@@ -104,9 +104,9 @@ impl ApprovalOverlay {
             ),
         };
 
-        let header = Box::new(ColumnRenderable::new([
-            Box::new(Line::from(title.bold())),
-            Box::new(Line::from("")),
+        let header = Box::new(ColumnRenderable::with([
+            Line::from(title.bold()).into(),
+            Line::from("").into(),
             header,
         ]));
 
@@ -323,7 +323,7 @@ impl From<ApprovalRequest> for ApprovalRequestState {
                 header.push(DiffSummary::new(changes, cwd).into());
                 Self {
                     variant: ApprovalVariant::ApplyPatch { id },
-                    header: Box::new(ColumnRenderable::new(header)),
+                    header: Box::new(ColumnRenderable::with(header)),
                 }
             }
         }

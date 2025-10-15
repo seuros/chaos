@@ -882,10 +882,7 @@ impl Session {
                 call_id,
                 command: command_for_display.clone(),
                 cwd,
-                parsed_cmd: parse_command(&command_for_display)
-                    .into_iter()
-                    .map(Into::into)
-                    .collect(),
+                parsed_cmd: parse_command(&command_for_display),
             }),
         };
         let event = Event {

@@ -505,10 +505,7 @@ fn begin_exec(chat: &mut ChatWidget, call_id: &str, raw_cmd: &str) {
     // Build the full command vec and parse it using core's parser,
     // then convert to protocol variants for the event payload.
     let command = vec!["bash".to_string(), "-lc".to_string(), raw_cmd.to_string()];
-    let parsed_cmd: Vec<ParsedCommand> = codex_core::parse_command::parse_command(&command)
-        .into_iter()
-        .map(Into::into)
-        .collect();
+    let parsed_cmd: Vec<ParsedCommand> = codex_core::parse_command::parse_command(&command);
     chat.handle_codex_event(Event {
         id: call_id.to_string(),
         msg: EventMsg::ExecCommandBegin(ExecCommandBeginEvent {
@@ -1205,10 +1202,7 @@ async fn binary_size_transcript_snapshot() {
                                     call_id: e.call_id.clone(),
                                     command: e.command,
                                     cwd: e.cwd,
-                                    parsed_cmd: parsed_cmd
-                                        .into_iter()
-                                        .map(std::convert::Into::into)
-                                        .collect(),
+                                    parsed_cmd,
                                 }),
                             }
                         }
@@ -2241,17 +2235,15 @@ fn chatwidget_exec_and_status_layout_vt100_snapshot() {
             command: vec!["bash".into(), "-lc".into(), "rg \"Change Approved\"".into()],
             cwd: std::env::current_dir().unwrap_or_else(|_| PathBuf::from(".")),
             parsed_cmd: vec![
-                codex_core::parse_command::ParsedCommand::Search {
+                ParsedCommand::Search {
                     query: Some("Change Approved".into()),
                     path: None,
                     cmd: "rg \"Change Approved\"".into(),
-                }
-                .into(),
-                codex_core::parse_command::ParsedCommand::Read {
+                },
+                ParsedCommand::Read {
                     name: "diff_render.rs".into(),
                     cmd: "cat diff_render.rs".into(),
-                }
-                .into(),
+                },
             ],
         }),
     });

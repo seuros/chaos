@@ -620,6 +620,7 @@ impl Session {
             warn!("Overwriting existing pending approval for sub_id: {event_id}");
         }
 
+        let parsed_cmd = parse_command(&command);
         let event = Event {
             id: event_id,
             msg: EventMsg::ExecApprovalRequest(ExecApprovalRequestEvent {
@@ -627,6 +628,7 @@ impl Session {
                 command,
                 cwd,
                 reason,
+                parsed_cmd,
             }),
         };
         self.send_event(event).await;

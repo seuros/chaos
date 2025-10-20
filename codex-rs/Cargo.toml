@@ -150,6 +150,7 @@ pretty_assertions = "1.4.1"
 pulldown-cmark = "0.10"
 rand = "0.9"
 ratatui = "0.29.0"
+ratatui-macros = "0.6.0"
 regex-lite = "0.1.7"
 reqwest = "0.12"
 rmcp = { version = "0.8.0", default-features = false }

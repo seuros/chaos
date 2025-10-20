@@ -1,4 +1,5 @@
 use std::borrow::Cow;
+use std::collections::HashMap;
 use std::fmt::Debug;
 use std::path::PathBuf;
 use std::sync::Arc;
@@ -8,6 +9,7 @@ use crate::AuthManager;
 use crate::client_common::REVIEW_PROMPT;
 use crate::event_mapping::map_response_item_to_event_messages;
 use crate::function_tool::FunctionCallError;
+use crate::mcp::auth::McpAuthStatusEntry;
 use crate::parse_command::parse_command;
 use crate::review_format::format_review_findings_block;
 use crate::state::ItemCollector;
@@ -21,7 +23,6 @@ use codex_protocol::items::TurnItem;
 use codex_protocol::items::UserMessageItem;
 use codex_protocol::protocol::ConversationPathResponseEvent;
 use codex_protocol::protocol::ExitedReviewModeEvent;
-use codex_protocol::protocol::McpAuthStatus;
 use codex_protocol::protocol::ReviewRequest;
 use codex_protocol::protocol::RolloutItem;
 use codex_protocol::protocol::SessionSource;
@@ -55,6 +56,7 @@ use crate::client::ModelClient;
 use crate::client_common::Prompt;
 use crate::client_common::ResponseEvent;
 use crate::config::Config;
+use crate::config_types::McpServerTransportConfig;
 use crate::config_types::ShellEnvironmentPolicy;
 use crate::conversation_history::ConversationHistory;
 use crate::environment_context::EnvironmentContext;
@@ -506,22 +508,9 @@ impl Session {
         // Surface individual client start-up failures to the user.
         if !failed_clients.is_empty() {
             for (server_name, err) in failed_clients {
-                let auth_status = auth_statuses.get(&server_name);
-                let requires_login = match auth_status {
-                    Some(McpAuthStatus::NotLoggedIn) => true,
-                    Some(McpAuthStatus::OAuth) => is_mcp_client_auth_required_error(&err),
-                    _ => false,
-                };
-                let log_message =
-                    format!("MCP client for `{server_name}` failed to start: {err:#}");
-                error!("{log_message}");
-                let display_message = if requires_login {
-                    format!(
-                        "The {server_name} MCP server is not logged in. Run `codex mcp login {server_name}` to log in."
-                    )
-                } else {
-                    log_message
-                };
+                let auth_entry = auth_statuses.get(&server_name);
+                let display_message = mcp_init_error_display(&server_name, auth_entry, &err);
+                warn!("MCP client for `{server_name}` failed to start: {err:#}");
                 post_session_configured_error_events.push(Event {
                     id: INITIAL_SUBMIT_ID.to_owned(),
                     msg: EventMsg::Error(ErrorEvent {
@@ -1235,7 +1224,7 @@ async fn submission_loop(sess: Arc<Session>, config: Arc<Config>, rx_sub: Receiv
 
                 // This is a cheap lookup from the connection manager's cache.
                 let tools = sess.services.mcp_connection_manager.list_all_tools();
-                let (auth_statuses, resources, resource_templates) = tokio::join!(
+                let (auth_status_entries, resources, resource_templates) = tokio::join!(
                     compute_auth_statuses(
                         config.mcp_servers.iter(),
                         config.mcp_oauth_credentials_store_mode,
@@ -1245,6 +1234,10 @@ async fn submission_loop(sess: Arc<Session>, config: Arc<Config>, rx_sub: Receiv
                         .mcp_connection_manager
                         .list_all_resource_templates()
                 );
+                let auth_statuses = auth_status_entries
+                    .iter()
+                    .map(|(name, entry)| (name.clone(), entry.auth_status))
+                    .collect();
                 let event = Event {
                     id: sub_id,
                     msg: EventMsg::McpListToolsResponse(
@@ -2312,6 +2305,36 @@ pub(crate) async fn exit_review_mode(
         .await;
 }
 
+fn mcp_init_error_display(
+    server_name: &str,
+    entry: Option<&McpAuthStatusEntry>,
+    err: &anyhow::Error,
+) -> String {
+    if let Some(McpServerTransportConfig::StreamableHttp {
+        url,
+        bearer_token_env_var,
+        http_headers,
+        ..
+    }) = &entry.map(|entry| &entry.config.transport)
+        && url == "https://api.githubcopilot.com/mcp/"
+        && bearer_token_env_var.is_none()
+        && http_headers.as_ref().map(HashMap::is_empty).unwrap_or(true)
+    {
+        // GitHub only supports OAUth for first party MCP clients.
+        // That means that the user has to specify a personal access token either via bearer_token_env_var or http_headers.
+        // https://github.com/github/github-mcp-server/issues/921#issuecomment-3221026448
+        format!(
+            "GitHub MCP does not support OAuth. Log in by adding `bearer_token_env_var = CODEX_GITHUB_PAT` in the `mcp_servers.{server_name}` section of your config.toml"
+        )
+    } else if is_mcp_client_auth_required_error(err) {
+        format!(
+            "The {server_name} MCP server is not logged in. Run `codex mcp login {server_name}`."
+        )
+    } else {
+        format!("MCP client for `{server_name}` failed to start: {err:#}")
+    }
+}
+
 fn is_mcp_client_auth_required_error(error: &anyhow::Error) -> bool {
     // StreamableHttpError::AuthRequired from the MCP SDK.
     error.to_string().contains("Auth required")
@@ -2325,7 +2348,10 @@ mod tests {
     use super::*;
     use crate::config::ConfigOverrides;
     use crate::config::ConfigToml;
+    use crate::config_types::McpServerConfig;
+    use crate::config_types::McpServerTransportConfig;
     use crate::exec::ExecToolCallOutput;
+    use crate::mcp::auth::McpAuthStatusEntry;
     use crate::tools::format_exec_output_str;
 
     use crate::protocol::CompactedItem;
@@ -2344,6 +2370,7 @@ mod tests {
     use codex_app_server_protocol::AuthMode;
     use codex_protocol::models::ContentItem;
     use codex_protocol::models::ResponseItem;
+    use codex_protocol::protocol::McpAuthStatus;
     use std::time::Duration;
     use tokio::time::sleep;
 
@@ -3127,5 +3154,77 @@ mod tests {
 
         pretty_assertions::assert_eq!(exec_output.metadata, ResponseExecMetadata { exit_code: 0 });
         assert!(exec_output.output.contains("hi"));
+    }
+
+    #[test]
+    fn mcp_init_error_display_prompts_for_github_pat() {
+        let server_name = "github";
+        let entry = McpAuthStatusEntry {
+            config: McpServerConfig {
+                transport: McpServerTransportConfig::StreamableHttp {
+                    url: "https://api.githubcopilot.com/mcp/".to_string(),
+                    bearer_token_env_var: None,
+                    http_headers: None,
+                    env_http_headers: None,
+                },
+                enabled: true,
+                startup_timeout_sec: None,
+                tool_timeout_sec: None,
+                enabled_tools: None,
+                disabled_tools: None,
+            },
+            auth_status: McpAuthStatus::Unsupported,
+        };
+        let err = anyhow::anyhow!("OAuth is unsupported");
+
+        let display = mcp_init_error_display(server_name, Some(&entry), &err);
+
+        let expected = format!(
+            "GitHub MCP does not support OAuth. Log in by adding `bearer_token_env_var = CODEX_GITHUB_PAT` in the `mcp_servers.{server_name}` section of your config.toml"
+        );
+
+        assert_eq!(expected, display);
+    }
+
+    #[test]
+    fn mcp_init_error_display_prompts_for_login_when_auth_required() {
+        let server_name = "example";
+        let err = anyhow::anyhow!("Auth required for server");
+
+        let display = mcp_init_error_display(server_name, None, &err);
+
+        let expected = format!(
+            "The {server_name} MCP server is not logged in. Run `codex mcp login {server_name}`."
+        );
+
+        assert_eq!(expected, display);
+    }
+
+    #[test]
+    fn mcp_init_error_display_reports_generic_errors() {
+        let server_name = "custom";
+        let entry = McpAuthStatusEntry {
+            config: McpServerConfig {
+                transport: McpServerTransportConfig::StreamableHttp {
+                    url: "https://example.com".to_string(),
+                    bearer_token_env_var: Some("TOKEN".to_string()),
+                    http_headers: None,
+                    env_http_headers: None,
+                },
+                enabled: true,
+                startup_timeout_sec: None,
+                tool_timeout_sec: None,
+                enabled_tools: None,
+                disabled_tools: None,
+            },
+            auth_status: McpAuthStatus::Unsupported,
+        };
+        let err = anyhow::anyhow!("boom");
+
+        let display = mcp_init_error_display(server_name, Some(&entry), &err);
+
+        let expected = format!("MCP client for `{server_name}` failed to start: {err:#}");
+
+        assert_eq!(expected, display);
     }
 }

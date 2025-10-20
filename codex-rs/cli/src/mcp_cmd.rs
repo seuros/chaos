@@ -402,7 +402,7 @@ async fn run_list(config_overrides: &CliConfigOverrides, list_args: ListArgs) ->
             .map(|(name, cfg)| {
                 let auth_status = auth_statuses
                     .get(name.as_str())
-                    .copied()
+                    .map(|entry| entry.auth_status)
                     .unwrap_or(McpAuthStatus::Unsupported);
                 let transport = match &cfg.transport {
                     McpServerTransportConfig::Stdio {
@@ -489,7 +489,7 @@ async fn run_list(config_overrides: &CliConfigOverrides, list_args: ListArgs) ->
                 };
                 let auth_status = auth_statuses
                     .get(name.as_str())
-                    .copied()
+                    .map(|entry| entry.auth_status)
                     .unwrap_or(McpAuthStatus::Unsupported)
                     .to_string();
                 stdio_rows.push([
@@ -514,7 +514,7 @@ async fn run_list(config_overrides: &CliConfigOverrides, list_args: ListArgs) ->
                 };
                 let auth_status = auth_statuses
                     .get(name.as_str())
-                    .copied()
+                    .map(|entry| entry.auth_status)
                     .unwrap_or(McpAuthStatus::Unsupported)
                     .to_string();
                 http_rows.push([

@@ -7,7 +7,6 @@ use crate::exec_cell::output_lines;
 use crate::exec_cell::spinner;
 use crate::exec_command::relativize_to_home;
 use crate::exec_command::strip_bash_lc_and_escape;
-use crate::markdown::MarkdownCitationContext;
 use crate::markdown::append_markdown;
 use crate::render::line_utils::line_to_static;
 use crate::render::line_utils::prefix_lines;
@@ -147,21 +146,14 @@ impl HistoryCell for UserHistoryCell {
 pub(crate) struct ReasoningSummaryCell {
     _header: String,
     content: String,
-    citation_context: MarkdownCitationContext,
     transcript_only: bool,
 }
 
 impl ReasoningSummaryCell {
-    pub(crate) fn new(
-        header: String,
-        content: String,
-        citation_context: MarkdownCitationContext,
-        transcript_only: bool,
-    ) -> Self {
+    pub(crate) fn new(header: String, content: String, transcript_only: bool) -> Self {
         Self {
             _header: header,
             content,
-            citation_context,
             transcript_only,
         }
     }
@@ -172,7 +164,6 @@ impl ReasoningSummaryCell {
             &self.content,
             Some((width as usize).saturating_sub(2)),
             &mut lines,
-            self.citation_context.clone(),
         );
         let summary_style = Style::default().dim().italic();
         let summary_lines = lines
@@ -1303,7 +1294,6 @@ pub(crate) fn new_reasoning_summary_block(
                     return Box::new(ReasoningSummaryCell::new(
                         header_buffer,
                         summary_buffer,
-                        config.into(),
                         false,
                     ));
                 }
@@ -1313,7 +1303,6 @@ pub(crate) fn new_reasoning_summary_block(
     Box::new(ReasoningSummaryCell::new(
         "".to_string(),
         full_reasoning_buffer,
-        config.into(),
         true,
     ))
 }

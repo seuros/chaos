@@ -17,6 +17,7 @@ use codex_protocol::protocol::EventMsg;
 use codex_protocol::protocol::FileChange;
 use codex_protocol::protocol::RateLimitSnapshot;
 use codex_protocol::protocol::ReviewDecision;
+use codex_protocol::protocol::SandboxCommandAssessment;
 use codex_protocol::protocol::SandboxPolicy;
 use codex_protocol::protocol::TurnAbortReason;
 use paste::paste;
@@ -847,6 +848,8 @@ pub struct ExecCommandApprovalParams {
     pub cwd: PathBuf,
     #[serde(skip_serializing_if = "Option::is_none")]
     pub reason: Option<String>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub risk: Option<SandboxCommandAssessment>,
     pub parsed_cmd: Vec<ParsedCommand>,
 }
 
@@ -1063,6 +1066,7 @@ mod tests {
             command: vec!["echo".to_string(), "hello".to_string()],
             cwd: PathBuf::from("/tmp"),
             reason: Some("because tests".to_string()),
+            risk: None,
             parsed_cmd: vec![ParsedCommand::Unknown {
                 cmd: "echo hello".to_string(),
             }],

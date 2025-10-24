@@ -527,6 +527,8 @@ pub enum EventMsg {
     /// Exited review mode with an optional final result to apply.
     ExitedReviewMode(ExitedReviewModeEvent),
 
+    RawResponseItem(ResponseItem),
+
     ItemStarted(ItemStartedEvent),
     ItemCompleted(ItemCompletedEvent),
 }

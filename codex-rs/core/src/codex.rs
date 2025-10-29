@@ -15,11 +15,13 @@ use crate::parse_turn_item;
 use crate::response_processing::process_items;
 use crate::terminal;
 use crate::user_notification::UserNotifier;
+use crate::util::error_or_panic;
 use async_channel::Receiver;
 use async_channel::Sender;
 use codex_protocol::ConversationId;
 use codex_protocol::items::TurnItem;
 use codex_protocol::protocol::FileChange;
+use codex_protocol::protocol::HasLegacyEvent;
 use codex_protocol::protocol::ItemCompletedEvent;
 use codex_protocol::protocol::ItemStartedEvent;
 use codex_protocol::protocol::RawResponseItemEvent;
@@ -69,9 +71,7 @@ use crate::mcp_connection_manager::McpConnectionManager;
 use crate::model_family::find_family_for_model;
 use crate::openai_model_info::get_model_info;
 use crate::project_doc::get_user_instructions;
-use crate::protocol::AgentMessageDeltaEvent;
-use crate::protocol::AgentReasoningDeltaEvent;
-use crate::protocol::AgentReasoningRawContentDeltaEvent;
+use crate::protocol::AgentMessageContentDeltaEvent;
 use crate::protocol::AgentReasoningSectionBreakEvent;
 use crate::protocol::ApplyPatchApprovalRequestEvent;
 use crate::protocol::AskForApproval;
@@ -83,6 +83,8 @@ use crate::protocol::EventMsg;
 use crate::protocol::ExecApprovalRequestEvent;
 use crate::protocol::Op;
 use crate::protocol::RateLimitSnapshot;
+use crate::protocol::ReasoningContentDeltaEvent;
+use crate::protocol::ReasoningRawContentDeltaEvent;
 use crate::protocol::ReviewDecision;
 use crate::protocol::SandboxCommandAssessment;
 use crate::protocol::SandboxPolicy;
@@ -92,7 +94,6 @@ use crate::protocol::Submission;
 use crate::protocol::TokenCountEvent;
 use crate::protocol::TokenUsage;
 use crate::protocol::TurnDiffEvent;
-use crate::protocol::WebSearchBeginEvent;
 use crate::rollout::RolloutRecorder;
 use crate::rollout::RolloutRecorderParams;
 use crate::shell;
@@ -729,11 +730,21 @@ impl Session {
 
     /// Persist the event to rollout and send it to clients.
     pub(crate) async fn send_event(&self, turn_context: &TurnContext, msg: EventMsg) {
+        let legacy_source = msg.clone();
         let event = Event {
             id: turn_context.sub_id.clone(),
             msg,
         };
         self.send_event_raw(event).await;
+
+        let show_raw_agent_reasoning = self.show_raw_agent_reasoning();
+        for legacy in legacy_source.as_legacy_events(show_raw_agent_reasoning) {
+            let legacy_event = Event {
+                id: turn_context.sub_id.clone(),
+                msg: legacy,
+            };
+            self.send_event_raw(legacy_event).await;
+        }
     }
 
     pub(crate) async fn send_event_raw(&self, event: Event) {
@@ -757,45 +768,16 @@ impl Session {
         .await;
     }
 
-    async fn emit_turn_item_completed(
-        &self,
-        turn_context: &TurnContext,
-        item: TurnItem,
-        emit_raw_agent_reasoning: bool,
-    ) {
+    async fn emit_turn_item_completed(&self, turn_context: &TurnContext, item: TurnItem) {
         self.send_event(
             turn_context,
             EventMsg::ItemCompleted(ItemCompletedEvent {
                 thread_id: self.conversation_id,
                 turn_id: turn_context.sub_id.clone(),
-                item: item.clone(),
+                item,
             }),
         )
         .await;
-        self.emit_turn_item_legacy_events(turn_context, &item, emit_raw_agent_reasoning)
-            .await;
-    }
-
-    async fn emit_turn_item_started_completed(
-        &self,
-        turn_context: &TurnContext,
-        item: TurnItem,
-        emit_raw_agent_reasoning: bool,
-    ) {
-        self.emit_turn_item_started(turn_context, &item).await;
-        self.emit_turn_item_completed(turn_context, item, emit_raw_agent_reasoning)
-            .await;
-    }
-
-    async fn emit_turn_item_legacy_events(
-        &self,
-        turn_context: &TurnContext,
-        item: &TurnItem,
-        emit_raw_agent_reasoning: bool,
-    ) {
-        for event in item.as_legacy_events(emit_raw_agent_reasoning) {
-            self.send_event(turn_context, event).await;
-        }
     }
 
     pub(crate) async fn assess_sandbox_command(
@@ -1092,8 +1074,8 @@ impl Session {
         let turn_item = parse_turn_item(&response_item);
 
         if let Some(item @ TurnItem::UserMessage(_)) = turn_item {
-            self.emit_turn_item_started_completed(turn_context, item, false)
-                .await;
+            self.emit_turn_item_started(turn_context, &item).await;
+            self.emit_turn_item_completed(turn_context, item).await;
         }
     }
 
@@ -1910,14 +1892,13 @@ async fn run_turn(
             Err(CodexErr::EnvVar(var)) => return Err(CodexErr::EnvVar(var)),
             Err(e @ CodexErr::Fatal(_)) => return Err(e),
             Err(e @ CodexErr::ContextWindowExceeded) => {
-                sess.set_total_tokens_full(turn_context.as_ref()).await;
+                sess.set_total_tokens_full(&turn_context).await;
                 return Err(e);
             }
             Err(CodexErr::UsageLimitReached(e)) => {
                 let rate_limits = e.rate_limits.clone();
                 if let Some(rate_limits) = rate_limits {
-                    sess.update_rate_limits(turn_context.as_ref(), rate_limits)
-                        .await;
+                    sess.update_rate_limits(&turn_context, rate_limits).await;
                 }
                 return Err(CodexErr::UsageLimitReached(e));
             }
@@ -1939,8 +1920,8 @@ async fn run_turn(
                     // user understands what is happening instead of staring
                     // at a seemingly frozen screen.
                     sess.notify_stream_error(
-                        turn_context.as_ref(),
-                        format!("Reconnecting... {retries}/{max_retries}"),
+                        &turn_context,
+                        format!("Re-connecting... {retries}/{max_retries}"),
                     )
                     .await;
 
@@ -2004,6 +1985,8 @@ async fn try_run_turn(
     let mut output: FuturesOrdered<BoxFuture<CodexResult<ProcessedResponseItem>>> =
         FuturesOrdered::new();
 
+    let mut active_item: Option<TurnItem> = None;
+
     loop {
         // Poll the next item from the model stream. We must inspect *both* Ok and Err
         // cases so that transient stream failures (e.g., dropped SSE connection before
@@ -2035,6 +2018,7 @@ async fn try_run_turn(
         match event {
             ResponseEvent::Created => {}
             ResponseEvent::OutputItemDone(item) => {
+                let previously_active_item = active_item.take();
                 match ToolRouter::build_tool_call(sess.as_ref(), item.clone()) {
                     Ok(Some(call)) => {
                         let payload_preview = call.payload.log_payload().into_owned();
@@ -2054,14 +2038,19 @@ async fn try_run_turn(
                         );
                     }
                     Ok(None) => {
-                        let response = handle_non_tool_response_item(
-                            sess.as_ref(),
-                            Arc::clone(&turn_context),
-                            item.clone(),
-                            sess.show_raw_agent_reasoning(),
-                        )
-                        .await?;
-                        add_completed(ProcessedResponseItem { item, response });
+                        if let Some(turn_item) = handle_non_tool_response_item(&item).await {
+                            if previously_active_item.is_none() {
+                                sess.emit_turn_item_started(&turn_context, &turn_item).await;
+                            }
+
+                            sess.emit_turn_item_completed(&turn_context, turn_item)
+                                .await;
+                        }
+
+                        add_completed(ProcessedResponseItem {
+                            item,
+                            response: None,
+                        });
                     }
                     Err(FunctionCallError::MissingLocalShellCallId) => {
                         let msg = "LocalShellCall without call_id or id";
@@ -2102,26 +2091,24 @@ async fn try_run_turn(
                     }
                 }
             }
-            ResponseEvent::WebSearchCallBegin { call_id } => {
-                let _ = sess
-                    .tx_event
-                    .send(Event {
-                        id: turn_context.sub_id.clone(),
-                        msg: EventMsg::WebSearchBegin(WebSearchBeginEvent { call_id }),
-                    })
-                    .await;
+            ResponseEvent::OutputItemAdded(item) => {
+                if let Some(turn_item) = handle_non_tool_response_item(&item).await {
+                    let tracked_item = turn_item.clone();
+                    sess.emit_turn_item_started(&turn_context, &turn_item).await;
+
+                    active_item = Some(tracked_item);
+                }
             }
             ResponseEvent::RateLimits(snapshot) => {
                 // Update internal state with latest rate limits, but defer sending until
                 // token usage is available to avoid duplicate TokenCount events.
-                sess.update_rate_limits(turn_context.as_ref(), snapshot)
-                    .await;
+                sess.update_rate_limits(&turn_context, snapshot).await;
             }
             ResponseEvent::Completed {
                 response_id: _,
                 token_usage,
             } => {
-                sess.update_token_usage_info(turn_context.as_ref(), token_usage.as_ref())
+                sess.update_token_usage_info(&turn_context, token_usage.as_ref())
                     .await;
                 let processed_items = output.try_collect().await?;
                 let unified_diff = {
@@ -2141,12 +2128,34 @@ async fn try_run_turn(
                 return Ok(result);
             }
             ResponseEvent::OutputTextDelta(delta) => {
-                let event = EventMsg::AgentMessageDelta(AgentMessageDeltaEvent { delta });
-                sess.send_event(&turn_context, event).await;
+                // In review child threads, suppress assistant text deltas; the
+                // UI will show a selection popup from the final ReviewOutput.
+                if let Some(active) = active_item.as_ref() {
+                    let event = AgentMessageContentDeltaEvent {
+                        thread_id: sess.conversation_id.to_string(),
+                        turn_id: turn_context.sub_id.clone(),
+                        item_id: active.id(),
+                        delta: delta.clone(),
+                    };
+                    sess.send_event(&turn_context, EventMsg::AgentMessageContentDelta(event))
+                        .await;
+                } else {
+                    error_or_panic("ReasoningSummaryDelta without active item".to_string());
+                }
             }
             ResponseEvent::ReasoningSummaryDelta(delta) => {
-                let event = EventMsg::AgentReasoningDelta(AgentReasoningDeltaEvent { delta });
-                sess.send_event(&turn_context, event).await;
+                if let Some(active) = active_item.as_ref() {
+                    let event = ReasoningContentDeltaEvent {
+                        thread_id: sess.conversation_id.to_string(),
+                        turn_id: turn_context.sub_id.clone(),
+                        item_id: active.id(),
+                        delta: delta.clone(),
+                    };
+                    sess.send_event(&turn_context, EventMsg::ReasoningContentDelta(event))
+                        .await;
+                } else {
+                    error_or_panic("ReasoningSummaryDelta without active item".to_string());
+                }
             }
             ResponseEvent::ReasoningSummaryPartAdded => {
                 let event =
@@ -2154,46 +2163,36 @@ async fn try_run_turn(
                 sess.send_event(&turn_context, event).await;
             }
             ResponseEvent::ReasoningContentDelta(delta) => {
-                if sess.show_raw_agent_reasoning() {
-                    let event = EventMsg::AgentReasoningRawContentDelta(
-                        AgentReasoningRawContentDeltaEvent { delta },
-                    );
-                    sess.send_event(&turn_context, event).await;
+                if let Some(active) = active_item.as_ref() {
+                    let event = ReasoningRawContentDeltaEvent {
+                        thread_id: sess.conversation_id.to_string(),
+                        turn_id: turn_context.sub_id.clone(),
+                        item_id: active.id(),
+                        delta: delta.clone(),
+                    };
+                    sess.send_event(&turn_context, EventMsg::ReasoningRawContentDelta(event))
+                        .await;
+                } else {
+                    error_or_panic("ReasoningRawContentDelta without active item".to_string());
                 }
             }
         }
     }
 }
 
-async fn handle_non_tool_response_item(
-    sess: &Session,
-    turn_context: Arc<TurnContext>,
-    item: ResponseItem,
-    show_raw_agent_reasoning: bool,
-) -> CodexResult<Option<ResponseInputItem>> {
+async fn handle_non_tool_response_item(item: &ResponseItem) -> Option<TurnItem> {
     debug!(?item, "Output item");
 
-    match &item {
+    match item {
         ResponseItem::Message { .. }
         | ResponseItem::Reasoning { .. }
-        | ResponseItem::WebSearchCall { .. } => {
-            let turn_item = parse_turn_item(&item);
-            if let Some(turn_item) = turn_item {
-                sess.emit_turn_item_started_completed(
-                    turn_context.as_ref(),
-                    turn_item,
-                    show_raw_agent_reasoning,
-                )
-                .await;
-            }
-        }
+        | ResponseItem::WebSearchCall { .. } => parse_turn_item(item),
         ResponseItem::FunctionCallOutput { .. } | ResponseItem::CustomToolCallOutput { .. } => {
             debug!("unexpected tool output from stream");
+            None
         }
-        _ => {}
+        _ => None,
     }
-
-    Ok(None)
 }
 
 pub(super) fn get_last_assistant_message_from_turn(responses: &[ResponseItem]) -> Option<String> {

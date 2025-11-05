@@ -1,4 +1,5 @@
 use std::collections::HashMap;
+use std::path::Path;
 use std::path::PathBuf;
 
 use crate::JSONRPCNotification;
@@ -101,11 +102,43 @@ macro_rules! client_request_definitions {
 
 client_request_definitions! {
     /// NEW APIs
+    // Thread lifecycle
+    #[serde(rename = "thread/start")]
+    #[ts(rename = "thread/start")]
+    ThreadStart {
+        params: v2::ThreadStartParams,
+        response: v2::ThreadStartResponse,
+    },
+    #[serde(rename = "thread/resume")]
+    #[ts(rename = "thread/resume")]
+    ThreadResume {
+        params: v2::ThreadResumeParams,
+        response: v2::ThreadResumeResponse,
+    },
+    #[serde(rename = "thread/archive")]
+    #[ts(rename = "thread/archive")]
+    ThreadArchive {
+        params: v2::ThreadArchiveParams,
+        response: v2::ThreadArchiveResponse,
+    },
+    #[serde(rename = "thread/list")]
+    #[ts(rename = "thread/list")]
+    ThreadList {
+        params: v2::ThreadListParams,
+        response: v2::ThreadListResponse,
+    },
+    #[serde(rename = "thread/compact")]
+    #[ts(rename = "thread/compact")]
+    ThreadCompact {
+        params: v2::ThreadCompactParams,
+        response: v2::ThreadCompactResponse,
+    },
+
     #[serde(rename = "model/list")]
     #[ts(rename = "model/list")]
-    ListModels {
-        params: v2::ListModelsParams,
-        response: v2::ListModelsResponse,
+    ModelList {
+        params: v2::ModelListParams,
+        response: v2::ModelListResponse,
     },
 
     #[serde(rename = "account/login")]
@@ -131,9 +164,9 @@ client_request_definitions! {
 
     #[serde(rename = "feedback/upload")]
     #[ts(rename = "feedback/upload")]
-    UploadFeedback {
-        params: v2::UploadFeedbackParams,
-        response: v2::UploadFeedbackResponse,
+    FeedbackUpload {
+        params: v2::FeedbackUploadParams,
+        response: v2::FeedbackUploadResponse,
     },
 
     #[serde(rename = "account/read")]
@@ -292,7 +325,7 @@ macro_rules! server_request_definitions {
 
         #[allow(clippy::vec_init_then_push)]
         pub fn export_server_response_schemas(
-            out_dir: &::std::path::Path,
+            out_dir: &Path,
         ) -> ::anyhow::Result<Vec<GeneratedSchema>> {
             let mut schemas = Vec::new();
             paste! {
@@ -303,7 +336,7 @@ macro_rules! server_request_definitions {
 
         #[allow(clippy::vec_init_then_push)]
         pub fn export_server_param_schemas(
-            out_dir: &::std::path::Path,
+            out_dir: &Path,
         ) -> ::anyhow::Result<Vec<GeneratedSchema>> {
             let mut schemas = Vec::new();
             paste! {
@@ -741,16 +774,16 @@ mod tests {
 
     #[test]
     fn serialize_list_models() -> Result<()> {
-        let request = ClientRequest::ListModels {
+        let request = ClientRequest::ModelList {
             request_id: RequestId::Integer(6),
-            params: v2::ListModelsParams::default(),
+            params: v2::ModelListParams::default(),
         };
         assert_eq!(
             json!({
                 "method": "model/list",
                 "id": 6,
                 "params": {
-                    "pageSize": null,
+                    "limit": null,
                     "cursor": null
                 }
             }),

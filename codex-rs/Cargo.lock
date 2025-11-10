@@ -986,14 +986,17 @@ dependencies = [
  "codex-tui",
  "codex-windows-sandbox",
  "ctor 0.5.0",
+ "libc",
  "owo-colors",
  "predicates",
  "pretty_assertions",
+ "regex-lite",
  "serde_json",
  "supports-color",
  "tempfile",
  "tokio",
  "toml",
+ "tracing",
 ]
 
 [[package]]

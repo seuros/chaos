@@ -27,6 +27,8 @@ pub struct ModelPreset {
     pub supported_reasoning_efforts: &'static [ReasoningEffortPreset],
     /// Whether this is the default model for new users.
     pub is_default: bool,
+    /// recommended upgrade model
+    pub recommended_upgrade_model: Option<&'static str>,
 }
 
 const PRESETS: &[ModelPreset] = &[
@@ -51,6 +53,7 @@ const PRESETS: &[ModelPreset] = &[
             },
         ],
         is_default: true,
+        recommended_upgrade_model: Some("gpt-5.1-codex"),
     },
     ModelPreset {
         id: "gpt-5-codex-mini",
@@ -69,6 +72,7 @@ const PRESETS: &[ModelPreset] = &[
             },
         ],
         is_default: false,
+        recommended_upgrade_model: Some("gpt-5.1-codex-mini"),
     },
     ModelPreset {
         id: "gpt-5",
@@ -95,6 +99,7 @@ const PRESETS: &[ModelPreset] = &[
             },
         ],
         is_default: false,
+        recommended_upgrade_model: Some("gpt-5.1"),
     },
 ];
 
@@ -105,6 +110,10 @@ pub fn builtin_model_presets(auth_mode: Option<AuthMode>) -> Vec<ModelPreset> {
         .filter(|preset| allow_codex_mini || preset.id != "gpt-5-codex-mini")
         .copied()
         .collect()
+}
+
+pub fn all_model_presets() -> &'static [ModelPreset] {
+    PRESETS
 }
 
 #[cfg(test)]

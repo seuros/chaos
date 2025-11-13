@@ -24,6 +24,8 @@ export type CodexExecArgs = {
   outputSchemaFile?: string;
   // --config model_reasoning_effort
   modelReasoningEffort?: ModelReasoningEffort;
+  // AbortSignal to cancel the execution
+  signal?: AbortSignal;
   // --config sandbox_workspace_write.network_access
   networkAccessEnabled?: boolean;
   // --config features.web_search_request
@@ -69,7 +71,10 @@ export class CodexExec {
     }
 
     if (args.networkAccessEnabled !== undefined) {
-      commandArgs.push("--config", `sandbox_workspace_write.network_access=${args.networkAccessEnabled}`);
+      commandArgs.push(
+        "--config",
+        `sandbox_workspace_write.network_access=${args.networkAccessEnabled}`,
+      );
     }
 
     if (args.webSearchEnabled !== undefined) {
@@ -105,6 +110,7 @@ export class CodexExec {
 
     const child = spawn(this.executablePath, commandArgs, {
       env,
+      signal: args.signal,
     });
 
     let spawnError: unknown | null = null;

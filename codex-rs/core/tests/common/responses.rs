@@ -296,6 +296,7 @@ pub fn ev_reasoning_summary_text_delta(delta: &str) -> Value {
     serde_json::json!({
         "type": "response.reasoning_summary_text.delta",
         "delta": delta,
+        "summary_index": 0,
     })
 }
 
@@ -303,6 +304,7 @@ pub fn ev_reasoning_text_delta(delta: &str) -> Value {
     serde_json::json!({
         "type": "response.reasoning_text.delta",
         "delta": delta,
+        "content_index": 0,
     })
 }
 

@@ -617,6 +617,9 @@ pub struct ReasoningContentDeltaEvent {
     pub turn_id: String,
     pub item_id: String,
     pub delta: String,
+    // load with default value so it's backward compatible with the old format.
+    #[serde(default)]
+    pub summary_index: i64,
 }
 
 impl HasLegacyEvent for ReasoningContentDeltaEvent {
@@ -633,6 +636,9 @@ pub struct ReasoningRawContentDeltaEvent {
     pub turn_id: String,
     pub item_id: String,
     pub delta: String,
+    // load with default value so it's backward compatible with the old format.
+    #[serde(default)]
+    pub content_index: i64,
 }
 
 impl HasLegacyEvent for ReasoningRawContentDeltaEvent {
@@ -923,7 +929,13 @@ pub struct AgentReasoningRawContentDeltaEvent {
 }
 
 #[derive(Debug, Clone, Deserialize, Serialize, JsonSchema, TS)]
-pub struct AgentReasoningSectionBreakEvent {}
+pub struct AgentReasoningSectionBreakEvent {
+    // load with default value so it's backward compatible with the old format.
+    #[serde(default)]
+    pub item_id: String,
+    #[serde(default)]
+    pub summary_index: i64,
+}
 
 #[derive(Debug, Clone, Deserialize, Serialize, JsonSchema, TS)]
 pub struct AgentReasoningDeltaEvent {

@@ -46,6 +46,8 @@ pub enum Feature {
     SandboxCommandAssessment,
     /// Enable Windows sandbox (restricted token) on Windows.
     WindowsSandbox,
+    /// Remote compaction enabled (only for ChatGPT auth)
+    RemoteCompaction,
     /// Enable the default shell tool.
     ShellTool,
 }
@@ -302,6 +304,12 @@ pub const FEATURES: &[FeatureSpec] = &[
     FeatureSpec {
         id: Feature::WindowsSandbox,
         key: "enable_experimental_windows_sandbox",
+        stage: Stage::Experimental,
+        default_enabled: false,
+    },
+    FeatureSpec {
+        id: Feature::RemoteCompaction,
+        key: "remote_compaction",
         stage: Stage::Experimental,
         default_enabled: false,
     },

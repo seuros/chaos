@@ -7,6 +7,9 @@ use std::sync::atomic::AtomicU64;
 use crate::AuthManager;
 use crate::client_common::REVIEW_PROMPT;
 use crate::compact;
+use crate::compact::run_inline_auto_compact_task;
+use crate::compact::should_use_remote_compact_task;
+use crate::compact_remote::run_inline_remote_auto_compact_task;
 use crate::features::Feature;
 use crate::function_tool::FunctionCallError;
 use crate::parse_command::parse_command;
@@ -1890,7 +1893,12 @@ pub(crate) async fn run_task(
 
                 // as long as compaction works well in getting us way below the token limit, we shouldn't worry about being in an infinite loop.
                 if token_limit_reached {
-                    compact::run_inline_auto_compact_task(sess.clone(), turn_context.clone()).await;
+                    if should_use_remote_compact_task(&sess).await {
+                        run_inline_remote_auto_compact_task(sess.clone(), turn_context.clone())
+                            .await;
+                    } else {
+                        run_inline_auto_compact_task(sess.clone(), turn_context.clone()).await;
+                    }
                     continue;
                 }
 

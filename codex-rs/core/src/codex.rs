@@ -1335,7 +1335,10 @@ impl Session {
 }
 
 async fn submission_loop(sess: Arc<Session>, config: Arc<Config>, rx_sub: Receiver<Submission>) {
-    let mut previous_context: Option<Arc<TurnContext>> = None;
+    // Seed with context in case there is an OverrideTurnContext first.
+    let mut previous_context: Option<Arc<TurnContext>> =
+        Some(sess.new_turn(SessionSettingsUpdate::default()).await);
+
     // To break out of this loop, send Op::Shutdown.
     while let Ok(sub) = rx_sub.recv().await {
         debug!(?sub, "Submission");

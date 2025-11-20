@@ -1001,6 +1001,7 @@ dependencies = [
  "codex-common",
  "codex-core",
  "codex-exec",
+ "codex-execpolicy",
  "codex-login",
  "codex-mcp-server",
  "codex-process-hardening",

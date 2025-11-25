@@ -722,6 +722,7 @@ fn begin_exec_with_source(
     let interaction_input = None;
     let event = ExecCommandBeginEvent {
         call_id: call_id.to_string(),
+        process_id: None,
         turn_id: "turn-1".to_string(),
         command,
         cwd,
@@ -760,11 +761,13 @@ fn end_exec(
         parsed_cmd,
         source,
         interaction_input,
+        process_id,
     } = begin_event;
     chat.handle_codex_event(Event {
         id: call_id.clone(),
         msg: EventMsg::ExecCommandEnd(ExecCommandEndEvent {
             call_id,
+            process_id,
             turn_id,
             command,
             cwd,
@@ -2880,6 +2883,7 @@ fn chatwidget_exec_and_status_layout_vt100_snapshot() {
         id: "c1".into(),
         msg: EventMsg::ExecCommandBegin(ExecCommandBeginEvent {
             call_id: "c1".into(),
+            process_id: None,
             turn_id: "turn-1".into(),
             command: command.clone(),
             cwd: cwd.clone(),
@@ -2892,6 +2896,7 @@ fn chatwidget_exec_and_status_layout_vt100_snapshot() {
         id: "c1".into(),
         msg: EventMsg::ExecCommandEnd(ExecCommandEndEvent {
             call_id: "c1".into(),
+            process_id: None,
             turn_id: "turn-1".into(),
             command,
             cwd,

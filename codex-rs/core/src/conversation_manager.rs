@@ -201,6 +201,10 @@ impl ConversationManager {
     pub async fn list_models(&self) -> Vec<ModelPreset> {
         self.models_manager.available_models.read().await.clone()
     }
+
+    pub fn get_models_manager(&self) -> Arc<ModelsManager> {
+        self.models_manager.clone()
+    }
 }
 
 /// Return a prefix of `items` obtained by cutting strictly before the nth user message

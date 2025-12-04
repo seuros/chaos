@@ -39,6 +39,7 @@ use ts_rs::TS;
 pub use crate::approvals::ApplyPatchApprovalRequestEvent;
 pub use crate::approvals::ElicitationAction;
 pub use crate::approvals::ExecApprovalRequestEvent;
+pub use crate::approvals::ExecPolicyAmendment;
 pub use crate::approvals::SandboxCommandAssessment;
 pub use crate::approvals::SandboxRiskLevel;
 
@@ -1655,9 +1656,11 @@ pub enum ReviewDecision {
     /// User has approved this command and the agent should execute it.
     Approved,
 
-    /// User has approved this command and wants to add the command prefix to
-    /// the execpolicy allow list so future matching commands are permitted.
-    ApprovedAllowPrefix { allow_prefix: Vec<String> },
+    /// User has approved this command and wants to apply the proposed execpolicy
+    /// amendment so future matching commands are permitted.
+    ApprovedExecpolicyAmendment {
+        proposed_execpolicy_amendment: ExecPolicyAmendment,
+    },
 
     /// User has approved this command and wants to automatically approve any
     /// future identical instances (`command` and `cwd` match exactly) for the

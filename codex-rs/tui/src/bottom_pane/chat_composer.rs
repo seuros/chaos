@@ -257,6 +257,8 @@ impl ChatComposer {
             return false;
         };
 
+        // normalize_pasted_path already handles Windows → WSL path conversion,
+        // so we can directly try to read the image dimensions.
         match image::image_dimensions(&path_buf) {
             Ok((w, h)) => {
                 tracing::info!("OK: {pasted}");

@@ -333,6 +333,7 @@ pub(crate) async fn apply_bespoke_event_handling(
             outgoing
                 .send_server_notification(ServerNotification::Error(ErrorNotification {
                     error: turn_error,
+                    will_retry: false,
                     thread_id: conversation_id.to_string(),
                     turn_id: event_turn_id.clone(),
                 }))
@@ -348,6 +349,7 @@ pub(crate) async fn apply_bespoke_event_handling(
             outgoing
                 .send_server_notification(ServerNotification::Error(ErrorNotification {
                     error: turn_error,
+                    will_retry: true,
                     thread_id: conversation_id.to_string(),
                     turn_id: event_turn_id.clone(),
                 }))

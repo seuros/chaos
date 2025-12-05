@@ -1,4 +1,4 @@
-use codex_app_server_protocol::AuthMode;
+use codex_core::AuthManager;
 use codex_core::CodexAuth;
 use codex_core::ContentItem;
 use codex_core::ConversationManager;
@@ -1017,8 +1017,8 @@ async fn azure_responses_request_includes_store_and_reasoning_ids() {
     let config = Arc::new(config);
 
     let conversation_id = ConversationId::new();
-    let auth_mode = AuthMode::ChatGPT;
-    let models_manager = Arc::new(ModelsManager::new(Some(auth_mode)));
+    let auth_manager = AuthManager::from_auth_for_testing(CodexAuth::from_api_key("Test API Key"));
+    let models_manager = Arc::new(ModelsManager::new(auth_manager.clone()));
     let model_family = models_manager.construct_model_family(&config.model, &config);
     let otel_event_manager = OtelEventManager::new(
         conversation_id,
@@ -1026,7 +1026,7 @@ async fn azure_responses_request_includes_store_and_reasoning_ids() {
         model_family.slug.as_str(),
         None,
         Some("test@test.com".to_string()),
-        Some(AuthMode::ChatGPT),
+        auth_manager.get_auth_mode(),
         false,
         "test".to_string(),
     );

@@ -5,11 +5,11 @@ use codex_api::provider::RetryConfig;
 use codex_api::provider::WireApi;
 use codex_client::ReqwestTransport;
 use codex_protocol::openai_models::ClientVersion;
+use codex_protocol::openai_models::ConfigShellToolType;
 use codex_protocol::openai_models::ModelInfo;
 use codex_protocol::openai_models::ModelVisibility;
 use codex_protocol::openai_models::ModelsResponse;
-use codex_protocol::openai_models::ReasoningLevel;
-use codex_protocol::openai_models::ShellType;
+use codex_protocol::openai_models::ReasoningEffort;
 use http::HeaderMap;
 use http::Method;
 use wiremock::Mock;
@@ -55,13 +55,13 @@ async fn models_client_hits_models_endpoint() {
             slug: "gpt-test".to_string(),
             display_name: "gpt-test".to_string(),
             description: Some("desc".to_string()),
-            default_reasoning_level: ReasoningLevel::Medium,
+            default_reasoning_level: ReasoningEffort::Medium,
             supported_reasoning_levels: vec![
-                ReasoningLevel::Low,
-                ReasoningLevel::Medium,
-                ReasoningLevel::High,
+                ReasoningEffort::Low,
+                ReasoningEffort::Medium,
+                ReasoningEffort::High,
             ],
-            shell_type: ShellType::ShellCommand,
+            shell_type: ConfigShellToolType::ShellCommand,
             visibility: ModelVisibility::List,
             minimal_client_version: ClientVersion(0, 1, 0),
             supported_in_api: true,

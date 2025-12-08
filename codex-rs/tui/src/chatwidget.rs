@@ -550,7 +550,7 @@ impl ChatWidget {
 
     fn context_remaining_percent(&self, info: &TokenUsageInfo) -> Option<i64> {
         info.model_context_window
-            .or(self.config.model_context_window)
+            .or(self.model_family.context_window)
             .map(|window| {
                 info.last_token_usage
                     .percent_of_context_window_remaining(window)
@@ -2024,6 +2024,7 @@ impl ChatWidget {
         self.add_to_history(crate::status::new_status_output(
             &self.config,
             self.auth_manager.as_ref(),
+            &self.model_family,
             total_usage,
             context_usage,
             &self.conversation_id,

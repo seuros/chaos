@@ -66,12 +66,9 @@ impl ModelsManager {
         let transport = ReqwestTransport::new(build_reqwest_client());
         let client = ModelsClient::new(transport, api_provider, api_auth);
 
-        let mut client_version = env!("CARGO_PKG_VERSION");
-        if client_version == "0.0.0" {
-            client_version = "99.99.99";
-        }
+        let client_version = format_client_version_to_whole();
         let ModelsResponse { models, etag } = client
-            .list_models(client_version, HeaderMap::new())
+            .list_models(&client_version, HeaderMap::new())
             .await
             .map_err(map_api_error)?;
 
@@ -168,6 +165,28 @@ impl ModelsManager {
 
     fn cache_path(&self) -> PathBuf {
         self.codex_home.join(MODEL_CACHE_FILE)
+    }
+}
+
+/// Convert a client version string to a whole version string (e.g. "1.2.3-alpha.4" -> "1.2.3")
+fn format_client_version_to_whole() -> String {
+    format_client_version_from_parts(
+        env!("CARGO_PKG_VERSION_MAJOR"),
+        env!("CARGO_PKG_VERSION_MINOR"),
+        env!("CARGO_PKG_VERSION_PATCH"),
+    )
+}
+
+fn format_client_version_from_parts(major: &str, minor: &str, patch: &str) -> String {
+    const DEV_VERSION: &str = "0.0.0";
+    const FALLBACK_VERSION: &str = "99.99.99";
+
+    let normalized = format!("{major}.{minor}.{patch}");
+
+    if normalized == DEV_VERSION {
+        FALLBACK_VERSION.to_string()
+    } else {
+        normalized
     }
 }
 

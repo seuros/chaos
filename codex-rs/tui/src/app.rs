@@ -700,6 +700,9 @@ impl App {
             AppEvent::OpenReasoningPopup { model } => {
                 self.chat_widget.open_reasoning_popup(model);
             }
+            AppEvent::OpenAllModelsPopup { models } => {
+                self.chat_widget.open_all_models_popup(models);
+            }
             AppEvent::OpenFullAccessConfirmation { preset } => {
                 self.chat_widget.open_full_access_confirmation(preset);
             }
@@ -799,20 +802,17 @@ impl App {
                     .await
                 {
                     Ok(()) => {
-                        let reasoning_label = Self::reasoning_label(effort);
-                        if let Some(profile) = profile {
-                            self.chat_widget.add_info_message(
-                                format!(
-                                    "Model changed to {model} {reasoning_label} for {profile} profile"
-                                ),
-                                None,
-                            );
-                        } else {
-                            self.chat_widget.add_info_message(
-                                format!("Model changed to {model} {reasoning_label}"),
-                                None,
-                            );
+                        let mut message = format!("Model changed to {model}");
+                        if let Some(label) = Self::reasoning_label_for(&model, effort) {
+                            message.push(' ');
+                            message.push_str(label);
                         }
+                        if let Some(profile) = profile {
+                            message.push_str(" for ");
+                            message.push_str(profile);
+                            message.push_str(" profile");
+                        }
+                        self.chat_widget.add_info_message(message, None);
                     }
                     Err(err) => {
                         tracing::error!(
@@ -1010,6 +1010,13 @@ impl App {
             Some(ReasoningEffortConfig::XHigh) => "xhigh",
             None | Some(ReasoningEffortConfig::None) => "default",
         }
+    }
+
+    fn reasoning_label_for(
+        model: &str,
+        reasoning_effort: Option<ReasoningEffortConfig>,
+    ) -> Option<&'static str> {
+        (!model.starts_with("codex-auto-")).then(|| Self::reasoning_label(reasoning_effort))
     }
 
     pub(crate) fn token_usage(&self) -> codex_core::protocol::TokenUsage {

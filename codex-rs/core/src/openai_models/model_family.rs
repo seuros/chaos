@@ -102,6 +102,7 @@ impl ModelFamily {
             if model.slug == self.slug {
                 self.default_reasoning_effort = Some(model.default_reasoning_level);
                 self.shell_type = model.shell_type;
+                self.base_instructions = model.base_instructions.unwrap_or(self.base_instructions);
             }
         }
         self
@@ -357,6 +358,7 @@ mod tests {
             supported_in_api: true,
             priority: 1,
             upgrade: None,
+            base_instructions: None,
         }
     }
 

@@ -12,10 +12,8 @@ use crate::tools::runtimes::build_command_spec;
 use crate::tools::sandboxing::Approvable;
 use crate::tools::sandboxing::ApprovalCtx;
 use crate::tools::sandboxing::ExecApprovalRequirement;
-use crate::tools::sandboxing::ProvidesSandboxRetryData;
 use crate::tools::sandboxing::SandboxAttempt;
 use crate::tools::sandboxing::SandboxOverride;
-use crate::tools::sandboxing::SandboxRetryData;
 use crate::tools::sandboxing::Sandboxable;
 use crate::tools::sandboxing::SandboxablePreference;
 use crate::tools::sandboxing::ToolCtx;
@@ -38,15 +36,6 @@ pub struct UnifiedExecRequest {
     pub sandbox_permissions: SandboxPermissions,
     pub justification: Option<String>,
     pub exec_approval_requirement: ExecApprovalRequirement,
-}
-
-impl ProvidesSandboxRetryData for UnifiedExecRequest {
-    fn sandbox_retry_data(&self) -> Option<SandboxRetryData> {
-        Some(SandboxRetryData {
-            command: self.command.clone(),
-            cwd: self.cwd.clone(),
-        })
-    }
 }
 
 #[derive(serde::Serialize, Clone, Debug, Eq, PartialEq, Hash)]
@@ -122,7 +111,6 @@ impl Approvable<UnifiedExecRequest> for UnifiedExecRuntime<'_> {
             .retry_reason
             .clone()
             .or_else(|| req.justification.clone());
-        let risk = ctx.risk.clone();
         Box::pin(async move {
             with_cached_approval(&session.services, key, || async move {
                 session
@@ -132,7 +120,6 @@ impl Approvable<UnifiedExecRequest> for UnifiedExecRuntime<'_> {
                         command,
                         cwd,
                         reason,
-                        risk,
                         req.exec_approval_requirement
                             .proposed_execpolicy_amendment()
                             .cloned(),

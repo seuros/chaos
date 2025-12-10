@@ -1727,6 +1727,7 @@ name = "codex-windows-sandbox"
 version = "0.0.0"
 dependencies = [
  "anyhow",
+ "chrono",
  "codex-protocol",
  "dirs-next",
  "dunce",

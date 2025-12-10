@@ -139,6 +139,11 @@ client_request_definitions! {
         response: v2::ModelListResponse,
     },
 
+    McpServerOauthLogin => "mcpServer/oauth/login" {
+        params: v2::McpServerOauthLoginParams,
+        response: v2::McpServerOauthLoginResponse,
+    },
+
     McpServersList => "mcpServers/list" {
         params: v2::ListMcpServersParams,
         response: v2::ListMcpServersResponse,
@@ -524,6 +529,7 @@ server_notification_definitions! {
     CommandExecutionOutputDelta => "item/commandExecution/outputDelta" (v2::CommandExecutionOutputDeltaNotification),
     FileChangeOutputDelta => "item/fileChange/outputDelta" (v2::FileChangeOutputDeltaNotification),
     McpToolCallProgress => "item/mcpToolCall/progress" (v2::McpToolCallProgressNotification),
+    McpServerOauthLoginCompleted => "mcpServer/oauthLogin/completed" (v2::McpServerOauthLoginCompletedNotification),
     AccountUpdated => "account/updated" (v2::AccountUpdatedNotification),
     AccountRateLimitsUpdated => "account/rateLimits/updated" (v2::AccountRateLimitsUpdatedNotification),
     ReasoningSummaryTextDelta => "item/reasoning/summaryTextDelta" (v2::ReasoningSummaryTextDeltaNotification),

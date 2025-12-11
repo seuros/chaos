@@ -206,7 +206,7 @@ impl ModelsManager {
     /// Convert remote model metadata into picker-ready presets, marking defaults.
     async fn build_available_models(&self) {
         let mut available_models = self.remote_models.read().await.clone();
-        available_models.sort_by(|a, b| b.priority.cmp(&a.priority));
+        available_models.sort_by(|a, b| a.priority.cmp(&b.priority));
         let mut model_presets: Vec<ModelPreset> = available_models
             .into_iter()
             .map(Into::into)
@@ -279,6 +279,15 @@ mod tests {
             "priority": priority,
             "upgrade": null,
             "base_instructions": null,
+            "supports_reasoning_summaries": false,
+            "support_verbosity": false,
+            "default_verbosity": null,
+            "apply_patch_tool_type": null,
+            "truncation_policy": {"mode": "bytes", "limit": 10_000},
+            "supports_parallel_tool_calls": false,
+            "context_window": null,
+            "reasoning_summary_format": "none",
+            "experimental_supported_tools": [],
         }))
         .expect("valid model")
     }
@@ -306,7 +315,7 @@ mod tests {
         let server = MockServer::start().await;
         let remote_models = vec![
             remote_model("priority-low", "Low", 1),
-            remote_model("priority-high", "High", 10),
+            remote_model("priority-high", "High", 0),
         ];
         let models_mock = mount_models_once(
             &server,

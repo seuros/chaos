@@ -700,6 +700,14 @@ impl Session {
         for event in events {
             sess.send_event_raw(event).await;
         }
+
+        // Construct sandbox_state before initialize() so it can be sent to each
+        // MCP server immediately after it becomes ready (avoiding blocking).
+        let sandbox_state = SandboxState {
+            sandbox_policy: session_configuration.sandbox_policy.clone(),
+            codex_linux_sandbox_exe: config.codex_linux_sandbox_exe.clone(),
+            sandbox_cwd: session_configuration.cwd.clone(),
+        };
         sess.services
             .mcp_connection_manager
             .write()
@@ -710,24 +718,9 @@ impl Session {
                 auth_statuses.clone(),
                 tx_event.clone(),
                 sess.services.mcp_startup_cancellation_token.clone(),
+                sandbox_state,
             )
             .await;
-
-        let sandbox_state = SandboxState {
-            sandbox_policy: session_configuration.sandbox_policy.clone(),
-            codex_linux_sandbox_exe: config.codex_linux_sandbox_exe.clone(),
-            sandbox_cwd: session_configuration.cwd.clone(),
-        };
-        if let Err(e) = sess
-            .services
-            .mcp_connection_manager
-            .read()
-            .await
-            .notify_sandbox_state_change(&sandbox_state)
-            .await
-        {
-            tracing::error!("Failed to notify sandbox state change: {e}");
-        }
 
         // record_initial_history can emit events. We record only after the SessionConfiguredEvent is emitted.
         sess.record_initial_history(initial_history).await;
@@ -840,14 +833,34 @@ impl Session {
         sub_id: String,
         updates: SessionSettingsUpdate,
     ) -> Arc<TurnContext> {
-        let session_configuration = {
+        let (session_configuration, sandbox_policy_changed) = {
             let mut state = self.state.lock().await;
             let session_configuration = state.session_configuration.clone().apply(&updates);
+            let sandbox_policy_changed =
+                state.session_configuration.sandbox_policy != session_configuration.sandbox_policy;
             state.session_configuration = session_configuration.clone();
-            session_configuration
+            (session_configuration, sandbox_policy_changed)
         };
-
         let per_turn_config = Self::build_per_turn_config(&session_configuration);
+
+        if sandbox_policy_changed {
+            let sandbox_state = SandboxState {
+                sandbox_policy: per_turn_config.sandbox_policy.clone(),
+                codex_linux_sandbox_exe: per_turn_config.codex_linux_sandbox_exe.clone(),
+                sandbox_cwd: per_turn_config.cwd.clone(),
+            };
+            if let Err(e) = self
+                .services
+                .mcp_connection_manager
+                .read()
+                .await
+                .notify_sandbox_state_change(&sandbox_state)
+                .await
+            {
+                warn!("Failed to notify sandbox state change to MCP servers: {e:#}");
+            }
+        }
+
         let model_family = self
             .services
             .models_manager

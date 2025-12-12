@@ -264,7 +264,7 @@ pub(super) fn find_family_for_model(slug: &str) -> ModelFamily {
         )
 
     // Experimental models.
-    } else if slug.starts_with("exp-codex") {
+    } else if slug.starts_with("exp-codex") || slug.starts_with("codex-1p") {
         // Same as gpt-5.1-codex-max.
         model_family!(
             slug, slug,

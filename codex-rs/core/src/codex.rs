@@ -66,8 +66,8 @@ use tracing::debug;
 use tracing::error;
 use tracing::field;
 use tracing::info;
-use tracing::info_span;
 use tracing::instrument;
+use tracing::trace_span;
 use tracing::warn;
 
 use crate::ModelProviderInfo;
@@ -2297,7 +2297,7 @@ async fn run_auto_compact(sess: &Arc<Session>, turn_context: &Arc<TurnContext>) 
     }
 }
 
-#[instrument(
+#[instrument(level = "trace",
     skip_all,
     fields(
         turn_id = %turn_context.sub_id,
@@ -2437,7 +2437,7 @@ async fn drain_in_flight(
 }
 
 #[allow(clippy::too_many_arguments)]
-#[instrument(
+#[instrument(level = "trace",
     skip_all,
     fields(
         turn_id = %turn_context.sub_id,
@@ -2466,7 +2466,7 @@ async fn try_run_turn(
         .client
         .clone()
         .stream(prompt)
-        .instrument(info_span!("stream_request"))
+        .instrument(trace_span!("stream_request"))
         .or_cancel(&cancellation_token)
         .await??;
 
@@ -2482,9 +2482,9 @@ async fn try_run_turn(
     let mut last_agent_message: Option<String> = None;
     let mut active_item: Option<TurnItem> = None;
     let mut should_emit_turn_diff = false;
-    let receiving_span = info_span!("receiving_stream");
+    let receiving_span = trace_span!("receiving_stream");
     let outcome: CodexResult<TurnRunResult> = loop {
-        let handle_responses = info_span!(
+        let handle_responses = trace_span!(
             parent: &receiving_span,
             "handle_responses",
             otel.name = field::Empty,
@@ -2494,7 +2494,7 @@ async fn try_run_turn(
 
         let event = match stream
             .next()
-            .instrument(info_span!(parent: &handle_responses, "receiving"))
+            .instrument(trace_span!(parent: &handle_responses, "receiving"))
             .or_cancel(&cancellation_token)
             .await
         {

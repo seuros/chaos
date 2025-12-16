@@ -144,9 +144,9 @@ client_request_definitions! {
         response: v2::McpServerOauthLoginResponse,
     },
 
-    McpServersList => "mcpServers/list" {
-        params: v2::ListMcpServersParams,
-        response: v2::ListMcpServersResponse,
+    McpServerStatusList => "mcpServerStatus/list" {
+        params: v2::ListMcpServerStatusParams,
+        response: v2::ListMcpServerStatusResponse,
     },
 
     LoginAccount => "account/login/start" {

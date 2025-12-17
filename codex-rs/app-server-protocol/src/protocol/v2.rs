@@ -987,6 +987,7 @@ pub struct SkillsListResponse {
 pub enum SkillScope {
     User,
     Repo,
+    Public,
 }
 
 #[derive(Serialize, Deserialize, Debug, Clone, PartialEq, JsonSchema, TS)]
@@ -1032,6 +1033,7 @@ impl From<CoreSkillScope> for SkillScope {
         match value {
             CoreSkillScope::User => Self::User,
             CoreSkillScope::Repo => Self::Repo,
+            CoreSkillScope::Public => Self::Public,
         }
     }
 }

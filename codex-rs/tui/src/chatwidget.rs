@@ -103,6 +103,7 @@ use crate::diff_render::display_path_for;
 use crate::exec_cell::CommandOutput;
 use crate::exec_cell::ExecCell;
 use crate::exec_cell::new_active_exec_command;
+use crate::exec_command::strip_bash_lc_and_escape;
 use crate::get_git_diff::get_git_diff;
 use crate::history_cell;
 use crate::history_cell::AgentMessageCell;
@@ -153,6 +154,11 @@ struct RunningCommand {
     source: ExecCommandSource,
 }
 
+struct UnifiedExecSessionSummary {
+    key: String,
+    command_display: String,
+}
+
 struct UnifiedExecWaitState {
     command_display: String,
 }
@@ -165,6 +171,20 @@ impl UnifiedExecWaitState {
     fn is_duplicate(&self, command_display: &str) -> bool {
         self.command_display == command_display
     }
+}
+
+fn is_unified_exec_source(source: ExecCommandSource) -> bool {
+    matches!(
+        source,
+        ExecCommandSource::UnifiedExecStartup | ExecCommandSource::UnifiedExecInteraction
+    )
+}
+
+fn is_standard_tool_call(parsed_cmd: &[ParsedCommand]) -> bool {
+    !parsed_cmd.is_empty()
+        && parsed_cmd
+            .iter()
+            .all(|parsed| !matches!(parsed, ParsedCommand::Unknown { .. }))
 }
 
 const RATE_LIMIT_WARNING_THRESHOLDS: [f64; 3] = [75.0, 90.0, 95.0];
@@ -304,6 +324,7 @@ pub(crate) struct ChatWidget {
     suppressed_exec_calls: HashSet<String>,
     last_unified_wait: Option<UnifiedExecWaitState>,
     task_complete_pending: bool,
+    unified_exec_sessions: Vec<UnifiedExecSessionSummary>,
     mcp_startup_status: Option<HashMap<String, McpStartupStatus>>,
     // Queue of interruptive UI events deferred during an active write cycle
     interrupts: InterruptManager,
@@ -835,6 +856,12 @@ impl ChatWidget {
 
     fn on_exec_command_begin(&mut self, ev: ExecCommandBeginEvent) {
         self.flush_answer_stream_with_separator();
+        if is_unified_exec_source(ev.source) {
+            self.track_unified_exec_session_begin(&ev);
+            if !is_standard_tool_call(&ev.parsed_cmd) {
+                return;
+            }
+        }
         let ev2 = ev.clone();
         self.defer_or_handle(|q| q.push_exec_begin(ev), |s| s.handle_exec_begin_now(ev2));
     }
@@ -846,8 +873,17 @@ impl ChatWidget {
         // TODO: Handle streaming exec output if/when implemented
     }
 
-    fn on_terminal_interaction(&mut self, _ev: TerminalInteractionEvent) {
-        // TODO: Handle once design is ready
+    fn on_terminal_interaction(&mut self, ev: TerminalInteractionEvent) {
+        self.flush_answer_stream_with_separator();
+        let command_display = self
+            .unified_exec_sessions
+            .iter()
+            .find(|session| session.key == ev.process_id)
+            .map(|session| session.command_display.clone());
+        self.add_to_history(history_cell::new_unified_exec_interaction(
+            command_display,
+            ev.stdin,
+        ));
     }
 
     fn on_patch_apply_begin(&mut self, event: PatchApplyBeginEvent) {
@@ -875,8 +911,54 @@ impl ChatWidget {
     }
 
     fn on_exec_command_end(&mut self, ev: ExecCommandEndEvent) {
+        if is_unified_exec_source(ev.source) {
+            self.track_unified_exec_session_end(&ev);
+            if !self.bottom_pane.is_task_running() {
+                return;
+            }
+        }
         let ev2 = ev.clone();
         self.defer_or_handle(|q| q.push_exec_end(ev), |s| s.handle_exec_end_now(ev2));
+    }
+
+    fn track_unified_exec_session_begin(&mut self, ev: &ExecCommandBeginEvent) {
+        if ev.source != ExecCommandSource::UnifiedExecStartup {
+            return;
+        }
+        let key = ev.process_id.clone().unwrap_or(ev.call_id.to_string());
+        let command_display = strip_bash_lc_and_escape(&ev.command);
+        if let Some(existing) = self
+            .unified_exec_sessions
+            .iter_mut()
+            .find(|session| session.key == key)
+        {
+            existing.command_display = command_display;
+        } else {
+            self.unified_exec_sessions.push(UnifiedExecSessionSummary {
+                key,
+                command_display,
+            });
+        }
+        self.sync_unified_exec_footer();
+    }
+
+    fn track_unified_exec_session_end(&mut self, ev: &ExecCommandEndEvent) {
+        let key = ev.process_id.clone().unwrap_or(ev.call_id.to_string());
+        let before = self.unified_exec_sessions.len();
+        self.unified_exec_sessions
+            .retain(|session| session.key != key);
+        if self.unified_exec_sessions.len() != before {
+            self.sync_unified_exec_footer();
+        }
+    }
+
+    fn sync_unified_exec_footer(&mut self) {
+        let sessions = self
+            .unified_exec_sessions
+            .iter()
+            .map(|session| session.command_display.clone())
+            .collect();
+        self.bottom_pane.set_unified_exec_sessions(sessions);
     }
 
     fn on_mcp_tool_call_begin(&mut self, ev: McpToolCallBeginEvent) {
@@ -1326,6 +1408,7 @@ impl ChatWidget {
             suppressed_exec_calls: HashSet::new(),
             last_unified_wait: None,
             task_complete_pending: false,
+            unified_exec_sessions: Vec::new(),
             mcp_startup_status: None,
             interrupts: InterruptManager::new(),
             reasoning_buffer: String::new(),
@@ -1411,6 +1494,7 @@ impl ChatWidget {
             suppressed_exec_calls: HashSet::new(),
             last_unified_wait: None,
             task_complete_pending: false,
+            unified_exec_sessions: Vec::new(),
             mcp_startup_status: None,
             interrupts: InterruptManager::new(),
             reasoning_buffer: String::new(),

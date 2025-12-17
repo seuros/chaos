@@ -1739,6 +1739,71 @@ fn render_bottom_popup(chat: &ChatWidget, width: u16) -> String {
 }
 
 #[test]
+fn experimental_features_popup_snapshot() {
+    let (mut chat, _rx, _op_rx) = make_chatwidget_manual(None);
+
+    let features = vec![
+        BetaFeatureItem {
+            feature: Feature::GhostCommit,
+            name: "Ghost snapshots".to_string(),
+            description: "Capture undo snapshots each turn.".to_string(),
+            enabled: false,
+        },
+        BetaFeatureItem {
+            feature: Feature::ShellTool,
+            name: "Shell tool".to_string(),
+            description: "Allow the model to run shell commands.".to_string(),
+            enabled: true,
+        },
+    ];
+    let view = ExperimentalFeaturesView::new(features, chat.app_event_tx.clone());
+    chat.bottom_pane.show_view(Box::new(view));
+
+    let popup = render_bottom_popup(&chat, 80);
+    assert_snapshot!("experimental_features_popup", popup);
+}
+
+#[test]
+fn experimental_features_toggle_saves_on_exit() {
+    let (mut chat, mut rx, _op_rx) = make_chatwidget_manual(None);
+
+    let expected_feature = Feature::GhostCommit;
+    let view = ExperimentalFeaturesView::new(
+        vec![BetaFeatureItem {
+            feature: expected_feature,
+            name: "Ghost snapshots".to_string(),
+            description: "Capture undo snapshots each turn.".to_string(),
+            enabled: false,
+        }],
+        chat.app_event_tx.clone(),
+    );
+    chat.bottom_pane.show_view(Box::new(view));
+
+    chat.handle_key_event(KeyEvent::new(KeyCode::Enter, KeyModifiers::NONE));
+
+    assert!(
+        rx.try_recv().is_err(),
+        "expected no updates until exiting the popup"
+    );
+
+    chat.handle_key_event(KeyEvent::new(KeyCode::Esc, KeyModifiers::NONE));
+
+    let mut updates = None;
+    while let Ok(event) = rx.try_recv() {
+        if let AppEvent::UpdateFeatureFlags {
+            updates: event_updates,
+        } = event
+        {
+            updates = Some(event_updates);
+            break;
+        }
+    }
+
+    let updates = updates.expect("expected UpdateFeatureFlags event");
+    assert_eq!(updates, vec![(expected_feature, true)]);
+}
+
+#[test]
 fn model_selection_popup_snapshot() {
     let (mut chat, _rx, _op_rx) = make_chatwidget_manual(Some("gpt-5-codex"));
     chat.open_model_popup();

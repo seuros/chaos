@@ -75,10 +75,6 @@ impl RefreshTokenError {
             Self::Transient(_) => None,
         }
     }
-
-    fn other_with_message(message: impl Into<String>) -> Self {
-        Self::Transient(std::io::Error::other(message.into()))
-    }
 }
 
 impl From<RefreshTokenError> for std::io::Error {
@@ -450,6 +446,7 @@ async fn try_refresh_token(
         Ok(refresh_response)
     } else {
         let body = response.text().await.unwrap_or_default();
+        tracing::error!("Failed to refresh token: {status}: {body}");
         if status == StatusCode::UNAUTHORIZED {
             let failed = classify_refresh_token_failure(&body);
             Err(RefreshTokenError::Permanent(failed))
@@ -548,6 +545,89 @@ struct CachedAuth {
     auth: Option<CodexAuth>,
 }
 
+enum UnauthorizedRecoveryStep {
+    Reload,
+    RefreshToken,
+    Done,
+}
+
+enum ReloadOutcome {
+    Reloaded,
+    Skipped,
+}
+
+// UnauthorizedRecovery is a state machine that handles an attempt to refresh the authentication when requests
+// to API fail with 401 status code.
+// The client calls next() every time it encounters a 401 error, one time per retry.
+// For API key based authentication, we don't do anything and let the error bubble to the user.
+// For ChatGPT based authentication, we:
+// 1. Attempt to reload the auth data from disk. We only reload if the account id matches the one the current process is running as.
+// 2. Attempt to refresh the token using OAuth token refresh flow.
+// If after both steps the server still responds with 401 we let the error bubble to the user.
+pub struct UnauthorizedRecovery {
+    manager: Arc<AuthManager>,
+    step: UnauthorizedRecoveryStep,
+    expected_account_id: Option<String>,
+}
+
+impl UnauthorizedRecovery {
+    fn new(manager: Arc<AuthManager>) -> Self {
+        let expected_account_id = manager
+            .auth_cached()
+            .as_ref()
+            .and_then(CodexAuth::get_account_id);
+        Self {
+            manager,
+            step: UnauthorizedRecoveryStep::Reload,
+            expected_account_id,
+        }
+    }
+
+    pub fn has_next(&self) -> bool {
+        if !self
+            .manager
+            .auth_cached()
+            .is_some_and(|auth| auth.mode == AuthMode::ChatGPT)
+        {
+            return false;
+        }
+
+        !matches!(self.step, UnauthorizedRecoveryStep::Done)
+    }
+
+    pub async fn next(&mut self) -> Result<(), RefreshTokenError> {
+        if !self.has_next() {
+            return Err(RefreshTokenError::Permanent(RefreshTokenFailedError::new(
+                RefreshTokenFailedReason::Other,
+                "No more recovery steps available.",
+            )));
+        }
+
+        match self.step {
+            UnauthorizedRecoveryStep::Reload => {
+                match self
+                    .manager
+                    .reload_if_account_id_matches(self.expected_account_id.as_deref())
+                {
+                    ReloadOutcome::Reloaded => {
+                        self.step = UnauthorizedRecoveryStep::RefreshToken;
+                    }
+                    ReloadOutcome::Skipped => {
+                        self.manager.refresh_token().await?;
+                        self.step = UnauthorizedRecoveryStep::Done;
+                    }
+                }
+            }
+            UnauthorizedRecoveryStep::RefreshToken => {
+                self.manager.refresh_token().await?;
+                self.step = UnauthorizedRecoveryStep::Done;
+            }
+            UnauthorizedRecoveryStep::Done => {}
+        }
+        Ok(())
+    }
+}
+
 /// Central manager providing a single source of truth for auth.json derived
 /// authentication data. It loads once (or on preference change) and then
 /// hands out cloned `CodexAuth` values so the rest of the program has a
@@ -633,20 +713,34 @@ impl AuthManager {
     /// Force a reload of the auth information from auth.json. Returns
     /// whether the auth value changed.
     pub fn reload(&self) -> bool {
-        let new_auth = load_auth(
-            &self.codex_home,
-            self.enable_codex_api_key_env,
-            self.auth_credentials_store_mode,
-        )
-        .ok()
-        .flatten();
-        if let Ok(mut guard) = self.inner.write() {
-            let changed = !AuthManager::auths_equal(&guard.auth, &new_auth);
-            guard.auth = new_auth;
-            changed
-        } else {
-            false
+        tracing::info!("Reloading auth");
+        let new_auth = self.load_auth_from_storage();
+        self.set_auth(new_auth)
+    }
+
+    fn reload_if_account_id_matches(&self, expected_account_id: Option<&str>) -> ReloadOutcome {
+        let expected_account_id = match expected_account_id {
+            Some(account_id) => account_id,
+            None => {
+                tracing::info!("Skipping auth reload because no account id is available.");
+                return ReloadOutcome::Skipped;
+            }
+        };
+
+        let new_auth = self.load_auth_from_storage();
+        let new_account_id = new_auth.as_ref().and_then(CodexAuth::get_account_id);
+
+        if new_account_id.as_deref() != Some(expected_account_id) {
+            let found_account_id = new_account_id.as_deref().unwrap_or("unknown");
+            tracing::info!(
+                "Skipping auth reload due to account id mismatch (expected: {expected_account_id}, found: {found_account_id})"
+            );
+            return ReloadOutcome::Skipped;
         }
+
+        tracing::info!("Reloading auth for account {expected_account_id}");
+        self.set_auth(new_auth);
+        ReloadOutcome::Reloaded
     }
 
     fn auths_equal(a: &Option<CodexAuth>, b: &Option<CodexAuth>) -> bool {
@@ -654,6 +748,27 @@ impl AuthManager {
             (None, None) => true,
             (Some(a), Some(b)) => a == b,
             _ => false,
+        }
+    }
+
+    fn load_auth_from_storage(&self) -> Option<CodexAuth> {
+        load_auth(
+            &self.codex_home,
+            self.enable_codex_api_key_env,
+            self.auth_credentials_store_mode,
+        )
+        .ok()
+        .flatten()
+    }
+
+    fn set_auth(&self, new_auth: Option<CodexAuth>) -> bool {
+        if let Ok(mut guard) = self.inner.write() {
+            let changed = !AuthManager::auths_equal(&guard.auth, &new_auth);
+            tracing::info!("Reloaded auth, changed: {changed}");
+            guard.auth = new_auth;
+            changed
+        } else {
+            false
         }
     }
 
@@ -670,22 +785,27 @@ impl AuthManager {
         ))
     }
 
+    pub fn unauthorized_recovery(self: &Arc<Self>) -> UnauthorizedRecovery {
+        UnauthorizedRecovery::new(Arc::clone(self))
+    }
+
     /// Attempt to refresh the current auth token (if any). On success, reload
     /// the auth state from disk so other components observe refreshed token.
     /// If the token refresh fails, returns the error to the caller.
-    pub async fn refresh_token(&self) -> Result<Option<String>, RefreshTokenError> {
+    pub async fn refresh_token(&self) -> Result<(), RefreshTokenError> {
+        tracing::info!("Refreshing token");
+
         let auth = match self.auth_cached() {
             Some(auth) => auth,
-            None => return Ok(None),
+            None => return Ok(()),
         };
-        tracing::info!("Refreshing token");
         let token_data = auth.get_current_token_data().ok_or_else(|| {
             RefreshTokenError::Transient(std::io::Error::other("Token data is not available."))
         })?;
-        let access = self.refresh_tokens(&auth, token_data.refresh_token).await?;
+        self.refresh_tokens(&auth, token_data.refresh_token).await?;
         // Reload to pick up persisted changes.
         self.reload();
-        Ok(Some(access))
+        Ok(())
     }
 
     /// Log out by deleting the on‑disk auth.json (if present). Returns Ok(true)
@@ -732,10 +852,10 @@ impl AuthManager {
         &self,
         auth: &CodexAuth,
         refresh_token: String,
-    ) -> Result<String, RefreshTokenError> {
+    ) -> Result<(), RefreshTokenError> {
         let refresh_response = try_refresh_token(refresh_token, &auth.client).await?;
 
-        let updated = update_tokens(
+        update_tokens(
             &auth.storage,
             refresh_response.id_token,
             refresh_response.access_token,
@@ -744,12 +864,7 @@ impl AuthManager {
         .await
         .map_err(RefreshTokenError::from)?;
 
-        match updated.tokens {
-            Some(tokens) => Ok(tokens.access_token),
-            None => Err(RefreshTokenError::other_with_message(
-                "Token data is not available after refresh.",
-            )),
-        }
+        Ok(())
     }
 }
 

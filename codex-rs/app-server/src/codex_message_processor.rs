@@ -590,7 +590,7 @@ impl CodexMessageProcessor {
                     .await;
 
                 let payload = AuthStatusChangeNotification {
-                    auth_method: self.auth_manager.auth().map(|auth| auth.mode),
+                    auth_method: self.auth_manager.auth_cached().map(|auth| auth.mode),
                 };
                 self.outgoing
                     .send_server_notification(ServerNotification::AuthStatusChange(payload))
@@ -620,7 +620,7 @@ impl CodexMessageProcessor {
                     .await;
 
                 let payload_v2 = AccountUpdatedNotification {
-                    auth_mode: self.auth_manager.auth().map(|auth| auth.mode),
+                    auth_mode: self.auth_manager.auth_cached().map(|auth| auth.mode),
                 };
                 self.outgoing
                     .send_server_notification(ServerNotification::AccountUpdated(payload_v2))
@@ -712,7 +712,7 @@ impl CodexMessageProcessor {
                             auth_manager.reload();
 
                             // Notify clients with the actual current auth mode.
-                            let current_auth_method = auth_manager.auth().map(|a| a.mode);
+                            let current_auth_method = auth_manager.auth_cached().map(|a| a.mode);
                             let payload = AuthStatusChangeNotification {
                                 auth_method: current_auth_method,
                             };
@@ -802,7 +802,7 @@ impl CodexMessageProcessor {
                             auth_manager.reload();
 
                             // Notify clients with the actual current auth mode.
-                            let current_auth_method = auth_manager.auth().map(|a| a.mode);
+                            let current_auth_method = auth_manager.auth_cached().map(|a| a.mode);
                             let payload_v2 = AccountUpdatedNotification {
                                 auth_mode: current_auth_method,
                             };
@@ -914,7 +914,7 @@ impl CodexMessageProcessor {
         }
 
         // Reflect the current auth method after logout (likely None).
-        Ok(self.auth_manager.auth().map(|auth| auth.mode))
+        Ok(self.auth_manager.auth_cached().map(|auth| auth.mode))
     }
 
     async fn logout_v1(&mut self, request_id: RequestId) {
@@ -981,10 +981,10 @@ impl CodexMessageProcessor {
                 requires_openai_auth: Some(false),
             }
         } else {
-            match self.auth_manager.auth() {
+            match self.auth_manager.auth().await {
                 Some(auth) => {
                     let auth_mode = auth.mode;
-                    let (reported_auth_method, token_opt) = match auth.get_token().await {
+                    let (reported_auth_method, token_opt) = match auth.get_token() {
                         Ok(token) if !token.is_empty() => {
                             let tok = if include_token { Some(token) } else { None };
                             (Some(auth_mode), tok)
@@ -1029,7 +1029,7 @@ impl CodexMessageProcessor {
             return;
         }
 
-        let account = match self.auth_manager.auth() {
+        let account = match self.auth_manager.auth_cached() {
             Some(auth) => Some(match auth.mode {
                 AuthMode::ApiKey => Account::ApiKey {},
                 AuthMode::ChatGPT => {
@@ -1083,7 +1083,7 @@ impl CodexMessageProcessor {
     }
 
     async fn fetch_account_rate_limits(&self) -> Result<CoreRateLimitSnapshot, JSONRPCErrorError> {
-        let Some(auth) = self.auth_manager.auth() else {
+        let Some(auth) = self.auth_manager.auth().await else {
             return Err(JSONRPCErrorError {
                 code: INVALID_REQUEST_ERROR_CODE,
                 message: "codex account authentication required to read rate limits".to_string(),
@@ -1100,7 +1100,6 @@ impl CodexMessageProcessor {
         }
 
         let client = BackendClient::from_auth(self.config.chatgpt_base_url.clone(), &auth)
-            .await
             .map_err(|err| JSONRPCErrorError {
                 code: INTERNAL_ERROR_CODE,
                 message: format!("failed to construct backend client: {err}"),
@@ -1140,7 +1139,10 @@ impl CodexMessageProcessor {
 
     async fn get_user_info(&self, request_id: RequestId) {
         // Read alleged user email from cached auth (best-effort; not verified).
-        let alleged_user_email = self.auth_manager.auth().and_then(|a| a.get_account_email());
+        let alleged_user_email = self
+            .auth_manager
+            .auth_cached()
+            .and_then(|a| a.get_account_email());
 
         let response = UserInfoResponse { alleged_user_email };
         self.outgoing.send_response(request_id, response).await;

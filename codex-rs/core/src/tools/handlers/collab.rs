@@ -143,11 +143,14 @@ mod send_input {
     }
 }
 
-#[allow(unused_variables)]
 mod wait {
     use super::*;
+    use crate::agent::status::is_final;
     use crate::codex::Session;
     use std::sync::Arc;
+    use std::time::Duration;
+    use tokio::time::Instant;
+    use tokio::time::timeout_at;
 
     #[derive(Debug, Deserialize)]
     struct WaitArgs {
@@ -168,40 +171,68 @@ mod wait {
         let args: WaitArgs = parse_arguments(&arguments)?;
         let agent_id = agent_id(&args.id)?;
 
+        // Validate timeout.
         let timeout_ms = args.timeout_ms.unwrap_or(DEFAULT_WAIT_TIMEOUT_MS);
-        if timeout_ms <= 0 {
-            return Err(FunctionCallError::RespondToModel(
-                "timeout_ms must be greater than zero".to_string(),
-            ));
-        }
-        let timeout_ms = timeout_ms.min(MAX_WAIT_TIMEOUT_MS);
-        // TODO(jif) actual implementation
-        let outcome = WaitResult {
-            status: Default::default(),
-            timed_out: false,
+        let timeout_ms = match timeout_ms {
+            ms if ms <= 0 => {
+                return Err(FunctionCallError::RespondToModel(
+                    "timeout_ms must be greater than zero".to_owned(),
+                ));
+            }
+            ms => ms.min(MAX_WAIT_TIMEOUT_MS),
         };
 
-        if matches!(outcome.status, AgentStatus::NotFound) {
+        let mut status_rx = session
+            .services
+            .agent_control
+            .subscribe_status(agent_id)
+            .await
+            .map_err(|err| match err {
+                CodexErr::ThreadNotFound(id) => {
+                    FunctionCallError::RespondToModel(format!("agent with id {id} not found"))
+                }
+                err => FunctionCallError::Fatal(err.to_string()),
+            })?;
+
+        // Get last known status.
+        let mut status = status_rx.borrow_and_update().clone();
+        let deadline = Instant::now() + Duration::from_millis(timeout_ms as u64);
+
+        let timed_out = loop {
+            if is_final(&status) {
+                break false;
+            }
+
+            match timeout_at(deadline, status_rx.changed()).await {
+                Ok(Ok(())) => status = status_rx.borrow().clone(),
+                Ok(Err(_)) => {
+                    let last_status = session.services.agent_control.get_status(agent_id).await;
+                    if last_status != AgentStatus::NotFound {
+                        // On-purpose we keep the last known status if the agent gets dropped. This
+                        // event is not supposed to happen.
+                        status = last_status;
+                    }
+                    break false;
+                }
+                Err(_) => break true,
+            }
+        };
+
+        if matches!(status, AgentStatus::NotFound) {
             return Err(FunctionCallError::RespondToModel(format!(
                 "agent with id {agent_id} not found"
             )));
         }
 
-        let message = outcome.timed_out.then(|| {
-            format!(
-                "Timed out after {timeout_ms}ms waiting for agent {agent_id}. The agent may still be running."
-            )
-        });
-        let result = WaitResult {
-            status: outcome.status,
-            timed_out: outcome.timed_out,
-        };
+        let result = WaitResult { status, timed_out };
+
         let content = serde_json::to_string(&result).map_err(|err| {
             FunctionCallError::Fatal(format!("failed to serialize wait result: {err}"))
         })?;
+
         Ok(ToolOutput::Function {
             content,
-            success: Some(!outcome.timed_out),
+            success: Some(!result.timed_out),
             content_items: None,
         })
     }
@@ -264,6 +295,7 @@ mod tests {
     use crate::config::types::ShellEnvironmentPolicy;
     use crate::function_tool::FunctionCallError;
     use crate::protocol::AskForApproval;
+    use crate::protocol::Op;
     use crate::protocol::SandboxPolicy;
     use crate::turn_diff_tracker::TurnDiffTracker;
     use codex_protocol::ThreadId;
@@ -271,7 +303,9 @@ mod tests {
     use serde_json::json;
     use std::path::PathBuf;
     use std::sync::Arc;
+    use std::time::Duration;
     use tokio::sync::Mutex;
+    use tokio::time::timeout;
 
     fn invocation(
         session: Arc<crate::codex::Session>,
@@ -473,6 +507,83 @@ mod tests {
             panic!("expected respond-to-model error");
         };
         assert!(msg.starts_with("invalid agent id invalid:"));
+    }
+
+    #[tokio::test]
+    async fn wait_times_out_when_status_is_not_final() {
+        let (mut session, turn) = make_session_and_context().await;
+        let manager = thread_manager();
+        session.services.agent_control = manager.agent_control();
+        let config = turn.client.config().as_ref().clone();
+        let thread = manager.start_thread(config).await.expect("start thread");
+        let agent_id = thread.thread_id;
+        let invocation = invocation(
+            Arc::new(session),
+            Arc::new(turn),
+            "wait",
+            function_payload(json!({"id": agent_id.to_string(), "timeout_ms": 10})),
+        );
+        let output = CollabHandler
+            .handle(invocation)
+            .await
+            .expect("wait should succeed");
+        let ToolOutput::Function {
+            content, success, ..
+        } = output
+        else {
+            panic!("expected function output");
+        };
+        assert_eq!(content, r#"{"status":"pending_init","timed_out":true}"#);
+        assert_eq!(success, Some(false));
+
+        let _ = thread
+            .thread
+            .submit(Op::Shutdown {})
+            .await
+            .expect("shutdown should submit");
+    }
+
+    #[tokio::test]
+    async fn wait_returns_final_status_without_timeout() {
+        let (mut session, turn) = make_session_and_context().await;
+        let manager = thread_manager();
+        session.services.agent_control = manager.agent_control();
+        let config = turn.client.config().as_ref().clone();
+        let thread = manager.start_thread(config).await.expect("start thread");
+        let agent_id = thread.thread_id;
+        let mut status_rx = manager
+            .agent_control()
+            .subscribe_status(agent_id)
+            .await
+            .expect("subscribe should succeed");
+
+        let _ = thread
+            .thread
+            .submit(Op::Shutdown {})
+            .await
+            .expect("shutdown should submit");
+        let _ = timeout(Duration::from_secs(1), status_rx.changed())
+            .await
+            .expect("shutdown status should arrive");
+
+        let invocation = invocation(
+            Arc::new(session),
+            Arc::new(turn),
+            "wait",
+            function_payload(json!({"id": agent_id.to_string(), "timeout_ms": 1000})),
+        );
+        let output = CollabHandler
+            .handle(invocation)
+            .await
+            .expect("wait should succeed");
+        let ToolOutput::Function {
+            content, success, ..
+        } = output
+        else {
+            panic!("expected function output");
+        };
+        assert_eq!(content, r#"{"status":"shutdown","timed_out":false}"#);
+        assert_eq!(success, Some(true));
     }
 
     #[tokio::test]

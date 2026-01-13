@@ -1543,6 +1543,9 @@ impl ChatWidget {
         };
 
         widget.prefetch_rate_limits();
+        widget
+            .bottom_pane
+            .set_steer_enabled(widget.config.features.enabled(Feature::Steer));
 
         widget
     }
@@ -1630,6 +1633,9 @@ impl ChatWidget {
         };
 
         widget.prefetch_rate_limits();
+        widget
+            .bottom_pane
+            .set_steer_enabled(widget.config.features.enabled(Feature::Steer));
 
         widget
     }
@@ -1695,7 +1701,19 @@ impl ChatWidget {
             _ => {
                 match self.bottom_pane.handle_key_event(key_event) {
                     InputResult::Submitted(text) => {
-                        // If a task is running, queue the user input to be sent after the turn completes.
+                        // Enter always sends messages immediately (bypasses queue check)
+                        // Clear any reasoning status header when submitting a new message
+                        self.reasoning_buffer.clear();
+                        self.full_reasoning_buffer.clear();
+                        self.set_status_header(String::from("Working"));
+                        let user_message = UserMessage {
+                            text,
+                            image_paths: self.bottom_pane.take_recent_submission_images(),
+                        };
+                        self.submit_user_message(user_message);
+                    }
+                    InputResult::Queued(text) => {
+                        // Tab queues the message if a task is running, otherwise submits immediately
                         let user_message = UserMessage {
                             text,
                             image_paths: self.bottom_pane.take_recent_submission_images(),
@@ -2109,6 +2127,18 @@ impl ChatWidget {
         if !text.is_empty() {
             self.add_to_history(history_cell::new_user_prompt(text));
         }
+
+        // If steer is enabled and a task is running, show hint about queuing with Tab
+        if self.config.features.enabled(Feature::Steer) && self.bottom_pane.is_task_running() {
+            use crate::key_hint;
+            use ratatui::text::Line;
+            let hint_line = Line::from(vec![
+                "You can queue messages by pressing ".dim(),
+                key_hint::plain(KeyCode::Tab).into(),
+            ]);
+            self.add_to_history(history_cell::PlainHistoryCell::new(vec![hint_line]));
+        }
+
         self.needs_final_message_separator = false;
     }
 
@@ -3633,6 +3663,9 @@ impl ChatWidget {
             self.config.features.enable(feature);
         } else {
             self.config.features.disable(feature);
+        }
+        if feature == Feature::Steer {
+            self.bottom_pane.set_steer_enabled(enabled);
         }
     }
 

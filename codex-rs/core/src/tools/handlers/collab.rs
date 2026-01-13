@@ -74,6 +74,11 @@ mod spawn {
         message: String,
     }
 
+    #[derive(Debug, Serialize)]
+    struct SpawnAgentResult {
+        agent_id: String,
+    }
+
     pub async fn handle(
         session: Arc<Session>,
         turn: Arc<TurnContext>,
@@ -82,7 +87,7 @@ mod spawn {
         let args: SpawnAgentArgs = parse_arguments(&arguments)?;
         if args.message.trim().is_empty() {
             return Err(FunctionCallError::RespondToModel(
-                "Empty message can't be send to an agent".to_string(),
+                "Empty message can't be sent to an agent".to_string(),
             ));
         }
         let config = build_agent_spawn_config(turn.as_ref())?;
@@ -93,8 +98,15 @@ mod spawn {
             .await
             .map_err(collab_spawn_error)?;
 
+        let content = serde_json::to_string(&SpawnAgentResult {
+            agent_id: result.to_string(),
+        })
+        .map_err(|err| {
+            FunctionCallError::Fatal(format!("failed to serialize spawn_agent result: {err}"))
+        })?;
+
         Ok(ToolOutput::Function {
-            content: format!("agent_id: {result}"),
+            content,
             success: Some(true),
             content_items: None,
         })
@@ -112,6 +124,11 @@ mod send_input {
         message: String,
     }
 
+    #[derive(Debug, Serialize)]
+    struct SendInputResult {
+        submission_id: String,
+    }
+
     pub async fn handle(
         session: Arc<Session>,
         arguments: String,
@@ -120,16 +137,20 @@ mod send_input {
         let agent_id = agent_id(&args.id)?;
         if args.message.trim().is_empty() {
             return Err(FunctionCallError::RespondToModel(
-                "Empty message can't be send to an agent".to_string(),
+                "Empty message can't be sent to an agent".to_string(),
             ));
         }
         let agent_id_for_err = agent_id;
-        let content = session
+        let submission_id = session
             .services
             .agent_control
             .send_prompt(agent_id, args.message)
             .await
             .map_err(|err| collab_agent_error(agent_id_for_err, err))?;
+
+        let content = serde_json::to_string(&SendInputResult { submission_id }).map_err(|err| {
+            FunctionCallError::Fatal(format!("failed to serialize send_input result: {err}"))
+        })?;
 
         Ok(ToolOutput::Function {
             content,
@@ -222,9 +243,11 @@ mod wait {
             FunctionCallError::Fatal(format!("failed to serialize wait result: {err}"))
         })?;
 
+        let success = !result.timed_out && !matches!(result.status, AgentStatus::Errored(_));
+
         Ok(ToolOutput::Function {
             content,
-            success: Some(!result.timed_out),
+            success: Some(success),
             content_items: None,
         })
     }
@@ -441,7 +464,7 @@ mod tests {
         assert_eq!(
             err,
             FunctionCallError::RespondToModel(
-                "Empty message can't be send to an agent".to_string()
+                "Empty message can't be sent to an agent".to_string()
             )
         );
     }
@@ -479,7 +502,7 @@ mod tests {
         assert_eq!(
             err,
             FunctionCallError::RespondToModel(
-                "Empty message can't be send to an agent".to_string()
+                "Empty message can't be sent to an agent".to_string()
             )
         );
     }

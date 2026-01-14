@@ -1420,7 +1420,7 @@ impl Config {
         let ConfigRequirements {
             approval_policy: mut constrained_approval_policy,
             sandbox_policy: mut constrained_sandbox_policy,
-            mcp_server_requirements,
+            mcp_servers,
         } = requirements;
 
         constrained_approval_policy
@@ -1430,11 +1430,8 @@ impl Config {
             .set(sandbox_policy)
             .map_err(|e| std::io::Error::new(std::io::ErrorKind::InvalidInput, format!("{e}")))?;
 
-        let mcp_servers =
-            constrain_mcp_servers(cfg.mcp_servers.clone(), mcp_server_requirements.as_ref())
-                .map_err(|e| {
-                    std::io::Error::new(std::io::ErrorKind::InvalidInput, format!("{e}"))
-                })?;
+        let mcp_servers = constrain_mcp_servers(cfg.mcp_servers.clone(), mcp_servers.as_ref())
+            .map_err(|e| std::io::Error::new(std::io::ErrorKind::InvalidInput, format!("{e}")))?;
 
         let config = Self {
             model,

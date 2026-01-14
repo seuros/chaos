@@ -28,6 +28,7 @@ use std::sync::Arc;
 use std::time::Duration;
 use std::time::Instant;
 
+use crate::version::CODEX_CLI_VERSION;
 use codex_app_server_protocol::AuthMode;
 use codex_backend_client::Client as BackendClient;
 use codex_core::config::Config;
@@ -100,6 +101,8 @@ use rand::Rng;
 use ratatui::buffer::Buffer;
 use ratatui::layout::Rect;
 use ratatui::style::Color;
+use ratatui::style::Modifier;
+use ratatui::style::Style;
 use ratatui::style::Stylize;
 use ratatui::text::Line;
 use ratatui::widgets::Paragraph;
@@ -107,6 +110,8 @@ use ratatui::widgets::Wrap;
 use tokio::sync::mpsc::UnboundedSender;
 use tokio::task::JoinHandle;
 use tracing::debug;
+
+const DEFAULT_MODEL_DISPLAY_NAME: &str = "loading";
 
 use crate::app_event::AppEvent;
 use crate::app_event::ExitMode;
@@ -344,7 +349,7 @@ pub(crate) struct ChatWidgetInit {
     pub(crate) models_manager: Arc<ModelsManager>,
     pub(crate) feedback: codex_feedback::CodexFeedback,
     pub(crate) is_first_run: bool,
-    pub(crate) model: String,
+    pub(crate) model: Option<String>,
 }
 
 #[derive(Default)]
@@ -391,7 +396,7 @@ pub(crate) struct ChatWidget {
     /// where the overlay may briefly treat new tail content as already cached.
     active_cell_revision: u64,
     config: Config,
-    model: String,
+    model: Option<String>,
     auth_manager: Arc<AuthManager>,
     models_manager: Arc<ModelsManager>,
     session_header: SessionHeader,
@@ -586,13 +591,16 @@ impl ChatWidget {
         self.current_rollout_path = Some(event.rollout_path.clone());
         let initial_messages = event.initial_messages.clone();
         let model_for_header = event.model.clone();
+        self.model = Some(model_for_header.clone());
         self.session_header.set_model(&model_for_header);
-        self.add_to_history(history_cell::new_session_info(
+        let session_info_cell = history_cell::new_session_info(
             &self.config,
             &model_for_header,
             event,
             self.show_welcome_banner,
-        ));
+        );
+        self.apply_session_info_cell(session_info_cell);
+
         if let Some(messages) = initial_messages {
             self.replay_initial_messages(messages);
         }
@@ -836,7 +844,7 @@ impl ChatWidget {
 
             if high_usage
                 && !self.rate_limit_switch_prompt_hidden()
-                && self.model != NUDGE_MODEL_SLUG
+                && self.current_model() != Some(NUDGE_MODEL_SLUG)
                 && !matches!(
                     self.rate_limit_switch_prompt,
                     RateLimitSwitchPromptState::Shown
@@ -1591,10 +1599,21 @@ impl ChatWidget {
             model,
         } = common;
         let mut config = config;
-        config.model = Some(model.clone());
+        let model = model.filter(|m| !m.trim().is_empty());
+        config.model = model.clone();
         let mut rng = rand::rng();
         let placeholder = PLACEHOLDERS[rng.random_range(0..PLACEHOLDERS.len())].to_string();
         let codex_op_tx = spawn_agent(config.clone(), app_event_tx.clone(), thread_manager);
+
+        let model_for_header = config
+            .model
+            .clone()
+            .unwrap_or_else(|| DEFAULT_MODEL_DISPLAY_NAME.to_string());
+        let active_cell = if model.is_none() {
+            Some(Self::placeholder_session_header_cell(&config))
+        } else {
+            None
+        };
 
         let mut widget = Self {
             app_event_tx: app_event_tx.clone(),
@@ -1610,13 +1629,13 @@ impl ChatWidget {
                 animations_enabled: config.animations,
                 skills: None,
             }),
-            active_cell: None,
+            active_cell,
             active_cell_revision: 0,
             config,
-            model: model.clone(),
+            model,
             auth_manager,
             models_manager,
-            session_header: SessionHeader::new(model),
+            session_header: SessionHeader::new(model_for_header),
             initial_user_message: create_initial_user_message(
                 initial_prompt.unwrap_or_default(),
                 initial_images,
@@ -1684,8 +1703,11 @@ impl ChatWidget {
             model,
             ..
         } = common;
+        let model = model.filter(|m| !m.trim().is_empty());
         let mut rng = rand::rng();
         let placeholder = PLACEHOLDERS[rng.random_range(0..PLACEHOLDERS.len())].to_string();
+
+        let header_model = model.unwrap_or_else(|| session_configured.model.clone());
 
         let codex_op_tx =
             spawn_agent_from_existing(conversation, session_configured, app_event_tx.clone());
@@ -1707,10 +1729,10 @@ impl ChatWidget {
             active_cell: None,
             active_cell_revision: 0,
             config,
-            model: model.clone(),
+            model: Some(header_model.clone()),
             auth_manager,
             models_manager,
-            session_header: SessionHeader::new(model),
+            session_header: SessionHeader::new(header_model),
             initial_user_message: create_initial_user_message(
                 initial_prompt.unwrap_or_default(),
                 initial_images,
@@ -1828,7 +1850,11 @@ impl ChatWidget {
                             text,
                             image_paths: self.bottom_pane.take_recent_submission_images(),
                         };
-                        self.submit_user_message(user_message);
+                        if !self.is_session_configured() {
+                            self.queue_user_message(user_message);
+                        } else {
+                            self.submit_user_message(user_message);
+                        }
                     }
                     InputResult::Queued(text) => {
                         // Tab queues the message if a task is running, otherwise submits immediately
@@ -2180,7 +2206,15 @@ impl ChatWidget {
     }
 
     fn add_boxed_history(&mut self, cell: Box<dyn HistoryCell>) {
-        if !cell.display_lines(u16::MAX).is_empty() {
+        // Keep the placeholder session header as the active cell until real session info arrives,
+        // so we can merge headers instead of committing a duplicate box to history.
+        let keep_placeholder_header_active = !self.is_session_configured()
+            && self
+                .active_cell
+                .as_ref()
+                .is_some_and(|c| c.as_any().is::<history_cell::SessionHeaderHistoryCell>());
+
+        if !keep_placeholder_header_active && !cell.display_lines(u16::MAX).is_empty() {
             // Only break exec grouping if the cell renders visible lines.
             self.flush_active_cell();
             self.needs_final_message_separator = true;
@@ -2189,7 +2223,10 @@ impl ChatWidget {
     }
 
     fn queue_user_message(&mut self, user_message: UserMessage) {
-        if self.bottom_pane.is_task_running() || self.is_review_mode {
+        if !self.is_session_configured()
+            || self.bottom_pane.is_task_running()
+            || self.is_review_mode
+        {
             self.queued_user_messages.push_back(user_message);
             self.refresh_queued_user_messages();
         } else {
@@ -2581,7 +2618,7 @@ impl ChatWidget {
             self.rate_limit_snapshot.as_ref(),
             self.plan_type,
             Local::now(),
-            &self.model,
+            self.model_display_name(),
         ));
     }
 
@@ -2735,6 +2772,14 @@ impl ChatWidget {
     /// Open a popup to choose a quick auto model. Selecting "All models"
     /// opens the full picker with every available preset.
     pub(crate) fn open_model_popup(&mut self) {
+        if !self.is_session_configured() {
+            self.add_info_message(
+                "Model selection is disabled until startup completes.".to_string(),
+                None,
+            );
+            return;
+        }
+
         let presets: Vec<ModelPreset> = match self.models_manager.try_list_models(&self.config) {
             Ok(models) => models,
             Err(_) => {
@@ -2793,11 +2838,12 @@ impl ChatWidget {
             .filter(|preset| preset.show_in_picker)
             .collect();
 
+        let current_model = self.current_model();
         let current_label = presets
             .iter()
-            .find(|preset| preset.model == self.model)
+            .find(|preset| Some(preset.model.as_str()) == current_model)
             .map(|preset| preset.display_name.to_string())
-            .unwrap_or_else(|| self.model.clone());
+            .unwrap_or_else(|| self.model_display_name().to_string());
 
         let (mut auto_presets, other_presets): (Vec<ModelPreset>, Vec<ModelPreset>) = presets
             .into_iter()
@@ -2823,7 +2869,7 @@ impl ChatWidget {
                 SelectionItem {
                     name: preset.display_name.clone(),
                     description,
-                    is_current: model == self.model,
+                    is_current: Some(model.as_str()) == current_model,
                     is_default: preset.is_default,
                     actions,
                     dismiss_on_select: true,
@@ -2893,7 +2939,7 @@ impl ChatWidget {
         for preset in presets.into_iter() {
             let description =
                 (!preset.description.is_empty()).then_some(preset.description.to_string());
-            let is_current = preset.model == self.model;
+            let is_current = Some(preset.model.as_str()) == self.current_model();
             let single_supported_effort = preset.supported_reasoning_efforts.len() == 1;
             let preset_for_action = preset.clone();
             let actions: Vec<SelectionAction> = vec![Box::new(move |tx| {
@@ -3019,7 +3065,7 @@ impl ChatWidget {
             .or(Some(default_effort));
 
         let model_slug = preset.model.to_string();
-        let is_current_model = self.model == preset.model;
+        let is_current_model = self.current_model() == Some(preset.model.as_str());
         let highlight_choice = if is_current_model {
             self.config.model_reasoning_effort
         } else {
@@ -3852,7 +3898,55 @@ impl ChatWidget {
     /// Set the model in the widget's config copy.
     pub(crate) fn set_model(&mut self, model: &str) {
         self.session_header.set_model(model);
-        self.model = model.to_string();
+        self.model = Some(model.to_string());
+    }
+
+    fn current_model(&self) -> Option<&str> {
+        self.model.as_deref()
+    }
+
+    fn model_display_name(&self) -> &str {
+        self.model.as_deref().unwrap_or(DEFAULT_MODEL_DISPLAY_NAME)
+    }
+
+    /// Build a placeholder header cell while the session is configuring.
+    fn placeholder_session_header_cell(config: &Config) -> Box<dyn HistoryCell> {
+        let placeholder_style = Style::default().add_modifier(Modifier::DIM | Modifier::ITALIC);
+        Box::new(history_cell::SessionHeaderHistoryCell::new_with_style(
+            DEFAULT_MODEL_DISPLAY_NAME.to_string(),
+            placeholder_style,
+            None,
+            config.cwd.clone(),
+            CODEX_CLI_VERSION,
+        ))
+    }
+
+    /// Merge the real session info cell with any placeholder header to avoid double boxes.
+    fn apply_session_info_cell(&mut self, cell: history_cell::SessionInfoCell) {
+        let mut session_info_cell = Some(Box::new(cell) as Box<dyn HistoryCell>);
+        let merged_header = if let Some(active) = self.active_cell.take() {
+            if active
+                .as_any()
+                .is::<history_cell::SessionHeaderHistoryCell>()
+            {
+                // Reuse the existing placeholder header to avoid rendering two boxes.
+                if let Some(cell) = session_info_cell.take() {
+                    self.active_cell = Some(cell);
+                }
+                true
+            } else {
+                self.active_cell = Some(active);
+                false
+            }
+        } else {
+            false
+        };
+
+        self.flush_active_cell();
+
+        if !merged_header && let Some(cell) = session_info_cell {
+            self.add_boxed_history(cell);
+        }
     }
 
     pub(crate) fn add_info_message(&mut self, message: String, hint: Option<String>) {
@@ -4194,6 +4288,10 @@ impl ChatWidget {
 
     pub(crate) fn thread_id(&self) -> Option<ThreadId> {
         self.thread_id
+    }
+
+    fn is_session_configured(&self) -> bool {
+        self.thread_id.is_some()
     }
 
     pub(crate) fn rollout_path(&self) -> Option<PathBuf> {

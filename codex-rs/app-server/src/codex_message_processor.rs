@@ -3231,6 +3231,7 @@ impl CodexMessageProcessor {
                 effort,
                 summary,
                 final_output_json_schema: output_schema,
+                collaboration_mode: None,
             })
             .await;
 
@@ -3344,7 +3345,8 @@ impl CodexMessageProcessor {
             || params.sandbox_policy.is_some()
             || params.model.is_some()
             || params.effort.is_some()
-            || params.summary.is_some();
+            || params.summary.is_some()
+            || params.collaboration_mode.is_some();
 
         // If any overrides are provided, update the session turn context first.
         if has_any_overrides {
@@ -3356,6 +3358,7 @@ impl CodexMessageProcessor {
                     model: params.model,
                     effort: params.effort.map(Some),
                     summary: params.summary,
+                    collaboration_mode: params.collaboration_mode,
                 })
                 .await;
         }

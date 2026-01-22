@@ -2611,6 +2611,7 @@ impl ChatWidget {
             collaboration_mode: self
                 .collaboration_modes_enabled()
                 .then(|| self.stored_collaboration_mode.clone()),
+            personality: None,
         };
 
         self.codex_op_tx.send(op).unwrap_or_else(|e| {
@@ -3062,6 +3063,7 @@ impl ChatWidget {
                 effort: Some(Some(default_effort)),
                 summary: None,
                 collaboration_mode: None,
+                personality: None,
             }));
             tx.send(AppEvent::UpdateModel(switch_model.clone()));
             tx.send(AppEvent::UpdateReasoningEffort(Some(default_effort)));
@@ -3380,6 +3382,7 @@ impl ChatWidget {
                 effort: Some(effort_for_action),
                 summary: None,
                 collaboration_mode: None,
+                personality: None,
             }));
             tx.send(AppEvent::UpdateModel(model_for_action.clone()));
             tx.send(AppEvent::UpdateReasoningEffort(effort_for_action));
@@ -3552,6 +3555,7 @@ impl ChatWidget {
                 effort: Some(effort),
                 summary: None,
                 collaboration_mode: None,
+                personality: None,
             }));
         self.app_event_tx.send(AppEvent::UpdateModel(model.clone()));
         self.app_event_tx
@@ -3735,6 +3739,7 @@ impl ChatWidget {
                 effort: None,
                 summary: None,
                 collaboration_mode: None,
+                personality: None,
             }));
             tx.send(AppEvent::UpdateAskForApprovalPolicy(approval));
             tx.send(AppEvent::UpdateSandboxPolicy(sandbox_clone));

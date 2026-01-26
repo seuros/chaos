@@ -28,6 +28,8 @@ use serde::Serialize;
 
 pub struct CollabHandler;
 
+/// Minimum wait timeout to prevent tight polling loops from burning CPU.
+pub(crate) const MIN_WAIT_TIMEOUT_MS: i64 = 10_000;
 pub(crate) const DEFAULT_WAIT_TIMEOUT_MS: i64 = 30_000;
 pub(crate) const MAX_WAIT_TIMEOUT_MS: i64 = 300_000;
 
@@ -323,6 +325,8 @@ mod wait {
             .collect::<Result<Vec<_>, _>>()?;
 
         // Validate timeout.
+        // Very short timeouts encourage busy-polling loops in the orchestrator prompt and can
+        // cause high CPU usage even with a single active worker, so clamp to a minimum.
         let timeout_ms = args.timeout_ms.unwrap_or(DEFAULT_WAIT_TIMEOUT_MS);
         let timeout_ms = match timeout_ms {
             ms if ms <= 0 => {
@@ -330,7 +334,7 @@ mod wait {
                     "timeout_ms must be greater than zero".to_owned(),
                 ));
             }
-            ms => ms.min(MAX_WAIT_TIMEOUT_MS),
+            ms => ms.clamp(MIN_WAIT_TIMEOUT_MS, MAX_WAIT_TIMEOUT_MS),
         };
 
         session
@@ -1012,7 +1016,7 @@ mod tests {
             "wait",
             function_payload(json!({
                 "ids": [agent_id.to_string()],
-                "timeout_ms": 10
+                "timeout_ms": MIN_WAIT_TIMEOUT_MS
             })),
         );
         let output = CollabHandler
@@ -1035,6 +1039,37 @@ mod tests {
             }
         );
         assert_eq!(success, None);
+
+        let _ = thread
+            .thread
+            .submit(Op::Shutdown {})
+            .await
+            .expect("shutdown should submit");
+    }
+
+    #[tokio::test]
+    async fn wait_clamps_short_timeouts_to_minimum() {
+        let (mut session, turn) = make_session_and_context().await;
+        let manager = thread_manager();
+        session.services.agent_control = manager.agent_control();
+        let config = turn.client.config().as_ref().clone();
+        let thread = manager.start_thread(config).await.expect("start thread");
+        let agent_id = thread.thread_id;
+        let invocation = invocation(
+            Arc::new(session),
+            Arc::new(turn),
+            "wait",
+            function_payload(json!({
+                "ids": [agent_id.to_string()],
+                "timeout_ms": 10
+            })),
+        );
+
+        let early = timeout(Duration::from_millis(50), CollabHandler.handle(invocation)).await;
+        assert!(
+            early.is_err(),
+            "wait should not return before the minimum timeout clamp"
+        );
 
         let _ = thread
             .thread

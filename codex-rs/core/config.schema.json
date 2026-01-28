@@ -198,6 +198,9 @@
             "shell_tool": {
               "type": "boolean"
             },
+            "skill_mcp_dependency_install": {
+              "type": "boolean"
+            },
             "steer": {
               "type": "boolean"
             },
@@ -1188,6 +1191,9 @@
           "type": "boolean"
         },
         "shell_tool": {
+          "type": "boolean"
+        },
+        "skill_mcp_dependency_install": {
           "type": "boolean"
         },
         "steer": {

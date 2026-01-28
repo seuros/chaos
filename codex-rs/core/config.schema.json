@@ -483,6 +483,14 @@
       },
       "type": "object"
     },
+    "NotificationMethod": {
+      "enum": [
+        "auto",
+        "osc9",
+        "bel"
+      ],
+      "type": "string"
+    },
     "Notifications": {
       "anyOf": [
         {
@@ -990,6 +998,15 @@
           ],
           "default": null,
           "description": "Start the TUI in the specified collaboration mode (plan/execute/etc.). Defaults to unset."
+        },
+        "notification_method": {
+          "allOf": [
+            {
+              "$ref": "#/definitions/NotificationMethod"
+            }
+          ],
+          "default": "auto",
+          "description": "Notification method to use for unfocused terminal notifications. Defaults to `auto`."
         },
         "notifications": {
           "allOf": [

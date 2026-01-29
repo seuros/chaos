@@ -111,8 +111,8 @@ pub enum Feature {
     EnableRequestCompression,
     /// Enable collab tools.
     Collab,
-    /// Enable connectors (apps).
-    Connectors,
+    /// Enable apps.
+    Apps,
     /// Allow prompting and installing missing MCP dependencies.
     SkillMcpDependencyInstall,
     /// Steer feature flag - when enabled, Enter submits immediately instead of queuing.
@@ -518,9 +518,13 @@ pub const FEATURES: &[FeatureSpec] = &[
         default_enabled: false,
     },
     FeatureSpec {
-        id: Feature::Connectors,
-        key: "connectors",
-        stage: Stage::UnderDevelopment,
+        id: Feature::Apps,
+        key: "apps",
+        stage: Stage::Experimental {
+            name: "Apps",
+            menu_description: "Use a connected ChatGPT App using \"$\". Install Apps via /apps command. Restart Codex after enabling.",
+            announcement: "NEW: Use ChatGPT Apps (Connectors) in Codex via $ mentions. Enable in /experimental and restart Codex!",
+        },
         default_enabled: false,
     },
     FeatureSpec {

@@ -1220,10 +1220,12 @@ dependencies = [
  "codex-core",
  "codex-git",
  "codex-utils-cargo-bin",
+ "pretty_assertions",
  "serde",
  "serde_json",
  "tempfile",
  "tokio",
+ "urlencoding",
 ]
 
 [[package]]
@@ -1886,6 +1888,7 @@ dependencies = [
  "codex-app-server-protocol",
  "codex-arg0",
  "codex-backend-client",
+ "codex-chatgpt",
  "codex-cli",
  "codex-common",
  "codex-core",

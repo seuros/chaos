@@ -32,6 +32,7 @@ pub(crate) struct CommandPopup {
 #[derive(Clone, Copy, Debug, Default)]
 pub(crate) struct CommandPopupFlags {
     pub(crate) collaboration_modes_enabled: bool,
+    pub(crate) connectors_enabled: bool,
     pub(crate) personality_command_enabled: bool,
     pub(crate) windows_degraded_sandbox_active: bool,
 }
@@ -41,6 +42,7 @@ impl CommandPopup {
         // Keep built-in availability in sync with the composer.
         let builtins = slash_commands::builtins_for_input(
             flags.collaboration_modes_enabled,
+            flags.connectors_enabled,
             flags.personality_command_enabled,
             flags.windows_degraded_sandbox_active,
         );
@@ -478,6 +480,7 @@ mod tests {
             Vec::new(),
             CommandPopupFlags {
                 collaboration_modes_enabled: true,
+                connectors_enabled: false,
                 personality_command_enabled: true,
                 windows_degraded_sandbox_active: false,
             },
@@ -496,6 +499,7 @@ mod tests {
             Vec::new(),
             CommandPopupFlags {
                 collaboration_modes_enabled: true,
+                connectors_enabled: false,
                 personality_command_enabled: false,
                 windows_degraded_sandbox_active: false,
             },
@@ -522,6 +526,7 @@ mod tests {
             Vec::new(),
             CommandPopupFlags {
                 collaboration_modes_enabled: true,
+                connectors_enabled: false,
                 personality_command_enabled: true,
                 windows_degraded_sandbox_active: false,
             },

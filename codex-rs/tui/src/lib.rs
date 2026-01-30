@@ -26,6 +26,7 @@ use codex_core::config::resolve_oss_provider;
 use codex_core::config_loader::ConfigLoadError;
 use codex_core::config_loader::format_config_error_with_source;
 use codex_core::find_thread_path_by_id_str;
+use codex_core::find_thread_path_by_name_str;
 use codex_core::path_utils;
 use codex_core::protocol::AskForApproval;
 use codex_core::read_session_meta_line;
@@ -47,6 +48,7 @@ use tracing::error;
 use tracing_appender::non_blocking;
 use tracing_subscriber::EnvFilter;
 use tracing_subscriber::prelude::*;
+use uuid::Uuid;
 
 mod additional_dirs;
 mod app;
@@ -411,6 +413,7 @@ async fn run_ratatui_app(
                     return Ok(AppExitInfo {
                         token_usage: codex_core::protocol::TokenUsage::default(),
                         thread_id: None,
+                        thread_name: None,
                         update_action: Some(action),
                         exit_reason: ExitReason::UserRequested,
                     });
@@ -451,6 +454,7 @@ async fn run_ratatui_app(
             return Ok(AppExitInfo {
                 token_usage: codex_core::protocol::TokenUsage::default(),
                 thread_id: None,
+                thread_name: None,
                 update_action: None,
                 exit_reason: ExitReason::UserRequested,
             });
@@ -484,6 +488,7 @@ async fn run_ratatui_app(
         Ok(AppExitInfo {
             token_usage: codex_core::protocol::TokenUsage::default(),
             thread_id: None,
+            thread_name: None,
             update_action: None,
             exit_reason: ExitReason::Fatal(format!(
                 "No saved session found with ID {id_str}. Run `codex {action}` without an ID to choose from existing sessions."
@@ -494,7 +499,13 @@ async fn run_ratatui_app(
     let use_fork = cli.fork_picker || cli.fork_last || cli.fork_session_id.is_some();
     let session_selection = if use_fork {
         if let Some(id_str) = cli.fork_session_id.as_deref() {
-            match find_thread_path_by_id_str(&config.codex_home, id_str).await? {
+            let is_uuid = Uuid::parse_str(id_str).is_ok();
+            let path = if is_uuid {
+                find_thread_path_by_id_str(&config.codex_home, id_str).await?
+            } else {
+                find_thread_path_by_name_str(&config.codex_home, id_str).await?
+            };
+            match path {
                 Some(path) => resume_picker::SessionSelection::Fork(path),
                 None => return missing_session_exit(id_str, "fork"),
             }
@@ -533,6 +544,7 @@ async fn run_ratatui_app(
                     return Ok(AppExitInfo {
                         token_usage: codex_core::protocol::TokenUsage::default(),
                         thread_id: None,
+                        thread_name: None,
                         update_action: None,
                         exit_reason: ExitReason::UserRequested,
                     });
@@ -543,7 +555,13 @@ async fn run_ratatui_app(
             resume_picker::SessionSelection::StartFresh
         }
     } else if let Some(id_str) = cli.resume_session_id.as_deref() {
-        match find_thread_path_by_id_str(&config.codex_home, id_str).await? {
+        let is_uuid = Uuid::parse_str(id_str).is_ok();
+        let path = if is_uuid {
+            find_thread_path_by_id_str(&config.codex_home, id_str).await?
+        } else {
+            find_thread_path_by_name_str(&config.codex_home, id_str).await?
+        };
+        match path {
             Some(path) => resume_picker::SessionSelection::Resume(path),
             None => return missing_session_exit(id_str, "resume"),
         }
@@ -584,6 +602,7 @@ async fn run_ratatui_app(
                 return Ok(AppExitInfo {
                     token_usage: codex_core::protocol::TokenUsage::default(),
                     thread_id: None,
+                    thread_name: None,
                     update_action: None,
                     exit_reason: ExitReason::UserRequested,
                 });

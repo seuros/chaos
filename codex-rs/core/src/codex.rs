@@ -26,6 +26,7 @@ use crate::features::maybe_push_unstable_features_warning;
 use crate::models_manager::manager::ModelsManager;
 use crate::parse_command::parse_command;
 use crate::parse_turn_item;
+use crate::rollout::session_index;
 use crate::stream_events_utils::HandleOutputCtx;
 use crate::stream_events_utils::handle_non_tool_response_item;
 use crate::stream_events_utils::handle_output_item_done;
@@ -354,6 +355,8 @@ impl Codex {
             sandbox_policy: config.sandbox_policy.clone(),
             windows_sandbox_level: WindowsSandboxLevel::from_config(&config),
             cwd: config.cwd.clone(),
+            codex_home: config.codex_home.clone(),
+            thread_name: None,
             original_config_do_not_use: Arc::clone(&config),
             session_source,
             dynamic_tools,
@@ -544,6 +547,10 @@ pub(crate) struct SessionConfiguration {
     /// `ConfigureSession` operation so that the business-logic layer can
     /// operate deterministically.
     cwd: PathBuf,
+    /// Directory containing all Codex state for this session.
+    codex_home: PathBuf,
+    /// Optional user-facing name for the thread, updated during the session.
+    thread_name: Option<String>,
 
     // TODO(pakrym): Remove config from here
     original_config_do_not_use: Arc<Config>,
@@ -553,6 +560,10 @@ pub(crate) struct SessionConfiguration {
 }
 
 impl SessionConfiguration {
+    pub(crate) fn codex_home(&self) -> &PathBuf {
+        &self.codex_home
+    }
+
     fn thread_config_snapshot(&self) -> ThreadConfigSnapshot {
         ThreadConfigSnapshot {
             model: self.collaboration_mode.model().to_string(),
@@ -623,6 +634,11 @@ impl Session {
         per_turn_config
     }
 
+    pub(crate) async fn codex_home(&self) -> PathBuf {
+        let state = self.state.lock().await;
+        state.session_configuration.codex_home().clone()
+    }
+
     #[allow(clippy::too_many_arguments)]
     fn make_turn_context(
         auth_manager: Option<Arc<AuthManager>>,
@@ -683,7 +699,7 @@ impl Session {
 
     #[allow(clippy::too_many_arguments)]
     async fn new(
-        session_configuration: SessionConfiguration,
+        mut session_configuration: SessionConfiguration,
         config: Arc<Config>,
         auth_manager: Arc<AuthManager>,
         models_manager: Arc<ModelsManager>,
@@ -863,6 +879,16 @@ impl Session {
                 otel_manager.clone(),
             );
         }
+        let thread_name =
+            match session_index::find_thread_name_by_id(&config.codex_home, &conversation_id).await
+            {
+                Ok(name) => name,
+                Err(err) => {
+                    warn!("Failed to read session index for thread name: {err}");
+                    None
+                }
+            };
+        session_configuration.thread_name = thread_name.clone();
         let state = SessionState::new(session_configuration.clone());
 
         let services = SessionServices {
@@ -904,6 +930,7 @@ impl Session {
             msg: EventMsg::SessionConfigured(SessionConfiguredEvent {
                 session_id: conversation_id,
                 forked_from_id,
+                thread_name: session_configuration.thread_name.clone(),
                 model: session_configuration.collaboration_mode.model().to_string(),
                 model_provider_id: config.model_provider_id.clone(),
                 approval_policy: session_configuration.approval_policy.value(),
@@ -1451,8 +1478,7 @@ impl Session {
             .lock()
             .await
             .session_configuration
-            .original_config_do_not_use
-            .codex_home
+            .codex_home()
             .clone();
 
         if !features.enabled(Feature::ExecPolicy) {
@@ -2440,6 +2466,9 @@ async fn submission_loop(sess: Arc<Session>, config: Arc<Config>, rx_sub: Receiv
             Op::ThreadRollback { num_turns } => {
                 handlers::thread_rollback(&sess, sub.id.clone(), num_turns).await;
             }
+            Op::SetThreadName { name } => {
+                handlers::set_thread_name(&sess, sub.id.clone(), name).await;
+            }
             Op::RunUserShellCommand { command } => {
                 handlers::run_user_shell_command(
                     &sess,
@@ -2483,6 +2512,7 @@ mod handlers {
     use crate::mcp::collect_mcp_snapshot_from_manager;
     use crate::mcp::effective_mcp_servers;
     use crate::review_prompts::resolve_review_request;
+    use crate::rollout::session_index;
     use crate::tasks::CompactTask;
     use crate::tasks::RegularTask;
     use crate::tasks::UndoTask;
@@ -2499,6 +2529,7 @@ mod handlers {
     use codex_protocol::protocol::ReviewDecision;
     use codex_protocol::protocol::ReviewRequest;
     use codex_protocol::protocol::SkillsListEntry;
+    use codex_protocol::protocol::ThreadNameUpdatedEvent;
     use codex_protocol::protocol::ThreadRolledBackEvent;
     use codex_protocol::protocol::TurnAbortReason;
     use codex_protocol::protocol::WarningEvent;
@@ -2948,6 +2979,72 @@ mod handlers {
         sess.send_event_raw_flushed(Event {
             id: turn_context.sub_id.clone(),
             msg: EventMsg::ThreadRolledBack(ThreadRolledBackEvent { num_turns }),
+        })
+        .await;
+    }
+
+    /// Persists the thread name in the session index, updates in-memory state, and emits
+    /// a `ThreadNameUpdated` event on success.
+    ///
+    /// This appends the name to `CODEX_HOME/sessions_index.jsonl` via `session_index::append_thread_name` for the
+    /// current `thread_id`, then updates `SessionConfiguration::thread_name`.
+    ///
+    /// Returns an error event if the name is empty or session persistence is disabled.
+    pub async fn set_thread_name(sess: &Arc<Session>, sub_id: String, name: String) {
+        let Some(name) = crate::util::normalize_thread_name(&name) else {
+            let event = Event {
+                id: sub_id,
+                msg: EventMsg::Error(ErrorEvent {
+                    message: "Thread name cannot be empty.".to_string(),
+                    codex_error_info: Some(CodexErrorInfo::BadRequest),
+                }),
+            };
+            sess.send_event_raw(event).await;
+            return;
+        };
+
+        let persistence_enabled = {
+            let rollout = sess.services.rollout.lock().await;
+            rollout.is_some()
+        };
+        if !persistence_enabled {
+            let event = Event {
+                id: sub_id,
+                msg: EventMsg::Error(ErrorEvent {
+                    message: "Session persistence is disabled; cannot rename thread.".to_string(),
+                    codex_error_info: Some(CodexErrorInfo::Other),
+                }),
+            };
+            sess.send_event_raw(event).await;
+            return;
+        };
+
+        let codex_home = sess.codex_home().await;
+        if let Err(e) =
+            session_index::append_thread_name(&codex_home, sess.conversation_id, &name).await
+        {
+            let event = Event {
+                id: sub_id,
+                msg: EventMsg::Error(ErrorEvent {
+                    message: format!("Failed to set thread name: {e}"),
+                    codex_error_info: Some(CodexErrorInfo::Other),
+                }),
+            };
+            sess.send_event_raw(event).await;
+            return;
+        }
+
+        {
+            let mut state = sess.state.lock().await;
+            state.session_configuration.thread_name = Some(name.clone());
+        }
+
+        sess.send_event_raw(Event {
+            id: sub_id,
+            msg: EventMsg::ThreadNameUpdated(ThreadNameUpdatedEvent {
+                thread_id: sess.conversation_id,
+                thread_name: Some(name),
+            }),
         })
         .await;
     }
@@ -4440,6 +4537,8 @@ mod tests {
             sandbox_policy: config.sandbox_policy.clone(),
             windows_sandbox_level: WindowsSandboxLevel::from_config(&config),
             cwd: config.cwd.clone(),
+            codex_home: config.codex_home.clone(),
+            thread_name: None,
             original_config_do_not_use: Arc::clone(&config),
             session_source: SessionSource::Exec,
             dynamic_tools: Vec::new(),
@@ -4521,6 +4620,8 @@ mod tests {
             sandbox_policy: config.sandbox_policy.clone(),
             windows_sandbox_level: WindowsSandboxLevel::from_config(&config),
             cwd: config.cwd.clone(),
+            codex_home: config.codex_home.clone(),
+            thread_name: None,
             original_config_do_not_use: Arc::clone(&config),
             session_source: SessionSource::Exec,
             dynamic_tools: Vec::new(),
@@ -4786,6 +4887,8 @@ mod tests {
             sandbox_policy: config.sandbox_policy.clone(),
             windows_sandbox_level: WindowsSandboxLevel::from_config(&config),
             cwd: config.cwd.clone(),
+            codex_home: config.codex_home.clone(),
+            thread_name: None,
             original_config_do_not_use: Arc::clone(&config),
             session_source: SessionSource::Exec,
             dynamic_tools: Vec::new(),
@@ -4900,6 +5003,8 @@ mod tests {
             sandbox_policy: config.sandbox_policy.clone(),
             windows_sandbox_level: WindowsSandboxLevel::from_config(&config),
             cwd: config.cwd.clone(),
+            codex_home: config.codex_home.clone(),
+            thread_name: None,
             original_config_do_not_use: Arc::clone(&config),
             session_source: SessionSource::Exec,
             dynamic_tools: Vec::new(),

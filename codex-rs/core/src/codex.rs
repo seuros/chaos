@@ -1285,27 +1285,31 @@ impl Session {
         previous: Option<&Arc<TurnContext>>,
         next: &TurnContext,
     ) -> Option<ResponseItem> {
-        let personality = next.personality?;
-        if let Some(prev) = previous
-            && prev.personality == Some(personality)
-        {
+        if !self.features.enabled(Feature::Personality) {
             return None;
         }
-        let model_info = next.client.get_model_info();
-        let personality_message = Self::personality_message_for(&model_info, personality);
+        let previous = previous?;
 
-        personality_message.map(|personality_message| {
-            DeveloperInstructions::personality_spec_message(personality_message).into()
-        })
+        // if a personality is specified and it's different from the previous one, build a personality update item
+        if let Some(personality) = next.personality
+            && next.personality != previous.personality
+        {
+            let model_info = next.client.get_model_info();
+            let personality_message = Self::personality_message_for(&model_info, personality);
+            personality_message.map(|personality_message| {
+                DeveloperInstructions::personality_spec_message(personality_message).into()
+            })
+        } else {
+            None
+        }
     }
 
     fn personality_message_for(model_info: &ModelInfo, personality: Personality) -> Option<String> {
         model_info
-            .model_instructions_template
+            .model_messages
             .as_ref()
-            .and_then(|template| template.personality_messages.as_ref())
-            .and_then(|messages| messages.0.get(&personality))
-            .cloned()
+            .and_then(|spec| spec.get_personality_message(Some(personality)))
+            .filter(|message| !message.is_empty())
     }
 
     fn build_collaboration_mode_update_item(
@@ -1845,14 +1849,32 @@ impl Session {
             items.push(DeveloperInstructions::new(developer_instructions.to_string()).into());
         }
         // Add developer instructions from collaboration_mode if they exist and are non-empty
-        let collaboration_mode = {
+        let (collaboration_mode, base_instructions) = {
             let state = self.state.lock().await;
-            state.session_configuration.collaboration_mode.clone()
+            (
+                state.session_configuration.collaboration_mode.clone(),
+                state.session_configuration.base_instructions.clone(),
+            )
         };
         if let Some(collab_instructions) =
             DeveloperInstructions::from_collaboration_mode(&collaboration_mode)
         {
             items.push(collab_instructions.into());
+        }
+        if self.features.enabled(Feature::Personality)
+            && let Some(personality) = turn_context.personality
+        {
+            let model_info = turn_context.client.get_model_info();
+            let has_baked_personality = model_info.supports_personality()
+                && base_instructions == model_info.get_model_instructions(Some(personality));
+            if !has_baked_personality
+                && let Some(personality_message) =
+                    Self::personality_message_for(&model_info, personality)
+            {
+                items.push(
+                    DeveloperInstructions::personality_spec_message(personality_message).into(),
+                );
+            }
         }
         if let Some(user_instructions) = turn_context.user_instructions.as_deref() {
             items.push(

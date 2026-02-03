@@ -1129,7 +1129,7 @@
                   "$ref": "#/definitions/ModeKind"
                 }
               ],
-              "default": "code"
+              "default": "default"
             },
             "model_context_window": {
               "format": "int64",
@@ -3901,10 +3901,7 @@
       "description": "Initial collaboration mode to use when the TUI starts.",
       "enum": [
         "plan",
-        "code",
-        "pair_programming",
-        "execute",
-        "custom"
+        "default"
       ],
       "type": "string"
     },

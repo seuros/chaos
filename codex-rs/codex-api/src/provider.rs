@@ -12,7 +12,6 @@ use url::Url;
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub enum WireApi {
     Responses,
-    Chat,
     Compact,
 }
 
@@ -182,7 +181,7 @@ mod tests {
         }
 
         assert!(!is_azure_responses_wire_base_url(
-            WireApi::Chat,
+            WireApi::Compact,
             "Azure",
             Some("https://foo.openai.azure.com/openai")
         ));

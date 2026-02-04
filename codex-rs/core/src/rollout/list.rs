@@ -1091,17 +1091,22 @@ async fn find_thread_path_by_id_str_in_subdir(
     let state_db_ctx = state_db::open_if_present(codex_home, "").await;
     if let Some(state_db_ctx) = state_db_ctx.as_deref()
         && let Ok(thread_id) = ThreadId::from_string(id_str)
-    {
-        let db_path = state_db::find_rollout_path_by_id(
+        && let Some(db_path) = state_db::find_rollout_path_by_id(
             Some(state_db_ctx),
             thread_id,
             archived_only,
             "find_path_query",
         )
-        .await;
-        if db_path.is_some() {
-            return Ok(db_path);
+        .await
+    {
+        if tokio::fs::try_exists(&db_path).await.unwrap_or(false) {
+            return Ok(Some(db_path));
         }
+        tracing::error!(
+            "state db returned stale rollout path for thread {id_str}: {}",
+            db_path.display()
+        );
+        state_db::record_discrepancy("find_thread_path_by_id_str_in_subdir", "stale_db_path");
     }
 
     let mut root = codex_home.to_path_buf();

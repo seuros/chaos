@@ -261,6 +261,14 @@ impl<'de> serde::Deserialize<'de> for Cursor {
     }
 }
 
+impl From<codex_state::Anchor> for Cursor {
+    fn from(anchor: codex_state::Anchor) -> Self {
+        let ts = OffsetDateTime::from_unix_timestamp(anchor.ts.timestamp())
+            .unwrap_or(OffsetDateTime::UNIX_EPOCH);
+        Self::new(ts, anchor.id)
+    }
+}
+
 /// Retrieve recorded thread file paths with token pagination. The returned `next_cursor`
 /// can be supplied on the next call to resume after the last returned item, resilient to
 /// concurrent new sessions being appended. Ordering is stable by the requested sort key
@@ -989,7 +997,6 @@ async fn read_head_summary(path: &Path, head_limit: usize) -> io::Result<HeadTai
                     && !UserInstructions::is_user_instructions(content.as_slice())
                     && !is_session_prefix_content(content.as_slice())
                 {
-                    tracing::warn!("Item: {item:#?}");
                     summary.saw_user_event = true;
                 }
                 if summary.head.len() < head_limit

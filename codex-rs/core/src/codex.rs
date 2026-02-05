@@ -1460,6 +1460,9 @@ impl Session {
             return None;
         }
         let previous = previous?;
+        if next.model_info.slug != previous.model_info.slug {
+            return None;
+        }
 
         // if a personality is specified and it's different from the previous one, build a personality update item
         if let Some(personality) = next.personality
@@ -1498,6 +1501,24 @@ impl Session {
         }
     }
 
+    fn build_model_instructions_update_item(
+        &self,
+        previous: Option<&Arc<TurnContext>>,
+        next: &TurnContext,
+    ) -> Option<ResponseItem> {
+        let prev = previous?;
+        if prev.model_info.slug == next.model_info.slug {
+            return None;
+        }
+
+        let model_instructions = next.model_info.get_model_instructions(next.personality);
+        if model_instructions.is_empty() {
+            return None;
+        }
+
+        Some(DeveloperInstructions::model_switch_message(model_instructions).into())
+    }
+
     fn build_settings_update_items(
         &self,
         previous_context: Option<&Arc<TurnContext>>,
@@ -1518,6 +1539,11 @@ impl Session {
             self.build_collaboration_mode_update_item(previous_context, current_context)
         {
             update_items.push(collaboration_mode_item);
+        }
+        if let Some(model_instructions_item) =
+            self.build_model_instructions_update_item(previous_context, current_context)
+        {
+            update_items.push(model_instructions_item);
         }
         if let Some(personality_item) =
             self.build_personality_update_item(previous_context, current_context)

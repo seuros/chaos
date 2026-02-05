@@ -1176,32 +1176,26 @@ impl Session {
                 {
                     let mut state = self.state.lock().await;
                     state.initial_context_seeded = false;
+                    state.pending_resume_previous_model = None;
                 }
 
                 // If resuming, warn when the last recorded model differs from the current one.
-                if let Some(prev) = rollout_items.iter().rev().find_map(|it| {
-                    if let RolloutItem::TurnContext(ctx) = it {
-                        Some(ctx.model.as_str())
-                    } else {
-                        None
-                    }
-                }) {
-                    let curr = turn_context.model_info.slug.as_str();
-                    if prev != curr {
-                        warn!(
-                            "resuming session with different model: previous={prev}, current={curr}"
-                        );
-                        self.send_event(
-                            &turn_context,
-                            EventMsg::Warning(WarningEvent {
-                                message: format!(
-                                    "This session was recorded with model `{prev}` but is resuming with `{curr}`. \
+                let curr = turn_context.model_info.slug.as_str();
+                if let Some(prev) = Self::last_model_name(&rollout_items, curr) {
+                    warn!("resuming session with different model: previous={prev}, current={curr}");
+                    self.send_event(
+                        &turn_context,
+                        EventMsg::Warning(WarningEvent {
+                            message: format!(
+                                "This session was recorded with model `{prev}` but is resuming with `{curr}`. \
                          Consider switching back to `{prev}` as it may affect Codex performance."
-                                ),
-                            }),
-                        )
-                            .await;
-                    }
+                            ),
+                        }),
+                    )
+                    .await;
+
+                    let mut state = self.state.lock().await;
+                    state.pending_resume_previous_model = Some(prev.to_string());
                 }
 
                 // Always add response items to conversation history
@@ -1260,11 +1254,31 @@ impl Session {
         }
     }
 
+    fn last_model_name<'a>(rollout_items: &'a [RolloutItem], current: &str) -> Option<&'a str> {
+        let previous = rollout_items.iter().rev().find_map(|it| {
+            if let RolloutItem::TurnContext(ctx) = it {
+                Some(ctx.model.as_str())
+            } else {
+                None
+            }
+        })?;
+        if previous == current {
+            None
+        } else {
+            Some(previous)
+        }
+    }
+
     fn last_token_info_from_rollout(rollout_items: &[RolloutItem]) -> Option<TokenUsageInfo> {
         rollout_items.iter().rev().find_map(|item| match item {
             RolloutItem::EventMsg(EventMsg::TokenCount(ev)) => ev.info.clone(),
             _ => None,
         })
+    }
+
+    async fn take_pending_resume_previous_model(&self) -> Option<String> {
+        let mut state = self.state.lock().await;
+        state.pending_resume_previous_model.take()
     }
 
     pub(crate) async fn update_settings(
@@ -1504,10 +1518,12 @@ impl Session {
     fn build_model_instructions_update_item(
         &self,
         previous: Option<&Arc<TurnContext>>,
+        resumed_model: Option<&str>,
         next: &TurnContext,
     ) -> Option<ResponseItem> {
-        let prev = previous?;
-        if prev.model_info.slug == next.model_info.slug {
+        let previous_model =
+            resumed_model.or_else(|| previous.map(|prev| prev.model_info.slug.as_str()))?;
+        if previous_model == next.model_info.slug {
             return None;
         }
 
@@ -1522,6 +1538,7 @@ impl Session {
     fn build_settings_update_items(
         &self,
         previous_context: Option<&Arc<TurnContext>>,
+        resumed_model: Option<&str>,
         current_context: &TurnContext,
     ) -> Vec<ResponseItem> {
         let mut update_items = Vec::new();
@@ -1540,9 +1557,11 @@ impl Session {
         {
             update_items.push(collaboration_mode_item);
         }
-        if let Some(model_instructions_item) =
-            self.build_model_instructions_update_item(previous_context, current_context)
-        {
+        if let Some(model_instructions_item) = self.build_model_instructions_update_item(
+            previous_context,
+            resumed_model,
+            current_context,
+        ) {
             update_items.push(model_instructions_item);
         }
         if let Some(personality_item) =
@@ -2819,8 +2838,12 @@ mod handlers {
         // Attempt to inject input into current task
         if let Err(items) = sess.inject_input(items).await {
             sess.seed_initial_context_if_needed(&current_context).await;
-            let update_items =
-                sess.build_settings_update_items(previous_context.as_ref(), &current_context);
+            let resumed_model = sess.take_pending_resume_previous_model().await;
+            let update_items = sess.build_settings_update_items(
+                previous_context.as_ref(),
+                resumed_model.as_deref(),
+                &current_context,
+            );
             if !update_items.is_empty() {
                 sess.record_conversation_items(&current_context, &update_items)
                     .await;

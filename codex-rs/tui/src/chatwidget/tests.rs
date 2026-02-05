@@ -1872,6 +1872,48 @@ async fn preamble_keeps_working_status_snapshot() {
 }
 
 #[tokio::test]
+async fn unified_exec_begin_restores_status_indicator_after_preamble() {
+    let (mut chat, _rx, _op_rx) = make_chatwidget_manual(None).await;
+
+    chat.on_task_started();
+    assert_eq!(chat.bottom_pane.status_indicator_visible(), true);
+
+    // Simulate a hidden status row during an active turn.
+    chat.bottom_pane.hide_status_indicator();
+    assert_eq!(chat.bottom_pane.status_indicator_visible(), false);
+    assert_eq!(chat.bottom_pane.is_task_running(), true);
+
+    begin_unified_exec_startup(&mut chat, "call-1", "proc-1", "sleep 2");
+
+    assert_eq!(chat.bottom_pane.status_indicator_visible(), true);
+}
+
+#[tokio::test]
+async fn unified_exec_begin_restores_working_status_snapshot() {
+    let (mut chat, mut rx, _op_rx) = make_chatwidget_manual(None).await;
+
+    chat.on_task_started();
+    chat.on_agent_message_delta("Preamble line\n".to_string());
+    chat.on_commit_tick();
+    drain_insert_history(&mut rx);
+
+    begin_unified_exec_startup(&mut chat, "call-1", "proc-1", "sleep 2");
+
+    let width: u16 = 80;
+    let height = chat.desired_height(width);
+    let mut terminal = ratatui::Terminal::new(ratatui::backend::TestBackend::new(width, height))
+        .expect("create terminal");
+    terminal.set_viewport_area(Rect::new(0, 0, width, height));
+    terminal
+        .draw(|f| chat.render(f.area(), f.buffer_mut()))
+        .expect("draw chatwidget");
+    assert_snapshot!(
+        "unified_exec_begin_restores_working_status",
+        terminal.backend()
+    );
+}
+
+#[tokio::test]
 async fn ctrl_c_shutdown_works_with_caps_lock() {
     let (mut chat, mut rx, _op_rx) = make_chatwidget_manual(None).await;
 

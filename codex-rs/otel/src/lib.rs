@@ -31,6 +31,13 @@ pub enum ToolDecisionSource {
     User,
 }
 
+/// Maps to core AuthMode to avoid a circular dependency on codex-core.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Display)]
+pub enum TelemetryAuthMode {
+    ApiKey,
+    Chatgpt,
+}
+
 #[derive(Debug, Clone)]
 pub struct OtelEventMetadata {
     pub(crate) conversation_id: ThreadId,

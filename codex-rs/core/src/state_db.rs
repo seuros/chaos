@@ -349,6 +349,7 @@ pub async fn reconcile_rollout(
     default_provider: &str,
     builder: Option<&ThreadMetadataBuilder>,
     items: &[RolloutItem],
+    archived_only: Option<bool>,
 ) {
     let Some(ctx) = context else {
         return;
@@ -376,7 +377,17 @@ pub async fn reconcile_rollout(
                 return;
             }
         };
-    if let Err(err) = ctx.upsert_thread(&outcome.metadata).await {
+    let mut metadata = outcome.metadata;
+    match archived_only {
+        Some(true) if metadata.archived_at.is_none() => {
+            metadata.archived_at = Some(metadata.updated_at);
+        }
+        Some(false) => {
+            metadata.archived_at = None;
+        }
+        Some(true) | None => {}
+    }
+    if let Err(err) = ctx.upsert_thread(&metadata).await {
         warn!(
             "state db reconcile_rollout upsert failed {}: {err}",
             rollout_path.display()
@@ -397,6 +408,56 @@ pub async fn reconcile_rollout(
             rollout_path.display()
         );
     }
+}
+
+/// Repair a thread's rollout path after filesystem fallback succeeds.
+pub async fn read_repair_rollout_path(
+    context: Option<&codex_state::StateRuntime>,
+    thread_id: Option<ThreadId>,
+    archived_only: Option<bool>,
+    rollout_path: &Path,
+) {
+    let Some(ctx) = context else {
+        return;
+    };
+
+    if let Some(thread_id) = thread_id
+        && let Ok(Some(mut metadata)) = ctx.get_thread(thread_id).await
+    {
+        metadata.rollout_path = rollout_path.to_path_buf();
+        match archived_only {
+            Some(true) if metadata.archived_at.is_none() => {
+                metadata.archived_at = Some(metadata.updated_at);
+            }
+            Some(false) => {
+                metadata.archived_at = None;
+            }
+            Some(true) | None => {}
+        }
+        if let Err(err) = ctx.upsert_thread(&metadata).await {
+            warn!(
+                "state db read-repair upsert failed for {}: {err}",
+                rollout_path.display()
+            );
+        } else {
+            return;
+        }
+    }
+
+    let default_provider = crate::rollout::list::read_session_meta_line(rollout_path)
+        .await
+        .ok()
+        .and_then(|meta| meta.meta.model_provider)
+        .unwrap_or_default();
+    reconcile_rollout(
+        Some(ctx),
+        rollout_path,
+        default_provider.as_str(),
+        None,
+        &[],
+        archived_only,
+    )
+    .await;
 }
 
 /// Apply rollout items incrementally to SQLite.

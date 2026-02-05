@@ -177,11 +177,12 @@ SELECT
     source,
     model_provider,
     cwd,
+    cli_version,
     title,
     sandbox_policy,
     approval_mode,
     tokens_used,
-    has_user_event,
+    first_user_message,
     archived_at,
     git_sha,
     git_branch,
@@ -295,11 +296,12 @@ SELECT
     source,
     model_provider,
     cwd,
+    cli_version,
     title,
     sandbox_policy,
     approval_mode,
     tokens_used,
-    has_user_event,
+    first_user_message,
     archived_at,
     git_sha,
     git_branch,
@@ -449,17 +451,18 @@ INSERT INTO threads (
     source,
     model_provider,
     cwd,
+    cli_version,
     title,
     sandbox_policy,
     approval_mode,
     tokens_used,
-    has_user_event,
+    first_user_message,
     archived,
     archived_at,
     git_sha,
     git_branch,
     git_origin_url
-) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
 ON CONFLICT(id) DO UPDATE SET
     rollout_path = excluded.rollout_path,
     created_at = excluded.created_at,
@@ -467,11 +470,12 @@ ON CONFLICT(id) DO UPDATE SET
     source = excluded.source,
     model_provider = excluded.model_provider,
     cwd = excluded.cwd,
+    cli_version = excluded.cli_version,
     title = excluded.title,
     sandbox_policy = excluded.sandbox_policy,
     approval_mode = excluded.approval_mode,
     tokens_used = excluded.tokens_used,
-    has_user_event = excluded.has_user_event,
+    first_user_message = excluded.first_user_message,
     archived = excluded.archived,
     archived_at = excluded.archived_at,
     git_sha = excluded.git_sha,
@@ -486,11 +490,12 @@ ON CONFLICT(id) DO UPDATE SET
         .bind(metadata.source.as_str())
         .bind(metadata.model_provider.as_str())
         .bind(metadata.cwd.display().to_string())
+        .bind(metadata.cli_version.as_str())
         .bind(metadata.title.as_str())
         .bind(metadata.sandbox_policy.as_str())
         .bind(metadata.approval_mode.as_str())
         .bind(metadata.tokens_used)
-        .bind(metadata.has_user_event)
+        .bind(metadata.first_user_message.as_deref().unwrap_or_default())
         .bind(metadata.archived_at.is_some())
         .bind(metadata.archived_at.map(datetime_to_epoch_seconds))
         .bind(metadata.git_sha.as_deref())
@@ -900,7 +905,7 @@ fn push_thread_filters<'a>(
     } else {
         builder.push(" AND archived = 0");
     }
-    builder.push(" AND has_user_event = 1");
+    builder.push(" AND first_user_message <> ''");
     if !allowed_sources.is_empty() {
         builder.push(" AND source IN (");
         let mut separated = builder.separated(", ");
@@ -1391,11 +1396,12 @@ mod tests {
             source: "cli".to_string(),
             model_provider: "test-provider".to_string(),
             cwd,
+            cli_version: "0.0.0".to_string(),
             title: String::new(),
             sandbox_policy: crate::extract::enum_to_string(&SandboxPolicy::ReadOnly),
             approval_mode: crate::extract::enum_to_string(&AskForApproval::OnRequest),
             tokens_used: 0,
-            has_user_event: true,
+            first_user_message: Some("hello".to_string()),
             archived_at: None,
             git_sha: None,
             git_branch: None,

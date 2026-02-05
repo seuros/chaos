@@ -47,7 +47,6 @@ struct WebsocketTestHarness {
     model_info: ModelInfo,
     effort: Option<ReasoningEffortConfig>,
     summary: ReasoningSummary,
-    web_search_eligible: bool,
     otel_manager: OtelManager,
 }
 
@@ -198,7 +197,6 @@ async fn responses_websocket_emits_reasoning_included_event() {
             &harness.otel_manager,
             harness.effort,
             harness.summary,
-            harness.web_search_eligible,
             None,
         )
         .await
@@ -269,7 +267,6 @@ async fn responses_websocket_emits_rate_limit_events() {
             &harness.otel_manager,
             harness.effort,
             harness.summary,
-            harness.web_search_eligible,
             None,
         )
         .await
@@ -455,7 +452,6 @@ async fn websocket_harness_with_runtime_metrics(
     .with_metrics(metrics);
     let effort = None;
     let summary = ReasoningSummary::Auto;
-    let web_search_eligible = true;
     let client = ModelClient::new(
         None,
         conversation_id,
@@ -474,7 +470,6 @@ async fn websocket_harness_with_runtime_metrics(
         model_info,
         effort,
         summary,
-        web_search_eligible,
         otel_manager,
     }
 }
@@ -491,7 +486,6 @@ async fn stream_until_complete(
             &harness.otel_manager,
             harness.effort,
             harness.summary,
-            harness.web_search_eligible,
             None,
         )
         .await

@@ -2025,6 +2025,15 @@ impl Session {
         history.raw_items().to_vec()
     }
 
+    pub(crate) async fn process_compacted_history(
+        &self,
+        turn_context: &TurnContext,
+        compacted_history: Vec<ResponseItem>,
+    ) -> Vec<ResponseItem> {
+        let initial_context = self.build_initial_context(turn_context).await;
+        compact::process_compacted_history(compacted_history, &initial_context)
+    }
+
     /// Append ResponseItems to the in-memory conversation history only.
     pub(crate) async fn record_into_history(
         &self,
@@ -5072,6 +5081,42 @@ mod tests {
             .await;
 
         assert_eq!(expected, reconstructed);
+    }
+
+    #[tokio::test]
+    async fn reconstruct_history_uses_replacement_history_verbatim() {
+        let (session, turn_context) = make_session_and_context().await;
+        let summary_item = ResponseItem::Message {
+            id: None,
+            role: "user".to_string(),
+            content: vec![ContentItem::InputText {
+                text: "summary".to_string(),
+            }],
+            end_turn: None,
+            phase: None,
+        };
+        let replacement_history = vec![
+            summary_item.clone(),
+            ResponseItem::Message {
+                id: None,
+                role: "developer".to_string(),
+                content: vec![ContentItem::InputText {
+                    text: "stale developer instructions".to_string(),
+                }],
+                end_turn: None,
+                phase: None,
+            },
+        ];
+        let rollout_items = vec![RolloutItem::Compacted(CompactedItem {
+            message: String::new(),
+            replacement_history: Some(replacement_history.clone()),
+        })];
+
+        let reconstructed = session
+            .reconstruct_history_from_rollout(&turn_context, &rollout_items)
+            .await;
+
+        assert_eq!(reconstructed, replacement_history);
     }
 
     #[tokio::test]

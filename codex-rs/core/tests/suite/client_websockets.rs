@@ -702,6 +702,7 @@ async fn websocket_harness_with_options(
         None,
         Some("test@test.com".to_string()),
         auth_manager.auth_mode().map(TelemetryAuthMode::from),
+        "test_originator".to_string(),
         false,
         "test".to_string(),
         SessionSource::Exec,

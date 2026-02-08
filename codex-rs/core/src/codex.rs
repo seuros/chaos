@@ -558,9 +558,8 @@ impl TurnContext {
     }
 
     async fn build_turn_metadata_header(&self) -> Option<String> {
-        let cwd = self.cwd.clone();
         self.turn_metadata_header
-            .get_or_init(|| async { build_turn_metadata_header(cwd).await })
+            .get_or_init(|| async { build_turn_metadata_header(self.cwd.clone()).await })
             .await
             .clone()
     }
@@ -1098,14 +1097,14 @@ impl Session {
         // Warm a websocket in the background so the first turn can reuse it.
         // This performs only connection setup; user input is still sent later via response.create
         // when submit_turn() runs.
-        sess.services.model_client.pre_establish_connection(
-            sess.services.otel_manager.clone(),
-            resolve_turn_metadata_header_with_timeout(
-                build_turn_metadata_header(session_configuration.cwd.clone()),
-                None,
-            )
-            .boxed(),
-        );
+        let turn_metadata_header = resolve_turn_metadata_header_with_timeout(
+            build_turn_metadata_header(session_configuration.cwd.clone()),
+            None,
+        )
+        .boxed();
+        sess.services
+            .model_client
+            .pre_establish_connection(sess.services.otel_manager.clone(), turn_metadata_header);
 
         // Dispatch the SessionConfiguredEvent first and then report any errors.
         // If resuming, include converted initial messages in the payload so UIs can render them immediately.

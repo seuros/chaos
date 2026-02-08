@@ -77,8 +77,8 @@ use futures::prelude::*;
 use futures::stream::FuturesOrdered;
 use rmcp::model::ListResourceTemplatesResult;
 use rmcp::model::ListResourcesResult;
-use rmcp::model::PaginatedRequestParam;
-use rmcp::model::ReadResourceRequestParam;
+use rmcp::model::PaginatedRequestParams;
+use rmcp::model::ReadResourceRequestParams;
 use rmcp::model::ReadResourceResult;
 use rmcp::model::RequestId;
 use serde_json;
@@ -2501,7 +2501,7 @@ impl Session {
     pub async fn list_resources(
         &self,
         server: &str,
-        params: Option<PaginatedRequestParam>,
+        params: Option<PaginatedRequestParams>,
     ) -> anyhow::Result<ListResourcesResult> {
         self.services
             .mcp_connection_manager
@@ -2514,7 +2514,7 @@ impl Session {
     pub async fn list_resource_templates(
         &self,
         server: &str,
-        params: Option<PaginatedRequestParam>,
+        params: Option<PaginatedRequestParams>,
     ) -> anyhow::Result<ListResourceTemplatesResult> {
         self.services
             .mcp_connection_manager
@@ -2527,7 +2527,7 @@ impl Session {
     pub async fn read_resource(
         &self,
         server: &str,
-        params: ReadResourceRequestParam,
+        params: ReadResourceRequestParams,
     ) -> anyhow::Result<ReadResourceResult> {
         self.services
             .mcp_connection_manager

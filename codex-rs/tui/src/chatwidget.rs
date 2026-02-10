@@ -1161,6 +1161,7 @@ impl ChatWidget {
             instructions,
             url,
             is_installed,
+            self.app_event_tx.clone(),
         );
         self.bottom_pane.show_view(Box::new(view));
         self.request_redraw();
@@ -4491,7 +4492,15 @@ impl ChatWidget {
         }
     }
 
+    pub(crate) fn refresh_connectors(&mut self, force_refetch: bool) {
+        self.prefetch_connectors_with_options(force_refetch);
+    }
+
     fn prefetch_connectors(&mut self) {
+        self.prefetch_connectors_with_options(false);
+    }
+
+    fn prefetch_connectors_with_options(&mut self, force_refetch: bool) {
         if !self.connectors_enabled() || self.connectors_prefetch_in_flight {
             return;
         }
@@ -4505,7 +4514,12 @@ impl ChatWidget {
         let app_event_tx = self.app_event_tx.clone();
         tokio::spawn(async move {
             let accessible_connectors =
-                match connectors::list_accessible_connectors_from_mcp_tools(&config).await {
+                match connectors::list_accessible_connectors_from_mcp_tools_with_options(
+                    &config,
+                    force_refetch,
+                )
+                .await
+                {
                     Ok(connectors) => connectors,
                     Err(err) => {
                         app_event_tx.send(AppEvent::ConnectorsLoaded {
@@ -6360,7 +6374,10 @@ impl ChatWidget {
             return;
         }
 
-        match self.connectors_cache.clone() {
+        let connectors_cache = self.connectors_cache.clone();
+        self.prefetch_connectors_with_options(true);
+
+        match connectors_cache {
             ConnectorsCacheState::Ready(snapshot) => {
                 if snapshot.connectors.is_empty() {
                     self.add_info_message("No apps available.".to_string(), None);
@@ -6370,8 +6387,6 @@ impl ChatWidget {
             }
             ConnectorsCacheState::Failed(err) => {
                 self.add_to_history(history_cell::new_error_event(err));
-                // Retry on demand so `/apps` can recover after transient failures.
-                self.prefetch_connectors();
             }
             ConnectorsCacheState::Loading => {
                 self.add_to_history(history_cell::new_info_event(
@@ -6380,7 +6395,6 @@ impl ChatWidget {
                 ));
             }
             ConnectorsCacheState::Uninitialized => {
-                self.prefetch_connectors();
                 self.add_to_history(history_cell::new_info_event(
                     "Apps are still loading.".to_string(),
                     Some("Try again in a moment.".to_string()),
@@ -6730,7 +6744,9 @@ impl ChatWidget {
         match result {
             Ok(snapshot) => {
                 self.refresh_connectors_popup_if_open(&snapshot.connectors);
-                self.connectors_cache = ConnectorsCacheState::Ready(snapshot.clone());
+                if is_final || !matches!(self.connectors_cache, ConnectorsCacheState::Ready(_)) {
+                    self.connectors_cache = ConnectorsCacheState::Ready(snapshot.clone());
+                }
                 self.bottom_pane.set_connectors_snapshot(Some(snapshot));
             }
             Err(err) => {

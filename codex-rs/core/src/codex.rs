@@ -31,6 +31,7 @@ use crate::models_manager::manager::ModelsManager;
 use crate::parse_command::parse_command;
 use crate::parse_turn_item;
 use crate::rollout::session_index;
+use crate::sandbox_tags::sandbox_tag;
 use crate::stream_events_utils::HandleOutputCtx;
 use crate::stream_events_utils::handle_non_tool_response_item;
 use crate::stream_events_utils::handle_output_item_done;
@@ -582,8 +583,11 @@ impl TurnContext {
     }
 
     async fn build_turn_metadata_header(&self) -> Option<String> {
+        let sandbox = sandbox_tag(&self.sandbox_policy, self.windows_sandbox_level);
         self.turn_metadata_header
-            .get_or_init(|| async { build_turn_metadata_header(self.cwd.clone()).await })
+            .get_or_init(|| async {
+                build_turn_metadata_header(self.cwd.as_path(), Some(sandbox)).await
+            })
             .await
             .clone()
     }
@@ -1130,8 +1134,9 @@ impl Session {
             ),
         };
 
+        let prewarm_cwd = session_configuration.cwd.clone();
         let turn_metadata_header = resolve_turn_metadata_header_with_timeout(
-            build_turn_metadata_header(session_configuration.cwd.clone()),
+            async move { build_turn_metadata_header(prewarm_cwd.as_path(), None).await },
             None,
         )
         .boxed();

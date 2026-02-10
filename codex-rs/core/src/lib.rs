@@ -57,6 +57,7 @@ pub mod path_utils;
 pub mod personality_migration;
 pub mod powershell;
 mod proposed_plan_parser;
+mod sandbox_tags;
 pub mod sandboxing;
 mod session_prefix;
 mod stream_events_utils;

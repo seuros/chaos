@@ -155,8 +155,8 @@ pub struct ModelClient {
 /// The session establishes a Responses WebSocket connection lazily and reuses it across multiple
 /// requests within the turn. It also caches per-turn state:
 ///
-/// - The last request's input items, so subsequent calls can use `response.append` when the input
-///   is an incremental extension of the previous request.
+/// - The last full request, so subsequent calls can use `response.append` only when the current
+///   request is an incremental extension of the previous one.
 /// - The `x-codex-turn-state` sticky-routing token, which must be replayed for all requests within
 ///   the same turn.
 ///
@@ -166,7 +166,7 @@ pub struct ModelClient {
 pub struct ModelClientSession {
     client: ModelClient,
     connection: Option<ApiWebSocketConnection>,
-    websocket_last_items: Vec<ResponseItem>,
+    websocket_last_request: Option<ResponsesApiRequest>,
     websocket_last_response_id: Option<String>,
     websocket_last_response_id_rx: Option<oneshot::Receiver<String>>,
     /// Turn state for sticky routing.
@@ -230,7 +230,7 @@ impl ModelClient {
         ModelClientSession {
             client: self.clone(),
             connection: None,
-            websocket_last_items: Vec::new(),
+            websocket_last_request: None,
             websocket_last_response_id: None,
             websocket_last_response_id_rx: None,
             turn_state: Arc::new(OnceLock::new()),
@@ -530,16 +530,25 @@ impl ModelClientSession {
         }
     }
 
-    fn get_incremental_items(&self, input_items: &[ResponseItem]) -> Option<Vec<ResponseItem>> {
-        // Checks whether the current request input is an incremental append to the previous request.
-        // If items in the new request contain all the items from the previous request we build
-        // a response.append request otherwise we start with a fresh response.create request.
-        let previous_len = self.websocket_last_items.len();
-        let can_append = previous_len > 0
-            && input_items.starts_with(&self.websocket_last_items)
-            && previous_len < input_items.len();
-        if can_append {
-            Some(input_items[previous_len..].to_vec())
+    fn get_incremental_items(&self, request: &ResponsesApiRequest) -> Option<Vec<ResponseItem>> {
+        // Checks whether the current request is an incremental append to the previous request.
+        // We only append when non-input request fields are unchanged and `input` is a strict
+        // extension of the previous input.
+        let previous_request = self.websocket_last_request.as_ref()?;
+        let mut previous_without_input = previous_request.clone();
+        previous_without_input.input.clear();
+        let mut request_without_input = request.clone();
+        request_without_input.input.clear();
+        if previous_without_input != request_without_input {
+            return None;
+        }
+
+        let previous_len = previous_request.input.len();
+        if previous_len > 0
+            && request.input.starts_with(&previous_request.input)
+            && previous_len < request.input.len()
+        {
+            Some(request.input[previous_len..].to_vec())
         } else {
             None
         }
@@ -571,10 +580,10 @@ impl ModelClientSession {
     fn prepare_websocket_request(
         &mut self,
         payload: ResponseCreateWsRequest,
-    ) -> (ResponsesWsRequest, Vec<ResponseItem>) {
-        let full_input = payload.input.clone();
+        request: &ResponsesApiRequest,
+    ) -> ResponsesWsRequest {
         let responses_websockets_v2_enabled = self.client.responses_websockets_v2_enabled();
-        let incremental_items = self.get_incremental_items(&full_input);
+        let incremental_items = self.get_incremental_items(request);
         if let Some(append_items) = incremental_items {
             if responses_websockets_v2_enabled
                 && let Some(previous_response_id) = self.websocket_previous_response_id()
@@ -584,20 +593,17 @@ impl ModelClientSession {
                     input: append_items,
                     ..payload
                 };
-                return (ResponsesWsRequest::ResponseCreate(payload), full_input);
+                return ResponsesWsRequest::ResponseCreate(payload);
             }
 
             if !responses_websockets_v2_enabled {
-                return (
-                    ResponsesWsRequest::ResponseAppend(ResponseAppendWsRequest {
-                        input: append_items,
-                    }),
-                    full_input,
-                );
+                return ResponsesWsRequest::ResponseAppend(ResponseAppendWsRequest {
+                    input: append_items,
+                });
             }
         }
 
-        (ResponsesWsRequest::ResponseCreate(payload), full_input)
+        ResponsesWsRequest::ResponseCreate(payload)
     }
 
     /// Opportunistically warms a websocket for this turn-scoped client session.
@@ -650,7 +656,7 @@ impl ModelClientSession {
         };
 
         if needs_new {
-            self.websocket_last_items.clear();
+            self.websocket_last_request = None;
             self.websocket_last_response_id = None;
             self.websocket_last_response_id_rx = None;
             let turn_state = options
@@ -806,7 +812,7 @@ impl ModelClientSession {
                 Err(err) => return Err(map_api_error(err)),
             }
 
-            let (request, request_input) = self.prepare_websocket_request(ws_payload);
+            let ws_request = self.prepare_websocket_request(ws_payload, &request);
 
             let stream_result = self
                 .connection
@@ -816,10 +822,10 @@ impl ModelClientSession {
                         "websocket connection is unavailable".to_string(),
                     ))
                 })?
-                .stream_request(request)
+                .stream_request(ws_request)
                 .await
                 .map_err(map_api_error)?;
-            self.websocket_last_items = request_input;
+            self.websocket_last_request = Some(request);
             let (last_response_id_sender, last_response_id_receiver) = oneshot::channel();
             self.websocket_last_response_id_rx = Some(last_response_id_receiver);
             let mut last_response_id_sender = Some(last_response_id_sender);
@@ -928,7 +934,7 @@ impl ModelClientSession {
             );
 
             self.connection = None;
-            self.websocket_last_items.clear();
+            self.websocket_last_request = None;
         }
         activated
     }

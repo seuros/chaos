@@ -6,47 +6,12 @@ use std::path::PathBuf;
 use tracing::warn;
 
 use super::LEGACY_CONSOLIDATED_FILENAME;
-use super::MAX_RAW_MEMORIES_PER_CWD;
+use super::MAX_RAW_MEMORIES_PER_SCOPE;
 use super::MEMORY_REGISTRY_FILENAME;
 use super::SKILLS_SUBDIR;
 use super::ensure_layout;
 use super::memory_summary_file;
 use super::raw_memories_dir;
-use super::types::RolloutCandidate;
-
-/// Writes (or replaces) the per-thread markdown raw memory on disk.
-///
-/// This also removes older files for the same thread id to keep one canonical
-/// raw memory file per thread.
-pub(crate) async fn write_raw_memory(
-    root: &Path,
-    candidate: &RolloutCandidate,
-    raw_memory: &str,
-) -> std::io::Result<PathBuf> {
-    let slug = build_memory_slug(&candidate.title);
-    let filename = format!("{}_{}.md", candidate.thread_id, slug);
-    let path = raw_memories_dir(root).join(filename);
-
-    remove_outdated_thread_raw_memories(root, &candidate.thread_id.to_string(), &path).await?;
-
-    let mut body = String::new();
-    writeln!(body, "thread_id: {}", candidate.thread_id)
-        .map_err(|err| std::io::Error::other(format!("format raw memory: {err}")))?;
-    writeln!(body, "cwd: {}", candidate.cwd.display())
-        .map_err(|err| std::io::Error::other(format!("format raw memory: {err}")))?;
-    writeln!(body, "rollout_path: {}", candidate.rollout_path.display())
-        .map_err(|err| std::io::Error::other(format!("format raw memory: {err}")))?;
-    if let Some(updated_at) = candidate.updated_at.as_deref() {
-        writeln!(body, "updated_at: {updated_at}")
-            .map_err(|err| std::io::Error::other(format!("format raw memory: {err}")))?;
-    }
-    writeln!(body).map_err(|err| std::io::Error::other(format!("format raw memory: {err}")))?;
-    body.push_str(raw_memory.trim());
-    body.push('\n');
-
-    tokio::fs::write(&path, body).await?;
-    Ok(path)
-}
 
 /// Prunes stale raw memory files and rebuilds the routing summary for recent memories.
 pub(crate) async fn prune_to_recent_memories_and_rebuild_summary(
@@ -57,12 +22,44 @@ pub(crate) async fn prune_to_recent_memories_and_rebuild_summary(
 
     let keep = memories
         .iter()
-        .take(MAX_RAW_MEMORIES_PER_CWD)
+        .take(MAX_RAW_MEMORIES_PER_SCOPE)
         .map(|memory| memory.thread_id.to_string())
         .collect::<BTreeSet<_>>();
 
     prune_raw_memories(root, &keep).await?;
     rebuild_memory_summary(root, memories).await
+}
+
+/// Rebuild `memory_summary.md` for a scope without pruning raw memory files.
+pub(crate) async fn rebuild_memory_summary_from_memories(
+    root: &Path,
+    memories: &[ThreadMemory],
+) -> std::io::Result<()> {
+    ensure_layout(root).await?;
+    rebuild_memory_summary(root, memories).await
+}
+
+/// Syncs canonical raw memory files from DB-backed memory rows.
+pub(crate) async fn sync_raw_memories_from_memories(
+    root: &Path,
+    memories: &[ThreadMemory],
+) -> std::io::Result<()> {
+    ensure_layout(root).await?;
+
+    let retained = memories
+        .iter()
+        .take(MAX_RAW_MEMORIES_PER_SCOPE)
+        .collect::<Vec<_>>();
+    let keep = retained
+        .iter()
+        .map(|memory| memory.thread_id.to_string())
+        .collect::<BTreeSet<_>>();
+    prune_raw_memories(root, &keep).await?;
+
+    for memory in retained {
+        write_raw_memory_for_thread(root, memory).await?;
+    }
+    Ok(())
 }
 
 /// Clears consolidation outputs so a fresh consolidation run can regenerate them.
@@ -103,7 +100,7 @@ async fn rebuild_memory_summary(root: &Path, memories: &[ThreadMemory]) -> std::
     }
 
     body.push_str("Map of concise summaries to thread IDs (latest first):\n\n");
-    for memory in memories.iter().take(MAX_RAW_MEMORIES_PER_CWD) {
+    for memory in memories.iter().take(MAX_RAW_MEMORIES_PER_SCOPE) {
         let summary = compact_summary_for_index(&memory.memory_summary);
         writeln!(body, "- {summary} (thread: `{}`)", memory.thread_id)
             .map_err(|err| std::io::Error::other(format!("format memory summary: {err}")))?;
@@ -179,27 +176,25 @@ async fn remove_outdated_thread_raw_memories(
     Ok(())
 }
 
-fn build_memory_slug(value: &str) -> String {
-    let mut slug = String::new();
-    let mut last_was_sep = false;
+async fn write_raw_memory_for_thread(
+    root: &Path,
+    memory: &ThreadMemory,
+) -> std::io::Result<PathBuf> {
+    let path = raw_memories_dir(root).join(format!("{}.md", memory.thread_id));
 
-    for ch in value.chars() {
-        let normalized = ch.to_ascii_lowercase();
-        if normalized.is_ascii_alphanumeric() {
-            slug.push(normalized);
-            last_was_sep = false;
-        } else if !last_was_sep {
-            slug.push('_');
-            last_was_sep = true;
-        }
-    }
+    remove_outdated_thread_raw_memories(root, &memory.thread_id.to_string(), &path).await?;
 
-    let slug = slug.trim_matches('_').to_string();
-    if slug.is_empty() {
-        "memory".to_string()
-    } else {
-        slug.chars().take(64).collect()
-    }
+    let mut body = String::new();
+    writeln!(body, "thread_id: {}", memory.thread_id)
+        .map_err(|err| std::io::Error::other(format!("format raw memory: {err}")))?;
+    writeln!(body, "updated_at: {}", memory.updated_at.to_rfc3339())
+        .map_err(|err| std::io::Error::other(format!("format raw memory: {err}")))?;
+    writeln!(body).map_err(|err| std::io::Error::other(format!("format raw memory: {err}")))?;
+    body.push_str(memory.raw_memory.trim());
+    body.push('\n');
+
+    tokio::fs::write(&path, body).await?;
+    Ok(path)
 }
 
 fn compact_summary_for_index(summary: &str) -> String {
@@ -208,10 +203,15 @@ fn compact_summary_for_index(summary: &str) -> String {
 
 fn extract_thread_id_from_summary_filename(file_name: &str) -> Option<&str> {
     let stem = file_name.strip_suffix(".md")?;
-    let (thread_id, _) = stem.split_once('_')?;
-    if thread_id.is_empty() {
+    if stem.is_empty() {
         None
+    } else if let Some((thread_id, _legacy_slug)) = stem.split_once('_') {
+        if thread_id.is_empty() {
+            None
+        } else {
+            Some(thread_id)
+        }
     } else {
-        Some(thread_id)
+        Some(stem)
     }
 }

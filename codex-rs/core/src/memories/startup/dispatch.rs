@@ -16,8 +16,19 @@ use super::super::PHASE_TWO_JOB_RETRY_DELAY_SECONDS;
 use super::super::prompts::build_consolidation_prompt;
 use super::super::storage::rebuild_raw_memories_file_from_memories;
 use super::super::storage::sync_rollout_summaries_from_memories;
-use super::super::storage::wipe_consolidation_outputs;
 use super::phase2::spawn_phase2_completion_task;
+
+fn completion_watermark(
+    claimed_watermark: i64,
+    latest_memories: &[codex_state::Stage1Output],
+) -> i64 {
+    latest_memories
+        .iter()
+        .map(|memory| memory.source_updated_at.timestamp())
+        .max()
+        .unwrap_or(claimed_watermark)
+        .max(claimed_watermark)
+}
 
 pub(super) async fn run_global_memory_consolidation(
     session: &Arc<Session>,
@@ -70,27 +81,14 @@ pub(super) async fn run_global_memory_consolidation(
             return false;
         }
     };
-    if latest_memories.is_empty() {
-        debug!("memory phase-2 has no stage-1 outputs; skipping global consolidation");
-        let _ = state_db
-            .mark_global_phase2_job_succeeded(&ownership_token, claimed_watermark)
-            .await;
-        return false;
-    };
-
     let root = memory_root(&config.codex_home);
-    let materialized_watermark = latest_memories
-        .iter()
-        .map(|memory| memory.source_updated_at.timestamp())
-        .max()
-        .unwrap_or(claimed_watermark);
-
+    let completion_watermark = completion_watermark(claimed_watermark, &latest_memories);
     if let Err(err) = sync_rollout_summaries_from_memories(&root, &latest_memories).await {
-        warn!("failed syncing phase-1 rollout summaries for global consolidation: {err}");
+        warn!("failed syncing local memory artifacts for global consolidation: {err}");
         let _ = state_db
             .mark_global_phase2_job_failed(
                 &ownership_token,
-                "failed syncing phase-1 rollout summaries",
+                "failed syncing local memory artifacts",
                 PHASE_TWO_JOB_RETRY_DELAY_SECONDS,
             )
             .await;
@@ -108,15 +106,10 @@ pub(super) async fn run_global_memory_consolidation(
             .await;
         return false;
     }
-
-    if let Err(err) = wipe_consolidation_outputs(&root).await {
-        warn!("failed to wipe previous global consolidation outputs: {err}");
+    if latest_memories.is_empty() {
+        debug!("memory phase-2 has no stage-1 outputs; finalized local memory artifacts");
         let _ = state_db
-            .mark_global_phase2_job_failed(
-                &ownership_token,
-                "failed to wipe previous consolidation outputs",
-                PHASE_TWO_JOB_RETRY_DELAY_SECONDS,
-            )
+            .mark_global_phase2_job_succeeded(&ownership_token, completion_watermark)
             .await;
         return false;
     }
@@ -145,7 +138,7 @@ pub(super) async fn run_global_memory_consolidation(
             spawn_phase2_completion_task(
                 session.as_ref(),
                 ownership_token,
-                materialized_watermark,
+                completion_watermark,
                 consolidation_agent_id,
             );
             true
@@ -166,6 +159,8 @@ pub(super) async fn run_global_memory_consolidation(
 
 #[cfg(test)]
 mod tests {
+    use super::completion_watermark;
+    use super::memory_root;
     use super::run_global_memory_consolidation;
     use crate::CodexAuth;
     use crate::ThreadManager;
@@ -174,11 +169,14 @@ mod tests {
     use crate::codex::make_session_and_context;
     use crate::config::Config;
     use crate::config::test_config;
+    use crate::memories::raw_memories_file;
+    use crate::memories::rollout_summaries_dir;
     use chrono::Utc;
     use codex_protocol::ThreadId;
     use codex_protocol::protocol::Op;
     use codex_protocol::protocol::SessionSource;
     use codex_state::Phase2JobClaimOutcome;
+    use codex_state::Stage1Output;
     use codex_state::ThreadMetadataBuilder;
     use pretty_assertions::assert_eq;
     use std::sync::Arc;
@@ -291,6 +289,22 @@ mod tests {
         }
     }
 
+    #[test]
+    fn completion_watermark_never_regresses_below_claimed_input_watermark() {
+        let stage1_output = Stage1Output {
+            thread_id: ThreadId::new(),
+            source_updated_at: chrono::DateTime::<Utc>::from_timestamp(123, 0)
+                .expect("valid source_updated_at timestamp"),
+            raw_memory: "raw memory".to_string(),
+            rollout_summary: "rollout summary".to_string(),
+            generated_at: chrono::DateTime::<Utc>::from_timestamp(124, 0)
+                .expect("valid generated_at timestamp"),
+        };
+
+        let completion = completion_watermark(1_000, &[stage1_output]);
+        assert_eq!(completion, 1_000);
+    }
+
     #[tokio::test]
     async fn dispatch_reclaims_stale_global_lock_and_starts_consolidation() {
         let harness = DispatchHarness::new().await;
@@ -374,6 +388,94 @@ mod tests {
             claim,
             Phase2JobClaimOutcome::SkippedNotDirty,
             "empty dispatch should finalize global job as up-to-date"
+        );
+
+        harness.shutdown_threads().await;
+    }
+
+    #[tokio::test]
+    async fn dispatch_with_empty_stage1_outputs_rebuilds_local_artifacts() {
+        let harness = DispatchHarness::new().await;
+        let root = memory_root(&harness.config.codex_home);
+        let summaries_dir = rollout_summaries_dir(&root);
+        tokio::fs::create_dir_all(&summaries_dir)
+            .await
+            .expect("create rollout summaries dir");
+
+        let stale_summary_path = summaries_dir.join(format!("{}.md", ThreadId::new()));
+        tokio::fs::write(&stale_summary_path, "stale summary\n")
+            .await
+            .expect("write stale rollout summary");
+        let raw_memories_path = raw_memories_file(&root);
+        tokio::fs::write(&raw_memories_path, "stale raw memories\n")
+            .await
+            .expect("write stale raw memories");
+        let memory_index_path = root.join("MEMORY.md");
+        tokio::fs::write(&memory_index_path, "stale memory index\n")
+            .await
+            .expect("write stale memory index");
+        let memory_summary_path = root.join("memory_summary.md");
+        tokio::fs::write(&memory_summary_path, "stale memory summary\n")
+            .await
+            .expect("write stale memory summary");
+        let stale_skill_file = root.join("skills/demo/SKILL.md");
+        tokio::fs::create_dir_all(
+            stale_skill_file
+                .parent()
+                .expect("skills subdirectory parent should exist"),
+        )
+        .await
+        .expect("create stale skills dir");
+        tokio::fs::write(&stale_skill_file, "stale skill\n")
+            .await
+            .expect("write stale skill");
+
+        harness
+            .state_db
+            .enqueue_global_consolidation(999)
+            .await
+            .expect("enqueue global consolidation");
+
+        let scheduled =
+            run_global_memory_consolidation(&harness.session, Arc::clone(&harness.config)).await;
+        assert!(
+            !scheduled,
+            "dispatch should skip subagent spawn when no stage-1 outputs are available"
+        );
+
+        assert!(
+            !tokio::fs::try_exists(&stale_summary_path)
+                .await
+                .expect("check stale summary existence"),
+            "empty consolidation should prune stale rollout summary files"
+        );
+        let raw_memories = tokio::fs::read_to_string(&raw_memories_path)
+            .await
+            .expect("read rebuilt raw memories");
+        assert_eq!(raw_memories, "# Raw Memories\n\nNo raw memories yet.\n");
+        assert!(
+            !tokio::fs::try_exists(&memory_index_path)
+                .await
+                .expect("check memory index existence"),
+            "empty consolidation should remove stale MEMORY.md"
+        );
+        assert!(
+            !tokio::fs::try_exists(&memory_summary_path)
+                .await
+                .expect("check memory summary existence"),
+            "empty consolidation should remove stale memory_summary.md"
+        );
+        assert!(
+            !tokio::fs::try_exists(&stale_skill_file)
+                .await
+                .expect("check stale skill existence"),
+            "empty consolidation should remove stale skills artifacts"
+        );
+        assert!(
+            !tokio::fs::try_exists(root.join("skills"))
+                .await
+                .expect("check skills dir existence"),
+            "empty consolidation should remove stale skills directory"
         );
 
         harness.shutdown_threads().await;

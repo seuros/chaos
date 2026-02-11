@@ -22,8 +22,6 @@ use std::path::PathBuf;
 const MEMORY_CONSOLIDATION_SUBAGENT_LABEL: &str = "memory_consolidation";
 const ROLLOUT_SUMMARIES_SUBDIR: &str = "rollout_summaries";
 const RAW_MEMORIES_FILENAME: &str = "raw_memories.md";
-const MEMORY_REGISTRY_FILENAME: &str = "MEMORY.md";
-const SKILLS_SUBDIR: &str = "skills";
 /// Maximum number of rollout candidates processed per startup pass.
 const MAX_ROLLOUTS_PER_STARTUP: usize = 64;
 /// Concurrency cap for startup memory extraction and consolidation scheduling.
@@ -55,6 +53,12 @@ struct StageOneOutput {
     /// Compact summary line used for routing and indexing.
     #[serde(rename = "rollout_summary")]
     rollout_summary: String,
+    /// Optional slug accepted from stage-1 output for forward compatibility.
+    ///
+    /// This is currently ignored by downstream storage and naming, which remain
+    /// thread-id based.
+    #[serde(default, rename = "rollout_slug")]
+    _rollout_slug: Option<String>,
 }
 
 fn memory_root(codex_home: &Path) -> PathBuf {

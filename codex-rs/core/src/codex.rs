@@ -2308,8 +2308,7 @@ impl Session {
         }
         // Add developer instructions for memories.
         if let Some(memory_prompt) =
-            memories::build_memory_tool_developer_instructions(&turn_context.config.codex_home)
-                .await
+            build_memory_tool_developer_instructions(&turn_context.config.codex_home).await
             && turn_context.features.enabled(Feature::MemoryTool)
         {
             items.push(DeveloperInstructions::new(memory_prompt).into());
@@ -5140,6 +5139,7 @@ pub(super) fn get_last_assistant_message_from_turn(responses: &[ResponseItem]) -
     })
 }
 
+use crate::memories::prompts::build_memory_tool_developer_instructions;
 #[cfg(test)]
 pub(crate) use tests::make_session_and_context;
 #[cfg(test)]

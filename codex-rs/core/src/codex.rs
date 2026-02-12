@@ -4482,16 +4482,26 @@ async fn run_sampling_request(
                 "stream disconnected - retrying sampling request ({retries}/{max_retries} in {delay:?})...",
             );
 
-            // Surface retry information to any UI/front‑end so the
-            // user understands what is happening instead of staring
-            // at a seemingly frozen screen.
-            sess.notify_stream_error(
-                &turn_context,
-                format!("Reconnecting... {retries}/{max_retries}"),
-                err,
-            )
-            .await;
+            // In release builds, hide the first websocket retry notification to reduce noisy
+            // transient reconnect messages. In debug builds, keep full visibility for diagnosis.
+            let report_error = retries > 1
+                || cfg!(debug_assertions)
+                || !sess
+                    .services
+                    .model_client
+                    .responses_websocket_enabled(&turn_context.model_info);
 
+            if report_error {
+                // Surface retry information to any UI/front‑end so the
+                // user understands what is happening instead of staring
+                // at a seemingly frozen screen.
+                sess.notify_stream_error(
+                    &turn_context,
+                    format!("Reconnecting... {retries}/{max_retries}"),
+                    err,
+                )
+                .await;
+            }
             tokio::time::sleep(delay).await;
         } else {
             return Err(err);

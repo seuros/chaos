@@ -284,6 +284,7 @@ mod tests {
     use codex_state::Stage1Output;
     use codex_state::ThreadMetadataBuilder;
     use pretty_assertions::assert_eq;
+    use std::path::PathBuf;
     use std::sync::Arc;
     use tempfile::TempDir;
 
@@ -402,6 +403,7 @@ mod tests {
                 .expect("valid source_updated_at timestamp"),
             raw_memory: "raw memory".to_string(),
             rollout_summary: "rollout summary".to_string(),
+            cwd: PathBuf::from("/tmp/workspace"),
             generated_at: chrono::DateTime::<Utc>::from_timestamp(124, 0)
                 .expect("valid generated_at timestamp"),
         };

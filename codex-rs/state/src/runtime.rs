@@ -2,6 +2,9 @@ use crate::DB_ERROR_METRIC;
 use crate::LogEntry;
 use crate::LogQuery;
 use crate::LogRow;
+use crate::METRIC_DB_INIT;
+use crate::STATE_DB_FILENAME;
+use crate::STATE_DB_VERSION;
 use crate::SortKey;
 use crate::ThreadMetadata;
 use crate::ThreadMetadataBuilder;
@@ -35,11 +38,6 @@ use std::sync::Arc;
 use std::time::Duration;
 use tracing::warn;
 use uuid::Uuid;
-
-pub const STATE_DB_FILENAME: &str = "state";
-pub const STATE_DB_VERSION: u32 = 4;
-
-const METRIC_DB_INIT: &str = "codex.db.init";
 
 mod memories;
 // Memory-specific CRUD and phase job lifecycle methods live in `runtime/memories.rs`.
@@ -904,11 +902,11 @@ fn push_thread_order_and_limit(
 
 #[cfg(test)]
 mod tests {
-    use super::STATE_DB_FILENAME;
-    use super::STATE_DB_VERSION;
     use super::StateRuntime;
     use super::ThreadMetadata;
     use super::state_db_filename;
+    use crate::STATE_DB_FILENAME;
+    use crate::STATE_DB_VERSION;
     use crate::model::Phase2JobClaimOutcome;
     use crate::model::Stage1JobClaimOutcome;
     use crate::model::Stage1StartupClaimParams;

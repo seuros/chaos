@@ -4,7 +4,6 @@
 //! - Phase 1: select rollouts, extract stage-1 raw memories, persist stage-1 outputs, and enqueue consolidation.
 //! - Phase 2: claim a global consolidation lock, materialize consolidation inputs, and dispatch one consolidation agent.
 
-mod dispatch;
 mod phase1;
 mod phase2;
 pub(crate) mod prompts;
@@ -58,8 +57,6 @@ mod phase_one {
 
 /// Phase 2 (aka `Consolidation`).
 mod phase_two {
-    /// Subagent source label used to identify consolidation tasks.
-    pub(super) const MEMORY_CONSOLIDATION_SUBAGENT_LABEL: &str = "memory_consolidation";
     /// Maximum number of recent raw memories retained for global consolidation.
     pub(super) const MAX_RAW_MEMORIES_FOR_GLOBAL: usize = 1_024;
     /// Lease duration (seconds) for phase-2 consolidation job ownership.

@@ -73,6 +73,7 @@ use codex_protocol::protocol::SessionSource;
 use codex_protocol::protocol::SubAgentSource;
 use codex_protocol::protocol::TurnAbortReason;
 use codex_protocol::protocol::TurnContextItem;
+use codex_protocol::protocol::TurnContextNetworkItem;
 use codex_protocol::protocol::TurnStartedEvent;
 use codex_protocol::request_user_input::RequestUserInputArgs;
 use codex_protocol::request_user_input::RequestUserInputResponse;
@@ -653,6 +654,41 @@ impl TurnContext {
         self.compact_prompt
             .as_deref()
             .unwrap_or(compact::SUMMARIZATION_PROMPT)
+    }
+
+    pub(crate) fn to_turn_context_item(
+        &self,
+        collaboration_mode: CollaborationMode,
+    ) -> TurnContextItem {
+        TurnContextItem {
+            turn_id: Some(self.sub_id.clone()),
+            cwd: self.cwd.clone(),
+            approval_policy: self.approval_policy,
+            sandbox_policy: self.sandbox_policy.clone(),
+            network: self.turn_context_network_item(),
+            model: self.model_info.slug.clone(),
+            personality: self.personality,
+            collaboration_mode: Some(collaboration_mode),
+            effort: self.reasoning_effort,
+            summary: self.reasoning_summary,
+            user_instructions: self.user_instructions.clone(),
+            developer_instructions: self.developer_instructions.clone(),
+            final_output_json_schema: self.final_output_json_schema.clone(),
+            truncation_policy: Some(self.truncation_policy.into()),
+        }
+    }
+
+    fn turn_context_network_item(&self) -> Option<TurnContextNetworkItem> {
+        let network = self
+            .config
+            .config_layer_stack
+            .requirements()
+            .network
+            .as_ref()?;
+        Some(TurnContextNetworkItem {
+            allowed_domains: network.allowed_domains.clone().unwrap_or_default(),
+            denied_domains: network.denied_domains.clone().unwrap_or_default(),
+        })
     }
 
     async fn build_turn_metadata_header(&self) -> Option<String> {
@@ -5236,21 +5272,8 @@ async fn try_run_sampling_request(
     cancellation_token: CancellationToken,
 ) -> CodexResult<SamplingRequestResult> {
     let collaboration_mode = sess.current_collaboration_mode().await;
-    let rollout_item = RolloutItem::TurnContext(TurnContextItem {
-        turn_id: Some(turn_context.sub_id.clone()),
-        cwd: turn_context.cwd.clone(),
-        approval_policy: turn_context.approval_policy,
-        sandbox_policy: turn_context.sandbox_policy.clone(),
-        model: turn_context.model_info.slug.clone(),
-        personality: turn_context.personality,
-        collaboration_mode: Some(collaboration_mode),
-        effort: turn_context.reasoning_effort,
-        summary: turn_context.reasoning_summary,
-        user_instructions: turn_context.user_instructions.clone(),
-        developer_instructions: turn_context.developer_instructions.clone(),
-        final_output_json_schema: turn_context.final_output_json_schema.clone(),
-        truncation_policy: Some(turn_context.truncation_policy.into()),
-    });
+    let rollout_item =
+        RolloutItem::TurnContext(turn_context.to_turn_context_item(collaboration_mode));
 
     feedback_tags!(
         model = turn_context.model_info.slug.clone(),
@@ -5550,6 +5573,11 @@ mod tests {
     use crate::CodexAuth;
     use crate::config::ConfigBuilder;
     use crate::config::test_config;
+    use crate::config_loader::ConfigLayerStack;
+    use crate::config_loader::ConfigLayerStackOrdering;
+    use crate::config_loader::NetworkConstraints;
+    use crate::config_loader::RequirementSource;
+    use crate::config_loader::Sourced;
     use crate::exec::ExecToolCallOutput;
     use crate::function_tool::FunctionCallError;
     use crate::mcp_connection_manager::ToolInfo;
@@ -6024,6 +6052,7 @@ mod tests {
             cwd: turn_context.cwd.clone(),
             approval_policy: turn_context.approval_policy,
             sandbox_policy: turn_context.sandbox_policy.clone(),
+            network: None,
             model: previous_model.to_string(),
             personality: turn_context.personality,
             collaboration_mode: Some(turn_context.collaboration_mode.clone()),
@@ -6242,6 +6271,7 @@ mod tests {
             cwd: turn_context.cwd.clone(),
             approval_policy: turn_context.approval_policy,
             sandbox_policy: turn_context.sandbox_policy.clone(),
+            network: None,
             model: previous_model.to_string(),
             personality: turn_context.personality,
             collaboration_mode: Some(turn_context.collaboration_mode.clone()),
@@ -7230,6 +7260,61 @@ mod tests {
             sess.previous_model().await,
             Some(tc.model_info.slug.clone())
         );
+    }
+
+    #[tokio::test]
+    async fn build_settings_update_items_emits_environment_item_for_network_changes() {
+        let (session, previous_context) = make_session_and_context().await;
+        let previous_context = Arc::new(previous_context);
+        let mut current_context = previous_context
+            .with_model(
+                previous_context.model_info.slug.clone(),
+                &session.services.models_manager,
+            )
+            .await;
+
+        let mut config = (*current_context.config).clone();
+        let mut requirements = config.config_layer_stack.requirements().clone();
+        requirements.network = Some(Sourced::new(
+            NetworkConstraints {
+                allowed_domains: Some(vec!["api.example.com".to_string()]),
+                denied_domains: Some(vec!["blocked.example.com".to_string()]),
+                ..Default::default()
+            },
+            RequirementSource::CloudRequirements,
+        ));
+        let layers = config
+            .config_layer_stack
+            .get_layers(ConfigLayerStackOrdering::LowestPrecedenceFirst, true)
+            .into_iter()
+            .cloned()
+            .collect();
+        config.config_layer_stack = ConfigLayerStack::new(
+            layers,
+            requirements,
+            config.config_layer_stack.requirements_toml().clone(),
+        )
+        .expect("rebuild config layer stack with network requirements");
+        current_context.config = Arc::new(config);
+
+        let update_items =
+            session.build_settings_update_items(Some(&previous_context), None, &current_context);
+
+        let environment_update = update_items
+            .iter()
+            .find_map(|item| match item {
+                ResponseItem::Message { role, content, .. } if role == "user" => {
+                    let [ContentItem::InputText { text }] = content.as_slice() else {
+                        return None;
+                    };
+                    text.contains("<environment_context>").then_some(text)
+                }
+                _ => None,
+            })
+            .expect("environment update item should be emitted");
+        assert!(environment_update.contains("<network enabled=\"true\">"));
+        assert!(environment_update.contains("<allowed>api.example.com</allowed>"));
+        assert!(environment_update.contains("<denied>blocked.example.com</denied>"));
     }
 
     #[derive(Clone, Copy)]

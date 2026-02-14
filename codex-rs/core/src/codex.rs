@@ -170,6 +170,7 @@ use crate::protocol::Event;
 use crate::protocol::EventMsg;
 use crate::protocol::ExecApprovalRequestEvent;
 use crate::protocol::McpServerRefreshConfig;
+use crate::protocol::NetworkApprovalContext;
 use crate::protocol::Op;
 use crate::protocol::PlanDeltaEvent;
 use crate::protocol::RateLimitSnapshot;
@@ -223,6 +224,9 @@ use crate::tasks::SessionTaskContext;
 use crate::tools::ToolRouter;
 use crate::tools::context::SharedTurnDiffTracker;
 use crate::tools::js_repl::JsReplHandle;
+use crate::tools::network_approval::NetworkApprovalService;
+use crate::tools::network_approval::build_blocked_request_observer;
+use crate::tools::network_approval::build_network_policy_decider;
 use crate::tools::parallel::ToolCallRuntime;
 use crate::tools::sandboxing::ApprovalStore;
 use crate::tools::spec::ToolsConfig;
@@ -519,7 +523,6 @@ pub(crate) struct Session {
     js_repl: Arc<JsReplHandle>,
     next_internal_sub_id: AtomicU64,
 }
-
 /// The context needed for a single turn of the thread.
 #[derive(Debug)]
 pub(crate) struct TurnContext {
@@ -820,6 +823,33 @@ impl Session {
         } else {
             Some(beta_features_header)
         }
+    }
+
+    async fn start_managed_network_proxy(
+        spec: &crate::config::NetworkProxySpec,
+        sandbox_policy: &SandboxPolicy,
+        network_policy_decider: Option<Arc<dyn codex_network_proxy::NetworkPolicyDecider>>,
+        blocked_request_observer: Option<Arc<dyn codex_network_proxy::BlockedRequestObserver>>,
+        managed_network_requirements_enabled: bool,
+    ) -> anyhow::Result<(StartedNetworkProxy, SessionNetworkProxyRuntime)> {
+        let network_proxy = spec
+            .start_proxy(
+                sandbox_policy,
+                network_policy_decider,
+                blocked_request_observer,
+                managed_network_requirements_enabled,
+            )
+            .await
+            .map_err(|err| anyhow::anyhow!("failed to start managed network proxy: {err}"))?;
+        let session_network_proxy = {
+            let proxy = network_proxy.proxy();
+            SessionNetworkProxyRuntime {
+                http_addr: proxy.http_addr().to_string(),
+                socks_addr: proxy.socks_addr().to_string(),
+                admin_addr: proxy.admin_addr().to_string(),
+            }
+        };
+        Ok((network_proxy, session_network_proxy))
     }
 
     /// Don't expand the number of mutated arguments on config. We are in the process of getting rid of it.
@@ -1178,21 +1208,50 @@ impl Session {
             };
         session_configuration.thread_name = thread_name.clone();
         let mut state = SessionState::new(session_configuration.clone());
-        let network_proxy =
-            match config.permissions.network.as_ref() {
-                Some(spec) => Some(spec.start_proxy().await.map_err(|err| {
-                    anyhow::anyhow!("failed to start managed network proxy: {err}")
-                })?),
-                None => None,
+        let managed_network_requirements_enabled = config.managed_network_requirements_enabled();
+        let network_approval = Arc::new(NetworkApprovalService::default());
+        // The managed proxy can call back into core for allowlist-miss decisions.
+        let network_policy_decider_session = if managed_network_requirements_enabled {
+            config
+                .permissions
+                .network
+                .as_ref()
+                .map(|_| Arc::new(RwLock::new(std::sync::Weak::<Session>::new())))
+        } else {
+            None
+        };
+        let blocked_request_observer = if managed_network_requirements_enabled {
+            config
+                .permissions
+                .network
+                .as_ref()
+                .map(|_| build_blocked_request_observer(Arc::clone(&network_approval)))
+        } else {
+            None
+        };
+        let network_policy_decider =
+            network_policy_decider_session
+                .as_ref()
+                .map(|network_policy_decider_session| {
+                    build_network_policy_decider(
+                        Arc::clone(&network_approval),
+                        Arc::clone(network_policy_decider_session),
+                    )
+                });
+        let (network_proxy, session_network_proxy) =
+            if let Some(spec) = config.permissions.network.as_ref() {
+                let (network_proxy, session_network_proxy) = Self::start_managed_network_proxy(
+                    spec,
+                    config.permissions.sandbox_policy.get(),
+                    network_policy_decider.as_ref().map(Arc::clone),
+                    blocked_request_observer.as_ref().map(Arc::clone),
+                    managed_network_requirements_enabled,
+                )
+                .await?;
+                (Some(network_proxy), Some(session_network_proxy))
+            } else {
+                (None, None)
             };
-        let session_network_proxy = network_proxy.as_ref().map(|started| {
-            let proxy = started.proxy();
-            SessionNetworkProxyRuntime {
-                http_addr: proxy.http_addr().to_string(),
-                socks_addr: proxy.socks_addr().to_string(),
-                admin_addr: proxy.admin_addr().to_string(),
-            }
-        });
 
         let services = SessionServices {
             mcp_connection_manager: Arc::new(RwLock::new(McpConnectionManager::default())),
@@ -1218,6 +1277,7 @@ impl Session {
             file_watcher,
             agent_control,
             network_proxy,
+            network_approval: Arc::clone(&network_approval),
             state_db: state_db_ctx.clone(),
             model_client: ModelClient::new(
                 Some(Arc::clone(&auth_manager)),
@@ -1260,6 +1320,10 @@ impl Session {
             js_repl,
             next_internal_sub_id: AtomicU64::new(0),
         });
+        if let Some(network_policy_decider_session) = network_policy_decider_session {
+            let mut guard = network_policy_decider_session.write().await;
+            *guard = Arc::downgrade(&sess);
+        }
 
         // Dispatch the SessionConfiguredEvent first and then report any errors.
         // If resuming, include converted initial messages in the payload so UIs can render them immediately.
@@ -2082,7 +2146,7 @@ impl Session {
         Ok(())
     }
 
-    async fn turn_context_for_sub_id(&self, sub_id: &str) -> Option<Arc<TurnContext>> {
+    pub(crate) async fn turn_context_for_sub_id(&self, sub_id: &str) -> Option<Arc<TurnContext>> {
         let active = self.active_turn.lock().await;
         active
             .as_ref()
@@ -2144,6 +2208,7 @@ impl Session {
         command: Vec<String>,
         cwd: PathBuf,
         reason: Option<String>,
+        network_approval_context: Option<NetworkApprovalContext>,
         proposed_execpolicy_amendment: Option<ExecPolicyAmendment>,
     ) -> ReviewDecision {
         // Add the tx_approve callback to the map before sending the request.
@@ -2170,6 +2235,7 @@ impl Session {
             command,
             cwd,
             reason,
+            network_approval_context,
             proposed_execpolicy_amendment,
             parsed_cmd,
         });
@@ -6948,6 +7014,7 @@ mod tests {
         let mut state = SessionState::new(session_configuration.clone());
         mark_state_initial_context_seeded(&mut state);
         let skills_manager = Arc::new(SkillsManager::new(config.codex_home.clone()));
+        let network_approval = Arc::new(NetworkApprovalService::default());
 
         let file_watcher = Arc::new(FileWatcher::noop());
         let services = SessionServices {
@@ -6974,6 +7041,7 @@ mod tests {
             file_watcher,
             agent_control,
             network_proxy: None,
+            network_approval: Arc::clone(&network_approval),
             state_db: None,
             model_client: ModelClient::new(
                 Some(auth_manager.clone()),
@@ -7094,6 +7162,7 @@ mod tests {
         let mut state = SessionState::new(session_configuration.clone());
         mark_state_initial_context_seeded(&mut state);
         let skills_manager = Arc::new(SkillsManager::new(config.codex_home.clone()));
+        let network_approval = Arc::new(NetworkApprovalService::default());
 
         let file_watcher = Arc::new(FileWatcher::noop());
         let services = SessionServices {
@@ -7120,6 +7189,7 @@ mod tests {
             file_watcher,
             agent_control,
             network_proxy: None,
+            network_approval: Arc::clone(&network_approval),
             state_db: None,
             model_client: ModelClient::new(
                 Some(Arc::clone(&auth_manager)),
@@ -7882,6 +7952,7 @@ mod tests {
             expiration: timeout_ms.into(),
             env: HashMap::new(),
             network: None,
+            network_attempt_id: None,
             sandbox_permissions,
             windows_sandbox_level: turn_context.windows_sandbox_level,
             justification: Some("test".to_string()),
@@ -7895,6 +7966,7 @@ mod tests {
             expiration: timeout_ms.into(),
             env: HashMap::new(),
             network: None,
+            network_attempt_id: None,
             windows_sandbox_level: turn_context.windows_sandbox_level,
             justification: params.justification.clone(),
             arg0: None,

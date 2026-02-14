@@ -1688,8 +1688,18 @@ impl CodexMessageProcessor {
         let timeout_ms = params
             .timeout_ms
             .and_then(|timeout_ms| u64::try_from(timeout_ms).ok());
+        let managed_network_requirements_enabled =
+            self.config.managed_network_requirements_enabled();
         let started_network_proxy = match self.config.permissions.network.as_ref() {
-            Some(spec) => match spec.start_proxy().await {
+            Some(spec) => match spec
+                .start_proxy(
+                    self.config.permissions.sandbox_policy.get(),
+                    None,
+                    None,
+                    managed_network_requirements_enabled,
+                )
+                .await
+            {
                 Ok(started) => Some(started),
                 Err(err) => {
                     let error = JSONRPCErrorError {
@@ -1712,6 +1722,7 @@ impl CodexMessageProcessor {
             network: started_network_proxy
                 .as_ref()
                 .map(codex_core::config::StartedNetworkProxy::proxy),
+            network_attempt_id: None,
             sandbox_permissions: SandboxPermissions::UseDefault,
             windows_sandbox_level,
             justification: None,

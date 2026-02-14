@@ -1932,6 +1932,19 @@ impl Session {
         Some(DeveloperInstructions::model_switch_message(model_instructions).into())
     }
 
+    pub(crate) fn is_model_switch_developer_message(item: &ResponseItem) -> bool {
+        let ResponseItem::Message { role, content, .. } = item else {
+            return false;
+        };
+        role == "developer"
+            && content.iter().any(|content_item| {
+                matches!(
+                    content_item,
+                    ContentItem::InputText { text } if text.starts_with("<model_switch>")
+                )
+            })
+    }
+
     fn build_settings_update_items(
         &self,
         previous_context: Option<&Arc<TurnContext>>,
@@ -4438,6 +4451,12 @@ async fn run_pre_sampling_compact(
     Ok(())
 }
 
+/// Runs pre-sampling compaction against the previous model when switching to a smaller
+/// context-window model.
+///
+/// Returns `Ok(())` when compaction either completed successfully or was skipped because the
+/// model/context-window preconditions were not met. Returns `Err(_)` only when compaction was
+/// attempted and failed.
 async fn maybe_run_previous_model_inline_compact(
     sess: &Arc<Session>,
     turn_context: &Arc<TurnContext>,

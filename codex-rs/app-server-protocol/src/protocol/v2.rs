@@ -1837,7 +1837,38 @@ pub struct SkillsListResponse {
 #[derive(Serialize, Deserialize, Debug, Clone, PartialEq, JsonSchema, TS)]
 #[serde(rename_all = "camelCase")]
 #[ts(export_to = "v2/")]
-pub struct SkillsRemoteReadParams {}
+pub struct SkillsRemoteReadParams {
+    #[serde(default)]
+    pub hazelnut_scope: HazelnutScope,
+    #[serde(default)]
+    pub product_surface: ProductSurface,
+    #[serde(default)]
+    pub enabled: bool,
+}
+
+#[derive(Serialize, Deserialize, Debug, Clone, Copy, PartialEq, Eq, JsonSchema, TS, Default)]
+#[serde(rename_all = "kebab-case")]
+#[ts(rename_all = "kebab-case")]
+#[ts(export_to = "v2/")]
+pub enum HazelnutScope {
+    #[default]
+    Example,
+    WorkspaceShared,
+    AllShared,
+    Personal,
+}
+
+#[derive(Serialize, Deserialize, Debug, Clone, Copy, PartialEq, Eq, JsonSchema, TS, Default)]
+#[serde(rename_all = "lowercase")]
+#[ts(rename_all = "lowercase")]
+#[ts(export_to = "v2/")]
+pub enum ProductSurface {
+    Chatgpt,
+    #[default]
+    Codex,
+    Api,
+    Atlas,
+}
 
 #[derive(Serialize, Deserialize, Debug, Clone, PartialEq, JsonSchema, TS)]
 #[serde(rename_all = "camelCase")]
@@ -1860,7 +1891,6 @@ pub struct SkillsRemoteReadResponse {
 #[ts(export_to = "v2/")]
 pub struct SkillsRemoteWriteParams {
     pub hazelnut_id: String,
-    pub is_preload: bool,
 }
 
 #[derive(Serialize, Deserialize, Debug, Clone, PartialEq, JsonSchema, TS)]
@@ -1868,7 +1898,6 @@ pub struct SkillsRemoteWriteParams {
 #[ts(export_to = "v2/")]
 pub struct SkillsRemoteWriteResponse {
     pub id: String,
-    pub name: String,
     pub path: PathBuf,
 }
 

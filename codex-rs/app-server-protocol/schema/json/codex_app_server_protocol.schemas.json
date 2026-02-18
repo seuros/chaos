@@ -8112,6 +8112,26 @@
           "properties": {
             "method": {
               "enum": [
+                "thread/status/changed"
+              ],
+              "title": "Thread/status/changedNotificationMethod",
+              "type": "string"
+            },
+            "params": {
+              "$ref": "#/definitions/v2/ThreadStatusChangedNotification"
+            }
+          },
+          "required": [
+            "method",
+            "params"
+          ],
+          "title": "Thread/status/changedNotification",
+          "type": "object"
+        },
+        {
+          "properties": {
+            "method": {
+              "enum": [
                 "thread/archived"
               ],
               "title": "Thread/archivedNotificationMethod",
@@ -15168,6 +15188,14 @@
             ],
             "description": "Origin of the thread (CLI, VSCode, codex exec, codex app-server, etc.)."
           },
+          "status": {
+            "allOf": [
+              {
+                "$ref": "#/definitions/v2/ThreadStatus"
+              }
+            ],
+            "description": "Current runtime status for the thread."
+          },
           "turns": {
             "description": "Only populated on `thread/resume`, `thread/rollback`, `thread/fork`, and `thread/read` (when `includeTurns` is true) responses. For all other responses and notifications returning a Thread, the turns field will be an empty list.",
             "items": {
@@ -15189,10 +15217,18 @@
           "modelProvider",
           "preview",
           "source",
+          "status",
           "turns",
           "updatedAt"
         ],
         "type": "object"
+      },
+      "ThreadActiveFlag": {
+        "enum": [
+          "waitingOnApproval",
+          "waitingOnUserInput"
+        ],
+        "type": "string"
       },
       "ThreadArchiveParams": {
         "$schema": "http://json-schema.org/draft-07/schema#",
@@ -16373,6 +16409,98 @@
           "thread"
         ],
         "title": "ThreadStartedNotification",
+        "type": "object"
+      },
+      "ThreadStatus": {
+        "oneOf": [
+          {
+            "properties": {
+              "type": {
+                "enum": [
+                  "notLoaded"
+                ],
+                "title": "NotLoadedThreadStatusType",
+                "type": "string"
+              }
+            },
+            "required": [
+              "type"
+            ],
+            "title": "NotLoadedThreadStatus",
+            "type": "object"
+          },
+          {
+            "properties": {
+              "type": {
+                "enum": [
+                  "idle"
+                ],
+                "title": "IdleThreadStatusType",
+                "type": "string"
+              }
+            },
+            "required": [
+              "type"
+            ],
+            "title": "IdleThreadStatus",
+            "type": "object"
+          },
+          {
+            "properties": {
+              "type": {
+                "enum": [
+                  "systemError"
+                ],
+                "title": "SystemErrorThreadStatusType",
+                "type": "string"
+              }
+            },
+            "required": [
+              "type"
+            ],
+            "title": "SystemErrorThreadStatus",
+            "type": "object"
+          },
+          {
+            "properties": {
+              "activeFlags": {
+                "items": {
+                  "$ref": "#/definitions/v2/ThreadActiveFlag"
+                },
+                "type": "array"
+              },
+              "type": {
+                "enum": [
+                  "active"
+                ],
+                "title": "ActiveThreadStatusType",
+                "type": "string"
+              }
+            },
+            "required": [
+              "activeFlags",
+              "type"
+            ],
+            "title": "ActiveThreadStatus",
+            "type": "object"
+          }
+        ]
+      },
+      "ThreadStatusChangedNotification": {
+        "$schema": "http://json-schema.org/draft-07/schema#",
+        "properties": {
+          "status": {
+            "$ref": "#/definitions/v2/ThreadStatus"
+          },
+          "threadId": {
+            "type": "string"
+          }
+        },
+        "required": [
+          "status",
+          "threadId"
+        ],
+        "title": "ThreadStatusChangedNotification",
         "type": "object"
       },
       "ThreadTokenUsage": {

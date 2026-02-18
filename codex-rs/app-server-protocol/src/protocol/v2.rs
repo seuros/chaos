@@ -1838,6 +1838,29 @@ pub struct ThreadLoadedListResponse {
 }
 
 #[derive(Serialize, Deserialize, Debug, Clone, PartialEq, JsonSchema, TS)]
+#[serde(tag = "type", rename_all = "camelCase")]
+#[ts(tag = "type")]
+#[ts(export_to = "v2/")]
+pub enum ThreadStatus {
+    NotLoaded,
+    Idle,
+    SystemError,
+    #[serde(rename_all = "camelCase")]
+    #[ts(rename_all = "camelCase")]
+    Active {
+        active_flags: Vec<ThreadActiveFlag>,
+    },
+}
+
+#[derive(Serialize, Deserialize, Debug, Clone, Copy, PartialEq, Eq, JsonSchema, TS)]
+#[serde(rename_all = "camelCase")]
+#[ts(export_to = "v2/")]
+pub enum ThreadActiveFlag {
+    WaitingOnApproval,
+    WaitingOnUserInput,
+}
+
+#[derive(Serialize, Deserialize, Debug, Clone, PartialEq, JsonSchema, TS)]
 #[serde(rename_all = "camelCase")]
 #[ts(export_to = "v2/")]
 pub struct ThreadReadParams {
@@ -2153,6 +2176,8 @@ pub struct Thread {
     /// Unix timestamp (in seconds) when the thread was last updated.
     #[ts(type = "number")]
     pub updated_at: i64,
+    /// Current runtime status for the thread.
+    pub status: ThreadStatus,
     /// [UNSTABLE] Path to the thread on disk.
     pub path: Option<PathBuf>,
     /// Working directory captured for the thread.
@@ -2939,6 +2964,14 @@ pub struct McpToolCallError {
 #[ts(export_to = "v2/")]
 pub struct ThreadStartedNotification {
     pub thread: Thread,
+}
+
+#[derive(Serialize, Deserialize, Debug, Clone, PartialEq, JsonSchema, TS)]
+#[serde(rename_all = "camelCase")]
+#[ts(export_to = "v2/")]
+pub struct ThreadStatusChangedNotification {
+    pub thread_id: String,
+    pub status: ThreadStatus,
 }
 
 #[derive(Serialize, Deserialize, Debug, Clone, PartialEq, JsonSchema, TS)]

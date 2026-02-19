@@ -85,12 +85,14 @@ use tempfile::tempdir;
 #[cfg(not(target_os = "macos"))]
 type MacOsSeatbeltProfileExtensions = ();
 
+use crate::config::permissions::network_proxy_config_from_permissions;
 use crate::config::profile::ConfigProfile;
 use toml::Value as TomlValue;
 use toml_edit::DocumentMut;
 
 pub mod edit;
 mod network_proxy_spec;
+mod permissions;
 pub mod profile;
 pub mod schema;
 pub mod service;
@@ -101,6 +103,8 @@ pub use codex_config::ConstraintResult;
 
 pub use network_proxy_spec::NetworkProxySpec;
 pub use network_proxy_spec::StartedNetworkProxy;
+pub use permissions::NetworkToml;
+pub use permissions::PermissionsToml;
 pub use service::ConfigService;
 pub use service::ConfigServiceError;
 
@@ -954,6 +958,10 @@ pub struct ConfigToml {
     /// Sandbox configuration to apply if `sandbox` is `WorkspaceWrite`.
     pub sandbox_workspace_write: Option<SandboxWorkspaceWrite>,
 
+    /// Nested permissions settings.
+    #[serde(default)]
+    pub permissions: Option<PermissionsToml>,
+
     /// Optional external command to spawn for end-user notifications.
     #[serde(default)]
     pub notify: Option<Vec<String>>,
@@ -1590,6 +1598,8 @@ impl Config {
                 .clone(),
             None => ConfigProfile::default(),
         };
+        let configured_network_proxy_config =
+            network_proxy_config_from_permissions(cfg.permissions.as_ref());
 
         let feature_overrides = FeatureOverrides {
             include_apply_patch_tool: include_apply_patch_tool_override,
@@ -1902,18 +1912,29 @@ impl Config {
         let mcp_servers = constrain_mcp_servers(cfg.mcp_servers.clone(), mcp_servers.as_ref())
             .map_err(|e| std::io::Error::new(std::io::ErrorKind::InvalidInput, format!("{e}")))?;
 
-        let network = match network_requirements {
-            Some(Sourced { value, source }) => {
-                let network = NetworkProxySpec::from_constraints(&config_layer_stack, value)
-                    .map_err(|err| {
-                        std::io::Error::new(
-                            err.kind(),
-                            format!("failed to build managed network proxy from {source}: {err}"),
-                        )
-                    })?;
-                Some(network)
+        let (network_requirements, network_requirements_source) = match network_requirements {
+            Some(Sourced { value, source }) => (Some(value), Some(source)),
+            None => (None, None),
+        };
+        let has_network_requirements = network_requirements.is_some();
+        let network = NetworkProxySpec::from_config_and_constraints(
+            configured_network_proxy_config,
+            network_requirements,
+        )
+        .map_err(|err| {
+            if let Some(source) = network_requirements_source.as_ref() {
+                std::io::Error::new(
+                    err.kind(),
+                    format!("failed to build managed network proxy from {source}: {err}"),
+                )
+            } else {
+                err
             }
-            None => None,
+        })?;
+        let network = if has_network_requirements {
+            Some(network)
+        } else {
+            network.enabled().then_some(network)
         };
 
         let config = Self {
@@ -2351,6 +2372,95 @@ phase_2_model = "gpt-5"
                 phase_2_model: Some("gpt-5".to_string()),
             }
         );
+    }
+
+    #[test]
+    fn config_toml_deserializes_permissions_network() {
+        let toml = r#"
+[permissions.network]
+enabled = true
+proxy_url = "http://127.0.0.1:43128"
+enable_socks5 = false
+allow_upstream_proxy = false
+allowed_domains = ["openai.com"]
+"#;
+        let cfg: ConfigToml = toml::from_str(toml)
+            .expect("TOML deserialization should succeed for permissions.network");
+
+        assert_eq!(
+            cfg.permissions
+                .and_then(|permissions| permissions.network)
+                .expect("permissions.network should deserialize"),
+            NetworkToml {
+                enabled: Some(true),
+                proxy_url: Some("http://127.0.0.1:43128".to_string()),
+                admin_url: None,
+                enable_socks5: Some(false),
+                socks_url: None,
+                enable_socks5_udp: None,
+                allow_upstream_proxy: Some(false),
+                dangerously_allow_non_loopback_proxy: None,
+                dangerously_allow_non_loopback_admin: None,
+                mode: None,
+                allowed_domains: Some(vec!["openai.com".to_string()]),
+                denied_domains: None,
+                allow_unix_sockets: None,
+                allow_local_binding: None,
+            }
+        );
+    }
+
+    #[test]
+    fn permissions_network_enabled_populates_runtime_network_proxy_spec() -> std::io::Result<()> {
+        let codex_home = TempDir::new()?;
+        let cfg = ConfigToml {
+            permissions: Some(PermissionsToml {
+                network: Some(NetworkToml {
+                    enabled: Some(true),
+                    proxy_url: Some("http://127.0.0.1:43128".to_string()),
+                    enable_socks5: Some(false),
+                    ..Default::default()
+                }),
+            }),
+            ..Default::default()
+        };
+
+        let config = Config::load_from_base_config_with_overrides(
+            cfg,
+            ConfigOverrides::default(),
+            codex_home.path().to_path_buf(),
+        )?;
+        let network = config
+            .permissions
+            .network
+            .as_ref()
+            .expect("enabled permissions.network should produce a NetworkProxySpec");
+
+        assert_eq!(network.proxy_host_and_port(), "127.0.0.1:43128");
+        assert!(!network.socks_enabled());
+        Ok(())
+    }
+
+    #[test]
+    fn permissions_network_disabled_by_default_does_not_start_proxy() -> std::io::Result<()> {
+        let codex_home = TempDir::new()?;
+        let cfg = ConfigToml {
+            permissions: Some(PermissionsToml {
+                network: Some(NetworkToml {
+                    allowed_domains: Some(vec!["openai.com".to_string()]),
+                    ..Default::default()
+                }),
+            }),
+            ..Default::default()
+        };
+
+        let config = Config::load_from_base_config_with_overrides(
+            cfg,
+            ConfigOverrides::default(),
+            codex_home.path().to_path_buf(),
+        )?;
+        assert!(config.permissions.network.is_none());
+        Ok(())
     }
 
     #[test]

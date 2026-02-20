@@ -5811,7 +5811,7 @@ impl CodexMessageProcessor {
         api_version: ApiVersion,
     ) {
         let (cancel_tx, mut cancel_rx) = oneshot::channel();
-        let mut listener_command_rx = {
+        let (mut listener_command_rx, listener_generation) = {
             let mut thread_state = thread_state.lock().await;
             if thread_state.listener_matches(&conversation) {
                 return;
@@ -5926,6 +5926,11 @@ impl CodexMessageProcessor {
                         }
                     }
                 }
+            }
+
+            let mut thread_state = thread_state.lock().await;
+            if thread_state.listener_generation == listener_generation {
+                thread_state.clear_listener();
             }
         });
     }

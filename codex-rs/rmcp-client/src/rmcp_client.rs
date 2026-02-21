@@ -465,6 +465,10 @@ pub struct ListToolsWithConnectorIdResult {
     pub tools: Vec<ToolWithConnectorId>,
 }
 
+/// Callback invoked when the MCP server sends a `notifications/tools/list_changed`
+/// notification.
+pub type OnToolListChanged = Box<dyn Fn() -> BoxFuture<'static, ()> + Send + Sync>;
+
 /// MCP client implemented on top of the official `rmcp` SDK.
 /// https://github.com/modelcontextprotocol/rust-sdk
 pub struct RmcpClient {
@@ -538,8 +542,11 @@ impl RmcpClient {
         params: InitializeRequestParams,
         timeout: Option<Duration>,
         send_elicitation: SendElicitation,
+        on_tool_list_changed: OnToolListChanged,
     ) -> Result<InitializeResult> {
-        let client_handler = LoggingClientHandler::new(params.clone(), send_elicitation);
+        let client_handler =
+            LoggingClientHandler::new(params.clone(), send_elicitation, on_tool_list_changed);
+
         let pending_transport = {
             let mut guard = self.state.lock().await;
             match &mut *guard {

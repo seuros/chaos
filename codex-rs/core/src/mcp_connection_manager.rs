@@ -43,6 +43,7 @@ use codex_protocol::protocol::McpStartupUpdateEvent;
 use codex_protocol::protocol::SandboxPolicy;
 use codex_rmcp_client::ElicitationResponse;
 use codex_rmcp_client::OAuthCredentialsStoreMode;
+use codex_rmcp_client::OnToolListChanged;
 use codex_rmcp_client::RmcpClient;
 use codex_rmcp_client::SendElicitation;
 use futures::future::BoxFuture;
@@ -70,6 +71,7 @@ use serde::Deserialize;
 use serde::Serialize;
 use sha1::Digest;
 use sha1::Sha1;
+use std::sync::RwLock as StdRwLock;
 use tokio::sync::Mutex;
 use tokio::sync::oneshot;
 use tokio::task::JoinSet;
@@ -370,7 +372,7 @@ impl ElicitationRequestManager {
 #[derive(Clone)]
 struct ManagedClient {
     client: Arc<RmcpClient>,
-    tools: Vec<ToolInfo>,
+    tools: Arc<StdRwLock<Vec<ToolInfo>>>,
     tool_filter: ToolFilter,
     tool_timeout: Option<Duration>,
     server_supports_sandbox_state_capability: bool,
@@ -400,7 +402,7 @@ impl ManagedClient {
             );
         }
 
-        self.tools.clone()
+        self.tools.read().unwrap_or_else(|e| e.into_inner()).clone()
     }
 
     /// Returns once the server has ack'd the sandbox state update.
@@ -1369,8 +1371,40 @@ async fn start_server_task(
 
     let send_elicitation = elicitation_requests.make_sender(server_name.clone(), tx_event);
 
+    let tools_arc: Arc<StdRwLock<Vec<ToolInfo>>> = Arc::new(StdRwLock::new(Vec::new()));
+    let on_tool_list_changed = {
+        let client = Arc::clone(&client);
+        let server_name = server_name.clone();
+        let tools_arc = Arc::clone(&tools_arc);
+        let tool_filter = tool_filter.clone();
+        Box::new(move || {
+            let client = Arc::clone(&client);
+            let server_name = server_name.clone();
+            let tools_arc = Arc::clone(&tools_arc);
+            let tool_filter = tool_filter.clone();
+            Box::pin(async move {
+                match list_tools_for_client_uncached(&server_name, &client, Some(tool_timeout))
+                    .await
+                {
+                    Ok(tools) => {
+                        *tools_arc.write().unwrap_or_else(|e| e.into_inner()) =
+                            filter_tools(tools, &tool_filter);
+                    }
+                    Err(err) => {
+                        warn!("Failed to refresh tool list for '{server_name}': {err}");
+                    }
+                }
+            }) as futures::future::BoxFuture<'static, ()>
+        }) as OnToolListChanged
+    };
+
     let initialize_result = client
-        .initialize(params, startup_timeout, send_elicitation)
+        .initialize(
+            params,
+            startup_timeout,
+            send_elicitation,
+            on_tool_list_changed,
+        )
         .await
         .map_err(StartupOutcomeError::from)?;
 
@@ -1396,7 +1430,7 @@ async fn start_server_task(
             &[("cache", "miss")],
         );
     }
-    let tools = filter_tools(tools, &tool_filter);
+    *tools_arc.write().unwrap_or_else(|e| e.into_inner()) = filter_tools(tools, &tool_filter);
 
     let server_supports_sandbox_state_capability = initialize_result
         .capabilities
@@ -1406,7 +1440,7 @@ async fn start_server_task(
         .is_some();
     let managed = ManagedClient {
         client: Arc::clone(&client),
-        tools,
+        tools: tools_arc,
         tool_timeout: Some(tool_timeout),
         tool_filter,
         server_supports_sandbox_state_capability,

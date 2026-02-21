@@ -45,6 +45,7 @@ use crate::terminal;
 use crate::truncate::TruncationPolicy;
 use crate::turn_metadata::TurnMetadataState;
 use crate::util::error_or_panic;
+use crate::ws_version_from_features;
 use async_channel::Receiver;
 use async_channel::Sender;
 use codex_hooks::HookEvent;
@@ -1335,9 +1336,7 @@ impl Session {
                 session_configuration.provider.clone(),
                 session_configuration.session_source.clone(),
                 config.model_verbosity,
-                config.features.enabled(Feature::ResponsesWebsockets)
-                    || config.features.enabled(Feature::ResponsesWebsocketsV2),
-                config.features.enabled(Feature::ResponsesWebsocketsV2),
+                ws_version_from_features(config.as_ref()),
                 config.features.enabled(Feature::EnableRequestCompression),
                 config.features.enabled(Feature::RuntimeMetrics),
                 Self::build_model_client_beta_features_header(config.as_ref()),
@@ -5198,10 +5197,11 @@ async fn run_sampling_request(
             // transient reconnect messages. In debug builds, keep full visibility for diagnosis.
             let report_error = retries > 1
                 || cfg!(debug_assertions)
-                || !sess
+                || sess
                     .services
                     .model_client
-                    .responses_websocket_enabled(&turn_context.model_info);
+                    .active_ws_version(&turn_context.model_info)
+                    .is_none();
 
             if report_error {
                 // Surface retry information to any UI/front‑end so the
@@ -7844,10 +7844,7 @@ mod tests {
                 session_configuration.provider.clone(),
                 session_configuration.session_source.clone(),
                 config.model_verbosity,
-                model_info.prefer_websockets
-                    || config.features.enabled(Feature::ResponsesWebsockets)
-                    || config.features.enabled(Feature::ResponsesWebsocketsV2),
-                config.features.enabled(Feature::ResponsesWebsocketsV2),
+                ws_version_from_features(config.as_ref()),
                 config.features.enabled(Feature::EnableRequestCompression),
                 config.features.enabled(Feature::RuntimeMetrics),
                 Session::build_model_client_beta_features_header(config.as_ref()),
@@ -8000,10 +7997,7 @@ mod tests {
                 session_configuration.provider.clone(),
                 session_configuration.session_source.clone(),
                 config.model_verbosity,
-                model_info.prefer_websockets
-                    || config.features.enabled(Feature::ResponsesWebsockets)
-                    || config.features.enabled(Feature::ResponsesWebsocketsV2),
-                config.features.enabled(Feature::ResponsesWebsocketsV2),
+                ws_version_from_features(config.as_ref()),
                 config.features.enabled(Feature::EnableRequestCompression),
                 config.features.enabled(Feature::RuntimeMetrics),
                 Session::build_model_client_beta_features_header(config.as_ref()),

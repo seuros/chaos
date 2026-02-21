@@ -836,6 +836,13 @@
           "description": "Model provider used for this thread (for example, 'openai').",
           "type": "string"
         },
+        "name": {
+          "description": "Optional user-facing thread title.",
+          "type": [
+            "string",
+            "null"
+          ]
+        },
         "path": {
           "description": "[UNSTABLE] Path to the thread on disk.",
           "type": [

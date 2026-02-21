@@ -2277,6 +2277,8 @@ pub struct Thread {
     pub agent_role: Option<String>,
     /// Optional Git metadata captured when the thread was created.
     pub git_info: Option<GitInfo>,
+    /// Optional user-facing thread title.
+    pub name: Option<String>,
     /// Only populated on `thread/resume`, `thread/rollback`, `thread/fork`, and `thread/read`
     /// (when `includeTurns` is true) responses.
     /// For all other responses and notifications returning a Thread,

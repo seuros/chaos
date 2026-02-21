@@ -202,6 +202,8 @@ use codex_core::features::FEATURES;
 use codex_core::features::Feature;
 use codex_core::features::Stage;
 use codex_core::find_archived_thread_path_by_id_str;
+use codex_core::find_thread_name_by_id;
+use codex_core::find_thread_names_by_ids;
 use codex_core::find_thread_path_by_id_str;
 use codex_core::git_info::git_diff_to_remote;
 use codex_core::mcp::collect_mcp_snapshot;
@@ -2374,6 +2376,7 @@ impl CodexMessageProcessor {
                     .thread_watch_manager
                     .loaded_status_for_thread(&thread.id)
                     .await;
+                self.attach_thread_name(thread_id, &mut thread).await;
                 let thread_id = thread.id.clone();
                 let response = ThreadUnarchiveResponse { thread };
                 self.outgoing.send_response(request_id, response).await;
@@ -2544,18 +2547,36 @@ impl CodexMessageProcessor {
                 return;
             }
         };
+        let mut threads = Vec::with_capacity(summaries.len());
+        let mut thread_ids = HashSet::with_capacity(summaries.len());
+        let mut status_ids = Vec::with_capacity(summaries.len());
 
-        let data = summaries
-            .into_iter()
-            .map(summary_to_thread)
-            .collect::<Vec<_>>();
+        for summary in summaries {
+            let conversation_id = summary.conversation_id;
+            thread_ids.insert(conversation_id);
+
+            let thread = summary_to_thread(summary);
+            status_ids.push(thread.id.clone());
+            threads.push((conversation_id, thread));
+        }
+
+        let names = match find_thread_names_by_ids(&self.config.codex_home, &thread_ids).await {
+            Ok(names) => names,
+            Err(err) => {
+                warn!("Failed to read thread names: {err}");
+                HashMap::new()
+            }
+        };
+
         let statuses = self
             .thread_watch_manager
-            .loaded_statuses_for_threads(data.iter().map(|thread| thread.id.clone()).collect())
+            .loaded_statuses_for_threads(status_ids)
             .await;
-        let data = data
+
+        let data = threads
             .into_iter()
-            .map(|mut thread| {
+            .map(|(conversation_id, mut thread)| {
+                thread.name = names.get(&conversation_id).cloned();
                 if let Some(status) = statuses.get(&thread.id) {
                     thread.status = status.clone();
                 }
@@ -2717,6 +2738,7 @@ impl CodexMessageProcessor {
             }
             build_thread_from_snapshot(thread_uuid, &config_snapshot, loaded_rollout_path)
         };
+        self.attach_thread_name(thread_uuid, &mut thread).await;
 
         if include_turns && let Some(rollout_path) = rollout_path.as_ref() {
             match read_rollout_items_from_rollout(rollout_path).await {
@@ -3206,6 +3228,7 @@ impl CodexMessageProcessor {
         match read_rollout_items_from_rollout(rollout_path).await {
             Ok(items) => {
                 thread.turns = build_turns_from_rollout_items(&items);
+                self.attach_thread_name(thread_id, &mut thread).await;
                 Some(thread)
             }
             Err(err) => {
@@ -3218,6 +3241,17 @@ impl CodexMessageProcessor {
                 )
                 .await;
                 None
+            }
+        }
+    }
+
+    async fn attach_thread_name(&self, thread_id: ThreadId, thread: &mut Thread) {
+        match find_thread_name_by_id(&self.config.codex_home, &thread_id).await {
+            Ok(name) => {
+                thread.name = name;
+            }
+            Err(err) => {
+                warn!("Failed to read thread name for {thread_id}: {err}");
             }
         }
     }
@@ -3419,6 +3453,7 @@ impl CodexMessageProcessor {
                 return;
             }
         };
+        // forked thread names do not inherit the source thread name
         match read_rollout_items_from_rollout(rollout_path.as_path()).await {
             Ok(items) => {
                 thread.turns = build_turns_from_rollout_items(&items);
@@ -5823,6 +5858,7 @@ impl CodexMessageProcessor {
         let thread_watch_manager = self.thread_watch_manager.clone();
         let fallback_model_provider = self.config.model_provider_id.clone();
         let single_client_mode = self.single_client_mode;
+        let codex_home = self.config.codex_home.clone();
         tokio::spawn(async move {
             loop {
                 tokio::select! {
@@ -5903,6 +5939,7 @@ impl CodexMessageProcessor {
                             thread_watch_manager.clone(),
                             api_version,
                             fallback_model_provider.clone(),
+                            codex_home.as_path(),
                         )
                         .await;
                     }
@@ -5916,6 +5953,7 @@ impl CodexMessageProcessor {
                             ) => {
                                 handle_pending_thread_resume_request(
                                     conversation_id,
+                                    codex_home.as_path(),
                                     &thread_state,
                                     &thread_watch_manager,
                                     &outgoing_for_task,
@@ -6235,6 +6273,7 @@ impl CodexMessageProcessor {
 
 async fn handle_pending_thread_resume_request(
     conversation_id: ThreadId,
+    codex_home: &Path,
     thread_state: &Arc<Mutex<ThreadState>>,
     thread_watch_manager: &ThreadWatchManager,
     outgoing: &Arc<OutgoingMessageSender>,
@@ -6273,6 +6312,11 @@ async fn handle_pending_thread_resume_request(
     thread.status = thread_watch_manager
         .loaded_status_for_thread(&thread.id)
         .await;
+
+    match find_thread_name_by_id(codex_home, &conversation_id).await {
+        Ok(thread_name) => thread.name = thread_name,
+        Err(err) => warn!("Failed to read thread name for {conversation_id}: {err}"),
+    }
 
     let ThreadConfigSnapshot {
         model,
@@ -6994,6 +7038,7 @@ fn build_thread_from_snapshot(
         agent_role: config_snapshot.session_source.get_agent_role(),
         source: config_snapshot.session_source.clone().into(),
         git_info: None,
+        name: None,
         turns: Vec::new(),
     }
 }
@@ -7034,6 +7079,7 @@ pub(crate) fn summary_to_thread(summary: ConversationSummary) -> Thread {
         agent_role: source.get_agent_role(),
         source: source.into(),
         git_info,
+        name: None,
         turns: Vec::new(),
     }
 }

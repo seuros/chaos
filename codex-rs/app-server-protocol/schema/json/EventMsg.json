@@ -1767,6 +1767,30 @@
         },
         {
           "properties": {
+            "item_id": {
+              "type": "string"
+            },
+            "skill_name": {
+              "type": "string"
+            },
+            "type": {
+              "enum": [
+                "skill_request_approval"
+              ],
+              "title": "SkillRequestApprovalEventMsgType",
+              "type": "string"
+            }
+          },
+          "required": [
+            "item_id",
+            "skill_name",
+            "type"
+          ],
+          "title": "SkillRequestApprovalEventMsg",
+          "type": "object"
+        },
+        {
+          "properties": {
             "id": {
               "$ref": "#/definitions/RequestId"
             },
@@ -7040,6 +7064,30 @@
         "type"
       ],
       "title": "DynamicToolCallRequestEventMsg",
+      "type": "object"
+    },
+    {
+      "properties": {
+        "item_id": {
+          "type": "string"
+        },
+        "skill_name": {
+          "type": "string"
+        },
+        "type": {
+          "enum": [
+            "skill_request_approval"
+          ],
+          "title": "SkillRequestApprovalEventMsgType",
+          "type": "string"
+        }
+      },
+      "required": [
+        "item_id",
+        "skill_name",
+        "type"
+      ],
+      "title": "SkillRequestApprovalEventMsg",
       "type": "object"
     },
     {

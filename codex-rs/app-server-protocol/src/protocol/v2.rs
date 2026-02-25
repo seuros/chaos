@@ -1963,6 +1963,9 @@ pub struct ThreadListParams {
     /// matches this path are returned.
     #[ts(optional = nullable)]
     pub cwd: Option<String>,
+    /// Optional substring filter for the extracted thread title.
+    #[ts(optional = nullable)]
+    pub search_term: Option<String>,
 }
 
 #[derive(Serialize, Deserialize, Debug, Clone, Copy, PartialEq, Eq, JsonSchema, TS)]

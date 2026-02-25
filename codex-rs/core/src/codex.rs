@@ -6361,6 +6361,8 @@ use crate::memories::prompts::build_memory_tool_developer_instructions;
 #[cfg(test)]
 pub(crate) use tests::make_session_and_context;
 #[cfg(test)]
+pub(crate) use tests::make_session_and_context_with_dynamic_tools_and_rx;
+#[cfg(test)]
 pub(crate) use tests::make_session_and_context_with_rx;
 #[cfg(test)]
 pub(crate) use tests::make_session_configuration_for_tests;
@@ -8273,9 +8275,9 @@ mod tests {
         (session, turn_context)
     }
 
-    // Like make_session_and_context, but returns Arc<Session> and the event receiver
-    // so tests can assert on emitted events.
-    pub(crate) async fn make_session_and_context_with_rx() -> (
+    pub(crate) async fn make_session_and_context_with_dynamic_tools_and_rx(
+        dynamic_tools: Vec<DynamicToolSpec>,
+    ) -> (
         Arc<Session>,
         Arc<TurnContext>,
         async_channel::Receiver<Event>,
@@ -8327,7 +8329,7 @@ mod tests {
             thread_name: None,
             original_config_do_not_use: Arc::clone(&config),
             session_source: SessionSource::Exec,
-            dynamic_tools: Vec::new(),
+            dynamic_tools,
             persist_extended_history: false,
         };
         let per_turn_config = Session::build_per_turn_config(&session_configuration);
@@ -8427,6 +8429,16 @@ mod tests {
         });
 
         (session, turn_context, rx_event)
+    }
+
+    // Like make_session_and_context, but returns Arc<Session> and the event receiver
+    // so tests can assert on emitted events.
+    pub(crate) async fn make_session_and_context_with_rx() -> (
+        Arc<Session>,
+        Arc<TurnContext>,
+        async_channel::Receiver<Event>,
+    ) {
+        make_session_and_context_with_dynamic_tools_and_rx(Vec::new()).await
     }
 
     #[tokio::test]
@@ -9273,7 +9285,6 @@ mod tests {
                     })
                     .to_string(),
                 },
-                source: ToolCallSource::Direct,
             })
             .await;
 
@@ -9313,7 +9324,6 @@ mod tests {
                     })
                     .to_string(),
                 },
-                source: ToolCallSource::Direct,
             })
             .await;
 
@@ -9373,7 +9383,6 @@ mod tests {
                     })
                     .to_string(),
                 },
-                source: ToolCallSource::Direct,
             })
             .await;
 

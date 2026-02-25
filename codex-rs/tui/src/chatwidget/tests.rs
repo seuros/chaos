@@ -25,6 +25,7 @@ use codex_core::config::types::WindowsSandboxModeToml;
 use codex_core::config_loader::RequirementSource;
 use codex_core::features::FEATURES;
 use codex_core::features::Feature;
+use codex_core::models_manager::collaboration_mode_presets::CollaborationModesConfig;
 use codex_core::models_manager::manager::ModelsManager;
 use codex_core::skills::model::SkillMetadata;
 use codex_core::terminal::TerminalName;
@@ -1636,7 +1637,12 @@ async fn make_chatwidget_manual(
     let auth_manager =
         codex_core::test_support::auth_manager_from_auth(CodexAuth::from_api_key("test"));
     let codex_home = cfg.codex_home.clone();
-    let models_manager = Arc::new(ModelsManager::new(codex_home, auth_manager.clone(), None));
+    let models_manager = Arc::new(ModelsManager::new(
+        codex_home,
+        auth_manager.clone(),
+        None,
+        CollaborationModesConfig::default(),
+    ));
     let reasoning_effort = None;
     let base_mode = CollaborationMode {
         mode: ModeKind::Default,
@@ -1762,6 +1768,7 @@ fn set_chatgpt_auth(chat: &mut ChatWidget) {
         chat.config.codex_home.clone(),
         chat.auth_manager.clone(),
         None,
+        CollaborationModesConfig::default(),
     ));
 }
 

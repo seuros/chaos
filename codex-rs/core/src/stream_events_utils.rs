@@ -11,7 +11,9 @@ use crate::codex::TurnContext;
 use crate::error::CodexErr;
 use crate::error::Result;
 use crate::function_tool::FunctionCallError;
+use crate::memories::citations::get_thread_id_from_citations;
 use crate::parse_turn_item;
+use crate::state_db;
 use crate::tools::parallel::ToolCallRuntime;
 use crate::tools::router::ToolRouter;
 use codex_protocol::models::FunctionCallOutputBody;
@@ -24,7 +26,7 @@ use tracing::debug;
 use tracing::instrument;
 
 fn strip_hidden_assistant_markup(text: &str, plan_mode: bool) -> String {
-    let (without_citations, _citations) = strip_citations(text);
+    let (without_citations, _) = strip_citations(text);
     if plan_mode {
         strip_proposed_plan_blocks(&without_citations)
     } else {
@@ -46,6 +48,36 @@ pub(crate) fn raw_assistant_output_text_from_item(item: &ResponseItem) -> Option
         return Some(combined);
     }
     None
+}
+
+/// Persist a completed model response item and record any cited memory usage.
+pub(crate) async fn record_completed_response_item(
+    sess: &Session,
+    turn_context: &TurnContext,
+    item: &ResponseItem,
+) {
+    sess.record_conversation_items(turn_context, std::slice::from_ref(item))
+        .await;
+    record_stage1_output_usage_for_completed_item(turn_context, item).await;
+}
+
+async fn record_stage1_output_usage_for_completed_item(
+    turn_context: &TurnContext,
+    item: &ResponseItem,
+) {
+    let Some(raw_text) = raw_assistant_output_text_from_item(item) else {
+        return;
+    };
+
+    let (_, citations) = strip_citations(&raw_text);
+    let thread_ids = get_thread_id_from_citations(citations);
+    if thread_ids.is_empty() {
+        return;
+    }
+
+    if let Some(db) = state_db::get_state_db(turn_context.config.as_ref(), None).await {
+        let _ = db.record_stage1_output_usage(&thread_ids).await;
+    }
 }
 
 /// Handle a completed output item from the model stream, recording it and
@@ -88,8 +120,7 @@ pub(crate) async fn handle_output_item_done(
                 payload_preview
             );
 
-            ctx.sess
-                .record_conversation_items(&ctx.turn_context, std::slice::from_ref(&item))
+            record_completed_response_item(ctx.sess.as_ref(), ctx.turn_context.as_ref(), &item)
                 .await;
 
             let cancellation_token = ctx.cancellation_token.child_token();
@@ -104,7 +135,7 @@ pub(crate) async fn handle_output_item_done(
         }
         // No tool call: convert messages/reasoning into turn items and mark them as complete.
         Ok(None) => {
-            if let Some(turn_item) = handle_non_tool_response_item(&item, plan_mode).await {
+            if let Some(turn_item) = handle_non_tool_response_item(&item, plan_mode) {
                 if previously_active_item.is_none() {
                     ctx.sess
                         .emit_turn_item_started(&ctx.turn_context, &turn_item)
@@ -116,8 +147,7 @@ pub(crate) async fn handle_output_item_done(
                     .await;
             }
 
-            ctx.sess
-                .record_conversation_items(&ctx.turn_context, std::slice::from_ref(&item))
+            record_completed_response_item(ctx.sess.as_ref(), ctx.turn_context.as_ref(), &item)
                 .await;
             let last_agent_message = last_assistant_message_from_item(&item, plan_mode);
 
@@ -138,8 +168,7 @@ pub(crate) async fn handle_output_item_done(
                     ..Default::default()
                 },
             };
-            ctx.sess
-                .record_conversation_items(&ctx.turn_context, std::slice::from_ref(&item))
+            record_completed_response_item(ctx.sess.as_ref(), ctx.turn_context.as_ref(), &item)
                 .await;
             if let Some(response_item) = response_input_to_response_item(&response) {
                 ctx.sess
@@ -161,8 +190,7 @@ pub(crate) async fn handle_output_item_done(
                     ..Default::default()
                 },
             };
-            ctx.sess
-                .record_conversation_items(&ctx.turn_context, std::slice::from_ref(&item))
+            record_completed_response_item(ctx.sess.as_ref(), ctx.turn_context.as_ref(), &item)
                 .await;
             if let Some(response_item) = response_input_to_response_item(&response) {
                 ctx.sess
@@ -184,7 +212,7 @@ pub(crate) async fn handle_output_item_done(
     Ok(output)
 }
 
-pub(crate) async fn handle_non_tool_response_item(
+pub(crate) fn handle_non_tool_response_item(
     item: &ResponseItem,
     plan_mode: bool,
 ) -> Option<TurnItem> {
@@ -286,13 +314,12 @@ mod tests {
         }
     }
 
-    #[tokio::test]
-    async fn handle_non_tool_response_item_strips_citations_from_assistant_message() {
+    #[test]
+    fn handle_non_tool_response_item_strips_citations_from_assistant_message() {
         let item = assistant_output_text("hello<oai-mem-citation>doc1</oai-mem-citation> world");
 
-        let turn_item = handle_non_tool_response_item(&item, false)
-            .await
-            .expect("assistant message should parse");
+        let turn_item =
+            handle_non_tool_response_item(&item, false).expect("assistant message should parse");
 
         let TurnItem::AgentMessage(agent_message) = turn_item else {
             panic!("expected agent message");

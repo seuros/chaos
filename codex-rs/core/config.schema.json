@@ -409,9 +409,6 @@
             "shell_zsh_fork": {
               "type": "boolean"
             },
-            "skill_approval": {
-              "type": "boolean"
-            },
             "skill_env_var_dependency_prompt": {
               "type": "boolean"
             },
@@ -1703,9 +1700,6 @@
           "type": "boolean"
         },
         "shell_zsh_fork": {
-          "type": "boolean"
-        },
-        "skill_approval": {
           "type": "boolean"
         },
         "skill_env_var_dependency_prompt": {

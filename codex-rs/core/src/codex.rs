@@ -3090,8 +3090,15 @@ impl Session {
                 .serialize_to_text(),
             );
         }
+        let subagents = self
+            .services
+            .agent_control
+            .format_environment_context_subagents(self.conversation_id)
+            .await;
         contextual_user_sections.push(
-            EnvironmentContext::from_turn_context(turn_context, shell.as_ref()).serialize_to_xml(),
+            EnvironmentContext::from_turn_context(turn_context, shell.as_ref())
+                .with_subagents(subagents)
+                .serialize_to_xml(),
         );
 
         let mut items = Vec::with_capacity(2);

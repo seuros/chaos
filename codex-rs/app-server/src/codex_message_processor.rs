@@ -7627,7 +7627,7 @@ mod tests {
                 "role": "user",
                 "content": [{
                     "type": "input_text",
-                    "text": "<user_instructions>\n<AGENTS.md contents>\n</user_instructions>".to_string(),
+                    "text": "# AGENTS.md instructions for project\n\n<INSTRUCTIONS>\n<AGENTS.md contents>\n</INSTRUCTIONS>".to_string(),
                 }],
             }),
             json!({

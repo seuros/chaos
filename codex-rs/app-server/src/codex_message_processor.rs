@@ -5249,6 +5249,7 @@ impl CodexMessageProcessor {
             connectors::list_cached_accessible_connectors_from_mcp_tools(&config),
             connectors::list_cached_all_connectors(&config)
         );
+        let cached_all_connectors = all_connectors.clone();
 
         let (tx, mut rx) = tokio::sync::mpsc::unbounded_channel();
 
@@ -5275,6 +5276,19 @@ impl CodexMessageProcessor {
         let app_list_deadline = tokio::time::Instant::now() + APP_LIST_LOAD_TIMEOUT;
         let mut accessible_loaded = false;
         let mut all_loaded = false;
+        let mut last_notified_apps = None;
+
+        if accessible_connectors.is_some() || all_connectors.is_some() {
+            let merged = connectors::with_app_enabled_state(
+                Self::merge_loaded_apps(
+                    all_connectors.as_deref(),
+                    accessible_connectors.as_deref(),
+                ),
+                &config,
+            );
+            Self::send_app_list_updated_notification(&outgoing, merged.clone()).await;
+            last_notified_apps = Some(merged);
+        }
 
         loop {
             let result = match tokio::time::timeout_at(app_list_deadline, rx.recv()).await {
@@ -5331,14 +5345,30 @@ impl CodexMessageProcessor {
                 }
             }
 
+            let showing_interim_force_refetch = force_refetch && !(accessible_loaded && all_loaded);
+            let all_connectors_for_update =
+                if showing_interim_force_refetch && cached_all_connectors.is_some() {
+                    cached_all_connectors.as_deref()
+                } else {
+                    all_connectors.as_deref()
+                };
+            let accessible_connectors_for_update =
+                if showing_interim_force_refetch && !accessible_loaded {
+                    None
+                } else {
+                    accessible_connectors.as_deref()
+                };
             let merged = connectors::with_app_enabled_state(
                 Self::merge_loaded_apps(
-                    all_connectors.as_deref(),
-                    accessible_connectors.as_deref(),
+                    all_connectors_for_update,
+                    accessible_connectors_for_update,
                 ),
                 &config,
             );
-            Self::send_app_list_updated_notification(&outgoing, merged.clone()).await;
+            if last_notified_apps.as_ref() != Some(&merged) {
+                Self::send_app_list_updated_notification(&outgoing, merged.clone()).await;
+                last_notified_apps = Some(merged.clone());
+            }
 
             if accessible_loaded && all_loaded {
                 match Self::paginate_apps(merged.as_slice(), start, limit) {

@@ -349,6 +349,9 @@
             "experimental_windows_sandbox": {
               "type": "boolean"
             },
+            "fast_mode": {
+              "type": "boolean"
+            },
             "include_apply_patch_tool": {
               "type": "boolean"
             },
@@ -504,6 +507,9 @@
         },
         "sandbox_mode": {
           "$ref": "#/definitions/SandboxMode"
+        },
+        "service_tier": {
+          "$ref": "#/definitions/ServiceTier"
         },
         "tools_view_image": {
           "type": "boolean"
@@ -1321,6 +1327,23 @@
       },
       "type": "object"
     },
+    "ServiceTier": {
+      "oneOf": [
+        {
+          "enum": [
+            "fast"
+          ],
+          "type": "string"
+        },
+        {
+          "description": "Legacy compatibility value for older local config files.",
+          "enum": [
+            "standard"
+          ],
+          "type": "string"
+        }
+      ]
+    },
     "ShellEnvironmentPolicyInherit": {
       "oneOf": [
         {
@@ -1724,6 +1747,9 @@
         "experimental_windows_sandbox": {
           "type": "boolean"
         },
+        "fast_mode": {
+          "type": "boolean"
+        },
         "include_apply_patch_tool": {
           "type": "boolean"
         },
@@ -2111,6 +2137,14 @@
         }
       ],
       "description": "Sandbox configuration to apply if `sandbox` is `WorkspaceWrite`."
+    },
+    "service_tier": {
+      "allOf": [
+        {
+          "$ref": "#/definitions/ServiceTier"
+        }
+      ],
+      "description": "Optional explicit service tier preference for new turns."
     },
     "shell_environment_policy": {
       "allOf": [

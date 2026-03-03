@@ -5323,6 +5323,7 @@ impl CodexMessageProcessor {
                 model,
                 effort,
                 summary: Some(summary),
+                service_tier: None,
                 final_output_json_schema: output_schema,
                 collaboration_mode: None,
                 personality: None,
@@ -5880,6 +5881,7 @@ impl CodexMessageProcessor {
                     model: params.model,
                     effort: params.effort.map(Some),
                     summary: params.summary,
+                    service_tier: None,
                     collaboration_mode,
                     personality: params.personality,
                 })

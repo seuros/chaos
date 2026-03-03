@@ -6590,6 +6590,7 @@ mod tests {
     use crate::protocol::TokenCountEvent;
     use crate::protocol::TokenUsage;
     use crate::protocol::TokenUsageInfo;
+    use crate::protocol::TurnCompleteEvent;
     use crate::protocol::UserMessageEvent;
     use crate::rollout::policy::EventPersistenceMode;
     use crate::rollout::recorder::RolloutRecorder;
@@ -9307,8 +9308,8 @@ mod tests {
     }
 
     #[tokio::test(flavor = "multi_thread", worker_threads = 2)]
-    async fn task_finish_persists_leftover_pending_input() {
-        let (sess, tc, _rx) = make_session_and_context_with_rx().await;
+    async fn task_finish_emits_turn_item_lifecycle_for_leftover_pending_user_input() {
+        let (sess, tc, rx) = make_session_and_context_with_rx().await;
         let input = vec![UserInput::Text {
             text: "hello".to_string(),
             text_elements: Vec::new(),
@@ -9322,6 +9323,8 @@ mod tests {
             },
         )
         .await;
+
+        while rx.try_recv().is_ok() {}
 
         sess.inject_response_items(vec![ResponseInputItem::Message {
             role: "user".to_string(),
@@ -9348,6 +9351,71 @@ mod tests {
             history.raw_items().iter().any(|item| item == &expected),
             "expected pending input to be persisted into history on turn completion"
         );
+
+        let first = tokio::time::timeout(std::time::Duration::from_secs(2), rx.recv())
+            .await
+            .expect("expected raw response item event")
+            .expect("channel open");
+        assert!(matches!(first.msg, EventMsg::RawResponseItem(_)));
+
+        let second = tokio::time::timeout(std::time::Duration::from_secs(2), rx.recv())
+            .await
+            .expect("expected item started event")
+            .expect("channel open");
+        assert!(matches!(
+            second.msg,
+            EventMsg::ItemStarted(ItemStartedEvent {
+                item: TurnItem::UserMessage(UserMessageItem { content, .. }),
+                ..
+            }) if content == vec![UserInput::Text {
+                text: "late pending input".to_string(),
+                text_elements: Vec::new(),
+            }]
+        ));
+
+        let third = tokio::time::timeout(std::time::Duration::from_secs(2), rx.recv())
+            .await
+            .expect("expected item completed event")
+            .expect("channel open");
+        assert!(matches!(
+            third.msg,
+            EventMsg::ItemCompleted(ItemCompletedEvent {
+                item: TurnItem::UserMessage(UserMessageItem { content, .. }),
+                ..
+            }) if content == vec![UserInput::Text {
+                text: "late pending input".to_string(),
+                text_elements: Vec::new(),
+            }]
+        ));
+
+        let fourth = tokio::time::timeout(std::time::Duration::from_secs(2), rx.recv())
+            .await
+            .expect("expected legacy user message event")
+            .expect("channel open");
+        assert!(matches!(
+            fourth.msg,
+            EventMsg::UserMessage(UserMessageEvent {
+                message,
+                images,
+                text_elements,
+                local_images,
+            }) if message == "late pending input"
+                && images == Some(Vec::new())
+                && text_elements.is_empty()
+                && local_images.is_empty()
+        ));
+
+        let fifth = tokio::time::timeout(std::time::Duration::from_secs(2), rx.recv())
+            .await
+            .expect("expected turn complete event")
+            .expect("channel open");
+        assert!(matches!(
+            fifth.msg,
+            EventMsg::TurnComplete(TurnCompleteEvent {
+                turn_id,
+                last_agent_message: None,
+            }) if turn_id == tc.sub_id
+        ));
     }
 
     #[tokio::test]

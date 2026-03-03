@@ -55,6 +55,9 @@ use async_channel::Receiver;
 use async_channel::Sender;
 use chrono::Local;
 use chrono::Utc;
+use codex_artifact_presentation::PresentationArtifactError;
+use codex_artifact_presentation::PresentationArtifactRequest;
+use codex_artifact_presentation::PresentationArtifactResponse;
 use codex_hooks::HookEvent;
 use codex_hooks::HookEventAfterAgent;
 use codex_hooks::HookPayload;
@@ -1775,6 +1778,15 @@ impl Session {
     pub(crate) async fn clear_connector_selection(&self) {
         let mut state = self.state.lock().await;
         state.clear_connector_selection();
+    }
+
+    pub(crate) async fn execute_presentation_artifact(
+        &self,
+        request: PresentationArtifactRequest,
+        cwd: &Path,
+    ) -> Result<PresentationArtifactResponse, PresentationArtifactError> {
+        let mut state = self.state.lock().await;
+        state.presentation_artifacts.execute(request, cwd)
     }
 
     async fn record_initial_history(&self, conversation_history: InitialHistory) {

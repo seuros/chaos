@@ -43,6 +43,11 @@
 //! - Prunes local attached images so only placeholders that survive expansion are sent.
 //! - Preserves remote image URLs as separate attachments even when text is empty.
 //!
+//! When these paths clear the visible textarea after a successful submit or slash-command
+//! dispatch, they intentionally preserve the textarea kill buffer. That lets users `Ctrl+K` part
+//! of a draft, perform a composer action such as changing reasoning level, and then `Ctrl+Y` the
+//! killed text back into the now-empty draft.
+//!
 //! The numeric auto-submit path used by the slash popup performs the same pending-paste expansion
 //! and attachment pruning, and clears pending paste state on success.
 //! Slash commands with arguments (like `/plan` and `/review`) reuse the same preparation path so
@@ -6386,6 +6391,78 @@ mod tests {
             InputResult::None => panic!("expected Command result for '/init'"),
         }
         assert!(composer.textarea.is_empty(), "composer should be cleared");
+    }
+
+    #[test]
+    fn kill_buffer_persists_after_submit() {
+        use crossterm::event::KeyCode;
+        use crossterm::event::KeyEvent;
+        use crossterm::event::KeyModifiers;
+
+        let (tx, _rx) = unbounded_channel::<AppEvent>();
+        let sender = AppEventSender::new(tx);
+        let mut composer = ChatComposer::new(
+            true,
+            sender,
+            false,
+            "Ask Codex to do anything".to_string(),
+            false,
+        );
+        composer.set_steer_enabled(true);
+        composer.textarea.insert_str("restore me");
+        composer.textarea.set_cursor(0);
+
+        let (_result, _needs_redraw) =
+            composer.handle_key_event(KeyEvent::new(KeyCode::Char('k'), KeyModifiers::CONTROL));
+        assert!(composer.textarea.is_empty());
+
+        composer.textarea.insert_str("hello");
+        let (result, _needs_redraw) =
+            composer.handle_key_event(KeyEvent::new(KeyCode::Enter, KeyModifiers::NONE));
+        assert!(matches!(result, InputResult::Submitted { .. }));
+        assert!(composer.textarea.is_empty());
+
+        let (_result, _needs_redraw) =
+            composer.handle_key_event(KeyEvent::new(KeyCode::Char('y'), KeyModifiers::CONTROL));
+        assert_eq!(composer.textarea.text(), "restore me");
+    }
+
+    #[test]
+    fn kill_buffer_persists_after_slash_command_dispatch() {
+        use crossterm::event::KeyCode;
+        use crossterm::event::KeyEvent;
+        use crossterm::event::KeyModifiers;
+
+        let (tx, _rx) = unbounded_channel::<AppEvent>();
+        let sender = AppEventSender::new(tx);
+        let mut composer = ChatComposer::new(
+            true,
+            sender,
+            false,
+            "Ask Codex to do anything".to_string(),
+            false,
+        );
+        composer.textarea.insert_str("restore me");
+        composer.textarea.set_cursor(0);
+
+        let (_result, _needs_redraw) =
+            composer.handle_key_event(KeyEvent::new(KeyCode::Char('k'), KeyModifiers::CONTROL));
+        assert!(composer.textarea.is_empty());
+
+        composer.textarea.insert_str("/diff");
+        let (result, _needs_redraw) =
+            composer.handle_key_event(KeyEvent::new(KeyCode::Enter, KeyModifiers::NONE));
+        match result {
+            InputResult::Command(cmd) => {
+                assert_eq!(cmd.command(), "diff");
+            }
+            _ => panic!("expected Command result for '/diff'"),
+        }
+        assert!(composer.textarea.is_empty());
+
+        let (_result, _needs_redraw) =
+            composer.handle_key_event(KeyEvent::new(KeyCode::Char('y'), KeyModifiers::CONTROL));
+        assert_eq!(composer.textarea.text(), "restore me");
     }
 
     #[test]

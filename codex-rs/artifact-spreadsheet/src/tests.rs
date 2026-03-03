@@ -15,6 +15,7 @@ use crate::SpreadsheetFileType;
 use crate::SpreadsheetFill;
 use crate::SpreadsheetFontFace;
 use crate::SpreadsheetNumberFormat;
+use crate::SpreadsheetRenderOptions;
 use crate::SpreadsheetSheet;
 use crate::SpreadsheetSheetReference;
 use crate::SpreadsheetTextStyle;
@@ -161,6 +162,72 @@ fn path_accesses_cover_import_and_export() -> Result<(), Box<dyn std::error::Err
     let accesses = request.required_path_accesses(cwd.path())?;
     assert_eq!(accesses.len(), 1);
     assert!(accesses[0].path.ends_with("out/report.xlsx"));
+    Ok(())
+}
+
+#[test]
+fn render_options_write_deterministic_html_previews() -> Result<(), Box<dyn std::error::Error>> {
+    let temp_dir = tempfile::tempdir()?;
+    let mut artifact = SpreadsheetArtifact::new(Some("Preview".to_string()));
+    artifact.create_sheet("Sheet 1".to_string())?;
+    {
+        let sheet = artifact
+            .get_sheet_mut(Some("Sheet 1"), None)
+            .expect("sheet");
+        sheet.set_value(
+            CellAddress::parse("A1")?,
+            Some(SpreadsheetCellValue::String("Name".to_string())),
+        )?;
+        sheet.set_value(
+            CellAddress::parse("B1")?,
+            Some(SpreadsheetCellValue::String("Value".to_string())),
+        )?;
+        sheet.set_value(
+            CellAddress::parse("A2")?,
+            Some(SpreadsheetCellValue::String("Alpha".to_string())),
+        )?;
+        sheet.set_value(
+            CellAddress::parse("B2")?,
+            Some(SpreadsheetCellValue::Integer(42)),
+        )?;
+    }
+
+    let rendered = artifact.render_range_preview(
+        temp_dir.path(),
+        artifact.get_sheet(Some("Sheet 1"), None).expect("sheet"),
+        &CellRange::parse("A1:B2")?,
+        &SpreadsheetRenderOptions {
+            output_path: Some(temp_dir.path().join("range-preview.html")),
+            width: Some(320),
+            height: Some(200),
+            include_headers: true,
+            scale: 1.25,
+            performance_mode: true,
+            ..Default::default()
+        },
+    )?;
+    assert!(rendered.path.exists());
+    assert_eq!(std::fs::read_to_string(&rendered.path)?, rendered.html);
+    assert!(rendered.html.contains("<!doctype html>"));
+    assert!(rendered.html.contains("data-performance-mode=\"true\""));
+    assert!(rendered.html.contains(
+        "style=\"--scale: 1.25; --headers: 1; width: 320px; height: 200px; overflow: auto\""
+    ));
+    assert!(rendered.html.contains("<th>A</th>"));
+    assert!(rendered.html.contains("data-address=\"B2\""));
+    assert!(rendered.html.contains(">42</td>"));
+
+    let workbook = artifact.render_workbook_previews(
+        temp_dir.path(),
+        &SpreadsheetRenderOptions {
+            output_path: Some(temp_dir.path().join("workbook")),
+            include_headers: false,
+            ..Default::default()
+        },
+    )?;
+    assert_eq!(workbook.len(), 1);
+    assert!(workbook[0].path.ends_with("Sheet_1.html"));
+    assert!(!workbook[0].html.contains("<th>A</th>"));
     Ok(())
 }
 
@@ -1046,6 +1113,116 @@ fn manager_get_reference_and_xlsx_import_preserve_workbook_name()
             .as_ref()
             .map(|range_ref| range_ref.address.clone()),
         Some("A1:B2".to_string())
+    );
+    Ok(())
+}
+
+#[test]
+fn manager_render_actions_support_workbook_sheet_and_range()
+-> Result<(), Box<dyn std::error::Error>> {
+    let temp_dir = tempfile::tempdir()?;
+    let mut manager = SpreadsheetArtifactManager::default();
+    let created = manager.execute(
+        SpreadsheetArtifactRequest {
+            artifact_id: None,
+            action: "create".to_string(),
+            args: serde_json::json!({ "name": "Render" }),
+        },
+        temp_dir.path(),
+    )?;
+    let artifact_id = created.artifact_id;
+
+    manager.execute(
+        SpreadsheetArtifactRequest {
+            artifact_id: Some(artifact_id.clone()),
+            action: "create_sheet".to_string(),
+            args: serde_json::json!({ "name": "Sheet1" }),
+        },
+        temp_dir.path(),
+    )?;
+    manager.execute(
+        SpreadsheetArtifactRequest {
+            artifact_id: Some(artifact_id.clone()),
+            action: "set_range_values".to_string(),
+            args: serde_json::json!({
+                "sheet_name": "Sheet1",
+                "range": "A1:C4",
+                "values": [
+                    ["h1", "h2", "h3"],
+                    ["a", 1, 2],
+                    ["b", 3, 4],
+                    ["c", 5, 6]
+                ]
+            }),
+        },
+        temp_dir.path(),
+    )?;
+
+    let workbook = manager.execute(
+        SpreadsheetArtifactRequest {
+            artifact_id: Some(artifact_id.clone()),
+            action: "render_workbook".to_string(),
+            args: serde_json::json!({
+                "output_path": temp_dir.path().join("workbook-previews"),
+                "include_headers": false
+            }),
+        },
+        temp_dir.path(),
+    )?;
+    assert_eq!(workbook.exported_paths.len(), 1);
+    assert!(workbook.exported_paths[0].exists());
+
+    let sheet = manager.execute(
+        SpreadsheetArtifactRequest {
+            artifact_id: Some(artifact_id.clone()),
+            action: "render_sheet".to_string(),
+            args: serde_json::json!({
+                "sheet_name": "Sheet1",
+                "output_path": temp_dir.path().join("sheet-preview.html"),
+                "center_address": "B3",
+                "width": 220,
+                "height": 90,
+                "scale": 1.5,
+                "performance_mode": true
+            }),
+        },
+        temp_dir.path(),
+    )?;
+    assert_eq!(sheet.exported_paths.len(), 1);
+    assert!(sheet.exported_paths[0].exists());
+    assert!(
+        sheet
+            .rendered_html
+            .as_ref()
+            .is_some_and(|html| html.contains("data-performance-mode=\"true\""))
+    );
+
+    let range = manager.execute(
+        SpreadsheetArtifactRequest {
+            artifact_id: Some(artifact_id),
+            action: "render_range".to_string(),
+            args: serde_json::json!({
+                "sheet_name": "Sheet1",
+                "range": "A2:C4",
+                "output_path": temp_dir.path().join("range-preview.html"),
+                "include_headers": true
+            }),
+        },
+        temp_dir.path(),
+    )?;
+    assert_eq!(range.exported_paths.len(), 1);
+    assert_eq!(
+        range
+            .range_ref
+            .as_ref()
+            .map(|range_ref| range_ref.address.clone()),
+        Some("A2:C4".to_string())
+    );
+    assert!(
+        range
+            .rendered_html
+            .as_ref()
+            .is_some_and(|html| html.contains("<th>A</th>"))
     );
     Ok(())
 }

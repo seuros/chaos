@@ -105,7 +105,7 @@ impl TestCodexBuilder {
             Some(home) => home,
             None => Arc::new(TempDir::new()?),
         };
-        self.build_with_home(server, home, None).await
+        Box::pin(self.build_with_home(server, home, None)).await
     }
 
     pub async fn build_with_streaming_server(
@@ -117,8 +117,7 @@ impl TestCodexBuilder {
             Some(home) => home,
             None => Arc::new(TempDir::new()?),
         };
-        self.build_with_home_and_base_url(format!("{base_url}/v1"), home, None)
-            .await
+        Box::pin(self.build_with_home_and_base_url(format!("{base_url}/v1"), home, None)).await
     }
 
     pub async fn build_with_websocket_server(
@@ -139,8 +138,7 @@ impl TestCodexBuilder {
                 .enable(Feature::ResponsesWebsockets)
                 .expect("test config should allow feature update");
         }));
-        self.build_with_home_and_base_url(base_url, home, None)
-            .await
+        Box::pin(self.build_with_home_and_base_url(base_url, home, None)).await
     }
 
     pub async fn resume(
@@ -149,7 +147,7 @@ impl TestCodexBuilder {
         home: Arc<TempDir>,
         rollout_path: PathBuf,
     ) -> anyhow::Result<TestCodex> {
-        self.build_with_home(server, home, Some(rollout_path)).await
+        Box::pin(self.build_with_home(server, home, Some(rollout_path))).await
     }
 
     async fn build_with_home(
@@ -160,7 +158,7 @@ impl TestCodexBuilder {
     ) -> anyhow::Result<TestCodex> {
         let base_url = format!("{}/v1", server.uri());
         let (config, cwd) = self.prepare_config(base_url, &home).await?;
-        self.build_from_config(config, cwd, home, resume_from).await
+        Box::pin(self.build_from_config(config, cwd, home, resume_from)).await
     }
 
     async fn build_with_home_and_base_url(
@@ -170,7 +168,7 @@ impl TestCodexBuilder {
         resume_from: Option<PathBuf>,
     ) -> anyhow::Result<TestCodex> {
         let (config, cwd) = self.prepare_config(base_url, &home).await?;
-        self.build_from_config(config, cwd, home, resume_from).await
+        Box::pin(self.build_from_config(config, cwd, home, resume_from)).await
     }
 
     async fn build_from_config(
@@ -201,11 +199,14 @@ impl TestCodexBuilder {
         let new_conversation = match resume_from {
             Some(path) => {
                 let auth_manager = codex_core::test_support::auth_manager_from_auth(auth);
-                thread_manager
-                    .resume_thread_from_rollout(config.clone(), path, auth_manager)
-                    .await?
+                Box::pin(thread_manager.resume_thread_from_rollout(
+                    config.clone(),
+                    path,
+                    auth_manager,
+                ))
+                .await?
             }
-            None => thread_manager.start_thread(config.clone()).await?,
+            None => Box::pin(thread_manager.start_thread(config.clone())).await?,
         };
 
         Ok(TestCodex {

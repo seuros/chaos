@@ -33,6 +33,10 @@ use tracing::warn;
 
 const DEFAULT_SKILLS_DIR_NAME: &str = "skills";
 const DEFAULT_MCP_CONFIG_FILE: &str = ".mcp.json";
+const DEFAULT_APP_CONFIG_FILE: &str = ".app.json";
+
+#[derive(Debug, Clone, PartialEq, Eq, Hash)]
+pub struct AppConnectorId(pub String);
 
 #[derive(Debug, Clone, PartialEq)]
 pub struct LoadedPlugin {
@@ -42,6 +46,7 @@ pub struct LoadedPlugin {
     pub enabled: bool,
     pub skill_roots: Vec<PathBuf>,
     pub mcp_servers: HashMap<String, McpServerConfig>,
+    pub apps: Vec<AppConnectorId>,
     pub error: Option<String>,
 }
 
@@ -79,6 +84,21 @@ impl PluginLoadOutcome {
             }
         }
         mcp_servers
+    }
+
+    pub fn effective_apps(&self) -> Vec<AppConnectorId> {
+        let mut apps = Vec::new();
+        let mut seen_connector_ids = std::collections::HashSet::new();
+
+        for plugin in self.plugins.iter().filter(|plugin| plugin.is_active()) {
+            for connector_id in &plugin.apps {
+                if seen_connector_ids.insert(connector_id.clone()) {
+                    apps.push(connector_id.clone());
+                }
+            }
+        }
+
+        apps
     }
 }
 
@@ -227,6 +247,18 @@ struct PluginMcpFile {
     mcp_servers: HashMap<String, JsonValue>,
 }
 
+#[derive(Debug, Default, Deserialize)]
+#[serde(rename_all = "camelCase")]
+struct PluginAppFile {
+    #[serde(default)]
+    apps: HashMap<String, PluginAppConfig>,
+}
+
+#[derive(Debug, Default, Deserialize)]
+struct PluginAppConfig {
+    id: String,
+}
+
 pub(crate) fn load_plugins_from_layer_stack(
     config_layer_stack: &ConfigLayerStack,
     store: &PluginStore,
@@ -299,6 +331,7 @@ fn load_plugin(config_name: String, plugin: &PluginConfig, store: &PluginStore) 
         enabled: plugin.enabled,
         skill_roots: Vec::new(),
         mcp_servers: HashMap::new(),
+        apps: Vec::new(),
         error: None,
     };
 
@@ -341,6 +374,10 @@ fn load_plugin(config_name: String, plugin: &PluginConfig, store: &PluginStore) 
         }
     }
     loaded_plugin.mcp_servers = mcp_servers;
+    loaded_plugin.apps = load_apps_from_file(
+        plugin_root.as_path(),
+        &plugin_root.as_path().join(DEFAULT_APP_CONFIG_FILE),
+    );
     loaded_plugin
 }
 
@@ -362,6 +399,39 @@ fn default_mcp_config_paths(plugin_root: &Path) -> Vec<PathBuf> {
     paths.sort_unstable();
     paths.dedup();
     paths
+}
+
+fn load_apps_from_file(plugin_root: &Path, app_config_path: &Path) -> Vec<AppConnectorId> {
+    let Ok(contents) = fs::read_to_string(app_config_path) else {
+        return Vec::new();
+    };
+    let parsed = match serde_json::from_str::<PluginAppFile>(&contents) {
+        Ok(parsed) => parsed,
+        Err(err) => {
+            warn!(
+                path = %app_config_path.display(),
+                "failed to parse plugin app config: {err}"
+            );
+            return Vec::new();
+        }
+    };
+
+    let mut apps: Vec<PluginAppConfig> = parsed.apps.into_values().collect();
+    apps.sort_unstable_by(|left, right| left.id.cmp(&right.id));
+
+    apps.into_iter()
+        .filter_map(|app| {
+            if app.id.trim().is_empty() {
+                warn!(
+                    plugin = %plugin_root.display(),
+                    "plugin app config is missing an app id"
+                );
+                None
+            } else {
+                Some(AppConnectorId(app.id))
+            }
+        })
+        .collect()
 }
 
 fn load_mcp_servers_from_file(plugin_root: &Path, mcp_config_path: &Path) -> PluginMcpDiscovery {
@@ -550,6 +620,16 @@ mod tests {
   }
 }"#,
         );
+        write_file(
+            &plugin_root.join(".app.json"),
+            r#"{
+  "apps": {
+    "example": {
+      "id": "connector_example"
+    }
+  }
+}"#,
+        );
 
         let outcome =
             load_plugins_from_config(&plugin_config_toml(true, true), codex_home.path()).await;
@@ -582,6 +662,7 @@ mod tests {
                         oauth_resource: None,
                     },
                 )]),
+                apps: vec![AppConnectorId("connector_example".to_string())],
                 error: None,
             }]
         );
@@ -590,6 +671,10 @@ mod tests {
             vec![plugin_root.join("skills")]
         );
         assert_eq!(outcome.effective_mcp_servers().len(), 1);
+        assert_eq!(
+            outcome.effective_apps(),
+            vec![AppConnectorId("connector_example".to_string())]
+        );
     }
 
     #[tokio::test]
@@ -628,11 +713,86 @@ mod tests {
                 enabled: false,
                 skill_roots: Vec::new(),
                 mcp_servers: HashMap::new(),
+                apps: Vec::new(),
                 error: None,
             }]
         );
         assert!(outcome.effective_skill_roots().is_empty());
         assert!(outcome.effective_mcp_servers().is_empty());
+    }
+
+    #[tokio::test]
+    async fn effective_apps_dedupes_connector_ids_across_plugins() {
+        let codex_home = TempDir::new().unwrap();
+        let plugin_a_root = codex_home
+            .path()
+            .join("plugins/cache")
+            .join("test/plugin-a/local");
+        let plugin_b_root = codex_home
+            .path()
+            .join("plugins/cache")
+            .join("test/plugin-b/local");
+
+        write_file(
+            &plugin_a_root.join(".codex-plugin/plugin.json"),
+            r#"{"name":"plugin-a"}"#,
+        );
+        write_file(
+            &plugin_a_root.join(".app.json"),
+            r#"{
+  "apps": {
+    "example": {
+      "id": "connector_example"
+    }
+  }
+}"#,
+        );
+        write_file(
+            &plugin_b_root.join(".codex-plugin/plugin.json"),
+            r#"{"name":"plugin-b"}"#,
+        );
+        write_file(
+            &plugin_b_root.join(".app.json"),
+            r#"{
+  "apps": {
+    "chat": {
+      "id": "connector_example"
+    },
+    "gmail": {
+      "id": "connector_gmail"
+    }
+  }
+}"#,
+        );
+
+        let mut root = toml::map::Map::new();
+        let mut features = toml::map::Map::new();
+        features.insert("plugins".to_string(), Value::Boolean(true));
+        root.insert("features".to_string(), Value::Table(features));
+
+        let mut plugins = toml::map::Map::new();
+
+        let mut plugin_a = toml::map::Map::new();
+        plugin_a.insert("enabled".to_string(), Value::Boolean(true));
+        plugins.insert("plugin-a@test".to_string(), Value::Table(plugin_a));
+
+        let mut plugin_b = toml::map::Map::new();
+        plugin_b.insert("enabled".to_string(), Value::Boolean(true));
+        plugins.insert("plugin-b@test".to_string(), Value::Table(plugin_b));
+
+        root.insert("plugins".to_string(), Value::Table(plugins));
+        let config_toml =
+            toml::to_string(&Value::Table(root)).expect("plugin test config should serialize");
+
+        let outcome = load_plugins_from_config(&config_toml, codex_home.path()).await;
+
+        assert_eq!(
+            outcome.effective_apps(),
+            vec![
+                AppConnectorId("connector_example".to_string()),
+                AppConnectorId("connector_gmail".to_string()),
+            ]
+        );
     }
 
     #[test]

@@ -78,6 +78,7 @@ use serde::Deserialize;
 use serde::Serialize;
 use similar::DiffableStr;
 use std::collections::BTreeMap;
+use std::collections::BTreeSet;
 use std::collections::HashMap;
 use std::io::ErrorKind;
 use std::path::Path;
@@ -1385,6 +1386,7 @@ pub struct AgentsToml {
     /// [agents.researcher]
     /// description = "Research-focused role."
     /// config_file = "./agents/researcher.toml"
+    /// nickname_candidates = ["Herodotus", "Ibn Battuta"]
     /// ```
     #[serde(default, flatten)]
     pub roles: BTreeMap<String, AgentRoleToml>,
@@ -1396,6 +1398,8 @@ pub struct AgentRoleConfig {
     pub description: Option<String>,
     /// Path to a role-specific config layer.
     pub config_file: Option<PathBuf>,
+    /// Candidate nicknames for agents spawned with this role.
+    pub nickname_candidates: Option<Vec<String>>,
 }
 
 #[derive(Serialize, Deserialize, Debug, Clone, Default, PartialEq, Eq, JsonSchema)]
@@ -1407,6 +1411,9 @@ pub struct AgentRoleToml {
     /// Path to a role-specific config layer.
     /// Relative paths are resolved relative to the `config.toml` that defines them.
     pub config_file: Option<AbsolutePathBuf>,
+
+    /// Candidate nicknames for agents spawned with this role.
+    pub nickname_candidates: Option<Vec<String>>,
 }
 
 impl From<ToolsToml> for Tools {
@@ -1895,11 +1902,16 @@ impl Config {
                         let config_file =
                             role.config_file.as_ref().map(AbsolutePathBuf::to_path_buf);
                         Self::validate_agent_role_config_file(name, config_file.as_deref())?;
+                        let nickname_candidates = Self::normalize_agent_role_nickname_candidates(
+                            name,
+                            role.nickname_candidates.as_deref(),
+                        )?;
                         Ok((
                             name.clone(),
                             AgentRoleConfig {
                                 description: role.description.clone(),
                                 config_file,
+                                nickname_candidates,
                             },
                         ))
                     })
@@ -2359,6 +2371,58 @@ impl Config {
                 ),
             ))
         }
+    }
+
+    fn normalize_agent_role_nickname_candidates(
+        role_name: &str,
+        nickname_candidates: Option<&[String]>,
+    ) -> std::io::Result<Option<Vec<String>>> {
+        let Some(nickname_candidates) = nickname_candidates else {
+            return Ok(None);
+        };
+
+        if nickname_candidates.is_empty() {
+            return Err(std::io::Error::new(
+                std::io::ErrorKind::InvalidInput,
+                format!("agents.{role_name}.nickname_candidates must contain at least one name"),
+            ));
+        }
+
+        let mut normalized_candidates = Vec::with_capacity(nickname_candidates.len());
+        let mut seen_candidates = BTreeSet::new();
+
+        for nickname in nickname_candidates {
+            let normalized_nickname = nickname.trim();
+            if normalized_nickname.is_empty() {
+                return Err(std::io::Error::new(
+                    std::io::ErrorKind::InvalidInput,
+                    format!("agents.{role_name}.nickname_candidates cannot contain blank names"),
+                ));
+            }
+
+            if !seen_candidates.insert(normalized_nickname.to_owned()) {
+                return Err(std::io::Error::new(
+                    std::io::ErrorKind::InvalidInput,
+                    format!("agents.{role_name}.nickname_candidates cannot contain duplicates"),
+                ));
+            }
+
+            if !normalized_nickname
+                .chars()
+                .all(|c| c.is_ascii_alphanumeric() || matches!(c, ' ' | '-' | '_'))
+            {
+                return Err(std::io::Error::new(
+                    std::io::ErrorKind::InvalidInput,
+                    format!(
+                        "agents.{role_name}.nickname_candidates may only contain ASCII letters, digits, spaces, hyphens, and underscores"
+                    ),
+                ));
+            }
+
+            normalized_candidates.push(normalized_nickname.to_owned());
+        }
+
+        Ok(Some(normalized_candidates))
     }
 
     pub fn set_windows_sandbox_enabled(&mut self, value: bool) {
@@ -4662,6 +4726,7 @@ model = "gpt-5.1-codex"
                     AgentRoleToml {
                         description: Some("Research role".to_string()),
                         config_file: Some(AbsolutePathBuf::from_absolute_path(missing_path)?),
+                        nickname_candidates: None,
                     },
                 )]),
             }),
@@ -4698,6 +4763,7 @@ model = "gpt-5.1-codex"
             r#"[agents.researcher]
 description = "Research role"
 config_file = "./agents/researcher.toml"
+nickname_candidates = ["Hypatia", "Noether"]
 "#,
         )
         .await?;
@@ -4714,6 +4780,162 @@ config_file = "./agents/researcher.toml"
                 .and_then(|role| role.config_file.as_ref()),
             Some(&role_config_path)
         );
+        assert_eq!(
+            config
+                .agent_roles
+                .get("researcher")
+                .and_then(|role| role.nickname_candidates.as_ref())
+                .map(|candidates| candidates.iter().map(String::as_str).collect::<Vec<_>>()),
+            Some(vec!["Hypatia", "Noether"])
+        );
+
+        Ok(())
+    }
+
+    #[test]
+    fn load_config_normalizes_agent_role_nickname_candidates() -> std::io::Result<()> {
+        let codex_home = TempDir::new()?;
+        let cfg = ConfigToml {
+            agents: Some(AgentsToml {
+                max_threads: None,
+                max_depth: None,
+                job_max_runtime_seconds: None,
+                roles: BTreeMap::from([(
+                    "researcher".to_string(),
+                    AgentRoleToml {
+                        description: Some("Research role".to_string()),
+                        config_file: None,
+                        nickname_candidates: Some(vec![
+                            "  Hypatia  ".to_string(),
+                            "Noether".to_string(),
+                        ]),
+                    },
+                )]),
+            }),
+            ..Default::default()
+        };
+
+        let config = Config::load_from_base_config_with_overrides(
+            cfg,
+            ConfigOverrides::default(),
+            codex_home.path().to_path_buf(),
+        )?;
+
+        assert_eq!(
+            config
+                .agent_roles
+                .get("researcher")
+                .and_then(|role| role.nickname_candidates.as_ref())
+                .map(|candidates| candidates.iter().map(String::as_str).collect::<Vec<_>>()),
+            Some(vec!["Hypatia", "Noether"])
+        );
+
+        Ok(())
+    }
+
+    #[test]
+    fn load_config_rejects_empty_agent_role_nickname_candidates() -> std::io::Result<()> {
+        let codex_home = TempDir::new()?;
+        let cfg = ConfigToml {
+            agents: Some(AgentsToml {
+                max_threads: None,
+                max_depth: None,
+                job_max_runtime_seconds: None,
+                roles: BTreeMap::from([(
+                    "researcher".to_string(),
+                    AgentRoleToml {
+                        description: Some("Research role".to_string()),
+                        config_file: None,
+                        nickname_candidates: Some(Vec::new()),
+                    },
+                )]),
+            }),
+            ..Default::default()
+        };
+
+        let result = Config::load_from_base_config_with_overrides(
+            cfg,
+            ConfigOverrides::default(),
+            codex_home.path().to_path_buf(),
+        );
+        let err = result.expect_err("empty nickname candidates should be rejected");
+        assert_eq!(err.kind(), std::io::ErrorKind::InvalidInput);
+        assert!(
+            err.to_string()
+                .contains("agents.researcher.nickname_candidates")
+        );
+
+        Ok(())
+    }
+
+    #[test]
+    fn load_config_rejects_duplicate_agent_role_nickname_candidates() -> std::io::Result<()> {
+        let codex_home = TempDir::new()?;
+        let cfg = ConfigToml {
+            agents: Some(AgentsToml {
+                max_threads: None,
+                max_depth: None,
+                job_max_runtime_seconds: None,
+                roles: BTreeMap::from([(
+                    "researcher".to_string(),
+                    AgentRoleToml {
+                        description: Some("Research role".to_string()),
+                        config_file: None,
+                        nickname_candidates: Some(vec![
+                            "Hypatia".to_string(),
+                            " Hypatia ".to_string(),
+                        ]),
+                    },
+                )]),
+            }),
+            ..Default::default()
+        };
+
+        let result = Config::load_from_base_config_with_overrides(
+            cfg,
+            ConfigOverrides::default(),
+            codex_home.path().to_path_buf(),
+        );
+        let err = result.expect_err("duplicate nickname candidates should be rejected");
+        assert_eq!(err.kind(), std::io::ErrorKind::InvalidInput);
+        assert!(
+            err.to_string()
+                .contains("agents.researcher.nickname_candidates cannot contain duplicates")
+        );
+
+        Ok(())
+    }
+
+    #[test]
+    fn load_config_rejects_unsafe_agent_role_nickname_candidates() -> std::io::Result<()> {
+        let codex_home = TempDir::new()?;
+        let cfg = ConfigToml {
+            agents: Some(AgentsToml {
+                max_threads: None,
+                max_depth: None,
+                job_max_runtime_seconds: None,
+                roles: BTreeMap::from([(
+                    "researcher".to_string(),
+                    AgentRoleToml {
+                        description: Some("Research role".to_string()),
+                        config_file: None,
+                        nickname_candidates: Some(vec!["Agent <One>".to_string()]),
+                    },
+                )]),
+            }),
+            ..Default::default()
+        };
+
+        let result = Config::load_from_base_config_with_overrides(
+            cfg,
+            ConfigOverrides::default(),
+            codex_home.path().to_path_buf(),
+        );
+        let err = result.expect_err("unsafe nickname candidates should be rejected");
+        assert_eq!(err.kind(), std::io::ErrorKind::InvalidInput);
+        assert!(err.to_string().contains(
+            "agents.researcher.nickname_candidates may only contain ASCII letters, digits, spaces, hyphens, and underscores"
+        ));
 
         Ok(())
     }

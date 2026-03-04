@@ -2835,25 +2835,31 @@ impl App {
                     .with_profile(self.active_profile.as_deref());
                 for (feature, enabled) in &updates {
                     let feature_key = feature.key();
-                    if *enabled {
-                        // Update the in-memory configs.
-                        self.config.features.enable(*feature);
-                        self.chat_widget.set_feature_enabled(*feature, true);
+                    if let Err(err) = self.config.features.set_enabled(*feature, *enabled) {
+                        tracing::error!(
+                            error = %err,
+                            feature = feature_key,
+                            "failed to update constrained feature flags"
+                        );
+                        self.chat_widget.add_error_message(format!(
+                            "Failed to update experimental feature `{feature_key}`: {err}"
+                        ));
+                        continue;
+                    }
+                    let effective_enabled = self.config.features.enabled(*feature);
+                    self.chat_widget
+                        .set_feature_enabled(*feature, effective_enabled);
+                    if effective_enabled {
                         builder = builder.set_feature_enabled(feature_key, true);
+                    } else if feature.default_enabled() {
+                        builder = builder.set_feature_enabled(feature_key, false);
                     } else {
-                        // Update the in-memory configs.
-                        self.config.features.disable(*feature);
-                        self.chat_widget.set_feature_enabled(*feature, false);
-                        if feature.default_enabled() {
-                            builder = builder.set_feature_enabled(feature_key, false);
-                        } else {
-                            // If the feature already default to `false`, we drop the key
-                            // in the config file so that the user does not miss the feature
-                            // once it gets globally released.
-                            builder = builder.with_edits(vec![ConfigEdit::ClearPath {
-                                segments: vec!["features".to_string(), feature_key.to_string()],
-                            }]);
-                        }
+                        // If the feature already default to `false`, we drop the key
+                        // in the config file so that the user does not miss the feature
+                        // once it gets globally released.
+                        builder = builder.with_edits(vec![ConfigEdit::ClearPath {
+                            segments: vec!["features".to_string(), feature_key.to_string()],
+                        }]);
                     }
                 }
                 if windows_sandbox_changed {

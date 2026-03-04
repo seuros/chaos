@@ -6059,7 +6059,10 @@ fn render_bottom_popup(chat: &ChatWidget, width: u16) -> String {
 #[tokio::test]
 async fn apps_popup_refreshes_when_connectors_snapshot_updates() {
     let (mut chat, _rx, _op_rx) = make_chatwidget_manual(None).await;
-    chat.config.features.enable(Feature::Apps);
+    chat.config
+        .features
+        .enable(Feature::Apps)
+        .expect("test config should allow feature update");
     chat.bottom_pane.set_connectors_enabled(true);
     let notion_id = "unit_test_apps_popup_refresh_connector_1";
     let linear_id = "unit_test_apps_popup_refresh_connector_2";
@@ -6149,7 +6152,10 @@ async fn apps_popup_refreshes_when_connectors_snapshot_updates() {
 #[tokio::test]
 async fn apps_refresh_failure_keeps_existing_full_snapshot() {
     let (mut chat, _rx, _op_rx) = make_chatwidget_manual(None).await;
-    chat.config.features.enable(Feature::Apps);
+    chat.config
+        .features
+        .enable(Feature::Apps)
+        .expect("test config should allow feature update");
     chat.bottom_pane.set_connectors_enabled(true);
     let notion_id = "unit_test_apps_refresh_failure_connector_1";
     let linear_id = "unit_test_apps_refresh_failure_connector_2";
@@ -6228,7 +6234,10 @@ async fn apps_refresh_failure_keeps_existing_full_snapshot() {
 #[tokio::test]
 async fn apps_refresh_failure_with_cached_snapshot_triggers_pending_force_refetch() {
     let (mut chat, _rx, _op_rx) = make_chatwidget_manual(None).await;
-    chat.config.features.enable(Feature::Apps);
+    chat.config
+        .features
+        .enable(Feature::Apps)
+        .expect("test config should allow feature update");
     chat.bottom_pane.set_connectors_enabled(true);
     chat.connectors_prefetch_in_flight = true;
     chat.connectors_force_refetch_pending = true;
@@ -6264,7 +6273,10 @@ async fn apps_refresh_failure_with_cached_snapshot_triggers_pending_force_refetc
 #[tokio::test]
 async fn apps_partial_refresh_uses_same_filtering_as_full_refresh() {
     let (mut chat, _rx, _op_rx) = make_chatwidget_manual(None).await;
-    chat.config.features.enable(Feature::Apps);
+    chat.config
+        .features
+        .enable(Feature::Apps)
+        .expect("test config should allow feature update");
     chat.bottom_pane.set_connectors_enabled(true);
 
     let full_connectors = vec![
@@ -6360,7 +6372,10 @@ async fn apps_partial_refresh_uses_same_filtering_as_full_refresh() {
 #[tokio::test]
 async fn apps_popup_shows_disabled_status_for_installed_but_disabled_apps() {
     let (mut chat, _rx, _op_rx) = make_chatwidget_manual(None).await;
-    chat.config.features.enable(Feature::Apps);
+    chat.config
+        .features
+        .enable(Feature::Apps)
+        .expect("test config should allow feature update");
     chat.bottom_pane.set_connectors_enabled(true);
 
     chat.on_connectors_loaded(
@@ -6398,7 +6413,10 @@ async fn apps_popup_shows_disabled_status_for_installed_but_disabled_apps() {
 #[tokio::test]
 async fn apps_initial_load_applies_enabled_state_from_config() {
     let (mut chat, _rx, _op_rx) = make_chatwidget_manual(None).await;
-    chat.config.features.enable(Feature::Apps);
+    chat.config
+        .features
+        .enable(Feature::Apps)
+        .expect("test config should allow feature update");
     chat.bottom_pane.set_connectors_enabled(true);
 
     let temp = tempdir().expect("tempdir");
@@ -6447,7 +6465,10 @@ async fn apps_initial_load_applies_enabled_state_from_config() {
 #[tokio::test]
 async fn apps_refresh_preserves_toggled_enabled_state() {
     let (mut chat, _rx, _op_rx) = make_chatwidget_manual(None).await;
-    chat.config.features.enable(Feature::Apps);
+    chat.config
+        .features
+        .enable(Feature::Apps)
+        .expect("test config should allow feature update");
     chat.bottom_pane.set_connectors_enabled(true);
 
     chat.on_connectors_loaded(
@@ -6512,7 +6533,10 @@ async fn apps_refresh_preserves_toggled_enabled_state() {
 #[tokio::test]
 async fn apps_popup_for_not_installed_app_uses_install_only_selected_description() {
     let (mut chat, _rx, _op_rx) = make_chatwidget_manual(None).await;
-    chat.config.features.enable(Feature::Apps);
+    chat.config
+        .features
+        .enable(Feature::Apps)
+        .expect("test config should allow feature update");
     chat.bottom_pane.set_connectors_enabled(true);
 
     chat.on_connectors_loaded(

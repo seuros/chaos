@@ -1381,7 +1381,10 @@ mod tests {
     #[tokio::test]
     async fn resume_thread_subagent_restores_stored_nickname_and_role() {
         let (home, mut config) = test_config().await;
-        config.features.enable(Feature::Sqlite);
+        config
+            .features
+            .enable(Feature::Sqlite)
+            .expect("test config should allow sqlite");
         let manager = ThreadManager::with_models_provider_and_home_for_tests(
             CodexAuth::from_api_key("dummy"),
             config.model_provider.clone(),

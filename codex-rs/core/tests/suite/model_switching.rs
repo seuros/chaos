@@ -133,7 +133,10 @@ async fn model_and_personality_change_only_appends_model_instructions() -> Resul
     let mut builder = test_codex()
         .with_model("gpt-5.2-codex")
         .with_config(|config| {
-            config.features.enable(Feature::Personality);
+            config
+                .features
+                .enable(Feature::Personality)
+                .expect("test config should allow feature update");
         });
     let test = builder.build(&server).await?;
     let next_model = "exp-codex-personality";

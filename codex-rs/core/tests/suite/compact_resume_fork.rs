@@ -10,6 +10,7 @@
 use super::compact::COMPACT_WARNING_MESSAGE;
 use super::compact::FIRST_REPLY;
 use super::compact::SUMMARY_TEXT;
+use anyhow::Result;
 use codex_core::CodexThread;
 use codex_core::ThreadManager;
 use codex_core::compact::SUMMARIZATION_PROMPT;
@@ -291,13 +292,36 @@ async fn compact_resume_and_fork_preserve_model_history_view() {
     assert_eq!(requests.len(), 5);
 }
 
-#[tokio::test(flavor = "multi_thread", worker_threads = 2)]
+#[test]
 /// Scenario: after the forked branch is compacted, resuming again should reuse
 /// the compacted history and only append the new user message.
-async fn compact_resume_after_second_compaction_preserves_history() {
+fn compact_resume_after_second_compaction_preserves_history() -> Result<()> {
+    const TEST_STACK_SIZE_BYTES: usize = 8 * 1024 * 1024;
+
+    let handle = std::thread::Builder::new()
+        .name("compact_resume_after_second_compaction_preserves_history".to_string())
+        .stack_size(TEST_STACK_SIZE_BYTES)
+        .spawn(|| -> Result<()> {
+            let runtime = tokio::runtime::Builder::new_multi_thread()
+                .worker_threads(2)
+                .thread_stack_size(TEST_STACK_SIZE_BYTES)
+                .enable_all()
+                .build()?;
+            runtime.block_on(compact_resume_after_second_compaction_preserves_history_impl())
+        })?;
+
+    match handle.join() {
+        Ok(result) => result,
+        Err(_) => Err(anyhow::anyhow!(
+            "compact_resume_after_second_compaction_preserves_history thread panicked"
+        )),
+    }
+}
+
+async fn compact_resume_after_second_compaction_preserves_history_impl() -> Result<()> {
     if network_disabled() {
         println!("Skipping test because network is disabled in this sandbox");
-        return;
+        return Ok(());
     }
 
     // 1. Arrange mocked SSE responses for the initial flow plus the second compact.
@@ -402,6 +426,7 @@ async fn compact_resume_after_second_compaction_preserves_history() {
             assert_eq!(chunk, seeded_user_prefix);
         }
     }
+    Ok(())
 }
 
 fn normalize_line_endings(value: &mut Value) {

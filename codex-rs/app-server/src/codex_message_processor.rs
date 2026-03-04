@@ -4550,11 +4550,9 @@ impl CodexMessageProcessor {
                 }
             };
 
-            if thread.enabled(Feature::Apps) {
-                config.features.enable(Feature::Apps);
-            } else {
-                config.features.disable(Feature::Apps);
-            }
+            let _ = config
+                .features
+                .set_enabled(Feature::Apps, thread.enabled(Feature::Apps));
         }
 
         if !config.features.enabled(Feature::Apps) {

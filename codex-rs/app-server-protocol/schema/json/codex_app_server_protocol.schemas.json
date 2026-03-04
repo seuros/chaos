@@ -9007,6 +9007,15 @@
                 "type": "null"
               }
             ]
+          },
+          "featureRequirements": {
+            "additionalProperties": {
+              "type": "boolean"
+            },
+            "type": [
+              "object",
+              "null"
+            ]
           }
         },
         "type": "object"

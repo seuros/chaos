@@ -1989,7 +1989,8 @@ mod tests {
         let (_session, mut turn) = make_session_and_context().await;
         Arc::make_mut(&mut turn.config)
             .features
-            .enable(Feature::ImageDetailOriginal);
+            .enable(Feature::ImageDetailOriginal)
+            .expect("test config should allow feature update");
         turn.model_info.supports_image_detail_original = true;
 
         let content_item =

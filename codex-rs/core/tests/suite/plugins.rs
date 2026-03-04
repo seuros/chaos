@@ -203,12 +203,19 @@ async fn plugin_apps_expose_tools_after_canonical_name_mention() -> Result<()> {
 
     let codex_home = Arc::new(TempDir::new()?);
     write_plugin_app_plugin(codex_home.as_ref());
+    #[allow(clippy::expect_used)]
     let mut builder = test_codex()
         .with_home(codex_home)
         .with_auth(CodexAuth::from_api_key("Test API Key"))
         .with_config(move |config| {
-            config.features.enable(Feature::Apps);
-            config.features.disable(Feature::AppsMcpGateway);
+            config
+                .features
+                .enable(Feature::Apps)
+                .expect("test config should allow feature update");
+            config
+                .features
+                .disable(Feature::AppsMcpGateway)
+                .expect("test config should allow feature update");
             config.chatgpt_base_url = apps_server.chatgpt_base_url;
         });
     let codex = builder

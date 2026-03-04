@@ -475,7 +475,9 @@ mod tests {
     async fn js_repl_instructions_are_appended_when_enabled() {
         let tmp = tempfile::tempdir().expect("tempdir");
         let mut cfg = make_config(&tmp, 4096, None).await;
-        cfg.features.enable(Feature::JsRepl);
+        cfg.features
+            .enable(Feature::JsRepl)
+            .expect("test config should allow js_repl");
 
         let res = get_user_instructions(&cfg, None)
             .await
@@ -488,9 +490,13 @@ mod tests {
     async fn js_repl_tools_only_instructions_are_feature_gated() {
         let tmp = tempfile::tempdir().expect("tempdir");
         let mut cfg = make_config(&tmp, 4096, None).await;
-        cfg.features
+        let mut features = cfg.features.get().clone();
+        features
             .enable(Feature::JsRepl)
             .enable(Feature::JsReplToolsOnly);
+        cfg.features
+            .set(features)
+            .expect("test config should allow js_repl tool restrictions");
 
         let res = get_user_instructions(&cfg, None)
             .await
@@ -503,9 +509,13 @@ mod tests {
     async fn js_repl_original_resolution_guidance_is_feature_gated() {
         let tmp = tempfile::tempdir().expect("tempdir");
         let mut cfg = make_config(&tmp, 4096, None).await;
-        cfg.features
+        let mut features = cfg.features.get().clone();
+        features
             .enable(Feature::JsRepl)
             .enable(Feature::ImageDetailOriginal);
+        cfg.features
+            .set(features)
+            .expect("test config should allow js_repl image detail settings");
 
         let res = get_user_instructions(&cfg, None)
             .await
@@ -730,7 +740,9 @@ mod tests {
     async fn apps_feature_does_not_emit_user_instructions_by_itself() {
         let tmp = tempfile::tempdir().expect("tempdir");
         let mut cfg = make_config(&tmp, 4096, None).await;
-        cfg.features.enable(Feature::Apps);
+        cfg.features
+            .enable(Feature::Apps)
+            .expect("test config should allow apps");
 
         let res = get_user_instructions(&cfg, None).await;
         assert_eq!(res, None);
@@ -742,7 +754,9 @@ mod tests {
         fs::write(tmp.path().join("AGENTS.md"), "base doc").unwrap();
 
         let mut cfg = make_config(&tmp, 4096, None).await;
-        cfg.features.enable(Feature::Apps);
+        cfg.features
+            .enable(Feature::Apps)
+            .expect("test config should allow apps");
 
         let res = get_user_instructions(&cfg, None)
             .await

@@ -13,10 +13,12 @@ It enforces an allow/deny policy and a "limited" mode intended for read-only net
 
 `codex-network-proxy` reads from Codex's merged `config.toml` (via `codex-core` config loading).
 
-Example config:
+Network settings live under the selected permissions profile. Example config:
 
 ```toml
-[network]
+default_permissions = "workspace"
+
+[permissions.workspace.network]
 enabled = true
 proxy_url = "http://127.0.0.1:3128"
 # SOCKS5 listener (enabled by default).

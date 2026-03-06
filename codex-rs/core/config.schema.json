@@ -568,6 +568,30 @@
       },
       "type": "object"
     },
+    "FileSystemAccessMode": {
+      "enum": [
+        "none",
+        "read",
+        "write"
+      ],
+      "type": "string"
+    },
+    "FilesystemPermissionToml": {
+      "anyOf": [
+        {
+          "$ref": "#/definitions/FileSystemAccessMode"
+        },
+        {
+          "additionalProperties": {
+            "$ref": "#/definitions/FileSystemAccessMode"
+          },
+          "type": "object"
+        }
+      ]
+    },
+    "FilesystemPermissionsToml": {
+      "type": "object"
+    },
     "ForcedLoginMethod": {
       "enum": [
         "chatgpt",
@@ -1089,18 +1113,19 @@
       },
       "type": "object"
     },
-    "PermissionsToml": {
+    "PermissionProfileToml": {
       "additionalProperties": false,
       "properties": {
+        "filesystem": {
+          "$ref": "#/definitions/FilesystemPermissionsToml"
+        },
         "network": {
-          "allOf": [
-            {
-              "$ref": "#/definitions/NetworkToml"
-            }
-          ],
-          "description": "Network proxy settings from `[permissions.network]`. User config can enable the proxy; managed requirements may still constrain values."
+          "$ref": "#/definitions/NetworkToml"
         }
       },
+      "type": "object"
+    },
+    "PermissionsToml": {
       "type": "object"
     },
     "Personality": {
@@ -1664,6 +1689,10 @@
       "description": "Compact prompt used for history compaction.",
       "type": "string"
     },
+    "default_permissions": {
+      "description": "Default named permissions profile to apply from the `[permissions]` table.",
+      "type": "string"
+    },
     "developer_instructions": {
       "default": null,
       "description": "Developer instructions inserted as a `developer` role message.",
@@ -2067,7 +2096,7 @@
         }
       ],
       "default": null,
-      "description": "Nested permissions settings."
+      "description": "Named permissions profiles."
     },
     "personality": {
       "allOf": [

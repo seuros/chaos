@@ -844,7 +844,6 @@ fn unsupported_windows_restricted_token_sandbox_reason(
         )
     })
 }
-
 /// Consumes the output of a child process, truncating it so it is suitable for
 /// use as the output of a `shell` tool call. Also enforces specified timeout.
 async fn consume_truncated_output(

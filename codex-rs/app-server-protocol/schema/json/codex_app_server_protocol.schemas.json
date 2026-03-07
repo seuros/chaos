@@ -2730,7 +2730,7 @@
         {
           "properties": {
             "action": {
-              "$ref": "#/definitions/v2/WebSearchAction"
+              "$ref": "#/definitions/v2/ResponsesApiWebSearchAction"
             },
             "call_id": {
               "type": "string"
@@ -8236,7 +8236,7 @@
         {
           "properties": {
             "action": {
-              "$ref": "#/definitions/v2/WebSearchAction"
+              "$ref": "#/definitions/v2/ResponsesApiWebSearchAction"
             },
             "id": {
               "type": "string"
@@ -13191,7 +13191,7 @@
               "action": {
                 "anyOf": [
                   {
-                    "$ref": "#/definitions/v2/WebSearchAction"
+                    "$ref": "#/definitions/v2/ResponsesApiWebSearchAction"
                   },
                   {
                     "type": "null"
@@ -13313,6 +13313,107 @@
               "type"
             ],
             "title": "OtherResponseItem",
+            "type": "object"
+          }
+        ]
+      },
+      "ResponsesApiWebSearchAction": {
+        "oneOf": [
+          {
+            "properties": {
+              "queries": {
+                "items": {
+                  "type": "string"
+                },
+                "type": [
+                  "array",
+                  "null"
+                ]
+              },
+              "query": {
+                "type": [
+                  "string",
+                  "null"
+                ]
+              },
+              "type": {
+                "enum": [
+                  "search"
+                ],
+                "title": "SearchResponsesApiWebSearchActionType",
+                "type": "string"
+              }
+            },
+            "required": [
+              "type"
+            ],
+            "title": "SearchResponsesApiWebSearchAction",
+            "type": "object"
+          },
+          {
+            "properties": {
+              "type": {
+                "enum": [
+                  "open_page"
+                ],
+                "title": "OpenPageResponsesApiWebSearchActionType",
+                "type": "string"
+              },
+              "url": {
+                "type": [
+                  "string",
+                  "null"
+                ]
+              }
+            },
+            "required": [
+              "type"
+            ],
+            "title": "OpenPageResponsesApiWebSearchAction",
+            "type": "object"
+          },
+          {
+            "properties": {
+              "pattern": {
+                "type": [
+                  "string",
+                  "null"
+                ]
+              },
+              "type": {
+                "enum": [
+                  "find_in_page"
+                ],
+                "title": "FindInPageResponsesApiWebSearchActionType",
+                "type": "string"
+              },
+              "url": {
+                "type": [
+                  "string",
+                  "null"
+                ]
+              }
+            },
+            "required": [
+              "type"
+            ],
+            "title": "FindInPageResponsesApiWebSearchAction",
+            "type": "object"
+          },
+          {
+            "properties": {
+              "type": {
+                "enum": [
+                  "other"
+                ],
+                "title": "OtherResponsesApiWebSearchActionType",
+                "type": "string"
+              }
+            },
+            "required": [
+              "type"
+            ],
+            "title": "OtherResponsesApiWebSearchAction",
             "type": "object"
           }
         ]
@@ -16722,7 +16823,7 @@
             "properties": {
               "type": {
                 "enum": [
-                  "open_page"
+                  "openPage"
                 ],
                 "title": "OpenPageWebSearchActionType",
                 "type": "string"
@@ -16750,7 +16851,7 @@
               },
               "type": {
                 "enum": [
-                  "find_in_page"
+                  "findInPage"
                 ],
                 "title": "FindInPageWebSearchActionType",
                 "type": "string"

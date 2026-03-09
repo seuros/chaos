@@ -110,6 +110,26 @@ macro_rules! client_request_definitions {
             )*
         }
 
+        impl ClientRequest {
+            pub fn id(&self) -> &RequestId {
+                match self {
+                    $(Self::$variant { request_id, .. } => request_id,)*
+                }
+            }
+
+            pub fn method(&self) -> String {
+                serde_json::to_value(self)
+                    .ok()
+                    .and_then(|value| {
+                        value
+                            .get("method")
+                            .and_then(serde_json::Value::as_str)
+                            .map(str::to_owned)
+                    })
+                    .unwrap_or_else(|| "<unknown>".to_string())
+            }
+        }
+
         impl crate::experimental_api::ExperimentalApi for ClientRequest {
             fn experimental_reason(&self) -> Option<&'static str> {
                 match self {
@@ -1136,6 +1156,8 @@ mod tests {
             request_id: RequestId::Integer(1),
             params: None,
         };
+        assert_eq!(request.id(), &RequestId::Integer(1));
+        assert_eq!(request.method(), "account/rateLimits/read");
         assert_eq!(
             json!({
                 "method": "account/rateLimits/read",

@@ -5,6 +5,8 @@
 //! booleans through multiple types, call sites consult a single `Features`
 //! container attached to `Config`.
 
+use crate::auth::AuthManager;
+use crate::auth::CodexAuth;
 use crate::config::Config;
 use crate::config::ConfigToml;
 use crate::config::profile::ConfigProfile;
@@ -255,6 +257,27 @@ impl Features {
 
     pub fn enabled(&self, f: Feature) -> bool {
         self.enabled.contains(&f)
+    }
+
+    pub async fn apps_enabled(&self, auth_manager: Option<&AuthManager>) -> bool {
+        if !self.enabled(Feature::Apps) {
+            return false;
+        }
+
+        let auth = match auth_manager {
+            Some(auth_manager) => auth_manager.auth().await,
+            None => None,
+        };
+        self.apps_enabled_for_auth(auth.as_ref())
+    }
+
+    pub fn apps_enabled_cached(&self, auth_manager: Option<&AuthManager>) -> bool {
+        let auth = auth_manager.and_then(AuthManager::auth_cached);
+        self.apps_enabled_for_auth(auth.as_ref())
+    }
+
+    pub(crate) fn apps_enabled_for_auth(&self, auth: Option<&CodexAuth>) -> bool {
+        self.enabled(Feature::Apps) && auth.is_some_and(CodexAuth::is_chatgpt_auth)
     }
 
     pub fn enable(&mut self, f: Feature) -> &mut Self {
@@ -972,5 +995,20 @@ mod tests {
     fn collab_is_legacy_alias_for_multi_agent() {
         assert_eq!(feature_for_key("multi_agent"), Some(Feature::Collab));
         assert_eq!(feature_for_key("collab"), Some(Feature::Collab));
+    }
+
+    #[test]
+    fn apps_require_feature_flag_and_chatgpt_auth() {
+        let mut features = Features::with_defaults();
+        assert!(!features.apps_enabled_for_auth(None));
+
+        features.enable(Feature::Apps);
+        assert!(!features.apps_enabled_for_auth(None));
+
+        let api_key_auth = CodexAuth::from_api_key("test-api-key");
+        assert!(!features.apps_enabled_for_auth(Some(&api_key_auth)));
+
+        let chatgpt_auth = CodexAuth::create_dummy_chatgpt_auth_for_testing();
+        assert!(features.apps_enabled_for_auth(Some(&chatgpt_auth)));
     }
 }

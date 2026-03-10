@@ -2183,6 +2183,7 @@ pub(crate) async fn make_session_and_context() -> (Session, TurnContext) {
         ),
         hooks: Hooks::new(HooksConfig {
             legacy_notify_argv: config.notify.clone(),
+            ..HooksConfig::default()
         }),
         rollout: Mutex::new(None),
         user_shell: Arc::new(default_user_shell()),
@@ -2300,7 +2301,7 @@ async fn request_permissions_emits_event_when_reject_policy_allows_requests() {
             }),
             ..Default::default()
         },
-        scope: codex_protocol::request_permissions::PermissionGrantScope::Turn,
+        scope: PermissionGrantScope::Turn,
     };
 
     let handle = tokio::spawn({
@@ -2385,7 +2386,7 @@ async fn request_permissions_returns_empty_grant_when_reject_policy_blocks_reque
         Some(
             codex_protocol::request_permissions::RequestPermissionsResponse {
                 permissions: codex_protocol::models::PermissionProfile::default(),
-                scope: codex_protocol::request_permissions::PermissionGrantScope::Turn,
+                scope: PermissionGrantScope::Turn,
             }
         )
     );
@@ -2737,6 +2738,7 @@ pub(crate) async fn make_session_and_context_with_dynamic_tools_and_rx(
         ),
         hooks: Hooks::new(HooksConfig {
             legacy_notify_argv: config.notify.clone(),
+            ..HooksConfig::default()
         }),
         rollout: Mutex::new(None),
         user_shell: Arc::new(default_user_shell()),

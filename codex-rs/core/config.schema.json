@@ -1323,6 +1323,7 @@
           "type": "boolean"
         },
         "request_permissions": {
+          "default": false,
           "description": "Reject approval prompts related to built-in permission requests.",
           "type": "boolean"
         },
@@ -1337,7 +1338,6 @@
       },
       "required": [
         "mcp_elicitations",
-        "request_permissions",
         "rules",
         "sandbox_approval"
       ],

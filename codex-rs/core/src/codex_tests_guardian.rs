@@ -8,7 +8,7 @@ use crate::features::Feature;
 use crate::guardian::GUARDIAN_SUBAGENT_NAME;
 use crate::protocol::AskForApproval;
 use crate::sandboxing::SandboxPermissions;
-use crate::tools::context::TextToolOutput;
+use crate::tools::context::FunctionToolOutput;
 use crate::turn_diff_tracker::TurnDiffTracker;
 use codex_app_server_protocol::ConfigLayerSource;
 use codex_execpolicy::Decision;
@@ -16,6 +16,7 @@ use codex_execpolicy::Evaluation;
 use codex_execpolicy::RuleMatch;
 use codex_protocol::models::NetworkPermissions;
 use codex_protocol::models::PermissionProfile;
+use codex_protocol::models::function_call_output_content_items_to_text;
 use codex_protocol::permissions::FileSystemSandboxPolicy;
 use codex_protocol::permissions::NetworkSandboxPolicy;
 use codex_utils_absolute_path::AbsolutePathBuf;
@@ -33,11 +34,8 @@ use std::fs;
 use std::sync::Arc;
 use tempfile::tempdir;
 
-fn expect_text_output(output: &dyn std::any::Any) -> String {
-    let Some(output) = output.downcast_ref::<TextToolOutput>() else {
-        panic!("unexpected tool output");
-    };
-    output.text.clone()
+fn expect_text_output(output: &FunctionToolOutput) -> String {
+    function_call_output_content_items_to_text(&output.body).unwrap_or_default()
 }
 
 #[tokio::test]
@@ -159,7 +157,7 @@ async fn guardian_allows_shell_additional_permissions_requests_past_policy_valid
         })
         .await;
 
-    let output = expect_text_output(&*resp.expect("expected Ok result"));
+    let output = expect_text_output(&resp.expect("expected Ok result"));
 
     #[derive(Deserialize, PartialEq, Eq, Debug)]
     struct ResponseExecMetadata {

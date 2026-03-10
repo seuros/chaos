@@ -7,10 +7,10 @@ use crate::truncate::TruncationPolicy;
 use crate::truncate::formatted_truncate_text;
 use crate::turn_diff_tracker::TurnDiffTracker;
 use crate::unified_exec::resolve_max_tokens;
-use codex_protocol::mcp::CallToolResult;
 use codex_protocol::models::FunctionCallOutputBody;
 use codex_protocol::models::FunctionCallOutputContentItem;
 use codex_protocol::models::FunctionCallOutputPayload;
+use codex_protocol::models::McpToolOutput;
 use codex_protocol::models::ResponseInputItem;
 use codex_protocol::models::ShellToolCallParams;
 use codex_protocol::models::function_call_output_content_items_to_text;
@@ -82,23 +82,21 @@ pub trait ToolOutput: Send {
     }
 }
 
-pub struct McpToolOutput {
-    pub result: Result<CallToolResult, String>,
-}
-
 impl ToolOutput for McpToolOutput {
     fn log_preview(&self) -> String {
-        format!("{:?}", self.result)
+        let output = self.as_function_call_output_payload();
+        let preview = output.body.to_text().unwrap_or_else(|| output.to_string());
+        telemetry_preview(&preview)
     }
 
     fn success_for_logging(&self) -> bool {
-        self.result.is_ok()
+        self.success
     }
 
     fn to_response_item(&self, call_id: &str, _payload: &ToolPayload) -> ResponseInputItem {
         ResponseInputItem::McpToolCallOutput {
             call_id: call_id.to_string(),
-            result: self.result.clone(),
+            output: self.clone(),
         }
     }
 }
@@ -273,15 +271,14 @@ fn response_input_to_code_mode_result(response: ResponseInputItem) -> JsonValue 
                 content_items_to_code_mode_result(&items)
             }
         },
-        ResponseInputItem::McpToolCallOutput { result, .. } => match result {
-            Ok(result) => match FunctionCallOutputPayload::from(&result).body {
+        ResponseInputItem::McpToolCallOutput { output, .. } => {
+            match output.as_function_call_output_payload().body {
                 FunctionCallOutputBody::Text(text) => JsonValue::String(text),
                 FunctionCallOutputBody::ContentItems(items) => {
                     content_items_to_code_mode_result(&items)
                 }
-            },
-            Err(error) => JsonValue::String(error),
-        },
+            }
+        }
     }
 }
 

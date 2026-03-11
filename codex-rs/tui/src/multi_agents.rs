@@ -1,3 +1,9 @@
+//! Helpers for rendering and navigating multi-agent state in the TUI.
+//!
+//! This module owns the shared presentation contracts for multi-agent history rows, `/agent` picker
+//! entries, and the fast-switch keyboard shortcuts. Higher-level coordination, such as deciding
+//! which thread becomes active or when a thread closes, stays in [`crate::app::App`].
+
 use crate::history_cell::PlainHistoryCell;
 use crate::render::line_utils::prefix_lines;
 use crate::text_formatting::truncate_text;
@@ -13,6 +19,12 @@ use codex_protocol::protocol::CollabResumeBeginEvent;
 use codex_protocol::protocol::CollabResumeEndEvent;
 use codex_protocol::protocol::CollabWaitingBeginEvent;
 use codex_protocol::protocol::CollabWaitingEndEvent;
+use crossterm::event::KeyCode;
+use crossterm::event::KeyEvent;
+#[cfg(target_os = "macos")]
+use crossterm::event::KeyEventKind;
+#[cfg(target_os = "macos")]
+use crossterm::event::KeyModifiers;
 use ratatui::style::Stylize;
 use ratatui::text::Line;
 use ratatui::text::Span;
@@ -25,8 +37,11 @@ const COLLAB_AGENT_RESPONSE_PREVIEW_GRAPHEMES: usize = 240;
 
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub(crate) struct AgentPickerThreadEntry {
+    /// Human-friendly nickname shown in picker rows and footer labels.
     pub(crate) agent_nickname: Option<String>,
+    /// Agent type shown in brackets when present, for example `worker`.
     pub(crate) agent_role: Option<String>,
+    /// Whether the thread has emitted a close event and should render dimmed.
     pub(crate) is_closed: bool,
 }
 
@@ -73,12 +88,83 @@ pub(crate) fn format_agent_picker_item_name(
     }
 }
 
-pub(crate) fn sort_agent_picker_threads(agent_threads: &mut [(ThreadId, AgentPickerThreadEntry)]) {
-    agent_threads.sort_by(|(left_id, left), (right_id, right)| {
-        left.is_closed
-            .cmp(&right.is_closed)
-            .then_with(|| left_id.to_string().cmp(&right_id.to_string()))
-    });
+pub(crate) fn previous_agent_shortcut() -> crate::key_hint::KeyBinding {
+    crate::key_hint::alt(KeyCode::Left)
+}
+
+pub(crate) fn next_agent_shortcut() -> crate::key_hint::KeyBinding {
+    crate::key_hint::alt(KeyCode::Right)
+}
+
+/// Matches the canonical "previous agent" binding plus platform-specific fallbacks that keep agent
+/// navigation working when enhanced key reporting is unavailable.
+pub(crate) fn previous_agent_shortcut_matches(
+    key_event: KeyEvent,
+    allow_word_motion_fallback: bool,
+) -> bool {
+    previous_agent_shortcut().is_press(key_event)
+        || previous_agent_word_motion_fallback(key_event, allow_word_motion_fallback)
+}
+
+/// Matches the canonical "next agent" binding plus platform-specific fallbacks that keep agent
+/// navigation working when enhanced key reporting is unavailable.
+pub(crate) fn next_agent_shortcut_matches(
+    key_event: KeyEvent,
+    allow_word_motion_fallback: bool,
+) -> bool {
+    next_agent_shortcut().is_press(key_event)
+        || next_agent_word_motion_fallback(key_event, allow_word_motion_fallback)
+}
+
+#[cfg(target_os = "macos")]
+fn previous_agent_word_motion_fallback(
+    key_event: KeyEvent,
+    allow_word_motion_fallback: bool,
+) -> bool {
+    // macOS terminals often send Option+b/f as word-motion keys instead of Option+arrow events
+    // unless enhanced keyboard reporting is enabled.
+    allow_word_motion_fallback
+        && matches!(
+            key_event,
+            KeyEvent {
+                code: KeyCode::Char('b'),
+                modifiers: KeyModifiers::ALT,
+                kind: KeyEventKind::Press | KeyEventKind::Repeat,
+                ..
+            }
+        )
+}
+
+#[cfg(not(target_os = "macos"))]
+fn previous_agent_word_motion_fallback(
+    _key_event: KeyEvent,
+    _allow_word_motion_fallback: bool,
+) -> bool {
+    false
+}
+
+#[cfg(target_os = "macos")]
+fn next_agent_word_motion_fallback(key_event: KeyEvent, allow_word_motion_fallback: bool) -> bool {
+    // macOS terminals often send Option+b/f as word-motion keys instead of Option+arrow events
+    // unless enhanced keyboard reporting is enabled.
+    allow_word_motion_fallback
+        && matches!(
+            key_event,
+            KeyEvent {
+                code: KeyCode::Char('f'),
+                modifiers: KeyModifiers::ALT,
+                kind: KeyEventKind::Press | KeyEventKind::Repeat,
+                ..
+            }
+        )
+}
+
+#[cfg(not(target_os = "macos"))]
+fn next_agent_word_motion_fallback(
+    _key_event: KeyEvent,
+    _allow_word_motion_fallback: bool,
+) -> bool {
+    false
 }
 
 pub(crate) fn spawn_end(
@@ -485,6 +571,10 @@ fn status_summary_spans(status: &AgentStatus) -> Vec<Span<'static>> {
 mod tests {
     use super::*;
     use crate::history_cell::HistoryCell;
+    #[cfg(target_os = "macos")]
+    use crossterm::event::KeyEvent;
+    #[cfg(target_os = "macos")]
+    use crossterm::event::KeyModifiers;
     use insta::assert_snapshot;
     use pretty_assertions::assert_eq;
     use ratatui::style::Color;
@@ -577,6 +667,27 @@ mod tests {
             .collect::<Vec<_>>()
             .join("\n\n");
         assert_snapshot!("collab_agent_transcript", snapshot);
+    }
+
+    #[cfg(target_os = "macos")]
+    #[test]
+    fn agent_shortcut_matches_option_arrow_word_motion_fallbacks() {
+        assert!(previous_agent_shortcut_matches(
+            KeyEvent::new(KeyCode::Char('b'), KeyModifiers::ALT),
+            true,
+        ));
+        assert!(next_agent_shortcut_matches(
+            KeyEvent::new(KeyCode::Char('f'), KeyModifiers::ALT),
+            true,
+        ));
+        assert!(!previous_agent_shortcut_matches(
+            KeyEvent::new(KeyCode::Char('b'), KeyModifiers::ALT),
+            false,
+        ));
+        assert!(!next_agent_shortcut_matches(
+            KeyEvent::new(KeyCode::Char('f'), KeyModifiers::ALT),
+            false,
+        ));
     }
 
     #[test]

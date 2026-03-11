@@ -1468,6 +1468,7 @@ impl ChatWidget {
         if self.plan_stream_controller.is_none() {
             self.plan_stream_controller = Some(PlanStreamController::new(
                 self.last_rendered_width.get().map(|w| w.saturating_sub(4)),
+                &self.config.cwd,
             ));
         }
         if let Some(controller) = self.plan_stream_controller.as_mut()
@@ -1506,7 +1507,7 @@ impl ChatWidget {
             // TODO: Replace streamed output with the final plan item text if plan streaming is
             // removed or if we need to reconcile mismatches between streamed and final content.
         } else if !plan_text.is_empty() {
-            self.add_to_history(history_cell::new_proposed_plan(plan_text));
+            self.add_to_history(history_cell::new_proposed_plan(plan_text, &self.config.cwd));
         }
         if should_restore_after_stream {
             self.pending_status_indicator_restore = true;
@@ -1539,8 +1540,10 @@ impl ChatWidget {
         // At the end of a reasoning block, record transcript-only content.
         self.full_reasoning_buffer.push_str(&self.reasoning_buffer);
         if !self.full_reasoning_buffer.is_empty() {
-            let cell =
-                history_cell::new_reasoning_summary_block(self.full_reasoning_buffer.clone());
+            let cell = history_cell::new_reasoning_summary_block(
+                self.full_reasoning_buffer.clone(),
+                &self.config.cwd,
+            );
             self.add_boxed_history(cell);
         }
         self.reasoning_buffer.clear();
@@ -2780,6 +2783,7 @@ impl ChatWidget {
             }
             self.stream_controller = Some(StreamController::new(
                 self.last_rendered_width.get().map(|w| w.saturating_sub(2)),
+                &self.config.cwd,
             ));
         }
         if let Some(controller) = self.stream_controller.as_mut()
@@ -5156,7 +5160,12 @@ impl ChatWidget {
                 } else {
                     // Show explanation when there are no structured findings.
                     let mut rendered: Vec<ratatui::text::Line<'static>> = vec!["".into()];
-                    append_markdown(&explanation, None, &mut rendered);
+                    append_markdown(
+                        &explanation,
+                        None,
+                        Some(self.config.cwd.as_path()),
+                        &mut rendered,
+                    );
                     let body_cell = AgentMessageCell::new(rendered, false);
                     self.app_event_tx
                         .send(AppEvent::InsertHistoryCell(Box::new(body_cell)));

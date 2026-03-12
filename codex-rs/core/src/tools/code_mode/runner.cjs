@@ -486,7 +486,7 @@ function createProtocol() {
     }
 
     if (message.type === 'poll') {
-      const session = sessions.get(message.session_id);
+      const session = sessions.get(message.cell_id);
       if (session) {
         session.request_id = String(message.request_id);
         if (session.pending_result) {
@@ -500,7 +500,7 @@ function createProtocol() {
           request_id: message.request_id,
           content_items: [],
           stored_values: {},
-          error_text: `exec session ${message.session_id} not found`,
+          error_text: `exec cell ${message.cell_id} not found`,
           max_output_tokens_per_exec_call: DEFAULT_MAX_OUTPUT_TOKENS_PER_EXEC_CALL,
         });
       }
@@ -508,7 +508,7 @@ function createProtocol() {
     }
 
     if (message.type === 'terminate') {
-      const session = sessions.get(message.session_id);
+      const session = sessions.get(message.cell_id);
       if (session) {
         session.request_id = String(message.request_id);
         void terminateSession(protocol, sessions, session);
@@ -518,7 +518,7 @@ function createProtocol() {
           request_id: message.request_id,
           content_items: [],
           stored_values: {},
-          error_text: `exec session ${message.session_id} not found`,
+          error_text: `exec cell ${message.cell_id} not found`,
           max_output_tokens_per_exec_call: DEFAULT_MAX_OUTPUT_TOKENS_PER_EXEC_CALL,
         });
       }
@@ -591,7 +591,7 @@ function startSession(protocol, sessions, start) {
     completed: false,
     content_items: [],
     default_yield_time_ms: normalizeYieldTime(start.default_yield_time_ms),
-    id: start.session_id,
+    id: start.cell_id,
     initial_yield_timer: null,
     initial_yield_triggered: false,
     max_output_tokens_per_exec_call: DEFAULT_MAX_OUTPUT_TOKENS_PER_EXEC_CALL,

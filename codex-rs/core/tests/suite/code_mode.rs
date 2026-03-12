@@ -20,6 +20,7 @@ use core_test_support::test_codex::test_codex;
 use pretty_assertions::assert_eq;
 use serde_json::Value;
 use std::collections::HashMap;
+use std::collections::HashSet;
 use std::fs;
 use std::path::Path;
 use std::time::Duration;
@@ -1580,6 +1581,184 @@ env=propagated-env
 isError=false
 contentLength=0"
     );
+
+    Ok(())
+}
+
+#[tokio::test(flavor = "multi_thread", worker_threads = 2)]
+async fn code_mode_can_dynamically_import_namespaced_mcp_tools() -> Result<()> {
+    skip_if_no_network!(Ok(()));
+
+    let server = responses::start_mock_server().await;
+    let code = r#"
+const rmcp = await import("tools/mcp/rmcp.js");
+const { content, structuredContent, isError } = await rmcp.echo({
+  message: "ping",
+});
+add_content(
+  `hasEcho=${String(Object.keys(rmcp).includes("echo"))}\n` +
+    `echoType=${typeof rmcp.echo}\n` +
+    `echo=${structuredContent?.echo ?? "missing"}\n` +
+    `isError=${String(isError)}\n` +
+    `contentLength=${content.length}`
+);
+"#;
+
+    let (_test, second_mock) = run_code_mode_turn_with_rmcp(
+        &server,
+        "use exec to dynamically import the rmcp module",
+        code,
+    )
+    .await?;
+
+    let req = second_mock.single_request();
+    let (output, success) = custom_tool_output_body_and_success(&req, "call-1");
+    assert_ne!(
+        success,
+        Some(false),
+        "exec dynamic rmcp import failed unexpectedly: {output}"
+    );
+    assert_eq!(
+        output,
+        "hasEcho=true
+echoType=function
+echo=ECHOING: ping
+isError=false
+contentLength=0"
+    );
+
+    Ok(())
+}
+
+#[tokio::test(flavor = "multi_thread", worker_threads = 2)]
+async fn code_mode_normalizes_illegal_namespaced_mcp_tool_identifiers() -> Result<()> {
+    skip_if_no_network!(Ok(()));
+
+    let server = responses::start_mock_server().await;
+    let code = r#"
+import { echo_tool } from "tools/mcp/rmcp.js";
+
+const result = await echo_tool({ message: "ping" });
+add_content(`echo=${result.structuredContent.echo}`);
+"#;
+
+    let (_test, second_mock) = run_code_mode_turn_with_rmcp(
+        &server,
+        "use exec to import a normalized rmcp tool name",
+        code,
+    )
+    .await?;
+
+    let req = second_mock.single_request();
+    let (output, success) = custom_tool_output_body_and_success(&req, "call-1");
+    assert_ne!(
+        success,
+        Some(false),
+        "exec normalized rmcp import failed unexpectedly: {output}"
+    );
+    assert_eq!(output, "echo=ECHOING: ping");
+
+    Ok(())
+}
+
+#[tokio::test(flavor = "multi_thread", worker_threads = 2)]
+async fn code_mode_lists_global_scope_items() -> Result<()> {
+    skip_if_no_network!(Ok(()));
+
+    let server = responses::start_mock_server().await;
+    let code = r#"
+add_content(JSON.stringify(Object.getOwnPropertyNames(globalThis).sort()));
+"#;
+
+    let (_test, second_mock) =
+        run_code_mode_turn_with_rmcp(&server, "use exec to inspect global scope", code).await?;
+
+    let req = second_mock.single_request();
+    let (output, success) = custom_tool_output_body_and_success(&req, "call-1");
+    assert_ne!(
+        success,
+        Some(false),
+        "exec global scope inspection failed unexpectedly: {output}"
+    );
+    let globals = serde_json::from_str::<Vec<String>>(&output)?;
+    let globals = globals.into_iter().collect::<HashSet<_>>();
+    let expected = [
+        "AggregateError",
+        "Array",
+        "ArrayBuffer",
+        "AsyncDisposableStack",
+        "Atomics",
+        "BigInt",
+        "BigInt64Array",
+        "BigUint64Array",
+        "Boolean",
+        "DataView",
+        "Date",
+        "DisposableStack",
+        "Error",
+        "EvalError",
+        "FinalizationRegistry",
+        "Float16Array",
+        "Float32Array",
+        "Float64Array",
+        "Function",
+        "Infinity",
+        "Int16Array",
+        "Int32Array",
+        "Int8Array",
+        "Intl",
+        "Iterator",
+        "JSON",
+        "Map",
+        "Math",
+        "NaN",
+        "Number",
+        "Object",
+        "Promise",
+        "Proxy",
+        "RangeError",
+        "ReferenceError",
+        "Reflect",
+        "RegExp",
+        "Set",
+        "SharedArrayBuffer",
+        "String",
+        "SuppressedError",
+        "Symbol",
+        "SyntaxError",
+        "TypeError",
+        "URIError",
+        "Uint16Array",
+        "Uint32Array",
+        "Uint8Array",
+        "Uint8ClampedArray",
+        "WeakMap",
+        "WeakRef",
+        "WeakSet",
+        "WebAssembly",
+        "__codexContentItems",
+        "add_content",
+        "console",
+        "decodeURI",
+        "decodeURIComponent",
+        "encodeURI",
+        "encodeURIComponent",
+        "escape",
+        "eval",
+        "globalThis",
+        "isFinite",
+        "isNaN",
+        "parseFloat",
+        "parseInt",
+        "undefined",
+        "unescape",
+    ];
+    for g in &globals {
+        assert!(
+            expected.contains(&g.as_str()),
+            "unexpected global {g} in {globals:?}"
+        );
+    }
 
     Ok(())
 }

@@ -134,8 +134,8 @@ function codeModeWorkerMain() {
   function createToolsNamespace(callTool, enabledTools) {
     const tools = Object.create(null);
 
-    for (const { tool_name } of enabledTools) {
-      Object.defineProperty(tools, tool_name, {
+    for (const { tool_name, global_name } of enabledTools) {
+      Object.defineProperty(tools, global_name, {
         value: async (args) => callTool(tool_name, args),
         configurable: false,
         enumerable: true,
@@ -163,9 +163,9 @@ function codeModeWorkerMain() {
     const allTools = createAllToolsMetadata(enabledTools);
     const exportNames = ['ALL_TOOLS'];
 
-    for (const { tool_name } of enabledTools) {
-      if (tool_name !== 'ALL_TOOLS') {
-        exportNames.push(tool_name);
+    for (const { global_name } of enabledTools) {
+      if (global_name !== 'ALL_TOOLS') {
+        exportNames.push(global_name);
       }
     }
 
@@ -382,6 +382,24 @@ function codeModeWorkerMain() {
     };
   }
 
+  async function resolveDynamicModule(specifier, resolveModule) {
+    const module = resolveModule(specifier);
+
+    if (module.status === 'unlinked') {
+      await module.link(resolveModule);
+    }
+
+    if (module.status === 'linked' || module.status === 'evaluating') {
+      await module.evaluate();
+    }
+
+    if (module.status === 'errored') {
+      throw module.error;
+    }
+
+    return module;
+  }
+
   async function runModule(context, start, state, callTool) {
     const resolveModule = createModuleResolver(
       context,
@@ -392,7 +410,8 @@ function codeModeWorkerMain() {
     const mainModule = new SourceTextModule(start.source, {
       context,
       identifier: 'exec_main.mjs',
-      importModuleDynamically: async (specifier) => resolveModule(specifier),
+      importModuleDynamically: async (specifier) =>
+        resolveDynamicModule(specifier, resolveModule),
     });
 
     await mainModule.link(resolveModule);
@@ -408,7 +427,6 @@ function codeModeWorkerMain() {
     const callTool = createToolCaller();
     const context = vm.createContext({
       __codexContentItems: createContentItems(),
-      __codex_tool_call: callTool,
     });
 
     try {

@@ -223,6 +223,8 @@ mod spawn {
                     new_agent_nickname,
                     new_agent_role,
                     prompt,
+                    model: args.model.clone().unwrap_or_default(),
+                    reasoning_effort: args.reasoning_effort.unwrap_or_default(),
                     status,
                 }
                 .into(),

@@ -845,8 +845,12 @@ async fn code_mode_exec_wait_terminate_returns_completed_session_if_it_finished_
     let test = builder.build(&server).await?;
     let session_a_gate = test.workspace_path("code-mode-session-a-finished.ready");
     let session_b_gate = test.workspace_path("code-mode-session-b-blocked.ready");
+    let session_a_done_marker = test.workspace_path("code-mode-session-a-done.txt");
     let session_a_wait = wait_for_file_source(&session_a_gate)?;
     let session_b_wait = wait_for_file_source(&session_b_gate)?;
+    let session_a_done_marker_quoted =
+        shlex::try_join([session_a_done_marker.to_string_lossy().as_ref()])?;
+    let session_a_done_command = format!("printf done > {session_a_done_marker_quoted}");
 
     let session_a_code = format!(
         r#"
@@ -857,6 +861,7 @@ output_text("session a start");
 set_yield_time(10);
 {session_a_wait}
 output_text("session a done");
+await exec_command({{ cmd: {session_a_done_command:?} }});
 "#
     );
     let session_b_code = format!(
@@ -966,6 +971,14 @@ output_text("session b done");
         session_b_id
     );
 
+    for _ in 0..100 {
+        if session_a_done_marker.exists() {
+            break;
+        }
+        tokio::time::sleep(Duration::from_millis(50)).await;
+    }
+    assert!(session_a_done_marker.exists());
+
     responses::mount_sse_once(
         &server,
         sse(vec![
@@ -995,14 +1008,124 @@ output_text("session b done");
 
     let fourth_request = fourth_completion.single_request();
     let fourth_items = function_tool_output_items(&fourth_request, "call-4");
-    assert_eq!(fourth_items.len(), 1);
+    match fourth_items.len() {
+        1 => {
+            assert_regex_match(
+                concat!(
+                    r"(?s)\A",
+                    r"Script terminated\nWall time \d+\.\d seconds\nOutput:\n\z"
+                ),
+                text_item(&fourth_items, 0),
+            );
+        }
+        2 => {
+            assert_regex_match(
+                concat!(
+                    r"(?s)\A",
+                    r"Script (?:completed|terminated)\nWall time \d+\.\d seconds\nOutput:\n\z"
+                ),
+                text_item(&fourth_items, 0),
+            );
+            assert_eq!(text_item(&fourth_items, 1), "session a done");
+        }
+        other => panic!("unexpected number of content items: {other}"),
+    }
+
+    Ok(())
+}
+
+#[cfg_attr(windows, ignore = "no exec_command on Windows")]
+#[tokio::test(flavor = "multi_thread", worker_threads = 2)]
+async fn code_mode_background_keeps_running_on_later_turn_without_exec_wait() -> Result<()> {
+    skip_if_no_network!(Ok(()));
+
+    let server = responses::start_mock_server().await;
+    let mut builder = test_codex().with_config(move |config| {
+        let _ = config.features.enable(Feature::CodeMode);
+    });
+    let test = builder.build(&server).await?;
+    let resumed_file = test.workspace_path("code-mode-yield-resumed.txt");
+    let resumed_file_quoted = shlex::try_join([resumed_file.to_string_lossy().as_ref()])?;
+    let write_file_command = format!("printf resumed > {resumed_file_quoted}");
+    let wait_for_file_command =
+        format!("while [ ! -f {resumed_file_quoted} ]; do sleep 0.01; done; printf ready");
+    let code = format!(
+        r#"
+import {{ background, output_text }} from "@openai/code_mode";
+import {{ exec_command }} from "tools.js";
+
+output_text("before yield");
+background();
+await exec_command({{ cmd: {write_file_command:?} }});
+output_text("after yield");
+"#
+    );
+
+    responses::mount_sse_once(
+        &server,
+        sse(vec![
+            ev_response_created("resp-1"),
+            ev_custom_tool_call("call-1", "exec", &code),
+            ev_completed("resp-1"),
+        ]),
+    )
+    .await;
+    let first_completion = responses::mount_sse_once(
+        &server,
+        sse(vec![
+            ev_assistant_message("msg-1", "exec yielded"),
+            ev_completed("resp-2"),
+        ]),
+    )
+    .await;
+
+    test.submit_turn("start yielded exec").await?;
+
+    let first_request = first_completion.single_request();
+    let first_items = custom_tool_output_items(&first_request, "call-1");
+    assert_eq!(first_items.len(), 2);
     assert_regex_match(
         concat!(
             r"(?s)\A",
-            r"Script terminated\nWall time \d+\.\d seconds\nOutput:\n\z"
+            r"Script running with session ID \d+\nWall time \d+\.\d seconds\nOutput:\n\z"
         ),
-        text_item(&fourth_items, 0),
+        text_item(&first_items, 0),
     );
+    assert_eq!(text_item(&first_items, 1), "before yield");
+
+    responses::mount_sse_once(
+        &server,
+        sse(vec![
+            ev_response_created("resp-3"),
+            responses::ev_function_call(
+                "call-2",
+                "exec_command",
+                &serde_json::to_string(&serde_json::json!({
+                    "cmd": wait_for_file_command,
+                }))?,
+            ),
+            ev_completed("resp-3"),
+        ]),
+    )
+    .await;
+    let second_completion = responses::mount_sse_once(
+        &server,
+        sse(vec![
+            ev_assistant_message("msg-2", "file appeared"),
+            ev_completed("resp-4"),
+        ]),
+    )
+    .await;
+
+    test.submit_turn("wait for resumed file").await?;
+
+    let second_request = second_completion.single_request();
+    assert!(
+        second_request
+            .function_call_output_text("call-2")
+            .is_some_and(|output| output.ends_with("ready"))
+    );
+    assert_eq!(fs::read_to_string(&resumed_file)?, "resumed");
 
     Ok(())
 }

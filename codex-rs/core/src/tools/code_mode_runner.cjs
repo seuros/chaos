@@ -265,6 +265,7 @@ function codeModeWorkerMain() {
         'set_max_output_tokens_per_exec_call',
         'set_yield_time',
         'store',
+        'background',
       ],
       function initCodeModeModule() {
         this.setExport('load', load);
@@ -288,6 +289,9 @@ function codeModeWorkerMain() {
           return normalized;
         });
         this.setExport('store', store);
+        this.setExport('background', () => {
+          parentPort.postMessage({ type: 'yield' });
+        });
       },
       { context }
     );
@@ -466,11 +470,16 @@ function createProtocol() {
     if (message.type === 'poll') {
       const session = sessions.get(message.session_id);
       if (session) {
-        schedulePollYield(protocol, session, normalizeYieldTime(message.yield_time_ms ?? 0));
+        session.request_id = String(message.request_id);
+        if (session.pending_result) {
+          void completeSession(protocol, sessions, session, session.pending_result);
+        } else {
+          schedulePollYield(protocol, session, normalizeYieldTime(message.yield_time_ms ?? 0));
+        }
       } else {
         void protocol.send({
           type: 'result',
-          session_id: message.session_id,
+          request_id: message.request_id,
           content_items: [],
           stored_values: {},
           error_text: `exec session ${message.session_id} not found`,
@@ -483,11 +492,12 @@ function createProtocol() {
     if (message.type === 'terminate') {
       const session = sessions.get(message.session_id);
       if (session) {
+        session.request_id = String(message.request_id);
         void terminateSession(protocol, sessions, session);
       } else {
         void protocol.send({
           type: 'result',
-          session_id: message.session_id,
+          request_id: message.request_id,
           content_items: [],
           stored_values: {},
           error_text: `exec session ${message.session_id} not found`,
@@ -498,11 +508,11 @@ function createProtocol() {
     }
 
     if (message.type === 'response') {
-      const entry = pending.get(message.session_id + ':' + message.id);
+      const entry = pending.get(message.request_id + ':' + message.id);
       if (!entry) {
         return;
       }
-      pending.delete(message.session_id + ':' + message.id);
+      pending.delete(message.request_id + ':' + message.id);
       entry.resolve(message.code_mode_result ?? '');
       return;
     }
@@ -537,12 +547,13 @@ function createProtocol() {
     });
   }
 
-  function request(sessionId, type, payload) {
+  function request(type, payload) {
+    const requestId = 'req-' + ++nextId;
     const id = 'msg-' + ++nextId;
-    const pendingKey = sessionId + ':' + id;
+    const pendingKey = requestId + ':' + id;
     return new Promise((resolve, reject) => {
       pending.set(pendingKey, { resolve, reject });
-      void send({ type, session_id: sessionId, id, ...payload }).catch((error) => {
+      void send({ type, request_id: requestId, id, ...payload }).catch((error) => {
         pending.delete(pendingKey);
         reject(error);
       });
@@ -565,7 +576,9 @@ function startSession(protocol, sessions, start) {
     initial_yield_timer: null,
     initial_yield_triggered: false,
     max_output_tokens_per_exec_call: DEFAULT_MAX_OUTPUT_TOKENS_PER_EXEC_CALL,
+    pending_result: null,
     poll_yield_timer: null,
+    request_id: String(start.request_id),
     worker: new Worker(sessionWorkerSource(), {
       eval: true,
       workerData: start,
@@ -620,18 +633,30 @@ async function handleWorkerMessage(protocol, sessions, session, message) {
     return;
   }
 
+  if (message.type === 'yield') {
+    void sendYielded(protocol, session);
+    return;
+  }
+
   if (message.type === 'tool_call') {
     void forwardToolCall(protocol, session, message);
     return;
   }
 
   if (message.type === 'result') {
-    await completeSession(protocol, sessions, session, {
+    const result = {
       type: 'result',
       stored_values: cloneJsonValue(message.stored_values ?? {}),
       error_text:
         typeof message.error_text === 'string' ? message.error_text : undefined,
-    });
+    };
+    if (session.request_id === null) {
+      session.pending_result = result;
+      session.initial_yield_timer = clearTimer(session.initial_yield_timer);
+      session.poll_yield_timer = clearTimer(session.poll_yield_timer);
+      return;
+    }
+    await completeSession(protocol, sessions, session, result);
     return;
   }
 
@@ -640,7 +665,7 @@ async function handleWorkerMessage(protocol, sessions, session, message) {
 
 async function forwardToolCall(protocol, session, message) {
   try {
-    const result = await protocol.request(session.id, 'tool_call', {
+    const result = await protocol.request('tool_call', {
       name: String(message.name),
       input: message.input,
     });
@@ -669,18 +694,20 @@ async function forwardToolCall(protocol, session, message) {
 }
 
 async function sendYielded(protocol, session) {
-  if (session.completed) {
+  if (session.completed || session.request_id === null) {
     return;
   }
   const contentItems = takeContentItems(session);
+  const requestId = session.request_id;
   try {
     session.worker.postMessage({ type: 'clear_content' });
   } catch {}
   await protocol.send({
     type: 'yielded',
-    session_id: session.id,
+    request_id: requestId,
     content_items: contentItems,
   });
+  session.request_id = null;
 }
 
 function scheduleInitialYield(protocol, session, yieldTime) {
@@ -711,17 +738,25 @@ async function completeSession(protocol, sessions, session, message) {
   if (session.completed) {
     return;
   }
+  if (session.request_id === null) {
+    session.pending_result = message;
+    session.initial_yield_timer = clearTimer(session.initial_yield_timer);
+    session.poll_yield_timer = clearTimer(session.poll_yield_timer);
+    return;
+  }
+  const requestId = session.request_id;
   session.completed = true;
   session.initial_yield_timer = clearTimer(session.initial_yield_timer);
   session.poll_yield_timer = clearTimer(session.poll_yield_timer);
   sessions.delete(session.id);
   const contentItems = takeContentItems(session);
+  session.pending_result = null;
   try {
     session.worker.postMessage({ type: 'clear_content' });
   } catch {}
   await protocol.send({
     ...message,
-    session_id: session.id,
+    request_id: requestId,
     content_items: contentItems,
     max_output_tokens_per_exec_call: session.max_output_tokens_per_exec_call,
   });
@@ -741,7 +776,7 @@ async function terminateSession(protocol, sessions, session) {
   } catch {}
   await protocol.send({
     type: 'terminated',
-    session_id: session.id,
+    request_id: session.request_id,
     content_items: contentItems,
   });
 }

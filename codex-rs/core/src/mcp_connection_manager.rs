@@ -105,6 +105,7 @@ const CODEX_APPS_TOOLS_CACHE_DIR: &str = "cache/codex_apps_tools";
 const MCP_TOOLS_LIST_DURATION_METRIC: &str = "codex.mcp.tools.list.duration_ms";
 const MCP_TOOLS_FETCH_UNCACHED_DURATION_METRIC: &str = "codex.mcp.tools.fetch_uncached.duration_ms";
 const MCP_TOOLS_CACHE_WRITE_DURATION_METRIC: &str = "codex.mcp.tools.cache_write.duration_ms";
+const MIN_COMPATIBLE_MCP_CLIENT_VERSION: &str = "0.63.0";
 
 /// The Responses API requires tool names to match `^[a-zA-Z0-9_-]+$`.
 /// MCP server/tool names are user-controlled, so sanitize the fully-qualified
@@ -131,6 +132,15 @@ fn sha1_hex(s: &str) -> String {
     hasher.update(s.as_bytes());
     let sha1 = hasher.finalize();
     format!("{sha1:x}")
+}
+
+fn mcp_client_implementation_version() -> &'static str {
+    let version = env!("CARGO_PKG_VERSION");
+    if version == "0.0.0" {
+        MIN_COMPATIBLE_MCP_CLIENT_VERSION
+    } else {
+        version
+    }
 }
 
 pub(crate) fn codex_apps_tools_cache_key(
@@ -382,27 +392,20 @@ struct ManagedClient {
 impl ManagedClient {
     fn listed_tools(&self) -> Vec<ToolInfo> {
         let total_start = Instant::now();
-        if let Some(cache_context) = self.codex_apps_tools_cache_context.as_ref()
-            && let CachedCodexAppsToolsLoad::Hit(tools) =
-                load_cached_codex_apps_tools(cache_context)
-        {
+        let in_memory_tools = self.tools.read().unwrap_or_else(|e| e.into_inner()).clone();
+        let (tools, cache_tag) = select_listed_tools(
+            in_memory_tools,
+            &self.tool_filter,
+            self.codex_apps_tools_cache_context.as_ref(),
+        );
+        if let Some(cache_tag) = cache_tag {
             emit_duration(
                 MCP_TOOLS_LIST_DURATION_METRIC,
                 total_start.elapsed(),
-                &[("cache", "hit")],
-            );
-            return filter_tools(tools, &self.tool_filter);
-        }
-
-        if self.codex_apps_tools_cache_context.is_some() {
-            emit_duration(
-                MCP_TOOLS_LIST_DURATION_METRIC,
-                total_start.elapsed(),
-                &[("cache", "miss")],
+                &[("cache", cache_tag)],
             );
         }
-
-        self.tools.read().unwrap_or_else(|e| e.into_inner()).clone()
+        tools
     }
 
     /// Returns once the server has ack'd the sandbox state update.
@@ -858,20 +861,19 @@ impl McpConnectionManager {
             &[],
         );
 
-        write_cached_codex_apps_tools_if_needed(
+        let filtered_tools = store_managed_tools(
             CODEX_APPS_MCP_SERVER_NAME,
             managed_client.codex_apps_tools_cache_context.as_ref(),
-            &tools,
+            &managed_client.tool_filter,
+            &managed_client.tools,
+            tools,
         );
         emit_duration(
             MCP_TOOLS_LIST_DURATION_METRIC,
             list_start.elapsed(),
             &[("cache", "miss")],
         );
-        Ok(qualify_tools(filter_tools(
-            tools,
-            &managed_client.tool_filter,
-        )))
+        Ok(qualify_tools(filtered_tools))
     }
 
     /// Returns a single map that contains all resources. Each key is the
@@ -1360,7 +1362,7 @@ async fn start_server_task(
         },
         client_info: Implementation {
             name: "codex-mcp-client".to_owned(),
-            version: env!("CARGO_PKG_VERSION").to_owned(),
+            version: mcp_client_implementation_version().to_owned(),
             title: Some("Codex".into()),
             description: None,
             icons: None,
@@ -1377,18 +1379,25 @@ async fn start_server_task(
         let server_name = server_name.clone();
         let tools_arc = Arc::clone(&tools_arc);
         let tool_filter = tool_filter.clone();
+        let codex_apps_tools_cache_context = codex_apps_tools_cache_context.clone();
         Box::new(move || {
             let client = Arc::clone(&client);
             let server_name = server_name.clone();
             let tools_arc = Arc::clone(&tools_arc);
             let tool_filter = tool_filter.clone();
+            let codex_apps_tools_cache_context = codex_apps_tools_cache_context.clone();
             Box::pin(async move {
                 match list_tools_for_client_uncached(&server_name, &client, Some(tool_timeout))
                     .await
                 {
                     Ok(tools) => {
-                        *tools_arc.write().unwrap_or_else(|e| e.into_inner()) =
-                            filter_tools(tools, &tool_filter);
+                        store_managed_tools(
+                            &server_name,
+                            codex_apps_tools_cache_context.as_ref(),
+                            &tool_filter,
+                            &tools_arc,
+                            tools,
+                        );
                     }
                     Err(err) => {
                         warn!("Failed to refresh tool list for '{server_name}': {err}");
@@ -1418,11 +1427,6 @@ async fn start_server_task(
         fetch_start.elapsed(),
         &[],
     );
-    write_cached_codex_apps_tools_if_needed(
-        &server_name,
-        codex_apps_tools_cache_context.as_ref(),
-        &tools,
-    );
     if server_name == CODEX_APPS_MCP_SERVER_NAME {
         emit_duration(
             MCP_TOOLS_LIST_DURATION_METRIC,
@@ -1430,7 +1434,13 @@ async fn start_server_task(
             &[("cache", "miss")],
         );
     }
-    *tools_arc.write().unwrap_or_else(|e| e.into_inner()) = filter_tools(tools, &tool_filter);
+    store_managed_tools(
+        &server_name,
+        codex_apps_tools_cache_context.as_ref(),
+        &tool_filter,
+        &tools_arc,
+        tools,
+    );
 
     let server_supports_sandbox_state_capability = initialize_result
         .capabilities
@@ -1539,6 +1549,20 @@ fn load_startup_cached_codex_apps_tools_snapshot(
     }
 }
 
+fn select_listed_tools(
+    in_memory_tools: Vec<ToolInfo>,
+    tool_filter: &ToolFilter,
+    cache_context: Option<&CodexAppsToolsCacheContext>,
+) -> (Vec<ToolInfo>, Option<&'static str>) {
+    if let Some(cache_context) = cache_context
+        && let CachedCodexAppsToolsLoad::Hit(tools) = load_cached_codex_apps_tools(cache_context)
+    {
+        return (filter_tools(tools, tool_filter), Some("hit"));
+    }
+
+    (in_memory_tools, cache_context.map(|_| "miss"))
+}
+
 #[cfg(test)]
 fn read_cached_codex_apps_tools(
     cache_context: &CodexAppsToolsCacheContext,
@@ -1585,6 +1609,19 @@ fn write_cached_codex_apps_tools(cache_context: &CodexAppsToolsCacheContext, too
         return;
     };
     let _ = std::fs::write(cache_path, bytes);
+}
+
+fn store_managed_tools(
+    server_name: &str,
+    cache_context: Option<&CodexAppsToolsCacheContext>,
+    tool_filter: &ToolFilter,
+    tools_arc: &Arc<StdRwLock<Vec<ToolInfo>>>,
+    tools: Vec<ToolInfo>,
+) -> Vec<ToolInfo> {
+    write_cached_codex_apps_tools_if_needed(server_name, cache_context, &tools);
+    let filtered_tools = filter_tools(tools, tool_filter);
+    *tools_arc.write().unwrap_or_else(|e| e.into_inner()) = filtered_tools.clone();
+    filtered_tools
 }
 
 fn filter_disallowed_codex_apps_tools(tools: Vec<ToolInfo>) -> Vec<ToolInfo> {

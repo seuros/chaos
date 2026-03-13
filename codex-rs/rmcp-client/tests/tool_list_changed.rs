@@ -76,6 +76,7 @@ async fn tool_list_changed_callback_is_invoked() -> anyhow::Result<()> {
                     Ok(ElicitationResponse {
                         action: ElicitationAction::Accept,
                         content: None,
+                        meta: None,
                     })
                 }
                 .boxed()

@@ -3791,6 +3791,46 @@
           "properties": {
             "method": {
               "enum": [
+                "item/autoApprovalReview/started"
+              ],
+              "title": "Item/autoApprovalReview/startedNotificationMethod",
+              "type": "string"
+            },
+            "params": {
+              "$ref": "#/definitions/v2/ItemGuardianApprovalReviewStartedNotification"
+            }
+          },
+          "required": [
+            "method",
+            "params"
+          ],
+          "title": "Item/autoApprovalReview/startedNotification",
+          "type": "object"
+        },
+        {
+          "properties": {
+            "method": {
+              "enum": [
+                "item/autoApprovalReview/completed"
+              ],
+              "title": "Item/autoApprovalReview/completedNotificationMethod",
+              "type": "string"
+            },
+            "params": {
+              "$ref": "#/definitions/v2/ItemGuardianApprovalReviewCompletedNotification"
+            }
+          },
+          "required": [
+            "method",
+            "params"
+          ],
+          "title": "Item/autoApprovalReview/completedNotification",
+          "type": "object"
+        },
+        {
+          "properties": {
+            "method": {
+              "enum": [
                 "item/completed"
               ],
               "title": "Item/completedNotificationMethod",
@@ -5288,6 +5328,14 @@
       "AppToolsConfig": {
         "type": "object"
       },
+      "ApprovalsReviewer": {
+        "description": "Configures who approval requests are routed to for review. Examples include sandbox escapes, blocked network access, MCP approval prompts, and ARC escalations. Defaults to `user`. `guardian_subagent` uses a carefully prompted subagent to gather relevant context and apply a risk-based decision framework before approving or denying the request.",
+        "enum": [
+          "user",
+          "guardian_subagent"
+        ],
+        "type": "string"
+      },
       "AppsConfig": {
         "properties": {
           "_default": {
@@ -6183,6 +6231,17 @@
                 "type": "null"
               }
             ]
+          },
+          "approvals_reviewer": {
+            "anyOf": [
+              {
+                "$ref": "#/definitions/v2/ApprovalsReviewer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "[UNSTABLE] Optional default for where approval requests are routed for review."
           },
           "compact_prompt": {
             "type": [
@@ -7847,6 +7906,61 @@
         },
         "type": "object"
       },
+      "GuardianApprovalReview": {
+        "description": "[UNSTABLE] Temporary guardian approval review payload used by `item/autoApprovalReview/*` notifications. This shape is expected to change soon.",
+        "properties": {
+          "rationale": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "riskLevel": {
+            "anyOf": [
+              {
+                "$ref": "#/definitions/v2/GuardianRiskLevel"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "riskScore": {
+            "format": "uint8",
+            "minimum": 0.0,
+            "type": [
+              "integer",
+              "null"
+            ]
+          },
+          "status": {
+            "$ref": "#/definitions/v2/GuardianApprovalReviewStatus"
+          }
+        },
+        "required": [
+          "status"
+        ],
+        "type": "object"
+      },
+      "GuardianApprovalReviewStatus": {
+        "description": "[UNSTABLE] Lifecycle state for a guardian approval review.",
+        "enum": [
+          "inProgress",
+          "approved",
+          "denied",
+          "aborted"
+        ],
+        "type": "string"
+      },
+      "GuardianRiskLevel": {
+        "description": "[UNSTABLE] Risk level assigned by guardian approval review.",
+        "enum": [
+          "low",
+          "medium",
+          "high"
+        ],
+        "type": "string"
+      },
       "HazelnutScope": {
         "enum": [
           "example",
@@ -8085,6 +8199,60 @@
           "turnId"
         ],
         "title": "ItemCompletedNotification",
+        "type": "object"
+      },
+      "ItemGuardianApprovalReviewCompletedNotification": {
+        "$schema": "http://json-schema.org/draft-07/schema#",
+        "description": "[UNSTABLE] Temporary notification payload for guardian automatic approval review. This shape is expected to change soon.\n\nTODO(ccunningham): Attach guardian review state to the reviewed tool item's lifecycle instead of sending separate standalone review notifications so the app-server API can persist and replay review state via `thread/read`.",
+        "properties": {
+          "action": true,
+          "review": {
+            "$ref": "#/definitions/v2/GuardianApprovalReview"
+          },
+          "targetItemId": {
+            "type": "string"
+          },
+          "threadId": {
+            "type": "string"
+          },
+          "turnId": {
+            "type": "string"
+          }
+        },
+        "required": [
+          "review",
+          "targetItemId",
+          "threadId",
+          "turnId"
+        ],
+        "title": "ItemGuardianApprovalReviewCompletedNotification",
+        "type": "object"
+      },
+      "ItemGuardianApprovalReviewStartedNotification": {
+        "$schema": "http://json-schema.org/draft-07/schema#",
+        "description": "[UNSTABLE] Temporary notification payload for guardian automatic approval review. This shape is expected to change soon.\n\nTODO(ccunningham): Attach guardian review state to the reviewed tool item's lifecycle instead of sending separate standalone review notifications so the app-server API can persist and replay review state via `thread/read`.",
+        "properties": {
+          "action": true,
+          "review": {
+            "$ref": "#/definitions/v2/GuardianApprovalReview"
+          },
+          "targetItemId": {
+            "type": "string"
+          },
+          "threadId": {
+            "type": "string"
+          },
+          "turnId": {
+            "type": "string"
+          }
+        },
+        "required": [
+          "review",
+          "targetItemId",
+          "threadId",
+          "turnId"
+        ],
+        "title": "ItemGuardianApprovalReviewStartedNotification",
         "type": "object"
       },
       "ItemStartedNotification": {
@@ -9397,6 +9565,17 @@
                 "type": "null"
               }
             ]
+          },
+          "approvals_reviewer": {
+            "anyOf": [
+              {
+                "$ref": "#/definitions/v2/ApprovalsReviewer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "[UNSTABLE] Optional profile-level override for where approval requests are routed for review. If omitted, the enclosing config default is used."
           },
           "chatgpt_base_url": {
             "type": [
@@ -11653,6 +11832,17 @@
               }
             ]
           },
+          "approvalsReviewer": {
+            "anyOf": [
+              {
+                "$ref": "#/definitions/v2/ApprovalsReviewer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "Override where approval requests are routed for review on this thread and subsequent turns."
+          },
           "baseInstructions": {
             "type": [
               "string",
@@ -11737,6 +11927,14 @@
           "approvalPolicy": {
             "$ref": "#/definitions/v2/AskForApproval"
           },
+          "approvalsReviewer": {
+            "allOf": [
+              {
+                "$ref": "#/definitions/v2/ApprovalsReviewer"
+              }
+            ],
+            "description": "Reviewer currently used for approval requests on this thread."
+          },
           "cwd": {
             "type": "string"
           },
@@ -11775,6 +11973,7 @@
         },
         "required": [
           "approvalPolicy",
+          "approvalsReviewer",
           "cwd",
           "model",
           "modelProvider",
@@ -12771,6 +12970,17 @@
               }
             ]
           },
+          "approvalsReviewer": {
+            "anyOf": [
+              {
+                "$ref": "#/definitions/v2/ApprovalsReviewer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "Override where approval requests are routed for review on this thread and subsequent turns."
+          },
           "baseInstructions": {
             "type": [
               "string",
@@ -12862,6 +13072,14 @@
           "approvalPolicy": {
             "$ref": "#/definitions/v2/AskForApproval"
           },
+          "approvalsReviewer": {
+            "allOf": [
+              {
+                "$ref": "#/definitions/v2/ApprovalsReviewer"
+              }
+            ],
+            "description": "Reviewer currently used for approval requests on this thread."
+          },
           "cwd": {
             "type": "string"
           },
@@ -12900,6 +13118,7 @@
         },
         "required": [
           "approvalPolicy",
+          "approvalsReviewer",
           "cwd",
           "model",
           "modelProvider",
@@ -13004,6 +13223,17 @@
               }
             ]
           },
+          "approvalsReviewer": {
+            "anyOf": [
+              {
+                "$ref": "#/definitions/v2/ApprovalsReviewer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "Override where approval requests are routed for review on this thread and subsequent turns."
+          },
           "baseInstructions": {
             "type": [
               "string",
@@ -13100,6 +13330,14 @@
           "approvalPolicy": {
             "$ref": "#/definitions/v2/AskForApproval"
           },
+          "approvalsReviewer": {
+            "allOf": [
+              {
+                "$ref": "#/definitions/v2/ApprovalsReviewer"
+              }
+            ],
+            "description": "Reviewer currently used for approval requests on this thread."
+          },
           "cwd": {
             "type": "string"
           },
@@ -13138,6 +13376,7 @@
         },
         "required": [
           "approvalPolicy",
+          "approvalsReviewer",
           "cwd",
           "model",
           "modelProvider",
@@ -13646,6 +13885,17 @@
               }
             ],
             "description": "Override the approval policy for this turn and subsequent turns."
+          },
+          "approvalsReviewer": {
+            "anyOf": [
+              {
+                "$ref": "#/definitions/v2/ApprovalsReviewer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "Override where approval requests are routed for review on this turn and subsequent turns."
           },
           "cwd": {
             "description": "Override the working directory for this turn and subsequent turns.",

@@ -13,6 +13,7 @@ use codex_protocol::approvals::NetworkApprovalContext as CoreNetworkApprovalCont
 use codex_protocol::approvals::NetworkApprovalProtocol as CoreNetworkApprovalProtocol;
 use codex_protocol::approvals::NetworkPolicyAmendment as CoreNetworkPolicyAmendment;
 use codex_protocol::approvals::NetworkPolicyRuleAction as CoreNetworkPolicyRuleAction;
+use codex_protocol::config_types::ApprovalsReviewer as CoreApprovalsReviewer;
 use codex_protocol::config_types::CollaborationMode;
 use codex_protocol::config_types::CollaborationModeMask as CoreCollaborationModeMask;
 use codex_protocol::config_types::ForcedLoginMethod;
@@ -51,6 +52,7 @@ use codex_protocol::protocol::CodexErrorInfo as CoreCodexErrorInfo;
 use codex_protocol::protocol::CreditsSnapshot as CoreCreditsSnapshot;
 use codex_protocol::protocol::ExecCommandStatus as CoreExecCommandStatus;
 use codex_protocol::protocol::GranularApprovalConfig as CoreGranularApprovalConfig;
+use codex_protocol::protocol::GuardianRiskLevel as CoreGuardianRiskLevel;
 use codex_protocol::protocol::HookEventName as CoreHookEventName;
 use codex_protocol::protocol::HookExecutionMode as CoreHookExecutionMode;
 use codex_protocol::protocol::HookHandlerType as CoreHookHandlerType;
@@ -252,6 +254,37 @@ impl From<CoreAskForApproval> for AskForApproval {
                 mcp_elicitations: granular_config.mcp_elicitations,
             },
             CoreAskForApproval::Never => AskForApproval::Never,
+        }
+    }
+}
+
+#[derive(Serialize, Deserialize, Debug, Clone, Copy, PartialEq, Eq, JsonSchema, TS)]
+#[serde(rename_all = "snake_case")]
+#[ts(rename_all = "snake_case", export_to = "v2/")]
+/// Configures who approval requests are routed to for review. Examples
+/// include sandbox escapes, blocked network access, MCP approval prompts, and
+/// ARC escalations. Defaults to `user`. `guardian_subagent` uses a carefully
+/// prompted subagent to gather relevant context and apply a risk-based
+/// decision framework before approving or denying the request.
+pub enum ApprovalsReviewer {
+    User,
+    GuardianSubagent,
+}
+
+impl ApprovalsReviewer {
+    pub fn to_core(self) -> CoreApprovalsReviewer {
+        match self {
+            ApprovalsReviewer::User => CoreApprovalsReviewer::User,
+            ApprovalsReviewer::GuardianSubagent => CoreApprovalsReviewer::GuardianSubagent,
+        }
+    }
+}
+
+impl From<CoreApprovalsReviewer> for ApprovalsReviewer {
+    fn from(value: CoreApprovalsReviewer) -> Self {
+        match value {
+            CoreApprovalsReviewer::User => ApprovalsReviewer::User,
+            CoreApprovalsReviewer::GuardianSubagent => ApprovalsReviewer::GuardianSubagent,
         }
     }
 }
@@ -519,6 +552,11 @@ pub struct ProfileV2 {
     pub model_provider: Option<String>,
     #[experimental(nested)]
     pub approval_policy: Option<AskForApproval>,
+    /// [UNSTABLE] Optional profile-level override for where approval requests
+    /// are routed for review. If omitted, the enclosing config default is
+    /// used.
+    #[experimental("config/read.approvalsReviewer")]
+    pub approvals_reviewer: Option<ApprovalsReviewer>,
     pub service_tier: Option<ServiceTier>,
     pub model_reasoning_effort: Option<ReasoningEffort>,
     pub model_reasoning_summary: Option<ReasoningSummary>,
@@ -618,6 +656,10 @@ pub struct Config {
     pub model_provider: Option<String>,
     #[experimental(nested)]
     pub approval_policy: Option<AskForApproval>,
+    /// [UNSTABLE] Optional default for where approval requests are routed for
+    /// review.
+    #[experimental("config/read.approvalsReviewer")]
+    pub approvals_reviewer: Option<ApprovalsReviewer>,
     pub sandbox_mode: Option<SandboxMode>,
     pub sandbox_workspace_write: Option<SandboxWorkspaceWrite>,
     pub forced_chatgpt_workspace_id: Option<String>,
@@ -2422,6 +2464,10 @@ pub struct ThreadStartParams {
     #[experimental(nested)]
     #[ts(optional = nullable)]
     pub approval_policy: Option<AskForApproval>,
+    /// Override where approval requests are routed for review on this thread
+    /// and subsequent turns.
+    #[ts(optional = nullable)]
+    pub approvals_reviewer: Option<ApprovalsReviewer>,
     #[ts(optional = nullable)]
     pub sandbox: Option<SandboxMode>,
     #[ts(optional = nullable)]
@@ -2484,6 +2530,8 @@ pub struct ThreadStartResponse {
     pub cwd: PathBuf,
     #[experimental(nested)]
     pub approval_policy: AskForApproval,
+    /// Reviewer currently used for approval requests on this thread.
+    pub approvals_reviewer: ApprovalsReviewer,
     pub sandbox: SandboxPolicy,
     pub reasoning_effort: Option<ReasoningEffort>,
 }
@@ -2536,6 +2584,10 @@ pub struct ThreadResumeParams {
     #[experimental(nested)]
     #[ts(optional = nullable)]
     pub approval_policy: Option<AskForApproval>,
+    /// Override where approval requests are routed for review on this thread
+    /// and subsequent turns.
+    #[ts(optional = nullable)]
+    pub approvals_reviewer: Option<ApprovalsReviewer>,
     #[ts(optional = nullable)]
     pub sandbox: Option<SandboxMode>,
     #[ts(optional = nullable)]
@@ -2564,6 +2616,8 @@ pub struct ThreadResumeResponse {
     pub cwd: PathBuf,
     #[experimental(nested)]
     pub approval_policy: AskForApproval,
+    /// Reviewer currently used for approval requests on this thread.
+    pub approvals_reviewer: ApprovalsReviewer,
     pub sandbox: SandboxPolicy,
     pub reasoning_effort: Option<ReasoningEffort>,
 }
@@ -2607,6 +2661,10 @@ pub struct ThreadForkParams {
     #[experimental(nested)]
     #[ts(optional = nullable)]
     pub approval_policy: Option<AskForApproval>,
+    /// Override where approval requests are routed for review on this thread
+    /// and subsequent turns.
+    #[ts(optional = nullable)]
+    pub approvals_reviewer: Option<ApprovalsReviewer>,
     #[ts(optional = nullable)]
     pub sandbox: Option<SandboxMode>,
     #[ts(optional = nullable)]
@@ -2635,6 +2693,8 @@ pub struct ThreadForkResponse {
     pub cwd: PathBuf,
     #[experimental(nested)]
     pub approval_policy: AskForApproval,
+    /// Reviewer currently used for approval requests on this thread.
+    pub approvals_reviewer: ApprovalsReviewer,
     pub sandbox: SandboxPolicy,
     pub reasoning_effort: Option<ReasoningEffort>,
 }
@@ -3758,6 +3818,10 @@ pub struct TurnStartParams {
     #[experimental(nested)]
     #[ts(optional = nullable)]
     pub approval_policy: Option<AskForApproval>,
+    /// Override where approval requests are routed for review on this turn and
+    /// subsequent turns.
+    #[ts(optional = nullable)]
+    pub approvals_reviewer: Option<ApprovalsReviewer>,
     /// Override the sandbox policy for this turn and subsequent turns.
     #[ts(optional = nullable)]
     pub sandbox_policy: Option<SandboxPolicy>,
@@ -4194,6 +4258,53 @@ impl ThreadItem {
     }
 }
 
+#[derive(Serialize, Deserialize, Debug, Clone, Copy, PartialEq, Eq, JsonSchema, TS)]
+#[serde(rename_all = "camelCase")]
+#[ts(export_to = "v2/")]
+/// [UNSTABLE] Lifecycle state for a guardian approval review.
+pub enum GuardianApprovalReviewStatus {
+    InProgress,
+    Approved,
+    Denied,
+    Aborted,
+}
+
+#[derive(Serialize, Deserialize, Debug, Clone, Copy, PartialEq, Eq, JsonSchema, TS)]
+#[serde(rename_all = "lowercase")]
+#[ts(export_to = "v2/")]
+/// [UNSTABLE] Risk level assigned by guardian approval review.
+pub enum GuardianRiskLevel {
+    Low,
+    Medium,
+    High,
+}
+
+impl From<CoreGuardianRiskLevel> for GuardianRiskLevel {
+    fn from(value: CoreGuardianRiskLevel) -> Self {
+        match value {
+            CoreGuardianRiskLevel::Low => Self::Low,
+            CoreGuardianRiskLevel::Medium => Self::Medium,
+            CoreGuardianRiskLevel::High => Self::High,
+        }
+    }
+}
+
+/// [UNSTABLE] Temporary guardian approval review payload used by
+/// `item/autoApprovalReview/*` notifications. This shape is expected to change
+/// soon.
+#[derive(Serialize, Deserialize, Debug, Clone, PartialEq, Eq, JsonSchema, TS)]
+#[serde(rename_all = "camelCase")]
+#[ts(export_to = "v2/")]
+pub struct GuardianApprovalReview {
+    pub status: GuardianApprovalReviewStatus,
+    #[serde(alias = "risk_score")]
+    #[ts(type = "number | null")]
+    pub risk_score: Option<u8>,
+    #[serde(alias = "risk_level")]
+    pub risk_level: Option<GuardianRiskLevel>,
+    pub rationale: Option<String>,
+}
+
 #[derive(Serialize, Deserialize, Debug, Clone, PartialEq, JsonSchema, TS)]
 #[serde(tag = "type", rename_all = "camelCase")]
 #[ts(tag = "type", rename_all = "camelCase")]
@@ -4623,6 +4734,40 @@ pub struct ItemStartedNotification {
     pub item: ThreadItem,
     pub thread_id: String,
     pub turn_id: String,
+}
+
+#[derive(Serialize, Deserialize, Debug, Clone, PartialEq, JsonSchema, TS)]
+#[serde(rename_all = "camelCase")]
+#[ts(export_to = "v2/")]
+/// [UNSTABLE] Temporary notification payload for guardian automatic approval
+/// review. This shape is expected to change soon.
+///
+/// TODO(ccunningham): Attach guardian review state to the reviewed tool item's
+/// lifecycle instead of sending separate standalone review notifications so the
+/// app-server API can persist and replay review state via `thread/read`.
+pub struct ItemGuardianApprovalReviewStartedNotification {
+    pub thread_id: String,
+    pub turn_id: String,
+    pub target_item_id: String,
+    pub review: GuardianApprovalReview,
+    pub action: Option<JsonValue>,
+}
+
+#[derive(Serialize, Deserialize, Debug, Clone, PartialEq, JsonSchema, TS)]
+#[serde(rename_all = "camelCase")]
+#[ts(export_to = "v2/")]
+/// [UNSTABLE] Temporary notification payload for guardian automatic approval
+/// review. This shape is expected to change soon.
+///
+/// TODO(ccunningham): Attach guardian review state to the reviewed tool item's
+/// lifecycle instead of sending separate standalone review notifications so the
+/// app-server API can persist and replay review state via `thread/read`.
+pub struct ItemGuardianApprovalReviewCompletedNotification {
+    pub thread_id: String,
+    pub turn_id: String,
+    pub target_item_id: String,
+    pub review: GuardianApprovalReview,
+    pub action: Option<JsonValue>,
 }
 
 #[derive(Serialize, Deserialize, Debug, Clone, PartialEq, JsonSchema, TS)]
@@ -6600,6 +6745,7 @@ mod tests {
                 request_permissions: true,
                 mcp_elicitations: false,
             }),
+            approvals_reviewer: None,
             service_tier: None,
             model_reasoning_effort: None,
             model_reasoning_summary: None,
@@ -6628,6 +6774,7 @@ mod tests {
                 request_permissions: false,
                 mcp_elicitations: true,
             }),
+            approvals_reviewer: None,
             sandbox_mode: None,
             sandbox_workspace_write: None,
             forced_chatgpt_workspace_id: None,
@@ -6652,6 +6799,39 @@ mod tests {
     }
 
     #[test]
+    fn config_approvals_reviewer_is_marked_experimental() {
+        let reason = crate::experimental_api::ExperimentalApi::experimental_reason(&Config {
+            model: None,
+            review_model: None,
+            model_context_window: None,
+            model_auto_compact_token_limit: None,
+            model_provider: None,
+            approval_policy: None,
+            approvals_reviewer: Some(ApprovalsReviewer::GuardianSubagent),
+            sandbox_mode: None,
+            sandbox_workspace_write: None,
+            forced_chatgpt_workspace_id: None,
+            forced_login_method: None,
+            web_search: None,
+            tools: None,
+            profile: None,
+            profiles: HashMap::new(),
+            instructions: None,
+            developer_instructions: None,
+            compact_prompt: None,
+            model_reasoning_effort: None,
+            model_reasoning_summary: None,
+            model_verbosity: None,
+            service_tier: None,
+            analytics: None,
+            apps: None,
+            additional: HashMap::new(),
+        });
+
+        assert_eq!(reason, Some("config/read.approvalsReviewer"));
+    }
+
+    #[test]
     fn config_nested_profile_granular_approval_policy_is_marked_experimental() {
         let reason = crate::experimental_api::ExperimentalApi::experimental_reason(&Config {
             model: None,
@@ -6660,6 +6840,7 @@ mod tests {
             model_auto_compact_token_limit: None,
             model_provider: None,
             approval_policy: None,
+            approvals_reviewer: None,
             sandbox_mode: None,
             sandbox_workspace_write: None,
             forced_chatgpt_workspace_id: None,
@@ -6679,6 +6860,7 @@ mod tests {
                         request_permissions: false,
                         mcp_elicitations: true,
                     }),
+                    approvals_reviewer: None,
                     service_tier: None,
                     model_reasoning_effort: None,
                     model_reasoning_summary: None,
@@ -6702,6 +6884,55 @@ mod tests {
         });
 
         assert_eq!(reason, Some("askForApproval.granular"));
+    }
+
+    #[test]
+    fn config_nested_profile_approvals_reviewer_is_marked_experimental() {
+        let reason = crate::experimental_api::ExperimentalApi::experimental_reason(&Config {
+            model: None,
+            review_model: None,
+            model_context_window: None,
+            model_auto_compact_token_limit: None,
+            model_provider: None,
+            approval_policy: None,
+            approvals_reviewer: None,
+            sandbox_mode: None,
+            sandbox_workspace_write: None,
+            forced_chatgpt_workspace_id: None,
+            forced_login_method: None,
+            web_search: None,
+            tools: None,
+            profile: None,
+            profiles: HashMap::from([(
+                "default".to_string(),
+                ProfileV2 {
+                    model: None,
+                    model_provider: None,
+                    approval_policy: None,
+                    approvals_reviewer: Some(ApprovalsReviewer::GuardianSubagent),
+                    service_tier: None,
+                    model_reasoning_effort: None,
+                    model_reasoning_summary: None,
+                    model_verbosity: None,
+                    web_search: None,
+                    tools: None,
+                    chatgpt_base_url: None,
+                    additional: HashMap::new(),
+                },
+            )]),
+            instructions: None,
+            developer_instructions: None,
+            compact_prompt: None,
+            model_reasoning_effort: None,
+            model_reasoning_summary: None,
+            model_verbosity: None,
+            service_tier: None,
+            analytics: None,
+            apps: None,
+            additional: HashMap::new(),
+        });
+
+        assert_eq!(reason, Some("config/read.approvalsReviewer"));
     }
 
     #[test]
@@ -7115,6 +7346,46 @@ mod tests {
     }
 
     #[test]
+    fn automatic_approval_review_deserializes_legacy_snake_case_risk_fields() {
+        let review: GuardianApprovalReview = serde_json::from_value(json!({
+            "status": "denied",
+            "risk_score": 91,
+            "risk_level": "high",
+            "rationale": "too risky"
+        }))
+        .expect("legacy snake_case automatic review should deserialize");
+        assert_eq!(
+            review,
+            GuardianApprovalReview {
+                status: GuardianApprovalReviewStatus::Denied,
+                risk_score: Some(91),
+                risk_level: Some(GuardianRiskLevel::High),
+                rationale: Some("too risky".to_string()),
+            }
+        );
+    }
+
+    #[test]
+    fn automatic_approval_review_deserializes_aborted_status() {
+        let review: GuardianApprovalReview = serde_json::from_value(json!({
+            "status": "aborted",
+            "riskScore": null,
+            "riskLevel": null,
+            "rationale": null
+        }))
+        .expect("aborted automatic review should deserialize");
+        assert_eq!(
+            review,
+            GuardianApprovalReview {
+                status: GuardianApprovalReviewStatus::Aborted,
+                risk_score: None,
+                risk_level: None,
+                rationale: None,
+            }
+        );
+    }
+
+    #[test]
     fn core_turn_item_into_thread_item_converts_supported_variants() {
         let user_item = TurnItem::UserMessage(UserMessageItem {
             id: "user-1".to_string(),
@@ -7420,6 +7691,7 @@ mod tests {
             input: vec![],
             cwd: None,
             approval_policy: None,
+            approvals_reviewer: None,
             sandbox_policy: None,
             model: None,
             service_tier: None,

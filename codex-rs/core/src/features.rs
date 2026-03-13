@@ -460,7 +460,12 @@ fn legacy_usage_notice(alias: &str, feature: Feature) -> (String, Option<String>
             (summary, Some(web_search_details().to_string()))
         }
         _ => {
-            let summary = format!("`{alias}` is deprecated. Use `[features].{canonical}` instead.");
+            let label = if alias.contains('.') || alias.starts_with('[') {
+                alias.to_string()
+            } else {
+                format!("[features].{alias}")
+            };
+            let summary = format!("`{label}` is deprecated. Use `[features].{canonical}` instead.");
             let details = if alias == canonical {
                 None
             } else {
@@ -780,10 +785,10 @@ pub const FEATURES: &[FeatureSpec] = &[
     },
     FeatureSpec {
         id: Feature::GuardianApproval,
-        key: "guardian_approval",
+        key: "smart_approvals",
         stage: Stage::Experimental {
-            name: "Automatic approval review",
-            menu_description: "Dispatch `on-request` approval prompts (for e.g. sandbox escapes or blocked network access) to a carefully-prompted security reviewer subagent rather than blocking the agent on your input.",
+            name: "Smart Approvals",
+            menu_description: "When Codex needs approval for higher-risk actions (e.g. sandbox escapes or blocked network access), route eligible approval requests to a carefully-prompted security reviewer subagent rather than blocking the agent on your input. This can consume significantly more tokens because it runs a subagent on every approval request.",
             announcement: "",
         },
         default_enabled: false,

@@ -182,6 +182,11 @@ fn test_qualify_tools_sanitizes_invalid_characters() {
 }
 
 #[test]
+fn mcp_client_implementation_version_is_not_placeholder() {
+    assert_ne!(mcp_client_implementation_version(), "0.0.0");
+}
+
+#[test]
 fn tool_filter_allows_by_default() {
     let filter = ToolFilter::default();
 
@@ -396,6 +401,49 @@ fn startup_cached_codex_apps_tools_loads_from_disk_cache() {
     assert_eq!(startup_tools.len(), 1);
     assert_eq!(startup_tools[0].server_name, CODEX_APPS_MCP_SERVER_NAME);
     assert_eq!(startup_tools[0].tool_name, "calendar_search");
+}
+
+#[test]
+fn store_managed_tools_refreshes_codex_apps_cache_used_by_listed_tools() {
+    let codex_home = tempdir().expect("tempdir");
+    let cache_context = create_codex_apps_tools_cache_context(
+        codex_home.path().to_path_buf(),
+        Some("account-one"),
+        Some("user-one"),
+    );
+    let tool_filter = ToolFilter::default();
+    let tools_arc = Arc::new(std::sync::RwLock::new(Vec::new()));
+
+    write_cached_codex_apps_tools(
+        &cache_context,
+        &[create_test_tool(CODEX_APPS_MCP_SERVER_NAME, "stale_tool")],
+    );
+    *tools_arc.write().unwrap_or_else(|e| e.into_inner()) =
+        vec![create_test_tool(CODEX_APPS_MCP_SERVER_NAME, "memory_tool")];
+
+    let (before_refresh, cache_tag) = select_listed_tools(
+        tools_arc.read().unwrap_or_else(|e| e.into_inner()).clone(),
+        &tool_filter,
+        Some(&cache_context),
+    );
+    assert_eq!(cache_tag, Some("hit"));
+    assert_eq!(before_refresh[0].tool_name, "stale_tool");
+
+    store_managed_tools(
+        CODEX_APPS_MCP_SERVER_NAME,
+        Some(&cache_context),
+        &tool_filter,
+        &tools_arc,
+        vec![create_test_tool(CODEX_APPS_MCP_SERVER_NAME, "fresh_tool")],
+    );
+
+    let (after_refresh, cache_tag) = select_listed_tools(
+        tools_arc.read().unwrap_or_else(|e| e.into_inner()).clone(),
+        &tool_filter,
+        Some(&cache_context),
+    );
+    assert_eq!(cache_tag, Some("hit"));
+    assert_eq!(after_refresh[0].tool_name, "fresh_tool");
 }
 
 #[tokio::test]

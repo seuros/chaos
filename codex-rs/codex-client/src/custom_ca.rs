@@ -1,9 +1,11 @@
-//! Custom CA handling for login HTTP clients.
+//! Custom CA handling for Codex outbound HTTP and websocket clients.
 //!
-//! Login flows are the only place this crate constructs ad hoc outbound HTTP clients, so this
-//! module centralizes the trust-store behavior that those clients must share. Enterprise networks
-//! often terminate TLS with an internal root CA, which means system roots alone cannot validate
-//! the OAuth and device-code endpoints that the login flows call.
+//! Codex constructs outbound reqwest clients and secure websocket connections in a few crates, but
+//! they all need the same trust-store policy when enterprise proxies or gateways intercept TLS.
+//! This module centralizes that policy so callers can start from an ordinary
+//! `reqwest::ClientBuilder` or rustls client config, layer in custom CA support, and either get
+//! back a configured transport or a user-facing error that explains how to fix a misconfigured CA
+//! bundle.
 //!
 //! The module intentionally has a narrow responsibility:
 //!
@@ -13,24 +15,41 @@
 //! - return user-facing errors that explain how to fix misconfigured CA files
 //!
 //! It does not validate certificate chains or perform a handshake in tests. Its contract is
-//! narrower: produce a `reqwest::Client` whose root store contains every parseable certificate
-//! block from the configured PEM bundle, or fail early with a precise error before the caller
-//! starts a login flow.
+//! narrower: produce a transport configuration whose root store contains every parseable
+//! certificate block from the configured PEM bundle, or fail early with a precise error before
+//! the caller starts network traffic.
 //!
-//! The tests in this module therefore split on that boundary:
+//! In this module's test setup, a hermetic test is one whose result depends only on the CA file
+//! and environment variables that the test chose for itself. That matters here because the normal
+//! reqwest client-construction path is not hermetic enough for environment-sensitive tests:
 //!
-//! - unit tests cover pure env-selection logic without constructing a real client
-//! - subprocess tests in `tests/ca_env.rs` cover real client construction, because that path is
-//!   not hermetic in macOS sandboxed runs and must also scrub inherited CA environment variables
-//! - the spawned `login_ca_probe` binary reaches the probe-only builder through the hidden
-//!   `probe_support` module so that workaround does not become part of the normal crate API
+//! - on macOS seatbelt runs, `reqwest::Client::builder().build()` can panic inside
+//!   `system-configuration` while probing platform proxy settings, which means the process can die
+//!   before the custom-CA code reports success or a structured error. That matters in practice
+//!   because Codex itself commonly runs spawned test processes under seatbelt, so this is not just
+//!   a hypothetical CI edge case.
+//! - child processes inherit CA-related environment variables by default, which lets developer
+//!   shell state or CI configuration affect a test unless the test scrubs those variables first
+//!
+//! The tests in this crate therefore stay split across two layers:
+//!
+//! - unit tests in this module cover env-selection logic without constructing a real client
+//! - subprocess integration tests under `tests/` cover real client construction through
+//!   [`build_reqwest_client_for_subprocess_tests`], which disables reqwest proxy autodetection so
+//!   the tests can observe custom-CA success and failure directly
+//! - those subprocess tests also scrub inherited CA environment variables before launch so their
+//!   result depends only on the test fixtures and env vars set by the test itself
 
 use std::env;
 use std::fs;
 use std::io;
 use std::path::Path;
 use std::path::PathBuf;
+use std::sync::Arc;
 
+use codex_utils_rustls_provider::ensure_rustls_crypto_provider;
+use rustls::ClientConfig;
+use rustls::RootCertStore;
 use rustls_pki_types::CertificateDer;
 use rustls_pki_types::pem::PemObject;
 use rustls_pki_types::pem::SectionKind;
@@ -39,20 +58,20 @@ use thiserror::Error;
 use tracing::info;
 use tracing::warn;
 
-const CODEX_CA_CERT_ENV: &str = "CODEX_CA_CERTIFICATE";
-const SSL_CERT_FILE_ENV: &str = "SSL_CERT_FILE";
+pub const CODEX_CA_CERT_ENV: &str = "CODEX_CA_CERTIFICATE";
+pub const SSL_CERT_FILE_ENV: &str = "SSL_CERT_FILE";
 const CA_CERT_HINT: &str = "If you set CODEX_CA_CERTIFICATE or SSL_CERT_FILE, ensure it points to a PEM file containing one or more CERTIFICATE blocks, or unset it to use system roots.";
 type PemSection = (SectionKind, Vec<u8>);
 
-/// Describes why the login HTTP client could not be constructed.
+/// Describes why a transport using shared custom CA support could not be constructed.
 ///
-/// This boundary is more specific than `io::Error`: login can fail because the configured CA file
-/// could not be read, could not be parsed as certificates, contained certs that `reqwest` refused
-/// to register, or because the final client builder failed. The rest of the login crate still
-/// speaks `io::Error`, so callers that do not care about the distinction can rely on the
-/// `From<BuildLoginHttpClientError> for io::Error` conversion.
+/// These failure modes apply to both reqwest client construction and websocket TLS
+/// configuration. A build can fail because the configured CA file could not be read, could not be
+/// parsed as certificates, contained certs that the target TLS stack refused to register, or
+/// because the final reqwest client builder failed. Callers that do not care about the
+/// distinction can rely on the `From<BuildCustomCaTransportError> for io::Error` conversion.
 #[derive(Debug, Error)]
-pub enum BuildLoginHttpClientError {
+pub enum BuildCustomCaTransportError {
     /// Reading the selected CA file from disk failed before any PEM parsing could happen.
     #[error(
         "Failed to read CA certificate file {} selected by {}: {source}. {hint}",
@@ -95,7 +114,7 @@ pub enum BuildLoginHttpClientError {
 
     /// Reqwest rejected the final client configuration after a custom CA bundle was loaded.
     #[error(
-        "Failed to build login HTTP client while using CA bundle from {} ({}): {source}",
+        "Failed to build HTTP client while using CA bundle from {} ({}): {source}",
         source_env,
         path.display()
     )]
@@ -107,76 +126,151 @@ pub enum BuildLoginHttpClientError {
     },
 
     /// Reqwest rejected the final client configuration while using only system roots.
-    #[error("Failed to build login HTTP client while using system root certificates: {0}")]
+    #[error("Failed to build HTTP client while using system root certificates: {0}")]
     BuildClientWithSystemRoots(#[source] reqwest::Error),
+
+    /// One parsed certificate block could not be registered with the websocket TLS root store.
+    #[error(
+        "Failed to register certificate #{certificate_index} from {} selected by {} in rustls root store: {source}. {hint}",
+        path.display(),
+        source_env,
+        hint = CA_CERT_HINT
+    )]
+    RegisterRustlsCertificate {
+        source_env: &'static str,
+        path: PathBuf,
+        certificate_index: usize,
+        source: rustls::Error,
+    },
 }
 
-impl From<BuildLoginHttpClientError> for io::Error {
-    fn from(error: BuildLoginHttpClientError) -> Self {
+impl From<BuildCustomCaTransportError> for io::Error {
+    fn from(error: BuildCustomCaTransportError) -> Self {
         match error {
-            BuildLoginHttpClientError::ReadCaFile { ref source, .. } => {
+            BuildCustomCaTransportError::ReadCaFile { ref source, .. } => {
                 io::Error::new(source.kind(), error)
             }
-            BuildLoginHttpClientError::InvalidCaFile { .. }
-            | BuildLoginHttpClientError::RegisterCertificate { .. } => {
+            BuildCustomCaTransportError::InvalidCaFile { .. }
+            | BuildCustomCaTransportError::RegisterCertificate { .. }
+            | BuildCustomCaTransportError::RegisterRustlsCertificate { .. } => {
                 io::Error::new(io::ErrorKind::InvalidData, error)
             }
-            BuildLoginHttpClientError::BuildClientWithCustomCa { .. }
-            | BuildLoginHttpClientError::BuildClientWithSystemRoots(_) => io::Error::other(error),
+            BuildCustomCaTransportError::BuildClientWithCustomCa { .. }
+            | BuildCustomCaTransportError::BuildClientWithSystemRoots(_) => io::Error::other(error),
         }
     }
 }
 
-/// Builds the HTTP client used by login and device-code flows.
+/// Builds a reqwest client that honors Codex custom CA environment variables.
 ///
-/// Callers should use this instead of constructing a raw `reqwest::Client` so every login entry
-/// point honors the same CA override behavior. A caller that bypasses this helper can silently
-/// regress enterprise login setups that rely on `CODEX_CA_CERTIFICATE` or `SSL_CERT_FILE`.
-/// `CODEX_CA_CERTIFICATE` takes precedence over `SSL_CERT_FILE`, and empty values for either are
-/// treated as unset so callers do not accidentally turn `VAR=""` into a bogus path lookup.
+/// Callers supply the baseline builder configuration they need, and this helper layers in custom
+/// CA handling before finally constructing the client. `CODEX_CA_CERTIFICATE` takes precedence
+/// over `SSL_CERT_FILE`, and empty values for either are treated as unset so callers do not
+/// accidentally turn `VAR=""` into a bogus path lookup.
+///
+/// Callers that build a raw `reqwest::Client` directly bypass this policy entirely. That is an
+/// easy mistake to make when adding a new outbound Codex HTTP path, and the resulting bug only
+/// shows up in environments where a proxy or gateway requires a custom root CA.
 ///
 /// # Errors
 ///
-/// Returns a [`BuildLoginHttpClientError`] when the configured CA file is unreadable, malformed,
-/// or contains a certificate block that `reqwest` cannot register as a root. Calling raw
-/// `reqwest::Client::builder()` instead would skip those user-facing errors and can make login
-/// failures in enterprise environments much harder to diagnose.
-pub fn build_login_http_client() -> Result<reqwest::Client, BuildLoginHttpClientError> {
-    build_login_http_client_with_env(&ProcessEnv, reqwest::Client::builder())
+/// Returns a [`BuildCustomCaTransportError`] when the configured CA file is unreadable,
+/// malformed, or contains a certificate block that `reqwest` cannot register as a root.
+pub fn build_reqwest_client_with_custom_ca(
+    builder: reqwest::ClientBuilder,
+) -> Result<reqwest::Client, BuildCustomCaTransportError> {
+    build_reqwest_client_with_env(&ProcessEnv, builder)
 }
 
-/// Builds the login HTTP client used behind the spawned CA probe binary.
+/// Builds a rustls client config when a Codex custom CA bundle is configured.
 ///
-/// This stays crate-private because normal callers should continue to go through
-/// [`build_login_http_client`]. The hidden `probe_support` module exposes this behavior only to
-/// `login_ca_probe`, which disables proxy autodetection so the subprocess tests can reach the
-/// custom-CA code path in sandboxed macOS test runs without crashing first in reqwest's platform
-/// proxy setup. Using this path for normal login would make the tests and production behavior
-/// diverge on proxy handling, which is exactly what the hidden module arrangement is trying to
-/// avoid.
-pub(crate) fn build_login_http_client_for_subprocess_tests()
--> Result<reqwest::Client, BuildLoginHttpClientError> {
-    build_login_http_client_with_env(
-        &ProcessEnv,
-        // The probe disables proxy autodetection so the subprocess tests can reach the custom-CA
-        // code path even in macOS seatbelt runs, where platform proxy discovery can panic first.
-        reqwest::Client::builder().no_proxy(),
-    )
+/// This is the websocket-facing sibling of [`build_reqwest_client_with_custom_ca`]. When
+/// `CODEX_CA_CERTIFICATE` or `SSL_CERT_FILE` selects a CA bundle, the returned config starts from
+/// the platform native roots and then adds the configured custom CA certificates. When no custom
+/// CA env var is set, this returns `Ok(None)` so websocket callers can keep using their ordinary
+/// default connector path.
+///
+/// Callers that let tungstenite build its default TLS connector directly bypass this policy
+/// entirely. That bug only shows up in environments where secure websocket traffic needs the same
+/// enterprise root CA bundle as HTTPS traffic.
+pub fn maybe_build_rustls_client_config_with_custom_ca()
+-> Result<Option<Arc<ClientConfig>>, BuildCustomCaTransportError> {
+    maybe_build_rustls_client_config_with_env(&ProcessEnv)
 }
 
-/// Builds a login HTTP client using an injected environment source and reqwest builder.
+/// Builds a reqwest client for spawned subprocess tests that exercise CA behavior.
 ///
-/// This exists so unit tests can exercise precedence and PEM-handling behavior deterministically.
-/// Production code should call [`build_login_http_client`] instead of supplying its own
-/// environment adapter, otherwise the tests and the real process environment can drift apart.
-/// This function is also the place where module responsibilities come together: it selects the CA
-/// bundle, delegates file parsing to [`ConfiguredCaBundle::load_certificates`], preserves the
-/// caller's chosen `reqwest` builder configuration, and finally registers each parsed certificate
-/// with that builder.
-fn build_login_http_client_with_env(
+/// This is the test-only client-construction path used by the subprocess coverage in `tests/`.
+/// The module-level docs explain the hermeticity problem in full; this helper only addresses the
+/// reqwest proxy-discovery panic side of that problem by disabling proxy autodetection. The tests
+/// still scrub inherited CA environment variables themselves. Normal production callers should use
+/// [`build_reqwest_client_with_custom_ca`] so test-only proxy behavior does not leak into
+/// ordinary client construction.
+pub fn build_reqwest_client_for_subprocess_tests(
+    builder: reqwest::ClientBuilder,
+) -> Result<reqwest::Client, BuildCustomCaTransportError> {
+    build_reqwest_client_with_env(&ProcessEnv, builder.no_proxy())
+}
+
+fn maybe_build_rustls_client_config_with_env(
+    env_source: &dyn EnvSource,
+) -> Result<Option<Arc<ClientConfig>>, BuildCustomCaTransportError> {
+    let Some(bundle) = env_source.configured_ca_bundle() else {
+        return Ok(None);
+    };
+
+    ensure_rustls_crypto_provider();
+
+    // Start from the platform roots so websocket callers keep the same baseline trust behavior
+    // they would get from tungstenite's default rustls connector, then layer in the Codex custom
+    // CA bundle on top when configured.
+    let mut root_store = RootCertStore::empty();
+    let rustls_native_certs::CertificateResult { certs, errors, .. } =
+        rustls_native_certs::load_native_certs();
+    if !errors.is_empty() {
+        warn!(
+            native_root_error_count = errors.len(),
+            "encountered errors while loading native root certificates"
+        );
+    }
+    let _ = root_store.add_parsable_certificates(certs);
+
+    let certificates = bundle.load_certificates()?;
+    for (idx, cert) in certificates.into_iter().enumerate() {
+        if let Err(source) = root_store.add(cert) {
+            warn!(
+                source_env = bundle.source_env,
+                ca_path = %bundle.path.display(),
+                certificate_index = idx + 1,
+                error = %source,
+                "failed to register CA certificate in rustls root store"
+            );
+            return Err(BuildCustomCaTransportError::RegisterRustlsCertificate {
+                source_env: bundle.source_env,
+                path: bundle.path.clone(),
+                certificate_index: idx + 1,
+                source,
+            });
+        }
+    }
+
+    Ok(Some(Arc::new(
+        ClientConfig::builder()
+            .with_root_certificates(root_store)
+            .with_no_client_auth(),
+    )))
+}
+
+/// Builds a reqwest client using an injected environment source and reqwest builder.
+///
+/// This exists so tests can exercise precedence behavior deterministically without mutating the
+/// real process environment. It selects the CA bundle, delegates file parsing to
+/// [`ConfiguredCaBundle::load_certificates`], preserves the caller's chosen `reqwest` builder
+/// configuration, and finally registers each parsed certificate with that builder.
+fn build_reqwest_client_with_env(
     env_source: &dyn EnvSource,
     mut builder: reqwest::ClientBuilder,
-) -> Result<reqwest::Client, BuildLoginHttpClientError> {
+) -> Result<reqwest::Client, BuildCustomCaTransportError> {
     if let Some(bundle) = env_source.configured_ca_bundle() {
         let certificates = bundle.load_certificates()?;
 
@@ -189,9 +283,9 @@ fn build_login_http_client_with_env(
                         ca_path = %bundle.path.display(),
                         certificate_index = idx + 1,
                         error = %source,
-                        "failed to register login CA certificate"
+                        "failed to register CA certificate"
                     );
-                    return Err(BuildLoginHttpClientError::RegisterCertificate {
+                    return Err(BuildCustomCaTransportError::RegisterCertificate {
                         source_env: bundle.source_env,
                         path: bundle.path.clone(),
                         certificate_index: idx + 1,
@@ -210,7 +304,7 @@ fn build_login_http_client_with_env(
                     error = %source,
                     "failed to build client after loading custom CA bundle"
                 );
-                Err(BuildLoginHttpClientError::BuildClientWithCustomCa {
+                Err(BuildCustomCaTransportError::BuildClientWithCustomCa {
                     source_env: bundle.source_env,
                     path: bundle.path.clone(),
                     source,
@@ -232,7 +326,7 @@ fn build_login_http_client_with_env(
                 error = %source,
                 "failed to build client while using system root certificates"
             );
-            Err(BuildLoginHttpClientError::BuildClientWithSystemRoots(
+            Err(BuildCustomCaTransportError::BuildClientWithSystemRoots(
                 source,
             ))
         }
@@ -245,17 +339,17 @@ trait EnvSource {
     /// Returns the environment variable value for `key`, if this source considers it set.
     ///
     /// Implementations should return `None` for absent values and may also collapse unreadable
-    /// process-environment states into `None`, because the login CA logic treats both cases as
+    /// process-environment states into `None`, because the custom CA logic treats both cases as
     /// "no override configured". Callers build precedence and empty-string handling on top of this
     /// method, so implementations should not trim or normalize the returned string.
     fn var(&self, key: &str) -> Option<String>;
 
     /// Returns a non-empty environment variable value interpreted as a filesystem path.
     ///
-    /// Empty strings are treated as unset because login uses presence here as a boolean "custom CA
+    /// Empty strings are treated as unset because presence here acts as a boolean "custom CA
     /// override requested" signal. This keeps the precedence logic from treating `VAR=""` as an
-    /// attempt to open the current working directory or some other platform-specific oddity once it
-    /// is converted into a path.
+    /// attempt to open the current working directory or some other platform-specific oddity once
+    /// it is converted into a path.
     fn non_empty_path(&self, key: &str) -> Option<PathBuf> {
         self.var(key)
             .filter(|value| !value.is_empty())
@@ -264,7 +358,7 @@ trait EnvSource {
 
     /// Returns the configured CA bundle and which environment variable selected it.
     ///
-    /// `CODEX_CA_CERTIFICATE` wins over `SSL_CERT_FILE` because it is the login-specific override.
+    /// `CODEX_CA_CERTIFICATE` wins over `SSL_CERT_FILE` because it is the Codex-specific override.
     /// Keeping the winning variable name with the path lets later logging explain not only which
     /// file was used but also why that file was chosen.
     fn configured_ca_bundle(&self) -> Option<ConfiguredCaBundle> {
@@ -283,12 +377,11 @@ trait EnvSource {
     }
 }
 
-/// Reads login CA configuration from the real process environment.
+/// Reads CA configuration from the real process environment.
 ///
 /// This is the production `EnvSource` implementation used by
-/// [`build_login_http_client`]. Tests substitute in-memory env maps so they can
-/// exercise precedence and empty-value behavior without mutating process-global
-/// variables.
+/// [`build_reqwest_client_with_custom_ca`]. Tests substitute in-memory env maps so they can
+/// exercise precedence and empty-value behavior without mutating process-global variables.
 struct ProcessEnv;
 
 impl EnvSource for ProcessEnv {
@@ -297,7 +390,7 @@ impl EnvSource for ProcessEnv {
     }
 }
 
-/// Identifies the CA bundle selected for login and the policy decision that selected it.
+/// Identifies the CA bundle selected for a client and the policy decision that selected it.
 ///
 /// This is the concrete output of the environment-precedence logic. Callers use `source_env` for
 /// logging and diagnostics, while `path` is the bundle that will actually be loaded.
@@ -315,7 +408,9 @@ impl ConfiguredCaBundle {
     /// the natural point where the file-loading phase begins. The method owns the high-level
     /// success/failure logs for that phase and keeps the source env and path together for lower-
     /// level parsing and error shaping.
-    fn load_certificates(&self) -> Result<Vec<CertificateDer<'static>>, BuildLoginHttpClientError> {
+    fn load_certificates(
+        &self,
+    ) -> Result<Vec<CertificateDer<'static>>, BuildCustomCaTransportError> {
         match self.parse_certificates() {
             Ok(certificates) => {
                 info!(
@@ -338,26 +433,20 @@ impl ConfiguredCaBundle {
         }
     }
 
-    /// Loads every certificate block from a PEM file intended for login CA overrides.
+    /// Loads every certificate block from a PEM file intended for Codex CA overrides.
     ///
-    /// This accepts a few common real-world variants so login behaves like other CA-aware tooling:
+    /// This accepts a few common real-world variants so Codex behaves like other CA-aware tooling:
     /// leading comments are preserved, `TRUSTED CERTIFICATE` labels are normalized to standard
-    /// certificate labels, and embedded CRLs are ignored.
-    ///
-    /// # Errors
-    ///
-    /// Returns `InvalidData` when the file cannot be interpreted as one or more certificates, and
-    /// preserves the filesystem error kind when the file itself cannot be read.
+    /// certificate labels, and embedded CRLs are ignored when they are well-formed enough for the
+    /// section iterator to classify them.
     fn parse_certificates(
         &self,
-    ) -> Result<Vec<CertificateDer<'static>>, BuildLoginHttpClientError> {
+    ) -> Result<Vec<CertificateDer<'static>>, BuildCustomCaTransportError> {
         let pem_data = self.read_pem_data()?;
         let normalized_pem = NormalizedPem::from_pem_data(self.source_env, &self.path, &pem_data);
 
         let mut certificates = Vec::new();
         let mut logged_crl_presence = false;
-        // Use the mixed-section parser from `rustls-pki-types` so CRLs can be identified and
-        // skipped explicitly instead of being removed with ad hoc text rewriting.
         for section_result in normalized_pem.sections() {
             // Known limitation: if `rustls-pki-types` fails while parsing a malformed CRL section,
             // that error is reported here before we can classify the block as ignorable. A bundle
@@ -369,6 +458,9 @@ impl ConfiguredCaBundle {
             };
             match section_kind {
                 SectionKind::Certificate => {
+                    // Standard CERTIFICATE blocks already decode to the exact DER bytes reqwest
+                    // wants. Only OpenSSL TRUSTED CERTIFICATE blocks need trimming to drop any
+                    // trailing X509_AUX trust metadata before registration.
                     let cert_der = normalized_pem.certificate_der(&der).ok_or_else(|| {
                         self.invalid_ca_file(
                             "failed to extract certificate data from TRUSTED CERTIFICATE: invalid DER length",
@@ -396,13 +488,14 @@ impl ConfiguredCaBundle {
 
         Ok(certificates)
     }
+
     /// Reads the CA bundle bytes while preserving the original filesystem error kind.
     ///
     /// The caller wants a user-facing error that includes the bundle path and remediation hint, but
-    /// the higher-level login surfaces still benefit from distinguishing "not found" from other I/O
+    /// higher-level surfaces still benefit from distinguishing "not found" from other I/O
     /// failures. This helper keeps both pieces together.
-    fn read_pem_data(&self) -> Result<Vec<u8>, BuildLoginHttpClientError> {
-        fs::read(&self.path).map_err(|source| BuildLoginHttpClientError::ReadCaFile {
+    fn read_pem_data(&self) -> Result<Vec<u8>, BuildCustomCaTransportError> {
+        fs::read(&self.path).map_err(|source| BuildCustomCaTransportError::ReadCaFile {
             source_env: self.source_env,
             path: self.path.clone(),
             source,
@@ -414,7 +507,7 @@ impl ConfiguredCaBundle {
     /// The underlying parser knows whether the file was empty, malformed, or contained unsupported
     /// PEM content, but callers need a message that also points them back to the relevant
     /// environment variables and the expected remediation.
-    fn pem_parse_error(&self, error: &pem::Error) -> BuildLoginHttpClientError {
+    fn pem_parse_error(&self, error: &pem::Error) -> BuildCustomCaTransportError {
         let detail = match error {
             pem::Error::NoItemsFound => "no certificates found in PEM file".to_string(),
             _ => format!("failed to parse PEM file: {error}"),
@@ -428,8 +521,8 @@ impl ConfiguredCaBundle {
     /// Most parse-time failures in this module eventually collapse to "the configured CA bundle is
     /// not usable", but the detailed reason still matters for operator debugging. Centralizing that
     /// formatting keeps the path and hint text consistent across the different parser branches.
-    fn invalid_ca_file(&self, detail: impl std::fmt::Display) -> BuildLoginHttpClientError {
-        BuildLoginHttpClientError::InvalidCaFile {
+    fn invalid_ca_file(&self, detail: impl std::fmt::Display) -> BuildCustomCaTransportError {
+        BuildCustomCaTransportError::InvalidCaFile {
             source_env: self.source_env,
             path: self.path.clone(),
             detail: detail.to_string(),
@@ -452,7 +545,7 @@ enum NormalizedPem {
 impl NormalizedPem {
     /// Normalizes PEM text from a CA bundle into the label shape this module expects.
     ///
-    /// Login only needs certificate DER bytes to seed `reqwest`'s root store, but operators may
+    /// Codex only needs certificate DER bytes to seed `reqwest`'s root store, but operators may
     /// point it at CA files that came from OpenSSL tooling rather than from a minimal certificate
     /// bundle. OpenSSL's `TRUSTED CERTIFICATE` form is one such variant: it is still certificate
     /// material, but it uses a different PEM label and may carry auxiliary trust metadata that
@@ -589,18 +682,20 @@ fn der_item_length(der: &[u8]) -> Option<usize> {
 #[cfg(test)]
 mod tests {
     use std::collections::HashMap;
+    use std::fs;
     use std::path::PathBuf;
 
     use pretty_assertions::assert_eq;
+    use tempfile::TempDir;
 
+    use super::BuildCustomCaTransportError;
     use super::CODEX_CA_CERT_ENV;
     use super::EnvSource;
     use super::SSL_CERT_FILE_ENV;
+    use super::maybe_build_rustls_client_config_with_env;
 
-    // Keep this module limited to pure precedence logic. Building a real reqwest client here is
-    // not hermetic on macOS sandboxed test runs because client construction can consult platform
-    // networking configuration and panic before the test asserts anything. The real client-building
-    // cases live in `tests/ca_env.rs`, which exercises them in a subprocess with explicit env.
+    const TEST_CERT: &str = include_str!("../tests/fixtures/test-ca.pem");
+
     struct MapEnv {
         values: HashMap<String, String>,
     }
@@ -618,6 +713,14 @@ mod tests {
                 .map(|(key, value)| ((*key).to_string(), (*value).to_string()))
                 .collect(),
         }
+    }
+
+    fn write_cert_file(temp_dir: &TempDir, name: &str, contents: &str) -> PathBuf {
+        let path = temp_dir.path().join(name);
+        fs::write(&path, contents).unwrap_or_else(|error| {
+            panic!("write cert fixture failed for {}: {error}", path.display())
+        });
+        path
     }
 
     #[test]
@@ -654,5 +757,32 @@ mod tests {
             env.configured_ca_bundle().map(|bundle| bundle.path),
             Some(PathBuf::from("/tmp/fallback.pem"))
         );
+    }
+
+    #[test]
+    fn rustls_config_uses_custom_ca_bundle_when_configured() {
+        let temp_dir = TempDir::new().expect("tempdir");
+        let cert_path = write_cert_file(&temp_dir, "ca.pem", TEST_CERT);
+        let env = map_env(&[(CODEX_CA_CERT_ENV, cert_path.to_string_lossy().as_ref())]);
+
+        let config = maybe_build_rustls_client_config_with_env(&env)
+            .expect("rustls config")
+            .expect("custom CA config should be present");
+
+        assert!(config.enable_sni);
+    }
+
+    #[test]
+    fn rustls_config_reports_invalid_ca_file() {
+        let temp_dir = TempDir::new().expect("tempdir");
+        let cert_path = write_cert_file(&temp_dir, "empty.pem", "");
+        let env = map_env(&[(CODEX_CA_CERT_ENV, cert_path.to_string_lossy().as_ref())]);
+
+        let error = maybe_build_rustls_client_config_with_env(&env).expect_err("invalid CA");
+
+        assert!(matches!(
+            error,
+            BuildCustomCaTransportError::InvalidCaFile { .. }
+        ));
     }
 }

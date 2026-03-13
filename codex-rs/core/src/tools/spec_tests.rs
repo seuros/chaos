@@ -459,6 +459,11 @@ fn test_full_toolset_specs_for_gpt5_codex_unified_exec_web_search() {
             search_content_types: None,
         },
         create_view_image_tool(config.can_request_original_image_detail),
+        create_spawn_agent_tool(&config),
+        create_send_input_tool(),
+        create_resume_agent_tool(),
+        create_wait_tool(),
+        create_close_agent_tool(),
     ] {
         expected.insert(tool_name(&spec).to_string(), spec);
     }
@@ -1184,6 +1189,11 @@ fn test_build_specs_gpt5_codex_default() {
             "apply_patch",
             "web_search",
             "view_image",
+            "spawn_agent",
+            "send_input",
+            "resume_agent",
+            "wait",
+            "close_agent",
         ],
     );
 }
@@ -1202,6 +1212,11 @@ fn test_build_specs_gpt51_codex_default() {
             "apply_patch",
             "web_search",
             "view_image",
+            "spawn_agent",
+            "send_input",
+            "resume_agent",
+            "wait",
+            "close_agent",
         ],
     );
 }
@@ -1222,6 +1237,11 @@ fn test_build_specs_gpt5_codex_unified_exec_web_search() {
             "apply_patch",
             "web_search",
             "view_image",
+            "spawn_agent",
+            "send_input",
+            "resume_agent",
+            "wait",
+            "close_agent",
         ],
     );
 }
@@ -1242,6 +1262,11 @@ fn test_build_specs_gpt51_codex_unified_exec_web_search() {
             "apply_patch",
             "web_search",
             "view_image",
+            "spawn_agent",
+            "send_input",
+            "resume_agent",
+            "wait",
+            "close_agent",
         ],
     );
 }
@@ -1260,6 +1285,11 @@ fn test_gpt_5_1_codex_max_defaults() {
             "apply_patch",
             "web_search",
             "view_image",
+            "spawn_agent",
+            "send_input",
+            "resume_agent",
+            "wait",
+            "close_agent",
         ],
     );
 }
@@ -1278,6 +1308,11 @@ fn test_codex_5_1_mini_defaults() {
             "apply_patch",
             "web_search",
             "view_image",
+            "spawn_agent",
+            "send_input",
+            "resume_agent",
+            "wait",
+            "close_agent",
         ],
     );
 }
@@ -1295,6 +1330,11 @@ fn test_gpt_5_defaults() {
             "request_user_input",
             "web_search",
             "view_image",
+            "spawn_agent",
+            "send_input",
+            "resume_agent",
+            "wait",
+            "close_agent",
         ],
     );
 }
@@ -1313,6 +1353,11 @@ fn test_gpt_5_1_defaults() {
             "apply_patch",
             "web_search",
             "view_image",
+            "spawn_agent",
+            "send_input",
+            "resume_agent",
+            "wait",
+            "close_agent",
         ],
     );
 }
@@ -1333,6 +1378,11 @@ fn test_gpt_5_1_codex_max_unified_exec_web_search() {
             "apply_patch",
             "web_search",
             "view_image",
+            "spawn_agent",
+            "send_input",
+            "resume_agent",
+            "wait",
+            "close_agent",
         ],
     );
 }

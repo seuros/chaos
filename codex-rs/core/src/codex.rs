@@ -204,6 +204,7 @@ use crate::feedback_tags;
 use crate::file_watcher::FileWatcher;
 use crate::file_watcher::FileWatcherEvent;
 use crate::git_info::get_git_repo_root;
+use crate::guardian::GuardianReviewSessionManager;
 use crate::instructions::UserInstructions;
 use crate::mcp::CODEX_APPS_MCP_SERVER_NAME;
 use crate::mcp::McpManager;
@@ -473,7 +474,7 @@ impl Codex {
 
         let user_instructions = get_user_instructions(&config).await;
 
-        let exec_policy = if crate::guardian::is_guardian_subagent_source(&session_source) {
+        let exec_policy = if crate::guardian::is_guardian_reviewer_source(&session_source) {
             // Guardian review should rely on the built-in shell safety checks,
             // not on caller-provided exec-policy rules that could shape the
             // reviewer or silently auto-approve commands.
@@ -748,6 +749,7 @@ pub(crate) struct Session {
     pending_mcp_server_refresh_config: Mutex<Option<McpServerRefreshConfig>>,
     pub(crate) conversation: Arc<RealtimeConversationManager>,
     pub(crate) active_turn: Mutex<Option<ActiveTurn>>,
+    pub(crate) guardian_review_session: GuardianReviewSessionManager,
     pub(crate) services: SessionServices,
     js_repl: Arc<JsReplHandle>,
     next_internal_sub_id: AtomicU64,
@@ -1810,6 +1812,7 @@ impl Session {
             pending_mcp_server_refresh_config: Mutex::new(None),
             conversation: Arc::new(RealtimeConversationManager::new()),
             active_turn: Mutex::new(None),
+            guardian_review_session: GuardianReviewSessionManager::default(),
             services,
             js_repl,
             next_internal_sub_id: AtomicU64::new(0),
@@ -3441,7 +3444,7 @@ impl Session {
             .into_text(),
         );
         let separate_guardian_developer_message =
-            crate::guardian::is_guardian_subagent_source(&session_source);
+            crate::guardian::is_guardian_reviewer_source(&session_source);
         // Keep the guardian policy prompt out of the aggregated developer bundle so it
         // stays isolated as its own top-level developer message for guardian subagents.
         if !separate_guardian_developer_message
@@ -4349,6 +4352,9 @@ async fn submission_loop(sess: Arc<Session>, config: Arc<Config>, rx_sub: Receiv
             break;
         }
     }
+    // Also drain cached guardian state if the submission loop exits because
+    // the channel closed without receiving an explicit shutdown op.
+    sess.guardian_review_session.shutdown().await;
     debug!("Agent loop exited");
 }
 
@@ -5158,6 +5164,7 @@ mod handlers {
             .unified_exec_manager
             .terminate_all_processes()
             .await;
+        sess.guardian_review_session.shutdown().await;
         info!("Shutting down Codex instance");
         let history = sess.clone_history().await;
         let turn_count = history

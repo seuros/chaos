@@ -118,6 +118,7 @@ pub struct PluginDetailSummary {
 pub struct ConfiguredMarketplaceSummary {
     pub name: String,
     pub path: AbsolutePathBuf,
+    pub display_name: Option<String>,
     pub plugins: Vec<ConfiguredMarketplacePluginSummary>,
 }
 
@@ -801,6 +802,7 @@ impl PluginsManager {
                 (!plugins.is_empty()).then_some(ConfiguredMarketplaceSummary {
                     name: marketplace.name,
                     path: marketplace.path,
+                    display_name: marketplace.display_name,
                     plugins,
                 })
             })

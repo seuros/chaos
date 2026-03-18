@@ -214,7 +214,7 @@ jobs:
         shell: bash
         run: |
           echo "CARGO_PROFILE_RELEASE_LTO: ${CARGO_PROFILE_RELEASE_LTO}"
-          cargo build --target ${{ matrix.target }} --release --timings --bin codex --bin codex-responses-api-proxy
+          cargo build --target ${{ matrix.target }} --release --timings --bin codex
 
       - name: Upload Cargo timings
         uses: actions/upload-artifact@v7
@@ -259,8 +259,6 @@ jobs:
           # built artifacts in `${release_dir}`. This step packages *those same*
           # signed binaries into a dmg.
           codex_binary_path="${release_dir}/codex"
-          proxy_binary_path="${release_dir}/codex-responses-api-proxy"
-
           rm -rf "$dmg_root"
           mkdir -p "$dmg_root"
 
@@ -268,13 +266,8 @@ jobs:
             echo "Binary $codex_binary_path not found"
             exit 1
           fi
-          if [[ ! -f "$proxy_binary_path" ]]; then
-            echo "Binary $proxy_binary_path not found"
-            exit 1
-          fi
 
           ditto "$codex_binary_path" "${dmg_root}/codex"
-          ditto "$proxy_binary_path" "${dmg_root}/codex-responses-api-proxy"
 
           rm -f "$dmg_path"
           hdiutil create \
@@ -309,11 +302,9 @@ jobs:
           mkdir -p "$dest"
 
           cp target/${{ matrix.target }}/release/codex "$dest/codex-${{ matrix.target }}"
-          cp target/${{ matrix.target }}/release/codex-responses-api-proxy "$dest/codex-responses-api-proxy-${{ matrix.target }}"
 
           if [[ "${{ matrix.target }}" == *linux* ]]; then
             cp target/${{ matrix.target }}/release/codex.sigstore "$dest/codex-${{ matrix.target }}.sigstore"
-            cp target/${{ matrix.target }}/release/codex-responses-api-proxy.sigstore "$dest/codex-responses-api-proxy-${{ matrix.target }}.sigstore"
           fi
 
           if [[ "${{ matrix.target }}" == *apple-darwin ]]; then

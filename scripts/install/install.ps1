@@ -92,17 +92,14 @@ if (-not [Environment]::Is64BitOperatingSystem) {
 $architecture = [System.Runtime.InteropServices.RuntimeInformation]::OSArchitecture
 $target = $null
 $platformLabel = $null
-$npmTag = $null
 switch ($architecture) {
     "Arm64" {
         $target = "aarch64-pc-windows-msvc"
         $platformLabel = "Windows (ARM64)"
-        $npmTag = "win32-arm64"
     }
     "X64" {
         $target = "x86_64-pc-windows-msvc"
         $platformLabel = "Windows (x64)"
-        $npmTag = "win32-x64"
     }
     default {
         Write-Error "Unsupported architecture: $architecture"
@@ -126,34 +123,32 @@ New-Item -ItemType Directory -Force -Path $installDir | Out-Null
 
 $resolvedVersion = Resolve-Version
 Write-Step "Resolved version: $resolvedVersion"
-$packageAsset = "codex-npm-$npmTag-$resolvedVersion.tgz"
+$assetBaseNames = @(
+    "codex-$target.exe",
+    "codex-command-runner-$target.exe",
+    "codex-windows-sandbox-setup-$target.exe"
+)
 
 $tempDir = Join-Path ([System.IO.Path]::GetTempPath()) ("codex-install-" + [System.Guid]::NewGuid().ToString("N"))
 New-Item -ItemType Directory -Force -Path $tempDir | Out-Null
 
 try {
-    $archivePath = Join-Path $tempDir $packageAsset
     $extractDir = Join-Path $tempDir "extract"
-    $url = Get-ReleaseUrl -AssetName $packageAsset -ResolvedVersion $resolvedVersion
-
-    Write-Step "Downloading Codex CLI"
-    Invoke-WebRequest -Uri $url -OutFile $archivePath
 
     New-Item -ItemType Directory -Force -Path $extractDir | Out-Null
-    tar -xzf $archivePath -C $extractDir
-
-    $vendorRoot = Join-Path $extractDir "package/vendor/$target"
     Write-Step "Installing to $installDir"
-    $copyMap = @{
-        "codex/codex.exe" = "codex.exe"
-        "codex/codex-command-runner.exe" = "codex-command-runner.exe"
-        "codex/codex-windows-sandbox-setup.exe" = "codex-windows-sandbox-setup.exe"
-        "path/rg.exe" = "rg.exe"
-    }
 
-    foreach ($relativeSource in $copyMap.Keys) {
-        $sourcePath = Join-Path $vendorRoot $relativeSource
-        $destinationPath = Join-Path $installDir $copyMap[$relativeSource]
+    foreach ($assetBaseName in $assetBaseNames) {
+        $archiveName = "$assetBaseName.tar.gz"
+        $archivePath = Join-Path $tempDir $archiveName
+        $url = Get-ReleaseUrl -AssetName $archiveName -ResolvedVersion $resolvedVersion
+
+        Write-Step "Downloading $assetBaseName"
+        Invoke-WebRequest -Uri $url -OutFile $archivePath
+        tar -xzf $archivePath -C $extractDir
+
+        $sourcePath = Join-Path $extractDir $assetBaseName
+        $destinationPath = Join-Path $installDir $assetBaseName.Replace("-$target", "")
         Move-Item -Force $sourcePath $destinationPath
     }
 } finally {

@@ -130,7 +130,7 @@ runs:
           keychain_args+=(--keychain "${APPLE_CODESIGN_KEYCHAIN}")
         fi
 
-        for binary in codex codex-responses-api-proxy; do
+        for binary in codex; do
           path="codex-rs/target/${{ inputs.target }}/release/${binary}"
           codesign --force --options runtime --timestamp --sign "$APPLE_CODESIGN_IDENTITY" "${keychain_args[@]}" "$path"
         done
@@ -178,7 +178,6 @@ runs:
         }
 
         notarize_binary "codex"
-        notarize_binary "codex-responses-api-proxy"
 
     - name: Sign and notarize macOS dmg
       if: ${{ inputs.sign-dmg == 'true' }}

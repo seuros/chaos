@@ -167,22 +167,18 @@ fi
 
 if [ "$os" = "darwin" ]; then
   if [ "$arch" = "aarch64" ]; then
-    npm_tag="darwin-arm64"
-    vendor_target="aarch64-apple-darwin"
+    target_triple="aarch64-apple-darwin"
     platform_label="macOS (Apple Silicon)"
   else
-    npm_tag="darwin-x64"
-    vendor_target="x86_64-apple-darwin"
+    target_triple="x86_64-apple-darwin"
     platform_label="macOS (Intel)"
   fi
 else
   if [ "$arch" = "aarch64" ]; then
-    npm_tag="linux-arm64"
-    vendor_target="aarch64-unknown-linux-musl"
+    target_triple="aarch64-unknown-linux-musl"
     platform_label="Linux (ARM64)"
   else
-    npm_tag="linux-x64"
-    vendor_target="x86_64-unknown-linux-musl"
+    target_triple="x86_64-unknown-linux-musl"
     platform_label="Linux (x64)"
   fi
 fi
@@ -197,7 +193,7 @@ step "$install_mode Codex CLI"
 step "Detected platform: $platform_label"
 
 resolved_version="$(resolve_version)"
-asset="codex-npm-$npm_tag-$resolved_version.tgz"
+asset="codex-$target_triple.tar.gz"
 download_url="$(release_url_for_asset "$asset" "$resolved_version")"
 
 step "Resolved version: $resolved_version"
@@ -217,10 +213,8 @@ tar -xzf "$archive_path" -C "$tmp_dir"
 
 step "Installing to $INSTALL_DIR"
 mkdir -p "$INSTALL_DIR"
-cp "$tmp_dir/package/vendor/$vendor_target/codex/codex" "$INSTALL_DIR/codex"
-cp "$tmp_dir/package/vendor/$vendor_target/path/rg" "$INSTALL_DIR/rg"
+cp "$tmp_dir/codex-$target_triple" "$INSTALL_DIR/codex"
 chmod 0755 "$INSTALL_DIR/codex"
-chmod 0755 "$INSTALL_DIR/rg"
 
 add_to_path
 

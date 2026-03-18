@@ -49,12 +49,6 @@ fn into_legacy_update_action(
     action: codex_tui_app_server::update_action::UpdateAction,
 ) -> UpdateAction {
     match action {
-        codex_tui_app_server::update_action::UpdateAction::NpmGlobalLatest => {
-            UpdateAction::NpmGlobalLatest
-        }
-        codex_tui_app_server::update_action::UpdateAction::BunGlobalLatest => {
-            UpdateAction::BunGlobalLatest
-        }
         codex_tui_app_server::update_action::UpdateAction::BrewUpgrade => UpdateAction::BrewUpgrade,
     }
 }

@@ -55,7 +55,7 @@ Further, "safety" in this system is not a guarantee that the command will execut
 
 Currently, the default policy is defined in [`default.policy`](./src/default.policy) within the crate.
 
-The system uses [Starlark](https://bazel.build/rules/language) as the file format because, unlike something like JSON or YAML, it supports "macros" without compromising on safety or reproducibility. (Under the hood, we use [`starlark-rust`](https://github.com/facebook/starlark-rust) as the specific Starlark implementation.)
+The system uses Starlark as the file format because, unlike something like JSON or YAML, it supports "macros" without compromising on safety or reproducibility. (Under the hood, we use [`starlark-rust`](https://github.com/facebook/starlark-rust) as the specific Starlark implementation.)
 
 This policy contains "rules" such as:
 

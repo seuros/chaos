@@ -5,7 +5,7 @@ use std::path::PathBuf;
 
 pub use runfiles;
 
-/// Bazel sets this when runfiles directories are disabled, which we do on all platforms for consistency.
+/// Runfiles-based test environments set this when runfiles directories are disabled.
 const RUNFILES_MANIFEST_ONLY_ENV: &str = "RUNFILES_MANIFEST_ONLY";
 
 #[derive(Debug, thiserror::Error)]
@@ -33,7 +33,8 @@ pub enum CargoBinError {
 /// Returns an absolute path to a binary target built for the current test run.
 ///
 /// In `cargo test`, `CARGO_BIN_EXE_*` env vars are absolute.
-/// In `bazel test`, `CARGO_BIN_EXE_*` env vars are rlocationpaths, intended to be consumed by `rlocation`.
+/// In runfiles-based test environments, `CARGO_BIN_EXE_*` env vars are rlocationpaths,
+/// intended to be consumed by `rlocation`.
 /// This helper allows callers to transparently support both.
 #[allow(deprecated)]
 pub fn cargo_bin(name: &str) -> Result<PathBuf, CargoBinError> {
@@ -107,7 +108,7 @@ fn resolve_bin_from_env(key: &str, value: OsString) -> Result<PathBuf, CargoBinE
 }
 
 /// Macro that derives the path to a test resource at runtime, the value of
-/// which depends on whether Cargo or Bazel is being used to build and run a
+/// which depends on whether Cargo or a runfiles-based build system is being used to build and run a
 /// test. Note the return value may be a relative or absolute path.
 /// (Incidentally, this is a macro rather than a function because it reads
 /// compile-time environment variables that need to be captured at the call
@@ -120,11 +121,11 @@ macro_rules! find_resource {
     ($resource:expr) => {{
         let resource = std::path::Path::new(&$resource);
         if $crate::runfiles_available() {
-            // When this code is built and run with Bazel:
+            // When this code is built and run with runfiles support:
             // - we inject `BAZEL_PACKAGE` as a compile-time environment variable
-            //   that points to native.package_name()
-            // - at runtime, Bazel will set runfiles-related env vars
-            $crate::resolve_bazel_runfile(option_env!("BAZEL_PACKAGE"), resource)
+            //   that points to the package-relative resource root
+            // - at runtime, the build system will set runfiles-related env vars
+            $crate::resolve_packaged_runfile(option_env!("BAZEL_PACKAGE"), resource)
         } else {
             let manifest_dir = std::path::Path::new(env!("CARGO_MANIFEST_DIR"));
             Ok(manifest_dir.join(resource))
@@ -132,18 +133,18 @@ macro_rules! find_resource {
     }};
 }
 
-pub fn resolve_bazel_runfile(
-    bazel_package: Option<&str>,
+pub fn resolve_packaged_runfile(
+    package_root: Option<&str>,
     resource: &Path,
 ) -> std::io::Result<PathBuf> {
     let runfiles = runfiles::Runfiles::create()
         .map_err(|err| std::io::Error::other(format!("failed to create runfiles: {err}")))?;
-    let runfile_path = match bazel_package {
-        Some(bazel_package) => PathBuf::from("_main").join(bazel_package).join(resource),
+    let runfile_path = match package_root {
+        Some(package_root) => PathBuf::from("_main").join(package_root).join(resource),
         None => {
             return Err(std::io::Error::new(
                 std::io::ErrorKind::NotFound,
-                "BAZEL_PACKAGE was not set at compile time",
+                "package root was not set at compile time",
             ));
         }
     };

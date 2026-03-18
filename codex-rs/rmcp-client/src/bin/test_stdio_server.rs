@@ -7,6 +7,8 @@ use rmcp::ServiceExt;
 use rmcp::handler::server::ServerHandler;
 use rmcp::model::CallToolRequestParams;
 use rmcp::model::CallToolResult;
+use rmcp::model::CreateElicitationRequestParams;
+use rmcp::model::ElicitationAction;
 use rmcp::model::JsonObject;
 use rmcp::model::ListResourceTemplatesResult;
 use rmcp::model::ListResourcesResult;
@@ -48,6 +50,8 @@ impl TestToolServer {
             Self::echo_dash_tool(),
             Self::image_tool(),
             Self::image_scenario_tool(),
+            Self::url_elicitation_tool(),
+            Self::require_url_elicitation_tool(),
         ];
         let resources = vec![Self::memo_resource()];
         let resource_templates = vec![Self::memo_template()];
@@ -89,6 +93,48 @@ impl TestToolServer {
             Cow::Borrowed(name),
             Cow::Borrowed(description),
             Arc::new(schema),
+        )
+    }
+
+    fn require_url_elicitation_tool() -> Tool {
+        #[expect(clippy::expect_used)]
+        let schema: JsonObject = serde_json::from_value(json!({
+            "type": "object",
+            "properties": {},
+            "additionalProperties": false
+        }))
+        .expect("url elicitation tool schema should deserialize");
+
+        Tool::new(
+            Cow::Borrowed("require_url_elicitation"),
+            Cow::Borrowed("Return a URL elicitation required MCP error."),
+            schema,
+        )
+    }
+
+    /// Tool intended for manual testing of Codex TUI URL-mode MCP elicitation.
+    ///
+    /// Manual testing approach (Codex TUI):
+    /// - Build this binary: `cargo build -p codex-rmcp-client --bin test_stdio_server`
+    /// - Register it:
+    ///   - `codex mcp add rmcp -- /abs/path/to/test_stdio_server`
+    /// - Ask Codex to call `mcp__rmcp__url_elicitation`.
+    /// - You should see the browser-consent approval overlay, including the target URL.
+    /// - Accepting it should open the configured browser handler and the tool should complete
+    ///   successfully with a structured result showing the accepted action.
+    fn url_elicitation_tool() -> Tool {
+        #[expect(clippy::expect_used)]
+        let schema: JsonObject = serde_json::from_value(json!({
+            "type": "object",
+            "properties": {},
+            "additionalProperties": false
+        }))
+        .expect("direct url elicitation tool schema should deserialize");
+
+        Tool::new(
+            Cow::Borrowed("url_elicitation"),
+            Cow::Borrowed("Trigger a direct URL-mode MCP elicitation and return the response."),
+            schema,
         )
     }
 
@@ -308,7 +354,7 @@ impl ServerHandler for TestToolServer {
     async fn call_tool(
         &self,
         request: CallToolRequestParams,
-        _context: rmcp::service::RequestContext<rmcp::service::RoleServer>,
+        context: rmcp::service::RequestContext<rmcp::service::RoleServer>,
     ) -> Result<CallToolResult, McpError> {
         match request.name.as_ref() {
             "echo" | "echo-tool" => {
@@ -358,6 +404,43 @@ impl ServerHandler for TestToolServer {
                 Ok(CallToolResult::success(vec![rmcp::model::Content::image(
                     data_b64, mime_type,
                 )]))
+            }
+            "require_url_elicitation" => Err(McpError::url_elicitation_required(
+                "This request requires more information.",
+                Some(json!({
+                    "elicitations": [
+                        {
+                            "mode": "url",
+                            "message": "Connect your account to continue.",
+                            "url": "https://example.test/connect",
+                            "elicitationId": "elicit-123"
+                        }
+                    ]
+                })),
+            )),
+            "url_elicitation" => {
+                let elicitation_id = "direct-elicit-123".to_string();
+                let response = context
+                    .peer
+                    .create_elicitation(CreateElicitationRequestParams::UrlElicitationParams {
+                        meta: None,
+                        message: "Open the connector consent page to continue.".to_string(),
+                        url: "https://example.test/direct-connect".to_string(),
+                        elicitation_id: elicitation_id.clone(),
+                    })
+                    .await
+                    .map_err(|err| McpError::internal_error(err.to_string(), None))?;
+
+                let action = match response.action {
+                    ElicitationAction::Accept => "accept",
+                    ElicitationAction::Decline => "decline",
+                    ElicitationAction::Cancel => "cancel",
+                };
+
+                Ok(CallToolResult::structured(json!({
+                    "action": action,
+                    "elicitationId": elicitation_id,
+                })))
             }
             "image_scenario" => {
                 let args = Self::parse_call_args::<ImageScenarioArgs>(&request, "image_scenario")?;

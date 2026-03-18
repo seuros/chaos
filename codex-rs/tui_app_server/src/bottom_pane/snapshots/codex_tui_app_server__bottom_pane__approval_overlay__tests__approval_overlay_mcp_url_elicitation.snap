@@ -1,0 +1,19 @@
+---
+source: tui_app_server/src/bottom_pane/approval_overlay.rs
+expression: "render_overlay_lines(&view, 80)"
+---
+
+  calendar wants to open a browser link.
+
+  Server: calendar
+
+  Site: calendar.example.com
+  URL: https://calendar.example.com/oauth/start
+
+  Open the provider login page to continue.
+
+› 1. Yes, open the link in my browser (y)
+  2. No, don't open it (n)
+  3. Cancel this request (esc)
+
+  Press enter to confirm or esc to cancel

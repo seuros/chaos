@@ -6765,6 +6765,7 @@ fn realtime_text_for_event(msg: &EventMsg) -> Option<String> {
         | EventMsg::DynamicToolCallResponse(_)
         | EventMsg::GuardianAssessment(_)
         | EventMsg::ElicitationRequest(_)
+        | EventMsg::ElicitationComplete(_)
         | EventMsg::ApplyPatchApprovalRequest(_)
         | EventMsg::DeprecationNotice(_)
         | EventMsg::BackgroundEvent(_)

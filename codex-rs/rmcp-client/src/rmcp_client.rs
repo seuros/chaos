@@ -29,6 +29,7 @@ use rmcp::model::CreateElicitationResult;
 use rmcp::model::CustomNotification;
 use rmcp::model::CustomRequest;
 use rmcp::model::ElicitationAction;
+use rmcp::model::ErrorCode;
 use rmcp::model::Extensions;
 use rmcp::model::InitializeRequestParams;
 use rmcp::model::InitializeResult;
@@ -86,6 +87,42 @@ const NON_JSON_RESPONSE_BODY_PREVIEW_BYTES: usize = 8_192;
 #[derive(Clone)]
 struct StreamableHttpResponseClient {
     inner: reqwest::Client,
+}
+
+#[derive(Debug, Deserialize)]
+struct UrlElicitationRequiredErrorData {
+    elicitations: Vec<UrlElicitationRequiredRequest>,
+}
+
+#[derive(Debug, Deserialize)]
+#[serde(tag = "mode", rename_all = "lowercase")]
+enum UrlElicitationRequiredRequest {
+    Url {
+        #[serde(rename = "_meta", default)]
+        meta: Option<rmcp::model::Meta>,
+        message: String,
+        url: String,
+        #[serde(rename = "elicitationId")]
+        elicitation_id: String,
+    },
+}
+
+impl From<UrlElicitationRequiredRequest> for CreateElicitationRequestParams {
+    fn from(value: UrlElicitationRequiredRequest) -> Self {
+        match value {
+            UrlElicitationRequiredRequest::Url {
+                meta,
+                message,
+                url,
+                elicitation_id,
+            } => CreateElicitationRequestParams::UrlElicitationParams {
+                meta,
+                message,
+                url,
+                elicitation_id,
+            },
+        }
+    }
 }
 
 impl StreamableHttpResponseClient {
@@ -453,6 +490,10 @@ pub type SendElicitation = Box<
     dyn Fn(RequestId, Elicitation) -> BoxFuture<'static, Result<ElicitationResponse>> + Send + Sync,
 >;
 
+/// Callback invoked when the MCP server sends a
+/// `notifications/elicitation/complete` notification.
+pub type OnUrlElicitationComplete = Box<dyn Fn(String) -> BoxFuture<'static, ()> + Send + Sync>;
+
 pub struct ToolWithConnectorId {
     pub tool: Tool,
     pub connector_id: Option<String>,
@@ -542,10 +583,15 @@ impl RmcpClient {
         params: InitializeRequestParams,
         timeout: Option<Duration>,
         send_elicitation: SendElicitation,
+        on_url_elicitation_complete: OnUrlElicitationComplete,
         on_tool_list_changed: OnToolListChanged,
     ) -> Result<InitializeResult> {
-        let client_handler =
-            LoggingClientHandler::new(params.clone(), send_elicitation, on_tool_list_changed);
+        let client_handler = LoggingClientHandler::new(
+            params.clone(),
+            send_elicitation,
+            on_url_elicitation_complete,
+            on_tool_list_changed,
+        );
 
         let pending_transport = {
             let mut guard = self.state.lock().await;
@@ -1047,7 +1093,53 @@ impl RmcpClient {
                     .await
                     .map_err(Into::into)
             }
-            Err(error) => Err(error.into()),
+            Err(error) => {
+                self.maybe_forward_url_elicitation_required(&error).await;
+                Err(error.into())
+            }
+        }
+    }
+
+    async fn maybe_forward_url_elicitation_required(&self, error: &ClientOperationError) {
+        let Some(requests) = Self::url_elicitation_required_requests(error) else {
+            return;
+        };
+        let handler = {
+            let initialize_context = self.initialize_context.lock().await;
+            initialize_context
+                .as_ref()
+                .map(|context| context.handler.clone())
+        };
+        let Some(handler) = handler else {
+            warn!("URL elicitation required but no initialized handler was available");
+            return;
+        };
+        handler.dispatch_url_elicitation_required(requests).await;
+    }
+
+    fn url_elicitation_required_requests(
+        error: &ClientOperationError,
+    ) -> Option<Vec<CreateElicitationRequestParams>> {
+        let ClientOperationError::Service(rmcp::service::ServiceError::McpError(error_data)) =
+            error
+        else {
+            return None;
+        };
+        if error_data.code != ErrorCode::URL_ELICITATION_REQUIRED {
+            return None;
+        }
+
+        let Some(data) = error_data.data.clone() else {
+            warn!("URL elicitation required error was missing data");
+            return None;
+        };
+
+        match serde_json::from_value::<UrlElicitationRequiredErrorData>(data) {
+            Ok(data) => Some(data.elicitations.into_iter().map(Into::into).collect()),
+            Err(err) => {
+                warn!("failed to parse URL elicitation required payload: {err}");
+                None
+            }
         }
     }
 

@@ -14,19 +14,22 @@ use serde_json::Value;
 use serde_json::json;
 use tracing::error;
 
+use crate::elicitation::ApprovalElicitationAction;
+use crate::elicitation::ApprovalElicitationResponse;
+
 /// Conforms to the MCP elicitation request params shape, so it can be used as
 /// the `params` field of an `elicitation/create` request.
 #[derive(Debug, Deserialize, Serialize)]
 pub struct ExecApprovalElicitRequestParams {
-    // These fields are required so that `params`
-    // conforms to ElicitRequestParams.
     pub message: String,
-
     #[serde(rename = "requestedSchema")]
     pub requested_schema: Value,
+    #[serde(rename = "_meta")]
+    pub meta: ExecApprovalElicitRequestMeta,
+}
 
-    // These are additional fields the client can use to
-    // correlate the request with the codex tool call.
+#[derive(Debug, Deserialize, Serialize)]
+pub struct ExecApprovalElicitRequestMeta {
     #[serde(rename = "threadId")]
     pub thread_id: ThreadId,
     pub codex_elicitation: String,
@@ -38,14 +41,7 @@ pub struct ExecApprovalElicitRequestParams {
     pub codex_parsed_cmd: Vec<ParsedCommand>,
 }
 
-// TODO(mbolin): ExecApprovalResponse does not conform to ElicitResult. See:
-// - https://github.com/modelcontextprotocol/modelcontextprotocol/blob/f962dc1780fa5eed7fb7c8a0232f1fc83ef220cd/schema/2025-06-18/schema.json#L617-L636
-// - https://modelcontextprotocol.io/specification/draft/client/elicitation#protocol-messages
-// It should have "action" and "content" fields.
-#[derive(Debug, Serialize, Deserialize)]
-pub struct ExecApprovalResponse {
-    pub decision: ReviewDecision,
-}
+pub type ExecApprovalResponse = ApprovalElicitationResponse;
 
 #[allow(clippy::too_many_arguments)]
 pub(crate) async fn handle_exec_approval_request(
@@ -71,14 +67,16 @@ pub(crate) async fn handle_exec_approval_request(
     let params = ExecApprovalElicitRequestParams {
         message,
         requested_schema: json!({"type":"object","properties":{}}),
-        thread_id,
-        codex_elicitation: "exec-approval".to_string(),
-        codex_mcp_tool_call_id: tool_call_id.clone(),
-        codex_event_id: event_id.clone(),
-        codex_call_id: call_id,
-        codex_command: command,
-        codex_cwd: cwd,
-        codex_parsed_cmd,
+        meta: ExecApprovalElicitRequestMeta {
+            thread_id,
+            codex_elicitation: "exec-approval".to_string(),
+            codex_mcp_tool_call_id: tool_call_id.clone(),
+            codex_event_id: event_id.clone(),
+            codex_call_id: call_id,
+            codex_command: command,
+            codex_cwd: cwd,
+            codex_parsed_cmd,
+        },
     };
     let params_json = match serde_json::to_value(&params) {
         Ok(value) => value,
@@ -93,6 +91,12 @@ pub(crate) async fn handle_exec_approval_request(
             return;
         }
     };
+
+    if !outgoing.supports_form_elicitation() {
+        error!("client does not support form elicitation; denying exec approval request");
+        submit_exec_approval(approval_id, event_id, ReviewDecision::Denied, codex).await;
+        return;
+    }
 
     let on_response = outgoing
         .send_request("elicitation/create", Some(params_json))
@@ -112,14 +116,20 @@ pub(crate) async fn handle_exec_approval_request(
 async fn on_exec_approval_response(
     approval_id: String,
     event_id: String,
-    receiver: tokio::sync::oneshot::Receiver<serde_json::Value>,
+    receiver: tokio::sync::oneshot::Receiver<Result<serde_json::Value, ErrorData>>,
     codex: Arc<CodexThread>,
 ) {
     let response = receiver.await;
     let value = match response {
-        Ok(value) => value,
+        Ok(Ok(value)) => value,
+        Ok(Err(err)) => {
+            error!("elicitation request failed: {err:?}");
+            submit_exec_approval(approval_id, event_id, ReviewDecision::Denied, codex).await;
+            return;
+        }
         Err(err) => {
             error!("request failed: {err:?}");
+            submit_exec_approval(approval_id, event_id, ReviewDecision::Denied, codex).await;
             return;
         }
     };
@@ -130,15 +140,26 @@ async fn on_exec_approval_response(
         // If we cannot deserialize the response, we deny the request to be
         // conservative.
         ExecApprovalResponse {
-            decision: ReviewDecision::Denied,
+            action: ApprovalElicitationAction::Decline,
+            content: None,
+            meta: None,
         }
     });
 
+    submit_exec_approval(approval_id, event_id, response.review_decision(), codex).await;
+}
+
+async fn submit_exec_approval(
+    approval_id: String,
+    event_id: String,
+    decision: ReviewDecision,
+    codex: Arc<CodexThread>,
+) {
     if let Err(err) = codex
         .submit(Op::ExecApproval {
             id: approval_id,
             turn_id: Some(event_id),
-            decision: response.decision,
+            decision,
         })
         .await
     {

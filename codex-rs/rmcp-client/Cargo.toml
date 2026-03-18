@@ -30,6 +30,7 @@ rmcp = { workspace = true, default-features = false, features = [
     "auth",
     "base64",
     "client",
+    "elicitation",
     "macros",
     "schemars",
     "server",

@@ -13,7 +13,9 @@ use std::path::PathBuf;
 use codex_chatgpt::connectors::AppInfo;
 use codex_file_search::FileMatch;
 use codex_protocol::ThreadId;
+use codex_protocol::mcp::RequestId as McpRequestId;
 use codex_protocol::openai_models::ModelPreset;
+use codex_protocol::protocol::ElicitationAction;
 use codex_protocol::protocol::Event;
 use codex_protocol::protocol::Op;
 use codex_protocol::protocol::RateLimitSnapshot;
@@ -158,6 +160,16 @@ pub(crate) enum AppEvent {
     /// Open the provided URL in the user's browser.
     OpenUrlInBrowser {
         url: String,
+    },
+
+    /// Open a URL-mode MCP elicitation in the user's browser, then resolve the request.
+    OpenUrlElicitationInBrowser {
+        thread_id: ThreadId,
+        server_name: String,
+        request_id: McpRequestId,
+        url: String,
+        on_open: ElicitationAction,
+        on_error: ElicitationAction,
     },
 
     /// Refresh app connector state and mention bindings.

@@ -5,6 +5,7 @@ use rmcp::model::JsonObject;
 use std::collections::HashSet;
 use std::sync::Arc;
 use tempfile::tempdir;
+use tokio::time::timeout;
 
 fn create_test_tool(server_name: &str, tool_name: &str) -> ToolInfo {
     ToolInfo {
@@ -94,6 +95,30 @@ fn elicitation_granular_policy_respects_never_and_config() {
             mcp_elicitations: false,
         }
     )));
+}
+
+#[tokio::test]
+async fn emit_elicitation_complete_event_sends_protocol_event() {
+    let (tx_event, rx_event) = async_channel::bounded(1);
+
+    emit_elicitation_complete_event(&tx_event, "calendar".to_string(), "elicit-123".to_string())
+        .await;
+
+    let event = timeout(std::time::Duration::from_secs(1), rx_event.recv())
+        .await
+        .expect("event receive should not time out")
+        .expect("event should be sent");
+
+    let EventMsg::ElicitationComplete(complete) = event.msg else {
+        panic!("expected elicitation completion event");
+    };
+    assert_eq!(
+        complete,
+        ElicitationCompleteEvent {
+            server_name: "calendar".to_string(),
+            elicitation_id: "elicit-123".to_string(),
+        }
+    );
 }
 
 #[test]
@@ -418,11 +443,16 @@ fn store_managed_tools_refreshes_codex_apps_cache_used_by_listed_tools() {
         &cache_context,
         &[create_test_tool(CODEX_APPS_MCP_SERVER_NAME, "stale_tool")],
     );
-    *tools_arc.write().unwrap_or_else(|e| e.into_inner()) =
+    *tools_arc
+        .write()
+        .unwrap_or_else(std::sync::PoisonError::into_inner) =
         vec![create_test_tool(CODEX_APPS_MCP_SERVER_NAME, "memory_tool")];
 
     let (before_refresh, cache_tag) = select_listed_tools(
-        tools_arc.read().unwrap_or_else(|e| e.into_inner()).clone(),
+        tools_arc
+            .read()
+            .unwrap_or_else(std::sync::PoisonError::into_inner)
+            .clone(),
         &tool_filter,
         Some(&cache_context),
     );
@@ -438,7 +468,10 @@ fn store_managed_tools_refreshes_codex_apps_cache_used_by_listed_tools() {
     );
 
     let (after_refresh, cache_tag) = select_listed_tools(
-        tools_arc.read().unwrap_or_else(|e| e.into_inner()).clone(),
+        tools_arc
+            .read()
+            .unwrap_or_else(std::sync::PoisonError::into_inner)
+            .clone(),
         &tool_filter,
         Some(&cache_context),
     );
@@ -555,19 +588,19 @@ async fn list_all_tools_uses_startup_snapshot_when_client_startup_fails() {
 }
 
 #[test]
-fn elicitation_capability_enabled_only_for_codex_apps() {
-    let codex_apps_capability = elicitation_capability_for_server(CODEX_APPS_MCP_SERVER_NAME);
-    assert!(matches!(
-        codex_apps_capability,
-        Some(ElicitationCapability {
-            form: Some(FormElicitationCapability {
-                schema_validation: None
-            }),
-            url: None,
-        })
-    ));
+fn elicitation_capability_enabled_for_all_servers() {
+    let expected = Some(ElicitationCapability {
+        form: Some(FormElicitationCapability {
+            schema_validation: None,
+        }),
+        url: Some(rmcp::model::UrlElicitationCapability {}),
+    });
 
-    assert!(elicitation_capability_for_server("custom_mcp").is_none());
+    assert_eq!(
+        elicitation_capability_for_server(CODEX_APPS_MCP_SERVER_NAME),
+        expected
+    );
+    assert_eq!(elicitation_capability_for_server("custom_mcp"), expected);
 }
 
 #[test]

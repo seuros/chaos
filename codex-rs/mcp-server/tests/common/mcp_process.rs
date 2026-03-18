@@ -31,6 +31,8 @@ use rmcp::model::RequestId;
 use serde_json::json;
 use tokio::process::Command;
 
+type TestJsonRpcMessage = JsonRpcMessage<CustomRequest, serde_json::Value, CustomNotification>;
+
 pub struct McpProcess {
     next_request_id: AtomicI64,
     /// Retain this child process until the client is dropped. The Tokio runtime
@@ -111,11 +113,63 @@ impl McpProcess {
 
     /// Performs the initialization handshake with the MCP server.
     pub async fn initialize(&mut self) -> anyhow::Result<()> {
-        let request_id = self.next_request_id.fetch_add(1, Ordering::Relaxed);
+        let initialized = self
+            .initialize_with_protocol_version_and_capabilities(
+                "2025-11-25",
+                ClientCapabilities {
+                    elicitation: Some(ElicitationCapability {
+                        form: Some(FormElicitationCapability {
+                            schema_validation: None,
+                        }),
+                        url: None,
+                    }),
+                    experimental: None,
+                    extensions: None,
+                    roots: None,
+                    sampling: None,
+                    tasks: None,
+                },
+            )
+            .await?;
+        let JsonRpcMessage::Response(JsonRpcResponse {
+            jsonrpc,
+            id,
+            result,
+        }) = initialized
+        else {
+            anyhow::bail!("expected initialize response message, got: {initialized:?}")
+        };
+        assert_eq!(jsonrpc, JsonRpcVersion2_0);
+        assert_eq!(id, RequestId::Number(0));
+        assert_eq!(
+            result,
+            json!({
+                "capabilities": {
+                    "tools": {
+                        "listChanged": true
+                    },
+                },
+                "serverInfo": {
+                    "name": "codex-mcp-server",
+                    "title": "Codex",
+                    "version": "0.0.0"
+                },
+                "protocolVersion": ProtocolVersion::V_2025_06_18
+            })
+        );
 
-        let params = InitializeRequestParams {
-            meta: None,
-            capabilities: ClientCapabilities {
+        self.send_initialized_notification().await?;
+
+        Ok(())
+    }
+
+    pub async fn initialize_with_protocol_version(
+        &mut self,
+        protocol_version: &str,
+    ) -> anyhow::Result<TestJsonRpcMessage> {
+        self.initialize_with_protocol_version_and_capabilities(
+            protocol_version,
+            ClientCapabilities {
                 elicitation: Some(ElicitationCapability {
                     form: Some(FormElicitationCapability {
                         schema_validation: None,
@@ -128,6 +182,41 @@ impl McpProcess {
                 sampling: None,
                 tasks: None,
             },
+        )
+        .await
+    }
+
+    pub async fn initialize_without_elicitation(&mut self) -> anyhow::Result<()> {
+        let initialized = self
+            .initialize_with_protocol_version_and_capabilities(
+                "2025-11-25",
+                ClientCapabilities {
+                    elicitation: None,
+                    experimental: None,
+                    extensions: None,
+                    roots: None,
+                    sampling: None,
+                    tasks: None,
+                },
+            )
+            .await?;
+        let JsonRpcMessage::Response(_) = initialized else {
+            anyhow::bail!("expected initialize response message, got: {initialized:?}")
+        };
+        self.send_initialized_notification().await?;
+        Ok(())
+    }
+
+    pub async fn initialize_with_protocol_version_and_capabilities(
+        &mut self,
+        protocol_version: &str,
+        capabilities: ClientCapabilities,
+    ) -> anyhow::Result<TestJsonRpcMessage> {
+        let request_id = self.next_request_id.fetch_add(1, Ordering::Relaxed);
+        let protocol_version = serde_json::from_value::<ProtocolVersion>(json!(protocol_version))?;
+        let params = InitializeRequestParams {
+            meta: None,
+            capabilities,
             client_info: Implementation {
                 name: "elicitation test".into(),
                 title: Some("Elicitation Test".into()),
@@ -136,7 +225,7 @@ impl McpProcess {
                 icons: None,
                 website_url: None,
             },
-            protocol_version: ProtocolVersion::V_2025_03_26,
+            protocol_version,
         };
         let params_value = serde_json::to_value(params)?;
 
@@ -147,53 +236,15 @@ impl McpProcess {
         }))
         .await?;
 
-        let initialized = self.read_jsonrpc_message().await?;
-        let os_info = os_info::get();
-        let build_version = env!("CARGO_PKG_VERSION");
-        let originator = codex_core::default_client::originator().value;
-        let user_agent = format!(
-            "{originator}/{build_version} ({} {}; {}) {} (elicitation test; 0.0.0)",
-            os_info.os_type(),
-            os_info.version(),
-            os_info.architecture().unwrap_or("unknown"),
-            codex_core::terminal::user_agent()
-        );
-        let JsonRpcMessage::Response(JsonRpcResponse {
-            jsonrpc,
-            id,
-            result,
-        }) = initialized
-        else {
-            anyhow::bail!("expected initialize response message, got: {initialized:?}")
-        };
-        assert_eq!(jsonrpc, JsonRpcVersion2_0);
-        assert_eq!(id, RequestId::Number(request_id));
-        assert_eq!(
-            result,
-            json!({
-                "capabilities": {
-                    "tools": {
-                        "listChanged": true
-                    },
-                },
-                "serverInfo": {
-                    "name": "codex-mcp-server",
-                    "title": "Codex",
-                    "version": "0.0.0",
-                    "user_agent": user_agent
-                },
-                "protocolVersion": ProtocolVersion::V_2025_03_26
-            })
-        );
+        self.read_jsonrpc_message().await
+    }
 
-        // Send notifications/initialized to ack the response.
+    pub async fn send_initialized_notification(&mut self) -> anyhow::Result<()> {
         self.send_jsonrpc_message(JsonRpcMessage::Notification(JsonRpcNotification {
             jsonrpc: JsonRpcVersion2_0,
             notification: CustomNotification::new("notifications/initialized", None),
         }))
-        .await?;
-
-        Ok(())
+        .await
     }
 
     /// Returns the id used to make the request so it can be used when
@@ -234,6 +285,14 @@ impl McpProcess {
         Ok(request_id)
     }
 
+    pub async fn send_custom_request(
+        &mut self,
+        method: &str,
+        params: Option<serde_json::Value>,
+    ) -> anyhow::Result<RequestId> {
+        Ok(RequestId::Number(self.send_request(method, params).await?))
+    }
+
     pub async fn send_response(
         &mut self,
         id: RequestId,
@@ -247,10 +306,7 @@ impl McpProcess {
         .await
     }
 
-    async fn send_jsonrpc_message(
-        &mut self,
-        message: JsonRpcMessage<CustomRequest, serde_json::Value, CustomNotification>,
-    ) -> anyhow::Result<()> {
+    async fn send_jsonrpc_message(&mut self, message: TestJsonRpcMessage) -> anyhow::Result<()> {
         eprintln!("writing message to stdin: {message:?}");
         let payload = serde_json::to_string(&message)?;
         self.stdin.write_all(payload.as_bytes()).await?;
@@ -259,16 +315,16 @@ impl McpProcess {
         Ok(())
     }
 
-    async fn read_jsonrpc_message(
-        &mut self,
-    ) -> anyhow::Result<JsonRpcMessage<CustomRequest, serde_json::Value, CustomNotification>> {
+    async fn read_jsonrpc_message(&mut self) -> anyhow::Result<TestJsonRpcMessage> {
         let mut line = String::new();
         self.stdout.read_line(&mut line).await?;
-        let message = serde_json::from_str::<
-            JsonRpcMessage<CustomRequest, serde_json::Value, CustomNotification>,
-        >(&line)?;
+        let message = serde_json::from_str::<TestJsonRpcMessage>(&line)?;
         eprintln!("read message from stdout: {message:?}");
         Ok(message)
+    }
+
+    pub async fn read_next_jsonrpc_message(&mut self) -> anyhow::Result<TestJsonRpcMessage> {
+        self.read_jsonrpc_message().await
     }
 
     pub async fn read_stream_until_request_message(
@@ -319,6 +375,33 @@ impl McpProcess {
                         return Ok(jsonrpc_response);
                     }
                 }
+            }
+        }
+    }
+
+    pub async fn read_stream_until_response_or_error_message(
+        &mut self,
+        request_id: RequestId,
+    ) -> anyhow::Result<TestJsonRpcMessage> {
+        eprintln!("in read_stream_until_response_or_error_message({request_id:?})");
+
+        loop {
+            let message = self.read_jsonrpc_message().await?;
+            match message {
+                JsonRpcMessage::Notification(_) => {
+                    eprintln!("notification: {message:?}");
+                }
+                JsonRpcMessage::Request(_) => {
+                    anyhow::bail!("unexpected JSONRPCMessage::Request: {message:?}");
+                }
+                JsonRpcMessage::Error(error) if error.id == request_id => {
+                    return Ok(JsonRpcMessage::Error(error));
+                }
+                JsonRpcMessage::Error(_) => {}
+                JsonRpcMessage::Response(jsonrpc_response) if jsonrpc_response.id == request_id => {
+                    return Ok(JsonRpcMessage::Response(jsonrpc_response));
+                }
+                JsonRpcMessage::Response(_) => {}
             }
         }
     }

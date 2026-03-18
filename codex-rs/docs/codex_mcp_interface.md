@@ -5,6 +5,9 @@ This document describes Codex's experimental MCP server interface: a JSON-RPC AP
 - Status: experimental and subject to change without notice
 - Server binary: `codex mcp-server` (or `codex-mcp-server`)
 - Transport: standard MCP over stdio (JSON-RPC 2.0, line-delimited)
+- Protocol negotiation: accepts newer client version strings such as `2025-11-25`, but
+  currently negotiates down to `2025-06-18`, the latest protocol version implemented by
+  the bundled Rust SDK
 
 ## Overview
 
@@ -28,7 +31,7 @@ At a glance:
   - `codex/event/*` stream notifications for live agent events
   - `fuzzyFileSearch/sessionUpdated`, `fuzzyFileSearch/sessionCompleted`
 - Approvals (server -> client requests)
-  - `applyPatchApproval`, `execCommandApproval`
+  - MCP `elicitation/create` requests for exec and patch approval
 
 See code for full type definitions and exact shapes: `app-server-protocol/src/protocol/{common,v1,v2}.rs`.
 
@@ -118,12 +121,27 @@ Example:
 
 ## Approvals (server -> client)
 
-When Codex needs approval to apply changes or run commands, the server issues JSON-RPC requests to the client:
+When Codex needs approval to apply changes or run commands, the server sends an MCP `elicitation/create` request in form mode.
+The same mechanism is also used to forward MCP elicitation requests originating from downstream MCP servers used inside a Codex session.
 
-- `applyPatchApproval { conversationId, callId, fileChanges, reason?, grantRoot? }`
-- `execCommandApproval { conversationId, callId, approvalId?, command, cwd, reason? }`
+The request body includes:
 
-The client must reply with `{ decision: "allow" | "deny" }` for each request.
+- `message`
+- `requestedSchema`
+- `_meta`, which carries Codex-specific correlation fields such as `threadId`, `codex_event_id`, and request metadata needed by Codex-aware clients
+
+When a downstream MCP server emits URL-mode elicitation, Codex forwards `mode: "url"`, `url`, and `elicitationId` to the client if the client declared URL elicitation support during initialization. If that downstream server instead returns `URLElicitationRequiredError` (`-32042`) with an `elicitations` list, Codex forwards those URL elicitation requests through the same outer `elicitation/create` mechanism before surfacing the original request error for a later retry. If the downstream server later sends the optional MCP `notifications/elicitation/complete`, Codex forwards that notification as well. Unsupported elicitation modes are cancelled rather than left hanging.
+
+The client must reply with an MCP elicitation result:
+
+```json
+{
+  "action": "accept" | "decline" | "cancel",
+  "content": {}
+}
+```
+
+For the current approval prompts, `content` is an empty object on `accept` because the approval decision is represented by `action`.
 
 ## Auth helpers
 

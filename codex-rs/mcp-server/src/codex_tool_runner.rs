@@ -5,6 +5,8 @@
 use std::collections::HashMap;
 use std::sync::Arc;
 
+use crate::elicitation::handle_mcp_server_elicitation_complete;
+use crate::elicitation::handle_mcp_server_elicitation_request;
 use crate::exec_approval::handle_exec_approval_request;
 use crate::outgoing_message::OutgoingMessageSender;
 use crate::outgoing_message::OutgoingNotificationMeta;
@@ -266,8 +268,21 @@ async fn run_codex_tool_session_inner(
                     EventMsg::GuardianAssessment(_) => {
                         continue;
                     }
-                    EventMsg::ElicitationRequest(_) => {
-                        // TODO: forward elicitation requests to the client?
+                    EventMsg::ElicitationRequest(request) => {
+                        handle_mcp_server_elicitation_request(
+                            request,
+                            outgoing.clone(),
+                            thread.clone(),
+                        )
+                        .await;
+                        continue;
+                    }
+                    EventMsg::ElicitationComplete(event) => {
+                        handle_mcp_server_elicitation_complete(
+                            event.elicitation_id,
+                            outgoing.clone(),
+                        )
+                        .await;
                         continue;
                     }
                     EventMsg::ApplyPatchApprovalRequest(ApplyPatchApprovalRequestEvent {

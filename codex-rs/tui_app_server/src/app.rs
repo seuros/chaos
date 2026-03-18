@@ -1170,15 +1170,16 @@ impl App {
         }
     }
 
-    fn open_url_in_browser(&mut self, url: String) {
+    fn open_url_in_browser(&mut self, url: String) -> bool {
         if let Err(err) = webbrowser::open(&url) {
             self.chat_widget
                 .add_error_message(format!("Failed to open browser for {url}: {err}"));
-            return;
+            return false;
         }
 
         self.chat_widget
             .add_info_message(format!("Opened {url} in your browser."), /*hint*/ None);
+        true
     }
 
     fn clear_ui_header_lines_with_version(
@@ -1462,6 +1463,12 @@ impl App {
                 {
                     Some(ThreadInteractiveRequest::McpServerElicitation(request))
                 } else {
+                    let url = match &ev.request {
+                        codex_protocol::approvals::ElicitationRequest::Url { url, .. } => {
+                            Some(url.clone())
+                        }
+                        codex_protocol::approvals::ElicitationRequest::Form { .. } => None,
+                    };
                     Some(ThreadInteractiveRequest::Approval(
                         ApprovalRequest::McpElicitation {
                             thread_id,
@@ -1469,6 +1476,7 @@ impl App {
                             server_name: ev.server_name.clone(),
                             request_id: ev.id.clone(),
                             message: ev.request.message().to_string(),
+                            url,
                         },
                     ))
                 }
@@ -2994,7 +3002,30 @@ impl App {
                     });
             }
             AppEvent::OpenUrlInBrowser { url } => {
-                self.open_url_in_browser(url);
+                let _ = self.open_url_in_browser(url);
+            }
+            AppEvent::OpenUrlElicitationInBrowser {
+                thread_id,
+                server_name,
+                request_id,
+                url,
+                on_open,
+                on_error,
+            } => {
+                let decision = if self.open_url_in_browser(url) {
+                    on_open
+                } else {
+                    on_error
+                };
+                let app_command =
+                    AppCommand::resolve_elicitation(server_name, request_id, decision, None, None);
+                if self
+                    .try_resolve_app_server_request(app_server, thread_id, &app_command)
+                    .await?
+                {
+                    return Ok(AppRunControl::Continue);
+                }
+                self.submit_op_to_thread(thread_id, app_command).await;
             }
             AppEvent::RefreshConnectors { force_refetch } => {
                 self.chat_widget.refresh_connectors(force_refetch);
@@ -3933,15 +3964,20 @@ impl App {
                 ApprovalRequest::McpElicitation {
                     server_name,
                     message,
+                    url,
                     ..
                 } => {
                     let _ = tui.enter_alt_screen();
-                    let paragraph = Paragraph::new(vec![
+                    let mut lines = vec![
                         Line::from(vec!["Server: ".into(), server_name.bold()]),
                         Line::from(""),
-                        Line::from(message),
-                    ])
-                    .wrap(Wrap { trim: false });
+                    ];
+                    if let Some(url) = url {
+                        lines.push(Line::from(vec!["URL: ".into(), url.cyan().underlined()]));
+                        lines.push(Line::from(""));
+                    }
+                    lines.push(Line::from(message));
+                    let paragraph = Paragraph::new(lines).wrap(Wrap { trim: false });
                     self.overlay = Some(Overlay::new_static_with_renderables(
                         vec![Box::new(paragraph)],
                         "E L I C I T A T I O N".to_string(),

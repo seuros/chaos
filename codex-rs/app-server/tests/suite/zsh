@@ -1,7 +1,6 @@
 #!/usr/bin/env dotslash
 
-// This is the patched zsh fork built by
-// `.github/workflows/shell-tool-mcp.yml` for the shell-tool-mcp package.
+// This is the patched zsh bundle used in shell-execution integration tests.
 // Fetching the prebuilt version via DotSlash makes it easier to write
 // integration tests that exercise the zsh fork behavior in app-server tests.
 //

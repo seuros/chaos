@@ -25,6 +25,7 @@ use tracing_subscriber::prelude::*;
 
 mod codex_tool_config;
 mod codex_tool_runner;
+mod elicitation;
 mod exec_approval;
 pub(crate) mod message_processor;
 mod outgoing_message;
@@ -37,8 +38,12 @@ use crate::outgoing_message::OutgoingMessageSender;
 
 pub use crate::codex_tool_config::CodexToolCallParam;
 pub use crate::codex_tool_config::CodexToolCallReplyParam;
+pub use crate::elicitation::ApprovalElicitationAction;
+pub use crate::elicitation::ApprovalElicitationResponse;
+pub use crate::exec_approval::ExecApprovalElicitRequestMeta;
 pub use crate::exec_approval::ExecApprovalElicitRequestParams;
 pub use crate::exec_approval::ExecApprovalResponse;
+pub use crate::patch_approval::PatchApprovalElicitRequestMeta;
 pub use crate::patch_approval::PatchApprovalElicitRequestParams;
 pub use crate::patch_approval::PatchApprovalResponse;
 
@@ -135,7 +140,7 @@ pub async fn run_main(
                     JsonRpcMessage::Request(r) => processor.process_request(r).await,
                     JsonRpcMessage::Response(r) => processor.process_response(r).await,
                     JsonRpcMessage::Notification(n) => processor.process_notification(n).await,
-                    JsonRpcMessage::Error(e) => processor.process_error(e),
+                    JsonRpcMessage::Error(e) => processor.process_error(e).await,
                 }
             }
 

@@ -43,6 +43,7 @@ use ratatui::text::Line;
 use ratatui::text::Span;
 use ratatui::widgets::Paragraph;
 use ratatui::widgets::Wrap;
+use url::Url;
 
 /// Request coming from the agent that needs user approval.
 #[derive(Clone, Debug)]
@@ -78,6 +79,7 @@ pub(crate) enum ApprovalRequest {
         server_name: String,
         request_id: RequestId,
         message: String,
+        url: Option<String>,
     },
 }
 
@@ -177,9 +179,15 @@ impl ApprovalOverlay {
                 patch_options(),
                 "Would you like to make the following edits?".to_string(),
             ),
-            ApprovalRequest::McpElicitation { server_name, .. } => (
-                elicitation_options(),
-                format!("{server_name} needs your approval."),
+            ApprovalRequest::McpElicitation {
+                server_name, url, ..
+            } => (
+                elicitation_options(url.is_some()),
+                if url.is_some() {
+                    format!("{server_name} wants to open a browser link.")
+                } else {
+                    format!("{server_name} needs your approval.")
+                },
             ),
         };
 
@@ -236,13 +244,29 @@ impl ApprovalOverlay {
                 }
                 (
                     ApprovalRequest::McpElicitation {
+                        thread_id,
                         server_name,
                         request_id,
+                        url,
                         ..
                     },
                     ApprovalDecision::McpElicitation(decision),
                 ) => {
-                    self.handle_elicitation_decision(server_name, request_id, *decision);
+                    if matches!(decision, ElicitationAction::Accept)
+                        && let Some(url) = url.as_ref()
+                    {
+                        self.app_event_tx
+                            .send(AppEvent::OpenUrlElicitationInBrowser {
+                                thread_id: *thread_id,
+                                server_name: server_name.clone(),
+                                request_id: request_id.clone(),
+                                url: url.clone(),
+                                on_open: ElicitationAction::Accept,
+                                on_error: ElicitationAction::Cancel,
+                            });
+                    } else {
+                        self.handle_elicitation_decision(server_name, request_id, *decision);
+                    }
                 }
                 _ => {}
             }
@@ -600,6 +624,7 @@ fn build_header(request: &ApprovalRequest) -> Box<dyn Renderable> {
             thread_label,
             server_name,
             message,
+            url,
             ..
         } => {
             let mut lines = Vec::new();
@@ -613,8 +638,21 @@ fn build_header(request: &ApprovalRequest) -> Box<dyn Renderable> {
             lines.extend([
                 Line::from(vec!["Server: ".into(), server_name.clone().bold()]),
                 Line::from(""),
-                Line::from(message.clone()),
             ]);
+            if let Some(url) = url {
+                let host = Url::parse(url)
+                    .ok()
+                    .and_then(|parsed| parsed.host_str().map(str::to_string));
+                if let Some(host) = host {
+                    lines.push(Line::from(vec!["Site: ".into(), host.bold()]));
+                }
+                lines.push(Line::from(vec![
+                    "URL: ".into(),
+                    url.clone().cyan().underlined(),
+                ]));
+                lines.push(Line::from(""));
+            }
+            lines.push(Line::from(message.clone()));
             let header = Paragraph::new(lines).wrap(Wrap { trim: false });
             Box::new(header)
         }
@@ -864,27 +902,50 @@ fn permissions_options() -> Vec<ApprovalOption> {
     ]
 }
 
-fn elicitation_options() -> Vec<ApprovalOption> {
-    vec![
-        ApprovalOption {
-            label: "Yes, provide the requested info".to_string(),
-            decision: ApprovalDecision::McpElicitation(ElicitationAction::Accept),
-            display_shortcut: None,
-            additional_shortcuts: vec![key_hint::plain(KeyCode::Char('y'))],
-        },
-        ApprovalOption {
-            label: "No, but continue without it".to_string(),
-            decision: ApprovalDecision::McpElicitation(ElicitationAction::Decline),
-            display_shortcut: None,
-            additional_shortcuts: vec![key_hint::plain(KeyCode::Char('n'))],
-        },
-        ApprovalOption {
-            label: "Cancel this request".to_string(),
-            decision: ApprovalDecision::McpElicitation(ElicitationAction::Cancel),
-            display_shortcut: Some(key_hint::plain(KeyCode::Esc)),
-            additional_shortcuts: vec![key_hint::plain(KeyCode::Char('c'))],
-        },
-    ]
+fn elicitation_options(is_url_mode: bool) -> Vec<ApprovalOption> {
+    if is_url_mode {
+        vec![
+            ApprovalOption {
+                label: "Yes, open the link in my browser".to_string(),
+                decision: ApprovalDecision::McpElicitation(ElicitationAction::Accept),
+                display_shortcut: None,
+                additional_shortcuts: vec![key_hint::plain(KeyCode::Char('y'))],
+            },
+            ApprovalOption {
+                label: "No, don't open it".to_string(),
+                decision: ApprovalDecision::McpElicitation(ElicitationAction::Decline),
+                display_shortcut: None,
+                additional_shortcuts: vec![key_hint::plain(KeyCode::Char('n'))],
+            },
+            ApprovalOption {
+                label: "Cancel this request".to_string(),
+                decision: ApprovalDecision::McpElicitation(ElicitationAction::Cancel),
+                display_shortcut: Some(key_hint::plain(KeyCode::Esc)),
+                additional_shortcuts: vec![key_hint::plain(KeyCode::Char('c'))],
+            },
+        ]
+    } else {
+        vec![
+            ApprovalOption {
+                label: "Yes, provide the requested info".to_string(),
+                decision: ApprovalDecision::McpElicitation(ElicitationAction::Accept),
+                display_shortcut: None,
+                additional_shortcuts: vec![key_hint::plain(KeyCode::Char('y'))],
+            },
+            ApprovalOption {
+                label: "No, but continue without it".to_string(),
+                decision: ApprovalDecision::McpElicitation(ElicitationAction::Decline),
+                display_shortcut: None,
+                additional_shortcuts: vec![key_hint::plain(KeyCode::Char('n'))],
+            },
+            ApprovalOption {
+                label: "Cancel this request".to_string(),
+                decision: ApprovalDecision::McpElicitation(ElicitationAction::Cancel),
+                display_shortcut: Some(key_hint::plain(KeyCode::Esc)),
+                additional_shortcuts: vec![key_hint::plain(KeyCode::Char('c'))],
+            },
+        ]
+    }
 }
 
 #[cfg(test)]
@@ -963,6 +1024,17 @@ mod tests {
                     write: Some(vec![absolute_path("/tmp/out.txt")]),
                 }),
             },
+        }
+    }
+
+    fn make_url_elicitation_request() -> ApprovalRequest {
+        ApprovalRequest::McpElicitation {
+            thread_id: ThreadId::new(),
+            thread_label: None,
+            server_name: "calendar".to_string(),
+            request_id: RequestId::Integer(7),
+            message: "Open the provider login page to continue.".to_string(),
+            url: Some("https://calendar.example.com/oauth/start".to_string()),
         }
     }
 
@@ -1047,6 +1119,55 @@ mod tests {
             "approval_overlay_cross_thread_prompt",
             render_overlay_lines(&view, 80)
         );
+    }
+
+    #[test]
+    fn mcp_url_elicitation_snapshot() {
+        let (tx, _rx) = unbounded_channel::<AppEvent>();
+        let tx = AppEventSender::new(tx);
+        let view = ApprovalOverlay::new(
+            make_url_elicitation_request(),
+            tx,
+            Features::with_defaults(),
+        );
+
+        assert_snapshot!(
+            "approval_overlay_mcp_url_elicitation",
+            render_overlay_lines(&view, 80)
+        );
+    }
+
+    #[test]
+    fn accepting_url_elicitation_opens_browser_and_resolves_on_success() {
+        let (tx, mut rx) = unbounded_channel::<AppEvent>();
+        let tx = AppEventSender::new(tx);
+        let request = make_url_elicitation_request();
+        let thread_id = request.thread_id();
+        let mut view = ApprovalOverlay::new(request, tx, Features::with_defaults());
+
+        view.handle_key_event(KeyEvent::new(KeyCode::Char('y'), KeyModifiers::NONE));
+
+        let event = rx
+            .try_recv()
+            .expect("expected browser-open elicitation event");
+        match event {
+            AppEvent::OpenUrlElicitationInBrowser {
+                thread_id: event_thread_id,
+                server_name,
+                request_id,
+                url,
+                on_open,
+                on_error,
+            } => {
+                assert_eq!(event_thread_id, thread_id);
+                assert_eq!(server_name, "calendar");
+                assert_eq!(request_id, RequestId::Integer(7));
+                assert_eq!(url, "https://calendar.example.com/oauth/start");
+                assert_eq!(on_open, ElicitationAction::Accept);
+                assert_eq!(on_error, ElicitationAction::Cancel);
+            }
+            other => panic!("unexpected event: {other:?}"),
+        }
     }
 
     #[test]

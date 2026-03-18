@@ -81,6 +81,7 @@ async fn tool_list_changed_callback_is_invoked() -> anyhow::Result<()> {
                 }
                 .boxed()
             }),
+            Box::new(|_| async {}.boxed()),
             Box::new(move || {
                 let count = Arc::clone(&count_clone);
                 async move {
@@ -103,6 +104,7 @@ async fn tool_list_changed_callback_is_invoked() -> anyhow::Result<()> {
         .call_tool(
             "trigger_list_changed".to_string(),
             Some(serde_json::json!({})),
+            None,
             Some(Duration::from_secs(5)),
         )
         .await?;

@@ -316,6 +316,7 @@ impl EventProcessor for EventProcessorWithHumanOutput {
                     "auto-cancelling (not supported in exec mode)".style(self.dimmed)
                 );
             }
+            EventMsg::ElicitationComplete(_) => {}
             EventMsg::TurnComplete(TurnCompleteEvent {
                 last_agent_message, ..
             }) => {
@@ -1053,6 +1054,7 @@ impl EventProcessorWithHumanOutput {
                     | EventMsg::ThreadRolledBack(_)
                     | EventMsg::RequestUserInput(_)
                     | EventMsg::RequestPermissions(_)
+                    | EventMsg::ElicitationComplete(_)
                     | EventMsg::DynamicToolCallRequest(_)
                     | EventMsg::DynamicToolCallResponse(_)
                     | EventMsg::GuardianAssessment(_)

@@ -763,6 +763,9 @@ pub(crate) async fn apply_bespoke_event_handling(
                 });
             }
         }
+        EventMsg::ElicitationComplete(_) => {
+            // App-server does not expose a dedicated notification for this yet.
+        }
         EventMsg::RequestPermissions(request) => {
             if matches!(api_version, ApiVersion::V2) {
                 let permission_guard = thread_watch_manager

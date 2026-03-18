@@ -293,6 +293,12 @@ pub struct ElicitationRequestEvent {
     pub request: ElicitationRequest,
 }
 
+#[derive(Debug, Clone, Deserialize, Serialize, PartialEq, JsonSchema, TS)]
+pub struct ElicitationCompleteEvent {
+    pub server_name: String,
+    pub elicitation_id: String,
+}
+
 #[derive(Debug, Clone, Copy, Deserialize, Serialize, PartialEq, Eq, JsonSchema, TS)]
 #[serde(rename_all = "lowercase")]
 pub enum ElicitationAction {

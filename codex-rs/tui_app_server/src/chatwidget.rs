@@ -79,6 +79,7 @@ use codex_otel::RuntimeMetricsSummary;
 use codex_otel::SessionTelemetry;
 use codex_protocol::ThreadId;
 use codex_protocol::account::PlanType;
+use codex_protocol::approvals::ElicitationRequest;
 use codex_protocol::approvals::ElicitationRequestEvent;
 use codex_protocol::config_types::CollaborationMode;
 use codex_protocol::config_types::CollaborationModeMask;
@@ -3328,12 +3329,17 @@ impl ChatWidget {
             self.bottom_pane
                 .push_mcp_server_elicitation_request(request);
         } else {
+            let url = match &ev.request {
+                ElicitationRequest::Url { url, .. } => Some(url.clone()),
+                ElicitationRequest::Form { .. } => None,
+            };
             let request = ApprovalRequest::McpElicitation {
                 thread_id,
                 thread_label: None,
                 server_name: ev.server_name,
                 request_id: ev.id,
                 message: ev.request.message().to_string(),
+                url,
             };
             self.bottom_pane
                 .push_approval_request(request, &self.config.features);
@@ -5138,6 +5144,7 @@ impl ChatWidget {
             EventMsg::ElicitationRequest(ev) => {
                 self.on_elicitation_request(ev);
             }
+            EventMsg::ElicitationComplete(_) => {}
             EventMsg::RequestUserInput(ev) => {
                 self.on_request_user_input(ev);
             }

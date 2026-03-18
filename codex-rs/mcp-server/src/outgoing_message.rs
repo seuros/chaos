@@ -1,11 +1,13 @@
 use std::collections::HashMap;
 use std::sync::atomic::AtomicI64;
+use std::sync::atomic::AtomicU8;
 use std::sync::atomic::Ordering;
 
 use codex_protocol::ThreadId;
 use codex_protocol::protocol::Event;
 use rmcp::model::CustomNotification;
 use rmcp::model::CustomRequest;
+use rmcp::model::ElicitationCapability;
 use rmcp::model::ErrorData;
 use rmcp::model::JsonRpcError;
 use rmcp::model::JsonRpcMessage;
@@ -27,7 +29,8 @@ pub(crate) type OutgoingJsonRpcMessage = JsonRpcMessage<CustomRequest, Value, Cu
 pub(crate) struct OutgoingMessageSender {
     next_request_id: AtomicI64,
     sender: mpsc::UnboundedSender<OutgoingMessage>,
-    request_id_to_callback: Mutex<HashMap<RequestId, oneshot::Sender<Value>>>,
+    request_id_to_callback: Mutex<HashMap<RequestId, oneshot::Sender<Result<Value, ErrorData>>>>,
+    client_elicitation_modes: AtomicU8,
 }
 
 impl OutgoingMessageSender {
@@ -36,6 +39,7 @@ impl OutgoingMessageSender {
             next_request_id: AtomicI64::new(0),
             sender,
             request_id_to_callback: Mutex::new(HashMap::new()),
+            client_elicitation_modes: AtomicU8::new(0),
         }
     }
 
@@ -43,7 +47,7 @@ impl OutgoingMessageSender {
         &self,
         method: &str,
         params: Option<serde_json::Value>,
-    ) -> oneshot::Receiver<Value> {
+    ) -> oneshot::Receiver<Result<Value, ErrorData>> {
         let id = RequestId::Number(self.next_request_id.fetch_add(1, Ordering::Relaxed));
         let outgoing_message_id = id.clone();
         let (tx_approve, rx_approve) = oneshot::channel();
@@ -69,7 +73,7 @@ impl OutgoingMessageSender {
 
         match entry {
             Some((id, sender)) => {
-                if let Err(err) = sender.send(result) {
+                if let Err(err) = sender.send(Ok(result)) {
                     warn!("could not notify callback for {id:?} due to: {err:?}");
                 }
             }
@@ -77,6 +81,57 @@ impl OutgoingMessageSender {
                 warn!("could not find callback for {id:?}");
             }
         }
+    }
+
+    pub(crate) async fn notify_client_error(&self, id: RequestId, error: ErrorData) {
+        let entry = {
+            let mut request_id_to_callback = self.request_id_to_callback.lock().await;
+            request_id_to_callback.remove_entry(&id)
+        };
+
+        match entry {
+            Some((id, sender)) => {
+                if let Err(err) = sender.send(Err(error)) {
+                    warn!("could not notify callback for {id:?} due to: {err:?}");
+                }
+            }
+            None => {
+                warn!("could not find callback for {id:?}");
+            }
+        }
+    }
+
+    pub(crate) fn set_client_elicitation_capability(
+        &self,
+        elicitation: Option<&ElicitationCapability>,
+    ) {
+        const FORM_MODE: u8 = 0b01;
+        const URL_MODE: u8 = 0b10;
+
+        let supports_form = match elicitation {
+            None => false,
+            Some(capability) if capability.form.is_some() => true,
+            Some(capability) => capability.url.is_none(),
+        };
+        let supports_url = elicitation.is_some_and(|capability| capability.url.is_some());
+
+        let mut modes = 0;
+        if supports_form {
+            modes |= FORM_MODE;
+        }
+        if supports_url {
+            modes |= URL_MODE;
+        }
+        self.client_elicitation_modes
+            .store(modes, Ordering::Relaxed);
+    }
+
+    pub(crate) fn supports_form_elicitation(&self) -> bool {
+        self.client_elicitation_modes.load(Ordering::Relaxed) & 0b01 != 0
+    }
+
+    pub(crate) fn supports_url_elicitation(&self) -> bool {
+        self.client_elicitation_modes.load(Ordering::Relaxed) & 0b10 != 0
     }
 
     pub(crate) async fn send_response<T: Serialize>(&self, id: RequestId, response: T) {
@@ -468,5 +523,39 @@ mod tests {
         });
         assert_eq!(params.unwrap(), expected_params);
         Ok(())
+    }
+
+    #[tokio::test]
+    async fn send_request_callback_receives_client_error() -> Result<()> {
+        let (outgoing_tx, _outgoing_rx) = mpsc::unbounded_channel::<OutgoingMessage>();
+        let outgoing_message_sender = OutgoingMessageSender::new(outgoing_tx);
+
+        let response = outgoing_message_sender
+            .send_request("elicitation/create", Some(json!({})))
+            .await;
+
+        outgoing_message_sender
+            .notify_client_error(
+                RequestId::Number(0),
+                ErrorData::invalid_params("bad elicitation", None),
+            )
+            .await;
+
+        assert_eq!(
+            response.await?,
+            Err(ErrorData::invalid_params("bad elicitation", None))
+        );
+        Ok(())
+    }
+
+    #[test]
+    fn empty_elicitation_capability_defaults_to_form_support() {
+        let (outgoing_tx, _outgoing_rx) = mpsc::unbounded_channel::<OutgoingMessage>();
+        let outgoing_message_sender = OutgoingMessageSender::new(outgoing_tx);
+
+        outgoing_message_sender
+            .set_client_elicitation_capability(Some(&ElicitationCapability::default()));
+
+        assert!(outgoing_message_sender.supports_form_elicitation());
     }
 }

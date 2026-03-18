@@ -29,6 +29,7 @@ use async_channel::Sender;
 use codex_async_utils::CancelErr;
 use codex_async_utils::OrCancelExt;
 use codex_config::Constrained;
+use codex_protocol::approvals::ElicitationCompleteEvent;
 use codex_protocol::approvals::ElicitationRequest;
 use codex_protocol::approvals::ElicitationRequestEvent;
 use codex_protocol::mcp::CallToolResult;
@@ -44,6 +45,7 @@ use codex_protocol::protocol::SandboxPolicy;
 use codex_rmcp_client::ElicitationResponse;
 use codex_rmcp_client::OAuthCredentialsStoreMode;
 use codex_rmcp_client::OnToolListChanged;
+use codex_rmcp_client::OnUrlElicitationComplete;
 use codex_rmcp_client::RmcpClient;
 use codex_rmcp_client::SendElicitation;
 use futures::future::BoxFuture;
@@ -66,6 +68,7 @@ use rmcp::model::RequestId;
 use rmcp::model::Resource;
 use rmcp::model::ResourceTemplate;
 use rmcp::model::Tool;
+use rmcp::model::UrlElicitationCapability;
 
 use serde::Deserialize;
 use serde::Serialize;
@@ -379,6 +382,26 @@ impl ElicitationRequestManager {
     }
 }
 
+fn emit_elicitation_complete_event(
+    tx_event: &Sender<Event>,
+    server_name: String,
+    elicitation_id: String,
+) -> BoxFuture<'static, ()> {
+    let tx_event = tx_event.clone();
+    async move {
+        let _ = tx_event
+            .send(Event {
+                id: "mcp_elicitation_complete".to_string(),
+                msg: EventMsg::ElicitationComplete(ElicitationCompleteEvent {
+                    server_name,
+                    elicitation_id,
+                }),
+            })
+            .await;
+    }
+    .boxed()
+}
+
 #[derive(Clone)]
 struct ManagedClient {
     client: Arc<RmcpClient>,
@@ -392,7 +415,11 @@ struct ManagedClient {
 impl ManagedClient {
     fn listed_tools(&self) -> Vec<ToolInfo> {
         let total_start = Instant::now();
-        let in_memory_tools = self.tools.read().unwrap_or_else(|e| e.into_inner()).clone();
+        let in_memory_tools = self
+            .tools
+            .read()
+            .unwrap_or_else(std::sync::PoisonError::into_inner)
+            .clone();
         let (tools, cache_tag) = select_listed_tools(
             in_memory_tools,
             &self.tool_filter,
@@ -1321,19 +1348,15 @@ impl From<anyhow::Error> for StartupOutcomeError {
     }
 }
 
-fn elicitation_capability_for_server(server_name: &str) -> Option<ElicitationCapability> {
-    if server_name == CODEX_APPS_MCP_SERVER_NAME {
-        // https://modelcontextprotocol.io/specification/2025-06-18/client/elicitation#capabilities
-        // indicates this should be an empty object.
-        Some(ElicitationCapability {
-            form: Some(FormElicitationCapability {
-                schema_validation: None,
-            }),
-            url: None,
-        })
-    } else {
-        None
-    }
+fn elicitation_capability_for_server(_server_name: &str) -> Option<ElicitationCapability> {
+    // Codex can handle downstream form-mode and URL-mode elicitation generically across
+    // configured MCP servers.
+    Some(ElicitationCapability {
+        form: Some(FormElicitationCapability {
+            schema_validation: None,
+        }),
+        url: Some(UrlElicitationCapability {}),
+    })
 }
 
 async fn start_server_task(
@@ -1371,7 +1394,14 @@ async fn start_server_task(
         protocol_version: ProtocolVersion::V_2025_06_18,
     };
 
-    let send_elicitation = elicitation_requests.make_sender(server_name.clone(), tx_event);
+    let send_elicitation = elicitation_requests.make_sender(server_name.clone(), tx_event.clone());
+    let on_url_elicitation_complete = {
+        let server_name = server_name.clone();
+        let tx_event = tx_event.clone();
+        Box::new(move |elicitation_id| {
+            emit_elicitation_complete_event(&tx_event, server_name.clone(), elicitation_id)
+        }) as OnUrlElicitationComplete
+    };
 
     let tools_arc: Arc<StdRwLock<Vec<ToolInfo>>> = Arc::new(StdRwLock::new(Vec::new()));
     let on_tool_list_changed = {
@@ -1412,6 +1442,7 @@ async fn start_server_task(
             params,
             startup_timeout,
             send_elicitation,
+            on_url_elicitation_complete,
             on_tool_list_changed,
         )
         .await
@@ -1620,7 +1651,9 @@ fn store_managed_tools(
 ) -> Vec<ToolInfo> {
     write_cached_codex_apps_tools_if_needed(server_name, cache_context, &tools);
     let filtered_tools = filter_tools(tools, tool_filter);
-    *tools_arc.write().unwrap_or_else(|e| e.into_inner()) = filtered_tools.clone();
+    *tools_arc
+        .write()
+        .unwrap_or_else(std::sync::PoisonError::into_inner) = filtered_tools.clone();
     filtered_tools
 }
 

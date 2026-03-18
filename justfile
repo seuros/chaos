@@ -41,29 +41,8 @@ install:
 test:
     cargo nextest run --no-fail-fast
 
-# Build and run Codex from source using Bazel.
-# Note we have to use the combination of `[no-cd]` and `--run_under="cd $PWD &&"`
-# to ensure that Bazel runs the command in the current working directory.
-[no-cd]
-bazel-codex *args:
-    bazel run //codex-rs/cli:codex --run_under="cd $PWD &&" -- "$@"
-
-[no-cd]
-bazel-lock-update:
-    bazel mod deps --lockfile_mode=update
-
-[no-cd]
-bazel-lock-check:
-    ./scripts/check-module-bazel-lock.sh
-
-bazel-test:
-    bazel test //... --keep_going
-
-bazel-remote-test:
-    bazel test //... --config=remote --platforms=//:rbe --keep_going
-
 build-for-release:
-    bazel build //codex-rs/cli:release_binaries --config=remote
+    cargo build --release -p codex-cli
 
 # Run the MCP server
 mcp-server-run *args:

@@ -1515,27 +1515,6 @@ dependencies = [
 ]
 
 [[package]]
-name = "codex-app-server-test-client"
-version = "0.0.0"
-dependencies = [
- "anyhow",
- "clap",
- "codex-app-server-protocol",
- "codex-core",
- "codex-otel",
- "codex-protocol",
- "codex-utils-cli",
- "serde",
- "serde_json",
- "tokio",
- "tracing",
- "tracing-subscriber",
- "tungstenite",
- "url",
- "uuid",
-]
-
-[[package]]
 name = "codex-apply-patch"
 version = "0.0.0"
 dependencies = [
@@ -1646,7 +1625,6 @@ dependencies = [
  "clap_complete",
  "codex-app-server",
  "codex-app-server-protocol",
- "codex-app-server-test-client",
  "codex-arg0",
  "codex-chatgpt",
  "codex-config",
@@ -1656,7 +1634,6 @@ dependencies = [
  "codex-login",
  "codex-mcp-server",
  "codex-protocol",
- "codex-responses-api-proxy",
  "codex-rmcp-client",
  "codex-state",
  "codex-stdio-to-uds",
@@ -1870,18 +1847,6 @@ dependencies = [
  "wiremock",
  "zip",
  "zstd",
-]
-
-[[package]]
-name = "codex-debug-client"
-version = "0.0.0"
-dependencies = [
- "anyhow",
- "clap",
- "codex-app-server-protocol",
- "pretty_assertions",
- "serde",
- "serde_json",
 ]
 
 [[package]]
@@ -2266,22 +2231,6 @@ dependencies = [
  "tracing",
  "ts-rs",
  "uuid",
-]
-
-[[package]]
-name = "codex-responses-api-proxy"
-version = "0.0.0"
-dependencies = [
- "anyhow",
- "clap",
- "codex-process-hardening",
- "ctor 0.6.3",
- "libc",
- "reqwest",
- "serde",
- "serde_json",
- "tiny_http",
- "zeroize",
 ]
 
 [[package]]

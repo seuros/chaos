@@ -18,11 +18,6 @@ exec *args:
 file-search *args:
     cargo run --bin codex-file-search -- "$@"
 
-# Build the CLI and run the app-server test client
-app-server-test-client *args:
-    cargo build -p codex-cli
-    cargo run -p codex-app-server-test-client -- --codex-bin ./target/debug/codex "$@"
-
 # format code
 fmt:
     cargo fmt -- --config imports_granularity=Item 2>/dev/null

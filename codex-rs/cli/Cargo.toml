@@ -21,7 +21,6 @@ clap = { workspace = true, features = ["derive"] }
 clap_complete = { workspace = true }
 codex-app-server = { workspace = true }
 codex-app-server-protocol = { workspace = true }
-codex-app-server-test-client = { workspace = true }
 codex-arg0 = { workspace = true }
 codex-chatgpt = { workspace = true }
 codex-utils-cli = { workspace = true }
@@ -32,7 +31,6 @@ codex-execpolicy = { workspace = true }
 codex-login = { workspace = true }
 codex-mcp-server = { workspace = true }
 codex-protocol = { workspace = true }
-codex-responses-api-proxy = { workspace = true }
 codex-rmcp-client = { workspace = true }
 codex-state = { workspace = true }
 codex-stdio-to-uds = { workspace = true }

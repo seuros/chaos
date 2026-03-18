@@ -20,9 +20,6 @@ use codex_exec::Cli as ExecCli;
 use codex_exec::Command as ExecCommand;
 use codex_exec::ReviewArgs;
 use codex_execpolicy::ExecPolicyCheckCommand;
-use codex_responses_api_proxy::Args as ResponsesApiProxyArgs;
-use codex_state::StateRuntime;
-use codex_state::state_db_path;
 use codex_tui::AppExitInfo;
 use codex_tui::Cli as TuiCli;
 use codex_tui::ExitReason;
@@ -117,9 +114,6 @@ enum Subcommand {
     /// Run commands within a Codex-provided sandbox.
     Sandbox(SandboxArgs),
 
-    /// Debugging tools.
-    Debug(DebugCommand),
-
     /// Execpolicy tooling.
     #[clap(hide = true)]
     Execpolicy(ExecpolicyCommand),
@@ -134,10 +128,6 @@ enum Subcommand {
     /// Fork a previous interactive session (picker by default; use --last to fork the most recent).
     Fork(ForkCommand),
 
-    /// Internal: run the responses API proxy.
-    #[clap(hide = true)]
-    ResponsesApiProxy(ResponsesApiProxyArgs),
-
     /// Internal: relay stdio to a Unix domain socket.
     #[clap(hide = true, name = "stdio-to-uds")]
     StdioToUds(StdioToUdsCommand),
@@ -151,40 +141,6 @@ struct CompletionCommand {
     /// Shell to generate completions for
     #[clap(value_enum, default_value_t = Shell::Bash)]
     shell: Shell,
-}
-
-#[derive(Debug, Parser)]
-struct DebugCommand {
-    #[command(subcommand)]
-    subcommand: DebugSubcommand,
-}
-
-#[derive(Debug, clap::Subcommand)]
-enum DebugSubcommand {
-    /// Tooling: helps debug the app server.
-    AppServer(DebugAppServerCommand),
-
-    /// Internal: reset local memory state for a fresh start.
-    #[clap(hide = true)]
-    ClearMemories,
-}
-
-#[derive(Debug, Parser)]
-struct DebugAppServerCommand {
-    #[command(subcommand)]
-    subcommand: DebugAppServerSubcommand,
-}
-
-#[derive(Debug, clap::Subcommand)]
-enum DebugAppServerSubcommand {
-    // Send message to app server V2.
-    SendMessageV2(DebugAppServerSendMessageV2Command),
-}
-
-#[derive(Debug, Parser)]
-struct DebugAppServerSendMessageV2Command {
-    #[arg(value_name = "USER_MESSAGE", required = true)]
-    user_message: String,
 }
 
 #[derive(Debug, Parser)]
@@ -475,16 +431,6 @@ fn run_update_action(action: UpdateAction) -> anyhow::Result<()> {
 
 fn run_execpolicycheck(cmd: ExecPolicyCheckCommand) -> anyhow::Result<()> {
     cmd.run()
-}
-
-async fn run_debug_app_server_command(cmd: DebugAppServerCommand) -> anyhow::Result<()> {
-    match cmd.subcommand {
-        DebugAppServerSubcommand::SendMessageV2(cmd) => {
-            let codex_bin = std::env::current_exe()?;
-            codex_app_server_test_client::send_message_v2(&codex_bin, &[], cmd.user_message, &None)
-                .await
-        }
-    }
 }
 
 #[derive(Debug, Default, Parser, Clone)]
@@ -794,16 +740,6 @@ async fn cli_main(arg0_paths: Arg0DispatchPaths) -> anyhow::Result<()> {
                 .await?;
             }
         },
-        Some(Subcommand::Debug(DebugCommand { subcommand })) => match subcommand {
-            DebugSubcommand::AppServer(cmd) => {
-                reject_remote_mode_for_subcommand(root_remote.as_deref(), "debug app-server")?;
-                run_debug_app_server_command(cmd).await?;
-            }
-            DebugSubcommand::ClearMemories => {
-                reject_remote_mode_for_subcommand(root_remote.as_deref(), "debug clear-memories")?;
-                run_debug_clear_memories_command(&root_config_overrides, &interactive).await?;
-            }
-        },
         Some(Subcommand::Execpolicy(ExecpolicyCommand { sub })) => match sub {
             ExecpolicySubcommand::Check(cmd) => {
                 reject_remote_mode_for_subcommand(root_remote.as_deref(), "execpolicy check")?;
@@ -817,11 +753,6 @@ async fn cli_main(arg0_paths: Arg0DispatchPaths) -> anyhow::Result<()> {
                 root_config_overrides.clone(),
             );
             run_apply_command(apply_cli, /*cwd*/ None).await?;
-        }
-        Some(Subcommand::ResponsesApiProxy(args)) => {
-            reject_remote_mode_for_subcommand(root_remote.as_deref(), "responses-api-proxy")?;
-            tokio::task::spawn_blocking(move || codex_responses_api_proxy::run_main(args))
-                .await??;
         }
         Some(Subcommand::StdioToUds(cmd)) => {
             reject_remote_mode_for_subcommand(root_remote.as_deref(), "stdio-to-uds")?;
@@ -936,57 +867,6 @@ fn maybe_print_under_development_feature_warning(
         "Under-development features enabled: {feature}. Under-development features are incomplete and may behave unpredictably. To suppress this warning, set `suppress_unstable_features_warning = true` in {}.",
         config_path.display()
     );
-}
-
-async fn run_debug_clear_memories_command(
-    root_config_overrides: &CliConfigOverrides,
-    interactive: &TuiCli,
-) -> anyhow::Result<()> {
-    let cli_kv_overrides = root_config_overrides
-        .parse_overrides()
-        .map_err(anyhow::Error::msg)?;
-    let overrides = ConfigOverrides {
-        config_profile: interactive.config_profile.clone(),
-        ..Default::default()
-    };
-    let config =
-        Config::load_with_cli_overrides_and_harness_overrides(cli_kv_overrides, overrides).await?;
-
-    let state_path = state_db_path(config.sqlite_home.as_path());
-    let mut cleared_state_db = false;
-    if tokio::fs::try_exists(&state_path).await? {
-        let state_db =
-            StateRuntime::init(config.sqlite_home.clone(), config.model_provider_id.clone())
-                .await?;
-        state_db.reset_memory_data_for_fresh_start().await?;
-        cleared_state_db = true;
-    }
-
-    let memory_root = config.codex_home.join("memories");
-    let removed_memory_root = match tokio::fs::remove_dir_all(&memory_root).await {
-        Ok(()) => true,
-        Err(err) if err.kind() == std::io::ErrorKind::NotFound => false,
-        Err(err) => return Err(err.into()),
-    };
-
-    let mut message = if cleared_state_db {
-        format!("Cleared memory state from {}.", state_path.display())
-    } else {
-        format!("No state db found at {}.", state_path.display())
-    };
-
-    if removed_memory_root {
-        message.push_str(&format!(" Removed {}.", memory_root.display()));
-    } else {
-        message.push_str(&format!(
-            " No memory directory found at {}.",
-            memory_root.display()
-        ));
-    }
-
-    println!("{message}");
-
-    Ok(())
 }
 
 /// Prepend root-level overrides so they have lower precedence than

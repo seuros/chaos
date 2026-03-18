@@ -807,6 +807,7 @@ impl McpConnectionManager {
             .await
     }
 
+    #[allow(dead_code)]
     pub(crate) async fn wait_for_server_ready(&self, server_name: &str, timeout: Duration) -> bool {
         let Some(async_managed_client) = self.clients.get(server_name) else {
             return false;

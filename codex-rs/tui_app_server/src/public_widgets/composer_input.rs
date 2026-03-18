@@ -1,8 +1,8 @@
 //! Public wrapper around the internal ChatComposer for simple, reusable text input.
 //!
-//! This exposes a minimal interface suitable for other crates (e.g.,
-//! codex-cloud-tasks) to reuse the mature composer behavior: multi-line input,
-//! paste heuristics, Enter-to-submit, and Shift+Enter for newline.
+//! This exposes a minimal interface suitable for other crates to reuse the
+//! mature composer behavior: multi-line input, paste heuristics,
+//! Enter-to-submit, and Shift+Enter for newline.
 
 use crossterm::event::KeyEvent;
 use ratatui::buffer::Buffer;

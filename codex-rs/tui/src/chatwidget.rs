@@ -502,7 +502,7 @@ enum ConnectorsCacheState {
     Uninitialized,
     Loading,
     Ready(ConnectorsSnapshot),
-    Failed(String),
+    Failed(#[allow(dead_code)] String),
 }
 
 #[derive(Debug)]
@@ -4583,9 +4583,6 @@ impl ChatWidget {
             SlashCommand::Mcp => {
                 self.add_mcp_output();
             }
-            SlashCommand::Apps => {
-                self.add_connectors_output();
-            }
             SlashCommand::Rollout => {
                 if let Some(path) = self.rollout_path() {
                     self.add_info_message(
@@ -8422,6 +8419,7 @@ impl ChatWidget {
         }
     }
 
+    #[allow(dead_code)]
     pub(crate) fn add_connectors_output(&mut self) {
         if !self.connectors_enabled() {
             self.add_info_message(
@@ -8454,6 +8452,7 @@ impl ChatWidget {
         self.request_redraw();
     }
 
+    #[allow(dead_code)]
     fn open_connectors_loading_popup(&mut self) {
         if !self.bottom_pane.replace_selection_view_if_active(
             CONNECTORS_SELECTION_VIEW_ID,
@@ -8464,12 +8463,14 @@ impl ChatWidget {
         }
     }
 
+    #[allow(dead_code)]
     fn open_connectors_popup(&mut self, connectors: &[connectors::AppInfo]) {
         self.bottom_pane.show_selection_view(
             self.connectors_popup_params(connectors, /*selected_connector_id*/ None),
         );
     }
 
+    #[allow(dead_code)]
     fn connectors_loading_popup_params(&self) -> SelectionViewParams {
         let mut header = ColumnRenderable::new();
         header.push(Line::from("Apps".bold()));

@@ -1624,7 +1624,6 @@ version = "0.0.0"
 dependencies = [
  "anyhow",
  "clap",
- "codex-connectors",
  "codex-core",
  "codex-git",
  "codex-utils-cargo-bin",
@@ -1650,7 +1649,6 @@ dependencies = [
  "codex-app-server-test-client",
  "codex-arg0",
  "codex-chatgpt",
- "codex-cloud-tasks",
  "codex-config",
  "codex-core",
  "codex-exec",
@@ -1737,51 +1735,6 @@ dependencies = [
 ]
 
 [[package]]
-name = "codex-cloud-tasks"
-version = "0.0.0"
-dependencies = [
- "anyhow",
- "async-trait",
- "base64 0.22.1",
- "chrono",
- "clap",
- "codex-client",
- "codex-cloud-tasks-client",
- "codex-core",
- "codex-login",
- "codex-tui",
- "codex-utils-cli",
- "crossterm",
- "owo-colors",
- "pretty_assertions",
- "ratatui",
- "reqwest",
- "serde",
- "serde_json",
- "supports-color 3.0.2",
- "tokio",
- "tokio-stream",
- "tracing",
- "tracing-subscriber",
- "unicode-width 0.2.1",
-]
-
-[[package]]
-name = "codex-cloud-tasks-client"
-version = "0.0.0"
-dependencies = [
- "anyhow",
- "async-trait",
- "chrono",
- "codex-backend-client",
- "codex-git",
- "diffy",
- "serde",
- "serde_json",
- "thiserror 2.0.18",
-]
-
-[[package]]
 name = "codex-config"
 version = "0.0.0"
 dependencies = [
@@ -1802,18 +1755,6 @@ dependencies = [
  "toml 0.9.11+spec-1.1.0",
  "toml_edit 0.24.0+spec-1.1.0",
  "tracing",
-]
-
-[[package]]
-name = "codex-connectors"
-version = "0.0.0"
-dependencies = [
- "anyhow",
- "codex-app-server-protocol",
- "pretty_assertions",
- "serde",
- "tokio",
- "urlencoding",
 ]
 
 [[package]]
@@ -1840,7 +1781,6 @@ dependencies = [
  "codex-async-utils",
  "codex-client",
  "codex-config",
- "codex-connectors",
  "codex-execpolicy",
  "codex-file-search",
  "codex-git",

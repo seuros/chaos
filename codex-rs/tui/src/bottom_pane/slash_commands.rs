@@ -13,6 +13,7 @@ use crate::slash_command::built_in_slash_commands;
 #[derive(Clone, Copy, Debug, Default)]
 pub(crate) struct BuiltinCommandFlags {
     pub(crate) collaboration_modes_enabled: bool,
+    #[allow(dead_code)]
     pub(crate) connectors_enabled: bool,
     pub(crate) fast_command_enabled: bool,
     pub(crate) personality_command_enabled: bool,
@@ -30,7 +31,6 @@ pub(crate) fn builtins_for_input(flags: BuiltinCommandFlags) -> Vec<(&'static st
             flags.collaboration_modes_enabled
                 || !matches!(*cmd, SlashCommand::Collab | SlashCommand::Plan)
         })
-        .filter(|(_, cmd)| flags.connectors_enabled || *cmd != SlashCommand::Apps)
         .filter(|(_, cmd)| flags.fast_command_enabled || *cmd != SlashCommand::Fast)
         .filter(|(_, cmd)| flags.personality_command_enabled || *cmd != SlashCommand::Personality)
         .filter(|(_, cmd)| flags.realtime_conversation_enabled || *cmd != SlashCommand::Realtime)

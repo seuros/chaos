@@ -270,24 +270,17 @@ impl Features {
     }
 
     pub async fn apps_enabled(&self, auth_manager: Option<&AuthManager>) -> bool {
-        if !self.enabled(Feature::Apps) {
-            return false;
-        }
-
-        let auth = match auth_manager {
-            Some(auth_manager) => auth_manager.auth().await,
-            None => None,
-        };
-        self.apps_enabled_for_auth(auth.as_ref())
+        let _ = auth_manager;
+        false
     }
 
     pub fn apps_enabled_cached(&self, auth_manager: Option<&AuthManager>) -> bool {
-        let auth = auth_manager.and_then(AuthManager::auth_cached);
-        self.apps_enabled_for_auth(auth.as_ref())
+        let _ = auth_manager;
+        false
     }
 
-    pub(crate) fn apps_enabled_for_auth(&self, auth: Option<&CodexAuth>) -> bool {
-        self.enabled(Feature::Apps) && auth.is_some_and(CodexAuth::is_chatgpt_auth)
+    pub(crate) fn apps_enabled_for_auth(&self, _auth: Option<&CodexAuth>) -> bool {
+        false
     }
 
     pub fn use_legacy_landlock(&self) -> bool {
@@ -728,11 +721,7 @@ pub const FEATURES: &[FeatureSpec] = &[
     FeatureSpec {
         id: Feature::Apps,
         key: "apps",
-        stage: Stage::Experimental {
-            name: "Apps",
-            menu_description: "Use a connected ChatGPT App using \"$\". Install Apps via /apps command. Restart Codex after enabling.",
-            announcement: "NEW: Use ChatGPT Apps (Connectors) in Codex via $ mentions. Enable in /experimental and restart Codex!",
-        },
+        stage: Stage::Removed,
         default_enabled: false,
     },
     FeatureSpec {

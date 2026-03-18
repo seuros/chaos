@@ -1,65 +1,26 @@
 use std::collections::BTreeSet;
 use std::collections::HashMap;
 use std::collections::HashSet;
-use std::env;
-use std::path::PathBuf;
-use std::sync::Arc;
-use std::sync::LazyLock;
-use std::sync::Mutex as StdMutex;
 use std::time::Duration;
-use std::time::Instant;
 
-use anyhow::Context;
-use async_channel::unbounded;
 pub use codex_app_server_protocol::AppBranding;
 pub use codex_app_server_protocol::AppInfo;
 pub use codex_app_server_protocol::AppMetadata;
-use codex_connectors::AllConnectorsCacheKey;
-use codex_connectors::DirectoryListResponse;
-use codex_protocol::protocol::SandboxPolicy;
 use rmcp::model::ToolAnnotations;
 use serde::Deserialize;
-use serde::de::DeserializeOwned;
-use tracing::warn;
 
-use crate::AuthManager;
 use crate::CodexAuth;
-use crate::SandboxState;
 use crate::config::Config;
 use crate::config::types::AppToolApproval;
 use crate::config::types::AppsConfigToml;
 use crate::config_loader::AppsRequirementsToml;
-use crate::default_client::create_client;
 use crate::default_client::is_first_party_chat_originator;
 use crate::default_client::originator;
-use crate::features::Feature;
 use crate::mcp::CODEX_APPS_MCP_SERVER_NAME;
-use crate::mcp::McpManager;
 use crate::mcp::ToolPluginProvenance;
-use crate::mcp::auth::compute_auth_statuses;
-use crate::mcp::with_codex_apps_mcp;
-use crate::mcp_connection_manager::McpConnectionManager;
-use crate::mcp_connection_manager::codex_apps_tools_cache_key;
 use crate::plugins::AppConnectorId;
-use crate::plugins::PluginsManager;
-use crate::token_data::TokenData;
 
-pub use codex_connectors::CONNECTORS_CACHE_TTL;
-const CONNECTORS_READY_TIMEOUT_ON_EMPTY_TOOLS: Duration = Duration::from_secs(30);
-const DIRECTORY_CONNECTORS_TIMEOUT: Duration = Duration::from_secs(60);
-const TOOL_SUGGEST_DISCOVERABLE_CONNECTOR_IDS: &[&str] = &[
-    "connector_2128aebfecb84f64a069897515042a44",
-    "connector_68df038e0ba48191908c8434991bbac2",
-    "asdk_app_69a1d78e929881919bba0dbda1f6436d",
-    "connector_4964e3b22e3e427e9b4ae1acf2c1fa34",
-    "connector_9d7cfa34e6654a5f98d3387af34b2e1c",
-    "connector_6f1ec045b8fa4ced8738e32c7f74514b",
-    "connector_947e0d954944416db111db556030eea6",
-    "connector_5f3c8c41a1e54ad7a76272c89e2554fa",
-    "connector_686fad9b54914a35b75be6d06a0f6f31",
-    "connector_76869538009648d5b282a4bb21c3d157",
-    "connector_37316be7febe4224b3d31465bae4dbd7",
-];
+pub const CONNECTORS_CACHE_TTL: Duration = Duration::from_secs(3600);
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub(crate) struct AppToolPolicy {
@@ -76,24 +37,6 @@ impl Default for AppToolPolicy {
     }
 }
 
-#[derive(Clone, PartialEq, Eq)]
-struct AccessibleConnectorsCacheKey {
-    chatgpt_base_url: String,
-    account_id: Option<String>,
-    chatgpt_user_id: Option<String>,
-    is_workspace_account: bool,
-}
-
-#[derive(Clone)]
-struct CachedAccessibleConnectors {
-    key: AccessibleConnectorsCacheKey,
-    expires_at: Instant,
-    connectors: Vec<AppInfo>,
-}
-
-static ACCESSIBLE_CONNECTORS_CACHE: LazyLock<StdMutex<Option<CachedAccessibleConnectors>>> =
-    LazyLock::new(|| StdMutex::new(None));
-
 #[derive(Debug, Clone)]
 pub struct AccessibleConnectorsStatus {
     pub connectors: Vec<AppInfo>,
@@ -101,374 +44,47 @@ pub struct AccessibleConnectorsStatus {
 }
 
 pub async fn list_accessible_connectors_from_mcp_tools(
-    config: &Config,
+    _config: &Config,
 ) -> anyhow::Result<Vec<AppInfo>> {
-    Ok(
-        list_accessible_connectors_from_mcp_tools_with_options_and_status(
-            config, /*force_refetch*/ false,
-        )
-        .await?
-        .connectors,
-    )
+    Ok(Vec::new())
 }
 
 pub(crate) async fn list_tool_suggest_discoverable_tools_with_auth(
-    config: &Config,
-    auth: Option<&CodexAuth>,
-    accessible_connectors: &[AppInfo],
+    _config: &Config,
+    _auth: Option<&CodexAuth>,
+    _accessible_connectors: &[AppInfo],
 ) -> anyhow::Result<Vec<AppInfo>> {
-    let directory_connectors =
-        list_directory_connectors_for_tool_suggest_with_auth(config, auth).await?;
-    Ok(filter_tool_suggest_discoverable_tools(
-        directory_connectors,
-        accessible_connectors,
-    ))
+    Ok(Vec::new())
 }
 
 pub async fn list_cached_accessible_connectors_from_mcp_tools(
-    config: &Config,
+    _config: &Config,
 ) -> Option<Vec<AppInfo>> {
-    let auth_manager = auth_manager_from_config(config);
-    let auth = auth_manager.auth().await;
-    if !config.features.apps_enabled_for_auth(auth.as_ref()) {
-        return Some(Vec::new());
-    }
-    let cache_key = accessible_connectors_cache_key(config, auth.as_ref());
-    read_cached_accessible_connectors(&cache_key).map(filter_disallowed_connectors)
+    Some(Vec::new())
 }
 
 pub(crate) fn refresh_accessible_connectors_cache_from_mcp_tools(
-    config: &Config,
-    auth: Option<&CodexAuth>,
-    mcp_tools: &HashMap<String, crate::mcp_connection_manager::ToolInfo>,
+    _config: &Config,
+    _auth: Option<&CodexAuth>,
+    _mcp_tools: &HashMap<String, crate::mcp_connection_manager::ToolInfo>,
 ) {
-    if !config.features.enabled(Feature::Apps) {
-        return;
-    }
-
-    let cache_key = accessible_connectors_cache_key(config, auth);
-    let accessible_connectors =
-        filter_disallowed_connectors(accessible_connectors_from_mcp_tools(mcp_tools));
-    write_cached_accessible_connectors(cache_key, &accessible_connectors);
 }
 
 pub async fn list_accessible_connectors_from_mcp_tools_with_options(
-    config: &Config,
-    force_refetch: bool,
+    _config: &Config,
+    _force_refetch: bool,
 ) -> anyhow::Result<Vec<AppInfo>> {
-    Ok(
-        list_accessible_connectors_from_mcp_tools_with_options_and_status(config, force_refetch)
-            .await?
-            .connectors,
-    )
+    Ok(Vec::new())
 }
 
 pub async fn list_accessible_connectors_from_mcp_tools_with_options_and_status(
-    config: &Config,
-    force_refetch: bool,
+    _config: &Config,
+    _force_refetch: bool,
 ) -> anyhow::Result<AccessibleConnectorsStatus> {
-    let auth_manager = auth_manager_from_config(config);
-    let auth = auth_manager.auth().await;
-    if !config.features.apps_enabled_for_auth(auth.as_ref()) {
-        return Ok(AccessibleConnectorsStatus {
-            connectors: Vec::new(),
-            codex_apps_ready: true,
-        });
-    }
-    let cache_key = accessible_connectors_cache_key(config, auth.as_ref());
-    let mcp_manager = McpManager::new(Arc::new(PluginsManager::new(config.codex_home.clone())));
-    let tool_plugin_provenance = mcp_manager.tool_plugin_provenance(config);
-    if !force_refetch && let Some(cached_connectors) = read_cached_accessible_connectors(&cache_key)
-    {
-        let cached_connectors = filter_disallowed_connectors(cached_connectors);
-        let cached_connectors = with_app_plugin_sources(cached_connectors, &tool_plugin_provenance);
-        return Ok(AccessibleConnectorsStatus {
-            connectors: cached_connectors,
-            codex_apps_ready: true,
-        });
-    }
-
-    let mcp_servers = with_codex_apps_mcp(
-        HashMap::new(),
-        /*connectors_enabled*/ true,
-        auth.as_ref(),
-        config,
-    );
-    if mcp_servers.is_empty() {
-        return Ok(AccessibleConnectorsStatus {
-            connectors: Vec::new(),
-            codex_apps_ready: true,
-        });
-    }
-
-    let auth_status_entries =
-        compute_auth_statuses(mcp_servers.iter(), config.mcp_oauth_credentials_store_mode).await;
-
-    let (tx_event, rx_event) = unbounded();
-    drop(rx_event);
-
-    let sandbox_state = SandboxState {
-        sandbox_policy: SandboxPolicy::new_read_only_policy(),
-        codex_linux_sandbox_exe: config.codex_linux_sandbox_exe.clone(),
-        sandbox_cwd: env::current_dir().unwrap_or_else(|_| PathBuf::from("/")),
-        use_legacy_landlock: config.features.use_legacy_landlock(),
-    };
-
-    let (mcp_connection_manager, cancel_token) = McpConnectionManager::new(
-        &mcp_servers,
-        config.mcp_oauth_credentials_store_mode,
-        auth_status_entries,
-        &config.permissions.approval_policy,
-        tx_event,
-        sandbox_state,
-        config.codex_home.clone(),
-        codex_apps_tools_cache_key(auth.as_ref()),
-        ToolPluginProvenance::default(),
-    )
-    .await;
-
-    let refreshed_tools = if force_refetch {
-        match mcp_connection_manager
-            .hard_refresh_codex_apps_tools_cache()
-            .await
-        {
-            Ok(tools) => Some(tools),
-            Err(err) => {
-                warn!(
-                    "failed to force-refresh tools for MCP server '{CODEX_APPS_MCP_SERVER_NAME}', using cached/startup tools: {err:#}"
-                );
-                None
-            }
-        }
-    } else {
-        None
-    };
-    let refreshed_tools_succeeded = refreshed_tools.is_some();
-
-    let mut tools = if let Some(tools) = refreshed_tools {
-        tools
-    } else {
-        mcp_connection_manager.list_all_tools().await
-    };
-    let mut should_reload_tools = false;
-    let codex_apps_ready = if refreshed_tools_succeeded {
-        true
-    } else if let Some(cfg) = mcp_servers.get(CODEX_APPS_MCP_SERVER_NAME) {
-        let immediate_ready = mcp_connection_manager
-            .wait_for_server_ready(CODEX_APPS_MCP_SERVER_NAME, Duration::ZERO)
-            .await;
-        if immediate_ready {
-            true
-        } else if tools.is_empty() {
-            let timeout = cfg
-                .startup_timeout_sec
-                .unwrap_or(CONNECTORS_READY_TIMEOUT_ON_EMPTY_TOOLS);
-            let ready = mcp_connection_manager
-                .wait_for_server_ready(CODEX_APPS_MCP_SERVER_NAME, timeout)
-                .await;
-            should_reload_tools = ready;
-            ready
-        } else {
-            false
-        }
-    } else {
-        false
-    };
-    if should_reload_tools {
-        tools = mcp_connection_manager.list_all_tools().await;
-    }
-    if codex_apps_ready {
-        cancel_token.cancel();
-    }
-
-    let accessible_connectors =
-        filter_disallowed_connectors(accessible_connectors_from_mcp_tools(&tools));
-    if codex_apps_ready || !accessible_connectors.is_empty() {
-        write_cached_accessible_connectors(cache_key, &accessible_connectors);
-    }
-    let accessible_connectors =
-        with_app_plugin_sources(accessible_connectors, &tool_plugin_provenance);
     Ok(AccessibleConnectorsStatus {
-        connectors: accessible_connectors,
-        codex_apps_ready,
+        connectors: Vec::new(),
+        codex_apps_ready: true,
     })
-}
-
-fn accessible_connectors_cache_key(
-    config: &Config,
-    auth: Option<&CodexAuth>,
-) -> AccessibleConnectorsCacheKey {
-    let token_data: Option<TokenData> = auth.and_then(|auth| auth.get_token_data().ok());
-    let account_id = token_data
-        .as_ref()
-        .and_then(|token_data| token_data.account_id.clone());
-    let chatgpt_user_id = token_data
-        .as_ref()
-        .and_then(|token_data| token_data.id_token.chatgpt_user_id.clone());
-    let is_workspace_account = token_data
-        .as_ref()
-        .is_some_and(|token_data| token_data.id_token.is_workspace_account());
-    AccessibleConnectorsCacheKey {
-        chatgpt_base_url: config.chatgpt_base_url.clone(),
-        account_id,
-        chatgpt_user_id,
-        is_workspace_account,
-    }
-}
-
-fn read_cached_accessible_connectors(
-    cache_key: &AccessibleConnectorsCacheKey,
-) -> Option<Vec<AppInfo>> {
-    let mut cache_guard = ACCESSIBLE_CONNECTORS_CACHE
-        .lock()
-        .unwrap_or_else(std::sync::PoisonError::into_inner);
-    let now = Instant::now();
-
-    if let Some(cached) = cache_guard.as_ref() {
-        if now < cached.expires_at && cached.key == *cache_key {
-            return Some(cached.connectors.clone());
-        }
-        if now >= cached.expires_at {
-            *cache_guard = None;
-        }
-    }
-
-    None
-}
-
-fn write_cached_accessible_connectors(
-    cache_key: AccessibleConnectorsCacheKey,
-    connectors: &[AppInfo],
-) {
-    let mut cache_guard = ACCESSIBLE_CONNECTORS_CACHE
-        .lock()
-        .unwrap_or_else(std::sync::PoisonError::into_inner);
-    *cache_guard = Some(CachedAccessibleConnectors {
-        key: cache_key,
-        expires_at: Instant::now() + CONNECTORS_CACHE_TTL,
-        connectors: connectors.to_vec(),
-    });
-}
-
-fn filter_tool_suggest_discoverable_tools(
-    directory_connectors: Vec<AppInfo>,
-    accessible_connectors: &[AppInfo],
-) -> Vec<AppInfo> {
-    let accessible_connector_ids: HashSet<&str> = accessible_connectors
-        .iter()
-        .filter(|connector| connector.is_accessible && connector.is_enabled)
-        .map(|connector| connector.id.as_str())
-        .collect();
-    let allowed_connector_ids: HashSet<&str> = TOOL_SUGGEST_DISCOVERABLE_CONNECTOR_IDS
-        .iter()
-        .copied()
-        .collect();
-
-    let mut connectors = filter_disallowed_connectors(directory_connectors)
-        .into_iter()
-        .filter(|connector| !accessible_connector_ids.contains(connector.id.as_str()))
-        .filter(|connector| allowed_connector_ids.contains(connector.id.as_str()))
-        .collect::<Vec<_>>();
-    connectors.sort_by(|left, right| {
-        left.name
-            .cmp(&right.name)
-            .then_with(|| left.id.cmp(&right.id))
-    });
-    connectors
-}
-
-async fn list_directory_connectors_for_tool_suggest_with_auth(
-    config: &Config,
-    auth: Option<&CodexAuth>,
-) -> anyhow::Result<Vec<AppInfo>> {
-    if !config.features.enabled(Feature::Apps) {
-        return Ok(Vec::new());
-    }
-
-    let token_data = if let Some(auth) = auth {
-        auth.get_token_data().ok()
-    } else {
-        let auth_manager = auth_manager_from_config(config);
-        auth_manager
-            .auth()
-            .await
-            .and_then(|auth| auth.get_token_data().ok())
-    };
-    let Some(token_data) = token_data else {
-        return Ok(Vec::new());
-    };
-
-    let account_id = match token_data.account_id.as_deref() {
-        Some(account_id) if !account_id.is_empty() => account_id,
-        _ => return Ok(Vec::new()),
-    };
-    let access_token = token_data.access_token.clone();
-    let account_id = account_id.to_string();
-    let is_workspace_account = token_data.id_token.is_workspace_account();
-    let cache_key = AllConnectorsCacheKey::new(
-        config.chatgpt_base_url.clone(),
-        Some(account_id.clone()),
-        token_data.id_token.chatgpt_user_id.clone(),
-        is_workspace_account,
-    );
-
-    codex_connectors::list_all_connectors_with_options(
-        cache_key,
-        is_workspace_account,
-        /*force_refetch*/ false,
-        |path| {
-            let access_token = access_token.clone();
-            let account_id = account_id.clone();
-            async move {
-                chatgpt_get_request_with_token::<DirectoryListResponse>(
-                    config,
-                    path,
-                    access_token.as_str(),
-                    account_id.as_str(),
-                )
-                .await
-            }
-        },
-    )
-    .await
-}
-
-async fn chatgpt_get_request_with_token<T: DeserializeOwned>(
-    config: &Config,
-    path: String,
-    access_token: &str,
-    account_id: &str,
-) -> anyhow::Result<T> {
-    let client = create_client();
-    let url = format!("{}{}", config.chatgpt_base_url, path);
-    let response = client
-        .get(&url)
-        .bearer_auth(access_token)
-        .header("chatgpt-account-id", account_id)
-        .header("Content-Type", "application/json")
-        .timeout(DIRECTORY_CONNECTORS_TIMEOUT)
-        .send()
-        .await
-        .context("failed to send request")?;
-
-    if response.status().is_success() {
-        response
-            .json()
-            .await
-            .context("failed to parse JSON response")
-    } else {
-        let status = response.status();
-        let body = response.text().await.unwrap_or_default();
-        anyhow::bail!("request failed with status {status}: {body}");
-    }
-}
-
-fn auth_manager_from_config(config: &Config) -> std::sync::Arc<AuthManager> {
-    AuthManager::shared(
-        config.codex_home.clone(),
-        /*enable_codex_api_key_env*/ false,
-        config.cli_auth_credentials_store_mode,
-    )
 }
 
 pub fn connector_display_label(connector: &AppInfo) -> String {
@@ -482,8 +98,6 @@ pub fn connector_mention_slug(connector: &AppInfo) -> String {
 pub(crate) fn accessible_connectors_from_mcp_tools(
     mcp_tools: &HashMap<String, crate::mcp_connection_manager::ToolInfo>,
 ) -> Vec<AppInfo> {
-    // ToolInfo already carries plugin provenance, so app-level plugin sources
-    // can be derived here instead of requiring a separate enrichment pass.
     let tools = mcp_tools.values().filter_map(|tool| {
         if tool.server_name != CODEX_APPS_MCP_SERVER_NAME {
             return None;
@@ -895,9 +509,6 @@ where
 }
 
 fn plugin_app_to_app_info(connector_id: AppConnectorId) -> AppInfo {
-    // Leave the placeholder name as the connector id so merge_connectors() can
-    // replace it with canonical app metadata from directory fetches or
-    // connector_name values from codex_apps tool discovery.
     let connector_id = connector_id.0;
     let name = connector_id.clone();
     AppInfo {
@@ -953,7 +564,3 @@ fn sanitize_slug(name: &str) -> String {
 fn format_connector_label(name: &str, _id: &str) -> String {
     name.to_string()
 }
-
-#[cfg(test)]
-#[path = "connectors_tests.rs"]
-mod tests;

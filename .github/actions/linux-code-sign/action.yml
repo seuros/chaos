@@ -30,7 +30,7 @@ runs:
           exit 1
         fi
 
-        for binary in codex codex-responses-api-proxy; do
+        for binary in codex; do
           artifact="${dest}/${binary}"
           if [[ ! -f "$artifact" ]]; then
             echo "Binary $artifact not found"

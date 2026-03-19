@@ -21,7 +21,6 @@ members = [
     "secrets",
     "exec",
     "execpolicy",
-    "execpolicy-legacy",
     "keyring-store",
     "file-search",
     "linux-sandbox",
@@ -89,7 +88,6 @@ codex-apply-patch = { path = "apply-patch" }
 codex-arg0 = { path = "arg0" }
 codex-async-utils = { path = "async-utils" }
 codex-backend-client = { path = "backend-client" }
-codex-chatgpt = { path = "chatgpt" }
 codex-cli = { path = "cli" }
 codex-client = { path = "codex-client" }
 codex-cloud-requirements = { path = "cloud-requirements" }
@@ -140,7 +138,6 @@ codex-utils-sandbox-summary = { path = "utils/sandbox-summary" }
 codex-utils-sleep-inhibitor = { path = "utils/sleep-inhibitor" }
 codex-utils-stream-parser = { path = "utils/stream-parser" }
 codex-utils-string = { path = "utils/string" }
-codex-windows-sandbox = { path = "windows-sandbox-rs" }
 core_test_support = { path = "core/tests/common" }
 mcp_test_support = { path = "mcp-server/tests/common" }
 

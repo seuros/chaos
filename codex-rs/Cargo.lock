@@ -1424,7 +1424,6 @@ dependencies = [
  "codex-app-server-protocol",
  "codex-arg0",
  "codex-backend-client",
- "codex-chatgpt",
  "codex-cloud-requirements",
  "codex-core",
  "codex-feedback",
@@ -1598,23 +1597,6 @@ dependencies = [
 ]
 
 [[package]]
-name = "codex-chatgpt"
-version = "0.0.0"
-dependencies = [
- "anyhow",
- "clap",
- "codex-core",
- "codex-git",
- "codex-utils-cargo-bin",
- "codex-utils-cli",
- "pretty_assertions",
- "serde",
- "serde_json",
- "tempfile",
- "tokio",
-]
-
-[[package]]
 name = "codex-cli"
 version = "0.0.0"
 dependencies = [
@@ -1626,7 +1608,6 @@ dependencies = [
  "codex-app-server",
  "codex-app-server-protocol",
  "codex-arg0",
- "codex-chatgpt",
  "codex-config",
  "codex-core",
  "codex-exec",
@@ -1641,7 +1622,6 @@ dependencies = [
  "codex-tui-app-server",
  "codex-utils-cargo-bin",
  "codex-utils-cli",
- "codex-windows-sandbox",
  "libc",
  "owo-colors",
  "predicates",
@@ -1782,7 +1762,6 @@ dependencies = [
  "codex-utils-readiness",
  "codex-utils-stream-parser",
  "codex-utils-string",
- "codex-windows-sandbox",
  "core-foundation 0.9.4",
  "core_test_support",
  "csv",
@@ -1909,26 +1888,6 @@ dependencies = [
  "starlark",
  "tempfile",
  "thiserror 2.0.18",
-]
-
-[[package]]
-name = "codex-execpolicy-legacy"
-version = "0.0.0"
-dependencies = [
- "allocative",
- "anyhow",
- "clap",
- "derive_more 2.1.1",
- "env_logger",
- "log",
- "multimap",
- "path-absolutize",
- "regex-lite",
- "serde",
- "serde_json",
- "serde_with",
- "starlark",
- "tempfile",
 ]
 
 [[package]]
@@ -2393,7 +2352,6 @@ dependencies = [
  "codex-app-server-protocol",
  "codex-arg0",
  "codex-backend-client",
- "codex-chatgpt",
  "codex-cli",
  "codex-client",
  "codex-cloud-requirements",
@@ -2417,7 +2375,6 @@ dependencies = [
  "codex-utils-sandbox-summary",
  "codex-utils-sleep-inhibitor",
  "codex-utils-string",
- "codex-windows-sandbox",
  "color-eyre",
  "cpal",
  "crossterm",
@@ -2484,7 +2441,6 @@ dependencies = [
  "codex-app-server-client",
  "codex-app-server-protocol",
  "codex-arg0",
- "codex-chatgpt",
  "codex-cli",
  "codex-client",
  "codex-cloud-requirements",
@@ -2507,7 +2463,6 @@ dependencies = [
  "codex-utils-sandbox-summary",
  "codex-utils-sleep-inhibitor",
  "codex-utils-string",
- "codex-windows-sandbox",
  "color-eyre",
  "cpal",
  "crossterm",
@@ -2724,30 +2679,6 @@ version = "0.0.0"
 dependencies = [
  "pretty_assertions",
  "regex-lite",
-]
-
-[[package]]
-name = "codex-windows-sandbox"
-version = "0.0.0"
-dependencies = [
- "anyhow",
- "base64 0.22.1",
- "chrono",
- "codex-protocol",
- "codex-utils-absolute-path",
- "codex-utils-pty",
- "codex-utils-string",
- "dirs-next",
- "dunce",
- "pretty_assertions",
- "rand 0.8.5",
- "serde",
- "serde_json",
- "tempfile",
- "tokio",
- "windows 0.58.0",
- "windows-sys 0.52.0",
- "winres",
 ]
 
 [[package]]
@@ -3757,7 +3688,6 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "7a1c3cc8e57274ec99de65301228b537f1e4eedc1b8e0f9411c6caac8ae7308f"
 dependencies = [
  "log",
- "regex",
 ]
 
 [[package]]
@@ -3775,7 +3705,6 @@ dependencies = [
  "anstream",
  "anstyle",
  "env_filter",
- "jiff",
  "log",
 ]
 
@@ -5252,30 +5181,6 @@ name = "itoa"
 version = "1.0.17"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "92ecc6618181def0457392ccd0ee51198e065e016d1d527a7ac1b6dc7c1f09d2"
-
-[[package]]
-name = "jiff"
-version = "0.2.18"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "e67e8da4c49d6d9909fe03361f9b620f58898859f5c7aded68351e85e71ecf50"
-dependencies = [
- "jiff-static",
- "log",
- "portable-atomic",
- "portable-atomic-util",
- "serde_core",
-]
-
-[[package]]
-name = "jiff-static"
-version = "0.2.18"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "e0c84ee7f197eca9a86c6fd6cb771e55eb991632f15f2bc3ca6ec838929e6e78"
-dependencies = [
- "proc-macro2",
- "quote",
- "syn 2.0.114",
-]
 
 [[package]]
 name = "jni"
@@ -6874,15 +6779,6 @@ name = "portable-atomic"
 version = "1.13.1"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "c33a9471896f1c69cecef8d20cbe2f7accd12527ce60845ff44c153bb2a21b49"
-
-[[package]]
-name = "portable-atomic-util"
-version = "0.2.5"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "7a9db96d7fa8782dd8c15ce32ffe8680bbd1e978a43bf51a34d39483540495f5"
-dependencies = [
- "portable-atomic",
-]
 
 [[package]]
 name = "portable-pty"
@@ -10808,16 +10704,6 @@ dependencies = [
 
 [[package]]
 name = "windows"
-version = "0.58.0"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "dd04d41d93c4992d421894c18c8b43496aa748dd4c081bac0dc93eb0489272b6"
-dependencies = [
- "windows-core 0.58.0",
- "windows-targets 0.52.6",
-]
-
-[[package]]
-name = "windows"
 version = "0.62.2"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "527fadee13e0c05939a6a05d5bd6eec6cd2e3dbd648b9f8e447c6518133d8580"
@@ -10849,28 +10735,15 @@ dependencies = [
 
 [[package]]
 name = "windows-core"
-version = "0.58.0"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "6ba6d44ec8c2591c134257ce647b7ea6b20335bf6379a27dac5f1641fcf59f99"
-dependencies = [
- "windows-implement 0.58.0",
- "windows-interface 0.58.0",
- "windows-result 0.2.0",
- "windows-strings 0.1.0",
- "windows-targets 0.52.6",
-]
-
-[[package]]
-name = "windows-core"
 version = "0.62.2"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "b8e83a14d34d0623b51dce9581199302a221863196a1dde71a7663a4c2be9deb"
 dependencies = [
- "windows-implement 0.60.2",
- "windows-interface 0.59.3",
+ "windows-implement",
+ "windows-interface",
  "windows-link",
  "windows-result 0.4.1",
- "windows-strings 0.5.1",
+ "windows-strings",
 ]
 
 [[package]]
@@ -10886,31 +10759,9 @@ dependencies = [
 
 [[package]]
 name = "windows-implement"
-version = "0.58.0"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "2bbd5b46c938e506ecbce286b6628a02171d56153ba733b6c741fc627ec9579b"
-dependencies = [
- "proc-macro2",
- "quote",
- "syn 2.0.114",
-]
-
-[[package]]
-name = "windows-implement"
 version = "0.60.2"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "053e2e040ab57b9dc951b72c264860db7eb3b0200ba345b4e4c3b14f67855ddf"
-dependencies = [
- "proc-macro2",
- "quote",
- "syn 2.0.114",
-]
-
-[[package]]
-name = "windows-interface"
-version = "0.58.0"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "053c4c462dc91d3b1504c6fe5a726dd15e216ba718e84a0e46a88fbe5ded3515"
 dependencies = [
  "proc-macro2",
  "quote",
@@ -10952,7 +10803,7 @@ checksum = "02752bf7fbdcce7f2a27a742f798510f3e5ad88dbe84871e5168e2120c3d5720"
 dependencies = [
  "windows-link",
  "windows-result 0.4.1",
- "windows-strings 0.5.1",
+ "windows-strings",
 ]
 
 [[package]]
@@ -10966,30 +10817,11 @@ dependencies = [
 
 [[package]]
 name = "windows-result"
-version = "0.2.0"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "1d1043d8214f791817bab27572aaa8af63732e11bf84aa21a45a78d6c317ae0e"
-dependencies = [
- "windows-targets 0.52.6",
-]
-
-[[package]]
-name = "windows-result"
 version = "0.4.1"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "7781fa89eaf60850ac3d2da7af8e5242a5ea78d1a11c49bf2910bb5a73853eb5"
 dependencies = [
  "windows-link",
-]
-
-[[package]]
-name = "windows-strings"
-version = "0.1.0"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "4cd9b125c486025df0eabcb585e62173c6c9eddcec5d117d3b6e8c30e2ee4d10"
-dependencies = [
- "windows-result 0.2.0",
- "windows-targets 0.52.6",
 ]
 
 [[package]]
@@ -11333,15 +11165,6 @@ checksum = "524e57b2c537c0f9b1e69f1965311ec12182b4122e45035b1508cd24d2adadb1"
 dependencies = [
  "cfg-if",
  "windows-sys 0.48.0",
-]
-
-[[package]]
-name = "winres"
-version = "0.1.12"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "b68db261ef59e9e52806f688020631e987592bd83619edccda9c47d42cde4f6c"
-dependencies = [
- "toml 0.5.11",
 ]
 
 [[package]]

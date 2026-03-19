@@ -4,8 +4,6 @@ use crate::command_safety::is_dangerous_command::executable_name_lookup_key;
 // may appear before it (e.g., `-C`, `-c`, `--git-dir`).
 // Implemented in `is_dangerous_command` and shared here.
 use crate::command_safety::is_dangerous_command::find_git_subcommand;
-use crate::command_safety::windows_safe_commands::is_safe_command_windows;
-
 pub fn is_known_safe_command(command: &[String]) -> bool {
     let command: Vec<String> = command
         .iter()
@@ -17,10 +15,6 @@ pub fn is_known_safe_command(command: &[String]) -> bool {
             }
         })
         .collect();
-
-    if is_safe_command_windows(&command) {
-        return true;
-    }
 
     if is_safe_to_call_with_exec(&command) {
         return true;
@@ -477,32 +471,6 @@ mod tests {
                 "expected {args:?} to be considered unsafe due to external-command flag",
             );
         }
-    }
-
-    #[test]
-    fn windows_powershell_full_path_is_safe() {
-        if !cfg!(windows) {
-            // Windows only because on Linux path splitting doesn't handle `/` separators properly
-            return;
-        }
-
-        assert!(is_known_safe_command(&vec_str(&[
-            r"C:\Program Files\PowerShell\7\pwsh.exe",
-            "-Command",
-            "Get-Location",
-        ])));
-    }
-
-    #[test]
-    fn windows_git_full_path_is_safe() {
-        if !cfg!(windows) {
-            return;
-        }
-
-        assert!(is_known_safe_command(&vec_str(&[
-            r"C:\Program Files\Git\cmd\git.exe",
-            "status",
-        ])));
     }
 
     #[test]

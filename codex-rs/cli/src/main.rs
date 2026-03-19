@@ -5,8 +5,6 @@ use clap_complete::Shell;
 use clap_complete::generate;
 use codex_arg0::Arg0DispatchPaths;
 use codex_arg0::arg0_dispatch_or_else;
-use codex_chatgpt::apply_command::ApplyCommand;
-use codex_chatgpt::apply_command::run_apply_command;
 use codex_cli::LandlockCommand;
 use codex_cli::SeatbeltCommand;
 use codex_cli::WindowsCommand;
@@ -117,10 +115,6 @@ enum Subcommand {
     /// Execpolicy tooling.
     #[clap(hide = true)]
     Execpolicy(ExecpolicyCommand),
-
-    /// Apply the latest diff produced by Codex agent as a `git apply` to your local working tree.
-    #[clap(visible_alias = "a")]
-    Apply(ApplyCommand),
 
     /// Resume a previous interactive session (picker by default; use --last to continue the most recent).
     Resume(ResumeCommand),
@@ -746,14 +740,6 @@ async fn cli_main(arg0_paths: Arg0DispatchPaths) -> anyhow::Result<()> {
                 run_execpolicycheck(cmd)?
             }
         },
-        Some(Subcommand::Apply(mut apply_cli)) => {
-            reject_remote_mode_for_subcommand(root_remote.as_deref(), "apply")?;
-            prepend_config_flags(
-                &mut apply_cli.config_overrides,
-                root_config_overrides.clone(),
-            );
-            run_apply_command(apply_cli, /*cwd*/ None).await?;
-        }
         Some(Subcommand::StdioToUds(cmd)) => {
             reject_remote_mode_for_subcommand(root_remote.as_deref(), "stdio-to-uds")?;
             let socket_path = cmd.socket_path;

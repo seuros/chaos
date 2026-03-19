@@ -38,11 +38,9 @@ use codex_core::path_utils;
 use codex_core::read_session_meta_line;
 use codex_core::state_db::get_state_db;
 use codex_core::terminal::Multiplexer;
-use codex_core::windows_sandbox::WindowsSandboxLevelExt;
 use codex_protocol::ThreadId;
 use codex_protocol::config_types::AltScreenMode;
 use codex_protocol::config_types::SandboxMode;
-use codex_protocol::config_types::WindowsSandboxLevel;
 use codex_protocol::protocol::AskForApproval;
 use codex_protocol::protocol::RolloutItem;
 use codex_protocol::protocol::RolloutLine;
@@ -1004,9 +1002,7 @@ async fn run_ratatui_app(
     set_default_client_residency_requirement(config.enforce_residency.value());
     let active_profile = config.active_profile.clone();
     let should_show_trust_screen = should_show_trust_screen(&config);
-    let should_prompt_windows_sandbox_nux_at_startup = cfg!(target_os = "windows")
-        && trust_decision_was_made
-        && WindowsSandboxLevel::from_config(&config) == WindowsSandboxLevel::Disabled;
+    let should_prompt_windows_sandbox_nux_at_startup = false;
 
     let Cli {
         prompt,

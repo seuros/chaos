@@ -939,7 +939,6 @@ network_access = false  # This should be ignored.
     let resolution = sandbox_full_access_cfg.derive_sandbox_policy(
         sandbox_mode_override,
         None,
-        WindowsSandboxLevel::Disabled,
         &PathBuf::from("/tmp/test"),
         None,
     );
@@ -958,7 +957,6 @@ network_access = true  # This should be ignored.
     let resolution = sandbox_read_only_cfg.derive_sandbox_policy(
         sandbox_mode_override,
         None,
-        WindowsSandboxLevel::Disabled,
         &PathBuf::from("/tmp/test"),
         None,
     );
@@ -985,7 +983,6 @@ exclude_slash_tmp = true
     let resolution = sandbox_workspace_write_cfg.derive_sandbox_policy(
         sandbox_mode_override,
         None,
-        WindowsSandboxLevel::Disabled,
         &PathBuf::from("/tmp/test"),
         None,
     );
@@ -1027,7 +1024,6 @@ trust_level = "trusted"
     let resolution = sandbox_workspace_write_cfg.derive_sandbox_policy(
         sandbox_mode_override,
         None,
-        WindowsSandboxLevel::Disabled,
         &PathBuf::from("/tmp/test"),
         None,
     );
@@ -4942,7 +4938,6 @@ trust_level = "untrusted"
     let resolution = cfg.derive_sandbox_policy(
         None,
         None,
-        WindowsSandboxLevel::Disabled,
         &PathBuf::from("/tmp/test"),
         None,
     );
@@ -4994,7 +4989,6 @@ fn derive_sandbox_policy_falls_back_to_constraint_value_for_implicit_defaults() 
     let resolution = cfg.derive_sandbox_policy(
         None,
         None,
-        WindowsSandboxLevel::Disabled,
         &project_path,
         Some(&constrained),
     );
@@ -5034,7 +5028,6 @@ fn derive_sandbox_policy_preserves_windows_downgrade_for_unsupported_fallback() 
     let resolution = cfg.derive_sandbox_policy(
         None,
         None,
-        WindowsSandboxLevel::Disabled,
         &project_path,
         Some(&constrained),
     );

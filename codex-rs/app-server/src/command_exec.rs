@@ -332,15 +332,13 @@ impl CommandExecManager {
             controls
         };
 
-        for control in controls {
-            if let CommandExecSession::Active { control_tx } = control {
-                let _ = control_tx
-                    .send(CommandControlRequest {
-                        control: CommandControl::Terminate,
-                        response_tx: None,
-                    })
-                    .await;
-            }
+        for CommandExecSession::Active { control_tx } in controls {
+            let _ = control_tx
+                .send(CommandControlRequest {
+                    control: CommandControl::Terminate,
+                    response_tx: None,
+                })
+                .await;
         }
     }
 
@@ -362,11 +360,7 @@ impl CommandExecManager {
                     ))
                 })?
         };
-        let CommandExecSession::Active { control_tx } = session else {
-            return Err(invalid_request(
-                "command/exec/write, command/exec/terminate, and command/exec/resize are not supported for windows sandbox processes".to_string(),
-            ));
-        };
+        let CommandExecSession::Active { control_tx } = session;
         let (response_tx, response_rx) = oneshot::channel();
         let request = CommandControlRequest {
             control,
@@ -746,75 +740,6 @@ mod tests {
         // replying, so shell startup noise is allowed here.
     }
 
-    #[tokio::test]
-    async fn windows_sandbox_process_ids_reject_write_requests() {
-        let manager = CommandExecManager::default();
-        let request_id = ConnectionRequestId {
-            connection_id: ConnectionId(11),
-            request_id: codex_app_server_protocol::RequestId::Integer(1),
-        };
-        let process_id = ConnectionProcessId {
-            connection_id: request_id.connection_id,
-            process_id: InternalProcessId::Client("proc-11".to_string()),
-        };
-        manager
-            .sessions
-            .lock()
-            .await
-            .insert(process_id, CommandExecSession::UnsupportedWindowsSandbox);
-
-        let err = manager
-            .write(
-                request_id,
-                CommandExecWriteParams {
-                    process_id: "proc-11".to_string(),
-                    delta_base64: Some(STANDARD.encode("hello")),
-                    close_stdin: false,
-                },
-            )
-            .await
-            .expect_err("windows sandbox process ids should reject command/exec/write");
-
-        assert_eq!(err.code, INVALID_REQUEST_ERROR_CODE);
-        assert_eq!(
-            err.message,
-            "command/exec/write, command/exec/terminate, and command/exec/resize are not supported for windows sandbox processes"
-        );
-    }
-
-    #[tokio::test]
-    async fn windows_sandbox_process_ids_reject_terminate_requests() {
-        let manager = CommandExecManager::default();
-        let request_id = ConnectionRequestId {
-            connection_id: ConnectionId(12),
-            request_id: codex_app_server_protocol::RequestId::Integer(2),
-        };
-        let process_id = ConnectionProcessId {
-            connection_id: request_id.connection_id,
-            process_id: InternalProcessId::Client("proc-12".to_string()),
-        };
-        manager
-            .sessions
-            .lock()
-            .await
-            .insert(process_id, CommandExecSession::UnsupportedWindowsSandbox);
-
-        let err = manager
-            .terminate(
-                request_id,
-                CommandExecTerminateParams {
-                    process_id: "proc-12".to_string(),
-                },
-            )
-            .await
-            .expect_err("windows sandbox process ids should reject command/exec/terminate");
-
-        assert_eq!(err.code, INVALID_REQUEST_ERROR_CODE);
-        assert_eq!(
-            err.message,
-            "command/exec/write, command/exec/terminate, and command/exec/resize are not supported for windows sandbox processes"
-        );
-    }
 
     #[tokio::test]
     async fn dropped_control_request_is_reported_as_not_running() {

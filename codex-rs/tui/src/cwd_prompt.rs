@@ -20,7 +20,6 @@ use ratatui::prelude::Widget;
 use ratatui::style::Stylize as _;
 use ratatui::text::Line;
 use ratatui::widgets::Clear;
-use ratatui::widgets::WidgetRef;
 use tokio_stream::StreamExt;
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
@@ -86,7 +85,7 @@ pub(crate) async fn run_cwd_selection_prompt(
         session_cwd.display().to_string(),
     );
     tui.draw(u16::MAX, |frame| {
-        frame.render_widget_ref(&screen, frame.area());
+        frame.render_widget(&screen, frame.area());
     })?;
 
     let events = tui.event_stream();
@@ -99,7 +98,7 @@ pub(crate) async fn run_cwd_selection_prompt(
                 TuiEvent::Paste(_) => {}
                 TuiEvent::Draw => {
                     tui.draw(u16::MAX, |frame| {
-                        frame.render_widget_ref(&screen, frame.area());
+                        frame.render_widget(&screen, frame.area());
                     })?;
                 }
             }
@@ -190,8 +189,8 @@ impl CwdPromptScreen {
     }
 }
 
-impl WidgetRef for &CwdPromptScreen {
-    fn render_ref(&self, area: Rect, buf: &mut Buffer) {
+impl Widget for &CwdPromptScreen {
+    fn render(self, area: Rect, buf: &mut Buffer) {
         Clear.render(area, buf);
         let mut column = ColumnRenderable::new();
 
@@ -270,7 +269,7 @@ mod tests {
         let screen = new_prompt();
         let mut terminal = Terminal::new(VT100Backend::new(80, 14)).expect("terminal");
         terminal
-            .draw(|frame| frame.render_widget_ref(&screen, frame.area()))
+            .draw(|frame| frame.render_widget(&screen, frame.area()))
             .expect("render cwd prompt");
         insta::assert_snapshot!("cwd_prompt_modal", terminal.backend());
     }
@@ -285,7 +284,7 @@ mod tests {
         );
         let mut terminal = Terminal::new(VT100Backend::new(80, 14)).expect("terminal");
         terminal
-            .draw(|frame| frame.render_widget_ref(&screen, frame.area()))
+            .draw(|frame| frame.render_widget(&screen, frame.area()))
             .expect("render cwd prompt");
         insta::assert_snapshot!("cwd_prompt_fork_modal", terminal.backend());
     }

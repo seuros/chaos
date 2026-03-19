@@ -40,6 +40,7 @@ use ratatui::buffer::Buffer;
 use ratatui::layout::Position;
 use ratatui::layout::Rect;
 use ratatui::layout::Size;
+use ratatui::prelude::IntoCrossterm;
 use ratatui::style::Color;
 use ratatui::style::Modifier;
 use ratatui::widgets::WidgetRef;
@@ -105,6 +106,15 @@ impl Frame<'_> {
         self.viewport_area
     }
 
+    /// Render a [`Widget`] to the current buffer using [`Widget::render`].
+    ///
+    /// Usually the area argument is the size of the current frame or a sub-area of the current
+    /// frame (which can be obtained using [`Layout`] to split the total area).
+    #[allow(clippy::needless_pass_by_value)]
+    pub fn render_widget<W: ratatui::widgets::Widget>(&mut self, widget: W, area: Rect) {
+        widget.render(area, self.buffer);
+    }
+
     /// Render a [`WidgetRef`] to the current buffer using [`WidgetRef::render_ref`].
     ///
     /// Usually the area argument is the size of the current frame or a sub-area of the current
@@ -137,7 +147,7 @@ impl Frame<'_> {
 #[derive(Debug, Default, Clone, Eq, PartialEq, Hash)]
 pub struct Terminal<B>
 where
-    B: Backend + Write,
+    B: Backend<Error = io::Error> + Write,
 {
     /// The backend used to interface with the terminal
     backend: B,
@@ -161,7 +171,7 @@ where
 
 impl<B> Drop for Terminal<B>
 where
-    B: Backend,
+    B: Backend<Error = io::Error>,
     B: Write,
 {
     #[allow(clippy::print_stderr)]
@@ -177,7 +187,7 @@ where
 
 impl<B> Terminal<B>
 where
-    B: Backend,
+    B: Backend<Error = io::Error>,
     B: Write,
 {
     /// Creates a new [`Terminal`] with the given [`Backend`] and [`TerminalOptions`].
@@ -601,7 +611,7 @@ where
                 if cell.fg != fg || cell.bg != bg {
                     queue!(
                         writer,
-                        SetColors(Colors::new(cell.fg.into(), cell.bg.into()))
+                        SetColors(Colors::new(cell.fg.into_crossterm(), cell.bg.into_crossterm()))
                     )?;
                     fg = cell.fg;
                     bg = cell.bg;
@@ -612,7 +622,7 @@ where
             DrawCommand::ClearToEnd { bg: clear_bg, .. } => {
                 queue!(writer, SetAttribute(crossterm::style::Attribute::Reset))?;
                 modifier = Modifier::empty();
-                queue!(writer, SetBackgroundColor(clear_bg.into()))?;
+                queue!(writer, SetBackgroundColor(clear_bg.into_crossterm()))?;
                 bg = clear_bg;
                 queue!(writer, Clear(crossterm::terminal::ClearType::UntilNewLine))?;
             }

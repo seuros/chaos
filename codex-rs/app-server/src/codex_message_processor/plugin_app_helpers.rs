@@ -1,5 +1,7 @@
+#[cfg(test)]
 use std::collections::HashSet;
 
+#[cfg(test)]
 use codex_app_server_protocol::AppInfo;
 use codex_app_server_protocol::AppSummary;
 use codex_core::connectors;
@@ -32,6 +34,7 @@ pub(super) async fn load_plugin_app_summaries(
         .collect()
 }
 
+#[cfg(test)]
 pub(super) fn plugin_apps_needing_auth(
     all_connectors: &[AppInfo],
     accessible_connectors: &[AppInfo],

@@ -24,6 +24,7 @@ use crossterm::terminal::Clear;
 use crossterm::terminal::ClearType;
 use ratatui::layout::Size;
 use ratatui::prelude::Backend;
+use ratatui::prelude::IntoCrossterm;
 use ratatui::style::Color;
 use ratatui::style::Modifier;
 use ratatui::text::Line;
@@ -36,7 +37,7 @@ pub fn insert_history_lines<B>(
     lines: Vec<Line>,
 ) -> io::Result<()>
 where
-    B: Backend + Write,
+    B: Backend<Error = io::Error> + Write,
 {
     let screen_size = terminal.backend().size().unwrap_or(Size::new(0, 0));
 
@@ -143,11 +144,11 @@ where
             SetColors(Colors::new(
                 line.style
                     .fg
-                    .map(std::convert::Into::into)
+                    .map(IntoCrossterm::into_crossterm)
                     .unwrap_or(CColor::Reset),
                 line.style
                     .bg
-                    .map(std::convert::Into::into)
+                    .map(IntoCrossterm::into_crossterm)
                     .unwrap_or(CColor::Reset)
             ))
         )?;
@@ -291,7 +292,7 @@ where
         if next_fg != fg || next_bg != bg {
             queue!(
                 writer,
-                SetColors(Colors::new(next_fg.into(), next_bg.into()))
+                SetColors(Colors::new(next_fg.into_crossterm(), next_bg.into_crossterm()))
             )?;
             fg = next_fg;
             bg = next_bg;

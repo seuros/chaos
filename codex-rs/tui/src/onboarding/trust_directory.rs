@@ -11,7 +11,7 @@ use ratatui::layout::Rect;
 use ratatui::style::Stylize;
 use ratatui::text::Line;
 use ratatui::widgets::Paragraph;
-use ratatui::widgets::WidgetRef;
+use ratatui::prelude::Widget;
 use ratatui::widgets::Wrap;
 
 use crate::key_hint;
@@ -40,8 +40,8 @@ pub enum TrustDirectorySelection {
     Quit,
 }
 
-impl WidgetRef for &TrustDirectoryWidget {
-    fn render_ref(&self, area: Rect, buf: &mut Buffer) {
+impl Widget for &TrustDirectoryWidget {
+    fn render(self, area: Rect, buf: &mut Buffer) {
         let mut column = ColumnRenderable::new();
 
         column.push(Line::from(vec![
@@ -216,7 +216,7 @@ mod tests {
 
         let mut terminal = Terminal::new(VT100Backend::new(70, 14)).expect("terminal");
         terminal
-            .draw(|f| (&widget).render_ref(f.area(), f.buffer_mut()))
+            .draw(|f| (&widget).render(f.area(), f.buffer_mut()))
             .expect("draw");
 
         insta::assert_snapshot!(terminal.backend());

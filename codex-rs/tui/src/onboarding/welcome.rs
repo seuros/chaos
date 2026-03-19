@@ -9,7 +9,6 @@ use ratatui::style::Stylize;
 use ratatui::text::Line;
 use ratatui::widgets::Clear;
 use ratatui::widgets::Paragraph;
-use ratatui::widgets::WidgetRef;
 use ratatui::widgets::Wrap;
 use std::cell::Cell;
 
@@ -64,8 +63,8 @@ impl WelcomeWidget {
     }
 }
 
-impl WidgetRef for &WelcomeWidget {
-    fn render_ref(&self, area: Rect, buf: &mut Buffer) {
+impl Widget for &WelcomeWidget {
+    fn render(self, area: Rect, buf: &mut Buffer) {
         Clear.render(area, buf);
         if self.animations_enabled {
             self.animation.schedule_next_frame();

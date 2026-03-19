@@ -3940,7 +3940,6 @@ async fn unified_exec_begin_restores_working_status_snapshot() {
     let height = chat.desired_height(width);
     let mut terminal = ratatui::Terminal::new(ratatui::backend::TestBackend::new(width, height))
         .expect("create terminal");
-    terminal.set_viewport_area(Rect::new(0, 0, width, height));
     terminal
         .draw(|f| chat.render(f.area(), f.buffer_mut()))
         .expect("draw chatwidget");
@@ -7298,7 +7297,6 @@ async fn approvals_popup_shows_disabled_presets() {
     let height = chat.desired_height(width);
     let mut terminal =
         ratatui::Terminal::new(VT100Backend::new(width, height)).expect("create terminal");
-    terminal.set_viewport_area(Rect::new(0, 0, width, height));
     terminal
         .draw(|f| chat.render(f.area(), f.buffer_mut()))
         .expect("render approvals popup");
@@ -7341,7 +7339,6 @@ async fn approvals_popup_navigation_skips_disabled() {
     let height = chat.desired_height(width);
     let mut terminal =
         ratatui::Terminal::new(VT100Backend::new(width, height)).expect("create terminal");
-    terminal.set_viewport_area(Rect::new(0, 0, width, height));
     terminal
         .draw(|f| chat.render(f.area(), f.buffer_mut()))
         .expect("render approvals popup after disabled selection");
@@ -7818,7 +7815,6 @@ async fn approval_modal_exec_snapshot() -> anyhow::Result<()> {
         crate::custom_terminal::Terminal::with_options(VT100Backend::new(width, height))
             .expect("create terminal");
     let viewport = Rect::new(0, 0, width, height);
-    terminal.set_viewport_area(viewport);
 
     terminal
         .draw(|f| chat.render(f.area(), f.buffer_mut()))
@@ -7877,7 +7873,6 @@ async fn approval_modal_exec_without_reason_snapshot() -> anyhow::Result<()> {
     let height = chat.desired_height(width);
     let mut terminal =
         ratatui::Terminal::new(VT100Backend::new(width, height)).expect("create terminal");
-    terminal.set_viewport_area(Rect::new(0, 0, width, height));
     terminal
         .draw(|f| chat.render(f.area(), f.buffer_mut()))
         .expect("draw approval modal (no reason)");
@@ -7926,7 +7921,6 @@ async fn approval_modal_exec_multiline_prefix_hides_execpolicy_option_snapshot()
     let height = chat.desired_height(width);
     let mut terminal =
         ratatui::Terminal::new(VT100Backend::new(width, height)).expect("create terminal");
-    terminal.set_viewport_area(Rect::new(0, 0, width, height));
     terminal
         .draw(|f| chat.render(f.area(), f.buffer_mut()))
         .expect("draw approval modal (multiline prefix)");
@@ -7973,7 +7967,6 @@ async fn approval_modal_patch_snapshot() -> anyhow::Result<()> {
     let height = chat.desired_height(80);
     let mut terminal =
         ratatui::Terminal::new(VT100Backend::new(80, height)).expect("create terminal");
-    terminal.set_viewport_area(Rect::new(0, 0, 80, height));
     terminal
         .draw(|f| chat.render(f.area(), f.buffer_mut()))
         .expect("draw patch approval modal");
@@ -8311,7 +8304,6 @@ async fn status_widget_and_approval_modal_snapshot() {
     let height = chat.desired_height(width);
     let mut terminal = ratatui::Terminal::new(ratatui::backend::TestBackend::new(width, height))
         .expect("create terminal");
-    terminal.set_viewport_area(Rect::new(0, 0, width, height));
     terminal
         .draw(|f| chat.render(f.area(), f.buffer_mut()))
         .expect("draw status + approval modal");
@@ -8365,7 +8357,6 @@ async fn guardian_denied_exec_renders_warning_and_denied_request() {
 
     let backend = VT100Backend::new(width, vt_height);
     let mut term = crate::custom_terminal::Terminal::with_options(backend).expect("terminal");
-    term.set_viewport_area(viewport);
 
     for lines in drain_insert_history(&mut rx) {
         crate::insert_history::insert_history_lines(&mut term, lines)
@@ -8411,7 +8402,6 @@ async fn guardian_approved_exec_renders_approved_request() {
 
     let backend = VT100Backend::new(width, vt_height);
     let mut term = crate::custom_terminal::Terminal::with_options(backend).expect("terminal");
-    term.set_viewport_area(viewport);
 
     for lines in drain_insert_history(&mut rx) {
         crate::insert_history::insert_history_lines(&mut term, lines)
@@ -9860,7 +9850,6 @@ async fn chatwidget_exec_and_status_layout_vt100_snapshot() {
 
     let backend = VT100Backend::new(width, vt_height);
     let mut term = crate::custom_terminal::Terminal::with_options(backend).expect("terminal");
-    term.set_viewport_area(viewport);
 
     for lines in drain_insert_history(&mut rx) {
         crate::insert_history::insert_history_lines(&mut term, lines)
@@ -9896,7 +9885,6 @@ async fn chatwidget_markdown_code_blocks_vt100_snapshot() {
     let backend = VT100Backend::new(width, height);
     let mut term = crate::custom_terminal::Terminal::with_options(backend).expect("terminal");
     // Place viewport at the last line so that history lines insert above it
-    term.set_viewport_area(Rect::new(0, height - 1, width, 1));
 
     // Simulate streaming via AgentMessageDelta in 2-character chunks (no final AgentMessage).
     let source: &str = r#"
@@ -9990,7 +9978,6 @@ async fn chatwidget_tall() {
     let backend = VT100Backend::new(width, height);
     let mut term = crate::custom_terminal::Terminal::with_options(backend).expect("terminal");
     let desired_height = chat.desired_height(width).min(height);
-    term.set_viewport_area(Rect::new(0, height - desired_height, width, desired_height));
     term.draw(|f| {
         chat.render(f.area(), f.buffer_mut());
     })
@@ -10052,7 +10039,6 @@ async fn review_queues_user_messages_snapshot() {
     let backend = VT100Backend::new(width, height);
     let mut term = crate::custom_terminal::Terminal::with_options(backend).expect("terminal");
     let desired_height = chat.desired_height(width).min(height);
-    term.set_viewport_area(Rect::new(0, height - desired_height, width, desired_height));
     term.draw(|f| {
         chat.render(f.area(), f.buffer_mut());
     })

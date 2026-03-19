@@ -12,11 +12,7 @@ use anyhow::Context;
 use anyhow::anyhow;
 use pretty_assertions::assert_eq;
 
-#[cfg(unix)]
 use std::os::unix::net::UnixListener;
-
-#[cfg(windows)]
-use uds_windows::UnixListener;
 
 #[test]
 fn pipes_stdin_and_stdout_through_socket() -> anyhow::Result<()> {

@@ -168,14 +168,6 @@ impl TurnDiffTracker {
                 return Some(cur);
             }
 
-            // On Windows, avoid walking above the drive or UNC share root.
-            #[cfg(windows)]
-            {
-                if is_windows_drive_or_unc_root(&cur) {
-                    return None;
-                }
-            }
-
             if let Some(parent) = cur.parent() {
                 cur = parent.to_path_buf();
             } else {
@@ -452,16 +444,6 @@ fn symlink_blob_bytes(path: &Path) -> Option<Vec<u8>> {
 #[cfg(not(unix))]
 fn symlink_blob_bytes(_path: &Path) -> Option<Vec<u8>> {
     None
-}
-
-#[cfg(windows)]
-fn is_windows_drive_or_unc_root(p: &std::path::Path) -> bool {
-    use std::path::Component;
-    let mut comps = p.components();
-    matches!(
-        (comps.next(), comps.next(), comps.next()),
-        (Some(Component::Prefix(_)), Some(Component::RootDir), None)
-    )
 }
 
 #[cfg(test)]

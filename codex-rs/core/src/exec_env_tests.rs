@@ -167,32 +167,6 @@ fn test_inherit_all_with_default_excludes() {
 }
 
 #[test]
-#[cfg(target_os = "windows")]
-fn test_core_inherit_respects_case_insensitive_names_on_windows() {
-    let vars = make_vars(&[
-        ("Path", "C:\\Windows\\System32"),
-        ("TEMP", "C:\\Temp"),
-        ("FOO", "bar"),
-    ]);
-
-    let policy = ShellEnvironmentPolicy {
-        inherit: ShellEnvironmentPolicyInherit::Core,
-        ignore_default_excludes: true,
-        ..Default::default()
-    };
-
-    let thread_id = ThreadId::new();
-    let result = populate_env(vars, &policy, Some(thread_id));
-    let mut expected: HashMap<String, String> = hashmap! {
-        "Path".to_string() => "C:\\Windows\\System32".to_string(),
-        "TEMP".to_string() => "C:\\Temp".to_string(),
-    };
-    expected.insert(CODEX_THREAD_ID_ENV_VAR.to_string(), thread_id.to_string());
-
-    assert_eq!(result, expected);
-}
-
-#[test]
 fn test_inherit_none() {
     let vars = make_vars(&[("PATH", "/usr/bin"), ("HOME", "/home")]);
 

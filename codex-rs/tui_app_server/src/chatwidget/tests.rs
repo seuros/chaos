@@ -24,8 +24,6 @@ use codex_core::config::ConfigBuilder;
 use codex_core::config::Constrained;
 use codex_core::config::ConstraintError;
 use codex_core::config::types::Notifications;
-#[cfg(target_os = "windows")]
-use codex_core::config::types::WindowsSandboxModeToml;
 use codex_core::config_loader::RequirementSource;
 use codex_core::features::FEATURES;
 use codex_core::features::Feature;
@@ -118,8 +116,6 @@ use crossterm::event::KeyEvent;
 use crossterm::event::KeyModifiers;
 use insta::assert_snapshot;
 use pretty_assertions::assert_eq;
-#[cfg(target_os = "windows")]
-use serial_test::serial;
 use std::collections::BTreeMap;
 use std::collections::HashSet;
 use std::path::PathBuf;
@@ -6872,39 +6868,7 @@ async fn approvals_selection_popup_snapshot() {
     chat.open_approvals_popup();
 
     let popup = render_bottom_popup(&chat, 80);
-    #[cfg(target_os = "windows")]
-    insta::with_settings!({ snapshot_suffix => "windows" }, {
-        assert_snapshot!("approvals_selection_popup", popup);
-    });
-    #[cfg(not(target_os = "windows"))]
     assert_snapshot!("approvals_selection_popup", popup);
-}
-
-#[cfg(target_os = "windows")]
-#[tokio::test]
-#[serial]
-async fn approvals_selection_popup_snapshot_windows_degraded_sandbox() {
-    let (mut chat, _rx, _op_rx) = make_chatwidget_manual(None).await;
-
-    chat.config.notices.hide_full_access_warning = None;
-    chat.set_feature_enabled(Feature::WindowsSandbox, true);
-    chat.set_feature_enabled(Feature::WindowsSandboxElevated, false);
-
-    chat.open_approvals_popup();
-
-    let popup = render_bottom_popup(&chat, 80);
-    assert!(
-        popup.contains("Default (non-admin sandbox)"),
-        "expected degraded sandbox label in approvals popup: {popup}"
-    );
-    assert!(
-        popup.contains("/setup-default-sandbox"),
-        "expected setup hint in approvals popup: {popup}"
-    );
-    assert!(
-        popup.contains("non-admin sandbox"),
-        "expected degraded sandbox note in approvals popup: {popup}"
-    );
 }
 
 #[tokio::test]
@@ -6943,72 +6907,6 @@ async fn full_access_confirmation_popup_snapshot() {
 
     let popup = render_bottom_popup(&chat, 80);
     assert_snapshot!("full_access_confirmation_popup", popup);
-}
-
-#[cfg(target_os = "windows")]
-#[tokio::test]
-async fn windows_auto_mode_prompt_requests_enabling_sandbox_feature() {
-    let (mut chat, _rx, _op_rx) = make_chatwidget_manual(None).await;
-
-    let preset = builtin_approval_presets()
-        .into_iter()
-        .find(|preset| preset.id == "auto")
-        .expect("auto preset");
-    chat.open_windows_sandbox_enable_prompt(preset);
-
-    let popup = render_bottom_popup(&chat, 120);
-    assert!(
-        popup.contains("requires Administrator permissions"),
-        "expected auto mode prompt to mention Administrator permissions, popup: {popup}"
-    );
-    assert!(
-        popup.contains("Use non-admin sandbox"),
-        "expected auto mode prompt to include non-admin fallback option, popup: {popup}"
-    );
-}
-
-#[cfg(target_os = "windows")]
-#[tokio::test]
-async fn startup_prompts_for_windows_sandbox_when_agent_requested() {
-    let (mut chat, _rx, _op_rx) = make_chatwidget_manual(None).await;
-
-    chat.set_feature_enabled(Feature::WindowsSandbox, false);
-    chat.set_feature_enabled(Feature::WindowsSandboxElevated, false);
-
-    chat.maybe_prompt_windows_sandbox_enable(true);
-
-    let popup = render_bottom_popup(&chat, 120);
-    assert!(
-        popup.contains("requires Administrator permissions"),
-        "expected startup prompt to mention Administrator permissions: {popup}"
-    );
-    assert!(
-        popup.contains("Set up default sandbox"),
-        "expected startup prompt to offer default sandbox setup: {popup}"
-    );
-    assert!(
-        popup.contains("Use non-admin sandbox"),
-        "expected startup prompt to offer non-admin fallback: {popup}"
-    );
-    assert!(
-        popup.contains("Quit"),
-        "expected startup prompt to offer quit action: {popup}"
-    );
-}
-
-#[cfg(target_os = "windows")]
-#[tokio::test]
-async fn startup_does_not_prompt_for_windows_sandbox_when_not_requested() {
-    let (mut chat, _rx, _op_rx) = make_chatwidget_manual(None).await;
-
-    chat.set_feature_enabled(Feature::WindowsSandbox, false);
-    chat.set_feature_enabled(Feature::WindowsSandboxElevated, false);
-    chat.maybe_prompt_windows_sandbox_enable(false);
-
-    assert!(
-        chat.bottom_pane.no_modal_or_popup_active(),
-        "expected no startup sandbox NUX popup when startup trigger is false"
-    );
 }
 
 #[tokio::test]
@@ -7491,11 +7389,6 @@ async fn approvals_popup_navigation_skips_disabled() {
 #[tokio::test]
 async fn permissions_selection_emits_history_cell_when_selection_changes() {
     let (mut chat, mut rx, _op_rx) = make_chatwidget_manual(None).await;
-    #[cfg(target_os = "windows")]
-    {
-        chat.config.notices.hide_world_writable_warning = Some(true);
-        chat.set_windows_sandbox_mode(Some(WindowsSandboxModeToml::Unelevated));
-    }
     chat.config.notices.hide_full_access_warning = Some(true);
 
     chat.open_permissions_popup();
@@ -7518,16 +7411,9 @@ async fn permissions_selection_emits_history_cell_when_selection_changes() {
 #[tokio::test]
 async fn permissions_selection_history_snapshot_after_mode_switch() {
     let (mut chat, mut rx, _op_rx) = make_chatwidget_manual(None).await;
-    #[cfg(target_os = "windows")]
-    {
-        chat.config.notices.hide_world_writable_warning = Some(true);
-        chat.set_windows_sandbox_mode(Some(WindowsSandboxModeToml::Unelevated));
-    }
     chat.config.notices.hide_full_access_warning = Some(true);
 
     chat.open_permissions_popup();
-    chat.handle_key_event(KeyEvent::from(KeyCode::Down));
-    #[cfg(target_os = "windows")]
     chat.handle_key_event(KeyEvent::from(KeyCode::Down));
     chat.handle_key_event(KeyEvent::from(KeyCode::Enter));
 
@@ -7542,11 +7428,6 @@ async fn permissions_selection_history_snapshot_after_mode_switch() {
 #[tokio::test]
 async fn permissions_selection_history_snapshot_full_access_to_default() {
     let (mut chat, mut rx, _op_rx) = make_chatwidget_manual(None).await;
-    #[cfg(target_os = "windows")]
-    {
-        chat.config.notices.hide_world_writable_warning = Some(true);
-        chat.set_windows_sandbox_mode(Some(WindowsSandboxModeToml::Unelevated));
-    }
     chat.config.notices.hide_full_access_warning = Some(true);
     chat.config
         .permissions
@@ -7569,14 +7450,6 @@ async fn permissions_selection_history_snapshot_full_access_to_default() {
 
     let cells = drain_insert_history(&mut rx);
     assert_eq!(cells.len(), 1, "expected one mode-switch history cell");
-    #[cfg(target_os = "windows")]
-    insta::with_settings!({ snapshot_suffix => "windows" }, {
-        assert_snapshot!(
-            "permissions_selection_history_full_access_to_default",
-            lines_to_single_string(&cells[0])
-        );
-    });
-    #[cfg(not(target_os = "windows"))]
     assert_snapshot!(
         "permissions_selection_history_full_access_to_default",
         lines_to_single_string(&cells[0])
@@ -7586,11 +7459,6 @@ async fn permissions_selection_history_snapshot_full_access_to_default() {
 #[tokio::test]
 async fn permissions_selection_emits_history_cell_when_current_is_selected() {
     let (mut chat, mut rx, _op_rx) = make_chatwidget_manual(None).await;
-    #[cfg(target_os = "windows")]
-    {
-        chat.config.notices.hide_world_writable_warning = Some(true);
-        chat.set_windows_sandbox_mode(Some(WindowsSandboxModeToml::Unelevated));
-    }
     chat.config
         .permissions
         .approval_policy
@@ -7621,11 +7489,6 @@ async fn permissions_selection_emits_history_cell_when_current_is_selected() {
 #[tokio::test]
 async fn permissions_selection_hides_guardian_approvals_when_feature_disabled() {
     let (mut chat, _rx, _op_rx) = make_chatwidget_manual(None).await;
-    #[cfg(target_os = "windows")]
-    {
-        chat.config.notices.hide_world_writable_warning = Some(true);
-        chat.set_windows_sandbox_mode(Some(WindowsSandboxModeToml::Unelevated));
-    }
     chat.config.notices.hide_full_access_warning = Some(true);
 
     chat.open_permissions_popup();
@@ -7641,11 +7504,6 @@ async fn permissions_selection_hides_guardian_approvals_when_feature_disabled() 
 async fn permissions_selection_hides_guardian_approvals_when_feature_disabled_even_if_auto_review_is_active()
  {
     let (mut chat, _rx, _op_rx) = make_chatwidget_manual(None).await;
-    #[cfg(target_os = "windows")]
-    {
-        chat.config.notices.hide_world_writable_warning = Some(true);
-        chat.set_windows_sandbox_mode(Some(WindowsSandboxModeToml::Unelevated));
-    }
     chat.config.notices.hide_full_access_warning = Some(true);
     chat.config.approvals_reviewer = ApprovalsReviewer::GuardianSubagent;
     chat.config
@@ -7671,11 +7529,6 @@ async fn permissions_selection_hides_guardian_approvals_when_feature_disabled_ev
 #[tokio::test]
 async fn permissions_selection_marks_guardian_approvals_current_after_session_configured() {
     let (mut chat, _rx, _op_rx) = make_chatwidget_manual(None).await;
-    #[cfg(target_os = "windows")]
-    {
-        chat.config.notices.hide_world_writable_warning = Some(true);
-        chat.set_windows_sandbox_mode(Some(WindowsSandboxModeToml::Unelevated));
-    }
     chat.config.notices.hide_full_access_warning = Some(true);
     let _ = chat
         .config
@@ -7717,11 +7570,6 @@ async fn permissions_selection_marks_guardian_approvals_current_after_session_co
 async fn permissions_selection_marks_guardian_approvals_current_with_custom_workspace_write_details()
  {
     let (mut chat, _rx, _op_rx) = make_chatwidget_manual(None).await;
-    #[cfg(target_os = "windows")]
-    {
-        chat.config.notices.hide_world_writable_warning = Some(true);
-        chat.set_windows_sandbox_mode(Some(WindowsSandboxModeToml::Unelevated));
-    }
     chat.config.notices.hide_full_access_warning = Some(true);
     let _ = chat
         .config
@@ -7771,11 +7619,6 @@ async fn permissions_selection_marks_guardian_approvals_current_with_custom_work
 #[tokio::test]
 async fn permissions_selection_can_disable_guardian_approvals() {
     let (mut chat, mut rx, _op_rx) = make_chatwidget_manual(None).await;
-    #[cfg(target_os = "windows")]
-    {
-        chat.config.notices.hide_world_writable_warning = Some(true);
-        chat.set_windows_sandbox_mode(Some(WindowsSandboxModeToml::Unelevated));
-    }
     chat.config.notices.hide_full_access_warning = Some(true);
     chat.set_feature_enabled(Feature::GuardianApproval, true);
     chat.config
@@ -7812,11 +7655,6 @@ async fn permissions_selection_can_disable_guardian_approvals() {
 #[tokio::test]
 async fn permissions_selection_sends_approvals_reviewer_in_override_turn_context() {
     let (mut chat, mut rx, _op_rx) = make_chatwidget_manual(None).await;
-    #[cfg(target_os = "windows")]
-    {
-        chat.config.notices.hide_world_writable_warning = Some(true);
-        chat.set_windows_sandbox_mode(Some(WindowsSandboxModeToml::Unelevated));
-    }
     chat.config.notices.hide_full_access_warning = Some(true);
     chat.set_feature_enabled(Feature::GuardianApproval, true);
     chat.config
@@ -7878,16 +7716,9 @@ async fn permissions_selection_sends_approvals_reviewer_in_override_turn_context
 #[tokio::test]
 async fn permissions_full_access_history_cell_emitted_only_after_confirmation() {
     let (mut chat, mut rx, _op_rx) = make_chatwidget_manual(None).await;
-    #[cfg(target_os = "windows")]
-    {
-        chat.config.notices.hide_world_writable_warning = Some(true);
-        chat.set_windows_sandbox_mode(Some(WindowsSandboxModeToml::Unelevated));
-    }
     chat.config.notices.hide_full_access_warning = None;
 
     chat.open_permissions_popup();
-    chat.handle_key_event(KeyEvent::from(KeyCode::Down));
-    #[cfg(target_os = "windows")]
     chat.handle_key_event(KeyEvent::from(KeyCode::Down));
     chat.handle_key_event(KeyEvent::from(KeyCode::Enter));
 
@@ -7907,12 +7738,10 @@ async fn permissions_full_access_history_cell_emitted_only_after_confirmation() 
             _ => {}
         }
     }
-    if cfg!(not(target_os = "windows")) {
-        assert!(
-            cells_before_confirmation.is_empty(),
-            "did not expect history cell before confirming full access"
-        );
-    }
+    assert!(
+        cells_before_confirmation.is_empty(),
+        "did not expect history cell before confirming full access"
+    );
     let (preset, return_to_permissions) =
         open_confirmation_event.expect("expected full access confirmation event");
     chat.open_full_access_confirmation(preset, return_to_permissions);

@@ -1,17 +1,7 @@
 use crate::bash::parse_shell_lc_plain_commands;
 use std::path::Path;
-#[cfg(windows)]
-#[path = "windows_dangerous_commands.rs"]
-mod windows_dangerous_commands;
 
 pub fn command_might_be_dangerous(command: &[String]) -> bool {
-    #[cfg(windows)]
-    {
-        if windows_dangerous_commands::is_dangerous_command_windows(command) {
-            return true;
-        }
-    }
-
     if is_dangerous_to_call_with_exec(command) {
         return true;
     }
@@ -54,29 +44,10 @@ fn is_git_global_option_with_inline_value(arg: &str) -> bool {
 }
 
 pub(crate) fn executable_name_lookup_key(raw: &str) -> Option<String> {
-    #[cfg(windows)]
-    {
-        Path::new(raw)
-            .file_name()
-            .and_then(|name| name.to_str())
-            .map(|name| {
-                let name = name.to_ascii_lowercase();
-                for suffix in [".exe", ".cmd", ".bat", ".com"] {
-                    if let Some(stripped) = name.strip_suffix(suffix) {
-                        return stripped.to_string();
-                    }
-                }
-                name
-            })
-    }
-
-    #[cfg(not(windows))]
-    {
-        Path::new(raw)
-            .file_name()
-            .and_then(|name| name.to_str())
-            .map(std::borrow::ToOwned::to_owned)
-    }
+    Path::new(raw)
+        .file_name()
+        .and_then(|name| name.to_str())
+        .map(std::borrow::ToOwned::to_owned)
 }
 
 /// Find the first matching git subcommand, skipping known global options that

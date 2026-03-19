@@ -162,11 +162,6 @@ async fn status_snapshot_includes_reasoning_details() {
         reasoning_effort_override,
     );
     let mut rendered_lines = render_lines(&composite.display_lines(80));
-    if cfg!(windows) {
-        for line in &mut rendered_lines {
-            *line = line.replace('\\', "/");
-        }
-    }
     let sanitized = sanitize_directory(rendered_lines).join("\n");
     assert_snapshot!(sanitized);
 }
@@ -281,11 +276,6 @@ async fn status_snapshot_includes_forked_from() {
         None,
     );
     let mut rendered_lines = render_lines(&composite.display_lines(80));
-    if cfg!(windows) {
-        for line in &mut rendered_lines {
-            *line = line.replace('\\', "/");
-        }
-    }
     let sanitized = sanitize_directory(rendered_lines).join("\n");
     assert_snapshot!(sanitized);
 }
@@ -343,11 +333,6 @@ async fn status_snapshot_includes_monthly_limit() {
         None,
     );
     let mut rendered_lines = render_lines(&composite.display_lines(80));
-    if cfg!(windows) {
-        for line in &mut rendered_lines {
-            *line = line.replace('\\', "/");
-        }
-    }
     let sanitized = sanitize_directory(rendered_lines).join("\n");
     assert_snapshot!(sanitized);
 }
@@ -645,11 +630,6 @@ async fn status_snapshot_truncates_in_narrow_terminal() {
         reasoning_effort_override,
     );
     let mut rendered_lines = render_lines(&composite.display_lines(70));
-    if cfg!(windows) {
-        for line in &mut rendered_lines {
-            *line = line.replace('\\', "/");
-        }
-    }
     let sanitized = sanitize_directory(rendered_lines).join("\n");
 
     assert_snapshot!(sanitized);
@@ -694,11 +674,6 @@ async fn status_snapshot_shows_missing_limits_message() {
         None,
     );
     let mut rendered_lines = render_lines(&composite.display_lines(80));
-    if cfg!(windows) {
-        for line in &mut rendered_lines {
-            *line = line.replace('\\', "/");
-        }
-    }
     let sanitized = sanitize_directory(rendered_lines).join("\n");
     assert_snapshot!(sanitized);
 }
@@ -763,11 +738,6 @@ async fn status_snapshot_includes_credits_and_limits() {
         None,
     );
     let mut rendered_lines = render_lines(&composite.display_lines(80));
-    if cfg!(windows) {
-        for line in &mut rendered_lines {
-            *line = line.replace('\\', "/");
-        }
-    }
     let sanitized = sanitize_directory(rendered_lines).join("\n");
     assert_snapshot!(sanitized);
 }
@@ -820,11 +790,6 @@ async fn status_snapshot_shows_empty_limits_message() {
         None,
     );
     let mut rendered_lines = render_lines(&composite.display_lines(80));
-    if cfg!(windows) {
-        for line in &mut rendered_lines {
-            *line = line.replace('\\', "/");
-        }
-    }
     let sanitized = sanitize_directory(rendered_lines).join("\n");
     assert_snapshot!(sanitized);
 }
@@ -886,11 +851,6 @@ async fn status_snapshot_shows_stale_limits_message() {
         None,
     );
     let mut rendered_lines = render_lines(&composite.display_lines(80));
-    if cfg!(windows) {
-        for line in &mut rendered_lines {
-            *line = line.replace('\\', "/");
-        }
-    }
     let sanitized = sanitize_directory(rendered_lines).join("\n");
     assert_snapshot!(sanitized);
 }
@@ -956,11 +916,6 @@ async fn status_snapshot_cached_limits_hide_credits_without_flag() {
         None,
     );
     let mut rendered_lines = render_lines(&composite.display_lines(80));
-    if cfg!(windows) {
-        for line in &mut rendered_lines {
-            *line = line.replace('\\', "/");
-        }
-    }
     let sanitized = sanitize_directory(rendered_lines).join("\n");
     assert_snapshot!(sanitized);
 }

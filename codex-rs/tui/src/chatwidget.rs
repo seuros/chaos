@@ -58,7 +58,6 @@ use codex_core::config::Constrained;
 use codex_core::config::ConstraintResult;
 use codex_core::config::types::ApprovalsReviewer;
 use codex_core::config::types::Notifications;
-use codex_core::config::types::WindowsSandboxModeToml;
 use codex_core::config_loader::ConfigLayerStackOrdering;
 use codex_core::features::FEATURES;
 use codex_core::features::Feature;
@@ -7202,11 +7201,6 @@ impl ChatWidget {
         }
     }
 
-    #[allow(dead_code)]
-    pub(crate) fn world_writable_warning_details(&self) -> Option<(Vec<String>, usize, bool)> {
-        None
-    }
-
     pub(crate) fn open_full_access_confirmation(
         &mut self,
         preset: ApprovalPreset,
@@ -7290,32 +7284,6 @@ impl ChatWidget {
         });
     }
 
-    pub(crate) fn open_world_writable_warning_confirmation(
-        &mut self,
-        _preset: Option<ApprovalPreset>,
-        _sample_paths: Vec<String>,
-        _extra_count: usize,
-        _failed_scan: bool,
-    ) {
-        // Not supported on Linux.
-    }
-
-
-    pub(crate) fn open_windows_sandbox_enable_prompt(&mut self, _preset: ApprovalPreset) {
-        // Not supported on Linux.
-    }
-
-    pub(crate) fn open_windows_sandbox_fallback_prompt(&mut self, _preset: ApprovalPreset) {
-        // Not supported on Linux.
-    }
-
-    pub(crate) fn maybe_prompt_windows_sandbox_enable(&mut self, _show_now: bool) {}
-
-    #[allow(dead_code)]
-    pub(crate) fn show_windows_sandbox_setup_status(&mut self) {}
-
-    pub(crate) fn clear_windows_sandbox_setup_status(&mut self) {}
-
     /// Set the approval policy in the widget's config copy.
     pub(crate) fn set_approval_policy(&mut self, policy: AskForApproval) {
         if let Err(err) = self.config.permissions.approval_policy.set(policy) {
@@ -7327,10 +7295,6 @@ impl ChatWidget {
     pub(crate) fn set_sandbox_policy(&mut self, policy: SandboxPolicy) -> ConstraintResult<()> {
         self.config.permissions.sandbox_policy.set(policy)?;
         Ok(())
-    }
-
-    pub(crate) fn set_windows_sandbox_mode(&mut self, mode: Option<WindowsSandboxModeToml>) {
-        self.config.permissions.windows_sandbox_mode = mode;
     }
 
     pub(crate) fn set_feature_enabled(&mut self, feature: Feature, enabled: bool) -> bool {
@@ -7383,23 +7347,11 @@ impl ChatWidget {
         self.config.notices.hide_full_access_warning = Some(acknowledged);
     }
 
-    pub(crate) fn set_world_writable_warning_acknowledged(&mut self, acknowledged: bool) {
-        self.config.notices.hide_world_writable_warning = Some(acknowledged);
-    }
-
     pub(crate) fn set_rate_limit_switch_prompt_hidden(&mut self, hidden: bool) {
         self.config.notices.hide_rate_limit_model_nudge = Some(hidden);
         if hidden {
             self.rate_limit_switch_prompt = RateLimitSwitchPromptState::Idle;
         }
-    }
-
-    #[cfg_attr(not(target_os = "windows"), allow(dead_code))]
-    pub(crate) fn world_writable_warning_hidden(&self) -> bool {
-        self.config
-            .notices
-            .hide_world_writable_warning
-            .unwrap_or(false)
     }
 
     pub(crate) fn set_plan_mode_reasoning_effort(&mut self, effort: Option<ReasoningEffortConfig>) {

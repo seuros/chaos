@@ -14,10 +14,6 @@ const ALIASES: &[Alias] = &[
         feature: Feature::Apps,
     },
     Alias {
-        legacy_key: "enable_experimental_windows_sandbox",
-        feature: Feature::WindowsSandbox,
-    },
-    Alias {
         legacy_key: "experimental_use_unified_exec_tool",
         feature: Feature::UnifiedExec,
     },

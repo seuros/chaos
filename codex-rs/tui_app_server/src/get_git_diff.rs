@@ -29,11 +29,7 @@ pub(crate) async fn get_git_diff() -> io::Result<(bool, String)> {
     let untracked_output = untracked_output_res?;
 
     let mut untracked_diff = String::new();
-    let null_device: &Path = if cfg!(windows) {
-        Path::new("NUL")
-    } else {
-        Path::new("/dev/null")
-    };
+    let null_device: &Path = Path::new("/dev/null");
 
     let null_path = null_device.to_str().unwrap_or("/dev/null").to_string();
     let mut join_set: tokio::task::JoinSet<io::Result<String>> = tokio::task::JoinSet::new();

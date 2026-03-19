@@ -1822,7 +1822,6 @@ dependencies = [
  "walkdir",
  "which",
  "wildmatch",
- "windows-sys 0.52.0",
  "wiremock",
  "zip",
  "zstd",
@@ -2325,7 +2324,6 @@ dependencies = [
  "codex-utils-cargo-bin",
  "pretty_assertions",
  "tempfile",
- "uds_windows",
 ]
 
 [[package]]
@@ -2422,9 +2420,6 @@ dependencies = [
  "uuid",
  "vt100",
  "webbrowser",
- "which",
- "windows-sys 0.52.0",
- "winsplit",
 ]
 
 [[package]]
@@ -2510,9 +2505,6 @@ dependencies = [
  "uuid",
  "vt100",
  "webbrowser",
- "which",
- "windows-sys 0.52.0",
- "winsplit",
 ]
 
 [[package]]
@@ -2663,7 +2655,6 @@ dependencies = [
  "core-foundation 0.9.4",
  "libc",
  "tracing",
- "windows-sys 0.61.2",
 ]
 
 [[package]]
@@ -5230,14 +5221,12 @@ version = "3.6.3"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "eebcc3aff044e5944a8fbaf69eb277d11986064cba30c468730e8b9909fb551c"
 dependencies = [
- "byteorder",
  "dbus-secret-service",
  "linux-keyutils",
  "log",
  "secret-service",
  "security-framework 2.11.1",
  "security-framework 3.5.1",
- "windows-sys 0.60.2",
  "zbus",
  "zeroize",
 ]
@@ -11172,12 +11161,6 @@ name = "winsafe"
 version = "0.0.19"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "d135d17ab770252ad95e9a872d365cf3090e3be864a34ab46f48555993efc904"
-
-[[package]]
-name = "winsplit"
-version = "0.1.0"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "3ab703352da6a72f35c39a533526393725640575bb211f61987a2748323ad956"
 
 [[package]]
 name = "wiremock"

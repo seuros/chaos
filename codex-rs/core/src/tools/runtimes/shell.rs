@@ -14,7 +14,6 @@ use crate::features::Feature;
 use crate::guardian::GuardianApprovalRequest;
 use crate::guardian::review_approval_request;
 use crate::guardian::routes_approval_to_guardian;
-use crate::powershell::prefix_powershell_script_with_utf8;
 use crate::sandboxing::SandboxPermissions;
 use crate::sandboxing::execute_env;
 use crate::shell::ShellType;
@@ -227,13 +226,6 @@ impl ToolRuntime<ShellRequest, ExecToolCallOutput> for ShellRuntime {
             &req.cwd,
             &req.explicit_env_overrides,
         );
-        let command = if matches!(session_shell.shell_type, ShellType::PowerShell)
-            && ctx.session.features().enabled(Feature::PowershellUtf8)
-        {
-            prefix_powershell_script_with_utf8(&command)
-        } else {
-            command
-        };
 
         if self.backend == ShellRuntimeBackend::ShellCommandZshFork {
             match zsh_fork_backend::maybe_run_shell_command(req, attempt, ctx, &command).await? {

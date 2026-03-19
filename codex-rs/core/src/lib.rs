@@ -152,7 +152,6 @@ pub(crate) use codex_shell_command::bash;
 pub(crate) use codex_shell_command::is_dangerous_command;
 pub(crate) use codex_shell_command::is_safe_command;
 pub(crate) use codex_shell_command::parse_command;
-pub(crate) use codex_shell_command::powershell;
 
 pub use client::ModelClient;
 pub use client::ModelClientSession;

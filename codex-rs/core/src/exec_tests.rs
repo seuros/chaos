@@ -404,22 +404,10 @@ async fn process_exec_tool_call_respects_cancellation_token() -> Result<()> {
     Ok(())
 }
 
-#[cfg(unix)]
 fn long_running_command() -> Vec<String> {
     vec![
         "/bin/sh".to_string(),
         "-c".to_string(),
         "sleep 30".to_string(),
-    ]
-}
-
-#[cfg(windows)]
-fn long_running_command() -> Vec<String> {
-    vec![
-        "powershell.exe".to_string(),
-        "-NonInteractive".to_string(),
-        "-NoLogo".to_string(),
-        "-Command".to_string(),
-        "Start-Sleep -Seconds 30".to_string(),
     ]
 }

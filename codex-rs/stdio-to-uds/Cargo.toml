@@ -18,8 +18,6 @@ workspace = true
 [dependencies]
 anyhow = { workspace = true }
 
-[target.'cfg(target_os = "windows")'.dependencies]
-uds_windows = { workspace = true }
 
 [dev-dependencies]
 codex-utils-cargo-bin = { workspace = true }

@@ -9,11 +9,7 @@ use std::thread;
 use anyhow::Context;
 use anyhow::anyhow;
 
-#[cfg(unix)]
 use std::os::unix::net::UnixStream;
-
-#[cfg(windows)]
-use uds_windows::UnixStream;
 
 /// Connects to the Unix Domain Socket at `socket_path` and relays data between
 /// standard input/output and the socket.

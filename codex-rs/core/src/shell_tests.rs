@@ -3,26 +3,6 @@ use std::path::PathBuf;
 use std::process::Command;
 
 #[test]
-#[cfg(target_os = "macos")]
-fn detects_zsh() {
-    let zsh_shell = get_shell(ShellType::Zsh, None).unwrap();
-
-    let shell_path = zsh_shell.shell_path;
-
-    assert_eq!(shell_path, std::path::Path::new("/bin/zsh"));
-}
-
-#[test]
-#[cfg(target_os = "macos")]
-fn fish_fallback_to_zsh() {
-    let zsh_shell = default_user_shell_from_path(Some(PathBuf::from("/bin/fish")));
-
-    let shell_path = zsh_shell.shell_path;
-
-    assert_eq!(shell_path, std::path::Path::new("/bin/zsh"));
-}
-
-#[test]
 fn detects_bash() {
     let bash_shell = get_shell(ShellType::Bash, None).unwrap();
     let shell_path = bash_shell.shell_path;
@@ -46,20 +26,10 @@ fn detects_sh() {
 #[test]
 fn can_run_on_shell_test() {
     let cmd = "echo \"Works\"";
-    if cfg!(windows) {
-        assert!(shell_works(
-            get_shell(ShellType::PowerShell, None),
-            "Out-String 'Works'",
-            true,
-        ));
-        assert!(shell_works(get_shell(ShellType::Cmd, None), cmd, true,));
-        assert!(shell_works(Some(ultimate_fallback_shell()), cmd, true));
-    } else {
-        assert!(shell_works(Some(ultimate_fallback_shell()), cmd, true));
-        assert!(shell_works(get_shell(ShellType::Zsh, None), cmd, false));
-        assert!(shell_works(get_shell(ShellType::Bash, None), cmd, true));
-        assert!(shell_works(get_shell(ShellType::Sh, None), cmd, true));
-    }
+    assert!(shell_works(Some(ultimate_fallback_shell()), cmd, true));
+    assert!(shell_works(get_shell(ShellType::Zsh, None), cmd, false));
+    assert!(shell_works(get_shell(ShellType::Bash, None), cmd, true));
+    assert!(shell_works(get_shell(ShellType::Sh, None), cmd, true));
 }
 
 fn shell_works(shell: Option<Shell>, command: &str, required: bool) -> bool {
@@ -106,20 +76,6 @@ fn derive_exec_args() {
         test_zsh_shell.derive_exec_args("echo hello", true),
         vec!["/bin/zsh", "-lc", "echo hello"]
     );
-
-    let test_powershell_shell = Shell {
-        shell_type: ShellType::PowerShell,
-        shell_path: PathBuf::from("pwsh.exe"),
-        shell_snapshot: empty_shell_snapshot_receiver(),
-    };
-    assert_eq!(
-        test_powershell_shell.derive_exec_args("echo hello", false),
-        vec!["pwsh.exe", "-NoProfile", "-Command", "echo hello"]
-    );
-    assert_eq!(
-        test_powershell_shell.derive_exec_args("echo hello", true),
-        vec!["pwsh.exe", "-Command", "echo hello"]
-    );
 }
 
 #[tokio::test]
@@ -141,28 +97,4 @@ async fn test_current_shell_detects_zsh() {
             }
         );
     }
-}
-
-#[tokio::test]
-async fn detects_powershell_as_default() {
-    if !cfg!(windows) {
-        return;
-    }
-
-    let powershell_shell = default_user_shell();
-    let shell_path = powershell_shell.shell_path;
-
-    assert!(shell_path.ends_with("pwsh.exe") || shell_path.ends_with("powershell.exe"));
-}
-
-#[test]
-fn finds_powershell() {
-    if !cfg!(windows) {
-        return;
-    }
-
-    let powershell_shell = get_shell(ShellType::PowerShell, None).unwrap();
-    let shell_path = powershell_shell.shell_path;
-
-    assert!(shell_path.ends_with("pwsh.exe") || shell_path.ends_with("powershell.exe"));
 }

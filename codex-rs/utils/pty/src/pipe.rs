@@ -25,50 +25,12 @@ use crate::process::SpawnedProcess;
 use libc;
 
 struct PipeChildTerminator {
-    #[cfg(windows)]
-    pid: u32,
-    #[cfg(unix)]
     process_group_id: u32,
 }
 
 impl ChildTerminator for PipeChildTerminator {
     fn kill(&mut self) -> io::Result<()> {
-        #[cfg(unix)]
-        {
-            crate::process_group::kill_process_group(self.process_group_id)
-        }
-
-        #[cfg(windows)]
-        {
-            kill_process(self.pid)
-        }
-
-        #[cfg(not(any(unix, windows)))]
-        {
-            Ok(())
-        }
-    }
-}
-
-#[cfg(windows)]
-fn kill_process(pid: u32) -> io::Result<()> {
-    unsafe {
-        let handle = winapi::um::processthreadsapi::OpenProcess(
-            winapi::um::winnt::PROCESS_TERMINATE,
-            0,
-            pid,
-        );
-        if handle.is_null() {
-            return Err(io::Error::last_os_error());
-        }
-        let success = winapi::um::processthreadsapi::TerminateProcess(handle, 1);
-        let err = io::Error::last_os_error();
-        winapi::um::handleapi::CloseHandle(handle);
-        if success == 0 {
-            Err(err)
-        } else {
-            Ok(())
-        }
+        crate::process_group::kill_process_group(self.process_group_id)
     }
 }
 
@@ -108,19 +70,13 @@ async fn spawn_process_with_stdin_mode(
         anyhow::bail!("missing program for pipe spawn");
     }
 
-    #[cfg(not(unix))]
-    let _ = inherited_fds;
-
     let mut command = Command::new(program);
-    #[cfg(unix)]
     if let Some(arg0) = arg0 {
         command.arg0(arg0);
     }
     #[cfg(target_os = "linux")]
     let parent_pid = unsafe { libc::getpid() };
-    #[cfg(unix)]
     let inherited_fds = inherited_fds.to_vec();
-    #[cfg(unix)]
     unsafe {
         command.pre_exec(move || {
             crate::process_group::detach_from_tty()?;
@@ -130,8 +86,6 @@ async fn spawn_process_with_stdin_mode(
             Ok(())
         });
     }
-    #[cfg(not(unix))]
-    let _ = arg0;
     command.current_dir(cwd);
     command.env_clear();
     for (key, value) in env {
@@ -152,11 +106,9 @@ async fn spawn_process_with_stdin_mode(
     command.stderr(Stdio::piped());
 
     let mut child = command.spawn()?;
-    let pid = child
+    let process_group_id = child
         .id()
         .ok_or_else(|| io::Error::other("missing child pid"))?;
-    #[cfg(unix)]
-    let process_group_id = pid;
 
     let stdin = child.stdin.take();
     let stdout = child.stdout.take();
@@ -226,12 +178,7 @@ async fn spawn_process_with_stdin_mode(
 
     let handle = ProcessHandle::new(
         writer_tx,
-        Box::new(PipeChildTerminator {
-            #[cfg(windows)]
-            pid,
-            #[cfg(unix)]
-            process_group_id,
-        }),
+        Box::new(PipeChildTerminator { process_group_id }),
         reader_handle,
         reader_abort_handles,
         writer_handle,

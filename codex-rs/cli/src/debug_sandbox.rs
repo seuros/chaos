@@ -18,7 +18,6 @@ use codex_utils_cli::CliConfigOverrides;
 
 use crate::LandlockCommand;
 use crate::SeatbeltCommand;
-use crate::WindowsCommand;
 use crate::exit_status::handle_exit_status;
 
 #[cfg(target_os = "macos")]
@@ -74,31 +73,10 @@ pub async fn run_command_under_landlock(
     .await
 }
 
-pub async fn run_command_under_windows(
-    command: WindowsCommand,
-    codex_linux_sandbox_exe: Option<PathBuf>,
-) -> anyhow::Result<()> {
-    let WindowsCommand {
-        full_auto,
-        config_overrides,
-        command,
-    } = command;
-    run_command_under_sandbox(
-        full_auto,
-        command,
-        config_overrides,
-        codex_linux_sandbox_exe,
-        SandboxType::Windows,
-        /*log_denials*/ false,
-    )
-    .await
-}
-
 enum SandboxType {
     #[cfg(target_os = "macos")]
     Seatbelt,
     Landlock,
-    Windows,
 }
 
 async fn run_command_under_sandbox(
@@ -135,11 +113,6 @@ async fn run_command_under_sandbox(
         &config.permissions.shell_environment_policy,
         /*thread_id*/ None,
     );
-
-    // Windows sandbox is not supported.
-    if let SandboxType::Windows = sandbox_type {
-        anyhow::bail!("Windows sandbox is not supported");
-    }
 
     #[cfg(target_os = "macos")]
     let mut denial_logger = log_denials.then(DenialLogger::new).flatten();
@@ -199,9 +172,6 @@ async fn run_command_under_sandbox(
                 env,
             )
             .await?
-        }
-        SandboxType::Windows => {
-            unreachable!("Windows sandbox should have been handled above");
         }
     };
 

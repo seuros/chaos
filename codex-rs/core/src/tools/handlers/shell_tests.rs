@@ -7,8 +7,6 @@ use pretty_assertions::assert_eq;
 use crate::codex::make_session_and_context;
 use crate::exec_env::create_env;
 use crate::is_safe_command::is_known_safe_command;
-use crate::powershell::try_find_powershell_executable_blocking;
-use crate::powershell::try_find_pwsh_executable_blocking;
 use crate::sandboxing::SandboxPermissions;
 use crate::shell::Shell;
 use crate::shell::ShellType;
@@ -35,23 +33,6 @@ fn commands_generated_by_shell_command_handler_can_be_matched_by_is_known_safe_c
     };
     assert_safe(&zsh_shell, "ls -la");
 
-    if let Some(path) = try_find_powershell_executable_blocking() {
-        let powershell = Shell {
-            shell_type: ShellType::PowerShell,
-            shell_path: path.to_path_buf(),
-            shell_snapshot: crate::shell::empty_shell_snapshot_receiver(),
-        };
-        assert_safe(&powershell, "ls -Name");
-    }
-
-    if let Some(path) = try_find_pwsh_executable_blocking() {
-        let pwsh = Shell {
-            shell_type: ShellType::PowerShell,
-            shell_path: path.to_path_buf(),
-            shell_snapshot: crate::shell::empty_shell_snapshot_receiver(),
-        };
-        assert_safe(&pwsh, "ls -Name");
-    }
 }
 
 fn assert_safe(shell: &Shell, command: &str) {

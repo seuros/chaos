@@ -1,7 +1,4 @@
-#[cfg(unix)]
 use std::ffi::OsString;
-
-#[cfg(unix)]
 use std::os::unix::ffi::OsStrExt;
 
 /// This is designed to be called pre-main() (using `#[ctor::ctor]`) to perform
@@ -19,9 +16,6 @@ pub fn pre_main_hardening() {
     // On FreeBSD and OpenBSD, apply similar hardening to Linux/macOS:
     #[cfg(any(target_os = "freebsd", target_os = "openbsd"))]
     pre_main_hardening_bsd();
-
-    #[cfg(windows)]
-    pre_main_hardening_windows();
 }
 
 #[cfg(any(target_os = "linux", target_os = "android"))]
@@ -105,7 +99,6 @@ pub(crate) fn pre_main_hardening_macos() {
     }
 }
 
-#[cfg(unix)]
 fn set_core_file_size_limit_to_zero() {
     let rlim = libc::rlimit {
         rlim_cur: 0,
@@ -122,12 +115,6 @@ fn set_core_file_size_limit_to_zero() {
     }
 }
 
-#[cfg(windows)]
-pub(crate) fn pre_main_hardening_windows() {
-    // TODO(mbolin): Perform the appropriate configuration for Windows.
-}
-
-#[cfg(unix)]
 fn env_keys_with_prefix<I>(vars: I, prefix: &[u8]) -> Vec<OsString>
 where
     I: IntoIterator<Item = (OsString, OsString)>,
@@ -142,7 +129,7 @@ where
         .collect()
 }
 
-#[cfg(all(test, unix))]
+#[cfg(test)]
 mod tests {
     use super::*;
     use pretty_assertions::assert_eq;

@@ -2453,11 +2453,6 @@ impl Session {
             .clone()
     }
 
-    pub(crate) async fn provider(&self) -> ModelProviderInfo {
-        let state = self.state.lock().await;
-        state.session_configuration.provider.clone()
-    }
-
     pub(crate) async fn reload_user_config_layer(&self) {
         let config_toml_path = {
             let state = self.state.lock().await;

@@ -81,7 +81,7 @@ async fn user_shell_cmd_ls_and_cat_in_temp_dir() {
         .unwrap();
     let msg = wait_for_event(&codex, |ev| matches!(ev, EventMsg::ExecCommandEnd(_))).await;
     let EventMsg::ExecCommandEnd(ExecCommandEndEvent {
-        mut stdout,
+        stdout,
         exit_code,
         ..
     }) = msg

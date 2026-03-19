@@ -1206,7 +1206,6 @@ mod tests {
     use codex_protocol::protocol::SessionSource;
     use codex_protocol::protocol::TurnContextItem;
     use pretty_assertions::assert_eq;
-    use serial_test::serial;
     use tempfile::TempDir;
 
     async fn build_config(temp_dir: &TempDir) -> std::io::Result<Config> {

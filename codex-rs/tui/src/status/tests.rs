@@ -161,7 +161,7 @@ async fn status_snapshot_includes_reasoning_details() {
         None,
         reasoning_effort_override,
     );
-    let mut rendered_lines = render_lines(&composite.display_lines(80));
+    let rendered_lines = render_lines(&composite.display_lines(80));
     let sanitized = sanitize_directory(rendered_lines).join("\n");
     assert_snapshot!(sanitized);
 }
@@ -275,7 +275,7 @@ async fn status_snapshot_includes_forked_from() {
         None,
         None,
     );
-    let mut rendered_lines = render_lines(&composite.display_lines(80));
+    let rendered_lines = render_lines(&composite.display_lines(80));
     let sanitized = sanitize_directory(rendered_lines).join("\n");
     assert_snapshot!(sanitized);
 }
@@ -332,7 +332,7 @@ async fn status_snapshot_includes_monthly_limit() {
         None,
         None,
     );
-    let mut rendered_lines = render_lines(&composite.display_lines(80));
+    let rendered_lines = render_lines(&composite.display_lines(80));
     let sanitized = sanitize_directory(rendered_lines).join("\n");
     assert_snapshot!(sanitized);
 }
@@ -629,7 +629,7 @@ async fn status_snapshot_truncates_in_narrow_terminal() {
         None,
         reasoning_effort_override,
     );
-    let mut rendered_lines = render_lines(&composite.display_lines(70));
+    let rendered_lines = render_lines(&composite.display_lines(70));
     let sanitized = sanitize_directory(rendered_lines).join("\n");
 
     assert_snapshot!(sanitized);
@@ -673,7 +673,7 @@ async fn status_snapshot_shows_missing_limits_message() {
         None,
         None,
     );
-    let mut rendered_lines = render_lines(&composite.display_lines(80));
+    let rendered_lines = render_lines(&composite.display_lines(80));
     let sanitized = sanitize_directory(rendered_lines).join("\n");
     assert_snapshot!(sanitized);
 }
@@ -737,7 +737,7 @@ async fn status_snapshot_includes_credits_and_limits() {
         None,
         None,
     );
-    let mut rendered_lines = render_lines(&composite.display_lines(80));
+    let rendered_lines = render_lines(&composite.display_lines(80));
     let sanitized = sanitize_directory(rendered_lines).join("\n");
     assert_snapshot!(sanitized);
 }
@@ -789,7 +789,7 @@ async fn status_snapshot_shows_empty_limits_message() {
         None,
         None,
     );
-    let mut rendered_lines = render_lines(&composite.display_lines(80));
+    let rendered_lines = render_lines(&composite.display_lines(80));
     let sanitized = sanitize_directory(rendered_lines).join("\n");
     assert_snapshot!(sanitized);
 }
@@ -850,7 +850,7 @@ async fn status_snapshot_shows_stale_limits_message() {
         None,
         None,
     );
-    let mut rendered_lines = render_lines(&composite.display_lines(80));
+    let rendered_lines = render_lines(&composite.display_lines(80));
     let sanitized = sanitize_directory(rendered_lines).join("\n");
     assert_snapshot!(sanitized);
 }
@@ -915,7 +915,7 @@ async fn status_snapshot_cached_limits_hide_credits_without_flag() {
         None,
         None,
     );
-    let mut rendered_lines = render_lines(&composite.display_lines(80));
+    let rendered_lines = render_lines(&composite.display_lines(80));
     let sanitized = sanitize_directory(rendered_lines).join("\n");
     assert_snapshot!(sanitized);
 }

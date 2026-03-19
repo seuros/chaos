@@ -6680,13 +6680,6 @@ impl ChatWidget {
                         return_to_permissions: !include_read_only,
                     });
                 })]
-            } else if preset.id == "auto" {
-                Self::approval_preset_actions(
-                    preset.approval,
-                    preset.sandbox.clone(),
-                    base_name.clone(),
-                    ApprovalsReviewer::User,
-                )
             } else {
                 Self::approval_preset_actions(
                     preset.approval,

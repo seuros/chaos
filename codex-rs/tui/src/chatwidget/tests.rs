@@ -7734,7 +7734,7 @@ async fn approval_modal_exec_snapshot() -> anyhow::Result<()> {
     let mut terminal =
         crate::custom_terminal::Terminal::with_options(VT100Backend::new(width, height))
             .expect("create terminal");
-    let viewport = Rect::new(0, 0, width, height);
+    let _viewport = Rect::new(0, 0, width, height);
 
     terminal
         .draw(|f| chat.render(f.area(), f.buffer_mut()))
@@ -8257,7 +8257,7 @@ async fn guardian_denied_exec_renders_warning_and_denied_request() {
     let width: u16 = 140;
     let ui_height: u16 = chat.desired_height(width);
     let vt_height: u16 = 20;
-    let viewport = Rect::new(0, vt_height - ui_height - 1, width, ui_height);
+    let _viewport = Rect::new(0, vt_height - ui_height - 1, width, ui_height);
 
     let backend = VT100Backend::new(width, vt_height);
     let mut term = crate::custom_terminal::Terminal::with_options(backend).expect("terminal");
@@ -8302,7 +8302,7 @@ async fn guardian_approved_exec_renders_approved_request() {
     let width: u16 = 120;
     let ui_height: u16 = chat.desired_height(width);
     let vt_height: u16 = 12;
-    let viewport = Rect::new(0, vt_height - ui_height - 1, width, ui_height);
+    let _viewport = Rect::new(0, vt_height - ui_height - 1, width, ui_height);
 
     let backend = VT100Backend::new(width, vt_height);
     let mut term = crate::custom_terminal::Terminal::with_options(backend).expect("terminal");
@@ -9750,7 +9750,7 @@ async fn chatwidget_exec_and_status_layout_vt100_snapshot() {
     let width: u16 = 80;
     let ui_height: u16 = chat.desired_height(width);
     let vt_height: u16 = 40;
-    let viewport = Rect::new(0, vt_height - ui_height - 1, width, ui_height);
+    let _viewport = Rect::new(0, vt_height - ui_height - 1, width, ui_height);
 
     let backend = VT100Backend::new(width, vt_height);
     let mut term = crate::custom_terminal::Terminal::with_options(backend).expect("terminal");
@@ -9881,7 +9881,7 @@ async fn chatwidget_tall() {
     let height: u16 = 24;
     let backend = VT100Backend::new(width, height);
     let mut term = crate::custom_terminal::Terminal::with_options(backend).expect("terminal");
-    let desired_height = chat.desired_height(width).min(height);
+    let _desired_height = chat.desired_height(width).min(height);
     term.draw(|f| {
         chat.render(f.area(), f.buffer_mut());
     })
@@ -9942,7 +9942,7 @@ async fn review_queues_user_messages_snapshot() {
     let height: u16 = 18;
     let backend = VT100Backend::new(width, height);
     let mut term = crate::custom_terminal::Terminal::with_options(backend).expect("terminal");
-    let desired_height = chat.desired_height(width).min(height);
+    let _desired_height = chat.desired_height(width).min(height);
     term.draw(|f| {
         chat.render(f.area(), f.buffer_mut());
     })

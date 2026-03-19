@@ -885,10 +885,8 @@ mod tests {
             if line == "\r\n" || line == "\n" {
                 break;
             }
-            if let Some((name, value)) = line.split_once(':') {
-                if name.trim().eq_ignore_ascii_case("sec-websocket-key") {
-                    ws_key = Some(value.trim().trim_end_matches(['\r', '\n']).to_string());
-                }
+            if let Some((name, value)) = line.split_once(':') && name.trim().eq_ignore_ascii_case("sec-websocket-key") {
+                ws_key = Some(value.trim().trim_end_matches(['\r', '\n']).to_string());
             }
         }
         let ws_key = ws_key.expect("missing Sec-WebSocket-Key");

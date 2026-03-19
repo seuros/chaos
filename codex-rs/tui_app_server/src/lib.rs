@@ -1461,7 +1461,6 @@ mod tests {
     use codex_protocol::protocol::SessionMetaLine;
     use codex_protocol::protocol::SessionSource;
     use codex_protocol::protocol::TurnContextItem;
-    use serial_test::serial;
     use tempfile::TempDir;
 
     async fn build_config(temp_dir: &TempDir) -> std::io::Result<Config> {

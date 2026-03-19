@@ -33,7 +33,6 @@ use crate::spawn::spawn_child_async;
 use crate::text_encoding::bytes_to_string_smart;
 use crate::tools::sandboxing::SandboxablePreference;
 use codex_network_proxy::NetworkProxy;
-use codex_protocol::permissions::FileSystemSandboxKind;
 use codex_protocol::permissions::FileSystemSandboxPolicy;
 use codex_protocol::permissions::NetworkSandboxPolicy;
 use codex_utils_pty::DEFAULT_OUTPUT_BYTES_CAP;
@@ -79,8 +78,6 @@ pub struct ExecParams {
     pub env: HashMap<String, String>,
     pub network: Option<NetworkProxy>,
     pub sandbox_permissions: SandboxPermissions,
-    pub windows_sandbox_level: codex_protocol::config_types::WindowsSandboxLevel,
-    pub windows_sandbox_private_desktop: bool,
     pub justification: Option<String>,
     pub arg0: Option<String>,
 }
@@ -88,14 +85,12 @@ pub struct ExecParams {
 fn select_process_exec_tool_sandbox_type(
     file_system_sandbox_policy: &FileSystemSandboxPolicy,
     network_sandbox_policy: NetworkSandboxPolicy,
-    windows_sandbox_level: codex_protocol::config_types::WindowsSandboxLevel,
     enforce_managed_network: bool,
 ) -> SandboxType {
     SandboxManager::new().select_initial(
         file_system_sandbox_policy,
         network_sandbox_policy,
         SandboxablePreference::Auto,
-        windows_sandbox_level,
         enforce_managed_network,
     )
 }
@@ -155,7 +150,7 @@ pub enum SandboxType {
     /// Only available on Linux.
     LinuxSeccomp,
 
-    /// Only available on Windows.
+    /// Kept for forward-compat deserialization; never constructed on Linux.
     WindowsRestrictedToken,
 }
 
@@ -213,12 +208,10 @@ pub fn build_exec_request(
     codex_linux_sandbox_exe: &Option<PathBuf>,
     use_legacy_landlock: bool,
 ) -> Result<ExecRequest> {
-    let windows_sandbox_level = params.windows_sandbox_level;
     let enforce_managed_network = params.network.is_some();
     let sandbox_type = select_process_exec_tool_sandbox_type(
         file_system_sandbox_policy,
         network_sandbox_policy,
-        windows_sandbox_level,
         enforce_managed_network,
     );
     tracing::debug!("Sandbox type: {sandbox_type:?}");
@@ -230,8 +223,6 @@ pub fn build_exec_request(
         expiration,
         network,
         sandbox_permissions,
-        windows_sandbox_level,
-        windows_sandbox_private_desktop,
         justification,
         arg0: _,
     } = params;
@@ -271,8 +262,6 @@ pub fn build_exec_request(
             macos_seatbelt_profile_extensions: None,
             codex_linux_sandbox_exe: codex_linux_sandbox_exe.as_ref(),
             use_legacy_landlock,
-            windows_sandbox_level,
-            windows_sandbox_private_desktop,
         })
         .map_err(CodexErr::from)?;
     Ok(exec_req)
@@ -291,8 +280,6 @@ pub(crate) async fn execute_exec_request(
         network,
         expiration,
         sandbox,
-        windows_sandbox_level,
-        windows_sandbox_private_desktop,
         sandbox_permissions,
         sandbox_policy: _sandbox_policy_from_env,
         file_system_sandbox_policy,
@@ -309,8 +296,6 @@ pub(crate) async fn execute_exec_request(
         env,
         network: network.clone(),
         sandbox_permissions,
-        windows_sandbox_level,
-        windows_sandbox_private_desktop,
         justification,
         arg0,
     };
@@ -587,7 +572,6 @@ async fn exec(
         network,
         arg0,
         expiration,
-        windows_sandbox_level: _,
         ..
     } = params;
     if let Some(network) = network.as_ref() {
@@ -621,42 +605,6 @@ async fn exec(
     consume_truncated_output(child, expiration, stdout_stream).await
 }
 
-#[allow(dead_code)]
-fn should_use_windows_restricted_token_sandbox(
-    sandbox: SandboxType,
-    sandbox_policy: &SandboxPolicy,
-    file_system_sandbox_policy: &FileSystemSandboxPolicy,
-) -> bool {
-    sandbox == SandboxType::WindowsRestrictedToken
-        && file_system_sandbox_policy.kind == FileSystemSandboxKind::Restricted
-        && !matches!(
-            sandbox_policy,
-            SandboxPolicy::DangerFullAccess | SandboxPolicy::ExternalSandbox { .. }
-        )
-}
-
-#[cfg(test)]
-fn unsupported_windows_restricted_token_sandbox_reason(
-    sandbox: SandboxType,
-    sandbox_policy: &SandboxPolicy,
-    file_system_sandbox_policy: &FileSystemSandboxPolicy,
-    network_sandbox_policy: NetworkSandboxPolicy,
-) -> Option<String> {
-    if should_use_windows_restricted_token_sandbox(
-        sandbox,
-        sandbox_policy,
-        file_system_sandbox_policy,
-    ) {
-        return None;
-    }
-
-    (sandbox == SandboxType::WindowsRestrictedToken).then(|| {
-        format!(
-            "windows sandbox backend cannot enforce file_system={:?}, network={network_sandbox_policy:?}, legacy_policy={sandbox_policy:?}; refusing to run unsandboxed",
-            file_system_sandbox_policy.kind,
-        )
-    })
-}
 /// Consumes the output of a child process, truncating it so it is suitable for
 /// use as the output of a `shell` tool call. Also enforces specified timeout.
 async fn consume_truncated_output(

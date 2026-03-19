@@ -177,7 +177,6 @@ impl ToolOrchestrator {
                 &turn_ctx.file_system_sandbox_policy,
                 turn_ctx.network_sandbox_policy,
                 tool.sandbox_preference(),
-                turn_ctx.windows_sandbox_level,
                 has_managed_network_requirements,
             ),
         };
@@ -195,11 +194,6 @@ impl ToolOrchestrator {
             sandbox_cwd: &turn_ctx.cwd,
             codex_linux_sandbox_exe: turn_ctx.codex_linux_sandbox_exe.as_ref(),
             use_legacy_landlock,
-            windows_sandbox_level: turn_ctx.windows_sandbox_level,
-            windows_sandbox_private_desktop: turn_ctx
-                .config
-                .permissions
-                .windows_sandbox_private_desktop,
         };
 
         let (first_result, first_deferred_network_approval) = Self::run_attempt(
@@ -321,11 +315,6 @@ impl ToolOrchestrator {
                     sandbox_cwd: &turn_ctx.cwd,
                     codex_linux_sandbox_exe: None,
                     use_legacy_landlock,
-                    windows_sandbox_level: turn_ctx.windows_sandbox_level,
-                    windows_sandbox_private_desktop: turn_ctx
-                        .config
-                        .permissions
-                        .windows_sandbox_private_desktop,
                 };
 
                 // Second attempt.

@@ -703,7 +703,7 @@ mod tests {
     use std::collections::HashMap;
     use std::path::PathBuf;
 
-    use codex_protocol::config_types::WindowsSandboxLevel;
+
     use codex_protocol::permissions::FileSystemSandboxPolicy;
     use codex_protocol::permissions::NetworkSandboxPolicy;
     use codex_protocol::protocol::ReadOnlyAccess;
@@ -734,8 +734,6 @@ mod tests {
             network: None,
             expiration: ExecExpiration::DefaultTimeout,
             sandbox: SandboxType::WindowsRestrictedToken,
-            windows_sandbox_level: WindowsSandboxLevel::Disabled,
-            windows_sandbox_private_desktop: false,
             sandbox_permissions: codex_core::sandboxing::SandboxPermissions::UseDefault,
             sandbox_policy: sandbox_policy.clone(),
             file_system_sandbox_policy: FileSystemSandboxPolicy::from(&sandbox_policy),
@@ -846,8 +844,6 @@ mod tests {
                     network: None,
                     expiration: ExecExpiration::Cancellation(CancellationToken::new()),
                     sandbox: SandboxType::None,
-                    windows_sandbox_level: WindowsSandboxLevel::Disabled,
-                    windows_sandbox_private_desktop: false,
                     sandbox_permissions: codex_core::sandboxing::SandboxPermissions::UseDefault,
                     sandbox_policy: sandbox_policy.clone(),
                     file_system_sandbox_policy: FileSystemSandboxPolicy::from(&sandbox_policy),

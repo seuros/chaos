@@ -1,4 +1,3 @@
-#![cfg(not(target_os = "windows"))]
 
 use codex_core::CodexAuth;
 use codex_core::features::Feature;

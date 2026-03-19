@@ -1,4 +1,3 @@
-#![cfg(not(target_os = "windows"))]
 
 use anyhow::Ok;
 use codex_app_server_protocol::ConfigLayerSource;

@@ -232,7 +232,6 @@ mod tests {
         );
     }
 
-    #[cfg(not(target_os = "windows"))]
     #[test]
     fn home_directory_root_on_non_windows_is_expanded_in_deserialization() {
         let Some(home) = home_dir() else {
@@ -246,7 +245,6 @@ mod tests {
         assert_eq!(abs_path_buf.as_path(), home.as_path());
     }
 
-    #[cfg(not(target_os = "windows"))]
     #[test]
     fn home_directory_subpath_on_non_windows_is_expanded_in_deserialization() {
         let Some(home) = home_dir() else {
@@ -260,7 +258,6 @@ mod tests {
         assert_eq!(abs_path_buf.as_path(), home.join("code").as_path());
     }
 
-    #[cfg(not(target_os = "windows"))]
     #[test]
     fn home_directory_double_slash_on_non_windows_is_expanded_in_deserialization() {
         let Some(home) = home_dir() else {
@@ -274,18 +271,4 @@ mod tests {
         assert_eq!(abs_path_buf.as_path(), home.join("code").as_path());
     }
 
-    #[cfg(target_os = "windows")]
-    #[test]
-    fn home_directory_on_windows_is_not_expanded_in_deserialization() {
-        let temp_dir = tempdir().expect("base dir");
-        let base_dir = temp_dir.path();
-        let abs_path_buf = {
-            let _guard = AbsolutePathBufGuard::new(base_dir);
-            serde_json::from_str::<AbsolutePathBuf>("\"~/code\"").expect("failed to deserialize")
-        };
-        assert_eq!(
-            abs_path_buf.as_path(),
-            base_dir.join("~").join("code").as_path()
-        );
-    }
 }

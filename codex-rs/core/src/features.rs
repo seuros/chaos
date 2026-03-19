@@ -116,9 +116,9 @@ pub enum Feature {
     UseLegacyLandlock,
     /// Allow the model to request approval and propose exec rules.
     RequestRule,
-    /// Enable Windows sandbox (restricted token) on Windows.
+    /// Removed: Windows sandbox (restricted token) on Windows.
     WindowsSandbox,
-    /// Use the elevated Windows sandbox pipeline (setup + runner).
+    /// Removed: elevated Windows sandbox pipeline (setup + runner).
     WindowsSandboxElevated,
     /// Legacy remote models flag kept for backward compatibility.
     RemoteModels,
@@ -136,7 +136,7 @@ pub enum Feature {
     ChildAgentsMd,
     /// Allow the model to request `detail: "original"` image outputs on supported models.
     ImageDetailOriginal,
-    /// Enforce UTF8 output in Powershell.
+    /// Removed: enforce UTF8 output in Powershell.
     PowershellUtf8,
     /// Compress request bodies (zstd) when sending streaming requests to codex-backend.
     EnableRequestCompression,
@@ -515,7 +515,7 @@ pub const FEATURES: &[FeatureSpec] = &[
         id: Feature::UnifiedExec,
         key: "unified_exec",
         stage: Stage::Stable,
-        default_enabled: !cfg!(windows),
+        default_enabled: true,
     },
     FeatureSpec {
         id: Feature::ShellZshFork,
@@ -809,11 +809,7 @@ pub const FEATURES: &[FeatureSpec] = &[
     FeatureSpec {
         id: Feature::PreventIdleSleep,
         key: "prevent_idle_sleep",
-        stage: if cfg!(any(
-            target_os = "macos",
-            target_os = "linux",
-            target_os = "windows"
-        )) {
+        stage: if cfg!(any(target_os = "macos", target_os = "linux")) {
             Stage::Experimental {
                 name: "Prevent sleep while running",
                 menu_description: "Keep your computer awake while Codex is running a thread.",

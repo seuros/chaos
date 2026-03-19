@@ -56,15 +56,7 @@ impl RealtimeAudioDeviceKind {
     }
 }
 
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
-#[cfg_attr(not(target_os = "windows"), allow(dead_code))]
-pub(crate) enum WindowsSandboxEnableMode {
-    Elevated,
-    Legacy,
-}
-
 #[derive(Debug, Clone)]
-#[cfg_attr(not(target_os = "windows"), allow(dead_code))]
 pub(crate) struct ConnectorsSnapshot {
     pub(crate) connectors: Vec<AppInfo>,
 }
@@ -262,68 +254,6 @@ pub(crate) enum AppEvent {
         return_to_permissions: bool,
     },
 
-    /// Open the Windows world-writable directories warning.
-    /// If `preset` is `Some`, the confirmation will apply the provided
-    /// approval/sandbox configuration on Continue; if `None`, it performs no
-    /// policy change and only acknowledges/dismisses the warning.
-    #[cfg_attr(not(target_os = "windows"), allow(dead_code))]
-    OpenWorldWritableWarningConfirmation {
-        preset: Option<ApprovalPreset>,
-        /// Up to 3 sample world-writable directories to display in the warning.
-        sample_paths: Vec<String>,
-        /// If there are more than `sample_paths`, this carries the remaining count.
-        extra_count: usize,
-        /// True when the scan failed (e.g. ACL query error) and protections could not be verified.
-        failed_scan: bool,
-    },
-
-    /// Prompt to enable the Windows sandbox feature before using Agent mode.
-    #[cfg_attr(not(target_os = "windows"), allow(dead_code))]
-    OpenWindowsSandboxEnablePrompt {
-        preset: ApprovalPreset,
-    },
-
-    /// Open the Windows sandbox fallback prompt after declining or failing elevation.
-    #[cfg_attr(not(target_os = "windows"), allow(dead_code))]
-    OpenWindowsSandboxFallbackPrompt {
-        preset: ApprovalPreset,
-    },
-
-    /// Begin the elevated Windows sandbox setup flow.
-    #[cfg_attr(not(target_os = "windows"), allow(dead_code))]
-    BeginWindowsSandboxElevatedSetup {
-        preset: ApprovalPreset,
-    },
-
-    /// Begin the non-elevated Windows sandbox setup flow.
-    #[cfg_attr(not(target_os = "windows"), allow(dead_code))]
-    BeginWindowsSandboxLegacySetup {
-        preset: ApprovalPreset,
-    },
-
-    /// Begin a non-elevated grant of read access for an additional directory.
-    #[cfg_attr(not(target_os = "windows"), allow(dead_code))]
-    BeginWindowsSandboxGrantReadRoot {
-        path: String,
-    },
-
-    /// Result of attempting to grant read access for an additional directory.
-    #[cfg_attr(not(target_os = "windows"), allow(dead_code))]
-    WindowsSandboxGrantReadRootCompleted {
-        path: PathBuf,
-        error: Option<String>,
-    },
-
-    /// Enable the Windows sandbox feature and switch to Agent mode.
-    #[cfg_attr(not(target_os = "windows"), allow(dead_code))]
-    EnableWindowsSandboxForAgentMode {
-        preset: ApprovalPreset,
-        mode: WindowsSandboxEnableMode,
-    },
-
-    /// Update the Windows sandbox feature mode without changing approval presets.
-    #[cfg_attr(not(target_os = "windows"), allow(dead_code))]
-
     /// Update the current approval policy in the running app and widget.
     UpdateAskForApprovalPolicy(AskForApproval),
 
@@ -341,10 +271,6 @@ pub(crate) enum AppEvent {
     /// Update whether the full access warning prompt has been acknowledged.
     UpdateFullAccessWarningAcknowledged(bool),
 
-    /// Update whether the world-writable directories warning has been acknowledged.
-    #[cfg_attr(not(target_os = "windows"), allow(dead_code))]
-    UpdateWorldWritableWarningAcknowledged(bool),
-
     /// Update whether the rate limit switch prompt has been acknowledged for the session.
     UpdateRateLimitSwitchPromptHidden(bool),
 
@@ -353,10 +279,6 @@ pub(crate) enum AppEvent {
 
     /// Persist the acknowledgement flag for the full access warning prompt.
     PersistFullAccessWarningAcknowledged,
-
-    /// Persist the acknowledgement flag for the world-writable directories warning.
-    #[cfg_attr(not(target_os = "windows"), allow(dead_code))]
-    PersistWorldWritableWarningAcknowledged,
 
     /// Persist the acknowledgement flag for the rate limit switch prompt.
     PersistRateLimitSwitchPromptHidden,
@@ -369,10 +291,6 @@ pub(crate) enum AppEvent {
         from_model: String,
         to_model: String,
     },
-
-    /// Skip the next world-writable scan (one-shot) after a user-confirmed continue.
-    #[cfg_attr(not(target_os = "windows"), allow(dead_code))]
-    SkipNextWorldWritableScan,
 
     /// Re-open the approval presets popup.
     OpenApprovalsPopup,

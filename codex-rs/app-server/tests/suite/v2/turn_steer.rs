@@ -72,13 +72,6 @@ async fn turn_steer_requires_active_turn() -> Result<()> {
 
 #[tokio::test]
 async fn turn_steer_rejects_oversized_text_input() -> Result<()> {
-    #[cfg(target_os = "windows")]
-    let shell_command = vec![
-        "powershell".to_string(),
-        "-Command".to_string(),
-        "Start-Sleep -Seconds 10".to_string(),
-    ];
-    #[cfg(not(target_os = "windows"))]
     let shell_command = vec!["sleep".to_string(), "10".to_string()];
 
     let tmp = TempDir::new()?;
@@ -175,13 +168,6 @@ async fn turn_steer_rejects_oversized_text_input() -> Result<()> {
 
 #[tokio::test]
 async fn turn_steer_returns_active_turn_id() -> Result<()> {
-    #[cfg(target_os = "windows")]
-    let shell_command = vec![
-        "powershell".to_string(),
-        "-Command".to_string(),
-        "Start-Sleep -Seconds 10".to_string(),
-    ];
-    #[cfg(not(target_os = "windows"))]
     let shell_command = vec!["sleep".to_string(), "10".to_string()];
 
     let tmp = TempDir::new()?;

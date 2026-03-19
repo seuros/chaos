@@ -1318,7 +1318,6 @@ impl Session {
             sub_id.clone(),
             cwd.clone(),
             session_configuration.sandbox_policy.get(),
-            session_configuration.windows_sandbox_level,
         ));
         let (current_date, timezone) = local_time_context();
         TurnContext {
@@ -5332,7 +5331,6 @@ async fn spawn_review_thread(
         review_turn_id.clone(),
         parent_turn_context.cwd.clone(),
         parent_turn_context.sandbox_policy.get(),
-        parent_turn_context.windows_sandbox_level,
     ));
 
     let review_turn_context = TurnContext {

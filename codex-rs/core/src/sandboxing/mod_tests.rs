@@ -13,7 +13,6 @@ use crate::protocol::NetworkAccess;
 use crate::protocol::ReadOnlyAccess;
 use crate::protocol::SandboxPolicy;
 use crate::tools::sandboxing::SandboxablePreference;
-use codex_protocol::config_types::WindowsSandboxLevel;
 use codex_protocol::models::FileSystemPermissions;
 #[cfg(target_os = "macos")]
 use codex_protocol::models::MacOsAutomationPermission;
@@ -44,7 +43,6 @@ fn danger_full_access_defaults_to_no_sandbox_without_network_requirements() {
         &FileSystemSandboxPolicy::unrestricted(),
         NetworkSandboxPolicy::Enabled,
         SandboxablePreference::Auto,
-        WindowsSandboxLevel::Disabled,
         false,
     );
     assert_eq!(sandbox, SandboxType::None);
@@ -53,12 +51,11 @@ fn danger_full_access_defaults_to_no_sandbox_without_network_requirements() {
 #[test]
 fn danger_full_access_uses_platform_sandbox_with_network_requirements() {
     let manager = SandboxManager::new();
-    let expected = crate::safety::get_platform_sandbox(false).unwrap_or(SandboxType::None);
+    let expected = crate::safety::get_platform_sandbox().unwrap_or(SandboxType::None);
     let sandbox = manager.select_initial(
         &FileSystemSandboxPolicy::unrestricted(),
         NetworkSandboxPolicy::Enabled,
         SandboxablePreference::Auto,
-        WindowsSandboxLevel::Disabled,
         true,
     );
     assert_eq!(sandbox, expected);
@@ -67,7 +64,7 @@ fn danger_full_access_uses_platform_sandbox_with_network_requirements() {
 #[test]
 fn restricted_file_system_uses_platform_sandbox_without_managed_network() {
     let manager = SandboxManager::new();
-    let expected = crate::safety::get_platform_sandbox(false).unwrap_or(SandboxType::None);
+    let expected = crate::safety::get_platform_sandbox().unwrap_or(SandboxType::None);
     let sandbox = manager.select_initial(
         &FileSystemSandboxPolicy::restricted(vec![FileSystemSandboxEntry {
             path: FileSystemPath::Special {
@@ -77,7 +74,6 @@ fn restricted_file_system_uses_platform_sandbox_without_managed_network() {
         }]),
         NetworkSandboxPolicy::Enabled,
         SandboxablePreference::Auto,
-        WindowsSandboxLevel::Disabled,
         false,
     );
     assert_eq!(sandbox, expected);
@@ -168,8 +164,6 @@ fn transform_preserves_unrestricted_file_system_policy_for_restricted_network() 
             macos_seatbelt_profile_extensions: None,
             codex_linux_sandbox_exe: None,
             use_legacy_landlock: false,
-            windows_sandbox_level: WindowsSandboxLevel::Disabled,
-            windows_sandbox_private_desktop: false,
         })
         .expect("transform");
 
@@ -502,8 +496,6 @@ fn transform_additional_permissions_enable_network_for_external_sandbox() {
             macos_seatbelt_profile_extensions: None,
             codex_linux_sandbox_exe: None,
             use_legacy_landlock: false,
-            windows_sandbox_level: WindowsSandboxLevel::Disabled,
-            windows_sandbox_private_desktop: false,
         })
         .expect("transform");
 
@@ -575,8 +567,6 @@ fn transform_additional_permissions_preserves_denied_entries() {
             macos_seatbelt_profile_extensions: None,
             codex_linux_sandbox_exe: None,
             use_legacy_landlock: false,
-            windows_sandbox_level: WindowsSandboxLevel::Disabled,
-            windows_sandbox_private_desktop: false,
         })
         .expect("transform");
 

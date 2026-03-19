@@ -246,7 +246,6 @@ use codex_protocol::ThreadId;
 use codex_protocol::config_types::CollaborationMode;
 use codex_protocol::config_types::ForcedLoginMethod;
 use codex_protocol::config_types::Personality;
-use codex_protocol::config_types::WindowsSandboxLevel;
 use codex_protocol::dynamic_tools::DynamicToolSpec as CoreDynamicToolSpec;
 use codex_protocol::items::TurnItem;
 use codex_protocol::models::ResponseItem;
@@ -1677,7 +1676,6 @@ impl CodexMessageProcessor {
             },
             None => None,
         };
-        let windows_sandbox_level = WindowsSandboxLevel::Disabled;
         let output_bytes_cap = if disable_output_cap {
             None
         } else {
@@ -1701,11 +1699,6 @@ impl CodexMessageProcessor {
                 .as_ref()
                 .map(codex_core::config::StartedNetworkProxy::proxy),
             sandbox_permissions: SandboxPermissions::UseDefault,
-            windows_sandbox_level,
-            windows_sandbox_private_desktop: self
-                .config
-                .permissions
-                .windows_sandbox_private_desktop,
             justification: None,
             arg0: None,
         };

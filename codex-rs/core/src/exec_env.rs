@@ -42,15 +42,7 @@ where
                 "HOME", "LOGNAME", "PATH", "SHELL", "USER", "USERNAME", "TMPDIR", "TEMP", "TMP",
             ];
             let allow: HashSet<&str> = CORE_VARS.iter().copied().collect();
-            let is_core_var = |name: &str| {
-                if cfg!(target_os = "windows") {
-                    CORE_VARS
-                        .iter()
-                        .any(|allowed| allowed.eq_ignore_ascii_case(name))
-                } else {
-                    allow.contains(name)
-                }
-            };
+            let is_core_var = |name: &str| allow.contains(name);
             vars.into_iter().filter(|(k, _)| is_core_var(k)).collect()
         }
     };

@@ -859,14 +859,72 @@ mod tests {
     use codex_core::AuthManager;
     use codex_core::ThreadManager;
     use codex_core::config::ConfigBuilder;
-    use futures::SinkExt;
-    use futures::StreamExt;
     use pretty_assertions::assert_eq;
+    use rama::http::ws::Message;
     use tokio::net::TcpListener;
     use tokio::time::Duration;
     use tokio::time::timeout;
-    use tokio_tungstenite::accept_async;
-    use tokio_tungstenite::tungstenite::Message;
+
+    type TestWsStream = rama::http::ws::AsyncWebSocket<rama::tcp::TcpStream>;
+
+    async fn accept_ws(
+        stream: tokio::net::TcpStream,
+    ) -> TestWsStream {
+        use base64::Engine;
+        use sha1::{Digest, Sha1};
+        use tokio::io::{AsyncBufReadExt, AsyncWriteExt, BufReader};
+
+        let mut reader = BufReader::new(stream);
+        let mut ws_key = None;
+        loop {
+            let mut line = String::new();
+            reader
+                .read_line(&mut line)
+                .await
+                .expect("read header line");
+            if line == "\r\n" || line == "\n" {
+                break;
+            }
+            if let Some((name, value)) = line.split_once(':') {
+                if name.trim().eq_ignore_ascii_case("sec-websocket-key") {
+                    ws_key = Some(value.trim().trim_end_matches(['\r', '\n']).to_string());
+                }
+            }
+        }
+        let ws_key = ws_key.expect("missing Sec-WebSocket-Key");
+        let mut hasher = Sha1::new();
+        hasher.update(ws_key.as_bytes());
+        hasher.update(b"258EAFA5-E914-47DA-95CA-5ADF5B3F4A84");
+        let accept = base64::engine::general_purpose::STANDARD.encode(hasher.finalize());
+        let remaining = reader.buffer().to_vec();
+        let mut stream = reader.into_inner();
+        stream
+            .write_all(
+                format!(
+                    "HTTP/1.1 101 Switching Protocols\r\nUpgrade: websocket\r\nConnection: Upgrade\r\nSec-WebSocket-Accept: {accept}\r\n\r\n"
+                )
+                .as_bytes(),
+            )
+            .await
+            .expect("write 101");
+        let stream = rama::tcp::TcpStream::new(stream);
+        if remaining.is_empty() {
+            rama::http::ws::AsyncWebSocket::from_raw_socket(
+                stream,
+                rama::http::ws::protocol::Role::Server,
+                None,
+            )
+            .await
+        } else {
+            rama::http::ws::AsyncWebSocket::from_partially_read(
+                stream,
+                remaining,
+                rama::http::ws::protocol::Role::Server,
+                None,
+            )
+            .await
+        }
+    }
 
     async fn build_test_config() -> Config {
         match ConfigBuilder::default().build().await {
@@ -906,7 +964,7 @@ mod tests {
 
     async fn start_test_remote_server<F, Fut>(handler: F) -> String
     where
-        F: FnOnce(tokio_tungstenite::WebSocketStream<tokio::net::TcpStream>) -> Fut
+        F: FnOnce(TestWsStream) -> Fut
             + Send
             + 'static,
         Fut: std::future::Future<Output = ()> + Send + 'static,
@@ -917,16 +975,14 @@ mod tests {
         let addr = listener.local_addr().expect("listener address");
         tokio::spawn(async move {
             let (stream, _) = listener.accept().await.expect("accept should succeed");
-            let websocket = accept_async(stream)
-                .await
-                .expect("websocket upgrade should succeed");
+            let websocket = accept_ws(stream).await;
             handler(websocket).await;
         });
         format!("ws://{addr}")
     }
 
     async fn expect_remote_initialize(
-        websocket: &mut tokio_tungstenite::WebSocketStream<tokio::net::TcpStream>,
+        websocket: &mut TestWsStream,
     ) {
         let JSONRPCMessage::Request(request) = read_websocket_message(websocket).await else {
             panic!("expected initialize request");
@@ -949,14 +1005,13 @@ mod tests {
     }
 
     async fn read_websocket_message(
-        websocket: &mut tokio_tungstenite::WebSocketStream<tokio::net::TcpStream>,
+        websocket: &mut TestWsStream,
     ) -> JSONRPCMessage {
         loop {
             let frame = websocket
-                .next()
+                .recv_message()
                 .await
-                .expect("frame should be available")
-                .expect("frame should decode");
+                .expect("frame should be available");
             match frame {
                 Message::Text(text) => {
                     return serde_json::from_str::<JSONRPCMessage>(&text)
@@ -971,14 +1026,13 @@ mod tests {
     }
 
     async fn write_websocket_message(
-        websocket: &mut tokio_tungstenite::WebSocketStream<tokio::net::TcpStream>,
+        websocket: &mut TestWsStream,
         message: JSONRPCMessage,
     ) {
         websocket
-            .send(Message::Text(
+            .send_message(Message::text(
                 serde_json::to_string(&message)
-                    .expect("message should serialize")
-                    .into(),
+                    .expect("message should serialize"),
             ))
             .await
             .expect("message should send");
@@ -1167,7 +1221,7 @@ mod tests {
                 }),
             )
             .await;
-            let _ = websocket.next().await;
+            let _ = websocket.recv_message().await;
         })
         .await;
         let client = RemoteAppServerClient::connect(test_remote_connect_args(websocket_url))

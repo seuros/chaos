@@ -26,9 +26,11 @@ url = { workspace = true }
 [dev-dependencies]
 anyhow = { workspace = true }
 assert_matches = { workspace = true }
+base64 = { workspace = true }
 pretty_assertions = { workspace = true }
+sha1 = { workspace = true }
+tokio = { workspace = true, features = ["io-util"] }
 tokio-test = { workspace = true }
-tokio-tungstenite = { workspace = true }
 wiremock = { workspace = true }
 reqwest = { workspace = true }
 

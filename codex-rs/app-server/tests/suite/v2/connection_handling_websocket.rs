@@ -10,8 +10,11 @@ use codex_app_server_protocol::JSONRPCNotification;
 use codex_app_server_protocol::JSONRPCRequest;
 use codex_app_server_protocol::JSONRPCResponse;
 use codex_app_server_protocol::RequestId;
-use futures::SinkExt;
-use futures::StreamExt;
+use rama::extensions::Extensions;
+use rama::http::client::EasyHttpConnectorBuilder;
+use rama::http::ws::Message as WebSocketMessage;
+use rama::http::ws::handshake::client::ClientWebSocket;
+use rama::http::ws::handshake::client::HttpClientWebSocketExt;
 use reqwest::StatusCode;
 use serde_json::json;
 use std::net::SocketAddr;
@@ -26,14 +29,10 @@ use tokio::time::Duration;
 use tokio::time::Instant;
 use tokio::time::sleep;
 use tokio::time::timeout;
-use tokio_tungstenite::MaybeTlsStream;
-use tokio_tungstenite::WebSocketStream;
-use tokio_tungstenite::connect_async;
-use tokio_tungstenite::tungstenite::Message as WebSocketMessage;
 
 pub(super) const DEFAULT_READ_TIMEOUT: Duration = Duration::from_secs(5);
 
-pub(super) type WsClient = WebSocketStream<MaybeTlsStream<tokio::net::TcpStream>>;
+pub(super) type WsClient = ClientWebSocket;
 
 #[tokio::test]
 async fn websocket_transport_routes_per_connection_handshake_and_responses() -> Result<()> {
@@ -180,8 +179,15 @@ pub(super) async fn connect_websocket(bind_addr: SocketAddr) -> Result<WsClient>
     let url = format!("ws://{bind_addr}");
     let deadline = Instant::now() + Duration::from_secs(10);
     loop {
-        match connect_async(&url).await {
-            Ok((stream, _response)) => return Ok(stream),
+        let client = EasyHttpConnectorBuilder::new()
+            .with_default_transport_connector()
+            .without_tls_proxy_support()
+            .without_proxy_support()
+            .without_tls_support()
+            .with_default_http_connector(Default::default())
+            .build_client();
+        match client.websocket(&url).handshake(Extensions::default()).await {
+            Ok(ws) => return Ok(ws),
             Err(err) => {
                 if Instant::now() >= deadline {
                     bail!("failed to connect websocket to {url}: {err}");
@@ -266,9 +272,9 @@ pub(super) async fn send_request(
 async fn send_jsonrpc(stream: &mut WsClient, message: JSONRPCMessage) -> Result<()> {
     let payload = serde_json::to_string(&message)?;
     stream
-        .send(WebSocketMessage::Text(payload.into()))
+        .send_message(WebSocketMessage::text(payload))
         .await
-        .context("failed to send websocket frame")
+        .map_err(|e| anyhow::anyhow!("failed to send websocket frame: {e}"))
 }
 
 pub(super) async fn read_response_for_id(
@@ -350,32 +356,33 @@ async fn read_error_for_id(stream: &mut WsClient, id: i64) -> Result<JSONRPCErro
 
 pub(super) async fn read_jsonrpc_message(stream: &mut WsClient) -> Result<JSONRPCMessage> {
     loop {
-        let frame = timeout(DEFAULT_READ_TIMEOUT, stream.next())
+        let frame = timeout(DEFAULT_READ_TIMEOUT, stream.recv_message())
             .await
             .context("timed out waiting for websocket frame")?
-            .context("websocket stream ended unexpectedly")?
-            .context("failed to read websocket frame")?;
+            .map_err(|e| anyhow::anyhow!("{e}"))?;
 
         match frame {
             WebSocketMessage::Text(text) => return Ok(serde_json::from_str(text.as_ref())?),
             WebSocketMessage::Ping(payload) => {
-                stream.send(WebSocketMessage::Pong(payload)).await?;
+                stream
+                    .send_message(WebSocketMessage::Pong(payload))
+                    .await
+                    .map_err(|e| anyhow::anyhow!("{e}"))?;
             }
             WebSocketMessage::Pong(_) => {}
             WebSocketMessage::Close(frame) => {
                 bail!("websocket closed unexpectedly: {frame:?}")
             }
             WebSocketMessage::Binary(_) => bail!("unexpected binary websocket frame"),
-            WebSocketMessage::Frame(_) => {}
+            _ => {}
         }
     }
 }
 
 pub(super) async fn assert_no_message(stream: &mut WsClient, wait_for: Duration) -> Result<()> {
-    match timeout(wait_for, stream.next()).await {
-        Ok(Some(Ok(frame))) => bail!("unexpected frame while waiting for silence: {frame:?}"),
-        Ok(Some(Err(err))) => bail!("unexpected websocket read error: {err}"),
-        Ok(None) => bail!("websocket closed unexpectedly while waiting for silence"),
+    match timeout(wait_for, stream.recv_message()).await {
+        Ok(Ok(frame)) => bail!("unexpected frame while waiting for silence: {frame:?}"),
+        Ok(Err(_)) => bail!("websocket read error while waiting for silence"),
         Err(_) => Ok(()),
     }
 }

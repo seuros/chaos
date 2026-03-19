@@ -24,20 +24,20 @@ use std::collections::HashMap;
 use std::sync::Arc;
 use std::sync::atomic::AtomicBool;
 use std::sync::atomic::Ordering;
-use tokio::net::TcpStream;
+use rama::error::BoxError;
+use rama::extensions::Extensions;
+use rama::http::client::EasyHttpConnectorBuilder;
+use rama::http::ws::Message;
+use rama::http::ws::handshake::client::ClientWebSocket;
+use rama::http::ws::handshake::client::HttpClientWebSocketExt;
+use rama::tls::rustls::client::TlsConnectorData;
 use tokio::sync::Mutex;
 use tokio::sync::mpsc;
 use tokio::sync::oneshot;
-use tokio_tungstenite::MaybeTlsStream;
-use tokio_tungstenite::WebSocketStream;
-use tokio_tungstenite::tungstenite::Error as WsError;
-use tokio_tungstenite::tungstenite::Message;
-use tokio_tungstenite::tungstenite::client::IntoClientRequest;
 use tracing::debug;
 use tracing::error;
 use tracing::info;
 use tracing::trace;
-use tungstenite::protocol::WebSocketConfig;
 use url::Url;
 
 struct WsStream {
@@ -48,19 +48,19 @@ struct WsStream {
 enum WsCommand {
     Send {
         message: Message,
-        tx_result: oneshot::Sender<Result<(), WsError>>,
+        tx_result: oneshot::Sender<Result<(), BoxError>>,
     },
     Close {
-        tx_result: oneshot::Sender<Result<(), WsError>>,
+        tx_result: oneshot::Sender<Result<(), BoxError>>,
     },
 }
 
 impl WsStream {
     fn new(
-        inner: WebSocketStream<MaybeTlsStream<TcpStream>>,
-    ) -> (Self, mpsc::UnboundedReceiver<Result<Message, WsError>>) {
+        inner: ClientWebSocket,
+    ) -> (Self, mpsc::UnboundedReceiver<Result<Message, BoxError>>) {
         let (tx_command, mut rx_command) = mpsc::channel::<WsCommand>(32);
-        let (tx_message, rx_message) = mpsc::unbounded_channel::<Result<Message, WsError>>();
+        let (tx_message, rx_message) = mpsc::unbounded_channel::<Result<Message, BoxError>>();
 
         let pump_task = tokio::spawn(async move {
             let mut inner = inner;
@@ -73,7 +73,8 @@ impl WsStream {
                         match command {
                             WsCommand::Send { message, tx_result } => {
                                 debug!("realtime websocket sending message");
-                                let result = inner.send(message).await;
+                                let result: Result<(), BoxError> = inner.send(message).await
+                                    .map_err(|e| -> BoxError { Box::new(e) });
                                 let should_break = result.is_err();
                                 if let Err(err) = &result {
                                     error!("realtime websocket send failed: {err}");
@@ -85,7 +86,8 @@ impl WsStream {
                             }
                             WsCommand::Close { tx_result } => {
                                 info!("realtime websocket sending close");
-                                let result = inner.close(None).await;
+                                let result: Result<(), BoxError> = inner.close(None).await
+                                    .map_err(|e| -> BoxError { Box::new(e) });
                                 if let Err(err) = &result {
                                     error!("realtime websocket close failed: {err}");
                                 }
@@ -103,7 +105,7 @@ impl WsStream {
                                 trace!(payload_len = payload.len(), "realtime websocket received ping");
                                 if let Err(err) = inner.send(Message::Pong(payload)).await {
                                     error!("realtime websocket failed to send pong: {err}");
-                                    let _ = tx_message.send(Err(err));
+                                    let _ = tx_message.send(Err(Box::new(err) as BoxError));
                                     break;
                                 }
                             }
@@ -140,7 +142,7 @@ impl WsStream {
                             }
                             Err(err) => {
                                 error!("realtime websocket receive failed: {err}");
-                                let _ = tx_message.send(Err(err));
+                                let _ = tx_message.send(Err(Box::new(err) as BoxError));
                                 break;
                             }
                         }
@@ -161,21 +163,21 @@ impl WsStream {
 
     async fn request(
         &self,
-        make_command: impl FnOnce(oneshot::Sender<Result<(), WsError>>) -> WsCommand,
-    ) -> Result<(), WsError> {
+        make_command: impl FnOnce(oneshot::Sender<Result<(), BoxError>>) -> WsCommand,
+    ) -> Result<(), BoxError> {
         let (tx_result, rx_result) = oneshot::channel();
         if self.tx_command.send(make_command(tx_result)).await.is_err() {
-            return Err(WsError::ConnectionClosed);
+            return Err("connection closed".into());
         }
-        rx_result.await.unwrap_or(Err(WsError::ConnectionClosed))
+        rx_result.await.unwrap_or_else(|_| Err("connection closed".into()))
     }
 
-    async fn send(&self, message: Message) -> Result<(), WsError> {
+    async fn send(&self, message: Message) -> Result<(), BoxError> {
         self.request(|tx_result| WsCommand::Send { message, tx_result })
             .await
     }
 
-    async fn close(&self) -> Result<(), WsError> {
+    async fn close(&self) -> Result<(), BoxError> {
         self.request(|tx_result| WsCommand::Close { tx_result })
             .await
     }
@@ -201,7 +203,7 @@ pub struct RealtimeWebsocketWriter {
 
 #[derive(Clone)]
 pub struct RealtimeWebsocketEvents {
-    rx_message: Arc<Mutex<mpsc::UnboundedReceiver<Result<Message, WsError>>>>,
+    rx_message: Arc<Mutex<mpsc::UnboundedReceiver<Result<Message, BoxError>>>>,
     active_transcript: Arc<Mutex<ActiveTranscriptState>>,
     event_parser: RealtimeEventParser,
     is_closed: Arc<AtomicBool>,
@@ -249,7 +251,7 @@ impl RealtimeWebsocketConnection {
 
     fn new(
         stream: WsStream,
-        rx_message: mpsc::UnboundedReceiver<Result<Message, WsError>>,
+        rx_message: mpsc::UnboundedReceiver<Result<Message, BoxError>>,
         event_parser: RealtimeEventParser,
     ) -> Self {
         let stream = Arc::new(stream);
@@ -309,12 +311,8 @@ impl RealtimeWebsocketWriter {
         if self.is_closed.swap(true, Ordering::SeqCst) {
             return Ok(());
         }
-        if let Err(err) = self.stream.close().await
-            && !matches!(err, WsError::ConnectionClosed | WsError::AlreadyClosed)
-        {
-            return Err(ApiError::Stream(format!(
-                "failed to close websocket: {err}"
-            )));
+        if let Err(err) = self.stream.close().await {
+            debug!("realtime websocket close error (may already be closed): {err}");
         }
         Ok(())
     }
@@ -331,7 +329,7 @@ impl RealtimeWebsocketWriter {
         }
 
         self.stream
-            .send(Message::Text(payload.into()))
+            .send(Message::text(payload))
             .await
             .map_err(|err| ApiError::Stream(format!("failed to send realtime request: {err}")))?;
         Ok(())
@@ -452,38 +450,49 @@ impl RealtimeWebsocketClient {
             config.session_mode,
         )?;
 
-        let mut request = ws_url
-            .as_str()
-            .into_client_request()
-            .map_err(|err| ApiError::Stream(format!("failed to build websocket request: {err}")))?;
         let headers = merge_request_headers(
             &self.provider.headers,
             with_session_id_header(extra_headers, config.session_id.as_deref())?,
             default_headers,
         );
-        request.headers_mut().extend(headers);
 
         info!("connecting realtime websocket: {ws_url}");
-        // Realtime websocket TLS should honor the same custom-CA env vars as the rest of Codex's
-        // outbound HTTPS and websocket traffic.
-        let connector = maybe_build_rustls_client_config_with_custom_ca()
+        let tls_data = match maybe_build_rustls_client_config_with_custom_ca()
             .map_err(|err| ApiError::Stream(format!("failed to configure websocket TLS: {err}")))?
-            .map(tokio_tungstenite::Connector::Rustls);
-        let (stream, response) = tokio_tungstenite::connect_async_tls_with_config(
-            request,
-            Some(websocket_config()),
-            false,
-            connector,
-        )
-        .await
-        .map_err(|err| ApiError::Stream(format!("failed to connect realtime websocket: {err}")))?;
+        {
+            Some(config) => TlsConnectorData::from(config),
+            None => TlsConnectorData::try_new_http_auto()
+                .map_err(|err| ApiError::Stream(format!("failed to configure websocket TLS: {err}")))?,
+        };
+
+        let client = EasyHttpConnectorBuilder::new()
+            .with_default_transport_connector()
+            .without_tls_proxy_support()
+            .without_proxy_support()
+            .with_tls_support_using_rustls(Some(tls_data))
+            .with_default_http_connector(Default::default())
+            .build_client();
+
+        let mut ws_builder = client.websocket(ws_url.as_str());
+        for (name, value) in &headers {
+            ws_builder = ws_builder.with_header(name.as_str(), value.to_str().map_err(|err| {
+                ApiError::Stream(format!("invalid header value for {name}: {err}"))
+            })?);
+        }
+
+        let ws = ws_builder
+            .handshake(Extensions::default())
+            .await
+            .map_err(|err| ApiError::Stream(format!("failed to connect realtime websocket: {err}")))?;
+
+        let response_parts = ws.response();
         info!(
             ws_url = %ws_url,
-            status = %response.status(),
+            status = %response_parts.status,
             "realtime websocket connected"
         );
 
-        let (stream, rx_message) = WsStream::new(stream);
+        let (stream, rx_message) = WsStream::new(ws);
         let connection = RealtimeWebsocketConnection::new(stream, rx_message, config.event_parser);
         debug!(
             session_id = config.session_id.as_deref().unwrap_or("<none>"),
@@ -526,10 +535,6 @@ fn with_session_id_header(
         })?,
     );
     Ok(headers)
-}
-
-fn websocket_config() -> WebSocketConfig {
-    WebSocketConfig::default()
 }
 
 fn websocket_url_from_api_url(
@@ -624,7 +629,7 @@ mod tests {
     use std::time::Duration;
     use tokio::net::TcpListener;
     use tokio_tungstenite::accept_async;
-    use tokio_tungstenite::tungstenite::Message;
+    use tokio_tungstenite::tungstenite::Message as WsMessage;
 
     #[test]
     fn parse_session_updated_event() {
@@ -1016,7 +1021,7 @@ mod tests {
                 Value::String("fathom".to_string())
             );
 
-            ws.send(Message::Text(
+            ws.send(WsMessage::Text(
                 json!({
                     "type": "session.updated",
                     "session": {"id": "sess_mock", "instructions": "backend prompt"}
@@ -1060,7 +1065,7 @@ mod tests {
             assert_eq!(fourth_json["handoff_id"], "handoff_1");
             assert_eq!(fourth_json["output_text"], "hello from codex");
 
-            ws.send(Message::Text(
+            ws.send(WsMessage::Text(
                 json!({
                     "type": "conversation.output_audio.delta",
                     "delta": "AQID",
@@ -1073,7 +1078,7 @@ mod tests {
             .await
             .expect("send audio");
 
-            ws.send(Message::Text(
+            ws.send(WsMessage::Text(
                 json!({
                     "type": "conversation.input_transcript.delta",
                     "delta": "delegate "
@@ -1084,7 +1089,7 @@ mod tests {
             .await
             .expect("send input transcript delta");
 
-            ws.send(Message::Text(
+            ws.send(WsMessage::Text(
                 json!({
                     "type": "conversation.input_transcript.delta",
                     "delta": "now"
@@ -1095,7 +1100,7 @@ mod tests {
             .await
             .expect("send input transcript delta");
 
-            ws.send(Message::Text(
+            ws.send(WsMessage::Text(
                 json!({
                     "type": "conversation.output_transcript.delta",
                     "delta": "working"
@@ -1106,7 +1111,7 @@ mod tests {
             .await
             .expect("send output transcript delta");
 
-            ws.send(Message::Text(
+            ws.send(WsMessage::Text(
                 json!({
                     "type": "conversation.handoff.requested",
                     "handoff_id": "handoff_1",
@@ -1302,7 +1307,7 @@ mod tests {
                 json!(["prompt"])
             );
 
-            ws.send(Message::Text(
+            ws.send(WsMessage::Text(
                 json!({
                     "type": "session.updated",
                     "session": {"id": "sess_v2", "instructions": "backend prompt"}
@@ -1440,7 +1445,7 @@ mod tests {
             assert!(first_json["session"]["audio"].get("output").is_none());
             assert!(first_json["session"].get("tools").is_none());
 
-            ws.send(Message::Text(
+            ws.send(WsMessage::Text(
                 json!({
                     "type": "session.updated",
                     "session": {"id": "sess_transcription"}
@@ -1551,7 +1556,7 @@ mod tests {
             );
             assert!(first_json["session"].get("tools").is_none());
 
-            ws.send(Message::Text(
+            ws.send(WsMessage::Text(
                 json!({
                     "type": "session.updated",
                     "session": {"id": "sess_v1_mode"}
@@ -1639,7 +1644,7 @@ mod tests {
             let second_json: Value = serde_json::from_str(&second).expect("json");
             assert_eq!(second_json["type"], "input_audio_buffer.append");
 
-            ws.send(Message::Text(
+            ws.send(WsMessage::Text(
                 json!({
                     "type": "session.updated",
                     "session": {"id": "sess_after_send", "instructions": "backend prompt"}

@@ -11,8 +11,8 @@ use std::future::Future;
 use std::sync::Arc;
 use std::time::Duration;
 use tokio::time::Instant;
-use tokio_tungstenite::tungstenite::Error;
-use tokio_tungstenite::tungstenite::Message;
+use rama::error::BoxError;
+use rama::http::ws::Message;
 
 /// Generic telemetry.
 pub trait SseTelemetry: Send + Sync {
@@ -37,7 +37,7 @@ pub trait WebsocketTelemetry: Send + Sync {
 
     fn on_ws_event(
         &self,
-        result: &Result<Option<Result<Message, Error>>, ApiError>,
+        result: &Result<Option<Result<Message, BoxError>>, ApiError>,
         duration: Duration,
     );
 }

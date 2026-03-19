@@ -564,3 +564,33 @@ fn sanitize_slug(name: &str) -> String {
 fn format_connector_label(name: &str, _id: &str) -> String {
     name.to_string()
 }
+
+/// Returns an empty list. All connectors are surfaced via MCP tools.
+pub async fn list_all_connectors_with_options(
+    _config: &Config,
+    _force_refetch: bool,
+) -> anyhow::Result<Vec<AppInfo>> {
+    Ok(Vec::new())
+}
+
+/// Returns an empty list from cache. All connectors are surfaced via MCP tools.
+pub async fn list_cached_all_connectors(_config: &Config) -> Option<Vec<AppInfo>> {
+    Some(Vec::new())
+}
+
+/// Filter `connectors` down to only those matching `plugin_apps`, after
+/// merging plugin app entries and removing disallowed connector IDs.
+pub fn connectors_for_plugin_apps(
+    connectors: Vec<AppInfo>,
+    plugin_apps: &[crate::plugins::AppConnectorId],
+) -> Vec<AppInfo> {
+    let plugin_app_ids: HashSet<&str> = plugin_apps
+        .iter()
+        .map(|connector_id| connector_id.0.as_str())
+        .collect();
+
+    filter_disallowed_connectors(merge_plugin_apps(connectors, plugin_apps.to_vec()))
+        .into_iter()
+        .filter(|connector| plugin_app_ids.contains(connector.id.as_str()))
+        .collect()
+}

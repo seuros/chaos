@@ -5,8 +5,6 @@
 //! booleans through multiple types, call sites consult a single `Features`
 //! container attached to `Config`.
 
-use crate::auth::AuthManager;
-use crate::auth::CodexAuth;
 use crate::config::Config;
 use crate::config::ConfigToml;
 use crate::config::profile::ConfigProfile;
@@ -267,20 +265,6 @@ impl Features {
 
     pub fn enabled(&self, f: Feature) -> bool {
         self.enabled.contains(&f)
-    }
-
-    pub async fn apps_enabled(&self, auth_manager: Option<&AuthManager>) -> bool {
-        let _ = auth_manager;
-        false
-    }
-
-    pub fn apps_enabled_cached(&self, auth_manager: Option<&AuthManager>) -> bool {
-        let _ = auth_manager;
-        false
-    }
-
-    pub(crate) fn apps_enabled_for_auth(&self, _auth: Option<&CodexAuth>) -> bool {
-        false
     }
 
     pub fn use_legacy_landlock(&self) -> bool {

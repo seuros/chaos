@@ -52,7 +52,7 @@ use crate::text_formatting::proper_join;
 use crate::version::CODEX_CLI_VERSION;
 use codex_app_server_protocol::ConfigLayerSource;
 use codex_backend_client::Client as BackendClient;
-use codex_chatgpt::connectors;
+use codex_core::connectors;
 use codex_core::config::Config;
 use codex_core::config::Constrained;
 use codex_core::config::ConstraintResult;
@@ -6077,11 +6077,8 @@ impl ChatWidget {
             let result: Result<ConnectorsSnapshot, String> = async {
                 let all_connectors =
                     connectors::list_all_connectors_with_options(&config, force_refetch).await?;
-                let connectors = connectors::merge_connectors_with_accessible(
-                    all_connectors,
-                    accessible_connectors,
-                    /*all_connectors_loaded*/ true,
-                );
+                let connectors =
+                    connectors::merge_connectors(all_connectors, accessible_connectors);
                 Ok(ConnectorsSnapshot { connectors })
             }
             .await
@@ -7070,8 +7067,7 @@ impl ChatWidget {
         #[cfg(not(target_os = "windows"))]
         let windows_degraded_sandbox_enabled = false;
 
-        let show_elevate_sandbox_hint = codex_core::windows_sandbox::ELEVATED_SANDBOX_NUX_ENABLED
-            && windows_degraded_sandbox_enabled
+        let show_elevate_sandbox_hint = windows_degraded_sandbox_enabled
             && presets.iter().any(|preset| preset.id == "auto");
 
         let guardian_disabled_reason = |enabled: bool| {
@@ -7344,31 +7340,6 @@ impl ChatWidget {
         }
     }
 
-    #[cfg(target_os = "windows")]
-    pub(crate) fn world_writable_warning_details(&self) -> Option<(Vec<String>, usize, bool)> {
-        if self
-            .config
-            .notices
-            .hide_world_writable_warning
-            .unwrap_or(false)
-        {
-            return None;
-        }
-        let cwd = self.config.cwd.clone();
-        let env_map: std::collections::HashMap<String, String> = std::env::vars().collect();
-        match codex_windows_sandbox::apply_world_writable_scan_and_denies(
-            self.config.codex_home.as_path(),
-            cwd.as_path(),
-            &env_map,
-            self.config.permissions.sandbox_policy.get(),
-            Some(self.config.codex_home.as_path()),
-        ) {
-            Ok(_) => None,
-            Err(_) => Some((Vec::new(), 0, true)),
-        }
-    }
-
-    #[cfg(not(target_os = "windows"))]
     #[allow(dead_code)]
     pub(crate) fn world_writable_warning_details(&self) -> Option<(Vec<String>, usize, bool)> {
         None
@@ -8307,9 +8278,7 @@ impl ChatWidget {
     }
 
     fn connectors_enabled(&self) -> bool {
-        self.config
-            .features
-            .apps_enabled_cached(Some(self.auth_manager.as_ref()))
+        false
     }
 
     fn connectors_for_mentions(&self) -> Option<&[connectors::AppInfo]> {
@@ -8909,11 +8878,8 @@ impl ChatWidget {
         match result {
             Ok(mut snapshot) => {
                 if !is_final {
-                    snapshot.connectors = connectors::merge_connectors_with_accessible(
-                        Vec::new(),
-                        snapshot.connectors,
-                        /*all_connectors_loaded*/ false,
-                    );
+                    snapshot.connectors =
+                        connectors::merge_connectors(Vec::new(), snapshot.connectors);
                 }
                 snapshot.connectors =
                     connectors::with_app_enabled_state(snapshot.connectors, &self.config);

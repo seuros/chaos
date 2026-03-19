@@ -117,19 +117,8 @@ fn build_command(shell: &CommandShell, handler: &ConfiguredHandler) -> Command {
 }
 
 fn default_shell_command() -> Command {
-    #[cfg(windows)]
-    {
-        let comspec = std::env::var("COMSPEC").unwrap_or_else(|_| "cmd.exe".to_string());
-        let mut command = Command::new(comspec);
-        command.arg("/C");
-        command
-    }
-
-    #[cfg(not(windows))]
-    {
-        let shell = std::env::var("SHELL").unwrap_or_else(|_| "/bin/sh".to_string());
-        let mut command = Command::new(shell);
-        command.arg("-lc");
-        command
-    }
+    let shell = std::env::var("SHELL").unwrap_or_else(|_| "/bin/sh".to_string());
+    let mut command = Command::new(shell);
+    command.arg("-lc");
+    command
 }

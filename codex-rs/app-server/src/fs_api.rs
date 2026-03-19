@@ -276,36 +276,7 @@ fn resolve_copy_destination_path(path: &Path) -> io::Result<PathBuf> {
 
 fn copy_symlink(source: &Path, target: &Path) -> io::Result<()> {
     let link_target = std::fs::read_link(source)?;
-    #[cfg(unix)]
-    {
-        std::os::unix::fs::symlink(&link_target, target)
-    }
-    #[cfg(windows)]
-    {
-        if symlink_points_to_directory(source)? {
-            std::os::windows::fs::symlink_dir(&link_target, target)
-        } else {
-            std::os::windows::fs::symlink_file(&link_target, target)
-        }
-    }
-    #[cfg(not(any(unix, windows)))]
-    {
-        let _ = link_target;
-        let _ = target;
-        Err(io::Error::new(
-            io::ErrorKind::Unsupported,
-            "copying symlinks is unsupported on this platform",
-        ))
-    }
-}
-
-#[cfg(windows)]
-fn symlink_points_to_directory(source: &Path) -> io::Result<bool> {
-    use std::os::windows::fs::FileTypeExt;
-
-    Ok(std::fs::symlink_metadata(source)?
-        .file_type()
-        .is_symlink_dir())
+    std::os::unix::fs::symlink(&link_target, target)
 }
 
 fn system_time_to_unix_ms(time: SystemTime) -> i64 {
@@ -339,27 +310,3 @@ pub(crate) fn map_io_error(err: io::Error) -> JSONRPCErrorError {
     }
 }
 
-#[cfg(all(test, windows))]
-mod tests {
-    use super::*;
-    use pretty_assertions::assert_eq;
-
-    #[test]
-    fn symlink_points_to_directory_handles_dangling_directory_symlinks() -> io::Result<()> {
-        use std::os::windows::fs::symlink_dir;
-
-        let temp_dir = tempfile::TempDir::new()?;
-        let source_dir = temp_dir.path().join("source");
-        let link_path = temp_dir.path().join("source-link");
-        std::fs::create_dir(&source_dir)?;
-
-        if symlink_dir(&source_dir, &link_path).is_err() {
-            return Ok(());
-        }
-
-        std::fs::remove_dir(&source_dir)?;
-
-        assert_eq!(symlink_points_to_directory(&link_path)?, true);
-        Ok(())
-    }
-}

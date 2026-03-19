@@ -675,13 +675,7 @@ pub const FEATURES: &[FeatureSpec] = &[
     FeatureSpec {
         id: Feature::PowershellUtf8,
         key: "powershell_utf8",
-        #[cfg(windows)]
-        stage: Stage::Stable,
-        #[cfg(windows)]
-        default_enabled: true,
-        #[cfg(not(windows))]
-        stage: Stage::UnderDevelopment,
-        #[cfg(not(windows))]
+        stage: Stage::Removed,
         default_enabled: false,
     },
     FeatureSpec {

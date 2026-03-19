@@ -7,7 +7,6 @@ use codex_arg0::Arg0DispatchPaths;
 use codex_arg0::arg0_dispatch_or_else;
 use codex_cli::LandlockCommand;
 use codex_cli::SeatbeltCommand;
-use codex_cli::WindowsCommand;
 use codex_cli::login::read_api_key_from_stdin;
 use codex_cli::login::run_login_status;
 use codex_cli::login::run_login_with_api_key;
@@ -33,7 +32,6 @@ mod app_cmd;
 #[cfg(target_os = "macos")]
 mod desktop_app;
 mod mcp_cmd;
-#[cfg(not(windows))]
 mod wsl_paths;
 
 use crate::mcp_cmd::McpCli;
@@ -197,8 +195,6 @@ enum SandboxCommand {
     #[clap(visible_alias = "landlock")]
     Linux(LandlockCommand),
 
-    /// Run a command under Windows restricted token (Windows only).
-    Windows(WindowsCommand),
 }
 
 #[derive(Debug, Parser)]
@@ -395,27 +391,15 @@ fn run_update_action(action: UpdateAction) -> anyhow::Result<()> {
     let cmd_str = action.command_str();
     println!("Updating Codex via `{cmd_str}`...");
 
-    let status = {
-        #[cfg(windows)]
-        {
-            // On Windows, run via cmd.exe so .CMD/.BAT are correctly resolved (PATHEXT semantics).
-            std::process::Command::new("cmd")
-                .args(["/C", &cmd_str])
-                .status()?
-        }
-        #[cfg(not(windows))]
-        {
-            let (cmd, args) = action.command_args();
-            let command_path = crate::wsl_paths::normalize_for_wsl(cmd);
-            let normalized_args: Vec<String> = args
-                .iter()
-                .map(crate::wsl_paths::normalize_for_wsl)
-                .collect();
-            std::process::Command::new(&command_path)
-                .args(&normalized_args)
-                .status()?
-        }
-    };
+    let (cmd, args) = action.command_args();
+    let command_path = crate::wsl_paths::normalize_for_wsl(cmd);
+    let normalized_args: Vec<String> = args
+        .iter()
+        .map(crate::wsl_paths::normalize_for_wsl)
+        .collect();
+    let status = std::process::Command::new(&command_path)
+        .args(&normalized_args)
+        .status()?;
     if !status.success() {
         anyhow::bail!("`{cmd_str}` failed with status {status}");
     }
@@ -717,18 +701,6 @@ async fn cli_main(arg0_paths: Arg0DispatchPaths) -> anyhow::Result<()> {
                 );
                 codex_cli::debug_sandbox::run_command_under_landlock(
                     landlock_cli,
-                    arg0_paths.codex_linux_sandbox_exe.clone(),
-                )
-                .await?;
-            }
-            SandboxCommand::Windows(mut windows_cli) => {
-                reject_remote_mode_for_subcommand(root_remote.as_deref(), "sandbox windows")?;
-                prepend_config_flags(
-                    &mut windows_cli.config_overrides,
-                    root_config_overrides.clone(),
-                );
-                codex_cli::debug_sandbox::run_command_under_windows(
-                    windows_cli,
                     arg0_paths.codex_linux_sandbox_exe.clone(),
                 )
                 .await?;

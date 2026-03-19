@@ -1,8 +1,7 @@
-#[cfg(unix)]
-use std::os::unix::process::ExitStatusExt;
-
 use std::collections::HashMap;
 use std::io;
+#[cfg(target_family = "unix")]
+use std::os::unix::process::ExitStatusExt;
 use std::path::Path;
 use std::path::PathBuf;
 use std::process::ExitStatus;
@@ -331,35 +330,6 @@ pub(crate) async fn execute_exec_request(
     finalize_exec_result(raw_output_result, sandbox, duration)
 }
 
-#[cfg(target_os = "windows")]
-fn extract_create_process_as_user_error_code(err: &str) -> Option<String> {
-    let marker = "CreateProcessAsUserW failed: ";
-    let start = err.find(marker)? + marker.len();
-    let tail = &err[start..];
-    let digits: String = tail.chars().take_while(char::is_ascii_digit).collect();
-    if digits.is_empty() {
-        None
-    } else {
-        Some(digits)
-    }
-}
-
-#[cfg(target_os = "windows")]
-fn windowsapps_path_kind(path: &str) -> &'static str {
-    let lower = path.to_ascii_lowercase();
-    if lower.contains("\\program files\\windowsapps\\") {
-        return "windowsapps_package";
-    }
-    if lower.contains("\\appdata\\local\\microsoft\\windowsapps\\") {
-        return "windowsapps_alias";
-    }
-    if lower.contains("\\windowsapps\\") {
-        return "windowsapps_other";
-    }
-    "other"
-}
-
-
 fn finalize_exec_result(
     raw_output_result: std::result::Result<RawExecToolCallOutput, CodexErr>,
     sandbox_type: SandboxType,
@@ -651,7 +621,7 @@ async fn exec(
     consume_truncated_output(child, expiration, stdout_stream).await
 }
 
-#[cfg_attr(not(target_os = "windows"), allow(dead_code))]
+#[allow(dead_code)]
 fn should_use_windows_restricted_token_sandbox(
     sandbox: SandboxType,
     sandbox_policy: &SandboxPolicy,
@@ -665,7 +635,7 @@ fn should_use_windows_restricted_token_sandbox(
         )
 }
 
-#[cfg(any(target_os = "windows", test))]
+#[cfg(test)]
 fn unsupported_windows_restricted_token_sandbox_reason(
     sandbox: SandboxType,
     sandbox_policy: &SandboxPolicy,
@@ -831,18 +801,9 @@ async fn read_capped<R: AsyncRead + Unpin + Send + 'static>(
     })
 }
 
-#[cfg(unix)]
 fn synthetic_exit_status(code: i32) -> ExitStatus {
     use std::os::unix::process::ExitStatusExt;
     std::process::ExitStatus::from_raw(code)
-}
-
-#[cfg(windows)]
-fn synthetic_exit_status(code: i32) -> ExitStatus {
-    use std::os::windows::process::ExitStatusExt;
-    // On Windows the raw status is a u32. Use a direct cast to avoid
-    // panicking on negative i32 values produced by prior narrowing casts.
-    std::process::ExitStatus::from_raw(code as u32)
 }
 
 #[cfg(test)]

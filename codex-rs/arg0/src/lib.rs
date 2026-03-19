@@ -1,18 +1,16 @@
 use std::fs::File;
 use std::future::Future;
+use std::os::unix::fs::symlink;
 use std::path::Path;
 use std::path::PathBuf;
 
 use codex_apply_patch::CODEX_CORE_APPLY_PATCH_ARG1;
 use codex_utils_home_dir::find_codex_home;
-#[cfg(unix)]
-use std::os::unix::fs::symlink;
 use tempfile::TempDir;
 
 const LINUX_SANDBOX_ARG0: &str = "codex-linux-sandbox";
 const APPLY_PATCH_ARG0: &str = "apply_patch";
 const MISSPELLED_APPLY_PATCH_ARG0: &str = "applypatch";
-#[cfg(unix)]
 const EXECVE_WRAPPER_ARG0: &str = "codex-execve-wrapper";
 const LOCK_FILENAME: &str = ".lock";
 const TOKIO_WORKER_STACK_SIZE_BYTES: usize = 16 * 1024 * 1024;
@@ -53,7 +51,6 @@ pub fn arg0_dispatch() -> Option<Arg0PathEntryGuard> {
         .and_then(|s| s.to_str())
         .unwrap_or("");
 
-    #[cfg(unix)]
     if exe_name == EXECVE_WRAPPER_ARG0 {
         let mut args = std::env::args();
         let _ = args.next();
@@ -245,7 +242,6 @@ pub fn prepend_path_entry_for_codex_aliases() -> std::io::Result<Arg0PathEntryGu
     // Use a CODEX_HOME-scoped temp root to avoid cluttering the top-level directory.
     let temp_root = codex_home.join("tmp").join("arg0");
     std::fs::create_dir_all(&temp_root)?;
-    #[cfg(unix)]
     {
         use std::os::unix::fs::PermissionsExt;
 
@@ -277,37 +273,14 @@ pub fn prepend_path_entry_for_codex_aliases() -> std::io::Result<Arg0PathEntryGu
         MISSPELLED_APPLY_PATCH_ARG0,
         #[cfg(target_os = "linux")]
         LINUX_SANDBOX_ARG0,
-        #[cfg(unix)]
         EXECVE_WRAPPER_ARG0,
     ] {
         let exe = std::env::current_exe()?;
-
-        #[cfg(unix)]
-        {
-            let link = path.join(filename);
-            symlink(&exe, &link)?;
-        }
-
-        #[cfg(windows)]
-        {
-            let batch_script = path.join(format!("{filename}.bat"));
-            std::fs::write(
-                &batch_script,
-                format!(
-                    r#"@echo off
-"{}" {CODEX_CORE_APPLY_PATCH_ARG1} %*
-"#,
-                    exe.display()
-                ),
-            )?;
-        }
+        let link = path.join(filename);
+        symlink(&exe, &link)?;
     }
 
-    #[cfg(unix)]
     const PATH_SEPARATOR: &str = ":";
-
-    #[cfg(windows)]
-    const PATH_SEPARATOR: &str = ";";
 
     let path_element = path.display();
     let updated_path_env_var = match std::env::var("PATH") {
@@ -334,16 +307,7 @@ pub fn prepend_path_entry_for_codex_aliases() -> std::io::Result<Arg0PathEntryGu
                 None
             }
         },
-        main_execve_wrapper_exe: {
-            #[cfg(unix)]
-            {
-                Some(path.join(EXECVE_WRAPPER_ARG0))
-            }
-            #[cfg(not(unix))]
-            {
-                None
-            }
-        },
+        main_execve_wrapper_exe: Some(path.join(EXECVE_WRAPPER_ARG0)),
     };
 
     Ok(Arg0PathEntryGuard::new(temp_dir, lock_file, paths))

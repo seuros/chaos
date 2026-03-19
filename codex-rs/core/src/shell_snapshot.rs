@@ -116,10 +116,7 @@ impl ShellSnapshot {
         shell: &Shell,
     ) -> std::result::Result<Self, &'static str> {
         // File to store the snapshot
-        let extension = match shell.shell_type {
-            ShellType::PowerShell => "ps1",
-            _ => "sh",
-        };
+        let extension = "sh";
         let path = codex_home
             .join(SNAPSHOT_DIR)
             .join(format!("{session_id}.{extension}"));
@@ -196,9 +193,6 @@ async fn write_shell_snapshot(
     output_path: &Path,
     cwd: &Path,
 ) -> Result<PathBuf> {
-    if shell_type == ShellType::PowerShell || shell_type == ShellType::Cmd {
-        bail!("Shell snapshot not supported yet for {shell_type:?}");
-    }
     let shell = get_shell(shell_type.clone(), /*path*/ None)
         .with_context(|| format!("No available shell for {shell_type:?}"))?;
 
@@ -221,13 +215,10 @@ async fn write_shell_snapshot(
 }
 
 async fn capture_snapshot(shell: &Shell, cwd: &Path) -> Result<String> {
-    let shell_type = shell.shell_type.clone();
-    match shell_type {
+    match shell.shell_type {
         ShellType::Zsh => run_shell_script(shell, &zsh_snapshot_script(), cwd).await,
         ShellType::Bash => run_shell_script(shell, &bash_snapshot_script(), cwd).await,
         ShellType::Sh => run_shell_script(shell, &sh_snapshot_script(), cwd).await,
-        ShellType::PowerShell => run_shell_script(shell, powershell_snapshot_script(), cwd).await,
-        ShellType::Cmd => bail!("Shell snapshotting is not yet supported for {shell_type:?}"),
     }
 }
 
@@ -459,31 +450,6 @@ else
 fi
 "##;
     script.replace("EXCLUDED_EXPORTS", &excluded)
-}
-
-fn powershell_snapshot_script() -> &'static str {
-    r##"$ErrorActionPreference = 'Stop'
-Write-Output '# Snapshot file'
-Write-Output '# Unset all aliases to avoid conflicts with functions'
-Write-Output 'Remove-Item Alias:* -ErrorAction SilentlyContinue'
-Write-Output '# Functions'
-Get-ChildItem Function: | ForEach-Object {
-    "function {0} {{`n{1}`n}}" -f $_.Name, $_.Definition
-}
-Write-Output ''
-$aliases = Get-Alias
-Write-Output ("# aliases " + $aliases.Count)
-$aliases | ForEach-Object {
-    "Set-Alias -Name {0} -Value {1}" -f $_.Name, $_.Definition
-}
-Write-Output ''
-$envVars = Get-ChildItem Env:
-Write-Output ("# exports " + $envVars.Count)
-$envVars | ForEach-Object {
-    $escaped = $_.Value -replace "'", "''"
-    "`$env:{0}='{1}'" -f $_.Name, $escaped
-}
-"##
 }
 
 /// Removes shell snapshots that either lack a matching session rollout file or

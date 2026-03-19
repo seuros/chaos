@@ -1,4 +1,3 @@
-#![cfg(not(target_os = "windows"))]
 
 use codex_protocol::protocol::AskForApproval;
 use codex_protocol::protocol::EventMsg;

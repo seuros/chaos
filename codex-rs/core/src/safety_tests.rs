@@ -77,7 +77,6 @@ fn external_sandbox_auto_approves_in_on_request() {
             &policy,
             &FileSystemSandboxPolicy::from(&policy),
             &cwd,
-            WindowsSandboxLevel::Disabled
         ),
         SafetyCheck::AutoApprove {
             sandbox_type: SandboxType::None,
@@ -108,7 +107,6 @@ fn granular_with_all_flags_true_matches_on_request_for_out_of_root_patch() {
             &policy_workspace_only,
             &FileSystemSandboxPolicy::from(&policy_workspace_only),
             &cwd,
-            WindowsSandboxLevel::Disabled,
         ),
         SafetyCheck::AskUser,
     );
@@ -125,7 +123,6 @@ fn granular_with_all_flags_true_matches_on_request_for_out_of_root_patch() {
             &policy_workspace_only,
             &FileSystemSandboxPolicy::from(&policy_workspace_only),
             &cwd,
-            WindowsSandboxLevel::Disabled,
         ),
         SafetyCheck::AskUser,
     );
@@ -159,7 +156,6 @@ fn granular_sandbox_approval_false_rejects_out_of_root_patch() {
             &policy_workspace_only,
             &FileSystemSandboxPolicy::from(&policy_workspace_only),
             &cwd,
-            WindowsSandboxLevel::Disabled,
         ),
         SafetyCheck::Reject {
             reason: "writing outside of the project; rejected by user approval settings"
@@ -204,7 +200,6 @@ fn explicit_unreadable_paths_prevent_auto_approval_for_external_sandbox() {
             &sandbox_policy,
             &file_system_sandbox_policy,
             &cwd,
-            WindowsSandboxLevel::Disabled,
         ),
         SafetyCheck::AskUser,
     );
@@ -247,7 +242,6 @@ fn explicit_read_only_subpaths_prevent_auto_approval_for_external_sandbox() {
             &sandbox_policy,
             &file_system_sandbox_policy,
             &cwd,
-            WindowsSandboxLevel::Disabled,
         ),
         SafetyCheck::AskUser,
     );

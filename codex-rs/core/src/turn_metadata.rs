@@ -13,7 +13,6 @@ use crate::git_info::get_git_repo_root;
 use crate::git_info::get_has_changes;
 use crate::git_info::get_head_commit_hash;
 use crate::sandbox_tags::sandbox_tag;
-use codex_protocol::config_types::WindowsSandboxLevel;
 use codex_protocol::protocol::SandboxPolicy;
 
 #[derive(Clone, Debug, Default)]
@@ -131,10 +130,9 @@ impl TurnMetadataState {
         turn_id: String,
         cwd: PathBuf,
         sandbox_policy: &SandboxPolicy,
-        windows_sandbox_level: WindowsSandboxLevel,
     ) -> Self {
         let repo_root = get_git_repo_root(&cwd).map(|root| root.to_string_lossy().into_owned());
-        let sandbox = Some(sandbox_tag(sandbox_policy, windows_sandbox_level).to_string());
+        let sandbox = Some(sandbox_tag(sandbox_policy).to_string());
         let base_metadata = build_turn_metadata_bag(
             Some(turn_id),
             sandbox,

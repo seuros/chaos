@@ -70,13 +70,12 @@ fn turn_metadata_state_uses_platform_sandbox_tag() {
         "turn-a".to_string(),
         cwd,
         &sandbox_policy,
-        WindowsSandboxLevel::Disabled,
     );
 
     let header = state.current_header_value().expect("header");
     let json: Value = serde_json::from_str(&header).expect("json");
     let sandbox_name = json.get("sandbox").and_then(Value::as_str);
 
-    let expected_sandbox = sandbox_tag(&sandbox_policy, WindowsSandboxLevel::Disabled);
+    let expected_sandbox = sandbox_tag(&sandbox_policy);
     assert_eq!(sandbox_name, Some(expected_sandbox));
 }

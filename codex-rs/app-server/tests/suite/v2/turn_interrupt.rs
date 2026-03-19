@@ -27,13 +27,6 @@ const DEFAULT_READ_TIMEOUT: std::time::Duration = std::time::Duration::from_secs
 #[tokio::test]
 async fn turn_interrupt_aborts_running_turn() -> Result<()> {
     // Use a portable sleep command to keep the turn running.
-    #[cfg(target_os = "windows")]
-    let shell_command = vec![
-        "powershell".to_string(),
-        "-Command".to_string(),
-        "Start-Sleep -Seconds 10".to_string(),
-    ];
-    #[cfg(not(target_os = "windows"))]
     let shell_command = vec!["sleep".to_string(), "10".to_string()];
 
     let tmp = TempDir::new()?;
@@ -124,13 +117,6 @@ async fn turn_interrupt_aborts_running_turn() -> Result<()> {
 
 #[tokio::test]
 async fn turn_interrupt_resolves_pending_command_approval_request() -> Result<()> {
-    #[cfg(target_os = "windows")]
-    let shell_command = vec![
-        "powershell".to_string(),
-        "-Command".to_string(),
-        "Start-Sleep -Seconds 10".to_string(),
-    ];
-    #[cfg(not(target_os = "windows"))]
     let shell_command = vec!["sleep".to_string(), "10".to_string()];
 
     let tmp = TempDir::new()?;

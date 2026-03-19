@@ -941,7 +941,6 @@ async fn run_ratatui_app(
     session_log::maybe_init(&initial_config);
 
     let should_show_trust_screen_flag = !remote_mode && should_show_trust_screen(&initial_config);
-    let mut trust_decision_was_made = false;
     let needs_onboarding_app_server =
         should_show_trust_screen_flag || initial_config.model_provider.requires_openai_auth;
     let mut onboarding_app_server = if needs_onboarding_app_server {
@@ -1003,7 +1002,7 @@ async fn run_ratatui_app(
                 exit_reason: ExitReason::UserRequested,
             });
         }
-        trust_decision_was_made = onboarding_result.directory_trust_decision.is_some();
+        let _ = onboarding_result.directory_trust_decision.is_some();
         // If this onboarding run included the login step, always refresh cloud requirements and
         // rebuild config. This avoids missing newly available cloud requirements due to login
         // status detection edge cases.

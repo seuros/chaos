@@ -4610,11 +4610,6 @@ async fn rejects_escalated_permissions_when_policy_not_on_request() {
         env: HashMap::new(),
         network: None,
         sandbox_permissions,
-        windows_sandbox_level: turn_context.windows_sandbox_level,
-        windows_sandbox_private_desktop: turn_context
-            .config
-            .permissions
-            .windows_sandbox_private_desktop,
         justification: Some("test".to_string()),
         arg0: None,
     };
@@ -4626,11 +4621,6 @@ async fn rejects_escalated_permissions_when_policy_not_on_request() {
         expiration: timeout_ms.into(),
         env: HashMap::new(),
         network: None,
-        windows_sandbox_level: turn_context.windows_sandbox_level,
-        windows_sandbox_private_desktop: turn_context
-            .config
-            .permissions
-            .windows_sandbox_private_desktop,
         justification: params.justification.clone(),
         arg0: None,
     };

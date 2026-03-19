@@ -54,12 +54,10 @@ pub static CODEX_ALIASES_TEMP_DIR: TestCodexAliasesGuard = unsafe {
     }
 };
 
-#[cfg(not(target_os = "windows"))]
 mod abort_tasks;
 mod agent_jobs;
 mod agent_websocket;
 mod apply_patch_cli;
-#[cfg(not(target_os = "windows"))]
 mod approvals;
 mod auth_refresh;
 mod cli_stream;
@@ -77,7 +75,6 @@ mod exec_policy;
 mod fork_thread;
 mod grep_files;
 mod hierarchical_agents;
-#[cfg(not(target_os = "windows"))]
 mod hooks;
 mod image_rollout;
 mod items;
@@ -105,9 +102,7 @@ mod read_file;
 mod realtime_conversation;
 mod remote_models;
 mod request_compression;
-#[cfg(not(target_os = "windows"))]
 mod request_permissions;
-#[cfg(not(target_os = "windows"))]
 mod request_permissions_tool;
 mod request_user_input;
 mod resume;

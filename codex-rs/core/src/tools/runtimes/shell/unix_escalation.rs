@@ -24,7 +24,6 @@ use codex_execpolicy::Evaluation;
 use codex_execpolicy::MatchOptions;
 use codex_execpolicy::Policy;
 use codex_execpolicy::RuleMatch;
-use codex_protocol::config_types::WindowsSandboxLevel;
 use codex_protocol::models::MacOsSeatbeltProfileExtensions;
 use codex_protocol::models::PermissionProfile;
 use codex_protocol::permissions::FileSystemSandboxPolicy;
@@ -125,8 +124,6 @@ pub(super) async fn try_run_zsh_fork(
         network: sandbox_network,
         expiration: _sandbox_expiration,
         sandbox,
-        windows_sandbox_level,
-        windows_sandbox_private_desktop: _windows_sandbox_private_desktop,
         sandbox_permissions,
         sandbox_policy,
         file_system_sandbox_policy,
@@ -151,7 +148,6 @@ pub(super) async fn try_run_zsh_fork(
         sandbox,
         env: sandbox_env,
         network: sandbox_network,
-        windows_sandbox_level,
         sandbox_permissions,
         justification,
         arg0,
@@ -257,7 +253,6 @@ pub(crate) async fn prepare_unified_exec_zsh_fork(
         sandbox: exec_request.sandbox,
         env: exec_request.env.clone(),
         network: exec_request.network.clone(),
-        windows_sandbox_level: exec_request.windows_sandbox_level,
         sandbox_permissions: exec_request.sandbox_permissions,
         justification: exec_request.justification.clone(),
         arg0: exec_request.arg0.clone(),
@@ -854,7 +849,6 @@ struct CoreShellCommandExecutor {
     sandbox: SandboxType,
     env: HashMap<String, String>,
     network: Option<codex_network_proxy::NetworkProxy>,
-    windows_sandbox_level: WindowsSandboxLevel,
     sandbox_permissions: SandboxPermissions,
     justification: Option<String>,
     arg0: Option<String>,
@@ -904,8 +898,6 @@ impl ShellCommandExecutor for CoreShellCommandExecutor {
                 network: self.network.clone(),
                 expiration: ExecExpiration::Cancellation(cancel_rx),
                 sandbox: self.sandbox,
-                windows_sandbox_level: self.windows_sandbox_level,
-                windows_sandbox_private_desktop: false,
                 sandbox_permissions: self.sandbox_permissions,
                 sandbox_policy: self.sandbox_policy.clone(),
                 file_system_sandbox_policy: self.file_system_sandbox_policy.clone(),
@@ -1031,7 +1023,6 @@ impl CoreShellCommandExecutor {
             file_system_sandbox_policy,
             network_sandbox_policy,
             SandboxablePreference::Auto,
-            self.windows_sandbox_level,
             self.network.is_some(),
         );
         let mut exec_request =
@@ -1061,8 +1052,6 @@ impl CoreShellCommandExecutor {
                 macos_seatbelt_profile_extensions,
                 codex_linux_sandbox_exe: self.codex_linux_sandbox_exe.as_ref(),
                 use_legacy_landlock: self.use_legacy_landlock,
-                windows_sandbox_level: self.windows_sandbox_level,
-                windows_sandbox_private_desktop: false,
             })?;
         if let Some(network) = exec_request.network.as_ref() {
             network.apply_to_env(&mut exec_request.env);

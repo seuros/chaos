@@ -1,4 +1,3 @@
-#![cfg(not(target_os = "windows"))]
 
 use anyhow::Result;
 use core_test_support::responses::mount_function_call_agent_response;

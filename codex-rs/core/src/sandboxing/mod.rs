@@ -25,7 +25,6 @@ use crate::spawn::CODEX_SANDBOX_ENV_VAR;
 use crate::spawn::CODEX_SANDBOX_NETWORK_DISABLED_ENV_VAR;
 use crate::tools::sandboxing::SandboxablePreference;
 use codex_network_proxy::NetworkProxy;
-use codex_protocol::config_types::WindowsSandboxLevel;
 use codex_protocol::models::FileSystemPermissions;
 use codex_protocol::models::MacOsSeatbeltProfileExtensions;
 use codex_protocol::models::NetworkPermissions;
@@ -68,8 +67,6 @@ pub struct ExecRequest {
     pub network: Option<NetworkProxy>,
     pub expiration: ExecExpiration,
     pub sandbox: SandboxType,
-    pub windows_sandbox_level: WindowsSandboxLevel,
-    pub windows_sandbox_private_desktop: bool,
     pub sandbox_permissions: SandboxPermissions,
     pub sandbox_policy: SandboxPolicy,
     pub file_system_sandbox_policy: FileSystemSandboxPolicy,
@@ -96,8 +93,6 @@ pub(crate) struct SandboxTransformRequest<'a> {
     pub macos_seatbelt_profile_extensions: Option<&'a MacOsSeatbeltProfileExtensions>,
     pub codex_linux_sandbox_exe: Option<&'a PathBuf>,
     pub use_legacy_landlock: bool,
-    pub windows_sandbox_level: WindowsSandboxLevel,
-    pub windows_sandbox_private_desktop: bool,
 }
 
 pub enum SandboxPreference {
@@ -547,18 +542,12 @@ impl SandboxManager {
         file_system_policy: &FileSystemSandboxPolicy,
         network_policy: NetworkSandboxPolicy,
         pref: SandboxablePreference,
-        windows_sandbox_level: WindowsSandboxLevel,
         has_managed_network_requirements: bool,
     ) -> SandboxType {
         match pref {
             SandboxablePreference::Forbid => SandboxType::None,
             SandboxablePreference::Require => {
-                // Require a platform sandbox when available; on Windows this
-                // respects the experimental_windows_sandbox feature.
-                crate::safety::get_platform_sandbox(
-                    windows_sandbox_level != WindowsSandboxLevel::Disabled,
-                )
-                .unwrap_or(SandboxType::None)
+                crate::safety::get_platform_sandbox().unwrap_or(SandboxType::None)
             }
             SandboxablePreference::Auto => {
                 if should_require_platform_sandbox(
@@ -566,10 +555,7 @@ impl SandboxManager {
                     network_policy,
                     has_managed_network_requirements,
                 ) {
-                    crate::safety::get_platform_sandbox(
-                        windows_sandbox_level != WindowsSandboxLevel::Disabled,
-                    )
-                    .unwrap_or(SandboxType::None)
+                    crate::safety::get_platform_sandbox().unwrap_or(SandboxType::None)
                 } else {
                     SandboxType::None
                 }
@@ -594,8 +580,6 @@ impl SandboxManager {
             macos_seatbelt_profile_extensions,
             codex_linux_sandbox_exe,
             use_legacy_landlock,
-            windows_sandbox_level,
-            windows_sandbox_private_desktop,
         } = request;
         #[cfg(not(target_os = "macos"))]
         let macos_seatbelt_profile_extensions = None;
@@ -688,13 +672,7 @@ impl SandboxManager {
                     Some("codex-linux-sandbox".to_string()),
                 )
             }
-            // On Windows, the restricted token sandbox executes in-process via the
-            // codex-windows-sandbox crate. We leave the command unchanged here and
-            // branch during execution based on the sandbox type.
-            #[cfg(target_os = "windows")]
-            SandboxType::WindowsRestrictedToken => (command, HashMap::new(), None),
-            // When building for non-Windows targets, this variant is never constructed.
-            #[cfg(not(target_os = "windows"))]
+            // This variant is never constructed on Linux-only builds.
             SandboxType::WindowsRestrictedToken => (command, HashMap::new(), None),
         };
 
@@ -707,8 +685,6 @@ impl SandboxManager {
             network: network.cloned(),
             expiration: spec.expiration,
             sandbox,
-            windows_sandbox_level,
-            windows_sandbox_private_desktop,
             sandbox_permissions: spec.sandbox_permissions,
             sandbox_policy: effective_policy,
             file_system_sandbox_policy: effective_file_system_policy,

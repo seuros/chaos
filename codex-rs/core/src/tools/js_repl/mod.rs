@@ -1053,7 +1053,6 @@ impl JsReplManager {
             &turn.file_system_sandbox_policy,
             turn.network_sandbox_policy,
             SandboxablePreference::Auto,
-            turn.windows_sandbox_level,
             has_managed_network_requirements,
         );
         let exec_env = sandbox
@@ -1070,11 +1069,6 @@ impl JsReplManager {
                 macos_seatbelt_profile_extensions: None,
                 codex_linux_sandbox_exe: turn.codex_linux_sandbox_exe.as_ref(),
                 use_legacy_landlock: turn.features.use_legacy_landlock(),
-                windows_sandbox_level: turn.windows_sandbox_level,
-                windows_sandbox_private_desktop: turn
-                    .config
-                    .permissions
-                    .windows_sandbox_private_desktop,
             })
             .map_err(|err| format!("failed to configure sandbox for js_repl: {err}"))?;
 

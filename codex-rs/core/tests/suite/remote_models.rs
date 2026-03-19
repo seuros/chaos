@@ -1,4 +1,3 @@
-#![cfg(not(target_os = "windows"))]
 #![allow(clippy::expect_used)]
 // unified exec is not supported on Windows OS
 use std::sync::Arc;

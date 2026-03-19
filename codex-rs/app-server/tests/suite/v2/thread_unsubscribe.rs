@@ -137,13 +137,6 @@ async fn thread_unsubscribe_unloads_thread_and_emits_thread_closed_notification(
 
 #[tokio::test]
 async fn thread_unsubscribe_during_turn_interrupts_turn_and_emits_thread_closed() -> Result<()> {
-    #[cfg(target_os = "windows")]
-    let shell_command = vec![
-        "powershell".to_string(),
-        "-Command".to_string(),
-        "Start-Sleep -Seconds 10".to_string(),
-    ];
-    #[cfg(not(target_os = "windows"))]
     let shell_command = vec!["sleep".to_string(), "10".to_string()];
 
     let tmp = TempDir::new()?;

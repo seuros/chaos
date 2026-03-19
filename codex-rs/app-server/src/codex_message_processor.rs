@@ -5625,8 +5625,6 @@ impl CodexMessageProcessor {
             marketplace_path,
             plugin_name,
         } = params;
-        let config_cwd = marketplace_path.as_path().parent().map(Path::to_path_buf);
-
         let plugins_manager = self.thread_manager.plugins_manager();
         let request = PluginInstallRequest {
             plugin_name,
@@ -5635,72 +5633,8 @@ impl CodexMessageProcessor {
 
         match plugins_manager.install_plugin(request).await {
             Ok(result) => {
-                let config = match self.load_latest_config(config_cwd).await {
-                    Ok(config) => config,
-                    Err(err) => {
-                        warn!(
-                            "failed to reload config after plugin install, using current config: {err:?}"
-                        );
-                        self.config.as_ref().clone()
-                    }
-                };
-                let plugin_apps = load_plugin_apps(result.installed_path.as_path());
-                let apps_needing_auth = if plugin_apps.is_empty() || true {
-                    Vec::new()
-                } else {
-                    let (all_connectors_result, accessible_connectors_result) = tokio::join!(
-                        connectors::list_all_connectors_with_options(&config, /*force_refetch*/ true),
-                        connectors::list_accessible_connectors_from_mcp_tools_with_options_and_status(
-                            &config, /*force_refetch*/ true
-                        ),
-                    );
-
-                    let all_connectors = match all_connectors_result {
-                        Ok(connectors) => connectors,
-                        Err(err) => {
-                            warn!(
-                                plugin = result.plugin_id.as_key(),
-                                "failed to load app metadata after plugin install: {err:#}"
-                            );
-                            connectors::list_cached_all_connectors(&config)
-                                .await
-                                .unwrap_or_default()
-                        }
-                    };
-                    let all_connectors =
-                        connectors::connectors_for_plugin_apps(all_connectors, &plugin_apps);
-                    let (accessible_connectors, codex_apps_ready) =
-                        match accessible_connectors_result {
-                            Ok(status) => (status.connectors, status.codex_apps_ready),
-                            Err(err) => {
-                                warn!(
-                                    plugin = result.plugin_id.as_key(),
-                                    "failed to load accessible apps after plugin install: {err:#}"
-                                );
-                                (
-                                    connectors::list_cached_accessible_connectors_from_mcp_tools(
-                                        &config,
-                                    )
-                                    .await
-                                    .unwrap_or_default(),
-                                    false,
-                                )
-                            }
-                        };
-                    if !codex_apps_ready {
-                        warn!(
-                            plugin = result.plugin_id.as_key(),
-                            "codex_apps MCP not ready after plugin install; skipping appsNeedingAuth check"
-                        );
-                    }
-
-                    plugin_app_helpers::plugin_apps_needing_auth(
-                        &all_connectors,
-                        &accessible_connectors,
-                        &plugin_apps,
-                        codex_apps_ready,
-                    )
-                };
+                let _plugin_apps = load_plugin_apps(result.installed_path.as_path());
+                let apps_needing_auth: Vec<_> = Vec::new();
 
                 self.clear_plugin_related_caches();
                 self.outgoing

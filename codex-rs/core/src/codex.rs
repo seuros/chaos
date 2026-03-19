@@ -35,11 +35,6 @@ use crate::models_manager::manager::ModelsManager;
 use crate::models_manager::manager::RefreshStrategy;
 use crate::parse_command::parse_command;
 use crate::parse_turn_item;
-use crate::realtime_conversation::RealtimeConversationManager;
-use crate::realtime_conversation::handle_audio as handle_realtime_conversation_audio;
-use crate::realtime_conversation::handle_close as handle_realtime_conversation_close;
-use crate::realtime_conversation::handle_start as handle_realtime_conversation_start;
-use crate::realtime_conversation::handle_text as handle_realtime_conversation_text;
 use crate::rollout::session_index;
 use crate::skills::render_skills_section;
 use crate::stream_events_utils::HandleOutputCtx;
@@ -141,7 +136,6 @@ use tokio::task::JoinHandle;
 use tokio_util::sync::CancellationToken;
 use tracing::Instrument;
 use tracing::debug;
-use tracing::debug_span;
 use tracing::error;
 use tracing::field;
 use tracing::info;
@@ -192,11 +186,10 @@ pub enum SteerInputError {
 /// Conceptually this is the same role that `previous_model` used to fill, but
 /// it can carry other prior-turn settings that matter when constructing
 /// sensible state-change diffs or full-context reinjection, such as model
-/// switches or detecting a prior `realtime_active -> false` transition.
+/// switches.
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub(crate) struct PreviousTurnSettings {
     pub(crate) model: String,
-    pub(crate) realtime_active: Option<bool>,
 }
 
 use crate::exec_policy::ExecPolicyUpdateError;
@@ -746,7 +739,6 @@ pub(crate) struct Session {
     /// session.
     features: ManagedFeatures,
     pending_mcp_server_refresh_config: Mutex<Option<McpServerRefreshConfig>>,
-    pub(crate) conversation: Arc<RealtimeConversationManager>,
     pub(crate) active_turn: Mutex<Option<ActiveTurn>>,
     pub(crate) guardian_review_session: GuardianReviewSessionManager,
     pub(crate) services: SessionServices,
@@ -773,7 +765,6 @@ impl TurnSkillsContext {
 pub(crate) struct TurnContext {
     pub(crate) sub_id: String,
     pub(crate) trace_id: Option<String>,
-    pub(crate) realtime_active: bool,
     pub(crate) config: Arc<Config>,
     pub(crate) auth_manager: Option<Arc<AuthManager>>,
     pub(crate) model_info: ModelInfo,
@@ -878,7 +869,6 @@ impl TurnContext {
         Self {
             sub_id: self.sub_id.clone(),
             trace_id: self.trace_id.clone(),
-            realtime_active: self.realtime_active,
             config: Arc::new(config),
             auth_manager: self.auth_manager.clone(),
             model_info: model_info.clone(),
@@ -946,7 +936,6 @@ impl TurnContext {
             model: self.model_info.slug.clone(),
             personality: self.personality,
             collaboration_mode: Some(self.collaboration_mode.clone()),
-            realtime_active: Some(self.realtime_active),
             effort: self.reasoning_effort,
             summary: self.reasoning_summary,
             user_instructions: self.user_instructions.clone(),
@@ -1323,7 +1312,6 @@ impl Session {
         TurnContext {
             sub_id,
             trace_id: current_span_trace_id(),
-            realtime_active: false,
             config: per_turn_config.clone(),
             auth_manager: auth_manager_for_context,
             model_info: model_info.clone(),
@@ -1811,7 +1799,6 @@ impl Session {
             state: Mutex::new(state),
             features: config.features.clone(),
             pending_mcp_server_refresh_config: Mutex::new(None),
-            conversation: Arc::new(RealtimeConversationManager::new()),
             active_turn: Mutex::new(None),
             guardian_review_session: GuardianReviewSessionManager::default(),
             services,
@@ -1991,21 +1978,6 @@ impl Session {
             .next_internal_sub_id
             .fetch_add(1, std::sync::atomic::Ordering::SeqCst);
         format!("auto-compact-{id}")
-    }
-
-    pub(crate) async fn route_realtime_text_input(self: &Arc<Self>, text: String) {
-        handlers::user_input_or_turn(
-            self,
-            self.next_internal_sub_id(),
-            Op::UserInput {
-                items: vec![UserInput::Text {
-                    text,
-                    text_elements: Vec::new(),
-                }],
-                final_output_json_schema: None,
-            },
-        )
-        .await;
     }
 
     pub(crate) async fn get_total_token_usage(&self) -> i64 {
@@ -2378,7 +2350,6 @@ impl Session {
             Arc::clone(&self.js_repl),
             skills_outcome,
         );
-        turn_context.realtime_active = self.conversation.running_state().await.is_some();
 
         if let Some(final_schema) = final_output_json_schema {
             turn_context.final_output_json_schema = final_schema;
@@ -2578,10 +2549,6 @@ impl Session {
             msg,
         };
         self.send_event_raw(event).await;
-        self.maybe_mirror_event_text_to_realtime(&legacy_source)
-            .await;
-        self.maybe_clear_realtime_handoff_for_event(&legacy_source)
-            .await;
 
         let show_raw_agent_reasoning = self.show_raw_agent_reasoning();
         for legacy in legacy_source.as_legacy_events(show_raw_agent_reasoning) {
@@ -2591,27 +2558,6 @@ impl Session {
             };
             self.send_event_raw(legacy_event).await;
         }
-    }
-
-    async fn maybe_mirror_event_text_to_realtime(&self, msg: &EventMsg) {
-        let Some(text) = realtime_text_for_event(msg) else {
-            return;
-        };
-        if self.conversation.running_state().await.is_none()
-            || self.conversation.active_handoff_id().await.is_none()
-        {
-            return;
-        }
-        if let Err(err) = self.conversation.handoff_out(text).await {
-            debug!("failed to mirror event text to realtime conversation: {err}");
-        }
-    }
-
-    async fn maybe_clear_realtime_handoff_for_event(&self, msg: &EventMsg) {
-        if !matches!(msg, EventMsg::TurnComplete(_)) {
-            return;
-        }
-        self.conversation.clear_active_handoff().await;
     }
 
     pub(crate) async fn send_event_raw(&self, event: Event) {
@@ -3411,7 +3357,7 @@ impl Session {
         let mut contextual_user_sections = Vec::<String>::with_capacity(2);
         let shell = self.user_shell();
         let (
-            reference_context_item,
+            _reference_context_item,
             previous_turn_settings,
             collaboration_mode,
             base_instructions,
@@ -3471,13 +3417,6 @@ impl Session {
             DeveloperInstructions::from_collaboration_mode(&collaboration_mode)
         {
             developer_sections.push(collab_instructions.into_text());
-        }
-        if let Some(realtime_update) = crate::context_manager::updates::build_initial_realtime_item(
-            reference_context_item.as_ref(),
-            previous_turn_settings.as_ref(),
-            turn_context,
-        ) {
-            developer_sections.push(realtime_update.into_text());
         }
         if self.features.enabled(Feature::Personality)
             && let Some(personality) = turn_context.personality
@@ -4145,33 +4084,6 @@ async fn submission_loop(sess: Arc<Session>, config: Arc<Config>, rx_sub: Receiv
                     handlers::clean_background_terminals(&sess).await;
                     false
                 }
-                Op::RealtimeConversationStart(params) => {
-                    if let Err(err) =
-                        handle_realtime_conversation_start(&sess, sub.id.clone(), params).await
-                    {
-                        sess.send_event_raw(Event {
-                            id: sub.id.clone(),
-                            msg: EventMsg::Error(ErrorEvent {
-                                message: err.to_string(),
-                                codex_error_info: Some(CodexErrorInfo::Other),
-                            }),
-                        })
-                        .await;
-                    }
-                    false
-                }
-                Op::RealtimeConversationAudio(params) => {
-                    handle_realtime_conversation_audio(&sess, sub.id.clone(), params).await;
-                    false
-                }
-                Op::RealtimeConversationText(params) => {
-                    handle_realtime_conversation_text(&sess, sub.id.clone(), params).await;
-                    false
-                }
-                Op::RealtimeConversationClose => {
-                    handle_realtime_conversation_close(&sess, sub.id.clone()).await;
-                    false
-                }
                 Op::OverrideTurnContext {
                     cwd,
                     approval_policy,
@@ -4367,22 +4279,12 @@ async fn submission_loop(sess: Arc<Session>, config: Arc<Config>, rx_sub: Receiv
 fn submission_dispatch_span(sub: &Submission) -> tracing::Span {
     let op_name = sub.op.kind();
     let span_name = format!("op.dispatch.{op_name}");
-    let dispatch_span = match &sub.op {
-        Op::RealtimeConversationAudio(_) => {
-            debug_span!(
-                "submission_dispatch",
-                otel.name = span_name.as_str(),
-                submission.id = sub.id.as_str(),
-                codex.op = op_name
-            )
-        }
-        _ => info_span!(
-            "submission_dispatch",
-            otel.name = span_name.as_str(),
-            submission.id = sub.id.as_str(),
-            codex.op = op_name
-        ),
-    };
+    let dispatch_span = info_span!(
+        "submission_dispatch",
+        otel.name = span_name.as_str(),
+        submission.id = sub.id.as_str(),
+        codex.op = op_name
+    );
     if let Some(trace) = sub.trace.as_ref()
         && !set_parent_from_w3c_trace_context(&dispatch_span, trace)
     {
@@ -5167,7 +5069,6 @@ mod handlers {
 
     pub async fn shutdown(sess: &Arc<Session>, sub_id: String) -> bool {
         sess.abort_all_tasks(TurnAbortReason::Interrupted).await;
-        let _ = sess.conversation.shutdown().await;
         sess.services
             .unified_exec_manager
             .terminate_all_processes()
@@ -5336,7 +5237,6 @@ async fn spawn_review_thread(
     let review_turn_context = TurnContext {
         sub_id: review_turn_id,
         trace_id: current_span_trace_id(),
-        realtime_active: parent_turn_context.realtime_active,
         config: per_turn_config,
         auth_manager: auth_manager_for_context,
         model_info: model_info.clone(),
@@ -5651,10 +5551,9 @@ pub(crate) async fn run_turn(
         .await;
     // Track the previous-turn baseline from the regular user-turn path only so
     // standalone tasks (compact/shell/review/undo) cannot suppress future
-    // model/realtime injections.
+    // model injections.
     sess.set_previous_turn_settings(Some(PreviousTurnSettings {
         model: turn_context.model_info.slug.clone(),
-        realtime_active: Some(turn_context.realtime_active),
     }))
     .await;
 
@@ -6710,96 +6609,6 @@ fn agent_message_text(item: &codex_protocol::items::AgentMessageItem) -> String 
             codex_protocol::items::AgentMessageContent::Text { text } => text.as_str(),
         })
         .collect()
-}
-
-fn realtime_text_for_event(msg: &EventMsg) -> Option<String> {
-    match msg {
-        EventMsg::AgentMessage(event) => Some(event.message.clone()),
-        EventMsg::ItemCompleted(event) => match &event.item {
-            TurnItem::AgentMessage(item) => Some(agent_message_text(item)),
-            _ => None,
-        },
-        EventMsg::Error(_)
-        | EventMsg::Warning(_)
-        | EventMsg::RealtimeConversationStarted(_)
-        | EventMsg::RealtimeConversationRealtime(_)
-        | EventMsg::RealtimeConversationClosed(_)
-        | EventMsg::ModelReroute(_)
-        | EventMsg::ContextCompacted(_)
-        | EventMsg::ThreadRolledBack(_)
-        | EventMsg::TurnStarted(_)
-        | EventMsg::TurnComplete(_)
-        | EventMsg::TokenCount(_)
-        | EventMsg::UserMessage(_)
-        | EventMsg::AgentMessageDelta(_)
-        | EventMsg::AgentReasoning(_)
-        | EventMsg::AgentReasoningDelta(_)
-        | EventMsg::AgentReasoningRawContent(_)
-        | EventMsg::AgentReasoningRawContentDelta(_)
-        | EventMsg::AgentReasoningSectionBreak(_)
-        | EventMsg::SessionConfigured(_)
-        | EventMsg::ThreadNameUpdated(_)
-        | EventMsg::McpStartupUpdate(_)
-        | EventMsg::McpStartupComplete(_)
-        | EventMsg::McpToolCallBegin(_)
-        | EventMsg::McpToolCallEnd(_)
-        | EventMsg::WebSearchBegin(_)
-        | EventMsg::WebSearchEnd(_)
-        | EventMsg::ExecCommandBegin(_)
-        | EventMsg::ExecCommandOutputDelta(_)
-        | EventMsg::TerminalInteraction(_)
-        | EventMsg::ExecCommandEnd(_)
-        | EventMsg::PatchApplyBegin(_)
-        | EventMsg::PatchApplyEnd(_)
-        | EventMsg::ViewImageToolCall(_)
-        | EventMsg::ImageGenerationBegin(_)
-        | EventMsg::ImageGenerationEnd(_)
-        | EventMsg::ExecApprovalRequest(_)
-        | EventMsg::RequestPermissions(_)
-        | EventMsg::RequestUserInput(_)
-        | EventMsg::DynamicToolCallRequest(_)
-        | EventMsg::DynamicToolCallResponse(_)
-        | EventMsg::GuardianAssessment(_)
-        | EventMsg::ElicitationRequest(_)
-        | EventMsg::ElicitationComplete(_)
-        | EventMsg::ApplyPatchApprovalRequest(_)
-        | EventMsg::DeprecationNotice(_)
-        | EventMsg::BackgroundEvent(_)
-        | EventMsg::UndoStarted(_)
-        | EventMsg::UndoCompleted(_)
-        | EventMsg::StreamError(_)
-        | EventMsg::TurnDiff(_)
-        | EventMsg::GetHistoryEntryResponse(_)
-        | EventMsg::McpListToolsResponse(_)
-        | EventMsg::ListCustomPromptsResponse(_)
-        | EventMsg::ListSkillsResponse(_)
-        | EventMsg::ListRemoteSkillsResponse(_)
-        | EventMsg::RemoteSkillDownloaded(_)
-        | EventMsg::SkillsUpdateAvailable
-        | EventMsg::PlanUpdate(_)
-        | EventMsg::TurnAborted(_)
-        | EventMsg::ShutdownComplete
-        | EventMsg::EnteredReviewMode(_)
-        | EventMsg::ExitedReviewMode(_)
-        | EventMsg::RawResponseItem(_)
-        | EventMsg::ItemStarted(_)
-        | EventMsg::HookStarted(_)
-        | EventMsg::HookCompleted(_)
-        | EventMsg::AgentMessageContentDelta(_)
-        | EventMsg::PlanDelta(_)
-        | EventMsg::ReasoningContentDelta(_)
-        | EventMsg::ReasoningRawContentDelta(_)
-        | EventMsg::CollabAgentSpawnBegin(_)
-        | EventMsg::CollabAgentSpawnEnd(_)
-        | EventMsg::CollabAgentInteractionBegin(_)
-        | EventMsg::CollabAgentInteractionEnd(_)
-        | EventMsg::CollabWaitingBegin(_)
-        | EventMsg::CollabWaitingEnd(_)
-        | EventMsg::CollabCloseBegin(_)
-        | EventMsg::CollabCloseEnd(_)
-        | EventMsg::CollabResumeBegin(_)
-        | EventMsg::CollabResumeEnd(_) => None,
-    }
 }
 
 /// Split the stream into normal assistant text vs. proposed plan content.

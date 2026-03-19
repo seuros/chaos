@@ -4,7 +4,6 @@ use crate::app_command::AppCommand;
 use codex_protocol::ThreadId;
 use codex_protocol::approvals::ElicitationAction;
 use codex_protocol::mcp::RequestId as McpRequestId;
-use codex_protocol::protocol::ConversationAudioParams;
 use codex_protocol::protocol::ReviewDecision;
 use codex_protocol::protocol::ReviewRequest;
 use codex_protocol::request_permissions::RequestPermissionsResponse;
@@ -60,16 +59,6 @@ impl AppEventSender {
     pub(crate) fn list_skills(&self, cwds: Vec<PathBuf>, force_reload: bool) {
         self.send(AppEvent::CodexOp(
             AppCommand::list_skills(cwds, force_reload).into_core(),
-        ));
-    }
-
-    #[cfg_attr(
-        any(target_os = "linux", not(feature = "voice-input")),
-        allow(dead_code)
-    )]
-    pub(crate) fn realtime_conversation_audio(&self, params: ConversationAudioParams) {
-        self.send(AppEvent::CodexOp(
-            AppCommand::realtime_conversation_audio(params).into_core(),
         ));
     }
 

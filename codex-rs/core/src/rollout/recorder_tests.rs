@@ -485,7 +485,6 @@ async fn resume_candidate_matches_cwd_reads_latest_turn_context() -> std::io::Re
             model: "test-model".to_string(),
             personality: None,
             collaboration_mode: None,
-            realtime_active: None,
             effort: None,
             summary: ReasoningSummaryConfig::Auto,
             user_instructions: None,

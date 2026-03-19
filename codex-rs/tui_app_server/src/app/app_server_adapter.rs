@@ -40,10 +40,6 @@ use codex_protocol::protocol::EventMsg;
 use codex_protocol::protocol::ItemCompletedEvent;
 use codex_protocol::protocol::ItemStartedEvent;
 use codex_protocol::protocol::PlanDeltaEvent;
-use codex_protocol::protocol::RealtimeConversationClosedEvent;
-use codex_protocol::protocol::RealtimeConversationRealtimeEvent;
-use codex_protocol::protocol::RealtimeConversationStartedEvent;
-use codex_protocol::protocol::RealtimeEvent;
 use codex_protocol::protocol::ThreadNameUpdatedEvent;
 use codex_protocol::protocol::TokenCountEvent;
 use codex_protocol::protocol::TokenUsage;
@@ -322,51 +318,6 @@ fn server_notification_thread_events(
                 id: String::new(),
                 msg: EventMsg::AgentReasoningRawContentDelta(AgentReasoningRawContentDeltaEvent {
                     delta: notification.delta,
-                }),
-            }],
-        )),
-        ServerNotification::ThreadRealtimeStarted(notification) => Some((
-            ThreadId::from_string(&notification.thread_id).ok()?,
-            vec![Event {
-                id: String::new(),
-                msg: EventMsg::RealtimeConversationStarted(RealtimeConversationStartedEvent {
-                    session_id: notification.session_id,
-                }),
-            }],
-        )),
-        ServerNotification::ThreadRealtimeItemAdded(notification) => Some((
-            ThreadId::from_string(&notification.thread_id).ok()?,
-            vec![Event {
-                id: String::new(),
-                msg: EventMsg::RealtimeConversationRealtime(RealtimeConversationRealtimeEvent {
-                    payload: RealtimeEvent::ConversationItemAdded(notification.item),
-                }),
-            }],
-        )),
-        ServerNotification::ThreadRealtimeOutputAudioDelta(notification) => Some((
-            ThreadId::from_string(&notification.thread_id).ok()?,
-            vec![Event {
-                id: String::new(),
-                msg: EventMsg::RealtimeConversationRealtime(RealtimeConversationRealtimeEvent {
-                    payload: RealtimeEvent::AudioOut(notification.audio.into()),
-                }),
-            }],
-        )),
-        ServerNotification::ThreadRealtimeError(notification) => Some((
-            ThreadId::from_string(&notification.thread_id).ok()?,
-            vec![Event {
-                id: String::new(),
-                msg: EventMsg::RealtimeConversationRealtime(RealtimeConversationRealtimeEvent {
-                    payload: RealtimeEvent::Error(notification.message),
-                }),
-            }],
-        )),
-        ServerNotification::ThreadRealtimeClosed(notification) => Some((
-            ThreadId::from_string(&notification.thread_id).ok()?,
-            vec![Event {
-                id: String::new(),
-                msg: EventMsg::RealtimeConversationClosed(RealtimeConversationClosedEvent {
-                    reason: notification.reason,
                 }),
             }],
         )),

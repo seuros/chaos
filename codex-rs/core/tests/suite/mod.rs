@@ -99,7 +99,6 @@ mod plugins;
 mod prompt_caching;
 mod quota_exceeded;
 mod read_file;
-mod realtime_conversation;
 mod remote_models;
 mod request_compression;
 mod request_permissions;

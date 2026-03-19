@@ -93,8 +93,6 @@ pub const PLUGINS_INSTRUCTIONS_OPEN_TAG: &str = "<plugins_instructions>";
 pub const PLUGINS_INSTRUCTIONS_CLOSE_TAG: &str = "</plugins_instructions>";
 pub const COLLABORATION_MODE_OPEN_TAG: &str = "<collaboration_mode>";
 pub const COLLABORATION_MODE_CLOSE_TAG: &str = "</collaboration_mode>";
-pub const REALTIME_CONVERSATION_OPEN_TAG: &str = "<realtime_conversation>";
-pub const REALTIME_CONVERSATION_CLOSE_TAG: &str = "</realtime_conversation>";
 pub const USER_MESSAGE_BEGIN: &str = "## My request for Codex:";
 
 /// Submission Queue Entry - requests from user
@@ -126,68 +124,6 @@ pub struct McpServerRefreshConfig {
     pub mcp_oauth_credentials_store_mode: Value,
 }
 
-#[derive(Debug, Clone, Deserialize, Serialize, PartialEq, JsonSchema, TS)]
-pub struct ConversationStartParams {
-    pub prompt: String,
-    #[serde(skip_serializing_if = "Option::is_none")]
-    pub session_id: Option<String>,
-}
-
-#[derive(Debug, Clone, Deserialize, Serialize, PartialEq, Eq, JsonSchema, TS)]
-pub struct RealtimeAudioFrame {
-    pub data: String,
-    pub sample_rate: u32,
-    pub num_channels: u16,
-    #[serde(skip_serializing_if = "Option::is_none")]
-    pub samples_per_channel: Option<u32>,
-}
-
-#[derive(Debug, Clone, Deserialize, Serialize, PartialEq, Eq, JsonSchema, TS)]
-pub struct RealtimeTranscriptDelta {
-    pub delta: String,
-}
-
-#[derive(Debug, Clone, Deserialize, Serialize, PartialEq, Eq, JsonSchema, TS)]
-pub struct RealtimeTranscriptEntry {
-    pub role: String,
-    pub text: String,
-}
-
-#[derive(Debug, Clone, Deserialize, Serialize, PartialEq, Eq, JsonSchema, TS)]
-pub struct RealtimeHandoffRequested {
-    pub handoff_id: String,
-    pub item_id: String,
-    pub input_transcript: String,
-    pub active_transcript: Vec<RealtimeTranscriptEntry>,
-}
-
-#[derive(Debug, Clone, Deserialize, Serialize, PartialEq, Eq, JsonSchema, TS)]
-pub enum RealtimeEvent {
-    SessionUpdated {
-        session_id: String,
-        instructions: Option<String>,
-    },
-    InputTranscriptDelta(RealtimeTranscriptDelta),
-    OutputTranscriptDelta(RealtimeTranscriptDelta),
-    AudioOut(RealtimeAudioFrame),
-    ConversationItemAdded(Value),
-    ConversationItemDone {
-        item_id: String,
-    },
-    HandoffRequested(RealtimeHandoffRequested),
-    Error(String),
-}
-
-#[derive(Debug, Clone, Deserialize, Serialize, PartialEq, JsonSchema, TS)]
-pub struct ConversationAudioParams {
-    pub frame: RealtimeAudioFrame,
-}
-
-#[derive(Debug, Clone, Deserialize, Serialize, PartialEq, JsonSchema, TS)]
-pub struct ConversationTextParams {
-    pub text: String,
-}
-
 /// Submission operation
 #[derive(Debug, Clone, Deserialize, Serialize, PartialEq, JsonSchema)]
 #[serde(tag = "type", rename_all = "snake_case")]
@@ -201,18 +137,6 @@ pub enum Op {
     /// Terminate all running background terminal processes for this thread.
     /// Use this when callers intentionally want to stop long-lived background shells.
     CleanBackgroundTerminals,
-
-    /// Start a realtime conversation stream.
-    RealtimeConversationStart(ConversationStartParams),
-
-    /// Send audio input to the running realtime conversation stream.
-    RealtimeConversationAudio(ConversationAudioParams),
-
-    /// Send text input to the running realtime conversation stream.
-    RealtimeConversationText(ConversationTextParams),
-
-    /// Close the running realtime conversation stream.
-    RealtimeConversationClose,
 
     /// Legacy user input.
     ///
@@ -499,10 +423,6 @@ impl Op {
         match self {
             Self::Interrupt => "interrupt",
             Self::CleanBackgroundTerminals => "clean_background_terminals",
-            Self::RealtimeConversationStart(_) => "realtime_conversation_start",
-            Self::RealtimeConversationAudio(_) => "realtime_conversation_audio",
-            Self::RealtimeConversationText(_) => "realtime_conversation_text",
-            Self::RealtimeConversationClose => "realtime_conversation_close",
             Self::UserInput { .. } => "user_input",
             Self::UserTurn { .. } => "user_turn",
             Self::OverrideTurnContext { .. } => "override_turn_context",
@@ -1141,15 +1061,6 @@ pub enum EventMsg {
     /// indicates the turn continued but the user should still be notified.
     Warning(WarningEvent),
 
-    /// Realtime conversation lifecycle start event.
-    RealtimeConversationStarted(RealtimeConversationStartedEvent),
-
-    /// Realtime conversation streaming payload event.
-    RealtimeConversationRealtime(RealtimeConversationRealtimeEvent),
-
-    /// Realtime conversation lifecycle close event.
-    RealtimeConversationClosed(RealtimeConversationClosedEvent),
-
     /// Model routing changed from the requested model to a different model.
     ModelReroute(ModelRerouteEvent),
 
@@ -1433,22 +1344,6 @@ pub struct HookStartedEvent {
 pub struct HookCompletedEvent {
     pub turn_id: Option<String>,
     pub run: HookRunSummary,
-}
-
-#[derive(Debug, Clone, Deserialize, Serialize, PartialEq, JsonSchema, TS)]
-pub struct RealtimeConversationStartedEvent {
-    pub session_id: Option<String>,
-}
-
-#[derive(Debug, Clone, Deserialize, Serialize, PartialEq, JsonSchema, TS)]
-pub struct RealtimeConversationRealtimeEvent {
-    pub payload: RealtimeEvent,
-}
-
-#[derive(Debug, Clone, Deserialize, Serialize, PartialEq, JsonSchema, TS)]
-pub struct RealtimeConversationClosedEvent {
-    #[serde(skip_serializing_if = "Option::is_none")]
-    pub reason: Option<String>,
 }
 
 impl From<CollabAgentSpawnBeginEvent> for EventMsg {
@@ -2468,8 +2363,6 @@ pub struct TurnContextItem {
     pub personality: Option<Personality>,
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub collaboration_mode: Option<CollaborationMode>,
-    #[serde(default, skip_serializing_if = "Option::is_none")]
-    pub realtime_active: Option<bool>,
     #[serde(skip_serializing_if = "Option::is_none")]
     pub effort: Option<ReasoningEffortConfig>,
     pub summary: ReasoningSummaryConfig,
@@ -4074,61 +3967,6 @@ mod tests {
     }
 
     #[test]
-    fn conversation_op_serializes_as_unnested_variants() {
-        let audio = Op::RealtimeConversationAudio(ConversationAudioParams {
-            frame: RealtimeAudioFrame {
-                data: "AQID".to_string(),
-                sample_rate: 24_000,
-                num_channels: 1,
-                samples_per_channel: Some(480),
-            },
-        });
-        let start = Op::RealtimeConversationStart(ConversationStartParams {
-            prompt: "be helpful".to_string(),
-            session_id: Some("conv_1".to_string()),
-        });
-        let text = Op::RealtimeConversationText(ConversationTextParams {
-            text: "hello".to_string(),
-        });
-        let close = Op::RealtimeConversationClose;
-
-        assert_eq!(
-            serde_json::to_value(&start).unwrap(),
-            json!({
-                "type": "realtime_conversation_start",
-                "prompt": "be helpful",
-                "session_id": "conv_1"
-            })
-        );
-        assert_eq!(
-            serde_json::to_value(&audio).unwrap(),
-            json!({
-                "type": "realtime_conversation_audio",
-                "frame": {
-                    "data": "AQID",
-                    "sample_rate": 24000,
-                    "num_channels": 1,
-                    "samples_per_channel": 480
-                }
-            })
-        );
-        assert_eq!(
-            serde_json::from_value::<Op>(serde_json::to_value(&text).unwrap()).unwrap(),
-            text
-        );
-        assert_eq!(
-            serde_json::to_value(&close).unwrap(),
-            json!({
-                "type": "realtime_conversation_close"
-            })
-        );
-        assert_eq!(
-            serde_json::from_value::<Op>(serde_json::to_value(&close).unwrap()).unwrap(),
-            close
-        );
-    }
-
-    #[test]
     fn user_input_serialization_omits_final_output_json_schema_when_none() -> Result<()> {
         let op = Op::UserInput {
             items: Vec::new(),
@@ -4276,7 +4114,6 @@ mod tests {
             model: "gpt-5".to_string(),
             personality: None,
             collaboration_mode: None,
-            realtime_active: None,
             effort: None,
             summary: ReasoningSummaryConfig::Auto,
             user_instructions: None,

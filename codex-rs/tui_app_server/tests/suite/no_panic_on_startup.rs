@@ -8,11 +8,6 @@ use tokio::time::timeout;
 #[tokio::test]
 #[ignore = "TODO(mbolin): flaky"]
 async fn malformed_rules_should_not_panic() -> anyhow::Result<()> {
-    // run_codex_cli() does not work on Windows due to PTY limitations.
-    if cfg!(windows) {
-        return Ok(());
-    }
-
     let tmp = tempfile::tempdir()?;
     let codex_home = tmp.path();
     std::fs::write(

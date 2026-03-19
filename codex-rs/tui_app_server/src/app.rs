@@ -2201,7 +2201,6 @@ impl App {
         session_selection: SessionSelection,
         feedback: codex_feedback::CodexFeedback,
         is_first_run: bool,
-        should_prompt_windows_sandbox_nux_at_startup: bool,
         remote_app_server_url: Option<String>,
     ) -> Result<AppExitInfo> {
         use tokio_stream::StreamExt;
@@ -2391,8 +2390,6 @@ impl App {
         for snapshot in startup_rate_limit_snapshots {
             chat_widget.on_rate_limit_snapshot(Some(snapshot));
         }
-        chat_widget
-            .maybe_prompt_windows_sandbox_enable(should_prompt_windows_sandbox_nux_at_startup);
 
         let file_search = FileSearchManager::new(config.cwd.clone(), app_event_tx.clone());
         #[cfg(not(debug_assertions))]

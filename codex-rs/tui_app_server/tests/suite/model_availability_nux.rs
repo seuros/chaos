@@ -11,11 +11,6 @@ use tokio::time::timeout;
 
 #[tokio::test]
 async fn resume_startup_does_not_consume_model_availability_nux_count() -> Result<()> {
-    // run_codex_cli() does not work on Windows due to PTY limitations.
-    if cfg!(windows) {
-        return Ok(());
-    }
-
     let repo_root = codex_utils_cargo_bin::repo_root()?;
     let codex_home = tempdir()?;
 

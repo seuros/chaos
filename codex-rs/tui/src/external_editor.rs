@@ -12,20 +12,10 @@ use tokio::process::Command;
 pub(crate) enum EditorError {
     #[error("neither VISUAL nor EDITOR is set")]
     MissingEditor,
-    #[cfg(not(windows))]
     #[error("failed to parse editor command")]
     ParseFailed,
     #[error("editor command is empty")]
     EmptyCommand,
-}
-
-/// Tries to resolve the full path to a Windows program, respecting PATH + PATHEXT.
-/// Falls back to the original program name if resolution fails.
-#[cfg(windows)]
-fn resolve_windows_program(program: &str) -> std::path::PathBuf {
-    // On Windows, `Command::new("code")` will not resolve `code.cmd` shims on PATH.
-    // Use `which` so we respect PATH + PATHEXT (e.g., `code` -> `code.cmd`).
-    which::which(program).unwrap_or_else(|_| std::path::PathBuf::from(program))
 }
 
 /// Resolve the editor command from environment variables.
@@ -34,16 +24,7 @@ pub(crate) fn resolve_editor_command() -> std::result::Result<Vec<String>, Edito
     let raw = env::var("VISUAL")
         .or_else(|_| env::var("EDITOR"))
         .map_err(|_| EditorError::MissingEditor)?;
-    let parts = {
-        #[cfg(windows)]
-        {
-            winsplit::split(&raw)
-        }
-        #[cfg(not(windows))]
-        {
-            shlex::split(&raw).ok_or(EditorError::ParseFailed)?
-        }
-    };
+    let parts = shlex::split(&raw).ok_or(EditorError::ParseFailed)?;
     if parts.is_empty() {
         return Err(EditorError::EmptyCommand);
     }
@@ -60,17 +41,7 @@ pub(crate) async fn run_editor(seed: &str, editor_cmd: &[String]) -> Result<Stri
     let temp_path = Builder::new().suffix(".md").tempfile()?.into_temp_path();
     fs::write(&temp_path, seed)?;
 
-    let mut cmd = {
-        #[cfg(windows)]
-        {
-            // handles .cmd/.bat shims
-            Command::new(resolve_windows_program(&editor_cmd[0]))
-        }
-        #[cfg(not(windows))]
-        {
-            Command::new(&editor_cmd[0])
-        }
-    };
+    let mut cmd = Command::new(&editor_cmd[0]);
     if editor_cmd.len() > 1 {
         cmd.args(&editor_cmd[1..]);
     }

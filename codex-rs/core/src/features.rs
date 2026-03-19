@@ -116,10 +116,6 @@ pub enum Feature {
     UseLegacyLandlock,
     /// Allow the model to request approval and propose exec rules.
     RequestRule,
-    /// Removed: Windows sandbox (restricted token) on Windows.
-    WindowsSandbox,
-    /// Removed: elevated Windows sandbox pipeline (setup + runner).
-    WindowsSandboxElevated,
     /// Legacy remote models flag kept for backward compatibility.
     RemoteModels,
     /// Experimental shell snapshotting.
@@ -136,8 +132,6 @@ pub enum Feature {
     ChildAgentsMd,
     /// Allow the model to request `detail: "original"` image outputs on supported models.
     ImageDetailOriginal,
-    /// Removed: enforce UTF8 output in Powershell.
-    PowershellUtf8,
     /// Compress request bodies (zstd) when sending streaming requests to codex-backend.
     EnableRequestCompression,
     /// Enable collab tools.
@@ -655,26 +649,8 @@ pub const FEATURES: &[FeatureSpec] = &[
         default_enabled: false,
     },
     FeatureSpec {
-        id: Feature::WindowsSandbox,
-        key: "experimental_windows_sandbox",
-        stage: Stage::Removed,
-        default_enabled: false,
-    },
-    FeatureSpec {
-        id: Feature::WindowsSandboxElevated,
-        key: "elevated_windows_sandbox",
-        stage: Stage::Removed,
-        default_enabled: false,
-    },
-    FeatureSpec {
         id: Feature::RemoteModels,
         key: "remote_models",
-        stage: Stage::Removed,
-        default_enabled: false,
-    },
-    FeatureSpec {
-        id: Feature::PowershellUtf8,
-        key: "powershell_utf8",
         stage: Stage::Removed,
         default_enabled: false,
     },

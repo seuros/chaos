@@ -2609,15 +2609,10 @@ name = "codex-utils-pty"
 version = "0.0.0"
 dependencies = [
  "anyhow",
- "filedescriptor",
- "lazy_static",
  "libc",
- "log",
  "portable-pty",
  "pretty_assertions",
- "shared_library",
  "tokio",
- "winapi",
 ]
 
 [[package]]

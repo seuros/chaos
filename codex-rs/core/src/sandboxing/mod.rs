@@ -672,8 +672,6 @@ impl SandboxManager {
                     Some("codex-linux-sandbox".to_string()),
                 )
             }
-            // This variant is never constructed on Linux-only builds.
-            SandboxType::WindowsRestrictedToken => (command, HashMap::new(), None),
         };
 
         env.extend(sandbox_env);

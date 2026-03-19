@@ -149,9 +149,6 @@ pub enum SandboxType {
 
     /// Only available on Linux.
     LinuxSeccomp,
-
-    /// Kept for forward-compat deserialization; never constructed on Linux.
-    WindowsRestrictedToken,
 }
 
 impl SandboxType {
@@ -160,7 +157,6 @@ impl SandboxType {
             SandboxType::None => "none",
             SandboxType::MacosSeatbelt => "seatbelt",
             SandboxType::LinuxSeccomp => "seccomp",
-            SandboxType::WindowsRestrictedToken => "windows_sandbox",
         }
     }
 }

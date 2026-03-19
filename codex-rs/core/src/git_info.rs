@@ -569,7 +569,7 @@ async fn diff_against_sha(cwd: &Path, sha: &GitSha) -> Option<String> {
 
         if !untracked.is_empty() {
             // Use platform-appropriate null device and guard paths with `--`.
-            let null_device: &str = if cfg!(windows) { "NUL" } else { "/dev/null" };
+            let null_device: &str = "/dev/null";
             let futures_iter = untracked.into_iter().map(|file| async move {
                 let file_owned = file;
                 let args_vec: Vec<&str> = vec![

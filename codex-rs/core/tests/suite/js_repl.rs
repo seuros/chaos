@@ -63,27 +63,12 @@ fn tool_names(body: &serde_json::Value) -> Vec<String> {
 }
 
 fn write_too_old_node_script(dir: &Path) -> Result<std::path::PathBuf> {
-    #[cfg(windows)]
-    {
-        let path = dir.join("old-node.cmd");
-        fs::write(&path, "@echo off\r\necho v0.0.1\r\n")?;
-        Ok(path)
-    }
-
-    #[cfg(unix)]
-    {
-        let path = dir.join("old-node.sh");
-        fs::write(&path, "#!/bin/sh\necho v0.0.1\n")?;
-        let mut permissions = fs::metadata(&path)?.permissions();
-        permissions.set_mode(0o755);
-        fs::set_permissions(&path, permissions)?;
-        Ok(path)
-    }
-
-    #[cfg(not(any(unix, windows)))]
-    {
-        anyhow::bail!("unsupported platform for js_repl test fixture");
-    }
+    let path = dir.join("old-node.sh");
+    fs::write(&path, "#!/bin/sh\necho v0.0.1\n")?;
+    let mut permissions = fs::metadata(&path)?.permissions();
+    permissions.set_mode(0o755);
+    fs::set_permissions(&path, permissions)?;
+    Ok(path)
 }
 
 async fn run_js_repl_turn(

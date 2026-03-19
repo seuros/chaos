@@ -238,26 +238,6 @@ fn write_file_atomically(path: &Path, contents: &[u8]) -> Result<()> {
     match fs::rename(&tmp_path, path) {
         Ok(()) => Ok(()),
         Err(initial_error) => {
-            #[cfg(target_os = "windows")]
-            {
-                if path.exists() {
-                    fs::remove_file(path).with_context(|| {
-                        format!(
-                            "failed to remove existing secrets file at {} before replace",
-                            path.display()
-                        )
-                    })?;
-                    fs::rename(&tmp_path, path).with_context(|| {
-                        format!(
-                            "failed to replace secrets file at {} with {}",
-                            path.display(),
-                            tmp_path.display()
-                        )
-                    })?;
-                    return Ok(());
-                }
-            }
-
             let _ = fs::remove_file(&tmp_path);
             Err(initial_error).with_context(|| {
                 format!(

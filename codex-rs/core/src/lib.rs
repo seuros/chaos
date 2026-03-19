@@ -14,8 +14,6 @@ pub mod auth;
 mod client;
 mod client_common;
 pub mod codex;
-mod realtime_context;
-mod realtime_conversation;
 pub use codex::SteerInputError;
 mod codex_thread;
 mod compact_remote;

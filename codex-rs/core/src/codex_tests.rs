@@ -67,8 +67,6 @@ use codex_protocol::models::DeveloperInstructions;
 use codex_protocol::models::ResponseInputItem;
 use codex_protocol::models::ResponseItem;
 use codex_protocol::openai_models::ModelsResponse;
-use codex_protocol::protocol::ConversationAudioParams;
-use codex_protocol::protocol::RealtimeAudioFrame;
 use codex_protocol::protocol::Submission;
 use codex_protocol::protocol::W3cTraceContext;
 use opentelemetry::trace::TraceContextExt;
@@ -1015,7 +1013,7 @@ async fn record_initial_history_forked_hydrates_previous_turn_settings() {
         model: previous_model.to_string(),
         personality: turn_context.personality,
         collaboration_mode: Some(turn_context.collaboration_mode.clone()),
-        realtime_active: Some(turn_context.realtime_active),
+
         effort: turn_context.reasoning_effort,
         summary: turn_context.reasoning_summary,
         user_instructions: None,
@@ -1060,7 +1058,7 @@ async fn record_initial_history_forked_hydrates_previous_turn_settings() {
         session.previous_turn_settings().await,
         Some(PreviousTurnSettings {
             model: previous_model.to_string(),
-            realtime_active: Some(turn_context.realtime_active),
+    
         })
     );
 }
@@ -1092,7 +1090,7 @@ async fn thread_rollback_drops_last_turn_from_history() {
     sess.persist_rollout_items(&rollout_items).await;
     sess.set_previous_turn_settings(Some(PreviousTurnSettings {
         model: "stale-model".to_string(),
-        realtime_active: Some(tc.realtime_active),
+
     }))
     .await;
     {
@@ -1254,7 +1252,7 @@ async fn thread_rollback_recomputes_previous_turn_settings_and_reference_context
     .await;
     sess.set_previous_turn_settings(Some(PreviousTurnSettings {
         model: "stale-model".to_string(),
-        realtime_active: None,
+
     }))
     .await;
 
@@ -1270,7 +1268,7 @@ async fn thread_rollback_recomputes_previous_turn_settings_and_reference_context
         sess.previous_turn_settings().await,
         Some(PreviousTurnSettings {
             model: tc.model_info.slug.clone(),
-            realtime_active: Some(tc.realtime_active),
+    
         })
     );
     assert_eq!(
@@ -2444,7 +2442,7 @@ pub(crate) async fn make_session_and_context() -> (Session, TurnContext) {
         state: Mutex::new(state),
         features: config.features.clone(),
         pending_mcp_server_refresh_config: Mutex::new(None),
-        conversation: Arc::new(RealtimeConversationManager::new()),
+
         active_turn: Mutex::new(None),
         guardian_review_session: crate::guardian::GuardianReviewSessionManager::default(),
         services,
@@ -2720,29 +2718,6 @@ fn submission_dispatch_span_prefers_submission_trace_context() {
     assert_eq!(
         trace_id,
         TraceId::from_hex("00000000000000000000000000000055").expect("trace id")
-    );
-}
-
-#[test]
-fn submission_dispatch_span_uses_debug_for_realtime_audio() {
-    init_test_tracing();
-
-    let dispatch_span = submission_dispatch_span(&Submission {
-        id: "sub-1".into(),
-        op: Op::RealtimeConversationAudio(ConversationAudioParams {
-            frame: RealtimeAudioFrame {
-                data: "ZmFrZQ==".into(),
-                sample_rate: 16_000,
-                num_channels: 1,
-                samples_per_channel: Some(160),
-            },
-        }),
-        trace: None,
-    });
-
-    assert_eq!(
-        dispatch_span.metadata().expect("span metadata").level(),
-        &tracing::Level::DEBUG
     );
 }
 
@@ -3234,7 +3209,7 @@ pub(crate) async fn make_session_and_context_with_dynamic_tools_and_rx(
         state: Mutex::new(state),
         features: config.features.clone(),
         pending_mcp_server_refresh_config: Mutex::new(None),
-        conversation: Arc::new(RealtimeConversationManager::new()),
+
         active_turn: Mutex::new(None),
         guardian_review_session: crate::guardian::GuardianReviewSessionManager::default(),
         services,
@@ -3440,124 +3415,6 @@ async fn build_settings_update_items_emits_environment_item_for_time_changes() {
 }
 
 #[tokio::test]
-async fn build_settings_update_items_emits_realtime_start_when_session_becomes_live() {
-    let (session, previous_context) = make_session_and_context().await;
-    let previous_context = Arc::new(previous_context);
-    let mut current_context = previous_context
-        .with_model(
-            previous_context.model_info.slug.clone(),
-            &session.services.models_manager,
-        )
-        .await;
-    current_context.realtime_active = true;
-
-    let update_items = session
-        .build_settings_update_items(
-            Some(&previous_context.to_turn_context_item()),
-            &current_context,
-        )
-        .await;
-
-    let developer_texts = developer_input_texts(&update_items);
-    assert!(
-        developer_texts
-            .iter()
-            .any(|text| text.contains("<realtime_conversation>")),
-        "expected a realtime start update, got {developer_texts:?}"
-    );
-}
-
-#[tokio::test]
-async fn build_settings_update_items_emits_realtime_end_when_session_stops_being_live() {
-    let (session, mut previous_context) = make_session_and_context().await;
-    previous_context.realtime_active = true;
-    let mut current_context = previous_context
-        .with_model(
-            previous_context.model_info.slug.clone(),
-            &session.services.models_manager,
-        )
-        .await;
-    current_context.realtime_active = false;
-
-    let update_items = session
-        .build_settings_update_items(
-            Some(&previous_context.to_turn_context_item()),
-            &current_context,
-        )
-        .await;
-
-    let developer_texts = developer_input_texts(&update_items);
-    assert!(
-        developer_texts
-            .iter()
-            .any(|text| text.contains("Reason: inactive")),
-        "expected a realtime end update, got {developer_texts:?}"
-    );
-}
-
-#[tokio::test]
-async fn build_settings_update_items_uses_previous_turn_settings_for_realtime_end() {
-    let (session, previous_context) = make_session_and_context().await;
-    let mut previous_context_item = previous_context.to_turn_context_item();
-    previous_context_item.realtime_active = None;
-    let previous_turn_settings = PreviousTurnSettings {
-        model: previous_context.model_info.slug.clone(),
-        realtime_active: Some(true),
-    };
-    let mut current_context = previous_context
-        .with_model(
-            previous_context.model_info.slug.clone(),
-            &session.services.models_manager,
-        )
-        .await;
-    current_context.realtime_active = false;
-
-    session
-        .set_previous_turn_settings(Some(previous_turn_settings))
-        .await;
-    let update_items = session
-        .build_settings_update_items(Some(&previous_context_item), &current_context)
-        .await;
-
-    let developer_texts = developer_input_texts(&update_items);
-    assert!(
-        developer_texts
-            .iter()
-            .any(|text| text.contains("Reason: inactive")),
-        "expected a realtime end update from previous turn settings, got {developer_texts:?}"
-    );
-}
-
-#[tokio::test]
-async fn build_initial_context_uses_previous_realtime_state() {
-    let (session, mut turn_context) = make_session_and_context().await;
-    turn_context.realtime_active = true;
-
-    let initial_context = session.build_initial_context(&turn_context).await;
-    let developer_texts = developer_input_texts(&initial_context);
-    assert!(
-        developer_texts
-            .iter()
-            .any(|text| text.contains("<realtime_conversation>")),
-        "expected initial context to describe active realtime state, got {developer_texts:?}"
-    );
-
-    let previous_context_item = turn_context.to_turn_context_item();
-    {
-        let mut state = session.state.lock().await;
-        state.set_reference_context_item(Some(previous_context_item));
-    }
-    let resumed_context = session.build_initial_context(&turn_context).await;
-    let resumed_developer_texts = developer_input_texts(&resumed_context);
-    assert!(
-        !resumed_developer_texts
-            .iter()
-            .any(|text| text.contains("<realtime_conversation>")),
-        "did not expect a duplicate realtime update, got {resumed_developer_texts:?}"
-    );
-}
-
-#[tokio::test]
 async fn build_initial_context_omits_default_image_save_location_with_image_history() {
     let (session, turn_context) = make_session_and_context().await;
     session
@@ -3665,49 +3522,6 @@ async fn handle_output_item_done_skips_image_save_message_when_save_fails() {
     let history = session.clone_history().await;
     assert_eq!(history.raw_items(), &[item]);
     assert!(!expected_saved_path.exists());
-}
-
-#[tokio::test]
-async fn build_initial_context_uses_previous_turn_settings_for_realtime_end() {
-    let (session, turn_context) = make_session_and_context().await;
-    let previous_turn_settings = PreviousTurnSettings {
-        model: turn_context.model_info.slug.clone(),
-        realtime_active: Some(true),
-    };
-
-    session
-        .set_previous_turn_settings(Some(previous_turn_settings))
-        .await;
-    let initial_context = session.build_initial_context(&turn_context).await;
-    let developer_texts = developer_input_texts(&initial_context);
-    assert!(
-        developer_texts
-            .iter()
-            .any(|text| text.contains("Reason: inactive")),
-        "expected initial context to describe an ended realtime session, got {developer_texts:?}"
-    );
-}
-
-#[tokio::test]
-async fn build_initial_context_restates_realtime_start_when_reference_context_is_missing() {
-    let (session, mut turn_context) = make_session_and_context().await;
-    turn_context.realtime_active = true;
-    let previous_turn_settings = PreviousTurnSettings {
-        model: turn_context.model_info.slug.clone(),
-        realtime_active: Some(true),
-    };
-
-    session
-        .set_previous_turn_settings(Some(previous_turn_settings))
-        .await;
-    let initial_context = session.build_initial_context(&turn_context).await;
-    let developer_texts = developer_input_texts(&initial_context);
-    assert!(
-        developer_texts
-            .iter()
-            .any(|text| text.contains("<realtime_conversation>")),
-        "expected initial context to restate active realtime when the reference context is missing, got {developer_texts:?}"
-    );
 }
 
 #[tokio::test]
@@ -3850,7 +3664,7 @@ async fn build_initial_context_prepends_model_switch_message() {
     let (session, turn_context) = make_session_and_context().await;
     let previous_turn_settings = PreviousTurnSettings {
         model: "previous-regular-model".to_string(),
-        realtime_active: None,
+
     };
 
     session
@@ -3920,7 +3734,7 @@ async fn record_context_updates_and_set_reference_context_item_persists_full_rei
     session
         .set_previous_turn_settings(Some(PreviousTurnSettings {
             model: previous_context.model_info.slug.clone(),
-            realtime_active: Some(previous_context.realtime_active),
+
         }))
         .await;
     session

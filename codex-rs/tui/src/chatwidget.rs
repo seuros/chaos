@@ -37,10 +37,6 @@ use std::sync::atomic::Ordering;
 use std::time::Duration;
 use std::time::Instant;
 
-use self::realtime::PendingSteerCompareKey;
-use crate::app_event::RealtimeAudioDeviceKind;
-#[cfg(all(not(target_os = "linux"), feature = "voice-input"))]
-use crate::audio_device::list_realtime_audio_device_names;
 use crate::bottom_pane::StatusLineItem;
 use crate::bottom_pane::StatusLinePreviewData;
 use crate::bottom_pane::StatusLineSetupView;
@@ -275,9 +271,6 @@ mod skills;
 use self::skills::collect_tool_mentions;
 use self::skills::find_app_mentions;
 use self::skills::find_skill_mentions_with_tool_mentions;
-mod realtime;
-use self::realtime::RealtimeConversationUiState;
-use self::realtime::RenderedUserMessageEvent;
 use crate::mention_codec::LinkedMention;
 use crate::mention_codec::encode_history_mentions;
 use crate::streaming::chunking::AdaptiveChunkingPolicy;
@@ -300,6 +293,20 @@ use codex_protocol::protocol::SandboxPolicy;
 use codex_utils_approval_presets::ApprovalPreset;
 use codex_utils_approval_presets::builtin_approval_presets;
 use strum::IntoEnumIterator;
+
+#[derive(Clone, Debug, PartialEq)]
+struct RenderedUserMessageEvent {
+    message: String,
+    remote_image_urls: Vec<String>,
+    local_images: Vec<PathBuf>,
+    text_elements: Vec<TextElement>,
+}
+
+#[derive(Clone, Debug, PartialEq, Eq)]
+struct PendingSteerCompareKey {
+    message: String,
+    image_count: usize,
+}
 
 const USER_SHELL_COMMAND_HELP_TITLE: &str = "Prefix a command with ! to run it locally";
 const USER_SHELL_COMMAND_HELP_HINT: &str = "Example: !ls";
@@ -797,7 +804,6 @@ pub(crate) struct ChatWidget {
     // True once we've attempted a branch lookup for the current CWD.
     status_line_branch_lookup_complete: bool,
     external_editor_state: ExternalEditorState,
-    realtime_conversation: RealtimeConversationUiState,
     last_rendered_user_message_event: Option<RenderedUserMessageEvent>,
 }
 
@@ -1067,15 +1073,6 @@ enum ReplayKind {
 }
 
 impl ChatWidget {
-    fn realtime_conversation_enabled(&self) -> bool {
-        self.config.features.enabled(Feature::RealtimeConversation)
-            && cfg!(not(target_os = "linux"))
-    }
-
-    fn realtime_audio_device_selection_enabled(&self) -> bool {
-        self.realtime_conversation_enabled() && cfg!(feature = "voice-input")
-    }
-
     /// Synchronize the bottom-pane "task running" indicator with the current lifecycles.
     ///
     /// The bottom pane only has one running flag, but this module treats it as a derived state of
@@ -3653,20 +3650,10 @@ impl ChatWidget {
             status_line_branch_pending: false,
             status_line_branch_lookup_complete: false,
             external_editor_state: ExternalEditorState::Closed,
-            realtime_conversation: RealtimeConversationUiState::default(),
             last_rendered_user_message_event: None,
         };
 
         widget.prefetch_rate_limits();
-        widget.bottom_pane.set_voice_transcription_enabled(
-            widget.config.features.enabled(Feature::VoiceTranscription),
-        );
-        widget
-            .bottom_pane
-            .set_realtime_conversation_enabled(widget.realtime_conversation_enabled());
-        widget
-            .bottom_pane
-            .set_audio_device_selection_enabled(widget.realtime_audio_device_selection_enabled());
         widget
             .bottom_pane
             .set_status_line_enabled(!widget.configured_status_line_items().is_empty());
@@ -3833,20 +3820,10 @@ impl ChatWidget {
             status_line_branch_pending: false,
             status_line_branch_lookup_complete: false,
             external_editor_state: ExternalEditorState::Closed,
-            realtime_conversation: RealtimeConversationUiState::default(),
             last_rendered_user_message_event: None,
         };
 
         widget.prefetch_rate_limits();
-        widget.bottom_pane.set_voice_transcription_enabled(
-            widget.config.features.enabled(Feature::VoiceTranscription),
-        );
-        widget
-            .bottom_pane
-            .set_realtime_conversation_enabled(widget.realtime_conversation_enabled());
-        widget
-            .bottom_pane
-            .set_audio_device_selection_enabled(widget.realtime_audio_device_selection_enabled());
         widget
             .bottom_pane
             .set_status_line_enabled(!widget.configured_status_line_items().is_empty());
@@ -4013,20 +3990,10 @@ impl ChatWidget {
             status_line_branch_pending: false,
             status_line_branch_lookup_complete: false,
             external_editor_state: ExternalEditorState::Closed,
-            realtime_conversation: RealtimeConversationUiState::default(),
             last_rendered_user_message_event: None,
         };
 
         widget.prefetch_rate_limits();
-        widget.bottom_pane.set_voice_transcription_enabled(
-            widget.config.features.enabled(Feature::VoiceTranscription),
-        );
-        widget
-            .bottom_pane
-            .set_realtime_conversation_enabled(widget.realtime_conversation_enabled());
-        widget
-            .bottom_pane
-            .set_audio_device_selection_enabled(widget.realtime_audio_device_selection_enabled());
         widget
             .bottom_pane
             .set_status_line_enabled(!widget.configured_status_line_items().is_empty());
@@ -4165,11 +4132,6 @@ impl ChatWidget {
                     {
                         return;
                     }
-                    let Some(user_message) =
-                        self.maybe_defer_user_message_for_realtime(user_message)
-                    else {
-                        return;
-                    };
                     let should_submit_now =
                         self.is_session_configured() && !self.is_plan_streaming_in_tui();
                     if should_submit_now {
@@ -4199,11 +4161,6 @@ impl ChatWidget {
                         mention_bindings: self
                             .bottom_pane
                             .take_recent_submission_mention_bindings(),
-                    };
-                    let Some(user_message) =
-                        self.maybe_defer_user_message_for_realtime(user_message)
-                    else {
-                        return;
                     };
                     self.queue_user_message(user_message);
                 }
@@ -4353,22 +4310,6 @@ impl ChatWidget {
                     Some(ServiceTier::Fast)
                 };
                 self.set_service_tier_selection(next_tier);
-            }
-            SlashCommand::Realtime => {
-                if !self.realtime_conversation_enabled() {
-                    return;
-                }
-                if self.realtime_conversation.is_live() {
-                    self.request_realtime_conversation_close(/*info_message*/ None);
-                } else {
-                    self.start_realtime_conversation();
-                }
-            }
-            SlashCommand::Settings => {
-                if !self.realtime_audio_device_selection_enabled() {
-                    return;
-                }
-                self.open_realtime_audio_popup();
             }
             SlashCommand::Personality => {
                 self.open_personality_popup();
@@ -5300,7 +5241,7 @@ impl ChatWidget {
                 }
             }
             EventMsg::UserMessage(ev) => {
-                if from_replay || self.should_render_realtime_user_message_event(&ev) {
+                if from_replay {
                     self.on_user_message_event(ev);
                 }
             }
@@ -5359,21 +5300,6 @@ impl ChatWidget {
             | EventMsg::DynamicToolCallResponse(_) => {}
             EventMsg::HookStarted(event) => self.on_hook_started(event),
             EventMsg::HookCompleted(event) => self.on_hook_completed(event),
-            EventMsg::RealtimeConversationStarted(ev) => {
-                if !from_replay {
-                    self.on_realtime_conversation_started(ev);
-                }
-            }
-            EventMsg::RealtimeConversationRealtime(ev) => {
-                if !from_replay {
-                    self.on_realtime_conversation_realtime(ev);
-                }
-            }
-            EventMsg::RealtimeConversationClosed(ev) => {
-                if !from_replay {
-                    self.on_realtime_conversation_closed(ev);
-                }
-            }
             EventMsg::ItemCompleted(event) => {
                 let item = event.item;
                 if !from_replay && let codex_protocol::items::TurnItem::UserMessage(item) = &item {
@@ -5482,6 +5408,94 @@ impl ChatWidget {
             "<< Code review finished >>".to_string(),
         ));
         self.request_redraw();
+    }
+
+    fn rendered_user_message_event_from_parts(
+        message: String,
+        text_elements: Vec<TextElement>,
+        local_images: Vec<PathBuf>,
+        remote_image_urls: Vec<String>,
+    ) -> RenderedUserMessageEvent {
+        RenderedUserMessageEvent {
+            message,
+            remote_image_urls,
+            local_images,
+            text_elements,
+        }
+    }
+
+    fn rendered_user_message_event_from_event(
+        event: &UserMessageEvent,
+    ) -> RenderedUserMessageEvent {
+        Self::rendered_user_message_event_from_parts(
+            event.message.clone(),
+            event.text_elements.clone(),
+            event.local_images.clone(),
+            event.images.clone().unwrap_or_default(),
+        )
+    }
+
+    fn pending_steer_compare_key_from_items(
+        items: &[UserInput],
+    ) -> PendingSteerCompareKey {
+        let mut message = String::new();
+        let mut image_count = 0;
+        for item in items {
+            match item {
+                UserInput::Text { text, .. } => message.push_str(text),
+                UserInput::Image { .. } | UserInput::LocalImage { .. } => image_count += 1,
+                _ => {}
+            }
+        }
+        PendingSteerCompareKey {
+            message,
+            image_count,
+        }
+    }
+
+    fn pending_steer_compare_key_from_item(
+        item: &codex_protocol::items::UserMessageItem,
+    ) -> PendingSteerCompareKey {
+        Self::pending_steer_compare_key_from_items(&item.content)
+    }
+
+    #[cfg(test)]
+    fn rendered_user_message_event_from_inputs(
+        items: &[UserInput],
+    ) -> RenderedUserMessageEvent {
+        let mut message = String::new();
+        let mut remote_image_urls = Vec::new();
+        let mut local_images = Vec::new();
+        let mut text_elements = Vec::new();
+
+        for item in items {
+            match item {
+                UserInput::Text {
+                    text,
+                    text_elements: current_text_elements,
+                } => append_text_with_rebased_elements(
+                    &mut message,
+                    &mut text_elements,
+                    text,
+                    current_text_elements.iter().map(|element| {
+                        TextElement::new(
+                            element.byte_range,
+                            element.placeholder(text).map(str::to_string),
+                        )
+                    }),
+                ),
+                UserInput::Image { image_url } => remote_image_urls.push(image_url.clone()),
+                UserInput::LocalImage { path } => local_images.push(path.clone()),
+                _ => {}
+            }
+        }
+
+        Self::rendered_user_message_event_from_parts(
+            message,
+            text_elements,
+            local_images,
+            remote_image_urls,
+        )
     }
 
     fn on_user_message_event(&mut self, event: UserMessageEvent) {
@@ -6247,161 +6261,6 @@ impl ChatWidget {
         let mut header = ColumnRenderable::new();
         header.push(Line::from("Select Personality".bold()));
         header.push(Line::from("Choose a communication style for Codex.".dim()));
-
-        self.bottom_pane.show_selection_view(SelectionViewParams {
-            header: Box::new(header),
-            footer_hint: Some(standard_popup_hint_line()),
-            items,
-            ..Default::default()
-        });
-    }
-
-    pub(crate) fn open_realtime_audio_popup(&mut self) {
-        let items = [
-            RealtimeAudioDeviceKind::Microphone,
-            RealtimeAudioDeviceKind::Speaker,
-        ]
-        .into_iter()
-        .map(|kind| {
-            let description = Some(format!(
-                "Current: {}",
-                self.current_realtime_audio_selection_label(kind)
-            ));
-            let actions: Vec<SelectionAction> = vec![Box::new(move |tx| {
-                tx.send(AppEvent::OpenRealtimeAudioDeviceSelection { kind });
-            })];
-            SelectionItem {
-                name: kind.title().to_string(),
-                description,
-                actions,
-                dismiss_on_select: true,
-                ..Default::default()
-            }
-        })
-        .collect();
-
-        self.bottom_pane.show_selection_view(SelectionViewParams {
-            title: Some("Settings".to_string()),
-            subtitle: Some("Configure settings for Codex.".to_string()),
-            footer_hint: Some(standard_popup_hint_line()),
-            items,
-            ..Default::default()
-        });
-    }
-
-    #[cfg(all(not(target_os = "linux"), feature = "voice-input"))]
-    pub(crate) fn open_realtime_audio_device_selection(&mut self, kind: RealtimeAudioDeviceKind) {
-        match list_realtime_audio_device_names(kind) {
-            Ok(device_names) => {
-                self.open_realtime_audio_device_selection_with_names(kind, device_names);
-            }
-            Err(err) => {
-                self.add_error_message(format!(
-                    "Failed to load realtime {} devices: {err}",
-                    kind.noun()
-                ));
-            }
-        }
-    }
-
-    #[cfg(any(target_os = "linux", not(feature = "voice-input")))]
-    pub(crate) fn open_realtime_audio_device_selection(&mut self, kind: RealtimeAudioDeviceKind) {
-        let _ = kind;
-    }
-
-    #[cfg(all(not(target_os = "linux"), feature = "voice-input"))]
-    fn open_realtime_audio_device_selection_with_names(
-        &mut self,
-        kind: RealtimeAudioDeviceKind,
-        device_names: Vec<String>,
-    ) {
-        let current_selection = self.current_realtime_audio_device_name(kind);
-        let current_available = current_selection
-            .as_deref()
-            .is_some_and(|name| device_names.iter().any(|device_name| device_name == name));
-        let mut items = vec![SelectionItem {
-            name: "System default".to_string(),
-            description: Some("Use your operating system default device.".to_string()),
-            is_current: current_selection.is_none(),
-            actions: vec![Box::new(move |tx| {
-                tx.send(AppEvent::PersistRealtimeAudioDeviceSelection { kind, name: None });
-            })],
-            dismiss_on_select: true,
-            ..Default::default()
-        }];
-
-        if let Some(selection) = current_selection.as_deref()
-            && !current_available
-        {
-            items.push(SelectionItem {
-                name: format!("Unavailable: {selection}"),
-                description: Some("Configured device is not currently available.".to_string()),
-                is_current: true,
-                is_disabled: true,
-                disabled_reason: Some("Reconnect the device or choose another one.".to_string()),
-                ..Default::default()
-            });
-        }
-
-        items.extend(device_names.into_iter().map(|device_name| {
-            let persisted_name = device_name.clone();
-            let actions: Vec<SelectionAction> = vec![Box::new(move |tx| {
-                tx.send(AppEvent::PersistRealtimeAudioDeviceSelection {
-                    kind,
-                    name: Some(persisted_name.clone()),
-                });
-            })];
-            SelectionItem {
-                is_current: current_selection.as_deref() == Some(device_name.as_str()),
-                name: device_name,
-                actions,
-                dismiss_on_select: true,
-                ..Default::default()
-            }
-        }));
-
-        let mut header = ColumnRenderable::new();
-        header.push(Line::from(format!("Select {}", kind.title()).bold()));
-        header.push(Line::from(
-            "Saved devices apply to realtime voice only.".dim(),
-        ));
-
-        self.bottom_pane.show_selection_view(SelectionViewParams {
-            header: Box::new(header),
-            footer_hint: Some(standard_popup_hint_line()),
-            items,
-            ..Default::default()
-        });
-    }
-
-    pub(crate) fn open_realtime_audio_restart_prompt(&mut self, kind: RealtimeAudioDeviceKind) {
-        let restart_actions: Vec<SelectionAction> = vec![Box::new(move |tx| {
-            tx.send(AppEvent::RestartRealtimeAudioDevice { kind });
-        })];
-        let items = vec![
-            SelectionItem {
-                name: "Restart now".to_string(),
-                description: Some(format!("Restart local {} audio now.", kind.noun())),
-                actions: restart_actions,
-                dismiss_on_select: true,
-                ..Default::default()
-            },
-            SelectionItem {
-                name: "Apply later".to_string(),
-                description: Some(format!(
-                    "Keep the current {} until local audio starts again.",
-                    kind.noun()
-                )),
-                dismiss_on_select: true,
-                ..Default::default()
-            },
-        ];
-
-        let mut header = ColumnRenderable::new();
-        header.push(Line::from(format!("Restart {} now?", kind.title()).bold()));
-        header.push(Line::from(
-            "Configuration is saved. Restart local audio to use it immediately.".dim(),
-        ));
 
         self.bottom_pane.show_selection_view(SelectionViewParams {
             header: Box::new(header),
@@ -7306,22 +7165,6 @@ impl ChatWidget {
             );
         }
         let enabled = self.config.features.enabled(feature);
-        if feature == Feature::VoiceTranscription {
-            self.bottom_pane.set_voice_transcription_enabled(enabled);
-        }
-        if feature == Feature::RealtimeConversation {
-            let realtime_conversation_enabled = self.realtime_conversation_enabled();
-            self.bottom_pane
-                .set_realtime_conversation_enabled(realtime_conversation_enabled);
-            self.bottom_pane
-                .set_audio_device_selection_enabled(self.realtime_audio_device_selection_enabled());
-            if !realtime_conversation_enabled && self.realtime_conversation.is_live() {
-                self.request_realtime_conversation_close(Some(
-                    "Realtime voice mode was closed because the feature was disabled.".to_string(),
-                ));
-                self.reset_realtime_conversation_state();
-            }
-        }
         if feature == Feature::FastMode {
             self.sync_fast_command_enabled();
         }
@@ -7419,17 +7262,6 @@ impl ChatWidget {
         self.config.features.enabled(Feature::FastMode)
     }
 
-    pub(crate) fn set_realtime_audio_device(
-        &mut self,
-        kind: RealtimeAudioDeviceKind,
-        name: Option<String>,
-    ) {
-        match kind {
-            RealtimeAudioDeviceKind::Microphone => self.config.realtime_audio.microphone = name,
-            RealtimeAudioDeviceKind::Speaker => self.config.realtime_audio.speaker = name,
-        }
-    }
-
     /// Set the syntax theme override in the widget's config copy.
     pub(crate) fn set_tui_theme(&mut self, theme: Option<String>) {
         self.config.tui_theme = theme;
@@ -7478,22 +7310,6 @@ impl ChatWidget {
             .as_ref()
             .and_then(|mask| mask.model.as_deref())
             .unwrap_or_else(|| self.current_collaboration_mode.model())
-    }
-
-    pub(crate) fn realtime_conversation_is_live(&self) -> bool {
-        self.realtime_conversation.is_active()
-    }
-
-    fn current_realtime_audio_device_name(&self, kind: RealtimeAudioDeviceKind) -> Option<String> {
-        match kind {
-            RealtimeAudioDeviceKind::Microphone => self.config.realtime_audio.microphone.clone(),
-            RealtimeAudioDeviceKind::Speaker => self.config.realtime_audio.speaker.clone(),
-        }
-    }
-
-    fn current_realtime_audio_selection_label(&self, kind: RealtimeAudioDeviceKind) -> String {
-        self.current_realtime_audio_device_name(kind)
-            .unwrap_or_else(|| "System default".to_string())
     }
 
     fn sync_fast_command_enabled(&mut self) {
@@ -8666,29 +8482,6 @@ impl ChatWidget {
     }
 }
 
-#[cfg(not(target_os = "linux"))]
-impl ChatWidget {
-    pub(crate) fn replace_transcription(&mut self, id: &str, text: &str) {
-        self.bottom_pane.replace_transcription(id, text);
-        // Ensure the UI redraws to reflect the updated transcription.
-        self.request_redraw();
-    }
-
-    pub(crate) fn update_transcription_in_place(&mut self, id: &str, text: &str) -> bool {
-        let updated = self.bottom_pane.update_transcription_in_place(id, text);
-        if updated {
-            self.request_redraw();
-        }
-        updated
-    }
-
-    pub(crate) fn remove_transcription_placeholder(&mut self, id: &str) {
-        self.bottom_pane.remove_transcription_placeholder(id);
-        // Ensure the UI redraws to reflect placeholder removal.
-        self.request_redraw();
-    }
-}
-
 fn has_websocket_timing_metrics(summary: RuntimeMetricsSummary) -> bool {
     summary.responses_api_overhead_ms > 0
         || summary.responses_api_inference_time_ms > 0
@@ -8700,7 +8493,6 @@ fn has_websocket_timing_metrics(summary: RuntimeMetricsSummary) -> bool {
 
 impl Drop for ChatWidget {
     fn drop(&mut self) {
-        self.reset_realtime_conversation_state();
         self.stop_rate_limit_poller();
     }
 }

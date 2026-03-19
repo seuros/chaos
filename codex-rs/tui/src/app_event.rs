@@ -33,28 +33,6 @@ use codex_protocol::openai_models::ReasoningEffort;
 use codex_protocol::protocol::AskForApproval;
 use codex_protocol::protocol::SandboxPolicy;
 
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
-pub(crate) enum RealtimeAudioDeviceKind {
-    Microphone,
-    Speaker,
-}
-
-impl RealtimeAudioDeviceKind {
-    pub(crate) fn title(self) -> &'static str {
-        match self {
-            Self::Microphone => "Microphone",
-            Self::Speaker => "Speaker",
-        }
-    }
-
-    pub(crate) fn noun(self) -> &'static str {
-        match self {
-            Self::Microphone => "microphone",
-            Self::Speaker => "speaker",
-        }
-    }
-}
-
 #[derive(Debug, Clone)]
 pub(crate) struct ConnectorsSnapshot {
     pub(crate) connectors: Vec<AppInfo>,
@@ -208,26 +186,6 @@ pub(crate) enum AppEvent {
         service_tier: Option<ServiceTier>,
     },
 
-    /// Open the device picker for a realtime microphone or speaker.
-    OpenRealtimeAudioDeviceSelection {
-        kind: RealtimeAudioDeviceKind,
-    },
-
-    /// Persist the selected realtime microphone or speaker to top-level config.
-    #[cfg_attr(
-        any(target_os = "linux", not(feature = "voice-input")),
-        allow(dead_code)
-    )]
-    PersistRealtimeAudioDeviceSelection {
-        kind: RealtimeAudioDeviceKind,
-        name: Option<String>,
-    },
-
-    /// Restart the selected realtime microphone or speaker locally.
-    RestartRealtimeAudioDevice {
-        kind: RealtimeAudioDeviceKind,
-    },
-
     /// Open the reasoning selection popup after picking a model.
     OpenReasoningPopup {
         model: ModelPreset,
@@ -314,29 +272,6 @@ pub(crate) enum AppEvent {
 
     /// Re-open the permissions presets popup.
     OpenPermissionsPopup,
-
-    /// Live update for the in-progress voice recording placeholder. Carries
-    /// the placeholder `id` and the text to display (e.g., an ASCII meter).
-    #[cfg(not(target_os = "linux"))]
-    UpdateRecordingMeter {
-        id: String,
-        text: String,
-    },
-
-    /// Voice transcription finished for the given placeholder id.
-    #[cfg(not(target_os = "linux"))]
-    TranscriptionComplete {
-        id: String,
-        text: String,
-    },
-
-    /// Voice transcription failed; remove the placeholder identified by `id`.
-    #[cfg(not(target_os = "linux"))]
-    TranscriptionFailed {
-        id: String,
-        #[allow(dead_code)]
-        error: String,
-    },
 
     /// Open the branch picker option from the review popup.
     OpenReviewBranchPicker(PathBuf),

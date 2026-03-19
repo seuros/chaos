@@ -894,9 +894,6 @@ impl EventProcessor for EventProcessorWithHumanOutput {
             | EventMsg::RequestPermissions(_)
             | EventMsg::CollabResumeBegin(_)
             | EventMsg::CollabResumeEnd(_)
-            | EventMsg::RealtimeConversationStarted(_)
-            | EventMsg::RealtimeConversationRealtime(_)
-            | EventMsg::RealtimeConversationClosed(_)
             | EventMsg::DynamicToolCallRequest(_)
             | EventMsg::DynamicToolCallResponse(_) => {}
         }

@@ -3,7 +3,6 @@ use crate::app_command::AppCommand;
 use crate::app_command::AppCommandView;
 use crate::app_event::AppEvent;
 use crate::app_event::ExitMode;
-use crate::app_event::RealtimeAudioDeviceKind;
 use crate::app_event_sender::AppEventSender;
 use crate::app_server_session::AppServerSession;
 use crate::app_server_session::AppServerStartedThread;
@@ -1658,28 +1657,6 @@ impl App {
                     .await?;
                 Ok(true)
             }
-            AppCommandView::RealtimeConversationStart(params) => {
-                app_server
-                    .thread_realtime_start(thread_id, params.clone())
-                    .await?;
-                Ok(true)
-            }
-            AppCommandView::RealtimeConversationAudio(params) => {
-                app_server
-                    .thread_realtime_audio(thread_id, params.clone())
-                    .await?;
-                Ok(true)
-            }
-            AppCommandView::RealtimeConversationText(params) => {
-                app_server
-                    .thread_realtime_text(thread_id, params.clone())
-                    .await?;
-                Ok(true)
-            }
-            AppCommandView::RealtimeConversationClose => {
-                app_server.thread_realtime_stop(thread_id).await?;
-                Ok(true)
-            }
             AppCommandView::OverrideTurnContext { .. } => Ok(true),
             _ => Ok(false),
         }
@@ -2983,9 +2960,6 @@ impl App {
             AppEvent::UpdatePersonality(personality) => {
                 self.on_update_personality(personality);
             }
-            AppEvent::OpenRealtimeAudioDeviceSelection { kind } => {
-                self.chat_widget.open_realtime_audio_device_selection(kind);
-            }
             AppEvent::OpenReasoningPopup { model } => {
                 self.chat_widget.open_reasoning_popup(model);
             }
@@ -3125,56 +3099,6 @@ impl App {
                         }
                     }
                 }
-            }
-            AppEvent::PersistRealtimeAudioDeviceSelection { kind, name } => {
-                let builder = match kind {
-                    RealtimeAudioDeviceKind::Microphone => {
-                        ConfigEditsBuilder::new(&self.config.codex_home)
-                            .set_realtime_microphone(name.as_deref())
-                    }
-                    RealtimeAudioDeviceKind::Speaker => {
-                        ConfigEditsBuilder::new(&self.config.codex_home)
-                            .set_realtime_speaker(name.as_deref())
-                    }
-                };
-
-                match builder.apply().await {
-                    Ok(()) => {
-                        match kind {
-                            RealtimeAudioDeviceKind::Microphone => {
-                                self.config.realtime_audio.microphone = name.clone();
-                            }
-                            RealtimeAudioDeviceKind::Speaker => {
-                                self.config.realtime_audio.speaker = name.clone();
-                            }
-                        }
-                        self.chat_widget
-                            .set_realtime_audio_device(kind, name.clone());
-
-                        if self.chat_widget.realtime_conversation_is_live() {
-                            self.chat_widget.open_realtime_audio_restart_prompt(kind);
-                        } else {
-                            let selection = name.unwrap_or_else(|| "System default".to_string());
-                            self.chat_widget.add_info_message(
-                                format!("Realtime {} set to {selection}", kind.noun()),
-                                /*hint*/ None,
-                            );
-                        }
-                    }
-                    Err(err) => {
-                        tracing::error!(
-                            error = %err,
-                            "failed to persist realtime audio selection"
-                        );
-                        self.chat_widget.add_error_message(format!(
-                            "Failed to save realtime {}: {err}",
-                            kind.noun()
-                        ));
-                    }
-                }
-            }
-            AppEvent::RestartRealtimeAudioDevice { kind } => {
-                self.chat_widget.restart_realtime_audio_device(kind);
             }
             AppEvent::UpdateAskForApprovalPolicy(policy) => {
                 let mut config = self.config.clone();
@@ -3523,22 +3447,6 @@ impl App {
                     ));
                 }
             },
-            #[cfg(not(target_os = "linux"))]
-            AppEvent::TranscriptionComplete { id, text } => {
-                self.chat_widget.replace_transcription(&id, &text);
-            }
-            #[cfg(not(target_os = "linux"))]
-            AppEvent::TranscriptionFailed { id, error: _ } => {
-                self.chat_widget.remove_transcription_placeholder(&id);
-            }
-            #[cfg(not(target_os = "linux"))]
-            AppEvent::UpdateRecordingMeter { id, text } => {
-                // Update in place to preserve the element id for subsequent frames.
-                let updated = self.chat_widget.update_transcription_in_place(&id, &text);
-                if updated {
-                    tui.frame_requester().schedule_frame();
-                }
-            }
             AppEvent::StatusLineSetup { items } => {
                 let ids = items.iter().map(ToString::to_string).collect::<Vec<_>>();
                 let edit = codex_core::config::edit::status_line_items_edit(&ids);

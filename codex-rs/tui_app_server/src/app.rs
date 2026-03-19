@@ -3252,48 +3252,7 @@ impl App {
                 }
             }
             AppEvent::BeginWindowsSandboxGrantReadRoot { path } => {
-                #[cfg(target_os = "windows")]
-                {
-                    self.chat_widget
-                        .add_to_history(history_cell::new_info_event(
-                            format!("Granting sandbox read access to {path} ..."),
-                            None,
-                        ));
-
-                    let policy = self.config.permissions.sandbox_policy.get().clone();
-                    let policy_cwd = self.config.cwd.clone();
-                    let command_cwd = self.config.cwd.clone();
-                    let env_map: std::collections::HashMap<String, String> =
-                        std::env::vars().collect();
-                    let codex_home = self.config.codex_home.clone();
-                    let tx = self.app_event_tx.clone();
-
-                    tokio::task::spawn_blocking(move || {
-                        let requested_path = PathBuf::from(path);
-                        let event = match codex_core::windows_sandbox_read_grants::grant_read_root_non_elevated(
-                            &policy,
-                            policy_cwd.as_path(),
-                            command_cwd.as_path(),
-                            &env_map,
-                            codex_home.as_path(),
-                            requested_path.as_path(),
-                        ) {
-                            Ok(canonical_path) => AppEvent::WindowsSandboxGrantReadRootCompleted {
-                                path: canonical_path,
-                                error: None,
-                            },
-                            Err(err) => AppEvent::WindowsSandboxGrantReadRootCompleted {
-                                path: requested_path,
-                                error: Some(err.to_string()),
-                            },
-                        };
-                        tx.send(event);
-                    });
-                }
-                #[cfg(not(target_os = "windows"))]
-                {
-                    let _ = path;
-                }
+                let _ = path;
             }
             AppEvent::WindowsSandboxGrantReadRootCompleted { path, error } => match error {
                 Some(err) => {
@@ -4428,33 +4387,6 @@ impl App {
         self.chat_widget.refresh_status_line();
     }
 
-    #[cfg(target_os = "windows")]
-    fn spawn_world_writable_scan(
-        cwd: PathBuf,
-        env_map: std::collections::HashMap<String, String>,
-        logs_base_dir: PathBuf,
-        sandbox_policy: codex_protocol::protocol::SandboxPolicy,
-        tx: AppEventSender,
-    ) {
-        tokio::task::spawn_blocking(move || {
-            let result = codex_windows_sandbox::apply_world_writable_scan_and_denies(
-                &logs_base_dir,
-                &cwd,
-                &env_map,
-                &sandbox_policy,
-                Some(logs_base_dir.as_path()),
-            );
-            if result.is_err() {
-                // Scan failed: warn without examples.
-                tx.send(AppEvent::OpenWorldWritableWarningConfirmation {
-                    preset: None,
-                    sample_paths: Vec::new(),
-                    extra_count: 0usize,
-                    failed_scan: true,
-                });
-            }
-        });
-    }
 }
 
 #[cfg(test)]

@@ -1,6 +1,5 @@
 mod account;
 mod analytics;
-mod app_list;
 mod collaboration_mode_list;
 #[cfg(unix)]
 mod command_exec;
@@ -14,11 +13,9 @@ mod experimental_api;
 mod experimental_feature_list;
 mod fs;
 mod initialize;
-mod mcp_server_elicitation;
 mod model_list;
 mod output_schema;
 mod plan_item;
-mod plugin_install;
 mod plugin_list;
 mod plugin_read;
 mod plugin_uninstall;
@@ -45,4 +42,3 @@ mod thread_unsubscribe;
 mod turn_interrupt;
 mod turn_start;
 mod turn_steer;
-mod windows_sandbox_setup;

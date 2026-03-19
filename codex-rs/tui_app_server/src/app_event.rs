@@ -10,7 +10,7 @@
 
 use std::path::PathBuf;
 
-use codex_chatgpt::connectors::AppInfo;
+use codex_core::connectors::AppInfo;
 use codex_file_search::FileMatch;
 use codex_protocol::ThreadId;
 use codex_protocol::mcp::RequestId as McpRequestId;

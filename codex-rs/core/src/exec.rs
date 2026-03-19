@@ -359,159 +359,6 @@ fn windowsapps_path_kind(path: &str) -> &'static str {
     "other"
 }
 
-#[cfg(target_os = "windows")]
-fn record_windows_sandbox_spawn_failure(
-    command_path: Option<&str>,
-    windows_sandbox_level: codex_protocol::config_types::WindowsSandboxLevel,
-    err: &str,
-) {
-    let Some(error_code) = extract_create_process_as_user_error_code(err) else {
-        return;
-    };
-    let path = command_path.unwrap_or("unknown");
-    let exe = Path::new(path)
-        .file_name()
-        .and_then(|name| name.to_str())
-        .unwrap_or("unknown")
-        .to_ascii_lowercase();
-    let path_kind = windowsapps_path_kind(path);
-    let level = if matches!(
-        windows_sandbox_level,
-        codex_protocol::config_types::WindowsSandboxLevel::Elevated
-    ) {
-        "elevated"
-    } else {
-        "legacy"
-    };
-    if let Some(metrics) = codex_otel::metrics::global() {
-        let _ = metrics.counter(
-            "codex.windows_sandbox.createprocessasuserw_failed",
-            1,
-            &[
-                ("error_code", error_code.as_str()),
-                ("path_kind", path_kind),
-                ("exe", exe.as_str()),
-                ("level", level),
-            ],
-        );
-    }
-}
-
-#[cfg(target_os = "windows")]
-async fn exec_windows_sandbox(
-    params: ExecParams,
-    sandbox_policy: &SandboxPolicy,
-) -> Result<RawExecToolCallOutput> {
-    use crate::config::find_codex_home;
-    use codex_protocol::config_types::WindowsSandboxLevel;
-    use codex_windows_sandbox::run_windows_sandbox_capture;
-    use codex_windows_sandbox::run_windows_sandbox_capture_elevated;
-
-    let ExecParams {
-        command,
-        cwd,
-        mut env,
-        network,
-        expiration,
-        windows_sandbox_level,
-        windows_sandbox_private_desktop,
-        ..
-    } = params;
-    if let Some(network) = network.as_ref() {
-        network.apply_to_env(&mut env);
-    }
-
-    // TODO(iceweasel-oai): run_windows_sandbox_capture should support all
-    // variants of ExecExpiration, not just timeout.
-    let timeout_ms = expiration.timeout_ms();
-
-    let policy_str = serde_json::to_string(sandbox_policy).map_err(|err| {
-        CodexErr::Io(io::Error::other(format!(
-            "failed to serialize Windows sandbox policy: {err}"
-        )))
-    })?;
-    let sandbox_cwd = cwd.clone();
-    let codex_home = find_codex_home().map_err(|err| {
-        CodexErr::Io(io::Error::other(format!(
-            "windows sandbox: failed to resolve codex_home: {err}"
-        )))
-    })?;
-    let command_path = command.first().cloned();
-    let sandbox_level = windows_sandbox_level;
-    let use_elevated = matches!(sandbox_level, WindowsSandboxLevel::Elevated);
-    let spawn_res = tokio::task::spawn_blocking(move || {
-        if use_elevated {
-            run_windows_sandbox_capture_elevated(
-                policy_str.as_str(),
-                &sandbox_cwd,
-                codex_home.as_ref(),
-                command,
-                &cwd,
-                env,
-                timeout_ms,
-                windows_sandbox_private_desktop,
-            )
-        } else {
-            run_windows_sandbox_capture(
-                policy_str.as_str(),
-                &sandbox_cwd,
-                codex_home.as_ref(),
-                command,
-                &cwd,
-                env,
-                timeout_ms,
-                windows_sandbox_private_desktop,
-            )
-        }
-    })
-    .await;
-
-    let capture = match spawn_res {
-        Ok(Ok(v)) => v,
-        Ok(Err(err)) => {
-            record_windows_sandbox_spawn_failure(
-                command_path.as_deref(),
-                sandbox_level,
-                &err.to_string(),
-            );
-            return Err(CodexErr::Io(io::Error::other(format!(
-                "windows sandbox: {err}"
-            ))));
-        }
-        Err(join_err) => {
-            return Err(CodexErr::Io(io::Error::other(format!(
-                "windows sandbox join error: {join_err}"
-            ))));
-        }
-    };
-
-    let exit_status = synthetic_exit_status(capture.exit_code);
-    let mut stdout_text = capture.stdout;
-    if stdout_text.len() > EXEC_OUTPUT_MAX_BYTES {
-        stdout_text.truncate(EXEC_OUTPUT_MAX_BYTES);
-    }
-    let mut stderr_text = capture.stderr;
-    if stderr_text.len() > EXEC_OUTPUT_MAX_BYTES {
-        stderr_text.truncate(EXEC_OUTPUT_MAX_BYTES);
-    }
-    let stdout = StreamOutput {
-        text: stdout_text,
-        truncated_after_lines: None,
-    };
-    let stderr = StreamOutput {
-        text: stderr_text,
-        truncated_after_lines: None,
-    };
-    let aggregated_output = aggregate_output(&stdout, &stderr);
-
-    Ok(RawExecToolCallOutput {
-        exit_status,
-        stdout,
-        stderr,
-        aggregated_output,
-        timed_out: capture.timed_out,
-    })
-}
 
 fn finalize_exec_result(
     raw_output_result: std::result::Result<RawExecToolCallOutput, CodexErr>,
@@ -753,7 +600,7 @@ impl Default for ExecToolCallOutput {
     }
 }
 
-#[cfg_attr(not(target_os = "windows"), allow(unused_variables))]
+#[allow(unused_variables)]
 async fn exec(
     params: ExecParams,
     sandbox: SandboxType,
@@ -763,18 +610,6 @@ async fn exec(
     stdout_stream: Option<StdoutStream>,
     after_spawn: Option<Box<dyn FnOnce() + Send>>,
 ) -> Result<RawExecToolCallOutput> {
-    #[cfg(target_os = "windows")]
-    if sandbox == SandboxType::WindowsRestrictedToken {
-        if let Some(reason) = unsupported_windows_restricted_token_sandbox_reason(
-            sandbox,
-            sandbox_policy,
-            file_system_sandbox_policy,
-            network_sandbox_policy,
-        ) {
-            return Err(CodexErr::Io(io::Error::other(reason)));
-        }
-        return exec_windows_sandbox(params, sandbox_policy).await;
-    }
     let ExecParams {
         command,
         cwd,

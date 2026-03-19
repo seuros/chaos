@@ -136,82 +136,9 @@ async fn run_command_under_sandbox(
         /*thread_id*/ None,
     );
 
-    // Special-case Windows sandbox: execute and exit the process to emulate inherited stdio.
+    // Windows sandbox is not supported.
     if let SandboxType::Windows = sandbox_type {
-        #[cfg(target_os = "windows")]
-        {
-            use codex_core::windows_sandbox::WindowsSandboxLevelExt;
-            use codex_protocol::config_types::WindowsSandboxLevel;
-            use codex_windows_sandbox::run_windows_sandbox_capture;
-            use codex_windows_sandbox::run_windows_sandbox_capture_elevated;
-
-            let policy_str = serde_json::to_string(config.permissions.sandbox_policy.get())?;
-
-            let sandbox_cwd = sandbox_policy_cwd.clone();
-            let cwd_clone = cwd.clone();
-            let env_map = env.clone();
-            let command_vec = command.clone();
-            let base_dir = config.codex_home.clone();
-            let use_elevated = matches!(
-                WindowsSandboxLevel::from_config(&config),
-                WindowsSandboxLevel::Elevated
-            );
-
-            // Preflight audit is invoked elsewhere at the appropriate times.
-            let res = tokio::task::spawn_blocking(move || {
-                if use_elevated {
-                    run_windows_sandbox_capture_elevated(
-                        policy_str.as_str(),
-                        &sandbox_cwd,
-                        base_dir.as_path(),
-                        command_vec,
-                        &cwd_clone,
-                        env_map,
-                        None,
-                        config.permissions.windows_sandbox_private_desktop,
-                    )
-                } else {
-                    run_windows_sandbox_capture(
-                        policy_str.as_str(),
-                        &sandbox_cwd,
-                        base_dir.as_path(),
-                        command_vec,
-                        &cwd_clone,
-                        env_map,
-                        None,
-                        config.permissions.windows_sandbox_private_desktop,
-                    )
-                }
-            })
-            .await;
-
-            let capture = match res {
-                Ok(Ok(v)) => v,
-                Ok(Err(err)) => {
-                    eprintln!("windows sandbox failed: {err}");
-                    std::process::exit(1);
-                }
-                Err(join_err) => {
-                    eprintln!("windows sandbox join error: {join_err}");
-                    std::process::exit(1);
-                }
-            };
-
-            if !capture.stdout.is_empty() {
-                use std::io::Write;
-                let _ = std::io::stdout().write_all(&capture.stdout);
-            }
-            if !capture.stderr.is_empty() {
-                use std::io::Write;
-                let _ = std::io::stderr().write_all(&capture.stderr);
-            }
-
-            std::process::exit(capture.exit_code);
-        }
-        #[cfg(not(target_os = "windows"))]
-        {
-            anyhow::bail!("Windows sandbox is only available on Windows");
-        }
+        anyhow::bail!("Windows sandbox is not supported");
     }
 
     #[cfg(target_os = "macos")]

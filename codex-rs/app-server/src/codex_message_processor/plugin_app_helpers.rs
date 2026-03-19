@@ -2,7 +2,7 @@ use std::collections::HashSet;
 
 use codex_app_server_protocol::AppInfo;
 use codex_app_server_protocol::AppSummary;
-use codex_chatgpt::connectors;
+use codex_core::connectors;
 use codex_core::config::Config;
 use codex_core::plugins::AppConnectorId;
 use tracing::warn;

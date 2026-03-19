@@ -73,16 +73,9 @@ impl ApplyPatchRuntime {
         let exe = if let Some(path) = &req.codex_exe {
             path.clone()
         } else {
-            #[cfg(target_os = "windows")]
-            {
-                codex_windows_sandbox::resolve_current_exe_for_launch(_codex_home, "codex.exe")
-            }
-            #[cfg(not(target_os = "windows"))]
-            {
-                std::env::current_exe().map_err(|e| {
-                    ToolError::Rejected(format!("failed to determine codex exe: {e}"))
-                })?
-            }
+            std::env::current_exe().map_err(|e| {
+                ToolError::Rejected(format!("failed to determine codex exe: {e}"))
+            })?
         };
         let program = exe.to_string_lossy().to_string();
         Ok(CommandSpec {

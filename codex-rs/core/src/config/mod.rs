@@ -57,9 +57,6 @@ use crate::protocol::ReadOnlyAccess;
 use crate::protocol::SandboxPolicy;
 use crate::unified_exec::DEFAULT_MAX_BACKGROUND_TERMINAL_TIMEOUT_MS;
 use crate::unified_exec::MIN_EMPTY_YIELD_TIME_MS;
-use crate::windows_sandbox::WindowsSandboxLevelExt;
-use crate::windows_sandbox::resolve_windows_sandbox_mode;
-use crate::windows_sandbox::resolve_windows_sandbox_private_desktop;
 use codex_app_server_protocol::Tools;
 use codex_app_server_protocol::UserSavedConfig;
 use codex_protocol::config_types::AltScreenMode;
@@ -2131,9 +2128,17 @@ impl Config {
 
         let configured_features = Features::from_config(&cfg, &config_profile, feature_overrides);
         let features = ManagedFeatures::from_configured(configured_features, feature_requirements)?;
-        let windows_sandbox_mode = resolve_windows_sandbox_mode(&cfg, &config_profile);
-        let windows_sandbox_private_desktop =
-            resolve_windows_sandbox_private_desktop(&cfg, &config_profile);
+        let windows_sandbox_mode = config_profile
+            .windows
+            .as_ref()
+            .and_then(|w| w.sandbox)
+            .or_else(|| cfg.windows.as_ref().and_then(|w| w.sandbox));
+        let windows_sandbox_private_desktop = config_profile
+            .windows
+            .as_ref()
+            .and_then(|w| w.sandbox_private_desktop)
+            .or_else(|| cfg.windows.as_ref().and_then(|w| w.sandbox_private_desktop))
+            .unwrap_or(true);
         let resolved_cwd = normalize_for_native_workdir({
             use std::env;
 
@@ -2185,7 +2190,7 @@ impl Config {
         let windows_sandbox_level = match windows_sandbox_mode {
             Some(WindowsSandboxModeToml::Elevated) => WindowsSandboxLevel::Elevated,
             Some(WindowsSandboxModeToml::Unelevated) => WindowsSandboxLevel::RestrictedToken,
-            None => WindowsSandboxLevel::from_features(&features),
+            None => WindowsSandboxLevel::Disabled,
         };
         let memories_root = memory_root(&codex_home);
         std::fs::create_dir_all(&memories_root)?;

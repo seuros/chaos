@@ -38,15 +38,17 @@ use codex_app_server_protocol::ServerNotification;
 use codex_app_server_protocol::ServerRequest;
 use futures::SinkExt;
 use futures::StreamExt;
+use rama::extensions::Extensions;
+use rama::http::client::EasyHttpConnectorBuilder;
+use rama::http::ws::Message;
+use rama::http::ws::handshake::client::ClientWebSocket;
+use rama::http::ws::handshake::client::HttpClientWebSocketExt;
+use rama::tls::rustls::client::TlsConnectorData;
+use codex_utils_rustls_provider::ensure_rustls_crypto_provider;
 use serde::de::DeserializeOwned;
-use tokio::net::TcpStream;
 use tokio::sync::mpsc;
 use tokio::sync::oneshot;
 use tokio::time::timeout;
-use tokio_tungstenite::MaybeTlsStream;
-use tokio_tungstenite::WebSocketStream;
-use tokio_tungstenite::connect_async;
-use tokio_tungstenite::tungstenite::Message;
 use tracing::warn;
 use url::Url;
 
@@ -131,21 +133,35 @@ impl RemoteAppServerClient {
                 format!("invalid websocket URL `{websocket_url}`: {err}"),
             )
         })?;
-        let stream = timeout(CONNECT_TIMEOUT, connect_async(url.as_str()))
-            .await
-            .map_err(|_| {
-                IoError::new(
-                    ErrorKind::TimedOut,
-                    format!("timed out connecting to remote app server at `{websocket_url}`"),
-                )
-            })?
-            .map(|(stream, _response)| stream)
-            .map_err(|err| {
-                IoError::other(format!(
-                    "failed to connect to remote app server at `{websocket_url}`: {err}"
-                ))
-            })?;
-        let mut stream = stream;
+        ensure_rustls_crypto_provider();
+        let tls_data = TlsConnectorData::try_new_http_auto().map_err(|err| {
+            IoError::other(format!("failed to configure websocket TLS: {err}"))
+        })?;
+        let client = EasyHttpConnectorBuilder::new()
+            .with_default_transport_connector()
+            .without_tls_proxy_support()
+            .without_proxy_support()
+            .with_tls_support_using_rustls(Some(tls_data))
+            .with_default_http_connector(Default::default())
+            .build_client();
+        let mut stream = timeout(CONNECT_TIMEOUT, async {
+            client
+                .websocket(url.as_str())
+                .handshake(Extensions::default())
+                .await
+        })
+        .await
+        .map_err(|_| {
+            IoError::new(
+                ErrorKind::TimedOut,
+                format!("timed out connecting to remote app server at `{websocket_url}`"),
+            )
+        })?
+        .map_err(|err| {
+            IoError::other(format!(
+                "failed to connect to remote app server at `{websocket_url}`: {err}"
+            ))
+        })?;
         let pending_events = initialize_remote_connection(
             &mut stream,
             &websocket_url,
@@ -634,7 +650,7 @@ impl RemoteAppServerRequestHandle {
 }
 
 async fn initialize_remote_connection(
-    stream: &mut WebSocketStream<MaybeTlsStream<TcpStream>>,
+    stream: &mut ClientWebSocket,
     websocket_url: &str,
     params: InitializeParams,
     initialize_timeout: Duration,
@@ -767,7 +783,7 @@ async fn deliver_event(
     event_tx: &mpsc::Sender<AppServerEvent>,
     skipped_events: &mut usize,
     event: AppServerEvent,
-    stream: &mut WebSocketStream<MaybeTlsStream<TcpStream>>,
+    stream: &mut ClientWebSocket,
 ) -> IoResult<()> {
     if *skipped_events > 0 {
         if event_requires_delivery(&event) {
@@ -828,7 +844,7 @@ async fn deliver_event(
 }
 
 async fn reject_if_server_request_dropped(
-    stream: &mut WebSocketStream<MaybeTlsStream<TcpStream>>,
+    stream: &mut ClientWebSocket,
     event: &AppServerEvent,
 ) -> IoResult<()> {
     let AppServerEvent::ServerRequest(request) = event else {
@@ -895,13 +911,13 @@ fn jsonrpc_notification_from_client_notification(
 }
 
 async fn write_jsonrpc_message(
-    stream: &mut WebSocketStream<MaybeTlsStream<TcpStream>>,
+    stream: &mut ClientWebSocket,
     message: JSONRPCMessage,
     websocket_url: &str,
 ) -> IoResult<()> {
     let payload = serde_json::to_string(&message).map_err(IoError::other)?;
     stream
-        .send(Message::Text(payload.into()))
+        .send(Message::text(payload))
         .await
         .map_err(|err| {
             IoError::other(format!(

@@ -533,8 +533,8 @@ impl SessionTelemetry {
         result: &Result<
             Option<
                 Result<
-                    tokio_tungstenite::tungstenite::Message,
-                    tokio_tungstenite::tungstenite::Error,
+                    rama::http::ws::Message,
+                    rama::error::BoxError,
                 >,
             >,
             ApiError,
@@ -547,7 +547,7 @@ impl SessionTelemetry {
 
         match result {
             Ok(Some(Ok(message))) => match message {
-                tokio_tungstenite::tungstenite::Message::Text(text) => {
+                rama::http::ws::Message::Text(text) => {
                     match serde_json::from_str::<serde_json::Value>(text) {
                         Ok(value) => {
                             kind = value
@@ -573,20 +573,20 @@ impl SessionTelemetry {
                         }
                     }
                 }
-                tokio_tungstenite::tungstenite::Message::Binary(_) => {
+                rama::http::ws::Message::Binary(_) => {
                     success = false;
                     error_message = Some("unexpected binary websocket event".to_string());
                 }
-                tokio_tungstenite::tungstenite::Message::Ping(_)
-                | tokio_tungstenite::tungstenite::Message::Pong(_) => {
+                rama::http::ws::Message::Ping(_)
+                | rama::http::ws::Message::Pong(_) => {
                     return;
                 }
-                tokio_tungstenite::tungstenite::Message::Close(_) => {
+                rama::http::ws::Message::Close(_) => {
                     success = false;
                     error_message =
                         Some("websocket closed by server before response.completed".to_string());
                 }
-                tokio_tungstenite::tungstenite::Message::Frame(_) => {
+                rama::http::ws::Message::Frame(_) => {
                     success = false;
                     error_message = Some("unexpected websocket frame".to_string());
                 }

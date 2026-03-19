@@ -63,7 +63,6 @@ tokio = { workspace = true, features = [
     "signal",
 ] }
 tokio-util = { workspace = true }
-tokio-tungstenite = { workspace = true }
 tracing = { workspace = true, features = ["log"] }
 tracing-subscriber = { workspace = true, features = ["env-filter", "fmt", "json"] }
 uuid = { workspace = true, features = ["serde", "v7"] }

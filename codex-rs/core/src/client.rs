@@ -79,8 +79,8 @@ use std::time::Instant;
 use tokio::sync::mpsc;
 use tokio::sync::oneshot;
 use tokio::sync::oneshot::error::TryRecvError;
-use tokio_tungstenite::tungstenite::Error;
-use tokio_tungstenite::tungstenite::Message;
+use rama::error::BoxError;
+use rama::http::ws::Message;
 use tracing::instrument;
 use tracing::trace;
 use tracing::warn;
@@ -1762,7 +1762,7 @@ impl WebsocketTelemetry for ApiTelemetry {
 
     fn on_ws_event(
         &self,
-        result: &std::result::Result<Option<std::result::Result<Message, Error>>, ApiError>,
+        result: &std::result::Result<Option<std::result::Result<Message, BoxError>>, ApiError>,
         duration: Duration,
     ) {
         self.session_telemetry

@@ -12,29 +12,28 @@ use crate::telemetry::WebsocketTelemetry;
 use codex_client::TransportError;
 use codex_client::maybe_build_rustls_client_config_with_custom_ca;
 use codex_utils_rustls_provider::ensure_rustls_crypto_provider;
-use futures::SinkExt;
-use futures::StreamExt;
 use http::HeaderMap;
 use http::HeaderName;
 use http::HeaderValue;
 use http::StatusCode;
+use rama::error::BoxError;
+use rama::extensions::Extensions;
+use rama::http::client::EasyHttpConnectorBuilder;
+use rama::http::ws::Message;
+use rama::http::ws::handshake::client::HandshakeError;
+use rama::http::ws::handshake::client::HttpClientWebSocketExt;
+use rama::http::ws::handshake::client::ResponseValidateError;
+use rama::tls::rustls::client::TlsConnectorData;
 use serde::Deserialize;
 use serde_json::Value;
 use serde_json::map::Map as JsonMap;
 use std::sync::Arc;
 use std::sync::OnceLock;
 use std::time::Duration;
-use tokio::net::TcpStream;
 use tokio::sync::Mutex;
 use tokio::sync::mpsc;
 use tokio::sync::oneshot;
 use tokio::time::Instant;
-use tokio_tungstenite::MaybeTlsStream;
-use tokio_tungstenite::WebSocketStream;
-use tokio_tungstenite::connect_async_tls_with_config;
-use tokio_tungstenite::tungstenite::Error as WsError;
-use tokio_tungstenite::tungstenite::Message;
-use tokio_tungstenite::tungstenite::client::IntoClientRequest;
 use tracing::Instrument;
 use tracing::Span;
 use tracing::debug;
@@ -42,10 +41,11 @@ use tracing::error;
 use tracing::info;
 use tracing::instrument;
 use tracing::trace;
-use tungstenite::extensions::ExtensionsConfig;
-use tungstenite::extensions::compression::deflate::DeflateConfig;
-use tungstenite::protocol::WebSocketConfig;
 use url::Url;
+
+// We define a rama-agnostic error type alias for the pump task.
+// ProtocolError covers WebSocket-level failures; BoxError covers transport-level ones.
+type WsError = BoxError;
 
 struct WsStream {
     tx_command: mpsc::Sender<WsCommand>,
@@ -61,7 +61,9 @@ enum WsCommand {
 }
 
 impl WsStream {
-    fn new(inner: WebSocketStream<MaybeTlsStream<TcpStream>>) -> Self {
+    fn new(inner: rama::http::ws::handshake::client::ClientWebSocket) -> Self {
+        use rama::futures::{SinkExt, StreamExt};
+
         let (tx_command, mut rx_command) = mpsc::channel::<WsCommand>(32);
         let (tx_message, rx_message) = mpsc::unbounded_channel::<Result<Message, WsError>>();
 
@@ -75,7 +77,8 @@ impl WsStream {
                         };
                         match command {
                             WsCommand::Send { message, tx_result } => {
-                                let result = inner.send(message).await;
+                                let result = inner.send(message).await
+                                    .map_err(|e| -> WsError { Box::new(e) });
                                 let should_break = result.is_err();
                                 let _ = tx_result.send(result);
                                 if should_break {
@@ -91,7 +94,7 @@ impl WsStream {
                         match message {
                             Ok(Message::Ping(payload)) => {
                                 if let Err(err) = inner.send(Message::Pong(payload)).await {
-                                    let _ = tx_message.send(Err(err));
+                                    let _ = tx_message.send(Err(Box::new(err)));
                                     break;
                                 }
                             }
@@ -109,7 +112,7 @@ impl WsStream {
                                 }
                             }
                             Err(err) => {
-                                let _ = tx_message.send(Err(err));
+                                let _ = tx_message.send(Err(Box::new(err)));
                                 break;
                             }
                         }
@@ -131,9 +134,11 @@ impl WsStream {
     ) -> Result<(), WsError> {
         let (tx_result, rx_result) = oneshot::channel();
         if self.tx_command.send(make_command(tx_result)).await.is_err() {
-            return Err(WsError::ConnectionClosed);
+            return Err("connection closed".into());
         }
-        rx_result.await.unwrap_or(Err(WsError::ConnectionClosed))
+        rx_result
+            .await
+            .unwrap_or_else(|_| Err("connection closed".into()))
     }
 
     async fn send(&self, message: Message) -> Result<(), WsError> {
@@ -348,98 +353,96 @@ async fn connect_websocket(
     ensure_rustls_crypto_provider();
     info!("connecting to websocket: {url}");
 
-    let mut request = url
-        .as_str()
-        .into_client_request()
-        .map_err(|err| ApiError::Stream(format!("failed to build websocket request: {err}")))?;
-    request.headers_mut().extend(headers);
-
-    // Secure websocket traffic needs the same custom-CA policy as reqwest-based HTTPS traffic.
-    // If a Codex-specific CA bundle is configured, build an explicit rustls connector so this
-    // websocket path does not fall back to tungstenite's default native-roots-only behavior.
-    let connector = maybe_build_rustls_client_config_with_custom_ca()
+    let tls_data = match maybe_build_rustls_client_config_with_custom_ca()
         .map_err(|err| ApiError::Stream(format!("failed to configure websocket TLS: {err}")))?
-        .map(tokio_tungstenite::Connector::Rustls);
-
-    let response = connect_async_tls_with_config(
-        request,
-        Some(websocket_config()),
-        false, // `false` means "do not disable Nagle", which is tungstenite's recommended default.
-        connector,
-    )
-    .await;
-
-    let (stream, response) = match response {
-        Ok((stream, response)) => {
-            info!(
-                "successfully connected to websocket: {url}, headers: {:?}",
-                response.headers()
-            );
-            (stream, response)
-        }
-        Err(err) => {
-            error!("failed to connect to websocket: {err}, url: {url}");
-            return Err(map_ws_error(err, &url));
-        }
+    {
+        Some(config) => TlsConnectorData::from(config),
+        None => TlsConnectorData::try_new_http_auto()
+            .map_err(|err| ApiError::Stream(format!("failed to configure default TLS: {err}")))?,
     };
 
-    let reasoning_included = response.headers().contains_key(X_REASONING_INCLUDED_HEADER);
-    let models_etag = response
-        .headers()
+    let client = EasyHttpConnectorBuilder::new()
+        .with_default_transport_connector()
+        .without_tls_proxy_support()
+        .without_proxy_support()
+        .with_tls_support_using_rustls(Some(tls_data))
+        .with_default_http_connector(Default::default())
+        .build_client();
+
+    let mut ws_builder = client.websocket(url.as_str());
+    for (name, value) in &headers {
+        ws_builder = ws_builder.with_header(name.as_str(), value.to_str().map_err(|err| {
+            ApiError::Stream(format!("invalid header value for {name}: {err}"))
+        })?);
+    }
+    let _ = ws_builder.set_per_message_deflate();
+
+    let ws = ws_builder
+        .handshake(Extensions::default())
+        .await
+        .map_err(|err| map_handshake_error(err, &url))?;
+
+    let response_parts = ws.response();
+    info!(
+        "successfully connected to websocket: {url}, headers: {:?}",
+        response_parts.headers
+    );
+
+    let reasoning_included = response_parts.headers.contains_key(X_REASONING_INCLUDED_HEADER);
+    let models_etag = response_parts
+        .headers
         .get(X_MODELS_ETAG_HEADER)
         .and_then(|value| value.to_str().ok())
         .map(ToString::to_string);
-    let server_model = response
-        .headers()
+    let server_model = response_parts
+        .headers
         .get(OPENAI_MODEL_HEADER)
         .and_then(|value| value.to_str().ok())
         .map(ToString::to_string);
     if let Some(turn_state) = turn_state
-        && let Some(header_value) = response
-            .headers()
+        && let Some(header_value) = response_parts
+            .headers
             .get(X_CODEX_TURN_STATE_HEADER)
             .and_then(|value| value.to_str().ok())
     {
         let _ = turn_state.set(header_value.to_string());
     }
     Ok((
-        WsStream::new(stream),
+        WsStream::new(ws),
         reasoning_included,
         models_etag,
         server_model,
     ))
 }
 
-fn websocket_config() -> WebSocketConfig {
-    let mut extensions = ExtensionsConfig::default();
-    extensions.permessage_deflate = Some(DeflateConfig::default());
-
-    let mut config = WebSocketConfig::default();
-    config.extensions = extensions;
-    config
-}
-
-fn map_ws_error(err: WsError, url: &Url) -> ApiError {
+fn map_handshake_error(err: HandshakeError, url: &Url) -> ApiError {
+    error!("failed to connect to websocket: {err}, url: {url}");
     match err {
-        WsError::Http(response) => {
-            let status = response.status();
-            let headers = response.headers().clone();
-            let body = response
-                .body()
-                .as_ref()
-                .and_then(|bytes| String::from_utf8(bytes.clone()).ok());
+        HandshakeError::ValidationError(
+            ResponseValidateError::UnexpectedStatusCode(status),
+        ) => {
+            // Preserve HTTP status so callers can match on 426 (fallback to HTTP)
+            // and 401 (auth recovery).
             ApiError::Transport(TransportError::Http {
                 status,
                 url: Some(url.to_string()),
-                headers: Some(headers),
-                body,
+                headers: None,
+                body: None,
             })
         }
-        WsError::ConnectionClosed | WsError::AlreadyClosed => {
-            ApiError::Stream("websocket closed".to_string())
+        HandshakeError::ValidationError(validation_err) => {
+            ApiError::Stream(format!("websocket handshake validation failed: {validation_err}"))
         }
-        WsError::Io(err) => ApiError::Transport(TransportError::Network(err.to_string())),
-        other => ApiError::Transport(TransportError::Network(other.to_string())),
+        HandshakeError::HttpRequestError(err) => {
+            ApiError::Transport(TransportError::Network(format!(
+                "websocket HTTP request failed: {err}"
+            )))
+        }
+        HandshakeError::HttpUpgradeError(err) => {
+            ApiError::Transport(TransportError::Network(format!(
+                "websocket upgrade failed: {err}"
+            )))
+        }
     }
 }
 
@@ -551,7 +554,7 @@ async fn run_websocket_response_stream(
 
     let request_start = Instant::now();
     let result = ws_stream
-        .send(Message::Text(request_text.into()))
+        .send(Message::text(request_text))
         .await
         .map_err(|err| ApiError::Stream(format!("failed to send websocket request: {err}")));
 
@@ -654,12 +657,6 @@ mod tests {
     use super::*;
     use pretty_assertions::assert_eq;
     use serde_json::json;
-
-    #[test]
-    fn websocket_config_enables_permessage_deflate() {
-        let config = websocket_config();
-        assert!(config.extensions.permessage_deflate.is_some());
-    }
 
     #[test]
     fn parse_wrapped_websocket_error_event_maps_to_transport_http() {

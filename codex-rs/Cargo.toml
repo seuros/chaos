@@ -217,6 +217,7 @@ portable-pty = "0.9.0"
 predicates = "3"
 pretty_assertions = "1.4.1"
 pulldown-cmark = "0.10"
+rama = { git = "https://github.com/seuros/rama.git", branch = "fix/rustls-alpn-target-version", features = ["http-full", "rustls", "compression"] }
 rand = "0.9"
 ratatui = "0.30.0"
 ratatui-macros = "0.7.0"

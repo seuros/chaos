@@ -7,7 +7,7 @@ use std::os::unix::ffi::OsStrExt;
 /// - disabling ptrace attach on Linux and macOS.
 /// - removing dangerous environment variables such as LD_PRELOAD and DYLD_*
 pub fn pre_main_hardening() {
-    #[cfg(any(target_os = "linux", target_os = "android"))]
+    #[cfg(target_os = "linux")]
     pre_main_hardening_linux();
 
     #[cfg(target_os = "macos")]
@@ -18,7 +18,7 @@ pub fn pre_main_hardening() {
     pre_main_hardening_bsd();
 }
 
-#[cfg(any(target_os = "linux", target_os = "android"))]
+#[cfg(target_os = "linux")]
 const PRCTL_FAILED_EXIT_CODE: i32 = 5;
 
 #[cfg(target_os = "macos")]
@@ -26,7 +26,6 @@ const PTRACE_DENY_ATTACH_FAILED_EXIT_CODE: i32 = 6;
 
 #[cfg(any(
     target_os = "linux",
-    target_os = "android",
     target_os = "macos",
     target_os = "freebsd",
     target_os = "netbsd",
@@ -34,7 +33,7 @@ const PTRACE_DENY_ATTACH_FAILED_EXIT_CODE: i32 = 6;
 ))]
 const SET_RLIMIT_CORE_FAILED_EXIT_CODE: i32 = 7;
 
-#[cfg(any(target_os = "linux", target_os = "android"))]
+#[cfg(target_os = "linux")]
 pub(crate) fn pre_main_hardening_linux() {
     // Disable ptrace attach / mark process non-dumpable.
     let ret_code = unsafe { libc::prctl(libc::PR_SET_DUMPABLE, 0, 0, 0, 0) };

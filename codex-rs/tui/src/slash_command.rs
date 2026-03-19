@@ -180,7 +180,7 @@ impl SlashCommand {
     fn is_visible(self) -> bool {
         match self {
             SlashCommand::SandboxReadRoot => false,
-            SlashCommand::Copy => !cfg!(target_os = "android"),
+            SlashCommand::Copy => true,
             SlashCommand::Rollout | SlashCommand::TestApproval => cfg!(debug_assertions),
             _ => true,
         }

@@ -106,6 +106,7 @@ url = { workspace = true }
 webbrowser = { workspace = true }
 uuid = { workspace = true }
 
+arboard = { workspace = true }
 tokio-util = { workspace = true, features = ["time"] }
 
 [target.'cfg(not(target_os = "linux"))'.dependencies]
@@ -114,12 +115,6 @@ hound = { version = "3.5", optional = true }
 
 [target.'cfg(unix)'.dependencies]
 libc = { workspace = true }
-
-
-# Clipboard support via `arboard` is not available on Android/Termux.
-# Only include it for non-Android targets so the crate builds on Android.
-[target.'cfg(not(target_os = "android"))'.dependencies]
-arboard = { workspace = true }
 
 
 [dev-dependencies]

@@ -19,6 +19,7 @@ pub mod responses;
 pub mod streaming_sse;
 pub mod test_codex;
 pub mod test_codex_exec;
+pub mod ws_accept;
 
 #[ctor]
 fn enable_deterministic_unified_exec_process_ids_for_tests() {

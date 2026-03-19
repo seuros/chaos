@@ -88,7 +88,7 @@ rmcp = { workspace = true, default-features = false, features = [
     "transport-streamable-http-server",
 ] }
 serial_test = { workspace = true }
-tokio-tungstenite = { workspace = true }
+rama = { workspace = true }
 tracing-opentelemetry = { workspace = true }
 wiremock = { workspace = true }
 shlex = { workspace = true }

@@ -2,6 +2,7 @@ use std::collections::HashMap;
 use std::future::Future;
 use std::time::Duration;
 
+use base64::Engine;
 use codex_api::RealtimeAudioFrame;
 use codex_api::RealtimeEvent;
 use codex_api::RealtimeEventParser;
@@ -11,16 +12,63 @@ use codex_api::RealtimeWebsocketClient;
 use codex_api::provider::Provider;
 use codex_api::provider::RetryConfig;
 use codex_protocol::protocol::RealtimeHandoffRequested;
-use futures::SinkExt;
-use futures::StreamExt;
 use http::HeaderMap;
+use rama::http::ws::AsyncWebSocket;
+use rama::http::ws::Message;
+use rama::http::ws::protocol::Role;
+use rama::tcp::TcpStream as RamaTcpStream;
 use serde_json::Value;
 use serde_json::json;
+use sha1::{Digest, Sha1};
+use tokio::io::{AsyncBufReadExt, AsyncWriteExt, BufReader};
 use tokio::net::TcpListener;
-use tokio_tungstenite::accept_async;
-use tokio_tungstenite::tungstenite::Message;
 
-type RealtimeWsStream = tokio_tungstenite::WebSocketStream<tokio::net::TcpStream>;
+type RealtimeWsStream = AsyncWebSocket<RamaTcpStream>;
+
+async fn accept_ws(stream: tokio::net::TcpStream) -> RealtimeWsStream {
+    let mut reader = BufReader::new(stream);
+    let mut ws_key = None;
+    loop {
+        let mut line = String::new();
+        reader
+            .read_line(&mut line)
+            .await
+            .expect("read header line");
+        if line == "\r\n" || line == "\n" {
+            break;
+        }
+        if let Some((name, value)) = line.split_once(':') {
+            if name.trim().eq_ignore_ascii_case("sec-websocket-key") {
+                ws_key = Some(value.trim().trim_end_matches(['\r', '\n']).to_string());
+            }
+        }
+    }
+    let ws_key = ws_key.expect("missing Sec-WebSocket-Key");
+    let mut hasher = Sha1::new();
+    hasher.update(ws_key.as_bytes());
+    hasher.update(b"258EAFA5-E914-47DA-95CA-5ADF5B3F4A84");
+    let accept = base64::engine::general_purpose::STANDARD.encode(hasher.finalize());
+    let remaining = reader.buffer().to_vec();
+    let mut stream = reader.into_inner();
+    stream
+        .write_all(
+            format!(
+                "HTTP/1.1 101 Switching Protocols\r\n\
+                 Upgrade: websocket\r\n\
+                 Connection: Upgrade\r\n\
+                 Sec-WebSocket-Accept: {accept}\r\n\r\n"
+            )
+            .as_bytes(),
+        )
+        .await
+        .expect("write 101");
+    let stream = RamaTcpStream::new(stream);
+    if remaining.is_empty() {
+        AsyncWebSocket::from_raw_socket(stream, Role::Server, None).await
+    } else {
+        AsyncWebSocket::from_partially_read(stream, remaining, Role::Server, None).await
+    }
+}
 
 async fn spawn_realtime_ws_server<Handler, Fut>(
     handler: Handler,
@@ -43,10 +91,7 @@ where
             Ok(stream) => stream,
             Err(err) => panic!("failed to accept test websocket connection: {err}"),
         };
-        let ws = match accept_async(stream).await {
-            Ok(ws) => ws,
-            Err(err) => panic!("failed to complete websocket handshake: {err}"),
-        };
+        let ws = accept_ws(stream).await;
         handler(ws).await;
     });
 
@@ -74,10 +119,9 @@ fn test_provider(base_url: String) -> Provider {
 async fn realtime_ws_e2e_session_create_and_event_flow() {
     let (addr, server) = spawn_realtime_ws_server(|mut ws: RealtimeWsStream| async move {
         let first = ws
-            .next()
+            .recv_message()
             .await
             .expect("first msg")
-            .expect("first msg ok")
             .into_text()
             .expect("text");
         let first_json: Value = serde_json::from_str(&first).expect("json");
@@ -99,36 +143,33 @@ async fn realtime_ws_e2e_session_create_and_event_flow() {
             Value::from(24_000)
         );
 
-        ws.send(Message::Text(
+        ws.send_message(Message::text(
             json!({
                 "type": "session.updated",
                 "session": {"id": "sess_mock", "instructions": "backend prompt"}
             })
-            .to_string()
-            .into(),
+            .to_string(),
         ))
         .await
         .expect("send session.updated");
 
         let second = ws
-            .next()
+            .recv_message()
             .await
             .expect("second msg")
-            .expect("second msg ok")
             .into_text()
             .expect("text");
         let second_json: Value = serde_json::from_str(&second).expect("json");
         assert_eq!(second_json["type"], "input_audio_buffer.append");
 
-        ws.send(Message::Text(
+        ws.send_message(Message::text(
             json!({
                 "type": "conversation.output_audio.delta",
                 "delta": "AQID",
                 "sample_rate": 48000,
                 "channels": 1
             })
-            .to_string()
-            .into(),
+            .to_string(),
         ))
         .await
         .expect("send audio out");
@@ -197,32 +238,29 @@ async fn realtime_ws_e2e_session_create_and_event_flow() {
 async fn realtime_ws_e2e_send_while_next_event_waits() {
     let (addr, server) = spawn_realtime_ws_server(|mut ws: RealtimeWsStream| async move {
         let first = ws
-            .next()
+            .recv_message()
             .await
             .expect("first msg")
-            .expect("first msg ok")
             .into_text()
             .expect("text");
         let first_json: Value = serde_json::from_str(&first).expect("json");
         assert_eq!(first_json["type"], "session.update");
 
         let second = ws
-            .next()
+            .recv_message()
             .await
             .expect("second msg")
-            .expect("second msg ok")
             .into_text()
             .expect("text");
         let second_json: Value = serde_json::from_str(&second).expect("json");
         assert_eq!(second_json["type"], "input_audio_buffer.append");
 
-        ws.send(Message::Text(
+        ws.send_message(Message::text(
             json!({
                 "type": "session.updated",
                 "session": {"id": "sess_after_send", "instructions": "backend prompt"}
             })
-            .to_string()
-            .into(),
+            .to_string(),
         ))
         .await
         .expect("send session.updated");
@@ -281,16 +319,15 @@ async fn realtime_ws_e2e_send_while_next_event_waits() {
 async fn realtime_ws_e2e_disconnected_emitted_once() {
     let (addr, server) = spawn_realtime_ws_server(|mut ws: RealtimeWsStream| async move {
         let first = ws
-            .next()
+            .recv_message()
             .await
             .expect("first msg")
-            .expect("first msg ok")
             .into_text()
             .expect("text");
         let first_json: Value = serde_json::from_str(&first).expect("json");
         assert_eq!(first_json["type"], "session.update");
 
-        ws.send(Message::Close(None)).await.expect("send close");
+        ws.send_message(Message::Close(None)).await.expect("send close");
     })
     .await;
 
@@ -323,33 +360,30 @@ async fn realtime_ws_e2e_disconnected_emitted_once() {
 async fn realtime_ws_e2e_ignores_unknown_text_events() {
     let (addr, server) = spawn_realtime_ws_server(|mut ws: RealtimeWsStream| async move {
         let first = ws
-            .next()
+            .recv_message()
             .await
             .expect("first msg")
-            .expect("first msg ok")
             .into_text()
             .expect("text");
         let first_json: Value = serde_json::from_str(&first).expect("json");
         assert_eq!(first_json["type"], "session.update");
 
-        ws.send(Message::Text(
+        ws.send_message(Message::text(
             json!({
                 "type": "response.created",
                 "response": {"id": "resp_unknown"}
             })
-            .to_string()
-            .into(),
+            .to_string(),
         ))
         .await
         .expect("send unknown event");
 
-        ws.send(Message::Text(
+        ws.send_message(Message::text(
             json!({
                 "type": "session.updated",
                 "session": {"id": "sess_after_unknown", "instructions": "backend prompt"}
             })
-            .to_string()
-            .into(),
+            .to_string(),
         ))
         .await
         .expect("send session.updated");
@@ -393,16 +427,15 @@ async fn realtime_ws_e2e_ignores_unknown_text_events() {
 async fn realtime_ws_e2e_realtime_v2_parser_emits_handoff_requested() {
     let (addr, server) = spawn_realtime_ws_server(|mut ws: RealtimeWsStream| async move {
         let first = ws
-            .next()
+            .recv_message()
             .await
             .expect("first msg")
-            .expect("first msg ok")
             .into_text()
             .expect("text");
         let first_json: Value = serde_json::from_str(&first).expect("json");
         assert_eq!(first_json["type"], "session.update");
 
-        ws.send(Message::Text(
+        ws.send_message(Message::text(
             json!({
                 "type": "conversation.item.done",
                 "item": {
@@ -413,8 +446,7 @@ async fn realtime_ws_e2e_realtime_v2_parser_emits_handoff_requested() {
                     "arguments": "{\"prompt\":\"delegate now\"}"
                 }
             })
-            .to_string()
-            .into(),
+            .to_string(),
         ))
         .await
         .expect("send function call");

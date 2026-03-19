@@ -628,8 +628,42 @@ mod tests {
     use std::collections::HashMap;
     use std::time::Duration;
     use tokio::net::TcpListener;
-    use tokio_tungstenite::accept_async;
-    use tokio_tungstenite::tungstenite::Message as WsMessage;
+    use rama::http::ws::Message as WsMessage;
+
+    async fn accept_ws(stream: tokio::net::TcpStream) -> rama::http::ws::AsyncWebSocket<rama::tcp::TcpStream> {
+        use base64::Engine;
+        use sha1::{Digest, Sha1};
+        use tokio::io::{AsyncBufReadExt, AsyncWriteExt, BufReader};
+
+        let mut reader = BufReader::new(stream);
+        let mut ws_key = None;
+        loop {
+            let mut line = String::new();
+            reader.read_line(&mut line).await.expect("read header line");
+            if line == "\r\n" || line == "\n" { break; }
+            if let Some((name, value)) = line.split_once(':') {
+                if name.trim().eq_ignore_ascii_case("sec-websocket-key") {
+                    ws_key = Some(value.trim().trim_end_matches(['\r', '\n']).to_string());
+                }
+            }
+        }
+        let ws_key = ws_key.expect("missing Sec-WebSocket-Key");
+        let mut hasher = Sha1::new();
+        hasher.update(ws_key.as_bytes());
+        hasher.update(b"258EAFA5-E914-47DA-95CA-5ADF5B3F4A84");
+        let accept = base64::engine::general_purpose::STANDARD.encode(hasher.finalize());
+        let remaining = reader.buffer().to_vec();
+        let mut stream = reader.into_inner();
+        stream.write_all(format!(
+            "HTTP/1.1 101 Switching Protocols\r\nUpgrade: websocket\r\nConnection: Upgrade\r\nSec-WebSocket-Accept: {accept}\r\n\r\n"
+        ).as_bytes()).await.expect("write 101");
+        let stream = rama::tcp::TcpStream::new(stream);
+        if remaining.is_empty() {
+            rama::http::ws::AsyncWebSocket::from_raw_socket(stream, rama::http::ws::protocol::Role::Server, None).await
+        } else {
+            rama::http::ws::AsyncWebSocket::from_partially_read(stream, remaining, rama::http::ws::protocol::Role::Server, None).await
+        }
+    }
 
     #[test]
     fn parse_session_updated_event() {
@@ -989,13 +1023,12 @@ mod tests {
 
         let server = tokio::spawn(async move {
             let (stream, _) = listener.accept().await.expect("accept");
-            let mut ws = accept_async(stream).await.expect("accept ws");
+            let mut ws = accept_ws(stream).await;
 
             let first = ws
-                .next()
+                .recv_message()
                 .await
                 .expect("first msg")
-                .expect("first msg ok")
                 .into_text()
                 .expect("text");
             let first_json: Value = serde_json::from_str(&first).expect("json");
@@ -1021,32 +1054,29 @@ mod tests {
                 Value::String("fathom".to_string())
             );
 
-            ws.send(WsMessage::Text(
+            ws.send_message(WsMessage::text(
                 json!({
                     "type": "session.updated",
                     "session": {"id": "sess_mock", "instructions": "backend prompt"}
                 })
-                .to_string()
-                .into(),
+                .to_string(),
             ))
             .await
             .expect("send session.updated");
 
             let second = ws
-                .next()
+                .recv_message()
                 .await
                 .expect("second msg")
-                .expect("second msg ok")
                 .into_text()
                 .expect("text");
             let second_json: Value = serde_json::from_str(&second).expect("json");
             assert_eq!(second_json["type"], "input_audio_buffer.append");
 
             let third = ws
-                .next()
+                .recv_message()
                 .await
                 .expect("third msg")
-                .expect("third msg ok")
                 .into_text()
                 .expect("text");
             let third_json: Value = serde_json::from_str(&third).expect("json");
@@ -1054,10 +1084,9 @@ mod tests {
             assert_eq!(third_json["item"]["content"][0]["text"], "hello agent");
 
             let fourth = ws
-                .next()
+                .recv_message()
                 .await
                 .expect("fourth msg")
-                .expect("fourth msg ok")
                 .into_text()
                 .expect("text");
             let fourth_json: Value = serde_json::from_str(&fourth).expect("json");
@@ -1065,61 +1094,56 @@ mod tests {
             assert_eq!(fourth_json["handoff_id"], "handoff_1");
             assert_eq!(fourth_json["output_text"], "hello from codex");
 
-            ws.send(WsMessage::Text(
+            ws.send_message(WsMessage::text(
                 json!({
                     "type": "conversation.output_audio.delta",
                     "delta": "AQID",
                     "sample_rate": 48000,
                     "channels": 1
                 })
-                .to_string()
-                .into(),
+                .to_string(),
             ))
             .await
             .expect("send audio");
 
-            ws.send(WsMessage::Text(
+            ws.send_message(WsMessage::text(
                 json!({
                     "type": "conversation.input_transcript.delta",
                     "delta": "delegate "
                 })
-                .to_string()
-                .into(),
+                .to_string(),
             ))
             .await
             .expect("send input transcript delta");
 
-            ws.send(WsMessage::Text(
+            ws.send_message(WsMessage::text(
                 json!({
                     "type": "conversation.input_transcript.delta",
                     "delta": "now"
                 })
-                .to_string()
-                .into(),
+                .to_string(),
             ))
             .await
             .expect("send input transcript delta");
 
-            ws.send(WsMessage::Text(
+            ws.send_message(WsMessage::text(
                 json!({
                     "type": "conversation.output_transcript.delta",
                     "delta": "working"
                 })
-                .to_string()
-                .into(),
+                .to_string(),
             ))
             .await
             .expect("send output transcript delta");
 
-            ws.send(WsMessage::Text(
+            ws.send_message(WsMessage::text(
                 json!({
                     "type": "conversation.handoff.requested",
                     "handoff_id": "handoff_1",
                     "item_id": "item_2",
                     "input_transcript": "delegate now"
                 })
-                .to_string()
-                .into(),
+                .to_string(),
             ))
             .await
             .expect("send item added");
@@ -1275,13 +1299,12 @@ mod tests {
 
         let server = tokio::spawn(async move {
             let (stream, _) = listener.accept().await.expect("accept");
-            let mut ws = accept_async(stream).await.expect("accept ws");
+            let mut ws = accept_ws(stream).await;
 
             let first = ws
-                .next()
+                .recv_message()
                 .await
                 .expect("first msg")
-                .expect("first msg ok")
                 .into_text()
                 .expect("text");
             let first_json: Value = serde_json::from_str(&first).expect("json");
@@ -1307,22 +1330,20 @@ mod tests {
                 json!(["prompt"])
             );
 
-            ws.send(WsMessage::Text(
+            ws.send_message(WsMessage::text(
                 json!({
                     "type": "session.updated",
                     "session": {"id": "sess_v2", "instructions": "backend prompt"}
                 })
-                .to_string()
-                .into(),
+                .to_string(),
             ))
             .await
             .expect("send session.updated");
 
             let second = ws
-                .next()
+                .recv_message()
                 .await
                 .expect("second msg")
-                .expect("second msg ok")
                 .into_text()
                 .expect("text");
             let second_json: Value = serde_json::from_str(&second).expect("json");
@@ -1341,10 +1362,9 @@ mod tests {
             );
 
             let third = ws
-                .next()
+                .recv_message()
                 .await
                 .expect("third msg")
-                .expect("third msg ok")
                 .into_text()
                 .expect("text");
             let third_json: Value = serde_json::from_str(&third).expect("json");
@@ -1426,13 +1446,12 @@ mod tests {
 
         let server = tokio::spawn(async move {
             let (stream, _) = listener.accept().await.expect("accept");
-            let mut ws = accept_async(stream).await.expect("accept ws");
+            let mut ws = accept_ws(stream).await;
 
             let first = ws
-                .next()
+                .recv_message()
                 .await
                 .expect("first msg")
-                .expect("first msg ok")
                 .into_text()
                 .expect("text");
             let first_json: Value = serde_json::from_str(&first).expect("json");
@@ -1445,22 +1464,20 @@ mod tests {
             assert!(first_json["session"]["audio"].get("output").is_none());
             assert!(first_json["session"].get("tools").is_none());
 
-            ws.send(WsMessage::Text(
+            ws.send_message(WsMessage::text(
                 json!({
                     "type": "session.updated",
                     "session": {"id": "sess_transcription"}
                 })
-                .to_string()
-                .into(),
+                .to_string(),
             ))
             .await
             .expect("send session.updated");
 
             let second = ws
-                .next()
+                .recv_message()
                 .await
                 .expect("second msg")
-                .expect("second msg ok")
                 .into_text()
                 .expect("text");
             let second_json: Value = serde_json::from_str(&second).expect("json");
@@ -1531,13 +1548,12 @@ mod tests {
 
         let server = tokio::spawn(async move {
             let (stream, _) = listener.accept().await.expect("accept");
-            let mut ws = accept_async(stream).await.expect("accept ws");
+            let mut ws = accept_ws(stream).await;
 
             let first = ws
-                .next()
+                .recv_message()
                 .await
                 .expect("first msg")
-                .expect("first msg ok")
                 .into_text()
                 .expect("text");
             let first_json: Value = serde_json::from_str(&first).expect("json");
@@ -1556,13 +1572,12 @@ mod tests {
             );
             assert!(first_json["session"].get("tools").is_none());
 
-            ws.send(WsMessage::Text(
+            ws.send_message(WsMessage::text(
                 json!({
                     "type": "session.updated",
                     "session": {"id": "sess_v1_mode"}
                 })
-                .to_string()
-                .into(),
+                .to_string(),
             ))
             .await
             .expect("send session.updated");
@@ -1622,35 +1637,32 @@ mod tests {
 
         let server = tokio::spawn(async move {
             let (stream, _) = listener.accept().await.expect("accept");
-            let mut ws = accept_async(stream).await.expect("accept ws");
+            let mut ws = accept_ws(stream).await;
 
             let first = ws
-                .next()
+                .recv_message()
                 .await
                 .expect("first msg")
-                .expect("first msg ok")
                 .into_text()
                 .expect("text");
             let first_json: Value = serde_json::from_str(&first).expect("json");
             assert_eq!(first_json["type"], "session.update");
 
             let second = ws
-                .next()
+                .recv_message()
                 .await
                 .expect("second msg")
-                .expect("second msg ok")
                 .into_text()
                 .expect("text");
             let second_json: Value = serde_json::from_str(&second).expect("json");
             assert_eq!(second_json["type"], "input_audio_buffer.append");
 
-            ws.send(WsMessage::Text(
+            ws.send_message(WsMessage::text(
                 json!({
                     "type": "session.updated",
                     "session": {"id": "sess_after_send", "instructions": "backend prompt"}
                 })
-                .to_string()
-                .into(),
+                .to_string(),
             ))
             .await
             .expect("send session.updated");

@@ -419,7 +419,7 @@ version = "1.1.5"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "40c48f72fd53cd289104fc64099abca73db4166ad86ea0b4341abe65af83dadc"
 dependencies = [
- "windows-sys 0.61.2",
+ "windows-sys 0.60.2",
 ]
 
 [[package]]
@@ -430,7 +430,7 @@ checksum = "291e6a250ff86cd4a820112fb8898808a366d8f9f58ce16d1f538353ad55747d"
 dependencies = [
  "anstyle",
  "once_cell_polyfill",
- "windows-sys 0.61.2",
+ "windows-sys 0.60.2",
 ]
 
 [[package]]
@@ -484,7 +484,7 @@ dependencies = [
  "objc2-foundation",
  "parking_lot",
  "percent-encoding",
- "windows-sys 0.59.0",
+ "windows-sys 0.60.2",
  "wl-clipboard-rs",
  "x11rb",
 ]
@@ -1023,7 +1023,7 @@ dependencies = [
  "bitflags 2.11.0",
  "cexpr",
  "clang-sys",
- "itertools 0.13.0",
+ "itertools 0.10.5",
  "log",
  "prettyplease",
  "proc-macro2",
@@ -1492,6 +1492,7 @@ dependencies = [
  "anyhow",
  "assert_matches",
  "async-trait",
+ "base64 0.22.1",
  "bytes",
  "codex-client",
  "codex-protocol",
@@ -1505,10 +1506,10 @@ dependencies = [
  "reqwest",
  "serde",
  "serde_json",
+ "sha1",
  "thiserror 2.0.18",
  "tokio",
  "tokio-test",
- "tokio-tungstenite",
  "tokio-util",
  "tracing",
  "url",
@@ -1550,6 +1551,7 @@ dependencies = [
  "opentelemetry_sdk",
  "owo-colors",
  "pretty_assertions",
+ "rama",
  "reqwest",
  "rmcp",
  "serde",
@@ -1559,7 +1561,6 @@ dependencies = [
  "tempfile",
  "time",
  "tokio",
- "tokio-tungstenite",
  "tokio-util",
  "toml 0.9.12+spec-1.1.0",
  "tracing",
@@ -1574,6 +1575,7 @@ dependencies = [
 name = "codex-app-server-client"
 version = "47.0.0"
 dependencies = [
+ "base64 0.22.1",
  "codex-app-server",
  "codex-app-server-protocol",
  "codex-arg0",
@@ -1586,8 +1588,8 @@ dependencies = [
  "rama",
  "serde",
  "serde_json",
+ "sha1",
  "tokio",
- "tokio-tungstenite",
  "toml 0.9.12+spec-1.1.0",
  "tracing",
  "url",
@@ -2990,14 +2992,14 @@ dependencies = [
  "futures",
  "notify",
  "pretty_assertions",
+ "rama",
  "regex-lite",
  "reqwest",
  "serde_json",
+ "sha1",
  "shlex",
  "tempfile",
  "tokio",
- "tokio-tungstenite",
- "tungstenite",
  "walkdir",
  "wiremock",
  "zstd",
@@ -3594,7 +3596,7 @@ dependencies = [
  "libc",
  "option-ext",
  "redox_users 0.5.2",
- "windows-sys 0.59.0",
+ "windows-sys 0.60.2",
 ]
 
 [[package]]
@@ -3840,7 +3842,7 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "39cab71617ae0d63f51a36d69f866391735b51691dbda63cf6f96d042b63efeb"
 dependencies = [
  "libc",
- "windows-sys 0.59.0",
+ "windows-sys 0.60.2",
 ]
 
 [[package]]
@@ -4551,30 +4553,6 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "7382cf6263419f2d8df38c55d7da83da5c18aef87fc7a7fc1fb1e344edfe14c1"
 dependencies = [
  "hashbrown 0.15.5",
-]
-
-[[package]]
-name = "headers"
-version = "0.4.1"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "b3314d5adb5d94bcdf56771f2e50dbbc80bb4bdf88967526706205ac9eff24eb"
-dependencies = [
- "base64 0.22.1",
- "bytes",
- "headers-core",
- "http 1.4.0",
- "httpdate",
- "mime",
- "sha1",
-]
-
-[[package]]
-name = "headers-core"
-version = "0.3.0"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "54b4a22553d4242c49fddb9ba998a99962b5cc6f22cb5a3482bec22522403ce4"
-dependencies = [
- "http 1.4.0",
 ]
 
 [[package]]
@@ -5326,7 +5304,7 @@ checksum = "3640c1c38b8e4e43584d8df18be5fc6b0aa314ce6ebf51b53313d4306cca8e46"
 dependencies = [
  "hermit-abi",
  "libc",
- "windows-sys 0.59.0",
+ "windows-sys 0.60.2",
 ]
 
 [[package]]
@@ -6157,7 +6135,7 @@ version = "0.50.3"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "7957b9740744892f114936ab4a57b3f487491bbeafaf8083688b16841a4240e5"
 dependencies = [
- "windows-sys 0.59.0",
+ "windows-sys 0.60.2",
 ]
 
 [[package]]
@@ -7361,7 +7339,7 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "343d3bd7056eda839b03204e68deff7d1b13aba7af2b2fd16890697274262ee7"
 dependencies = [
  "heck",
- "itertools 0.14.0",
+ "itertools 0.10.5",
  "log",
  "multimap",
  "petgraph 0.8.3",
@@ -7380,7 +7358,7 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "27c6023962132f4b30eb4c172c91ce92d933da334c59c23cddee82358ddafb0b"
 dependencies = [
  "anyhow",
- "itertools 0.14.0",
+ "itertools 0.10.5",
  "proc-macro2",
  "quote",
  "syn 2.0.117",
@@ -7575,7 +7553,7 @@ dependencies = [
  "once_cell",
  "socket2 0.6.3",
  "tracing",
- "windows-sys 0.59.0",
+ "windows-sys 0.60.2",
 ]
 
 [[package]]
@@ -7622,7 +7600,7 @@ dependencies = [
 [[package]]
 name = "rama"
 version = "0.3.0-rc1"
-source = "git+https://github.com/seuros/rama.git?branch=fix%2Frustls-alpn-target-version#512703b9bf4c2b48e663a954c2b9eb3c663dbceb"
+source = "git+https://github.com/seuros/rama.git?branch=fix%2Frustls-alpn-target-version#b19a3d75af88e4e60e93fa4c4bd9ad502ed5542d"
 dependencies = [
  "ahash",
  "base64 0.22.1",
@@ -7712,7 +7690,7 @@ dependencies = [
 [[package]]
 name = "rama-core"
 version = "0.3.0-rc1"
-source = "git+https://github.com/seuros/rama.git?branch=fix%2Frustls-alpn-target-version#512703b9bf4c2b48e663a954c2b9eb3c663dbceb"
+source = "git+https://github.com/seuros/rama.git?branch=fix%2Frustls-alpn-target-version#b19a3d75af88e4e60e93fa4c4bd9ad502ed5542d"
 dependencies = [
  "ahash",
  "asynk-strim",
@@ -7736,7 +7714,7 @@ dependencies = [
 [[package]]
 name = "rama-crypto"
 version = "0.3.0-rc1"
-source = "git+https://github.com/seuros/rama.git?branch=fix%2Frustls-alpn-target-version#512703b9bf4c2b48e663a954c2b9eb3c663dbceb"
+source = "git+https://github.com/seuros/rama.git?branch=fix%2Frustls-alpn-target-version#b19a3d75af88e4e60e93fa4c4bd9ad502ed5542d"
 dependencies = [
  "aws-lc-rs",
  "base64 0.22.1",
@@ -7767,7 +7745,7 @@ dependencies = [
 [[package]]
 name = "rama-dns"
 version = "0.3.0-rc1"
-source = "git+https://github.com/seuros/rama.git?branch=fix%2Frustls-alpn-target-version#512703b9bf4c2b48e663a954c2b9eb3c663dbceb"
+source = "git+https://github.com/seuros/rama.git?branch=fix%2Frustls-alpn-target-version#b19a3d75af88e4e60e93fa4c4bd9ad502ed5542d"
 dependencies = [
  "ahash",
  "hickory-resolver",
@@ -7790,12 +7768,12 @@ checksum = "3c452aba1beb7e29b873ff32f304536164cffcc596e786921aea64e858ff8f40"
 [[package]]
 name = "rama-error"
 version = "0.3.0-rc1"
-source = "git+https://github.com/seuros/rama.git?branch=fix%2Frustls-alpn-target-version#512703b9bf4c2b48e663a954c2b9eb3c663dbceb"
+source = "git+https://github.com/seuros/rama.git?branch=fix%2Frustls-alpn-target-version#b19a3d75af88e4e60e93fa4c4bd9ad502ed5542d"
 
 [[package]]
 name = "rama-grpc"
 version = "0.3.0-rc1"
-source = "git+https://github.com/seuros/rama.git?branch=fix%2Frustls-alpn-target-version#512703b9bf4c2b48e663a954c2b9eb3c663dbceb"
+source = "git+https://github.com/seuros/rama.git?branch=fix%2Frustls-alpn-target-version#b19a3d75af88e4e60e93fa4c4bd9ad502ed5542d"
 dependencies = [
  "base64 0.22.1",
  "flate2",
@@ -7818,7 +7796,7 @@ dependencies = [
 [[package]]
 name = "rama-grpc-build"
 version = "0.3.0-rc1"
-source = "git+https://github.com/seuros/rama.git?branch=fix%2Frustls-alpn-target-version#512703b9bf4c2b48e663a954c2b9eb3c663dbceb"
+source = "git+https://github.com/seuros/rama.git?branch=fix%2Frustls-alpn-target-version#b19a3d75af88e4e60e93fa4c4bd9ad502ed5542d"
 dependencies = [
  "prettyplease",
  "proc-macro-crate",
@@ -7869,7 +7847,7 @@ dependencies = [
 [[package]]
 name = "rama-http"
 version = "0.3.0-rc1"
-source = "git+https://github.com/seuros/rama.git?branch=fix%2Frustls-alpn-target-version#512703b9bf4c2b48e663a954c2b9eb3c663dbceb"
+source = "git+https://github.com/seuros/rama.git?branch=fix%2Frustls-alpn-target-version#b19a3d75af88e4e60e93fa4c4bd9ad502ed5542d"
 dependencies = [
  "ahash",
  "async-compression",
@@ -7926,7 +7904,7 @@ dependencies = [
 [[package]]
 name = "rama-http-backend"
 version = "0.3.0-rc1"
-source = "git+https://github.com/seuros/rama.git?branch=fix%2Frustls-alpn-target-version#512703b9bf4c2b48e663a954c2b9eb3c663dbceb"
+source = "git+https://github.com/seuros/rama.git?branch=fix%2Frustls-alpn-target-version#b19a3d75af88e4e60e93fa4c4bd9ad502ed5542d"
 dependencies = [
  "pin-project-lite",
  "rama-core 0.3.0-rc1",
@@ -7970,7 +7948,7 @@ dependencies = [
 [[package]]
 name = "rama-http-core"
 version = "0.3.0-rc1"
-source = "git+https://github.com/seuros/rama.git?branch=fix%2Frustls-alpn-target-version#512703b9bf4c2b48e663a954c2b9eb3c663dbceb"
+source = "git+https://github.com/seuros/rama.git?branch=fix%2Frustls-alpn-target-version#b19a3d75af88e4e60e93fa4c4bd9ad502ed5542d"
 dependencies = [
  "ahash",
  "atomic-waker",
@@ -8017,7 +7995,7 @@ dependencies = [
 [[package]]
 name = "rama-http-headers"
 version = "0.3.0-rc1"
-source = "git+https://github.com/seuros/rama.git?branch=fix%2Frustls-alpn-target-version#512703b9bf4c2b48e663a954c2b9eb3c663dbceb"
+source = "git+https://github.com/seuros/rama.git?branch=fix%2Frustls-alpn-target-version#b19a3d75af88e4e60e93fa4c4bd9ad502ed5542d"
 dependencies = [
  "ahash",
  "base64 0.22.1",
@@ -8067,7 +8045,7 @@ dependencies = [
 [[package]]
 name = "rama-http-types"
 version = "0.3.0-rc1"
-source = "git+https://github.com/seuros/rama.git?branch=fix%2Frustls-alpn-target-version#512703b9bf4c2b48e663a954c2b9eb3c663dbceb"
+source = "git+https://github.com/seuros/rama.git?branch=fix%2Frustls-alpn-target-version#b19a3d75af88e4e60e93fa4c4bd9ad502ed5542d"
 dependencies = [
  "ahash",
  "bytes",
@@ -8107,7 +8085,7 @@ dependencies = [
 [[package]]
 name = "rama-macros"
 version = "0.3.0-rc1"
-source = "git+https://github.com/seuros/rama.git?branch=fix%2Frustls-alpn-target-version#512703b9bf4c2b48e663a954c2b9eb3c663dbceb"
+source = "git+https://github.com/seuros/rama.git?branch=fix%2Frustls-alpn-target-version#b19a3d75af88e4e60e93fa4c4bd9ad502ed5542d"
 dependencies = [
  "proc-macro-crate",
  "proc-macro2",
@@ -8146,7 +8124,7 @@ dependencies = [
 [[package]]
 name = "rama-net"
 version = "0.3.0-rc1"
-source = "git+https://github.com/seuros/rama.git?branch=fix%2Frustls-alpn-target-version#512703b9bf4c2b48e663a954c2b9eb3c663dbceb"
+source = "git+https://github.com/seuros/rama.git?branch=fix%2Frustls-alpn-target-version#b19a3d75af88e4e60e93fa4c4bd9ad502ed5542d"
 dependencies = [
  "ahash",
  "const_format",
@@ -8205,7 +8183,7 @@ dependencies = [
 [[package]]
 name = "rama-tcp"
 version = "0.3.0-rc1"
-source = "git+https://github.com/seuros/rama.git?branch=fix%2Frustls-alpn-target-version#512703b9bf4c2b48e663a954c2b9eb3c663dbceb"
+source = "git+https://github.com/seuros/rama.git?branch=fix%2Frustls-alpn-target-version#b19a3d75af88e4e60e93fa4c4bd9ad502ed5542d"
 dependencies = [
  "pin-project-lite",
  "rama-core 0.3.0-rc1",
@@ -8220,7 +8198,7 @@ dependencies = [
 [[package]]
 name = "rama-tls-boring"
 version = "0.3.0-rc1"
-source = "git+https://github.com/seuros/rama.git?branch=fix%2Frustls-alpn-target-version#512703b9bf4c2b48e663a954c2b9eb3c663dbceb"
+source = "git+https://github.com/seuros/rama.git?branch=fix%2Frustls-alpn-target-version#b19a3d75af88e4e60e93fa4c4bd9ad502ed5542d"
 dependencies = [
  "ahash",
  "brotli",
@@ -8266,7 +8244,7 @@ dependencies = [
 [[package]]
 name = "rama-tls-rustls"
 version = "0.3.0-rc1"
-source = "git+https://github.com/seuros/rama.git?branch=fix%2Frustls-alpn-target-version#512703b9bf4c2b48e663a954c2b9eb3c663dbceb"
+source = "git+https://github.com/seuros/rama.git?branch=fix%2Frustls-alpn-target-version#b19a3d75af88e4e60e93fa4c4bd9ad502ed5542d"
 dependencies = [
  "pin-project-lite",
  "rama-core 0.3.0-rc1",
@@ -8286,7 +8264,7 @@ dependencies = [
 [[package]]
 name = "rama-ua"
 version = "0.3.0-rc1"
-source = "git+https://github.com/seuros/rama.git?branch=fix%2Frustls-alpn-target-version#512703b9bf4c2b48e663a954c2b9eb3c663dbceb"
+source = "git+https://github.com/seuros/rama.git?branch=fix%2Frustls-alpn-target-version#b19a3d75af88e4e60e93fa4c4bd9ad502ed5542d"
 dependencies = [
  "ahash",
  "itertools 0.14.0",
@@ -8327,7 +8305,7 @@ dependencies = [
 [[package]]
 name = "rama-unix"
 version = "0.3.0-rc1"
-source = "git+https://github.com/seuros/rama.git?branch=fix%2Frustls-alpn-target-version#512703b9bf4c2b48e663a954c2b9eb3c663dbceb"
+source = "git+https://github.com/seuros/rama.git?branch=fix%2Frustls-alpn-target-version#b19a3d75af88e4e60e93fa4c4bd9ad502ed5542d"
 dependencies = [
  "libc",
  "pin-project-lite",
@@ -8357,7 +8335,7 @@ dependencies = [
 [[package]]
 name = "rama-utils"
 version = "0.3.0-rc1"
-source = "git+https://github.com/seuros/rama.git?branch=fix%2Frustls-alpn-target-version#512703b9bf4c2b48e663a954c2b9eb3c663dbceb"
+source = "git+https://github.com/seuros/rama.git?branch=fix%2Frustls-alpn-target-version#b19a3d75af88e4e60e93fa4c4bd9ad502ed5542d"
 dependencies = [
  "const_format",
  "parking_lot",
@@ -8374,7 +8352,7 @@ dependencies = [
 [[package]]
 name = "rama-ws"
 version = "0.3.0-rc1"
-source = "git+https://github.com/seuros/rama.git?branch=fix%2Frustls-alpn-target-version#512703b9bf4c2b48e663a954c2b9eb3c663dbceb"
+source = "git+https://github.com/seuros/rama.git?branch=fix%2Frustls-alpn-target-version#b19a3d75af88e4e60e93fa4c4bd9ad502ed5542d"
 dependencies = [
  "flate2",
  "rama-core 0.3.0-rc1",
@@ -8942,7 +8920,7 @@ dependencies = [
  "errno",
  "libc",
  "linux-raw-sys",
- "windows-sys 0.59.0",
+ "windows-sys 0.60.2",
 ]
 
 [[package]]
@@ -9801,7 +9779,7 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "3a766e1110788c36f4fa1c2b71b387a7815aa65f88ce0229841826633d93723e"
 dependencies = [
  "libc",
- "windows-sys 0.61.2",
+ "windows-sys 0.60.2",
 ]
 
 [[package]]
@@ -10368,7 +10346,7 @@ dependencies = [
  "getrandom 0.4.2",
  "once_cell",
  "rustix",
- "windows-sys 0.59.0",
+ "windows-sys 0.60.2",
 ]
 
 [[package]]
@@ -10785,15 +10763,12 @@ dependencies = [
 [[package]]
 name = "tokio-tungstenite"
 version = "0.28.0"
-source = "git+https://github.com/openai-oss-forks/tokio-tungstenite?rev=132f5b39c862e3a970f731d709608b3e6276d5f6#132f5b39c862e3a970f731d709608b3e6276d5f6"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "d25a406cddcc431a75d3d9afc6a7c0f7428d4891dd973e4d54c56b46127bf857"
 dependencies = [
  "futures-util",
  "log",
- "rustls",
- "rustls-native-certs",
- "rustls-pki-types",
  "tokio",
- "tokio-rustls",
  "tungstenite",
 ]
 
@@ -11191,19 +11166,16 @@ dependencies = [
 
 [[package]]
 name = "tungstenite"
-version = "0.27.0"
-source = "git+https://github.com/openai-oss-forks/tungstenite-rs?rev=9200079d3b54a1ff51072e24d81fd354f085156f#9200079d3b54a1ff51072e24d81fd354f085156f"
+version = "0.28.0"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "8628dcc84e5a09eb3d8423d6cb682965dea9133204e8fb3efee74c2a0c259442"
 dependencies = [
  "bytes",
  "data-encoding",
- "flate2",
- "headers",
  "http 1.4.0",
  "httparse",
  "log",
  "rand 0.9.2",
- "rustls",
- "rustls-pki-types",
  "sha1",
  "thiserror 2.0.18",
  "utf-8",
@@ -11249,7 +11221,7 @@ checksum = "f2f6fb2847f6742cd76af783a2a2c49e9375d0a111c7bef6f71cd9e738c72d6e"
 dependencies = [
  "memoffset 0.9.1",
  "tempfile",
- "windows-sys 0.61.2",
+ "windows-sys 0.60.2",
 ]
 
 [[package]]
@@ -11953,7 +11925,7 @@ version = "0.1.11"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "c2a7b1c03c876122aa43f3020e6c3c3ee5c05081c9a00739faf7503aeba10d22"
 dependencies = [
- "windows-sys 0.59.0",
+ "windows-sys 0.60.2",
 ]
 
 [[package]]

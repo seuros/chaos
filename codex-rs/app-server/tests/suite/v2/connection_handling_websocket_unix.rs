@@ -17,8 +17,7 @@ use codex_app_server_protocol::ThreadStartResponse;
 use codex_app_server_protocol::TurnStartParams;
 use codex_app_server_protocol::UserInput as V2UserInput;
 use core_test_support::responses;
-use futures::SinkExt;
-use futures::StreamExt;
+use rama::http::ws::Message as WebSocketMessage;
 use std::process::Command as StdCommand;
 use tempfile::TempDir;
 use tokio::process::Child;
@@ -26,7 +25,6 @@ use tokio::time::Duration;
 use tokio::time::Instant;
 use tokio::time::sleep;
 use tokio::time::timeout;
-use tokio_tungstenite::tungstenite::Message as WebSocketMessage;
 use wiremock::Mock;
 use wiremock::matchers::method;
 use wiremock::matchers::path_regex;
@@ -272,23 +270,21 @@ async fn wait_for_process_exit_within(
 
 async fn expect_websocket_disconnect(stream: &mut WsClient) -> Result<()> {
     loop {
-        let frame = timeout(DEFAULT_READ_TIMEOUT, stream.next())
-            .await
-            .context("timed out waiting for websocket disconnect")?;
+        let frame = timeout(DEFAULT_READ_TIMEOUT, stream.recv_message()).await;
         match frame {
-            None => return Ok(()),
-            Some(Ok(WebSocketMessage::Close(_))) => return Ok(()),
-            Some(Ok(WebSocketMessage::Ping(payload))) => {
+            Err(_) => bail!("timed out waiting for websocket disconnect"),
+            Ok(Ok(WebSocketMessage::Close(_))) => return Ok(()),
+            Ok(Ok(WebSocketMessage::Ping(payload))) => {
                 stream
-                    .send(WebSocketMessage::Pong(payload))
+                    .send_message(WebSocketMessage::Pong(payload))
                     .await
-                    .context("failed to reply to ping while waiting for disconnect")?;
+                    .map_err(|e| anyhow::anyhow!("failed to reply to ping while waiting for disconnect: {e}"))?;
             }
-            Some(Ok(WebSocketMessage::Pong(_))) => {}
-            Some(Ok(WebSocketMessage::Frame(_))) => {}
-            Some(Ok(WebSocketMessage::Text(_))) => {}
-            Some(Ok(WebSocketMessage::Binary(_))) => {}
-            Some(Err(_)) => return Ok(()),
+            Ok(Ok(WebSocketMessage::Pong(_))) => {}
+            Ok(Ok(WebSocketMessage::Text(_))) => {}
+            Ok(Ok(WebSocketMessage::Binary(_))) => {}
+            Ok(Ok(_)) => {}
+            Ok(Err(_)) => return Ok(()),
         }
     }
 }

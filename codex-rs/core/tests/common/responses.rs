@@ -8,19 +8,13 @@ use base64::Engine;
 use codex_protocol::models::ContentItem;
 use codex_protocol::models::ResponseItem;
 use codex_protocol::openai_models::ModelsResponse;
-use futures::SinkExt;
-use futures::StreamExt;
+use rama::http::ws::Message;
 use serde_json::Value;
 use tokio::net::TcpListener;
 use tokio::sync::Notify;
 use tokio::sync::oneshot;
-use tokio_tungstenite::accept_hdr_async_with_config;
-use tokio_tungstenite::tungstenite::Message;
-use tokio_tungstenite::tungstenite::extensions::ExtensionsConfig;
-use tokio_tungstenite::tungstenite::extensions::compression::deflate::DeflateConfig;
-use tokio_tungstenite::tungstenite::handshake::server::Request;
-use tokio_tungstenite::tungstenite::handshake::server::Response;
-use tokio_tungstenite::tungstenite::protocol::WebSocketConfig;
+
+use crate::ws_accept::{WsHandshakeRequest, accept_ws_with_handler};
 use wiremock::BodyPrintLimit;
 use wiremock::Match;
 use wiremock::Mock;
@@ -28,8 +22,6 @@ use wiremock::MockBuilder;
 use wiremock::MockServer;
 use wiremock::Respond;
 use wiremock::ResponseTemplate;
-use wiremock::http::HeaderName;
-use wiremock::http::HeaderValue;
 use wiremock::matchers::method;
 use wiremock::matchers::path_regex;
 
@@ -1238,45 +1230,18 @@ pub async fn start_websocket_server_with_headers(
 
             let response_headers = connection.response_headers.clone();
             let handshake_log = Arc::clone(&handshakes);
-            let callback = move |req: &Request, mut response: Response| {
-                let headers = req
-                    .headers()
-                    .iter()
-                    .filter_map(|(name, value)| {
-                        value
-                            .to_str()
-                            .ok()
-                            .map(|value| (name.as_str().to_string(), value.to_string()))
-                    })
-                    .collect();
-                handshake_log.lock().unwrap().push(WebSocketHandshake {
-                    uri: req.uri().to_string(),
-                    headers,
-                });
-
-                let headers_mut = response.headers_mut();
-                for (name, value) in &response_headers {
-                    if let (Ok(name), Ok(value)) = (
-                        HeaderName::from_bytes(name.as_bytes()),
-                        HeaderValue::from_str(value),
-                    ) {
-                        headers_mut.insert(name, value);
-                    }
-                }
-
-                Ok(response)
-            };
-
-            let mut ws_stream = match accept_hdr_async_with_config(
+            let (mut ws_stream, _handshake_info) = accept_ws_with_handler(
                 stream,
-                callback,
-                Some(websocket_accept_config()),
+                None,
+                |req: &WsHandshakeRequest| {
+                    handshake_log.lock().unwrap().push(WebSocketHandshake {
+                        uri: req.uri.clone(),
+                        headers: req.headers.clone(),
+                    });
+                    response_headers.clone()
+                },
             )
-            .await
-            {
-                Ok(ws) => ws,
-                Err(_) => continue,
-            };
+            .await;
 
             let connection_index = {
                 let mut log = requests.lock().unwrap();
@@ -1285,7 +1250,7 @@ pub async fn start_websocket_server_with_headers(
             };
             let close_after_requests = connection.close_after_requests;
             for request_events in connection.requests {
-                let Some(Ok(message)) = ws_stream.next().await else {
+                let Ok(message) = ws_stream.recv_message().await else {
                     break;
                 };
                 if let Some(body) = parse_ws_request_body(message) {
@@ -1341,7 +1306,7 @@ pub async fn start_websocket_server_with_headers(
                     let Ok(payload) = serde_json::to_string(event) else {
                         continue;
                     };
-                    if ws_stream.send(Message::Text(payload.into())).await.is_err() {
+                    if ws_stream.send_message(Message::text(payload)).await.is_err() {
                         break;
                     }
                 }
@@ -1376,15 +1341,6 @@ fn parse_ws_request_body(message: Message) -> Option<Value> {
         Message::Binary(bytes) => serde_json::from_slice(&bytes).ok(),
         _ => None,
     }
-}
-
-fn websocket_accept_config() -> WebSocketConfig {
-    let mut extensions = ExtensionsConfig::default();
-    extensions.permessage_deflate = Some(DeflateConfig::default());
-
-    let mut config = WebSocketConfig::default();
-    config.extensions = extensions;
-    config
 }
 
 #[derive(Clone)]

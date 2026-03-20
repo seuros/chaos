@@ -4,7 +4,6 @@ use std::path::PathBuf;
 
 use crate::RequestId;
 use crate::protocol::common::AuthMode;
-use codex_experimental_api_macros::ExperimentalApi;
 use codex_protocol::account::PlanType;
 use codex_protocol::approvals::ElicitationRequest as CoreElicitationRequest;
 use codex_protocol::approvals::ExecApprovalRequestSkillMetadata as CoreExecApprovalRequestSkillMetadata;
@@ -193,7 +192,7 @@ impl From<CoreCodexErrorInfo> for CodexErrorInfo {
 }
 
 #[derive(
-    Serialize, Deserialize, Debug, Clone, Copy, PartialEq, Eq, JsonSchema, TS, ExperimentalApi,
+    Serialize, Deserialize, Debug, Clone, Copy, PartialEq, Eq, JsonSchema, TS,
 )]
 #[serde(rename_all = "kebab-case")]
 #[ts(rename_all = "kebab-case", export_to = "v2/")]
@@ -203,7 +202,6 @@ pub enum AskForApproval {
     UnlessTrusted,
     OnFailure,
     OnRequest,
-    #[experimental("askForApproval.granular")]
     Granular {
         sandbox_approval: bool,
         rules: bool,
@@ -214,6 +212,18 @@ pub enum AskForApproval {
         mcp_elicitations: bool,
     },
     Never,
+}
+
+impl crate::experimental_api::ExperimentalApi for AskForApproval {
+    fn experimental_reason(&self) -> Option<&'static str> {
+        match self {
+            Self::UnlessTrusted => None,
+            Self::OnFailure => None,
+            Self::OnRequest => None,
+            Self::Granular { .. } => Some("askForApproval.granular"),
+            Self::Never => None,
+        }
+    }
 }
 
 impl AskForApproval {
@@ -579,18 +589,16 @@ impl<'de> Deserialize<'de> for DynamicToolSpec {
     }
 }
 
-#[derive(Serialize, Deserialize, Debug, Clone, PartialEq, JsonSchema, TS, ExperimentalApi)]
+#[derive(Serialize, Deserialize, Debug, Clone, PartialEq, JsonSchema, TS)]
 #[serde(rename_all = "snake_case")]
 #[ts(export_to = "v2/")]
 pub struct ProfileV2 {
     pub model: Option<String>,
     pub model_provider: Option<String>,
-    #[experimental(nested)]
     pub approval_policy: Option<AskForApproval>,
     /// [UNSTABLE] Optional profile-level override for where approval requests
     /// are routed for review. If omitted, the enclosing config default is
     /// used.
-    #[experimental("config/read.approvalsReviewer")]
     pub approvals_reviewer: Option<ApprovalsReviewer>,
     pub service_tier: Option<ServiceTier>,
     pub model_reasoning_effort: Option<ReasoningEffort>,
@@ -601,6 +609,26 @@ pub struct ProfileV2 {
     pub chatgpt_base_url: Option<String>,
     #[serde(default, flatten)]
     pub additional: HashMap<String, JsonValue>,
+}
+
+::inventory::submit! {
+    crate::experimental_api::ExperimentalField {
+        type_name: "ProfileV2",
+        field_name: "approvalsReviewer",
+        reason: "config/read.approvalsReviewer",
+    }
+}
+
+impl crate::experimental_api::ExperimentalApi for ProfileV2 {
+    fn experimental_reason(&self) -> Option<&'static str> {
+        if let Some(reason) = crate::experimental_api::ExperimentalApi::experimental_reason(&self.approval_policy) {
+            return Some(reason);
+        }
+        if self.approvals_reviewer.is_some() {
+            return Some("config/read.approvalsReviewer");
+        }
+        None
+    }
 }
 
 #[derive(Serialize, Deserialize, Debug, Clone, PartialEq, JsonSchema, TS)]
@@ -680,7 +708,7 @@ const fn default_include_platform_defaults() -> bool {
     true
 }
 
-#[derive(Serialize, Deserialize, Debug, Clone, PartialEq, JsonSchema, TS, ExperimentalApi)]
+#[derive(Serialize, Deserialize, Debug, Clone, PartialEq, JsonSchema, TS)]
 #[serde(rename_all = "snake_case")]
 #[ts(export_to = "v2/")]
 pub struct Config {
@@ -689,11 +717,9 @@ pub struct Config {
     pub model_context_window: Option<i64>,
     pub model_auto_compact_token_limit: Option<i64>,
     pub model_provider: Option<String>,
-    #[experimental(nested)]
     pub approval_policy: Option<AskForApproval>,
     /// [UNSTABLE] Optional default for where approval requests are routed for
     /// review.
-    #[experimental("config/read.approvalsReviewer")]
     pub approvals_reviewer: Option<ApprovalsReviewer>,
     pub sandbox_mode: Option<SandboxMode>,
     pub sandbox_workspace_write: Option<SandboxWorkspaceWrite>,
@@ -702,7 +728,6 @@ pub struct Config {
     pub web_search: Option<WebSearchMode>,
     pub tools: Option<ToolsV2>,
     pub profile: Option<String>,
-    #[experimental(nested)]
     #[serde(default)]
     pub profiles: HashMap<String, ProfileV2>,
     pub instructions: Option<String>,
@@ -713,11 +738,44 @@ pub struct Config {
     pub model_verbosity: Option<Verbosity>,
     pub service_tier: Option<ServiceTier>,
     pub analytics: Option<AnalyticsConfig>,
-    #[experimental("config/read.apps")]
     #[serde(default)]
     pub apps: Option<AppsConfig>,
     #[serde(default, flatten)]
     pub additional: HashMap<String, JsonValue>,
+}
+
+::inventory::submit! {
+    crate::experimental_api::ExperimentalField {
+        type_name: "Config",
+        field_name: "approvalsReviewer",
+        reason: "config/read.approvalsReviewer",
+    }
+}
+
+::inventory::submit! {
+    crate::experimental_api::ExperimentalField {
+        type_name: "Config",
+        field_name: "apps",
+        reason: "config/read.apps",
+    }
+}
+
+impl crate::experimental_api::ExperimentalApi for Config {
+    fn experimental_reason(&self) -> Option<&'static str> {
+        if let Some(reason) = crate::experimental_api::ExperimentalApi::experimental_reason(&self.approval_policy) {
+            return Some(reason);
+        }
+        if self.approvals_reviewer.is_some() {
+            return Some("config/read.approvalsReviewer");
+        }
+        if let Some(reason) = crate::experimental_api::ExperimentalApi::experimental_reason(&self.profiles) {
+            return Some(reason);
+        }
+        if self.apps.is_some() {
+            return Some("config/read.apps");
+        }
+        None
+    }
 }
 
 #[derive(Serialize, Deserialize, Debug, Clone, PartialEq, JsonSchema, TS)]
@@ -800,29 +858,52 @@ pub struct ConfigReadParams {
     pub cwd: Option<String>,
 }
 
-#[derive(Serialize, Deserialize, Debug, Clone, PartialEq, JsonSchema, TS, ExperimentalApi)]
+#[derive(Serialize, Deserialize, Debug, Clone, PartialEq, JsonSchema, TS)]
 #[serde(rename_all = "camelCase")]
 #[ts(export_to = "v2/")]
 pub struct ConfigReadResponse {
-    #[experimental(nested)]
     pub config: Config,
     pub origins: HashMap<String, ConfigLayerMetadata>,
     #[serde(skip_serializing_if = "Option::is_none")]
     pub layers: Option<Vec<ConfigLayer>>,
 }
 
-#[derive(Serialize, Deserialize, Debug, Clone, PartialEq, JsonSchema, TS, ExperimentalApi)]
+impl crate::experimental_api::ExperimentalApi for ConfigReadResponse {
+    fn experimental_reason(&self) -> Option<&'static str> {
+        crate::experimental_api::ExperimentalApi::experimental_reason(&self.config)
+    }
+}
+
+#[derive(Serialize, Deserialize, Debug, Clone, PartialEq, JsonSchema, TS)]
 #[serde(rename_all = "camelCase")]
 #[ts(export_to = "v2/")]
 pub struct ConfigRequirements {
-    #[experimental(nested)]
     pub allowed_approval_policies: Option<Vec<AskForApproval>>,
     pub allowed_sandbox_modes: Option<Vec<SandboxMode>>,
     pub allowed_web_search_modes: Option<Vec<WebSearchMode>>,
     pub feature_requirements: Option<BTreeMap<String, bool>>,
     pub enforce_residency: Option<ResidencyRequirement>,
-    #[experimental("configRequirements/read.network")]
     pub network: Option<NetworkRequirements>,
+}
+
+::inventory::submit! {
+    crate::experimental_api::ExperimentalField {
+        type_name: "ConfigRequirements",
+        field_name: "network",
+        reason: "configRequirements/read.network",
+    }
+}
+
+impl crate::experimental_api::ExperimentalApi for ConfigRequirements {
+    fn experimental_reason(&self) -> Option<&'static str> {
+        if let Some(reason) = crate::experimental_api::ExperimentalApi::experimental_reason(&self.allowed_approval_policies) {
+            return Some(reason);
+        }
+        if self.network.is_some() {
+            return Some("configRequirements/read.network");
+        }
+        None
+    }
 }
 
 #[derive(Serialize, Deserialize, Debug, Clone, PartialEq, JsonSchema, TS)]
@@ -848,13 +929,18 @@ pub enum ResidencyRequirement {
     Us,
 }
 
-#[derive(Serialize, Deserialize, Debug, Clone, PartialEq, JsonSchema, TS, ExperimentalApi)]
+#[derive(Serialize, Deserialize, Debug, Clone, PartialEq, JsonSchema, TS)]
 #[serde(rename_all = "camelCase")]
 #[ts(export_to = "v2/")]
 pub struct ConfigRequirementsReadResponse {
     /// Null if no requirements are configured (e.g. no requirements.toml/MDM entries).
-    #[experimental(nested)]
     pub requirements: Option<ConfigRequirements>,
+}
+
+impl crate::experimental_api::ExperimentalApi for ConfigRequirementsReadResponse {
+    fn experimental_reason(&self) -> Option<&'static str> {
+        crate::experimental_api::ExperimentalApi::experimental_reason(&self.requirements)
+    }
 }
 
 #[derive(Serialize, Deserialize, Debug, Clone, Copy, PartialEq, Eq, Hash, JsonSchema, TS)]
@@ -1559,7 +1645,7 @@ pub enum Account {
     Chatgpt { email: String, plan_type: PlanType },
 }
 
-#[derive(Serialize, Deserialize, Debug, Clone, PartialEq, JsonSchema, TS, ExperimentalApi)]
+#[derive(Serialize, Deserialize, Debug, Clone, PartialEq, JsonSchema, TS)]
 #[serde(tag = "type")]
 #[ts(tag = "type")]
 #[ts(export_to = "v2/")]
@@ -1576,7 +1662,6 @@ pub enum LoginAccountParams {
     Chatgpt,
     /// [UNSTABLE] FOR OPENAI INTERNAL USE ONLY - DO NOT USE.
     /// The access token must contain the same scopes that Codex-managed ChatGPT auth tokens have.
-    #[experimental("account/login/start.chatgptAuthTokens")]
     #[serde(rename = "chatgptAuthTokens", rename_all = "camelCase")]
     #[ts(rename = "chatgptAuthTokens", rename_all = "camelCase")]
     ChatgptAuthTokens {
@@ -1592,6 +1677,16 @@ pub enum LoginAccountParams {
         #[ts(optional = nullable)]
         chatgpt_plan_type: Option<String>,
     },
+}
+
+impl crate::experimental_api::ExperimentalApi for LoginAccountParams {
+    fn experimental_reason(&self) -> Option<&'static str> {
+        match self {
+            Self::ApiKey { .. } => None,
+            Self::Chatgpt => None,
+            Self::ChatgptAuthTokens { .. } => Some("account/login/start.chatgptAuthTokens"),
+        }
+    }
 }
 
 #[derive(Serialize, Deserialize, Debug, Clone, PartialEq, JsonSchema, TS)]
@@ -2441,7 +2536,7 @@ pub enum CommandExecOutputStream {
 // === Threads, Turns, and Items ===
 // Thread APIs
 #[derive(
-    Serialize, Deserialize, Debug, Clone, PartialEq, Default, JsonSchema, TS, ExperimentalApi,
+    Serialize, Deserialize, Debug, Clone, PartialEq, Default, JsonSchema, TS,
 )]
 #[serde(rename_all = "camelCase")]
 #[ts(export_to = "v2/")]
@@ -2460,7 +2555,6 @@ pub struct ThreadStartParams {
     pub service_tier: Option<Option<ServiceTier>>,
     #[ts(optional = nullable)]
     pub cwd: Option<String>,
-    #[experimental(nested)]
     #[ts(optional = nullable)]
     pub approval_policy: Option<AskForApproval>,
     /// Override where approval requests are routed for review on this thread
@@ -2481,24 +2575,73 @@ pub struct ThreadStartParams {
     pub personality: Option<Personality>,
     #[ts(optional = nullable)]
     pub ephemeral: Option<bool>,
-    #[experimental("thread/start.dynamicTools")]
     #[ts(optional = nullable)]
     pub dynamic_tools: Option<Vec<DynamicToolSpec>>,
     /// Test-only experimental field used to validate experimental gating and
     /// schema filtering behavior in a stable way.
-    #[experimental("thread/start.mockExperimentalField")]
     #[ts(optional = nullable)]
     pub mock_experimental_field: Option<String>,
     /// If true, opt into emitting raw Responses API items on the event stream.
     /// This is for internal use only (e.g. Codex Cloud).
-    #[experimental("thread/start.experimentalRawEvents")]
     #[serde(default)]
     pub experimental_raw_events: bool,
     /// If true, persist additional rollout EventMsg variants required to
     /// reconstruct a richer thread history on resume/fork/read.
-    #[experimental("thread/start.persistFullHistory")]
     #[serde(default)]
     pub persist_extended_history: bool,
+}
+
+::inventory::submit! {
+    crate::experimental_api::ExperimentalField {
+        type_name: "ThreadStartParams",
+        field_name: "dynamicTools",
+        reason: "thread/start.dynamicTools",
+    }
+}
+
+::inventory::submit! {
+    crate::experimental_api::ExperimentalField {
+        type_name: "ThreadStartParams",
+        field_name: "mockExperimentalField",
+        reason: "thread/start.mockExperimentalField",
+    }
+}
+
+::inventory::submit! {
+    crate::experimental_api::ExperimentalField {
+        type_name: "ThreadStartParams",
+        field_name: "experimentalRawEvents",
+        reason: "thread/start.experimentalRawEvents",
+    }
+}
+
+::inventory::submit! {
+    crate::experimental_api::ExperimentalField {
+        type_name: "ThreadStartParams",
+        field_name: "persistExtendedHistory",
+        reason: "thread/start.persistFullHistory",
+    }
+}
+
+impl crate::experimental_api::ExperimentalApi for ThreadStartParams {
+    fn experimental_reason(&self) -> Option<&'static str> {
+        if let Some(reason) = crate::experimental_api::ExperimentalApi::experimental_reason(&self.approval_policy) {
+            return Some(reason);
+        }
+        if self.dynamic_tools.as_ref().is_some_and(|v| !v.is_empty()) {
+            return Some("thread/start.dynamicTools");
+        }
+        if self.mock_experimental_field.is_some() {
+            return Some("thread/start.mockExperimentalField");
+        }
+        if self.experimental_raw_events {
+            return Some("thread/start.experimentalRawEvents");
+        }
+        if self.persist_extended_history {
+            return Some("thread/start.persistFullHistory");
+        }
+        None
+    }
 }
 
 #[derive(Serialize, Deserialize, Debug, Default, Clone, PartialEq, JsonSchema, TS)]
@@ -2518,7 +2661,7 @@ pub struct MockExperimentalMethodResponse {
     pub echoed: Option<String>,
 }
 
-#[derive(Serialize, Deserialize, Debug, Clone, PartialEq, JsonSchema, TS, ExperimentalApi)]
+#[derive(Serialize, Deserialize, Debug, Clone, PartialEq, JsonSchema, TS)]
 #[serde(rename_all = "camelCase")]
 #[ts(export_to = "v2/")]
 pub struct ThreadStartResponse {
@@ -2527,7 +2670,6 @@ pub struct ThreadStartResponse {
     pub model_provider: String,
     pub service_tier: Option<ServiceTier>,
     pub cwd: PathBuf,
-    #[experimental(nested)]
     pub approval_policy: AskForApproval,
     /// Reviewer currently used for approval requests on this thread.
     pub approvals_reviewer: ApprovalsReviewer,
@@ -2535,8 +2677,14 @@ pub struct ThreadStartResponse {
     pub reasoning_effort: Option<ReasoningEffort>,
 }
 
+impl crate::experimental_api::ExperimentalApi for ThreadStartResponse {
+    fn experimental_reason(&self) -> Option<&'static str> {
+        crate::experimental_api::ExperimentalApi::experimental_reason(&self.approval_policy)
+    }
+}
+
 #[derive(
-    Serialize, Deserialize, Debug, Default, Clone, PartialEq, JsonSchema, TS, ExperimentalApi,
+    Serialize, Deserialize, Debug, Default, Clone, PartialEq, JsonSchema, TS,
 )]
 #[serde(rename_all = "camelCase")]
 #[ts(export_to = "v2/")]
@@ -2555,13 +2703,11 @@ pub struct ThreadResumeParams {
     /// [UNSTABLE] FOR CODEX CLOUD - DO NOT USE.
     /// If specified, the thread will be resumed with the provided history
     /// instead of loaded from disk.
-    #[experimental("thread/resume.history")]
     #[ts(optional = nullable)]
     pub history: Option<Vec<ResponseItem>>,
 
     /// [UNSTABLE] Specify the rollout path to resume from.
     /// If specified, the thread_id param will be ignored.
-    #[experimental("thread/resume.path")]
     #[ts(optional = nullable)]
     pub path: Option<PathBuf>,
 
@@ -2580,7 +2726,6 @@ pub struct ThreadResumeParams {
     pub service_tier: Option<Option<ServiceTier>>,
     #[ts(optional = nullable)]
     pub cwd: Option<String>,
-    #[experimental(nested)]
     #[ts(optional = nullable)]
     pub approval_policy: Option<AskForApproval>,
     /// Override where approval requests are routed for review on this thread
@@ -2599,12 +2744,53 @@ pub struct ThreadResumeParams {
     pub personality: Option<Personality>,
     /// If true, persist additional rollout EventMsg variants required to
     /// reconstruct a richer thread history on subsequent resume/fork/read.
-    #[experimental("thread/resume.persistFullHistory")]
     #[serde(default)]
     pub persist_extended_history: bool,
 }
 
-#[derive(Serialize, Deserialize, Debug, Clone, PartialEq, JsonSchema, TS, ExperimentalApi)]
+::inventory::submit! {
+    crate::experimental_api::ExperimentalField {
+        type_name: "ThreadResumeParams",
+        field_name: "history",
+        reason: "thread/resume.history",
+    }
+}
+
+::inventory::submit! {
+    crate::experimental_api::ExperimentalField {
+        type_name: "ThreadResumeParams",
+        field_name: "path",
+        reason: "thread/resume.path",
+    }
+}
+
+::inventory::submit! {
+    crate::experimental_api::ExperimentalField {
+        type_name: "ThreadResumeParams",
+        field_name: "persistExtendedHistory",
+        reason: "thread/resume.persistFullHistory",
+    }
+}
+
+impl crate::experimental_api::ExperimentalApi for ThreadResumeParams {
+    fn experimental_reason(&self) -> Option<&'static str> {
+        if self.history.is_some() {
+            return Some("thread/resume.history");
+        }
+        if self.path.is_some() {
+            return Some("thread/resume.path");
+        }
+        if let Some(reason) = crate::experimental_api::ExperimentalApi::experimental_reason(&self.approval_policy) {
+            return Some(reason);
+        }
+        if self.persist_extended_history {
+            return Some("thread/resume.persistFullHistory");
+        }
+        None
+    }
+}
+
+#[derive(Serialize, Deserialize, Debug, Clone, PartialEq, JsonSchema, TS)]
 #[serde(rename_all = "camelCase")]
 #[ts(export_to = "v2/")]
 pub struct ThreadResumeResponse {
@@ -2613,7 +2799,6 @@ pub struct ThreadResumeResponse {
     pub model_provider: String,
     pub service_tier: Option<ServiceTier>,
     pub cwd: PathBuf,
-    #[experimental(nested)]
     pub approval_policy: AskForApproval,
     /// Reviewer currently used for approval requests on this thread.
     pub approvals_reviewer: ApprovalsReviewer,
@@ -2621,8 +2806,14 @@ pub struct ThreadResumeResponse {
     pub reasoning_effort: Option<ReasoningEffort>,
 }
 
+impl crate::experimental_api::ExperimentalApi for ThreadResumeResponse {
+    fn experimental_reason(&self) -> Option<&'static str> {
+        crate::experimental_api::ExperimentalApi::experimental_reason(&self.approval_policy)
+    }
+}
+
 #[derive(
-    Serialize, Deserialize, Debug, Default, Clone, PartialEq, JsonSchema, TS, ExperimentalApi,
+    Serialize, Deserialize, Debug, Default, Clone, PartialEq, JsonSchema, TS,
 )]
 #[serde(rename_all = "camelCase")]
 #[ts(export_to = "v2/")]
@@ -2638,7 +2829,6 @@ pub struct ThreadForkParams {
 
     /// [UNSTABLE] Specify the rollout path to fork from.
     /// If specified, the thread_id param will be ignored.
-    #[experimental("thread/fork.path")]
     #[ts(optional = nullable)]
     pub path: Option<PathBuf>,
 
@@ -2657,7 +2847,6 @@ pub struct ThreadForkParams {
     pub service_tier: Option<Option<ServiceTier>>,
     #[ts(optional = nullable)]
     pub cwd: Option<String>,
-    #[experimental(nested)]
     #[ts(optional = nullable)]
     pub approval_policy: Option<AskForApproval>,
     /// Override where approval requests are routed for review on this thread
@@ -2676,12 +2865,42 @@ pub struct ThreadForkParams {
     pub ephemeral: bool,
     /// If true, persist additional rollout EventMsg variants required to
     /// reconstruct a richer thread history on subsequent resume/fork/read.
-    #[experimental("thread/fork.persistFullHistory")]
     #[serde(default)]
     pub persist_extended_history: bool,
 }
 
-#[derive(Serialize, Deserialize, Debug, Clone, PartialEq, JsonSchema, TS, ExperimentalApi)]
+::inventory::submit! {
+    crate::experimental_api::ExperimentalField {
+        type_name: "ThreadForkParams",
+        field_name: "path",
+        reason: "thread/fork.path",
+    }
+}
+
+::inventory::submit! {
+    crate::experimental_api::ExperimentalField {
+        type_name: "ThreadForkParams",
+        field_name: "persistExtendedHistory",
+        reason: "thread/fork.persistFullHistory",
+    }
+}
+
+impl crate::experimental_api::ExperimentalApi for ThreadForkParams {
+    fn experimental_reason(&self) -> Option<&'static str> {
+        if self.path.is_some() {
+            return Some("thread/fork.path");
+        }
+        if let Some(reason) = crate::experimental_api::ExperimentalApi::experimental_reason(&self.approval_policy) {
+            return Some(reason);
+        }
+        if self.persist_extended_history {
+            return Some("thread/fork.persistFullHistory");
+        }
+        None
+    }
+}
+
+#[derive(Serialize, Deserialize, Debug, Clone, PartialEq, JsonSchema, TS)]
 #[serde(rename_all = "camelCase")]
 #[ts(export_to = "v2/")]
 pub struct ThreadForkResponse {
@@ -2690,12 +2909,17 @@ pub struct ThreadForkResponse {
     pub model_provider: String,
     pub service_tier: Option<ServiceTier>,
     pub cwd: PathBuf,
-    #[experimental(nested)]
     pub approval_policy: AskForApproval,
     /// Reviewer currently used for approval requests on this thread.
     pub approvals_reviewer: ApprovalsReviewer,
     pub sandbox: SandboxPolicy,
     pub reasoning_effort: Option<ReasoningEffort>,
+}
+
+impl crate::experimental_api::ExperimentalApi for ThreadForkResponse {
+    fn experimental_reason(&self) -> Option<&'static str> {
+        crate::experimental_api::ExperimentalApi::experimental_reason(&self.approval_policy)
+    }
 }
 
 #[derive(Serialize, Deserialize, Debug, Clone, PartialEq, JsonSchema, TS)]
@@ -3655,7 +3879,7 @@ pub enum TurnStatus {
 
 // Turn APIs
 #[derive(
-    Serialize, Deserialize, Debug, Default, Clone, PartialEq, JsonSchema, TS, ExperimentalApi,
+    Serialize, Deserialize, Debug, Default, Clone, PartialEq, JsonSchema, TS,
 )]
 #[serde(rename_all = "camelCase")]
 #[ts(export_to = "v2/")]
@@ -3666,7 +3890,6 @@ pub struct TurnStartParams {
     #[ts(optional = nullable)]
     pub cwd: Option<PathBuf>,
     /// Override the approval policy for this turn and subsequent turns.
-    #[experimental(nested)]
     #[ts(optional = nullable)]
     pub approval_policy: Option<AskForApproval>,
     /// Override where approval requests are routed for review on this turn and
@@ -3707,9 +3930,28 @@ pub struct TurnStartParams {
     ///
     /// For `collaboration_mode.settings.developer_instructions`, `null` means
     /// "use the built-in instructions for the selected mode".
-    #[experimental("turn/start.collaborationMode")]
     #[ts(optional = nullable)]
     pub collaboration_mode: Option<CollaborationMode>,
+}
+
+::inventory::submit! {
+    crate::experimental_api::ExperimentalField {
+        type_name: "TurnStartParams",
+        field_name: "collaborationMode",
+        reason: "turn/start.collaborationMode",
+    }
+}
+
+impl crate::experimental_api::ExperimentalApi for TurnStartParams {
+    fn experimental_reason(&self) -> Option<&'static str> {
+        if let Some(reason) = crate::experimental_api::ExperimentalApi::experimental_reason(&self.approval_policy) {
+            return Some(reason);
+        }
+        if self.collaboration_mode.is_some() {
+            return Some("turn/start.collaborationMode");
+        }
+        None
+    }
 }
 
 #[derive(Serialize, Deserialize, Debug, Clone, PartialEq, JsonSchema, TS)]
@@ -4833,7 +5075,7 @@ pub struct ContextCompactedNotification {
     pub turn_id: String,
 }
 
-#[derive(Serialize, Deserialize, Debug, Clone, PartialEq, JsonSchema, TS, ExperimentalApi)]
+#[derive(Serialize, Deserialize, Debug, Clone, PartialEq, JsonSchema, TS)]
 #[serde(rename_all = "camelCase")]
 #[ts(export_to = "v2/")]
 pub struct CommandExecutionRequestApprovalParams {
@@ -4871,12 +5113,10 @@ pub struct CommandExecutionRequestApprovalParams {
     #[ts(optional = nullable)]
     pub command_actions: Option<Vec<CommandAction>>,
     /// Optional additional permissions requested for this command.
-    #[experimental("item/commandExecution/requestApproval.additionalPermissions")]
     #[serde(default, skip_serializing_if = "Option::is_none")]
     #[ts(optional = nullable)]
     pub additional_permissions: Option<AdditionalPermissionProfile>,
     /// Optional skill metadata when the approval was triggered by a skill script.
-    #[experimental("item/commandExecution/requestApproval.skillMetadata")]
     #[serde(default, skip_serializing_if = "Option::is_none")]
     #[ts(optional = nullable)]
     pub skill_metadata: Option<CommandExecutionRequestApprovalSkillMetadata>,
@@ -4889,10 +5129,48 @@ pub struct CommandExecutionRequestApprovalParams {
     #[ts(optional = nullable)]
     pub proposed_network_policy_amendments: Option<Vec<NetworkPolicyAmendment>>,
     /// Ordered list of decisions the client may present for this prompt.
-    #[experimental("item/commandExecution/requestApproval.availableDecisions")]
     #[serde(default, skip_serializing_if = "Option::is_none")]
     #[ts(optional = nullable)]
     pub available_decisions: Option<Vec<CommandExecutionApprovalDecision>>,
+}
+
+::inventory::submit! {
+    crate::experimental_api::ExperimentalField {
+        type_name: "CommandExecutionRequestApprovalParams",
+        field_name: "additionalPermissions",
+        reason: "item/commandExecution/requestApproval.additionalPermissions",
+    }
+}
+
+::inventory::submit! {
+    crate::experimental_api::ExperimentalField {
+        type_name: "CommandExecutionRequestApprovalParams",
+        field_name: "skillMetadata",
+        reason: "item/commandExecution/requestApproval.skillMetadata",
+    }
+}
+
+::inventory::submit! {
+    crate::experimental_api::ExperimentalField {
+        type_name: "CommandExecutionRequestApprovalParams",
+        field_name: "availableDecisions",
+        reason: "item/commandExecution/requestApproval.availableDecisions",
+    }
+}
+
+impl crate::experimental_api::ExperimentalApi for CommandExecutionRequestApprovalParams {
+    fn experimental_reason(&self) -> Option<&'static str> {
+        if self.additional_permissions.is_some() {
+            return Some("item/commandExecution/requestApproval.additionalPermissions");
+        }
+        if self.skill_metadata.is_some() {
+            return Some("item/commandExecution/requestApproval.skillMetadata");
+        }
+        if self.available_decisions.as_ref().is_some_and(|v| !v.is_empty()) {
+            return Some("item/commandExecution/requestApproval.availableDecisions");
+        }
+        None
+    }
 }
 
 impl CommandExecutionRequestApprovalParams {

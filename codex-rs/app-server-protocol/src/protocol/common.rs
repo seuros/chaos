@@ -7,7 +7,6 @@ use crate::export::GeneratedSchema;
 use crate::export::write_json_schema;
 use crate::protocol::v1;
 use crate::protocol::v2;
-use codex_experimental_api_macros::ExperimentalApi;
 use schemars::JsonSchema;
 use serde::Deserialize;
 use serde::Serialize;
@@ -639,7 +638,6 @@ macro_rules! server_notification_definitions {
             JsonSchema,
             TS,
             Display,
-            ExperimentalApi,
         )]
         #[serde(tag = "method", content = "params", rename_all = "camelCase")]
         #[strum(serialize_all = "camelCase")]
@@ -907,6 +905,12 @@ server_notification_definitions! {
 
 client_notification_definitions! {
     Initialized,
+}
+
+impl crate::experimental_api::ExperimentalApi for ServerNotification {
+    fn experimental_reason(&self) -> Option<&'static str> {
+        None
+    }
 }
 
 #[cfg(test)]

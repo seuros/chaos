@@ -5,6 +5,8 @@ mod service;
 mod wait_handler;
 mod worker;
 
+use std::path::Path;
+use std::path::PathBuf;
 use std::sync::Arc;
 use std::time::Duration;
 
@@ -54,6 +56,72 @@ pub(super) struct ExecContext {
 pub(crate) use execute_handler::CodeModeExecuteHandler;
 pub(crate) use service::CodeModeService;
 pub(crate) use wait_handler::CodeModeWaitHandler;
+
+/// Resolve a Node.js executable path, checking CODEX_JS_REPL_NODE_PATH env var,
+/// then the caller-supplied config path, then `which("node")`.
+pub(crate) fn resolve_node(config_path: Option<&Path>) -> Option<PathBuf> {
+    if let Some(path) = std::env::var_os("CODEX_JS_REPL_NODE_PATH") {
+        let p = PathBuf::from(path);
+        if p.exists() {
+            return Some(p);
+        }
+    }
+
+    if let Some(path) = config_path
+        && path.exists()
+    {
+        return Some(path.to_path_buf());
+    }
+
+    if let Ok(path) = which::which("node") {
+        return Some(path);
+    }
+
+    None
+}
+
+pub(crate) async fn resolve_compatible_node(
+    config_path: Option<&Path>,
+) -> Result<PathBuf, String> {
+    let node_path = resolve_node(config_path).ok_or_else(|| {
+        "Node runtime not found; install Node or set CODEX_JS_REPL_NODE_PATH".to_string()
+    })?;
+    ensure_node_version(&node_path).await?;
+    Ok(node_path)
+}
+
+async fn ensure_node_version(node_path: &Path) -> Result<(), String> {
+    let output = tokio::process::Command::new(node_path)
+        .arg("--version")
+        .output()
+        .await
+        .map_err(|err| format!("failed to execute Node: {err}"))?;
+
+    if !output.status.success() {
+        return Err(format!(
+            "failed to read Node version (status {})",
+            output.status
+        ));
+    }
+
+    let stdout = String::from_utf8_lossy(&output.stdout);
+    let stdout = stdout.trim().trim_start_matches('v');
+    let major: u64 = stdout
+        .split('.')
+        .next()
+        .unwrap_or("0")
+        .parse()
+        .unwrap_or(0);
+
+    if major < 22 {
+        return Err(format!(
+            "Node runtime too old for code mode (resolved {node_path}): found v{stdout}, requires >= v22. Install/update Node.",
+            node_path = node_path.display()
+        ));
+    }
+
+    Ok(())
+}
 
 enum CodeModeSessionProgress {
     Finished(FunctionToolOutput),

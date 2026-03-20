@@ -291,7 +291,7 @@ fn for_prompt_strips_images_when_model_does_not_support_images() {
             id: None,
             status: None,
             call_id: "tool-1".to_string(),
-            name: "js_repl".to_string(),
+            name: "custom_tool".to_string(),
             input: "view_image".to_string(),
         },
         ResponseItem::CustomToolCallOutput {
@@ -353,7 +353,7 @@ fn for_prompt_strips_images_when_model_does_not_support_images() {
             id: None,
             status: None,
             call_id: "tool-1".to_string(),
-            name: "js_repl".to_string(),
+            name: "custom_tool".to_string(),
             input: "view_image".to_string(),
         },
         ResponseItem::CustomToolCallOutput {

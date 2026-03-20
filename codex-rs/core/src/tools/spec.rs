@@ -269,8 +269,6 @@ pub(crate) struct ToolsConfig {
     pub request_permissions_tool_enabled: bool,
     pub code_mode_enabled: bool,
     pub code_mode_only_enabled: bool,
-    pub js_repl_enabled: bool,
-    pub js_repl_tools_only: bool,
     pub can_request_original_image_detail: bool,
     pub collab_tools: bool,
     pub artifact_tools: bool,
@@ -318,9 +316,6 @@ impl ToolsConfig {
         let include_apply_patch_tool = features.enabled(Feature::ApplyPatchFreeform);
         let include_code_mode = features.enabled(Feature::CodeMode);
         let include_code_mode_only = include_code_mode && features.enabled(Feature::CodeModeOnly);
-        let include_js_repl = features.enabled(Feature::JsRepl);
-        let include_js_repl_tools_only =
-            include_js_repl && features.enabled(Feature::JsReplToolsOnly);
         let include_collab_tools = features.enabled(Feature::Collab);
         let include_agent_jobs = features.enabled(Feature::SpawnCsv);
         let include_request_user_input = !matches!(session_source, SessionSource::SubAgent(_));
@@ -401,8 +396,6 @@ impl ToolsConfig {
             request_permissions_tool_enabled,
             code_mode_enabled: include_code_mode,
             code_mode_only_enabled: include_code_mode_only,
-            js_repl_enabled: include_js_repl,
-            js_repl_tools_only: include_js_repl_tools_only,
             can_request_original_image_detail: include_original_image_detail,
             collab_tools: include_collab_tools,
             artifact_tools: include_artifact_tools,
@@ -2017,38 +2010,6 @@ fn create_list_dir_tool() -> ToolSpec {
     })
 }
 
-fn create_js_repl_tool() -> ToolSpec {
-    // Keep JS input freeform, but block the most common malformed payload shapes
-    // (JSON wrappers, quoted strings, and markdown fences) before they reach the
-    // runtime `reject_json_or_quoted_source` validation. The API's regex engine
-    // does not support look-around, so this uses a "first significant token"
-    // pattern rather than negative lookaheads.
-    const JS_REPL_FREEFORM_GRAMMAR: &str = r#"
-start: pragma_source | plain_source
-
-pragma_source: PRAGMA_LINE NEWLINE js_source
-plain_source: PLAIN_JS_SOURCE
-
-js_source: JS_SOURCE
-
-PRAGMA_LINE: /[ \t]*\/\/ codex-js-repl:[^\r\n]*/
-NEWLINE: /\r?\n/
-PLAIN_JS_SOURCE: /(?:\s*)(?:[^\s{\"`]|`[^`]|``[^`])[\s\S]*/
-JS_SOURCE: /(?:\s*)(?:[^\s{\"`]|`[^`]|``[^`])[\s\S]*/
-"#;
-
-    ToolSpec::Freeform(FreeformTool {
-        name: "js_repl".to_string(),
-        description: "Runs JavaScript in a persistent Node kernel with top-level await. This is a freeform tool: send raw JavaScript source text, optionally with a first-line pragma like `// codex-js-repl: timeout_ms=15000`; do not send JSON/quotes/markdown fences."
-            .to_string(),
-        format: FreeformToolFormat {
-            r#type: "grammar".to_string(),
-            syntax: "lark".to_string(),
-            definition: JS_REPL_FREEFORM_GRAMMAR.to_string(),
-        },
-    })
-}
-
 fn create_artifacts_tool() -> ToolSpec {
     const ARTIFACTS_FREEFORM_GRAMMAR: &str = r#"
 start: pragma_source | plain_source
@@ -2073,23 +2034,6 @@ JS_SOURCE: /(?:\s*)(?:[^\s{\"`]|`[^`]|``[^`])[\s\S]*/
             syntax: "lark".to_string(),
             definition: ARTIFACTS_FREEFORM_GRAMMAR.to_string(),
         },
-    })
-}
-
-fn create_js_repl_reset_tool() -> ToolSpec {
-    ToolSpec::Function(ResponsesApiTool {
-        name: "js_repl_reset".to_string(),
-        description:
-            "Restarts the js_repl kernel for this run and clears persisted top-level bindings."
-                .to_string(),
-        strict: false,
-        defer_loading: None,
-        parameters: JsonSchema::Object {
-            properties: BTreeMap::new(),
-            required: None,
-            additional_properties: Some(false.into()),
-        },
-        output_schema: None,
     })
 }
 
@@ -2514,8 +2458,6 @@ pub(crate) fn build_specs_with_discoverable_tools(
     use crate::tools::handlers::CodeModeWaitHandler;
     use crate::tools::handlers::DynamicToolHandler;
     use crate::tools::handlers::GrepFilesHandler;
-    use crate::tools::handlers::JsReplHandler;
-    use crate::tools::handlers::JsReplResetHandler;
     use crate::tools::handlers::ListDirHandler;
     use crate::tools::handlers::McpHandler;
     use crate::tools::handlers::McpResourceHandler;
@@ -2555,8 +2497,6 @@ pub(crate) fn build_specs_with_discoverable_tools(
     let tool_suggest_handler = Arc::new(ToolSuggestHandler);
     let code_mode_handler = Arc::new(CodeModeExecuteHandler);
     let code_mode_wait_handler = Arc::new(CodeModeWaitHandler);
-    let js_repl_handler = Arc::new(JsReplHandler);
-    let js_repl_reset_handler = Arc::new(JsReplResetHandler);
     let artifacts_handler = Arc::new(ArtifactsHandler);
     let exec_permission_approvals_enabled = config.exec_permission_approvals_enabled;
 
@@ -2692,23 +2632,6 @@ pub(crate) fn build_specs_with_discoverable_tools(
         config.code_mode_enabled,
     );
     builder.register_handler("update_plan", plan_handler);
-
-    if config.js_repl_enabled {
-        push_tool_spec(
-            &mut builder,
-            create_js_repl_tool(),
-            /*supports_parallel_tool_calls*/ false,
-            config.code_mode_enabled,
-        );
-        push_tool_spec(
-            &mut builder,
-            create_js_repl_reset_tool(),
-            /*supports_parallel_tool_calls*/ false,
-            config.code_mode_enabled,
-        );
-        builder.register_handler("js_repl", js_repl_handler);
-        builder.register_handler("js_repl_reset", js_repl_reset_handler);
-    }
 
     if config.request_user_input {
         push_tool_spec(

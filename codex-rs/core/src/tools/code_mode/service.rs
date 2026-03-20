@@ -10,8 +10,8 @@ use crate::codex::Session;
 use crate::codex::TurnContext;
 use crate::features::Feature;
 use crate::tools::ToolRouter;
+use crate::tools::code_mode::resolve_compatible_node;
 use crate::tools::context::SharedTurnDiffTracker;
-use crate::tools::js_repl::resolve_compatible_node;
 use crate::tools::parallel::ToolCallRuntime;
 
 use super::ExecContext;
@@ -21,16 +21,16 @@ use super::process::spawn_code_mode_process;
 use super::worker::CodeModeWorker;
 
 pub(crate) struct CodeModeService {
-    js_repl_node_path: Option<PathBuf>,
+    node_path: Option<PathBuf>,
     stored_values: Mutex<HashMap<String, JsonValue>>,
     process: Arc<Mutex<Option<CodeModeProcess>>>,
     next_cell_id: Mutex<u64>,
 }
 
 impl CodeModeService {
-    pub(crate) fn new(js_repl_node_path: Option<PathBuf>) -> Self {
+    pub(crate) fn new(node_path: Option<PathBuf>) -> Self {
         Self {
-            js_repl_node_path,
+            node_path,
             stored_values: Mutex::new(HashMap::new()),
             process: Arc::new(Mutex::new(None)),
             next_cell_id: Mutex::new(1),
@@ -54,7 +54,7 @@ impl CodeModeService {
             None => true,
         };
         if needs_spawn {
-            let node_path = resolve_compatible_node(self.js_repl_node_path.as_deref())
+            let node_path = resolve_compatible_node(self.node_path.as_deref())
                 .await
                 .map_err(std::io::Error::other)?;
             *process_slot = Some(spawn_code_mode_process(&node_path).await?);

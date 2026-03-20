@@ -10,6 +10,7 @@ pub(crate) fn can_request_original_image_detail(
     model_info.supports_image_detail_original && features.enabled(Feature::ImageDetailOriginal)
 }
 
+#[allow(dead_code)]
 pub(crate) fn normalize_output_image_detail(
     features: &Features,
     model_info: &ModelInfo,

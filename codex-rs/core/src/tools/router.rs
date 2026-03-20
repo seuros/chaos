@@ -214,6 +214,7 @@ impl ToolRouter {
         }
     }
 
+    #[allow(dead_code)]
     #[instrument(level = "trace", skip_all, err)]
     pub async fn dispatch_tool_call(
         &self,
@@ -236,7 +237,7 @@ impl ToolRouter {
         turn: Arc<TurnContext>,
         tracker: SharedTurnDiffTracker,
         call: ToolCall,
-        source: ToolCallSource,
+        _source: ToolCallSource,
     ) -> Result<AnyToolResult, FunctionCallError> {
         let ToolCall {
             tool_name,
@@ -247,22 +248,6 @@ impl ToolRouter {
         let payload_outputs_custom = matches!(payload, ToolPayload::Custom { .. });
         let payload_outputs_tool_search = matches!(payload, ToolPayload::ToolSearch { .. });
         let failure_call_id = call_id.clone();
-
-        if source == ToolCallSource::Direct
-            && turn.tools_config.js_repl_tools_only
-            && !matches!(tool_name.as_str(), "js_repl" | "js_repl_reset")
-        {
-            let err = FunctionCallError::RespondToModel(
-                "direct tool calls are disabled; use js_repl and codex.tool(...) instead"
-                    .to_string(),
-            );
-            return Ok(Self::failure_result(
-                failure_call_id,
-                payload_outputs_custom,
-                payload_outputs_tool_search,
-                err,
-            ));
-        }
 
         let invocation = ToolInvocation {
             session,

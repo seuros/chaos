@@ -17,7 +17,6 @@ use codex_protocol::mcp::RequestId as McpRequestId;
 use codex_protocol::openai_models::ModelPreset;
 use codex_protocol::protocol::ElicitationAction;
 use codex_protocol::protocol::Event;
-use codex_protocol::protocol::RateLimitSnapshot;
 use codex_utils_approval_presets::ApprovalPreset;
 
 use crate::bottom_pane::ApprovalRequest;
@@ -99,9 +98,6 @@ pub(crate) enum AppEvent {
         query: String,
         matches: Vec<FileMatch>,
     },
-
-    /// Result of refreshing rate limits
-    RateLimitSnapshotFetched(RateLimitSnapshot),
 
     /// Result of prefetching connectors.
     ConnectorsLoaded {

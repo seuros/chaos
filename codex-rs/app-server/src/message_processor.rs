@@ -63,11 +63,9 @@ use codex_core::default_client::get_codex_user_agent;
 use codex_core::default_client::set_default_client_residency_requirement;
 use codex_core::default_client::set_default_originator;
 use codex_core::models_manager::collaboration_mode_presets::CollaborationModesConfig;
-use codex_feedback::CodexFeedback;
 use codex_protocol::ThreadId;
 use codex_protocol::protocol::SessionSource;
 use codex_protocol::protocol::W3cTraceContext;
-use codex_state::log_db::LogDbLayer;
 use futures::FutureExt;
 use tokio::sync::broadcast;
 use tokio::sync::watch;
@@ -171,8 +169,6 @@ pub(crate) struct MessageProcessorArgs {
     pub(crate) cloud_requirements: CloudRequirementsLoader,
     pub(crate) auth_manager: Option<Arc<AuthManager>>,
     pub(crate) thread_manager: Option<Arc<ThreadManager>>,
-    pub(crate) feedback: CodexFeedback,
-    pub(crate) log_db: Option<LogDbLayer>,
     pub(crate) config_warnings: Vec<ConfigWarningNotification>,
     pub(crate) session_source: SessionSource,
     pub(crate) enable_codex_api_key_env: bool,
@@ -191,8 +187,6 @@ impl MessageProcessor {
             cloud_requirements,
             auth_manager,
             thread_manager,
-            feedback,
-            log_db,
             config_warnings,
             session_source,
             enable_codex_api_key_env,
@@ -241,8 +235,6 @@ impl MessageProcessor {
             config: Arc::clone(&config),
             cli_overrides: cli_overrides.clone(),
             cloud_requirements: cloud_requirements.clone(),
-            feedback,
-            log_db,
         });
         let config_api = ConfigApi::new(
             config.codex_home.clone(),

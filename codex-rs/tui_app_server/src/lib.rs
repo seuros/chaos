@@ -20,7 +20,6 @@ use codex_app_server_protocol::Thread as AppServerThread;
 use codex_app_server_protocol::ThreadListParams;
 use codex_app_server_protocol::ThreadSortKey as AppServerThreadSortKey;
 use codex_app_server_protocol::ThreadSourceKind;
-use codex_cloud_requirements::cloud_requirements_loader_for_storage;
 use codex_core::auth::enforce_login_restrictions;
 use codex_core::check_execpolicy_for_warnings;
 use codex_core::config::Config;
@@ -147,7 +146,6 @@ async fn start_embedded_app_server(
     cli_kv_overrides: Vec<(String, toml::Value)>,
     loader_overrides: LoaderOverrides,
     cloud_requirements: CloudRequirementsLoader,
-    feedback: codex_feedback::CodexFeedback,
 ) -> color_eyre::Result<InProcessAppServerClient> {
     start_embedded_app_server_with(
         arg0_paths,
@@ -155,7 +153,6 @@ async fn start_embedded_app_server(
         cli_kv_overrides,
         loader_overrides,
         cloud_requirements,
-        feedback,
         InProcessAppServerClient::start,
     )
     .await
@@ -241,7 +238,6 @@ async fn start_app_server(
     cli_kv_overrides: Vec<(String, toml::Value)>,
     loader_overrides: LoaderOverrides,
     cloud_requirements: CloudRequirementsLoader,
-    feedback: codex_feedback::CodexFeedback,
 ) -> color_eyre::Result<AppServerClient> {
     match target {
         AppServerTarget::Embedded => start_embedded_app_server(
@@ -250,7 +246,6 @@ async fn start_app_server(
             cli_kv_overrides,
             loader_overrides,
             cloud_requirements,
-            feedback,
         )
         .await
         .map(AppServerClient::InProcess),
@@ -271,7 +266,6 @@ pub(crate) async fn start_app_server_for_picker(
         Vec::new(),
         LoaderOverrides::default(),
         CloudRequirementsLoader::default(),
-        codex_feedback::CodexFeedback::new(),
     )
     .await?;
     Ok(AppServerSession::new(app_server))
@@ -290,7 +284,6 @@ async fn start_embedded_app_server_with<F, Fut>(
     cli_kv_overrides: Vec<(String, toml::Value)>,
     loader_overrides: LoaderOverrides,
     cloud_requirements: CloudRequirementsLoader,
-    feedback: codex_feedback::CodexFeedback,
     start_client: F,
 ) -> color_eyre::Result<InProcessAppServerClient>
 where
@@ -313,7 +306,6 @@ where
         cli_overrides: cli_kv_overrides,
         loader_overrides,
         cloud_requirements,
-        feedback,
         config_warnings,
         session_source: codex_protocol::protocol::SessionSource::Cli,
         enable_codex_api_key_env: false,
@@ -564,16 +556,7 @@ pub async fn run_main(
         tracing::warn!(error = %err, "failed to run personality migration");
     }
 
-    let chatgpt_base_url = config_toml
-        .chatgpt_base_url
-        .clone()
-        .unwrap_or_else(|| "https://chatgpt.com/backend-api/".to_string());
-    let cloud_requirements = cloud_requirements_loader_for_storage(
-        codex_home.to_path_buf(),
-        /*enable_codex_api_key_env*/ false,
-        config_toml.cli_auth_credentials_store.unwrap_or_default(),
-        chatgpt_base_url,
-    );
+    let cloud_requirements = CloudRequirementsLoader::default();
 
     let model_provider_override = if cli.oss {
         let resolved = resolve_oss_provider(
@@ -696,10 +679,6 @@ pub async fn run_main(
         )
         .with_filter(env_filter());
 
-    let feedback = codex_feedback::CodexFeedback::new();
-    let feedback_layer = feedback.logger_layer();
-    let feedback_metadata_layer = feedback.metadata_layer();
-
     if cli.oss && model_provider_override.is_some() {
         // We're in the oss section, so provider_id should be Some
         // Let's handle None case gracefully though just in case
@@ -752,8 +731,6 @@ pub async fn run_main(
 
     let _ = tracing_subscriber::registry()
         .with(file_layer)
-        .with(feedback_layer)
-        .with(feedback_metadata_layer)
         .with(log_db_layer)
         .with(otel_logger_layer)
         .with(otel_tracing_layer)
@@ -768,7 +745,6 @@ pub async fn run_main(
         overrides,
         cli_kv_overrides,
         cloud_requirements,
-        feedback,
         remote_url,
     )
     .await
@@ -785,7 +761,6 @@ async fn run_ratatui_app(
     overrides: ConfigOverrides,
     cli_kv_overrides: Vec<(String, toml::Value)>,
     mut cloud_requirements: CloudRequirementsLoader,
-    feedback: codex_feedback::CodexFeedback,
     remote_url: Option<String>,
 ) -> color_eyre::Result<AppExitInfo> {
     let remote_mode = matches!(&app_server_target, AppServerTarget::Remote(_));
@@ -844,7 +819,6 @@ async fn run_ratatui_app(
                 cli_kv_overrides.clone(),
                 loader_overrides.clone(),
                 cloud_requirements.clone(),
-                feedback.clone(),
             )
             .await?,
         ))
@@ -899,12 +873,7 @@ async fn run_ratatui_app(
         // rebuild config. This avoids missing newly available cloud requirements due to login
         // status detection edge cases.
         if show_login_screen && !remote_mode {
-            cloud_requirements = cloud_requirements_loader_for_storage(
-                initial_config.codex_home.clone(),
-                /*enable_codex_api_key_env*/ false,
-                initial_config.cli_auth_credentials_store_mode,
-                initial_config.chatgpt_base_url.clone(),
-            );
+            cloud_requirements = CloudRequirementsLoader::default();
         }
 
         // If the user made an explicit trust decision, or we showed the login flow, reload config
@@ -958,7 +927,6 @@ async fn run_ratatui_app(
                 cli_kv_overrides.clone(),
                 loader_overrides.clone(),
                 cloud_requirements.clone(),
-                feedback.clone(),
             )
             .await?,
         ))
@@ -1161,7 +1129,6 @@ async fn run_ratatui_app(
         cli_kv_overrides.clone(),
         loader_overrides,
         cloud_requirements.clone(),
-        feedback.clone(),
     )
     .await
     {
@@ -1183,7 +1150,7 @@ async fn run_ratatui_app(
         prompt,
         images,
         session_selection,
-        feedback,
+        crate::bottom_pane::FeedbackSnapshot::default(),
         should_show_trust_screen, // Proxy to: is it a first run in this directory?
         remote_url,
     )
@@ -1467,7 +1434,6 @@ mod tests {
             Vec::new(),
             LoaderOverrides::default(),
             CloudRequirementsLoader::default(),
-            codex_feedback::CodexFeedback::new(),
         )
         .await
     }
@@ -1606,7 +1572,6 @@ mod tests {
             Vec::new(),
             LoaderOverrides::default(),
             CloudRequirementsLoader::default(),
-            codex_feedback::CodexFeedback::new(),
             |_args| async { Err(std::io::Error::other("boom")) },
         )
         .await;

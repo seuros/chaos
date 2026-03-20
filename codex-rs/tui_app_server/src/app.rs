@@ -718,7 +718,8 @@ pub(crate) struct App {
     /// This is used after a confirmed thread rollback to ensure scrollback reflects the trimmed
     /// transcript cells.
     pub(crate) backtrack_render_pending: bool,
-    pub(crate) feedback: codex_feedback::CodexFeedback,
+    #[allow(dead_code)]
+    pub(crate) feedback: crate::bottom_pane::FeedbackSnapshot,
     feedback_audience: FeedbackAudience,
     remote_app_server_url: Option<String>,
     /// Set when the user confirms an update; propagated on exit.
@@ -2176,7 +2177,7 @@ impl App {
         initial_prompt: Option<String>,
         initial_images: Vec<PathBuf>,
         session_selection: SessionSelection,
-        feedback: codex_feedback::CodexFeedback,
+        feedback: crate::bottom_pane::FeedbackSnapshot,
         is_first_run: bool,
         remote_app_server_url: Option<String>,
     ) -> Result<AppExitInfo> {
@@ -6062,7 +6063,7 @@ guardian_approval = true
             status_line_invalid_items_warned: Arc::new(AtomicBool::new(false)),
             backtrack: BacktrackState::default(),
             backtrack_render_pending: false,
-            feedback: codex_feedback::CodexFeedback::new(),
+            feedback: crate::bottom_pane::FeedbackSnapshot::default(),
             feedback_audience: FeedbackAudience::External,
             remote_app_server_url: None,
             pending_update_action: None,
@@ -6114,7 +6115,7 @@ guardian_approval = true
                 status_line_invalid_items_warned: Arc::new(AtomicBool::new(false)),
                 backtrack: BacktrackState::default(),
                 backtrack_render_pending: false,
-                feedback: codex_feedback::CodexFeedback::new(),
+                feedback: crate::bottom_pane::FeedbackSnapshot::default(),
                 feedback_audience: FeedbackAudience::External,
                 remote_app_server_url: None,
                 pending_update_action: None,

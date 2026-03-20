@@ -79,7 +79,6 @@ use codex_core::ThreadManager;
 use codex_core::config::Config;
 use codex_core::config_loader::CloudRequirementsLoader;
 use codex_core::config_loader::LoaderOverrides;
-use codex_feedback::CodexFeedback;
 use codex_protocol::protocol::SessionSource;
 use tokio::sync::mpsc;
 use tokio::sync::oneshot;
@@ -128,8 +127,6 @@ pub struct InProcessStartArgs {
     pub auth_manager: Option<Arc<AuthManager>>,
     /// Optional prebuilt thread manager reused by an embedding caller.
     pub thread_manager: Option<Arc<ThreadManager>>,
-    /// Feedback sink used by app-server/core telemetry and logs.
-    pub feedback: CodexFeedback,
     /// Startup warnings emitted after initialize succeeds.
     pub config_warnings: Vec<ConfigWarningNotification>,
     /// Session source stamped into thread/session metadata.
@@ -412,8 +409,6 @@ fn start_uninitialized(args: InProcessStartArgs) -> InProcessClientHandle {
                 cloud_requirements: args.cloud_requirements,
                 auth_manager: args.auth_manager,
                 thread_manager: args.thread_manager,
-                feedback: args.feedback,
-                log_db: None,
                 config_warnings: args.config_warnings,
                 session_source: args.session_source,
                 enable_codex_api_key_env: args.enable_codex_api_key_env,
@@ -761,7 +756,6 @@ mod tests {
             cloud_requirements: CloudRequirementsLoader::default(),
             auth_manager: None,
             thread_manager: None,
-            feedback: CodexFeedback::new(),
             config_warnings: Vec::new(),
             session_source,
             enable_codex_api_key_env: false,

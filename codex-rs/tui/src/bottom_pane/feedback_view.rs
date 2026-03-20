@@ -1,8 +1,6 @@
 use std::cell::RefCell;
 use std::path::PathBuf;
 
-use codex_feedback::feedback_diagnostics::FEEDBACK_DIAGNOSTICS_ATTACHMENT_FILENAME;
-use codex_feedback::feedback_diagnostics::FeedbackDiagnostics;
 use crossterm::event::KeyCode;
 use crossterm::event::KeyEvent;
 use crossterm::event::KeyModifiers;
@@ -44,11 +42,48 @@ pub(crate) enum FeedbackAudience {
     External,
 }
 
-/// Minimal input overlay to collect an optional feedback note, then upload
+/// Minimal stub for a feedback snapshot. Feedback upload is not supported in this build.
+#[derive(Clone, Default)]
+pub(crate) struct FeedbackSnapshot {
+    pub(crate) thread_id: String,
+}
+
+impl FeedbackSnapshot {
+    pub(crate) fn new(thread_id: Option<impl Into<String>>) -> Self {
+        Self {
+            thread_id: thread_id.map(Into::into).unwrap_or_default(),
+        }
+    }
+
+    pub(crate) fn upload_feedback(
+        &self,
+        _classification: &str,
+        _reason: Option<&str>,
+        _include_logs: bool,
+        _attachment_paths: &[PathBuf],
+        _session_source: Option<SessionSource>,
+        _logs_override: Option<()>,
+    ) -> Result<(), String> {
+        Err("feedback upload is not supported in this build".to_string())
+    }
+}
+
+/// Minimal stub for feedback diagnostics.
+#[derive(Clone, Default)]
+pub(crate) struct FeedbackDiagnostics;
+
+impl FeedbackDiagnostics {
+    #[allow(dead_code)]
+    pub(crate) fn is_empty(&self) -> bool {
+        true
+    }
+}
+
+/// Minimal overlay to collect an optional feedback note, then upload
 /// both logs and rollout with classification + metadata.
 pub(crate) struct FeedbackNoteView {
     category: FeedbackCategory,
-    snapshot: codex_feedback::FeedbackSnapshot,
+    snapshot: FeedbackSnapshot,
     rollout_path: Option<PathBuf>,
     app_event_tx: AppEventSender,
     include_logs: bool,
@@ -63,7 +98,7 @@ pub(crate) struct FeedbackNoteView {
 impl FeedbackNoteView {
     pub(crate) fn new(
         category: FeedbackCategory,
-        snapshot: codex_feedback::FeedbackSnapshot,
+        snapshot: FeedbackSnapshot,
         rollout_path: Option<PathBuf>,
         app_event_tx: AppEventSender,
         include_logs: bool,
@@ -346,6 +381,7 @@ impl FeedbackNoteView {
     }
 }
 
+#[allow(dead_code)]
 pub(crate) fn should_show_feedback_connectivity_details(
     category: FeedbackCategory,
     diagnostics: &FeedbackDiagnostics,
@@ -397,9 +433,6 @@ fn issue_url_for_category(
     thread_id: &str,
     feedback_audience: FeedbackAudience,
 ) -> Option<String> {
-    // Only certain categories provide a follow-up link. We intentionally keep
-    // the external GitHub behavior identical while routing internal users to
-    // the internal go link.
     match category {
         FeedbackCategory::Bug
         | FeedbackCategory::BadResult
@@ -414,10 +447,6 @@ fn issue_url_for_category(
     }
 }
 
-/// Build the internal follow-up URL.
-///
-/// We accept a `thread_id` so the call site stays symmetric with the external
-/// path, but we currently point to a fixed channel without prefilling text.
 fn slack_feedback_url(_thread_id: &str) -> String {
     CODEX_FEEDBACK_INTERNAL_URL.to_string()
 }
@@ -444,7 +473,7 @@ pub(crate) fn feedback_selection_params(
             make_feedback_item(
                 app_event_tx.clone(),
                 "good result",
-                "Helpful, correct, high‑quality, or delightful result worth celebrating.",
+                "Helpful, correct, high\u{2011}quality, or delightful result worth celebrating.",
                 FeedbackCategory::GoodResult,
             ),
             make_feedback_item(
@@ -502,7 +531,7 @@ pub(crate) fn feedback_upload_consent_params(
     app_event_tx: AppEventSender,
     category: FeedbackCategory,
     rollout_path: Option<std::path::PathBuf>,
-    feedback_diagnostics: &FeedbackDiagnostics,
+    _feedback_diagnostics: &FeedbackDiagnostics,
 ) -> super::SelectionViewParams {
     use super::popup_consts::standard_popup_hint_line;
     let yes_action: super::SelectionAction = Box::new({
@@ -539,26 +568,6 @@ pub(crate) fn feedback_upload_consent_params(
     {
         header_lines.push(Line::from(vec!["  • ".into(), name.into()]).into());
     }
-    if !feedback_diagnostics.is_empty() {
-        header_lines.push(
-            Line::from(vec![
-                "  • ".into(),
-                FEEDBACK_DIAGNOSTICS_ATTACHMENT_FILENAME.into(),
-            ])
-            .into(),
-        );
-    }
-    if should_show_feedback_connectivity_details(category, feedback_diagnostics) {
-        header_lines.push(Line::from("").into());
-        header_lines.push(Line::from("Connectivity diagnostics".bold()).into());
-        for diagnostic in feedback_diagnostics.diagnostics() {
-            header_lines
-                .push(Line::from(vec!["  - ".into(), diagnostic.headline.clone().into()]).into());
-            for detail in &diagnostic.details {
-                header_lines.push(Line::from(vec!["    - ".dim(), detail.clone().into()]).into());
-            }
-        }
-    }
 
     super::SelectionViewParams {
         footer_hint: Some(standard_popup_hint_line()),
@@ -592,13 +601,12 @@ mod tests {
     use super::*;
     use crate::app_event::AppEvent;
     use crate::app_event_sender::AppEventSender;
-    use codex_feedback::feedback_diagnostics::FeedbackDiagnostic;
     use pretty_assertions::assert_eq;
 
     fn render(view: &FeedbackNoteView, width: u16) -> String {
         let height = view.desired_height(width);
         let area = Rect::new(0, 0, width, height);
-        let mut buf = Buffer::empty(area);
+        let mut buf = ratatui::buffer::Buffer::empty(area);
         view.render(area, &mut buf);
 
         let mut lines: Vec<String> = (0..area.height)
@@ -628,7 +636,7 @@ mod tests {
     fn make_view(category: FeedbackCategory) -> FeedbackNoteView {
         let (tx_raw, _rx) = tokio::sync::mpsc::unbounded_channel::<AppEvent>();
         let tx = AppEventSender::new(tx_raw);
-        let snapshot = codex_feedback::CodexFeedback::new().snapshot(None);
+        let snapshot = FeedbackSnapshot::new(None::<String>);
         FeedbackNoteView::new(
             category,
             snapshot,
@@ -678,20 +686,7 @@ mod tests {
     fn feedback_view_with_connectivity_diagnostics() {
         let (tx_raw, _rx) = tokio::sync::mpsc::unbounded_channel::<AppEvent>();
         let tx = AppEventSender::new(tx_raw);
-        let diagnostics = FeedbackDiagnostics::new(vec![
-            FeedbackDiagnostic {
-                headline: "Proxy environment variables are set and may affect connectivity."
-                    .to_string(),
-                details: vec!["HTTP_PROXY = http://proxy.example.com:8080".to_string()],
-            },
-            FeedbackDiagnostic {
-                headline: "OPENAI_BASE_URL is set and may affect connectivity.".to_string(),
-                details: vec!["OPENAI_BASE_URL = https://example.com/v1".to_string()],
-            },
-        ]);
-        let snapshot = codex_feedback::CodexFeedback::new()
-            .snapshot(None)
-            .with_feedback_diagnostics(diagnostics);
+        let snapshot = FeedbackSnapshot::new(None::<String>);
         let view = FeedbackNoteView::new(
             FeedbackCategory::Bug,
             snapshot,
@@ -707,15 +702,11 @@ mod tests {
 
     #[test]
     fn should_show_feedback_connectivity_details_only_for_non_good_result_with_diagnostics() {
-        let diagnostics = FeedbackDiagnostics::new(vec![FeedbackDiagnostic {
-            headline: "Proxy environment variables are set and may affect connectivity."
-                .to_string(),
-            details: vec!["HTTP_PROXY = http://proxy.example.com:8080".to_string()],
-        }]);
+        let diagnostics = FeedbackDiagnostics::default();
 
         assert_eq!(
             should_show_feedback_connectivity_details(FeedbackCategory::Bug, &diagnostics),
-            true
+            false
         );
         assert_eq!(
             should_show_feedback_connectivity_details(FeedbackCategory::GoodResult, &diagnostics),

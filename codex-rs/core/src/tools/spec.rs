@@ -324,8 +324,7 @@ impl ToolsConfig {
         let include_search_tool = model_info.supports_search_tool;
         let include_tool_suggest = include_search_tool && features.enabled(Feature::ToolSuggest);
         let include_original_image_detail = can_request_original_image_detail(features, model_info);
-        let include_artifact_tools =
-            features.enabled(Feature::Artifact) && codex_artifacts::can_manage_artifact_runtime();
+        let include_artifact_tools = false;
         let include_image_gen_tool =
             features.enabled(Feature::ImageGeneration) && supports_image_generation(model_info);
         let exec_permission_approvals_enabled = features.enabled(Feature::ExecPermissionApprovals);
@@ -2010,6 +2009,7 @@ fn create_list_dir_tool() -> ToolSpec {
     })
 }
 
+#[allow(dead_code)]
 fn create_artifacts_tool() -> ToolSpec {
     const ARTIFACTS_FREEFORM_GRAMMAR: &str = r#"
 start: pragma_source | plain_source
@@ -2453,7 +2453,6 @@ pub(crate) fn build_specs_with_discoverable_tools(
     dynamic_tools: &[DynamicToolSpec],
 ) -> ToolRegistryBuilder {
     use crate::tools::handlers::ApplyPatchHandler;
-    use crate::tools::handlers::ArtifactsHandler;
     use crate::tools::handlers::CodeModeExecuteHandler;
     use crate::tools::handlers::CodeModeWaitHandler;
     use crate::tools::handlers::DynamicToolHandler;
@@ -2497,7 +2496,6 @@ pub(crate) fn build_specs_with_discoverable_tools(
     let tool_suggest_handler = Arc::new(ToolSuggestHandler);
     let code_mode_handler = Arc::new(CodeModeExecuteHandler);
     let code_mode_wait_handler = Arc::new(CodeModeWaitHandler);
-    let artifacts_handler = Arc::new(ArtifactsHandler);
     let exec_permission_approvals_enabled = config.exec_permission_approvals_enabled;
 
     if config.code_mode_enabled {
@@ -2826,13 +2824,7 @@ pub(crate) fn build_specs_with_discoverable_tools(
     builder.register_handler("view_image", view_image_handler);
 
     if config.artifact_tools {
-        push_tool_spec(
-            &mut builder,
-            create_artifacts_tool(),
-            /*supports_parallel_tool_calls*/ false,
-            config.code_mode_enabled,
-        );
-        builder.register_handler("artifacts", artifacts_handler);
+        // artifact tools removed: codex-artifacts crate evicted
     }
 
     if config.collab_tools {

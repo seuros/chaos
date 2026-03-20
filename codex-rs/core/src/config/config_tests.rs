@@ -4844,31 +4844,28 @@ fn test_set_default_oss_provider() -> std::io::Result<()> {
     let codex_home = temp_dir.path();
     let config_path = codex_home.join(CONFIG_TOML_FILE);
 
-    // Test setting valid provider on empty config
-    set_default_oss_provider(codex_home, OLLAMA_OSS_PROVIDER_ID)?;
+    // Test setting a provider on empty config
+    set_default_oss_provider(codex_home, "ollama")?;
     let content = std::fs::read_to_string(&config_path)?;
     assert!(content.contains("oss_provider = \"ollama\""));
 
     // Test updating existing config
     std::fs::write(&config_path, "model = \"gpt-4\"\n")?;
-    set_default_oss_provider(codex_home, LMSTUDIO_OSS_PROVIDER_ID)?;
+    set_default_oss_provider(codex_home, "lmstudio")?;
     let content = std::fs::read_to_string(&config_path)?;
     assert!(content.contains("oss_provider = \"lmstudio\""));
     assert!(content.contains("model = \"gpt-4\""));
 
     // Test overwriting existing oss_provider
-    set_default_oss_provider(codex_home, OLLAMA_OSS_PROVIDER_ID)?;
+    set_default_oss_provider(codex_home, "ollama")?;
     let content = std::fs::read_to_string(&config_path)?;
     assert!(content.contains("oss_provider = \"ollama\""));
     assert!(!content.contains("oss_provider = \"lmstudio\""));
 
-    // Test invalid provider
-    let result = set_default_oss_provider(codex_home, "invalid_provider");
+    // Test that an empty provider is rejected
+    let result = set_default_oss_provider(codex_home, "");
     assert!(result.is_err());
-    let error = result.unwrap_err();
-    assert_eq!(error.kind(), std::io::ErrorKind::InvalidInput);
-    assert!(error.to_string().contains("Invalid OSS provider"));
-    assert!(error.to_string().contains("invalid_provider"));
+    assert_eq!(result.unwrap_err().kind(), std::io::ErrorKind::InvalidInput);
 
     Ok(())
 }

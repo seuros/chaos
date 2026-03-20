@@ -757,28 +757,6 @@ dependencies = [
 ]
 
 [[package]]
-name = "async-stream"
-version = "0.3.6"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "0b5a71a6f37880a80d1d7f19efd781e4b5de42c88f0722cc13bcb6cc2cfe8476"
-dependencies = [
- "async-stream-impl",
- "futures-core",
- "pin-project-lite",
-]
-
-[[package]]
-name = "async-stream-impl"
-version = "0.3.6"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "c7c24de15d275a1ecfd47a380fb4d5ec9bfe0933f309ed5e705b775596a3574d"
-dependencies = [
- "proc-macro2",
- "quote",
- "syn 2.0.117",
-]
-
-[[package]]
 name = "async-task"
 version = "4.7.1"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -1948,7 +1926,6 @@ dependencies = [
  "codex-utils-cargo-bin",
  "codex-utils-cli",
  "codex-utils-elapsed",
- "codex-utils-oss",
  "codex-utils-sandbox-summary",
  "core_test_support",
  "libc",
@@ -2091,19 +2068,6 @@ dependencies = [
 ]
 
 [[package]]
-name = "codex-lmstudio"
-version = "47.0.0"
-dependencies = [
- "codex-core",
- "reqwest",
- "serde_json",
- "tokio",
- "tracing",
- "which",
- "wiremock",
-]
-
-[[package]]
 name = "codex-login"
 version = "47.0.0"
 dependencies = [
@@ -2186,24 +2150,6 @@ dependencies = [
  "tokio",
  "tracing",
  "url",
-]
-
-[[package]]
-name = "codex-ollama"
-version = "47.0.0"
-dependencies = [
- "assert_matches",
- "async-stream",
- "bytes",
- "codex-core",
- "futures",
- "pretty_assertions",
- "reqwest",
- "semver",
- "serde_json",
- "tokio",
- "tracing",
- "wiremock",
 ]
 
 [[package]]
@@ -2469,7 +2415,6 @@ dependencies = [
  "codex-utils-cli",
  "codex-utils-elapsed",
  "codex-utils-fuzzy-match",
- "codex-utils-oss",
  "codex-utils-pty",
  "codex-utils-sandbox-summary",
  "codex-utils-sleep-inhibitor",
@@ -2552,7 +2497,6 @@ dependencies = [
  "codex-utils-cli",
  "codex-utils-elapsed",
  "codex-utils-fuzzy-match",
- "codex-utils-oss",
  "codex-utils-pty",
  "codex-utils-sandbox-summary",
  "codex-utils-sleep-inhibitor",
@@ -2690,15 +2634,6 @@ dependencies = [
  "pretty_assertions",
  "serde_json",
  "toml 0.9.12+spec-1.1.0",
-]
-
-[[package]]
-name = "codex-utils-oss"
-version = "47.0.0"
-dependencies = [
- "codex-core",
- "codex-lmstudio",
- "codex-ollama",
 ]
 
 [[package]]

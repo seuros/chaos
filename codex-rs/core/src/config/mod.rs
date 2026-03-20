@@ -43,10 +43,8 @@ use crate::features::FeaturesToml;
 use crate::git_info::resolve_root_git_project_for_trust;
 use crate::memories::memory_root;
 use crate::model_provider_info::LEGACY_OLLAMA_CHAT_PROVIDER_ID;
-use crate::model_provider_info::LMSTUDIO_OSS_PROVIDER_ID;
 use crate::model_provider_info::ModelProviderInfo;
 use crate::model_provider_info::OLLAMA_CHAT_PROVIDER_REMOVED_ERROR;
-use crate::model_provider_info::OLLAMA_OSS_PROVIDER_ID;
 use crate::model_provider_info::OPENAI_PROVIDER_ID;
 use crate::model_provider_info::built_in_model_providers;
 use crate::path_utils::normalize_for_native_workdir;
@@ -136,11 +134,7 @@ pub(crate) const DEFAULT_AGENT_JOB_MAX_RUNTIME_SECONDS: Option<u64> = None;
 
 pub const CONFIG_TOML_FILE: &str = "config.toml";
 const OPENAI_BASE_URL_ENV_VAR: &str = "OPENAI_BASE_URL";
-const RESERVED_MODEL_PROVIDER_IDS: [&str; 3] = [
-    OPENAI_PROVIDER_ID,
-    OLLAMA_OSS_PROVIDER_ID,
-    LMSTUDIO_OSS_PROVIDER_ID,
-];
+const RESERVED_MODEL_PROVIDER_IDS: [&str; 1] = [OPENAI_PROVIDER_ID];
 
 fn resolve_sqlite_home_env(resolved_cwd: &Path) -> Option<PathBuf> {
     let raw = std::env::var(codex_state::SQLITE_HOME_ENV).ok()?;
@@ -1120,25 +1114,19 @@ pub fn set_project_trust_level(
 
 /// Save the default OSS provider preference to config.toml
 pub fn set_default_oss_provider(codex_home: &Path, provider: &str) -> std::io::Result<()> {
-    // Validate that the provider is one of the known OSS providers
-    match provider {
-        LMSTUDIO_OSS_PROVIDER_ID | OLLAMA_OSS_PROVIDER_ID => {
-            // Valid provider, continue
-        }
-        LEGACY_OLLAMA_CHAT_PROVIDER_ID => {
-            return Err(std::io::Error::new(
-                std::io::ErrorKind::InvalidInput,
-                OLLAMA_CHAT_PROVIDER_REMOVED_ERROR,
-            ));
-        }
-        _ => {
-            return Err(std::io::Error::new(
-                std::io::ErrorKind::InvalidInput,
-                format!(
-                    "Invalid OSS provider '{provider}'. Must be one of: {LMSTUDIO_OSS_PROVIDER_ID}, {OLLAMA_OSS_PROVIDER_ID}"
-                ),
-            ));
-        }
+    // Reject the legacy ollama-chat provider with a helpful error.
+    if provider == LEGACY_OLLAMA_CHAT_PROVIDER_ID {
+        return Err(std::io::Error::new(
+            std::io::ErrorKind::InvalidInput,
+            OLLAMA_CHAT_PROVIDER_REMOVED_ERROR,
+        ));
+    }
+    // Any other non-empty provider string is accepted and written to config.
+    if provider.trim().is_empty() {
+        return Err(std::io::Error::new(
+            std::io::ErrorKind::InvalidInput,
+            "Invalid OSS provider ''. Provider must not be empty.",
+        ));
     }
     use toml_edit::value;
 

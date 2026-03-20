@@ -266,12 +266,6 @@ impl ModelProviderInfo {
     }
 }
 
-pub const DEFAULT_LMSTUDIO_PORT: u16 = 1234;
-pub const DEFAULT_OLLAMA_PORT: u16 = 11434;
-
-pub const LMSTUDIO_OSS_PROVIDER_ID: &str = "lmstudio";
-pub const OLLAMA_OSS_PROVIDER_ID: &str = "ollama";
-
 /// Built-in default provider list.
 pub fn built_in_model_providers(
     openai_base_url: Option<String>,
@@ -280,42 +274,13 @@ pub fn built_in_model_providers(
     let openai_provider = P::create_openai_provider(openai_base_url);
 
     // We do not want to be in the business of adjucating which third-party
-    // providers are bundled with Codex CLI, so we only include the OpenAI and
-    // open source ("oss") providers by default. Users are encouraged to add to
+    // providers are bundled with Codex CLI, so we only include the OpenAI
+    // provider by default. Users are encouraged to add to
     // `model_providers` in config.toml to add their own providers.
-    [
-        (OPENAI_PROVIDER_ID, openai_provider),
-        (
-            OLLAMA_OSS_PROVIDER_ID,
-            create_oss_provider(DEFAULT_OLLAMA_PORT, WireApi::Responses),
-        ),
-        (
-            LMSTUDIO_OSS_PROVIDER_ID,
-            create_oss_provider(DEFAULT_LMSTUDIO_PORT, WireApi::Responses),
-        ),
-    ]
-    .into_iter()
-    .map(|(k, v)| (k.to_string(), v))
-    .collect()
-}
-
-pub fn create_oss_provider(default_provider_port: u16, wire_api: WireApi) -> ModelProviderInfo {
-    // These CODEX_OSS_ environment variables are experimental: we may
-    // switch to reading values from config.toml instead.
-    let default_codex_oss_base_url = format!(
-        "http://localhost:{codex_oss_port}/v1",
-        codex_oss_port = std::env::var("CODEX_OSS_PORT")
-            .ok()
-            .filter(|value| !value.trim().is_empty())
-            .and_then(|value| value.parse::<u16>().ok())
-            .unwrap_or(default_provider_port)
-    );
-
-    let codex_oss_base_url = std::env::var("CODEX_OSS_BASE_URL")
-        .ok()
-        .filter(|v| !v.trim().is_empty())
-        .unwrap_or(default_codex_oss_base_url);
-    create_oss_provider_with_base_url(&codex_oss_base_url, wire_api)
+    [(OPENAI_PROVIDER_ID, openai_provider)]
+        .into_iter()
+        .map(|(k, v)| (k.to_string(), v))
+        .collect()
 }
 
 pub fn create_oss_provider_with_base_url(base_url: &str, wire_api: WireApi) -> ModelProviderInfo {

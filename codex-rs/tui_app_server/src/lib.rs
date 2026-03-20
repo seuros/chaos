@@ -47,8 +47,6 @@ use codex_protocol::protocol::RolloutItem;
 use codex_protocol::protocol::RolloutLine;
 use codex_state::log_db;
 use codex_utils_absolute_path::AbsolutePathBuf;
-use codex_utils_oss::ensure_oss_provider_ready;
-use codex_utils_oss::get_default_model_for_oss_provider;
 use color_eyre::eyre::WrapErr;
 use cwd_prompt::CwdPromptAction;
 use cwd_prompt::CwdPromptOutcome;
@@ -105,7 +103,6 @@ mod model_migration;
 mod multi_agents;
 mod notifications;
 pub mod onboarding;
-mod oss_selection;
 mod pager_overlay;
 pub mod public_widgets;
 mod render;
@@ -588,14 +585,9 @@ pub async fn run_main(
         if let Some(provider) = resolved {
             Some(provider)
         } else {
-            // No provider configured, prompt the user
-            let provider = oss_selection::select_oss_provider(&codex_home).await?;
-            if provider == "__CANCELLED__" {
-                return Err(std::io::Error::other(
-                    "OSS provider selection was cancelled by user",
-                ));
-            }
-            Some(provider)
+            return Err(std::io::Error::other(
+                "No OSS provider configured. Use --local-provider=provider or set oss_provider in config.toml",
+            ));
         }
     } else {
         None
@@ -604,12 +596,6 @@ pub async fn run_main(
     // When using `--oss`, let the bootstrapper pick the model based on selected provider
     let model = if let Some(model) = &cli.model {
         Some(model.clone())
-    } else if cli.oss {
-        // Use the provider from model_provider_override
-        model_provider_override
-            .as_ref()
-            .and_then(|provider_id| get_default_model_for_oss_provider(provider_id))
-            .map(std::borrow::ToOwned::to_owned)
     } else {
         None // No model specified, will use the default.
     };
@@ -726,7 +712,9 @@ pub async fn run_main(
                 ));
             }
         };
-        ensure_oss_provider_ready(provider_id, &config).await?;
+        // OSS provider readiness checks have been removed; connectivity is
+        // validated lazily on the first request.
+        let _ = provider_id;
     }
 
     let otel = match std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| {

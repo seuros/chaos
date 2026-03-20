@@ -78,7 +78,6 @@ mod hierarchical_agents;
 mod hooks;
 mod image_rollout;
 mod items;
-mod js_repl;
 mod json_result;
 mod list_dir;
 mod live_cli;

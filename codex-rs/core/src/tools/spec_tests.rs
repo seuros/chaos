@@ -795,55 +795,6 @@ fn get_memory_requires_feature_flag() {
 }
 
 #[test]
-fn js_repl_requires_feature_flag() {
-    let config = test_config();
-    let model_info = ModelsManager::construct_model_info_offline_for_tests("gpt-5-codex", &config);
-    let features = Features::with_defaults();
-
-    let available_models = Vec::new();
-    let tools_config = ToolsConfig::new(&ToolsConfigParams {
-        model_info: &model_info,
-        available_models: &available_models,
-        features: &features,
-        web_search_mode: Some(WebSearchMode::Cached),
-        session_source: SessionSource::Cli,
-        sandbox_policy: &SandboxPolicy::DangerFullAccess,
-        windows_sandbox_level: WindowsSandboxLevel::Disabled,
-    });
-    let (tools, _) = build_specs(&tools_config, None, None, &[]).build();
-
-    assert!(
-        !tools.iter().any(|tool| tool.spec.name() == "js_repl"),
-        "js_repl should be disabled when the feature is off"
-    );
-    assert!(
-        !tools.iter().any(|tool| tool.spec.name() == "js_repl_reset"),
-        "js_repl_reset should be disabled when the feature is off"
-    );
-}
-
-#[test]
-fn js_repl_enabled_adds_tools() {
-    let config = test_config();
-    let model_info = ModelsManager::construct_model_info_offline_for_tests("gpt-5-codex", &config);
-    let mut features = Features::with_defaults();
-    features.enable(Feature::JsRepl);
-
-    let available_models = Vec::new();
-    let tools_config = ToolsConfig::new(&ToolsConfigParams {
-        model_info: &model_info,
-        available_models: &available_models,
-        features: &features,
-        web_search_mode: Some(WebSearchMode::Cached),
-        session_source: SessionSource::Cli,
-        sandbox_policy: &SandboxPolicy::DangerFullAccess,
-        windows_sandbox_level: WindowsSandboxLevel::Disabled,
-    });
-    let (tools, _) = build_specs(&tools_config, None, None, &[]).build();
-    assert_contains_tool_names(&tools, &["js_repl", "js_repl_reset"]);
-}
-
-#[test]
 fn image_generation_tools_require_feature_and_supported_model() {
     let config = test_config();
     let mut supported_model_info =
@@ -909,21 +860,6 @@ fn image_generation_tools_require_feature_and_supported_model() {
             .any(|tool| tool.spec.name() == "image_generation"),
         "image_generation should be disabled for unsupported models"
     );
-}
-
-#[test]
-fn js_repl_freeform_grammar_blocks_common_non_js_prefixes() {
-    let ToolSpec::Freeform(FreeformTool { format, .. }) = create_js_repl_tool() else {
-        panic!("js_repl should use a freeform tool spec");
-    };
-
-    assert_eq!(format.syntax, "lark");
-    assert!(format.definition.contains("PRAGMA_LINE"));
-    assert!(format.definition.contains("`[^`]"));
-    assert!(format.definition.contains("``[^`]"));
-    assert!(format.definition.contains("PLAIN_JS_SOURCE"));
-    assert!(format.definition.contains("codex-js-repl:"));
-    assert!(!format.definition.contains("(?!"));
 }
 
 fn assert_model_tools(

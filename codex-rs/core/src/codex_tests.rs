@@ -2407,14 +2407,8 @@ pub(crate) async fn make_session_and_context() -> (Session, TurnContext) {
             config.features.enabled(Feature::RuntimeMetrics),
             Session::build_model_client_beta_features_header(config.as_ref()),
         ),
-        code_mode_service: crate::tools::code_mode::CodeModeService::new(
-            config.js_repl_node_path.clone(),
-        ),
+        code_mode_service: crate::tools::code_mode::CodeModeService::new(None),
     };
-    let js_repl = Arc::new(JsReplHandle::with_node_path(
-        config.js_repl_node_path.clone(),
-        config.js_repl_node_module_dirs.clone(),
-    ));
 
     let skills_outcome = Arc::new(services.skills_manager.skills_for_config(&per_turn_config));
     let turn_context = Session::make_turn_context(
@@ -2430,7 +2424,6 @@ pub(crate) async fn make_session_and_context() -> (Session, TurnContext) {
         &models_manager,
         None,
         "turn_id".to_string(),
-        Arc::clone(&js_repl),
         skills_outcome,
     );
 
@@ -2446,7 +2439,6 @@ pub(crate) async fn make_session_and_context() -> (Session, TurnContext) {
         active_turn: Mutex::new(None),
         guardian_review_session: crate::guardian::GuardianReviewSessionManager::default(),
         services,
-        js_repl,
         next_internal_sub_id: AtomicU64::new(0),
     };
 
@@ -3174,14 +3166,8 @@ pub(crate) async fn make_session_and_context_with_dynamic_tools_and_rx(
             config.features.enabled(Feature::RuntimeMetrics),
             Session::build_model_client_beta_features_header(config.as_ref()),
         ),
-        code_mode_service: crate::tools::code_mode::CodeModeService::new(
-            config.js_repl_node_path.clone(),
-        ),
+        code_mode_service: crate::tools::code_mode::CodeModeService::new(None),
     };
-    let js_repl = Arc::new(JsReplHandle::with_node_path(
-        config.js_repl_node_path.clone(),
-        config.js_repl_node_module_dirs.clone(),
-    ));
 
     let skills_outcome = Arc::new(services.skills_manager.skills_for_config(&per_turn_config));
     let turn_context = Arc::new(Session::make_turn_context(
@@ -3197,7 +3183,6 @@ pub(crate) async fn make_session_and_context_with_dynamic_tools_and_rx(
         &models_manager,
         None,
         "turn_id".to_string(),
-        Arc::clone(&js_repl),
         skills_outcome,
     ));
 
@@ -3213,7 +3198,6 @@ pub(crate) async fn make_session_and_context_with_dynamic_tools_and_rx(
         active_turn: Mutex::new(None),
         guardian_review_session: crate::guardian::GuardianReviewSessionManager::default(),
         services,
-        js_repl,
         next_internal_sub_id: AtomicU64::new(0),
     });
 

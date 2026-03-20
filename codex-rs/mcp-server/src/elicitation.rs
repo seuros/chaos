@@ -6,7 +6,7 @@ use codex_protocol::approvals::ElicitationRequest as CoreElicitationRequest;
 use codex_protocol::approvals::ElicitationRequestEvent;
 use codex_protocol::protocol::Op;
 use codex_protocol::protocol::ReviewDecision;
-use rmcp::model::ErrorData;
+use crate::mcp_types::ErrorData;
 use serde::Deserialize;
 use serde::Serialize;
 use serde_json::Value;
@@ -252,8 +252,8 @@ async fn submit_resolve_elicitation(
 mod tests {
     use codex_protocol::approvals::ElicitationRequest;
     use pretty_assertions::assert_eq;
-    use rmcp::model::ElicitationCapability;
-    use rmcp::model::UrlElicitationCapability;
+    use crate::mcp_types::ElicitationCapability;
+    use crate::mcp_types::UrlElicitationCapability;
     use tokio::sync::mpsc;
 
     use super::*;
@@ -325,7 +325,7 @@ mod tests {
         let outgoing = OutgoingMessageSender::new(outgoing_tx);
         outgoing.set_client_elicitation_capability(Some(&ElicitationCapability {
             form: None,
-            url: Some(UrlElicitationCapability {}),
+            url: Some(UrlElicitationCapability::default()),
         }));
 
         let request = ForwardedElicitationRequestParams::Url {

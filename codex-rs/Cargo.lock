@@ -1107,6 +1107,16 @@ dependencies = [
 ]
 
 [[package]]
+name = "breaker-machines"
+version = "0.7.5"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "2d1239399f74673a5a537201a74a2210b49bba3197e674404ff57b4e9d518e33"
+dependencies = [
+ "chrono-machines",
+ "state-machines",
+]
+
+[[package]]
 name = "brotli"
 version = "8.0.2"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -1344,6 +1354,16 @@ dependencies = [
  "serde",
  "wasm-bindgen",
  "windows-link",
+]
+
+[[package]]
+name = "chrono-machines"
+version = "0.3.1"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "faf72f86922bae137d2fd6a6690499d78ffcfaa28be6a340f0ee9d7036b446dd"
+dependencies = [
+ "async-trait",
+ "rand 0.10.0",
 ]
 
 [[package]]
@@ -2122,10 +2142,10 @@ dependencies = [
  "codex-utils-cli",
  "codex-utils-json-to-toml",
  "core_test_support",
+ "mcp-host",
  "mcp_test_support",
  "os_info",
  "pretty_assertions",
- "rmcp",
  "schemars 0.8.22",
  "serde",
  "serde_json",
@@ -3258,6 +3278,20 @@ dependencies = [
  "darling_core 0.23.0",
  "quote",
  "syn 2.0.117",
+]
+
+[[package]]
+name = "dashmap"
+version = "6.1.0"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "5041cc499144891f3790297212f32a74fb938e5136a14943f338ef9e0ae276cf"
+dependencies = [
+ "cfg-if",
+ "crossbeam-utils",
+ "hashbrown 0.14.5",
+ "lock_api",
+ "once_cell",
+ "parking_lot_core",
 ]
 
 [[package]]
@@ -5705,6 +5739,33 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "b3eede3bdf92f3b4f9dc04072a9ce5ab557d5ec9038773bf9ffcd5588b3cc05b"
 
 [[package]]
+name = "mcp-host"
+version = "0.1.20"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "b844d100289762141f358fc6ee4e7aacda047c0667d53a9293d4bb42dbb2ff29"
+dependencies = [
+ "arc-swap",
+ "base64 0.22.1",
+ "breaker-machines",
+ "chrono",
+ "chrono-machines",
+ "dashmap",
+ "futures",
+ "ignore",
+ "parking_lot",
+ "rand 0.10.0",
+ "schemars 1.2.1",
+ "serde",
+ "serde_json",
+ "state-machines",
+ "thiserror 2.0.18",
+ "throttle-machines",
+ "tokio",
+ "tracing",
+ "uuid",
+]
+
+[[package]]
 name = "mcp_test_support"
 version = "47.0.0"
 dependencies = [
@@ -5713,9 +5774,9 @@ dependencies = [
  "codex-mcp-server",
  "codex-utils-cargo-bin",
  "core_test_support",
+ "mcp-host",
  "os_info",
  "pretty_assertions",
- "rmcp",
  "serde",
  "serde_json",
  "shlex",
@@ -9927,6 +9988,33 @@ dependencies = [
 ]
 
 [[package]]
+name = "state-machines"
+version = "0.8.1"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "b08593eedd523d615a423049378a93093365856a4ea71675bfcea8a1d220c96e"
+dependencies = [
+ "state-machines-core",
+ "state-machines-macro",
+]
+
+[[package]]
+name = "state-machines-core"
+version = "0.8.0"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "e1e15be96b91f9d162ebb665099ba4ff3de50eb1f407db0a6fee481b6d5cd695"
+
+[[package]]
+name = "state-machines-macro"
+version = "0.8.1"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "7fc20f1354c15c36730f900a4984e67ee3af69184c1bac449d51101ed0dcde9f"
+dependencies = [
+ "proc-macro2",
+ "quote",
+ "syn 2.0.117",
+]
+
+[[package]]
 name = "static_assertions"
 version = "1.1.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -10395,6 +10483,12 @@ checksum = "f60246a4944f24f6e018aa17cdeffb7818b76356965d03b07d6a9886e8962185"
 dependencies = [
  "cfg-if",
 ]
+
+[[package]]
+name = "throttle-machines"
+version = "0.1.0"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "37ddf0aa98f258ef624ba9fed2a1c3f01b6c63cfb970b9e4cfa358083593e7ac"
 
 [[package]]
 name = "tiff"

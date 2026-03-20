@@ -7,8 +7,8 @@ use codex_protocol::ThreadId;
 use codex_protocol::protocol::FileChange;
 use codex_protocol::protocol::Op;
 use codex_protocol::protocol::ReviewDecision;
-use rmcp::model::ErrorData;
-use rmcp::model::RequestId;
+use crate::mcp_types::ErrorData;
+use crate::mcp_types::RequestId;
 use serde::Deserialize;
 use serde::Serialize;
 use serde_json::Value;
@@ -86,7 +86,7 @@ pub(crate) async fn handle_patch_approval_request(
             error!("{message}");
 
             outgoing
-                .send_error(request_id.clone(), ErrorData::invalid_params(message, None))
+                .send_error(request_id.clone(), ErrorData::invalid_params(message))
                 .await;
 
             return;

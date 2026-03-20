@@ -7,15 +7,14 @@ use codex_protocol::ThreadId;
 use codex_protocol::config_types::SandboxMode;
 use codex_protocol::protocol::AskForApproval;
 use codex_utils_json_to_toml::json_to_toml;
-use rmcp::model::JsonObject;
-use rmcp::model::Tool;
+use crate::mcp_types::JsonObject;
+use crate::mcp_types::ToolInfo;
 use schemars::JsonSchema;
 use schemars::r#gen::SchemaSettings;
 use serde::Deserialize;
 use serde::Serialize;
 use std::collections::HashMap;
 use std::path::PathBuf;
-use std::sync::Arc;
 
 /// Client-supplied configuration for a `codex` tool-call.
 #[derive(Debug, Clone, Serialize, Deserialize, JsonSchema, Default)]
@@ -24,7 +23,7 @@ pub struct CodexToolCallParam {
     /// The *initial user prompt* to start the Codex conversation.
     pub prompt: String,
 
-    /// Optional override for the model name (e.g. 'gpt-5.2', 'gpt-5.2-codex').
+    /// Optional override for the model name (e.g. 'gpt-5.4', 'gpt-5.4-codex').
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub model: Option<String>,
 
@@ -106,8 +105,8 @@ impl From<CodexToolCallSandboxMode> for SandboxMode {
     }
 }
 
-/// Builds a `Tool` definition (JSON schema etc.) for the Codex tool-call.
-pub(crate) fn create_tool_for_codex_tool_call_param() -> Tool {
+/// Builds a `ToolInfo` definition (JSON schema etc.) for the Codex tool-call.
+pub(crate) fn create_tool_for_codex_tool_call_param() -> ToolInfo {
     let schema = SchemaSettings::draft2019_09()
         .with(|s| {
             s.inline_subschemas = true;
@@ -118,10 +117,10 @@ pub(crate) fn create_tool_for_codex_tool_call_param() -> Tool {
 
     let input_schema = create_tool_input_schema(schema, "Codex tool schema should serialize");
 
-    Tool {
+    ToolInfo {
         name: "codex".into(),
         title: Some("Codex".to_string()),
-        input_schema,
+        input_schema: serde_json::Value::Object(input_schema),
         output_schema: Some(codex_tool_output_schema()),
         description: Some(
             "Run a Codex session. Accepts configuration parameters matching the Codex Config struct."
@@ -129,24 +128,18 @@ pub(crate) fn create_tool_for_codex_tool_call_param() -> Tool {
         ),
         annotations: None,
         execution: None,
-        icons: None,
-        meta: None,
     }
 }
 
-fn codex_tool_output_schema() -> Arc<JsonObject> {
-    let schema = serde_json::json!({
+fn codex_tool_output_schema() -> serde_json::Value {
+    serde_json::json!({
         "type": "object",
         "properties": {
             "threadId": { "type": "string" },
             "content": { "type": "string" }
         },
         "required": ["threadId", "content"],
-    });
-    match schema {
-        serde_json::Value::Object(map) => Arc::new(map),
-        _ => unreachable!("json literal must be an object"),
-    }
+    })
 }
 
 impl CodexToolCallParam {
@@ -200,13 +193,7 @@ impl CodexToolCallParam {
 #[derive(Debug, Clone, Serialize, Deserialize, JsonSchema)]
 #[serde(rename_all = "camelCase")]
 pub struct CodexToolCallReplyParam {
-    /// DEPRECATED: use threadId instead.
-    #[serde(default, skip_serializing_if = "Option::is_none")]
-    conversation_id: Option<String>,
-
     /// The thread id for this Codex session.
-    /// This field is required, but we keep it optional here for backward
-    /// compatibility for clients that still use conversationId.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     thread_id: Option<String>,
 
@@ -216,22 +203,16 @@ pub struct CodexToolCallReplyParam {
 
 impl CodexToolCallReplyParam {
     pub(crate) fn get_thread_id(&self) -> anyhow::Result<ThreadId> {
-        if let Some(thread_id) = &self.thread_id {
-            let thread_id = ThreadId::from_string(thread_id)?;
-            Ok(thread_id)
-        } else if let Some(conversation_id) = &self.conversation_id {
-            let thread_id = ThreadId::from_string(conversation_id)?;
-            Ok(thread_id)
-        } else {
-            Err(anyhow::anyhow!(
-                "either threadId or conversationId must be provided"
-            ))
-        }
+        let id = self
+            .thread_id
+            .as_deref()
+            .ok_or_else(|| anyhow::anyhow!("threadId must be provided"))?;
+        ThreadId::from_string(id).map_err(|e| anyhow::anyhow!("invalid threadId: {e}"))
     }
 }
 
-/// Builds a `Tool` definition for the `codex-reply` tool-call.
-pub(crate) fn create_tool_for_codex_tool_call_reply_param() -> Tool {
+/// Builds a `ToolInfo` definition for the `codex-reply` tool-call.
+pub(crate) fn create_tool_for_codex_tool_call_reply_param() -> ToolInfo {
     let schema = SchemaSettings::draft2019_09()
         .with(|s| {
             s.inline_subschemas = true;
@@ -242,25 +223,23 @@ pub(crate) fn create_tool_for_codex_tool_call_reply_param() -> Tool {
 
     let input_schema = create_tool_input_schema(schema, "Codex reply tool schema should serialize");
 
-    Tool {
+    ToolInfo {
         name: "codex-reply".into(),
         title: Some("Codex Reply".to_string()),
-        input_schema,
+        input_schema: serde_json::Value::Object(input_schema),
         output_schema: Some(codex_tool_output_schema()),
         description: Some(
             "Continue a Codex conversation by providing the thread id and prompt.".into(),
         ),
         annotations: None,
         execution: None,
-        icons: None,
-        meta: None,
     }
 }
 
 fn create_tool_input_schema(
     schema: schemars::schema::RootSchema,
     panic_message: &str,
-) -> Arc<JsonObject> {
+) -> JsonObject {
     #[expect(clippy::expect_used)]
     let schema_value = serde_json::to_value(&schema).expect(panic_message);
     let mut schema_object = match schema_value {
@@ -278,7 +257,7 @@ fn create_tool_input_schema(
         }
     }
 
-    Arc::new(input_schema)
+    input_schema
 }
 
 #[cfg(test)]
@@ -337,7 +316,7 @@ mod tests {
                 "type": "string"
               },
               "model": {
-                "description": "Optional override for the model name (e.g. 'gpt-5.2', 'gpt-5.2-codex').",
+                "description": "Optional override for the model name (e.g. 'gpt-5.4', 'gpt-5.4-codex').",
                 "type": "string"
               },
               "profile": {
@@ -392,16 +371,12 @@ mod tests {
           "description": "Continue a Codex conversation by providing the thread id and prompt.",
           "inputSchema": {
             "properties": {
-              "conversationId": {
-                "description": "DEPRECATED: use threadId instead.",
-                "type": "string"
-              },
               "prompt": {
                 "description": "The *next user prompt* to continue the Codex conversation.",
                 "type": "string"
               },
               "threadId": {
-                "description": "The thread id for this Codex session. This field is required, but we keep it optional here for backward compatibility for clients that still use conversationId.",
+                "description": "The thread id for this Codex session.",
                 "type": "string"
               }
             },

@@ -5,14 +5,18 @@ set positional-arguments
 help:
     just -l
 
-# `codex`
-alias c := codex
-codex *args:
-    cargo run --bin codex -- "$@"
+# `chaos`
+alias c := chaos
+chaos *args:
+    cargo run --bin chaos -- "$@"
 
-# `codex exec`
+# Just talk.
+talk *args:
+    cargo run --bin chaos -- "${1:-explain me this chaos}"
+
+# `chaos exec`
 exec *args:
-    cargo run --bin codex -- exec "$@"
+    cargo run --bin chaos -- exec "$@"
 
 # Run the CLI version of the file-search crate.
 file-search *args:

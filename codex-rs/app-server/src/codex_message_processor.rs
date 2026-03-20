@@ -55,7 +55,6 @@ use codex_app_server_protocol::FuzzyFileSearchSessionStopResponse;
 use codex_app_server_protocol::FuzzyFileSearchSessionUpdateParams;
 use codex_app_server_protocol::FuzzyFileSearchSessionUpdateResponse;
 use codex_app_server_protocol::GetAccountParams;
-use codex_app_server_protocol::GetAccountRateLimitsResponse;
 use codex_app_server_protocol::GetAccountResponse;
 use codex_app_server_protocol::GetAuthStatusParams;
 use codex_app_server_protocol::GetAuthStatusResponse;
@@ -166,7 +165,6 @@ use codex_app_server_protocol::WindowsSandboxSetupStartParams;
 use codex_app_server_protocol::WindowsSandboxSetupStartResponse;
 use codex_app_server_protocol::build_turns_from_rollout_items;
 use codex_arg0::Arg0DispatchPaths;
-use codex_backend_client::Client as BackendClient;
 use codex_core::connectors;
 use codex_core::AuthManager;
 use codex_core::CodexAuth;
@@ -245,7 +243,6 @@ use codex_protocol::protocol::InitialHistory;
 use codex_protocol::protocol::McpAuthStatus as CoreMcpAuthStatus;
 use codex_protocol::protocol::McpServerRefreshConfig;
 use codex_protocol::protocol::Op;
-use codex_protocol::protocol::RateLimitSnapshot as CoreRateLimitSnapshot;
 use codex_protocol::protocol::RemoteSkillHazelnutScope;
 use codex_protocol::protocol::RemoteSkillProductSurface;
 use codex_protocol::protocol::ReviewDelivery as CoreReviewDelivery;
@@ -1423,92 +1420,16 @@ impl CodexMessageProcessor {
     }
 
     async fn get_account_rate_limits(&self, request_id: ConnectionRequestId) {
-        match self.fetch_account_rate_limits().await {
-            Ok((rate_limits, rate_limits_by_limit_id)) => {
-                let response = GetAccountRateLimitsResponse {
-                    rate_limits: rate_limits.into(),
-                    rate_limits_by_limit_id: Some(
-                        rate_limits_by_limit_id
-                            .into_iter()
-                            .map(|(limit_id, snapshot)| (limit_id, snapshot.into()))
-                            .collect(),
-                    ),
-                };
-                self.outgoing.send_response(request_id, response).await;
-            }
-            Err(error) => {
-                self.outgoing.send_error(request_id, error).await;
-            }
-        }
-    }
-
-    async fn fetch_account_rate_limits(
-        &self,
-    ) -> Result<
-        (
-            CoreRateLimitSnapshot,
-            HashMap<String, CoreRateLimitSnapshot>,
-        ),
-        JSONRPCErrorError,
-    > {
-        let Some(auth) = self.auth_manager.auth().await else {
-            return Err(JSONRPCErrorError {
-                code: INVALID_REQUEST_ERROR_CODE,
-                message: "codex account authentication required to read rate limits".to_string(),
-                data: None,
-            });
-        };
-
-        if !auth.is_chatgpt_auth() {
-            return Err(JSONRPCErrorError {
-                code: INVALID_REQUEST_ERROR_CODE,
-                message: "chatgpt authentication required to read rate limits".to_string(),
-                data: None,
-            });
-        }
-
-        let client = BackendClient::from_auth(self.config.chatgpt_base_url.clone(), &auth)
-            .map_err(|err| JSONRPCErrorError {
-                code: INTERNAL_ERROR_CODE,
-                message: format!("failed to construct backend client: {err}"),
-                data: None,
-            })?;
-
-        let snapshots = client
-            .get_rate_limits_many()
-            .await
-            .map_err(|err| JSONRPCErrorError {
-                code: INTERNAL_ERROR_CODE,
-                message: format!("failed to fetch codex rate limits: {err}"),
-                data: None,
-            })?;
-        if snapshots.is_empty() {
-            return Err(JSONRPCErrorError {
-                code: INTERNAL_ERROR_CODE,
-                message: "failed to fetch codex rate limits: no snapshots returned".to_string(),
-                data: None,
-            });
-        }
-
-        let rate_limits_by_limit_id: HashMap<String, CoreRateLimitSnapshot> = snapshots
-            .iter()
-            .cloned()
-            .map(|snapshot| {
-                let limit_id = snapshot
-                    .limit_id
-                    .clone()
-                    .unwrap_or_else(|| "codex".to_string());
-                (limit_id, snapshot)
-            })
-            .collect();
-
-        let primary = snapshots
-            .iter()
-            .find(|snapshot| snapshot.limit_id.as_deref() == Some("codex"))
-            .cloned()
-            .unwrap_or_else(|| snapshots[0].clone());
-
-        Ok((primary, rate_limits_by_limit_id))
+        self.outgoing
+            .send_error(
+                request_id,
+                JSONRPCErrorError {
+                    code: INTERNAL_ERROR_CODE,
+                    message: "rate limit fetching is not supported".to_string(),
+                    data: None,
+                },
+            )
+            .await;
     }
 
     async fn exec_one_off_command(

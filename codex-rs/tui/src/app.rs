@@ -2687,9 +2687,6 @@ impl App {
             AppEvent::FileSearchResult { query, matches } => {
                 self.chat_widget.apply_file_search_result(query, matches);
             }
-            AppEvent::RateLimitSnapshotFetched(snapshot) => {
-                self.chat_widget.on_rate_limit_snapshot(Some(snapshot));
-            }
             AppEvent::ConnectorsLoaded { result, is_final } => {
                 self.chat_widget.on_connectors_loaded(result, is_final);
             }

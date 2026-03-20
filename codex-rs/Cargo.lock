@@ -1342,7 +1342,6 @@ dependencies = [
  "clap",
  "codex-app-server-protocol",
  "codex-arg0",
- "codex-backend-client",
  "codex-core",
  "codex-file-search",
  "codex-login",
@@ -1470,30 +1469,6 @@ dependencies = [
  "pretty_assertions",
  "tokio",
  "tokio-util",
-]
-
-[[package]]
-name = "codex-backend-client"
-version = "47.0.0"
-dependencies = [
- "anyhow",
- "codex-backend-openapi-models",
- "codex-client",
- "codex-core",
- "codex-protocol",
- "pretty_assertions",
- "reqwest",
- "serde",
- "serde_json",
-]
-
-[[package]]
-name = "codex-backend-openapi-models"
-version = "47.0.0"
-dependencies = [
- "serde",
- "serde_json",
- "serde_with",
 ]
 
 [[package]]
@@ -2179,7 +2154,6 @@ dependencies = [
  "codex-app-server-client",
  "codex-app-server-protocol",
  "codex-arg0",
- "codex-backend-client",
  "codex-cli",
  "codex-client",
  "codex-core",

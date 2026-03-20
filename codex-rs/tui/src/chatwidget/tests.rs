@@ -1850,7 +1850,6 @@ async fn make_chatwidget_manual(
         plan_type: None,
         rate_limit_warnings: RateLimitWarningState::default(),
         rate_limit_switch_prompt: RateLimitSwitchPromptState::default(),
-        rate_limit_poller: None,
         adaptive_chunking: crate::streaming::chunking::AdaptiveChunkingPolicy::default(),
         stream_controller: None,
         plan_stream_controller: None,
@@ -1964,22 +1963,6 @@ pub(crate) fn set_chatgpt_auth(chat: &mut ChatWidget) {
         None,
         CollaborationModesConfig::default(),
     ));
-}
-
-#[tokio::test]
-async fn prefetch_rate_limits_is_gated_on_chatgpt_auth_provider() {
-    let (mut chat, _rx, _op_rx) = make_chatwidget_manual(None).await;
-
-    assert!(!chat.should_prefetch_rate_limits());
-
-    set_chatgpt_auth(&mut chat);
-    assert!(chat.should_prefetch_rate_limits());
-
-    chat.config.model_provider.requires_openai_auth = false;
-    assert!(!chat.should_prefetch_rate_limits());
-
-    chat.prefetch_rate_limits();
-    assert!(chat.rate_limit_poller.is_none());
 }
 
 #[tokio::test]

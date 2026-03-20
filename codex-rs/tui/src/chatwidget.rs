@@ -34,7 +34,6 @@ use std::path::PathBuf;
 use std::sync::Arc;
 use std::sync::atomic::AtomicBool;
 use std::sync::atomic::Ordering;
-use std::time::Duration;
 use std::time::Instant;
 
 use crate::bottom_pane::StatusLineItem;
@@ -47,7 +46,6 @@ use crate::status::rate_limit_snapshot_display_for_limit;
 use crate::text_formatting::proper_join;
 use crate::version::CODEX_CLI_VERSION;
 use codex_app_server_protocol::ConfigLayerSource;
-use codex_backend_client::Client as BackendClient;
 use codex_core::connectors;
 use codex_core::config::Config;
 use codex_core::config::Constrained;
@@ -158,7 +156,6 @@ use ratatui::text::Line;
 use ratatui::widgets::Paragraph;
 use ratatui::widgets::Wrap;
 use tokio::sync::mpsc::UnboundedSender;
-use tokio::task::JoinHandle;
 use tracing::debug;
 use tracing::warn;
 
@@ -665,7 +662,6 @@ pub(crate) struct ChatWidget {
     plan_type: Option<PlanType>,
     rate_limit_warnings: RateLimitWarningState,
     rate_limit_switch_prompt: RateLimitSwitchPromptState,
-    rate_limit_poller: Option<JoinHandle<()>>,
     adaptive_chunking: AdaptiveChunkingPolicy,
     // Stream lifecycle controller
     stream_controller: Option<StreamController>,
@@ -3589,7 +3585,6 @@ impl ChatWidget {
             plan_type: None,
             rate_limit_warnings: RateLimitWarningState::default(),
             rate_limit_switch_prompt: RateLimitSwitchPromptState::default(),
-            rate_limit_poller: None,
             adaptive_chunking: AdaptiveChunkingPolicy::default(),
             stream_controller: None,
             plan_stream_controller: None,
@@ -3654,7 +3649,6 @@ impl ChatWidget {
             last_rendered_user_message_event: None,
         };
 
-        widget.prefetch_rate_limits();
         widget
             .bottom_pane
             .set_status_line_enabled(!widget.configured_status_line_items().is_empty());
@@ -3759,7 +3753,6 @@ impl ChatWidget {
             plan_type: None,
             rate_limit_warnings: RateLimitWarningState::default(),
             rate_limit_switch_prompt: RateLimitSwitchPromptState::default(),
-            rate_limit_poller: None,
             adaptive_chunking: AdaptiveChunkingPolicy::default(),
             stream_controller: None,
             plan_stream_controller: None,
@@ -3824,7 +3817,6 @@ impl ChatWidget {
             last_rendered_user_message_event: None,
         };
 
-        widget.prefetch_rate_limits();
         widget
             .bottom_pane
             .set_status_line_enabled(!widget.configured_status_line_items().is_empty());
@@ -3929,7 +3921,6 @@ impl ChatWidget {
             plan_type: None,
             rate_limit_warnings: RateLimitWarningState::default(),
             rate_limit_switch_prompt: RateLimitSwitchPromptState::default(),
-            rate_limit_poller: None,
             adaptive_chunking: AdaptiveChunkingPolicy::default(),
             stream_controller: None,
             plan_stream_controller: None,
@@ -3994,7 +3985,6 @@ impl ChatWidget {
             last_rendered_user_message_event: None,
         };
 
-        widget.prefetch_rate_limits();
         widget
             .bottom_pane
             .set_status_line_enabled(!widget.configured_status_line_items().is_empty());
@@ -5946,12 +5936,6 @@ impl ChatWidget {
         );
     }
 
-    fn stop_rate_limit_poller(&mut self) {
-        if let Some(handle) = self.rate_limit_poller.take() {
-            handle.abort();
-        }
-    }
-
     pub(crate) fn refresh_connectors(&mut self, force_refetch: bool) {
         self.prefetch_connectors_with_options(force_refetch);
     }
@@ -6027,46 +6011,6 @@ impl ChatWidget {
                 });
             }
         });
-    }
-
-    fn prefetch_rate_limits(&mut self) {
-        self.stop_rate_limit_poller();
-
-        if !self.should_prefetch_rate_limits() {
-            return;
-        }
-
-        let base_url = self.config.chatgpt_base_url.clone();
-        let app_event_tx = self.app_event_tx.clone();
-        let auth_manager = Arc::clone(&self.auth_manager);
-
-        let handle = tokio::spawn(async move {
-            let mut interval = tokio::time::interval(Duration::from_secs(60));
-
-            loop {
-                if let Some(auth) = auth_manager.auth().await
-                    && auth.is_chatgpt_auth()
-                {
-                    for snapshot in fetch_rate_limits(base_url.clone(), auth).await {
-                        app_event_tx.send(AppEvent::RateLimitSnapshotFetched(snapshot));
-                    }
-                }
-                interval.tick().await;
-            }
-        });
-
-        self.rate_limit_poller = Some(handle);
-    }
-
-    fn should_prefetch_rate_limits(&self) -> bool {
-        if !self.config.model_provider.requires_openai_auth {
-            return false;
-        }
-
-        self.auth_manager
-            .auth_cached()
-            .as_ref()
-            .is_some_and(CodexAuth::is_chatgpt_auth)
     }
 
     fn lower_cost_preset(&self) -> Option<ModelPreset> {
@@ -8485,12 +8429,6 @@ fn has_websocket_timing_metrics(summary: RuntimeMetricsSummary) -> bool {
         || summary.responses_api_engine_service_tbt_ms > 0
 }
 
-impl Drop for ChatWidget {
-    fn drop(&mut self) {
-        self.stop_rate_limit_poller();
-    }
-}
-
 impl Renderable for ChatWidget {
     fn render(&self, area: Rect, buf: &mut Buffer) {
         self.as_renderable().render(area, buf);
@@ -8680,22 +8618,6 @@ fn hook_event_label(event_name: codex_protocol::protocol::HookEventName) -> &'st
     match event_name {
         codex_protocol::protocol::HookEventName::SessionStart => "SessionStart",
         codex_protocol::protocol::HookEventName::Stop => "Stop",
-    }
-}
-
-async fn fetch_rate_limits(base_url: String, auth: CodexAuth) -> Vec<RateLimitSnapshot> {
-    match BackendClient::from_auth(base_url, &auth) {
-        Ok(client) => match client.get_rate_limits_many().await {
-            Ok(snapshots) => snapshots,
-            Err(err) => {
-                debug!(error = ?err, "failed to fetch rate limits from /usage");
-                Vec::new()
-            }
-        },
-        Err(err) => {
-            debug!(error = ?err, "failed to construct backend client for rate limits");
-            Vec::new()
-        }
     }
 }
 

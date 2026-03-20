@@ -1392,7 +1392,6 @@ version = "47.0.0"
 dependencies = [
  "anyhow",
  "clap",
- "codex-experimental-api-macros",
  "codex-protocol",
  "codex-utils-absolute-path",
  "codex-utils-cargo-bin",
@@ -1717,15 +1716,6 @@ dependencies = [
  "starlark",
  "tempfile",
  "thiserror 2.0.18",
-]
-
-[[package]]
-name = "codex-experimental-api-macros"
-version = "47.0.0"
-dependencies = [
- "proc-macro2",
- "quote",
- "syn 2.0.117",
 ]
 
 [[package]]

@@ -12,26 +12,20 @@ use tokio::process::ChildStdout;
 use anyhow::Context;
 use codex_mcp_server::CodexToolCallParam;
 
+use mcp_host::protocol::capabilities::ClientCapabilities;
+use mcp_host::protocol::capabilities::ElicitationCapability;
+use mcp_host::protocol::capabilities::FormElicitationCapability;
+use mcp_host::protocol::capabilities::InitializeRequest;
+use mcp_host::protocol::types::CallToolRequestParams;
+use mcp_host::protocol::types::Implementation;
+use mcp_host::protocol::types::JsonRpcMessage;
+use mcp_host::protocol::types::JsonRpcRequest;
+use mcp_host::protocol::types::JsonRpcResponse;
+use mcp_host::protocol::types::RequestId;
+use mcp_host::protocol::version::ProtocolVersion;
 use pretty_assertions::assert_eq;
-use rmcp::model::CallToolRequestParams;
-use rmcp::model::ClientCapabilities;
-use rmcp::model::CustomNotification;
-use rmcp::model::CustomRequest;
-use rmcp::model::ElicitationCapability;
-use rmcp::model::FormElicitationCapability;
-use rmcp::model::Implementation;
-use rmcp::model::InitializeRequestParams;
-use rmcp::model::JsonRpcMessage;
-use rmcp::model::JsonRpcNotification;
-use rmcp::model::JsonRpcRequest;
-use rmcp::model::JsonRpcResponse;
-use rmcp::model::JsonRpcVersion2_0;
-use rmcp::model::ProtocolVersion;
-use rmcp::model::RequestId;
 use serde_json::json;
 use tokio::process::Command;
-
-type TestJsonRpcMessage = JsonRpcMessage<CustomRequest, serde_json::Value, CustomNotification>;
 
 pub struct McpProcess {
     next_request_id: AtomicI64,
@@ -118,13 +112,10 @@ impl McpProcess {
                 "2025-11-25",
                 ClientCapabilities {
                     elicitation: Some(ElicitationCapability {
-                        form: Some(FormElicitationCapability {
-                            schema_validation: None,
-                        }),
+                        form: Some(FormElicitationCapability {}),
                         url: None,
                     }),
                     experimental: None,
-                    extensions: None,
                     roots: None,
                     sampling: None,
                     tasks: None,
@@ -135,15 +126,16 @@ impl McpProcess {
             jsonrpc,
             id,
             result,
+            error: _,
         }) = initialized
         else {
             anyhow::bail!("expected initialize response message, got: {initialized:?}")
         };
-        assert_eq!(jsonrpc, JsonRpcVersion2_0);
-        assert_eq!(id, RequestId::Number(0));
+        assert_eq!(jsonrpc, "2.0");
+        assert_eq!(id, json!(0));
         assert_eq!(
-            result,
-            json!({
+            result.as_ref().unwrap(),
+            &json!({
                 "capabilities": {
                     "tools": {
                         "listChanged": true
@@ -166,18 +158,15 @@ impl McpProcess {
     pub async fn initialize_with_protocol_version(
         &mut self,
         protocol_version: &str,
-    ) -> anyhow::Result<TestJsonRpcMessage> {
+    ) -> anyhow::Result<JsonRpcMessage> {
         self.initialize_with_protocol_version_and_capabilities(
             protocol_version,
             ClientCapabilities {
                 elicitation: Some(ElicitationCapability {
-                    form: Some(FormElicitationCapability {
-                        schema_validation: None,
-                    }),
+                    form: Some(FormElicitationCapability {}),
                     url: None,
                 }),
                 experimental: None,
-                extensions: None,
                 roots: None,
                 sampling: None,
                 tasks: None,
@@ -193,7 +182,6 @@ impl McpProcess {
                 ClientCapabilities {
                     elicitation: None,
                     experimental: None,
-                    extensions: None,
                     roots: None,
                     sampling: None,
                     tasks: None,
@@ -211,11 +199,9 @@ impl McpProcess {
         &mut self,
         protocol_version: &str,
         capabilities: ClientCapabilities,
-    ) -> anyhow::Result<TestJsonRpcMessage> {
+    ) -> anyhow::Result<JsonRpcMessage> {
         let request_id = self.next_request_id.fetch_add(1, Ordering::Relaxed);
-        let protocol_version = serde_json::from_value::<ProtocolVersion>(json!(protocol_version))?;
-        let params = InitializeRequestParams {
-            meta: None,
+        let params = InitializeRequest {
             capabilities,
             client_info: Implementation {
                 name: "elicitation test".into(),
@@ -225,25 +211,22 @@ impl McpProcess {
                 icons: None,
                 website_url: None,
             },
-            protocol_version,
+            protocol_version: protocol_version.to_string(),
         };
         let params_value = serde_json::to_value(params)?;
 
-        self.send_jsonrpc_message(JsonRpcMessage::Request(JsonRpcRequest {
-            jsonrpc: JsonRpcVersion2_0,
-            id: RequestId::Number(request_id),
-            request: CustomRequest::new("initialize", Some(params_value)),
-        }))
+        self.send_jsonrpc_message(JsonRpcMessage::Request(
+            JsonRpcRequest::new(json!(request_id), "initialize", Some(params_value)),
+        ))
         .await?;
 
         self.read_jsonrpc_message().await
     }
 
     pub async fn send_initialized_notification(&mut self) -> anyhow::Result<()> {
-        self.send_jsonrpc_message(JsonRpcMessage::Notification(JsonRpcNotification {
-            jsonrpc: JsonRpcVersion2_0,
-            notification: CustomNotification::new("notifications/initialized", None),
-        }))
+        self.send_jsonrpc_message(JsonRpcMessage::Notification(
+            JsonRpcRequest::notification("notifications/initialized", None),
+        ))
         .await
     }
 
@@ -260,7 +243,6 @@ impl McpProcess {
                 serde_json::Value::Object(map) => map,
                 _ => unreachable!("params serialize to object"),
             }),
-            task: None,
         };
         self.send_request(
             "tools/call",
@@ -276,11 +258,9 @@ impl McpProcess {
     ) -> anyhow::Result<i64> {
         let request_id = self.next_request_id.fetch_add(1, Ordering::Relaxed);
 
-        let message = JsonRpcMessage::Request(JsonRpcRequest {
-            jsonrpc: JsonRpcVersion2_0,
-            id: RequestId::Number(request_id),
-            request: CustomRequest::new(method, params),
-        });
+        let message = JsonRpcMessage::Request(
+            JsonRpcRequest::new(json!(request_id), method, params),
+        );
         self.send_jsonrpc_message(message).await?;
         Ok(request_id)
     }
@@ -299,14 +279,15 @@ impl McpProcess {
         result: serde_json::Value,
     ) -> anyhow::Result<()> {
         self.send_jsonrpc_message(JsonRpcMessage::Response(JsonRpcResponse {
-            jsonrpc: JsonRpcVersion2_0,
-            id,
-            result,
+            jsonrpc: "2.0".to_string(),
+            id: id.to_value(),
+            result: Some(result),
+            error: None,
         }))
         .await
     }
 
-    async fn send_jsonrpc_message(&mut self, message: TestJsonRpcMessage) -> anyhow::Result<()> {
+    async fn send_jsonrpc_message(&mut self, message: JsonRpcMessage) -> anyhow::Result<()> {
         eprintln!("writing message to stdin: {message:?}");
         let payload = serde_json::to_string(&message)?;
         self.stdin.write_all(payload.as_bytes()).await?;
@@ -315,21 +296,21 @@ impl McpProcess {
         Ok(())
     }
 
-    async fn read_jsonrpc_message(&mut self) -> anyhow::Result<TestJsonRpcMessage> {
+    async fn read_jsonrpc_message(&mut self) -> anyhow::Result<JsonRpcMessage> {
         let mut line = String::new();
         self.stdout.read_line(&mut line).await?;
-        let message = serde_json::from_str::<TestJsonRpcMessage>(&line)?;
+        let message = serde_json::from_str::<JsonRpcMessage>(&line)?;
         eprintln!("read message from stdout: {message:?}");
         Ok(message)
     }
 
-    pub async fn read_next_jsonrpc_message(&mut self) -> anyhow::Result<TestJsonRpcMessage> {
+    pub async fn read_next_jsonrpc_message(&mut self) -> anyhow::Result<JsonRpcMessage> {
         self.read_jsonrpc_message().await
     }
 
     pub async fn read_stream_until_request_message(
         &mut self,
-    ) -> anyhow::Result<JsonRpcRequest<CustomRequest>> {
+    ) -> anyhow::Result<JsonRpcRequest> {
         eprintln!("in read_stream_until_request_message()");
 
         loop {
@@ -342,8 +323,8 @@ impl McpProcess {
                 JsonRpcMessage::Request(jsonrpc_request) => {
                     return Ok(jsonrpc_request);
                 }
-                JsonRpcMessage::Error(_) => {
-                    anyhow::bail!("unexpected JSONRPCMessage::Error: {message:?}");
+                JsonRpcMessage::Response(resp) if resp.error.is_some() => {
+                    anyhow::bail!("unexpected JSONRPCMessage error response: {resp:?}");
                 }
                 JsonRpcMessage::Response(_) => {
                     anyhow::bail!("unexpected JSONRPCMessage::Response: {message:?}");
@@ -355,8 +336,9 @@ impl McpProcess {
     pub async fn read_stream_until_response_message(
         &mut self,
         request_id: RequestId,
-    ) -> anyhow::Result<JsonRpcResponse<serde_json::Value>> {
+    ) -> anyhow::Result<JsonRpcResponse> {
         eprintln!("in read_stream_until_response_message({request_id:?})");
+        let id_value = request_id.to_value();
 
         loop {
             let message = self.read_jsonrpc_message().await?;
@@ -367,11 +349,11 @@ impl McpProcess {
                 JsonRpcMessage::Request(_) => {
                     anyhow::bail!("unexpected JSONRPCMessage::Request: {message:?}");
                 }
-                JsonRpcMessage::Error(_) => {
-                    anyhow::bail!("unexpected JSONRPCMessage::Error: {message:?}");
+                JsonRpcMessage::Response(ref resp) if resp.error.is_some() => {
+                    anyhow::bail!("unexpected JSONRPCMessage error response: {message:?}");
                 }
                 JsonRpcMessage::Response(jsonrpc_response) => {
-                    if jsonrpc_response.id == request_id {
+                    if jsonrpc_response.id == id_value {
                         return Ok(jsonrpc_response);
                     }
                 }
@@ -382,8 +364,9 @@ impl McpProcess {
     pub async fn read_stream_until_response_or_error_message(
         &mut self,
         request_id: RequestId,
-    ) -> anyhow::Result<TestJsonRpcMessage> {
+    ) -> anyhow::Result<JsonRpcMessage> {
         eprintln!("in read_stream_until_response_or_error_message({request_id:?})");
+        let id_value = request_id.to_value();
 
         loop {
             let message = self.read_jsonrpc_message().await?;
@@ -394,12 +377,8 @@ impl McpProcess {
                 JsonRpcMessage::Request(_) => {
                     anyhow::bail!("unexpected JSONRPCMessage::Request: {message:?}");
                 }
-                JsonRpcMessage::Error(error) if error.id == request_id => {
-                    return Ok(JsonRpcMessage::Error(error));
-                }
-                JsonRpcMessage::Error(_) => {}
-                JsonRpcMessage::Response(jsonrpc_response) if jsonrpc_response.id == request_id => {
-                    return Ok(JsonRpcMessage::Response(jsonrpc_response));
+                JsonRpcMessage::Response(ref resp) if resp.id == id_value => {
+                    return Ok(message);
                 }
                 JsonRpcMessage::Response(_) => {}
             }
@@ -410,15 +389,15 @@ impl McpProcess {
     /// Method "codex/event" with params.msg.type == "task_complete".
     pub async fn read_stream_until_legacy_task_complete_notification(
         &mut self,
-    ) -> anyhow::Result<JsonRpcNotification<CustomNotification>> {
+    ) -> anyhow::Result<JsonRpcRequest> {
         eprintln!("in read_stream_until_legacy_task_complete_notification()");
 
         loop {
             let message = self.read_jsonrpc_message().await?;
             match message {
                 JsonRpcMessage::Notification(notification) => {
-                    let is_match = if notification.notification.method == "codex/event" {
-                        if let Some(params) = &notification.notification.params {
+                    let is_match = if notification.method == "codex/event" {
+                        if let Some(params) = &notification.params {
                             params
                                 .get("msg")
                                 .and_then(|m| m.get("type"))
@@ -440,8 +419,8 @@ impl McpProcess {
                 JsonRpcMessage::Request(_) => {
                     anyhow::bail!("unexpected JSONRPCMessage::Request: {message:?}");
                 }
-                JsonRpcMessage::Error(_) => {
-                    anyhow::bail!("unexpected JSONRPCMessage::Error: {message:?}");
+                JsonRpcMessage::Response(ref resp) if resp.error.is_some() => {
+                    anyhow::bail!("unexpected JSONRPCMessage error response: {message:?}");
                 }
                 JsonRpcMessage::Response(_) => {
                     anyhow::bail!("unexpected JSONRPCMessage::Response: {message:?}");

@@ -8,10 +8,8 @@ use codex_arg0::Arg0DispatchPaths;
 use codex_core::config::Config;
 use codex_utils_cli::CliConfigOverrides;
 
-use rmcp::model::ClientNotification;
-use rmcp::model::ClientRequest;
-use rmcp::model::JsonRpcMessage;
-use serde_json::Value;
+use mcp_types::JsonRpcMessage;
+use mcp_types::RequestId;
 use tokio::io::AsyncBufReadExt;
 use tokio::io::AsyncWriteExt;
 use tokio::io::BufReader;
@@ -27,6 +25,7 @@ mod codex_tool_config;
 mod codex_tool_runner;
 mod elicitation;
 mod exec_approval;
+pub(crate) mod mcp_types;
 pub(crate) mod message_processor;
 mod outgoing_message;
 mod patch_approval;
@@ -54,7 +53,7 @@ const CHANNEL_CAPACITY: usize = 128;
 const DEFAULT_ANALYTICS_ENABLED: bool = true;
 const OTEL_SERVICE_NAME: &str = "codex_mcp_server";
 
-type IncomingMessage = JsonRpcMessage<ClientRequest, Value, ClientNotification>;
+type IncomingMessage = JsonRpcMessage;
 
 pub async fn run_main(
     arg0_paths: Arg0DispatchPaths,
@@ -137,10 +136,31 @@ pub async fn run_main(
         async move {
             while let Some(msg) = incoming_rx.recv().await {
                 match msg {
-                    JsonRpcMessage::Request(r) => processor.process_request(r).await,
-                    JsonRpcMessage::Response(r) => processor.process_response(r).await,
-                    JsonRpcMessage::Notification(n) => processor.process_notification(n).await,
-                    JsonRpcMessage::Error(e) => processor.process_error(e).await,
+                    JsonRpcMessage::Request(r) => {
+                        let id = r
+                            .id
+                            .as_ref()
+                            .and_then(RequestId::from_value)
+                            .unwrap_or(RequestId::Number(0));
+                        processor.process_request(id, r.method, r.params).await;
+                    }
+                    JsonRpcMessage::Notification(n) => {
+                        processor
+                            .process_notification(n.method, n.params)
+                            .await;
+                    }
+                    JsonRpcMessage::Response(r) => {
+                        if let Some(error) = r.error {
+                            let id = RequestId::from_value(&r.id)
+                                .unwrap_or(RequestId::Number(0));
+                            processor.process_error(id, error).await;
+                        } else {
+                            let id = RequestId::from_value(&r.id)
+                                .unwrap_or(RequestId::Number(0));
+                            let result = r.result.unwrap_or(serde_json::Value::Null);
+                            processor.process_response(id, result).await;
+                        }
+                    }
                 }
             }
 

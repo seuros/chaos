@@ -25,9 +25,9 @@ use codex_protocol::protocol::Op;
 use codex_protocol::protocol::Submission;
 use codex_protocol::protocol::TurnCompleteEvent;
 use codex_protocol::user_input::UserInput;
-use rmcp::model::CallToolResult;
-use rmcp::model::Content;
-use rmcp::model::RequestId;
+use crate::mcp_types::CallToolResult;
+use crate::mcp_types::ContentItem;
+use crate::mcp_types::RequestId;
 use serde_json::json;
 use tokio::sync::Mutex;
 
@@ -41,7 +41,7 @@ pub(crate) fn create_call_tool_result_with_thread_id(
     is_error: Option<bool>,
 ) -> CallToolResult {
     let content_text = text;
-    let content = vec![Content::text(content_text.clone())];
+    let content = vec![ContentItem::text(content_text.clone())];
     let structured_content = json!({
         "threadId": thread_id,
         "content": content_text,
@@ -74,7 +74,7 @@ pub async fn run_codex_tool_session(
         Ok(res) => res,
         Err(e) => {
             let result = CallToolResult {
-                content: vec![Content::text(format!("Failed to start Codex session: {e}"))],
+                content: vec![ContentItem::text(format!("Failed to start Codex session: {e}"))],
                 is_error: Some(true),
                 structured_content: None,
                 meta: None,

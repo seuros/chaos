@@ -10,13 +10,14 @@ pub use mock_model_server::create_mock_responses_server;
 pub use responses::create_apply_patch_sse_response;
 pub use responses::create_final_assistant_message_sse_response;
 pub use responses::create_shell_command_sse_response;
-use rmcp::model::JsonRpcResponse;
+use mcp_host::protocol::types::JsonRpcResponse;
 use serde::de::DeserializeOwned;
 
 pub fn to_response<T: DeserializeOwned>(
-    response: JsonRpcResponse<serde_json::Value>,
+    response: JsonRpcResponse,
 ) -> anyhow::Result<T> {
-    let value = serde_json::to_value(response.result)?;
+    let result = response.result.ok_or_else(|| anyhow::anyhow!("response has no result"))?;
+    let value = serde_json::to_value(result)?;
     let codex_response = serde_json::from_value(value)?;
     Ok(codex_response)
 }

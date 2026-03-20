@@ -16,12 +16,9 @@ use codex_mcp_server::PatchApprovalResponse;
 use codex_protocol::protocol::FileChange;
 use codex_shell_command::parse_command;
 use pretty_assertions::assert_eq;
-use rmcp::model::CustomRequest;
-use rmcp::model::GetMeta;
-use rmcp::model::JsonRpcMessage;
-use rmcp::model::JsonRpcResponse;
-use rmcp::model::JsonRpcVersion2_0;
-use rmcp::model::RequestId;
+use mcp_host::protocol::types::JsonRpcMessage;
+use mcp_host::protocol::types::JsonRpcRequest;
+use mcp_host::protocol::types::RequestId;
 use serde_json::json;
 use tempfile::TempDir;
 use tokio::time::timeout;
@@ -111,11 +108,11 @@ async fn shell_command_approval_triggers_elicitation() -> anyhow::Result<()> {
     )
     .await??;
 
-    assert_eq!(elicitation_request.jsonrpc, JsonRpcVersion2_0);
-    assert_eq!(elicitation_request.request.method, "elicitation/create");
+    assert_eq!(elicitation_request.jsonrpc, "2.0");
+    assert_eq!(elicitation_request.method, "elicitation/create");
 
     let elicitation_request_id = elicitation_request.id.clone();
-    let request_params = request_params_with_meta(&elicitation_request.request)?;
+    let request_params = request_params_with_meta(&elicitation_request)?;
     let params = serde_json::from_value::<ExecApprovalElicitRequestParams>(request_params.clone())?;
     assert_eq!(
         request_params,
@@ -129,9 +126,12 @@ async fn shell_command_approval_triggers_elicitation() -> anyhow::Result<()> {
     );
 
     // Accept the `git init` request by responding to the elicitation.
+    let elicitation_id = elicitation_request_id
+        .ok_or_else(|| anyhow::anyhow!("elicitation request should have an id"))?;
     mcp_process
         .send_response(
-            elicitation_request_id,
+            RequestId::from_value(&elicitation_id)
+                .ok_or_else(|| anyhow::anyhow!("invalid request id"))?,
             serde_json::to_value(ExecApprovalResponse {
                 action: ApprovalElicitationAction::Accept,
                 content: Some(json!({})),
@@ -156,24 +156,27 @@ async fn shell_command_approval_triggers_elicitation() -> anyhow::Result<()> {
         mcp_process.read_stream_until_response_message(RequestId::Number(codex_request_id)),
     )
     .await??;
+    assert_eq!(codex_response.jsonrpc, "2.0");
+    assert_eq!(codex_response.id, json!(codex_request_id));
+    assert!(codex_response.error.is_none());
+    let result = codex_response
+        .result
+        .as_ref()
+        .ok_or_else(|| anyhow::anyhow!("result should be present"))?;
     assert_eq!(
-        JsonRpcResponse {
-            jsonrpc: JsonRpcVersion2_0,
-            id: RequestId::Number(codex_request_id),
-            result: json!({
-                "content": [
-                    {
-                        "text": "File created!",
-                        "type": "text"
-                    }
-                ],
-                "structuredContent": {
-                    "threadId": params.meta.thread_id,
-                    "content": "File created!"
+        result,
+        &json!({
+            "content": [
+                {
+                    "text": "File created!",
+                    "type": "text"
                 }
-            }),
-        },
-        codex_response
+            ],
+            "structuredContent": {
+                "threadId": params.meta.thread_id,
+                "content": "File created!"
+            }
+        })
     );
 
     assert!(created_file.is_file(), "created file should exist");
@@ -267,11 +270,11 @@ async fn patch_approval_triggers_elicitation() -> anyhow::Result<()> {
     )
     .await??;
 
-    assert_eq!(elicitation_request.jsonrpc, JsonRpcVersion2_0);
-    assert_eq!(elicitation_request.request.method, "elicitation/create");
+    assert_eq!(elicitation_request.jsonrpc, "2.0");
+    assert_eq!(elicitation_request.method, "elicitation/create");
 
     let elicitation_request_id = elicitation_request.id.clone();
-    let request_params = request_params_with_meta(&elicitation_request.request)?;
+    let request_params = request_params_with_meta(&elicitation_request)?;
     let params =
         serde_json::from_value::<PatchApprovalElicitRequestParams>(request_params.clone())?;
 
@@ -297,9 +300,12 @@ async fn patch_approval_triggers_elicitation() -> anyhow::Result<()> {
     );
 
     // Accept the patch approval request by responding to the elicitation
+    let elicitation_id = elicitation_request_id
+        .ok_or_else(|| anyhow::anyhow!("elicitation request should have an id"))?;
     mcp_process
         .send_response(
-            elicitation_request_id,
+            RequestId::from_value(&elicitation_id)
+                .ok_or_else(|| anyhow::anyhow!("invalid request id"))?,
             serde_json::to_value(PatchApprovalResponse {
                 action: ApprovalElicitationAction::Accept,
                 content: Some(json!({})),
@@ -314,24 +320,27 @@ async fn patch_approval_triggers_elicitation() -> anyhow::Result<()> {
         mcp_process.read_stream_until_response_message(RequestId::Number(codex_request_id)),
     )
     .await??;
+    assert_eq!(codex_response.jsonrpc, "2.0");
+    assert_eq!(codex_response.id, json!(codex_request_id));
+    assert!(codex_response.error.is_none());
+    let result = codex_response
+        .result
+        .as_ref()
+        .ok_or_else(|| anyhow::anyhow!("result should be present"))?;
     assert_eq!(
-        JsonRpcResponse {
-            jsonrpc: JsonRpcVersion2_0,
-            id: RequestId::Number(codex_request_id),
-            result: json!({
-                "content": [
-                    {
-                        "text": "Patch has been applied successfully!",
-                        "type": "text"
-                    }
-                ],
-                "structuredContent": {
-                    "threadId": params.meta.thread_id,
-                    "content": "Patch has been applied successfully!"
+        result,
+        &json!({
+            "content": [
+                {
+                    "text": "Patch has been applied successfully!",
+                    "type": "text"
                 }
-            }),
-        },
-        codex_response
+            ],
+            "structuredContent": {
+                "threadId": params.meta.thread_id,
+                "content": "Patch has been applied successfully!"
+            }
+        })
     );
 
     let file_contents = std::fs::read_to_string(test_file.as_path())?;
@@ -377,16 +386,19 @@ async fn codex_tool_passes_base_instructions() -> anyhow::Result<()> {
         mcp_process.read_stream_until_response_message(RequestId::Number(codex_request_id)),
     )
     .await??;
-    let thread_id = codex_response
+    let result = codex_response
         .result
+        .as_ref()
+        .ok_or_else(|| anyhow::anyhow!("result should be present"))?;
+    let thread_id = result
         .get("structuredContent")
         .and_then(|value| value.get("threadId"))
         .and_then(serde_json::Value::as_str)
         .context("codex tool response should include structuredContent.threadId")?;
-    assert_eq!(codex_response.jsonrpc, JsonRpcVersion2_0);
-    assert_eq!(codex_response.id, RequestId::Number(codex_request_id));
+    assert_eq!(codex_response.jsonrpc, "2.0");
+    assert_eq!(codex_response.id, json!(codex_request_id));
     assert_eq!(
-        codex_response.result,
+        *result,
         json!({
             "content": [
                 {
@@ -440,18 +452,12 @@ async fn codex_tool_passes_base_instructions() -> anyhow::Result<()> {
     Ok(())
 }
 
-fn request_params_with_meta(request: &CustomRequest) -> anyhow::Result<serde_json::Value> {
-    let mut params = request
+/// In mcp-host, `_meta` is already part of `params`, so we just return params directly.
+fn request_params_with_meta(request: &JsonRpcRequest) -> anyhow::Result<serde_json::Value> {
+    let params = request
         .params
         .clone()
         .ok_or_else(|| anyhow::anyhow!("elicitation request params must be set"))?;
-    let meta = request.get_meta();
-    if !meta.is_empty() {
-        let serde_json::Value::Object(map) = &mut params else {
-            anyhow::bail!("expected elicitation params to be a JSON object");
-        };
-        map.insert("_meta".to_string(), serde_json::to_value(meta)?);
-    }
     Ok(params)
 }
 
@@ -557,11 +563,11 @@ async fn shell_command_without_elicitation_capability_is_denied() -> anyhow::Res
             JsonRpcMessage::Request(request) => {
                 panic!("unexpected elicitation request: {request:?}");
             }
-            JsonRpcMessage::Error(error) => {
-                panic!("unexpected json-rpc error: {error:?}");
+            JsonRpcMessage::Response(ref resp) if resp.error.is_some() => {
+                panic!("unexpected json-rpc error: {resp:?}");
             }
             JsonRpcMessage::Response(response)
-                if response.id == RequestId::Number(codex_request_id) =>
+                if response.id == json!(codex_request_id) =>
             {
                 break;
             }

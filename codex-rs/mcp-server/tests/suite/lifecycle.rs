@@ -2,9 +2,8 @@ use std::time::Duration;
 
 use anyhow::Result;
 use pretty_assertions::assert_eq;
-use rmcp::model::ErrorCode;
-use rmcp::model::JsonRpcMessage;
-use rmcp::model::JsonRpcVersion2_0;
+use mcp_host::protocol::types::ErrorCode;
+use mcp_host::protocol::types::JsonRpcMessage;
 use serde_json::json;
 use tempfile::TempDir;
 use tokio::time::timeout;
@@ -33,10 +32,10 @@ async fn initialize_negotiates_newer_client_protocol_to_latest_supported_version
         anyhow::bail!("expected initialize response, got: {message:?}");
     };
 
-    assert_eq!(response.jsonrpc, JsonRpcVersion2_0);
-    assert_eq!(response.result["protocolVersion"], json!("2025-06-18"));
+    assert_eq!(response.jsonrpc, "2.0");
+    assert_eq!(response.result.as_ref().unwrap()["protocolVersion"], json!("2025-06-18"));
     assert_eq!(
-        response.result["capabilities"],
+        response.result.as_ref().unwrap()["capabilities"],
         json!({
             "tools": {
                 "listChanged": true
@@ -44,7 +43,7 @@ async fn initialize_negotiates_newer_client_protocol_to_latest_supported_version
         })
     );
     assert_eq!(
-        response.result["serverInfo"],
+        response.result.as_ref().unwrap()["serverInfo"],
         json!({
             "name": "codex-mcp-server",
             "title": "Codex",
@@ -68,19 +67,20 @@ async fn tools_list_before_initialize_is_rejected() -> Result<()> {
     )
     .await??;
 
-    let JsonRpcMessage::Error(error) = message else {
-        anyhow::bail!("expected JSON-RPC error, got: {message:?}");
+    let JsonRpcMessage::Response(resp) = message else {
+        anyhow::bail!("expected JSON-RPC response, got: {message:?}");
     };
+    let error = resp.error.as_ref().expect("expected error response");
 
-    assert_eq!(error.id, request_id);
-    assert_eq!(error.error.code, ErrorCode::INVALID_REQUEST);
+    assert_eq!(resp.id, request_id.to_value());
+    assert_eq!(error.code, ErrorCode::INVALID_REQUEST);
     assert_eq!(
-        error.error.data,
+        error.data,
         Some(json!({
             "method": "tools/list"
         }))
     );
-    assert!(error.error.message.contains("before initialize"));
+    assert!(error.message.contains("before initialize"));
 
     Ok(())
 }
@@ -102,21 +102,21 @@ async fn tools_list_before_initialized_notification_is_rejected() -> Result<()> 
     )
     .await??;
 
-    let JsonRpcMessage::Error(error) = message else {
-        anyhow::bail!("expected JSON-RPC error, got: {message:?}");
+    let JsonRpcMessage::Response(resp) = message else {
+        anyhow::bail!("expected JSON-RPC response, got: {message:?}");
     };
+    let error = resp.error.as_ref().expect("expected error response");
 
-    assert_eq!(error.id, request_id);
-    assert_eq!(error.error.code, ErrorCode::INVALID_REQUEST);
+    assert_eq!(resp.id, request_id.to_value());
+    assert_eq!(error.code, ErrorCode::INVALID_REQUEST);
     assert_eq!(
-        error.error.data,
+        error.data,
         Some(json!({
             "method": "tools/list"
         }))
     );
     assert!(
         error
-            .error
             .message
             .contains("before initialized notification")
     );
@@ -164,19 +164,20 @@ async fn unsupported_optional_methods_return_method_not_found_after_initialize()
         )
         .await??;
 
-        let JsonRpcMessage::Error(error) = message else {
-            anyhow::bail!("expected JSON-RPC error for `{method}`, got: {message:?}");
+        let JsonRpcMessage::Response(resp) = message else {
+            anyhow::bail!("expected JSON-RPC response for `{method}`, got: {message:?}");
         };
+        let error = resp.error.as_ref().expect("expected error response");
 
-        assert_eq!(error.id, request_id);
-        assert_eq!(error.error.code, ErrorCode::METHOD_NOT_FOUND);
+        assert_eq!(resp.id, request_id.to_value());
+        assert_eq!(error.code, ErrorCode::METHOD_NOT_FOUND);
         assert_eq!(
-            error.error.data,
+            error.data,
             Some(json!({
                 "method": method
             }))
         );
-        assert_eq!(error.error.message, format!("method not found: {method}"));
+        assert_eq!(error.message, format!("method not found: {method}"));
     }
 
     Ok(())

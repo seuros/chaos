@@ -10,23 +10,6 @@ use codex_core::models_manager::collaboration_mode_presets::CollaborationModesCo
 use codex_protocol::ThreadId;
 use codex_protocol::protocol::SessionSource;
 use codex_protocol::protocol::Submission;
-use rmcp::model::CallToolRequestParams;
-use rmcp::model::CallToolResult;
-use rmcp::model::ClientNotification;
-use rmcp::model::ClientRequest;
-use rmcp::model::EmptyResult;
-use rmcp::model::ErrorCode;
-use rmcp::model::ErrorData;
-use rmcp::model::Implementation;
-use rmcp::model::InitializeResult;
-use rmcp::model::JsonRpcError;
-use rmcp::model::JsonRpcNotification;
-use rmcp::model::JsonRpcRequest;
-use rmcp::model::JsonRpcResponse;
-use rmcp::model::ProtocolVersion;
-use rmcp::model::RequestId;
-use rmcp::model::ServerCapabilities;
-use rmcp::model::ToolsCapability;
 use serde_json::json;
 use std::sync::Arc;
 use tokio::sync::Mutex;
@@ -36,6 +19,7 @@ use crate::codex_tool_config::CodexToolCallParam;
 use crate::codex_tool_config::CodexToolCallReplyParam;
 use crate::codex_tool_config::create_tool_for_codex_tool_call_param;
 use crate::codex_tool_config::create_tool_for_codex_tool_call_reply_param;
+use crate::mcp_types::*;
 use crate::outgoing_message::OutgoingMessageSender;
 
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
@@ -86,82 +70,57 @@ impl MessageProcessor {
         }
     }
 
-    pub(crate) async fn process_request(&mut self, request: JsonRpcRequest<ClientRequest>) {
-        let request_id = request.id.clone();
-        let client_request = request.request;
-        let method = match &client_request {
-            ClientRequest::InitializeRequest(_) => "initialize",
-            ClientRequest::PingRequest(_) => "ping",
-            ClientRequest::ListResourcesRequest(_) => "resources/list",
-            ClientRequest::ListResourceTemplatesRequest(_) => "resources/templates/list",
-            ClientRequest::ReadResourceRequest(_) => "resources/read",
-            ClientRequest::SubscribeRequest(_) => "resources/subscribe",
-            ClientRequest::UnsubscribeRequest(_) => "resources/unsubscribe",
-            ClientRequest::ListPromptsRequest(_) => "prompts/list",
-            ClientRequest::GetPromptRequest(_) => "prompts/get",
-            ClientRequest::ListToolsRequest(_) => "tools/list",
-            ClientRequest::CallToolRequest(_) => "tools/call",
-            ClientRequest::SetLevelRequest(_) => "logging/setLevel",
-            ClientRequest::CompleteRequest(_) => "completion/complete",
-            ClientRequest::GetTaskInfoRequest(_) => "tasks/get_info",
-            ClientRequest::ListTasksRequest(_) => "tasks/list",
-            ClientRequest::GetTaskResultRequest(_) => "tasks/get_result",
-            ClientRequest::CancelTaskRequest(_) => "tasks/cancel",
-            ClientRequest::CustomRequest(custom) => custom.method.as_str(),
-        };
-
+    pub(crate) async fn process_request(
+        &mut self,
+        request_id: RequestId,
+        method: String,
+        params: Option<serde_json::Value>,
+    ) {
+        // Lifecycle gate: check method is allowed in current state.
         match self.lifecycle_state {
             LifecycleState::Uninitialized => {
-                if !matches!(
-                    &client_request,
-                    ClientRequest::InitializeRequest(_) | ClientRequest::PingRequest(_)
-                ) {
+                if method != "initialize" && method != "ping" {
                     self.outgoing
                         .send_error(
                             request_id,
-                            ErrorData::invalid_request(
-                                format!("request `{method}` is not allowed before initialize"),
-                                Some(json!({ "method": method })),
-                            ),
+                            ErrorData::invalid_request(format!(
+                                "request `{method}` is not allowed before initialize"
+                            ))
+                            .with_optional_data(Some(json!({ "method": method }))),
                         )
                         .await;
                     return;
                 }
             }
             LifecycleState::InitializeResponded => {
-                if matches!(&client_request, ClientRequest::InitializeRequest(_)) {
+                if method == "initialize" {
                     self.outgoing
                         .send_error(
                             request_id,
-                            ErrorData::invalid_request("initialize called more than once", None),
+                            ErrorData::invalid_request("initialize called more than once"),
                         )
                         .await;
                     return;
                 }
-                if !matches!(
-                    &client_request,
-                    ClientRequest::PingRequest(_) | ClientRequest::SetLevelRequest(_)
-                ) {
+                if method != "ping" && method != "logging/setLevel" {
                     self.outgoing
                         .send_error(
                             request_id,
-                            ErrorData::invalid_request(
-                                format!(
-                                    "request `{method}` is not allowed before initialized notification"
-                                ),
-                                Some(json!({ "method": method })),
-                            ),
+                            ErrorData::invalid_request(format!(
+                                "request `{method}` is not allowed before initialized notification"
+                            ))
+                            .with_optional_data(Some(json!({ "method": method }))),
                         )
                         .await;
                     return;
                 }
             }
             LifecycleState::Operational => {
-                if matches!(&client_request, ClientRequest::InitializeRequest(_)) {
+                if method == "initialize" {
                     self.outgoing
                         .send_error(
                             request_id,
-                            ErrorData::invalid_request("initialize called more than once", None),
+                            ErrorData::invalid_request("initialize called more than once"),
                         )
                         .await;
                     return;
@@ -169,117 +128,147 @@ impl MessageProcessor {
             }
         }
 
-        match client_request {
-            ClientRequest::InitializeRequest(params) => {
-                self.handle_initialize(request_id, params.params).await;
+        // Dispatch by method name.
+        match method.as_str() {
+            "initialize" => {
+                let init_params: InitializeRequest = match params
+                    .map(serde_json::from_value)
+                    .transpose()
+                {
+                    Ok(Some(p)) => p,
+                    Ok(None) => {
+                        self.outgoing
+                            .send_error(
+                                request_id,
+                                ErrorData::invalid_params("missing initialize params"),
+                            )
+                            .await;
+                        return;
+                    }
+                    Err(e) => {
+                        self.outgoing
+                            .send_error(
+                                request_id,
+                                ErrorData::invalid_params(format!(
+                                    "invalid initialize params: {e}"
+                                )),
+                            )
+                            .await;
+                        return;
+                    }
+                };
+                self.handle_initialize(request_id, init_params).await;
             }
-            ClientRequest::PingRequest(_params) => {
+            "ping" => {
                 self.handle_ping(request_id).await;
             }
-            ClientRequest::ListResourcesRequest(params) => {
-                self.handle_list_resources(request_id, params.params).await;
+            "tools/list" => {
+                self.handle_list_tools(request_id).await;
             }
-            ClientRequest::ListResourceTemplatesRequest(params) => {
-                self.handle_list_resource_templates(request_id, params.params)
-                    .await;
+            "tools/call" => {
+                let call_params: CallToolRequestParams = match params
+                    .map(serde_json::from_value)
+                    .transpose()
+                {
+                    Ok(Some(p)) => p,
+                    Ok(None) => {
+                        self.outgoing
+                            .send_error(
+                                request_id,
+                                ErrorData::invalid_params("missing tools/call params"),
+                            )
+                            .await;
+                        return;
+                    }
+                    Err(e) => {
+                        self.outgoing
+                            .send_error(
+                                request_id,
+                                ErrorData::invalid_params(format!(
+                                    "invalid tools/call params: {e}"
+                                )),
+                            )
+                            .await;
+                        return;
+                    }
+                };
+                self.handle_call_tool(request_id, call_params).await;
             }
-            ClientRequest::ReadResourceRequest(params) => {
-                self.handle_read_resource(request_id, params.params).await;
+            "resources/list" | "resources/templates/list" | "resources/read"
+            | "resources/subscribe" | "resources/unsubscribe" | "prompts/list" | "prompts/get"
+            | "logging/setLevel" | "completion/complete" | "tasks/get_info" | "tasks/list"
+            | "tasks/get_result" | "tasks/cancel" => {
+                tracing::info!("{method} -> params: {:?}", params);
+                self.handle_unsupported_request(request_id, &method).await;
             }
-            ClientRequest::SubscribeRequest(params) => {
-                self.handle_subscribe(request_id, params.params).await;
-            }
-            ClientRequest::UnsubscribeRequest(params) => {
-                self.handle_unsubscribe(request_id, params.params).await;
-            }
-            ClientRequest::ListPromptsRequest(params) => {
-                self.handle_list_prompts(request_id, params.params).await;
-            }
-            ClientRequest::GetPromptRequest(params) => {
-                self.handle_get_prompt(request_id, params.params).await;
-            }
-            ClientRequest::ListToolsRequest(params) => {
-                self.handle_list_tools(request_id, params.params).await;
-            }
-            ClientRequest::CallToolRequest(params) => {
-                self.handle_call_tool(request_id, params.params).await;
-            }
-            ClientRequest::SetLevelRequest(params) => {
-                self.handle_set_level(request_id, params.params).await;
-            }
-            ClientRequest::CompleteRequest(params) => {
-                self.handle_complete(request_id, params.params).await;
-            }
-            ClientRequest::GetTaskInfoRequest(_) => {
-                self.handle_unsupported_request(request_id, "tasks/get_info")
-                    .await;
-            }
-            ClientRequest::ListTasksRequest(_) => {
-                self.handle_unsupported_request(request_id, "tasks/list")
-                    .await;
-            }
-            ClientRequest::GetTaskResultRequest(_) => {
-                self.handle_unsupported_request(request_id, "tasks/get_result")
-                    .await;
-            }
-            ClientRequest::CancelTaskRequest(_) => {
-                self.handle_unsupported_request(request_id, "tasks/cancel")
-                    .await;
-            }
-            ClientRequest::CustomRequest(custom) => {
-                let method = custom.method.clone();
+            _ => {
                 self.outgoing
                     .send_error(
                         request_id,
-                        ErrorData::new(
-                            ErrorCode::METHOD_NOT_FOUND,
-                            format!("method not found: {method}"),
-                            Some(json!({ "method": method })),
-                        ),
+                        ErrorData::method_not_found(format!("method not found: {method}"))
+                            .with_optional_data(Some(json!({ "method": method }))),
                     )
                     .await;
             }
         }
     }
 
-    pub(crate) async fn process_response(&mut self, response: JsonRpcResponse<serde_json::Value>) {
-        tracing::info!("<- response: {:?}", response);
-        let JsonRpcResponse { id, result, .. } = response;
+    pub(crate) async fn process_response(
+        &mut self,
+        id: RequestId,
+        result: serde_json::Value,
+    ) {
+        tracing::info!("<- response: id={id:?}");
         self.outgoing.notify_client_response(id, result).await
     }
 
     pub(crate) async fn process_notification(
         &mut self,
-        notification: JsonRpcNotification<ClientNotification>,
+        method: String,
+        params: Option<serde_json::Value>,
     ) {
-        match notification.notification {
-            ClientNotification::CancelledNotification(params) => {
-                self.handle_cancelled_notification(params.params).await;
+        match method.as_str() {
+            "notifications/cancelled" => {
+                if let Some(params) = params {
+                    match serde_json::from_value::<CancelledNotificationParams>(params) {
+                        Ok(p) => self.handle_cancelled_notification(p).await,
+                        Err(e) => {
+                            tracing::warn!("invalid cancelled notification params: {e}");
+                        }
+                    }
+                }
             }
-            ClientNotification::ProgressNotification(params) => {
-                self.handle_progress_notification(params.params);
+            "notifications/progress" => {
+                if let Some(params) = params {
+                    match serde_json::from_value::<ProgressNotificationParams>(params) {
+                        Ok(p) => self.handle_progress_notification(p),
+                        Err(e) => {
+                            tracing::warn!("invalid progress notification params: {e}");
+                        }
+                    }
+                }
             }
-            ClientNotification::RootsListChangedNotification(_params) => {
+            "notifications/roots/list_changed" => {
                 self.handle_roots_list_changed();
             }
-            ClientNotification::InitializedNotification(_) => {
+            "notifications/initialized" => {
                 self.handle_initialized_notification();
             }
-            ClientNotification::CustomNotification(_) => {
-                tracing::warn!("ignoring custom client notification");
+            _ => {
+                tracing::warn!("ignoring unknown notification: {method}");
             }
         }
     }
 
-    pub(crate) async fn process_error(&mut self, err: JsonRpcError) {
-        tracing::error!("<- error: {:?}", err);
-        self.outgoing.notify_client_error(err.id, err.error).await;
+    pub(crate) async fn process_error(&mut self, id: RequestId, error: ErrorData) {
+        tracing::error!("<- error: {:?}", error);
+        self.outgoing.notify_client_error(id, error).await;
     }
 
     async fn handle_initialize(
         &mut self,
         id: RequestId,
-        params: rmcp::model::InitializeRequestParams,
+        params: InitializeRequest,
     ) {
         tracing::info!("initialize -> params: {:?}", params);
 
@@ -287,7 +276,7 @@ impl MessageProcessor {
             self.outgoing
                 .send_error(
                     id,
-                    ErrorData::invalid_request("initialize called more than once", None),
+                    ErrorData::invalid_request("initialize called more than once"),
                 )
                 .await;
             return;
@@ -313,12 +302,13 @@ impl MessageProcessor {
             website_url: None,
         };
 
-        let protocol_version = match params
-            .protocol_version
-            .partial_cmp(&ProtocolVersion::V_2025_06_18)
-        {
+        let client_pv = ProtocolVersion::new(&params.protocol_version);
+        let v_2025_06_18 = ProtocolVersion::new(ProtocolVersion::V_2025_06_18);
+        let protocol_version = match client_pv.partial_cmp(&v_2025_06_18) {
             Some(Ordering::Less) => params.protocol_version,
-            Some(Ordering::Equal | Ordering::Greater) | None => ProtocolVersion::V_2025_06_18,
+            Some(Ordering::Equal | Ordering::Greater) | None => {
+                ProtocolVersion::V_2025_06_18.to_string()
+            }
         };
 
         let result = InitializeResult {
@@ -339,79 +329,23 @@ impl MessageProcessor {
 
     async fn handle_ping(&self, id: RequestId) {
         tracing::info!("ping");
-        self.outgoing.send_response(id, EmptyResult {}).await;
+        self.outgoing.send_response(id, json!({})).await;
     }
 
-    async fn handle_list_resources(
-        &self,
-        id: RequestId,
-        params: Option<rmcp::model::PaginatedRequestParams>,
-    ) {
-        tracing::info!("resources/list -> params: {:?}", params);
-        self.handle_unsupported_request(id, "resources/list").await;
-    }
-
-    async fn handle_list_resource_templates(
-        &self,
-        id: RequestId,
-        params: Option<rmcp::model::PaginatedRequestParams>,
-    ) {
-        tracing::info!("resources/templates/list -> params: {:?}", params);
-        self.handle_unsupported_request(id, "resources/templates/list")
-            .await;
-    }
-
-    async fn handle_read_resource(
-        &self,
-        id: RequestId,
-        params: rmcp::model::ReadResourceRequestParams,
-    ) {
-        tracing::info!("resources/read -> params: {:?}", params);
-        self.handle_unsupported_request(id, "resources/read").await;
-    }
-
-    async fn handle_subscribe(&self, id: RequestId, params: rmcp::model::SubscribeRequestParams) {
-        tracing::info!("resources/subscribe -> params: {:?}", params);
-        self.handle_unsupported_request(id, "resources/subscribe")
-            .await;
-    }
-
-    async fn handle_unsubscribe(
-        &self,
-        id: RequestId,
-        params: rmcp::model::UnsubscribeRequestParams,
-    ) {
-        tracing::info!("resources/unsubscribe -> params: {:?}", params);
-        self.handle_unsupported_request(id, "resources/unsubscribe")
-            .await;
-    }
-
-    async fn handle_list_prompts(
-        &self,
-        id: RequestId,
-        params: Option<rmcp::model::PaginatedRequestParams>,
-    ) {
-        tracing::info!("prompts/list -> params: {:?}", params);
-        self.handle_unsupported_request(id, "prompts/list").await;
-    }
-
-    async fn handle_get_prompt(&self, id: RequestId, params: rmcp::model::GetPromptRequestParams) {
-        tracing::info!("prompts/get -> params: {:?}", params);
-        self.handle_unsupported_request(id, "prompts/get").await;
-    }
-
-    async fn handle_list_tools(
-        &self,
-        id: RequestId,
-        params: Option<rmcp::model::PaginatedRequestParams>,
-    ) {
-        tracing::trace!("tools/list -> {params:?}");
-        let result = rmcp::model::ListToolsResult {
+    async fn handle_list_tools(&self, id: RequestId) {
+        tracing::trace!("tools/list");
+        let tools = vec![
+            create_tool_for_codex_tool_call_param(),
+            create_tool_for_codex_tool_call_reply_param(),
+        ];
+        // Serialize ToolInfo values for ListToolsResult's Vec<Value> field.
+        let tools_value: Vec<serde_json::Value> = tools
+            .into_iter()
+            .filter_map(|t| serde_json::to_value(t).ok())
+            .collect();
+        let result = ListToolsResult {
             meta: None,
-            tools: vec![
-                create_tool_for_codex_tool_call_param(),
-                create_tool_for_codex_tool_call_reply_param(),
-            ],
+            tools: tools_value,
             next_cursor: None,
         };
 
@@ -432,7 +366,7 @@ impl MessageProcessor {
             }
             _ => {
                 let result = CallToolResult {
-                    content: vec![rmcp::model::Content::text(format!("Unknown tool '{name}'"))],
+                    content: vec![ContentItem::text(format!("Unknown tool '{name}'"))],
                     structured_content: None,
                     is_error: Some(true),
                     meta: None,
@@ -445,7 +379,7 @@ impl MessageProcessor {
     async fn handle_tool_call_codex(
         &self,
         id: RequestId,
-        arguments: Option<rmcp::model::JsonObject>,
+        arguments: Option<JsonObject>,
     ) {
         let arguments = arguments.map(serde_json::Value::Object);
         let (initial_prompt, config): (String, Config) = match arguments {
@@ -454,7 +388,7 @@ impl MessageProcessor {
                     Ok(cfg) => cfg,
                     Err(e) => {
                         let result = CallToolResult {
-                            content: vec![rmcp::model::Content::text(format!(
+                            content: vec![ContentItem::text(format!(
                                 "Failed to load Codex configuration from overrides: {e}"
                             ))],
                             structured_content: None,
@@ -467,7 +401,7 @@ impl MessageProcessor {
                 },
                 Err(e) => {
                     let result = CallToolResult {
-                        content: vec![rmcp::model::Content::text(format!(
+                        content: vec![ContentItem::text(format!(
                             "Failed to parse configuration for Codex tool: {e}"
                         ))],
                         structured_content: None,
@@ -480,7 +414,7 @@ impl MessageProcessor {
             },
             None => {
                 let result = CallToolResult {
-                    content: vec![rmcp::model::Content::text(
+                    content: vec![ContentItem::text(
                         "Missing arguments for codex tool-call; the `prompt` field is required.",
                     )],
                     structured_content: None,
@@ -516,7 +450,7 @@ impl MessageProcessor {
     async fn handle_tool_call_codex_session_reply(
         &self,
         request_id: RequestId,
-        arguments: Option<rmcp::model::JsonObject>,
+        arguments: Option<JsonObject>,
     ) {
         let arguments = arguments.map(serde_json::Value::Object);
         tracing::info!("tools/call -> params: {:?}", arguments);
@@ -528,7 +462,7 @@ impl MessageProcessor {
                 Err(e) => {
                     tracing::error!("Failed to parse Codex tool call reply parameters: {e}");
                     let result = CallToolResult {
-                        content: vec![rmcp::model::Content::text(format!(
+                        content: vec![ContentItem::text(format!(
                             "Failed to parse configuration for Codex tool: {e}"
                         ))],
                         structured_content: None,
@@ -544,7 +478,7 @@ impl MessageProcessor {
                     "Missing arguments for codex-reply tool-call; the `thread_id` and `prompt` fields are required."
                 );
                 let result = CallToolResult {
-                    content: vec![rmcp::model::Content::text(
+                    content: vec![ContentItem::text(
                         "Missing arguments for codex-reply tool-call; the `thread_id` and `prompt` fields are required.",
                     )],
                     structured_content: None,
@@ -561,7 +495,7 @@ impl MessageProcessor {
             Err(e) => {
                 tracing::error!("Failed to parse thread_id: {e}");
                 let result = CallToolResult {
-                    content: vec![rmcp::model::Content::text(format!(
+                    content: vec![ContentItem::text(format!(
                         "Failed to parse thread_id: {e}"
                     ))],
                     structured_content: None,
@@ -611,27 +545,12 @@ impl MessageProcessor {
         });
     }
 
-    async fn handle_set_level(&self, id: RequestId, params: rmcp::model::SetLevelRequestParams) {
-        tracing::info!("logging/setLevel -> params: {:?}", params);
-        self.handle_unsupported_request(id, "logging/setLevel")
-            .await;
-    }
-
-    async fn handle_complete(&self, id: RequestId, params: rmcp::model::CompleteRequestParams) {
-        tracing::info!("completion/complete -> params: {:?}", params);
-        self.handle_unsupported_request(id, "completion/complete")
-            .await;
-    }
-
     async fn handle_unsupported_request(&self, id: RequestId, method: &str) {
         self.outgoing
             .send_error(
                 id,
-                ErrorData::new(
-                    ErrorCode::METHOD_NOT_FOUND,
-                    format!("method not found: {method}"),
-                    Some(json!({ "method": method })),
-                ),
+                ErrorData::method_not_found(format!("method not found: {method}"))
+                    .with_optional_data(Some(json!({ "method": method }))),
             )
             .await;
     }
@@ -640,7 +559,7 @@ impl MessageProcessor {
     // Notification handlers
     // ---------------------------------------------------------------------
 
-    async fn handle_cancelled_notification(&self, params: rmcp::model::CancelledNotificationParam) {
+    async fn handle_cancelled_notification(&self, params: CancelledNotificationParams) {
         let request_id = params.request_id;
         // Create a stable string form early for logging and submission id.
         let request_id_string = request_id.to_string();
@@ -686,7 +605,7 @@ impl MessageProcessor {
             .remove(&request_id);
     }
 
-    fn handle_progress_notification(&self, params: rmcp::model::ProgressNotificationParam) {
+    fn handle_progress_notification(&self, params: ProgressNotificationParams) {
         tracing::info!("notifications/progress -> params: {:?}", params);
     }
 

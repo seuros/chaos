@@ -5,17 +5,6 @@ use std::sync::atomic::Ordering;
 
 use codex_protocol::ThreadId;
 use codex_protocol::protocol::Event;
-use rmcp::model::CustomNotification;
-use rmcp::model::CustomRequest;
-use rmcp::model::ElicitationCapability;
-use rmcp::model::ErrorData;
-use rmcp::model::JsonRpcError;
-use rmcp::model::JsonRpcMessage;
-use rmcp::model::JsonRpcNotification;
-use rmcp::model::JsonRpcRequest;
-use rmcp::model::JsonRpcResponse;
-use rmcp::model::JsonRpcVersion2_0;
-use rmcp::model::RequestId;
 use serde::Serialize;
 use serde_json::Value;
 use tokio::sync::Mutex;
@@ -23,7 +12,9 @@ use tokio::sync::mpsc;
 use tokio::sync::oneshot;
 use tracing::warn;
 
-pub(crate) type OutgoingJsonRpcMessage = JsonRpcMessage<CustomRequest, Value, CustomNotification>;
+use crate::mcp_types::*;
+
+pub(crate) type OutgoingJsonRpcMessage = JsonRpcMessage;
 
 /// Sends messages to the client and manages request callbacks.
 pub(crate) struct OutgoingMessageSender {
@@ -140,7 +131,7 @@ impl OutgoingMessageSender {
             Err(err) => {
                 self.send_error(
                     id,
-                    ErrorData::internal_error(format!("failed to serialize response: {err}"), None),
+                    ErrorData::internal_error(format!("failed to serialize response: {err}")),
                 )
                 .await;
                 return;
@@ -203,30 +194,17 @@ impl From<OutgoingMessage> for OutgoingJsonRpcMessage {
         use OutgoingMessage::*;
         match val {
             Request(OutgoingRequest { id, method, params }) => {
-                JsonRpcMessage::Request(JsonRpcRequest {
-                    jsonrpc: JsonRpcVersion2_0,
-                    id,
-                    request: CustomRequest::new(method, params),
-                })
+                JsonRpcMessage::Request(JsonRpcRequest::new(id.to_value(), method, params))
             }
             Notification(OutgoingNotification { method, params }) => {
-                JsonRpcMessage::Notification(JsonRpcNotification {
-                    jsonrpc: JsonRpcVersion2_0,
-                    notification: CustomNotification::new(method, params),
-                })
+                JsonRpcMessage::Notification(JsonRpcRequest::notification(method, params))
             }
             Response(OutgoingResponse { id, result }) => {
-                JsonRpcMessage::Response(JsonRpcResponse {
-                    jsonrpc: JsonRpcVersion2_0,
-                    id,
-                    result,
-                })
+                JsonRpcMessage::Response(JsonRpcResponse::success(id.to_value(), result))
             }
-            Error(OutgoingError { id, error }) => JsonRpcMessage::Error(JsonRpcError {
-                jsonrpc: JsonRpcVersion2_0,
-                id,
-                error,
-            }),
+            Error(OutgoingError { id, error }) => {
+                JsonRpcMessage::Response(JsonRpcResponse::error(id.to_value(), error))
+            }
         }
     }
 }
@@ -314,10 +292,6 @@ mod tests {
         assert_eq!(obj.get("id"), Some(&json!(1)));
         assert_eq!(obj.get("method"), Some(&json!("elicitation/create")));
         assert_eq!(obj.get("params"), Some(&json!({ "k": "v" })));
-        assert!(
-            obj.get("request").is_none(),
-            "rmcp request must flatten to JSON-RPC method/params"
-        );
     }
 
     #[test]
@@ -333,10 +307,10 @@ mod tests {
 
         assert_eq!(obj.get("jsonrpc"), Some(&json!("2.0")));
         assert_eq!(obj.get("method"), Some(&json!("notifications/initialized")));
-        assert_eq!(obj.get("params"), Some(&serde_json::Value::Null));
+        // mcp-host omits null params via skip_serializing_if
         assert!(
-            obj.get("notification").is_none(),
-            "rmcp notification must flatten to JSON-RPC method/params"
+            obj.get("params").is_none() || obj.get("params") == Some(&serde_json::Value::Null),
+            "params should be absent or null"
         );
     }
 
@@ -537,13 +511,13 @@ mod tests {
         outgoing_message_sender
             .notify_client_error(
                 RequestId::Number(0),
-                ErrorData::invalid_params("bad elicitation", None),
+                ErrorData::invalid_params("bad elicitation"),
             )
             .await;
 
         assert_eq!(
             response.await?,
-            Err(ErrorData::invalid_params("bad elicitation", None))
+            Err(ErrorData::invalid_params("bad elicitation"))
         );
         Ok(())
     }

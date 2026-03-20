@@ -14,9 +14,7 @@ const BACKOFF_FACTOR: f64 = 2.0;
 
 /// Emit structured feedback metadata as key/value pairs.
 ///
-/// This logs a tracing event with `target: "feedback_tags"`. If
-/// `codex_feedback::CodexFeedback::metadata_layer()` is installed, these fields are captured and
-/// later attached as tags when feedback is uploaded.
+/// This logs a tracing event with `target: "feedback_tags"`.
 ///
 /// Values are wrapped with [`tracing::field::DebugValue`], so the expression only needs to
 /// implement [`std::fmt::Debug`].

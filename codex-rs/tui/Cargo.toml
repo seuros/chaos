@@ -33,9 +33,7 @@ codex-app-server-protocol = { workspace = true }
 codex-arg0 = { workspace = true }
 codex-backend-client = { workspace = true }
 codex-client = { workspace = true }
-codex-cloud-requirements = { workspace = true }
 codex-core = { workspace = true }
-codex-feedback = { workspace = true }
 codex-file-search = { workspace = true }
 codex-login = { workspace = true }
 codex-otel = { workspace = true }

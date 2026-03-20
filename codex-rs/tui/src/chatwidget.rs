@@ -478,7 +478,8 @@ pub(crate) struct ChatWidgetInit {
     pub(crate) enhanced_keys_supported: bool,
     pub(crate) auth_manager: Arc<AuthManager>,
     pub(crate) models_manager: Arc<ModelsManager>,
-    pub(crate) feedback: codex_feedback::CodexFeedback,
+    #[allow(dead_code)]
+    pub(crate) feedback: crate::bottom_pane::FeedbackSnapshot,
     pub(crate) is_first_run: bool,
     pub(crate) feedback_audience: FeedbackAudience,
     pub(crate) model: Option<String>,
@@ -784,8 +785,9 @@ pub(crate) struct ChatWidget {
     // Runtime metrics accumulated across delta snapshots for the active turn.
     turn_runtime_metrics: RuntimeMetricsSummary,
     last_rendered_width: std::cell::Cell<Option<usize>>,
-    // Feedback sink for /feedback
-    feedback: codex_feedback::CodexFeedback,
+    // Feedback sink for /feedback (stub - upload not supported)
+    #[allow(dead_code)]
+    feedback: crate::bottom_pane::FeedbackSnapshot,
     feedback_audience: FeedbackAudience,
     // Current session rollout path (if known)
     current_rollout_path: Option<PathBuf>,
@@ -1499,7 +1501,7 @@ impl ChatWidget {
         {
             tracing::info!(target: "feedback_tags", chatgpt_user_id);
         }
-        let snapshot = self.feedback.snapshot(self.thread_id);
+        let snapshot = crate::bottom_pane::FeedbackSnapshot::new(self.thread_id.map(|id| id.to_string()));
         self.show_feedback_note(category, include_logs, snapshot);
     }
 
@@ -1507,7 +1509,7 @@ impl ChatWidget {
         &mut self,
         category: crate::app_event::FeedbackCategory,
         include_logs: bool,
-        snapshot: codex_feedback::FeedbackSnapshot,
+        snapshot: crate::bottom_pane::FeedbackSnapshot,
     ) {
         let rollout = if include_logs {
             self.current_rollout_path.clone()
@@ -1540,12 +1542,11 @@ impl ChatWidget {
         {
             tracing::info!(target: "feedback_tags", chatgpt_user_id);
         }
-        let snapshot = self.feedback.snapshot(self.thread_id);
         let params = crate::bottom_pane::feedback_upload_consent_params(
             self.app_event_tx.clone(),
             category,
             self.current_rollout_path.clone(),
-            snapshot.feedback_diagnostics(),
+            &crate::bottom_pane::FeedbackDiagnostics::default(),
         );
         self.bottom_pane.show_selection_view(params);
         self.request_redraw();

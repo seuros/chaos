@@ -24,7 +24,6 @@ use codex_core::config::Config;
 use codex_core::config::ConfigBuilder;
 use codex_core::config_loader::CloudRequirementsLoader;
 use codex_core::config_loader::LoaderOverrides;
-use codex_feedback::CodexFeedback;
 use codex_protocol::protocol::SessionSource;
 use codex_protocol::protocol::W3cTraceContext;
 use opentelemetry::global;
@@ -241,8 +240,6 @@ fn build_test_processor(
         cloud_requirements: CloudRequirementsLoader::default(),
         auth_manager: None,
         thread_manager: None,
-        feedback: CodexFeedback::new(),
-        log_db: None,
         config_warnings: Vec::new(),
         session_source: SessionSource::VSCode,
         enable_codex_api_key_env: false,

@@ -1742,7 +1742,7 @@ async fn helpers_are_available_and_do_not_panic() {
         enhanced_keys_supported: false,
         has_chatgpt_account: false,
         model_catalog: test_model_catalog(&cfg),
-        feedback: codex_feedback::CodexFeedback::new(),
+        feedback: crate::bottom_pane::FeedbackSnapshot::default(),
         is_first_run: true,
         feedback_audience: FeedbackAudience::External,
         status_account_display: None,
@@ -1901,7 +1901,7 @@ async fn make_chatwidget_manual(
         last_separator_elapsed_secs: None,
         turn_runtime_metrics: RuntimeMetricsSummary::default(),
         last_rendered_width: std::cell::Cell::new(None),
-        feedback: codex_feedback::CodexFeedback::new(),
+        feedback: crate::bottom_pane::FeedbackSnapshot::default(),
         feedback_audience: FeedbackAudience::External,
         current_rollout_path: None,
         current_cwd: None,
@@ -5567,7 +5567,7 @@ async fn collaboration_modes_defaults_to_code_on_startup() {
         enhanced_keys_supported: false,
         has_chatgpt_account: false,
         model_catalog: test_model_catalog(&cfg),
-        feedback: codex_feedback::CodexFeedback::new(),
+        feedback: crate::bottom_pane::FeedbackSnapshot::default(),
         is_first_run: true,
         feedback_audience: FeedbackAudience::External,
         status_account_display: None,
@@ -5611,7 +5611,7 @@ async fn experimental_mode_plan_is_ignored_on_startup() {
         enhanced_keys_supported: false,
         has_chatgpt_account: false,
         model_catalog: test_model_catalog(&cfg),
-        feedback: codex_feedback::CodexFeedback::new(),
+        feedback: crate::bottom_pane::FeedbackSnapshot::default(),
         is_first_run: true,
         feedback_audience: FeedbackAudience::External,
         status_account_display: None,
@@ -6936,12 +6936,7 @@ async fn feedback_upload_consent_popup_snapshot() {
         chat.app_event_tx.clone(),
         crate::app_event::FeedbackCategory::Bug,
         chat.current_rollout_path.clone(),
-        &codex_feedback::feedback_diagnostics::FeedbackDiagnostics::new(vec![
-            codex_feedback::feedback_diagnostics::FeedbackDiagnostic {
-                headline: "OPENAI_BASE_URL is set and may affect connectivity.".to_string(),
-                details: vec!["OPENAI_BASE_URL = hello".to_string()],
-            },
-        ]),
+        &crate::bottom_pane::FeedbackDiagnostics::default(),
     ));
 
     let popup = render_bottom_popup(&chat, 80);
@@ -6956,12 +6951,7 @@ async fn feedback_good_result_consent_popup_includes_connectivity_diagnostics_fi
         chat.app_event_tx.clone(),
         crate::app_event::FeedbackCategory::GoodResult,
         chat.current_rollout_path.clone(),
-        &codex_feedback::feedback_diagnostics::FeedbackDiagnostics::new(vec![
-            codex_feedback::feedback_diagnostics::FeedbackDiagnostic {
-                headline: "OPENAI_BASE_URL is set and may affect connectivity.".to_string(),
-                details: vec!["OPENAI_BASE_URL = hello".to_string()],
-            },
-        ]),
+        &crate::bottom_pane::FeedbackDiagnostics::default(),
     ));
 
     let popup = render_bottom_popup(&chat, 80);

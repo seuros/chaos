@@ -41,7 +41,6 @@ use codex_app_server_protocol::TurnInterruptResponse;
 use codex_app_server_protocol::TurnStartParams;
 use codex_app_server_protocol::TurnStartResponse;
 use codex_arg0::Arg0DispatchPaths;
-use codex_cloud_requirements::cloud_requirements_loader;
 use codex_core::AuthManager;
 use codex_core::auth::enforce_login_restrictions;
 use codex_core::check_execpolicy_for_warnings;
@@ -56,7 +55,6 @@ use codex_core::config_loader::LoaderOverrides;
 use codex_core::config_loader::format_config_error_with_source;
 use codex_core::format_exec_policy_error_with_source;
 use codex_core::git_info::get_git_repo_root;
-use codex_feedback::CodexFeedback;
 use codex_otel::set_parent_from_context;
 use codex_otel::traceparent_context_from_env;
 use codex_protocol::account::PlanType as AccountPlanType;
@@ -282,18 +280,7 @@ pub async fn run_main(cli: Cli, arg0_paths: Arg0DispatchPaths) -> anyhow::Result
         }
     };
 
-    let cloud_auth_manager = AuthManager::shared(
-        codex_home.clone(),
-        /*enable_codex_api_key_env*/ false,
-        config_toml.cli_auth_credentials_store.unwrap_or_default(),
-    );
-    let chatgpt_base_url = config_toml
-        .chatgpt_base_url
-        .clone()
-        .unwrap_or_else(|| "https://chatgpt.com/backend-api/".to_string());
-    // TODO(gt): Make cloud requirements failures blocking once we can fail-closed.
-    let cloud_requirements =
-        cloud_requirements_loader(cloud_auth_manager, chatgpt_base_url, codex_home.clone());
+    let cloud_requirements = codex_core::config_loader::CloudRequirementsLoader::default();
     let run_cli_overrides = cli_kv_overrides.clone();
     let run_loader_overrides = LoaderOverrides::default();
     let run_cloud_requirements = cloud_requirements.clone();
@@ -427,7 +414,6 @@ pub async fn run_main(cli: Cli, arg0_paths: Arg0DispatchPaths) -> anyhow::Result
         cli_overrides: run_cli_overrides,
         loader_overrides: run_loader_overrides,
         cloud_requirements: run_cloud_requirements,
-        feedback: CodexFeedback::new(),
         config_warnings,
         session_source: SessionSource::Exec,
         enable_codex_api_key_env: true,

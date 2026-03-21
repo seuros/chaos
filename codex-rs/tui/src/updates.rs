@@ -12,7 +12,7 @@ use serde::Serialize;
 use std::path::Path;
 use std::path::PathBuf;
 
-use crate::version::CODEX_CLI_VERSION;
+use crate::version::CHAOS_VERSION;
 
 pub fn get_upgrade_version(config: &Config) -> Option<String> {
     if !config.check_for_update_on_startup {
@@ -37,7 +37,7 @@ pub fn get_upgrade_version(config: &Config) -> Option<String> {
     }
 
     info.and_then(|info| {
-        if is_newer(&info.latest_version, CODEX_CLI_VERSION).unwrap_or(false) {
+        if is_newer(&info.latest_version, CHAOS_VERSION).unwrap_or(false) {
             Some(info.latest_version)
         } else {
             None

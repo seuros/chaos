@@ -34,7 +34,7 @@ use crate::resume_picker::SessionSelection;
 use crate::tui;
 use crate::tui::TuiEvent;
 use crate::update_action::UpdateAction;
-use crate::version::CODEX_CLI_VERSION;
+use crate::version::CHAOS_VERSION;
 use codex_ansi_escape::ansi_escape_line;
 use codex_app_server_client::InProcessAppServerClient;
 use codex_app_server_protocol::ConfigLayerSource;
@@ -1122,7 +1122,7 @@ impl App {
     }
 
     fn clear_ui_header_lines(&self, width: u16) -> Vec<Line<'static>> {
-        self.clear_ui_header_lines_with_version(width, CODEX_CLI_VERSION)
+        self.clear_ui_header_lines_with_version(width, CHAOS_VERSION)
     }
 
     fn queue_clear_ui_header(&mut self, tui: &mut tui::Tui) {

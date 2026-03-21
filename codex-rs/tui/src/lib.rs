@@ -65,7 +65,6 @@ mod app;
 mod app_backtrack;
 mod app_event;
 mod app_event_sender;
-mod app_server_tui_dispatch;
 mod ascii_animation;
 mod bottom_pane;
 mod chatwidget;
@@ -127,7 +126,6 @@ pub mod test_backend;
 use crate::onboarding::onboarding_screen::OnboardingScreenArgs;
 use crate::onboarding::onboarding_screen::run_onboarding_app;
 use crate::tui::Tui;
-pub use app_server_tui_dispatch::should_use_app_server_tui;
 pub use cli::Cli;
 use codex_arg0::Arg0DispatchPaths;
 pub use markdown_render::render_markdown_text;
@@ -308,12 +306,7 @@ pub async fn run_main(
         None
     };
 
-    // When using `--oss`, let the bootstrapper pick the model based on selected provider
-    let model = if let Some(model) = &cli.model {
-        Some(model.clone())
-    } else {
-        None // No model specified, will use the default.
-    };
+    let model = cli.model.clone();
 
     let additional_dirs = cli.add_dir.clone();
 

@@ -160,8 +160,6 @@ pub enum Feature {
     Artifact,
     /// Enable Fast mode selection in the TUI and request layer.
     FastMode,
-    /// Route interactive startup to the app-server-backed TUI implementation.
-    TuiAppServer,
     /// Prevent idle system sleep while a turn is actively running.
     PreventIdleSleep,
     /// Use the Responses API WebSocket transport for OpenAI by default.
@@ -712,16 +710,6 @@ pub const FEATURES: &[FeatureSpec] = &[
         key: "fast_mode",
         stage: Stage::Stable,
         default_enabled: true,
-    },
-    FeatureSpec {
-        id: Feature::TuiAppServer,
-        key: "tui_app_server",
-        stage: Stage::Experimental {
-            name: "App-server TUI",
-            menu_description: "Use the app-server-backed TUI implementation.",
-            announcement: "",
-        },
-        default_enabled: false,
     },
     FeatureSpec {
         id: Feature::PreventIdleSleep,

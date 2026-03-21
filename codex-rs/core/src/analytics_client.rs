@@ -1,16 +1,9 @@
 use crate::AuthManager;
 use crate::config::Config;
 use crate::default_client::create_client;
-use crate::git_info::collect_git_info;
-use crate::git_info::get_git_repo_root;
 use crate::plugins::PluginTelemetryMetadata;
-use codex_protocol::protocol::SkillScope;
 use serde::Serialize;
-use sha1::Digest;
-use sha1::Sha1;
 use std::collections::HashSet;
-use std::path::Path;
-use std::path::PathBuf;
 use std::sync::Arc;
 use std::sync::Mutex;
 use std::time::Duration;
@@ -33,14 +26,6 @@ pub(crate) fn build_track_events_context(
         thread_id,
         turn_id,
     }
-}
-
-#[derive(Clone, Debug)]
-pub(crate) struct SkillInvocation {
-    pub(crate) skill_name: String,
-    pub(crate) skill_scope: SkillScope,
-    pub(crate) skill_path: PathBuf,
-    pub(crate) invocation_type: InvocationType,
 }
 
 #[derive(Clone, Copy, Debug, Serialize)]
@@ -75,9 +60,6 @@ impl AnalyticsEventsQueue {
         tokio::spawn(async move {
             while let Some(job) = receiver.recv().await {
                 match job {
-                    TrackEventsJob::SkillInvocations(job) => {
-                        send_track_skill_invocations(&auth_manager, job).await;
-                    }
                     TrackEventsJob::AppMentioned(job) => {
                         send_track_app_mentioned(&auth_manager, job).await;
                     }
@@ -154,19 +136,6 @@ impl AnalyticsEventsClient {
         }
     }
 
-    pub(crate) fn track_skill_invocations(
-        &self,
-        tracking: TrackEventsContext,
-        invocations: Vec<SkillInvocation>,
-    ) {
-        track_skill_invocations(
-            &self.queue,
-            Arc::clone(&self.config),
-            Some(tracking),
-            invocations,
-        );
-    }
-
     pub(crate) fn track_app_mentioned(
         &self,
         tracking: TrackEventsContext,
@@ -235,7 +204,6 @@ impl AnalyticsEventsClient {
 }
 
 enum TrackEventsJob {
-    SkillInvocations(TrackSkillInvocationsJob),
     AppMentioned(TrackAppMentionedJob),
     AppUsed(TrackAppUsedJob),
     PluginUsed(TrackPluginUsedJob),
@@ -243,12 +211,6 @@ enum TrackEventsJob {
     PluginUninstalled(TrackPluginManagementJob),
     PluginEnabled(TrackPluginManagementJob),
     PluginDisabled(TrackPluginManagementJob),
-}
-
-struct TrackSkillInvocationsJob {
-    config: Arc<Config>,
-    tracking: TrackEventsContext,
-    invocations: Vec<SkillInvocation>,
 }
 
 struct TrackAppMentionedJob {
@@ -294,7 +256,6 @@ struct TrackEventsRequest {
 #[derive(Serialize)]
 #[serde(untagged)]
 enum TrackEventRequest {
-    SkillInvocation(SkillInvocationEventRequest),
     AppMentioned(CodexAppMentionedEventRequest),
     AppUsed(CodexAppUsedEventRequest),
     PluginUsed(CodexPluginUsedEventRequest),
@@ -302,24 +263,6 @@ enum TrackEventRequest {
     PluginUninstalled(CodexPluginEventRequest),
     PluginEnabled(CodexPluginEventRequest),
     PluginDisabled(CodexPluginEventRequest),
-}
-
-#[derive(Serialize)]
-struct SkillInvocationEventRequest {
-    event_type: &'static str,
-    skill_id: String,
-    skill_name: String,
-    event_params: SkillInvocationEventParams,
-}
-
-#[derive(Serialize)]
-struct SkillInvocationEventParams {
-    product_client_id: Option<String>,
-    skill_scope: Option<String>,
-    repo_url: Option<String>,
-    thread_id: Option<String>,
-    invoke_type: Option<InvocationType>,
-    model_slug: Option<String>,
 }
 
 #[derive(Serialize)]
@@ -375,29 +318,6 @@ struct CodexPluginEventRequest {
 struct CodexPluginUsedEventRequest {
     event_type: &'static str,
     event_params: CodexPluginUsedMetadata,
-}
-
-pub(crate) fn track_skill_invocations(
-    queue: &AnalyticsEventsQueue,
-    config: Arc<Config>,
-    tracking: Option<TrackEventsContext>,
-    invocations: Vec<SkillInvocation>,
-) {
-    if config.analytics_enabled == Some(false) {
-        return;
-    }
-    let Some(tracking) = tracking else {
-        return;
-    };
-    if invocations.is_empty() {
-        return;
-    }
-    let job = TrackEventsJob::SkillInvocations(TrackSkillInvocationsJob {
-        config,
-        tracking,
-        invocations,
-    });
-    queue.try_send(job);
 }
 
 pub(crate) fn track_app_mentioned(
@@ -486,54 +406,6 @@ fn track_plugin_management(
         PluginManagementEventType::Disabled => TrackEventsJob::PluginDisabled(job),
     };
     queue.try_send(job);
-}
-
-async fn send_track_skill_invocations(auth_manager: &AuthManager, job: TrackSkillInvocationsJob) {
-    let TrackSkillInvocationsJob {
-        config,
-        tracking,
-        invocations,
-    } = job;
-    let mut events = Vec::with_capacity(invocations.len());
-    for invocation in invocations {
-        let skill_scope = match invocation.skill_scope {
-            SkillScope::User => "user",
-            SkillScope::Repo => "repo",
-            SkillScope::System => "system",
-            SkillScope::Admin => "admin",
-        };
-        let repo_root = get_git_repo_root(invocation.skill_path.as_path());
-        let repo_url = if let Some(root) = repo_root.as_ref() {
-            collect_git_info(root)
-                .await
-                .and_then(|info| info.repository_url)
-        } else {
-            None
-        };
-        let skill_id = skill_id_for_local_skill(
-            repo_url.as_deref(),
-            repo_root.as_deref(),
-            invocation.skill_path.as_path(),
-            invocation.skill_name.as_str(),
-        );
-        events.push(TrackEventRequest::SkillInvocation(
-            SkillInvocationEventRequest {
-                event_type: "skill_invocation",
-                skill_id,
-                skill_name: invocation.skill_name.clone(),
-                event_params: SkillInvocationEventParams {
-                    thread_id: Some(tracking.thread_id.clone()),
-                    invoke_type: Some(invocation.invocation_type),
-                    model_slug: Some(tracking.model_slug.clone()),
-                    product_client_id: Some(crate::default_client::originator().value),
-                    repo_url,
-                    skill_scope: Some(skill_scope.to_string()),
-                },
-            },
-        ));
-    }
-
-    send_track_events(auth_manager, config, events).await;
 }
 
 async fn send_track_app_mentioned(auth_manager: &AuthManager, job: TrackAppMentionedJob) {
@@ -716,48 +588,6 @@ async fn send_track_events(
         Err(err) => {
             tracing::warn!("failed to send events request: {err}");
         }
-    }
-}
-
-pub(crate) fn skill_id_for_local_skill(
-    repo_url: Option<&str>,
-    repo_root: Option<&Path>,
-    skill_path: &Path,
-    skill_name: &str,
-) -> String {
-    let path = normalize_path_for_skill_id(repo_url, repo_root, skill_path);
-    let prefix = if let Some(url) = repo_url {
-        format!("repo_{url}")
-    } else {
-        "personal".to_string()
-    };
-    let raw_id = format!("{prefix}_{path}_{skill_name}");
-    let mut hasher = Sha1::new();
-    hasher.update(raw_id.as_bytes());
-    format!("{:x}", hasher.finalize())
-}
-
-/// Returns a normalized path for skill ID construction.
-///
-/// - Repo-scoped skills use a path relative to the repo root.
-/// - User/admin/system skills use an absolute path.
-fn normalize_path_for_skill_id(
-    repo_url: Option<&str>,
-    repo_root: Option<&Path>,
-    skill_path: &Path,
-) -> String {
-    let resolved_path =
-        std::fs::canonicalize(skill_path).unwrap_or_else(|_| skill_path.to_path_buf());
-    match (repo_url, repo_root) {
-        (Some(_), Some(root)) => {
-            let resolved_root = std::fs::canonicalize(root).unwrap_or_else(|_| root.to_path_buf());
-            resolved_path
-                .strip_prefix(&resolved_root)
-                .unwrap_or(resolved_path.as_path())
-                .to_string_lossy()
-                .replace('\\', "/")
-        }
-        _ => resolved_path.to_string_lossy().replace('\\', "/"),
     }
 }
 

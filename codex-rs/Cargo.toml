@@ -12,7 +12,6 @@ members = [
     "config",
     "shell-command",
     "shell-escalation",
-    "skills",
     "core",
     "hooks",
     "secrets",
@@ -98,7 +97,6 @@ codex-rmcp-client = { path = "rmcp-client" }
 codex-secrets = { path = "secrets" }
 codex-shell-command = { path = "shell-command" }
 codex-shell-escalation = { path = "shell-escalation" }
-codex-skills = { path = "skills" }
 codex-state = { path = "state" }
 codex-stdio-to-uds = { path = "stdio-to-uds" }
 codex-test-macros = { path = "test-macros" }

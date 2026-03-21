@@ -40,7 +40,6 @@ use crate::skills::loader::SkillRoot;
 use crate::skills::loader::load_skills_from_roots;
 use codex_app_server_protocol::ConfigValueWriteParams;
 use codex_app_server_protocol::MergeStrategy;
-use codex_protocol::protocol::SkillScope;
 use codex_utils_absolute_path::AbsolutePathBuf;
 use serde::Deserialize;
 use serde_json::Map as JsonMap;
@@ -847,7 +846,6 @@ impl PluginsManager {
         let skill_roots = plugin_skill_roots(source_path.as_path(), &manifest_paths);
         let skills = load_skills_from_roots(skill_roots.into_iter().map(|path| SkillRoot {
             path,
-            scope: SkillScope::User,
         }))
         .skills;
         let apps = load_plugin_apps(source_path.as_path());
@@ -1172,16 +1170,6 @@ pub(crate) fn load_plugins_from_layer_stack(
     }
 
     PluginLoadOutcome::from_plugins(plugins)
-}
-
-pub(crate) fn plugin_namespace_for_skill_path(path: &Path) -> Option<String> {
-    for ancestor in path.ancestors() {
-        if let Some(manifest) = load_plugin_manifest(ancestor) {
-            return Some(plugin_manifest_name(&manifest, ancestor));
-        }
-    }
-
-    None
 }
 
 fn refresh_curated_plugin_cache(

@@ -25,7 +25,6 @@ pub(crate) struct SessionState {
     pub(crate) latest_rate_limits: Option<RateLimitSnapshot>,
     pub(crate) server_reasoning_included: bool,
     pub(crate) dependency_env: HashMap<String, String>,
-    pub(crate) mcp_dependency_prompted: HashSet<String>,
     /// Settings used by the latest regular user turn, used for turn-to-turn
     /// model/realtime handling on subsequent regular turns (including full-context
     /// reinjection after resume or `/compact`).
@@ -47,7 +46,6 @@ impl SessionState {
             latest_rate_limits: None,
             server_reasoning_included: false,
             dependency_env: HashMap::new(),
-            mcp_dependency_prompted: HashSet::new(),
             previous_turn_settings: None,
             startup_regular_task: None,
             active_connector_selection: HashSet::new(),
@@ -142,23 +140,6 @@ impl SessionState {
 
     pub(crate) fn server_reasoning_included(&self) -> bool {
         self.server_reasoning_included
-    }
-
-    pub(crate) fn record_mcp_dependency_prompted<I>(&mut self, names: I)
-    where
-        I: IntoIterator<Item = String>,
-    {
-        self.mcp_dependency_prompted.extend(names);
-    }
-
-    pub(crate) fn mcp_dependency_prompted(&self) -> HashSet<String> {
-        self.mcp_dependency_prompted.clone()
-    }
-
-    pub(crate) fn set_dependency_env(&mut self, values: HashMap<String, String>) {
-        for (key, value) in values {
-            self.dependency_env.insert(key, value);
-        }
     }
 
     pub(crate) fn dependency_env(&self) -> HashMap<String, String> {

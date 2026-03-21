@@ -1,30 +1,22 @@
 use std::path::Path;
 use std::path::PathBuf;
-use std::sync::Arc;
 
 use tracing::info;
 
 use crate::config::Config;
 use crate::config::types::SkillsConfig;
-use crate::plugins::PluginsManager;
 use crate::skills::SkillLoadOutcome;
 use crate::skills::loader::SkillRoot;
 
-pub struct SkillsManager {
-    codex_home: PathBuf,
-    plugins_manager: Arc<PluginsManager>,
-}
+pub struct SkillsManager;
 
 impl SkillsManager {
     pub fn new(
-        codex_home: PathBuf,
-        plugins_manager: Arc<PluginsManager>,
+        _codex_home: PathBuf,
+        _plugins_manager: std::sync::Arc<crate::plugins::PluginsManager>,
         _bundled_skills_enabled: bool,
     ) -> Self {
-        Self {
-            codex_home,
-            plugins_manager,
-        }
+        Self
     }
 
     pub fn skills_for_config(&self, _config: &Config) -> SkillLoadOutcome {

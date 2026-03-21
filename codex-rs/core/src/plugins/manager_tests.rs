@@ -756,24 +756,6 @@ fn capability_index_filters_inactive_and_zero_capability_plugins() {
 }
 
 #[test]
-fn plugin_namespace_for_skill_path_uses_manifest_name() {
-    let codex_home = TempDir::new().unwrap();
-    let plugin_root = codex_home.path().join("plugins/sample");
-    let skill_path = plugin_root.join("skills/search/SKILL.md");
-
-    write_file(
-        &plugin_root.join(".codex-plugin/plugin.json"),
-        r#"{"name":"sample"}"#,
-    );
-    write_file(&skill_path, "---\ndescription: search\n---\n");
-
-    assert_eq!(
-        plugin_namespace_for_skill_path(&skill_path),
-        Some("sample".to_string())
-    );
-}
-
-#[test]
 fn load_plugins_returns_empty_when_feature_disabled() {
     let codex_home = TempDir::new().unwrap();
     let plugin_root = codex_home

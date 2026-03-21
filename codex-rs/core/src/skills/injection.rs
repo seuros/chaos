@@ -4,7 +4,6 @@ use std::path::PathBuf;
 
 use crate::analytics_client::AnalyticsEventsClient;
 use crate::analytics_client::TrackEventsContext;
-use crate::mention_syntax::TOOL_MENTION_SIGIL;
 use crate::skills::SkillMetadata;
 use codex_otel::SessionTelemetry;
 use codex_protocol::models::ResponseItem;
@@ -35,16 +34,11 @@ pub(crate) fn collect_explicit_skill_mentions(
 }
 
 pub(crate) struct ToolMentions<'a> {
-    names: HashSet<&'a str>,
     paths: HashSet<&'a str>,
     plain_names: HashSet<&'a str>,
 }
 
 impl<'a> ToolMentions<'a> {
-    fn is_empty(&self) -> bool {
-        self.names.is_empty() && self.paths.is_empty()
-    }
-
     pub(crate) fn plain_names(&self) -> impl Iterator<Item = &'a str> + '_ {
         self.plain_names.iter().copied()
     }
@@ -98,22 +92,8 @@ pub(crate) fn plugin_config_name_from_path(path: &str) -> Option<&str> {
         .filter(|value| !value.is_empty())
 }
 
-pub(crate) fn normalize_skill_path(path: &str) -> &str {
-    path.strip_prefix(SKILL_PATH_PREFIX).unwrap_or(path)
-}
-
-/// Extract `$tool-name` mentions from a single text input.
-///
-/// Supports explicit resource links in the form `[$tool-name](resource path)`. When a
-/// resource path is present, it is captured for exact path matching while also tracking
-/// the name for fallback matching.
-pub(crate) fn extract_tool_mentions(text: &str) -> ToolMentions<'_> {
-    extract_tool_mentions_with_sigil(text, TOOL_MENTION_SIGIL)
-}
-
 pub(crate) fn extract_tool_mentions_with_sigil(text: &str, sigil: char) -> ToolMentions<'_> {
     let text_bytes = text.as_bytes();
-    let mut mentioned_names: HashSet<&str> = HashSet::new();
     let mut mentioned_paths: HashSet<&str> = HashSet::new();
     let mut plain_names: HashSet<&str> = HashSet::new();
 
@@ -125,12 +105,6 @@ pub(crate) fn extract_tool_mentions_with_sigil(text: &str, sigil: char) -> ToolM
                 parse_linked_tool_mention(text, text_bytes, index, sigil)
         {
             if !is_common_env_var(name) {
-                if !matches!(
-                    tool_kind_for_path(path),
-                    ToolMentionKind::App | ToolMentionKind::Mcp | ToolMentionKind::Plugin
-                ) {
-                    mentioned_names.insert(name);
-                }
                 mentioned_paths.insert(path);
             }
             index = end_index;
@@ -161,14 +135,12 @@ pub(crate) fn extract_tool_mentions_with_sigil(text: &str, sigil: char) -> ToolM
 
         let name = &text[name_start..name_end];
         if !is_common_env_var(name) {
-            mentioned_names.insert(name);
             plain_names.insert(name);
         }
         index = name_end;
     }
 
     ToolMentions {
-        names: mentioned_names,
         paths: mentioned_paths,
         plain_names,
     }

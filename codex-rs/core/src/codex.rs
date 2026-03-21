@@ -718,13 +718,11 @@ pub(crate) struct Session {
 #[derive(Clone, Debug)]
 pub(crate) struct TurnSkillsContext {
     pub(crate) outcome: Arc<SkillLoadOutcome>,
-    pub(crate) implicit_invocation_seen_skills: Arc<Mutex<HashSet<String>>>,
 }
 impl TurnSkillsContext {
     pub(crate) fn new(outcome: Arc<SkillLoadOutcome>) -> Self {
         Self {
             outcome,
-            implicit_invocation_seen_skills: Arc::new(Mutex::new(HashSet::new())),
         }
     }
 }
@@ -3582,27 +3580,9 @@ impl Session {
         self.send_token_count_event(turn_context).await;
     }
 
-    pub(crate) async fn mcp_dependency_prompted(&self) -> HashSet<String> {
-        let state = self.state.lock().await;
-        state.mcp_dependency_prompted()
-    }
-
-    pub(crate) async fn record_mcp_dependency_prompted<I>(&self, names: I)
-    where
-        I: IntoIterator<Item = String>,
-    {
-        let mut state = self.state.lock().await;
-        state.record_mcp_dependency_prompted(names);
-    }
-
     pub async fn dependency_env(&self) -> HashMap<String, String> {
         let state = self.state.lock().await;
         state.dependency_env()
-    }
-
-    pub async fn set_dependency_env(&self, values: HashMap<String, String>) {
-        let mut state = self.state.lock().await;
-        state.set_dependency_env(values);
     }
 
     pub(crate) async fn set_server_reasoning_included(&self, included: bool) {
@@ -3984,16 +3964,6 @@ impl Session {
             }
         };
 
-        self.refresh_mcp_servers_inner(turn_context, mcp_servers, store_mode)
-            .await;
-    }
-
-    pub(crate) async fn refresh_mcp_servers_now(
-        &self,
-        turn_context: &TurnContext,
-        mcp_servers: HashMap<String, McpServerConfig>,
-        store_mode: OAuthCredentialsStoreMode,
-    ) {
         self.refresh_mcp_servers_inner(turn_context, mcp_servers, store_mode)
             .await;
     }

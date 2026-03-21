@@ -10,7 +10,6 @@ use super::TrackEventsContext;
 use super::codex_app_metadata;
 use super::codex_plugin_metadata;
 use super::codex_plugin_used_metadata;
-use super::normalize_path_for_skill_id;
 use crate::plugins::AppConnectorId;
 use crate::plugins::PluginCapabilitySummary;
 use crate::plugins::PluginId;
@@ -18,66 +17,9 @@ use crate::plugins::PluginTelemetryMetadata;
 use pretty_assertions::assert_eq;
 use serde_json::json;
 use std::collections::HashSet;
-use std::path::PathBuf;
 use std::sync::Arc;
 use std::sync::Mutex;
 use tokio::sync::mpsc;
-
-fn expected_absolute_path(path: &PathBuf) -> String {
-    std::fs::canonicalize(path)
-        .unwrap_or_else(|_| path.to_path_buf())
-        .to_string_lossy()
-        .replace('\\', "/")
-}
-
-#[test]
-fn normalize_path_for_skill_id_repo_scoped_uses_relative_path() {
-    let repo_root = PathBuf::from("/repo/root");
-    let skill_path = PathBuf::from("/repo/root/.codex/skills/doc/SKILL.md");
-
-    let path = normalize_path_for_skill_id(
-        Some("https://example.com/repo.git"),
-        Some(repo_root.as_path()),
-        skill_path.as_path(),
-    );
-
-    assert_eq!(path, ".codex/skills/doc/SKILL.md");
-}
-
-#[test]
-fn normalize_path_for_skill_id_user_scoped_uses_absolute_path() {
-    let skill_path = PathBuf::from("/Users/abc/.codex/skills/doc/SKILL.md");
-
-    let path = normalize_path_for_skill_id(None, None, skill_path.as_path());
-    let expected = expected_absolute_path(&skill_path);
-
-    assert_eq!(path, expected);
-}
-
-#[test]
-fn normalize_path_for_skill_id_admin_scoped_uses_absolute_path() {
-    let skill_path = PathBuf::from("/etc/codex/skills/doc/SKILL.md");
-
-    let path = normalize_path_for_skill_id(None, None, skill_path.as_path());
-    let expected = expected_absolute_path(&skill_path);
-
-    assert_eq!(path, expected);
-}
-
-#[test]
-fn normalize_path_for_skill_id_repo_root_not_in_skill_path_uses_absolute_path() {
-    let repo_root = PathBuf::from("/repo/root");
-    let skill_path = PathBuf::from("/other/path/.codex/skills/doc/SKILL.md");
-
-    let path = normalize_path_for_skill_id(
-        Some("https://example.com/repo.git"),
-        Some(repo_root.as_path()),
-        skill_path.as_path(),
-    );
-    let expected = expected_absolute_path(&skill_path);
-
-    assert_eq!(path, expected);
-}
 
 #[test]
 fn app_mentioned_event_serializes_expected_shape() {

@@ -168,8 +168,6 @@ use super::footer::toggle_shortcut_mode;
 use super::footer::uses_passive_footer_status_layout;
 use super::paste_burst::CharDecision;
 use super::paste_burst::PasteBurst;
-use super::skill_popup::MentionItem;
-use super::skill_popup::SkillPopup;
 use super::slash_commands;
 use super::slash_commands::BuiltinCommandFlags;
 use crate::bottom_pane::paste_burst::FlushResult;
@@ -204,10 +202,7 @@ use crate::clipboard_paste::pasted_image_format;
 use crate::history_cell;
 use crate::tui::FrameRequester;
 use crate::ui_consts::LIVE_PREFIX_COLS;
-use codex_core::connectors;
-use codex_core::connectors::AppInfo;
 use codex_core::plugins::PluginCapabilitySummary;
-use codex_core::skills::model::SkillMetadata;
 use codex_file_search::FileMatch;
 use std::cell::RefCell;
 use std::collections::HashMap;
@@ -342,7 +337,6 @@ pub(crate) struct ChatComposer {
     footer_flash: Option<FooterFlash>,
     context_window_percent: Option<i64>,
     context_window_used_tokens: Option<i64>,
-    skills: Option<Vec<SkillMetadata>>,
     plugins: Option<Vec<PluginCapabilitySummary>>,
     connectors_snapshot: Option<ConnectorsSnapshot>,
     dismissed_mention_popup_token: Option<String>,
@@ -378,7 +372,6 @@ enum ActivePopup {
     None,
     Command(CommandPopup),
     File(FileSearchPopup),
-    Skill(SkillPopup),
 }
 
 const FOOTER_SPACING_HEIGHT: u16 = 0;
@@ -456,7 +449,6 @@ impl ChatComposer {
             footer_flash: None,
             context_window_percent: None,
             context_window_used_tokens: None,
-            skills: None,
             plugins: None,
             connectors_snapshot: None,
             dismissed_mention_popup_token: None,
@@ -480,10 +472,6 @@ impl ChatComposer {
 
     pub(crate) fn set_frame_requester(&mut self, frame_requester: FrameRequester) {
         self.frame_requester = Some(frame_requester);
-    }
-
-    pub fn set_skill_mentions(&mut self, skills: Option<Vec<SkillMetadata>>) {
-        self.skills = skills;
     }
 
     pub fn set_plugin_mentions(&mut self, plugins: Option<Vec<PluginCapabilitySummary>>) {
@@ -571,9 +559,6 @@ impl ChatComposer {
                 Constraint::Max(popup.calculate_required_height(area.width))
             }
             ActivePopup::File(popup) => Constraint::Max(popup.calculate_required_height()),
-            ActivePopup::Skill(popup) => {
-                Constraint::Max(popup.calculate_required_height(area.width))
-            }
             ActivePopup::None => Constraint::Max(footer_total_height),
         };
         let [composer_rect, popup_rect] =
@@ -1195,7 +1180,6 @@ impl ChatComposer {
         let result = match &mut self.active_popup {
             ActivePopup::Command(_) => self.handle_key_event_with_slash_popup(key_event),
             ActivePopup::File(_) => self.handle_key_event_with_file_popup(key_event),
-            ActivePopup::Skill(_) => self.handle_key_event_with_skill_popup(key_event),
             ActivePopup::None => self.handle_key_event_without_popup(key_event),
         };
         // Update (or hide/show) popup after processing the key.
@@ -1268,11 +1252,6 @@ impl ChatComposer {
                     let mut cursor_target: Option<usize> = None;
                     match sel {
                         CommandItem::Builtin(cmd) => {
-                            if cmd == SlashCommand::Skills {
-                                self.textarea.set_text_clearing_elements("");
-                                return (InputResult::Command(cmd), true);
-                            }
-
                             let starts_with_cmd = first_line
                                 .trim_start()
                                 .starts_with(&format!("/{}", cmd.command()));
@@ -1620,79 +1599,6 @@ impl ChatComposer {
         }
     }
 
-    fn handle_key_event_with_skill_popup(&mut self, key_event: KeyEvent) -> (InputResult, bool) {
-        if self.handle_shortcut_overlay_key(&key_event) {
-            return (InputResult::None, true);
-        }
-        self.footer_mode = reset_mode_after_activity(self.footer_mode);
-
-        let ActivePopup::Skill(popup) = &mut self.active_popup else {
-            unreachable!();
-        };
-
-        let mut selected_mention: Option<(String, Option<String>)> = None;
-        let mut close_popup = false;
-
-        let result = match key_event {
-            KeyEvent {
-                code: KeyCode::Up, ..
-            }
-            | KeyEvent {
-                code: KeyCode::Char('p'),
-                modifiers: KeyModifiers::CONTROL,
-                ..
-            } => {
-                popup.move_up();
-                (InputResult::None, true)
-            }
-            KeyEvent {
-                code: KeyCode::Down,
-                ..
-            }
-            | KeyEvent {
-                code: KeyCode::Char('n'),
-                modifiers: KeyModifiers::CONTROL,
-                ..
-            } => {
-                popup.move_down();
-                (InputResult::None, true)
-            }
-            KeyEvent {
-                code: KeyCode::Esc, ..
-            } => {
-                if let Some(tok) = self.current_mention_token() {
-                    self.dismissed_mention_popup_token = Some(tok);
-                }
-                self.active_popup = ActivePopup::None;
-                (InputResult::None, true)
-            }
-            KeyEvent {
-                code: KeyCode::Tab, ..
-            }
-            | KeyEvent {
-                code: KeyCode::Enter,
-                modifiers: KeyModifiers::NONE,
-                ..
-            } => {
-                if let Some(mention) = popup.selected_mention() {
-                    selected_mention = Some((mention.insert_text.clone(), mention.path.clone()));
-                }
-                close_popup = true;
-                (InputResult::None, true)
-            }
-            input => self.handle_input_basic(input),
-        };
-
-        if close_popup {
-            if let Some((insert_text, path)) = selected_mention {
-                self.insert_selected_mention(&insert_text, path.as_deref());
-            }
-            self.active_popup = ActivePopup::None;
-        }
-
-        result
-    }
-
     fn is_image_path(path: &str) -> bool {
         let lower = path.to_ascii_lowercase();
         lower.ends_with(".png")
@@ -1807,19 +1713,11 @@ impl ChatComposer {
         (rebuilt, rebuilt_elements)
     }
 
-    pub fn skills(&self) -> Option<&Vec<SkillMetadata>> {
-        self.skills.as_ref()
-    }
-
     pub fn plugins(&self) -> Option<&Vec<PluginCapabilitySummary>> {
         self.plugins.as_ref()
     }
 
     fn mentions_enabled(&self) -> bool {
-        let skills_ready = self
-            .skills
-            .as_ref()
-            .is_some_and(|skills| !skills.is_empty());
         let plugins_ready = self
             .plugins
             .as_ref()
@@ -1829,7 +1727,7 @@ impl ChatComposer {
                 .connectors_snapshot
                 .as_ref()
                 .is_some_and(|snapshot| !snapshot.connectors.is_empty());
-        skills_ready || plugins_ready || connectors_ready
+        plugins_ready || connectors_ready
     }
 
     /// Extract a token prefixed with `prefix` under the cursor, if any.
@@ -2007,51 +1905,6 @@ impl ChatComposer {
         self.textarea
             .replace_range(start_idx..end_idx, &format!("{inserted} "));
         let new_cursor = start_idx.saturating_add(inserted.len()).saturating_add(1);
-        self.textarea.set_cursor(new_cursor);
-    }
-
-    fn insert_selected_mention(&mut self, insert_text: &str, path: Option<&str>) {
-        let cursor_offset = self.textarea.cursor();
-        let text = self.textarea.text();
-        let safe_cursor = Self::clamp_to_char_boundary(text, cursor_offset);
-
-        let before_cursor = &text[..safe_cursor];
-        let after_cursor = &text[safe_cursor..];
-
-        let start_idx = before_cursor
-            .char_indices()
-            .rfind(|(_, c)| c.is_whitespace())
-            .map(|(idx, c)| idx + c.len_utf8())
-            .unwrap_or(0);
-
-        let end_rel_idx = after_cursor
-            .char_indices()
-            .find(|(_, c)| c.is_whitespace())
-            .map(|(idx, _)| idx)
-            .unwrap_or(after_cursor.len());
-        let end_idx = safe_cursor + end_rel_idx;
-
-        // Remove the active token and insert the selected mention as an atomic element.
-        self.textarea.replace_range(start_idx..end_idx, "");
-        self.textarea.set_cursor(start_idx);
-        let id = self.textarea.insert_element(insert_text);
-
-        if let (Some(path), Some(mention)) =
-            (path, Self::mention_name_from_insert_text(insert_text))
-        {
-            self.mention_bindings.insert(
-                id,
-                ComposerMentionBinding {
-                    mention,
-                    path: path.to_string(),
-                },
-            );
-        }
-
-        self.textarea.insert_str(" ");
-        let new_cursor = start_idx
-            .saturating_add(insert_text.len())
-            .saturating_add(1);
         self.textarea.set_cursor(new_cursor);
     }
 
@@ -3022,17 +2875,6 @@ impl ChatComposer {
             return;
         }
 
-        if let Some(token) = mention_token {
-            if self.current_file_query.is_some() {
-                self.app_event_tx
-                    .send(AppEvent::StartFileSearch(String::new()));
-                self.current_file_query = None;
-            }
-            self.sync_mention_popup(token);
-            return;
-        }
-        self.dismissed_mention_popup_token = None;
-
         if let Some(token) = file_token {
             self.sync_file_search_popup(token);
             return;
@@ -3044,10 +2886,7 @@ impl ChatComposer {
             self.current_file_query = None;
         }
         self.dismissed_file_popup_token = None;
-        if matches!(
-            self.active_popup,
-            ActivePopup::File(_) | ActivePopup::Skill(_)
-        ) {
+        if matches!(self.active_popup, ActivePopup::File(_)) {
             self.active_popup = ActivePopup::None;
         }
     }
@@ -3287,147 +3126,6 @@ impl ChatComposer {
         self.dismissed_file_popup_token = None;
     }
 
-    fn sync_mention_popup(&mut self, query: String) {
-        if self.dismissed_mention_popup_token.as_ref() == Some(&query) {
-            return;
-        }
-
-        let mentions = self.mention_items();
-        if mentions.is_empty() {
-            self.active_popup = ActivePopup::None;
-            return;
-        }
-
-        match &mut self.active_popup {
-            ActivePopup::Skill(popup) => {
-                popup.set_query(&query);
-                popup.set_mentions(mentions);
-            }
-            _ => {
-                let mut popup = SkillPopup::new(mentions);
-                popup.set_query(&query);
-                self.active_popup = ActivePopup::Skill(popup);
-            }
-        }
-    }
-
-    fn mention_items(&self) -> Vec<MentionItem> {
-        let mut mentions = Vec::new();
-
-        if let Some(skills) = self.skills.as_ref() {
-            for skill in skills {
-                let display_name = skill_display_name(skill).to_string();
-                let description = skill_description(skill);
-                let skill_name = skill.name.clone();
-                let search_terms = if display_name == skill.name {
-                    vec![skill_name.clone()]
-                } else {
-                    vec![skill_name.clone(), display_name.clone()]
-                };
-                mentions.push(MentionItem {
-                    display_name,
-                    description,
-                    insert_text: format!("${skill_name}"),
-                    search_terms,
-                    path: Some(skill.path_to_skills_md.to_string_lossy().into_owned()),
-                    category_tag: Some("[Skill]".to_string()),
-                    sort_rank: 1,
-                });
-            }
-        }
-
-        if let Some(plugins) = self.plugins.as_ref() {
-            for plugin in plugins {
-                let (plugin_name, marketplace_name) = plugin
-                    .config_name
-                    .split_once('@')
-                    .unwrap_or((plugin.config_name.as_str(), ""));
-                let mut capability_labels = Vec::new();
-                if plugin.has_skills {
-                    capability_labels.push("skills".to_string());
-                }
-                if !plugin.mcp_server_names.is_empty() {
-                    let mcp_server_count = plugin.mcp_server_names.len();
-                    capability_labels.push(if mcp_server_count == 1 {
-                        "1 MCP server".to_string()
-                    } else {
-                        format!("{mcp_server_count} MCP servers")
-                    });
-                }
-                if !plugin.app_connector_ids.is_empty() {
-                    let app_count = plugin.app_connector_ids.len();
-                    capability_labels.push(if app_count == 1 {
-                        "1 app".to_string()
-                    } else {
-                        format!("{app_count} apps")
-                    });
-                }
-                let description = plugin.description.clone().or_else(|| {
-                    Some(if capability_labels.is_empty() {
-                        "Plugin".to_string()
-                    } else {
-                        format!("Plugin · {}", capability_labels.join(" · "))
-                    })
-                });
-                let mut search_terms = vec![plugin_name.to_string(), plugin.config_name.clone()];
-                if plugin.display_name != plugin_name {
-                    search_terms.push(plugin.display_name.clone());
-                }
-                if !marketplace_name.is_empty() {
-                    search_terms.push(marketplace_name.to_string());
-                }
-                mentions.push(MentionItem {
-                    display_name: plugin.display_name.clone(),
-                    description,
-                    insert_text: format!("${plugin_name}"),
-                    search_terms,
-                    path: Some(format!("plugin://{}", plugin.config_name)),
-                    category_tag: Some("[Plugin]".to_string()),
-                    sort_rank: 0,
-                });
-            }
-        }
-
-        if self.connectors_enabled
-            && let Some(snapshot) = self.connectors_snapshot.as_ref()
-        {
-            for connector in &snapshot.connectors {
-                if !connector.is_accessible || !connector.is_enabled {
-                    continue;
-                }
-                let display_name = connectors::connector_display_label(connector);
-                let description = Some(Self::connector_brief_description(connector));
-                let slug = codex_core::connectors::connector_mention_slug(connector);
-                let search_terms = vec![display_name.clone(), connector.id.clone(), slug.clone()];
-                let connector_id = connector.id.as_str();
-                mentions.push(MentionItem {
-                    display_name: display_name.clone(),
-                    description,
-                    insert_text: format!("${slug}"),
-                    search_terms,
-                    path: Some(format!("app://{connector_id}")),
-                    category_tag: Some("[App]".to_string()),
-                    sort_rank: 1,
-                });
-            }
-        }
-
-        mentions
-    }
-
-    fn connector_brief_description(connector: &AppInfo) -> String {
-        Self::connector_description(connector).unwrap_or_default()
-    }
-
-    fn connector_description(connector: &AppInfo) -> Option<String> {
-        connector
-            .description
-            .as_deref()
-            .map(str::trim)
-            .filter(|description| !description.is_empty())
-            .map(str::to_string)
-    }
-
     fn set_has_focus(&mut self, has_focus: bool) {
         self.has_focus = has_focus;
     }
@@ -3493,26 +3191,6 @@ impl ChatComposer {
         self.active_agent_label = active_agent_label;
         true
     }
-}
-
-
-fn skill_display_name(skill: &SkillMetadata) -> &str {
-    skill
-        .interface
-        .as_ref()
-        .and_then(|interface| interface.display_name.as_deref())
-        .unwrap_or(&skill.name)
-}
-
-fn skill_description(skill: &SkillMetadata) -> Option<String> {
-    let description = skill
-        .interface
-        .as_ref()
-        .and_then(|interface| interface.short_description.as_deref())
-        .or(skill.short_description.as_deref())
-        .unwrap_or(&skill.description);
-    let trimmed = description.trim();
-    (!trimmed.is_empty()).then(|| trimmed.to_string())
 }
 
 fn is_mention_name_char(byte: u8) -> bool {
@@ -3589,7 +3267,6 @@ impl Renderable for ChatComposer {
                 ActivePopup::None => footer_total_height,
                 ActivePopup::Command(c) => c.calculate_required_height(width),
                 ActivePopup::File(c) => c.calculate_required_height(),
-                ActivePopup::Skill(c) => c.calculate_required_height(width),
             }
     }
 
@@ -3607,9 +3284,6 @@ impl ChatComposer {
                 popup.render_ref(popup_rect, buf);
             }
             ActivePopup::File(popup) => {
-                popup.render_ref(popup_rect, buf);
-            }
-            ActivePopup::Skill(popup) => {
                 popup.render_ref(popup_rect, buf);
             }
             ActivePopup::None => {
@@ -4681,48 +4355,6 @@ mod tests {
     }
 
     #[test]
-    fn set_connector_mentions_refreshes_open_mention_popup() {
-        let (tx, _rx) = unbounded_channel::<AppEvent>();
-        let sender = AppEventSender::new(tx);
-        let mut composer = ChatComposer::new(
-            true,
-            sender,
-            false,
-            "Ask Codex to do anything".to_string(),
-            false,
-        );
-        composer.set_connectors_enabled(true);
-        composer.set_text_content("$".to_string(), Vec::new(), Vec::new());
-        assert!(matches!(composer.active_popup, ActivePopup::None));
-
-        let connectors = vec![AppInfo {
-            id: "connector_1".to_string(),
-            name: "Notion".to_string(),
-            description: Some("Workspace docs".to_string()),
-            logo_url: None,
-            logo_url_dark: None,
-            distribution_channel: None,
-            branding: None,
-            app_metadata: None,
-            labels: None,
-            install_url: Some("https://example.test/notion".to_string()),
-            is_accessible: true,
-            is_enabled: true,
-            plugin_display_names: Vec::new(),
-        }];
-        composer.set_connector_mentions(Some(ConnectorsSnapshot { connectors }));
-
-        let ActivePopup::Skill(popup) = &composer.active_popup else {
-            panic!("expected mention popup to open after connectors update");
-        };
-        let mention = popup
-            .selected_mention()
-            .expect("expected connector mention to be selected");
-        assert_eq!(mention.insert_text, "$notion".to_string());
-        assert_eq!(mention.path, Some("app://connector_1".to_string()));
-    }
-
-    #[test]
     fn set_connector_mentions_skips_disabled_connectors() {
         let (tx, _rx) = unbounded_channel::<AppEvent>();
         let sender = AppEventSender::new(tx);
@@ -4758,114 +4390,6 @@ mod tests {
             matches!(composer.active_popup, ActivePopup::None),
             "disabled connectors should not appear in the mention popup"
         );
-    }
-
-    #[test]
-    fn set_plugin_mentions_refreshes_open_mention_popup() {
-        let (tx, _rx) = unbounded_channel::<AppEvent>();
-        let sender = AppEventSender::new(tx);
-        let mut composer = ChatComposer::new(
-            true,
-            sender,
-            false,
-            "Ask Codex to do anything".to_string(),
-            false,
-        );
-        composer.set_text_content("$".to_string(), Vec::new(), Vec::new());
-        assert!(matches!(composer.active_popup, ActivePopup::None));
-
-        composer.set_plugin_mentions(Some(vec![PluginCapabilitySummary {
-            config_name: "sample@test".to_string(),
-            display_name: "Sample Plugin".to_string(),
-            description: None,
-            has_skills: true,
-            mcp_server_names: vec!["sample".to_string()],
-            app_connector_ids: Vec::new(),
-        }]));
-
-        let ActivePopup::Skill(popup) = &composer.active_popup else {
-            panic!("expected mention popup to open after plugin update");
-        };
-        let mention = popup
-            .selected_mention()
-            .expect("expected plugin mention to be selected");
-        assert_eq!(mention.insert_text, "$sample".to_string());
-        assert_eq!(mention.path, Some("plugin://sample@test".to_string()));
-    }
-
-    #[test]
-    fn plugin_mention_popup_snapshot() {
-        snapshot_composer_state("plugin_mention_popup", false, |composer| {
-            composer.set_text_content("$sa".to_string(), Vec::new(), Vec::new());
-            composer.set_plugin_mentions(Some(vec![PluginCapabilitySummary {
-                config_name: "sample@test".to_string(),
-                display_name: "Sample Plugin".to_string(),
-                description: Some(
-                    "Plugin that includes the Figma MCP server and Skills for common workflows"
-                        .to_string(),
-                ),
-                has_skills: true,
-                mcp_server_names: vec!["sample".to_string()],
-                app_connector_ids: vec![codex_core::plugins::AppConnectorId(
-                    "calendar".to_string(),
-                )],
-            }]));
-        });
-    }
-
-    #[test]
-    fn mention_popup_type_prefixes_snapshot() {
-        snapshot_composer_state_with_width("mention_popup_type_prefixes", 72, false, |composer| {
-            composer.set_connectors_enabled(true);
-            composer.set_text_content("$goog".to_string(), Vec::new(), Vec::new());
-            composer.set_skill_mentions(Some(vec![SkillMetadata {
-                name: "google-calendar-skill".to_string(),
-                description: "Find availability and plan event changes".to_string(),
-                short_description: None,
-                interface: Some(codex_core::skills::model::SkillInterface {
-                    display_name: Some("Google Calendar".to_string()),
-                    short_description: None,
-                    icon_small: None,
-                    icon_large: None,
-                    brand_color: None,
-                    default_prompt: None,
-                }),
-                dependencies: None,
-                policy: None,
-                permission_profile: None,
-                managed_network_override: None,
-                path_to_skills_md: PathBuf::from("/tmp/repo/google-calendar/SKILL.md"),
-                scope: codex_protocol::protocol::SkillScope::Repo,
-            }]));
-            composer.set_plugin_mentions(Some(vec![PluginCapabilitySummary {
-                config_name: "google-calendar@debug".to_string(),
-                display_name: "Google Calendar".to_string(),
-                description: Some(
-                    "Connect Google Calendar for scheduling, availability, and event management."
-                        .to_string(),
-                ),
-                has_skills: false,
-                mcp_server_names: vec!["google-calendar".to_string()],
-                app_connector_ids: Vec::new(),
-            }]));
-            composer.set_connector_mentions(Some(ConnectorsSnapshot {
-                connectors: vec![AppInfo {
-                    id: "google_calendar".to_string(),
-                    name: "Google Calendar".to_string(),
-                    description: Some("Look up events and availability".to_string()),
-                    logo_url: None,
-                    logo_url_dark: None,
-                    distribution_channel: None,
-                    branding: None,
-                    app_metadata: None,
-                    labels: None,
-                    install_url: Some("https://example.test/google-calendar".to_string()),
-                    is_accessible: true,
-                    is_enabled: true,
-                    plugin_display_names: Vec::new(),
-                }],
-            }));
-        });
     }
 
     #[test]

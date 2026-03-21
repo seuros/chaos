@@ -65,7 +65,6 @@ use codex_core::git_info::local_git_branches;
 use codex_core::mcp::McpManager;
 use codex_core::plugins::PluginsManager;
 use codex_core::project_doc::DEFAULT_PROJECT_DOC_FILENAME;
-use codex_core::skills::model::SkillMetadata;
 use codex_core::terminal::TerminalName;
 use codex_core::terminal::terminal_info;
 use codex_otel::RuntimeMetricsSummary;
@@ -110,7 +109,6 @@ use codex_protocol::protocol::GuardianAssessmentEvent;
 use codex_protocol::protocol::GuardianAssessmentStatus;
 use codex_protocol::protocol::ImageGenerationBeginEvent;
 use codex_protocol::protocol::ImageGenerationEndEvent;
-use codex_protocol::protocol::ListSkillsResponseEvent;
 use codex_protocol::protocol::McpListToolsResponseEvent;
 use codex_protocol::protocol::McpStartupCompleteEvent;
 use codex_protocol::protocol::McpStartupStatus;
@@ -122,7 +120,6 @@ use codex_protocol::protocol::PatchApplyBeginEvent;
 use codex_protocol::protocol::RateLimitSnapshot;
 use codex_protocol::protocol::ReviewRequest;
 use codex_protocol::protocol::ReviewTarget;
-use codex_protocol::protocol::SkillMetadata as ProtocolSkillMetadata;
 use codex_protocol::protocol::StreamErrorEvent;
 use codex_protocol::protocol::TerminalInteractionEvent;
 use codex_protocol::protocol::TokenUsage;
@@ -264,10 +261,6 @@ mod agent;
 use self::agent::spawn_agent_from_existing;
 mod session_header;
 use self::session_header::SessionHeader;
-mod skills;
-use self::skills::collect_tool_mentions;
-use self::skills::find_app_mentions;
-use self::skills::find_skill_mentions_with_tool_mentions;
 use crate::streaming::chunking::AdaptiveChunkingPolicy;
 use crate::streaming::commit_tick::CommitTickScope;
 use crate::streaming::commit_tick::run_commit_tick;
@@ -670,8 +663,6 @@ pub(crate) struct ChatWidget {
     running_commands: HashMap<String, RunningCommand>,
     pending_collab_spawn_requests: HashMap<String, multi_agents::SpawnRequestSummary>,
     suppressed_exec_calls: HashSet<String>,
-    skills_all: Vec<ProtocolSkillMetadata>,
-    skills_initial_state: Option<HashMap<PathBuf, bool>>,
     last_unified_wait: Option<UnifiedExecWaitState>,
     unified_exec_wait_streak: Option<UnifiedExecWaitStreak>,
     turn_sleep_inhibitor: SleepInhibitor,
@@ -1349,7 +1340,6 @@ impl ChatWidget {
     fn on_session_configured(&mut self, event: codex_protocol::protocol::SessionConfiguredEvent) {
         self.bottom_pane
             .set_history_metadata(event.history_log_id, event.history_entry_count);
-        self.set_skills(/*skills*/ None);
         self.session_network_proxy = event.network_proxy.clone();
         self.thread_id = Some(event.session_id);
         self.thread_name = event.thread_name.clone();
@@ -1412,10 +1402,6 @@ impl ChatWidget {
         if let Some(messages) = initial_messages {
             self.replay_initial_messages(messages);
         }
-        self.submit_op(AppCommand::list_skills(
-            Vec::new(),
-            /*force_reload*/ true,
-        ));
         if self.connectors_enabled() {
             self.prefetch_connectors();
         }
@@ -1479,10 +1465,6 @@ impl ChatWidget {
             self.thread_name = event.thread_name;
             self.request_redraw();
         }
-    }
-
-    fn set_skills(&mut self, skills: Option<Vec<SkillMetadata>>) {
-        self.bottom_pane.set_skills(skills);
     }
 
     pub(crate) fn open_feedback_note(
@@ -3565,13 +3547,10 @@ impl ChatWidget {
                 placeholder_text: placeholder,
                 disable_paste_burst: config.disable_paste_burst,
                 animations_enabled: config.animations,
-                skills: None,
             }),
             active_cell,
             active_cell_revision: 0,
             config,
-            skills_all: Vec::new(),
-            skills_initial_state: None,
             current_collaboration_mode,
             active_collaboration_mask,
             has_chatgpt_account,
@@ -3739,13 +3718,10 @@ impl ChatWidget {
                 placeholder_text: placeholder,
                 disable_paste_burst: config.disable_paste_burst,
                 animations_enabled: config.animations,
-                skills: None,
             }),
             active_cell: None,
             active_cell_revision: 0,
             config,
-            skills_all: Vec::new(),
-            skills_initial_state: None,
             current_collaboration_mode,
             active_collaboration_mask,
             has_chatgpt_account,
@@ -4253,9 +4229,6 @@ impl ChatWidget {
             SlashCommand::Mention => {
                 self.insert_str("@");
             }
-            SlashCommand::Skills => {
-                self.open_skills_menu();
-            }
             SlashCommand::Status => {
                 self.add_status_output();
             }
@@ -4627,52 +4600,7 @@ impl ChatWidget {
             });
         }
 
-        let mentions = collect_tool_mentions(&text, &HashMap::new());
-        let bound_names: HashSet<String> = mention_bindings
-            .iter()
-            .map(|binding| binding.mention.clone())
-            .collect();
-        let mut skill_names_lower: HashSet<String> = HashSet::new();
-        let mut selected_skill_paths: HashSet<PathBuf> = HashSet::new();
         let mut selected_plugin_ids: HashSet<String> = HashSet::new();
-
-        if let Some(skills) = self.bottom_pane.skills() {
-            skill_names_lower = skills
-                .iter()
-                .map(|skill| skill.name.to_ascii_lowercase())
-                .collect();
-
-            for binding in &mention_bindings {
-                let path = binding
-                    .path
-                    .strip_prefix("skill://")
-                    .unwrap_or(binding.path.as_str());
-                let path = Path::new(path);
-                if let Some(skill) = skills
-                    .iter()
-                    .find(|skill| skill.path_to_skills_md.as_path() == path)
-                    && selected_skill_paths.insert(skill.path_to_skills_md.clone())
-                {
-                    items.push(UserInput::Skill {
-                        name: skill.name.clone(),
-                        path: skill.path_to_skills_md.clone(),
-                    });
-                }
-            }
-
-            let skill_mentions = find_skill_mentions_with_tool_mentions(&mentions, skills);
-            for skill in skill_mentions {
-                if bound_names.contains(skill.name.as_str())
-                    || !selected_skill_paths.insert(skill.path_to_skills_md.clone())
-                {
-                    continue;
-                }
-                items.push(UserInput::Skill {
-                    name: skill.name.clone(),
-                    path: skill.path_to_skills_md.clone(),
-                });
-            }
-        }
 
         if let Some(plugins) = self.plugins_for_mentions() {
             for binding in &mention_bindings {
@@ -4717,19 +4645,6 @@ impl ChatWidget {
                         path: binding.path.clone(),
                     });
                 }
-            }
-
-            let app_mentions = find_app_mentions(&mentions, apps, &skill_names_lower);
-            for app in app_mentions {
-                let slug = codex_core::connectors::connector_mention_slug(&app);
-                if bound_names.contains(&slug) || !selected_app_ids.insert(app.id.clone()) {
-                    continue;
-                }
-                let app_id = app.id.as_str();
-                items.push(UserInput::Mention {
-                    name: app.name.clone(),
-                    path: format!("app://{app_id}"),
-                });
             }
         }
 
@@ -5037,14 +4952,9 @@ impl ChatWidget {
                     "ignoring unsupported custom prompt list response in app-server TUI"
                 );
             }
-            EventMsg::ListSkillsResponse(ev) => self.on_list_skills(ev),
+            EventMsg::ListSkillsResponse(_) => {}
             EventMsg::ListRemoteSkillsResponse(_) | EventMsg::RemoteSkillDownloaded(_) => {}
-            EventMsg::SkillsUpdateAvailable => {
-                self.submit_op(AppCommand::list_skills(
-                    Vec::new(),
-                    /*force_reload*/ true,
-                ));
-            }
+            EventMsg::SkillsUpdateAvailable => {}
             EventMsg::ShutdownComplete => self.on_shutdown_complete(),
             EventMsg::TurnDiff(TurnDiffEvent { unified_diff }) => self.on_turn_diff(unified_diff),
             EventMsg::DeprecationNotice(ev) => self.on_deprecation_notice(ev),
@@ -7959,11 +7869,6 @@ impl ChatWidget {
         ));
     }
 
-    fn on_list_skills(&mut self, ev: ListSkillsResponseEvent) {
-        self.set_skills_from_response(&ev);
-        self.refresh_plugin_mentions();
-    }
-
     pub(crate) fn on_connectors_loaded(
         &mut self,
         result: Result<ConnectorsSnapshot, String>,
@@ -8475,7 +8380,7 @@ const PLACEHOLDERS: [&str; 8] = [
     "Write tests for @filename",
     "Improve documentation in @filename",
     "Run /review on my current changes",
-    "Use /skills to list available skills",
+    "Explore /status to view session info",
 ];
 
 // Extract the first bold (Markdown) element in the form **...** from `s`.

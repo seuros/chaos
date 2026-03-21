@@ -1,10 +1,5 @@
-#[path = "tools/read_file.rs"]
 pub mod read_file;
-
-#[path = "tools/grep_files.rs"]
 pub mod grep_files;
-
-#[path = "tools/list_dir.rs"]
 pub mod list_dir;
 
 use mcp_host::registry::router::McpToolRouter;

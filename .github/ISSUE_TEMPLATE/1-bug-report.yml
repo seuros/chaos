@@ -1,0 +1,41 @@
+name: Bug Report
+description: Something broke or behaves unexpectedly
+labels:
+  - bug
+body:
+  - type: input
+    id: version
+    attributes:
+      label: Chaos version
+      description: Output of `chaos --version`
+    validations:
+      required: true
+  - type: input
+    id: platform
+    attributes:
+      label: Platform
+      description: Output of `uname -mprs`
+    validations:
+      required: true
+  - type: textarea
+    id: actual
+    attributes:
+      label: What happened?
+      description: Include error messages with secrets redacted.
+    validations:
+      required: true
+  - type: textarea
+    id: steps
+    attributes:
+      label: Steps to reproduce
+    validations:
+      required: true
+  - type: textarea
+    id: expected
+    attributes:
+      label: Expected behavior
+  - type: textarea
+    id: notes
+    attributes:
+      label: Additional context
+      description: Logs, config snippets, screenshots, dump files.

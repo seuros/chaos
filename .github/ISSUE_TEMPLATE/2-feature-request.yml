@@ -1,0 +1,32 @@
+name: Feature Request
+description: Propose a new feature or improvement
+labels:
+  - enhancement
+body:
+  - type: dropdown
+    id: layer
+    attributes:
+      label: Architecture layer
+      options:
+        - Kernel (LLM providers, wire protocols)
+        - Module (capabilities, tools)
+        - Driver (MCP server)
+        - TUI (terminal interface)
+        - Other
+    validations:
+      required: true
+  - type: textarea
+    id: feature
+    attributes:
+      label: What do you want?
+    validations:
+      required: true
+  - type: textarea
+    id: why
+    attributes:
+      label: Why?
+      description: What problem does this solve?
+  - type: textarea
+    id: notes
+    attributes:
+      label: Additional context

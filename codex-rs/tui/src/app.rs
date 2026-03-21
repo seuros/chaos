@@ -66,12 +66,10 @@ use codex_protocol::protocol::AskForApproval;
 use codex_protocol::protocol::Event;
 use codex_protocol::protocol::EventMsg;
 use codex_protocol::protocol::FinalOutput;
-use codex_protocol::protocol::ListSkillsResponseEvent;
 use codex_protocol::protocol::Op;
 use codex_protocol::protocol::SandboxPolicy;
 use codex_protocol::protocol::SessionConfiguredEvent;
 use codex_protocol::protocol::SessionSource;
-use codex_protocol::protocol::SkillErrorInfo;
 use codex_protocol::protocol::TokenUsage;
 use codex_utils_absolute_path::AbsolutePathBuf;
 use color_eyre::eyre::Result;
@@ -193,36 +191,6 @@ fn session_summary(
         usage_line,
         resume_command,
     })
-}
-
-fn errors_for_cwd(cwd: &Path, response: &ListSkillsResponseEvent) -> Vec<SkillErrorInfo> {
-    response
-        .skills
-        .iter()
-        .find(|entry| entry.cwd.as_path() == cwd)
-        .map(|entry| entry.errors.clone())
-        .unwrap_or_default()
-}
-
-fn emit_skill_load_warnings(app_event_tx: &AppEventSender, errors: &[SkillErrorInfo]) {
-    if errors.is_empty() {
-        return;
-    }
-
-    let error_count = errors.len();
-    app_event_tx.send(AppEvent::InsertHistoryCell(Box::new(
-        crate::history_cell::new_warning_event(format!(
-            "Skipped loading {error_count} skill(s) due to invalid SKILL.md files."
-        )),
-    )));
-
-    for error in errors {
-        let path = error.path.display();
-        let message = error.message.as_str();
-        app_event_tx.send(AppEvent::InsertHistoryCell(Box::new(
-            crate::history_cell::new_warning_event(format!("{path}: {message}")),
-        )));
-    }
 }
 
 fn emit_project_config_warnings(app_event_tx: &AppEventSender, config: &Config) {
@@ -3023,39 +2991,6 @@ impl App {
             AppEvent::SelectAgentThread(thread_id) => {
                 self.select_agent_thread(tui, thread_id).await?;
             }
-            AppEvent::OpenSkillsList => {
-                self.chat_widget.open_skills_list();
-            }
-            AppEvent::OpenManageSkillsPopup => {
-                self.chat_widget.open_manage_skills_popup();
-            }
-            AppEvent::SetSkillEnabled { path, enabled } => {
-                let edits = [ConfigEdit::SetSkillConfig {
-                    path: path.clone(),
-                    enabled,
-                }];
-                match ConfigEditsBuilder::new(&self.config.codex_home)
-                    .with_edits(edits)
-                    .apply()
-                    .await
-                {
-                    Ok(()) => {
-                        self.chat_widget.update_skill_enabled(path.clone(), enabled);
-                        if let Err(err) = self.refresh_in_memory_config_from_disk().await {
-                            tracing::warn!(
-                                error = %err,
-                                "failed to refresh config after skill toggle"
-                            );
-                        }
-                    }
-                    Err(err) => {
-                        let path_display = path.display();
-                        self.chat_widget.add_error_message(format!(
-                            "Failed to update skill config for {path_display}: {err}"
-                        ));
-                    }
-                }
-            }
             AppEvent::SetAppEnabled { id, enabled } => {
                 let edits = if enabled {
                     vec![
@@ -3123,9 +3058,6 @@ impl App {
             } => {
                 self.chat_widget
                     .submit_user_message_with_mode(text, collaboration_mode);
-            }
-            AppEvent::ManageSkillsClosed => {
-                self.chat_widget.handle_manage_skills_closed();
             }
             AppEvent::FullScreenApprovalRequest(request) => match request {
                 ApprovalRequest::ApplyPatch { cwd, changes, .. } => {
@@ -3282,11 +3214,6 @@ impl App {
         if self.suppress_shutdown_complete && matches!(event.msg, EventMsg::ShutdownComplete) {
             self.suppress_shutdown_complete = false;
             return;
-        }
-        if let EventMsg::ListSkillsResponse(response) = &event.msg {
-            let cwd = self.chat_widget.config_ref().cwd.clone();
-            let errors = errors_for_cwd(&cwd, response);
-            emit_skill_load_warnings(&self.app_event_tx, &errors);
         }
         self.handle_backtrack_event(&event.msg);
         self.chat_widget.handle_codex_event(event);

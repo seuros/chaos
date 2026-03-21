@@ -211,10 +211,6 @@ impl AppCommand {
         Self(Op::ReloadUserConfig)
     }
 
-    pub(crate) fn list_skills(cwds: Vec<PathBuf>, force_reload: bool) -> Self {
-        Self(Op::ListSkills { cwds, force_reload })
-    }
-
     pub(crate) fn compact() -> Self {
         Self(Op::Compact)
     }

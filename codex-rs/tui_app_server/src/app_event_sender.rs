@@ -1,5 +1,3 @@
-use std::path::PathBuf;
-
 use crate::app_command::AppCommand;
 use codex_protocol::ThreadId;
 use codex_protocol::approvals::ElicitationAction;
@@ -53,12 +51,6 @@ impl AppEventSender {
     pub(crate) fn review(&self, review_request: ReviewRequest) {
         self.send(AppEvent::CodexOp(
             AppCommand::review(review_request).into_core(),
-        ));
-    }
-
-    pub(crate) fn list_skills(&self, cwds: Vec<PathBuf>, force_reload: bool) {
-        self.send(AppEvent::CodexOp(
-            AppCommand::list_skills(cwds, force_reload).into_core(),
         ));
     }
 

@@ -21,7 +21,6 @@ pub enum SlashCommand {
     #[strum(serialize = "sandbox-add-read-dir")]
     SandboxReadRoot,
     Experimental,
-    Skills,
     Review,
     Rename,
     New,
@@ -79,7 +78,6 @@ impl SlashCommand {
             SlashCommand::Diff => "show git diff (including untracked files)",
             SlashCommand::Copy => "copy the latest Codex output to your clipboard",
             SlashCommand::Mention => "mention a file",
-            SlashCommand::Skills => "use skills to improve how Codex performs specific tasks",
             SlashCommand::Status => "show current session configuration and token usage",
             SlashCommand::DebugConfig => "show config layers and requirement sources for debugging",
             SlashCommand::Statusline => "configure which items appear in the status line",
@@ -153,7 +151,6 @@ impl SlashCommand {
             | SlashCommand::Copy
             | SlashCommand::Rename
             | SlashCommand::Mention
-            | SlashCommand::Skills
             | SlashCommand::Status
             | SlashCommand::DebugConfig
             | SlashCommand::Ps

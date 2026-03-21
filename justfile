@@ -56,10 +56,6 @@ mcp-server-run *args:
 write-config-schema:
     cargo run -p codex-core --bin codex-write-config-schema
 
-# Regenerate vendored app-server protocol schema artifacts.
-write-app-server-schema *args:
-    cargo run -p codex-app-server-protocol --bin write_schema_fixtures -- "$@"
-
 [no-cd]
 write-hooks-schema:
     cargo run --manifest-path ./codex-rs/Cargo.toml -p codex-hooks --bin write_hooks_schema_fixtures

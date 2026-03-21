@@ -3,7 +3,6 @@ members = [
     "ansi-escape",
     "chaos-arsenal",
     "async-utils",
-    "app-server",
     "app-server-protocol",
     "apply-patch",
     "arg0",
@@ -64,10 +63,8 @@ license = "Apache-2.0"
 
 [workspace.dependencies]
 # Internal
-app_test_support = { path = "app-server/tests/common" }
 codex-ansi-escape = { path = "ansi-escape" }
 codex-api = { path = "codex-api" }
-codex-app-server = { path = "app-server" }
 codex-app-server-protocol = { path = "app-server-protocol" }
 codex-apply-patch = { path = "apply-patch" }
 codex-arg0 = { path = "arg0" }

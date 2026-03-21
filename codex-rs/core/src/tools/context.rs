@@ -17,7 +17,6 @@ use codex_protocol::models::SearchToolCallParams;
 use codex_protocol::models::ShellToolCallParams;
 use codex_protocol::models::function_call_output_content_items_to_text;
 use codex_utils_string::take_bytes_at_char_boundary;
-use serde::Serialize;
 use serde_json::Value as JsonValue;
 use std::borrow::Cow;
 use std::sync::Arc;
@@ -29,7 +28,6 @@ pub type SharedTurnDiffTracker = Arc<Mutex<TurnDiffTracker>>;
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
 pub enum ToolCallSource {
     Direct,
-    CodeMode,
 }
 
 #[derive(Clone)]
@@ -82,10 +80,6 @@ pub trait ToolOutput: Send {
     fn success_for_logging(&self) -> bool;
 
     fn to_response_item(&self, call_id: &str, payload: &ToolPayload) -> ResponseInputItem;
-
-    fn code_mode_result(&self, payload: &ToolPayload) -> JsonValue {
-        response_input_to_code_mode_result(self.to_response_item("", payload))
-    }
 }
 
 impl ToolOutput for CallToolResult {
@@ -104,12 +98,6 @@ impl ToolOutput for CallToolResult {
             call_id: call_id.to_string(),
             output: self.clone(),
         }
-    }
-
-    fn code_mode_result(&self, _payload: &ToolPayload) -> JsonValue {
-        serde_json::to_value(self).unwrap_or_else(|err| {
-            JsonValue::String(format!("failed to serialize mcp result: {err}"))
-        })
     }
 }
 
@@ -268,35 +256,6 @@ impl ToolOutput for ExecCommandToolOutput {
             Some(true),
         )
     }
-
-    fn code_mode_result(&self, _payload: &ToolPayload) -> JsonValue {
-        #[derive(Serialize)]
-        struct UnifiedExecCodeModeResult {
-            #[serde(skip_serializing_if = "Option::is_none")]
-            chunk_id: Option<String>,
-            wall_time_seconds: f64,
-            #[serde(skip_serializing_if = "Option::is_none")]
-            exit_code: Option<i32>,
-            #[serde(skip_serializing_if = "Option::is_none")]
-            session_id: Option<i32>,
-            #[serde(skip_serializing_if = "Option::is_none")]
-            original_token_count: Option<usize>,
-            output: String,
-        }
-
-        let result = UnifiedExecCodeModeResult {
-            chunk_id: (!self.chunk_id.is_empty()).then(|| self.chunk_id.clone()),
-            wall_time_seconds: self.wall_time.as_secs_f64(),
-            exit_code: self.exit_code,
-            session_id: self.process_id,
-            original_token_count: self.original_token_count,
-            output: self.truncated_output(),
-        };
-
-        serde_json::to_value(result).unwrap_or_else(|err| {
-            JsonValue::String(format!("failed to serialize exec result: {err}"))
-        })
-    }
 }
 
 impl ExecCommandToolOutput {
@@ -340,64 +299,6 @@ impl ExecCommandToolOutput {
 
         sections.join("\n")
     }
-}
-
-pub(crate) fn response_input_to_code_mode_result(response: ResponseInputItem) -> JsonValue {
-    match response {
-        ResponseInputItem::Message { content, .. } => content_items_to_code_mode_result(
-            &content
-                .into_iter()
-                .map(|item| match item {
-                    codex_protocol::models::ContentItem::InputText { text }
-                    | codex_protocol::models::ContentItem::OutputText { text } => {
-                        FunctionCallOutputContentItem::InputText { text }
-                    }
-                    codex_protocol::models::ContentItem::InputImage { image_url } => {
-                        FunctionCallOutputContentItem::InputImage {
-                            image_url,
-                            detail: None,
-                        }
-                    }
-                })
-                .collect::<Vec<_>>(),
-        ),
-        ResponseInputItem::FunctionCallOutput { output, .. }
-        | ResponseInputItem::CustomToolCallOutput { output, .. } => match output.body {
-            FunctionCallOutputBody::Text(text) => JsonValue::String(text),
-            FunctionCallOutputBody::ContentItems(items) => {
-                content_items_to_code_mode_result(&items)
-            }
-        },
-        ResponseInputItem::ToolSearchOutput { tools, .. } => JsonValue::Array(tools),
-        ResponseInputItem::McpToolCallOutput { output, .. } => {
-            output.code_mode_result(&ToolPayload::Mcp {
-                server: String::new(),
-                tool: String::new(),
-                raw_arguments: String::new(),
-            })
-        }
-    }
-}
-
-fn content_items_to_code_mode_result(items: &[FunctionCallOutputContentItem]) -> JsonValue {
-    JsonValue::String(
-        items
-            .iter()
-            .filter_map(|item| match item {
-                FunctionCallOutputContentItem::InputText { text } if !text.trim().is_empty() => {
-                    Some(text.clone())
-                }
-                FunctionCallOutputContentItem::InputImage { image_url, .. }
-                    if !image_url.trim().is_empty() =>
-                {
-                    Some(image_url.clone())
-                }
-                FunctionCallOutputContentItem::InputText { .. }
-                | FunctionCallOutputContentItem::InputImage { .. } => None,
-            })
-            .collect::<Vec<_>>()
-            .join("\n"),
-    )
 }
 
 fn function_tool_response(

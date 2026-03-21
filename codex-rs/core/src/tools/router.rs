@@ -4,7 +4,6 @@ use crate::codex::TurnContext;
 use crate::function_tool::FunctionCallError;
 use crate::mcp_connection_manager::ToolInfo;
 use crate::sandboxing::SandboxPermissions;
-use crate::tools::code_mode::is_code_mode_nested_tool;
 use crate::tools::context::FunctionToolOutput;
 use crate::tools::context::SharedTurnDiffTracker;
 use crate::tools::context::ToolInvocation;
@@ -18,7 +17,6 @@ use crate::tools::spec::ToolsConfig;
 use crate::tools::spec::build_specs_with_discoverable_tools;
 use codex_protocol::dynamic_tools::DynamicToolSpec;
 use codex_protocol::models::LocalShellAction;
-use codex_protocol::models::ResponseInputItem;
 use codex_protocol::models::ResponseItem;
 use codex_protocol::models::SearchToolCallParams;
 use codex_protocol::models::ShellToolCallParams;
@@ -66,23 +64,10 @@ impl ToolRouter {
             dynamic_tools,
         );
         let (specs, registry) = builder.build();
-        let model_visible_specs = if config.code_mode_only_enabled {
-            specs
-                .iter()
-                .filter_map(|configured_tool| {
-                    if !is_code_mode_nested_tool(configured_tool.spec.name()) {
-                        Some(configured_tool.spec.clone())
-                    } else {
-                        None
-                    }
-                })
-                .collect()
-        } else {
-            specs
-                .iter()
-                .map(|configured_tool| configured_tool.spec.clone())
-                .collect()
-        };
+        let model_visible_specs = specs
+            .iter()
+            .map(|configured_tool| configured_tool.spec.clone())
+            .collect();
 
         Self {
             registry,
@@ -91,22 +76,8 @@ impl ToolRouter {
         }
     }
 
-    pub fn specs(&self) -> Vec<ToolSpec> {
-        self.specs
-            .iter()
-            .map(|config| config.spec.clone())
-            .collect()
-    }
-
     pub fn model_visible_specs(&self) -> Vec<ToolSpec> {
         self.model_visible_specs.clone()
-    }
-
-    pub fn find_spec(&self, tool_name: &str) -> Option<ToolSpec> {
-        self.specs
-            .iter()
-            .find(|config| config.spec.name() == tool_name)
-            .map(|config| config.spec.clone())
     }
 
     pub fn tool_supports_parallel(&self, tool_name: &str) -> bool {
@@ -214,24 +185,8 @@ impl ToolRouter {
         }
     }
 
-    #[allow(dead_code)]
     #[instrument(level = "trace", skip_all, err)]
     pub async fn dispatch_tool_call(
-        &self,
-        session: Arc<Session>,
-        turn: Arc<TurnContext>,
-        tracker: SharedTurnDiffTracker,
-        call: ToolCall,
-        source: ToolCallSource,
-    ) -> Result<ResponseInputItem, FunctionCallError> {
-        Ok(self
-            .dispatch_tool_call_with_code_mode_result(session, turn, tracker, call, source)
-            .await?
-            .into_response())
-    }
-
-    #[instrument(level = "trace", skip_all, err)]
-    pub async fn dispatch_tool_call_with_code_mode_result(
         &self,
         session: Arc<Session>,
         turn: Arc<TurnContext>,

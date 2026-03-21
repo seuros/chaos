@@ -15,7 +15,6 @@ use crate::models_manager::manager::ModelsManager;
 use crate::plugins::PluginsManager;
 use crate::skills::SkillsManager;
 use crate::state_db::StateDbHandle;
-use crate::tools::code_mode::CodeModeService;
 use crate::tools::network_approval::NetworkApprovalService;
 use crate::tools::runtimes::ExecveSessionApproval;
 use crate::tools::sandboxing::ApprovalStore;
@@ -60,5 +59,4 @@ pub(crate) struct SessionServices {
     pub(crate) state_db: Option<StateDbHandle>,
     /// Session-scoped model client shared across turns.
     pub(crate) model_client: ModelClient,
-    pub(crate) code_mode_service: CodeModeService,
 }

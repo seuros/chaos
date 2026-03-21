@@ -42,16 +42,6 @@ fn use_linux_sandbox_bwrap_is_removed_and_disabled_by_default() {
 }
 
 #[test]
-fn code_mode_only_requires_code_mode() {
-    let mut features = Features::with_defaults();
-    features.enable(Feature::CodeModeOnly);
-    features.normalize_dependencies();
-
-    assert_eq!(features.enabled(Feature::CodeModeOnly), true);
-    assert_eq!(features.enabled(Feature::CodeMode), true);
-}
-
-#[test]
 fn guardian_approval_is_experimental_and_user_toggleable() {
     let spec = Feature::GuardianApproval.info();
     let stage = spec.stage;

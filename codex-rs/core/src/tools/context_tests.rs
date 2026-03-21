@@ -42,48 +42,6 @@ fn function_payloads_remain_function_outputs() {
 }
 
 #[test]
-fn mcp_code_mode_result_serializes_full_call_tool_result() {
-    let output = CallToolResult {
-        content: vec![serde_json::json!({
-            "type": "text",
-            "text": "ignored",
-        })],
-        structured_content: Some(serde_json::json!({
-            "threadId": "thread_123",
-            "content": "done",
-        })),
-        is_error: Some(false),
-        meta: Some(serde_json::json!({
-            "source": "mcp",
-        })),
-    };
-
-    let result = output.code_mode_result(&ToolPayload::Mcp {
-        server: "server".to_string(),
-        tool: "tool".to_string(),
-        raw_arguments: "{}".to_string(),
-    });
-
-    assert_eq!(
-        result,
-        serde_json::json!({
-            "content": [{
-                "type": "text",
-                "text": "ignored",
-            }],
-            "structuredContent": {
-                "threadId": "thread_123",
-                "content": "done",
-            },
-            "isError": false,
-            "_meta": {
-                "source": "mcp",
-            },
-        })
-    );
-}
-
-#[test]
 fn custom_tool_calls_can_derive_text_from_content_items() {
     let payload = ToolPayload::Custom {
         input: "patch".to_string(),

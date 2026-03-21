@@ -16,7 +16,6 @@ codex-protocol = { workspace = true }
 codex-utils-absolute-path = { workspace = true }
 codex-utils-cargo-bin = { workspace = true }
 ctor = { workspace = true }
-futures = { workspace = true }
 notify = { workspace = true }
 rama = { workspace = true }
 regex-lite = { workspace = true }

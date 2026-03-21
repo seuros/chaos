@@ -57,7 +57,6 @@ tokio = { workspace = true, features = [
 tracing = { workspace = true, features = ["log"] }
 urlencoding = { workspace = true }
 webbrowser = { workspace = true }
-which = { workspace = true }
 
 [dev-dependencies]
 codex-utils-cargo-bin = { workspace = true }

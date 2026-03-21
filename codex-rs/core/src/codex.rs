@@ -434,17 +434,6 @@ impl Codex {
             let _ = config.features.disable(Feature::Collab);
         }
 
-        if config.features.enabled(Feature::CodeMode)
-            && let Err(err) = crate::tools::code_mode::resolve_compatible_node(None).await
-        {
-            let message = format!(
-                "Disabled `exec` for this session because the configured Node runtime is unavailable or incompatible. {err}"
-            );
-            warn!("{message}");
-            let _ = config.features.disable(Feature::CodeMode);
-            config.startup_warnings.push(message);
-        }
-
         let user_instructions = get_user_instructions(&config).await;
 
         let exec_policy = if crate::guardian::is_guardian_reviewer_source(&session_source) {
@@ -1756,7 +1745,6 @@ impl Session {
                 config.features.enabled(Feature::RuntimeMetrics),
                 Self::build_model_client_beta_features_header(config.as_ref()),
             ),
-            code_mode_service: crate::tools::code_mode::CodeModeService::new(None),
         };
         let (out_of_band_elicitation_paused, _out_of_band_elicitation_paused_rx) =
             watch::channel(false);
@@ -6166,16 +6154,6 @@ async fn run_sampling_request(
         Arc::clone(&turn_context),
         Arc::clone(&turn_diff_tracker),
     );
-    let _code_mode_worker = sess
-        .services
-        .code_mode_service
-        .start_turn_worker(
-            &sess,
-            &turn_context,
-            Arc::clone(&router),
-            Arc::clone(&turn_diff_tracker),
-        )
-        .await;
     let mut retries = 0;
     loop {
         let err = match try_run_sampling_request(

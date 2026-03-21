@@ -3,8 +3,6 @@ target/
 dist/
 build/
 out/
-bazel-*
-
 # editor
 .vscode/
 .idea/

@@ -943,14 +943,12 @@ mod tests {
             config_overrides: root_overrides,
             subcommand,
             feature_toggles: _,
-            remote: _,
         } = cli;
 
         let Subcommand::Resume(ResumeCommand {
             session_id,
             last,
             all,
-            remote: _,
             config_overrides: resume_cli,
         }) = subcommand.expect("resume present")
         else {
@@ -974,14 +972,12 @@ mod tests {
             config_overrides: root_overrides,
             subcommand,
             feature_toggles: _,
-            remote: _,
         } = cli;
 
         let Subcommand::Fork(ForkCommand {
             session_id,
             last,
             all,
-            remote: _,
             config_overrides: fork_cli,
         }) = subcommand.expect("fork present")
         else {

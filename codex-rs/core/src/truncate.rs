@@ -95,6 +95,7 @@ pub(crate) fn truncate_text(content: &str, policy: TruncationPolicy) -> String {
     }
 }
 
+#[cfg(test)]
 pub(crate) fn formatted_truncate_text_content_items_with_policy(
     items: &[FunctionCallOutputContentItem],
     policy: TruncationPolicy,

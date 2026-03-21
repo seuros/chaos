@@ -96,15 +96,6 @@ where
         .to_response_item(call_id, payload)
 }
 
-fn tool_output_code_mode_result<T>(value: &T, tool_name: &str) -> JsonValue
-where
-    T: Serialize,
-{
-    serde_json::to_value(value).unwrap_or_else(|err| {
-        JsonValue::String(format!("failed to serialize {tool_name} result: {err}"))
-    })
-}
-
 pub mod close_agent;
 mod resume_agent;
 mod send_input;

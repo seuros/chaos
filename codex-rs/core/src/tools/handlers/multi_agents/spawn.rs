@@ -169,8 +169,4 @@ impl ToolOutput for SpawnAgentResult {
     fn to_response_item(&self, call_id: &str, payload: &ToolPayload) -> ResponseInputItem {
         tool_output_response_item(call_id, payload, self, Some(true), "spawn_agent")
     }
-
-    fn code_mode_result(&self, _payload: &ToolPayload) -> JsonValue {
-        tool_output_code_mode_result(self, "spawn_agent")
-    }
 }

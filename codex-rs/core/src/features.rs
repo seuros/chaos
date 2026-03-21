@@ -81,10 +81,6 @@ pub enum Feature {
     ShellTool,
 
     // Experimental
-    /// Enable a minimal JavaScript mode backed by Node's built-in vm runtime.
-    CodeMode,
-    /// Restrict model-visible tools to code mode entrypoints (`exec`, `exec_wait`).
-    CodeModeOnly,
     /// Use the single unified PTY-backed exec tool.
     UnifiedExec,
     /// Route shell tool execution through the zsh exec bridge.
@@ -394,9 +390,6 @@ impl Features {
         if self.enabled(Feature::SpawnCsv) && !self.enabled(Feature::Collab) {
             self.enable(Feature::Collab);
         }
-        if self.enabled(Feature::CodeModeOnly) && !self.enabled(Feature::CodeMode) {
-            self.enable(Feature::CodeMode);
-        }
     }
 }
 
@@ -510,18 +503,6 @@ pub const FEATURES: &[FeatureSpec] = &[
         key: "shell_snapshot",
         stage: Stage::Stable,
         default_enabled: true,
-    },
-    FeatureSpec {
-        id: Feature::CodeMode,
-        key: "code_mode",
-        stage: Stage::UnderDevelopment,
-        default_enabled: false,
-    },
-    FeatureSpec {
-        id: Feature::CodeModeOnly,
-        key: "code_mode_only",
-        stage: Stage::UnderDevelopment,
-        default_enabled: false,
     },
     FeatureSpec {
         id: Feature::WebSearchRequest,

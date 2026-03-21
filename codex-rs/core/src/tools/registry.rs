@@ -63,6 +63,15 @@ pub(crate) struct AnyToolResult {
     pub(crate) result: Box<dyn ToolOutput>,
 }
 
+impl std::fmt::Debug for AnyToolResult {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        f.debug_struct("AnyToolResult")
+            .field("call_id", &self.call_id)
+            .field("payload", &self.payload)
+            .finish_non_exhaustive()
+    }
+}
+
 impl AnyToolResult {
     pub(crate) fn into_response(self) -> ResponseInputItem {
         let Self {
@@ -71,13 +80,6 @@ impl AnyToolResult {
             result,
         } = self;
         result.to_response_item(&call_id, &payload)
-    }
-
-    pub(crate) fn code_mode_result(self) -> serde_json::Value {
-        let Self {
-            payload, result, ..
-        } = self;
-        result.code_mode_result(&payload)
     }
 }
 

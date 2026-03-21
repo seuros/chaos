@@ -1472,7 +1472,6 @@ dependencies = [
  "codex-mcp-server",
  "codex-protocol",
  "codex-rmcp-client",
- "codex-state",
  "codex-stdio-to-uds",
  "codex-tui",
  "codex-tui-app-server",
@@ -1979,7 +1978,6 @@ dependencies = [
  "tracing",
  "urlencoding",
  "webbrowser",
- "which",
 ]
 
 [[package]]
@@ -2007,19 +2005,11 @@ name = "codex-shell-command"
 version = "47.0.0"
 dependencies = [
  "anyhow",
- "base64 0.22.1",
  "codex-protocol",
- "codex-utils-absolute-path",
- "once_cell",
  "pretty_assertions",
- "regex",
- "serde",
- "serde_json",
  "shlex",
  "tree-sitter",
  "tree-sitter-bash",
- "url",
- "which",
 ]
 
 [[package]]
@@ -2107,7 +2097,6 @@ dependencies = [
  "codex-app-server-protocol",
  "codex-arg0",
  "codex-cli",
- "codex-client",
  "codex-core",
  "codex-file-search",
  "codex-login",
@@ -2188,7 +2177,6 @@ dependencies = [
  "codex-app-server-protocol",
  "codex-arg0",
  "codex-cli",
- "codex-client",
  "codex-core",
  "codex-file-search",
  "codex-login",
@@ -2617,7 +2605,6 @@ dependencies = [
  "codex-utils-absolute-path",
  "codex-utils-cargo-bin",
  "ctor 0.6.3",
- "futures",
  "notify",
  "pretty_assertions",
  "rama",
@@ -5336,12 +5323,10 @@ name = "mcp_test_support"
 version = "47.0.0"
 dependencies = [
  "anyhow",
- "codex-core",
  "codex-mcp-server",
  "codex-utils-cargo-bin",
  "core_test_support",
  "mcp-host",
- "os_info",
  "pretty_assertions",
  "serde",
  "serde_json",

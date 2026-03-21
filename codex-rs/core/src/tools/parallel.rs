@@ -9,7 +9,6 @@ use tracing::Instrument;
 use tracing::instrument;
 use tracing::trace_span;
 
-use crate::client_common::tools::ToolSpec;
 use crate::codex::Session;
 use crate::codex::TurnContext;
 use crate::error::CodexErr;
@@ -45,10 +44,6 @@ impl ToolCallRuntime {
             tracker,
             parallel_execution: Arc::new(RwLock::new(())),
         }
-    }
-
-    pub(crate) fn find_spec(&self, tool_name: &str) -> Option<ToolSpec> {
-        self.router.find_spec(tool_name)
     }
 
     #[instrument(level = "trace", skip_all)]
@@ -101,7 +96,7 @@ impl ToolCallRuntime {
                         };
 
                         router
-                            .dispatch_tool_call_with_code_mode_result(
+                            .dispatch_tool_call(
                                 session,
                                 turn,
                                 tracker,

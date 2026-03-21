@@ -7,11 +7,10 @@ use additional_dirs::add_dir_warning_message;
 use app::App;
 pub use app::AppExitInfo;
 pub use app::ExitReason;
-use codex_app_server_client::DEFAULT_IN_PROCESS_CHANNEL_CAPACITY;
-use codex_app_server_client::InProcessAppServerClient;
-use codex_app_server_client::InProcessClientStartArgs;
-use codex_app_server_protocol::ConfigWarningNotification;
 use codex_core::AuthManager;
+use codex_core::ThreadManager;
+use codex_core::features::Feature;
+use codex_core::models_manager::collaboration_mode_presets::CollaborationModesConfig;
 use codex_core::CodexAuth;
 use codex_core::INTERACTIVE_SESSION_SOURCES;
 use codex_core::RolloutRecorder;
@@ -45,12 +44,10 @@ use codex_protocol::protocol::RolloutItem;
 use codex_protocol::protocol::RolloutLine;
 use codex_state::log_db;
 use codex_utils_absolute_path::AbsolutePathBuf;
-use color_eyre::eyre::WrapErr;
 use cwd_prompt::CwdPromptAction;
 use cwd_prompt::CwdPromptOutcome;
 use cwd_prompt::CwdSelection;
 use std::fs::OpenOptions;
-use std::future::Future;
 use std::path::Path;
 use std::path::PathBuf;
 use std::sync::Arc;
@@ -133,64 +130,31 @@ pub use public_widgets::composer_input::ComposerAction;
 pub use public_widgets::composer_input::ComposerInput;
 // (tests access modules directly within the crate)
 
-async fn start_embedded_app_server(
-    arg0_paths: Arg0DispatchPaths,
-    config: Config,
-    cli_kv_overrides: Vec<(String, toml::Value)>,
-    loader_overrides: LoaderOverrides,
-    cloud_requirements: CloudRequirementsLoader,
-) -> color_eyre::Result<InProcessAppServerClient> {
-    start_embedded_app_server_with(
-        arg0_paths,
-        config,
-        cli_kv_overrides,
-        loader_overrides,
-        cloud_requirements,
-        InProcessAppServerClient::start,
-    )
-    .await
+struct CoreManagers {
+    auth_manager: Arc<AuthManager>,
+    thread_manager: Arc<ThreadManager>,
 }
 
-async fn start_embedded_app_server_with<F, Fut>(
-    arg0_paths: Arg0DispatchPaths,
-    config: Config,
-    cli_kv_overrides: Vec<(String, toml::Value)>,
-    loader_overrides: LoaderOverrides,
-    cloud_requirements: CloudRequirementsLoader,
-    start_client: F,
-) -> color_eyre::Result<InProcessAppServerClient>
-where
-    F: FnOnce(InProcessClientStartArgs) -> Fut,
-    Fut: Future<Output = std::io::Result<InProcessAppServerClient>>,
-{
-    let config_warnings = config
-        .startup_warnings
-        .iter()
-        .map(|warning| ConfigWarningNotification {
-            summary: warning.clone(),
-            details: None,
-            path: None,
-            range: None,
-        })
-        .collect();
-    let client = start_client(InProcessClientStartArgs {
-        arg0_paths,
-        config: Arc::new(config),
-        cli_overrides: cli_kv_overrides,
-        loader_overrides,
-        cloud_requirements,
-        config_warnings,
-        session_source: codex_protocol::protocol::SessionSource::Cli,
-        enable_codex_api_key_env: false,
-        client_name: "codex-tui".to_string(),
-        client_version: env!("CARGO_PKG_VERSION").to_string(),
-        experimental_api: true,
-        opt_out_notification_methods: Vec::new(),
-        channel_capacity: DEFAULT_IN_PROCESS_CHANNEL_CAPACITY,
-    })
-    .await
-    .wrap_err("failed to start embedded app server")?;
-    Ok(client)
+fn create_core_managers(config: &Config) -> CoreManagers {
+    let auth_manager = AuthManager::shared(
+        config.codex_home.clone(),
+        false, // enable_codex_api_key_env
+        config.cli_auth_credentials_store_mode,
+    );
+    let thread_manager = Arc::new(ThreadManager::new(
+        config,
+        auth_manager.clone(),
+        codex_protocol::protocol::SessionSource::Cli,
+        CollaborationModesConfig {
+            default_mode_request_user_input: config
+                .features
+                .enabled(Feature::DefaultModeRequestUserInput),
+        },
+    ));
+    CoreManagers {
+        auth_manager,
+        thread_manager,
+    }
 }
 
 pub async fn run_main(
@@ -475,8 +439,8 @@ pub async fn run_main(
 #[allow(clippy::too_many_arguments)]
 async fn run_ratatui_app(
     cli: Cli,
-    arg0_paths: Arg0DispatchPaths,
-    loader_overrides: LoaderOverrides,
+    _arg0_paths: Arg0DispatchPaths,
+    _loader_overrides: LoaderOverrides,
     initial_config: Config,
     overrides: ConfigOverrides,
     cli_kv_overrides: Vec<(String, toml::Value)>,
@@ -864,26 +828,12 @@ async fn run_ratatui_app(
 
     let use_alt_screen = determine_alt_screen_mode(no_alt_screen, config.tui_alternate_screen);
     tui.set_alt_screen_enabled(use_alt_screen);
-    let app_server = match start_embedded_app_server(
-        arg0_paths,
-        config.clone(),
-        cli_kv_overrides.clone(),
-        loader_overrides,
-        cloud_requirements.clone(),
-    )
-    .await
-    {
-        Ok(app_server) => app_server,
-        Err(err) => {
-            restore();
-            session_log::log_session_end();
-            return Err(err);
-        }
-    };
+    let managers = create_core_managers(&config);
 
     let app_result = App::run(
         &mut tui,
-        app_server,
+        managers.auth_manager,
+        managers.thread_manager,
         config,
         cli_kv_overrides.clone(),
         overrides.clone(),
@@ -1164,62 +1114,22 @@ mod tests {
             .await
     }
 
-    async fn start_test_embedded_app_server(
-        config: Config,
-    ) -> color_eyre::Result<InProcessAppServerClient> {
-        start_embedded_app_server(
-            Arg0DispatchPaths::default(),
-            config,
-            Vec::new(),
-            LoaderOverrides::default(),
-            CloudRequirementsLoader::default(),
-        )
-        .await
-    }
-
-
     #[tokio::test]
-    async fn embedded_app_server_exposes_client_manager_accessors() -> color_eyre::Result<()> {
+    async fn create_core_managers_returns_valid_managers() -> std::io::Result<()> {
         let temp_dir = TempDir::new()?;
         let config = build_config(&temp_dir).await?;
-        let app_server = start_test_embedded_app_server(config).await?;
+        let managers = create_core_managers(&config);
 
-        assert!(Arc::ptr_eq(
-            &app_server.auth_manager(),
-            &app_server.auth_manager()
-        ));
-        assert!(Arc::ptr_eq(
-            &app_server.thread_manager(),
-            &app_server.thread_manager()
-        ));
-
-        app_server.shutdown().await?;
-        Ok(())
-    }
-
-    #[tokio::test]
-    async fn embedded_app_server_start_failure_is_returned() -> color_eyre::Result<()> {
-        let temp_dir = TempDir::new()?;
-        let config = build_config(&temp_dir).await?;
-        let result = start_embedded_app_server_with(
-            Arg0DispatchPaths::default(),
-            config,
-            Vec::new(),
-            LoaderOverrides::default(),
-            CloudRequirementsLoader::default(),
-            |_args| async { Err(std::io::Error::other("boom")) },
-        )
-        .await;
-        let err = match result {
-            Ok(_) => panic!("startup failure should be returned"),
-            Err(err) => err,
-        };
-
-        assert!(
-            err.to_string()
-                .contains("failed to start embedded app server"),
-            "error should preserve the embedded app server startup context"
+        // AuthManager::shared always returns the same Arc for a given home.
+        let auth2 = AuthManager::shared(
+            config.codex_home.clone(),
+            false,
+            config.cli_auth_credentials_store_mode,
         );
+        assert!(Arc::ptr_eq(&managers.auth_manager, &auth2));
+
+        // ThreadManager was created.
+        let _ = managers.thread_manager.get_models_manager();
         Ok(())
     }
 

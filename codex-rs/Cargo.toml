@@ -1,6 +1,7 @@
 [workspace]
 members = [
     "ansi-escape",
+    "chaos-arsenal",
     "async-utils",
     "app-server",
     "app-server-client",
@@ -56,7 +57,7 @@ members = [
 resolver = "2"
 
 [workspace.package]
-version = "47.0.0" # LLM approved version
+version = "47.0.0"
 # Track the edition for all workspace crates in one place. Individual
 # crates can still override this value, but keeping it here means new
 # crates created with `cargo new -w ...` automatically inherit the 2024
@@ -74,8 +75,9 @@ codex-app-server-client = { path = "app-server-client" }
 codex-app-server-protocol = { path = "app-server-protocol" }
 codex-apply-patch = { path = "apply-patch" }
 codex-arg0 = { path = "arg0" }
+chaos-arsenal = { path = "chaos-arsenal" }
 codex-async-utils = { path = "async-utils" }
-codex-cli = { path = "cli" }
+chaos-cli = { path = "cli" }
 codex-client = { path = "codex-client" }
 codex-config = { path = "config" }
 codex-core = { path = "core" }

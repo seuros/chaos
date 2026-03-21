@@ -1789,6 +1789,9 @@ fn format_plugin_summary(plugin: &DiscoverablePluginInfo) -> String {
 }
 
 fn create_read_file_tool() -> ToolSpec {
+    // NOTE: The canonical schema lives in chaos-arsenal via schemars, but core's
+    // JsonSchema enum can't represent $ref/$defs/anyOf from JSON Schema 2020-12.
+    // Keep this hand-rolled version until core's schema model is upgraded.
     let indentation_properties = BTreeMap::from([
         (
             "anchor_line".to_string(),
@@ -2553,9 +2556,6 @@ pub(crate) fn build_specs_with_discoverable_tools(
         builder.register_handler("apply_patch", apply_patch_handler);
     }
 
-    if config
-        .experimental_supported_tools
-        .contains(&"grep_files".to_string())
     {
         let grep_files_handler = Arc::new(GrepFilesHandler);
         push_tool_spec(
@@ -2566,9 +2566,6 @@ pub(crate) fn build_specs_with_discoverable_tools(
         builder.register_handler("grep_files", grep_files_handler);
     }
 
-    if config
-        .experimental_supported_tools
-        .contains(&"read_file".to_string())
     {
         let read_file_handler = Arc::new(ReadFileHandler);
         push_tool_spec(
@@ -2579,10 +2576,6 @@ pub(crate) fn build_specs_with_discoverable_tools(
         builder.register_handler("read_file", read_file_handler);
     }
 
-    if config
-        .experimental_supported_tools
-        .iter()
-        .any(|tool| tool == "list_dir")
     {
         let list_dir_handler = Arc::new(ListDirHandler);
         push_tool_spec(

@@ -1,8 +1,32 @@
-use super::indentation::read_block;
-use super::slice::read;
-use super::*;
+use anyhow::anyhow;
+use chaos_arsenal::tools::read_file::IndentationParams;
+use chaos_arsenal::tools::read_file::MAX_LINE_LENGTH;
+use chaos_arsenal::tools::read_file::indentation_mode::read_block as read_block_inner;
+use chaos_arsenal::tools::read_file::slice::read as read_inner;
 use pretty_assertions::assert_eq;
 use tempfile::NamedTempFile;
+
+/// Adapts `Result<T, String>` to `anyhow::Result<T>` for test ergonomics.
+async fn read(
+    path: &std::path::Path,
+    offset: usize,
+    limit: usize,
+) -> anyhow::Result<Vec<String>> {
+    read_inner(path, offset, limit)
+        .await
+        .map_err(|e| anyhow!(e))
+}
+
+async fn read_block(
+    path: &std::path::Path,
+    offset: usize,
+    limit: usize,
+    options: IndentationParams,
+) -> anyhow::Result<Vec<String>> {
+    read_block_inner(path, offset, limit, options)
+        .await
+        .map_err(|e| anyhow!(e))
+}
 
 #[tokio::test]
 async fn reads_requested_range() -> anyhow::Result<()> {
@@ -27,13 +51,10 @@ async fn errors_when_offset_exceeds_length() -> anyhow::Result<()> {
     use std::io::Write as _;
     writeln!(temp, "only")?;
 
-    let err = read(temp.path(), 3, 1)
+    let err = read_inner(temp.path(), 3, 1)
         .await
         .expect_err("offset exceeds length");
-    assert_eq!(
-        err,
-        FunctionCallError::RespondToModel("offset exceeds file length".to_string())
-    );
+    assert_eq!(err, "offset exceeds file length");
     Ok(())
 }
 
@@ -108,7 +129,7 @@ async fn indentation_mode_captures_block() -> anyhow::Result<()> {
 "
     )?;
 
-    let options = IndentationArgs {
+    let options = IndentationParams {
         anchor_line: Some(3),
         include_siblings: false,
         max_levels: 1,
@@ -144,7 +165,7 @@ async fn indentation_mode_expands_parents() -> anyhow::Result<()> {
 "
     )?;
 
-    let mut options = IndentationArgs {
+    let mut options = IndentationParams {
         anchor_line: Some(4),
         max_levels: 2,
         ..Default::default()
@@ -196,7 +217,7 @@ async fn indentation_mode_respects_sibling_flag() -> anyhow::Result<()> {
 "
     )?;
 
-    let mut options = IndentationArgs {
+    let mut options = IndentationParams {
         anchor_line: Some(3),
         include_siblings: false,
         max_levels: 1,
@@ -250,7 +271,7 @@ class Bar:
 "
     )?;
 
-    let options = IndentationArgs {
+    let options = IndentationParams {
         anchor_line: Some(7),
         include_siblings: true,
         max_levels: 1,
@@ -307,7 +328,7 @@ export function other() {{
 "
     )?;
 
-    let options = IndentationArgs {
+    let options = IndentationParams {
         anchor_line: Some(15),
         max_levels: 1,
         ..Default::default()
@@ -378,7 +399,7 @@ private:
 async fn indentation_mode_handles_cpp_sample_shallow() -> anyhow::Result<()> {
     let temp = write_cpp_sample()?;
 
-    let options = IndentationArgs {
+    let options = IndentationParams {
         include_siblings: false,
         anchor_line: Some(18),
         max_levels: 1,
@@ -406,7 +427,7 @@ async fn indentation_mode_handles_cpp_sample_shallow() -> anyhow::Result<()> {
 async fn indentation_mode_handles_cpp_sample() -> anyhow::Result<()> {
     let temp = write_cpp_sample()?;
 
-    let options = IndentationArgs {
+    let options = IndentationParams {
         include_siblings: false,
         anchor_line: Some(18),
         max_levels: 2,
@@ -437,7 +458,7 @@ async fn indentation_mode_handles_cpp_sample() -> anyhow::Result<()> {
 async fn indentation_mode_handles_cpp_sample_no_headers() -> anyhow::Result<()> {
     let temp = write_cpp_sample()?;
 
-    let options = IndentationArgs {
+    let options = IndentationParams {
         include_siblings: false,
         include_header: false,
         anchor_line: Some(18),
@@ -468,7 +489,7 @@ async fn indentation_mode_handles_cpp_sample_no_headers() -> anyhow::Result<()> 
 async fn indentation_mode_handles_cpp_sample_siblings() -> anyhow::Result<()> {
     let temp = write_cpp_sample()?;
 
-    let options = IndentationArgs {
+    let options = IndentationParams {
         include_siblings: true,
         include_header: false,
         anchor_line: Some(18),

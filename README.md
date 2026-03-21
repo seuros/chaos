@@ -1,56 +1,97 @@
-<p align="center"><code>brew install --cask codex</code><br />or download a release binary from GitHub</p>
-<p align="center"><strong>Codex CLI</strong> is a coding agent from OpenAI that runs locally on your computer.
-<p align="center">
-  <img src="https://github.com/openai/codex/blob/main/.github/codex-cli-splash.png" alt="Codex CLI splash" width="80%" />
-</p>
-</br>
-If you want Codex in your code editor (VS Code, Cursor, Windsurf), <a href="https://developers.openai.com/codex/ide">install in your IDE.</a>
-</br>If you want the desktop app experience, run <code>codex app</code> or visit <a href="https://chatgpt.com/codex?app-landing-page=true">the Codex App page</a>.
-</br>If you are looking for the <em>cloud-based agent</em> from OpenAI, <strong>Codex Web</strong>, go to <a href="https://chatgpt.com/codex">chatgpt.com/codex</a>.</p>
+# Chaos
+
+Chaos is an AI agent operating system. Not a coding assistant — an OS.
+You pick the brain (OpenAI, Anthropic, local models), snap in the capabilities you need (modules),
+and wire up external services (drivers). It was forked from OpenAI's Codex CLI after one too many
+bugs were called features. It runs on a Celeron.
 
 ---
 
-## Quickstart
+## Architecture
 
-### Installing and running Codex CLI
-
-Install with Homebrew:
-
-```shell
-brew install --cask codex
+```
+ ┌──────────────────────────────────────────────┐
+ │                   Chaos OS                   │
+ ├──────────┬───────────────┬───────────────────┤
+ │  Kernel  │   Modules     │     Drivers       │
+ │          │               │                   │
+ │  LLM     │  Tools that   │  MCP servers for  │
+ │  comms   │  extend the   │  external         │
+ │  layer   │  OS           │  services         │
+ │          │               │                   │
+ │ OpenAI   │  voice        │  file system      │
+ │ Anthropic│  sandbox      │  Telegram         │
+ │ Local    │  ...          │  Google Play      │
+ │ ...      │               │  GitHub           │
+ │ ...      │  ...          │  ...              │
+ └──────────┴───────────────┴───────────────────┘
 ```
 
-Or download the appropriate binary from the latest GitHub Release.
+**Kernel** — Talks to LLM providers. OpenAI, Anthropic, local models. This is the only
+part that cares about wire protocols and API formats.
 
-Then run `codex` to get started.
+**Modules** — Extend what Chaos can do. Want voice? Module.
+Want a custom tool for your workflow? Module. Everything is modular — Chaos is not
+locked into being a coding agent.
 
-<details>
-<summary>You can also go to the <a href="https://github.com/openai/codex/releases/latest">latest GitHub Release</a> and download the appropriate binary for your platform.</summary>
+**Drivers** — MCP servers that give Chaos its tools and connect it to the outside world.
+File reading, shell access, Telegram, Google Play — if it speaks MCP, it's a driver.
+Plug in, wire up, ship.
 
-Each GitHub Release contains many executables, but in practice, you likely want one of these:
+---
 
-- macOS
-  - Apple Silicon/arm64: `codex-aarch64-apple-darwin.tar.gz`
-  - x86_64 (older Mac hardware): `codex-x86_64-apple-darwin.tar.gz`
-- Linux
-  - x86_64: `codex-x86_64-unknown-linux-musl.tar.gz`
-  - arm64: `codex-aarch64-unknown-linux-musl.tar.gz`
+## Hardware Philosophy
 
-Each archive contains a single entry with the platform baked into the name (e.g., `codex-x86_64-unknown-linux-musl`), so you likely want to rename it to `codex` after extracting it.
+Chaos runs on hardware you assemble from Temu parts. If it can't run on a Core 2 Duo
+with 1 GB of RAM, it's out of tree.
 
-</details>
+Old hardware does not mean old software. Chaos expects bleeding-edge operating systems
+and abuses every security primitive they offer:
 
-### Using Codex with your ChatGPT plan
+- **Linux**: landlock, seccomp
+- **FreeBSD**: jails, capsicum
+- **OpenBSD**: pledge, unveil
+- **macOS**: sandbox profiles
 
-Run `codex` and select **Sign in with ChatGPT**. We recommend signing into your ChatGPT account to use Codex as part of your Plus, Pro, Team, Edu, or Enterprise plan. [Learn more about what's included in your ChatGPT plan](https://help.openai.com/en/articles/11369540-codex-in-chatgpt).
+No shims. No compatibility layers. If the OS gives us something, we use it.
 
-You can also use Codex with an API key, but this requires [additional setup](https://developers.openai.com/codex/auth#sign-in-with-an-api-key).
+Windows is not supported.
+
+---
+
+## Clamping / Docking
+
+Anthropic requires MAX subscribers to use the official Claude Code harness.
+The Clamping module works within these terms: it launches Claude Code with `--bare`,
+strips its built-in tools, and connects through MCP. Chaos provides the tools.
+Chaos hooks into the lifecycle. Claude Code becomes the transport.
+
+API key users connect directly through the kernel — no clamping needed.
+
+This architecture is correct usage of both providers' terms of service.
+
+---
+
+## Install
+
+See [Installing & building from source](./docs/install.md).
+
+---
 
 ## Docs
 
-- [**Codex Documentation**](https://developers.openai.com/codex)
-- [**Contributing**](./docs/contributing.md)
-- [**Installing & building**](./docs/install.md)
-- [**Open source fund**](./docs/open-source-fund.md)
+- [Contributing](./docs/contributing.md)
+- [Installing & building from source](./docs/install.md)
 
-This repository is licensed under the [Apache-2.0 License](LICENSE).
+---
+
+## Origin
+
+Chaos was forked from [OpenAI Codex CLI](https://github.com/openai/codex).
+The fork exists because upstream refused to fix bugs and called them features.
+The codebase has since diverged significantly — Chaos is provider-agnostic,
+modular, and built for hardware that most projects have forgotten.
+
+---
+
+Licensed under [Apache-2.0](LICENSE).

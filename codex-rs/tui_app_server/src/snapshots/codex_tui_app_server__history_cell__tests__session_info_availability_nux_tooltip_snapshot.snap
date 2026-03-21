@@ -3,7 +3,7 @@ source: tui_app_server/src/history_cell.rs
 expression: rendered
 ---
 ╭─────────────────────────────────────╮
-│ >_ OpenAI Codex (v0.0.0)            │
+│ >_ Chaos (v0.0.0)            │
 │                                     │
 │ model:     gpt-5   /model to change │
 │ directory: /tmp/project             │

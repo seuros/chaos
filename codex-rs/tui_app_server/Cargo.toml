@@ -112,7 +112,7 @@ libc = { workspace = true }
 
 
 [dev-dependencies]
-codex-cli = { workspace = true }
+chaos-cli = { workspace = true }
 codex-core = { workspace = true }
 codex-utils-cargo-bin = { workspace = true }
 codex-utils-pty = { workspace = true }

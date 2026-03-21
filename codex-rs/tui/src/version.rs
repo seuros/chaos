@@ -1,2 +1,5 @@
-/// The current Codex CLI version as embedded at compile time.
-pub const CODEX_CLI_VERSION: &str = env!("CARGO_PKG_VERSION");
+/// The product name shown in the TUI header.
+pub const PRODUCT_NAME: &str = "Chaos";
+
+/// The current version as embedded at compile time.
+pub const CHAOS_VERSION: &str = env!("CARGO_PKG_VERSION");

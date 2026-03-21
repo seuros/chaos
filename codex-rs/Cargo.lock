@@ -1421,29 +1421,6 @@ dependencies = [
 ]
 
 [[package]]
-name = "codex-app-server-client"
-version = "47.0.0"
-dependencies = [
- "base64 0.22.1",
- "codex-app-server",
- "codex-app-server-protocol",
- "codex-arg0",
- "codex-core",
- "codex-protocol",
- "codex-utils-rustls-provider",
- "futures",
- "pretty_assertions",
- "rama",
- "serde",
- "serde_json",
- "sha1",
- "tokio",
- "toml 0.9.12+spec-1.1.0",
- "tracing",
- "url",
-]
-
-[[package]]
 name = "codex-app-server-protocol"
 version = "47.0.0"
 dependencies = [

@@ -161,7 +161,10 @@ impl AppServerSession {
                 params: None,
             })
             .await
-            .wrap_err("account/rateLimits/read failed during TUI bootstrap")?;
+            .unwrap_or(GetAccountRateLimitsResponse {
+                rate_limits: Default::default(),
+                rate_limits_by_limit_id: None,
+            });
 
         let available_models = models
             .data

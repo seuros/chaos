@@ -1,9 +1,14 @@
-pub(crate) use codex_skills::install_system_skills;
-pub(crate) use codex_skills::system_cache_root_dir;
-
 use std::path::Path;
+use std::path::PathBuf;
 
-pub(crate) fn uninstall_system_skills(codex_home: &Path) {
-    let system_skills_dir = system_cache_root_dir(codex_home);
-    let _ = std::fs::remove_dir_all(&system_skills_dir);
+pub(crate) fn system_cache_root_dir(codex_home: &Path) -> PathBuf {
+    codex_home.join("skills").join(".system")
+}
+
+pub(crate) fn install_system_skills(_codex_home: &Path) -> Result<(), std::io::Error> {
+    Ok(())
+}
+
+pub(crate) fn uninstall_system_skills(_codex_home: &Path) {
+    // no-op
 }

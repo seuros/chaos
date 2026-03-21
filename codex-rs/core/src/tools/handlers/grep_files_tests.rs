@@ -1,6 +1,5 @@
-use super::*;
+use chaos_arsenal::tools::grep_files::{parse_results, run_rg_search};
 use std::process::Command as StdCommand;
-use tempfile::tempdir;
 
 #[test]
 fn parses_basic_results() {
@@ -23,67 +22,71 @@ fn parse_truncates_after_limit() {
 }
 
 #[tokio::test]
-async fn run_search_returns_results() -> anyhow::Result<()> {
+async fn run_search_returns_results() {
     if !rg_available() {
-        return Ok(());
+        return;
     }
-    let temp = tempdir().expect("create temp dir");
+    let temp = tempfile::tempdir().expect("create temp dir");
     let dir = temp.path();
     std::fs::write(dir.join("match_one.txt"), "alpha beta gamma").unwrap();
     std::fs::write(dir.join("match_two.txt"), "alpha delta").unwrap();
     std::fs::write(dir.join("other.txt"), "omega").unwrap();
 
-    let results = run_rg_search("alpha", None, dir, 10, dir).await?;
+    let results = run_rg_search("alpha", None, dir, 10)
+        .await
+        .expect("search failed");
     assert_eq!(results.len(), 2);
     assert!(results.iter().any(|path| path.ends_with("match_one.txt")));
     assert!(results.iter().any(|path| path.ends_with("match_two.txt")));
-    Ok(())
 }
 
 #[tokio::test]
-async fn run_search_with_glob_filter() -> anyhow::Result<()> {
+async fn run_search_with_glob_filter() {
     if !rg_available() {
-        return Ok(());
+        return;
     }
-    let temp = tempdir().expect("create temp dir");
+    let temp = tempfile::tempdir().expect("create temp dir");
     let dir = temp.path();
     std::fs::write(dir.join("match_one.rs"), "alpha beta gamma").unwrap();
     std::fs::write(dir.join("match_two.txt"), "alpha delta").unwrap();
 
-    let results = run_rg_search("alpha", Some("*.rs"), dir, 10, dir).await?;
+    let results = run_rg_search("alpha", Some("*.rs"), dir, 10)
+        .await
+        .expect("search failed");
     assert_eq!(results.len(), 1);
     assert!(results.iter().all(|path| path.ends_with("match_one.rs")));
-    Ok(())
 }
 
 #[tokio::test]
-async fn run_search_respects_limit() -> anyhow::Result<()> {
+async fn run_search_respects_limit() {
     if !rg_available() {
-        return Ok(());
+        return;
     }
-    let temp = tempdir().expect("create temp dir");
+    let temp = tempfile::tempdir().expect("create temp dir");
     let dir = temp.path();
     std::fs::write(dir.join("one.txt"), "alpha one").unwrap();
     std::fs::write(dir.join("two.txt"), "alpha two").unwrap();
     std::fs::write(dir.join("three.txt"), "alpha three").unwrap();
 
-    let results = run_rg_search("alpha", None, dir, 2, dir).await?;
+    let results = run_rg_search("alpha", None, dir, 2)
+        .await
+        .expect("search failed");
     assert_eq!(results.len(), 2);
-    Ok(())
 }
 
 #[tokio::test]
-async fn run_search_handles_no_matches() -> anyhow::Result<()> {
+async fn run_search_handles_no_matches() {
     if !rg_available() {
-        return Ok(());
+        return;
     }
-    let temp = tempdir().expect("create temp dir");
+    let temp = tempfile::tempdir().expect("create temp dir");
     let dir = temp.path();
     std::fs::write(dir.join("one.txt"), "omega").unwrap();
 
-    let results = run_rg_search("alpha", None, dir, 5, dir).await?;
+    let results = run_rg_search("alpha", None, dir, 5)
+        .await
+        .expect("search failed");
     assert!(results.is_empty());
-    Ok(())
 }
 
 fn rg_available() -> bool {

@@ -1,4 +1,3 @@
-use clap::Args;
 use clap::CommandFactory;
 use clap::Parser;
 use clap_complete::Shell;
@@ -89,9 +88,6 @@ enum Subcommand {
 
     /// Start Codex as an MCP server (stdio).
     McpServer,
-
-    /// [experimental] Run the app server or related tooling.
-    AppServer(AppServerCommand),
 
     /// Generate shell completion scripts.
     Completion(CompletionCommand),
@@ -238,75 +234,6 @@ enum LoginSubcommand {
 struct LogoutCommand {
     #[clap(skip)]
     config_overrides: CliConfigOverrides,
-}
-
-#[derive(Debug, Parser)]
-struct AppServerCommand {
-    /// Omit to run the app server; specify a subcommand for tooling.
-    #[command(subcommand)]
-    subcommand: Option<AppServerSubcommand>,
-
-    /// Transport endpoint URL. Supported values: `stdio://` (default),
-    /// `ws://IP:PORT`.
-    #[arg(
-        long = "listen",
-        value_name = "URL",
-        default_value = codex_app_server::AppServerTransport::DEFAULT_LISTEN_URL
-    )]
-    listen: codex_app_server::AppServerTransport,
-
-    /// Controls whether analytics are enabled by default.
-    ///
-    /// Analytics are disabled by default for app-server. Users have to explicitly opt in
-    /// via the `analytics` section in the config.toml file.
-    ///
-    /// However, for first-party use cases like the VSCode IDE extension, we default analytics
-    /// to be enabled by default by setting this flag. Users can still opt out by setting this
-    /// in their config.toml:
-    ///
-    /// ```toml
-    /// [analytics]
-    /// enabled = false
-    /// ```
-    ///
-    /// See https://developers.openai.com/codex/config-advanced/#metrics for more details.
-    #[arg(long = "analytics-default-enabled")]
-    analytics_default_enabled: bool,
-}
-
-#[derive(Debug, clap::Subcommand)]
-enum AppServerSubcommand {
-    /// [experimental] Generate TypeScript bindings for the app server protocol.
-    GenerateTs(GenerateTsCommand),
-
-    /// [experimental] Generate JSON Schema for the app server protocol.
-    GenerateJsonSchema(GenerateJsonSchemaCommand),
-}
-
-#[derive(Debug, Args)]
-struct GenerateTsCommand {
-    /// Output directory where .ts files will be written
-    #[arg(short = 'o', long = "out", value_name = "DIR")]
-    out_dir: PathBuf,
-
-    /// Optional path to the Prettier executable to format generated files
-    #[arg(short = 'p', long = "prettier", value_name = "PRETTIER_BIN")]
-    prettier: Option<PathBuf>,
-
-    /// Include experimental methods and fields in the generated output
-    #[arg(long = "experimental", default_value_t = false)]
-    experimental: bool,
-}
-
-#[derive(Debug, Args)]
-struct GenerateJsonSchemaCommand {
-    /// Output directory where the schema bundle will be written
-    #[arg(short = 'o', long = "out", value_name = "DIR")]
-    out_dir: PathBuf,
-
-    /// Include experimental methods and fields in the generated output
-    #[arg(long = "experimental", default_value_t = false)]
-    experimental: bool,
 }
 
 #[derive(Debug, Parser)]
@@ -514,36 +441,6 @@ async fn cli_main(arg0_paths: Arg0DispatchPaths) -> anyhow::Result<()> {
             prepend_config_flags(&mut mcp_cli.config_overrides, root_config_overrides.clone());
             mcp_cli.run().await?;
         }
-        Some(Subcommand::AppServer(app_server_cli)) => match app_server_cli.subcommand {
-            None => {
-                let transport = app_server_cli.listen;
-                codex_app_server::run_main_with_transport(
-                    arg0_paths.clone(),
-                    root_config_overrides,
-                    codex_core::config_loader::LoaderOverrides::default(),
-                    app_server_cli.analytics_default_enabled,
-                    transport,
-                )
-                .await?;
-            }
-            Some(AppServerSubcommand::GenerateTs(gen_cli)) => {
-                let options = codex_app_server_protocol::GenerateTsOptions {
-                    experimental_api: gen_cli.experimental,
-                    ..Default::default()
-                };
-                codex_app_server_protocol::generate_ts_with_options(
-                    &gen_cli.out_dir,
-                    gen_cli.prettier.as_deref(),
-                    options,
-                )?;
-            }
-            Some(AppServerSubcommand::GenerateJsonSchema(gen_cli)) => {
-                codex_app_server_protocol::generate_json_with_experimental(
-                    &gen_cli.out_dir,
-                    gen_cli.experimental,
-                )?;
-            }
-        },
         Some(Subcommand::Resume(ResumeCommand {
             session_id,
             last,
@@ -1033,14 +930,6 @@ mod tests {
         assert_eq!(args.prompt.as_deref(), Some("re-review"));
     }
 
-    fn app_server_from_args(args: &[&str]) -> AppServerCommand {
-        let cli = MultitoolCli::try_parse_from(args).expect("parse");
-        let Subcommand::AppServer(app_server) = cli.subcommand.expect("app-server present") else {
-            unreachable!()
-        };
-        app_server
-    }
-
     fn sample_exit_info(conversation_id: Option<&str>, thread_name: Option<&str>) -> AppExitInfo {
         let token_usage = TokenUsage {
             output_tokens: 2,
@@ -1259,53 +1148,6 @@ mod tests {
         let interactive = finalize_fork_from_args(["chaos", "fork", "--all"].as_ref());
         assert!(interactive.fork_picker);
         assert!(interactive.fork_show_all);
-    }
-
-    #[test]
-    fn app_server_analytics_default_disabled_without_flag() {
-        let app_server = app_server_from_args(["chaos", "app-server"].as_ref());
-        assert!(!app_server.analytics_default_enabled);
-        assert_eq!(
-            app_server.listen,
-            codex_app_server::AppServerTransport::Stdio
-        );
-    }
-
-    #[test]
-    fn app_server_analytics_default_enabled_with_flag() {
-        let app_server =
-            app_server_from_args(["chaos", "app-server", "--analytics-default-enabled"].as_ref());
-        assert!(app_server.analytics_default_enabled);
-    }
-
-    #[test]
-    fn app_server_listen_websocket_url_parses() {
-        let app_server = app_server_from_args(
-            ["chaos", "app-server", "--listen", "ws://127.0.0.1:4500"].as_ref(),
-        );
-        assert_eq!(
-            app_server.listen,
-            codex_app_server::AppServerTransport::WebSocket {
-                bind_address: "127.0.0.1:4500".parse().expect("valid socket address"),
-            }
-        );
-    }
-
-    #[test]
-    fn app_server_listen_stdio_url_parses() {
-        let app_server =
-            app_server_from_args(["chaos", "app-server", "--listen", "stdio://"].as_ref());
-        assert_eq!(
-            app_server.listen,
-            codex_app_server::AppServerTransport::Stdio
-        );
-    }
-
-    #[test]
-    fn app_server_listen_invalid_url_fails_to_parse() {
-        let parse_result =
-            MultitoolCli::try_parse_from(["chaos", "app-server", "--listen", "http://foo"]);
-        assert!(parse_result.is_err());
     }
 
     #[test]

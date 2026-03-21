@@ -1,0 +1,28 @@
+name: Driver Request
+description: Request an MCP driver for an external service
+labels:
+  - driver
+body:
+  - type: input
+    id: service
+    attributes:
+      label: Service name
+      description: e.g. Telegram, Slack, Jira, PostgreSQL
+    validations:
+      required: true
+  - type: textarea
+    id: what
+    attributes:
+      label: What should the driver do?
+      description: Which operations? Read-only or read-write?
+    validations:
+      required: true
+  - type: input
+    id: existing
+    attributes:
+      label: Existing MCP server?
+      description: Link to an existing MCP server that could be used as a driver, if any.
+  - type: textarea
+    id: notes
+    attributes:
+      label: Additional context

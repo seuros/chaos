@@ -117,7 +117,7 @@ pub fn is_first_party_originator(originator_value: &str) -> bool {
 }
 
 pub fn is_first_party_chat_originator(originator_value: &str) -> bool {
-    originator_value == "codex_atlas" || originator_value == "codex_chatgpt_desktop"
+    originator_value == "codex_atlas"
 }
 
 pub fn get_codex_user_agent() -> String {

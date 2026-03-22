@@ -40,11 +40,7 @@ fn absolute_path(path: &str) -> AbsolutePathBuf {
 }
 
 fn host_absolute_path(segments: &[&str]) -> String {
-    let mut path = if cfg!(windows) {
-        PathBuf::from(r"C:\")
-    } else {
-        PathBuf::from("/")
-    };
+    let mut path = PathBuf::from("/");
     for segment in segments {
         path.push(segment);
     }
@@ -52,11 +48,7 @@ fn host_absolute_path(segments: &[&str]) -> String {
 }
 
 fn host_executable_name(name: &str) -> String {
-    if cfg!(windows) {
-        format!("{name}.exe")
-    } else {
-        name.to_string()
-    }
+    name.to_string()
 }
 
 fn starlark_string(value: &str) -> String {

@@ -33,7 +33,7 @@ fn test_utf8_passthrough() {
 
 #[test]
 fn test_cp1251_russian_text() {
-    // Cyrillic text emitted by PowerShell/WSL in CP1251 should decode cleanly.
+    // Cyrillic text emitted in CP1251 should decode cleanly.
     let bytes = b"\xEF\xF0\xE8\xEC\xE5\xF0"; // "пример" encoded with Windows-1251
     assert_eq!(bytes_to_string_smart(bytes), "пример");
 }
@@ -54,7 +54,7 @@ fn test_koi8_r_privet_word() {
 
 #[test]
 fn test_cp866_russian_text() {
-    // Legacy consoles (cmd.exe) commonly emit CP866 bytes for Cyrillic content.
+    // Legacy consoles commonly emit CP866 bytes for Cyrillic content.
     let bytes = b"\xAF\xE0\xA8\xAC\xA5\xE0"; // "пример" encoded with CP866
     assert_eq!(bytes_to_string_smart(bytes), "пример");
 }

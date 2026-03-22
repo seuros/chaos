@@ -291,7 +291,7 @@ fn parse_special_path(path: &str) -> Option<FileSystemSpecialPath> {
 }
 
 fn parse_absolute_path(path: &str) -> io::Result<AbsolutePathBuf> {
-    parse_absolute_path_for_platform(path, cfg!(windows))
+    parse_absolute_path_for_platform(path, false)
 }
 
 fn parse_absolute_path_for_platform(path: &str, is_windows: bool) -> io::Result<AbsolutePathBuf> {

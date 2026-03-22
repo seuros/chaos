@@ -20,7 +20,7 @@ fn test_cp1251_shell_output() {
 
 #[test]
 fn test_cp866_shell_output() {
-    // Native cmd.exe still defaults to CP866; make sure we recognize that too.
+    // CP866 is used for Cyrillic in some legacy contexts; make sure we recognize it.
     assert_eq!(decode_shell_output(b"\xAF\xE0\xA8\xAC\xA5\xE0"), "пример");
 }
 

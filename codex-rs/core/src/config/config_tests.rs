@@ -553,7 +553,7 @@ fn permissions_profiles_reject_writes_outside_workspace_root() -> std::io::Resul
     let codex_home = TempDir::new()?;
     let cwd = TempDir::new()?;
     std::fs::write(cwd.path().join(".git"), "gitdir: nowhere")?;
-    let external_write_path = if cfg!(windows) { r"C:\temp" } else { "/tmp" };
+    let external_write_path = "/tmp";
 
     let err = Config::load_from_base_config_with_overrides(
         ConfigToml {
@@ -986,20 +986,16 @@ exclude_slash_tmp = true
         &PathBuf::from("/tmp/test"),
         None,
     );
-    if cfg!(target_os = "windows") {
-        assert_eq!(resolution, SandboxPolicy::new_read_only_policy());
-    } else {
-        assert_eq!(
-            resolution,
-            SandboxPolicy::WorkspaceWrite {
-                writable_roots: vec![writable_root.clone()],
-                read_only_access: ReadOnlyAccess::FullAccess,
-                network_access: false,
-                exclude_tmpdir_env_var: true,
-                exclude_slash_tmp: true,
-            }
-        );
-    }
+    assert_eq!(
+        resolution,
+        SandboxPolicy::WorkspaceWrite {
+            writable_roots: vec![writable_root.clone()],
+            read_only_access: ReadOnlyAccess::FullAccess,
+            network_access: false,
+            exclude_tmpdir_env_var: true,
+            exclude_slash_tmp: true,
+        }
+    );
 
     let sandbox_workspace_write = format!(
         r#"
@@ -1027,20 +1023,16 @@ trust_level = "trusted"
         &PathBuf::from("/tmp/test"),
         None,
     );
-    if cfg!(target_os = "windows") {
-        assert_eq!(resolution, SandboxPolicy::new_read_only_policy());
-    } else {
-        assert_eq!(
-            resolution,
-            SandboxPolicy::WorkspaceWrite {
-                writable_roots: vec![writable_root],
-                read_only_access: ReadOnlyAccess::FullAccess,
-                network_access: false,
-                exclude_tmpdir_env_var: true,
-                exclude_slash_tmp: true,
-            }
-        );
-    }
+    assert_eq!(
+        resolution,
+        SandboxPolicy::WorkspaceWrite {
+            writable_roots: vec![writable_root],
+            read_only_access: ReadOnlyAccess::FullAccess,
+            network_access: false,
+            exclude_tmpdir_env_var: true,
+            exclude_slash_tmp: true,
+        }
+    );
 }
 
 #[test]
@@ -1269,26 +1261,19 @@ fn add_dir_override_extends_workspace_writable_roots() -> std::io::Result<()> {
     )?;
 
     let expected_backend = AbsolutePathBuf::try_from(backend).unwrap();
-    if cfg!(target_os = "windows") {
-        match config.permissions.sandbox_policy.get() {
-            SandboxPolicy::ReadOnly { .. } => {}
-            other => panic!("expected read-only policy on Windows, got {other:?}"),
+    match config.permissions.sandbox_policy.get() {
+        SandboxPolicy::WorkspaceWrite { writable_roots, .. } => {
+            assert_eq!(
+                writable_roots
+                    .iter()
+                    .filter(|root| **root == expected_backend)
+                    .count(),
+                1,
+                "expected single writable root entry for {}",
+                expected_backend.display()
+            );
         }
-    } else {
-        match config.permissions.sandbox_policy.get() {
-            SandboxPolicy::WorkspaceWrite { writable_roots, .. } => {
-                assert_eq!(
-                    writable_roots
-                        .iter()
-                        .filter(|root| **root == expected_backend)
-                        .count(),
-                    1,
-                    "expected single writable root entry for {}",
-                    expected_backend.display()
-                );
-            }
-            other => panic!("expected workspace-write policy, got {other:?}"),
-        }
+        other => panic!("expected workspace-write policy, got {other:?}"),
     }
 
     Ok(())
@@ -1330,32 +1315,25 @@ fn workspace_write_always_includes_memories_root_once() -> std::io::Result<()> {
         codex_home.path().to_path_buf(),
     )?;
 
-    if cfg!(target_os = "windows") {
-        match config.permissions.sandbox_policy.get() {
-            SandboxPolicy::ReadOnly { .. } => {}
-            other => panic!("expected read-only policy on Windows, got {other:?}"),
+    assert!(
+        memories_root.is_dir(),
+        "expected memories root directory to exist at {}",
+        memories_root.display()
+    );
+    let expected_memories_root = AbsolutePathBuf::from_absolute_path(&memories_root)?;
+    match config.permissions.sandbox_policy.get() {
+        SandboxPolicy::WorkspaceWrite { writable_roots, .. } => {
+            assert_eq!(
+                writable_roots
+                    .iter()
+                    .filter(|root| **root == expected_memories_root)
+                    .count(),
+                1,
+                "expected single writable root entry for {}",
+                expected_memories_root.display()
+            );
         }
-    } else {
-        assert!(
-            memories_root.is_dir(),
-            "expected memories root directory to exist at {}",
-            memories_root.display()
-        );
-        let expected_memories_root = AbsolutePathBuf::from_absolute_path(&memories_root)?;
-        match config.permissions.sandbox_policy.get() {
-            SandboxPolicy::WorkspaceWrite { writable_roots, .. } => {
-                assert_eq!(
-                    writable_roots
-                        .iter()
-                        .filter(|root| **root == expected_memories_root)
-                        .count(),
-                    1,
-                    "expected single writable root entry for {}",
-                    expected_memories_root.display()
-                );
-            }
-            other => panic!("expected workspace-write policy, got {other:?}"),
-        }
+        other => panic!("expected workspace-write policy, got {other:?}"),
     }
 
     Ok(())
@@ -1633,17 +1611,10 @@ fn cli_override_takes_precedence_over_profile_sandbox_mode() -> std::io::Result<
         codex_home.path().to_path_buf(),
     )?;
 
-    if cfg!(target_os = "windows") {
-        assert!(matches!(
-            config.permissions.sandbox_policy.get(),
-            SandboxPolicy::ReadOnly { .. }
-        ));
-    } else {
-        assert!(matches!(
-            config.permissions.sandbox_policy.get(),
-            SandboxPolicy::WorkspaceWrite { .. }
-        ));
-    }
+    assert!(matches!(
+        config.permissions.sandbox_policy.get(),
+        SandboxPolicy::WorkspaceWrite { .. }
+    ));
 
     Ok(())
 }
@@ -4195,8 +4166,6 @@ fn test_precedence_fixture_with_o3_profile() -> std::io::Result<()> {
                 network: None,
                 allow_login_shell: true,
                 shell_environment_policy: ShellEnvironmentPolicy::default(),
-                windows_sandbox_mode: None,
-                windows_sandbox_private_desktop: true,
                 macos_seatbelt_profile_extensions: None,
             },
             approvals_reviewer: ApprovalsReviewer::User,
@@ -4255,7 +4224,7 @@ fn test_precedence_fixture_with_o3_profile() -> std::io::Result<()> {
             include_apply_patch_tool: false,
             web_search_mode: Constrained::allow_any(WebSearchMode::Cached),
             web_search_config: None,
-            use_experimental_unified_exec_tool: !cfg!(windows),
+            use_experimental_unified_exec_tool: true,
             background_terminal_max_timeout: DEFAULT_MAX_BACKGROUND_TERMINAL_TIMEOUT_MS,
             ghost_snapshot: GhostSnapshotConfig::default(),
             features: Features::with_defaults().into(),
@@ -4332,8 +4301,6 @@ fn test_precedence_fixture_with_gpt3_profile() -> std::io::Result<()> {
             network: None,
             allow_login_shell: true,
             shell_environment_policy: ShellEnvironmentPolicy::default(),
-            windows_sandbox_mode: None,
-            windows_sandbox_private_desktop: true,
             macos_seatbelt_profile_extensions: None,
         },
         approvals_reviewer: ApprovalsReviewer::User,
@@ -4392,7 +4359,7 @@ fn test_precedence_fixture_with_gpt3_profile() -> std::io::Result<()> {
         include_apply_patch_tool: false,
         web_search_mode: Constrained::allow_any(WebSearchMode::Cached),
         web_search_config: None,
-        use_experimental_unified_exec_tool: !cfg!(windows),
+        use_experimental_unified_exec_tool: true,
         background_terminal_max_timeout: DEFAULT_MAX_BACKGROUND_TERMINAL_TIMEOUT_MS,
         ghost_snapshot: GhostSnapshotConfig::default(),
         features: Features::with_defaults().into(),
@@ -4467,8 +4434,6 @@ fn test_precedence_fixture_with_zdr_profile() -> std::io::Result<()> {
             network: None,
             allow_login_shell: true,
             shell_environment_policy: ShellEnvironmentPolicy::default(),
-            windows_sandbox_mode: None,
-            windows_sandbox_private_desktop: true,
             macos_seatbelt_profile_extensions: None,
         },
         approvals_reviewer: ApprovalsReviewer::User,
@@ -4527,7 +4492,7 @@ fn test_precedence_fixture_with_zdr_profile() -> std::io::Result<()> {
         include_apply_patch_tool: false,
         web_search_mode: Constrained::allow_any(WebSearchMode::Cached),
         web_search_config: None,
-        use_experimental_unified_exec_tool: !cfg!(windows),
+        use_experimental_unified_exec_tool: true,
         background_terminal_max_timeout: DEFAULT_MAX_BACKGROUND_TERMINAL_TIMEOUT_MS,
         ghost_snapshot: GhostSnapshotConfig::default(),
         features: Features::with_defaults().into(),
@@ -4588,8 +4553,6 @@ fn test_precedence_fixture_with_gpt5_profile() -> std::io::Result<()> {
             network: None,
             allow_login_shell: true,
             shell_environment_policy: ShellEnvironmentPolicy::default(),
-            windows_sandbox_mode: None,
-            windows_sandbox_private_desktop: true,
             macos_seatbelt_profile_extensions: None,
         },
         approvals_reviewer: ApprovalsReviewer::User,
@@ -4648,7 +4611,7 @@ fn test_precedence_fixture_with_gpt5_profile() -> std::io::Result<()> {
         include_apply_patch_tool: false,
         web_search_mode: Constrained::allow_any(WebSearchMode::Cached),
         web_search_config: None,
-        use_experimental_unified_exec_tool: !cfg!(windows),
+        use_experimental_unified_exec_tool: true,
         background_terminal_max_timeout: DEFAULT_MAX_BACKGROUND_TERMINAL_TIMEOUT_MS,
         ghost_snapshot: GhostSnapshotConfig::default(),
         features: Features::with_defaults().into(),
@@ -4931,18 +4894,10 @@ trust_level = "untrusted"
         None,
     );
 
-    // Verify that untrusted projects get WorkspaceWrite (or ReadOnly on Windows due to downgrade)
-    if cfg!(target_os = "windows") {
-        assert!(
-            matches!(resolution, SandboxPolicy::ReadOnly { .. }),
-            "Expected ReadOnly on Windows, got {resolution:?}"
-        );
-    } else {
-        assert!(
-            matches!(resolution, SandboxPolicy::WorkspaceWrite { .. }),
-            "Expected WorkspaceWrite for untrusted project, got {resolution:?}"
-        );
-    }
+    assert!(
+        matches!(resolution, SandboxPolicy::WorkspaceWrite { .. }),
+        "Expected WorkspaceWrite for untrusted project, got {resolution:?}"
+    );
 
     Ok(())
 }
@@ -5021,11 +4976,7 @@ fn derive_sandbox_policy_preserves_windows_downgrade_for_unsupported_fallback() 
         Some(&constrained),
     );
 
-    if cfg!(target_os = "windows") {
-        assert_eq!(resolution, SandboxPolicy::new_read_only_policy());
-    } else {
-        assert_eq!(resolution, SandboxPolicy::new_workspace_write_policy());
-    }
+    assert_eq!(resolution, SandboxPolicy::new_workspace_write_policy());
     Ok(())
 }
 
@@ -5221,24 +5172,13 @@ fn test_untrusted_project_gets_unless_trusted_approval_policy() -> anyhow::Resul
         "Expected UnlessTrusted approval policy for untrusted project"
     );
 
-    // Verify that untrusted projects still get WorkspaceWrite sandbox (or ReadOnly on Windows)
-    if cfg!(target_os = "windows") {
-        assert!(
-            matches!(
-                config.permissions.sandbox_policy.get(),
-                SandboxPolicy::ReadOnly { .. }
-            ),
-            "Expected ReadOnly on Windows"
-        );
-    } else {
-        assert!(
-            matches!(
-                config.permissions.sandbox_policy.get(),
-                SandboxPolicy::WorkspaceWrite { .. }
-            ),
-            "Expected WorkspaceWrite sandbox for untrusted project"
-        );
-    }
+    assert!(
+        matches!(
+            config.permissions.sandbox_policy.get(),
+            SandboxPolicy::WorkspaceWrite { .. }
+        ),
+        "Expected WorkspaceWrite sandbox for untrusted project"
+    );
 
     Ok(())
 }

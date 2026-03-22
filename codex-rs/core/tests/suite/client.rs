@@ -2116,7 +2116,7 @@ async fn incomplete_response_emits_content_filter_error_message() -> anyhow::Res
 #[tokio::test(flavor = "multi_thread", worker_threads = 2)]
 async fn azure_overrides_assign_properties_used_for_responses_url() {
     skip_if_no_network!();
-    let existing_env_var_with_random_value = if cfg!(windows) { "USERNAME" } else { "USER" };
+    let existing_env_var_with_random_value = "USER";
 
     // Mock server
     let server = MockServer::start().await;
@@ -2200,7 +2200,7 @@ async fn azure_overrides_assign_properties_used_for_responses_url() {
 #[tokio::test(flavor = "multi_thread", worker_threads = 2)]
 async fn env_var_overrides_loaded_auth() {
     skip_if_no_network!();
-    let existing_env_var_with_random_value = if cfg!(windows) { "USERNAME" } else { "USER" };
+    let existing_env_var_with_random_value = "USER";
 
     // Mock server
     let server = MockServer::start().await;

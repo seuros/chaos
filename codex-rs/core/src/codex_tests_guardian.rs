@@ -104,24 +104,14 @@ async fn guardian_allows_shell_additional_permissions_requests_past_policy_valid
     turn_context_raw.provider = config.model_provider.clone();
     let session = Arc::new(session);
     let turn_context = Arc::new(turn_context_raw);
-    let expiration_ms: u64 = if cfg!(windows) { 2_500 } else { 1_000 };
+    let expiration_ms: u64 = 1_000;
 
     let params = ExecParams {
-        command: if cfg!(windows) {
-            vec![
-                "cmd.exe".to_string(),
-                "/Q".to_string(),
-                "/D".to_string(),
-                "/C".to_string(),
-                "echo hi".to_string(),
-            ]
-        } else {
-            vec![
-                "/bin/sh".to_string(),
-                "-c".to_string(),
-                "echo hi".to_string(),
-            ]
-        },
+        command: vec![
+            "/bin/sh".to_string(),
+            "-c".to_string(),
+            "echo hi".to_string(),
+        ],
         cwd: turn_context.cwd.clone(),
         expiration: expiration_ms.into(),
         env: HashMap::new(),

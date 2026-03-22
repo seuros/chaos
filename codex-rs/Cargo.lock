@@ -1520,6 +1520,7 @@ dependencies = [
  "sha2",
  "shlex",
  "similar",
+ "state-machines",
  "tempfile",
  "test-case",
  "test-log",

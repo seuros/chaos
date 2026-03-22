@@ -1774,7 +1774,7 @@ fn parse_find_query_and_path(tail: &[String]) -> (Option<String>, Option<String>
 }
 
 fn parse_shell_lc_commands(original: &[String]) -> Option<Vec<ParsedCommand>> {
-    // Only handle bash/zsh here; PowerShell is stripped separately without bash parsing.
+    // Only handle bash/zsh here.
     let (_, script) = extract_bash_command(original)?;
 
     if let Some(tree) = try_parse_shell(script)

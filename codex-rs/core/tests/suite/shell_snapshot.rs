@@ -384,7 +384,6 @@ async fn linux_unified_exec_uses_shell_snapshot() -> Result<()> {
     Ok(())
 }
 
-#[cfg_attr(target_os = "windows", ignore)]
 #[tokio::test(flavor = "multi_thread", worker_threads = 2)]
 async fn linux_shell_command_uses_shell_snapshot() -> Result<()> {
     let command = "echo shell-command-snapshot-linux";
@@ -404,7 +403,6 @@ async fn linux_shell_command_uses_shell_snapshot() -> Result<()> {
     Ok(())
 }
 
-#[cfg_attr(target_os = "windows", ignore)]
 #[tokio::test(flavor = "multi_thread", worker_threads = 2)]
 async fn shell_command_snapshot_preserves_shell_environment_policy_set() -> Result<()> {
     let builder = test_codex().with_config(|config| {
@@ -507,7 +505,6 @@ async fn linux_unified_exec_snapshot_preserves_shell_environment_policy_set() ->
     Ok(())
 }
 
-#[cfg_attr(target_os = "windows", ignore)]
 #[tokio::test(flavor = "multi_thread", worker_threads = 2)]
 async fn shell_command_snapshot_still_intercepts_apply_patch() -> Result<()> {
     let builder = test_codex().with_config(|config| {
@@ -579,7 +576,6 @@ async fn shell_command_snapshot_still_intercepts_apply_patch() -> Result<()> {
     Ok(())
 }
 
-#[cfg_attr(target_os = "windows", ignore)]
 #[tokio::test(flavor = "multi_thread", worker_threads = 2)]
 async fn shell_snapshot_deleted_after_shutdown_with_skills() -> Result<()> {
     let builder = test_codex().with_config(|config| {
@@ -645,38 +641,3 @@ async fn macos_unified_exec_uses_shell_snapshot() -> Result<()> {
     Ok(())
 }
 
-// #[cfg_attr(not(target_os = "windows"), ignore)]
-#[ignore]
-#[tokio::test(flavor = "multi_thread", worker_threads = 2)]
-async fn windows_unified_exec_uses_shell_snapshot() -> Result<()> {
-    let command = "Write-Output snapshot-windows";
-    let run = run_snapshot_command(command).await?;
-
-    let snapshot_index = run
-        .begin
-        .command
-        .iter()
-        .position(|arg| arg.contains("shell_snapshots"))
-        .expect("snapshot argument exists");
-    assert!(run.begin.command.iter().any(|arg| arg == "-NoProfile"));
-    assert!(
-        run.begin
-            .command
-            .iter()
-            .any(|arg| arg == "param($snapshot) . $snapshot; & @args")
-    );
-    assert!(snapshot_index > 0);
-    assert_eq!(run.begin.command.last(), Some(&command.to_string()));
-
-    assert!(run.snapshot_path.starts_with(&run.codex_home));
-    assert!(run.snapshot_content.contains("# Snapshot file"));
-    assert!(run.snapshot_content.contains("# aliases "));
-    assert!(run.snapshot_content.contains("# exports "));
-    assert_eq!(
-        normalize_newlines(&run.end.stdout).trim(),
-        "snapshot-windows"
-    );
-    assert_eq!(run.end.exit_code, 0);
-
-    Ok(())
-}

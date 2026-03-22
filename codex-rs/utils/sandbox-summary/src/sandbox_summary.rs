@@ -83,7 +83,7 @@ mod tests {
 
     #[test]
     fn workspace_write_summary_still_includes_network_access() {
-        let root = if cfg!(windows) { "C:\\repo" } else { "/repo" };
+        let root = "/repo";
         let writable_root = AbsolutePathBuf::try_from(root).unwrap();
         let summary = summarize_sandbox_policy(&SandboxPolicy::WorkspaceWrite {
             writable_roots: vec![writable_root.clone()],

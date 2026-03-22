@@ -344,12 +344,6 @@
             "child_agents_md": {
               "type": "boolean"
             },
-            "code_mode": {
-              "type": "boolean"
-            },
-            "code_mode_only": {
-              "type": "boolean"
-            },
             "codex_git_commit": {
               "type": "boolean"
             },
@@ -368,12 +362,6 @@
             "default_mode_request_user_input": {
               "type": "boolean"
             },
-            "elevated_windows_sandbox": {
-              "type": "boolean"
-            },
-            "enable_experimental_windows_sandbox": {
-              "type": "boolean"
-            },
             "enable_fanout": {
               "type": "boolean"
             },
@@ -387,9 +375,6 @@
               "type": "boolean"
             },
             "experimental_use_unified_exec_tool": {
-              "type": "boolean"
-            },
-            "experimental_windows_sandbox": {
               "type": "boolean"
             },
             "fast_mode": {
@@ -407,12 +392,6 @@
             "include_apply_patch_tool": {
               "type": "boolean"
             },
-            "js_repl": {
-              "type": "boolean"
-            },
-            "js_repl_tools_only": {
-              "type": "boolean"
-            },
             "memories": {
               "type": "boolean"
             },
@@ -428,13 +407,7 @@
             "plugins": {
               "type": "boolean"
             },
-            "powershell_utf8": {
-              "type": "boolean"
-            },
             "prevent_idle_sleep": {
-              "type": "boolean"
-            },
-            "realtime_conversation": {
               "type": "boolean"
             },
             "remote_models": {
@@ -488,9 +461,6 @@
             "tool_suggest": {
               "type": "boolean"
             },
-            "tui_app_server": {
-              "type": "boolean"
-            },
             "undo": {
               "type": "boolean"
             },
@@ -501,9 +471,6 @@
               "type": "boolean"
             },
             "use_linux_sandbox_bwrap": {
-              "type": "boolean"
-            },
-            "voice_transcription": {
               "type": "boolean"
             },
             "web_search": {
@@ -520,16 +487,6 @@
         },
         "include_apply_patch_tool": {
           "type": "boolean"
-        },
-        "js_repl_node_module_dirs": {
-          "description": "Ordered list of directories to search for Node modules in `js_repl`.",
-          "items": {
-            "$ref": "#/definitions/AbsolutePathBuf"
-          },
-          "type": "array"
-        },
-        "js_repl_node_path": {
-          "$ref": "#/definitions/AbsolutePathBuf"
         },
         "model": {
           "type": "string"
@@ -1896,12 +1853,6 @@
         "child_agents_md": {
           "type": "boolean"
         },
-        "code_mode": {
-          "type": "boolean"
-        },
-        "code_mode_only": {
-          "type": "boolean"
-        },
         "codex_git_commit": {
           "type": "boolean"
         },
@@ -1920,12 +1871,6 @@
         "default_mode_request_user_input": {
           "type": "boolean"
         },
-        "elevated_windows_sandbox": {
-          "type": "boolean"
-        },
-        "enable_experimental_windows_sandbox": {
-          "type": "boolean"
-        },
         "enable_fanout": {
           "type": "boolean"
         },
@@ -1939,9 +1884,6 @@
           "type": "boolean"
         },
         "experimental_use_unified_exec_tool": {
-          "type": "boolean"
-        },
-        "experimental_windows_sandbox": {
           "type": "boolean"
         },
         "fast_mode": {
@@ -1959,12 +1901,6 @@
         "include_apply_patch_tool": {
           "type": "boolean"
         },
-        "js_repl": {
-          "type": "boolean"
-        },
-        "js_repl_tools_only": {
-          "type": "boolean"
-        },
         "memories": {
           "type": "boolean"
         },
@@ -1980,13 +1916,7 @@
         "plugins": {
           "type": "boolean"
         },
-        "powershell_utf8": {
-          "type": "boolean"
-        },
         "prevent_idle_sleep": {
-          "type": "boolean"
-        },
-        "realtime_conversation": {
           "type": "boolean"
         },
         "remote_models": {
@@ -2040,9 +1970,6 @@
         "tool_suggest": {
           "type": "boolean"
         },
-        "tui_app_server": {
-          "type": "boolean"
-        },
         "undo": {
           "type": "boolean"
         },
@@ -2053,9 +1980,6 @@
           "type": "boolean"
         },
         "use_linux_sandbox_bwrap": {
-          "type": "boolean"
-        },
-        "voice_transcription": {
           "type": "boolean"
         },
         "web_search": {
@@ -2125,21 +2049,6 @@
     "instructions": {
       "description": "System instructions.",
       "type": "string"
-    },
-    "js_repl_node_module_dirs": {
-      "description": "Ordered list of directories to search for Node modules in `js_repl`.",
-      "items": {
-        "$ref": "#/definitions/AbsolutePathBuf"
-      },
-      "type": "array"
-    },
-    "js_repl_node_path": {
-      "allOf": [
-        {
-          "$ref": "#/definitions/AbsolutePathBuf"
-        }
-      ],
-      "description": "Optional absolute path to the Node runtime used by `js_repl`."
     },
     "log_dir": {
       "allOf": [

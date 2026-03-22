@@ -27,8 +27,6 @@ const APPLY_PATCH_COMMANDS: [&str; 2] = ["apply_patch", "applypatch"];
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 enum ApplyPatchShell {
     Unix,
-    PowerShell,
-    Cmd,
 }
 
 #[derive(Debug, PartialEq)]
@@ -58,18 +56,12 @@ fn classify_shell_name(shell: &str) -> Option<String> {
 fn classify_shell(shell: &str, flag: &str) -> Option<ApplyPatchShell> {
     classify_shell_name(shell).and_then(|name| match name.as_str() {
         "bash" | "zsh" | "sh" if matches!(flag, "-lc" | "-c") => Some(ApplyPatchShell::Unix),
-        "pwsh" | "powershell" if flag.eq_ignore_ascii_case("-command") => {
-            Some(ApplyPatchShell::PowerShell)
-        }
-        "cmd" if flag.eq_ignore_ascii_case("/c") => Some(ApplyPatchShell::Cmd),
         _ => None,
     })
 }
 
-fn can_skip_flag(shell: &str, flag: &str) -> bool {
-    classify_shell_name(shell).is_some_and(|name| {
-        matches!(name.as_str(), "pwsh" | "powershell") && flag.eq_ignore_ascii_case("-noprofile")
-    })
+fn can_skip_flag(_shell: &str, _flag: &str) -> bool {
+    false
 }
 
 fn parse_shell_script(argv: &[String]) -> Option<(ApplyPatchShell, &str)> {
@@ -93,7 +85,7 @@ fn extract_apply_patch_from_shell(
     script: &str,
 ) -> std::result::Result<(String, Option<String>), ExtractHeredocError> {
     match shell {
-        ApplyPatchShell::Unix | ApplyPatchShell::PowerShell | ApplyPatchShell::Cmd => {
+        ApplyPatchShell::Unix => {
             extract_apply_patch_from_bash(script)
         }
     }
@@ -392,21 +384,6 @@ mod tests {
         strs_to_strings(&["bash", "-lc", script])
     }
 
-    fn args_powershell(script: &str) -> Vec<String> {
-        strs_to_strings(&["powershell.exe", "-Command", script])
-    }
-
-    fn args_powershell_no_profile(script: &str) -> Vec<String> {
-        strs_to_strings(&["powershell.exe", "-NoProfile", "-Command", script])
-    }
-
-    fn args_pwsh(script: &str) -> Vec<String> {
-        strs_to_strings(&["pwsh", "-NoProfile", "-Command", script])
-    }
-
-    fn args_cmd(script: &str) -> Vec<String> {
-        strs_to_strings(&["cmd.exe", "/c", script])
-    }
 
     fn heredoc_script(prefix: &str) -> String {
         format!(
@@ -414,7 +391,7 @@ mod tests {
         )
     }
 
-    fn heredoc_script_ps(prefix: &str, suffix: &str) -> String {
+    fn heredoc_script_with_suffix(prefix: &str, suffix: &str) -> String {
         format!(
             "{prefix}apply_patch <<'PATCH'\n*** Begin Patch\n*** Add File: foo\n+hi\n*** End Patch\nPATCH{suffix}"
         )
@@ -563,28 +540,6 @@ PATCH"#,
     }
 
     #[test]
-    fn test_powershell_heredoc() {
-        let script = heredoc_script("");
-        assert_match_args(args_powershell(&script), None);
-    }
-    #[test]
-    fn test_powershell_heredoc_no_profile() {
-        let script = heredoc_script("");
-        assert_match_args(args_powershell_no_profile(&script), None);
-    }
-    #[test]
-    fn test_pwsh_heredoc() {
-        let script = heredoc_script("");
-        assert_match_args(args_pwsh(&script), None);
-    }
-
-    #[test]
-    fn test_cmd_heredoc_with_cd() {
-        let script = heredoc_script("cd foo && ");
-        assert_match_args(args_cmd(&script), Some("foo"));
-    }
-
-    #[test]
     fn test_heredoc_with_leading_cd() {
         assert_match(&heredoc_script("cd foo && "), Some("foo"));
     }
@@ -637,7 +592,7 @@ PATCH"#,
 
     #[test]
     fn test_cd_then_apply_patch_then_extra_is_ignored() {
-        let script = heredoc_script_ps("cd bar && ", " && echo done");
+        let script = heredoc_script_with_suffix("cd bar && ", " && echo done");
         assert_not_match(&script);
     }
 

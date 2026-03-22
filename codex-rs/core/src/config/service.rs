@@ -16,18 +16,18 @@ use crate::path_utils;
 use crate::path_utils::SymlinkWritePaths;
 use crate::path_utils::resolve_symlink_write_paths;
 use crate::path_utils::write_atomically;
-use codex_app_server_protocol::Config as ApiConfig;
-use codex_app_server_protocol::ConfigBatchWriteParams;
-use codex_app_server_protocol::ConfigLayerMetadata;
-use codex_app_server_protocol::ConfigLayerSource;
-use codex_app_server_protocol::ConfigReadParams;
-use codex_app_server_protocol::ConfigReadResponse;
-use codex_app_server_protocol::ConfigValueWriteParams;
-use codex_app_server_protocol::ConfigWriteErrorCode;
-use codex_app_server_protocol::ConfigWriteResponse;
-use codex_app_server_protocol::MergeStrategy;
-use codex_app_server_protocol::OverriddenMetadata;
-use codex_app_server_protocol::WriteStatus;
+use codex_protocol::api::Config as ApiConfig;
+use codex_protocol::api::ConfigBatchWriteParams;
+use codex_protocol::api::ConfigLayerMetadata;
+use codex_protocol::api::ConfigLayerSource;
+use codex_protocol::api::ConfigReadParams;
+use codex_protocol::api::ConfigReadResponse;
+use codex_protocol::api::ConfigValueWriteParams;
+use codex_protocol::api::ConfigWriteErrorCode;
+use codex_protocol::api::ConfigWriteResponse;
+use codex_protocol::api::MergeStrategy;
+use codex_protocol::api::OverriddenMetadata;
+use codex_protocol::api::WriteStatus;
 use codex_config::CONFIG_TOML_FILE;
 use codex_utils_absolute_path::AbsolutePathBuf;
 use serde_json::Value as JsonValue;
@@ -235,7 +235,7 @@ impl ConfigService {
 
     pub async fn load_user_saved_config(
         &self,
-    ) -> Result<codex_app_server_protocol::UserSavedConfig, ConfigServiceError> {
+    ) -> Result<codex_protocol::api::UserSavedConfig, ConfigServiceError> {
         let layers = self
             .load_thread_agnostic_config()
             .await

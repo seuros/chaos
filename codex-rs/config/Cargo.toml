@@ -8,7 +8,6 @@ license.workspace = true
 workspace = true
 
 [dependencies]
-codex-app-server-protocol = { workspace = true }
 codex-execpolicy = { workspace = true }
 codex-protocol = { workspace = true }
 codex-utils-absolute-path = { workspace = true }

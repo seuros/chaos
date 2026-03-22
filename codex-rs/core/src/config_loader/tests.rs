@@ -1399,7 +1399,7 @@ mod requirements_exec_policy_tests {
     use crate::config_loader::ConfigRequirementsWithSources;
     use crate::config_loader::RequirementSource;
     use crate::exec_policy::load_exec_policy;
-    use codex_app_server_protocol::ConfigLayerSource;
+    use codex_protocol::api::ConfigLayerSource;
     use codex_config::RequirementsExecPolicyDecisionToml;
     use codex_config::RequirementsExecPolicyParseError;
     use codex_config::RequirementsExecPolicyPatternTokenToml;

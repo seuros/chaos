@@ -3,7 +3,7 @@ use crate::config_loader::ConfigLayerEntry;
 use crate::config_loader::ConfigLayerStack;
 use crate::config_loader::ConfigRequirements;
 use crate::config_loader::ConfigRequirementsToml;
-use codex_app_server_protocol::ConfigLayerSource;
+use codex_protocol::api::ConfigLayerSource;
 use codex_protocol::permissions::FileSystemAccessMode;
 use codex_protocol::permissions::FileSystemPath;
 use codex_protocol::permissions::FileSystemSandboxEntry;

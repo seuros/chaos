@@ -61,7 +61,7 @@ pub struct ConfigProfile {
     pub oss_provider: Option<String>,
 }
 
-impl From<ConfigProfile> for codex_app_server_protocol::Profile {
+impl From<ConfigProfile> for codex_protocol::api::Profile {
     fn from(config_profile: ConfigProfile) -> Self {
         Self {
             model: config_profile.model,

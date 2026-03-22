@@ -3,7 +3,7 @@ use anyhow::Result;
 use base64::Engine;
 use chrono::Duration;
 use chrono::Utc;
-use codex_app_server_protocol::AuthMode;
+use codex_protocol::api::AuthMode;
 use codex_core::AuthManager;
 use codex_core::auth::AuthCredentialsStoreMode;
 use codex_core::auth::AuthDotJson;

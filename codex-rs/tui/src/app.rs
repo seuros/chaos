@@ -36,7 +36,7 @@ use crate::tui::TuiEvent;
 use crate::update_action::UpdateAction;
 use crate::version::CHAOS_VERSION;
 use codex_ansi_escape::ansi_escape_line;
-use codex_app_server_protocol::ConfigLayerSource;
+use codex_protocol::api::ConfigLayerSource;
 use codex_core::AuthManager;
 use codex_core::CodexAuth;
 use codex_core::ThreadManager;

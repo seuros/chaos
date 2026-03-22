@@ -13,7 +13,7 @@ use crate::exec_policy::load_exec_policy;
 use anyhow::Context;
 use anyhow::Result;
 use async_trait::async_trait;
-use codex_app_server_protocol::ConfigLayerSource;
+use codex_protocol::api::ConfigLayerSource;
 use codex_config::CONFIG_TOML_FILE;
 use codex_network_proxy::ConfigReloader;
 use codex_network_proxy::ConfigState;

@@ -18,9 +18,7 @@ mcp-host = { workspace = true, features = ["macros"] }
 schemars = "1.0.0-alpha.20"
 serde = { workspace = true, features = ["derive"] }
 serde_json = { workspace = true }
-thiserror = { workspace = true }
 tokio = { workspace = true, features = ["fs", "io-util", "process"] }
-tracing = { workspace = true }
 
 [dev-dependencies]
 anyhow = { workspace = true }

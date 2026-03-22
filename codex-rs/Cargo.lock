@@ -1123,9 +1123,7 @@ dependencies = [
  "serde",
  "serde_json",
  "tempfile",
- "thiserror 2.0.18",
  "tokio",
- "tracing",
 ]
 
 [[package]]
@@ -1347,26 +1345,13 @@ dependencies = [
 name = "codex-app-server-protocol"
 version = "47.0.0"
 dependencies = [
- "anyhow",
- "clap",
  "codex-protocol",
  "codex-utils-absolute-path",
- "codex-utils-cargo-bin",
- "inventory",
- "pretty_assertions",
- "rmcp",
  "schemars 0.8.22",
  "serde",
  "serde_json",
- "serde_with",
- "shlex",
- "similar",
  "strum_macros 0.28.0",
- "tempfile",
- "thiserror 2.0.18",
- "tracing",
  "ts-rs",
- "uuid",
 ]
 
 [[package]]
@@ -1545,7 +1530,6 @@ dependencies = [
  "seccompiler",
  "serde",
  "serde_json",
- "serde_yaml",
  "serial_test",
  "sha1",
  "sha2",
@@ -8663,19 +8647,6 @@ dependencies = [
 ]
 
 [[package]]
-name = "serde_yaml"
-version = "0.9.34+deprecated"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "6a8b1a1a2ebf674015cc02edccce75287f1a0130d394307b36743c2f5d504b47"
-dependencies = [
- "indexmap 2.13.0",
- "itoa",
- "ryu",
- "serde",
- "unsafe-libyaml",
-]
-
-[[package]]
 name = "serial2"
 version = "0.2.34"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -10430,12 +10401,6 @@ dependencies = [
  "crypto-common",
  "subtle",
 ]
-
-[[package]]
-name = "unsafe-libyaml"
-version = "0.2.11"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "673aac59facbab8a9007c7f6108d11f63b603f7cabff99fabf650fea5c32b861"
 
 [[package]]
 name = "untrusted"

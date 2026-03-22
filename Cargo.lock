@@ -1112,6 +1112,18 @@ dependencies = [
 ]
 
 [[package]]
+name = "chaos-abi"
+version = "47.0.0"
+dependencies = [
+ "codex-protocol",
+ "futures",
+ "serde",
+ "serde_json",
+ "thiserror 2.0.18",
+ "tokio",
+]
+
+[[package]]
 name = "chaos-arsenal"
 version = "47.0.0"
 dependencies = [
@@ -1319,6 +1331,7 @@ dependencies = [
  "async-trait",
  "base64 0.22.1",
  "bytes",
+ "chaos-abi",
  "codex-client",
  "codex-protocol",
  "codex-utils-rustls-provider",

@@ -1,0 +1,21 @@
+[package]
+name = "chaos-abi"
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+description = "Chaos-ABI: provider-agnostic binary interface for model adapters"
+
+[lib]
+name = "chaos_abi"
+path = "src/lib.rs"
+
+[lints]
+workspace = true
+
+[dependencies]
+codex-protocol = { workspace = true }
+futures = { workspace = true }
+serde = { workspace = true, features = ["derive"] }
+serde_json = { workspace = true }
+thiserror = { workspace = true }
+tokio = { workspace = true, features = ["sync"] }

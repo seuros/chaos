@@ -836,12 +836,7 @@ impl Debug for CachedAuth {
     }
 }
 
-enum UnauthorizedRecoveryStep {
-    Reload,
-    RefreshToken,
-    ExternalRefresh,
-    Done,
-}
+use state_machines::state_machine;
 
 enum ReloadOutcome {
     /// Reload was performed and the cached auth changed
@@ -852,30 +847,52 @@ enum ReloadOutcome {
     Skipped,
 }
 
-#[derive(Clone, Copy, Debug, PartialEq, Eq)]
-enum UnauthorizedRecoveryMode {
-    Managed,
-    External,
+// UnauthorizedRecovery is a state machine that handles 401 recovery.
+//
+// Managed mode (ChatGPT auth):
+//   Reload → RefreshToken → Done
+// External mode (external ChatGPT auth tokens):
+//   ExternalRefresh → Done
+// API key auth: no recovery available.
+state_machine! {
+    name: ManagedRecovery,
+    dynamic: true,
+    initial: Reload,
+    states: [Reload, RefreshToken, Done],
+    events {
+        reloaded {
+            transition: { from: Reload, to: RefreshToken }
+        }
+        reload_skipped {
+            transition: { from: Reload, to: Done }
+        }
+        refreshed {
+            transition: { from: RefreshToken, to: Done }
+        }
+    }
 }
 
-// UnauthorizedRecovery is a state machine that handles an attempt to refresh the authentication when requests
-// to API fail with 401 status code.
-// The client calls next() every time it encounters a 401 error, one time per retry.
-// For API key based authentication, we don't do anything and let the error bubble to the user.
-//
-// For ChatGPT based authentication, we:
-// 1. Attempt to reload the auth data from disk. We only reload if the account id matches the one the current process is running as.
-// 2. Attempt to refresh the token using OAuth token refresh flow.
-// If after both steps the server still responds with 401 we let the error bubble to the user.
-//
-// For external ChatGPT auth tokens (chatgptAuthTokens), UnauthorizedRecovery does not touch disk or refresh
-// tokens locally. Instead it calls the ExternalAuthRefresher (account/chatgptAuthTokens/refresh) to ask the
-// parent app for new tokens, stores them in the ephemeral auth store, and retries once.
+state_machine! {
+    name: ExternalRecovery,
+    dynamic: true,
+    initial: Pending,
+    states: [Pending, Completed],
+    events {
+        refreshed {
+            transition: { from: Pending, to: Completed }
+        }
+    }
+}
+
+enum RecoveryMachine {
+    Managed(DynamicManagedRecovery<()>),
+    External(DynamicExternalRecovery<()>),
+}
+
 pub struct UnauthorizedRecovery {
     manager: Arc<AuthManager>,
-    step: UnauthorizedRecoveryStep,
+    machine: RecoveryMachine,
     expected_account_id: Option<String>,
-    mode: UnauthorizedRecoveryMode,
 }
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
@@ -893,23 +910,19 @@ impl UnauthorizedRecovery {
     fn new(manager: Arc<AuthManager>) -> Self {
         let cached_auth = manager.auth_cached();
         let expected_account_id = cached_auth.as_ref().and_then(CodexAuth::get_account_id);
-        let mode = if cached_auth
+        let machine = if cached_auth
             .as_ref()
             .is_some_and(CodexAuth::is_external_chatgpt_tokens)
         {
-            UnauthorizedRecoveryMode::External
+            RecoveryMachine::External(DynamicExternalRecovery::new(()))
         } else {
-            UnauthorizedRecoveryMode::Managed
+            RecoveryMachine::Managed(DynamicManagedRecovery::new(()))
         };
-        let step = match mode {
-            UnauthorizedRecoveryMode::Managed => UnauthorizedRecoveryStep::Reload,
-            UnauthorizedRecoveryMode::External => UnauthorizedRecoveryStep::ExternalRefresh,
-        };
+
         Self {
             manager,
-            step,
+            machine,
             expected_account_id,
-            mode,
         }
     }
 
@@ -923,13 +936,15 @@ impl UnauthorizedRecovery {
             return false;
         }
 
-        if self.mode == UnauthorizedRecoveryMode::External
-            && !self.manager.has_external_auth_refresher()
-        {
-            return false;
+        match &self.machine {
+            RecoveryMachine::External(m) => {
+                if !self.manager.has_external_auth_refresher() {
+                    return false;
+                }
+                m.current_state() != "Completed"
+            }
+            RecoveryMachine::Managed(m) => m.current_state() != "Done",
         }
-
-        !matches!(self.step, UnauthorizedRecoveryStep::Done)
     }
 
     pub fn unavailable_reason(&self) -> &'static str {
@@ -942,13 +957,17 @@ impl UnauthorizedRecovery {
             return "not_chatgpt_auth";
         }
 
-        if self.mode == UnauthorizedRecoveryMode::External
-            && !self.manager.has_external_auth_refresher()
-        {
-            return "no_external_refresher";
+        if let RecoveryMachine::External(_) = &self.machine {
+            if !self.manager.has_external_auth_refresher() {
+                return "no_external_refresher";
+            }
         }
 
-        if matches!(self.step, UnauthorizedRecoveryStep::Done) {
+        let is_done = match &self.machine {
+            RecoveryMachine::Managed(m) => m.current_state() == "Done",
+            RecoveryMachine::External(m) => m.current_state() == "Completed",
+        };
+        if is_done {
             return "recovery_exhausted";
         }
 
@@ -956,18 +975,23 @@ impl UnauthorizedRecovery {
     }
 
     pub fn mode_name(&self) -> &'static str {
-        match self.mode {
-            UnauthorizedRecoveryMode::Managed => "managed",
-            UnauthorizedRecoveryMode::External => "external",
+        match &self.machine {
+            RecoveryMachine::Managed(_) => "managed",
+            RecoveryMachine::External(_) => "external",
         }
     }
 
     pub fn step_name(&self) -> &'static str {
-        match self.step {
-            UnauthorizedRecoveryStep::Reload => "reload",
-            UnauthorizedRecoveryStep::RefreshToken => "refresh_token",
-            UnauthorizedRecoveryStep::ExternalRefresh => "external_refresh",
-            UnauthorizedRecoveryStep::Done => "done",
+        match &self.machine {
+            RecoveryMachine::Managed(m) => match m.current_state() {
+                "Reload" => "reload",
+                "RefreshToken" => "refresh_token",
+                _ => "done",
+            },
+            RecoveryMachine::External(m) => match m.current_state() {
+                "Pending" => "external_refresh",
+                _ => "done",
+            },
         }
     }
 
@@ -979,54 +1003,55 @@ impl UnauthorizedRecovery {
             )));
         }
 
-        match self.step {
-            UnauthorizedRecoveryStep::Reload => {
-                match self
-                    .manager
-                    .reload_if_account_id_matches(self.expected_account_id.as_deref())
-                {
-                    ReloadOutcome::ReloadedChanged => {
-                        self.step = UnauthorizedRecoveryStep::RefreshToken;
-                        return Ok(UnauthorizedRecoveryStepResult {
-                            auth_state_changed: Some(true),
-                        });
-                    }
-                    ReloadOutcome::ReloadedNoChange => {
-                        self.step = UnauthorizedRecoveryStep::RefreshToken;
-                        return Ok(UnauthorizedRecoveryStepResult {
-                            auth_state_changed: Some(false),
-                        });
-                    }
-                    ReloadOutcome::Skipped => {
-                        self.step = UnauthorizedRecoveryStep::Done;
-                        return Err(RefreshTokenError::Permanent(RefreshTokenFailedError::new(
-                            RefreshTokenFailedReason::Other,
-                            REFRESH_TOKEN_ACCOUNT_MISMATCH_MESSAGE.to_string(),
-                        )));
+        match &mut self.machine {
+            RecoveryMachine::Managed(m) => match m.current_state() {
+                "Reload" => {
+                    match self
+                        .manager
+                        .reload_if_account_id_matches(self.expected_account_id.as_deref())
+                    {
+                        ReloadOutcome::ReloadedChanged => {
+                            let _ = m.handle(ManagedRecoveryEvent::Reloaded);
+                            Ok(UnauthorizedRecoveryStepResult {
+                                auth_state_changed: Some(true),
+                            })
+                        }
+                        ReloadOutcome::ReloadedNoChange => {
+                            let _ = m.handle(ManagedRecoveryEvent::Reloaded);
+                            Ok(UnauthorizedRecoveryStepResult {
+                                auth_state_changed: Some(false),
+                            })
+                        }
+                        ReloadOutcome::Skipped => {
+                            let _ = m.handle(ManagedRecoveryEvent::ReloadSkipped);
+                            Err(RefreshTokenError::Permanent(RefreshTokenFailedError::new(
+                                RefreshTokenFailedReason::Other,
+                                REFRESH_TOKEN_ACCOUNT_MISMATCH_MESSAGE.to_string(),
+                            )))
+                        }
                     }
                 }
-            }
-            UnauthorizedRecoveryStep::RefreshToken => {
-                self.manager.refresh_token_from_authority().await?;
-                self.step = UnauthorizedRecoveryStep::Done;
-                return Ok(UnauthorizedRecoveryStepResult {
-                    auth_state_changed: Some(true),
-                });
-            }
-            UnauthorizedRecoveryStep::ExternalRefresh => {
+                "RefreshToken" => {
+                    self.manager.refresh_token_from_authority().await?;
+                    let _ = m.handle(ManagedRecoveryEvent::Refreshed);
+                    Ok(UnauthorizedRecoveryStepResult {
+                        auth_state_changed: Some(true),
+                    })
+                }
+                _ => Ok(UnauthorizedRecoveryStepResult {
+                    auth_state_changed: None,
+                }),
+            },
+            RecoveryMachine::External(m) => {
                 self.manager
                     .refresh_external_auth(ExternalAuthRefreshReason::Unauthorized)
                     .await?;
-                self.step = UnauthorizedRecoveryStep::Done;
-                return Ok(UnauthorizedRecoveryStepResult {
+                let _ = m.handle(ExternalRecoveryEvent::Refreshed);
+                Ok(UnauthorizedRecoveryStepResult {
                     auth_state_changed: Some(true),
-                });
+                })
             }
-            UnauthorizedRecoveryStep::Done => {}
         }
-        Ok(UnauthorizedRecoveryStepResult {
-            auth_state_changed: None,
-        })
     }
 }
 

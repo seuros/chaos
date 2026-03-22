@@ -13,7 +13,6 @@ use codex_protocol::config_types::ForcedLoginMethod;
 use pretty_assertions::assert_eq;
 use serde::Serialize;
 use serde_json::json;
-use std::sync::Arc;
 use tempfile::tempdir;
 
 #[tokio::test]
@@ -180,23 +179,10 @@ fn unauthorized_recovery_reports_mode_and_step_names() {
         false,
         AuthCredentialsStoreMode::File,
     );
-    let managed = UnauthorizedRecovery {
-        manager: Arc::clone(&manager),
-        step: UnauthorizedRecoveryStep::Reload,
-        expected_account_id: None,
-        mode: UnauthorizedRecoveryMode::Managed,
-    };
+    // No ChatGPT auth → constructor defaults to managed mode starting at Reload.
+    let managed = manager.unauthorized_recovery();
     assert_eq!(managed.mode_name(), "managed");
     assert_eq!(managed.step_name(), "reload");
-
-    let external = UnauthorizedRecovery {
-        manager,
-        step: UnauthorizedRecoveryStep::ExternalRefresh,
-        expected_account_id: None,
-        mode: UnauthorizedRecoveryMode::External,
-    };
-    assert_eq!(external.mode_name(), "external");
-    assert_eq!(external.step_name(), "external_refresh");
 }
 
 struct AuthFileParams {

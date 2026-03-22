@@ -902,7 +902,7 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "2d1239399f74673a5a537201a74a2210b49bba3197e674404ff57b4e9d518e33"
 dependencies = [
  "chrono-machines",
- "state-machines",
+ "state-machines 0.8.1",
 ]
 
 [[package]]
@@ -1520,7 +1520,7 @@ dependencies = [
  "sha2",
  "shlex",
  "similar",
- "state-machines",
+ "state-machines 0.9.0",
  "tempfile",
  "test-case",
  "test-log",
@@ -5085,7 +5085,7 @@ dependencies = [
  "schemars 1.2.1",
  "serde",
  "serde_json",
- "state-machines",
+ "state-machines 0.8.1",
  "thiserror 2.0.18",
  "throttle-machines",
  "tokio",
@@ -9189,8 +9189,18 @@ version = "0.8.1"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "b08593eedd523d615a423049378a93093365856a4ea71675bfcea8a1d220c96e"
 dependencies = [
- "state-machines-core",
- "state-machines-macro",
+ "state-machines-core 0.8.0",
+ "state-machines-macro 0.8.1",
+]
+
+[[package]]
+name = "state-machines"
+version = "0.9.0"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "e6a3c439e93b084079d81f1ccec41c64edf5a7348484db5228344372e634b92f"
+dependencies = [
+ "state-machines-core 0.9.0",
+ "state-machines-macro 0.9.0",
 ]
 
 [[package]]
@@ -9200,10 +9210,27 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "e1e15be96b91f9d162ebb665099ba4ff3de50eb1f407db0a6fee481b6d5cd695"
 
 [[package]]
+name = "state-machines-core"
+version = "0.9.0"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "b53079921cf97a990334cd0296c1efa4f16631ed3f30a3010bb2f2d5c76cb37b"
+
+[[package]]
 name = "state-machines-macro"
 version = "0.8.1"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "7fc20f1354c15c36730f900a4984e67ee3af69184c1bac449d51101ed0dcde9f"
+dependencies = [
+ "proc-macro2",
+ "quote",
+ "syn 2.0.117",
+]
+
+[[package]]
+name = "state-machines-macro"
+version = "0.9.0"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "c7158fc1607004ff2bfba01ef8ca59d0446c374cd52a25a8726bba0cbb0d5c74"
 dependencies = [
  "proc-macro2",
  "quote",

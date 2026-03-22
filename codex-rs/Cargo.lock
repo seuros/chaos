@@ -1342,19 +1342,6 @@ dependencies = [
 ]
 
 [[package]]
-name = "codex-app-server-protocol"
-version = "47.0.0"
-dependencies = [
- "codex-protocol",
- "codex-utils-absolute-path",
- "schemars 0.8.22",
- "serde",
- "serde_json",
- "strum_macros 0.28.0",
- "ts-rs",
-]
-
-[[package]]
 name = "codex-apply-patch"
 version = "47.0.0"
 dependencies = [

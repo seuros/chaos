@@ -5,6 +5,10 @@ use std::sync::atomic::Ordering;
 
 use codex_protocol::ThreadId;
 use codex_protocol::protocol::Event;
+use mcp_host::protocol::capabilities::ElicitationCapability;
+use mcp_host::protocol::types::{
+    JsonRpcError, JsonRpcMessage, JsonRpcRequest, JsonRpcResponse, RequestId,
+};
 use serde::Serialize;
 use serde_json::Value;
 use tokio::sync::Mutex;
@@ -12,8 +16,8 @@ use tokio::sync::mpsc;
 use tokio::sync::oneshot;
 use tracing::warn;
 
-use crate::mcp_types::*;
-
+/// Alias kept for compatibility with existing call-sites.
+pub(crate) type ErrorData = JsonRpcError;
 pub(crate) type OutgoingJsonRpcMessage = JsonRpcMessage;
 
 /// Sends messages to the client and manages request callbacks.
@@ -56,42 +60,6 @@ impl OutgoingMessageSender {
         rx_approve
     }
 
-    pub(crate) async fn notify_client_response(&self, id: RequestId, result: Value) {
-        let entry = {
-            let mut request_id_to_callback = self.request_id_to_callback.lock().await;
-            request_id_to_callback.remove_entry(&id)
-        };
-
-        match entry {
-            Some((id, sender)) => {
-                if let Err(err) = sender.send(Ok(result)) {
-                    warn!("could not notify callback for {id:?} due to: {err:?}");
-                }
-            }
-            None => {
-                warn!("could not find callback for {id:?}");
-            }
-        }
-    }
-
-    pub(crate) async fn notify_client_error(&self, id: RequestId, error: ErrorData) {
-        let entry = {
-            let mut request_id_to_callback = self.request_id_to_callback.lock().await;
-            request_id_to_callback.remove_entry(&id)
-        };
-
-        match entry {
-            Some((id, sender)) => {
-                if let Err(err) = sender.send(Err(error)) {
-                    warn!("could not notify callback for {id:?} due to: {err:?}");
-                }
-            }
-            None => {
-                warn!("could not find callback for {id:?}");
-            }
-        }
-    }
-
     pub(crate) fn set_client_elicitation_capability(
         &self,
         elicitation: Option<&ElicitationCapability>,
@@ -125,26 +93,7 @@ impl OutgoingMessageSender {
         self.client_elicitation_modes.load(Ordering::Relaxed) & 0b10 != 0
     }
 
-    pub(crate) async fn send_response<T: Serialize>(&self, id: RequestId, response: T) {
-        let result = match serde_json::to_value(response) {
-            Ok(result) => result,
-            Err(err) => {
-                self.send_error(
-                    id,
-                    ErrorData::internal_error(format!("failed to serialize response: {err}")),
-                )
-                .await;
-                return;
-            }
-        };
-
-        let outgoing_message = OutgoingMessage::Response(OutgoingResponse { id, result });
-        let _ = self.sender.send(outgoing_message);
-    }
-
-    /// This is used with the MCP server, but not the more general JSON-RPC app
-    /// server. Prefer [`OutgoingMessageSender::send_server_notification`] where
-    /// possible.
+    /// Send a Codex event as an MCP notification.
     pub(crate) async fn send_event_as_notification(
         &self,
         event: &Event,
@@ -185,7 +134,6 @@ impl OutgoingMessageSender {
 pub(crate) enum OutgoingMessage {
     Request(OutgoingRequest),
     Notification(OutgoingNotification),
-    Response(OutgoingResponse),
     Error(OutgoingError),
 }
 
@@ -198,9 +146,6 @@ impl From<OutgoingMessage> for OutgoingJsonRpcMessage {
             }
             Notification(OutgoingNotification { method, params }) => {
                 JsonRpcMessage::Notification(JsonRpcRequest::notification(method, params))
-            }
-            Response(OutgoingResponse { id, result }) => {
-                JsonRpcMessage::Response(JsonRpcResponse::success(id.to_value(), result))
             }
             Error(OutgoingError { id, error }) => {
                 JsonRpcMessage::Response(JsonRpcResponse::error(id.to_value(), error))
@@ -233,24 +178,13 @@ pub(crate) struct OutgoingNotificationParams {
     pub event: serde_json::Value,
 }
 
-// Additional mcp-specific data to be added to a [`codex_protocol::protocol::Event`] as notification.params._meta
-// MCP Spec: https://modelcontextprotocol.io/specification/2025-06-18/basic#meta
-// Typescript Schema: https://github.com/modelcontextprotocol/modelcontextprotocol/blob/0695a497eb50a804fc0e88c18a93a21a675d6b3e/schema/2025-06-18/schema.ts
 #[derive(Debug, Clone, PartialEq, Serialize)]
 #[serde(rename_all = "camelCase")]
 pub(crate) struct OutgoingNotificationMeta {
     pub request_id: Option<RequestId>,
 
-    /// Because multiple threads may be multiplexed over a single MCP connection,
-    /// include the `threadId` in the notification meta.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub thread_id: Option<ThreadId>,
-}
-
-#[derive(Debug, Clone, PartialEq, Serialize)]
-pub(crate) struct OutgoingResponse {
-    pub id: RequestId,
-    pub result: Value,
 }
 
 #[derive(Debug, Clone, PartialEq, Serialize)]
@@ -307,7 +241,6 @@ mod tests {
 
         assert_eq!(obj.get("jsonrpc"), Some(&json!("2.0")));
         assert_eq!(obj.get("method"), Some(&json!("notifications/initialized")));
-        // mcp-host omits null params via skip_serializing_if
         assert!(
             obj.get("params").is_none() || obj.get("params") == Some(&serde_json::Value::Null),
             "params should be absent or null"
@@ -496,29 +429,6 @@ mod tests {
             }
         });
         assert_eq!(params.unwrap(), expected_params);
-        Ok(())
-    }
-
-    #[tokio::test]
-    async fn send_request_callback_receives_client_error() -> Result<()> {
-        let (outgoing_tx, _outgoing_rx) = mpsc::unbounded_channel::<OutgoingMessage>();
-        let outgoing_message_sender = OutgoingMessageSender::new(outgoing_tx);
-
-        let response = outgoing_message_sender
-            .send_request("elicitation/create", Some(json!({})))
-            .await;
-
-        outgoing_message_sender
-            .notify_client_error(
-                RequestId::Number(0),
-                ErrorData::invalid_params("bad elicitation"),
-            )
-            .await;
-
-        assert_eq!(
-            response.await?,
-            Err(ErrorData::invalid_params("bad elicitation"))
-        );
         Ok(())
     }
 

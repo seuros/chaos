@@ -10,7 +10,7 @@ use tokio::process::ChildStdin;
 use tokio::process::ChildStdout;
 
 use anyhow::Context;
-use codex_mcp_server::CodexToolCallParam;
+use codex_mcp_server::ChaosToolParams;
 
 use mcp_host::protocol::capabilities::ClientCapabilities;
 use mcp_host::protocol::capabilities::ElicitationCapability;
@@ -142,9 +142,8 @@ impl McpProcess {
                     },
                 },
                 "serverInfo": {
-                    "name": "codex-mcp-server",
-                    "title": "Codex",
-                    "version": "0.0.0"
+                    "name": "chaos-mcp-server",
+                    "version": env!("CARGO_PKG_VERSION")
                 },
                 "protocolVersion": ProtocolVersion::V_2025_06_18
             })
@@ -232,13 +231,13 @@ impl McpProcess {
 
     /// Returns the id used to make the request so it can be used when
     /// correlating notifications.
-    pub async fn send_codex_tool_call(
+    pub async fn send_chaos_tool_call(
         &mut self,
-        params: CodexToolCallParam,
+        params: ChaosToolParams,
     ) -> anyhow::Result<i64> {
         let codex_tool_call_params = CallToolRequestParams {
             meta: None,
-            name: "codex".into(),
+            name: "chaos".into(),
             arguments: Some(match serde_json::to_value(params)? {
                 serde_json::Value::Object(map) => map,
                 _ => unreachable!("params serialize to object"),

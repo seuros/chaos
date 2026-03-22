@@ -6,7 +6,7 @@ use std::path::PathBuf;
 use anyhow::Context;
 use codex_core::spawn::CODEX_SANDBOX_NETWORK_DISABLED_ENV_VAR;
 use codex_mcp_server::ApprovalElicitationAction;
-use codex_mcp_server::CodexToolCallParam;
+use codex_mcp_server::ChaosToolParams;
 use codex_mcp_server::ExecApprovalElicitRequestMeta;
 use codex_mcp_server::ExecApprovalElicitRequestParams;
 use codex_mcp_server::ExecApprovalResponse;
@@ -86,7 +86,7 @@ async fn shell_command_approval_triggers_elicitation() -> anyhow::Result<()> {
     // In turn, it should reply with a tool call, which the MCP should forward
     // as an elicitation.
     let codex_request_id = mcp_process
-        .send_codex_tool_call(CodexToolCallParam {
+        .send_chaos_tool_call(ChaosToolParams {
             prompt: "run `git init`".to_string(),
             ..Default::default()
         })
@@ -241,7 +241,7 @@ async fn patch_approval_triggers_elicitation() -> anyhow::Result<()> {
 
     // Send a "codex" tool request that will trigger the apply_patch command
     let codex_request_id = mcp_process
-        .send_codex_tool_call(CodexToolCallParam {
+        .send_chaos_tool_call(ChaosToolParams {
             cwd: Some(cwd.path().to_string_lossy().to_string()),
             prompt: "please modify the test file".to_string(),
             ..Default::default()
@@ -356,7 +356,7 @@ async fn codex_tool_passes_base_instructions() -> anyhow::Result<()> {
 
     // Send a "codex" tool request, which should hit the responses endpoint.
     let codex_request_id = mcp_process
-        .send_codex_tool_call(CodexToolCallParam {
+        .send_chaos_tool_call(ChaosToolParams {
             prompt: "How are you?".to_string(),
             base_instructions: Some("You are a helpful assistant.".to_string()),
             developer_instructions: Some("Foreshadow upcoming tool calls.".to_string()),
@@ -518,7 +518,7 @@ async fn shell_command_without_elicitation_capability_is_denied() -> anyhow::Res
     .await??;
 
     let codex_request_id = mcp_process
-        .send_codex_tool_call(CodexToolCallParam {
+        .send_chaos_tool_call(ChaosToolParams {
             prompt: "run `git init`".to_string(),
             ..Default::default()
         })

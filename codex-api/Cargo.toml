@@ -6,6 +6,7 @@ license.workspace = true
 
 [dependencies]
 async-trait = { workspace = true }
+chaos-abi = { workspace = true }
 bytes = { workspace = true }
 codex-client = { workspace = true }
 codex-protocol = { workspace = true }

@@ -45,6 +45,7 @@ members = [
     "utils/fuzzy-match",
     "utils/stream-parser",
     "codex-client",
+    "chaos-abi",
     "codex-api",
     "state",
     "test-macros",
@@ -63,6 +64,7 @@ license = "Apache-2.0"
 [workspace.dependencies]
 # Internal
 codex-ansi-escape = { path = "ansi-escape" }
+chaos-abi = { path = "chaos-abi" }
 codex-api = { path = "codex-api" }
 codex-apply-patch = { path = "apply-patch" }
 codex-arg0 = { path = "arg0" }

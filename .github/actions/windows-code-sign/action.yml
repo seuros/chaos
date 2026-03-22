@@ -51,6 +51,6 @@ runs:
         exclude-interactive-browser-credential: true
         cache-dependencies: false
         files: |
-          ${{ github.workspace }}/codex-rs/target/${{ inputs.target }}/release/codex.exe
-          ${{ github.workspace }}/codex-rs/target/${{ inputs.target }}/release/codex-windows-sandbox-setup.exe
-          ${{ github.workspace }}/codex-rs/target/${{ inputs.target }}/release/codex-command-runner.exe
+          ${{ github.workspace }}/target/${{ inputs.target }}/release/codex.exe
+          ${{ github.workspace }}/target/${{ inputs.target }}/release/codex-windows-sandbox-setup.exe
+          ${{ github.workspace }}/target/${{ inputs.target }}/release/codex-command-runner.exe

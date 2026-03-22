@@ -75,11 +75,11 @@ let terminal_info = codex_core::terminal::terminal_info();
 !matches!(terminal_info.multiplexer, Some(Multiplexer::Zellij { .. }))
 ```
 
-This detection happens in the helper function `determine_alt_screen_mode()` in `codex-rs/tui/src/lib.rs`.
+This detection happens in the helper function `determine_alt_screen_mode()` in `tui/src/lib.rs`.
 
 ### Configuration Schema
 
-The `AltScreenMode` enum is defined in `codex-rs/protocol/src/config_types.rs` and serializes to lowercase TOML:
+The `AltScreenMode` enum is defined in `protocol/src/config_types.rs` and serializes to lowercase TOML:
 
 ```toml
 [tui]

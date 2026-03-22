@@ -1,42 +1,8 @@
-# build
-target/
-dist/
-build/
-out/
-# editor
-.vscode/
-.idea/
-.history/
-.zed/
-*.swp
-*~
+/target/
+/target-*/
 
-# cli tools
-CLAUDE.md
-.claude/
-AGENTS.override.md
+# Recommended value of CARGO_TARGET_DIR when using Docker as explained in .devcontainer/README.md.
+/target-amd64/
 
-# caches
-.cache/
-
-# logs
-*.log
-
-# env
-.env*
-!.env.example
-
-# os
-.DS_Store
-Thumbs.db
-Icon?
-.Spotlight-V100/
-
-# nix
-.direnv
-.envrc
-
-# Python bytecode
-__pycache__/
-*.pyc
-
+# Value of CARGO_TARGET_DIR when using .devcontainer/devcontainer.json.
+/target-arm64/

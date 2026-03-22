@@ -2062,7 +2062,6 @@ async fn session_configuration_apply_preserves_split_file_system_policy_on_cwd_o
     );
 }
 
-#[cfg_attr(windows, ignore)]
 #[tokio::test]
 async fn new_default_turn_uses_config_aware_skills_for_role_overrides() {
     let (session, _turn_context) = make_session_and_context().await;

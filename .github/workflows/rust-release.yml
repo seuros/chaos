@@ -343,7 +343,7 @@ jobs:
             tar -C "$dest" -czf "$dest/${base}.tar.gz" "$base"
 
             # Also create .zst and remove the uncompressed binaries to keep
-            # non-Windows artifact directories small.
+            # artifact directories small.
             zstd -T0 -19 --rm "$dest/$base"
           done
 

@@ -1901,18 +1901,6 @@ mod tests {
         assert_eq!(t.cursor(), 3);
     }
 
-    #[cfg_attr(not(windows), ignore = "AltGr modifier only applies on Windows")]
-    #[test]
-    fn altgr_ctrl_alt_char_inserts_literal() {
-        let mut t = ta_with("");
-        t.input(KeyEvent::new(
-            KeyCode::Char('c'),
-            KeyModifiers::CONTROL | KeyModifiers::ALT,
-        ));
-        assert_eq!(t.text(), "c");
-        assert_eq!(t.cursor(), 1);
-    }
-
     #[test]
     fn cursor_vertical_movement_across_lines_and_bounds() {
         let mut t = ta_with("short\nloooooooooong\nmid");

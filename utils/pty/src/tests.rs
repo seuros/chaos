@@ -97,8 +97,8 @@ async fn collect_output_until_exit(
             }
             res = &mut exit_rx => {
                 let code = res.unwrap_or(-1);
-                // On Windows (ConPTY in particular), it's possible to observe the exit notification
-                // before the final bytes are drained from the PTY reader thread. Drain for a brief
+                // It's possible to observe the exit notification before the final
+                // bytes are drained from the PTY reader thread. Drain for a brief
                 // "quiet" window to make output assertions deterministic.
                 let (quiet_ms, max_ms) = (50, 500);
                 let quiet = tokio::time::Duration::from_millis(quiet_ms);

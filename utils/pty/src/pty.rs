@@ -27,7 +27,8 @@ use crate::process::PtyMasterHandle;
 use crate::process::SpawnedProcess;
 use crate::process::TerminalSize;
 
-/// Returns true when ConPTY support is available (always true on Unix).
+/// Returns true when PTY support is available (always true on Unix).
+/// Chaos targets Linux/macOS/FreeBSD only.
 pub fn conpty_supported() -> bool {
     true
 }

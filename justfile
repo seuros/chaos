@@ -1,4 +1,4 @@
-set working-directory := "codex-rs"
+set working-directory := "."
 set positional-arguments
 
 # Display help
@@ -58,7 +58,7 @@ write-config-schema:
 
 [no-cd]
 write-hooks-schema:
-    cargo run --manifest-path ./codex-rs/Cargo.toml -p codex-hooks --bin write_hooks_schema_fixtures
+    cargo run -p codex-hooks --bin write_hooks_schema_fixtures
 
 # Run the argument-comment Dylint checks across codex-rs.
 [no-cd]

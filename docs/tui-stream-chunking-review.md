@@ -25,13 +25,13 @@ and visible output lags behind received output.
 
 ## Where the logic lives
 
-- `codex-rs/tui/src/streaming/chunking.rs`
+- `tui/src/streaming/chunking.rs`
   - Adaptive policy, mode transitions, and drain-plan selection.
-- `codex-rs/tui/src/streaming/commit_tick.rs`
+- `tui/src/streaming/commit_tick.rs`
   - Orchestration for each commit tick: snapshot, decide, drain, trace.
-- `codex-rs/tui/src/streaming/controller.rs`
+- `tui/src/streaming/controller.rs`
   - Queue/drain primitives used by commit-tick orchestration.
-- `codex-rs/tui/src/chatwidget.rs`
+- `tui/src/chatwidget.rs`
   - Integration point that invokes commit-tick orchestration and handles UI
     lifecycle events.
 

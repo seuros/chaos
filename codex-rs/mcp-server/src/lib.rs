@@ -1,42 +1,35 @@
-//! Prototype MCP server.
+//! Chaos MCP server — built on mcp-host.
 #![deny(clippy::print_stdout, clippy::print_stderr)]
 
 use std::io::ErrorKind;
 use std::io::Result as IoResult;
+use std::sync::Arc;
 
 use codex_arg0::Arg0DispatchPaths;
+use codex_core::AuthManager;
+use codex_core::ThreadManager;
 use codex_core::config::Config;
+use codex_core::models_manager::collaboration_mode_presets::CollaborationModesConfig;
+use codex_protocol::protocol::SessionSource;
 use codex_utils_cli::CliConfigOverrides;
-
-use mcp_types::JsonRpcMessage;
-use mcp_types::RequestId;
-use tokio::io::AsyncBufReadExt;
-use tokio::io::AsyncWriteExt;
-use tokio::io::BufReader;
-use tokio::io::{self};
-use tokio::sync::mpsc;
-use tracing::debug;
-use tracing::error;
-use tracing::info;
+use mcp_host::prelude::*;
+use tokio::sync::Mutex;
 use tracing_subscriber::EnvFilter;
 use tracing_subscriber::prelude::*;
 
-mod codex_tool_config;
-mod codex_tool_runner;
+mod chaos_tool;
+mod chaos_runner;
 mod elicitation;
 mod exec_approval;
-pub(crate) mod mcp_types;
-pub(crate) mod message_processor;
 mod outgoing_message;
 mod patch_approval;
+mod session_resources;
 
-use crate::message_processor::MessageProcessor;
-use crate::outgoing_message::OutgoingJsonRpcMessage;
+use crate::chaos_tool::ChaosMcpServer;
 use crate::outgoing_message::OutgoingMessage;
 use crate::outgoing_message::OutgoingMessageSender;
 
-pub use crate::codex_tool_config::CodexToolCallParam;
-pub use crate::codex_tool_config::CodexToolCallReplyParam;
+pub use crate::chaos_tool::ChaosToolParams;
 pub use crate::elicitation::ApprovalElicitationAction;
 pub use crate::elicitation::ApprovalElicitationResponse;
 pub use crate::exec_approval::ExecApprovalElicitRequestMeta;
@@ -46,21 +39,14 @@ pub use crate::patch_approval::PatchApprovalElicitRequestMeta;
 pub use crate::patch_approval::PatchApprovalElicitRequestParams;
 pub use crate::patch_approval::PatchApprovalResponse;
 
-/// Size of the bounded channels used to communicate between tasks. The value
-/// is a balance between throughput and memory usage – 128 messages should be
-/// plenty for an interactive CLI.
-const CHANNEL_CAPACITY: usize = 128;
 const DEFAULT_ANALYTICS_ENABLED: bool = true;
 const OTEL_SERVICE_NAME: &str = "codex_mcp_server";
-
-type IncomingMessage = JsonRpcMessage;
 
 pub async fn run_main(
     arg0_paths: Arg0DispatchPaths,
     cli_config_overrides: CliConfigOverrides,
 ) -> IoResult<()> {
-    // Parse CLI overrides once and derive the base Config eagerly so later
-    // components do not need to work with raw TOML values.
+    // Parse CLI overrides and load base Config.
     let cli_kv_overrides = cli_config_overrides.parse_overrides().map_err(|e| {
         std::io::Error::new(
             ErrorKind::InvalidInput,
@@ -73,6 +59,7 @@ pub async fn run_main(
             std::io::Error::new(ErrorKind::InvalidData, format!("error loading config: {e}"))
         })?;
 
+    // OpenTelemetry setup.
     let otel = codex_core::otel_init::build_provider(
         &config,
         env!("CARGO_PKG_VERSION"),
@@ -98,103 +85,105 @@ pub async fn run_main(
         .with(otel_tracing_layer)
         .try_init();
 
-    // Set up channels.
-    let (incoming_tx, mut incoming_rx) = mpsc::channel::<IncomingMessage>(CHANNEL_CAPACITY);
-    let (outgoing_tx, mut outgoing_rx) = mpsc::unbounded_channel::<OutgoingMessage>();
+    // Init state database singleton — same DB as TUI/CLI.
+    let config = Arc::new(config);
+    let state_runtime = codex_core::state_db::get_state_db(&config).await;
 
-    // Task: read from stdin, push to `incoming_tx`.
-    let stdin_reader_handle = tokio::spawn({
-        async move {
-            let stdin = io::stdin();
-            let reader = BufReader::new(stdin);
-            let mut lines = reader.lines();
+    // Build ThreadManager.
+    let auth_manager = AuthManager::shared(
+        config.codex_home.clone(),
+        false,
+        config.cli_auth_credentials_store_mode,
+    );
+    let thread_manager = Arc::new(ThreadManager::new(
+        config.as_ref(),
+        auth_manager,
+        SessionSource::Mcp,
+        CollaborationModesConfig {
+            default_mode_request_user_input: config
+                .features
+                .enabled(codex_core::features::Feature::DefaultModeRequestUserInput),
+        },
+    ));
 
-            while let Some(line) = lines.next_line().await.unwrap_or_default() {
-                match serde_json::from_str::<IncomingMessage>(&line) {
-                    Ok(msg) => {
-                        if incoming_tx.send(msg).await.is_err() {
-                            // Receiver gone – nothing left to do.
-                            break;
-                        }
+    // Outgoing message channel — used by the tool runner to send JSON-RPC
+    // messages while mcp-host handles the transport framing.
+    let (outgoing_tx, mut outgoing_rx) = tokio::sync::mpsc::unbounded_channel::<OutgoingMessage>();
+    let outgoing = Arc::new(OutgoingMessageSender::new(outgoing_tx));
+
+    // Build the mcp-host Server.
+    let mcp_server = server("chaos-mcp-server", env!("CARGO_PKG_VERSION"))
+        .with_tools(true)
+        .with_resources(true, false)
+        .with_resource_templates()
+        .with_instructions("Chaos — provider-agnostic coding agent")
+        .on_initialized({
+            let outgoing = outgoing.clone();
+            move |_session_id: String, requester: Option<ClientRequester>| {
+                // Capture elicitation support from the ClientRequester.
+                // The ClientRequester knows what the client declared during initialize.
+                if let Some(ref req) = requester {
+                    // If the client supports form elicitation, mark it.
+                    // ClientRequester tracks this internally; mirror it to our outgoing sender
+                    // so approval handlers can check.
+                    if req.supports_elicitation() {
+                        outgoing.set_client_elicitation_capability(Some(
+                            &mcp_host::protocol::capabilities::ElicitationCapability::default(),
+                        ));
                     }
-                    Err(e) => error!("Failed to deserialize JSON-RPC message: {e}"),
+                }
+                async {}
+            }
+        })
+        .build();
+
+    // Register tools.
+    let chaos_server = Arc::new(ChaosMcpServer {
+        thread_manager,
+        outgoing,
+        arg0_paths,
+        running_requests: Arc::new(Mutex::new(std::collections::HashMap::new())),
+        session_threads: Arc::new(Mutex::new(std::collections::HashMap::new())),
+        thread_names: Arc::new(Mutex::new(std::collections::HashMap::new())),
+        state_runtime,
+    });
+    chaos_tool::tool_router().register_all(mcp_server.tool_registry(), chaos_server.clone());
+    session_resources::resource_router()
+        .register_all(mcp_server.resource_manager(), chaos_server.clone());
+    session_resources::resource_template_router()
+        .register_all(mcp_server.resource_manager(), chaos_server);
+
+    // Spawn a task to forward outgoing messages as notifications via mcp-host.
+    let notification_sender = mcp_server.notification_sender();
+    tokio::spawn(async move {
+        use crate::outgoing_message::OutgoingJsonRpcMessage;
+        use mcp_host::protocol::types::JsonRpcMessage;
+
+        while let Some(msg) = outgoing_rx.recv().await {
+            let jsonrpc: OutgoingJsonRpcMessage = msg.into();
+            // Forward notifications and responses through mcp-host's notification channel.
+            match &jsonrpc {
+                JsonRpcMessage::Notification(n) => {
+                    let notif = mcp_host::prelude::JsonRpcNotification::new(
+                        n.method.clone(),
+                        n.params.clone(),
+                    );
+                    let _ = notification_sender.send(notif);
+                }
+                JsonRpcMessage::Response(_) | JsonRpcMessage::Request(_) => {
+                    // Error responses and server→client requests (elicitation)
+                    // are not routed through mcp-host's notification channel.
+                    tracing::debug!("non-notification message on outgoing channel (ignored)");
                 }
             }
-
-            debug!("stdin reader finished (EOF)");
         }
     });
 
-    // Task: process incoming messages.
-    let processor_handle = tokio::spawn({
-        let outgoing_message_sender = OutgoingMessageSender::new(outgoing_tx);
-        let mut processor = MessageProcessor::new(
-            outgoing_message_sender,
-            arg0_paths,
-            std::sync::Arc::new(config),
-        );
-        async move {
-            while let Some(msg) = incoming_rx.recv().await {
-                match msg {
-                    JsonRpcMessage::Request(r) => {
-                        let id = r
-                            .id
-                            .as_ref()
-                            .and_then(RequestId::from_value)
-                            .unwrap_or(RequestId::Number(0));
-                        processor.process_request(id, r.method, r.params).await;
-                    }
-                    JsonRpcMessage::Notification(n) => {
-                        processor
-                            .process_notification(n.method, n.params)
-                            .await;
-                    }
-                    JsonRpcMessage::Response(r) => {
-                        if let Some(error) = r.error {
-                            let id = RequestId::from_value(&r.id)
-                                .unwrap_or(RequestId::Number(0));
-                            processor.process_error(id, error).await;
-                        } else {
-                            let id = RequestId::from_value(&r.id)
-                                .unwrap_or(RequestId::Number(0));
-                            let result = r.result.unwrap_or(serde_json::Value::Null);
-                            processor.process_response(id, result).await;
-                        }
-                    }
-                }
-            }
-
-            info!("processor task exited (channel closed)");
-        }
-    });
-
-    // Task: write outgoing messages to stdout.
-    let stdout_writer_handle = tokio::spawn(async move {
-        let mut stdout = io::stdout();
-        while let Some(outgoing_message) = outgoing_rx.recv().await {
-            let msg: OutgoingJsonRpcMessage = outgoing_message.into();
-            match serde_json::to_string(&msg) {
-                Ok(json) => {
-                    if let Err(e) = stdout.write_all(json.as_bytes()).await {
-                        error!("Failed to write to stdout: {e}");
-                        break;
-                    }
-                    if let Err(e) = stdout.write_all(b"\n").await {
-                        error!("Failed to write newline to stdout: {e}");
-                        break;
-                    }
-                }
-                Err(e) => error!("Failed to serialize JSON-RPC message: {e}"),
-            }
-        }
-
-        info!("stdout writer exited (channel closed)");
-    });
-
-    // Wait for all tasks to finish.  The typical exit path is the stdin reader
-    // hitting EOF which, once it drops `incoming_tx`, propagates shutdown to
-    // the processor and then to the stdout task.
-    let _ = tokio::join!(stdin_reader_handle, processor_handle, stdout_writer_handle);
+    // Run with stdio transport.
+    mcp_server
+        .run(StdioTransport::new())
+        .await
+        .map_err(|e| std::io::Error::new(ErrorKind::Other, format!("mcp server error: {e}")))?;
 
     Ok(())
 }

@@ -6,7 +6,7 @@ use codex_protocol::approvals::ElicitationRequest as CoreElicitationRequest;
 use codex_protocol::approvals::ElicitationRequestEvent;
 use codex_protocol::protocol::Op;
 use codex_protocol::protocol::ReviewDecision;
-use crate::mcp_types::ErrorData;
+use crate::outgoing_message::ErrorData;
 use serde::Deserialize;
 use serde::Serialize;
 use serde_json::Value;
@@ -252,8 +252,8 @@ async fn submit_resolve_elicitation(
 mod tests {
     use codex_protocol::approvals::ElicitationRequest;
     use pretty_assertions::assert_eq;
-    use crate::mcp_types::ElicitationCapability;
-    use crate::mcp_types::UrlElicitationCapability;
+    use mcp_host::protocol::capabilities::ElicitationCapability;
+    use mcp_host::protocol::capabilities::UrlElicitationCapability;
     use tokio::sync::mpsc;
 
     use super::*;

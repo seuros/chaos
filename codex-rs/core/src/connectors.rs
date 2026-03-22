@@ -3,9 +3,9 @@ use std::collections::HashMap;
 use std::collections::HashSet;
 use std::time::Duration;
 
-pub use codex_app_server_protocol::AppBranding;
-pub use codex_app_server_protocol::AppInfo;
-pub use codex_app_server_protocol::AppMetadata;
+pub use codex_protocol::api::AppBranding;
+pub use codex_protocol::api::AppInfo;
+pub use codex_protocol::api::AppMetadata;
 use rmcp::model::ToolAnnotations;
 use serde::Deserialize;
 

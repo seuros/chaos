@@ -45,7 +45,7 @@ use crate::status::format_tokens_compact;
 use crate::status::rate_limit_snapshot_display_for_limit;
 use crate::text_formatting::proper_join;
 use crate::version::CHAOS_VERSION;
-use codex_app_server_protocol::ConfigLayerSource;
+use codex_protocol::api::ConfigLayerSource;
 use codex_core::connectors;
 use codex_core::config::Config;
 use codex_core::config::Constrained;

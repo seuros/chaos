@@ -7,7 +7,7 @@ use crate::shell::ShellType;
 use crate::tools::ToolRouter;
 use crate::tools::registry::ConfiguredToolSpec;
 use crate::tools::router::ToolRouterParams;
-use codex_app_server_protocol::AppInfo;
+use codex_protocol::api::AppInfo;
 use codex_protocol::openai_models::InputModality;
 use codex_protocol::openai_models::ModelInfo;
 use codex_protocol::openai_models::ModelsResponse;

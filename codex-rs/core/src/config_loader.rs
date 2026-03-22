@@ -8,7 +8,7 @@ mod tests;
 use crate::config::ConfigToml;
 use crate::config_loader::layer_io::LoadedConfigLayers;
 use crate::git_info::resolve_root_git_project_for_trust;
-use codex_app_server_protocol::ConfigLayerSource;
+use codex_protocol::api::ConfigLayerSource;
 use codex_config::CONFIG_TOML_FILE;
 use codex_config::ConfigRequirementsWithSources;
 use codex_protocol::config_types::SandboxMode;

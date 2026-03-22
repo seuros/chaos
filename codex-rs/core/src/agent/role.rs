@@ -16,7 +16,7 @@ use crate::config_loader::ConfigLayerStack;
 use crate::config_loader::ConfigLayerStackOrdering;
 use crate::config_loader::resolve_relative_paths_in_config_toml;
 use anyhow::anyhow;
-use codex_app_server_protocol::ConfigLayerSource;
+use codex_protocol::api::ConfigLayerSource;
 use std::collections::BTreeMap;
 use std::collections::BTreeSet;
 use std::path::Path;

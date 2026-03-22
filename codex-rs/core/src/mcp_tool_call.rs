@@ -2,10 +2,10 @@ use std::collections::BTreeMap;
 use std::time::Duration;
 use std::time::Instant;
 
-use codex_app_server_protocol::McpElicitationObjectType;
-use codex_app_server_protocol::McpElicitationSchema;
-use codex_app_server_protocol::McpServerElicitationRequest;
-use codex_app_server_protocol::McpServerElicitationRequestParams;
+use codex_protocol::api::McpElicitationObjectType;
+use codex_protocol::api::McpElicitationSchema;
+use codex_protocol::api::McpServerElicitationRequest;
+use codex_protocol::api::McpServerElicitationRequestParams;
 use tracing::error;
 
 use crate::analytics_client::AppInvocation;

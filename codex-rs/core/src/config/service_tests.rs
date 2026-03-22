@@ -1,9 +1,9 @@
 use super::*;
 use anyhow::Result;
-use codex_app_server_protocol::AppConfig;
-use codex_app_server_protocol::AppToolApproval;
-use codex_app_server_protocol::AppsConfig;
-use codex_app_server_protocol::AskForApproval;
+use codex_protocol::api::AppConfig;
+use codex_protocol::api::AppToolApproval;
+use codex_protocol::api::AppsConfig;
+use codex_protocol::api::AskForApprovalV2 as AskForApproval;
 use codex_utils_absolute_path::AbsolutePathBuf;
 use pretty_assertions::assert_eq;
 use std::collections::BTreeMap;

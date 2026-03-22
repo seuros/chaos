@@ -1,5 +1,5 @@
 use crate::history_cell::PlainHistoryCell;
-use codex_app_server_protocol::ConfigLayerSource;
+use codex_protocol::api::ConfigLayerSource;
 use codex_core::config::Config;
 use codex_core::config_loader::ConfigLayerEntry;
 use codex_core::config_loader::ConfigLayerStack;
@@ -390,7 +390,7 @@ fn format_network_constraints(network: &NetworkConstraints) -> String {
 mod tests {
     use super::render_debug_config_lines;
     use super::session_all_proxy_url;
-    use codex_app_server_protocol::ConfigLayerSource;
+    use codex_protocol::api::ConfigLayerSource;
     use codex_core::config::Constrained;
     use codex_core::config_loader::ConfigLayerEntry;
     use codex_core::config_loader::ConfigLayerStack;

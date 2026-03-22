@@ -70,15 +70,6 @@ static BANNED_PREFIX_SUGGESTIONS: &[&[&str]] = &[
     &["/bin/zsh", "-lc"],
     &["/bin/bash"],
     &["/bin/bash", "-lc"],
-    &["pwsh"],
-    &["pwsh", "-Command"],
-    &["pwsh", "-c"],
-    &["powershell"],
-    &["powershell", "-Command"],
-    &["powershell", "-c"],
-    &["powershell.exe"],
-    &["powershell.exe", "-Command"],
-    &["powershell.exe", "-c"],
     &["env"],
     &["sudo"],
     &["node"],
@@ -497,7 +488,7 @@ pub async fn load_exec_policy(config_stack: &ConfigLayerStack) -> Result<Policy,
 /// If a command is not matched by any execpolicy rule, derive a [`Decision`].
 pub fn render_decision_for_unmatched_command(
     approval_policy: AskForApproval,
-    sandbox_policy: &SandboxPolicy,
+    _sandbox_policy: &SandboxPolicy,
     file_system_sandbox_policy: &FileSystemSandboxPolicy,
     command: &[String],
     sandbox_permissions: SandboxPermissions,
@@ -507,10 +498,7 @@ pub fn render_decision_for_unmatched_command(
         return Decision::Allow;
     }
 
-    // On Windows, ReadOnly sandbox is not a real sandbox, so special-case it
-    // here.
-    let runtime_sandbox_provides_safety =
-        cfg!(windows) && matches!(sandbox_policy, SandboxPolicy::ReadOnly { .. });
+    let runtime_sandbox_provides_safety = false;
 
     // If the command is flagged as dangerous or we have no sandbox protection,
     // we should never allow it to run without approval.

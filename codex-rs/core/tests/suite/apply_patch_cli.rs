@@ -785,11 +785,7 @@ async fn apply_patch_cli_can_use_shell_command_output_as_patch_input() -> Result
             let call_num = self.num_calls.fetch_add(1, Ordering::SeqCst);
             match call_num {
                 0 => {
-                    let command = if cfg!(windows) {
-                        "Get-Content -Encoding utf8 source.txt"
-                    } else {
-                        "cat source.txt"
-                    };
+                    let command = "cat source.txt";
                     let args = json!({
                         "command": command,
                         "login": false,

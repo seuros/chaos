@@ -57,23 +57,8 @@ pub fn assert_regex_match<'s>(pattern: &str, actual: &'s str) -> regex_lite::Cap
         .unwrap_or_else(|| panic!("regex {pattern:?} did not match {actual:?}"))
 }
 
-pub fn test_path_buf_with_windows(unix_path: &str, windows_path: Option<&str>) -> PathBuf {
-    if cfg!(windows) {
-        if let Some(windows) = windows_path {
-            PathBuf::from(windows)
-        } else {
-            let mut path = PathBuf::from(r"C:\");
-            path.extend(
-                unix_path
-                    .trim_start_matches('/')
-                    .split('/')
-                    .filter(|segment| !segment.is_empty()),
-            );
-            path
-        }
-    } else {
-        PathBuf::from(unix_path)
-    }
+pub fn test_path_buf_with_windows(unix_path: &str, _windows_path: Option<&str>) -> PathBuf {
+    PathBuf::from(unix_path)
 }
 
 pub fn test_path_buf(unix_path: &str) -> PathBuf {
@@ -474,12 +459,8 @@ macro_rules! codex_linux_sandbox_exe_or_skip {
     }};
 }
 
+/// No-op: Windows is not a supported target.
 #[macro_export]
 macro_rules! skip_if_windows {
-    ($return_value:expr $(,)?) => {{
-        if cfg!(target_os = "windows") {
-            println!("Skipping test because it cannot execute on Windows.");
-            return $return_value;
-        }
-    }};
+    ($return_value:expr $(,)?) => {{}};
 }

@@ -4388,19 +4388,11 @@ async fn rejects_escalated_permissions_when_policy_not_on_request() {
     let timeout_ms = 1000;
     let sandbox_permissions = SandboxPermissions::RequireEscalated;
     let params = ExecParams {
-        command: if cfg!(windows) {
-            vec![
-                "cmd.exe".to_string(),
-                "/C".to_string(),
-                "echo hi".to_string(),
-            ]
-        } else {
-            vec![
-                "/bin/sh".to_string(),
-                "-c".to_string(),
-                "echo hi".to_string(),
-            ]
-        },
+        command: vec![
+            "/bin/sh".to_string(),
+            "-c".to_string(),
+            "echo hi".to_string(),
+        ],
         cwd: turn_context.cwd.clone(),
         expiration: timeout_ms.into(),
         env: HashMap::new(),

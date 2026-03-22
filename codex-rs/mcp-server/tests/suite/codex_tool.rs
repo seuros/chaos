@@ -63,18 +63,7 @@ async fn shell_command_approval_triggers_elicitation() -> anyhow::Result<()> {
         .path()
         .join(created_filename);
 
-    let shell_command = if cfg!(windows) {
-        vec![
-            "New-Item".to_string(),
-            "-ItemType".to_string(),
-            "File".to_string(),
-            "-Path".to_string(),
-            created_filename.to_string(),
-            "-Force".to_string(),
-        ]
-    } else {
-        vec!["touch".to_string(), created_filename.to_string()]
-    };
+    let shell_command = vec!["touch".to_string(), created_filename.to_string()];
     let expected_shell_command =
         format_with_current_shell(&shlex::try_join(shell_command.iter().map(String::as_str))?);
 
@@ -231,12 +220,6 @@ async fn test_patch_approval_triggers_elicitation() {
 }
 
 async fn patch_approval_triggers_elicitation() -> anyhow::Result<()> {
-    if cfg!(windows) {
-        // powershell apply_patch shell calls are not parsed into apply patch approvals
-
-        return Ok(());
-    }
-
     let cwd = TempDir::new()?;
     let test_file = cwd.path().join("destination_file.txt");
     std::fs::write(&test_file, "original content\n")?;
@@ -513,18 +496,7 @@ async fn shell_command_without_elicitation_capability_is_denied() -> anyhow::Res
         .path()
         .join(created_filename);
 
-    let shell_command = if cfg!(windows) {
-        vec![
-            "New-Item".to_string(),
-            "-ItemType".to_string(),
-            "File".to_string(),
-            "-Path".to_string(),
-            created_filename.to_string(),
-            "-Force".to_string(),
-        ]
-    } else {
-        vec!["touch".to_string(), created_filename.to_string()]
-    };
+    let shell_command = vec!["touch".to_string(), created_filename.to_string()];
 
     let server = create_mock_responses_server(vec![
         create_shell_command_sse_response(

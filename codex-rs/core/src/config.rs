@@ -23,7 +23,6 @@ use crate::config::types::ShellEnvironmentPolicyToml;
 use crate::config::types::SkillsConfig;
 use crate::config::types::Tui;
 use crate::config::types::UriBasedFileOpener;
-use crate::config::types::WindowsSandboxModeToml;
 use crate::config::types::WindowsToml;
 use crate::config_loader::CloudRequirementsLoader;
 use crate::config_loader::ConfigLayerStack;
@@ -186,11 +185,6 @@ pub struct Permissions {
     pub allow_login_shell: bool,
     /// Policy used to build process environments for shell/unified exec.
     pub shell_environment_policy: ShellEnvironmentPolicy,
-    /// Effective Windows sandbox mode derived from `[windows].sandbox` or
-    /// legacy feature keys.
-    pub windows_sandbox_mode: Option<WindowsSandboxModeToml>,
-    /// Whether the final Windows sandboxed child should run on a private desktop.
-    pub windows_sandbox_private_desktop: bool,
     /// Optional macOS seatbelt extension profile used to extend default
     /// seatbelt permissions when running under seatbelt.
     pub macos_seatbelt_profile_extensions: Option<MacOsSeatbeltProfileExtensions>,
@@ -2075,17 +2069,6 @@ impl Config {
 
         let configured_features = Features::from_config(&cfg, &config_profile, feature_overrides);
         let features = ManagedFeatures::from_configured(configured_features, feature_requirements)?;
-        let windows_sandbox_mode = config_profile
-            .windows
-            .as_ref()
-            .and_then(|w| w.sandbox)
-            .or_else(|| cfg.windows.as_ref().and_then(|w| w.sandbox));
-        let windows_sandbox_private_desktop = config_profile
-            .windows
-            .as_ref()
-            .and_then(|w| w.sandbox_private_desktop)
-            .or_else(|| cfg.windows.as_ref().and_then(|w| w.sandbox_private_desktop))
-            .unwrap_or(true);
         let resolved_cwd = normalize_for_native_workdir({
             use std::env;
 
@@ -2550,8 +2533,6 @@ impl Config {
                 network,
                 allow_login_shell,
                 shell_environment_policy,
-                windows_sandbox_mode,
-                windows_sandbox_private_desktop,
                 macos_seatbelt_profile_extensions: None,
             },
             approvals_reviewer,

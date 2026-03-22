@@ -1204,7 +1204,7 @@ mod tests {
         let config: ConfigRequirementsToml = from_str(toml_str)?;
         let requirements: ConfigRequirements = with_unknown_source(config).try_into()?;
 
-        let root = if cfg!(windows) { "C:\\repo" } else { "/repo" };
+        let root = "/repo";
         assert!(
             requirements
                 .sandbox_policy

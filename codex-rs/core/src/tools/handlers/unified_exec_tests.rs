@@ -59,46 +59,6 @@ fn test_get_command_respects_explicit_bash_shell() -> anyhow::Result<()> {
 }
 
 #[test]
-fn test_get_command_respects_explicit_powershell_shell() -> anyhow::Result<()> {
-    let json = r#"{"cmd": "echo hello", "shell": "powershell"}"#;
-
-    let args: ExecCommandArgs = parse_arguments(json)?;
-
-    assert_eq!(args.shell.as_deref(), Some("powershell"));
-
-    let command = get_command(
-        &args,
-        Arc::new(default_user_shell()),
-        &UnifiedExecShellMode::Direct,
-        true,
-    )
-    .map_err(anyhow::Error::msg)?;
-
-    assert_eq!(command[2], "echo hello");
-    Ok(())
-}
-
-#[test]
-fn test_get_command_respects_explicit_cmd_shell() -> anyhow::Result<()> {
-    let json = r#"{"cmd": "echo hello", "shell": "cmd"}"#;
-
-    let args: ExecCommandArgs = parse_arguments(json)?;
-
-    assert_eq!(args.shell.as_deref(), Some("cmd"));
-
-    let command = get_command(
-        &args,
-        Arc::new(default_user_shell()),
-        &UnifiedExecShellMode::Direct,
-        true,
-    )
-    .map_err(anyhow::Error::msg)?;
-
-    assert_eq!(command[2], "echo hello");
-    Ok(())
-}
-
-#[test]
 fn test_get_command_rejects_explicit_login_when_disallowed() -> anyhow::Result<()> {
     let json = r#"{"cmd": "echo hello", "login": true}"#;
 
@@ -122,18 +82,12 @@ fn test_get_command_rejects_explicit_login_when_disallowed() -> anyhow::Result<(
 fn test_get_command_ignores_explicit_shell_in_zsh_fork_mode() -> anyhow::Result<()> {
     let json = r#"{"cmd": "echo hello", "shell": "/bin/bash"}"#;
     let args: ExecCommandArgs = parse_arguments(json)?;
-    let shell_zsh_path = AbsolutePathBuf::from_absolute_path(if cfg!(windows) {
-        r"C:\opt\codex\zsh"
-    } else {
-        "/opt/codex/zsh"
-    })?;
+    let shell_zsh_path = AbsolutePathBuf::from_absolute_path("/opt/codex/zsh")?;
     let shell_mode = UnifiedExecShellMode::ZshFork(ZshForkConfig {
         shell_zsh_path: shell_zsh_path.clone(),
-        main_execve_wrapper_exe: AbsolutePathBuf::from_absolute_path(if cfg!(windows) {
-            r"C:\opt\codex\codex-execve-wrapper"
-        } else {
-            "/opt/codex/codex-execve-wrapper"
-        })?,
+        main_execve_wrapper_exe: AbsolutePathBuf::from_absolute_path(
+            "/opt/codex/codex-execve-wrapper",
+        )?,
     });
 
     let command = get_command(&args, Arc::new(default_user_shell()), &shell_mode, true)

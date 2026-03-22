@@ -54,11 +54,7 @@ use std::path::PathBuf;
 use std::time::Duration;
 
 fn host_absolute_path(segments: &[&str]) -> String {
-    let mut path = if cfg!(windows) {
-        PathBuf::from(r"C:\")
-    } else {
-        PathBuf::from("/")
-    };
+    let mut path = PathBuf::from("/");
     for segment in segments {
         path.push(segment);
     }
@@ -729,8 +725,6 @@ async fn prepare_escalated_exec_permissions_preserve_macos_seatbelt_extensions()
         network: None,
         allow_login_shell: true,
         shell_environment_policy: ShellEnvironmentPolicy::default(),
-        windows_sandbox_mode: None,
-        windows_sandbox_private_desktop: false,
         macos_seatbelt_profile_extensions: Some(MacOsSeatbeltProfileExtensions {
             macos_preferences: MacOsPreferencesPermission::ReadWrite,
             ..Default::default()

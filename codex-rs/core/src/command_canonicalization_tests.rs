@@ -54,34 +54,6 @@ fn canonicalizes_heredoc_scripts_to_stable_script_key() {
 }
 
 #[test]
-fn canonicalizes_powershell_wrappers_to_stable_script_key() {
-    let script = "Write-Host hi";
-    let command_a = vec![
-        "powershell.exe".to_string(),
-        "-NoProfile".to_string(),
-        "-Command".to_string(),
-        script.to_string(),
-    ];
-    let command_b = vec![
-        "powershell".to_string(),
-        "-Command".to_string(),
-        script.to_string(),
-    ];
-
-    assert_eq!(
-        canonicalize_command_for_approval(&command_a),
-        vec![
-            "__codex_powershell_script__".to_string(),
-            script.to_string(),
-        ]
-    );
-    assert_eq!(
-        canonicalize_command_for_approval(&command_a),
-        canonicalize_command_for_approval(&command_b)
-    );
-}
-
-#[test]
 fn preserves_non_shell_commands() {
     let command = vec!["cargo".to_string(), "fmt".to_string()];
     assert_eq!(canonicalize_command_for_approval(&command), command);

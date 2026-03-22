@@ -489,7 +489,6 @@ model_reasoning_effort = "high"
 }
 
 #[tokio::test]
-#[cfg(not(windows))]
 async fn apply_role_does_not_materialize_default_sandbox_workspace_write_fields() {
     use codex_protocol::protocol::SandboxPolicy;
     let (home, mut config) = test_config_with_cli_overrides(vec![

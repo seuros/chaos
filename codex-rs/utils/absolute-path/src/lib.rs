@@ -26,8 +26,7 @@ impl AbsolutePathBuf {
         let Some(path_str) = path.to_str() else {
             return path.to_path_buf();
         };
-        if cfg!(not(target_os = "windows"))
-            && let Some(home) = home_dir()
+        if let Some(home) = home_dir()
         {
             if path_str == "~" {
                 return home;

@@ -280,7 +280,6 @@ async fn remote_compact_runs_automatically() -> Result<()> {
     Ok(())
 }
 
-#[cfg_attr(target_os = "windows", ignore)]
 #[tokio::test(flavor = "multi_thread", worker_threads = 2)]
 async fn remote_compact_trims_function_call_history_to_fit_context_window() -> Result<()> {
     skip_if_no_network!(Ok(()));
@@ -397,7 +396,6 @@ async fn remote_compact_trims_function_call_history_to_fit_context_window() -> R
     Ok(())
 }
 
-#[cfg_attr(target_os = "windows", ignore)]
 #[tokio::test(flavor = "multi_thread", worker_threads = 2)]
 async fn auto_remote_compact_trims_function_call_history_to_fit_context_window() -> Result<()> {
     skip_if_no_network!(Ok(()));
@@ -623,7 +621,6 @@ async fn auto_remote_compact_failure_stops_agent_loop() -> Result<()> {
     Ok(())
 }
 
-#[cfg_attr(target_os = "windows", ignore)]
 #[tokio::test(flavor = "multi_thread", worker_threads = 2)]
 async fn remote_compact_trim_estimate_uses_session_base_instructions() -> Result<()> {
     skip_if_no_network!(Ok(()));

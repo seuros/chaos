@@ -5,9 +5,9 @@
 //! clipboard path when the current machine is also the user's desktop, but it
 //! intentionally changes strategy in environments where a "local" clipboard
 //! would be the wrong one: SSH sessions use OSC 52 so the user's terminal can
-//! proxy the copy back to the client, and WSL shells fall back to
+//! proxy the copy back to the client, and WSL environments fall back to
 //! `powershell.exe` because Linux-side clipboard providers often cannot reach
-//! the Windows clipboard reliably.
+//! the host clipboard reliably.
 //!
 //! The module is deliberately narrow. It only handles text copy, returns
 //! user-facing error strings for the chat UI, and does not try to expose a
@@ -76,10 +76,9 @@ pub fn copy_text_to_clipboard(text: &str) -> Result<(), String> {
 /// Writes text through OSC 52 so the controlling terminal can own the copy.
 ///
 /// This path exists for remote sessions where the process-local clipboard is
-/// not the clipboard the user actually wants. On Unix it writes directly to the
+/// not the clipboard the user actually wants. It writes directly to the
 /// controlling TTY so the escape sequence reaches the terminal even if stdout
-/// is redirected; on Windows it writes to stdout because the console is the
-/// transport.
+/// is redirected.
 fn copy_via_osc52(text: &str) -> Result<(), String> {
     let sequence = osc52_sequence(text, std::env::var_os("TMUX").is_some());
     #[cfg(unix)]

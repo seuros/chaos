@@ -53,8 +53,8 @@ mcp-server-run *args:
     cargo run -p codex-mcp-server -- "$@"
 
 # Regenerate the json schema for config.toml from the current config types.
-write-config-schema:
-    cargo run -p codex-core --bin codex-write-config-schema
+# TODO: convert to a #[test] that writes the schema
+# write-config-schema:
 
 [no-cd]
 write-hooks-schema:

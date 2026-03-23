@@ -106,7 +106,7 @@ fn bash_snapshot_filters_invalid_exports() -> Result<()> {
         .env("BASH_ENV", "/dev/null")
         .env("VALID_NAME", "ok")
         .env("PWD", "/tmp/stale")
-        .env("NEXTEST_BIN_EXE_codex-write-config-schema", "/path/to/bin")
+        .env("NEXTEST_BIN_EXE_some-test-binary", "/path/to/bin")
         .env("BAD-NAME", "broken")
         .output()?;
 
@@ -115,7 +115,7 @@ fn bash_snapshot_filters_invalid_exports() -> Result<()> {
     let stdout = String::from_utf8_lossy(&output.stdout);
     assert!(stdout.contains("VALID_NAME"));
     assert!(!stdout.contains("PWD=/tmp/stale"));
-    assert!(!stdout.contains("NEXTEST_BIN_EXE_codex-write-config-schema"));
+    assert!(!stdout.contains("NEXTEST_BIN_EXE_some-test-binary"));
     assert!(!stdout.contains("BAD-NAME"));
 
     Ok(())

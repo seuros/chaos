@@ -16,6 +16,7 @@ members = [
     "execpolicy",
     "keyring-store",
     "file-search",
+    "alcatraz/base",
     "alcatraz/linux",
     "login",
     "mcp-server",
@@ -81,6 +82,7 @@ codex-file-search = { path = "file-search" }
 codex-git = { path = "utils/git" }
 codex-hooks = { path = "hooks" }
 codex-keyring-store = { path = "keyring-store" }
+alcatraz-base = { path = "alcatraz/base" }
 alcatraz-linux = { path = "alcatraz/linux" }
 codex-login = { path = "login" }
 codex-mcp-server = { path = "mcp-server" }

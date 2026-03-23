@@ -17,8 +17,8 @@ path = "src/lib.rs"
 workspace = true
 
 [target.'cfg(target_os = "linux")'.dependencies]
+alcatraz-base = { workspace = true }
 clap = { workspace = true, features = ["derive"] }
-codex-core = { workspace = true }
 codex-protocol = { workspace = true }
 codex-utils-absolute-path = { workspace = true }
 landlock = { workspace = true }
@@ -29,6 +29,7 @@ serde_json = { workspace = true }
 url = { workspace = true }
 
 [target.'cfg(target_os = "linux")'.dev-dependencies]
+codex-core = { workspace = true }
 pretty_assertions = { workspace = true }
 tempfile = { workspace = true }
 tokio = { workspace = true, features = [

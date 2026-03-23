@@ -114,9 +114,19 @@ dependencies = [
 ]
 
 [[package]]
+name = "alcatraz-base"
+version = "47.0.0"
+dependencies = [
+ "landlock",
+ "seccompiler",
+ "thiserror 2.0.18",
+]
+
+[[package]]
 name = "alcatraz-linux"
 version = "47.0.0"
 dependencies = [
+ "alcatraz-base",
  "clap",
  "codex-core",
  "codex-protocol",

@@ -4,10 +4,6 @@ version.workspace = true
 edition.workspace = true
 license.workspace = true
 
-[[bin]]
-name = "codex-tui"
-path = "src/main.rs"
-
 [lib]
 name = "codex_tui"
 path = "src/lib.rs"

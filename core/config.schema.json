@@ -1773,10 +1773,6 @@
       "description": "Base URL for requests to ChatGPT (as opposed to the OpenAI API).",
       "type": "string"
     },
-    "check_for_update_on_startup": {
-      "description": "When `true`, checks for Codex updates on startup and surfaces update prompts. Set to `false` only if your Codex updates are centrally managed. Defaults to `true`.",
-      "type": "boolean"
-    },
     "cli_auth_credentials_store": {
       "allOf": [
         {

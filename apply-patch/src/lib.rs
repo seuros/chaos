@@ -532,6 +532,94 @@ pub fn unified_diff_from_chunks_with_context(
     })
 }
 
+/// Apply a pre-verified [`ApplyPatchAction`] directly to the filesystem.
+///
+/// Unlike [`apply_patch`] which re-parses the raw patch string, this function
+/// uses the already-computed `new_content` from the action's changes. This is
+/// the preferred path when the harness has already verified the patch — it
+/// avoids redundant parsing and can run in a sandboxed fork without needing
+/// to serialize/deserialize through a subprocess CLI.
+///
+/// Returns the summary string (e.g. "Success. Updated the following files:\nM src/foo.rs\n").
+pub fn apply_action(action: &ApplyPatchAction) -> std::result::Result<String, ApplyPatchError> {
+    if action.is_empty() {
+        return Err(ApplyPatchError::IoError(IoError {
+            context: "No files were modified.".to_string(),
+            source: std::io::Error::other("empty patch action"),
+        }));
+    }
+
+    let mut added: Vec<PathBuf> = Vec::new();
+    let mut modified: Vec<PathBuf> = Vec::new();
+    let mut deleted: Vec<PathBuf> = Vec::new();
+
+    for (path, change) in action.changes() {
+        match change {
+            ApplyPatchFileChange::Add { content } => {
+                if let Some(parent) = path.parent()
+                    && !parent.as_os_str().is_empty()
+                {
+                    std::fs::create_dir_all(parent).map_err(|e| ApplyPatchError::IoError(IoError {
+                        context: format!("Failed to create parent directories for {}", path.display()),
+                        source: e,
+                    }))?;
+                }
+                std::fs::write(path, content).map_err(|e| ApplyPatchError::IoError(IoError {
+                    context: format!("Failed to write file {}", path.display()),
+                    source: e,
+                }))?;
+                added.push(path.clone());
+            }
+            ApplyPatchFileChange::Delete { .. } => {
+                std::fs::remove_file(path).map_err(|e| ApplyPatchError::IoError(IoError {
+                    context: format!("Failed to delete file {}", path.display()),
+                    source: e,
+                }))?;
+                deleted.push(path.clone());
+            }
+            ApplyPatchFileChange::Update {
+                new_content,
+                move_path,
+                ..
+            } => {
+                let dest = move_path.as_deref().unwrap_or(path.as_path());
+                if let Some(parent) = dest.parent()
+                    && !parent.as_os_str().is_empty()
+                {
+                    std::fs::create_dir_all(parent).map_err(|e| ApplyPatchError::IoError(IoError {
+                        context: format!("Failed to create parent directories for {}", dest.display()),
+                        source: e,
+                    }))?;
+                }
+                std::fs::write(dest, new_content).map_err(|e| ApplyPatchError::IoError(IoError {
+                    context: format!("Failed to write file {}", dest.display()),
+                    source: e,
+                }))?;
+                if move_path.is_some() {
+                    std::fs::remove_file(path).map_err(|e| ApplyPatchError::IoError(IoError {
+                        context: format!("Failed to remove original {}", path.display()),
+                        source: e,
+                    }))?;
+                }
+                modified.push(dest.to_path_buf());
+            }
+        }
+    }
+
+    let affected = AffectedPaths {
+        added,
+        modified,
+        deleted,
+    };
+    let mut summary = Vec::new();
+    print_summary(&affected, &mut summary)
+        .map_err(|e| ApplyPatchError::IoError(IoError {
+            context: "Failed to write summary".to_string(),
+            source: e,
+        }))?;
+    Ok(String::from_utf8_lossy(&summary).into_owned())
+}
+
 /// Print the summary of changes in git-style format.
 /// Write a summary of changes to the given writer.
 pub fn print_summary(
@@ -1070,5 +1158,76 @@ g
         let mut stderr = Vec::new();
         let result = apply_patch(&patch, &mut stdout, &mut stderr);
         assert!(result.is_err());
+    }
+
+    #[test]
+    fn test_apply_action_add_file() {
+        let dir = tempdir().unwrap();
+        let path = dir.path().join("new_file.txt");
+        let action = ApplyPatchAction::new_add_for_test(&path, "hello world\n".to_string());
+        let summary = apply_action(&action).unwrap();
+        assert!(summary.contains("Success."));
+        assert!(summary.contains(&format!("A {}", path.display())));
+        assert_eq!(fs::read_to_string(&path).unwrap(), "hello world\n");
+    }
+
+    #[test]
+    fn test_apply_action_update_file() {
+        let dir = tempdir().unwrap();
+        let path = dir.path().join("existing.txt");
+        fs::write(&path, "old content\n").unwrap();
+
+        let mut changes = HashMap::new();
+        changes.insert(
+            path.clone(),
+            ApplyPatchFileChange::Update {
+                unified_diff: String::new(),
+                move_path: None,
+                new_content: "new content\n".to_string(),
+            },
+        );
+        let action = ApplyPatchAction {
+            changes,
+            cwd: dir.path().to_path_buf(),
+            patch: String::new(),
+        };
+        let summary = apply_action(&action).unwrap();
+        assert!(summary.contains("Success."));
+        assert!(summary.contains(&format!("M {}", path.display())));
+        assert_eq!(fs::read_to_string(&path).unwrap(), "new content\n");
+    }
+
+    #[test]
+    fn test_apply_action_delete_file() {
+        let dir = tempdir().unwrap();
+        let path = dir.path().join("doomed.txt");
+        fs::write(&path, "goodbye\n").unwrap();
+
+        let mut changes = HashMap::new();
+        changes.insert(
+            path.clone(),
+            ApplyPatchFileChange::Delete {
+                content: "goodbye\n".to_string(),
+            },
+        );
+        let action = ApplyPatchAction {
+            changes,
+            cwd: dir.path().to_path_buf(),
+            patch: String::new(),
+        };
+        let summary = apply_action(&action).unwrap();
+        assert!(summary.contains("Success."));
+        assert!(summary.contains(&format!("D {}", path.display())));
+        assert!(!path.exists());
+    }
+
+    #[test]
+    fn test_apply_action_empty_returns_error() {
+        let action = ApplyPatchAction {
+            changes: HashMap::new(),
+            cwd: PathBuf::from("/tmp"),
+            patch: String::new(),
+        };
+        assert!(apply_action(&action).is_err());
     }
 }

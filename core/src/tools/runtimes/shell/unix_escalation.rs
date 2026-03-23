@@ -158,7 +158,7 @@ pub(super) async fn try_run_zsh_fork(
             .permissions
             .macos_seatbelt_profile_extensions
             .clone(),
-        codex_linux_sandbox_exe: ctx.turn.codex_linux_sandbox_exe.clone(),
+        alcatraz_linux_exe: ctx.turn.alcatraz_linux_exe.clone(),
     };
     let main_execve_wrapper_exe = ctx
         .session
@@ -262,7 +262,7 @@ pub(crate) async fn prepare_unified_exec_zsh_fork(
             .permissions
             .macos_seatbelt_profile_extensions
             .clone(),
-        codex_linux_sandbox_exe: ctx.turn.codex_linux_sandbox_exe.clone(),
+        alcatraz_linux_exe: ctx.turn.alcatraz_linux_exe.clone(),
     };
     let escalation_policy = CoreShellActionProvider {
         policy: Arc::clone(&exec_policy),
@@ -853,7 +853,7 @@ struct CoreShellCommandExecutor {
     sandbox_policy_cwd: PathBuf,
     #[cfg_attr(not(target_os = "macos"), allow(dead_code))]
     macos_seatbelt_profile_extensions: Option<MacOsSeatbeltProfileExtensions>,
-    codex_linux_sandbox_exe: Option<PathBuf>,
+    alcatraz_linux_exe: Option<PathBuf>,
 }
 
 struct PrepareSandboxedExecParams<'a> {
@@ -1047,7 +1047,7 @@ impl CoreShellCommandExecutor {
                 sandbox_policy_cwd: &self.sandbox_policy_cwd,
                 #[cfg(target_os = "macos")]
                 macos_seatbelt_profile_extensions,
-                codex_linux_sandbox_exe: self.codex_linux_sandbox_exe.as_ref(),
+                alcatraz_linux_exe: self.alcatraz_linux_exe.as_ref(),
             })?;
         if let Some(network) = exec_request.network.as_ref() {
             network.apply_to_env(&mut exec_request.env);

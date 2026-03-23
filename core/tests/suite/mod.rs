@@ -15,7 +15,7 @@ struct TestCodexAliasesGuard {
 const CODEX_HOME_ENV_VAR: &str = "CODEX_HOME";
 
 // This code runs before any other tests are run.
-// It allows the test binary to behave like codex and dispatch to apply_patch and codex-linux-sandbox
+// It allows the test binary to behave like codex and dispatch to apply_patch and alcatraz-linux
 // based on the arg0.
 // NOTE: this doesn't work on ARM
 #[ctor]

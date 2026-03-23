@@ -1,6 +1,6 @@
 //! Linux sandbox helper entry point.
 //!
-//! On Linux, `codex-linux-sandbox` applies landlock filesystem restrictions
+//! On Linux, `alcatraz-linux` applies landlock filesystem restrictions
 //! and seccomp syscall filters in-process, then execs the target command.
 #[cfg(target_os = "linux")]
 mod landlock;
@@ -14,5 +14,5 @@ pub fn run_main() -> ! {
 
 #[cfg(not(target_os = "linux"))]
 pub fn run_main() -> ! {
-    panic!("codex-linux-sandbox is only supported on Linux");
+    panic!("alcatraz-linux is only supported on Linux");
 }

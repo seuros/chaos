@@ -289,7 +289,7 @@ fn apply_spawn_agent_runtime_overrides(
             FunctionCallError::RespondToModel(format!("approval_policy is invalid: {err}"))
         })?;
     config.permissions.shell_environment_policy = turn.shell_environment_policy.clone();
-    config.codex_linux_sandbox_exe = turn.codex_linux_sandbox_exe.clone();
+    config.alcatraz_linux_exe = turn.alcatraz_linux_exe.clone();
     config.cwd = turn.cwd.clone();
     config
         .permissions

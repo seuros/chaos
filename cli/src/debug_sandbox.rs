@@ -26,7 +26,7 @@ use seatbelt::DenialLogger;
 #[cfg(target_os = "macos")]
 pub async fn run_command_under_seatbelt(
     command: SeatbeltCommand,
-    codex_linux_sandbox_exe: Option<PathBuf>,
+    alcatraz_linux_exe: Option<PathBuf>,
 ) -> anyhow::Result<()> {
     let SeatbeltCommand {
         full_auto,
@@ -38,7 +38,7 @@ pub async fn run_command_under_seatbelt(
         full_auto,
         command,
         config_overrides,
-        codex_linux_sandbox_exe,
+        alcatraz_linux_exe,
         SandboxType::Seatbelt,
         log_denials,
     )
@@ -48,14 +48,14 @@ pub async fn run_command_under_seatbelt(
 #[cfg(not(target_os = "macos"))]
 pub async fn run_command_under_seatbelt(
     _command: SeatbeltCommand,
-    _codex_linux_sandbox_exe: Option<PathBuf>,
+    _alcatraz_linux_exe: Option<PathBuf>,
 ) -> anyhow::Result<()> {
     anyhow::bail!("Seatbelt sandbox is only available on macOS");
 }
 
 pub async fn run_command_under_landlock(
     command: LandlockCommand,
-    codex_linux_sandbox_exe: Option<PathBuf>,
+    alcatraz_linux_exe: Option<PathBuf>,
 ) -> anyhow::Result<()> {
     let LandlockCommand {
         full_auto,
@@ -66,7 +66,7 @@ pub async fn run_command_under_landlock(
         full_auto,
         command,
         config_overrides,
-        codex_linux_sandbox_exe,
+        alcatraz_linux_exe,
         SandboxType::Landlock,
         /*log_denials*/ false,
     )
@@ -83,7 +83,7 @@ async fn run_command_under_sandbox(
     full_auto: bool,
     command: Vec<String>,
     config_overrides: CliConfigOverrides,
-    codex_linux_sandbox_exe: Option<PathBuf>,
+    alcatraz_linux_exe: Option<PathBuf>,
     sandbox_type: SandboxType,
     log_denials: bool,
 ) -> anyhow::Result<()> {
@@ -94,7 +94,7 @@ async fn run_command_under_sandbox(
             .map_err(anyhow::Error::msg)?,
         ConfigOverrides {
             sandbox_mode: Some(sandbox_mode),
-            codex_linux_sandbox_exe,
+            alcatraz_linux_exe,
             ..Default::default()
         },
     )
@@ -156,11 +156,11 @@ async fn run_command_under_sandbox(
         }
         SandboxType::Landlock => {
             #[expect(clippy::expect_used)]
-            let codex_linux_sandbox_exe = config
-                .codex_linux_sandbox_exe
-                .expect("codex-linux-sandbox executable not found");
+            let alcatraz_linux_exe = config
+                .alcatraz_linux_exe
+                .expect("alcatraz-linux executable not found");
             spawn_command_under_linux_sandbox(
-                codex_linux_sandbox_exe,
+                alcatraz_linux_exe,
                 command,
                 cwd,
                 config.permissions.sandbox_policy.get(),

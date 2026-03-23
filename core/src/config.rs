@@ -403,13 +403,13 @@ pub struct Config {
     /// output will be hyperlinked using the specified URI scheme.
     pub file_opener: UriBasedFileOpener,
 
-    /// Path to the `codex-linux-sandbox` executable. This must be set if
+    /// Path to the `alcatraz-linux` executable. This must be set if
     /// [`crate::exec::SandboxType::LinuxSeccomp`] is used. Note that this
     /// cannot be set in the config file: it must be set in code via
     /// [`ConfigOverrides`].
     ///
-    /// When this program is invoked, arg0 will be set to `codex-linux-sandbox`.
-    pub codex_linux_sandbox_exe: Option<PathBuf>,
+    /// When this program is invoked, arg0 will be set to `alcatraz-linux`.
+    pub alcatraz_linux_exe: Option<PathBuf>,
 
     /// Path to the `codex-execve-wrapper` executable used for shell
     /// escalation. This cannot be set in the config file: it must be set in
@@ -781,7 +781,7 @@ impl Config {
     /// designed to use [AskForApproval::Never] exclusively.
     ///
     /// Further, [ConfigOverrides] contains some options that are not supported
-    /// in [ConfigToml], such as `cwd`, `codex_linux_sandbox_exe`, and
+    /// in [ConfigToml], such as `cwd`, `alcatraz_linux_exe`, and
     /// `main_execve_wrapper_exe`.
     pub async fn load_with_cli_overrides_and_harness_overrides(
         cli_overrides: Vec<(String, TomlValue)>,
@@ -1825,7 +1825,7 @@ pub struct ConfigOverrides {
     pub model_provider: Option<String>,
     pub service_tier: Option<Option<ServiceTier>>,
     pub config_profile: Option<String>,
-    pub codex_linux_sandbox_exe: Option<PathBuf>,
+    pub alcatraz_linux_exe: Option<PathBuf>,
     pub main_execve_wrapper_exe: Option<PathBuf>,
     pub zsh_path: Option<PathBuf>,
     pub base_instructions: Option<String>,
@@ -2021,7 +2021,7 @@ impl Config {
             model_provider,
             service_tier: service_tier_override,
             config_profile: config_profile_key,
-            codex_linux_sandbox_exe,
+            alcatraz_linux_exe,
             main_execve_wrapper_exe,
             zsh_path: zsh_path_override,
             base_instructions,
@@ -2570,7 +2570,7 @@ impl Config {
             history,
             ephemeral: ephemeral.unwrap_or_default(),
             file_opener: cfg.file_opener.unwrap_or(UriBasedFileOpener::VsCode),
-            codex_linux_sandbox_exe,
+            alcatraz_linux_exe,
             main_execve_wrapper_exe,
             zsh_path,
 

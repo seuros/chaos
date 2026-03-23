@@ -205,7 +205,7 @@ impl ToolHandler for ApplyPatchHandler {
                             permissions_preapproved: effective_additional_permissions
                                 .permissions_preapproved,
                             timeout_ms: None,
-                            codex_exe: turn.codex_linux_sandbox_exe.clone(),
+                            codex_exe: turn.alcatraz_linux_exe.clone(),
                         };
 
                         let mut orchestrator = ToolOrchestrator::new();
@@ -309,7 +309,7 @@ pub(crate) async fn intercept_apply_patch(
                         permissions_preapproved: effective_additional_permissions
                             .permissions_preapproved,
                         timeout_ms,
-                        codex_exe: turn.codex_linux_sandbox_exe.clone(),
+                        codex_exe: turn.alcatraz_linux_exe.clone(),
                     };
 
                     let mut orchestrator = ToolOrchestrator::new();

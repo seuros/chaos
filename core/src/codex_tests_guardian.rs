@@ -23,7 +23,7 @@ use codex_protocol::models::function_call_output_content_items_to_text;
 use codex_protocol::permissions::FileSystemSandboxPolicy;
 use codex_protocol::permissions::NetworkSandboxPolicy;
 use codex_utils_absolute_path::AbsolutePathBuf;
-use core_test_support::codex_linux_sandbox_exe_or_skip;
+use core_test_support::alcatraz_linux_exe_or_skip;
 use core_test_support::responses::ev_assistant_message;
 use core_test_support::responses::ev_completed;
 use core_test_support::responses::ev_response_created;
@@ -67,7 +67,7 @@ async fn guardian_allows_shell_additional_permissions_requests_past_policy_valid
     .await;
 
     let (mut session, mut turn_context_raw) = make_session_and_context().await;
-    turn_context_raw.codex_linux_sandbox_exe = codex_linux_sandbox_exe_or_skip!();
+    turn_context_raw.alcatraz_linux_exe = alcatraz_linux_exe_or_skip!();
     turn_context_raw
         .approval_policy
         .set(AskForApproval::OnRequest)

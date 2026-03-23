@@ -11,7 +11,7 @@ use std::path::PathBuf;
 use tokio::process::Child;
 
 /// Spawn a shell tool command under the Linux sandbox helper
-/// (codex-linux-sandbox), which uses Landlock for filesystem isolation plus
+/// (alcatraz-linux), which uses Landlock for filesystem isolation plus
 /// seccomp for network restrictions.
 ///
 /// Unlike macOS Seatbelt where we directly embed the policy text, the Linux
@@ -20,7 +20,7 @@ use tokio::process::Child;
 /// incrementally without breaking older call sites.
 #[allow(clippy::too_many_arguments)]
 pub async fn spawn_command_under_linux_sandbox<P>(
-    codex_linux_sandbox_exe: P,
+    alcatraz_linux_exe: P,
     command: Vec<String>,
     command_cwd: PathBuf,
     sandbox_policy: &SandboxPolicy,
@@ -43,9 +43,9 @@ where
         sandbox_policy_cwd,
         allow_network_for_proxy(/*enforce_managed_network*/ false),
     );
-    let arg0 = Some("codex-linux-sandbox");
+    let arg0 = Some("alcatraz-linux");
     spawn_child_async(SpawnChildRequest {
-        program: codex_linux_sandbox_exe.as_ref().to_path_buf(),
+        program: alcatraz_linux_exe.as_ref().to_path_buf(),
         args,
         arg0,
         cwd: command_cwd,
@@ -65,7 +65,7 @@ pub(crate) fn allow_network_for_proxy(enforce_managed_network: bool) -> bool {
 }
 
 /// Converts the sandbox policies into the CLI invocation for
-/// `codex-linux-sandbox`.
+/// `alcatraz-linux`.
 ///
 /// The helper performs the actual sandboxing (bubblewrap by default + seccomp) after
 /// parsing these arguments. Policy JSON flags are emitted before helper feature
@@ -109,7 +109,7 @@ pub(crate) fn create_linux_sandbox_command_args_for_policies(
 }
 
 /// Converts the sandbox cwd and execution options into the CLI invocation for
-/// `codex-linux-sandbox`.
+/// `alcatraz-linux`.
 #[cfg(test)]
 pub(crate) fn create_linux_sandbox_command_args(
     command: Vec<String>,

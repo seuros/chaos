@@ -504,7 +504,7 @@ async fn cli_main(arg0_paths: Arg0DispatchPaths) -> anyhow::Result<()> {
                 );
                 codex_cli::debug_sandbox::run_command_under_seatbelt(
                     seatbelt_cli,
-                    arg0_paths.codex_linux_sandbox_exe.clone(),
+                    arg0_paths.alcatraz_linux_exe.clone(),
                 )
                 .await?;
             }
@@ -515,7 +515,7 @@ async fn cli_main(arg0_paths: Arg0DispatchPaths) -> anyhow::Result<()> {
                 );
                 codex_cli::debug_sandbox::run_command_under_landlock(
                     landlock_cli,
-                    arg0_paths.codex_linux_sandbox_exe.clone(),
+                    arg0_paths.alcatraz_linux_exe.clone(),
                 )
                 .await?;
             }

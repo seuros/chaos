@@ -118,8 +118,8 @@ async fn run_cmd_result_with_policies(
         justification: None,
         arg0: None,
     };
-    let sandbox_program = env!("CARGO_BIN_EXE_codex-linux-sandbox");
-    let codex_linux_sandbox_exe = Some(PathBuf::from(sandbox_program));
+    let sandbox_program = env!("CARGO_BIN_EXE_alcatraz-linux");
+    let alcatraz_linux_exe = Some(PathBuf::from(sandbox_program));
 
     process_exec_tool_call(
         params,
@@ -127,7 +127,7 @@ async fn run_cmd_result_with_policies(
         &file_system_sandbox_policy,
         network_sandbox_policy,
         sandbox_cwd.as_path(),
-        &codex_linux_sandbox_exe,
+        &alcatraz_linux_exe,
         None,
     )
     .await
@@ -346,15 +346,15 @@ async fn assert_network_blocked(cmd: &[&str]) {
     };
 
     let sandbox_policy = SandboxPolicy::new_read_only_policy();
-    let sandbox_program = env!("CARGO_BIN_EXE_codex-linux-sandbox");
-    let codex_linux_sandbox_exe: Option<PathBuf> = Some(PathBuf::from(sandbox_program));
+    let sandbox_program = env!("CARGO_BIN_EXE_alcatraz-linux");
+    let alcatraz_linux_exe: Option<PathBuf> = Some(PathBuf::from(sandbox_program));
     let result = process_exec_tool_call(
         params,
         &sandbox_policy,
         &FileSystemSandboxPolicy::from(&sandbox_policy),
         NetworkSandboxPolicy::from(&sandbox_policy),
         sandbox_cwd.as_path(),
-        &codex_linux_sandbox_exe,
+        &alcatraz_linux_exe,
         None,
     )
     .await;
@@ -502,7 +502,7 @@ async fn sandbox_blocks_explicit_split_policy_carveouts_under_bwrap() {
     let blocked_target = blocked.join("secret.txt");
     // These tests bypass the usual legacy-policy bridge, so explicitly keep
     // the sandbox helper binary and minimal runtime paths readable.
-    let sandbox_helper_dir = PathBuf::from(env!("CARGO_BIN_EXE_codex-linux-sandbox"))
+    let sandbox_helper_dir = PathBuf::from(env!("CARGO_BIN_EXE_alcatraz-linux"))
         .parent()
         .expect("sandbox helper should have a parent")
         .to_path_buf();
@@ -574,7 +574,7 @@ async fn sandbox_reenables_writable_subpaths_under_unreadable_parents() {
     let allowed_target = allowed.join("note.txt");
     // These tests bypass the usual legacy-policy bridge, so explicitly keep
     // the sandbox helper binary and minimal runtime paths readable.
-    let sandbox_helper_dir = PathBuf::from(env!("CARGO_BIN_EXE_codex-linux-sandbox"))
+    let sandbox_helper_dir = PathBuf::from(env!("CARGO_BIN_EXE_alcatraz-linux"))
         .parent()
         .expect("sandbox helper should have a parent")
         .to_path_buf();

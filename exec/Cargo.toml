@@ -4,10 +4,6 @@ version.workspace = true
 edition.workspace = true
 license.workspace = true
 
-[[bin]]
-name = "codex-exec"
-path = "src/main.rs"
-
 [lib]
 name = "codex_exec"
 path = "src/lib.rs"

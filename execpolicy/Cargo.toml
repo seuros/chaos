@@ -9,10 +9,6 @@ description = "Codex exec policy: prefix-based Starlark rules for command decisi
 name = "codex_execpolicy"
 path = "src/lib.rs"
 
-[[bin]]
-name = "codex-execpolicy"
-path = "src/main.rs"
-
 [lints]
 workspace = true
 

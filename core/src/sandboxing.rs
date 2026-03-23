@@ -92,7 +92,6 @@ pub(crate) struct SandboxTransformRequest<'a> {
     #[cfg(target_os = "macos")]
     pub macos_seatbelt_profile_extensions: Option<&'a MacOsSeatbeltProfileExtensions>,
     pub codex_linux_sandbox_exe: Option<&'a PathBuf>,
-    pub use_legacy_landlock: bool,
 }
 
 pub enum SandboxPreference {
@@ -579,7 +578,6 @@ impl SandboxManager {
             #[cfg(target_os = "macos")]
             macos_seatbelt_profile_extensions,
             codex_linux_sandbox_exe,
-            use_legacy_landlock,
         } = request;
         #[cfg(not(target_os = "macos"))]
         let macos_seatbelt_profile_extensions = None;
@@ -660,7 +658,6 @@ impl SandboxManager {
                     &effective_file_system_policy,
                     effective_network_policy,
                     sandbox_policy_cwd,
-                    use_legacy_landlock,
                     allow_proxy_network,
                 );
                 let mut full_command = Vec::with_capacity(1 + args.len());

@@ -11,8 +11,8 @@ use std::path::PathBuf;
 use tokio::process::Child;
 
 /// Spawn a shell tool command under the Linux sandbox helper
-/// (codex-linux-sandbox), which defaults to bubblewrap for filesystem
-/// isolation plus seccomp for network restrictions.
+/// (codex-linux-sandbox), which uses Landlock for filesystem isolation plus
+/// seccomp for network restrictions.
 ///
 /// Unlike macOS Seatbelt where we directly embed the policy text, the Linux
 /// helper is a separate executable. We pass the legacy [`SandboxPolicy`] plus
@@ -25,7 +25,6 @@ pub async fn spawn_command_under_linux_sandbox<P>(
     command_cwd: PathBuf,
     sandbox_policy: &SandboxPolicy,
     sandbox_policy_cwd: &Path,
-    use_legacy_landlock: bool,
     stdio_policy: StdioPolicy,
     network: Option<&NetworkProxy>,
     env: HashMap<String, String>,
@@ -42,7 +41,6 @@ where
         &file_system_sandbox_policy,
         network_sandbox_policy,
         sandbox_policy_cwd,
-        use_legacy_landlock,
         allow_network_for_proxy(/*enforce_managed_network*/ false),
     );
     let arg0 = Some("codex-linux-sandbox");
@@ -73,14 +71,12 @@ pub(crate) fn allow_network_for_proxy(enforce_managed_network: bool) -> bool {
 /// parsing these arguments. Policy JSON flags are emitted before helper feature
 /// flags so the argv order matches the helper's CLI shape. See
 /// `docs/linux_sandbox.md` for the Linux semantics.
-#[allow(clippy::too_many_arguments)]
 pub(crate) fn create_linux_sandbox_command_args_for_policies(
     command: Vec<String>,
     sandbox_policy: &SandboxPolicy,
     file_system_sandbox_policy: &FileSystemSandboxPolicy,
     network_sandbox_policy: NetworkSandboxPolicy,
     sandbox_policy_cwd: &Path,
-    use_legacy_landlock: bool,
     allow_network_for_proxy: bool,
 ) -> Vec<String> {
     let sandbox_policy_json = serde_json::to_string(sandbox_policy)
@@ -104,9 +100,6 @@ pub(crate) fn create_linux_sandbox_command_args_for_policies(
         "--network-sandbox-policy".to_string(),
         network_policy_json,
     ];
-    if use_legacy_landlock {
-        linux_cmd.push("--use-legacy-landlock".to_string());
-    }
     if allow_network_for_proxy {
         linux_cmd.push("--allow-network-for-proxy".to_string());
     }
@@ -121,7 +114,6 @@ pub(crate) fn create_linux_sandbox_command_args_for_policies(
 pub(crate) fn create_linux_sandbox_command_args(
     command: Vec<String>,
     sandbox_policy_cwd: &Path,
-    use_legacy_landlock: bool,
     allow_network_for_proxy: bool,
 ) -> Vec<String> {
     let sandbox_policy_cwd = sandbox_policy_cwd
@@ -130,9 +122,6 @@ pub(crate) fn create_linux_sandbox_command_args(
         .to_string();
 
     let mut linux_cmd: Vec<String> = vec!["--sandbox-policy-cwd".to_string(), sandbox_policy_cwd];
-    if use_legacy_landlock {
-        linux_cmd.push("--use-legacy-landlock".to_string());
-    }
     if allow_network_for_proxy {
         linux_cmd.push("--allow-network-for-proxy".to_string());
     }

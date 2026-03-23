@@ -247,10 +247,6 @@ impl Features {
         self.enabled.contains(&f)
     }
 
-    pub fn use_legacy_landlock(&self) -> bool {
-        self.enabled(Feature::UseLegacyLandlock)
-    }
-
     pub fn enable(&mut self, f: Feature) -> &mut Self {
         self.enabled.insert(f);
         self
@@ -590,7 +586,7 @@ pub const FEATURES: &[FeatureSpec] = &[
     FeatureSpec {
         id: Feature::UseLegacyLandlock,
         key: "use_legacy_landlock",
-        stage: Stage::Stable,
+        stage: Stage::Removed,
         default_enabled: false,
     },
     FeatureSpec {

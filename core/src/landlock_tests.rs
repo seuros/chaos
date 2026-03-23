@@ -2,20 +2,14 @@ use super::*;
 use pretty_assertions::assert_eq;
 
 #[test]
-fn legacy_landlock_flag_is_included_when_requested() {
+fn use_legacy_landlock_flag_is_no_longer_emitted() {
     let command = vec!["/bin/true".to_string()];
     let cwd = Path::new("/tmp");
 
-    let default_bwrap = create_linux_sandbox_command_args(command.clone(), cwd, false, false);
+    let args = create_linux_sandbox_command_args(command, cwd, false);
     assert_eq!(
-        default_bwrap.contains(&"--use-legacy-landlock".to_string()),
+        args.contains(&"--use-legacy-landlock".to_string()),
         false
-    );
-
-    let legacy_landlock = create_linux_sandbox_command_args(command, cwd, true, false);
-    assert_eq!(
-        legacy_landlock.contains(&"--use-legacy-landlock".to_string()),
-        true
     );
 }
 
@@ -24,7 +18,7 @@ fn proxy_flag_is_included_when_requested() {
     let command = vec!["/bin/true".to_string()];
     let cwd = Path::new("/tmp");
 
-    let args = create_linux_sandbox_command_args(command, cwd, true, true);
+    let args = create_linux_sandbox_command_args(command, cwd, true);
     assert_eq!(
         args.contains(&"--allow-network-for-proxy".to_string()),
         true
@@ -45,7 +39,6 @@ fn split_policy_flags_are_included() {
         &file_system_sandbox_policy,
         network_sandbox_policy,
         cwd,
-        true,
         false,
     );
 

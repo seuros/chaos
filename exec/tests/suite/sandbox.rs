@@ -51,7 +51,6 @@ async fn spawn_command_under_sandbox(
         command_cwd,
         sandbox_policy,
         sandbox_cwd,
-        false,
         stdio_policy,
         None,
         env,

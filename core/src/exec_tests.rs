@@ -297,7 +297,6 @@ async fn process_exec_tool_call_respects_cancellation_token() -> Result<()> {
         NetworkSandboxPolicy::Enabled,
         cwd.as_path(),
         &None,
-        false,
         None,
     )
     .await;

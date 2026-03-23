@@ -176,7 +176,6 @@ pub async fn process_exec_tool_call(
     network_sandbox_policy: NetworkSandboxPolicy,
     sandbox_cwd: &Path,
     codex_linux_sandbox_exe: &Option<PathBuf>,
-    use_legacy_landlock: bool,
     stdout_stream: Option<StdoutStream>,
 ) -> Result<ExecToolCallOutput> {
     let exec_req = build_exec_request(
@@ -186,7 +185,6 @@ pub async fn process_exec_tool_call(
         network_sandbox_policy,
         sandbox_cwd,
         codex_linux_sandbox_exe,
-        use_legacy_landlock,
     )?;
 
     // Route through the sandboxing module for a single, unified execution path.
@@ -202,7 +200,6 @@ pub fn build_exec_request(
     network_sandbox_policy: NetworkSandboxPolicy,
     sandbox_cwd: &Path,
     codex_linux_sandbox_exe: &Option<PathBuf>,
-    use_legacy_landlock: bool,
 ) -> Result<ExecRequest> {
     let enforce_managed_network = params.network.is_some();
     let sandbox_type = select_process_exec_tool_sandbox_type(
@@ -257,7 +254,6 @@ pub fn build_exec_request(
             #[cfg(target_os = "macos")]
             macos_seatbelt_profile_extensions: None,
             codex_linux_sandbox_exe: codex_linux_sandbox_exe.as_ref(),
-            use_legacy_landlock,
         })
         .map_err(CodexErr::from)?;
     Ok(exec_req)

@@ -163,7 +163,6 @@ fn transform_preserves_unrestricted_file_system_policy_for_restricted_network() 
             #[cfg(target_os = "macos")]
             macos_seatbelt_profile_extensions: None,
             codex_linux_sandbox_exe: None,
-            use_legacy_landlock: false,
         })
         .expect("transform");
 
@@ -495,7 +494,6 @@ fn transform_additional_permissions_enable_network_for_external_sandbox() {
             #[cfg(target_os = "macos")]
             macos_seatbelt_profile_extensions: None,
             codex_linux_sandbox_exe: None,
-            use_legacy_landlock: false,
         })
         .expect("transform");
 
@@ -566,7 +564,6 @@ fn transform_additional_permissions_preserves_denied_entries() {
             #[cfg(target_os = "macos")]
             macos_seatbelt_profile_extensions: None,
             codex_linux_sandbox_exe: None,
-            use_legacy_landlock: false,
         })
         .expect("transform");
 

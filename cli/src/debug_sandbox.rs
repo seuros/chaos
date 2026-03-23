@@ -159,14 +159,12 @@ async fn run_command_under_sandbox(
             let codex_linux_sandbox_exe = config
                 .codex_linux_sandbox_exe
                 .expect("codex-linux-sandbox executable not found");
-            let use_legacy_landlock = config.features.use_legacy_landlock();
             spawn_command_under_linux_sandbox(
                 codex_linux_sandbox_exe,
                 command,
                 cwd,
                 config.permissions.sandbox_policy.get(),
                 sandbox_policy_cwd.as_path(),
-                use_legacy_landlock,
                 stdio_policy,
                 network.as_ref(),
                 env,

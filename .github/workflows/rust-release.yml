@@ -146,11 +146,12 @@ jobs:
         with:
           version: 0.14.0
 
-      - if: ${{ matrix.target == 'x86_64-unknown-linux-musl' || matrix.target == 'aarch64-unknown-linux-musl'}}
-        name: Install musl build tools
-        env:
-          TARGET: ${{ matrix.target }}
-        run: bash "${GITHUB_WORKSPACE}/.github/scripts/install-musl-build-tools.sh"
+      # TODO: rebuild MUSL toolchain setup for Chaos release pipeline
+      # - if: ${{ matrix.target == 'x86_64-unknown-linux-musl' || matrix.target == 'aarch64-unknown-linux-musl'}}
+      #   name: Install musl build tools
+      #   env:
+      #     TARGET: ${{ matrix.target }}
+      #   run: bash "${GITHUB_WORKSPACE}/.github/scripts/install-musl-build-tools.sh"
 
       - if: ${{ matrix.target == 'x86_64-unknown-linux-musl' || matrix.target == 'aarch64-unknown-linux-musl'}}
         name: Configure rustc UBSan wrapper (musl host)
@@ -230,18 +231,9 @@ jobs:
           target: ${{ matrix.target }}
           artifacts-dir: ${{ github.workspace }}/codex-rs/target/${{ matrix.target }}/release
 
-      - if: ${{ runner.os == 'macOS' }}
-        name: MacOS code signing (binaries)
-        uses: ./.github/actions/macos-code-sign
-        with:
-          target: ${{ matrix.target }}
-          sign-binaries: "true"
-          sign-dmg: "false"
-          apple-certificate: ${{ secrets.APPLE_CERTIFICATE_P12 }}
-          apple-certificate-password: ${{ secrets.APPLE_CERTIFICATE_PASSWORD }}
-          apple-notarization-key-p8: ${{ secrets.APPLE_NOTARIZATION_KEY_P8 }}
-          apple-notarization-key-id: ${{ secrets.APPLE_NOTARIZATION_KEY_ID }}
-          apple-notarization-issuer-id: ${{ secrets.APPLE_NOTARIZATION_ISSUER_ID }}
+      # macOS code signing evicted — Apple wants $199/year to let a binary run.
+      # Chaos ships unsigned. Users can xattr -d com.apple.quarantine or
+      # right-click → Open. We're friends with macOS, but dollars are dollars.
 
       - if: ${{ runner.os == 'macOS' }}
         name: Build macOS dmg
@@ -282,18 +274,7 @@ jobs:
             exit 1
           fi
 
-      - if: ${{ runner.os == 'macOS' }}
-        name: MacOS code signing (dmg)
-        uses: ./.github/actions/macos-code-sign
-        with:
-          target: ${{ matrix.target }}
-          sign-binaries: "false"
-          sign-dmg: "true"
-          apple-certificate: ${{ secrets.APPLE_CERTIFICATE_P12 }}
-          apple-certificate-password: ${{ secrets.APPLE_CERTIFICATE_PASSWORD }}
-          apple-notarization-key-p8: ${{ secrets.APPLE_NOTARIZATION_KEY_P8 }}
-          apple-notarization-key-id: ${{ secrets.APPLE_NOTARIZATION_KEY_ID }}
-          apple-notarization-issuer-id: ${{ secrets.APPLE_NOTARIZATION_ISSUER_ID }}
+      # No DMG, no notarization. Static binary, tar.gz, done.
 
       - name: Stage artifacts
         shell: bash

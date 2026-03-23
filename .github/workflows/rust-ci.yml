@@ -330,15 +330,10 @@ jobs:
         with:
           version: 0.14.0
 
-      - if: ${{ matrix.target == 'x86_64-unknown-linux-musl' || matrix.target == 'aarch64-unknown-linux-musl'}}
-        name: Install musl build tools
-        env:
-          DEBIAN_FRONTEND: noninteractive
-          TARGET: ${{ matrix.target }}
-          APT_UPDATE_ARGS: -o Acquire::Retries=3
-          APT_INSTALL_ARGS: --no-install-recommends
-        shell: bash
-        run: bash "${GITHUB_WORKSPACE}/.github/scripts/install-musl-build-tools.sh"
+      # TODO: rebuild MUSL toolchain setup for Chaos CI
+      # - if: ${{ matrix.target == 'x86_64-unknown-linux-musl' || matrix.target == 'aarch64-unknown-linux-musl'}}
+      #   name: Install musl build tools
+      #   run: bash "${GITHUB_WORKSPACE}/.github/scripts/install-musl-build-tools.sh"
 
       - if: ${{ matrix.target == 'x86_64-unknown-linux-musl' || matrix.target == 'aarch64-unknown-linux-musl'}}
         name: Configure rustc UBSan wrapper (musl host)

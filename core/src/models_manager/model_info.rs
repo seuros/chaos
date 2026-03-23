@@ -10,7 +10,6 @@ use codex_protocol::openai_models::WebSearchToolType;
 use codex_protocol::openai_models::default_input_modalities;
 
 use crate::config::Config;
-use crate::features::Feature;
 use crate::truncate::approx_bytes_for_tokens;
 use tracing::warn;
 
@@ -50,7 +49,10 @@ pub(crate) fn with_config_overrides(mut model: ModelInfo, config: &Config) -> Mo
     if let Some(base_instructions) = &config.base_instructions {
         model.base_instructions = base_instructions.clone();
         model.model_messages = None;
-    } else if !config.features.enabled(Feature::Personality) {
+    } else {
+        // Always override server-supplied instructions with the local prompt.
+        // The server sends OpenAI-branded personality; Chaos has its own identity.
+        model.base_instructions = BASE_INSTRUCTIONS.to_string();
         model.model_messages = None;
     }
 

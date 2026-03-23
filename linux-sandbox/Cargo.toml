@@ -38,6 +38,3 @@ tokio = { workspace = true, features = [
     "signal",
 ] }
 
-[build-dependencies]
-cc = "1"
-pkg-config = "0.3"

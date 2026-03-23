@@ -30,8 +30,8 @@ fn default_enabled_features_are_stable() {
 }
 
 #[test]
-fn use_legacy_landlock_is_stable_and_disabled_by_default() {
-    assert_eq!(Feature::UseLegacyLandlock.stage(), Stage::Stable);
+fn use_legacy_landlock_is_removed_and_disabled_by_default() {
+    assert_eq!(Feature::UseLegacyLandlock.stage(), Stage::Removed);
     assert_eq!(Feature::UseLegacyLandlock.default_enabled(), false);
 }
 

@@ -159,7 +159,6 @@ pub(super) async fn try_run_zsh_fork(
             .macos_seatbelt_profile_extensions
             .clone(),
         codex_linux_sandbox_exe: ctx.turn.codex_linux_sandbox_exe.clone(),
-        use_legacy_landlock: ctx.turn.features.use_legacy_landlock(),
     };
     let main_execve_wrapper_exe = ctx
         .session
@@ -264,7 +263,6 @@ pub(crate) async fn prepare_unified_exec_zsh_fork(
             .macos_seatbelt_profile_extensions
             .clone(),
         codex_linux_sandbox_exe: ctx.turn.codex_linux_sandbox_exe.clone(),
-        use_legacy_landlock: ctx.turn.features.use_legacy_landlock(),
     };
     let escalation_policy = CoreShellActionProvider {
         policy: Arc::clone(&exec_policy),
@@ -856,7 +854,6 @@ struct CoreShellCommandExecutor {
     #[cfg_attr(not(target_os = "macos"), allow(dead_code))]
     macos_seatbelt_profile_extensions: Option<MacOsSeatbeltProfileExtensions>,
     codex_linux_sandbox_exe: Option<PathBuf>,
-    use_legacy_landlock: bool,
 }
 
 struct PrepareSandboxedExecParams<'a> {
@@ -1051,7 +1048,6 @@ impl CoreShellCommandExecutor {
                 #[cfg(target_os = "macos")]
                 macos_seatbelt_profile_extensions,
                 codex_linux_sandbox_exe: self.codex_linux_sandbox_exe.as_ref(),
-                use_legacy_landlock: self.use_legacy_landlock,
             })?;
         if let Some(network) = exec_request.network.as_ref() {
             network.apply_to_env(&mut exec_request.env);

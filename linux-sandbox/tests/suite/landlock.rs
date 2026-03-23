@@ -62,7 +62,7 @@ async fn run_cmd_output(
     writable_roots: &[PathBuf],
     timeout_ms: u64,
 ) -> codex_core::exec::ExecToolCallOutput {
-    run_cmd_result_with_writable_roots(cmd, writable_roots, timeout_ms, false, false)
+    run_cmd_result_with_writable_roots(cmd, writable_roots, timeout_ms, false)
         .await
         .expect("sandboxed command should execute")
 }
@@ -71,7 +71,6 @@ async fn run_cmd_result_with_writable_roots(
     cmd: &[&str],
     writable_roots: &[PathBuf],
     timeout_ms: u64,
-    use_legacy_landlock: bool,
     network_access: bool,
 ) -> Result<codex_core::exec::ExecToolCallOutput> {
     let sandbox_policy = SandboxPolicy::WorkspaceWrite {
@@ -95,7 +94,6 @@ async fn run_cmd_result_with_writable_roots(
         file_system_sandbox_policy,
         network_sandbox_policy,
         timeout_ms,
-        use_legacy_landlock,
     )
     .await
 }
@@ -107,7 +105,6 @@ async fn run_cmd_result_with_policies(
     file_system_sandbox_policy: FileSystemSandboxPolicy,
     network_sandbox_policy: NetworkSandboxPolicy,
     timeout_ms: u64,
-    use_legacy_landlock: bool,
 ) -> Result<codex_core::exec::ExecToolCallOutput> {
     let cwd = std::env::current_dir().expect("cwd should exist");
     let sandbox_cwd = cwd.clone();
@@ -131,7 +128,6 @@ async fn run_cmd_result_with_policies(
         network_sandbox_policy,
         sandbox_cwd.as_path(),
         &codex_linux_sandbox_exe,
-        use_legacy_landlock,
         None,
     )
     .await
@@ -153,7 +149,6 @@ async fn should_skip_bwrap_tests() -> bool {
         &["bash", "-lc", "true"],
         &[],
         NETWORK_TIMEOUT_MS,
-        false,
         true,
     )
     .await
@@ -214,7 +209,6 @@ async fn test_dev_null_write() {
         // We have seen timeouts when running this test in CI on GitHub,
         // so we are using a generous timeout until we can diagnose further.
         LONG_TIMEOUT_MS,
-        false,
         true,
     )
     .await
@@ -238,7 +232,6 @@ async fn bwrap_populates_minimal_dev_nodes() {
         ],
         &[],
         LONG_TIMEOUT_MS,
-        false,
         true,
     )
     .await
@@ -276,7 +269,6 @@ async fn bwrap_preserves_writable_dev_shm_bind_mount() {
         ],
         &[PathBuf::from("/dev/shm")],
         LONG_TIMEOUT_MS,
-        false,
         true,
     )
     .await
@@ -363,7 +355,6 @@ async fn assert_network_blocked(cmd: &[&str]) {
         NetworkSandboxPolicy::from(&sandbox_policy),
         sandbox_cwd.as_path(),
         &codex_linux_sandbox_exe,
-        false,
         None,
     )
     .await;
@@ -439,7 +430,6 @@ async fn sandbox_blocks_git_and_codex_writes_inside_writable_root() {
             ],
             &[tmpdir.path().to_path_buf()],
             LONG_TIMEOUT_MS,
-            false,
             true,
         )
         .await,
@@ -455,7 +445,6 @@ async fn sandbox_blocks_git_and_codex_writes_inside_writable_root() {
             ],
             &[tmpdir.path().to_path_buf()],
             LONG_TIMEOUT_MS,
-            false,
             true,
         )
         .await,
@@ -492,7 +481,6 @@ async fn sandbox_blocks_codex_symlink_replacement_attack() {
             ],
             &[tmpdir.path().to_path_buf()],
             LONG_TIMEOUT_MS,
-            false,
             true,
         )
         .await,
@@ -564,7 +552,6 @@ async fn sandbox_blocks_explicit_split_policy_carveouts_under_bwrap() {
             file_system_sandbox_policy,
             NetworkSandboxPolicy::Enabled,
             LONG_TIMEOUT_MS,
-            false,
         )
         .await,
         "explicit split-policy carveout should be denied under bubblewrap",
@@ -646,7 +633,6 @@ async fn sandbox_reenables_writable_subpaths_under_unreadable_parents() {
         file_system_sandbox_policy,
         NetworkSandboxPolicy::Enabled,
         LONG_TIMEOUT_MS,
-        false,
     )
     .await
     .expect("nested writable carveout should execute under bubblewrap");
@@ -697,7 +683,6 @@ async fn sandbox_blocks_root_read_carveouts_under_bwrap() {
             file_system_sandbox_policy,
             NetworkSandboxPolicy::Enabled,
             LONG_TIMEOUT_MS,
-            false,
         )
         .await,
         "root-read carveout should be denied under bubblewrap",

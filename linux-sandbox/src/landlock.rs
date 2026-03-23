@@ -1,7 +1,6 @@
-//! In-process Linux sandbox primitives: `no_new_privs` and seccomp.
+//! Linux sandbox primitives: landlock filesystem rules, `no_new_privs`, and seccomp.
 //!
-//! Filesystem restrictions are enforced by bubblewrap in `linux_run_main`.
-//! Landlock helpers remain available here as legacy/backup utilities.
+//! All restrictions are applied in-process before execing the target command.
 use std::collections::BTreeMap;
 use std::path::Path;
 
@@ -38,7 +37,7 @@ use seccompiler::apply_filter;
 /// - enabling `PR_SET_NO_NEW_PRIVS` when restrictions apply, and
 /// - installing the network seccomp filter when network access is disabled.
 ///
-/// Filesystem restrictions are intentionally handled by bubblewrap.
+/// Filesystem restrictions are enforced via landlock when `apply_landlock_fs` is set.
 pub(crate) fn apply_sandbox_policy_to_current_thread(
     sandbox_policy: &SandboxPolicy,
     network_sandbox_policy: NetworkSandboxPolicy,
@@ -53,10 +52,7 @@ pub(crate) fn apply_sandbox_policy_to_current_thread(
         proxy_routed_network,
     );
 
-    // `PR_SET_NO_NEW_PRIVS` is required for seccomp, but it also prevents
-    // setuid privilege elevation. Many `bwrap` deployments rely on setuid, so
-    // we avoid this unless we need seccomp or we are explicitly using the
-    // legacy Landlock filesystem pipeline.
+    // `PR_SET_NO_NEW_PRIVS` is required for both seccomp and landlock.
     if network_seccomp_mode.is_some()
         || (apply_landlock_fs && !sandbox_policy.has_full_disk_write_access())
     {
@@ -131,8 +127,7 @@ fn set_no_new_privs() -> Result<()> {
 /// # Errors
 /// Returns [`CodexErr::Sandbox`] variants when the ruleset fails to apply.
 ///
-/// Note: this is currently unused because filesystem sandboxing is performed
-/// via bubblewrap. It is kept for reference and potential fallback use.
+/// This is the primary filesystem sandboxing mechanism on Linux.
 fn install_filesystem_landlock_rules_on_current_thread(
     writable_roots: Vec<AbsolutePathBuf>,
 ) -> Result<()> {

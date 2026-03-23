@@ -3,6 +3,7 @@ name = "codex-rmcp-client"
 version.workspace = true
 edition.workspace = true
 license.workspace = true
+publish.workspace = true
 
 [lints]
 workspace = true

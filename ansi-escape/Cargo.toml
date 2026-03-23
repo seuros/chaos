@@ -3,6 +3,7 @@ name = "codex-ansi-escape"
 version.workspace = true
 edition.workspace = true
 license.workspace = true
+publish.workspace = true
 
 [lib]
 name = "codex_ansi_escape"

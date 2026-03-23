@@ -3,6 +3,7 @@ name = "codex-file-search"
 version.workspace = true
 edition.workspace = true
 license.workspace = true
+publish.workspace = true
 
 [lib]
 name = "codex_file_search"

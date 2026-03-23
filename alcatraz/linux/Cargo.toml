@@ -3,6 +3,7 @@ name = "alcatraz-linux"
 version.workspace = true
 edition.workspace = true
 license.workspace = true
+publish.workspace = true
 
 [[bin]]
 name = "alcatraz-linux"

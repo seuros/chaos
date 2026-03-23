@@ -18,8 +18,6 @@ use crate::external_editor;
 use crate::file_search::FileSearchManager;
 use crate::history_cell;
 use crate::history_cell::HistoryCell;
-#[cfg(not(debug_assertions))]
-use crate::history_cell::UpdateAvailableHistoryCell;
 use crate::model_migration::ModelMigrationOutcome;
 use crate::model_migration::migration_copy_for_models;
 use crate::model_migration::run_model_migration_prompt;
@@ -33,7 +31,6 @@ use crate::render::renderable::Renderable;
 use crate::resume_picker::SessionSelection;
 use crate::tui;
 use crate::tui::TuiEvent;
-use crate::update_action::UpdateAction;
 use crate::version::CHAOS_VERSION;
 use codex_ansi_escape::ansi_escape_line;
 use codex_protocol::api::ConfigLayerSource;
@@ -146,7 +143,6 @@ pub struct AppExitInfo {
     pub token_usage: TokenUsage,
     pub thread_id: Option<ThreadId>,
     pub thread_name: Option<String>,
-    pub update_action: Option<UpdateAction>,
     pub exit_reason: ExitReason,
 }
 
@@ -156,7 +152,6 @@ impl AppExitInfo {
             token_usage: TokenUsage::default(),
             thread_id: None,
             thread_name: None,
-            update_action: None,
             exit_reason: ExitReason::Fatal(message.into()),
         }
     }
@@ -608,7 +603,6 @@ async fn handle_model_migration_prompt_if_needed(
                     token_usage: TokenUsage::default(),
                     thread_id: None,
                     thread_name: None,
-                    update_action: None,
                     exit_reason: ExitReason::UserRequested,
                 });
             }
@@ -658,9 +652,6 @@ pub(crate) struct App {
     #[allow(dead_code)]
     pub(crate) feedback: crate::bottom_pane::FeedbackSnapshot,
     feedback_audience: FeedbackAudience,
-    /// Set when the user confirms an update; propagated on exit.
-    pub(crate) pending_update_action: Option<UpdateAction>,
-
     /// One-shot guard used while switching threads.
     ///
     /// We set this when intentionally stopping the current thread before moving
@@ -2073,9 +2064,6 @@ impl App {
         };
 
         let file_search = FileSearchManager::new(config.cwd.clone(), app_event_tx.clone());
-        #[cfg(not(debug_assertions))]
-        let upgrade_version = crate::updates::get_upgrade_version(&config);
-
         let mut app = Self {
             server: thread_manager.clone(),
             session_telemetry: session_telemetry.clone(),
@@ -2100,7 +2088,6 @@ impl App {
             backtrack_render_pending: false,
             feedback: feedback.clone(),
             feedback_audience,
-            pending_update_action: None,
             suppress_shutdown_complete: false,
             pending_shutdown_exit_thread_id: None,
 
@@ -2123,30 +2110,7 @@ impl App {
         let mut listen_for_threads = true;
         let mut waiting_for_initial_session_configured = wait_for_initial_session_configured;
 
-        #[cfg(not(debug_assertions))]
-        let pre_loop_exit_reason = if let Some(latest_version) = upgrade_version {
-            let control = app
-                .handle_event(
-                    tui,
-                    AppEvent::InsertHistoryCell(Box::new(UpdateAvailableHistoryCell::new(
-                        latest_version,
-                        crate::update_action::get_update_action(),
-                    ))),
-                )
-                .await?;
-            match control {
-                AppRunControl::Continue => None,
-                AppRunControl::Exit(exit_reason) => Some(exit_reason),
-            }
-        } else {
-            None
-        };
-        #[cfg(debug_assertions)]
-        let pre_loop_exit_reason: Option<ExitReason> = None;
-
-        let exit_reason_result = if let Some(exit_reason) = pre_loop_exit_reason {
-            Ok(exit_reason)
-        } else {
+        let exit_reason_result = {
             loop {
                 let control = select! {
                     Some(event) = app_event_rx.recv() => {
@@ -2227,7 +2191,6 @@ impl App {
             token_usage: app.token_usage(),
             thread_id: app.chat_widget.thread_id(),
             thread_name: app.chat_widget.thread_name(),
-            update_action: app.pending_update_action,
             exit_reason,
         })
     }
@@ -5781,7 +5744,6 @@ guardian_approval = true
             backtrack_render_pending: false,
             feedback: crate::bottom_pane::FeedbackSnapshot::default(),
             feedback_audience: FeedbackAudience::External,
-            pending_update_action: None,
             suppress_shutdown_complete: false,
             pending_shutdown_exit_thread_id: None,
 
@@ -5841,8 +5803,7 @@ guardian_approval = true
                 backtrack_render_pending: false,
                 feedback: crate::bottom_pane::FeedbackSnapshot::default(),
                 feedback_audience: FeedbackAudience::External,
-                pending_update_action: None,
-                suppress_shutdown_complete: false,
+                    suppress_shutdown_complete: false,
                 pending_shutdown_exit_thread_id: None,
     
                 thread_event_channels: HashMap::new(),

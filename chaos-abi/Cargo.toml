@@ -3,6 +3,7 @@ name = "chaos-abi"
 version.workspace = true
 edition.workspace = true
 license.workspace = true
+publish.workspace = true
 description = "Chaos-ABI: provider-agnostic binary interface for model adapters"
 
 [lib]

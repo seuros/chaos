@@ -140,7 +140,7 @@ async fn run_linux_sandbox_direct(
     args.push("--".to_string());
     args.extend(command.iter().map(|entry| (*entry).to_string()));
 
-    let mut cmd = Command::new(env!("CARGO_BIN_EXE_codex-linux-sandbox"));
+    let mut cmd = Command::new(env!("CARGO_BIN_EXE_alcatraz-linux"));
     cmd.args(args)
         .current_dir(cwd)
         .env_clear()

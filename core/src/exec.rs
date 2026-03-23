@@ -175,7 +175,7 @@ pub async fn process_exec_tool_call(
     file_system_sandbox_policy: &FileSystemSandboxPolicy,
     network_sandbox_policy: NetworkSandboxPolicy,
     sandbox_cwd: &Path,
-    codex_linux_sandbox_exe: &Option<PathBuf>,
+    alcatraz_linux_exe: &Option<PathBuf>,
     stdout_stream: Option<StdoutStream>,
 ) -> Result<ExecToolCallOutput> {
     let exec_req = build_exec_request(
@@ -184,7 +184,7 @@ pub async fn process_exec_tool_call(
         file_system_sandbox_policy,
         network_sandbox_policy,
         sandbox_cwd,
-        codex_linux_sandbox_exe,
+        alcatraz_linux_exe,
     )?;
 
     // Route through the sandboxing module for a single, unified execution path.
@@ -199,7 +199,7 @@ pub fn build_exec_request(
     file_system_sandbox_policy: &FileSystemSandboxPolicy,
     network_sandbox_policy: NetworkSandboxPolicy,
     sandbox_cwd: &Path,
-    codex_linux_sandbox_exe: &Option<PathBuf>,
+    alcatraz_linux_exe: &Option<PathBuf>,
 ) -> Result<ExecRequest> {
     let enforce_managed_network = params.network.is_some();
     let sandbox_type = select_process_exec_tool_sandbox_type(
@@ -253,7 +253,7 @@ pub fn build_exec_request(
             sandbox_policy_cwd: sandbox_cwd,
             #[cfg(target_os = "macos")]
             macos_seatbelt_profile_extensions: None,
-            codex_linux_sandbox_exe: codex_linux_sandbox_exe.as_ref(),
+            alcatraz_linux_exe: alcatraz_linux_exe.as_ref(),
         })
         .map_err(CodexErr::from)?;
     Ok(exec_req)

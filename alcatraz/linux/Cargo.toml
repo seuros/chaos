@@ -1,15 +1,15 @@
 [package]
-name = "codex-linux-sandbox"
+name = "alcatraz-linux"
 version.workspace = true
 edition.workspace = true
 license.workspace = true
 
 [[bin]]
-name = "codex-linux-sandbox"
+name = "alcatraz-linux"
 path = "src/main.rs"
 
 [lib]
-name = "codex_linux_sandbox"
+name = "alcatraz_linux"
 path = "src/lib.rs"
 
 [lints]

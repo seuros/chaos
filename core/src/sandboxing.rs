@@ -91,7 +91,7 @@ pub(crate) struct SandboxTransformRequest<'a> {
     pub sandbox_policy_cwd: &'a Path,
     #[cfg(target_os = "macos")]
     pub macos_seatbelt_profile_extensions: Option<&'a MacOsSeatbeltProfileExtensions>,
-    pub codex_linux_sandbox_exe: Option<&'a PathBuf>,
+    pub alcatraz_linux_exe: Option<&'a PathBuf>,
 }
 
 pub enum SandboxPreference {
@@ -102,7 +102,7 @@ pub enum SandboxPreference {
 
 #[derive(Debug, thiserror::Error)]
 pub(crate) enum SandboxTransformError {
-    #[error("missing codex-linux-sandbox executable path")]
+    #[error("missing alcatraz-linux executable path")]
     MissingLinuxSandboxExecutable,
     #[cfg(not(target_os = "macos"))]
     #[error("seatbelt sandbox is only available on macOS")]
@@ -577,7 +577,7 @@ impl SandboxManager {
             sandbox_policy_cwd,
             #[cfg(target_os = "macos")]
             macos_seatbelt_profile_extensions,
-            codex_linux_sandbox_exe,
+            alcatraz_linux_exe,
         } = request;
         #[cfg(not(target_os = "macos"))]
         let macos_seatbelt_profile_extensions = None;
@@ -649,7 +649,7 @@ impl SandboxManager {
             #[cfg(not(target_os = "macos"))]
             SandboxType::MacosSeatbelt => return Err(SandboxTransformError::SeatbeltUnavailable),
             SandboxType::LinuxSeccomp => {
-                let exe = codex_linux_sandbox_exe
+                let exe = alcatraz_linux_exe
                     .ok_or(SandboxTransformError::MissingLinuxSandboxExecutable)?;
                 let allow_proxy_network = allow_network_for_proxy(enforce_managed_network);
                 let mut args = create_linux_sandbox_command_args_for_policies(
@@ -666,7 +666,7 @@ impl SandboxManager {
                 (
                     full_command,
                     HashMap::new(),
-                    Some("codex-linux-sandbox".to_string()),
+                    Some("alcatraz-linux".to_string()),
                 )
             }
         };

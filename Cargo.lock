@@ -114,6 +114,25 @@ dependencies = [
 ]
 
 [[package]]
+name = "alcatraz-linux"
+version = "47.0.0"
+dependencies = [
+ "clap",
+ "codex-core",
+ "codex-protocol",
+ "codex-utils-absolute-path",
+ "landlock",
+ "libc",
+ "pretty_assertions",
+ "seccompiler",
+ "serde",
+ "serde_json",
+ "tempfile",
+ "tokio",
+ "url",
+]
+
+[[package]]
 name = "alloc-no-stdlib"
 version = "2.0.4"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -1374,9 +1393,9 @@ dependencies = [
 name = "codex-arg0"
 version = "47.0.0"
 dependencies = [
+ "alcatraz-linux",
  "anyhow",
  "codex-apply-patch",
- "codex-linux-sandbox",
  "codex-shell-escalation",
  "codex-utils-home-dir",
  "dotenvy",
@@ -1670,25 +1689,6 @@ version = "47.0.0"
 dependencies = [
  "keyring",
  "tracing",
-]
-
-[[package]]
-name = "codex-linux-sandbox"
-version = "47.0.0"
-dependencies = [
- "clap",
- "codex-core",
- "codex-protocol",
- "codex-utils-absolute-path",
- "landlock",
- "libc",
- "pretty_assertions",
- "seccompiler",
- "serde",
- "serde_json",
- "tempfile",
- "tokio",
- "url",
 ]
 
 [[package]]

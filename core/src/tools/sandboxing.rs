@@ -330,7 +330,7 @@ pub(crate) struct SandboxAttempt<'a> {
     pub enforce_managed_network: bool,
     pub(crate) manager: &'a SandboxManager,
     pub(crate) sandbox_cwd: &'a Path,
-    pub codex_linux_sandbox_exe: Option<&'a std::path::PathBuf>,
+    pub alcatraz_linux_exe: Option<&'a std::path::PathBuf>,
 }
 
 impl<'a> SandboxAttempt<'a> {
@@ -351,7 +351,7 @@ impl<'a> SandboxAttempt<'a> {
                 sandbox_policy_cwd: self.sandbox_cwd,
                 #[cfg(target_os = "macos")]
                 macos_seatbelt_profile_extensions: None,
-                codex_linux_sandbox_exe: self.codex_linux_sandbox_exe,
+                alcatraz_linux_exe: self.alcatraz_linux_exe,
             })
     }
 }

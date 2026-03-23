@@ -8,7 +8,7 @@ use codex_apply_patch::CODEX_CORE_APPLY_PATCH_ARG1;
 use codex_utils_home_dir::find_codex_home;
 use tempfile::TempDir;
 
-const LINUX_SANDBOX_ARG0: &str = "codex-linux-sandbox";
+const LINUX_SANDBOX_ARG0: &str = "alcatraz-linux";
 const APPLY_PATCH_ARG0: &str = "apply_patch";
 const MISSPELLED_APPLY_PATCH_ARG0: &str = "applypatch";
 const EXECVE_WRAPPER_ARG0: &str = "codex-execve-wrapper";
@@ -17,7 +17,7 @@ const TOKIO_WORKER_STACK_SIZE_BYTES: usize = 16 * 1024 * 1024;
 
 #[derive(Clone, Debug, Default, Eq, PartialEq)]
 pub struct Arg0DispatchPaths {
-    pub codex_linux_sandbox_exe: Option<PathBuf>,
+    pub alcatraz_linux_exe: Option<PathBuf>,
     pub main_execve_wrapper_exe: Option<PathBuf>,
 }
 
@@ -78,7 +78,7 @@ pub fn arg0_dispatch() -> Option<Arg0PathEntryGuard> {
 
     if exe_name == LINUX_SANDBOX_ARG0 {
         // Safety: [`run_main`] never returns.
-        codex_linux_sandbox::run_main();
+        alcatraz_linux::run_main();
     } else if exe_name == APPLY_PATCH_ARG0 || exe_name == MISSPELLED_APPLY_PATCH_ARG0 {
         codex_apply_patch::main();
     }
@@ -125,8 +125,8 @@ pub fn arg0_dispatch() -> Option<Arg0PathEntryGuard> {
 /// Linux (but not Windows).
 ///
 /// When the current executable is invoked through the hard-link or alias named
-/// `codex-linux-sandbox` we *directly* execute
-/// [`codex_linux_sandbox::run_main`] (which never returns). Otherwise we:
+/// `alcatraz-linux` we *directly* execute
+/// [`alcatraz_linux::run_main`] (which never returns). Otherwise we:
 ///
 /// 1.  Load `.env` values from `~/.codex/.env` before creating any threads.
 /// 2.  Construct a Tokio multi-thread runtime.
@@ -155,11 +155,11 @@ where
     runtime.block_on(async move {
         let current_exe = std::env::current_exe().ok();
         let paths = Arg0DispatchPaths {
-            codex_linux_sandbox_exe: if cfg!(target_os = "linux") {
+            alcatraz_linux_exe: if cfg!(target_os = "linux") {
                 current_exe.or_else(|| {
                     path_entry
                         .as_ref()
-                        .and_then(|path_entry| path_entry.paths().codex_linux_sandbox_exe.clone())
+                        .and_then(|path_entry| path_entry.paths().alcatraz_linux_exe.clone())
                 })
             } else {
                 None
@@ -297,7 +297,7 @@ pub fn prepend_path_entry_for_codex_aliases() -> std::io::Result<Arg0PathEntryGu
     }
 
     let paths = Arg0DispatchPaths {
-        codex_linux_sandbox_exe: {
+        alcatraz_linux_exe: {
             #[cfg(target_os = "linux")]
             {
                 Some(path.join(LINUX_SANDBOX_ARG0))

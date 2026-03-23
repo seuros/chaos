@@ -254,7 +254,7 @@ mod reload {
         ConfigOverrides {
             cwd: Some(config.cwd.clone()),
             model_provider: preserve_current_provider.then(|| config.model_provider_id.clone()),
-            codex_linux_sandbox_exe: config.codex_linux_sandbox_exe.clone(),
+            alcatraz_linux_exe: config.alcatraz_linux_exe.clone(),
             main_execve_wrapper_exe: config.main_execve_wrapper_exe.clone(),
             ..Default::default()
         }

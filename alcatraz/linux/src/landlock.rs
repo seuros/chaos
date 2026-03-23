@@ -4,9 +4,8 @@
 use std::collections::BTreeMap;
 use std::path::Path;
 
-use codex_core::error::CodexErr;
-use codex_core::error::Result;
-use codex_core::error::SandboxErr;
+use alcatraz_base::error::AlcatrazError;
+use alcatraz_base::error::Result;
 use codex_protocol::protocol::NetworkSandboxPolicy;
 use codex_protocol::protocol::SandboxPolicy;
 use codex_utils_absolute_path::AbsolutePathBuf;
@@ -65,8 +64,8 @@ pub(crate) fn apply_sandbox_policy_to_current_thread(
 
     if apply_landlock_fs && !sandbox_policy.has_full_disk_write_access() {
         if !sandbox_policy.has_full_disk_read_access() {
-            return Err(CodexErr::UnsupportedOperation(
-                "Restricted read-only access is not supported by the legacy Linux Landlock filesystem backend."
+            return Err(AlcatrazError::UnsupportedOperation(
+                "Restricted read-only access is not supported by the Linux Landlock filesystem backend."
                     .to_string(),
             ));
         }
@@ -125,7 +124,7 @@ fn set_no_new_privs() -> Result<()> {
 /// `/dev/null` and the provided list of `writable_roots`.
 ///
 /// # Errors
-/// Returns [`CodexErr::Sandbox`] variants when the ruleset fails to apply.
+/// Returns [`AlcatrazError`] variants when the ruleset fails to apply.
 ///
 /// This is the primary filesystem sandboxing mechanism on Linux.
 fn install_filesystem_landlock_rules_on_current_thread(
@@ -150,7 +149,7 @@ fn install_filesystem_landlock_rules_on_current_thread(
     let status = ruleset.restrict_self()?;
 
     if status.ruleset == landlock::RulesetStatus::NotEnforced {
-        return Err(CodexErr::Sandbox(SandboxErr::LandlockRestrict));
+        return Err(AlcatrazError::LandlockRestrict);
     }
 
     Ok(())
@@ -162,7 +161,7 @@ fn install_filesystem_landlock_rules_on_current_thread(
 /// inherits it.
 fn install_network_seccomp_filter_on_current_thread(
     mode: NetworkSeccompMode,
-) -> std::result::Result<(), SandboxErr> {
+) -> Result<()> {
     fn deny_syscall(rules: &mut BTreeMap<i64, Vec<SeccompRule>>, nr: i64) {
         rules.insert(nr, vec![]); // empty rule vec = unconditional match
     }

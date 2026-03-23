@@ -1,0 +1,16 @@
+[package]
+name = "alcatraz-base"
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+publish.workspace = true
+
+[lints]
+workspace = true
+
+[dependencies]
+thiserror = { workspace = true }
+
+[target.'cfg(target_os = "linux")'.dependencies]
+seccompiler = { workspace = true }
+landlock = { workspace = true }

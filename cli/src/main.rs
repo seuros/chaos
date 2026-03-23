@@ -37,7 +37,7 @@ use codex_core::features::Stage;
 use codex_core::features::is_known_feature_key;
 use codex_core::terminal::TerminalName;
 
-/// Codex CLI
+/// Chaos
 ///
 /// If no subcommand is specified, options will be forwarded to the interactive CLI.
 #[derive(Debug, Parser)]
@@ -68,7 +68,7 @@ struct MultitoolCli {
 
 #[derive(Debug, clap::Subcommand)]
 enum Subcommand {
-    /// Run Codex non-interactively.
+    /// Run Chaos non-interactively.
     #[clap(visible_alias = "e")]
     Exec(ExecCli),
 
@@ -81,16 +81,16 @@ enum Subcommand {
     /// Remove stored authentication credentials.
     Logout(LogoutCommand),
 
-    /// Manage external MCP servers for Codex.
+    /// Manage external MCP servers for Chaos.
     Mcp(McpCli),
 
-    /// Start Codex as an MCP server (stdio).
+    /// Start Chaos as an MCP server (stdio).
     McpServer,
 
     /// Generate shell completion scripts.
     Completion(CompletionCommand),
 
-    /// Run commands within a Codex-provided sandbox.
+    /// Run commands within the Chaos sandbox.
     Sandbox(SandboxArgs),
 
     /// Execpolicy tooling.

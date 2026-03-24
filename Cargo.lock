@@ -1153,6 +1153,10 @@ dependencies = [
 ]
 
 [[package]]
+name = "chaos-age-verification"
+version = "47.0.0"
+
+[[package]]
 name = "chaos-arsenal"
 version = "47.0.0"
 dependencies = [

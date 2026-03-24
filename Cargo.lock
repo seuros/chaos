@@ -1479,6 +1479,7 @@ dependencies = [
 name = "codex-core"
 version = "47.0.0"
 dependencies = [
+ "alcatraz-linux",
  "anyhow",
  "arc-swap",
  "askama",

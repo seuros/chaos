@@ -147,6 +147,22 @@ impl ApplyPatchAction {
         &self.changes
     }
 
+    /// Reconstruct an `ApplyPatchAction` from its constituent parts.
+    ///
+    /// Used by the fork-based apply_patch runtime on Linux to rebuild the
+    /// action in the child process after deserializing across the fork boundary.
+    pub fn from_parts(
+        changes: HashMap<PathBuf, ApplyPatchFileChange>,
+        cwd: PathBuf,
+        patch: String,
+    ) -> Self {
+        Self {
+            changes,
+            cwd,
+            patch,
+        }
+    }
+
     /// Should be used exclusively for testing. (Not worth the overhead of
     /// creating a feature flag for this.)
     pub fn new_add_for_test(path: &Path, content: String) -> Self {

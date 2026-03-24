@@ -6,7 +6,7 @@ use std::time::Duration;
 pub use codex_protocol::api::AppBranding;
 pub use codex_protocol::api::AppInfo;
 pub use codex_protocol::api::AppMetadata;
-use rmcp::model::ToolAnnotations;
+use mcp_guest::ToolAnnotations;
 use serde::Deserialize;
 
 use crate::CodexAuth;

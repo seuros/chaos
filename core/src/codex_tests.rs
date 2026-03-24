@@ -81,8 +81,7 @@ use tracing_subscriber::prelude::*;
 
 use codex_protocol::mcp::CallToolResult as McpCallToolResult;
 use pretty_assertions::assert_eq;
-use rmcp::model::JsonObject;
-use rmcp::model::Tool;
+use crate::mcp_connection_manager::McpToolInfo;
 use serde::Deserialize;
 use serde_json::json;
 use std::path::PathBuf;
@@ -270,11 +269,11 @@ fn make_mcp_tool(
         server_name: server_name.to_string(),
         tool_name: tool_name.to_string(),
         tool_namespace,
-        tool: Tool {
-            name: tool_name.to_string().into(),
+        tool: McpToolInfo {
+            name: tool_name.to_string(),
             title: None,
-            description: Some(format!("Test tool: {tool_name}").into()),
-            input_schema: Arc::new(JsonObject::default()),
+            description: Some(format!("Test tool: {tool_name}")),
+            input_schema: serde_json::json!({}),
             output_schema: None,
             annotations: None,
             execution: None,

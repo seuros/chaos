@@ -12,8 +12,8 @@ use codex_protocol::dynamic_tools::DynamicToolResponse;
 use codex_protocol::models::ResponseInputItem;
 use codex_protocol::request_permissions::RequestPermissionsResponse;
 use codex_protocol::request_user_input::RequestUserInputResponse;
-use codex_rmcp_client::ElicitationResponse;
-use rmcp::model::RequestId;
+use mcp_guest::protocol::ElicitationResponse;
+use mcp_guest::protocol::RequestId;
 use tokio::sync::oneshot;
 
 use crate::codex::TurnContext;

@@ -17,12 +17,12 @@ use std::path::PathBuf;
 
 use super::*;
 
-fn mcp_tool(name: &str, description: &str, input_schema: serde_json::Value) -> rmcp::model::Tool {
-    rmcp::model::Tool {
-        name: name.to_string().into(),
+fn mcp_tool(name: &str, description: &str, input_schema: serde_json::Value) -> crate::mcp_connection_manager::McpToolInfo {
+    crate::mcp_connection_manager::McpToolInfo {
+        name: name.to_string(),
         title: None,
-        description: Some(description.to_string().into()),
-        input_schema: std::sync::Arc::new(rmcp::model::object(input_schema)),
+        description: Some(description.to_string()),
+        input_schema,
         output_schema: None,
         annotations: None,
         execution: None,
@@ -60,14 +60,11 @@ fn search_capable_model_info() -> ModelInfo {
 
 #[test]
 fn mcp_tool_to_openai_tool_inserts_empty_properties() {
-    let mut schema = rmcp::model::JsonObject::new();
-    schema.insert("type".to_string(), serde_json::json!("object"));
-
-    let tool = rmcp::model::Tool {
-        name: "no_props".to_string().into(),
+    let tool = crate::mcp_connection_manager::McpToolInfo {
+        name: "no_props".to_string(),
         title: None,
-        description: Some("No properties".to_string().into()),
-        input_schema: std::sync::Arc::new(schema),
+        description: Some("No properties".to_string()),
+        input_schema: serde_json::json!({"type": "object"}),
         output_schema: None,
         annotations: None,
         execution: None,
@@ -84,28 +81,21 @@ fn mcp_tool_to_openai_tool_inserts_empty_properties() {
 
 #[test]
 fn mcp_tool_to_openai_tool_preserves_top_level_output_schema() {
-    let mut input_schema = rmcp::model::JsonObject::new();
-    input_schema.insert("type".to_string(), serde_json::json!("object"));
-
-    let mut output_schema = rmcp::model::JsonObject::new();
-    output_schema.insert(
-        "properties".to_string(),
-        serde_json::json!({
-            "result": {
-                "properties": {
-                    "nested": {}
-                }
-            }
-        }),
-    );
-    output_schema.insert("required".to_string(), serde_json::json!(["result"]));
-
-    let tool = rmcp::model::Tool {
-        name: "with_output".to_string().into(),
+    let tool = crate::mcp_connection_manager::McpToolInfo {
+        name: "with_output".to_string(),
         title: None,
-        description: Some("Has output schema".to_string().into()),
-        input_schema: std::sync::Arc::new(input_schema),
-        output_schema: Some(std::sync::Arc::new(output_schema)),
+        description: Some("Has output schema".to_string()),
+        input_schema: serde_json::json!({"type": "object"}),
+        output_schema: Some(serde_json::json!({
+            "properties": {
+                "result": {
+                    "properties": {
+                        "nested": {}
+                    }
+                }
+            },
+            "required": ["result"]
+        })),
         annotations: None,
         execution: None,
         icons: None,
@@ -147,18 +137,12 @@ fn mcp_tool_to_openai_tool_preserves_top_level_output_schema() {
 
 #[test]
 fn mcp_tool_to_openai_tool_preserves_output_schema_without_inferred_type() {
-    let mut input_schema = rmcp::model::JsonObject::new();
-    input_schema.insert("type".to_string(), serde_json::json!("object"));
-
-    let mut output_schema = rmcp::model::JsonObject::new();
-    output_schema.insert("enum".to_string(), serde_json::json!(["ok", "error"]));
-
-    let tool = rmcp::model::Tool {
-        name: "with_enum_output".to_string().into(),
+    let tool = crate::mcp_connection_manager::McpToolInfo {
+        name: "with_enum_output".to_string(),
         title: None,
-        description: Some("Has enum output schema".to_string().into()),
-        input_schema: std::sync::Arc::new(input_schema),
-        output_schema: Some(std::sync::Arc::new(output_schema)),
+        description: Some("Has enum output schema".to_string()),
+        input_schema: serde_json::json!({"type": "object"}),
+        output_schema: Some(serde_json::json!({"enum": ["ok", "error"]})),
         annotations: None,
         execution: None,
         icons: None,
@@ -1581,7 +1565,7 @@ fn test_build_specs_mcp_tools_sorted_by_name() {
     });
 
     // Intentionally construct a map with keys that would sort alphabetically.
-    let tools_map: HashMap<String, rmcp::model::Tool> = HashMap::from([
+    let tools_map: HashMap<String, crate::mcp_connection_manager::McpToolInfo> = HashMap::from([
         (
             "test_server/do".to_string(),
             mcp_tool("a", "a", serde_json::json!({"type": "object"})),

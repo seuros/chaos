@@ -19,11 +19,9 @@ use codex_core::mcp::auth::compute_auth_statuses;
 use codex_core::mcp::auth::discover_supported_scopes;
 use codex_core::mcp::auth::oauth_login_support;
 use codex_core::mcp::auth::resolve_oauth_scopes;
-use codex_core::mcp::auth::should_retry_without_scopes;
 use codex_core::plugins::PluginsManager;
 use codex_protocol::protocol::McpAuthStatus;
-use codex_rmcp_client::delete_oauth_tokens;
-use codex_rmcp_client::perform_oauth_login;
+use codex_core::mcp::auth::OAuthCredentialsStoreMode;
 use codex_utils_cli::CliConfigOverrides;
 use codex_utils_cli::format_env_display::format_env_display;
 
@@ -198,47 +196,28 @@ impl McpCli {
 /// retry the login flow once without scopes.
 #[allow(clippy::too_many_arguments)]
 async fn perform_oauth_login_retry_without_scopes(
-    name: &str,
-    url: &str,
-    store_mode: codex_rmcp_client::OAuthCredentialsStoreMode,
-    http_headers: Option<HashMap<String, String>>,
-    env_http_headers: Option<HashMap<String, String>>,
-    resolved_scopes: &ResolvedMcpOAuthScopes,
-    oauth_resource: Option<&str>,
-    callback_port: Option<u16>,
-    callback_url: Option<&str>,
+    _name: &str,
+    _url: &str,
+    _store_mode: OAuthCredentialsStoreMode,
+    _http_headers: Option<HashMap<String, String>>,
+    _env_http_headers: Option<HashMap<String, String>>,
+    _resolved_scopes: &ResolvedMcpOAuthScopes,
+    _oauth_resource: Option<&str>,
+    _callback_port: Option<u16>,
+    _callback_url: Option<&str>,
 ) -> Result<()> {
-    match perform_oauth_login(
-        name,
-        url,
-        store_mode,
-        http_headers.clone(),
-        env_http_headers.clone(),
-        &resolved_scopes.scopes,
-        oauth_resource,
-        callback_port,
-        callback_url,
-    )
-    .await
-    {
-        Ok(()) => Ok(()),
-        Err(err) if should_retry_without_scopes(resolved_scopes, &err) => {
-            println!("OAuth provider rejected discovered scopes. Retrying without scopes…");
-            perform_oauth_login(
-                name,
-                url,
-                store_mode,
-                http_headers,
-                env_http_headers,
-                &[],
-                oauth_resource,
-                callback_port,
-                callback_url,
-            )
-            .await
-        }
-        Err(err) => Err(err),
-    }
+    // TODO(oauth): implement when mcp-guest gains OAuth support
+    bail!("OAuth login is not yet implemented in this build")
+}
+
+/// Stub: delete stored OAuth tokens for an MCP server.
+fn delete_oauth_tokens(
+    _server_name: &str,
+    _url: &str,
+    _store_mode: OAuthCredentialsStoreMode,
+) -> Result<bool> {
+    // TODO(oauth): implement when mcp-guest gains OAuth support
+    Ok(false)
 }
 
 async fn run_add(config_overrides: &CliConfigOverrides, add_args: AddArgs) -> Result<()> {

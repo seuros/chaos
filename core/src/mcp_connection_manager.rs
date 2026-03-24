@@ -1,16 +1,14 @@
 //! Connection manager for Model Context Protocol (MCP) servers.
 //!
-//! The [`McpConnectionManager`] owns one [`codex_rmcp_client::RmcpClient`] per
+//! The [`McpConnectionManager`] owns one [`mcp_guest::McpSession`] per
 //! configured server (keyed by the *server name*). It offers convenience
 //! helpers to query the available tools across *all* servers and returns them
 //! in a single aggregated map using the fully-qualified tool name
 //! `"<server><MCP_TOOL_NAME_DELIMITER><tool>"` as the key.
 
-use std::borrow::Cow;
 use std::collections::HashMap;
 use std::collections::HashSet;
 use std::env;
-use std::ffi::OsString;
 use std::path::PathBuf;
 use std::sync::Arc;
 use std::sync::Mutex as StdMutex;
@@ -42,33 +40,30 @@ use codex_protocol::protocol::McpStartupFailure;
 use codex_protocol::protocol::McpStartupStatus;
 use codex_protocol::protocol::McpStartupUpdateEvent;
 use codex_protocol::protocol::SandboxPolicy;
-use codex_rmcp_client::ElicitationResponse;
-use codex_rmcp_client::OAuthCredentialsStoreMode;
-use codex_rmcp_client::OnToolListChanged;
-use codex_rmcp_client::OnUrlElicitationComplete;
-use codex_rmcp_client::RmcpClient;
-use codex_rmcp_client::SendElicitation;
+use crate::mcp::oauth_types::OAuthCredentialsStoreMode;
 use futures::future::BoxFuture;
 use futures::future::FutureExt;
 use futures::future::Shared;
-use rmcp::model::ClientCapabilities;
-use rmcp::model::CreateElicitationRequestParams;
-use rmcp::model::ElicitationAction;
-use rmcp::model::ElicitationCapability;
-use rmcp::model::FormElicitationCapability;
-use rmcp::model::Implementation;
-use rmcp::model::InitializeRequestParams;
-use rmcp::model::ListResourceTemplatesResult;
-use rmcp::model::ListResourcesResult;
-use rmcp::model::PaginatedRequestParams;
-use rmcp::model::ProtocolVersion;
-use rmcp::model::ReadResourceRequestParams;
-use rmcp::model::ReadResourceResult;
-use rmcp::model::RequestId;
-use rmcp::model::Resource;
-use rmcp::model::ResourceTemplate;
-use rmcp::model::Tool;
-use rmcp::model::UrlElicitationCapability;
+use mcp_guest::ClientHandler;
+use mcp_guest::ClientHandlerFuture;
+use mcp_guest::ClientHandlerResultFuture;
+use mcp_guest::McpSession;
+use mcp_guest::protocol::CreateElicitationRequest;
+use mcp_guest::protocol::CreateElicitationResponse;
+use mcp_guest::protocol::ElicitationAction;
+use mcp_guest::protocol::ElicitationCompleteNotificationParams;
+use mcp_guest::protocol::ElicitationResponse;
+use mcp_guest::protocol::RequestId;
+use mcp_guest::protocol::TaskOrResult;
+// Use mcp-guest types directly throughout core.
+use mcp_guest::ListResourceTemplatesResult;
+use mcp_guest::ListResourcesResult;
+use mcp_guest::PaginatedRequestParams;
+use mcp_guest::ReadResourceRequestParams;
+use mcp_guest::ReadResourceResult;
+use mcp_guest::ResourceInfo;
+use mcp_guest::ResourceTemplateInfo;
+pub(crate) use mcp_guest::ToolInfo as McpToolInfo;
 
 use serde::Deserialize;
 use serde::Serialize;
@@ -109,6 +104,21 @@ const MCP_TOOLS_LIST_DURATION_METRIC: &str = "codex.mcp.tools.list.duration_ms";
 const MCP_TOOLS_FETCH_UNCACHED_DURATION_METRIC: &str = "codex.mcp.tools.fetch_uncached.duration_ms";
 const MCP_TOOLS_CACHE_WRITE_DURATION_METRIC: &str = "codex.mcp.tools.cache_write.duration_ms";
 const MIN_COMPATIBLE_MCP_CLIENT_VERSION: &str = "0.63.0";
+
+/// Default env vars inherited by stdio MCP server processes.
+const DEFAULT_ENV_VARS: &[&str] = &[
+    "HOME",
+    "LOGNAME",
+    "PATH",
+    "SHELL",
+    "USER",
+    "__CF_USER_TEXT_ENCODING",
+    "LANG",
+    "LC_ALL",
+    "TERM",
+    "TMPDIR",
+    "TZ",
+];
 
 /// The Responses API requires tool names to match `^[a-zA-Z0-9_-]+$`.
 /// MCP server/tool names are user-controlled, so sanitize the fully-qualified
@@ -218,7 +228,7 @@ pub(crate) struct ToolInfo {
     pub(crate) server_name: String,
     pub(crate) tool_name: String,
     pub(crate) tool_namespace: String,
-    pub(crate) tool: Tool,
+    pub(crate) tool: McpToolInfo,
     pub(crate) connector_id: Option<String>,
     pub(crate) connector_name: Option<String>,
     #[serde(default)]
@@ -301,114 +311,173 @@ impl ElicitationRequestManager {
             .send(response)
             .map_err(|e| anyhow!("failed to send elicitation response: {e:?}"))
     }
+}
 
-    fn make_sender(&self, server_name: String, tx_event: Sender<Event>) -> SendElicitation {
-        let elicitation_requests = self.requests.clone();
-        let approval_policy = self.approval_policy.clone();
-        Box::new(move |id, elicitation| {
-            let elicitation_requests = elicitation_requests.clone();
-            let tx_event = tx_event.clone();
-            let server_name = server_name.clone();
-            let approval_policy = approval_policy.clone();
-            async move {
-                if approval_policy
-                    .lock()
-                    .is_ok_and(|policy| elicitation_is_rejected_by_policy(*policy))
-                {
-                    return Ok(ElicitationResponse {
+/// Handler that bridges mcp-guest callbacks to the core event system.
+struct ChaosClientHandler {
+    server_name: String,
+    tx_event: Sender<Event>,
+    elicitation_requests: ElicitationRequestManager,
+    /// Shared tool store + filter for refreshing on list_changed.
+    tools_arc: Arc<StdRwLock<Vec<ToolInfo>>>,
+    tool_filter: ToolFilter,
+    tool_timeout: Duration,
+    codex_apps_tools_cache_context: Option<CodexAppsToolsCacheContext>,
+    /// The session is set after connect. We need it for re-listing tools
+    /// when the server sends a tools/list_changed notification.
+    session: Arc<tokio::sync::RwLock<Option<McpSession>>>,
+}
+
+impl ClientHandler for ChaosClientHandler {
+    fn create_elicitation(
+        &self,
+        request: CreateElicitationRequest,
+    ) -> ClientHandlerResultFuture<'_, CreateElicitationResponse> {
+        Box::pin(async move {
+            if self
+                .elicitation_requests
+                .approval_policy
+                .lock()
+                .is_ok_and(|policy| elicitation_is_rejected_by_policy(*policy))
+            {
+                return Ok(TaskOrResult::Result(
+                    mcp_guest::protocol::CreateElicitationResult {
                         action: ElicitationAction::Decline,
                         content: None,
-                        meta: None,
-                    });
-                }
-
-                let request = match elicitation {
-                    CreateElicitationRequestParams::FormElicitationParams {
-                        meta,
-                        message,
-                        requested_schema,
-                    } => ElicitationRequest::Form {
-                        meta: meta
-                            .map(serde_json::to_value)
-                            .transpose()
-                            .context("failed to serialize MCP elicitation metadata")?,
-                        message,
-                        requested_schema: serde_json::to_value(requested_schema)
-                            .context("failed to serialize MCP elicitation schema")?,
                     },
-                    CreateElicitationRequestParams::UrlElicitationParams {
-                        meta,
-                        message,
-                        url,
-                        elicitation_id,
-                    } => ElicitationRequest::Url {
-                        meta: meta
-                            .map(serde_json::to_value)
-                            .transpose()
-                            .context("failed to serialize MCP elicitation metadata")?,
-                        message,
-                        url,
-                        elicitation_id,
-                    },
-                };
-                let (tx, rx) = oneshot::channel();
-                {
-                    let mut lock = elicitation_requests.lock().await;
-                    lock.insert((server_name.clone(), id.clone()), tx);
-                }
-                let _ = tx_event
-                    .send(Event {
-                        id: "mcp_elicitation_request".to_string(),
-                        msg: EventMsg::ElicitationRequest(ElicitationRequestEvent {
-                            turn_id: None,
-                            server_name,
-                            id: match id.clone() {
-                                rmcp::model::NumberOrString::String(value) => {
-                                    ProtocolRequestId::String(value.to_string())
-                                }
-                                rmcp::model::NumberOrString::Number(value) => {
-                                    ProtocolRequestId::Integer(value)
-                                }
-                            },
-                            request,
-                        }),
-                    })
-                    .await;
-                rx.await
-                    .context("elicitation request channel closed unexpectedly")
+                ));
             }
-            .boxed()
+
+            let elicitation_request = match &request {
+                CreateElicitationRequest::Form(form) => ElicitationRequest::Form {
+                    meta: None,
+                    message: form.message.clone(),
+                    requested_schema: form.requested_schema.clone(),
+                },
+                CreateElicitationRequest::Url(url_req) => ElicitationRequest::Url {
+                    meta: None,
+                    message: url_req.message.clone(),
+                    url: url_req.url.clone(),
+                    elicitation_id: url_req.elicitation_id.clone(),
+                },
+            };
+
+            // Generate a request ID for tracking.
+            let id = RequestId::number(
+                std::time::SystemTime::now()
+                    .duration_since(std::time::UNIX_EPOCH)
+                    .unwrap_or_default()
+                    .as_millis() as i64,
+            );
+
+            let (tx, rx) = oneshot::channel();
+            {
+                let mut lock = self.elicitation_requests.requests.lock().await;
+                lock.insert((self.server_name.clone(), id.clone()), tx);
+            }
+            let _ = self
+                .tx_event
+                .send(Event {
+                    id: "mcp_elicitation_request".to_string(),
+                    msg: EventMsg::ElicitationRequest(ElicitationRequestEvent {
+                        turn_id: None,
+                        server_name: self.server_name.clone(),
+                        id: request_id_to_protocol(&id),
+                        request: elicitation_request,
+                    }),
+                })
+                .await;
+
+            let response = rx
+                .await
+                .map_err(|_| {
+                    mcp_guest::GuestError::Disconnected
+                })?;
+
+            Ok(TaskOrResult::Result(
+                mcp_guest::protocol::CreateElicitationResult {
+                    action: response.action,
+                    content: response.content,
+                },
+            ))
+        })
+    }
+
+    fn on_tools_list_changed(&self) -> ClientHandlerFuture<'_> {
+        Box::pin(async move {
+            let session_guard = self.session.read().await;
+            let Some(session) = session_guard.as_ref() else {
+                return;
+            };
+
+            match list_tools_for_session_uncached(
+                &self.server_name,
+                session,
+                Some(self.tool_timeout),
+            )
+            .await
+            {
+                Ok(tools) => {
+                    store_managed_tools(
+                        &self.server_name,
+                        self.codex_apps_tools_cache_context.as_ref(),
+                        &self.tool_filter,
+                        &self.tools_arc,
+                        tools,
+                    );
+                }
+                Err(err) => {
+                    warn!(
+                        "Failed to refresh tool list for '{}': {err}",
+                        self.server_name
+                    );
+                }
+            }
+        })
+    }
+
+    fn on_elicitation_complete(
+        &self,
+        params: ElicitationCompleteNotificationParams,
+    ) -> ClientHandlerFuture<'_> {
+        let tx_event = self.tx_event.clone();
+        let server_name = self.server_name.clone();
+        Box::pin(async move {
+            let _ = tx_event
+                .send(Event {
+                    id: "mcp_elicitation_complete".to_string(),
+                    msg: EventMsg::ElicitationComplete(ElicitationCompleteEvent {
+                        server_name,
+                        elicitation_id: params.elicitation_id,
+                    }),
+                })
+                .await;
         })
     }
 }
 
-fn emit_elicitation_complete_event(
-    tx_event: &Sender<Event>,
-    server_name: String,
-    elicitation_id: String,
-) -> BoxFuture<'static, ()> {
-    let tx_event = tx_event.clone();
-    async move {
-        let _ = tx_event
-            .send(Event {
-                id: "mcp_elicitation_complete".to_string(),
-                msg: EventMsg::ElicitationComplete(ElicitationCompleteEvent {
-                    server_name,
-                    elicitation_id,
-                }),
-            })
-            .await;
+/// Convert mcp-guest RequestId to protocol RequestId.
+fn request_id_to_protocol(id: &RequestId) -> ProtocolRequestId {
+    match id {
+        RequestId::String(s) => ProtocolRequestId::String(s.clone()),
+        RequestId::Number(n) => ProtocolRequestId::Integer(*n),
     }
-    .boxed()
+}
+
+/// Convert protocol RequestId to mcp-guest RequestId.
+pub(crate) fn protocol_request_id_to_guest(id: &ProtocolRequestId) -> RequestId {
+    match id {
+        ProtocolRequestId::String(s) => RequestId::string(s.clone()),
+        ProtocolRequestId::Integer(n) => RequestId::number(*n),
+    }
 }
 
 #[derive(Clone)]
 struct ManagedClient {
-    client: Arc<RmcpClient>,
+    session: McpSession,
     tools: Arc<StdRwLock<Vec<ToolInfo>>>,
     tool_filter: ToolFilter,
     tool_timeout: Option<Duration>,
-    server_supports_sandbox_state_capability: bool,
     codex_apps_tools_cache_context: Option<CodexAppsToolsCacheContext>,
 }
 
@@ -435,19 +504,19 @@ impl ManagedClient {
         tools
     }
 
-    /// Returns once the server has ack'd the sandbox state update.
+    /// Sends sandbox state as a standard MCP log notification.
     async fn notify_sandbox_state_change(&self, sandbox_state: &SandboxState) -> Result<()> {
-        if !self.server_supports_sandbox_state_capability {
-            return Ok(());
-        }
-
-        let _response = self
-            .client
-            .send_custom_request(
-                MCP_SANDBOX_STATE_METHOD,
-                Some(serde_json::to_value(sandbox_state)?),
+        self.session
+            .notify_value(
+                "notifications/message",
+                Some(serde_json::json!({
+                    "level": "info",
+                    "logger": "chaos/alcatraz-state",
+                    "data": serde_json::to_value(sandbox_state)?,
+                })),
             )
-            .await?;
+            .await
+            .map_err(|e| anyhow!("{e}"))?;
         Ok(())
     }
 }
@@ -467,7 +536,7 @@ impl AsyncManagedClient {
     fn new(
         server_name: String,
         config: McpServerConfig,
-        store_mode: OAuthCredentialsStoreMode,
+        _store_mode: OAuthCredentialsStoreMode,
         cancel_token: CancellationToken,
         tx_event: Sender<Event>,
         elicitation_requests: ElicitationRequestManager,
@@ -489,16 +558,10 @@ impl AsyncManagedClient {
                     return Err(error.into());
                 }
 
-                let client =
-                    Arc::new(make_rmcp_client(&server_name, config.transport, store_mode).await?);
-                match start_server_task(
+                make_managed_client(
                     server_name,
-                    client,
-                    StartServerTaskParams {
-                        startup_timeout: config
-                            .startup_timeout_sec
-                            .or(Some(DEFAULT_STARTUP_TIMEOUT)),
-                        tool_timeout: config.tool_timeout_sec.unwrap_or(DEFAULT_TOOL_TIMEOUT),
+                    config,
+                    MakeClientParams {
                         tool_filter: startup_tool_filter,
                         tx_event,
                         elicitation_requests,
@@ -507,10 +570,7 @@ impl AsyncManagedClient {
                 )
                 .or_cancel(&cancel_token)
                 .await
-                {
-                    Ok(result) => result,
-                    Err(CancelErr::Cancelled) => Err(StartupOutcomeError::Cancelled),
-                }
+                .map_err(|CancelErr::Cancelled| StartupOutcomeError::Cancelled)?
             }
             .await;
 
@@ -587,7 +647,7 @@ impl AsyncManagedClient {
                 } else {
                     format!("{description}. {plugin_source_note}")
                 };
-                tool.tool.description = Some(Cow::Owned(annotated_description));
+                tool.tool.description = Some(annotated_description);
             }
             tools
         };
@@ -610,11 +670,8 @@ impl AsyncManagedClient {
     }
 }
 
-pub const MCP_SANDBOX_STATE_CAPABILITY: &str = "codex/sandbox-state";
-
-/// Custom MCP request to push sandbox state updates.
-/// When used, the `params` field of the notification is [`SandboxState`].
-pub const MCP_SANDBOX_STATE_METHOD: &str = "codex/sandbox-state/update";
+/// Logger name used to identify sandbox state notifications.
+pub const MCP_SANDBOX_STATE_LOGGER: &str = "chaos/alcatraz-state";
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
@@ -624,7 +681,7 @@ pub struct SandboxState {
     pub sandbox_cwd: PathBuf,
 }
 
-/// A thin wrapper around a set of running [`RmcpClient`] instances.
+/// A thin wrapper around a set of running [`McpSession`] instances.
 pub(crate) struct McpConnectionManager {
     clients: HashMap<String, AsyncManagedClient>,
     server_origins: HashMap<String, String>,
@@ -872,9 +929,9 @@ impl McpConnectionManager {
 
         let list_start = Instant::now();
         let fetch_start = Instant::now();
-        let tools = list_tools_for_client_uncached(
+        let tools = list_tools_for_session_uncached(
             CODEX_APPS_MCP_SERVER_NAME,
-            &managed_client.client,
+            &managed_client.session,
             managed_client.tool_timeout,
         )
         .await
@@ -904,7 +961,7 @@ impl McpConnectionManager {
 
     /// Returns a single map that contains all resources. Each key is the
     /// server name and the value is a vector of resources.
-    pub async fn list_all_resources(&self) -> HashMap<String, Vec<Resource>> {
+    pub async fn list_all_resources(&self) -> HashMap<String, Vec<ResourceInfo>> {
         let mut join_set = JoinSet::new();
 
         let clients_snapshot = &self.clients;
@@ -914,42 +971,22 @@ impl McpConnectionManager {
             let Ok(managed_client) = async_managed_client.client().await else {
                 continue;
             };
-            let timeout = managed_client.tool_timeout;
-            let client = managed_client.client.clone();
+            let session = managed_client.session.clone();
 
             join_set.spawn(async move {
-                let mut collected: Vec<Resource> = Vec::new();
-                let mut cursor: Option<String> = None;
-
-                loop {
-                    let params = cursor.as_ref().map(|next| PaginatedRequestParams {
-                        meta: None,
-                        cursor: Some(next.clone()),
-                    });
-                    let response = match client.list_resources(params, timeout).await {
-                        Ok(result) => result,
-                        Err(err) => return (server_name, Err(err)),
-                    };
-
-                    collected.extend(response.resources);
-
-                    match response.next_cursor {
-                        Some(next) => {
-                            if cursor.as_ref() == Some(&next) {
-                                return (
-                                    server_name,
-                                    Err(anyhow!("resources/list returned duplicate cursor")),
-                                );
-                            }
-                            cursor = Some(next);
-                        }
-                        None => return (server_name, Ok(collected)),
+                match session
+                    .list_resources()
+                    .await
+                {
+                    Ok(resources) => {
+                        (server_name, Ok(resources))
                     }
+                    Err(err) => (server_name, Err(anyhow!("{err}"))),
                 }
             });
         }
 
-        let mut aggregated: HashMap<String, Vec<Resource>> = HashMap::new();
+        let mut aggregated: HashMap<String, Vec<ResourceInfo>> = HashMap::new();
 
         while let Some(join_res) = join_set.join_next().await {
             match join_res {
@@ -970,7 +1007,7 @@ impl McpConnectionManager {
 
     /// Returns a single map that contains all resource templates. Each key is the
     /// server name and the value is a vector of resource templates.
-    pub async fn list_all_resource_templates(&self) -> HashMap<String, Vec<ResourceTemplate>> {
+    pub async fn list_all_resource_templates(&self) -> HashMap<String, Vec<ResourceTemplateInfo>> {
         let mut join_set = JoinSet::new();
 
         let clients_snapshot = &self.clients;
@@ -980,44 +1017,22 @@ impl McpConnectionManager {
             let Ok(managed_client) = async_managed_client.client().await else {
                 continue;
             };
-            let client = managed_client.client.clone();
-            let timeout = managed_client.tool_timeout;
+            let session = managed_client.session.clone();
 
             join_set.spawn(async move {
-                let mut collected: Vec<ResourceTemplate> = Vec::new();
-                let mut cursor: Option<String> = None;
-
-                loop {
-                    let params = cursor.as_ref().map(|next| PaginatedRequestParams {
-                        meta: None,
-                        cursor: Some(next.clone()),
-                    });
-                    let response = match client.list_resource_templates(params, timeout).await {
-                        Ok(result) => result,
-                        Err(err) => return (server_name_cloned, Err(err)),
-                    };
-
-                    collected.extend(response.resource_templates);
-
-                    match response.next_cursor {
-                        Some(next) => {
-                            if cursor.as_ref() == Some(&next) {
-                                return (
-                                    server_name_cloned,
-                                    Err(anyhow!(
-                                        "resources/templates/list returned duplicate cursor"
-                                    )),
-                                );
-                            }
-                            cursor = Some(next);
-                        }
-                        None => return (server_name_cloned, Ok(collected)),
+                match session
+                    .list_resource_templates()
+                    .await
+                {
+                    Ok(templates) => {
+                        (server_name_cloned, Ok(templates))
                     }
+                    Err(err) => (server_name_cloned, Err(anyhow!("{err}"))),
                 }
             });
         }
 
-        let mut aggregated: HashMap<String, Vec<ResourceTemplate>> = HashMap::new();
+        let mut aggregated: HashMap<String, Vec<ResourceTemplateInfo>> = HashMap::new();
 
         while let Some(join_res) = join_set.join_next().await {
             match join_res {
@@ -1053,11 +1068,36 @@ impl McpConnectionManager {
             ));
         }
 
-        let result: rmcp::model::CallToolResult = client
-            .client
-            .call_tool(tool.to_string(), arguments, meta, client.tool_timeout)
+        // Convert arguments Value to Map<String, Value> for mcp-guest
+        let arguments_map = arguments.and_then(|v| match v {
+            serde_json::Value::Object(map) => Some(map),
+            _ => None,
+        });
+
+        let params = mcp_guest::protocol::CallToolRequestParams {
+            name: tool.to_string(),
+            arguments: arguments_map,
+            meta,
+            task: None,
+        };
+
+        let response = client
+            .session
+            .call_tool_with(params)
             .await
+            .map_err(|e| anyhow!("{e}"))
             .with_context(|| format!("tool call failed for `{server}/{tool}`"))?;
+
+        // Extract the result from TaskOrResult (we only handle direct results for now)
+        let result = match response {
+            TaskOrResult::Result(result) => result,
+            TaskOrResult::Task(task_result) => {
+                return Err(anyhow!(
+                    "tool call returned async task (id: {}), which is not yet supported",
+                    task_result.task.task_id
+                ));
+            }
+        };
 
         let content = result
             .content
@@ -1072,7 +1112,7 @@ impl McpConnectionManager {
             content,
             structured_content: result.structured_content,
             is_error: result.is_error,
-            meta: result.meta.and_then(|meta| serde_json::to_value(meta).ok()),
+            meta: result.meta,
         })
     }
 
@@ -1083,13 +1123,17 @@ impl McpConnectionManager {
         params: Option<PaginatedRequestParams>,
     ) -> Result<ListResourcesResult> {
         let managed = self.client_by_name(server).await?;
-        let timeout = managed.tool_timeout;
 
-        managed
-            .client
-            .list_resources(params, timeout)
+        let guest_params = params.unwrap_or(PaginatedRequestParams { cursor: None });
+
+        let result: ListResourcesResult = managed
+            .session
+            .request("resources/list", &guest_params)
             .await
-            .with_context(|| format!("resources/list failed for `{server}`"))
+            .map_err(|e| anyhow!("{e}"))
+            .with_context(|| format!("resources/list failed for `{server}`"))?;
+
+        Ok(result)
     }
 
     /// List resource templates from the specified server.
@@ -1099,13 +1143,17 @@ impl McpConnectionManager {
         params: Option<PaginatedRequestParams>,
     ) -> Result<ListResourceTemplatesResult> {
         let managed = self.client_by_name(server).await?;
-        let client = managed.client.clone();
-        let timeout = managed.tool_timeout;
 
-        client
-            .list_resource_templates(params, timeout)
+        let guest_params = params.unwrap_or(PaginatedRequestParams { cursor: None });
+
+        let result: ListResourceTemplatesResult = managed
+            .session
+            .request("resources/templates/list", &guest_params)
             .await
-            .with_context(|| format!("resources/templates/list failed for `{server}`"))
+            .map_err(|e| anyhow!("{e}"))
+            .with_context(|| format!("resources/templates/list failed for `{server}`"))?;
+
+        Ok(result)
     }
 
     /// Read a resource from the specified server.
@@ -1115,14 +1163,16 @@ impl McpConnectionManager {
         params: ReadResourceRequestParams,
     ) -> Result<ReadResourceResult> {
         let managed = self.client_by_name(server).await?;
-        let client = managed.client.clone();
-        let timeout = managed.tool_timeout;
         let uri = params.uri.clone();
 
-        client
-            .read_resource(params, timeout)
+        let result: ReadResourceResult = managed
+            .session
+            .request("resources/read", &params)
             .await
-            .with_context(|| format!("resources/read failed for `{server}` ({uri})"))
+            .map_err(|e| anyhow!("{e}"))
+            .with_context(|| format!("resources/read failed for `{server}` ({uri})"))?;
+
+        Ok(result)
     }
 
     pub async fn parse_tool_name(&self, tool_name: &str) -> Option<(String, String)> {
@@ -1347,109 +1397,185 @@ impl From<anyhow::Error> for StartupOutcomeError {
     }
 }
 
-fn elicitation_capability_for_server(_server_name: &str) -> Option<ElicitationCapability> {
-    // Codex can handle downstream form-mode and URL-mode elicitation generically across
-    // configured MCP servers.
-    Some(ElicitationCapability {
-        form: Some(FormElicitationCapability {
-            schema_validation: None,
-        }),
-        url: Some(UrlElicitationCapability {}),
-    })
+struct MakeClientParams {
+    tool_filter: ToolFilter,
+    tx_event: Sender<Event>,
+    elicitation_requests: ElicitationRequestManager,
+    codex_apps_tools_cache_context: Option<CodexAppsToolsCacheContext>,
 }
 
-async fn start_server_task(
+/// Build an env HashMap for a stdio MCP server child process.
+fn create_env_for_mcp_server(
+    extra_env: Option<HashMap<String, String>>,
+    env_vars: &[String],
+) -> HashMap<String, String> {
+    DEFAULT_ENV_VARS
+        .iter()
+        .copied()
+        .chain(env_vars.iter().map(String::as_str))
+        .filter_map(|var| env::var(var).ok().map(|value| (var.to_string(), value)))
+        .chain(extra_env.unwrap_or_default())
+        .collect()
+}
+
+/// Resolve env_http_headers from environment variables and merge with static headers.
+fn resolve_http_headers(
+    http_headers: Option<HashMap<String, String>>,
+    env_http_headers: Option<HashMap<String, String>>,
+) -> Vec<(String, String)> {
+    let mut headers = Vec::new();
+
+    if let Some(static_headers) = http_headers {
+        for (name, value) in static_headers {
+            headers.push((name, value));
+        }
+    }
+
+    if let Some(env_headers) = env_http_headers {
+        for (name, env_var) in env_headers {
+            if let Ok(value) = env::var(&env_var) {
+                let trimmed = value.trim();
+                if !trimmed.is_empty() {
+                    headers.push((name, value));
+                }
+            }
+        }
+    }
+
+    headers
+}
+
+/// Build a McpSession via mcp-guest and return a fully-initialized ManagedClient.
+async fn make_managed_client(
     server_name: String,
-    client: Arc<RmcpClient>,
-    params: StartServerTaskParams,
+    config: McpServerConfig,
+    params: MakeClientParams,
 ) -> Result<ManagedClient, StartupOutcomeError> {
-    let StartServerTaskParams {
-        startup_timeout,
-        tool_timeout,
+    let MakeClientParams {
         tool_filter,
         tx_event,
         elicitation_requests,
         codex_apps_tools_cache_context,
     } = params;
-    let elicitation = elicitation_capability_for_server(&server_name);
-    let params = InitializeRequestParams {
-        meta: None,
-        capabilities: ClientCapabilities {
-            experimental: None,
-            extensions: None,
-            roots: None,
-            sampling: None,
-            elicitation,
-            tasks: None,
-        },
-        client_info: Implementation {
-            name: "codex-mcp-client".to_owned(),
-            version: mcp_client_implementation_version().to_owned(),
-            title: Some("Codex".into()),
-            description: None,
-            icons: None,
-            website_url: None,
-        },
-        protocol_version: ProtocolVersion::V_2025_06_18,
-    };
 
-    let send_elicitation = elicitation_requests.make_sender(server_name.clone(), tx_event.clone());
-    let on_url_elicitation_complete = {
-        let server_name = server_name.clone();
-        let tx_event = tx_event.clone();
-        Box::new(move |elicitation_id| {
-            emit_elicitation_complete_event(&tx_event, server_name.clone(), elicitation_id)
-        }) as OnUrlElicitationComplete
-    };
+    let tool_timeout = config.tool_timeout_sec.unwrap_or(DEFAULT_TOOL_TIMEOUT);
+    let startup_timeout = config.startup_timeout_sec.or(Some(DEFAULT_STARTUP_TIMEOUT));
 
     let tools_arc: Arc<StdRwLock<Vec<ToolInfo>>> = Arc::new(StdRwLock::new(Vec::new()));
-    let on_tool_list_changed = {
-        let client = Arc::clone(&client);
-        let server_name = server_name.clone();
-        let tools_arc = Arc::clone(&tools_arc);
-        let tool_filter = tool_filter.clone();
-        let codex_apps_tools_cache_context = codex_apps_tools_cache_context.clone();
-        Box::new(move || {
-            let client = Arc::clone(&client);
-            let server_name = server_name.clone();
-            let tools_arc = Arc::clone(&tools_arc);
-            let tool_filter = tool_filter.clone();
-            let codex_apps_tools_cache_context = codex_apps_tools_cache_context.clone();
-            Box::pin(async move {
-                match list_tools_for_client_uncached(&server_name, &client, Some(tool_timeout))
-                    .await
-                {
-                    Ok(tools) => {
-                        store_managed_tools(
-                            &server_name,
-                            codex_apps_tools_cache_context.as_ref(),
-                            &tool_filter,
-                            &tools_arc,
-                            tools,
-                        );
-                    }
-                    Err(err) => {
-                        warn!("Failed to refresh tool list for '{server_name}': {err}");
-                    }
-                }
-            }) as futures::future::BoxFuture<'static, ()>
-        }) as OnToolListChanged
+    let session_holder: Arc<tokio::sync::RwLock<Option<McpSession>>> =
+        Arc::new(tokio::sync::RwLock::new(None));
+
+    let handler = ChaosClientHandler {
+        server_name: server_name.clone(),
+        tx_event,
+        elicitation_requests,
+        tools_arc: Arc::clone(&tools_arc),
+        tool_filter: tool_filter.clone(),
+        tool_timeout,
+        codex_apps_tools_cache_context: codex_apps_tools_cache_context.clone(),
+        session: Arc::clone(&session_holder),
     };
 
-    let initialize_result = client
-        .initialize(
-            params,
-            startup_timeout,
-            send_elicitation,
-            on_url_elicitation_complete,
-            on_tool_list_changed,
-        )
-        .await
-        .map_err(StartupOutcomeError::from)?;
+    let client_info = mcp_guest::protocol::Implementation::new(
+        "chaos-mcp-client",
+        mcp_client_implementation_version(),
+    )
+    .with_title("Chaos");
 
+    let capabilities = mcp_guest::protocol::ClientCapabilities {
+        experimental: None,
+        roots: Some(mcp_guest::protocol::RootsCapability {
+            list_changed: Some(false),
+        }),
+        sampling: Some(mcp_guest::protocol::SamplingCapability {
+            context: None,
+            tools: None,
+        }),
+        elicitation: Some(mcp_guest::protocol::ElicitationCapability {
+            form: Some(mcp_guest::protocol::FormElicitationCapability {}),
+            url: Some(mcp_guest::protocol::UrlElicitationCapability {}),
+        }),
+        tasks: None,
+    };
+
+    // Build and connect session based on transport type
+    let connect_fut = async {
+        match config.transport {
+            McpServerTransportConfig::Stdio {
+                command,
+                args,
+                env,
+                env_vars,
+                cwd,
+            } => {
+                let envs = create_env_for_mcp_server(env, &env_vars);
+                let mut builder = mcp_guest::stdio(&command, &args)
+                    .envs(&envs)
+                    .client_info(client_info)
+                    .capabilities(capabilities)
+                    .handler(handler)
+                    .request_timeout(tool_timeout);
+
+                if let Some(cwd_path) = cwd {
+                    builder = builder.cwd(cwd_path);
+                }
+
+                builder
+                    .connect()
+                    .await
+                    .map_err(|e| anyhow!("{e}"))
+            }
+            McpServerTransportConfig::StreamableHttp {
+                url,
+                http_headers,
+                env_http_headers,
+                bearer_token_env_var,
+            } => {
+                let resolved_bearer_token =
+                    resolve_bearer_token(&server_name, bearer_token_env_var.as_deref())?;
+
+                let resolved_headers = resolve_http_headers(http_headers, env_http_headers);
+
+                let mut builder = mcp_guest::http(&url)
+                    .headers(resolved_headers)
+                    .client_info(client_info)
+                    .capabilities(capabilities)
+                    .handler(handler)
+                    .request_timeout(tool_timeout);
+
+                if let Some(token) = resolved_bearer_token {
+                    builder = builder.bearer_token(token);
+                }
+
+                builder
+                    .connect()
+                    .await
+                    .map_err(|e| anyhow!("{e}"))
+            }
+        }
+    };
+
+    // Wrap with startup timeout
+    let session = if let Some(timeout) = startup_timeout {
+        match tokio::time::timeout(timeout, connect_fut).await {
+            Ok(result) => result.map_err(StartupOutcomeError::from)?,
+            Err(_) => {
+                return Err(StartupOutcomeError::Failed {
+                    error: "timed out handshaking with MCP server".to_string(),
+                });
+            }
+        }
+    } else {
+        connect_fut.await.map_err(StartupOutcomeError::from)?
+    };
+
+    // Store session in handler's session holder so tools_list_changed can use it
+    *session_holder.write().await = Some(session.clone());
+
+    // List tools
     let list_start = Instant::now();
     let fetch_start = Instant::now();
-    let tools = list_tools_for_client_uncached(&server_name, &client, startup_timeout)
+    let tools = list_tools_for_session_uncached(&server_name, &session, startup_timeout)
         .await
         .map_err(StartupOutcomeError::from)?;
     emit_duration(
@@ -1472,75 +1598,13 @@ async fn start_server_task(
         tools,
     );
 
-    let server_supports_sandbox_state_capability = initialize_result
-        .capabilities
-        .experimental
-        .as_ref()
-        .and_then(|exp| exp.get(MCP_SANDBOX_STATE_CAPABILITY))
-        .is_some();
-    let managed = ManagedClient {
-        client: Arc::clone(&client),
+    Ok(ManagedClient {
+        session,
         tools: tools_arc,
         tool_timeout: Some(tool_timeout),
         tool_filter,
-        server_supports_sandbox_state_capability,
         codex_apps_tools_cache_context,
-    };
-
-    Ok(managed)
-}
-
-struct StartServerTaskParams {
-    startup_timeout: Option<Duration>, // TODO: cancel_token should handle this.
-    tool_timeout: Duration,
-    tool_filter: ToolFilter,
-    tx_event: Sender<Event>,
-    elicitation_requests: ElicitationRequestManager,
-    codex_apps_tools_cache_context: Option<CodexAppsToolsCacheContext>,
-}
-
-async fn make_rmcp_client(
-    server_name: &str,
-    transport: McpServerTransportConfig,
-    store_mode: OAuthCredentialsStoreMode,
-) -> Result<RmcpClient, StartupOutcomeError> {
-    match transport {
-        McpServerTransportConfig::Stdio {
-            command,
-            args,
-            env,
-            env_vars,
-            cwd,
-        } => {
-            let command_os: OsString = command.into();
-            let args_os: Vec<OsString> = args.into_iter().map(Into::into).collect();
-            RmcpClient::new_stdio_client(command_os, args_os, env, &env_vars, cwd)
-                .await
-                .map_err(|err| StartupOutcomeError::from(anyhow!(err)))
-        }
-        McpServerTransportConfig::StreamableHttp {
-            url,
-            http_headers,
-            env_http_headers,
-            bearer_token_env_var,
-        } => {
-            let resolved_bearer_token =
-                match resolve_bearer_token(server_name, bearer_token_env_var.as_deref()) {
-                    Ok(token) => token,
-                    Err(error) => return Err(error.into()),
-                };
-            RmcpClient::new_streamable_http_client(
-                server_name,
-                &url,
-                resolved_bearer_token,
-                http_headers,
-                env_http_headers,
-                store_mode,
-            )
-            .await
-            .map_err(StartupOutcomeError::from)
-        }
-    }
+    })
 }
 
 fn write_cached_codex_apps_tools_if_needed(
@@ -1683,48 +1747,85 @@ fn transport_origin(transport: &McpServerTransportConfig) -> Option<String> {
     }
 }
 
-async fn list_tools_for_client_uncached(
+/// Helper to extract a string from a serde_json object's _meta field.
+fn meta_string(meta: Option<&serde_json::Value>, key: &str) -> Option<String> {
+    meta.and_then(|meta| meta.get(key))
+        .and_then(serde_json::Value::as_str)
+        .map(str::trim)
+        .filter(|value| !value.is_empty())
+        .map(str::to_string)
+}
+
+/// Convert mcp-guest ToolInfo to our internal ToolInfo, extracting connector metadata.
+fn guest_tool_to_tool_info(
     server_name: &str,
-    client: &Arc<RmcpClient>,
+    guest_tool: McpToolInfo,
+) -> ToolInfo {
+    let meta = guest_tool.meta.as_ref();
+    let connector_id = meta_string(meta, "connector_id");
+    let connector_name = meta_string(meta, "connector_name")
+        .or_else(|| meta_string(meta, "connector_display_name"));
+    let connector_description = meta_string(meta, "connector_description")
+        .or_else(|| meta_string(meta, "connectorDescription"));
+
+    let tool_name = normalize_codex_apps_tool_name(
+        server_name,
+        &guest_tool.name,
+        connector_id.as_deref(),
+        connector_name.as_deref(),
+    );
+    let tool_namespace =
+        normalize_codex_apps_namespace(server_name, connector_name.as_deref());
+
+    let mut tool_def = guest_tool;
+    if let Some(title) = tool_def.title.as_deref() {
+        let normalized_title =
+            normalize_codex_apps_tool_title(server_name, connector_name.as_deref(), title);
+        if tool_def.title.as_deref() != Some(normalized_title.as_str()) {
+            tool_def.title = Some(normalized_title);
+        }
+    }
+
+    ToolInfo {
+        server_name: server_name.to_owned(),
+        tool_name,
+        tool_namespace,
+        tool: tool_def,
+        connector_id,
+        connector_name,
+        plugin_display_names: Vec::new(),
+        connector_description,
+    }
+}
+
+async fn list_tools_for_session_uncached(
+    server_name: &str,
+    session: &McpSession,
     timeout: Option<Duration>,
 ) -> Result<Vec<ToolInfo>> {
-    let resp = client
-        .list_tools_with_connector_ids(/*params*/ None, timeout)
-        .await?;
-    let tools = resp
-        .tools
+    // Bypass the session's built-in cache by issuing the request directly.
+    let mut cursor: Option<String> = None;
+    let mut all_guest_tools = Vec::new();
+    loop {
+        let params = mcp_guest::protocol::PaginatedRequestParams {
+            cursor: cursor.clone(),
+        };
+        let result: mcp_guest::protocol::ListToolsResult = session
+            .request_with_timeout("tools/list", &params, timeout)
+            .await
+            .map_err(|e| anyhow!("{e}"))?;
+        all_guest_tools.extend(result.tools);
+        cursor = result.next_cursor;
+        if cursor.is_none() {
+            break;
+        }
+    }
+
+    let tools: Vec<ToolInfo> = all_guest_tools
         .into_iter()
-        .map(|tool| {
-            let tool_name = normalize_codex_apps_tool_name(
-                server_name,
-                &tool.tool.name,
-                tool.connector_id.as_deref(),
-                tool.connector_name.as_deref(),
-            );
-            let tool_namespace =
-                normalize_codex_apps_namespace(server_name, tool.connector_name.as_deref());
-            let connector_name = tool.connector_name;
-            let connector_description = tool.connector_description;
-            let mut tool_def = tool.tool;
-            if let Some(title) = tool_def.title.as_deref() {
-                let normalized_title =
-                    normalize_codex_apps_tool_title(server_name, connector_name.as_deref(), title);
-                if tool_def.title.as_deref() != Some(normalized_title.as_str()) {
-                    tool_def.title = Some(normalized_title);
-                }
-            }
-            ToolInfo {
-                server_name: server_name.to_owned(),
-                tool_name,
-                tool_namespace,
-                tool: tool_def,
-                connector_id: tool.connector_id,
-                connector_name,
-                plugin_display_names: Vec::new(),
-                connector_description,
-            }
-        })
+        .map(|tool| guest_tool_to_tool_info(server_name, tool))
         .collect();
+
     if server_name == CODEX_APPS_MCP_SERVER_NAME {
         return Ok(filter_disallowed_codex_apps_tools(tools));
     }

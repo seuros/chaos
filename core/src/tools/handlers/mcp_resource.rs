@@ -6,13 +6,13 @@ use std::time::Instant;
 use async_trait::async_trait;
 use codex_protocol::mcp::CallToolResult;
 use codex_protocol::models::function_call_output_content_items_to_text;
-use rmcp::model::ListResourceTemplatesResult;
-use rmcp::model::ListResourcesResult;
-use rmcp::model::PaginatedRequestParams;
-use rmcp::model::ReadResourceRequestParams;
-use rmcp::model::ReadResourceResult;
-use rmcp::model::Resource;
-use rmcp::model::ResourceTemplate;
+use mcp_guest::ListResourceTemplatesResult;
+use mcp_guest::ListResourcesResult;
+use mcp_guest::PaginatedRequestParams;
+use mcp_guest::ReadResourceRequestParams;
+use mcp_guest::ReadResourceResult;
+use mcp_guest::ResourceInfo;
+use mcp_guest::ResourceTemplateInfo;
 use serde::Deserialize;
 use serde::Serialize;
 use serde::de::DeserializeOwned;
@@ -61,11 +61,11 @@ struct ReadResourceArgs {
 struct ResourceWithServer {
     server: String,
     #[serde(flatten)]
-    resource: Resource,
+    resource: ResourceInfo,
 }
 
 impl ResourceWithServer {
-    fn new(server: String, resource: Resource) -> Self {
+    fn new(server: String, resource: ResourceInfo) -> Self {
         Self { server, resource }
     }
 }
@@ -74,11 +74,11 @@ impl ResourceWithServer {
 struct ResourceTemplateWithServer {
     server: String,
     #[serde(flatten)]
-    template: ResourceTemplate,
+    template: ResourceTemplateInfo,
 }
 
 impl ResourceTemplateWithServer {
-    fn new(server: String, template: ResourceTemplate) -> Self {
+    fn new(server: String, template: ResourceTemplateInfo) -> Self {
         Self { server, template }
     }
 }
@@ -107,8 +107,8 @@ impl ListResourcesPayload {
         }
     }
 
-    fn from_all_servers(resources_by_server: HashMap<String, Vec<Resource>>) -> Self {
-        let mut entries: Vec<(String, Vec<Resource>)> = resources_by_server.into_iter().collect();
+    fn from_all_servers(resources_by_server: HashMap<String, Vec<ResourceInfo>>) -> Self {
+        let mut entries: Vec<(String, Vec<ResourceInfo>)> = resources_by_server.into_iter().collect();
         entries.sort_by(|a, b| a.0.cmp(&b.0));
 
         let mut resources = Vec::new();
@@ -150,8 +150,8 @@ impl ListResourceTemplatesPayload {
         }
     }
 
-    fn from_all_servers(templates_by_server: HashMap<String, Vec<ResourceTemplate>>) -> Self {
-        let mut entries: Vec<(String, Vec<ResourceTemplate>)> =
+    fn from_all_servers(templates_by_server: HashMap<String, Vec<ResourceTemplateInfo>>) -> Self {
+        let mut entries: Vec<(String, Vec<ResourceTemplateInfo>)> =
             templates_by_server.into_iter().collect();
         entries.sort_by(|a, b| a.0.cmp(&b.0));
 
@@ -265,7 +265,6 @@ async fn handle_list_resources(
     let payload_result: Result<ListResourcesPayload, FunctionCallError> = async {
         if let Some(server_name) = server.clone() {
             let params = cursor.clone().map(|value| PaginatedRequestParams {
-                meta: None,
                 cursor: Some(value),
             });
             let result = session
@@ -369,7 +368,6 @@ async fn handle_list_resource_templates(
     let payload_result: Result<ListResourceTemplatesPayload, FunctionCallError> = async {
         if let Some(server_name) = server.clone() {
             let params = cursor.clone().map(|value| PaginatedRequestParams {
-                meta: None,
                 cursor: Some(value),
             });
             let result = session
@@ -477,8 +475,8 @@ async fn handle_read_resource(
             .read_resource(
                 &server,
                 ReadResourceRequestParams {
-                    meta: None,
                     uri: uri.clone(),
+                    meta: None,
                 },
             )
             .await

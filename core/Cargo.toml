@@ -39,7 +39,7 @@ codex-keyring-store = { workspace = true }
 codex-network-proxy = { workspace = true }
 codex-otel = { workspace = true }
 codex-protocol = { workspace = true }
-codex-rmcp-client = { workspace = true }
+mcp-guest = { workspace = true, features = ["http"] }
 codex-state = { workspace = true }
 codex-utils-absolute-path = { workspace = true }
 codex-utils-cache = { workspace = true }
@@ -69,12 +69,6 @@ os_info = { workspace = true }
 rand = { workspace = true }
 regex-lite = { workspace = true }
 reqwest = { workspace = true, features = ["json", "stream"] }
-rmcp = { workspace = true, default-features = false, features = [
-    "base64",
-    "macros",
-    "schemars",
-    "server",
-] }
 schemars = { workspace = true }
 serde = { workspace = true, features = ["derive"] }
 serde_json = { workspace = true }

@@ -772,7 +772,7 @@ pub(crate) struct ChatWidget {
     // Runtime metrics accumulated across delta snapshots for the active turn.
     turn_runtime_metrics: RuntimeMetricsSummary,
     last_rendered_width: std::cell::Cell<Option<usize>>,
-    // Feedback sink for /feedback (stub - upload not supported)
+    // TODO(feedback): upload not yet supported
     #[allow(dead_code)]
     feedback: crate::bottom_pane::FeedbackSnapshot,
     feedback_audience: FeedbackAudience,

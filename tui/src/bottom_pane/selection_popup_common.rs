@@ -1,7 +1,5 @@
 use ratatui::buffer::Buffer;
 use ratatui::layout::Rect;
-// Note: Table-based layout previously used Constraint; the manual renderer
-// below no longer requires it.
 use ratatui::style::Color;
 use ratatui::style::Style;
 use ratatui::style::Stylize;

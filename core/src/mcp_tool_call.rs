@@ -43,9 +43,9 @@ use codex_protocol::request_user_input::RequestUserInputArgs;
 use codex_protocol::request_user_input::RequestUserInputQuestion;
 use codex_protocol::request_user_input::RequestUserInputQuestionOption;
 use codex_protocol::request_user_input::RequestUserInputResponse;
-use codex_rmcp_client::ElicitationAction;
-use codex_rmcp_client::ElicitationResponse;
-use rmcp::model::ToolAnnotations;
+use mcp_guest::protocol::ElicitationAction;
+use mcp_guest::protocol::ElicitationResponse;
+use mcp_guest::ToolAnnotations;
 use serde::Serialize;
 use std::path::Path;
 use std::sync::Arc;
@@ -574,8 +574,8 @@ async fn maybe_request_mcp_tool_approval(
     question.question =
         mcp_tool_approval_question_text(question.question, monitor_reason.as_deref());
     if tool_call_mcp_elicitation_enabled {
-        let request_id = rmcp::model::RequestId::String(
-            format!("{MCP_TOOL_APPROVAL_QUESTION_ID_PREFIX}_{call_id}").into(),
+        let request_id = mcp_guest::protocol::RequestId::string(
+            format!("{MCP_TOOL_APPROVAL_QUESTION_ID_PREFIX}_{call_id}"),
         );
         let params = build_mcp_tool_approval_elicitation_request(
             sess.as_ref(),
@@ -783,7 +783,7 @@ pub(crate) async fn lookup_mcp_tool_metadata(
         connector_name: tool_info.connector_name,
         connector_description,
         tool_title: tool_info.tool.title,
-        tool_description: tool_info.tool.description.map(std::borrow::Cow::into_owned),
+        tool_description: tool_info.tool.description,
         codex_apps_meta: tool_info
             .tool
             .meta

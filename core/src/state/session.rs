@@ -18,7 +18,7 @@ use crate::tasks::RegularTask;
 use crate::truncate::TruncationPolicy;
 use codex_protocol::protocol::TurnContextItem;
 
-/// Persistent, session-scoped state previously stored directly on `Session`.
+/// Persistent, session-scoped state owned by the session runner task.
 pub(crate) struct SessionState {
     pub(crate) session_configuration: SessionConfiguration,
     pub(crate) history: ContextManager,

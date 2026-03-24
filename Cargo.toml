@@ -19,11 +19,11 @@ members = [
     "alcatraz/base",
     "alcatraz/linux",
     "login",
+    "mcp-guest",
     "mcp-server",
     "network-proxy",
     "process-hardening",
     "protocol",
-    "rmcp-client",
     "otel",
     "tui",
     "utils/absolute-path",
@@ -85,12 +85,12 @@ codex-keyring-store = { path = "keyring-store" }
 alcatraz-base = { path = "alcatraz/base" }
 alcatraz-linux = { path = "alcatraz/linux" }
 codex-login = { path = "login" }
+mcp-guest = { path = "mcp-guest" }
 chaos-mcphost = { path = "mcp-server" }
 codex-network-proxy = { path = "network-proxy" }
 codex-otel = { path = "otel" }
 codex-process-hardening = { path = "process-hardening" }
 codex-protocol = { path = "protocol" }
-codex-rmcp-client = { path = "rmcp-client" }
 codex-secrets = { path = "secrets" }
 codex-shell-command = { path = "shell-command" }
 codex-shell-escalation = { path = "shell-escalation" }
@@ -201,7 +201,7 @@ ratatui-macros = "0.7.0"
 regex = "1.12.3"
 regex-lite = "0.1.8"
 reqwest = "0.12"
-rmcp = { version = "0.15.0", default-features = false }
+# rmcp evicted — OAuth will be rebuilt on mcp-guest when it gains OAuth support
 runfiles = { git = "https://github.com/dzbarsky/rules_rust", rev = "b56cbaa8465e74127f1ea216f813cd377295ad81" }
 rustls = { version = "0.23", default-features = false, features = [
     "ring",

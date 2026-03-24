@@ -27,10 +27,9 @@ codex-core = { workspace = true }
 codex-exec = { workspace = true }
 codex-execpolicy = { workspace = true }
 codex-login = { workspace = true }
-codex-mcp-server = { workspace = true }
+chaos-mcphost = { workspace = true }
 codex-protocol = { workspace = true }
 codex-rmcp-client = { workspace = true }
-codex-stdio-to-uds = { workspace = true }
 codex-tui = { workspace = true }
 libc = { workspace = true }
 owo-colors = { workspace = true }

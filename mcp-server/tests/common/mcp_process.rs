@@ -214,27 +214,27 @@ impl McpProcess {
         };
         let params_value = serde_json::to_value(params)?;
 
-        self.send_jsonrpc_message(JsonRpcMessage::Request(
-            JsonRpcRequest::new(json!(request_id), "initialize", Some(params_value)),
-        ))
+        self.send_jsonrpc_message(JsonRpcMessage::Request(JsonRpcRequest::new(
+            json!(request_id),
+            "initialize",
+            Some(params_value),
+        )))
         .await?;
 
         self.read_jsonrpc_message().await
     }
 
     pub async fn send_initialized_notification(&mut self) -> anyhow::Result<()> {
-        self.send_jsonrpc_message(JsonRpcMessage::Notification(
-            JsonRpcRequest::notification("notifications/initialized", None),
-        ))
+        self.send_jsonrpc_message(JsonRpcMessage::Notification(JsonRpcRequest::notification(
+            "notifications/initialized",
+            None,
+        )))
         .await
     }
 
     /// Returns the id used to make the request so it can be used when
     /// correlating notifications.
-    pub async fn send_chaos_tool_call(
-        &mut self,
-        params: ChaosToolParams,
-    ) -> anyhow::Result<i64> {
+    pub async fn send_chaos_tool_call(&mut self, params: ChaosToolParams) -> anyhow::Result<i64> {
         let codex_tool_call_params = CallToolRequestParams {
             meta: None,
             name: "chaos".into(),
@@ -257,9 +257,8 @@ impl McpProcess {
     ) -> anyhow::Result<i64> {
         let request_id = self.next_request_id.fetch_add(1, Ordering::Relaxed);
 
-        let message = JsonRpcMessage::Request(
-            JsonRpcRequest::new(json!(request_id), method, params),
-        );
+        let message =
+            JsonRpcMessage::Request(JsonRpcRequest::new(json!(request_id), method, params));
         self.send_jsonrpc_message(message).await?;
         Ok(request_id)
     }
@@ -307,9 +306,7 @@ impl McpProcess {
         self.read_jsonrpc_message().await
     }
 
-    pub async fn read_stream_until_request_message(
-        &mut self,
-    ) -> anyhow::Result<JsonRpcRequest> {
+    pub async fn read_stream_until_request_message(&mut self) -> anyhow::Result<JsonRpcRequest> {
         eprintln!("in read_stream_until_request_message()");
 
         loop {

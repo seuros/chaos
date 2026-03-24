@@ -180,7 +180,6 @@ fn aggregate_output_keeps_stdout_then_stderr_when_under_cap() {
     assert_eq!(aggregated.truncated_after_lines, None);
 }
 
-
 #[test]
 fn process_exec_tool_call_uses_platform_sandbox_for_network_only_restrictions() {
     let expected = crate::get_platform_sandbox().unwrap_or(SandboxType::None);

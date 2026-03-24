@@ -50,6 +50,19 @@ members = [
     "codex-api",
     "state",
     "test-macros",
+    "chaos-daemon",
+    "chaos-watchdog",
+    "chaos-minions",
+    "chaos-warden",
+    "chaos-parole",
+    "chaos-contraband",
+    "chaos-snitch",
+    "chaos-parrot",
+    "chaos-hallucinate",
+    "chaos-rollout",
+    "chaos-memento",
+    "chaos-concierge",
+    "chaos-ration",
 ]
 resolver = "2"
 
@@ -65,6 +78,19 @@ publish = false
 
 [workspace.dependencies]
 # Internal
+chaos-concierge = { path = "chaos-concierge" }
+chaos-contraband = { path = "chaos-contraband" }
+chaos-ration = { path = "chaos-ration" }
+chaos-daemon = { path = "chaos-daemon" }
+chaos-hallucinate = { path = "chaos-hallucinate" }
+chaos-memento = { path = "chaos-memento" }
+chaos-rollout = { path = "chaos-rollout" }
+chaos-minions = { path = "chaos-minions" }
+chaos-parole = { path = "chaos-parole" }
+chaos-parrot = { path = "chaos-parrot" }
+chaos-snitch = { path = "chaos-snitch" }
+chaos-warden = { path = "chaos-warden" }
+chaos-watchdog = { path = "chaos-watchdog" }
 codex-ansi-escape = { path = "ansi-escape" }
 chaos-abi = { path = "chaos-abi" }
 codex-api = { path = "codex-api" }

@@ -287,7 +287,7 @@ impl RolloutRecorder {
         )
         .await
         {
-            return Ok(db_page.into());
+            return Ok(threads_page_from_db(db_page));
         }
         // If SQLite listing still fails, return the filesystem page rather than failing the list.
         tracing::error!("Falling back on rollout system");
@@ -332,7 +332,7 @@ impl RolloutRecorder {
                 {
                     return Ok(Some(path));
                 }
-                db_cursor = db_page.next_anchor.map(Into::into);
+                db_cursor = db_page.next_anchor.map(super::list::cursor_from_anchor);
                 if db_cursor.is_none() {
                     break;
                 }
@@ -979,38 +979,40 @@ impl JsonlWriter {
     }
 }
 
-impl From<codex_state::ThreadsPage> for ThreadsPage {
-    fn from(db_page: codex_state::ThreadsPage) -> Self {
-        let items = db_page
-            .items
-            .into_iter()
-            .map(|item| ThreadItem {
-                path: item.rollout_path,
-                thread_id: Some(item.id),
-                first_user_message: item.first_user_message,
-                cwd: Some(item.cwd),
-                git_branch: item.git_branch,
-                git_sha: item.git_sha,
-                git_origin_url: item.git_origin_url,
-                source: Some(
-                    serde_json::from_str(item.source.as_str())
-                        .or_else(|_| serde_json::from_value(Value::String(item.source)))
-                        .unwrap_or(SessionSource::Unknown),
-                ),
-                agent_nickname: item.agent_nickname,
-                agent_role: item.agent_role,
-                model_provider: Some(item.model_provider),
-                cli_version: Some(item.cli_version),
-                created_at: Some(item.created_at.to_rfc3339_opts(SecondsFormat::Secs, true)),
-                updated_at: Some(item.updated_at.to_rfc3339_opts(SecondsFormat::Secs, true)),
-            })
-            .collect();
-        Self {
-            items,
-            next_cursor: db_page.next_anchor.map(Into::into),
-            num_scanned_files: db_page.num_scanned_rows,
-            reached_scan_cap: false,
-        }
+/// Convert a `codex_state::ThreadsPage` into a `ThreadsPage`.
+///
+/// This cannot be a `From` impl due to the orphan rule (both types are
+/// foreign to codex-core after the chaos-rollout extraction).
+fn threads_page_from_db(db_page: codex_state::ThreadsPage) -> ThreadsPage {
+    let items = db_page
+        .items
+        .into_iter()
+        .map(|item| ThreadItem {
+            path: item.rollout_path,
+            thread_id: Some(item.id),
+            first_user_message: item.first_user_message,
+            cwd: Some(item.cwd),
+            git_branch: item.git_branch,
+            git_sha: item.git_sha,
+            git_origin_url: item.git_origin_url,
+            source: Some(
+                serde_json::from_str(item.source.as_str())
+                    .or_else(|_| serde_json::from_value(Value::String(item.source)))
+                    .unwrap_or(SessionSource::Unknown),
+            ),
+            agent_nickname: item.agent_nickname,
+            agent_role: item.agent_role,
+            model_provider: Some(item.model_provider),
+            cli_version: Some(item.cli_version),
+            created_at: Some(item.created_at.to_rfc3339_opts(SecondsFormat::Secs, true)),
+            updated_at: Some(item.updated_at.to_rfc3339_opts(SecondsFormat::Secs, true)),
+        })
+        .collect();
+    ThreadsPage {
+        items,
+        next_cursor: db_page.next_anchor.map(super::list::cursor_from_anchor),
+        num_scanned_files: db_page.num_scanned_rows,
+        reached_scan_cap: false,
     }
 }
 

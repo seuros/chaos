@@ -306,7 +306,6 @@ async fn linux_sh_snapshot_includes_sections() -> Result<()> {
     Ok(())
 }
 
-
 async fn write_rollout_stub(codex_home: &Path, session_id: ThreadId) -> Result<PathBuf> {
     let dir = codex_home
         .join("sessions")

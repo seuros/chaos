@@ -1,12 +1,12 @@
 use std::sync::Arc;
 
+use crate::outgoing_message::ErrorData;
 use codex_core::CodexThread;
 use codex_protocol::approvals::ElicitationAction as CoreElicitationAction;
 use codex_protocol::approvals::ElicitationRequest as CoreElicitationRequest;
 use codex_protocol::approvals::ElicitationRequestEvent;
 use codex_protocol::protocol::Op;
 use codex_protocol::protocol::ReviewDecision;
-use crate::outgoing_message::ErrorData;
 use serde::Deserialize;
 use serde::Serialize;
 use serde_json::Value;
@@ -251,9 +251,9 @@ async fn submit_resolve_elicitation(
 #[cfg(test)]
 mod tests {
     use codex_protocol::approvals::ElicitationRequest;
-    use pretty_assertions::assert_eq;
     use mcp_host::protocol::capabilities::ElicitationCapability;
     use mcp_host::protocol::capabilities::UrlElicitationCapability;
+    use pretty_assertions::assert_eq;
     use tokio::sync::mpsc;
 
     use super::*;

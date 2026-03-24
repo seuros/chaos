@@ -108,7 +108,8 @@ impl ListResourcesPayload {
     }
 
     fn from_all_servers(resources_by_server: HashMap<String, Vec<ResourceInfo>>) -> Self {
-        let mut entries: Vec<(String, Vec<ResourceInfo>)> = resources_by_server.into_iter().collect();
+        let mut entries: Vec<(String, Vec<ResourceInfo>)> =
+            resources_by_server.into_iter().collect();
         entries.sort_by(|a, b| a.0.cmp(&b.0));
 
         let mut resources = Vec::new();

@@ -1230,18 +1230,15 @@ pub async fn start_websocket_server_with_headers(
 
             let response_headers = connection.response_headers.clone();
             let handshake_log = Arc::clone(&handshakes);
-            let (mut ws_stream, _handshake_info) = accept_ws_with_handler(
-                stream,
-                None,
-                |req: &WsHandshakeRequest| {
+            let (mut ws_stream, _handshake_info) =
+                accept_ws_with_handler(stream, None, |req: &WsHandshakeRequest| {
                     handshake_log.lock().unwrap().push(WebSocketHandshake {
                         uri: req.uri.clone(),
                         headers: req.headers.clone(),
                     });
                     response_headers.clone()
-                },
-            )
-            .await;
+                })
+                .await;
 
             let connection_index = {
                 let mut log = requests.lock().unwrap();
@@ -1306,7 +1303,11 @@ pub async fn start_websocket_server_with_headers(
                     let Ok(payload) = serde_json::to_string(event) else {
                         continue;
                     };
-                    if ws_stream.send_message(Message::text(payload)).await.is_err() {
+                    if ws_stream
+                        .send_message(Message::text(payload))
+                        .await
+                        .is_err()
+                    {
                         break;
                     }
                 }

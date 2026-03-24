@@ -304,7 +304,8 @@ pub(crate) fn validate_feature_requirements_in_config_toml(
         profile: &ConfigProfile,
         feature_requirements: Option<&Sourced<FeatureRequirementsToml>>,
     ) -> std::io::Result<()> {
-        let configured_features = Features::from_config(cfg, profile, FeatureOverrides::default());
+        let configured_features =
+            crate::features::features_from_config(cfg, profile, FeatureOverrides::default());
         ManagedFeatures::from_configured(configured_features, feature_requirements.cloned())
             .map(|_| ())
             .map_err(|err| {

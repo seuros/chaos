@@ -19,9 +19,9 @@ use codex_core::mcp::auth::compute_auth_statuses;
 use codex_core::mcp::auth::discover_supported_scopes;
 use codex_core::mcp::auth::oauth_login_support;
 use codex_core::mcp::auth::resolve_oauth_scopes;
+use codex_core::mcp::oauth_types::OAuthCredentialsStoreMode;
 use codex_core::plugins::PluginsManager;
 use codex_protocol::protocol::McpAuthStatus;
-use codex_core::mcp::auth::OAuthCredentialsStoreMode;
 use codex_utils_cli::CliConfigOverrides;
 use codex_utils_cli::format_env_display::format_env_display;
 

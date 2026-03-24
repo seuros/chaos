@@ -9,11 +9,11 @@ use tokio::sync::{RwLock, mpsc, oneshot};
 
 use crate::error::GuestError;
 use crate::protocol::{
-    CallToolRequestParams, CallToolResponse, CompleteRequest, CompleteResult, GetPromptRequestParams,
-    GetPromptResult, GetTaskParams, ListPromptsResult, ListResourceTemplatesResult,
-    ListResourcesResult, ListTasksResult, ListToolsResult, PaginatedRequestParams,
-    ReadResourceRequestParams, ReadResourceResult, RequestId, ServerInfo, SetLevelRequest,
-    StringMap, SubscribeRequestParams, Task, ToolInfo,
+    CallToolRequestParams, CallToolResponse, CompleteRequest, CompleteResult,
+    GetPromptRequestParams, GetPromptResult, GetTaskParams, ListPromptsResult,
+    ListResourceTemplatesResult, ListResourcesResult, ListTasksResult, ListToolsResult,
+    PaginatedRequestParams, ReadResourceRequestParams, ReadResourceResult, RequestId, ServerInfo,
+    SetLevelRequest, StringMap, SubscribeRequestParams, Task, ToolInfo,
 };
 
 pub(crate) enum RuntimeCommand {
@@ -468,7 +468,9 @@ impl McpSession {
     }
 }
 
-fn coerce_string_arguments(arguments: Option<Map<String, Value>>) -> Result<Option<StringMap>, GuestError> {
+fn coerce_string_arguments(
+    arguments: Option<Map<String, Value>>,
+) -> Result<Option<StringMap>, GuestError> {
     arguments
         .map(|arguments| {
             arguments

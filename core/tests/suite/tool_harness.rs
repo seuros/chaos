@@ -1,4 +1,3 @@
-
 use std::fs;
 
 use assert_matches::assert_matches;

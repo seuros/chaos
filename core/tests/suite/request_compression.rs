@@ -1,4 +1,3 @@
-
 use codex_core::CodexAuth;
 use codex_core::features::Feature;
 use codex_protocol::protocol::EventMsg;

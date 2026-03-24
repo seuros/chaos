@@ -34,7 +34,6 @@ use crate::config_loader::ConfigLayerStack;
 use crate::default_client::build_reqwest_client;
 use crate::features::Feature;
 use crate::features::FeatureOverrides;
-use crate::features::Features;
 use crate::skills::SkillMetadata;
 use crate::skills::loader::SkillRoot;
 use crate::skills::loader::load_skills_from_roots;
@@ -844,10 +843,8 @@ impl PluginsManager {
         let description = manifest.description.clone();
         let manifest_paths = plugin_manifest_paths(&manifest, source_path.as_path());
         let skill_roots = plugin_skill_roots(source_path.as_path(), &manifest_paths);
-        let skills = load_skills_from_roots(skill_roots.into_iter().map(|path| SkillRoot {
-            path,
-        }))
-        .skills;
+        let skills =
+            load_skills_from_roots(skill_roots.into_iter().map(|path| SkillRoot { path })).skills;
         let apps = load_plugin_apps(source_path.as_path());
         let mcp_config_paths = plugin_mcp_config_paths(source_path.as_path(), &manifest_paths);
         let mut mcp_server_names = Vec::new();
@@ -1101,8 +1098,11 @@ fn plugins_feature_enabled_from_stack(config_layer_stack: &ConfigLayerStack) -> 
     let config_profile = config_toml
         .get_config_profile(config_toml.profile.clone())
         .unwrap_or_else(|_| ConfigProfile::default());
-    let features =
-        Features::from_config(&config_toml, &config_profile, FeatureOverrides::default());
+    let features = crate::features::features_from_config(
+        &config_toml,
+        &config_profile,
+        FeatureOverrides::default(),
+    );
     features.enabled(Feature::Plugins)
 }
 

@@ -1,6 +1,5 @@
 use chrono::DateTime;
 use chrono::Utc;
-use schemars::JsonSchema;
 use serde::Deserialize;
 use serde::Serialize;
 use sha2::Digest;
@@ -20,25 +19,12 @@ use std::sync::Mutex;
 use tracing::warn;
 
 use crate::token_data::TokenData;
-use codex_protocol::api::AuthMode;
 use codex_keyring_store::DefaultKeyringStore;
 use codex_keyring_store::KeyringStore;
+use codex_protocol::api::AuthMode;
 use once_cell::sync::Lazy;
 
-/// Determine where Codex should store CLI auth credentials.
-#[derive(Debug, Default, Copy, Clone, PartialEq, Eq, Serialize, Deserialize, JsonSchema)]
-#[serde(rename_all = "lowercase")]
-pub enum AuthCredentialsStoreMode {
-    #[default]
-    /// Persist credentials in CODEX_HOME/auth.json.
-    File,
-    /// Persist credentials in the keyring. Fail if unavailable.
-    Keyring,
-    /// Use keyring when available; otherwise, fall back to a file in CODEX_HOME.
-    Auto,
-    /// Store credentials in memory only for the current process.
-    Ephemeral,
-}
+pub use codex_config::types::AuthCredentialsStoreMode;
 
 /// Expected structure for $CODEX_HOME/auth.json.
 #[derive(Deserialize, Serialize, Clone, Debug, PartialEq)]

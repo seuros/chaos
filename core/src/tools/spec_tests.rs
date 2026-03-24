@@ -17,7 +17,11 @@ use std::path::PathBuf;
 
 use super::*;
 
-fn mcp_tool(name: &str, description: &str, input_schema: serde_json::Value) -> crate::mcp_connection_manager::McpToolInfo {
+fn mcp_tool(
+    name: &str,
+    description: &str,
+    input_schema: serde_json::Value,
+) -> crate::mcp_connection_manager::McpToolInfo {
     crate::mcp_connection_manager::McpToolInfo {
         name: name.to_string(),
         title: None,

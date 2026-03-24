@@ -5,8 +5,8 @@
 //! in tungstenite as a direct dependency.
 
 use base64::Engine;
-use rama::http::ws::protocol::{Role, WebSocketConfig};
 use rama::http::ws::AsyncWebSocket;
+use rama::http::ws::protocol::{Role, WebSocketConfig};
 use sha1::{Digest, Sha1};
 use tokio::io::{AsyncBufReadExt, AsyncWriteExt, BufReader};
 use tokio::net::TcpStream;
@@ -63,10 +63,7 @@ where
     let mut headers = Vec::new();
     loop {
         let mut line = String::new();
-        reader
-            .read_line(&mut line)
-            .await
-            .expect("read header line");
+        reader.read_line(&mut line).await.expect("read header line");
         if line == "\r\n" || line == "\n" {
             break;
         }
@@ -124,7 +121,11 @@ where
     let stream = rama::tcp::TcpStream::new(stream);
 
     let ws_config = if has_deflate {
-        Some(config.unwrap_or_default().with_per_message_deflate_default())
+        Some(
+            config
+                .unwrap_or_default()
+                .with_per_message_deflate_default(),
+        )
     } else {
         config
     };

@@ -1312,7 +1312,7 @@ mod tests {
     use ratatui::backend::TestBackend;
     use ratatui::text::Text;
     use ratatui::widgets::Paragraph;
-    
+
     use ratatui::widgets::Wrap;
 
     #[test]

@@ -86,30 +86,28 @@ pub(crate) async fn run_chaos_session(
     progress_token: Option<String>,
 ) -> SessionOutcome {
     // Send progress if the client requested it.
-    let progress = progress_token.as_ref().map(|token| {
-        ProgressSender::new(token.clone(), outgoing.clone())
-    });
+    let progress = progress_token
+        .as_ref()
+        .map(|token| ProgressSender::new(token.clone(), outgoing.clone()));
     if let Some(ref p) = progress {
         p.send(0, 4, "Resolving thread...").await;
     }
 
     // Phase 1: resolve thread
     let resolved = match existing_thread_id {
-        Some(tid) => {
-            match thread_manager.get_thread(tid).await {
-                Ok(thread) => ResolvedThread {
+        Some(tid) => match thread_manager.get_thread(tid).await {
+            Ok(thread) => ResolvedThread {
+                thread_id: tid,
+                thread,
+            },
+            Err(e) => {
+                return SessionOutcome {
                     thread_id: tid,
-                    thread,
-                },
-                Err(e) => {
-                    return SessionOutcome {
-                        thread_id: tid,
-                        text: format!("Session not found for thread_id {tid}: {e}"),
-                        is_error: true,
-                    };
-                }
+                    text: format!("Session not found for thread_id {tid}: {e}"),
+                    is_error: true,
+                };
             }
-        }
+        },
         None => {
             let config = config.expect("config required for new threads");
             match thread_manager.start_thread(config).await {
@@ -192,10 +190,22 @@ pub(crate) async fn run_chaos_session(
     }
 
     // Phase 3: event loop
-    let outcome = run_event_loop(thread_id, thread, outgoing, request_id, running_requests, thread_names).await;
+    let outcome = run_event_loop(
+        thread_id,
+        thread,
+        outgoing,
+        request_id,
+        running_requests,
+        thread_names,
+    )
+    .await;
 
     if let Some(ref p) = progress {
-        let msg = if outcome.is_error { "Failed" } else { "Complete" };
+        let msg = if outcome.is_error {
+            "Failed"
+        } else {
+            "Complete"
+        };
         p.send(4, 4, msg).await;
     }
 
@@ -275,11 +285,8 @@ async fn run_event_loop(
                         .await;
                     }
                     EventMsg::ElicitationComplete(ev) => {
-                        handle_mcp_server_elicitation_complete(
-                            ev.elicitation_id,
-                            outgoing.clone(),
-                        )
-                        .await;
+                        handle_mcp_server_elicitation_complete(ev.elicitation_id, outgoing.clone())
+                            .await;
                     }
                     EventMsg::ApplyPatchApprovalRequest(ApplyPatchApprovalRequestEvent {
                         call_id,

@@ -2,12 +2,12 @@ use std::collections::HashMap;
 use std::path::PathBuf;
 use std::sync::Arc;
 
+use crate::outgoing_message::ErrorData;
 use codex_core::CodexThread;
 use codex_protocol::ThreadId;
 use codex_protocol::protocol::FileChange;
 use codex_protocol::protocol::Op;
 use codex_protocol::protocol::ReviewDecision;
-use crate::outgoing_message::ErrorData;
 use mcp_host::protocol::types::RequestId;
 use serde::Deserialize;
 use serde::Serialize;

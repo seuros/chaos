@@ -1,5 +1,5 @@
 use super::*;
-use crate::config::types::McpServerTransportConfig;
+use crate::types::McpServerTransportConfig;
 use codex_protocol::openai_models::ReasoningEffort;
 use pretty_assertions::assert_eq;
 #[cfg(unix)]

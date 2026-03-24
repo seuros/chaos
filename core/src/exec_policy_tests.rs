@@ -654,12 +654,7 @@ prefix_rule(pattern=["git"], decision="allow")
 #[tokio::test]
 async fn absolute_path_exec_approval_requirement_ignores_disallowed_host_executable_paths() {
     let allowed_git_path = host_program_path("git");
-    let disallowed_git_path = host_absolute_path(&[
-        "opt",
-        "homebrew",
-        "bin",
-        "git",
-    ]);
+    let disallowed_git_path = host_absolute_path(&["opt", "homebrew", "bin", "git"]);
     let allowed_git_path_literal = starlark_string(&allowed_git_path);
     let policy_src = format!(
         r#"

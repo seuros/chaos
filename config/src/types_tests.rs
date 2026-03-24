@@ -1,5 +1,7 @@
 use super::*;
 use pretty_assertions::assert_eq;
+use std::collections::HashMap;
+use std::path::PathBuf;
 
 #[test]
 fn deserialize_stdio_command_server_config() {

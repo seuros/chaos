@@ -26,8 +26,7 @@ impl AbsolutePathBuf {
         let Some(path_str) = path.to_str() else {
             return path.to_path_buf();
         };
-        if let Some(home) = home_dir()
-        {
+        if let Some(home) = home_dir() {
             if path_str == "~" {
                 return home;
             }
@@ -269,5 +268,4 @@ mod tests {
         };
         assert_eq!(abs_path_buf.as_path(), home.join("code").as_path());
     }
-
 }

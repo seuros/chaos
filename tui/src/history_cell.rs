@@ -1646,7 +1646,10 @@ fn try_new_completed_mcp_tool_call_with_image_output(
 /// cannot be inferred, or when the image decoder rejects the bytes.
 fn decode_mcp_image(block: &serde_json::Value) -> Option<DynamicImage> {
     let content = serde_json::from_value::<mcp_guest::ContentBlock>(block.clone()).ok()?;
-    let mcp_guest::ContentBlock::Image { data, mime_type: _, .. } = content else {
+    let mcp_guest::ContentBlock::Image {
+        data, mime_type: _, ..
+    } = content
+    else {
         return None;
     };
     let base64_data = if let Some(data_url) = data.strip_prefix("data:") {
@@ -2544,8 +2547,7 @@ mod tests {
     }
 
     fn text_block(text: &str) -> serde_json::Value {
-        serde_json::to_value(ContentBlock::text(text))
-            .expect("text content should serialize")
+        serde_json::to_value(ContentBlock::text(text)).expect("text content should serialize")
     }
 
     fn resource_link_block(

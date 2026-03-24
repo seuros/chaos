@@ -126,11 +126,7 @@ pub(crate) struct TurnMetadataState {
 }
 
 impl TurnMetadataState {
-    pub(crate) fn new(
-        turn_id: String,
-        cwd: PathBuf,
-        sandbox_policy: &SandboxPolicy,
-    ) -> Self {
+    pub(crate) fn new(turn_id: String, cwd: PathBuf, sandbox_policy: &SandboxPolicy) -> Self {
         let repo_root = get_git_repo_root(&cwd).map(|root| root.to_string_lossy().into_owned());
         let sandbox = Some(sandbox_tag(sandbox_policy).to_string());
         let base_metadata = build_turn_metadata_bag(

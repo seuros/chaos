@@ -1,7 +1,7 @@
 use super::*;
 use crate::mcp::CODEX_APPS_MCP_SERVER_NAME;
-use pretty_assertions::assert_eq;
 use crate::mcp_connection_manager::McpToolInfo;
+use pretty_assertions::assert_eq;
 use serde_json::json;
 
 #[test]

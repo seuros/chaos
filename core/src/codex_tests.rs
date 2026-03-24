@@ -55,12 +55,12 @@ use crate::tools::handlers::UnifiedExecHandler;
 use crate::tools::registry::ToolHandler;
 use crate::tools::router::ToolCallSource;
 use crate::turn_diff_tracker::TurnDiffTracker;
-use codex_protocol::api::AppInfo;
 use codex_execpolicy::Decision;
 use codex_execpolicy::NetworkRuleProtocol;
 use codex_execpolicy::Policy;
 use codex_network_proxy::NetworkProxyConfig;
 use codex_otel::TelemetryAuthMode;
+use codex_protocol::api::AppInfo;
 use codex_protocol::models::BaseInstructions;
 use codex_protocol::models::ContentItem;
 use codex_protocol::models::DeveloperInstructions;
@@ -79,9 +79,9 @@ use tokio::time::sleep;
 use tracing_opentelemetry::OpenTelemetrySpanExt;
 use tracing_subscriber::prelude::*;
 
+use crate::mcp_connection_manager::McpToolInfo;
 use codex_protocol::mcp::CallToolResult as McpCallToolResult;
 use pretty_assertions::assert_eq;
-use crate::mcp_connection_manager::McpToolInfo;
 use serde::Deserialize;
 use serde_json::json;
 use std::path::PathBuf;
@@ -1057,7 +1057,6 @@ async fn record_initial_history_forked_hydrates_previous_turn_settings() {
         session.previous_turn_settings().await,
         Some(PreviousTurnSettings {
             model: previous_model.to_string(),
-    
         })
     );
 }
@@ -1089,7 +1088,6 @@ async fn thread_rollback_drops_last_turn_from_history() {
     sess.persist_rollout_items(&rollout_items).await;
     sess.set_previous_turn_settings(Some(PreviousTurnSettings {
         model: "stale-model".to_string(),
-
     }))
     .await;
     {
@@ -1251,7 +1249,6 @@ async fn thread_rollback_recomputes_previous_turn_settings_and_reference_context
     .await;
     sess.set_previous_turn_settings(Some(PreviousTurnSettings {
         model: "stale-model".to_string(),
-
     }))
     .await;
 
@@ -1267,7 +1264,6 @@ async fn thread_rollback_recomputes_previous_turn_settings_and_reference_context
         sess.previous_turn_settings().await,
         Some(PreviousTurnSettings {
             model: tc.model_info.slug.clone(),
-    
         })
     );
     assert_eq!(
@@ -3644,7 +3640,6 @@ async fn build_initial_context_prepends_model_switch_message() {
     let (session, turn_context) = make_session_and_context().await;
     let previous_turn_settings = PreviousTurnSettings {
         model: "previous-regular-model".to_string(),
-
     };
 
     session
@@ -3714,7 +3709,6 @@ async fn record_context_updates_and_set_reference_context_item_persists_full_rei
     session
         .set_previous_turn_settings(Some(PreviousTurnSettings {
             model: previous_context.model_info.slug.clone(),
-
         }))
         .await;
     session

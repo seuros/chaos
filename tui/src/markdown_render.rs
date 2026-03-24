@@ -48,7 +48,6 @@ struct MarkdownStyles {
 
 impl Default for MarkdownStyles {
     fn default() -> Self {
-
         Self {
             h1: Style::new().bold().underlined(),
             h2: Style::new().bold(),

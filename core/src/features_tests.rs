@@ -43,8 +43,7 @@ fn use_linux_sandbox_bwrap_is_removed_and_disabled_by_default() {
 
 #[test]
 fn guardian_approval_is_experimental_and_user_toggleable() {
-    let spec = Feature::GuardianApproval.info();
-    let stage = spec.stage;
+    let stage = Feature::GuardianApproval.stage();
 
     assert!(matches!(stage, Stage::Experimental { .. }));
     assert_eq!(stage.experimental_menu_name(), Some("Guardian Approvals"));
@@ -141,4 +140,3 @@ fn enable_fanout_normalization_enables_multi_agent_one_way() {
     assert_eq!(collab_features.enabled(Feature::Collab), true);
     assert_eq!(collab_features.enabled(Feature::SpawnCsv), false);
 }
-

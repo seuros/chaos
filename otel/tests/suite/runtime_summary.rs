@@ -10,9 +10,9 @@ use codex_protocol::protocol::SessionSource;
 use eventsource_stream::Event as StreamEvent;
 use opentelemetry_sdk::metrics::InMemoryMetricExporter;
 use pretty_assertions::assert_eq;
-use std::time::Duration;
 use rama::error::BoxError;
 use rama::http::ws::Message;
+use std::time::Duration;
 
 #[test]
 fn runtime_metrics_summary_collects_tool_api_and_streaming_metrics() -> Result<()> {

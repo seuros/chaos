@@ -1233,7 +1233,6 @@ mod tests {
             }],
         );
     }
-
 }
 
 pub fn parse_command_impl(command: &[String]) -> Vec<ParsedCommand> {

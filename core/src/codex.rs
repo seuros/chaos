@@ -29,6 +29,7 @@ use crate::exec_policy::ExecPolicyManager;
 use crate::features::FEATURES;
 use crate::features::Feature;
 use crate::features::maybe_push_unstable_features_warning;
+use crate::mcp::oauth_types::OAuthCredentialsStoreMode;
 #[cfg(test)]
 use crate::models_manager::collaboration_mode_presets::CollaborationModesConfig;
 use crate::models_manager::manager::ModelsManager;
@@ -52,8 +53,6 @@ use async_channel::Receiver;
 use async_channel::Sender;
 use chrono::Local;
 use chrono::Utc;
-use codex_protocol::api::McpServerElicitationRequest;
-use codex_protocol::api::McpServerElicitationRequestParams;
 use codex_hooks::HookEvent;
 use codex_hooks::HookEventAfterAgent;
 use codex_hooks::HookPayload;
@@ -67,6 +66,8 @@ use codex_otel::current_span_trace_id;
 use codex_otel::current_span_w3c_trace_context;
 use codex_otel::set_parent_from_w3c_trace_context;
 use codex_protocol::ThreadId;
+use codex_protocol::api::McpServerElicitationRequest;
+use codex_protocol::api::McpServerElicitationRequestParams;
 use codex_protocol::approvals::ElicitationRequestEvent;
 use codex_protocol::approvals::ExecApprovalRequestSkillMetadata;
 use codex_protocol::approvals::ExecPolicyAmendment;
@@ -109,7 +110,6 @@ use codex_protocol::request_permissions::RequestPermissionsEvent;
 use codex_protocol::request_permissions::RequestPermissionsResponse;
 use codex_protocol::request_user_input::RequestUserInputArgs;
 use codex_protocol::request_user_input::RequestUserInputResponse;
-use crate::mcp::oauth_types::OAuthCredentialsStoreMode;
 use codex_utils_stream_parser::AssistantTextChunk;
 use codex_utils_stream_parser::AssistantTextStreamParser;
 use codex_utils_stream_parser::ProposedPlanSegment;
@@ -119,13 +119,13 @@ use futures::future::BoxFuture;
 use futures::future::Shared;
 use futures::prelude::*;
 use futures::stream::FuturesOrdered;
-use mcp_guest::protocol::ElicitationResponse;
-use mcp_guest::protocol::RequestId;
 use mcp_guest::ListResourceTemplatesResult;
 use mcp_guest::ListResourcesResult;
 use mcp_guest::PaginatedRequestParams;
 use mcp_guest::ReadResourceRequestParams;
 use mcp_guest::ReadResourceResult;
+use mcp_guest::protocol::ElicitationResponse;
+use mcp_guest::protocol::RequestId;
 use serde_json;
 use serde_json::Value;
 use tokio::sync::Mutex;
@@ -721,9 +721,7 @@ pub(crate) struct TurnSkillsContext {
 }
 impl TurnSkillsContext {
     pub(crate) fn new(outcome: Arc<SkillLoadOutcome>) -> Self {
-        Self {
-            outcome,
-        }
+        Self { outcome }
     }
 }
 
@@ -1537,7 +1535,7 @@ impl Session {
             model: Some(session_model.clone()),
             slug: Some(session_model),
         };
-        config.features.emit_metrics(&session_telemetry);
+        crate::features::emit_feature_metrics(&config.features, &session_telemetry);
         session_telemetry.counter(
             THREAD_STARTED_METRIC,
             /*inc*/ 1,
@@ -1801,7 +1799,6 @@ impl Session {
             sandbox_policy: session_configuration.sandbox_policy.get().clone(),
             alcatraz_linux_exe: config.alcatraz_linux_exe.clone(),
             sandbox_cwd: session_configuration.cwd.clone(),
-
         };
         let mut required_mcp_servers: Vec<String> = mcp_servers
             .iter()
@@ -2259,7 +2256,6 @@ impl Session {
                 sandbox_policy: per_turn_config.permissions.sandbox_policy.get().clone(),
                 alcatraz_linux_exe: per_turn_config.alcatraz_linux_exe.clone(),
                 sandbox_cwd: per_turn_config.cwd.clone(),
-
             };
             if let Err(e) = self
                 .services
@@ -2992,12 +2988,8 @@ impl Session {
             );
         }
         let id = match &request_id {
-            RequestId::String(value) => {
-                codex_protocol::mcp::RequestId::String(value.clone())
-            }
-            RequestId::Number(value) => {
-                codex_protocol::mcp::RequestId::Integer(*value)
-            }
+            RequestId::String(value) => codex_protocol::mcp::RequestId::String(value.clone()),
+            RequestId::Number(value) => codex_protocol::mcp::RequestId::Integer(*value),
         };
         let event = EventMsg::ElicitationRequest(ElicitationRequestEvent {
             turn_id: params.turn_id,
@@ -3893,18 +3885,12 @@ impl Session {
             .services
             .mcp_manager
             .tool_plugin_provenance(config.as_ref());
-        let mcp_servers = with_codex_apps_mcp(
-            mcp_servers,
-            false,
-            auth.as_ref(),
-            config.as_ref(),
-        );
+        let mcp_servers = with_codex_apps_mcp(mcp_servers, false, auth.as_ref(), config.as_ref());
         let auth_statuses = compute_auth_statuses(mcp_servers.iter(), store_mode).await;
         let sandbox_state = SandboxState {
             sandbox_policy: turn_context.sandbox_policy.get().clone(),
             alcatraz_linux_exe: turn_context.alcatraz_linux_exe.clone(),
             sandbox_cwd: turn_context.cwd.clone(),
-
         };
         {
             let mut guard = self.services.mcp_startup_cancellation_token.lock().await;

@@ -101,5 +101,4 @@ mod tests {
         flags.fast_command_enabled = false;
         assert_eq!(find_builtin_command("fast", flags), None);
     }
-
 }

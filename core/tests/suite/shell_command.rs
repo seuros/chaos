@@ -241,8 +241,7 @@ async fn unicode_output(login: bool) -> anyhow::Result<()> {
     skip_if_no_network!(Ok(()));
 
     #[allow(clippy::expect_used)]
-    let harness = shell_command_harness_with(|builder| builder.with_model("gpt-5.2"))
-    .await?;
+    let harness = shell_command_harness_with(|builder| builder.with_model("gpt-5.2")).await?;
 
     let call_id = "unicode_output";
     let command = "echo \"naïve_café\"";
@@ -263,8 +262,7 @@ async fn unicode_output_with_newlines(login: bool) -> anyhow::Result<()> {
     skip_if_no_network!(Ok(()));
 
     #[allow(clippy::expect_used)]
-    let harness = shell_command_harness_with(|builder| builder.with_model("gpt-5.2"))
-    .await?;
+    let harness = shell_command_harness_with(|builder| builder.with_model("gpt-5.2")).await?;
 
     let call_id = "unicode_output";
     mount_shell_responses_with_timeout(

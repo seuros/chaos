@@ -1,9 +1,9 @@
 use std::time::Duration;
 
 use anyhow::Result;
-use pretty_assertions::assert_eq;
 use mcp_host::protocol::types::ErrorCode;
 use mcp_host::protocol::types::JsonRpcMessage;
+use pretty_assertions::assert_eq;
 use serde_json::json;
 use tempfile::TempDir;
 use tokio::time::timeout;
@@ -33,7 +33,10 @@ async fn initialize_negotiates_newer_client_protocol_to_latest_supported_version
     };
 
     assert_eq!(response.jsonrpc, "2.0");
-    assert_eq!(response.result.as_ref().unwrap()["protocolVersion"], json!("2025-06-18"));
+    assert_eq!(
+        response.result.as_ref().unwrap()["protocolVersion"],
+        json!("2025-06-18")
+    );
     assert_eq!(
         response.result.as_ref().unwrap()["capabilities"],
         json!({
@@ -115,11 +118,7 @@ async fn tools_list_before_initialized_notification_is_rejected() -> Result<()> 
             "method": "tools/list"
         }))
     );
-    assert!(
-        error
-            .message
-            .contains("before initialized notification")
-    );
+    assert!(error.message.contains("before initialized notification"));
 
     Ok(())
 }

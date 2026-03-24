@@ -215,11 +215,7 @@ pub mod slice {
     use tokio::io::AsyncBufReadExt;
     use tokio::io::BufReader;
 
-    pub async fn read(
-        path: &Path,
-        offset: usize,
-        limit: usize,
-    ) -> Result<Vec<String>, String> {
+    pub async fn read(path: &Path, offset: usize, limit: usize) -> Result<Vec<String>, String> {
         let file = File::open(path)
             .await
             .map_err(|err| format!("failed to read file: {err}"))?;
@@ -523,10 +519,7 @@ mod tests {
             props.contains_key("limit"),
             "schema must have limit property"
         );
-        assert!(
-            props.contains_key("mode"),
-            "schema must have mode property"
-        );
+        assert!(props.contains_key("mode"), "schema must have mode property");
         assert!(
             props.contains_key("indentation"),
             "schema must have indentation property"

@@ -34,8 +34,9 @@ impl ToolHandler for ListDirHandler {
             }
         };
 
-        let args_value: serde_json::Value = serde_json::from_str(&arguments)
-            .map_err(|e| FunctionCallError::RespondToModel(format!("invalid JSON arguments: {e}")))?;
+        let args_value: serde_json::Value = serde_json::from_str(&arguments).map_err(|e| {
+            FunctionCallError::RespondToModel(format!("invalid JSON arguments: {e}"))
+        })?;
 
         match chaos_arsenal::tools::list_dir::execute(&args_value).await {
             Ok(text) => Ok(FunctionToolOutput::from_text(text, Some(true))),

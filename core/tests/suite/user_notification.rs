@@ -1,4 +1,3 @@
-
 use std::os::unix::fs::PermissionsExt;
 
 use codex_protocol::protocol::EventMsg;

@@ -575,22 +575,31 @@ pub fn apply_action(action: &ApplyPatchAction) -> std::result::Result<String, Ap
                 if let Some(parent) = path.parent()
                     && !parent.as_os_str().is_empty()
                 {
-                    std::fs::create_dir_all(parent).map_err(|e| ApplyPatchError::IoError(IoError {
-                        context: format!("Failed to create parent directories for {}", path.display()),
-                        source: e,
-                    }))?;
+                    std::fs::create_dir_all(parent).map_err(|e| {
+                        ApplyPatchError::IoError(IoError {
+                            context: format!(
+                                "Failed to create parent directories for {}",
+                                path.display()
+                            ),
+                            source: e,
+                        })
+                    })?;
                 }
-                std::fs::write(path, content).map_err(|e| ApplyPatchError::IoError(IoError {
-                    context: format!("Failed to write file {}", path.display()),
-                    source: e,
-                }))?;
+                std::fs::write(path, content).map_err(|e| {
+                    ApplyPatchError::IoError(IoError {
+                        context: format!("Failed to write file {}", path.display()),
+                        source: e,
+                    })
+                })?;
                 added.push(path.clone());
             }
             ApplyPatchFileChange::Delete { .. } => {
-                std::fs::remove_file(path).map_err(|e| ApplyPatchError::IoError(IoError {
-                    context: format!("Failed to delete file {}", path.display()),
-                    source: e,
-                }))?;
+                std::fs::remove_file(path).map_err(|e| {
+                    ApplyPatchError::IoError(IoError {
+                        context: format!("Failed to delete file {}", path.display()),
+                        source: e,
+                    })
+                })?;
                 deleted.push(path.clone());
             }
             ApplyPatchFileChange::Update {
@@ -602,20 +611,29 @@ pub fn apply_action(action: &ApplyPatchAction) -> std::result::Result<String, Ap
                 if let Some(parent) = dest.parent()
                     && !parent.as_os_str().is_empty()
                 {
-                    std::fs::create_dir_all(parent).map_err(|e| ApplyPatchError::IoError(IoError {
-                        context: format!("Failed to create parent directories for {}", dest.display()),
-                        source: e,
-                    }))?;
+                    std::fs::create_dir_all(parent).map_err(|e| {
+                        ApplyPatchError::IoError(IoError {
+                            context: format!(
+                                "Failed to create parent directories for {}",
+                                dest.display()
+                            ),
+                            source: e,
+                        })
+                    })?;
                 }
-                std::fs::write(dest, new_content).map_err(|e| ApplyPatchError::IoError(IoError {
-                    context: format!("Failed to write file {}", dest.display()),
-                    source: e,
-                }))?;
-                if move_path.is_some() {
-                    std::fs::remove_file(path).map_err(|e| ApplyPatchError::IoError(IoError {
-                        context: format!("Failed to remove original {}", path.display()),
+                std::fs::write(dest, new_content).map_err(|e| {
+                    ApplyPatchError::IoError(IoError {
+                        context: format!("Failed to write file {}", dest.display()),
                         source: e,
-                    }))?;
+                    })
+                })?;
+                if move_path.is_some() {
+                    std::fs::remove_file(path).map_err(|e| {
+                        ApplyPatchError::IoError(IoError {
+                            context: format!("Failed to remove original {}", path.display()),
+                            source: e,
+                        })
+                    })?;
                 }
                 modified.push(dest.to_path_buf());
             }
@@ -628,11 +646,12 @@ pub fn apply_action(action: &ApplyPatchAction) -> std::result::Result<String, Ap
         deleted,
     };
     let mut summary = Vec::new();
-    print_summary(&affected, &mut summary)
-        .map_err(|e| ApplyPatchError::IoError(IoError {
+    print_summary(&affected, &mut summary).map_err(|e| {
+        ApplyPatchError::IoError(IoError {
             context: "Failed to write summary".to_string(),
             source: e,
-        }))?;
+        })
+    })?;
     Ok(String::from_utf8_lossy(&summary).into_owned())
 }
 

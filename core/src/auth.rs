@@ -15,8 +15,8 @@ use std::sync::Arc;
 use std::sync::Mutex;
 use std::sync::RwLock;
 
-use codex_protocol::api::AuthMode as ApiAuthMode;
 use codex_otel::TelemetryAuthMode;
+use codex_protocol::api::AuthMode as ApiAuthMode;
 use codex_protocol::config_types::ForcedLoginMethod;
 
 pub use crate::auth::storage::AuthCredentialsStoreMode;

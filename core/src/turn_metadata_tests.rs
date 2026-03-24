@@ -66,11 +66,7 @@ fn turn_metadata_state_uses_platform_sandbox_tag() {
     let cwd = temp_dir.path().to_path_buf();
     let sandbox_policy = SandboxPolicy::new_read_only_policy();
 
-    let state = TurnMetadataState::new(
-        "turn-a".to_string(),
-        cwd,
-        &sandbox_policy,
-    );
+    let state = TurnMetadataState::new("turn-a".to_string(), cwd, &sandbox_policy);
 
     let header = state.current_header_value().expect("header");
     let json: Value = serde_json::from_str(&header).expect("json");

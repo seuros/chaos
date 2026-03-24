@@ -3,22 +3,7 @@
 // Stub OAuth types so core and cli compile. Real OAuth flows will live
 // in mcp-guest once the protocol support lands.
 
-use schemars::JsonSchema;
-use serde::Deserialize;
-use serde::Serialize;
-
-/// Determine where Codex should store and read MCP credentials.
-#[derive(Debug, Default, Copy, Clone, PartialEq, Eq, Serialize, Deserialize, JsonSchema)]
-#[serde(rename_all = "lowercase")]
-pub enum OAuthCredentialsStoreMode {
-    /// `Keyring` when available; otherwise, `File`.
-    #[default]
-    Auto,
-    /// CODEX_HOME/.credentials.json
-    File,
-    /// Keyring when available, otherwise fail.
-    Keyring,
-}
+pub use codex_config::types::OAuthCredentialsStoreMode;
 
 /// Error returned by an OAuth provider (e.g. invalid_scope).
 #[derive(Debug, Clone, PartialEq, Eq)]

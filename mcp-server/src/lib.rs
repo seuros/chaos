@@ -17,8 +17,8 @@ use tokio::sync::Mutex;
 use tracing_subscriber::EnvFilter;
 use tracing_subscriber::prelude::*;
 
-mod chaos_tool;
 mod chaos_runner;
+mod chaos_tool;
 mod elicitation;
 mod exec_approval;
 mod outgoing_message;

@@ -272,7 +272,7 @@ fn parse_kernel_version(release: &str) -> Option<(u32, u32)> {
     let major = parts.next()?.parse().ok()?;
     // Minor may be followed by non-numeric suffixes (e.g. "10-rc1"), strip them.
     let minor_str = parts.next()?;
-    let minor_digits: String = minor_str.chars().take_while(|c| c.is_ascii_digit()).collect();
+    let minor_digits: String = minor_str.chars().take_while(char::is_ascii_digit).collect();
     let minor = minor_digits.parse().ok()?;
     Some((major, minor))
 }

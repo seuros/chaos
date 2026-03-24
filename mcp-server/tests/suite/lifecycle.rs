@@ -45,7 +45,7 @@ async fn initialize_negotiates_newer_client_protocol_to_latest_supported_version
     assert_eq!(
         response.result.as_ref().unwrap()["serverInfo"],
         json!({
-            "name": "codex-mcp-server",
+            "name": "chaos-mcphost",
             "title": "Codex",
             "version": "0.0.0"
         })

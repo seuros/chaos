@@ -52,8 +52,8 @@ impl McpProcess {
         codex_home: &Path,
         env_overrides: &[(&str, Option<&str>)],
     ) -> anyhow::Result<Self> {
-        let program = codex_utils_cargo_bin::cargo_bin("codex-mcp-server")
-            .context("should find binary for codex-mcp-server")?;
+        let program = codex_utils_cargo_bin::cargo_bin("chaos-mcphost")
+            .context("should find binary for chaos-mcphost")?;
         let mut cmd = Command::new(program);
 
         cmd.stdin(Stdio::piped());
@@ -76,7 +76,7 @@ impl McpProcess {
         let mut process = cmd
             .kill_on_drop(true)
             .spawn()
-            .context("codex-mcp-server proc should start")?;
+            .context("chaos-mcphost proc should start")?;
         let stdin = process
             .stdin
             .take()
@@ -431,7 +431,7 @@ impl McpProcess {
 
 impl Drop for McpProcess {
     fn drop(&mut self) {
-        // These tests spawn a `codex-mcp-server` child process.
+        // These tests spawn a `chaos-mcphost` child process.
         //
         // We keep that child alive for the test and rely on Tokio's `kill_on_drop(true)` when this
         // helper is dropped. Tokio documents kill-on-drop as best-effort: dropping requests

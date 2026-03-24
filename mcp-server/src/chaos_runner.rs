@@ -26,6 +26,32 @@ use codex_protocol::user_input::UserInput;
 use mcp_host::protocol::types::RequestId;
 use tokio::sync::Mutex;
 
+/// Lightweight MCP progress sender — sends `notifications/progress` via
+/// the existing `OutgoingMessageSender` channel.
+struct ProgressSender {
+    token: String,
+    outgoing: Arc<OutgoingMessageSender>,
+}
+
+impl ProgressSender {
+    fn new(token: String, outgoing: Arc<OutgoingMessageSender>) -> Self {
+        Self { token, outgoing }
+    }
+
+    async fn send(&self, progress: u32, total: u32, message: &str) {
+        let notification = crate::outgoing_message::OutgoingNotification {
+            method: "notifications/progress".to_string(),
+            params: Some(serde_json::json!({
+                "progressToken": self.token,
+                "progress": progress,
+                "total": total,
+                "message": message,
+            })),
+        };
+        self.outgoing.send_notification(notification).await;
+    }
+}
+
 /// Outcome of a Chaos session run.
 pub(crate) struct SessionOutcome {
     pub thread_id: ThreadId,
@@ -46,6 +72,8 @@ struct ResolvedThread {
 ///
 /// Returns a `SessionOutcome` — the caller (tool handler) converts this
 /// to the appropriate `ToolOutput`. Notifications are streamed via `outgoing`.
+/// If `progress_token` is provided, MCP progress notifications are sent at
+/// key milestones so the client can display status.
 pub(crate) async fn run_chaos_session(
     request_id: RequestId,
     prompt: String,
@@ -55,7 +83,16 @@ pub(crate) async fn run_chaos_session(
     thread_manager: Arc<ThreadManager>,
     running_requests: Arc<Mutex<HashMap<RequestId, ThreadId>>>,
     thread_names: ThreadNameCache,
+    progress_token: Option<String>,
 ) -> SessionOutcome {
+    // Send progress if the client requested it.
+    let progress = progress_token.as_ref().map(|token| {
+        ProgressSender::new(token.clone(), outgoing.clone())
+    });
+    if let Some(ref p) = progress {
+        p.send(0, 4, "Resolving thread...").await;
+    }
+
     // Phase 1: resolve thread
     let resolved = match existing_thread_id {
         Some(tid) => {
@@ -109,6 +146,10 @@ pub(crate) async fn run_chaos_session(
 
     let ResolvedThread { thread_id, thread } = resolved;
 
+    if let Some(ref p) = progress {
+        p.send(1, 4, "Configuring session...").await;
+    }
+
     // Phase 2: submit prompt
     running_requests
         .lock()
@@ -146,8 +187,19 @@ pub(crate) async fn run_chaos_session(
         };
     }
 
+    if let Some(ref p) = progress {
+        p.send(2, 4, "Streaming response...").await;
+    }
+
     // Phase 3: event loop
-    run_event_loop(thread_id, thread, outgoing, request_id, running_requests, thread_names).await
+    let outcome = run_event_loop(thread_id, thread, outgoing, request_id, running_requests, thread_names).await;
+
+    if let Some(ref p) = progress {
+        let msg = if outcome.is_error { "Failed" } else { "Complete" };
+        p.send(4, 4, msg).await;
+    }
+
+    outcome
 }
 
 /// Stream Codex events until TurnComplete or error.

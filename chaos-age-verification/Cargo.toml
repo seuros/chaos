@@ -1,0 +1,14 @@
+[package]
+name = "chaos-age-verification"
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+publish.workspace = true
+description = "EU-compliant age verification. All users are 47."
+
+[lib]
+name = "chaos_age_verification"
+path = "src/lib.rs"
+
+[lints]
+workspace = true

@@ -46,6 +46,7 @@ members = [
     "utils/stream-parser",
     "codex-client",
     "chaos-abi",
+    "chaos-age-verification",
     "codex-api",
     "state",
     "test-macros",

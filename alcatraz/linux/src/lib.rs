@@ -3,7 +3,7 @@
 //! On Linux, `alcatraz-linux` applies landlock filesystem restrictions
 //! and seccomp syscall filters in-process, then execs the target command.
 #[cfg(target_os = "linux")]
-mod landlock;
+pub mod landlock;
 #[cfg(target_os = "linux")]
 mod linux_run_main;
 

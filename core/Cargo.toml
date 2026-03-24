@@ -111,6 +111,7 @@ wildmatch = { workspace = true }
 zip = { workspace = true }
 
 [target.'cfg(target_os = "linux")'.dependencies]
+alcatraz-linux = { workspace = true }
 keyring = { workspace = true, features = ["linux-native-async-persistent"] }
 landlock = { workspace = true }
 seccompiler = { workspace = true }

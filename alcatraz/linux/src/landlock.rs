@@ -1,6 +1,9 @@
 //! Linux sandbox primitives: landlock filesystem rules, `no_new_privs`, and seccomp.
 //!
 //! All restrictions are applied in-process before execing the target command.
+//!
+//! Requires Linux kernel ≥ 6.10. Older kernels lack the landlock and seccomp
+//! features we depend on. We refuse to run on legacy systems.
 use std::collections::BTreeMap;
 use std::path::Path;
 
@@ -37,7 +40,7 @@ use seccompiler::apply_filter;
 /// - installing the network seccomp filter when network access is disabled.
 ///
 /// Filesystem restrictions are enforced via landlock when `apply_landlock_fs` is set.
-pub(crate) fn apply_sandbox_policy_to_current_thread(
+pub fn apply_sandbox_policy_to_current_thread(
     sandbox_policy: &SandboxPolicy,
     network_sandbox_policy: NetworkSandboxPolicy,
     cwd: &Path,
@@ -45,6 +48,8 @@ pub(crate) fn apply_sandbox_policy_to_current_thread(
     allow_network_for_proxy: bool,
     proxy_routed_network: bool,
 ) -> Result<()> {
+    check_minimum_kernel_version()?;
+
     let network_seccomp_mode = network_seccomp_mode(
         network_sandbox_policy,
         allow_network_for_proxy,
@@ -257,6 +262,49 @@ fn install_network_seccomp_filter_on_current_thread(
     Ok(())
 }
 
+/// Minimum kernel version required for alcatraz sandbox features.
+const MIN_KERNEL_MAJOR: u32 = 6;
+const MIN_KERNEL_MINOR: u32 = 10;
+
+/// Parse major.minor from a utsname release string (e.g. "6.19.8-arch1-1").
+fn parse_kernel_version(release: &str) -> Option<(u32, u32)> {
+    let mut parts = release.split('.');
+    let major = parts.next()?.parse().ok()?;
+    // Minor may be followed by non-numeric suffixes (e.g. "10-rc1"), strip them.
+    let minor_str = parts.next()?;
+    let minor_digits: String = minor_str.chars().take_while(|c| c.is_ascii_digit()).collect();
+    let minor = minor_digits.parse().ok()?;
+    Some((major, minor))
+}
+
+/// Verify the running kernel is ≥ 6.10. Returns an error on legacy kernels.
+fn check_minimum_kernel_version() -> Result<()> {
+    let mut uname: libc::utsname = unsafe { std::mem::zeroed() };
+    if unsafe { libc::uname(&mut uname) } != 0 {
+        return Err(AlcatrazError::UnsupportedOperation(
+            "failed to determine kernel version via uname()".to_string(),
+        ));
+    }
+
+    let release = unsafe {
+        std::ffi::CStr::from_ptr(uname.release.as_ptr())
+    };
+    let release_str = release.to_string_lossy();
+
+    if let Some((major, minor)) = parse_kernel_version(&release_str) {
+        if major > MIN_KERNEL_MAJOR || (major == MIN_KERNEL_MAJOR && minor >= MIN_KERNEL_MINOR) {
+            return Ok(());
+        }
+        return Err(AlcatrazError::UnsupportedOperation(format!(
+            "kernel {release_str} is too old — alcatraz requires Linux ≥ {MIN_KERNEL_MAJOR}.{MIN_KERNEL_MINOR}. \
+             Upgrade your kernel or find a time machine."
+        )));
+    }
+
+    // Can't parse — let it through, landlock will fail naturally if unsupported.
+    Ok(())
+}
+
 #[cfg(test)]
 mod tests {
     use super::NetworkSeccompMode;
@@ -315,5 +363,36 @@ mod tests {
             network_seccomp_mode(NetworkSandboxPolicy::Enabled, false, false),
             None
         );
+    }
+
+    #[test]
+    fn parse_kernel_version_standard() {
+        assert_eq!(super::parse_kernel_version("6.19.8-arch1-1"), Some((6, 19)));
+    }
+
+    #[test]
+    fn parse_kernel_version_release_candidate() {
+        assert_eq!(super::parse_kernel_version("6.10-rc1"), Some((6, 10)));
+    }
+
+    #[test]
+    fn parse_kernel_version_minimum_accepted() {
+        assert_eq!(super::parse_kernel_version("6.10.0"), Some((6, 10)));
+    }
+
+    #[test]
+    fn parse_kernel_version_too_old() {
+        assert_eq!(super::parse_kernel_version("6.9.12"), Some((6, 9)));
+    }
+
+    #[test]
+    fn parse_kernel_version_garbage() {
+        assert_eq!(super::parse_kernel_version("not-a-kernel"), None);
+    }
+
+    #[test]
+    fn check_minimum_kernel_passes_on_current_host() {
+        // This test runs on the CI/dev machine — it must be ≥ 6.10.
+        super::check_minimum_kernel_version().expect("host kernel should be ≥ 6.10");
     }
 }

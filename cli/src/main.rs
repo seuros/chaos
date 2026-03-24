@@ -4,8 +4,6 @@ use clap_complete::Shell;
 use clap_complete::generate;
 use codex_arg0::Arg0DispatchPaths;
 use codex_arg0::arg0_dispatch_or_else;
-use codex_cli::LandlockCommand;
-use codex_cli::SeatbeltCommand;
 use codex_cli::login::read_api_key_from_stdin;
 use codex_cli::login::run_login_status;
 use codex_cli::login::run_login_with_api_key;
@@ -90,8 +88,8 @@ enum Subcommand {
     /// Generate shell completion scripts.
     Completion(CompletionCommand),
 
-    /// Run commands within the Chaos sandbox.
-    Sandbox(SandboxArgs),
+    /// Run a command inside the platform sandbox (landlock on Linux, seatbelt on macOS).
+    Sandbox(codex_cli::SandboxCommand),
 
     /// Execpolicy tooling.
     #[clap(hide = true)]
@@ -156,23 +154,8 @@ struct ForkCommand {
     config_overrides: TuiCli,
 }
 
-#[derive(Debug, Parser)]
-struct SandboxArgs {
-    #[command(subcommand)]
-    cmd: SandboxCommand,
-}
-
-#[derive(Debug, clap::Subcommand)]
-enum SandboxCommand {
-    /// Run a command under Seatbelt (macOS only).
-    #[clap(visible_alias = "seatbelt")]
-    Macos(SeatbeltCommand),
-
-    /// Run a command under the Linux sandbox (bubblewrap by default).
-    #[clap(visible_alias = "landlock")]
-    Linux(LandlockCommand),
-
-}
+// SandboxCommand is defined in codex_cli::SandboxCommand — platform-agnostic,
+// auto-dispatches to seatbelt (macOS) or landlock (Linux) at runtime.
 
 #[derive(Debug, Parser)]
 struct ExecpolicyCommand {
@@ -496,30 +479,36 @@ async fn cli_main(arg0_paths: Arg0DispatchPaths) -> anyhow::Result<()> {
         Some(Subcommand::Completion(completion_cli)) => {
             print_completion(completion_cli);
         }
-        Some(Subcommand::Sandbox(sandbox_args)) => match sandbox_args.cmd {
-            SandboxCommand::Macos(mut seatbelt_cli) => {
-                prepend_config_flags(
-                    &mut seatbelt_cli.config_overrides,
-                    root_config_overrides.clone(),
-                );
-                codex_cli::debug_sandbox::run_command_under_seatbelt(
-                    seatbelt_cli,
-                    arg0_paths.alcatraz_linux_exe.clone(),
-                )
-                .await?;
-            }
-            SandboxCommand::Linux(mut landlock_cli) => {
-                prepend_config_flags(
-                    &mut landlock_cli.config_overrides,
-                    root_config_overrides.clone(),
-                );
+        Some(Subcommand::Sandbox(mut sandbox_cmd)) => {
+            prepend_config_flags(
+                &mut sandbox_cmd.config_overrides,
+                root_config_overrides.clone(),
+            );
+
+            #[cfg(target_os = "linux")]
+            {
                 codex_cli::debug_sandbox::run_command_under_landlock(
-                    landlock_cli,
+                    sandbox_cmd.into_landlock(),
                     arg0_paths.alcatraz_linux_exe.clone(),
                 )
                 .await?;
             }
-        },
+
+            #[cfg(target_os = "macos")]
+            {
+                codex_cli::debug_sandbox::run_command_under_seatbelt(
+                    sandbox_cmd.into_seatbelt(),
+                    arg0_paths.alcatraz_linux_exe.clone(),
+                )
+                .await?;
+            }
+
+            #[cfg(not(any(target_os = "linux", target_os = "macos")))]
+            {
+                let _ = sandbox_cmd;
+                anyhow::bail!("sandbox is not yet supported on this platform");
+            }
+        }
         Some(Subcommand::Execpolicy(ExecpolicyCommand { sub })) => match sub {
             ExecpolicySubcommand::Check(cmd) => {
                 run_execpolicycheck(cmd)?

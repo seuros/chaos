@@ -1174,6 +1174,7 @@ dependencies = [
  "anyhow",
  "assert_cmd",
  "assert_matches",
+ "chaos-mcphost",
  "clap",
  "clap_complete",
  "codex-arg0",
@@ -1182,10 +1183,8 @@ dependencies = [
  "codex-exec",
  "codex-execpolicy",
  "codex-login",
- "codex-mcp-server",
  "codex-protocol",
  "codex-rmcp-client",
- "codex-stdio-to-uds",
  "codex-tui",
  "codex-utils-cargo-bin",
  "codex-utils-cli",
@@ -1203,6 +1202,35 @@ dependencies = [
  "tracing",
  "tracing-appender",
  "tracing-subscriber",
+]
+
+[[package]]
+name = "chaos-mcphost"
+version = "47.0.0"
+dependencies = [
+ "anyhow",
+ "codex-arg0",
+ "codex-core",
+ "codex-protocol",
+ "codex-shell-command",
+ "codex-state",
+ "codex-utils-cli",
+ "codex-utils-json-to-toml",
+ "core_test_support",
+ "mcp-host",
+ "mcp_test_support",
+ "os_info",
+ "pretty_assertions",
+ "schemars 0.8.22",
+ "serde",
+ "serde_json",
+ "shlex",
+ "state-machines 0.9.0",
+ "tempfile",
+ "tokio",
+ "tracing",
+ "tracing-subscriber",
+ "wiremock",
 ]
 
 [[package]]
@@ -1730,35 +1758,6 @@ dependencies = [
 ]
 
 [[package]]
-name = "codex-mcp-server"
-version = "47.0.0"
-dependencies = [
- "anyhow",
- "codex-arg0",
- "codex-core",
- "codex-protocol",
- "codex-shell-command",
- "codex-state",
- "codex-utils-cli",
- "codex-utils-json-to-toml",
- "core_test_support",
- "mcp-host",
- "mcp_test_support",
- "os_info",
- "pretty_assertions",
- "schemars 0.8.22",
- "serde",
- "serde_json",
- "shlex",
- "state-machines 0.9.0",
- "tempfile",
- "tokio",
- "tracing",
- "tracing-subscriber",
- "wiremock",
-]
-
-[[package]]
 name = "codex-network-proxy"
 version = "47.0.0"
 dependencies = [
@@ -1960,16 +1959,6 @@ dependencies = [
  "tracing",
  "tracing-subscriber",
  "uuid",
-]
-
-[[package]]
-name = "codex-stdio-to-uds"
-version = "47.0.0"
-dependencies = [
- "anyhow",
- "codex-utils-cargo-bin",
- "pretty_assertions",
- "tempfile",
 ]
 
 [[package]]
@@ -5134,7 +5123,7 @@ name = "mcp_test_support"
 version = "47.0.0"
 dependencies = [
  "anyhow",
- "codex-mcp-server",
+ "chaos-mcphost",
  "codex-utils-cargo-bin",
  "core_test_support",
  "mcp-host",

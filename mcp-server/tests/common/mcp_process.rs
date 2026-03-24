@@ -10,7 +10,7 @@ use tokio::process::ChildStdin;
 use tokio::process::ChildStdout;
 
 use anyhow::Context;
-use codex_mcp_server::ChaosToolParams;
+use chaos_mcphost::ChaosToolParams;
 
 use mcp_host::protocol::capabilities::ClientCapabilities;
 use mcp_host::protocol::capabilities::ElicitationCapability;

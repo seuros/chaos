@@ -1,12 +1,12 @@
 [package]
-name = "codex-mcp-server"
+name = "chaos-mcphost"
 version.workspace = true
 edition.workspace = true
 license.workspace = true
 publish.workspace = true
 
 [lib]
-name = "codex_mcp_server"
+name = "chaos_mcphost"
 path = "src/lib.rs"
 
 [lints]

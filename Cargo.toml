@@ -24,7 +24,6 @@ members = [
     "process-hardening",
     "protocol",
     "rmcp-client",
-    "stdio-to-uds",
     "otel",
     "tui",
     "utils/absolute-path",
@@ -85,7 +84,7 @@ codex-keyring-store = { path = "keyring-store" }
 alcatraz-base = { path = "alcatraz/base" }
 alcatraz-linux = { path = "alcatraz/linux" }
 codex-login = { path = "login" }
-codex-mcp-server = { path = "mcp-server" }
+chaos-mcphost = { path = "mcp-server" }
 codex-network-proxy = { path = "network-proxy" }
 codex-otel = { path = "otel" }
 codex-process-hardening = { path = "process-hardening" }
@@ -95,7 +94,6 @@ codex-secrets = { path = "secrets" }
 codex-shell-command = { path = "shell-command" }
 codex-shell-escalation = { path = "shell-escalation" }
 codex-state = { path = "state" }
-codex-stdio-to-uds = { path = "stdio-to-uds" }
 codex-test-macros = { path = "test-macros" }
 codex-tui = { path = "tui" }
 codex-utils-absolute-path = { path = "utils/absolute-path" }

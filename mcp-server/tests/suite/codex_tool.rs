@@ -4,7 +4,6 @@ use std::path::Path;
 use std::path::PathBuf;
 
 use anyhow::Context;
-use codex_core::spawn::CODEX_SANDBOX_NETWORK_DISABLED_ENV_VAR;
 use chaos_mcphost::ApprovalElicitationAction;
 use chaos_mcphost::ChaosToolParams;
 use chaos_mcphost::ExecApprovalElicitRequestMeta;
@@ -13,12 +12,13 @@ use chaos_mcphost::ExecApprovalResponse;
 use chaos_mcphost::PatchApprovalElicitRequestMeta;
 use chaos_mcphost::PatchApprovalElicitRequestParams;
 use chaos_mcphost::PatchApprovalResponse;
+use codex_core::spawn::CODEX_SANDBOX_NETWORK_DISABLED_ENV_VAR;
 use codex_protocol::protocol::FileChange;
 use codex_shell_command::parse_command;
-use pretty_assertions::assert_eq;
 use mcp_host::protocol::types::JsonRpcMessage;
 use mcp_host::protocol::types::JsonRpcRequest;
 use mcp_host::protocol::types::RequestId;
+use pretty_assertions::assert_eq;
 use serde_json::json;
 use tempfile::TempDir;
 use tokio::time::timeout;
@@ -538,9 +538,7 @@ async fn shell_command_without_elicitation_capability_is_denied() -> anyhow::Res
             JsonRpcMessage::Response(ref resp) if resp.error.is_some() => {
                 panic!("unexpected json-rpc error: {resp:?}");
             }
-            JsonRpcMessage::Response(response)
-                if response.id == json!(codex_request_id) =>
-            {
+            JsonRpcMessage::Response(response) if response.id == json!(codex_request_id) => {
                 break;
             }
             JsonRpcMessage::Response(_) => {}

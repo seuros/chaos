@@ -611,7 +611,10 @@ where
                 if cell.fg != fg || cell.bg != bg {
                     queue!(
                         writer,
-                        SetColors(Colors::new(cell.fg.into_crossterm(), cell.bg.into_crossterm()))
+                        SetColors(Colors::new(
+                            cell.fg.into_crossterm(),
+                            cell.bg.into_crossterm()
+                        ))
                     )?;
                     fg = cell.fg;
                     bg = cell.bg;

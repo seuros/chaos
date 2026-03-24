@@ -1,12 +1,20 @@
+pub mod agent_roles;
 mod cloud_requirements;
 mod config_requirements;
 mod constraint;
 mod diagnostics;
+pub mod edit;
+pub mod features;
 mod fingerprint;
 mod merge;
 mod overrides;
+pub mod path_utils;
+pub mod permissions;
+pub mod profile;
 mod requirements_exec_policy;
+pub mod schema;
 mod state;
+pub mod types;
 
 pub const CONFIG_TOML_FILE: &str = "config.toml";
 

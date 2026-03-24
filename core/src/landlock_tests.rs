@@ -7,10 +7,7 @@ fn use_legacy_landlock_flag_is_no_longer_emitted() {
     let cwd = Path::new("/tmp");
 
     let args = create_linux_sandbox_command_args(command, cwd, false);
-    assert_eq!(
-        args.contains(&"--use-legacy-landlock".to_string()),
-        false
-    );
+    assert_eq!(args.contains(&"--use-legacy-landlock".to_string()), false);
 }
 
 #[test]

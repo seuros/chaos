@@ -1,0 +1,22 @@
+[package]
+name = "chaos-concierge"
+description = "MCP connection concierge — server lifecycle, guest check-in/check-out, tool routing"
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+publish.workspace = true
+
+[dependencies]
+codex-protocol = { workspace = true }
+codex-config = { workspace = true }
+mcp-guest = { workspace = true }
+tokio = { workspace = true, features = ["sync"] }
+tracing = { workspace = true }
+anyhow = { workspace = true }
+futures = { workspace = true }
+
+[dev-dependencies]
+pretty_assertions = { workspace = true }
+
+[lints]
+workspace = true

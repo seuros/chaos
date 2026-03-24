@@ -32,7 +32,6 @@ fn commands_generated_by_shell_command_handler_can_be_matched_by_is_known_safe_c
         shell_snapshot: crate::shell::empty_shell_snapshot_receiver(),
     };
     assert_safe(&zsh_shell, "ls -la");
-
 }
 
 fn assert_safe(shell: &Shell, command: &str) {

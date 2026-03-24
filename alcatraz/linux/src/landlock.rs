@@ -164,9 +164,7 @@ fn install_filesystem_landlock_rules_on_current_thread(
 ///
 /// The filter is applied to the current thread so only the sandboxed child
 /// inherits it.
-fn install_network_seccomp_filter_on_current_thread(
-    mode: NetworkSeccompMode,
-) -> Result<()> {
+fn install_network_seccomp_filter_on_current_thread(mode: NetworkSeccompMode) -> Result<()> {
     fn deny_syscall(rules: &mut BTreeMap<i64, Vec<SeccompRule>>, nr: i64) {
         rules.insert(nr, vec![]); // empty rule vec = unconditional match
     }
@@ -286,9 +284,7 @@ fn check_minimum_kernel_version() -> Result<()> {
         ));
     }
 
-    let release = unsafe {
-        std::ffi::CStr::from_ptr(uname.release.as_ptr())
-    };
+    let release = unsafe { std::ffi::CStr::from_ptr(uname.release.as_ptr()) };
     let release_str = release.to_string_lossy();
 
     if let Some((major, minor)) = parse_kernel_version(&release_str) {

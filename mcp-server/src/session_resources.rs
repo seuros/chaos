@@ -15,8 +15,9 @@ use crate::chaos_tool::ChaosMcpServer;
 fn sessions_list_handler<'a>(
     server: &'a ChaosMcpServer,
     ctx: ExecutionContext<'a>,
-) -> std::pin::Pin<Box<dyn std::future::Future<Output = Result<Vec<ResourceContent>, ResourceError>> + Send + 'a>>
-{
+) -> std::pin::Pin<
+    Box<dyn std::future::Future<Output = Result<Vec<ResourceContent>, ResourceError>> + Send + 'a>,
+> {
     let _ = ctx;
     Box::pin(async move {
         let sessions: Vec<serde_json::Value> = match &server.state_runtime {
@@ -85,8 +86,9 @@ fn sessions_resource_info() -> ResourceInfo {
 fn session_detail_handler<'a>(
     server: &'a ChaosMcpServer,
     ctx: ExecutionContext<'a>,
-) -> std::pin::Pin<Box<dyn std::future::Future<Output = Result<Vec<ResourceContent>, ResourceError>> + Send + 'a>>
-{
+) -> std::pin::Pin<
+    Box<dyn std::future::Future<Output = Result<Vec<ResourceContent>, ResourceError>> + Send + 'a>,
+> {
     Box::pin(async move {
         let id = ctx
             .uri_params

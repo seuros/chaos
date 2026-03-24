@@ -353,8 +353,7 @@ async fn cli_main(arg0_paths: Arg0DispatchPaths) -> anyhow::Result<()> {
                 &mut interactive.config_overrides,
                 root_config_overrides.clone(),
             );
-            let exit_info =
-                run_interactive_tui(interactive, arg0_paths.clone()).await?;
+            let exit_info = run_interactive_tui(interactive, arg0_paths.clone()).await?;
             handle_app_exit(exit_info)?;
         }
         Some(Subcommand::Exec(mut exec_cli)) => {
@@ -377,10 +376,7 @@ async fn cli_main(arg0_paths: Arg0DispatchPaths) -> anyhow::Result<()> {
             if matches!(mcp_cli.subcommand, crate::mcp_cmd::McpSubcommand::Serve) {
                 chaos_mcphost::run_main(arg0_paths.clone(), root_config_overrides).await?;
             } else {
-                prepend_config_flags(
-                    &mut mcp_cli.config_overrides,
-                    root_config_overrides.clone(),
-                );
+                prepend_config_flags(&mut mcp_cli.config_overrides, root_config_overrides.clone());
                 mcp_cli.run().await?;
             }
         }
@@ -398,11 +394,7 @@ async fn cli_main(arg0_paths: Arg0DispatchPaths) -> anyhow::Result<()> {
                 all,
                 config_overrides,
             );
-            let exit_info = run_interactive_tui(
-                interactive,
-                arg0_paths.clone(),
-            )
-            .await?;
+            let exit_info = run_interactive_tui(interactive, arg0_paths.clone()).await?;
             handle_app_exit(exit_info)?;
         }
         Some(Subcommand::Fork(ForkCommand {
@@ -419,11 +411,7 @@ async fn cli_main(arg0_paths: Arg0DispatchPaths) -> anyhow::Result<()> {
                 all,
                 config_overrides,
             );
-            let exit_info = run_interactive_tui(
-                interactive,
-                arg0_paths.clone(),
-            )
-            .await?;
+            let exit_info = run_interactive_tui(interactive, arg0_paths.clone()).await?;
             handle_app_exit(exit_info)?;
         }
         Some(Subcommand::Login(mut login_cli)) => {
@@ -498,9 +486,7 @@ async fn cli_main(arg0_paths: Arg0DispatchPaths) -> anyhow::Result<()> {
             }
         }
         Some(Subcommand::Execpolicy(ExecpolicyCommand { sub })) => match sub {
-            ExecpolicySubcommand::Check(cmd) => {
-                run_execpolicycheck(cmd)?
-            }
+            ExecpolicySubcommand::Check(cmd) => run_execpolicycheck(cmd)?,
         },
         Some(Subcommand::Features(FeaturesCli { sub })) => match sub {
             FeaturesSubcommand::List => {

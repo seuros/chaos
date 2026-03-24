@@ -85,9 +85,7 @@ fn extract_apply_patch_from_shell(
     script: &str,
 ) -> std::result::Result<(String, Option<String>), ExtractHeredocError> {
     match shell {
-        ApplyPatchShell::Unix => {
-            extract_apply_patch_from_bash(script)
-        }
+        ApplyPatchShell::Unix => extract_apply_patch_from_bash(script),
     }
 }
 
@@ -383,7 +381,6 @@ mod tests {
     fn args_bash(script: &str) -> Vec<String> {
         strs_to_strings(&["bash", "-lc", script])
     }
-
 
     fn heredoc_script(prefix: &str) -> String {
         format!(

@@ -8,12 +8,10 @@ use app::App;
 pub use app::AppExitInfo;
 pub use app::ExitReason;
 use codex_core::AuthManager;
-use codex_core::ThreadManager;
-use codex_core::features::Feature;
-use codex_core::models_manager::collaboration_mode_presets::CollaborationModesConfig;
 use codex_core::CodexAuth;
 use codex_core::INTERACTIVE_SESSION_SOURCES;
 use codex_core::RolloutRecorder;
+use codex_core::ThreadManager;
 use codex_core::ThreadSortKey;
 use codex_core::auth::AuthMode;
 use codex_core::auth::enforce_login_restrictions;
@@ -29,9 +27,11 @@ use codex_core::config_loader::ConfigLoadError;
 use codex_core::config_loader::LoaderOverrides;
 use codex_core::config_loader::format_config_error_with_source;
 use codex_core::default_client::set_default_client_residency_requirement;
+use codex_core::features::Feature;
 use codex_core::find_thread_path_by_id_str;
 use codex_core::find_thread_path_by_name_str;
 use codex_core::format_exec_policy_error_with_source;
+use codex_core::models_manager::collaboration_mode_presets::CollaborationModesConfig;
 use codex_core::path_utils;
 use codex_core::read_session_meta_line;
 use codex_core::state_db::get_state_db;
@@ -599,7 +599,7 @@ async fn run_ratatui_app(
                                     token_usage: codex_protocol::protocol::TokenUsage::default(),
                                     thread_id: None,
                                     thread_name: None,
-                                                        exit_reason: ExitReason::Fatal(format!(
+                                    exit_reason: ExitReason::Fatal(format!(
                                         "Found latest saved session at {rollout_path}, but failed to read its metadata. Run `codex fork` to choose from existing sessions."
                                     )),
                                 });
@@ -619,7 +619,7 @@ async fn run_ratatui_app(
                         token_usage: codex_protocol::protocol::TokenUsage::default(),
                         thread_id: None,
                         thread_name: None,
-                                exit_reason: ExitReason::UserRequested,
+                        exit_reason: ExitReason::UserRequested,
                     });
                 }
                 other => other,
@@ -691,7 +691,7 @@ async fn run_ratatui_app(
                             token_usage: codex_protocol::protocol::TokenUsage::default(),
                             thread_id: None,
                             thread_name: None,
-                                        exit_reason: ExitReason::Fatal(format!(
+                            exit_reason: ExitReason::Fatal(format!(
                                 "Found latest saved session at {rollout_path}, but failed to read its metadata. Run `codex resume` to choose from existing sessions."
                             )),
                         });
@@ -709,7 +709,7 @@ async fn run_ratatui_app(
                     token_usage: codex_protocol::protocol::TokenUsage::default(),
                     thread_id: None,
                     thread_name: None,
-                        exit_reason: ExitReason::UserRequested,
+                    exit_reason: ExitReason::UserRequested,
                 });
             }
             other => other,
@@ -750,7 +750,7 @@ async fn run_ratatui_app(
                         token_usage: codex_protocol::protocol::TokenUsage::default(),
                         thread_id: None,
                         thread_name: None,
-                                exit_reason: ExitReason::UserRequested,
+                        exit_reason: ExitReason::UserRequested,
                     });
                 }
             }

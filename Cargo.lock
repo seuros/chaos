@@ -1156,6 +1156,43 @@ dependencies = [
 ]
 
 [[package]]
+name = "chaos-concierge"
+version = "47.0.0"
+dependencies = [
+ "anyhow",
+ "codex-config",
+ "codex-protocol",
+ "futures",
+ "mcp-guest",
+ "pretty_assertions",
+ "tokio",
+ "tracing",
+]
+
+[[package]]
+name = "chaos-contraband"
+version = "47.0.0"
+
+[[package]]
+name = "chaos-daemon"
+version = "47.0.0"
+dependencies = [
+ "chrono",
+ "codex-utils-home-dir",
+ "serde",
+ "serde_json",
+ "sqlx",
+ "tempfile",
+ "thiserror 2.0.18",
+ "tokio",
+ "tracing",
+]
+
+[[package]]
+name = "chaos-hallucinate"
+version = "47.0.0"
+
+[[package]]
 name = "chaos-mcphost"
 version = "47.0.0"
 dependencies = [
@@ -1182,6 +1219,87 @@ dependencies = [
  "tracing",
  "tracing-subscriber",
  "wiremock",
+]
+
+[[package]]
+name = "chaos-memento"
+version = "47.0.0"
+dependencies = [
+ "anyhow",
+ "askama",
+ "chrono",
+ "codex-config",
+ "codex-protocol",
+ "codex-state",
+ "pretty_assertions",
+ "serde",
+ "serde_json",
+ "tokio",
+ "tracing",
+ "uuid",
+]
+
+[[package]]
+name = "chaos-minions"
+version = "47.0.0"
+
+[[package]]
+name = "chaos-parole"
+version = "47.0.0"
+
+[[package]]
+name = "chaos-parrot"
+version = "47.0.0"
+dependencies = [
+ "chaos-abi",
+]
+
+[[package]]
+name = "chaos-ration"
+version = "47.0.0"
+dependencies = [
+ "async-trait",
+ "chrono",
+ "serde",
+ "thiserror 2.0.18",
+ "tokio",
+]
+
+[[package]]
+name = "chaos-rollout"
+version = "47.0.0"
+dependencies = [
+ "anyhow",
+ "chrono",
+ "codex-config",
+ "codex-protocol",
+ "pretty_assertions",
+ "serde",
+ "serde_json",
+ "tempfile",
+ "time",
+ "tokio",
+ "tracing",
+ "uuid",
+]
+
+[[package]]
+name = "chaos-snitch"
+version = "47.0.0"
+
+[[package]]
+name = "chaos-warden"
+version = "47.0.0"
+
+[[package]]
+name = "chaos-watchdog"
+version = "47.0.0"
+dependencies = [
+ "codex-protocol",
+ "codex-shell-command",
+ "codex-utils-absolute-path",
+ "serde",
+ "serde_json",
 ]
 
 [[package]]
@@ -1438,20 +1556,24 @@ version = "47.0.0"
 dependencies = [
  "anyhow",
  "codex-execpolicy",
+ "codex-network-proxy",
  "codex-protocol",
  "codex-utils-absolute-path",
  "futures",
  "multimap",
  "pretty_assertions",
+ "schemars 0.8.22",
  "serde",
  "serde_json",
  "serde_path_to_error",
  "sha2",
+ "tempfile",
  "thiserror 2.0.18",
  "tokio",
  "toml 0.9.12+spec-1.1.0",
  "toml_edit 0.24.1+spec-1.1.0",
  "tracing",
+ "wildmatch",
 ]
 
 [[package]]
@@ -1469,6 +1591,10 @@ dependencies = [
  "base64 0.22.1",
  "bm25",
  "chaos-arsenal",
+ "chaos-concierge",
+ "chaos-memento",
+ "chaos-rollout",
+ "chaos-watchdog",
  "chardetng",
  "chrono",
  "clap",

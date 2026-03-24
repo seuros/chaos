@@ -1,4 +1,3 @@
-
 use anyhow::Result;
 use core_test_support::responses::mount_function_call_agent_response;
 use core_test_support::responses::start_mock_server;

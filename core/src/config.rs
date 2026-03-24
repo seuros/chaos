@@ -40,6 +40,7 @@ use crate::features::FeatureOverrides;
 use crate::features::Features;
 use crate::features::FeaturesToml;
 use crate::git_info::resolve_root_git_project_for_trust;
+use crate::mcp::oauth_types::OAuthCredentialsStoreMode;
 use crate::memories::memory_root;
 use crate::model_provider_info::LEGACY_OLLAMA_CHAT_PROVIDER_ID;
 use crate::model_provider_info::ModelProviderInfo;
@@ -54,7 +55,6 @@ use crate::protocol::ReadOnlyAccess;
 use crate::protocol::SandboxPolicy;
 use crate::unified_exec::DEFAULT_MAX_BACKGROUND_TERMINAL_TIMEOUT_MS;
 use crate::unified_exec::MIN_EMPTY_YIELD_TIME_MS;
-use codex_protocol::api::Tools;
 use codex_protocol::api::UserSavedConfig;
 use codex_protocol::config_types::AltScreenMode;
 use codex_protocol::config_types::ForcedLoginMethod;
@@ -66,18 +66,15 @@ use codex_protocol::config_types::TrustLevel;
 use codex_protocol::config_types::Verbosity;
 use codex_protocol::config_types::WebSearchConfig;
 use codex_protocol::config_types::WebSearchMode;
-use codex_protocol::config_types::WebSearchToolConfig;
 use codex_protocol::models::MacOsSeatbeltProfileExtensions;
 use codex_protocol::openai_models::ModelsResponse;
 use codex_protocol::openai_models::ReasoningEffort;
 use codex_protocol::permissions::FileSystemSandboxPolicy;
 use codex_protocol::permissions::NetworkSandboxPolicy;
-use crate::mcp::oauth_types::OAuthCredentialsStoreMode;
 use codex_utils_absolute_path::AbsolutePathBuf;
 use codex_utils_absolute_path::AbsolutePathBufGuard;
 use schemars::JsonSchema;
 use serde::Deserialize;
-use serde::Deserializer;
 use serde::Serialize;
 use similar::DiffableStr;
 use std::collections::BTreeMap;
@@ -91,7 +88,6 @@ use crate::config::permissions::network_proxy_config_from_profile_network;
 use crate::config::profile::ConfigProfile;
 use codex_network_proxy::NetworkProxyConfig;
 use toml::Value as TomlValue;
-use toml_edit::DocumentMut;
 use toml_edit::value;
 
 pub(crate) mod agent_roles;
@@ -1017,74 +1013,9 @@ fn ensure_no_inline_bearer_tokens(value: &TomlValue) -> std::io::Result<()> {
     Ok(())
 }
 
-pub(crate) fn set_project_trust_level_inner(
-    doc: &mut DocumentMut,
-    project_path: &Path,
-    trust_level: TrustLevel,
-) -> anyhow::Result<()> {
-    // Ensure we render a human-friendly structure:
-    //
-    // [projects]
-    // [projects."/path/to/project"]
-    // trust_level = "trusted" or "untrusted"
-    //
-    // rather than inline tables like:
-    //
-    // [projects]
-    // "/path/to/project" = { trust_level = "trusted" }
-    let project_key = project_path.to_string_lossy().to_string();
-
-    // Ensure top-level `projects` exists as a non-inline, explicit table. If it
-    // exists but was previously represented as a non-table (e.g., inline),
-    // replace it with an explicit table.
-    {
-        let root = doc.as_table_mut();
-        // If `projects` exists but isn't a standard table (e.g., it's an inline table),
-        // convert it to an explicit table while preserving existing entries.
-        let existing_projects = root.get("projects").cloned();
-        if existing_projects.as_ref().is_none_or(|i| !i.is_table()) {
-            let mut projects_tbl = toml_edit::Table::new();
-            projects_tbl.set_implicit(true);
-
-            // If there was an existing inline table, migrate its entries to explicit tables.
-            if let Some(inline_tbl) = existing_projects.as_ref().and_then(|i| i.as_inline_table()) {
-                for (k, v) in inline_tbl.iter() {
-                    if let Some(inner_tbl) = v.as_inline_table() {
-                        let new_tbl = inner_tbl.clone().into_table();
-                        projects_tbl.insert(k, toml_edit::Item::Table(new_tbl));
-                    }
-                }
-            }
-
-            root.insert("projects", toml_edit::Item::Table(projects_tbl));
-        }
-    }
-    let Some(projects_tbl) = doc["projects"].as_table_mut() else {
-        return Err(anyhow::anyhow!(
-            "projects table missing after initialization"
-        ));
-    };
-
-    // Ensure the per-project entry is its own explicit table. If it exists but
-    // is not a table (e.g., an inline table), replace it with an explicit table.
-    let needs_proj_table = !projects_tbl.contains_key(project_key.as_str())
-        || projects_tbl
-            .get(project_key.as_str())
-            .and_then(|i| i.as_table())
-            .is_none();
-    if needs_proj_table {
-        projects_tbl.insert(project_key.as_str(), toml_edit::table());
-    }
-    let Some(proj_tbl) = projects_tbl
-        .get_mut(project_key.as_str())
-        .and_then(|i| i.as_table_mut())
-    else {
-        return Err(anyhow::anyhow!("project table missing for {project_key}"));
-    };
-    proj_tbl.set_implicit(false);
-    proj_tbl["trust_level"] = toml_edit::value(trust_level.to_string());
-    Ok(())
-}
+#[cfg(test)]
+#[allow(unused_imports)]
+pub(crate) use codex_config::edit::set_project_trust_level_inner;
 
 /// Patch `CODEX_HOME/config.toml` project state to set trust level.
 /// Use with caution.
@@ -1459,182 +1390,18 @@ impl From<ConfigToml> for UserSavedConfig {
     }
 }
 
-#[derive(Serialize, Deserialize, Debug, Clone, PartialEq, Eq, JsonSchema)]
-#[schemars(deny_unknown_fields)]
-pub struct ProjectConfig {
-    pub trust_level: Option<TrustLevel>,
-}
-
-impl ProjectConfig {
-    pub fn is_trusted(&self) -> bool {
-        matches!(self.trust_level, Some(TrustLevel::Trusted))
-    }
-
-    pub fn is_untrusted(&self) -> bool {
-        matches!(self.trust_level, Some(TrustLevel::Untrusted))
-    }
-}
-
-#[derive(Debug, Clone, Default, PartialEq, Eq)]
-pub struct RealtimeAudioConfig {
-    pub microphone: Option<String>,
-    pub speaker: Option<String>,
-}
-
-#[derive(Serialize, Deserialize, Debug, Clone, Copy, Default, PartialEq, Eq, JsonSchema)]
-#[serde(rename_all = "snake_case")]
-pub enum RealtimeWsMode {
-    #[default]
-    Conversational,
-    Transcription,
-}
-
-#[derive(Serialize, Deserialize, Debug, Clone, Copy, Default, PartialEq, Eq, JsonSchema)]
-#[serde(rename_all = "snake_case")]
-pub enum RealtimeWsVersion {
-    #[default]
-    V1,
-    V2,
-}
-
-#[derive(Serialize, Deserialize, Debug, Clone, Default, PartialEq, Eq, JsonSchema)]
-#[schemars(deny_unknown_fields)]
-pub struct RealtimeConfig {
-    pub version: RealtimeWsVersion,
-    #[serde(rename = "type")]
-    pub session_type: RealtimeWsMode,
-}
-
-#[derive(Serialize, Deserialize, Debug, Clone, Default, PartialEq, Eq, JsonSchema)]
-#[schemars(deny_unknown_fields)]
-pub struct RealtimeToml {
-    pub version: Option<RealtimeWsVersion>,
-    #[serde(rename = "type")]
-    pub session_type: Option<RealtimeWsMode>,
-}
-
-#[derive(Serialize, Deserialize, Debug, Clone, Default, PartialEq, Eq, JsonSchema)]
-#[schemars(deny_unknown_fields)]
-pub struct RealtimeAudioToml {
-    pub microphone: Option<String>,
-    pub speaker: Option<String>,
-}
-
-#[derive(Serialize, Deserialize, Debug, Clone, Default, PartialEq, JsonSchema)]
-#[schemars(deny_unknown_fields)]
-pub struct ToolsToml {
-    #[serde(
-        default,
-        deserialize_with = "deserialize_optional_web_search_tool_config"
-    )]
-    pub web_search: Option<WebSearchToolConfig>,
-
-    /// Enable the `view_image` tool that lets the agent attach local images.
-    #[serde(default)]
-    pub view_image: Option<bool>,
-}
-
-#[derive(Deserialize)]
-#[serde(untagged)]
-enum WebSearchToolConfigInput {
-    Enabled(bool),
-    Config(WebSearchToolConfig),
-}
-
-fn deserialize_optional_web_search_tool_config<'de, D>(
-    deserializer: D,
-) -> Result<Option<WebSearchToolConfig>, D::Error>
-where
-    D: Deserializer<'de>,
-{
-    let value = Option::<WebSearchToolConfigInput>::deserialize(deserializer)?;
-
-    Ok(match value {
-        None => None,
-        Some(WebSearchToolConfigInput::Enabled(enabled)) => {
-            let _ = enabled;
-            None
-        }
-        Some(WebSearchToolConfigInput::Config(config)) => Some(config),
-    })
-}
-
-#[derive(Serialize, Deserialize, Debug, Clone, Default, PartialEq, Eq, JsonSchema)]
-#[schemars(deny_unknown_fields)]
-pub struct AgentsToml {
-    /// Maximum number of agent threads that can be open concurrently.
-    /// When unset, no limit is enforced.
-    #[schemars(range(min = 1))]
-    pub max_threads: Option<usize>,
-    /// Maximum nesting depth allowed for spawned agent threads.
-    /// Root sessions start at depth 0.
-    #[schemars(range(min = 1))]
-    pub max_depth: Option<i32>,
-    /// Default maximum runtime in seconds for agent job workers.
-    #[schemars(range(min = 1))]
-    pub job_max_runtime_seconds: Option<u64>,
-
-    /// User-defined role declarations keyed by role name.
-    ///
-    /// Example:
-    /// ```toml
-    /// [agents.researcher]
-    /// description = "Research-focused role."
-    /// config_file = "./agents/researcher.toml"
-    /// nickname_candidates = ["Herodotus", "Ibn Battuta"]
-    /// ```
-    #[serde(default, flatten)]
-    pub roles: BTreeMap<String, AgentRoleToml>,
-}
-
-#[derive(Debug, Clone, Default, PartialEq, Eq)]
-pub struct AgentRoleConfig {
-    /// Human-facing role documentation used in spawn tool guidance.
-    /// Required for loaded user-defined roles after deprecated/new metadata precedence resolves.
-    pub description: Option<String>,
-    /// Path to a role-specific config layer.
-    pub config_file: Option<PathBuf>,
-    /// Candidate nicknames for agents spawned with this role.
-    pub nickname_candidates: Option<Vec<String>>,
-}
-
-#[derive(Serialize, Deserialize, Debug, Clone, Default, PartialEq, Eq, JsonSchema)]
-#[schemars(deny_unknown_fields)]
-pub struct AgentRoleToml {
-    /// Human-facing role documentation used in spawn tool guidance.
-    /// Required unless supplied by the referenced agent role file.
-    pub description: Option<String>,
-
-    /// Path to a role-specific config layer.
-    /// Relative paths are resolved relative to the `config.toml` that defines them.
-    pub config_file: Option<AbsolutePathBuf>,
-
-    /// Candidate nicknames for agents spawned with this role.
-    pub nickname_candidates: Option<Vec<String>>,
-}
-
-impl From<ToolsToml> for Tools {
-    fn from(tools_toml: ToolsToml) -> Self {
-        Self {
-            web_search: tools_toml.web_search.is_some().then_some(true),
-            view_image: tools_toml.view_image,
-        }
-    }
-}
-
-#[derive(Serialize, Deserialize, Debug, Clone, Default, PartialEq, Eq, JsonSchema)]
-#[schemars(deny_unknown_fields)]
-pub struct GhostSnapshotToml {
-    /// Exclude untracked files larger than this many bytes from ghost snapshots.
-    #[serde(alias = "ignore_untracked_files_over_bytes")]
-    pub ignore_large_untracked_files: Option<i64>,
-    /// Ignore untracked directories that contain this many files or more.
-    /// (Still emits a warning unless warnings are disabled.)
-    #[serde(alias = "large_untracked_dir_warning_threshold")]
-    pub ignore_large_untracked_dirs: Option<i64>,
-    /// Disable all ghost snapshot warning events.
-    pub disable_warnings: Option<bool>,
-}
+pub use codex_config::types::AgentRoleConfig;
+pub use codex_config::types::AgentRoleToml;
+pub use codex_config::types::AgentsToml;
+pub use codex_config::types::GhostSnapshotToml;
+pub use codex_config::types::ProjectConfig;
+pub use codex_config::types::RealtimeAudioConfig;
+pub use codex_config::types::RealtimeAudioToml;
+pub use codex_config::types::RealtimeConfig;
+pub use codex_config::types::RealtimeToml;
+pub use codex_config::types::RealtimeWsMode;
+pub use codex_config::types::RealtimeWsVersion;
+pub use codex_config::types::ToolsToml;
 
 impl ConfigToml {
     /// Derive the effective sandbox policy from the configuration.
@@ -2055,7 +1822,8 @@ impl Config {
             web_search_request: override_tools_web_search_request,
         };
 
-        let configured_features = Features::from_config(&cfg, &config_profile, feature_overrides);
+        let configured_features =
+            crate::features::features_from_config(&cfg, &config_profile, feature_overrides);
         let features = ManagedFeatures::from_configured(configured_features, feature_requirements)?;
         let resolved_cwd = normalize_for_native_workdir({
             use std::env;
@@ -2220,8 +1988,11 @@ impl Config {
             .unwrap_or(WebSearchMode::Cached);
         let web_search_config = resolve_web_search_config(&cfg, &config_profile);
 
-        let agent_roles =
-            agent_roles::load_agent_roles(&cfg, &config_layer_stack, &mut startup_warnings)?;
+        let agent_roles = agent_roles::load_agent_roles(
+            cfg.agents.as_ref(),
+            &config_layer_stack,
+            &mut startup_warnings,
+        )?;
 
         let openai_base_url = cfg
             .openai_base_url
@@ -2725,7 +2496,6 @@ impl Config {
             Ok(Some(s))
         }
     }
-
 
     pub fn managed_network_requirements_enabled(&self) -> bool {
         self.config_layer_stack

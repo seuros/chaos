@@ -7,12 +7,12 @@ use codex_client::StreamResponse;
 use codex_client::TransportError;
 use codex_client::run_with_retry;
 use http::StatusCode;
+use rama::error::BoxError;
+use rama::http::ws::Message;
 use std::future::Future;
 use std::sync::Arc;
 use std::time::Duration;
 use tokio::time::Instant;
-use rama::error::BoxError;
-use rama::http::ws::Message;
 
 /// Generic telemetry.
 pub trait SseTelemetry: Send + Sync {

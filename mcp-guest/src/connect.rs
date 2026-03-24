@@ -9,8 +9,7 @@ use crate::error::GuestError;
 use crate::handler::{ClientHandler, NoopClientHandler};
 use crate::protocol::{
     ClientCapabilities, ElicitationCapability, EmptyObject, FormElicitationCapability,
-    Implementation, RootsCapability, SamplingCapability, TasksCapability,
-    UrlElicitationCapability,
+    Implementation, RootsCapability, SamplingCapability, TasksCapability, UrlElicitationCapability,
 };
 use crate::runtime::{ConnectionOptions, connect_with_transport};
 use crate::session::McpSession;

@@ -51,11 +51,7 @@ pub struct ListDirParams {
 impl ChaosServer {
     /// List directory contents recursively with configurable depth, offset, and limit.
     #[mcp_tool(name = "list_dir", read_only = true, idempotent = true)]
-    async fn list_dir(
-        &self,
-        _ctx: ChaosCtx<'_>,
-        params: Parameters<ListDirParams>,
-    ) -> ToolResult {
+    async fn list_dir(&self, _ctx: ChaosCtx<'_>, params: Parameters<ListDirParams>) -> ToolResult {
         match execute_params(params.0).await {
             Ok(text) => Ok(ToolOutput::text(text)),
             Err(msg) => Err(ToolError::Execution(msg)),
@@ -286,13 +282,21 @@ mod tests {
         let dir_path = temp.path();
 
         let sub_dir = dir_path.join("nested");
-        tokio::fs::create_dir(&sub_dir).await.expect("create sub dir");
+        tokio::fs::create_dir(&sub_dir)
+            .await
+            .expect("create sub dir");
 
         let deeper_dir = sub_dir.join("deeper");
-        tokio::fs::create_dir(&deeper_dir).await.expect("create deeper dir");
+        tokio::fs::create_dir(&deeper_dir)
+            .await
+            .expect("create deeper dir");
 
-        tokio::fs::write(dir_path.join("entry.txt"), b"content").await.expect("write file");
-        tokio::fs::write(sub_dir.join("child.txt"), b"child").await.expect("write child");
+        tokio::fs::write(dir_path.join("entry.txt"), b"content")
+            .await
+            .expect("write file");
+        tokio::fs::write(sub_dir.join("child.txt"), b"child")
+            .await
+            .expect("write child");
         tokio::fs::write(deeper_dir.join("grandchild.txt"), b"grandchild")
             .await
             .expect("write grandchild");
@@ -352,9 +356,15 @@ mod tests {
         let deeper = nested.join("deeper");
         tokio::fs::create_dir(&nested).await.expect("create nested");
         tokio::fs::create_dir(&deeper).await.expect("create deeper");
-        tokio::fs::write(dir_path.join("root.txt"), b"root").await.expect("write root");
-        tokio::fs::write(nested.join("child.txt"), b"child").await.expect("write nested");
-        tokio::fs::write(deeper.join("grandchild.txt"), b"deep").await.expect("write deeper");
+        tokio::fs::write(dir_path.join("root.txt"), b"root")
+            .await
+            .expect("write root");
+        tokio::fs::write(nested.join("child.txt"), b"child")
+            .await
+            .expect("write nested");
+        tokio::fs::write(deeper.join("grandchild.txt"), b"deep")
+            .await
+            .expect("write deeper");
 
         let entries_depth_one = list_dir_slice(dir_path, 1, 10, 1)
             .await
@@ -388,8 +398,12 @@ mod tests {
         tokio::fs::create_dir(&dir_a).await.expect("create a");
         tokio::fs::create_dir(&dir_b).await.expect("create b");
 
-        tokio::fs::write(dir_a.join("a_child.txt"), b"a").await.expect("write a child");
-        tokio::fs::write(dir_b.join("b_child.txt"), b"b").await.expect("write b child");
+        tokio::fs::write(dir_a.join("a_child.txt"), b"a")
+            .await
+            .expect("write a child");
+        tokio::fs::write(dir_b.join("b_child.txt"), b"b")
+            .await
+            .expect("write b child");
 
         let first_page = list_dir_slice(dir_path, 1, 2, 2)
             .await

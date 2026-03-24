@@ -22,5 +22,4 @@ impl Command for PostNotification {
     fn write_ansi(&self, f: &mut impl fmt::Write) -> fmt::Result {
         write!(f, "\x07")
     }
-
 }

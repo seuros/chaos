@@ -24,6 +24,7 @@ pub(crate) use control::clear_memory_root_contents;
 /// This is the entry point to read and understand this module.
 pub(crate) use start::start_memories_startup_task;
 
+#[cfg(test)]
 mod artifacts {
     pub(super) const ROLLOUT_SUMMARIES_SUBDIR: &str = "rollout_summaries";
     pub(super) const RAW_MEMORIES_FILENAME: &str = "raw_memories.md";
@@ -39,18 +40,6 @@ mod phase_one {
     pub(super) const PROMPT: &str = include_str!("../templates/memories/stage_one_system.md");
     /// Concurrency cap for startup memory extraction and consolidation scheduling.
     pub(super) const CONCURRENCY_LIMIT: usize = 8;
-    /// Fallback stage-1 rollout truncation limit (tokens) when model metadata
-    /// does not include a valid context window.
-    pub(super) const DEFAULT_STAGE_ONE_ROLLOUT_TOKEN_LIMIT: usize = 150_000;
-    /// Maximum number of tokens from `memory_summary.md` injected into memory
-    /// tool developer instructions.
-    pub(super) const MEMORY_TOOL_DEVELOPER_INSTRUCTIONS_SUMMARY_TOKEN_LIMIT: usize = 5_000;
-    /// Portion of the model effective input window reserved for the stage-1
-    /// rollout input.
-    ///
-    /// Keeping this below 100% leaves room for system instructions, prompt
-    /// framing, and model output.
-    pub(super) const CONTEXT_WINDOW_PERCENT: i64 = 70;
     /// Lease duration (seconds) for phase-1 job ownership.
     pub(super) const JOB_LEASE_SECONDS: i64 = 3_600;
     /// Backoff delay (seconds) before retrying a failed stage-1 extraction job.
@@ -102,14 +91,17 @@ pub fn memory_root(codex_home: &Path) -> PathBuf {
     codex_home.join("memories")
 }
 
-fn rollout_summaries_dir(root: &Path) -> PathBuf {
+#[cfg(test)]
+pub(crate) fn rollout_summaries_dir(root: &Path) -> PathBuf {
     root.join(artifacts::ROLLOUT_SUMMARIES_SUBDIR)
 }
 
+#[cfg(test)]
 fn raw_memories_file(root: &Path) -> PathBuf {
     root.join(artifacts::RAW_MEMORIES_FILENAME)
 }
 
+#[cfg(test)]
 async fn ensure_layout(root: &Path) -> std::io::Result<()> {
     tokio::fs::create_dir_all(rollout_summaries_dir(root)).await
 }

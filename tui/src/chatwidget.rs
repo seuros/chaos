@@ -45,14 +45,13 @@ use crate::status::format_tokens_compact;
 use crate::status::rate_limit_snapshot_display_for_limit;
 use crate::text_formatting::proper_join;
 use crate::version::CHAOS_VERSION;
-use codex_protocol::api::ConfigLayerSource;
-use codex_core::connectors;
 use codex_core::config::Config;
 use codex_core::config::Constrained;
 use codex_core::config::ConstraintResult;
 use codex_core::config::types::ApprovalsReviewer;
 use codex_core::config::types::Notifications;
 use codex_core::config_loader::ConfigLayerStackOrdering;
+use codex_core::connectors;
 use codex_core::features::FEATURES;
 use codex_core::features::Feature;
 use codex_core::find_thread_name_by_id;
@@ -69,6 +68,7 @@ use codex_otel::RuntimeMetricsSummary;
 use codex_otel::SessionTelemetry;
 use codex_protocol::ThreadId;
 use codex_protocol::account::PlanType;
+use codex_protocol::api::ConfigLayerSource;
 use codex_protocol::approvals::ElicitationRequest;
 use codex_protocol::approvals::ElicitationRequestEvent;
 use codex_protocol::config_types::CollaborationMode;
@@ -1479,7 +1479,8 @@ impl ChatWidget {
         {
             tracing::info!(target: "feedback_tags", chatgpt_user_id);
         }
-        let snapshot = crate::bottom_pane::FeedbackSnapshot::new(self.thread_id.map(|id| id.to_string()));
+        let snapshot =
+            crate::bottom_pane::FeedbackSnapshot::new(self.thread_id.map(|id| id.to_string()));
         self.show_feedback_note(category, include_logs, snapshot);
     }
 
@@ -5333,9 +5334,7 @@ impl ChatWidget {
         )
     }
 
-    fn pending_steer_compare_key_from_items(
-        items: &[UserInput],
-    ) -> PendingSteerCompareKey {
+    fn pending_steer_compare_key_from_items(items: &[UserInput]) -> PendingSteerCompareKey {
         let mut message = String::new();
         let mut image_count = 0;
         for item in items {
@@ -5358,9 +5357,7 @@ impl ChatWidget {
     }
 
     #[cfg(test)]
-    fn rendered_user_message_event_from_inputs(
-        items: &[UserInput],
-    ) -> RenderedUserMessageEvent {
+    fn rendered_user_message_event_from_inputs(items: &[UserInput]) -> RenderedUserMessageEvent {
         let mut message = String::new();
         let mut remote_image_urls = Vec::new();
         let mut local_images = Vec::new();

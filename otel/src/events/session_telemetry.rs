@@ -530,15 +530,7 @@ impl SessionTelemetry {
 
     pub fn record_websocket_event(
         &self,
-        result: &Result<
-            Option<
-                Result<
-                    rama::http::ws::Message,
-                    rama::error::BoxError,
-                >,
-            >,
-            ApiError,
-        >,
+        result: &Result<Option<Result<rama::http::ws::Message, rama::error::BoxError>>, ApiError>,
         duration: Duration,
     ) {
         let mut kind = None;
@@ -577,8 +569,7 @@ impl SessionTelemetry {
                     success = false;
                     error_message = Some("unexpected binary websocket event".to_string());
                 }
-                rama::http::ws::Message::Ping(_)
-                | rama::http::ws::Message::Pong(_) => {
+                rama::http::ws::Message::Ping(_) | rama::http::ws::Message::Pong(_) => {
                     return;
                 }
                 rama::http::ws::Message::Close(_) => {

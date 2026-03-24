@@ -1,5 +1,4 @@
 use crate::history_cell::PlainHistoryCell;
-use codex_protocol::api::ConfigLayerSource;
 use codex_core::config::Config;
 use codex_core::config_loader::ConfigLayerEntry;
 use codex_core::config_loader::ConfigLayerStack;
@@ -9,6 +8,7 @@ use codex_core::config_loader::RequirementSource;
 use codex_core::config_loader::ResidencyRequirement;
 use codex_core::config_loader::SandboxModeRequirement;
 use codex_core::config_loader::WebSearchModeRequirement;
+use codex_protocol::api::ConfigLayerSource;
 use codex_protocol::protocol::SessionNetworkProxyRuntime;
 use ratatui::style::Stylize;
 use ratatui::text::Line;
@@ -390,7 +390,6 @@ fn format_network_constraints(network: &NetworkConstraints) -> String {
 mod tests {
     use super::render_debug_config_lines;
     use super::session_all_proxy_url;
-    use codex_protocol::api::ConfigLayerSource;
     use codex_core::config::Constrained;
     use codex_core::config_loader::ConfigLayerEntry;
     use codex_core::config_loader::ConfigLayerStack;
@@ -405,6 +404,7 @@ mod tests {
     use codex_core::config_loader::SandboxModeRequirement;
     use codex_core::config_loader::Sourced;
     use codex_core::config_loader::WebSearchModeRequirement;
+    use codex_protocol::api::ConfigLayerSource;
     use codex_protocol::config_types::WebSearchMode;
     use codex_protocol::protocol::AskForApproval;
     use codex_protocol::protocol::SandboxPolicy;

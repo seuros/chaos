@@ -325,11 +325,8 @@ impl ToolsConfig {
             } else {
                 ShellCommandBackendConfig::Classic
             };
-        let unified_exec_allowed = unified_exec_allowed_in_environment(
-            false,
-            sandbox_policy,
-            *windows_sandbox_level,
-        );
+        let unified_exec_allowed =
+            unified_exec_allowed_in_environment(false, sandbox_policy, *windows_sandbox_level);
         let shell_type = if !features.enabled(Feature::ShellTool) {
             ConfigShellToolType::Disabled
         } else if features.enabled(Feature::ShellZshFork) {
@@ -426,7 +423,6 @@ impl ToolsConfig {
         self.web_search_config = web_search_config;
         self
     }
-
 }
 
 fn supports_image_generation(model_info: &ModelInfo) -> bool {
@@ -2170,8 +2166,8 @@ fn mcp_tool_to_openai_tool_parts(
     // `type`, so we coerce/sanitize here for compatibility.
     sanitize_json_schema(&mut serialized_input_schema);
     let input_schema = serde_json::from_value::<JsonSchema>(serialized_input_schema)?;
-    let structured_content_schema = output_schema
-        .unwrap_or_else(|| JsonValue::Object(serde_json::Map::new()));
+    let structured_content_schema =
+        output_schema.unwrap_or_else(|| JsonValue::Object(serde_json::Map::new()));
     let output_schema = Some(mcp_call_tool_result_output_schema(
         structured_content_schema,
     ));
@@ -2679,7 +2675,8 @@ pub(crate) fn build_specs_with_discoverable_tools(
     }
 
     if let Some(mcp_tools) = mcp_tools {
-        let mut entries: Vec<(String, crate::mcp_connection_manager::McpToolInfo)> = mcp_tools.into_iter().collect();
+        let mut entries: Vec<(String, crate::mcp_connection_manager::McpToolInfo)> =
+            mcp_tools.into_iter().collect();
         entries.sort_by(|a, b| a.0.cmp(&b.0));
 
         for (name, tool) in entries.into_iter() {

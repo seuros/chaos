@@ -3451,7 +3451,11 @@ impl ChatComposer {
                     }
                 } else if self.footer_flash_visible() {
                     if let Some(flash) = self.footer_flash.as_ref() {
-                        ratatui::widgets::Widget::render(&flash.line, inset_footer_hint_area(hint_rect), buf);
+                        ratatui::widgets::Widget::render(
+                            &flash.line,
+                            inset_footer_hint_area(hint_rect),
+                            buf,
+                        );
                     }
                 } else if let Some(items) = self.footer_hint_override.as_ref() {
                     render_footer_hint_items(hint_rect, buf, items);
@@ -3515,8 +3519,7 @@ impl ChatComposer {
             };
             if !textarea_rect.is_empty() {
                 let placeholder = Span::from(text).dim();
-                Line::from(vec![placeholder])
-                    .render(textarea_rect.inner(Margin::new(0, 0)), buf);
+                Line::from(vec![placeholder]).render(textarea_rect.inner(Margin::new(0, 0)), buf);
             }
         }
     }

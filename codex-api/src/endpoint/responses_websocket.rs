@@ -371,9 +371,12 @@ async fn connect_websocket(
 
     let mut ws_builder = client.websocket(url.as_str());
     for (name, value) in &headers {
-        ws_builder = ws_builder.with_header(name.as_str(), value.to_str().map_err(|err| {
-            ApiError::Stream(format!("invalid header value for {name}: {err}"))
-        })?);
+        ws_builder = ws_builder.with_header(
+            name.as_str(),
+            value.to_str().map_err(|err| {
+                ApiError::Stream(format!("invalid header value for {name}: {err}"))
+            })?,
+        );
     }
     let _ = ws_builder.set_per_message_deflate();
 
@@ -388,7 +391,9 @@ async fn connect_websocket(
         response_parts.headers
     );
 
-    let reasoning_included = response_parts.headers.contains_key(X_REASONING_INCLUDED_HEADER);
+    let reasoning_included = response_parts
+        .headers
+        .contains_key(X_REASONING_INCLUDED_HEADER);
     let models_etag = response_parts
         .headers
         .get(X_MODELS_ETAG_HEADER)
@@ -418,9 +423,7 @@ async fn connect_websocket(
 fn map_handshake_error(err: HandshakeError, url: &Url) -> ApiError {
     error!("failed to connect to websocket: {err}, url: {url}");
     match err {
-        HandshakeError::ValidationError(
-            ResponseValidateError::UnexpectedStatusCode(status),
-        ) => {
+        HandshakeError::ValidationError(ResponseValidateError::UnexpectedStatusCode(status)) => {
             // Preserve HTTP status so callers can match on 426 (fallback to HTTP)
             // and 401 (auth recovery).
             ApiError::Transport(TransportError::Http {
@@ -430,19 +433,15 @@ fn map_handshake_error(err: HandshakeError, url: &Url) -> ApiError {
                 body: None,
             })
         }
-        HandshakeError::ValidationError(validation_err) => {
-            ApiError::Stream(format!("websocket handshake validation failed: {validation_err}"))
-        }
-        HandshakeError::HttpRequestError(err) => {
-            ApiError::Transport(TransportError::Network(format!(
-                "websocket HTTP request failed: {err}"
-            )))
-        }
-        HandshakeError::HttpUpgradeError(err) => {
-            ApiError::Transport(TransportError::Network(format!(
-                "websocket upgrade failed: {err}"
-            )))
-        }
+        HandshakeError::ValidationError(validation_err) => ApiError::Stream(format!(
+            "websocket handshake validation failed: {validation_err}"
+        )),
+        HandshakeError::HttpRequestError(err) => ApiError::Transport(TransportError::Network(
+            format!("websocket HTTP request failed: {err}"),
+        )),
+        HandshakeError::HttpUpgradeError(err) => ApiError::Transport(TransportError::Network(
+            format!("websocket upgrade failed: {err}"),
+        )),
     }
 }
 

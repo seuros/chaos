@@ -1,4 +1,3 @@
-
 use anyhow::Ok;
 use codex_protocol::config_types::CollaborationMode;
 use codex_protocol::config_types::ModeKind;

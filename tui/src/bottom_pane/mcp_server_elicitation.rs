@@ -2,10 +2,10 @@ use std::collections::HashSet;
 use std::collections::VecDeque;
 use std::path::PathBuf;
 
+use codex_protocol::ThreadId;
 use codex_protocol::api::McpElicitationEnumSchema;
 use codex_protocol::api::McpElicitationPrimitiveSchema;
 use codex_protocol::api::McpElicitationSingleSelectEnumSchema;
-use codex_protocol::ThreadId;
 use codex_protocol::approvals::ElicitationAction;
 use codex_protocol::approvals::ElicitationRequest;
 use codex_protocol::approvals::ElicitationRequestEvent;

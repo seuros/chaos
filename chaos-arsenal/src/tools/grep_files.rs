@@ -72,10 +72,7 @@ async fn execute_params(params: GrepFilesParams) -> Result<String, String> {
 
     let limit = params.limit.min(MAX_LIMIT);
 
-    let search_path = params
-        .path
-        .as_deref()
-        .unwrap_or(".");
+    let search_path = params.path.as_deref().unwrap_or(".");
 
     let search_path = Path::new(search_path);
     verify_path_exists(search_path).await?;
@@ -209,7 +206,9 @@ mod tests {
         std::fs::write(dir.join("match_two.txt"), "alpha delta").unwrap();
         std::fs::write(dir.join("other.txt"), "omega").unwrap();
 
-        let results = run_rg_search("alpha", None, dir, 10).await.expect("search failed");
+        let results = run_rg_search("alpha", None, dir, 10)
+            .await
+            .expect("search failed");
         assert_eq!(results.len(), 2);
         assert!(results.iter().any(|path| path.ends_with("match_one.txt")));
         assert!(results.iter().any(|path| path.ends_with("match_two.txt")));
@@ -225,7 +224,9 @@ mod tests {
         std::fs::write(dir.join("match_one.rs"), "alpha beta gamma").unwrap();
         std::fs::write(dir.join("match_two.txt"), "alpha delta").unwrap();
 
-        let results = run_rg_search("alpha", Some("*.rs"), dir, 10).await.expect("search failed");
+        let results = run_rg_search("alpha", Some("*.rs"), dir, 10)
+            .await
+            .expect("search failed");
         assert_eq!(results.len(), 1);
         assert!(results.iter().all(|path| path.ends_with("match_one.rs")));
     }
@@ -241,7 +242,9 @@ mod tests {
         std::fs::write(dir.join("two.txt"), "alpha two").unwrap();
         std::fs::write(dir.join("three.txt"), "alpha three").unwrap();
 
-        let results = run_rg_search("alpha", None, dir, 2).await.expect("search failed");
+        let results = run_rg_search("alpha", None, dir, 2)
+            .await
+            .expect("search failed");
         assert_eq!(results.len(), 2);
     }
 
@@ -254,7 +257,9 @@ mod tests {
         let dir = temp.path();
         std::fs::write(dir.join("one.txt"), "omega").unwrap();
 
-        let results = run_rg_search("alpha", None, dir, 5).await.expect("search failed");
+        let results = run_rg_search("alpha", None, dir, 5)
+            .await
+            .expect("search failed");
         assert!(results.is_empty());
     }
 

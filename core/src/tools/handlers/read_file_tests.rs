@@ -7,11 +7,7 @@ use pretty_assertions::assert_eq;
 use tempfile::NamedTempFile;
 
 /// Adapts `Result<T, String>` to `anyhow::Result<T>` for test ergonomics.
-async fn read(
-    path: &std::path::Path,
-    offset: usize,
-    limit: usize,
-) -> anyhow::Result<Vec<String>> {
+async fn read(path: &std::path::Path, offset: usize, limit: usize) -> anyhow::Result<Vec<String>> {
     read_inner(path, offset, limit)
         .await
         .map_err(|e| anyhow!(e))

@@ -1,7 +1,7 @@
 use super::*;
+use crate::mcp_connection_manager::McpToolInfo;
 use codex_protocol::protocol::GranularApprovalConfig;
 use codex_protocol::protocol::McpAuthStatus;
-use crate::mcp_connection_manager::McpToolInfo;
 use std::collections::HashSet;
 use std::sync::Arc;
 use tempfile::tempdir;

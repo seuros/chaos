@@ -232,12 +232,11 @@ async fn handle_runtime_command(
         }
         RuntimeCommand::Cancel { request_id, reason } => {
             pending_outgoing.remove(&request_id);
-            let params =
-                serde_json::to_value(CancelledNotificationParams {
-                    request_id: Some(request_id),
-                    reason,
-                })
-                .ok();
+            let params = serde_json::to_value(CancelledNotificationParams {
+                request_id: Some(request_id),
+                reason,
+            })
+            .ok();
             let notification = JsonRpcRequest::notification("notifications/cancelled", params);
             let _ = transport
                 .send(JsonRpcMessage::Notification(notification))

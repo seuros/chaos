@@ -20,6 +20,7 @@ use std::time::Instant;
 use crate::mcp::CODEX_APPS_MCP_SERVER_NAME;
 use crate::mcp::ToolPluginProvenance;
 use crate::mcp::auth::McpAuthStatusEntry;
+use crate::mcp::oauth_types::OAuthCredentialsStoreMode;
 use anyhow::Context;
 use anyhow::Result;
 use anyhow::anyhow;
@@ -40,7 +41,6 @@ use codex_protocol::protocol::McpStartupFailure;
 use codex_protocol::protocol::McpStartupStatus;
 use codex_protocol::protocol::McpStartupUpdateEvent;
 use codex_protocol::protocol::SandboxPolicy;
-use crate::mcp::oauth_types::OAuthCredentialsStoreMode;
 use futures::future::BoxFuture;
 use futures::future::FutureExt;
 use futures::future::Shared;
@@ -388,11 +388,7 @@ impl ClientHandler for ChaosClientHandler {
                 })
                 .await;
 
-            let response = rx
-                .await
-                .map_err(|_| {
-                    mcp_guest::GuestError::Disconnected
-                })?;
+            let response = rx.await.map_err(|_| mcp_guest::GuestError::Disconnected)?;
 
             Ok(TaskOrResult::Result(
                 mcp_guest::protocol::CreateElicitationResult {
@@ -974,13 +970,8 @@ impl McpConnectionManager {
             let session = managed_client.session.clone();
 
             join_set.spawn(async move {
-                match session
-                    .list_resources()
-                    .await
-                {
-                    Ok(resources) => {
-                        (server_name, Ok(resources))
-                    }
+                match session.list_resources().await {
+                    Ok(resources) => (server_name, Ok(resources)),
                     Err(err) => (server_name, Err(anyhow!("{err}"))),
                 }
             });
@@ -1020,13 +1011,8 @@ impl McpConnectionManager {
             let session = managed_client.session.clone();
 
             join_set.spawn(async move {
-                match session
-                    .list_resource_templates()
-                    .await
-                {
-                    Ok(templates) => {
-                        (server_name_cloned, Ok(templates))
-                    }
+                match session.list_resource_templates().await {
+                    Ok(templates) => (server_name_cloned, Ok(templates)),
                     Err(err) => (server_name_cloned, Err(anyhow!("{err}"))),
                 }
             });
@@ -1520,10 +1506,7 @@ async fn make_managed_client(
                     builder = builder.cwd(cwd_path);
                 }
 
-                builder
-                    .connect()
-                    .await
-                    .map_err(|e| anyhow!("{e}"))
+                builder.connect().await.map_err(|e| anyhow!("{e}"))
             }
             McpServerTransportConfig::StreamableHttp {
                 url,
@@ -1547,10 +1530,7 @@ async fn make_managed_client(
                     builder = builder.bearer_token(token);
                 }
 
-                builder
-                    .connect()
-                    .await
-                    .map_err(|e| anyhow!("{e}"))
+                builder.connect().await.map_err(|e| anyhow!("{e}"))
             }
         }
     };
@@ -1757,14 +1737,11 @@ fn meta_string(meta: Option<&serde_json::Value>, key: &str) -> Option<String> {
 }
 
 /// Convert mcp-guest ToolInfo to our internal ToolInfo, extracting connector metadata.
-fn guest_tool_to_tool_info(
-    server_name: &str,
-    guest_tool: McpToolInfo,
-) -> ToolInfo {
+fn guest_tool_to_tool_info(server_name: &str, guest_tool: McpToolInfo) -> ToolInfo {
     let meta = guest_tool.meta.as_ref();
     let connector_id = meta_string(meta, "connector_id");
-    let connector_name = meta_string(meta, "connector_name")
-        .or_else(|| meta_string(meta, "connector_display_name"));
+    let connector_name =
+        meta_string(meta, "connector_name").or_else(|| meta_string(meta, "connector_display_name"));
     let connector_description = meta_string(meta, "connector_description")
         .or_else(|| meta_string(meta, "connectorDescription"));
 
@@ -1774,8 +1751,7 @@ fn guest_tool_to_tool_info(
         connector_id.as_deref(),
         connector_name.as_deref(),
     );
-    let tool_namespace =
-        normalize_codex_apps_namespace(server_name, connector_name.as_deref());
+    let tool_namespace = normalize_codex_apps_namespace(server_name, connector_name.as_deref());
 
     let mut tool_def = guest_tool;
     if let Some(title) = tool_def.title.as_deref() {

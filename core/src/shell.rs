@@ -228,13 +228,28 @@ mod detect_shell_type_tests {
 
     #[test]
     fn test_detect_shell_type() {
-        assert_eq!(detect_shell_type(&PathBuf::from("zsh")), Some(ShellType::Zsh));
-        assert_eq!(detect_shell_type(&PathBuf::from("bash")), Some(ShellType::Bash));
+        assert_eq!(
+            detect_shell_type(&PathBuf::from("zsh")),
+            Some(ShellType::Zsh)
+        );
+        assert_eq!(
+            detect_shell_type(&PathBuf::from("bash")),
+            Some(ShellType::Bash)
+        );
         assert_eq!(detect_shell_type(&PathBuf::from("fish")), None);
         assert_eq!(detect_shell_type(&PathBuf::from("other")), None);
-        assert_eq!(detect_shell_type(&PathBuf::from("/bin/zsh")), Some(ShellType::Zsh));
-        assert_eq!(detect_shell_type(&PathBuf::from("/bin/bash")), Some(ShellType::Bash));
-        assert_eq!(detect_shell_type(&PathBuf::from("/bin/sh")), Some(ShellType::Sh));
+        assert_eq!(
+            detect_shell_type(&PathBuf::from("/bin/zsh")),
+            Some(ShellType::Zsh)
+        );
+        assert_eq!(
+            detect_shell_type(&PathBuf::from("/bin/bash")),
+            Some(ShellType::Bash)
+        );
+        assert_eq!(
+            detect_shell_type(&PathBuf::from("/bin/sh")),
+            Some(ShellType::Sh)
+        );
         assert_eq!(detect_shell_type(&PathBuf::from("sh")), Some(ShellType::Sh));
     }
 }

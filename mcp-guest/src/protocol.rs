@@ -1293,11 +1293,10 @@ mod tests {
 
     #[test]
     fn test_cancelled_notification_allows_missing_request_id() {
-        let params: CancelledNotificationParams =
-            serde_json::from_value(serde_json::json!({
-                "reason": "server shutdown"
-            }))
-            .unwrap();
+        let params: CancelledNotificationParams = serde_json::from_value(serde_json::json!({
+            "reason": "server shutdown"
+        }))
+        .unwrap();
 
         assert!(params.request_id.is_none());
         assert_eq!(params.reason.as_deref(), Some("server shutdown"));

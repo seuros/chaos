@@ -92,8 +92,8 @@ pub fn run_main() -> ! {
     )
     .unwrap_or_else(|err| panic!("{err}"));
 
-    let apply_landlock_fs = !file_system_sandbox_policy.has_full_disk_write_access()
-        || allow_network_for_proxy;
+    let apply_landlock_fs =
+        !file_system_sandbox_policy.has_full_disk_write_access() || allow_network_for_proxy;
 
     if let Err(e) = apply_sandbox_policy_to_current_thread(
         &sandbox_policy,

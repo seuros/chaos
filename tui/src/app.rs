@@ -33,7 +33,6 @@ use crate::tui;
 use crate::tui::TuiEvent;
 use crate::version::CHAOS_VERSION;
 use codex_ansi_escape::ansi_escape_line;
-use codex_protocol::api::ConfigLayerSource;
 use codex_core::AuthManager;
 use codex_core::CodexAuth;
 use codex_core::ThreadManager;
@@ -52,6 +51,7 @@ use codex_core::models_manager::model_presets::HIDE_GPT5_1_MIGRATION_PROMPT_CONF
 use codex_otel::SessionTelemetry;
 use codex_otel::TelemetryAuthMode;
 use codex_protocol::ThreadId;
+use codex_protocol::api::ConfigLayerSource;
 use codex_protocol::config_types::Personality;
 use codex_protocol::items::TurnItem;
 use codex_protocol::openai_models::ModelAvailabilityNux;
@@ -3544,7 +3544,6 @@ impl App {
     fn refresh_status_line(&mut self) {
         self.chat_widget.refresh_status_line();
     }
-
 }
 
 #[cfg(test)]
@@ -5803,9 +5802,9 @@ guardian_approval = true
                 backtrack_render_pending: false,
                 feedback: crate::bottom_pane::FeedbackSnapshot::default(),
                 feedback_audience: FeedbackAudience::External,
-                    suppress_shutdown_complete: false,
+                suppress_shutdown_complete: false,
                 pending_shutdown_exit_thread_id: None,
-    
+
                 thread_event_channels: HashMap::new(),
                 thread_event_listener_tasks: HashMap::new(),
                 agent_navigation: AgentNavigationState::default(),

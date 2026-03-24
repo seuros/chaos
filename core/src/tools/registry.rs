@@ -170,10 +170,7 @@ impl ToolRegistry {
         let payload_for_response = invocation.payload.clone();
         let log_payload = payload_for_response.log_payload();
         let metric_tags = [
-            (
-                "sandbox",
-                sandbox_tag(&invocation.turn.sandbox_policy),
-            ),
+            ("sandbox", sandbox_tag(&invocation.turn.sandbox_policy)),
             (
                 "sandbox_policy",
                 sandbox_policy_tag(&invocation.turn.sandbox_policy),

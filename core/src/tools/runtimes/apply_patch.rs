@@ -246,15 +246,14 @@ impl ApplyPatchRuntime {
         let sandbox_type = attempt.sandbox;
 
         // Create a pipe for the child to send results back.
-        let (read_fd, write_fd) = nix_pipe().map_err(|e| {
-            ToolError::Rejected(format!("failed to create pipe for fork: {e}"))
-        })?;
+        let (read_fd, write_fd) = nix_pipe()
+            .map_err(|e| ToolError::Rejected(format!("failed to create pipe for fork: {e}")))?;
 
         let start = Instant::now();
 
         // Serialize the action before fork — after fork we must be minimal.
-        let action_bytes =
-            serde_json::to_vec(&PatchActionTransfer::from_action(&req.action)).map_err(|e| {
+        let action_bytes = serde_json::to_vec(&PatchActionTransfer::from_action(&req.action))
+            .map_err(|e| {
                 unsafe {
                     libc::close(read_fd);
                     libc::close(write_fd);
@@ -284,15 +283,14 @@ impl ApplyPatchRuntime {
             unsafe { libc::close(read_fd) };
 
             // Apply landlock+seccomp sandbox.
-            let sandbox_result =
-                alcatraz_linux::landlock::apply_sandbox_policy_to_current_thread(
-                    sandbox_policy,
-                    network_policy,
-                    cwd,
-                    true,  // apply_landlock_fs
-                    false, // allow_network_for_proxy
-                    false, // proxy_routed_network
-                );
+            let sandbox_result = alcatraz_linux::landlock::apply_sandbox_policy_to_current_thread(
+                sandbox_policy,
+                network_policy,
+                cwd,
+                true,  // apply_landlock_fs
+                false, // allow_network_for_proxy
+                false, // proxy_routed_network
+            );
 
             let result = match sandbox_result {
                 Ok(()) => {
@@ -455,8 +453,12 @@ struct PatchActionTransfer {
 #[cfg(target_os = "linux")]
 #[derive(serde::Serialize, serde::Deserialize)]
 enum PatchChangeTransfer {
-    Add { content: String },
-    Delete { content: String },
+    Add {
+        content: String,
+    },
+    Delete {
+        content: String,
+    },
     Update {
         unified_diff: String,
         move_path: Option<PathBuf>,

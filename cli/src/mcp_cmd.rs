@@ -45,6 +45,8 @@ pub struct McpCli {
 
 #[derive(Debug, clap::Subcommand)]
 pub enum McpSubcommand {
+    /// Start Chaos as an MCP server (stdio).
+    Serve,
     List(ListArgs),
     Get(GetArgs),
     Add(AddArgs),
@@ -163,6 +165,10 @@ impl McpCli {
         } = self;
 
         match subcommand {
+            McpSubcommand::Serve => {
+                // Handled in main.rs before reaching here.
+                unreachable!("`chaos mcp serve` is dispatched in main");
+            }
             McpSubcommand::List(args) => {
                 run_list(&config_overrides, args).await?;
             }

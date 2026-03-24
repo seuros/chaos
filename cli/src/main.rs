@@ -81,9 +81,6 @@ enum Subcommand {
     /// Manage external MCP servers for Chaos.
     Mcp(McpCli),
 
-    /// Start Chaos as an MCP server (stdio).
-    McpServer,
-
     /// Generate shell completion scripts.
     Completion(CompletionCommand),
 
@@ -376,13 +373,16 @@ async fn cli_main(arg0_paths: Arg0DispatchPaths) -> anyhow::Result<()> {
             );
             codex_exec::run_main(exec_cli, arg0_paths.clone()).await?;
         }
-        Some(Subcommand::McpServer) => {
-            chaos_mcphost::run_main(arg0_paths.clone(), root_config_overrides).await?;
-        }
         Some(Subcommand::Mcp(mut mcp_cli)) => {
-            // Propagate any root-level config overrides (e.g. `-c key=value`).
-            prepend_config_flags(&mut mcp_cli.config_overrides, root_config_overrides.clone());
-            mcp_cli.run().await?;
+            if matches!(mcp_cli.subcommand, crate::mcp_cmd::McpSubcommand::Serve) {
+                chaos_mcphost::run_main(arg0_paths.clone(), root_config_overrides).await?;
+            } else {
+                prepend_config_flags(
+                    &mut mcp_cli.config_overrides,
+                    root_config_overrides.clone(),
+                );
+                mcp_cli.run().await?;
+            }
         }
         Some(Subcommand::Resume(ResumeCommand {
             session_id,

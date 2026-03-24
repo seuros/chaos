@@ -68,7 +68,7 @@ use codex_protocol::protocol::WarningEvent;
 use codex_protocol::protocol::WebSearchBeginEvent;
 use codex_protocol::protocol::WebSearchEndEvent;
 use pretty_assertions::assert_eq;
-use rmcp::model::Content;
+use mcp_guest::ContentBlock;
 use serde_json::json;
 use std::path::PathBuf;
 use std::time::Duration;
@@ -507,7 +507,7 @@ fn mcp_tool_call_defaults_arguments_and_preserves_structured_content() {
             invocation,
             duration: Duration::from_millis(10),
             result: Ok(CallToolResult {
-                content: vec![serde_json::to_value(Content::text("done")).unwrap()],
+                content: vec![serde_json::to_value(ContentBlock::text("done")).unwrap()],
                 is_error: None,
                 structured_content: Some(json!({ "status": "ok" })),
                 meta: None,
@@ -525,7 +525,7 @@ fn mcp_tool_call_defaults_arguments_and_preserves_structured_content() {
                     tool: "tool_z".to_string(),
                     arguments: serde_json::Value::Null,
                     result: Some(McpToolCallItemResult {
-                        content: vec![serde_json::to_value(Content::text("done")).unwrap()],
+                        content: vec![serde_json::to_value(ContentBlock::text("done")).unwrap()],
                         structured_content: Some(json!({ "status": "ok" })),
                     }),
                     error: None,

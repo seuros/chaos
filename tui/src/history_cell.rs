@@ -1390,7 +1390,7 @@ impl McpToolCallCell {
     }
 
     fn render_content_block(block: &serde_json::Value, width: usize) -> String {
-        let content = match serde_json::from_value::<rmcp::model::Content>(block.clone()) {
+        let content = match serde_json::from_value::<mcp_guest::ContentBlock>(block.clone()) {
             Ok(content) => content,
             Err(_) => {
                 return format_and_truncate_tool_result(
@@ -1401,20 +1401,20 @@ impl McpToolCallCell {
             }
         };
 
-        match content.raw {
-            rmcp::model::RawContent::Text(text) => {
-                format_and_truncate_tool_result(&text.text, TOOL_CALL_MAX_LINES, width)
+        match content {
+            mcp_guest::ContentBlock::Text { text, .. } => {
+                format_and_truncate_tool_result(&text, TOOL_CALL_MAX_LINES, width)
             }
-            rmcp::model::RawContent::Image(_) => "<image content>".to_string(),
-            rmcp::model::RawContent::Audio(_) => "<audio content>".to_string(),
-            rmcp::model::RawContent::Resource(resource) => {
-                let uri = match resource.resource {
-                    rmcp::model::ResourceContents::TextResourceContents { uri, .. } => uri,
-                    rmcp::model::ResourceContents::BlobResourceContents { uri, .. } => uri,
+            mcp_guest::ContentBlock::Image { .. } => "<image content>".to_string(),
+            mcp_guest::ContentBlock::Audio { .. } => "<audio content>".to_string(),
+            mcp_guest::ContentBlock::Resource { resource, .. } => {
+                let uri = match resource {
+                    mcp_guest::ResourceContents::Text(t) => t.uri,
+                    mcp_guest::ResourceContents::Blob(b) => b.uri,
                 };
                 format!("embedded resource: {uri}")
             }
-            rmcp::model::RawContent::ResourceLink(link) => format!("link: {}", link.uri),
+            mcp_guest::ContentBlock::ResourceLink { uri, .. } => format!("link: {uri}"),
         }
     }
 }
@@ -1623,8 +1623,7 @@ pub(crate) fn new_web_search_call(
 /// exists” affordance separate from the main MCP tool call cell.
 ///
 /// Manual testing tip:
-/// - Run the rmcp stdio test server (`codex-rs/rmcp-client/src/bin/test_stdio_server.rs`) and
-///   register it as an MCP server via `codex mcp add`.
+/// - Register an MCP stdio test server via `codex mcp add`.
 /// - Use its `image_scenario` tool with cases like `text_then_image`,
 ///   `invalid_base64_then_image`, or `invalid_image_bytes_then_image` to ensure this path triggers
 ///   even when the first block is not a valid image.
@@ -1646,14 +1645,14 @@ fn try_new_completed_mcp_tool_call_with_image_output(
 /// Returns `None` when the block is not an image, when base64 decoding fails, when the format
 /// cannot be inferred, or when the image decoder rejects the bytes.
 fn decode_mcp_image(block: &serde_json::Value) -> Option<DynamicImage> {
-    let content = serde_json::from_value::<rmcp::model::Content>(block.clone()).ok()?;
-    let rmcp::model::RawContent::Image(image) = content.raw else {
+    let content = serde_json::from_value::<mcp_guest::ContentBlock>(block.clone()).ok()?;
+    let mcp_guest::ContentBlock::Image { data, mime_type: _, .. } = content else {
         return None;
     };
-    let base64_data = if let Some(data_url) = image.data.strip_prefix("data:") {
+    let base64_data = if let Some(data_url) = data.strip_prefix("data:") {
         data_url.split_once(',')?.1
     } else {
-        image.data.as_str()
+        data.as_str()
     };
     let raw_data = base64::engine::general_purpose::STANDARD
         .decode(base64_data)
@@ -2500,7 +2499,7 @@ mod tests {
     use codex_protocol::mcp::CallToolResult;
     use codex_protocol::mcp::Tool;
     use codex_protocol::protocol::ExecCommandSource;
-    use rmcp::model::Content;
+    use mcp_guest::ContentBlock;
 
     const SMALL_PNG_BASE64: &str = "iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR4nGP4z8DwHwAFAAH/iZk9HQAAAABJRU5ErkJggg==";
     async fn test_config() -> Config {
@@ -2535,12 +2534,18 @@ mod tests {
     }
 
     fn image_block(data: &str) -> serde_json::Value {
-        serde_json::to_value(Content::image(data.to_string(), "image/png"))
-            .expect("image content should serialize")
+        serde_json::to_value(ContentBlock::Image {
+            data: data.to_string(),
+            mime_type: "image/png".to_string(),
+            annotations: None,
+            meta: None,
+        })
+        .expect("image content should serialize")
     }
 
     fn text_block(text: &str) -> serde_json::Value {
-        serde_json::to_value(Content::text(text)).expect("text content should serialize")
+        serde_json::to_value(ContentBlock::text(text))
+            .expect("text content should serialize")
     }
 
     fn resource_link_block(
@@ -2549,7 +2554,7 @@ mod tests {
         title: Option<&str>,
         description: Option<&str>,
     ) -> serde_json::Value {
-        serde_json::to_value(Content::resource_link(rmcp::model::RawResource {
+        serde_json::to_value(ContentBlock::ResourceLink {
             uri: uri.to_string(),
             name: name.to_string(),
             title: title.map(str::to_string),
@@ -2557,8 +2562,9 @@ mod tests {
             mime_type: None,
             size: None,
             icons: None,
+            annotations: None,
             meta: None,
-        }))
+        })
         .expect("resource link content should serialize")
     }
 

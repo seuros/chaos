@@ -2087,7 +2087,7 @@ fn push_tool_spec(
 
 pub(crate) fn mcp_tool_to_openai_tool(
     fully_qualified_name: String,
-    tool: rmcp::model::Tool,
+    tool: crate::mcp_connection_manager::McpToolInfo,
 ) -> Result<ResponsesApiTool, serde_json::Error> {
     let (description, input_schema, output_schema) = mcp_tool_to_openai_tool_parts(tool)?;
 
@@ -2103,7 +2103,7 @@ pub(crate) fn mcp_tool_to_openai_tool(
 
 pub(crate) fn mcp_tool_to_deferred_openai_tool(
     name: String,
-    tool: rmcp::model::Tool,
+    tool: crate::mcp_connection_manager::McpToolInfo,
 ) -> Result<ResponsesApiTool, serde_json::Error> {
     let (description, input_schema, _) = mcp_tool_to_openai_tool_parts(tool)?;
 
@@ -2140,16 +2140,16 @@ pub fn parse_tool_input_schema(input_schema: &JsonValue) -> Result<JsonSchema, s
 }
 
 fn mcp_tool_to_openai_tool_parts(
-    tool: rmcp::model::Tool,
+    tool: crate::mcp_connection_manager::McpToolInfo,
 ) -> Result<(String, JsonSchema, Option<JsonValue>), serde_json::Error> {
-    let rmcp::model::Tool {
+    let crate::mcp_connection_manager::McpToolInfo {
         description,
         input_schema,
         output_schema,
         ..
     } = tool;
 
-    let mut serialized_input_schema = serde_json::Value::Object(input_schema.as_ref().clone());
+    let mut serialized_input_schema = input_schema;
 
     // OpenAI models mandate the "properties" field in the schema. Some MCP
     // servers omit it (or set it to null), so we insert an empty object to
@@ -2171,12 +2171,11 @@ fn mcp_tool_to_openai_tool_parts(
     sanitize_json_schema(&mut serialized_input_schema);
     let input_schema = serde_json::from_value::<JsonSchema>(serialized_input_schema)?;
     let structured_content_schema = output_schema
-        .map(|output_schema| serde_json::Value::Object(output_schema.as_ref().clone()))
         .unwrap_or_else(|| JsonValue::Object(serde_json::Map::new()));
     let output_schema = Some(mcp_call_tool_result_output_schema(
         structured_content_schema,
     ));
-    let description = description.map(Into::into).unwrap_or_default();
+    let description = description.unwrap_or_default();
 
     Ok((description, input_schema, output_schema))
 }
@@ -2315,7 +2314,7 @@ fn sanitize_json_schema(value: &mut JsonValue) {
 #[cfg(test)]
 pub(crate) fn build_specs(
     config: &ToolsConfig,
-    mcp_tools: Option<HashMap<String, rmcp::model::Tool>>,
+    mcp_tools: Option<HashMap<String, crate::mcp_connection_manager::McpToolInfo>>,
     app_tools: Option<HashMap<String, ToolInfo>>,
     dynamic_tools: &[DynamicToolSpec],
 ) -> ToolRegistryBuilder {
@@ -2324,7 +2323,7 @@ pub(crate) fn build_specs(
 
 pub(crate) fn build_specs_with_discoverable_tools(
     config: &ToolsConfig,
-    mcp_tools: Option<HashMap<String, rmcp::model::Tool>>,
+    mcp_tools: Option<HashMap<String, crate::mcp_connection_manager::McpToolInfo>>,
     app_tools: Option<HashMap<String, ToolInfo>>,
     discoverable_tools: Option<Vec<DiscoverableTool>>,
     dynamic_tools: &[DynamicToolSpec],
@@ -2680,7 +2679,7 @@ pub(crate) fn build_specs_with_discoverable_tools(
     }
 
     if let Some(mcp_tools) = mcp_tools {
-        let mut entries: Vec<(String, rmcp::model::Tool)> = mcp_tools.into_iter().collect();
+        let mut entries: Vec<(String, crate::mcp_connection_manager::McpToolInfo)> = mcp_tools.into_iter().collect();
         entries.sort_by(|a, b| a.0.cmp(&b.0));
 
         for (name, tool) in entries.into_iter() {

@@ -16,11 +16,9 @@ use crate::mcp_connection_manager::ToolInfo;
 use codex_config::CONFIG_TOML_FILE;
 use codex_utils_absolute_path::AbsolutePathBuf;
 use pretty_assertions::assert_eq;
-use rmcp::model::JsonObject;
-use rmcp::model::Tool;
+use crate::mcp_connection_manager::McpToolInfo;
 use std::collections::BTreeMap;
 use std::collections::HashMap;
-use std::sync::Arc;
 use tempfile::tempdir;
 
 fn annotations(destructive_hint: Option<bool>, open_world_hint: Option<bool>) -> ToolAnnotations {
@@ -64,12 +62,12 @@ fn plugin_names(names: &[&str]) -> Vec<String> {
     names.iter().map(ToString::to_string).collect()
 }
 
-fn test_tool_definition(tool_name: &str) -> Tool {
-    Tool {
-        name: tool_name.to_string().into(),
+fn test_tool_definition(tool_name: &str) -> McpToolInfo {
+    McpToolInfo {
+        name: tool_name.to_string(),
         title: None,
         description: None,
-        input_schema: Arc::new(JsonObject::default()),
+        input_schema: serde_json::json!({}),
         output_schema: None,
         annotations: None,
         execution: None,
@@ -313,11 +311,11 @@ fn accessible_connectors_from_mcp_tools_preserves_description() {
             server_name: CODEX_APPS_MCP_SERVER_NAME.to_string(),
             tool_name: "calendar_create_event".to_string(),
             tool_namespace: "mcp__codex_apps__calendar".to_string(),
-            tool: Tool {
-                name: "calendar_create_event".to_string().into(),
+            tool: McpToolInfo {
+                name: "calendar_create_event".to_string(),
                 title: None,
-                description: Some("Create a calendar event".into()),
-                input_schema: Arc::new(JsonObject::default()),
+                description: Some("Create a calendar event".to_string()),
+                input_schema: serde_json::json!({}),
                 output_schema: None,
                 annotations: None,
                 execution: None,

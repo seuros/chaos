@@ -109,8 +109,7 @@ use codex_protocol::request_permissions::RequestPermissionsEvent;
 use codex_protocol::request_permissions::RequestPermissionsResponse;
 use codex_protocol::request_user_input::RequestUserInputArgs;
 use codex_protocol::request_user_input::RequestUserInputResponse;
-use codex_rmcp_client::ElicitationResponse;
-use codex_rmcp_client::OAuthCredentialsStoreMode;
+use crate::mcp::oauth_types::OAuthCredentialsStoreMode;
 use codex_utils_stream_parser::AssistantTextChunk;
 use codex_utils_stream_parser::AssistantTextStreamParser;
 use codex_utils_stream_parser::ProposedPlanSegment;
@@ -120,12 +119,13 @@ use futures::future::BoxFuture;
 use futures::future::Shared;
 use futures::prelude::*;
 use futures::stream::FuturesOrdered;
-use rmcp::model::ListResourceTemplatesResult;
-use rmcp::model::ListResourcesResult;
-use rmcp::model::PaginatedRequestParams;
-use rmcp::model::ReadResourceRequestParams;
-use rmcp::model::ReadResourceResult;
-use rmcp::model::RequestId;
+use mcp_guest::protocol::ElicitationResponse;
+use mcp_guest::protocol::RequestId;
+use mcp_guest::ListResourceTemplatesResult;
+use mcp_guest::ListResourcesResult;
+use mcp_guest::PaginatedRequestParams;
+use mcp_guest::ReadResourceRequestParams;
+use mcp_guest::ReadResourceResult;
 use serde_json;
 use serde_json::Value;
 use tokio::sync::Mutex;
@@ -2991,12 +2991,12 @@ impl Session {
                 "Overwriting existing pending elicitation for server_name: {server_name}, request_id: {request_id}"
             );
         }
-        let id = match request_id {
-            rmcp::model::NumberOrString::String(value) => {
-                codex_protocol::mcp::RequestId::String(value.to_string())
+        let id = match &request_id {
+            RequestId::String(value) => {
+                codex_protocol::mcp::RequestId::String(value.clone())
             }
-            rmcp::model::NumberOrString::Number(value) => {
-                codex_protocol::mcp::RequestId::Integer(value)
+            RequestId::Number(value) => {
+                codex_protocol::mcp::RequestId::Integer(*value)
             }
         };
         let event = EventMsg::ElicitationRequest(ElicitationRequestEvent {
@@ -4268,8 +4268,8 @@ mod handlers {
     use codex_protocol::dynamic_tools::DynamicToolResponse;
     use codex_protocol::mcp::RequestId as ProtocolRequestId;
     use codex_protocol::user_input::UserInput;
-    use codex_rmcp_client::ElicitationAction;
-    use codex_rmcp_client::ElicitationResponse;
+    use mcp_guest::protocol::ElicitationAction;
+    use mcp_guest::protocol::ElicitationResponse;
     use serde_json::Value;
     use std::path::PathBuf;
     use std::sync::Arc;
@@ -4426,12 +4426,7 @@ mod handlers {
             content,
             meta,
         };
-        let request_id = match request_id {
-            ProtocolRequestId::String(value) => {
-                rmcp::model::NumberOrString::String(std::sync::Arc::from(value))
-            }
-            ProtocolRequestId::Integer(value) => rmcp::model::NumberOrString::Number(value),
-        };
+        let request_id = crate::mcp_connection_manager::protocol_request_id_to_guest(&request_id);
         if let Err(err) = sess
             .resolve_elicitation(server_name, request_id, response)
             .await

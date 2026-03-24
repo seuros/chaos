@@ -2,15 +2,13 @@ use std::collections::HashMap;
 
 use anyhow::Result;
 use codex_protocol::protocol::McpAuthStatus;
-use codex_rmcp_client::OAuthCredentialsStoreMode;
-use codex_rmcp_client::OAuthProviderError;
-use codex_rmcp_client::determine_streamable_http_auth_status;
-use codex_rmcp_client::discover_streamable_http_oauth;
 use futures::future::join_all;
 use tracing::warn;
 
 use crate::config::types::McpServerConfig;
 use crate::config::types::McpServerTransportConfig;
+pub use crate::mcp::oauth_types::OAuthCredentialsStoreMode;
+pub use crate::mcp::oauth_types::OAuthProviderError;
 
 #[derive(Debug, Clone)]
 pub struct McpOAuthLoginConfig {
@@ -56,17 +54,9 @@ pub async fn oauth_login_support(transport: &McpServerTransportConfig) -> McpOAu
         return McpOAuthLoginSupport::Unsupported;
     }
 
-    match discover_streamable_http_oauth(url, http_headers.clone(), env_http_headers.clone()).await
-    {
-        Ok(Some(discovery)) => McpOAuthLoginSupport::Supported(McpOAuthLoginConfig {
-            url: url.clone(),
-            http_headers: http_headers.clone(),
-            env_http_headers: env_http_headers.clone(),
-            discovered_scopes: discovery.scopes_supported,
-        }),
-        Ok(None) => McpOAuthLoginSupport::Unsupported,
-        Err(err) => McpOAuthLoginSupport::Unknown(err),
-    }
+    // TODO(oauth): implement when mcp-guest gains OAuth support
+    let _ = (url, http_headers, env_http_headers);
+    McpOAuthLoginSupport::Unsupported
 }
 
 pub async fn discover_supported_scopes(
@@ -157,23 +147,19 @@ async fn compute_auth_status(
     config: &McpServerConfig,
     store_mode: OAuthCredentialsStoreMode,
 ) -> Result<McpAuthStatus> {
+    // TODO(oauth): implement when mcp-guest gains OAuth support
+    let _ = (server_name, store_mode);
     match &config.transport {
         McpServerTransportConfig::Stdio { .. } => Ok(McpAuthStatus::Unsupported),
         McpServerTransportConfig::StreamableHttp {
-            url,
             bearer_token_env_var,
-            http_headers,
-            env_http_headers,
+            ..
         } => {
-            determine_streamable_http_auth_status(
-                server_name,
-                url,
-                bearer_token_env_var.as_deref(),
-                http_headers.clone(),
-                env_http_headers.clone(),
-                store_mode,
-            )
-            .await
+            if bearer_token_env_var.is_some() {
+                Ok(McpAuthStatus::BearerToken)
+            } else {
+                Ok(McpAuthStatus::Unsupported)
+            }
         }
     }
 }

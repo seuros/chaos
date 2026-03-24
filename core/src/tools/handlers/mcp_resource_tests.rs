@@ -1,10 +1,9 @@
 use super::*;
 use pretty_assertions::assert_eq;
-use rmcp::model::AnnotateAble;
 use serde_json::json;
 
-fn resource(uri: &str, name: &str) -> Resource {
-    rmcp::model::RawResource {
+fn resource(uri: &str, name: &str) -> ResourceInfo {
+    ResourceInfo {
         uri: uri.to_string(),
         name: name.to_string(),
         title: None,
@@ -12,21 +11,22 @@ fn resource(uri: &str, name: &str) -> Resource {
         mime_type: None,
         size: None,
         icons: None,
+        annotations: None,
         meta: None,
     }
-    .no_annotation()
 }
 
-fn template(uri_template: &str, name: &str) -> ResourceTemplate {
-    rmcp::model::RawResourceTemplate {
+fn template(uri_template: &str, name: &str) -> ResourceTemplateInfo {
+    ResourceTemplateInfo {
         uri_template: uri_template.to_string(),
         name: name.to_string(),
         title: None,
         description: None,
         mime_type: None,
         icons: None,
+        annotations: None,
+        meta: None,
     }
-    .no_annotation()
 }
 
 #[test]

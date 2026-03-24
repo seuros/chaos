@@ -55,7 +55,7 @@ opentelemetry = { workspace = true }
 opentelemetry_sdk = { workspace = true }
 predicates = { workspace = true }
 pretty_assertions = { workspace = true }
-rmcp = { workspace = true }
+mcp-guest = { workspace = true }
 tempfile = { workspace = true }
 tracing-opentelemetry = { workspace = true }
 uuid = { workspace = true }

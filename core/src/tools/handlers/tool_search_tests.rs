@@ -1,10 +1,8 @@
 use super::*;
 use crate::mcp::CODEX_APPS_MCP_SERVER_NAME;
 use pretty_assertions::assert_eq;
-use rmcp::model::JsonObject;
-use rmcp::model::Tool;
+use crate::mcp_connection_manager::McpToolInfo;
 use serde_json::json;
-use std::sync::Arc;
 
 #[test]
 fn serialize_tool_search_output_tools_groups_results_by_namespace() {
@@ -15,14 +13,11 @@ fn serialize_tool_search_output_tools_groups_results_by_namespace() {
                 server_name: CODEX_APPS_MCP_SERVER_NAME.to_string(),
                 tool_name: "_create_event".to_string(),
                 tool_namespace: "mcp__codex_apps__calendar".to_string(),
-                tool: Tool {
-                    name: "calendar-create-event".to_string().into(),
+                tool: McpToolInfo {
+                    name: "calendar-create-event".to_string(),
                     title: None,
-                    description: Some("Create a calendar event.".into()),
-                    input_schema: Arc::new(JsonObject::from_iter([(
-                        "type".to_string(),
-                        json!("object"),
-                    )])),
+                    description: Some("Create a calendar event.".to_string()),
+                    input_schema: json!({"type": "object"}),
                     output_schema: None,
                     annotations: None,
                     execution: None,
@@ -41,14 +36,11 @@ fn serialize_tool_search_output_tools_groups_results_by_namespace() {
                 server_name: CODEX_APPS_MCP_SERVER_NAME.to_string(),
                 tool_name: "_read_email".to_string(),
                 tool_namespace: "mcp__codex_apps__gmail".to_string(),
-                tool: Tool {
-                    name: "gmail-read-email".to_string().into(),
+                tool: McpToolInfo {
+                    name: "gmail-read-email".to_string(),
                     title: None,
-                    description: Some("Read an email.".into()),
-                    input_schema: Arc::new(JsonObject::from_iter([(
-                        "type".to_string(),
-                        json!("object"),
-                    )])),
+                    description: Some("Read an email.".to_string()),
+                    input_schema: json!({"type": "object"}),
                     output_schema: None,
                     annotations: None,
                     execution: None,
@@ -67,14 +59,11 @@ fn serialize_tool_search_output_tools_groups_results_by_namespace() {
                 server_name: CODEX_APPS_MCP_SERVER_NAME.to_string(),
                 tool_name: "_list_events".to_string(),
                 tool_namespace: "mcp__codex_apps__calendar".to_string(),
-                tool: Tool {
-                    name: "calendar-list-events".to_string().into(),
+                tool: McpToolInfo {
+                    name: "calendar-list-events".to_string(),
                     title: None,
-                    description: Some("List calendar events.".into()),
-                    input_schema: Arc::new(JsonObject::from_iter([(
-                        "type".to_string(),
-                        json!("object"),
-                    )])),
+                    description: Some("List calendar events.".to_string()),
+                    input_schema: json!({"type": "object"}),
                     output_schema: None,
                     annotations: None,
                     execution: None,
@@ -153,14 +142,11 @@ fn serialize_tool_search_output_tools_falls_back_to_connector_name_description()
             server_name: CODEX_APPS_MCP_SERVER_NAME.to_string(),
             tool_name: "_batch_read_email".to_string(),
             tool_namespace: "mcp__codex_apps__gmail".to_string(),
-            tool: Tool {
-                name: "gmail-batch-read-email".to_string().into(),
+            tool: McpToolInfo {
+                name: "gmail-batch-read-email".to_string(),
                 title: None,
-                description: Some("Read multiple emails.".into()),
-                input_schema: Arc::new(JsonObject::from_iter([(
-                    "type".to_string(),
-                    json!("object"),
-                )])),
+                description: Some("Read multiple emails.".to_string()),
+                input_schema: json!({"type": "object"}),
                 output_schema: None,
                 annotations: None,
                 execution: None,

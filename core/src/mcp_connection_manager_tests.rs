@@ -1,11 +1,10 @@
 use super::*;
 use codex_protocol::protocol::GranularApprovalConfig;
 use codex_protocol::protocol::McpAuthStatus;
-use rmcp::model::JsonObject;
+use crate::mcp_connection_manager::McpToolInfo;
 use std::collections::HashSet;
 use std::sync::Arc;
 use tempfile::tempdir;
-use tokio::time::timeout;
 
 fn create_test_tool(server_name: &str, tool_name: &str) -> ToolInfo {
     ToolInfo {
@@ -16,11 +15,11 @@ fn create_test_tool(server_name: &str, tool_name: &str) -> ToolInfo {
         } else {
             server_name.to_string()
         },
-        tool: Tool {
-            name: tool_name.to_string().into(),
+        tool: McpToolInfo {
+            name: tool_name.to_string(),
             title: None,
-            description: Some(format!("Test tool: {tool_name}").into()),
-            input_schema: Arc::new(JsonObject::default()),
+            description: Some(format!("Test tool: {tool_name}")),
+            input_schema: serde_json::json!({}),
             output_schema: None,
             annotations: None,
             execution: None,
@@ -95,30 +94,6 @@ fn elicitation_granular_policy_respects_never_and_config() {
             mcp_elicitations: false,
         }
     )));
-}
-
-#[tokio::test]
-async fn emit_elicitation_complete_event_sends_protocol_event() {
-    let (tx_event, rx_event) = async_channel::bounded(1);
-
-    emit_elicitation_complete_event(&tx_event, "calendar".to_string(), "elicit-123".to_string())
-        .await;
-
-    let event = timeout(std::time::Duration::from_secs(1), rx_event.recv())
-        .await
-        .expect("event receive should not time out")
-        .expect("event should be sent");
-
-    let EventMsg::ElicitationComplete(complete) = event.msg else {
-        panic!("expected elicitation completion event");
-    };
-    assert_eq!(
-        complete,
-        ElicitationCompleteEvent {
-            server_name: "calendar".to_string(),
-            elicitation_id: "elicit-123".to_string(),
-        }
-    );
 }
 
 #[test]
@@ -585,22 +560,6 @@ async fn list_all_tools_uses_startup_snapshot_when_client_startup_fails() {
         .expect("tool from startup cache");
     assert_eq!(tool.server_name, CODEX_APPS_MCP_SERVER_NAME);
     assert_eq!(tool.tool_name, "calendar_create_event");
-}
-
-#[test]
-fn elicitation_capability_enabled_for_all_servers() {
-    let expected = Some(ElicitationCapability {
-        form: Some(FormElicitationCapability {
-            schema_validation: None,
-        }),
-        url: Some(rmcp::model::UrlElicitationCapability {}),
-    });
-
-    assert_eq!(
-        elicitation_capability_for_server(CODEX_APPS_MCP_SERVER_NAME),
-        expected
-    );
-    assert_eq!(elicitation_capability_for_server("custom_mcp"), expected);
 }
 
 #[test]

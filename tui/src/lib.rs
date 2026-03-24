@@ -346,14 +346,13 @@ pub async fn run_main(
     // use RUST_LOG env var, default to info for codex crates.
     let env_filter = || {
         EnvFilter::try_from_default_env().unwrap_or_else(|_| {
-            EnvFilter::new("codex_core=info,codex_tui=info,codex_rmcp_client=info")
+            EnvFilter::new("codex_core=info,codex_tui=info,codex_mcp_guest=info")
         })
     };
 
     let file_layer = tracing_subscriber::fmt::layer()
         .with_writer(non_blocking)
-        // `with_target(true)` is the default, but we previously disabled it for file output.
-        // Keep it enabled so we can selectively enable targets via `RUST_LOG=...` and then
+        // Keep target enabled so we can selectively filter via `RUST_LOG=...` and then
         // grep for a specific module/target while troubleshooting.
         .with_target(true)
         .with_ansi(false)

@@ -42,7 +42,7 @@ pub(crate) enum FeedbackAudience {
     External,
 }
 
-/// Minimal stub for a feedback snapshot. Feedback upload is not supported in this build.
+/// TODO(feedback): Feedback upload is not yet supported.
 #[derive(Clone, Default)]
 pub(crate) struct FeedbackSnapshot {
     pub(crate) thread_id: String,
@@ -68,7 +68,7 @@ impl FeedbackSnapshot {
     }
 }
 
-/// Minimal stub for feedback diagnostics.
+/// TODO(feedback): Diagnostics collection not yet implemented.
 #[derive(Clone, Default)]
 pub(crate) struct FeedbackDiagnostics;
 

@@ -216,6 +216,8 @@ impl ChaosMcpServer {
             (prompt, Some(cfg))
         };
 
+        let progress_token = ctx.progress_token().map(String::from);
+
         let outcome = chaos_runner::run_chaos_session(
             request_id,
             prompt,
@@ -225,6 +227,7 @@ impl ChaosMcpServer {
             self.thread_manager.clone(),
             self.running_requests.clone(),
             self.thread_names.clone(),
+            progress_token,
         )
         .await;
 

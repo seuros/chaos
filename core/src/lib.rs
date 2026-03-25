@@ -70,6 +70,7 @@ mod stream_events_utils;
 pub mod test_support;
 mod text_encoding;
 pub mod token_data;
+mod traits_impl;
 mod truncate;
 mod unified_exec;
 pub use client::X_RESPONSESAPI_INCLUDE_TIMING_METRICS_HEADER;

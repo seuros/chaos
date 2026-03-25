@@ -63,6 +63,7 @@ members = [
     "chaos-memento",
     "chaos-concierge",
     "chaos-ration",
+    "chaos-traits",
 ]
 resolver = "2"
 
@@ -90,6 +91,7 @@ chaos-parole = { path = "chaos-parole" }
 chaos-parrot = { path = "chaos-parrot" }
 chaos-snitch = { path = "chaos-snitch" }
 chaos-warden = { path = "chaos-warden" }
+chaos-traits = { path = "chaos-traits" }
 chaos-watchdog = { path = "chaos-watchdog" }
 codex-ansi-escape = { path = "ansi-escape" }
 chaos-abi = { path = "chaos-abi" }

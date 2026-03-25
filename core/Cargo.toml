@@ -28,6 +28,7 @@ codex-api = { workspace = true }
 codex-apply-patch = { workspace = true }
 chaos-arsenal = { workspace = true }
 chaos-concierge = { workspace = true }
+chaos-traits = { workspace = true }
 chaos-memento = { workspace = true }
 chaos-rollout = { workspace = true }
 chaos-watchdog = { workspace = true }

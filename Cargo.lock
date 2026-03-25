@@ -1288,6 +1288,21 @@ name = "chaos-snitch"
 version = "47.0.0"
 
 [[package]]
+name = "chaos-traits"
+version = "47.0.0"
+dependencies = [
+ "anyhow",
+ "async-channel",
+ "codex-config",
+ "codex-otel",
+ "codex-protocol",
+ "codex-state",
+ "serde",
+ "serde_json",
+ "tokio",
+]
+
+[[package]]
 name = "chaos-warden"
 version = "47.0.0"
 
@@ -1594,6 +1609,7 @@ dependencies = [
  "chaos-concierge",
  "chaos-memento",
  "chaos-rollout",
+ "chaos-traits",
  "chaos-watchdog",
  "chardetng",
  "chrono",

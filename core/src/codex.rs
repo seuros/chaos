@@ -701,7 +701,7 @@ pub(crate) fn session_loop_termination_from_handle(
 /// A session has at most 1 running task at a time, and can be interrupted by user input.
 pub(crate) struct Session {
     pub(crate) conversation_id: ThreadId,
-    tx_event: Sender<Event>,
+    pub(crate) tx_event: Sender<Event>,
     agent_status: watch::Sender<AgentStatus>,
     out_of_band_elicitation_paused: watch::Sender<bool>,
     state: Mutex<SessionState>,

@@ -32,5 +32,5 @@ pub use crate::sse::sse_stream;
 pub use crate::telemetry::RequestTelemetry;
 pub use crate::transport::ByteStream;
 pub use crate::transport::HttpTransport;
-pub use crate::transport::ReqwestTransport;
+pub use crate::transport::RamaTransport;
 pub use crate::transport::StreamResponse;

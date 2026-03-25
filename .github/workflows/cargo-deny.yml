@@ -11,7 +11,7 @@ jobs:
     runs-on: ubuntu-latest
     defaults:
       run:
-        working-directory: ./codex-rs
+        working-directory: .
     steps:
       - name: Checkout
         uses: actions/checkout@v6
@@ -23,4 +23,4 @@ jobs:
         uses: EmbarkStudios/cargo-deny-action@v2
         with:
           rust-version: stable
-          manifest-path: ./codex-rs/Cargo.toml
+          manifest-path: ./Cargo.toml

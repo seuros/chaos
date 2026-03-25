@@ -37,7 +37,7 @@ jobs:
             mapfile -t files < <(git diff --name-only --no-renames "$BASE_SHA" "$HEAD_SHA")
           else
             # On push / manual runs, default to running everything
-            files=("codex-rs/force" ".github/force")
+            files=("force" ".github/force")
           fi
 
           codex=false
@@ -45,8 +45,8 @@ jobs:
           argument_comment_lint_package=false
           workflows=false
           for f in "${files[@]}"; do
-            [[ $f == codex-rs/* ]] && codex=true
-            [[ $f == codex-rs/* || $f == tools/argument-comment-lint/* || $f == justfile ]] && argument_comment_lint=true
+            [[ $f == sys/* || $f == bin/* || $f == lib/* || $f == etc/* || $f == var/* || $f == share/* || $f == secure/* || $f == drivers/* || $f == srv/* || $f == tests/* || $f == Cargo.toml || $f == Cargo.lock ]] && codex=true
+            [[ $codex == true || $f == tools/argument-comment-lint/* || $f == justfile ]] && argument_comment_lint=true
             [[ $f == tools/argument-comment-lint/* || $f == .github/workflows/rust-ci.yml ]] && argument_comment_lint_package=true
             [[ $f == .github/* ]] && workflows=true
           done
@@ -62,9 +62,6 @@ jobs:
     runs-on: ubuntu-24.04
     needs: changed
     if: ${{ needs.changed.outputs.codex == 'true' || needs.changed.outputs.workflows == 'true' || github.event_name == 'push' }}
-    defaults:
-      run:
-        working-directory: codex-rs
     steps:
       - uses: actions/checkout@v6
       - uses: dtolnay/rust-toolchain@1.93.0
@@ -78,9 +75,6 @@ jobs:
     runs-on: ubuntu-24.04
     needs: changed
     if: ${{ needs.changed.outputs.codex == 'true' || needs.changed.outputs.workflows == 'true' || github.event_name == 'push' }}
-    defaults:
-      run:
-        working-directory: codex-rs
     steps:
       - uses: actions/checkout@v6
       - uses: dtolnay/rust-toolchain@1.93.0
@@ -124,7 +118,7 @@ jobs:
         if: ${{ needs.changed.outputs.argument_comment_lint_package == 'true' || github.event_name == 'push' }}
         working-directory: tools/argument-comment-lint
         run: cargo test
-      - name: Run argument comment lint on codex-rs
+      - name: Run argument comment lint
         run: |
           bash -n tools/argument-comment-lint/run.sh
           ./tools/argument-comment-lint/run.sh
@@ -137,9 +131,6 @@ jobs:
     needs: changed
     # Keep job-level if to avoid spinning up runners when not needed
     if: ${{ needs.changed.outputs.codex == 'true' || needs.changed.outputs.workflows == 'true' || github.event_name == 'push' }}
-    defaults:
-      run:
-        working-directory: codex-rs
     env:
       USE_SCCACHE: "true"
       CARGO_INCREMENTAL: "0"
@@ -235,7 +226,6 @@ jobs:
 
       - name: Compute lockfile hash
         id: lockhash
-        working-directory: codex-rs
         shell: bash
         run: |
           set -euo pipefail
@@ -411,7 +401,7 @@ jobs:
         uses: actions/upload-artifact@v7
         with:
           name: cargo-timings-rust-ci-clippy-${{ matrix.target }}-${{ matrix.profile }}
-          path: codex-rs/target/**/cargo-timings/cargo-timing.html
+          path: target/**/cargo-timings/cargo-timing.html
           if-no-files-found: warn
 
       # Save caches explicitly; make non-fatal so cache packaging
@@ -472,9 +462,6 @@ jobs:
     timeout-minutes: 30
     needs: changed
     if: ${{ needs.changed.outputs.codex == 'true' || needs.changed.outputs.workflows == 'true' || github.event_name == 'push' }}
-    defaults:
-      run:
-        working-directory: codex-rs
     env:
       USE_SCCACHE: "true"
       CARGO_INCREMENTAL: "0"
@@ -505,7 +492,7 @@ jobs:
       - name: Set up Node.js for js_repl tests
         uses: actions/setup-node@v6
         with:
-          node-version-file: codex-rs/node-version.txt
+          node-version-file: node-version.txt
       - name: Install Linux build dependencies
         if: ${{ runner.os == 'Linux' }}
         shell: bash
@@ -526,7 +513,6 @@ jobs:
 
       - name: Compute lockfile hash
         id: lockhash
-        working-directory: codex-rs
         shell: bash
         run: |
           set -euo pipefail
@@ -611,7 +597,7 @@ jobs:
         uses: actions/upload-artifact@v7
         with:
           name: cargo-timings-rust-ci-nextest-${{ matrix.target }}-${{ matrix.profile }}
-          path: codex-rs/target/**/cargo-timings/cargo-timing.html
+          path: target/**/cargo-timings/cargo-timing.html
           if-no-files-found: warn
 
       - name: Save cargo home cache

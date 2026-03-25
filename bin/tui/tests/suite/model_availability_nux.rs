@@ -14,7 +14,7 @@ async fn resume_startup_does_not_consume_model_availability_nux_count() -> Resul
     let repo_root = codex_utils_cargo_bin::repo_root()?;
     let codex_home = tempdir()?;
 
-    let source_catalog_path = codex_utils_cargo_bin::find_resource!("../core/models.json")?;
+    let source_catalog_path = codex_utils_cargo_bin::find_resource!("../../sys/kern/core/models.json")?;
     let source_catalog = std::fs::read_to_string(&source_catalog_path)?;
     let mut source_catalog: JsonValue = serde_json::from_str(&source_catalog)?;
     let models = source_catalog
@@ -65,7 +65,7 @@ trust_level = "trusted"
     std::fs::write(codex_home.path().join("config.toml"), config_contents)?;
 
     let fixture_path =
-        codex_utils_cargo_bin::find_resource!("../core/tests/cli_responses_fixture.sse")?;
+        codex_utils_cargo_bin::find_resource!("../../sys/kern/core/tests/cli_responses_fixture.sse")?;
     let codex = if let Ok(path) = codex_utils_cargo_bin::cargo_bin("codex") {
         path
     } else {

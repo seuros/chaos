@@ -5,7 +5,6 @@ use crate::auth::AuthManager;
 use crate::auth::AuthMode;
 use crate::auth::CodexAuth;
 use crate::config::Config;
-use crate::default_client::build_reqwest_client;
 use crate::error::CodexErr;
 use crate::error::Result as CoreResult;
 use crate::model_provider_info::ModelProviderInfo;
@@ -18,7 +17,7 @@ use crate::util::FeedbackRequestTags;
 use crate::util::emit_feedback_request_tags;
 use codex_api::ModelsClient;
 use codex_api::RequestTelemetry;
-use codex_api::ReqwestTransport;
+use codex_api::RamaTransport;
 use codex_api::TransportError;
 use chaos_syslog::TelemetryAuthMode;
 use chaos_ipc::config_types::CollaborationModeMask;
@@ -417,7 +416,7 @@ impl ModelsManager {
         let auth_mode = auth.as_ref().map(CodexAuth::auth_mode);
         let api_provider = self.provider.to_api_provider(auth_mode)?;
         let api_auth = auth_provider_from_auth(auth.clone(), &self.provider)?;
-        let transport = ReqwestTransport::new(build_reqwest_client());
+        let transport = RamaTransport::default_client();
         let request_telemetry: Arc<dyn RequestTelemetry> = Arc::new(ModelsRequestTelemetry {
             auth_mode: auth_mode.map(|mode| TelemetryAuthMode::from(mode).to_string()),
             auth_header_attached: api_auth.auth_header_attached(),

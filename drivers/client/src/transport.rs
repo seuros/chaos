@@ -8,6 +8,7 @@ use futures::StreamExt;
 use futures::stream::BoxStream;
 use http::HeaderMap;
 use http::StatusCode;
+use rama::Service;
 use rama::http::Body;
 use rama::http::body::util::BodyExt;
 use rama::service::BoxService;
@@ -250,9 +251,10 @@ impl HttpTransport for RamaTransport {
             });
         }
 
+        let body_stream = response.into_body().into_data_stream();
         let stream = tokio_stream::StreamExt::map(
-            rama::http::body::BodyDataStream::new(response.into_body()),
-            |result| result.map_err(|err| TransportError::Network(err.to_string())),
+            body_stream,
+            |result: Result<Bytes, _>| result.map_err(|err| TransportError::Network(err.to_string())),
         );
 
         Ok(StreamResponse {

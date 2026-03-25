@@ -10,5 +10,4 @@ workspace = true
 
 [dependencies]
 assert_cmd = { workspace = true }
-runfiles = { workspace = true }
 thiserror = { workspace = true }

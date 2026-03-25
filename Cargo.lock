@@ -1634,7 +1634,6 @@ dependencies = [
  "async-trait",
  "chaos-pwd",
  "chaos-realpath",
- "chaos-tls",
  "chrono",
  "clap",
  "globset",
@@ -1895,13 +1894,6 @@ dependencies = [
 ]
 
 [[package]]
-name = "chaos-tls"
-version = "47.0.0"
-dependencies = [
- "rustls",
-]
-
-[[package]]
 name = "chaos-tmpfs"
 version = "47.0.0"
 dependencies = [
@@ -1977,7 +1969,6 @@ name = "chaos-which"
 version = "47.0.0"
 dependencies = [
  "assert_cmd",
- "runfiles",
  "thiserror 2.0.18",
 ]
 
@@ -2206,7 +2197,6 @@ dependencies = [
  "bytes",
  "chaos-abi",
  "chaos-ipc",
- "chaos-tls",
  "codex-client",
  "eventsource-stream",
  "futures",
@@ -2233,7 +2223,6 @@ version = "47.0.0"
 dependencies = [
  "async-trait",
  "bytes",
- "chaos-tls",
  "chaos-which",
  "eventsource-stream",
  "futures",
@@ -6957,6 +6946,7 @@ dependencies = [
  "base64 0.22.1",
  "rama-core 0.3.0-rc1",
  "rama-utils 0.3.0-rc1",
+ "rcgen",
  "rustls-pki-types",
  "serde",
  "serde_json",
@@ -7487,6 +7477,7 @@ dependencies = [
  "rama-http-types 0.3.0-rc1",
  "rama-net 0.3.0-rc1",
  "rama-utils 0.3.0-rc1",
+ "rcgen",
  "rustls",
  "rustls-native-certs",
  "rustls-pki-types",
@@ -7814,6 +7805,7 @@ checksum = "10b99e0098aa4082912d4c649628623db6aba77335e4f4569ff5083a6448b32e"
 dependencies = [
  "aws-lc-rs",
  "pem",
+ "ring",
  "rustls-pki-types",
  "time",
  "x509-parser",
@@ -8010,11 +8002,6 @@ dependencies = [
  "subtle",
  "zeroize",
 ]
-
-[[package]]
-name = "runfiles"
-version = "0.1.0"
-source = "git+https://github.com/dzbarsky/rules_rust?rev=b56cbaa8465e74127f1ea216f813cd377295ad81#b56cbaa8465e74127f1ea216f813cd377295ad81"
 
 [[package]]
 name = "rust-embed"

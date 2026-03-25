@@ -19,7 +19,6 @@ clap = { workspace = true, features = ["derive"] }
 chrono = { workspace = true }
 chaos-realpath = { workspace = true }
 chaos-pwd = { workspace = true }
-chaos-tls = { workspace = true }
 globset = { workspace = true }
 serde = { workspace = true, features = ["derive"] }
 serde_json = { workspace = true }

@@ -47,7 +47,6 @@ use std::path::Path;
 use std::path::PathBuf;
 use std::sync::Arc;
 
-use chaos_tls::ensure_rustls_crypto_provider;
 use rustls::ClientConfig;
 use rustls::RootCertStore;
 use rustls_pki_types::CertificateDer;
@@ -218,8 +217,6 @@ fn maybe_build_rustls_client_config_with_env(
     let Some(bundle) = env_source.configured_ca_bundle() else {
         return Ok(None);
     };
-
-    ensure_rustls_crypto_provider();
 
     // Start from the platform roots so websocket callers keep the same baseline trust behavior
     // they would get from tungstenite's default rustls connector, then layer in the Codex custom

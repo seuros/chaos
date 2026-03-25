@@ -77,7 +77,6 @@ members = [
     "lib/libutil/conv",
     "lib/libutil/pty",
     "lib/libutil/ready",
-    "lib/libutil/tls",
     "lib/libutil/jail-report",
     "lib/libutil/amphetamine",
     "lib/libutil/lex",
@@ -173,7 +172,6 @@ chaos-pixbuf = { path = "lib/libutil/pixbuf" }
 chaos-conv = { path = "lib/libutil/conv" }
 chaos-pty = { path = "lib/libutil/pty" }
 chaos-ready = { path = "lib/libutil/ready" }
-chaos-tls = { path = "lib/libutil/tls" }
 chaos-jail-report = { path = "lib/libutil/jail-report" }
 chaos-amphetamine = { path = "lib/libutil/amphetamine" }
 chaos-lex = { path = "lib/libutil/lex" }
@@ -261,15 +259,13 @@ portable-pty = "0.9.0"
 predicates = "3"
 pretty_assertions = "1.4.1"
 pulldown-cmark = "0.10"
-rama = { git = "https://github.com/plabayo/rama.git", features = ["http-full", "rustls", "compression"] }
+rama = { git = "https://github.com/plabayo/rama.git", features = ["http-full", "rustls", "ring", "compression"] }
 rand = "0.9"
 ratatui = "0.30.0"
 ratatui-macros = "0.7.0"
 regex = "1.12.3"
 regex-lite = "0.1.8"
 reqwest = "0.12"
-# rmcp evicted — OAuth will be rebuilt on mcp-guest when it gains OAuth support
-runfiles = { git = "https://github.com/dzbarsky/rules_rust", rev = "b56cbaa8465e74127f1ea216f813cd377295ad81" }
 rustls = { version = "0.23", default-features = false, features = [
     "ring",
     "std",

@@ -1,12 +1,6 @@
-use std::ffi::OsString;
 use std::io;
 use std::path::Path;
 use std::path::PathBuf;
-
-pub use runfiles;
-
-/// Runfiles-based test environments set this when runfiles directories are disabled.
-const RUNFILES_MANIFEST_ONLY_ENV: &str = "RUNFILES_MANIFEST_ONLY";
 
 #[derive(Debug, thiserror::Error)]
 pub enum CargoBinError {
@@ -32,16 +26,20 @@ pub enum CargoBinError {
 
 /// Returns an absolute path to a binary target built for the current test run.
 ///
-/// In `cargo test`, `CARGO_BIN_EXE_*` env vars are absolute.
-/// In runfiles-based test environments, `CARGO_BIN_EXE_*` env vars are rlocationpaths,
-/// intended to be consumed by `rlocation`.
-/// This helper allows callers to transparently support both.
+/// In `cargo test`, `CARGO_BIN_EXE_*` env vars are absolute paths.
 #[allow(deprecated)]
 pub fn cargo_bin(name: &str) -> Result<PathBuf, CargoBinError> {
     let env_keys = cargo_bin_env_keys(name);
     for key in &env_keys {
         if let Some(value) = std::env::var_os(key) {
-            return resolve_bin_from_env(key, value);
+            let path = PathBuf::from(&value);
+            if path.is_absolute() && path.exists() {
+                return Ok(path);
+            }
+            return Err(CargoBinError::ResolvedPathDoesNotExist {
+                key: key.to_owned(),
+                path,
+            });
         }
     }
     match assert_cmd::Command::cargo_bin(name) {
@@ -82,111 +80,18 @@ fn cargo_bin_env_keys(name: &str) -> Vec<String> {
     keys
 }
 
-pub fn runfiles_available() -> bool {
-    std::env::var_os(RUNFILES_MANIFEST_ONLY_ENV).is_some()
-}
-
-fn resolve_bin_from_env(key: &str, value: OsString) -> Result<PathBuf, CargoBinError> {
-    let raw = PathBuf::from(&value);
-    if runfiles_available() {
-        let runfiles = runfiles::Runfiles::create().map_err(|err| CargoBinError::CurrentExe {
-            source: std::io::Error::other(err),
-        })?;
-        if let Some(resolved) = runfiles::rlocation!(runfiles, &raw)
-            && resolved.exists()
-        {
-            return Ok(resolved);
-        }
-    } else if raw.is_absolute() && raw.exists() {
-        return Ok(raw);
-    }
-
-    Err(CargoBinError::ResolvedPathDoesNotExist {
-        key: key.to_owned(),
-        path: raw,
-    })
-}
-
-/// Macro that derives the path to a test resource at runtime, the value of
-/// which depends on whether Cargo or a runfiles-based build system is being used to build and run a
-/// test. Note the return value may be a relative or absolute path.
-/// (Incidentally, this is a macro rather than a function because it reads
-/// compile-time environment variables that need to be captured at the call
-/// site.)
-///
-/// This is expected to be used exclusively in test code because Codex CLI is a
-/// standalone binary with no packaged resources.
+/// Macro that derives the path to a test resource at compile time using
+/// `CARGO_MANIFEST_DIR`. This is expected to be used exclusively in test code.
 #[macro_export]
 macro_rules! find_resource {
     ($resource:expr) => {{
-        let resource = std::path::Path::new(&$resource);
-        if $crate::runfiles_available() {
-            // When this code is built and run with runfiles support:
-            // - we inject `BAZEL_PACKAGE` as a compile-time environment variable
-            //   that points to the package-relative resource root
-            // - at runtime, the build system will set runfiles-related env vars
-            $crate::resolve_packaged_runfile(option_env!("BAZEL_PACKAGE"), resource)
-        } else {
-            let manifest_dir = std::path::Path::new(env!("CARGO_MANIFEST_DIR"));
-            Ok(manifest_dir.join(resource))
-        }
+        let manifest_dir = std::path::Path::new(env!("CARGO_MANIFEST_DIR"));
+        Ok::<std::path::PathBuf, std::io::Error>(manifest_dir.join($resource))
     }};
 }
 
-pub fn resolve_packaged_runfile(
-    package_root: Option<&str>,
-    resource: &Path,
-) -> std::io::Result<PathBuf> {
-    let runfiles = runfiles::Runfiles::create()
-        .map_err(|err| std::io::Error::other(format!("failed to create runfiles: {err}")))?;
-    let runfile_path = match package_root {
-        Some(package_root) => PathBuf::from("_main").join(package_root).join(resource),
-        None => {
-            return Err(std::io::Error::new(
-                std::io::ErrorKind::NotFound,
-                "package root was not set at compile time",
-            ));
-        }
-    };
-    let runfile_path = normalize_runfile_path(&runfile_path);
-    if let Some(resolved) = runfiles::rlocation!(runfiles, &runfile_path)
-        && resolved.exists()
-    {
-        return Ok(resolved);
-    }
-    let runfile_path_display = runfile_path.display();
-    Err(std::io::Error::new(
-        std::io::ErrorKind::NotFound,
-        format!("runfile does not exist at: {runfile_path_display}"),
-    ))
-}
-
-pub fn resolve_cargo_runfile(resource: &Path) -> std::io::Result<PathBuf> {
-    let manifest_dir = std::path::PathBuf::from(env!("CARGO_MANIFEST_DIR"));
-    Ok(manifest_dir.join(resource))
-}
-
 pub fn repo_root() -> io::Result<PathBuf> {
-    let marker = if runfiles_available() {
-        let runfiles = runfiles::Runfiles::create()
-            .map_err(|err| io::Error::other(format!("failed to create runfiles: {err}")))?;
-        let marker_path = option_env!("CODEX_REPO_ROOT_MARKER")
-            .map(PathBuf::from)
-            .ok_or_else(|| {
-                io::Error::new(
-                    io::ErrorKind::NotFound,
-                    "CODEX_REPO_ROOT_MARKER was not set at compile time",
-                )
-            })?;
-        runfiles::rlocation!(runfiles, &marker_path).ok_or_else(|| {
-            io::Error::new(
-                io::ErrorKind::NotFound,
-                "repo_root.marker not available in runfiles",
-            )
-        })?
-    } else {
-        resolve_cargo_runfile(Path::new("repo_root.marker"))?
-    };
+    let marker = Path::new(env!("CARGO_MANIFEST_DIR")).join("repo_root.marker");
     let mut root = marker;
     for _ in 0..4 {
         root = root
@@ -200,28 +105,4 @@ pub fn repo_root() -> io::Result<PathBuf> {
             .to_path_buf();
     }
     Ok(root)
-}
-
-fn normalize_runfile_path(path: &Path) -> PathBuf {
-    let mut components = Vec::new();
-    for component in path.components() {
-        match component {
-            std::path::Component::CurDir => {}
-            std::path::Component::ParentDir => {
-                if matches!(components.last(), Some(std::path::Component::Normal(_))) {
-                    components.pop();
-                } else {
-                    components.push(component);
-                }
-            }
-            _ => components.push(component),
-        }
-    }
-
-    components
-        .into_iter()
-        .fold(PathBuf::new(), |mut acc, component| {
-            acc.push(component.as_os_str());
-            acc
-        })
 }

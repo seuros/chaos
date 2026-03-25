@@ -23,7 +23,6 @@ thiserror = { workspace = true }
 tokio = { workspace = true, features = ["macros", "rt", "time", "sync"] }
 tracing = { workspace = true }
 tracing-opentelemetry = { workspace = true }
-chaos-tls = { workspace = true }
 zstd = { workspace = true }
 
 [lints]

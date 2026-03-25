@@ -1227,7 +1227,7 @@ fn style_sign_add(
     diff_backgrounds: ResolvedDiffBackgrounds,
 ) -> Style {
     match theme {
-        DiffTheme::Light => Style::default().fg(Color::Green),
+        DiffTheme::Light => Style::default().fg(crate::theme::green()),
         DiffTheme::Dark => style_add(theme, color_level, diff_backgrounds),
     }
 }
@@ -1239,7 +1239,7 @@ fn style_sign_del(
     diff_backgrounds: ResolvedDiffBackgrounds,
 ) -> Style {
     match theme {
-        DiffTheme::Light => Style::default().fg(Color::Red),
+        DiffTheme::Light => Style::default().fg(crate::theme::red()),
         DiffTheme::Dark => style_del(theme, color_level, diff_backgrounds),
     }
 }
@@ -1261,17 +1261,17 @@ fn style_add(
     diff_backgrounds: ResolvedDiffBackgrounds,
 ) -> Style {
     match (theme, color_level, diff_backgrounds.add) {
-        (_, DiffColorLevel::Ansi16, _) => Style::default().fg(Color::Green),
+        (_, DiffColorLevel::Ansi16, _) => Style::default().fg(crate::theme::green()),
         (DiffTheme::Light, DiffColorLevel::TrueColor, Some(bg))
         | (DiffTheme::Light, DiffColorLevel::Ansi256, Some(bg)) => Style::default().bg(bg),
         (DiffTheme::Dark, DiffColorLevel::TrueColor, Some(bg))
         | (DiffTheme::Dark, DiffColorLevel::Ansi256, Some(bg)) => {
-            Style::default().fg(Color::Green).bg(bg)
+            Style::default().fg(crate::theme::green()).bg(bg)
         }
         (DiffTheme::Light, DiffColorLevel::TrueColor, None)
         | (DiffTheme::Light, DiffColorLevel::Ansi256, None) => Style::default(),
         (DiffTheme::Dark, DiffColorLevel::TrueColor, None)
-        | (DiffTheme::Dark, DiffColorLevel::Ansi256, None) => Style::default().fg(Color::Green),
+        | (DiffTheme::Dark, DiffColorLevel::Ansi256, None) => Style::default().fg(crate::theme::green()),
     }
 }
 
@@ -1285,17 +1285,17 @@ fn style_del(
     diff_backgrounds: ResolvedDiffBackgrounds,
 ) -> Style {
     match (theme, color_level, diff_backgrounds.del) {
-        (_, DiffColorLevel::Ansi16, _) => Style::default().fg(Color::Red),
+        (_, DiffColorLevel::Ansi16, _) => Style::default().fg(crate::theme::red()),
         (DiffTheme::Light, DiffColorLevel::TrueColor, Some(bg))
         | (DiffTheme::Light, DiffColorLevel::Ansi256, Some(bg)) => Style::default().bg(bg),
         (DiffTheme::Dark, DiffColorLevel::TrueColor, Some(bg))
         | (DiffTheme::Dark, DiffColorLevel::Ansi256, Some(bg)) => {
-            Style::default().fg(Color::Red).bg(bg)
+            Style::default().fg(crate::theme::red()).bg(bg)
         }
         (DiffTheme::Light, DiffColorLevel::TrueColor, None)
         | (DiffTheme::Light, DiffColorLevel::Ansi256, None) => Style::default(),
         (DiffTheme::Dark, DiffColorLevel::TrueColor, None)
-        | (DiffTheme::Dark, DiffColorLevel::Ansi256, None) => Style::default().fg(Color::Red),
+        | (DiffTheme::Dark, DiffColorLevel::Ansi256, None) => Style::default().fg(crate::theme::red()),
     }
 }
 

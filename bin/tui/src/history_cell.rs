@@ -293,7 +293,7 @@ impl HistoryCell for UserHistoryCell {
             .max(1);
 
         let style = user_message_style();
-        let element_style = style.fg(Color::Cyan);
+        let element_style = style.fg(crate::theme::cyan());
 
         let wrapped_remote_images = if self.remote_image_urls.is_empty() {
             None
@@ -982,7 +982,8 @@ fn with_border_internal(
 
     let mut out = Vec::with_capacity(lines.len() + 2);
     let border_inner_width = content_width + 2;
-    out.push(vec![format!("╭{}╮", "─".repeat(border_inner_width)).dim()].into());
+    let border_style = crate::theme::border();
+    out.push(vec![Span::styled(format!("╭{}╮", "─".repeat(border_inner_width)), border_style)].into());
 
     for line in lines.into_iter() {
         let used_width: usize = line
@@ -991,16 +992,16 @@ fn with_border_internal(
             .sum();
         let span_count = line.spans.len();
         let mut spans: Vec<Span<'static>> = Vec::with_capacity(span_count + 4);
-        spans.push(Span::from("│ ").dim());
+        spans.push(Span::styled("│ ", border_style));
         spans.extend(line.into_iter());
         if used_width < content_width {
-            spans.push(Span::from(" ".repeat(content_width - used_width)).dim());
+            spans.push(Span::from(" ".repeat(content_width - used_width)));
         }
-        spans.push(Span::from(" │").dim());
+        spans.push(Span::styled(" │", border_style));
         out.push(Line::from(spans));
     }
 
-    out.push(vec![format!("╰{}╯", "─".repeat(border_inner_width)).dim()].into());
+    out.push(vec![Span::styled(format!("╰{}╯", "─".repeat(border_inner_width)), border_style)].into());
 
     out
 }
@@ -1082,35 +1083,39 @@ pub(crate) fn new_session_info(
 
     if is_first_event {
         // Help lines below the header (new copy and list)
+        let p = crate::theme::palette();
+        let cmd_style = Style::default().fg(p.accent);
+        let desc_style = crate::theme::dim();
         let help_lines: Vec<Line<'static>> = vec![
-            "  To get started, describe a task or try one of these commands:"
-                .dim()
-                .into(),
+            Line::from(Span::styled(
+                "  To get started, describe a task or try one of these commands:",
+                desc_style,
+            )),
             Line::from(""),
             Line::from(vec![
-                "  ".into(),
-                "/init".into(),
-                " - create an AGENTS.md file with instructions for Codex".dim(),
+                Span::from("  "),
+                Span::styled("/init", cmd_style),
+                Span::styled(" - create an AGENTS.md file with instructions for Chaos", desc_style),
             ]),
             Line::from(vec![
-                "  ".into(),
-                "/status".into(),
-                " - show current session configuration".dim(),
+                Span::from("  "),
+                Span::styled("/status", cmd_style),
+                Span::styled(" - show current session configuration", desc_style),
             ]),
             Line::from(vec![
-                "  ".into(),
-                "/permissions".into(),
-                " - choose what Codex is allowed to do".dim(),
+                Span::from("  "),
+                Span::styled("/permissions", cmd_style),
+                Span::styled(" - choose what Chaos is allowed to do", desc_style),
             ]),
             Line::from(vec![
-                "  ".into(),
-                "/model".into(),
-                " - choose what model and reasoning effort to use".dim(),
+                Span::from("  "),
+                Span::styled("/model", cmd_style),
+                Span::styled(" - choose what model and reasoning effort to use", desc_style),
             ]),
             Line::from(vec![
-                "  ".into(),
-                "/review".into(),
-                " - review any changes and find issues".dim(),
+                Span::from("  "),
+                Span::styled("/review", cmd_style),
+                Span::styled(" - review any changes and find issues", desc_style),
             ]),
         ];
 
@@ -1249,11 +1254,12 @@ impl HistoryCell for SessionHeaderHistoryCell {
         let make_row = |spans: Vec<Span<'static>>| Line::from(spans);
 
         // Title line rendered inside the box: ">_ Chaos (vX)"
+        let p = crate::theme::palette();
         let title_spans: Vec<Span<'static>> = vec![
-            Span::from(">_ ").dim(),
-            Span::from(PRODUCT_NAME).bold(),
-            Span::from(" ").dim(),
-            Span::from(format!("(v{})", self.version)).dim(),
+            Span::styled(">_ ", crate::theme::prompt()),
+            Span::styled(PRODUCT_NAME, Style::default().fg(p.highlight).bold()),
+            Span::styled(" ", crate::theme::dim()),
+            Span::styled(format!("(v{})", self.version), crate::theme::dim()),
         ];
 
         const CHANGE_MODEL_HINT_COMMAND: &str = "/model";
@@ -1269,7 +1275,7 @@ impl HistoryCell for SessionHeaderHistoryCell {
         let reasoning_label = self.reasoning_label();
         let model_spans: Vec<Span<'static>> = {
             let mut spans = vec![
-                Span::from(format!("{model_label} ")).dim(),
+                Span::styled(format!("{model_label} "), crate::theme::dim()),
                 Span::styled(self.model.clone(), self.model_style),
             ];
             if let Some(reasoning) = reasoning_label {
@@ -1278,11 +1284,11 @@ impl HistoryCell for SessionHeaderHistoryCell {
             }
             if self.show_fast_status {
                 spans.push("   ".into());
-                spans.push(Span::styled("fast", self.model_style.magenta()));
+                spans.push(Span::styled("fast", Style::default().fg(p.warning)));
             }
-            spans.push("   ".dim());
-            spans.push(CHANGE_MODEL_HINT_COMMAND.cyan());
-            spans.push(CHANGE_MODEL_HINT_EXPLANATION.dim());
+            spans.push(Span::styled("   ", crate::theme::dim()));
+            spans.push(Span::styled(CHANGE_MODEL_HINT_COMMAND, Style::default().fg(p.accent)));
+            spans.push(Span::styled(CHANGE_MODEL_HINT_EXPLANATION, crate::theme::dim()));
             spans
         };
 
@@ -1291,7 +1297,7 @@ impl HistoryCell for SessionHeaderHistoryCell {
         let dir_prefix_width = UnicodeWidthStr::width(dir_prefix.as_str());
         let dir_max_width = inner_width.saturating_sub(dir_prefix_width);
         let dir = self.format_directory(Some(dir_max_width));
-        let dir_spans = vec![Span::from(dir_prefix).dim(), Span::from(dir)];
+        let dir_spans = vec![Span::styled(dir_prefix, crate::theme::dim()), Span::styled(dir, Style::default().fg(p.fg))];
 
         let lines = vec![
             make_row(title_spans),
@@ -1979,7 +1985,7 @@ impl HistoryCell for RequestUserInputResultCell {
                     width,
                     "    answer: ".dim(),
                     "            ".dim(),
-                    Style::default().fg(Color::Cyan),
+                    Style::default().fg(crate::theme::cyan()),
                 ));
                 continue;
             }
@@ -1992,7 +1998,7 @@ impl HistoryCell for RequestUserInputResultCell {
                     width,
                     "    answer: ".dim(),
                     "            ".dim(),
-                    Style::default().fg(Color::Cyan),
+                    Style::default().fg(crate::theme::cyan()),
                 ));
             }
             if let Some(note) = note {
@@ -2000,13 +2006,13 @@ impl HistoryCell for RequestUserInputResultCell {
                     (
                         "    note: ".dim(),
                         "          ".dim(),
-                        Style::default().fg(Color::Cyan),
+                        Style::default().fg(crate::theme::cyan()),
                     )
                 } else {
                     (
                         "    answer: ".dim(),
                         "            ".dim(),
-                        Style::default().fg(Color::Cyan),
+                        Style::default().fg(crate::theme::cyan()),
                     )
                 };
                 lines.extend(wrap_with_prefix(&note, width, label, continuation, style));
@@ -2020,7 +2026,7 @@ impl HistoryCell for RequestUserInputResultCell {
                 width,
                 "  ↳ ".cyan().dim(),
                 "    ".dim(),
-                Style::default().fg(Color::Cyan).add_modifier(Modifier::DIM),
+                Style::default().fg(crate::theme::cyan()).add_modifier(Modifier::DIM),
             ));
         }
 

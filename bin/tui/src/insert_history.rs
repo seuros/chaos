@@ -360,7 +360,7 @@ mod tests {
 
         // Build a blockquote-like line: apply line-level green style and prefix "> "
         let mut line: Line<'static> = Line::from(vec!["> ".into(), "Hello world".into()]);
-        line = line.style(Color::Green);
+        line = line.style(crate::theme::green());
         insert_history_lines(&mut term, vec![line])
             .expect("Failed to insert history lines in test");
 
@@ -398,7 +398,7 @@ mod tests {
             "> ".into(),
             "This is a long quoted line that should wrap".into(),
         ]);
-        line = line.style(Color::Green);
+        line = line.style(crate::theme::green());
 
         insert_history_lines(&mut term, vec![line])
             .expect("Failed to insert history lines in test");
@@ -459,7 +459,7 @@ mod tests {
 
         // First span colored, rest plain.
         let line: Line<'static> = Line::from(vec![
-            Span::styled("1. ", ratatui::style::Style::default().fg(Color::LightBlue)),
+            Span::styled("1. ", ratatui::style::Style::default().fg(crate::theme::light_blue())),
             Span::raw("Hello world"),
         ]);
 

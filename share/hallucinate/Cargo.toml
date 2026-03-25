@@ -9,3 +9,14 @@ publish.workspace = true
 workspace = true
 
 [dependencies]
+mlua = { workspace = true }
+chaos-ipc = { workspace = true }
+anyhow = { workspace = true }
+serde = { workspace = true, features = ["derive"] }
+serde_json = { workspace = true }
+tokio = { workspace = true, features = ["sync", "rt"] }
+tracing = { workspace = true }
+
+[dev-dependencies]
+tempfile = { workspace = true }
+tokio = { workspace = true, features = ["full"] }

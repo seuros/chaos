@@ -1763,7 +1763,7 @@ mod tests {
             for x in 0..width {
                 buf[(x, y)]
                     .set_symbol("X")
-                    .set_style(Style::default().bg(Color::Red));
+                    .set_style(Style::default().bg(crate::theme::red()));
             }
         }
         view.render(area, &mut buf);
@@ -1822,7 +1822,7 @@ mod tests {
             for x in area.x..area.x + width {
                 buf[(x, y)]
                     .set_symbol("X")
-                    .set_style(Style::default().bg(Color::Red));
+                    .set_style(Style::default().bg(crate::theme::red()));
             }
         }
         view.render(area, &mut buf);

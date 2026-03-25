@@ -322,7 +322,7 @@ impl AuthModeWidget {
 
             let line2 = if is_selected {
                 Line::from(format!("     {description}"))
-                    .fg(Color::Cyan)
+                    .fg(crate::theme::cyan())
                     .add_modifier(Modifier::DIM)
             } else {
                 Line::from(format!("     {description}"))
@@ -440,7 +440,7 @@ impl AuthModeWidget {
 
     fn render_chatgpt_success_message(&self, area: Rect, buf: &mut Buffer) {
         let lines = vec![
-            "✓ Signed in with your ChatGPT account".fg(Color::Green).into(),
+            "✓ Signed in with your ChatGPT account".fg(crate::theme::green()).into(),
             "".into(),
             "  Before you start:".into(),
             "".into(),
@@ -461,7 +461,7 @@ impl AuthModeWidget {
             ])
             .dim(),
             "".into(),
-            "  Press Enter to continue".fg(Color::Cyan).into(),
+            "  Press Enter to continue".fg(crate::theme::cyan()).into(),
         ];
 
         Paragraph::new(lines)
@@ -472,7 +472,7 @@ impl AuthModeWidget {
     fn render_chatgpt_success(&self, area: Rect, buf: &mut Buffer) {
         let lines = vec![
             "✓ Signed in with your ChatGPT account"
-                .fg(Color::Green)
+                .fg(crate::theme::green())
                 .into(),
         ];
 
@@ -483,7 +483,7 @@ impl AuthModeWidget {
 
     fn render_api_key_configured(&self, area: Rect, buf: &mut Buffer) {
         let lines = vec![
-            "✓ API key configured".fg(Color::Green).into(),
+            "✓ API key configured".fg(crate::theme::green()).into(),
             "".into(),
             "  Codex will use usage-based billing with your API key.".into(),
         ];
@@ -535,7 +535,7 @@ impl AuthModeWidget {
                     .title("API key")
                     .borders(Borders::ALL)
                     .border_type(BorderType::Rounded)
-                    .border_style(Style::default().fg(Color::Cyan)),
+                    .border_style(Style::default().fg(crate::theme::cyan())),
             )
             .render(input_area, buf);
 
@@ -936,7 +936,7 @@ mod tests {
         for (i, ch) in "example".chars().enumerate() {
             let cell = &mut buf[(i as u16, 0)];
             cell.set_symbol(&ch.to_string());
-            cell.fg = Color::Cyan;
+            cell.fg = crate::theme::cyan();
             cell.modifier = Modifier::UNDERLINED;
         }
         // Leave a plain cell that should NOT be marked.
@@ -960,7 +960,7 @@ mod tests {
         // One cyan+underlined cell to mark.
         let cell = &mut buf[(0, 0)];
         cell.set_symbol("a");
-        cell.fg = Color::Cyan;
+        cell.fg = crate::theme::cyan();
         cell.modifier = Modifier::UNDERLINED;
 
         // URL contains ESC and BEL that could break the OSC 8 sequence.

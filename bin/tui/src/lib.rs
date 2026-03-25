@@ -106,6 +106,7 @@ mod status_indicator_widget;
 mod streaming;
 mod style;
 mod terminal_palette;
+pub(crate) mod theme;
 mod text_formatting;
 mod theme_picker;
 mod tooltips;

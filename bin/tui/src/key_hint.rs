@@ -91,7 +91,7 @@ impl From<&KeyBinding> for Span<'static> {
 }
 
 fn key_hint_style() -> Style {
-    Style::default().dim()
+    crate::theme::key_hint()
 }
 
 pub(crate) fn has_ctrl_or_alt(mods: KeyModifiers) -> bool {

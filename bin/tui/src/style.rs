@@ -1,44 +1,30 @@
-use crate::color::blend;
-use crate::color::is_light;
-use crate::terminal_palette::best_color;
-use crate::terminal_palette::default_bg;
-use ratatui::style::Color;
+use crate::theme;
 use ratatui::style::Style;
 
 pub fn user_message_style() -> Style {
-    user_message_style_for(default_bg())
+    theme::user_message()
 }
 
 pub fn proposed_plan_style() -> Style {
-    proposed_plan_style_for(default_bg())
+    theme::user_message()
 }
 
 /// Returns the style for a user-authored message using the provided terminal background.
-pub fn user_message_style_for(terminal_bg: Option<(u8, u8, u8)>) -> Style {
-    match terminal_bg {
-        Some(bg) => Style::default().bg(user_message_bg(bg)),
-        None => Style::default(),
-    }
+/// With the Fallout theme active, we ignore the terminal bg and use the palette.
+pub fn user_message_style_for(_terminal_bg: Option<(u8, u8, u8)>) -> Style {
+    theme::user_message()
 }
 
-pub fn proposed_plan_style_for(terminal_bg: Option<(u8, u8, u8)>) -> Style {
-    match terminal_bg {
-        Some(bg) => Style::default().bg(proposed_plan_bg(bg)),
-        None => Style::default(),
-    }
+pub fn proposed_plan_style_for(_terminal_bg: Option<(u8, u8, u8)>) -> Style {
+    theme::user_message()
 }
 
 #[allow(clippy::disallowed_methods)]
-pub fn user_message_bg(terminal_bg: (u8, u8, u8)) -> Color {
-    let (top, alpha) = if is_light(terminal_bg) {
-        ((0, 0, 0), 0.04)
-    } else {
-        ((255, 255, 255), 0.12)
-    };
-    best_color(blend(top, terminal_bg, alpha))
+pub fn user_message_bg(_terminal_bg: (u8, u8, u8)) -> ratatui::style::Color {
+    theme::palette().user_msg_bg
 }
 
 #[allow(clippy::disallowed_methods)]
-pub fn proposed_plan_bg(terminal_bg: (u8, u8, u8)) -> Color {
-    user_message_bg(terminal_bg)
+pub fn proposed_plan_bg(_terminal_bg: (u8, u8, u8)) -> ratatui::style::Color {
+    theme::palette().user_msg_bg
 }

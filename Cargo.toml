@@ -20,7 +20,6 @@ members = [
     "secure/contraband",
     "secure/selinux",
     "secure/vault",
-    "secure/pledge",
 
     # drivers/ — external service adapters
     "drivers/parrot",
@@ -116,7 +115,6 @@ chaos-parole = { path = "secure/parole" }
 chaos-contraband = { path = "secure/contraband" }
 chaos-selinux = { path = "secure/selinux" }
 chaos-vault = { path = "secure/vault" }
-chaos-pledge = { path = "secure/pledge" }
 
 # Internal — drivers/
 chaos-parrot = { path = "drivers/parrot" }

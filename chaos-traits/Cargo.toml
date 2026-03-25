@@ -1,0 +1,21 @@
+[package]
+name = "chaos-traits"
+description = "Narrow trait abstractions for decoupling codex-core orchestration into satellite crates"
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+publish.workspace = true
+
+[dependencies]
+codex-protocol = { workspace = true }
+codex-config = { workspace = true }
+codex-state = { workspace = true }
+codex-otel = { workspace = true }
+async-channel = { workspace = true }
+tokio = { workspace = true, features = ["sync"] }
+anyhow = { workspace = true }
+serde = { workspace = true, features = ["derive"] }
+serde_json = { workspace = true }
+
+[lints]
+workspace = true

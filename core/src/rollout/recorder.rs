@@ -39,7 +39,7 @@ use super::list::parse_timestamp_uuid_from_filename;
 use super::metadata;
 use super::policy::EventPersistenceMode;
 use super::policy::is_persisted_response_item;
-use crate::config::Config;
+use chaos_traits::RolloutConfig;
 use crate::default_client::originator;
 use crate::git_info::collect_git_info;
 use crate::path_utils;
@@ -163,7 +163,7 @@ impl RolloutRecorder {
     /// List threads (rollout files) under the provided Codex home directory.
     #[allow(clippy::too_many_arguments)]
     pub async fn list_threads(
-        config: &Config,
+        config: &impl RolloutConfig,
         page_size: usize,
         cursor: Option<&Cursor>,
         sort_key: ThreadSortKey,
@@ -189,7 +189,7 @@ impl RolloutRecorder {
     /// List archived threads (rollout files) under the archived sessions directory.
     #[allow(clippy::too_many_arguments)]
     pub async fn list_archived_threads(
-        config: &Config,
+        config: &impl RolloutConfig,
         page_size: usize,
         cursor: Option<&Cursor>,
         sort_key: ThreadSortKey,
@@ -214,7 +214,7 @@ impl RolloutRecorder {
 
     #[allow(clippy::too_many_arguments)]
     async fn list_threads_with_db_fallback(
-        config: &Config,
+        config: &impl RolloutConfig,
         page_size: usize,
         cursor: Option<&Cursor>,
         sort_key: ThreadSortKey,
@@ -224,7 +224,7 @@ impl RolloutRecorder {
         archived: bool,
         search_term: Option<&str>,
     ) -> std::io::Result<ThreadsPage> {
-        let codex_home = config.codex_home.as_path();
+        let codex_home = config.codex_home();
         // Filesystem-first listing intentionally overfetches so we can repair stale/missing
         // SQLite rollout paths before the final DB-backed page is returned.
         let fs_page_size = page_size.saturating_mul(2).max(page_size);
@@ -256,7 +256,7 @@ impl RolloutRecorder {
             .await?
         };
 
-        let state_db_ctx = state_db::get_state_db(config).await;
+        let state_db_ctx = state_db::get_state_db_for(config.sqlite_home(), config.model_provider_id()).await;
         if state_db_ctx.is_none() {
             // Keep legacy behavior when SQLite is unavailable: return filesystem results
             // at the requested page size.
@@ -298,7 +298,7 @@ impl RolloutRecorder {
     /// Find the newest recorded thread path, optionally filtering to a matching cwd.
     #[allow(clippy::too_many_arguments)]
     pub async fn find_latest_thread_path(
-        config: &Config,
+        config: &impl RolloutConfig,
         page_size: usize,
         cursor: Option<&Cursor>,
         sort_key: ThreadSortKey,
@@ -307,8 +307,8 @@ impl RolloutRecorder {
         default_provider: &str,
         filter_cwd: Option<&Path>,
     ) -> std::io::Result<Option<PathBuf>> {
-        let codex_home = config.codex_home.as_path();
-        let state_db_ctx = state_db::get_state_db(config).await;
+        let codex_home = config.codex_home();
+        let state_db_ctx = state_db::get_state_db_for(config.sqlite_home(), config.model_provider_id()).await;
         if state_db_ctx.is_some() {
             let mut db_cursor = cursor.cloned();
             loop {
@@ -368,7 +368,7 @@ impl RolloutRecorder {
     ///
     /// For resumed sessions, this immediately opens the existing rollout file.
     pub async fn new(
-        config: &Config,
+        config: &impl RolloutConfig,
         params: RolloutRecorderParams,
         state_db_ctx: Option<StateDbHandle>,
         state_builder: Option<ThreadMetadataBuilder>,
@@ -400,20 +400,20 @@ impl RolloutRecorder {
                         id: session_id,
                         forked_from_id,
                         timestamp,
-                        cwd: config.cwd.clone(),
+                        cwd: config.cwd().to_path_buf(),
                         originator: originator().value,
                         cli_version: env!("CARGO_PKG_VERSION").to_string(),
                         agent_nickname: source.get_nickname(),
                         agent_role: source.get_agent_role(),
                         source,
-                        model_provider: Some(config.model_provider_id.clone()),
+                        model_provider: Some(config.model_provider_id().to_string()),
                         base_instructions: Some(base_instructions),
                         dynamic_tools: if dynamic_tools.is_empty() {
                             None
                         } else {
                             Some(dynamic_tools)
                         },
-                        memory_mode: (!config.memories.generate_memories)
+                        memory_mode: (!config.generate_memories())
                             .then_some("disabled".to_string()),
                     };
 
@@ -443,7 +443,7 @@ impl RolloutRecorder {
             };
 
         // Clone the cwd for the spawned task to collect git info asynchronously
-        let cwd = config.cwd.clone();
+        let cwd = config.cwd().to_path_buf();
 
         // A reasonably-sized bounded channel. If the buffer fills up the send
         // future will yield, which is fine – we only need to ensure we do not
@@ -461,8 +461,8 @@ impl RolloutRecorder {
             rollout_path.clone(),
             state_db_ctx.clone(),
             state_builder,
-            config.model_provider_id.clone(),
-            config.memories.generate_memories,
+            config.model_provider_id().to_string(),
+            config.generate_memories(),
         ));
 
         Ok(Self {
@@ -659,13 +659,13 @@ struct LogFileInfo {
 }
 
 fn precompute_log_file_info(
-    config: &Config,
+    config: &impl RolloutConfig,
     conversation_id: ThreadId,
 ) -> std::io::Result<LogFileInfo> {
     // Resolve ~/.codex/sessions/YYYY/MM/DD path.
     let timestamp = OffsetDateTime::now_local()
         .map_err(|e| IoError::other(format!("failed to get local time: {e}")))?;
-    let mut dir = config.codex_home.clone();
+    let mut dir = config.codex_home().to_path_buf();
     dir.push(SESSIONS_SUBDIR);
     dir.push(timestamp.year().to_string());
     dir.push(format!("{:02}", u8::from(timestamp.month())));

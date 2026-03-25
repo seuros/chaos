@@ -24,7 +24,7 @@ fn memory_root_uses_shared_global_path() {
 
 #[test]
 fn stage_one_output_schema_requires_rollout_slug_and_keeps_it_nullable() {
-    let schema = crate::memories::phase1::output_schema();
+    let schema = crate::memories::extraction::output_schema();
     let properties = schema
         .get("properties")
         .and_then(Value::as_object)
@@ -413,7 +413,7 @@ task_outcome: success
     assert!(raw_memories.contains("task_outcome: success"));
 }
 
-mod phase2 {
+mod consolidation_tests {
     use crate::CodexAuth;
     use crate::ThreadManager;
     use crate::agent::AgentControl;
@@ -422,7 +422,7 @@ mod phase2 {
     use crate::config::Config;
     use crate::config::test_config;
     use crate::memories::memory_root;
-    use crate::memories::phase2;
+    use crate::memories::consolidation;
     use crate::memories::raw_memories_file;
     use crate::memories::rollout_summaries_dir;
     use chrono::Utc;
@@ -568,13 +568,13 @@ mod phase2 {
     fn completion_watermark_never_regresses_below_claimed_input_watermark() {
         let stage1_output = stage1_output_with_source_updated_at(123);
 
-        let completion = phase2::get_watermark(1_000, &[stage1_output]);
+        let completion = consolidation::get_watermark(1_000, &[stage1_output]);
         pretty_assertions::assert_eq!(completion, 1_000);
     }
 
     #[test]
     fn completion_watermark_uses_claimed_watermark_when_there_are_no_memories() {
-        let completion = phase2::get_watermark(777, &[]);
+        let completion = consolidation::get_watermark(777, &[]);
         pretty_assertions::assert_eq!(completion, 777);
     }
 
@@ -583,7 +583,7 @@ mod phase2 {
         let older = stage1_output_with_source_updated_at(123);
         let newer = stage1_output_with_source_updated_at(456);
 
-        let completion = phase2::get_watermark(200, &[older, newer]);
+        let completion = consolidation::get_watermark(200, &[older, newer]);
         pretty_assertions::assert_eq!(completion, 456);
     }
 
@@ -591,7 +591,7 @@ mod phase2 {
     async fn dispatch_skips_when_global_job_is_not_dirty() {
         let harness = DispatchHarness::new().await;
 
-        phase2::run(&harness.session, Arc::clone(&harness.config)).await;
+        consolidation::run(&harness.session, Arc::clone(&harness.config)).await;
 
         pretty_assertions::assert_eq!(harness.user_input_ops_count(), 0);
         let thread_ids = harness.manager.list_thread_ids().await;
@@ -616,7 +616,7 @@ mod phase2 {
             "precondition should claim the running lock"
         );
 
-        phase2::run(&harness.session, Arc::clone(&harness.config)).await;
+        consolidation::run(&harness.session, Arc::clone(&harness.config)).await;
 
         let running_claim = harness
             .state_db
@@ -644,7 +644,7 @@ mod phase2 {
             "stale lock precondition should be claimed"
         );
 
-        phase2::run(&harness.session, Arc::clone(&harness.config)).await;
+        consolidation::run(&harness.session, Arc::clone(&harness.config)).await;
 
         let post_dispatch_claim = harness
             .state_db
@@ -729,7 +729,7 @@ mod phase2 {
             .await
             .expect("enqueue global consolidation");
 
-        phase2::run(&harness.session, Arc::clone(&harness.config)).await;
+        consolidation::run(&harness.session, Arc::clone(&harness.config)).await;
 
         assert!(
             !tokio::fs::try_exists(&stale_summary_path)
@@ -790,7 +790,7 @@ mod phase2 {
         constrained_config.permissions.sandbox_policy =
             Constrained::allow_only(SandboxPolicy::DangerFullAccess);
 
-        phase2::run(&harness.session, Arc::new(constrained_config)).await;
+        consolidation::run(&harness.session, Arc::new(constrained_config)).await;
 
         let retry_claim = harness
             .state_db
@@ -812,7 +812,7 @@ mod phase2 {
             .await
             .expect("create file at memory root");
 
-        phase2::run(&harness.session, Arc::clone(&harness.config)).await;
+        consolidation::run(&harness.session, Arc::clone(&harness.config)).await;
 
         let retry_claim = harness
             .state_db
@@ -834,7 +834,7 @@ mod phase2 {
             .await
             .expect("create raw_memories.md as a directory");
 
-        phase2::run(&harness.session, Arc::clone(&harness.config)).await;
+        consolidation::run(&harness.session, Arc::clone(&harness.config)).await;
 
         let retry_claim = harness
             .state_db
@@ -905,7 +905,7 @@ mod phase2 {
             "stage-1 success should enqueue global consolidation"
         );
 
-        phase2::run(&session, Arc::clone(&config)).await;
+        consolidation::run(&session, Arc::clone(&config)).await;
 
         let retry_claim = state_db
             .try_claim_global_phase2_job(ThreadId::new(), 3_600)

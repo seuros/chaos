@@ -1,8 +1,9 @@
+use chaos_traits::MementoConfig;
 use crate::codex::Session;
 use crate::config::Config;
 use crate::features::Feature;
-use crate::memories::phase1;
-use crate::memories::phase2;
+use crate::memories::extraction;
+use crate::memories::consolidation;
 use codex_protocol::protocol::SessionSource;
 use std::sync::Arc;
 use tracing::warn;
@@ -16,14 +17,14 @@ pub(crate) fn start_memories_startup_task(
     config: Arc<Config>,
     source: &SessionSource,
 ) {
-    if config.ephemeral
-        || !config.features.enabled(Feature::MemoryTool)
+    if config.ephemeral()
+        || !config.features().enabled(Feature::MemoryTool)
         || matches!(source, SessionSource::SubAgent(_))
     {
         return;
     }
 
-    if session.services.state_db.is_none() {
+    if session.state_db().is_none() {
         warn!("state db unavailable for memories startup pipeline; skipping");
         return;
     }
@@ -34,11 +35,11 @@ pub(crate) fn start_memories_startup_task(
             return;
         };
 
-        // Clean memories to make preserve DB size
-        phase1::prune(&session, &config).await;
-        // Run phase 1.
-        phase1::run(&session, &config).await;
-        // Run phase 2.
-        phase2::run(&session, config).await;
+        // Prune stale raw memories to keep DB size bounded.
+        extraction::prune(&session, &config).await;
+        // Extract raw memories from eligible rollouts.
+        extraction::run(&session, &config).await;
+        // Consolidate raw memories via sub-agent.
+        consolidation::run(&session, config).await;
     });
 }

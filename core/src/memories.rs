@@ -1,15 +1,15 @@
-//! Memory subsystem for startup extraction and consolidation.
+//! Memory subsystem — extraction and consolidation of session memories.
 //!
-//! The startup memory pipeline is split into two phases:
-//! - Phase 1: select rollouts, extract stage-1 raw memories, persist stage-1 outputs, and enqueue consolidation.
-//! - Phase 2: claim a global consolidation lock, materialize consolidation inputs, and dispatch one consolidation agent.
+//! The startup memory pipeline runs two stages:
+//! - **Extraction**: select rollouts, run stage-1 LLM extraction to produce raw memories.
+//! - **Consolidation**: merge/deduplicate raw memories via a sub-agent.
 
 pub(crate) mod citations;
 mod control;
-mod phase1;
-mod phase2;
+mod extraction;
+mod consolidation;
 pub(crate) mod prompts;
-mod start;
+mod pipeline;
 mod storage;
 #[cfg(test)]
 mod tests;
@@ -22,7 +22,7 @@ pub(crate) use control::clear_memory_root_contents;
 /// This is the single entrypoint that `codex` uses to trigger memory startup.
 ///
 /// This is the entry point to read and understand this module.
-pub(crate) use start::start_memories_startup_task;
+pub(crate) use pipeline::start_memories_startup_task;
 
 #[cfg(test)]
 mod artifacts {

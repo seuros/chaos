@@ -63,17 +63,25 @@ pub(crate) async fn init(config: &Config) -> Option<StateDbHandle> {
 
 /// Get the DB if the feature is enabled and the DB exists.
 pub async fn get_state_db(config: &Config) -> Option<StateDbHandle> {
-    let state_path = codex_state::state_db_path(config.sqlite_home.as_path());
+    get_state_db_for(config.sqlite_home.as_path(), &config.model_provider_id).await
+}
+
+/// Trait-friendly variant: accepts only the fields needed to open the state DB.
+pub async fn get_state_db_for(
+    sqlite_home: &Path,
+    model_provider_id: &str,
+) -> Option<StateDbHandle> {
+    let state_path = codex_state::state_db_path(sqlite_home);
     if !tokio::fs::try_exists(&state_path).await.unwrap_or(false) {
         return None;
     }
     let runtime = codex_state::StateRuntime::init(
-        config.sqlite_home.clone(),
-        config.model_provider_id.clone(),
+        sqlite_home.to_path_buf(),
+        model_provider_id.to_string(),
     )
     .await
     .ok()?;
-    require_backfill_complete(runtime, config.sqlite_home.as_path()).await
+    require_backfill_complete(runtime, sqlite_home).await
 }
 
 /// Open the state runtime when the SQLite file exists, without feature gating.

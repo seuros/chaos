@@ -30,7 +30,6 @@ use crate::upstream::UpstreamClient;
 use crate::upstream::proxy_for_connect;
 use anyhow::Context as _;
 use anyhow::Result;
-use chaos_tls::ensure_rustls_crypto_provider;
 use rama_core::Layer;
 use rama_core::Service;
 use rama_core::error::BoxError;
@@ -113,8 +112,6 @@ async fn run_http_proxy_with_listener(
     listener: TcpListener,
     policy_decider: Option<Arc<dyn NetworkPolicyDecider>>,
 ) -> Result<()> {
-    ensure_rustls_crypto_provider();
-
     let addr = listener
         .local_addr()
         .context("read HTTP proxy listener local addr")?;

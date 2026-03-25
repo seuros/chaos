@@ -11,7 +11,6 @@ use crate::sse::responses::process_responses_event;
 use crate::telemetry::WebsocketTelemetry;
 use codex_client::TransportError;
 use codex_client::maybe_build_rustls_client_config_with_custom_ca;
-use chaos_tls::ensure_rustls_crypto_provider;
 use http::HeaderMap;
 use http::HeaderName;
 use http::HeaderValue;
@@ -350,7 +349,6 @@ async fn connect_websocket(
     headers: HeaderMap,
     turn_state: Option<Arc<OnceLock<String>>>,
 ) -> Result<(WsStream, bool, Option<String>, Option<String>), ApiError> {
-    ensure_rustls_crypto_provider();
     info!("connecting to websocket: {url}");
 
     let tls_data = match maybe_build_rustls_client_config_with_custom_ca()

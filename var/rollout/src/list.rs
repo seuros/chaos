@@ -18,13 +18,13 @@ use time::macros::format_description;
 use uuid::Uuid;
 
 use crate::SESSIONS_SUBDIR;
-use codex_protocol::ThreadId;
-use codex_protocol::protocol::EventMsg;
-use codex_protocol::protocol::RolloutItem;
-use codex_protocol::protocol::RolloutLine;
-use codex_protocol::protocol::SessionMetaLine;
-use codex_protocol::protocol::SessionSource;
-use codex_protocol::protocol::USER_MESSAGE_BEGIN;
+use chaos_ipc::ThreadId;
+use chaos_ipc::protocol::EventMsg;
+use chaos_ipc::protocol::RolloutItem;
+use chaos_ipc::protocol::RolloutLine;
+use chaos_ipc::protocol::SessionMetaLine;
+use chaos_ipc::protocol::SessionSource;
+use chaos_ipc::protocol::USER_MESSAGE_BEGIN;
 
 /// Returned page of thread (thread) summaries.
 #[derive(Debug, Default, PartialEq)]

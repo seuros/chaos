@@ -1,8 +1,8 @@
 //! Event emission trait — decouples event producers from the concrete Session event channel.
 
 use async_channel::Sender;
-use codex_protocol::protocol::Event;
-use codex_protocol::protocol::EventMsg;
+use chaos_ipc::protocol::Event;
+use chaos_ipc::protocol::EventMsg;
 
 /// Asynchronous event bus for publishing session events.
 ///

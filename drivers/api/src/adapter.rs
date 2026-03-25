@@ -14,7 +14,7 @@ use chaos_abi::AbiError;
 use chaos_abi::ToolDef;
 use chaos_abi::TurnEvent;
 use chaos_abi::TurnRequest;
-use codex_protocol::config_types::Verbosity as VerbosityConfig;
+use chaos_ipc::config_types::Verbosity as VerbosityConfig;
 use serde_json::Value;
 
 // ---------------------------------------------------------------------------

@@ -1,16 +1,16 @@
 [package]
 name = "chaos-traits"
-description = "Narrow trait abstractions for decoupling codex-core orchestration into satellite crates"
+description = "Narrow trait abstractions for decoupling chaos-kern orchestration into satellite crates"
 version.workspace = true
 edition.workspace = true
 license.workspace = true
 publish.workspace = true
 
 [dependencies]
-codex-protocol = { workspace = true }
-codex-config = { workspace = true }
-codex-state = { workspace = true }
-codex-otel = { workspace = true }
+chaos-ipc = { workspace = true }
+chaos-sysctl = { workspace = true }
+chaos-proc = { workspace = true }
+chaos-syslog = { workspace = true }
 async-channel = { workspace = true }
 tokio = { workspace = true, features = ["sync"] }
 anyhow = { workspace = true }

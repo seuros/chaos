@@ -5,9 +5,9 @@ use std::path::Path;
 use std::path::PathBuf;
 
 use crate::landlock::apply_sandbox_policy_to_current_thread;
-use codex_protocol::protocol::FileSystemSandboxPolicy;
-use codex_protocol::protocol::NetworkSandboxPolicy;
-use codex_protocol::protocol::SandboxPolicy;
+use chaos_ipc::protocol::FileSystemSandboxPolicy;
+use chaos_ipc::protocol::NetworkSandboxPolicy;
+use chaos_ipc::protocol::SandboxPolicy;
 
 #[derive(Debug, Parser)]
 /// CLI surface for the Linux sandbox helper.

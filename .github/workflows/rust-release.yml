@@ -388,7 +388,7 @@ jobs:
 
       - name: Add config schema release asset
         run: |
-          cp sys/kern/core/config.schema.json dist/config-schema.json
+          cp sys/kern/kern/config.schema.json dist/config-schema.json
 
       - name: Define release name
         id: release_name

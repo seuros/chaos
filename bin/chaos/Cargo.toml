@@ -20,16 +20,16 @@ workspace = true
 anyhow = { workspace = true }
 clap = { workspace = true, features = ["derive"] }
 clap_complete = { workspace = true }
-codex-arg0 = { workspace = true }
-codex-utils-cli = { workspace = true }
-codex-config = { workspace = true }
-codex-core = { workspace = true }
-codex-exec = { workspace = true }
-codex-execpolicy = { workspace = true }
-codex-login = { workspace = true }
+chaos-argv = { workspace = true }
+chaos-getopt = { workspace = true }
+chaos-sysctl = { workspace = true }
+chaos-kern = { workspace = true }
+chaos-fork = { workspace = true }
+chaos-selinux = { workspace = true }
+chaos-pam = { workspace = true }
 chaos-mcphost = { workspace = true }
-codex-protocol = { workspace = true }
-codex-tui = { workspace = true }
+chaos-ipc = { workspace = true }
+chaos-xserver = { workspace = true }
 libc = { workspace = true }
 owo-colors = { workspace = true }
 regex-lite = { workspace = true }
@@ -51,7 +51,7 @@ tracing-subscriber = { workspace = true }
 [dev-dependencies]
 assert_cmd = { workspace = true }
 assert_matches = { workspace = true }
-codex-utils-cargo-bin = { workspace = true }
+chaos-which = { workspace = true }
 predicates = { workspace = true }
 pretty_assertions = { workspace = true }
 sqlx = { workspace = true }

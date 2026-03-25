@@ -9,9 +9,9 @@ use std::path::Path;
 
 use alcatraz_base::error::AlcatrazError;
 use alcatraz_base::error::Result;
-use codex_protocol::protocol::NetworkSandboxPolicy;
-use codex_protocol::protocol::SandboxPolicy;
-use codex_utils_absolute_path::AbsolutePathBuf;
+use chaos_ipc::protocol::NetworkSandboxPolicy;
+use chaos_ipc::protocol::SandboxPolicy;
+use chaos_realpath::AbsolutePathBuf;
 
 use landlock::ABI;
 #[allow(unused_imports)]
@@ -306,7 +306,7 @@ mod tests {
     use super::NetworkSeccompMode;
     use super::network_seccomp_mode;
     use super::should_install_network_seccomp;
-    use codex_protocol::protocol::NetworkSandboxPolicy;
+    use chaos_ipc::protocol::NetworkSandboxPolicy;
     use pretty_assertions::assert_eq;
 
     #[test]

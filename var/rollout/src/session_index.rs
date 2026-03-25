@@ -9,7 +9,7 @@ use std::io::SeekFrom;
 use std::path::Path;
 use std::path::PathBuf;
 
-use codex_protocol::ThreadId;
+use chaos_ipc::ThreadId;
 use serde::Deserialize;
 use serde::Serialize;
 use tokio::io::AsyncBufReadExt;

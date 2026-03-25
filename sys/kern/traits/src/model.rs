@@ -1,10 +1,10 @@
 //! Model sampling trait — narrow interface for running LLM inference without depending on the
 //! full ModelClient/ModelClientSession machinery.
 
-use codex_protocol::config_types::ReasoningSummary;
-use codex_protocol::config_types::ServiceTier;
-use codex_protocol::openai_models::ReasoningEffort;
-use codex_protocol::protocol::TokenUsage;
+use chaos_ipc::config_types::ReasoningSummary;
+use chaos_ipc::config_types::ServiceTier;
+use chaos_ipc::openai_models::ReasoningEffort;
+use chaos_ipc::protocol::TokenUsage;
 use serde_json::Value;
 use std::future::Future;
 

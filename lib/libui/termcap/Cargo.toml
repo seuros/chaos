@@ -1,0 +1,18 @@
+[package]
+name = "chaos-termcap"
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+publish.workspace = true
+
+[lib]
+name = "chaos_termcap"
+path = "src/lib.rs"
+
+[dependencies]
+ansi-to-tui = { workspace = true }
+ratatui = { workspace = true, features = [
+    "unstable-rendered-line-info",
+    "unstable-widget-ref",
+] }
+tracing = { workspace = true, features = ["log"] }

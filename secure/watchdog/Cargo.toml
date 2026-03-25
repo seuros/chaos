@@ -9,8 +9,8 @@ publish.workspace = true
 workspace = true
 
 [dependencies]
-codex-protocol = { workspace = true }
-codex-shell-command = { workspace = true }
-codex-utils-absolute-path = { workspace = true }
+chaos-ipc = { workspace = true }
+chaos-sh = { workspace = true }
+chaos-realpath = { workspace = true }
 serde = { workspace = true, features = ["derive"] }
 serde_json = { workspace = true }

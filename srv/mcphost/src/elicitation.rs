@@ -1,12 +1,12 @@
 use std::sync::Arc;
 
 use crate::outgoing_message::ErrorData;
-use codex_core::CodexThread;
-use codex_protocol::approvals::ElicitationAction as CoreElicitationAction;
-use codex_protocol::approvals::ElicitationRequest as CoreElicitationRequest;
-use codex_protocol::approvals::ElicitationRequestEvent;
-use codex_protocol::protocol::Op;
-use codex_protocol::protocol::ReviewDecision;
+use chaos_kern::CodexThread;
+use chaos_ipc::approvals::ElicitationAction as CoreElicitationAction;
+use chaos_ipc::approvals::ElicitationRequest as CoreElicitationRequest;
+use chaos_ipc::approvals::ElicitationRequestEvent;
+use chaos_ipc::protocol::Op;
+use chaos_ipc::protocol::ReviewDecision;
 use serde::Deserialize;
 use serde::Serialize;
 use serde_json::Value;
@@ -190,7 +190,7 @@ pub(crate) async fn handle_mcp_server_elicitation_complete(
 
 async fn on_mcp_server_elicitation_response(
     server_name: String,
-    request_id: codex_protocol::mcp::RequestId,
+    request_id: chaos_ipc::mcp::RequestId,
     receiver: tokio::sync::oneshot::Receiver<Result<Value, ErrorData>>,
     codex: Arc<CodexThread>,
 ) {
@@ -230,7 +230,7 @@ async fn on_mcp_server_elicitation_response(
 
 async fn submit_resolve_elicitation(
     server_name: String,
-    request_id: codex_protocol::mcp::RequestId,
+    request_id: chaos_ipc::mcp::RequestId,
     response: ApprovalElicitationResponse,
     codex: Arc<CodexThread>,
 ) {
@@ -250,7 +250,7 @@ async fn submit_resolve_elicitation(
 
 #[cfg(test)]
 mod tests {
-    use codex_protocol::approvals::ElicitationRequest;
+    use chaos_ipc::approvals::ElicitationRequest;
     use mcp_host::protocol::capabilities::ElicitationCapability;
     use mcp_host::protocol::capabilities::UrlElicitationCapability;
     use pretty_assertions::assert_eq;

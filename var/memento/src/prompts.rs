@@ -1,9 +1,9 @@
 use crate::storage::rollout_summary_file_stem_from_parts;
 use askama::Template;
-use codex_protocol::openai_models::ModelInfo;
-use codex_state::Phase2InputSelection;
-use codex_state::Stage1Output;
-use codex_state::Stage1OutputRef;
+use chaos_ipc::openai_models::ModelInfo;
+use chaos_proc::Phase2InputSelection;
+use chaos_proc::Stage1Output;
+use chaos_proc::Stage1OutputRef;
 use std::path::Path;
 use tokio::fs;
 use tracing::warn;

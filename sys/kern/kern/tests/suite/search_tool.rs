@@ -1,0 +1,95 @@
+#![allow(clippy::unwrap_used, clippy::expect_used)]
+
+use anyhow::Result;
+use chaos_kern::CodexAuth;
+use chaos_kern::config::Config;
+use chaos_kern::features::Feature;
+use chaos_ipc::openai_models::ModelsResponse;
+use chaos_ipc::protocol::AskForApproval;
+use chaos_ipc::protocol::SandboxPolicy;
+use core_test_support::apps_test_server::AppsTestServer;
+use core_test_support::responses::ev_assistant_message;
+use core_test_support::responses::ev_completed;
+use core_test_support::responses::ev_response_created;
+use core_test_support::responses::mount_sse_once;
+use core_test_support::responses::sse;
+use core_test_support::responses::start_mock_server;
+use core_test_support::skip_if_no_network;
+use core_test_support::test_codex::test_codex;
+use serde_json::Value;
+
+const TOOL_SEARCH_TOOL_NAME: &str = "tool_search";
+
+fn tool_names(body: &Value) -> Vec<String> {
+    body.get("tools")
+        .and_then(Value::as_array)
+        .map(|tools| {
+            tools
+                .iter()
+                .filter_map(|tool| {
+                    tool.get("name")
+                        .or_else(|| tool.get("type"))
+                        .and_then(Value::as_str)
+                        .map(str::to_string)
+                })
+                .collect()
+        })
+        .unwrap_or_default()
+}
+
+fn configure_apps(config: &mut Config, apps_base_url: &str) {
+    config
+        .features
+        .enable(Feature::Apps)
+        .expect("test config should allow feature update");
+    config.chatgpt_base_url = apps_base_url.to_string();
+    config.model = Some("gpt-5-codex".to_string());
+
+    let mut model_catalog: ModelsResponse =
+        serde_json::from_str(include_str!("../../models.json")).expect("valid models.json");
+    let model = model_catalog
+        .models
+        .iter_mut()
+        .find(|model| model.slug == "gpt-5-codex")
+        .expect("gpt-5-codex exists in bundled models.json");
+    model.supports_search_tool = true;
+    config.model_catalog = Some(model_catalog);
+}
+
+#[tokio::test(flavor = "multi_thread", worker_threads = 2)]
+async fn search_tool_is_hidden_for_api_key_auth() -> Result<()> {
+    skip_if_no_network!(Ok(()));
+
+    let server = start_mock_server().await;
+    let apps_server = AppsTestServer::mount(&server).await?;
+    let mock = mount_sse_once(
+        &server,
+        sse(vec![
+            ev_response_created("resp-1"),
+            ev_assistant_message("msg-1", "done"),
+            ev_completed("resp-1"),
+        ]),
+    )
+    .await;
+
+    let mut builder = test_codex()
+        .with_auth(CodexAuth::from_api_key("Test API Key"))
+        .with_config(move |config| configure_apps(config, apps_server.chatgpt_base_url.as_str()));
+    let test = builder.build(&server).await?;
+
+    test.submit_turn_with_policies(
+        "list tools",
+        AskForApproval::Never,
+        SandboxPolicy::DangerFullAccess,
+    )
+    .await?;
+
+    let body = mock.single_request().body_json();
+    let tools = tool_names(&body);
+    assert!(
+        !tools.iter().any(|name| name == TOOL_SEARCH_TOOL_NAME),
+        "tools list should not include {TOOL_SEARCH_TOOL_NAME} for API key auth: {tools:?}"
+    );
+
+    Ok(())
+}

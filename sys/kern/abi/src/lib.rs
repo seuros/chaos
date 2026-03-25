@@ -26,10 +26,10 @@ pub use tools::FunctionToolDef;
 pub use tools::ToolDef;
 
 // Re-export neutral types from protocol that the ABI traffics in.
-pub use codex_protocol::config_types::ReasoningSummary;
-pub use codex_protocol::config_types::Verbosity;
-pub use codex_protocol::models::ContentItem;
-pub use codex_protocol::models::ResponseItem;
-pub use codex_protocol::openai_models::ReasoningEffort;
-pub use codex_protocol::protocol::RateLimitSnapshot;
-pub use codex_protocol::protocol::TokenUsage;
+pub use chaos_ipc::config_types::ReasoningSummary;
+pub use chaos_ipc::config_types::Verbosity;
+pub use chaos_ipc::models::ContentItem;
+pub use chaos_ipc::models::ResponseItem;
+pub use chaos_ipc::openai_models::ReasoningEffort;
+pub use chaos_ipc::protocol::RateLimitSnapshot;
+pub use chaos_ipc::protocol::TokenUsage;

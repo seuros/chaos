@@ -26,7 +26,7 @@ fn sessions_list_handler<'a>(
                     .list_threads(
                         50,
                         None,
-                        codex_state::SortKey::UpdatedAt,
+                        chaos_proc::SortKey::UpdatedAt,
                         &[],
                         None,
                         false,
@@ -96,7 +96,7 @@ fn session_detail_handler<'a>(
             .ok_or_else(|| ResourceError::InvalidUri("missing 'id' parameter".into()))?
             .clone();
 
-        let thread_id = codex_protocol::ThreadId::from_string(&id)
+        let thread_id = chaos_ipc::ThreadId::from_string(&id)
             .map_err(|e| ResourceError::NotFound(format!("invalid thread_id: {e}")))?;
 
         let info = match &server.state_runtime {

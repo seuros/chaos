@@ -2,7 +2,7 @@
 
 use std::sync::Arc;
 
-use codex_state::StateRuntime;
+use chaos_proc::StateRuntime;
 
 /// Provides access to the optional SQLite state database.
 ///

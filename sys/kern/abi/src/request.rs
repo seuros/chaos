@@ -2,8 +2,8 @@
 
 use crate::reasoning::ReasoningConfig;
 use crate::tools::ToolDef;
-use codex_protocol::config_types::Verbosity;
-use codex_protocol::models::ResponseItem;
+use chaos_ipc::config_types::Verbosity;
+use chaos_ipc::models::ResponseItem;
 use serde_json::Map;
 use serde_json::Value;
 

@@ -7,18 +7,18 @@
 //! into a one-shot CLI command while still producing a durable `codex-login.log` artifact that
 //! support can request from users.
 
-use codex_core::CodexAuth;
-use codex_core::auth::AuthCredentialsStoreMode;
-use codex_core::auth::AuthMode;
-use codex_core::auth::CLIENT_ID;
-use codex_core::auth::login_with_api_key;
-use codex_core::auth::logout;
-use codex_core::config::Config;
-use codex_login::ServerOptions;
-use codex_login::run_device_code_login;
-use codex_login::run_login_server;
-use codex_protocol::config_types::ForcedLoginMethod;
-use codex_utils_cli::CliConfigOverrides;
+use chaos_kern::CodexAuth;
+use chaos_kern::auth::AuthCredentialsStoreMode;
+use chaos_kern::auth::AuthMode;
+use chaos_kern::auth::CLIENT_ID;
+use chaos_kern::auth::login_with_api_key;
+use chaos_kern::auth::logout;
+use chaos_kern::config::Config;
+use chaos_pam::ServerOptions;
+use chaos_pam::run_device_code_login;
+use chaos_pam::run_login_server;
+use chaos_ipc::config_types::ForcedLoginMethod;
+use chaos_getopt::CliConfigOverrides;
 use std::fs::OpenOptions;
 use std::io::IsTerminal;
 use std::io::Read;
@@ -44,7 +44,7 @@ const LOGIN_SUCCESS_MESSAGE: &str = "Successfully logged in";
 /// command produce a durable `codex-login.log` artifact without coupling it to the TUI's broader
 /// telemetry and feedback initialization.
 fn init_login_file_logging(config: &Config) -> Option<WorkerGuard> {
-    let log_dir = match codex_core::config::log_dir(config) {
+    let log_dir = match chaos_kern::config::log_dir(config) {
         Ok(log_dir) => log_dir,
         Err(err) => {
             eprintln!("Warning: failed to resolve login log directory: {err}");
@@ -83,7 +83,7 @@ fn init_login_file_logging(config: &Config) -> Option<WorkerGuard> {
 
     let (non_blocking, guard) = non_blocking(log_file);
     let env_filter = EnvFilter::try_from_default_env()
-        .unwrap_or_else(|_| EnvFilter::new("codex_cli=info,codex_core=info,codex_login=info"));
+        .unwrap_or_else(|_| EnvFilter::new("codex_cli=info,chaos_kern=info,chaos_pam=info"));
     let file_layer = tracing_subscriber::fmt::layer()
         .with_writer(non_blocking)
         .with_target(true)

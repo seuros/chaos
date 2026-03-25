@@ -1,4 +1,4 @@
-# codex-utils-pty
+# chaos-pty
 
 Lightweight helpers for spawning interactive processes either under a PTY (pseudo terminal) or regular pipes. The public API is minimal and mirrors both backends so callers can switch based on their needs (e.g., enabling or disabling TTY).
 
@@ -60,5 +60,5 @@ Use `spawn_pipe_process_no_stdin` to force stdin closed (commands that read stdi
 Unit tests live in `src/lib.rs` and cover both backends (PTY Python REPL and pipe-based stdin roundtrip). Run with:
 
 ```
-cargo test -p codex-utils-pty -- --nocapture
+cargo test -p chaos-pty -- --nocapture
 ```

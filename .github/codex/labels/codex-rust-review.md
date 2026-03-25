@@ -16,7 +16,7 @@ Things to look out for when doing the review:
 ## Code Organization
 
 - Each crate in the Cargo workspace has a specific purpose: make a note if you believe new code is not introduced in the correct crate.
-- When possible, try to keep the `core` crate (`sys/kern/core`) as small as possible. Non-core but shared logic is often a good candidate for crates under `lib/`.
+- When possible, try to keep the `core` crate (`sys/kern/kern`) as small as possible. Non-core but shared logic is often a good candidate for crates under `lib/`.
 - Be wary of large files and offer suggestions for how to break things into more reasonably-sized files.
 - Rust files should generally be organized such that the public parts of the API appear near the top of the file and helper functions go below. This is analogous to the "inverted pyramid" structure that is favored in journalism.
 

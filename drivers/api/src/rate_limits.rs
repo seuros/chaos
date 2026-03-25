@@ -1,7 +1,7 @@
-use codex_protocol::account::PlanType;
-use codex_protocol::protocol::CreditsSnapshot;
-use codex_protocol::protocol::RateLimitSnapshot;
-use codex_protocol::protocol::RateLimitWindow;
+use chaos_ipc::account::PlanType;
+use chaos_ipc::protocol::CreditsSnapshot;
+use chaos_ipc::protocol::RateLimitSnapshot;
+use chaos_ipc::protocol::RateLimitWindow;
 use http::HeaderMap;
 use serde::Deserialize;
 use std::collections::BTreeSet;

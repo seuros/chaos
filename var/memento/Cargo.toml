@@ -7,8 +7,8 @@ license.workspace = true
 publish.workspace = true
 
 [dependencies]
-codex-protocol = { workspace = true }
-codex-config = { workspace = true }
+chaos-ipc = { workspace = true }
+chaos-sysctl = { workspace = true }
 tokio = { workspace = true, features = ["fs"] }
 serde = { workspace = true, features = ["derive"] }
 serde_json = { workspace = true }
@@ -16,7 +16,7 @@ tracing = { workspace = true }
 anyhow = { workspace = true }
 askama = { workspace = true }
 chrono = { workspace = true }
-codex-state = { workspace = true }
+chaos-proc = { workspace = true }
 uuid = { workspace = true }
 
 [dev-dependencies]

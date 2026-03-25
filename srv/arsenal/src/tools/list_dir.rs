@@ -6,7 +6,7 @@ use std::fs::FileType;
 use std::path::Path;
 use std::path::PathBuf;
 
-use codex_utils_string::take_bytes_at_char_boundary;
+use chaos_wchar::take_bytes_at_char_boundary;
 use mcp_host::prelude::*;
 use schemars::JsonSchema;
 use serde::Deserialize;

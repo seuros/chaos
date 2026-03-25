@@ -3,8 +3,8 @@ use std::sync::atomic::AtomicI64;
 use std::sync::atomic::AtomicU8;
 use std::sync::atomic::Ordering;
 
-use codex_protocol::ThreadId;
-use codex_protocol::protocol::Event;
+use chaos_ipc::ThreadId;
+use chaos_ipc::protocol::Event;
 use mcp_host::protocol::capabilities::ElicitationCapability;
 use mcp_host::protocol::types::{
     JsonRpcError, JsonRpcMessage, JsonRpcRequest, JsonRpcResponse, RequestId,
@@ -198,12 +198,12 @@ mod tests {
     use std::path::PathBuf;
 
     use anyhow::Result;
-    use codex_protocol::ThreadId;
-    use codex_protocol::openai_models::ReasoningEffort;
-    use codex_protocol::protocol::AskForApproval;
-    use codex_protocol::protocol::EventMsg;
-    use codex_protocol::protocol::SandboxPolicy;
-    use codex_protocol::protocol::SessionConfiguredEvent;
+    use chaos_ipc::ThreadId;
+    use chaos_ipc::openai_models::ReasoningEffort;
+    use chaos_ipc::protocol::AskForApproval;
+    use chaos_ipc::protocol::EventMsg;
+    use chaos_ipc::protocol::SandboxPolicy;
+    use chaos_ipc::protocol::SessionConfiguredEvent;
     use pretty_assertions::assert_eq;
     use serde_json::json;
     use tempfile::NamedTempFile;
@@ -264,7 +264,7 @@ mod tests {
                 model_provider_id: "test-provider".to_string(),
                 service_tier: None,
                 approval_policy: AskForApproval::Never,
-                approvals_reviewer: codex_protocol::config_types::ApprovalsReviewer::User,
+                approvals_reviewer: chaos_ipc::config_types::ApprovalsReviewer::User,
                 sandbox_policy: SandboxPolicy::new_read_only_policy(),
                 cwd: PathBuf::from("/home/user/project"),
                 reasoning_effort: Some(ReasoningEffort::default()),
@@ -308,7 +308,7 @@ mod tests {
             model_provider_id: "test-provider".to_string(),
             service_tier: None,
             approval_policy: AskForApproval::Never,
-            approvals_reviewer: codex_protocol::config_types::ApprovalsReviewer::User,
+            approvals_reviewer: chaos_ipc::config_types::ApprovalsReviewer::User,
             sandbox_policy: SandboxPolicy::new_read_only_policy(),
             cwd: PathBuf::from("/home/user/project"),
             reasoning_effort: Some(ReasoningEffort::default()),
@@ -377,7 +377,7 @@ mod tests {
             model_provider_id: "test-provider".to_string(),
             service_tier: None,
             approval_policy: AskForApproval::Never,
-            approvals_reviewer: codex_protocol::config_types::ApprovalsReviewer::User,
+            approvals_reviewer: chaos_ipc::config_types::ApprovalsReviewer::User,
             sandbox_policy: SandboxPolicy::new_read_only_policy(),
             cwd: PathBuf::from("/home/user/project"),
             reasoning_effort: Some(ReasoningEffort::default()),

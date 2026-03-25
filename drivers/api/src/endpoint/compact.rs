@@ -5,7 +5,7 @@ use crate::error::ApiError;
 use crate::provider::Provider;
 use codex_client::HttpTransport;
 use codex_client::RequestTelemetry;
-use codex_protocol::models::ResponseItem;
+use chaos_ipc::models::ResponseItem;
 use http::HeaderMap;
 use http::Method;
 use serde::Deserialize;

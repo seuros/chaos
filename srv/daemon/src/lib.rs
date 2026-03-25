@@ -33,7 +33,7 @@ impl Daemon {
     /// Open the default daemon for the current user.
     /// Stored at `~/.codex/daemon.db` (or `$CODEX_HOME/daemon.db`).
     pub async fn default() -> Result<Self, DaemonError> {
-        let dir = codex_utils_home_dir::find_codex_home()?;
+        let dir = chaos_pwd::find_codex_home()?;
         tokio::fs::create_dir_all(&dir).await?;
         let path = dir.join("daemon.db");
         Self::open(&path).await

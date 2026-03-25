@@ -23,14 +23,14 @@ thiserror = { workspace = true }
 tokio = { workspace = true, features = ["macros", "rt", "time", "sync"] }
 tracing = { workspace = true }
 tracing-opentelemetry = { workspace = true }
-codex-utils-rustls-provider = { workspace = true }
+chaos-tls = { workspace = true }
 zstd = { workspace = true }
 
 [lints]
 workspace = true
 
 [dev-dependencies]
-codex-utils-cargo-bin = { workspace = true }
+chaos-which = { workspace = true }
 opentelemetry_sdk = { workspace = true }
 pretty_assertions = { workspace = true }
 tempfile = { workspace = true }

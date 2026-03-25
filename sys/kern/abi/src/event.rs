@@ -1,8 +1,8 @@
 //! Events emitted by model adapters during a streaming turn.
 
-use codex_protocol::models::ResponseItem;
-use codex_protocol::protocol::RateLimitSnapshot;
-use codex_protocol::protocol::TokenUsage;
+use chaos_ipc::models::ResponseItem;
+use chaos_ipc::protocol::RateLimitSnapshot;
+use chaos_ipc::protocol::TokenUsage;
 
 /// A single event from a streaming model turn.
 ///

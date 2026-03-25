@@ -1,4 +1,4 @@
-use codex_protocol::ThreadId;
+use chaos_ipc::ThreadId;
 
 pub fn get_thread_id_from_citations(citations: Vec<String>) -> Vec<ThreadId> {
     let mut result = Vec::new();
@@ -34,7 +34,7 @@ pub fn get_thread_id_from_citations(citations: Vec<String>) -> Vec<ThreadId> {
 #[cfg(test)]
 mod tests {
     use super::get_thread_id_from_citations;
-    use codex_protocol::ThreadId;
+    use chaos_ipc::ThreadId;
     use pretty_assertions::assert_eq;
 
     #[test]

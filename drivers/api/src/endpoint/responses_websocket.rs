@@ -11,7 +11,7 @@ use crate::sse::responses::process_responses_event;
 use crate::telemetry::WebsocketTelemetry;
 use codex_client::TransportError;
 use codex_client::maybe_build_rustls_client_config_with_custom_ca;
-use codex_utils_rustls_provider::ensure_rustls_crypto_provider;
+use chaos_tls::ensure_rustls_crypto_provider;
 use http::HeaderMap;
 use http::HeaderName;
 use http::HeaderValue;

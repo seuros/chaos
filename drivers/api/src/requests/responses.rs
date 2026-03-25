@@ -1,4 +1,4 @@
-use codex_protocol::models::ResponseItem;
+use chaos_ipc::models::ResponseItem;
 use serde_json::Value;
 
 #[derive(Debug, Clone, Copy, Default, PartialEq, Eq)]

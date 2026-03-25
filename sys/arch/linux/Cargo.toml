@@ -19,8 +19,8 @@ workspace = true
 [target.'cfg(target_os = "linux")'.dependencies]
 alcatraz-base = { workspace = true }
 clap = { workspace = true, features = ["derive"] }
-codex-protocol = { workspace = true }
-codex-utils-absolute-path = { workspace = true }
+chaos-ipc = { workspace = true }
+chaos-realpath = { workspace = true }
 landlock = { workspace = true }
 libc = { workspace = true }
 seccompiler = { workspace = true }
@@ -29,7 +29,7 @@ serde_json = { workspace = true }
 url = { workspace = true }
 
 [target.'cfg(target_os = "linux")'.dev-dependencies]
-codex-core = { workspace = true }
+chaos-kern = { workspace = true }
 pretty_assertions = { workspace = true }
 tempfile = { workspace = true }
 tokio = { workspace = true, features = [

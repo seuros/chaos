@@ -5,16 +5,16 @@ mod seatbelt;
 
 use std::path::PathBuf;
 
-use codex_core::config::Config;
-use codex_core::config::ConfigOverrides;
-use codex_core::config::NetworkProxyAuditMetadata;
-use codex_core::exec_env::create_env;
-use codex_core::landlock::spawn_command_under_linux_sandbox;
+use chaos_kern::config::Config;
+use chaos_kern::config::ConfigOverrides;
+use chaos_kern::config::NetworkProxyAuditMetadata;
+use chaos_kern::exec_env::create_env;
+use chaos_kern::landlock::spawn_command_under_linux_sandbox;
 #[cfg(target_os = "macos")]
-use codex_core::seatbelt::spawn_command_under_seatbelt;
-use codex_core::spawn::StdioPolicy;
-use codex_protocol::config_types::SandboxMode;
-use codex_utils_cli::CliConfigOverrides;
+use chaos_kern::seatbelt::spawn_command_under_seatbelt;
+use chaos_kern::spawn::StdioPolicy;
+use chaos_ipc::config_types::SandboxMode;
+use chaos_getopt::CliConfigOverrides;
 
 use crate::LandlockCommand;
 use crate::SeatbeltCommand;
@@ -138,7 +138,7 @@ async fn run_command_under_sandbox(
     };
     let network = network_proxy
         .as_ref()
-        .map(codex_core::config::StartedNetworkProxy::proxy);
+        .map(chaos_kern::config::StartedNetworkProxy::proxy);
 
     let mut child = match sandbox_type {
         #[cfg(target_os = "macos")]

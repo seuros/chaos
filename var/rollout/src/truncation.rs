@@ -3,9 +3,9 @@
 //! User-turn detection is injected via a predicate so this crate stays
 //! independent of the event-mapping logic that lives in codex-core.
 
-use codex_protocol::models::ResponseItem;
-use codex_protocol::protocol::EventMsg;
-use codex_protocol::protocol::RolloutItem;
+use chaos_ipc::models::ResponseItem;
+use chaos_ipc::protocol::EventMsg;
+use chaos_ipc::protocol::RolloutItem;
 
 /// Default predicate: a `ResponseItem::Message` with role "user" whose content
 /// items include at least one `InputText`.
@@ -84,9 +84,9 @@ pub fn truncate_rollout_before_nth_user_message_from_start(
 #[cfg(test)]
 mod tests {
     use super::*;
-    use codex_protocol::models::ContentItem;
-    use codex_protocol::models::ReasoningItemReasoningSummary;
-    use codex_protocol::protocol::ThreadRolledBackEvent;
+    use chaos_ipc::models::ContentItem;
+    use chaos_ipc::models::ReasoningItemReasoningSummary;
+    use chaos_ipc::protocol::ThreadRolledBackEvent;
 
     fn user_msg(text: &str) -> ResponseItem {
         ResponseItem::Message {

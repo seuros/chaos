@@ -14,7 +14,7 @@ use crate::telemetry::SseTelemetry;
 use codex_client::HttpTransport;
 use codex_client::RequestCompression;
 use codex_client::RequestTelemetry;
-use codex_protocol::protocol::SessionSource;
+use chaos_ipc::protocol::SessionSource;
 use http::HeaderMap;
 use http::HeaderValue;
 use http::Method;

@@ -47,7 +47,7 @@ use std::path::Path;
 use std::path::PathBuf;
 use std::sync::Arc;
 
-use codex_utils_rustls_provider::ensure_rustls_crypto_provider;
+use chaos_tls::ensure_rustls_crypto_provider;
 use rustls::ClientConfig;
 use rustls::RootCertStore;
 use rustls_pki_types::CertificateDer;

@@ -1,10 +1,10 @@
 use std::collections::HashMap;
 
 use anyhow::Result;
-use codex_config::types::McpServerConfig;
-use codex_config::types::McpServerTransportConfig;
-use codex_config::types::OAuthCredentialsStoreMode;
-use codex_protocol::protocol::McpAuthStatus;
+use chaos_sysctl::types::McpServerConfig;
+use chaos_sysctl::types::McpServerTransportConfig;
+use chaos_sysctl::types::OAuthCredentialsStoreMode;
+use chaos_ipc::protocol::McpAuthStatus;
 use futures::future::join_all;
 use tracing::warn;
 

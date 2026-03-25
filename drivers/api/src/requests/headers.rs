@@ -1,4 +1,4 @@
-use codex_protocol::protocol::SessionSource;
+use chaos_ipc::protocol::SessionSource;
 use http::HeaderMap;
 use http::HeaderValue;
 
@@ -15,15 +15,15 @@ pub(crate) fn subagent_header(source: &Option<SessionSource>) -> Option<String> 
         return None;
     };
     match sub {
-        codex_protocol::protocol::SubAgentSource::Review => Some("review".to_string()),
-        codex_protocol::protocol::SubAgentSource::Compact => Some("compact".to_string()),
-        codex_protocol::protocol::SubAgentSource::MemoryConsolidation => {
+        chaos_ipc::protocol::SubAgentSource::Review => Some("review".to_string()),
+        chaos_ipc::protocol::SubAgentSource::Compact => Some("compact".to_string()),
+        chaos_ipc::protocol::SubAgentSource::MemoryConsolidation => {
             Some("memory_consolidation".to_string())
         }
-        codex_protocol::protocol::SubAgentSource::ThreadSpawn { .. } => {
+        chaos_ipc::protocol::SubAgentSource::ThreadSpawn { .. } => {
             Some("collab_spawn".to_string())
         }
-        codex_protocol::protocol::SubAgentSource::Other(label) => Some(label.clone()),
+        chaos_ipc::protocol::SubAgentSource::Other(label) => Some(label.clone()),
     }
 }
 

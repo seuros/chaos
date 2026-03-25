@@ -13,7 +13,7 @@ use codex_client::Request;
 use codex_client::Response;
 use codex_client::StreamResponse;
 use codex_client::TransportError;
-use codex_protocol::models::ResponseItem;
+use chaos_ipc::models::ResponseItem;
 use futures::StreamExt;
 use http::HeaderMap;
 use http::StatusCode;

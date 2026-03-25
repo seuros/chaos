@@ -2,22 +2,22 @@ use clap::CommandFactory;
 use clap::Parser;
 use clap_complete::Shell;
 use clap_complete::generate;
-use codex_arg0::Arg0DispatchPaths;
-use codex_arg0::arg0_dispatch_or_else;
+use chaos_argv::Arg0DispatchPaths;
+use chaos_argv::arg0_dispatch_or_else;
 use codex_cli::login::read_api_key_from_stdin;
 use codex_cli::login::run_login_status;
 use codex_cli::login::run_login_with_api_key;
 use codex_cli::login::run_login_with_chatgpt;
 use codex_cli::login::run_login_with_device_code;
 use codex_cli::login::run_logout;
-use codex_exec::Cli as ExecCli;
-use codex_exec::Command as ExecCommand;
-use codex_exec::ReviewArgs;
-use codex_execpolicy::ExecPolicyCheckCommand;
-use codex_tui::AppExitInfo;
-use codex_tui::Cli as TuiCli;
-use codex_tui::ExitReason;
-use codex_utils_cli::CliConfigOverrides;
+use chaos_fork::Cli as ExecCli;
+use chaos_fork::Command as ExecCommand;
+use chaos_fork::ReviewArgs;
+use chaos_selinux::ExecPolicyCheckCommand;
+use chaos_xserver::AppExitInfo;
+use chaos_xserver::Cli as TuiCli;
+use chaos_xserver::ExitReason;
+use chaos_getopt::CliConfigOverrides;
 use owo_colors::OwoColorize;
 use std::io::IsTerminal;
 use supports_color::Stream;
@@ -26,13 +26,13 @@ mod mcp_cmd;
 
 use crate::mcp_cmd::McpCli;
 
-use codex_core::config::Config;
-use codex_core::config::ConfigOverrides;
-use codex_core::config::edit::ConfigEditsBuilder;
-use codex_core::config::find_codex_home;
-use codex_core::features::Stage;
-use codex_core::features::is_known_feature_key;
-use codex_core::terminal::TerminalName;
+use chaos_kern::config::Config;
+use chaos_kern::config::ConfigOverrides;
+use chaos_kern::config::edit::ConfigEditsBuilder;
+use chaos_kern::config::find_codex_home;
+use chaos_kern::features::Stage;
+use chaos_kern::features::is_known_feature_key;
+use chaos_kern::terminal::TerminalName;
 
 /// Chaos
 ///
@@ -223,11 +223,11 @@ fn format_exit_messages(exit_info: AppExitInfo, color_enabled: bool) -> Vec<Stri
 
     let mut lines = vec![format!(
         "{}",
-        codex_protocol::protocol::FinalOutput::from(token_usage)
+        chaos_ipc::protocol::FinalOutput::from(token_usage)
     )];
 
     if let Some(resume_cmd) =
-        codex_core::util::resume_command(thread_name.as_deref(), conversation_id)
+        chaos_kern::util::resume_command(thread_name.as_deref(), conversation_id)
     {
         let command = if color_enabled {
             resume_cmd.cyan().to_string()
@@ -317,8 +317,8 @@ struct FeatureSetArgs {
     feature: String,
 }
 
-fn stage_str(stage: codex_core::features::Stage) -> &'static str {
-    use codex_core::features::Stage;
+fn stage_str(stage: chaos_kern::features::Stage) -> &'static str {
+    use chaos_kern::features::Stage;
     match stage {
         Stage::UnderDevelopment => "under development",
         Stage::Experimental { .. } => "experimental",
@@ -361,7 +361,7 @@ async fn cli_main(arg0_paths: Arg0DispatchPaths) -> anyhow::Result<()> {
                 &mut exec_cli.config_overrides,
                 root_config_overrides.clone(),
             );
-            codex_exec::run_main(exec_cli, arg0_paths.clone()).await?;
+            chaos_fork::run_main(exec_cli, arg0_paths.clone()).await?;
         }
         Some(Subcommand::Review(review_args)) => {
             let mut exec_cli = ExecCli::try_parse_from(["chaos", "exec"])?;
@@ -370,7 +370,7 @@ async fn cli_main(arg0_paths: Arg0DispatchPaths) -> anyhow::Result<()> {
                 &mut exec_cli.config_overrides,
                 root_config_overrides.clone(),
             );
-            codex_exec::run_main(exec_cli, arg0_paths.clone()).await?;
+            chaos_fork::run_main(exec_cli, arg0_paths.clone()).await?;
         }
         Some(Subcommand::Mcp(mut mcp_cli)) => {
             if matches!(mcp_cli.subcommand, crate::mcp_cmd::McpSubcommand::Serve) {
@@ -514,10 +514,10 @@ async fn cli_main(arg0_paths: Arg0DispatchPaths) -> anyhow::Result<()> {
                     overrides,
                 )
                 .await?;
-                let mut rows = Vec::with_capacity(codex_core::features::FEATURES.len());
+                let mut rows = Vec::with_capacity(chaos_kern::features::FEATURES.len());
                 let mut name_width = 0;
                 let mut stage_width = 0;
-                for def in codex_core::features::FEATURES.iter() {
+                for def in chaos_kern::features::FEATURES.iter() {
                     let name = def.key;
                     let stage = stage_str(def.stage);
                     let enabled = config.features.enabled(def.id);
@@ -577,7 +577,7 @@ fn maybe_print_under_development_feature_warning(
         return;
     }
 
-    let Some(spec) = codex_core::features::FEATURES
+    let Some(spec) = chaos_kern::features::FEATURES
         .iter()
         .find(|spec| spec.key == feature)
     else {
@@ -587,7 +587,7 @@ fn maybe_print_under_development_feature_warning(
         return;
     }
 
-    let config_path = codex_home.join(codex_config::CONFIG_TOML_FILE);
+    let config_path = codex_home.join(chaos_sysctl::CONFIG_TOML_FILE);
     eprintln!(
         "Under-development features enabled: {feature}. Under-development features are incomplete and may behave unpredictably. To suppress this warning, set `suppress_unstable_features_warning = true` in {}.",
         config_path.display()
@@ -614,7 +614,7 @@ async fn run_interactive_tui(
         interactive.prompt = Some(prompt.replace("\r\n", "\n").replace('\r', "\n"));
     }
 
-    let terminal_info = codex_core::terminal::terminal_info();
+    let terminal_info = chaos_kern::terminal::terminal_info();
     if terminal_info.name == TerminalName::Dumb {
         if !(std::io::stdin().is_terminal() && std::io::stderr().is_terminal()) {
             return Ok(AppExitInfo::fatal(
@@ -632,10 +632,10 @@ async fn run_interactive_tui(
         }
     }
 
-    codex_tui::run_main(
+    chaos_xserver::run_main(
         interactive,
         arg0_paths,
-        codex_core::config_loader::LoaderOverrides::default(),
+        chaos_kern::config_loader::LoaderOverrides::default(),
     )
     .await
 }
@@ -759,8 +759,8 @@ fn print_completion(cmd: CompletionCommand) {
 mod tests {
     use super::*;
     use assert_matches::assert_matches;
-    use codex_protocol::ThreadId;
-    use codex_protocol::protocol::TokenUsage;
+    use chaos_ipc::ThreadId;
+    use chaos_ipc::protocol::TokenUsage;
     use pretty_assertions::assert_eq;
 
     fn finalize_resume_from_args(args: &[&str]) -> TuiCli {
@@ -823,7 +823,7 @@ mod tests {
         let Some(Subcommand::Exec(exec)) = cli.subcommand else {
             panic!("expected exec subcommand");
         };
-        let Some(codex_exec::Command::Resume(args)) = exec.command else {
+        let Some(chaos_fork::Command::Resume(args)) = exec.command else {
             panic!("expected exec resume");
         };
 
@@ -848,7 +848,7 @@ mod tests {
         let Some(Subcommand::Exec(exec)) = cli.subcommand else {
             panic!("expected exec subcommand");
         };
-        let Some(codex_exec::Command::Resume(args)) = exec.command else {
+        let Some(chaos_fork::Command::Resume(args)) = exec.command else {
             panic!("expected exec resume");
         };
 
@@ -1002,11 +1002,11 @@ mod tests {
         assert_eq!(interactive.config_profile.as_deref(), Some("my-profile"));
         assert_matches!(
             interactive.sandbox_mode,
-            Some(codex_utils_cli::SandboxModeCliArg::WorkspaceWrite)
+            Some(chaos_getopt::SandboxModeCliArg::WorkspaceWrite)
         );
         assert_matches!(
             interactive.approval_policy,
-            Some(codex_utils_cli::ApprovalModeCliArg::OnRequest)
+            Some(chaos_getopt::ApprovalModeCliArg::OnRequest)
         );
         assert!(interactive.full_auto);
         assert_eq!(

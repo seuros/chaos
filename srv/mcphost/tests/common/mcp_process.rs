@@ -52,7 +52,7 @@ impl McpProcess {
         codex_home: &Path,
         env_overrides: &[(&str, Option<&str>)],
     ) -> anyhow::Result<Self> {
-        let program = codex_utils_cargo_bin::cargo_bin("chaos-mcphost")
+        let program = chaos_which::cargo_bin("chaos-mcphost")
             .context("should find binary for chaos-mcphost")?;
         let mut cmd = Command::new(program);
 

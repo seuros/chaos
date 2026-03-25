@@ -1,15 +1,15 @@
 #[cfg(test)]
 use super::*;
 #[cfg(test)]
-use codex_protocol::protocol::FileSystemSandboxPolicy;
+use chaos_ipc::protocol::FileSystemSandboxPolicy;
 #[cfg(test)]
-use codex_protocol::protocol::NetworkSandboxPolicy;
+use chaos_ipc::protocol::NetworkSandboxPolicy;
 #[cfg(test)]
-use codex_protocol::protocol::ReadOnlyAccess;
+use chaos_ipc::protocol::ReadOnlyAccess;
 #[cfg(test)]
-use codex_protocol::protocol::SandboxPolicy;
+use chaos_ipc::protocol::SandboxPolicy;
 #[cfg(test)]
-use codex_utils_absolute_path::AbsolutePathBuf;
+use chaos_realpath::AbsolutePathBuf;
 #[cfg(test)]
 use pretty_assertions::assert_eq;
 
@@ -20,15 +20,15 @@ fn split_only_filesystem_policy_requires_direct_runtime_enforcement() {
     std::fs::create_dir_all(&docs).expect("create docs");
     let docs = AbsolutePathBuf::from_absolute_path(&docs).expect("absolute docs");
     let policy = FileSystemSandboxPolicy::restricted(vec![
-        codex_protocol::permissions::FileSystemSandboxEntry {
-            path: codex_protocol::permissions::FileSystemPath::Special {
-                value: codex_protocol::permissions::FileSystemSpecialPath::CurrentWorkingDirectory,
+        chaos_ipc::permissions::FileSystemSandboxEntry {
+            path: chaos_ipc::permissions::FileSystemPath::Special {
+                value: chaos_ipc::permissions::FileSystemSpecialPath::CurrentWorkingDirectory,
             },
-            access: codex_protocol::permissions::FileSystemAccessMode::Write,
+            access: chaos_ipc::permissions::FileSystemAccessMode::Write,
         },
-        codex_protocol::permissions::FileSystemSandboxEntry {
-            path: codex_protocol::permissions::FileSystemPath::Path { path: docs },
-            access: codex_protocol::permissions::FileSystemAccessMode::Read,
+        chaos_ipc::permissions::FileSystemSandboxEntry {
+            path: chaos_ipc::permissions::FileSystemPath::Path { path: docs },
+            access: chaos_ipc::permissions::FileSystemAccessMode::Read,
         },
     ]);
 
@@ -44,15 +44,15 @@ fn root_write_read_only_carveout_requires_direct_runtime_enforcement() {
     std::fs::create_dir_all(&docs).expect("create docs");
     let docs = AbsolutePathBuf::from_absolute_path(&docs).expect("absolute docs");
     let policy = FileSystemSandboxPolicy::restricted(vec![
-        codex_protocol::permissions::FileSystemSandboxEntry {
-            path: codex_protocol::permissions::FileSystemPath::Special {
-                value: codex_protocol::permissions::FileSystemSpecialPath::Root,
+        chaos_ipc::permissions::FileSystemSandboxEntry {
+            path: chaos_ipc::permissions::FileSystemPath::Special {
+                value: chaos_ipc::permissions::FileSystemSpecialPath::Root,
             },
-            access: codex_protocol::permissions::FileSystemAccessMode::Write,
+            access: chaos_ipc::permissions::FileSystemAccessMode::Write,
         },
-        codex_protocol::permissions::FileSystemSandboxEntry {
-            path: codex_protocol::permissions::FileSystemPath::Path { path: docs },
-            access: codex_protocol::permissions::FileSystemAccessMode::Read,
+        chaos_ipc::permissions::FileSystemSandboxEntry {
+            path: chaos_ipc::permissions::FileSystemPath::Path { path: docs },
+            access: chaos_ipc::permissions::FileSystemAccessMode::Read,
         },
     ]);
 
@@ -141,15 +141,15 @@ fn resolve_sandbox_policies_accepts_split_policies_requiring_direct_runtime_enfo
     let docs = AbsolutePathBuf::from_absolute_path(&docs).expect("absolute docs");
     let sandbox_policy = SandboxPolicy::new_read_only_policy();
     let file_system_sandbox_policy = FileSystemSandboxPolicy::restricted(vec![
-        codex_protocol::permissions::FileSystemSandboxEntry {
-            path: codex_protocol::permissions::FileSystemPath::Special {
-                value: codex_protocol::permissions::FileSystemSpecialPath::Root,
+        chaos_ipc::permissions::FileSystemSandboxEntry {
+            path: chaos_ipc::permissions::FileSystemPath::Special {
+                value: chaos_ipc::permissions::FileSystemSpecialPath::Root,
             },
-            access: codex_protocol::permissions::FileSystemAccessMode::Read,
+            access: chaos_ipc::permissions::FileSystemAccessMode::Read,
         },
-        codex_protocol::permissions::FileSystemSandboxEntry {
-            path: codex_protocol::permissions::FileSystemPath::Path { path: docs },
-            access: codex_protocol::permissions::FileSystemAccessMode::Write,
+        chaos_ipc::permissions::FileSystemSandboxEntry {
+            path: chaos_ipc::permissions::FileSystemPath::Path { path: docs },
+            access: chaos_ipc::permissions::FileSystemAccessMode::Write,
         },
     ]);
 

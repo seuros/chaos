@@ -1,26 +1,26 @@
 [workspace]
 members = [
     # sys/ — kernel
-    "sys/kern/core",
+    "sys/kern/kern",
     "sys/kern/abi",
-    "sys/kern/protocol",
+    "sys/kern/ipc",
     "sys/kern/traits",
     # sys/arch — platform sandboxes
     "sys/arch/base",
     "sys/arch/linux",
     # sys/exec — process execution
-    "sys/exec/exec",
-    "sys/exec/shell-command",
-    "sys/exec/shell-escalation",
+    "sys/exec/fork",
+    "sys/exec/sh",
+    "sys/exec/doas",
 
     # secure/ — security (peer to kernel)
     "secure/warden",
     "secure/watchdog",
     "secure/parole",
     "secure/contraband",
-    "secure/execpolicy",
-    "secure/secrets",
-    "secure/hardening",
+    "secure/selinux",
+    "secure/vault",
+    "secure/pledge",
 
     # drivers/ — external service adapters
     "drivers/parrot",
@@ -33,58 +33,58 @@ members = [
     "srv/mcpc",
     "srv/arsenal",
     "srv/daemon",
-    "srv/proxy",
+    "srv/pf",
 
     # bin/ — userland programs
     "bin/chaos",
-    "bin/tui",
+    "bin/xserver",
     "bin/concierge",
 
     # etc/ — configuration
-    "etc/config",
+    "etc/sysctl",
 
     # var/ — runtime state
-    "var/state",
+    "var/proc",
     "var/rollout",
     "var/memento",
 
     # share/ — extensions + data
     "share/hallucinate",
-    "share/hooks",
+    "share/dtrace",
     "share/age-verification",
 
     # lib/ — shared libraries
-    "lib/libasync/async-utils",
-    "lib/libfs/file-search",
-    "lib/libfs/apply-patch",
-    "lib/libmisc/arg0",
-    "lib/libmisc/login",
-    "lib/libmisc/keyring-store",
+    "lib/libasync/epoll",
+    "lib/libfs/locate",
+    "lib/libfs/diff",
+    "lib/libmisc/argv",
+    "lib/libmisc/pam",
+    "lib/libmisc/keyring",
     "lib/libmisc/minions",
-    "lib/libtrace/otel",
+    "lib/libtrace/syslog",
     "lib/libtrace/snitch",
-    "lib/libui/ansi-escape",
-    "lib/libutil/absolute-path",
-    "lib/libutil/approval-presets",
-    "lib/libutil/cache",
-    "lib/libutil/cargo-bin",
-    "lib/libutil/cli",
-    "lib/libutil/elapsed",
-    "lib/libutil/fuzzy-match",
-    "lib/libutil/git",
-    "lib/libutil/home-dir",
-    "lib/libutil/image",
-    "lib/libutil/json-to-toml",
+    "lib/libui/termcap",
+    "lib/libutil/realpath",
+    "lib/libutil/sudoers",
+    "lib/libutil/tmpfs",
+    "lib/libutil/which",
+    "lib/libutil/getopt",
+    "lib/libutil/uptime",
+    "lib/libutil/glob",
+    "lib/libutil/scm",
+    "lib/libutil/pwd",
+    "lib/libutil/pixbuf",
+    "lib/libutil/conv",
     "lib/libutil/pty",
-    "lib/libutil/readiness",
-    "lib/libutil/rustls-provider",
-    "lib/libutil/sandbox-summary",
-    "lib/libutil/sleep-inhibitor",
-    "lib/libutil/stream-parser",
-    "lib/libutil/string",
+    "lib/libutil/ready",
+    "lib/libutil/tls",
+    "lib/libutil/jail-report",
+    "lib/libutil/amphetamine",
+    "lib/libutil/lex",
+    "lib/libutil/wchar",
 
     # tests/
-    "tests/macros",
+    "tests/check",
 ]
 resolver = "2"
 
@@ -100,24 +100,24 @@ publish = false
 
 [workspace.dependencies]
 # Internal — sys/
-codex-core = { path = "sys/kern/core" }
+chaos-kern = { path = "sys/kern/kern" }
 chaos-abi = { path = "sys/kern/abi" }
-codex-protocol = { path = "sys/kern/protocol" }
+chaos-ipc = { path = "sys/kern/ipc" }
 chaos-traits = { path = "sys/kern/traits" }
 alcatraz-base = { path = "sys/arch/base" }
 alcatraz-linux = { path = "sys/arch/linux" }
-codex-exec = { path = "sys/exec/exec" }
-codex-shell-command = { path = "sys/exec/shell-command" }
-codex-shell-escalation = { path = "sys/exec/shell-escalation" }
+chaos-fork = { path = "sys/exec/fork" }
+chaos-sh = { path = "sys/exec/sh" }
+chaos-doas = { path = "sys/exec/doas" }
 
 # Internal — secure/
 chaos-warden = { path = "secure/warden" }
 chaos-watchdog = { path = "secure/watchdog" }
 chaos-parole = { path = "secure/parole" }
 chaos-contraband = { path = "secure/contraband" }
-codex-execpolicy = { path = "secure/execpolicy" }
-codex-secrets = { path = "secure/secrets" }
-codex-process-hardening = { path = "secure/hardening" }
+chaos-selinux = { path = "secure/selinux" }
+chaos-vault = { path = "secure/vault" }
+chaos-pledge = { path = "secure/pledge" }
 
 # Internal — drivers/
 chaos-parrot = { path = "drivers/parrot" }
@@ -130,58 +130,58 @@ chaos-mcphost = { path = "srv/mcphost" }
 mcp-guest = { path = "srv/mcpc" }
 chaos-arsenal = { path = "srv/arsenal" }
 chaos-daemon = { path = "srv/daemon" }
-codex-network-proxy = { path = "srv/proxy" }
+chaos-pf = { path = "srv/pf" }
 
 # Internal — bin/
 chaos-cli = { path = "bin/chaos" }
-codex-tui = { path = "bin/tui" }
+chaos-xserver = { path = "bin/xserver" }
 chaos-concierge = { path = "bin/concierge" }
 
 # Internal — etc/
-codex-config = { path = "etc/config" }
+chaos-sysctl = { path = "etc/sysctl" }
 
 # Internal — var/
-codex-state = { path = "var/state" }
+chaos-proc = { path = "var/proc" }
 chaos-rollout = { path = "var/rollout" }
 chaos-memento = { path = "var/memento" }
 
 # Internal — share/
 chaos-hallucinate = { path = "share/hallucinate" }
-codex-hooks = { path = "share/hooks" }
+chaos-dtrace = { path = "share/dtrace" }
 
 # Internal — lib/
-codex-async-utils = { path = "lib/libasync/async-utils" }
-codex-file-search = { path = "lib/libfs/file-search" }
-codex-apply-patch = { path = "lib/libfs/apply-patch" }
-codex-arg0 = { path = "lib/libmisc/arg0" }
-codex-login = { path = "lib/libmisc/login" }
-codex-keyring-store = { path = "lib/libmisc/keyring-store" }
+chaos-epoll = { path = "lib/libasync/epoll" }
+chaos-locate = { path = "lib/libfs/locate" }
+chaos-diff = { path = "lib/libfs/diff" }
+chaos-argv = { path = "lib/libmisc/argv" }
+chaos-pam = { path = "lib/libmisc/pam" }
+chaos-keyring = { path = "lib/libmisc/keyring" }
 chaos-minions = { path = "lib/libmisc/minions" }
-codex-otel = { path = "lib/libtrace/otel" }
+chaos-syslog = { path = "lib/libtrace/syslog" }
 chaos-snitch = { path = "lib/libtrace/snitch" }
-codex-ansi-escape = { path = "lib/libui/ansi-escape" }
-codex-git = { path = "lib/libutil/git" }
-codex-utils-absolute-path = { path = "lib/libutil/absolute-path" }
-codex-utils-approval-presets = { path = "lib/libutil/approval-presets" }
-codex-utils-cache = { path = "lib/libutil/cache" }
-codex-utils-cargo-bin = { path = "lib/libutil/cargo-bin" }
-codex-utils-cli = { path = "lib/libutil/cli" }
-codex-utils-elapsed = { path = "lib/libutil/elapsed" }
-codex-utils-fuzzy-match = { path = "lib/libutil/fuzzy-match" }
-codex-utils-home-dir = { path = "lib/libutil/home-dir" }
-codex-utils-image = { path = "lib/libutil/image" }
-codex-utils-json-to-toml = { path = "lib/libutil/json-to-toml" }
-codex-utils-pty = { path = "lib/libutil/pty" }
-codex-utils-readiness = { path = "lib/libutil/readiness" }
-codex-utils-rustls-provider = { path = "lib/libutil/rustls-provider" }
-codex-utils-sandbox-summary = { path = "lib/libutil/sandbox-summary" }
-codex-utils-sleep-inhibitor = { path = "lib/libutil/sleep-inhibitor" }
-codex-utils-stream-parser = { path = "lib/libutil/stream-parser" }
-codex-utils-string = { path = "lib/libutil/string" }
+chaos-termcap = { path = "lib/libui/termcap" }
+chaos-scm = { path = "lib/libutil/scm" }
+chaos-realpath = { path = "lib/libutil/realpath" }
+chaos-sudoers = { path = "lib/libutil/sudoers" }
+chaos-tmpfs = { path = "lib/libutil/tmpfs" }
+chaos-which = { path = "lib/libutil/which" }
+chaos-getopt = { path = "lib/libutil/getopt" }
+chaos-uptime = { path = "lib/libutil/uptime" }
+chaos-glob = { path = "lib/libutil/glob" }
+chaos-pwd = { path = "lib/libutil/pwd" }
+chaos-pixbuf = { path = "lib/libutil/pixbuf" }
+chaos-conv = { path = "lib/libutil/conv" }
+chaos-pty = { path = "lib/libutil/pty" }
+chaos-ready = { path = "lib/libutil/ready" }
+chaos-tls = { path = "lib/libutil/tls" }
+chaos-jail-report = { path = "lib/libutil/jail-report" }
+chaos-amphetamine = { path = "lib/libutil/amphetamine" }
+chaos-lex = { path = "lib/libutil/lex" }
+chaos-wchar = { path = "lib/libutil/wchar" }
 
 # Internal — tests/
-codex-test-macros = { path = "tests/macros" }
-core_test_support = { path = "sys/kern/core/tests/common" }
+chaos-check = { path = "tests/check" }
+core_test_support = { path = "sys/kern/kern/tests/common" }
 mcp_test_support = { path = "srv/mcphost/tests/common" }
 mcp-host = { version = "0.1.20", default-features = false, features = ["stdio", "macros"] }
 
@@ -389,8 +389,8 @@ unwrap_used = "deny"
 ignored = [
     "icu_provider",
     "openssl-sys",
-    "codex-utils-readiness",
-    "codex-secrets"
+    "chaos-ready",
+    "chaos-vault"
 ]
 
 [profile.release]

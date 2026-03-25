@@ -12,9 +12,9 @@ use chaos_mcphost::ExecApprovalResponse;
 use chaos_mcphost::PatchApprovalElicitRequestMeta;
 use chaos_mcphost::PatchApprovalElicitRequestParams;
 use chaos_mcphost::PatchApprovalResponse;
-use codex_core::spawn::CODEX_SANDBOX_NETWORK_DISABLED_ENV_VAR;
-use codex_protocol::protocol::FileChange;
-use codex_shell_command::parse_command;
+use chaos_kern::spawn::CODEX_SANDBOX_NETWORK_DISABLED_ENV_VAR;
+use chaos_ipc::protocol::FileChange;
+use chaos_sh::parse_command;
 use mcp_host::protocol::types::JsonRpcMessage;
 use mcp_host::protocol::types::JsonRpcRequest;
 use mcp_host::protocol::types::RequestId;
@@ -178,7 +178,7 @@ fn create_expected_elicitation_request_params(
     workdir: &Path,
     codex_mcp_tool_call_id: String,
     codex_event_id: String,
-    thread_id: codex_protocol::ThreadId,
+    thread_id: chaos_ipc::ThreadId,
 ) -> anyhow::Result<serde_json::Value> {
     let expected_message = format!(
         "Allow Codex to run `{}` in `{}`?",
@@ -450,7 +450,7 @@ fn create_expected_patch_approval_elicitation_request_params(
     reason: Option<String>,
     codex_mcp_tool_call_id: String,
     codex_event_id: String,
-    thread_id: codex_protocol::ThreadId,
+    thread_id: chaos_ipc::ThreadId,
 ) -> anyhow::Result<serde_json::Value> {
     let mut message_lines = Vec::new();
     if let Some(r) = &reason {

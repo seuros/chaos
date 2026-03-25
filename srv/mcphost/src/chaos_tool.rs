@@ -7,14 +7,14 @@ use std::collections::HashMap;
 use std::path::PathBuf;
 use std::sync::Arc;
 
-use codex_arg0::Arg0DispatchPaths;
-use codex_core::ThreadManager;
-use codex_core::config::Config;
-use codex_core::config::ConfigOverrides;
-use codex_protocol::ThreadId;
-use codex_protocol::config_types::SandboxMode;
-use codex_protocol::protocol::AskForApproval;
-use codex_utils_json_to_toml::json_to_toml;
+use chaos_argv::Arg0DispatchPaths;
+use chaos_kern::ThreadManager;
+use chaos_kern::config::Config;
+use chaos_kern::config::ConfigOverrides;
+use chaos_ipc::ThreadId;
+use chaos_ipc::config_types::SandboxMode;
+use chaos_ipc::protocol::AskForApproval;
+use chaos_conv::json_to_toml;
 use mcp_host::prelude::*;
 use mcp_host::registry::router::{McpToolRouter, tool_info_with_output};
 use schemars::JsonSchema;
@@ -37,7 +37,7 @@ pub(crate) struct ChaosMcpServer {
     /// Caches thread names from ThreadNameUpdated events.
     pub(crate) thread_names: Arc<Mutex<HashMap<ThreadId, String>>>,
     /// State database for persisted thread metadata.
-    pub(crate) state_runtime: Option<codex_core::state_db::StateDbHandle>,
+    pub(crate) state_runtime: Option<chaos_kern::state_db::StateDbHandle>,
 }
 
 // ---------------------------------------------------------------------------

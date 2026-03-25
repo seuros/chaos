@@ -1,6 +1,6 @@
 //! Phase 3 — persist and retrieve consolidated memories.
 
-use codex_state::Stage1Output;
+use chaos_proc::Stage1Output;
 use std::collections::HashSet;
 use std::fmt::Write as _;
 use std::path::{Path, PathBuf};
@@ -190,7 +190,7 @@ pub fn rollout_summary_file_stem(memory: &Stage1Output) -> String {
 }
 
 pub fn rollout_summary_file_stem_from_parts(
-    thread_id: codex_protocol::ThreadId,
+    thread_id: chaos_ipc::ThreadId,
     source_updated_at: chrono::DateTime<chrono::Utc>,
     rollout_slug: Option<&str>,
 ) -> String {

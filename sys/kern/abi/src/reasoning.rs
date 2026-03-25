@@ -1,7 +1,7 @@
 //! Provider-neutral reasoning configuration.
 
-use codex_protocol::config_types::ReasoningSummary;
-use codex_protocol::openai_models::ReasoningEffort;
+use chaos_ipc::config_types::ReasoningSummary;
+use chaos_ipc::openai_models::ReasoningEffort;
 
 /// Reasoning controls for models that support chain-of-thought.
 ///

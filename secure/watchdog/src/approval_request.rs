@@ -1,9 +1,9 @@
 use std::path::PathBuf;
 
-use codex_protocol::approvals::NetworkApprovalProtocol;
-use codex_protocol::models::PermissionProfile;
-use codex_protocol::models::SandboxPermissions;
-use codex_utils_absolute_path::AbsolutePathBuf;
+use chaos_ipc::approvals::NetworkApprovalProtocol;
+use chaos_ipc::models::PermissionProfile;
+use chaos_ipc::models::SandboxPermissions;
+use chaos_realpath::AbsolutePathBuf;
 use serde::Serialize;
 use serde_json::Value;
 
@@ -157,7 +157,7 @@ fn serialize_command_guardian_action(
 fn command_assessment_action_value(tool: &'static str, command: &[String], cwd: &PathBuf) -> Value {
     serde_json::json!({
         "tool": tool,
-        "command": codex_shell_command::parse_command::shlex_join(command),
+        "command": chaos_sh::parse_command::shlex_join(command),
         "cwd": cwd,
     })
 }

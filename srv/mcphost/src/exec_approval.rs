@@ -2,11 +2,11 @@ use std::path::PathBuf;
 use std::sync::Arc;
 
 use crate::outgoing_message::ErrorData;
-use codex_core::CodexThread;
-use codex_protocol::ThreadId;
-use codex_protocol::parse_command::ParsedCommand;
-use codex_protocol::protocol::Op;
-use codex_protocol::protocol::ReviewDecision;
+use chaos_kern::CodexThread;
+use chaos_ipc::ThreadId;
+use chaos_ipc::parse_command::ParsedCommand;
+use chaos_ipc::protocol::Op;
+use chaos_ipc::protocol::ReviewDecision;
 use mcp_host::protocol::types::RequestId;
 use serde::Deserialize;
 use serde::Serialize;

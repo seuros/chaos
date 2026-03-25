@@ -8,7 +8,7 @@
 //! assertions here cover CA file selection, PEM parsing, and user-facing errors, not a full TLS
 //! handshake.
 
-use codex_utils_cargo_bin::cargo_bin;
+use chaos_which::cargo_bin;
 use std::fs;
 use std::path::Path;
 use std::process::Command;

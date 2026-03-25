@@ -14,13 +14,13 @@ workspace = true
 
 [dependencies]
 anyhow = { workspace = true }
-codex-arg0 = { workspace = true }
-codex-core = { workspace = true }
-codex-protocol = { workspace = true }
-codex-shell-command = { workspace = true }
-codex-state = { workspace = true }
-codex-utils-cli = { workspace = true }
-codex-utils-json-to-toml = { workspace = true }
+chaos-argv = { workspace = true }
+chaos-kern = { workspace = true }
+chaos-ipc = { workspace = true }
+chaos-sh = { workspace = true }
+chaos-proc = { workspace = true }
+chaos-getopt = { workspace = true }
+chaos-conv = { workspace = true }
 mcp-host = { workspace = true }
 schemars = { workspace = true }
 serde = { workspace = true, features = ["derive"] }

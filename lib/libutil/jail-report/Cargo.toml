@@ -1,0 +1,17 @@
+[package]
+name = "chaos-jail-report"
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+publish.workspace = true
+
+[lints]
+workspace = true
+
+[dependencies]
+chaos-kern = { workspace = true }
+chaos-ipc = { workspace = true }
+
+[dev-dependencies]
+chaos-realpath = { workspace = true }
+pretty_assertions = { workspace = true }

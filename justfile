@@ -20,7 +20,7 @@ exec *args:
 
 # Run the CLI version of the file-search crate.
 file-search *args:
-    cargo run --bin codex-file-search -- "$@"
+    cargo run --bin chaos-locate -- "$@"
 
 # format code
 fmt:
@@ -46,11 +46,11 @@ test:
     cargo nextest run --no-fail-fast
 
 build-for-release:
-    cargo build --release -p codex-cli
+    cargo build --release -p chaos-cli
 
 # Run the MCP server
 mcp-server-run *args:
-    cargo run -p codex-mcp-server -- "$@"
+    cargo run -p chaos-mcphost -- "$@"
 
 # Regenerate the json schema for config.toml from the current config types.
 # TODO: convert to a #[test] that writes the schema
@@ -58,13 +58,13 @@ mcp-server-run *args:
 
 [no-cd]
 write-hooks-schema:
-    cargo run -p codex-hooks --bin write_hooks_schema_fixtures
+    cargo run -p chaos-dtrace --bin write_hooks_schema_fixtures
 
-# Run the argument-comment Dylint checks across codex-rs.
+# Run the argument-comment Dylint checks across the workspace.
 [no-cd]
 argument-comment-lint *args:
     ./tools/argument-comment-lint/run.sh "$@"
 
 # Tail logs from the state SQLite database
 log *args:
-    if [ "${1:-}" = "--" ]; then shift; fi; cargo run -p codex-state --bin logs_client -- "$@"
+    if [ "${1:-}" = "--" ]; then shift; fi; cargo run -p chaos-proc --bin logs_client -- "$@"

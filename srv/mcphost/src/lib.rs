@@ -5,13 +5,13 @@ use std::io::ErrorKind;
 use std::io::Result as IoResult;
 use std::sync::Arc;
 
-use codex_arg0::Arg0DispatchPaths;
-use codex_core::AuthManager;
-use codex_core::ThreadManager;
-use codex_core::config::Config;
-use codex_core::models_manager::collaboration_mode_presets::CollaborationModesConfig;
-use codex_protocol::protocol::SessionSource;
-use codex_utils_cli::CliConfigOverrides;
+use chaos_argv::Arg0DispatchPaths;
+use chaos_kern::AuthManager;
+use chaos_kern::ThreadManager;
+use chaos_kern::config::Config;
+use chaos_kern::models_manager::collaboration_mode_presets::CollaborationModesConfig;
+use chaos_ipc::protocol::SessionSource;
+use chaos_getopt::CliConfigOverrides;
 use mcp_host::prelude::*;
 use tokio::sync::Mutex;
 use tracing_subscriber::EnvFilter;
@@ -60,7 +60,7 @@ pub async fn run_main(
         })?;
 
     // OpenTelemetry setup.
-    let otel = codex_core::otel_init::build_provider(
+    let otel = chaos_kern::otel_init::build_provider(
         &config,
         env!("CARGO_PKG_VERSION"),
         Some(OTEL_SERVICE_NAME),
@@ -87,7 +87,7 @@ pub async fn run_main(
 
     // Init state database singleton — same DB as TUI/CLI.
     let config = Arc::new(config);
-    let state_runtime = codex_core::state_db::get_state_db(&config).await;
+    let state_runtime = chaos_kern::state_db::get_state_db(&config).await;
 
     // Build ThreadManager.
     let auth_manager = AuthManager::shared(
@@ -102,7 +102,7 @@ pub async fn run_main(
         CollaborationModesConfig {
             default_mode_request_user_input: config
                 .features
-                .enabled(codex_core::features::Feature::DefaultModeRequestUserInput),
+                .enabled(chaos_kern::features::Feature::DefaultModeRequestUserInput),
         },
     ));
 
@@ -191,8 +191,8 @@ pub async fn run_main(
 #[cfg(test)]
 mod tests {
     use super::*;
-    use codex_core::config::ConfigBuilder;
-    use codex_core::config::types::OtelExporterKind;
+    use chaos_kern::config::ConfigBuilder;
+    use chaos_kern::config::types::OtelExporterKind;
     use pretty_assertions::assert_eq;
     use std::collections::HashMap;
     use tempfile::TempDir;
@@ -219,7 +219,7 @@ mod tests {
         config.otel.metrics_exporter = exporter;
         config.analytics_enabled = None;
 
-        let provider = codex_core::otel_init::build_provider(
+        let provider = chaos_kern::otel_init::build_provider(
             &config,
             "0.0.0-test",
             Some(OTEL_SERVICE_NAME),

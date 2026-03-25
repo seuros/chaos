@@ -2,7 +2,7 @@
 edition = "2021"
 license.workspace = true
 publish.workspace = true
-name = "codex-utils-pty"
+name = "chaos-pty"
 version.workspace = true
 
 [lints]

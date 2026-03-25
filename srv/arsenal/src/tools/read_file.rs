@@ -1,7 +1,7 @@
 use std::collections::VecDeque;
 use std::path::PathBuf;
 
-use codex_utils_string::take_bytes_at_char_boundary;
+use chaos_wchar::take_bytes_at_char_boundary;
 use mcp_host::prelude::*;
 use mcp_host::registry::router::McpToolRouter;
 use schemars::JsonSchema;

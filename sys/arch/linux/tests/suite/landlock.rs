@@ -1,22 +1,22 @@
 #![cfg(target_os = "linux")]
 #![allow(clippy::unwrap_used)]
-use codex_core::config::types::ShellEnvironmentPolicy;
-use codex_core::error::CodexErr;
-use codex_core::error::Result;
-use codex_core::error::SandboxErr;
-use codex_core::exec::ExecParams;
-use codex_core::exec::process_exec_tool_call;
-use codex_core::exec_env::create_env;
-use codex_core::sandboxing::SandboxPermissions;
-use codex_protocol::permissions::FileSystemAccessMode;
-use codex_protocol::permissions::FileSystemPath;
-use codex_protocol::permissions::FileSystemSandboxEntry;
-use codex_protocol::permissions::FileSystemSandboxPolicy;
-use codex_protocol::permissions::FileSystemSpecialPath;
-use codex_protocol::permissions::NetworkSandboxPolicy;
-use codex_protocol::protocol::ReadOnlyAccess;
-use codex_protocol::protocol::SandboxPolicy;
-use codex_utils_absolute_path::AbsolutePathBuf;
+use chaos_kern::config::types::ShellEnvironmentPolicy;
+use chaos_kern::error::CodexErr;
+use chaos_kern::error::Result;
+use chaos_kern::error::SandboxErr;
+use chaos_kern::exec::ExecParams;
+use chaos_kern::exec::process_exec_tool_call;
+use chaos_kern::exec_env::create_env;
+use chaos_kern::sandboxing::SandboxPermissions;
+use chaos_ipc::permissions::FileSystemAccessMode;
+use chaos_ipc::permissions::FileSystemPath;
+use chaos_ipc::permissions::FileSystemSandboxEntry;
+use chaos_ipc::permissions::FileSystemSandboxPolicy;
+use chaos_ipc::permissions::FileSystemSpecialPath;
+use chaos_ipc::permissions::NetworkSandboxPolicy;
+use chaos_ipc::protocol::ReadOnlyAccess;
+use chaos_ipc::protocol::SandboxPolicy;
+use chaos_realpath::AbsolutePathBuf;
 use pretty_assertions::assert_eq;
 use std::collections::HashMap;
 use std::path::PathBuf;
@@ -61,7 +61,7 @@ async fn run_cmd_output(
     cmd: &[&str],
     writable_roots: &[PathBuf],
     timeout_ms: u64,
-) -> codex_core::exec::ExecToolCallOutput {
+) -> chaos_kern::exec::ExecToolCallOutput {
     run_cmd_result_with_writable_roots(cmd, writable_roots, timeout_ms, false)
         .await
         .expect("sandboxed command should execute")
@@ -72,7 +72,7 @@ async fn run_cmd_result_with_writable_roots(
     writable_roots: &[PathBuf],
     timeout_ms: u64,
     network_access: bool,
-) -> Result<codex_core::exec::ExecToolCallOutput> {
+) -> Result<chaos_kern::exec::ExecToolCallOutput> {
     let sandbox_policy = SandboxPolicy::WorkspaceWrite {
         writable_roots: writable_roots
             .iter()
@@ -105,7 +105,7 @@ async fn run_cmd_result_with_policies(
     file_system_sandbox_policy: FileSystemSandboxPolicy,
     network_sandbox_policy: NetworkSandboxPolicy,
     timeout_ms: u64,
-) -> Result<codex_core::exec::ExecToolCallOutput> {
+) -> Result<chaos_kern::exec::ExecToolCallOutput> {
     let cwd = std::env::current_dir().expect("cwd should exist");
     let sandbox_cwd = cwd.clone();
     let params = ExecParams {
@@ -133,7 +133,7 @@ async fn run_cmd_result_with_policies(
     .await
 }
 
-fn is_bwrap_unavailable_output(output: &codex_core::exec::ExecToolCallOutput) -> bool {
+fn is_bwrap_unavailable_output(output: &chaos_kern::exec::ExecToolCallOutput) -> bool {
     output.stderr.text.contains(BWRAP_UNAVAILABLE_ERR)
         || (output
             .stderr
@@ -165,9 +165,9 @@ async fn should_skip_bwrap_tests() -> bool {
 }
 
 fn expect_denied(
-    result: Result<codex_core::exec::ExecToolCallOutput>,
+    result: Result<chaos_kern::exec::ExecToolCallOutput>,
     context: &str,
-) -> codex_core::exec::ExecToolCallOutput {
+) -> chaos_kern::exec::ExecToolCallOutput {
     match result {
         Ok(output) => {
             assert_ne!(output.exit_code, 0, "{context}: expected nonzero exit code");

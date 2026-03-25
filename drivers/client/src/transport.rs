@@ -1,5 +1,3 @@
-use crate::default_client::CodexHttpClient;
-use crate::default_client::CodexRequestBuilder;
 use crate::error::TransportError;
 use crate::request::Request;
 use crate::request::RequestCompression;
@@ -9,8 +7,13 @@ use bytes::Bytes;
 use futures::StreamExt;
 use futures::stream::BoxStream;
 use http::HeaderMap;
-use http::Method;
 use http::StatusCode;
+use rama::http::Body;
+use rama::http::body::util::BodyExt;
+use rama::service::BoxService;
+use rama::error::extra::OpaqueError;
+use std::sync::Arc;
+use tokio::sync::Mutex;
 use tracing::Level;
 use tracing::enabled;
 use tracing::trace;
@@ -29,38 +32,39 @@ pub trait HttpTransport: Send + Sync {
     async fn stream(&self, req: Request) -> Result<StreamResponse, TransportError>;
 }
 
-#[derive(Clone, Debug)]
-pub struct ReqwestTransport {
-    client: CodexHttpClient,
+type RamaClient = BoxService<rama::http::Request, rama::http::Response, OpaqueError>;
+
+#[derive(Clone)]
+pub struct RamaTransport {
+    client: Arc<Mutex<RamaClient>>,
 }
 
-impl ReqwestTransport {
-    pub fn new(client: reqwest::Client) -> Self {
+impl RamaTransport {
+    pub fn new(client: RamaClient) -> Self {
         Self {
-            client: CodexHttpClient::new(client),
+            client: Arc::new(Mutex::new(client)),
         }
     }
 
-    fn build(&self, req: Request) -> Result<CodexRequestBuilder, TransportError> {
+    pub fn default_client() -> Self {
+        use rama::Service;
+        Self::new(rama::http::client::EasyHttpWebClient::default().boxed())
+    }
+
+    fn build_request(req: Request) -> Result<rama::http::Request, TransportError> {
         let Request {
             method,
             url,
             mut headers,
             body,
             compression,
-            timeout,
+            timeout: _timeout, // TODO: rama per-request timeout via layer
         } = req;
 
-        let mut builder = self.client.request(
-            Method::from_bytes(method.as_str().as_bytes()).unwrap_or(Method::GET),
-            &url,
-        );
+        let http_method = http::Method::from_bytes(method.as_str().as_bytes())
+            .unwrap_or(http::Method::GET);
 
-        if let Some(timeout) = timeout {
-            builder = builder.timeout(timeout);
-        }
-
-        if let Some(body) = body {
+        let rama_body = if let Some(body) = body {
             if compression != RequestCompression::None {
                 if headers.contains_key(http::header::CONTENT_ENCODING) {
                     return Err(TransportError::Build(
@@ -84,7 +88,6 @@ impl ReqwestTransport {
                 let post_compression_bytes = compressed.len();
                 let compression_duration = compression_start.elapsed();
 
-                // Ensure the server knows to unpack the request body.
                 headers.insert(http::header::CONTENT_ENCODING, content_encoding);
                 if !headers.contains_key(http::header::CONTENT_TYPE) {
                     headers.insert(
@@ -100,27 +103,68 @@ impl ReqwestTransport {
                     "Compressed request body with zstd"
                 );
 
-                builder = builder.headers(headers).body(compressed);
+                Body::from(compressed)
             } else {
-                builder = builder.headers(headers).json(&body);
+                if !headers.contains_key(http::header::CONTENT_TYPE) {
+                    headers.insert(
+                        http::header::CONTENT_TYPE,
+                        http::HeaderValue::from_static("application/json"),
+                    );
+                }
+                let json_bytes = serde_json::to_vec(&body)
+                    .map_err(|err| TransportError::Build(err.to_string()))?;
+                Body::from(json_bytes)
             }
         } else {
-            builder = builder.headers(headers);
-        }
-        Ok(builder)
-    }
+            Body::empty()
+        };
 
-    fn map_error(err: reqwest::Error) -> TransportError {
-        if err.is_timeout() {
-            TransportError::Timeout
-        } else {
-            TransportError::Network(err.to_string())
+        // Inject trace headers.
+        inject_trace_headers(&mut headers);
+
+        let mut builder = rama::http::Request::builder()
+            .method(http_method)
+            .uri(&url);
+
+        for (key, value) in headers.iter() {
+            builder = builder.header(key, value);
         }
+
+        builder
+            .body(rama_body)
+            .map_err(|err| TransportError::Build(err.to_string()))
     }
 }
 
+fn inject_trace_headers(headers: &mut HeaderMap) {
+    use opentelemetry::global;
+    use opentelemetry::propagation::Injector;
+    use tracing::Span;
+    use tracing_opentelemetry::OpenTelemetrySpanExt;
+
+    struct HeaderMapInjector<'a>(&'a mut HeaderMap);
+
+    impl Injector for HeaderMapInjector<'_> {
+        fn set(&mut self, key: &str, value: String) {
+            if let (Ok(name), Ok(val)) = (
+                http::HeaderName::from_bytes(key.as_bytes()),
+                http::HeaderValue::from_str(&value),
+            ) {
+                self.0.insert(name, val);
+            }
+        }
+    }
+
+    global::get_text_map_propagator(|prop| {
+        prop.inject_context(
+            &Span::current().context(),
+            &mut HeaderMapInjector(headers),
+        );
+    });
+}
+
 #[async_trait]
-impl HttpTransport for ReqwestTransport {
+impl HttpTransport for RamaTransport {
     async fn execute(&self, req: Request) -> Result<Response, TransportError> {
         if enabled!(Level::TRACE) {
             trace!(
@@ -132,13 +176,26 @@ impl HttpTransport for ReqwestTransport {
         }
 
         let url = req.url.clone();
-        let builder = self.build(req)?;
-        let resp = builder.send().await.map_err(Self::map_error)?;
-        let status = resp.status();
-        let headers = resp.headers().clone();
-        let bytes = resp.bytes().await.map_err(Self::map_error)?;
+        let request = Self::build_request(req)?;
+        let response = self
+            .client
+            .lock()
+            .await
+            .serve(request)
+            .await
+            .map_err(|err| TransportError::Network(err.to_string()))?;
+
+        let status = response.status();
+        let headers = response.headers().clone();
+        let body_bytes = response
+            .into_body()
+            .collect()
+            .await
+            .map_err(|err| TransportError::Network(err.to_string()))?
+            .to_bytes();
+
         if !status.is_success() {
-            let body = String::from_utf8(bytes.to_vec()).ok();
+            let body = String::from_utf8(body_bytes.to_vec()).ok();
             return Err(TransportError::Http {
                 status,
                 url: Some(url),
@@ -146,10 +203,11 @@ impl HttpTransport for ReqwestTransport {
                 body,
             });
         }
+
         Ok(Response {
             status,
             headers,
-            body: bytes,
+            body: body_bytes,
         })
     }
 
@@ -164,12 +222,26 @@ impl HttpTransport for ReqwestTransport {
         }
 
         let url = req.url.clone();
-        let builder = self.build(req)?;
-        let resp = builder.send().await.map_err(Self::map_error)?;
-        let status = resp.status();
-        let headers = resp.headers().clone();
+        let request = Self::build_request(req)?;
+        let response = self
+            .client
+            .lock()
+            .await
+            .serve(request)
+            .await
+            .map_err(|err| TransportError::Network(err.to_string()))?;
+
+        let status = response.status();
+        let headers = response.headers().clone();
+
         if !status.is_success() {
-            let body = resp.text().await.ok();
+            let body_bytes = response
+                .into_body()
+                .collect()
+                .await
+                .map_err(|err| TransportError::Network(err.to_string()))?
+                .to_bytes();
+            let body = String::from_utf8(body_bytes.to_vec()).ok();
             return Err(TransportError::Http {
                 status,
                 url: Some(url),
@@ -177,9 +249,12 @@ impl HttpTransport for ReqwestTransport {
                 body,
             });
         }
-        let stream = resp
-            .bytes_stream()
-            .map(|result| result.map_err(Self::map_error));
+
+        let stream = tokio_stream::StreamExt::map(
+            rama::http::body::BodyDataStream::new(response.into_body()),
+            |result| result.map_err(|err| TransportError::Network(err.to_string())),
+        );
+
         Ok(StreamResponse {
             status,
             headers,

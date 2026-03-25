@@ -1,69 +1,90 @@
 [workspace]
 members = [
-    "ansi-escape",
-    "chaos-arsenal",
-    "async-utils",
-    "apply-patch",
-    "arg0",
-    "cli",
-    "config",
-    "shell-command",
-    "shell-escalation",
-    "core",
-    "hooks",
-    "secrets",
-    "exec",
-    "execpolicy",
-    "keyring-store",
-    "file-search",
-    "alcatraz/base",
-    "alcatraz/linux",
-    "login",
-    "mcp-guest",
-    "mcp-server",
-    "network-proxy",
-    "process-hardening",
-    "protocol",
-    "otel",
-    "tui",
-    "utils/absolute-path",
-    "utils/cargo-bin",
-    "utils/git",
-    "utils/cache",
-    "utils/image",
-    "utils/json-to-toml",
-    "utils/home-dir",
-    "utils/pty",
-    "utils/readiness",
-    "utils/rustls-provider",
-    "utils/string",
-    "utils/cli",
-    "utils/elapsed",
-    "utils/sandbox-summary",
-    "utils/sleep-inhibitor",
-    "utils/approval-presets",
-    "utils/fuzzy-match",
-    "utils/stream-parser",
-    "codex-client",
-    "chaos-abi",
-    "chaos-age-verification",
-    "codex-api",
-    "state",
-    "test-macros",
-    "chaos-daemon",
-    "chaos-watchdog",
-    "chaos-minions",
-    "chaos-warden",
-    "chaos-parole",
-    "chaos-contraband",
-    "chaos-snitch",
-    "chaos-parrot",
-    "chaos-hallucinate",
-    "chaos-rollout",
-    "chaos-memento",
-    "chaos-concierge",
-    "chaos-ration",
-    "chaos-traits",
+    # sys/ — kernel
+    "sys/kern/core",
+    "sys/kern/abi",
+    "sys/kern/protocol",
+    "sys/kern/traits",
+    # sys/arch — platform sandboxes
+    "sys/arch/base",
+    "sys/arch/linux",
+    # sys/exec — process execution
+    "sys/exec/exec",
+    "sys/exec/shell-command",
+    "sys/exec/shell-escalation",
+
+    # secure/ — security (peer to kernel)
+    "secure/warden",
+    "secure/watchdog",
+    "secure/parole",
+    "secure/contraband",
+    "secure/execpolicy",
+    "secure/secrets",
+    "secure/hardening",
+
+    # drivers/ — external service adapters
+    "drivers/parrot",
+    "drivers/ration",
+    "drivers/api",
+    "drivers/client",
+
+    # srv/ — services
+    "srv/mcphost",
+    "srv/mcpc",
+    "srv/arsenal",
+    "srv/daemon",
+    "srv/proxy",
+
+    # bin/ — userland programs
+    "bin/chaos",
+    "bin/tui",
+    "bin/concierge",
+
+    # etc/ — configuration
+    "etc/config",
+
+    # var/ — runtime state
+    "var/state",
+    "var/rollout",
+    "var/memento",
+
+    # share/ — extensions + data
+    "share/hallucinate",
+    "share/hooks",
+    "share/age-verification",
+
+    # lib/ — shared libraries
+    "lib/libasync/async-utils",
+    "lib/libfs/file-search",
+    "lib/libfs/apply-patch",
+    "lib/libmisc/arg0",
+    "lib/libmisc/login",
+    "lib/libmisc/keyring-store",
+    "lib/libmisc/minions",
+    "lib/libtrace/otel",
+    "lib/libtrace/snitch",
+    "lib/libui/ansi-escape",
+    "lib/libutil/absolute-path",
+    "lib/libutil/approval-presets",
+    "lib/libutil/cache",
+    "lib/libutil/cargo-bin",
+    "lib/libutil/cli",
+    "lib/libutil/elapsed",
+    "lib/libutil/fuzzy-match",
+    "lib/libutil/git",
+    "lib/libutil/home-dir",
+    "lib/libutil/image",
+    "lib/libutil/json-to-toml",
+    "lib/libutil/pty",
+    "lib/libutil/readiness",
+    "lib/libutil/rustls-provider",
+    "lib/libutil/sandbox-summary",
+    "lib/libutil/sleep-inhibitor",
+    "lib/libutil/stream-parser",
+    "lib/libutil/string",
+
+    # tests/
+    "tests/macros",
 ]
 resolver = "2"
 
@@ -78,73 +99,91 @@ license = "Apache-2.0"
 publish = false
 
 [workspace.dependencies]
-# Internal
-chaos-concierge = { path = "chaos-concierge" }
-chaos-contraband = { path = "chaos-contraband" }
-chaos-ration = { path = "chaos-ration" }
-chaos-daemon = { path = "chaos-daemon" }
-chaos-hallucinate = { path = "chaos-hallucinate" }
-chaos-memento = { path = "chaos-memento" }
-chaos-rollout = { path = "chaos-rollout" }
-chaos-minions = { path = "chaos-minions" }
-chaos-parole = { path = "chaos-parole" }
-chaos-parrot = { path = "chaos-parrot" }
-chaos-snitch = { path = "chaos-snitch" }
-chaos-warden = { path = "chaos-warden" }
-chaos-traits = { path = "chaos-traits" }
-chaos-watchdog = { path = "chaos-watchdog" }
-codex-ansi-escape = { path = "ansi-escape" }
-chaos-abi = { path = "chaos-abi" }
-codex-api = { path = "codex-api" }
-codex-apply-patch = { path = "apply-patch" }
-codex-arg0 = { path = "arg0" }
-chaos-arsenal = { path = "chaos-arsenal" }
-codex-async-utils = { path = "async-utils" }
-chaos-cli = { path = "cli" }
-codex-client = { path = "codex-client" }
-codex-config = { path = "config" }
-codex-core = { path = "core" }
-codex-exec = { path = "exec" }
-codex-execpolicy = { path = "execpolicy" }
-codex-file-search = { path = "file-search" }
-codex-git = { path = "utils/git" }
-codex-hooks = { path = "hooks" }
-codex-keyring-store = { path = "keyring-store" }
-alcatraz-base = { path = "alcatraz/base" }
-alcatraz-linux = { path = "alcatraz/linux" }
-codex-login = { path = "login" }
-mcp-guest = { path = "mcp-guest" }
-chaos-mcphost = { path = "mcp-server" }
-codex-network-proxy = { path = "network-proxy" }
-codex-otel = { path = "otel" }
-codex-process-hardening = { path = "process-hardening" }
-codex-protocol = { path = "protocol" }
-codex-secrets = { path = "secrets" }
-codex-shell-command = { path = "shell-command" }
-codex-shell-escalation = { path = "shell-escalation" }
-codex-state = { path = "state" }
-codex-test-macros = { path = "test-macros" }
-codex-tui = { path = "tui" }
-codex-utils-absolute-path = { path = "utils/absolute-path" }
-codex-utils-approval-presets = { path = "utils/approval-presets" }
-codex-utils-cache = { path = "utils/cache" }
-codex-utils-cargo-bin = { path = "utils/cargo-bin" }
-codex-utils-cli = { path = "utils/cli" }
-codex-utils-elapsed = { path = "utils/elapsed" }
-codex-utils-fuzzy-match = { path = "utils/fuzzy-match" }
-codex-utils-home-dir = { path = "utils/home-dir" }
-codex-utils-image = { path = "utils/image" }
-codex-utils-json-to-toml = { path = "utils/json-to-toml" }
-codex-utils-pty = { path = "utils/pty" }
-codex-utils-readiness = { path = "utils/readiness" }
-codex-utils-rustls-provider = { path = "utils/rustls-provider" }
-codex-utils-sandbox-summary = { path = "utils/sandbox-summary" }
-codex-utils-sleep-inhibitor = { path = "utils/sleep-inhibitor" }
-codex-utils-stream-parser = { path = "utils/stream-parser" }
-codex-utils-string = { path = "utils/string" }
-core_test_support = { path = "core/tests/common" }
+# Internal — sys/
+codex-core = { path = "sys/kern/core" }
+chaos-abi = { path = "sys/kern/abi" }
+codex-protocol = { path = "sys/kern/protocol" }
+chaos-traits = { path = "sys/kern/traits" }
+alcatraz-base = { path = "sys/arch/base" }
+alcatraz-linux = { path = "sys/arch/linux" }
+codex-exec = { path = "sys/exec/exec" }
+codex-shell-command = { path = "sys/exec/shell-command" }
+codex-shell-escalation = { path = "sys/exec/shell-escalation" }
+
+# Internal — secure/
+chaos-warden = { path = "secure/warden" }
+chaos-watchdog = { path = "secure/watchdog" }
+chaos-parole = { path = "secure/parole" }
+chaos-contraband = { path = "secure/contraband" }
+codex-execpolicy = { path = "secure/execpolicy" }
+codex-secrets = { path = "secure/secrets" }
+codex-process-hardening = { path = "secure/hardening" }
+
+# Internal — drivers/
+chaos-parrot = { path = "drivers/parrot" }
+chaos-ration = { path = "drivers/ration" }
+codex-api = { path = "drivers/api" }
+codex-client = { path = "drivers/client" }
+
+# Internal — srv/
+chaos-mcphost = { path = "srv/mcphost" }
+mcp-guest = { path = "srv/mcpc" }
+chaos-arsenal = { path = "srv/arsenal" }
+chaos-daemon = { path = "srv/daemon" }
+codex-network-proxy = { path = "srv/proxy" }
+
+# Internal — bin/
+chaos-cli = { path = "bin/chaos" }
+codex-tui = { path = "bin/tui" }
+chaos-concierge = { path = "bin/concierge" }
+
+# Internal — etc/
+codex-config = { path = "etc/config" }
+
+# Internal — var/
+codex-state = { path = "var/state" }
+chaos-rollout = { path = "var/rollout" }
+chaos-memento = { path = "var/memento" }
+
+# Internal — share/
+chaos-hallucinate = { path = "share/hallucinate" }
+codex-hooks = { path = "share/hooks" }
+
+# Internal — lib/
+codex-async-utils = { path = "lib/libasync/async-utils" }
+codex-file-search = { path = "lib/libfs/file-search" }
+codex-apply-patch = { path = "lib/libfs/apply-patch" }
+codex-arg0 = { path = "lib/libmisc/arg0" }
+codex-login = { path = "lib/libmisc/login" }
+codex-keyring-store = { path = "lib/libmisc/keyring-store" }
+chaos-minions = { path = "lib/libmisc/minions" }
+codex-otel = { path = "lib/libtrace/otel" }
+chaos-snitch = { path = "lib/libtrace/snitch" }
+codex-ansi-escape = { path = "lib/libui/ansi-escape" }
+codex-git = { path = "lib/libutil/git" }
+codex-utils-absolute-path = { path = "lib/libutil/absolute-path" }
+codex-utils-approval-presets = { path = "lib/libutil/approval-presets" }
+codex-utils-cache = { path = "lib/libutil/cache" }
+codex-utils-cargo-bin = { path = "lib/libutil/cargo-bin" }
+codex-utils-cli = { path = "lib/libutil/cli" }
+codex-utils-elapsed = { path = "lib/libutil/elapsed" }
+codex-utils-fuzzy-match = { path = "lib/libutil/fuzzy-match" }
+codex-utils-home-dir = { path = "lib/libutil/home-dir" }
+codex-utils-image = { path = "lib/libutil/image" }
+codex-utils-json-to-toml = { path = "lib/libutil/json-to-toml" }
+codex-utils-pty = { path = "lib/libutil/pty" }
+codex-utils-readiness = { path = "lib/libutil/readiness" }
+codex-utils-rustls-provider = { path = "lib/libutil/rustls-provider" }
+codex-utils-sandbox-summary = { path = "lib/libutil/sandbox-summary" }
+codex-utils-sleep-inhibitor = { path = "lib/libutil/sleep-inhibitor" }
+codex-utils-stream-parser = { path = "lib/libutil/stream-parser" }
+codex-utils-string = { path = "lib/libutil/string" }
+
+# Internal — tests/
+codex-test-macros = { path = "tests/macros" }
+core_test_support = { path = "sys/kern/core/tests/common" }
+mcp_test_support = { path = "srv/mcphost/tests/common" }
 mcp-host = { version = "0.1.20", default-features = false, features = ["stdio", "macros"] }
-mcp_test_support = { path = "mcp-server/tests/common" }
 
 # External
 age = "0.11.1"
@@ -306,8 +345,8 @@ zstd = "0.13"
 wiremock = "0.6"
 zeroize = "1.8.2"
 
-[workspace.lints]
-rust = {}
+[workspace.lints.rust]
+unexpected_cfgs = { level = "warn", check-cfg = ["cfg(feature, values(\"inspect\"))"] }
 
 [workspace.lints.clippy]
 expect_used = "deny"

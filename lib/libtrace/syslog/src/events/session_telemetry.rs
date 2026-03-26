@@ -42,8 +42,8 @@ use chaos_ipc::user_input::UserInput;
 use eventsource_stream::Event as StreamEvent;
 use eventsource_stream::EventStreamError as StreamError;
 use opentelemetry_sdk::metrics::data::ResourceMetrics;
-use reqwest::Error;
-use reqwest::Response;
+// reqwest::Error removed — log_request is dead code
+// reqwest::Response removed — log_request is dead code
 use std::borrow::Cow;
 use std::future::Future;
 use std::time::Duration;
@@ -325,39 +325,6 @@ impl SessionTelemetry {
                 active_profile_present = active_profile.is_some(),
             },
         );
-    }
-
-    pub async fn log_request<F, Fut>(&self, attempt: u64, f: F) -> Result<Response, Error>
-    where
-        F: FnOnce() -> Fut,
-        Fut: Future<Output = Result<Response, Error>>,
-    {
-        let start = Instant::now();
-        let response = f().await;
-        let duration = start.elapsed();
-
-        let (status, error) = match &response {
-            Ok(response) => (Some(response.status().as_u16()), None),
-            Err(error) => (error.status().map(|s| s.as_u16()), Some(error.to_string())),
-        };
-        self.record_api_request(
-            attempt,
-            status,
-            error.as_deref(),
-            duration,
-            /*auth_header_attached*/ false,
-            /*auth_header_name*/ None,
-            /*retry_after_unauthorized*/ false,
-            /*recovery_mode*/ None,
-            /*recovery_phase*/ None,
-            "unknown",
-            /*request_id*/ None,
-            /*cf_ray*/ None,
-            /*auth_error*/ None,
-            /*auth_error_code*/ None,
-        );
-
-        response
     }
 
     #[allow(clippy::too_many_arguments)]

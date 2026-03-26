@@ -5,6 +5,7 @@ pub mod provider;
 pub mod trace_context;
 
 mod otlp;
+mod rama_otel_client;
 mod targets;
 
 use crate::metrics::MetricsError;

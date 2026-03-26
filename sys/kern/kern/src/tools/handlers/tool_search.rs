@@ -10,9 +10,8 @@ use crate::tools::registry::ToolHandler;
 use crate::tools::registry::ToolKind;
 use crate::tools::spec::mcp_tool_to_deferred_openai_tool;
 use async_trait::async_trait;
-use bm25::Document;
-use bm25::Language;
-use bm25::SearchEngineBuilder;
+use chaos_apropos::Corpus;
+use chaos_apropos::Document;
 use std::collections::BTreeMap;
 use std::collections::HashMap;
 
@@ -81,13 +80,12 @@ impl ToolHandler for ToolSearchHandler {
             .enumerate()
             .map(|(idx, (name, info))| Document::new(idx, build_search_text(name, info)))
             .collect();
-        let search_engine =
-            SearchEngineBuilder::<usize>::with_documents(Language::English, documents).build();
-        let results = search_engine.search(query, limit);
+        let corpus = Corpus::new(documents);
+        let results = corpus.search(query, limit);
 
         let matched_entries = results
             .into_iter()
-            .filter_map(|result| entries.get(result.document.id))
+            .filter_map(|result| entries.get(*result.id))
             .collect::<Vec<_>>();
         let tools = serialize_tool_search_output_tools(&matched_entries).map_err(|err| {
             FunctionCallError::Fatal(format!("failed to encode tool_search output: {err}"))

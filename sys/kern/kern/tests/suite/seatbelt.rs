@@ -122,13 +122,13 @@ async fn if_git_repo_is_writable_root_then_dot_git_folder_is_read_only() {
         .await;
 }
 
-/// Under DangerFullAccess, all writes should be permitted anywhere on disk,
+/// Under RootAccess, all writes should be permitted anywhere on disk,
 /// including inside the .git folder.
 #[tokio::test]
-async fn danger_full_access_allows_all_writes() {
+async fn root_access_allows_all_writes() {
     let tmp = TempDir::new().expect("should be able to create temp dir");
     let test_scenario = create_test_scenario(&tmp);
-    let policy = SandboxPolicy::DangerFullAccess;
+    let policy = SandboxPolicy::RootAccess;
 
     test_scenario
         .run_test(

@@ -78,7 +78,7 @@ async fn codex_returns_json_result(model: String) -> anyhow::Result<()> {
             final_output_json_schema: Some(serde_json::from_str(SCHEMA)?),
             cwd: cwd.path().to_path_buf(),
             approval_policy: AskForApproval::Never,
-            sandbox_policy: SandboxPolicy::DangerFullAccess,
+            sandbox_policy: SandboxPolicy::RootAccess,
             model,
             effort: None,
             summary: None,

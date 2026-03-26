@@ -450,7 +450,7 @@ fn sandbox_policy_with_additional_permissions(
     let (extra_reads, extra_writes) = additional_permission_roots(additional_permissions);
 
     match sandbox_policy {
-        SandboxPolicy::DangerFullAccess => SandboxPolicy::DangerFullAccess,
+        SandboxPolicy::RootAccess => SandboxPolicy::RootAccess,
         SandboxPolicy::ExternalSandbox { network_access } => SandboxPolicy::ExternalSandbox {
             network_access: if merge_network_access(
                 network_access.is_enabled(),

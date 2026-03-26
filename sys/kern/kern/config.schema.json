@@ -1372,7 +1372,7 @@
       "enum": [
         "read-only",
         "workspace-write",
-        "danger-full-access"
+        "root-access"
       ],
       "type": "string"
     },

@@ -3,7 +3,7 @@ use chaos_ipc::protocol::SandboxPolicy;
 
 pub fn summarize_sandbox_policy(sandbox_policy: &SandboxPolicy) -> String {
     match sandbox_policy {
-        SandboxPolicy::DangerFullAccess => "danger-full-access".to_string(),
+        SandboxPolicy::RootAccess => "root-access".to_string(),
         SandboxPolicy::ReadOnly { network_access, .. } => {
             let mut summary = "read-only".to_string();
             if *network_access {

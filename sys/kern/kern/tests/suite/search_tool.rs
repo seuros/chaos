@@ -80,7 +80,7 @@ async fn search_tool_is_hidden_for_api_key_auth() -> Result<()> {
     test.submit_turn_with_policies(
         "list tools",
         AskForApproval::Never,
-        SandboxPolicy::DangerFullAccess,
+        SandboxPolicy::RootAccess,
     )
     .await?;
 

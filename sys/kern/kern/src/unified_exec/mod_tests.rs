@@ -18,7 +18,7 @@ async fn test_session_and_turn() -> (Arc<Session>, Arc<TurnContext>) {
         .set(AskForApproval::Never)
         .expect("test setup should allow updating approval policy");
     turn.sandbox_policy
-        .set(SandboxPolicy::DangerFullAccess)
+        .set(SandboxPolicy::RootAccess)
         .expect("test setup should allow updating sandbox policy");
     turn.file_system_sandbox_policy =
         chaos_ipc::permissions::FileSystemSandboxPolicy::from(turn.sandbox_policy.get());

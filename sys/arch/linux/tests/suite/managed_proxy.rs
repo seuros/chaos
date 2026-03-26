@@ -91,7 +91,7 @@ async fn managed_proxy_skip_reason() -> Option<String> {
 
     let output = run_linux_sandbox_direct(
         &["bash", "-c", "true"],
-        &SandboxPolicy::DangerFullAccess,
+        &SandboxPolicy::RootAccess,
         true,
         env,
         NETWORK_TIMEOUT_MS,
@@ -170,7 +170,7 @@ async fn managed_proxy_mode_fails_closed_without_proxy_env() {
 
     let output = run_linux_sandbox_direct(
         &["bash", "-c", "true"],
-        &SandboxPolicy::DangerFullAccess,
+        &SandboxPolicy::RootAccess,
         true,
         env,
         NETWORK_TIMEOUT_MS,
@@ -225,7 +225,7 @@ async fn managed_proxy_mode_routes_through_bridge_and_blocks_direct_egress() {
             "-c",
             "proxy=\"${HTTP_PROXY#*://}\"; host=\"${proxy%%:*}\"; port=\"${proxy##*:}\"; exec 3<>/dev/tcp/${host}/${port}; printf 'GET http://example.com/ HTTP/1.1\\r\\nHost: example.com\\r\\n\\r\\n' >&3; IFS= read -r line <&3; printf '%s\\n' \"$line\"",
         ],
-        &SandboxPolicy::DangerFullAccess,
+        &SandboxPolicy::RootAccess,
         true,
         env.clone(),
         NETWORK_TIMEOUT_MS,
@@ -256,7 +256,7 @@ async fn managed_proxy_mode_routes_through_bridge_and_blocks_direct_egress() {
 
     let direct_egress_output = run_linux_sandbox_direct(
         &["bash", "-c", "echo hi > /dev/tcp/192.0.2.1/80"],
-        &SandboxPolicy::DangerFullAccess,
+        &SandboxPolicy::RootAccess,
         true,
         env,
         NETWORK_TIMEOUT_MS,
@@ -294,7 +294,7 @@ async fn managed_proxy_mode_denies_af_unix_creation_for_user_command() {
             "-c",
             "import socket,sys\ntry:\n    socket.socket(socket.AF_UNIX, socket.SOCK_STREAM)\nexcept PermissionError:\n    sys.exit(0)\nexcept OSError:\n    sys.exit(2)\nsys.exit(1)\n",
         ],
-        &SandboxPolicy::DangerFullAccess,
+        &SandboxPolicy::RootAccess,
         true,
         env,
         NETWORK_TIMEOUT_MS,

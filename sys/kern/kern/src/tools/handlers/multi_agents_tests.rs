@@ -236,7 +236,7 @@ async fn spawn_agent_reapplies_runtime_sandbox_after_role_config() {
         base: SandboxPolicy,
     ) -> SandboxPolicy {
         let candidates = [
-            SandboxPolicy::DangerFullAccess,
+            SandboxPolicy::RootAccess,
             SandboxPolicy::new_workspace_write_policy(),
             SandboxPolicy::new_read_only_policy(),
         ];
@@ -1015,7 +1015,7 @@ async fn build_agent_spawn_config_uses_turn_context_values() {
         let candidates = [
             SandboxPolicy::new_read_only_policy(),
             SandboxPolicy::new_workspace_write_policy(),
-            SandboxPolicy::DangerFullAccess,
+            SandboxPolicy::RootAccess,
         ];
         candidates
             .into_iter()

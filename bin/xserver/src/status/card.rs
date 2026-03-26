@@ -198,7 +198,7 @@ impl StatusHistoryCell {
             .map(|(_, v)| v.clone())
             .unwrap_or_else(|| "<unknown>".to_string());
         let sandbox = match config.permissions.sandbox_policy.get() {
-            SandboxPolicy::DangerFullAccess => "danger-full-access".to_string(),
+            SandboxPolicy::RootAccess => "root-access".to_string(),
             SandboxPolicy::ReadOnly { .. } => "read-only".to_string(),
             SandboxPolicy::WorkspaceWrite {
                 network_access: true,
@@ -219,7 +219,7 @@ impl StatusHistoryCell {
         {
             "Default".to_string()
         } else if config.permissions.approval_policy.value() == AskForApproval::Never
-            && *config.permissions.sandbox_policy.get() == SandboxPolicy::DangerFullAccess
+            && *config.permissions.sandbox_policy.get() == SandboxPolicy::RootAccess
         {
             "Full Access".to_string()
         } else {

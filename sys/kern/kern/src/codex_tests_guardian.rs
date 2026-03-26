@@ -82,7 +82,7 @@ async fn guardian_allows_shell_additional_permissions_requests_past_policy_valid
         .expect("test setup should allow enabling request permissions");
     turn_context_raw
         .sandbox_policy
-        .set(SandboxPolicy::DangerFullAccess)
+        .set(SandboxPolicy::RootAccess)
         .expect("test setup should allow updating sandbox policy");
     // This test is about request-permissions validation, not managed sandbox
     // policy enforcement. Widen the derived sandbox policies directly so the

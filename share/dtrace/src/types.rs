@@ -238,7 +238,7 @@ mod tests {
                     duration_ms: 42,
                     mutating: true,
                     sandbox: "none".to_string(),
-                    sandbox_policy: "danger-full-access".to_string(),
+                    sandbox_policy: "root-access".to_string(),
                     output_preview: "ok".to_string(),
                 },
             },
@@ -271,7 +271,7 @@ mod tests {
                 "duration_ms": 42,
                 "mutating": true,
                 "sandbox": "none",
-                "sandbox_policy": "danger-full-access",
+                "sandbox_policy": "root-access",
                 "output_preview": "ok",
             },
         });

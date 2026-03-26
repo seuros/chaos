@@ -3,7 +3,7 @@ use crate::protocol::SandboxPolicy;
 use crate::safety::get_platform_sandbox;
 
 pub(crate) fn sandbox_tag(policy: &SandboxPolicy) -> &'static str {
-    if matches!(policy, SandboxPolicy::DangerFullAccess) {
+    if matches!(policy, SandboxPolicy::RootAccess) {
         return "none";
     }
     if matches!(policy, SandboxPolicy::ExternalSandbox { .. }) {

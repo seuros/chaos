@@ -69,7 +69,7 @@ async fn tool_call_output_configured_limit_chars_type() -> Result<()> {
     .await;
 
     fixture
-        .submit_turn_with_policy("trigger big shell output", SandboxPolicy::DangerFullAccess)
+        .submit_turn_with_policy("trigger big shell output", SandboxPolicy::RootAccess)
         .await?;
 
     // Inspect what we sent back to the model; it should contain a truncated
@@ -139,7 +139,7 @@ async fn tool_call_output_exceeds_limit_truncated_chars_limit() -> Result<()> {
     .await;
 
     fixture
-        .submit_turn_with_policy("trigger big shell output", SandboxPolicy::DangerFullAccess)
+        .submit_turn_with_policy("trigger big shell output", SandboxPolicy::RootAccess)
         .await?;
 
     // Inspect what we sent back to the model; it should contain a truncated
@@ -208,7 +208,7 @@ async fn tool_call_output_exceeds_limit_truncated_for_model() -> Result<()> {
     .await;
 
     fixture
-        .submit_turn_with_policy("trigger big shell output", SandboxPolicy::DangerFullAccess)
+        .submit_turn_with_policy("trigger big shell output", SandboxPolicy::RootAccess)
         .await?;
 
     // Inspect what we sent back to the model; it should contain a truncated
@@ -278,7 +278,7 @@ async fn tool_call_output_truncated_only_once() -> Result<()> {
     .await;
 
     fixture
-        .submit_turn_with_policy("trigger big shell output", SandboxPolicy::DangerFullAccess)
+        .submit_turn_with_policy("trigger big shell output", SandboxPolicy::RootAccess)
         .await?;
 
     let output = mock2
@@ -533,7 +533,7 @@ async fn token_policy_marker_reports_tokens() -> Result<()> {
     .await;
 
     fixture
-        .submit_turn_with_policy("run the shell tool", SandboxPolicy::DangerFullAccess)
+        .submit_turn_with_policy("run the shell tool", SandboxPolicy::RootAccess)
         .await?;
 
     let output = done_mock
@@ -584,7 +584,7 @@ async fn byte_policy_marker_reports_bytes() -> Result<()> {
     .await;
 
     fixture
-        .submit_turn_with_policy("run the shell tool", SandboxPolicy::DangerFullAccess)
+        .submit_turn_with_policy("run the shell tool", SandboxPolicy::RootAccess)
         .await?;
 
     let output = done_mock
@@ -640,7 +640,7 @@ async fn shell_command_output_not_truncated_with_custom_limit() -> Result<()> {
     fixture
         .submit_turn_with_policy(
             "run big output without truncation",
-            SandboxPolicy::DangerFullAccess,
+            SandboxPolicy::RootAccess,
         )
         .await?;
 

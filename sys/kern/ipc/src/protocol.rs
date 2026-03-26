@@ -639,8 +639,8 @@ impl ReadOnlyAccess {
 #[serde(tag = "type", rename_all = "kebab-case")]
 pub enum SandboxPolicy {
     /// No restrictions whatsoever. Use with caution.
-    #[serde(rename = "danger-full-access")]
-    DangerFullAccess,
+    #[serde(rename = "root-access")]
+    RootAccess,
 
     /// Read-only access configuration.
     #[serde(rename = "read-only")]
@@ -780,7 +780,7 @@ impl SandboxPolicy {
 
     pub fn has_full_disk_read_access(&self) -> bool {
         match self {
-            SandboxPolicy::DangerFullAccess => true,
+            SandboxPolicy::RootAccess => true,
             SandboxPolicy::ExternalSandbox { .. } => true,
             SandboxPolicy::ReadOnly { access, .. } => access.has_full_disk_read_access(),
             SandboxPolicy::WorkspaceWrite {
@@ -791,7 +791,7 @@ impl SandboxPolicy {
 
     pub fn has_full_disk_write_access(&self) -> bool {
         match self {
-            SandboxPolicy::DangerFullAccess => true,
+            SandboxPolicy::RootAccess => true,
             SandboxPolicy::ExternalSandbox { .. } => true,
             SandboxPolicy::ReadOnly { .. } => false,
             SandboxPolicy::WorkspaceWrite { .. } => false,
@@ -800,7 +800,7 @@ impl SandboxPolicy {
 
     pub fn has_full_network_access(&self) -> bool {
         match self {
-            SandboxPolicy::DangerFullAccess => true,
+            SandboxPolicy::RootAccess => true,
             SandboxPolicy::ExternalSandbox { network_access } => network_access.is_enabled(),
             SandboxPolicy::ReadOnly { network_access, .. } => *network_access,
             SandboxPolicy::WorkspaceWrite { network_access, .. } => *network_access,
@@ -817,7 +817,7 @@ impl SandboxPolicy {
             SandboxPolicy::WorkspaceWrite {
                 read_only_access, ..
             } => read_only_access.include_platform_defaults(),
-            SandboxPolicy::DangerFullAccess | SandboxPolicy::ExternalSandbox { .. } => false,
+            SandboxPolicy::RootAccess | SandboxPolicy::ExternalSandbox { .. } => false,
         }
     }
 
@@ -828,7 +828,7 @@ impl SandboxPolicy {
     /// callers should grant blanket reads.
     pub fn get_readable_roots_with_cwd(&self, cwd: &Path) -> Vec<AbsolutePathBuf> {
         let mut roots = match self {
-            SandboxPolicy::DangerFullAccess | SandboxPolicy::ExternalSandbox { .. } => Vec::new(),
+            SandboxPolicy::RootAccess | SandboxPolicy::ExternalSandbox { .. } => Vec::new(),
             SandboxPolicy::ReadOnly { access, .. } => access.get_readable_roots_with_cwd(cwd),
             SandboxPolicy::WorkspaceWrite {
                 read_only_access, ..
@@ -852,7 +852,7 @@ impl SandboxPolicy {
     /// each writable root.
     pub fn get_writable_roots_with_cwd(&self, cwd: &Path) -> Vec<WritableRoot> {
         match self {
-            SandboxPolicy::DangerFullAccess => Vec::new(),
+            SandboxPolicy::RootAccess => Vec::new(),
             SandboxPolicy::ExternalSandbox { .. } => Vec::new(),
             SandboxPolicy::ReadOnly { .. } => Vec::new(),
             SandboxPolicy::WorkspaceWrite {
@@ -3797,7 +3797,7 @@ mod tests {
         let nested_readable_root = AbsolutePathBuf::resolve_path_against_base("docs", cwd.path())
             .expect("resolve nested readable root");
         let policies = [
-            SandboxPolicy::DangerFullAccess,
+            SandboxPolicy::RootAccess,
             SandboxPolicy::ExternalSandbox {
                 network_access: NetworkAccess::Restricted,
             },
@@ -4076,7 +4076,7 @@ mod tests {
         let item: TurnContextItem = serde_json::from_value(json!({
             "cwd": "/tmp",
             "approval_policy": "never",
-            "sandbox_policy": { "type": "danger-full-access" },
+            "sandbox_policy": { "type": "root-access" },
             "model": "gpt-5",
             "summary": "auto",
         }))?;
@@ -4095,7 +4095,7 @@ mod tests {
             current_date: None,
             timezone: None,
             approval_policy: AskForApproval::Never,
-            sandbox_policy: SandboxPolicy::DangerFullAccess,
+            sandbox_policy: SandboxPolicy::RootAccess,
             network: Some(TurnContextNetworkItem {
                 allowed_domains: vec!["api.example.com".to_string()],
                 denied_domains: vec!["blocked.example.com".to_string()],

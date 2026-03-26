@@ -97,7 +97,7 @@ fn should_install_network_seccomp(
     allow_network_for_proxy: bool,
 ) -> bool {
     // Managed-network sessions should remain fail-closed even for policies that
-    // would normally grant full network access (for example, DangerFullAccess).
+    // would normally grant full network access (for example, RootAccess).
     !network_sandbox_policy.is_enabled() || allow_network_for_proxy
 }
 

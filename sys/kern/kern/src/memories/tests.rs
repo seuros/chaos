@@ -796,7 +796,7 @@ mod consolidation_tests {
             .expect("enqueue global consolidation");
         let mut constrained_config = harness.config.as_ref().clone();
         constrained_config.permissions.sandbox_policy =
-            Constrained::allow_only(SandboxPolicy::DangerFullAccess);
+            Constrained::allow_only(SandboxPolicy::RootAccess);
 
         consolidation::run(&harness.session, Arc::new(constrained_config)).await;
 

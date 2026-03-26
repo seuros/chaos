@@ -1093,6 +1093,7 @@ dependencies = [
  "owo-colors",
  "predicates",
  "pretty_assertions",
+ "rama",
  "regex-lite",
  "serde_json",
  "sqlx",

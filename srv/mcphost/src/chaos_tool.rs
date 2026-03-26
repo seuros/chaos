@@ -72,7 +72,7 @@ pub struct ChaosToolParams {
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub approval_policy: Option<ChaosApprovalPolicy>,
 
-    /// Sandbox mode: `read-only`, `workspace-write`, `danger-full-access`.
+    /// Sandbox mode: `read-only`, `workspace-write`, `root-access`.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub sandbox: Option<ChaosSandboxMode>,
 
@@ -118,7 +118,7 @@ impl From<ChaosApprovalPolicy> for AskForApproval {
 pub enum ChaosSandboxMode {
     ReadOnly,
     WorkspaceWrite,
-    DangerFullAccess,
+    RootAccess,
 }
 
 impl From<ChaosSandboxMode> for SandboxMode {
@@ -126,7 +126,7 @@ impl From<ChaosSandboxMode> for SandboxMode {
         match value {
             ChaosSandboxMode::ReadOnly => SandboxMode::ReadOnly,
             ChaosSandboxMode::WorkspaceWrite => SandboxMode::WorkspaceWrite,
-            ChaosSandboxMode::DangerFullAccess => SandboxMode::DangerFullAccess,
+            ChaosSandboxMode::RootAccess => SandboxMode::RootAccess,
         }
     }
 }

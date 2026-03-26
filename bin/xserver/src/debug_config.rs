@@ -312,7 +312,7 @@ fn format_sandbox_mode_requirement(mode: SandboxModeRequirement) -> String {
     match mode {
         SandboxModeRequirement::ReadOnly => "read-only".to_string(),
         SandboxModeRequirement::WorkspaceWrite => "workspace-write".to_string(),
-        SandboxModeRequirement::DangerFullAccess => "danger-full-access".to_string(),
+        SandboxModeRequirement::RootAccess => "root-access".to_string(),
         SandboxModeRequirement::ExternalSandbox => "external-sandbox".to_string(),
     }
 }

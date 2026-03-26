@@ -27,7 +27,7 @@ use crate::pkce::PkceCodes;
 use crate::pkce::generate_pkce;
 use base64::Engine;
 use chrono::Utc;
-use codex_client::build_reqwest_client_with_custom_ca;
+use codex_client::CodexHttpClient;
 use chaos_kern::auth::AuthCredentialsStoreMode;
 use chaos_kern::auth::AuthDotJson;
 use chaos_kern::auth::save_auth;
@@ -651,14 +651,6 @@ fn redact_sensitive_url_parts(url: &mut url::Url) {
     url.set_query(Some(&redacted_query));
 }
 
-/// Redacts any URL attached to a reqwest transport error before it is logged or returned.
-fn redact_sensitive_error_url(mut err: reqwest::Error) -> reqwest::Error {
-    if let Some(url) = err.url_mut() {
-        redact_sensitive_url_parts(url);
-    }
-    err
-}
-
 /// Sanitizes a free-form URL string for structured logging.
 ///
 /// This is used for caller-supplied issuer values, which may contain credentials or query
@@ -692,14 +684,15 @@ pub(crate) async fn exchange_code_for_tokens(
         refresh_token: String,
     }
 
-    let client = build_reqwest_client_with_custom_ca(reqwest::Client::builder())?;
+    let client = CodexHttpClient::default_client();
     info!(
         issuer = %sanitize_url_for_logging(issuer),
         redirect_uri = %redirect_uri,
         "starting oauth token exchange"
     );
+    let token_url = format!("{issuer}/oauth/token");
     let resp = client
-        .post(format!("{issuer}/oauth/token"))
+        .post(&token_url)
         .header("Content-Type", "application/x-www-form-urlencoded")
         .body(format!(
             "grant_type=authorization_code&code={}&redirect_uri={}&client_id={}&code_verifier={}",
@@ -712,16 +705,12 @@ pub(crate) async fn exchange_code_for_tokens(
         .await;
     let resp = match resp {
         Ok(resp) => resp,
-        Err(error) => {
-            let error = redact_sensitive_error_url(error);
+        Err(err) => {
             error!(
-                is_timeout = error.is_timeout(),
-                is_connect = error.is_connect(),
-                is_request = error.is_request(),
-                error = %error,
+                error = %err,
                 "oauth token exchange transport failure"
             );
-            return Err(io::Error::other(error));
+            return Err(io::Error::other(err));
         }
     };
 
@@ -1061,9 +1050,10 @@ pub(crate) async fn obtain_api_key(
     struct ExchangeResp {
         access_token: String,
     }
-    let client = build_reqwest_client_with_custom_ca(reqwest::Client::builder())?;
+    let client = CodexHttpClient::default_client();
+    let token_url = format!("{issuer}/oauth/token");
     let resp = client
-        .post(format!("{issuer}/oauth/token"))
+        .post(&token_url)
         .header("Content-Type", "application/x-www-form-urlencoded")
         .body(format!(
             "grant_type={}&client_id={}&requested_token={}&subject_token={}&subject_token_type={}",

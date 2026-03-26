@@ -1,4 +1,5 @@
-use reqwest::StatusCode;
+use codex_client::CodexHttpClient;
+use http::StatusCode;
 use serde::Deserialize;
 use serde::Serialize;
 use serde::de::Deserializer;
@@ -8,7 +9,6 @@ use std::time::Instant;
 
 use crate::pkce::PkceCodes;
 use crate::server::ServerOptions;
-use codex_client::build_reqwest_client_with_custom_ca;
 use std::io;
 
 const ANSI_BLUE: &str = "\x1b[94m";
@@ -60,7 +60,7 @@ struct CodeSuccessResp {
 
 /// Request the user code and polling interval.
 async fn request_user_code(
-    client: &reqwest::Client,
+    client: &CodexHttpClient,
     auth_base_url: &str,
     client_id: &str,
 ) -> std::io::Result<UserCodeResp> {
@@ -70,7 +70,7 @@ async fn request_user_code(
     })
     .map_err(std::io::Error::other)?;
     let resp = client
-        .post(url)
+        .post(&url)
         .header("Content-Type", "application/json")
         .body(body)
         .send()
@@ -97,7 +97,7 @@ async fn request_user_code(
 
 /// Poll token endpoint until a code is issued or timeout occurs.
 async fn poll_for_token(
-    client: &reqwest::Client,
+    client: &CodexHttpClient,
     auth_base_url: &str,
     device_auth_id: &str,
     user_code: &str,
@@ -157,7 +157,7 @@ fn print_device_code_prompt(verification_url: &str, code: &str) {
 }
 
 pub async fn request_device_code(opts: &ServerOptions) -> std::io::Result<DeviceCode> {
-    let client = build_reqwest_client_with_custom_ca(reqwest::Client::builder())?;
+    let client = CodexHttpClient::default_client();
     let base_url = opts.issuer.trim_end_matches('/');
     let api_base_url = format!("{base_url}/api/accounts");
     let uc = request_user_code(&client, &api_base_url, &opts.client_id).await?;
@@ -174,7 +174,7 @@ pub async fn complete_device_code_login(
     opts: ServerOptions,
     device_code: DeviceCode,
 ) -> std::io::Result<()> {
-    let client = build_reqwest_client_with_custom_ca(reqwest::Client::builder())?;
+    let client = CodexHttpClient::default_client();
     let base_url = opts.issuer.trim_end_matches('/');
     let api_base_url = format!("{base_url}/api/accounts");
 

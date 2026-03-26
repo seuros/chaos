@@ -10,11 +10,13 @@ name = "chaos_xserver"
 path = "src/lib.rs"
 
 [features]
-default = []
+default = ["syntax"]
 # Enable vt100-based tests (emulator) when running with `--features vt100-tests`.
 vt100-tests = []
 # Gate verbose debug logging inside the TUI implementation.
 debug-logs = []
+# Syntax highlighting via chaos-highlight (syntect + two-face).
+syntax = ["dep:chaos-highlight"]
 
 [lints]
 workspace = true
@@ -24,6 +26,7 @@ anyhow = { workspace = true }
 base64 = { workspace = true }
 chrono = { workspace = true, features = ["serde"] }
 clap = { workspace = true, features = ["derive"] }
+chaos-highlight = { workspace = true, optional = true }
 chaos-termcap = { workspace = true }
 chaos-argv = { workspace = true }
 chaos-kern = { workspace = true }
@@ -84,8 +87,6 @@ toml = { workspace = true }
 tracing = { workspace = true, features = ["log"] }
 tracing-appender = { workspace = true }
 tracing-subscriber = { workspace = true, features = ["env-filter"] }
-syntect = "5"
-two-face = { version = "0.5", default-features = false, features = ["syntect-default-onig"] }
 unicode-segmentation = { workspace = true }
 unicode-width = { workspace = true }
 url = { workspace = true }

@@ -1,0 +1,30 @@
+[package]
+name = "chaos-highlight"
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+publish.workspace = true
+description = "Optional syntax highlighting for the Chaos TUI. Not loaded during therapy sessions."
+
+[lib]
+name = "chaos_highlight"
+path = "src/lib.rs"
+
+[lints]
+workspace = true
+
+[dependencies]
+ratatui = { workspace = true }
+syntect = { version = "5", default-features = false, features = [
+    "default-themes",
+    "parsing",
+    "plist-load",
+    "regex-onig",
+] }
+tracing = { workspace = true }
+two-face = { version = "0.5", default-features = false, features = ["syntect-onig"] }
+
+[dev-dependencies]
+insta = { workspace = true }
+pretty_assertions = { workspace = true }
+tempfile = { workspace = true }

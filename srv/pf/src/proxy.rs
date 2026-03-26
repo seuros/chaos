@@ -125,11 +125,6 @@ impl NetworkProxyBuilder {
     }
 
     pub async fn build(self) -> Result<NetworkProxy> {
-        // Ensure the ring CryptoProvider is installed process-wide before any
-        // TLS operation. Idempotent: returns Err if already installed, which
-        // we intentionally ignore.
-        let _ = rama_tls_rustls::dep::rustls::crypto::ring::default_provider().install_default();
-
         let state = self.state.ok_or_else(|| {
             anyhow::anyhow!(
                 "NetworkProxyBuilder requires a state; supply one via builder.state(...)"

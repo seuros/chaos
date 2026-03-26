@@ -30,6 +30,7 @@ chaos-pam = { workspace = true }
 chaos-mcphost = { workspace = true }
 chaos-ipc = { workspace = true }
 chaos-xserver = { workspace = true }
+rama = { workspace = true }
 libc = { workspace = true }
 owo-colors = { workspace = true }
 regex-lite = { workspace = true }

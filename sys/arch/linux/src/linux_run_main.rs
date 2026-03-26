@@ -77,7 +77,8 @@ pub fn run_main() -> ! {
     } = LandlockCommand::parse();
 
     if command.is_empty() {
-        panic!("No command specified to execute.");
+        eprintln!("alcatraz-linux: no command specified to execute.");
+        std::process::exit(1);
     }
 
     let EffectiveSandboxPolicies {
@@ -90,7 +91,10 @@ pub fn run_main() -> ! {
         file_system_sandbox_policy,
         network_sandbox_policy,
     )
-    .unwrap_or_else(|err| panic!("{err}"));
+    .unwrap_or_else(|err| {
+        eprintln!("alcatraz-linux: {err}");
+        std::process::exit(1);
+    });
 
     let apply_landlock_fs =
         !file_system_sandbox_policy.has_full_disk_write_access() || allow_network_for_proxy;
@@ -103,7 +107,8 @@ pub fn run_main() -> ! {
         allow_network_for_proxy,
         /*proxy_routed_network*/ false,
     ) {
-        panic!("error applying Linux sandbox restrictions: {e:?}");
+        eprintln!("alcatraz-linux: {e}");
+        std::process::exit(1);
     }
 
     exec_or_panic(command);

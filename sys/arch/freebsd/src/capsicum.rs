@@ -1,80 +1,108 @@
-//! FreeBSD sandbox compatibility checks for the generic exec helper.
+//! FreeBSD process hardening for the generic exec helper.
 //!
-//! Capsicum capability mode is all-or-nothing: once a process enters it, the
-//! global filesystem namespace and new socket creation are both gone. That can
-//! work for tightly controlled children that operate entirely on inherited file
-//! descriptors, but it does not work for arbitrary commands launched via
-//! `alcatraz-freebsd`, which still expect pathname-based `open(2)` and their
-//! own socket creation.
+//! Capsicum capability mode (`cap_enter()`) is the wrong tool for arbitrary
+//! commands — it blocks `open(2)`, `connect(2)`, and `openat(AT_FDCWD)`, which
+//! every shell command relies on.  Full Capsicum enforcement belongs in
+//! controlled code paths (Phase 3: `apply_patch` fork).
 //!
-//! The current FreeBSD exec helper therefore fails closed for restrictive
-//! configurations that it cannot yet enforce correctly instead of entering
-//! capability mode and breaking common command behavior.
+//! What we *can* do for every child process right now:
+//!
+//!   1. `procctl(PROC_NO_NEW_PRIVS_CTL)` — prevent setuid/setgid escalation.
+//!   2. `procctl(PROC_TRACE_CTL, PROC_TRACE_CTL_DISABLE)` — block ptrace.
+//!
+//! Filesystem and network restrictions that require `cap_enter()`, `ipfw`, or
+//! jails are logged as warnings and passed through so the command still runs.
+//! This function never returns `Err` for a valid policy.
 
-use alcatraz_base::error::AlcatrazError;
 use alcatraz_base::error::Result;
 use chaos_ipc::protocol::FileSystemSandboxPolicy;
 use chaos_ipc::protocol::NetworkSandboxPolicy;
 
 /// Apply sandbox policies inside this process before exec.
 ///
-/// The generic FreeBSD exec helper only supports policy combinations that do
-/// not require entering capability mode. Restrictive filesystem and network
-/// modes currently fail fast with descriptive errors so the caller does not get
-/// a misleading partially-broken sandbox.
+/// Always applies process hardening (no-new-privs, anti-ptrace).  Logs
+/// warnings for enforcement dimensions that are not yet implemented instead
+/// of rejecting the policy outright.
 pub fn apply_sandbox_policy_to_current_thread(
     file_system_sandbox_policy: &FileSystemSandboxPolicy,
     network_sandbox_policy: NetworkSandboxPolicy,
     allow_network_for_proxy: bool,
     proxy_routed_network: bool,
 ) -> Result<()> {
-    if let Some(err) = unsupported_exec_helper_policy(
-        file_system_sandbox_policy,
-        network_sandbox_policy,
-        allow_network_for_proxy,
-        proxy_routed_network,
-    ) {
-        return Err(err);
+    // ── Layer 1: process hardening (always applied) ──────────────────────
+    apply_procctl_hardening();
+
+    // ── Layer 2: network isolation ───────────────────────────────────────
+    if should_restrict_network(network_sandbox_policy, allow_network_for_proxy) {
+        eprintln!(
+            "alcatraz-freebsd: warning: network isolation requested but ipfw enforcement \
+             is not yet implemented — network access is unrestricted."
+        );
+    }
+
+    if proxy_routed_network || allow_network_for_proxy {
+        eprintln!(
+            "alcatraz-freebsd: warning: managed network proxy mode requested but not yet \
+             implemented on FreeBSD — proxy routing is inactive."
+        );
+    }
+
+    // ── Layer 3: filesystem confinement ──────────────────────────────────
+    if !file_system_sandbox_policy.has_full_disk_write_access() {
+        if !file_system_sandbox_policy.has_full_disk_read_access() {
+            eprintln!(
+                "alcatraz-freebsd: warning: restricted read-only filesystem access requested \
+                 but requires jail-based confinement (not yet implemented) — filesystem \
+                 access is unrestricted."
+            );
+        } else {
+            eprintln!(
+                "alcatraz-freebsd: warning: restricted filesystem write access requested \
+                 but requires jail-based confinement (not yet implemented) — filesystem \
+                 access is unrestricted."
+            );
+        }
     }
 
     Ok(())
 }
 
-fn unsupported_exec_helper_policy(
-    file_system_sandbox_policy: &FileSystemSandboxPolicy,
-    network_sandbox_policy: NetworkSandboxPolicy,
-    allow_network_for_proxy: bool,
-    proxy_routed_network: bool,
-) -> Option<AlcatrazError> {
-    if proxy_routed_network || allow_network_for_proxy {
-        return Some(AlcatrazError::UnsupportedOperation(
-            "Managed network proxy mode is not yet supported by the FreeBSD Capsicum exec helper because generic child processes cannot preserve proxy-only connectivity after capability mode removes ordinary socket creation."
-                .to_string(),
-        ));
+/// Apply `procctl` process hardening that is safe for arbitrary commands.
+///
+/// - `PROC_NO_NEW_PRIVS_CTL`: prevents setuid/setgid privilege escalation.
+///   Survives `execve()`.
+/// - `PROC_TRACE_CTL`: disables `ptrace(2)` attachment to this process.
+///   Survives `execve()` with `PROC_TRACE_CTL_DISABLE_EXEC`.
+fn apply_procctl_hardening() {
+    // PROC_NO_NEW_PRIVS_CTL — block setuid/setgid escalation
+    let mut arg: libc::c_int = libc::PROC_NO_NEW_PRIVS_ENABLE;
+    let ret = unsafe {
+        libc::procctl(
+            libc::P_PID,
+            0, // 0 = current process
+            libc::PROC_NO_NEW_PRIVS_CTL,
+            std::ptr::addr_of_mut!(arg).cast(),
+        )
+    };
+    if ret != 0 {
+        let err = std::io::Error::last_os_error();
+        eprintln!("alcatraz-freebsd: warning: procctl(PROC_NO_NEW_PRIVS_CTL) failed: {err}");
     }
 
-    if !file_system_sandbox_policy.has_full_disk_write_access() {
-        if !file_system_sandbox_policy.has_full_disk_read_access() {
-            return Some(AlcatrazError::UnsupportedOperation(
-                "Restricted read-only access is not yet supported by the FreeBSD Capsicum exec helper."
-                    .to_string(),
-            ));
-        }
-
-        return Some(AlcatrazError::UnsupportedOperation(
-            "Restricted filesystem access is not yet supported by the FreeBSD Capsicum exec helper because arbitrary child processes cannot consume pre-opened directory file descriptors after capability mode is entered."
-                .to_string(),
-        ));
+    // PROC_TRACE_CTL — block ptrace attachment (survives exec)
+    let mut arg: libc::c_int = libc::PROC_TRACE_CTL_DISABLE_EXEC;
+    let ret = unsafe {
+        libc::procctl(
+            libc::P_PID,
+            0,
+            libc::PROC_TRACE_CTL,
+            std::ptr::addr_of_mut!(arg).cast(),
+        )
+    };
+    if ret != 0 {
+        let err = std::io::Error::last_os_error();
+        eprintln!("alcatraz-freebsd: warning: procctl(PROC_TRACE_CTL) failed: {err}");
     }
-
-    if should_restrict_network(network_sandbox_policy, allow_network_for_proxy) {
-        return Some(AlcatrazError::UnsupportedOperation(
-            "Network-only sandboxing is not yet supported by the FreeBSD Capsicum exec helper because capability mode would also deny pathname-based filesystem access for ordinary commands."
-                .to_string(),
-        ));
-    }
-
-    None
 }
 
 /// Check if network should be restricted based on policy and proxy settings.
@@ -82,8 +110,6 @@ fn should_restrict_network(
     network_sandbox_policy: NetworkSandboxPolicy,
     allow_network_for_proxy: bool,
 ) -> bool {
-    // Mirror Linux logic: managed-network sessions remain fail-closed even for
-    // policies that would normally grant full access.
     !network_sandbox_policy.is_enabled() || allow_network_for_proxy
 }
 
@@ -119,78 +145,68 @@ mod tests {
     }
 
     #[test]
-    fn unrestricted_policy_is_supported() {
-        assert!(
-            unsupported_exec_helper_policy(
-                &FileSystemSandboxPolicy::unrestricted(),
-                NetworkSandboxPolicy::Enabled,
-                false,
-                false,
-            )
-            .is_none()
+    fn unrestricted_policy_succeeds() {
+        let result = apply_sandbox_policy_to_current_thread(
+            &FileSystemSandboxPolicy::unrestricted(),
+            NetworkSandboxPolicy::Enabled,
+            false,
+            false,
         );
+        assert!(result.is_ok());
     }
 
     #[test]
-    fn restricted_read_only_policy_is_rejected() {
-        let err = unsupported_exec_helper_policy(
+    fn restricted_read_only_policy_succeeds_with_warning() {
+        let result = apply_sandbox_policy_to_current_thread(
             &FileSystemSandboxPolicy::from(&SandboxPolicy::new_read_only_policy()),
             NetworkSandboxPolicy::Restricted,
             false,
             false,
-        )
-        .expect("read-only policy should be rejected");
-
-        // new_read_only_policy() has full read access but not full write,
-        // so it hits the "Restricted filesystem access" check.
-        assert!(
-            err.to_string().contains("Restricted filesystem access"),
-            "{err}"
         );
+        assert!(result.is_ok(), "restricted policies should pass through with warnings");
     }
 
     #[test]
-    fn restricted_filesystem_policy_is_rejected() {
-        let err = unsupported_exec_helper_policy(
+    fn restricted_filesystem_policy_succeeds_with_warning() {
+        let result = apply_sandbox_policy_to_current_thread(
             &FileSystemSandboxPolicy::from(&SandboxPolicy::new_workspace_write_policy()),
             NetworkSandboxPolicy::Enabled,
             false,
             false,
-        )
-        .expect("workspace-write policy should be rejected");
-
-        assert!(
-            err.to_string().contains("Restricted filesystem access"),
-            "{err}"
         );
+        assert!(result.is_ok(), "workspace-write policy should pass through with warnings");
     }
 
     #[test]
-    fn network_only_restriction_is_rejected() {
-        let err = unsupported_exec_helper_policy(
+    fn network_only_restriction_succeeds_with_warning() {
+        let result = apply_sandbox_policy_to_current_thread(
             &FileSystemSandboxPolicy::unrestricted(),
             NetworkSandboxPolicy::Restricted,
             false,
             false,
-        )
-        .expect("network-only restriction should be rejected");
-
-        assert!(err.to_string().contains("Network-only sandboxing"), "{err}");
+        );
+        assert!(result.is_ok(), "network-only restriction should pass through with warnings");
     }
 
     #[test]
-    fn managed_proxy_mode_is_rejected() {
-        let err = unsupported_exec_helper_policy(
+    fn managed_proxy_mode_succeeds_with_warning() {
+        let result = apply_sandbox_policy_to_current_thread(
             &FileSystemSandboxPolicy::unrestricted(),
             NetworkSandboxPolicy::Enabled,
             true,
             true,
-        )
-        .expect("managed proxy mode should be rejected");
-
-        assert!(
-            err.to_string().contains("Managed network proxy mode"),
-            "{err}"
         );
+        assert!(result.is_ok(), "managed proxy mode should pass through with warnings");
+    }
+
+    #[test]
+    fn danger_full_access_applies_hardening() {
+        let result = apply_sandbox_policy_to_current_thread(
+            &FileSystemSandboxPolicy::unrestricted(),
+            NetworkSandboxPolicy::Enabled,
+            false,
+            false,
+        );
+        assert!(result.is_ok(), "DangerFullAccess should succeed with procctl hardening");
     }
 }

@@ -69,7 +69,8 @@ pub fn run_main() -> ! {
     } = CapsicumCommand::parse();
 
     if command.is_empty() {
-        panic!("No command specified to execute.");
+        eprintln!("alcatraz-freebsd: no command specified to execute.");
+        std::process::exit(1);
     }
 
     let EffectiveSandboxPolicies {
@@ -82,17 +83,25 @@ pub fn run_main() -> ! {
         file_system_sandbox_policy,
         network_sandbox_policy,
     )
-    .unwrap_or_else(|err| panic!("{err}"));
+    .unwrap_or_else(|err| {
+        eprintln!("alcatraz-freebsd: {err}");
+        std::process::exit(1);
+    });
 
     let prepared_exec = prepare_exec(command);
 
+    // apply_sandbox_policy_to_current_thread now always succeeds for valid
+    // policies — it applies procctl hardening and logs warnings for
+    // unenforced dimensions.  A failure here would indicate a programming
+    // error (not a policy rejection), so we still exit.
     if let Err(e) = apply_sandbox_policy_to_current_thread(
         &file_system_sandbox_policy,
         network_sandbox_policy,
         allow_network_for_proxy,
         /*proxy_routed_network*/ allow_network_for_proxy,
     ) {
-        panic!("error applying FreeBSD sandbox restrictions: {e:?}");
+        eprintln!("alcatraz-freebsd: {e}");
+        std::process::exit(1);
     }
 
     prepared_exec.exec_or_panic();

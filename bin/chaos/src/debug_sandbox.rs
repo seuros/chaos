@@ -205,6 +205,8 @@ async fn run_command_under_sandbox(
         }
         #[cfg(target_os = "freebsd")]
         SandboxType::Capsicum => {
+            // Always dispatch to the helper — it applies procctl hardening
+            // and warns about unenforced dimensions internally.
             #[expect(clippy::expect_used)]
             let alcatraz_freebsd_exe = config
                 .alcatraz_freebsd_exe

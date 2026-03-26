@@ -546,8 +546,8 @@ impl SandboxManager {
         pref: SandboxablePreference,
         has_managed_network_requirements: bool,
     ) -> SandboxType {
-        match pref {
-            SandboxablePreference::Forbid => SandboxType::None,
+        let candidate = match pref {
+            SandboxablePreference::Forbid => return SandboxType::None,
             SandboxablePreference::Require => {
                 crate::safety::get_platform_sandbox().unwrap_or(SandboxType::None)
             }
@@ -562,7 +562,13 @@ impl SandboxManager {
                     SandboxType::None
                 }
             }
-        }
+        };
+
+        // FreeBSD Capsicum: the alcatraz-freebsd helper applies what it can
+        // (procctl hardening) and warns about unenforced dimensions.  The
+        // helper itself decides enforcement scope — the selector should not
+        // reject it.
+        candidate
     }
 
     pub(crate) fn transform(

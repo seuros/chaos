@@ -1,0 +1,39 @@
+[package]
+name = "alcatraz-freebsd"
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+publish.workspace = true
+
+[[bin]]
+name = "alcatraz-freebsd"
+path = "src/main.rs"
+
+[lib]
+name = "alcatraz_freebsd"
+path = "src/lib.rs"
+
+[lints]
+workspace = true
+
+[target.'cfg(target_os = "freebsd")'.dependencies]
+alcatraz-base = { workspace = true }
+clap = { workspace = true, features = ["derive"] }
+chaos-ipc = { workspace = true }
+chaos-realpath = { workspace = true }
+libc = { workspace = true }
+serde = { workspace = true, features = ["derive"] }
+serde_json = { workspace = true }
+url = { workspace = true }
+
+[target.'cfg(target_os = "freebsd")'.dev-dependencies]
+chaos-kern = { workspace = true }
+pretty_assertions = { workspace = true }
+tempfile = { workspace = true }
+tokio = { workspace = true, features = [
+    "io-std",
+    "macros",
+    "process",
+    "rt-multi-thread",
+    "signal",
+] }

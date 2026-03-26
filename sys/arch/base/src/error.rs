@@ -28,6 +28,11 @@ pub enum AlcatrazError {
     #[error("landlock ruleset error")]
     LandlockRuleset(#[from] landlock::RulesetError),
 
+    /// Capsicum cap_enter() or cap_rights_limit() failed.
+    #[cfg(target_os = "freebsd")]
+    #[error("capsicum capability mode error: {0}")]
+    CapsicumRestrict(String),
+
     /// The requested operation is not supported on this platform.
     #[error("{0}")]
     UnsupportedOperation(String),

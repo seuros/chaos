@@ -290,6 +290,7 @@ fn apply_spawn_agent_runtime_overrides(
         })?;
     config.permissions.shell_environment_policy = turn.shell_environment_policy.clone();
     config.alcatraz_linux_exe = turn.alcatraz_linux_exe.clone();
+    config.alcatraz_freebsd_exe = turn.alcatraz_freebsd_exe.clone();
     config.cwd = turn.cwd.clone();
     config
         .permissions

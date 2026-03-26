@@ -42,6 +42,7 @@ mod flags;
 pub mod git_info;
 mod guardian;
 pub mod instructions;
+pub mod capsicum;
 pub mod landlock;
 pub mod mcp;
 mod mcp_connection_manager;

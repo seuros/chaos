@@ -27,6 +27,7 @@ use seatbelt::DenialLogger;
 pub async fn run_command_under_seatbelt(
     command: SeatbeltCommand,
     alcatraz_linux_exe: Option<PathBuf>,
+    alcatraz_freebsd_exe: Option<PathBuf>,
 ) -> anyhow::Result<()> {
     let SeatbeltCommand {
         full_auto,
@@ -39,6 +40,7 @@ pub async fn run_command_under_seatbelt(
         command,
         config_overrides,
         alcatraz_linux_exe,
+        alcatraz_freebsd_exe,
         SandboxType::Seatbelt,
         log_denials,
     )
@@ -49,6 +51,7 @@ pub async fn run_command_under_seatbelt(
 pub async fn run_command_under_seatbelt(
     _command: SeatbeltCommand,
     _alcatraz_linux_exe: Option<PathBuf>,
+    _alcatraz_freebsd_exe: Option<PathBuf>,
 ) -> anyhow::Result<()> {
     anyhow::bail!("Seatbelt sandbox is only available on macOS");
 }
@@ -56,6 +59,7 @@ pub async fn run_command_under_seatbelt(
 pub async fn run_command_under_landlock(
     command: LandlockCommand,
     alcatraz_linux_exe: Option<PathBuf>,
+    alcatraz_freebsd_exe: Option<PathBuf>,
 ) -> anyhow::Result<()> {
     let LandlockCommand {
         full_auto,
@@ -67,7 +71,31 @@ pub async fn run_command_under_landlock(
         command,
         config_overrides,
         alcatraz_linux_exe,
+        alcatraz_freebsd_exe,
         SandboxType::Landlock,
+        /*log_denials*/ false,
+    )
+    .await
+}
+
+#[cfg(target_os = "freebsd")]
+pub async fn run_command_under_capsicum(
+    command: LandlockCommand,
+    alcatraz_linux_exe: Option<PathBuf>,
+    alcatraz_freebsd_exe: Option<PathBuf>,
+) -> anyhow::Result<()> {
+    let LandlockCommand {
+        full_auto,
+        config_overrides,
+        command,
+    } = command;
+    run_command_under_sandbox(
+        full_auto,
+        command,
+        config_overrides,
+        alcatraz_linux_exe,
+        alcatraz_freebsd_exe,
+        SandboxType::Capsicum,
         /*log_denials*/ false,
     )
     .await
@@ -77,6 +105,8 @@ enum SandboxType {
     #[cfg(target_os = "macos")]
     Seatbelt,
     Landlock,
+    #[cfg(target_os = "freebsd")]
+    Capsicum,
 }
 
 async fn run_command_under_sandbox(
@@ -84,6 +114,7 @@ async fn run_command_under_sandbox(
     command: Vec<String>,
     config_overrides: CliConfigOverrides,
     alcatraz_linux_exe: Option<PathBuf>,
+    alcatraz_freebsd_exe: Option<PathBuf>,
     sandbox_type: SandboxType,
     log_denials: bool,
 ) -> anyhow::Result<()> {
@@ -95,6 +126,7 @@ async fn run_command_under_sandbox(
         ConfigOverrides {
             sandbox_mode: Some(sandbox_mode),
             alcatraz_linux_exe,
+            alcatraz_freebsd_exe,
             ..Default::default()
         },
     )
@@ -161,6 +193,24 @@ async fn run_command_under_sandbox(
                 .expect("alcatraz-linux executable not found");
             spawn_command_under_linux_sandbox(
                 alcatraz_linux_exe,
+                command,
+                cwd,
+                config.permissions.sandbox_policy.get(),
+                sandbox_policy_cwd.as_path(),
+                stdio_policy,
+                network.as_ref(),
+                env,
+            )
+            .await?
+        }
+        #[cfg(target_os = "freebsd")]
+        SandboxType::Capsicum => {
+            #[expect(clippy::expect_used)]
+            let alcatraz_freebsd_exe = config
+                .alcatraz_freebsd_exe
+                .expect("alcatraz-freebsd executable not found");
+            chaos_kern::capsicum::spawn_command_under_freebsd_sandbox(
+                alcatraz_freebsd_exe,
                 command,
                 cwd,
                 config.permissions.sandbox_policy.get(),

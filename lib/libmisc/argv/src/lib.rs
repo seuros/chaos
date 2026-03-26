@@ -9,6 +9,7 @@ use chaos_pwd::find_codex_home;
 use tempfile::TempDir;
 
 const LINUX_SANDBOX_ARG0: &str = "alcatraz-linux";
+const FREEBSD_SANDBOX_ARG0: &str = "alcatraz-freebsd";
 const APPLY_PATCH_ARG0: &str = "apply_patch";
 const MISSPELLED_APPLY_PATCH_ARG0: &str = "applypatch";
 const EXECVE_WRAPPER_ARG0: &str = "codex-execve-wrapper";
@@ -18,6 +19,7 @@ const TOKIO_WORKER_STACK_SIZE_BYTES: usize = 16 * 1024 * 1024;
 #[derive(Clone, Debug, Default, Eq, PartialEq)]
 pub struct Arg0DispatchPaths {
     pub alcatraz_linux_exe: Option<PathBuf>,
+    pub alcatraz_freebsd_exe: Option<PathBuf>,
     pub main_execve_wrapper_exe: Option<PathBuf>,
 }
 
@@ -79,6 +81,9 @@ pub fn arg0_dispatch() -> Option<Arg0PathEntryGuard> {
     if exe_name == LINUX_SANDBOX_ARG0 {
         // Safety: [`run_main`] never returns.
         alcatraz_linux::run_main();
+    } else if exe_name == FREEBSD_SANDBOX_ARG0 {
+        // Safety: [`run_main`] never returns.
+        alcatraz_freebsd::run_main();
     } else if exe_name == APPLY_PATCH_ARG0 || exe_name == MISSPELLED_APPLY_PATCH_ARG0 {
         chaos_diff::main();
     }
@@ -156,10 +161,19 @@ where
         let current_exe = std::env::current_exe().ok();
         let paths = Arg0DispatchPaths {
             alcatraz_linux_exe: if cfg!(target_os = "linux") {
-                current_exe.or_else(|| {
+                current_exe.clone().or_else(|| {
                     path_entry
                         .as_ref()
                         .and_then(|path_entry| path_entry.paths().alcatraz_linux_exe.clone())
+                })
+            } else {
+                None
+            },
+            alcatraz_freebsd_exe: if cfg!(target_os = "freebsd") {
+                current_exe.or_else(|| {
+                    path_entry
+                        .as_ref()
+                        .and_then(|path_entry| path_entry.paths().alcatraz_freebsd_exe.clone())
                 })
             } else {
                 None
@@ -273,6 +287,8 @@ pub fn prepend_path_entry_for_codex_aliases() -> std::io::Result<Arg0PathEntryGu
         MISSPELLED_APPLY_PATCH_ARG0,
         #[cfg(target_os = "linux")]
         LINUX_SANDBOX_ARG0,
+        #[cfg(target_os = "freebsd")]
+        FREEBSD_SANDBOX_ARG0,
         EXECVE_WRAPPER_ARG0,
     ] {
         let exe = std::env::current_exe()?;
@@ -303,6 +319,16 @@ pub fn prepend_path_entry_for_codex_aliases() -> std::io::Result<Arg0PathEntryGu
                 Some(path.join(LINUX_SANDBOX_ARG0))
             }
             #[cfg(not(target_os = "linux"))]
+            {
+                None
+            }
+        },
+        alcatraz_freebsd_exe: {
+            #[cfg(target_os = "freebsd")]
+            {
+                Some(path.join(FREEBSD_SANDBOX_ARG0))
+            }
+            #[cfg(not(target_os = "freebsd"))]
             {
                 None
             }

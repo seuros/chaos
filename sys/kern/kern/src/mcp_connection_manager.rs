@@ -674,6 +674,7 @@ pub const MCP_SANDBOX_STATE_LOGGER: &str = "chaos/alcatraz-state";
 pub struct SandboxState {
     pub sandbox_policy: SandboxPolicy,
     pub alcatraz_linux_exe: Option<PathBuf>,
+    pub alcatraz_freebsd_exe: Option<PathBuf>,
     pub sandbox_cwd: PathBuf,
 }
 

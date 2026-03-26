@@ -8,6 +8,7 @@ members = [
     # sys/arch — platform sandboxes
     "sys/arch/base",
     "sys/arch/linux",
+    "sys/arch/freebsd",
     # sys/exec — process execution
     "sys/exec/fork",
     "sys/exec/sh",
@@ -104,6 +105,7 @@ chaos-ipc = { path = "sys/kern/ipc" }
 chaos-traits = { path = "sys/kern/traits" }
 alcatraz-base = { path = "sys/arch/base" }
 alcatraz-linux = { path = "sys/arch/linux" }
+alcatraz-freebsd = { path = "sys/arch/freebsd" }
 chaos-fork = { path = "sys/exec/fork" }
 chaos-sh = { path = "sys/exec/sh" }
 chaos-doas = { path = "sys/exec/doas" }

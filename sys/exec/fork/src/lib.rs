@@ -282,6 +282,7 @@ pub async fn run_main(cli: Cli, arg0_paths: Arg0DispatchPaths) -> anyhow::Result
         model_provider: model_provider.clone(),
         service_tier: None,
         alcatraz_linux_exe: arg0_paths.alcatraz_linux_exe.clone(),
+        alcatraz_freebsd_exe: arg0_paths.alcatraz_freebsd_exe.clone(),
         main_execve_wrapper_exe: arg0_paths.main_execve_wrapper_exe.clone(),
         zsh_path: None,
         base_instructions: None,

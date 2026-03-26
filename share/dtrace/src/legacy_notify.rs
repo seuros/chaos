@@ -120,7 +120,7 @@ mod tests {
             session_id: ThreadId::new(),
             cwd: Path::new("/Users/example/project").to_path_buf(),
             client: Some("codex-tui".to_string()),
-            triggered_at: chrono::Utc::now(),
+            triggered_at: jiff::Timestamp::now(),
             hook_event: HookEvent::AfterAgent {
                 event: HookEventAfterAgent {
                     thread_id: ThreadId::from_string("b5f6c1c2-1111-2222-3333-444455556666")

@@ -1,5 +1,4 @@
-use chrono::DateTime;
-use chrono::Utc;
+use jiff::Timestamp;
 use chaos_ipc::openai_models::ModelInfo;
 use serde::Deserialize;
 use serde::Serialize;
@@ -81,7 +80,7 @@ impl ModelsCacheManager {
         client_version: String,
     ) {
         let cache = ModelsCache {
-            fetched_at: Utc::now(),
+            fetched_at: Timestamp::now(),
             etag,
             client_version: Some(client_version),
             models: models.to_vec(),
@@ -97,7 +96,7 @@ impl ModelsCacheManager {
             Some(cache) => cache,
             None => return Err(io::Error::new(ErrorKind::NotFound, "cache not found")),
         };
-        cache.fetched_at = Utc::now();
+        cache.fetched_at = Timestamp::now();
         self.save_internal(&cache).await
     }
 
@@ -132,7 +131,7 @@ impl ModelsCacheManager {
     /// Manipulate cache file for testing. Allows setting a custom fetched_at timestamp.
     pub(crate) async fn manipulate_cache_for_test<F>(&self, f: F) -> io::Result<()>
     where
-        F: FnOnce(&mut DateTime<Utc>),
+        F: FnOnce(&mut Timestamp),
     {
         let mut cache = match self.load().await? {
             Some(cache) => cache,
@@ -160,7 +159,7 @@ impl ModelsCacheManager {
 /// Serialized snapshot of models and metadata cached on disk.
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub(crate) struct ModelsCache {
-    pub(crate) fetched_at: DateTime<Utc>,
+    pub(crate) fetched_at: Timestamp,
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub(crate) etag: Option<String>,
     #[serde(default, skip_serializing_if = "Option::is_none")]
@@ -174,10 +173,7 @@ impl ModelsCache {
         if ttl.is_zero() {
             return false;
         }
-        let Ok(ttl_duration) = chrono::Duration::from_std(ttl) else {
-            return false;
-        };
-        let age = Utc::now().signed_duration_since(self.fetched_at);
-        age <= ttl_duration
+        let age_secs = Timestamp::now().as_second() - self.fetched_at.as_second();
+        age_secs >= 0 && (age_secs as u64) <= ttl.as_secs()
     }
 }

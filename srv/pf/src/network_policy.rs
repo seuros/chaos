@@ -4,8 +4,7 @@ use crate::runtime::HostBlockReason;
 use crate::state::NetworkProxyState;
 use anyhow::Result;
 use async_trait::async_trait;
-use chrono::SecondsFormat;
-use chrono::Utc;
+use jiff::Timestamp;
 use std::future::Future;
 use std::sync::Arc;
 
@@ -255,7 +254,9 @@ fn emit_policy_audit_event(state: &NetworkProxyState, args: PolicyAuditEventArgs
 }
 
 fn audit_timestamp() -> String {
-    Utc::now().to_rfc3339_opts(SecondsFormat::Millis, true)
+    Timestamp::now()
+        .strftime("%Y-%m-%dT%H:%M:%S%.3fZ")
+        .to_string()
 }
 
 /// Decide whether a network request should be allowed.

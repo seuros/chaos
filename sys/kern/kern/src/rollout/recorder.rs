@@ -6,8 +6,7 @@ use std::io::Error as IoError;
 use std::path::Path;
 use std::path::PathBuf;
 
-use chrono::SecondsFormat;
-use chrono::Utc;
+use jiff::Timestamp;
 use chaos_ipc::ThreadId;
 use chaos_ipc::dynamic_tools::DynamicToolSpec;
 use chaos_ipc::models::BaseInstructions;
@@ -903,7 +902,7 @@ async fn sync_thread_state_after_write(
     default_provider: &str,
     new_thread_memory_mode: Option<&str>,
 ) {
-    let updated_at = Utc::now();
+    let updated_at = Timestamp::now();
     if new_thread_memory_mode.is_some()
         || items
             .iter()
@@ -1004,8 +1003,8 @@ fn threads_page_from_db(db_page: chaos_proc::ThreadsPage) -> ThreadsPage {
             agent_role: item.agent_role,
             model_provider: Some(item.model_provider),
             cli_version: Some(item.cli_version),
-            created_at: Some(item.created_at.to_rfc3339_opts(SecondsFormat::Secs, true)),
-            updated_at: Some(item.updated_at.to_rfc3339_opts(SecondsFormat::Secs, true)),
+            created_at: Some(item.created_at.to_string()),
+            updated_at: Some(item.updated_at.to_string()),
         })
         .collect();
     ThreadsPage {

@@ -299,7 +299,7 @@ mod job {
                 session,
                 thread.id,
                 &claim.ownership_token,
-                thread.updated_at.timestamp(),
+                thread.updated_at.as_second(),
                 &stage_one_output.raw_memory,
                 &stage_one_output.rollout_summary,
                 stage_one_output.rollout_slug.as_deref(),

@@ -1037,19 +1037,24 @@ fn job_runtime_timeout(job: &chaos_proc::AgentJob) -> Duration {
 }
 
 fn started_at_from_item(item: &chaos_proc::AgentJobItem) -> Instant {
-    let now = chrono::Utc::now();
-    let age = now.signed_duration_since(item.updated_at);
-    if let Ok(age) = age.to_std() {
-        Instant::now().checked_sub(age).unwrap_or_else(Instant::now)
+    let now_secs = jiff::Timestamp::now().as_second();
+    let item_secs = item.updated_at.as_second();
+    let age_secs = now_secs.saturating_sub(item_secs);
+    if age_secs >= 0 {
+        Instant::now()
+            .checked_sub(Duration::from_secs(age_secs as u64))
+            .unwrap_or_else(Instant::now)
     } else {
         Instant::now()
     }
 }
 
 fn is_item_stale(item: &chaos_proc::AgentJobItem, runtime_timeout: Duration) -> bool {
-    let now = chrono::Utc::now();
-    if let Ok(age) = now.signed_duration_since(item.updated_at).to_std() {
-        age >= runtime_timeout
+    let now_secs = jiff::Timestamp::now().as_second();
+    let item_secs = item.updated_at.as_second();
+    let age_secs = now_secs.saturating_sub(item_secs);
+    if age_secs >= 0 {
+        Duration::from_secs(age_secs as u64) >= runtime_timeout
     } else {
         false
     }
@@ -1146,13 +1151,13 @@ fn render_job_csv(
         ));
         row_values.push(csv_escape(
             item.reported_at
-                .map(|value| value.to_rfc3339())
+                .map(|value| value.to_string())
                 .unwrap_or_default()
                 .as_str(),
         ));
         row_values.push(csv_escape(
             item.completed_at
-                .map(|value| value.to_rfc3339())
+                .map(|value| value.to_string())
                 .unwrap_or_default()
                 .as_str(),
         ));

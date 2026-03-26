@@ -42,7 +42,7 @@ fn sessions_list_handler<'a>(
                             "title": t.title,
                             "source": t.source,
                             "cwd": t.cwd,
-                            "updated_at": t.updated_at.to_rfc3339(),
+                            "updated_at": t.updated_at.to_string(),
                             "tokens_used": t.tokens_used,
                         })
                     })
@@ -112,8 +112,8 @@ fn session_detail_handler<'a>(
                     "title": t.title,
                     "source": t.source,
                     "cwd": t.cwd,
-                    "created_at": t.created_at.to_rfc3339(),
-                    "updated_at": t.updated_at.to_rfc3339(),
+                    "created_at": t.created_at.to_string(),
+                    "updated_at": t.updated_at.to_string(),
                     "model_provider": t.model_provider,
                     "sandbox_policy": t.sandbox_policy,
                     "approval_mode": t.approval_mode,

@@ -7,7 +7,7 @@ publish.workspace = true
 
 [dependencies]
 anyhow = { workspace = true }
-chrono = { workspace = true }
+jiff = { workspace = true }
 clap = { workspace = true, features = ["derive", "env"] }
 chaos-ipc = { workspace = true }
 dirs = { workspace = true }

@@ -1,6 +1,4 @@
 use anyhow::Result;
-use chrono::DateTime;
-use chrono::Utc;
 use chaos_ipc::ThreadId;
 use sqlx::Row;
 use sqlx::sqlite::SqliteRow;
@@ -13,19 +11,19 @@ use super::ThreadMetadata;
 pub struct Stage1Output {
     pub thread_id: ThreadId,
     pub rollout_path: PathBuf,
-    pub source_updated_at: DateTime<Utc>,
+    pub source_updated_at: jiff::Timestamp,
     pub raw_memory: String,
     pub rollout_summary: String,
     pub rollout_slug: Option<String>,
     pub cwd: PathBuf,
     pub git_branch: Option<String>,
-    pub generated_at: DateTime<Utc>,
+    pub generated_at: jiff::Timestamp,
 }
 
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct Stage1OutputRef {
     pub thread_id: ThreadId,
-    pub source_updated_at: DateTime<Utc>,
+    pub source_updated_at: jiff::Timestamp,
     pub rollout_slug: Option<String>,
 }
 
@@ -84,9 +82,9 @@ impl TryFrom<Stage1OutputRow> for Stage1Output {
     }
 }
 
-fn epoch_seconds_to_datetime(secs: i64) -> Result<DateTime<Utc>> {
-    DateTime::<Utc>::from_timestamp(secs, 0)
-        .ok_or_else(|| anyhow::anyhow!("invalid unix timestamp: {secs}"))
+fn epoch_seconds_to_datetime(secs: i64) -> Result<jiff::Timestamp> {
+    jiff::Timestamp::from_second(secs)
+        .map_err(|err| anyhow::anyhow!("invalid unix timestamp {secs}: {err}"))
 }
 
 pub(crate) fn stage1_output_ref_from_parts(

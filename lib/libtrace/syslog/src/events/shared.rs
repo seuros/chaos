@@ -1,5 +1,4 @@
-use chrono::SecondsFormat;
-use chrono::Utc;
+use jiff::Timestamp;
 
 macro_rules! log_event {
     ($self:expr, $($fields:tt)*) => {{
@@ -56,5 +55,7 @@ pub(crate) use log_event;
 pub(crate) use trace_event;
 
 pub(crate) fn timestamp() -> String {
-    Utc::now().to_rfc3339_opts(SecondsFormat::Millis, true)
+    Timestamp::now()
+        .strftime("%Y-%m-%dT%H:%M:%S%.3fZ")
+        .to_string()
 }

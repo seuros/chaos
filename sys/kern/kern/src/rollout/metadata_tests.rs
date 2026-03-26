@@ -1,8 +1,5 @@
 use super::*;
-use chrono::DateTime;
-use chrono::NaiveDateTime;
-use chrono::Timelike;
-use chrono::Utc;
+use jiff::Timestamp;
 use chaos_ipc::ThreadId;
 use chaos_ipc::protocol::CompactedItem;
 use chaos_ipc::protocol::GitInfo;
@@ -145,11 +142,7 @@ fn builder_from_items_falls_back_to_filename() {
     })];
 
     let builder = builder_from_items(items.as_slice(), path.as_path()).expect("builder");
-    let naive = NaiveDateTime::parse_from_str("2026-01-27T12-34-56", "%Y-%m-%dT%H-%M-%S")
-        .expect("timestamp");
-    let created_at = DateTime::<Utc>::from_naive_utc_and_offset(naive, Utc)
-        .with_nanosecond(0)
-        .expect("nanosecond");
+    let created_at: Timestamp = "2026-01-27T12:34:56Z".parse().expect("timestamp");
     let expected = ThreadMetadataBuilder::new(
         ThreadId::from_string(&uuid.to_string()).expect("thread id"),
         path,

@@ -26,7 +26,7 @@ use std::time::Duration;
 use crate::pkce::PkceCodes;
 use crate::pkce::generate_pkce;
 use base64::Engine;
-use chrono::Utc;
+
 use codex_client::CodexHttpClient;
 use chaos_kern::auth::AuthCredentialsStoreMode;
 use chaos_kern::auth::AuthDotJson;
@@ -766,7 +766,7 @@ pub(crate) async fn persist_tokens_async(
             auth_mode: Some(AuthMode::Chatgpt),
             openai_api_key: api_key,
             tokens: Some(tokens),
-            last_refresh: Some(Utc::now()),
+            last_refresh: Some(jiff::Timestamp::now()),
         };
         save_auth(&codex_home, &auth, auth_credentials_store_mode)
     })

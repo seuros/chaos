@@ -15,7 +15,6 @@ serde_json = { workspace = true }
 tracing = { workspace = true }
 anyhow = { workspace = true }
 uuid = { workspace = true }
-chrono = { workspace = true }
 time = { workspace = true, features = ["formatting", "parsing", "macros"] }
 
 [dev-dependencies]

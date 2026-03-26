@@ -2,7 +2,6 @@ use std::path::PathBuf;
 use std::time::Duration;
 
 use anyhow::Context;
-use chrono::DateTime;
 use clap::Parser;
 use chaos_proc::LogQuery;
 use chaos_proc::LogRow;
@@ -174,9 +173,10 @@ fn parse_timestamp(value: &str) -> anyhow::Result<i64> {
         return Ok(secs);
     }
 
-    let dt = DateTime::parse_from_rfc3339(value)
+    let ts: jiff::Timestamp = value
+        .parse()
         .with_context(|| format!("expected RFC3339 or unix seconds, got {value}"))?;
-    Ok(dt.timestamp())
+    Ok(ts.as_second())
 }
 
 async fn print_backfill(
@@ -300,9 +300,6 @@ mod matcher {
 }
 
 mod formatter {
-    use chrono::DateTime;
-    use chrono::SecondsFormat;
-    use chrono::Utc;
     use owo_colors::OwoColorize;
 
     pub(super) fn apply_patch(message: &str) -> String {
@@ -322,11 +319,11 @@ mod formatter {
     }
 
     pub(super) fn ts(ts: i64, ts_nanos: i64, compact: bool) -> String {
-        let nanos = u32::try_from(ts_nanos).unwrap_or(0);
-        match DateTime::<Utc>::from_timestamp(ts, nanos) {
-            Some(dt) if compact => dt.format("%H:%M:%S").to_string(),
-            Some(dt) => dt.to_rfc3339_opts(SecondsFormat::Millis, true),
-            None => format!("{ts}.{ts_nanos:09}Z"),
+        let nanos = i32::try_from(ts_nanos).unwrap_or(0);
+        match jiff::Timestamp::new(ts, nanos) {
+            Ok(dt) if compact => dt.strftime("%H:%M:%S").to_string(),
+            Ok(dt) => dt.strftime("%Y-%m-%dT%H:%M:%S%.3fZ").to_string(),
+            Err(_) => format!("{ts}.{ts_nanos:09}Z"),
         }
     }
 

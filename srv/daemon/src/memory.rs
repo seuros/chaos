@@ -74,7 +74,7 @@ impl Daemon {
     /// Decay unused memories. Call periodically.
     /// Memories not accessed in `stale_days` lose confidence.
     pub async fn decay(&self, stale_days: i64, decay_rate: f64) -> Result<u64, DaemonError> {
-        let cutoff = chrono::Utc::now().timestamp() - (stale_days * 86400);
+        let cutoff = jiff::Timestamp::now().as_second() - (stale_days * 86400);
         let result = sqlx::query(
             "UPDATE memories SET confidence = MAX(confidence - ?2, 0.0)
              WHERE accessed_at < ?1 AND confidence > 0.0",

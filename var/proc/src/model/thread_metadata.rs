@@ -1,7 +1,4 @@
 use anyhow::Result;
-use chrono::DateTime;
-use chrono::Timelike;
-use chrono::Utc;
 use chaos_ipc::ThreadId;
 use chaos_ipc::protocol::AskForApproval;
 use chaos_ipc::protocol::SandboxPolicy;
@@ -24,7 +21,7 @@ pub enum SortKey {
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct Anchor {
     /// The timestamp component of the anchor.
-    pub ts: DateTime<Utc>,
+    pub ts: jiff::Timestamp,
     /// The UUID component of the anchor.
     pub id: Uuid,
 }
@@ -59,9 +56,9 @@ pub struct ThreadMetadata {
     /// The absolute rollout path on disk.
     pub rollout_path: PathBuf,
     /// The creation timestamp.
-    pub created_at: DateTime<Utc>,
+    pub created_at: jiff::Timestamp,
     /// The last update timestamp.
-    pub updated_at: DateTime<Utc>,
+    pub updated_at: jiff::Timestamp,
     /// The session source (stringified enum).
     pub source: String,
     /// Optional random unique nickname assigned to an AgentControl-spawned sub-agent.
@@ -85,7 +82,7 @@ pub struct ThreadMetadata {
     /// First user message observed for this thread, if any.
     pub first_user_message: Option<String>,
     /// The archive timestamp, if the thread is archived.
-    pub archived_at: Option<DateTime<Utc>>,
+    pub archived_at: Option<jiff::Timestamp>,
     /// The git commit SHA, if known.
     pub git_sha: Option<String>,
     /// The git branch name, if known.
@@ -102,9 +99,9 @@ pub struct ThreadMetadataBuilder {
     /// The absolute rollout path on disk.
     pub rollout_path: PathBuf,
     /// The creation timestamp.
-    pub created_at: DateTime<Utc>,
+    pub created_at: jiff::Timestamp,
     /// The last update timestamp, if known.
-    pub updated_at: Option<DateTime<Utc>>,
+    pub updated_at: Option<jiff::Timestamp>,
     /// The session source.
     pub source: SessionSource,
     /// Optional random unique nickname assigned to the session.
@@ -122,7 +119,7 @@ pub struct ThreadMetadataBuilder {
     /// The approval mode.
     pub approval_mode: AskForApproval,
     /// The archive timestamp, if the thread is archived.
-    pub archived_at: Option<DateTime<Utc>>,
+    pub archived_at: Option<jiff::Timestamp>,
     /// The git commit SHA, if known.
     pub git_sha: Option<String>,
     /// The git branch name, if known.
@@ -136,7 +133,7 @@ impl ThreadMetadataBuilder {
     pub fn new(
         id: ThreadId,
         rollout_path: PathBuf,
-        created_at: DateTime<Utc>,
+        created_at: jiff::Timestamp,
         source: SessionSource,
     ) -> Self {
         Self {
@@ -274,8 +271,8 @@ impl ThreadMetadata {
     }
 }
 
-fn canonicalize_datetime(dt: DateTime<Utc>) -> DateTime<Utc> {
-    dt.with_nanosecond(0).unwrap_or(dt)
+fn canonicalize_datetime(dt: jiff::Timestamp) -> jiff::Timestamp {
+    jiff::Timestamp::from_second(dt.as_second()).unwrap_or(dt)
 }
 
 #[derive(Debug)]
@@ -385,13 +382,13 @@ pub(crate) fn anchor_from_item(item: &ThreadMetadata, sort_key: SortKey) -> Opti
     Some(Anchor { ts, id })
 }
 
-pub(crate) fn datetime_to_epoch_seconds(dt: DateTime<Utc>) -> i64 {
-    dt.timestamp()
+pub(crate) fn datetime_to_epoch_seconds(dt: jiff::Timestamp) -> i64 {
+    dt.as_second()
 }
 
-pub(crate) fn epoch_seconds_to_datetime(secs: i64) -> Result<DateTime<Utc>> {
-    DateTime::<Utc>::from_timestamp(secs, 0)
-        .ok_or_else(|| anyhow::anyhow!("invalid unix timestamp: {secs}"))
+pub(crate) fn epoch_seconds_to_datetime(secs: i64) -> Result<jiff::Timestamp> {
+    jiff::Timestamp::from_second(secs)
+        .map_err(|err| anyhow::anyhow!("invalid unix timestamp {secs}: {err}"))
 }
 
 /// Statistics about a backfill operation.

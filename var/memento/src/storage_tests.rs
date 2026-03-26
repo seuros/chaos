@@ -1,7 +1,5 @@
 use super::rollout_summary_file_stem;
 use super::rollout_summary_file_stem_from_parts;
-use chrono::TimeZone;
-use chrono::Utc;
 use chaos_ipc::ThreadId;
 use chaos_proc::Stage1Output;
 use pretty_assertions::assert_eq;
@@ -11,14 +9,14 @@ const FIXED_PREFIX: &str = "2025-02-11T15-35-19-jqmb";
 fn stage1_output_with_slug(thread_id: ThreadId, rollout_slug: Option<&str>) -> Stage1Output {
     Stage1Output {
         thread_id,
-        source_updated_at: Utc.timestamp_opt(123, 0).single().expect("timestamp"),
+        source_updated_at: jiff::Timestamp::from_second(123).expect("timestamp"),
         raw_memory: "raw memory".to_string(),
         rollout_summary: "summary".to_string(),
         rollout_slug: rollout_slug.map(ToString::to_string),
         rollout_path: PathBuf::from("/tmp/rollout.jsonl"),
         cwd: PathBuf::from("/tmp/workspace"),
         git_branch: None,
-        generated_at: Utc.timestamp_opt(124, 0).single().expect("timestamp"),
+        generated_at: jiff::Timestamp::from_second(124).expect("timestamp"),
     }
 }
 

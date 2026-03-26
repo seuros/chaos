@@ -3,10 +3,7 @@ use crate::path_utils::normalize_for_path_comparison;
 use crate::rollout::list::Cursor;
 use crate::rollout::list::ThreadSortKey;
 use crate::rollout::metadata;
-use chrono::DateTime;
-use chrono::NaiveDateTime;
-use chrono::Timelike;
-use chrono::Utc;
+use jiff::Timestamp;
 use chaos_ipc::ThreadId;
 use chaos_ipc::dynamic_tools::DynamicToolSpec;
 use chaos_ipc::protocol::RolloutItem;
@@ -132,15 +129,33 @@ fn cursor_to_anchor(cursor: Option<&Cursor>) -> Option<chaos_proc::Anchor> {
         return None;
     }
     let id = Uuid::parse_str(id_str).ok()?;
-    let ts = if let Ok(naive) = NaiveDateTime::parse_from_str(ts_str, "%Y-%m-%dT%H-%M-%S") {
-        DateTime::<Utc>::from_naive_utc_and_offset(naive, Utc)
-    } else if let Ok(dt) = DateTime::parse_from_rfc3339(ts_str) {
-        dt.with_timezone(&Utc)
+    let ts = if let Some(ts) = parse_filename_timestamp(ts_str) {
+        ts
+    } else if let Ok(ts) = ts_str.parse::<Timestamp>() {
+        Timestamp::from_second(ts.as_second()).unwrap_or(ts)
     } else {
         return None;
-    }
-    .with_nanosecond(0)?;
+    };
     Some(chaos_proc::Anchor { ts, id })
+}
+
+/// Parse a `YYYY-MM-DDThh-mm-ss` filename timestamp into a `jiff::Timestamp`.
+fn parse_filename_timestamp(ts_str: &str) -> Option<Timestamp> {
+    if ts_str.len() < 19 {
+        return None;
+    }
+    // "2026-01-27T12-34-56" → "2026-01-27T12:34:56Z"
+    let normalized = format!(
+        "{}-{}-{}T{}:{}:{}Z",
+        &ts_str[0..4],
+        &ts_str[5..7],
+        &ts_str[8..10],
+        &ts_str[11..13],
+        &ts_str[14..16],
+        &ts_str[17..19],
+    );
+    let ts: Timestamp = normalized.parse().ok()?;
+    Some(Timestamp::from_second(ts.as_second()).unwrap_or(ts))
 }
 
 pub(crate) fn normalize_cwd_for_state_db(cwd: &Path) -> PathBuf {
@@ -498,7 +513,7 @@ pub async fn apply_rollout_items(
     items: &[RolloutItem],
     stage: &str,
     new_thread_memory_mode: Option<&str>,
-    updated_at_override: Option<DateTime<Utc>>,
+    updated_at_override: Option<Timestamp>,
 ) {
     let Some(ctx) = context else {
         return;
@@ -533,7 +548,7 @@ pub async fn apply_rollout_items(
 pub async fn touch_thread_updated_at(
     context: Option<&chaos_proc::StateRuntime>,
     thread_id: Option<ThreadId>,
-    updated_at: DateTime<Utc>,
+    updated_at: Timestamp,
     stage: &str,
 ) -> bool {
     let Some(ctx) = context else {

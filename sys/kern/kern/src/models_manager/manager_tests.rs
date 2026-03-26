@@ -3,7 +3,8 @@ use crate::CodexAuth;
 use crate::auth::AuthCredentialsStoreMode;
 use crate::config::ConfigBuilder;
 use crate::model_provider_info::WireApi;
-use chrono::Utc;
+use jiff::Timestamp;
+use jiff::ToSpan;
 use chaos_ipc::openai_models::ModelsResponse;
 use core_test_support::responses::mount_models_once;
 use pretty_assertions::assert_eq;
@@ -325,7 +326,7 @@ async fn refresh_available_models_refetches_when_cache_stale() {
     manager
         .cache_manager
         .manipulate_cache_for_test(|fetched_at| {
-            *fetched_at = Utc::now() - chrono::Duration::hours(1);
+            *fetched_at = Timestamp::now().checked_sub(1.hours()).unwrap();
         })
         .await
         .expect("cache manipulation succeeds");

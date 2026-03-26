@@ -38,8 +38,8 @@ use core_test_support::stdio_server_bin;
 use core_test_support::test_codex::test_codex;
 use core_test_support::wait_for_event;
 use core_test_support::wait_for_event_with_timeout;
-use reqwest::Client;
-use reqwest::StatusCode;
+use codex_client::CodexHttpClient;
+use http::StatusCode;
 use serde_json::Value;
 use serde_json::json;
 use serial_test::serial;
@@ -1108,7 +1108,7 @@ async fn wait_for_streamable_http_server(
 ) -> anyhow::Result<()> {
     let deadline = Instant::now() + timeout;
     let metadata_url = format!("http://{address}/.well-known/oauth-authorization-server/mcp");
-    let client = Client::builder().no_proxy().build()?;
+    let client = CodexHttpClient::default_client();
     loop {
         if let Some(status) = server_child.try_wait()? {
             return Err(anyhow::anyhow!(

@@ -1,7 +1,4 @@
 //! OpenTelemetry HttpClient implementation backed by rama.
-//!
-//! Replaces the reqwest-based OTLP HTTP exporter client with rama's
-//! EasyHttpWebClient, eliminating the reqwest dependency from telemetry.
 
 use rama::bytes::Bytes;
 use rama::Service;

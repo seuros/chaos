@@ -186,8 +186,8 @@ pub fn create_client() -> CodexHttpClient {
 /// Builds the default rama HTTP client used for ordinary Chaos HTTP traffic.
 ///
 /// This is the infallible entry point for call sites that previously used
-/// `build_reqwest_client()`. Returns a CodexHttpClient backed by rama.
-pub fn build_reqwest_client() -> CodexHttpClient {
+/// `build_http_client()`. Returns a CodexHttpClient backed by rama.
+pub fn build_http_client() -> CodexHttpClient {
     create_client()
 }
 

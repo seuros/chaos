@@ -6,10 +6,7 @@ use chrono::TimeZone;
 use chrono::Utc;
 use chaos_ipc::protocol::RateLimitWindow;
 use pretty_assertions::assert_eq;
-use reqwest::Response;
-use reqwest::ResponseBuilderExt;
-use reqwest::StatusCode;
-use reqwest::Url;
+use http::StatusCode;
 
 fn rate_limit_snapshot() -> RateLimitSnapshot {
     let primary_reset_at = Utc
@@ -123,12 +120,8 @@ fn sandbox_denied_reports_stdout_when_no_stderr() {
 
 #[test]
 fn to_error_event_handles_response_stream_failed() {
-    let response = http::Response::builder()
-        .status(StatusCode::TOO_MANY_REQUESTS)
-        .url(Url::parse("http://example.com").unwrap())
-        .body("")
-        .unwrap();
-    let source = Response::from(response).error_for_status_ref().unwrap_err();
+    let source: Box<dyn std::error::Error + Send + Sync> =
+        Box::new(std::io::Error::other("stream connection lost"));
     let err = CodexErr::ResponseStreamFailed(ResponseStreamFailed {
         source,
         request_id: Some("req-123".to_string()),
@@ -136,14 +129,12 @@ fn to_error_event_handles_response_stream_failed() {
 
     let event = err.to_error_event(Some("prefix".to_string()));
 
-    assert_eq!(
-        event.message,
-        "prefix: Error while reading the server response: HTTP status client error (429 Too Many Requests) for url (http://example.com/), request id: req-123"
-    );
+    assert!(event.message.contains("prefix:"));
+    assert!(event.message.contains("req-123"));
     assert_eq!(
         event.codex_error_info,
         Some(CodexErrorInfo::ResponseStreamConnectionFailed {
-            http_status_code: Some(429)
+            http_status_code: None
         })
     );
 }

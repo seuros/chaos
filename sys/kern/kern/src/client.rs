@@ -75,7 +75,7 @@ use http::HeaderValue;
 use http::StatusCode as HttpStatusCode;
 use rama::error::BoxError;
 use rama::http::ws::Message;
-use reqwest::StatusCode;
+use http::StatusCode;
 use std::time::Duration;
 use std::time::Instant;
 use tokio::sync::mpsc;

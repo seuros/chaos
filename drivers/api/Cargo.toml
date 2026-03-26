@@ -33,7 +33,6 @@ sha1 = { workspace = true }
 tokio = { workspace = true, features = ["io-util"] }
 tokio-test = { workspace = true }
 wiremock = { workspace = true }
-reqwest = { workspace = true }
 
 [lints]
 workspace = true

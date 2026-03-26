@@ -123,6 +123,24 @@ dependencies = [
 ]
 
 [[package]]
+name = "alcatraz-freebsd"
+version = "47.0.0"
+dependencies = [
+ "alcatraz-base",
+ "chaos-ipc",
+ "chaos-kern",
+ "chaos-realpath",
+ "clap",
+ "libc",
+ "pretty_assertions",
+ "serde",
+ "serde_json",
+ "tempfile",
+ "tokio",
+ "url",
+]
+
+[[package]]
 name = "alcatraz-linux"
 version = "47.0.0"
 dependencies = [
@@ -1117,6 +1135,7 @@ dependencies = [
 name = "chaos-argv"
 version = "47.0.0"
 dependencies = [
+ "alcatraz-freebsd",
  "alcatraz-linux",
  "anyhow",
  "chaos-diff",

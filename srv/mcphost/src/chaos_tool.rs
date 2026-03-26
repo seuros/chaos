@@ -158,6 +158,7 @@ impl ChaosToolParams {
             approval_policy: approval_policy.map(Into::into),
             sandbox_mode: sandbox.map(Into::into),
             alcatraz_linux_exe: arg0_paths.alcatraz_linux_exe.clone(),
+            alcatraz_freebsd_exe: arg0_paths.alcatraz_freebsd_exe.clone(),
             main_execve_wrapper_exe: arg0_paths.main_execve_wrapper_exe.clone(),
             base_instructions,
             developer_instructions,

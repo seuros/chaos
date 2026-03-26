@@ -149,6 +149,9 @@ pub enum SandboxType {
 
     /// Only available on Linux.
     LinuxSeccomp,
+
+    /// Only available on FreeBSD.
+    FreeBSDCapsicum,
 }
 
 impl SandboxType {
@@ -157,6 +160,7 @@ impl SandboxType {
             SandboxType::None => "none",
             SandboxType::MacosSeatbelt => "seatbelt",
             SandboxType::LinuxSeccomp => "seccomp",
+            SandboxType::FreeBSDCapsicum => "capsicum",
         }
     }
 }
@@ -176,6 +180,7 @@ pub async fn process_exec_tool_call(
     network_sandbox_policy: NetworkSandboxPolicy,
     sandbox_cwd: &Path,
     alcatraz_linux_exe: &Option<PathBuf>,
+    alcatraz_freebsd_exe: &Option<PathBuf>,
     stdout_stream: Option<StdoutStream>,
 ) -> Result<ExecToolCallOutput> {
     let exec_req = build_exec_request(
@@ -185,6 +190,7 @@ pub async fn process_exec_tool_call(
         network_sandbox_policy,
         sandbox_cwd,
         alcatraz_linux_exe,
+        alcatraz_freebsd_exe,
     )?;
 
     // Route through the sandboxing module for a single, unified execution path.
@@ -200,6 +206,7 @@ pub fn build_exec_request(
     network_sandbox_policy: NetworkSandboxPolicy,
     sandbox_cwd: &Path,
     alcatraz_linux_exe: &Option<PathBuf>,
+    alcatraz_freebsd_exe: &Option<PathBuf>,
 ) -> Result<ExecRequest> {
     let enforce_managed_network = params.network.is_some();
     let sandbox_type = select_process_exec_tool_sandbox_type(
@@ -254,6 +261,7 @@ pub fn build_exec_request(
             #[cfg(target_os = "macos")]
             macos_seatbelt_profile_extensions: None,
             alcatraz_linux_exe: alcatraz_linux_exe.as_ref(),
+            alcatraz_freebsd_exe: alcatraz_freebsd_exe.as_ref(),
         })
         .map_err(CodexErr::from)?;
     Ok(exec_req)
@@ -377,6 +385,11 @@ pub(crate) mod errors {
                 SandboxTransformError::MissingLinuxSandboxExecutable => {
                     CodexErr::LandlockSandboxExecutableNotProvided
                 }
+                SandboxTransformError::MissingFreeBSDSandboxExecutable => {
+                    CodexErr::UnsupportedOperation(
+                        "alcatraz-freebsd executable not found".to_string(),
+                    )
+                }
                 #[cfg(not(target_os = "macos"))]
                 SandboxTransformError::SeatbeltUnavailable => CodexErr::UnsupportedOperation(
                     "seatbelt sandbox is only available on macOS".to_string(),
@@ -403,7 +416,7 @@ pub(crate) fn is_likely_sandbox_denied(
     // 2: misuse of shell builtins
     // 126: permission denied
     // 127: command not found
-    const SANDBOX_DENIED_KEYWORDS: [&str; 7] = [
+    const SANDBOX_DENIED_KEYWORDS: [&str; 10] = [
         "operation not permitted",
         "permission denied",
         "read-only file system",
@@ -411,6 +424,9 @@ pub(crate) fn is_likely_sandbox_denied(
         "sandbox",
         "landlock",
         "failed to write file",
+        "capsicum",
+        "ecapmode",
+        "enotcapable",
     ];
 
     let has_sandbox_keyword = [
@@ -440,6 +456,15 @@ pub(crate) fn is_likely_sandbox_denied(
         const SIGSYS_CODE: i32 = libc::SIGSYS;
         if sandbox_type == SandboxType::LinuxSeccomp
             && exec_output.exit_code == EXIT_CODE_SIGNAL_BASE + SIGSYS_CODE
+        {
+            return true;
+        }
+
+        // FreeBSD Capsicum: SIGTRAP with TRAP_CAP when kern.trap_enotcap is set,
+        // or ECAPMODE (94) / ENOTCAPABLE (93) returned as exit codes.
+        const SIGTRAP_CODE: i32 = libc::SIGTRAP;
+        if sandbox_type == SandboxType::FreeBSDCapsicum
+            && exec_output.exit_code == EXIT_CODE_SIGNAL_BASE + SIGTRAP_CODE
         {
             return true;
         }

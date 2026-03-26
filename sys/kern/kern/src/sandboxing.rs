@@ -92,6 +92,7 @@ pub(crate) struct SandboxTransformRequest<'a> {
     #[cfg(target_os = "macos")]
     pub macos_seatbelt_profile_extensions: Option<&'a MacOsSeatbeltProfileExtensions>,
     pub alcatraz_linux_exe: Option<&'a PathBuf>,
+    pub alcatraz_freebsd_exe: Option<&'a PathBuf>,
 }
 
 pub enum SandboxPreference {
@@ -104,6 +105,8 @@ pub enum SandboxPreference {
 pub(crate) enum SandboxTransformError {
     #[error("missing alcatraz-linux executable path")]
     MissingLinuxSandboxExecutable,
+    #[error("missing alcatraz-freebsd executable path")]
+    MissingFreeBSDSandboxExecutable,
     #[cfg(not(target_os = "macos"))]
     #[error("seatbelt sandbox is only available on macOS")]
     SeatbeltUnavailable,
@@ -578,6 +581,7 @@ impl SandboxManager {
             #[cfg(target_os = "macos")]
             macos_seatbelt_profile_extensions,
             alcatraz_linux_exe,
+            alcatraz_freebsd_exe,
         } = request;
         #[cfg(not(target_os = "macos"))]
         let macos_seatbelt_profile_extensions = None;
@@ -667,6 +671,29 @@ impl SandboxManager {
                     full_command,
                     HashMap::new(),
                     Some("alcatraz-linux".to_string()),
+                )
+            }
+            SandboxType::FreeBSDCapsicum => {
+                let exe = alcatraz_freebsd_exe
+                    .ok_or(SandboxTransformError::MissingFreeBSDSandboxExecutable)?;
+                // FreeBSD uses the same CLI interface as Linux — policy JSON
+                // args followed by `--` and the command.
+                let allow_proxy_network = allow_network_for_proxy(enforce_managed_network);
+                let mut args = create_linux_sandbox_command_args_for_policies(
+                    command.clone(),
+                    &effective_policy,
+                    &effective_file_system_policy,
+                    effective_network_policy,
+                    sandbox_policy_cwd,
+                    allow_proxy_network,
+                );
+                let mut full_command = Vec::with_capacity(1 + args.len());
+                full_command.push(exe.to_string_lossy().to_string());
+                full_command.append(&mut args);
+                (
+                    full_command,
+                    HashMap::new(),
+                    Some("alcatraz-freebsd".to_string()),
                 )
             }
         };

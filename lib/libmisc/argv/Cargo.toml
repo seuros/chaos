@@ -16,6 +16,7 @@ workspace = true
 anyhow = { workspace = true }
 chaos-diff = { workspace = true }
 alcatraz-linux = { workspace = true }
+alcatraz-freebsd = { workspace = true }
 chaos-doas = { workspace = true }
 chaos-pwd = { workspace = true }
 dotenvy = { workspace = true }

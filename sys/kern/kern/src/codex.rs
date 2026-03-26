@@ -762,6 +762,7 @@ pub(crate) struct TurnContext {
     pub(crate) ghost_snapshot: GhostSnapshotConfig,
     pub(crate) final_output_json_schema: Option<Value>,
     pub(crate) alcatraz_linux_exe: Option<PathBuf>,
+    pub(crate) alcatraz_freebsd_exe: Option<PathBuf>,
     pub(crate) tool_call_gate: Arc<ReadinessFlag>,
     pub(crate) truncation_policy: TruncationPolicy,
     pub(crate) dynamic_tools: Vec<DynamicToolSpec>,
@@ -865,6 +866,7 @@ impl TurnContext {
             ghost_snapshot: self.ghost_snapshot.clone(),
             final_output_json_schema: self.final_output_json_schema.clone(),
             alcatraz_linux_exe: self.alcatraz_linux_exe.clone(),
+            alcatraz_freebsd_exe: self.alcatraz_freebsd_exe.clone(),
             tool_call_gate: Arc::new(ReadinessFlag::new()),
             truncation_policy,
             dynamic_tools: self.dynamic_tools.clone(),
@@ -1306,6 +1308,7 @@ impl Session {
             ghost_snapshot: per_turn_config.ghost_snapshot.clone(),
             final_output_json_schema: None,
             alcatraz_linux_exe: per_turn_config.alcatraz_linux_exe.clone(),
+            alcatraz_freebsd_exe: per_turn_config.alcatraz_freebsd_exe.clone(),
             tool_call_gate: Arc::new(ReadinessFlag::new()),
             truncation_policy: model_info.truncation_policy.into(),
             dynamic_tools: session_configuration.dynamic_tools.clone(),
@@ -1801,6 +1804,7 @@ impl Session {
         let sandbox_state = SandboxState {
             sandbox_policy: session_configuration.sandbox_policy.get().clone(),
             alcatraz_linux_exe: config.alcatraz_linux_exe.clone(),
+            alcatraz_freebsd_exe: config.alcatraz_freebsd_exe.clone(),
             sandbox_cwd: session_configuration.cwd.clone(),
         };
         let mut required_mcp_servers: Vec<String> = mcp_servers
@@ -2258,6 +2262,7 @@ impl Session {
             let sandbox_state = SandboxState {
                 sandbox_policy: per_turn_config.permissions.sandbox_policy.get().clone(),
                 alcatraz_linux_exe: per_turn_config.alcatraz_linux_exe.clone(),
+                alcatraz_freebsd_exe: per_turn_config.alcatraz_freebsd_exe.clone(),
                 sandbox_cwd: per_turn_config.cwd.clone(),
             };
             if let Err(e) = self
@@ -3893,6 +3898,7 @@ impl Session {
         let sandbox_state = SandboxState {
             sandbox_policy: turn_context.sandbox_policy.get().clone(),
             alcatraz_linux_exe: turn_context.alcatraz_linux_exe.clone(),
+            alcatraz_freebsd_exe: turn_context.alcatraz_freebsd_exe.clone(),
             sandbox_cwd: turn_context.cwd.clone(),
         };
         {
@@ -5171,6 +5177,7 @@ async fn spawn_review_thread(
         cwd: parent_turn_context.cwd.clone(),
         final_output_json_schema: None,
         alcatraz_linux_exe: parent_turn_context.alcatraz_linux_exe.clone(),
+        alcatraz_freebsd_exe: parent_turn_context.alcatraz_freebsd_exe.clone(),
         tool_call_gate: Arc::new(ReadinessFlag::new()),
         dynamic_tools: parent_turn_context.dynamic_tools.clone(),
         truncation_policy: model_info.truncation_policy.into(),

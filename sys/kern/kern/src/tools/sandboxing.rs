@@ -331,6 +331,7 @@ pub(crate) struct SandboxAttempt<'a> {
     pub(crate) manager: &'a SandboxManager,
     pub(crate) sandbox_cwd: &'a Path,
     pub alcatraz_linux_exe: Option<&'a std::path::PathBuf>,
+    pub alcatraz_freebsd_exe: Option<&'a std::path::PathBuf>,
 }
 
 impl<'a> SandboxAttempt<'a> {
@@ -352,6 +353,7 @@ impl<'a> SandboxAttempt<'a> {
                 #[cfg(target_os = "macos")]
                 macos_seatbelt_profile_extensions: None,
                 alcatraz_linux_exe: self.alcatraz_linux_exe,
+                alcatraz_freebsd_exe: self.alcatraz_freebsd_exe,
             })
     }
 }

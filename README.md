@@ -49,7 +49,7 @@ Old hardware does not mean old software. Chaos expects bleeding-edge operating s
 and abuses every security primitive they offer:
 
 - **Linux**: landlock, seccomp
-- **FreeBSD**: jails, capsicum
+- **FreeBSD**: capsicum
 - **OpenBSD**: pledge, unveil
 - **macOS**: sandbox profiles
 

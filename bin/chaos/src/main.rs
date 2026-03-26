@@ -466,6 +466,7 @@ async fn cli_main(arg0_paths: Arg0DispatchPaths) -> anyhow::Result<()> {
                 codex_cli::debug_sandbox::run_command_under_landlock(
                     sandbox_cmd.into_landlock(),
                     arg0_paths.alcatraz_linux_exe.clone(),
+                    arg0_paths.alcatraz_freebsd_exe.clone(),
                 )
                 .await?;
             }
@@ -475,11 +476,22 @@ async fn cli_main(arg0_paths: Arg0DispatchPaths) -> anyhow::Result<()> {
                 codex_cli::debug_sandbox::run_command_under_seatbelt(
                     sandbox_cmd.into_seatbelt(),
                     arg0_paths.alcatraz_linux_exe.clone(),
+                    arg0_paths.alcatraz_freebsd_exe.clone(),
                 )
                 .await?;
             }
 
-            #[cfg(not(any(target_os = "linux", target_os = "macos")))]
+            #[cfg(target_os = "freebsd")]
+            {
+                codex_cli::debug_sandbox::run_command_under_capsicum(
+                    sandbox_cmd.into_capsicum(),
+                    arg0_paths.alcatraz_linux_exe.clone(),
+                    arg0_paths.alcatraz_freebsd_exe.clone(),
+                )
+                .await?;
+            }
+
+            #[cfg(not(any(target_os = "linux", target_os = "macos", target_os = "freebsd")))]
             {
                 let _ = sandbox_cmd;
                 anyhow::bail!("sandbox is not yet supported on this platform");

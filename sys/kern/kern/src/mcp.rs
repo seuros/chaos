@@ -274,6 +274,7 @@ pub async fn collect_mcp_snapshot(config: &Config) -> McpListToolsResponseEvent 
     let sandbox_state = SandboxState {
         sandbox_policy: SandboxPolicy::new_read_only_policy(),
         alcatraz_linux_exe: config.alcatraz_linux_exe.clone(),
+        alcatraz_freebsd_exe: config.alcatraz_freebsd_exe.clone(),
         sandbox_cwd: env::current_dir().unwrap_or_else(|_| PathBuf::from("/")),
     };
 

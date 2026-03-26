@@ -78,4 +78,13 @@ impl SandboxCommand {
             command: self.command,
         }
     }
+
+    #[cfg(target_os = "freebsd")]
+    pub fn into_capsicum(self) -> LandlockCommand {
+        LandlockCommand {
+            full_auto: self.full_auto,
+            config_overrides: self.config_overrides,
+            command: self.command,
+        }
+    }
 }

@@ -255,6 +255,7 @@ mod reload {
             cwd: Some(config.cwd.clone()),
             model_provider: preserve_current_provider.then(|| config.model_provider_id.clone()),
             alcatraz_linux_exe: config.alcatraz_linux_exe.clone(),
+            alcatraz_freebsd_exe: config.alcatraz_freebsd_exe.clone(),
             main_execve_wrapper_exe: config.main_execve_wrapper_exe.clone(),
             ..Default::default()
         }

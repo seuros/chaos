@@ -192,6 +192,7 @@ impl ToolOrchestrator {
             manager: &self.sandbox,
             sandbox_cwd: &turn_ctx.cwd,
             alcatraz_linux_exe: turn_ctx.alcatraz_linux_exe.as_ref(),
+            alcatraz_freebsd_exe: turn_ctx.alcatraz_freebsd_exe.as_ref(),
         };
 
         let (first_result, first_deferred_network_approval) = Self::run_attempt(
@@ -312,6 +313,7 @@ impl ToolOrchestrator {
                     manager: &self.sandbox,
                     sandbox_cwd: &turn_ctx.cwd,
                     alcatraz_linux_exe: None,
+                    alcatraz_freebsd_exe: None,
                 };
 
                 // Second attempt.

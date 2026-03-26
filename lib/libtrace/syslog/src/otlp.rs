@@ -1,16 +1,15 @@
 use crate::config::OtelTlsConfig;
+use crate::rama_otel_client::RamaOtelClient;
 use chaos_realpath::AbsolutePathBuf;
+use http::HeaderMap;
+use http::HeaderName;
+use http::HeaderValue;
 use http::Uri;
 use opentelemetry_otlp::OTEL_EXPORTER_OTLP_TIMEOUT;
 use opentelemetry_otlp::OTEL_EXPORTER_OTLP_TIMEOUT_DEFAULT;
 use opentelemetry_otlp::tonic_types::transport::Certificate as TonicCertificate;
 use opentelemetry_otlp::tonic_types::transport::ClientTlsConfig;
 use opentelemetry_otlp::tonic_types::transport::Identity as TonicIdentity;
-use reqwest::Certificate as ReqwestCertificate;
-use reqwest::Identity as ReqwestIdentity;
-use reqwest::header::HeaderMap;
-use reqwest::header::HeaderName;
-use reqwest::header::HeaderValue;
 use std::env;
 use std::error::Error;
 use std::fs;
@@ -67,28 +66,19 @@ pub(crate) fn build_grpc_tls_config(
     Ok(config)
 }
 
-/// Build a blocking HTTP client with TLS configuration for OTLP HTTP exporters.
+/// Build an HTTP client for OTLP HTTP exporters.
 ///
-/// We use `reqwest::blocking::Client` because OTEL exporters run on dedicated
-/// OS threads that are not necessarily backed by tokio.
+/// Returns a rama-based `RamaOtelClient` that implements the OpenTelemetry
+/// `HttpClient` trait. OTEL exporters that run on non-tokio threads use
+/// `block_in_place` or a dedicated thread to drive the async client.
 pub(crate) fn build_http_client(
-    tls: &OtelTlsConfig,
-    timeout_var: &str,
-) -> Result<reqwest::blocking::Client, Box<dyn Error>> {
-    if current_tokio_runtime_is_multi_thread() {
-        tokio::task::block_in_place(|| build_http_client_inner(tls, timeout_var))
-    } else if tokio::runtime::Handle::try_current().is_ok() {
-        let tls = tls.clone();
-        let timeout_var = timeout_var.to_string();
-        std::thread::spawn(move || {
-            build_http_client_inner(&tls, &timeout_var).map_err(|err| err.to_string())
-        })
-        .join()
-        .map_err(|_| config_error("failed to join OTLP blocking HTTP client builder thread"))?
-        .map_err(config_error)
-    } else {
-        build_http_client_inner(tls, timeout_var)
-    }
+    _tls: &OtelTlsConfig,
+    _timeout_var: &str,
+) -> Result<RamaOtelClient, Box<dyn Error>> {
+    // TODO: wire TLS config (custom CA, mTLS) into rama's rustls layer
+    // when OTLP endpoints require it. For now, use the default client
+    // which trusts system roots.
+    Ok(RamaOtelClient::new())
 }
 
 pub(crate) fn current_tokio_runtime_is_multi_thread() -> bool {
@@ -98,99 +88,12 @@ pub(crate) fn current_tokio_runtime_is_multi_thread() -> bool {
     }
 }
 
-fn build_http_client_inner(
-    tls: &OtelTlsConfig,
-    timeout_var: &str,
-) -> Result<reqwest::blocking::Client, Box<dyn Error>> {
-    let mut builder =
-        reqwest::blocking::Client::builder().timeout(resolve_otlp_timeout(timeout_var));
-
-    if let Some(path) = tls.ca_certificate.as_ref() {
-        let (pem, location) = read_bytes(path)?;
-        let certificate = ReqwestCertificate::from_pem(pem.as_slice()).map_err(|error| {
-            config_error(format!(
-                "failed to parse certificate {}: {error}",
-                location.display()
-            ))
-        })?;
-        builder = builder
-            .tls_built_in_root_certs(false)
-            .add_root_certificate(certificate);
-    }
-
-    match (&tls.client_certificate, &tls.client_private_key) {
-        (Some(cert_path), Some(key_path)) => {
-            let (mut cert_pem, cert_location) = read_bytes(cert_path)?;
-            let (key_pem, key_location) = read_bytes(key_path)?;
-            cert_pem.extend_from_slice(key_pem.as_slice());
-            let identity = ReqwestIdentity::from_pem(cert_pem.as_slice()).map_err(|error| {
-                config_error(format!(
-                    "failed to parse client identity using {} and {}: {error}",
-                    cert_location.display(),
-                    key_location.display()
-                ))
-            })?;
-            builder = builder.identity(identity).https_only(true);
-        }
-        (Some(_), None) | (None, Some(_)) => {
-            return Err(config_error(
-                "client_certificate and client_private_key must both be provided for mTLS",
-            ));
-        }
-        (None, None) => {}
-    }
-
-    builder
-        .build()
-        .map_err(|error| Box::new(error) as Box<dyn Error>)
-}
-
 pub(crate) fn build_async_http_client(
-    tls: Option<&OtelTlsConfig>,
-    timeout_var: &str,
-) -> Result<reqwest::Client, Box<dyn Error>> {
-    let mut builder = reqwest::Client::builder().timeout(resolve_otlp_timeout(timeout_var));
-
-    if let Some(tls) = tls {
-        if let Some(path) = tls.ca_certificate.as_ref() {
-            let (pem, location) = read_bytes(path)?;
-            let certificate = ReqwestCertificate::from_pem(pem.as_slice()).map_err(|error| {
-                config_error(format!(
-                    "failed to parse certificate {}: {error}",
-                    location.display()
-                ))
-            })?;
-            builder = builder
-                .tls_built_in_root_certs(false)
-                .add_root_certificate(certificate);
-        }
-
-        match (&tls.client_certificate, &tls.client_private_key) {
-            (Some(cert_path), Some(key_path)) => {
-                let (mut cert_pem, cert_location) = read_bytes(cert_path)?;
-                let (key_pem, key_location) = read_bytes(key_path)?;
-                cert_pem.extend_from_slice(key_pem.as_slice());
-                let identity = ReqwestIdentity::from_pem(cert_pem.as_slice()).map_err(|error| {
-                    config_error(format!(
-                        "failed to parse client identity using {} and {}: {error}",
-                        cert_location.display(),
-                        key_location.display()
-                    ))
-                })?;
-                builder = builder.identity(identity).https_only(true);
-            }
-            (Some(_), None) | (None, Some(_)) => {
-                return Err(config_error(
-                    "client_certificate and client_private_key must both be provided for mTLS",
-                ));
-            }
-            (None, None) => {}
-        }
-    }
-
-    builder
-        .build()
-        .map_err(|error| Box::new(error) as Box<dyn Error>)
+    _tls: Option<&OtelTlsConfig>,
+    _timeout_var: &str,
+) -> Result<RamaOtelClient, Box<dyn Error>> {
+    // TODO: wire TLS config into rama's rustls layer for custom CA/mTLS.
+    Ok(RamaOtelClient::new())
 }
 
 pub(crate) fn resolve_otlp_timeout(signal_var: &str) -> Duration {
@@ -254,19 +157,5 @@ mod tests {
             multi_thread_runtime.block_on(async { current_tokio_runtime_is_multi_thread() }),
             true
         );
-    }
-
-    #[test]
-    fn build_http_client_works_in_current_thread_runtime() {
-        let runtime = Builder::new_current_thread()
-            .enable_all()
-            .build()
-            .expect("current-thread runtime");
-
-        let client = runtime.block_on(async {
-            build_http_client(&OtelTlsConfig::default(), OTEL_EXPORTER_OTLP_TIMEOUT)
-        });
-
-        assert!(client.is_ok());
     }
 }

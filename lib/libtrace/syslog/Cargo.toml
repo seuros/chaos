@@ -30,6 +30,7 @@ eventsource-stream = { workspace = true }
 gethostname = { workspace = true }
 opentelemetry = { workspace = true, features = ["logs", "metrics", "trace"] }
 opentelemetry-appender-tracing = { workspace = true }
+opentelemetry-http = { workspace = true }
 opentelemetry-otlp = { workspace = true, features = [
     "grpc-tonic",
     "http-proto",
@@ -37,8 +38,6 @@ opentelemetry-otlp = { workspace = true, features = [
     "logs",
     "metrics",
     "trace",
-    "reqwest-blocking-client",
-    "reqwest-rustls",
     "tls",
     "tls-roots",
 ]}
@@ -54,7 +53,6 @@ opentelemetry_sdk = { workspace = true, features = [
 ] }
 http = { workspace = true }
 os_info = { workspace = true }
-reqwest = { workspace = true, features = ["blocking", "rustls-tls"] }
 serde = { workspace = true, features = ["derive"] }
 serde_json = { workspace = true }
 strum_macros = { workspace = true }

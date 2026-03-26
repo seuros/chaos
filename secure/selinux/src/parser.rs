@@ -1,20 +1,8 @@
 use chaos_realpath::AbsolutePathBuf;
+use mlua::{Lua, Table, Value};
 use multimap::MultiMap;
 use shlex;
-use starlark::any::ProvidesStaticType;
-use starlark::codemap::FileSpan;
-use starlark::environment::GlobalsBuilder;
-use starlark::environment::Module;
-use starlark::eval::Evaluator;
-use starlark::starlark_module;
-use starlark::syntax::AstModule;
-use starlark::syntax::Dialect;
-use starlark::values::Value;
-use starlark::values::list::ListRef;
-use starlark::values::list::UnpackList;
-use starlark::values::none::NoneType;
 use std::cell::RefCell;
-use std::cell::RefMut;
 use std::collections::HashMap;
 use std::path::Path;
 use std::sync::Arc;
@@ -23,8 +11,6 @@ use crate::decision::Decision;
 use crate::error::Error;
 use crate::error::ErrorLocation;
 use crate::error::Result;
-use crate::error::TextPosition;
-use crate::error::TextRange;
 use crate::executable_name::executable_lookup_key;
 use crate::executable_name::executable_path_lookup_key;
 use crate::rule::NetworkRule;
@@ -35,6 +21,11 @@ use crate::rule::PrefixRule;
 use crate::rule::RuleRef;
 use crate::rule::validate_match_examples;
 use crate::rule::validate_not_match_examples;
+
+/// Globals stripped from the policy Lua VM. Policy files are config, not scripts.
+const DANGEROUS_GLOBALS: &[&str] = &[
+    "os", "io", "debug", "package", "loadfile", "dofile", "collectgarbage", "require", "load",
+];
 
 pub struct PolicyParser {
     builder: RefCell<PolicyBuilder>,
@@ -57,21 +48,17 @@ impl PolicyParser {
     /// identifier alongside line numbers.
     pub fn parse(&mut self, policy_identifier: &str, policy_file_contents: &str) -> Result<()> {
         let pending_validation_count = self.builder.borrow().pending_example_validations.len();
-        let mut dialect = Dialect::Extended.clone();
-        dialect.enable_f_strings = true;
-        let ast = AstModule::parse(
+
+        let lua = Lua::new();
+        strip_dangerous_globals(&lua).map_err(|e| Error::Lua(e.to_string()))?;
+
+        register_policy_builtins_and_eval(
+            &lua,
+            &self.builder,
             policy_identifier,
-            policy_file_contents.to_string(),
-            &dialect,
-        )
-        .map_err(Error::Starlark)?;
-        let globals = GlobalsBuilder::standard().with(policy_builtins).build();
-        let module = Module::new();
-        {
-            let mut eval = Evaluator::new(&module);
-            eval.extra = Some(&self.builder);
-            eval.eval_module(ast, &globals).map_err(Error::Starlark)?;
-        }
+            policy_file_contents,
+        )?;
+
         self.builder
             .borrow()
             .validate_pending_examples_from(pending_validation_count)?;
@@ -83,7 +70,7 @@ impl PolicyParser {
     }
 }
 
-#[derive(Debug, ProvidesStaticType)]
+#[derive(Debug)]
 struct PolicyBuilder {
     rules_by_program: MultiMap<String, RuleRef>,
     network_rules: Vec<NetworkRule>,
@@ -168,56 +155,315 @@ struct PendingExampleValidation {
     location: Option<ErrorLocation>,
 }
 
-fn parse_pattern<'v>(pattern: UnpackList<Value<'v>>) -> Result<Vec<PatternToken>> {
-    let tokens: Vec<PatternToken> = pattern
-        .items
-        .into_iter()
-        .map(parse_pattern_token)
-        .collect::<Result<_>>()?;
+/// Strip dangerous globals from the policy Lua VM.
+fn strip_dangerous_globals(lua: &Lua) -> mlua::Result<()> {
+    let globals = lua.globals();
+    for name in DANGEROUS_GLOBALS {
+        globals.raw_set(*name, mlua::Value::Nil)?;
+    }
+    Ok(())
+}
+
+fn register_policy_builtins_and_eval(
+    lua: &Lua,
+    builder: &RefCell<PolicyBuilder>,
+    policy_identifier: &str,
+    policy_file_contents: &str,
+) -> Result<()> {
+    // Use lua.scope() to create non-'static, non-Send closures that can borrow
+    // the builder directly. The scope ensures all callbacks are dropped before
+    // the borrow ends.
+    lua.scope(|scope| {
+        let globals = lua.globals();
+
+        globals
+            .set(
+                "prefix_rule",
+                scope
+                    .create_function(|_lua, args: Table| {
+                        handle_prefix_rule(builder, &args)
+                            .map_err(|e| mlua::Error::runtime(e.to_string()))
+                    })
+                    .map_err(|e| mlua::Error::runtime(e.to_string()))?,
+            )
+            .map_err(|e| mlua::Error::runtime(e.to_string()))?;
+
+        globals
+            .set(
+                "network_rule",
+                scope
+                    .create_function(|_lua, args: Table| {
+                        handle_network_rule(builder, &args)
+                            .map_err(|e| mlua::Error::runtime(e.to_string()))
+                    })
+                    .map_err(|e| mlua::Error::runtime(e.to_string()))?,
+            )
+            .map_err(|e| mlua::Error::runtime(e.to_string()))?;
+
+        globals
+            .set(
+                "host_executable",
+                scope
+                    .create_function(|_lua, args: Table| {
+                        handle_host_executable(builder, &args)
+                            .map_err(|e| mlua::Error::runtime(e.to_string()))
+                    })
+                    .map_err(|e| mlua::Error::runtime(e.to_string()))?,
+            )
+            .map_err(|e| mlua::Error::runtime(e.to_string()))?;
+
+        lua.load(policy_file_contents)
+            .set_name(policy_identifier)
+            .exec()
+            .map_err(|e| mlua::Error::runtime(e.to_string()))
+    })
+    .map_err(|e| Error::Lua(e.to_string()))
+}
+
+fn handle_prefix_rule(builder: &RefCell<PolicyBuilder>, args: &Table) -> Result<()> {
+    let pattern_table: Table = args
+        .get("pattern")
+        .map_err(|e| Error::InvalidPattern(format!("missing 'pattern' field: {e}")))?;
+    let pattern_tokens = parse_pattern_from_table(&pattern_table)?;
+
+    let decision = match args.get::<Option<String>>("decision") {
+        Ok(Some(raw)) => Decision::parse(&raw)?,
+        Ok(None) => Decision::Allow,
+        Err(e) => return Err(Error::InvalidRule(format!("invalid 'decision' field: {e}"))),
+    };
+
+    let justification = match args.get::<Option<String>>("justification") {
+        Ok(Some(raw)) if raw.trim().is_empty() => {
+            return Err(Error::InvalidRule(
+                "justification cannot be empty".to_string(),
+            ));
+        }
+        Ok(Some(raw)) => Some(raw),
+        Ok(None) => None,
+        Err(e) => {
+            return Err(Error::InvalidRule(format!(
+                "invalid 'justification' field: {e}"
+            )))
+        }
+    };
+
+    let matches: Vec<Vec<String>> =
+        match args.get::<Option<Table>>("match") {
+            Ok(Some(tbl)) => parse_examples_from_table(&tbl)?,
+            Ok(None) => Vec::new(),
+            Err(e) => return Err(Error::InvalidExample(format!(
+                "invalid 'match' field: {e}"
+            ))),
+        };
+
+    let not_matches: Vec<Vec<String>> =
+        match args.get::<Option<Table>>("not_match") {
+            Ok(Some(tbl)) => parse_examples_from_table(&tbl)?,
+            Ok(None) => Vec::new(),
+            Err(e) => return Err(Error::InvalidExample(format!(
+                "invalid 'not_match' field: {e}"
+            ))),
+        };
+
+    let (first_token, remaining_tokens) = pattern_tokens
+        .split_first()
+        .ok_or_else(|| Error::InvalidPattern("pattern cannot be empty".to_string()))?;
+
+    let rest: Arc<[PatternToken]> = remaining_tokens.to_vec().into();
+
+    let rules: Vec<RuleRef> = first_token
+        .alternatives()
+        .iter()
+        .map(|head| {
+            Arc::new(PrefixRule {
+                pattern: PrefixPattern {
+                    first: Arc::from(head.as_str()),
+                    rest: rest.clone(),
+                },
+                decision,
+                justification: justification.clone(),
+            }) as RuleRef
+        })
+        .collect();
+
+    let mut b = builder.borrow_mut();
+    b.add_pending_example_validation(rules.clone(), matches, not_matches, None);
+    rules.into_iter().for_each(|rule| b.add_rule(rule));
+    Ok(())
+}
+
+fn handle_network_rule(builder: &RefCell<PolicyBuilder>, args: &Table) -> Result<()> {
+    let host: String = args
+        .get("host")
+        .map_err(|e| Error::InvalidRule(format!("missing 'host' field: {e}")))?;
+    let protocol_raw: String = args
+        .get("protocol")
+        .map_err(|e| Error::InvalidRule(format!("missing 'protocol' field: {e}")))?;
+    let decision_raw: String = args
+        .get("decision")
+        .map_err(|e| Error::InvalidRule(format!("missing 'decision' field: {e}")))?;
+
+    let protocol = NetworkRuleProtocol::parse(&protocol_raw)?;
+    let decision = parse_network_rule_decision(&decision_raw)?;
+
+    let justification = match args.get::<Option<String>>("justification") {
+        Ok(Some(raw)) if raw.trim().is_empty() => {
+            return Err(Error::InvalidRule(
+                "justification cannot be empty".to_string(),
+            ));
+        }
+        Ok(Some(raw)) => Some(raw),
+        Ok(None) => None,
+        Err(e) => {
+            return Err(Error::InvalidRule(format!(
+                "invalid 'justification' field: {e}"
+            )))
+        }
+    };
+
+    builder.borrow_mut().add_network_rule(NetworkRule {
+        host: crate::rule::normalize_network_rule_host(&host)?,
+        protocol,
+        decision,
+        justification,
+    });
+    Ok(())
+}
+
+fn handle_host_executable(builder: &RefCell<PolicyBuilder>, args: &Table) -> Result<()> {
+    let name: String = args
+        .get("name")
+        .map_err(|e| Error::InvalidRule(format!("missing 'name' field: {e}")))?;
+    validate_host_executable_name(&name)?;
+
+    let paths_table: Table = args
+        .get("paths")
+        .map_err(|e| Error::InvalidRule(format!("missing 'paths' field: {e}")))?;
+
+    let mut parsed_paths = Vec::new();
+    for pair in paths_table.sequence_values::<String>() {
+        let raw = pair.map_err(|e| {
+            Error::InvalidRule(format!("host_executable paths must be strings: {e}"))
+        })?;
+        let path = parse_literal_absolute_path(&raw)?;
+        let Some(path_name) = executable_path_lookup_key(path.as_path()) else {
+            return Err(Error::InvalidRule(format!(
+                "host_executable path `{raw}` must have basename `{name}`"
+            )));
+        };
+        if path_name != executable_lookup_key(&name) {
+            return Err(Error::InvalidRule(format!(
+                "host_executable path `{raw}` must have basename `{name}`"
+            )));
+        }
+        if !parsed_paths.iter().any(|existing| existing == &path) {
+            parsed_paths.push(path);
+        }
+    }
+
+    builder
+        .borrow_mut()
+        .add_host_executable(executable_lookup_key(&name), parsed_paths);
+    Ok(())
+}
+
+fn parse_pattern_from_table(table: &Table) -> Result<Vec<PatternToken>> {
+    let mut tokens = Vec::new();
+    for pair in table.sequence_values::<Value>() {
+        let value = pair.map_err(|e| Error::InvalidPattern(format!("bad pattern element: {e}")))?;
+        tokens.push(parse_pattern_token_from_value(&value)?);
+    }
     if tokens.is_empty() {
-        Err(Error::InvalidPattern("pattern cannot be empty".to_string()))
+        return Err(Error::InvalidPattern("pattern cannot be empty".to_string()));
+    }
+    Ok(tokens)
+}
+
+fn parse_pattern_token_from_value(value: &Value) -> Result<PatternToken> {
+    match value {
+        Value::String(s) => Ok(PatternToken::Single(
+            s.to_str()
+                .map_err(|e| Error::InvalidPattern(format!("invalid utf-8 in pattern: {e}")))?
+                .to_string(),
+        )),
+        Value::Table(tbl) => {
+            let mut alts = Vec::new();
+            for pair in tbl.sequence_values::<String>() {
+                let s = pair.map_err(|e| {
+                    Error::InvalidPattern(format!("pattern alternative must be a string: {e}"))
+                })?;
+                alts.push(s);
+            }
+            match alts.as_slice() {
+                [] => Err(Error::InvalidPattern(
+                    "pattern alternatives cannot be empty".to_string(),
+                )),
+                [single] => Ok(PatternToken::Single(single.clone())),
+                _ => Ok(PatternToken::Alts(alts)),
+            }
+        }
+        other => Err(Error::InvalidPattern(format!(
+            "pattern element must be a string or table of strings (got {})",
+            other.type_name()
+        ))),
+    }
+}
+
+fn parse_examples_from_table(table: &Table) -> Result<Vec<Vec<String>>> {
+    let mut examples = Vec::new();
+    for pair in table.sequence_values::<Value>() {
+        let value =
+            pair.map_err(|e| Error::InvalidExample(format!("bad example element: {e}")))?;
+        examples.push(parse_example_from_value(&value)?);
+    }
+    Ok(examples)
+}
+
+fn parse_example_from_value(value: &Value) -> Result<Vec<String>> {
+    match value {
+        Value::String(s) => {
+            let raw = s
+                .to_str()
+                .map_err(|e| Error::InvalidExample(format!("invalid utf-8: {e}")))?;
+            parse_string_example(&raw)
+        }
+        Value::Table(tbl) => parse_list_example_from_table(tbl),
+        other => Err(Error::InvalidExample(format!(
+            "example must be a string or table of strings (got {})",
+            other.type_name()
+        ))),
+    }
+}
+
+fn parse_string_example(raw: &str) -> Result<Vec<String>> {
+    let tokens = shlex::split(raw).ok_or_else(|| {
+        Error::InvalidExample("example string has invalid shell syntax".to_string())
+    })?;
+
+    if tokens.is_empty() {
+        Err(Error::InvalidExample(
+            "example cannot be an empty string".to_string(),
+        ))
     } else {
         Ok(tokens)
     }
 }
 
-fn parse_pattern_token<'v>(value: Value<'v>) -> Result<PatternToken> {
-    if let Some(s) = value.unpack_str() {
-        Ok(PatternToken::Single(s.to_string()))
-    } else if let Some(list) = ListRef::from_value(value) {
-        let tokens: Vec<String> = list
-            .content()
-            .iter()
-            .map(|value| {
-                value
-                    .unpack_str()
-                    .ok_or_else(|| {
-                        Error::InvalidPattern(format!(
-                            "pattern alternative must be a string (got {})",
-                            value.get_type()
-                        ))
-                    })
-                    .map(str::to_string)
-            })
-            .collect::<Result<_>>()?;
-
-        match tokens.as_slice() {
-            [] => Err(Error::InvalidPattern(
-                "pattern alternatives cannot be empty".to_string(),
-            )),
-            [single] => Ok(PatternToken::Single(single.clone())),
-            _ => Ok(PatternToken::Alts(tokens)),
-        }
-    } else {
-        Err(Error::InvalidPattern(format!(
-            "pattern element must be a string or list of strings (got {})",
-            value.get_type()
-        )))
+fn parse_list_example_from_table(table: &Table) -> Result<Vec<String>> {
+    let mut tokens = Vec::new();
+    for pair in table.sequence_values::<String>() {
+        let s = pair.map_err(|e| {
+            Error::InvalidExample(format!("example tokens must be strings: {e}"))
+        })?;
+        tokens.push(s);
     }
-}
-
-fn parse_examples<'v>(examples: UnpackList<Value<'v>>) -> Result<Vec<Vec<String>>> {
-    examples.items.into_iter().map(parse_example).collect()
+    if tokens.is_empty() {
+        Err(Error::InvalidExample(
+            "example cannot be an empty table".to_string(),
+        ))
+    } else {
+        Ok(tokens)
+    }
 }
 
 fn parse_literal_absolute_path(raw: &str) -> Result<AbsolutePathBuf> {
@@ -257,217 +503,9 @@ fn parse_network_rule_decision(raw: &str) -> Result<Decision> {
     }
 }
 
-fn error_location_from_file_span(span: FileSpan) -> ErrorLocation {
-    let resolved = span.resolve_span();
-    ErrorLocation {
-        path: span.filename().to_string(),
-        range: TextRange {
-            start: TextPosition {
-                line: resolved.begin.line + 1,
-                column: resolved.begin.column + 1,
-            },
-            end: TextPosition {
-                line: resolved.end.line + 1,
-                column: resolved.end.column + 1,
-            },
-        },
-    }
-}
-
 fn attach_validation_location(error: Error, location: Option<ErrorLocation>) -> Error {
     match location {
         Some(location) => error.with_location(location),
         None => error,
-    }
-}
-
-fn parse_example<'v>(value: Value<'v>) -> Result<Vec<String>> {
-    if let Some(raw) = value.unpack_str() {
-        parse_string_example(raw)
-    } else if let Some(list) = ListRef::from_value(value) {
-        parse_list_example(list)
-    } else {
-        Err(Error::InvalidExample(format!(
-            "example must be a string or list of strings (got {})",
-            value.get_type()
-        )))
-    }
-}
-
-fn parse_string_example(raw: &str) -> Result<Vec<String>> {
-    let tokens = shlex::split(raw).ok_or_else(|| {
-        Error::InvalidExample("example string has invalid shell syntax".to_string())
-    })?;
-
-    if tokens.is_empty() {
-        Err(Error::InvalidExample(
-            "example cannot be an empty string".to_string(),
-        ))
-    } else {
-        Ok(tokens)
-    }
-}
-
-fn parse_list_example(list: &ListRef) -> Result<Vec<String>> {
-    let tokens: Vec<String> = list
-        .content()
-        .iter()
-        .map(|value| {
-            value
-                .unpack_str()
-                .ok_or_else(|| {
-                    Error::InvalidExample(format!(
-                        "example tokens must be strings (got {})",
-                        value.get_type()
-                    ))
-                })
-                .map(str::to_string)
-        })
-        .collect::<Result<_>>()?;
-
-    if tokens.is_empty() {
-        Err(Error::InvalidExample(
-            "example cannot be an empty list".to_string(),
-        ))
-    } else {
-        Ok(tokens)
-    }
-}
-
-fn policy_builder<'v, 'a>(eval: &Evaluator<'v, 'a, '_>) -> RefMut<'a, PolicyBuilder> {
-    #[expect(clippy::expect_used)]
-    eval.extra
-        .as_ref()
-        .expect("policy_builder requires Evaluator.extra to be populated")
-        .downcast_ref::<RefCell<PolicyBuilder>>()
-        .expect("Evaluator.extra must contain a PolicyBuilder")
-        .borrow_mut()
-}
-
-#[starlark_module]
-fn policy_builtins(builder: &mut GlobalsBuilder) {
-    fn prefix_rule<'v>(
-        pattern: UnpackList<Value<'v>>,
-        decision: Option<&'v str>,
-        r#match: Option<UnpackList<Value<'v>>>,
-        not_match: Option<UnpackList<Value<'v>>>,
-        justification: Option<&'v str>,
-        eval: &mut Evaluator<'v, '_, '_>,
-    ) -> anyhow::Result<NoneType> {
-        let decision = match decision {
-            Some(raw) => Decision::parse(raw)?,
-            None => Decision::Allow,
-        };
-
-        let justification = match justification {
-            Some(raw) if raw.trim().is_empty() => {
-                return Err(Error::InvalidRule("justification cannot be empty".to_string()).into());
-            }
-            Some(raw) => Some(raw.to_string()),
-            None => None,
-        };
-
-        let pattern_tokens = parse_pattern(pattern)?;
-
-        let matches: Vec<Vec<String>> =
-            r#match.map(parse_examples).transpose()?.unwrap_or_default();
-        let not_matches: Vec<Vec<String>> = not_match
-            .map(parse_examples)
-            .transpose()?
-            .unwrap_or_default();
-        let location = eval
-            .call_stack_top_location()
-            .map(error_location_from_file_span);
-
-        let mut builder = policy_builder(eval);
-
-        let (first_token, remaining_tokens) = pattern_tokens
-            .split_first()
-            .ok_or_else(|| Error::InvalidPattern("pattern cannot be empty".to_string()))?;
-
-        let rest: Arc<[PatternToken]> = remaining_tokens.to_vec().into();
-
-        let rules: Vec<RuleRef> = first_token
-            .alternatives()
-            .iter()
-            .map(|head| {
-                Arc::new(PrefixRule {
-                    pattern: PrefixPattern {
-                        first: Arc::from(head.as_str()),
-                        rest: rest.clone(),
-                    },
-                    decision,
-                    justification: justification.clone(),
-                }) as RuleRef
-            })
-            .collect();
-
-        builder.add_pending_example_validation(rules.clone(), matches, not_matches, location);
-        rules.into_iter().for_each(|rule| builder.add_rule(rule));
-        Ok(NoneType)
-    }
-
-    fn network_rule<'v>(
-        host: &'v str,
-        protocol: &'v str,
-        decision: &'v str,
-        justification: Option<&'v str>,
-        eval: &mut Evaluator<'v, '_, '_>,
-    ) -> anyhow::Result<NoneType> {
-        let protocol = NetworkRuleProtocol::parse(protocol)?;
-        let decision = parse_network_rule_decision(decision)?;
-        let justification = match justification {
-            Some(raw) if raw.trim().is_empty() => {
-                return Err(Error::InvalidRule("justification cannot be empty".to_string()).into());
-            }
-            Some(raw) => Some(raw.to_string()),
-            None => None,
-        };
-
-        let mut builder = policy_builder(eval);
-        builder.add_network_rule(NetworkRule {
-            host: crate::rule::normalize_network_rule_host(host)?,
-            protocol,
-            decision,
-            justification,
-        });
-        Ok(NoneType)
-    }
-
-    fn host_executable<'v>(
-        name: &'v str,
-        paths: UnpackList<Value<'v>>,
-        eval: &mut Evaluator<'v, '_, '_>,
-    ) -> anyhow::Result<NoneType> {
-        validate_host_executable_name(name)?;
-
-        let mut parsed_paths = Vec::new();
-        for value in paths.items {
-            let raw = value.unpack_str().ok_or_else(|| {
-                Error::InvalidRule(format!(
-                    "host_executable paths must be strings (got {})",
-                    value.get_type()
-                ))
-            })?;
-            let path = parse_literal_absolute_path(raw)?;
-            let Some(path_name) = executable_path_lookup_key(path.as_path()) else {
-                return Err(Error::InvalidRule(format!(
-                    "host_executable path `{raw}` must have basename `{name}`"
-                ))
-                .into());
-            };
-            if path_name != executable_lookup_key(name) {
-                return Err(Error::InvalidRule(format!(
-                    "host_executable path `{raw}` must have basename `{name}`"
-                ))
-                .into());
-            }
-            if !parsed_paths.iter().any(|existing| existing == &path) {
-                parsed_paths.push(path);
-            }
-        }
-
-        policy_builder(eval).add_host_executable(executable_lookup_key(name), parsed_paths);
-        Ok(NoneType)
     }
 }

@@ -1,4 +1,3 @@
-use starlark::Error as StarlarkError;
 use thiserror::Error;
 
 pub type Result<T> = std::result::Result<T, Error>;
@@ -46,8 +45,8 @@ pub enum Error {
         example: String,
         location: Option<ErrorLocation>,
     },
-    #[error("starlark error: {0}")]
-    Starlark(StarlarkError),
+    #[error("lua error: {0}")]
+    Lua(String),
 }
 
 impl Error {
@@ -79,23 +78,32 @@ impl Error {
         match self {
             Error::ExampleDidNotMatch { location, .. }
             | Error::ExampleDidMatch { location, .. } => location.clone(),
-            Error::Starlark(err) => err.span().map(|span| {
-                let resolved = span.resolve_span();
-                ErrorLocation {
-                    path: span.filename().to_string(),
-                    range: TextRange {
-                        start: TextPosition {
-                            line: resolved.begin.line + 1,
-                            column: resolved.begin.column + 1,
-                        },
-                        end: TextPosition {
-                            line: resolved.end.line + 1,
-                            column: resolved.end.column + 1,
-                        },
-                    },
-                }
-            }),
+            Error::Lua(msg) => parse_lua_error_location(msg),
             _ => None,
         }
     }
+}
+
+/// Try to extract file:line from a Lua error message.
+/// Lua errors typically look like: `[string "test.rules"]:3: some error`
+fn parse_lua_error_location(message: &str) -> Option<ErrorLocation> {
+    let first_line = message.lines().next()?.trim();
+
+    // Pattern: [string "FILENAME"]:LINE: ...
+    let rest = first_line.strip_prefix("[string \"")?;
+    let (path, rest) = rest.split_once("\"]:")?;
+    let (line_str, _) = rest.split_once(':')?;
+    let line = line_str.trim().parse::<usize>().ok()?;
+
+    if line == 0 {
+        return None;
+    }
+
+    Some(ErrorLocation {
+        path: path.to_string(),
+        range: TextRange {
+            start: TextPosition { line, column: 1 },
+            end: TextPosition { line, column: 1 },
+        },
+    })
 }

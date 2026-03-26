@@ -297,7 +297,6 @@ sqlx = { version = "0.8.6", default-features = false, features = [
     "time",
     "uuid",
 ] }
-starlark = "0.13.0"
 strum = "0.27.2"
 strum_macros = "0.28.0"
 supports-color = "3.0.2"

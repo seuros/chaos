@@ -202,7 +202,7 @@ mod tests {
     #[test]
     fn appends_rule_and_creates_directories() {
         let tmp = tempdir().expect("create temp dir");
-        let policy_path = tmp.path().join("rules").join("default.rules");
+        let policy_path = tmp.path().join("rules").join("default.decrees");
 
         blocking_append_allow_prefix_rule(
             &policy_path,
@@ -221,7 +221,7 @@ mod tests {
     #[test]
     fn appends_rule_without_duplicate_newline() {
         let tmp = tempdir().expect("create temp dir");
-        let policy_path = tmp.path().join("rules").join("default.rules");
+        let policy_path = tmp.path().join("rules").join("default.decrees");
         std::fs::create_dir_all(policy_path.parent().unwrap()).expect("create policy dir");
         std::fs::write(
             &policy_path,
@@ -248,7 +248,7 @@ prefix_rule {pattern={"echo", "Hello, world!"}, decision="allow"}
     #[test]
     fn inserts_newline_when_missing_before_append() {
         let tmp = tempdir().expect("create temp dir");
-        let policy_path = tmp.path().join("rules").join("default.rules");
+        let policy_path = tmp.path().join("rules").join("default.decrees");
         std::fs::create_dir_all(policy_path.parent().unwrap()).expect("create policy dir");
         std::fs::write(
             &policy_path,
@@ -274,7 +274,7 @@ prefix_rule {pattern={"echo", "Hello, world!"}, decision="allow"}
     #[test]
     fn appends_network_rule() {
         let tmp = tempdir().expect("create temp dir");
-        let policy_path = tmp.path().join("rules").join("default.rules");
+        let policy_path = tmp.path().join("rules").join("default.decrees");
 
         blocking_append_network_rule(
             &policy_path,
@@ -296,7 +296,7 @@ prefix_rule {pattern={"echo", "Hello, world!"}, decision="allow"}
     #[test]
     fn appends_prefix_and_network_rules() {
         let tmp = tempdir().expect("create temp dir");
-        let policy_path = tmp.path().join("rules").join("default.rules");
+        let policy_path = tmp.path().join("rules").join("default.decrees");
 
         blocking_append_allow_prefix_rule(&policy_path, &[String::from("curl")])
             .expect("append prefix rule");
@@ -321,7 +321,7 @@ network_rule {host="api.github.com", protocol="https", decision="allow", justifi
     #[test]
     fn rejects_wildcard_network_rule_host() {
         let tmp = tempdir().expect("create temp dir");
-        let policy_path = tmp.path().join("rules").join("default.rules");
+        let policy_path = tmp.path().join("rules").join("default.decrees");
         let err = blocking_append_network_rule(
             &policy_path,
             "*.example.com",

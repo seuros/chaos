@@ -1670,7 +1670,7 @@ prefix_rules = []
         let policy_dir = temp_dir.path().join("rules");
         std::fs::create_dir_all(&policy_dir)?;
         std::fs::write(
-            policy_dir.join("deny.rules"),
+            policy_dir.join("deny.decrees"),
             r#"prefix_rule {pattern={"rm"}, decision="forbidden"}"#,
         )?;
 

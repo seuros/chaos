@@ -77,7 +77,7 @@ fn rule_snapshots(rules: &[RuleRef]) -> Vec<RuleSnapshot> {
 #[test]
 fn append_allow_prefix_rule_dedupes_existing_rule() -> Result<()> {
     let tmp = tempdir().context("create temp dir")?;
-    let policy_path = tmp.path().join("rules").join("default.rules");
+    let policy_path = tmp.path().join("rules").join("default.decrees");
     let prefix = tokens(&["python3"]);
 
     blocking_append_allow_prefix_rule(&policy_path, &prefix)?;

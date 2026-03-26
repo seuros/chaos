@@ -106,7 +106,7 @@ async fn format_exec_policy_error_with_source_renders_range() {
     let config_stack = config_stack_for_dot_codex_folder(temp_dir.path());
     let policy_dir = temp_dir.path().join(RULES_DIR_NAME);
     fs::create_dir_all(&policy_dir).expect("create policy dir");
-    let broken_path = policy_dir.join("broken.rules");
+    let broken_path = policy_dir.join("broken.decrees");
     fs::write(
         &broken_path,
         r#"prefix_rule {
@@ -122,25 +122,25 @@ async fn format_exec_policy_error_with_source_renders_range() {
         .expect_err("expected parse error");
     let rendered = format_exec_policy_error_with_source(&err);
 
-    assert!(rendered.contains("broken.rules"));
+    assert!(rendered.contains("broken.decrees"));
     assert!(rendered.contains("on or around line"));
 }
 
 #[test]
 fn parse_lua_line_from_message_extracts_path_and_line() {
     let parsed = parse_lua_line_from_message(
-        r#"[string "/tmp/default.rules"]:143: unexpected symbol near 'end'"#,
+        r#"[string "/tmp/default.decrees"]:143: unexpected symbol near 'end'"#,
     )
     .expect("parse should succeed");
 
-    assert_eq!(parsed.0, PathBuf::from("/tmp/default.rules"));
+    assert_eq!(parsed.0, PathBuf::from("/tmp/default.decrees"));
     assert_eq!(parsed.1, 143);
 }
 
 #[test]
 fn parse_lua_line_from_message_rejects_zero_line() {
     let parsed = parse_lua_line_from_message(
-        r#"[string "/tmp/default.rules"]:0: unexpected symbol near 'end'"#,
+        r#"[string "/tmp/default.decrees"]:0: unexpected symbol near 'end'"#,
     );
     assert_eq!(parsed, None);
 }
@@ -152,7 +152,7 @@ async fn loads_policies_from_policy_subdirectory() {
     let policy_dir = temp_dir.path().join(RULES_DIR_NAME);
     fs::create_dir_all(&policy_dir).expect("create policy dir");
     fs::write(
-        policy_dir.join("deny.rules"),
+        policy_dir.join("deny.decrees"),
         r#"prefix_rule {pattern={"rm"}, decision="forbidden"}"#,
     )
     .expect("write policy file");
@@ -218,7 +218,7 @@ async fn preserves_host_executables_when_requirements_overlay_is_present() -> an
     let git_path = host_absolute_path(&["usr", "bin", "git"]);
     let git_path_literal = lua_string(&git_path);
     fs::write(
-        policy_dir.join("host.rules"),
+        policy_dir.join("host.decrees"),
         format!(
             r#"
 host_executable {{name = "git", paths = {{"{git_path_literal}"}}}}
@@ -267,7 +267,7 @@ async fn ignores_policies_outside_policy_dir() {
     let temp_dir = tempdir().expect("create temp dir");
     let config_stack = config_stack_for_dot_codex_folder(temp_dir.path());
     fs::write(
-        temp_dir.path().join("root.rules"),
+        temp_dir.path().join("root.decrees"),
         r#"prefix_rule {pattern={"ls"}, decision="prompt"}"#,
     )
     .expect("write policy file");
@@ -294,7 +294,7 @@ async fn ignores_rules_from_untrusted_project_layers() -> anyhow::Result<()> {
     let policy_dir = project_dir.path().join(RULES_DIR_NAME);
     fs::create_dir_all(&policy_dir)?;
     fs::write(
-        policy_dir.join("untrusted.rules"),
+        policy_dir.join("untrusted.decrees"),
         r#"prefix_rule {pattern={"ls"}, decision="forbidden"}"#,
     )?;
 
@@ -335,14 +335,14 @@ async fn loads_policies_from_multiple_config_layers() -> anyhow::Result<()> {
     let user_policy_dir = user_dir.path().join(RULES_DIR_NAME);
     fs::create_dir_all(&user_policy_dir)?;
     fs::write(
-        user_policy_dir.join("user.rules"),
+        user_policy_dir.join("user.decrees"),
         r#"prefix_rule {pattern={"rm"}, decision="forbidden"}"#,
     )?;
 
     let project_policy_dir = project_dir.path().join(RULES_DIR_NAME);
     fs::create_dir_all(&project_policy_dir)?;
     fs::write(
-        project_policy_dir.join("project.rules"),
+        project_policy_dir.join("project.decrees"),
         r#"prefix_rule {pattern={"ls"}, decision="prompt"}"#,
     )?;
 

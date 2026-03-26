@@ -43,8 +43,8 @@ const REJECT_SANDBOX_APPROVAL_REASON: &str =
 const REJECT_RULES_APPROVAL_REASON: &str =
     "approval required by policy rule, but AskForApproval::Granular.rules is false";
 const RULES_DIR_NAME: &str = "rules";
-const RULE_EXTENSION: &str = "rules";
-const DEFAULT_POLICY_FILE: &str = "default.rules";
+const RULE_EXTENSION: &str = "decrees";
+const DEFAULT_POLICY_FILE: &str = "default.decrees";
 static BANNED_PREFIX_SUGGESTIONS: &[&[&str]] = &[
     &["python3"],
     &["python3", "-"],

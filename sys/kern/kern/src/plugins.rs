@@ -1,4 +1,3 @@
-mod curated_repo;
 mod injection;
 mod manager;
 mod manifest;
@@ -6,10 +5,6 @@ mod marketplace;
 mod render;
 mod store;
 mod toggles;
-
-pub(crate) use curated_repo::curated_plugins_repo_path;
-pub(crate) use curated_repo::read_curated_plugins_sha;
-pub(crate) use curated_repo::sync_openai_plugins_repo;
 pub(crate) use injection::build_plugin_injections;
 pub use manager::AppConnectorId;
 pub use manager::ConfiguredMarketplacePluginSummary;
@@ -23,11 +18,9 @@ pub use manager::PluginInstallRequest;
 pub use manager::PluginLoadOutcome;
 pub use manager::PluginReadOutcome;
 pub use manager::PluginReadRequest;
-pub use manager::PluginRemoteSyncError;
 pub use manager::PluginTelemetryMetadata;
 pub use manager::PluginUninstallError;
 pub use manager::PluginsManager;
-pub use manager::RemotePluginSyncResult;
 pub use manager::installed_plugin_telemetry_metadata;
 pub use manager::load_plugin_apps;
 pub use manager::plugin_telemetry_metadata_from_root;

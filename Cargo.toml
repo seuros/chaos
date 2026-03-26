@@ -64,6 +64,7 @@ members = [
     "lib/libtrace/syslog",
     "lib/libtrace/snitch",
     "lib/libui/termcap",
+    "lib/libui/highlight",
     "lib/libutil/realpath",
     "lib/libutil/sudoers",
     "lib/libutil/tmpfs",
@@ -160,6 +161,7 @@ chaos-minions = { path = "lib/libmisc/minions" }
 chaos-syslog = { path = "lib/libtrace/syslog" }
 chaos-snitch = { path = "lib/libtrace/snitch" }
 chaos-termcap = { path = "lib/libui/termcap" }
+chaos-highlight = { path = "lib/libui/highlight" }
 chaos-scm = { path = "lib/libutil/scm" }
 chaos-realpath = { path = "lib/libutil/realpath" }
 chaos-sudoers = { path = "lib/libutil/sudoers" }

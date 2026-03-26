@@ -1282,6 +1282,19 @@ dependencies = [
 ]
 
 [[package]]
+name = "chaos-highlight"
+version = "47.0.0"
+dependencies = [
+ "insta",
+ "pretty_assertions",
+ "ratatui",
+ "syntect",
+ "tempfile",
+ "tracing",
+ "two-face",
+]
+
+[[package]]
 name = "chaos-ipc"
 version = "47.0.0"
 dependencies = [
@@ -1900,6 +1913,7 @@ dependencies = [
  "chaos-cli",
  "chaos-getopt",
  "chaos-glob",
+ "chaos-highlight",
  "chaos-ipc",
  "chaos-jail-report",
  "chaos-kern",
@@ -1942,7 +1956,6 @@ dependencies = [
  "strum",
  "strum_macros 0.28.0",
  "supports-color",
- "syntect",
  "tempfile",
  "textwrap",
  "thiserror 2.0.18",
@@ -1953,7 +1966,6 @@ dependencies = [
  "tracing",
  "tracing-appender",
  "tracing-subscriber",
- "two-face",
  "unicode-segmentation",
  "unicode-width",
  "url",
@@ -4595,12 +4607,6 @@ checksum = "5f4de44e98ddbf09375cbf4d17714d18f39195f4f4894e8524501726fd9a8a4a"
 dependencies = [
  "bitflags 2.11.0",
 ]
-
-[[package]]
-name = "linked-hash-map"
-version = "0.5.6"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "0717cef1bc8b636c6e1c1bbdefc09e6322da8a9321966e8928ef80d20f7f770f"
 
 [[package]]
 name = "linux-keyutils"
@@ -8678,7 +8684,6 @@ dependencies = [
  "serde_json",
  "thiserror 2.0.18",
  "walkdir",
- "yaml-rust",
 ]
 
 [[package]]
@@ -10687,15 +10692,6 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "388c44dc09d76f1536602ead6d325eb532f5c122f17782bd57fb47baeeb767e2"
 dependencies = [
  "lzma-sys",
-]
-
-[[package]]
-name = "yaml-rust"
-version = "0.4.5"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "56c1936c4cc7a1c9ab21a1ebb602eb942ba868cbd44a99cb7cdc5892335e1c85"
-dependencies = [
- "linked-hash-map",
 ]
 
 [[package]]

@@ -20,7 +20,7 @@ async-channel = { workspace = true }
 async-trait = { workspace = true }
 askama = { workspace = true }
 base64 = { workspace = true }
-bm25 = { workspace = true }
+chaos-apropos = { workspace = true }
 chardetng = { workspace = true }
 jiff = { workspace = true }
 clap = { workspace = true, features = ["derive"] }

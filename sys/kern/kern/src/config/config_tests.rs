@@ -928,7 +928,7 @@ fn tui_config_missing_notifications_field_defaults_to_enabled() {
 #[test]
 fn test_sandbox_config_parsing() {
     let sandbox_full_access = r#"
-sandbox_mode = "danger-full-access"
+sandbox_mode = "root-access"
 
 [sandbox_workspace_write]
 network_access = false  # This should be ignored.
@@ -942,7 +942,7 @@ network_access = false  # This should be ignored.
         &PathBuf::from("/tmp/test"),
         None,
     );
-    assert_eq!(resolution, SandboxPolicy::DangerFullAccess);
+    assert_eq!(resolution, SandboxPolicy::RootAccess);
 
     let sandbox_read_only = r#"
 sandbox_mode = "read-only"
@@ -1042,8 +1042,8 @@ fn legacy_sandbox_mode_config_builds_split_policies_without_drift() -> std::io::
     let extra_root = test_absolute_path("/tmp/legacy-extra-root");
     let cases = vec![
         (
-            "danger-full-access".to_string(),
-            r#"sandbox_mode = "danger-full-access"
+            "root-access".to_string(),
+            r#"sandbox_mode = "root-access"
 "#
             .to_string(),
         ),
@@ -1469,17 +1469,17 @@ fn web_search_mode_for_turn_uses_preference_for_read_only() {
 }
 
 #[test]
-fn web_search_mode_for_turn_prefers_live_for_danger_full_access() {
+fn web_search_mode_for_turn_prefers_live_for_root_access() {
     let web_search_mode = Constrained::allow_any(WebSearchMode::Cached);
-    let mode = resolve_web_search_mode_for_turn(&web_search_mode, &SandboxPolicy::DangerFullAccess);
+    let mode = resolve_web_search_mode_for_turn(&web_search_mode, &SandboxPolicy::RootAccess);
 
     assert_eq!(mode, WebSearchMode::Live);
 }
 
 #[test]
-fn web_search_mode_for_turn_respects_disabled_for_danger_full_access() {
+fn web_search_mode_for_turn_respects_disabled_for_root_access() {
     let web_search_mode = Constrained::allow_any(WebSearchMode::Disabled);
-    let mode = resolve_web_search_mode_for_turn(&web_search_mode, &SandboxPolicy::DangerFullAccess);
+    let mode = resolve_web_search_mode_for_turn(&web_search_mode, &SandboxPolicy::RootAccess);
 
     assert_eq!(mode, WebSearchMode::Disabled);
 }
@@ -1499,7 +1499,7 @@ fn web_search_mode_for_turn_falls_back_when_live_is_disallowed() -> anyhow::Resu
             })
         }
     })?;
-    let mode = resolve_web_search_mode_for_turn(&web_search_mode, &SandboxPolicy::DangerFullAccess);
+    let mode = resolve_web_search_mode_for_turn(&web_search_mode, &SandboxPolicy::RootAccess);
 
     assert_eq!(mode, WebSearchMode::Cached);
     Ok(())
@@ -1558,7 +1558,7 @@ fn profile_sandbox_mode_overrides_base() -> std::io::Result<()> {
     profiles.insert(
         "work".to_string(),
         ConfigProfile {
-            sandbox_mode: Some(SandboxMode::DangerFullAccess),
+            sandbox_mode: Some(SandboxMode::RootAccess),
             ..Default::default()
         },
     );
@@ -1577,7 +1577,7 @@ fn profile_sandbox_mode_overrides_base() -> std::io::Result<()> {
 
     assert!(matches!(
         config.permissions.sandbox_policy.get(),
-        &SandboxPolicy::DangerFullAccess
+        &SandboxPolicy::RootAccess
     ));
 
     Ok(())
@@ -1590,7 +1590,7 @@ fn cli_override_takes_precedence_over_profile_sandbox_mode() -> std::io::Result<
     profiles.insert(
         "work".to_string(),
         ConfigProfile {
-            sandbox_mode: Some(SandboxMode::DangerFullAccess),
+            sandbox_mode: Some(SandboxMode::RootAccess),
             ..Default::default()
         },
     );
@@ -4913,14 +4913,14 @@ fn derive_sandbox_policy_falls_back_to_constraint_value_for_implicit_defaults() 
         )])),
         ..Default::default()
     };
-    let constrained = Constrained::new(SandboxPolicy::DangerFullAccess, |candidate| {
-        if matches!(candidate, SandboxPolicy::DangerFullAccess) {
+    let constrained = Constrained::new(SandboxPolicy::RootAccess, |candidate| {
+        if matches!(candidate, SandboxPolicy::RootAccess) {
             Ok(())
         } else {
             Err(ConstraintError::InvalidValue {
                 field_name: "sandbox_mode",
                 candidate: format!("{candidate:?}"),
-                allowed: "[DangerFullAccess]".to_string(),
+                allowed: "[RootAccess]".to_string(),
                 requirement_source: RequirementSource::Unknown,
             })
         }
@@ -4933,7 +4933,7 @@ fn derive_sandbox_policy_falls_back_to_constraint_value_for_implicit_defaults() 
         Some(&constrained),
     );
 
-    assert_eq!(resolution, SandboxPolicy::DangerFullAccess);
+    assert_eq!(resolution, SandboxPolicy::RootAccess);
     Ok(())
 }
 
@@ -5208,7 +5208,7 @@ async fn explicit_sandbox_mode_falls_back_when_disallowed_by_requirements() -> s
     let codex_home = TempDir::new()?;
     std::fs::write(
         codex_home.path().join(CONFIG_TOML_FILE),
-        r#"sandbox_mode = "danger-full-access"
+        r#"sandbox_mode = "root-access"
 "#,
     )?;
 
@@ -5240,12 +5240,12 @@ async fn explicit_sandbox_mode_falls_back_when_disallowed_by_requirements() -> s
 }
 
 #[tokio::test]
-async fn requirements_web_search_mode_overrides_danger_full_access_default() -> std::io::Result<()>
+async fn requirements_web_search_mode_overrides_root_access_default() -> std::io::Result<()>
 {
     let codex_home = TempDir::new()?;
     std::fs::write(
         codex_home.path().join(CONFIG_TOML_FILE),
-        r#"sandbox_mode = "danger-full-access"
+        r#"sandbox_mode = "root-access"
 "#,
     )?;
 

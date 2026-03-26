@@ -626,7 +626,7 @@ fn create_seatbelt_args_with_read_only_git_and_codex_subpaths() {
     let shell_command: Vec<String> = [
         "bash",
         "-c",
-        "echo 'sandbox_mode = \"danger-full-access\"' > \"$1\"",
+        "echo 'sandbox_mode = \"root-access\"' > \"$1\"",
         "bash",
         dot_codex_canonical
             .join("config.toml")
@@ -911,7 +911,7 @@ fn create_seatbelt_args_for_cwd_as_git_repo() {
     let shell_command: Vec<String> = [
         "bash",
         "-c",
-        "echo 'sandbox_mode = \"danger-full-access\"' > \"$1\"",
+        "echo 'sandbox_mode = \"root-access\"' > \"$1\"",
         "bash",
         dot_codex_canonical
             .join("config.toml")
@@ -1010,7 +1010,7 @@ struct PopulatedTmp {
     /// because a bad actor could write to .git/hooks/pre-commit so an
     /// unsuspecting user would run code as privileged the next time they
     /// ran `git commit` themselves, or modified .codex/config.toml to
-    /// contain `sandbox_mode = "danger-full-access"` so the agent would
+    /// contain `sandbox_mode = "root-access"` so the agent would
     /// have full privileges the next time it ran in that repo.
     vulnerable_root: PathBuf,
     vulnerable_root_canonical: PathBuf,

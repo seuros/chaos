@@ -525,7 +525,7 @@ impl FileSystemSandboxPolicy {
             },
             FileSystemSandboxKind::Unrestricted => {
                 if network_policy.is_enabled() {
-                    SandboxPolicy::DangerFullAccess
+                    SandboxPolicy::RootAccess
                 } else {
                     SandboxPolicy::ExternalSandbox {
                         network_access: NetworkAccess::Restricted,
@@ -626,7 +626,7 @@ impl FileSystemSandboxPolicy {
 
                 if has_full_disk_write_access {
                     return Ok(if network_policy.is_enabled() {
-                        SandboxPolicy::DangerFullAccess
+                        SandboxPolicy::RootAccess
                     } else {
                         SandboxPolicy::ExternalSandbox {
                             network_access: NetworkAccess::Restricted,
@@ -712,7 +712,7 @@ impl From<&SandboxPolicy> for NetworkSandboxPolicy {
 impl From<&SandboxPolicy> for FileSystemSandboxPolicy {
     fn from(value: &SandboxPolicy) -> Self {
         match value {
-            SandboxPolicy::DangerFullAccess => FileSystemSandboxPolicy::unrestricted(),
+            SandboxPolicy::RootAccess => FileSystemSandboxPolicy::unrestricted(),
             SandboxPolicy::ExternalSandbox { .. } => FileSystemSandboxPolicy::external_sandbox(),
             SandboxPolicy::ReadOnly { access, .. } => {
                 let mut entries = Vec::new();

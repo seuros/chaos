@@ -96,7 +96,7 @@ async fn renews_cache_ttl_on_matching_models_etag() -> Result<()> {
             final_output_json_schema: None,
             cwd: test.cwd_path().to_path_buf(),
             approval_policy: chaos_ipc::protocol::AskForApproval::Never,
-            sandbox_policy: SandboxPolicy::DangerFullAccess,
+            sandbox_policy: SandboxPolicy::RootAccess,
             model: test.session_configured.model.clone(),
             effort: None,
             summary: None,

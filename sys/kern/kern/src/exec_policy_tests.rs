@@ -420,7 +420,7 @@ prefix_rule {pattern={"rm"}, decision="forbidden"}
         .create_exec_approval_requirement_for_command(ExecApprovalRequest {
             command: &forbidden_script,
             approval_policy: AskForApproval::OnRequest,
-            sandbox_policy: &SandboxPolicy::DangerFullAccess,
+            sandbox_policy: &SandboxPolicy::RootAccess,
             file_system_sandbox_policy: &unrestricted_file_system_sandbox_policy(),
             sandbox_permissions: SandboxPermissions::UseDefault,
             prefix_rule: None,
@@ -568,7 +568,7 @@ prefix_rule {
                 "/some/important/folder".to_string(),
             ],
             approval_policy: AskForApproval::OnRequest,
-            sandbox_policy: &SandboxPolicy::DangerFullAccess,
+            sandbox_policy: &SandboxPolicy::RootAccess,
             file_system_sandbox_policy: &unrestricted_file_system_sandbox_policy(),
             sandbox_permissions: SandboxPermissions::UseDefault,
             prefix_rule: None,
@@ -598,7 +598,7 @@ async fn exec_approval_requirement_prefers_execpolicy_match() {
         .create_exec_approval_requirement_for_command(ExecApprovalRequest {
             command: &command,
             approval_policy: AskForApproval::OnRequest,
-            sandbox_policy: &SandboxPolicy::DangerFullAccess,
+            sandbox_policy: &SandboxPolicy::RootAccess,
             file_system_sandbox_policy: &unrestricted_file_system_sandbox_policy(),
             sandbox_permissions: SandboxPermissions::UseDefault,
             prefix_rule: None,
@@ -736,7 +736,7 @@ async fn exec_approval_requirement_respects_approval_policy() {
         .create_exec_approval_requirement_for_command(ExecApprovalRequest {
             command: &command,
             approval_policy: AskForApproval::Never,
-            sandbox_policy: &SandboxPolicy::DangerFullAccess,
+            sandbox_policy: &SandboxPolicy::RootAccess,
             file_system_sandbox_policy: &unrestricted_file_system_sandbox_policy(),
             sandbox_permissions: SandboxPermissions::UseDefault,
             prefix_rule: None,
@@ -783,7 +783,7 @@ fn unmatched_on_request_uses_split_filesystem_policy_for_escalation_prompts() {
         Decision::Prompt,
         render_decision_for_unmatched_command(
             AskForApproval::OnRequest,
-            &SandboxPolicy::DangerFullAccess,
+            &SandboxPolicy::RootAccess,
             &restricted_file_system_policy,
             &command,
             SandboxPermissions::RequireEscalated,
@@ -1022,7 +1022,7 @@ async fn request_rule_falls_back_when_prefix_rule_does_not_approve_all_commands(
         .create_exec_approval_requirement_for_command(ExecApprovalRequest {
             command: &command,
             approval_policy: AskForApproval::OnRequest,
-            sandbox_policy: &SandboxPolicy::DangerFullAccess,
+            sandbox_policy: &SandboxPolicy::RootAccess,
             file_system_sandbox_policy: &unrestricted_file_system_sandbox_policy(),
             sandbox_permissions: SandboxPermissions::RequireEscalated,
             prefix_rule: Some(vec!["cargo".to_string(), "install".to_string()]),
@@ -1061,7 +1061,7 @@ async fn heuristics_apply_when_other_commands_match_policy() {
             .create_exec_approval_requirement_for_command(ExecApprovalRequest {
                 command: &command,
                 approval_policy: AskForApproval::UnlessTrusted,
-                sandbox_policy: &SandboxPolicy::DangerFullAccess,
+                sandbox_policy: &SandboxPolicy::RootAccess,
                 file_system_sandbox_policy: &unrestricted_file_system_sandbox_policy(),
                 sandbox_permissions: SandboxPermissions::UseDefault,
                 prefix_rule: None,
@@ -1167,7 +1167,7 @@ async fn proposed_execpolicy_amendment_is_omitted_when_policy_prompts() {
         .create_exec_approval_requirement_for_command(ExecApprovalRequest {
             command: &command,
             approval_policy: AskForApproval::OnRequest,
-            sandbox_policy: &SandboxPolicy::DangerFullAccess,
+            sandbox_policy: &SandboxPolicy::RootAccess,
             file_system_sandbox_policy: &unrestricted_file_system_sandbox_policy(),
             sandbox_permissions: SandboxPermissions::UseDefault,
             prefix_rule: None,
@@ -1441,14 +1441,14 @@ fn derive_requested_execpolicy_amendment_returns_none_when_policy_matches() {
 }
 
 #[tokio::test]
-async fn dangerous_rm_rf_requires_approval_in_danger_full_access() {
+async fn dangerous_rm_rf_requires_approval_in_root_access() {
     let command = vec_str(&["rm", "-rf", "/tmp/nonexistent"]);
     let manager = ExecPolicyManager::default();
     let requirement = manager
         .create_exec_approval_requirement_for_command(ExecApprovalRequest {
             command: &command,
             approval_policy: AskForApproval::OnRequest,
-            sandbox_policy: &SandboxPolicy::DangerFullAccess,
+            sandbox_policy: &SandboxPolicy::RootAccess,
             file_system_sandbox_policy: &unrestricted_file_system_sandbox_policy(),
             sandbox_permissions: SandboxPermissions::UseDefault,
             prefix_rule: None,

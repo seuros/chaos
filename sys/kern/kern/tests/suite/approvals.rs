@@ -687,9 +687,9 @@ fn scenarios() -> Vec<ScenarioSpec> {
 
     vec![
         ScenarioSpec {
-            name: "danger_full_access_on_request_allows_outside_write",
+            name: "root_access_on_request_allows_outside_write",
             approval_policy: OnRequest,
-            sandbox_policy: SandboxPolicy::DangerFullAccess,
+            sandbox_policy: SandboxPolicy::RootAccess,
             action: ActionKind::WriteFile {
                 target: TargetPath::OutsideWorkspace("dfa_on_request.txt"),
                 content: "danger-on-request",
@@ -704,9 +704,9 @@ fn scenarios() -> Vec<ScenarioSpec> {
             },
         },
         ScenarioSpec {
-            name: "danger_full_access_on_request_allows_outside_write_gpt_5_1_no_exit",
+            name: "root_access_on_request_allows_outside_write_gpt_5_1_no_exit",
             approval_policy: OnRequest,
-            sandbox_policy: SandboxPolicy::DangerFullAccess,
+            sandbox_policy: SandboxPolicy::RootAccess,
             action: ActionKind::WriteFile {
                 target: TargetPath::OutsideWorkspace("dfa_on_request_5_1.txt"),
                 content: "danger-on-request",
@@ -721,9 +721,9 @@ fn scenarios() -> Vec<ScenarioSpec> {
             },
         },
         ScenarioSpec {
-            name: "danger_full_access_on_request_allows_network",
+            name: "root_access_on_request_allows_network",
             approval_policy: OnRequest,
-            sandbox_policy: SandboxPolicy::DangerFullAccess,
+            sandbox_policy: SandboxPolicy::RootAccess,
             action: ActionKind::FetchUrlNoProxy {
                 endpoint: "/dfa/network",
                 response_body: "danger-network-ok",
@@ -737,9 +737,9 @@ fn scenarios() -> Vec<ScenarioSpec> {
             },
         },
         ScenarioSpec {
-            name: "danger_full_access_on_request_allows_network_gpt_5_1_no_exit",
+            name: "root_access_on_request_allows_network_gpt_5_1_no_exit",
             approval_policy: OnRequest,
-            sandbox_policy: SandboxPolicy::DangerFullAccess,
+            sandbox_policy: SandboxPolicy::RootAccess,
             action: ActionKind::FetchUrlNoProxy {
                 endpoint: "/dfa/network",
                 response_body: "danger-network-ok",
@@ -755,7 +755,7 @@ fn scenarios() -> Vec<ScenarioSpec> {
         ScenarioSpec {
             name: "trusted_command_unless_trusted_runs_without_prompt",
             approval_policy: UnlessTrusted,
-            sandbox_policy: SandboxPolicy::DangerFullAccess,
+            sandbox_policy: SandboxPolicy::RootAccess,
             action: ActionKind::RunCommand {
                 command: "echo trusted-unless",
             },
@@ -770,7 +770,7 @@ fn scenarios() -> Vec<ScenarioSpec> {
         ScenarioSpec {
             name: "trusted_command_unless_trusted_runs_without_prompt_gpt_5_1_no_exit",
             approval_policy: UnlessTrusted,
-            sandbox_policy: SandboxPolicy::DangerFullAccess,
+            sandbox_policy: SandboxPolicy::RootAccess,
             action: ActionKind::RunCommand {
                 command: "echo trusted-unless",
             },
@@ -819,9 +819,9 @@ fn scenarios() -> Vec<ScenarioSpec> {
             },
         },
         ScenarioSpec {
-            name: "danger_full_access_on_failure_allows_outside_write",
+            name: "root_access_on_failure_allows_outside_write",
             approval_policy: OnFailure,
-            sandbox_policy: SandboxPolicy::DangerFullAccess,
+            sandbox_policy: SandboxPolicy::RootAccess,
             action: ActionKind::WriteFile {
                 target: TargetPath::OutsideWorkspace("dfa_on_failure.txt"),
                 content: "danger-on-failure",
@@ -836,9 +836,9 @@ fn scenarios() -> Vec<ScenarioSpec> {
             },
         },
         ScenarioSpec {
-            name: "danger_full_access_on_failure_allows_outside_write_gpt_5_1_no_exit",
+            name: "root_access_on_failure_allows_outside_write_gpt_5_1_no_exit",
             approval_policy: OnFailure,
-            sandbox_policy: SandboxPolicy::DangerFullAccess,
+            sandbox_policy: SandboxPolicy::RootAccess,
             action: ActionKind::WriteFile {
                 target: TargetPath::OutsideWorkspace("dfa_on_failure_5_1.txt"),
                 content: "danger-on-failure",
@@ -853,9 +853,9 @@ fn scenarios() -> Vec<ScenarioSpec> {
             },
         },
         ScenarioSpec {
-            name: "danger_full_access_unless_trusted_requests_approval",
+            name: "root_access_unless_trusted_requests_approval",
             approval_policy: UnlessTrusted,
-            sandbox_policy: SandboxPolicy::DangerFullAccess,
+            sandbox_policy: SandboxPolicy::RootAccess,
             action: ActionKind::WriteFile {
                 target: TargetPath::OutsideWorkspace("dfa_unless_trusted.txt"),
                 content: "danger-unless-trusted",
@@ -873,9 +873,9 @@ fn scenarios() -> Vec<ScenarioSpec> {
             },
         },
         ScenarioSpec {
-            name: "danger_full_access_unless_trusted_requests_approval_gpt_5_1_no_exit",
+            name: "root_access_unless_trusted_requests_approval_gpt_5_1_no_exit",
             approval_policy: UnlessTrusted,
-            sandbox_policy: SandboxPolicy::DangerFullAccess,
+            sandbox_policy: SandboxPolicy::RootAccess,
             action: ActionKind::WriteFile {
                 target: TargetPath::OutsideWorkspace("dfa_unless_trusted_5_1.txt"),
                 content: "danger-unless-trusted",
@@ -893,9 +893,9 @@ fn scenarios() -> Vec<ScenarioSpec> {
             },
         },
         ScenarioSpec {
-            name: "danger_full_access_never_allows_outside_write",
+            name: "root_access_never_allows_outside_write",
             approval_policy: Never,
-            sandbox_policy: SandboxPolicy::DangerFullAccess,
+            sandbox_policy: SandboxPolicy::RootAccess,
             action: ActionKind::WriteFile {
                 target: TargetPath::OutsideWorkspace("dfa_never.txt"),
                 content: "danger-never",
@@ -910,9 +910,9 @@ fn scenarios() -> Vec<ScenarioSpec> {
             },
         },
         ScenarioSpec {
-            name: "danger_full_access_never_allows_outside_write_gpt_5_1_no_exit",
+            name: "root_access_never_allows_outside_write_gpt_5_1_no_exit",
             approval_policy: Never,
-            sandbox_policy: SandboxPolicy::DangerFullAccess,
+            sandbox_policy: SandboxPolicy::RootAccess,
             action: ActionKind::WriteFile {
                 target: TargetPath::OutsideWorkspace("dfa_never_5_1.txt"),
                 content: "danger-never",
@@ -1133,7 +1133,7 @@ fn scenarios() -> Vec<ScenarioSpec> {
         ScenarioSpec {
             name: "apply_patch_function_auto_inside_workspace",
             approval_policy: OnRequest,
-            sandbox_policy: SandboxPolicy::DangerFullAccess,
+            sandbox_policy: SandboxPolicy::RootAccess,
             action: ActionKind::ApplyPatchFunction {
                 target: TargetPath::Workspace("apply_patch_function.txt"),
                 content: "function-apply-patch",
@@ -1150,7 +1150,7 @@ fn scenarios() -> Vec<ScenarioSpec> {
         ScenarioSpec {
             name: "apply_patch_function_danger_allows_outside_workspace",
             approval_policy: OnRequest,
-            sandbox_policy: SandboxPolicy::DangerFullAccess,
+            sandbox_policy: SandboxPolicy::RootAccess,
             action: ActionKind::ApplyPatchFunction {
                 target: TargetPath::OutsideWorkspace("apply_patch_function_danger.txt"),
                 content: "function-patch-danger",
@@ -1477,7 +1477,7 @@ fn scenarios() -> Vec<ScenarioSpec> {
         ScenarioSpec {
             name: "unified exec on request no approval for safe command",
             approval_policy: OnRequest,
-            sandbox_policy: SandboxPolicy::DangerFullAccess,
+            sandbox_policy: SandboxPolicy::RootAccess,
             action: ActionKind::RunUnifiedExecCommand {
                 command: "echo \"hello unified exec\"",
                 justification: None,
@@ -1514,7 +1514,7 @@ fn scenarios() -> Vec<ScenarioSpec> {
         ScenarioSpec {
             name: "unified exec on request requires approval unless trusted",
             approval_policy: AskForApproval::UnlessTrusted,
-            sandbox_policy: SandboxPolicy::DangerFullAccess,
+            sandbox_policy: SandboxPolicy::RootAccess,
             action: ActionKind::RunUnifiedExecCommand {
                 command: "git reset --hard",
                 justification: None,

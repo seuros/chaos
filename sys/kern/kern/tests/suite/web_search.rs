@@ -198,7 +198,7 @@ async fn web_search_mode_updates_between_turns_with_sandbox_policy() {
     test.submit_turn_with_policy("hello cached", SandboxPolicy::new_read_only_policy())
         .await
         .expect("submit first turn");
-    test.submit_turn_with_policy("hello live", SandboxPolicy::DangerFullAccess)
+    test.submit_turn_with_policy("hello live", SandboxPolicy::RootAccess)
         .await
         .expect("submit second turn");
 
@@ -222,7 +222,7 @@ async fn web_search_mode_updates_between_turns_with_sandbox_policy() {
             .get("external_web_access")
             .and_then(Value::as_bool),
         Some(true),
-        "danger-full-access policy should default web_search to live"
+        "root-access policy should default web_search to live"
     );
 }
 
@@ -258,7 +258,7 @@ location = { country = "US", city = "New York", timezone = "America/New_York" }
 
     test.submit_turn_with_policy(
         "hello configured web search",
-        SandboxPolicy::DangerFullAccess,
+        SandboxPolicy::RootAccess,
     )
     .await
     .expect("submit turn");

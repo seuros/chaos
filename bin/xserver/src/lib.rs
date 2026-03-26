@@ -167,7 +167,7 @@ pub async fn run_main(
         )
     } else if cli.dangerously_bypass_approvals_and_sandbox {
         (
-            Some(SandboxMode::DangerFullAccess),
+            Some(SandboxMode::RootAccess),
             Some(AskForApproval::Never),
         )
     } else {

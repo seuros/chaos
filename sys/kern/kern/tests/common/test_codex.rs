@@ -333,7 +333,7 @@ impl TestCodex {
         self.submit_turn_with_policies(
             prompt,
             AskForApproval::Never,
-            SandboxPolicy::DangerFullAccess,
+            SandboxPolicy::RootAccess,
         )
         .await
     }
@@ -355,7 +355,7 @@ impl TestCodex {
         self.submit_turn_with_context(
             prompt,
             AskForApproval::Never,
-            SandboxPolicy::DangerFullAccess,
+            SandboxPolicy::RootAccess,
             Some(service_tier),
         )
         .await

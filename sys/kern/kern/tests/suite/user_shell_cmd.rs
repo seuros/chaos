@@ -163,7 +163,7 @@ async fn user_shell_command_does_not_replace_active_turn() -> anyhow::Result<()>
             final_output_json_schema: None,
             cwd: fixture.cwd.path().to_path_buf(),
             approval_policy: AskForApproval::Never,
-            sandbox_policy: SandboxPolicy::DangerFullAccess,
+            sandbox_policy: SandboxPolicy::RootAccess,
             model: fixture.session_configured.model.clone(),
             effort: None,
             summary: None,
@@ -436,7 +436,7 @@ async fn user_shell_command_is_truncated_only_once() -> anyhow::Result<()> {
     fixture
         .submit_turn_with_policy(
             "trigger big shell_command output",
-            SandboxPolicy::DangerFullAccess,
+            SandboxPolicy::RootAccess,
         )
         .await?;
 

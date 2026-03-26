@@ -291,8 +291,8 @@ async fn process_exec_tool_call_respects_cancellation_token() -> Result<()> {
     });
     let result = process_exec_tool_call(
         params,
-        &SandboxPolicy::DangerFullAccess,
-        &FileSystemSandboxPolicy::from(&SandboxPolicy::DangerFullAccess),
+        &SandboxPolicy::RootAccess,
+        &FileSystemSandboxPolicy::from(&SandboxPolicy::RootAccess),
         NetworkSandboxPolicy::Enabled,
         cwd.as_path(),
         &None,

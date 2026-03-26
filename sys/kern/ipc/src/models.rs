@@ -465,8 +465,8 @@ const APPROVAL_POLICY_ON_REQUEST_RULE: &str =
 const APPROVAL_POLICY_ON_REQUEST_RULE_REQUEST_PERMISSION: &str =
     include_str!("prompts/permissions/approval_policy/on_request_rule_request_permission.md");
 
-const SANDBOX_MODE_DANGER_FULL_ACCESS: &str =
-    include_str!("prompts/permissions/sandbox_mode/danger_full_access.md");
+const SANDBOX_MODE_ROOT_ACCESS: &str =
+    include_str!("prompts/permissions/sandbox_mode/root_access.md");
 const SANDBOX_MODE_WORKSPACE_WRITE: &str =
     include_str!("prompts/permissions/sandbox_mode/workspace_write.md");
 const SANDBOX_MODE_READ_ONLY: &str = include_str!("prompts/permissions/sandbox_mode/read_only.md");
@@ -565,9 +565,9 @@ impl DeveloperInstructions {
         };
 
         let (sandbox_mode, writable_roots) = match sandbox_policy {
-            SandboxPolicy::DangerFullAccess => (SandboxMode::DangerFullAccess, None),
+            SandboxPolicy::RootAccess => (SandboxMode::RootAccess, None),
             SandboxPolicy::ReadOnly { .. } => (SandboxMode::ReadOnly, None),
-            SandboxPolicy::ExternalSandbox { .. } => (SandboxMode::DangerFullAccess, None),
+            SandboxPolicy::ExternalSandbox { .. } => (SandboxMode::RootAccess, None),
             SandboxPolicy::WorkspaceWrite { .. } => {
                 let roots = sandbox_policy.get_writable_roots_with_cwd(cwd);
                 (SandboxMode::WorkspaceWrite, Some(roots))
@@ -648,7 +648,7 @@ impl DeveloperInstructions {
 
     fn sandbox_text(mode: SandboxMode, network_access: NetworkAccess) -> DeveloperInstructions {
         let template = match mode {
-            SandboxMode::DangerFullAccess => SANDBOX_MODE_DANGER_FULL_ACCESS.trim_end(),
+            SandboxMode::RootAccess => SANDBOX_MODE_ROOT_ACCESS.trim_end(),
             SandboxMode::WorkspaceWrite => SANDBOX_MODE_WORKSPACE_WRITE.trim_end(),
             SandboxMode::ReadOnly => SANDBOX_MODE_READ_ONLY.trim_end(),
         };
@@ -816,7 +816,7 @@ impl From<DeveloperInstructions> for ResponseItem {
 impl From<SandboxMode> for DeveloperInstructions {
     fn from(mode: SandboxMode) -> Self {
         let network_access = match mode {
-            SandboxMode::DangerFullAccess => NetworkAccess::Enabled,
+            SandboxMode::RootAccess => NetworkAccess::Enabled,
             SandboxMode::WorkspaceWrite | SandboxMode::ReadOnly => NetworkAccess::Restricted,
         };
 

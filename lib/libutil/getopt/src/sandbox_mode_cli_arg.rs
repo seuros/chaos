@@ -14,7 +14,7 @@ use chaos_ipc::config_types::SandboxMode;
 pub enum SandboxModeCliArg {
     ReadOnly,
     WorkspaceWrite,
-    DangerFullAccess,
+    RootAccess,
 }
 
 impl From<SandboxModeCliArg> for SandboxMode {
@@ -22,7 +22,7 @@ impl From<SandboxModeCliArg> for SandboxMode {
         match value {
             SandboxModeCliArg::ReadOnly => SandboxMode::ReadOnly,
             SandboxModeCliArg::WorkspaceWrite => SandboxMode::WorkspaceWrite,
-            SandboxModeCliArg::DangerFullAccess => SandboxMode::DangerFullAccess,
+            SandboxModeCliArg::RootAccess => SandboxMode::RootAccess,
         }
     }
 }
@@ -40,8 +40,8 @@ mod tests {
             SandboxModeCliArg::WorkspaceWrite.into()
         );
         assert_eq!(
-            SandboxMode::DangerFullAccess,
-            SandboxModeCliArg::DangerFullAccess.into()
+            SandboxMode::RootAccess,
+            SandboxModeCliArg::RootAccess.into()
         );
     }
 }

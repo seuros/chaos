@@ -153,7 +153,7 @@ pub(crate) async fn execute_user_shell_command(
         )
         .await;
 
-    let sandbox_policy = SandboxPolicy::DangerFullAccess;
+    let sandbox_policy = SandboxPolicy::RootAccess;
     let exec_env = ExecRequest {
         command: exec_command.clone(),
         cwd: cwd.clone(),

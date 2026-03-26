@@ -133,7 +133,7 @@ async fn shell_output_stays_json_without_freeform_apply_patch(
 
     test.submit_turn_with_policy(
         "run the json shell command",
-        SandboxPolicy::DangerFullAccess,
+        SandboxPolicy::RootAccess,
     )
     .await?;
 
@@ -185,7 +185,7 @@ async fn shell_output_is_structured_with_freeform_apply_patch(
 
     test.submit_turn_with_policy(
         "run the structured shell command",
-        SandboxPolicy::DangerFullAccess,
+        SandboxPolicy::RootAccess,
     )
     .await?;
 
@@ -238,7 +238,7 @@ async fn shell_output_preserves_fixture_json_without_serialization(
 
     test.submit_turn_with_policy(
         "read the fixture JSON with sed",
-        SandboxPolicy::DangerFullAccess,
+        SandboxPolicy::RootAccess,
     )
     .await?;
 
@@ -302,7 +302,7 @@ async fn shell_output_structures_fixture_with_serialization(
 
     test.submit_turn_with_policy(
         "read the fixture JSON with structured output",
-        SandboxPolicy::DangerFullAccess,
+        SandboxPolicy::RootAccess,
     )
     .await?;
 
@@ -353,7 +353,7 @@ async fn shell_output_for_freeform_tool_records_duration(
 
     test.submit_turn_with_policy(
         "run the structured shell command",
-        SandboxPolicy::DangerFullAccess,
+        SandboxPolicy::RootAccess,
     )
     .await?;
 
@@ -406,7 +406,7 @@ async fn shell_output_reserializes_truncated_content(output_type: ShellModelOutp
 
     test.submit_turn_with_policy(
         "run the truncation shell command",
-        SandboxPolicy::DangerFullAccess,
+        SandboxPolicy::RootAccess,
     )
     .await?;
 
@@ -472,7 +472,7 @@ async fn apply_patch_custom_tool_output_is_structured(
         .test()
         .submit_turn_with_policy(
             "apply the patch via custom tool",
-            SandboxPolicy::DangerFullAccess,
+            SandboxPolicy::RootAccess,
         )
         .await?;
 
@@ -514,7 +514,7 @@ async fn apply_patch_custom_tool_call_creates_file(
         .test()
         .submit_turn_with_policy(
             "apply the patch via custom tool to create a file",
-            SandboxPolicy::DangerFullAccess,
+            SandboxPolicy::RootAccess,
         )
         .await?;
 
@@ -572,7 +572,7 @@ async fn apply_patch_custom_tool_call_updates_existing_file(
         .test()
         .submit_turn_with_policy(
             "apply the patch via custom tool to update a file",
-            SandboxPolicy::DangerFullAccess,
+            SandboxPolicy::RootAccess,
         )
         .await?;
 
@@ -624,7 +624,7 @@ async fn apply_patch_custom_tool_call_reports_failure_output(
         .test()
         .submit_turn_with_policy(
             "attempt a failing apply_patch via custom tool",
-            SandboxPolicy::DangerFullAccess,
+            SandboxPolicy::RootAccess,
         )
         .await?;
 
@@ -667,7 +667,7 @@ async fn apply_patch_function_call_output_is_structured(
         .test()
         .submit_turn_with_policy(
             "apply the patch via function-call apply_patch",
-            SandboxPolicy::DangerFullAccess,
+            SandboxPolicy::RootAccess,
         )
         .await?;
 
@@ -706,7 +706,7 @@ async fn shell_output_is_structured_for_nonzero_exit(output_type: ShellModelOutp
 
     test.submit_turn_with_policy(
         "run the failing shell command",
-        SandboxPolicy::DangerFullAccess,
+        SandboxPolicy::RootAccess,
     )
     .await?;
 
@@ -757,7 +757,7 @@ async fn shell_command_output_is_freeform() -> Result<()> {
 
     test.submit_turn_with_policy(
         "run the shell_command script in the user's shell",
-        SandboxPolicy::DangerFullAccess,
+        SandboxPolicy::RootAccess,
     )
     .await?;
 
@@ -809,7 +809,7 @@ async fn shell_command_output_is_not_truncated_under_10k_bytes() -> Result<()> {
 
     test.submit_turn_with_policy(
         "run the shell_command script in the user's shell",
-        SandboxPolicy::DangerFullAccess,
+        SandboxPolicy::RootAccess,
     )
     .await?;
 
@@ -860,7 +860,7 @@ async fn shell_command_output_is_not_truncated_over_10k_bytes() -> Result<()> {
 
     test.submit_turn_with_policy(
         "run the shell_command script in the user's shell",
-        SandboxPolicy::DangerFullAccess,
+        SandboxPolicy::RootAccess,
     )
     .await?;
 
@@ -910,7 +910,7 @@ async fn local_shell_call_output_is_structured() -> Result<()> {
 
     test.submit_turn_with_policy(
         "run the local shell command",
-        SandboxPolicy::DangerFullAccess,
+        SandboxPolicy::RootAccess,
     )
     .await?;
 

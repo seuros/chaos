@@ -290,7 +290,7 @@ fn unified_exec_allowed_in_environment(
         && windows_sandbox_level != WindowsSandboxLevel::Disabled
         && !matches!(
             sandbox_policy,
-            SandboxPolicy::DangerFullAccess | SandboxPolicy::ExternalSandbox { .. }
+            SandboxPolicy::RootAccess | SandboxPolicy::ExternalSandbox { .. }
         ))
 }
 

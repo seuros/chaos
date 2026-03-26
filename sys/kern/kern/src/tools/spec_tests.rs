@@ -368,12 +368,12 @@ fn unified_exec_is_blocked_for_windows_sandboxed_policies_only() {
     ));
     assert!(unified_exec_allowed_in_environment(
         true,
-        &SandboxPolicy::DangerFullAccess,
+        &SandboxPolicy::RootAccess,
         WindowsSandboxLevel::RestrictedToken,
     ));
     assert!(unified_exec_allowed_in_environment(
         true,
-        &SandboxPolicy::DangerFullAccess,
+        &SandboxPolicy::RootAccess,
         WindowsSandboxLevel::Disabled,
     ));
 }
@@ -409,7 +409,7 @@ fn test_full_toolset_specs_for_gpt5_codex_unified_exec_web_search() {
         features: &features,
         web_search_mode: Some(WebSearchMode::Live),
         session_source: SessionSource::Cli,
-        sandbox_policy: &SandboxPolicy::DangerFullAccess,
+        sandbox_policy: &SandboxPolicy::RootAccess,
         windows_sandbox_level: WindowsSandboxLevel::Disabled,
     });
     let (tools, _) = build_specs(&config, None, None, &[]).build();
@@ -488,7 +488,7 @@ fn test_build_specs_collab_tools_enabled() {
         features: &features,
         web_search_mode: Some(WebSearchMode::Cached),
         session_source: SessionSource::Cli,
-        sandbox_policy: &SandboxPolicy::DangerFullAccess,
+        sandbox_policy: &SandboxPolicy::RootAccess,
         windows_sandbox_level: WindowsSandboxLevel::Disabled,
     });
     let (tools, _) = build_specs(&tools_config, None, None, &[]).build();
@@ -513,7 +513,7 @@ fn test_build_specs_enable_fanout_enables_agent_jobs_and_collab_tools() {
         features: &features,
         web_search_mode: Some(WebSearchMode::Cached),
         session_source: SessionSource::Cli,
-        sandbox_policy: &SandboxPolicy::DangerFullAccess,
+        sandbox_policy: &SandboxPolicy::RootAccess,
         windows_sandbox_level: WindowsSandboxLevel::Disabled,
     });
     let (tools, _) = build_specs(&tools_config, None, None, &[]).build();
@@ -543,7 +543,7 @@ fn view_image_tool_omits_detail_without_original_detail_feature() {
         features: &features,
         web_search_mode: Some(WebSearchMode::Cached),
         session_source: SessionSource::Cli,
-        sandbox_policy: &SandboxPolicy::DangerFullAccess,
+        sandbox_policy: &SandboxPolicy::RootAccess,
         windows_sandbox_level: WindowsSandboxLevel::Disabled,
     });
     let (tools, _) = build_specs(&tools_config, None, None, &[]).build();
@@ -572,7 +572,7 @@ fn view_image_tool_includes_detail_with_original_detail_feature() {
         features: &features,
         web_search_mode: Some(WebSearchMode::Cached),
         session_source: SessionSource::Cli,
-        sandbox_policy: &SandboxPolicy::DangerFullAccess,
+        sandbox_policy: &SandboxPolicy::RootAccess,
         windows_sandbox_level: WindowsSandboxLevel::Disabled,
     });
     let (tools, _) = build_specs(&tools_config, None, None, &[]).build();
@@ -609,7 +609,7 @@ fn test_build_specs_artifact_tool_enabled() {
         features: &features,
         web_search_mode: Some(WebSearchMode::Cached),
         session_source: SessionSource::Cli,
-        sandbox_policy: &SandboxPolicy::DangerFullAccess,
+        sandbox_policy: &SandboxPolicy::RootAccess,
         windows_sandbox_level: WindowsSandboxLevel::Disabled,
     });
     let (tools, _) = build_specs(&tools_config, None, None, &[]).build();
@@ -633,7 +633,7 @@ fn test_build_specs_agent_job_worker_tools_enabled() {
         session_source: SessionSource::SubAgent(SubAgentSource::Other(
             "agent_job:test".to_string(),
         )),
-        sandbox_policy: &SandboxPolicy::DangerFullAccess,
+        sandbox_policy: &SandboxPolicy::RootAccess,
         windows_sandbox_level: WindowsSandboxLevel::Disabled,
     });
     let (tools, _) = build_specs(&tools_config, None, None, &[]).build();
@@ -664,7 +664,7 @@ fn request_user_input_description_reflects_default_mode_feature_flag() {
         features: &features,
         web_search_mode: Some(WebSearchMode::Cached),
         session_source: SessionSource::Cli,
-        sandbox_policy: &SandboxPolicy::DangerFullAccess,
+        sandbox_policy: &SandboxPolicy::RootAccess,
         windows_sandbox_level: WindowsSandboxLevel::Disabled,
     });
     let (tools, _) = build_specs(&tools_config, None, None, &[]).build();
@@ -682,7 +682,7 @@ fn request_user_input_description_reflects_default_mode_feature_flag() {
         features: &features,
         web_search_mode: Some(WebSearchMode::Cached),
         session_source: SessionSource::Cli,
-        sandbox_policy: &SandboxPolicy::DangerFullAccess,
+        sandbox_policy: &SandboxPolicy::RootAccess,
         windows_sandbox_level: WindowsSandboxLevel::Disabled,
     });
     let (tools, _) = build_specs(&tools_config, None, None, &[]).build();
@@ -707,7 +707,7 @@ fn request_permissions_requires_feature_flag() {
         features: &features,
         web_search_mode: Some(WebSearchMode::Cached),
         session_source: SessionSource::Cli,
-        sandbox_policy: &SandboxPolicy::DangerFullAccess,
+        sandbox_policy: &SandboxPolicy::RootAccess,
         windows_sandbox_level: WindowsSandboxLevel::Disabled,
     });
     let (tools, _) = build_specs(&tools_config, None, None, &[]).build();
@@ -722,7 +722,7 @@ fn request_permissions_requires_feature_flag() {
         features: &features,
         web_search_mode: Some(WebSearchMode::Cached),
         session_source: SessionSource::Cli,
-        sandbox_policy: &SandboxPolicy::DangerFullAccess,
+        sandbox_policy: &SandboxPolicy::RootAccess,
         windows_sandbox_level: WindowsSandboxLevel::Disabled,
     });
     let (tools, _) = build_specs(&tools_config, None, None, &[]).build();
@@ -746,7 +746,7 @@ fn request_permissions_tool_is_independent_from_additional_permissions() {
         features: &features,
         web_search_mode: Some(WebSearchMode::Cached),
         session_source: SessionSource::Cli,
-        sandbox_policy: &SandboxPolicy::DangerFullAccess,
+        sandbox_policy: &SandboxPolicy::RootAccess,
         windows_sandbox_level: WindowsSandboxLevel::Disabled,
     });
     let (tools, _) = build_specs(&tools_config, None, None, &[]).build();
@@ -767,7 +767,7 @@ fn get_memory_requires_feature_flag() {
         features: &features,
         web_search_mode: Some(WebSearchMode::Cached),
         session_source: SessionSource::Cli,
-        sandbox_policy: &SandboxPolicy::DangerFullAccess,
+        sandbox_policy: &SandboxPolicy::RootAccess,
         windows_sandbox_level: WindowsSandboxLevel::Disabled,
     });
     let (tools, _) = build_specs(&tools_config, None, None, &[]).build();
@@ -796,7 +796,7 @@ fn image_generation_tools_require_feature_and_supported_model() {
         features: &default_features,
         web_search_mode: Some(WebSearchMode::Cached),
         session_source: SessionSource::Cli,
-        sandbox_policy: &SandboxPolicy::DangerFullAccess,
+        sandbox_policy: &SandboxPolicy::RootAccess,
         windows_sandbox_level: WindowsSandboxLevel::Disabled,
     });
     let (default_tools, _) = build_specs(&default_tools_config, None, None, &[]).build();
@@ -813,7 +813,7 @@ fn image_generation_tools_require_feature_and_supported_model() {
         features: &image_generation_features,
         web_search_mode: Some(WebSearchMode::Cached),
         session_source: SessionSource::Cli,
-        sandbox_policy: &SandboxPolicy::DangerFullAccess,
+        sandbox_policy: &SandboxPolicy::RootAccess,
         windows_sandbox_level: WindowsSandboxLevel::Disabled,
     });
     let (supported_tools, _) = build_specs(&supported_tools_config, None, None, &[]).build();
@@ -833,7 +833,7 @@ fn image_generation_tools_require_feature_and_supported_model() {
         features: &image_generation_features,
         web_search_mode: Some(WebSearchMode::Cached),
         session_source: SessionSource::Cli,
-        sandbox_policy: &SandboxPolicy::DangerFullAccess,
+        sandbox_policy: &SandboxPolicy::RootAccess,
         windows_sandbox_level: WindowsSandboxLevel::Disabled,
     });
     let (tools, _) = build_specs(&tools_config, None, None, &[]).build();
@@ -860,7 +860,7 @@ fn assert_model_tools(
         features,
         web_search_mode,
         session_source: SessionSource::Cli,
-        sandbox_policy: &SandboxPolicy::DangerFullAccess,
+        sandbox_policy: &SandboxPolicy::RootAccess,
         windows_sandbox_level: WindowsSandboxLevel::Disabled,
     });
     let router = ToolRouter::from_config(
@@ -909,7 +909,7 @@ fn web_search_mode_cached_sets_external_web_access_false() {
         features: &features,
         web_search_mode: Some(WebSearchMode::Cached),
         session_source: SessionSource::Cli,
-        sandbox_policy: &SandboxPolicy::DangerFullAccess,
+        sandbox_policy: &SandboxPolicy::RootAccess,
         windows_sandbox_level: WindowsSandboxLevel::Disabled,
     });
     let (tools, _) = build_specs(&tools_config, None, None, &[]).build();
@@ -940,7 +940,7 @@ fn web_search_mode_live_sets_external_web_access_true() {
         features: &features,
         web_search_mode: Some(WebSearchMode::Live),
         session_source: SessionSource::Cli,
-        sandbox_policy: &SandboxPolicy::DangerFullAccess,
+        sandbox_policy: &SandboxPolicy::RootAccess,
         windows_sandbox_level: WindowsSandboxLevel::Disabled,
     });
     let (tools, _) = build_specs(&tools_config, None, None, &[]).build();
@@ -984,7 +984,7 @@ fn web_search_config_is_forwarded_to_tool_spec() {
         features: &features,
         web_search_mode: Some(WebSearchMode::Live),
         session_source: SessionSource::Cli,
-        sandbox_policy: &SandboxPolicy::DangerFullAccess,
+        sandbox_policy: &SandboxPolicy::RootAccess,
         windows_sandbox_level: WindowsSandboxLevel::Disabled,
     })
     .with_web_search_config(Some(web_search_config.clone()));
@@ -1022,7 +1022,7 @@ fn web_search_tool_type_text_and_image_sets_search_content_types() {
         features: &features,
         web_search_mode: Some(WebSearchMode::Live),
         session_source: SessionSource::Cli,
-        sandbox_policy: &SandboxPolicy::DangerFullAccess,
+        sandbox_policy: &SandboxPolicy::RootAccess,
         windows_sandbox_level: WindowsSandboxLevel::Disabled,
     });
     let (tools, _) = build_specs(&tools_config, None, None, &[]).build();
@@ -1057,7 +1057,7 @@ fn mcp_resource_tools_are_hidden_without_mcp_servers() {
         features: &features,
         web_search_mode: Some(WebSearchMode::Cached),
         session_source: SessionSource::Cli,
-        sandbox_policy: &SandboxPolicy::DangerFullAccess,
+        sandbox_policy: &SandboxPolicy::RootAccess,
         windows_sandbox_level: WindowsSandboxLevel::Disabled,
     });
     let (tools, _) = build_specs(&tools_config, None, None, &[]).build();
@@ -1083,7 +1083,7 @@ fn mcp_resource_tools_are_included_when_mcp_servers_are_present() {
         features: &features,
         web_search_mode: Some(WebSearchMode::Cached),
         session_source: SessionSource::Cli,
-        sandbox_policy: &SandboxPolicy::DangerFullAccess,
+        sandbox_policy: &SandboxPolicy::RootAccess,
         windows_sandbox_level: WindowsSandboxLevel::Disabled,
     });
     let (tools, _) = build_specs(&tools_config, Some(HashMap::new()), None, &[]).build();
@@ -1323,7 +1323,7 @@ fn test_build_specs_default_shell_present() {
         features: &features,
         web_search_mode: Some(WebSearchMode::Live),
         session_source: SessionSource::Cli,
-        sandbox_policy: &SandboxPolicy::DangerFullAccess,
+        sandbox_policy: &SandboxPolicy::RootAccess,
         windows_sandbox_level: WindowsSandboxLevel::Disabled,
     });
     let (tools, _) = build_specs(&tools_config, Some(HashMap::new()), None, &[]).build();
@@ -1351,7 +1351,7 @@ fn shell_zsh_fork_prefers_shell_command_over_unified_exec() {
         features: &features,
         web_search_mode: Some(WebSearchMode::Live),
         session_source: SessionSource::Cli,
-        sandbox_policy: &SandboxPolicy::DangerFullAccess,
+        sandbox_policy: &SandboxPolicy::RootAccess,
         windows_sandbox_level: WindowsSandboxLevel::Disabled,
     });
     let user_shell = Shell {
@@ -1405,7 +1405,7 @@ fn test_parallel_support_flags() {
         features: &features,
         web_search_mode: Some(WebSearchMode::Cached),
         session_source: SessionSource::Cli,
-        sandbox_policy: &SandboxPolicy::DangerFullAccess,
+        sandbox_policy: &SandboxPolicy::RootAccess,
         windows_sandbox_level: WindowsSandboxLevel::Disabled,
     });
     let (tools, _) = build_specs(&tools_config, None, None, &[]).build();
@@ -1435,7 +1435,7 @@ fn test_test_model_info_includes_sync_tool() {
         features: &features,
         web_search_mode: Some(WebSearchMode::Cached),
         session_source: SessionSource::Cli,
-        sandbox_policy: &SandboxPolicy::DangerFullAccess,
+        sandbox_policy: &SandboxPolicy::RootAccess,
         windows_sandbox_level: WindowsSandboxLevel::Disabled,
     });
     let (tools, _) = build_specs(&tools_config, None, None, &[]).build();
@@ -1471,7 +1471,7 @@ fn test_build_specs_mcp_tools_converted() {
         features: &features,
         web_search_mode: Some(WebSearchMode::Live),
         session_source: SessionSource::Cli,
-        sandbox_policy: &SandboxPolicy::DangerFullAccess,
+        sandbox_policy: &SandboxPolicy::RootAccess,
         windows_sandbox_level: WindowsSandboxLevel::Disabled,
     });
     let (tools, _) = build_specs(
@@ -1564,7 +1564,7 @@ fn test_build_specs_mcp_tools_sorted_by_name() {
         features: &features,
         web_search_mode: Some(WebSearchMode::Cached),
         session_source: SessionSource::Cli,
-        sandbox_policy: &SandboxPolicy::DangerFullAccess,
+        sandbox_policy: &SandboxPolicy::RootAccess,
         windows_sandbox_level: WindowsSandboxLevel::Disabled,
     });
 
@@ -1612,7 +1612,7 @@ fn search_tool_description_lists_each_codex_apps_connector_once() {
         features: &features,
         web_search_mode: Some(WebSearchMode::Cached),
         session_source: SessionSource::Cli,
-        sandbox_policy: &SandboxPolicy::DangerFullAccess,
+        sandbox_policy: &SandboxPolicy::RootAccess,
         windows_sandbox_level: WindowsSandboxLevel::Disabled,
     });
 
@@ -1754,7 +1754,7 @@ fn search_tool_requires_model_capability_only() {
         features: &features,
         web_search_mode: Some(WebSearchMode::Cached),
         session_source: SessionSource::Cli,
-        sandbox_policy: &SandboxPolicy::DangerFullAccess,
+        sandbox_policy: &SandboxPolicy::RootAccess,
         windows_sandbox_level: WindowsSandboxLevel::Disabled,
     });
     let (tools, _) = build_specs(&tools_config, None, app_tools.clone(), &[]).build();
@@ -1766,7 +1766,7 @@ fn search_tool_requires_model_capability_only() {
         features: &features,
         web_search_mode: Some(WebSearchMode::Cached),
         session_source: SessionSource::Cli,
-        sandbox_policy: &SandboxPolicy::DangerFullAccess,
+        sandbox_policy: &SandboxPolicy::RootAccess,
         windows_sandbox_level: WindowsSandboxLevel::Disabled,
     });
     let (tools, _) = build_specs(&tools_config, None, app_tools, &[]).build();
@@ -1785,7 +1785,7 @@ fn tool_suggest_is_not_registered_without_feature_flag() {
         features: &features,
         web_search_mode: Some(WebSearchMode::Cached),
         session_source: SessionSource::Cli,
-        sandbox_policy: &SandboxPolicy::DangerFullAccess,
+        sandbox_policy: &SandboxPolicy::RootAccess,
         windows_sandbox_level: WindowsSandboxLevel::Disabled,
     });
     let (tools, _) = build_specs_with_discoverable_tools(
@@ -1820,7 +1820,7 @@ fn search_tool_description_handles_no_enabled_apps() {
         features: &features,
         web_search_mode: Some(WebSearchMode::Cached),
         session_source: SessionSource::Cli,
-        sandbox_policy: &SandboxPolicy::DangerFullAccess,
+        sandbox_policy: &SandboxPolicy::RootAccess,
         windows_sandbox_level: WindowsSandboxLevel::Disabled,
     });
 
@@ -1846,7 +1846,7 @@ fn search_tool_description_falls_back_to_connector_name_without_description() {
         features: &features,
         web_search_mode: Some(WebSearchMode::Cached),
         session_source: SessionSource::Cli,
-        sandbox_policy: &SandboxPolicy::DangerFullAccess,
+        sandbox_policy: &SandboxPolicy::RootAccess,
         windows_sandbox_level: WindowsSandboxLevel::Disabled,
     });
 
@@ -1894,7 +1894,7 @@ fn search_tool_registers_namespaced_app_tool_aliases() {
         features: &features,
         web_search_mode: Some(WebSearchMode::Cached),
         session_source: SessionSource::Cli,
-        sandbox_policy: &SandboxPolicy::DangerFullAccess,
+        sandbox_policy: &SandboxPolicy::RootAccess,
         windows_sandbox_level: WindowsSandboxLevel::Disabled,
     });
 
@@ -1960,7 +1960,7 @@ fn tool_suggest_description_lists_discoverable_tools() {
         features: &features,
         web_search_mode: Some(WebSearchMode::Cached),
         session_source: SessionSource::Cli,
-        sandbox_policy: &SandboxPolicy::DangerFullAccess,
+        sandbox_policy: &SandboxPolicy::RootAccess,
         windows_sandbox_level: WindowsSandboxLevel::Disabled,
     });
 
@@ -2040,7 +2040,7 @@ fn test_mcp_tool_property_missing_type_defaults_to_string() {
         features: &features,
         web_search_mode: Some(WebSearchMode::Cached),
         session_source: SessionSource::Cli,
-        sandbox_policy: &SandboxPolicy::DangerFullAccess,
+        sandbox_policy: &SandboxPolicy::RootAccess,
         windows_sandbox_level: WindowsSandboxLevel::Disabled,
     });
 
@@ -2100,7 +2100,7 @@ fn test_mcp_tool_integer_normalized_to_number() {
         features: &features,
         web_search_mode: Some(WebSearchMode::Cached),
         session_source: SessionSource::Cli,
-        sandbox_policy: &SandboxPolicy::DangerFullAccess,
+        sandbox_policy: &SandboxPolicy::RootAccess,
         windows_sandbox_level: WindowsSandboxLevel::Disabled,
     });
 
@@ -2157,7 +2157,7 @@ fn test_mcp_tool_array_without_items_gets_default_string_items() {
         features: &features,
         web_search_mode: Some(WebSearchMode::Cached),
         session_source: SessionSource::Cli,
-        sandbox_policy: &SandboxPolicy::DangerFullAccess,
+        sandbox_policy: &SandboxPolicy::RootAccess,
         windows_sandbox_level: WindowsSandboxLevel::Disabled,
     });
 
@@ -2216,7 +2216,7 @@ fn test_mcp_tool_anyof_defaults_to_string() {
         features: &features,
         web_search_mode: Some(WebSearchMode::Cached),
         session_source: SessionSource::Cli,
-        sandbox_policy: &SandboxPolicy::DangerFullAccess,
+        sandbox_policy: &SandboxPolicy::RootAccess,
         windows_sandbox_level: WindowsSandboxLevel::Disabled,
     });
 
@@ -2387,7 +2387,7 @@ fn test_get_openai_tools_mcp_tools_with_additional_properties_schema() {
         features: &features,
         web_search_mode: Some(WebSearchMode::Cached),
         session_source: SessionSource::Cli,
-        sandbox_policy: &SandboxPolicy::DangerFullAccess,
+        sandbox_policy: &SandboxPolicy::RootAccess,
         windows_sandbox_level: WindowsSandboxLevel::Disabled,
     });
     let (tools, _) = build_specs(

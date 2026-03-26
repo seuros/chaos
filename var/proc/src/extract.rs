@@ -266,7 +266,7 @@ mod tests {
                 current_date: None,
                 timezone: None,
                 approval_policy: AskForApproval::Never,
-                sandbox_policy: SandboxPolicy::DangerFullAccess,
+                sandbox_policy: SandboxPolicy::RootAccess,
                 network: None,
                 model: "gpt-5".to_string(),
                 personality: None,
@@ -284,7 +284,7 @@ mod tests {
         assert_eq!(metadata.cwd, PathBuf::from("/child/worktree"));
         assert_eq!(
             metadata.sandbox_policy,
-            super::enum_to_string(&SandboxPolicy::DangerFullAccess)
+            super::enum_to_string(&SandboxPolicy::RootAccess)
         );
         assert_eq!(metadata.approval_mode, "never");
     }

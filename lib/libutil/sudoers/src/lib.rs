@@ -40,7 +40,7 @@ pub fn builtin_approval_presets() -> Vec<ApprovalPreset> {
             label: "Full Access",
             description: "Codex can edit files outside this workspace and access the internet without asking for approval. Exercise caution when using.",
             approval: AskForApproval::Never,
-            sandbox: SandboxPolicy::DangerFullAccess,
+            sandbox: SandboxPolicy::RootAccess,
         },
     ]
 }

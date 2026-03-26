@@ -404,7 +404,7 @@ fn sandbox_policy_tag(policy: &SandboxPolicy) -> &'static str {
     match policy {
         SandboxPolicy::ReadOnly { .. } => "read-only",
         SandboxPolicy::WorkspaceWrite { .. } => "workspace-write",
-        SandboxPolicy::DangerFullAccess => "danger-full-access",
+        SandboxPolicy::RootAccess => "root-access",
         SandboxPolicy::ExternalSandbox { .. } => "external-sandbox",
     }
 }

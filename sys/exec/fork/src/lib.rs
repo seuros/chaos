@@ -182,7 +182,7 @@ pub async fn run_main(cli: Cli, arg0_paths: Arg0DispatchPaths) -> anyhow::Result
     let sandbox_mode = if full_auto {
         Some(SandboxMode::WorkspaceWrite)
     } else if dangerously_bypass_approvals_and_sandbox {
-        Some(SandboxMode::DangerFullAccess)
+        Some(SandboxMode::RootAccess)
     } else {
         sandbox_mode_cli_arg.map(Into::<SandboxMode>::into)
     };

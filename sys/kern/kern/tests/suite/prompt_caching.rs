@@ -955,7 +955,7 @@ async fn send_user_turn_with_changes_sends_environment_context() -> anyhow::Resu
             }],
             cwd: default_cwd.clone(),
             approval_policy: AskForApproval::Never,
-            sandbox_policy: SandboxPolicy::DangerFullAccess,
+            sandbox_policy: SandboxPolicy::RootAccess,
             model: "o3".to_string(),
             effort: Some(ReasoningEffort::High),
             summary: Some(ReasoningSummary::Detailed),

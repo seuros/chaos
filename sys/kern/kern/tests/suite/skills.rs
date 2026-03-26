@@ -73,7 +73,7 @@ async fn user_turn_includes_skill_instructions() -> Result<()> {
             final_output_json_schema: None,
             cwd: test.cwd_path().to_path_buf(),
             approval_policy: AskForApproval::Never,
-            sandbox_policy: SandboxPolicy::DangerFullAccess,
+            sandbox_policy: SandboxPolicy::RootAccess,
             model: session_model,
             effort: None,
             summary: None,

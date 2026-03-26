@@ -161,7 +161,7 @@ pub enum ApprovalsReviewerV2 {
 pub enum SandboxModeV2 {
     ReadOnly,
     WorkspaceWrite,
-    DangerFullAccess,
+    RootAccess,
 }
 
 // ===========================================================================

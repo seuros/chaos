@@ -65,9 +65,9 @@ pub fn assess_patch_safety(
     {
         if matches!(
             sandbox_policy,
-            SandboxPolicy::DangerFullAccess | SandboxPolicy::ExternalSandbox { .. }
+            SandboxPolicy::RootAccess | SandboxPolicy::ExternalSandbox { .. }
         ) {
-            // DangerFullAccess is intended to bypass sandboxing entirely.
+            // RootAccess is intended to bypass sandboxing entirely.
             SafetyCheck::AutoApprove {
                 sandbox_type: SandboxType::None,
                 user_explicitly_approved: false,

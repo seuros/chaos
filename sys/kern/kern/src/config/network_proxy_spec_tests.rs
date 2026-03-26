@@ -49,7 +49,7 @@ fn requirements_allowed_domains_are_a_baseline_for_user_allowlist() {
 }
 
 #[test]
-fn danger_full_access_keeps_managed_allowlist_and_denylist_fixed() {
+fn root_access_keeps_managed_allowlist_and_denylist_fixed() {
     let mut config = NetworkProxyConfig::default();
     config.network.allowed_domains = vec!["evil.com".to_string()];
     config.network.denied_domains = vec!["more-blocked.example.com".to_string()];
@@ -62,7 +62,7 @@ fn danger_full_access_keeps_managed_allowlist_and_denylist_fixed() {
     let spec = NetworkProxySpec::from_config_and_constraints(
         config,
         Some(requirements),
-        &SandboxPolicy::DangerFullAccess,
+        &SandboxPolicy::RootAccess,
     )
     .expect("yolo mode should pin the effective policy to the managed baseline");
 
@@ -165,7 +165,7 @@ fn managed_allowed_domains_only_blocks_all_user_domains_in_full_access_without_m
     let spec = NetworkProxySpec::from_config_and_constraints(
         config,
         Some(requirements),
-        &SandboxPolicy::DangerFullAccess,
+        &SandboxPolicy::RootAccess,
     )
     .expect("managed-only mode should treat missing managed allowlist as empty");
 

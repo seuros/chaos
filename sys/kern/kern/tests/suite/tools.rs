@@ -75,7 +75,7 @@ async fn custom_tool_unknown_returns_custom_output_error() -> Result<()> {
     test.submit_turn_with_policies(
         "invoke custom tool",
         AskForApproval::Never,
-        SandboxPolicy::DangerFullAccess,
+        SandboxPolicy::RootAccess,
     )
     .await?;
 
@@ -150,7 +150,7 @@ async fn shell_escalated_permissions_rejected_then_ok() -> Result<()> {
     test.submit_turn_with_policies(
         "run the shell command",
         AskForApproval::Never,
-        SandboxPolicy::DangerFullAccess,
+        SandboxPolicy::RootAccess,
     )
     .await?;
 
@@ -308,7 +308,7 @@ async fn collect_tools(use_unified_exec: bool) -> Result<Vec<String>> {
     test.submit_turn_with_policies(
         "list tools",
         AskForApproval::Never,
-        SandboxPolicy::DangerFullAccess,
+        SandboxPolicy::RootAccess,
     )
     .await?;
 
@@ -379,7 +379,7 @@ async fn shell_timeout_includes_timeout_prefix_and_metadata() -> Result<()> {
     test.submit_turn_with_policies(
         "run a long command",
         AskForApproval::Never,
-        SandboxPolicy::DangerFullAccess,
+        SandboxPolicy::RootAccess,
     )
     .await?;
 
@@ -423,7 +423,7 @@ async fn shell_timeout_handles_background_grandchild_stdout() -> Result<()> {
         config
             .permissions
             .sandbox_policy
-            .set(SandboxPolicy::DangerFullAccess)
+            .set(SandboxPolicy::RootAccess)
             .expect("set sandbox policy");
     });
     let test = builder.build(&server).await?;
@@ -472,7 +472,7 @@ time.sleep(60)
         test.submit_turn_with_policies(
             "run a command with a detached grandchild",
             AskForApproval::Never,
-            SandboxPolicy::DangerFullAccess,
+            SandboxPolicy::RootAccess,
         )
         .await?;
         let timeout_item = second_mock.single_request().function_call_output(call_id);
@@ -519,7 +519,7 @@ async fn shell_spawn_failure_truncates_exec_error() -> Result<()> {
     let mut builder = test_codex().with_config(|cfg| {
         cfg.permissions
             .sandbox_policy
-            .set(SandboxPolicy::DangerFullAccess)
+            .set(SandboxPolicy::RootAccess)
             .expect("set sandbox policy");
     });
     let test = builder.build(&server).await?;
@@ -559,7 +559,7 @@ async fn shell_spawn_failure_truncates_exec_error() -> Result<()> {
     test.submit_turn_with_policies(
         "spawn a missing binary",
         AskForApproval::Never,
-        SandboxPolicy::DangerFullAccess,
+        SandboxPolicy::RootAccess,
     )
     .await?;
 

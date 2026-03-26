@@ -6877,7 +6877,7 @@ impl ChatWidget {
         }
 
         match (current_sandbox, &preset.sandbox) {
-            (SandboxPolicy::DangerFullAccess, SandboxPolicy::DangerFullAccess) => true,
+            (SandboxPolicy::RootAccess, SandboxPolicy::RootAccess) => true,
             (
                 SandboxPolicy::ReadOnly {
                     network_access: current_network_access,

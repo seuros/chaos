@@ -37,7 +37,7 @@ use std::collections::HashMap;
 use tempfile::TempDir;
 
 #[test]
-fn danger_full_access_defaults_to_no_sandbox_without_network_requirements() {
+fn root_access_defaults_to_no_sandbox_without_network_requirements() {
     let manager = SandboxManager::new();
     let sandbox = manager.select_initial(
         &FileSystemSandboxPolicy::unrestricted(),
@@ -49,7 +49,7 @@ fn danger_full_access_defaults_to_no_sandbox_without_network_requirements() {
 }
 
 #[test]
-fn danger_full_access_uses_platform_sandbox_with_network_requirements() {
+fn root_access_uses_platform_sandbox_with_network_requirements() {
     let manager = SandboxManager::new();
     let expected = crate::safety::get_platform_sandbox().unwrap_or(SandboxType::None);
     let sandbox = manager.select_initial(

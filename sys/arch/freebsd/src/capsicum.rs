@@ -200,13 +200,13 @@ mod tests {
     }
 
     #[test]
-    fn danger_full_access_applies_hardening() {
+    fn root_access_applies_hardening() {
         let result = apply_sandbox_policy_to_current_thread(
             &FileSystemSandboxPolicy::unrestricted(),
             NetworkSandboxPolicy::Enabled,
             false,
             false,
         );
-        assert!(result.is_ok(), "DangerFullAccess should succeed with procctl hardening");
+        assert!(result.is_ok(), "RootAccess should succeed with procctl hardening");
     }
 }

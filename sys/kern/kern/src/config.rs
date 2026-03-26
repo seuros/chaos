@@ -1454,7 +1454,7 @@ impl ConfigToml {
                 },
                 None => SandboxPolicy::new_workspace_write_policy(),
             },
-            SandboxMode::DangerFullAccess => SandboxPolicy::DangerFullAccess,
+            SandboxMode::RootAccess => SandboxPolicy::RootAccess,
         };
         if !sandbox_mode_was_explicit
             && let Some(constraint) = sandbox_policy_constraint
@@ -1718,7 +1718,7 @@ pub(crate) fn resolve_web_search_mode_for_turn(
 ) -> WebSearchMode {
     let preferred = web_search_mode.value();
 
-    if matches!(sandbox_policy, SandboxPolicy::DangerFullAccess)
+    if matches!(sandbox_policy, SandboxPolicy::RootAccess)
         && preferred != WebSearchMode::Disabled
     {
         for mode in [

@@ -6,8 +6,8 @@ use chaos_ipc::protocol::NetworkAccess;
 use pretty_assertions::assert_eq;
 
 #[test]
-fn danger_full_access_is_untagged_even_when_linux_sandbox_defaults_apply() {
-    let actual = sandbox_tag(&SandboxPolicy::DangerFullAccess);
+fn root_access_is_untagged_even_when_linux_sandbox_defaults_apply() {
+    let actual = sandbox_tag(&SandboxPolicy::RootAccess);
     assert_eq!(actual, "none");
 }
 

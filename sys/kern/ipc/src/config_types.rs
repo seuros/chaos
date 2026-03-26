@@ -62,8 +62,8 @@ pub enum SandboxMode {
     #[serde(rename = "workspace-write")]
     WorkspaceWrite,
 
-    #[serde(rename = "danger-full-access")]
-    DangerFullAccess,
+    #[serde(rename = "root-access")]
+    RootAccess,
 }
 
 #[derive(

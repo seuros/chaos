@@ -126,7 +126,7 @@ async fn execpolicy_blocks_shell_invocation() -> Result<()> {
             final_output_json_schema: None,
             cwd: test.cwd_path().to_path_buf(),
             approval_policy: AskForApproval::Never,
-            sandbox_policy: SandboxPolicy::DangerFullAccess,
+            sandbox_policy: SandboxPolicy::RootAccess,
             model: session_model,
             effort: None,
             summary: None,
@@ -197,7 +197,7 @@ async fn shell_command_empty_script_with_collaboration_mode_does_not_panic() -> 
         &test,
         "run an empty shell command",
         AskForApproval::OnRequest,
-        SandboxPolicy::DangerFullAccess,
+        SandboxPolicy::RootAccess,
         Some(collaboration_mode),
     )
     .await?;
@@ -256,7 +256,7 @@ async fn unified_exec_empty_script_with_collaboration_mode_does_not_panic() -> R
         &test,
         "run empty unified exec command",
         AskForApproval::OnRequest,
-        SandboxPolicy::DangerFullAccess,
+        SandboxPolicy::RootAccess,
         Some(collaboration_mode),
     )
     .await?;
@@ -311,7 +311,7 @@ async fn shell_command_whitespace_script_with_collaboration_mode_does_not_panic(
         &test,
         "run whitespace shell command",
         AskForApproval::OnRequest,
-        SandboxPolicy::DangerFullAccess,
+        SandboxPolicy::RootAccess,
         Some(collaboration_mode),
     )
     .await?;
@@ -370,7 +370,7 @@ async fn unified_exec_whitespace_script_with_collaboration_mode_does_not_panic()
         &test,
         "run whitespace unified exec command",
         AskForApproval::OnRequest,
-        SandboxPolicy::DangerFullAccess,
+        SandboxPolicy::RootAccess,
         Some(collaboration_mode),
     )
     .await?;

@@ -428,8 +428,8 @@ pub enum SandboxModeRequirement {
     #[serde(rename = "workspace-write")]
     WorkspaceWrite,
 
-    #[serde(rename = "danger-full-access")]
-    DangerFullAccess,
+    #[serde(rename = "root-access")]
+    RootAccess,
 
     #[serde(rename = "external-sandbox")]
     ExternalSandbox,
@@ -440,7 +440,7 @@ impl From<SandboxMode> for SandboxModeRequirement {
         match mode {
             SandboxMode::ReadOnly => SandboxModeRequirement::ReadOnly,
             SandboxMode::WorkspaceWrite => SandboxModeRequirement::WorkspaceWrite,
-            SandboxMode::DangerFullAccess => SandboxModeRequirement::DangerFullAccess,
+            SandboxMode::RootAccess => SandboxModeRequirement::RootAccess,
         }
     }
 }
@@ -546,7 +546,7 @@ impl TryFrom<ConfigRequirementsWithSources> for ConfigRequirements {
                         SandboxPolicy::WorkspaceWrite { .. } => {
                             SandboxModeRequirement::WorkspaceWrite
                         }
-                        SandboxPolicy::DangerFullAccess => SandboxModeRequirement::DangerFullAccess,
+                        SandboxPolicy::RootAccess => SandboxModeRequirement::RootAccess,
                         SandboxPolicy::ExternalSandbox { .. } => {
                             SandboxModeRequirement::ExternalSandbox
                         }
@@ -732,7 +732,7 @@ mod tests {
         let allowed_approval_policies = vec![AskForApproval::UnlessTrusted, AskForApproval::Never];
         let allowed_sandbox_modes = vec![
             SandboxModeRequirement::WorkspaceWrite,
-            SandboxModeRequirement::DangerFullAccess,
+            SandboxModeRequirement::RootAccess,
         ];
         let allowed_web_search_modes = vec![
             WebSearchModeRequirement::Cached,
@@ -1060,10 +1060,10 @@ mod tests {
         assert_eq!(
             requirements
                 .sandbox_policy
-                .can_set(&SandboxPolicy::DangerFullAccess),
+                .can_set(&SandboxPolicy::RootAccess),
             Err(ConstraintError::InvalidValue {
                 field_name: "sandbox_mode",
-                candidate: "DangerFullAccess".into(),
+                candidate: "RootAccess".into(),
                 allowed: "[ReadOnly]".into(),
                 requirement_source: source_location,
             })
@@ -1226,10 +1226,10 @@ mod tests {
         assert_eq!(
             requirements
                 .sandbox_policy
-                .can_set(&SandboxPolicy::DangerFullAccess),
+                .can_set(&SandboxPolicy::RootAccess),
             Err(ConstraintError::InvalidValue {
                 field_name: "sandbox_mode",
-                candidate: "DangerFullAccess".into(),
+                candidate: "RootAccess".into(),
                 allowed: "[ReadOnly, WorkspaceWrite]".into(),
                 requirement_source: RequirementSource::Unknown,
             })

@@ -7303,7 +7303,7 @@ async fn permissions_selection_history_snapshot_full_access_to_default() {
     chat.config
         .permissions
         .sandbox_policy
-        .set(SandboxPolicy::DangerFullAccess)
+        .set(SandboxPolicy::RootAccess)
         .expect("set sandbox policy");
 
     chat.open_permissions_popup();

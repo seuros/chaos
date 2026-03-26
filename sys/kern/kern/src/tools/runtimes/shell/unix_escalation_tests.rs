@@ -703,7 +703,7 @@ async fn prepare_escalated_exec_permissions_preserve_macos_seatbelt_extensions()
         env: HashMap::new(),
         network: None,
         sandbox: SandboxType::None,
-        sandbox_policy: SandboxPolicy::DangerFullAccess,
+        sandbox_policy: SandboxPolicy::RootAccess,
         file_system_sandbox_policy: unrestricted_file_system_sandbox_policy(),
         network_sandbox_policy: NetworkSandboxPolicy::Enabled,
         windows_sandbox_level: WindowsSandboxLevel::Disabled,

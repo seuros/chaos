@@ -69,7 +69,6 @@ indexmap = { workspace = true }
 keyring = { workspace = true, features = ["crypto-rust"] }
 libc = { workspace = true }
 notify = { workspace = true }
-once_cell = { workspace = true }
 os_info = { workspace = true }
 rand = { workspace = true }
 regex-lite = { workspace = true }

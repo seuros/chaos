@@ -11,7 +11,7 @@ use chaos_ipc::config_types::CollaborationModeMask;
 use chaos_ipc::openai_models::ModelInfo;
 use chaos_ipc::openai_models::ModelPreset;
 use chaos_ipc::openai_models::ModelsResponse;
-use once_cell::sync::Lazy;
+use std::sync::LazyLock;
 
 use crate::AuthManager;
 use crate::CodexAuth;
@@ -23,7 +23,7 @@ use crate::models_manager::manager::ModelsManager;
 use crate::thread_manager;
 use crate::unified_exec;
 
-static TEST_MODEL_PRESETS: Lazy<Vec<ModelPreset>> = Lazy::new(|| {
+static TEST_MODEL_PRESETS: LazyLock<Vec<ModelPreset>> = LazyLock::new(|| {
     let file_contents = include_str!("../models.json");
     let mut response: ModelsResponse = serde_json::from_str(file_contents)
         .unwrap_or_else(|err| panic!("bundled models.json should parse: {err}"));

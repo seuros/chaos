@@ -2,16 +2,14 @@ use chaos_ipc::custom_prompts::CustomPrompt;
 use chaos_ipc::custom_prompts::PROMPTS_CMD_PREFIX;
 use chaos_ipc::user_input::ByteRange;
 use chaos_ipc::user_input::TextElement;
-use lazy_static::lazy_static;
 use regex_lite::Regex;
 use shlex::Shlex;
 use std::collections::HashMap;
 use std::collections::HashSet;
+use std::sync::LazyLock;
 
-lazy_static! {
-    static ref PROMPT_ARG_REGEX: Regex =
-        Regex::new(r"\$[A-Z][A-Z0-9_]*").unwrap_or_else(|_| std::process::abort());
-}
+static PROMPT_ARG_REGEX: LazyLock<Regex> =
+    LazyLock::new(|| Regex::new(r"\$[A-Z][A-Z0-9_]*").unwrap_or_else(|_| std::process::abort()));
 
 #[derive(Debug)]
 pub enum PromptArgsError {

@@ -2,7 +2,7 @@ mod storage;
 
 use async_trait::async_trait;
 use chrono::Utc;
-use reqwest::StatusCode;
+use http::StatusCode;
 use serde::Deserialize;
 use serde::Serialize;
 #[cfg(test)]

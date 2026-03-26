@@ -13,7 +13,7 @@ use chaos_ipc::ThreadId;
 use chaos_ipc::protocol::CodexErrorInfo;
 use chaos_ipc::protocol::ErrorEvent;
 use chaos_ipc::protocol::RateLimitSnapshot;
-use reqwest::StatusCode;
+use http::StatusCode;
 use serde_json;
 use std::io;
 use std::time::Duration;
@@ -232,7 +232,7 @@ impl CodexErr {
 
 #[derive(Debug)]
 pub struct ConnectionFailedError {
-    pub source: reqwest::Error,
+    pub source: Box<dyn std::error::Error + Send + Sync>,
 }
 
 impl std::fmt::Display for ConnectionFailedError {
@@ -243,7 +243,7 @@ impl std::fmt::Display for ConnectionFailedError {
 
 #[derive(Debug)]
 pub struct ResponseStreamFailed {
-    pub source: reqwest::Error,
+    pub source: Box<dyn std::error::Error + Send + Sync>,
     pub request_id: Option<String>,
 }
 
@@ -624,8 +624,8 @@ impl CodexErr {
         let http_status_code = match self {
             CodexErr::RetryLimit(err) => Some(err.status),
             CodexErr::UnexpectedStatus(err) => Some(err.status),
-            CodexErr::ConnectionFailed(err) => err.source.status(),
-            CodexErr::ResponseStreamFailed(err) => err.source.status(),
+            CodexErr::ConnectionFailed(_) => None,
+            CodexErr::ResponseStreamFailed(_) => None,
             _ => None,
         };
         http_status_code.as_ref().map(StatusCode::as_u16)

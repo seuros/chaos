@@ -2,7 +2,7 @@ use codex_api::AuthProvider;
 use codex_api::ModelsClient;
 use codex_api::provider::Provider;
 use codex_api::provider::RetryConfig;
-use codex_client::ReqwestTransport;
+use codex_client::RamaTransport;
 use chaos_ipc::config_types::ReasoningSummary;
 use chaos_ipc::openai_models::ConfigShellToolType;
 use chaos_ipc::openai_models::ModelInfo;
@@ -109,7 +109,7 @@ async fn models_client_hits_models_endpoint() {
         .mount(&server)
         .await;
 
-    let transport = ReqwestTransport::new(reqwest::Client::new());
+    let transport = RamaTransport::default_client();
     let client = ModelsClient::new(transport, provider(&base_url), DummyAuth);
 
     let (models, _) = client

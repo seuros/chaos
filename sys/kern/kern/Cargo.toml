@@ -73,7 +73,6 @@ once_cell = { workspace = true }
 os_info = { workspace = true }
 rand = { workspace = true }
 regex-lite = { workspace = true }
-reqwest = { workspace = true, features = ["json", "stream"] }
 schemars = { workspace = true }
 serde = { workspace = true, features = ["derive"] }
 serde_json = { workspace = true }

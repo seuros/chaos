@@ -8,7 +8,7 @@ use tempfile::TempDir;
 #[test]
 fn execpolicy_check_matches_expected_json() -> Result<(), Box<dyn std::error::Error>> {
     let codex_home = TempDir::new()?;
-    let policy_path = codex_home.path().join("rules").join("policy.rules");
+    let policy_path = codex_home.path().join("rules").join("policy.decrees");
     fs::create_dir_all(
         policy_path
             .parent()
@@ -64,7 +64,7 @@ prefix_rule {
 fn execpolicy_check_includes_justification_when_present() -> Result<(), Box<dyn std::error::Error>>
 {
     let codex_home = TempDir::new()?;
-    let policy_path = codex_home.path().join("rules").join("policy.rules");
+    let policy_path = codex_home.path().join("rules").join("policy.decrees");
     fs::create_dir_all(
         policy_path
             .parent()

@@ -365,7 +365,7 @@ async fn guardian_subagent_does_not_inherit_parent_exec_policy_rules() {
     let rules_dir = project_dir.path().join("rules");
     fs::create_dir_all(&rules_dir).expect("create rules dir");
     fs::write(
-        rules_dir.join("deny.rules"),
+        rules_dir.join("deny.decrees"),
         r#"prefix_rule {pattern={"rm"}, decision="forbidden"}"#,
     )
     .expect("write policy file");

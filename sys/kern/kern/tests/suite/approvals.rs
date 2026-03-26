@@ -1896,7 +1896,7 @@ async fn approving_execpolicy_amendment_persists_policy_and_skips_future_prompts
         "expected developer message documenting saved rule, got: {developer_messages:?}"
     );
 
-    let policy_path = test.home.path().join("rules").join("default.rules");
+    let policy_path = test.home.path().join("rules").join("default.decrees");
     let policy_contents = fs::read_to_string(&policy_path)?;
     assert!(
         policy_contents
@@ -2327,7 +2327,7 @@ allow_local_binding = true
         .await?;
     wait_for_completion(&test).await;
 
-    let policy_path = test.home.path().join("rules").join("default.rules");
+    let policy_path = test.home.path().join("rules").join("default.decrees");
     let policy_contents = fs::read_to_string(&policy_path)?;
     let expected_rule = format!(
         r#"network_rule {{host="{}", protocol="{}", decision="deny", justification="Deny {} access to {}"}}"#,
@@ -2466,7 +2466,7 @@ async fn compound_command_with_one_safe_command_still_requires_approval() -> Res
     let rules_dir = test.home.path().join("rules");
     fs::create_dir_all(&rules_dir)?;
     fs::write(
-        rules_dir.join("default.rules"),
+        rules_dir.join("default.decrees"),
         r#"prefix_rule {pattern={"touch", "allow-prefix.txt"}, decision="allow"}"#,
     )?;
 

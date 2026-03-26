@@ -329,6 +329,9 @@ fn stage_str(stage: chaos_kern::features::Stage) -> &'static str {
 }
 
 fn main() -> anyhow::Result<()> {
+    // Install the ring CryptoProvider process-wide before any TLS operation.
+    let _ = rama::tls::rustls::dep::rustls::crypto::ring::default_provider().install_default();
+
     arg0_dispatch_or_else(|arg0_paths: Arg0DispatchPaths| async move {
         cli_main(arg0_paths).await?;
         Ok(())

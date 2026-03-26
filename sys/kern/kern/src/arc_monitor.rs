@@ -8,7 +8,7 @@ use tracing::warn;
 use crate::codex::Session;
 use crate::codex::TurnContext;
 use crate::compact::content_items_to_text;
-use crate::default_client::build_reqwest_client;
+use crate::default_client::build_http_client;
 use crate::event_mapping::is_contextual_user_message_content;
 use chaos_ipc::models::MessagePhase;
 use chaos_ipc::models::ResponseItem;
@@ -139,7 +139,7 @@ pub(crate) async fn monitor_action(
         }
     };
     let body = build_arc_monitor_request(sess, turn_context, action).await;
-    let client = build_reqwest_client();
+    let client = build_http_client();
     let mut request = client
         .post(&url)
         .timeout(ARC_MONITOR_TIMEOUT)

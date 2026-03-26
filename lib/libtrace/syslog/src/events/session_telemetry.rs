@@ -42,8 +42,6 @@ use chaos_ipc::user_input::UserInput;
 use eventsource_stream::Event as StreamEvent;
 use eventsource_stream::EventStreamError as StreamError;
 use opentelemetry_sdk::metrics::data::ResourceMetrics;
-// reqwest::Error removed — log_request is dead code
-// reqwest::Response removed — log_request is dead code
 use std::borrow::Cow;
 use std::future::Future;
 use std::time::Duration;

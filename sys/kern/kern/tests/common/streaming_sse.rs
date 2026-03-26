@@ -591,7 +591,8 @@ data: {"type":"response.completed","response":{"id":"resp-1"}}
             "stream": true
         });
 
-        let resp = reqwest::Client::new()
+        let client = codex_client::CodexHttpClient::default_client();
+        let resp = client
             .post(url)
             .json(&payload)
             .send()

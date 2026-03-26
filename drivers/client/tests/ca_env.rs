@@ -1,7 +1,7 @@
-//! Subprocess coverage for custom CA behavior that must build a real reqwest client.
+//! Subprocess coverage for custom CA behavior that must build a real HTTP client.
 //!
 //! These tests intentionally run through `custom_ca_probe` and
-//! `build_reqwest_client_for_subprocess_tests` instead of calling the helper in-process. The
+//! the rustls config probe instead of calling the helper in-process. The
 //! detailed explanation of what "hermetic" means here lives in `codex_client::custom_ca`; these
 //! tests add the process-level half of that contract by scrubbing inherited CA environment
 //! variables before each subprocess launch. They still stop at client construction: the

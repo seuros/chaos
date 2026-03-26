@@ -1,5 +1,4 @@
-use chrono::DateTime;
-use chrono::Utc;
+use jiff::Timestamp;
 use serde::Deserialize;
 use serde::Serialize;
 use sha2::Digest;
@@ -39,7 +38,7 @@ pub struct AuthDotJson {
     pub tokens: Option<TokenData>,
 
     #[serde(default, skip_serializing_if = "Option::is_none")]
-    pub last_refresh: Option<DateTime<Utc>>,
+    pub last_refresh: Option<Timestamp>,
 }
 
 pub(super) fn get_auth_file(codex_home: &Path) -> PathBuf {

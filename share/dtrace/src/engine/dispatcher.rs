@@ -54,7 +54,7 @@ pub(crate) fn running_summary(handler: &ConfiguredHandler) -> HookRunSummary {
         display_order: handler.display_order,
         status: HookRunStatus::Running,
         status_message: handler.status_message.clone(),
-        started_at: chrono::Utc::now().timestamp(),
+        started_at: jiff::Timestamp::now().as_second(),
         completed_at: None,
         duration_ms: None,
         entries: Vec::new(),

@@ -7,7 +7,7 @@ impl StateRuntime {
         params: &AgentJobCreateParams,
         items: &[AgentJobItemCreateParams],
     ) -> anyhow::Result<AgentJob> {
-        let now = Utc::now().timestamp();
+        let now = jiff::Timestamp::now().as_second();
         let input_headers_json = serde_json::to_string(&params.input_headers)?;
         let output_schema_json = params
             .output_schema_json
@@ -205,7 +205,7 @@ WHERE job_id = ? AND item_id = ?
     }
 
     pub async fn mark_agent_job_running(&self, job_id: &str) -> anyhow::Result<()> {
-        let now = Utc::now().timestamp();
+        let now = jiff::Timestamp::now().as_second();
         sqlx::query(
             r#"
 UPDATE agent_jobs
@@ -228,7 +228,7 @@ WHERE id = ?
     }
 
     pub async fn mark_agent_job_completed(&self, job_id: &str) -> anyhow::Result<()> {
-        let now = Utc::now().timestamp();
+        let now = jiff::Timestamp::now().as_second();
         sqlx::query(
             r#"
 UPDATE agent_jobs
@@ -250,7 +250,7 @@ WHERE id = ?
         job_id: &str,
         error_message: &str,
     ) -> anyhow::Result<()> {
-        let now = Utc::now().timestamp();
+        let now = jiff::Timestamp::now().as_second();
         sqlx::query(
             r#"
 UPDATE agent_jobs
@@ -273,7 +273,7 @@ WHERE id = ?
         job_id: &str,
         reason: &str,
     ) -> anyhow::Result<bool> {
-        let now = Utc::now().timestamp();
+        let now = jiff::Timestamp::now().as_second();
         let result = sqlx::query(
             r#"
 UPDATE agent_jobs
@@ -316,7 +316,7 @@ WHERE id = ?
         job_id: &str,
         item_id: &str,
     ) -> anyhow::Result<bool> {
-        let now = Utc::now().timestamp();
+        let now = jiff::Timestamp::now().as_second();
         let result = sqlx::query(
             r#"
 UPDATE agent_job_items
@@ -345,7 +345,7 @@ WHERE job_id = ? AND item_id = ? AND status = ?
         item_id: &str,
         thread_id: &str,
     ) -> anyhow::Result<bool> {
-        let now = Utc::now().timestamp();
+        let now = jiff::Timestamp::now().as_second();
         let result = sqlx::query(
             r#"
 UPDATE agent_job_items
@@ -375,7 +375,7 @@ WHERE job_id = ? AND item_id = ? AND status = ?
         item_id: &str,
         error_message: Option<&str>,
     ) -> anyhow::Result<bool> {
-        let now = Utc::now().timestamp();
+        let now = jiff::Timestamp::now().as_second();
         let result = sqlx::query(
             r#"
 UPDATE agent_job_items
@@ -404,7 +404,7 @@ WHERE job_id = ? AND item_id = ? AND status = ?
         item_id: &str,
         thread_id: &str,
     ) -> anyhow::Result<bool> {
-        let now = Utc::now().timestamp();
+        let now = jiff::Timestamp::now().as_second();
         let result = sqlx::query(
             r#"
 UPDATE agent_job_items
@@ -429,7 +429,7 @@ WHERE job_id = ? AND item_id = ? AND status = ?
         reporting_thread_id: &str,
         result_json: &Value,
     ) -> anyhow::Result<bool> {
-        let now = Utc::now().timestamp();
+        let now = jiff::Timestamp::now().as_second();
         let serialized = serde_json::to_string(result_json)?;
         let result = sqlx::query(
             r#"
@@ -463,7 +463,7 @@ WHERE
         job_id: &str,
         item_id: &str,
     ) -> anyhow::Result<bool> {
-        let now = Utc::now().timestamp();
+        let now = jiff::Timestamp::now().as_second();
         let result = sqlx::query(
             r#"
 UPDATE agent_job_items
@@ -496,7 +496,7 @@ WHERE
         item_id: &str,
         error_message: &str,
     ) -> anyhow::Result<bool> {
-        let now = Utc::now().timestamp();
+        let now = jiff::Timestamp::now().as_second();
         let result = sqlx::query(
             r#"
 UPDATE agent_job_items

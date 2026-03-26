@@ -37,7 +37,7 @@ pub use chaos_rollout::list::rollout_date_parts;
 /// This cannot be a `From` impl due to the orphan rule (both types are
 /// foreign to codex-core).
 pub fn cursor_from_anchor(anchor: chaos_proc::Anchor) -> Cursor {
-    let ts = OffsetDateTime::from_unix_timestamp(anchor.ts.timestamp())
+    let ts = OffsetDateTime::from_unix_timestamp(anchor.ts.as_second())
         .unwrap_or(OffsetDateTime::UNIX_EPOCH);
     Cursor::new(ts, anchor.id)
 }

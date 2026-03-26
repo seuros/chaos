@@ -1,7 +1,8 @@
 mod storage;
 
 use async_trait::async_trait;
-use chrono::Utc;
+use jiff::Timestamp;
+use jiff::ToSpan;
 use http::StatusCode;
 use serde::Deserialize;
 use serde::Serialize;
@@ -332,7 +333,7 @@ impl CodexAuth {
                 refresh_token: "test".to_string(),
                 account_id: Some("account_id".to_string()),
             }),
-            last_refresh: Some(Utc::now()),
+            last_refresh: Some(Timestamp::now()),
         };
 
         let client = crate::default_client::create_client();
@@ -625,7 +626,7 @@ fn persist_tokens(
     if let Some(refresh_token) = refresh_token {
         tokens.refresh_token = refresh_token;
     }
-    auth_dot_json.last_refresh = Some(Utc::now());
+    auth_dot_json.last_refresh = Some(Timestamp::now());
     storage.save(&auth_dot_json)?;
     Ok(auth_dot_json)
 }
@@ -774,7 +775,7 @@ impl AuthDotJson {
             auth_mode: Some(ApiAuthMode::ChatgptAuthTokens),
             openai_api_key: None,
             tokens: Some(tokens),
-            last_refresh: Some(Utc::now()),
+            last_refresh: Some(Timestamp::now()),
         })
     }
 
@@ -1385,7 +1386,7 @@ impl AuthManager {
             Some(last_refresh) => last_refresh,
             None => return Ok(false),
         };
-        if last_refresh >= Utc::now() - chrono::Duration::days(TOKEN_REFRESH_INTERVAL) {
+        if last_refresh >= Timestamp::now().checked_sub(TOKEN_REFRESH_INTERVAL.days()).unwrap_or(Timestamp::now()) {
             return Ok(false);
         }
         self.refresh_and_persist_chatgpt_token(chatgpt_auth, tokens.refresh_token)

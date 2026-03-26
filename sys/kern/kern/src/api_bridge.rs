@@ -1,6 +1,5 @@
 use base64::Engine;
-use chrono::DateTime;
-use chrono::Utc;
+use jiff::Timestamp;
 use codex_api::AuthProvider as ApiAuthProvider;
 use codex_api::TransportError;
 use codex_api::error::ApiError;
@@ -79,7 +78,7 @@ pub(crate) fn map_api_error(err: ApiError) -> CodexErr {
                             let resets_at = err
                                 .error
                                 .resets_at
-                                .and_then(|seconds| DateTime::<Utc>::from_timestamp(seconds, 0));
+                                .and_then(|seconds| Timestamp::from_second(seconds).ok());
                             return CodexErr::UsageLimitReached(UsageLimitReachedError {
                                 plan_type: err.error.plan_type,
                                 resets_at,

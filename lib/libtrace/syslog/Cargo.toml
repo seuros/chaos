@@ -21,7 +21,7 @@ workspace = true
 disable-default-metrics-exporter = []
 
 [dependencies]
-chrono = { workspace = true }
+jiff = { workspace = true }
 chaos-realpath = { workspace = true }
 chaos-wchar = { workspace = true }
 codex-api = { workspace = true }

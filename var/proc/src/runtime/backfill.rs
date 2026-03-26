@@ -22,7 +22,7 @@ WHERE id = 1
     /// non-expired worker.
     pub async fn try_claim_backfill(&self, lease_seconds: i64) -> anyhow::Result<bool> {
         self.ensure_backfill_state_row().await?;
-        let now = Utc::now().timestamp();
+        let now = jiff::Timestamp::now().as_second();
         let lease_cutoff = now.saturating_sub(lease_seconds.max(0));
         let result = sqlx::query(
             r#"
@@ -54,7 +54,7 @@ WHERE id = 1
             "#,
         )
         .bind(crate::BackfillStatus::Running.as_str())
-        .bind(Utc::now().timestamp())
+        .bind(jiff::Timestamp::now().as_second())
         .execute(self.pool.as_ref())
         .await?;
         Ok(())
@@ -72,7 +72,7 @@ WHERE id = 1
         )
         .bind(crate::BackfillStatus::Running.as_str())
         .bind(watermark)
-        .bind(Utc::now().timestamp())
+        .bind(jiff::Timestamp::now().as_second())
         .execute(self.pool.as_ref())
         .await?;
         Ok(())
@@ -81,7 +81,7 @@ WHERE id = 1
     /// Mark rollout metadata backfill as complete.
     pub async fn mark_backfill_complete(&self, last_watermark: Option<&str>) -> anyhow::Result<()> {
         self.ensure_backfill_state_row().await?;
-        let now = Utc::now().timestamp();
+        let now = jiff::Timestamp::now().as_second();
         sqlx::query(
             r#"
 UPDATE backfill_state
@@ -112,7 +112,7 @@ ON CONFLICT(id) DO NOTHING
         )
         .bind(1_i64)
         .bind(crate::BackfillStatus::Pending.as_str())
-        .bind(Utc::now().timestamp())
+        .bind(jiff::Timestamp::now().as_second())
         .execute(self.pool.as_ref())
         .await?;
         Ok(())
@@ -126,7 +126,6 @@ mod tests {
     use super::test_support::unique_temp_dir;
     use crate::STATE_DB_FILENAME;
     use crate::STATE_DB_VERSION;
-    use chrono::Utc;
     use pretty_assertions::assert_eq;
 
     #[tokio::test]
@@ -276,7 +275,7 @@ mod tests {
             .expect("duplicate backfill claim");
         assert_eq!(duplicate_claim, false);
 
-        let stale_updated_at = Utc::now().timestamp().saturating_sub(10_000);
+        let stale_updated_at = jiff::Timestamp::now().as_second().saturating_sub(10_000);
         sqlx::query(
             r#"
 UPDATE backfill_state

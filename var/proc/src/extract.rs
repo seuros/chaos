@@ -135,8 +135,6 @@ pub(crate) fn enum_to_string<T: Serialize>(value: &T) -> String {
 mod tests {
     use super::apply_rollout_item;
     use crate::model::ThreadMetadata;
-    use chrono::DateTime;
-    use chrono::Utc;
     use chaos_ipc::ThreadId;
     use chaos_ipc::config_types::ReasoningSummary;
     use chaos_ipc::models::ContentItem;
@@ -325,7 +323,7 @@ mod tests {
 
     fn metadata_for_test() -> ThreadMetadata {
         let id = ThreadId::from_string(&Uuid::from_u128(42).to_string()).expect("thread id");
-        let created_at = DateTime::<Utc>::from_timestamp(1_735_689_600, 0).expect("timestamp");
+        let created_at = jiff::Timestamp::new(1_735_689_600, 0).expect("timestamp");
         ThreadMetadata {
             id,
             rollout_path: PathBuf::from("/tmp/a.jsonl"),

@@ -10,7 +10,7 @@ use crate::model::Stage1OutputRow;
 use crate::model::Stage1StartupClaimParams;
 use crate::model::ThreadRow;
 use crate::model::stage1_output_ref_from_parts;
-use chrono::Duration;
+use jiff::ToSpan;
 use sqlx::Executor;
 use sqlx::QueryBuilder;
 use sqlx::Sqlite;
@@ -94,7 +94,7 @@ WHERE memory_mode = 'enabled'
             return Ok(0);
         }
 
-        let now = Utc::now().timestamp();
+        let now = jiff::Timestamp::now().as_second();
         let mut tx = self.pool.begin().await?;
         let mut updated_rows = 0;
 
@@ -134,7 +134,7 @@ WHERE thread_id = ?
     /// - orders by `updated_at DESC, id DESC` and applies `scan_limit`
     ///
     /// For each selected thread, this function calls [`Self::try_claim_stage1_job`]
-    /// with `source_updated_at = thread.updated_at.timestamp()` and returns up to
+    /// with `source_updated_at = thread.updated_at.as_second()` and returns up to
     /// `max_claimed` successful claims.
     pub async fn claim_stage1_jobs_for_startup(
         &self,
@@ -155,8 +155,8 @@ WHERE thread_id = ?
 
         let worker_id = current_thread_id;
         let current_thread_id = worker_id.to_string();
-        let max_age_cutoff = (Utc::now() - Duration::days(max_age_days.max(0))).timestamp();
-        let idle_cutoff = (Utc::now() - Duration::hours(min_rollout_idle_hours.max(0))).timestamp();
+        let max_age_cutoff = jiff::Timestamp::now().checked_sub(max_age_days.max(0).days()).expect("age cutoff").as_second();
+        let idle_cutoff = jiff::Timestamp::now().checked_sub(min_rollout_idle_hours.max(0).hours()).expect("idle cutoff").as_second();
 
         let mut builder = QueryBuilder::<Sqlite>::new(
             r#"
@@ -233,7 +233,7 @@ LEFT JOIN jobs
                 .try_claim_stage1_job(
                     item.id,
                     worker_id,
-                    item.updated_at.timestamp(),
+                    item.updated_at.as_second(),
                     lease_seconds,
                     max_claimed,
                 )
@@ -311,7 +311,7 @@ LIMIT ?
             return Ok(0);
         }
 
-        let cutoff = (Utc::now() - Duration::days(max_unused_days.max(0))).timestamp();
+        let cutoff = jiff::Timestamp::now().checked_sub(max_unused_days.max(0).days()).expect("unused cutoff").as_second();
         let rows_affected = sqlx::query(
             r#"
 DELETE FROM stage1_outputs
@@ -365,7 +365,7 @@ WHERE thread_id IN (
         if n == 0 {
             return Ok(Phase2InputSelection::default());
         }
-        let cutoff = (Utc::now() - Duration::days(max_unused_days.max(0))).timestamp();
+        let cutoff = jiff::Timestamp::now().checked_sub(max_unused_days.max(0).days()).expect("unused cutoff").as_second();
 
         let current_rows = sqlx::query(
             r#"
@@ -476,7 +476,7 @@ ORDER BY so.source_updated_at DESC, so.thread_id DESC
         &self,
         thread_id: ThreadId,
     ) -> anyhow::Result<bool> {
-        let now = Utc::now().timestamp();
+        let now = jiff::Timestamp::now().as_second();
         let thread_id = thread_id.to_string();
         let mut tx = self.pool.begin().await?;
         let rows_affected = sqlx::query(
@@ -539,7 +539,7 @@ WHERE thread_id = ?
         lease_seconds: i64,
         max_running_jobs: usize,
     ) -> anyhow::Result<Stage1JobClaimOutcome> {
-        let now = Utc::now().timestamp();
+        let now = jiff::Timestamp::now().as_second();
         let lease_until = now.saturating_add(lease_seconds.max(0));
         let max_running_jobs = max_running_jobs as i64;
         let ownership_token = Uuid::new_v4().to_string();
@@ -727,7 +727,7 @@ WHERE kind = ? AND job_key = ?
         rollout_summary: &str,
         rollout_slug: Option<&str>,
     ) -> anyhow::Result<bool> {
-        let now = Utc::now().timestamp();
+        let now = jiff::Timestamp::now().as_second();
         let thread_id = thread_id.to_string();
 
         let mut tx = self.pool.begin().await?;
@@ -804,7 +804,7 @@ WHERE excluded.source_updated_at >= stage1_outputs.source_updated_at
         thread_id: ThreadId,
         ownership_token: &str,
     ) -> anyhow::Result<bool> {
-        let now = Utc::now().timestamp();
+        let now = jiff::Timestamp::now().as_second();
         let thread_id = thread_id.to_string();
 
         let mut tx = self.pool.begin().await?;
@@ -881,7 +881,7 @@ WHERE thread_id = ?
         failure_reason: &str,
         retry_delay_seconds: i64,
     ) -> anyhow::Result<bool> {
-        let now = Utc::now().timestamp();
+        let now = jiff::Timestamp::now().as_second();
         let retry_at = now.saturating_add(retry_delay_seconds.max(0));
         let thread_id = thread_id.to_string();
 
@@ -936,7 +936,7 @@ WHERE kind = ? AND job_key = ?
         worker_id: ThreadId,
         lease_seconds: i64,
     ) -> anyhow::Result<Phase2JobClaimOutcome> {
-        let now = Utc::now().timestamp();
+        let now = jiff::Timestamp::now().as_second();
         let lease_until = now.saturating_add(lease_seconds.max(0));
         let ownership_token = Uuid::new_v4().to_string();
         let worker_id = worker_id.to_string();
@@ -1039,7 +1039,7 @@ WHERE kind = ? AND job_key = ?
         ownership_token: &str,
         lease_seconds: i64,
     ) -> anyhow::Result<bool> {
-        let now = Utc::now().timestamp();
+        let now = jiff::Timestamp::now().as_second();
         let lease_until = now.saturating_add(lease_seconds.max(0));
         let rows_affected = sqlx::query(
             r#"
@@ -1077,7 +1077,7 @@ WHERE kind = ? AND job_key = ?
         completed_watermark: i64,
         selected_outputs: &[Stage1Output],
     ) -> anyhow::Result<bool> {
-        let now = Utc::now().timestamp();
+        let now = jiff::Timestamp::now().as_second();
         let mut tx = self.pool.begin().await?;
         let rows_affected = sqlx::query(
             r#"
@@ -1128,9 +1128,9 @@ SET
 WHERE thread_id = ? AND source_updated_at = ?
                 "#,
             )
-            .bind(output.source_updated_at.timestamp())
+            .bind(output.source_updated_at.as_second())
             .bind(output.thread_id.to_string())
-            .bind(output.source_updated_at.timestamp())
+            .bind(output.source_updated_at.as_second())
             .execute(&mut *tx)
             .await?;
         }
@@ -1152,7 +1152,7 @@ WHERE thread_id = ? AND source_updated_at = ?
         failure_reason: &str,
         retry_delay_seconds: i64,
     ) -> anyhow::Result<bool> {
-        let now = Utc::now().timestamp();
+        let now = jiff::Timestamp::now().as_second();
         let retry_at = now.saturating_add(retry_delay_seconds.max(0));
         let rows_affected = sqlx::query(
             r#"
@@ -1193,7 +1193,7 @@ WHERE kind = ? AND job_key = ?
         failure_reason: &str,
         retry_delay_seconds: i64,
     ) -> anyhow::Result<bool> {
-        let now = Utc::now().timestamp();
+        let now = jiff::Timestamp::now().as_second();
         let retry_at = now.saturating_add(retry_delay_seconds.max(0));
         let rows_affected = sqlx::query(
             r#"
@@ -1285,8 +1285,7 @@ mod tests {
     use crate::model::Phase2JobClaimOutcome;
     use crate::model::Stage1JobClaimOutcome;
     use crate::model::Stage1StartupClaimParams;
-    use chrono::Duration;
-    use chrono::Utc;
+    use jiff::ToSpan;
     use chaos_ipc::ThreadId;
     use pretty_assertions::assert_eq;
     use sqlx::Row;
@@ -1532,11 +1531,11 @@ mod tests {
             .await
             .expect("initialize runtime");
 
-        let now = Utc::now();
-        let fresh_at = now - Duration::hours(1);
-        let just_under_idle_at = now - Duration::hours(12) + Duration::minutes(1);
-        let eligible_idle_at = now - Duration::hours(12) - Duration::minutes(1);
-        let old_at = now - Duration::days(31);
+        let now = jiff::Timestamp::now();
+        let fresh_at = now.checked_sub(1.hours()).unwrap();
+        let just_under_idle_at = now.checked_sub(12.hours()).unwrap().checked_add(1.minutes()).unwrap();
+        let eligible_idle_at = now.checked_sub(12.hours()).unwrap().checked_sub(1.minutes()).unwrap();
+        let old_at = now.checked_sub(31.days()).unwrap();
 
         let current_thread_id =
             ThreadId::from_string(&Uuid::new_v4().to_string()).expect("current thread id");
@@ -1622,9 +1621,9 @@ mod tests {
             .await
             .expect("initialize runtime");
 
-        let now = Utc::now();
-        let eligible_newer_at = now - Duration::hours(13);
-        let eligible_older_at = now - Duration::hours(14);
+        let now = jiff::Timestamp::now();
+        let eligible_newer_at = now.checked_sub(13.hours()).unwrap();
+        let eligible_older_at = now.checked_sub(14.hours()).unwrap();
 
         let current_thread_id =
             ThreadId::from_string(&Uuid::new_v4().to_string()).expect("current thread id");
@@ -1659,7 +1658,7 @@ mod tests {
             .try_claim_stage1_job(
                 up_to_date_thread_id,
                 worker_id,
-                up_to_date.updated_at.timestamp(),
+                up_to_date.updated_at.as_second(),
                 3600,
                 64,
             )
@@ -1674,7 +1673,7 @@ mod tests {
                 .mark_stage1_job_succeeded(
                     up_to_date_thread_id,
                     up_to_date_token.as_str(),
-                    up_to_date.updated_at.timestamp(),
+                    up_to_date.updated_at.as_second(),
                     "raw",
                     "summary",
                     None,
@@ -1721,8 +1720,8 @@ mod tests {
             .await
             .expect("initialize runtime");
 
-        let now = Utc::now();
-        let eligible_at = now - Duration::hours(13);
+        let now = jiff::Timestamp::now();
+        let eligible_at = now.checked_sub(13.hours()).unwrap();
 
         let current_thread_id =
             ThreadId::from_string(&Uuid::new_v4().to_string()).expect("current thread id");
@@ -1792,7 +1791,7 @@ mod tests {
             .await
             .expect("initialize runtime");
 
-        let now = Utc::now() - Duration::hours(13);
+        let now = jiff::Timestamp::now().checked_sub(13.hours()).unwrap();
         let worker_id = ThreadId::from_string(&Uuid::new_v4().to_string()).expect("worker id");
         let enabled_thread_id =
             ThreadId::from_string(&Uuid::new_v4().to_string()).expect("enabled thread id");
@@ -1812,7 +1811,7 @@ mod tests {
             .try_claim_stage1_job(
                 enabled_thread_id,
                 worker_id,
-                enabled.updated_at.timestamp(),
+                enabled.updated_at.as_second(),
                 3600,
                 64,
             )
@@ -1827,7 +1826,7 @@ mod tests {
                 .mark_stage1_job_succeeded(
                     enabled_thread_id,
                     ownership_token.as_str(),
-                    enabled.updated_at.timestamp(),
+                    enabled.updated_at.as_second(),
                     "raw",
                     "summary",
                     None,
@@ -1837,7 +1836,7 @@ mod tests {
             "stage1 success should be recorded"
         );
         runtime
-            .enqueue_global_consolidation(enabled.updated_at.timestamp())
+            .enqueue_global_consolidation(enabled.updated_at.as_second())
             .await
             .expect("enqueue global consolidation");
 
@@ -1912,10 +1911,10 @@ mod tests {
             .await
             .expect("upsert current");
 
-        let now = Utc::now();
-        let started_at = now.timestamp();
+        let now = jiff::Timestamp::now();
+        let started_at = now.as_second();
         let lease_until = started_at + 3600;
-        let eligible_at = now - Duration::hours(13);
+        let eligible_at = now.checked_sub(13.hours()).unwrap();
         let existing_running = 10usize;
         let total_candidates = 80usize;
 
@@ -1926,8 +1925,8 @@ mod tests {
                 thread_id,
                 codex_home.join(format!("thread-{idx}")),
             );
-            metadata.created_at = eligible_at - Duration::seconds(idx as i64);
-            metadata.updated_at = eligible_at - Duration::seconds(idx as i64);
+            metadata.created_at = eligible_at.checked_sub((idx as i64).seconds()).unwrap();
+            metadata.updated_at = eligible_at.checked_sub((idx as i64).seconds()).unwrap();
             runtime
                 .upsert_thread(&metadata)
                 .await
@@ -1960,7 +1959,7 @@ INSERT INTO jobs (
                 .bind(started_at)
                 .bind(lease_until)
                 .bind(3)
-                .bind(metadata.updated_at.timestamp())
+                .bind(metadata.updated_at.as_second())
                 .execute(runtime.pool.as_ref())
                 .await
                 .expect("seed running stage1 job");
@@ -1994,7 +1993,7 @@ WHERE kind = 'memory_stage1'
   AND lease_until > ?
             "#,
         )
-        .bind(Utc::now().timestamp())
+        .bind(jiff::Timestamp::now().as_second())
         .fetch_one(runtime.pool.as_ref())
         .await
         .expect("count running stage1 jobs")
@@ -2032,14 +2031,14 @@ WHERE kind = 'memory_stage1'
             ThreadId::from_string(&Uuid::new_v4().to_string()).expect("current thread id");
         let mut current =
             test_thread_metadata(&codex_home, current_thread_id, codex_home.join("current"));
-        current.created_at = Utc::now();
-        current.updated_at = Utc::now();
+        current.created_at = jiff::Timestamp::now();
+        current.updated_at = jiff::Timestamp::now();
         runtime
             .upsert_thread(&current)
             .await
             .expect("upsert current");
 
-        let eligible_at = Utc::now() - Duration::hours(13);
+        let eligible_at = jiff::Timestamp::now().checked_sub(13.hours()).unwrap();
         for idx in 0..200 {
             let thread_id = ThreadId::from_string(&Uuid::new_v4().to_string()).expect("thread id");
             let mut metadata = test_thread_metadata(
@@ -2047,8 +2046,8 @@ WHERE kind = 'memory_stage1'
                 thread_id,
                 codex_home.join(format!("thread-{idx}")),
             );
-            metadata.created_at = eligible_at - Duration::seconds(idx as i64);
-            metadata.updated_at = eligible_at - Duration::seconds(idx as i64);
+            metadata.created_at = eligible_at.checked_sub((idx as i64).seconds()).unwrap();
+            metadata.updated_at = eligible_at.checked_sub((idx as i64).seconds()).unwrap();
             runtime
                 .upsert_thread(&metadata)
                 .await
@@ -2078,7 +2077,7 @@ WHERE kind = 'memory_stage1'
                     .mark_stage1_job_succeeded(
                         claim.thread.id,
                         claim.ownership_token.as_str(),
-                        claim.thread.updated_at.timestamp(),
+                        claim.thread.updated_at.as_second(),
                         "raw",
                         "summary",
                         None,
@@ -3129,7 +3128,7 @@ VALUES (?, ?, ?, ?, ?)
         assert_eq!(selection.selected.len(), 1);
         assert_eq!(selection.previous_selected.len(), 1);
         assert_eq!(selection.selected[0].thread_id, thread_id);
-        assert_eq!(selection.selected[0].source_updated_at.timestamp(), 101);
+        assert_eq!(selection.selected[0].source_updated_at.as_second(), 101);
         assert!(selection.retained_thread_ids.is_empty());
         assert!(selection.removed.is_empty());
 
@@ -3294,7 +3293,7 @@ VALUES (?, ?, ?, ?, ?)
             selection
                 .removed
                 .iter()
-                .map(|output| (output.thread_id, output.source_updated_at.timestamp()))
+                .map(|output| (output.thread_id, output.source_updated_at.as_second()))
                 .collect::<Vec<_>>(),
             vec![(thread_id_a, 102), (thread_id_b, 101)]
         );
@@ -3409,7 +3408,7 @@ VALUES (?, ?, ?, ?, ?)
             .await
             .expect("list second selected outputs");
         assert_eq!(
-            second_selected_outputs[0].source_updated_at.timestamp(),
+            second_selected_outputs[0].source_updated_at.as_second(),
             101
         );
         assert!(
@@ -3500,7 +3499,7 @@ VALUES (?, ?, ?, ?, ?)
             .list_stage1_outputs_for_global(1)
             .await
             .expect("list selected outputs");
-        assert_eq!(selected_outputs[0].source_updated_at.timestamp(), 100);
+        assert_eq!(selected_outputs[0].source_updated_at.as_second(), 100);
 
         let refreshed_claim = runtime
             .try_claim_stage1_job(thread_id, owner, 101, 3600, 64)
@@ -3553,7 +3552,7 @@ VALUES (?, ?, ?, ?, ?)
             .await
             .expect("load phase2 input selection");
         assert_eq!(selection.selected.len(), 1);
-        assert_eq!(selection.selected[0].source_updated_at.timestamp(), 101);
+        assert_eq!(selection.selected[0].source_updated_at.as_second(), 101);
         assert!(selection.retained_thread_ids.is_empty());
 
         let _ = tokio::fs::remove_dir_all(codex_home).await;
@@ -3665,7 +3664,7 @@ VALUES (?, ?, ?, ?, ?)
             .await
             .expect("initialize runtime");
 
-        let now = Utc::now();
+        let now = jiff::Timestamp::now();
         let owner = ThreadId::from_string(&Uuid::new_v4().to_string()).expect("owner id");
         let thread_a = ThreadId::from_string(&Uuid::new_v4().to_string()).expect("thread id a");
         let thread_b = ThreadId::from_string(&Uuid::new_v4().to_string()).expect("thread id b");
@@ -3687,11 +3686,11 @@ VALUES (?, ?, ?, ?, ?)
         }
 
         for (thread_id, generated_at, summary) in [
-            (thread_a, now - Duration::days(3), "summary-a"),
-            (thread_b, now - Duration::days(2), "summary-b"),
-            (thread_c, now - Duration::days(1), "summary-c"),
+            (thread_a, now.checked_sub(3.days()).unwrap(), "summary-a"),
+            (thread_b, now.checked_sub(2.days()).unwrap(), "summary-b"),
+            (thread_c, now.checked_sub(1.days()).unwrap(), "summary-c"),
         ] {
-            let source_updated_at = generated_at.timestamp();
+            let source_updated_at = generated_at.as_second();
             let claim = runtime
                 .try_claim_stage1_job(thread_id, owner, source_updated_at, 3600, 64)
                 .await
@@ -3717,15 +3716,15 @@ VALUES (?, ?, ?, ?, ?)
         }
 
         for (thread_id, usage_count, last_usage) in [
-            (thread_a, 5_i64, now - Duration::days(10)),
-            (thread_b, 5_i64, now - Duration::days(1)),
-            (thread_c, 1_i64, now - Duration::hours(1)),
+            (thread_a, 5_i64, now.checked_sub(10.days()).unwrap()),
+            (thread_b, 5_i64, now.checked_sub(1.days()).unwrap()),
+            (thread_c, 1_i64, now.checked_sub(1.hours()).unwrap()),
         ] {
             sqlx::query(
                 "UPDATE stage1_outputs SET usage_count = ?, last_usage = ? WHERE thread_id = ?",
             )
             .bind(usage_count)
-            .bind(last_usage.timestamp())
+            .bind(last_usage.as_second())
             .bind(thread_id.to_string())
             .execute(runtime.pool.as_ref())
             .await
@@ -3756,7 +3755,7 @@ VALUES (?, ?, ?, ?, ?)
             .await
             .expect("initialize runtime");
 
-        let now = Utc::now();
+        let now = jiff::Timestamp::now();
         let owner = ThreadId::from_string(&Uuid::new_v4().to_string()).expect("owner id");
         let thread_a = ThreadId::from_string(&Uuid::new_v4().to_string()).expect("thread id a");
         let thread_b = ThreadId::from_string(&Uuid::new_v4().to_string()).expect("thread id b");
@@ -3778,11 +3777,11 @@ VALUES (?, ?, ?, ?, ?)
         }
 
         for (thread_id, generated_at, summary) in [
-            (thread_a, now - Duration::days(40), "summary-a"),
-            (thread_b, now - Duration::days(2), "summary-b"),
-            (thread_c, now - Duration::days(50), "summary-c"),
+            (thread_a, now.checked_sub(40.days()).unwrap(), "summary-a"),
+            (thread_b, now.checked_sub(2.days()).unwrap(), "summary-b"),
+            (thread_c, now.checked_sub(50.days()).unwrap(), "summary-c"),
         ] {
-            let source_updated_at = generated_at.timestamp();
+            let source_updated_at = generated_at.as_second();
             let claim = runtime
                 .try_claim_stage1_job(thread_id, owner, source_updated_at, 3600, 64)
                 .await
@@ -3808,15 +3807,15 @@ VALUES (?, ?, ?, ?, ?)
         }
 
         for (thread_id, usage_count, last_usage) in [
-            (thread_a, Some(9_i64), Some(now - Duration::days(31))),
+            (thread_a, Some(9_i64), Some(now.checked_sub(31.days()).unwrap())),
             (thread_b, None, None),
-            (thread_c, Some(1_i64), Some(now - Duration::days(1))),
+            (thread_c, Some(1_i64), Some(now.checked_sub(1.days()).unwrap())),
         ] {
             sqlx::query(
                 "UPDATE stage1_outputs SET usage_count = ?, last_usage = ? WHERE thread_id = ?",
             )
             .bind(usage_count)
-            .bind(last_usage.map(|value| value.timestamp()))
+            .bind(last_usage.map(|value| value.as_second()))
             .bind(thread_id.to_string())
             .execute(runtime.pool.as_ref())
             .await
@@ -3915,7 +3914,7 @@ VALUES (?, ?, ?, ?, ?)
 
         assert_eq!(selection.selected.len(), 1);
         assert_eq!(selection.selected[0].thread_id, newer_thread);
-        assert_eq!(selection.selected[0].source_updated_at.timestamp(), 200);
+        assert_eq!(selection.selected[0].source_updated_at.as_second(), 200);
 
         let _ = tokio::fs::remove_dir_all(codex_home).await;
     }
@@ -3951,26 +3950,26 @@ VALUES (?, ?, ?, ?, ?)
                 .expect("upsert thread");
         }
 
-        let now = Utc::now().timestamp();
+        let now = jiff::Timestamp::now().as_second();
         for (thread_id, source_updated_at, summary) in [
             (
                 stale_unused,
-                now - Duration::days(60).num_seconds(),
+                now - 60 * 86400,
                 "stale-unused",
             ),
             (
                 stale_used,
-                now - Duration::days(50).num_seconds(),
+                now - 50 * 86400,
                 "stale-used",
             ),
             (
                 stale_selected,
-                now - Duration::days(45).num_seconds(),
+                now - 45 * 86400,
                 "stale-selected",
             ),
             (
                 fresh_used,
-                now - Duration::days(10).num_seconds(),
+                now - 10 * 86400,
                 "fresh-used",
             ),
         ] {
@@ -4002,7 +4001,7 @@ VALUES (?, ?, ?, ?, ?)
             "UPDATE stage1_outputs SET usage_count = ?, last_usage = ? WHERE thread_id = ?",
         )
         .bind(3_i64)
-        .bind(now - Duration::days(40).num_seconds())
+        .bind(now - 40 * 86400)
         .bind(stale_used.to_string())
         .execute(runtime.pool.as_ref())
         .await
@@ -4018,7 +4017,7 @@ VALUES (?, ?, ?, ?, ?)
             "UPDATE stage1_outputs SET usage_count = ?, last_usage = ? WHERE thread_id = ?",
         )
         .bind(8_i64)
-        .bind(now - Duration::days(2).num_seconds())
+        .bind(now - 2 * 86400)
         .bind(fresh_used.to_string())
         .execute(runtime.pool.as_ref())
         .await
@@ -4083,11 +4082,11 @@ VALUES (?, ?, ?, ?, ?)
                 .expect("upsert thread");
         }
 
-        let now = Utc::now().timestamp();
+        let now = jiff::Timestamp::now().as_second();
         for (thread_id, source_updated_at, summary) in [
-            (thread_a, now - Duration::days(60).num_seconds(), "stale-a"),
-            (thread_b, now - Duration::days(50).num_seconds(), "stale-b"),
-            (thread_c, now - Duration::days(40).num_seconds(), "stale-c"),
+            (thread_a, now - 60 * 86400, "stale-a"),
+            (thread_b, now - 50 * 86400, "stale-b"),
+            (thread_c, now - 40 * 86400, "stale-c"),
         ] {
             let claim = runtime
                 .try_claim_stage1_job(thread_id, owner, source_updated_at, 3600, 64)
@@ -4277,7 +4276,7 @@ VALUES (?, ?, ?, ?, ?)
         };
 
         sqlx::query("UPDATE jobs SET lease_until = ? WHERE kind = ? AND job_key = ?")
-            .bind(Utc::now().timestamp() - 1)
+            .bind(jiff::Timestamp::now().as_second() - 1)
             .bind("memory_consolidate_global")
             .bind("global")
             .execute(runtime.pool.as_ref())

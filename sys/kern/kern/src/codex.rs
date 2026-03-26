@@ -51,8 +51,8 @@ use crate::util::error_or_panic;
 use crate::ws_version_from_features;
 use async_channel::Receiver;
 use async_channel::Sender;
-use chrono::Local;
-use chrono::Utc;
+use jiff::Timestamp;
+use jiff::Zoned;
 use chaos_dtrace::HookEvent;
 use chaos_dtrace::HookEventAfterAgent;
 use chaos_dtrace::HookPayload;
@@ -924,9 +924,12 @@ impl TurnContext {
 
 fn local_time_context() -> (String, String) {
     match iana_time_zone::get_timezone() {
-        Ok(timezone) => (Local::now().format("%Y-%m-%d").to_string(), timezone),
+        Ok(timezone) => (Zoned::now().strftime("%Y-%m-%d").to_string(), timezone),
         Err(_) => (
-            Utc::now().format("%Y-%m-%d").to_string(),
+            Timestamp::now()
+                .to_zoned(jiff::tz::TimeZone::UTC)
+                .strftime("%Y-%m-%d")
+                .to_string(),
             "Etc/UTC".to_string(),
         ),
     }
@@ -5693,7 +5696,7 @@ pub(crate) async fn run_turn(
                             session_id: sess.conversation_id,
                             cwd: turn_context.cwd.clone(),
                             client: turn_context.app_server_client_name.clone(),
-                            triggered_at: chrono::Utc::now(),
+                            triggered_at: Timestamp::now(),
                             hook_event: HookEvent::AfterAgent {
                                 event: HookEventAfterAgent {
                                     thread_id: sess.conversation_id,

@@ -3,10 +3,7 @@ use crate::rollout;
 use crate::rollout::list::parse_timestamp_uuid_from_filename;
 use crate::rollout::recorder::RolloutRecorder;
 use crate::state_db::normalize_cwd_for_state_db;
-use chrono::DateTime;
-use chrono::NaiveDateTime;
-use chrono::Timelike;
-use chrono::Utc;
+use jiff::Timestamp;
 use chaos_ipc::ThreadId;
 use chaos_ipc::protocol::AskForApproval;
 use chaos_ipc::protocol::RolloutItem;
@@ -81,8 +78,7 @@ pub(crate) fn builder_from_items(
         return None;
     }
     let (created_ts, uuid) = parse_timestamp_uuid_from_filename(file_name)?;
-    let created_at =
-        DateTime::<Utc>::from_timestamp(created_ts.unix_timestamp(), 0)?.with_nanosecond(0)?;
+    let created_at = Timestamp::from_second(created_ts.unix_timestamp()).ok()?;
     let id = ThreadId::from_string(&uuid.to_string()).ok()?;
     Some(ThreadMetadataBuilder::new(
         id,
@@ -366,20 +362,33 @@ fn backfill_watermark_for_path(codex_home: &Path, path: &Path) -> String {
         .replace('\\', "/")
 }
 
-async fn file_modified_time_utc(path: &Path) -> Option<DateTime<Utc>> {
+async fn file_modified_time_utc(path: &Path) -> Option<Timestamp> {
     let modified = tokio::fs::metadata(path).await.ok()?.modified().ok()?;
-    let updated_at: DateTime<Utc> = modified.into();
-    updated_at.with_nanosecond(0)
+    let duration = modified
+        .duration_since(std::time::SystemTime::UNIX_EPOCH)
+        .ok()?;
+    Timestamp::from_second(duration.as_secs() as i64).ok()
 }
 
-fn parse_timestamp_to_utc(ts: &str) -> Option<DateTime<Utc>> {
-    const FILENAME_TS_FORMAT: &str = "%Y-%m-%dT%H-%M-%S";
-    if let Ok(naive) = NaiveDateTime::parse_from_str(ts, FILENAME_TS_FORMAT) {
-        let dt = DateTime::<Utc>::from_naive_utc_and_offset(naive, Utc);
-        return dt.with_nanosecond(0);
+fn parse_timestamp_to_utc(ts: &str) -> Option<Timestamp> {
+    // Try filename format: "YYYY-MM-DDThh-mm-ss"
+    if ts.len() >= 19 && ts.as_bytes().get(13) == Some(&b'-') {
+        let normalized = format!(
+            "{}-{}-{}T{}:{}:{}Z",
+            &ts[0..4],
+            &ts[5..7],
+            &ts[8..10],
+            &ts[11..13],
+            &ts[14..16],
+            &ts[17..19],
+        );
+        if let Ok(parsed) = normalized.parse::<Timestamp>() {
+            return Timestamp::from_second(parsed.as_second()).ok();
+        }
     }
-    if let Ok(dt) = DateTime::parse_from_rfc3339(ts) {
-        return dt.with_timezone(&Utc).with_nanosecond(0);
+    // Try RFC 3339
+    if let Ok(parsed) = ts.parse::<Timestamp>() {
+        return Timestamp::from_second(parsed.as_second()).ok();
     }
     None
 }

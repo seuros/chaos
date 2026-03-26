@@ -26,7 +26,7 @@ use std::net::IpAddr;
 use std::path::Path;
 use std::sync::Arc;
 use std::time::Duration;
-use time::OffsetDateTime;
+use jiff::Timestamp;
 use tokio::net::lookup_host;
 use tokio::sync::RwLock;
 use tokio::time::timeout;
@@ -779,7 +779,7 @@ fn is_explicit_local_allowlisted(allowed_domains: &[String], host: &Host) -> boo
 }
 
 fn unix_timestamp() -> i64 {
-    OffsetDateTime::now_utc().unix_timestamp()
+    Timestamp::now().as_second()
 }
 
 #[cfg(test)]

@@ -282,7 +282,7 @@ ON CONFLICT(id) DO NOTHING
     pub async fn touch_thread_updated_at(
         &self,
         thread_id: ThreadId,
-        updated_at: DateTime<Utc>,
+        updated_at: jiff::Timestamp,
     ) -> anyhow::Result<bool> {
         let result = sqlx::query("UPDATE threads SET updated_at = ? WHERE id = ?")
             .bind(datetime_to_epoch_seconds(updated_at))
@@ -451,7 +451,7 @@ ON CONFLICT(thread_id, position) DO NOTHING
         builder: &ThreadMetadataBuilder,
         items: &[RolloutItem],
         new_thread_memory_mode: Option<&str>,
-        updated_at_override: Option<DateTime<Utc>>,
+        updated_at_override: Option<jiff::Timestamp>,
     ) -> anyhow::Result<()> {
         if items.is_empty() {
             return Ok(());
@@ -506,7 +506,7 @@ ON CONFLICT(thread_id, position) DO NOTHING
         &self,
         thread_id: ThreadId,
         rollout_path: &Path,
-        archived_at: DateTime<Utc>,
+        archived_at: jiff::Timestamp,
     ) -> anyhow::Result<()> {
         let Some(mut metadata) = self.get_thread(thread_id).await? else {
             return Ok(());
@@ -729,7 +729,7 @@ mod tests {
             meta: SessionMeta {
                 id: thread_id,
                 forked_from_id: None,
-                timestamp: metadata.created_at.to_rfc3339(),
+                timestamp: metadata.created_at.to_string(),
                 cwd: PathBuf::new(),
                 originator: String::new(),
                 cli_version: String::new(),
@@ -772,7 +772,7 @@ mod tests {
             .await
             .expect("initial upsert should succeed");
 
-        let created_at = metadata.created_at.to_rfc3339();
+        let created_at = metadata.created_at.to_string();
         let builder = ThreadMetadataBuilder::new(
             thread_id,
             metadata.rollout_path.clone(),
@@ -836,7 +836,7 @@ mod tests {
             .expect("initial upsert should succeed");
 
         let updated_at = datetime_to_epoch_seconds(
-            DateTime::<Utc>::from_timestamp(1_700_000_100, 0).expect("timestamp"),
+            jiff::Timestamp::new(1_700_000_100, 0).expect("timestamp"),
         );
         sqlx::query(
             "UPDATE threads SET updated_at = ?, tokens_used = ?, first_user_message = ? WHERE id = ?",
@@ -891,7 +891,7 @@ mod tests {
         let mut existing = test_thread_metadata(&codex_home, thread_id, codex_home.clone());
         existing.tokens_used = 123;
         existing.first_user_message = Some("newer preview".to_string());
-        existing.updated_at = DateTime::<Utc>::from_timestamp(1_700_000_100, 0).expect("timestamp");
+        existing.updated_at = jiff::Timestamp::new(1_700_000_100, 0).expect("timestamp");
         runtime
             .upsert_thread(&existing)
             .await
@@ -900,7 +900,7 @@ mod tests {
         let mut fallback = test_thread_metadata(&codex_home, thread_id, codex_home.clone());
         fallback.tokens_used = 0;
         fallback.first_user_message = None;
-        fallback.updated_at = DateTime::<Utc>::from_timestamp(1_700_000_000, 0).expect("timestamp");
+        fallback.updated_at = jiff::Timestamp::new(1_700_000_000, 0).expect("timestamp");
 
         let inserted = runtime
             .insert_thread_if_absent(&fallback)
@@ -975,7 +975,7 @@ mod tests {
             .await
             .expect("initial upsert should succeed");
 
-        let touched_at = DateTime::<Utc>::from_timestamp(1_700_001_111, 0).expect("timestamp");
+        let touched_at = jiff::Timestamp::new(1_700_001_111, 0).expect("timestamp");
         let touched = runtime
             .touch_thread_updated_at(thread_id, touched_at)
             .await
@@ -1033,7 +1033,7 @@ mod tests {
             },
         ))];
         let override_updated_at =
-            DateTime::<Utc>::from_timestamp(1_700_001_234, 0).expect("timestamp");
+            jiff::Timestamp::new(1_700_001_234, 0).expect("timestamp");
 
         runtime
             .apply_rollout_items(&builder, &items, None, Some(override_updated_at))

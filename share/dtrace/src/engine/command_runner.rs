@@ -27,7 +27,7 @@ pub(crate) async fn run_command(
     input_json: &str,
     cwd: &Path,
 ) -> CommandRunResult {
-    let started_at = chrono::Utc::now().timestamp();
+    let started_at = jiff::Timestamp::now().as_second();
     let started = Instant::now();
 
     let mut command = build_command(shell, handler);
@@ -43,7 +43,7 @@ pub(crate) async fn run_command(
         Err(err) => {
             return CommandRunResult {
                 started_at,
-                completed_at: chrono::Utc::now().timestamp(),
+                completed_at: jiff::Timestamp::now().as_second(),
                 duration_ms: started.elapsed().as_millis().try_into().unwrap_or(i64::MAX),
                 exit_code: None,
                 stdout: String::new(),
@@ -59,7 +59,7 @@ pub(crate) async fn run_command(
         let _ = child.kill().await;
         return CommandRunResult {
             started_at,
-            completed_at: chrono::Utc::now().timestamp(),
+            completed_at: jiff::Timestamp::now().as_second(),
             duration_ms: started.elapsed().as_millis().try_into().unwrap_or(i64::MAX),
             exit_code: None,
             stdout: String::new(),
@@ -72,7 +72,7 @@ pub(crate) async fn run_command(
     match timeout(timeout_duration, child.wait_with_output()).await {
         Ok(Ok(output)) => CommandRunResult {
             started_at,
-            completed_at: chrono::Utc::now().timestamp(),
+            completed_at: jiff::Timestamp::now().as_second(),
             duration_ms: started.elapsed().as_millis().try_into().unwrap_or(i64::MAX),
             exit_code: output.status.code(),
             stdout: String::from_utf8_lossy(&output.stdout).to_string(),
@@ -81,7 +81,7 @@ pub(crate) async fn run_command(
         },
         Ok(Err(err)) => CommandRunResult {
             started_at,
-            completed_at: chrono::Utc::now().timestamp(),
+            completed_at: jiff::Timestamp::now().as_second(),
             duration_ms: started.elapsed().as_millis().try_into().unwrap_or(i64::MAX),
             exit_code: None,
             stdout: String::new(),
@@ -90,7 +90,7 @@ pub(crate) async fn run_command(
         },
         Err(_) => CommandRunResult {
             started_at,
-            completed_at: chrono::Utc::now().timestamp(),
+            completed_at: jiff::Timestamp::now().as_second(),
             duration_ms: started.elapsed().as_millis().try_into().unwrap_or(i64::MAX),
             exit_code: None,
             stdout: String::new(),

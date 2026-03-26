@@ -91,7 +91,7 @@ async fn rebuild_raw_memories_file(
         writeln!(
             body,
             "updated_at: {}",
-            memory.source_updated_at.to_rfc3339()
+            memory.source_updated_at.to_string()
         )
         .map_err(raw_memories_format_error)?;
         writeln!(body, "cwd: {}", memory.cwd.display()).map_err(raw_memories_format_error)?;
@@ -150,7 +150,7 @@ async fn write_rollout_summary_for_thread(
     writeln!(
         body,
         "updated_at: {}",
-        memory.source_updated_at.to_rfc3339()
+        memory.source_updated_at.to_string()
     )
     .map_err(rollout_summary_format_error)?;
     writeln!(body, "rollout_path: {}", memory.rollout_path.display())
@@ -191,7 +191,7 @@ pub fn rollout_summary_file_stem(memory: &Stage1Output) -> String {
 
 pub fn rollout_summary_file_stem_from_parts(
     thread_id: chaos_ipc::ThreadId,
-    source_updated_at: chrono::DateTime<chrono::Utc>,
+    source_updated_at: jiff::Timestamp,
     rollout_slug: Option<&str>,
 ) -> String {
     const ROLLOUT_SLUG_MAX_LEN: usize = 60;
@@ -206,14 +206,14 @@ pub fn rollout_summary_file_stem_from_parts(
                 .get_timestamp()
                 .and_then(|uuid_timestamp| {
                     let (seconds, nanos) = uuid_timestamp.to_unix();
-                    i64::try_from(seconds).ok().and_then(|secs| {
-                        chrono::DateTime::<chrono::Utc>::from_timestamp(secs, nanos)
-                    })
+                    i64::try_from(seconds)
+                        .ok()
+                        .and_then(|secs| jiff::Timestamp::new(secs, nanos as i32).ok())
                 })
                 .unwrap_or(source_updated_at);
             let short_hash_seed = (thread_uuid.as_u128() & 0xFFFF_FFFF) as u32;
             (
-                timestamp.format("%Y-%m-%dT%H-%M-%S").to_string(),
+                timestamp.strftime("%Y-%m-%dT%H-%M-%S").to_string(),
                 short_hash_seed,
             )
         }
@@ -225,7 +225,7 @@ pub fn rollout_summary_file_stem_from_parts(
                     .wrapping_add(u32::from(byte));
             }
             (
-                source_updated_at.format("%Y-%m-%dT%H-%M-%S").to_string(),
+                source_updated_at.strftime("%Y-%m-%dT%H-%M-%S").to_string(),
                 short_hash_seed,
             )
         }

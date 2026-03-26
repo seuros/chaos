@@ -1,6 +1,4 @@
 use anyhow::Result;
-use chrono::DateTime;
-use chrono::Utc;
 use sqlx::Row;
 use sqlx::sqlite::SqliteRow;
 
@@ -12,7 +10,7 @@ pub struct BackfillState {
     /// Last processed rollout watermark.
     pub last_watermark: Option<String>,
     /// Last successful completion time.
-    pub last_success_at: Option<DateTime<Utc>>,
+    pub last_success_at: Option<jiff::Timestamp>,
 }
 
 impl Default for BackfillState {
@@ -67,7 +65,7 @@ impl BackfillStatus {
     }
 }
 
-fn epoch_seconds_to_datetime(secs: i64) -> Result<DateTime<Utc>> {
-    DateTime::<Utc>::from_timestamp(secs, 0)
-        .ok_or_else(|| anyhow::anyhow!("invalid unix timestamp: {secs}"))
+fn epoch_seconds_to_datetime(secs: i64) -> Result<jiff::Timestamp> {
+    jiff::Timestamp::from_second(secs)
+        .map_err(|err| anyhow::anyhow!("invalid unix timestamp {secs}: {err}"))
 }

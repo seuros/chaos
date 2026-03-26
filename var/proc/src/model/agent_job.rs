@@ -1,6 +1,4 @@
 use anyhow::Result;
-use chrono::DateTime;
-use chrono::Utc;
 use serde_json::Value;
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -84,10 +82,10 @@ pub struct AgentJob {
     pub input_headers: Vec<String>,
     pub input_csv_path: String,
     pub output_csv_path: String,
-    pub created_at: DateTime<Utc>,
-    pub updated_at: DateTime<Utc>,
-    pub started_at: Option<DateTime<Utc>>,
-    pub completed_at: Option<DateTime<Utc>>,
+    pub created_at: jiff::Timestamp,
+    pub updated_at: jiff::Timestamp,
+    pub started_at: Option<jiff::Timestamp>,
+    pub completed_at: Option<jiff::Timestamp>,
     pub last_error: Option<String>,
 }
 
@@ -103,10 +101,10 @@ pub struct AgentJobItem {
     pub attempt_count: i64,
     pub result_json: Option<Value>,
     pub last_error: Option<String>,
-    pub created_at: DateTime<Utc>,
-    pub updated_at: DateTime<Utc>,
-    pub completed_at: Option<DateTime<Utc>>,
-    pub reported_at: Option<DateTime<Utc>>,
+    pub created_at: jiff::Timestamp,
+    pub updated_at: jiff::Timestamp,
+    pub completed_at: Option<jiff::Timestamp>,
+    pub reported_at: Option<jiff::Timestamp>,
 }
 
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -250,7 +248,7 @@ impl TryFrom<AgentJobItemRow> for AgentJobItem {
     }
 }
 
-fn epoch_seconds_to_datetime(secs: i64) -> Result<DateTime<Utc>> {
-    DateTime::<Utc>::from_timestamp(secs, 0)
-        .ok_or_else(|| anyhow::anyhow!("invalid unix timestamp: {secs}"))
+fn epoch_seconds_to_datetime(secs: i64) -> Result<jiff::Timestamp> {
+    jiff::Timestamp::from_second(secs)
+        .map_err(|err| anyhow::anyhow!("invalid unix timestamp {secs}: {err}"))
 }

@@ -1,7 +1,7 @@
 use super::*;
 use crate::config::ConfigBuilder;
 use crate::features::Feature;
-use chrono::TimeZone;
+use jiff::Timestamp;
 use chaos_ipc::config_types::ReasoningSummary as ReasoningSummaryConfig;
 use chaos_ipc::protocol::AgentMessageEvent;
 use chaos_ipc::protocol::AskForApproval;
@@ -350,10 +350,7 @@ async fn list_threads_db_enabled_drops_missing_rollout_paths() -> std::io::Resul
         .mark_backfill_complete(None)
         .await
         .expect("backfill should be complete");
-    let created_at = chrono::Utc
-        .with_ymd_and_hms(2025, 1, 3, 13, 0, 0)
-        .single()
-        .expect("valid datetime");
+    let created_at: Timestamp = "2025-01-03T13:00:00Z".parse().expect("valid datetime");
     let mut builder = chaos_proc::ThreadMetadataBuilder::new(
         thread_id,
         stale_path,
@@ -419,10 +416,7 @@ async fn list_threads_db_enabled_repairs_stale_rollout_paths() -> std::io::Resul
         .mark_backfill_complete(None)
         .await
         .expect("backfill should be complete");
-    let created_at = chrono::Utc
-        .with_ymd_and_hms(2025, 1, 3, 13, 0, 0)
-        .single()
-        .expect("valid datetime");
+    let created_at: Timestamp = "2025-01-03T13:00:00Z".parse().expect("valid datetime");
     let mut builder = chaos_proc::ThreadMetadataBuilder::new(
         thread_id,
         stale_path,

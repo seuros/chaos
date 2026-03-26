@@ -1,9 +1,7 @@
 use std::path::PathBuf;
 use std::sync::Arc;
 
-use chrono::DateTime;
-use chrono::SecondsFormat;
-use chrono::Utc;
+use jiff::Timestamp;
 use chaos_ipc::ThreadId;
 use chaos_ipc::models::SandboxPermissions;
 use futures::future::BoxFuture;
@@ -68,7 +66,7 @@ pub struct HookPayload {
     #[serde(skip_serializing_if = "Option::is_none")]
     pub client: Option<String>,
     #[serde(serialize_with = "serialize_triggered_at")]
-    pub triggered_at: DateTime<Utc>,
+    pub triggered_at: Timestamp,
     pub hook_event: HookEvent,
 }
 
@@ -137,11 +135,11 @@ pub struct HookEventAfterToolUse {
     pub output_preview: String,
 }
 
-fn serialize_triggered_at<S>(value: &DateTime<Utc>, serializer: S) -> Result<S::Ok, S::Error>
+fn serialize_triggered_at<S>(value: &Timestamp, serializer: S) -> Result<S::Ok, S::Error>
 where
     S: Serializer,
 {
-    serializer.serialize_str(&value.to_rfc3339_opts(SecondsFormat::Secs, true))
+    serializer.serialize_str(&value.strftime("%Y-%m-%dT%H:%M:%SZ").to_string())
 }
 
 #[derive(Debug, Clone, Serialize)]
@@ -161,8 +159,7 @@ pub enum HookEvent {
 mod tests {
     use std::path::PathBuf;
 
-    use chrono::TimeZone;
-    use chrono::Utc;
+    use jiff::Timestamp;
     use chaos_ipc::ThreadId;
     use chaos_ipc::models::SandboxPermissions;
     use pretty_assertions::assert_eq;
@@ -184,10 +181,7 @@ mod tests {
             session_id,
             cwd: PathBuf::from("tmp"),
             client: None,
-            triggered_at: Utc
-                .with_ymd_and_hms(2025, 1, 1, 0, 0, 0)
-                .single()
-                .expect("valid timestamp"),
+            triggered_at: "2025-01-01T00:00:00Z".parse::<Timestamp>().unwrap(),
             hook_event: HookEvent::AfterAgent {
                 event: HookEventAfterAgent {
                     thread_id,
@@ -222,10 +216,7 @@ mod tests {
             session_id,
             cwd: PathBuf::from("tmp"),
             client: None,
-            triggered_at: Utc
-                .with_ymd_and_hms(2025, 1, 1, 0, 0, 0)
-                .single()
-                .expect("valid timestamp"),
+            triggered_at: "2025-01-01T00:00:00Z".parse::<Timestamp>().unwrap(),
             hook_event: HookEvent::AfterToolUse {
                 event: HookEventAfterToolUse {
                     turn_id: "turn-2".to_string(),

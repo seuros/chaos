@@ -6,8 +6,7 @@ use crate::memories::ensure_layout;
 use crate::memories::memory_root;
 use crate::memories::raw_memories_file;
 use crate::memories::rollout_summaries_dir;
-use chrono::TimeZone;
-use chrono::Utc;
+use jiff::Timestamp;
 use chaos_ipc::ThreadId;
 use chaos_proc::Stage1Output;
 use pretty_assertions::assert_eq;
@@ -295,7 +294,16 @@ async fn sync_rollout_summaries_uses_timestamp_hash_and_sanitized_slug_filename(
         .expect("rollout summary filename should include short hash");
 
     assert_eq!(timestamp.len(), 19, "timestamp should be second precision");
-    let parsed_timestamp = chrono::NaiveDateTime::parse_from_str(timestamp, "%Y-%m-%dT%H-%M-%S");
+    let normalized_ts = format!(
+        "{}-{}-{}T{}:{}:{}Z",
+        &timestamp[0..4],
+        &timestamp[5..7],
+        &timestamp[8..10],
+        &timestamp[11..13],
+        &timestamp[14..16],
+        &timestamp[17..19],
+    );
+    let parsed_timestamp = normalized_ts.parse::<Timestamp>();
     assert!(
         parsed_timestamp.is_ok(),
         "timestamp should use YYYY-MM-DDThh-mm-ss"
@@ -425,7 +433,7 @@ mod consolidation_tests {
     use crate::memories::consolidation;
     use crate::memories::raw_memories_file;
     use crate::memories::rollout_summaries_dir;
-    use chrono::Utc;
+    use jiff::Timestamp;
     use chaos_sysctl::Constrained;
     use chaos_ipc::ThreadId;
     use chaos_ipc::protocol::AskForApproval;
@@ -442,7 +450,7 @@ mod consolidation_tests {
     fn stage1_output_with_source_updated_at(source_updated_at: i64) -> Stage1Output {
         Stage1Output {
             thread_id: ThreadId::new(),
-            source_updated_at: chrono::DateTime::<Utc>::from_timestamp(source_updated_at, 0)
+            source_updated_at: Timestamp::from_second(source_updated_at)
                 .expect("valid source_updated_at timestamp"),
             raw_memory: "raw memory".to_string(),
             rollout_summary: "rollout summary".to_string(),
@@ -450,7 +458,7 @@ mod consolidation_tests {
             rollout_path: PathBuf::from("/tmp/rollout-summary.jsonl"),
             cwd: PathBuf::from("/tmp/workspace"),
             git_branch: None,
-            generated_at: chrono::DateTime::<Utc>::from_timestamp(source_updated_at + 1, 0)
+            generated_at: Timestamp::from_second(source_updated_at + 1)
                 .expect("valid generated_at timestamp"),
         }
     }
@@ -503,7 +511,7 @@ mod consolidation_tests {
                 self.config
                     .codex_home
                     .join(format!("rollout-{thread_id}.jsonl")),
-                Utc::now(),
+                Timestamp::now(),
                 SessionSource::Cli,
             );
             metadata_builder.cwd = self.config.cwd.clone();
@@ -632,7 +640,7 @@ mod consolidation_tests {
     #[tokio::test]
     async fn dispatch_reclaims_stale_global_lock_and_starts_consolidation() {
         let harness = DispatchHarness::new().await;
-        harness.seed_stage1_output(Utc::now().timestamp()).await;
+        harness.seed_stage1_output(Timestamp::now().timestamp()).await;
 
         let stale_claim = harness
             .state_db
@@ -871,7 +879,7 @@ mod consolidation_tests {
         let mut metadata_builder = ThreadMetadataBuilder::new(
             thread_id,
             config.codex_home.join(format!("rollout-{thread_id}.jsonl")),
-            Utc::now(),
+            Timestamp::now(),
             SessionSource::Cli,
         );
         metadata_builder.cwd = config.cwd.clone();

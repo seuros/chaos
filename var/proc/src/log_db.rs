@@ -18,8 +18,7 @@
 //! # }
 //! ```
 
-use chrono::Duration as ChronoDuration;
-use chrono::Utc;
+use jiff::ToSpan;
 use std::sync::OnceLock;
 use std::time::Duration;
 use std::time::SystemTime;
@@ -279,11 +278,10 @@ async fn flush(state_db: &std::sync::Arc<StateRuntime>, buffer: &mut Vec<LogEntr
 }
 
 async fn run_retention_cleanup(state_db: std::sync::Arc<StateRuntime>) {
-    let Some(cutoff) = Utc::now().checked_sub_signed(ChronoDuration::days(LOG_RETENTION_DAYS))
-    else {
+    let Ok(cutoff) = jiff::Timestamp::now().checked_sub(LOG_RETENTION_DAYS.days()) else {
         return;
     };
-    let _ = state_db.delete_logs_before(cutoff.timestamp()).await;
+    let _ = state_db.delete_logs_before(cutoff.as_second()).await;
 }
 
 #[derive(Default)]

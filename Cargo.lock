@@ -1472,7 +1472,6 @@ dependencies = [
  "maplit",
  "mcp-guest",
  "notify",
- "once_cell",
  "openssl-sys",
  "opentelemetry",
  "opentelemetry_sdk",
@@ -1777,7 +1776,6 @@ name = "chaos-scm"
 version = "47.0.0"
 dependencies = [
  "assert_matches",
- "once_cell",
  "pretty_assertions",
  "regex",
  "schemars 0.8.22",
@@ -2012,7 +2010,6 @@ dependencies = [
  "image",
  "insta",
  "itertools 0.14.0",
- "lazy_static",
  "libc",
  "mcp-guest",
  "pathdiff",

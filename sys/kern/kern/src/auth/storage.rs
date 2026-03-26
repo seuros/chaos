@@ -22,7 +22,7 @@ use crate::token_data::TokenData;
 use chaos_keyring::DefaultKeyringStore;
 use chaos_keyring::KeyringStore;
 use chaos_ipc::api::AuthMode;
-use once_cell::sync::Lazy;
+use std::sync::LazyLock;
 
 pub use chaos_sysctl::types::AuthCredentialsStoreMode;
 
@@ -252,8 +252,8 @@ impl AuthStorageBackend for AutoAuthStorage {
 }
 
 // A global in-memory store for mapping codex_home -> AuthDotJson.
-static EPHEMERAL_AUTH_STORE: Lazy<Mutex<HashMap<String, AuthDotJson>>> =
-    Lazy::new(|| Mutex::new(HashMap::new()));
+static EPHEMERAL_AUTH_STORE: LazyLock<Mutex<HashMap<String, AuthDotJson>>> =
+    LazyLock::new(|| Mutex::new(HashMap::new()));
 
 #[derive(Clone, Debug)]
 struct EphemeralAuthStorage {

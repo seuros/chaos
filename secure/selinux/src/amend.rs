@@ -76,8 +76,8 @@ pub fn blocking_append_allow_prefix_rule(
         .map(serde_json::to_string)
         .collect::<Result<Vec<_>, _>>()
         .map_err(|source| AmendError::SerializePrefix { source })?;
-    let pattern = format!("[{}]", tokens.join(", "));
-    let rule = format!(r#"prefix_rule(pattern={pattern}, decision="allow")"#);
+    let pattern = format!("{{{}}}", tokens.join(", "));
+    let rule = format!(r#"prefix_rule {{pattern={pattern}, decision="allow"}}"#);
     append_rule_line(policy_path, &rule)
 }
 
@@ -121,7 +121,7 @@ pub fn blocking_append_network_rule(
             .map_err(|source| AmendError::SerializeNetworkRule { source })?;
         args.push(format!("justification={justification}"));
     }
-    let rule = format!("network_rule({})", args.join(", "));
+    let rule = format!("network_rule {{{}}}", args.join(", "));
     append_rule_line(policy_path, &rule)
 }
 
@@ -213,7 +213,7 @@ mod tests {
         let contents = std::fs::read_to_string(&policy_path).expect("default.rules should exist");
         assert_eq!(
             contents,
-            r#"prefix_rule(pattern=["echo", "Hello, world!"], decision="allow")
+            r#"prefix_rule {pattern={"echo", "Hello, world!"}, decision="allow"}
 "#
         );
     }
@@ -225,7 +225,7 @@ mod tests {
         std::fs::create_dir_all(policy_path.parent().unwrap()).expect("create policy dir");
         std::fs::write(
             &policy_path,
-            r#"prefix_rule(pattern=["ls"], decision="allow")
+            r#"prefix_rule {pattern={"ls"}, decision="allow"}
 "#,
         )
         .expect("write seed rule");
@@ -239,8 +239,8 @@ mod tests {
         let contents = std::fs::read_to_string(&policy_path).expect("read policy");
         assert_eq!(
             contents,
-            r#"prefix_rule(pattern=["ls"], decision="allow")
-prefix_rule(pattern=["echo", "Hello, world!"], decision="allow")
+            r#"prefix_rule {pattern={"ls"}, decision="allow"}
+prefix_rule {pattern={"echo", "Hello, world!"}, decision="allow"}
 "#
         );
     }
@@ -252,7 +252,7 @@ prefix_rule(pattern=["echo", "Hello, world!"], decision="allow")
         std::fs::create_dir_all(policy_path.parent().unwrap()).expect("create policy dir");
         std::fs::write(
             &policy_path,
-            r#"prefix_rule(pattern=["ls"], decision="allow")"#,
+            r#"prefix_rule {pattern={"ls"}, decision="allow"}"#,
         )
         .expect("write seed rule without newline");
 
@@ -265,8 +265,8 @@ prefix_rule(pattern=["echo", "Hello, world!"], decision="allow")
         let contents = std::fs::read_to_string(&policy_path).expect("read policy");
         assert_eq!(
             contents,
-            r#"prefix_rule(pattern=["ls"], decision="allow")
-prefix_rule(pattern=["echo", "Hello, world!"], decision="allow")
+            r#"prefix_rule {pattern={"ls"}, decision="allow"}
+prefix_rule {pattern={"echo", "Hello, world!"}, decision="allow"}
 "#
         );
     }
@@ -288,7 +288,7 @@ prefix_rule(pattern=["echo", "Hello, world!"], decision="allow")
         let contents = std::fs::read_to_string(&policy_path).expect("read policy");
         assert_eq!(
             contents,
-            r#"network_rule(host="api.github.com", protocol="https", decision="allow", justification="Allow https_connect access to api.github.com")
+            r#"network_rule {host="api.github.com", protocol="https", decision="allow", justification="Allow https_connect access to api.github.com"}
 "#
         );
     }
@@ -312,8 +312,8 @@ prefix_rule(pattern=["echo", "Hello, world!"], decision="allow")
         let contents = std::fs::read_to_string(&policy_path).expect("read policy");
         assert_eq!(
             contents,
-            r#"prefix_rule(pattern=["curl"], decision="allow")
-network_rule(host="api.github.com", protocol="https", decision="allow", justification="Allow https_connect access to api.github.com")
+            r#"prefix_rule {pattern={"curl"}, decision="allow"}
+network_rule {host="api.github.com", protocol="https", decision="allow", justification="Allow https_connect access to api.github.com"}
 "#
         );
     }

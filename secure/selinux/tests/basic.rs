@@ -51,7 +51,7 @@ fn host_executable_name(name: &str) -> String {
     name.to_string()
 }
 
-fn starlark_string(value: &str) -> String {
+fn lua_string(value: &str) -> String {
     value.replace('\\', "\\\\").replace('"', "\\\"")
 }
 
@@ -86,7 +86,7 @@ fn append_allow_prefix_rule_dedupes_existing_rule() -> Result<()> {
     let contents = fs::read_to_string(&policy_path).context("read policy")?;
     assert_eq!(
         contents,
-        r#"prefix_rule(pattern=["python3"], decision="allow")
+        r#"prefix_rule {pattern={"python3"}, decision="allow"}
 "#
     );
     Ok(())
@@ -95,10 +95,10 @@ fn append_allow_prefix_rule_dedupes_existing_rule() -> Result<()> {
 #[test]
 fn network_rules_compile_into_domain_lists() -> Result<()> {
     let policy_src = r#"
-network_rule(host = "google.com", protocol = "http", decision = "allow")
-network_rule(host = "api.github.com", protocol = "https", decision = "allow")
-network_rule(host = "blocked.example.com", protocol = "https", decision = "deny")
-network_rule(host = "prompt-only.example.com", protocol = "https", decision = "prompt")
+network_rule {host = "google.com", protocol = "http", decision = "allow"}
+network_rule {host = "api.github.com", protocol = "https", decision = "allow"}
+network_rule {host = "blocked.example.com", protocol = "https", decision = "deny"}
+network_rule {host = "prompt-only.example.com", protocol = "https", decision = "prompt"}
     "#;
     let mut parser = PolicyParser::new();
     parser.parse("network.rules", policy_src)?;
@@ -125,7 +125,7 @@ fn network_rule_rejects_wildcard_hosts() {
     let err = parser
         .parse(
             "network.rules",
-            r#"network_rule(host="*", protocol="http", decision="allow")"#,
+            r#"network_rule {host="*", protocol="http", decision="allow"}"#,
         )
         .expect_err("wildcard network_rule host should fail");
     assert!(err.to_string().contains("wildcards are not allowed"));
@@ -134,9 +134,9 @@ fn network_rule_rejects_wildcard_hosts() {
 #[test]
 fn basic_match() -> Result<()> {
     let policy_src = r#"
-prefix_rule(
-    pattern = ["git", "status"],
-)
+prefix_rule {
+    pattern = {"git", "status"},
+}
     "#;
     let mut parser = PolicyParser::new();
     parser.parse("test.rules", policy_src)?;
@@ -161,11 +161,11 @@ prefix_rule(
 #[test]
 fn justification_is_attached_to_forbidden_matches() -> Result<()> {
     let policy_src = r#"
-prefix_rule(
-    pattern = ["rm"],
+prefix_rule {
+    pattern = {"rm"},
     decision = "forbidden",
     justification = "destructive command",
-)
+}
     "#;
     let mut parser = PolicyParser::new();
     parser.parse("test.rules", policy_src)?;
@@ -193,11 +193,11 @@ prefix_rule(
 #[test]
 fn justification_can_be_used_with_allow_decision() -> Result<()> {
     let policy_src = r#"
-prefix_rule(
-    pattern = ["ls"],
+prefix_rule {
+    pattern = {"ls"},
     decision = "allow",
     justification = "safe and commonly used",
-)
+}
     "#;
     let mut parser = PolicyParser::new();
     parser.parse("test.rules", policy_src)?;
@@ -222,11 +222,11 @@ prefix_rule(
 #[test]
 fn justification_cannot_be_empty() {
     let policy_src = r#"
-prefix_rule(
-    pattern = ["ls"],
+prefix_rule {
+    pattern = {"ls"},
     decision = "prompt",
     justification = "   ",
-)
+}
     "#;
     let mut parser = PolicyParser::new();
     let err = parser
@@ -234,7 +234,7 @@ prefix_rule(
         .expect_err("expected parse error");
     assert!(
         err.to_string()
-            .contains("invalid rule: justification cannot be empty")
+            .contains("justification cannot be empty")
     );
 }
 
@@ -287,16 +287,16 @@ fn add_prefix_rule_rejects_empty_prefix() -> Result<()> {
 #[test]
 fn parses_multiple_policy_files() -> Result<()> {
     let first_policy = r#"
-prefix_rule(
-    pattern = ["git"],
+prefix_rule {
+    pattern = {"git"},
     decision = "prompt",
-)
+}
     "#;
     let second_policy = r#"
-prefix_rule(
-    pattern = ["git", "commit"],
+prefix_rule {
+    pattern = {"git", "commit"},
     decision = "forbidden",
-)
+}
     "#;
     let mut parser = PolicyParser::new();
     parser.parse("first.rules", first_policy)?;
@@ -367,9 +367,9 @@ prefix_rule(
 #[test]
 fn only_first_token_alias_expands_to_multiple_rules() -> Result<()> {
     let policy_src = r#"
-prefix_rule(
-    pattern = [["bash", "sh"], ["-c", "-l"]],
-)
+prefix_rule {
+    pattern = {{"bash", "sh"}, {"-c", "-l"}},
+}
     "#;
     let mut parser = PolicyParser::new();
     parser.parse("test.rules", policy_src)?;
@@ -438,9 +438,9 @@ prefix_rule(
 #[test]
 fn tail_aliases_are_not_cartesian_expanded() -> Result<()> {
     let policy_src = r#"
-prefix_rule(
-    pattern = ["npm", ["i", "install"], ["--legacy-peer-deps", "--no-save"]],
-)
+prefix_rule {
+    pattern = {"npm", {"i", "install"}, {"--legacy-peer-deps", "--no-save"}},
+}
     "#;
     let mut parser = PolicyParser::new();
     parser.parse("test.rules", policy_src)?;
@@ -502,14 +502,14 @@ prefix_rule(
 #[test]
 fn match_and_not_match_examples_are_enforced() -> Result<()> {
     let policy_src = r#"
-prefix_rule(
-    pattern = ["git", "status"],
-    match = [["git", "status"], "git status"],
-    not_match = [
-        ["git", "--config", "color.status=always", "status"],
+prefix_rule {
+    pattern = {"git", "status"},
+    match = {{"git", "status"}, "git status"},
+    not_match = {
+        {"git", "--config", "color.status=always", "status"},
         "git --config color.status=always status",
-    ],
-)
+    },
+}
     "#;
     let mut parser = PolicyParser::new();
     parser.parse("test.rules", policy_src)?;
@@ -548,14 +548,14 @@ prefix_rule(
 #[test]
 fn strictest_decision_wins_across_matches() -> Result<()> {
     let policy_src = r#"
-prefix_rule(
-    pattern = ["git"],
+prefix_rule {
+    pattern = {"git"},
     decision = "prompt",
-)
-prefix_rule(
-    pattern = ["git", "commit"],
+}
+prefix_rule {
+    pattern = {"git", "commit"},
     decision = "forbidden",
-)
+}
     "#;
     let mut parser = PolicyParser::new();
     parser.parse("test.rules", policy_src)?;
@@ -588,14 +588,14 @@ prefix_rule(
 #[test]
 fn strictest_decision_across_multiple_commands() -> Result<()> {
     let policy_src = r#"
-prefix_rule(
-    pattern = ["git"],
+prefix_rule {
+    pattern = {"git"},
     decision = "prompt",
-)
-prefix_rule(
-    pattern = ["git", "commit"],
+}
+prefix_rule {
+    pattern = {"git", "commit"},
     decision = "forbidden",
-)
+}
     "#;
     let mut parser = PolicyParser::new();
     parser.parse("test.rules", policy_src)?;
@@ -658,18 +658,18 @@ fn heuristics_match_is_returned_when_no_policy_matches() {
 fn parses_host_executable_paths() -> Result<()> {
     let homebrew_git = host_absolute_path(&["opt", "homebrew", "bin", "git"]);
     let usr_git = host_absolute_path(&["usr", "bin", "git"]);
-    let homebrew_git_literal = starlark_string(&homebrew_git);
-    let usr_git_literal = starlark_string(&usr_git);
+    let homebrew_git_literal = lua_string(&homebrew_git);
+    let usr_git_literal = lua_string(&usr_git);
     let policy_src = format!(
         r#"
-host_executable(
+host_executable {{
     name = "git",
-    paths = [
+    paths = {{
         "{homebrew_git_literal}",
         "{usr_git_literal}",
         "{usr_git_literal}",
-    ],
-)
+    }},
+}}
 "#
     );
     let mut parser = PolicyParser::new();
@@ -690,7 +690,7 @@ host_executable(
 #[test]
 fn host_executable_rejects_non_absolute_path() {
     let policy_src = r#"
-host_executable(name = "git", paths = ["git"])
+host_executable {name = "git", paths = {"git"}}
 "#;
     let mut parser = PolicyParser::new();
     let err = parser
@@ -705,9 +705,9 @@ host_executable(name = "git", paths = ["git"])
 #[test]
 fn host_executable_rejects_name_with_path_separator() {
     let git_path = host_absolute_path(&["usr", "bin", "git"]);
-    let git_path_literal = starlark_string(&git_path);
+    let git_path_literal = lua_string(&git_path);
     let policy_src =
-        format!(r#"host_executable(name = "{git_path_literal}", paths = ["{git_path_literal}"])"#);
+        format!(r#"host_executable {{name = "{git_path_literal}", paths = {{"{git_path_literal}"}}}}"#);
     let mut parser = PolicyParser::new();
     let err = parser
         .parse("test.rules", &policy_src)
@@ -721,8 +721,8 @@ fn host_executable_rejects_name_with_path_separator() {
 #[test]
 fn host_executable_rejects_path_with_wrong_basename() {
     let rg_path = host_absolute_path(&["usr", "bin", "rg"]);
-    let rg_path_literal = starlark_string(&rg_path);
-    let policy_src = format!(r#"host_executable(name = "git", paths = ["{rg_path_literal}"])"#);
+    let rg_path_literal = lua_string(&rg_path);
+    let policy_src = format!(r#"host_executable {{name = "git", paths = {{"{rg_path_literal}"}}}}"#);
     let mut parser = PolicyParser::new();
     let err = parser
         .parse("test.rules", &policy_src)
@@ -734,16 +734,16 @@ fn host_executable_rejects_path_with_wrong_basename() {
 fn host_executable_last_definition_wins() -> Result<()> {
     let usr_git = host_absolute_path(&["usr", "bin", "git"]);
     let homebrew_git = host_absolute_path(&["opt", "homebrew", "bin", "git"]);
-    let usr_git_literal = starlark_string(&usr_git);
-    let homebrew_git_literal = starlark_string(&homebrew_git);
+    let usr_git_literal = lua_string(&usr_git);
+    let homebrew_git_literal = lua_string(&homebrew_git);
     let mut parser = PolicyParser::new();
     parser.parse(
         "shared.rules",
-        &format!(r#"host_executable(name = "git", paths = ["{usr_git_literal}"])"#),
+        &format!(r#"host_executable {{name = "git", paths = {{"{usr_git_literal}"}}}}"#),
     )?;
     parser.parse(
         "user.rules",
-        &format!(r#"host_executable(name = "git", paths = ["{homebrew_git_literal}"])"#),
+        &format!(r#"host_executable {{name = "git", paths = {{"{homebrew_git_literal}"}}}}"#),
     )?;
     let policy = parser.build();
 
@@ -762,11 +762,11 @@ fn host_executable_last_definition_wins() -> Result<()> {
 fn host_executable_resolution_uses_basename_rule_when_allowed() -> Result<()> {
     let git_name = host_executable_name("git");
     let git_path = host_absolute_path(&["usr", "bin", &git_name]);
-    let git_path_literal = starlark_string(&git_path);
+    let git_path_literal = lua_string(&git_path);
     let policy_src = format!(
         r#"
-prefix_rule(pattern = ["git", "status"], decision = "prompt")
-host_executable(name = "git", paths = ["{git_path_literal}"])
+prefix_rule {{pattern = {{"git", "status"}}, decision = "prompt"}}
+host_executable {{name = "git", paths = {{"{git_path_literal}"}}}}
 "#
     );
     let mut parser = PolicyParser::new();
@@ -800,16 +800,16 @@ fn prefix_rule_examples_honor_host_executable_resolution() -> Result<()> {
     let allowed_git_name = host_executable_name("git");
     let allowed_git = host_absolute_path(&["usr", "bin", &allowed_git_name]);
     let other_git = host_absolute_path(&["opt", "homebrew", "bin", &allowed_git_name]);
-    let allowed_git_literal = starlark_string(&allowed_git);
-    let other_git_literal = starlark_string(&other_git);
+    let allowed_git_literal = lua_string(&allowed_git);
+    let other_git_literal = lua_string(&other_git);
     let policy_src = format!(
         r#"
-prefix_rule(
-    pattern = ["git", "status"],
-    match = [["{allowed_git_literal}", "status"]],
-    not_match = [["{other_git_literal}", "status"]],
-)
-host_executable(name = "git", paths = ["{allowed_git_literal}"])
+prefix_rule {{
+    pattern = {{"git", "status"}},
+    match = {{{{"{allowed_git_literal}", "status"}}}},
+    not_match = {{{{"{other_git_literal}", "status"}}}},
+}}
+host_executable {{name = "git", paths = {{"{allowed_git_literal}"}}}}
 "#
     );
 
@@ -822,8 +822,8 @@ host_executable(name = "git", paths = ["{allowed_git_literal}"])
 #[test]
 fn host_executable_resolution_respects_explicit_empty_allowlist() -> Result<()> {
     let policy_src = r#"
-prefix_rule(pattern = ["git"], decision = "prompt")
-host_executable(name = "git", paths = [])
+prefix_rule {pattern = {"git"}, decision = "prompt"}
+host_executable {name = "git", paths = {}}
 "#;
     let mut parser = PolicyParser::new();
     parser.parse("test.rules", policy_src)?;
@@ -854,11 +854,11 @@ host_executable(name = "git", paths = [])
 fn host_executable_resolution_ignores_path_not_in_allowlist() -> Result<()> {
     let allowed_git = host_absolute_path(&["usr", "bin", "git"]);
     let other_git = host_absolute_path(&["opt", "homebrew", "bin", "git"]);
-    let allowed_git_literal = starlark_string(&allowed_git);
+    let allowed_git_literal = lua_string(&allowed_git);
     let policy_src = format!(
         r#"
-prefix_rule(pattern = ["git"], decision = "prompt")
-host_executable(name = "git", paths = ["{allowed_git_literal}"])
+prefix_rule {{pattern = {{"git"}}, decision = "prompt"}}
+host_executable {{name = "git", paths = {{"{allowed_git_literal}"}}}}
 "#
     );
     let mut parser = PolicyParser::new();
@@ -888,7 +888,7 @@ host_executable(name = "git", paths = ["{allowed_git_literal}"])
 #[test]
 fn host_executable_resolution_falls_back_without_mapping() -> Result<()> {
     let policy_src = r#"
-prefix_rule(pattern = ["git"], decision = "prompt")
+prefix_rule {pattern = {"git"}, decision = "prompt"}
 "#;
     let mut parser = PolicyParser::new();
     parser.parse("test.rules", policy_src)?;
@@ -920,12 +920,12 @@ prefix_rule(pattern = ["git"], decision = "prompt")
 #[test]
 fn host_executable_resolution_does_not_override_exact_match() -> Result<()> {
     let git_path = host_absolute_path(&["usr", "bin", "git"]);
-    let git_path_literal = starlark_string(&git_path);
+    let git_path_literal = lua_string(&git_path);
     let policy_src = format!(
         r#"
-prefix_rule(pattern = ["{git_path_literal}"], decision = "allow")
-prefix_rule(pattern = ["git"], decision = "prompt")
-host_executable(name = "git", paths = ["{git_path_literal}"])
+prefix_rule {{pattern = {{"{git_path_literal}"}}, decision = "allow"}}
+prefix_rule {{pattern = {{"git"}}, decision = "prompt"}}
+host_executable {{name = "git", paths = {{"{git_path_literal}"}}}}
 "#
     );
     let mut parser = PolicyParser::new();

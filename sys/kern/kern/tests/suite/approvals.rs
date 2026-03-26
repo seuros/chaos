@@ -1900,7 +1900,7 @@ async fn approving_execpolicy_amendment_persists_policy_and_skips_future_prompts
     let policy_contents = fs::read_to_string(&policy_path)?;
     assert!(
         policy_contents
-            .contains(r#"prefix_rule(pattern=["touch", "allow-prefix.txt"], decision="allow")"#),
+            .contains(r#"prefix_rule {pattern={"touch", "allow-prefix.txt"}, decision="allow"}"#),
         "unexpected policy contents: {policy_contents}"
     );
 
@@ -2330,7 +2330,7 @@ allow_local_binding = true
     let policy_path = test.home.path().join("rules").join("default.rules");
     let policy_contents = fs::read_to_string(&policy_path)?;
     let expected_rule = format!(
-        r#"network_rule(host="{}", protocol="{}", decision="deny", justification="Deny {} access to {}")"#,
+        r#"network_rule {{host="{}", protocol="{}", decision="deny", justification="Deny {} access to {}"}}"#,
         deny_network_amendment.host,
         match network_context.protocol {
             NetworkApprovalProtocol::Http => "http",
@@ -2467,7 +2467,7 @@ async fn compound_command_with_one_safe_command_still_requires_approval() -> Res
     fs::create_dir_all(&rules_dir)?;
     fs::write(
         rules_dir.join("default.rules"),
-        r#"prefix_rule(pattern=["touch", "allow-prefix.txt"], decision="allow")"#,
+        r#"prefix_rule {pattern={"touch", "allow-prefix.txt"}, decision="allow"}"#,
     )?;
 
     let call_id = "heredoc-with-chained-prefix";

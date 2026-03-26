@@ -51,7 +51,7 @@ pub struct RequirementsExecPolicyToml {
     pub prefix_rules: Vec<RequirementsExecPolicyPrefixRuleToml>,
 }
 
-/// A TOML representation of the `prefix_rule(...)` Starlark builtin.
+/// A TOML representation of the `prefix_rule {...}` Lua builtin.
 ///
 /// This mirrors the builtin defined in `execpolicy/src/parser.rs`.
 #[derive(Debug, Clone, PartialEq, Eq, Deserialize)]
@@ -63,7 +63,7 @@ pub struct RequirementsExecPolicyPrefixRuleToml {
 
 /// TOML-friendly representation of a pattern token.
 ///
-/// Starlark supports either a string token or a list of alternative tokens at
+/// Lua supports either a string token or a table of alternative tokens at
 /// each position, but TOML arrays cannot mix strings and arrays. Using an
 /// array of tables sidesteps that restriction.
 #[derive(Debug, Clone, PartialEq, Eq, Deserialize)]

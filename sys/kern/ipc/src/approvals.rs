@@ -34,7 +34,7 @@ pub enum EscalationPermissions {
 /// Proposed execpolicy change to allow commands starting with this prefix.
 ///
 /// The `command` tokens form the prefix that would be added as an execpolicy
-/// `prefix_rule(..., decision="allow")`, letting the agent bypass approval for
+/// `prefix_rule {..., decision="allow"}`, letting the agent bypass approval for
 /// commands that start with this token sequence.
 #[derive(Debug, Clone, Deserialize, Serialize, PartialEq, Eq, JsonSchema, TS)]
 #[serde(transparent)]

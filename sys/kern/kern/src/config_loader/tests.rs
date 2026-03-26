@@ -1671,7 +1671,7 @@ prefix_rules = []
         std::fs::create_dir_all(&policy_dir)?;
         std::fs::write(
             policy_dir.join("deny.rules"),
-            r#"prefix_rule(pattern=["rm"], decision="forbidden")"#,
+            r#"prefix_rule {pattern={"rm"}, decision="forbidden"}"#,
         )?;
 
         let requirements = requirements_from_toml(

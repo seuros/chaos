@@ -2,47 +2,47 @@
 
 ## Overview
 
-- Policy engine and CLI built around `prefix_rule(pattern=[...], decision?, justification?, match?, not_match?)` plus `host_executable(name=..., paths=[...])`.
+- Policy engine and CLI built around `prefix_rule {pattern={...}, decision?, justification?, match?, not_match?}` plus `host_executable {name=..., paths={...}}`.
 - This release covers the prefix-rule subset of the execpolicy language plus host executable metadata; a richer language will follow.
-- Tokens are matched in order; any `pattern` element may be a list to denote alternatives. `decision` defaults to `allow`; valid values: `allow`, `prompt`, `forbidden`.
+- Tokens are matched in order; any `pattern` element may be a table to denote alternatives. `decision` defaults to `allow`; valid values: `allow`, `prompt`, `forbidden`.
 - `justification` is an optional human-readable rationale for why a rule exists. It can be provided for any `decision` and may be surfaced in different contexts (for example, in approval prompts or rejection messages). When `decision = "forbidden"` is used, include a recommended alternative in the `justification`, when appropriate (e.g., ``"Use `jj` instead of `git`."``).
-- `match` / `not_match` supply example invocations that are validated at load time (think of them as unit tests); examples can be token arrays or strings (strings are tokenized with `shlex`).
+- `match` / `not_match` supply example invocations that are validated at load time (think of them as unit tests); examples can be token tables or strings (strings are tokenized with `shlex`).
 - The CLI always prints the JSON serialization of the evaluation result.
 - The legacy rule matcher lives in `chaos-selinux-legacy`.
 
 ## Policy shapes
 
-- Prefix rules use Starlark syntax:
+- Prefix rules use Lua syntax (evaluated by the Hallucinate sandboxed VM):
 
-```starlark
-prefix_rule(
-    pattern = ["cmd", ["alt1", "alt2"]], # ordered tokens; list entries denote alternatives
-    decision = "prompt",                 # allow | prompt | forbidden; defaults to allow
+```lua
+prefix_rule {
+    pattern = {"cmd", {"alt1", "alt2"}}, -- ordered tokens; table entries denote alternatives
+    decision = "prompt",                 -- allow | prompt | forbidden; defaults to allow
     justification = "explain why this rule exists",
-    match = [["cmd", "alt1"], "cmd alt2"],           # examples that must match this rule
-    not_match = [["cmd", "oops"], "cmd alt3"],       # examples that must not match this rule
-)
+    match = {{"cmd", "alt1"}, "cmd alt2"},           -- examples that must match this rule
+    not_match = {{"cmd", "oops"}, "cmd alt3"},       -- examples that must not match this rule
+}
 ```
 
 - Host executable metadata can optionally constrain which absolute paths may
   resolve through basename rules:
 
-```starlark
-host_executable(
+```lua
+host_executable {
     name = "git",
-    paths = [
+    paths = {
         "/opt/homebrew/bin/git",
         "/usr/bin/git",
-    ],
-)
+    },
+}
 ```
 
 - Matching semantics:
   - execpolicy always tries exact first-token matches first.
   - With host-executable resolution disabled, `/usr/bin/git status` only matches a rule whose first token is `/usr/bin/git`.
   - With host-executable resolution enabled, if no exact rule matches, execpolicy may fall back from `/usr/bin/git` to basename rules for `git`.
-  - If `host_executable(name="git", ...)` exists, basename fallback is only allowed for listed absolute paths.
-  - If no `host_executable()` entry exists for a basename, basename fallback is allowed.
+  - If `host_executable {name="git", ...}` exists, basename fallback is only allowed for listed absolute paths.
+  - If no `host_executable {}` entry exists for a basename, basename fallback is allowed.
 
 ## CLI
 

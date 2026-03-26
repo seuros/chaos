@@ -4,7 +4,7 @@ version.workspace = true
 edition.workspace = true
 license.workspace = true
 publish.workspace = true
-description = "Codex exec policy: prefix-based Starlark rules for command decisions."
+description = "Codex exec policy: prefix-based Lua rules for command decisions."
 
 [lib]
 name = "chaos_selinux"
@@ -15,13 +15,13 @@ workspace = true
 
 [dependencies]
 anyhow = { workspace = true }
-clap = { workspace = true, features = ["derive"] }
 chaos-realpath = { workspace = true }
+clap = { workspace = true, features = ["derive"] }
+mlua = { workspace = true }
 multimap = { workspace = true }
 serde = { workspace = true, features = ["derive"] }
 serde_json = { workspace = true }
 shlex = { workspace = true }
-starlark = { workspace = true }
 thiserror = { workspace = true }
 
 [dev-dependencies]

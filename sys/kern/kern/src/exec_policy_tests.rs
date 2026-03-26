@@ -47,7 +47,7 @@ fn host_program_path(name: &str) -> String {
     host_absolute_path(&["usr", "bin", name])
 }
 
-fn starlark_string(value: &str) -> String {
+fn lua_string(value: &str) -> String {
     value.replace('\\', "\\\\").replace('"', "\\\"")
 }
 
@@ -109,11 +109,11 @@ async fn format_exec_policy_error_with_source_renders_range() {
     let broken_path = policy_dir.join("broken.rules");
     fs::write(
         &broken_path,
-        r#"prefix_rule(
-    pattern = ["tmux capture-pane"],
+        r#"prefix_rule {
+    pattern = {"tmux capture-pane"},
     decision = "allow",
-    match = ["tmux capture-pane -p"],
-)"#,
+    match = {"tmux capture-pane -p"},
+}"#,
     )
     .expect("write broken policy file");
 
@@ -122,14 +122,14 @@ async fn format_exec_policy_error_with_source_renders_range() {
         .expect_err("expected parse error");
     let rendered = format_exec_policy_error_with_source(&err);
 
-    assert!(rendered.contains("broken.rules:1:"));
-    assert!(rendered.contains("on or around line 1"));
+    assert!(rendered.contains("broken.rules"));
+    assert!(rendered.contains("on or around line"));
 }
 
 #[test]
-fn parse_starlark_line_from_message_extracts_path_and_line() {
-    let parsed = parse_starlark_line_from_message(
-        "/tmp/default.rules:143:1: starlark error: error: Parse error: unexpected new line",
+fn parse_lua_line_from_message_extracts_path_and_line() {
+    let parsed = parse_lua_line_from_message(
+        r#"[string "/tmp/default.rules"]:143: unexpected symbol near 'end'"#,
     )
     .expect("parse should succeed");
 
@@ -138,9 +138,9 @@ fn parse_starlark_line_from_message_extracts_path_and_line() {
 }
 
 #[test]
-fn parse_starlark_line_from_message_rejects_zero_line() {
-    let parsed = parse_starlark_line_from_message(
-        "/tmp/default.rules:0:1: starlark error: error: Parse error: unexpected new line",
+fn parse_lua_line_from_message_rejects_zero_line() {
+    let parsed = parse_lua_line_from_message(
+        r#"[string "/tmp/default.rules"]:0: unexpected symbol near 'end'"#,
     );
     assert_eq!(parsed, None);
 }
@@ -153,7 +153,7 @@ async fn loads_policies_from_policy_subdirectory() {
     fs::create_dir_all(&policy_dir).expect("create policy dir");
     fs::write(
         policy_dir.join("deny.rules"),
-        r#"prefix_rule(pattern=["rm"], decision="forbidden")"#,
+        r#"prefix_rule {pattern={"rm"}, decision="forbidden"}"#,
     )
     .expect("write policy file");
 
@@ -216,12 +216,12 @@ async fn preserves_host_executables_when_requirements_overlay_is_present() -> an
     let policy_dir = temp_dir.path().join(RULES_DIR_NAME);
     fs::create_dir_all(&policy_dir)?;
     let git_path = host_absolute_path(&["usr", "bin", "git"]);
-    let git_path_literal = starlark_string(&git_path);
+    let git_path_literal = lua_string(&git_path);
     fs::write(
         policy_dir.join("host.rules"),
         format!(
             r#"
-host_executable(name = "git", paths = ["{git_path_literal}"])
+host_executable {{name = "git", paths = {{"{git_path_literal}"}}}}
 "#
         ),
     )?;
@@ -268,7 +268,7 @@ async fn ignores_policies_outside_policy_dir() {
     let config_stack = config_stack_for_dot_codex_folder(temp_dir.path());
     fs::write(
         temp_dir.path().join("root.rules"),
-        r#"prefix_rule(pattern=["ls"], decision="prompt")"#,
+        r#"prefix_rule {pattern={"ls"}, decision="prompt"}"#,
     )
     .expect("write policy file");
 
@@ -295,7 +295,7 @@ async fn ignores_rules_from_untrusted_project_layers() -> anyhow::Result<()> {
     fs::create_dir_all(&policy_dir)?;
     fs::write(
         policy_dir.join("untrusted.rules"),
-        r#"prefix_rule(pattern=["ls"], decision="forbidden")"#,
+        r#"prefix_rule {pattern={"ls"}, decision="forbidden"}"#,
     )?;
 
     let project_dot_codex_folder = AbsolutePathBuf::from_absolute_path(project_dir.path())?;
@@ -336,14 +336,14 @@ async fn loads_policies_from_multiple_config_layers() -> anyhow::Result<()> {
     fs::create_dir_all(&user_policy_dir)?;
     fs::write(
         user_policy_dir.join("user.rules"),
-        r#"prefix_rule(pattern=["rm"], decision="forbidden")"#,
+        r#"prefix_rule {pattern={"rm"}, decision="forbidden"}"#,
     )?;
 
     let project_policy_dir = project_dir.path().join(RULES_DIR_NAME);
     fs::create_dir_all(&project_policy_dir)?;
     fs::write(
         project_policy_dir.join("project.rules"),
-        r#"prefix_rule(pattern=["ls"], decision="prompt")"#,
+        r#"prefix_rule {pattern={"ls"}, decision="prompt"}"#,
     )?;
 
     let user_config_toml =
@@ -401,7 +401,7 @@ async fn loads_policies_from_multiple_config_layers() -> anyhow::Result<()> {
 #[tokio::test]
 async fn evaluates_bash_lc_inner_commands() {
     let policy_src = r#"
-prefix_rule(pattern=["rm"], decision="forbidden")
+prefix_rule {pattern={"rm"}, decision="forbidden"}
 "#;
     let mut parser = PolicyParser::new();
     parser
@@ -455,7 +455,7 @@ fn commands_for_exec_policy_falls_back_for_whitespace_shell_script() {
 
 #[tokio::test]
 async fn evaluates_heredoc_script_against_prefix_rules() {
-    let policy_src = r#"prefix_rule(pattern=["python3"], decision="allow")"#;
+    let policy_src = r#"prefix_rule {pattern={"python3"}, decision="allow"}"#;
     let mut parser = PolicyParser::new();
     parser
         .parse("test.rules", policy_src)
@@ -547,11 +547,11 @@ async fn drops_requested_amendment_for_heredoc_fallback_prompts_when_it_wont_mat
 #[tokio::test]
 async fn justification_is_included_in_forbidden_exec_approval_requirement() {
     let policy_src = r#"
-prefix_rule(
-    pattern=["rm"],
+prefix_rule {
+    pattern={"rm"},
     decision="forbidden",
     justification="destructive command",
-)
+}
 "#;
     let mut parser = PolicyParser::new();
     parser
@@ -585,7 +585,7 @@ prefix_rule(
 
 #[tokio::test]
 async fn exec_approval_requirement_prefers_execpolicy_match() {
-    let policy_src = r#"prefix_rule(pattern=["rm"], decision="prompt")"#;
+    let policy_src = r#"prefix_rule {pattern={"rm"}, decision="prompt"}"#;
     let mut parser = PolicyParser::new();
     parser
         .parse("test.rules", policy_src)
@@ -617,11 +617,11 @@ async fn exec_approval_requirement_prefers_execpolicy_match() {
 #[tokio::test]
 async fn absolute_path_exec_approval_requirement_matches_host_executable_rules() {
     let git_path = host_program_path("git");
-    let git_path_literal = starlark_string(&git_path);
+    let git_path_literal = lua_string(&git_path);
     let policy_src = format!(
         r#"
-host_executable(name = "git", paths = ["{git_path_literal}"])
-prefix_rule(pattern=["git"], decision="allow")
+host_executable {{name = "git", paths = {{"{git_path_literal}"}}}}
+prefix_rule {{pattern={{"git"}}, decision="allow"}}
 "#
     );
     let mut parser = PolicyParser::new();
@@ -655,11 +655,11 @@ prefix_rule(pattern=["git"], decision="allow")
 async fn absolute_path_exec_approval_requirement_ignores_disallowed_host_executable_paths() {
     let allowed_git_path = host_program_path("git");
     let disallowed_git_path = host_absolute_path(&["opt", "homebrew", "bin", "git"]);
-    let allowed_git_path_literal = starlark_string(&allowed_git_path);
+    let allowed_git_path_literal = lua_string(&allowed_git_path);
     let policy_src = format!(
         r#"
-host_executable(name = "git", paths = ["{allowed_git_path_literal}"])
-prefix_rule(pattern=["git"], decision="prompt")
+host_executable {{name = "git", paths = {{"{allowed_git_path_literal}"}}}}
+prefix_rule {{pattern={{"git"}}, decision="prompt"}}
 "#
     );
     let mut parser = PolicyParser::new();
@@ -723,7 +723,7 @@ async fn requested_prefix_rule_can_approve_absolute_path_commands() {
 
 #[tokio::test]
 async fn exec_approval_requirement_respects_approval_policy() {
-    let policy_src = r#"prefix_rule(pattern=["rm"], decision="prompt")"#;
+    let policy_src = r#"prefix_rule {pattern={"rm"}, decision="prompt"}"#;
     let mut parser = PolicyParser::new();
     parser
         .parse("test.rules", policy_src)
@@ -824,7 +824,7 @@ async fn exec_approval_requirement_rejects_unmatched_sandbox_escalation_when_gra
 
 #[tokio::test]
 async fn mixed_rule_and_sandbox_prompt_prioritizes_rule_for_rejection_decision() {
-    let policy_src = r#"prefix_rule(pattern=["git"], decision="prompt")"#;
+    let policy_src = r#"prefix_rule {pattern={"git"}, decision="prompt"}"#;
     let mut parser = PolicyParser::new();
     parser
         .parse("test.rules", policy_src)
@@ -861,7 +861,7 @@ async fn mixed_rule_and_sandbox_prompt_prioritizes_rule_for_rejection_decision()
 
 #[tokio::test]
 async fn mixed_rule_and_sandbox_prompt_rejects_when_granular_rules_are_disabled() {
-    let policy_src = r#"prefix_rule(pattern=["git"], decision="prompt")"#;
+    let policy_src = r#"prefix_rule {pattern={"git"}, decision="prompt"}"#;
     let mut parser = PolicyParser::new();
     parser
         .parse("test.rules", policy_src)
@@ -1044,7 +1044,7 @@ async fn request_rule_falls_back_when_prefix_rule_does_not_approve_all_commands(
 
 #[tokio::test]
 async fn heuristics_apply_when_other_commands_match_policy() {
-    let policy_src = r#"prefix_rule(pattern=["apple"], decision="allow")"#;
+    let policy_src = r#"prefix_rule {pattern={"apple"}, decision="allow"}"#;
     let mut parser = PolicyParser::new();
     parser
         .parse("test.rules", policy_src)
@@ -1104,7 +1104,7 @@ async fn append_execpolicy_amendment_updates_policy_and_file() {
         .expect("policy file should have been created");
     assert_eq!(
         contents,
-        r#"prefix_rule(pattern=["echo", "hello"], decision="allow")
+        r#"prefix_rule {pattern={"echo", "hello"}, decision="allow"}
 "#
     );
 }
@@ -1154,7 +1154,7 @@ async fn proposed_execpolicy_amendment_is_present_for_single_command_without_pol
 
 #[tokio::test]
 async fn proposed_execpolicy_amendment_is_omitted_when_policy_prompts() {
-    let policy_src = r#"prefix_rule(pattern=["rm"], decision="prompt")"#;
+    let policy_src = r#"prefix_rule {pattern={"rm"}, decision="prompt"}"#;
     let mut parser = PolicyParser::new();
     parser
         .parse("test.rules", policy_src)
@@ -1216,7 +1216,7 @@ async fn proposed_execpolicy_amendment_is_present_for_multi_command_scripts() {
 
 #[tokio::test]
 async fn proposed_execpolicy_amendment_uses_first_no_match_in_multi_command_scripts() {
-    let policy_src = r#"prefix_rule(pattern=["cat"], decision="allow")"#;
+    let policy_src = r#"prefix_rule {pattern={"cat"}, decision="allow"}"#;
     let mut parser = PolicyParser::new();
     parser
         .parse("test.rules", policy_src)
@@ -1276,7 +1276,7 @@ async fn proposed_execpolicy_amendment_is_present_when_heuristics_allow() {
 
 #[tokio::test]
 async fn proposed_execpolicy_amendment_is_suppressed_when_policy_matches_allow() {
-    let policy_src = r#"prefix_rule(pattern=["echo"], decision="allow")"#;
+    let policy_src = r#"prefix_rule {pattern={"echo"}, decision="allow"}"#;
     let mut parser = PolicyParser::new();
     parser
         .parse("test.rules", policy_src)

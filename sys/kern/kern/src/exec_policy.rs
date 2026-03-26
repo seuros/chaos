@@ -363,7 +363,7 @@ fn exec_policy_message_for_display(source: &chaos_selinux::Error) -> String {
         return line.to_owned();
     }
     if let Some(first_line) = message.lines().next()
-        && let Some((_, detail)) = first_line.rsplit_once(": starlark error: ")
+        && let Some((_, detail)) = first_line.rsplit_once(": lua error: ")
     {
         return detail.trim().to_string();
     }
@@ -376,20 +376,20 @@ fn exec_policy_message_for_display(source: &chaos_selinux::Error) -> String {
         .to_string()
 }
 
-fn parse_starlark_line_from_message(message: &str) -> Option<(PathBuf, usize)> {
+fn parse_lua_line_from_message(message: &str) -> Option<(PathBuf, usize)> {
     let first_line = message.lines().next()?.trim();
-    let (path_and_position, _) = first_line.rsplit_once(": starlark error:")?;
 
-    let mut parts = path_and_position.rsplitn(3, ':');
-    let _column = parts.next()?.parse::<usize>().ok()?;
-    let line = parts.next()?.parse::<usize>().ok()?;
-    let path = PathBuf::from(parts.next()?);
+    // Lua errors: [string "FILENAME"]:LINE: ...
+    let rest = first_line.strip_prefix("[string \"")?;
+    let (path, rest) = rest.split_once("\"]:")?;
+    let (line_str, _) = rest.split_once(':')?;
+    let line = line_str.trim().parse::<usize>().ok()?;
 
     if line == 0 {
         return None;
     }
 
-    Some((path, line))
+    Some((PathBuf::from(path), line))
 }
 
 pub fn format_exec_policy_error_with_source(error: &ExecPolicyError) -> String {
@@ -399,7 +399,7 @@ pub fn format_exec_policy_error_with_source(error: &ExecPolicyError) -> String {
             let structured_location = source
                 .location()
                 .map(|location| (PathBuf::from(location.path), location.range.start.line));
-            let parsed_location = parse_starlark_line_from_message(&rendered_source);
+            let parsed_location = parse_lua_line_from_message(&rendered_source);
             let location = match (structured_location, parsed_location) {
                 (Some((_, 1)), Some((parsed_path, parsed_line))) if parsed_line > 1 => {
                     Some((parsed_path, parsed_line))

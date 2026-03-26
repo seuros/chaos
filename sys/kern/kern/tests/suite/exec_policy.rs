@@ -85,7 +85,7 @@ async fn execpolicy_blocks_shell_invocation() -> Result<()> {
         .expect("create policy directory");
         fs::write(
             &policy_path,
-            r#"prefix_rule(pattern=["echo"], decision="forbidden")"#,
+            r#"prefix_rule {pattern={"echo"}, decision="forbidden"}"#,
         )
         .expect("write policy file");
     });

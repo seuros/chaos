@@ -61,7 +61,7 @@ fn host_absolute_path(segments: &[&str]) -> String {
     path.to_string_lossy().into_owned()
 }
 
-fn starlark_string(value: &str) -> String {
+fn lua_string(value: &str) -> String {
     value.replace('\\', "\\\\").replace('"', "\\\"")
 }
 
@@ -426,7 +426,7 @@ fn skill_escalation_execution_ignores_empty_permissions() {
 
 #[test]
 fn evaluate_intercepted_exec_policy_uses_wrapper_command_when_shell_wrapper_parsing_disabled() {
-    let policy_src = r#"prefix_rule(pattern = ["npm", "publish"], decision = "prompt")"#;
+    let policy_src = r#"prefix_rule {pattern = {"npm", "publish"}, decision = "prompt"}"#;
     let mut parser = PolicyParser::new();
     parser.parse("test.rules", policy_src).unwrap();
     let policy = parser.build();
@@ -477,7 +477,7 @@ ultimately intercept the `npm publish` command and apply the policy rules to it.
 
 #[test]
 fn evaluate_intercepted_exec_policy_matches_inner_shell_commands_when_enabled() {
-    let policy_src = r#"prefix_rule(pattern = ["npm", "publish"], decision = "prompt")"#;
+    let policy_src = r#"prefix_rule {pattern = {"npm", "publish"}, decision = "prompt"}"#;
     let mut parser = PolicyParser::new();
     parser.parse("test.rules", policy_src).unwrap();
     let policy = parser.build();
@@ -518,11 +518,11 @@ fn evaluate_intercepted_exec_policy_matches_inner_shell_commands_when_enabled() 
 #[test]
 fn intercepted_exec_policy_uses_host_executable_mappings() {
     let git_path = host_absolute_path(&["usr", "bin", "git"]);
-    let git_path_literal = starlark_string(&git_path);
+    let git_path_literal = lua_string(&git_path);
     let policy_src = format!(
         r#"
-prefix_rule(pattern = ["git", "status"], decision = "prompt")
-host_executable(name = "git", paths = ["{git_path_literal}"])
+prefix_rule {{pattern = {{"git", "status"}}, decision = "prompt"}}
+host_executable {{name = "git", paths = {{"{git_path_literal}"}}}}
 "#
     );
     let mut parser = PolicyParser::new();
@@ -606,11 +606,11 @@ fn intercepted_exec_policy_treats_preapproved_additional_permissions_as_default(
 fn intercepted_exec_policy_rejects_disallowed_host_executable_mapping() {
     let allowed_git = host_absolute_path(&["usr", "bin", "git"]);
     let other_git = host_absolute_path(&["opt", "homebrew", "bin", "git"]);
-    let allowed_git_literal = starlark_string(&allowed_git);
+    let allowed_git_literal = lua_string(&allowed_git);
     let policy_src = format!(
         r#"
-prefix_rule(pattern = ["git", "status"], decision = "prompt")
-host_executable(name = "git", paths = ["{allowed_git_literal}"])
+prefix_rule {{pattern = {{"git", "status"}}, decision = "prompt"}}
+host_executable {{name = "git", paths = {{"{allowed_git_literal}"}}}}
 "#
     );
     let mut parser = PolicyParser::new();

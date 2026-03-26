@@ -17,10 +17,10 @@ fn execpolicy_check_matches_expected_json() -> Result<(), Box<dyn std::error::Er
     fs::write(
         &policy_path,
         r#"
-prefix_rule(
-    pattern = ["git", "push"],
+prefix_rule {
+    pattern = {"git", "push"},
     decision = "forbidden",
-)
+}
 "#,
     )?;
 
@@ -73,11 +73,11 @@ fn execpolicy_check_includes_justification_when_present() -> Result<(), Box<dyn 
     fs::write(
         &policy_path,
         r#"
-prefix_rule(
-    pattern = ["git", "push"],
+prefix_rule {
+    pattern = {"git", "push"},
     decision = "forbidden",
     justification = "pushing is blocked in this repo",
-)
+}
 "#,
     )?;
 

@@ -1843,13 +1843,19 @@ pub(crate) fn mcp_tool_to_deferred_openai_tool(
 fn dynamic_tool_to_openai_tool(
     tool: &DynamicToolSpec,
 ) -> Result<ResponsesApiTool, serde_json::Error> {
-    mcp_tool_to_responses_api_tool(
-        tool.name.clone(),
-        Some(tool.description.clone()),
-        tool.input_schema.clone(),
-        None,
-        false,
-    )
+    // Dynamic tools are session-local Chaos IPC registrations, not MCP tools.
+    // Keep this path separate from `mcp_tool_to_responses_api_tool()` so we do
+    // not fabricate MCP output envelopes or other negotiated MCP semantics.
+    let input_schema = parse_tool_input_schema(&tool.input_schema)?;
+
+    Ok(ResponsesApiTool {
+        name: tool.name.clone(),
+        description: tool.description.clone(),
+        strict: false,
+        defer_loading: None,
+        parameters: input_schema,
+        output_schema: None,
+    })
 }
 
 /// Builds the tool registry builder while collecting tool specs for later serialization.

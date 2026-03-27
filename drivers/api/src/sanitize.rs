@@ -127,9 +127,142 @@ pub fn mcp_call_tool_result_output_schema(structured_content_schema: JsonValue) 
 ///   common keywords (`properties` → object, `items` → array, `enum`/`const`/`format` → string)
 ///   and otherwise defaults to `"string"`.
 /// - Normalizes union types (`["string", "null"]`) to a single type.
+/// - Expands local `$ref` pointers and unwraps nullable `anyOf`/`oneOf`
+///   wrappers into the underlying non-null schema when possible.
 /// - Fills required child fields (e.g. array items, object properties) with
 ///   permissive defaults when absent.
 pub fn sanitize_json_schema(value: &mut JsonValue) {
+    let root = value.clone();
+    let mut ref_stack = Vec::new();
+    expand_local_schema_references(value, &root, &mut ref_stack);
+    sanitize_json_schema_subset(value);
+}
+
+fn expand_local_schema_references(
+    value: &mut JsonValue,
+    root: &JsonValue,
+    ref_stack: &mut Vec<String>,
+) {
+    match value {
+        JsonValue::Array(arr) => {
+            for v in arr.iter_mut() {
+                expand_local_schema_references(v, root, ref_stack);
+            }
+        }
+        JsonValue::Object(map) => {
+            if let Some(expanded) = resolve_local_ref_object(map, root, ref_stack) {
+                *value = expanded;
+                expand_local_schema_references(value, root, ref_stack);
+                return;
+            }
+
+            for child in map.values_mut() {
+                expand_local_schema_references(child, root, ref_stack);
+            }
+
+            if let Some(collapsed) = collapse_single_schema_combiners(map) {
+                *value = collapsed;
+                expand_local_schema_references(value, root, ref_stack);
+            }
+        }
+        _ => {}
+    }
+}
+
+fn resolve_local_ref_object(
+    map: &serde_json::Map<String, JsonValue>,
+    root: &JsonValue,
+    ref_stack: &mut Vec<String>,
+) -> Option<JsonValue> {
+    let reference = map.get("$ref")?.as_str()?;
+    if !reference.starts_with('#') || ref_stack.iter().any(|entry| entry == reference) {
+        return None;
+    }
+
+    ref_stack.push(reference.to_string());
+    let resolved_pointer = if reference == "#" {
+        Some(root.clone())
+    } else {
+        root.pointer(reference.strip_prefix('#')?).cloned()
+    };
+    let Some(mut resolved) = resolved_pointer else {
+        ref_stack.pop();
+        return None;
+    };
+    if let JsonValue::Object(resolved_map) = &mut resolved {
+        for (key, value) in map {
+            if key != "$ref" {
+                resolved_map.insert(key.clone(), value.clone());
+            }
+        }
+    }
+    expand_local_schema_references(&mut resolved, root, ref_stack);
+    ref_stack.pop();
+    Some(resolved)
+}
+
+fn collapse_single_schema_combiners(map: &serde_json::Map<String, JsonValue>) -> Option<JsonValue> {
+    for combiner in ["anyOf", "oneOf"] {
+        if let Some(options) = map.get(combiner).and_then(JsonValue::as_array)
+            && let Some(branch) = select_single_non_null_branch(options)
+        {
+            return Some(merge_schema_branch(map, combiner, branch.clone()));
+        }
+    }
+
+    if let Some(options) = map.get("allOf").and_then(JsonValue::as_array)
+        && let [branch] = options.as_slice()
+    {
+        return Some(merge_schema_branch(map, "allOf", branch.clone()));
+    }
+
+    None
+}
+
+fn select_single_non_null_branch(options: &[JsonValue]) -> Option<&JsonValue> {
+    let mut branch = None;
+    for option in options {
+        if is_null_schema(option) {
+            continue;
+        }
+        if branch.is_some() {
+            return None;
+        }
+        branch = Some(option);
+    }
+    branch
+}
+
+fn is_null_schema(value: &JsonValue) -> bool {
+    match value {
+        JsonValue::Null => true,
+        JsonValue::Object(map) => match map.get("type") {
+            Some(JsonValue::String(ty)) => ty == "null",
+            Some(JsonValue::Array(types)) => {
+                !types.is_empty() && types.iter().all(|ty| ty.as_str() == Some("null"))
+            }
+            _ => map.get("const").is_some_and(JsonValue::is_null),
+        },
+        _ => false,
+    }
+}
+
+fn merge_schema_branch(
+    original: &serde_json::Map<String, JsonValue>,
+    combiner: &str,
+    mut branch: JsonValue,
+) -> JsonValue {
+    if let JsonValue::Object(branch_map) = &mut branch {
+        for (key, value) in original {
+            if key != combiner {
+                branch_map.insert(key.clone(), value.clone());
+            }
+        }
+    }
+    branch
+}
+
+fn sanitize_json_schema_subset(value: &mut JsonValue) {
     match value {
         JsonValue::Bool(_) => {
             // JSON Schema boolean form: true/false. Coerce to an accept-all string.
@@ -137,7 +270,7 @@ pub fn sanitize_json_schema(value: &mut JsonValue) {
         }
         JsonValue::Array(arr) => {
             for v in arr.iter_mut() {
-                sanitize_json_schema(v);
+                sanitize_json_schema_subset(v);
             }
         }
         JsonValue::Object(map) => {
@@ -146,16 +279,16 @@ pub fn sanitize_json_schema(value: &mut JsonValue) {
                 && let Some(props_map) = props.as_object_mut()
             {
                 for (_k, v) in props_map.iter_mut() {
-                    sanitize_json_schema(v);
+                    sanitize_json_schema_subset(v);
                 }
             }
             if let Some(items) = map.get_mut("items") {
-                sanitize_json_schema(items);
+                sanitize_json_schema_subset(items);
             }
             // Some schemas use oneOf/anyOf/allOf - sanitize their entries
             for combiner in ["oneOf", "anyOf", "allOf", "prefixItems"] {
                 if let Some(v) = map.get_mut(combiner) {
-                    sanitize_json_schema(v);
+                    sanitize_json_schema_subset(v);
                 }
             }
 
@@ -219,7 +352,7 @@ pub fn sanitize_json_schema(value: &mut JsonValue) {
                 if let Some(ap) = map.get_mut("additionalProperties") {
                     let is_bool = matches!(ap, JsonValue::Bool(_));
                     if !is_bool {
-                        sanitize_json_schema(ap);
+                        sanitize_json_schema_subset(ap);
                     }
                 }
             }

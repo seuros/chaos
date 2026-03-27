@@ -435,6 +435,7 @@ pub use codex_api::sanitize::JsonSchema;
 pub use codex_api::sanitize::ResponsesApiTool;
 pub use codex_api::sanitize::mcp_call_tool_result_output_schema;
 pub use codex_api::sanitize::parse_tool_input_schema;
+#[allow(unused_imports)]
 pub use codex_api::sanitize::sanitize_json_schema;
 
 fn create_network_permissions_schema() -> JsonSchema {
@@ -1897,13 +1898,12 @@ fn mcp_tool_to_openai_tool_parts(
         );
     }
 
-    // Serialize to a raw JSON value so we can sanitize schemas coming from MCP
-    // servers. Some servers omit the top-level or nested `type` in JSON
-    // Schemas (e.g. using enum/anyOf), or use unsupported variants like
-    // `integer`. Our internal JsonSchema is a small subset and requires
-    // `type`, so we coerce/sanitize here for compatibility.
-    sanitize_json_schema(&mut serialized_input_schema);
-    let input_schema = serde_json::from_value::<JsonSchema>(serialized_input_schema)?;
+    // Serialize to a raw JSON value so we can normalize schemas coming from
+    // MCP servers. Some servers omit the top-level or nested `type`, use local
+    // `$ref`s, or wrap optional objects in nullable combiners. Our internal
+    // JsonSchema is a small subset, so we coerce/sanitize here for
+    // compatibility.
+    let input_schema = parse_tool_input_schema(&serialized_input_schema)?;
     let structured_content_schema =
         output_schema.unwrap_or_else(|| JsonValue::Object(serde_json::Map::new()));
     let output_schema = Some(mcp_call_tool_result_output_schema(
@@ -2134,9 +2134,7 @@ pub(crate) fn build_specs_with_discoverable_tools(
     {
         let arsenal_handler = Arc::new(ArsenalHandler);
         for info in chaos_arsenal::tools::tool_infos() {
-            let mut schema = info.input_schema.clone();
-            sanitize_json_schema(&mut schema);
-            let input_schema: JsonSchema = serde_json::from_value(schema)
+            let input_schema = parse_tool_input_schema(&info.input_schema)
                 .unwrap_or_else(|e| panic!("arsenal tool {} has invalid schema: {e}", info.name));
             let spec = ToolSpec::Function(ResponsesApiTool {
                 name: info.name.clone(),
@@ -2146,7 +2144,11 @@ pub(crate) fn build_specs_with_discoverable_tools(
                 parameters: input_schema,
                 output_schema: None,
             });
-            push_tool_spec(&mut builder, spec, /*supports_parallel_tool_calls*/ true);
+            push_tool_spec(
+                &mut builder,
+                spec,
+                /*supports_parallel_tool_calls*/ true,
+            );
             builder.register_handler(&info.name, arsenal_handler.clone());
         }
     }

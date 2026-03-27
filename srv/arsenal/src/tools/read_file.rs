@@ -17,6 +17,8 @@ const COMMENT_PREFIXES: &[&str] = &["#", "//", "--"];
 
 /// Parameters accepted by the `read_file` tool.
 #[derive(Debug, Deserialize, JsonSchema)]
+#[serde(deny_unknown_fields)]
+#[schemars(deny_unknown_fields)]
 pub struct ReadFileParams {
     /// Absolute path to the file.
     file_path: String,
@@ -49,6 +51,8 @@ enum ReadMode {
 
 /// Additional configuration for indentation-aware reads.
 #[derive(Debug, Clone, Deserialize, JsonSchema)]
+#[serde(deny_unknown_fields)]
+#[schemars(deny_unknown_fields)]
 pub struct IndentationParams {
     /// Anchor line to center the indentation lookup on (defaults to offset).
     #[serde(default)]
@@ -539,5 +543,20 @@ mod tests {
         assert!(names.contains(&"grep_files"));
         assert!(names.contains(&"list_dir"));
         assert_eq!(tools.len(), 3);
+    }
+
+    #[tokio::test]
+    async fn rejects_unknown_arguments() {
+        let result = execute(&serde_json::json!({
+            "file_path": "/tmp/example.rs",
+            "indentation": {
+                "anchor_line": 1,
+                "unknwon_field": true
+            }
+        }))
+        .await;
+
+        let err = result.expect_err("unknown indentation field should fail");
+        assert!(err.contains("unknown field `unknwon_field`"));
     }
 }

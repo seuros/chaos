@@ -21,6 +21,8 @@ fn default_limit() -> usize {
 }
 
 #[derive(Debug, Deserialize, JsonSchema)]
+#[serde(deny_unknown_fields)]
+#[schemars(deny_unknown_fields)]
 pub struct GrepFilesParams {
     /// Regex pattern to search for.
     pattern: String,
@@ -269,5 +271,17 @@ mod tests {
             .output()
             .map(|output| output.status.success())
             .unwrap_or(false)
+    }
+
+    #[tokio::test]
+    async fn rejects_unknown_arguments() {
+        let result = execute(&serde_json::json!({
+            "pattern": "alpha",
+            "pathh": "."
+        }))
+        .await;
+
+        let err = result.expect_err("unknown field should fail");
+        assert!(err.contains("unknown field `pathh`"));
     }
 }

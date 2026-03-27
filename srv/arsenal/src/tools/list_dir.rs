@@ -31,6 +31,8 @@ fn default_depth() -> usize {
 }
 
 #[derive(Debug, Deserialize, JsonSchema)]
+#[serde(deny_unknown_fields)]
+#[schemars(deny_unknown_fields)]
 pub struct ListDirParams {
     /// Absolute path to the directory to list.
     dir_path: String,
@@ -424,5 +426,17 @@ mod tests {
             second_page,
             vec!["b/".to_string(), "  b_child.txt".to_string()]
         );
+    }
+
+    #[tokio::test]
+    async fn rejects_unknown_arguments() {
+        let result = execute(&serde_json::json!({
+            "dir_path": "/tmp",
+            "limitt": 10
+        }))
+        .await;
+
+        let err = result.expect_err("unknown field should fail");
+        assert!(err.contains("unknown field `limitt`"));
     }
 }

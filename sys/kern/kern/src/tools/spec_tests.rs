@@ -457,9 +457,7 @@ fn test_full_toolset_specs_for_gpt5_codex_unified_exec_web_search() {
 
     // Arsenal tools — registered from the arsenal crate at boot.
     for info in chaos_arsenal::tools::tool_infos() {
-        let mut schema = info.input_schema.clone();
-        sanitize_json_schema(&mut schema);
-        let input_schema: JsonSchema = serde_json::from_value(schema)
+        let input_schema = parse_tool_input_schema(&info.input_schema)
             .unwrap_or_else(|e| panic!("arsenal tool {} has invalid schema: {e}", info.name));
         let spec = ToolSpec::Function(ResponsesApiTool {
             name: info.name.clone(),
@@ -490,6 +488,88 @@ fn test_full_toolset_specs_for_gpt5_codex_unified_exec_web_search() {
         strip_descriptions_tool(&mut e);
         assert_eq!(a, e, "spec mismatch for {name}");
     }
+}
+
+#[test]
+fn arsenal_tools_keep_closed_object_schemas() {
+    let config = test_config();
+    let model_info = ModelsManager::construct_model_info_offline_for_tests("gpt-5-codex", &config);
+    let features = Features::with_defaults();
+    let available_models = Vec::new();
+    let tools_config = ToolsConfig::new(&ToolsConfigParams {
+        model_info: &model_info,
+        available_models: &available_models,
+        features: &features,
+        web_search_mode: Some(WebSearchMode::Cached),
+        session_source: SessionSource::Cli,
+        sandbox_policy: &SandboxPolicy::RootAccess,
+        windows_sandbox_level: WindowsSandboxLevel::Disabled,
+    });
+    let (tools, _) = build_specs(&tools_config, None, None, &[]).build();
+
+    for name in ["read_file", "grep_files", "list_dir"] {
+        let ToolSpec::Function(ResponsesApiTool { parameters, .. }) = &find_tool(&tools, name).spec
+        else {
+            panic!("expected function tool");
+        };
+        let JsonSchema::Object {
+            additional_properties,
+            ..
+        } = parameters
+        else {
+            panic!("{name} should use an object schema");
+        };
+        assert_eq!(
+            additional_properties,
+            &Some(false.into()),
+            "{name} should reject unknown arguments"
+        );
+    }
+}
+
+#[test]
+fn arsenal_read_file_preserves_indentation_object_schema() {
+    let config = test_config();
+    let model_info = ModelsManager::construct_model_info_offline_for_tests("gpt-5-codex", &config);
+    let features = Features::with_defaults();
+    let available_models = Vec::new();
+    let tools_config = ToolsConfig::new(&ToolsConfigParams {
+        model_info: &model_info,
+        available_models: &available_models,
+        features: &features,
+        web_search_mode: Some(WebSearchMode::Cached),
+        session_source: SessionSource::Cli,
+        sandbox_policy: &SandboxPolicy::RootAccess,
+        windows_sandbox_level: WindowsSandboxLevel::Disabled,
+    });
+    let (tools, _) = build_specs(&tools_config, None, None, &[]).build();
+
+    let ToolSpec::Function(ResponsesApiTool { parameters, .. }) =
+        &find_tool(&tools, "read_file").spec
+    else {
+        panic!("expected function tool");
+    };
+    let JsonSchema::Object { properties, .. } = parameters else {
+        panic!("read_file should use an object schema");
+    };
+
+    let Some(JsonSchema::Object {
+        properties: indentation_properties,
+        additional_properties,
+        ..
+    }) = properties.get("indentation")
+    else {
+        panic!("indentation should remain an object schema");
+    };
+
+    assert_eq!(
+        additional_properties,
+        &Some(false.into()),
+        "indentation should reject unknown keys"
+    );
+    assert!(indentation_properties.contains_key("anchor_line"));
+    assert!(indentation_properties.contains_key("max_levels"));
+    assert!(indentation_properties.contains_key("include_siblings"));
 }
 
 #[test]

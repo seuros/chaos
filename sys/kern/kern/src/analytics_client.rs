@@ -12,18 +12,18 @@ use tokio::sync::mpsc;
 #[derive(Clone)]
 pub(crate) struct TrackEventsContext {
     pub(crate) model_slug: String,
-    pub(crate) thread_id: String,
+    pub(crate) process_id: String,
     pub(crate) turn_id: String,
 }
 
 pub(crate) fn build_track_events_context(
     model_slug: String,
-    thread_id: String,
+    process_id: String,
     turn_id: String,
 ) -> TrackEventsContext {
     TrackEventsContext {
         model_slug,
-        thread_id,
+        process_id,
         turn_id,
     }
 }
@@ -268,7 +268,7 @@ enum TrackEventRequest {
 #[derive(Serialize)]
 struct CodexAppMetadata {
     connector_id: Option<String>,
-    thread_id: Option<String>,
+    process_id: Option<String>,
     turn_id: Option<String>,
     app_name: Option<String>,
     product_client_id: Option<String>,
@@ -303,7 +303,7 @@ struct CodexPluginMetadata {
 struct CodexPluginUsedMetadata {
     #[serde(flatten)]
     plugin: CodexPluginMetadata,
-    thread_id: Option<String>,
+    process_id: Option<String>,
     turn_id: Option<String>,
     model_slug: Option<String>,
 }
@@ -498,7 +498,7 @@ async fn send_track_plugin_management_event(
 fn codex_app_metadata(tracking: &TrackEventsContext, app: AppInvocation) -> CodexAppMetadata {
     CodexAppMetadata {
         connector_id: app.connector_id,
-        thread_id: Some(tracking.thread_id.clone()),
+        process_id: Some(tracking.process_id.clone()),
         turn_id: Some(tracking.turn_id.clone()),
         app_name: app.app_name,
         product_client_id: Some(crate::default_client::originator().value),
@@ -536,7 +536,7 @@ fn codex_plugin_used_metadata(
 ) -> CodexPluginUsedMetadata {
     CodexPluginUsedMetadata {
         plugin: codex_plugin_metadata(plugin),
-        thread_id: Some(tracking.thread_id.clone()),
+        process_id: Some(tracking.process_id.clone()),
         turn_id: Some(tracking.turn_id.clone()),
         model_slug: Some(tracking.model_slug.clone()),
     }

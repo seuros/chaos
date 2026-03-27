@@ -19,14 +19,14 @@ use uuid::Uuid;
 
 use crate::rollout::INTERACTIVE_SESSION_SOURCES;
 use crate::rollout::list::Cursor;
-use crate::rollout::list::ThreadItem;
-use crate::rollout::list::ThreadSortKey;
-use crate::rollout::list::ThreadsPage;
-use crate::rollout::list::get_threads;
+use crate::rollout::list::ProcessItem;
+use crate::rollout::list::ProcessSortKey;
+use crate::rollout::list::ProcessesPage;
+use crate::rollout::list::get_processes;
 use crate::rollout::list::read_head_for_summary;
 use crate::rollout::rollout_date_parts;
 use anyhow::Result;
-use chaos_ipc::ThreadId;
+use chaos_ipc::ProcessId;
 use chaos_ipc::models::ContentItem;
 use chaos_ipc::models::ResponseItem;
 use chaos_ipc::protocol::EventMsg;
@@ -47,13 +47,13 @@ fn provider_vec(providers: &[&str]) -> Vec<String> {
         .collect()
 }
 
-fn thread_id_from_uuid(uuid: Uuid) -> ThreadId {
-    ThreadId::from_string(&uuid.to_string()).expect("valid thread id")
+fn process_id_from_uuid(uuid: Uuid) -> ProcessId {
+    ProcessId::from_string(&uuid.to_string()).expect("valid thread id")
 }
 
 async fn insert_state_db_thread(
     home: &Path,
-    thread_id: ThreadId,
+    process_id: ProcessId,
     rollout_path: &Path,
     archived: bool,
 ) {
@@ -65,8 +65,8 @@ async fn insert_state_db_thread(
         .await
         .expect("backfill should be complete");
     let created_at: Timestamp = "2025-01-03T12:00:00Z".parse().expect("valid datetime");
-    let mut builder = chaos_proc::ThreadMetadataBuilder::new(
-        thread_id,
+    let mut builder = chaos_proc::ProcessMetadataBuilder::new(
+        process_id,
         rollout_path.to_path_buf(),
         created_at,
         SessionSource::Cli,
@@ -79,7 +79,7 @@ async fn insert_state_db_thread(
     let mut metadata = builder.build(TEST_PROVIDER);
     metadata.first_user_message = Some("Hello from user".to_string());
     runtime
-        .upsert_thread(&metadata)
+        .upsert_process(&metadata)
         .await
         .expect("state db upsert should succeed");
 }
@@ -100,17 +100,17 @@ async fn insert_state_db_thread(
 //     .unwrap();
 //
 //     let db_uuid = Uuid::from_u128(102);
-//     let db_thread_id = ThreadId::from_string(&db_uuid.to_string()).expect("valid thread id");
+//     let db_process_id = ProcessId::from_string(&db_uuid.to_string()).expect("valid thread id");
 //     let db_rollout_path = home.join(format!(
 //         "sessions/2025/01/03/rollout-2025-01-03T12-00-00-{db_uuid}.jsonl"
 //     ));
-//     insert_state_db_thread(home, db_thread_id, db_rollout_path.as_path(), false).await;
+//     insert_state_db_thread(home, db_process_id, db_rollout_path.as_path(), false).await;
 //
 //     let page = RolloutRecorder::list_threads(
 //         home,
 //         10,
 //         None,
-//         ThreadSortKey::CreatedAt,
+//         ProcessSortKey::CreatedAt,
 //         NO_SOURCE_FILTER,
 //         None,
 //         TEST_PROVIDER,
@@ -120,7 +120,7 @@ async fn insert_state_db_thread(
 //
 //     assert_eq!(page.items.len(), 1);
 //     assert_eq!(page.items[0].path, db_rollout_path);
-//     assert_eq!(page.items[0].thread_id, Some(db_thread_id));
+//     assert_eq!(page.items[0].process_id, Some(db_process_id));
 //     assert_eq!(page.items[0].cwd, Some(home.to_path_buf()));
 //     assert_eq!(
 //         page.items[0].first_user_message.as_deref(),
@@ -138,20 +138,20 @@ async fn insert_state_db_thread(
 //     fs::create_dir_all(&archived_root).unwrap();
 //
 //     let active_uuid = Uuid::from_u128(211);
-//     let active_thread_id =
-//         ThreadId::from_string(&active_uuid.to_string()).expect("valid active thread id");
+//     let active_process_id =
+//         ProcessId::from_string(&active_uuid.to_string()).expect("valid active thread id");
 //     let active_rollout_path =
 //         sessions_root.join(format!("rollout-2025-01-03T12-00-00-{active_uuid}.jsonl"));
-//     insert_state_db_thread(home, active_thread_id, active_rollout_path.as_path(), false).await;
+//     insert_state_db_thread(home, active_process_id, active_rollout_path.as_path(), false).await;
 //
 //     let archived_uuid = Uuid::from_u128(212);
-//     let archived_thread_id =
-//         ThreadId::from_string(&archived_uuid.to_string()).expect("valid archived thread id");
+//     let archived_process_id =
+//         ProcessId::from_string(&archived_uuid.to_string()).expect("valid archived thread id");
 //     let archived_rollout_path =
 //         archived_root.join(format!("rollout-2025-01-03T11-00-00-{archived_uuid}.jsonl"));
 //     insert_state_db_thread(
 //         home,
-//         archived_thread_id,
+//         archived_process_id,
 //         archived_rollout_path.as_path(),
 //         true,
 //     )
@@ -161,7 +161,7 @@ async fn insert_state_db_thread(
 //         home,
 //         10,
 //         None,
-//         ThreadSortKey::CreatedAt,
+//         ProcessSortKey::CreatedAt,
 //         NO_SOURCE_FILTER,
 //         None,
 //         TEST_PROVIDER,
@@ -191,7 +191,7 @@ async fn insert_state_db_thread(
 //         home,
 //         10,
 //         None,
-//         ThreadSortKey::CreatedAt,
+//         ProcessSortKey::CreatedAt,
 //         NO_SOURCE_FILTER,
 //         None,
 //         TEST_PROVIDER,
@@ -212,11 +212,11 @@ async fn insert_state_db_thread(
 // }
 
 #[tokio::test]
-async fn find_thread_path_falls_back_when_db_path_is_stale() {
+async fn find_process_path_falls_back_when_db_path_is_stale() {
     let temp = TempDir::new().unwrap();
     let home = temp.path();
     let uuid = Uuid::from_u128(302);
-    let thread_id = ThreadId::from_string(&uuid.to_string()).expect("valid thread id");
+    let process_id = ProcessId::from_string(&uuid.to_string()).expect("valid thread id");
     let ts = "2025-01-03T13-00-00";
     write_session_file(home, ts, uuid, 1, Some(SessionSource::Cli)).unwrap();
     let fs_rollout_path = home.join(format!("sessions/2025/01/03/rollout-{ts}-{uuid}.jsonl"));
@@ -224,21 +224,21 @@ async fn find_thread_path_falls_back_when_db_path_is_stale() {
     let stale_db_path = home.join(format!(
         "sessions/2099/01/01/rollout-2099-01-01T00-00-00-{uuid}.jsonl"
     ));
-    insert_state_db_thread(home, thread_id, stale_db_path.as_path(), false).await;
+    insert_state_db_thread(home, process_id, stale_db_path.as_path(), false).await;
 
-    let found = crate::rollout::find_thread_path_by_id_str(home, &uuid.to_string())
+    let found = crate::rollout::find_process_path_by_id_str(home, &uuid.to_string())
         .await
         .expect("lookup should succeed");
     assert_eq!(found, Some(fs_rollout_path.clone()));
-    assert_state_db_rollout_path(home, thread_id, Some(fs_rollout_path.as_path())).await;
+    assert_state_db_rollout_path(home, process_id, Some(fs_rollout_path.as_path())).await;
 }
 
 #[tokio::test]
-async fn find_thread_path_repairs_missing_db_row_after_filesystem_fallback() {
+async fn find_process_path_repairs_missing_db_row_after_filesystem_fallback() {
     let temp = TempDir::new().unwrap();
     let home = temp.path();
     let uuid = Uuid::from_u128(303);
-    let thread_id = ThreadId::from_string(&uuid.to_string()).expect("valid thread id");
+    let process_id = ProcessId::from_string(&uuid.to_string()).expect("valid thread id");
     let ts = "2025-01-03T13-00-00";
     write_session_file(home, ts, uuid, 1, Some(SessionSource::Cli)).unwrap();
     let fs_rollout_path = home.join(format!("sessions/2025/01/03/rollout-{ts}-{uuid}.jsonl"));
@@ -252,11 +252,11 @@ async fn find_thread_path_repairs_missing_db_row_after_filesystem_fallback() {
         .await
         .expect("backfill should be complete");
 
-    let found = crate::rollout::find_thread_path_by_id_str(home, &uuid.to_string())
+    let found = crate::rollout::find_process_path_by_id_str(home, &uuid.to_string())
         .await
         .expect("lookup should succeed");
     assert_eq!(found, Some(fs_rollout_path.clone()));
-    assert_state_db_rollout_path(home, thread_id, Some(fs_rollout_path.as_path())).await;
+    assert_state_db_rollout_path(home, process_id, Some(fs_rollout_path.as_path())).await;
 }
 
 #[test]
@@ -271,14 +271,14 @@ fn rollout_date_parts_extracts_directory_components() {
 
 async fn assert_state_db_rollout_path(
     home: &Path,
-    thread_id: ThreadId,
+    process_id: ProcessId,
     expected_path: Option<&Path>,
 ) {
     let runtime = chaos_proc::StateRuntime::init(home.to_path_buf(), TEST_PROVIDER.to_string())
         .await
         .expect("state db should initialize");
     let path = runtime
-        .find_rollout_path_by_id(thread_id, Some(false))
+        .find_rollout_path_by_id(process_id, Some(false))
         .await
         .expect("state db lookup should succeed");
     assert_eq!(path.as_deref(), expected_path);
@@ -508,11 +508,11 @@ async fn test_list_conversations_latest_first() {
     .unwrap();
 
     let provider_filter = provider_vec(&[TEST_PROVIDER]);
-    let page = get_threads(
+    let page = get_processes(
         home,
         10,
         None,
-        ThreadSortKey::CreatedAt,
+        ProcessSortKey::CreatedAt,
         INTERACTIVE_SESSION_SOURCES,
         Some(provider_filter.as_slice()),
         TEST_PROVIDER,
@@ -543,11 +543,11 @@ async fn test_list_conversations_latest_first() {
     let updated_times: Vec<Option<String>> =
         page.items.iter().map(|i| i.updated_at.clone()).collect();
 
-    let expected = ThreadsPage {
+    let expected = ProcessesPage {
         items: vec![
-            ThreadItem {
+            ProcessItem {
                 path: p1,
-                thread_id: Some(thread_id_from_uuid(u3)),
+                process_id: Some(process_id_from_uuid(u3)),
                 first_user_message: Some("Hello from user".to_string()),
                 cwd: Some(Path::new(".").to_path_buf()),
                 git_branch: None,
@@ -561,9 +561,9 @@ async fn test_list_conversations_latest_first() {
                 created_at: Some("2025-01-03T12-00-00".into()),
                 updated_at: updated_times.first().cloned().flatten(),
             },
-            ThreadItem {
+            ProcessItem {
                 path: p2,
-                thread_id: Some(thread_id_from_uuid(u2)),
+                process_id: Some(process_id_from_uuid(u2)),
                 first_user_message: Some("Hello from user".to_string()),
                 cwd: Some(Path::new(".").to_path_buf()),
                 git_branch: None,
@@ -577,9 +577,9 @@ async fn test_list_conversations_latest_first() {
                 created_at: Some("2025-01-02T12-00-00".into()),
                 updated_at: updated_times.get(1).cloned().flatten(),
             },
-            ThreadItem {
+            ProcessItem {
                 path: p3,
-                thread_id: Some(thread_id_from_uuid(u1)),
+                process_id: Some(process_id_from_uuid(u1)),
                 first_user_message: Some("Hello from user".to_string()),
                 cwd: Some(Path::new(".").to_path_buf()),
                 git_branch: None,
@@ -657,11 +657,11 @@ async fn test_pagination_cursor() {
     .unwrap();
 
     let provider_filter = provider_vec(&[TEST_PROVIDER]);
-    let page1 = get_threads(
+    let page1 = get_processes(
         home,
         2,
         None,
-        ThreadSortKey::CreatedAt,
+        ProcessSortKey::CreatedAt,
         INTERACTIVE_SESSION_SOURCES,
         Some(provider_filter.as_slice()),
         TEST_PROVIDER,
@@ -684,11 +684,11 @@ async fn test_pagination_cursor() {
         page1.items.iter().map(|i| i.updated_at.clone()).collect();
     let expected_cursor1: Cursor =
         serde_json::from_str(&format!("\"2025-03-04T09-00-00|{u4}\"")).unwrap();
-    let expected_page1 = ThreadsPage {
+    let expected_page1 = ProcessesPage {
         items: vec![
-            ThreadItem {
+            ProcessItem {
                 path: p5,
-                thread_id: Some(thread_id_from_uuid(u5)),
+                process_id: Some(process_id_from_uuid(u5)),
                 first_user_message: Some("Hello from user".to_string()),
                 cwd: Some(Path::new(".").to_path_buf()),
                 git_branch: None,
@@ -702,9 +702,9 @@ async fn test_pagination_cursor() {
                 created_at: Some("2025-03-05T09-00-00".into()),
                 updated_at: updated_page1.first().cloned().flatten(),
             },
-            ThreadItem {
+            ProcessItem {
                 path: p4,
-                thread_id: Some(thread_id_from_uuid(u4)),
+                process_id: Some(process_id_from_uuid(u4)),
                 first_user_message: Some("Hello from user".to_string()),
                 cwd: Some(Path::new(".").to_path_buf()),
                 git_branch: None,
@@ -725,11 +725,11 @@ async fn test_pagination_cursor() {
     };
     assert_eq!(page1, expected_page1);
 
-    let page2 = get_threads(
+    let page2 = get_processes(
         home,
         2,
         page1.next_cursor.as_ref(),
-        ThreadSortKey::CreatedAt,
+        ProcessSortKey::CreatedAt,
         INTERACTIVE_SESSION_SOURCES,
         Some(provider_filter.as_slice()),
         TEST_PROVIDER,
@@ -752,11 +752,11 @@ async fn test_pagination_cursor() {
         page2.items.iter().map(|i| i.updated_at.clone()).collect();
     let expected_cursor2: Cursor =
         serde_json::from_str(&format!("\"2025-03-02T09-00-00|{u2}\"")).unwrap();
-    let expected_page2 = ThreadsPage {
+    let expected_page2 = ProcessesPage {
         items: vec![
-            ThreadItem {
+            ProcessItem {
                 path: p3,
-                thread_id: Some(thread_id_from_uuid(u3)),
+                process_id: Some(process_id_from_uuid(u3)),
                 first_user_message: Some("Hello from user".to_string()),
                 cwd: Some(Path::new(".").to_path_buf()),
                 git_branch: None,
@@ -770,9 +770,9 @@ async fn test_pagination_cursor() {
                 created_at: Some("2025-03-03T09-00-00".into()),
                 updated_at: updated_page2.first().cloned().flatten(),
             },
-            ThreadItem {
+            ProcessItem {
                 path: p2,
-                thread_id: Some(thread_id_from_uuid(u2)),
+                process_id: Some(process_id_from_uuid(u2)),
                 first_user_message: Some("Hello from user".to_string()),
                 cwd: Some(Path::new(".").to_path_buf()),
                 git_branch: None,
@@ -793,11 +793,11 @@ async fn test_pagination_cursor() {
     };
     assert_eq!(page2, expected_page2);
 
-    let page3 = get_threads(
+    let page3 = get_processes(
         home,
         2,
         page2.next_cursor.as_ref(),
-        ThreadSortKey::CreatedAt,
+        ProcessSortKey::CreatedAt,
         INTERACTIVE_SESSION_SOURCES,
         Some(provider_filter.as_slice()),
         TEST_PROVIDER,
@@ -812,10 +812,10 @@ async fn test_pagination_cursor() {
         .join(format!("rollout-2025-03-01T09-00-00-{u1}.jsonl"));
     let updated_page3: Vec<Option<String>> =
         page3.items.iter().map(|i| i.updated_at.clone()).collect();
-    let expected_page3 = ThreadsPage {
-        items: vec![ThreadItem {
+    let expected_page3 = ProcessesPage {
+        items: vec![ProcessItem {
             path: p1,
-            thread_id: Some(thread_id_from_uuid(u1)),
+            process_id: Some(process_id_from_uuid(u1)),
             first_user_message: Some("Hello from user".to_string()),
             cwd: Some(Path::new(".").to_path_buf()),
             git_branch: None,
@@ -846,11 +846,11 @@ async fn test_list_threads_scans_past_head_for_user_event() {
     write_session_file_with_delayed_user_event(home, ts, uuid, 12).unwrap();
 
     let provider_filter = provider_vec(&[TEST_PROVIDER]);
-    let page = get_threads(
+    let page = get_processes(
         home,
         10,
         None,
-        ThreadSortKey::CreatedAt,
+        ProcessSortKey::CreatedAt,
         INTERACTIVE_SESSION_SOURCES,
         Some(provider_filter.as_slice()),
         TEST_PROVIDER,
@@ -859,11 +859,11 @@ async fn test_list_threads_scans_past_head_for_user_event() {
     .unwrap();
 
     assert_eq!(page.items.len(), 1);
-    assert_eq!(page.items[0].thread_id, Some(thread_id_from_uuid(uuid)));
+    assert_eq!(page.items[0].process_id, Some(process_id_from_uuid(uuid)));
 }
 
 #[tokio::test]
-async fn test_get_thread_contents() {
+async fn test_get_process_contents() {
     let temp = TempDir::new().unwrap();
     let home = temp.path();
 
@@ -872,11 +872,11 @@ async fn test_get_thread_contents() {
     write_session_file(home, ts, uuid, 2, Some(SessionSource::VSCode)).unwrap();
 
     let provider_filter = provider_vec(&[TEST_PROVIDER]);
-    let page = get_threads(
+    let page = get_processes(
         home,
         1,
         None,
-        ThreadSortKey::CreatedAt,
+        ProcessSortKey::CreatedAt,
         INTERACTIVE_SESSION_SOURCES,
         Some(provider_filter.as_slice()),
         TEST_PROVIDER,
@@ -894,10 +894,10 @@ async fn test_get_thread_contents() {
         .join("04")
         .join("01")
         .join(format!("rollout-2025-04-01T10-30-00-{uuid}.jsonl"));
-    let expected_page = ThreadsPage {
-        items: vec![ThreadItem {
+    let expected_page = ProcessesPage {
+        items: vec![ProcessItem {
             path: expected_path,
-            thread_id: Some(thread_id_from_uuid(uuid)),
+            process_id: Some(process_id_from_uuid(uuid)),
             first_user_message: Some("Hello from user".to_string()),
             cwd: Some(Path::new(".").to_path_buf()),
             git_branch: None,
@@ -962,11 +962,11 @@ async fn test_base_instructions_missing_in_meta_defaults_to_null() {
     write_session_file_with_meta_payload(home, ts, uuid, payload).unwrap();
 
     let provider_filter = provider_vec(&[TEST_PROVIDER]);
-    let page = get_threads(
+    let page = get_processes(
         home,
         1,
         None,
-        ThreadSortKey::CreatedAt,
+        ProcessSortKey::CreatedAt,
         INTERACTIVE_SESSION_SOURCES,
         Some(provider_filter.as_slice()),
         TEST_PROVIDER,
@@ -1005,11 +1005,11 @@ async fn test_base_instructions_present_in_meta_is_preserved() {
     write_session_file_with_meta_payload(home, ts, uuid, payload).unwrap();
 
     let provider_filter = provider_vec(&[TEST_PROVIDER]);
-    let page = get_threads(
+    let page = get_processes(
         home,
         1,
         None,
-        ThreadSortKey::CreatedAt,
+        ProcessSortKey::CreatedAt,
         INTERACTIVE_SESSION_SOURCES,
         Some(provider_filter.as_slice()),
         TEST_PROVIDER,
@@ -1056,11 +1056,11 @@ async fn test_created_at_sort_uses_file_mtime_for_updated_at() -> Result<()> {
     file.set_times(times)?;
 
     let provider_filter = provider_vec(&[TEST_PROVIDER]);
-    let page = get_threads(
+    let page = get_processes(
         home,
         1,
         None,
-        ThreadSortKey::CreatedAt,
+        ProcessSortKey::CreatedAt,
         INTERACTIVE_SESSION_SOURCES,
         Some(provider_filter.as_slice()),
         TEST_PROVIDER,
@@ -1086,7 +1086,7 @@ async fn test_updated_at_uses_file_mtime() -> Result<()> {
     let file_path = day_dir.join(format!("rollout-{ts}-{uuid}.jsonl"));
     let mut file = File::create(&file_path)?;
 
-    let conversation_id = ThreadId::from_string(&uuid.to_string())?;
+    let conversation_id = ProcessId::from_string(&uuid.to_string())?;
     let meta_line = RolloutLine {
         timestamp: ts.to_string(),
         item: RolloutItem::SessionMeta(SessionMetaLine {
@@ -1140,11 +1140,11 @@ async fn test_updated_at_uses_file_mtime() -> Result<()> {
     drop(file);
 
     let provider_filter = provider_vec(&[TEST_PROVIDER]);
-    let page = get_threads(
+    let page = get_processes(
         home,
         1,
         None,
-        ThreadSortKey::UpdatedAt,
+        ProcessSortKey::UpdatedAt,
         INTERACTIVE_SESSION_SOURCES,
         Some(provider_filter.as_slice()),
         TEST_PROVIDER,
@@ -1179,11 +1179,11 @@ async fn test_stable_ordering_same_second_pagination() {
     write_session_file(home, ts, u3, 0, Some(SessionSource::VSCode)).unwrap();
 
     let provider_filter = provider_vec(&[TEST_PROVIDER]);
-    let page1 = get_threads(
+    let page1 = get_processes(
         home,
         2,
         None,
-        ThreadSortKey::CreatedAt,
+        ProcessSortKey::CreatedAt,
         INTERACTIVE_SESSION_SOURCES,
         Some(provider_filter.as_slice()),
         TEST_PROVIDER,
@@ -1206,11 +1206,11 @@ async fn test_stable_ordering_same_second_pagination() {
     let updated_page1: Vec<Option<String>> =
         page1.items.iter().map(|i| i.updated_at.clone()).collect();
     let expected_cursor1: Cursor = serde_json::from_str(&format!("\"{ts}|{u2}\"")).unwrap();
-    let expected_page1 = ThreadsPage {
+    let expected_page1 = ProcessesPage {
         items: vec![
-            ThreadItem {
+            ProcessItem {
                 path: p3,
-                thread_id: Some(thread_id_from_uuid(u3)),
+                process_id: Some(process_id_from_uuid(u3)),
                 first_user_message: Some("Hello from user".to_string()),
                 cwd: Some(Path::new(".").to_path_buf()),
                 git_branch: None,
@@ -1224,9 +1224,9 @@ async fn test_stable_ordering_same_second_pagination() {
                 created_at: Some(ts.to_string()),
                 updated_at: updated_page1.first().cloned().flatten(),
             },
-            ThreadItem {
+            ProcessItem {
                 path: p2,
-                thread_id: Some(thread_id_from_uuid(u2)),
+                process_id: Some(process_id_from_uuid(u2)),
                 first_user_message: Some("Hello from user".to_string()),
                 cwd: Some(Path::new(".").to_path_buf()),
                 git_branch: None,
@@ -1247,11 +1247,11 @@ async fn test_stable_ordering_same_second_pagination() {
     };
     assert_eq!(page1, expected_page1);
 
-    let page2 = get_threads(
+    let page2 = get_processes(
         home,
         2,
         page1.next_cursor.as_ref(),
-        ThreadSortKey::CreatedAt,
+        ProcessSortKey::CreatedAt,
         INTERACTIVE_SESSION_SOURCES,
         Some(provider_filter.as_slice()),
         TEST_PROVIDER,
@@ -1266,10 +1266,10 @@ async fn test_stable_ordering_same_second_pagination() {
         .join(format!("rollout-2025-07-01T00-00-00-{u1}.jsonl"));
     let updated_page2: Vec<Option<String>> =
         page2.items.iter().map(|i| i.updated_at.clone()).collect();
-    let expected_page2 = ThreadsPage {
-        items: vec![ThreadItem {
+    let expected_page2 = ProcessesPage {
+        items: vec![ProcessItem {
             path: p1,
-            thread_id: Some(thread_id_from_uuid(u1)),
+            process_id: Some(process_id_from_uuid(u1)),
             first_user_message: Some("Hello from user".to_string()),
             cwd: Some(Path::new(".").to_path_buf()),
             git_branch: None,
@@ -1316,11 +1316,11 @@ async fn test_source_filter_excludes_non_matching_sessions() {
     .unwrap();
 
     let provider_filter = provider_vec(&[TEST_PROVIDER]);
-    let interactive_only = get_threads(
+    let interactive_only = get_processes(
         home,
         10,
         None,
-        ThreadSortKey::CreatedAt,
+        ProcessSortKey::CreatedAt,
         INTERACTIVE_SESSION_SOURCES,
         Some(provider_filter.as_slice()),
         TEST_PROVIDER,
@@ -1338,11 +1338,11 @@ async fn test_source_filter_excludes_non_matching_sessions() {
         path.ends_with("rollout-2025-08-02T10-00-00-00000000-0000-0000-0000-00000000002a.jsonl")
     }));
 
-    let all_sessions = get_threads(
+    let all_sessions = get_processes(
         home,
         10,
         None,
-        ThreadSortKey::CreatedAt,
+        ProcessSortKey::CreatedAt,
         NO_SOURCE_FILTER,
         None,
         TEST_PROVIDER,
@@ -1400,11 +1400,11 @@ async fn test_model_provider_filter_selects_only_matching_sessions() -> Result<(
     let openai_id_str = openai_id.to_string();
     let none_id_str = none_id.to_string();
     let openai_filter = provider_vec(&["openai"]);
-    let openai_sessions = get_threads(
+    let openai_sessions = get_processes(
         home,
         10,
         None,
-        ThreadSortKey::CreatedAt,
+        ProcessSortKey::CreatedAt,
         NO_SOURCE_FILTER,
         Some(openai_filter.as_slice()),
         "openai",
@@ -1414,17 +1414,17 @@ async fn test_model_provider_filter_selects_only_matching_sessions() -> Result<(
     let openai_ids: Vec<_> = openai_sessions
         .items
         .iter()
-        .filter_map(|item| item.thread_id.as_ref().map(ToString::to_string))
+        .filter_map(|item| item.process_id.as_ref().map(ToString::to_string))
         .collect();
     assert!(openai_ids.contains(&openai_id_str));
     assert!(openai_ids.contains(&none_id_str));
 
     let beta_filter = provider_vec(&["beta"]);
-    let beta_sessions = get_threads(
+    let beta_sessions = get_processes(
         home,
         10,
         None,
-        ThreadSortKey::CreatedAt,
+        ProcessSortKey::CreatedAt,
         NO_SOURCE_FILTER,
         Some(beta_filter.as_slice()),
         "openai",
@@ -1435,15 +1435,15 @@ async fn test_model_provider_filter_selects_only_matching_sessions() -> Result<(
     let beta_head = beta_sessions
         .items
         .first()
-        .and_then(|item| item.thread_id.as_ref().map(ToString::to_string));
+        .and_then(|item| item.process_id.as_ref().map(ToString::to_string));
     assert_eq!(beta_head.as_deref(), Some(beta_id_str.as_str()));
 
     let unknown_filter = provider_vec(&["unknown"]);
-    let unknown_sessions = get_threads(
+    let unknown_sessions = get_processes(
         home,
         10,
         None,
-        ThreadSortKey::CreatedAt,
+        ProcessSortKey::CreatedAt,
         NO_SOURCE_FILTER,
         Some(unknown_filter.as_slice()),
         "openai",
@@ -1451,11 +1451,11 @@ async fn test_model_provider_filter_selects_only_matching_sessions() -> Result<(
     .await?;
     assert!(unknown_sessions.items.is_empty());
 
-    let all_sessions = get_threads(
+    let all_sessions = get_processes(
         home,
         10,
         None,
-        ThreadSortKey::CreatedAt,
+        ProcessSortKey::CreatedAt,
         NO_SOURCE_FILTER,
         None,
         "openai",

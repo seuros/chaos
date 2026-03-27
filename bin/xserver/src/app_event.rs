@@ -12,7 +12,7 @@ use std::path::PathBuf;
 
 use chaos_kern::connectors::AppInfo;
 use chaos_locate::FileMatch;
-use chaos_ipc::ThreadId;
+use chaos_ipc::ProcessId;
 use chaos_ipc::mcp::RequestId as McpRequestId;
 use chaos_ipc::openai_models::ModelPreset;
 use chaos_ipc::protocol::ElicitationAction;
@@ -41,20 +41,20 @@ pub(crate) struct ConnectorsSnapshot {
 #[derive(Debug)]
 pub(crate) enum AppEvent {
     CodexEvent(Event),
-    /// Open the agent picker for switching active threads.
+    /// Open the agent picker for switching active processes.
     OpenAgentPicker,
-    /// Switch the active thread to the selected agent.
-    SelectAgentThread(ThreadId),
+    /// Switch the active process to the selected agent.
+    SelectAgentProcess(ProcessId),
 
-    /// Submit an op to the specified thread, regardless of current focus.
-    SubmitThreadOp {
-        thread_id: ThreadId,
+    /// Submit an op to the specified process, regardless of current focus.
+    SubmitProcessOp {
+        process_id: ProcessId,
         op: chaos_ipc::protocol::Op,
     },
 
-    /// Forward an event from a non-primary thread into the app-level thread router.
-    ThreadEvent {
-        thread_id: ThreadId,
+    /// Forward an event from a non-primary process into the app-level process router.
+    ProcessEvent {
+        process_id: ProcessId,
         event: Event,
     },
 
@@ -68,7 +68,7 @@ pub(crate) enum AppEvent {
     /// Open the resume picker inside the running TUI session.
     OpenResumePicker,
 
-    /// Fork the current session into a new thread.
+    /// Fork the current session into a new process.
     ForkCurrentSession,
 
     /// Request to exit the application.
@@ -126,7 +126,7 @@ pub(crate) enum AppEvent {
 
     /// Open a URL-mode MCP elicitation in the user's browser, then resolve the request.
     OpenUrlElicitationInBrowser {
-        thread_id: ThreadId,
+        process_id: ProcessId,
         server_name: String,
         request_id: McpRequestId,
         url: String,
@@ -146,7 +146,7 @@ pub(crate) enum AppEvent {
     /// This is emitted when rollback was not initiated by the current
     /// backtrack flow so trimming occurs in AppEvent queue order relative to
     /// inserted history cells.
-    ApplyThreadRollback {
+    ApplyProcessRollback {
         num_turns: u32,
     },
 

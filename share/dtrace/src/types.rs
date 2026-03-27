@@ -2,7 +2,7 @@ use std::path::PathBuf;
 use std::sync::Arc;
 
 use jiff::Timestamp;
-use chaos_ipc::ThreadId;
+use chaos_ipc::ProcessId;
 use chaos_ipc::models::SandboxPermissions;
 use futures::future::BoxFuture;
 use serde::Serialize;
@@ -61,7 +61,7 @@ impl Hook {
 #[derive(Debug, Serialize, Clone)]
 #[serde(rename_all = "snake_case")]
 pub struct HookPayload {
-    pub session_id: ThreadId,
+    pub session_id: ProcessId,
     pub cwd: PathBuf,
     #[serde(skip_serializing_if = "Option::is_none")]
     pub client: Option<String>,
@@ -73,7 +73,7 @@ pub struct HookPayload {
 #[derive(Debug, Clone, Serialize)]
 #[serde(rename_all = "snake_case")]
 pub struct HookEventAfterAgent {
-    pub thread_id: ThreadId,
+    pub process_id: ProcessId,
     pub turn_id: String,
     pub input_messages: Vec<String>,
     pub last_assistant_message: Option<String>,
@@ -160,7 +160,7 @@ mod tests {
     use std::path::PathBuf;
 
     use jiff::Timestamp;
-    use chaos_ipc::ThreadId;
+    use chaos_ipc::ProcessId;
     use chaos_ipc::models::SandboxPermissions;
     use pretty_assertions::assert_eq;
     use serde_json::json;
@@ -175,8 +175,8 @@ mod tests {
 
     #[test]
     fn hook_payload_serializes_stable_wire_shape() {
-        let session_id = ThreadId::new();
-        let thread_id = ThreadId::new();
+        let session_id = ProcessId::new();
+        let process_id = ProcessId::new();
         let payload = HookPayload {
             session_id,
             cwd: PathBuf::from("tmp"),
@@ -184,7 +184,7 @@ mod tests {
             triggered_at: "2025-01-01T00:00:00Z".parse::<Timestamp>().unwrap(),
             hook_event: HookEvent::AfterAgent {
                 event: HookEventAfterAgent {
-                    thread_id,
+                    process_id,
                     turn_id: "turn-1".to_string(),
                     input_messages: vec!["hello".to_string()],
                     last_assistant_message: Some("hi".to_string()),
@@ -199,7 +199,7 @@ mod tests {
             "triggered_at": "2025-01-01T00:00:00Z",
             "hook_event": {
                 "event_type": "after_agent",
-                "thread_id": thread_id.to_string(),
+                "process_id": process_id.to_string(),
                 "turn_id": "turn-1",
                 "input_messages": ["hello"],
                 "last_assistant_message": "hi",
@@ -211,7 +211,7 @@ mod tests {
 
     #[test]
     fn after_tool_use_payload_serializes_stable_wire_shape() {
-        let session_id = ThreadId::new();
+        let session_id = ProcessId::new();
         let payload = HookPayload {
             session_id,
             cwd: PathBuf::from("tmp"),

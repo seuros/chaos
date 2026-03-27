@@ -1,4 +1,4 @@
-//! Unified Chaos session runner — handles both new and resumed threads.
+//! Unified Chaos session runner — handles both new and resumed processes.
 
 use std::collections::HashMap;
 use std::sync::Arc;
@@ -9,11 +9,10 @@ use crate::exec_approval::handle_exec_approval_request;
 use crate::outgoing_message::OutgoingMessageSender;
 use crate::outgoing_message::OutgoingNotificationMeta;
 use crate::patch_approval::handle_patch_approval_request;
-use chaos_kern::CodexThread;
-use chaos_kern::NewThread;
-use chaos_kern::ThreadManager;
+use chaos_kern::Process;
+use chaos_kern::ProcessTable;
 use chaos_kern::config::Config as CodexConfig;
-use chaos_ipc::ThreadId;
+use chaos_ipc::ProcessId;
 use chaos_ipc::protocol::AgentMessageEvent;
 use chaos_ipc::protocol::ApplyPatchApprovalRequestEvent;
 use chaos_ipc::protocol::Event;
@@ -54,18 +53,18 @@ impl ProgressSender {
 
 /// Outcome of a Chaos session run.
 pub(crate) struct SessionOutcome {
-    pub thread_id: ThreadId,
+    pub process_id: ProcessId,
     pub text: String,
     pub is_error: bool,
 }
 
-/// Shared cache for thread names observed from ThreadNameUpdated events.
-pub(crate) type ThreadNameCache = Arc<Mutex<HashMap<ThreadId, String>>>;
+/// Shared cache for process names observed from ProcessNameUpdated events.
+pub(crate) type ProcessNameCache = Arc<Mutex<HashMap<ProcessId, String>>>;
 
-/// Resolved thread — either newly created or resumed from an existing ID.
-struct ResolvedThread {
-    thread_id: ThreadId,
-    thread: Arc<CodexThread>,
+/// Resolved process — either newly created or resumed from an existing ID.
+struct ResolvedProcess {
+    process_id: ProcessId,
+    process: Arc<Process>,
 }
 
 /// Unified entry point: create or resume a Chaos session.
@@ -78,11 +77,11 @@ pub(crate) async fn run_chaos_session(
     request_id: RequestId,
     prompt: String,
     config: Option<CodexConfig>,
-    existing_thread_id: Option<ThreadId>,
+    existing_process_id: Option<ProcessId>,
     outgoing: Arc<OutgoingMessageSender>,
-    thread_manager: Arc<ThreadManager>,
-    running_requests: Arc<Mutex<HashMap<RequestId, ThreadId>>>,
-    thread_names: ThreadNameCache,
+    process_table: Arc<ProcessTable>,
+    running_requests: Arc<Mutex<HashMap<RequestId, ProcessId>>>,
+    process_names: ProcessNameCache,
     progress_token: Option<String>,
 ) -> SessionOutcome {
     // Send progress if the client requested it.
@@ -90,32 +89,29 @@ pub(crate) async fn run_chaos_session(
         .as_ref()
         .map(|token| ProgressSender::new(token.clone(), outgoing.clone()));
     if let Some(ref p) = progress {
-        p.send(0, 4, "Resolving thread...").await;
+        p.send(0, 4, "Resolving process...").await;
     }
 
-    // Phase 1: resolve thread
-    let resolved = match existing_thread_id {
-        Some(tid) => match thread_manager.get_thread(tid).await {
-            Ok(thread) => ResolvedThread {
-                thread_id: tid,
-                thread,
+    // Phase 1: resolve process
+    let resolved = match existing_process_id {
+        Some(pid) => match process_table.get_process(pid).await {
+            Ok(process) => ResolvedProcess {
+                process_id: pid,
+                process,
             },
             Err(e) => {
                 return SessionOutcome {
-                    thread_id: tid,
-                    text: format!("Session not found for thread_id {tid}: {e}"),
+                    process_id: pid,
+                    text: format!("Session not found for process_id {pid}: {e}"),
                     is_error: true,
                 };
             }
         },
         None => {
-            let config = config.expect("config required for new threads");
-            match thread_manager.start_thread(config).await {
-                Ok(NewThread {
-                    thread_id,
-                    thread,
-                    session_configured,
-                }) => {
+            let config = config.expect("config required for new processes");
+            match process_table.start_process(config).await {
+                Ok(new_process) => {
+                    let (process_id, process, session_configured) = new_process.into_parts();
                     let event = Event {
                         id: String::new(),
                         msg: EventMsg::SessionConfigured(session_configured),
@@ -125,15 +121,18 @@ pub(crate) async fn run_chaos_session(
                             &event,
                             Some(OutgoingNotificationMeta {
                                 request_id: Some(request_id.clone()),
-                                thread_id: Some(thread_id),
+                                process_id: Some(process_id),
                             }),
                         )
                         .await;
-                    ResolvedThread { thread_id, thread }
+                    ResolvedProcess {
+                        process_id,
+                        process,
+                    }
                 }
                 Err(e) => {
                     return SessionOutcome {
-                        thread_id: ThreadId::new(),
+                        process_id: ProcessId::new(),
                         text: format!("Failed to start Codex session: {e}"),
                         is_error: true,
                     };
@@ -142,7 +141,10 @@ pub(crate) async fn run_chaos_session(
         }
     };
 
-    let ResolvedThread { thread_id, thread } = resolved;
+    let ResolvedProcess {
+        process_id,
+        process,
+    } = resolved;
 
     if let Some(ref p) = progress {
         p.send(1, 4, "Configuring session...").await;
@@ -152,7 +154,7 @@ pub(crate) async fn run_chaos_session(
     running_requests
         .lock()
         .await
-        .insert(request_id.clone(), thread_id);
+        .insert(request_id.clone(), process_id);
 
     let user_input = Op::UserInput {
         items: vec![UserInput::Text {
@@ -162,10 +164,10 @@ pub(crate) async fn run_chaos_session(
         final_output_json_schema: None,
     };
 
-    let submit_err = if existing_thread_id.is_some() {
-        thread.submit(user_input).await.err()
+    let submit_err = if existing_process_id.is_some() {
+        process.submit(user_input).await.err()
     } else {
-        thread
+        process
             .submit_with_id(Submission {
                 id: request_id.to_string(),
                 op: user_input,
@@ -179,7 +181,7 @@ pub(crate) async fn run_chaos_session(
         tracing::error!("Failed to submit prompt: {e}");
         running_requests.lock().await.remove(&request_id);
         return SessionOutcome {
-            thread_id,
+            process_id,
             text: format!("Failed to submit prompt: {e}"),
             is_error: true,
         };
@@ -191,12 +193,12 @@ pub(crate) async fn run_chaos_session(
 
     // Phase 3: event loop
     let outcome = run_event_loop(
-        thread_id,
-        thread,
+        process_id,
+        process,
         outgoing,
         request_id,
         running_requests,
-        thread_names,
+        process_names,
     )
     .await;
 
@@ -214,24 +216,24 @@ pub(crate) async fn run_chaos_session(
 
 /// Stream Codex events until TurnComplete or error.
 async fn run_event_loop(
-    thread_id: ThreadId,
-    thread: Arc<CodexThread>,
+    process_id: ProcessId,
+    process: Arc<Process>,
     outgoing: Arc<OutgoingMessageSender>,
     request_id: RequestId,
-    running_requests: Arc<Mutex<HashMap<RequestId, ThreadId>>>,
-    thread_names: ThreadNameCache,
+    running_requests: Arc<Mutex<HashMap<RequestId, ProcessId>>>,
+    process_names: ProcessNameCache,
 ) -> SessionOutcome {
     let request_id_str = request_id.to_string();
 
     loop {
-        match thread.next_event().await {
+        match process.next_event().await {
             Ok(event) => {
                 outgoing
                     .send_event_as_notification(
                         &event,
                         Some(OutgoingNotificationMeta {
                             request_id: Some(request_id.clone()),
-                            thread_id: Some(thread_id),
+                            process_id: Some(process_id),
                         }),
                     )
                     .await;
@@ -258,20 +260,20 @@ async fn run_event_loop(
                             command,
                             cwd,
                             outgoing.clone(),
-                            thread.clone(),
+                            process.clone(),
                             request_id.clone(),
                             request_id_str.clone(),
                             event.id.clone(),
                             call_id,
                             approval_id,
                             parsed_cmd,
-                            thread_id,
+                            process_id,
                         )
                         .await;
                     }
                     EventMsg::Error(err_event) => {
                         return SessionOutcome {
-                            thread_id,
+                            process_id,
                             text: err_event.message,
                             is_error: true,
                         };
@@ -280,7 +282,7 @@ async fn run_event_loop(
                         handle_mcp_server_elicitation_request(
                             request,
                             outgoing.clone(),
-                            thread.clone(),
+                            process.clone(),
                         )
                         .await;
                     }
@@ -301,11 +303,11 @@ async fn run_event_loop(
                             grant_root,
                             changes,
                             outgoing.clone(),
-                            thread.clone(),
+                            process.clone(),
                             request_id.clone(),
                             request_id_str.clone(),
                             event.id.clone(),
-                            thread_id,
+                            process_id,
                         )
                         .await;
                     }
@@ -314,14 +316,14 @@ async fn run_event_loop(
                     }) => {
                         running_requests.lock().await.remove(&request_id);
                         return SessionOutcome {
-                            thread_id,
+                            process_id,
                             text: last_agent_message.unwrap_or_default(),
                             is_error: false,
                         };
                     }
-                    EventMsg::ThreadNameUpdated(ev) => {
-                        if let Some(name) = ev.thread_name {
-                            thread_names.lock().await.insert(thread_id, name);
+                    EventMsg::ProcessNameUpdated(ev) => {
+                        if let Some(name) = ev.process_name {
+                            process_names.lock().await.insert(process_id, name);
                         }
                     }
                     // Events forwarded as notifications — no special handling.
@@ -385,7 +387,7 @@ async fn run_event_loop(
                     | EventMsg::DynamicToolCallResponse(_)
                     | EventMsg::ContextCompacted(_)
                     | EventMsg::ModelReroute(_)
-                    | EventMsg::ThreadRolledBack(_)
+                    | EventMsg::ProcessRolledBack(_)
                     | EventMsg::CollabAgentSpawnBegin(_)
                     | EventMsg::CollabAgentSpawnEnd(_)
                     | EventMsg::CollabAgentInteractionBegin(_)
@@ -403,7 +405,7 @@ async fn run_event_loop(
             }
             Err(e) => {
                 return SessionOutcome {
-                    thread_id,
+                    process_id,
                     text: format!("Codex runtime error: {e}"),
                     is_error: true,
                 };
@@ -418,14 +420,14 @@ mod tests {
     use pretty_assertions::assert_eq;
 
     #[test]
-    fn session_outcome_captures_thread_id() {
-        let thread_id = ThreadId::new();
+    fn session_outcome_captures_process_id() {
+        let process_id = ProcessId::new();
         let outcome = SessionOutcome {
-            thread_id,
+            process_id,
             text: "done".to_string(),
             is_error: false,
         };
-        assert_eq!(outcome.thread_id, thread_id);
+        assert_eq!(outcome.process_id, process_id);
         assert_eq!(outcome.text, "done");
         assert!(!outcome.is_error);
     }

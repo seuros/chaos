@@ -1,14 +1,14 @@
 CREATE TABLE stage1_outputs (
-    thread_id TEXT PRIMARY KEY,
+    process_id TEXT PRIMARY KEY,
     source_updated_at INTEGER NOT NULL,
     raw_memory TEXT NOT NULL,
     rollout_summary TEXT NOT NULL,
     generated_at INTEGER NOT NULL,
-    FOREIGN KEY(thread_id) REFERENCES threads(id) ON DELETE CASCADE
+    FOREIGN KEY(process_id) REFERENCES processes(id) ON DELETE CASCADE
 );
 
 CREATE INDEX idx_stage1_outputs_source_updated_at
-    ON stage1_outputs(source_updated_at DESC, thread_id DESC);
+    ON stage1_outputs(source_updated_at DESC, process_id DESC);
 
 CREATE TABLE jobs (
     kind TEXT NOT NULL,

@@ -19,7 +19,6 @@ use crossterm::event::KeyEventKind;
 use crossterm::event::KeyModifiers;
 use ratatui::buffer::Buffer;
 use ratatui::layout::Rect;
-use ratatui::style::Color;
 use ratatui::style::Style;
 use ratatui::widgets::StatefulWidgetRef;
 use ratatui::widgets::WidgetRef;

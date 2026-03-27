@@ -6,7 +6,7 @@ use crate::truncate::TruncationPolicy;
 use crate::truncate::truncate_text;
 use jiff::Timestamp;
 use chaos_epoll::CancelErr;
-use chaos_ipc::ThreadId;
+use chaos_ipc::ProcessId;
 use chaos_ipc::protocol::CodexErrorInfo;
 use chaos_ipc::protocol::ErrorEvent;
 use chaos_ipc::protocol::RateLimitSnapshot;
@@ -77,7 +77,7 @@ pub enum CodexErr {
     ContextWindowExceeded,
 
     #[error("no thread with id: {0}")]
-    ThreadNotFound(ThreadId),
+    ProcessNotFound(ProcessId),
 
     #[error("agent thread limit reached (max {max_threads})")]
     AgentLimitReached { max_threads: usize },
@@ -205,7 +205,7 @@ impl CodexErr {
             | CodexErr::LandlockSandboxExecutableNotProvided
             | CodexErr::RetryLimit(_)
             | CodexErr::ContextWindowExceeded
-            | CodexErr::ThreadNotFound(_)
+            | CodexErr::ProcessNotFound(_)
             | CodexErr::AgentLimitReached { .. }
             | CodexErr::Spawn
             | CodexErr::SessionConfiguredNotFirstEvent
@@ -598,7 +598,7 @@ impl CodexErr {
             | CodexErr::InternalServerError
             | CodexErr::InternalAgentDied => CodexErrorInfo::InternalServerError,
             CodexErr::UnsupportedOperation(_)
-            | CodexErr::ThreadNotFound(_)
+            | CodexErr::ProcessNotFound(_)
             | CodexErr::AgentLimitReached { .. } => CodexErrorInfo::BadRequest,
             CodexErr::Sandbox(_) => CodexErrorInfo::SandboxError,
             _ => CodexErrorInfo::Other,

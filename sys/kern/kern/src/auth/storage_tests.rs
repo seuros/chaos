@@ -2,6 +2,7 @@ use super::*;
 use crate::token_data::IdTokenInfo;
 use anyhow::Context;
 use base64::Engine;
+use jiff::Timestamp;
 use pretty_assertions::assert_eq;
 use serde_json::json;
 use tempfile::tempdir;
@@ -17,7 +18,7 @@ async fn file_storage_load_returns_auth_dot_json() -> anyhow::Result<()> {
         auth_mode: Some(AuthMode::ApiKey),
         openai_api_key: Some("test-key".to_string()),
         tokens: None,
-        last_refresh: Some(Utc::now()),
+        last_refresh: Some(Timestamp::now()),
     };
 
     storage
@@ -37,7 +38,7 @@ async fn file_storage_save_persists_auth_dot_json() -> anyhow::Result<()> {
         auth_mode: Some(AuthMode::ApiKey),
         openai_api_key: Some("test-key".to_string()),
         tokens: None,
-        last_refresh: Some(Utc::now()),
+        last_refresh: Some(Timestamp::now()),
     };
 
     let file = get_auth_file(codex_home.path());
@@ -82,7 +83,7 @@ fn ephemeral_storage_save_load_delete_is_in_memory_only() -> anyhow::Result<()> 
         auth_mode: Some(AuthMode::ApiKey),
         openai_api_key: Some("sk-ephemeral".to_string()),
         tokens: None,
-        last_refresh: Some(Utc::now()),
+        last_refresh: Some(Timestamp::now()),
     };
 
     storage.save(&auth_dot_json)?;
@@ -238,7 +239,7 @@ fn keyring_auth_storage_save_persists_and_removes_fallback_file() -> anyhow::Res
             refresh_token: "refresh".to_string(),
             account_id: Some("account".to_string()),
         }),
-        last_refresh: Some(Utc::now()),
+        last_refresh: Some(Timestamp::now()),
     };
 
     storage.save(&auth)?;

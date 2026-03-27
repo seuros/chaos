@@ -1,7 +1,7 @@
-//! Thread discovery, pagination, and rollout file scanning.
+//! Process discovery, pagination, and rollout file scanning.
 //!
 //! Pure filesystem operations for scanning rollout directory trees,
-//! parsing filenames, building thread summaries, and paginating results.
+//! parsing filenames, building process summaries, and paginating results.
 //! No database dependencies — state_db integration lives in codex-core.
 
 use std::cmp::Reverse;
@@ -18,7 +18,7 @@ use time::macros::format_description;
 use uuid::Uuid;
 
 use crate::SESSIONS_SUBDIR;
-use chaos_ipc::ThreadId;
+use chaos_ipc::ProcessId;
 use chaos_ipc::protocol::EventMsg;
 use chaos_ipc::protocol::RolloutItem;
 use chaos_ipc::protocol::RolloutLine;
@@ -26,11 +26,11 @@ use chaos_ipc::protocol::SessionMetaLine;
 use chaos_ipc::protocol::SessionSource;
 use chaos_ipc::protocol::USER_MESSAGE_BEGIN;
 
-/// Returned page of thread (thread) summaries.
+/// Returned page of process summaries.
 #[derive(Debug, Default, PartialEq)]
-pub struct ThreadsPage {
-    /// Thread summaries ordered newest first.
-    pub items: Vec<ThreadItem>,
+pub struct ProcessesPage {
+    /// Process summaries ordered newest first.
+    pub items: Vec<ProcessItem>,
     /// Opaque pagination token to resume after the last item, or `None` if end.
     pub next_cursor: Option<Cursor>,
     /// Total number of files touched while scanning this request.
@@ -39,14 +39,14 @@ pub struct ThreadsPage {
     pub reached_scan_cap: bool,
 }
 
-/// Summary information for a thread rollout file.
+/// Summary information for a process rollout file.
 #[derive(Debug, PartialEq, Default)]
-pub struct ThreadItem {
+pub struct ProcessItem {
     /// Absolute path to the rollout file.
     pub path: PathBuf,
-    /// Thread ID from session metadata.
-    pub thread_id: Option<ThreadId>,
-    /// First user message captured for this thread, if any.
+    /// Process ID from session metadata.
+    pub process_id: Option<ProcessId>,
+    /// First user message captured for this process, if any.
     pub first_user_message: Option<String>,
     /// Working directory from session metadata.
     pub cwd: Option<PathBuf>,
@@ -75,17 +75,15 @@ pub struct ThreadItem {
 }
 
 #[allow(dead_code)]
-#[deprecated(note = "use ThreadItem")]
-pub type ConversationItem = ThreadItem;
+pub type ConversationItem = ProcessItem;
 #[allow(dead_code)]
-#[deprecated(note = "use ThreadsPage")]
-pub type ConversationsPage = ThreadsPage;
+pub type ConversationsPage = ProcessesPage;
 
 #[derive(Default)]
 struct HeadTailSummary {
     saw_session_meta: bool,
     saw_user_event: bool,
-    thread_id: Option<ThreadId>,
+    process_id: Option<ProcessId>,
     first_user_message: Option<String>,
     cwd: Option<PathBuf>,
     git_branch: Option<String>,
@@ -106,22 +104,22 @@ const HEAD_RECORD_LIMIT: usize = 10;
 const USER_EVENT_SCAN_LIMIT: usize = 200;
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
-pub enum ThreadSortKey {
+pub enum ProcessSortKey {
     CreatedAt,
     UpdatedAt,
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
-pub enum ThreadListLayout {
+pub enum ProcessListLayout {
     NestedByDate,
     Flat,
 }
 
-pub struct ThreadListConfig<'a> {
+pub struct ProcessListConfig<'a> {
     pub allowed_sources: &'a [SessionSource],
     pub model_providers: Option<&'a [String]>,
     pub default_provider: &'a str,
-    pub layout: ThreadListLayout,
+    pub layout: ProcessListLayout,
 }
 
 /// Pagination cursor identifying a file by timestamp and UUID.
@@ -188,7 +186,7 @@ impl AnchorState {
 /// in `walk_rollout_files`.
 ///
 /// We need to apply different logic if we're ultimately going to be returning
-/// threads ordered by created_at or updated_at.
+/// processes ordered by created_at or updated_at.
 trait RolloutFileVisitor {
     async fn visit(
         &mut self,
@@ -199,10 +197,10 @@ trait RolloutFileVisitor {
     ) -> ControlFlow<()>;
 }
 
-/// Collects thread items during directory traversal in created_at order,
+/// Collects process items during directory traversal in created_at order,
 /// applying pagination and filters inline.
 struct FilesByCreatedAtVisitor<'a> {
-    items: &'a mut Vec<ThreadItem>,
+    items: &'a mut Vec<ProcessItem>,
     page_size: usize,
     anchor_state: AnchorState,
     more_matches_available: bool,
@@ -233,7 +231,7 @@ impl<'a> RolloutFileVisitor for FilesByCreatedAtVisitor<'a> {
             .await
             .unwrap_or(None)
             .and_then(format_rfc3339);
-        if let Some(item) = build_thread_item(
+        if let Some(item) = build_process_item(
             path,
             self.allowed_sources,
             self.provider_matcher,
@@ -250,7 +248,7 @@ impl<'a> RolloutFileVisitor for FilesByCreatedAtVisitor<'a> {
 /// Collects lightweight file candidates (path + id + mtime).
 /// Sorting after mtime happens after all files are collected.
 struct FilesByUpdatedAtVisitor<'a> {
-    candidates: &'a mut Vec<ThreadCandidate>,
+    candidates: &'a mut Vec<ProcessCandidate>,
 }
 
 impl<'a> RolloutFileVisitor for FilesByUpdatedAtVisitor<'a> {
@@ -262,7 +260,7 @@ impl<'a> RolloutFileVisitor for FilesByUpdatedAtVisitor<'a> {
         _scanned: usize,
     ) -> ControlFlow<()> {
         let updated_at = file_modified_time(&path).await.unwrap_or(None);
-        self.candidates.push(ThreadCandidate {
+        self.candidates.push(ProcessCandidate {
             path,
             id,
             updated_at,
@@ -294,44 +292,44 @@ impl<'de> serde::Deserialize<'de> for Cursor {
     }
 }
 
-/// Retrieve recorded thread file paths with token pagination. The returned `next_cursor`
+/// Retrieve recorded process file paths with token pagination. The returned `next_cursor`
 /// can be supplied on the next call to resume after the last returned item, resilient to
 /// concurrent new sessions being appended. Ordering is stable by the requested sort key
 /// (timestamp desc, then UUID desc).
-pub async fn get_threads(
+pub async fn get_processes(
     codex_home: &Path,
     page_size: usize,
     cursor: Option<&Cursor>,
-    sort_key: ThreadSortKey,
+    sort_key: ProcessSortKey,
     allowed_sources: &[SessionSource],
     model_providers: Option<&[String]>,
     default_provider: &str,
-) -> io::Result<ThreadsPage> {
+) -> io::Result<ProcessesPage> {
     let root = codex_home.join(SESSIONS_SUBDIR);
-    get_threads_in_root(
+    get_processes_in_root(
         root,
         page_size,
         cursor,
         sort_key,
-        ThreadListConfig {
+        ProcessListConfig {
             allowed_sources,
             model_providers,
             default_provider,
-            layout: ThreadListLayout::NestedByDate,
+            layout: ProcessListLayout::NestedByDate,
         },
     )
     .await
 }
 
-pub async fn get_threads_in_root(
+pub async fn get_processes_in_root(
     root: PathBuf,
     page_size: usize,
     cursor: Option<&Cursor>,
-    sort_key: ThreadSortKey,
-    config: ThreadListConfig<'_>,
-) -> io::Result<ThreadsPage> {
+    sort_key: ProcessSortKey,
+    config: ProcessListConfig<'_>,
+) -> io::Result<ProcessesPage> {
     if !root.exists() {
-        return Ok(ThreadsPage {
+        return Ok(ProcessesPage {
             items: Vec::new(),
             next_cursor: None,
             num_scanned_files: 0,
@@ -346,7 +344,7 @@ pub async fn get_threads_in_root(
         .and_then(|filters| ProviderMatcher::new(filters, config.default_provider));
 
     let result = match config.layout {
-        ThreadListLayout::NestedByDate => {
+        ProcessListLayout::NestedByDate => {
             traverse_directories_for_paths(
                 root.clone(),
                 page_size,
@@ -357,7 +355,7 @@ pub async fn get_threads_in_root(
             )
             .await?
         }
-        ThreadListLayout::Flat => {
+        ProcessListLayout::Flat => {
             traverse_flat_paths(
                 root.clone(),
                 page_size,
@@ -372,7 +370,7 @@ pub async fn get_threads_in_root(
     Ok(result)
 }
 
-/// Load thread file paths from disk using directory traversal.
+/// Load process file paths from disk using directory traversal.
 ///
 /// Directory layout: `~/.codex/sessions/YYYY/MM/DD/rollout-YYYY-MM-DDThh-mm-ss-<uuid>.jsonl`
 /// Returned newest (based on sort key) first.
@@ -380,12 +378,12 @@ async fn traverse_directories_for_paths(
     root: PathBuf,
     page_size: usize,
     anchor: Option<Cursor>,
-    sort_key: ThreadSortKey,
+    sort_key: ProcessSortKey,
     allowed_sources: &[SessionSource],
     provider_matcher: Option<&ProviderMatcher<'_>>,
-) -> io::Result<ThreadsPage> {
+) -> io::Result<ProcessesPage> {
     match sort_key {
-        ThreadSortKey::CreatedAt => {
+        ProcessSortKey::CreatedAt => {
             traverse_directories_for_paths_created(
                 root,
                 page_size,
@@ -395,7 +393,7 @@ async fn traverse_directories_for_paths(
             )
             .await
         }
-        ThreadSortKey::UpdatedAt => {
+        ProcessSortKey::UpdatedAt => {
             traverse_directories_for_paths_updated(
                 root,
                 page_size,
@@ -412,16 +410,16 @@ async fn traverse_flat_paths(
     root: PathBuf,
     page_size: usize,
     anchor: Option<Cursor>,
-    sort_key: ThreadSortKey,
+    sort_key: ProcessSortKey,
     allowed_sources: &[SessionSource],
     provider_matcher: Option<&ProviderMatcher<'_>>,
-) -> io::Result<ThreadsPage> {
+) -> io::Result<ProcessesPage> {
     match sort_key {
-        ThreadSortKey::CreatedAt => {
+        ProcessSortKey::CreatedAt => {
             traverse_flat_paths_created(root, page_size, anchor, allowed_sources, provider_matcher)
                 .await
         }
-        ThreadSortKey::UpdatedAt => {
+        ProcessSortKey::UpdatedAt => {
             traverse_flat_paths_updated(root, page_size, anchor, allowed_sources, provider_matcher)
                 .await
         }
@@ -440,8 +438,8 @@ async fn traverse_directories_for_paths_created(
     anchor: Option<Cursor>,
     allowed_sources: &[SessionSource],
     provider_matcher: Option<&ProviderMatcher<'_>>,
-) -> io::Result<ThreadsPage> {
-    let mut items: Vec<ThreadItem> = Vec::with_capacity(page_size);
+) -> io::Result<ProcessesPage> {
+    let mut items: Vec<ProcessItem> = Vec::with_capacity(page_size);
     let mut scanned_files = 0usize;
     let mut more_matches_available = false;
     let mut visitor = FilesByCreatedAtVisitor {
@@ -461,11 +459,11 @@ async fn traverse_directories_for_paths_created(
     }
 
     let next = if more_matches_available {
-        build_next_cursor(&items, ThreadSortKey::CreatedAt)
+        build_next_cursor(&items, ProcessSortKey::CreatedAt)
     } else {
         None
     };
-    Ok(ThreadsPage {
+    Ok(ProcessesPage {
         items,
         next_cursor: next,
         num_scanned_files: scanned_files,
@@ -487,8 +485,8 @@ async fn traverse_directories_for_paths_updated(
     anchor: Option<Cursor>,
     allowed_sources: &[SessionSource],
     provider_matcher: Option<&ProviderMatcher<'_>>,
-) -> io::Result<ThreadsPage> {
-    let mut items: Vec<ThreadItem> = Vec::with_capacity(page_size);
+) -> io::Result<ProcessesPage> {
+    let mut items: Vec<ProcessItem> = Vec::with_capacity(page_size);
     let mut scanned_files = 0usize;
     let mut anchor_state = AnchorState::new(anchor);
     let mut more_matches_available = false;
@@ -511,7 +509,7 @@ async fn traverse_directories_for_paths_updated(
         }
 
         let updated_at_fallback = candidate.updated_at.and_then(format_rfc3339);
-        if let Some(item) = build_thread_item(
+        if let Some(item) = build_process_item(
             candidate.path,
             allowed_sources,
             provider_matcher,
@@ -529,11 +527,11 @@ async fn traverse_directories_for_paths_updated(
     }
 
     let next = if more_matches_available {
-        build_next_cursor(&items, ThreadSortKey::UpdatedAt)
+        build_next_cursor(&items, ProcessSortKey::UpdatedAt)
     } else {
         None
     };
-    Ok(ThreadsPage {
+    Ok(ProcessesPage {
         items,
         next_cursor: next,
         num_scanned_files: scanned_files,
@@ -547,8 +545,8 @@ async fn traverse_flat_paths_created(
     anchor: Option<Cursor>,
     allowed_sources: &[SessionSource],
     provider_matcher: Option<&ProviderMatcher<'_>>,
-) -> io::Result<ThreadsPage> {
-    let mut items: Vec<ThreadItem> = Vec::with_capacity(page_size);
+) -> io::Result<ProcessesPage> {
+    let mut items: Vec<ProcessItem> = Vec::with_capacity(page_size);
     let mut scanned_files = 0usize;
     let mut anchor_state = AnchorState::new(anchor);
     let mut more_matches_available = false;
@@ -567,7 +565,7 @@ async fn traverse_flat_paths_created(
             .unwrap_or(None)
             .and_then(format_rfc3339);
         if let Some(item) =
-            build_thread_item(path, allowed_sources, provider_matcher, updated_at).await
+            build_process_item(path, allowed_sources, provider_matcher, updated_at).await
         {
             items.push(item);
         }
@@ -579,11 +577,11 @@ async fn traverse_flat_paths_created(
     }
 
     let next = if more_matches_available {
-        build_next_cursor(&items, ThreadSortKey::CreatedAt)
+        build_next_cursor(&items, ProcessSortKey::CreatedAt)
     } else {
         None
     };
-    Ok(ThreadsPage {
+    Ok(ProcessesPage {
         items,
         next_cursor: next,
         num_scanned_files: scanned_files,
@@ -597,8 +595,8 @@ async fn traverse_flat_paths_updated(
     anchor: Option<Cursor>,
     allowed_sources: &[SessionSource],
     provider_matcher: Option<&ProviderMatcher<'_>>,
-) -> io::Result<ThreadsPage> {
-    let mut items: Vec<ThreadItem> = Vec::with_capacity(page_size);
+) -> io::Result<ProcessesPage> {
+    let mut items: Vec<ProcessItem> = Vec::with_capacity(page_size);
     let mut scanned_files = 0usize;
     let mut anchor_state = AnchorState::new(anchor);
     let mut more_matches_available = false;
@@ -621,7 +619,7 @@ async fn traverse_flat_paths_updated(
         }
 
         let updated_at_fallback = candidate.updated_at.and_then(format_rfc3339);
-        if let Some(item) = build_thread_item(
+        if let Some(item) = build_process_item(
             candidate.path,
             allowed_sources,
             provider_matcher,
@@ -639,11 +637,11 @@ async fn traverse_flat_paths_updated(
     }
 
     let next = if more_matches_available {
-        build_next_cursor(&items, ThreadSortKey::UpdatedAt)
+        build_next_cursor(&items, ProcessSortKey::UpdatedAt)
     } else {
         None
     };
-    Ok(ThreadsPage {
+    Ok(ProcessesPage {
         items,
         next_cursor: next,
         num_scanned_files: scanned_files,
@@ -672,13 +670,13 @@ pub fn parse_cursor(token: &str) -> Option<Cursor> {
     Some(Cursor::new(ts, uuid))
 }
 
-fn build_next_cursor(items: &[ThreadItem], sort_key: ThreadSortKey) -> Option<Cursor> {
+fn build_next_cursor(items: &[ProcessItem], sort_key: ProcessSortKey) -> Option<Cursor> {
     let last = items.last()?;
     let file_name = last.path.file_name()?.to_string_lossy();
     let (created_ts, id) = parse_timestamp_uuid_from_filename(&file_name)?;
     let ts = match sort_key {
-        ThreadSortKey::CreatedAt => created_ts,
-        ThreadSortKey::UpdatedAt => {
+        ProcessSortKey::CreatedAt => created_ts,
+        ProcessSortKey::UpdatedAt => {
             let updated_at = last.updated_at.as_deref()?;
             OffsetDateTime::parse(updated_at, &Rfc3339).ok()?
         }
@@ -686,12 +684,12 @@ fn build_next_cursor(items: &[ThreadItem], sort_key: ThreadSortKey) -> Option<Cu
     Some(Cursor::new(ts, id))
 }
 
-async fn build_thread_item(
+async fn build_process_item(
     path: PathBuf,
     allowed_sources: &[SessionSource],
     provider_matcher: Option<&ProviderMatcher<'_>>,
     updated_at: Option<String>,
-) -> Option<ThreadItem> {
+) -> Option<ProcessItem> {
     // Read head and detect message events; stop once meta + user are found.
     let summary = read_head_summary(&path, HEAD_RECORD_LIMIT)
         .await
@@ -712,7 +710,7 @@ async fn build_thread_item(
     // Apply filters: must have session meta and at least one user message event
     if summary.saw_session_meta && summary.saw_user_event {
         let HeadTailSummary {
-            thread_id,
+            process_id,
             first_user_message,
             cwd,
             git_branch,
@@ -730,9 +728,9 @@ async fn build_thread_item(
         if summary_updated_at.is_none() {
             summary_updated_at = updated_at.or_else(|| created_at.clone());
         }
-        return Some(ThreadItem {
+        return Some(ProcessItem {
             path,
-            thread_id,
+            process_id,
             first_user_message,
             cwd,
             git_branch,
@@ -868,7 +866,7 @@ pub fn parse_timestamp_uuid_from_filename(name: &str) -> Option<(OffsetDateTime,
     Some((ts, uuid))
 }
 
-struct ThreadCandidate {
+struct ProcessCandidate {
     path: PathBuf,
     id: Uuid,
     updated_at: Option<OffsetDateTime>,
@@ -877,7 +875,7 @@ struct ThreadCandidate {
 async fn collect_files_by_updated_at(
     root: &Path,
     scanned_files: &mut usize,
-) -> io::Result<Vec<ThreadCandidate>> {
+) -> io::Result<Vec<ProcessCandidate>> {
     let mut candidates = Vec::new();
     let mut visitor = FilesByUpdatedAtVisitor {
         candidates: &mut candidates,
@@ -890,7 +888,7 @@ async fn collect_files_by_updated_at(
 async fn collect_flat_files_by_updated_at(
     root: &Path,
     scanned_files: &mut usize,
-) -> io::Result<Vec<ThreadCandidate>> {
+) -> io::Result<Vec<ProcessCandidate>> {
     let mut candidates = Vec::new();
     let mut dir = tokio::fs::read_dir(root).await?;
     while let Some(entry) = dir.next_entry().await? {
@@ -920,7 +918,7 @@ async fn collect_flat_files_by_updated_at(
             break;
         }
         let updated_at = file_modified_time(&entry.path()).await.unwrap_or(None);
-        candidates.push(ThreadCandidate {
+        candidates.push(ProcessCandidate {
             path: entry.path(),
             id,
             updated_at,
@@ -1028,7 +1026,7 @@ async fn read_head_summary(path: &Path, head_limit: usize) -> io::Result<HeadTai
                     summary.agent_nickname = session_meta_line.meta.agent_nickname.clone();
                     summary.agent_role = session_meta_line.meta.agent_role.clone();
                     summary.model_provider = session_meta_line.meta.model_provider.clone();
-                    summary.thread_id = Some(session_meta_line.meta.id);
+                    summary.process_id = Some(session_meta_line.meta.id);
                     summary.cwd = Some(session_meta_line.meta.cwd.clone());
                     summary.git_branch = session_meta_line
                         .git

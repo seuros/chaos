@@ -425,7 +425,7 @@ async fn agent_message_content_delta_has_item_metadata() -> anyhow::Result<()> {
     .await;
 
     let session_id = session_configured.session_id.to_string();
-    assert_eq!(delta_event.thread_id, session_id);
+    assert_eq!(delta_event.process_id, session_id);
     assert_eq!(delta_event.turn_id, started_turn_id);
     assert_eq!(delta_event.item_id, started_item.id);
     assert_eq!(delta_event.delta, "streamed response");
@@ -502,7 +502,7 @@ async fn plan_mode_emits_plan_item_from_proposed_plan_block() -> anyhow::Result<
     .await;
 
     assert_eq!(
-        plan_delta.thread_id,
+        plan_delta.process_id,
         session_configured.session_id.to_string()
     );
     assert_eq!(plan_delta.delta, "- Step 1\n- Step 2\n");

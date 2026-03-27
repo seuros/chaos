@@ -219,7 +219,7 @@ impl ToolHandler for ToolSuggestHandler {
 }
 
 fn build_tool_suggestion_elicitation_request(
-    thread_id: String,
+    process_id: String,
     turn_id: String,
     args: &ToolSuggestArgs,
     suggest_reason: &str,
@@ -237,7 +237,7 @@ fn build_tool_suggestion_elicitation_request(
     );
 
     McpServerElicitationRequestParams {
-        thread_id,
+        process_id,
         turn_id: Some(turn_id),
         server_name: CODEX_APPS_MCP_SERVER_NAME.to_string(),
         request: McpServerElicitationRequest::Form {

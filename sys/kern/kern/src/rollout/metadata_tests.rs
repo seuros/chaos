@@ -1,6 +1,6 @@
 use super::*;
 use jiff::Timestamp;
-use chaos_ipc::ThreadId;
+use chaos_ipc::ProcessId;
 use chaos_ipc::protocol::CompactedItem;
 use chaos_ipc::protocol::GitInfo;
 use chaos_ipc::protocol::RolloutItem;
@@ -9,7 +9,7 @@ use chaos_ipc::protocol::SessionMeta;
 use chaos_ipc::protocol::SessionMetaLine;
 use chaos_ipc::protocol::SessionSource;
 use chaos_proc::BackfillStatus;
-use chaos_proc::ThreadMetadataBuilder;
+use chaos_proc::ProcessMetadataBuilder;
 use pretty_assertions::assert_eq;
 use std::fs::File;
 use std::io::Write;
@@ -22,7 +22,7 @@ use uuid::Uuid;
 async fn extract_metadata_from_rollout_uses_session_meta() {
     let dir = tempdir().expect("tempdir");
     let uuid = Uuid::new_v4();
-    let id = ThreadId::from_string(&uuid.to_string()).expect("thread id");
+    let id = ProcessId::from_string(&uuid.to_string()).expect("thread id");
     let path = dir
         .path()
         .join(format!("rollout-2026-01-27T12-34-56-{uuid}.jsonl"));
@@ -72,7 +72,7 @@ async fn extract_metadata_from_rollout_uses_session_meta() {
 async fn extract_metadata_from_rollout_returns_latest_memory_mode() {
     let dir = tempdir().expect("tempdir");
     let uuid = Uuid::new_v4();
-    let id = ThreadId::from_string(&uuid.to_string()).expect("thread id");
+    let id = ProcessId::from_string(&uuid.to_string()).expect("thread id");
     let path = dir
         .path()
         .join(format!("rollout-2026-01-27T12-34-56-{uuid}.jsonl"));
@@ -143,8 +143,8 @@ fn builder_from_items_falls_back_to_filename() {
 
     let builder = builder_from_items(items.as_slice(), path.as_path()).expect("builder");
     let created_at: Timestamp = "2026-01-27T12:34:56Z".parse().expect("timestamp");
-    let expected = ThreadMetadataBuilder::new(
-        ThreadId::from_string(&uuid.to_string()).expect("thread id"),
+    let expected = ProcessMetadataBuilder::new(
+        ProcessId::from_string(&uuid.to_string()).expect("thread id"),
         path,
         created_at,
         SessionSource::default(),
@@ -193,18 +193,18 @@ async fn backfill_sessions_resumes_from_watermark_and_marks_complete() {
     config.model_provider_id = "test-provider".to_string();
     backfill_sessions(runtime.as_ref(), &config).await;
 
-    let first_id = ThreadId::from_string(&first_uuid.to_string()).expect("first thread id");
-    let second_id = ThreadId::from_string(&second_uuid.to_string()).expect("second thread id");
+    let first_id = ProcessId::from_string(&first_uuid.to_string()).expect("first thread id");
+    let second_id = ProcessId::from_string(&second_uuid.to_string()).expect("second thread id");
     assert_eq!(
         runtime
-            .get_thread(first_id)
+            .get_process(first_id)
             .await
             .expect("get first thread"),
         None
     );
     assert!(
         runtime
-            .get_thread(second_id)
+            .get_process(second_id)
             .await
             .expect("get second thread")
             .is_some()
@@ -229,12 +229,12 @@ async fn backfill_sessions_resumes_from_watermark_and_marks_complete() {
 async fn backfill_sessions_preserves_existing_git_branch_and_fills_missing_git_fields() {
     let dir = tempdir().expect("tempdir");
     let codex_home = dir.path().to_path_buf();
-    let thread_uuid = Uuid::new_v4();
+    let process_uuid = Uuid::new_v4();
     let rollout_path = write_rollout_in_sessions(
         codex_home.as_path(),
         "2026-01-27T12-34-56",
         "2026-01-27T12:34:56Z",
-        thread_uuid,
+        process_uuid,
         Some(GitInfo {
             commit_hash: Some("rollout-sha".to_string()),
             branch: Some("rollout-branch".to_string()),
@@ -245,7 +245,7 @@ async fn backfill_sessions_preserves_existing_git_branch_and_fills_missing_git_f
     let runtime = chaos_proc::StateRuntime::init(codex_home.clone(), "test-provider".to_string())
         .await
         .expect("initialize runtime");
-    let thread_id = ThreadId::from_string(&thread_uuid.to_string()).expect("thread id");
+    let process_id = ProcessId::from_string(&process_uuid.to_string()).expect("thread id");
     let mut existing = extract_metadata_from_rollout(&rollout_path, "test-provider")
         .await
         .expect("extract")
@@ -254,7 +254,7 @@ async fn backfill_sessions_preserves_existing_git_branch_and_fills_missing_git_f
     existing.git_branch = Some("sqlite-branch".to_string());
     existing.git_origin_url = None;
     runtime
-        .upsert_thread(&existing)
+        .upsert_process(&existing)
         .await
         .expect("existing metadata upsert");
 
@@ -264,7 +264,7 @@ async fn backfill_sessions_preserves_existing_git_branch_and_fills_missing_git_f
     backfill_sessions(runtime.as_ref(), &config).await;
 
     let persisted = runtime
-        .get_thread(thread_id)
+        .get_process(process_id)
         .await
         .expect("get thread")
         .expect("thread exists");
@@ -280,13 +280,13 @@ async fn backfill_sessions_preserves_existing_git_branch_and_fills_missing_git_f
 async fn backfill_sessions_normalizes_cwd_before_upsert() {
     let dir = tempdir().expect("tempdir");
     let codex_home = dir.path().to_path_buf();
-    let thread_uuid = Uuid::new_v4();
+    let process_uuid = Uuid::new_v4();
     let session_cwd = codex_home.join(".");
     let rollout_path = write_rollout_in_sessions_with_cwd(
         codex_home.as_path(),
         "2026-01-27T12-34-56",
         "2026-01-27T12:34:56Z",
-        thread_uuid,
+        process_uuid,
         session_cwd.clone(),
         None,
     );
@@ -300,9 +300,9 @@ async fn backfill_sessions_normalizes_cwd_before_upsert() {
     config.model_provider_id = "test-provider".to_string();
     backfill_sessions(runtime.as_ref(), &config).await;
 
-    let thread_id = ThreadId::from_string(&thread_uuid.to_string()).expect("thread id");
+    let process_id = ProcessId::from_string(&process_uuid.to_string()).expect("thread id");
     let stored = runtime
-        .get_thread(thread_id)
+        .get_process(process_id)
         .await
         .expect("get thread")
         .expect("thread should be backfilled");
@@ -315,14 +315,14 @@ fn write_rollout_in_sessions(
     codex_home: &Path,
     filename_ts: &str,
     event_ts: &str,
-    thread_uuid: Uuid,
+    process_uuid: Uuid,
     git: Option<GitInfo>,
 ) -> PathBuf {
     write_rollout_in_sessions_with_cwd(
         codex_home,
         filename_ts,
         event_ts,
-        thread_uuid,
+        process_uuid,
         codex_home.to_path_buf(),
         git,
     )
@@ -332,14 +332,14 @@ fn write_rollout_in_sessions_with_cwd(
     codex_home: &Path,
     filename_ts: &str,
     event_ts: &str,
-    thread_uuid: Uuid,
+    process_uuid: Uuid,
     cwd: PathBuf,
     git: Option<GitInfo>,
 ) -> PathBuf {
-    let id = ThreadId::from_string(&thread_uuid.to_string()).expect("thread id");
+    let id = ProcessId::from_string(&process_uuid.to_string()).expect("thread id");
     let sessions_dir = codex_home.join("sessions");
     std::fs::create_dir_all(sessions_dir.as_path()).expect("create sessions dir");
-    let path = sessions_dir.join(format!("rollout-{filename_ts}-{thread_uuid}.jsonl"));
+    let path = sessions_dir.join(format!("rollout-{filename_ts}-{process_uuid}.jsonl"));
     let session_meta = SessionMeta {
         id,
         forked_from_id: None,

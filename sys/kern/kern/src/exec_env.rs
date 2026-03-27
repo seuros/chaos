@@ -1,7 +1,7 @@
 use crate::config::types::EnvironmentVariablePattern;
 use crate::config::types::ShellEnvironmentPolicy;
 use crate::config::types::ShellEnvironmentPolicyInherit;
-use chaos_ipc::ThreadId;
+use chaos_ipc::ProcessId;
 use std::collections::HashMap;
 use std::collections::HashSet;
 
@@ -19,15 +19,15 @@ pub const CODEX_THREAD_ID_ENV_VAR: &str = "CODEX_THREAD_ID";
 /// `include_only` is set.
 pub fn create_env(
     policy: &ShellEnvironmentPolicy,
-    thread_id: Option<ThreadId>,
+    process_id: Option<ProcessId>,
 ) -> HashMap<String, String> {
-    populate_env(std::env::vars(), policy, thread_id)
+    populate_env(std::env::vars(), policy, process_id)
 }
 
 fn populate_env<I>(
     vars: I,
     policy: &ShellEnvironmentPolicy,
-    thread_id: Option<ThreadId>,
+    process_id: Option<ProcessId>,
 ) -> HashMap<String, String>
 where
     I: IntoIterator<Item = (String, String)>,
@@ -78,8 +78,8 @@ where
     }
 
     // Step 6 – Populate the thread ID environment variable when provided.
-    if let Some(thread_id) = thread_id {
-        env_map.insert(CODEX_THREAD_ID_ENV_VAR.to_string(), thread_id.to_string());
+    if let Some(process_id) = process_id {
+        env_map.insert(CODEX_THREAD_ID_ENV_VAR.to_string(), process_id.to_string());
     }
 
     env_map

@@ -15,7 +15,7 @@ use crate::command_from_argv;
 enum UserNotification {
     #[serde(rename_all = "kebab-case")]
     AgentTurnComplete {
-        thread_id: String,
+        process_id: String,
         turn_id: String,
         cwd: String,
         #[serde(skip_serializing_if = "Option::is_none")]
@@ -33,7 +33,7 @@ pub fn legacy_notify_json(payload: &HookPayload) -> Result<String, serde_json::E
     match &payload.hook_event {
         HookEvent::AfterAgent { event } => {
             serde_json::to_string(&UserNotification::AgentTurnComplete {
-                thread_id: event.thread_id.to_string(),
+                process_id: event.process_id.to_string(),
                 turn_id: event.turn_id.clone(),
                 cwd: payload.cwd.display().to_string(),
                 client: payload.client.clone(),
@@ -80,7 +80,7 @@ pub fn notify_hook(argv: Vec<String>) -> Hook {
 #[cfg(test)]
 mod tests {
     use anyhow::Result;
-    use chaos_ipc::ThreadId;
+    use chaos_ipc::ProcessId;
     use pretty_assertions::assert_eq;
     use serde_json::Value;
     use serde_json::json;
@@ -102,7 +102,7 @@ mod tests {
     #[test]
     fn test_user_notification() -> Result<()> {
         let notification = UserNotification::AgentTurnComplete {
-            thread_id: "b5f6c1c2-1111-2222-3333-444455556666".to_string(),
+            process_id: "b5f6c1c2-1111-2222-3333-444455556666".to_string(),
             turn_id: "12345".to_string(),
             cwd: "/Users/example/project".to_string(),
             client: Some("codex-tui".to_string()),
@@ -120,13 +120,13 @@ mod tests {
     #[test]
     fn legacy_notify_json_matches_historical_wire_shape() -> Result<()> {
         let payload = HookPayload {
-            session_id: ThreadId::new(),
+            session_id: ProcessId::new(),
             cwd: std::path::Path::new("/Users/example/project").to_path_buf(),
             client: Some("codex-tui".to_string()),
             triggered_at: jiff::Timestamp::now(),
             hook_event: HookEvent::AfterAgent {
                 event: crate::HookEventAfterAgent {
-                    thread_id: ThreadId::from_string("b5f6c1c2-1111-2222-3333-444455556666")
+                    process_id: ProcessId::from_string("b5f6c1c2-1111-2222-3333-444455556666")
                         .expect("valid thread id"),
                     turn_id: "12345".to_string(),
                     input_messages: vec![

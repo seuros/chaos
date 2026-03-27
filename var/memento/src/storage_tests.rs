@@ -1,14 +1,14 @@
 use super::rollout_summary_file_stem;
 use super::rollout_summary_file_stem_from_parts;
-use chaos_ipc::ThreadId;
+use chaos_ipc::ProcessId;
 use chaos_proc::Stage1Output;
 use pretty_assertions::assert_eq;
 use std::path::PathBuf;
 const FIXED_PREFIX: &str = "2025-02-11T15-35-19-jqmb";
 
-fn stage1_output_with_slug(thread_id: ThreadId, rollout_slug: Option<&str>) -> Stage1Output {
+fn stage1_output_with_slug(process_id: ProcessId, rollout_slug: Option<&str>) -> Stage1Output {
     Stage1Output {
-        thread_id,
+        process_id,
         source_updated_at: jiff::Timestamp::from_second(123).expect("timestamp"),
         raw_memory: "raw memory".to_string(),
         rollout_summary: "summary".to_string(),
@@ -20,19 +20,19 @@ fn stage1_output_with_slug(thread_id: ThreadId, rollout_slug: Option<&str>) -> S
     }
 }
 
-fn fixed_thread_id() -> ThreadId {
-    ThreadId::try_from("0194f5a6-89ab-7cde-8123-456789abcdef").expect("valid thread id")
+fn fixed_process_id() -> ProcessId {
+    ProcessId::try_from("0194f5a6-89ab-7cde-8123-456789abcdef").expect("valid process id")
 }
 
 #[test]
 fn rollout_summary_file_stem_uses_uuid_timestamp_and_hash_when_slug_missing() {
-    let thread_id = fixed_thread_id();
-    let memory = stage1_output_with_slug(thread_id, None);
+    let process_id = fixed_process_id();
+    let memory = stage1_output_with_slug(process_id, None);
 
     assert_eq!(rollout_summary_file_stem(&memory), FIXED_PREFIX);
     assert_eq!(
         rollout_summary_file_stem_from_parts(
-            memory.thread_id,
+            memory.process_id,
             memory.source_updated_at,
             memory.rollout_slug.as_deref(),
         ),
@@ -42,9 +42,9 @@ fn rollout_summary_file_stem_uses_uuid_timestamp_and_hash_when_slug_missing() {
 
 #[test]
 fn rollout_summary_file_stem_sanitizes_and_truncates_slug() {
-    let thread_id = fixed_thread_id();
+    let process_id = fixed_process_id();
     let memory = stage1_output_with_slug(
-        thread_id,
+        process_id,
         Some("Unsafe Slug/With Spaces & Symbols + EXTRA_LONG_12345_67890_ABCDE_fghij_klmno"),
     );
 
@@ -61,8 +61,8 @@ fn rollout_summary_file_stem_sanitizes_and_truncates_slug() {
 
 #[test]
 fn rollout_summary_file_stem_uses_uuid_timestamp_and_hash_when_slug_is_empty() {
-    let thread_id = fixed_thread_id();
-    let memory = stage1_output_with_slug(thread_id, Some(""));
+    let process_id = fixed_process_id();
+    let memory = stage1_output_with_slug(process_id, Some(""));
 
     assert_eq!(rollout_summary_file_stem(&memory), FIXED_PREFIX);
 }

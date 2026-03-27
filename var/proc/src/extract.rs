@@ -1,4 +1,4 @@
-use crate::model::ThreadMetadata;
+use crate::model::ProcessMetadata;
 use chaos_ipc::models::ResponseItem;
 use chaos_ipc::protocol::EventMsg;
 use chaos_ipc::protocol::RolloutItem;
@@ -13,7 +13,7 @@ const IMAGE_ONLY_USER_MESSAGE_PLACEHOLDER: &str = "[Image]";
 
 /// Apply a rollout item to the metadata structure.
 pub fn apply_rollout_item(
-    metadata: &mut ThreadMetadata,
+    metadata: &mut ProcessMetadata,
     item: &RolloutItem,
     default_provider: &str,
 ) {
@@ -29,8 +29,8 @@ pub fn apply_rollout_item(
     }
 }
 
-/// Return whether this rollout item can mutate thread metadata stored in SQLite.
-pub fn rollout_item_affects_thread_metadata(item: &RolloutItem) -> bool {
+/// Return whether this rollout item can mutate process metadata stored in SQLite.
+pub fn rollout_item_affects_process_metadata(item: &RolloutItem) -> bool {
     match item {
         RolloutItem::SessionMeta(_) | RolloutItem::TurnContext(_) => true,
         RolloutItem::EventMsg(EventMsg::TokenCount(_) | EventMsg::UserMessage(_)) => true,
@@ -40,7 +40,7 @@ pub fn rollout_item_affects_thread_metadata(item: &RolloutItem) -> bool {
     }
 }
 
-fn apply_session_meta_from_item(metadata: &mut ThreadMetadata, meta_line: &SessionMetaLine) {
+fn apply_session_meta_from_item(metadata: &mut ProcessMetadata, meta_line: &SessionMetaLine) {
     if metadata.id != meta_line.meta.id {
         // Ignore session_meta lines that don't match the canonical thread ID,
         // e.g., forked rollouts that embed the source session metadata.
@@ -66,7 +66,7 @@ fn apply_session_meta_from_item(metadata: &mut ThreadMetadata, meta_line: &Sessi
     }
 }
 
-fn apply_turn_context(metadata: &mut ThreadMetadata, turn_ctx: &TurnContextItem) {
+fn apply_turn_context(metadata: &mut ProcessMetadata, turn_ctx: &TurnContextItem) {
     if metadata.cwd.as_os_str().is_empty() {
         metadata.cwd = turn_ctx.cwd.clone();
     }
@@ -74,7 +74,7 @@ fn apply_turn_context(metadata: &mut ThreadMetadata, turn_ctx: &TurnContextItem)
     metadata.approval_mode = enum_to_string(&turn_ctx.approval_policy);
 }
 
-fn apply_event_msg(metadata: &mut ThreadMetadata, event: &EventMsg) {
+fn apply_event_msg(metadata: &mut ProcessMetadata, event: &EventMsg) {
     match event {
         EventMsg::TokenCount(token_count) => {
             if let Some(info) = token_count.info.as_ref() {
@@ -96,7 +96,7 @@ fn apply_event_msg(metadata: &mut ThreadMetadata, event: &EventMsg) {
     }
 }
 
-fn apply_response_item(_metadata: &mut ThreadMetadata, _item: &ResponseItem) {
+fn apply_response_item(_metadata: &mut ProcessMetadata, _item: &ResponseItem) {
     // Title and first_user_message are derived from EventMsg::UserMessage only.
 }
 
@@ -134,8 +134,8 @@ pub(crate) fn enum_to_string<T: Serialize>(value: &T) -> String {
 #[cfg(test)]
 mod tests {
     use super::apply_rollout_item;
-    use crate::model::ThreadMetadata;
-    use chaos_ipc::ThreadId;
+    use crate::model::ProcessMetadata;
+    use chaos_ipc::ProcessId;
     use chaos_ipc::config_types::ReasoningSummary;
     use chaos_ipc::models::ContentItem;
     use chaos_ipc::models::ResponseItem;
@@ -231,15 +231,15 @@ mod tests {
     fn turn_context_does_not_override_session_cwd() {
         let mut metadata = metadata_for_test();
         metadata.cwd = PathBuf::new();
-        let thread_id = metadata.id;
+        let process_id = metadata.id;
 
         apply_rollout_item(
             &mut metadata,
             &RolloutItem::SessionMeta(SessionMetaLine {
                 meta: SessionMeta {
-                    id: thread_id,
+                    id: process_id,
                     forked_from_id: Some(
-                        ThreadId::from_string(&Uuid::now_v7().to_string()).expect("thread id"),
+                        ProcessId::from_string(&Uuid::now_v7().to_string()).expect("thread id"),
                     ),
                     timestamp: "2026-02-26T00:00:00.000Z".to_string(),
                     cwd: PathBuf::from("/child/worktree"),
@@ -321,10 +321,10 @@ mod tests {
         assert_eq!(metadata.cwd, PathBuf::from("/fallback/workspace"));
     }
 
-    fn metadata_for_test() -> ThreadMetadata {
-        let id = ThreadId::from_string(&Uuid::from_u128(42).to_string()).expect("thread id");
+    fn metadata_for_test() -> ProcessMetadata {
+        let id = ProcessId::from_string(&Uuid::from_u128(42).to_string()).expect("thread id");
         let created_at = jiff::Timestamp::new(1_735_689_600, 0).expect("timestamp");
-        ThreadMetadata {
+        ProcessMetadata {
             id,
             rollout_path: PathBuf::from("/tmp/a.jsonl"),
             created_at,
@@ -350,7 +350,7 @@ mod tests {
     #[test]
     fn diff_fields_detects_changes() {
         let mut base = metadata_for_test();
-        base.id = ThreadId::from_string(&Uuid::now_v7().to_string()).expect("thread id");
+        base.id = ProcessId::from_string(&Uuid::now_v7().to_string()).expect("thread id");
         base.title = "hello".to_string();
         let mut other = base.clone();
         other.tokens_used = 2;

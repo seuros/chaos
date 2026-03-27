@@ -10,7 +10,7 @@ name = "chaos"
 path = "src/main.rs"
 
 [lib]
-name = "codex_cli"
+name = "chaos_boot"
 path = "src/lib.rs"
 
 [lints]

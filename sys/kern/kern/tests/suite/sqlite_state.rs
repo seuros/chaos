@@ -2,7 +2,7 @@ use anyhow::Result;
 use chaos_kern::config::types::McpServerConfig;
 use chaos_kern::config::types::McpServerTransportConfig;
 use chaos_kern::features::Feature;
-use chaos_ipc::ThreadId;
+use chaos_ipc::ProcessId;
 use chaos_ipc::dynamic_tools::DynamicToolSpec;
 use chaos_ipc::protocol::AskForApproval;
 use chaos_ipc::protocol::EventMsg;
@@ -47,7 +47,7 @@ async fn new_thread_is_recorded_in_state_db() -> Result<()> {
     });
     let test = builder.build(&server).await?;
 
-    let thread_id = test.session_configured.session_id;
+    let process_id = test.session_configured.session_id;
     let rollout_path = test.codex.rollout_path().expect("rollout path");
     let db_path = chaos_proc::state_db_path(test.config.sqlite_home.as_path());
 
@@ -64,7 +64,7 @@ async fn new_thread_is_recorded_in_state_db() -> Result<()> {
         "fresh thread rollout should not be materialized before first user message"
     );
 
-    let initial_metadata = db.get_thread(thread_id).await?;
+    let initial_metadata = db.get_process(process_id).await?;
     assert!(
         initial_metadata.is_none(),
         "fresh thread should not be recorded in state db before first user message"
@@ -74,7 +74,7 @@ async fn new_thread_is_recorded_in_state_db() -> Result<()> {
 
     let mut metadata = None;
     for _ in 0..100 {
-        metadata = db.get_thread(thread_id).await?;
+        metadata = db.get_process(process_id).await?;
         if metadata.is_some() {
             break;
         }
@@ -82,7 +82,7 @@ async fn new_thread_is_recorded_in_state_db() -> Result<()> {
     }
 
     let metadata = metadata.expect("thread should exist in state db");
-    assert_eq!(metadata.id, thread_id);
+    assert_eq!(metadata.id, process_id);
     assert_eq!(metadata.rollout_path, rollout_path);
     assert!(
         rollout_path.exists(),
@@ -97,7 +97,7 @@ async fn backfill_scans_existing_rollouts() -> Result<()> {
     let server = start_mock_server().await;
 
     let uuid = Uuid::now_v7();
-    let thread_id = ThreadId::from_string(&uuid.to_string())?;
+    let process_id = ProcessId::from_string(&uuid.to_string())?;
     let rollout_rel_path = format!("sessions/2026/01/27/rollout-2026-01-27T12-00-00-{uuid}.jsonl");
     let rollout_rel_path_for_hook = rollout_rel_path.clone();
 
@@ -134,7 +134,7 @@ async fn backfill_scans_existing_rollouts() -> Result<()> {
             fs::create_dir_all(parent).expect("should create rollout directory");
             let session_meta_line = SessionMetaLine {
                 meta: SessionMeta {
-                    id: thread_id,
+                    id: process_id,
                     forked_from_id: None,
                     timestamp: "2026-01-27T12:00:00Z".to_string(),
                     cwd: codex_home.to_path_buf(),
@@ -198,7 +198,7 @@ async fn backfill_scans_existing_rollouts() -> Result<()> {
 
     let mut metadata = None;
     for _ in 0..40 {
-        metadata = db.get_thread(thread_id).await?;
+        metadata = db.get_process(process_id).await?;
         if metadata.is_some() {
             break;
         }
@@ -206,14 +206,14 @@ async fn backfill_scans_existing_rollouts() -> Result<()> {
     }
 
     let metadata = metadata.expect("backfilled thread should exist in state db");
-    assert_eq!(metadata.id, thread_id);
+    assert_eq!(metadata.id, process_id);
     assert_eq!(metadata.rollout_path, rollout_path);
     assert_eq!(metadata.model_provider, default_provider);
     assert!(metadata.first_user_message.is_some());
 
     let mut stored_tools = None;
     for _ in 0..40 {
-        stored_tools = db.get_dynamic_tools(thread_id).await?;
+        stored_tools = db.get_dynamic_tools(process_id).await?;
         if stored_tools.is_some() {
             break;
         }
@@ -257,11 +257,11 @@ async fn user_messages_persist_in_state_db() -> Result<()> {
     test.submit_turn("another message").await?;
 
     let db = test.codex.state_db().expect("state db enabled");
-    let thread_id = test.session_configured.session_id;
+    let process_id = test.session_configured.session_id;
 
     let mut metadata = None;
     for _ in 0..100 {
-        metadata = db.get_thread(thread_id).await?;
+        metadata = db.get_process(process_id).await?;
         if metadata
             .as_ref()
             .map(|entry| entry.first_user_message.is_some())
@@ -279,7 +279,7 @@ async fn user_messages_persist_in_state_db() -> Result<()> {
 }
 
 #[tokio::test(flavor = "multi_thread", worker_threads = 2)]
-async fn web_search_marks_thread_memory_mode_polluted_when_configured() -> Result<()> {
+async fn web_search_marks_process_memory_mode_polluted_when_configured() -> Result<()> {
     let server = start_mock_server().await;
     mount_sse_sequence(
         &server,
@@ -300,13 +300,13 @@ async fn web_search_marks_thread_memory_mode_polluted_when_configured() -> Resul
     });
     let test = builder.build(&server).await?;
     let db = test.codex.state_db().expect("state db enabled");
-    let thread_id = test.session_configured.session_id;
+    let process_id = test.session_configured.session_id;
 
     test.submit_turn("search the web").await?;
 
     let mut memory_mode = None;
     for _ in 0..100 {
-        memory_mode = db.get_thread_memory_mode(thread_id).await?;
+        memory_mode = db.get_process_memory_mode(process_id).await?;
         if memory_mode.as_deref() == Some("polluted") {
             break;
         }
@@ -318,7 +318,7 @@ async fn web_search_marks_thread_memory_mode_polluted_when_configured() -> Resul
 }
 
 #[tokio::test(flavor = "multi_thread", worker_threads = 2)]
-async fn mcp_call_marks_thread_memory_mode_polluted_when_configured() -> Result<()> {
+async fn mcp_call_marks_process_memory_mode_polluted_when_configured() -> Result<()> {
     skip_if_no_network!(Ok(()));
 
     let server = start_mock_server().await;
@@ -383,7 +383,7 @@ async fn mcp_call_marks_thread_memory_mode_polluted_when_configured() -> Result<
     });
     let test = builder.build(&server).await?;
     let db = test.codex.state_db().expect("state db enabled");
-    let thread_id = test.session_configured.session_id;
+    let process_id = test.session_configured.session_id;
 
     test.codex
         .submit(Op::UserTurn {
@@ -416,7 +416,7 @@ async fn mcp_call_marks_thread_memory_mode_polluted_when_configured() -> Result<
 
     let mut memory_mode = None;
     for _ in 0..100 {
-        memory_mode = db.get_thread_memory_mode(thread_id).await?;
+        memory_mode = db.get_process_memory_mode(process_id).await?;
         if memory_mode.as_deref() == Some("polluted") {
             break;
         }
@@ -428,7 +428,7 @@ async fn mcp_call_marks_thread_memory_mode_polluted_when_configured() -> Result<
 }
 
 #[tokio::test(flavor = "current_thread")]
-async fn tool_call_logs_include_thread_id() -> Result<()> {
+async fn tool_call_logs_include_process_id() -> Result<()> {
     let server = start_mock_server().await;
     let call_id = "call-1";
     let args = json!({
@@ -458,7 +458,7 @@ async fn tool_call_logs_include_thread_id() -> Result<()> {
     });
     let test = builder.build(&server).await?;
     let db = test.codex.state_db().expect("state db enabled");
-    let expected_thread_id = test.session_configured.session_id.to_string();
+    let expected_process_id = test.session_configured.session_id.to_string();
 
     let subscriber = tracing_subscriber::registry().with(chaos_proc::log_db::start(db.clone()));
     let dispatch = tracing::Dispatch::new(subscriber);
@@ -466,7 +466,7 @@ async fn tool_call_logs_include_thread_id() -> Result<()> {
 
     test.submit_turn("run a shell command").await?;
     {
-        let span = tracing::info_span!("test_log_span", thread_id = %expected_thread_id);
+        let span = tracing::info_span!("test_log_span", process_id = %expected_process_id);
         let _entered = span.enter();
         tracing::info!("ToolCall: shell_command {{\"command\":\"echo hello\"}}");
     }
@@ -484,16 +484,16 @@ async fn tool_call_logs_include_thread_id() -> Result<()> {
                 .as_deref()
                 .is_some_and(|m| m.starts_with("ToolCall:"))
         }) {
-            let thread_id = row.thread_id;
+            let process_id = row.process_id;
             let message = row.message;
-            found = Some((thread_id, message));
+            found = Some((process_id, message));
             break;
         }
         tokio::time::sleep(Duration::from_millis(25)).await;
     }
 
-    let (thread_id, message) = found.expect("expected ToolCall log row");
-    assert_eq!(thread_id, Some(expected_thread_id));
+    let (process_id, message) = found.expect("expected ToolCall log row");
+    assert_eq!(process_id, Some(expected_process_id));
     assert!(
         message
             .as_deref()

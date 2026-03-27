@@ -1,0 +1,1 @@
+ALTER TABLE processes ADD COLUMN cli_version TEXT NOT NULL DEFAULT '';

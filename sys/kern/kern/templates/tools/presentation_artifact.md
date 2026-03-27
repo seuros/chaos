@@ -122,7 +122,7 @@ Example proto export:
 
 Rich text is supported on notes, text boxes, shapes with text, and table cells. Use `set_rich_text` to replace a full rich-text payload, `set_notes_rich_text` for speaker notes, and `format_text_range` to annotate a substring by `query` or explicit codepoint range. `inspect`, `resolve`, and `to_proto` surface text-range anchors as `tr/<range_id>`.
 
-Comment threads are supported through `set_comment_author`, `add_comment_thread`, `add_comment_reply`, `toggle_comment_reaction`, `resolve_comment_thread`, and `reopen_comment_thread`. Thread anchors resolve as `th/<thread_id>`, and comment records appear in both `inspect` and `to_proto`.
+Comment threads are supported through `set_comment_author`, `add_comment_thread`, `add_comment_reply`, `toggle_comment_reaction`, `resolve_comment_thread`, and `reopen_comment_thread`. Thread anchors resolve as `th/<process_id>`, and comment records appear in both `inspect` and `to_proto`.
 
 Charts support richer series metadata plus `update_chart` and `add_chart_series`, including legend, axis, data-label, marker, fill, and per-point override state.
 
@@ -168,7 +168,7 @@ Text boxes and shapes support whole-element hyperlinks via `set_hyperlink`. Supp
 Notes visibility is honored on export: `set_notes_visibility` controls whether speaker notes are emitted into exported PPTX output.
 
 Example comment thread:
-`{"artifact_id":"presentation_x","actions":[{"action":"set_comment_author","args":{"display_name":"Jamie Fox","initials":"JF"}},{"action":"add_comment_thread","args":{"slide_index":0,"element_id":"element_3","query":"Quarterly","text":"Tighten this headline"}},{"action":"add_comment_reply","args":{"thread_id":"thread_1","text":"Applied to the draft."}}]}`
+`{"artifact_id":"presentation_x","actions":[{"action":"set_comment_author","args":{"display_name":"Jamie Fox","initials":"JF"}},{"action":"add_comment_thread","args":{"slide_index":0,"element_id":"element_3","query":"Quarterly","text":"Tighten this headline"}},{"action":"add_comment_reply","args":{"process_id":"thread_1","text":"Applied to the draft."}}]}`
 
 Image placeholders can be prompt-only. `add_image` accepts `prompt` without `path`/`data_url`, and unresolved placeholders export as a visible placeholder box instead of failing.
 

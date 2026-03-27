@@ -3587,6 +3587,7 @@ mod tests {
     use image::ImageBuffer;
     use image::Rgba;
     use pretty_assertions::assert_eq;
+    use chaos_kern::connectors::AppInfo;
     use std::path::PathBuf;
     use tempfile::tempdir;
 

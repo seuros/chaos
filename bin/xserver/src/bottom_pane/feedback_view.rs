@@ -45,13 +45,13 @@ pub(crate) enum FeedbackAudience {
 /// TODO(feedback): Feedback upload is not yet supported.
 #[derive(Clone, Default)]
 pub(crate) struct FeedbackSnapshot {
-    pub(crate) thread_id: String,
+    pub(crate) process_id: String,
 }
 
 impl FeedbackSnapshot {
-    pub(crate) fn new(thread_id: Option<impl Into<String>>) -> Self {
+    pub(crate) fn new(process_id: Option<impl Into<String>>) -> Self {
         Self {
-            thread_id: thread_id.map(Into::into).unwrap_or_default(),
+            process_id: process_id.map(Into::into).unwrap_or_default(),
         }
     }
 
@@ -131,7 +131,7 @@ impl FeedbackNoteView {
         };
         let classification = feedback_classification(self.category);
 
-        let mut thread_id = self.snapshot.thread_id.clone();
+        let mut process_id = self.snapshot.process_id.clone();
 
         let result = self.snapshot.upload_feedback(
             classification,
@@ -150,7 +150,7 @@ impl FeedbackNoteView {
                     "• Feedback recorded (no logs)."
                 };
                 let issue_url =
-                    issue_url_for_category(self.category, &thread_id, self.feedback_audience);
+                    issue_url_for_category(self.category, &process_id, self.feedback_audience);
                 let mut lines = vec![Line::from(match issue_url.as_ref() {
                     Some(_) if self.feedback_audience == FeedbackAudience::OpenAiEmployee => {
                         format!("{prefix} Please report this in #codex-feedback:")
@@ -167,7 +167,7 @@ impl FeedbackNoteView {
                             Line::from("  Share this and add some info about your problem:"),
                             Line::from(vec![
                                 "    ".into(),
-                                format!("https://go/codex-feedback/{thread_id}").bold(),
+                                format!("https://go/codex-feedback/{process_id}").bold(),
                             ]),
                         ]);
                     }
@@ -177,8 +177,8 @@ impl FeedbackNoteView {
                             Line::from(vec!["  ".into(), url.cyan().underlined()]),
                             "".into(),
                             Line::from(vec![
-                                "  Or mention your thread ID ".into(),
-                                std::mem::take(&mut thread_id).bold(),
+                                "  Or mention your process ID ".into(),
+                                std::mem::take(&mut process_id).bold(),
                                 " in an existing issue.".into(),
                             ]),
                         ]);
@@ -187,8 +187,8 @@ impl FeedbackNoteView {
                         lines.extend([
                             "".into(),
                             Line::from(vec![
-                                "  Thread ID: ".into(),
-                                std::mem::take(&mut thread_id).bold(),
+                                "  Process ID: ".into(),
+                                std::mem::take(&mut process_id).bold(),
                             ]),
                         ]);
                     }
@@ -430,7 +430,7 @@ fn feedback_classification(category: FeedbackCategory) -> &'static str {
 
 fn issue_url_for_category(
     category: FeedbackCategory,
-    thread_id: &str,
+    process_id: &str,
     feedback_audience: FeedbackAudience,
 ) -> Option<String> {
     match category {
@@ -438,16 +438,16 @@ fn issue_url_for_category(
         | FeedbackCategory::BadResult
         | FeedbackCategory::SafetyCheck
         | FeedbackCategory::Other => Some(match feedback_audience {
-            FeedbackAudience::OpenAiEmployee => slack_feedback_url(thread_id),
+            FeedbackAudience::OpenAiEmployee => slack_feedback_url(process_id),
             FeedbackAudience::External => {
-                format!("{BASE_CLI_BUG_ISSUE_URL}&steps=Uploaded%20thread:%20{thread_id}")
+                format!("{BASE_CLI_BUG_ISSUE_URL}&steps=Uploaded%20thread:%20{process_id}")
             }
         }),
         FeedbackCategory::GoodResult => None,
     }
 }
 
-fn slack_feedback_url(_thread_id: &str) -> String {
+fn slack_feedback_url(_process_id: &str) -> String {
     CODEX_FEEDBACK_INTERNAL_URL.to_string()
 }
 

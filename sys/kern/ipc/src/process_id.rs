@@ -10,11 +10,11 @@ use uuid::Uuid;
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, TS, Hash)]
 #[ts(type = "string")]
-pub struct ThreadId {
+pub struct ProcessId {
     uuid: Uuid,
 }
 
-impl ThreadId {
+impl ProcessId {
     pub fn new() -> Self {
         Self {
             uuid: Uuid::now_v7(),
@@ -28,7 +28,7 @@ impl ThreadId {
     }
 }
 
-impl TryFrom<&str> for ThreadId {
+impl TryFrom<&str> for ProcessId {
     type Error = uuid::Error;
 
     fn try_from(value: &str) -> Result<Self, Self::Error> {
@@ -36,7 +36,7 @@ impl TryFrom<&str> for ThreadId {
     }
 }
 
-impl TryFrom<String> for ThreadId {
+impl TryFrom<String> for ProcessId {
     type Error = uuid::Error;
 
     fn try_from(value: String) -> Result<Self, Self::Error> {
@@ -44,25 +44,25 @@ impl TryFrom<String> for ThreadId {
     }
 }
 
-impl From<ThreadId> for String {
-    fn from(value: ThreadId) -> Self {
+impl From<ProcessId> for String {
+    fn from(value: ProcessId) -> Self {
         value.to_string()
     }
 }
 
-impl Default for ThreadId {
+impl Default for ProcessId {
     fn default() -> Self {
         Self::new()
     }
 }
 
-impl Display for ThreadId {
+impl Display for ProcessId {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         Display::fmt(&self.uuid, f)
     }
 }
 
-impl Serialize for ThreadId {
+impl Serialize for ProcessId {
     fn serialize<S>(&self, serializer: S) -> Result<S::Ok, S::Error>
     where
         S: serde::Serializer,
@@ -71,7 +71,7 @@ impl Serialize for ThreadId {
     }
 }
 
-impl<'de> Deserialize<'de> for ThreadId {
+impl<'de> Deserialize<'de> for ProcessId {
     fn deserialize<D>(deserializer: D) -> Result<Self, D::Error>
     where
         D: serde::Deserializer<'de>,
@@ -82,9 +82,9 @@ impl<'de> Deserialize<'de> for ThreadId {
     }
 }
 
-impl JsonSchema for ThreadId {
+impl JsonSchema for ProcessId {
     fn schema_name() -> String {
-        "ThreadId".to_string()
+        "ProcessId".to_string()
     }
 
     fn json_schema(generator: &mut SchemaGenerator) -> Schema {
@@ -96,8 +96,8 @@ impl JsonSchema for ThreadId {
 mod tests {
     use super::*;
     #[test]
-    fn test_thread_id_default_is_not_zeroes() {
-        let id = ThreadId::default();
+    fn test_process_id_default_is_not_zeroes() {
+        let id = ProcessId::default();
         assert_ne!(id.uuid, Uuid::nil());
     }
 }

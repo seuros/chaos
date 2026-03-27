@@ -126,7 +126,7 @@ impl Session {
                         rollout_suffix = &rollout_items[index + 1..];
                     }
                 }
-                RolloutItem::EventMsg(EventMsg::ThreadRolledBack(rollback)) => {
+                RolloutItem::EventMsg(EventMsg::ProcessRolledBack(rollback)) => {
                     pending_rollback_turns = pending_rollback_turns
                         .saturating_add(usize::try_from(rollback.num_turns).unwrap_or(usize::MAX));
                 }
@@ -266,7 +266,7 @@ impl Session {
                         history.replace(rebuilt);
                     }
                 }
-                RolloutItem::EventMsg(EventMsg::ThreadRolledBack(rollback)) => {
+                RolloutItem::EventMsg(EventMsg::ProcessRolledBack(rollback)) => {
                     history.drop_last_n_user_turns(rollback.num_turns);
                 }
                 RolloutItem::EventMsg(_)

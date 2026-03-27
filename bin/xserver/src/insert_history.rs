@@ -317,7 +317,6 @@ mod tests {
     use crate::markdown_render::render_markdown_text;
     use crate::test_backend::VT100Backend;
     use ratatui::layout::Rect;
-    use ratatui::style::Color;
 
     #[test]
     fn writes_bold_then_regular_spans() {

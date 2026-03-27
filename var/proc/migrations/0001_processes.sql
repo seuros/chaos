@@ -1,4 +1,4 @@
-CREATE TABLE threads (
+CREATE TABLE processes (
     id TEXT PRIMARY KEY,
     rollout_path TEXT NOT NULL,
     created_at INTEGER NOT NULL,
@@ -18,8 +18,8 @@ CREATE TABLE threads (
     git_origin_url TEXT
 );
 
-CREATE INDEX idx_threads_created_at ON threads(created_at DESC, id DESC);
-CREATE INDEX idx_threads_updated_at ON threads(updated_at DESC, id DESC);
-CREATE INDEX idx_threads_archived ON threads(archived);
-CREATE INDEX idx_threads_source ON threads(source);
-CREATE INDEX idx_threads_provider ON threads(model_provider);
+CREATE INDEX idx_threads_created_at ON processes(created_at DESC, id DESC);
+CREATE INDEX idx_threads_updated_at ON processes(updated_at DESC, id DESC);
+CREATE INDEX idx_threads_archived ON processes(archived);
+CREATE INDEX idx_threads_source ON processes(source);
+CREATE INDEX idx_threads_provider ON processes(model_provider);

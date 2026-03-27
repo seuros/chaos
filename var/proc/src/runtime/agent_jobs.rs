@@ -67,7 +67,7 @@ INSERT INTO agent_job_items (
     source_id,
     row_json,
     status,
-    assigned_thread_id,
+    assigned_process_id,
     attempt_count,
     result_json,
     last_error,
@@ -142,7 +142,7 @@ SELECT
     source_id,
     row_json,
     status,
-    assigned_thread_id,
+    assigned_process_id,
     attempt_count,
     result_json,
     last_error,
@@ -185,7 +185,7 @@ SELECT
     source_id,
     row_json,
     status,
-    assigned_thread_id,
+    assigned_process_id,
     attempt_count,
     result_json,
     last_error,
@@ -322,7 +322,7 @@ WHERE id = ?
 UPDATE agent_job_items
 SET
     status = ?,
-    assigned_thread_id = NULL,
+    assigned_process_id = NULL,
     attempt_count = attempt_count + 1,
     updated_at = ?,
     last_error = NULL
@@ -343,7 +343,7 @@ WHERE job_id = ? AND item_id = ? AND status = ?
         &self,
         job_id: &str,
         item_id: &str,
-        thread_id: &str,
+        process_id: &str,
     ) -> anyhow::Result<bool> {
         let now = jiff::Timestamp::now().as_second();
         let result = sqlx::query(
@@ -351,7 +351,7 @@ WHERE job_id = ? AND item_id = ? AND status = ?
 UPDATE agent_job_items
 SET
     status = ?,
-    assigned_thread_id = ?,
+    assigned_process_id = ?,
     attempt_count = attempt_count + 1,
     updated_at = ?,
     last_error = NULL
@@ -359,7 +359,7 @@ WHERE job_id = ? AND item_id = ? AND status = ?
             "#,
         )
         .bind(AgentJobItemStatus::Running.as_str())
-        .bind(thread_id)
+        .bind(process_id)
         .bind(now)
         .bind(job_id)
         .bind(item_id)
@@ -381,7 +381,7 @@ WHERE job_id = ? AND item_id = ? AND status = ?
 UPDATE agent_job_items
 SET
     status = ?,
-    assigned_thread_id = NULL,
+    assigned_process_id = NULL,
     updated_at = ?,
     last_error = ?
 WHERE job_id = ? AND item_id = ? AND status = ?
@@ -402,17 +402,17 @@ WHERE job_id = ? AND item_id = ? AND status = ?
         &self,
         job_id: &str,
         item_id: &str,
-        thread_id: &str,
+        process_id: &str,
     ) -> anyhow::Result<bool> {
         let now = jiff::Timestamp::now().as_second();
         let result = sqlx::query(
             r#"
 UPDATE agent_job_items
-SET assigned_thread_id = ?, updated_at = ?
+SET assigned_process_id = ?, updated_at = ?
 WHERE job_id = ? AND item_id = ? AND status = ?
             "#,
         )
-        .bind(thread_id)
+        .bind(process_id)
         .bind(now)
         .bind(job_id)
         .bind(item_id)
@@ -426,7 +426,7 @@ WHERE job_id = ? AND item_id = ? AND status = ?
         &self,
         job_id: &str,
         item_id: &str,
-        reporting_thread_id: &str,
+        reporting_process_id: &str,
         result_json: &Value,
     ) -> anyhow::Result<bool> {
         let now = jiff::Timestamp::now().as_second();
@@ -443,7 +443,7 @@ WHERE
     job_id = ?
     AND item_id = ?
     AND status = ?
-    AND assigned_thread_id = ?
+    AND assigned_process_id = ?
             "#,
         )
         .bind(serialized)
@@ -452,7 +452,7 @@ WHERE
         .bind(job_id)
         .bind(item_id)
         .bind(AgentJobItemStatus::Running.as_str())
-        .bind(reporting_thread_id)
+        .bind(reporting_process_id)
         .execute(self.pool.as_ref())
         .await?;
         Ok(result.rows_affected() > 0)
@@ -471,7 +471,7 @@ SET
     status = ?,
     completed_at = ?,
     updated_at = ?,
-    assigned_thread_id = NULL
+    assigned_process_id = NULL
 WHERE
     job_id = ?
     AND item_id = ?
@@ -505,7 +505,7 @@ SET
     completed_at = ?,
     updated_at = ?,
     last_error = ?,
-    assigned_thread_id = NULL
+    assigned_process_id = NULL
 WHERE
     job_id = ?
     AND item_id = ?

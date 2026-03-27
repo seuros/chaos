@@ -4,7 +4,7 @@ use chaos_which::CargoBinError;
 use ctor::ctor;
 use tempfile::TempDir;
 
-use chaos_kern::CodexThread;
+use chaos_kern::Process;
 use chaos_kern::config::Config;
 use chaos_kern::config::ConfigBuilder;
 use chaos_kern::config::ConfigOverrides;
@@ -23,7 +23,7 @@ pub mod ws_accept;
 
 #[ctor]
 fn enable_deterministic_unified_exec_process_ids_for_tests() {
-    chaos_kern::test_support::set_thread_manager_test_mode(/*enabled*/ true);
+    chaos_kern::test_support::set_process_table_test_mode(/*enabled*/ true);
     chaos_kern::test_support::set_deterministic_process_ids(/*enabled*/ true);
 }
 
@@ -162,7 +162,7 @@ pub fn load_sse_fixture_with_id_from_str(raw: &str, id: &str) -> String {
 }
 
 pub async fn wait_for_event<F>(
-    codex: &CodexThread,
+    codex: &Process,
     predicate: F,
 ) -> chaos_ipc::protocol::EventMsg
 where
@@ -172,7 +172,7 @@ where
     wait_for_event_with_timeout(codex, predicate, Duration::from_secs(1)).await
 }
 
-pub async fn wait_for_event_match<T, F>(codex: &CodexThread, matcher: F) -> T
+pub async fn wait_for_event_match<T, F>(codex: &Process, matcher: F) -> T
 where
     F: Fn(&chaos_ipc::protocol::EventMsg) -> Option<T>,
 {
@@ -181,7 +181,7 @@ where
 }
 
 pub async fn wait_for_event_with_timeout<F>(
-    codex: &CodexThread,
+    codex: &Process,
     mut predicate: F,
     wait_time: tokio::time::Duration,
 ) -> chaos_ipc::protocol::EventMsg

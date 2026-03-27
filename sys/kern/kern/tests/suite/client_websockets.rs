@@ -13,7 +13,7 @@ use chaos_syslog::SessionTelemetry;
 use chaos_syslog::TelemetryAuthMode;
 use chaos_syslog::metrics::MetricsClient;
 use chaos_syslog::metrics::MetricsConfig;
-use chaos_ipc::ThreadId;
+use chaos_ipc::ProcessId;
 use chaos_ipc::account::PlanType;
 use chaos_ipc::config_types::ReasoningSummary;
 use chaos_ipc::config_types::ServiceTier;
@@ -54,7 +54,7 @@ const X_CLIENT_REQUEST_ID_HEADER: &str = "x-client-request-id";
 struct WebsocketTestHarness {
     _codex_home: TempDir,
     client: ModelClient,
-    conversation_id: ThreadId,
+    conversation_id: ProcessId,
     model_info: ModelInfo,
     effort: Option<ReasoningEffortConfig>,
     summary: ReasoningSummary,
@@ -1573,7 +1573,7 @@ async fn websocket_harness_with_options(
     let config = Arc::new(config);
     let mut model_info = chaos_kern::test_support::construct_model_info_offline(MODEL, &config);
     model_info.prefer_websockets = prefer_websockets;
-    let conversation_id = ThreadId::new();
+    let conversation_id = ProcessId::new();
     let auth_manager =
         chaos_kern::test_support::auth_manager_from_auth(CodexAuth::from_api_key("Test API Key"));
     let exporter = InMemoryMetricExporter::default();

@@ -5,7 +5,7 @@ use chaos_syslog::TelemetryAuthMode;
 use chaos_syslog::metrics::MetricsClient;
 use chaos_syslog::metrics::MetricsConfig;
 use chaos_syslog::metrics::Result;
-use chaos_ipc::ThreadId;
+use chaos_ipc::ProcessId;
 use chaos_ipc::protocol::SessionSource;
 use eventsource_stream::Event as StreamEvent;
 use opentelemetry_sdk::metrics::InMemoryMetricExporter;
@@ -22,7 +22,7 @@ fn runtime_metrics_summary_collects_tool_api_and_streaming_metrics() -> Result<(
             .with_runtime_reader(),
     )?;
     let manager = SessionTelemetry::new(
-        ThreadId::new(),
+        ProcessId::new(),
         "gpt-5.1",
         "gpt-5.1",
         Some("account-id".to_string()),

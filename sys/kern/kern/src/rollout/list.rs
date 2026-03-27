@@ -10,22 +10,22 @@ use std::path::Path;
 use std::path::PathBuf;
 
 use chaos_locate as file_search;
-use chaos_ipc::ThreadId;
+use chaos_ipc::ProcessId;
 use time::OffsetDateTime;
 
 use super::ARCHIVED_SESSIONS_SUBDIR;
 use super::SESSIONS_SUBDIR;
 use crate::state_db;
 
-// Re-export the shared thread-listing types and helpers from chaos-rollout.
+// Re-export the shared process-listing types and helpers from chaos-rollout.
 pub use chaos_rollout::list::Cursor;
-pub use chaos_rollout::list::ThreadItem;
-pub use chaos_rollout::list::ThreadListConfig;
-pub use chaos_rollout::list::ThreadListLayout;
-pub use chaos_rollout::list::ThreadSortKey;
-pub use chaos_rollout::list::ThreadsPage;
-pub use chaos_rollout::list::get_threads;
-pub use chaos_rollout::list::get_threads_in_root;
+pub use chaos_rollout::list::ProcessItem;
+pub use chaos_rollout::list::ProcessListConfig;
+pub use chaos_rollout::list::ProcessListLayout;
+pub use chaos_rollout::list::ProcessSortKey;
+pub use chaos_rollout::list::ProcessesPage;
+pub use chaos_rollout::list::get_processes;
+pub use chaos_rollout::list::get_processes_in_root;
 pub use chaos_rollout::list::parse_cursor;
 pub use chaos_rollout::list::parse_timestamp_uuid_from_filename;
 pub use chaos_rollout::list::read_head_for_summary;
@@ -46,7 +46,7 @@ pub fn cursor_from_anchor(anchor: chaos_proc::Anchor) -> Cursor {
 // state_db-dependent lookup functions (cannot move to chaos-rollout)
 // ---------------------------------------------------------------------------
 
-async fn find_thread_path_by_id_str_in_subdir(
+async fn find_process_path_by_id_str_in_subdir(
     codex_home: &Path,
     subdir: &str,
     id_str: &str,
@@ -63,13 +63,13 @@ async fn find_thread_path_by_id_str_in_subdir(
         ARCHIVED_SESSIONS_SUBDIR => Some(true),
         _ => None,
     };
-    let thread_id = ThreadId::from_string(id_str).ok();
+    let process_id = ProcessId::from_string(id_str).ok();
     let state_db_ctx = state_db::open_if_present(codex_home, "").await;
     if let Some(state_db_ctx) = state_db_ctx.as_deref()
-        && let Some(thread_id) = thread_id
+        && let Some(process_id) = process_id
         && let Some(db_path) = state_db::find_rollout_path_by_id(
             Some(state_db_ctx),
-            thread_id,
+            process_id,
             archived_only,
             "find_path_query",
         )
@@ -79,11 +79,11 @@ async fn find_thread_path_by_id_str_in_subdir(
             return Ok(Some(db_path));
         }
         tracing::error!(
-            "state db returned stale rollout path for thread {id_str}: {}",
+            "state db returned stale rollout path for process {id_str}: {}",
             db_path.display()
         );
         tracing::warn!(
-            "state db discrepancy during find_thread_path_by_id_str_in_subdir: stale_db_path"
+            "state db discrepancy during find_process_path_by_id_str_in_subdir: stale_db_path"
         );
     }
 
@@ -107,13 +107,13 @@ async fn find_thread_path_by_id_str_in_subdir(
 
     let found = results.matches.into_iter().next().map(|m| m.full_path());
     if let Some(found_path) = found.as_ref() {
-        tracing::debug!("state db missing rollout path for thread {id_str}");
+        tracing::debug!("state db missing rollout path for process {id_str}");
         tracing::warn!(
-            "state db discrepancy during find_thread_path_by_id_str_in_subdir: falling_back"
+            "state db discrepancy during find_process_path_by_id_str_in_subdir: falling_back"
         );
         state_db::read_repair_rollout_path(
             state_db_ctx.as_deref(),
-            thread_id,
+            process_id,
             archived_only,
             found_path.as_path(),
         )
@@ -123,20 +123,20 @@ async fn find_thread_path_by_id_str_in_subdir(
     Ok(found)
 }
 
-/// Locate a recorded thread rollout file by its UUID string using the existing
+/// Locate a recorded process rollout file by its UUID string using the existing
 /// paginated listing implementation. Returns `Ok(Some(path))` if found, `Ok(None)` if not present
 /// or the id is invalid.
-pub async fn find_thread_path_by_id_str(
+pub async fn find_process_path_by_id_str(
     codex_home: &Path,
     id_str: &str,
 ) -> io::Result<Option<PathBuf>> {
-    find_thread_path_by_id_str_in_subdir(codex_home, SESSIONS_SUBDIR, id_str).await
+    find_process_path_by_id_str_in_subdir(codex_home, SESSIONS_SUBDIR, id_str).await
 }
 
-/// Locate an archived thread rollout file by its UUID string.
-pub async fn find_archived_thread_path_by_id_str(
+/// Locate an archived process rollout file by its UUID string.
+pub async fn find_archived_process_path_by_id_str(
     codex_home: &Path,
     id_str: &str,
 ) -> io::Result<Option<PathBuf>> {
-    find_thread_path_by_id_str_in_subdir(codex_home, ARCHIVED_SESSIONS_SUBDIR, id_str).await
+    find_process_path_by_id_str_in_subdir(codex_home, ARCHIVED_SESSIONS_SUBDIR, id_str).await
 }

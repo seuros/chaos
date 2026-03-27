@@ -2,7 +2,7 @@ use std::collections::HashSet;
 use std::collections::VecDeque;
 use std::path::PathBuf;
 
-use chaos_ipc::ThreadId;
+use chaos_ipc::ProcessId;
 use chaos_ipc::api::McpElicitationEnumSchema;
 use chaos_ipc::api::McpElicitationPrimitiveSchema;
 use chaos_ipc::api::McpElicitationSingleSelectEnumSchema;
@@ -161,7 +161,7 @@ struct McpToolApprovalDisplayParam {
 
 #[derive(Clone, Debug, PartialEq)]
 pub(crate) struct McpServerElicitationFormRequest {
-    thread_id: ThreadId,
+    process_id: ProcessId,
     server_name: String,
     request_id: McpRequestId,
     message: String,
@@ -202,7 +202,7 @@ impl FooterTip {
 
 impl McpServerElicitationFormRequest {
     pub(crate) fn from_event(
-        thread_id: ThreadId,
+        process_id: ProcessId,
         request: ElicitationRequestEvent,
     ) -> Option<Self> {
         let ElicitationRequest::Form {
@@ -312,7 +312,7 @@ impl McpServerElicitationFormRequest {
         };
 
         Some(Self {
-            thread_id,
+            process_id,
             server_name: request.server_name,
             request_id: request.id,
             message,
@@ -327,8 +327,8 @@ impl McpServerElicitationFormRequest {
         self.tool_suggestion.as_ref()
     }
 
-    pub(crate) fn thread_id(&self) -> ThreadId {
-        self.thread_id
+    pub(crate) fn process_id(&self) -> ProcessId {
+        self.process_id
     }
 
     pub(crate) fn server_name(&self) -> &str {
@@ -1083,8 +1083,8 @@ impl McpServerElicitationOverlay {
     }
 
     fn dispatch_cancel(&self) {
-        self.app_event_tx.send(AppEvent::SubmitThreadOp {
-            thread_id: self.request.thread_id,
+        self.app_event_tx.send(AppEvent::SubmitProcessOp {
+            process_id: self.request.process_id,
             op: Op::ResolveElicitation {
                 server_name: self.request.server_name.clone(),
                 request_id: self.request.request_id.clone(),
@@ -1123,8 +1123,8 @@ impl McpServerElicitationOverlay {
                     Some(APPROVAL_CANCEL_VALUE) => (ElicitationAction::Cancel, None),
                     _ => (ElicitationAction::Cancel, None),
                 };
-            self.app_event_tx.send(AppEvent::SubmitThreadOp {
-                thread_id: self.request.thread_id,
+            self.app_event_tx.send(AppEvent::SubmitProcessOp {
+                process_id: self.request.process_id,
                 op: Op::ResolveElicitation {
                     server_name: self.request.server_name.clone(),
                     request_id: self.request.request_id.clone(),
@@ -1149,8 +1149,8 @@ impl McpServerElicitationOverlay {
             .enumerate()
             .filter_map(|(idx, field)| self.field_value(idx).map(|value| (field.id.clone(), value)))
             .collect::<serde_json::Map<_, _>>();
-        self.app_event_tx.send(AppEvent::SubmitThreadOp {
-            thread_id: self.request.thread_id,
+        self.app_event_tx.send(AppEvent::SubmitProcessOp {
+            process_id: self.request.process_id,
             op: Op::ResolveElicitation {
                 server_name: self.request.server_name.clone(),
                 request_id: self.request.request_id.clone(),
@@ -1740,9 +1740,9 @@ mod tests {
 
     #[test]
     fn parses_boolean_form_request() {
-        let thread_id = ThreadId::default();
+        let process_id = ProcessId::default();
         let request = McpServerElicitationFormRequest::from_event(
-            thread_id,
+            process_id,
             form_request(
                 "Allow this request?",
                 serde_json::json!({
@@ -1764,7 +1764,7 @@ mod tests {
         assert_eq!(
             request,
             McpServerElicitationFormRequest {
-                thread_id,
+                process_id,
                 server_name: "server-1".to_string(),
                 request_id: McpRequestId::String("request-1".to_string()),
                 message: "Allow this request?".to_string(),
@@ -1799,7 +1799,7 @@ mod tests {
     #[test]
     fn unsupported_numeric_form_falls_back() {
         let request = McpServerElicitationFormRequest::from_event(
-            ThreadId::default(),
+            ProcessId::default(),
             form_request(
                 "Pick a number",
                 serde_json::json!({
@@ -1820,9 +1820,9 @@ mod tests {
 
     #[test]
     fn missing_schema_uses_approval_actions() {
-        let thread_id = ThreadId::default();
+        let process_id = ProcessId::default();
         let request = McpServerElicitationFormRequest::from_event(
-            thread_id,
+            process_id,
             form_request("Allow this request?", Value::Null, None),
         )
         .expect("expected approval fallback");
@@ -1830,7 +1830,7 @@ mod tests {
         assert_eq!(
             request,
             McpServerElicitationFormRequest {
-                thread_id,
+                process_id,
                 server_name: "server-1".to_string(),
                 request_id: McpRequestId::String("request-1".to_string()),
                 message: "Allow this request?".to_string(),
@@ -1871,9 +1871,9 @@ mod tests {
 
     #[test]
     fn empty_tool_approval_schema_uses_approval_actions() {
-        let thread_id = ThreadId::default();
+        let process_id = ProcessId::default();
         let request = McpServerElicitationFormRequest::from_event(
-            thread_id,
+            process_id,
             form_request(
                 "Allow this request?",
                 empty_object_schema(),
@@ -1885,7 +1885,7 @@ mod tests {
         assert_eq!(
             request,
             McpServerElicitationFormRequest {
-                thread_id,
+                process_id,
                 server_name: "server-1".to_string(),
                 request_id: McpRequestId::String("request-1".to_string()),
                 message: "Allow this request?".to_string(),
@@ -1920,7 +1920,7 @@ mod tests {
     #[test]
     fn tool_suggestion_meta_is_parsed_into_request_payload() {
         let request = McpServerElicitationFormRequest::from_event(
-            ThreadId::default(),
+            ProcessId::default(),
             form_request(
                 "Suggest Google Calendar",
                 empty_object_schema(),
@@ -1953,7 +1953,7 @@ mod tests {
     #[test]
     fn empty_unmarked_schema_falls_back() {
         let request = McpServerElicitationFormRequest::from_event(
-            ThreadId::default(),
+            ProcessId::default(),
             form_request("Empty form", empty_object_schema(), None),
         );
 
@@ -1963,7 +1963,7 @@ mod tests {
     #[test]
     fn tool_approval_display_params_prefer_explicit_display_order() {
         let request = McpServerElicitationFormRequest::from_event(
-            ThreadId::default(),
+            ProcessId::default(),
             form_request(
                 "Allow Calendar to create an event",
                 empty_object_schema(),
@@ -2010,9 +2010,9 @@ mod tests {
     #[test]
     fn submit_sends_accept_with_typed_content() {
         let (tx, mut rx) = test_sender();
-        let thread_id = ThreadId::default();
+        let process_id = ProcessId::default();
         let request = McpServerElicitationFormRequest::from_event(
-            thread_id,
+            process_id,
             form_request(
                 "Allow this request?",
                 serde_json::json!({
@@ -2036,14 +2036,14 @@ mod tests {
         overlay.submit_answers();
 
         let event = rx.try_recv().expect("expected resolution");
-        let AppEvent::SubmitThreadOp {
-            thread_id: resolved_thread_id,
+        let AppEvent::SubmitProcessOp {
+            process_id: resolved_process_id,
             op,
         } = event
         else {
-            panic!("expected SubmitThreadOp");
+            panic!("expected SubmitProcessOp");
         };
-        assert_eq!(resolved_thread_id, thread_id);
+        assert_eq!(resolved_process_id, process_id);
         assert_eq!(
             op,
             Op::ResolveElicitation {
@@ -2061,9 +2061,9 @@ mod tests {
     #[test]
     fn empty_tool_approval_schema_session_choice_sets_persist_meta() {
         let (tx, mut rx) = test_sender();
-        let thread_id = ThreadId::default();
+        let process_id = ProcessId::default();
         let request = McpServerElicitationFormRequest::from_event(
-            thread_id,
+            process_id,
             form_request(
                 "Allow this request?",
                 empty_object_schema(),
@@ -2087,14 +2087,14 @@ mod tests {
         overlay.submit_answers();
 
         let event = rx.try_recv().expect("expected resolution");
-        let AppEvent::SubmitThreadOp {
-            thread_id: resolved_thread_id,
+        let AppEvent::SubmitProcessOp {
+            process_id: resolved_process_id,
             op,
         } = event
         else {
-            panic!("expected SubmitThreadOp");
+            panic!("expected SubmitProcessOp");
         };
-        assert_eq!(resolved_thread_id, thread_id);
+        assert_eq!(resolved_process_id, process_id);
         assert_eq!(
             op,
             Op::ResolveElicitation {
@@ -2112,9 +2112,9 @@ mod tests {
     #[test]
     fn empty_tool_approval_schema_always_allow_sets_persist_meta() {
         let (tx, mut rx) = test_sender();
-        let thread_id = ThreadId::default();
+        let process_id = ProcessId::default();
         let request = McpServerElicitationFormRequest::from_event(
-            thread_id,
+            process_id,
             form_request(
                 "Allow this request?",
                 empty_object_schema(),
@@ -2138,14 +2138,14 @@ mod tests {
         overlay.submit_answers();
 
         let event = rx.try_recv().expect("expected resolution");
-        let AppEvent::SubmitThreadOp {
-            thread_id: resolved_thread_id,
+        let AppEvent::SubmitProcessOp {
+            process_id: resolved_process_id,
             op,
         } = event
         else {
-            panic!("expected SubmitThreadOp");
+            panic!("expected SubmitProcessOp");
         };
-        assert_eq!(resolved_thread_id, thread_id);
+        assert_eq!(resolved_process_id, process_id);
         assert_eq!(
             op,
             Op::ResolveElicitation {
@@ -2163,9 +2163,9 @@ mod tests {
     #[test]
     fn ctrl_c_cancels_elicitation() {
         let (tx, mut rx) = test_sender();
-        let thread_id = ThreadId::default();
+        let process_id = ProcessId::default();
         let request = McpServerElicitationFormRequest::from_event(
-            thread_id,
+            process_id,
             form_request(
                 "Allow this request?",
                 serde_json::json!({
@@ -2188,14 +2188,14 @@ mod tests {
         assert_eq!(overlay.on_ctrl_c(), CancellationEvent::Handled);
 
         let event = rx.try_recv().expect("expected resolution");
-        let AppEvent::SubmitThreadOp {
-            thread_id: resolved_thread_id,
+        let AppEvent::SubmitProcessOp {
+            process_id: resolved_process_id,
             op,
         } = event
         else {
-            panic!("expected SubmitThreadOp");
+            panic!("expected SubmitProcessOp");
         };
-        assert_eq!(resolved_thread_id, thread_id);
+        assert_eq!(resolved_process_id, process_id);
         assert_eq!(
             op,
             Op::ResolveElicitation {
@@ -2212,7 +2212,7 @@ mod tests {
     fn queues_requests_fifo() {
         let (tx, _rx) = test_sender();
         let first = McpServerElicitationFormRequest::from_event(
-            ThreadId::default(),
+            ProcessId::default(),
             form_request(
                 "First",
                 serde_json::json!({
@@ -2229,7 +2229,7 @@ mod tests {
         )
         .expect("expected supported form");
         let second = McpServerElicitationFormRequest::from_event(
-            ThreadId::default(),
+            ProcessId::default(),
             form_request(
                 "Second",
                 serde_json::json!({
@@ -2246,7 +2246,7 @@ mod tests {
         )
         .expect("expected supported form");
         let third = McpServerElicitationFormRequest::from_event(
-            ThreadId::default(),
+            ProcessId::default(),
             form_request(
                 "Third",
                 serde_json::json!({
@@ -2281,7 +2281,7 @@ mod tests {
     fn boolean_form_snapshot() {
         let (tx, _rx) = test_sender();
         let request = McpServerElicitationFormRequest::from_event(
-            ThreadId::default(),
+            ProcessId::default(),
             form_request(
                 "Allow this request?",
                 serde_json::json!({
@@ -2311,7 +2311,7 @@ mod tests {
     fn approval_form_tool_approval_snapshot() {
         let (tx, _rx) = test_sender();
         let request = McpServerElicitationFormRequest::from_event(
-            ThreadId::default(),
+            ProcessId::default(),
             form_request(
                 "Allow this request?",
                 empty_object_schema(),
@@ -2331,7 +2331,7 @@ mod tests {
     fn approval_form_tool_approval_with_persist_options_snapshot() {
         let (tx, _rx) = test_sender();
         let request = McpServerElicitationFormRequest::from_event(
-            ThreadId::default(),
+            ProcessId::default(),
             form_request(
                 "Allow this request?",
                 empty_object_schema(),
@@ -2358,7 +2358,7 @@ mod tests {
     fn approval_form_tool_approval_with_param_summary_snapshot() {
         let (tx, _rx) = test_sender();
         let request = McpServerElicitationFormRequest::from_event(
-            ThreadId::default(),
+            ProcessId::default(),
             form_request(
                 "Allow Calendar to create an event",
                 empty_object_schema(),

@@ -1,8 +1,7 @@
 use std::sync::Arc;
 
-use chaos_kern::CodexThread;
-use chaos_kern::NewThread;
-use chaos_kern::ThreadManager;
+use chaos_kern::Process;
+use chaos_kern::ProcessTable;
 use chaos_kern::config::Config;
 use chaos_ipc::protocol::Event;
 use chaos_ipc::protocol::EventMsg;
@@ -15,7 +14,7 @@ use crate::app_event_sender::AppEventSender;
 
 const TUI_NOTIFY_CLIENT: &str = "codex-tui";
 
-async fn initialize_app_server_client_name(thread: &CodexThread) {
+async fn initialize_app_server_client_name(thread: &Process) {
     if let Err(err) = thread
         .set_app_server_client_name(Some(TUI_NOTIFY_CLIENT.to_string()))
         .await
@@ -29,17 +28,13 @@ async fn initialize_app_server_client_name(thread: &CodexThread) {
 pub(crate) fn spawn_agent(
     config: Config,
     app_event_tx: AppEventSender,
-    server: Arc<ThreadManager>,
+    server: Arc<ProcessTable>,
 ) -> UnboundedSender<Op> {
     let (codex_op_tx, mut codex_op_rx) = unbounded_channel::<Op>();
 
     let app_event_tx_clone = app_event_tx;
     tokio::spawn(async move {
-        let NewThread {
-            thread,
-            session_configured,
-            ..
-        } = match server.start_thread(config).await {
+        let new_process = match server.start_process(config).await {
             Ok(v) => v,
             Err(err) => {
                 let message = format!("Failed to initialize codex: {err}");
@@ -53,6 +48,7 @@ pub(crate) fn spawn_agent(
                 return;
             }
         };
+        let (_, thread, session_configured) = new_process.into_parts();
         initialize_app_server_client_name(thread.as_ref()).await;
 
         // Forward the captured `SessionConfigured` event so it can be rendered in the UI.
@@ -63,10 +59,10 @@ pub(crate) fn spawn_agent(
         };
         app_event_tx_clone.send(AppEvent::CodexEvent(ev));
 
-        let thread_clone = thread.clone();
+        let process_clone = thread.clone();
         tokio::spawn(async move {
             while let Some(op) = codex_op_rx.recv().await {
-                let id = thread_clone.submit(op).await;
+                let id = process_clone.submit(op).await;
                 if let Err(e) = id {
                     tracing::error!("failed to submit op: {e}");
                 }
@@ -78,7 +74,7 @@ pub(crate) fn spawn_agent(
             app_event_tx_clone.send(AppEvent::CodexEvent(event));
             if is_shutdown_complete {
                 // ShutdownComplete is terminal for a thread; drop this receiver task so
-                // the Arc<CodexThread> can be released and thread resources can clean up.
+                // the Arc<Process> can be released and thread resources can clean up.
                 break;
             }
         }
@@ -87,11 +83,11 @@ pub(crate) fn spawn_agent(
     codex_op_tx
 }
 
-/// Spawn agent loops for an existing thread (e.g., a forked thread).
+/// Spawn agent loops for an existing process (e.g., a forked process).
 /// Sends the provided `SessionConfiguredEvent` immediately, then forwards subsequent
 /// events and accepts Ops for submission.
 pub(crate) fn spawn_agent_from_existing(
-    thread: std::sync::Arc<CodexThread>,
+    thread: std::sync::Arc<Process>,
     session_configured: chaos_ipc::protocol::SessionConfiguredEvent,
     app_event_tx: AppEventSender,
 ) -> UnboundedSender<Op> {
@@ -108,10 +104,10 @@ pub(crate) fn spawn_agent_from_existing(
         };
         app_event_tx_clone.send(AppEvent::CodexEvent(ev));
 
-        let thread_clone = thread.clone();
+        let process_clone = thread.clone();
         tokio::spawn(async move {
             while let Some(op) = codex_op_rx.recv().await {
-                let id = thread_clone.submit(op).await;
+                let id = process_clone.submit(op).await;
                 if let Err(e) = id {
                     tracing::error!("failed to submit op: {e}");
                 }
@@ -123,7 +119,7 @@ pub(crate) fn spawn_agent_from_existing(
             app_event_tx_clone.send(AppEvent::CodexEvent(event));
             if is_shutdown_complete {
                 // ShutdownComplete is terminal for a thread; drop this receiver task so
-                // the Arc<CodexThread> can be released and thread resources can clean up.
+                // the Arc<Process> can be released and thread resources can clean up.
                 break;
             }
         }
@@ -132,8 +128,8 @@ pub(crate) fn spawn_agent_from_existing(
     codex_op_tx
 }
 
-/// Spawn an op-forwarding loop for an existing thread without subscribing to events.
-pub(crate) fn spawn_op_forwarder(thread: std::sync::Arc<CodexThread>) -> UnboundedSender<Op> {
+/// Spawn an op-forwarding loop for an existing process without subscribing to events.
+pub(crate) fn spawn_op_forwarder(thread: std::sync::Arc<Process>) -> UnboundedSender<Op> {
     let (codex_op_tx, mut codex_op_rx) = unbounded_channel::<Op>();
 
     tokio::spawn(async move {

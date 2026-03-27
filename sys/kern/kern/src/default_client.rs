@@ -1,5 +1,4 @@
 use crate::config_loader::ResidencyRequirement;
-use crate::spawn::CODEX_SANDBOX_ENV_VAR;
 use codex_client::CodexHttpClient;
 pub use codex_client::CodexRequestBuilder;
 use http::HeaderMap;
@@ -204,10 +203,6 @@ pub fn default_headers() -> HeaderMap {
         headers.insert(RESIDENCY_HEADER_NAME, value);
     }
     headers
-}
-
-fn is_sandboxed() -> bool {
-    std::env::var(CODEX_SANDBOX_ENV_VAR).as_deref() == Ok("seatbelt")
 }
 
 #[cfg(test)]

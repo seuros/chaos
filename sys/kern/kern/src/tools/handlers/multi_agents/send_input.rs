@@ -24,30 +24,30 @@ impl ToolHandler for Handler {
         } = invocation;
         let arguments = function_arguments(payload)?;
         let args: SendInputArgs = parse_arguments(&arguments)?;
-        let receiver_thread_id = agent_id(&args.id)?;
+        let receiver_process_id = agent_id(&args.id)?;
         let input_items = parse_collab_input(args.message, args.items)?;
         let prompt = input_preview(&input_items);
         let (receiver_agent_nickname, receiver_agent_role) = session
             .services
             .agent_control
-            .get_agent_nickname_and_role(receiver_thread_id)
+            .get_agent_nickname_and_role(receiver_process_id)
             .await
             .unwrap_or((None, None));
         if args.interrupt {
             session
                 .services
                 .agent_control
-                .interrupt_agent(receiver_thread_id)
+                .interrupt_agent(receiver_process_id)
                 .await
-                .map_err(|err| collab_agent_error(receiver_thread_id, err))?;
+                .map_err(|err| collab_agent_error(receiver_process_id, err))?;
         }
         session
             .send_event(
                 &turn,
                 CollabAgentInteractionBeginEvent {
                     call_id: call_id.clone(),
-                    sender_thread_id: session.conversation_id,
-                    receiver_thread_id,
+                    sender_process_id: session.conversation_id,
+                    receiver_process_id,
                     prompt: prompt.clone(),
                 }
                 .into(),
@@ -56,21 +56,21 @@ impl ToolHandler for Handler {
         let result = session
             .services
             .agent_control
-            .send_input(receiver_thread_id, input_items)
+            .send_input(receiver_process_id, input_items)
             .await
-            .map_err(|err| collab_agent_error(receiver_thread_id, err));
+            .map_err(|err| collab_agent_error(receiver_process_id, err));
         let status = session
             .services
             .agent_control
-            .get_status(receiver_thread_id)
+            .get_status(receiver_process_id)
             .await;
         session
             .send_event(
                 &turn,
                 CollabAgentInteractionEndEvent {
                     call_id,
-                    sender_thread_id: session.conversation_id,
-                    receiver_thread_id,
+                    sender_process_id: session.conversation_id,
+                    receiver_process_id,
                     receiver_agent_nickname,
                     receiver_agent_role,
                     prompt,

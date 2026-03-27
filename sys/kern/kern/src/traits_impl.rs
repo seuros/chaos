@@ -18,7 +18,7 @@ use chaos_sysctl::types::McpServerConfig;
 use chaos_sysctl::types::MemoriesConfig;
 use chaos_sysctl::types::OAuthCredentialsStoreMode;
 use chaos_syslog::SessionTelemetry;
-use chaos_ipc::ThreadId;
+use chaos_ipc::ProcessId;
 use chaos_ipc::config_types::ServiceTier;
 use chaos_ipc::protocol::AskForApproval;
 use chaos_ipc::protocol::Event;
@@ -133,7 +133,7 @@ impl TelemetrySource for Session {
 }
 
 impl chaos_traits::AgentSpawner for Session {
-    fn conversation_id(&self) -> ThreadId {
+    fn conversation_id(&self) -> ProcessId {
         self.conversation_id.clone()
     }
 
@@ -141,7 +141,7 @@ impl chaos_traits::AgentSpawner for Session {
         &self,
         _config: AgentSpawnConfig,
         _prompt: String,
-    ) -> anyhow::Result<ThreadId> {
+    ) -> anyhow::Result<ProcessId> {
         // TODO: Wire to self.services.agent_control.spawn_agent() during Phase D migration.
         // The full implementation requires building an AgentConfig from AgentSpawnConfig,
         // which depends on types not yet extracted. This stub compiles and will be completed

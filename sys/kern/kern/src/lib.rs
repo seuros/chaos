@@ -1,4 +1,4 @@
-//! Root of the `codex-core` library.
+//! Root of the `chaos-kern` library.
 
 // Prevent accidental direct writes to stdout/stderr in library code. All
 // user-visible output must go through the appropriate abstraction (e.g.,
@@ -15,10 +15,10 @@ mod client;
 mod client_common;
 pub mod codex;
 pub use codex::SteerInputError;
-mod codex_thread;
+mod process;
 mod compact_remote;
-pub use codex_thread::CodexThread;
-pub use codex_thread::ThreadConfigSnapshot;
+pub use process::Process;
+pub use process::ProcessConfigSnapshot;
 mod agent;
 mod codex_delegate;
 mod command_canonicalization;
@@ -85,16 +85,10 @@ mod response_debug_context;
 pub mod review_format;
 pub mod review_prompts;
 mod seatbelt_permissions;
-mod thread_manager;
+mod process_table;
 pub mod web_search;
-pub use thread_manager::NewThread;
-pub use thread_manager::ThreadManager;
-#[deprecated(note = "use ThreadManager")]
-pub type ConversationManager = ThreadManager;
-#[deprecated(note = "use NewThread")]
-pub type NewConversation = NewThread;
-#[deprecated(note = "use CodexThread")]
-pub type CodexConversation = CodexThread;
+pub use process_table::NewProcess;
+pub use process_table::ProcessTable;
 // Re-export common auth types for workspace consumers
 pub use analytics_client::AnalyticsEventsClient;
 pub use auth::AuthManager;
@@ -120,23 +114,26 @@ pub use rollout::RolloutRecorder;
 pub use rollout::RolloutRecorderParams;
 pub use rollout::SESSIONS_SUBDIR;
 pub use rollout::SessionMeta;
-pub use rollout::append_thread_name;
-pub use rollout::find_archived_thread_path_by_id_str;
-#[deprecated(note = "use find_thread_path_by_id_str")]
-pub use rollout::find_conversation_path_by_id_str;
-pub use rollout::find_thread_name_by_id;
-pub use rollout::find_thread_path_by_id_str;
-pub use rollout::find_thread_path_by_name_str;
+pub use rollout::append_process_name;
+pub use rollout::find_archived_process_path_by_id_str;
+pub use rollout::find_process_id_by_name;
+pub use rollout::find_process_name_by_id;
+pub use rollout::find_process_names_by_ids;
+pub use rollout::find_process_path_by_id_str;
+pub use rollout::find_process_path_by_name_str;
 pub use rollout::list::Cursor;
-pub use rollout::list::ThreadItem;
-pub use rollout::list::ThreadSortKey;
-pub use rollout::list::ThreadsPage;
+pub use rollout::ProcessItem;
+pub use rollout::ProcessListConfig;
+pub use rollout::ProcessListLayout;
+pub use rollout::ProcessSortKey;
+pub use rollout::ProcessesPage;
+pub use rollout::get_processes;
+pub use rollout::get_processes_in_root;
 pub use rollout::list::parse_cursor;
 pub use rollout::list::read_head_for_summary;
 pub use rollout::list::read_session_meta_line;
 pub use rollout::policy::EventPersistenceMode;
 pub use rollout::rollout_date_parts;
-pub use rollout::session_index::find_thread_names_by_ids;
 mod function_tool;
 mod state;
 mod tasks;

@@ -2,7 +2,7 @@ use anyhow::Result;
 use chrono::Duration as ChronoDuration;
 use chrono::Utc;
 use chaos_kern::features::Feature;
-use chaos_ipc::ThreadId;
+use chaos_ipc::ProcessId;
 use chaos_ipc::protocol::EventMsg;
 use chaos_ipc::protocol::Op;
 use chaos_ipc::protocol::SessionSource;
@@ -33,7 +33,7 @@ async fn memories_startup_phase2_tracks_added_and_removed_inputs_across_runs() -
     let db = init_state_db(&home).await?;
 
     let now = Utc::now();
-    let thread_a = seed_stage1_output(
+    let process_a = seed_stage1_output(
         db.as_ref(),
         home.path(),
         now - ChronoDuration::hours(2),
@@ -69,7 +69,7 @@ async fn memories_startup_phase2_tracks_added_and_removed_inputs_across_runs() -
         "expected removed count in first prompt: {first_prompt}"
     );
     assert!(
-        first_prompt.contains(&format!("- [added] thread_id={thread_a},")),
+        first_prompt.contains(&format!("- [added] process_id={process_a},")),
         "expected thread A to be marked added: {first_prompt}"
     );
     assert!(
@@ -77,7 +77,7 @@ async fn memories_startup_phase2_tracks_added_and_removed_inputs_across_runs() -
         "expected no removed items in first prompt: {first_prompt}"
     );
 
-    wait_for_phase2_success(db.as_ref(), thread_a).await?;
+    wait_for_phase2_success(db.as_ref(), process_a).await?;
     let memory_root = home.path().join("memories");
     let raw_memories = tokio::fs::read_to_string(memory_root.join("raw_memories.md")).await?;
     assert!(raw_memories.contains("raw memory A"));
@@ -89,7 +89,7 @@ async fn memories_startup_phase2_tracks_added_and_removed_inputs_across_runs() -
 
     shutdown_test_codex(&first).await?;
 
-    let thread_b = seed_stage1_output(
+    let process_b = seed_stage1_output(
         db.as_ref(),
         home.path(),
         now - ChronoDuration::hours(1),
@@ -125,15 +125,15 @@ async fn memories_startup_phase2_tracks_added_and_removed_inputs_across_runs() -
         "expected removed count in second prompt: {second_prompt}"
     );
     assert!(
-        second_prompt.contains(&format!("- [added] thread_id={thread_b},")),
+        second_prompt.contains(&format!("- [added] process_id={process_b},")),
         "expected thread B to be marked added: {second_prompt}"
     );
     assert!(
-        second_prompt.contains(&format!("- thread_id={thread_a},")),
+        second_prompt.contains(&format!("- process_id={process_a},")),
         "expected thread A to be marked removed: {second_prompt}"
     );
 
-    wait_for_phase2_success(db.as_ref(), thread_b).await?;
+    wait_for_phase2_success(db.as_ref(), process_b).await?;
     let raw_memories = tokio::fs::read_to_string(memory_root.join("raw_memories.md")).await?;
     assert!(raw_memories.contains("raw memory B"));
     assert!(raw_memories.contains("raw memory A"));
@@ -193,16 +193,16 @@ async fn web_search_pollution_moves_selected_thread_into_removed_phase2_inputs()
         .rollout_path
         .clone()
         .expect("rollout path");
-    let thread_id = initial.session_configured.session_id;
+    let process_id = initial.session_configured.session_id;
     let updated_at = {
         let deadline = Instant::now() + Duration::from_secs(10);
         loop {
-            if let Some(metadata) = db.get_thread(thread_id).await? {
+            if let Some(metadata) = db.get_process(process_id).await? {
                 break metadata.updated_at;
             }
             assert!(
                 Instant::now() < deadline,
-                "timed out waiting for thread metadata for {thread_id}"
+                "timed out waiting for thread metadata for {process_id}"
             );
             tokio::time::sleep(Duration::from_millis(50)).await;
         }
@@ -210,7 +210,7 @@ async fn web_search_pollution_moves_selected_thread_into_removed_phase2_inputs()
 
     seed_stage1_output_for_existing_thread(
         db.as_ref(),
-        thread_id,
+        process_id,
         updated_at.timestamp(),
         "raw memory seeded for web search pollution",
         "rollout summary seeded for web search pollution",
@@ -264,11 +264,11 @@ async fn web_search_pollution_moves_selected_thread_into_removed_phase2_inputs()
         "expected seeded thread to be added before pollution: {first_phase2_prompt}"
     );
     assert!(
-        first_phase2_prompt.contains(&format!("- [added] thread_id={thread_id},")),
+        first_phase2_prompt.contains(&format!("- [added] process_id={process_id},")),
         "expected selected thread in first phase2 prompt: {first_phase2_prompt}"
     );
 
-    wait_for_phase2_success(db.as_ref(), thread_id).await?;
+    wait_for_phase2_success(db.as_ref(), process_id).await?;
 
     resumed
         .submit_turn("search the web for weather seattle")
@@ -277,13 +277,13 @@ async fn web_search_pollution_moves_selected_thread_into_removed_phase2_inputs()
         {
             let deadline = Instant::now() + Duration::from_secs(10);
             loop {
-                let memory_mode = db.get_thread_memory_mode(thread_id).await?;
+                let memory_mode = db.get_process_memory_mode(process_id).await?;
                 if memory_mode.as_deref() == Some("polluted") {
                     break memory_mode;
                 }
                 assert!(
                     Instant::now() < deadline,
-                    "timed out waiting for polluted memory mode for {thread_id}"
+                    "timed out waiting for polluted memory mode for {process_id}"
                 );
                 tokio::time::sleep(Duration::from_millis(50)).await;
             }
@@ -297,9 +297,9 @@ async fn web_search_pollution_moves_selected_thread_into_removed_phase2_inputs()
         loop {
             let selection = db.get_phase2_input_selection(1, 30).await?;
             if selection.selected.is_empty()
-                && selection.retained_thread_ids.is_empty()
+                && selection.retained_process_ids.is_empty()
                 && selection.removed.len() == 1
-                && selection.removed[0].thread_id == thread_id
+                && selection.removed[0].process_id == process_id
             {
                 break selection;
             }
@@ -313,9 +313,9 @@ async fn web_search_pollution_moves_selected_thread_into_removed_phase2_inputs()
     };
     assert_eq!(responses.requests().len(), 2);
     assert!(selection.selected.is_empty());
-    assert_eq!(selection.retained_thread_ids, Vec::<ThreadId>::new());
+    assert_eq!(selection.retained_process_ids, Vec::<ProcessId>::new());
     assert_eq!(selection.removed.len(), 1);
-    assert_eq!(selection.removed[0].thread_id, thread_id);
+    assert_eq!(selection.removed[0].process_id, process_id);
 
     shutdown_test_codex(&resumed).await?;
     Ok(())
@@ -351,11 +351,11 @@ async fn seed_stage1_output(
     raw_memory: &str,
     rollout_summary: &str,
     rollout_slug: &str,
-) -> Result<ThreadId> {
-    let thread_id = ThreadId::new();
-    let mut metadata_builder = chaos_proc::ThreadMetadataBuilder::new(
-        thread_id,
-        codex_home.join(format!("rollout-{thread_id}.jsonl")),
+) -> Result<ProcessId> {
+    let process_id = ProcessId::new();
+    let mut metadata_builder = chaos_proc::ProcessMetadataBuilder::new(
+        process_id,
+        codex_home.join(format!("rollout-{process_id}.jsonl")),
         updated_at,
         SessionSource::Cli,
     );
@@ -363,11 +363,11 @@ async fn seed_stage1_output(
     metadata_builder.model_provider = Some("test-provider".to_string());
     metadata_builder.git_branch = Some(format!("branch-{rollout_slug}"));
     let metadata = metadata_builder.build("test-provider");
-    db.upsert_thread(&metadata).await?;
+    db.upsert_process(&metadata).await?;
 
     seed_stage1_output_for_existing_thread(
         db,
-        thread_id,
+        process_id,
         updated_at.timestamp(),
         raw_memory,
         rollout_summary,
@@ -375,7 +375,7 @@ async fn seed_stage1_output(
     )
     .await?;
 
-    Ok(thread_id)
+    Ok(process_id)
 }
 
 async fn wait_for_single_request(mock: &ResponseMock) -> ResponsesRequest {
@@ -408,14 +408,14 @@ fn phase2_prompt_text(request: &ResponsesRequest) -> String {
 
 async fn wait_for_phase2_success(
     db: &chaos_proc::StateRuntime,
-    expected_thread_id: ThreadId,
+    expected_process_id: ProcessId,
 ) -> Result<()> {
     let deadline = Instant::now() + Duration::from_secs(10);
     loop {
         let selection = db.get_phase2_input_selection(1, 30).await?;
         if selection.selected.len() == 1
-            && selection.selected[0].thread_id == expected_thread_id
-            && selection.retained_thread_ids == vec![expected_thread_id]
+            && selection.selected[0].process_id == expected_process_id
+            && selection.retained_process_ids == vec![expected_process_id]
             && selection.removed.is_empty()
         {
             return Ok(());
@@ -423,7 +423,7 @@ async fn wait_for_phase2_success(
 
         assert!(
             Instant::now() < deadline,
-            "timed out waiting for phase2 success for {expected_thread_id}"
+            "timed out waiting for phase2 success for {expected_process_id}"
         );
         tokio::time::sleep(Duration::from_millis(50)).await;
     }
@@ -431,15 +431,15 @@ async fn wait_for_phase2_success(
 
 async fn seed_stage1_output_for_existing_thread(
     db: &chaos_proc::StateRuntime,
-    thread_id: ThreadId,
+    process_id: ProcessId,
     updated_at: i64,
     raw_memory: &str,
     rollout_summary: &str,
     rollout_slug: Option<&str>,
 ) -> Result<()> {
-    let owner = ThreadId::new();
+    let owner = ProcessId::new();
     let claim = db
-        .try_claim_stage1_job(thread_id, owner, updated_at, 3_600, 64)
+        .try_claim_stage1_job(process_id, owner, updated_at, 3_600, 64)
         .await?;
     let ownership_token = match claim {
         chaos_proc::Stage1JobClaimOutcome::Claimed { ownership_token } => ownership_token,
@@ -448,7 +448,7 @@ async fn seed_stage1_output_for_existing_thread(
 
     assert!(
         db.mark_stage1_job_succeeded(
-            thread_id,
+            process_id,
             &ownership_token,
             updated_at,
             raw_memory,

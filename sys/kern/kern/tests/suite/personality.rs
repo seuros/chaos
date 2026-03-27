@@ -686,7 +686,7 @@ async fn remote_model_friendly_personality_instructions_with_feature() -> anyhow
         });
     let test = builder.build(&server).await?;
 
-    wait_for_model_available(&test.thread_manager.get_models_manager(), remote_slug).await;
+    wait_for_model_available(&test.process_table.get_models_manager(), remote_slug).await;
 
     test.codex
         .submit(Op::UserTurn {
@@ -805,7 +805,7 @@ async fn user_turn_personality_remote_model_template_includes_update_message() -
         });
     let test = builder.build(&server).await?;
 
-    wait_for_model_available(&test.thread_manager.get_models_manager(), remote_slug).await;
+    wait_for_model_available(&test.process_table.get_models_manager(), remote_slug).await;
 
     test.codex
         .submit(Op::UserTurn {

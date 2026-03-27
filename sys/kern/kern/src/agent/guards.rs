@@ -1,6 +1,6 @@
 use crate::error::CodexErr;
 use crate::error::Result;
-use chaos_ipc::ThreadId;
+use chaos_ipc::ProcessId;
 use chaos_ipc::protocol::SessionSource;
 use chaos_ipc::protocol::SubAgentSource;
 use rand::prelude::IndexedRandom;
@@ -25,8 +25,8 @@ pub(crate) struct Guards {
 
 #[derive(Default)]
 struct ActiveAgents {
-    threads_set: HashSet<ThreadId>,
-    thread_agent_nicknames: HashMap<ThreadId, String>,
+    threads_set: HashSet<ProcessId>,
+    process_agent_nicknames: HashMap<ProcessId, String>,
     used_agent_nicknames: HashSet<String>,
     nickname_reset_count: usize,
 }
@@ -52,17 +52,17 @@ fn format_agent_nickname(name: &str, nickname_reset_count: usize) -> String {
 
 fn session_depth(session_source: &SessionSource) -> i32 {
     match session_source {
-        SessionSource::SubAgent(SubAgentSource::ThreadSpawn { depth, .. }) => *depth,
+        SessionSource::SubAgent(SubAgentSource::ProcessSpawn { depth, .. }) => *depth,
         SessionSource::SubAgent(_) => 0,
         _ => 0,
     }
 }
 
-pub(crate) fn next_thread_spawn_depth(session_source: &SessionSource) -> i32 {
+pub(crate) fn next_process_spawn_depth(session_source: &SessionSource) -> i32 {
     session_depth(session_source).saturating_add(1)
 }
 
-pub(crate) fn exceeds_thread_spawn_depth_limit(depth: i32, max_depth: i32) -> bool {
+pub(crate) fn exceeds_process_spawn_depth_limit(depth: i32, max_depth: i32) -> bool {
     depth > max_depth
 }
 
@@ -85,14 +85,14 @@ impl Guards {
         })
     }
 
-    pub(crate) fn release_spawned_thread(&self, thread_id: ThreadId) {
+    pub(crate) fn release_spawned_thread(&self, process_id: ProcessId) {
         let removed = {
             let mut active_agents = self
                 .active_agents
                 .lock()
                 .unwrap_or_else(std::sync::PoisonError::into_inner);
-            let removed = active_agents.threads_set.remove(&thread_id);
-            active_agents.thread_agent_nicknames.remove(&thread_id);
+            let removed = active_agents.threads_set.remove(&process_id);
+            active_agents.process_agent_nicknames.remove(&process_id);
             removed
         };
         if removed {
@@ -100,19 +100,19 @@ impl Guards {
         }
     }
 
-    fn register_spawned_thread(&self, thread_id: ThreadId, agent_nickname: Option<String>) {
+    fn register_spawned_thread(&self, process_id: ProcessId, agent_nickname: Option<String>) {
         let mut active_agents = self
             .active_agents
             .lock()
             .unwrap_or_else(std::sync::PoisonError::into_inner);
-        active_agents.threads_set.insert(thread_id);
+        active_agents.threads_set.insert(process_id);
         if let Some(agent_nickname) = agent_nickname {
             active_agents
                 .used_agent_nicknames
                 .insert(agent_nickname.clone());
             active_agents
-                .thread_agent_nicknames
-                .insert(thread_id, agent_nickname);
+                .process_agent_nicknames
+                .insert(process_id, agent_nickname);
         }
     }
 
@@ -201,18 +201,18 @@ impl SpawnReservation {
         Ok(agent_nickname)
     }
 
-    pub(crate) fn commit(self, thread_id: ThreadId) {
-        self.commit_with_agent_nickname(thread_id, /*agent_nickname*/ None);
+    pub(crate) fn commit(self, process_id: ProcessId) {
+        self.commit_with_agent_nickname(process_id, /*agent_nickname*/ None);
     }
 
     pub(crate) fn commit_with_agent_nickname(
         mut self,
-        thread_id: ThreadId,
+        process_id: ProcessId,
         agent_nickname: Option<String>,
     ) {
         let agent_nickname = self.reserved_agent_nickname.take().or(agent_nickname);
         self.state
-            .register_spawned_thread(thread_id, agent_nickname);
+            .register_spawned_thread(process_id, agent_nickname);
         self.active = false;
     }
 }

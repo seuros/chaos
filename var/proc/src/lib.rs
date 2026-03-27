@@ -23,7 +23,7 @@ pub use runtime::StateRuntime;
 ///
 /// Most consumers should prefer [`StateRuntime`].
 pub use extract::apply_rollout_item;
-pub use extract::rollout_item_affects_thread_metadata;
+pub use extract::rollout_item_affects_process_metadata;
 pub use model::AgentJob;
 pub use model::AgentJobCreateParams;
 pub use model::AgentJobItem;
@@ -36,15 +36,15 @@ pub use model::BackfillState;
 pub use model::BackfillStats;
 pub use model::BackfillStatus;
 pub use model::ExtractionOutcome;
+pub use model::ProcessMetadata;
+pub use model::ProcessMetadataBuilder;
+pub use model::ProcessesPage;
 pub use model::SortKey;
 pub use model::Stage1JobClaim;
 pub use model::Stage1JobClaimOutcome;
 pub use model::Stage1Output;
 pub use model::Stage1OutputRef;
 pub use model::Stage1StartupClaimParams;
-pub use model::ThreadMetadata;
-pub use model::ThreadMetadataBuilder;
-pub use model::ThreadsPage;
 pub use runtime::logs_db_filename;
 pub use runtime::logs_db_path;
 pub use runtime::state_db_filename;

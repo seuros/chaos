@@ -157,7 +157,7 @@ async fn approval_elicitation_request_uses_message_override_and_preserves_tool_p
     assert_eq!(
         request,
         McpServerElicitationRequestParams {
-            thread_id: session.conversation_id.to_string(),
+            process_id: session.conversation_id.to_string(),
             turn_id: Some(turn_context.sub_id),
             server_name: CODEX_APPS_MCP_SERVER_NAME.to_string(),
             request: McpServerElicitationRequest::Form {

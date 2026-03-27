@@ -17,24 +17,24 @@ fn session_depth_defaults_to_zero_for_root_sources() {
 }
 
 #[test]
-fn thread_spawn_depth_increments_and_enforces_limit() {
-    let session_source = SessionSource::SubAgent(SubAgentSource::ThreadSpawn {
-        parent_thread_id: ThreadId::new(),
+fn process_spawn_depth_increments_and_enforces_limit() {
+    let session_source = SessionSource::SubAgent(SubAgentSource::ProcessSpawn {
+        parent_process_id: ProcessId::new(),
         depth: 1,
         agent_nickname: None,
         agent_role: None,
     });
-    let child_depth = next_thread_spawn_depth(&session_source);
+    let child_depth = next_process_spawn_depth(&session_source);
     assert_eq!(child_depth, 2);
-    assert!(exceeds_thread_spawn_depth_limit(child_depth, 1));
+    assert!(exceeds_process_spawn_depth_limit(child_depth, 1));
 }
 
 #[test]
-fn non_thread_spawn_subagents_default_to_depth_zero() {
+fn non_process_spawn_subagents_default_to_depth_zero() {
     let session_source = SessionSource::SubAgent(SubAgentSource::Review);
     assert_eq!(session_depth(&session_source), 0);
-    assert_eq!(next_thread_spawn_depth(&session_source), 1);
-    assert!(!exceeds_thread_spawn_depth_limit(1, 1));
+    assert_eq!(next_process_spawn_depth(&session_source), 1);
+    assert!(!exceeds_process_spawn_depth_limit(1, 1));
 }
 
 #[test]
@@ -51,8 +51,8 @@ fn reservation_drop_releases_slot() {
 fn commit_holds_slot_until_release() {
     let guards = Arc::new(Guards::default());
     let reservation = guards.reserve_spawn_slot(Some(1)).expect("reserve slot");
-    let thread_id = ThreadId::new();
-    reservation.commit(thread_id);
+    let process_id = ProcessId::new();
+    reservation.commit(process_id);
 
     let err = match guards.reserve_spawn_slot(Some(1)) {
         Ok(_) => panic!("limit should be enforced"),
@@ -63,7 +63,7 @@ fn commit_holds_slot_until_release() {
     };
     assert_eq!(max_threads, 1);
 
-    guards.release_spawned_thread(thread_id);
+    guards.release_spawned_thread(process_id);
     let reservation = guards
         .reserve_spawn_slot(Some(1))
         .expect("slot released after thread removal");
@@ -71,13 +71,13 @@ fn commit_holds_slot_until_release() {
 }
 
 #[test]
-fn release_ignores_unknown_thread_id() {
+fn release_ignores_unknown_process_id() {
     let guards = Arc::new(Guards::default());
     let reservation = guards.reserve_spawn_slot(Some(1)).expect("reserve slot");
-    let thread_id = ThreadId::new();
-    reservation.commit(thread_id);
+    let process_id = ProcessId::new();
+    reservation.commit(process_id);
 
-    guards.release_spawned_thread(ThreadId::new());
+    guards.release_spawned_thread(ProcessId::new());
 
     let err = match guards.reserve_spawn_slot(Some(1)) {
         Ok(_) => panic!("limit should still be enforced"),
@@ -88,7 +88,7 @@ fn release_ignores_unknown_thread_id() {
     };
     assert_eq!(max_threads, 1);
 
-    guards.release_spawned_thread(thread_id);
+    guards.release_spawned_thread(process_id);
     let reservation = guards
         .reserve_spawn_slot(Some(1))
         .expect("slot released after real thread removal");
@@ -96,16 +96,16 @@ fn release_ignores_unknown_thread_id() {
 }
 
 #[test]
-fn release_is_idempotent_for_registered_threads() {
+fn release_is_idempotent_for_registered_processes() {
     let guards = Arc::new(Guards::default());
     let reservation = guards.reserve_spawn_slot(Some(1)).expect("reserve slot");
-    let first_id = ThreadId::new();
+    let first_id = ProcessId::new();
     reservation.commit(first_id);
 
     guards.release_spawned_thread(first_id);
 
     let reservation = guards.reserve_spawn_slot(Some(1)).expect("slot reused");
-    let second_id = ThreadId::new();
+    let second_id = ProcessId::new();
     reservation.commit(second_id);
 
     guards.release_spawned_thread(first_id);
@@ -150,7 +150,7 @@ fn agent_nickname_resets_used_pool_when_exhausted() {
     let first_name = first
         .reserve_agent_nickname(&["alpha"])
         .expect("reserve first agent name");
-    let first_id = ThreadId::new();
+    let first_id = ProcessId::new();
     first.commit(first_id);
     assert_eq!(first_name, "alpha");
 
@@ -176,7 +176,7 @@ fn released_nickname_stays_used_until_pool_reset() {
     let first_name = first
         .reserve_agent_nickname(&["alpha"])
         .expect("reserve first agent name");
-    let first_id = ThreadId::new();
+    let first_id = ProcessId::new();
     first.commit(first_id);
     assert_eq!(first_name, "alpha");
 
@@ -189,7 +189,7 @@ fn released_nickname_stays_used_until_pool_reset() {
         .reserve_agent_nickname(&["alpha", "beta"])
         .expect("released name should still be marked used");
     assert_eq!(second_name, "beta");
-    let second_id = ThreadId::new();
+    let second_id = ProcessId::new();
     second.commit(second_id);
     guards.release_spawned_thread(second_id);
 
@@ -214,7 +214,7 @@ fn repeated_resets_advance_the_ordinal_suffix() {
     let first_name = first
         .reserve_agent_nickname(&["Plato"])
         .expect("reserve first agent name");
-    let first_id = ThreadId::new();
+    let first_id = ProcessId::new();
     first.commit(first_id);
     assert_eq!(first_name, "Plato");
     guards.release_spawned_thread(first_id);
@@ -225,7 +225,7 @@ fn repeated_resets_advance_the_ordinal_suffix() {
     let second_name = second
         .reserve_agent_nickname(&["Plato"])
         .expect("reserve second agent name");
-    let second_id = ThreadId::new();
+    let second_id = ProcessId::new();
     second.commit(second_id);
     assert_eq!(second_name, "Plato the 2nd");
     guards.release_spawned_thread(second_id);

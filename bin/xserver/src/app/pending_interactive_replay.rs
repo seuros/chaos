@@ -46,7 +46,7 @@ pub(super) struct PendingInteractiveReplayState {
 }
 
 impl PendingInteractiveReplayState {
-    pub(super) fn event_can_change_pending_thread_approvals(event: &Event) -> bool {
+    pub(super) fn event_can_change_pending_process_approvals(event: &Event) -> bool {
         matches!(
             &event.msg,
             EventMsg::ExecApprovalRequest(_)
@@ -294,7 +294,7 @@ impl PendingInteractiveReplayState {
         }
     }
 
-    pub(super) fn has_pending_thread_approvals(&self) -> bool {
+    pub(super) fn has_pending_process_approvals(&self) -> bool {
         !self.exec_approval_call_ids.is_empty()
             || !self.patch_approval_call_ids.is_empty()
             || !self.elicitation_requests.is_empty()
@@ -375,7 +375,7 @@ impl PendingInteractiveReplayState {
 
 #[cfg(test)]
 mod tests {
-    use super::super::ThreadEventStore;
+    use super::super::ProcessEventStore;
     use chaos_ipc::protocol::Event;
     use chaos_ipc::protocol::EventMsg;
     use chaos_ipc::protocol::Op;
@@ -385,8 +385,8 @@ mod tests {
     use std::path::PathBuf;
 
     #[test]
-    fn thread_event_snapshot_keeps_pending_request_user_input() {
-        let mut store = ThreadEventStore::new(8);
+    fn process_event_snapshot_keeps_pending_request_user_input() {
+        let mut store = ProcessEventStore::new(8);
         let request = Event {
             id: "ev-1".to_string(),
             msg: EventMsg::RequestUserInput(
@@ -409,8 +409,8 @@ mod tests {
     }
 
     #[test]
-    fn thread_event_snapshot_drops_resolved_request_user_input_after_user_answer() {
-        let mut store = ThreadEventStore::new(8);
+    fn process_event_snapshot_drops_resolved_request_user_input_after_user_answer() {
+        let mut store = ProcessEventStore::new(8);
         store.push_event(Event {
             id: "ev-1".to_string(),
             msg: EventMsg::RequestUserInput(
@@ -437,8 +437,8 @@ mod tests {
     }
 
     #[test]
-    fn thread_event_snapshot_drops_resolved_exec_approval_after_outbound_approval_id() {
-        let mut store = ThreadEventStore::new(8);
+    fn process_event_snapshot_drops_resolved_exec_approval_after_outbound_approval_id() {
+        let mut store = ProcessEventStore::new(8);
         store.push_event(Event {
             id: "ev-1".to_string(),
             msg: EventMsg::ExecApprovalRequest(
@@ -474,8 +474,8 @@ mod tests {
     }
 
     #[test]
-    fn thread_event_snapshot_drops_answered_request_user_input_for_multi_prompt_turn() {
-        let mut store = ThreadEventStore::new(8);
+    fn process_event_snapshot_drops_answered_request_user_input_for_multi_prompt_turn() {
+        let mut store = ProcessEventStore::new(8);
         store.push_event(Event {
             id: "ev-1".to_string(),
             msg: EventMsg::RequestUserInput(
@@ -514,8 +514,8 @@ mod tests {
     }
 
     #[test]
-    fn thread_event_snapshot_keeps_newer_request_user_input_pending_when_same_turn_has_queue() {
-        let mut store = ThreadEventStore::new(8);
+    fn process_event_snapshot_keeps_newer_request_user_input_pending_when_same_turn_has_queue() {
+        let mut store = ProcessEventStore::new(8);
         store.push_event(Event {
             id: "ev-1".to_string(),
             msg: EventMsg::RequestUserInput(
@@ -553,8 +553,8 @@ mod tests {
     }
 
     #[test]
-    fn thread_event_snapshot_drops_resolved_patch_approval_after_outbound_approval() {
-        let mut store = ThreadEventStore::new(8);
+    fn process_event_snapshot_drops_resolved_patch_approval_after_outbound_approval() {
+        let mut store = ProcessEventStore::new(8);
         store.push_event(Event {
             id: "ev-1".to_string(),
             msg: EventMsg::ApplyPatchApprovalRequest(
@@ -581,8 +581,8 @@ mod tests {
     }
 
     #[test]
-    fn thread_event_snapshot_drops_pending_approvals_when_turn_aborts() {
-        let mut store = ThreadEventStore::new(8);
+    fn process_event_snapshot_drops_pending_approvals_when_turn_aborts() {
+        let mut store = ProcessEventStore::new(8);
         store.push_event(Event {
             id: "ev-1".to_string(),
             msg: EventMsg::ExecApprovalRequest(
@@ -633,8 +633,8 @@ mod tests {
     }
 
     #[test]
-    fn thread_event_snapshot_drops_resolved_elicitation_after_outbound_resolution() {
-        let mut store = ThreadEventStore::new(8);
+    fn process_event_snapshot_drops_resolved_elicitation_after_outbound_resolution() {
+        let mut store = ProcessEventStore::new(8);
         let request_id = chaos_ipc::mcp::RequestId::String("request-1".to_string());
         store.push_event(Event {
             id: "ev-1".to_string(),
@@ -669,9 +669,9 @@ mod tests {
     }
 
     #[test]
-    fn thread_event_store_reports_pending_thread_approvals() {
-        let mut store = ThreadEventStore::new(8);
-        assert_eq!(store.has_pending_thread_approvals(), false);
+    fn process_event_store_reports_pending_process_approvals() {
+        let mut store = ProcessEventStore::new(8);
+        assert_eq!(store.has_pending_process_approvals(), false);
 
         store.push_event(Event {
             id: "ev-1".to_string(),
@@ -694,7 +694,7 @@ mod tests {
             ),
         });
 
-        assert_eq!(store.has_pending_thread_approvals(), true);
+        assert_eq!(store.has_pending_process_approvals(), true);
 
         store.note_outbound_op(&Op::ExecApproval {
             id: "call-1".to_string(),
@@ -702,12 +702,12 @@ mod tests {
             decision: chaos_ipc::protocol::ReviewDecision::Approved,
         });
 
-        assert_eq!(store.has_pending_thread_approvals(), false);
+        assert_eq!(store.has_pending_process_approvals(), false);
     }
 
     #[test]
-    fn request_user_input_does_not_count_as_pending_thread_approval() {
-        let mut store = ThreadEventStore::new(8);
+    fn request_user_input_does_not_count_as_pending_process_approval() {
+        let mut store = ProcessEventStore::new(8);
         store.push_event(Event {
             id: "ev-1".to_string(),
             msg: EventMsg::RequestUserInput(
@@ -719,6 +719,6 @@ mod tests {
             ),
         });
 
-        assert_eq!(store.has_pending_thread_approvals(), false);
+        assert_eq!(store.has_pending_process_approvals(), false);
     }
 }

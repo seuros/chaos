@@ -2,7 +2,7 @@
 
 use chaos_sysctl::CONFIG_TOML_FILE;
 use chaos_kern::CodexAuth;
-use chaos_kern::NewThread;
+use chaos_kern::NewProcess;
 use chaos_kern::features::Feature;
 use chaos_ipc::protocol::EventMsg;
 use chaos_ipc::protocol::InitialHistory;
@@ -31,18 +31,18 @@ async fn emits_warning_when_unstable_features_enabled_via_config() {
         toml! { features = { child_agents_md = true } }.into(),
     );
 
-    let thread_manager = chaos_kern::test_support::thread_manager_with_models_provider(
+    let process_table = chaos_kern::test_support::process_table_with_models_provider(
         CodexAuth::from_api_key("test"),
         config.model_provider.clone(),
     );
     let auth_manager =
         chaos_kern::test_support::auth_manager_from_auth(CodexAuth::from_api_key("test"));
 
-    let NewThread {
+    let NewProcess {
         thread: conversation,
         ..
-    } = thread_manager
-        .resume_thread_with_history(config, InitialHistory::New, auth_manager, false, None)
+    } = process_table
+        .resume_process_with_history(config, InitialHistory::New, auth_manager, false, None)
         .await
         .expect("spawn conversation");
 
@@ -72,18 +72,18 @@ async fn suppresses_warning_when_configured() {
         toml! { features = { child_agents_md = true } }.into(),
     );
 
-    let thread_manager = chaos_kern::test_support::thread_manager_with_models_provider(
+    let process_table = chaos_kern::test_support::process_table_with_models_provider(
         CodexAuth::from_api_key("test"),
         config.model_provider.clone(),
     );
     let auth_manager =
         chaos_kern::test_support::auth_manager_from_auth(CodexAuth::from_api_key("test"));
 
-    let NewThread {
+    let NewProcess {
         thread: conversation,
         ..
-    } = thread_manager
-        .resume_thread_with_history(config, InitialHistory::New, auth_manager, false, None)
+    } = process_table
+        .resume_process_with_history(config, InitialHistory::New, auth_manager, false, None)
         .await
         .expect("spawn conversation");
 

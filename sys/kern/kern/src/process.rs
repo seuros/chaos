@@ -29,7 +29,7 @@ use tokio::sync::watch;
 use crate::state_db::StateDbHandle;
 
 #[derive(Clone, Debug)]
-pub struct ThreadConfigSnapshot {
+pub struct ProcessConfigSnapshot {
     pub model: String,
     pub model_provider_id: String,
     pub service_tier: Option<ServiceTier>,
@@ -43,16 +43,16 @@ pub struct ThreadConfigSnapshot {
     pub session_source: SessionSource,
 }
 
-pub struct CodexThread {
+pub struct Process {
     pub(crate) codex: Codex,
     rollout_path: Option<PathBuf>,
     out_of_band_elicitation_count: Mutex<u64>,
     _watch_registration: WatchRegistration,
 }
 
-/// Conduit for the bidirectional stream of messages that compose a thread
-/// (formerly called a conversation) in Codex.
-impl CodexThread {
+/// Conduit for the bidirectional stream of messages that compose a process
+/// (formerly called a thread, and earlier a conversation) in Chaos.
+impl Process {
     pub(crate) fn new(
         codex: Codex,
         rollout_path: Option<PathBuf>,
@@ -155,8 +155,8 @@ impl CodexThread {
         self.codex.state_db()
     }
 
-    pub async fn config_snapshot(&self) -> ThreadConfigSnapshot {
-        self.codex.thread_config_snapshot().await
+    pub async fn config_snapshot(&self) -> ProcessConfigSnapshot {
+        self.codex.process_config_snapshot().await
     }
 
     pub fn enabled(&self, feature: Feature) -> bool {

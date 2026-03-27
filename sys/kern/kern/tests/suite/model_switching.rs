@@ -352,7 +352,7 @@ async fn model_change_from_image_to_text_strips_prior_image_content() -> Result<
             config.model = Some(image_model_slug.to_string());
         });
     let test = builder.build(&server).await?;
-    let models_manager = test.thread_manager.get_models_manager();
+    let models_manager = test.process_table.get_models_manager();
     let _ = models_manager
         .list_models(RefreshStrategy::OnlineIfUncached)
         .await;
@@ -483,7 +483,7 @@ async fn generated_image_is_replayed_for_image_capable_models() -> Result<()> {
             config.model = Some(image_model_slug.to_string());
         });
     let test = builder.build(&server).await?;
-    let models_manager = test.thread_manager.get_models_manager();
+    let models_manager = test.process_table.get_models_manager();
     let _ = models_manager
         .list_models(RefreshStrategy::OnlineIfUncached)
         .await;
@@ -610,7 +610,7 @@ async fn model_change_from_generated_image_to_text_preserves_prior_generated_ima
             config.model = Some(image_model_slug.to_string());
         });
     let test = builder.build(&server).await?;
-    let models_manager = test.thread_manager.get_models_manager();
+    let models_manager = test.process_table.get_models_manager();
     let _ = models_manager
         .list_models(RefreshStrategy::OnlineIfUncached)
         .await;
@@ -698,7 +698,7 @@ async fn model_change_from_generated_image_to_text_preserves_prior_generated_ima
 }
 
 #[tokio::test(flavor = "multi_thread", worker_threads = 2)]
-async fn thread_rollback_after_generated_image_drops_entire_image_turn_history() -> Result<()> {
+async fn process_rollback_after_generated_image_drops_entire_image_turn_history() -> Result<()> {
     skip_if_no_network!(Ok(()));
 
     let saved_path = std::env::temp_dir().join("ig_rollback.png");
@@ -739,7 +739,7 @@ async fn thread_rollback_after_generated_image_drops_entire_image_turn_history()
             config.model = Some(image_model_slug.to_string());
         });
     let test = builder.build(&server).await?;
-    let models_manager = test.thread_manager.get_models_manager();
+    let models_manager = test.process_table.get_models_manager();
     let _ = models_manager
         .list_models(RefreshStrategy::OnlineIfUncached)
         .await;
@@ -765,10 +765,10 @@ async fn thread_rollback_after_generated_image_drops_entire_image_turn_history()
     wait_for_event(&test.codex, |ev| matches!(ev, EventMsg::TurnComplete(_))).await;
 
     test.codex
-        .submit(Op::ThreadRollback { num_turns: 1 })
+        .submit(Op::ProcessRollback { num_turns: 1 })
         .await?;
     wait_for_event(&test.codex, |ev| {
-        matches!(ev, EventMsg::ThreadRolledBack(_))
+        matches!(ev, EventMsg::ProcessRolledBack(_))
     })
     .await;
 
@@ -907,7 +907,7 @@ async fn model_switch_to_smaller_model_updates_token_context_window() -> Result<
         });
     let test = builder.build(&server).await?;
 
-    let models_manager = test.thread_manager.get_models_manager();
+    let models_manager = test.process_table.get_models_manager();
     let available_models = models_manager.list_models(RefreshStrategy::Online).await;
     assert!(
         available_models

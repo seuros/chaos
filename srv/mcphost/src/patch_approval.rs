@@ -3,8 +3,8 @@ use std::path::PathBuf;
 use std::sync::Arc;
 
 use crate::outgoing_message::ErrorData;
-use chaos_kern::CodexThread;
-use chaos_ipc::ThreadId;
+use chaos_kern::Process;
+use chaos_ipc::ProcessId;
 use chaos_ipc::protocol::FileChange;
 use chaos_ipc::protocol::Op;
 use chaos_ipc::protocol::ReviewDecision;
@@ -30,8 +30,8 @@ pub struct PatchApprovalElicitRequestParams {
 
 #[derive(Debug, Deserialize, Serialize)]
 pub struct PatchApprovalElicitRequestMeta {
-    #[serde(rename = "threadId")]
-    pub thread_id: ThreadId,
+    #[serde(rename = "processId")]
+    pub process_id: ProcessId,
     pub codex_elicitation: String,
     pub codex_mcp_tool_call_id: String,
     pub codex_event_id: String,
@@ -52,11 +52,11 @@ pub(crate) async fn handle_patch_approval_request(
     grant_root: Option<PathBuf>,
     changes: HashMap<PathBuf, FileChange>,
     outgoing: Arc<OutgoingMessageSender>,
-    codex: Arc<CodexThread>,
+    codex: Arc<Process>,
     request_id: RequestId,
     tool_call_id: String,
     event_id: String,
-    thread_id: ThreadId,
+    process_id: ProcessId,
 ) {
     let approval_id = call_id.clone();
     let mut message_lines = Vec::new();
@@ -69,7 +69,7 @@ pub(crate) async fn handle_patch_approval_request(
         message: message_lines.join("\n"),
         requested_schema: json!({"type":"object","properties":{}}),
         meta: PatchApprovalElicitRequestMeta {
-            thread_id,
+            process_id,
             codex_elicitation: "patch-approval".to_string(),
             codex_mcp_tool_call_id: tool_call_id.clone(),
             codex_event_id: event_id.clone(),
@@ -116,7 +116,7 @@ pub(crate) async fn handle_patch_approval_request(
 pub(crate) async fn on_patch_approval_response(
     approval_id: String,
     receiver: tokio::sync::oneshot::Receiver<Result<serde_json::Value, ErrorData>>,
-    codex: Arc<CodexThread>,
+    codex: Arc<Process>,
 ) {
     let response = receiver.await;
     let value = match response {
@@ -148,7 +148,7 @@ pub(crate) async fn on_patch_approval_response(
 async fn submit_patch_approval(
     approval_id: String,
     decision: ReviewDecision,
-    codex: Arc<CodexThread>,
+    codex: Arc<Process>,
 ) {
     if let Err(err) = codex
         .submit(Op::PatchApproval {

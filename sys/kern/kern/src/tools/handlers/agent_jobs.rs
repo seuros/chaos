@@ -1,5 +1,5 @@
-use crate::agent::exceeds_thread_spawn_depth_limit;
-use crate::agent::next_thread_spawn_depth;
+use crate::agent::exceeds_process_spawn_depth_limit;
+use crate::agent::next_process_spawn_depth;
 use crate::agent::status::is_final;
 use crate::codex::Session;
 use crate::codex::TurnContext;
@@ -14,7 +14,7 @@ use crate::tools::handlers::parse_arguments;
 use crate::tools::registry::ToolHandler;
 use crate::tools::registry::ToolKind;
 use async_trait::async_trait;
-use chaos_ipc::ThreadId;
+use chaos_ipc::ProcessId;
 use chaos_ipc::protocol::SessionSource;
 use chaos_ipc::protocol::SubAgentSource;
 use chaos_ipc::user_input::UserInput;
@@ -475,12 +475,12 @@ mod report_agent_job_result {
             ));
         }
         let db = required_state_db(&session)?;
-        let reporting_thread_id = session.conversation_id.to_string();
+        let reporting_process_id = session.conversation_id.to_string();
         let accepted = db
             .report_agent_job_item_result(
                 args.job_id.as_str(),
                 args.item_id.as_str(),
-                reporting_thread_id.as_str(),
+                reporting_process_id.as_str(),
                 &args.result,
             )
             .await
@@ -521,9 +521,9 @@ async fn build_runner_options(
     requested_concurrency: Option<usize>,
 ) -> Result<JobRunnerOptions, FunctionCallError> {
     let session_source = turn.session_source.clone();
-    let child_depth = next_thread_spawn_depth(&session_source);
+    let child_depth = next_process_spawn_depth(&session_source);
     let max_depth = turn.config.agent_max_depth;
-    if exceeds_thread_spawn_depth_limit(child_depth, max_depth) {
+    if exceeds_process_spawn_depth_limit(child_depth, max_depth) {
         return Err(FunctionCallError::RespondToModel(
             "agent depth limit reached; this session cannot spawn more subagents".to_string(),
         ));
@@ -572,7 +572,7 @@ async fn run_agent_job_loop(
         .await?
         .ok_or_else(|| anyhow::anyhow!("agent job {job_id} was not found"))?;
     let runtime_timeout = job_runtime_timeout(&job);
-    let mut active_items: HashMap<ThreadId, ActiveJobItem> = HashMap::new();
+    let mut active_items: HashMap<ProcessId, ActiveJobItem> = HashMap::new();
     let mut progress_emitter = JobProgressEmitter::new();
     recover_running_items(
         session.clone(),
@@ -622,7 +622,7 @@ async fn run_agent_job_loop(
                     text: prompt,
                     text_elements: Vec::new(),
                 }];
-                let thread_id = match session
+                let process_id = match session
                     .services
                     .agent_control
                     .spawn_agent(
@@ -634,7 +634,7 @@ async fn run_agent_job_loop(
                     )
                     .await
                 {
-                    Ok(thread_id) => thread_id,
+                    Ok(process_id) => process_id,
                     Err(CodexErr::AgentLimitReached { .. }) => {
                         db.mark_agent_job_item_pending(
                             job_id.as_str(),
@@ -660,19 +660,19 @@ async fn run_agent_job_loop(
                     .mark_agent_job_item_running_with_thread(
                         job_id.as_str(),
                         item.item_id.as_str(),
-                        thread_id.to_string().as_str(),
+                        process_id.to_string().as_str(),
                     )
                     .await?;
                 if !assigned {
                     let _ = session
                         .services
                         .agent_control
-                        .shutdown_agent(thread_id)
+                        .shutdown_agent(process_id)
                         .await;
                     continue;
                 }
                 active_items.insert(
-                    thread_id,
+                    process_id,
                     ActiveJobItem {
                         item_id: item.item_id.clone(),
                         started_at: Instant::now(),
@@ -713,16 +713,16 @@ async fn run_agent_job_loop(
             continue;
         }
 
-        for (thread_id, item_id) in finished {
+        for (process_id, item_id) in finished {
             finalize_finished_item(
                 session.clone(),
                 db.clone(),
                 job_id.as_str(),
                 item_id.as_str(),
-                thread_id,
+                process_id,
             )
             .await?;
-            active_items.remove(&thread_id);
+            active_items.remove(&process_id);
             let progress = db.get_agent_job_progress(job_id.as_str()).await?;
             progress_emitter
                 .maybe_emit(
@@ -800,7 +800,7 @@ async fn recover_running_items(
     session: Arc<Session>,
     db: Arc<chaos_proc::StateRuntime>,
     job_id: &str,
-    active_items: &mut HashMap<ThreadId, ActiveJobItem>,
+    active_items: &mut HashMap<ProcessId, ActiveJobItem>,
     runtime_timeout: Duration,
 ) -> anyhow::Result<()> {
     let running_items = db
@@ -815,30 +815,30 @@ async fn recover_running_items(
             let error_message = format!("worker exceeded max runtime of {runtime_timeout:?}");
             db.mark_agent_job_item_failed(job_id, item.item_id.as_str(), error_message.as_str())
                 .await?;
-            if let Some(assigned_thread_id) = item.assigned_thread_id.as_ref()
-                && let Ok(thread_id) = ThreadId::from_string(assigned_thread_id.as_str())
+            if let Some(assigned_process_id) = item.assigned_process_id.as_ref()
+                && let Ok(process_id) = ProcessId::from_string(assigned_process_id.as_str())
             {
                 let _ = session
                     .services
                     .agent_control
-                    .shutdown_agent(thread_id)
+                    .shutdown_agent(process_id)
                     .await;
             }
             continue;
         }
-        let Some(assigned_thread_id) = item.assigned_thread_id.clone() else {
+        let Some(assigned_process_id) = item.assigned_process_id.clone() else {
             db.mark_agent_job_item_failed(
                 job_id,
                 item.item_id.as_str(),
-                "running item is missing assigned_thread_id",
+                "running item is missing assigned_process_id",
             )
             .await?;
             continue;
         };
-        let thread_id = match ThreadId::from_string(assigned_thread_id.as_str()) {
-            Ok(thread_id) => thread_id,
+        let process_id = match ProcessId::from_string(assigned_process_id.as_str()) {
+            Ok(process_id) => process_id,
             Err(err) => {
-                let error_message = format!("invalid assigned_thread_id: {err:?}");
+                let error_message = format!("invalid assigned_process_id: {err:?}");
                 db.mark_agent_job_item_failed(
                     job_id,
                     item.item_id.as_str(),
@@ -848,18 +848,18 @@ async fn recover_running_items(
                 continue;
             }
         };
-        if is_final(&session.services.agent_control.get_status(thread_id).await) {
+        if is_final(&session.services.agent_control.get_status(process_id).await) {
             finalize_finished_item(
                 session.clone(),
                 db.clone(),
                 job_id,
                 item.item_id.as_str(),
-                thread_id,
+                process_id,
             )
             .await?;
         } else {
             active_items.insert(
-                thread_id,
+                process_id,
                 ActiveJobItem {
                     item_id: item.item_id.clone(),
                     started_at: started_at_from_item(&item),
@@ -872,12 +872,12 @@ async fn recover_running_items(
 
 async fn find_finished_threads(
     session: Arc<Session>,
-    active_items: &HashMap<ThreadId, ActiveJobItem>,
-) -> Vec<(ThreadId, String)> {
+    active_items: &HashMap<ProcessId, ActiveJobItem>,
+) -> Vec<(ProcessId, String)> {
     let mut finished = Vec::new();
-    for (thread_id, item) in active_items {
-        if is_final(&session.services.agent_control.get_status(*thread_id).await) {
-            finished.push((*thread_id, item.item_id.clone()));
+    for (process_id, item) in active_items {
+        if is_final(&session.services.agent_control.get_status(*process_id).await) {
+            finished.push((*process_id, item.item_id.clone()));
         }
     }
     finished
@@ -887,28 +887,28 @@ async fn reap_stale_active_items(
     session: Arc<Session>,
     db: Arc<chaos_proc::StateRuntime>,
     job_id: &str,
-    active_items: &mut HashMap<ThreadId, ActiveJobItem>,
+    active_items: &mut HashMap<ProcessId, ActiveJobItem>,
     runtime_timeout: Duration,
 ) -> anyhow::Result<bool> {
     let mut stale = Vec::new();
-    for (thread_id, item) in active_items.iter() {
+    for (process_id, item) in active_items.iter() {
         if item.started_at.elapsed() >= runtime_timeout {
-            stale.push((*thread_id, item.item_id.clone()));
+            stale.push((*process_id, item.item_id.clone()));
         }
     }
     if stale.is_empty() {
         return Ok(false);
     }
-    for (thread_id, item_id) in stale {
+    for (process_id, item_id) in stale {
         let error_message = format!("worker exceeded max runtime of {runtime_timeout:?}");
         db.mark_agent_job_item_failed(job_id, item_id.as_str(), error_message.as_str())
             .await?;
         let _ = session
             .services
             .agent_control
-            .shutdown_agent(thread_id)
+            .shutdown_agent(process_id)
             .await;
-        active_items.remove(&thread_id);
+        active_items.remove(&process_id);
     }
     Ok(true)
 }
@@ -918,7 +918,7 @@ async fn finalize_finished_item(
     db: Arc<chaos_proc::StateRuntime>,
     job_id: &str,
     item_id: &str,
-    thread_id: ThreadId,
+    process_id: ProcessId,
 ) -> anyhow::Result<()> {
     let mut item = db
         .get_agent_job_item(job_id, item_id)
@@ -955,7 +955,7 @@ async fn finalize_finished_item(
     let _ = session
         .services
         .agent_control
-        .shutdown_agent(thread_id)
+        .shutdown_agent(process_id)
         .await;
     Ok(())
 }

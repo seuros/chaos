@@ -10,9 +10,9 @@ pub use app::ExitReason;
 use chaos_kern::AuthManager;
 use chaos_kern::CodexAuth;
 use chaos_kern::INTERACTIVE_SESSION_SOURCES;
+use chaos_kern::ProcessTable;
 use chaos_kern::RolloutRecorder;
-use chaos_kern::ThreadManager;
-use chaos_kern::ThreadSortKey;
+use chaos_kern::ProcessSortKey;
 use chaos_kern::auth::AuthMode;
 use chaos_kern::auth::enforce_login_restrictions;
 use chaos_kern::check_execpolicy_for_warnings;
@@ -28,15 +28,15 @@ use chaos_kern::config_loader::LoaderOverrides;
 use chaos_kern::config_loader::format_config_error_with_source;
 use chaos_kern::default_client::set_default_client_residency_requirement;
 use chaos_kern::features::Feature;
-use chaos_kern::find_thread_path_by_id_str;
-use chaos_kern::find_thread_path_by_name_str;
+use chaos_kern::find_process_path_by_id_str;
+use chaos_kern::find_process_path_by_name_str;
 use chaos_kern::format_exec_policy_error_with_source;
 use chaos_kern::models_manager::collaboration_mode_presets::CollaborationModesConfig;
 use chaos_kern::path_utils;
 use chaos_kern::read_session_meta_line;
 use chaos_kern::state_db::get_state_db;
 use chaos_kern::terminal::Multiplexer;
-use chaos_ipc::ThreadId;
+use chaos_ipc::ProcessId;
 use chaos_ipc::config_types::AltScreenMode;
 use chaos_ipc::config_types::SandboxMode;
 use chaos_ipc::protocol::AskForApproval;
@@ -130,7 +130,7 @@ pub use public_widgets::composer_input::ComposerInput;
 
 struct CoreManagers {
     auth_manager: Arc<AuthManager>,
-    thread_manager: Arc<ThreadManager>,
+    process_table: Arc<ProcessTable>,
 }
 
 fn create_core_managers(config: &Config) -> CoreManagers {
@@ -139,7 +139,7 @@ fn create_core_managers(config: &Config) -> CoreManagers {
         false, // enable_codex_api_key_env
         config.cli_auth_credentials_store_mode,
     );
-    let thread_manager = Arc::new(ThreadManager::new(
+    let process_table = Arc::new(ProcessTable::new(
         config,
         auth_manager.clone(),
         chaos_ipc::protocol::SessionSource::Cli,
@@ -151,7 +151,7 @@ fn create_core_managers(config: &Config) -> CoreManagers {
     ));
     CoreManagers {
         auth_manager,
-        thread_manager,
+        process_table,
     }
 }
 
@@ -492,8 +492,8 @@ async fn run_ratatui_app(
             let _ = tui.terminal.clear();
             return Ok(AppExitInfo {
                 token_usage: chaos_ipc::protocol::TokenUsage::default(),
-                thread_id: None,
-                thread_name: None,
+                process_id: None,
+                process_name: None,
                 exit_reason: ExitReason::UserRequested,
             });
         }
@@ -528,8 +528,8 @@ async fn run_ratatui_app(
         let _ = tui.terminal.clear();
         Ok(AppExitInfo {
             token_usage: chaos_ipc::protocol::TokenUsage::default(),
-            thread_id: None,
-            thread_name: None,
+            process_id: None,
+            process_name: None,
             exit_reason: ExitReason::Fatal(format!(
                 "No saved session found with ID {id_str}. Run `codex {action}` without an ID to choose from existing sessions."
             )),
@@ -541,33 +541,33 @@ async fn run_ratatui_app(
         if let Some(id_str) = cli.fork_session_id.as_deref() {
             let is_uuid = Uuid::parse_str(id_str).is_ok();
             let path = if is_uuid {
-                find_thread_path_by_id_str(&config.codex_home, id_str).await?
+                find_process_path_by_id_str(&config.codex_home, id_str).await?
             } else {
-                find_thread_path_by_name_str(&config.codex_home, id_str).await?
+                find_process_path_by_name_str(&config.codex_home, id_str).await?
             };
             match path {
                 Some(path) => {
-                    let thread_id =
-                        match resolve_session_thread_id(path.as_path(), is_uuid.then_some(id_str))
+                    let process_id =
+                        match resolve_session_process_id(path.as_path(), is_uuid.then_some(id_str))
                             .await
                         {
-                            Some(thread_id) => thread_id,
+                            Some(process_id) => process_id,
                             None => return missing_session_exit(id_str, "fork"),
                         };
                     resume_picker::SessionSelection::Fork(resume_picker::SessionTarget {
                         path,
-                        thread_id,
+                        process_id: process_id,
                     })
                 }
                 None => return missing_session_exit(id_str, "fork"),
             }
         } else if cli.fork_last {
             let provider_filter = vec![config.model_provider_id.clone()];
-            match RolloutRecorder::list_threads(
+            match RolloutRecorder::list_processes(
                 &config,
                 /*page_size*/ 1,
                 /*cursor*/ None,
-                ThreadSortKey::UpdatedAt,
+                ProcessSortKey::UpdatedAt,
                 INTERACTIVE_SESSION_SOURCES,
                 Some(provider_filter.as_slice()),
                 &config.model_provider_id,
@@ -577,16 +577,16 @@ async fn run_ratatui_app(
             {
                 Ok(page) => match page.items.first() {
                     Some(item) => {
-                        match resolve_session_thread_id(
+                        match resolve_session_process_id(
                             item.path.as_path(),
                             /*id_str_if_uuid*/ None,
                         )
                         .await
                         {
-                            Some(thread_id) => resume_picker::SessionSelection::Fork(
+                            Some(process_id) => resume_picker::SessionSelection::Fork(
                                 resume_picker::SessionTarget {
                                     path: item.path.clone(),
-                                    thread_id,
+                                    process_id: process_id,
                                 },
                             ),
                             None => {
@@ -599,8 +599,8 @@ async fn run_ratatui_app(
                                 let _ = tui.terminal.clear();
                                 return Ok(AppExitInfo {
                                     token_usage: chaos_ipc::protocol::TokenUsage::default(),
-                                    thread_id: None,
-                                    thread_name: None,
+                                    process_id: None,
+                                    process_name: None,
                                     exit_reason: ExitReason::Fatal(format!(
                                         "Found latest saved session at {rollout_path}, but failed to read its metadata. Run `codex fork` to choose from existing sessions."
                                     )),
@@ -619,8 +619,8 @@ async fn run_ratatui_app(
                     session_log::log_session_end();
                     return Ok(AppExitInfo {
                         token_usage: chaos_ipc::protocol::TokenUsage::default(),
-                        thread_id: None,
-                        thread_name: None,
+                        process_id: None,
+                        process_name: None,
                         exit_reason: ExitReason::UserRequested,
                     });
                 }
@@ -632,24 +632,24 @@ async fn run_ratatui_app(
     } else if let Some(id_str) = cli.resume_session_id.as_deref() {
         let is_uuid = Uuid::parse_str(id_str).is_ok();
         let path = if is_uuid {
-            find_thread_path_by_id_str(&config.codex_home, id_str).await?
+            find_process_path_by_id_str(&config.codex_home, id_str).await?
         } else {
-            find_thread_path_by_name_str(&config.codex_home, id_str).await?
+            find_process_path_by_name_str(&config.codex_home, id_str).await?
         };
         match path {
             Some(path) => {
-                let thread_id = match resolve_session_thread_id(
+                let process_id = match resolve_session_process_id(
                     path.as_path(),
                     is_uuid.then_some(id_str),
                 )
                 .await
                 {
-                    Some(thread_id) => thread_id,
+                    Some(process_id) => process_id,
                     None => return missing_session_exit(id_str, "resume"),
                 };
                 resume_picker::SessionSelection::Resume(resume_picker::SessionTarget {
                     path,
-                    thread_id,
+                    process_id: process_id,
                 })
             }
             None => return missing_session_exit(id_str, "resume"),
@@ -661,11 +661,11 @@ async fn run_ratatui_app(
         } else {
             Some(config.cwd.as_path())
         };
-        match RolloutRecorder::find_latest_thread_path(
+        match RolloutRecorder::find_latest_process_path(
             &config,
             /*page_size*/ 1,
             /*cursor*/ None,
-            ThreadSortKey::UpdatedAt,
+            ProcessSortKey::UpdatedAt,
             INTERACTIVE_SESSION_SOURCES,
             Some(provider_filter.as_slice()),
             &config.model_provider_id,
@@ -674,11 +674,11 @@ async fn run_ratatui_app(
         .await
         {
             Ok(Some(path)) => {
-                match resolve_session_thread_id(path.as_path(), /*id_str_if_uuid*/ None).await {
-                    Some(thread_id) => {
+                match resolve_session_process_id(path.as_path(), /*id_str_if_uuid*/ None).await {
+                    Some(process_id) => {
                         resume_picker::SessionSelection::Resume(resume_picker::SessionTarget {
                             path,
-                            thread_id,
+                            process_id: process_id,
                         })
                     }
                     None => {
@@ -691,8 +691,8 @@ async fn run_ratatui_app(
                         let _ = tui.terminal.clear();
                         return Ok(AppExitInfo {
                             token_usage: chaos_ipc::protocol::TokenUsage::default(),
-                            thread_id: None,
-                            thread_name: None,
+                            process_id: None,
+                            process_name: None,
                             exit_reason: ExitReason::Fatal(format!(
                                 "Found latest saved session at {rollout_path}, but failed to read its metadata. Run `codex resume` to choose from existing sessions."
                             )),
@@ -709,8 +709,8 @@ async fn run_ratatui_app(
                 session_log::log_session_end();
                 return Ok(AppExitInfo {
                     token_usage: chaos_ipc::protocol::TokenUsage::default(),
-                    thread_id: None,
-                    thread_name: None,
+                    process_id: None,
+                    process_name: None,
                     exit_reason: ExitReason::UserRequested,
                 });
             }
@@ -737,7 +737,7 @@ async fn run_ratatui_app(
                 &mut tui,
                 &config,
                 &current_cwd,
-                target_session.thread_id,
+                target_session.process_id,
                 &target_session.path,
                 action,
                 allow_prompt,
@@ -750,8 +750,8 @@ async fn run_ratatui_app(
                     session_log::log_session_end();
                     return Ok(AppExitInfo {
                         token_usage: chaos_ipc::protocol::TokenUsage::default(),
-                        thread_id: None,
-                        thread_name: None,
+                        process_id: None,
+                        process_name: None,
                         exit_reason: ExitReason::UserRequested,
                     });
                 }
@@ -800,7 +800,7 @@ async fn run_ratatui_app(
     let app_result = App::run(
         &mut tui,
         managers.auth_manager,
-        managers.thread_manager,
+        managers.process_table,
         config,
         cli_kv_overrides.clone(),
         overrides.clone(),
@@ -820,12 +820,12 @@ async fn run_ratatui_app(
     app_result
 }
 
-pub(crate) async fn resolve_session_thread_id(
+pub(crate) async fn resolve_session_process_id(
     path: &Path,
     id_str_if_uuid: Option<&str>,
-) -> Option<ThreadId> {
+) -> Option<ProcessId> {
     match id_str_if_uuid {
-        Some(id_str) => ThreadId::from_string(id_str).ok(),
+        Some(id_str) => ProcessId::from_string(id_str).ok(),
         None => read_session_meta_line(path)
             .await
             .ok()
@@ -835,11 +835,11 @@ pub(crate) async fn resolve_session_thread_id(
 
 pub(crate) async fn read_session_cwd(
     config: &Config,
-    thread_id: ThreadId,
+    process_id: ProcessId,
     path: &Path,
 ) -> Option<PathBuf> {
     if let Some(state_db_ctx) = get_state_db(config).await
-        && let Ok(Some(metadata)) = state_db_ctx.get_thread(thread_id).await
+        && let Ok(Some(metadata)) = state_db_ctx.get_process(process_id).await
     {
         return Some(metadata.cwd);
     }
@@ -902,12 +902,12 @@ pub(crate) async fn resolve_cwd_for_resume_or_fork(
     tui: &mut Tui,
     config: &Config,
     current_cwd: &Path,
-    thread_id: ThreadId,
+    process_id: ProcessId,
     path: &Path,
     action: CwdPromptAction,
     allow_prompt: bool,
 ) -> color_eyre::Result<ResolveCwdOutcome> {
-    let Some(history_cwd) = read_session_cwd(config, thread_id, path).await else {
+    let Some(history_cwd) = read_session_cwd(config, process_id, path).await else {
         return Ok(ResolveCwdOutcome::Continue(None));
     };
     if allow_prompt && cwds_differ(current_cwd, &history_cwd) {
@@ -1095,8 +1095,8 @@ mod tests {
         );
         assert!(Arc::ptr_eq(&managers.auth_manager, &auth2));
 
-        // ThreadManager was created.
-        let _ = managers.thread_manager.get_models_manager();
+        // ProcessTable was created.
+        let _ = managers.process_table.get_models_manager();
         Ok(())
     }
 
@@ -1172,7 +1172,7 @@ mod tests {
         }
         std::fs::write(&rollout_path, text)?;
 
-        let cwd = read_session_cwd(&config, ThreadId::new(), &rollout_path)
+        let cwd = read_session_cwd(&config, ProcessId::new(), &rollout_path)
             .await
             .expect("expected cwd");
         assert_eq!(cwd, second);
@@ -1214,7 +1214,7 @@ mod tests {
         }
         std::fs::write(&rollout_path, text)?;
 
-        let session_cwd = read_session_cwd(&config, ThreadId::new(), &rollout_path)
+        let session_cwd = read_session_cwd(&config, ProcessId::new(), &rollout_path)
             .await
             .expect("expected cwd");
         assert_eq!(session_cwd, latest);
@@ -1343,7 +1343,7 @@ trust_level = "untrusted"
         );
         std::fs::write(&rollout_path, text)?;
 
-        let cwd = read_session_cwd(&config, ThreadId::new(), &rollout_path)
+        let cwd = read_session_cwd(&config, ProcessId::new(), &rollout_path)
             .await
             .expect("expected cwd");
         assert_eq!(cwd, session_cwd);
@@ -1351,7 +1351,7 @@ trust_level = "untrusted"
     }
 
     #[tokio::test]
-    async fn read_session_cwd_prefers_sqlite_when_thread_id_present() -> std::io::Result<()> {
+    async fn read_session_cwd_prefers_sqlite_when_process_id_present() -> std::io::Result<()> {
         let temp_dir = TempDir::new()?;
         let mut config = build_config(&temp_dir).await?;
         config
@@ -1359,7 +1359,7 @@ trust_level = "untrusted"
             .enable(Feature::Sqlite)
             .expect("test config should allow sqlite");
 
-        let thread_id = ThreadId::new();
+        let process_id = ProcessId::new();
         let rollout_cwd = temp_dir.path().join("rollout-cwd");
         let sqlite_cwd = temp_dir.path().join("sqlite-cwd");
         std::fs::create_dir_all(&rollout_cwd)?;
@@ -1389,20 +1389,23 @@ trust_level = "untrusted"
             .await
             .map_err(std::io::Error::other)?;
 
-        let mut builder = chaos_proc::ThreadMetadataBuilder::new(
-            thread_id,
+        let mut builder = chaos_proc::ProcessMetadataBuilder::new(
+            process_id,
             rollout_path.clone(),
-            chrono::Utc::now(),
+            chrono::Utc::now()
+                .to_rfc3339()
+                .parse()
+                .expect("timestamp"),
             SessionSource::Cli,
         );
         builder.cwd = sqlite_cwd.clone();
         let metadata = builder.build(config.model_provider_id.as_str());
         runtime
-            .upsert_thread(&metadata)
+            .upsert_process(&metadata)
             .await
             .map_err(std::io::Error::other)?;
 
-        let cwd = read_session_cwd(&config, thread_id, &rollout_path)
+        let cwd = read_session_cwd(&config, process_id, &rollout_path)
             .await
             .expect("expected cwd");
         assert_eq!(cwd, sqlite_cwd);

@@ -1,10 +1,10 @@
 use chaos_kern::CodexAuth;
 use chaos_kern::ModelClient;
 use chaos_kern::ModelProviderInfo;
-use chaos_kern::NewThread;
+use chaos_kern::NewProcess;
 use chaos_kern::Prompt;
 use chaos_kern::ResponseEvent;
-use chaos_kern::ThreadManager;
+use chaos_kern::ProcessTable;
 use chaos_kern::WireApi;
 use chaos_kern::auth::AuthCredentialsStoreMode;
 use chaos_kern::built_in_model_providers;
@@ -14,7 +14,7 @@ use chaos_kern::features::Feature;
 use chaos_kern::models_manager::collaboration_mode_presets::CollaborationModesConfig;
 use chaos_syslog::SessionTelemetry;
 use chaos_syslog::TelemetryAuthMode;
-use chaos_ipc::ThreadId;
+use chaos_ipc::ProcessId;
 use chaos_ipc::config_types::CollaborationMode;
 use chaos_ipc::config_types::ModeKind;
 use chaos_ipc::config_types::ReasoningSummary;
@@ -361,7 +361,7 @@ async fn resume_replays_image_tool_outputs_with_detail() {
             timestamp: "2024-01-01T00:00:00.000Z".to_string(),
             item: RolloutItem::SessionMeta(SessionMetaLine {
                 meta: SessionMeta {
-                    id: ThreadId::default(),
+                    id: ProcessId::default(),
                     timestamp: "2024-01-01T00:00:00Z".to_string(),
                     cwd: ".".into(),
                     originator: "test_originator".to_string(),
@@ -589,7 +589,7 @@ async fn chatgpt_auth_sends_correct_request() {
         .await
         .expect("create new conversation");
     let codex = test.codex.clone();
-    let thread_id = test.session_configured.session_id;
+    let process_id = test.session_configured.session_id;
 
     codex
         .submit(Op::UserInput {
@@ -616,7 +616,7 @@ async fn chatgpt_auth_sends_correct_request() {
     let request_body = request.body_json();
 
     let session_id = request.header("session_id").expect("session_id header");
-    assert_eq!(session_id, thread_id.to_string());
+    assert_eq!(session_id, process_id.to_string());
 
     assert_eq!(request_originator, originator().value);
     assert_eq!(request_authorization, "Bearer Access Token");
@@ -677,7 +677,7 @@ async fn prefers_apikey_when_config_prefers_apikey_even_with_chatgpt_tokens() {
             Ok(None) => panic!("No CodexAuth found in codex_home"),
             Err(e) => panic!("Failed to load CodexAuth: {e}"),
         };
-    let thread_manager = ThreadManager::new(
+    let process_table = ProcessTable::new(
         &config,
         auth_manager,
         SessionSource::Exec,
@@ -687,8 +687,8 @@ async fn prefers_apikey_when_config_prefers_apikey_even_with_chatgpt_tokens() {
                 .enabled(Feature::DefaultModeRequestUserInput),
         },
     );
-    let NewThread { thread: codex, .. } = thread_manager
-        .start_thread(config)
+    let NewProcess { thread: codex, .. } = process_table
+        .start_process(config)
         .await
         .expect("create new conversation");
 
@@ -1581,7 +1581,7 @@ async fn azure_responses_request_includes_store_and_reasoning_ids() {
     let config = Arc::new(config);
     let model_info =
         chaos_kern::test_support::construct_model_info_offline(model.as_str(), &config);
-    let conversation_id = ThreadId::new();
+    let conversation_id = ProcessId::new();
     let auth_manager =
         chaos_kern::test_support::auth_manager_from_auth(CodexAuth::from_api_key("Test API Key"));
     let session_telemetry = SessionTelemetry::new(

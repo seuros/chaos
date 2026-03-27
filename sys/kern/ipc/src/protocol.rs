@@ -12,7 +12,7 @@ use std::path::PathBuf;
 use std::str::FromStr;
 use std::time::Duration;
 
-use crate::ThreadId;
+use crate::ProcessId;
 use crate::approvals::ElicitationRequestEvent;
 use crate::config_types::ApprovalsReviewer;
 use crate::config_types::CollaborationMode;
@@ -151,7 +151,7 @@ pub enum Op {
     },
 
     /// Similar to [`Op::UserInput`], but contains additional context required
-    /// for a turn of a [`crate::codex_thread::CodexThread`].
+    /// for a Chaos process turn.
     UserTurn {
         /// User input items, see `InputItem`
         items: Vec<UserInput>,
@@ -384,10 +384,11 @@ pub enum Op {
     /// Trigger a single pass of the startup memory pipeline.
     UpdateMemories,
 
-    /// Set a user-facing thread name in the persisted rollout metadata.
+    /// Set a user-facing process name in the persisted rollout metadata.
     /// This is a local-only operation handled by codex-core; it does not
     /// involve the model.
-    SetThreadName { name: String },
+    #[serde(rename = "set_process_name")]
+    SetProcessName { name: String },
 
     /// Request Codex to undo a turn (turn are stacked so it is the same effect as CMD + Z).
     Undo,
@@ -396,7 +397,8 @@ pub enum Op {
     ///
     /// This does not attempt to revert local filesystem changes. Clients are
     /// responsible for undoing any edits on disk.
-    ThreadRollback { num_turns: u32 },
+    #[serde(rename = "process_rollback")]
+    ProcessRollback { num_turns: u32 },
 
     /// Request a code review from the agent.
     Review { review_request: ReviewRequest },
@@ -444,9 +446,9 @@ impl Op {
             Self::Compact => "compact",
             Self::DropMemories => "drop_memories",
             Self::UpdateMemories => "update_memories",
-            Self::SetThreadName { .. } => "set_thread_name",
+            Self::SetProcessName { .. } => "set_process_name",
             Self::Undo => "undo",
-            Self::ThreadRollback { .. } => "thread_rollback",
+            Self::ProcessRollback { .. } => "process_rollback",
             Self::Review { .. } => "review",
             Self::Shutdown => "shutdown",
             Self::RunUserShellCommand { .. } => "run_user_shell_command",
@@ -1068,7 +1070,8 @@ pub enum EventMsg {
     ContextCompacted(ContextCompactedEvent),
 
     /// Conversation history was rolled back by dropping the last N user turns.
-    ThreadRolledBack(ThreadRolledBackEvent),
+    #[serde(rename = "process_rolled_back")]
+    ProcessRolledBack(ProcessRolledBackEvent),
 
     /// Agent has started a turn.
     /// v1 wire format uses `task_started`; accept `turn_started` for v2 interop.
@@ -1110,8 +1113,9 @@ pub enum EventMsg {
     /// Ack the client's configure message.
     SessionConfigured(SessionConfiguredEvent),
 
-    /// Updated session metadata (e.g., thread name changes).
-    ThreadNameUpdated(ThreadNameUpdatedEvent),
+    /// Updated session metadata (e.g., process name changes).
+    #[serde(rename = "process_name_updated")]
+    ProcessNameUpdated(ProcessNameUpdatedEvent),
 
     /// Incremental MCP startup progress updates.
     McpStartupUpdate(McpStartupUpdateEvent),
@@ -1280,6 +1284,7 @@ pub enum HookExecutionMode {
 #[derive(Debug, Clone, Copy, Deserialize, Serialize, PartialEq, Eq, JsonSchema, TS)]
 #[serde(rename_all = "snake_case")]
 pub enum HookScope {
+    #[serde(rename = "process", alias = "thread")]
     Thread,
     Turn,
 }
@@ -1455,7 +1460,9 @@ pub enum CodexErrorInfo {
     ResponseTooManyFailedAttempts {
         http_status_code: Option<u16>,
     },
-    ThreadRollbackFailed,
+    #[serde(rename = "process_rollback_failed", alias = "process_rollback_failed")]
+    #[ts(rename = "process_rollback_failed")]
+    ProcessRollbackFailed,
     Other,
 }
 
@@ -1463,7 +1470,7 @@ impl CodexErrorInfo {
     /// Whether this error should mark the current turn as failed when replaying history.
     pub fn affects_turn_status(&self) -> bool {
         match self {
-            Self::ThreadRollbackFailed => false,
+            Self::ProcessRollbackFailed => false,
             Self::ContextWindowExceeded
             | Self::UsageLimitExceeded
             | Self::ServerOverloaded
@@ -1487,7 +1494,8 @@ pub struct RawResponseItemEvent {
 
 #[derive(Debug, Clone, Deserialize, Serialize, TS, JsonSchema)]
 pub struct ItemStartedEvent {
-    pub thread_id: ThreadId,
+    #[serde(rename = "process_id", alias = "process_id")]
+    pub process_id: ProcessId,
     pub turn_id: String,
     pub item: TurnItem,
 }
@@ -1510,7 +1518,8 @@ impl HasLegacyEvent for ItemStartedEvent {
 
 #[derive(Debug, Clone, Deserialize, Serialize, TS, JsonSchema)]
 pub struct ItemCompletedEvent {
-    pub thread_id: ThreadId,
+    #[serde(rename = "process_id", alias = "process_id")]
+    pub process_id: ProcessId,
     pub turn_id: String,
     pub item: TurnItem,
 }
@@ -1527,7 +1536,8 @@ impl HasLegacyEvent for ItemCompletedEvent {
 
 #[derive(Debug, Clone, Deserialize, Serialize, TS, JsonSchema)]
 pub struct AgentMessageContentDeltaEvent {
-    pub thread_id: String,
+    #[serde(rename = "process_id", alias = "process_id")]
+    pub process_id: String,
     pub turn_id: String,
     pub item_id: String,
     pub delta: String,
@@ -1543,7 +1553,8 @@ impl HasLegacyEvent for AgentMessageContentDeltaEvent {
 
 #[derive(Debug, Clone, Deserialize, Serialize, TS, JsonSchema)]
 pub struct PlanDeltaEvent {
-    pub thread_id: String,
+    #[serde(rename = "process_id", alias = "process_id")]
+    pub process_id: String,
     pub turn_id: String,
     pub item_id: String,
     pub delta: String,
@@ -1551,7 +1562,8 @@ pub struct PlanDeltaEvent {
 
 #[derive(Debug, Clone, Deserialize, Serialize, TS, JsonSchema)]
 pub struct ReasoningContentDeltaEvent {
-    pub thread_id: String,
+    #[serde(rename = "process_id", alias = "process_id")]
+    pub process_id: String,
     pub turn_id: String,
     pub item_id: String,
     pub delta: String,
@@ -1570,7 +1582,8 @@ impl HasLegacyEvent for ReasoningContentDeltaEvent {
 
 #[derive(Debug, Clone, Deserialize, Serialize, TS, JsonSchema)]
 pub struct ReasoningRawContentDeltaEvent {
-    pub thread_id: String,
+    #[serde(rename = "process_id", alias = "process_id")]
+    pub process_id: String,
     pub turn_id: String,
     pub item_id: String,
     pub delta: String,
@@ -2035,13 +2048,13 @@ pub struct ImageGenerationEndEvent {
 /// in-memory transcript.
 #[derive(Debug, Clone, Deserialize, Serialize, JsonSchema, TS)]
 pub struct ConversationPathResponseEvent {
-    pub conversation_id: ThreadId,
+    pub conversation_id: ProcessId,
     pub path: PathBuf,
 }
 
 #[derive(Debug, Clone, Deserialize, Serialize, JsonSchema, TS)]
 pub struct ResumedHistory {
-    pub conversation_id: ThreadId,
+    pub conversation_id: ProcessId,
     pub history: Vec<RolloutItem>,
     pub rollout_path: PathBuf,
 }
@@ -2054,7 +2067,7 @@ pub enum InitialHistory {
 }
 
 impl InitialHistory {
-    pub fn forked_from_id(&self) -> Option<ThreadId> {
+    pub fn forked_from_id(&self) -> Option<ProcessId> {
         match self {
             InitialHistory::New => None,
             InitialHistory::Resumed(resumed) => {
@@ -2172,8 +2185,8 @@ pub enum SessionSource {
 pub enum SubAgentSource {
     Review,
     Compact,
-    ThreadSpawn {
-        parent_thread_id: ThreadId,
+    ProcessSpawn {
+        parent_process_id: ProcessId,
         depth: i32,
         #[serde(default)]
         agent_nickname: Option<String>,
@@ -2200,7 +2213,7 @@ impl fmt::Display for SessionSource {
 impl SessionSource {
     pub fn get_nickname(&self) -> Option<String> {
         match self {
-            SessionSource::SubAgent(SubAgentSource::ThreadSpawn { agent_nickname, .. }) => {
+            SessionSource::SubAgent(SubAgentSource::ProcessSpawn { agent_nickname, .. }) => {
                 agent_nickname.clone()
             }
             SessionSource::SubAgent(SubAgentSource::MemoryConsolidation) => {
@@ -2212,7 +2225,7 @@ impl SessionSource {
 
     pub fn get_agent_role(&self) -> Option<String> {
         match self {
-            SessionSource::SubAgent(SubAgentSource::ThreadSpawn { agent_role, .. }) => {
+            SessionSource::SubAgent(SubAgentSource::ProcessSpawn { agent_role, .. }) => {
                 agent_role.clone()
             }
             SessionSource::SubAgent(SubAgentSource::MemoryConsolidation) => {
@@ -2229,12 +2242,12 @@ impl fmt::Display for SubAgentSource {
             SubAgentSource::Review => f.write_str("review"),
             SubAgentSource::Compact => f.write_str("compact"),
             SubAgentSource::MemoryConsolidation => f.write_str("memory_consolidation"),
-            SubAgentSource::ThreadSpawn {
-                parent_thread_id,
+            SubAgentSource::ProcessSpawn {
+                parent_process_id,
                 depth,
                 ..
             } => {
-                write!(f, "thread_spawn_{parent_thread_id}_d{depth}")
+                write!(f, "process_spawn_{parent_process_id}_d{depth}")
             }
             SubAgentSource::Other(other) => f.write_str(other),
         }
@@ -2248,9 +2261,13 @@ impl fmt::Display for SubAgentSource {
 /// and should be used when there is no config override.
 #[derive(Serialize, Deserialize, Clone, Debug, JsonSchema, TS)]
 pub struct SessionMeta {
-    pub id: ThreadId,
-    #[serde(skip_serializing_if = "Option::is_none")]
-    pub forked_from_id: Option<ThreadId>,
+    pub id: ProcessId,
+    #[serde(
+        rename = "forked_from_process_id",
+        alias = "forked_from_id",
+        skip_serializing_if = "Option::is_none"
+    )]
+    pub forked_from_id: Option<ProcessId>,
     pub timestamp: String,
     pub cwd: PathBuf,
     pub originator: String,
@@ -2277,7 +2294,7 @@ pub struct SessionMeta {
 impl Default for SessionMeta {
     fn default() -> Self {
         SessionMeta {
-            id: ThreadId::default(),
+            id: ProcessId::default(),
             forked_from_id: None,
             timestamp: String::new(),
             cwd: PathBuf::new(),
@@ -2643,7 +2660,7 @@ pub struct UndoCompletedEvent {
 }
 
 #[derive(Debug, Clone, Deserialize, Serialize, JsonSchema, TS)]
-pub struct ThreadRolledBackEvent {
+pub struct ProcessRolledBackEvent {
     /// Number of user turns that were removed from context.
     pub num_turns: u32,
 }
@@ -2931,14 +2948,23 @@ pub struct SessionNetworkProxyRuntime {
 
 #[derive(Debug, Clone, Deserialize, Serialize, JsonSchema, TS)]
 pub struct SessionConfiguredEvent {
-    pub session_id: ThreadId,
-    #[serde(skip_serializing_if = "Option::is_none")]
-    pub forked_from_id: Option<ThreadId>,
+    pub session_id: ProcessId,
+    #[serde(
+        rename = "forked_from_process_id",
+        alias = "forked_from_id",
+        skip_serializing_if = "Option::is_none"
+    )]
+    pub forked_from_id: Option<ProcessId>,
 
-    /// Optional user-facing thread name (may be unset).
-    #[serde(default, skip_serializing_if = "Option::is_none")]
+    /// Optional user-facing process name (may be unset).
+    #[serde(
+        rename = "process_name",
+        alias = "process_name",
+        default,
+        skip_serializing_if = "Option::is_none"
+    )]
     #[ts(optional)]
-    pub thread_name: Option<String>,
+    pub process_name: Option<String>,
 
     /// Tell the client what model is being queried.
     pub model: String,
@@ -2990,11 +3016,16 @@ pub struct SessionConfiguredEvent {
 }
 
 #[derive(Debug, Clone, Deserialize, Serialize, JsonSchema, TS)]
-pub struct ThreadNameUpdatedEvent {
-    pub thread_id: ThreadId,
-    #[serde(default, skip_serializing_if = "Option::is_none")]
+pub struct ProcessNameUpdatedEvent {
+    #[serde(rename = "process_id")]
+    pub process_id: ProcessId,
+    #[serde(
+        rename = "process_name",
+        default,
+        skip_serializing_if = "Option::is_none"
+    )]
     #[ts(optional)]
-    pub thread_name: Option<String>,
+    pub process_name: Option<String>,
 }
 
 /// User's decision in response to an ExecApprovalRequest.
@@ -3093,8 +3124,9 @@ pub enum TurnAbortReason {
 pub struct CollabAgentSpawnBeginEvent {
     /// Identifier for the collab tool call.
     pub call_id: String,
-    /// Thread ID of the sender.
-    pub sender_thread_id: ThreadId,
+    /// Process ID of the sender.
+    #[serde(rename = "sender_process_id", alias = "sender_process_id")]
+    pub sender_process_id: ProcessId,
     /// Initial prompt sent to the agent. Can be empty to prevent CoT leaking at the
     /// beginning.
     pub prompt: String,
@@ -3104,8 +3136,9 @@ pub struct CollabAgentSpawnBeginEvent {
 
 #[derive(Debug, Clone, Deserialize, Serialize, PartialEq, Eq, JsonSchema, TS)]
 pub struct CollabAgentRef {
-    /// Thread ID of the receiver/new agent.
-    pub thread_id: ThreadId,
+    /// Process ID of the receiver/new agent.
+    #[serde(rename = "process_id", alias = "process_id")]
+    pub process_id: ProcessId,
     /// Optional nickname assigned to an AgentControl-spawned sub-agent.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub agent_nickname: Option<String>,
@@ -3116,8 +3149,9 @@ pub struct CollabAgentRef {
 
 #[derive(Debug, Clone, Deserialize, Serialize, PartialEq, Eq, JsonSchema, TS)]
 pub struct CollabAgentStatusEntry {
-    /// Thread ID of the receiver/new agent.
-    pub thread_id: ThreadId,
+    /// Process ID of the receiver/new agent.
+    #[serde(rename = "process_id", alias = "process_id")]
+    pub process_id: ProcessId,
     /// Optional nickname assigned to an AgentControl-spawned sub-agent.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub agent_nickname: Option<String>,
@@ -3132,10 +3166,12 @@ pub struct CollabAgentStatusEntry {
 pub struct CollabAgentSpawnEndEvent {
     /// Identifier for the collab tool call.
     pub call_id: String,
-    /// Thread ID of the sender.
-    pub sender_thread_id: ThreadId,
-    /// Thread ID of the newly spawned agent, if it was created.
-    pub new_thread_id: Option<ThreadId>,
+    /// Process ID of the sender.
+    #[serde(rename = "sender_process_id", alias = "sender_process_id")]
+    pub sender_process_id: ProcessId,
+    /// Process ID of the newly spawned agent, if it was created.
+    #[serde(rename = "new_process_id", alias = "new_process_id")]
+    pub new_process_id: Option<ProcessId>,
     /// Optional nickname assigned to the new agent.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub new_agent_nickname: Option<String>,
@@ -3157,10 +3193,12 @@ pub struct CollabAgentSpawnEndEvent {
 pub struct CollabAgentInteractionBeginEvent {
     /// Identifier for the collab tool call.
     pub call_id: String,
-    /// Thread ID of the sender.
-    pub sender_thread_id: ThreadId,
-    /// Thread ID of the receiver.
-    pub receiver_thread_id: ThreadId,
+    /// Process ID of the sender.
+    #[serde(rename = "sender_process_id", alias = "sender_process_id")]
+    pub sender_process_id: ProcessId,
+    /// Process ID of the receiver.
+    #[serde(rename = "receiver_process_id", alias = "receiver_process_id")]
+    pub receiver_process_id: ProcessId,
     /// Prompt sent from the sender to the receiver. Can be empty to prevent CoT
     /// leaking at the beginning.
     pub prompt: String,
@@ -3170,10 +3208,12 @@ pub struct CollabAgentInteractionBeginEvent {
 pub struct CollabAgentInteractionEndEvent {
     /// Identifier for the collab tool call.
     pub call_id: String,
-    /// Thread ID of the sender.
-    pub sender_thread_id: ThreadId,
-    /// Thread ID of the receiver.
-    pub receiver_thread_id: ThreadId,
+    /// Process ID of the sender.
+    #[serde(rename = "sender_process_id", alias = "sender_process_id")]
+    pub sender_process_id: ProcessId,
+    /// Process ID of the receiver.
+    #[serde(rename = "receiver_process_id", alias = "receiver_process_id")]
+    pub receiver_process_id: ProcessId,
     /// Optional nickname assigned to the receiver agent.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub receiver_agent_nickname: Option<String>,
@@ -3189,10 +3229,12 @@ pub struct CollabAgentInteractionEndEvent {
 
 #[derive(Debug, Clone, Deserialize, Serialize, PartialEq, JsonSchema, TS)]
 pub struct CollabWaitingBeginEvent {
-    /// Thread ID of the sender.
-    pub sender_thread_id: ThreadId,
-    /// Thread ID of the receivers.
-    pub receiver_thread_ids: Vec<ThreadId>,
+    /// Process ID of the sender.
+    #[serde(rename = "sender_process_id", alias = "sender_process_id")]
+    pub sender_process_id: ProcessId,
+    /// Process IDs of the receivers.
+    #[serde(rename = "receiver_process_ids", alias = "receiver_process_ids")]
+    pub receiver_process_ids: Vec<ProcessId>,
     /// Optional nicknames/roles for receivers.
     #[serde(default, skip_serializing_if = "Vec::is_empty")]
     pub receiver_agents: Vec<CollabAgentRef>,
@@ -3202,35 +3244,40 @@ pub struct CollabWaitingBeginEvent {
 
 #[derive(Debug, Clone, Deserialize, Serialize, PartialEq, JsonSchema, TS)]
 pub struct CollabWaitingEndEvent {
-    /// Thread ID of the sender.
-    pub sender_thread_id: ThreadId,
+    /// Process ID of the sender.
+    #[serde(rename = "sender_process_id", alias = "sender_process_id")]
+    pub sender_process_id: ProcessId,
     /// ID of the waiting call.
     pub call_id: String,
     /// Optional receiver metadata paired with final statuses.
     #[serde(default, skip_serializing_if = "Vec::is_empty")]
     pub agent_statuses: Vec<CollabAgentStatusEntry>,
     /// Last known status of the receiver agents reported to the sender agent.
-    pub statuses: HashMap<ThreadId, AgentStatus>,
+    pub statuses: HashMap<ProcessId, AgentStatus>,
 }
 
 #[derive(Debug, Clone, Deserialize, Serialize, PartialEq, JsonSchema, TS)]
 pub struct CollabCloseBeginEvent {
     /// Identifier for the collab tool call.
     pub call_id: String,
-    /// Thread ID of the sender.
-    pub sender_thread_id: ThreadId,
-    /// Thread ID of the receiver.
-    pub receiver_thread_id: ThreadId,
+    /// Process ID of the sender.
+    #[serde(rename = "sender_process_id", alias = "sender_process_id")]
+    pub sender_process_id: ProcessId,
+    /// Process ID of the receiver.
+    #[serde(rename = "receiver_process_id", alias = "receiver_process_id")]
+    pub receiver_process_id: ProcessId,
 }
 
 #[derive(Debug, Clone, Deserialize, Serialize, PartialEq, JsonSchema, TS)]
 pub struct CollabCloseEndEvent {
     /// Identifier for the collab tool call.
     pub call_id: String,
-    /// Thread ID of the sender.
-    pub sender_thread_id: ThreadId,
-    /// Thread ID of the receiver.
-    pub receiver_thread_id: ThreadId,
+    /// Process ID of the sender.
+    #[serde(rename = "sender_process_id", alias = "sender_process_id")]
+    pub sender_process_id: ProcessId,
+    /// Process ID of the receiver.
+    #[serde(rename = "receiver_process_id", alias = "receiver_process_id")]
+    pub receiver_process_id: ProcessId,
     /// Optional nickname assigned to the receiver agent.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub receiver_agent_nickname: Option<String>,
@@ -3246,10 +3293,12 @@ pub struct CollabCloseEndEvent {
 pub struct CollabResumeBeginEvent {
     /// Identifier for the collab tool call.
     pub call_id: String,
-    /// Thread ID of the sender.
-    pub sender_thread_id: ThreadId,
-    /// Thread ID of the receiver.
-    pub receiver_thread_id: ThreadId,
+    /// Process ID of the sender.
+    #[serde(rename = "sender_process_id", alias = "sender_process_id")]
+    pub sender_process_id: ProcessId,
+    /// Process ID of the receiver.
+    #[serde(rename = "receiver_process_id", alias = "receiver_process_id")]
+    pub receiver_process_id: ProcessId,
     /// Optional nickname assigned to the receiver agent.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub receiver_agent_nickname: Option<String>,
@@ -3262,10 +3311,12 @@ pub struct CollabResumeBeginEvent {
 pub struct CollabResumeEndEvent {
     /// Identifier for the collab tool call.
     pub call_id: String,
-    /// Thread ID of the sender.
-    pub sender_thread_id: ThreadId,
-    /// Thread ID of the receiver.
-    pub receiver_thread_id: ThreadId,
+    /// Process ID of the sender.
+    #[serde(rename = "sender_process_id", alias = "sender_process_id")]
+    pub sender_process_id: ProcessId,
+    /// Process ID of the receiver.
+    #[serde(rename = "receiver_process_id", alias = "receiver_process_id")]
+    pub receiver_process_id: ProcessId,
     /// Optional nickname assigned to the receiver agent.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub receiver_agent_nickname: Option<String>,
@@ -3856,7 +3907,7 @@ mod tests {
     #[test]
     fn item_started_event_from_web_search_emits_begin_event() {
         let event = ItemStartedEvent {
-            thread_id: ThreadId::new(),
+            process_id: ProcessId::new(),
             turn_id: "turn-1".into(),
             item: TurnItem::WebSearch(WebSearchItem {
                 id: "search-1".into(),
@@ -3879,7 +3930,7 @@ mod tests {
     #[test]
     fn item_started_event_from_non_web_search_emits_no_legacy_events() {
         let event = ItemStartedEvent {
-            thread_id: ThreadId::new(),
+            process_id: ProcessId::new(),
             turn_id: "turn-1".into(),
             item: TurnItem::UserMessage(UserMessageItem::new(&[])),
         };
@@ -3890,7 +3941,7 @@ mod tests {
     #[test]
     fn item_started_event_from_image_generation_emits_begin_event() {
         let event = ItemStartedEvent {
-            thread_id: ThreadId::new(),
+            process_id: ProcessId::new(),
             turn_id: "turn-1".into(),
             item: TurnItem::ImageGeneration(ImageGenerationItem {
                 id: "ig-1".into(),
@@ -3912,7 +3963,7 @@ mod tests {
     #[test]
     fn item_completed_event_from_image_generation_emits_end_event() {
         let event = ItemCompletedEvent {
-            thread_id: ThreadId::new(),
+            process_id: ProcessId::new(),
             turn_id: "turn-1".into(),
             item: TurnItem::ImageGeneration(ImageGenerationItem {
                 id: "ig-1".into(),
@@ -3941,7 +3992,7 @@ mod tests {
     fn rollback_failed_error_does_not_affect_turn_status() {
         let event = ErrorEvent {
             message: "rollback failed".into(),
-            codex_error_info: Some(CodexErrorInfo::ThreadRollbackFailed),
+            codex_error_info: Some(CodexErrorInfo::ProcessRollbackFailed),
         };
         assert!(!event.affects_turn_status());
     }
@@ -4126,14 +4177,14 @@ mod tests {
     /// amount of nesting.
     #[test]
     fn serialize_event() -> Result<()> {
-        let conversation_id = ThreadId::from_string("67e55044-10b1-426f-9247-bb680e5fe0c8")?;
+        let conversation_id = ProcessId::from_string("67e55044-10b1-426f-9247-bb680e5fe0c8")?;
         let rollout_file = NamedTempFile::new()?;
         let event = Event {
             id: "1234".to_string(),
             msg: EventMsg::SessionConfigured(SessionConfiguredEvent {
                 session_id: conversation_id,
                 forked_from_id: None,
-                thread_name: None,
+                process_name: None,
                 model: "codex-mini-latest".to_string(),
                 model_provider_id: "openai".to_string(),
                 service_tier: None,

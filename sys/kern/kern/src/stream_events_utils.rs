@@ -14,7 +14,7 @@ use crate::codex::TurnContext;
 use crate::error::CodexErr;
 use crate::error::Result;
 use crate::function_tool::FunctionCallError;
-use crate::memories::citations::get_thread_id_from_citations;
+use crate::memories::citations::get_process_id_from_citations;
 use crate::parse_turn_item;
 use crate::state_db;
 use crate::tools::parallel::ToolCallRuntime;
@@ -86,11 +86,11 @@ pub(crate) async fn record_completed_response_item(
 ) {
     sess.record_conversation_items(turn_context, std::slice::from_ref(item))
         .await;
-    maybe_mark_thread_memory_mode_polluted_from_web_search(sess, turn_context, item).await;
+    maybe_mark_process_memory_mode_polluted_from_web_search(sess, turn_context, item).await;
     record_stage1_output_usage_for_completed_item(turn_context, item).await;
 }
 
-async fn maybe_mark_thread_memory_mode_polluted_from_web_search(
+async fn maybe_mark_process_memory_mode_polluted_from_web_search(
     sess: &Session,
     turn_context: &TurnContext,
     item: &ResponseItem,
@@ -103,7 +103,7 @@ async fn maybe_mark_thread_memory_mode_polluted_from_web_search(
     {
         return;
     }
-    state_db::mark_thread_memory_mode_polluted(
+    state_db::mark_process_memory_mode_polluted(
         sess.services.state_db.as_deref(),
         sess.conversation_id,
         "record_completed_response_item",
@@ -120,13 +120,13 @@ async fn record_stage1_output_usage_for_completed_item(
     };
 
     let (_, citations) = strip_citations(&raw_text);
-    let thread_ids = get_thread_id_from_citations(citations);
-    if thread_ids.is_empty() {
+    let process_ids = get_process_id_from_citations(citations);
+    if process_ids.is_empty() {
         return;
     }
 
     if let Some(db) = state_db::get_state_db(turn_context.config.as_ref()).await {
-        let _ = db.record_stage1_output_usage(&thread_ids).await;
+        let _ = db.record_stage1_output_usage(&process_ids).await;
     }
 }
 
@@ -164,7 +164,7 @@ pub(crate) async fn handle_output_item_done(
         Ok(Some(call)) => {
             let payload_preview = call.payload.log_payload().into_owned();
             tracing::info!(
-                thread_id = %ctx.sess.conversation_id,
+                process_id = %ctx.sess.conversation_id,
                 "ToolCall: {} {}",
                 call.tool_name,
                 payload_preview

@@ -13,5 +13,17 @@ pub mod policy;
 pub mod session_index;
 pub mod truncation;
 
+pub use list::ProcessItem;
+pub use list::ProcessListConfig;
+pub use list::ProcessListLayout;
+pub use list::ProcessSortKey;
+pub use list::ProcessesPage;
+pub use list::get_processes;
+pub use list::get_processes_in_root;
+pub use session_index::append_process_name;
+pub use session_index::find_process_id_by_name;
+pub use session_index::find_process_name_by_id;
+pub use session_index::find_process_names_by_ids;
+
 pub const SESSIONS_SUBDIR: &str = "sessions";
 pub const ARCHIVED_SESSIONS_SUBDIR: &str = "archived_sessions";

@@ -4,7 +4,7 @@ use crate::rollout::list::parse_timestamp_uuid_from_filename;
 use crate::rollout::recorder::RolloutRecorder;
 use crate::state_db::normalize_cwd_for_state_db;
 use jiff::Timestamp;
-use chaos_ipc::ThreadId;
+use chaos_ipc::ProcessId;
 use chaos_ipc::protocol::AskForApproval;
 use chaos_ipc::protocol::RolloutItem;
 use chaos_ipc::protocol::SandboxPolicy;
@@ -17,7 +17,7 @@ use chaos_proc::DB_ERROR_METRIC;
 use chaos_proc::DB_METRIC_BACKFILL;
 use chaos_proc::DB_METRIC_BACKFILL_DURATION_MS;
 use chaos_proc::ExtractionOutcome;
-use chaos_proc::ThreadMetadataBuilder;
+use chaos_proc::ProcessMetadataBuilder;
 use chaos_proc::apply_rollout_item;
 use std::path::Path;
 use std::path::PathBuf;
@@ -35,9 +35,9 @@ const BACKFILL_LEASE_SECONDS: i64 = 1;
 pub(crate) fn builder_from_session_meta(
     session_meta: &SessionMetaLine,
     rollout_path: &Path,
-) -> Option<ThreadMetadataBuilder> {
+) -> Option<ProcessMetadataBuilder> {
     let created_at = parse_timestamp_to_utc(session_meta.meta.timestamp.as_str())?;
-    let mut builder = ThreadMetadataBuilder::new(
+    let mut builder = ProcessMetadataBuilder::new(
         session_meta.meta.id,
         rollout_path.to_path_buf(),
         created_at,
@@ -61,7 +61,7 @@ pub(crate) fn builder_from_session_meta(
 pub(crate) fn builder_from_items(
     items: &[RolloutItem],
     rollout_path: &Path,
-) -> Option<ThreadMetadataBuilder> {
+) -> Option<ProcessMetadataBuilder> {
     if let Some(session_meta) = items.iter().find_map(|item| match item {
         RolloutItem::SessionMeta(meta_line) => Some(meta_line),
         RolloutItem::ResponseItem(_)
@@ -79,8 +79,8 @@ pub(crate) fn builder_from_items(
     }
     let (created_ts, uuid) = parse_timestamp_uuid_from_filename(file_name)?;
     let created_at = Timestamp::from_second(created_ts.unix_timestamp()).ok()?;
-    let id = ThreadId::from_string(&uuid.to_string()).ok()?;
-    Some(ThreadMetadataBuilder::new(
+    let id = ProcessId::from_string(&uuid.to_string()).ok()?;
+    Some(ProcessMetadataBuilder::new(
         id,
         rollout_path.to_path_buf(),
         created_at,
@@ -92,7 +92,7 @@ pub(crate) async fn extract_metadata_from_rollout(
     rollout_path: &Path,
     default_provider: &str,
 ) -> anyhow::Result<ExtractionOutcome> {
-    let (items, _thread_id, parse_errors) =
+    let (items, _process_id, parse_errors) =
         RolloutRecorder::load_rollout_items(rollout_path).await?;
     if items.is_empty() {
         return Err(anyhow::anyhow!(
@@ -238,7 +238,7 @@ pub(crate) async fn backfill_sessions(runtime: &chaos_proc::StateRuntime, config
                     let mut metadata = outcome.metadata;
                     metadata.cwd = normalize_cwd_for_state_db(&metadata.cwd);
                     let memory_mode = outcome.memory_mode.unwrap_or_else(|| "enabled".to_string());
-                    if let Ok(Some(existing_metadata)) = runtime.get_thread(metadata.id).await {
+                    if let Ok(Some(existing_metadata)) = runtime.get_process(metadata.id).await {
                         metadata.prefer_existing_git_info(&existing_metadata);
                     }
                     if rollout.archived && metadata.archived_at.is_none() {
@@ -247,12 +247,12 @@ pub(crate) async fn backfill_sessions(runtime: &chaos_proc::StateRuntime, config
                             .await
                             .or(Some(fallback_archived_at));
                     }
-                    if let Err(err) = runtime.upsert_thread(&metadata).await {
+                    if let Err(err) = runtime.upsert_process(&metadata).await {
                         stats.failed = stats.failed.saturating_add(1);
                         warn!("failed to upsert rollout {}: {err}", rollout.path.display());
                     } else {
                         if let Err(err) = runtime
-                            .set_thread_memory_mode(metadata.id, memory_mode.as_str())
+                            .set_process_memory_mode(metadata.id, memory_mode.as_str())
                             .await
                         {
                             stats.failed = stats.failed.saturating_add(1);

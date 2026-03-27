@@ -97,7 +97,7 @@ pub struct AgentJobItem {
     pub source_id: Option<String>,
     pub row_json: Value,
     pub status: AgentJobItemStatus,
-    pub assigned_thread_id: Option<String>,
+    pub assigned_process_id: Option<String>,
     pub attempt_count: i64,
     pub result_json: Option<Value>,
     pub last_error: Option<String>,
@@ -205,7 +205,7 @@ pub(crate) struct AgentJobItemRow {
     pub(crate) source_id: Option<String>,
     pub(crate) row_json: String,
     pub(crate) status: String,
-    pub(crate) assigned_thread_id: Option<String>,
+    pub(crate) assigned_process_id: Option<String>,
     pub(crate) attempt_count: i64,
     pub(crate) result_json: Option<String>,
     pub(crate) last_error: Option<String>,
@@ -226,7 +226,7 @@ impl TryFrom<AgentJobItemRow> for AgentJobItem {
             source_id: value.source_id,
             row_json: serde_json::from_str(value.row_json.as_str())?,
             status: AgentJobItemStatus::parse(value.status.as_str())?,
-            assigned_thread_id: value.assigned_thread_id,
+            assigned_process_id: value.assigned_process_id,
             attempt_count: value.attempt_count,
             result_json: value
                 .result_json

@@ -1,8 +1,8 @@
 #![allow(clippy::unwrap_used, clippy::expect_used)]
 
 use chaos_kern::CodexAuth;
-use chaos_kern::NewThread;
-use chaos_ipc::ThreadId;
+use chaos_kern::NewProcess;
+use chaos_ipc::ProcessId;
 use chaos_ipc::config_types::ModeKind;
 use chaos_ipc::config_types::ReasoningSummary;
 use chaos_ipc::protocol::EventMsg;
@@ -48,7 +48,7 @@ fn resume_history(
     };
 
     InitialHistory::Resumed(ResumedHistory {
-        conversation_id: ThreadId::default(),
+        conversation_id: ProcessId::default(),
         history: vec![
             RolloutItem::EventMsg(EventMsg::TurnStarted(TurnStartedEvent {
                 turn_id: turn_id.clone(),
@@ -85,7 +85,7 @@ async fn emits_warning_when_resumed_model_differs() {
 
     let initial_history = resume_history(&config, "previous-model", &rollout_path);
 
-    let thread_manager = chaos_kern::test_support::thread_manager_with_models_provider(
+    let process_table = chaos_kern::test_support::process_table_with_models_provider(
         CodexAuth::from_api_key("test"),
         config.model_provider.clone(),
     );
@@ -93,11 +93,11 @@ async fn emits_warning_when_resumed_model_differs() {
         chaos_kern::test_support::auth_manager_from_auth(CodexAuth::from_api_key("test"));
 
     // Act: resume the conversation.
-    let NewThread {
+    let NewProcess {
         thread: conversation,
         ..
-    } = thread_manager
-        .resume_thread_with_history(config, initial_history, auth_manager, false, None)
+    } = process_table
+        .resume_process_with_history(config, initial_history, auth_manager, false, None)
         .await
         .expect("resume conversation");
 

@@ -4,12 +4,12 @@ use clap_complete::Shell;
 use clap_complete::generate;
 use chaos_argv::Arg0DispatchPaths;
 use chaos_argv::arg0_dispatch_or_else;
-use codex_cli::login::read_api_key_from_stdin;
-use codex_cli::login::run_login_status;
-use codex_cli::login::run_login_with_api_key;
-use codex_cli::login::run_login_with_chatgpt;
-use codex_cli::login::run_login_with_device_code;
-use codex_cli::login::run_logout;
+use chaos_boot::login::read_api_key_from_stdin;
+use chaos_boot::login::run_login_status;
+use chaos_boot::login::run_login_with_api_key;
+use chaos_boot::login::run_login_with_chatgpt;
+use chaos_boot::login::run_login_with_device_code;
+use chaos_boot::login::run_logout;
 use chaos_fork::Cli as ExecCli;
 use chaos_fork::Command as ExecCommand;
 use chaos_fork::ReviewArgs;
@@ -85,7 +85,7 @@ enum Subcommand {
     Completion(CompletionCommand),
 
     /// Run a command inside the platform sandbox (landlock on Linux, seatbelt on macOS).
-    Sandbox(codex_cli::SandboxCommand),
+    Sandbox(chaos_boot::SandboxCommand),
 
     /// Execpolicy tooling.
     #[clap(hide = true)]
@@ -146,7 +146,7 @@ struct ForkCommand {
     config_overrides: TuiCli,
 }
 
-// SandboxCommand is defined in codex_cli::SandboxCommand — platform-agnostic,
+// SandboxCommand is defined in chaos_boot::SandboxCommand — platform-agnostic,
 // auto-dispatches to seatbelt (macOS) or landlock (Linux) at runtime.
 
 #[derive(Debug, Parser)]
@@ -212,8 +212,8 @@ struct LogoutCommand {
 fn format_exit_messages(exit_info: AppExitInfo, color_enabled: bool) -> Vec<String> {
     let AppExitInfo {
         token_usage,
-        thread_id: conversation_id,
-        thread_name,
+        process_id: conversation_id,
+        process_name,
         ..
     } = exit_info;
 
@@ -227,7 +227,7 @@ fn format_exit_messages(exit_info: AppExitInfo, color_enabled: bool) -> Vec<Stri
     )];
 
     if let Some(resume_cmd) =
-        chaos_kern::util::resume_command(thread_name.as_deref(), conversation_id)
+        chaos_kern::util::resume_command(process_name.as_deref(), conversation_id)
     {
         let command = if color_enabled {
             resume_cmd.cyan().to_string()
@@ -466,7 +466,7 @@ async fn cli_main(arg0_paths: Arg0DispatchPaths) -> anyhow::Result<()> {
 
             #[cfg(target_os = "linux")]
             {
-                codex_cli::debug_sandbox::run_command_under_landlock(
+                chaos_boot::debug_sandbox::run_command_under_landlock(
                     sandbox_cmd.into_landlock(),
                     arg0_paths.alcatraz_linux_exe.clone(),
                     arg0_paths.alcatraz_freebsd_exe.clone(),
@@ -476,7 +476,7 @@ async fn cli_main(arg0_paths: Arg0DispatchPaths) -> anyhow::Result<()> {
 
             #[cfg(target_os = "macos")]
             {
-                codex_cli::debug_sandbox::run_command_under_seatbelt(
+                chaos_boot::debug_sandbox::run_command_under_seatbelt(
                     sandbox_cmd.into_seatbelt(),
                     arg0_paths.alcatraz_linux_exe.clone(),
                     arg0_paths.alcatraz_freebsd_exe.clone(),
@@ -486,7 +486,7 @@ async fn cli_main(arg0_paths: Arg0DispatchPaths) -> anyhow::Result<()> {
 
             #[cfg(target_os = "freebsd")]
             {
-                codex_cli::debug_sandbox::run_command_under_capsicum(
+                chaos_boot::debug_sandbox::run_command_under_capsicum(
                     sandbox_cmd.into_capsicum(),
                     arg0_paths.alcatraz_linux_exe.clone(),
                     arg0_paths.alcatraz_freebsd_exe.clone(),
@@ -774,7 +774,7 @@ fn print_completion(cmd: CompletionCommand) {
 mod tests {
     use super::*;
     use assert_matches::assert_matches;
-    use chaos_ipc::ThreadId;
+    use chaos_ipc::ProcessId;
     use chaos_ipc::protocol::TokenUsage;
     use pretty_assertions::assert_eq;
 
@@ -875,7 +875,7 @@ mod tests {
         assert_eq!(args.prompt.as_deref(), Some("re-review"));
     }
 
-    fn sample_exit_info(conversation_id: Option<&str>, thread_name: Option<&str>) -> AppExitInfo {
+    fn sample_exit_info(conversation_id: Option<&str>, process_name: Option<&str>) -> AppExitInfo {
         let token_usage = TokenUsage {
             output_tokens: 2,
             total_tokens: 2,
@@ -883,10 +883,10 @@ mod tests {
         };
         AppExitInfo {
             token_usage,
-            thread_id: conversation_id
-                .map(ThreadId::from_string)
+            process_id: conversation_id
+                .map(ProcessId::from_string)
                 .map(Result::unwrap),
-            thread_name: thread_name.map(str::to_string),
+            process_name: process_name.map(str::to_string),
             exit_reason: ExitReason::UserRequested,
         }
     }
@@ -895,8 +895,8 @@ mod tests {
     fn format_exit_messages_skips_zero_usage() {
         let exit_info = AppExitInfo {
             token_usage: TokenUsage::default(),
-            thread_id: None,
-            thread_name: None,
+            process_id: None,
+            process_name: None,
             exit_reason: ExitReason::UserRequested,
         };
         let lines = format_exit_messages(exit_info, false);
@@ -926,7 +926,7 @@ mod tests {
     }
 
     #[test]
-    fn format_exit_messages_prefers_thread_name() {
+    fn format_exit_messages_prefers_process_name() {
         let exit_info = sample_exit_info(
             Some("123e4567-e89b-12d3-a456-426614174000"),
             Some("my-thread"),

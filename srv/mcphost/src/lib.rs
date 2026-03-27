@@ -7,7 +7,7 @@ use std::sync::Arc;
 
 use chaos_argv::Arg0DispatchPaths;
 use chaos_kern::AuthManager;
-use chaos_kern::ThreadManager;
+use chaos_kern::ProcessTable;
 use chaos_kern::config::Config;
 use chaos_kern::models_manager::collaboration_mode_presets::CollaborationModesConfig;
 use chaos_ipc::protocol::SessionSource;
@@ -89,13 +89,13 @@ pub async fn run_main(
     let config = Arc::new(config);
     let state_runtime = chaos_kern::state_db::get_state_db(&config).await;
 
-    // Build ThreadManager.
+    // Build ProcessTable.
     let auth_manager = AuthManager::shared(
         config.codex_home.clone(),
         false,
         config.cli_auth_credentials_store_mode,
     );
-    let thread_manager = Arc::new(ThreadManager::new(
+    let process_table = Arc::new(ProcessTable::new(
         config.as_ref(),
         auth_manager,
         SessionSource::Mcp,
@@ -139,12 +139,12 @@ pub async fn run_main(
 
     // Register tools.
     let chaos_server = Arc::new(ChaosMcpServer {
-        thread_manager,
+        process_table,
         outgoing,
         arg0_paths,
         running_requests: Arc::new(Mutex::new(std::collections::HashMap::new())),
-        session_threads: Arc::new(Mutex::new(std::collections::HashMap::new())),
-        thread_names: Arc::new(Mutex::new(std::collections::HashMap::new())),
+        session_processes: Arc::new(Mutex::new(std::collections::HashMap::new())),
+        process_names: Arc::new(Mutex::new(std::collections::HashMap::new())),
         state_runtime,
     });
     chaos_tool::tool_router().register_all(mcp_server.tool_registry(), chaos_server.clone());

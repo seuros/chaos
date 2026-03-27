@@ -1,5 +1,5 @@
 use anyhow::Result;
-use chaos_ipc::ThreadId;
+use chaos_ipc::ProcessId;
 use chaos_ipc::protocol::AskForApproval;
 use chaos_ipc::protocol::SandboxPolicy;
 use chaos_ipc::protocol::SessionSource;
@@ -8,7 +8,7 @@ use sqlx::sqlite::SqliteRow;
 use std::path::PathBuf;
 use uuid::Uuid;
 
-/// The sort key to use when listing threads.
+/// The sort key to use when listing processes.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum SortKey {
     /// Sort by the thread's creation timestamp.
@@ -28,9 +28,9 @@ pub struct Anchor {
 
 /// A single page of thread metadata results.
 #[derive(Debug, Clone, PartialEq, Eq)]
-pub struct ThreadsPage {
+pub struct ProcessesPage {
     /// The thread metadata items in this page.
-    pub items: Vec<ThreadMetadata>,
+    pub items: Vec<ProcessMetadata>,
     /// The next anchor to use for pagination, if any.
     pub next_anchor: Option<Anchor>,
     /// The number of rows scanned to produce this page.
@@ -41,7 +41,7 @@ pub struct ThreadsPage {
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct ExtractionOutcome {
     /// The extracted thread metadata.
-    pub metadata: ThreadMetadata,
+    pub metadata: ProcessMetadata,
     /// The explicit thread memory mode from rollout metadata, if present.
     pub memory_mode: Option<String>,
     /// The number of rollout lines that failed to parse.
@@ -50,9 +50,9 @@ pub struct ExtractionOutcome {
 
 /// Canonical thread metadata derived from rollout files.
 #[derive(Debug, Clone, PartialEq, Eq)]
-pub struct ThreadMetadata {
+pub struct ProcessMetadata {
     /// The thread identifier.
-    pub id: ThreadId,
+    pub id: ProcessId,
     /// The absolute rollout path on disk.
     pub rollout_path: PathBuf,
     /// The creation timestamp.
@@ -91,11 +91,11 @@ pub struct ThreadMetadata {
     pub git_origin_url: Option<String>,
 }
 
-/// Builder data required to construct [`ThreadMetadata`] without parsing filenames.
+/// Builder data required to construct [`ProcessMetadata`] without parsing filenames.
 #[derive(Debug, Clone, PartialEq, Eq)]
-pub struct ThreadMetadataBuilder {
+pub struct ProcessMetadataBuilder {
     /// The thread identifier.
-    pub id: ThreadId,
+    pub id: ProcessId,
     /// The absolute rollout path on disk.
     pub rollout_path: PathBuf,
     /// The creation timestamp.
@@ -128,10 +128,10 @@ pub struct ThreadMetadataBuilder {
     pub git_origin_url: Option<String>,
 }
 
-impl ThreadMetadataBuilder {
+impl ProcessMetadataBuilder {
     /// Create a new builder with required fields and sensible defaults.
     pub fn new(
-        id: ThreadId,
+        id: ProcessId,
         rollout_path: PathBuf,
         created_at: jiff::Timestamp,
         source: SessionSource,
@@ -157,7 +157,7 @@ impl ThreadMetadataBuilder {
     }
 
     /// Build canonical thread metadata, filling missing values from defaults.
-    pub fn build(&self, default_provider: &str) -> ThreadMetadata {
+    pub fn build(&self, default_provider: &str) -> ProcessMetadata {
         let source = crate::extract::enum_to_string(&self.source);
         let sandbox_policy = crate::extract::enum_to_string(&self.sandbox_policy);
         let approval_mode = crate::extract::enum_to_string(&self.approval_mode);
@@ -166,7 +166,7 @@ impl ThreadMetadataBuilder {
             .updated_at
             .map(canonicalize_datetime)
             .unwrap_or(created_at);
-        ThreadMetadata {
+        ProcessMetadata {
             id: self.id,
             rollout_path: self.rollout_path.clone(),
             created_at,
@@ -193,7 +193,7 @@ impl ThreadMetadataBuilder {
     }
 }
 
-impl ThreadMetadata {
+impl ProcessMetadata {
     /// Preserve existing non-null Git fields when rollout-derived metadata is reconciled.
     pub fn prefer_existing_git_info(&mut self, existing: &Self) {
         if existing.git_sha.is_some() {
@@ -276,7 +276,7 @@ fn canonicalize_datetime(dt: jiff::Timestamp) -> jiff::Timestamp {
 }
 
 #[derive(Debug)]
-pub(crate) struct ThreadRow {
+pub(crate) struct ProcessRow {
     id: String,
     rollout_path: String,
     created_at: i64,
@@ -298,7 +298,7 @@ pub(crate) struct ThreadRow {
     git_origin_url: Option<String>,
 }
 
-impl ThreadRow {
+impl ProcessRow {
     pub(crate) fn try_from_row(row: &SqliteRow) -> Result<Self> {
         Ok(Self {
             id: row.try_get("id")?,
@@ -324,11 +324,11 @@ impl ThreadRow {
     }
 }
 
-impl TryFrom<ThreadRow> for ThreadMetadata {
+impl TryFrom<ProcessRow> for ProcessMetadata {
     type Error = anyhow::Error;
 
-    fn try_from(row: ThreadRow) -> std::result::Result<Self, Self::Error> {
-        let ThreadRow {
+    fn try_from(row: ProcessRow) -> std::result::Result<Self, Self::Error> {
+        let ProcessRow {
             id,
             rollout_path,
             created_at,
@@ -350,7 +350,7 @@ impl TryFrom<ThreadRow> for ThreadMetadata {
             git_origin_url,
         } = row;
         Ok(Self {
-            id: ThreadId::try_from(id)?,
+            id: ProcessId::try_from(id)?,
             rollout_path: PathBuf::from(rollout_path),
             created_at: epoch_seconds_to_datetime(created_at)?,
             updated_at: epoch_seconds_to_datetime(updated_at)?,
@@ -373,7 +373,7 @@ impl TryFrom<ThreadRow> for ThreadMetadata {
     }
 }
 
-pub(crate) fn anchor_from_item(item: &ThreadMetadata, sort_key: SortKey) -> Option<Anchor> {
+pub(crate) fn anchor_from_item(item: &ProcessMetadata, sort_key: SortKey) -> Option<Anchor> {
     let id = Uuid::parse_str(&item.id.to_string()).ok()?;
     let ts = match sort_key {
         SortKey::CreatedAt => item.created_at,

@@ -5,18 +5,14 @@ use http::HeaderMap;
 use http::HeaderName;
 use http::HeaderValue;
 use http::Uri;
-use opentelemetry_otlp::OTEL_EXPORTER_OTLP_TIMEOUT;
-use opentelemetry_otlp::OTEL_EXPORTER_OTLP_TIMEOUT_DEFAULT;
 use opentelemetry_otlp::tonic_types::transport::Certificate as TonicCertificate;
 use opentelemetry_otlp::tonic_types::transport::ClientTlsConfig;
 use opentelemetry_otlp::tonic_types::transport::Identity as TonicIdentity;
-use std::env;
 use std::error::Error;
 use std::fs;
 use std::io;
 use std::io::ErrorKind;
 use std::path::PathBuf;
-use std::time::Duration;
 
 pub(crate) fn build_header_map(headers: &std::collections::HashMap<String, String>) -> HeaderMap {
     let mut header_map = HeaderMap::new();
@@ -94,25 +90,6 @@ pub(crate) fn build_async_http_client(
 ) -> Result<RamaOtelClient, Box<dyn Error>> {
     // TODO: wire TLS config into rama's rustls layer for custom CA/mTLS.
     Ok(RamaOtelClient::new())
-}
-
-pub(crate) fn resolve_otlp_timeout(signal_var: &str) -> Duration {
-    if let Some(timeout) = read_timeout_env(signal_var) {
-        return timeout;
-    }
-    if let Some(timeout) = read_timeout_env(OTEL_EXPORTER_OTLP_TIMEOUT) {
-        return timeout;
-    }
-    OTEL_EXPORTER_OTLP_TIMEOUT_DEFAULT
-}
-
-fn read_timeout_env(var: &str) -> Option<Duration> {
-    let value = env::var(var).ok()?;
-    let parsed = value.parse::<i64>().ok()?;
-    if parsed < 0 {
-        return None;
-    }
-    Some(Duration::from_millis(parsed as u64))
 }
 
 fn read_bytes(path: &AbsolutePathBuf) -> Result<(Vec<u8>, PathBuf), Box<dyn Error>> {

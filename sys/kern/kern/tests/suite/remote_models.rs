@@ -328,11 +328,11 @@ async fn remote_models_remote_model_uses_unified_exec() -> Result<()> {
         codex,
         cwd,
         config,
-        thread_manager,
+        process_table,
         ..
     } = builder.build(&server).await?;
 
-    let models_manager = thread_manager.get_models_manager();
+    let models_manager = process_table.get_models_manager();
     let available_model = wait_for_model_available(&models_manager, REMOTE_MODEL_SLUG).await;
 
     assert_eq!(available_model.model, REMOTE_MODEL_SLUG);
@@ -449,7 +449,7 @@ async fn remote_models_truncation_policy_without_override_preserves_remote() -> 
         });
     let test = builder.build(&server).await?;
 
-    let models_manager = test.thread_manager.get_models_manager();
+    let models_manager = test.process_table.get_models_manager();
     wait_for_model_available(&models_manager, slug).await;
 
     let model_info = models_manager.get_model_info(slug, &test.config).await;
@@ -494,7 +494,7 @@ async fn remote_models_truncation_policy_with_tool_output_override() -> Result<(
         });
     let test = builder.build(&server).await?;
 
-    let models_manager = test.thread_manager.get_models_manager();
+    let models_manager = test.process_table.get_models_manager();
     wait_for_model_available(&models_manager, slug).await;
 
     let model_info = models_manager.get_model_info(slug, &test.config).await;
@@ -581,11 +581,11 @@ async fn remote_models_apply_remote_base_instructions() -> Result<()> {
         codex,
         cwd,
         config,
-        thread_manager,
+        process_table,
         ..
     } = builder.build(&server).await?;
 
-    let models_manager = thread_manager.get_models_manager();
+    let models_manager = process_table.get_models_manager();
     wait_for_model_available(&models_manager, model).await;
 
     codex

@@ -17,7 +17,7 @@ use crate::render::highlight::highlight_bash_to_lines;
 use crate::render::renderable::ColumnRenderable;
 use crate::render::renderable::Renderable;
 use chaos_kern::features::Features;
-use chaos_ipc::ThreadId;
+use chaos_ipc::ProcessId;
 use chaos_ipc::mcp::RequestId;
 use chaos_ipc::models::MacOsAutomationPermission;
 use chaos_ipc::models::MacOsContactsPermission;
@@ -48,8 +48,8 @@ use url::Url;
 #[derive(Clone, Debug)]
 pub(crate) enum ApprovalRequest {
     Exec {
-        thread_id: ThreadId,
-        thread_label: Option<String>,
+        process_id: ProcessId,
+        process_label: Option<String>,
         id: String,
         command: Vec<String>,
         reason: Option<String>,
@@ -58,23 +58,23 @@ pub(crate) enum ApprovalRequest {
         additional_permissions: Option<PermissionProfile>,
     },
     Permissions {
-        thread_id: ThreadId,
-        thread_label: Option<String>,
+        process_id: ProcessId,
+        process_label: Option<String>,
         call_id: String,
         reason: Option<String>,
         permissions: RequestPermissionProfile,
     },
     ApplyPatch {
-        thread_id: ThreadId,
-        thread_label: Option<String>,
+        process_id: ProcessId,
+        process_label: Option<String>,
         id: String,
         reason: Option<String>,
         cwd: PathBuf,
         changes: HashMap<PathBuf, FileChange>,
     },
     McpElicitation {
-        thread_id: ThreadId,
-        thread_label: Option<String>,
+        process_id: ProcessId,
+        process_label: Option<String>,
         server_name: String,
         request_id: RequestId,
         message: String,
@@ -83,21 +83,21 @@ pub(crate) enum ApprovalRequest {
 }
 
 impl ApprovalRequest {
-    fn thread_id(&self) -> ThreadId {
+    fn process_id(&self) -> ProcessId {
         match self {
-            ApprovalRequest::Exec { thread_id, .. }
-            | ApprovalRequest::Permissions { thread_id, .. }
-            | ApprovalRequest::ApplyPatch { thread_id, .. }
-            | ApprovalRequest::McpElicitation { thread_id, .. } => *thread_id,
+            ApprovalRequest::Exec { process_id, .. }
+            | ApprovalRequest::Permissions { process_id, .. }
+            | ApprovalRequest::ApplyPatch { process_id, .. }
+            | ApprovalRequest::McpElicitation { process_id, .. } => *process_id,
         }
     }
 
-    fn thread_label(&self) -> Option<&str> {
+    fn process_label(&self) -> Option<&str> {
         match self {
-            ApprovalRequest::Exec { thread_label, .. }
-            | ApprovalRequest::Permissions { thread_label, .. }
-            | ApprovalRequest::ApplyPatch { thread_label, .. }
-            | ApprovalRequest::McpElicitation { thread_label, .. } => thread_label.as_deref(),
+            ApprovalRequest::Exec { process_label, .. }
+            | ApprovalRequest::Permissions { process_label, .. }
+            | ApprovalRequest::ApplyPatch { process_label, .. }
+            | ApprovalRequest::McpElicitation { process_label, .. } => process_label.as_deref(),
         }
     }
 }
@@ -243,7 +243,7 @@ impl ApprovalOverlay {
                 }
                 (
                     ApprovalRequest::McpElicitation {
-                        thread_id,
+                        process_id,
                         server_name,
                         request_id,
                         url,
@@ -256,7 +256,7 @@ impl ApprovalOverlay {
                     {
                         self.app_event_tx
                             .send(AppEvent::OpenUrlElicitationInBrowser {
-                                thread_id: *thread_id,
+                                process_id: *process_id,
                                 server_name: server_name.clone(),
                                 request_id: request_id.clone(),
                                 url: url.clone(),
@@ -279,7 +279,7 @@ impl ApprovalOverlay {
         let Some(request) = self.current_request.as_ref() else {
             return;
         };
-        if request.thread_label().is_none() {
+        if request.process_label().is_none() {
             let cell = history_cell::new_approval_decision_cell(
                 command.to_vec(),
                 decision.clone(),
@@ -287,9 +287,9 @@ impl ApprovalOverlay {
             );
             self.app_event_tx.send(AppEvent::InsertHistoryCell(cell));
         }
-        let thread_id = request.thread_id();
-        self.app_event_tx.send(AppEvent::SubmitThreadOp {
-            thread_id,
+        let process_id = request.process_id();
+        self.app_event_tx.send(AppEvent::SubmitProcessOp {
+            process_id: process_id,
             op: Op::ExecApproval {
                 id: id.to_string(),
                 turn_id: None,
@@ -318,7 +318,7 @@ impl ApprovalOverlay {
         } else {
             PermissionGrantScope::Turn
         };
-        if request.thread_label().is_none() {
+        if request.process_label().is_none() {
             let message = if granted_permissions.is_empty() {
                 "You did not grant additional permissions"
             } else if matches!(scope, PermissionGrantScope::Session) {
@@ -330,9 +330,9 @@ impl ApprovalOverlay {
                 crate::history_cell::PlainHistoryCell::new(vec![message.into()]),
             )));
         }
-        let thread_id = request.thread_id();
-        self.app_event_tx.send(AppEvent::SubmitThreadOp {
-            thread_id,
+        let process_id = request.process_id();
+        self.app_event_tx.send(AppEvent::SubmitProcessOp {
+            process_id: process_id,
             op: Op::RequestPermissionsResponse {
                 id: call_id.to_string(),
                 response: chaos_ipc::request_permissions::RequestPermissionsResponse {
@@ -344,15 +344,15 @@ impl ApprovalOverlay {
     }
 
     fn handle_patch_decision(&self, id: &str, decision: ReviewDecision) {
-        let Some(thread_id) = self
+        let Some(process_id) = self
             .current_request
             .as_ref()
-            .map(ApprovalRequest::thread_id)
+            .map(ApprovalRequest::process_id)
         else {
             return;
         };
-        self.app_event_tx.send(AppEvent::SubmitThreadOp {
-            thread_id,
+        self.app_event_tx.send(AppEvent::SubmitProcessOp {
+            process_id: process_id,
             op: Op::PatchApproval {
                 id: id.to_string(),
                 decision,
@@ -366,15 +366,15 @@ impl ApprovalOverlay {
         request_id: &RequestId,
         decision: ElicitationAction,
     ) {
-        let Some(thread_id) = self
+        let Some(process_id) = self
             .current_request
             .as_ref()
-            .map(ApprovalRequest::thread_id)
+            .map(ApprovalRequest::process_id)
         else {
             return;
         };
-        self.app_event_tx.send(AppEvent::SubmitThreadOp {
-            thread_id,
+        self.app_event_tx.send(AppEvent::SubmitProcessOp {
+            process_id: process_id,
             op: Op::ResolveElicitation {
                 server_name: server_name.to_string(),
                 request_id: request_id.clone(),
@@ -415,9 +415,9 @@ impl ApprovalOverlay {
                 ..
             } => {
                 if let Some(request) = self.current_request.as_ref() {
-                    if request.thread_label().is_some() {
+                    if request.process_label().is_some() {
                         self.app_event_tx
-                            .send(AppEvent::SelectAgentThread(request.thread_id()));
+                            .send(AppEvent::SelectAgentProcess(request.process_id()));
                         true
                     } else {
                         false
@@ -527,11 +527,11 @@ fn approval_footer_hint(request: &ApprovalRequest) -> Line<'static> {
         key_hint::plain(KeyCode::Esc).into(),
         " to cancel".into(),
     ];
-    if request.thread_label().is_some() {
+    if request.process_label().is_some() {
         spans.extend([
             " or ".into(),
             key_hint::plain(KeyCode::Char('o')).into(),
-            " to open thread".into(),
+            " to open process".into(),
         ]);
     }
     Line::from(spans)
@@ -540,7 +540,7 @@ fn approval_footer_hint(request: &ApprovalRequest) -> Line<'static> {
 fn build_header(request: &ApprovalRequest) -> Box<dyn Renderable> {
     match request {
         ApprovalRequest::Exec {
-            thread_label,
+            process_label,
             reason,
             command,
             network_approval_context,
@@ -548,10 +548,10 @@ fn build_header(request: &ApprovalRequest) -> Box<dyn Renderable> {
             ..
         } => {
             let mut header: Vec<Line<'static>> = Vec::new();
-            if let Some(thread_label) = thread_label {
+            if let Some(process_label) = process_label {
                 header.push(Line::from(vec![
-                    "Thread: ".into(),
-                    thread_label.clone().bold(),
+                    "Process: ".into(),
+                    process_label.clone().bold(),
                 ]));
                 header.push(Line::from(""));
             }
@@ -579,16 +579,16 @@ fn build_header(request: &ApprovalRequest) -> Box<dyn Renderable> {
             Box::new(Paragraph::new(header).wrap(Wrap { trim: false }))
         }
         ApprovalRequest::Permissions {
-            thread_label,
+            process_label,
             reason,
             permissions,
             ..
         } => {
             let mut header: Vec<Line<'static>> = Vec::new();
-            if let Some(thread_label) = thread_label {
+            if let Some(process_label) = process_label {
                 header.push(Line::from(vec![
-                    "Thread: ".into(),
-                    thread_label.clone().bold(),
+                    "Process: ".into(),
+                    process_label.clone().bold(),
                 ]));
                 header.push(Line::from(""));
             }
@@ -605,17 +605,17 @@ fn build_header(request: &ApprovalRequest) -> Box<dyn Renderable> {
             Box::new(Paragraph::new(header).wrap(Wrap { trim: false }))
         }
         ApprovalRequest::ApplyPatch {
-            thread_label,
+            process_label,
             reason,
             cwd,
             changes,
             ..
         } => {
             let mut header: Vec<Box<dyn Renderable>> = Vec::new();
-            if let Some(thread_label) = thread_label {
+            if let Some(process_label) = process_label {
                 header.push(Box::new(Line::from(vec![
-                    "Thread: ".into(),
-                    thread_label.clone().bold(),
+                    "Process: ".into(),
+                    process_label.clone().bold(),
                 ])));
                 header.push(Box::new(Line::from("")));
             }
@@ -635,17 +635,17 @@ fn build_header(request: &ApprovalRequest) -> Box<dyn Renderable> {
             Box::new(ColumnRenderable::with(header))
         }
         ApprovalRequest::McpElicitation {
-            thread_label,
+            process_label,
             server_name,
             message,
             url,
             ..
         } => {
             let mut lines = Vec::new();
-            if let Some(thread_label) = thread_label {
+            if let Some(process_label) = process_label {
                 lines.push(Line::from(vec![
-                    "Thread: ".into(),
-                    thread_label.clone().bold(),
+                    "Process: ".into(),
+                    process_label.clone().bold(),
                 ]));
                 lines.push(Line::from(""));
             }
@@ -1012,8 +1012,8 @@ mod tests {
 
     fn make_exec_request() -> ApprovalRequest {
         ApprovalRequest::Exec {
-            thread_id: ThreadId::new(),
-            thread_label: None,
+            process_id: ProcessId::new(),
+            process_label: None,
             id: "test".to_string(),
             command: vec!["echo".to_string(), "hi".to_string()],
             reason: Some("reason".to_string()),
@@ -1025,8 +1025,8 @@ mod tests {
 
     fn make_permissions_request() -> ApprovalRequest {
         ApprovalRequest::Permissions {
-            thread_id: ThreadId::new(),
-            thread_label: None,
+            process_id: ProcessId::new(),
+            process_label: None,
             call_id: "test".to_string(),
             reason: Some("need workspace access".to_string()),
             permissions: RequestPermissionProfile {
@@ -1043,8 +1043,8 @@ mod tests {
 
     fn make_url_elicitation_request() -> ApprovalRequest {
         ApprovalRequest::McpElicitation {
-            thread_id: ThreadId::new(),
-            thread_label: None,
+            process_id: ProcessId::new(),
+            process_label: None,
             server_name: "calendar".to_string(),
             request_id: RequestId::Integer(7),
             message: "Open the provider login page to continue.".to_string(),
@@ -1070,10 +1070,10 @@ mod tests {
         let mut view = ApprovalOverlay::new(make_exec_request(), tx, Features::with_defaults());
         assert!(!view.is_complete());
         view.handle_key_event(KeyEvent::new(KeyCode::Char('y'), KeyModifiers::NONE));
-        // We expect at least one thread-scoped approval op message in the queue.
+        // We expect at least one process-scoped approval op message in the queue.
         let mut saw_op = false;
         while let Ok(ev) = rx.try_recv() {
-            if matches!(ev, AppEvent::SubmitThreadOp { .. }) {
+            if matches!(ev, AppEvent::SubmitProcessOp { .. }) {
                 saw_op = true;
                 break;
             }
@@ -1082,14 +1082,14 @@ mod tests {
     }
 
     #[test]
-    fn o_opens_source_thread_for_cross_thread_approval() {
+    fn o_opens_source_process_for_cross_process_approval() {
         let (tx, mut rx) = unbounded_channel::<AppEvent>();
         let tx = AppEventSender::new(tx);
-        let thread_id = ThreadId::new();
+        let process_id = ProcessId::new();
         let mut view = ApprovalOverlay::new(
             ApprovalRequest::Exec {
-                thread_id,
-                thread_label: Some("Robie [explorer]".to_string()),
+                process_id,
+                process_label: Some("Robie [explorer]".to_string()),
                 id: "test".to_string(),
                 command: vec!["echo".to_string(), "hi".to_string()],
                 reason: None,
@@ -1103,21 +1103,21 @@ mod tests {
 
         view.handle_key_event(KeyEvent::new(KeyCode::Char('o'), KeyModifiers::NONE));
 
-        let event = rx.try_recv().expect("expected select-agent-thread event");
+        let event = rx.try_recv().expect("expected select-agent-process event");
         assert_eq!(
-            matches!(event, AppEvent::SelectAgentThread(id) if id == thread_id),
+            matches!(event, AppEvent::SelectAgentProcess(id) if id == process_id),
             true
         );
     }
 
     #[test]
-    fn cross_thread_footer_hint_mentions_o_shortcut() {
+    fn cross_process_footer_hint_mentions_o_shortcut() {
         let (tx, _rx) = unbounded_channel::<AppEvent>();
         let tx = AppEventSender::new(tx);
         let view = ApprovalOverlay::new(
             ApprovalRequest::Exec {
-                thread_id: ThreadId::new(),
-                thread_label: Some("Robie [explorer]".to_string()),
+                process_id: ProcessId::new(),
+                process_label: Some("Robie [explorer]".to_string()),
                 id: "test".to_string(),
                 command: vec!["echo".to_string(), "hi".to_string()],
                 reason: None,
@@ -1130,7 +1130,7 @@ mod tests {
         );
 
         assert_snapshot!(
-            "approval_overlay_cross_thread_prompt",
+            "approval_overlay_cross_process_prompt",
             render_overlay_lines(&view, 80)
         );
     }
@@ -1156,7 +1156,7 @@ mod tests {
         let (tx, mut rx) = unbounded_channel::<AppEvent>();
         let tx = AppEventSender::new(tx);
         let request = make_url_elicitation_request();
-        let thread_id = request.thread_id();
+        let process_id = request.process_id();
         let mut view = ApprovalOverlay::new(request, tx, Features::with_defaults());
 
         view.handle_key_event(KeyEvent::new(KeyCode::Char('y'), KeyModifiers::NONE));
@@ -1166,14 +1166,14 @@ mod tests {
             .expect("expected browser-open elicitation event");
         match event {
             AppEvent::OpenUrlElicitationInBrowser {
-                thread_id: event_thread_id,
+                process_id: event_process_id,
                 server_name,
                 request_id,
                 url,
                 on_open,
                 on_error,
             } => {
-                assert_eq!(event_thread_id, thread_id);
+                assert_eq!(event_process_id, process_id);
                 assert_eq!(server_name, "calendar");
                 assert_eq!(request_id, RequestId::Integer(7));
                 assert_eq!(url, "https://calendar.example.com/oauth/start");
@@ -1190,8 +1190,8 @@ mod tests {
         let tx = AppEventSender::new(tx);
         let mut view = ApprovalOverlay::new(
             ApprovalRequest::Exec {
-                thread_id: ThreadId::new(),
-                thread_label: None,
+                process_id: ProcessId::new(),
+                process_label: None,
                 id: "test".to_string(),
                 command: vec!["echo".to_string()],
                 reason: None,
@@ -1213,7 +1213,7 @@ mod tests {
         view.handle_key_event(KeyEvent::new(KeyCode::Char('p'), KeyModifiers::NONE));
         let mut saw_op = false;
         while let Ok(ev) = rx.try_recv() {
-            if let AppEvent::SubmitThreadOp {
+            if let AppEvent::SubmitProcessOp {
                 op: Op::ExecApproval { decision, .. },
                 ..
             } = ev
@@ -1242,8 +1242,8 @@ mod tests {
         let tx = AppEventSender::new(tx);
         let mut view = ApprovalOverlay::new(
             ApprovalRequest::Exec {
-                thread_id: ThreadId::new(),
-                thread_label: None,
+                process_id: ProcessId::new(),
+                process_label: None,
                 id: "test".to_string(),
                 command: vec!["curl".to_string(), "https://example.com".to_string()],
                 reason: None,
@@ -1281,8 +1281,8 @@ mod tests {
         let tx = AppEventSender::new(tx);
         let command = vec!["echo".into(), "hello".into(), "world".into()];
         let exec_request = ApprovalRequest::Exec {
-            thread_id: ThreadId::new(),
-            thread_label: None,
+            process_id: ProcessId::new(),
+            process_label: None,
             id: "test".into(),
             command,
             reason: None,
@@ -1419,7 +1419,7 @@ mod tests {
 
         let mut saw_op = false;
         while let Ok(ev) = rx.try_recv() {
-            if let AppEvent::SubmitThreadOp {
+            if let AppEvent::SubmitProcessOp {
                 op: Op::RequestPermissionsResponse { response, .. },
                 ..
             } = ev
@@ -1440,8 +1440,8 @@ mod tests {
         let (tx, _rx) = unbounded_channel::<AppEvent>();
         let tx = AppEventSender::new(tx);
         let exec_request = ApprovalRequest::Exec {
-            thread_id: ThreadId::new(),
-            thread_label: None,
+            process_id: ProcessId::new(),
+            process_label: None,
             id: "test".into(),
             command: vec!["cat".into(), "/tmp/readme.txt".into()],
             reason: None,
@@ -1488,8 +1488,8 @@ mod tests {
         let (tx, _rx) = unbounded_channel::<AppEvent>();
         let tx = AppEventSender::new(tx);
         let exec_request = ApprovalRequest::Exec {
-            thread_id: ThreadId::new(),
-            thread_label: None,
+            process_id: ProcessId::new(),
+            process_label: None,
             id: "test".into(),
             command: vec!["cat".into(), "/tmp/readme.txt".into()],
             reason: Some("need filesystem access".into()),
@@ -1530,8 +1530,8 @@ mod tests {
         let (tx, _rx) = unbounded_channel::<AppEvent>();
         let tx = AppEventSender::new(tx);
         let exec_request = ApprovalRequest::Exec {
-            thread_id: ThreadId::new(),
-            thread_label: None,
+            process_id: ProcessId::new(),
+            process_label: None,
             id: "test".into(),
             command: vec!["osascript".into(), "-e".into(), "tell application".into()],
             reason: Some("need macOS automation".into()),
@@ -1566,8 +1566,8 @@ mod tests {
         let (tx, _rx) = unbounded_channel::<AppEvent>();
         let tx = AppEventSender::new(tx);
         let exec_request = ApprovalRequest::Exec {
-            thread_id: ThreadId::new(),
-            thread_label: None,
+            process_id: ProcessId::new(),
+            process_label: None,
             id: "test".into(),
             command: vec!["curl".into(), "https://example.com".into()],
             reason: Some("network request blocked".into()),
@@ -1663,7 +1663,7 @@ mod tests {
 
         let mut decision = None;
         while let Ok(ev) = rx.try_recv() {
-            if let AppEvent::SubmitThreadOp {
+            if let AppEvent::SubmitProcessOp {
                 op: Op::ExecApproval { decision: d, .. },
                 ..
             } = ev

@@ -25,7 +25,7 @@ use tokio::sync::mpsc;
 fn app_mentioned_event_serializes_expected_shape() {
     let tracking = TrackEventsContext {
         model_slug: "gpt-5".to_string(),
-        thread_id: "thread-1".to_string(),
+        process_id: "thread-1".to_string(),
         turn_id: "turn-1".to_string(),
     };
     let event = TrackEventRequest::AppMentioned(CodexAppMentionedEventRequest {
@@ -48,7 +48,7 @@ fn app_mentioned_event_serializes_expected_shape() {
             "event_type": "codex_app_mentioned",
             "event_params": {
                 "connector_id": "calendar",
-                "thread_id": "thread-1",
+                "process_id": "thread-1",
                 "turn_id": "turn-1",
                 "app_name": "Calendar",
                 "product_client_id": crate::default_client::originator().value,
@@ -63,7 +63,7 @@ fn app_mentioned_event_serializes_expected_shape() {
 fn app_used_event_serializes_expected_shape() {
     let tracking = TrackEventsContext {
         model_slug: "gpt-5".to_string(),
-        thread_id: "thread-2".to_string(),
+        process_id: "thread-2".to_string(),
         turn_id: "turn-2".to_string(),
     };
     let event = TrackEventRequest::AppUsed(CodexAppUsedEventRequest {
@@ -86,7 +86,7 @@ fn app_used_event_serializes_expected_shape() {
             "event_type": "codex_app_used",
             "event_params": {
                 "connector_id": "drive",
-                "thread_id": "thread-2",
+                "process_id": "thread-2",
                 "turn_id": "turn-2",
                 "app_name": "Google Drive",
                 "product_client_id": crate::default_client::originator().value,
@@ -113,12 +113,12 @@ fn app_used_dedupe_is_keyed_by_turn_and_connector() {
 
     let turn_1 = TrackEventsContext {
         model_slug: "gpt-5".to_string(),
-        thread_id: "thread-1".to_string(),
+        process_id: "thread-1".to_string(),
         turn_id: "turn-1".to_string(),
     };
     let turn_2 = TrackEventsContext {
         model_slug: "gpt-5".to_string(),
-        thread_id: "thread-1".to_string(),
+        process_id: "thread-1".to_string(),
         turn_id: "turn-2".to_string(),
     };
 
@@ -131,7 +131,7 @@ fn app_used_dedupe_is_keyed_by_turn_and_connector() {
 fn plugin_used_event_serializes_expected_shape() {
     let tracking = TrackEventsContext {
         model_slug: "gpt-5".to_string(),
-        thread_id: "thread-3".to_string(),
+        process_id: "thread-3".to_string(),
         turn_id: "turn-3".to_string(),
     };
     let event = TrackEventRequest::PluginUsed(CodexPluginUsedEventRequest {
@@ -153,7 +153,7 @@ fn plugin_used_event_serializes_expected_shape() {
                 "mcp_server_count": 2,
                 "connector_ids": ["calendar", "drive"],
                 "product_client_id": crate::default_client::originator().value,
-                "thread_id": "thread-3",
+                "process_id": "thread-3",
                 "turn_id": "turn-3",
                 "model_slug": "gpt-5"
             }
@@ -199,12 +199,12 @@ fn plugin_used_dedupe_is_keyed_by_turn_and_plugin() {
 
     let turn_1 = TrackEventsContext {
         model_slug: "gpt-5".to_string(),
-        thread_id: "thread-1".to_string(),
+        process_id: "thread-1".to_string(),
         turn_id: "turn-1".to_string(),
     };
     let turn_2 = TrackEventsContext {
         model_slug: "gpt-5".to_string(),
-        thread_id: "thread-1".to_string(),
+        process_id: "thread-1".to_string(),
         turn_id: "turn-2".to_string(),
     };
 

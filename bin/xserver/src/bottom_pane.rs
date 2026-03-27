@@ -18,7 +18,7 @@ use std::path::PathBuf;
 use crate::app_event::ConnectorsSnapshot;
 use crate::app_event_sender::AppEventSender;
 use crate::bottom_pane::pending_input_preview::PendingInputPreview;
-use crate::bottom_pane::pending_thread_approvals::PendingThreadApprovals;
+use crate::bottom_pane::pending_process_approvals::PendingProcessApprovals;
 use crate::bottom_pane::unified_exec_footer::UnifiedExecFooter;
 use crate::key_hint;
 use crate::key_hint::KeyBinding;
@@ -99,7 +99,7 @@ pub(crate) use status_line_setup::StatusLinePreviewData;
 pub(crate) use status_line_setup::StatusLineSetupView;
 mod paste_burst;
 mod pending_input_preview;
-mod pending_thread_approvals;
+mod pending_process_approvals;
 pub mod popup_consts;
 mod scroll_state;
 mod selection_popup_common;
@@ -180,7 +180,7 @@ pub(crate) struct BottomPane {
     /// Preview of pending steers and queued drafts shown above the composer.
     pending_input_preview: PendingInputPreview,
     /// Inactive threads with pending approval requests.
-    pending_thread_approvals: PendingThreadApprovals,
+    pending_process_approvals: PendingProcessApprovals,
     context_window_percent: Option<i64>,
     context_window_used_tokens: Option<i64>,
 }
@@ -226,7 +226,7 @@ impl BottomPane {
             status: None,
             unified_exec_footer: UnifiedExecFooter::new(),
             pending_input_preview: PendingInputPreview::new(),
-            pending_thread_approvals: PendingThreadApprovals::new(),
+            pending_process_approvals: PendingProcessApprovals::new(),
             esc_backtrack_hint: false,
             animations_enabled,
             context_window_percent: None,
@@ -773,15 +773,15 @@ impl BottomPane {
     }
 
     /// Update the inactive-thread approval list shown above the composer.
-    pub(crate) fn set_pending_thread_approvals(&mut self, threads: Vec<String>) {
-        if self.pending_thread_approvals.set_threads(threads) {
+    pub(crate) fn set_pending_process_approvals(&mut self, processes: Vec<String>) {
+        if self.pending_process_approvals.set_processes(processes) {
             self.request_redraw();
         }
     }
 
     #[cfg(test)]
-    pub(crate) fn pending_thread_approvals(&self) -> &[String] {
-        self.pending_thread_approvals.threads()
+    pub(crate) fn pending_process_approvals(&self) -> &[String] {
+        self.pending_process_approvals.processes()
     }
 
     /// Update the unified-exec process set and refresh whichever summary surface is active.
@@ -944,7 +944,7 @@ impl BottomPane {
                     suggest_reason: Some(tool_suggestion.suggest_reason.clone()),
                     suggestion_type: Some(suggestion_type),
                     elicitation_target: Some(AppLinkElicitationTarget {
-                        thread_id: request.thread_id(),
+                        process_id: request.process_id(),
                         server_name: request.server_name().to_string(),
                         request_id: request.request_id().clone(),
                     }),
@@ -1090,20 +1090,20 @@ impl BottomPane {
                     RenderableItem::Borrowed(&self.unified_exec_footer),
                 );
             }
-            let has_pending_thread_approvals = !self.pending_thread_approvals.is_empty();
+            let has_pending_process_approvals = !self.pending_process_approvals.is_empty();
             let has_pending_input = !self.pending_input_preview.queued_messages.is_empty()
                 || !self.pending_input_preview.pending_steers.is_empty();
             let has_status_or_footer =
                 self.status.is_some() || !self.unified_exec_footer.is_empty();
-            let has_inline_previews = has_pending_thread_approvals || has_pending_input;
+            let has_inline_previews = has_pending_process_approvals || has_pending_input;
             if has_inline_previews && has_status_or_footer {
                 flex.push(/*flex*/ 0, RenderableItem::Owned("".into()));
             }
             flex.push(
                 /*flex*/ 1,
-                RenderableItem::Borrowed(&self.pending_thread_approvals),
+                RenderableItem::Borrowed(&self.pending_process_approvals),
             );
-            if has_pending_thread_approvals && has_pending_input {
+            if has_pending_process_approvals && has_pending_input {
                 flex.push(/*flex*/ 0, RenderableItem::Owned("".into()));
             }
             flex.push(
@@ -1168,7 +1168,6 @@ mod tests {
     use ratatui::buffer::Buffer;
     use ratatui::layout::Rect;
     use std::cell::Cell;
-    use std::path::PathBuf;
     use std::rc::Rc;
     use tokio::sync::mpsc::unbounded_channel;
 
@@ -1192,8 +1191,8 @@ mod tests {
 
     fn exec_request() -> ApprovalRequest {
         ApprovalRequest::Exec {
-            thread_id: chaos_ipc::ThreadId::new(),
-            thread_label: None,
+            process_id: chaos_ipc::ProcessId::new(),
+            process_label: None,
             id: "1".to_string(),
             command: vec!["echo".into(), "ok".into()],
             reason: None,

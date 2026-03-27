@@ -1,8 +1,8 @@
 use anyhow::Result;
-use chaos_kern::ThreadConfigSnapshot;
+use chaos_kern::ProcessConfigSnapshot;
 use chaos_kern::config::AgentRoleConfig;
 use chaos_kern::features::Feature;
-use chaos_ipc::ThreadId;
+use chaos_ipc::ProcessId;
 use chaos_ipc::openai_models::ReasoningEffort;
 use core_test_support::responses::ResponsesRequest;
 use core_test_support::responses::ev_assistant_message;
@@ -101,10 +101,10 @@ fn role_block(description: &str, role_name: &str) -> Option<String> {
     Some(block.join("\n"))
 }
 
-async fn wait_for_spawned_thread_id(test: &TestCodex) -> Result<String> {
+async fn wait_for_spawned_process_id(test: &TestCodex) -> Result<String> {
     let deadline = Instant::now() + Duration::from_secs(2);
     loop {
-        let ids = test.thread_manager.list_thread_ids().await;
+        let ids = test.process_table.list_process_ids().await;
         if let Some(spawned_id) = ids
             .iter()
             .find(|id| **id != test.session_configured.session_id)
@@ -241,7 +241,7 @@ async fn setup_turn_one_with_custom_spawned_child(
             sleep(Duration::from_millis(10)).await;
         }
     }
-    let spawned_id = wait_for_spawned_thread_id(&test).await?;
+    let spawned_id = wait_for_spawned_process_id(&test).await?;
 
     Ok((test, spawned_id))
 }
@@ -252,14 +252,14 @@ async fn spawn_child_and_capture_snapshot(
     configure_test: impl FnOnce(
         core_test_support::test_codex::TestCodexBuilder,
     ) -> core_test_support::test_codex::TestCodexBuilder,
-) -> Result<ThreadConfigSnapshot> {
+) -> Result<ProcessConfigSnapshot> {
     let (test, spawned_id) =
         setup_turn_one_with_custom_spawned_child(server, spawn_args, None, false, configure_test)
             .await?;
-    let thread_id = ThreadId::from_string(&spawned_id)?;
+    let process_id = ProcessId::from_string(&spawned_id)?;
     Ok(test
-        .thread_manager
-        .get_thread(thread_id)
+        .process_table
+        .get_process(process_id)
         .await?
         .config_snapshot()
         .await)

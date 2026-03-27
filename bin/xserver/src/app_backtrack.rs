@@ -12,7 +12,7 @@
 //! - The first `Esc` in the main view "primes" the feature and captures a base thread id.
 //! - A subsequent `Esc` opens the transcript overlay (`Ctrl+T`) and highlights a user message.
 //! - `Enter` requests a rollback from core and records a `pending_rollback` guard.
-//! - On `EventMsg::ThreadRolledBack`, we either finish an in-flight backtrack request or queue a
+//! - On `EventMsg::ProcessRolledBack`, we either finish an in-flight backtrack request or queue a
 //!   rollback trim so it runs in event order with transcript inserts.
 //!
 //! The transcript overlay (`Ctrl+T`) renders committed transcript cells plus a render-only live
@@ -34,7 +34,7 @@ use crate::history_cell::UserHistoryCell;
 use crate::pager_overlay::Overlay;
 use crate::tui;
 use crate::tui::TuiEvent;
-use chaos_ipc::ThreadId;
+use chaos_ipc::ProcessId;
 use chaos_ipc::protocol::CodexErrorInfo;
 use chaos_ipc::protocol::ErrorEvent;
 use chaos_ipc::protocol::EventMsg;
@@ -53,7 +53,7 @@ pub(crate) struct BacktrackState {
     /// Session id of the base thread to rollback.
     ///
     /// If the current thread changes, backtrack selections become invalid and must be ignored.
-    pub(crate) base_id: Option<ThreadId>,
+    pub(crate) base_id: Option<ProcessId>,
     /// Index of the currently highlighted user message.
     ///
     /// This is an index into the filtered "user messages since the last session start" view,
@@ -96,7 +96,7 @@ pub(crate) struct BacktrackSelection {
 #[derive(Debug, Clone)]
 pub(crate) struct PendingBacktrackRollback {
     pub(crate) selection: BacktrackSelection,
-    pub(crate) thread_id: Option<ThreadId>,
+    pub(crate) process_id: Option<ProcessId>,
 }
 
 impl App {
@@ -213,9 +213,9 @@ impl App {
         let has_remote_image_urls = !remote_image_urls.is_empty();
         self.backtrack.pending_rollback = Some(PendingBacktrackRollback {
             selection,
-            thread_id: self.chat_widget.thread_id(),
+            process_id: self.chat_widget.process_id(),
         });
-        self.chat_widget.submit_op(Op::ThreadRollback { num_turns });
+        self.chat_widget.submit_op(Op::ProcessRollback { num_turns });
         self.chat_widget.set_remote_image_urls(remote_image_urls);
         if !prefill.is_empty()
             || !text_elements.is_empty()
@@ -265,7 +265,7 @@ impl App {
     fn prime_backtrack(&mut self) {
         self.backtrack.primed = true;
         self.backtrack.nth_user_message = usize::MAX;
-        self.backtrack.base_id = self.chat_widget.thread_id();
+        self.backtrack.base_id = self.chat_widget.process_id();
         self.chat_widget.show_esc_backtrack_hint();
     }
 
@@ -281,7 +281,7 @@ impl App {
     /// When overlay is already open, begin preview mode and select latest user message.
     fn begin_overlay_backtrack_preview(&mut self, tui: &mut tui::Tui) {
         self.backtrack.primed = true;
-        self.backtrack.base_id = self.chat_widget.thread_id();
+        self.backtrack.base_id = self.chat_widget.process_id();
         self.backtrack.overlay_preview_active = true;
         let count = user_count(&self.transcript_cells);
         if let Some(last) = count.checked_sub(1) {
@@ -463,8 +463,8 @@ impl App {
 
     pub(crate) fn handle_backtrack_event(&mut self, event: &EventMsg) {
         match event {
-            EventMsg::ThreadRolledBack(rollback) => {
-                // `pending_rollback` is set only after this UI sends `Op::ThreadRollback`
+            EventMsg::ProcessRolledBack(rollback) => {
+                // `pending_rollback` is set only after this UI sends `Op::ProcessRollback`
                 // from the backtrack flow. In that case, finish immediately using the
                 // stored selection (nth user message) so local trim matches the exact
                 // backtrack target.
@@ -476,13 +476,13 @@ impl App {
                 if self.backtrack.pending_rollback.is_some() {
                     self.finish_pending_backtrack();
                 } else {
-                    self.app_event_tx.send(AppEvent::ApplyThreadRollback {
+                    self.app_event_tx.send(AppEvent::ApplyProcessRollback {
                         num_turns: rollback.num_turns,
                     });
                 }
             }
             EventMsg::Error(ErrorEvent {
-                codex_error_info: Some(CodexErrorInfo::ThreadRollbackFailed),
+                codex_error_info: Some(CodexErrorInfo::ProcessRollbackFailed),
                 ..
             }) => {
                 // Core rejected the rollback; clear the guard so the user can retry.
@@ -492,11 +492,11 @@ impl App {
         }
     }
 
-    /// Apply rollback semantics for `ThreadRolledBack` events where this TUI does not have an
+    /// Apply rollback semantics for `ProcessRolledBack` events where this TUI does not have an
     /// in-flight backtrack request (`pending_rollback` is `None`).
     ///
     /// Returns `true` when local transcript state changed.
-    pub(crate) fn apply_non_pending_thread_rollback(&mut self, num_turns: u32) -> bool {
+    pub(crate) fn apply_non_pending_process_rollback(&mut self, num_turns: u32) -> bool {
         if !trim_transcript_cells_drop_last_n_user_turns(&mut self.transcript_cells, num_turns) {
             return false;
         }
@@ -513,7 +513,7 @@ impl App {
         let Some(pending) = self.backtrack.pending_rollback.take() else {
             return;
         };
-        if pending.thread_id != self.chat_widget.thread_id() {
+        if pending.process_id != self.chat_widget.process_id() {
             // Ignore rollbacks targeting a prior thread.
             return;
         }
@@ -528,7 +528,7 @@ impl App {
 
     fn backtrack_selection(&self, nth_user_message: usize) -> Option<BacktrackSelection> {
         let base_id = self.backtrack.base_id?;
-        if self.chat_widget.thread_id() != Some(base_id) {
+        if self.chat_widget.process_id() != Some(base_id) {
             return None;
         }
 

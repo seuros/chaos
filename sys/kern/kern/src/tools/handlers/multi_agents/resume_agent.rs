@@ -1,5 +1,5 @@
 use super::*;
-use crate::agent::next_thread_spawn_depth;
+use crate::agent::next_process_spawn_depth;
 
 pub(crate) struct Handler;
 
@@ -25,16 +25,16 @@ impl ToolHandler for Handler {
         } = invocation;
         let arguments = function_arguments(payload)?;
         let args: ResumeAgentArgs = parse_arguments(&arguments)?;
-        let receiver_thread_id = agent_id(&args.id)?;
+        let receiver_process_id = agent_id(&args.id)?;
         let (receiver_agent_nickname, receiver_agent_role) = session
             .services
             .agent_control
-            .get_agent_nickname_and_role(receiver_thread_id)
+            .get_agent_nickname_and_role(receiver_process_id)
             .await
             .unwrap_or((None, None));
-        let child_depth = next_thread_spawn_depth(&turn.session_source);
+        let child_depth = next_process_spawn_depth(&turn.session_source);
         let max_depth = turn.config.agent_max_depth;
-        if exceeds_thread_spawn_depth_limit(child_depth, max_depth) {
+        if exceeds_process_spawn_depth_limit(child_depth, max_depth) {
             return Err(FunctionCallError::RespondToModel(
                 "Agent depth limit reached. Solve the task yourself.".to_string(),
             ));
@@ -45,8 +45,8 @@ impl ToolHandler for Handler {
                 &turn,
                 CollabResumeBeginEvent {
                     call_id: call_id.clone(),
-                    sender_thread_id: session.conversation_id,
-                    receiver_thread_id,
+                    sender_process_id: session.conversation_id,
+                    receiver_process_id,
                     receiver_agent_nickname: receiver_agent_nickname.clone(),
                     receiver_agent_role: receiver_agent_role.clone(),
                 }
@@ -57,10 +57,10 @@ impl ToolHandler for Handler {
         let mut status = session
             .services
             .agent_control
-            .get_status(receiver_thread_id)
+            .get_status(receiver_process_id)
             .await;
         let error = if matches!(status, AgentStatus::NotFound) {
-            match try_resume_closed_agent(&session, &turn, receiver_thread_id, child_depth).await {
+            match try_resume_closed_agent(&session, &turn, receiver_process_id, child_depth).await {
                 Ok(resumed_status) => {
                     status = resumed_status;
                     None
@@ -69,7 +69,7 @@ impl ToolHandler for Handler {
                     status = session
                         .services
                         .agent_control
-                        .get_status(receiver_thread_id)
+                        .get_status(receiver_process_id)
                         .await;
                     Some(err)
                 }
@@ -81,7 +81,7 @@ impl ToolHandler for Handler {
         let (receiver_agent_nickname, receiver_agent_role) = session
             .services
             .agent_control
-            .get_agent_nickname_and_role(receiver_thread_id)
+            .get_agent_nickname_and_role(receiver_process_id)
             .await
             .unwrap_or((receiver_agent_nickname, receiver_agent_role));
         session
@@ -89,8 +89,8 @@ impl ToolHandler for Handler {
                 &turn,
                 CollabResumeEndEvent {
                     call_id,
-                    sender_thread_id: session.conversation_id,
-                    receiver_thread_id,
+                    sender_process_id: session.conversation_id,
+                    receiver_process_id,
                     receiver_agent_nickname,
                     receiver_agent_role,
                     status: status.clone(),
@@ -136,28 +136,28 @@ impl ToolOutput for ResumeAgentResult {
 async fn try_resume_closed_agent(
     session: &Arc<Session>,
     turn: &Arc<TurnContext>,
-    receiver_thread_id: ThreadId,
+    receiver_process_id: ProcessId,
     child_depth: i32,
 ) -> Result<AgentStatus, FunctionCallError> {
     let config = build_agent_resume_config(turn.as_ref(), child_depth)?;
-    let resumed_thread_id = session
+    let resumed_process_id = session
         .services
         .agent_control
         .resume_agent_from_rollout(
             config,
-            receiver_thread_id,
-            thread_spawn_source(
+            receiver_process_id,
+            process_spawn_source(
                 session.conversation_id,
                 child_depth,
                 /*agent_role*/ None,
             ),
         )
         .await
-        .map_err(|err| collab_agent_error(receiver_thread_id, err))?;
+        .map_err(|err| collab_agent_error(receiver_process_id, err))?;
 
     Ok(session
         .services
         .agent_control
-        .get_status(resumed_thread_id)
+        .get_status(resumed_process_id)
         .await)
 }

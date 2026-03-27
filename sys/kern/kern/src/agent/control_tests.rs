@@ -1,7 +1,7 @@
 use super::*;
 use crate::CodexAuth;
-use crate::CodexThread;
-use crate::ThreadManager;
+use crate::Process;
+use crate::ProcessTable;
 use crate::agent::agent_status_from_event;
 use crate::config::AgentRoleConfig;
 use crate::config::Config;
@@ -61,14 +61,14 @@ fn text_input(text: &str) -> Vec<UserInput> {
 struct AgentControlHarness {
     _home: TempDir,
     config: Config,
-    manager: ThreadManager,
+    manager: ProcessTable,
     control: AgentControl,
 }
 
 impl AgentControlHarness {
     async fn new() -> Self {
         let (home, config) = test_config().await;
-        let manager = ThreadManager::with_models_provider_and_home_for_tests(
+        let manager = ProcessTable::with_models_provider_and_home_for_tests(
             CodexAuth::from_api_key("dummy"),
             config.model_provider.clone(),
             config.codex_home.clone(),
@@ -82,13 +82,13 @@ impl AgentControlHarness {
         }
     }
 
-    async fn start_thread(&self) -> (ThreadId, Arc<CodexThread>) {
+    async fn start_process(&self) -> (ProcessId, Arc<Process>) {
         let new_thread = self
             .manager
-            .start_thread(self.config.clone())
+            .start_process(self.config.clone())
             .await
             .expect("start thread");
-        (new_thread.thread_id, new_thread.thread)
+        (new_thread.process_id, new_thread.process)
     }
 }
 
@@ -124,7 +124,7 @@ fn history_contains_text(history_items: &[ResponseItem], needle: &str) -> bool {
     })
 }
 
-async fn wait_for_subagent_notification(parent_thread: &Arc<CodexThread>) -> bool {
+async fn wait_for_subagent_notification(parent_thread: &Arc<Process>) -> bool {
     let wait = async {
         loop {
             let history_items = parent_thread
@@ -148,7 +148,7 @@ async fn send_input_errors_when_manager_dropped() {
     let control = AgentControl::default();
     let err = control
         .send_input(
-            ThreadId::new(),
+            ProcessId::new(),
             vec![UserInput::Text {
                 text: "hello".to_string(),
                 text_elements: Vec::new(),
@@ -165,7 +165,7 @@ async fn send_input_errors_when_manager_dropped() {
 #[tokio::test]
 async fn get_status_returns_not_found_without_manager() {
     let control = AgentControl::default();
-    let got = control.get_status(ThreadId::new()).await;
+    let got = control.get_status(ProcessId::new()).await;
     assert_eq!(got, AgentStatus::NotFound);
 }
 
@@ -236,7 +236,7 @@ async fn resume_agent_errors_when_manager_dropped() {
     let control = AgentControl::default();
     let (_home, config) = test_config().await;
     let err = control
-        .resume_agent_from_rollout(config, ThreadId::new(), SessionSource::Exec)
+        .resume_agent_from_rollout(config, ProcessId::new(), SessionSource::Exec)
         .await
         .expect_err("resume_agent should fail without a manager");
     assert_eq!(
@@ -248,11 +248,11 @@ async fn resume_agent_errors_when_manager_dropped() {
 #[tokio::test]
 async fn send_input_errors_when_thread_missing() {
     let harness = AgentControlHarness::new().await;
-    let thread_id = ThreadId::new();
+    let process_id = ProcessId::new();
     let err = harness
         .control
         .send_input(
-            thread_id,
+            process_id,
             vec![UserInput::Text {
                 text: "hello".to_string(),
                 text_elements: Vec::new(),
@@ -260,43 +260,43 @@ async fn send_input_errors_when_thread_missing() {
         )
         .await
         .expect_err("send_input should fail for missing thread");
-    assert_matches!(err, CodexErr::ThreadNotFound(id) if id == thread_id);
+    assert_matches!(err, CodexErr::ProcessNotFound(id) if id == process_id);
 }
 
 #[tokio::test]
 async fn get_status_returns_not_found_for_missing_thread() {
     let harness = AgentControlHarness::new().await;
-    let status = harness.control.get_status(ThreadId::new()).await;
+    let status = harness.control.get_status(ProcessId::new()).await;
     assert_eq!(status, AgentStatus::NotFound);
 }
 
 #[tokio::test]
 async fn get_status_returns_pending_init_for_new_thread() {
     let harness = AgentControlHarness::new().await;
-    let (thread_id, _) = harness.start_thread().await;
-    let status = harness.control.get_status(thread_id).await;
+    let (process_id, _) = harness.start_process().await;
+    let status = harness.control.get_status(process_id).await;
     assert_eq!(status, AgentStatus::PendingInit);
 }
 
 #[tokio::test]
 async fn subscribe_status_errors_for_missing_thread() {
     let harness = AgentControlHarness::new().await;
-    let thread_id = ThreadId::new();
+    let process_id = ProcessId::new();
     let err = harness
         .control
-        .subscribe_status(thread_id)
+        .subscribe_status(process_id)
         .await
         .expect_err("subscribe_status should fail for missing thread");
-    assert_matches!(err, CodexErr::ThreadNotFound(id) if id == thread_id);
+    assert_matches!(err, CodexErr::ProcessNotFound(id) if id == process_id);
 }
 
 #[tokio::test]
 async fn subscribe_status_updates_on_shutdown() {
     let harness = AgentControlHarness::new().await;
-    let (thread_id, thread) = harness.start_thread().await;
+    let (process_id, thread) = harness.start_process().await;
     let mut status_rx = harness
         .control
-        .subscribe_status(thread_id)
+        .subscribe_status(process_id)
         .await
         .expect("subscribe_status should succeed");
     assert_eq!(status_rx.borrow().clone(), AgentStatus::PendingInit);
@@ -313,12 +313,12 @@ async fn subscribe_status_updates_on_shutdown() {
 #[tokio::test]
 async fn send_input_submits_user_message() {
     let harness = AgentControlHarness::new().await;
-    let (thread_id, _thread) = harness.start_thread().await;
+    let (process_id, _thread) = harness.start_process().await;
 
     let submission_id = harness
         .control
         .send_input(
-            thread_id,
+            process_id,
             vec![UserInput::Text {
                 text: "hello from tests".to_string(),
                 text_elements: Vec::new(),
@@ -328,7 +328,7 @@ async fn send_input_submits_user_message() {
         .expect("send_input should succeed");
     assert!(!submission_id.is_empty());
     let expected = (
-        thread_id,
+        process_id,
         Op::UserInput {
             items: vec![UserInput::Text {
                 text: "hello from tests".to_string(),
@@ -346,20 +346,20 @@ async fn send_input_submits_user_message() {
 }
 
 #[tokio::test]
-async fn spawn_agent_creates_thread_and_sends_prompt() {
+async fn spawn_agent_creates_process_and_sends_prompt() {
     let harness = AgentControlHarness::new().await;
-    let thread_id = harness
+    let process_id = harness
         .control
         .spawn_agent(harness.config.clone(), text_input("spawned"), None)
         .await
         .expect("spawn_agent should succeed");
     let _thread = harness
         .manager
-        .get_thread(thread_id)
+        .get_process(process_id)
         .await
         .expect("thread should be registered");
     let expected = (
-        thread_id,
+        process_id,
         Op::UserInput {
             items: vec![UserInput::Text {
                 text: "spawned".to_string(),
@@ -379,7 +379,7 @@ async fn spawn_agent_creates_thread_and_sends_prompt() {
 #[tokio::test]
 async fn spawn_agent_can_fork_parent_thread_history() {
     let harness = AgentControlHarness::new().await;
-    let (parent_thread_id, parent_thread) = harness.start_thread().await;
+    let (parent_process_id, parent_thread) = harness.start_process().await;
     parent_thread
         .inject_user_message_without_turn("parent seed context".to_string())
         .await;
@@ -404,13 +404,13 @@ async fn spawn_agent_can_fork_parent_thread_history() {
         .await;
     parent_thread.codex.session.flush_rollout().await;
 
-    let child_thread_id = harness
+    let child_process_id = harness
         .control
         .spawn_agent_with_options(
             harness.config.clone(),
             text_input("child task"),
-            Some(SessionSource::SubAgent(SubAgentSource::ThreadSpawn {
-                parent_thread_id,
+            Some(SessionSource::SubAgent(SubAgentSource::ProcessSpawn {
+                parent_process_id,
                 depth: 1,
                 agent_nickname: None,
                 agent_role: None,
@@ -424,10 +424,10 @@ async fn spawn_agent_can_fork_parent_thread_history() {
 
     let child_thread = harness
         .manager
-        .get_thread(child_thread_id)
+        .get_process(child_process_id)
         .await
         .expect("child thread should be registered");
-    assert_ne!(child_thread_id, parent_thread_id);
+    assert_ne!(child_process_id, parent_process_id);
     let history = child_thread.codex.session.clone_history().await;
     assert!(history_contains_text(
         history.raw_items(),
@@ -435,7 +435,7 @@ async fn spawn_agent_can_fork_parent_thread_history() {
     ));
 
     let expected = (
-        child_thread_id,
+        child_process_id,
         Op::UserInput {
             items: vec![UserInput::Text {
                 text: "child task".to_string(),
@@ -453,7 +453,7 @@ async fn spawn_agent_can_fork_parent_thread_history() {
 
     let _ = harness
         .control
-        .shutdown_agent(child_thread_id)
+        .shutdown_agent(child_process_id)
         .await
         .expect("child shutdown should submit");
     let _ = parent_thread
@@ -465,7 +465,7 @@ async fn spawn_agent_can_fork_parent_thread_history() {
 #[tokio::test]
 async fn spawn_agent_fork_injects_output_for_parent_spawn_call() {
     let harness = AgentControlHarness::new().await;
-    let (parent_thread_id, parent_thread) = harness.start_thread().await;
+    let (parent_process_id, parent_thread) = harness.start_process().await;
     let turn_context = parent_thread.codex.session.new_default_turn().await;
     let parent_spawn_call_id = "spawn-call-1".to_string();
     let parent_spawn_call = ResponseItem::FunctionCall {
@@ -487,13 +487,13 @@ async fn spawn_agent_fork_injects_output_for_parent_spawn_call() {
         .await;
     parent_thread.codex.session.flush_rollout().await;
 
-    let child_thread_id = harness
+    let child_process_id = harness
         .control
         .spawn_agent_with_options(
             harness.config.clone(),
             text_input("child task"),
-            Some(SessionSource::SubAgent(SubAgentSource::ThreadSpawn {
-                parent_thread_id,
+            Some(SessionSource::SubAgent(SubAgentSource::ProcessSpawn {
+                parent_process_id,
                 depth: 1,
                 agent_nickname: None,
                 agent_role: None,
@@ -507,7 +507,7 @@ async fn spawn_agent_fork_injects_output_for_parent_spawn_call() {
 
     let child_thread = harness
         .manager
-        .get_thread(child_thread_id)
+        .get_process(child_process_id)
         .await
         .expect("child thread should be registered");
     let history = child_thread.codex.session.clone_history().await;
@@ -529,7 +529,7 @@ async fn spawn_agent_fork_injects_output_for_parent_spawn_call() {
 
     let _ = harness
         .control
-        .shutdown_agent(child_thread_id)
+        .shutdown_agent(child_process_id)
         .await
         .expect("child shutdown should submit");
     let _ = parent_thread
@@ -541,7 +541,7 @@ async fn spawn_agent_fork_injects_output_for_parent_spawn_call() {
 #[tokio::test]
 async fn spawn_agent_fork_flushes_parent_rollout_before_loading_history() {
     let harness = AgentControlHarness::new().await;
-    let (parent_thread_id, parent_thread) = harness.start_thread().await;
+    let (parent_process_id, parent_thread) = harness.start_process().await;
     let turn_context = parent_thread.codex.session.new_default_turn().await;
     let parent_spawn_call_id = "spawn-call-unflushed".to_string();
     let parent_spawn_call = ResponseItem::FunctionCall {
@@ -557,13 +557,13 @@ async fn spawn_agent_fork_flushes_parent_rollout_before_loading_history() {
         .record_conversation_items(turn_context.as_ref(), &[parent_spawn_call])
         .await;
 
-    let child_thread_id = harness
+    let child_process_id = harness
         .control
         .spawn_agent_with_options(
             harness.config.clone(),
             text_input("child task"),
-            Some(SessionSource::SubAgent(SubAgentSource::ThreadSpawn {
-                parent_thread_id,
+            Some(SessionSource::SubAgent(SubAgentSource::ProcessSpawn {
+                parent_process_id,
                 depth: 1,
                 agent_nickname: None,
                 agent_role: None,
@@ -577,7 +577,7 @@ async fn spawn_agent_fork_flushes_parent_rollout_before_loading_history() {
 
     let child_thread = harness
         .manager
-        .get_thread(child_thread_id)
+        .get_process(child_process_id)
         .await
         .expect("child thread should be registered");
     let history = child_thread.codex.session.clone_history().await;
@@ -606,7 +606,7 @@ async fn spawn_agent_fork_flushes_parent_rollout_before_loading_history() {
 
     let _ = harness
         .control
-        .shutdown_agent(child_thread_id)
+        .shutdown_agent(child_process_id)
         .await
         .expect("child shutdown should submit");
     let _ = parent_thread
@@ -623,7 +623,7 @@ async fn spawn_agent_respects_max_threads_limit() {
         TomlValue::Integer(max_threads as i64),
     )])
     .await;
-    let manager = ThreadManager::with_models_provider_and_home_for_tests(
+    let manager = ProcessTable::with_models_provider_and_home_for_tests(
         CodexAuth::from_api_key("dummy"),
         config.model_provider.clone(),
         config.codex_home.clone(),
@@ -631,7 +631,7 @@ async fn spawn_agent_respects_max_threads_limit() {
     let control = manager.agent_control();
 
     let _ = manager
-        .start_thread(config.clone())
+        .start_process(config.clone())
         .await
         .expect("start thread");
 
@@ -666,7 +666,7 @@ async fn spawn_agent_releases_slot_after_shutdown() {
         TomlValue::Integer(max_threads as i64),
     )])
     .await;
-    let manager = ThreadManager::with_models_provider_and_home_for_tests(
+    let manager = ProcessTable::with_models_provider_and_home_for_tests(
         CodexAuth::from_api_key("dummy"),
         config.model_provider.clone(),
         config.codex_home.clone(),
@@ -700,7 +700,7 @@ async fn spawn_agent_limit_shared_across_clones() {
         TomlValue::Integer(max_threads as i64),
     )])
     .await;
-    let manager = ThreadManager::with_models_provider_and_home_for_tests(
+    let manager = ProcessTable::with_models_provider_and_home_for_tests(
         CodexAuth::from_api_key("dummy"),
         config.model_provider.clone(),
         config.codex_home.clone(),
@@ -736,7 +736,7 @@ async fn resume_agent_respects_max_threads_limit() {
         TomlValue::Integer(max_threads as i64),
     )])
     .await;
-    let manager = ThreadManager::with_models_provider_and_home_for_tests(
+    let manager = ProcessTable::with_models_provider_and_home_for_tests(
         CodexAuth::from_api_key("dummy"),
         config.model_provider.clone(),
         config.codex_home.clone(),
@@ -783,7 +783,7 @@ async fn resume_agent_releases_slot_after_resume_failure() {
         TomlValue::Integer(max_threads as i64),
     )])
     .await;
-    let manager = ThreadManager::with_models_provider_and_home_for_tests(
+    let manager = ProcessTable::with_models_provider_and_home_for_tests(
         CodexAuth::from_api_key("dummy"),
         config.model_provider.clone(),
         config.codex_home.clone(),
@@ -791,7 +791,7 @@ async fn resume_agent_releases_slot_after_resume_failure() {
     let control = manager.agent_control();
 
     let _ = control
-        .resume_agent_from_rollout(config.clone(), ThreadId::new(), SessionSource::Exec)
+        .resume_agent_from_rollout(config.clone(), ProcessId::new(), SessionSource::Exec)
         .await
         .expect_err("resume should fail for missing rollout path");
 
@@ -808,15 +808,15 @@ async fn resume_agent_releases_slot_after_resume_failure() {
 #[tokio::test]
 async fn spawn_child_completion_notifies_parent_history() {
     let harness = AgentControlHarness::new().await;
-    let (parent_thread_id, parent_thread) = harness.start_thread().await;
+    let (parent_process_id, parent_thread) = harness.start_process().await;
 
-    let child_thread_id = harness
+    let child_process_id = harness
         .control
         .spawn_agent(
             harness.config.clone(),
             text_input("hello child"),
-            Some(SessionSource::SubAgent(SubAgentSource::ThreadSpawn {
-                parent_thread_id,
+            Some(SessionSource::SubAgent(SubAgentSource::ProcessSpawn {
+                parent_process_id,
                 depth: 1,
                 agent_nickname: None,
                 agent_role: Some("explorer".to_string()),
@@ -827,7 +827,7 @@ async fn spawn_child_completion_notifies_parent_history() {
 
     let child_thread = harness
         .manager
-        .get_thread(child_thread_id)
+        .get_process(child_process_id)
         .await
         .expect("child thread should exist");
     let _ = child_thread
@@ -841,13 +841,13 @@ async fn spawn_child_completion_notifies_parent_history() {
 #[tokio::test]
 async fn completion_watcher_notifies_parent_when_child_is_missing() {
     let harness = AgentControlHarness::new().await;
-    let (parent_thread_id, parent_thread) = harness.start_thread().await;
-    let child_thread_id = ThreadId::new();
+    let (parent_process_id, parent_thread) = harness.start_process().await;
+    let child_process_id = ProcessId::new();
 
     harness.control.maybe_start_completion_watcher(
-        child_thread_id,
-        Some(SessionSource::SubAgent(SubAgentSource::ThreadSpawn {
-            parent_thread_id,
+        child_process_id,
+        Some(SessionSource::SubAgent(SubAgentSource::ProcessSpawn {
+            parent_process_id,
             depth: 1,
             agent_nickname: None,
             agent_role: Some("explorer".to_string()),
@@ -866,7 +866,7 @@ async fn completion_watcher_notifies_parent_when_child_is_missing() {
     assert_eq!(
         history_contains_text(
             &history_items,
-            &format!("\"agent_id\":\"{child_thread_id}\"")
+            &format!("\"agent_id\":\"{child_process_id}\"")
         ),
         true
     );
@@ -877,17 +877,17 @@ async fn completion_watcher_notifies_parent_when_child_is_missing() {
 }
 
 #[tokio::test]
-async fn spawn_thread_subagent_gets_random_nickname_in_session_source() {
+async fn spawn_process_subagent_gets_random_nickname_in_session_source() {
     let harness = AgentControlHarness::new().await;
-    let (parent_thread_id, _parent_thread) = harness.start_thread().await;
+    let (parent_process_id, _parent_thread) = harness.start_process().await;
 
-    let child_thread_id = harness
+    let child_process_id = harness
         .control
         .spawn_agent(
             harness.config.clone(),
             text_input("hello child"),
-            Some(SessionSource::SubAgent(SubAgentSource::ThreadSpawn {
-                parent_thread_id,
+            Some(SessionSource::SubAgent(SubAgentSource::ProcessSpawn {
+                parent_process_id,
                 depth: 1,
                 agent_nickname: None,
                 agent_role: Some("explorer".to_string()),
@@ -898,13 +898,13 @@ async fn spawn_thread_subagent_gets_random_nickname_in_session_source() {
 
     let child_thread = harness
         .manager
-        .get_thread(child_thread_id)
+        .get_process(child_process_id)
         .await
         .expect("child thread should be registered");
     let snapshot = child_thread.config_snapshot().await;
 
-    let SessionSource::SubAgent(SubAgentSource::ThreadSpawn {
-        parent_thread_id: seen_parent_thread_id,
+    let SessionSource::SubAgent(SubAgentSource::ProcessSpawn {
+        parent_process_id: seen_parent_process_id,
         depth,
         agent_nickname,
         agent_role,
@@ -912,14 +912,14 @@ async fn spawn_thread_subagent_gets_random_nickname_in_session_source() {
     else {
         panic!("expected thread-spawn sub-agent source");
     };
-    assert_eq!(seen_parent_thread_id, parent_thread_id);
+    assert_eq!(seen_parent_process_id, parent_process_id);
     assert_eq!(depth, 1);
     assert!(agent_nickname.is_some());
     assert_eq!(agent_role, Some("explorer".to_string()));
 }
 
 #[tokio::test]
-async fn spawn_thread_subagent_uses_role_specific_nickname_candidates() {
+async fn spawn_process_subagent_uses_role_specific_nickname_candidates() {
     let mut harness = AgentControlHarness::new().await;
     harness.config.agent_roles.insert(
         "researcher".to_string(),
@@ -929,15 +929,15 @@ async fn spawn_thread_subagent_uses_role_specific_nickname_candidates() {
             nickname_candidates: Some(vec!["Atlas".to_string()]),
         },
     );
-    let (parent_thread_id, _parent_thread) = harness.start_thread().await;
+    let (parent_process_id, _parent_thread) = harness.start_process().await;
 
-    let child_thread_id = harness
+    let child_process_id = harness
         .control
         .spawn_agent(
             harness.config.clone(),
             text_input("hello child"),
-            Some(SessionSource::SubAgent(SubAgentSource::ThreadSpawn {
-                parent_thread_id,
+            Some(SessionSource::SubAgent(SubAgentSource::ProcessSpawn {
+                parent_process_id,
                 depth: 1,
                 agent_nickname: None,
                 agent_role: Some("researcher".to_string()),
@@ -948,12 +948,12 @@ async fn spawn_thread_subagent_uses_role_specific_nickname_candidates() {
 
     let child_thread = harness
         .manager
-        .get_thread(child_thread_id)
+        .get_process(child_process_id)
         .await
         .expect("child thread should be registered");
     let snapshot = child_thread.config_snapshot().await;
 
-    let SessionSource::SubAgent(SubAgentSource::ThreadSpawn { agent_nickname, .. }) =
+    let SessionSource::SubAgent(SubAgentSource::ProcessSpawn { agent_nickname, .. }) =
         snapshot.session_source
     else {
         panic!("expected thread-spawn sub-agent source");
@@ -962,13 +962,13 @@ async fn spawn_thread_subagent_uses_role_specific_nickname_candidates() {
 }
 
 #[tokio::test]
-async fn resume_thread_subagent_restores_stored_nickname_and_role() {
+async fn resume_process_subagent_restores_stored_nickname_and_role() {
     let (home, mut config) = test_config().await;
     config
         .features
         .enable(Feature::Sqlite)
         .expect("test config should allow sqlite");
-    let manager = ThreadManager::with_models_provider_and_home_for_tests(
+    let manager = ProcessTable::with_models_provider_and_home_for_tests(
         CodexAuth::from_api_key("dummy"),
         config.model_provider.clone(),
         config.codex_home.clone(),
@@ -980,15 +980,15 @@ async fn resume_thread_subagent_restores_stored_nickname_and_role() {
         manager,
         control,
     };
-    let (parent_thread_id, _parent_thread) = harness.start_thread().await;
+    let (parent_process_id, _parent_thread) = harness.start_process().await;
 
-    let child_thread_id = harness
+    let child_process_id = harness
         .control
         .spawn_agent(
             harness.config.clone(),
             text_input("hello child"),
-            Some(SessionSource::SubAgent(SubAgentSource::ThreadSpawn {
-                parent_thread_id,
+            Some(SessionSource::SubAgent(SubAgentSource::ProcessSpawn {
+                parent_process_id,
                 depth: 1,
                 agent_nickname: None,
                 agent_role: Some("explorer".to_string()),
@@ -999,12 +999,12 @@ async fn resume_thread_subagent_restores_stored_nickname_and_role() {
 
     let child_thread = harness
         .manager
-        .get_thread(child_thread_id)
+        .get_process(child_process_id)
         .await
         .expect("child thread should exist");
     let mut status_rx = harness
         .control
-        .subscribe_status(child_thread_id)
+        .subscribe_status(child_process_id)
         .await
         .expect("status subscription should succeed");
     if matches!(status_rx.borrow().clone(), AgentStatus::PendingInit) {
@@ -1032,7 +1032,7 @@ async fn resume_thread_subagent_restores_stored_nickname_and_role() {
         .expect("sqlite state db should be available for nickname resume test");
     timeout(Duration::from_secs(5), async {
         loop {
-            if let Ok(Some(metadata)) = state_db.get_thread(child_thread_id).await
+            if let Ok(Some(metadata)) = state_db.get_process(child_process_id).await
                 && metadata.agent_nickname.is_some()
                 && metadata.agent_role.as_deref() == Some("explorer")
             {
@@ -1046,17 +1046,17 @@ async fn resume_thread_subagent_restores_stored_nickname_and_role() {
 
     let _ = harness
         .control
-        .shutdown_agent(child_thread_id)
+        .shutdown_agent(child_process_id)
         .await
         .expect("child shutdown should submit");
 
-    let resumed_thread_id = harness
+    let resumed_process_id = harness
         .control
         .resume_agent_from_rollout(
             harness.config.clone(),
-            child_thread_id,
-            SessionSource::SubAgent(SubAgentSource::ThreadSpawn {
-                parent_thread_id,
+            child_process_id,
+            SessionSource::SubAgent(SubAgentSource::ProcessSpawn {
+                parent_process_id,
                 depth: 1,
                 agent_nickname: None,
                 agent_role: None,
@@ -1064,17 +1064,17 @@ async fn resume_thread_subagent_restores_stored_nickname_and_role() {
         )
         .await
         .expect("resume should succeed");
-    assert_eq!(resumed_thread_id, child_thread_id);
+    assert_eq!(resumed_process_id, child_process_id);
 
     let resumed_snapshot = harness
         .manager
-        .get_thread(resumed_thread_id)
+        .get_process(resumed_process_id)
         .await
         .expect("resumed child thread should exist")
         .config_snapshot()
         .await;
-    let SessionSource::SubAgent(SubAgentSource::ThreadSpawn {
-        parent_thread_id: resumed_parent_thread_id,
+    let SessionSource::SubAgent(SubAgentSource::ProcessSpawn {
+        parent_process_id: resumed_parent_process_id,
         depth: resumed_depth,
         agent_nickname: resumed_nickname,
         agent_role: resumed_role,
@@ -1082,14 +1082,14 @@ async fn resume_thread_subagent_restores_stored_nickname_and_role() {
     else {
         panic!("expected thread-spawn sub-agent source");
     };
-    assert_eq!(resumed_parent_thread_id, parent_thread_id);
+    assert_eq!(resumed_parent_process_id, parent_process_id);
     assert_eq!(resumed_depth, 1);
     assert_eq!(resumed_nickname, Some(original_nickname));
     assert_eq!(resumed_role, Some("explorer".to_string()));
 
     let _ = harness
         .control
-        .shutdown_agent(resumed_thread_id)
+        .shutdown_agent(resumed_process_id)
         .await
         .expect("resumed child shutdown should submit");
 }

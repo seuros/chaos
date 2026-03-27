@@ -3,7 +3,7 @@ use chaos_syslog::SessionTelemetry;
 use chaos_syslog::metrics::MetricsClient;
 use chaos_syslog::metrics::MetricsConfig;
 use chaos_syslog::metrics::names::TURN_NETWORK_PROXY_METRIC;
-use chaos_ipc::ThreadId;
+use chaos_ipc::ProcessId;
 use chaos_ipc::protocol::SessionSource;
 use opentelemetry::KeyValue;
 use opentelemetry_sdk::metrics::InMemoryMetricExporter;
@@ -22,7 +22,7 @@ fn test_session_telemetry() -> SessionTelemetry {
     )
     .expect("in-memory metrics client");
     SessionTelemetry::new(
-        ThreadId::new(),
+        ProcessId::new(),
         "gpt-5.1",
         "gpt-5.1",
         None,

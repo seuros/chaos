@@ -1,4 +1,4 @@
-use chaos_kern::NewThread;
+use chaos_kern::NewProcess;
 use chaos_kern::parse_turn_item;
 use chaos_ipc::items::TurnItem;
 use chaos_ipc::protocol::EventMsg;
@@ -19,7 +19,7 @@ use wiremock::matchers::method;
 use wiremock::matchers::path;
 
 #[tokio::test(flavor = "multi_thread", worker_threads = 2)]
-async fn fork_thread_twice_drops_to_first_message() {
+async fn fork_process_twice_drops_to_first_message() {
     skip_if_no_network!();
 
     // Start a mock server that completes three turns.
@@ -40,7 +40,7 @@ async fn fork_thread_twice_drops_to_first_message() {
     let mut builder = test_codex();
     let test = builder.build(&server).await.expect("create conversation");
     let codex = test.codex.clone();
-    let thread_manager = test.thread_manager.clone();
+    let process_table = test.process_table.clone();
     let config_for_fork = test.config.clone();
 
     // Send three user messages; wait for three completed turns.
@@ -106,11 +106,11 @@ async fn fork_thread_twice_drops_to_first_message() {
     // After dropping again (n=1 on fork1), compute expected relative to fork1's rollout.
 
     // Fork once with n=1 → drops the last user input and everything after.
-    let NewThread {
+    let NewProcess {
         thread: codex_fork1,
         ..
-    } = thread_manager
-        .fork_thread(1, config_for_fork.clone(), base_path.clone(), false, None)
+    } = process_table
+        .fork_process(1, config_for_fork.clone(), base_path.clone(), false, None)
         .await
         .expect("fork 1");
 
@@ -125,11 +125,11 @@ async fn fork_thread_twice_drops_to_first_message() {
     );
 
     // Fork again with n=0 → drops the (new) last user message, leaving only the first.
-    let NewThread {
+    let NewProcess {
         thread: codex_fork2,
         ..
-    } = thread_manager
-        .fork_thread(0, config_for_fork.clone(), fork1_path.clone(), false, None)
+    } = process_table
+        .fork_process(0, config_for_fork.clone(), fork1_path.clone(), false, None)
         .await
         .expect("fork 2");
 

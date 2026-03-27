@@ -8,14 +8,14 @@ use chaos_kern::EventPersistenceMode;
 use chaos_kern::RolloutRecorder;
 use chaos_kern::RolloutRecorderParams;
 use chaos_kern::config::ConfigBuilder;
-use chaos_kern::find_archived_thread_path_by_id_str;
-use chaos_kern::find_thread_path_by_id_str;
-use chaos_kern::find_thread_path_by_name_str;
-use chaos_ipc::ThreadId;
+use chaos_kern::find_archived_process_path_by_id_str;
+use chaos_kern::find_process_path_by_id_str;
+use chaos_kern::find_process_path_by_name_str;
+use chaos_ipc::ProcessId;
 use chaos_ipc::models::BaseInstructions;
 use chaos_ipc::protocol::SessionSource;
 use chaos_proc::StateRuntime;
-use chaos_proc::ThreadMetadataBuilder;
+use chaos_proc::ProcessMetadataBuilder;
 use pretty_assertions::assert_eq;
 use tempfile::TempDir;
 use uuid::Uuid;
@@ -56,20 +56,20 @@ fn write_minimal_rollout_with_id(codex_home: &Path, id: Uuid) -> PathBuf {
     write_minimal_rollout_with_id_in_subdir(codex_home, "sessions", id)
 }
 
-async fn upsert_thread_metadata(codex_home: &Path, thread_id: ThreadId, rollout_path: PathBuf) {
+async fn upsert_process_metadata(codex_home: &Path, process_id: ProcessId, rollout_path: PathBuf) {
     let runtime = StateRuntime::init(codex_home.to_path_buf(), "test-provider".to_string())
         .await
         .unwrap();
     runtime.mark_backfill_complete(None).await.unwrap();
-    let mut builder = ThreadMetadataBuilder::new(
-        thread_id,
+    let mut builder = ProcessMetadataBuilder::new(
+        process_id,
         rollout_path,
         Utc::now(),
         SessionSource::default(),
     );
     builder.cwd = codex_home.to_path_buf();
     let metadata = builder.build("test-provider");
-    runtime.upsert_thread(&metadata).await.unwrap();
+    runtime.upsert_process(&metadata).await.unwrap();
 }
 
 #[tokio::test]
@@ -78,7 +78,7 @@ async fn find_locates_rollout_file_by_id() {
     let id = Uuid::new_v4();
     let expected = write_minimal_rollout_with_id(home.path(), id);
 
-    let found = find_thread_path_by_id_str(home.path(), &id.to_string())
+    let found = find_process_path_by_id_str(home.path(), &id.to_string())
         .await
         .unwrap();
 
@@ -94,7 +94,7 @@ async fn find_handles_gitignore_covering_codex_home_directory() {
     let id = Uuid::new_v4();
     let expected = write_minimal_rollout_with_id(&codex_home, id);
 
-    let found = find_thread_path_by_id_str(&codex_home, &id.to_string())
+    let found = find_process_path_by_id_str(&codex_home, &id.to_string())
         .await
         .unwrap();
 
@@ -105,16 +105,16 @@ async fn find_handles_gitignore_covering_codex_home_directory() {
 async fn find_prefers_sqlite_path_by_id() {
     let home = TempDir::new().unwrap();
     let id = Uuid::new_v4();
-    let thread_id = ThreadId::from_string(&id.to_string()).unwrap();
+    let process_id = ProcessId::from_string(&id.to_string()).unwrap();
     let db_path = home.path().join(format!(
         "sessions/2030/12/30/rollout-2030-12-30T00-00-00-{id}.jsonl"
     ));
     std::fs::create_dir_all(db_path.parent().unwrap()).unwrap();
     std::fs::write(&db_path, "").unwrap();
     write_minimal_rollout_with_id(home.path(), id);
-    upsert_thread_metadata(home.path(), thread_id, db_path.clone()).await;
+    upsert_process_metadata(home.path(), process_id, db_path.clone()).await;
 
-    let found = find_thread_path_by_id_str(home.path(), &id.to_string())
+    let found = find_process_path_by_id_str(home.path(), &id.to_string())
         .await
         .unwrap();
 
@@ -127,13 +127,13 @@ async fn find_falls_back_to_filesystem_when_sqlite_has_no_match() {
     let id = Uuid::new_v4();
     let expected = write_minimal_rollout_with_id(home.path(), id);
     let unrelated_id = Uuid::new_v4();
-    let unrelated_thread_id = ThreadId::from_string(&unrelated_id.to_string()).unwrap();
+    let unrelated_process_id = ProcessId::from_string(&unrelated_id.to_string()).unwrap();
     let unrelated_path = home
         .path()
         .join("sessions/2030/12/30/rollout-2030-12-30T00-00-00-unrelated.jsonl");
-    upsert_thread_metadata(home.path(), unrelated_thread_id, unrelated_path).await;
+    upsert_process_metadata(home.path(), unrelated_process_id, unrelated_path).await;
 
-    let found = find_thread_path_by_id_str(home.path(), &id.to_string())
+    let found = find_process_path_by_id_str(home.path(), &id.to_string())
         .await
         .unwrap();
 
@@ -147,7 +147,7 @@ async fn find_ignores_granular_gitignore_rules() {
     let expected = write_minimal_rollout_with_id(home.path(), id);
     std::fs::write(home.path().join("sessions/.gitignore"), "*.jsonl\n").unwrap();
 
-    let found = find_thread_path_by_id_str(home.path(), &id.to_string())
+    let found = find_process_path_by_id_str(home.path(), &id.to_string())
         .await
         .unwrap();
 
@@ -162,12 +162,12 @@ async fn find_locates_rollout_file_written_by_recorder() -> std::io::Result<()> 
         .codex_home(home.path().to_path_buf())
         .build()
         .await?;
-    let thread_id = ThreadId::new();
-    let thread_name = "named thread";
+    let process_id = ProcessId::new();
+    let process_name = "named process";
     let recorder = RolloutRecorder::new(
         &config,
         RolloutRecorderParams::new(
-            thread_id,
+            process_id,
             None,
             SessionSource::Exec,
             BaseInstructions::default(),
@@ -187,19 +187,19 @@ async fn find_locates_rollout_file_written_by_recorder() -> std::io::Result<()> 
         format!(
             "{}\n",
             serde_json::json!({
-                "id": thread_id,
-                "thread_name": thread_name,
+                "id": process_id,
+                "process_name": process_name,
                 "updated_at": "2024-01-01T00:00:00Z"
             })
         ),
     )?;
 
-    let found = find_thread_path_by_name_str(home.path(), thread_name).await?;
+    let found = find_process_path_by_name_str(home.path(), process_name).await?;
 
     let path = found.expect("expected rollout path to be found");
     assert!(path.exists());
     let contents = std::fs::read_to_string(&path)?;
-    assert!(contents.contains(&thread_id.to_string()));
+    assert!(contents.contains(&process_id.to_string()));
     recorder.shutdown().await?;
     Ok(())
 }
@@ -210,7 +210,7 @@ async fn find_archived_locates_rollout_file_by_id() {
     let id = Uuid::new_v4();
     let expected = write_minimal_rollout_with_id_in_subdir(home.path(), "archived_sessions", id);
 
-    let found = find_archived_thread_path_by_id_str(home.path(), &id.to_string())
+    let found = find_archived_process_path_by_id_str(home.path(), &id.to_string())
         .await
         .unwrap();
 

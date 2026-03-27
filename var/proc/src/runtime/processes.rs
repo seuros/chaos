@@ -1,7 +1,7 @@
 use super::*;
 
 impl StateRuntime {
-    pub async fn get_thread(&self, id: ThreadId) -> anyhow::Result<Option<crate::ThreadMetadata>> {
+    pub async fn get_process(&self, id: ProcessId) -> anyhow::Result<Option<crate::ProcessMetadata>> {
         let row = sqlx::query(
             r#"
 SELECT
@@ -24,19 +24,19 @@ SELECT
     git_sha,
     git_branch,
     git_origin_url
-FROM threads
+FROM processes
 WHERE id = ?
             "#,
         )
         .bind(id.to_string())
         .fetch_optional(self.pool.as_ref())
         .await?;
-        row.map(|row| ThreadRow::try_from_row(&row).and_then(ThreadMetadata::try_from))
+        row.map(|row| ProcessRow::try_from_row(&row).and_then(ProcessMetadata::try_from))
             .transpose()
     }
 
-    pub async fn get_thread_memory_mode(&self, id: ThreadId) -> anyhow::Result<Option<String>> {
-        let row = sqlx::query("SELECT memory_mode FROM threads WHERE id = ?")
+    pub async fn get_process_memory_mode(&self, id: ProcessId) -> anyhow::Result<Option<String>> {
+        let row = sqlx::query("SELECT memory_mode FROM processes WHERE id = ?")
             .bind(id.to_string())
             .fetch_optional(self.pool.as_ref())
             .await?;
@@ -46,17 +46,17 @@ WHERE id = ?
     /// Get dynamic tools for a thread, if present.
     pub async fn get_dynamic_tools(
         &self,
-        thread_id: ThreadId,
+        process_id: ProcessId,
     ) -> anyhow::Result<Option<Vec<DynamicToolSpec>>> {
         let rows = sqlx::query(
             r#"
 SELECT name, description, input_schema, defer_loading
-FROM thread_dynamic_tools
-WHERE thread_id = ?
+FROM process_dynamic_tools
+WHERE process_id = ?
 ORDER BY position ASC
             "#,
         )
-        .bind(thread_id.to_string())
+        .bind(process_id.to_string())
         .fetch_all(self.pool.as_ref())
         .await?;
         if rows.is_empty() {
@@ -79,11 +79,11 @@ ORDER BY position ASC
     /// Find a rollout path by thread id using the underlying database.
     pub async fn find_rollout_path_by_id(
         &self,
-        id: ThreadId,
+        id: ProcessId,
         archived_only: Option<bool>,
     ) -> anyhow::Result<Option<PathBuf>> {
         let mut builder =
-            QueryBuilder::<Sqlite>::new("SELECT rollout_path FROM threads WHERE id = ");
+            QueryBuilder::<Sqlite>::new("SELECT rollout_path FROM processes WHERE id = ");
         builder.push_bind(id.to_string());
         match archived_only {
             Some(true) => {
@@ -100,9 +100,9 @@ ORDER BY position ASC
             .map(PathBuf::from))
     }
 
-    /// List threads using the underlying database.
+    /// List processes using the underlying database.
     #[allow(clippy::too_many_arguments)]
-    pub async fn list_threads(
+    pub async fn list_processes(
         &self,
         page_size: usize,
         anchor: Option<&crate::Anchor>,
@@ -111,7 +111,7 @@ ORDER BY position ASC
         model_providers: Option<&[String]>,
         archived_only: bool,
         search_term: Option<&str>,
-    ) -> anyhow::Result<crate::ThreadsPage> {
+    ) -> anyhow::Result<crate::ProcessesPage> {
         let limit = page_size.saturating_add(1);
 
         let mut builder = QueryBuilder::<Sqlite>::new(
@@ -136,10 +136,10 @@ SELECT
     git_sha,
     git_branch,
     git_origin_url
-FROM threads
+FROM processes
             "#,
         );
-        push_thread_filters(
+        push_process_filters(
             &mut builder,
             archived_only,
             allowed_sources,
@@ -148,12 +148,12 @@ FROM threads
             sort_key,
             search_term,
         );
-        push_thread_order_and_limit(&mut builder, sort_key, limit);
+        push_process_order_and_limit(&mut builder, sort_key, limit);
 
         let rows = builder.build().fetch_all(self.pool.as_ref()).await?;
         let mut items = rows
             .into_iter()
-            .map(|row| ThreadRow::try_from_row(&row).and_then(ThreadMetadata::try_from))
+            .map(|row| ProcessRow::try_from_row(&row).and_then(ProcessMetadata::try_from))
             .collect::<Result<Vec<_>, _>>()?;
         let num_scanned_rows = items.len();
         let next_anchor = if items.len() > page_size {
@@ -164,7 +164,7 @@ FROM threads
         } else {
             None
         };
-        Ok(ThreadsPage {
+        Ok(ProcessesPage {
             items,
             next_anchor,
             num_scanned_rows,
@@ -172,7 +172,7 @@ FROM threads
     }
 
     /// List thread ids using the underlying database (no rollout scanning).
-    pub async fn list_thread_ids(
+    pub async fn list_process_ids(
         &self,
         limit: usize,
         anchor: Option<&crate::Anchor>,
@@ -180,9 +180,9 @@ FROM threads
         allowed_sources: &[String],
         model_providers: Option<&[String]>,
         archived_only: bool,
-    ) -> anyhow::Result<Vec<ThreadId>> {
-        let mut builder = QueryBuilder::<Sqlite>::new("SELECT id FROM threads");
-        push_thread_filters(
+    ) -> anyhow::Result<Vec<ProcessId>> {
+        let mut builder = QueryBuilder::<Sqlite>::new("SELECT id FROM processes");
+        push_process_filters(
             &mut builder,
             archived_only,
             allowed_sources,
@@ -191,30 +191,30 @@ FROM threads
             sort_key,
             /*search_term*/ None,
         );
-        push_thread_order_and_limit(&mut builder, sort_key, limit);
+        push_process_order_and_limit(&mut builder, sort_key, limit);
 
         let rows = builder.build().fetch_all(self.pool.as_ref()).await?;
         rows.into_iter()
             .map(|row| {
                 let id: String = row.try_get("id")?;
-                Ok(ThreadId::try_from(id)?)
+                Ok(ProcessId::try_from(id)?)
             })
             .collect()
     }
 
     /// Insert or replace thread metadata directly.
-    pub async fn upsert_thread(&self, metadata: &crate::ThreadMetadata) -> anyhow::Result<()> {
-        self.upsert_thread_with_creation_memory_mode(metadata, /*creation_memory_mode*/ None)
+    pub async fn upsert_process(&self, metadata: &crate::ProcessMetadata) -> anyhow::Result<()> {
+        self.upsert_process_with_creation_memory_mode(metadata, /*creation_memory_mode*/ None)
             .await
     }
 
-    pub async fn insert_thread_if_absent(
+    pub async fn insert_process_if_absent(
         &self,
-        metadata: &crate::ThreadMetadata,
+        metadata: &crate::ProcessMetadata,
     ) -> anyhow::Result<bool> {
         let result = sqlx::query(
             r#"
-INSERT INTO threads (
+INSERT INTO processes (
     id,
     rollout_path,
     created_at,
@@ -266,42 +266,42 @@ ON CONFLICT(id) DO NOTHING
         Ok(result.rows_affected() > 0)
     }
 
-    pub async fn set_thread_memory_mode(
+    pub async fn set_process_memory_mode(
         &self,
-        thread_id: ThreadId,
+        process_id: ProcessId,
         memory_mode: &str,
     ) -> anyhow::Result<bool> {
-        let result = sqlx::query("UPDATE threads SET memory_mode = ? WHERE id = ?")
+        let result = sqlx::query("UPDATE processes SET memory_mode = ? WHERE id = ?")
             .bind(memory_mode)
-            .bind(thread_id.to_string())
+            .bind(process_id.to_string())
             .execute(self.pool.as_ref())
             .await?;
         Ok(result.rows_affected() > 0)
     }
 
-    pub async fn touch_thread_updated_at(
+    pub async fn touch_process_updated_at(
         &self,
-        thread_id: ThreadId,
+        process_id: ProcessId,
         updated_at: jiff::Timestamp,
     ) -> anyhow::Result<bool> {
-        let result = sqlx::query("UPDATE threads SET updated_at = ? WHERE id = ?")
+        let result = sqlx::query("UPDATE processes SET updated_at = ? WHERE id = ?")
             .bind(datetime_to_epoch_seconds(updated_at))
-            .bind(thread_id.to_string())
+            .bind(process_id.to_string())
             .execute(self.pool.as_ref())
             .await?;
         Ok(result.rows_affected() > 0)
     }
 
-    pub async fn update_thread_git_info(
+    pub async fn update_process_git_info(
         &self,
-        thread_id: ThreadId,
+        process_id: ProcessId,
         git_sha: Option<Option<&str>>,
         git_branch: Option<Option<&str>>,
         git_origin_url: Option<Option<&str>>,
     ) -> anyhow::Result<bool> {
         let result = sqlx::query(
             r#"
-UPDATE threads
+UPDATE processes
 SET
     git_sha = CASE WHEN ? THEN ? ELSE git_sha END,
     git_branch = CASE WHEN ? THEN ? ELSE git_branch END,
@@ -315,20 +315,20 @@ WHERE id = ?
         .bind(git_branch.flatten())
         .bind(git_origin_url.is_some())
         .bind(git_origin_url.flatten())
-        .bind(thread_id.to_string())
+        .bind(process_id.to_string())
         .execute(self.pool.as_ref())
         .await?;
         Ok(result.rows_affected() > 0)
     }
 
-    async fn upsert_thread_with_creation_memory_mode(
+    async fn upsert_process_with_creation_memory_mode(
         &self,
-        metadata: &crate::ThreadMetadata,
+        metadata: &crate::ProcessMetadata,
         creation_memory_mode: Option<&str>,
     ) -> anyhow::Result<()> {
         sqlx::query(
             r#"
-INSERT INTO threads (
+INSERT INTO processes (
     id,
     rollout_path,
     created_at,
@@ -405,7 +405,7 @@ ON CONFLICT(id) DO UPDATE SET
     /// This only writes the first time we see tools for a given thread.
     pub async fn persist_dynamic_tools(
         &self,
-        thread_id: ThreadId,
+        process_id: ProcessId,
         tools: Option<&[DynamicToolSpec]>,
     ) -> anyhow::Result<()> {
         let Some(tools) = tools else {
@@ -414,25 +414,25 @@ ON CONFLICT(id) DO UPDATE SET
         if tools.is_empty() {
             return Ok(());
         }
-        let thread_id = thread_id.to_string();
+        let process_id = process_id.to_string();
         let mut tx = self.pool.begin().await?;
         for (idx, tool) in tools.iter().enumerate() {
             let position = i64::try_from(idx).unwrap_or(i64::MAX);
             let input_schema = serde_json::to_string(&tool.input_schema)?;
             sqlx::query(
                 r#"
-INSERT INTO thread_dynamic_tools (
-    thread_id,
+INSERT INTO process_dynamic_tools (
+    process_id,
     position,
     name,
     description,
     input_schema,
     defer_loading
 ) VALUES (?, ?, ?, ?, ?, ?)
-ON CONFLICT(thread_id, position) DO NOTHING
+ON CONFLICT(process_id, position) DO NOTHING
                 "#,
             )
-            .bind(thread_id.as_str())
+            .bind(process_id.as_str())
             .bind(position)
             .bind(tool.name.as_str())
             .bind(tool.description.as_str())
@@ -448,15 +448,15 @@ ON CONFLICT(thread_id, position) DO NOTHING
     /// Apply rollout items incrementally using the underlying database.
     pub async fn apply_rollout_items(
         &self,
-        builder: &ThreadMetadataBuilder,
+        builder: &ProcessMetadataBuilder,
         items: &[RolloutItem],
-        new_thread_memory_mode: Option<&str>,
+        new_process_memory_mode: Option<&str>,
         updated_at_override: Option<jiff::Timestamp>,
     ) -> anyhow::Result<()> {
         if items.is_empty() {
             return Ok(());
         }
-        let existing_metadata = self.get_thread(builder.id).await?;
+        let existing_metadata = self.get_process(builder.id).await?;
         let mut metadata = existing_metadata
             .clone()
             .unwrap_or_else(|| builder.build(&self.default_provider));
@@ -475,17 +475,17 @@ ON CONFLICT(thread_id, position) DO NOTHING
             metadata.updated_at = updated_at;
         }
         // Keep the thread upsert before dynamic tools to satisfy the foreign key constraint:
-        // thread_dynamic_tools.thread_id -> threads.id.
+        // process_dynamic_tools.process_id -> processes.id.
         let upsert_result = if existing_metadata.is_none() {
-            self.upsert_thread_with_creation_memory_mode(&metadata, new_thread_memory_mode)
+            self.upsert_process_with_creation_memory_mode(&metadata, new_process_memory_mode)
                 .await
         } else {
-            self.upsert_thread(&metadata).await
+            self.upsert_process(&metadata).await
         };
         upsert_result?;
         if let Some(memory_mode) = extract_memory_mode(items)
             && let Err(err) = self
-                .set_thread_memory_mode(builder.id, memory_mode.as_str())
+                .set_process_memory_mode(builder.id, memory_mode.as_str())
                 .await
         {
             return Err(err);
@@ -504,11 +504,11 @@ ON CONFLICT(thread_id, position) DO NOTHING
     /// Mark a thread as archived using the underlying database.
     pub async fn mark_archived(
         &self,
-        thread_id: ThreadId,
+        process_id: ProcessId,
         rollout_path: &Path,
         archived_at: jiff::Timestamp,
     ) -> anyhow::Result<()> {
-        let Some(mut metadata) = self.get_thread(thread_id).await? else {
+        let Some(mut metadata) = self.get_process(process_id).await? else {
             return Ok(());
         };
         metadata.archived_at = Some(archived_at);
@@ -516,22 +516,22 @@ ON CONFLICT(thread_id, position) DO NOTHING
         if let Some(updated_at) = file_modified_time_utc(rollout_path).await {
             metadata.updated_at = updated_at;
         }
-        if metadata.id != thread_id {
+        if metadata.id != process_id {
             warn!(
-                "thread id mismatch during archive: expected {thread_id}, got {}",
+                "thread id mismatch during archive: expected {process_id}, got {}",
                 metadata.id
             );
         }
-        self.upsert_thread(&metadata).await
+        self.upsert_process(&metadata).await
     }
 
     /// Mark a thread as unarchived using the underlying database.
     pub async fn mark_unarchived(
         &self,
-        thread_id: ThreadId,
+        process_id: ProcessId,
         rollout_path: &Path,
     ) -> anyhow::Result<()> {
-        let Some(mut metadata) = self.get_thread(thread_id).await? else {
+        let Some(mut metadata) = self.get_process(process_id).await? else {
             return Ok(());
         };
         metadata.archived_at = None;
@@ -539,19 +539,19 @@ ON CONFLICT(thread_id, position) DO NOTHING
         if let Some(updated_at) = file_modified_time_utc(rollout_path).await {
             metadata.updated_at = updated_at;
         }
-        if metadata.id != thread_id {
+        if metadata.id != process_id {
             warn!(
-                "thread id mismatch during unarchive: expected {thread_id}, got {}",
+                "thread id mismatch during unarchive: expected {process_id}, got {}",
                 metadata.id
             );
         }
-        self.upsert_thread(&metadata).await
+        self.upsert_process(&metadata).await
     }
 
     /// Delete a thread metadata row by id.
-    pub async fn delete_thread(&self, thread_id: ThreadId) -> anyhow::Result<u64> {
-        let result = sqlx::query("DELETE FROM threads WHERE id = ?")
-            .bind(thread_id.to_string())
+    pub async fn delete_process(&self, process_id: ProcessId) -> anyhow::Result<u64> {
+        let result = sqlx::query("DELETE FROM processes WHERE id = ?")
+            .bind(process_id.to_string())
             .execute(self.pool.as_ref())
             .await?;
         Ok(result.rows_affected())
@@ -578,7 +578,7 @@ pub(super) fn extract_memory_mode(items: &[RolloutItem]) -> Option<String> {
     })
 }
 
-pub(super) fn push_thread_filters<'a>(
+pub(super) fn push_process_filters<'a>(
     builder: &mut QueryBuilder<'a, Sqlite>,
     archived_only: bool,
     allowed_sources: &'a [String],
@@ -637,7 +637,7 @@ pub(super) fn push_thread_filters<'a>(
     }
 }
 
-pub(super) fn push_thread_order_and_limit(
+pub(super) fn push_process_order_and_limit(
     builder: &mut QueryBuilder<'_, Sqlite>,
     sort_key: SortKey,
     limit: usize,
@@ -656,7 +656,7 @@ pub(super) fn push_thread_order_and_limit(
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::runtime::test_support::test_thread_metadata;
+    use crate::runtime::test_support::test_process_metadata;
     use crate::runtime::test_support::unique_temp_dir;
     use chaos_ipc::protocol::EventMsg;
     use chaos_ipc::protocol::GitInfo;
@@ -672,18 +672,18 @@ mod tests {
         let runtime = StateRuntime::init(codex_home.clone(), "test-provider".to_string())
             .await
             .expect("state db should initialize");
-        let thread_id =
-            ThreadId::from_string("00000000-0000-0000-0000-000000000123").expect("valid thread id");
-        let mut metadata = test_thread_metadata(&codex_home, thread_id, codex_home.clone());
+        let process_id =
+            ProcessId::from_string("00000000-0000-0000-0000-000000000123").expect("valid thread id");
+        let mut metadata = test_process_metadata(&codex_home, process_id, codex_home.clone());
 
         runtime
-            .upsert_thread_with_creation_memory_mode(&metadata, Some("disabled"))
+            .upsert_process_with_creation_memory_mode(&metadata, Some("disabled"))
             .await
             .expect("initial insert should succeed");
 
         let memory_mode: String =
-            sqlx::query_scalar("SELECT memory_mode FROM threads WHERE id = ?")
-                .bind(thread_id.to_string())
+            sqlx::query_scalar("SELECT memory_mode FROM processes WHERE id = ?")
+                .bind(process_id.to_string())
                 .fetch_one(runtime.pool.as_ref())
                 .await
                 .expect("memory mode should be readable");
@@ -691,13 +691,13 @@ mod tests {
 
         metadata.title = "updated title".to_string();
         runtime
-            .upsert_thread(&metadata)
+            .upsert_process(&metadata)
             .await
             .expect("upsert should succeed");
 
         let memory_mode: String =
-            sqlx::query_scalar("SELECT memory_mode FROM threads WHERE id = ?")
-                .bind(thread_id.to_string())
+            sqlx::query_scalar("SELECT memory_mode FROM processes WHERE id = ?")
+                .bind(process_id.to_string())
                 .fetch_one(runtime.pool.as_ref())
                 .await
                 .expect("memory mode should remain readable");
@@ -710,24 +710,24 @@ mod tests {
         let runtime = StateRuntime::init(codex_home.clone(), "test-provider".to_string())
             .await
             .expect("state db should initialize");
-        let thread_id =
-            ThreadId::from_string("00000000-0000-0000-0000-000000000456").expect("valid thread id");
-        let metadata = test_thread_metadata(&codex_home, thread_id, codex_home.clone());
+        let process_id =
+            ProcessId::from_string("00000000-0000-0000-0000-000000000456").expect("valid thread id");
+        let metadata = test_process_metadata(&codex_home, process_id, codex_home.clone());
 
         runtime
-            .upsert_thread(&metadata)
+            .upsert_process(&metadata)
             .await
             .expect("initial upsert should succeed");
 
-        let builder = ThreadMetadataBuilder::new(
-            thread_id,
+        let builder = ProcessMetadataBuilder::new(
+            process_id,
             metadata.rollout_path.clone(),
             metadata.created_at,
             SessionSource::Cli,
         );
         let items = vec![RolloutItem::SessionMeta(SessionMetaLine {
             meta: SessionMeta {
-                id: thread_id,
+                id: process_id,
                 forked_from_id: None,
                 timestamp: metadata.created_at.to_string(),
                 cwd: PathBuf::new(),
@@ -750,7 +750,7 @@ mod tests {
             .expect("apply_rollout_items should succeed");
 
         let memory_mode = runtime
-            .get_thread_memory_mode(thread_id)
+            .get_process_memory_mode(process_id)
             .await
             .expect("memory mode should load");
         assert_eq!(memory_mode.as_deref(), Some("polluted"));
@@ -762,26 +762,26 @@ mod tests {
         let runtime = StateRuntime::init(codex_home.clone(), "test-provider".to_string())
             .await
             .expect("state db should initialize");
-        let thread_id =
-            ThreadId::from_string("00000000-0000-0000-0000-000000000457").expect("valid thread id");
-        let mut metadata = test_thread_metadata(&codex_home, thread_id, codex_home.clone());
+        let process_id =
+            ProcessId::from_string("00000000-0000-0000-0000-000000000457").expect("valid thread id");
+        let mut metadata = test_process_metadata(&codex_home, process_id, codex_home.clone());
         metadata.git_branch = Some("sqlite-branch".to_string());
 
         runtime
-            .upsert_thread(&metadata)
+            .upsert_process(&metadata)
             .await
             .expect("initial upsert should succeed");
 
         let created_at = metadata.created_at.to_string();
-        let builder = ThreadMetadataBuilder::new(
-            thread_id,
+        let builder = ProcessMetadataBuilder::new(
+            process_id,
             metadata.rollout_path.clone(),
             metadata.created_at,
             SessionSource::Cli,
         );
         let items = vec![RolloutItem::SessionMeta(SessionMetaLine {
             meta: SessionMeta {
-                id: thread_id,
+                id: process_id,
                 forked_from_id: None,
                 timestamp: created_at,
                 cwd: PathBuf::new(),
@@ -808,7 +808,7 @@ mod tests {
             .expect("apply_rollout_items should succeed");
 
         let persisted = runtime
-            .get_thread(thread_id)
+            .get_process(process_id)
             .await
             .expect("thread should load")
             .expect("thread should exist");
@@ -821,17 +821,17 @@ mod tests {
     }
 
     #[tokio::test]
-    async fn update_thread_git_info_preserves_newer_non_git_metadata() {
+    async fn update_process_git_info_preserves_newer_non_git_metadata() {
         let codex_home = unique_temp_dir();
         let runtime = StateRuntime::init(codex_home.clone(), "test-provider".to_string())
             .await
             .expect("state db should initialize");
-        let thread_id =
-            ThreadId::from_string("00000000-0000-0000-0000-000000000789").expect("valid thread id");
-        let metadata = test_thread_metadata(&codex_home, thread_id, codex_home.clone());
+        let process_id =
+            ProcessId::from_string("00000000-0000-0000-0000-000000000789").expect("valid thread id");
+        let metadata = test_process_metadata(&codex_home, process_id, codex_home.clone());
 
         runtime
-            .upsert_thread(&metadata)
+            .upsert_process(&metadata)
             .await
             .expect("initial upsert should succeed");
 
@@ -839,19 +839,19 @@ mod tests {
             jiff::Timestamp::new(1_700_000_100, 0).expect("timestamp"),
         );
         sqlx::query(
-            "UPDATE threads SET updated_at = ?, tokens_used = ?, first_user_message = ? WHERE id = ?",
+            "UPDATE processes SET updated_at = ?, tokens_used = ?, first_user_message = ? WHERE id = ?",
         )
         .bind(updated_at)
         .bind(123_i64)
         .bind("newer preview")
-        .bind(thread_id.to_string())
+        .bind(process_id.to_string())
         .execute(runtime.pool.as_ref())
         .await
         .expect("concurrent metadata write should succeed");
 
         let updated = runtime
-            .update_thread_git_info(
-                thread_id,
+            .update_process_git_info(
+                process_id,
                 Some(Some("abc123")),
                 Some(Some("feature/branch")),
                 Some(Some("git@example.com:openai/codex.git")),
@@ -861,7 +861,7 @@ mod tests {
         assert!(updated, "git info update should touch the thread row");
 
         let persisted = runtime
-            .get_thread(thread_id)
+            .get_process(process_id)
             .await
             .expect("thread should load")
             .expect("thread should exist");
@@ -885,31 +885,31 @@ mod tests {
         let runtime = StateRuntime::init(codex_home.clone(), "test-provider".to_string())
             .await
             .expect("state db should initialize");
-        let thread_id =
-            ThreadId::from_string("00000000-0000-0000-0000-000000000791").expect("valid thread id");
+        let process_id =
+            ProcessId::from_string("00000000-0000-0000-0000-000000000791").expect("valid thread id");
 
-        let mut existing = test_thread_metadata(&codex_home, thread_id, codex_home.clone());
+        let mut existing = test_process_metadata(&codex_home, process_id, codex_home.clone());
         existing.tokens_used = 123;
         existing.first_user_message = Some("newer preview".to_string());
         existing.updated_at = jiff::Timestamp::new(1_700_000_100, 0).expect("timestamp");
         runtime
-            .upsert_thread(&existing)
+            .upsert_process(&existing)
             .await
             .expect("initial upsert should succeed");
 
-        let mut fallback = test_thread_metadata(&codex_home, thread_id, codex_home.clone());
+        let mut fallback = test_process_metadata(&codex_home, process_id, codex_home.clone());
         fallback.tokens_used = 0;
         fallback.first_user_message = None;
         fallback.updated_at = jiff::Timestamp::new(1_700_000_000, 0).expect("timestamp");
 
         let inserted = runtime
-            .insert_thread_if_absent(&fallback)
+            .insert_process_if_absent(&fallback)
             .await
             .expect("insert should succeed");
         assert!(!inserted, "existing rows should not be overwritten");
 
         let persisted = runtime
-            .get_thread(thread_id)
+            .get_process(process_id)
             .await
             .expect("thread should load")
             .expect("thread should exist");
@@ -925,31 +925,31 @@ mod tests {
     }
 
     #[tokio::test]
-    async fn update_thread_git_info_can_clear_fields() {
+    async fn update_process_git_info_can_clear_fields() {
         let codex_home = unique_temp_dir();
         let runtime = StateRuntime::init(codex_home.clone(), "test-provider".to_string())
             .await
             .expect("state db should initialize");
-        let thread_id =
-            ThreadId::from_string("00000000-0000-0000-0000-000000000790").expect("valid thread id");
-        let mut metadata = test_thread_metadata(&codex_home, thread_id, codex_home.clone());
+        let process_id =
+            ProcessId::from_string("00000000-0000-0000-0000-000000000790").expect("valid thread id");
+        let mut metadata = test_process_metadata(&codex_home, process_id, codex_home.clone());
         metadata.git_sha = Some("abc123".to_string());
         metadata.git_branch = Some("feature/branch".to_string());
         metadata.git_origin_url = Some("git@example.com:openai/codex.git".to_string());
 
         runtime
-            .upsert_thread(&metadata)
+            .upsert_process(&metadata)
             .await
             .expect("initial upsert should succeed");
 
         let updated = runtime
-            .update_thread_git_info(thread_id, Some(None), Some(None), Some(None))
+            .update_process_git_info(process_id, Some(None), Some(None), Some(None))
             .await
             .expect("git info clear should succeed");
         assert!(updated, "git info clear should touch the thread row");
 
         let persisted = runtime
-            .get_thread(thread_id)
+            .get_process(process_id)
             .await
             .expect("thread should load")
             .expect("thread should exist");
@@ -959,31 +959,31 @@ mod tests {
     }
 
     #[tokio::test]
-    async fn touch_thread_updated_at_updates_only_updated_at() {
+    async fn touch_process_updated_at_updates_only_updated_at() {
         let codex_home = unique_temp_dir();
         let runtime = StateRuntime::init(codex_home.clone(), "test-provider".to_string())
             .await
             .expect("state db should initialize");
-        let thread_id =
-            ThreadId::from_string("00000000-0000-0000-0000-000000000791").expect("valid thread id");
-        let mut metadata = test_thread_metadata(&codex_home, thread_id, codex_home.clone());
+        let process_id =
+            ProcessId::from_string("00000000-0000-0000-0000-000000000791").expect("valid thread id");
+        let mut metadata = test_process_metadata(&codex_home, process_id, codex_home.clone());
         metadata.title = "original title".to_string();
         metadata.first_user_message = Some("first-user-message".to_string());
 
         runtime
-            .upsert_thread(&metadata)
+            .upsert_process(&metadata)
             .await
             .expect("initial upsert should succeed");
 
         let touched_at = jiff::Timestamp::new(1_700_001_111, 0).expect("timestamp");
         let touched = runtime
-            .touch_thread_updated_at(thread_id, touched_at)
+            .touch_process_updated_at(process_id, touched_at)
             .await
             .expect("touch should succeed");
         assert!(touched);
 
         let persisted = runtime
-            .get_thread(thread_id)
+            .get_process(process_id)
             .await
             .expect("thread should load")
             .expect("thread should exist");
@@ -1001,17 +1001,17 @@ mod tests {
         let runtime = StateRuntime::init(codex_home.clone(), "test-provider".to_string())
             .await
             .expect("state db should initialize");
-        let thread_id =
-            ThreadId::from_string("00000000-0000-0000-0000-000000000792").expect("valid thread id");
-        let metadata = test_thread_metadata(&codex_home, thread_id, codex_home.clone());
+        let process_id =
+            ProcessId::from_string("00000000-0000-0000-0000-000000000792").expect("valid thread id");
+        let metadata = test_process_metadata(&codex_home, process_id, codex_home.clone());
 
         runtime
-            .upsert_thread(&metadata)
+            .upsert_process(&metadata)
             .await
             .expect("initial upsert should succeed");
 
-        let builder = ThreadMetadataBuilder::new(
-            thread_id,
+        let builder = ProcessMetadataBuilder::new(
+            process_id,
             metadata.rollout_path.clone(),
             metadata.created_at,
             SessionSource::Cli,
@@ -1041,7 +1041,7 @@ mod tests {
             .expect("apply_rollout_items should succeed");
 
         let persisted = runtime
-            .get_thread(thread_id)
+            .get_process(process_id)
             .await
             .expect("thread should load")
             .expect("thread should exist");

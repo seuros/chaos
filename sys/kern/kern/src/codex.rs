@@ -65,7 +65,7 @@ use chaos_pf::normalize_host;
 use chaos_syslog::current_span_trace_id;
 use chaos_syslog::current_span_w3c_trace_context;
 use chaos_syslog::set_parent_from_w3c_trace_context;
-use chaos_ipc::ThreadId;
+use chaos_ipc::ProcessId;
 use chaos_ipc::api::McpServerElicitationRequest;
 use chaos_ipc::api::McpServerElicitationRequestParams;
 use chaos_ipc::approvals::ElicitationRequestEvent;
@@ -151,7 +151,7 @@ use crate::client::ModelClient;
 use crate::client::ModelClientSession;
 use crate::client_common::Prompt;
 use crate::client_common::ResponseEvent;
-use crate::codex_thread::ThreadConfigSnapshot;
+use crate::process::ProcessConfigSnapshot;
 use crate::compact::collect_user_messages;
 use crate::config::Config;
 use crate::config::Constrained;
@@ -341,9 +341,8 @@ pub(crate) type SessionLoopTermination = Shared<BoxFuture<'static, ()>>;
 /// unique session id.
 pub struct CodexSpawnOk {
     pub codex: Codex,
-    pub thread_id: ThreadId,
-    #[deprecated(note = "use thread_id")]
-    pub conversation_id: ThreadId,
+    pub process_id: ProcessId,
+    pub conversation_id: ProcessId,
 }
 
 pub(crate) struct CodexSpawnArgs {
@@ -384,15 +383,15 @@ impl Codex {
             }
             None => None,
         };
-        let thread_spawn_span = info_span!("thread_spawn", otel.name = "thread_spawn");
+        let process_spawn_span = info_span!("process_spawn", otel.name = "process_spawn");
         if let Some(trace) = parent_trace.as_ref() {
-            let _ = set_parent_from_w3c_trace_context(&thread_spawn_span, trace);
+            let _ = set_parent_from_w3c_trace_context(&process_spawn_span, trace);
         }
         Self::spawn_internal(CodexSpawnArgs {
             parent_trace,
             ..args
         })
-        .instrument(thread_spawn_span)
+        .instrument(process_spawn_span)
         .await
     }
 
@@ -427,7 +426,7 @@ impl Codex {
             );
         }
 
-        if let SessionSource::SubAgent(SubAgentSource::ThreadSpawn { depth, .. }) = session_source
+        if let SessionSource::SubAgent(SubAgentSource::ProcessSpawn { depth, .. }) = session_source
             && depth >= config.agent_max_depth
         {
             let _ = config.features.disable(Feature::SpawnCsv);
@@ -475,18 +474,18 @@ impl Codex {
             .or_else(|| conversation_history.get_base_instructions().map(|s| s.text))
             .unwrap_or_else(|| model_info.get_model_instructions(config.personality));
 
-        // Respect thread-start tools. When missing (resumed/forked threads), read from the db
+        // Respect process-start tools. When missing (resumed/forked processes), read from the db
         // first, then fall back to rollout-file tools.
         let persisted_tools = if dynamic_tools.is_empty() {
-            let thread_id = match &conversation_history {
+            let process_id = match &conversation_history {
                 InitialHistory::Resumed(resumed) => Some(resumed.conversation_id),
                 InitialHistory::Forked(_) => conversation_history.forked_from_id(),
                 InitialHistory::New => None,
             };
-            match thread_id {
-                Some(thread_id) => {
+            match process_id {
+                Some(process_id) => {
                     let state_db_ctx = state_db::get_state_db(&config).await;
-                    state_db::get_dynamic_tools(state_db_ctx.as_deref(), thread_id, "codex_spawn")
+                    state_db::get_dynamic_tools(state_db_ctx.as_deref(), process_id, "codex_spawn")
                         .await
                 }
                 None => None,
@@ -530,7 +529,7 @@ impl Codex {
             windows_sandbox_level: WindowsSandboxLevel::Disabled,
             cwd: config.cwd.clone(),
             codex_home: config.codex_home.clone(),
-            thread_name: None,
+            process_name: None,
             original_config_do_not_use: Arc::clone(&config),
             metrics_service_name,
             app_server_client_name: None,
@@ -565,13 +564,13 @@ impl Codex {
             error!("Failed to create session: {e:#}");
             map_session_init_error(&e, &config.codex_home)
         })?;
-        let thread_id = session.conversation_id;
+        let process_id = session.conversation_id;
 
         // This task will run until Op::Shutdown is received.
         let session_for_loop = Arc::clone(&session);
         let session_loop_handle = tokio::spawn(async move {
             submission_loop(session_for_loop, config, rx_sub)
-                .instrument(info_span!("session_loop", thread_id = %thread_id))
+                .instrument(info_span!("session_loop", process_id = %process_id))
                 .await;
         });
         let codex = Codex {
@@ -582,11 +581,10 @@ impl Codex {
             session_loop_termination: session_loop_termination_from_handle(session_loop_handle),
         };
 
-        #[allow(deprecated)]
         Ok(CodexSpawnOk {
             codex,
-            thread_id,
-            conversation_id: thread_id,
+            process_id,
+            conversation_id: process_id,
         })
     }
 
@@ -667,9 +665,9 @@ impl Codex {
         self.agent_status.borrow().clone()
     }
 
-    pub(crate) async fn thread_config_snapshot(&self) -> ThreadConfigSnapshot {
+    pub(crate) async fn process_config_snapshot(&self) -> ProcessConfigSnapshot {
         let state = self.session.state.lock().await;
-        state.session_configuration.thread_config_snapshot()
+        state.session_configuration.process_config_snapshot()
     }
 
     pub(crate) fn state_db(&self) -> Option<state_db::StateDbHandle> {
@@ -700,7 +698,7 @@ pub(crate) fn session_loop_termination_from_handle(
 ///
 /// A session has at most 1 running task at a time, and can be interrupted by user input.
 pub(crate) struct Session {
-    pub(crate) conversation_id: ThreadId,
+    pub(crate) conversation_id: ProcessId,
     pub(crate) tx_event: Sender<Event>,
     agent_status: watch::Sender<AgentStatus>,
     out_of_band_elicitation_paused: watch::Sender<bool>,
@@ -981,7 +979,7 @@ pub(crate) struct SessionConfiguration {
     /// Directory containing all Codex state for this session.
     codex_home: PathBuf,
     /// Optional user-facing name for the thread, updated during the session.
-    thread_name: Option<String>,
+    process_name: Option<String>,
 
     // TODO(pakrym): Remove config from here
     original_config_do_not_use: Arc<Config>,
@@ -1000,8 +998,8 @@ impl SessionConfiguration {
         &self.codex_home
     }
 
-    fn thread_config_snapshot(&self) -> ThreadConfigSnapshot {
-        ThreadConfigSnapshot {
+    fn process_config_snapshot(&self) -> ProcessConfigSnapshot {
+        ProcessConfigSnapshot {
             model: self.collaboration_mode.model().to_string(),
             model_provider_id: self.original_config_do_not_use.model_provider_id.clone(),
             service_tier: self.service_tier,
@@ -1352,7 +1350,7 @@ impl Session {
 
         let (conversation_id, rollout_params) = match &initial_history {
             InitialHistory::New | InitialHistory::Forked(_) => {
-                let conversation_id = ThreadId::default();
+                let conversation_id = ProcessId::default();
                 (
                     conversation_id,
                     RolloutRecorderParams::new(
@@ -1606,21 +1604,21 @@ impl Session {
             default_shell.shell_snapshot = rx;
             tx
         };
-        let thread_name =
-            match session_index::find_thread_name_by_id(&config.codex_home, &conversation_id)
+        let process_name =
+            match session_index::find_process_name_by_id(&config.codex_home, &conversation_id)
                 .instrument(info_span!(
-                    "session_init.thread_name_lookup",
-                    otel.name = "session_init.thread_name_lookup",
+                    "session_init.process_name_lookup",
+                    otel.name = "session_init.process_name_lookup",
                 ))
                 .await
             {
                 Ok(name) => name,
                 Err(err) => {
-                    warn!("Failed to read session index for thread name: {err}");
+                    warn!("Failed to read session index for process name: {err}");
                     None
                 }
             };
-        session_configuration.thread_name = thread_name.clone();
+        session_configuration.process_name = process_name.clone();
         let state = SessionState::new(session_configuration.clone());
         let managed_network_requirements_enabled = config.managed_network_requirements_enabled();
         let network_approval = Arc::new(NetworkApprovalService::default());
@@ -1776,7 +1774,7 @@ impl Session {
             msg: EventMsg::SessionConfigured(SessionConfiguredEvent {
                 session_id: conversation_id,
                 forked_from_id,
-                thread_name: session_configuration.thread_name.clone(),
+                process_name: session_configuration.process_name.clone(),
                 model: session_configuration.collaboration_mode.model().to_string(),
                 model_provider_id: config.model_provider_id.clone(),
                 service_tier: session_configuration.service_tier,
@@ -2137,7 +2135,7 @@ impl Session {
 
         if matches!(
             session_source,
-            SessionSource::SubAgent(SubAgentSource::ThreadSpawn { .. })
+            SessionSource::SubAgent(SubAgentSource::ProcessSpawn { .. })
         ) {
             return;
         }
@@ -2534,7 +2532,7 @@ impl Session {
         self.send_event(
             turn_context,
             EventMsg::ItemStarted(ItemStartedEvent {
-                thread_id: self.conversation_id,
+                process_id: self.conversation_id,
                 turn_id: turn_context.sub_id.clone(),
                 item: item.clone(),
             }),
@@ -2551,7 +2549,7 @@ impl Session {
         self.send_event(
             turn_context,
             EventMsg::ItemCompleted(ItemCompletedEvent {
-                thread_id: self.conversation_id,
+                process_id: self.conversation_id,
                 turn_id: turn_context.sub_id.clone(),
                 item,
             }),
@@ -4142,12 +4140,12 @@ async fn submission_loop(sess: Arc<Session>, config: Arc<Config>, rx_sub: Receiv
                     handlers::update_memories(&sess, &config, sub.id.clone()).await;
                     false
                 }
-                Op::ThreadRollback { num_turns } => {
-                    handlers::thread_rollback(&sess, sub.id.clone(), num_turns).await;
+                Op::ProcessRollback { num_turns } => {
+                    handlers::process_rollback(&sess, sub.id.clone(), num_turns).await;
                     false
                 }
-                Op::SetThreadName { name } => {
-                    handlers::set_thread_name(&sess, sub.id.clone(), name).await;
+                Op::SetProcessName { name } => {
+                    handlers::set_process_name(&sess, sub.id.clone(), name).await;
                     false
                 }
                 Op::RunUserShellCommand { command } => {
@@ -4249,8 +4247,8 @@ mod handlers {
     use chaos_ipc::protocol::ReviewRequest;
     use chaos_ipc::protocol::RolloutItem;
     use chaos_ipc::protocol::SkillsListEntry;
-    use chaos_ipc::protocol::ThreadNameUpdatedEvent;
-    use chaos_ipc::protocol::ThreadRolledBackEvent;
+    use chaos_ipc::protocol::ProcessNameUpdatedEvent;
+    use chaos_ipc::protocol::ProcessRolledBackEvent;
     use chaos_ipc::protocol::TurnAbortReason;
     use chaos_ipc::protocol::WarningEvent;
     use chaos_ipc::request_permissions::RequestPermissionsResponse;
@@ -4808,13 +4806,13 @@ mod handlers {
         .await;
     }
 
-    pub async fn thread_rollback(sess: &Arc<Session>, sub_id: String, num_turns: u32) {
+    pub async fn process_rollback(sess: &Arc<Session>, sub_id: String, num_turns: u32) {
         if num_turns == 0 {
             sess.send_event_raw(Event {
                 id: sub_id,
                 msg: EventMsg::Error(ErrorEvent {
                     message: "num_turns must be >= 1".to_string(),
-                    codex_error_info: Some(CodexErrorInfo::ThreadRollbackFailed),
+                    codex_error_info: Some(CodexErrorInfo::ProcessRollbackFailed),
                 }),
             })
             .await;
@@ -4827,7 +4825,7 @@ mod handlers {
                 id: sub_id,
                 msg: EventMsg::Error(ErrorEvent {
                     message: "Cannot rollback while a turn is in progress.".to_string(),
-                    codex_error_info: Some(CodexErrorInfo::ThreadRollbackFailed),
+                    codex_error_info: Some(CodexErrorInfo::ProcessRollbackFailed),
                 }),
             })
             .await;
@@ -4845,7 +4843,7 @@ mod handlers {
                     id: turn_context.sub_id.clone(),
                     msg: EventMsg::Error(ErrorEvent {
                         message: "thread rollback requires a persisted rollout path".to_string(),
-                        codex_error_info: Some(CodexErrorInfo::ThreadRollbackFailed),
+                        codex_error_info: Some(CodexErrorInfo::ProcessRollbackFailed),
                     }),
                 })
                 .await;
@@ -4865,7 +4863,7 @@ mod handlers {
                         "failed to flush rollout `{}` for rollback replay: {err}",
                         rollout_path.display()
                     ),
-                    codex_error_info: Some(CodexErrorInfo::ThreadRollbackFailed),
+                    codex_error_info: Some(CodexErrorInfo::ProcessRollbackFailed),
                 }),
             })
             .await;
@@ -4883,7 +4881,7 @@ mod handlers {
                                 "failed to load rollout `{}` for rollback replay: {err}",
                                 rollout_path.display()
                             ),
-                            codex_error_info: Some(CodexErrorInfo::ThreadRollbackFailed),
+                            codex_error_info: Some(CodexErrorInfo::ProcessRollbackFailed),
                         }),
                     })
                     .await;
@@ -4891,8 +4889,8 @@ mod handlers {
                 }
             };
 
-        let rollback_event = ThreadRolledBackEvent { num_turns };
-        let rollback_msg = EventMsg::ThreadRolledBack(rollback_event.clone());
+        let rollback_event = ProcessRolledBackEvent { num_turns };
+        let rollback_msg = EventMsg::ProcessRolledBack(rollback_event.clone());
         let replay_items = initial_history
             .get_rollout_items()
             .into_iter()
@@ -4912,19 +4910,19 @@ mod handlers {
         .await;
     }
 
-    /// Persists the thread name in the session index, updates in-memory state, and emits
-    /// a `ThreadNameUpdated` event on success.
+    /// Persists the process name in the session index, updates in-memory state, and emits
+    /// a `ProcessNameUpdated` event on success.
     ///
-    /// This appends the name to `CODEX_HOME/sessions_index.jsonl` via `session_index::append_thread_name` for the
-    /// current `thread_id`, then updates `SessionConfiguration::thread_name`.
+    /// This appends the name to `CODEX_HOME/sessions_index.jsonl` via `session_index::append_process_name` for the
+    /// current `process_id`, then updates `SessionConfiguration::process_name`.
     ///
     /// Returns an error event if the name is empty or session persistence is disabled.
-    pub async fn set_thread_name(sess: &Arc<Session>, sub_id: String, name: String) {
-        let Some(name) = crate::util::normalize_thread_name(&name) else {
+    pub async fn set_process_name(sess: &Arc<Session>, sub_id: String, name: String) {
+        let Some(name) = crate::util::normalize_process_name(&name) else {
             let event = Event {
                 id: sub_id,
                 msg: EventMsg::Error(ErrorEvent {
-                    message: "Thread name cannot be empty.".to_string(),
+                    message: "Process name cannot be empty.".to_string(),
                     codex_error_info: Some(CodexErrorInfo::BadRequest),
                 }),
             };
@@ -4940,7 +4938,7 @@ mod handlers {
             let event = Event {
                 id: sub_id,
                 msg: EventMsg::Error(ErrorEvent {
-                    message: "Session persistence is disabled; cannot rename thread.".to_string(),
+                    message: "Session persistence is disabled; cannot rename process.".to_string(),
                     codex_error_info: Some(CodexErrorInfo::Other),
                 }),
             };
@@ -4950,12 +4948,12 @@ mod handlers {
 
         let codex_home = sess.codex_home().await;
         if let Err(e) =
-            session_index::append_thread_name(&codex_home, sess.conversation_id, &name).await
+            session_index::append_process_name(&codex_home, sess.conversation_id, &name).await
         {
             let event = Event {
                 id: sub_id,
                 msg: EventMsg::Error(ErrorEvent {
-                    message: format!("Failed to set thread name: {e}"),
+                    message: format!("Failed to set process name: {e}"),
                     codex_error_info: Some(CodexErrorInfo::Other),
                 }),
             };
@@ -4965,14 +4963,14 @@ mod handlers {
 
         {
             let mut state = sess.state.lock().await;
-            state.session_configuration.thread_name = Some(name.clone());
+            state.session_configuration.process_name = Some(name.clone());
         }
 
         sess.send_event_raw(Event {
             id: sub_id,
-            msg: EventMsg::ThreadNameUpdated(ThreadNameUpdatedEvent {
-                thread_id: sess.conversation_id,
-                thread_name: Some(name),
+            msg: EventMsg::ProcessNameUpdated(ProcessNameUpdatedEvent {
+                process_id: sess.conversation_id,
+                process_name: Some(name),
             }),
         })
         .await;
@@ -5382,10 +5380,10 @@ pub(crate) async fn run_turn(
     .await;
 
     let session_telemetry = turn_context.session_telemetry.clone();
-    let thread_id = sess.conversation_id.to_string();
+    let process_id = sess.conversation_id.to_string();
     let tracking = build_track_events_context(
         turn_context.model_info.slug.clone(),
-        thread_id,
+        process_id,
         turn_context.sub_id.clone(),
     );
     let SkillInjections {
@@ -5706,7 +5704,7 @@ pub(crate) async fn run_turn(
                             triggered_at: Timestamp::now(),
                             hook_event: HookEvent::AfterAgent {
                                 event: HookEventAfterAgent {
-                                    thread_id: sess.conversation_id,
+                                    process_id: sess.conversation_id,
                                     turn_id: turn_context.sub_id.clone(),
                                     input_messages: sampling_request_input_messages,
                                     last_assistant_message: last_agent_message.clone(),
@@ -6455,7 +6453,7 @@ impl ProposedPlanItemState {
             return;
         }
         let event = PlanDeltaEvent {
-            thread_id: sess.conversation_id.to_string(),
+            process_id: sess.conversation_id.to_string(),
             turn_id: turn_context.sub_id.clone(),
             item_id: self.item_id.clone(),
             delta: delta.to_string(),
@@ -6549,7 +6547,7 @@ async fn handle_plan_segments(
                 maybe_emit_pending_agent_message_start(sess, turn_context, state, item_id).await;
 
                 let event = AgentMessageContentDeltaEvent {
-                    thread_id: sess.conversation_id.to_string(),
+                    process_id: sess.conversation_id.to_string(),
                     turn_id: turn_context.sub_id.clone(),
                     item_id: item_id.to_string(),
                     delta,
@@ -6603,7 +6601,7 @@ async fn emit_streamed_assistant_text_delta(
         return;
     }
     let event = AgentMessageContentDeltaEvent {
-        thread_id: sess.conversation_id.to_string(),
+        process_id: sess.conversation_id.to_string(),
         turn_id: turn_context.sub_id.clone(),
         item_id: item_id.to_string(),
         delta: parsed.visible_text,
@@ -7041,7 +7039,7 @@ async fn try_run_sampling_request(
                         .await;
                     } else {
                         let event = AgentMessageContentDeltaEvent {
-                            thread_id: sess.conversation_id.to_string(),
+                            process_id: sess.conversation_id.to_string(),
                             turn_id: turn_context.sub_id.clone(),
                             item_id,
                             delta,
@@ -7059,7 +7057,7 @@ async fn try_run_sampling_request(
             } => {
                 if let Some(active) = active_item.as_ref() {
                     let event = ReasoningContentDeltaEvent {
-                        thread_id: sess.conversation_id.to_string(),
+                        process_id: sess.conversation_id.to_string(),
                         turn_id: turn_context.sub_id.clone(),
                         item_id: active.id(),
                         delta,
@@ -7089,7 +7087,7 @@ async fn try_run_sampling_request(
             } => {
                 if let Some(active) = active_item.as_ref() {
                     let event = ReasoningRawContentDeltaEvent {
-                        thread_id: sess.conversation_id.to_string(),
+                        process_id: sess.conversation_id.to_string(),
                         turn_id: turn_context.sub_id.clone(),
                         item_id: active.id(),
                         delta,

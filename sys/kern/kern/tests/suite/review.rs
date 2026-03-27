@@ -1,4 +1,4 @@
-use chaos_kern::CodexThread;
+use chaos_kern::Process;
 use chaos_kern::REVIEW_PROMPT;
 use chaos_kern::config::Config;
 use chaos_kern::review_format::render_review_output_text;
@@ -884,7 +884,7 @@ async fn new_conversation_for_server<F>(
     server: &MockServer,
     codex_home: Arc<TempDir>,
     mutator: F,
-) -> Arc<CodexThread>
+) -> Arc<Process>
 where
     F: FnOnce(&mut Config) + Send + 'static,
 {
@@ -909,7 +909,7 @@ async fn resume_conversation_for_server<F>(
     codex_home: Arc<TempDir>,
     resume_path: std::path::PathBuf,
     mutator: F,
-) -> Arc<CodexThread>
+) -> Arc<Process>
 where
     F: FnOnce(&mut Config) + Send + 'static,
 {

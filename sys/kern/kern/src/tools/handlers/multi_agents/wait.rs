@@ -39,21 +39,21 @@ impl ToolHandler for Handler {
                 "ids must be non-empty".to_owned(),
             ));
         }
-        let receiver_thread_ids = args
+        let receiver_process_ids = args
             .ids
             .iter()
             .map(|id| agent_id(id))
             .collect::<Result<Vec<_>, _>>()?;
-        let mut receiver_agents = Vec::with_capacity(receiver_thread_ids.len());
-        for receiver_thread_id in &receiver_thread_ids {
+        let mut receiver_agents = Vec::with_capacity(receiver_process_ids.len());
+        for receiver_process_id in &receiver_process_ids {
             let (agent_nickname, agent_role) = session
                 .services
                 .agent_control
-                .get_agent_nickname_and_role(*receiver_thread_id)
+                .get_agent_nickname_and_role(*receiver_process_id)
                 .await
                 .unwrap_or((None, None));
             receiver_agents.push(CollabAgentRef {
-                thread_id: *receiver_thread_id,
+                process_id: *receiver_process_id,
                 agent_nickname,
                 agent_role,
             });
@@ -73,8 +73,8 @@ impl ToolHandler for Handler {
             .send_event(
                 &turn,
                 CollabWaitingBeginEvent {
-                    sender_thread_id: session.conversation_id,
-                    receiver_thread_ids: receiver_thread_ids.clone(),
+                    sender_process_id: session.conversation_id,
+                    receiver_process_ids: receiver_process_ids.clone(),
                     receiver_agents: receiver_agents.clone(),
                     call_id: call_id.clone(),
                 }
@@ -82,9 +82,9 @@ impl ToolHandler for Handler {
             )
             .await;
 
-        let mut status_rxs = Vec::with_capacity(receiver_thread_ids.len());
+        let mut status_rxs = Vec::with_capacity(receiver_process_ids.len());
         let mut initial_final_statuses = Vec::new();
-        for id in &receiver_thread_ids {
+        for id in &receiver_process_ids {
             match session.services.agent_control.subscribe_status(*id).await {
                 Ok(rx) => {
                     let status = rx.borrow().clone();
@@ -93,7 +93,7 @@ impl ToolHandler for Handler {
                     }
                     status_rxs.push((*id, rx));
                 }
-                Err(CodexErr::ThreadNotFound(_)) => {
+                Err(CodexErr::ProcessNotFound(_)) => {
                     initial_final_statuses.push((*id, AgentStatus::NotFound));
                 }
                 Err(err) => {
@@ -103,7 +103,7 @@ impl ToolHandler for Handler {
                         .send_event(
                             &turn,
                             CollabWaitingEndEvent {
-                                sender_thread_id: session.conversation_id,
+                                sender_process_id: session.conversation_id,
                                 call_id: call_id.clone(),
                                 agent_statuses: build_wait_agent_statuses(
                                     &statuses,
@@ -162,7 +162,7 @@ impl ToolHandler for Handler {
             .send_event(
                 &turn,
                 CollabWaitingEndEvent {
-                    sender_thread_id: session.conversation_id,
+                    sender_process_id: session.conversation_id,
                     call_id,
                     agent_statuses,
                     statuses: statuses_map,
@@ -183,7 +183,7 @@ struct WaitArgs {
 
 #[derive(Debug, Deserialize, Serialize, PartialEq, Eq)]
 pub(crate) struct WaitAgentResult {
-    pub(crate) status: HashMap<ThreadId, AgentStatus>,
+    pub(crate) status: HashMap<ProcessId, AgentStatus>,
     pub(crate) timed_out: bool,
 }
 
@@ -203,22 +203,22 @@ impl ToolOutput for WaitAgentResult {
 
 async fn wait_for_final_status(
     session: Arc<Session>,
-    thread_id: ThreadId,
+    process_id: ProcessId,
     mut status_rx: Receiver<AgentStatus>,
-) -> Option<(ThreadId, AgentStatus)> {
+) -> Option<(ProcessId, AgentStatus)> {
     let mut status = status_rx.borrow().clone();
     if is_final(&status) {
-        return Some((thread_id, status));
+        return Some((process_id, status));
     }
 
     loop {
         if status_rx.changed().await.is_err() {
-            let latest = session.services.agent_control.get_status(thread_id).await;
-            return is_final(&latest).then_some((thread_id, latest));
+            let latest = session.services.agent_control.get_status(process_id).await;
+            return is_final(&latest).then_some((process_id, latest));
         }
         status = status_rx.borrow().clone();
         if is_final(&status) {
-            return Some((thread_id, status));
+            return Some((process_id, status));
         }
     }
 }

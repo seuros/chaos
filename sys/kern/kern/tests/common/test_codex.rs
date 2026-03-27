@@ -6,9 +6,9 @@ use std::sync::Arc;
 use anyhow::Context;
 use anyhow::Result;
 use chaos_kern::CodexAuth;
-use chaos_kern::CodexThread;
+use chaos_kern::Process;
 use chaos_kern::ModelProviderInfo;
-use chaos_kern::ThreadManager;
+use chaos_kern::ProcessTable;
 use chaos_kern::built_in_model_providers;
 use chaos_kern::config::Config;
 use chaos_kern::features::Feature;
@@ -184,26 +184,26 @@ impl TestCodexBuilder {
         resume_from: Option<PathBuf>,
     ) -> anyhow::Result<TestCodex> {
         let auth = self.auth.clone();
-        let thread_manager = if config.model_catalog.is_some() {
-            ThreadManager::new(
+        let process_table = if config.model_catalog.is_some() {
+            ProcessTable::new(
                 &config,
                 chaos_kern::test_support::auth_manager_from_auth(auth.clone()),
                 SessionSource::Exec,
                 CollaborationModesConfig::default(),
             )
         } else {
-            chaos_kern::test_support::thread_manager_with_models_provider_and_home(
+            chaos_kern::test_support::process_table_with_models_provider_and_home(
                 auth.clone(),
                 config.model_provider.clone(),
                 config.codex_home.clone(),
             )
         };
-        let thread_manager = Arc::new(thread_manager);
+        let process_table = Arc::new(process_table);
 
         let new_conversation = match resume_from {
             Some(path) => {
                 let auth_manager = chaos_kern::test_support::auth_manager_from_auth(auth);
-                Box::pin(thread_manager.resume_thread_from_rollout(
+                Box::pin(process_table.resume_process_from_rollout(
                     config.clone(),
                     path,
                     auth_manager,
@@ -211,16 +211,16 @@ impl TestCodexBuilder {
                 ))
                 .await?
             }
-            None => Box::pin(thread_manager.start_thread(config.clone())).await?,
+            None => Box::pin(process_table.start_process(config.clone())).await?,
         };
 
         Ok(TestCodex {
             home,
             cwd,
             config,
-            codex: new_conversation.thread,
+            codex: new_conversation.process,
             session_configured: new_conversation.session_configured,
-            thread_manager,
+            process_table,
         })
     }
 
@@ -310,10 +310,10 @@ fn ensure_test_model_catalog(config: &mut Config) -> Result<()> {
 pub struct TestCodex {
     pub home: Arc<TempDir>,
     pub cwd: Arc<TempDir>,
-    pub codex: Arc<CodexThread>,
+    pub codex: Arc<Process>,
     pub session_configured: SessionConfiguredEvent,
     pub config: Config,
-    pub thread_manager: Arc<ThreadManager>,
+    pub process_table: Arc<ProcessTable>,
 }
 
 impl TestCodex {

@@ -13,20 +13,20 @@ fn write_index(path: &Path, lines: &[SessionIndexEntry]) -> std::io::Result<()> 
 }
 
 #[test]
-fn find_thread_id_by_name_prefers_latest_entry() -> std::io::Result<()> {
+fn find_process_id_by_name_prefers_latest_entry() -> std::io::Result<()> {
     let temp = TempDir::new()?;
     let path = session_index_path(temp.path());
-    let id1 = ThreadId::new();
-    let id2 = ThreadId::new();
+    let id1 = ProcessId::new();
+    let id2 = ProcessId::new();
     let lines = vec![
         SessionIndexEntry {
             id: id1,
-            thread_name: "same".to_string(),
+            process_name: "same".to_string(),
             updated_at: "2024-01-01T00:00:00Z".to_string(),
         },
         SessionIndexEntry {
             id: id2,
-            thread_name: "same".to_string(),
+            process_name: "same".to_string(),
             updated_at: "2024-01-02T00:00:00Z".to_string(),
         },
     ];
@@ -38,19 +38,19 @@ fn find_thread_id_by_name_prefers_latest_entry() -> std::io::Result<()> {
 }
 
 #[test]
-fn find_thread_name_by_id_prefers_latest_entry() -> std::io::Result<()> {
+fn find_process_name_by_id_prefers_latest_entry() -> std::io::Result<()> {
     let temp = TempDir::new()?;
     let path = session_index_path(temp.path());
-    let id = ThreadId::new();
+    let id = ProcessId::new();
     let lines = vec![
         SessionIndexEntry {
             id,
-            thread_name: "first".to_string(),
+            process_name: "first".to_string(),
             updated_at: "2024-01-01T00:00:00Z".to_string(),
         },
         SessionIndexEntry {
             id,
-            thread_name: "second".to_string(),
+            process_name: "second".to_string(),
             updated_at: "2024-01-02T00:00:00Z".to_string(),
         },
     ];
@@ -58,7 +58,7 @@ fn find_thread_name_by_id_prefers_latest_entry() -> std::io::Result<()> {
 
     let found = scan_index_from_end_by_id(&path, &id)?;
     assert_eq!(
-        found.map(|entry| entry.thread_name),
+        found.map(|entry| entry.process_name),
         Some("second".to_string())
     );
     Ok(())
@@ -68,10 +68,10 @@ fn find_thread_name_by_id_prefers_latest_entry() -> std::io::Result<()> {
 fn scan_index_returns_none_when_entry_missing() -> std::io::Result<()> {
     let temp = TempDir::new()?;
     let path = session_index_path(temp.path());
-    let id = ThreadId::new();
+    let id = ProcessId::new();
     let lines = vec![SessionIndexEntry {
         id,
-        thread_name: "present".to_string(),
+        process_name: "present".to_string(),
         updated_at: "2024-01-01T00:00:00Z".to_string(),
     }];
     write_index(&path, &lines)?;
@@ -79,31 +79,31 @@ fn scan_index_returns_none_when_entry_missing() -> std::io::Result<()> {
     let missing_name = scan_index_from_end_by_name(&path, "missing")?;
     assert_eq!(missing_name, None);
 
-    let missing_id = scan_index_from_end_by_id(&path, &ThreadId::new())?;
+    let missing_id = scan_index_from_end_by_id(&path, &ProcessId::new())?;
     assert_eq!(missing_id, None);
     Ok(())
 }
 
 #[tokio::test]
-async fn find_thread_names_by_ids_prefers_latest_entry() -> std::io::Result<()> {
+async fn find_process_names_by_ids_prefers_latest_entry() -> std::io::Result<()> {
     let temp = TempDir::new()?;
     let path = session_index_path(temp.path());
-    let id1 = ThreadId::new();
-    let id2 = ThreadId::new();
+    let id1 = ProcessId::new();
+    let id2 = ProcessId::new();
     let lines = vec![
         SessionIndexEntry {
             id: id1,
-            thread_name: "first".to_string(),
+            process_name: "first".to_string(),
             updated_at: "2024-01-01T00:00:00Z".to_string(),
         },
         SessionIndexEntry {
             id: id2,
-            thread_name: "other".to_string(),
+            process_name: "other".to_string(),
             updated_at: "2024-01-01T00:00:00Z".to_string(),
         },
         SessionIndexEntry {
             id: id1,
-            thread_name: "latest".to_string(),
+            process_name: "latest".to_string(),
             updated_at: "2024-01-02T00:00:00Z".to_string(),
         },
     ];
@@ -117,7 +117,7 @@ async fn find_thread_names_by_ids_prefers_latest_entry() -> std::io::Result<()> 
     expected.insert(id1, "latest".to_string());
     expected.insert(id2, "other".to_string());
 
-    let found = find_thread_names_by_ids(temp.path(), &ids).await?;
+    let found = find_process_names_by_ids(temp.path(), &ids).await?;
     assert_eq!(found, expected);
     Ok(())
 }
@@ -126,30 +126,30 @@ async fn find_thread_names_by_ids_prefers_latest_entry() -> std::io::Result<()> 
 fn scan_index_finds_latest_match_among_mixed_entries() -> std::io::Result<()> {
     let temp = TempDir::new()?;
     let path = session_index_path(temp.path());
-    let id_target = ThreadId::new();
-    let id_other = ThreadId::new();
+    let id_target = ProcessId::new();
+    let id_other = ProcessId::new();
     let expected = SessionIndexEntry {
         id: id_target,
-        thread_name: "target".to_string(),
+        process_name: "target".to_string(),
         updated_at: "2024-01-03T00:00:00Z".to_string(),
     };
     let expected_other = SessionIndexEntry {
         id: id_other,
-        thread_name: "target".to_string(),
+        process_name: "target".to_string(),
         updated_at: "2024-01-02T00:00:00Z".to_string(),
     };
     // Resolution is based on append order (scan from end), not updated_at.
     let lines = vec![
         SessionIndexEntry {
             id: id_target,
-            thread_name: "target".to_string(),
+            process_name: "target".to_string(),
             updated_at: "2024-01-01T00:00:00Z".to_string(),
         },
         expected_other.clone(),
         expected.clone(),
         SessionIndexEntry {
-            id: ThreadId::new(),
-            thread_name: "another".to_string(),
+            id: ProcessId::new(),
+            process_name: "another".to_string(),
             updated_at: "2024-01-04T00:00:00Z".to_string(),
         },
     ];

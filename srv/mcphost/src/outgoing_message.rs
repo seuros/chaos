@@ -3,7 +3,7 @@ use std::sync::atomic::AtomicI64;
 use std::sync::atomic::AtomicU8;
 use std::sync::atomic::Ordering;
 
-use chaos_ipc::ThreadId;
+use chaos_ipc::ProcessId;
 use chaos_ipc::protocol::Event;
 use mcp_host::protocol::capabilities::ElicitationCapability;
 use mcp_host::protocol::types::{
@@ -93,7 +93,7 @@ impl OutgoingMessageSender {
         self.client_elicitation_modes.load(Ordering::Relaxed) & 0b10 != 0
     }
 
-    /// Send a Codex event as an MCP notification.
+    /// Send a Chaos event as an MCP notification.
     pub(crate) async fn send_event_as_notification(
         &self,
         event: &Event,
@@ -184,7 +184,7 @@ pub(crate) struct OutgoingNotificationMeta {
     pub request_id: Option<RequestId>,
 
     #[serde(default, skip_serializing_if = "Option::is_none")]
-    pub thread_id: Option<ThreadId>,
+    pub process_id: Option<ProcessId>,
 }
 
 #[derive(Debug, Clone, PartialEq, Serialize)]
@@ -198,7 +198,7 @@ mod tests {
     use std::path::PathBuf;
 
     use anyhow::Result;
-    use chaos_ipc::ThreadId;
+    use chaos_ipc::ProcessId;
     use chaos_ipc::openai_models::ReasoningEffort;
     use chaos_ipc::protocol::AskForApproval;
     use chaos_ipc::protocol::EventMsg;
@@ -252,14 +252,14 @@ mod tests {
         let (outgoing_tx, mut outgoing_rx) = mpsc::unbounded_channel::<OutgoingMessage>();
         let outgoing_message_sender = OutgoingMessageSender::new(outgoing_tx);
 
-        let thread_id = ThreadId::new();
+        let process_id = ProcessId::new();
         let rollout_file = NamedTempFile::new()?;
         let event = Event {
             id: "1".to_string(),
             msg: EventMsg::SessionConfigured(SessionConfiguredEvent {
-                session_id: thread_id,
+                session_id: process_id,
                 forked_from_id: None,
-                thread_name: None,
+                process_name: None,
                 model: "gpt-4o".to_string(),
                 model_provider_id: "test-provider".to_string(),
                 service_tier: None,
@@ -298,12 +298,12 @@ mod tests {
         let (outgoing_tx, mut outgoing_rx) = mpsc::unbounded_channel::<OutgoingMessage>();
         let outgoing_message_sender = OutgoingMessageSender::new(outgoing_tx);
 
-        let conversation_id = ThreadId::new();
+        let conversation_id = ProcessId::new();
         let rollout_file = NamedTempFile::new()?;
         let session_configured_event = SessionConfiguredEvent {
             session_id: conversation_id,
             forked_from_id: None,
-            thread_name: None,
+            process_name: None,
             model: "gpt-4o".to_string(),
             model_provider_id: "test-provider".to_string(),
             service_tier: None,
@@ -324,7 +324,7 @@ mod tests {
         };
         let meta = OutgoingNotificationMeta {
             request_id: Some(RequestId::String("123".into())),
-            thread_id: None,
+            process_id: None,
         };
 
         outgoing_message_sender
@@ -363,16 +363,16 @@ mod tests {
     }
 
     #[tokio::test]
-    async fn test_send_event_as_notification_with_meta_and_thread_id() -> Result<()> {
+    async fn test_send_event_as_notification_with_meta_and_process_id() -> Result<()> {
         let (outgoing_tx, mut outgoing_rx) = mpsc::unbounded_channel::<OutgoingMessage>();
         let outgoing_message_sender = OutgoingMessageSender::new(outgoing_tx);
 
-        let thread_id = ThreadId::new();
+        let process_id = ProcessId::new();
         let rollout_file = NamedTempFile::new()?;
         let session_configured_event = SessionConfiguredEvent {
-            session_id: thread_id,
+            session_id: process_id,
             forked_from_id: None,
-            thread_name: None,
+            process_name: None,
             model: "gpt-4o".to_string(),
             model_provider_id: "test-provider".to_string(),
             service_tier: None,
@@ -393,7 +393,7 @@ mod tests {
         };
         let meta = OutgoingNotificationMeta {
             request_id: Some(RequestId::String("123".into())),
-            thread_id: Some(thread_id),
+            process_id: Some(process_id),
         };
 
         outgoing_message_sender
@@ -408,7 +408,7 @@ mod tests {
         let expected_params = json!({
             "_meta": {
                 "requestId": "123",
-                "threadId": thread_id.to_string(),
+                "processId": process_id.to_string(),
             },
             "id": "1",
             "msg": {

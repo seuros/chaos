@@ -428,15 +428,10 @@ fn supports_image_generation(model_info: &ModelInfo) -> bool {
     model_info.input_modalities.contains(&InputModality::Image)
 }
 
-// OpenAI-specific types — canonical definitions live in codex-api.
-#[allow(unused_imports)]
-pub use codex_api::sanitize::AdditionalProperties;
-pub use codex_api::sanitize::JsonSchema;
-pub use codex_api::sanitize::ResponsesApiTool;
-pub use codex_api::sanitize::mcp_call_tool_result_output_schema;
-pub use codex_api::sanitize::parse_tool_input_schema;
-#[allow(unused_imports)]
-pub use codex_api::sanitize::sanitize_json_schema;
+use codex_api::sanitize::JsonSchema;
+use codex_api::sanitize::ResponsesApiTool;
+use codex_api::sanitize::mcp_tool_to_responses_api_tool;
+use codex_api::sanitize::parse_tool_input_schema;
 
 fn create_network_permissions_schema() -> JsonSchema {
     JsonSchema::Object {
@@ -1829,93 +1824,33 @@ pub(crate) fn mcp_tool_to_openai_tool(
     fully_qualified_name: String,
     tool: crate::mcp_connection_manager::McpToolInfo,
 ) -> Result<ResponsesApiTool, serde_json::Error> {
-    let (description, input_schema, output_schema) = mcp_tool_to_openai_tool_parts(tool)?;
-
-    Ok(ResponsesApiTool {
-        name: fully_qualified_name,
-        description,
-        strict: false,
-        defer_loading: None,
-        parameters: input_schema,
-        output_schema,
-    })
+    mcp_tool_to_responses_api_tool(
+        fully_qualified_name,
+        tool.description,
+        tool.input_schema,
+        tool.output_schema,
+        false,
+    )
 }
 
 pub(crate) fn mcp_tool_to_deferred_openai_tool(
     name: String,
     tool: crate::mcp_connection_manager::McpToolInfo,
 ) -> Result<ResponsesApiTool, serde_json::Error> {
-    let (description, input_schema, _) = mcp_tool_to_openai_tool_parts(tool)?;
-
-    Ok(ResponsesApiTool {
-        name,
-        description,
-        strict: false,
-        defer_loading: Some(true),
-        parameters: input_schema,
-        output_schema: None,
-    })
+    mcp_tool_to_responses_api_tool(name, tool.description, tool.input_schema, None, true)
 }
 
 fn dynamic_tool_to_openai_tool(
     tool: &DynamicToolSpec,
 ) -> Result<ResponsesApiTool, serde_json::Error> {
-    let input_schema = parse_tool_input_schema(&tool.input_schema)?;
-
-    Ok(ResponsesApiTool {
-        name: tool.name.clone(),
-        description: tool.description.clone(),
-        strict: false,
-        defer_loading: None,
-        parameters: input_schema,
-        output_schema: None,
-    })
+    mcp_tool_to_responses_api_tool(
+        tool.name.clone(),
+        Some(tool.description.clone()),
+        tool.input_schema.clone(),
+        None,
+        false,
+    )
 }
-
-// parse_tool_input_schema is now re-exported from codex_api::sanitize
-
-fn mcp_tool_to_openai_tool_parts(
-    tool: crate::mcp_connection_manager::McpToolInfo,
-) -> Result<(String, JsonSchema, Option<JsonValue>), serde_json::Error> {
-    let crate::mcp_connection_manager::McpToolInfo {
-        description,
-        input_schema,
-        output_schema,
-        ..
-    } = tool;
-
-    let mut serialized_input_schema = input_schema;
-
-    // OpenAI models mandate the "properties" field in the schema. Some MCP
-    // servers omit it (or set it to null), so we insert an empty object to
-    // match the behavior of the Agents SDK.
-    if let serde_json::Value::Object(obj) = &mut serialized_input_schema
-        && obj.get("properties").is_none_or(serde_json::Value::is_null)
-    {
-        obj.insert(
-            "properties".to_string(),
-            serde_json::Value::Object(serde_json::Map::new()),
-        );
-    }
-
-    // Serialize to a raw JSON value so we can normalize schemas coming from
-    // MCP servers. Some servers omit the top-level or nested `type`, use local
-    // `$ref`s, or wrap optional objects in nullable combiners. Our internal
-    // JsonSchema is a small subset, so we coerce/sanitize here for
-    // compatibility.
-    let input_schema = parse_tool_input_schema(&serialized_input_schema)?;
-    let structured_content_schema =
-        output_schema.unwrap_or_else(|| JsonValue::Object(serde_json::Map::new()));
-    let output_schema = Some(mcp_call_tool_result_output_schema(
-        structured_content_schema,
-    ));
-    let description = description.unwrap_or_default();
-
-    Ok((description, input_schema, output_schema))
-}
-
-// mcp_call_tool_result_output_schema and sanitize_json_schema are now
-// re-exported from codex_api::sanitize
 
 /// Builds the tool registry builder while collecting tool specs for later serialization.
 #[cfg(test)]

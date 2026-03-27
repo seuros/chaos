@@ -12,6 +12,12 @@ use chaos_ipc::openai_models::InputModality;
 use chaos_ipc::openai_models::ModelInfo;
 use chaos_ipc::openai_models::ModelsResponse;
 use chaos_realpath::AbsolutePathBuf;
+use codex_api::sanitize::AdditionalProperties;
+use codex_api::sanitize::JsonSchema;
+use codex_api::sanitize::ResponsesApiTool;
+use codex_api::sanitize::mcp_call_tool_result_output_schema;
+use codex_api::sanitize::parse_tool_input_schema;
+use codex_api::sanitize::sanitize_json_schema;
 use pretty_assertions::assert_eq;
 use std::path::PathBuf;
 

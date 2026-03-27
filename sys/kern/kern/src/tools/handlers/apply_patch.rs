@@ -28,7 +28,7 @@ use crate::tools::runtimes::apply_patch::ApplyPatchRequest;
 use crate::tools::runtimes::apply_patch::ApplyPatchRuntime;
 use crate::tools::sandboxing::ToolCtx;
 use crate::tools::spec::ApplyPatchToolArgs;
-use crate::tools::spec::JsonSchema;
+use codex_api::sanitize::JsonSchema;
 use async_trait::async_trait;
 use chaos_diff::ApplyPatchAction;
 use chaos_diff::ApplyPatchFileChange;

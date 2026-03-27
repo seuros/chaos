@@ -153,7 +153,7 @@ fn strip_total_output_header(output: &str) -> Option<(&str, u32)> {
 }
 
 pub(crate) mod tools {
-    use crate::tools::spec::JsonSchema;
+    use codex_api::sanitize::JsonSchema;
     use chaos_ipc::config_types::WebSearchContextSize;
     use chaos_ipc::config_types::WebSearchFilters as ConfigWebSearchFilters;
     use chaos_ipc::config_types::WebSearchUserLocation as ConfigWebSearchUserLocation;

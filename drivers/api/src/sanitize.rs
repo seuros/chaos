@@ -98,6 +98,52 @@ pub struct ResponsesApiTool {
     pub output_schema: Option<JsonValue>,
 }
 
+/// Converts raw MCP tool fields into an OpenAI [`ResponsesApiTool`].
+///
+/// Takes the provider-neutral fields (description, input_schema, output_schema)
+/// and produces the OpenAI-specific tool definition with sanitized schemas.
+/// The kernel calls this with fields destructured from `McpToolInfo` so that
+/// `codex-api` never depends on MCP types.
+pub fn mcp_tool_to_responses_api_tool(
+    name: String,
+    description: Option<String>,
+    input_schema: JsonValue,
+    output_schema: Option<JsonValue>,
+    deferred: bool,
+) -> Result<ResponsesApiTool, serde_json::Error> {
+    let mut schema = input_schema;
+
+    // OpenAI models mandate the "properties" field in the schema. Some MCP
+    // servers omit it (or set it to null), so we insert an empty object to
+    // match the behavior of the Agents SDK.
+    if let JsonValue::Object(obj) = &mut schema
+        && obj.get("properties").is_none_or(JsonValue::is_null)
+    {
+        obj.insert(
+            "properties".to_string(),
+            JsonValue::Object(serde_json::Map::new()),
+        );
+    }
+
+    let parameters = parse_tool_input_schema(&schema)?;
+
+    let output_schema = if deferred {
+        None
+    } else {
+        let structured = output_schema.unwrap_or_else(|| JsonValue::Object(serde_json::Map::new()));
+        Some(mcp_call_tool_result_output_schema(structured))
+    };
+
+    Ok(ResponsesApiTool {
+        name,
+        description: description.unwrap_or_default(),
+        strict: false,
+        defer_loading: if deferred { Some(true) } else { None },
+        parameters,
+        output_schema,
+    })
+}
+
 /// Wraps an MCP tool's structured output schema in the OpenAI call-tool
 /// result envelope (`content`, `structuredContent`, `isError`, `_meta`).
 pub fn mcp_call_tool_result_output_schema(structured_content_schema: JsonValue) -> JsonValue {

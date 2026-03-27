@@ -6,6 +6,7 @@ pub mod error;
 pub mod provider;
 pub mod rate_limits;
 pub mod requests;
+pub mod sanitize;
 pub mod sse;
 pub mod telemetry;
 

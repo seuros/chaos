@@ -160,7 +160,6 @@ pub(crate) mod tools {
     use chaos_ipc::config_types::WebSearchUserLocationType;
     use serde::Deserialize;
     use serde::Serialize;
-    use serde_json::Value;
 
     /// When serialized as JSON, this produces a valid "Tool" in the OpenAI
     /// Responses API.
@@ -267,20 +266,7 @@ pub(crate) mod tools {
         pub(crate) definition: String,
     }
 
-    #[derive(Debug, Clone, Serialize, PartialEq)]
-    pub struct ResponsesApiTool {
-        pub(crate) name: String,
-        pub(crate) description: String,
-        /// TODO: Validation. When strict is set to true, the JSON schema,
-        /// `required` and `additional_properties` must be present. All fields in
-        /// `properties` must be present in `required`.
-        pub(crate) strict: bool,
-        #[serde(skip_serializing_if = "Option::is_none")]
-        pub(crate) defer_loading: Option<bool>,
-        pub(crate) parameters: JsonSchema,
-        #[serde(skip)]
-        pub(crate) output_schema: Option<Value>,
-    }
+    pub use codex_api::sanitize::ResponsesApiTool;
 
     #[derive(Debug, Clone, Serialize, PartialEq)]
     #[serde(tag = "type")]

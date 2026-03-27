@@ -428,7 +428,8 @@ pub enum SandboxModeRequirement {
     #[serde(rename = "workspace-write")]
     WorkspaceWrite,
 
-    #[serde(rename = "root-access")]
+    #[serde(rename = "root-access", alias = "danger-full-access")]
+    /// Support legacy hardware like i386 and OpenAI Codex.
     RootAccess,
 
     #[serde(rename = "external-sandbox")]

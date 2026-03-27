@@ -641,7 +641,8 @@ impl ReadOnlyAccess {
 #[serde(tag = "type", rename_all = "kebab-case")]
 pub enum SandboxPolicy {
     /// No restrictions whatsoever. Use with caution.
-    #[serde(rename = "root-access")]
+    #[serde(rename = "root-access", alias = "danger-full-access")]
+    /// Support legacy hardware like i386 and OpenAI Codex.
     RootAccess,
 
     /// Read-only access configuration.

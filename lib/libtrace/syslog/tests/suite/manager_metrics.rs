@@ -5,7 +5,7 @@ use crate::harness::latest_metrics;
 use chaos_syslog::SessionTelemetry;
 use chaos_syslog::TelemetryAuthMode;
 use chaos_syslog::metrics::Result;
-use chaos_ipc::ThreadId;
+use chaos_ipc::ProcessId;
 use chaos_ipc::protocol::SessionSource;
 use opentelemetry_sdk::metrics::data::AggregatedMetrics;
 use opentelemetry_sdk::metrics::data::MetricData;
@@ -17,7 +17,7 @@ use std::collections::BTreeMap;
 fn manager_attaches_metadata_tags_to_metrics() -> Result<()> {
     let (metrics, exporter) = build_metrics_with_defaults(&[("service", "codex-cli")])?;
     let manager = SessionTelemetry::new(
-        ThreadId::new(),
+        ProcessId::new(),
         "gpt-5.1",
         "gpt-5.1",
         Some("account-id".to_string()),
@@ -73,7 +73,7 @@ fn manager_attaches_metadata_tags_to_metrics() -> Result<()> {
 fn manager_allows_disabling_metadata_tags() -> Result<()> {
     let (metrics, exporter) = build_metrics_with_defaults(&[])?;
     let manager = SessionTelemetry::new(
-        ThreadId::new(),
+        ProcessId::new(),
         "gpt-4o",
         "gpt-4o",
         Some("account-id".to_string()),
@@ -114,7 +114,7 @@ fn manager_allows_disabling_metadata_tags() -> Result<()> {
 fn manager_attaches_optional_service_name_tag() -> Result<()> {
     let (metrics, exporter) = build_metrics_with_defaults(&[])?;
     let manager = SessionTelemetry::new(
-        ThreadId::new(),
+        ProcessId::new(),
         "gpt-5.1",
         "gpt-5.1",
         None,

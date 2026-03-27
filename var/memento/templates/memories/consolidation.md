@@ -143,7 +143,7 @@ Mode selection:
 - INCREMENTAL UPDATE: existing artifacts already exist and `raw_memories.md`
   mostly contains new additions.
 
-Incremental thread diff snapshot (computed before the current artifact sync rewrites local files):
+Incremental process diff snapshot (computed before the current artifact sync rewrites local files):
 
 **Diff since last consolidation:**
 {{ phase2_input_selection }}
@@ -152,20 +152,20 @@ Incremental update and forgetting mechanism:
 
 - Use the diff provided
 - Do not open raw sessions / original rollout transcripts.
-- For each added thread id, search it in `raw_memories.md`, read that raw-memory section, and
+- For each added process id, search it in `raw_memories.md`, read that raw-memory section, and
   read the corresponding `rollout_summaries/*.md` file only when needed for stronger evidence,
   task placement, or conflict resolution.
   - When scanning a raw-memory section, read the task-level `Preference signals:` subsections
     first, then the rest of the task blocks.
-- For each removed thread id, search it in `MEMORY.md` and delete only the memory supported by
-  that thread. Use `thread_id=<thread_id>` in `### rollout_summary_files` when available; if not,
+- For each removed process id, search it in `MEMORY.md` and delete only the memory supported by
+  that process. Use `process_id=<process_id>` in `### rollout_summary_files` when available; if not,
   fall back to rollout summary filenames plus the corresponding `rollout_summaries/*.md` files.
 - If a `MEMORY.md` block contains both removed and undeleted threads, do not delete the whole
-  block. Remove only the removed thread's references and thread-local guidance, preserve shared
+  block. Remove only the removed process's references and process-local guidance, preserve shared
   or still-supported content, and split or rewrite the block only if needed to keep the undeleted
   threads intact.
 - After `MEMORY.md` cleanup is done, revisit `memory_summary.md` and remove or rewrite stale
-  summary/index content that was only supported by removed thread ids.
+  summary/index content that was only supported by removed process ids.
 
 Outputs:
 Under `{{ memory_root }}/`:
@@ -227,7 +227,7 @@ Required task-oriented body shape (strict):
 
 ### rollout_summary_files
 
-- <rollout_summaries/file1.md> (cwd=<path>, rollout_path=<path>, updated_at=<timestamp>, thread_id=<thread_id>, <optional status/usefulness note>)
+- <rollout_summaries/file1.md> (cwd=<path>, rollout_path=<path>, updated_at=<timestamp>, process_id=<process_id>, <optional status/usefulness note>)
 
 ### keywords
 
@@ -743,18 +743,18 @@ WORKFLOW
 3. INCREMENTAL UPDATE behavior:
    - Read existing `MEMORY.md` and `memory_summary.md` first for continuity and to locate
      existing references that may need surgical cleanup.
-   - Use the injected thread-diff snapshot as the first routing pass:
-     - added thread ids = ingestion queue
-     - removed thread ids = forgetting / stale-cleanup queue
+   - Use the injected process-diff snapshot as the first routing pass:
+     - added process ids = ingestion queue
+     - removed process ids = forgetting / stale-cleanup queue
    - Build an index of rollout references already present in existing `MEMORY.md` before
      scanning raw memories so you can route net-new evidence into the right blocks.
    - Work in this order:
-     1. For newly added thread ids, search them in `raw_memories.md`, read those sections, and
+     1. For newly added process ids, search them in `raw_memories.md`, read those sections, and
         open the corresponding `rollout_summaries/*.md` files when necessary.
      2. Route the new signal into existing `MEMORY.md` blocks or create new ones when needed.
-     3. For removed thread ids, search `MEMORY.md` and surgically delete or rewrite only the
-        unsupported thread-local memory.
-     4. If a block mixes removed and undeleted threads, preserve the undeleted-thread content;
+     3. For removed process ids, search `MEMORY.md` and surgically delete or rewrite only the
+        unsupported process-local memory.
+     4. If a block mixes removed and undeleted threads, preserve the undeleted-process content;
         split or rewrite the block if that is the cleanest way to delete only the removed part.
      5. After `MEMORY.md` is correct, revisit `memory_summary.md` and remove or rewrite stale
         summary/index content that no longer has undeleted support.
@@ -762,7 +762,7 @@ WORKFLOW
      - scanning the newly added raw-memory entries in recency order and identifying which existing blocks they should update
      - updating existing knowledge with better/newer evidence
      - updating stale or contradicting guidance
-     - pruning or downgrading memory whose only provenance comes from removed thread ids
+     - pruning or downgrading memory whose only provenance comes from removed process ids
      - expanding terse old blocks when new summaries/raw memories make the task family clearer
      - doing light clustering and merging if needed
      - refreshing `MEMORY.md` top-of-file ordering so recent high-utility task families stay easy to find
@@ -774,8 +774,8 @@ WORKFLOW
      target, keep its wording, label, and relative order mostly stable. Rewrite/reorder/rename/
      split/merge only when fixing a real problem (staleness, ambiguity, schema drift, wrong
      boundaries) or when meaningful new evidence materially improves retrieval clarity/searchability.
-   - Spend most of your deep-dive budget on newly added thread ids and on mixed blocks touched by
-     removed thread ids. Do not re-read unchanged older threads unless you need them for
+   - Spend most of your deep-dive budget on newly added process ids and on mixed blocks touched by
+     removed process ids. Do not re-read unchanged older threads unless you need them for
      conflict resolution, clustering, or provenance repair.
 
 4. Evidence deep-dive rule (both modes):
@@ -805,13 +805,13 @@ WORKFLOW
 
 6. Housekeeping (optional):
    - remove clearly redundant/low-signal rollout summaries
-   - if multiple summaries overlap for the same thread, keep the best one
+   - if multiple summaries overlap for the same process, keep the best one
 
 7. Final pass:
    - remove duplication in memory_summary, skills/, and MEMORY.md
    - remove stale or low-signal blocks that are less likely to be useful in the future
    - remove or rewrite blocks/task sections whose supporting rollout references point only to
-     removed thread ids or missing rollout summary files
+     removed process ids or missing rollout summary files
    - run a global rollout-reference audit on final `MEMORY.md` and fix accidental duplicate
      entries / redundant repetition, while preserving intentional multi-task or multi-block
      reuse when it adds distinct task-local value

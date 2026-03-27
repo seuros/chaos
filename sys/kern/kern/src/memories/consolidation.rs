@@ -11,7 +11,7 @@ use crate::memories::storage::rebuild_raw_memories_file_from_memories;
 use crate::memories::storage::rollout_summary_file_stem;
 use crate::memories::storage::sync_rollout_summaries_from_memories;
 use chaos_sysctl::Constrained;
-use chaos_ipc::ThreadId;
+use chaos_ipc::ProcessId;
 use chaos_ipc::protocol::AskForApproval;
 use chaos_ipc::protocol::SandboxPolicy;
 use chaos_ipc::protocol::SessionSource;
@@ -129,13 +129,13 @@ pub(super) async fn run(session: &Arc<Session>, config: Arc<Config>) {
     // 5. Spawn the agent
     let prompt = agent::get_prompt(config, &selection);
     let source = SessionSource::SubAgent(SubAgentSource::MemoryConsolidation);
-    let thread_id = match session
+    let process_id = match session
         .services
         .agent_control
         .spawn_agent(agent_config, prompt, Some(source))
         .await
     {
-        Ok(thread_id) => thread_id,
+        Ok(process_id) => process_id,
         Err(err) => {
             tracing::error!("failed to spawn global memory consolidation agent: {err}");
             job::failed(session, db, &claim, "failed_spawn_agent").await;
@@ -149,7 +149,7 @@ pub(super) async fn run(session: &Arc<Session>, config: Arc<Config>) {
         claim,
         new_watermark,
         raw_memories.clone(),
-        thread_id,
+        process_id,
         phase_two_e2e_timer,
     );
 
@@ -326,7 +326,7 @@ mod agent {
         claim: Claim,
         new_watermark: i64,
         selected_outputs: Vec<chaos_proc::Stage1Output>,
-        thread_id: ThreadId,
+        process_id: ProcessId,
         phase_two_e2e_timer: Option<chaos_syslog::Timer>,
     ) {
         let Some(db) = session.services.state_db.clone() else {
@@ -339,7 +339,7 @@ mod agent {
             let agent_control = session.services.agent_control.clone();
 
             // TODO(jif) we might have a very small race here.
-            let rx = match agent_control.subscribe_status(thread_id).await {
+            let rx = match agent_control.subscribe_status(process_id).await {
                 Ok(rx) => rx,
                 Err(err) => {
                     tracing::error!("agent_control.subscribe_status failed: {err:?}");
@@ -353,13 +353,13 @@ mod agent {
                 db.clone(),
                 claim.token.clone(),
                 new_watermark,
-                thread_id,
+                process_id,
                 rx,
             )
             .await;
 
             if matches!(final_status, AgentStatus::Completed(_)) {
-                if let Some(token_usage) = agent_control.get_total_token_usage(thread_id).await {
+                if let Some(token_usage) = agent_control.get_total_token_usage(process_id).await {
                     emit_token_usage_metrics(&session, &token_usage);
                 }
                 job::succeed(
@@ -378,9 +378,9 @@ mod agent {
             // Fire and forget close of the agent.
             if !matches!(final_status, AgentStatus::Shutdown | AgentStatus::NotFound) {
                 tokio::spawn(async move {
-                    if let Err(err) = agent_control.shutdown_agent(thread_id).await {
+                    if let Err(err) = agent_control.shutdown_agent(process_id).await {
                         warn!(
-                            "failed to auto-close global memory consolidation agent {thread_id}: {err}"
+                            "failed to auto-close global memory consolidation agent {process_id}: {err}"
                         );
                     }
                 });
@@ -394,7 +394,7 @@ mod agent {
         db: Arc<StateRuntime>,
         token: String,
         _new_watermark: i64,
-        thread_id: ThreadId,
+        process_id: ProcessId,
         mut rx: watch::Receiver<AgentStatus>,
     ) -> AgentStatus {
         let mut heartbeat_interval =
@@ -411,7 +411,7 @@ mod agent {
                 update = rx.changed() => {
                     if update.is_err() {
                         tracing::warn!(
-                            "lost status updates for global memory consolidation agent {thread_id}"
+                            "lost status updates for global memory consolidation agent {process_id}"
                         );
                         break status;
                     }

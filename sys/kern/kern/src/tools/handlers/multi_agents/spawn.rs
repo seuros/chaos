@@ -3,8 +3,8 @@ use crate::agent::control::SpawnAgentOptions;
 use crate::agent::role::DEFAULT_ROLE_NAME;
 use crate::agent::role::apply_role_to_config;
 
-use crate::agent::exceeds_thread_spawn_depth_limit;
-use crate::agent::next_thread_spawn_depth;
+use crate::agent::exceeds_process_spawn_depth_limit;
+use crate::agent::next_process_spawn_depth;
 
 pub(crate) struct Handler;
 
@@ -38,9 +38,9 @@ impl ToolHandler for Handler {
         let input_items = parse_collab_input(args.message, args.items)?;
         let prompt = input_preview(&input_items);
         let session_source = turn.session_source.clone();
-        let child_depth = next_thread_spawn_depth(&session_source);
+        let child_depth = next_process_spawn_depth(&session_source);
         let max_depth = turn.config.agent_max_depth;
-        if exceeds_thread_spawn_depth_limit(child_depth, max_depth) {
+        if exceeds_process_spawn_depth_limit(child_depth, max_depth) {
             return Err(FunctionCallError::RespondToModel(
                 "Agent depth limit reached. Solve the task yourself.".to_string(),
             ));
@@ -50,7 +50,7 @@ impl ToolHandler for Handler {
                 &turn,
                 CollabAgentSpawnBeginEvent {
                     call_id: call_id.clone(),
-                    sender_thread_id: session.conversation_id,
+                    sender_process_id: session.conversation_id,
                     prompt: prompt.clone(),
                     model: args.model.clone().unwrap_or_default(),
                     reasoning_effort: args.reasoning_effort.unwrap_or_default(),
@@ -80,7 +80,7 @@ impl ToolHandler for Handler {
             .spawn_agent_with_options(
                 config,
                 input_items,
-                Some(thread_spawn_source(
+                Some(process_spawn_source(
                     session.conversation_id,
                     child_depth,
                     role_name,
@@ -91,18 +91,18 @@ impl ToolHandler for Handler {
             )
             .await
             .map_err(collab_spawn_error);
-        let (new_thread_id, status) = match &result {
-            Ok(thread_id) => (
-                Some(*thread_id),
-                session.services.agent_control.get_status(*thread_id).await,
+        let (new_process_id, status) = match &result {
+            Ok(process_id) => (
+                Some(*process_id),
+                session.services.agent_control.get_status(*process_id).await,
             ),
             Err(_) => (None, AgentStatus::NotFound),
         };
-        let (new_agent_nickname, new_agent_role) = match new_thread_id {
-            Some(thread_id) => session
+        let (new_agent_nickname, new_agent_role) = match new_process_id {
+            Some(process_id) => session
                 .services
                 .agent_control
-                .get_agent_nickname_and_role(thread_id)
+                .get_agent_nickname_and_role(process_id)
                 .await
                 .unwrap_or((None, None)),
             None => (None, None),
@@ -113,8 +113,8 @@ impl ToolHandler for Handler {
                 &turn,
                 CollabAgentSpawnEndEvent {
                     call_id,
-                    sender_thread_id: session.conversation_id,
-                    new_thread_id,
+                    sender_process_id: session.conversation_id,
+                    new_process_id,
                     new_agent_nickname,
                     new_agent_role,
                     prompt,
@@ -125,7 +125,7 @@ impl ToolHandler for Handler {
                 .into(),
             )
             .await;
-        let new_thread_id = result?;
+        let new_process_id = result?;
         let role_tag = role_name.unwrap_or(DEFAULT_ROLE_NAME);
         turn.session_telemetry.counter(
             "codex.multi_agent.spawn",
@@ -134,7 +134,7 @@ impl ToolHandler for Handler {
         );
 
         Ok(SpawnAgentResult {
-            agent_id: new_thread_id.to_string(),
+            agent_id: new_process_id.to_string(),
             nickname,
         })
     }

@@ -6,7 +6,7 @@
 //! then optionally layer role-specific config on top.
 
 use crate::agent::AgentStatus;
-use crate::agent::exceeds_thread_spawn_depth_limit;
+use crate::agent::exceeds_process_spawn_depth_limit;
 use crate::codex::Session;
 use crate::codex::TurnContext;
 use crate::config::Config;
@@ -22,7 +22,7 @@ use crate::tools::handlers::parse_arguments;
 use crate::tools::registry::ToolHandler;
 use crate::tools::registry::ToolKind;
 use async_trait::async_trait;
-use chaos_ipc::ThreadId;
+use chaos_ipc::ProcessId;
 use chaos_ipc::models::BaseInstructions;
 use chaos_ipc::models::ResponseInputItem;
 use chaos_ipc::openai_models::ReasoningEffort;
@@ -102,13 +102,13 @@ mod send_input;
 mod spawn;
 pub(crate) mod wait;
 
-fn agent_id(id: &str) -> Result<ThreadId, FunctionCallError> {
-    ThreadId::from_string(id)
+fn agent_id(id: &str) -> Result<ProcessId, FunctionCallError> {
+    ProcessId::from_string(id)
         .map_err(|e| FunctionCallError::RespondToModel(format!("invalid agent id {id}: {e:?}")))
 }
 
 fn build_wait_agent_statuses(
-    statuses: &HashMap<ThreadId, AgentStatus>,
+    statuses: &HashMap<ProcessId, AgentStatus>,
     receiver_agents: &[CollabAgentRef],
 ) -> Vec<CollabAgentStatusEntry> {
     if statuses.is_empty() {
@@ -118,10 +118,10 @@ fn build_wait_agent_statuses(
     let mut entries = Vec::with_capacity(statuses.len());
     let mut seen = HashMap::with_capacity(receiver_agents.len());
     for receiver_agent in receiver_agents {
-        seen.insert(receiver_agent.thread_id, ());
-        if let Some(status) = statuses.get(&receiver_agent.thread_id) {
+        seen.insert(receiver_agent.process_id, ());
+        if let Some(status) = statuses.get(&receiver_agent.process_id) {
             entries.push(CollabAgentStatusEntry {
-                thread_id: receiver_agent.thread_id,
+                process_id: receiver_agent.process_id,
                 agent_nickname: receiver_agent.agent_nickname.clone(),
                 agent_role: receiver_agent.agent_role.clone(),
                 status: status.clone(),
@@ -131,15 +131,15 @@ fn build_wait_agent_statuses(
 
     let mut extras = statuses
         .iter()
-        .filter(|(thread_id, _)| !seen.contains_key(thread_id))
-        .map(|(thread_id, status)| CollabAgentStatusEntry {
-            thread_id: *thread_id,
+        .filter(|(process_id, _)| !seen.contains_key(process_id))
+        .map(|(process_id, status)| CollabAgentStatusEntry {
+            process_id: *process_id,
             agent_nickname: None,
             agent_role: None,
             status: status.clone(),
         })
         .collect::<Vec<_>>();
-    extras.sort_by(|left, right| left.thread_id.to_string().cmp(&right.thread_id.to_string()));
+    extras.sort_by(|left, right| left.process_id.to_string().cmp(&right.process_id.to_string()));
     entries.extend(extras);
     entries
 }
@@ -153,9 +153,9 @@ fn collab_spawn_error(err: CodexErr) -> FunctionCallError {
     }
 }
 
-fn collab_agent_error(agent_id: ThreadId, err: CodexErr) -> FunctionCallError {
+fn collab_agent_error(agent_id: ProcessId, err: CodexErr) -> FunctionCallError {
     match err {
-        CodexErr::ThreadNotFound(id) => {
+        CodexErr::ProcessNotFound(id) => {
             FunctionCallError::RespondToModel(format!("agent with id {id} not found"))
         }
         CodexErr::InternalAgentDied => {
@@ -168,13 +168,13 @@ fn collab_agent_error(agent_id: ThreadId, err: CodexErr) -> FunctionCallError {
     }
 }
 
-fn thread_spawn_source(
-    parent_thread_id: ThreadId,
+fn process_spawn_source(
+    parent_process_id: ProcessId,
     depth: i32,
     agent_role: Option<&str>,
 ) -> SessionSource {
-    SessionSource::SubAgent(SubAgentSource::ThreadSpawn {
-        parent_thread_id,
+    SessionSource::SubAgent(SubAgentSource::ProcessSpawn {
+        parent_process_id,
         depth,
         agent_nickname: None,
         agent_role: agent_role.map(str::to_string),

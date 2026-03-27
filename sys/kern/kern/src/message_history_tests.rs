@@ -1,6 +1,6 @@
 use super::*;
 use crate::config::ConfigBuilder;
-use chaos_ipc::ThreadId;
+use chaos_ipc::ProcessId;
 use pretty_assertions::assert_eq;
 use std::fs::File;
 use std::io::Write;
@@ -95,7 +95,7 @@ async fn append_entry_trims_history_when_beyond_max_bytes() {
         .await
         .expect("load config");
 
-    let conversation_id = ThreadId::new();
+    let conversation_id = ProcessId::new();
 
     let entry_one = "a".repeat(200);
     let entry_two = "b".repeat(200);
@@ -142,7 +142,7 @@ async fn append_entry_trims_history_to_soft_cap() {
         .await
         .expect("load config");
 
-    let conversation_id = ThreadId::new();
+    let conversation_id = ProcessId::new();
 
     let short_entry = "a".repeat(200);
     let long_entry = "b".repeat(400);

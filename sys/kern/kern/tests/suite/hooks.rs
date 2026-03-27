@@ -194,7 +194,7 @@ async fn stop_hook_can_block_multiple_times_in_same_turn() -> Result<()> {
 }
 
 #[tokio::test(flavor = "multi_thread", worker_threads = 2)]
-async fn resumed_thread_keeps_stop_continuation_prompt_in_history() -> Result<()> {
+async fn resumed_process_keeps_stop_continuation_prompt_in_history() -> Result<()> {
     skip_if_no_network!(Ok(()));
 
     let server = start_mock_server().await;

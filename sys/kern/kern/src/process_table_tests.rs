@@ -128,24 +128,24 @@ async fn shutdown_all_threads_bounded_submits_shutdown_to_every_thread() {
     config.cwd = config.codex_home.clone();
     std::fs::create_dir_all(&config.codex_home).expect("create codex home");
 
-    let manager = ThreadManager::with_models_provider_and_home_for_tests(
+    let manager = ProcessTable::with_models_provider_and_home_for_tests(
         CodexAuth::from_api_key("dummy"),
         config.model_provider.clone(),
         config.codex_home.clone(),
     );
     let thread_1 = manager
-        .start_thread(config.clone())
+        .start_process(config.clone())
         .await
         .expect("start first thread")
-        .thread_id;
+        .process_id;
     let thread_2 = manager
-        .start_thread(config)
+        .start_process(config)
         .await
         .expect("start second thread")
-        .thread_id;
+        .process_id;
 
     let report = manager
-        .shutdown_all_threads_bounded(Duration::from_secs(10))
+        .shutdown_all_processes_bounded(Duration::from_secs(10))
         .await;
 
     let mut expected_completed = vec![thread_1, thread_2];
@@ -153,7 +153,7 @@ async fn shutdown_all_threads_bounded_submits_shutdown_to_every_thread() {
     assert_eq!(report.completed, expected_completed);
     assert!(report.submit_failed.is_empty());
     assert!(report.timed_out.is_empty());
-    assert!(manager.list_thread_ids().await.is_empty());
+    assert!(manager.list_process_ids().await.is_empty());
 }
 
 #[tokio::test]
@@ -175,7 +175,7 @@ async fn new_uses_configured_openai_provider_for_model_refresh() {
 
     let auth_manager =
         AuthManager::from_auth_for_testing(CodexAuth::create_dummy_chatgpt_auth_for_testing());
-    let manager = ThreadManager::new(
+    let manager = ProcessTable::new(
         &config,
         auth_manager,
         SessionSource::Exec,

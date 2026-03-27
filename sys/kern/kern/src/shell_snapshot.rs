@@ -6,7 +6,7 @@ use std::sync::Arc;
 use std::time::Duration;
 use std::time::SystemTime;
 
-use crate::rollout::list::find_thread_path_by_id_str;
+use crate::rollout::list::find_process_path_by_id_str;
 use crate::shell::Shell;
 use crate::shell::ShellType;
 use crate::shell::get_shell;
@@ -15,7 +15,7 @@ use anyhow::Result;
 use anyhow::anyhow;
 use anyhow::bail;
 use chaos_syslog::SessionTelemetry;
-use chaos_ipc::ThreadId;
+use chaos_ipc::ProcessId;
 use tokio::fs;
 use tokio::process::Command;
 use tokio::sync::watch;
@@ -37,7 +37,7 @@ const EXCLUDED_EXPORT_VARS: &[&str] = &["PWD", "OLDPWD"];
 impl ShellSnapshot {
     pub fn start_snapshotting(
         codex_home: PathBuf,
-        session_id: ThreadId,
+        session_id: ProcessId,
         session_cwd: PathBuf,
         shell: &mut Shell,
         session_telemetry: SessionTelemetry,
@@ -59,7 +59,7 @@ impl ShellSnapshot {
 
     pub fn refresh_snapshot(
         codex_home: PathBuf,
-        session_id: ThreadId,
+        session_id: ProcessId,
         session_cwd: PathBuf,
         shell: Shell,
         shell_snapshot_tx: watch::Sender<Option<Arc<ShellSnapshot>>>,
@@ -77,13 +77,13 @@ impl ShellSnapshot {
 
     fn spawn_snapshot_task(
         codex_home: PathBuf,
-        session_id: ThreadId,
+        session_id: ProcessId,
         session_cwd: PathBuf,
         snapshot_shell: Shell,
         shell_snapshot_tx: watch::Sender<Option<Arc<ShellSnapshot>>>,
         session_telemetry: SessionTelemetry,
     ) {
-        let snapshot_span = info_span!("shell_snapshot", thread_id = %session_id);
+        let snapshot_span = info_span!("shell_snapshot", process_id = %session_id);
         tokio::spawn(
             async move {
                 let timer = session_telemetry.start_timer("codex.shell_snapshot.duration_ms", &[]);
@@ -111,7 +111,7 @@ impl ShellSnapshot {
 
     async fn try_new(
         codex_home: &Path,
-        session_id: ThreadId,
+        session_id: ProcessId,
         session_cwd: &Path,
         shell: &Shell,
     ) -> std::result::Result<Self, &'static str> {
@@ -455,7 +455,7 @@ fi
 /// Removes shell snapshots that either lack a matching session rollout file or
 /// whose rollouts have not been updated within the retention window.
 /// The active session id is exempt from cleanup.
-pub async fn cleanup_stale_snapshots(codex_home: &Path, active_session_id: ThreadId) -> Result<()> {
+pub async fn cleanup_stale_snapshots(codex_home: &Path, active_session_id: ProcessId) -> Result<()> {
     let snapshot_dir = codex_home.join(SNAPSHOT_DIR);
 
     let mut entries = match fs::read_dir(&snapshot_dir).await {
@@ -487,7 +487,7 @@ pub async fn cleanup_stale_snapshots(codex_home: &Path, active_session_id: Threa
             continue;
         }
 
-        let rollout_path = find_thread_path_by_id_str(codex_home, session_id).await?;
+        let rollout_path = find_process_path_by_id_str(codex_home, session_id).await?;
         let Some(rollout_path) = rollout_path else {
             remove_snapshot_file(&path).await;
             continue;

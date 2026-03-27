@@ -1,4 +1,4 @@
-use chaos_ipc::ThreadId;
+use chaos_ipc::ProcessId;
 use chaos_ipc::approvals::ElicitationAction;
 use chaos_ipc::mcp::RequestId as McpRequestId;
 use chaos_ipc::protocol::Op;
@@ -46,7 +46,7 @@ pub(crate) enum AppLinkSuggestionType {
 
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub(crate) struct AppLinkElicitationTarget {
-    pub(crate) thread_id: ThreadId,
+    pub(crate) process_id: ProcessId,
     pub(crate) server_name: String,
     pub(crate) request_id: McpRequestId,
 }
@@ -150,8 +150,8 @@ impl AppLinkView {
         let Some(target) = self.elicitation_target.as_ref() else {
             return;
         };
-        self.app_event_tx.send(AppEvent::SubmitThreadOp {
-            thread_id: target.thread_id,
+        self.app_event_tx.send(AppEvent::SubmitProcessOp {
+            process_id: target.process_id,
             op: Op::ResolveElicitation {
                 server_name: target.server_name.clone(),
                 request_id: target.request_id.clone(),
@@ -554,7 +554,7 @@ mod tests {
 
     fn suggestion_target() -> AppLinkElicitationTarget {
         AppLinkElicitationTarget {
-            thread_id: ThreadId::try_from("00000000-0000-0000-0000-000000000001")
+            process_id: ProcessId::try_from("00000000-0000-0000-0000-000000000001")
                 .expect("valid thread id"),
             server_name: "codex_apps".to_string(),
             request_id: McpRequestId::String("request-1".to_string()),
@@ -779,8 +779,8 @@ mod tests {
             Err(err) => panic!("missing app event: {err}"),
         }
         match rx.try_recv() {
-            Ok(AppEvent::SubmitThreadOp { thread_id, op }) => {
-                assert_eq!(thread_id, suggestion_target().thread_id);
+            Ok(AppEvent::SubmitProcessOp { process_id, op }) => {
+                assert_eq!(process_id, suggestion_target().process_id);
                 assert_eq!(
                     op,
                     Op::ResolveElicitation {
@@ -821,8 +821,8 @@ mod tests {
         view.handle_key_event(KeyEvent::new(KeyCode::Char('2'), KeyModifiers::NONE));
 
         match rx.try_recv() {
-            Ok(AppEvent::SubmitThreadOp { thread_id, op }) => {
-                assert_eq!(thread_id, suggestion_target().thread_id);
+            Ok(AppEvent::SubmitProcessOp { process_id, op }) => {
+                assert_eq!(process_id, suggestion_target().process_id);
                 assert_eq!(
                     op,
                     Op::ResolveElicitation {
@@ -871,8 +871,8 @@ mod tests {
             Err(err) => panic!("missing app event: {err}"),
         }
         match rx.try_recv() {
-            Ok(AppEvent::SubmitThreadOp { thread_id, op }) => {
-                assert_eq!(thread_id, suggestion_target().thread_id);
+            Ok(AppEvent::SubmitProcessOp { process_id, op }) => {
+                assert_eq!(process_id, suggestion_target().process_id);
                 assert_eq!(
                     op,
                     Op::ResolveElicitation {

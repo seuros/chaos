@@ -20,7 +20,7 @@ pub(crate) fn subagent_header(source: &Option<SessionSource>) -> Option<String> 
         chaos_ipc::protocol::SubAgentSource::MemoryConsolidation => {
             Some("memory_consolidation".to_string())
         }
-        chaos_ipc::protocol::SubAgentSource::ThreadSpawn { .. } => {
+        chaos_ipc::protocol::SubAgentSource::ProcessSpawn { .. } => {
             Some("collab_spawn".to_string())
         }
         chaos_ipc::protocol::SubAgentSource::Other(label) => Some(label.clone()),

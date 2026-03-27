@@ -62,7 +62,7 @@ struct ArcMonitorPolicies {
 #[derive(Debug, Serialize, PartialEq)]
 #[serde(deny_unknown_fields)]
 struct ArcMonitorMetadata {
-    codex_thread_id: String,
+    codex_process_id: String,
     codex_turn_id: String,
     #[serde(skip_serializing_if = "Option::is_none")]
     conversation_id: Option<String>,
@@ -251,7 +251,7 @@ async fn build_arc_monitor_request(
     let conversation_id = sess.conversation_id.to_string();
     ArcMonitorRequest {
         metadata: ArcMonitorMetadata {
-            codex_thread_id: conversation_id.clone(),
+            codex_process_id: conversation_id.clone(),
             codex_turn_id: turn_context.sub_id.clone(),
             conversation_id: Some(conversation_id),
             protection_client_callsite: None,

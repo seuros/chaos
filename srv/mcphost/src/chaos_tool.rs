@@ -1,17 +1,17 @@
 //! Unified `chaos` MCP tool — replaces the old `codex` + `codex-reply` pair.
 //!
-//! Omit `thread_id` → new thread via ThreadManager.
-//! Provide `thread_id` → resume existing thread.
+//! Omit `process_id` → new process via ProcessTable.
+//! Provide `process_id` → resume an existing process.
 
 use std::collections::HashMap;
 use std::path::PathBuf;
 use std::sync::Arc;
 
 use chaos_argv::Arg0DispatchPaths;
-use chaos_kern::ThreadManager;
+use chaos_kern::ProcessTable;
 use chaos_kern::config::Config;
 use chaos_kern::config::ConfigOverrides;
-use chaos_ipc::ThreadId;
+use chaos_ipc::ProcessId;
 use chaos_ipc::config_types::SandboxMode;
 use chaos_ipc::protocol::AskForApproval;
 use chaos_conv::json_to_toml;
@@ -27,16 +27,16 @@ use crate::outgoing_message::OutgoingMessageSender;
 
 /// Server state shared across all MCP tool invocations.
 pub(crate) struct ChaosMcpServer {
-    pub(crate) thread_manager: Arc<ThreadManager>,
+    pub(crate) process_table: Arc<ProcessTable>,
     pub(crate) outgoing: Arc<OutgoingMessageSender>,
     pub(crate) arg0_paths: Arg0DispatchPaths,
-    /// Maps active MCP request IDs → Codex thread IDs for cancellation.
-    pub(crate) running_requests: Arc<Mutex<HashMap<RequestId, ThreadId>>>,
-    /// Maps MCP session IDs → last used thread ID for auto-resume.
-    pub(crate) session_threads: Arc<Mutex<HashMap<String, ThreadId>>>,
-    /// Caches thread names from ThreadNameUpdated events.
-    pub(crate) thread_names: Arc<Mutex<HashMap<ThreadId, String>>>,
-    /// State database for persisted thread metadata.
+    /// Maps active MCP request IDs → active process IDs for cancellation.
+    pub(crate) running_requests: Arc<Mutex<HashMap<RequestId, ProcessId>>>,
+    /// Maps MCP session IDs → last used process ID for auto-resume.
+    pub(crate) session_processes: Arc<Mutex<HashMap<String, ProcessId>>>,
+    /// Caches process names from ProcessNameUpdated events.
+    pub(crate) process_names: Arc<Mutex<HashMap<ProcessId, String>>>,
+    /// State database for persisted process metadata.
     pub(crate) state_runtime: Option<chaos_kern::state_db::StateDbHandle>,
 }
 
@@ -51,10 +51,10 @@ pub struct ChaosToolParams {
     /// The user prompt to send to Codex.
     pub prompt: String,
 
-    /// Thread ID to resume a specific conversation.
-    /// Omit to auto-resume the last thread for this session, or start a new one.
+    /// Process ID to resume a specific process.
+    /// Omit to auto-resume the last process for this session, or start a new one.
     #[serde(default, skip_serializing_if = "Option::is_none")]
-    pub thread_id: Option<String>,
+    pub process_id: Option<String>,
 
     /// Optional model override (e.g. 'gpt-5.4', 'claude-sonnet-4-6').
     #[serde(default, skip_serializing_if = "Option::is_none")]
@@ -139,7 +139,7 @@ impl ChaosToolParams {
     ) -> std::io::Result<(String, Config)> {
         let Self {
             prompt,
-            thread_id: _,
+            process_id: _,
             model,
             profile,
             cwd,
@@ -192,22 +192,22 @@ impl ChaosMcpServer {
         let session_id = ctx.session.id.clone();
         let request_id = RequestId::String(session_id.clone());
 
-        // Resolve thread_id: explicit > auto-resume from session > new
-        // Pass "new" or "" to force a new thread instead of auto-resuming.
-        let existing_thread_id = match &params.thread_id {
-            Some(tid) if tid.is_empty() || tid.eq_ignore_ascii_case("new") => None,
-            Some(tid) => Some(
-                ThreadId::from_string(tid)
-                    .map_err(|e| ToolError::Execution(format!("invalid thread_id: {e}")))?,
+        // Resolve process_id: explicit > auto-resume from session > new
+        // Pass "new" or "" to force a new process instead of auto-resuming.
+        let existing_process_id = match &params.process_id {
+            Some(pid) if pid.is_empty() || pid.eq_ignore_ascii_case("new") => None,
+            Some(pid) => Some(
+                ProcessId::from_string(pid)
+                    .map_err(|e| ToolError::Execution(format!("invalid process_id: {e}")))?,
             ),
             None => {
-                // Auto-resume: reuse last thread for this session
-                self.session_threads.lock().await.get(&session_id).copied()
+                // Auto-resume: reuse the last process for this session
+                self.session_processes.lock().await.get(&session_id).copied()
             }
         };
 
-        // Build config only for new threads
-        let (prompt, config) = if existing_thread_id.is_some() {
+        // Build config only for new processes
+        let (prompt, config) = if existing_process_id.is_some() {
             (params.prompt, None)
         } else {
             let (prompt, cfg) = params
@@ -223,26 +223,26 @@ impl ChaosMcpServer {
             request_id,
             prompt,
             config,
-            existing_thread_id,
+            existing_process_id,
             self.outgoing.clone(),
-            self.thread_manager.clone(),
+            self.process_table.clone(),
             self.running_requests.clone(),
-            self.thread_names.clone(),
+            self.process_names.clone(),
             progress_token,
         )
         .await;
 
-        // Track thread for auto-resume on next call from this session.
-        self.session_threads
+        // Track the process for auto-resume on next call from this session.
+        self.session_processes
             .lock()
             .await
-            .insert(session_id, outcome.thread_id);
+            .insert(session_id, outcome.process_id);
 
         if outcome.is_error {
             Err(ToolError::Execution(outcome.text))
         } else {
             structured(json!({
-                "threadId": outcome.thread_id.to_string(),
+                "processId": outcome.process_id.to_string(),
                 "content": outcome.text,
             }))
         }
@@ -274,10 +274,10 @@ fn chaos_output_schema() -> serde_json::Value {
     json!({
         "type": "object",
         "properties": {
-            "threadId": { "type": "string" },
+            "processId": { "type": "string" },
             "content": { "type": "string" }
         },
-        "required": ["threadId", "content"],
+        "required": ["processId", "content"],
     })
 }
 
@@ -285,7 +285,7 @@ fn chaos_tool_info() -> ToolInfo {
     tool_info_with_output(
         "chaos",
         None,
-        Some("Run a Chaos session. Auto-resumes last thread per session; pass thread-id to target a specific one.".to_string()),
+        Some("Run a Chaos session. Auto-resumes the last process per session; pass process-id to target a specific one.".to_string()),
         chaos_input_schema(),
         chaos_output_schema(),
     )
@@ -316,7 +316,7 @@ mod tests {
         let input = tool_json.get("inputSchema").expect("inputSchema");
         let props = input.get("properties").expect("properties");
         assert!(props.get("prompt").is_some(), "prompt field required");
-        assert!(props.get("thread-id").is_some(), "thread-id field required");
+        assert!(props.get("process-id").is_some(), "process-id field required");
         assert_eq!(tool_json.get("name"), Some(&json!("chaos")));
     }
 }

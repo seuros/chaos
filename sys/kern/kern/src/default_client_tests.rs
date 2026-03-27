@@ -52,8 +52,9 @@ async fn test_create_client_sets_default_headers() {
         .mount(&server)
         .await;
 
+    let server_uri = server.uri();
     let resp = client
-        .get(server.uri())
+        .get(server_uri.as_str())
         .send()
         .await
         .expect("failed to send request");

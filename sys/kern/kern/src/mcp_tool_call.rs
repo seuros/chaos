@@ -141,7 +141,7 @@ pub(crate) async fn handle_mcp_tool_call(
             McpToolApprovalDecision::Accept
             | McpToolApprovalDecision::AcceptForSession
             | McpToolApprovalDecision::AcceptAndRemember => {
-                maybe_mark_thread_memory_mode_polluted(sess.as_ref(), turn_context.as_ref()).await;
+                maybe_mark_process_memory_mode_polluted(sess.as_ref(), turn_context.as_ref()).await;
 
                 let start = Instant::now();
                 let result = sess
@@ -231,7 +231,7 @@ pub(crate) async fn handle_mcp_tool_call(
         return CallToolResult::from_result(result);
     }
 
-    maybe_mark_thread_memory_mode_polluted(sess.as_ref(), turn_context.as_ref()).await;
+    maybe_mark_process_memory_mode_polluted(sess.as_ref(), turn_context.as_ref()).await;
 
     let start = Instant::now();
     // Perform the tool call.
@@ -272,7 +272,7 @@ pub(crate) async fn handle_mcp_tool_call(
     CallToolResult::from_result(result)
 }
 
-async fn maybe_mark_thread_memory_mode_polluted(sess: &Session, turn_context: &TurnContext) {
+async fn maybe_mark_process_memory_mode_polluted(sess: &Session, turn_context: &TurnContext) {
     if !turn_context
         .config
         .memories
@@ -280,7 +280,7 @@ async fn maybe_mark_thread_memory_mode_polluted(sess: &Session, turn_context: &T
     {
         return;
     }
-    state_db::mark_thread_memory_mode_polluted(
+    state_db::mark_process_memory_mode_polluted(
         sess.services.state_db.as_deref(),
         sess.conversation_id,
         "mcp_tool_call",
@@ -913,7 +913,7 @@ fn build_mcp_tool_approval_elicitation_request(
         .unwrap_or_else(|| request.question.question.clone());
 
     McpServerElicitationRequestParams {
-        thread_id: sess.conversation_id.to_string(),
+        process_id: sess.conversation_id.to_string(),
         turn_id: Some(turn_context.sub_id.clone()),
         server_name: request.server.to_string(),
         request: McpServerElicitationRequest::Form {

@@ -7,7 +7,7 @@ use crate::memories::memory_root;
 use crate::memories::raw_memories_file;
 use crate::memories::rollout_summaries_dir;
 use jiff::Timestamp;
-use chaos_ipc::ThreadId;
+use chaos_ipc::ProcessId;
 use chaos_proc::Stage1Output;
 use pretty_assertions::assert_eq;
 use serde_json::Value;
@@ -135,8 +135,8 @@ async fn sync_rollout_summaries_and_raw_memories_file_keeps_latest_memories_only
     let root = dir.path().join("memory");
     ensure_layout(&root).await.expect("ensure layout");
 
-    let keep_id = ThreadId::default().to_string();
-    let drop_id = ThreadId::default().to_string();
+    let keep_id = ProcessId::default().to_string();
+    let drop_id = ProcessId::default().to_string();
     let keep_path = rollout_summaries_dir(&root).join(format!("{keep_id}.md"));
     let drop_path = rollout_summaries_dir(&root).join(format!("{drop_id}.md"));
     tokio::fs::write(&keep_path, "keep")
@@ -147,15 +147,15 @@ async fn sync_rollout_summaries_and_raw_memories_file_keeps_latest_memories_only
         .expect("write drop");
 
     let memories = vec![Stage1Output {
-        thread_id: ThreadId::try_from(keep_id.clone()).expect("thread id"),
-        source_updated_at: Utc.timestamp_opt(100, 0).single().expect("timestamp"),
+        process_id: ProcessId::try_from(keep_id.clone()).expect("thread id"),
+        source_updated_at: Timestamp::from_second(100).expect("timestamp"),
         raw_memory: "raw memory".to_string(),
         rollout_summary: "short summary".to_string(),
         rollout_slug: None,
         rollout_path: PathBuf::from("/tmp/rollout-100.jsonl"),
         cwd: PathBuf::from("/tmp/workspace"),
         git_branch: None,
-        generated_at: Utc.timestamp_opt(101, 0).single().expect("timestamp"),
+        generated_at: Timestamp::from_second(101).expect("timestamp"),
     }];
 
     sync_rollout_summaries_from_memories(
@@ -207,29 +207,29 @@ async fn sync_rollout_summaries_and_raw_memories_file_keeps_latest_memories_only
     assert!(raw_memories.contains(&format!(
         "rollout_summary_file: {canonical_rollout_summary_file}"
     )));
-    let thread_header = format!("## Thread `{keep_id}`");
-    let thread_pos = raw_memories
-        .find(&thread_header)
+    let process_header = format!("## Thread `{keep_id}`");
+    let process_pos = raw_memories
+        .find(&process_header)
         .expect("thread header should exist");
-    let updated_pos = raw_memories[thread_pos..]
+    let updated_pos = raw_memories[process_pos..]
         .find("updated_at: ")
-        .map(|offset| thread_pos + offset)
+        .map(|offset| process_pos + offset)
         .expect("updated_at should exist after thread header");
-    let cwd_pos = raw_memories[thread_pos..]
+    let cwd_pos = raw_memories[process_pos..]
         .find("cwd: /tmp/workspace")
-        .map(|offset| thread_pos + offset)
+        .map(|offset| process_pos + offset)
         .expect("cwd should exist after thread header");
-    let rollout_path_pos = raw_memories[thread_pos..]
+    let rollout_path_pos = raw_memories[process_pos..]
         .find("rollout_path: /tmp/rollout-100.jsonl")
-        .map(|offset| thread_pos + offset)
+        .map(|offset| process_pos + offset)
         .expect("rollout_path should exist after thread header");
-    let file_pos = raw_memories[thread_pos..]
+    let file_pos = raw_memories[process_pos..]
         .find(&format!(
             "rollout_summary_file: {canonical_rollout_summary_file}"
         ))
-        .map(|offset| thread_pos + offset)
+        .map(|offset| process_pos + offset)
         .expect("rollout_summary_file should exist after thread header");
-    assert!(thread_pos < updated_pos);
+    assert!(process_pos < updated_pos);
     assert!(updated_pos < cwd_pos);
     assert!(cwd_pos < rollout_path_pos);
     assert!(rollout_path_pos < file_pos);
@@ -241,10 +241,10 @@ async fn sync_rollout_summaries_uses_timestamp_hash_and_sanitized_slug_filename(
     let root = dir.path().join("memory");
     ensure_layout(&root).await.expect("ensure layout");
 
-    let thread_id = ThreadId::new();
-    let stale_unslugged_path = rollout_summaries_dir(&root).join(format!("{thread_id}.md"));
+    let process_id = ProcessId::new();
+    let stale_unslugged_path = rollout_summaries_dir(&root).join(format!("{process_id}.md"));
     let stale_old_slug_path =
-        rollout_summaries_dir(&root).join(format!("{thread_id}--old-slug.md"));
+        rollout_summaries_dir(&root).join(format!("{process_id}--old-slug.md"));
     tokio::fs::write(&stale_unslugged_path, "stale")
         .await
         .expect("write stale unslugged file");
@@ -253,15 +253,15 @@ async fn sync_rollout_summaries_uses_timestamp_hash_and_sanitized_slug_filename(
         .expect("write stale old-slug file");
 
     let memories = vec![Stage1Output {
-        thread_id,
-        source_updated_at: Utc.timestamp_opt(200, 0).single().expect("timestamp"),
+        process_id,
+        source_updated_at: Timestamp::from_second(200).expect("timestamp"),
         raw_memory: "raw memory".to_string(),
         rollout_summary: "short summary".to_string(),
         rollout_slug: Some("Unsafe Slug/With Spaces & Symbols + EXTRA_LONG_12345".to_string()),
         rollout_path: PathBuf::from("/tmp/rollout-200.jsonl"),
         cwd: PathBuf::from("/tmp/workspace"),
         git_branch: Some("feature/memory-branch".to_string()),
-        generated_at: Utc.timestamp_opt(201, 0).single().expect("timestamp"),
+        generated_at: Timestamp::from_second(201).expect("timestamp"),
     }];
 
     sync_rollout_summaries_from_memories(
@@ -323,7 +323,7 @@ async fn sync_rollout_summaries_uses_timestamp_hash_and_sanitized_slug_filename(
     let summary = tokio::fs::read_to_string(rollout_summaries_dir(&root).join(file_name))
         .await
         .expect("read rollout summary");
-    assert!(summary.contains(&format!("thread_id: {thread_id}")));
+    assert!(summary.contains(&format!("process_id: {process_id}")));
     assert!(summary.contains("rollout_path: /tmp/rollout-200.jsonl"));
     assert!(summary.contains("git_branch: feature/memory-branch"));
     assert!(
@@ -346,11 +346,11 @@ async fn rebuild_raw_memories_file_adds_canonical_rollout_summary_file_header() 
     let root = dir.path().join("memory");
     ensure_layout(&root).await.expect("ensure layout");
 
-    let thread_id =
-        ThreadId::try_from("0194f5a6-89ab-7cde-8123-456789abcdef").expect("valid thread id");
+    let process_id =
+        ProcessId::try_from("0194f5a6-89ab-7cde-8123-456789abcdef").expect("valid thread id");
     let memories = vec![Stage1Output {
-        thread_id,
-        source_updated_at: Utc.timestamp_opt(200, 0).single().expect("timestamp"),
+        process_id,
+        source_updated_at: Timestamp::from_second(200).expect("timestamp"),
         raw_memory: "\
 ---
 description: Added a migration test
@@ -373,7 +373,7 @@ task_outcome: success
         rollout_path: PathBuf::from("/tmp/rollout-200.jsonl"),
         cwd: PathBuf::from("/tmp/workspace"),
         git_branch: None,
-        generated_at: Utc.timestamp_opt(201, 0).single().expect("timestamp"),
+        generated_at: Timestamp::from_second(201).expect("timestamp"),
     }];
 
     sync_rollout_summaries_from_memories(
@@ -423,7 +423,7 @@ task_outcome: success
 
 mod consolidation_tests {
     use crate::CodexAuth;
-    use crate::ThreadManager;
+    use crate::ProcessTable;
     use crate::agent::AgentControl;
     use crate::codex::Session;
     use crate::codex::make_session_and_context;
@@ -435,21 +435,21 @@ mod consolidation_tests {
     use crate::memories::rollout_summaries_dir;
     use jiff::Timestamp;
     use chaos_sysctl::Constrained;
-    use chaos_ipc::ThreadId;
+    use chaos_ipc::ProcessId;
     use chaos_ipc::protocol::AskForApproval;
     use chaos_ipc::protocol::Op;
     use chaos_ipc::protocol::SandboxPolicy;
     use chaos_ipc::protocol::SessionSource;
     use chaos_proc::Phase2JobClaimOutcome;
     use chaos_proc::Stage1Output;
-    use chaos_proc::ThreadMetadataBuilder;
+    use chaos_proc::ProcessMetadataBuilder;
     use std::path::PathBuf;
     use std::sync::Arc;
     use tempfile::TempDir;
 
     fn stage1_output_with_source_updated_at(source_updated_at: i64) -> Stage1Output {
         Stage1Output {
-            thread_id: ThreadId::new(),
+            process_id: ProcessId::new(),
             source_updated_at: Timestamp::from_second(source_updated_at)
                 .expect("valid source_updated_at timestamp"),
             raw_memory: "raw memory".to_string(),
@@ -467,7 +467,7 @@ mod consolidation_tests {
         _codex_home: TempDir,
         config: Arc<Config>,
         session: Arc<Session>,
-        manager: ThreadManager,
+        manager: ProcessTable,
         state_db: Arc<chaos_proc::StateRuntime>,
     }
 
@@ -486,7 +486,7 @@ mod consolidation_tests {
             .await
             .expect("initialize state db");
 
-            let manager = ThreadManager::with_models_provider_and_home_for_tests(
+            let manager = ProcessTable::with_models_provider_and_home_for_tests(
                 CodexAuth::from_api_key("dummy"),
                 config.model_provider.clone(),
                 config.codex_home.clone(),
@@ -505,12 +505,12 @@ mod consolidation_tests {
         }
 
         async fn seed_stage1_output(&self, source_updated_at: i64) {
-            let thread_id = ThreadId::new();
-            let mut metadata_builder = ThreadMetadataBuilder::new(
-                thread_id,
+            let process_id = ProcessId::new();
+            let mut metadata_builder = ProcessMetadataBuilder::new(
+                process_id,
                 self.config
                     .codex_home
-                    .join(format!("rollout-{thread_id}.jsonl")),
+                    .join(format!("rollout-{process_id}.jsonl")),
                 Timestamp::now(),
                 SessionSource::Cli,
             );
@@ -519,14 +519,14 @@ mod consolidation_tests {
             let metadata = metadata_builder.build(&self.config.model_provider_id);
 
             self.state_db
-                .upsert_thread(&metadata)
+                .upsert_process(&metadata)
                 .await
                 .expect("upsert thread metadata");
 
             let claim = self
                 .state_db
                 .try_claim_stage1_job(
-                    thread_id,
+                    process_id,
                     self.session.conversation_id,
                     source_updated_at,
                     3_600,
@@ -541,7 +541,7 @@ mod consolidation_tests {
             assert!(
                 self.state_db
                     .mark_stage1_job_succeeded(
-                        thread_id,
+                        process_id,
                         &ownership_token,
                         source_updated_at,
                         "raw memory",
@@ -554,10 +554,10 @@ mod consolidation_tests {
             );
         }
 
-        async fn shutdown_threads(&self) {
+        async fn shutdown_processes(&self) {
             let report = self
                 .manager
-                .shutdown_all_threads_bounded(std::time::Duration::from_secs(10))
+                .shutdown_all_processes_bounded(std::time::Duration::from_secs(10))
                 .await;
             assert!(report.submit_failed.is_empty());
             assert!(report.timed_out.is_empty());
@@ -602,8 +602,8 @@ mod consolidation_tests {
         consolidation::run(&harness.session, Arc::clone(&harness.config)).await;
 
         pretty_assertions::assert_eq!(harness.user_input_ops_count(), 0);
-        let thread_ids = harness.manager.list_thread_ids().await;
-        pretty_assertions::assert_eq!(thread_ids.len(), 0);
+        let process_ids = harness.manager.list_process_ids().await;
+        pretty_assertions::assert_eq!(process_ids.len(), 0);
     }
 
     #[tokio::test]
@@ -616,7 +616,7 @@ mod consolidation_tests {
             .expect("enqueue global consolidation");
         let claimed = harness
             .state_db
-            .try_claim_global_phase2_job(ThreadId::new(), 3_600)
+            .try_claim_global_phase2_job(ProcessId::new(), 3_600)
             .await
             .expect("claim running global lock");
         assert!(
@@ -628,23 +628,23 @@ mod consolidation_tests {
 
         let running_claim = harness
             .state_db
-            .try_claim_global_phase2_job(ThreadId::new(), 3_600)
+            .try_claim_global_phase2_job(ProcessId::new(), 3_600)
             .await
             .expect("claim while lock is still running");
         pretty_assertions::assert_eq!(running_claim, Phase2JobClaimOutcome::SkippedRunning);
         pretty_assertions::assert_eq!(harness.user_input_ops_count(), 0);
-        let thread_ids = harness.manager.list_thread_ids().await;
-        pretty_assertions::assert_eq!(thread_ids.len(), 0);
+        let process_ids = harness.manager.list_process_ids().await;
+        pretty_assertions::assert_eq!(process_ids.len(), 0);
     }
 
     #[tokio::test]
     async fn dispatch_reclaims_stale_global_lock_and_starts_consolidation() {
         let harness = DispatchHarness::new().await;
-        harness.seed_stage1_output(Timestamp::now().timestamp()).await;
+        harness.seed_stage1_output(Timestamp::now().as_second()).await;
 
         let stale_claim = harness
             .state_db
-            .try_claim_global_phase2_job(ThreadId::new(), 0)
+            .try_claim_global_phase2_job(ProcessId::new(), 0)
             .await
             .expect("claim stale global lock");
         assert!(
@@ -656,7 +656,7 @@ mod consolidation_tests {
 
         let post_dispatch_claim = harness
             .state_db
-            .try_claim_global_phase2_job(ThreadId::new(), 3_600)
+            .try_claim_global_phase2_job(ProcessId::new(), 3_600)
             .await
             .expect("claim after stale lock dispatch");
         assert!(
@@ -669,11 +669,11 @@ mod consolidation_tests {
 
         let user_input_ops = harness.user_input_ops_count();
         pretty_assertions::assert_eq!(user_input_ops, 1);
-        let thread_ids = harness.manager.list_thread_ids().await;
-        pretty_assertions::assert_eq!(thread_ids.len(), 1);
+        let process_ids = harness.manager.list_process_ids().await;
+        pretty_assertions::assert_eq!(process_ids.len(), 1);
         let subagent = harness
             .manager
-            .get_thread(thread_ids[0])
+            .get_process(process_ids[0])
             .await
             .expect("get consolidation thread");
         let config_snapshot = subagent.config_snapshot().await;
@@ -691,7 +691,7 @@ mod consolidation_tests {
             other => panic!("unexpected sandbox policy: {other:?}"),
         }
 
-        harness.shutdown_threads().await;
+        harness.shutdown_processes().await;
     }
 
     #[tokio::test]
@@ -703,7 +703,7 @@ mod consolidation_tests {
             .await
             .expect("create rollout summaries dir");
 
-        let stale_summary_path = summaries_dir.join(format!("{}.md", ThreadId::new()));
+        let stale_summary_path = summaries_dir.join(format!("{}.md", ProcessId::new()));
         tokio::fs::write(&stale_summary_path, "stale summary\n")
             .await
             .expect("write stale rollout summary");
@@ -775,15 +775,15 @@ mod consolidation_tests {
         );
         let next_claim = harness
             .state_db
-            .try_claim_global_phase2_job(ThreadId::new(), 3_600)
+            .try_claim_global_phase2_job(ProcessId::new(), 3_600)
             .await
             .expect("claim global job after empty consolidation success");
         pretty_assertions::assert_eq!(next_claim, Phase2JobClaimOutcome::SkippedNotDirty);
         pretty_assertions::assert_eq!(harness.user_input_ops_count(), 0);
-        let thread_ids = harness.manager.list_thread_ids().await;
-        pretty_assertions::assert_eq!(thread_ids.len(), 0);
+        let process_ids = harness.manager.list_process_ids().await;
+        pretty_assertions::assert_eq!(process_ids.len(), 0);
 
-        harness.shutdown_threads().await;
+        harness.shutdown_processes().await;
     }
 
     #[tokio::test]
@@ -802,13 +802,13 @@ mod consolidation_tests {
 
         let retry_claim = harness
             .state_db
-            .try_claim_global_phase2_job(ThreadId::new(), 3_600)
+            .try_claim_global_phase2_job(ProcessId::new(), 3_600)
             .await
             .expect("claim global job after sandbox policy failure");
         pretty_assertions::assert_eq!(retry_claim, Phase2JobClaimOutcome::SkippedNotDirty);
         pretty_assertions::assert_eq!(harness.user_input_ops_count(), 0);
-        let thread_ids = harness.manager.list_thread_ids().await;
-        pretty_assertions::assert_eq!(thread_ids.len(), 0);
+        let process_ids = harness.manager.list_process_ids().await;
+        pretty_assertions::assert_eq!(process_ids.len(), 0);
     }
 
     #[tokio::test]
@@ -824,13 +824,13 @@ mod consolidation_tests {
 
         let retry_claim = harness
             .state_db
-            .try_claim_global_phase2_job(ThreadId::new(), 3_600)
+            .try_claim_global_phase2_job(ProcessId::new(), 3_600)
             .await
             .expect("claim global job after sync failure");
         pretty_assertions::assert_eq!(retry_claim, Phase2JobClaimOutcome::SkippedNotDirty);
         pretty_assertions::assert_eq!(harness.user_input_ops_count(), 0);
-        let thread_ids = harness.manager.list_thread_ids().await;
-        pretty_assertions::assert_eq!(thread_ids.len(), 0);
+        let process_ids = harness.manager.list_process_ids().await;
+        pretty_assertions::assert_eq!(process_ids.len(), 0);
     }
 
     #[tokio::test]
@@ -846,13 +846,13 @@ mod consolidation_tests {
 
         let retry_claim = harness
             .state_db
-            .try_claim_global_phase2_job(ThreadId::new(), 3_600)
+            .try_claim_global_phase2_job(ProcessId::new(), 3_600)
             .await
             .expect("claim global job after rebuild failure");
         pretty_assertions::assert_eq!(retry_claim, Phase2JobClaimOutcome::SkippedNotDirty);
         pretty_assertions::assert_eq!(harness.user_input_ops_count(), 0);
-        let thread_ids = harness.manager.list_thread_ids().await;
-        pretty_assertions::assert_eq!(thread_ids.len(), 0);
+        let process_ids = harness.manager.list_process_ids().await;
+        pretty_assertions::assert_eq!(process_ids.len(), 0);
     }
 
     #[tokio::test]
@@ -875,10 +875,10 @@ mod consolidation_tests {
         session.services.agent_control = AgentControl::default();
         let session = Arc::new(session);
 
-        let thread_id = ThreadId::new();
-        let mut metadata_builder = ThreadMetadataBuilder::new(
-            thread_id,
-            config.codex_home.join(format!("rollout-{thread_id}.jsonl")),
+        let process_id = ProcessId::new();
+        let mut metadata_builder = ProcessMetadataBuilder::new(
+            process_id,
+            config.codex_home.join(format!("rollout-{process_id}.jsonl")),
             Timestamp::now(),
             SessionSource::Cli,
         );
@@ -886,12 +886,12 @@ mod consolidation_tests {
         metadata_builder.model_provider = Some(config.model_provider_id.clone());
         let metadata = metadata_builder.build(&config.model_provider_id);
         state_db
-            .upsert_thread(&metadata)
+            .upsert_process(&metadata)
             .await
             .expect("upsert thread metadata");
 
         let claim = state_db
-            .try_claim_stage1_job(thread_id, session.conversation_id, 100, 3_600, 64)
+            .try_claim_stage1_job(process_id, session.conversation_id, 100, 3_600, 64)
             .await
             .expect("claim stage-1 job");
         let ownership_token = match claim {
@@ -901,7 +901,7 @@ mod consolidation_tests {
         assert!(
             state_db
                 .mark_stage1_job_succeeded(
-                    thread_id,
+                    process_id,
                     &ownership_token,
                     100,
                     "raw memory",
@@ -916,7 +916,7 @@ mod consolidation_tests {
         consolidation::run(&session, Arc::clone(&config)).await;
 
         let retry_claim = state_db
-            .try_claim_global_phase2_job(ThreadId::new(), 3_600)
+            .try_claim_global_phase2_job(ProcessId::new(), 3_600)
             .await
             .expect("claim global job after spawn failure");
         pretty_assertions::assert_eq!(

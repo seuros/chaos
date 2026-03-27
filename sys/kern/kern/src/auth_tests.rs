@@ -9,6 +9,7 @@ use crate::token_data::PlanType as InternalPlanType;
 use chaos_ipc::account::PlanType as AccountPlanType;
 
 use base64::Engine;
+use jiff::Timestamp;
 use chaos_ipc::config_types::ForcedLoginMethod;
 use pretty_assertions::assert_eq;
 use serde::Serialize;
@@ -235,7 +236,7 @@ fn write_auth_file(params: AuthFileParams, codex_home: &Path) -> std::io::Result
             "access_token": "test-access-token",
             "refresh_token": "test-refresh-token"
         },
-        "last_refresh": Utc::now(),
+        "last_refresh": Timestamp::now(),
     });
     let auth_json = serde_json::to_string_pretty(&auth_json_data)?;
     std::fs::write(auth_file, auth_json)?;

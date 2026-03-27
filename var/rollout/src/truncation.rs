@@ -25,7 +25,7 @@ pub fn is_user_message_default(item: &ResponseItem) -> bool {
 /// `is_user_message` decides whether a given `ResponseItem` counts as a user
 /// turn.
 ///
-/// Rollouts can contain `ThreadRolledBack` markers. Those markers indicate
+/// Rollouts can contain `ProcessRolledBack` markers. Those markers indicate
 /// that the last N user turns were removed from the effective thread history;
 /// we apply them here so indexing uses the post-rollback history rather than
 /// the raw stream.
@@ -39,7 +39,7 @@ pub fn user_message_positions_in_rollout(
             RolloutItem::ResponseItem(resp) if is_user_message(resp) => {
                 user_positions.push(idx);
             }
-            RolloutItem::EventMsg(EventMsg::ThreadRolledBack(rollback)) => {
+            RolloutItem::EventMsg(EventMsg::ProcessRolledBack(rollback)) => {
                 let num_turns = usize::try_from(rollback.num_turns).unwrap_or(usize::MAX);
                 let new_len = user_positions.len().saturating_sub(num_turns);
                 user_positions.truncate(new_len);
@@ -86,7 +86,7 @@ mod tests {
     use super::*;
     use chaos_ipc::models::ContentItem;
     use chaos_ipc::models::ReasoningItemReasoningSummary;
-    use chaos_ipc::protocol::ThreadRolledBackEvent;
+    use chaos_ipc::protocol::ProcessRolledBackEvent;
 
     fn user_msg(text: &str) -> ResponseItem {
         ResponseItem::Message {
@@ -194,7 +194,7 @@ mod tests {
             RolloutItem::ResponseItem(assistant_msg("a1")),
             RolloutItem::ResponseItem(user_msg("u2")),
             RolloutItem::ResponseItem(assistant_msg("a2")),
-            RolloutItem::EventMsg(EventMsg::ThreadRolledBack(ThreadRolledBackEvent {
+            RolloutItem::EventMsg(EventMsg::ProcessRolledBack(ProcessRolledBackEvent {
                 num_turns: 1,
             })),
             RolloutItem::ResponseItem(user_msg("u3")),

@@ -22,7 +22,7 @@ CREATE TABLE agent_job_items (
     source_id TEXT,
     row_json TEXT NOT NULL,
     status TEXT NOT NULL,
-    assigned_thread_id TEXT,
+    assigned_process_id TEXT,
     attempt_count INTEGER NOT NULL DEFAULT 0,
     result_json TEXT,
     last_error TEXT,

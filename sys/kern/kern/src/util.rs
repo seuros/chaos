@@ -2,7 +2,7 @@ use std::path::Path;
 use std::path::PathBuf;
 use std::time::Duration;
 
-use chaos_ipc::ThreadId;
+use chaos_ipc::ProcessId;
 use rand::Rng;
 use tracing::debug;
 use tracing::error;
@@ -179,7 +179,7 @@ pub fn resolve_path(base: &Path, path: &PathBuf) -> PathBuf {
 }
 
 /// Trim a thread name and return `None` if it is empty after trimming.
-pub fn normalize_thread_name(name: &str) -> Option<String> {
+pub fn normalize_process_name(name: &str) -> Option<String> {
     let trimmed = name.trim();
     if trimmed.is_empty() {
         None
@@ -188,11 +188,11 @@ pub fn normalize_thread_name(name: &str) -> Option<String> {
     }
 }
 
-pub fn resume_command(thread_name: Option<&str>, thread_id: Option<ThreadId>) -> Option<String> {
-    let resume_target = thread_name
+pub fn resume_command(process_name: Option<&str>, process_id: Option<ProcessId>) -> Option<String> {
+    let resume_target = process_name
         .filter(|name| !name.is_empty())
         .map(str::to_string)
-        .or_else(|| thread_id.map(|thread_id| thread_id.to_string()));
+        .or_else(|| process_id.map(|process_id| process_id.to_string()));
     resume_target.map(|target| {
         let needs_double_dash = target.starts_with('-');
         let escaped = shlex_join(&[target]);

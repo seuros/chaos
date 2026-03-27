@@ -7,7 +7,7 @@ use std::path::Path;
 use std::path::PathBuf;
 
 use jiff::Timestamp;
-use chaos_ipc::ThreadId;
+use chaos_ipc::ProcessId;
 use chaos_ipc::dynamic_tools::DynamicToolSpec;
 use chaos_ipc::models::BaseInstructions;
 use serde_json::Value;
@@ -26,13 +26,13 @@ use tracing::warn;
 use super::ARCHIVED_SESSIONS_SUBDIR;
 use super::SESSIONS_SUBDIR;
 use super::list::Cursor;
-use super::list::ThreadItem;
-use super::list::ThreadListConfig;
-use super::list::ThreadListLayout;
-use super::list::ThreadSortKey;
-use super::list::ThreadsPage;
-use super::list::get_threads;
-use super::list::get_threads_in_root;
+use super::list::ProcessItem;
+use super::list::ProcessListConfig;
+use super::list::ProcessListLayout;
+use super::list::ProcessSortKey;
+use super::list::ProcessesPage;
+use super::list::get_processes;
+use super::list::get_processes_in_root;
 use super::list::parse_cursor;
 use super::list::parse_timestamp_uuid_from_filename;
 use super::metadata;
@@ -55,7 +55,7 @@ use chaos_ipc::protocol::SessionMeta;
 use chaos_ipc::protocol::SessionMetaLine;
 use chaos_ipc::protocol::SessionSource;
 use chaos_proc::StateRuntime;
-use chaos_proc::ThreadMetadataBuilder;
+use chaos_proc::ProcessMetadataBuilder;
 
 /// Records all [`ResponseItem`]s for a session and flushes them to disk after
 /// every update.
@@ -77,8 +77,8 @@ pub struct RolloutRecorder {
 #[derive(Clone)]
 pub enum RolloutRecorderParams {
     Create {
-        conversation_id: ThreadId,
-        forked_from_id: Option<ThreadId>,
+        conversation_id: ProcessId,
+        forked_from_id: Option<ProcessId>,
         source: SessionSource,
         base_instructions: BaseInstructions,
         dynamic_tools: Vec<DynamicToolSpec>,
@@ -106,8 +106,8 @@ enum RolloutCmd {
 
 impl RolloutRecorderParams {
     pub fn new(
-        conversation_id: ThreadId,
-        forked_from_id: Option<ThreadId>,
+        conversation_id: ProcessId,
+        forked_from_id: Option<ProcessId>,
         source: SessionSource,
         base_instructions: BaseInstructions,
         dynamic_tools: Vec<DynamicToolSpec>,
@@ -159,19 +159,19 @@ fn sanitize_rollout_item_for_persistence(
 }
 
 impl RolloutRecorder {
-    /// List threads (rollout files) under the provided Codex home directory.
+    /// List processes (rollout files) under the provided Codex home directory.
     #[allow(clippy::too_many_arguments)]
-    pub async fn list_threads(
+    pub async fn list_processes(
         config: &impl RolloutConfig,
         page_size: usize,
         cursor: Option<&Cursor>,
-        sort_key: ThreadSortKey,
+        sort_key: ProcessSortKey,
         allowed_sources: &[SessionSource],
         model_providers: Option<&[String]>,
         default_provider: &str,
         search_term: Option<&str>,
-    ) -> std::io::Result<ThreadsPage> {
-        Self::list_threads_with_db_fallback(
+    ) -> std::io::Result<ProcessesPage> {
+        Self::list_processes_with_db_fallback(
             config,
             page_size,
             cursor,
@@ -185,19 +185,19 @@ impl RolloutRecorder {
         .await
     }
 
-    /// List archived threads (rollout files) under the archived sessions directory.
+    /// List archived processes (rollout files) under the archived sessions directory.
     #[allow(clippy::too_many_arguments)]
-    pub async fn list_archived_threads(
+    pub async fn list_archived_processes(
         config: &impl RolloutConfig,
         page_size: usize,
         cursor: Option<&Cursor>,
-        sort_key: ThreadSortKey,
+        sort_key: ProcessSortKey,
         allowed_sources: &[SessionSource],
         model_providers: Option<&[String]>,
         default_provider: &str,
         search_term: Option<&str>,
-    ) -> std::io::Result<ThreadsPage> {
-        Self::list_threads_with_db_fallback(
+    ) -> std::io::Result<ProcessesPage> {
+        Self::list_processes_with_db_fallback(
             config,
             page_size,
             cursor,
@@ -212,38 +212,38 @@ impl RolloutRecorder {
     }
 
     #[allow(clippy::too_many_arguments)]
-    async fn list_threads_with_db_fallback(
+    async fn list_processes_with_db_fallback(
         config: &impl RolloutConfig,
         page_size: usize,
         cursor: Option<&Cursor>,
-        sort_key: ThreadSortKey,
+        sort_key: ProcessSortKey,
         allowed_sources: &[SessionSource],
         model_providers: Option<&[String]>,
         default_provider: &str,
         archived: bool,
         search_term: Option<&str>,
-    ) -> std::io::Result<ThreadsPage> {
+    ) -> std::io::Result<ProcessesPage> {
         let codex_home = config.codex_home();
         // Filesystem-first listing intentionally overfetches so we can repair stale/missing
         // SQLite rollout paths before the final DB-backed page is returned.
         let fs_page_size = page_size.saturating_mul(2).max(page_size);
         let fs_page = if archived {
             let root = codex_home.join(ARCHIVED_SESSIONS_SUBDIR);
-            get_threads_in_root(
+            get_processes_in_root(
                 root,
                 fs_page_size,
                 cursor,
                 sort_key,
-                ThreadListConfig {
+                ProcessListConfig {
                     allowed_sources,
                     model_providers,
                     default_provider,
-                    layout: ThreadListLayout::Flat,
+                    layout: ProcessListLayout::Flat,
                 },
             )
             .await?
         } else {
-            get_threads(
+            get_processes(
                 codex_home,
                 fs_page_size,
                 cursor,
@@ -266,14 +266,14 @@ impl RolloutRecorder {
         for item in &fs_page.items {
             state_db::read_repair_rollout_path(
                 state_db_ctx.as_deref(),
-                item.thread_id,
+                item.process_id,
                 Some(archived),
                 item.path.as_path(),
             )
             .await;
         }
 
-        if let Some(db_page) = state_db::list_threads_db(
+        if let Some(db_page) = state_db::list_processes_db(
             state_db_ctx.as_deref(),
             codex_home,
             page_size,
@@ -290,17 +290,17 @@ impl RolloutRecorder {
         }
         // If SQLite listing still fails, return the filesystem page rather than failing the list.
         tracing::error!("Falling back on rollout system");
-        tracing::warn!("state db discrepancy during list_threads_with_db_fallback: falling_back");
+        tracing::warn!("state db discrepancy during list_processes_with_db_fallback: falling_back");
         Ok(truncate_fs_page(fs_page, page_size, sort_key))
     }
 
-    /// Find the newest recorded thread path, optionally filtering to a matching cwd.
+    /// Find the newest recorded process path, optionally filtering to a matching cwd.
     #[allow(clippy::too_many_arguments)]
-    pub async fn find_latest_thread_path(
+    pub async fn find_latest_process_path(
         config: &impl RolloutConfig,
         page_size: usize,
         cursor: Option<&Cursor>,
-        sort_key: ThreadSortKey,
+        sort_key: ProcessSortKey,
         allowed_sources: &[SessionSource],
         model_providers: Option<&[String]>,
         default_provider: &str,
@@ -311,7 +311,7 @@ impl RolloutRecorder {
         if state_db_ctx.is_some() {
             let mut db_cursor = cursor.cloned();
             loop {
-                let Some(db_page) = state_db::list_threads_db(
+                let Some(db_page) = state_db::list_processes_db(
                     state_db_ctx.as_deref(),
                     codex_home,
                     page_size,
@@ -340,7 +340,7 @@ impl RolloutRecorder {
 
         let mut cursor = cursor.cloned();
         loop {
-            let page = get_threads(
+            let page = get_processes(
                 codex_home,
                 page_size,
                 cursor.as_ref(),
@@ -370,7 +370,7 @@ impl RolloutRecorder {
         config: &impl RolloutConfig,
         params: RolloutRecorderParams,
         state_db_ctx: Option<StateDbHandle>,
-        state_builder: Option<ThreadMetadataBuilder>,
+        state_builder: Option<ProcessMetadataBuilder>,
     ) -> std::io::Result<Self> {
         let (file, deferred_log_file_info, rollout_path, meta, event_persistence_mode) =
             match params {
@@ -528,7 +528,7 @@ impl RolloutRecorder {
 
     pub(crate) async fn load_rollout_items(
         path: &Path,
-    ) -> std::io::Result<(Vec<RolloutItem>, Option<ThreadId>, usize)> {
+    ) -> std::io::Result<(Vec<RolloutItem>, Option<ProcessId>, usize)> {
         trace!("Resuming rollout from {path:?}");
         let text = tokio::fs::read_to_string(path).await?;
         if text.trim().is_empty() {
@@ -536,7 +536,7 @@ impl RolloutRecorder {
         }
 
         let mut items: Vec<RolloutItem> = Vec::new();
-        let mut thread_id: Option<ThreadId> = None;
+        let mut process_id: Option<ProcessId> = None;
         let mut parse_errors = 0usize;
         for line in text.lines() {
             if line.trim().is_empty() {
@@ -557,8 +557,8 @@ impl RolloutRecorder {
                     RolloutItem::SessionMeta(session_meta_line) => {
                         // Use the FIRST SessionMeta encountered in the file as the canonical
                         // thread id and main session information. Keep all items intact.
-                        if thread_id.is_none() {
-                            thread_id = Some(session_meta_line.meta.id);
+                        if process_id.is_none() {
+                            process_id = Some(session_meta_line.meta.id);
                         }
                         items.push(RolloutItem::SessionMeta(session_meta_line));
                     }
@@ -585,15 +585,15 @@ impl RolloutRecorder {
         tracing::debug!(
             "Resumed rollout with {} items, thread ID: {:?}, parse errors: {}",
             items.len(),
-            thread_id,
+            process_id,
             parse_errors,
         );
-        Ok((items, thread_id, parse_errors))
+        Ok((items, process_id, parse_errors))
     }
 
     pub async fn get_rollout_history(path: &Path) -> std::io::Result<InitialHistory> {
-        let (items, thread_id, _parse_errors) = Self::load_rollout_items(path).await?;
-        let conversation_id = thread_id
+        let (items, process_id, _parse_errors) = Self::load_rollout_items(path).await?;
+        let conversation_id = process_id
             .ok_or_else(|| IoError::other("failed to parse thread ID from rollout file"))?;
 
         if items.is_empty() {
@@ -626,10 +626,10 @@ impl RolloutRecorder {
 }
 
 fn truncate_fs_page(
-    mut page: ThreadsPage,
+    mut page: ProcessesPage,
     page_size: usize,
-    sort_key: ThreadSortKey,
-) -> ThreadsPage {
+    sort_key: ProcessSortKey,
+) -> ProcessesPage {
     if page.items.len() <= page_size {
         return page;
     }
@@ -638,8 +638,8 @@ fn truncate_fs_page(
         let file_name = item.path.file_name()?.to_str()?;
         let (created_at, id) = parse_timestamp_uuid_from_filename(file_name)?;
         let cursor_token = match sort_key {
-            ThreadSortKey::CreatedAt => format!("{}|{id}", created_at.format(&Rfc3339).ok()?),
-            ThreadSortKey::UpdatedAt => format!("{}|{id}", item.updated_at.as_deref()?),
+            ProcessSortKey::CreatedAt => format!("{}|{id}", created_at.format(&Rfc3339).ok()?),
+            ProcessSortKey::UpdatedAt => format!("{}|{id}", item.updated_at.as_deref()?),
         };
         parse_cursor(cursor_token.as_str())
     });
@@ -651,7 +651,7 @@ struct LogFileInfo {
     path: PathBuf,
 
     /// Session ID (also embedded in filename).
-    conversation_id: ThreadId,
+    conversation_id: ProcessId,
 
     /// Timestamp for the start of the session.
     timestamp: OffsetDateTime,
@@ -659,7 +659,7 @@ struct LogFileInfo {
 
 fn precompute_log_file_info(
     config: &impl RolloutConfig,
-    conversation_id: ThreadId,
+    conversation_id: ProcessId,
 ) -> std::io::Result<LogFileInfo> {
     // Resolve ~/.codex/sessions/YYYY/MM/DD path.
     let timestamp = OffsetDateTime::now_local()
@@ -712,7 +712,7 @@ async fn rollout_writer(
     cwd: std::path::PathBuf,
     rollout_path: PathBuf,
     state_db_ctx: Option<StateDbHandle>,
-    mut state_builder: Option<ThreadMetadataBuilder>,
+    mut state_builder: Option<ProcessMetadataBuilder>,
     default_provider: String,
     generate_memories: bool,
 ) -> std::io::Result<()> {
@@ -840,7 +840,7 @@ async fn write_session_meta(
     cwd: &Path,
     rollout_path: &Path,
     state_db_ctx: Option<&StateRuntime>,
-    state_builder: &mut Option<ThreadMetadataBuilder>,
+    state_builder: &mut Option<ProcessMetadataBuilder>,
     default_provider: &str,
     generate_memories: bool,
 ) -> std::io::Result<()> {
@@ -857,7 +857,7 @@ async fn write_session_meta(
     if let Some(writer) = writer.as_mut() {
         writer.write_rollout_item(&rollout_item).await?;
     }
-    sync_thread_state_after_write(
+    sync_process_state_after_write(
         state_db_ctx,
         rollout_path,
         state_builder.as_ref(),
@@ -874,7 +874,7 @@ async fn write_and_reconcile_items(
     items: &[RolloutItem],
     rollout_path: &Path,
     state_db_ctx: Option<&StateRuntime>,
-    state_builder: Option<&ThreadMetadataBuilder>,
+    state_builder: Option<&ProcessMetadataBuilder>,
     default_provider: &str,
 ) -> std::io::Result<()> {
     if let Some(writer) = writer.as_mut() {
@@ -882,31 +882,31 @@ async fn write_and_reconcile_items(
             writer.write_rollout_item(item).await?;
         }
     }
-    sync_thread_state_after_write(
+    sync_process_state_after_write(
         state_db_ctx,
         rollout_path,
         state_builder,
         items,
         default_provider,
-        /*new_thread_memory_mode*/ None,
+        /*new_process_memory_mode*/ None,
     )
     .await;
     Ok(())
 }
 
-async fn sync_thread_state_after_write(
+async fn sync_process_state_after_write(
     state_db_ctx: Option<&StateRuntime>,
     rollout_path: &Path,
-    state_builder: Option<&ThreadMetadataBuilder>,
+    state_builder: Option<&ProcessMetadataBuilder>,
     items: &[RolloutItem],
     default_provider: &str,
-    new_thread_memory_mode: Option<&str>,
+    new_process_memory_mode: Option<&str>,
 ) {
     let updated_at = Timestamp::now();
-    if new_thread_memory_mode.is_some()
+    if new_process_memory_mode.is_some()
         || items
             .iter()
-            .any(chaos_proc::rollout_item_affects_thread_metadata)
+            .any(chaos_proc::rollout_item_affects_process_metadata)
     {
         state_db::apply_rollout_items(
             state_db_ctx,
@@ -915,17 +915,17 @@ async fn sync_thread_state_after_write(
             state_builder,
             items,
             "rollout_writer",
-            new_thread_memory_mode,
+            new_process_memory_mode,
             Some(updated_at),
         )
         .await;
         return;
     }
 
-    let thread_id = state_builder
+    let process_id = state_builder
         .map(|builder| builder.id)
         .or_else(|| metadata::builder_from_items(items, rollout_path).map(|builder| builder.id));
-    if state_db::touch_thread_updated_at(state_db_ctx, thread_id, updated_at, "rollout_writer")
+    if state_db::touch_process_updated_at(state_db_ctx, process_id, updated_at, "rollout_writer")
         .await
     {
         return;
@@ -937,7 +937,7 @@ async fn sync_thread_state_after_write(
         state_builder,
         items,
         "rollout_writer",
-        new_thread_memory_mode,
+        new_process_memory_mode,
         Some(updated_at),
     )
     .await;
@@ -978,17 +978,17 @@ impl JsonlWriter {
     }
 }
 
-/// Convert a `chaos_proc::ThreadsPage` into a `ThreadsPage`.
+/// Convert a `chaos_proc::ProcessesPage` into a `ProcessesPage`.
 ///
 /// This cannot be a `From` impl due to the orphan rule (both types are
 /// foreign to codex-core after the chaos-rollout extraction).
-fn threads_page_from_db(db_page: chaos_proc::ThreadsPage) -> ThreadsPage {
+fn threads_page_from_db(db_page: chaos_proc::ProcessesPage) -> ProcessesPage {
     let items = db_page
         .items
         .into_iter()
-        .map(|item| ThreadItem {
+        .map(|item| ProcessItem {
             path: item.rollout_path,
-            thread_id: Some(item.id),
+            process_id: Some(item.id),
             first_user_message: item.first_user_message,
             cwd: Some(item.cwd),
             git_branch: item.git_branch,
@@ -1007,7 +1007,7 @@ fn threads_page_from_db(db_page: chaos_proc::ThreadsPage) -> ThreadsPage {
             updated_at: Some(item.updated_at.to_string()),
         })
         .collect();
-    ThreadsPage {
+    ProcessesPage {
         items,
         next_cursor: db_page.next_anchor.map(super::list::cursor_from_anchor),
         num_scanned_files: db_page.num_scanned_rows,
@@ -1016,7 +1016,7 @@ fn threads_page_from_db(db_page: chaos_proc::ThreadsPage) -> ThreadsPage {
 }
 
 async fn select_resume_path(
-    page: &ThreadsPage,
+    page: &ProcessesPage,
     filter_cwd: Option<&Path>,
     default_provider: &str,
 ) -> Option<PathBuf> {
@@ -1068,7 +1068,7 @@ async fn resume_candidate_matches_cwd(
 }
 
 async fn select_resume_path_from_db_page(
-    page: &chaos_proc::ThreadsPage,
+    page: &chaos_proc::ProcessesPage,
     filter_cwd: Option<&Path>,
     default_provider: &str,
 ) -> Option<PathBuf> {

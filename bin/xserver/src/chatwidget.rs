@@ -54,7 +54,7 @@ use chaos_kern::config_loader::ConfigLayerStackOrdering;
 use chaos_kern::connectors;
 use chaos_kern::features::FEATURES;
 use chaos_kern::features::Feature;
-use chaos_kern::find_thread_name_by_id;
+use chaos_kern::find_process_name_by_id;
 use chaos_kern::git_info::current_branch_name;
 use chaos_kern::git_info::get_git_repo_root;
 use chaos_kern::git_info::local_git_branches;
@@ -66,7 +66,7 @@ use chaos_kern::terminal::TerminalName;
 use chaos_kern::terminal::terminal_info;
 use chaos_syslog::RuntimeMetricsSummary;
 use chaos_syslog::SessionTelemetry;
-use chaos_ipc::ThreadId;
+use chaos_ipc::ProcessId;
 use chaos_ipc::account::PlanType;
 use chaos_ipc::api::ConfigLayerSource;
 use chaos_ipc::approvals::ElicitationRequest;
@@ -145,7 +145,6 @@ use crossterm::event::KeyModifiers;
 use rand::Rng;
 use ratatui::buffer::Buffer;
 use ratatui::layout::Rect;
-use ratatui::style::Color;
 use ratatui::style::Modifier;
 use ratatui::style::Style;
 use ratatui::style::Stylize;
@@ -272,7 +271,7 @@ use crate::streaming::controller::StreamController;
 use chrono::Local;
 use chaos_kern::AuthManager;
 use chaos_kern::CodexAuth;
-use chaos_kern::ThreadManager;
+use chaos_kern::ProcessTable;
 use chaos_locate::FileMatch;
 use chaos_ipc::openai_models::InputModality;
 use chaos_ipc::openai_models::ModelPreset;
@@ -703,9 +702,9 @@ pub(crate) struct ChatWidget {
     // Set when commentary output completes; once stream queues go idle we restore the status row.
     pending_status_indicator_restore: bool,
     suppress_queue_autosend: bool,
-    thread_id: Option<ThreadId>,
-    thread_name: Option<String>,
-    forked_from: Option<ThreadId>,
+    process_id: Option<ProcessId>,
+    process_name: Option<String>,
+    forked_from: Option<ProcessId>,
     frame_requester: FrameRequester,
     // Whether to include the initial welcome banner on session configured
     show_welcome_banner: bool,
@@ -835,7 +834,7 @@ pub(crate) struct UserMessage {
 }
 
 #[derive(Debug, Clone, PartialEq, Default)]
-struct ThreadComposerState {
+struct ProcessComposerState {
     text: String,
     local_images: Vec<LocalImageAttachment>,
     remote_image_urls: Vec<String>,
@@ -844,7 +843,7 @@ struct ThreadComposerState {
     pending_pastes: Vec<(String, String)>,
 }
 
-impl ThreadComposerState {
+impl ProcessComposerState {
     fn has_content(&self) -> bool {
         !self.text.is_empty()
             || !self.local_images.is_empty()
@@ -856,8 +855,8 @@ impl ThreadComposerState {
 }
 
 #[derive(Debug, Clone, PartialEq)]
-pub(crate) struct ThreadInputState {
-    composer: Option<ThreadComposerState>,
+pub(crate) struct ProcessInputState {
+    composer: Option<ProcessComposerState>,
     pending_steers: VecDeque<UserMessage>,
     queued_user_messages: VecDeque<UserMessage>,
     current_collaboration_mode: CollaborationMode,
@@ -1058,7 +1057,7 @@ fn merge_user_messages(messages: Vec<UserMessage>) -> UserMessage {
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
 enum ReplayKind {
     ResumeInitialMessages,
-    ThreadSnapshot,
+    ProcessSnapshot,
 }
 
 impl ChatWidget {
@@ -1205,7 +1204,7 @@ impl ChatWidget {
     /// placeholders so the line remains compact and stable.
     pub(crate) fn refresh_status_line(&mut self) {
         let (items, invalid_items) = self.status_line_items_with_invalids();
-        if self.thread_id.is_some()
+        if self.process_id.is_some()
             && !invalid_items.is_empty()
             && self
                 .status_line_invalid_items_warned
@@ -1337,8 +1336,8 @@ impl ChatWidget {
         self.bottom_pane
             .set_history_metadata(event.history_log_id, event.history_entry_count);
         self.session_network_proxy = event.network_proxy.clone();
-        self.thread_id = Some(event.session_id);
-        self.thread_name = event.thread_name.clone();
+        self.process_id = Some(event.session_id);
+        self.process_name = event.process_name.clone();
         self.forked_from = event.forked_from_id;
         self.current_rollout_path = event.rollout_path.clone();
         self.current_cwd = Some(event.cwd.clone());
@@ -1409,14 +1408,14 @@ impl ChatWidget {
             self.submit_user_message(user_message);
         }
         if let Some(forked_from_id) = forked_from_id {
-            self.emit_forked_thread_event(forked_from_id);
+            self.emit_forked_process_event(forked_from_id);
         }
         if !self.suppress_session_configured_redraw {
             self.request_redraw();
         }
     }
 
-    fn emit_forked_thread_event(&self, forked_from_id: ThreadId) {
+    fn emit_forked_process_event(&self, forked_from_id: ProcessId) {
         let app_event_tx = self.app_event_tx.clone();
         let codex_home = self.config.codex_home.clone();
         tokio::spawn(async move {
@@ -1424,7 +1423,7 @@ impl ChatWidget {
             let send_name_and_id = |name: String| {
                 let line: Line<'static> = vec![
                     "• ".dim(),
-                    "Thread forked from ".into(),
+                    "Process forked from ".into(),
                     name.cyan(),
                     " (".into(),
                     forked_from_id_text.clone().cyan(),
@@ -1438,7 +1437,7 @@ impl ChatWidget {
             let send_id_only = || {
                 let line: Line<'static> = vec![
                     "• ".dim(),
-                    "Thread forked from ".into(),
+                    "Process forked from ".into(),
                     forked_from_id_text.clone().cyan(),
                 ]
                 .into();
@@ -1447,22 +1446,22 @@ impl ChatWidget {
                 )));
             };
 
-            match find_thread_name_by_id(&codex_home, &forked_from_id).await {
+            match find_process_name_by_id(&codex_home, &forked_from_id).await {
                 Ok(Some(name)) if !name.trim().is_empty() => {
                     send_name_and_id(name);
                 }
                 Ok(_) => send_id_only(),
                 Err(err) => {
-                    tracing::warn!("Failed to read forked thread name: {err}");
+                    tracing::warn!("Failed to read forked process name: {err}");
                     send_id_only();
                 }
             }
         });
     }
 
-    fn on_thread_name_updated(&mut self, event: chaos_ipc::protocol::ThreadNameUpdatedEvent) {
-        if self.thread_id == Some(event.thread_id) {
-            self.thread_name = event.thread_name;
+    fn on_process_name_updated(&mut self, event: chaos_ipc::protocol::ProcessNameUpdatedEvent) {
+        if self.process_id == Some(event.process_id) {
+            self.process_name = event.process_name;
             self.request_redraw();
         }
     }
@@ -1480,7 +1479,7 @@ impl ChatWidget {
             tracing::info!(target: "feedback_tags", chatgpt_user_id);
         }
         let snapshot =
-            crate::bottom_pane::FeedbackSnapshot::new(self.thread_id.map(|id| id.to_string()));
+            crate::bottom_pane::FeedbackSnapshot::new(self.process_id.map(|id| id.to_string()));
         self.show_feedback_note(category, include_logs, snapshot);
     }
 
@@ -2239,8 +2238,8 @@ impl ChatWidget {
         );
     }
 
-    pub(crate) fn capture_thread_input_state(&self) -> Option<ThreadInputState> {
-        let composer = ThreadComposerState {
+    pub(crate) fn capture_process_input_state(&self) -> Option<ProcessInputState> {
+        let composer = ProcessComposerState {
             text: self.bottom_pane.composer_text(),
             text_elements: self.bottom_pane.composer_text_elements(),
             local_images: self.bottom_pane.composer_local_images(),
@@ -2248,7 +2247,7 @@ impl ChatWidget {
             mention_bindings: self.bottom_pane.composer_mention_bindings(),
             pending_pastes: self.bottom_pane.composer_pending_pastes(),
         };
-        Some(ThreadInputState {
+        Some(ProcessInputState {
             composer: composer.has_content().then_some(composer),
             pending_steers: self
                 .pending_steers
@@ -2262,7 +2261,7 @@ impl ChatWidget {
         })
     }
 
-    pub(crate) fn restore_thread_input_state(&mut self, input_state: Option<ThreadInputState>) {
+    pub(crate) fn restore_process_input_state(&mut self, input_state: Option<ProcessInputState>) {
         if let Some(input_state) = input_state {
             self.current_collaboration_mode = input_state.current_collaboration_mode;
             self.active_collaboration_mask = input_state.active_collaboration_mask;
@@ -3271,8 +3270,8 @@ impl ChatWidget {
 
         let available_decisions = ev.effective_available_decisions();
         let request = ApprovalRequest::Exec {
-            thread_id: self.thread_id.unwrap_or_default(),
-            thread_label: None,
+            process_id: self.process_id.unwrap_or_default(),
+            process_label: None,
             id: ev.effective_approval_id(),
             command: ev.command,
             reason: ev.reason,
@@ -3289,8 +3288,8 @@ impl ChatWidget {
         self.flush_answer_stream_with_separator();
 
         let request = ApprovalRequest::ApplyPatch {
-            thread_id: self.thread_id.unwrap_or_default(),
-            thread_label: None,
+            process_id: self.process_id.unwrap_or_default(),
+            process_label: None,
             id: ev.call_id,
             reason: ev.reason,
             changes: ev.changes.clone(),
@@ -3312,8 +3311,8 @@ impl ChatWidget {
             server_name: ev.server_name.clone(),
         });
 
-        let thread_id = self.thread_id.unwrap_or_default();
-        if let Some(request) = McpServerElicitationFormRequest::from_event(thread_id, ev.clone()) {
+        let process_id = self.process_id.unwrap_or_default();
+        if let Some(request) = McpServerElicitationFormRequest::from_event(process_id, ev.clone()) {
             self.bottom_pane
                 .push_mcp_server_elicitation_request(request);
         } else {
@@ -3322,8 +3321,8 @@ impl ChatWidget {
                 ElicitationRequest::Form { .. } => None,
             };
             let request = ApprovalRequest::McpElicitation {
-                thread_id,
-                thread_label: None,
+                process_id,
+                process_label: None,
                 server_name: ev.server_name,
                 request_id: ev.id,
                 message: ev.request.message().to_string(),
@@ -3363,8 +3362,8 @@ impl ChatWidget {
     pub(crate) fn handle_request_permissions_now(&mut self, ev: RequestPermissionsEvent) {
         self.flush_answer_stream_with_separator();
         let request = ApprovalRequest::Permissions {
-            thread_id: self.thread_id.unwrap_or_default(),
-            thread_label: None,
+            process_id: self.process_id.unwrap_or_default(),
+            process_label: None,
             call_id: ev.call_id,
             reason: ev.reason,
             permissions: ev.permissions,
@@ -3486,7 +3485,7 @@ impl ChatWidget {
         self.had_work_activity = true;
     }
 
-    pub(crate) fn new(common: ChatWidgetInit, thread_manager: Arc<ThreadManager>) -> Self {
+    pub(crate) fn new(common: ChatWidgetInit, process_table: Arc<ProcessTable>) -> Self {
         let ChatWidgetInit {
             config,
             frame_requester,
@@ -3509,7 +3508,7 @@ impl ChatWidget {
         let prevent_idle_sleep = config.features.enabled(Feature::PreventIdleSleep);
         let mut rng = rand::rng();
         let placeholder = PLACEHOLDERS[rng.random_range(0..PLACEHOLDERS.len())].to_string();
-        let codex_op_tx = spawn_agent(config.clone(), app_event_tx.clone(), thread_manager);
+        let codex_op_tx = spawn_agent(config.clone(), app_event_tx.clone(), process_table);
 
         let model_override = model.as_deref();
         let model_for_header = model
@@ -3591,8 +3590,8 @@ impl ChatWidget {
             retry_status_header: None,
             pending_status_indicator_restore: false,
             suppress_queue_autosend: false,
-            thread_id: None,
-            thread_name: None,
+            process_id: None,
+            process_name: None,
             forked_from: None,
             queued_user_messages: VecDeque::new(),
             pending_steers: VecDeque::new(),
@@ -3756,8 +3755,8 @@ impl ChatWidget {
             retry_status_header: None,
             pending_status_indicator_restore: false,
             suppress_queue_autosend: false,
-            thread_id: None,
-            thread_name: None,
+            process_id: None,
+            process_name: None,
             forked_from: None,
             saw_plan_update_this_turn: false,
             saw_plan_item_this_turn: false,
@@ -3815,7 +3814,7 @@ impl ChatWidget {
     /// Create a ChatWidget attached to an existing conversation (e.g., a fork).
     pub(crate) fn new_from_existing(
         common: ChatWidgetInit,
-        conversation: std::sync::Arc<chaos_kern::CodexThread>,
+        conversation: std::sync::Arc<chaos_kern::Process>,
         session_configured: chaos_ipc::protocol::SessionConfiguredEvent,
     ) -> Self {
         let ChatWidgetInit {
@@ -3921,8 +3920,8 @@ impl ChatWidget {
             retry_status_header: None,
             pending_status_indicator_restore: false,
             suppress_queue_autosend: false,
-            thread_id: None,
-            thread_name: None,
+            process_id: None,
+            process_name: None,
             forked_from: None,
             queued_user_messages: VecDeque::new(),
             pending_steers: VecDeque::new(),
@@ -4262,7 +4261,7 @@ impl ChatWidget {
             }
             SlashCommand::Rename => {
                 self.session_telemetry
-                    .counter("codex.thread.rename", /*inc*/ 1, &[]);
+                    .counter("codex.process.rename", /*inc*/ 1, &[]);
                 self.show_rename_prompt();
             }
             SlashCommand::Model => {
@@ -4519,22 +4518,22 @@ impl ChatWidget {
             }
             SlashCommand::Rename if !trimmed.is_empty() => {
                 self.session_telemetry
-                    .counter("codex.thread.rename", /*inc*/ 1, &[]);
+                    .counter("codex.process.rename", /*inc*/ 1, &[]);
                 let Some((prepared_args, _prepared_elements)) = self
                     .bottom_pane
                     .prepare_inline_args_submission(/*record_history*/ false)
                 else {
                     return;
                 };
-                let Some(name) = chaos_kern::util::normalize_thread_name(&prepared_args) else {
-                    self.add_error_message("Thread name cannot be empty.".to_string());
+                let Some(name) = chaos_kern::util::normalize_process_name(&prepared_args) else {
+                    self.add_error_message("Process name cannot be empty.".to_string());
                     return;
                 };
-                let cell = Self::rename_confirmation_cell(&name, self.thread_id);
+                let cell = Self::rename_confirmation_cell(&name, self.process_id);
                 self.add_boxed_history(Box::new(cell));
                 self.request_redraw();
                 self.app_event_tx
-                    .send(AppEvent::CodexOp(Op::SetThreadName { name }));
+                    .send(AppEvent::CodexOp(Op::SetProcessName { name }));
                 self.bottom_pane.drain_pending_submission_state();
             }
             SlashCommand::Plan if !trimmed.is_empty() => {
@@ -4592,29 +4591,29 @@ impl ChatWidget {
     fn show_rename_prompt(&mut self) {
         let tx = self.app_event_tx.clone();
         let has_name = self
-            .thread_name
+            .process_name
             .as_ref()
             .is_some_and(|name| !name.is_empty());
         let title = if has_name {
-            "Rename thread"
+            "Rename process"
         } else {
-            "Name thread"
+            "Name process"
         };
-        let thread_id = self.thread_id;
+        let process_id = self.process_id;
         let view = CustomPromptView::new(
             title.to_string(),
             "Type a name and press Enter".to_string(),
             /*context_label*/ None,
             Box::new(move |name: String| {
-                let Some(name) = chaos_kern::util::normalize_thread_name(&name) else {
+                let Some(name) = chaos_kern::util::normalize_process_name(&name) else {
                     tx.send(AppEvent::InsertHistoryCell(Box::new(
-                        history_cell::new_error_event("Thread name cannot be empty.".to_string()),
+                        history_cell::new_error_event("Process name cannot be empty.".to_string()),
                     )));
                     return;
                 };
-                let cell = Self::rename_confirmation_cell(&name, thread_id);
+                let cell = Self::rename_confirmation_cell(&name, process_id);
                 tx.send(AppEvent::InsertHistoryCell(Box::new(cell)));
-                tx.send(AppEvent::CodexOp(Op::SetThreadName { name }));
+                tx.send(AppEvent::CodexOp(Op::SetProcessName { name }));
             }),
         );
 
@@ -4949,7 +4948,7 @@ impl ChatWidget {
         for msg in events {
             if matches!(
                 msg,
-                EventMsg::SessionConfigured(_) | EventMsg::ThreadNameUpdated(_)
+                EventMsg::SessionConfigured(_) | EventMsg::ProcessNameUpdated(_)
             ) {
                 continue;
             }
@@ -4972,7 +4971,7 @@ impl ChatWidget {
         if matches!(msg, EventMsg::ShutdownComplete) {
             return;
         }
-        self.dispatch_event_msg(/*id*/ None, msg, Some(ReplayKind::ThreadSnapshot));
+        self.dispatch_event_msg(/*id*/ None, msg, Some(ReplayKind::ProcessSnapshot));
     }
 
     /// Dispatch a protocol `EventMsg` to the appropriate handler.
@@ -5007,9 +5006,9 @@ impl ChatWidget {
 
         match msg {
             EventMsg::SessionConfigured(e) => self.on_session_configured(e),
-            EventMsg::ThreadNameUpdated(e) => self.on_thread_name_updated(e),
+            EventMsg::ProcessNameUpdated(e) => self.on_process_name_updated(e),
             EventMsg::AgentMessage(AgentMessageEvent { .. })
-                if matches!(replay_kind, Some(ReplayKind::ThreadSnapshot))
+                if matches!(replay_kind, Some(ReplayKind::ProcessSnapshot))
                     && !self.is_review_mode => {}
             EventMsg::AgentMessage(AgentMessageEvent { message, .. })
                 if from_replay || self.is_review_mode =>
@@ -5179,13 +5178,13 @@ impl ChatWidget {
             EventMsg::CollabCloseEnd(ev) => self.on_collab_event(multi_agents::close_end(ev)),
             EventMsg::CollabResumeBegin(ev) => self.on_collab_event(multi_agents::resume_begin(ev)),
             EventMsg::CollabResumeEnd(ev) => self.on_collab_event(multi_agents::resume_end(ev)),
-            EventMsg::ThreadRolledBack(rollback) => {
+            EventMsg::ProcessRolledBack(rollback) => {
                 // Conservatively clear `/copy` state on rollback. The app layer trims visible
                 // transcript cells, but we do not maintain rollback-aware raw-markdown history yet,
                 // so keeping the previous cache can return content that was just removed.
                 self.last_copyable_output = None;
                 if from_replay {
-                    self.app_event_tx.send(AppEvent::ApplyThreadRollback {
+                    self.app_event_tx.send(AppEvent::ApplyProcessRollback {
                         num_turns: rollback.num_turns,
                     });
                 }
@@ -5503,8 +5502,8 @@ impl ChatWidget {
             .set_pending_input_preview(queued_messages, pending_steers);
     }
 
-    pub(crate) fn set_pending_thread_approvals(&mut self, threads: Vec<String>) {
-        self.bottom_pane.set_pending_thread_approvals(threads);
+    pub(crate) fn set_pending_process_approvals(&mut self, threads: Vec<String>) {
+        self.bottom_pane.set_pending_process_approvals(threads);
     }
 
     pub(crate) fn add_diff_in_progress(&mut self) {
@@ -5533,8 +5532,8 @@ impl ChatWidget {
             self.auth_manager.as_ref(),
             token_info,
             total_usage,
-            &self.thread_id,
-            self.thread_name.clone(),
+            &self.process_id,
+            self.process_name.clone(),
             self.forked_from,
             rate_limit_snapshots.as_slice(),
             self.plan_type,
@@ -5752,7 +5751,7 @@ impl ChatWidget {
                 "{} out",
                 format_tokens_compact(self.status_line_total_usage().output_tokens)
             )),
-            StatusLineItem::SessionId => self.thread_id.map(|id| id.to_string()),
+            StatusLineItem::SessionId => self.process_id.map(|id| id.to_string()),
             StatusLineItem::FastMode => Some(
                 if matches!(self.config.service_tier, Some(ServiceTier::Fast)) {
                     "Fast on".to_string()
@@ -7223,7 +7222,7 @@ impl ChatWidget {
     }
 
     fn is_session_configured(&self) -> bool {
-        self.thread_id.is_some()
+        self.process_id.is_some()
     }
 
     fn collaboration_modes_enabled(&self) -> bool {
@@ -7471,8 +7470,8 @@ impl ChatWidget {
         self.request_redraw();
     }
 
-    fn rename_confirmation_cell(name: &str, thread_id: Option<ThreadId>) -> PlainHistoryCell {
-        let resume_cmd = chaos_kern::util::resume_command(Some(name), thread_id)
+    fn rename_confirmation_cell(name: &str, process_id: Option<ProcessId>) -> PlainHistoryCell {
+        let resume_cmd = chaos_kern::util::resume_command(Some(name), process_id)
             .unwrap_or_else(|| format!("codex resume {name}"));
         let name = name.to_string();
         let line = vec![
@@ -7920,8 +7919,8 @@ impl ChatWidget {
     }
 
     #[cfg(test)]
-    pub(crate) fn pending_thread_approvals(&self) -> &[String] {
-        self.bottom_pane.pending_thread_approvals()
+    pub(crate) fn pending_process_approvals(&self) -> &[String] {
+        self.bottom_pane.pending_process_approvals()
     }
 
     #[cfg(test)]
@@ -8237,12 +8236,12 @@ impl ChatWidget {
             .unwrap_or_default()
     }
 
-    pub(crate) fn thread_id(&self) -> Option<ThreadId> {
-        self.thread_id
+    pub(crate) fn process_id(&self) -> Option<ProcessId> {
+        self.process_id
     }
 
-    pub(crate) fn thread_name(&self) -> Option<String> {
-        self.thread_name.clone()
+    pub(crate) fn process_name(&self) -> Option<String> {
+        self.process_name.clone()
     }
 
     /// Returns the current thread's precomputed rollout path.

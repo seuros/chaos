@@ -1,4 +1,3 @@
-use crate::color::perceptual_distance;
 use ratatui::style::Color;
 use std::sync::atomic::AtomicU64;
 use std::sync::atomic::Ordering;
@@ -34,24 +33,6 @@ pub fn rgb_color((r, g, b): (u8, u8, u8)) -> Color {
 #[allow(clippy::disallowed_methods)]
 pub fn indexed_color(index: u8) -> Color {
     Color::Indexed(index)
-}
-
-/// Returns the closest color to the target color that the terminal can display.
-pub fn best_color(target: (u8, u8, u8)) -> Color {
-    let color_level = stdout_color_level();
-    if color_level == StdoutColorLevel::TrueColor {
-        rgb_color(target)
-    } else if color_level == StdoutColorLevel::Ansi256
-        && let Some((i, _)) = xterm_fixed_colors().min_by(|(_, a), (_, b)| {
-            perceptual_distance(*a, target)
-                .partial_cmp(&perceptual_distance(*b, target))
-                .unwrap_or(std::cmp::Ordering::Equal)
-        })
-    {
-        indexed_color(i as u8)
-    } else {
-        Color::default()
-    }
 }
 
 pub fn requery_default_colors() {
@@ -158,11 +139,6 @@ mod imp {
     }
 
     pub(super) fn requery_default_colors() {}
-}
-
-/// The subset of Xterm colors that are usually consistent across terminals.
-fn xterm_fixed_colors() -> impl Iterator<Item = (usize, (u8, u8, u8))> {
-    XTERM_COLORS.into_iter().enumerate().skip(16)
 }
 
 // Xterm colors; derived from https://ss64.com/bash/syntax-colors.html

@@ -60,7 +60,7 @@ use crate::codex::completed_session_loop_termination;
 /// Approval requests are handled via `parent_session` and are not surfaced.
 /// The returned `ops_tx` allows the caller to submit additional `Op`s to the sub-agent.
 #[allow(clippy::too_many_arguments)]
-pub(crate) async fn run_codex_thread_interactive(
+pub(crate) async fn run_codex_process_interactive(
     config: Config,
     auth_manager: Arc<AuthManager>,
     models_manager: Arc<ModelsManager>,
@@ -137,7 +137,7 @@ pub(crate) async fn run_codex_thread_interactive(
 ///
 /// Internally calls the interactive variant, then immediately submits the provided input.
 #[allow(clippy::too_many_arguments)]
-pub(crate) async fn run_codex_thread_one_shot(
+pub(crate) async fn run_codex_process_one_shot(
     config: Config,
     auth_manager: Arc<AuthManager>,
     models_manager: Arc<ModelsManager>,
@@ -152,7 +152,7 @@ pub(crate) async fn run_codex_thread_one_shot(
     // Use a child token so we can stop the delegate after completion without
     // requiring the caller to cancel the parent token.
     let child_cancel = cancel_token.child_token();
-    let io = run_codex_thread_interactive(
+    let io = run_codex_process_interactive(
         config,
         auth_manager,
         models_manager,
@@ -252,7 +252,7 @@ async fn forward_events(
                     } => {}
                     Event {
                         id: _,
-                        msg: EventMsg::ThreadNameUpdated(_),
+                        msg: EventMsg::ProcessNameUpdated(_),
                     } => {}
                     Event {
                         id,

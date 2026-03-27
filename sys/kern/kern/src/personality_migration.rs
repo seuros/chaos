@@ -2,10 +2,10 @@ use crate::config::ConfigToml;
 use crate::config::edit::ConfigEditsBuilder;
 use crate::rollout::ARCHIVED_SESSIONS_SUBDIR;
 use crate::rollout::SESSIONS_SUBDIR;
-use crate::rollout::list::ThreadListConfig;
-use crate::rollout::list::ThreadListLayout;
-use crate::rollout::list::ThreadSortKey;
-use crate::rollout::list::get_threads_in_root;
+use crate::rollout::list::ProcessListConfig;
+use crate::rollout::list::ProcessListLayout;
+use crate::rollout::list::ProcessSortKey;
+use crate::rollout::list::get_processes_in_root;
 use crate::state_db;
 use chaos_ipc::config_types::Personality;
 use chaos_ipc::protocol::SessionSource;
@@ -67,12 +67,12 @@ async fn has_recorded_sessions(codex_home: &Path, default_provider: &str) -> io:
     let allowed_sources: &[SessionSource] = &[];
 
     if let Some(state_db_ctx) = state_db::open_if_present(codex_home, default_provider).await
-        && let Some(ids) = state_db::list_thread_ids_db(
+        && let Some(ids) = state_db::list_process_ids_db(
             Some(state_db_ctx.as_ref()),
             codex_home,
             /*page_size*/ 1,
             /*cursor*/ None,
-            ThreadSortKey::CreatedAt,
+            ProcessSortKey::CreatedAt,
             allowed_sources,
             /*model_providers*/ None,
             /*archived_only*/ false,
@@ -84,16 +84,16 @@ async fn has_recorded_sessions(codex_home: &Path, default_provider: &str) -> io:
         return Ok(true);
     }
 
-    let sessions = get_threads_in_root(
+    let sessions = get_processes_in_root(
         codex_home.join(SESSIONS_SUBDIR),
         /*page_size*/ 1,
         /*cursor*/ None,
-        ThreadSortKey::CreatedAt,
-        ThreadListConfig {
+        ProcessSortKey::CreatedAt,
+        ProcessListConfig {
             allowed_sources,
             model_providers: None,
             default_provider,
-            layout: ThreadListLayout::NestedByDate,
+            layout: ProcessListLayout::NestedByDate,
         },
     )
     .await?;
@@ -101,16 +101,16 @@ async fn has_recorded_sessions(codex_home: &Path, default_provider: &str) -> io:
         return Ok(true);
     }
 
-    let archived_sessions = get_threads_in_root(
+    let archived_sessions = get_processes_in_root(
         codex_home.join(ARCHIVED_SESSIONS_SUBDIR),
         /*page_size*/ 1,
         /*cursor*/ None,
-        ThreadSortKey::CreatedAt,
-        ThreadListConfig {
+        ProcessSortKey::CreatedAt,
+        ProcessListConfig {
             allowed_sources,
             model_providers: None,
             default_provider,
-            layout: ThreadListLayout::Flat,
+            layout: ProcessListLayout::Flat,
         },
     )
     .await?;

@@ -134,7 +134,7 @@ async fn live_skills_reload_refreshes_skill_cache_after_skill_change() -> Result
         // Some environments do not reliably surface file watcher events for
         // skill changes. Clear the cache explicitly so we can still validate
         // that the updated skill body is injected on the next turn.
-        test.thread_manager.skills_manager().clear_cache();
+        test.process_table.skills_manager().clear_cache();
     }
 
     submit_skill_turn(&test, skill_path.clone(), "please use $demo again").await?;

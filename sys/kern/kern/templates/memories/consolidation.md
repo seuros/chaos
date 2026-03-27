@@ -158,7 +158,7 @@ Incremental update and forgetting mechanism:
   - When scanning a raw-memory section, read the task-level `Preference signals:` subsections
     first, then the rest of the task blocks.
 - For each removed thread id, search it in `MEMORY.md` and delete only the memory supported by
-  that thread. Use `thread_id=<thread_id>` in `### rollout_summary_files` when available; if not,
+  that thread. Use `process_id=<process_id>` in `### rollout_summary_files` when available; if not,
   fall back to rollout summary filenames plus the corresponding `rollout_summaries/*.md` files.
 - If a `MEMORY.md` block contains both removed and undeleted threads, do not delete the whole
   block. Remove only the removed thread's references and thread-local guidance, preserve shared
@@ -227,7 +227,7 @@ Required task-oriented body shape (strict):
 
 ### rollout_summary_files
 
-- <rollout_summaries/file1.md> (cwd=<path>, rollout_path=<path>, updated_at=<timestamp>, thread_id=<thread_id>, <optional status/usefulness note>)
+- <rollout_summaries/file1.md> (cwd=<path>, rollout_path=<path>, updated_at=<timestamp>, process_id=<process_id>, <optional status/usefulness note>)
 
 ### keywords
 

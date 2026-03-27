@@ -23,7 +23,7 @@ use tracing::warn;
 use crate::codex::Codex;
 use crate::codex::Session;
 use crate::codex::TurnContext;
-use crate::codex_delegate::run_codex_thread_interactive;
+use crate::codex_delegate::run_codex_process_interactive;
 use crate::config::Config;
 use crate::config::Constrained;
 use crate::config::ManagedFeatures;
@@ -448,7 +448,7 @@ async fn spawn_guardian_review_session(
     cancel_token: CancellationToken,
     initial_history: Option<InitialHistory>,
 ) -> anyhow::Result<GuardianReviewSession> {
-    let codex = run_codex_thread_interactive(
+    let codex = run_codex_process_interactive(
         spawn_config,
         params.parent_session.services.auth_manager.clone(),
         params.parent_session.services.models_manager.clone(),

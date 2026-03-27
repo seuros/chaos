@@ -7,7 +7,7 @@ use chrono::Utc;
 use chaos_kern::AuthManager;
 use chaos_kern::config::Config;
 use chaos_kern::config::ConfigBuilder;
-use chaos_ipc::ThreadId;
+use chaos_ipc::ProcessId;
 use chaos_ipc::config_types::ReasoningSummary;
 use chaos_ipc::openai_models::ReasoningEffort;
 use chaos_ipc::protocol::AskForApproval;
@@ -256,9 +256,9 @@ async fn status_snapshot_includes_forked_from() {
     let model_slug = chaos_kern::test_support::get_model_offline(config.model.as_deref());
     let token_info = token_info_for(&model_slug, &config, &usage);
     let session_id =
-        ThreadId::from_string("0f0f3c13-6cf9-4aa4-8b80-7d49c2f1be2e").expect("session id");
+        ProcessId::from_string("0f0f3c13-6cf9-4aa4-8b80-7d49c2f1be2e").expect("session id");
     let forked_from =
-        ThreadId::from_string("e9f18a88-8081-4e51-9d4e-8af5cde2d8dd").expect("forked id");
+        ProcessId::from_string("e9f18a88-8081-4e51-9d4e-8af5cde2d8dd").expect("forked id");
 
     let composite = new_status_output(
         &config,

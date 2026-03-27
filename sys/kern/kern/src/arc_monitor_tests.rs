@@ -185,7 +185,7 @@ async fn build_arc_monitor_request_includes_relevant_history_and_null_policies()
         request,
         ArcMonitorRequest {
             metadata: ArcMonitorMetadata {
-                codex_thread_id: session.conversation_id.to_string(),
+                codex_process_id: session.conversation_id.to_string(),
                 codex_turn_id: turn_context.sub_id.clone(),
                 conversation_id: Some(session.conversation_id.to_string()),
                 protection_client_callsite: None,
@@ -282,7 +282,7 @@ async fn monitor_action_posts_expected_arc_request() {
         .and(header("chatgpt-account-id", "account_id"))
         .and(body_json(serde_json::json!({
             "metadata": {
-                "codex_thread_id": session.conversation_id.to_string(),
+                "codex_process_id": session.conversation_id.to_string(),
                 "codex_turn_id": turn_context.sub_id.clone(),
                 "conversation_id": session.conversation_id.to_string(),
             },

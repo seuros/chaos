@@ -2,8 +2,8 @@ use std::path::PathBuf;
 use std::sync::Arc;
 
 use crate::outgoing_message::ErrorData;
-use chaos_kern::CodexThread;
-use chaos_ipc::ThreadId;
+use chaos_kern::Process;
+use chaos_ipc::ProcessId;
 use chaos_ipc::parse_command::ParsedCommand;
 use chaos_ipc::protocol::Op;
 use chaos_ipc::protocol::ReviewDecision;
@@ -30,8 +30,8 @@ pub struct ExecApprovalElicitRequestParams {
 
 #[derive(Debug, Deserialize, Serialize)]
 pub struct ExecApprovalElicitRequestMeta {
-    #[serde(rename = "threadId")]
-    pub thread_id: ThreadId,
+    #[serde(rename = "processId")]
+    pub process_id: ProcessId,
     pub codex_elicitation: String,
     pub codex_mcp_tool_call_id: String,
     pub codex_event_id: String,
@@ -48,14 +48,14 @@ pub(crate) async fn handle_exec_approval_request(
     command: Vec<String>,
     cwd: PathBuf,
     outgoing: Arc<crate::outgoing_message::OutgoingMessageSender>,
-    codex: Arc<CodexThread>,
+    codex: Arc<Process>,
     request_id: RequestId,
     tool_call_id: String,
     event_id: String,
     call_id: String,
     approval_id: String,
     codex_parsed_cmd: Vec<ParsedCommand>,
-    thread_id: ThreadId,
+    process_id: ProcessId,
 ) {
     let escaped_command =
         shlex::try_join(command.iter().map(String::as_str)).unwrap_or_else(|_| command.join(" "));
@@ -68,7 +68,7 @@ pub(crate) async fn handle_exec_approval_request(
         message,
         requested_schema: json!({"type":"object","properties":{}}),
         meta: ExecApprovalElicitRequestMeta {
-            thread_id,
+            process_id,
             codex_elicitation: "exec-approval".to_string(),
             codex_mcp_tool_call_id: tool_call_id.clone(),
             codex_event_id: event_id.clone(),
@@ -117,7 +117,7 @@ async fn on_exec_approval_response(
     approval_id: String,
     event_id: String,
     receiver: tokio::sync::oneshot::Receiver<Result<serde_json::Value, ErrorData>>,
-    codex: Arc<CodexThread>,
+    codex: Arc<Process>,
 ) {
     let response = receiver.await;
     let value = match response {
@@ -153,7 +153,7 @@ async fn submit_exec_approval(
     approval_id: String,
     event_id: String,
     decision: ReviewDecision,
-    codex: Arc<CodexThread>,
+    codex: Arc<Process>,
 ) {
     if let Err(err) = codex
         .submit(Op::ExecApproval {

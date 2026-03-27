@@ -3,7 +3,7 @@ use super::*;
 use crate::protocol::CompactedItem;
 use crate::protocol::InitialHistory;
 use crate::protocol::ResumedHistory;
-use chaos_ipc::ThreadId;
+use chaos_ipc::ProcessId;
 use chaos_ipc::models::ContentItem;
 use chaos_ipc::models::ResponseItem;
 use pretty_assertions::assert_eq;
@@ -62,7 +62,7 @@ async fn record_initial_history_resumed_bare_turn_context_does_not_hydrate_previ
 
     session
         .record_initial_history(InitialHistory::Resumed(ResumedHistory {
-            conversation_id: ThreadId::default(),
+            conversation_id: ProcessId::default(),
             history: rollout_items,
             rollout_path: PathBuf::from("/tmp/resume.jsonl"),
         }))
@@ -130,7 +130,7 @@ async fn record_initial_history_resumed_hydrates_previous_turn_settings_from_lif
 
     session
         .record_initial_history(InitialHistory::Resumed(ResumedHistory {
-            conversation_id: ThreadId::default(),
+            conversation_id: ProcessId::default(),
             history: rollout_items,
             rollout_path: PathBuf::from("/tmp/resume.jsonl"),
         }))
@@ -213,8 +213,8 @@ async fn reconstruct_history_rollback_keeps_history_and_metadata_in_sync_for_com
                 last_agent_message: None,
             },
         )),
-        RolloutItem::EventMsg(EventMsg::ThreadRolledBack(
-            chaos_ipc::protocol::ThreadRolledBackEvent { num_turns: 1 },
+        RolloutItem::EventMsg(EventMsg::ProcessRolledBack(
+            chaos_ipc::protocol::ProcessRolledBackEvent { num_turns: 1 },
         )),
     ];
 
@@ -294,8 +294,8 @@ async fn reconstruct_history_rollback_keeps_history_and_metadata_in_sync_for_inc
             },
         )),
         RolloutItem::ResponseItem(turn_two_user),
-        RolloutItem::EventMsg(EventMsg::ThreadRolledBack(
-            chaos_ipc::protocol::ThreadRolledBackEvent { num_turns: 1 },
+        RolloutItem::EventMsg(EventMsg::ProcessRolledBack(
+            chaos_ipc::protocol::ProcessRolledBackEvent { num_turns: 1 },
         )),
     ];
 
@@ -399,8 +399,8 @@ async fn reconstruct_history_rollback_skips_non_user_turns_for_history_and_metad
                 last_agent_message: None,
             },
         )),
-        RolloutItem::EventMsg(EventMsg::ThreadRolledBack(
-            chaos_ipc::protocol::ThreadRolledBackEvent { num_turns: 1 },
+        RolloutItem::EventMsg(EventMsg::ProcessRolledBack(
+            chaos_ipc::protocol::ProcessRolledBackEvent { num_turns: 1 },
         )),
     ];
 
@@ -459,8 +459,8 @@ async fn reconstruct_history_rollback_clears_history_and_metadata_when_exceeding
                 last_agent_message: None,
             },
         )),
-        RolloutItem::EventMsg(EventMsg::ThreadRolledBack(
-            chaos_ipc::protocol::ThreadRolledBackEvent { num_turns: 99 },
+        RolloutItem::EventMsg(EventMsg::ProcessRolledBack(
+            chaos_ipc::protocol::ProcessRolledBackEvent { num_turns: 99 },
         )),
     ];
 
@@ -519,14 +519,14 @@ async fn record_initial_history_resumed_rollback_skips_only_user_turns() {
                 last_agent_message: None,
             },
         )),
-        RolloutItem::EventMsg(EventMsg::ThreadRolledBack(
-            chaos_ipc::protocol::ThreadRolledBackEvent { num_turns: 1 },
+        RolloutItem::EventMsg(EventMsg::ProcessRolledBack(
+            chaos_ipc::protocol::ProcessRolledBackEvent { num_turns: 1 },
         )),
     ];
 
     session
         .record_initial_history(InitialHistory::Resumed(ResumedHistory {
-            conversation_id: ThreadId::default(),
+            conversation_id: ProcessId::default(),
             history: rollout_items,
             rollout_path: PathBuf::from("/tmp/resume.jsonl"),
         }))
@@ -588,14 +588,14 @@ async fn record_initial_history_resumed_rollback_drops_incomplete_user_turn_comp
             message: String::new(),
             replacement_history: Some(Vec::new()),
         }),
-        RolloutItem::EventMsg(EventMsg::ThreadRolledBack(
-            chaos_ipc::protocol::ThreadRolledBackEvent { num_turns: 1 },
+        RolloutItem::EventMsg(EventMsg::ProcessRolledBack(
+            chaos_ipc::protocol::ProcessRolledBackEvent { num_turns: 1 },
         )),
     ];
 
     session
         .record_initial_history(InitialHistory::Resumed(ResumedHistory {
-            conversation_id: ThreadId::default(),
+            conversation_id: ProcessId::default(),
             history: rollout_items,
             rollout_path: PathBuf::from("/tmp/resume.jsonl"),
         }))
@@ -623,7 +623,7 @@ async fn record_initial_history_resumed_bare_turn_context_does_not_seed_referenc
 
     session
         .record_initial_history(InitialHistory::Resumed(ResumedHistory {
-            conversation_id: ThreadId::default(),
+            conversation_id: ProcessId::default(),
             history: rollout_items,
             rollout_path: PathBuf::from("/tmp/resume.jsonl"),
         }))
@@ -646,7 +646,7 @@ async fn record_initial_history_resumed_does_not_seed_reference_context_item_aft
 
     session
         .record_initial_history(InitialHistory::Resumed(ResumedHistory {
-            conversation_id: ThreadId::default(),
+            conversation_id: ProcessId::default(),
             history: rollout_items,
             rollout_path: PathBuf::from("/tmp/resume.jsonl"),
         }))
@@ -790,7 +790,7 @@ async fn record_initial_history_resumed_turn_context_after_compaction_reestablis
 
     session
         .record_initial_history(InitialHistory::Resumed(ResumedHistory {
-            conversation_id: ThreadId::default(),
+            conversation_id: ProcessId::default(),
             history: rollout_items,
             rollout_path: PathBuf::from("/tmp/resume.jsonl"),
         }))
@@ -912,7 +912,7 @@ async fn record_initial_history_resumed_aborted_turn_without_id_clears_active_tu
 
     session
         .record_initial_history(InitialHistory::Resumed(ResumedHistory {
-            conversation_id: ThreadId::default(),
+            conversation_id: ProcessId::default(),
             history: rollout_items,
             rollout_path: PathBuf::from("/tmp/resume.jsonl"),
         }))
@@ -1015,7 +1015,7 @@ async fn record_initial_history_resumed_unmatched_abort_preserves_active_turn_fo
 
     session
         .record_initial_history(InitialHistory::Resumed(ResumedHistory {
-            conversation_id: ThreadId::default(),
+            conversation_id: ProcessId::default(),
             history: rollout_items,
             rollout_path: PathBuf::from("/tmp/resume.jsonl"),
         }))
@@ -1112,7 +1112,7 @@ async fn record_initial_history_resumed_trailing_incomplete_turn_compaction_clea
 
     session
         .record_initial_history(InitialHistory::Resumed(ResumedHistory {
-            conversation_id: ThreadId::default(),
+            conversation_id: ProcessId::default(),
             history: rollout_items,
             rollout_path: PathBuf::from("/tmp/resume.jsonl"),
         }))
@@ -1157,7 +1157,7 @@ async fn record_initial_history_resumed_trailing_incomplete_turn_preserves_turn_
 
     session
         .record_initial_history(InitialHistory::Resumed(ResumedHistory {
-            conversation_id: ThreadId::default(),
+            conversation_id: ProcessId::default(),
             history: rollout_items,
             rollout_path: PathBuf::from("/tmp/resume.jsonl"),
         }))
@@ -1264,7 +1264,7 @@ async fn record_initial_history_resumed_replaced_incomplete_compacted_turn_clear
 
     session
         .record_initial_history(InitialHistory::Resumed(ResumedHistory {
-            conversation_id: ThreadId::default(),
+            conversation_id: ProcessId::default(),
             history: rollout_items,
             rollout_path: PathBuf::from("/tmp/resume.jsonl"),
         }))

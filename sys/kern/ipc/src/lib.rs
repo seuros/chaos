@@ -1,7 +1,7 @@
 pub mod account;
 pub mod api;
-mod thread_id;
-pub use thread_id::ThreadId;
+mod process_id;
+pub use process_id::ProcessId;
 pub mod approvals;
 pub mod config_types;
 pub mod custom_prompts;

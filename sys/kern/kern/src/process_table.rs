@@ -7,7 +7,7 @@ use crate::codex::Codex;
 use crate::codex::CodexSpawnArgs;
 use crate::codex::CodexSpawnOk;
 use crate::codex::INITIAL_SUBMIT_ID;
-use crate::codex_thread::CodexThread;
+use crate::process::Process;
 use crate::config::Config;
 use crate::error::CodexErr;
 use crate::error::Result as CodexResult;
@@ -24,7 +24,7 @@ use crate::rollout::RolloutRecorder;
 use crate::rollout::truncation;
 use crate::shell_snapshot::ShellSnapshot;
 use crate::skills::SkillsManager;
-use chaos_ipc::ThreadId;
+use chaos_ipc::ProcessId;
 use chaos_ipc::config_types::CollaborationModeMask;
 use chaos_ipc::openai_models::ModelPreset;
 use chaos_ipc::protocol::InitialHistory;
@@ -47,23 +47,23 @@ use tokio::sync::RwLock;
 use tokio::sync::broadcast;
 use tracing::warn;
 
-const THREAD_CREATED_CHANNEL_CAPACITY: usize = 1024;
-/// Test-only override for enabling thread-manager behaviors used by integration
+const PROCESS_CREATED_CHANNEL_CAPACITY: usize = 1024;
+/// Test-only override for enabling process-table behaviors used by integration
 /// tests.
 ///
 /// In production builds this value should remain at its default (`false`) and
 /// must not be toggled.
-static FORCE_TEST_THREAD_MANAGER_BEHAVIOR: AtomicBool = AtomicBool::new(false);
+static FORCE_TEST_PROCESS_TABLE_BEHAVIOR: AtomicBool = AtomicBool::new(false);
 
-type CapturedOps = Vec<(ThreadId, Op)>;
+type CapturedOps = Vec<(ProcessId, Op)>;
 type SharedCapturedOps = Arc<std::sync::Mutex<CapturedOps>>;
 
-pub(crate) fn set_thread_manager_test_mode_for_tests(enabled: bool) {
-    FORCE_TEST_THREAD_MANAGER_BEHAVIOR.store(enabled, Ordering::Relaxed);
+pub(crate) fn set_process_table_test_mode_for_tests(enabled: bool) {
+    FORCE_TEST_PROCESS_TABLE_BEHAVIOR.store(enabled, Ordering::Relaxed);
 }
 
-fn should_use_test_thread_manager_behavior() -> bool {
-    FORCE_TEST_THREAD_MANAGER_BEHAVIOR.load(Ordering::Relaxed)
+fn should_use_process_table_test_behavior() -> bool {
+    FORCE_TEST_PROCESS_TABLE_BEHAVIOR.load(Ordering::Relaxed)
 }
 
 struct TempCodexHomeGuard {
@@ -77,7 +77,7 @@ impl Drop for TempCodexHomeGuard {
 }
 
 fn build_file_watcher(codex_home: PathBuf, skills_manager: Arc<SkillsManager>) -> Arc<FileWatcher> {
-    if should_use_test_thread_manager_behavior()
+    if should_use_process_table_test_behavior()
         && let Ok(handle) = Handle::try_current()
         && handle.runtime_flavor() == RuntimeFlavor::CurrentThread
     {
@@ -116,19 +116,33 @@ fn build_file_watcher(codex_home: PathBuf, skills_manager: Arc<SkillsManager>) -
     file_watcher
 }
 
-/// Represents a newly created Codex thread (formerly called a conversation), including the first event
+/// Represents a newly created process, including the first event
 /// (which is [`EventMsg::SessionConfigured`]).
-pub struct NewThread {
-    pub thread_id: ThreadId,
-    pub thread: Arc<CodexThread>,
+pub struct NewProcess {
+    pub process_id: ProcessId,
+    pub process: Arc<Process>,
     pub session_configured: SessionConfiguredEvent,
 }
 
+impl NewProcess {
+    pub fn process_id(&self) -> ProcessId {
+        self.process_id
+    }
+
+    pub fn process(&self) -> Arc<Process> {
+        Arc::clone(&self.process)
+    }
+
+    pub fn into_parts(self) -> (ProcessId, Arc<Process>, SessionConfiguredEvent) {
+        (self.process_id, self.process, self.session_configured)
+    }
+}
+
 #[derive(Debug, Default, PartialEq, Eq)]
-pub struct ThreadShutdownReport {
-    pub completed: Vec<ThreadId>,
-    pub submit_failed: Vec<ThreadId>,
-    pub timed_out: Vec<ThreadId>,
+pub struct ProcessShutdownReport {
+    pub completed: Vec<ProcessId>,
+    pub submit_failed: Vec<ProcessId>,
+    pub timed_out: Vec<ProcessId>,
 }
 
 enum ShutdownOutcome {
@@ -137,19 +151,19 @@ enum ShutdownOutcome {
     TimedOut,
 }
 
-/// [`ThreadManager`] is responsible for creating threads and maintaining
+/// [`ProcessTable`] is responsible for creating processes and maintaining
 /// them in memory.
-pub struct ThreadManager {
-    state: Arc<ThreadManagerState>,
+pub struct ProcessTable {
+    state: Arc<ProcessTableState>,
     _test_codex_home_guard: Option<TempCodexHomeGuard>,
 }
 
-/// Shared, `Arc`-owned state for [`ThreadManager`]. This `Arc` is required to have a single
+/// Shared, `Arc`-owned state for [`ProcessTable`]. This `Arc` is required to have a single
 /// `Arc` reference that can be downgraded to by `AgentControl` while preventing every single
 /// function to require an `Arc<&Self>`.
-pub(crate) struct ThreadManagerState {
-    threads: Arc<RwLock<HashMap<ThreadId, Arc<CodexThread>>>>,
-    thread_created_tx: broadcast::Sender<ThreadId>,
+pub(crate) struct ProcessTableState {
+    processes: Arc<RwLock<HashMap<ProcessId, Arc<Process>>>>,
+    process_created_tx: broadcast::Sender<ProcessId>,
     auth_manager: Arc<AuthManager>,
     models_manager: Arc<ModelsManager>,
     skills_manager: Arc<SkillsManager>,
@@ -161,7 +175,7 @@ pub(crate) struct ThreadManagerState {
     ops_log: Option<SharedCapturedOps>,
 }
 
-impl ThreadManager {
+impl ProcessTable {
     pub fn new(
         config: &Config,
         auth_manager: Arc<AuthManager>,
@@ -174,7 +188,7 @@ impl ThreadManager {
             .get(OPENAI_PROVIDER_ID)
             .cloned()
             .unwrap_or_else(|| ModelProviderInfo::create_openai_provider(/*base_url*/ None));
-        let (thread_created_tx, _) = broadcast::channel(THREAD_CREATED_CHANNEL_CAPACITY);
+        let (process_created_tx, _) = broadcast::channel(PROCESS_CREATED_CHANNEL_CAPACITY);
         let plugins_manager = Arc::new(PluginsManager::new(codex_home.clone()));
         let mcp_manager = Arc::new(McpManager::new(Arc::clone(&plugins_manager)));
         let skills_manager = Arc::new(SkillsManager::new(
@@ -184,9 +198,9 @@ impl ThreadManager {
         ));
         let file_watcher = build_file_watcher(codex_home.clone(), Arc::clone(&skills_manager));
         Self {
-            state: Arc::new(ThreadManagerState {
-                threads: Arc::new(RwLock::new(HashMap::new())),
-                thread_created_tx,
+            state: Arc::new(ProcessTableState {
+                processes: Arc::new(RwLock::new(HashMap::new())),
+                process_created_tx,
                 models_manager: Arc::new(ModelsManager::new_with_provider(
                     codex_home,
                     auth_manager.clone(),
@@ -200,7 +214,7 @@ impl ThreadManager {
                 file_watcher,
                 auth_manager,
                 session_source,
-                ops_log: should_use_test_thread_manager_behavior()
+                ops_log: should_use_process_table_test_behavior()
                     .then(|| Arc::new(std::sync::Mutex::new(Vec::new()))),
             }),
             _test_codex_home_guard: None,
@@ -213,7 +227,7 @@ impl ThreadManager {
         auth: CodexAuth,
         provider: ModelProviderInfo,
     ) -> Self {
-        set_thread_manager_test_mode_for_tests(/*enabled*/ true);
+        set_process_table_test_mode_for_tests(/*enabled*/ true);
         let codex_home = std::env::temp_dir().join(format!(
             "codex-thread-manager-test-{}",
             uuid::Uuid::new_v4()
@@ -233,9 +247,9 @@ impl ThreadManager {
         provider: ModelProviderInfo,
         codex_home: PathBuf,
     ) -> Self {
-        set_thread_manager_test_mode_for_tests(/*enabled*/ true);
+        set_process_table_test_mode_for_tests(/*enabled*/ true);
         let auth_manager = AuthManager::from_auth_for_testing(auth);
-        let (thread_created_tx, _) = broadcast::channel(THREAD_CREATED_CHANNEL_CAPACITY);
+        let (process_created_tx, _) = broadcast::channel(PROCESS_CREATED_CHANNEL_CAPACITY);
         let plugins_manager = Arc::new(PluginsManager::new(codex_home.clone()));
         let mcp_manager = Arc::new(McpManager::new(Arc::clone(&plugins_manager)));
         let skills_manager = Arc::new(SkillsManager::new(
@@ -245,9 +259,9 @@ impl ThreadManager {
         ));
         let file_watcher = build_file_watcher(codex_home.clone(), Arc::clone(&skills_manager));
         Self {
-            state: Arc::new(ThreadManagerState {
-                threads: Arc::new(RwLock::new(HashMap::new())),
-                thread_created_tx,
+            state: Arc::new(ProcessTableState {
+                processes: Arc::new(RwLock::new(HashMap::new())),
+                process_created_tx,
                 models_manager: Arc::new(ModelsManager::with_provider_for_tests(
                     codex_home,
                     auth_manager.clone(),
@@ -259,7 +273,7 @@ impl ThreadManager {
                 file_watcher,
                 auth_manager,
                 session_source: SessionSource::Exec,
-                ops_log: should_use_test_thread_manager_behavior()
+                ops_log: should_use_process_table_test_behavior()
                     .then(|| Arc::new(std::sync::Mutex::new(Vec::new()))),
             }),
             _test_codex_home_guard: None,
@@ -304,21 +318,21 @@ impl ThreadManager {
         self.state.models_manager.list_collaboration_modes()
     }
 
-    pub async fn list_thread_ids(&self) -> Vec<ThreadId> {
-        self.state.list_thread_ids().await
+    pub async fn list_process_ids(&self) -> Vec<ProcessId> {
+        self.state.list_process_ids().await
     }
 
     pub async fn refresh_mcp_servers(&self, refresh_config: McpServerRefreshConfig) {
-        let threads = self
+        let processes = self
             .state
-            .threads
+            .processes
             .read()
             .await
             .values()
             .cloned()
             .collect::<Vec<_>>();
-        for thread in threads {
-            if let Err(err) = thread
+        for process in processes {
+            if let Err(err) = process
                 .submit(Op::RefreshMcpServers {
                     config: refresh_config.clone(),
                 })
@@ -329,18 +343,18 @@ impl ThreadManager {
         }
     }
 
-    pub fn subscribe_thread_created(&self) -> broadcast::Receiver<ThreadId> {
-        self.state.thread_created_tx.subscribe()
+    pub fn subscribe_process_created(&self) -> broadcast::Receiver<ProcessId> {
+        self.state.process_created_tx.subscribe()
     }
 
-    pub async fn get_thread(&self, thread_id: ThreadId) -> CodexResult<Arc<CodexThread>> {
-        self.state.get_thread(thread_id).await
+    pub async fn get_process(&self, process_id: ProcessId) -> CodexResult<Arc<Process>> {
+        self.state.get_process(process_id).await
     }
 
-    pub async fn start_thread(&self, config: Config) -> CodexResult<NewThread> {
+    pub async fn start_process(&self, config: Config) -> CodexResult<NewProcess> {
         // Box delegated thread-spawn futures so these convenience wrappers do
         // not inline the full spawn path into every caller's async state.
-        Box::pin(self.start_thread_with_tools(
+        Box::pin(self.start_process_with_tools(
             config,
             Vec::new(),
             /*persist_extended_history*/ false,
@@ -348,13 +362,13 @@ impl ThreadManager {
         .await
     }
 
-    pub async fn start_thread_with_tools(
+    pub async fn start_process_with_tools(
         &self,
         config: Config,
         dynamic_tools: Vec<chaos_ipc::dynamic_tools::DynamicToolSpec>,
         persist_extended_history: bool,
-    ) -> CodexResult<NewThread> {
-        Box::pin(self.start_thread_with_tools_and_service_name(
+    ) -> CodexResult<NewProcess> {
+        Box::pin(self.start_process_with_tools_and_service_name(
             config,
             dynamic_tools,
             persist_extended_history,
@@ -364,15 +378,15 @@ impl ThreadManager {
         .await
     }
 
-    pub async fn start_thread_with_tools_and_service_name(
+    pub async fn start_process_with_tools_and_service_name(
         &self,
         config: Config,
         dynamic_tools: Vec<chaos_ipc::dynamic_tools::DynamicToolSpec>,
         persist_extended_history: bool,
         metrics_service_name: Option<String>,
         parent_trace: Option<W3cTraceContext>,
-    ) -> CodexResult<NewThread> {
-        Box::pin(self.state.spawn_thread(
+    ) -> CodexResult<NewProcess> {
+        Box::pin(self.state.spawn_process(
             config,
             InitialHistory::New,
             Arc::clone(&self.state.auth_manager),
@@ -385,15 +399,15 @@ impl ThreadManager {
         .await
     }
 
-    pub async fn resume_thread_from_rollout(
+    pub async fn resume_process_from_rollout(
         &self,
         config: Config,
         rollout_path: PathBuf,
         auth_manager: Arc<AuthManager>,
         parent_trace: Option<W3cTraceContext>,
-    ) -> CodexResult<NewThread> {
+    ) -> CodexResult<NewProcess> {
         let initial_history = RolloutRecorder::get_rollout_history(&rollout_path).await?;
-        Box::pin(self.resume_thread_with_history(
+        Box::pin(self.resume_process_with_history(
             config,
             initial_history,
             auth_manager,
@@ -403,15 +417,15 @@ impl ThreadManager {
         .await
     }
 
-    pub async fn resume_thread_with_history(
+    pub async fn resume_process_with_history(
         &self,
         config: Config,
         initial_history: InitialHistory,
         auth_manager: Arc<AuthManager>,
         persist_extended_history: bool,
         parent_trace: Option<W3cTraceContext>,
-    ) -> CodexResult<NewThread> {
-        Box::pin(self.state.spawn_thread(
+    ) -> CodexResult<NewProcess> {
+        Box::pin(self.state.spawn_process(
             config,
             initial_history,
             auth_manager,
@@ -424,50 +438,54 @@ impl ThreadManager {
         .await
     }
 
-    /// Removes the thread from the manager's internal map, though the thread is stored
-    /// as `Arc<CodexThread>`, it is possible that other references to it exist elsewhere.
-    /// Returns the thread if the thread was found and removed.
-    pub async fn remove_thread(&self, thread_id: &ThreadId) -> Option<Arc<CodexThread>> {
-        self.state.threads.write().await.remove(thread_id)
+    /// Removes the process from the manager's internal map. Though the process is
+    /// stored as `Arc<Process>`, other references may still exist elsewhere.
+    /// Returns the process if it was found and removed.
+    pub async fn remove_process(&self, process_id: &ProcessId) -> Option<Arc<Process>> {
+        self.state.remove_process(process_id).await
     }
 
-    /// Tries to shut down all tracked threads concurrently within the provided timeout.
-    /// Threads that complete shutdown are removed from the manager; incomplete shutdowns
+    /// Tries to shut down all tracked processes concurrently within the provided timeout.
+    /// Processes that complete shutdown are removed from the manager; incomplete shutdowns
     /// remain tracked so callers can retry or inspect them later.
-    pub async fn shutdown_all_threads_bounded(&self, timeout: Duration) -> ThreadShutdownReport {
-        let threads = {
-            let threads = self.state.threads.read().await;
-            threads
+    pub async fn shutdown_all_processes_bounded(
+        &self,
+        timeout: Duration,
+    ) -> ProcessShutdownReport {
+        let processes = {
+            let processes = self.state.processes.read().await;
+            processes
                 .iter()
-                .map(|(thread_id, thread)| (*thread_id, Arc::clone(thread)))
+                .map(|(process_id, process)| (*process_id, Arc::clone(process)))
                 .collect::<Vec<_>>()
         };
 
-        let mut shutdowns = threads
+        let mut shutdowns = processes
             .into_iter()
-            .map(|(thread_id, thread)| async move {
-                let outcome = match tokio::time::timeout(timeout, thread.shutdown_and_wait()).await
+            .map(|(process_id, process)| async move {
+                let outcome =
+                    match tokio::time::timeout(timeout, process.shutdown_and_wait()).await
                 {
                     Ok(Ok(())) => ShutdownOutcome::Complete,
                     Ok(Err(_)) => ShutdownOutcome::SubmitFailed,
                     Err(_) => ShutdownOutcome::TimedOut,
                 };
-                (thread_id, outcome)
+                (process_id, outcome)
             })
             .collect::<FuturesUnordered<_>>();
-        let mut report = ThreadShutdownReport::default();
+        let mut report = ProcessShutdownReport::default();
 
-        while let Some((thread_id, outcome)) = shutdowns.next().await {
+        while let Some((process_id, outcome)) = shutdowns.next().await {
             match outcome {
-                ShutdownOutcome::Complete => report.completed.push(thread_id),
-                ShutdownOutcome::SubmitFailed => report.submit_failed.push(thread_id),
-                ShutdownOutcome::TimedOut => report.timed_out.push(thread_id),
+                ShutdownOutcome::Complete => report.completed.push(process_id),
+                ShutdownOutcome::SubmitFailed => report.submit_failed.push(process_id),
+                ShutdownOutcome::TimedOut => report.timed_out.push(process_id),
             }
         }
 
-        let mut tracked_threads = self.state.threads.write().await;
-        for thread_id in &report.completed {
-            tracked_threads.remove(thread_id);
+        let mut tracked_processes = self.state.processes.write().await;
+        for process_id in &report.completed {
+            tracked_processes.remove(process_id);
         }
 
         report
@@ -482,21 +500,21 @@ impl ThreadManager {
         report
     }
 
-    /// Fork an existing thread by taking messages up to the given position (not including
-    /// the message at the given position) and starting a new thread with identical
-    /// configuration (unless overridden by the caller's `config`). The new thread will have
+    /// Fork an existing process by taking messages up to the given position (not including
+    /// the message at the given position) and starting a new process with identical
+    /// configuration (unless overridden by the caller's `config`). The new process will have
     /// a fresh id. Pass `usize::MAX` to keep the full rollout history.
-    pub async fn fork_thread(
+    pub async fn fork_process(
         &self,
         nth_user_message: usize,
         config: Config,
         path: PathBuf,
         persist_extended_history: bool,
         parent_trace: Option<W3cTraceContext>,
-    ) -> CodexResult<NewThread> {
+    ) -> CodexResult<NewProcess> {
         let history = RolloutRecorder::get_rollout_history(&path).await?;
         let history = truncate_before_nth_user_message(history, nth_user_message);
-        Box::pin(self.state.spawn_thread(
+        Box::pin(self.state.spawn_process(
             config,
             history,
             Arc::clone(&self.state.auth_manager),
@@ -514,7 +532,7 @@ impl ThreadManager {
     }
 
     #[cfg(test)]
-    pub(crate) fn captured_ops(&self) -> Vec<(ThreadId, Op)> {
+    pub(crate) fn captured_ops(&self) -> Vec<(ProcessId, Op)> {
         self.state
             .ops_log
             .as_ref()
@@ -523,43 +541,43 @@ impl ThreadManager {
     }
 }
 
-impl ThreadManagerState {
-    pub(crate) async fn list_thread_ids(&self) -> Vec<ThreadId> {
-        self.threads.read().await.keys().copied().collect()
+impl ProcessTableState {
+    pub(crate) async fn list_process_ids(&self) -> Vec<ProcessId> {
+        self.processes.read().await.keys().copied().collect()
     }
 
-    /// Fetch a thread by ID or return ThreadNotFound.
-    pub(crate) async fn get_thread(&self, thread_id: ThreadId) -> CodexResult<Arc<CodexThread>> {
-        let threads = self.threads.read().await;
-        threads
-            .get(&thread_id)
+    /// Fetch a process by ID or return ProcessNotFound.
+    pub(crate) async fn get_process(&self, process_id: ProcessId) -> CodexResult<Arc<Process>> {
+        let processes = self.processes.read().await;
+        processes
+            .get(&process_id)
             .cloned()
-            .ok_or_else(|| CodexErr::ThreadNotFound(thread_id))
+            .ok_or_else(|| CodexErr::ProcessNotFound(process_id))
     }
 
-    /// Send an operation to a thread by ID.
-    pub(crate) async fn send_op(&self, thread_id: ThreadId, op: Op) -> CodexResult<String> {
-        let thread = self.get_thread(thread_id).await?;
+    /// Send an operation to a process by ID.
+    pub(crate) async fn send_op(&self, process_id: ProcessId, op: Op) -> CodexResult<String> {
+        let process = self.get_process(process_id).await?;
         if let Some(ops_log) = &self.ops_log
             && let Ok(mut log) = ops_log.lock()
         {
-            log.push((thread_id, op.clone()));
+            log.push((process_id, op.clone()));
         }
-        thread.submit(op).await
+        process.submit(op).await
     }
 
-    /// Remove a thread from the manager by ID, returning it when present.
-    pub(crate) async fn remove_thread(&self, thread_id: &ThreadId) -> Option<Arc<CodexThread>> {
-        self.threads.write().await.remove(thread_id)
+    /// Remove a process from the manager by ID, returning it when present.
+    pub(crate) async fn remove_process(&self, process_id: &ProcessId) -> Option<Arc<Process>> {
+        self.processes.write().await.remove(process_id)
     }
 
     /// Spawn a new thread with no history using a provided config.
-    pub(crate) async fn spawn_new_thread(
+    pub(crate) async fn spawn_new_process(
         &self,
         config: Config,
         agent_control: AgentControl,
-    ) -> CodexResult<NewThread> {
-        Box::pin(self.spawn_new_thread_with_source(
+    ) -> CodexResult<NewProcess> {
+        Box::pin(self.spawn_new_process_with_source(
             config,
             agent_control,
             self.session_source.clone(),
@@ -570,7 +588,7 @@ impl ThreadManagerState {
         .await
     }
 
-    pub(crate) async fn spawn_new_thread_with_source(
+    pub(crate) async fn spawn_new_process_with_source(
         &self,
         config: Config,
         agent_control: AgentControl,
@@ -578,8 +596,8 @@ impl ThreadManagerState {
         persist_extended_history: bool,
         metrics_service_name: Option<String>,
         inherited_shell_snapshot: Option<Arc<ShellSnapshot>>,
-    ) -> CodexResult<NewThread> {
-        Box::pin(self.spawn_thread_with_source(
+    ) -> CodexResult<NewProcess> {
+        Box::pin(self.spawn_process_with_source(
             config,
             InitialHistory::New,
             Arc::clone(&self.auth_manager),
@@ -594,16 +612,16 @@ impl ThreadManagerState {
         .await
     }
 
-    pub(crate) async fn resume_thread_from_rollout_with_source(
+    pub(crate) async fn resume_process_from_rollout_with_source(
         &self,
         config: Config,
         rollout_path: PathBuf,
         agent_control: AgentControl,
         session_source: SessionSource,
         inherited_shell_snapshot: Option<Arc<ShellSnapshot>>,
-    ) -> CodexResult<NewThread> {
+    ) -> CodexResult<NewProcess> {
         let initial_history = RolloutRecorder::get_rollout_history(&rollout_path).await?;
-        Box::pin(self.spawn_thread_with_source(
+        Box::pin(self.spawn_process_with_source(
             config,
             initial_history,
             Arc::clone(&self.auth_manager),
@@ -618,7 +636,7 @@ impl ThreadManagerState {
         .await
     }
 
-    pub(crate) async fn fork_thread_with_source(
+    pub(crate) async fn fork_process_with_source(
         &self,
         config: Config,
         initial_history: InitialHistory,
@@ -626,8 +644,8 @@ impl ThreadManagerState {
         session_source: SessionSource,
         persist_extended_history: bool,
         inherited_shell_snapshot: Option<Arc<ShellSnapshot>>,
-    ) -> CodexResult<NewThread> {
-        Box::pin(self.spawn_thread_with_source(
+    ) -> CodexResult<NewProcess> {
+        Box::pin(self.spawn_process_with_source(
             config,
             initial_history,
             Arc::clone(&self.auth_manager),
@@ -644,7 +662,7 @@ impl ThreadManagerState {
 
     /// Spawn a new thread with optional history and register it with the manager.
     #[allow(clippy::too_many_arguments)]
-    pub(crate) async fn spawn_thread(
+    pub(crate) async fn spawn_process(
         &self,
         config: Config,
         initial_history: InitialHistory,
@@ -654,8 +672,8 @@ impl ThreadManagerState {
         persist_extended_history: bool,
         metrics_service_name: Option<String>,
         parent_trace: Option<W3cTraceContext>,
-    ) -> CodexResult<NewThread> {
-        Box::pin(self.spawn_thread_with_source(
+    ) -> CodexResult<NewProcess> {
+        Box::pin(self.spawn_process_with_source(
             config,
             initial_history,
             auth_manager,
@@ -671,7 +689,7 @@ impl ThreadManagerState {
     }
 
     #[allow(clippy::too_many_arguments)]
-    pub(crate) async fn spawn_thread_with_source(
+    pub(crate) async fn spawn_process_with_source(
         &self,
         config: Config,
         initial_history: InitialHistory,
@@ -683,12 +701,12 @@ impl ThreadManagerState {
         metrics_service_name: Option<String>,
         inherited_shell_snapshot: Option<Arc<ShellSnapshot>>,
         parent_trace: Option<W3cTraceContext>,
-    ) -> CodexResult<NewThread> {
+    ) -> CodexResult<NewProcess> {
         let watch_registration = self
             .file_watcher
             .register_config(&config, self.skills_manager.as_ref());
         let CodexSpawnOk {
-            codex, thread_id, ..
+            codex, process_id, ..
         } = Codex::spawn(CodexSpawnArgs {
             config,
             auth_manager,
@@ -707,16 +725,16 @@ impl ThreadManagerState {
             parent_trace,
         })
         .await?;
-        self.finalize_thread_spawn(codex, thread_id, watch_registration)
+        self.finalize_process_spawn(codex, process_id, watch_registration)
             .await
     }
 
-    async fn finalize_thread_spawn(
+    async fn finalize_process_spawn(
         &self,
         codex: Codex,
-        thread_id: ThreadId,
+        process_id: ProcessId,
         watch_registration: crate::file_watcher::WatchRegistration,
-    ) -> CodexResult<NewThread> {
+    ) -> CodexResult<NewProcess> {
         let event = codex.next_event().await?;
         let session_configured = match event {
             Event {
@@ -728,23 +746,23 @@ impl ThreadManagerState {
             }
         };
 
-        let thread = Arc::new(CodexThread::new(
+        let process = Arc::new(Process::new(
             codex,
             session_configured.rollout_path.clone(),
             watch_registration,
         ));
-        let mut threads = self.threads.write().await;
-        threads.insert(thread_id, thread.clone());
+        let mut processes = self.processes.write().await;
+        processes.insert(process_id, process.clone());
 
-        Ok(NewThread {
-            thread_id,
-            thread,
+        Ok(NewProcess {
+            process_id,
+            process,
             session_configured,
         })
     }
 
-    pub(crate) fn notify_thread_created(&self, thread_id: ThreadId) {
-        let _ = self.thread_created_tx.send(thread_id);
+    pub(crate) fn notify_process_created(&self, process_id: ProcessId) {
+        let _ = self.process_created_tx.send(process_id);
     }
 }
 
@@ -762,5 +780,5 @@ fn truncate_before_nth_user_message(history: InitialHistory, n: usize) -> Initia
 }
 
 #[cfg(test)]
-#[path = "thread_manager_tests.rs"]
+#[path = "process_table_tests.rs"]
 mod tests;

@@ -13,7 +13,7 @@ impl StateRuntime {
 
         let mut tx = self.logs_pool.begin().await?;
         let mut builder = QueryBuilder::<Sqlite>::new(
-            "INSERT INTO logs (ts, ts_nanos, level, target, message, thread_id, process_uuid, module_path, file, line, estimated_bytes) ",
+            "INSERT INTO logs (ts, ts_nanos, level, target, message, process_id, process_uuid, module_path, file, line, estimated_bytes) ",
         );
         builder.push_values(entries, |mut row, entry| {
             let estimated_bytes = entry.message.as_ref().map_or(0, String::len) as i64
@@ -26,7 +26,7 @@ impl StateRuntime {
                 .push_bind(&entry.level)
                 .push_bind(&entry.target)
                 .push_bind(&entry.message)
-                .push_bind(&entry.thread_id)
+                .push_bind(&entry.process_id)
                 .push_bind(&entry.process_uuid)
                 .push_bind(&entry.module_path)
                 .push_bind(&entry.file)
@@ -42,10 +42,10 @@ impl StateRuntime {
     /// Enforce per-partition log size caps after a successful batch insert.
     ///
     /// We maintain two independent budgets:
-    /// - Thread logs: rows with `thread_id IS NOT NULL`, capped per `thread_id`.
-    /// - Threadless process logs: rows with `thread_id IS NULL` ("threadless"),
+    /// - Thread logs: rows with `process_id IS NOT NULL`, capped per `process_id`.
+    /// - Threadless process logs: rows with `process_id IS NULL` ("processless"),
     ///   capped per `process_uuid` (including `process_uuid IS NULL` as its own
-    ///   threadless partition).
+    ///   processless partition).
     ///
     /// "Threadless" means the log row is not associated with any conversation
     /// thread, so retention is keyed by process identity instead.
@@ -57,35 +57,35 @@ impl StateRuntime {
         entries: &[LogEntry],
         tx: &mut SqliteConnection,
     ) -> anyhow::Result<()> {
-        let thread_ids: BTreeSet<&str> = entries
+        let process_ids: BTreeSet<&str> = entries
             .iter()
-            .filter_map(|entry| entry.thread_id.as_deref())
+            .filter_map(|entry| entry.process_id.as_deref())
             .collect();
-        if !thread_ids.is_empty() {
+        if !process_ids.is_empty() {
             // Cheap precheck: only run the heavier window-function prune for
-            // threads that are currently above the cap.
+            // processes that are currently above the cap.
             let mut over_limit_threads_query =
-                QueryBuilder::<Sqlite>::new("SELECT thread_id FROM logs WHERE thread_id IN (");
+                QueryBuilder::<Sqlite>::new("SELECT process_id FROM logs WHERE process_id IN (");
             {
                 let mut separated = over_limit_threads_query.separated(", ");
-                for thread_id in &thread_ids {
-                    separated.push_bind(*thread_id);
+                for process_id in &process_ids {
+                    separated.push_bind(*process_id);
                 }
             }
-            over_limit_threads_query.push(") GROUP BY thread_id HAVING SUM(");
+            over_limit_threads_query.push(") GROUP BY process_id HAVING SUM(");
             over_limit_threads_query.push("estimated_bytes");
             over_limit_threads_query.push(") > ");
             over_limit_threads_query.push_bind(LOG_PARTITION_SIZE_LIMIT_BYTES);
             over_limit_threads_query.push(" OR COUNT(*) > ");
             over_limit_threads_query.push_bind(LOG_PARTITION_ROW_LIMIT);
-            let over_limit_thread_ids: Vec<String> = over_limit_threads_query
+            let over_limit_process_ids: Vec<String> = over_limit_threads_query
                 .build()
                 .fetch_all(&mut *tx)
                 .await?
                 .into_iter()
-                .map(|row| row.try_get("thread_id"))
+                .map(|row| row.try_get("process_id"))
                 .collect::<Result<_, _>>()?;
-            if !over_limit_thread_ids.is_empty() {
+            if !over_limit_process_ids.is_empty() {
                 // Enforce a strict per-thread cap by deleting every row whose
                 // newest-first cumulative bytes exceed the partition budget.
                 let mut prune_threads = QueryBuilder::<Sqlite>::new(
@@ -103,21 +103,21 @@ WHERE id IN (
                 prune_threads.push(
                     r#"
             ) OVER (
-                PARTITION BY thread_id
+                PARTITION BY process_id
                 ORDER BY ts DESC, ts_nanos DESC, id DESC
             ) AS cumulative_bytes,
             ROW_NUMBER() OVER (
-                PARTITION BY thread_id
+                PARTITION BY process_id
                 ORDER BY ts DESC, ts_nanos DESC, id DESC
             ) AS row_number
         FROM logs
-        WHERE thread_id IN (
+        WHERE process_id IN (
 "#,
                 );
                 {
                     let mut separated = prune_threads.separated(", ");
-                    for thread_id in &over_limit_thread_ids {
-                        separated.push_bind(thread_id);
+                    for process_id in &over_limit_process_ids {
+                        separated.push_bind(process_id);
                     }
                 }
                 prune_threads.push(
@@ -135,22 +135,22 @@ WHERE id IN (
             }
         }
 
-        let threadless_process_uuids: BTreeSet<&str> = entries
+        let processless_process_uuids: BTreeSet<&str> = entries
             .iter()
-            .filter(|entry| entry.thread_id.is_none())
+            .filter(|entry| entry.process_id.is_none())
             .filter_map(|entry| entry.process_uuid.as_deref())
             .collect();
-        let has_threadless_null_process_uuid = entries
+        let has_processless_null_process_uuid = entries
             .iter()
-            .any(|entry| entry.thread_id.is_none() && entry.process_uuid.is_none());
-        if !threadless_process_uuids.is_empty() {
+            .any(|entry| entry.process_id.is_none() && entry.process_uuid.is_none());
+        if !processless_process_uuids.is_empty() {
             // Threadless logs are budgeted separately per process UUID.
             let mut over_limit_processes_query = QueryBuilder::<Sqlite>::new(
-                "SELECT process_uuid FROM logs WHERE thread_id IS NULL AND process_uuid IN (",
+                "SELECT process_uuid FROM logs WHERE process_id IS NULL AND process_uuid IN (",
             );
             {
                 let mut separated = over_limit_processes_query.separated(", ");
-                for process_uuid in &threadless_process_uuids {
+                for process_uuid in &processless_process_uuids {
                     separated.push_bind(*process_uuid);
                 }
             }
@@ -169,8 +169,8 @@ WHERE id IN (
                 .collect::<Result<_, _>>()?;
             if !over_limit_process_uuids.is_empty() {
                 // Same strict cap policy as thread pruning, but only for
-                // threadless rows in the affected process UUIDs.
-                let mut prune_threadless_process_logs = QueryBuilder::<Sqlite>::new(
+                // processless rows in the affected process UUIDs.
+                let mut prune_processless_process_logs = QueryBuilder::<Sqlite>::new(
                     r#"
 DELETE FROM logs
 WHERE id IN (
@@ -181,8 +181,8 @@ WHERE id IN (
             SUM(
 "#,
                 );
-                prune_threadless_process_logs.push("estimated_bytes");
-                prune_threadless_process_logs.push(
+                prune_processless_process_logs.push("estimated_bytes");
+                prune_processless_process_logs.push(
                     r#"
             ) OVER (
                 PARTITION BY process_uuid
@@ -193,40 +193,40 @@ WHERE id IN (
                 ORDER BY ts DESC, ts_nanos DESC, id DESC
             ) AS row_number
         FROM logs
-        WHERE thread_id IS NULL
+        WHERE process_id IS NULL
           AND process_uuid IN (
 "#,
                 );
                 {
-                    let mut separated = prune_threadless_process_logs.separated(", ");
+                    let mut separated = prune_processless_process_logs.separated(", ");
                     for process_uuid in &over_limit_process_uuids {
                         separated.push_bind(process_uuid);
                     }
                 }
-                prune_threadless_process_logs.push(
+                prune_processless_process_logs.push(
                     r#"
           )
     )
     WHERE cumulative_bytes >
 "#,
                 );
-                prune_threadless_process_logs.push_bind(LOG_PARTITION_SIZE_LIMIT_BYTES);
-                prune_threadless_process_logs.push(" OR row_number > ");
-                prune_threadless_process_logs.push_bind(LOG_PARTITION_ROW_LIMIT);
-                prune_threadless_process_logs.push("\n)");
-                prune_threadless_process_logs
+                prune_processless_process_logs.push_bind(LOG_PARTITION_SIZE_LIMIT_BYTES);
+                prune_processless_process_logs.push(" OR row_number > ");
+                prune_processless_process_logs.push_bind(LOG_PARTITION_ROW_LIMIT);
+                prune_processless_process_logs.push("\n)");
+                prune_processless_process_logs
                     .build()
                     .execute(&mut *tx)
                     .await?;
             }
         }
-        if has_threadless_null_process_uuid {
+        if has_processless_null_process_uuid {
             // Rows without a process UUID still need a cap; treat NULL as its
-            // own threadless partition.
+            // own processless partition.
             let mut null_process_usage_query = QueryBuilder::<Sqlite>::new("SELECT SUM(");
             null_process_usage_query.push("estimated_bytes");
             null_process_usage_query.push(
-                ") AS total_bytes, COUNT(*) AS row_count FROM logs WHERE thread_id IS NULL AND process_uuid IS NULL",
+                ") AS total_bytes, COUNT(*) AS row_count FROM logs WHERE process_id IS NULL AND process_uuid IS NULL",
             );
             let null_process_usage = null_process_usage_query.build().fetch_one(&mut *tx).await?;
             let total_null_process_bytes: Option<i64> =
@@ -236,7 +236,7 @@ WHERE id IN (
             if total_null_process_bytes.unwrap_or(0) > LOG_PARTITION_SIZE_LIMIT_BYTES
                 || null_process_row_count > LOG_PARTITION_ROW_LIMIT
             {
-                let mut prune_threadless_null_process_logs = QueryBuilder::<Sqlite>::new(
+                let mut prune_processless_null_process_logs = QueryBuilder::<Sqlite>::new(
                     r#"
 DELETE FROM logs
 WHERE id IN (
@@ -247,8 +247,8 @@ WHERE id IN (
             SUM(
 "#,
                 );
-                prune_threadless_null_process_logs.push("estimated_bytes");
-                prune_threadless_null_process_logs.push(
+                prune_processless_null_process_logs.push("estimated_bytes");
+                prune_processless_null_process_logs.push(
                     r#"
             ) OVER (
                 PARTITION BY process_uuid
@@ -259,17 +259,17 @@ WHERE id IN (
                 ORDER BY ts DESC, ts_nanos DESC, id DESC
             ) AS row_number
         FROM logs
-        WHERE thread_id IS NULL
+        WHERE process_id IS NULL
           AND process_uuid IS NULL
     )
     WHERE cumulative_bytes >
 "#,
                 );
-                prune_threadless_null_process_logs.push_bind(LOG_PARTITION_SIZE_LIMIT_BYTES);
-                prune_threadless_null_process_logs.push(" OR row_number > ");
-                prune_threadless_null_process_logs.push_bind(LOG_PARTITION_ROW_LIMIT);
-                prune_threadless_null_process_logs.push("\n)");
-                prune_threadless_null_process_logs
+                prune_processless_null_process_logs.push_bind(LOG_PARTITION_SIZE_LIMIT_BYTES);
+                prune_processless_null_process_logs.push(" OR row_number > ");
+                prune_processless_null_process_logs.push_bind(LOG_PARTITION_ROW_LIMIT);
+                prune_processless_null_process_logs.push("\n)");
+                prune_processless_null_process_logs
                     .build()
                     .execute(&mut *tx)
                     .await?;
@@ -289,7 +289,7 @@ WHERE id IN (
     /// Query logs with optional filters.
     pub async fn query_logs(&self, query: &LogQuery) -> anyhow::Result<Vec<LogRow>> {
         let mut builder = QueryBuilder::<Sqlite>::new(
-            "SELECT id, ts, ts_nanos, level, target, message, thread_id, process_uuid, file, line FROM logs WHERE 1 = 1",
+            "SELECT id, ts, ts_nanos, level, target, message, process_id, process_uuid, file, line FROM logs WHERE 1 = 1",
         );
         push_log_filters(&mut builder, query);
         if query.descending {
@@ -309,7 +309,7 @@ WHERE id IN (
     }
 
     /// Query per-thread feedback logs, capped to the per-thread SQLite retention budget.
-    pub async fn query_feedback_logs(&self, thread_id: &str) -> anyhow::Result<Vec<u8>> {
+    pub async fn query_feedback_logs(&self, process_id: &str) -> anyhow::Result<Vec<u8>> {
         let max_bytes = LOG_PARTITION_SIZE_LIMIT_BYTES;
         // TODO(ccunningham): Store rendered span/event fields in SQLite so this
         // export can match feedback formatting beyond timestamp + level + message.
@@ -318,7 +318,7 @@ WHERE id IN (
 WITH latest_process AS (
     SELECT process_uuid
     FROM logs
-    WHERE thread_id = ? AND process_uuid IS NOT NULL
+    WHERE process_id = ? AND process_uuid IS NOT NULL
     ORDER BY ts DESC, ts_nanos DESC, id DESC
     LIMIT 1
 ),
@@ -351,9 +351,9 @@ feedback_logs AS (
         id
     FROM logs
     WHERE message IS NOT NULL AND (
-        thread_id = ?
+        process_id = ?
         OR (
-            thread_id IS NULL
+            process_id IS NULL
             AND process_uuid IN (SELECT process_uuid FROM latest_process)
         )
     )
@@ -374,8 +374,8 @@ WHERE cumulative_bytes <= ?
 ORDER BY ts ASC, ts_nanos ASC, id ASC
 "#,
         )
-        .bind(thread_id)
-        .bind(thread_id)
+        .bind(process_id)
+        .bind(process_id)
         .bind(max_bytes)
         .fetch_all(self.logs_pool.as_ref())
         .await?;
@@ -408,22 +408,22 @@ fn push_log_filters<'a>(builder: &mut QueryBuilder<'a, Sqlite>, query: &'a LogQu
     }
     push_like_filters(builder, "module_path", &query.module_like);
     push_like_filters(builder, "file", &query.file_like);
-    let has_thread_filter = !query.thread_ids.is_empty() || query.include_threadless;
-    if has_thread_filter {
+    let has_process_filter = !query.process_ids.is_empty() || query.include_processless;
+    if has_process_filter {
         builder.push(" AND (");
         let mut needs_or = false;
-        for thread_id in &query.thread_ids {
+        for process_id in &query.process_ids {
             if needs_or {
                 builder.push(" OR ");
             }
-            builder.push("thread_id = ").push_bind(thread_id.as_str());
+            builder.push("process_id = ").push_bind(process_id.as_str());
             needs_or = true;
         }
-        if query.include_threadless {
+        if query.include_processless {
             if needs_or {
                 builder.push(" OR ");
             }
-            builder.push("thread_id IS NULL");
+            builder.push("process_id IS NULL");
         }
         builder.push(")");
     }
@@ -506,7 +506,7 @@ mod tests {
                 level: "INFO".to_string(),
                 target: "cli".to_string(),
                 message: Some("dedicated-log-db".to_string()),
-                thread_id: Some("thread-1".to_string()),
+                process_id: Some("thread-1".to_string()),
                 process_uuid: Some("proc-1".to_string()),
                 module_path: Some("mod".to_string()),
                 file: Some("main.rs".to_string()),
@@ -539,7 +539,7 @@ mod tests {
                     level: "INFO".to_string(),
                     target: "cli".to_string(),
                     message: Some("alpha".to_string()),
-                    thread_id: Some("thread-1".to_string()),
+                    process_id: Some("thread-1".to_string()),
                     process_uuid: None,
                     file: Some("main.rs".to_string()),
                     line: Some(42),
@@ -551,7 +551,7 @@ mod tests {
                     level: "INFO".to_string(),
                     target: "cli".to_string(),
                     message: Some("alphabet".to_string()),
-                    thread_id: Some("thread-1".to_string()),
+                    process_id: Some("thread-1".to_string()),
                     process_uuid: None,
                     file: Some("main.rs".to_string()),
                     line: Some(43),
@@ -591,7 +591,7 @@ mod tests {
                     level: "INFO".to_string(),
                     target: "cli".to_string(),
                     message: Some(six_mebibytes.clone()),
-                    thread_id: Some("thread-1".to_string()),
+                    process_id: Some("thread-1".to_string()),
                     process_uuid: Some("proc-1".to_string()),
                     file: Some("main.rs".to_string()),
                     line: Some(1),
@@ -603,7 +603,7 @@ mod tests {
                     level: "INFO".to_string(),
                     target: "cli".to_string(),
                     message: Some(six_mebibytes.clone()),
-                    thread_id: Some("thread-1".to_string()),
+                    process_id: Some("thread-1".to_string()),
                     process_uuid: Some("proc-1".to_string()),
                     file: Some("main.rs".to_string()),
                     line: Some(2),
@@ -615,7 +615,7 @@ mod tests {
 
         let rows = runtime
             .query_logs(&LogQuery {
-                thread_ids: vec!["thread-1".to_string()],
+                process_ids: vec!["thread-1".to_string()],
                 ..Default::default()
             })
             .await
@@ -642,7 +642,7 @@ mod tests {
                 level: "INFO".to_string(),
                 target: "cli".to_string(),
                 message: Some(eleven_mebibytes),
-                thread_id: Some("thread-oversized".to_string()),
+                process_id: Some("thread-oversized".to_string()),
                 process_uuid: Some("proc-1".to_string()),
                 file: Some("main.rs".to_string()),
                 line: Some(1),
@@ -653,7 +653,7 @@ mod tests {
 
         let rows = runtime
             .query_logs(&LogQuery {
-                thread_ids: vec!["thread-oversized".to_string()],
+                process_ids: vec!["thread-oversized".to_string()],
                 ..Default::default()
             })
             .await
@@ -665,7 +665,7 @@ mod tests {
     }
 
     #[tokio::test]
-    async fn insert_logs_prunes_threadless_rows_per_process_uuid_only() {
+    async fn insert_logs_prunes_processless_rows_per_process_uuid_only() {
         let codex_home = unique_temp_dir();
         let runtime = StateRuntime::init(codex_home.clone(), "test-provider".to_string())
             .await
@@ -680,7 +680,7 @@ mod tests {
                     level: "INFO".to_string(),
                     target: "cli".to_string(),
                     message: Some(six_mebibytes.clone()),
-                    thread_id: None,
+                    process_id: None,
                     process_uuid: Some("proc-1".to_string()),
                     file: Some("main.rs".to_string()),
                     line: Some(1),
@@ -692,7 +692,7 @@ mod tests {
                     level: "INFO".to_string(),
                     target: "cli".to_string(),
                     message: Some(six_mebibytes.clone()),
-                    thread_id: None,
+                    process_id: None,
                     process_uuid: Some("proc-1".to_string()),
                     file: Some("main.rs".to_string()),
                     line: Some(2),
@@ -704,7 +704,7 @@ mod tests {
                     level: "INFO".to_string(),
                     target: "cli".to_string(),
                     message: Some(six_mebibytes),
-                    thread_id: Some("thread-1".to_string()),
+                    process_id: Some("thread-1".to_string()),
                     process_uuid: Some("proc-1".to_string()),
                     file: Some("main.rs".to_string()),
                     line: Some(3),
@@ -716,12 +716,12 @@ mod tests {
 
         let rows = runtime
             .query_logs(&LogQuery {
-                thread_ids: vec!["thread-1".to_string()],
-                include_threadless: true,
+                process_ids: vec!["thread-1".to_string()],
+                include_processless: true,
                 ..Default::default()
             })
             .await
-            .expect("query thread and threadless logs");
+            .expect("query thread and processless logs");
 
         let mut timestamps: Vec<i64> = rows.into_iter().map(|row| row.ts).collect();
         timestamps.sort_unstable();
@@ -731,7 +731,7 @@ mod tests {
     }
 
     #[tokio::test]
-    async fn insert_logs_prunes_single_threadless_process_row_when_it_exceeds_size_limit() {
+    async fn insert_logs_prunes_single_processless_process_row_when_it_exceeds_size_limit() {
         let codex_home = unique_temp_dir();
         let runtime = StateRuntime::init(codex_home.clone(), "test-provider".to_string())
             .await
@@ -745,7 +745,7 @@ mod tests {
                 level: "INFO".to_string(),
                 target: "cli".to_string(),
                 message: Some(eleven_mebibytes),
-                thread_id: None,
+                process_id: None,
                 process_uuid: Some("proc-oversized".to_string()),
                 file: Some("main.rs".to_string()),
                 line: Some(1),
@@ -756,11 +756,11 @@ mod tests {
 
         let rows = runtime
             .query_logs(&LogQuery {
-                include_threadless: true,
+                include_processless: true,
                 ..Default::default()
             })
             .await
-            .expect("query threadless logs");
+            .expect("query processless logs");
 
         assert!(rows.is_empty());
 
@@ -768,7 +768,7 @@ mod tests {
     }
 
     #[tokio::test]
-    async fn insert_logs_prunes_threadless_rows_with_null_process_uuid() {
+    async fn insert_logs_prunes_processless_rows_with_null_process_uuid() {
         let codex_home = unique_temp_dir();
         let runtime = StateRuntime::init(codex_home.clone(), "test-provider".to_string())
             .await
@@ -783,7 +783,7 @@ mod tests {
                     level: "INFO".to_string(),
                     target: "cli".to_string(),
                     message: Some(six_mebibytes.clone()),
-                    thread_id: None,
+                    process_id: None,
                     process_uuid: None,
                     file: Some("main.rs".to_string()),
                     line: Some(1),
@@ -795,7 +795,7 @@ mod tests {
                     level: "INFO".to_string(),
                     target: "cli".to_string(),
                     message: Some(six_mebibytes),
-                    thread_id: None,
+                    process_id: None,
                     process_uuid: None,
                     file: Some("main.rs".to_string()),
                     line: Some(2),
@@ -807,7 +807,7 @@ mod tests {
                     level: "INFO".to_string(),
                     target: "cli".to_string(),
                     message: Some("small".to_string()),
-                    thread_id: None,
+                    process_id: None,
                     process_uuid: Some("proc-1".to_string()),
                     file: Some("main.rs".to_string()),
                     line: Some(3),
@@ -819,11 +819,11 @@ mod tests {
 
         let rows = runtime
             .query_logs(&LogQuery {
-                include_threadless: true,
+                include_processless: true,
                 ..Default::default()
             })
             .await
-            .expect("query threadless logs");
+            .expect("query processless logs");
 
         let mut timestamps: Vec<i64> = rows.into_iter().map(|row| row.ts).collect();
         timestamps.sort_unstable();
@@ -833,7 +833,7 @@ mod tests {
     }
 
     #[tokio::test]
-    async fn insert_logs_prunes_single_threadless_null_process_row_when_it_exceeds_limit() {
+    async fn insert_logs_prunes_single_processless_null_process_row_when_it_exceeds_limit() {
         let codex_home = unique_temp_dir();
         let runtime = StateRuntime::init(codex_home.clone(), "test-provider".to_string())
             .await
@@ -847,7 +847,7 @@ mod tests {
                 level: "INFO".to_string(),
                 target: "cli".to_string(),
                 message: Some(eleven_mebibytes),
-                thread_id: None,
+                process_id: None,
                 process_uuid: None,
                 file: Some("main.rs".to_string()),
                 line: Some(1),
@@ -858,11 +858,11 @@ mod tests {
 
         let rows = runtime
             .query_logs(&LogQuery {
-                include_threadless: true,
+                include_processless: true,
                 ..Default::default()
             })
             .await
-            .expect("query threadless logs");
+            .expect("query processless logs");
 
         assert!(rows.is_empty());
 
@@ -883,7 +883,7 @@ mod tests {
                 level: "INFO".to_string(),
                 target: "cli".to_string(),
                 message: Some(format!("thread-row-{ts}")),
-                thread_id: Some("thread-row-limit".to_string()),
+                process_id: Some("thread-row-limit".to_string()),
                 process_uuid: Some("proc-1".to_string()),
                 file: Some("main.rs".to_string()),
                 line: Some(ts),
@@ -897,7 +897,7 @@ mod tests {
 
         let rows = runtime
             .query_logs(&LogQuery {
-                thread_ids: vec!["thread-row-limit".to_string()],
+                process_ids: vec!["thread-row-limit".to_string()],
                 ..Default::default()
             })
             .await
@@ -912,7 +912,7 @@ mod tests {
     }
 
     #[tokio::test]
-    async fn insert_logs_prunes_old_threadless_rows_when_process_exceeds_row_limit() {
+    async fn insert_logs_prunes_old_processless_rows_when_process_exceeds_row_limit() {
         let codex_home = unique_temp_dir();
         let runtime = StateRuntime::init(codex_home.clone(), "test-provider".to_string())
             .await
@@ -925,7 +925,7 @@ mod tests {
                 level: "INFO".to_string(),
                 target: "cli".to_string(),
                 message: Some(format!("process-row-{ts}")),
-                thread_id: None,
+                process_id: None,
                 process_uuid: Some("proc-row-limit".to_string()),
                 file: Some("main.rs".to_string()),
                 line: Some(ts),
@@ -939,11 +939,11 @@ mod tests {
 
         let rows = runtime
             .query_logs(&LogQuery {
-                include_threadless: true,
+                include_processless: true,
                 ..Default::default()
             })
             .await
-            .expect("query threadless logs");
+            .expect("query processless logs");
 
         let timestamps: Vec<i64> = rows
             .into_iter()
@@ -958,7 +958,7 @@ mod tests {
     }
 
     #[tokio::test]
-    async fn insert_logs_prunes_old_threadless_null_process_rows_when_row_limit_exceeded() {
+    async fn insert_logs_prunes_old_processless_null_process_rows_when_row_limit_exceeded() {
         let codex_home = unique_temp_dir();
         let runtime = StateRuntime::init(codex_home.clone(), "test-provider".to_string())
             .await
@@ -971,7 +971,7 @@ mod tests {
                 level: "INFO".to_string(),
                 target: "cli".to_string(),
                 message: Some(format!("null-process-row-{ts}")),
-                thread_id: None,
+                process_id: None,
                 process_uuid: None,
                 file: Some("main.rs".to_string()),
                 line: Some(ts),
@@ -985,11 +985,11 @@ mod tests {
 
         let rows = runtime
             .query_logs(&LogQuery {
-                include_threadless: true,
+                include_processless: true,
                 ..Default::default()
             })
             .await
-            .expect("query threadless logs");
+            .expect("query processless logs");
 
         let timestamps: Vec<i64> = rows
             .into_iter()
@@ -1018,7 +1018,7 @@ mod tests {
                     level: "INFO".to_string(),
                     target: "cli".to_string(),
                     message: Some("alpha".to_string()),
-                    thread_id: Some("thread-1".to_string()),
+                    process_id: Some("thread-1".to_string()),
                     process_uuid: Some("proc-1".to_string()),
                     file: None,
                     line: None,
@@ -1030,7 +1030,7 @@ mod tests {
                     level: "INFO".to_string(),
                     target: "cli".to_string(),
                     message: Some("bravo".to_string()),
-                    thread_id: Some("thread-1".to_string()),
+                    process_id: Some("thread-1".to_string()),
                     process_uuid: Some("proc-1".to_string()),
                     file: None,
                     line: None,
@@ -1042,7 +1042,7 @@ mod tests {
                     level: "INFO".to_string(),
                     target: "cli".to_string(),
                     message: Some("charlie".to_string()),
-                    thread_id: Some("thread-1".to_string()),
+                    process_id: Some("thread-1".to_string()),
                     process_uuid: Some("proc-1".to_string()),
                     file: None,
                     line: None,
@@ -1081,7 +1081,7 @@ mod tests {
                     level: "INFO".to_string(),
                     target: "cli".to_string(),
                     message: Some("small".to_string()),
-                    thread_id: Some("thread-oversized".to_string()),
+                    process_id: Some("thread-oversized".to_string()),
                     process_uuid: Some("proc-1".to_string()),
                     file: None,
                     line: None,
@@ -1093,7 +1093,7 @@ mod tests {
                     level: "INFO".to_string(),
                     target: "cli".to_string(),
                     message: Some(eleven_mebibytes),
-                    thread_id: Some("thread-oversized".to_string()),
+                    process_id: Some("thread-oversized".to_string()),
                     process_uuid: Some("proc-1".to_string()),
                     file: None,
                     line: None,
@@ -1114,7 +1114,7 @@ mod tests {
     }
 
     #[tokio::test]
-    async fn query_feedback_logs_includes_threadless_rows_from_same_process() {
+    async fn query_feedback_logs_includes_processless_rows_from_same_process() {
         let codex_home = unique_temp_dir();
         let runtime = StateRuntime::init(codex_home.clone(), "test-provider".to_string())
             .await
@@ -1127,8 +1127,8 @@ mod tests {
                     ts_nanos: 0,
                     level: "INFO".to_string(),
                     target: "cli".to_string(),
-                    message: Some("threadless-before".to_string()),
-                    thread_id: None,
+                    message: Some("processless-before".to_string()),
+                    process_id: None,
                     process_uuid: Some("proc-1".to_string()),
                     file: None,
                     line: None,
@@ -1139,8 +1139,8 @@ mod tests {
                     ts_nanos: 0,
                     level: "INFO".to_string(),
                     target: "cli".to_string(),
-                    message: Some("thread-scoped".to_string()),
-                    thread_id: Some("thread-1".to_string()),
+                    message: Some("process-scoped".to_string()),
+                    process_id: Some("thread-1".to_string()),
                     process_uuid: Some("proc-1".to_string()),
                     file: None,
                     line: None,
@@ -1151,8 +1151,8 @@ mod tests {
                     ts_nanos: 0,
                     level: "INFO".to_string(),
                     target: "cli".to_string(),
-                    message: Some("threadless-after".to_string()),
-                    thread_id: None,
+                    message: Some("processless-after".to_string()),
+                    process_id: None,
                     process_uuid: Some("proc-1".to_string()),
                     file: None,
                     line: None,
@@ -1163,8 +1163,8 @@ mod tests {
                     ts_nanos: 0,
                     level: "INFO".to_string(),
                     target: "cli".to_string(),
-                    message: Some("other-process-threadless".to_string()),
-                    thread_id: None,
+                    message: Some("other-process-processless".to_string()),
+                    process_id: None,
                     process_uuid: Some("proc-2".to_string()),
                     file: None,
                     line: None,
@@ -1181,14 +1181,14 @@ mod tests {
 
         assert_eq!(
             String::from_utf8(bytes).expect("valid utf-8"),
-            "1970-01-01T00:00:01.000000Z  INFO threadless-before\n1970-01-01T00:00:02.000000Z  INFO thread-scoped\n1970-01-01T00:00:03.000000Z  INFO threadless-after\n"
+            "1970-01-01T00:00:01.000000Z  INFO processless-before\n1970-01-01T00:00:02.000000Z  INFO process-scoped\n1970-01-01T00:00:03.000000Z  INFO processless-after\n"
         );
 
         let _ = tokio::fs::remove_dir_all(codex_home).await;
     }
 
     #[tokio::test]
-    async fn query_feedback_logs_excludes_threadless_rows_from_prior_processes() {
+    async fn query_feedback_logs_excludes_processless_rows_from_prior_processes() {
         let codex_home = unique_temp_dir();
         let runtime = StateRuntime::init(codex_home.clone(), "test-provider".to_string())
             .await
@@ -1201,8 +1201,8 @@ mod tests {
                     ts_nanos: 0,
                     level: "INFO".to_string(),
                     target: "cli".to_string(),
-                    message: Some("old-process-threadless".to_string()),
-                    thread_id: None,
+                    message: Some("old-process-processless".to_string()),
+                    process_id: None,
                     process_uuid: Some("proc-old".to_string()),
                     file: None,
                     line: None,
@@ -1214,7 +1214,7 @@ mod tests {
                     level: "INFO".to_string(),
                     target: "cli".to_string(),
                     message: Some("old-process-thread".to_string()),
-                    thread_id: Some("thread-1".to_string()),
+                    process_id: Some("thread-1".to_string()),
                     process_uuid: Some("proc-old".to_string()),
                     file: None,
                     line: None,
@@ -1226,7 +1226,7 @@ mod tests {
                     level: "INFO".to_string(),
                     target: "cli".to_string(),
                     message: Some("new-process-thread".to_string()),
-                    thread_id: Some("thread-1".to_string()),
+                    process_id: Some("thread-1".to_string()),
                     process_uuid: Some("proc-new".to_string()),
                     file: None,
                     line: None,
@@ -1237,8 +1237,8 @@ mod tests {
                     ts_nanos: 0,
                     level: "INFO".to_string(),
                     target: "cli".to_string(),
-                    message: Some("new-process-threadless".to_string()),
-                    thread_id: None,
+                    message: Some("new-process-processless".to_string()),
+                    process_id: None,
                     process_uuid: Some("proc-new".to_string()),
                     file: None,
                     line: None,
@@ -1255,24 +1255,24 @@ mod tests {
 
         assert_eq!(
             String::from_utf8(bytes).expect("valid utf-8"),
-            "1970-01-01T00:00:02.000000Z  INFO old-process-thread\n1970-01-01T00:00:03.000000Z  INFO new-process-thread\n1970-01-01T00:00:04.000000Z  INFO new-process-threadless\n"
+            "1970-01-01T00:00:02.000000Z  INFO old-process-thread\n1970-01-01T00:00:03.000000Z  INFO new-process-thread\n1970-01-01T00:00:04.000000Z  INFO new-process-processless\n"
         );
 
         let _ = tokio::fs::remove_dir_all(codex_home).await;
     }
 
     #[tokio::test]
-    async fn query_feedback_logs_keeps_newest_suffix_across_thread_and_threadless_logs() {
+    async fn query_feedback_logs_keeps_newest_suffix_across_process_and_processless_logs() {
         let codex_home = unique_temp_dir();
         let runtime = StateRuntime::init(codex_home.clone(), "test-provider".to_string())
             .await
             .expect("initialize runtime");
-        let thread_marker = "thread-scoped-oldest";
-        let threadless_older_marker = "threadless-older";
-        let threadless_newer_marker = "threadless-newer";
-        let five_mebibytes = format!("{threadless_older_marker} {}", "a".repeat(5 * 1024 * 1024));
+        let thread_marker = "process-scoped-oldest";
+        let processless_older_marker = "processless-older";
+        let processless_newer_marker = "processless-newer";
+        let five_mebibytes = format!("{processless_older_marker} {}", "a".repeat(5 * 1024 * 1024));
         let four_and_half_mebibytes = format!(
-            "{threadless_newer_marker} {}",
+            "{processless_newer_marker} {}",
             "b".repeat((9 * 1024 * 1024) / 2)
         );
         let one_mebibyte = format!("{thread_marker} {}", "c".repeat(1024 * 1024));
@@ -1285,7 +1285,7 @@ mod tests {
                     level: "INFO".to_string(),
                     target: "cli".to_string(),
                     message: Some(one_mebibyte.clone()),
-                    thread_id: Some("thread-1".to_string()),
+                    process_id: Some("thread-1".to_string()),
                     process_uuid: Some("proc-1".to_string()),
                     file: None,
                     line: None,
@@ -1297,7 +1297,7 @@ mod tests {
                     level: "INFO".to_string(),
                     target: "cli".to_string(),
                     message: Some(five_mebibytes),
-                    thread_id: None,
+                    process_id: None,
                     process_uuid: Some("proc-1".to_string()),
                     file: None,
                     line: None,
@@ -1309,7 +1309,7 @@ mod tests {
                     level: "INFO".to_string(),
                     target: "cli".to_string(),
                     message: Some(four_and_half_mebibytes),
-                    thread_id: None,
+                    process_id: None,
                     process_uuid: Some("proc-1".to_string()),
                     file: None,
                     line: None,
@@ -1326,8 +1326,8 @@ mod tests {
         let logs = String::from_utf8(bytes).expect("valid utf-8");
 
         assert!(!logs.contains(thread_marker));
-        assert!(logs.contains(threadless_older_marker));
-        assert!(logs.contains(threadless_newer_marker));
+        assert!(logs.contains(processless_older_marker));
+        assert!(logs.contains(processless_newer_marker));
         assert_eq!(logs.matches('\n').count(), 2);
 
         let _ = tokio::fs::remove_dir_all(codex_home).await;

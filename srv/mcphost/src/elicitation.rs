@@ -1,7 +1,7 @@
 use std::sync::Arc;
 
 use crate::outgoing_message::ErrorData;
-use chaos_kern::CodexThread;
+use chaos_kern::Process;
 use chaos_ipc::approvals::ElicitationAction as CoreElicitationAction;
 use chaos_ipc::approvals::ElicitationRequest as CoreElicitationRequest;
 use chaos_ipc::approvals::ElicitationRequestEvent;
@@ -124,7 +124,7 @@ impl ForwardedElicitationRequestParams {
 pub(crate) async fn handle_mcp_server_elicitation_request(
     request: ElicitationRequestEvent,
     outgoing: Arc<OutgoingMessageSender>,
-    codex: Arc<CodexThread>,
+    codex: Arc<Process>,
 ) {
     let params = ForwardedElicitationRequestParams::from_protocol_request(&request.request);
     if !params.is_supported_by(outgoing.as_ref()) {
@@ -192,7 +192,7 @@ async fn on_mcp_server_elicitation_response(
     server_name: String,
     request_id: chaos_ipc::mcp::RequestId,
     receiver: tokio::sync::oneshot::Receiver<Result<Value, ErrorData>>,
-    codex: Arc<CodexThread>,
+    codex: Arc<Process>,
 ) {
     let response = match receiver.await {
         Ok(Ok(value)) => serde_json::from_value::<ApprovalElicitationResponse>(value)
@@ -232,7 +232,7 @@ async fn submit_resolve_elicitation(
     server_name: String,
     request_id: chaos_ipc::mcp::RequestId,
     response: ApprovalElicitationResponse,
-    codex: Arc<CodexThread>,
+    codex: Arc<Process>,
 ) {
     if let Err(err) = codex
         .submit(Op::ResolveElicitation {

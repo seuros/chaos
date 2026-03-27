@@ -1,5 +1,5 @@
 #[cfg(test)]
-use chaos_ipc::ThreadId;
+use chaos_ipc::ProcessId;
 #[cfg(test)]
 use chaos_ipc::protocol::AskForApproval;
 #[cfg(test)]
@@ -16,7 +16,7 @@ use std::time::UNIX_EPOCH;
 use uuid::Uuid;
 
 #[cfg(test)]
-use crate::ThreadMetadata;
+use crate::ProcessMetadata;
 
 #[cfg(test)]
 pub(super) fn unique_temp_dir() -> PathBuf {
@@ -30,15 +30,15 @@ pub(super) fn unique_temp_dir() -> PathBuf {
 }
 
 #[cfg(test)]
-pub(super) fn test_thread_metadata(
+pub(super) fn test_process_metadata(
     codex_home: &Path,
-    thread_id: ThreadId,
+    process_id: ProcessId,
     cwd: PathBuf,
-) -> ThreadMetadata {
+) -> ProcessMetadata {
     let now = jiff::Timestamp::from_second(1_700_000_000).expect("timestamp");
-    ThreadMetadata {
-        id: thread_id,
-        rollout_path: codex_home.join(format!("rollout-{thread_id}.jsonl")),
+    ProcessMetadata {
+        id: process_id,
+        rollout_path: codex_home.join(format!("rollout-{process_id}.jsonl")),
         created_at: now,
         updated_at: now,
         source: "cli".to_string(),

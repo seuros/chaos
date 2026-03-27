@@ -13,18 +13,18 @@ use crate::LogRow;
 use crate::STATE_DB_FILENAME;
 use crate::STATE_DB_VERSION;
 use crate::SortKey;
-use crate::ThreadMetadata;
-use crate::ThreadMetadataBuilder;
-use crate::ThreadsPage;
+use crate::ProcessMetadata;
+use crate::ProcessMetadataBuilder;
+use crate::ProcessesPage;
 use crate::apply_rollout_item;
 use crate::migrations::LOGS_MIGRATOR;
 use crate::migrations::STATE_MIGRATOR;
 use crate::model::AgentJobRow;
-use crate::model::ThreadRow;
+use crate::model::ProcessRow;
 use crate::model::anchor_from_item;
 use crate::model::datetime_to_epoch_seconds;
 use crate::paths::file_modified_time_utc;
-use chaos_ipc::ThreadId;
+use chaos_ipc::ProcessId;
 use chaos_ipc::dynamic_tools::DynamicToolSpec;
 use chaos_ipc::protocol::RolloutItem;
 use log::LevelFilter;
@@ -53,12 +53,12 @@ mod logs;
 mod memories;
 #[cfg(test)]
 mod test_support;
-mod threads;
+mod processes;
 
 // "Partition" is the retention bucket we cap at 10 MiB:
-// - one bucket per non-null thread_id
-// - one bucket per threadless (thread_id IS NULL) non-null process_uuid
-// - one bucket for threadless rows with process_uuid IS NULL
+// - one bucket per non-null process_id
+// - one bucket per processless (process_id IS NULL) non-null process_uuid
+// - one bucket for processless rows with process_uuid IS NULL
 const LOG_PARTITION_SIZE_LIMIT_BYTES: i64 = 10 * 1024 * 1024;
 const LOG_PARTITION_ROW_LIMIT: i64 = 1_000;
 

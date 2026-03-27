@@ -5,13 +5,13 @@ use serde_json::Value as JsonValue;
 use std::collections::HashMap;
 use ts_rs::TS;
 
-/// Top-level JSONL events emitted by codex exec
+/// Top-level JSONL events emitted by Chaos exec.
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq, TS)]
 #[serde(tag = "type")]
-pub enum ThreadEvent {
-    /// Emitted when a new thread is started as the first event.
-    #[serde(rename = "thread.started")]
-    ThreadStarted(ThreadStartedEvent),
+pub enum ProcessEvent {
+    /// Emitted when a new process is started as the first event.
+    #[serde(rename = "process.started")]
+    ProcessStarted(ProcessStartedEvent),
     /// Emitted when a turn is started by sending a new prompt to the model.
     /// A turn encompasses all events that happen while agent is processing the prompt.
     #[serde(rename = "turn.started")]
@@ -33,13 +33,13 @@ pub enum ThreadEvent {
     ItemCompleted(ItemCompletedEvent),
     /// Represents an unrecoverable error emitted directly by the event stream.
     #[serde(rename = "error")]
-    Error(ThreadErrorEvent),
+    Error(ProcessErrorEvent),
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq, TS)]
-pub struct ThreadStartedEvent {
-    /// The identified of the new thread. Can be used to resume the thread later.
-    pub thread_id: String,
+pub struct ProcessStartedEvent {
+    /// The identifier of the new process. Can be used to resume the process later.
+    pub process_id: String,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq, TS, Default)]
@@ -53,7 +53,7 @@ pub struct TurnCompletedEvent {
 
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq, TS)]
 pub struct TurnFailedEvent {
-    pub error: ThreadErrorEvent,
+    pub error: ProcessErrorEvent,
 }
 
 /// Describes the usage of tokens during a turn.
@@ -69,37 +69,37 @@ pub struct Usage {
 
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq, TS)]
 pub struct ItemStartedEvent {
-    pub item: ThreadItem,
+    pub item: ProcessItem,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq, TS)]
 pub struct ItemCompletedEvent {
-    pub item: ThreadItem,
+    pub item: ProcessItem,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq, TS)]
 pub struct ItemUpdatedEvent {
-    pub item: ThreadItem,
+    pub item: ProcessItem,
 }
 
 /// Fatal error emitted by the stream.
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq, TS)]
-pub struct ThreadErrorEvent {
+pub struct ProcessErrorEvent {
     pub message: String,
 }
 
-/// Canonical representation of a thread item and its domain-specific payload.
+/// Canonical representation of a process item and its domain-specific payload.
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq, TS)]
-pub struct ThreadItem {
+pub struct ProcessItem {
     pub id: String,
     #[serde(flatten)]
-    pub details: ThreadItemDetails,
+    pub details: ProcessItemDetails,
 }
 
-/// Typed payloads for each supported thread item type.
+/// Typed payloads for each supported process item type.
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq, TS)]
 #[serde(tag = "type", rename_all = "snake_case")]
-pub enum ThreadItemDetails {
+pub enum ProcessItemDetails {
     /// Response from the agent.
     /// Either a natural-language response or a JSON string when structured output is requested.
     AgentMessage(AgentMessageItem),
@@ -246,8 +246,10 @@ pub struct CollabAgentState {
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq, TS)]
 pub struct CollabToolCallItem {
     pub tool: CollabTool,
-    pub sender_thread_id: String,
-    pub receiver_thread_ids: Vec<String>,
+    #[serde(alias = "sender_process_id")]
+    pub sender_process_id: String,
+    #[serde(alias = "receiver_process_ids")]
+    pub receiver_process_ids: Vec<String>,
     pub prompt: Option<String>,
     pub agents_states: HashMap<String, CollabAgentState>,
     pub status: CollabToolCallStatus,

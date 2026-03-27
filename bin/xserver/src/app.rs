@@ -10,7 +10,7 @@ use crate::bottom_pane::SelectionViewParams;
 use crate::bottom_pane::popup_consts::standard_popup_hint_line;
 use crate::chatwidget::ChatWidget;
 use crate::chatwidget::ExternalEditorState;
-use crate::chatwidget::ThreadInputState;
+use crate::chatwidget::ProcessInputState;
 use crate::cwd_prompt::CwdPromptAction;
 use crate::diff_render::DiffSummary;
 use crate::exec_command::strip_bash_lc_and_escape;
@@ -35,7 +35,7 @@ use crate::version::CHAOS_VERSION;
 use chaos_termcap::ansi_escape_line;
 use chaos_kern::AuthManager;
 use chaos_kern::CodexAuth;
-use chaos_kern::ThreadManager;
+use chaos_kern::ProcessTable;
 use chaos_kern::config::Config;
 use chaos_kern::config::ConfigBuilder;
 use chaos_kern::config::ConfigOverrides;
@@ -50,7 +50,7 @@ use chaos_kern::models_manager::model_presets::HIDE_GPT_5_1_CODEX_MAX_MIGRATION_
 use chaos_kern::models_manager::model_presets::HIDE_GPT5_1_MIGRATION_PROMPT_CONFIG;
 use chaos_syslog::SessionTelemetry;
 use chaos_syslog::TelemetryAuthMode;
-use chaos_ipc::ThreadId;
+use chaos_ipc::ProcessId;
 use chaos_ipc::api::ConfigLayerSource;
 use chaos_ipc::config_types::Personality;
 use chaos_ipc::items::TurnItem;
@@ -106,9 +106,9 @@ use self::agent_navigation::AgentNavigationState;
 use self::pending_interactive_replay::PendingInteractiveReplayState;
 
 const EXTERNAL_EDITOR_HINT: &str = "Save and close external editor to continue.";
-const THREAD_EVENT_CHANNEL_CAPACITY: usize = 32768;
+const PROCESS_EVENT_CHANNEL_CAPACITY: usize = 32768;
 
-enum ThreadInteractiveRequest {
+enum ProcessInteractiveRequest {
     Approval(ApprovalRequest),
     McpServerElicitation(McpServerElicitationFormRequest),
 }
@@ -141,8 +141,8 @@ const COMMIT_ANIMATION_TICK: Duration = tui::TARGET_FRAME_INTERVAL;
 #[derive(Debug, Clone)]
 pub struct AppExitInfo {
     pub token_usage: TokenUsage,
-    pub thread_id: Option<ThreadId>,
-    pub thread_name: Option<String>,
+    pub process_id: Option<ProcessId>,
+    pub process_name: Option<String>,
     pub exit_reason: ExitReason,
 }
 
@@ -150,8 +150,8 @@ impl AppExitInfo {
     pub fn fatal(message: impl Into<String>) -> Self {
         Self {
             token_usage: TokenUsage::default(),
-            thread_id: None,
-            thread_name: None,
+            process_id: None,
+            process_name: None,
             exit_reason: ExitReason::Fatal(message.into()),
         }
     }
@@ -171,15 +171,15 @@ pub enum ExitReason {
 
 fn session_summary(
     token_usage: TokenUsage,
-    thread_id: Option<ThreadId>,
-    thread_name: Option<String>,
+    process_id: Option<ProcessId>,
+    process_name: Option<String>,
 ) -> Option<SessionSummary> {
     if token_usage.is_zero() {
         return None;
     }
 
     let usage_line = FinalOutput::from(token_usage).to_string();
-    let resume_command = chaos_kern::util::resume_command(thread_name.as_deref(), thread_id);
+    let resume_command = chaos_kern::util::resume_command(process_name.as_deref(), process_id);
     Some(SessionSummary {
         usage_line,
         resume_command,
@@ -236,24 +236,24 @@ struct SessionSummary {
 }
 
 #[derive(Debug, Clone)]
-struct ThreadEventSnapshot {
+struct ProcessEventSnapshot {
     session_configured: Option<Event>,
     events: Vec<Event>,
-    input_state: Option<ThreadInputState>,
+    input_state: Option<ProcessInputState>,
 }
 
 #[derive(Debug)]
-struct ThreadEventStore {
+struct ProcessEventStore {
     session_configured: Option<Event>,
     buffer: VecDeque<Event>,
     user_message_ids: HashSet<String>,
     pending_interactive_replay: PendingInteractiveReplayState,
-    input_state: Option<ThreadInputState>,
+    input_state: Option<ProcessInputState>,
     capacity: usize,
     active: bool,
 }
 
-impl ThreadEventStore {
+impl ProcessEventStore {
     fn new(capacity: usize) -> Self {
         Self {
             session_configured: None,
@@ -316,8 +316,8 @@ impl ThreadEventStore {
         }
     }
 
-    fn snapshot(&self) -> ThreadEventSnapshot {
-        ThreadEventSnapshot {
+    fn snapshot(&self) -> ProcessEventSnapshot {
+        ProcessEventSnapshot {
             session_configured: self.session_configured.clone(),
             // Thread switches replay buffered events into a rebuilt ChatWidget. Only replay
             // interactive prompts that are still pending, or answered approvals/input will reappear.
@@ -342,30 +342,30 @@ impl ThreadEventStore {
         PendingInteractiveReplayState::op_can_change_state(op)
     }
 
-    fn event_can_change_pending_thread_approvals(event: &Event) -> bool {
-        PendingInteractiveReplayState::event_can_change_pending_thread_approvals(event)
+    fn event_can_change_pending_process_approvals(event: &Event) -> bool {
+        PendingInteractiveReplayState::event_can_change_pending_process_approvals(event)
     }
 
-    fn has_pending_thread_approvals(&self) -> bool {
+    fn has_pending_process_approvals(&self) -> bool {
         self.pending_interactive_replay
-            .has_pending_thread_approvals()
+            .has_pending_process_approvals()
     }
 }
 
 #[derive(Debug)]
-struct ThreadEventChannel {
+struct ProcessEventChannel {
     sender: mpsc::Sender<Event>,
     receiver: Option<mpsc::Receiver<Event>>,
-    store: Arc<Mutex<ThreadEventStore>>,
+    store: Arc<Mutex<ProcessEventStore>>,
 }
 
-impl ThreadEventChannel {
+impl ProcessEventChannel {
     fn new(capacity: usize) -> Self {
         let (sender, receiver) = mpsc::channel(capacity);
         Self {
             sender,
             receiver: Some(receiver),
-            store: Arc::new(Mutex::new(ThreadEventStore::new(capacity))),
+            store: Arc::new(Mutex::new(ProcessEventStore::new(capacity))),
         }
     }
 
@@ -374,7 +374,7 @@ impl ThreadEventChannel {
         Self {
             sender,
             receiver: Some(receiver),
-            store: Arc::new(Mutex::new(ThreadEventStore::new_with_session_configured(
+            store: Arc::new(Mutex::new(ProcessEventStore::new_with_session_configured(
                 capacity, event,
             ))),
         }
@@ -601,8 +601,8 @@ async fn handle_model_migration_prompt_if_needed(
             ModelMigrationOutcome::Exit => {
                 return Some(AppExitInfo {
                     token_usage: TokenUsage::default(),
-                    thread_id: None,
-                    thread_name: None,
+                    process_id: None,
+                    process_name: None,
                     exit_reason: ExitReason::UserRequested,
                 });
             }
@@ -613,7 +613,7 @@ async fn handle_model_migration_prompt_if_needed(
 }
 
 pub(crate) struct App {
-    pub(crate) server: Arc<ThreadManager>,
+    pub(crate) server: Arc<ProcessTable>,
     pub(crate) session_telemetry: SessionTelemetry,
     pub(crate) app_event_tx: AppEventSender,
     pub(crate) chat_widget: ChatWidget,
@@ -664,16 +664,16 @@ pub(crate) struct App {
     /// process exit instead of being treated as an unexpected sub-agent death that
     /// triggers failover to the primary thread.
     ///
-    /// This is thread-scoped state (`Option<ThreadId>`) instead of a global bool
+    /// This is process-scoped state (`Option<ProcessId>`) instead of a global bool
     /// so shutdown events from other threads still take the normal failover path.
-    pending_shutdown_exit_thread_id: Option<ThreadId>,
+    pending_shutdown_exit_process_id: Option<ProcessId>,
 
-    thread_event_channels: HashMap<ThreadId, ThreadEventChannel>,
-    thread_event_listener_tasks: HashMap<ThreadId, JoinHandle<()>>,
+    process_event_channels: HashMap<ProcessId, ProcessEventChannel>,
+    process_event_listener_tasks: HashMap<ProcessId, JoinHandle<()>>,
     agent_navigation: AgentNavigationState,
-    active_thread_id: Option<ThreadId>,
-    active_thread_rx: Option<mpsc::Receiver<Event>>,
-    primary_thread_id: Option<ThreadId>,
+    active_process_id: Option<ProcessId>,
+    active_process_rx: Option<mpsc::Receiver<Event>>,
+    primary_process_id: Option<ProcessId>,
     primary_session_configured: Option<SessionConfiguredEvent>,
     pending_primary_events: VecDeque<Event>,
 }
@@ -696,7 +696,7 @@ fn normalize_harness_overrides_for_cwd(
 }
 
 impl App {
-    pub fn chatwidget_init_for_forked_or_resumed_thread(
+    pub fn chatwidget_init_for_forked_or_resumed_process(
         &self,
         tui: &mut tui::Tui,
         cfg: chaos_kern::config::Config,
@@ -747,7 +747,7 @@ impl App {
             tracing::warn!(
                 error = %err,
                 action,
-                "failed to refresh config before thread transition; continuing with current in-memory config"
+                "failed to refresh config before process transition; continuing with current in-memory config"
             );
         }
     }
@@ -1032,11 +1032,11 @@ impl App {
                 personality: None,
             };
             let replay_state_op =
-                ThreadEventStore::op_can_change_pending_replay_state(&op).then(|| op.clone());
+                ProcessEventStore::op_can_change_pending_replay_state(&op).then(|| op.clone());
             let submitted = self.chat_widget.submit_op(op);
             if submitted && let Some(op) = replay_state_op.as_ref() {
-                self.note_active_thread_outbound_op(op).await;
-                self.refresh_pending_thread_approvals().await;
+                self.note_active_process_outbound_op(op).await;
+                self.refresh_pending_process_approvals().await;
             }
         }
 
@@ -1129,26 +1129,26 @@ impl App {
         self.backtrack_render_pending = false;
     }
 
-    async fn shutdown_current_thread(&mut self) {
-        if let Some(thread_id) = self.chat_widget.thread_id() {
-            // Clear any in-flight rollback guard when switching threads.
+    async fn shutdown_current_process(&mut self) {
+        if let Some(process_id) = self.chat_widget.process_id() {
+            // Clear any in-flight rollback guard when switching processes.
             self.backtrack.pending_rollback = None;
             self.suppress_shutdown_complete = true;
             self.chat_widget.submit_op(Op::Shutdown);
-            self.server.remove_thread(&thread_id).await;
-            self.abort_thread_event_listener(thread_id);
+            self.server.remove_process(&process_id).await;
+            self.abort_process_event_listener(process_id);
         }
     }
 
-    fn abort_thread_event_listener(&mut self, thread_id: ThreadId) {
-        if let Some(handle) = self.thread_event_listener_tasks.remove(&thread_id) {
+    fn abort_process_event_listener(&mut self, process_id: ProcessId) {
+        if let Some(handle) = self.process_event_listener_tasks.remove(&process_id) {
             handle.abort();
         }
     }
 
-    fn abort_all_thread_event_listeners(&mut self) {
+    fn abort_all_process_event_listeners(&mut self) {
         for handle in self
-            .thread_event_listener_tasks
+            .process_event_listener_tasks
             .drain()
             .map(|(_, handle)| handle)
         {
@@ -1156,41 +1156,41 @@ impl App {
         }
     }
 
-    fn ensure_thread_channel(&mut self, thread_id: ThreadId) -> &mut ThreadEventChannel {
-        self.thread_event_channels
-            .entry(thread_id)
-            .or_insert_with(|| ThreadEventChannel::new(THREAD_EVENT_CHANNEL_CAPACITY))
+    fn ensure_process_channel(&mut self, process_id: ProcessId) -> &mut ProcessEventChannel {
+        self.process_event_channels
+            .entry(process_id)
+            .or_insert_with(|| ProcessEventChannel::new(PROCESS_EVENT_CHANNEL_CAPACITY))
     }
 
-    async fn set_thread_active(&mut self, thread_id: ThreadId, active: bool) {
-        if let Some(channel) = self.thread_event_channels.get_mut(&thread_id) {
+    async fn set_process_active(&mut self, process_id: ProcessId, active: bool) {
+        if let Some(channel) = self.process_event_channels.get_mut(&process_id) {
             let mut store = channel.store.lock().await;
             store.active = active;
         }
     }
 
-    async fn activate_thread_channel(&mut self, thread_id: ThreadId) {
-        if self.active_thread_id.is_some() {
+    async fn activate_process_channel(&mut self, process_id: ProcessId) {
+        if self.active_process_id.is_some() {
             return;
         }
-        self.set_thread_active(thread_id, /*active*/ true).await;
-        let receiver = if let Some(channel) = self.thread_event_channels.get_mut(&thread_id) {
+        self.set_process_active(process_id, /*active*/ true).await;
+        let receiver = if let Some(channel) = self.process_event_channels.get_mut(&process_id) {
             channel.receiver.take()
         } else {
             None
         };
-        self.active_thread_id = Some(thread_id);
-        self.active_thread_rx = receiver;
-        self.refresh_pending_thread_approvals().await;
+        self.active_process_id = Some(process_id);
+        self.active_process_rx = receiver;
+        self.refresh_pending_process_approvals().await;
     }
 
-    async fn store_active_thread_receiver(&mut self) {
-        let Some(active_id) = self.active_thread_id else {
+    async fn store_active_process_receiver(&mut self) {
+        let Some(active_id) = self.active_process_id else {
             return;
         };
-        let input_state = self.chat_widget.capture_thread_input_state();
-        if let Some(channel) = self.thread_event_channels.get_mut(&active_id) {
-            let receiver = self.active_thread_rx.take();
+        let input_state = self.chat_widget.capture_process_input_state();
+        if let Some(channel) = self.process_event_channels.get_mut(&active_id) {
+            let receiver = self.active_process_rx.take();
             let mut store = channel.store.lock().await;
             store.active = false;
             store.input_state = input_state;
@@ -1200,11 +1200,11 @@ impl App {
         }
     }
 
-    async fn activate_thread_for_replay(
+    async fn activate_process_for_replay(
         &mut self,
-        thread_id: ThreadId,
-    ) -> Option<(mpsc::Receiver<Event>, ThreadEventSnapshot)> {
-        let channel = self.thread_event_channels.get_mut(&thread_id)?;
+        process_id: ProcessId,
+    ) -> Option<(mpsc::Receiver<Event>, ProcessEventSnapshot)> {
+        let channel = self.process_event_channels.get_mut(&process_id)?;
         let receiver = channel.receiver.take()?;
         let mut store = channel.store.lock().await;
         store.active = true;
@@ -1213,49 +1213,49 @@ impl App {
     }
 
     async fn clear_active_thread(&mut self) {
-        if let Some(active_id) = self.active_thread_id.take() {
-            self.set_thread_active(active_id, /*active*/ false).await;
+        if let Some(active_id) = self.active_process_id.take() {
+            self.set_process_active(active_id, /*active*/ false).await;
         }
-        self.active_thread_rx = None;
-        self.refresh_pending_thread_approvals().await;
+        self.active_process_rx = None;
+        self.refresh_pending_process_approvals().await;
     }
 
-    async fn note_thread_outbound_op(&mut self, thread_id: ThreadId, op: &Op) {
-        let Some(channel) = self.thread_event_channels.get(&thread_id) else {
+    async fn note_process_outbound_op(&mut self, process_id: ProcessId, op: &Op) {
+        let Some(channel) = self.process_event_channels.get(&process_id) else {
             return;
         };
         let mut store = channel.store.lock().await;
         store.note_outbound_op(op);
     }
 
-    async fn note_active_thread_outbound_op(&mut self, op: &Op) {
-        if !ThreadEventStore::op_can_change_pending_replay_state(op) {
+    async fn note_active_process_outbound_op(&mut self, op: &Op) {
+        if !ProcessEventStore::op_can_change_pending_replay_state(op) {
             return;
         }
-        let Some(thread_id) = self.active_thread_id else {
+        let Some(process_id) = self.active_process_id else {
             return;
         };
-        self.note_thread_outbound_op(thread_id, op).await;
+        self.note_process_outbound_op(process_id, op).await;
     }
 
-    fn thread_label(&self, thread_id: ThreadId) -> String {
-        let is_primary = self.primary_thread_id == Some(thread_id);
+    fn process_label(&self, process_id: ProcessId) -> String {
+        let is_primary = self.primary_process_id == Some(process_id);
         let fallback_label = if is_primary {
             "Main [default]".to_string()
         } else {
-            let thread_id = thread_id.to_string();
-            let short_id: String = thread_id.chars().take(8).collect();
+            let process_id = process_id.to_string();
+            let short_id: String = process_id.chars().take(8).collect();
             format!("Agent ({short_id})")
         };
-        if let Some(entry) = self.agent_navigation.get(&thread_id) {
+        if let Some(entry) = self.agent_navigation.get(&process_id) {
             let label = format_agent_picker_item_name(
                 entry.agent_nickname.as_deref(),
                 entry.agent_role.as_deref(),
                 is_primary,
             );
             if label == "Agent" {
-                let thread_id = thread_id.to_string();
-                let short_id: String = thread_id.chars().take(8).collect();
+                let process_id = process_id.to_string();
+                let short_id: String = process_id.chars().take(8).collect();
                 format!("{label} ({short_id})")
             } else {
                 label
@@ -1267,12 +1267,12 @@ impl App {
 
     /// Returns the thread whose transcript is currently on screen.
     ///
-    /// `active_thread_id` is the source of truth during steady state, but the widget can briefly
+    /// `active_process_id` is the source of truth during steady state, but the widget can briefly
     /// lag behind thread bookkeeping during transitions. The footer label and adjacent-thread
     /// navigation both follow what the user is actually looking at, not whichever thread most
     /// recently began switching.
-    fn current_displayed_thread_id(&self) -> Option<ThreadId> {
-        self.active_thread_id.or(self.chat_widget.thread_id())
+    fn current_displayed_process_id(&self) -> Option<ProcessId> {
+        self.active_process_id.or(self.chat_widget.process_id())
     }
 
     /// Mirrors the visible thread into the contextual footer row.
@@ -1284,12 +1284,12 @@ impl App {
     fn sync_active_agent_label(&mut self) {
         let label = self
             .agent_navigation
-            .active_agent_label(self.current_displayed_thread_id(), self.primary_thread_id);
+            .active_agent_label(self.current_displayed_process_id(), self.primary_process_id);
         self.chat_widget.set_active_agent_label(label);
     }
 
-    async fn thread_cwd(&self, thread_id: ThreadId) -> Option<PathBuf> {
-        let channel = self.thread_event_channels.get(&thread_id)?;
+    async fn process_cwd(&self, process_id: ProcessId) -> Option<PathBuf> {
+        let channel = self.process_event_channels.get(&process_id)?;
         let store = channel.store.lock().await;
         match store.session_configured.as_ref().map(|event| &event.msg) {
             Some(EventMsg::SessionConfigured(session)) => Some(session.cwd.clone()),
@@ -1297,17 +1297,17 @@ impl App {
         }
     }
 
-    async fn interactive_request_for_thread_event(
+    async fn interactive_request_for_process_event(
         &self,
-        thread_id: ThreadId,
+        process_id: ProcessId,
         event: &Event,
-    ) -> Option<ThreadInteractiveRequest> {
-        let thread_label = Some(self.thread_label(thread_id));
+    ) -> Option<ProcessInteractiveRequest> {
+        let process_label = Some(self.process_label(process_id));
         match &event.msg {
             EventMsg::ExecApprovalRequest(ev) => {
-                Some(ThreadInteractiveRequest::Approval(ApprovalRequest::Exec {
-                    thread_id,
-                    thread_label,
+                Some(ProcessInteractiveRequest::Approval(ApprovalRequest::Exec {
+                    process_id,
+                    process_label,
                     id: ev.effective_approval_id(),
                     command: ev.command.clone(),
                     reason: ev.reason.clone(),
@@ -1316,14 +1316,14 @@ impl App {
                     additional_permissions: ev.additional_permissions.clone(),
                 }))
             }
-            EventMsg::ApplyPatchApprovalRequest(ev) => Some(ThreadInteractiveRequest::Approval(
+            EventMsg::ApplyPatchApprovalRequest(ev) => Some(ProcessInteractiveRequest::Approval(
                 ApprovalRequest::ApplyPatch {
-                    thread_id,
-                    thread_label,
+                    process_id,
+                    process_label,
                     id: ev.call_id.clone(),
                     reason: ev.reason.clone(),
                     cwd: self
-                        .thread_cwd(thread_id)
+                        .process_cwd(process_id)
                         .await
                         .unwrap_or_else(|| self.config.cwd.clone()),
                     changes: ev.changes.clone(),
@@ -1331,9 +1331,9 @@ impl App {
             )),
             EventMsg::ElicitationRequest(ev) => {
                 if let Some(request) =
-                    McpServerElicitationFormRequest::from_event(thread_id, ev.clone())
+                    McpServerElicitationFormRequest::from_event(process_id, ev.clone())
                 {
-                    Some(ThreadInteractiveRequest::McpServerElicitation(request))
+                    Some(ProcessInteractiveRequest::McpServerElicitation(request))
                 } else {
                     let url = match &ev.request {
                         chaos_ipc::approvals::ElicitationRequest::Url { url, .. } => {
@@ -1341,10 +1341,10 @@ impl App {
                         }
                         chaos_ipc::approvals::ElicitationRequest::Form { .. } => None,
                     };
-                    Some(ThreadInteractiveRequest::Approval(
+                    Some(ProcessInteractiveRequest::Approval(
                         ApprovalRequest::McpElicitation {
-                            thread_id,
-                            thread_label,
+                            process_id,
+                            process_label,
                             server_name: ev.server_name.clone(),
                             request_id: ev.id.clone(),
                             message: ev.request.message().to_string(),
@@ -1353,10 +1353,10 @@ impl App {
                     ))
                 }
             }
-            EventMsg::RequestPermissions(ev) => Some(ThreadInteractiveRequest::Approval(
+            EventMsg::RequestPermissions(ev) => Some(ProcessInteractiveRequest::Approval(
                 ApprovalRequest::Permissions {
-                    thread_id,
-                    thread_label,
+                    process_id,
+                    process_label,
                     call_id: ev.call_id.clone(),
                     reason: ev.reason.clone(),
                     permissions: ev.permissions.clone(),
@@ -1366,77 +1366,77 @@ impl App {
         }
     }
 
-    async fn submit_op_to_thread(&mut self, thread_id: ThreadId, op: Op) {
+    async fn submit_op_to_process(&mut self, process_id: ProcessId, op: Op) {
         let replay_state_op =
-            ThreadEventStore::op_can_change_pending_replay_state(&op).then(|| op.clone());
-        let submitted = if self.active_thread_id == Some(thread_id) {
+            ProcessEventStore::op_can_change_pending_replay_state(&op).then(|| op.clone());
+        let submitted = if self.active_process_id == Some(process_id) {
             self.chat_widget.submit_op(op)
         } else {
             crate::session_log::log_outbound_op(&op);
-            match self.server.get_thread(thread_id).await {
+            match self.server.get_process(process_id).await {
                 Ok(thread) => match thread.submit(op).await {
                     Ok(_) => true,
                     Err(err) => {
                         self.chat_widget.add_error_message(format!(
-                            "Failed to submit op to thread {thread_id}: {err}"
+                            "Failed to submit op to process {process_id}: {err}"
                         ));
                         false
                     }
                 },
                 Err(err) => {
                     self.chat_widget.add_error_message(format!(
-                        "Failed to find thread {thread_id} for approval response: {err}"
+                        "Failed to find process {process_id} for approval response: {err}"
                     ));
                     false
                 }
             }
         };
         if submitted && let Some(op) = replay_state_op.as_ref() {
-            self.note_thread_outbound_op(thread_id, op).await;
-            self.refresh_pending_thread_approvals().await;
+            self.note_process_outbound_op(process_id, op).await;
+            self.refresh_pending_process_approvals().await;
         }
     }
 
-    async fn refresh_pending_thread_approvals(&mut self) {
-        let channels: Vec<(ThreadId, Arc<Mutex<ThreadEventStore>>)> = self
-            .thread_event_channels
+    async fn refresh_pending_process_approvals(&mut self) {
+        let channels: Vec<(ProcessId, Arc<Mutex<ProcessEventStore>>)> = self
+            .process_event_channels
             .iter()
-            .map(|(thread_id, channel)| (*thread_id, Arc::clone(&channel.store)))
+            .map(|(process_id, channel)| (*process_id, Arc::clone(&channel.store)))
             .collect();
 
-        let mut pending_thread_ids = Vec::new();
-        for (thread_id, store) in channels {
-            if Some(thread_id) == self.active_thread_id {
+        let mut pending_process_ids = Vec::new();
+        for (process_id, store) in channels {
+            if Some(process_id) == self.active_process_id {
                 continue;
             }
 
             let store = store.lock().await;
-            if store.has_pending_thread_approvals() {
-                pending_thread_ids.push(thread_id);
+            if store.has_pending_process_approvals() {
+                pending_process_ids.push(process_id);
             }
         }
 
-        pending_thread_ids.sort_by_key(ThreadId::to_string);
+        pending_process_ids.sort_by_key(ProcessId::to_string);
 
-        let threads = pending_thread_ids
+        let threads = pending_process_ids
             .into_iter()
-            .map(|thread_id| self.thread_label(thread_id))
+            .map(|process_id| self.process_label(process_id))
             .collect();
 
-        self.chat_widget.set_pending_thread_approvals(threads);
+        self.chat_widget.set_pending_process_approvals(threads);
     }
 
-    async fn enqueue_thread_event(&mut self, thread_id: ThreadId, event: Event) -> Result<()> {
-        let refresh_pending_thread_approvals =
-            ThreadEventStore::event_can_change_pending_thread_approvals(&event);
-        let inactive_interactive_request = if self.active_thread_id != Some(thread_id) {
-            self.interactive_request_for_thread_event(thread_id, &event)
+    async fn enqueue_process_event(&mut self, process_id: ProcessId, event: Event) -> Result<()> {
+        let refresh_pending_process_approvals =
+            ProcessEventStore::event_can_change_pending_process_approvals(&event);
+        let inactive_interactive_request = if self.active_process_id != Some(process_id) {
+            self.interactive_request_for_process_event(process_id, &event)
                 .await
         } else {
             None
         };
         let (sender, store) = {
-            let channel = self.ensure_thread_channel(thread_id);
+            let channel = self.ensure_process_channel(process_id);
             (channel.sender.clone(), Arc::clone(&channel.store))
         };
 
@@ -1455,64 +1455,64 @@ impl App {
                 Err(TrySendError::Full(event)) => {
                     tokio::spawn(async move {
                         if let Err(err) = sender.send(event).await {
-                            tracing::warn!("thread {thread_id} event channel closed: {err}");
+                            tracing::warn!("process {process_id} event channel closed: {err}");
                         }
                     });
                 }
                 Err(TrySendError::Closed(_)) => {
-                    tracing::warn!("thread {thread_id} event channel closed");
+                    tracing::warn!("process {process_id} event channel closed");
                 }
             }
         } else if let Some(request) = inactive_interactive_request {
             match request {
-                ThreadInteractiveRequest::Approval(request) => {
+                ProcessInteractiveRequest::Approval(request) => {
                     self.chat_widget.push_approval_request(request);
                 }
-                ThreadInteractiveRequest::McpServerElicitation(request) => {
+                ProcessInteractiveRequest::McpServerElicitation(request) => {
                     self.chat_widget
                         .push_mcp_server_elicitation_request(request);
                 }
             }
         }
-        if refresh_pending_thread_approvals {
-            self.refresh_pending_thread_approvals().await;
+        if refresh_pending_process_approvals {
+            self.refresh_pending_process_approvals().await;
         }
         Ok(())
     }
 
-    async fn handle_routed_thread_event(
+    async fn handle_routed_process_event(
         &mut self,
-        thread_id: ThreadId,
+        process_id: ProcessId,
         event: Event,
     ) -> Result<()> {
-        if !self.thread_event_channels.contains_key(&thread_id) {
-            tracing::debug!("dropping stale event for untracked thread {thread_id}");
+        if !self.process_event_channels.contains_key(&process_id) {
+            tracing::debug!("dropping stale event for untracked process {process_id}");
             return Ok(());
         }
 
-        self.enqueue_thread_event(thread_id, event).await
+        self.enqueue_process_event(process_id, event).await
     }
 
     async fn enqueue_primary_event(&mut self, event: Event) -> Result<()> {
-        if let Some(thread_id) = self.primary_thread_id {
-            return self.enqueue_thread_event(thread_id, event).await;
+        if let Some(process_id) = self.primary_process_id {
+            return self.enqueue_process_event(process_id, event).await;
         }
 
         if let EventMsg::SessionConfigured(session) = &event.msg {
-            let thread_id = session.session_id;
-            self.primary_thread_id = Some(thread_id);
+            let process_id = session.session_id;
+            self.primary_process_id = Some(process_id);
             self.primary_session_configured = Some(session.clone());
             self.upsert_agent_picker_thread(
-                thread_id, /*agent_nickname*/ None, /*agent_role*/ None,
+                process_id, /*agent_nickname*/ None, /*agent_role*/ None,
                 /*is_closed*/ false,
             );
-            self.ensure_thread_channel(thread_id);
-            self.activate_thread_channel(thread_id).await;
-            self.enqueue_thread_event(thread_id, event).await?;
+            self.ensure_process_channel(process_id);
+            self.activate_process_channel(process_id).await;
+            self.enqueue_process_event(process_id, event).await?;
 
             let pending = std::mem::take(&mut self.pending_primary_events);
             for pending_event in pending {
-                self.enqueue_thread_event(thread_id, pending_event).await?;
+                self.enqueue_process_event(process_id, pending_event).await?;
             }
         } else {
             self.pending_primary_events.push_back(event);
@@ -1527,28 +1527,28 @@ impl App {
     /// historical id now" and converted into closed picker entries instead of deleting them, so
     /// the stable traversal order remains intact for review and keyboard navigation.
     async fn open_agent_picker(&mut self) {
-        let thread_ids: Vec<ThreadId> = self.thread_event_channels.keys().cloned().collect();
-        for thread_id in thread_ids {
-            match self.server.get_thread(thread_id).await {
+        let process_ids: Vec<ProcessId> = self.process_event_channels.keys().cloned().collect();
+        for process_id in process_ids {
+            match self.server.get_process(process_id).await {
                 Ok(thread) => {
                     let session_source = thread.config_snapshot().await.session_source;
                     self.upsert_agent_picker_thread(
-                        thread_id,
+                        process_id,
                         session_source.get_nickname(),
                         session_source.get_agent_role(),
                         /*is_closed*/ false,
                     );
                 }
                 Err(_) => {
-                    self.mark_agent_picker_thread_closed(thread_id);
+                    self.mark_agent_picker_process_closed(process_id);
                 }
             }
         }
 
-        let has_non_primary_agent_thread = self
+        let has_non_primary_agent_process = self
             .agent_navigation
-            .has_non_primary_thread(self.primary_thread_id);
-        if !self.config.features.enabled(Feature::Collab) && !has_non_primary_agent_thread {
+            .has_non_primary_process(self.primary_process_id);
+        if !self.config.features.enabled(Feature::Collab) && !has_non_primary_agent_process {
             self.chat_widget.open_multi_agent_enable_prompt();
             return;
         }
@@ -1562,28 +1562,28 @@ impl App {
         let mut initial_selected_idx = None;
         let items: Vec<SelectionItem> = self
             .agent_navigation
-            .ordered_threads()
+            .ordered_processes()
             .iter()
             .enumerate()
-            .map(|(idx, (thread_id, entry))| {
-                if self.active_thread_id == Some(*thread_id) {
+            .map(|(idx, (process_id, entry))| {
+                if self.active_process_id == Some(*process_id) {
                     initial_selected_idx = Some(idx);
                 }
-                let id = *thread_id;
-                let is_primary = self.primary_thread_id == Some(*thread_id);
+                let id = *process_id;
+                let is_primary = self.primary_process_id == Some(*process_id);
                 let name = format_agent_picker_item_name(
                     entry.agent_nickname.as_deref(),
                     entry.agent_role.as_deref(),
                     is_primary,
                 );
-                let uuid = thread_id.to_string();
+                let uuid = process_id.to_string();
                 SelectionItem {
                     name: name.clone(),
                     name_prefix_spans: agent_picker_status_dot_spans(entry.is_closed),
                     description: Some(uuid.clone()),
-                    is_current: self.active_thread_id == Some(*thread_id),
+                    is_current: self.active_process_id == Some(*process_id),
                     actions: vec![Box::new(move |tx| {
-                        tx.send(AppEvent::SelectAgentThread(id));
+                        tx.send(AppEvent::SelectAgentProcess(id));
                     })],
                     dismiss_on_select: true,
                     search_value: Some(format!("{name} {uuid}")),
@@ -1608,13 +1608,13 @@ impl App {
     /// the same displayed thread after nickname or role updates.
     fn upsert_agent_picker_thread(
         &mut self,
-        thread_id: ThreadId,
+        process_id: ProcessId,
         agent_nickname: Option<String>,
         agent_role: Option<String>,
         is_closed: bool,
     ) {
         self.agent_navigation
-            .upsert(thread_id, agent_nickname, agent_role, is_closed);
+            .upsert(process_id, agent_nickname, agent_role, is_closed);
         self.sync_active_agent_label();
     }
 
@@ -1622,25 +1622,25 @@ impl App {
     ///
     /// Closing a thread is not the same as removing it: users can still inspect finished agent
     /// transcripts, and the stable next/previous traversal order should not collapse around them.
-    fn mark_agent_picker_thread_closed(&mut self, thread_id: ThreadId) {
-        self.agent_navigation.mark_closed(thread_id);
+    fn mark_agent_picker_process_closed(&mut self, process_id: ProcessId) {
+        self.agent_navigation.mark_closed(process_id);
         self.sync_active_agent_label();
     }
 
-    async fn select_agent_thread(&mut self, tui: &mut tui::Tui, thread_id: ThreadId) -> Result<()> {
-        if self.active_thread_id == Some(thread_id) {
+    async fn select_agent_process(&mut self, tui: &mut tui::Tui, process_id: ProcessId) -> Result<()> {
+        if self.active_process_id == Some(process_id) {
             return Ok(());
         }
 
-        let live_thread = match self.server.get_thread(thread_id).await {
+        let live_thread = match self.server.get_process(process_id).await {
             Ok(thread) => Some(thread),
             Err(err) => {
-                if self.thread_event_channels.contains_key(&thread_id) {
-                    self.mark_agent_picker_thread_closed(thread_id);
+                if self.process_event_channels.contains_key(&process_id) {
+                    self.mark_agent_picker_process_closed(process_id);
                     None
                 } else {
                     self.chat_widget.add_error_message(format!(
-                        "Failed to attach to agent thread {thread_id}: {err}"
+                        "Failed to attach to agent process {process_id}: {err}"
                     ));
                     return Ok(());
                 }
@@ -1648,22 +1648,22 @@ impl App {
         };
         let is_replay_only = live_thread.is_none();
 
-        let previous_thread_id = self.active_thread_id;
-        self.store_active_thread_receiver().await;
-        self.active_thread_id = None;
-        let Some((receiver, snapshot)) = self.activate_thread_for_replay(thread_id).await else {
+        let previous_process_id = self.active_process_id;
+        self.store_active_process_receiver().await;
+        self.active_process_id = None;
+        let Some((receiver, snapshot)) = self.activate_process_for_replay(process_id).await else {
             self.chat_widget
-                .add_error_message(format!("Agent thread {thread_id} is already active."));
-            if let Some(previous_thread_id) = previous_thread_id {
-                self.activate_thread_channel(previous_thread_id).await;
+                .add_error_message(format!("Agent process {process_id} is already active."));
+            if let Some(previous_process_id) = previous_process_id {
+                self.activate_process_channel(previous_process_id).await;
             }
             return Ok(());
         };
 
-        self.active_thread_id = Some(thread_id);
-        self.active_thread_rx = Some(receiver);
+        self.active_process_id = Some(process_id);
+        self.active_process_rx = Some(receiver);
 
-        let init = self.chatwidget_init_for_forked_or_resumed_thread(tui, self.config.clone());
+        let init = self.chatwidget_init_for_forked_or_resumed_process(tui, self.config.clone());
         let codex_op_tx = if let Some(thread) = live_thread {
             crate::chatwidget::spawn_op_forwarder(thread)
         } else {
@@ -1673,21 +1673,21 @@ impl App {
         self.chat_widget = ChatWidget::new_with_op_sender(init, codex_op_tx);
         self.sync_active_agent_label();
 
-        self.reset_for_thread_switch(tui)?;
-        self.replay_thread_snapshot(snapshot, !is_replay_only);
+        self.reset_for_process_switch(tui)?;
+        self.replay_process_snapshot(snapshot, !is_replay_only);
         if is_replay_only {
             self.chat_widget.add_info_message(
-                format!("Agent thread {thread_id} is closed. Replaying saved transcript."),
+                format!("Agent process {process_id} is closed. Replaying saved transcript."),
                 /*hint*/ None,
             );
         }
-        self.drain_active_thread_events(tui).await?;
-        self.refresh_pending_thread_approvals().await;
+        self.drain_active_process_events(tui).await?;
+        self.refresh_pending_process_approvals().await;
 
         Ok(())
     }
 
-    fn reset_for_thread_switch(&mut self, tui: &mut tui::Tui) -> Result<()> {
+    fn reset_for_process_switch(&mut self, tui: &mut tui::Tui) -> Result<()> {
         self.overlay = None;
         self.transcript_cells.clear();
         self.deferred_history_lines.clear();
@@ -1699,40 +1699,40 @@ impl App {
         Ok(())
     }
 
-    fn reset_thread_event_state(&mut self) {
-        self.abort_all_thread_event_listeners();
-        self.thread_event_channels.clear();
+    fn reset_process_event_state(&mut self) {
+        self.abort_all_process_event_listeners();
+        self.process_event_channels.clear();
         self.agent_navigation.clear();
-        self.active_thread_id = None;
-        self.active_thread_rx = None;
-        self.primary_thread_id = None;
+        self.active_process_id = None;
+        self.active_process_rx = None;
+        self.primary_process_id = None;
         self.pending_primary_events.clear();
-        self.chat_widget.set_pending_thread_approvals(Vec::new());
+        self.chat_widget.set_pending_process_approvals(Vec::new());
         self.sync_active_agent_label();
     }
 
     async fn start_fresh_session_with_summary_hint(&mut self, tui: &mut tui::Tui) {
         // Start a fresh in-memory session while preserving resumability via persisted rollout
         // history.
-        self.refresh_in_memory_config_from_disk_best_effort("starting a new thread")
+        self.refresh_in_memory_config_from_disk_best_effort("starting a new process")
             .await;
         let model = self.chat_widget.current_model().to_string();
         let config = self.fresh_session_config();
         let summary = session_summary(
             self.chat_widget.token_usage(),
-            self.chat_widget.thread_id(),
-            self.chat_widget.thread_name(),
+            self.chat_widget.process_id(),
+            self.chat_widget.process_name(),
         );
-        self.shutdown_current_thread().await;
+        self.shutdown_current_process().await;
         let report = self
             .server
-            .shutdown_all_threads_bounded(Duration::from_secs(10))
+            .shutdown_all_processes_bounded(Duration::from_secs(10))
             .await;
         if !report.submit_failed.is_empty() || !report.timed_out.is_empty() {
             tracing::warn!(
                 submit_failed = report.submit_failed.len(),
                 timed_out = report.timed_out.len(),
-                "failed to close all threads"
+                "failed to close all processes"
             );
         }
         let init = crate::chatwidget::ChatWidgetInit {
@@ -1753,7 +1753,7 @@ impl App {
             session_telemetry: self.session_telemetry.clone(),
         };
         self.chat_widget = ChatWidget::new(init, self.server.clone());
-        self.reset_thread_event_state();
+        self.reset_process_event_state();
         if let Some(summary) = summary {
             let mut lines: Vec<Line<'static>> = vec![summary.usage_line.clone().into()];
             if let Some(command) = summary.resume_command {
@@ -1771,8 +1771,8 @@ impl App {
         config
     }
 
-    async fn drain_active_thread_events(&mut self, tui: &mut tui::Tui) -> Result<()> {
-        let Some(mut rx) = self.active_thread_rx.take() else {
+    async fn drain_active_process_events(&mut self, tui: &mut tui::Tui) -> Result<()> {
+        let Some(mut rx) = self.active_process_rx.take() else {
             return Ok(());
         };
 
@@ -1789,7 +1789,7 @@ impl App {
         }
 
         if !disconnected {
-            self.active_thread_rx = Some(rx);
+            self.active_process_rx = Some(rx);
         } else {
             self.clear_active_thread().await;
         }
@@ -1800,32 +1800,32 @@ impl App {
         Ok(())
     }
 
-    /// Returns `(closed_thread_id, primary_thread_id)` when a non-primary active
+    /// Returns `(closed_process_id, primary_process_id)` when a non-primary active
     /// thread has died and we should fail over to the primary thread.
     ///
     /// A user-requested shutdown (`ExitMode::ShutdownFirst`) sets
-    /// `pending_shutdown_exit_thread_id`; matching shutdown completions are ignored
+    /// `pending_shutdown_exit_process_id`; matching shutdown completions are ignored
     /// here so Ctrl+C-like exits don't accidentally resurrect the main thread.
     ///
     /// Failover is only eligible when all of these are true:
     /// 1. the event is `ShutdownComplete`;
     /// 2. the active thread differs from the primary thread;
     /// 3. the active thread is not the pending shutdown-exit thread.
-    fn active_non_primary_shutdown_target(&self, msg: &EventMsg) -> Option<(ThreadId, ThreadId)> {
+    fn active_non_primary_shutdown_target(&self, msg: &EventMsg) -> Option<(ProcessId, ProcessId)> {
         if !matches!(msg, EventMsg::ShutdownComplete) {
             return None;
         }
-        let active_thread_id = self.active_thread_id?;
-        let primary_thread_id = self.primary_thread_id?;
-        if self.pending_shutdown_exit_thread_id == Some(active_thread_id) {
+        let active_process_id = self.active_process_id?;
+        let primary_process_id = self.primary_process_id?;
+        if self.pending_shutdown_exit_process_id == Some(active_process_id) {
             return None;
         }
-        (active_thread_id != primary_thread_id).then_some((active_thread_id, primary_thread_id))
+        (active_process_id != primary_process_id).then_some((active_process_id, primary_process_id))
     }
 
-    fn replay_thread_snapshot(
+    fn replay_process_snapshot(
         &mut self,
-        snapshot: ThreadEventSnapshot,
+        snapshot: ProcessEventSnapshot,
         resume_restored_queue: bool,
     ) {
         if let Some(event) = snapshot.session_configured {
@@ -1834,7 +1834,7 @@ impl App {
         self.chat_widget
             .set_queue_autosend_suppressed(/*suppressed*/ true);
         self.chat_widget
-            .restore_thread_input_state(snapshot.input_state);
+            .restore_process_input_state(snapshot.input_state);
         for event in snapshot.events {
             self.handle_codex_event_replay(event);
         }
@@ -1853,25 +1853,25 @@ impl App {
         )
     }
 
-    fn should_handle_active_thread_events(
+    fn should_handle_active_process_events(
         waiting_for_initial_session_configured: bool,
-        has_active_thread_receiver: bool,
+        has_active_process_receiver: bool,
     ) -> bool {
-        has_active_thread_receiver && !waiting_for_initial_session_configured
+        has_active_process_receiver && !waiting_for_initial_session_configured
     }
 
     fn should_stop_waiting_for_initial_session(
         waiting_for_initial_session_configured: bool,
-        primary_thread_id: Option<ThreadId>,
+        primary_process_id: Option<ProcessId>,
     ) -> bool {
-        waiting_for_initial_session_configured && primary_thread_id.is_some()
+        waiting_for_initial_session_configured && primary_process_id.is_some()
     }
 
     #[allow(clippy::too_many_arguments)]
     pub async fn run(
         tui: &mut tui::Tui,
         auth_manager: Arc<AuthManager>,
-        thread_manager: Arc<ThreadManager>,
+        process_table: Arc<ProcessTable>,
         mut config: Config,
         cli_kv_overrides: Vec<(String, TomlValue)>,
         harness_overrides: ConfigOverrides,
@@ -1891,12 +1891,12 @@ impl App {
         let harness_overrides =
             normalize_harness_overrides_for_cwd(harness_overrides, &config.cwd)?;
         let auth_manager = auth_manager.clone();
-        let thread_manager = thread_manager.clone();
-        let mut model = thread_manager
+        let process_table = process_table.clone();
+        let mut model = process_table
             .get_models_manager()
             .get_default_model(&config.model, RefreshStrategy::Offline)
             .await;
-        let available_models = thread_manager
+        let available_models = process_table
             .get_models_manager()
             .list_models(RefreshStrategy::Offline)
             .await;
@@ -1931,7 +1931,7 @@ impl App {
             .map(CodexAuth::auth_mode)
             .map(TelemetryAuthMode::from);
         let session_telemetry = SessionTelemetry::new(
-            ThreadId::new(),
+            ProcessId::new(),
             model.as_str(),
             model.as_str(),
             auth_ref.and_then(CodexAuth::get_account_id),
@@ -1972,7 +1972,7 @@ impl App {
                     ),
                     enhanced_keys_supported,
                     auth_manager: auth_manager.clone(),
-                    models_manager: thread_manager.get_models_manager(),
+                    models_manager: process_table.get_models_manager(),
                     feedback: feedback.clone(),
                     is_first_run,
                     feedback_audience,
@@ -1981,11 +1981,11 @@ impl App {
                     status_line_invalid_items_warned: status_line_invalid_items_warned.clone(),
                     session_telemetry: session_telemetry.clone(),
                 };
-                ChatWidget::new(init, thread_manager.clone())
+                ChatWidget::new(init, process_table.clone())
             }
             SessionSelection::Resume(target_session) => {
-                let resumed = thread_manager
-                    .resume_thread_from_rollout(
+                let resumed = process_table
+                    .resume_process_from_rollout(
                         config.clone(),
                         target_session.path.clone(),
                         auth_manager.clone(),
@@ -2008,7 +2008,7 @@ impl App {
                     ),
                     enhanced_keys_supported,
                     auth_manager: auth_manager.clone(),
-                    models_manager: thread_manager.get_models_manager(),
+                    models_manager: process_table.get_models_manager(),
                     feedback: feedback.clone(),
                     is_first_run,
                     feedback_audience,
@@ -2017,7 +2017,8 @@ impl App {
                     status_line_invalid_items_warned: status_line_invalid_items_warned.clone(),
                     session_telemetry: session_telemetry.clone(),
                 };
-                ChatWidget::new_from_existing(init, resumed.thread, resumed.session_configured)
+                let (_, process, session_configured) = resumed.into_parts();
+                ChatWidget::new_from_existing(init, process, session_configured)
             }
             SessionSelection::Fork(target_session) => {
                 session_telemetry.counter(
@@ -2025,8 +2026,8 @@ impl App {
                     /*inc*/ 1,
                     &[("source", "cli_subcommand")],
                 );
-                let forked = thread_manager
-                    .fork_thread(
+                let forked = process_table
+                    .fork_process(
                         usize::MAX,
                         config.clone(),
                         target_session.path.clone(),
@@ -2050,7 +2051,7 @@ impl App {
                     ),
                     enhanced_keys_supported,
                     auth_manager: auth_manager.clone(),
-                    models_manager: thread_manager.get_models_manager(),
+                    models_manager: process_table.get_models_manager(),
                     feedback: feedback.clone(),
                     is_first_run,
                     feedback_audience,
@@ -2059,13 +2060,14 @@ impl App {
                     status_line_invalid_items_warned: status_line_invalid_items_warned.clone(),
                     session_telemetry: session_telemetry.clone(),
                 };
-                ChatWidget::new_from_existing(init, forked.thread, forked.session_configured)
+                let (_, process, session_configured) = forked.into_parts();
+                ChatWidget::new_from_existing(init, process, session_configured)
             }
         };
 
         let file_search = FileSearchManager::new(config.cwd.clone(), app_event_tx.clone());
         let mut app = Self {
-            server: thread_manager.clone(),
+            server: process_table.clone(),
             session_telemetry: session_telemetry.clone(),
             app_event_tx,
             chat_widget,
@@ -2089,14 +2091,14 @@ impl App {
             feedback: feedback.clone(),
             feedback_audience,
             suppress_shutdown_complete: false,
-            pending_shutdown_exit_thread_id: None,
+            pending_shutdown_exit_process_id: None,
 
-            thread_event_channels: HashMap::new(),
-            thread_event_listener_tasks: HashMap::new(),
+            process_event_channels: HashMap::new(),
+            process_event_listener_tasks: HashMap::new(),
             agent_navigation: AgentNavigationState::default(),
-            active_thread_id: None,
-            active_thread_rx: None,
-            primary_thread_id: None,
+            active_process_id: None,
+            active_process_rx: None,
+            primary_process_id: None,
             primary_session_configured: None,
             pending_primary_events: VecDeque::new(),
         };
@@ -2106,7 +2108,7 @@ impl App {
 
         tui.frame_requester().schedule_frame();
 
-        let mut thread_created_rx = thread_manager.subscribe_thread_created();
+        let mut process_created_rx = process_table.subscribe_process_created();
         let mut listen_for_threads = true;
         let mut waiting_for_initial_session_configured = wait_for_initial_session_configured;
 
@@ -2120,17 +2122,17 @@ impl App {
                         }
                     }
                     active = async {
-                        if let Some(rx) = app.active_thread_rx.as_mut() {
+                        if let Some(rx) = app.active_process_rx.as_mut() {
                             rx.recv().await
                         } else {
                             None
                         }
-                    }, if App::should_handle_active_thread_events(
+                    }, if App::should_handle_active_process_events(
                         waiting_for_initial_session_configured,
-                        app.active_thread_rx.is_some()
+                        app.active_process_rx.is_some()
                     ) => {
                         if let Some(event) = active {
-                            if let Err(err) = app.handle_active_thread_event(tui, event).await {
+                            if let Err(err) = app.handle_active_process_event(tui, event).await {
                                 break Err(err);
                             }
                         } else {
@@ -2145,15 +2147,15 @@ impl App {
                         }
                     }
                     // Listen on new thread creation due to collab tools.
-                    created = thread_created_rx.recv(), if listen_for_threads => {
+                    created = process_created_rx.recv(), if listen_for_threads => {
                         match created {
-                            Ok(thread_id) => {
-                                if let Err(err) = app.handle_thread_created(thread_id).await {
+                            Ok(process_id) => {
+                                if let Err(err) = app.handle_process_created(process_id).await {
                                     break Err(err);
                                 }
                             }
                             Err(broadcast::error::RecvError::Lagged(_)) => {
-                                tracing::warn!("thread_created receiver lagged; skipping resync");
+                                tracing::warn!("process_created receiver lagged; skipping resync");
                             }
                             Err(broadcast::error::RecvError::Closed) => {
                                 listen_for_threads = false;
@@ -2164,7 +2166,7 @@ impl App {
                 };
                 if App::should_stop_waiting_for_initial_session(
                     waiting_for_initial_session_configured,
-                    app.primary_thread_id,
+                    app.primary_process_id,
                 ) {
                     waiting_for_initial_session_configured = false;
                 }
@@ -2189,8 +2191,8 @@ impl App {
         };
         Ok(AppExitInfo {
             token_usage: app.token_usage(),
-            thread_id: app.chat_widget.thread_id(),
-            thread_name: app.chat_widget.thread_name(),
+            process_id: app.chat_widget.process_id(),
+            process_name: app.chat_widget.process_name(),
             exit_reason,
         })
     }
@@ -2281,7 +2283,7 @@ impl App {
                             tui,
                             &self.config,
                             &current_cwd,
-                            target_session.thread_id,
+                            target_session.process_id,
                             &target_session.path,
                             CwdPromptAction::Resume,
                             /*allow_prompt*/ true,
@@ -2309,12 +2311,12 @@ impl App {
                         self.apply_runtime_policy_overrides(&mut resume_config);
                         let summary = session_summary(
                             self.chat_widget.token_usage(),
-                            self.chat_widget.thread_id(),
-                            self.chat_widget.thread_name(),
+                            self.chat_widget.process_id(),
+                            self.chat_widget.process_name(),
                         );
                         match self
                             .server
-                            .resume_thread_from_rollout(
+                            .resume_process_from_rollout(
                                 resume_config.clone(),
                                 target_session.path.clone(),
                                 self.auth_manager.clone(),
@@ -2323,20 +2325,18 @@ impl App {
                             .await
                         {
                             Ok(resumed) => {
-                                self.shutdown_current_thread().await;
+                                self.shutdown_current_process().await;
                                 self.config = resume_config;
                                 tui.set_notification_method(self.config.tui_notification_method);
                                 self.file_search.update_search_dir(self.config.cwd.clone());
-                                let init = self.chatwidget_init_for_forked_or_resumed_thread(
+                                let init = self.chatwidget_init_for_forked_or_resumed_process(
                                     tui,
                                     self.config.clone(),
                                 );
-                                self.chat_widget = ChatWidget::new_from_existing(
-                                    init,
-                                    resumed.thread,
-                                    resumed.session_configured,
-                                );
-                                self.reset_thread_event_state();
+                                let (_, process, session_configured) = resumed.into_parts();
+                                self.chat_widget =
+                                    ChatWidget::new_from_existing(init, process, session_configured);
+                                self.reset_process_event_state();
                                 if let Some(summary) = summary {
                                     let mut lines: Vec<Line<'static>> =
                                         vec![summary.usage_line.clone().into()];
@@ -2374,20 +2374,20 @@ impl App {
                 );
                 let summary = session_summary(
                     self.chat_widget.token_usage(),
-                    self.chat_widget.thread_id(),
-                    self.chat_widget.thread_name(),
+                    self.chat_widget.process_id(),
+                    self.chat_widget.process_name(),
                 );
                 self.chat_widget
                     .add_plain_history_lines(vec!["/fork".magenta().into()]);
                 if let Some(path) = self.chat_widget.rollout_path() {
-                    self.refresh_in_memory_config_from_disk_best_effort("forking the thread")
+                    self.refresh_in_memory_config_from_disk_best_effort("forking the process")
                         .await;
                     // Fresh threads expose a precomputed path, but the file is
                     // materialized lazily on first user message.
                     if path.exists() {
                         match self
                             .server
-                            .fork_thread(
+                            .fork_process(
                                 usize::MAX,
                                 self.config.clone(),
                                 path.clone(),
@@ -2397,17 +2397,15 @@ impl App {
                             .await
                         {
                             Ok(forked) => {
-                                self.shutdown_current_thread().await;
-                                let init = self.chatwidget_init_for_forked_or_resumed_thread(
+                                self.shutdown_current_process().await;
+                                let init = self.chatwidget_init_for_forked_or_resumed_process(
                                     tui,
                                     self.config.clone(),
                                 );
-                                self.chat_widget = ChatWidget::new_from_existing(
-                                    init,
-                                    forked.thread,
-                                    forked.session_configured,
-                                );
-                                self.reset_thread_event_state();
+                                let (_, process, session_configured) = forked.into_parts();
+                                self.chat_widget =
+                                    ChatWidget::new_from_existing(init, process, session_configured);
+                                self.reset_process_event_state();
                                 if let Some(summary) = summary {
                                     let mut lines: Vec<Line<'static>> =
                                         vec![summary.usage_line.clone().into()];
@@ -2430,13 +2428,13 @@ impl App {
                         }
                     } else {
                         self.chat_widget.add_error_message(
-                            "A thread must contain at least one turn before it can be forked."
+                            "A process must contain at least one turn before it can be forked."
                                 .to_string(),
                         );
                     }
                 } else {
                     self.chat_widget.add_error_message(
-                        "A thread must contain at least one turn before it can be forked."
+                        "A process must contain at least one turn before it can be forked."
                             .to_string(),
                     );
                 }
@@ -2469,8 +2467,8 @@ impl App {
                     }
                 }
             }
-            AppEvent::ApplyThreadRollback { num_turns } => {
-                if self.apply_non_pending_thread_rollback(num_turns) {
+            AppEvent::ApplyProcessRollback { num_turns } => {
+                if self.apply_non_pending_process_rollback(num_turns) {
                     tui.frame_requester().schedule_frame();
                 }
             }
@@ -2499,8 +2497,8 @@ impl App {
             AppEvent::CodexEvent(event) => {
                 self.enqueue_primary_event(event).await?;
             }
-            AppEvent::ThreadEvent { thread_id, event } => {
-                self.handle_routed_thread_event(thread_id, event).await?;
+            AppEvent::ProcessEvent { process_id, event } => {
+                self.handle_routed_process_event(process_id, event).await?;
             }
             AppEvent::Exit(mode) => {
                 return Ok(self.handle_exit_mode(mode));
@@ -2510,15 +2508,15 @@ impl App {
             }
             AppEvent::CodexOp(op) => {
                 let replay_state_op =
-                    ThreadEventStore::op_can_change_pending_replay_state(&op).then(|| op.clone());
+                    ProcessEventStore::op_can_change_pending_replay_state(&op).then(|| op.clone());
                 let submitted = self.chat_widget.submit_op(op);
                 if submitted && let Some(op) = replay_state_op.as_ref() {
-                    self.note_active_thread_outbound_op(op).await;
-                    self.refresh_pending_thread_approvals().await;
+                    self.note_active_process_outbound_op(op).await;
+                    self.refresh_pending_process_approvals().await;
                 }
             }
-            AppEvent::SubmitThreadOp { thread_id, op } => {
-                self.submit_op_to_thread(thread_id, op).await;
+            AppEvent::SubmitProcessOp { process_id, op } => {
+                self.submit_op_to_process(process_id, op).await;
             }
             AppEvent::DiffResult(text) => {
                 // Clear the in-progress state in the bottom pane
@@ -2563,7 +2561,7 @@ impl App {
                 let _ = self.open_url_in_browser(url);
             }
             AppEvent::OpenUrlElicitationInBrowser {
-                thread_id,
+                process_id,
                 server_name,
                 request_id,
                 url,
@@ -2575,8 +2573,8 @@ impl App {
                 } else {
                     on_error
                 };
-                self.submit_op_to_thread(
-                    thread_id,
+                self.submit_op_to_process(
+                    process_id,
                     Op::ResolveElicitation {
                         server_name,
                         request_id,
@@ -2929,8 +2927,8 @@ impl App {
             AppEvent::OpenAgentPicker => {
                 self.open_agent_picker().await;
             }
-            AppEvent::SelectAgentThread(thread_id) => {
-                self.select_agent_thread(tui, thread_id).await?;
+            AppEvent::SelectAgentProcess(process_id) => {
+                self.select_agent_process(tui, process_id).await?;
             }
             AppEvent::SetAppEnabled { id, enabled } => {
                 let edits = if enabled {
@@ -3128,17 +3126,17 @@ impl App {
             ExitMode::ShutdownFirst => {
                 // Mark the thread we are explicitly shutting down for exit so
                 // its shutdown completion does not trigger agent failover.
-                self.pending_shutdown_exit_thread_id =
-                    self.active_thread_id.or(self.chat_widget.thread_id());
+                self.pending_shutdown_exit_process_id =
+                    self.active_process_id.or(self.chat_widget.process_id());
                 if self.chat_widget.submit_op(Op::Shutdown) {
                     AppRunControl::Continue
                 } else {
-                    self.pending_shutdown_exit_thread_id = None;
+                    self.pending_shutdown_exit_process_id = None;
                     AppRunControl::Exit(ExitReason::UserRequested)
                 }
             }
             ExitMode::Immediate => {
-                self.pending_shutdown_exit_thread_id = None;
+                self.pending_shutdown_exit_process_id = None;
                 AppRunControl::Exit(ExitReason::UserRequested)
             }
         }
@@ -3150,8 +3148,8 @@ impl App {
             EventMsg::SessionConfigured(_) | EventMsg::TurnStarted(_) | EventMsg::TokenCount(_)
         );
         // This guard is only for intentional thread-switch shutdowns.
-        // App-exit shutdowns are tracked by `pending_shutdown_exit_thread_id`
-        // and resolved in `handle_active_thread_event`.
+        // App-exit shutdowns are tracked by `pending_shutdown_exit_process_id`
+        // and resolved in `handle_active_process_event`.
         if self.suppress_shutdown_complete && matches!(event.msg, EventMsg::ShutdownComplete) {
             self.suppress_shutdown_complete = false;
             return;
@@ -3173,11 +3171,11 @@ impl App {
     /// This function enforces shutdown intent routing: unexpected non-primary
     /// thread shutdowns fail over to the primary thread, while user-requested
     /// app exits consume only the tracked shutdown completion and then proceed.
-    async fn handle_active_thread_event(&mut self, tui: &mut tui::Tui, event: Event) -> Result<()> {
+    async fn handle_active_process_event(&mut self, tui: &mut tui::Tui, event: Event) -> Result<()> {
         // Capture this before any potential thread switch: we only want to clear
         // the exit marker when the currently active thread acknowledges shutdown.
         let pending_shutdown_exit_completed = matches!(&event.msg, EventMsg::ShutdownComplete)
-            && self.pending_shutdown_exit_thread_id == self.active_thread_id;
+            && self.pending_shutdown_exit_process_id == self.active_process_id;
 
         // Processing order matters:
         //
@@ -3187,22 +3185,22 @@ impl App {
         //
         // This preserves the mental model that user-requested exits do not trigger
         // failover, while true sub-agent deaths still do.
-        if let Some((closed_thread_id, primary_thread_id)) =
+        if let Some((closed_process_id, primary_process_id)) =
             self.active_non_primary_shutdown_target(&event.msg)
         {
-            self.mark_agent_picker_thread_closed(closed_thread_id);
-            self.select_agent_thread(tui, primary_thread_id).await?;
-            if self.active_thread_id == Some(primary_thread_id) {
+            self.mark_agent_picker_process_closed(closed_process_id);
+            self.select_agent_process(tui, primary_process_id).await?;
+            if self.active_process_id == Some(primary_process_id) {
                 self.chat_widget.add_info_message(
                     format!(
-                        "Agent thread {closed_thread_id} closed. Switched back to main thread."
+                        "Agent process {closed_process_id} closed. Switched back to the main process."
                     ),
                     /*hint*/ None,
                 );
             } else {
                 self.clear_active_thread().await;
                 self.chat_widget.add_error_message(format!(
-                    "Agent thread {closed_thread_id} closed. Failed to switch back to main thread {primary_thread_id}.",
+                    "Agent process {closed_process_id} closed. Failed to switch back to the main process {primary_process_id}.",
                 ));
             }
             return Ok(());
@@ -3211,7 +3209,7 @@ impl App {
         if pending_shutdown_exit_completed {
             // Clear only after seeing the shutdown completion for the tracked
             // thread, so unrelated shutdowns cannot consume this marker.
-            self.pending_shutdown_exit_thread_id = None;
+            self.pending_shutdown_exit_process_id = None;
         }
         self.handle_codex_event_now(event);
         if self.backtrack_render_pending {
@@ -3220,20 +3218,20 @@ impl App {
         Ok(())
     }
 
-    async fn handle_thread_created(&mut self, thread_id: ThreadId) -> Result<()> {
-        if self.thread_event_channels.contains_key(&thread_id) {
+    async fn handle_process_created(&mut self, process_id: ProcessId) -> Result<()> {
+        if self.process_event_channels.contains_key(&process_id) {
             return Ok(());
         }
-        let thread = match self.server.get_thread(thread_id).await {
+        let thread = match self.server.get_process(process_id).await {
             Ok(thread) => thread,
             Err(err) => {
-                tracing::warn!("failed to attach listener for thread {thread_id}: {err}");
+                tracing::warn!("failed to attach listener for process {process_id}: {err}");
                 return Ok(());
             }
         };
         let config_snapshot = thread.config_snapshot().await;
         self.upsert_agent_picker_thread(
-            thread_id,
+            process_id,
             config_snapshot.session_source.get_nickname(),
             config_snapshot.session_source.get_agent_role(),
             /*is_closed*/ false,
@@ -3241,9 +3239,9 @@ impl App {
         let event = Event {
             id: String::new(),
             msg: EventMsg::SessionConfigured(SessionConfiguredEvent {
-                session_id: thread_id,
+                session_id: process_id,
                 forked_from_id: None,
-                thread_name: None,
+                process_name: None,
                 model: config_snapshot.model,
                 model_provider_id: config_snapshot.model_provider_id,
                 service_tier: config_snapshot.service_tier,
@@ -3260,23 +3258,23 @@ impl App {
             }),
         };
         let channel =
-            ThreadEventChannel::new_with_session_configured(THREAD_EVENT_CHANNEL_CAPACITY, event);
+            ProcessEventChannel::new_with_session_configured(PROCESS_EVENT_CHANNEL_CAPACITY, event);
         let app_event_tx = self.app_event_tx.clone();
-        self.thread_event_channels.insert(thread_id, channel);
+        self.process_event_channels.insert(process_id, channel);
         let listener_handle = tokio::spawn(async move {
             loop {
                 let event = match thread.next_event().await {
                     Ok(event) => event,
                     Err(err) => {
-                        tracing::debug!("external thread {thread_id} listener stopped: {err}");
+                        tracing::debug!("external process {process_id} listener stopped: {err}");
                         break;
                     }
                 };
-                app_event_tx.send(AppEvent::ThreadEvent { thread_id, event });
+                app_event_tx.send(AppEvent::ProcessEvent { process_id: process_id, event });
             }
         });
-        self.thread_event_listener_tasks
-            .insert(thread_id, listener_handle);
+        self.process_event_listener_tasks
+            .insert(process_id, listener_handle);
         Ok(())
     }
 
@@ -3423,26 +3421,26 @@ impl App {
             && self.chat_widget.composer_text_with_pending().is_empty()
             && previous_agent_shortcut_matches(key_event, allow_agent_word_motion_fallback)
         {
-            if let Some(thread_id) = self.agent_navigation.adjacent_thread_id(
-                self.current_displayed_thread_id(),
+            if let Some(process_id) = self.agent_navigation.adjacent_process_id(
+                self.current_displayed_process_id(),
                 AgentNavigationDirection::Previous,
             ) {
-                let _ = self.select_agent_thread(tui, thread_id).await;
+                let _ = self.select_agent_process(tui, process_id).await;
             }
             return;
         }
         if self.overlay.is_none()
             && self.chat_widget.no_modal_or_popup_active()
-            // Mirror the previous-agent rule above: empty drafts may use these keys for thread
+            // Mirror the previous-agent rule above: empty drafts may use these keys for process
             // switching, but non-empty drafts keep them for expected word-wise cursor motion.
             && self.chat_widget.composer_text_with_pending().is_empty()
             && next_agent_shortcut_matches(key_event, allow_agent_word_motion_fallback)
         {
-            if let Some(thread_id) = self.agent_navigation.adjacent_thread_id(
-                self.current_displayed_thread_id(),
+            if let Some(process_id) = self.agent_navigation.adjacent_process_id(
+                self.current_displayed_process_id(),
                 AgentNavigationDirection::Next,
             ) {
-                let _ = self.select_agent_thread(tui, thread_id).await;
+                let _ = self.select_agent_process(tui, process_id).await;
             }
             return;
         }
@@ -3559,14 +3557,14 @@ mod tests {
     use crate::history_cell::HistoryCell;
     use crate::history_cell::UserHistoryCell;
     use crate::history_cell::new_session_info;
-    use crate::multi_agents::AgentPickerThreadEntry;
+    use crate::multi_agents::AgentPickerProcessEntry;
     use assert_matches::assert_matches;
     use chaos_kern::CodexAuth;
     use chaos_kern::config::ConfigBuilder;
     use chaos_kern::config::ConfigOverrides;
     use chaos_kern::config::types::ModelAvailabilityNuxConfig;
     use chaos_syslog::SessionTelemetry;
-    use chaos_ipc::ThreadId;
+    use chaos_ipc::ProcessId;
     use chaos_ipc::config_types::CollaborationMode;
     use chaos_ipc::config_types::CollaborationModeMask;
     use chaos_ipc::config_types::ModeKind;
@@ -3579,7 +3577,7 @@ mod tests {
     use chaos_ipc::protocol::SandboxPolicy;
     use chaos_ipc::protocol::SessionConfiguredEvent;
     use chaos_ipc::protocol::SessionSource;
-    use chaos_ipc::protocol::ThreadRolledBackEvent;
+    use chaos_ipc::protocol::ProcessRolledBackEvent;
     use chaos_ipc::protocol::TurnAbortReason;
     use chaos_ipc::protocol::TurnAbortedEvent;
     use chaos_ipc::protocol::TurnCompleteEvent;
@@ -3630,7 +3628,7 @@ mod tests {
             App::should_wait_for_initial_session(&SessionSelection::Resume(
                 crate::resume_picker::SessionTarget {
                     path: PathBuf::from("/tmp/restore"),
-                    thread_id: ThreadId::new(),
+                    process_id: ProcessId::new(),
                 }
             )),
             false
@@ -3639,7 +3637,7 @@ mod tests {
             App::should_wait_for_initial_session(&SessionSelection::Fork(
                 crate::resume_picker::SessionTarget {
                     path: PathBuf::from("/tmp/fork"),
-                    thread_id: ThreadId::new(),
+                    process_id: ProcessId::new(),
                 }
             )),
             false
@@ -3647,12 +3645,12 @@ mod tests {
     }
 
     #[test]
-    fn startup_waiting_gate_holds_active_thread_events_until_primary_thread_configured() {
+    fn startup_waiting_gate_holds_active_process_events_until_primary_process_configured() {
         let mut wait_for_initial_session =
             App::should_wait_for_initial_session(&SessionSelection::StartFresh);
         assert_eq!(wait_for_initial_session, true);
         assert_eq!(
-            App::should_handle_active_thread_events(wait_for_initial_session, true),
+            App::should_handle_active_process_events(wait_for_initial_session, true),
             false
         );
 
@@ -3662,14 +3660,14 @@ mod tests {
         );
         if App::should_stop_waiting_for_initial_session(
             wait_for_initial_session,
-            Some(ThreadId::new()),
+            Some(ProcessId::new()),
         ) {
             wait_for_initial_session = false;
         }
         assert_eq!(wait_for_initial_session, false);
 
         assert_eq!(
-            App::should_handle_active_thread_events(wait_for_initial_session, true),
+            App::should_handle_active_process_events(wait_for_initial_session, true),
             true
         );
     }
@@ -3679,21 +3677,21 @@ mod tests {
         let wait_for_resume = App::should_wait_for_initial_session(&SessionSelection::Resume(
             crate::resume_picker::SessionTarget {
                 path: PathBuf::from("/tmp/restore"),
-                thread_id: ThreadId::new(),
+                process_id: ProcessId::new(),
             },
         ));
         assert_eq!(
-            App::should_handle_active_thread_events(wait_for_resume, true),
+            App::should_handle_active_process_events(wait_for_resume, true),
             true
         );
         let wait_for_fork = App::should_wait_for_initial_session(&SessionSelection::Fork(
             crate::resume_picker::SessionTarget {
                 path: PathBuf::from("/tmp/fork"),
-                thread_id: ThreadId::new(),
+                process_id: ProcessId::new(),
             },
         ));
         assert_eq!(
-            App::should_handle_active_thread_events(wait_for_fork, true),
+            App::should_handle_active_process_events(wait_for_fork, true),
             true
         );
     }
@@ -3702,7 +3700,7 @@ mod tests {
     async fn enqueue_primary_event_delivers_session_configured_before_buffered_approval()
     -> Result<()> {
         let (mut app, mut app_event_rx, _op_rx) = make_test_app_with_channels().await;
-        let thread_id = ThreadId::new();
+        let process_id = ProcessId::new();
         let approval_event = Event {
             id: "approval-event".to_string(),
             msg: EventMsg::ExecApprovalRequest(
@@ -3726,9 +3724,9 @@ mod tests {
         let session_configured_event = Event {
             id: "session-configured".to_string(),
             msg: EventMsg::SessionConfigured(SessionConfiguredEvent {
-                session_id: thread_id,
+                session_id: process_id,
                 forked_from_id: None,
-                thread_name: None,
+                process_name: None,
                 model: "gpt-test".to_string(),
                 model_provider_id: "test-provider".to_string(),
                 service_tier: None,
@@ -3750,7 +3748,7 @@ mod tests {
             .await?;
 
         let rx = app
-            .active_thread_rx
+            .active_process_rx
             .as_mut()
             .expect("primary thread receiver should be active");
         let first_event = time::timeout(Duration::from_millis(50), rx.recv())
@@ -3771,31 +3769,31 @@ mod tests {
             .handle_key_event(KeyEvent::new(KeyCode::Char('y'), KeyModifiers::NONE));
 
         while let Ok(app_event) = app_event_rx.try_recv() {
-            if let AppEvent::SubmitThreadOp {
-                thread_id: op_thread_id,
+            if let AppEvent::SubmitProcessOp {
+                process_id: op_process_id,
                 ..
             } = app_event
             {
-                assert_eq!(op_thread_id, thread_id);
+                assert_eq!(op_process_id, process_id);
                 return Ok(());
             }
         }
 
-        panic!("expected approval action to submit a thread-scoped op");
+        panic!("expected approval action to submit a process-scoped op");
     }
 
     #[tokio::test]
     async fn routed_thread_event_does_not_recreate_channel_after_reset() -> Result<()> {
         let mut app = make_test_app().await;
-        let thread_id = ThreadId::new();
-        app.thread_event_channels.insert(
-            thread_id,
-            ThreadEventChannel::new(THREAD_EVENT_CHANNEL_CAPACITY),
+        let process_id = ProcessId::new();
+        app.process_event_channels.insert(
+            process_id,
+            ProcessEventChannel::new(PROCESS_EVENT_CHANNEL_CAPACITY),
         );
 
-        app.reset_thread_event_state();
-        app.handle_routed_thread_event(
-            thread_id,
+        app.reset_process_event_state();
+        app.handle_routed_process_event(
+            process_id,
             Event {
                 id: "stale-event".to_string(),
                 msg: EventMsg::ShutdownComplete,
@@ -3804,16 +3802,16 @@ mod tests {
         .await?;
 
         assert!(
-            !app.thread_event_channels.contains_key(&thread_id),
+            !app.process_event_channels.contains_key(&process_id),
             "stale routed events should not recreate cleared thread channels"
         );
-        assert_eq!(app.active_thread_id, None);
-        assert_eq!(app.primary_thread_id, None);
+        assert_eq!(app.active_process_id, None);
+        assert_eq!(app.primary_process_id, None);
         Ok(())
     }
 
     #[tokio::test]
-    async fn reset_thread_event_state_aborts_listener_tasks() {
+    async fn reset_process_event_state_aborts_listener_tasks() {
         struct NotifyOnDrop(Option<tokio::sync::oneshot::Sender<()>>);
 
         impl Drop for NotifyOnDrop {
@@ -3825,7 +3823,7 @@ mod tests {
         }
 
         let mut app = make_test_app().await;
-        let thread_id = ThreadId::new();
+        let process_id = ProcessId::new();
         let (started_tx, started_rx) = tokio::sync::oneshot::channel();
         let (dropped_tx, dropped_rx) = tokio::sync::oneshot::channel();
         let handle = tokio::spawn(async move {
@@ -3833,14 +3831,14 @@ mod tests {
             let _ = started_tx.send(());
             std::future::pending::<()>().await;
         });
-        app.thread_event_listener_tasks.insert(thread_id, handle);
+        app.process_event_listener_tasks.insert(process_id, handle);
         started_rx
             .await
             .expect("listener task should report it started");
 
-        app.reset_thread_event_state();
+        app.reset_process_event_state();
 
-        assert_eq!(app.thread_event_listener_tasks.is_empty(), true);
+        assert_eq!(app.process_event_listener_tasks.is_empty(), true);
         time::timeout(Duration::from_millis(50), dropped_rx)
             .await
             .expect("timed out waiting for listener task abort")
@@ -3850,27 +3848,27 @@ mod tests {
     #[tokio::test]
     async fn enqueue_thread_event_does_not_block_when_channel_full() -> Result<()> {
         let mut app = make_test_app().await;
-        let thread_id = ThreadId::new();
-        app.thread_event_channels
-            .insert(thread_id, ThreadEventChannel::new(1));
-        app.set_thread_active(thread_id, true).await;
+        let process_id = ProcessId::new();
+        app.process_event_channels
+            .insert(process_id, ProcessEventChannel::new(1));
+        app.set_process_active(process_id, true).await;
 
         let event = Event {
             id: String::new(),
             msg: EventMsg::ShutdownComplete,
         };
 
-        app.enqueue_thread_event(thread_id, event.clone()).await?;
+        app.enqueue_process_event(process_id, event.clone()).await?;
         time::timeout(
             Duration::from_millis(50),
-            app.enqueue_thread_event(thread_id, event),
+            app.enqueue_process_event(process_id, event),
         )
         .await
-        .expect("enqueue_thread_event blocked on a full channel")?;
+        .expect("enqueue_process_event blocked on a full channel")?;
 
         let mut rx = app
-            .thread_event_channels
-            .get_mut(&thread_id)
+            .process_event_channels
+            .get_mut(&process_id)
             .expect("missing thread channel")
             .receiver
             .take()
@@ -3889,19 +3887,19 @@ mod tests {
     }
 
     #[tokio::test]
-    async fn replay_thread_snapshot_restores_draft_and_queued_input() {
+    async fn replay_process_snapshot_restores_draft_and_queued_input() {
         let mut app = make_test_app().await;
-        let thread_id = ThreadId::new();
-        app.thread_event_channels.insert(
-            thread_id,
-            ThreadEventChannel::new_with_session_configured(
-                THREAD_EVENT_CHANNEL_CAPACITY,
+        let process_id = ProcessId::new();
+        app.process_event_channels.insert(
+            process_id,
+            ProcessEventChannel::new_with_session_configured(
+                PROCESS_EVENT_CHANNEL_CAPACITY,
                 Event {
                     id: "session-configured".to_string(),
                     msg: EventMsg::SessionConfigured(SessionConfiguredEvent {
-                        session_id: thread_id,
+                        session_id: process_id,
                         forked_from_id: None,
-                        thread_name: None,
+                        process_name: None,
                         model: "gpt-test".to_string(),
                         model_provider_id: "test-provider".to_string(),
                         service_tier: None,
@@ -3919,7 +3917,7 @@ mod tests {
                 },
             ),
         );
-        app.activate_thread_channel(thread_id).await;
+        app.activate_process_channel(process_id).await;
 
         app.chat_widget
             .apply_external_edit("draft prompt".to_string());
@@ -3935,15 +3933,15 @@ mod tests {
         );
         let expected_input_state = app
             .chat_widget
-            .capture_thread_input_state()
+            .capture_process_input_state()
             .expect("expected thread input state");
 
-        app.store_active_thread_receiver().await;
+        app.store_active_process_receiver().await;
 
         let snapshot = {
             let channel = app
-                .thread_event_channels
-                .get(&thread_id)
+                .process_event_channels
+                .get(&process_id)
                 .expect("thread channel should exist");
             let store = channel.store.lock().await;
             assert_eq!(store.input_state, Some(expected_input_state));
@@ -3954,7 +3952,7 @@ mod tests {
             make_chatwidget_manual_with_sender().await;
         app.chat_widget = chat_widget;
 
-        app.replay_thread_snapshot(snapshot, true);
+        app.replay_process_snapshot(snapshot, true);
 
         assert_eq!(app.chat_widget.composer_text_with_pending(), "draft prompt");
         assert!(app.chat_widget.queued_user_message_texts().is_empty());
@@ -3973,13 +3971,13 @@ mod tests {
     #[tokio::test]
     async fn replayed_turn_complete_submits_restored_queued_follow_up() {
         let (mut app, _app_event_rx, _op_rx) = make_test_app_with_channels().await;
-        let thread_id = ThreadId::new();
+        let process_id = ProcessId::new();
         let session_configured = Event {
             id: "session-configured".to_string(),
             msg: EventMsg::SessionConfigured(SessionConfiguredEvent {
-                session_id: thread_id,
+                session_id: process_id,
                 forked_from_id: None,
-                thread_name: None,
+                process_name: None,
                 model: "gpt-test".to_string(),
                 model_provider_id: "test-provider".to_string(),
                 service_tier: None,
@@ -4017,7 +4015,7 @@ mod tests {
             .handle_key_event(KeyEvent::new(KeyCode::Enter, KeyModifiers::NONE));
         let input_state = app
             .chat_widget
-            .capture_thread_input_state()
+            .capture_process_input_state()
             .expect("expected queued follow-up state");
 
         let (chat_widget, _app_event_tx, _rx, mut new_op_rx) =
@@ -4025,8 +4023,8 @@ mod tests {
         app.chat_widget = chat_widget;
         app.chat_widget.handle_codex_event(session_configured);
         while new_op_rx.try_recv().is_ok() {}
-        app.replay_thread_snapshot(
-            ThreadEventSnapshot {
+        app.replay_process_snapshot(
+            ProcessEventSnapshot {
                 session_configured: None,
                 events: vec![Event {
                     id: "turn-complete".to_string(),
@@ -4055,13 +4053,13 @@ mod tests {
     #[tokio::test]
     async fn replay_only_thread_keeps_restored_queue_visible() {
         let (mut app, _app_event_rx, _op_rx) = make_test_app_with_channels().await;
-        let thread_id = ThreadId::new();
+        let process_id = ProcessId::new();
         let session_configured = Event {
             id: "session-configured".to_string(),
             msg: EventMsg::SessionConfigured(SessionConfiguredEvent {
-                session_id: thread_id,
+                session_id: process_id,
                 forked_from_id: None,
-                thread_name: None,
+                process_name: None,
                 model: "gpt-test".to_string(),
                 model_provider_id: "test-provider".to_string(),
                 service_tier: None,
@@ -4099,7 +4097,7 @@ mod tests {
             .handle_key_event(KeyEvent::new(KeyCode::Enter, KeyModifiers::NONE));
         let input_state = app
             .chat_widget
-            .capture_thread_input_state()
+            .capture_process_input_state()
             .expect("expected queued follow-up state");
 
         let (chat_widget, _app_event_tx, _rx, mut new_op_rx) =
@@ -4108,8 +4106,8 @@ mod tests {
         app.chat_widget.handle_codex_event(session_configured);
         while new_op_rx.try_recv().is_ok() {}
 
-        app.replay_thread_snapshot(
-            ThreadEventSnapshot {
+        app.replay_process_snapshot(
+            ProcessEventSnapshot {
                 session_configured: None,
                 events: vec![Event {
                     id: "turn-complete".to_string(),
@@ -4134,15 +4132,15 @@ mod tests {
     }
 
     #[tokio::test]
-    async fn replay_thread_snapshot_keeps_queue_when_running_state_only_comes_from_snapshot() {
+    async fn replay_process_snapshot_keeps_queue_when_running_state_only_comes_from_snapshot() {
         let (mut app, _app_event_rx, _op_rx) = make_test_app_with_channels().await;
-        let thread_id = ThreadId::new();
+        let process_id = ProcessId::new();
         let session_configured = Event {
             id: "session-configured".to_string(),
             msg: EventMsg::SessionConfigured(SessionConfiguredEvent {
-                session_id: thread_id,
+                session_id: process_id,
                 forked_from_id: None,
-                thread_name: None,
+                process_name: None,
                 model: "gpt-test".to_string(),
                 model_provider_id: "test-provider".to_string(),
                 service_tier: None,
@@ -4180,7 +4178,7 @@ mod tests {
             .handle_key_event(KeyEvent::new(KeyCode::Enter, KeyModifiers::NONE));
         let input_state = app
             .chat_widget
-            .capture_thread_input_state()
+            .capture_process_input_state()
             .expect("expected queued follow-up state");
 
         let (chat_widget, _app_event_tx, _rx, mut new_op_rx) =
@@ -4189,8 +4187,8 @@ mod tests {
         app.chat_widget.handle_codex_event(session_configured);
         while new_op_rx.try_recv().is_ok() {}
 
-        app.replay_thread_snapshot(
-            ThreadEventSnapshot {
+        app.replay_process_snapshot(
+            ProcessEventSnapshot {
                 session_configured: None,
                 events: vec![],
                 input_state: Some(input_state),
@@ -4209,15 +4207,15 @@ mod tests {
     }
 
     #[tokio::test]
-    async fn replay_thread_snapshot_does_not_submit_queue_before_replay_catches_up() {
+    async fn replay_process_snapshot_does_not_submit_queue_before_replay_catches_up() {
         let (mut app, _app_event_rx, _op_rx) = make_test_app_with_channels().await;
-        let thread_id = ThreadId::new();
+        let process_id = ProcessId::new();
         let session_configured = Event {
             id: "session-configured".to_string(),
             msg: EventMsg::SessionConfigured(SessionConfiguredEvent {
-                session_id: thread_id,
+                session_id: process_id,
                 forked_from_id: None,
-                thread_name: None,
+                process_name: None,
                 model: "gpt-test".to_string(),
                 model_provider_id: "test-provider".to_string(),
                 service_tier: None,
@@ -4255,7 +4253,7 @@ mod tests {
             .handle_key_event(KeyEvent::new(KeyCode::Enter, KeyModifiers::NONE));
         let input_state = app
             .chat_widget
-            .capture_thread_input_state()
+            .capture_process_input_state()
             .expect("expected queued follow-up state");
 
         let (chat_widget, _app_event_tx, _rx, mut new_op_rx) =
@@ -4264,8 +4262,8 @@ mod tests {
         app.chat_widget.handle_codex_event(session_configured);
         while new_op_rx.try_recv().is_ok() {}
 
-        app.replay_thread_snapshot(
-            ThreadEventSnapshot {
+        app.replay_process_snapshot(
+            ProcessEventSnapshot {
                 session_configured: None,
                 events: vec![
                     Event {
@@ -4319,19 +4317,19 @@ mod tests {
     }
 
     #[tokio::test]
-    async fn replay_thread_snapshot_restores_pending_pastes_for_submit() {
+    async fn replay_process_snapshot_restores_pending_pastes_for_submit() {
         let (mut app, _app_event_rx, _op_rx) = make_test_app_with_channels().await;
-        let thread_id = ThreadId::new();
-        app.thread_event_channels.insert(
-            thread_id,
-            ThreadEventChannel::new_with_session_configured(
-                THREAD_EVENT_CHANNEL_CAPACITY,
+        let process_id = ProcessId::new();
+        app.process_event_channels.insert(
+            process_id,
+            ProcessEventChannel::new_with_session_configured(
+                PROCESS_EVENT_CHANNEL_CAPACITY,
                 Event {
                     id: "session-configured".to_string(),
                     msg: EventMsg::SessionConfigured(SessionConfiguredEvent {
-                        session_id: thread_id,
+                        session_id: process_id,
                         forked_from_id: None,
-                        thread_name: None,
+                        process_name: None,
                         model: "gpt-test".to_string(),
                         model_provider_id: "test-provider".to_string(),
                         service_tier: None,
@@ -4349,21 +4347,21 @@ mod tests {
                 },
             ),
         );
-        app.activate_thread_channel(thread_id).await;
+        app.activate_process_channel(process_id).await;
 
         let large = "x".repeat(1005);
         app.chat_widget.handle_paste(large.clone());
         let expected_input_state = app
             .chat_widget
-            .capture_thread_input_state()
+            .capture_process_input_state()
             .expect("expected thread input state");
 
-        app.store_active_thread_receiver().await;
+        app.store_active_process_receiver().await;
 
         let snapshot = {
             let channel = app
-                .thread_event_channels
-                .get(&thread_id)
+                .process_event_channels
+                .get(&process_id)
                 .expect("thread channel should exist");
             let store = channel.store.lock().await;
             assert_eq!(store.input_state, Some(expected_input_state));
@@ -4373,7 +4371,7 @@ mod tests {
         let (chat_widget, _app_event_tx, _rx, mut new_op_rx) =
             make_chatwidget_manual_with_sender().await;
         app.chat_widget = chat_widget;
-        app.replay_thread_snapshot(snapshot, true);
+        app.replay_process_snapshot(snapshot, true);
 
         assert_eq!(app.chat_widget.composer_text_with_pending(), large);
 
@@ -4393,15 +4391,15 @@ mod tests {
     }
 
     #[tokio::test]
-    async fn replay_thread_snapshot_restores_collaboration_mode_for_draft_submit() {
+    async fn replay_process_snapshot_restores_collaboration_mode_for_draft_submit() {
         let (mut app, _app_event_rx, _op_rx) = make_test_app_with_channels().await;
-        let thread_id = ThreadId::new();
+        let process_id = ProcessId::new();
         let session_configured = Event {
             id: "session-configured".to_string(),
             msg: EventMsg::SessionConfigured(SessionConfiguredEvent {
-                session_id: thread_id,
+                session_id: process_id,
                 forked_from_id: None,
-                thread_name: None,
+                process_name: None,
                 model: "gpt-test".to_string(),
                 model_provider_id: "test-provider".to_string(),
                 service_tier: None,
@@ -4433,7 +4431,7 @@ mod tests {
             .apply_external_edit("draft prompt".to_string());
         let input_state = app
             .chat_widget
-            .capture_thread_input_state()
+            .capture_process_input_state()
             .expect("expected draft input state");
 
         let (chat_widget, _app_event_tx, _rx, mut new_op_rx) =
@@ -4452,8 +4450,8 @@ mod tests {
             });
         while new_op_rx.try_recv().is_ok() {}
 
-        app.replay_thread_snapshot(
-            ThreadEventSnapshot {
+        app.replay_process_snapshot(
+            ProcessEventSnapshot {
                 session_configured: None,
                 events: vec![],
                 input_state: Some(input_state),
@@ -4497,15 +4495,15 @@ mod tests {
     }
 
     #[tokio::test]
-    async fn replay_thread_snapshot_restores_collaboration_mode_without_input() {
+    async fn replay_process_snapshot_restores_collaboration_mode_without_input() {
         let (mut app, _app_event_rx, _op_rx) = make_test_app_with_channels().await;
-        let thread_id = ThreadId::new();
+        let process_id = ProcessId::new();
         let session_configured = Event {
             id: "session-configured".to_string(),
             msg: EventMsg::SessionConfigured(SessionConfiguredEvent {
-                session_id: thread_id,
+                session_id: process_id,
                 forked_from_id: None,
-                thread_name: None,
+                process_name: None,
                 model: "gpt-test".to_string(),
                 model_provider_id: "test-provider".to_string(),
                 service_tier: None,
@@ -4535,7 +4533,7 @@ mod tests {
             });
         let input_state = app
             .chat_widget
-            .capture_thread_input_state()
+            .capture_process_input_state()
             .expect("expected collaboration-only input state");
 
         let (chat_widget, _app_event_tx, _rx, _new_op_rx) =
@@ -4553,8 +4551,8 @@ mod tests {
                 developer_instructions: None,
             });
 
-        app.replay_thread_snapshot(
-            ThreadEventSnapshot {
+        app.replay_process_snapshot(
+            ProcessEventSnapshot {
                 session_configured: None,
                 events: vec![],
                 input_state: Some(input_state),
@@ -4576,13 +4574,13 @@ mod tests {
     #[tokio::test]
     async fn replayed_interrupted_turn_restores_queued_input_to_composer() {
         let (mut app, _app_event_rx, _op_rx) = make_test_app_with_channels().await;
-        let thread_id = ThreadId::new();
+        let process_id = ProcessId::new();
         let session_configured = Event {
             id: "session-configured".to_string(),
             msg: EventMsg::SessionConfigured(SessionConfiguredEvent {
-                session_id: thread_id,
+                session_id: process_id,
                 forked_from_id: None,
-                thread_name: None,
+                process_name: None,
                 model: "gpt-test".to_string(),
                 model_provider_id: "test-provider".to_string(),
                 service_tier: None,
@@ -4620,7 +4618,7 @@ mod tests {
             .handle_key_event(KeyEvent::new(KeyCode::Enter, KeyModifiers::NONE));
         let input_state = app
             .chat_widget
-            .capture_thread_input_state()
+            .capture_process_input_state()
             .expect("expected queued follow-up state");
 
         let (chat_widget, _app_event_tx, _rx, mut new_op_rx) =
@@ -4629,8 +4627,8 @@ mod tests {
         app.chat_widget.handle_codex_event(session_configured);
         while new_op_rx.try_recv().is_ok() {}
 
-        app.replay_thread_snapshot(
-            ThreadEventSnapshot {
+        app.replay_process_snapshot(
+            ProcessEventSnapshot {
                 session_configured: None,
                 events: vec![Event {
                     id: "turn-aborted".to_string(),
@@ -4681,33 +4679,33 @@ mod tests {
     #[tokio::test]
     async fn open_agent_picker_keeps_missing_threads_for_replay() -> Result<()> {
         let mut app = make_test_app().await;
-        let thread_id = ThreadId::new();
-        app.thread_event_channels
-            .insert(thread_id, ThreadEventChannel::new(1));
+        let process_id = ProcessId::new();
+        app.process_event_channels
+            .insert(process_id, ProcessEventChannel::new(1));
 
         app.open_agent_picker().await;
 
-        assert_eq!(app.thread_event_channels.contains_key(&thread_id), true);
+        assert_eq!(app.process_event_channels.contains_key(&process_id), true);
         assert_eq!(
-            app.agent_navigation.get(&thread_id),
-            Some(&AgentPickerThreadEntry {
+            app.agent_navigation.get(&process_id),
+            Some(&AgentPickerProcessEntry {
                 agent_nickname: None,
                 agent_role: None,
                 is_closed: true,
             })
         );
-        assert_eq!(app.agent_navigation.ordered_thread_ids(), vec![thread_id]);
+        assert_eq!(app.agent_navigation.ordered_process_ids(), vec![process_id]);
         Ok(())
     }
 
     #[tokio::test]
-    async fn open_agent_picker_keeps_cached_closed_threads() -> Result<()> {
+    async fn open_agent_picker_keeps_cached_closed_processes() -> Result<()> {
         let mut app = make_test_app().await;
-        let thread_id = ThreadId::new();
-        app.thread_event_channels
-            .insert(thread_id, ThreadEventChannel::new(1));
+        let process_id = ProcessId::new();
+        app.process_event_channels
+            .insert(process_id, ProcessEventChannel::new(1));
         app.agent_navigation.upsert(
-            thread_id,
+            process_id,
             Some("Robie".to_string()),
             Some("explorer".to_string()),
             false,
@@ -4715,10 +4713,10 @@ mod tests {
 
         app.open_agent_picker().await;
 
-        assert_eq!(app.thread_event_channels.contains_key(&thread_id), true);
+        assert_eq!(app.process_event_channels.contains_key(&process_id), true);
         assert_eq!(
-            app.agent_navigation.get(&thread_id),
-            Some(&AgentPickerThreadEntry {
+            app.agent_navigation.get(&process_id),
+            Some(&AgentPickerProcessEntry {
                 agent_nickname: Some("Robie".to_string()),
                 agent_role: Some("explorer".to_string()),
                 is_closed: true,
@@ -5287,9 +5285,9 @@ guardian_approval = true
     async fn open_agent_picker_allows_existing_agent_threads_when_feature_is_disabled() -> Result<()>
     {
         let (mut app, mut app_event_rx, _op_rx) = make_test_app_with_channels().await;
-        let thread_id = ThreadId::new();
-        app.thread_event_channels
-            .insert(thread_id, ThreadEventChannel::new(1));
+        let process_id = ProcessId::new();
+        app.process_event_channels
+            .insert(process_id, ProcessEventChannel::new(1));
 
         app.open_agent_picker().await;
         app.chat_widget
@@ -5297,25 +5295,25 @@ guardian_approval = true
 
         assert_matches!(
             app_event_rx.try_recv(),
-            Ok(AppEvent::SelectAgentThread(selected_thread_id)) if selected_thread_id == thread_id
+            Ok(AppEvent::SelectAgentProcess(selected_process_id)) if selected_process_id == process_id
         );
         Ok(())
     }
 
     #[tokio::test]
-    async fn refresh_pending_thread_approvals_only_lists_inactive_threads() {
+    async fn refresh_pending_process_approvals_only_lists_inactive_processes() {
         let mut app = make_test_app().await;
-        let main_thread_id =
-            ThreadId::from_string("00000000-0000-0000-0000-000000000001").expect("valid thread");
-        let agent_thread_id =
-            ThreadId::from_string("00000000-0000-0000-0000-000000000002").expect("valid thread");
+        let main_process_id =
+            ProcessId::from_string("00000000-0000-0000-0000-000000000001").expect("valid thread");
+        let agent_process_id =
+            ProcessId::from_string("00000000-0000-0000-0000-000000000002").expect("valid thread");
 
-        app.primary_thread_id = Some(main_thread_id);
-        app.active_thread_id = Some(main_thread_id);
-        app.thread_event_channels
-            .insert(main_thread_id, ThreadEventChannel::new(1));
+        app.primary_process_id = Some(main_process_id);
+        app.active_process_id = Some(main_process_id);
+        app.process_event_channels
+            .insert(main_process_id, ProcessEventChannel::new(1));
 
-        let agent_channel = ThreadEventChannel::new(1);
+        let agent_channel = ProcessEventChannel::new(1);
         {
             let mut store = agent_channel.store.lock().await;
             store.push_event(Event {
@@ -5339,48 +5337,48 @@ guardian_approval = true
                 ),
             });
         }
-        app.thread_event_channels
-            .insert(agent_thread_id, agent_channel);
+        app.process_event_channels
+            .insert(agent_process_id, agent_channel);
         app.agent_navigation.upsert(
-            agent_thread_id,
+            agent_process_id,
             Some("Robie".to_string()),
             Some("explorer".to_string()),
             false,
         );
 
-        app.refresh_pending_thread_approvals().await;
+        app.refresh_pending_process_approvals().await;
         assert_eq!(
-            app.chat_widget.pending_thread_approvals(),
+            app.chat_widget.pending_process_approvals(),
             &["Robie [explorer]".to_string()]
         );
 
-        app.active_thread_id = Some(agent_thread_id);
-        app.refresh_pending_thread_approvals().await;
-        assert!(app.chat_widget.pending_thread_approvals().is_empty());
+        app.active_process_id = Some(agent_process_id);
+        app.refresh_pending_process_approvals().await;
+        assert!(app.chat_widget.pending_process_approvals().is_empty());
     }
 
     #[tokio::test]
-    async fn inactive_thread_approval_bubbles_into_active_view() -> Result<()> {
+    async fn inactive_process_approval_bubbles_into_active_view() -> Result<()> {
         let mut app = make_test_app().await;
-        let main_thread_id =
-            ThreadId::from_string("00000000-0000-0000-0000-000000000011").expect("valid thread");
-        let agent_thread_id =
-            ThreadId::from_string("00000000-0000-0000-0000-000000000022").expect("valid thread");
+        let main_process_id =
+            ProcessId::from_string("00000000-0000-0000-0000-000000000011").expect("valid thread");
+        let agent_process_id =
+            ProcessId::from_string("00000000-0000-0000-0000-000000000022").expect("valid thread");
 
-        app.primary_thread_id = Some(main_thread_id);
-        app.active_thread_id = Some(main_thread_id);
-        app.thread_event_channels
-            .insert(main_thread_id, ThreadEventChannel::new(1));
-        app.thread_event_channels.insert(
-            agent_thread_id,
-            ThreadEventChannel::new_with_session_configured(
+        app.primary_process_id = Some(main_process_id);
+        app.active_process_id = Some(main_process_id);
+        app.process_event_channels
+            .insert(main_process_id, ProcessEventChannel::new(1));
+        app.process_event_channels.insert(
+            agent_process_id,
+            ProcessEventChannel::new_with_session_configured(
                 1,
                 Event {
                     id: String::new(),
                     msg: EventMsg::SessionConfigured(SessionConfiguredEvent {
-                        session_id: agent_thread_id,
+                        session_id: agent_process_id,
                         forked_from_id: None,
-                        thread_name: None,
+                        process_name: None,
                         model: "gpt-5".to_string(),
                         model_provider_id: "test-provider".to_string(),
                         service_tier: None,
@@ -5399,14 +5397,14 @@ guardian_approval = true
             ),
         );
         app.agent_navigation.upsert(
-            agent_thread_id,
+            agent_process_id,
             Some("Robie".to_string()),
             Some("explorer".to_string()),
             false,
         );
 
-        app.enqueue_thread_event(
-            agent_thread_id,
+        app.enqueue_process_event(
+            agent_process_id,
             Event {
                 id: "ev-approval".to_string(),
                 msg: EventMsg::ExecApprovalRequest(
@@ -5432,7 +5430,7 @@ guardian_approval = true
 
         assert_eq!(app.chat_widget.has_active_view(), true);
         assert_eq!(
-            app.chat_widget.pending_thread_approvals(),
+            app.chat_widget.pending_process_approvals(),
             &["Robie [explorer]".to_string()]
         );
 
@@ -5441,33 +5439,33 @@ guardian_approval = true
 
     #[test]
     fn agent_picker_item_name_snapshot() {
-        let thread_id =
-            ThreadId::from_string("00000000-0000-0000-0000-000000000123").expect("valid thread id");
+        let process_id =
+            ProcessId::from_string("00000000-0000-0000-0000-000000000123").expect("valid thread id");
         let snapshot = [
             format!(
                 "{} | {}",
                 format_agent_picker_item_name(Some("Robie"), Some("explorer"), true),
-                thread_id
+                process_id
             ),
             format!(
                 "{} | {}",
                 format_agent_picker_item_name(Some("Robie"), Some("explorer"), false),
-                thread_id
+                process_id
             ),
             format!(
                 "{} | {}",
                 format_agent_picker_item_name(Some("Robie"), None, false),
-                thread_id
+                process_id
             ),
             format!(
                 "{} | {}",
                 format_agent_picker_item_name(None, Some("explorer"), false),
-                thread_id
+                process_id
             ),
             format!(
                 "{} | {}",
                 format_agent_picker_item_name(None, None, false),
-                thread_id
+                process_id
             ),
         ]
         .join("\n");
@@ -5478,8 +5476,8 @@ guardian_approval = true
     async fn active_non_primary_shutdown_target_returns_none_for_non_shutdown_event() -> Result<()>
     {
         let mut app = make_test_app().await;
-        app.active_thread_id = Some(ThreadId::new());
-        app.primary_thread_id = Some(ThreadId::new());
+        app.active_process_id = Some(ProcessId::new());
+        app.primary_process_id = Some(ProcessId::new());
 
         assert_eq!(
             app.active_non_primary_shutdown_target(&EventMsg::SkillsUpdateAvailable),
@@ -5492,9 +5490,9 @@ guardian_approval = true
     async fn active_non_primary_shutdown_target_returns_none_for_primary_thread_shutdown()
     -> Result<()> {
         let mut app = make_test_app().await;
-        let thread_id = ThreadId::new();
-        app.active_thread_id = Some(thread_id);
-        app.primary_thread_id = Some(thread_id);
+        let process_id = ProcessId::new();
+        app.active_process_id = Some(process_id);
+        app.primary_process_id = Some(process_id);
 
         assert_eq!(
             app.active_non_primary_shutdown_target(&EventMsg::ShutdownComplete),
@@ -5507,14 +5505,14 @@ guardian_approval = true
     async fn active_non_primary_shutdown_target_returns_ids_for_non_primary_shutdown() -> Result<()>
     {
         let mut app = make_test_app().await;
-        let active_thread_id = ThreadId::new();
-        let primary_thread_id = ThreadId::new();
-        app.active_thread_id = Some(active_thread_id);
-        app.primary_thread_id = Some(primary_thread_id);
+        let active_process_id = ProcessId::new();
+        let primary_process_id = ProcessId::new();
+        app.active_process_id = Some(active_process_id);
+        app.primary_process_id = Some(primary_process_id);
 
         assert_eq!(
             app.active_non_primary_shutdown_target(&EventMsg::ShutdownComplete),
-            Some((active_thread_id, primary_thread_id))
+            Some((active_process_id, primary_process_id))
         );
         Ok(())
     }
@@ -5523,11 +5521,11 @@ guardian_approval = true
     async fn active_non_primary_shutdown_target_returns_none_when_shutdown_exit_is_pending()
     -> Result<()> {
         let mut app = make_test_app().await;
-        let active_thread_id = ThreadId::new();
-        let primary_thread_id = ThreadId::new();
-        app.active_thread_id = Some(active_thread_id);
-        app.primary_thread_id = Some(primary_thread_id);
-        app.pending_shutdown_exit_thread_id = Some(active_thread_id);
+        let active_process_id = ProcessId::new();
+        let primary_process_id = ProcessId::new();
+        app.active_process_id = Some(active_process_id);
+        app.primary_process_id = Some(primary_process_id);
+        app.pending_shutdown_exit_process_id = Some(active_process_id);
 
         assert_eq!(
             app.active_non_primary_shutdown_target(&EventMsg::ShutdownComplete),
@@ -5540,15 +5538,15 @@ guardian_approval = true
     async fn active_non_primary_shutdown_target_still_switches_for_other_pending_exit_thread()
     -> Result<()> {
         let mut app = make_test_app().await;
-        let active_thread_id = ThreadId::new();
-        let primary_thread_id = ThreadId::new();
-        app.active_thread_id = Some(active_thread_id);
-        app.primary_thread_id = Some(primary_thread_id);
-        app.pending_shutdown_exit_thread_id = Some(ThreadId::new());
+        let active_process_id = ProcessId::new();
+        let primary_process_id = ProcessId::new();
+        app.active_process_id = Some(active_process_id);
+        app.primary_process_id = Some(primary_process_id);
+        app.pending_shutdown_exit_process_id = Some(ProcessId::new());
 
         assert_eq!(
             app.active_non_primary_shutdown_target(&EventMsg::ShutdownComplete),
-            Some((active_thread_id, primary_thread_id))
+            Some((active_process_id, primary_process_id))
         );
         Ok(())
     }
@@ -5599,9 +5597,9 @@ guardian_approval = true
         };
         let make_header = |is_first| -> Arc<dyn HistoryCell> {
             let event = SessionConfiguredEvent {
-                session_id: ThreadId::new(),
+                session_id: ProcessId::new(),
                 forked_from_id: None,
-                thread_name: None,
+                process_name: None,
                 model: "gpt-test".to_string(),
                 model_provider_id: "test-provider".to_string(),
                 service_tier: None,
@@ -5707,7 +5705,7 @@ guardian_approval = true
         let (chat_widget, app_event_tx, _rx, _op_rx) = make_chatwidget_manual_with_sender().await;
         let config = chat_widget.config_ref().clone();
         let server = Arc::new(
-            chaos_kern::test_support::thread_manager_with_models_provider(
+            chaos_kern::test_support::process_table_with_models_provider(
                 CodexAuth::from_api_key("Test API Key"),
                 config.model_provider.clone(),
             ),
@@ -5744,14 +5742,14 @@ guardian_approval = true
             feedback: crate::bottom_pane::FeedbackSnapshot::default(),
             feedback_audience: FeedbackAudience::External,
             suppress_shutdown_complete: false,
-            pending_shutdown_exit_thread_id: None,
+            pending_shutdown_exit_process_id: None,
 
-            thread_event_channels: HashMap::new(),
-            thread_event_listener_tasks: HashMap::new(),
+            process_event_channels: HashMap::new(),
+            process_event_listener_tasks: HashMap::new(),
             agent_navigation: AgentNavigationState::default(),
-            active_thread_id: None,
-            active_thread_rx: None,
-            primary_thread_id: None,
+            active_process_id: None,
+            active_process_rx: None,
+            primary_process_id: None,
             primary_session_configured: None,
             pending_primary_events: VecDeque::new(),
         }
@@ -5765,7 +5763,7 @@ guardian_approval = true
         let (chat_widget, app_event_tx, rx, op_rx) = make_chatwidget_manual_with_sender().await;
         let config = chat_widget.config_ref().clone();
         let server = Arc::new(
-            chaos_kern::test_support::thread_manager_with_models_provider(
+            chaos_kern::test_support::process_table_with_models_provider(
                 CodexAuth::from_api_key("Test API Key"),
                 config.model_provider.clone(),
             ),
@@ -5803,14 +5801,14 @@ guardian_approval = true
                 feedback: crate::bottom_pane::FeedbackSnapshot::default(),
                 feedback_audience: FeedbackAudience::External,
                 suppress_shutdown_complete: false,
-                pending_shutdown_exit_thread_id: None,
+                pending_shutdown_exit_process_id: None,
 
-                thread_event_channels: HashMap::new(),
-                thread_event_listener_tasks: HashMap::new(),
+                process_event_channels: HashMap::new(),
+                process_event_listener_tasks: HashMap::new(),
                 agent_navigation: AgentNavigationState::default(),
-                active_thread_id: None,
-                active_thread_rx: None,
-                primary_thread_id: None,
+                active_process_id: None,
+                active_process_rx: None,
+                primary_process_id: None,
                 primary_session_configured: None,
                 pending_primary_events: VecDeque::new(),
             },
@@ -5833,7 +5831,7 @@ guardian_approval = true
     fn test_session_telemetry(config: &Config, model: &str) -> SessionTelemetry {
         let model_info = chaos_kern::test_support::construct_model_info_offline(model, config);
         SessionTelemetry::new(
-            ThreadId::new(),
+            ProcessId::new(),
             model,
             model_info.slug.as_str(),
             None,
@@ -6248,9 +6246,9 @@ guardian_approval = true
         app.chat_widget.handle_codex_event(Event {
             id: String::new(),
             msg: EventMsg::SessionConfigured(SessionConfiguredEvent {
-                session_id: ThreadId::new(),
+                session_id: ProcessId::new(),
                 forked_from_id: None,
-                thread_name: None,
+                process_name: None,
                 model: "gpt-test".to_string(),
                 model_provider_id: "test-provider".to_string(),
                 service_tier: None,
@@ -6364,9 +6362,9 @@ guardian_approval = true
 
         let make_header = |is_first| {
             let event = SessionConfiguredEvent {
-                session_id: ThreadId::new(),
+                session_id: ProcessId::new(),
                 forked_from_id: None,
-                thread_name: None,
+                process_name: None,
                 model: "gpt-test".to_string(),
                 model_provider_id: "test-provider".to_string(),
                 service_tier: None,
@@ -6420,13 +6418,13 @@ guardian_approval = true
 
         assert_eq!(user_count(&app.transcript_cells), 2);
 
-        let base_id = ThreadId::new();
+        let base_id = ProcessId::new();
         app.chat_widget.handle_codex_event(Event {
             id: String::new(),
             msg: EventMsg::SessionConfigured(SessionConfiguredEvent {
                 session_id: base_id,
                 forked_from_id: None,
-                thread_name: None,
+                process_name: None,
                 model: "gpt-test".to_string(),
                 model_provider_id: "test-provider".to_string(),
                 service_tier: None,
@@ -6467,7 +6465,7 @@ guardian_approval = true
 
         let mut rollback_turns = None;
         while let Ok(op) = op_rx.try_recv() {
-            if let Op::ThreadRollback { num_turns } = op {
+            if let Op::ProcessRollback { num_turns } = op {
                 rollback_turns = Some(num_turns);
             }
         }
@@ -6502,7 +6500,7 @@ guardian_approval = true
 
         let mut rollback_turns = None;
         while let Ok(op) = op_rx.try_recv() {
-            if let Op::ThreadRollback { num_turns } = op {
+            if let Op::ProcessRollback { num_turns } = op {
                 rollback_turns = Some(num_turns);
             }
         }
@@ -6513,13 +6511,13 @@ guardian_approval = true
     async fn backtrack_resubmit_preserves_data_image_urls_in_user_turn() {
         let (mut app, _app_event_rx, mut op_rx) = make_test_app_with_channels().await;
 
-        let thread_id = ThreadId::new();
+        let process_id = ProcessId::new();
         app.chat_widget.handle_codex_event(Event {
             id: String::new(),
             msg: EventMsg::SessionConfigured(SessionConfiguredEvent {
-                session_id: thread_id,
+                session_id: process_id,
                 forked_from_id: None,
-                thread_name: None,
+                process_name: None,
                 model: "gpt-test".to_string(),
                 model_provider_id: "test-provider".to_string(),
                 service_tier: None,
@@ -6559,7 +6557,7 @@ guardian_approval = true
         let mut submitted_items: Option<Vec<UserInput>> = None;
         while let Ok(op) = op_rx.try_recv() {
             match op {
-                Op::ThreadRollback { .. } => saw_rollback = true,
+                Op::ProcessRollback { .. } => saw_rollback = true,
                 Op::UserTurn { items, .. } => submitted_items = Some(items),
                 _ => {}
             }
@@ -6579,13 +6577,13 @@ guardian_approval = true
     async fn replayed_initial_messages_apply_rollback_in_queue_order() {
         let (mut app, mut app_event_rx, _op_rx) = make_test_app_with_channels().await;
 
-        let session_id = ThreadId::new();
+        let session_id = ProcessId::new();
         app.handle_codex_event_replay(Event {
             id: String::new(),
             msg: EventMsg::SessionConfigured(SessionConfiguredEvent {
                 session_id,
                 forked_from_id: None,
-                thread_name: None,
+                process_name: None,
                 model: "gpt-test".to_string(),
                 model_provider_id: "test-provider".to_string(),
                 service_tier: None,
@@ -6609,7 +6607,7 @@ guardian_approval = true
                         local_images: Vec::new(),
                         text_elements: Vec::new(),
                     }),
-                    EventMsg::ThreadRolledBack(ThreadRolledBackEvent { num_turns: 1 }),
+                    EventMsg::ProcessRolledBack(ProcessRolledBackEvent { num_turns: 1 }),
                     EventMsg::UserMessage(UserMessageEvent {
                         message: "third prompt".to_string(),
                         images: None,
@@ -6629,7 +6627,7 @@ guardian_approval = true
                     let cell: Arc<dyn HistoryCell> = cell.into();
                     app.transcript_cells.push(cell);
                 }
-                AppEvent::ApplyThreadRollback { num_turns } => {
+                AppEvent::ApplyProcessRollback { num_turns } => {
                     saw_rollback = true;
                     crate::app_backtrack::trim_transcript_cells_drop_last_n_user_turns(
                         &mut app.transcript_cells,
@@ -6660,13 +6658,13 @@ guardian_approval = true
     async fn live_rollback_during_replay_is_applied_in_app_event_order() {
         let (mut app, mut app_event_rx, _op_rx) = make_test_app_with_channels().await;
 
-        let session_id = ThreadId::new();
+        let session_id = ProcessId::new();
         app.handle_codex_event_replay(Event {
             id: String::new(),
             msg: EventMsg::SessionConfigured(SessionConfiguredEvent {
                 session_id,
                 forked_from_id: None,
-                thread_name: None,
+                process_name: None,
                 model: "gpt-test".to_string(),
                 model_provider_id: "test-provider".to_string(),
                 service_tier: None,
@@ -6699,7 +6697,7 @@ guardian_approval = true
         // Simulate a live rollback arriving before queued replay inserts are drained.
         app.handle_codex_event_now(Event {
             id: "live-rollback".to_string(),
-            msg: EventMsg::ThreadRolledBack(ThreadRolledBackEvent { num_turns: 1 }),
+            msg: EventMsg::ProcessRolledBack(ProcessRolledBackEvent { num_turns: 1 }),
         });
 
         let mut saw_rollback = false;
@@ -6709,7 +6707,7 @@ guardian_approval = true
                     let cell: Arc<dyn HistoryCell> = cell.into();
                     app.transcript_cells.push(cell);
                 }
-                AppEvent::ApplyThreadRollback { num_turns } => {
+                AppEvent::ApplyProcessRollback { num_turns } => {
                     saw_rollback = true;
                     crate::app_backtrack::trim_transcript_cells_drop_last_n_user_turns(
                         &mut app.transcript_cells,
@@ -6763,7 +6761,7 @@ guardian_approval = true
         app.backtrack.overlay_preview_active = true;
         app.backtrack.nth_user_message = 1;
 
-        let changed = app.apply_non_pending_thread_rollback(1);
+        let changed = app.apply_non_pending_process_rollback(1);
 
         assert!(changed);
         assert!(app.backtrack_render_pending);
@@ -6790,11 +6788,11 @@ guardian_approval = true
     async fn new_session_requests_shutdown_for_previous_conversation() {
         let (mut app, mut app_event_rx, mut op_rx) = make_test_app_with_channels().await;
 
-        let thread_id = ThreadId::new();
+        let process_id = ProcessId::new();
         let event = SessionConfiguredEvent {
-            session_id: thread_id,
+            session_id: process_id,
             forked_from_id: None,
-            thread_name: None,
+            process_name: None,
             model: "gpt-test".to_string(),
             model_provider_id: "test-provider".to_string(),
             service_tier: None,
@@ -6818,7 +6816,7 @@ guardian_approval = true
         while app_event_rx.try_recv().is_ok() {}
         while op_rx.try_recv().is_ok() {}
 
-        app.shutdown_current_thread().await;
+        app.shutdown_current_process().await;
 
         match op_rx.try_recv() {
             Ok(Op::Shutdown) => {}
@@ -6830,12 +6828,12 @@ guardian_approval = true
     #[tokio::test]
     async fn shutdown_first_exit_returns_immediate_exit_when_shutdown_submit_fails() {
         let mut app = make_test_app().await;
-        let thread_id = ThreadId::new();
-        app.active_thread_id = Some(thread_id);
+        let process_id = ProcessId::new();
+        app.active_process_id = Some(process_id);
 
         let control = app.handle_exit_mode(ExitMode::ShutdownFirst);
 
-        assert_eq!(app.pending_shutdown_exit_thread_id, None);
+        assert_eq!(app.pending_shutdown_exit_process_id, None);
         assert!(matches!(
             control,
             AppRunControl::Exit(ExitReason::UserRequested)
@@ -6845,12 +6843,12 @@ guardian_approval = true
     #[tokio::test]
     async fn shutdown_first_exit_waits_for_shutdown_when_submit_succeeds() {
         let (mut app, _app_event_rx, mut op_rx) = make_test_app_with_channels().await;
-        let thread_id = ThreadId::new();
-        app.active_thread_id = Some(thread_id);
+        let process_id = ProcessId::new();
+        app.active_process_id = Some(process_id);
 
         let control = app.handle_exit_mode(ExitMode::ShutdownFirst);
 
-        assert_eq!(app.pending_shutdown_exit_thread_id, Some(thread_id));
+        assert_eq!(app.pending_shutdown_exit_process_id, Some(process_id));
         assert!(matches!(control, AppRunControl::Continue));
         assert_eq!(op_rx.try_recv(), Ok(Op::Shutdown));
     }
@@ -6858,13 +6856,13 @@ guardian_approval = true
     #[tokio::test]
     async fn clear_only_ui_reset_preserves_chat_session_state() {
         let mut app = make_test_app().await;
-        let thread_id = ThreadId::new();
+        let process_id = ProcessId::new();
         app.chat_widget.handle_codex_event(Event {
             id: String::new(),
             msg: EventMsg::SessionConfigured(SessionConfiguredEvent {
-                session_id: thread_id,
+                session_id: process_id,
                 forked_from_id: None,
-                thread_name: Some("keep me".to_string()),
+                process_name: Some("keep me".to_string()),
                 model: "gpt-test".to_string(),
                 model_provider_id: "test-provider".to_string(),
                 service_tier: None,
@@ -6906,7 +6904,7 @@ guardian_approval = true
         assert!(!app.backtrack.overlay_preview_active);
         assert!(app.backtrack.pending_rollback.is_none());
         assert!(!app.backtrack_render_pending);
-        assert_eq!(app.chat_widget.thread_id(), Some(thread_id));
+        assert_eq!(app.chat_widget.process_id(), Some(process_id));
         assert_eq!(app.chat_widget.composer_text_with_pending(), "draft prompt");
     }
 
@@ -6923,7 +6921,7 @@ guardian_approval = true
             total_tokens: 12,
             ..Default::default()
         };
-        let conversation = ThreadId::from_string("123e4567-e89b-12d3-a456-426614174000").unwrap();
+        let conversation = ProcessId::from_string("123e4567-e89b-12d3-a456-426614174000").unwrap();
 
         let summary = session_summary(usage, Some(conversation), None).expect("summary");
         assert_eq!(
@@ -6944,7 +6942,7 @@ guardian_approval = true
             total_tokens: 12,
             ..Default::default()
         };
-        let conversation = ThreadId::from_string("123e4567-e89b-12d3-a456-426614174000").unwrap();
+        let conversation = ProcessId::from_string("123e4567-e89b-12d3-a456-426614174000").unwrap();
 
         let summary = session_summary(usage, Some(conversation), Some("my-session".to_string()))
             .expect("summary");

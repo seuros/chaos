@@ -17,12 +17,12 @@ use chaos_fork::exec_events::McpToolCallItemResult;
 use chaos_fork::exec_events::McpToolCallStatus;
 use chaos_fork::exec_events::PatchApplyStatus;
 use chaos_fork::exec_events::PatchChangeKind;
+use chaos_fork::exec_events::ProcessEvent;
 use chaos_fork::exec_events::ReasoningItem;
-use chaos_fork::exec_events::ThreadErrorEvent;
-use chaos_fork::exec_events::ThreadEvent;
-use chaos_fork::exec_events::ThreadItem;
-use chaos_fork::exec_events::ThreadItemDetails;
-use chaos_fork::exec_events::ThreadStartedEvent;
+use chaos_fork::exec_events::ProcessItem;
+use chaos_fork::exec_events::ProcessItemDetails;
+use chaos_fork::exec_events::ProcessStartedEvent;
+use chaos_fork::exec_events::ProcessErrorEvent;
 use chaos_fork::exec_events::TodoItem as ExecTodoItem;
 use chaos_fork::exec_events::TodoListItem as ExecTodoListItem;
 use chaos_fork::exec_events::TurnCompletedEvent;
@@ -30,7 +30,7 @@ use chaos_fork::exec_events::TurnFailedEvent;
 use chaos_fork::exec_events::TurnStartedEvent;
 use chaos_fork::exec_events::Usage;
 use chaos_fork::exec_events::WebSearchItem;
-use chaos_ipc::ThreadId;
+use chaos_ipc::ProcessId;
 use chaos_ipc::config_types::ModeKind;
 use chaos_ipc::mcp::CallToolResult;
 use chaos_ipc::models::WebSearchAction;
@@ -81,17 +81,17 @@ fn event(id: &str, msg: EventMsg) -> Event {
 }
 
 #[test]
-fn session_configured_produces_thread_started_event() {
+fn session_configured_produces_process_started_event() {
     let mut ep = EventProcessorWithJsonOutput::new(None);
     let session_id =
-        chaos_ipc::ThreadId::from_string("67e55044-10b1-426f-9247-bb680e5fe0c8").unwrap();
+        chaos_ipc::ProcessId::from_string("67e55044-10b1-426f-9247-bb680e5fe0c8").unwrap();
     let rollout_path = PathBuf::from("/tmp/rollout.json");
     let ev = event(
         "e1",
         EventMsg::SessionConfigured(SessionConfiguredEvent {
             session_id,
             forked_from_id: None,
-            thread_name: None,
+            process_name: None,
             model: "codex-mini-latest".to_string(),
             model_provider_id: "test-provider".to_string(),
             service_tier: None,
@@ -107,11 +107,11 @@ fn session_configured_produces_thread_started_event() {
             rollout_path: Some(rollout_path),
         }),
     );
-    let out = ep.collect_thread_events(&ev);
+    let out = ep.collect_process_events(&ev);
     assert_eq!(
         out,
-        vec![ThreadEvent::ThreadStarted(ThreadStartedEvent {
-            thread_id: "67e55044-10b1-426f-9247-bb680e5fe0c8".to_string(),
+        vec![ProcessEvent::ProcessStarted(ProcessStartedEvent {
+            process_id: "67e55044-10b1-426f-9247-bb680e5fe0c8".to_string(),
         })]
     );
 }
@@ -119,7 +119,7 @@ fn session_configured_produces_thread_started_event() {
 #[test]
 fn task_started_produces_turn_started_event() {
     let mut ep = EventProcessorWithJsonOutput::new(None);
-    let out = ep.collect_thread_events(&event(
+    let out = ep.collect_process_events(&event(
         "t1",
         EventMsg::TurnStarted(chaos_ipc::protocol::TurnStartedEvent {
             turn_id: "turn-1".to_string(),
@@ -128,7 +128,7 @@ fn task_started_produces_turn_started_event() {
         }),
     ));
 
-    assert_eq!(out, vec![ThreadEvent::TurnStarted(TurnStartedEvent {})]);
+    assert_eq!(out, vec![ProcessEvent::TurnStarted(TurnStartedEvent {})]);
 }
 
 #[test]
@@ -139,7 +139,7 @@ fn web_search_end_emits_item_completed() {
         query: Some(query.clone()),
         queries: None,
     };
-    let out = ep.collect_thread_events(&event(
+    let out = ep.collect_process_events(&event(
         "w1",
         EventMsg::WebSearchEnd(WebSearchEndEvent {
             call_id: "call-123".to_string(),
@@ -150,10 +150,10 @@ fn web_search_end_emits_item_completed() {
 
     assert_eq!(
         out,
-        vec![ThreadEvent::ItemCompleted(ItemCompletedEvent {
-            item: ThreadItem {
+        vec![ProcessEvent::ItemCompleted(ItemCompletedEvent {
+            item: ProcessItem {
                 id: "item_0".to_string(),
-                details: ThreadItemDetails::WebSearch(WebSearchItem {
+                details: ProcessItemDetails::WebSearch(WebSearchItem {
                     id: "call-123".to_string(),
                     query,
                     action,
@@ -166,7 +166,7 @@ fn web_search_end_emits_item_completed() {
 #[test]
 fn web_search_begin_emits_item_started() {
     let mut ep = EventProcessorWithJsonOutput::new(None);
-    let out = ep.collect_thread_events(&event(
+    let out = ep.collect_process_events(&event(
         "w0",
         EventMsg::WebSearchBegin(WebSearchBeginEvent {
             call_id: "call-0".to_string(),
@@ -174,13 +174,13 @@ fn web_search_begin_emits_item_started() {
     ));
 
     assert_eq!(out.len(), 1);
-    let ThreadEvent::ItemStarted(ItemStartedEvent { item }) = &out[0] else {
+    let ProcessEvent::ItemStarted(ItemStartedEvent { item }) = &out[0] else {
         panic!("expected ItemStarted");
     };
     assert!(item.id.starts_with("item_"));
     assert_eq!(
         item.details,
-        ThreadItemDetails::WebSearch(WebSearchItem {
+        ProcessItemDetails::WebSearch(WebSearchItem {
             id: "call-0".to_string(),
             query: String::new(),
             action: WebSearchAction::Other,
@@ -191,20 +191,20 @@ fn web_search_begin_emits_item_started() {
 #[test]
 fn web_search_begin_then_end_reuses_item_id() {
     let mut ep = EventProcessorWithJsonOutput::new(None);
-    let begin = ep.collect_thread_events(&event(
+    let begin = ep.collect_process_events(&event(
         "w0",
         EventMsg::WebSearchBegin(WebSearchBeginEvent {
             call_id: "call-1".to_string(),
         }),
     ));
-    let ThreadEvent::ItemStarted(ItemStartedEvent { item: started_item }) = &begin[0] else {
+    let ProcessEvent::ItemStarted(ItemStartedEvent { item: started_item }) = &begin[0] else {
         panic!("expected ItemStarted");
     };
     let action = WebSearchAction::Search {
         query: Some("rust async await".to_string()),
         queries: None,
     };
-    let end = ep.collect_thread_events(&event(
+    let end = ep.collect_process_events(&event(
         "w1",
         EventMsg::WebSearchEnd(WebSearchEndEvent {
             call_id: "call-1".to_string(),
@@ -212,7 +212,7 @@ fn web_search_begin_then_end_reuses_item_id() {
             action: action.clone(),
         }),
     ));
-    let ThreadEvent::ItemCompleted(ItemCompletedEvent {
+    let ProcessEvent::ItemCompleted(ItemCompletedEvent {
         item: completed_item,
     }) = &end[0]
     else {
@@ -222,7 +222,7 @@ fn web_search_begin_then_end_reuses_item_id() {
     assert_eq!(completed_item.id, started_item.id);
     assert_eq!(
         completed_item.details,
-        ThreadItemDetails::WebSearch(WebSearchItem {
+        ProcessItemDetails::WebSearch(WebSearchItem {
             id: "call-1".to_string(),
             query: "rust async await".to_string(),
             action,
@@ -251,13 +251,13 @@ fn plan_update_emits_todo_list_started_updated_and_completed() {
             ],
         }),
     );
-    let out_first = ep.collect_thread_events(&first);
+    let out_first = ep.collect_process_events(&first);
     assert_eq!(
         out_first,
-        vec![ThreadEvent::ItemStarted(ItemStartedEvent {
-            item: ThreadItem {
+        vec![ProcessEvent::ItemStarted(ItemStartedEvent {
+            item: ProcessItem {
                 id: "item_0".to_string(),
-                details: ThreadItemDetails::TodoList(ExecTodoListItem {
+                details: ProcessItemDetails::TodoList(ExecTodoListItem {
                     items: vec![
                         ExecTodoItem {
                             text: "step one".to_string(),
@@ -290,13 +290,13 @@ fn plan_update_emits_todo_list_started_updated_and_completed() {
             ],
         }),
     );
-    let out_second = ep.collect_thread_events(&second);
+    let out_second = ep.collect_process_events(&second);
     assert_eq!(
         out_second,
-        vec![ThreadEvent::ItemUpdated(ItemUpdatedEvent {
-            item: ThreadItem {
+        vec![ProcessEvent::ItemUpdated(ItemUpdatedEvent {
+            item: ProcessItem {
                 id: "item_0".to_string(),
-                details: ThreadItemDetails::TodoList(ExecTodoListItem {
+                details: ProcessItemDetails::TodoList(ExecTodoListItem {
                     items: vec![
                         ExecTodoItem {
                             text: "step one".to_string(),
@@ -320,14 +320,14 @@ fn plan_update_emits_todo_list_started_updated_and_completed() {
             last_agent_message: None,
         }),
     );
-    let out_complete = ep.collect_thread_events(&complete);
+    let out_complete = ep.collect_process_events(&complete);
     assert_eq!(
         out_complete,
         vec![
-            ThreadEvent::ItemCompleted(ItemCompletedEvent {
-                item: ThreadItem {
+            ProcessEvent::ItemCompleted(ItemCompletedEvent {
+                item: ProcessItem {
                     id: "item_0".to_string(),
-                    details: ThreadItemDetails::TodoList(ExecTodoListItem {
+                    details: ProcessItemDetails::TodoList(ExecTodoListItem {
                         items: vec![
                             ExecTodoItem {
                                 text: "step one".to_string(),
@@ -341,7 +341,7 @@ fn plan_update_emits_todo_list_started_updated_and_completed() {
                     }),
                 },
             }),
-            ThreadEvent::TurnCompleted(TurnCompletedEvent {
+            ProcessEvent::TurnCompleted(TurnCompletedEvent {
                 usage: Usage::default(),
             }),
         ]
@@ -364,13 +364,13 @@ fn mcp_tool_call_begin_and_end_emit_item_events() {
             invocation: invocation.clone(),
         }),
     );
-    let begin_events = ep.collect_thread_events(&begin);
+    let begin_events = ep.collect_process_events(&begin);
     assert_eq!(
         begin_events,
-        vec![ThreadEvent::ItemStarted(ItemStartedEvent {
-            item: ThreadItem {
+        vec![ProcessEvent::ItemStarted(ItemStartedEvent {
+            item: ProcessItem {
                 id: "item_0".to_string(),
-                details: ThreadItemDetails::McpToolCall(McpToolCallItem {
+                details: ProcessItemDetails::McpToolCall(McpToolCallItem {
                     server: "server_a".to_string(),
                     tool: "tool_x".to_string(),
                     arguments: json!({ "key": "value" }),
@@ -396,13 +396,13 @@ fn mcp_tool_call_begin_and_end_emit_item_events() {
             }),
         }),
     );
-    let end_events = ep.collect_thread_events(&end);
+    let end_events = ep.collect_process_events(&end);
     assert_eq!(
         end_events,
-        vec![ThreadEvent::ItemCompleted(ItemCompletedEvent {
-            item: ThreadItem {
+        vec![ProcessEvent::ItemCompleted(ItemCompletedEvent {
+            item: ProcessItem {
                 id: "item_0".to_string(),
-                details: ThreadItemDetails::McpToolCall(McpToolCallItem {
+                details: ProcessItemDetails::McpToolCall(McpToolCallItem {
                     server: "server_a".to_string(),
                     tool: "tool_x".to_string(),
                     arguments: json!({ "key": "value" }),
@@ -434,7 +434,7 @@ fn mcp_tool_call_failure_sets_failed_status() {
             invocation: invocation.clone(),
         }),
     );
-    ep.collect_thread_events(&begin);
+    ep.collect_process_events(&begin);
 
     let end = event(
         "m4",
@@ -445,13 +445,13 @@ fn mcp_tool_call_failure_sets_failed_status() {
             result: Err("tool exploded".to_string()),
         }),
     );
-    let events = ep.collect_thread_events(&end);
+    let events = ep.collect_process_events(&end);
     assert_eq!(
         events,
-        vec![ThreadEvent::ItemCompleted(ItemCompletedEvent {
-            item: ThreadItem {
+        vec![ProcessEvent::ItemCompleted(ItemCompletedEvent {
+            item: ProcessItem {
                 id: "item_0".to_string(),
-                details: ThreadItemDetails::McpToolCall(McpToolCallItem {
+                details: ProcessItemDetails::McpToolCall(McpToolCallItem {
                     server: "server_b".to_string(),
                     tool: "tool_y".to_string(),
                     arguments: json!({ "param": 42 }),
@@ -482,13 +482,13 @@ fn mcp_tool_call_defaults_arguments_and_preserves_structured_content() {
             invocation: invocation.clone(),
         }),
     );
-    let begin_events = ep.collect_thread_events(&begin);
+    let begin_events = ep.collect_process_events(&begin);
     assert_eq!(
         begin_events,
-        vec![ThreadEvent::ItemStarted(ItemStartedEvent {
-            item: ThreadItem {
+        vec![ProcessEvent::ItemStarted(ItemStartedEvent {
+            item: ProcessItem {
                 id: "item_0".to_string(),
-                details: ThreadItemDetails::McpToolCall(McpToolCallItem {
+                details: ProcessItemDetails::McpToolCall(McpToolCallItem {
                     server: "server_c".to_string(),
                     tool: "tool_z".to_string(),
                     arguments: serde_json::Value::Null,
@@ -514,13 +514,13 @@ fn mcp_tool_call_defaults_arguments_and_preserves_structured_content() {
             }),
         }),
     );
-    let events = ep.collect_thread_events(&end);
+    let events = ep.collect_process_events(&end);
     assert_eq!(
         events,
-        vec![ThreadEvent::ItemCompleted(ItemCompletedEvent {
-            item: ThreadItem {
+        vec![ProcessEvent::ItemCompleted(ItemCompletedEvent {
+            item: ProcessItem {
                 id: "item_0".to_string(),
-                details: ThreadItemDetails::McpToolCall(McpToolCallItem {
+                details: ProcessItemDetails::McpToolCall(McpToolCallItem {
                     server: "server_c".to_string(),
                     tool: "tool_z".to_string(),
                     arguments: serde_json::Value::Null,
@@ -539,30 +539,30 @@ fn mcp_tool_call_defaults_arguments_and_preserves_structured_content() {
 #[test]
 fn collab_spawn_begin_and_end_emit_item_events() {
     let mut ep = EventProcessorWithJsonOutput::new(None);
-    let sender_thread_id = ThreadId::from_string("67e55044-10b1-426f-9247-bb680e5fe0c8").unwrap();
-    let new_thread_id = ThreadId::from_string("9e107d9d-372b-4b8c-a2a4-1d9bb3fce0c1").unwrap();
+    let sender_process_id = ProcessId::from_string("67e55044-10b1-426f-9247-bb680e5fe0c8").unwrap();
+    let new_process_id = ProcessId::from_string("9e107d9d-372b-4b8c-a2a4-1d9bb3fce0c1").unwrap();
     let prompt = "draft a plan".to_string();
 
     let begin = event(
         "c1",
         EventMsg::CollabAgentSpawnBegin(CollabAgentSpawnBeginEvent {
             call_id: "call-10".to_string(),
-            sender_thread_id,
+            sender_process_id,
             prompt: prompt.clone(),
             model: "gpt-5".to_string(),
             reasoning_effort: ReasoningEffortConfig::default(),
         }),
     );
-    let begin_events = ep.collect_thread_events(&begin);
+    let begin_events = ep.collect_process_events(&begin);
     assert_eq!(
         begin_events,
-        vec![ThreadEvent::ItemStarted(ItemStartedEvent {
-            item: ThreadItem {
+        vec![ProcessEvent::ItemStarted(ItemStartedEvent {
+            item: ProcessItem {
                 id: "item_0".to_string(),
-                details: ThreadItemDetails::CollabToolCall(CollabToolCallItem {
+                details: ProcessItemDetails::CollabToolCall(CollabToolCallItem {
                     tool: CollabTool::SpawnAgent,
-                    sender_thread_id: sender_thread_id.to_string(),
-                    receiver_thread_ids: Vec::new(),
+                    sender_process_id: sender_process_id.to_string(),
+                    receiver_process_ids: Vec::new(),
                     prompt: Some(prompt.clone()),
                     agents_states: std::collections::HashMap::new(),
                     status: CollabToolCallStatus::InProgress,
@@ -575,8 +575,8 @@ fn collab_spawn_begin_and_end_emit_item_events() {
         "c2",
         EventMsg::CollabAgentSpawnEnd(CollabAgentSpawnEndEvent {
             call_id: "call-10".to_string(),
-            sender_thread_id,
-            new_thread_id: Some(new_thread_id),
+            sender_process_id,
+            new_process_id: Some(new_process_id),
             new_agent_nickname: None,
             new_agent_role: None,
             prompt: prompt.clone(),
@@ -585,19 +585,19 @@ fn collab_spawn_begin_and_end_emit_item_events() {
             status: AgentStatus::Running,
         }),
     );
-    let end_events = ep.collect_thread_events(&end);
+    let end_events = ep.collect_process_events(&end);
     assert_eq!(
         end_events,
-        vec![ThreadEvent::ItemCompleted(ItemCompletedEvent {
-            item: ThreadItem {
+        vec![ProcessEvent::ItemCompleted(ItemCompletedEvent {
+            item: ProcessItem {
                 id: "item_0".to_string(),
-                details: ThreadItemDetails::CollabToolCall(CollabToolCallItem {
+                details: ProcessItemDetails::CollabToolCall(CollabToolCallItem {
                     tool: CollabTool::SpawnAgent,
-                    sender_thread_id: sender_thread_id.to_string(),
-                    receiver_thread_ids: vec![new_thread_id.to_string()],
+                    sender_process_id: sender_process_id.to_string(),
+                    receiver_process_ids: vec![new_process_id.to_string()],
                     prompt: Some(prompt),
                     agents_states: [(
-                        new_thread_id.to_string(),
+                        new_process_id.to_string(),
                         CollabAgentState {
                             status: CollabAgentStatus::Running,
                             message: None,
@@ -615,48 +615,48 @@ fn collab_spawn_begin_and_end_emit_item_events() {
 #[test]
 fn collab_wait_end_without_begin_synthesizes_failed_item() {
     let mut ep = EventProcessorWithJsonOutput::new(None);
-    let sender_thread_id = ThreadId::from_string("67e55044-10b1-426f-9247-bb680e5fe0c8").unwrap();
-    let running_thread_id = ThreadId::from_string("3f76d2a0-943e-4f43-8a38-b289c9c6c3d1").unwrap();
-    let failed_thread_id = ThreadId::from_string("c1dfd96e-1f0c-4f26-9b4f-1aa02c2d3c4d").unwrap();
-    let mut receiver_thread_ids = vec![running_thread_id.to_string(), failed_thread_id.to_string()];
-    receiver_thread_ids.sort();
+    let sender_process_id = ProcessId::from_string("67e55044-10b1-426f-9247-bb680e5fe0c8").unwrap();
+    let running_process_id = ProcessId::from_string("3f76d2a0-943e-4f43-8a38-b289c9c6c3d1").unwrap();
+    let failed_process_id = ProcessId::from_string("c1dfd96e-1f0c-4f26-9b4f-1aa02c2d3c4d").unwrap();
+    let mut receiver_process_ids = vec![running_process_id.to_string(), failed_process_id.to_string()];
+    receiver_process_ids.sort();
     let mut statuses = std::collections::HashMap::new();
     statuses.insert(
-        running_thread_id,
+        running_process_id,
         AgentStatus::Completed(Some("done".to_string())),
     );
-    statuses.insert(failed_thread_id, AgentStatus::Errored("boom".to_string()));
+    statuses.insert(failed_process_id, AgentStatus::Errored("boom".to_string()));
 
     let end = event(
         "c3",
         EventMsg::CollabWaitingEnd(CollabWaitingEndEvent {
-            sender_thread_id,
+            sender_process_id,
             call_id: "call-11".to_string(),
             agent_statuses: Vec::new(),
             statuses: statuses.clone(),
         }),
     );
-    let events = ep.collect_thread_events(&end);
+    let events = ep.collect_process_events(&end);
     assert_eq!(
         events,
-        vec![ThreadEvent::ItemCompleted(ItemCompletedEvent {
-            item: ThreadItem {
+        vec![ProcessEvent::ItemCompleted(ItemCompletedEvent {
+            item: ProcessItem {
                 id: "item_0".to_string(),
-                details: ThreadItemDetails::CollabToolCall(CollabToolCallItem {
+                details: ProcessItemDetails::CollabToolCall(CollabToolCallItem {
                     tool: CollabTool::Wait,
-                    sender_thread_id: sender_thread_id.to_string(),
-                    receiver_thread_ids,
+                    sender_process_id: sender_process_id.to_string(),
+                    receiver_process_ids,
                     prompt: None,
                     agents_states: [
                         (
-                            running_thread_id.to_string(),
+                            running_process_id.to_string(),
                             CollabAgentState {
                                 status: CollabAgentStatus::Completed,
                                 message: Some("done".to_string()),
                             },
                         ),
                         (
-                            failed_thread_id.to_string(),
+                            failed_process_id.to_string(),
                             CollabAgentState {
                                 status: CollabAgentStatus::Errored,
                                 message: Some("boom".to_string()),
@@ -687,7 +687,7 @@ fn plan_update_after_complete_starts_new_todo_list_with_new_id() {
             }],
         }),
     );
-    let _ = ep.collect_thread_events(&start);
+    let _ = ep.collect_process_events(&start);
     let complete = event(
         "t2",
         EventMsg::TurnComplete(chaos_ipc::protocol::TurnCompleteEvent {
@@ -695,7 +695,7 @@ fn plan_update_after_complete_starts_new_todo_list_with_new_id() {
             last_agent_message: None,
         }),
     );
-    let _ = ep.collect_thread_events(&complete);
+    let _ = ep.collect_process_events(&complete);
 
     // Second turn: a new todo list should have a new id
     let start_again = event(
@@ -708,10 +708,10 @@ fn plan_update_after_complete_starts_new_todo_list_with_new_id() {
             }],
         }),
     );
-    let out = ep.collect_thread_events(&start_again);
+    let out = ep.collect_process_events(&start_again);
 
     match &out[0] {
-        ThreadEvent::ItemStarted(ItemStartedEvent { item }) => {
+        ProcessEvent::ItemStarted(ItemStartedEvent { item }) => {
             assert_eq!(&item.id, "item_1");
         }
         other => panic!("unexpected event: {other:?}"),
@@ -727,13 +727,13 @@ fn agent_reasoning_produces_item_completed_reasoning() {
             text: "thinking...".to_string(),
         }),
     );
-    let out = ep.collect_thread_events(&ev);
+    let out = ep.collect_process_events(&ev);
     assert_eq!(
         out,
-        vec![ThreadEvent::ItemCompleted(ItemCompletedEvent {
-            item: ThreadItem {
+        vec![ProcessEvent::ItemCompleted(ItemCompletedEvent {
+            item: ProcessItem {
                 id: "item_0".to_string(),
-                details: ThreadItemDetails::Reasoning(ReasoningItem {
+                details: ProcessItemDetails::Reasoning(ReasoningItem {
                     text: "thinking...".to_string(),
                 }),
             },
@@ -751,13 +751,13 @@ fn agent_message_produces_item_completed_agent_message() {
             phase: None,
         }),
     );
-    let out = ep.collect_thread_events(&ev);
+    let out = ep.collect_process_events(&ev);
     assert_eq!(
         out,
-        vec![ThreadEvent::ItemCompleted(ItemCompletedEvent {
-            item: ThreadItem {
+        vec![ProcessEvent::ItemCompleted(ItemCompletedEvent {
+            item: ProcessItem {
                 id: "item_0".to_string(),
-                details: ThreadItemDetails::AgentMessage(AgentMessageItem {
+                details: ProcessItemDetails::AgentMessage(AgentMessageItem {
                     text: "hello".to_string(),
                 }),
             },
@@ -768,7 +768,7 @@ fn agent_message_produces_item_completed_agent_message() {
 #[test]
 fn error_event_produces_error() {
     let mut ep = EventProcessorWithJsonOutput::new(None);
-    let out = ep.collect_thread_events(&event(
+    let out = ep.collect_process_events(&event(
         "e1",
         EventMsg::Error(chaos_ipc::protocol::ErrorEvent {
             message: "boom".to_string(),
@@ -777,7 +777,7 @@ fn error_event_produces_error() {
     ));
     assert_eq!(
         out,
-        vec![ThreadEvent::Error(ThreadErrorEvent {
+        vec![ProcessEvent::Error(ProcessErrorEvent {
             message: "boom".to_string(),
         })]
     );
@@ -786,7 +786,7 @@ fn error_event_produces_error() {
 #[test]
 fn warning_event_produces_error_item() {
     let mut ep = EventProcessorWithJsonOutput::new(None);
-    let out = ep.collect_thread_events(&event(
+    let out = ep.collect_process_events(&event(
         "e1",
         EventMsg::Warning(WarningEvent {
             message: "Heads up: Long conversations and multiple compactions can cause the model to be less accurate. Start a new conversation when possible to keep conversations small and targeted.".to_string(),
@@ -794,10 +794,10 @@ fn warning_event_produces_error_item() {
     ));
     assert_eq!(
         out,
-        vec![ThreadEvent::ItemCompleted(ItemCompletedEvent {
-            item: ThreadItem {
+        vec![ProcessEvent::ItemCompleted(ItemCompletedEvent {
+            item: ProcessItem {
                 id: "item_0".to_string(),
-                details: ThreadItemDetails::Error(ErrorItem {
+                details: ProcessItemDetails::Error(ErrorItem {
                     message: "Heads up: Long conversations and multiple compactions can cause the model to be less accurate. Start a new conversation when possible to keep conversations small and targeted.".to_string(),
                 }),
             },
@@ -808,7 +808,7 @@ fn warning_event_produces_error_item() {
 #[test]
 fn stream_error_event_produces_error() {
     let mut ep = EventProcessorWithJsonOutput::new(None);
-    let out = ep.collect_thread_events(&event(
+    let out = ep.collect_process_events(&event(
         "e1",
         EventMsg::StreamError(chaos_ipc::protocol::StreamErrorEvent {
             message: "retrying".to_string(),
@@ -818,7 +818,7 @@ fn stream_error_event_produces_error() {
     ));
     assert_eq!(
         out,
-        vec![ThreadEvent::Error(ThreadErrorEvent {
+        vec![ProcessEvent::Error(ProcessErrorEvent {
             message: "retrying".to_string(),
         })]
     );
@@ -836,8 +836,8 @@ fn error_followed_by_task_complete_produces_turn_failed() {
         }),
     );
     assert_eq!(
-        ep.collect_thread_events(&error_event),
-        vec![ThreadEvent::Error(ThreadErrorEvent {
+        ep.collect_process_events(&error_event),
+        vec![ProcessEvent::Error(ProcessErrorEvent {
             message: "boom".to_string(),
         })]
     );
@@ -850,9 +850,9 @@ fn error_followed_by_task_complete_produces_turn_failed() {
         }),
     );
     assert_eq!(
-        ep.collect_thread_events(&complete_event),
-        vec![ThreadEvent::TurnFailed(TurnFailedEvent {
-            error: ThreadErrorEvent {
+        ep.collect_process_events(&complete_event),
+        vec![ProcessEvent::TurnFailed(TurnFailedEvent {
+            error: ProcessErrorEvent {
                 message: "boom".to_string(),
             },
         })]
@@ -880,13 +880,13 @@ fn exec_command_end_success_produces_completed_command_item() {
             interaction_input: None,
         }),
     );
-    let out_begin = ep.collect_thread_events(&begin);
+    let out_begin = ep.collect_process_events(&begin);
     assert_eq!(
         out_begin,
-        vec![ThreadEvent::ItemStarted(ItemStartedEvent {
-            item: ThreadItem {
+        vec![ProcessEvent::ItemStarted(ItemStartedEvent {
+            item: ProcessItem {
                 id: "item_0".to_string(),
-                details: ThreadItemDetails::CommandExecution(CommandExecutionItem {
+                details: ProcessItemDetails::CommandExecution(CommandExecutionItem {
                     command: "bash -lc 'echo hi'".to_string(),
                     aggregated_output: String::new(),
                     exit_code: None,
@@ -917,13 +917,13 @@ fn exec_command_end_success_produces_completed_command_item() {
             status: CoreExecCommandStatus::Completed,
         }),
     );
-    let out_ok = ep.collect_thread_events(&end_ok);
+    let out_ok = ep.collect_process_events(&end_ok);
     assert_eq!(
         out_ok,
-        vec![ThreadEvent::ItemCompleted(ItemCompletedEvent {
-            item: ThreadItem {
+        vec![ProcessEvent::ItemCompleted(ItemCompletedEvent {
+            item: ProcessItem {
                 id: "item_0".to_string(),
-                details: ThreadItemDetails::CommandExecution(CommandExecutionItem {
+                details: ProcessItemDetails::CommandExecution(CommandExecutionItem {
                     command: "bash -lc 'echo hi'".to_string(),
                     aggregated_output: "hi\n".to_string(),
                     exit_code: Some(0),
@@ -958,13 +958,13 @@ fn command_execution_output_delta_updates_item_progress() {
             interaction_input: None,
         }),
     );
-    let out_begin = ep.collect_thread_events(&begin);
+    let out_begin = ep.collect_process_events(&begin);
     assert_eq!(
         out_begin,
-        vec![ThreadEvent::ItemStarted(ItemStartedEvent {
-            item: ThreadItem {
+        vec![ProcessEvent::ItemStarted(ItemStartedEvent {
+            item: ProcessItem {
                 id: "item_0".to_string(),
-                details: ThreadItemDetails::CommandExecution(CommandExecutionItem {
+                details: ProcessItemDetails::CommandExecution(CommandExecutionItem {
                     command: "bash -lc 'echo delta'".to_string(),
                     aggregated_output: String::new(),
                     exit_code: None,
@@ -982,8 +982,8 @@ fn command_execution_output_delta_updates_item_progress() {
             chunk: b"partial output\n".to_vec(),
         }),
     );
-    let out_delta = ep.collect_thread_events(&delta);
-    assert_eq!(out_delta, Vec::<ThreadEvent>::new());
+    let out_delta = ep.collect_process_events(&delta);
+    assert_eq!(out_delta, Vec::<ProcessEvent>::new());
 
     let end = event(
         "d3",
@@ -1005,13 +1005,13 @@ fn command_execution_output_delta_updates_item_progress() {
             status: CoreExecCommandStatus::Completed,
         }),
     );
-    let out_end = ep.collect_thread_events(&end);
+    let out_end = ep.collect_process_events(&end);
     assert_eq!(
         out_end,
-        vec![ThreadEvent::ItemCompleted(ItemCompletedEvent {
-            item: ThreadItem {
+        vec![ProcessEvent::ItemCompleted(ItemCompletedEvent {
+            item: ProcessItem {
                 id: "item_0".to_string(),
-                details: ThreadItemDetails::CommandExecution(CommandExecutionItem {
+                details: ProcessItemDetails::CommandExecution(CommandExecutionItem {
                     command: "bash -lc 'echo delta'".to_string(),
                     aggregated_output: String::new(),
                     exit_code: Some(0),
@@ -1044,11 +1044,11 @@ fn exec_command_end_failure_produces_failed_command_item() {
         }),
     );
     assert_eq!(
-        ep.collect_thread_events(&begin),
-        vec![ThreadEvent::ItemStarted(ItemStartedEvent {
-            item: ThreadItem {
+        ep.collect_process_events(&begin),
+        vec![ProcessEvent::ItemStarted(ItemStartedEvent {
+            item: ProcessItem {
                 id: "item_0".to_string(),
-                details: ThreadItemDetails::CommandExecution(CommandExecutionItem {
+                details: ProcessItemDetails::CommandExecution(CommandExecutionItem {
                     command: "sh -c 'exit 1'".to_string(),
                     aggregated_output: String::new(),
                     exit_code: None,
@@ -1079,13 +1079,13 @@ fn exec_command_end_failure_produces_failed_command_item() {
             status: CoreExecCommandStatus::Failed,
         }),
     );
-    let out_fail = ep.collect_thread_events(&end_fail);
+    let out_fail = ep.collect_process_events(&end_fail);
     assert_eq!(
         out_fail,
-        vec![ThreadEvent::ItemCompleted(ItemCompletedEvent {
-            item: ThreadItem {
+        vec![ProcessEvent::ItemCompleted(ItemCompletedEvent {
+            item: ProcessItem {
                 id: "item_0".to_string(),
-                details: ThreadItemDetails::CommandExecution(CommandExecutionItem {
+                details: ProcessItemDetails::CommandExecution(CommandExecutionItem {
                     command: "sh -c 'exit 1'".to_string(),
                     aggregated_output: String::new(),
                     exit_code: Some(1),
@@ -1121,7 +1121,7 @@ fn exec_command_end_without_begin_is_ignored() {
             status: CoreExecCommandStatus::Completed,
         }),
     );
-    let out = ep.collect_thread_events(&end_only);
+    let out = ep.collect_process_events(&end_only);
     assert!(out.is_empty());
 }
 
@@ -1161,7 +1161,7 @@ fn patch_apply_success_produces_item_completed_patchapply() {
             changes: changes.clone(),
         }),
     );
-    let out_begin = ep.collect_thread_events(&begin);
+    let out_begin = ep.collect_process_events(&begin);
     assert!(out_begin.is_empty());
 
     // End (success) -> item.completed (item_0)
@@ -1177,15 +1177,15 @@ fn patch_apply_success_produces_item_completed_patchapply() {
             status: CorePatchApplyStatus::Completed,
         }),
     );
-    let out_end = ep.collect_thread_events(&end);
+    let out_end = ep.collect_process_events(&end);
     assert_eq!(out_end.len(), 1);
 
     // Validate structure without relying on HashMap iteration order
     match &out_end[0] {
-        ThreadEvent::ItemCompleted(ItemCompletedEvent { item }) => {
+        ProcessEvent::ItemCompleted(ItemCompletedEvent { item }) => {
             assert_eq!(&item.id, "item_0");
             match &item.details {
-                ThreadItemDetails::FileChange(file_update) => {
+                ProcessItemDetails::FileChange(file_update) => {
                     assert_eq!(file_update.status, PatchApplyStatus::Completed);
 
                     let mut actual: Vec<(String, PatchChangeKind)> = file_update
@@ -1234,7 +1234,7 @@ fn patch_apply_failure_produces_item_completed_patchapply_failed() {
             changes: changes.clone(),
         }),
     );
-    assert!(ep.collect_thread_events(&begin).is_empty());
+    assert!(ep.collect_process_events(&begin).is_empty());
 
     // End (failure) -> item.completed (item_0) with Failed status
     let end = event(
@@ -1249,14 +1249,14 @@ fn patch_apply_failure_produces_item_completed_patchapply_failed() {
             status: CorePatchApplyStatus::Failed,
         }),
     );
-    let out_end = ep.collect_thread_events(&end);
+    let out_end = ep.collect_process_events(&end);
     assert_eq!(out_end.len(), 1);
 
     match &out_end[0] {
-        ThreadEvent::ItemCompleted(ItemCompletedEvent { item }) => {
+        ProcessEvent::ItemCompleted(ItemCompletedEvent { item }) => {
             assert_eq!(&item.id, "item_0");
             match &item.details {
-                ThreadItemDetails::FileChange(file_update) => {
+                ProcessItemDetails::FileChange(file_update) => {
                     assert_eq!(file_update.status, PatchApplyStatus::Failed);
                     assert_eq!(file_update.changes.len(), 1);
                     assert_eq!(file_update.changes[0].path, "file.txt".to_string());
@@ -1293,7 +1293,7 @@ fn task_complete_produces_turn_completed_with_usage() {
             rate_limits: None,
         }),
     );
-    assert!(ep.collect_thread_events(&token_count_event).is_empty());
+    assert!(ep.collect_process_events(&token_count_event).is_empty());
 
     // Then TurnComplete should produce turn.completed with the captured usage.
     let complete_event = event(
@@ -1303,10 +1303,10 @@ fn task_complete_produces_turn_completed_with_usage() {
             last_agent_message: Some("done".to_string()),
         }),
     );
-    let out = ep.collect_thread_events(&complete_event);
+    let out = ep.collect_process_events(&complete_event);
     assert_eq!(
         out,
-        vec![ThreadEvent::TurnCompleted(TurnCompletedEvent {
+        vec![ProcessEvent::TurnCompleted(TurnCompletedEvent {
             usage: Usage {
                 input_tokens: 1200,
                 cached_input_tokens: 200,

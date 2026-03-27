@@ -1,3 +1,5 @@
+#![allow(dead_code)]
+
 use chaos_syslog::metrics::MetricsClient;
 use chaos_syslog::metrics::MetricsConfig;
 use chaos_syslog::metrics::Result;

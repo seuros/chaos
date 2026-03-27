@@ -30,7 +30,7 @@ use crate::provider::OtelProvider;
 use crate::sanitize_metric_tag_value;
 use codex_api::ApiError;
 use codex_api::ResponseEvent;
-use chaos_ipc::ThreadId;
+use chaos_ipc::ProcessId;
 use chaos_ipc::config_types::ReasoningSummary;
 use chaos_ipc::models::ResponseItem;
 use chaos_ipc::openai_models::ReasoningEffort;
@@ -62,7 +62,7 @@ const RESPONSES_API_ENGINE_SERVICE_TBT_FIELD: &str = "engine_service_tbt_across_
 
 #[derive(Debug, Clone)]
 pub struct SessionTelemetryMetadata {
-    pub(crate) conversation_id: ThreadId,
+    pub(crate) conversation_id: ProcessId,
     pub(crate) auth_mode: Option<String>,
     pub(crate) account_id: Option<String>,
     pub(crate) account_email: Option<String>,
@@ -238,7 +238,7 @@ impl SessionTelemetry {
 
     #[allow(clippy::too_many_arguments)]
     pub fn new(
-        conversation_id: ThreadId,
+        conversation_id: ProcessId,
         model: &str,
         slug: &str,
         account_id: Option<String>,

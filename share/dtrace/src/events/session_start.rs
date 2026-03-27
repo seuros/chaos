@@ -1,6 +1,6 @@
 use std::path::PathBuf;
 
-use chaos_ipc::ThreadId;
+use chaos_ipc::ProcessId;
 use chaos_ipc::protocol::HookCompletedEvent;
 use chaos_ipc::protocol::HookEventName;
 use chaos_ipc::protocol::HookOutputEntry;
@@ -32,7 +32,7 @@ impl SessionStartSource {
 
 #[derive(Debug, Clone)]
 pub struct SessionStartRequest {
-    pub session_id: ThreadId,
+    pub session_id: ProcessId,
     pub cwd: PathBuf,
     pub transcript_path: Option<PathBuf>,
     pub model: String,

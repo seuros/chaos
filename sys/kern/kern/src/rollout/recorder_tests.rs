@@ -58,11 +58,11 @@ async fn recorder_materializes_only_after_explicit_persist() -> std::io::Result<
         .codex_home(home.path().to_path_buf())
         .build()
         .await?;
-    let thread_id = ThreadId::new();
+    let process_id = ProcessId::new();
     let recorder = RolloutRecorder::new(
         &config,
         RolloutRecorderParams::new(
-            thread_id,
+            process_id,
             None,
             SessionSource::Exec,
             BaseInstructions::default(),
@@ -157,11 +157,11 @@ async fn metadata_irrelevant_events_touch_state_db_updated_at() -> std::io::Resu
         .await
         .expect("backfill should be complete");
 
-    let thread_id = ThreadId::new();
+    let process_id = ProcessId::new();
     let recorder = RolloutRecorder::new(
         &config,
         RolloutRecorderParams::new(
-            thread_id,
+            process_id,
             None,
             SessionSource::Cli,
             BaseInstructions::default(),
@@ -186,7 +186,7 @@ async fn metadata_irrelevant_events_touch_state_db_updated_at() -> std::io::Resu
     recorder.persist().await?;
     recorder.flush().await?;
     let initial_thread = state_db
-        .get_thread(thread_id)
+        .get_process(process_id)
         .await
         .expect("thread should load")
         .expect("thread should exist");
@@ -207,7 +207,7 @@ async fn metadata_irrelevant_events_touch_state_db_updated_at() -> std::io::Resu
     recorder.flush().await?;
 
     let updated_thread = state_db
-        .get_thread(thread_id)
+        .get_process(process_id)
         .await
         .expect("thread should load after agent message")
         .expect("thread should still exist");
@@ -239,12 +239,12 @@ async fn metadata_irrelevant_events_fall_back_to_upsert_when_thread_missing() ->
     let state_db = StateRuntime::init(home.path().to_path_buf(), config.model_provider_id.clone())
         .await
         .expect("state db should initialize");
-    let thread_id = ThreadId::new();
+    let process_id = ProcessId::new();
     let rollout_path = home.path().join("rollout.jsonl");
-    let builder = ThreadMetadataBuilder::new(
-        thread_id,
+    let builder = ProcessMetadataBuilder::new(
+        process_id,
         rollout_path.clone(),
-        Utc::now(),
+        Timestamp::now(),
         SessionSource::Cli,
     );
     let items = vec![RolloutItem::EventMsg(EventMsg::AgentMessage(
@@ -254,7 +254,7 @@ async fn metadata_irrelevant_events_fall_back_to_upsert_when_thread_missing() ->
         },
     ))];
 
-    sync_thread_state_after_write(
+    sync_process_state_after_write(
         Some(state_db.as_ref()),
         rollout_path.as_path(),
         Some(&builder),
@@ -265,11 +265,11 @@ async fn metadata_irrelevant_events_fall_back_to_upsert_when_thread_missing() ->
     .await;
 
     let thread = state_db
-        .get_thread(thread_id)
+        .get_process(process_id)
         .await
         .expect("thread should load after fallback")
         .expect("thread should be inserted after fallback");
-    assert_eq!(thread.id, thread_id);
+    assert_eq!(thread.id, process_id);
 
     Ok(())
 }
@@ -291,11 +291,11 @@ async fn list_threads_db_disabled_does_not_skip_paginated_items() -> std::io::Re
     let _oldest = write_session_file(home.path(), "2025-01-01T12-00-00", Uuid::from_u128(9003))?;
 
     let default_provider = config.model_provider_id.clone();
-    let page1 = RolloutRecorder::list_threads(
+    let page1 = RolloutRecorder::list_processes(
         &config,
         1,
         None,
-        ThreadSortKey::CreatedAt,
+        ProcessSortKey::CreatedAt,
         &[],
         None,
         default_provider.as_str(),
@@ -306,11 +306,11 @@ async fn list_threads_db_disabled_does_not_skip_paginated_items() -> std::io::Re
     assert_eq!(page1.items[0].path, newest);
     let cursor = page1.next_cursor.clone().expect("cursor should be present");
 
-    let page2 = RolloutRecorder::list_threads(
+    let page2 = RolloutRecorder::list_processes(
         &config,
         1,
         Some(&cursor),
-        ThreadSortKey::CreatedAt,
+        ProcessSortKey::CreatedAt,
         &[],
         None,
         default_provider.as_str(),
@@ -335,7 +335,7 @@ async fn list_threads_db_enabled_drops_missing_rollout_paths() -> std::io::Resul
         .expect("test config should allow sqlite");
 
     let uuid = Uuid::from_u128(9010);
-    let thread_id = ThreadId::from_string(&uuid.to_string()).expect("valid thread id");
+    let process_id = ProcessId::from_string(&uuid.to_string()).expect("valid thread id");
     let stale_path = home.path().join(format!(
         "sessions/2099/01/01/rollout-2099-01-01T00-00-00-{uuid}.jsonl"
     ));
@@ -351,8 +351,8 @@ async fn list_threads_db_enabled_drops_missing_rollout_paths() -> std::io::Resul
         .await
         .expect("backfill should be complete");
     let created_at: Timestamp = "2025-01-03T13:00:00Z".parse().expect("valid datetime");
-    let mut builder = chaos_proc::ThreadMetadataBuilder::new(
-        thread_id,
+    let mut builder = chaos_proc::ProcessMetadataBuilder::new(
+        process_id,
         stale_path,
         created_at,
         SessionSource::Cli,
@@ -362,16 +362,16 @@ async fn list_threads_db_enabled_drops_missing_rollout_paths() -> std::io::Resul
     let mut metadata = builder.build(config.model_provider_id.as_str());
     metadata.first_user_message = Some("Hello from user".to_string());
     runtime
-        .upsert_thread(&metadata)
+        .upsert_process(&metadata)
         .await
         .expect("state db upsert should succeed");
 
     let default_provider = config.model_provider_id.clone();
-    let page = RolloutRecorder::list_threads(
+    let page = RolloutRecorder::list_processes(
         &config,
         10,
         None,
-        ThreadSortKey::CreatedAt,
+        ProcessSortKey::CreatedAt,
         &[],
         None,
         default_provider.as_str(),
@@ -380,7 +380,7 @@ async fn list_threads_db_enabled_drops_missing_rollout_paths() -> std::io::Resul
     .await?;
     assert_eq!(page.items.len(), 0);
     let stored_path = runtime
-        .find_rollout_path_by_id(thread_id, Some(false))
+        .find_rollout_path_by_id(process_id, Some(false))
         .await
         .expect("state db lookup should succeed");
     assert_eq!(stored_path, None);
@@ -400,7 +400,7 @@ async fn list_threads_db_enabled_repairs_stale_rollout_paths() -> std::io::Resul
         .expect("test config should allow sqlite");
 
     let uuid = Uuid::from_u128(9011);
-    let thread_id = ThreadId::from_string(&uuid.to_string()).expect("valid thread id");
+    let process_id = ProcessId::from_string(&uuid.to_string()).expect("valid thread id");
     let real_path = write_session_file(home.path(), "2025-01-03T13-00-00", uuid)?;
     let stale_path = home.path().join(format!(
         "sessions/2099/01/01/rollout-2099-01-01T00-00-00-{uuid}.jsonl"
@@ -417,8 +417,8 @@ async fn list_threads_db_enabled_repairs_stale_rollout_paths() -> std::io::Resul
         .await
         .expect("backfill should be complete");
     let created_at: Timestamp = "2025-01-03T13:00:00Z".parse().expect("valid datetime");
-    let mut builder = chaos_proc::ThreadMetadataBuilder::new(
-        thread_id,
+    let mut builder = chaos_proc::ProcessMetadataBuilder::new(
+        process_id,
         stale_path,
         created_at,
         SessionSource::Cli,
@@ -428,16 +428,16 @@ async fn list_threads_db_enabled_repairs_stale_rollout_paths() -> std::io::Resul
     let mut metadata = builder.build(config.model_provider_id.as_str());
     metadata.first_user_message = Some("Hello from user".to_string());
     runtime
-        .upsert_thread(&metadata)
+        .upsert_process(&metadata)
         .await
         .expect("state db upsert should succeed");
 
     let default_provider = config.model_provider_id.clone();
-    let page = RolloutRecorder::list_threads(
+    let page = RolloutRecorder::list_processes(
         &config,
         1,
         None,
-        ThreadSortKey::CreatedAt,
+        ProcessSortKey::CreatedAt,
         &[],
         None,
         default_provider.as_str(),
@@ -448,7 +448,7 @@ async fn list_threads_db_enabled_repairs_stale_rollout_paths() -> std::io::Resul
     assert_eq!(page.items[0].path, real_path);
 
     let repaired_path = runtime
-        .find_rollout_path_by_id(thread_id, Some(false))
+        .find_rollout_path_by_id(process_id, Some(false))
         .await
         .expect("state db lookup should succeed");
     assert_eq!(repaired_path, Some(real_path));

@@ -1,5 +1,5 @@
-ALTER TABLE threads ADD COLUMN first_user_message TEXT NOT NULL DEFAULT '';
+ALTER TABLE processes ADD COLUMN first_user_message TEXT NOT NULL DEFAULT '';
 
-UPDATE threads
+UPDATE processes
 SET first_user_message = title
 WHERE first_user_message = '' AND has_user_event = 1 AND title <> '';

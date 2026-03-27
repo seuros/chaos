@@ -38,7 +38,7 @@ use tokio::io::AsyncReadExt;
 use crate::config::Config;
 use crate::config::types::HistoryPersistence;
 
-use chaos_ipc::ThreadId;
+use chaos_ipc::ProcessId;
 use std::os::unix::fs::OpenOptionsExt;
 use std::os::unix::fs::PermissionsExt;
 
@@ -69,7 +69,7 @@ fn history_filepath(config: &Config) -> PathBuf {
 /// which entails a small amount of blocking I/O internally.
 pub(crate) async fn append_entry(
     text: &str,
-    conversation_id: &ThreadId,
+    conversation_id: &ProcessId,
     config: &Config,
 ) -> Result<()> {
     match config.history.persistence {

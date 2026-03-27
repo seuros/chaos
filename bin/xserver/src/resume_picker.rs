@@ -15,13 +15,13 @@ use chrono::Utc;
 use chaos_kern::Cursor;
 use chaos_kern::INTERACTIVE_SESSION_SOURCES;
 use chaos_kern::RolloutRecorder;
-use chaos_kern::ThreadItem;
-use chaos_kern::ThreadSortKey;
-use chaos_kern::ThreadsPage;
+use chaos_kern::ProcessItem;
+use chaos_kern::ProcessSortKey;
+use chaos_kern::ProcessesPage;
 use chaos_kern::config::Config;
-use chaos_kern::find_thread_names_by_ids;
+use chaos_kern::find_process_names_by_ids;
 use chaos_kern::path_utils;
-use chaos_ipc::ThreadId;
+use chaos_ipc::ProcessId;
 use color_eyre::eyre::Result;
 use crossterm::event::KeyCode;
 use crossterm::event::KeyEvent;
@@ -43,7 +43,7 @@ const LOAD_NEAR_THRESHOLD: usize = 5;
 #[derive(Debug, Clone)]
 pub struct SessionTarget {
     pub path: PathBuf,
-    pub thread_id: ThreadId,
+    pub process_id: ProcessId,
 }
 
 #[derive(Debug, Clone)]
@@ -75,8 +75,8 @@ impl SessionPickerAction {
         }
     }
 
-    fn selection(self, path: PathBuf, thread_id: ThreadId) -> SessionSelection {
-        let target_session = SessionTarget { path, thread_id };
+    fn selection(self, path: PathBuf, process_id: ProcessId) -> SessionSelection {
+        let target_session = SessionTarget { path, process_id };
         match self {
             SessionPickerAction::Resume => SessionSelection::Resume(target_session),
             SessionPickerAction::Fork => SessionSelection::Fork(target_session),
@@ -90,7 +90,7 @@ struct PageLoadRequest {
     request_token: usize,
     search_token: Option<usize>,
     default_provider: String,
-    sort_key: ThreadSortKey,
+    sort_key: ProcessSortKey,
 }
 
 type PageLoader = Arc<dyn Fn(PageLoadRequest) + Send + Sync>;
@@ -99,7 +99,7 @@ enum BackgroundEvent {
     PageLoaded {
         request_token: usize,
         search_token: Option<usize>,
-        page: std::io::Result<ThreadsPage>,
+        page: std::io::Result<ProcessesPage>,
     },
 }
 
@@ -111,7 +111,7 @@ enum BackgroundEvent {
 /// between sorting by creation time and last-updated time using the Tab key.
 ///
 /// Sessions are loaded on-demand via cursor-based pagination. The backend
-/// `RolloutRecorder::list_threads` returns pages ordered by the selected sort key,
+/// `RolloutRecorder::list_processes` returns pages ordered by the selected sort key,
 /// and the picker deduplicates across pages to handle overlapping windows when
 /// new sessions appear during pagination.
 ///
@@ -159,7 +159,7 @@ async fn run_session_picker(
         let config = config.clone();
         tokio::spawn(async move {
             let provider_filter = vec![request.default_provider.clone()];
-            let page = RolloutRecorder::list_threads(
+            let page = RolloutRecorder::list_processes(
                 &config,
                 PAGE_SIZE,
                 request.cursor.as_ref(),
@@ -228,10 +228,10 @@ async fn run_session_picker(
 }
 
 /// Returns the human-readable column header for the given sort key.
-fn sort_key_label(sort_key: ThreadSortKey) -> &'static str {
+fn sort_key_label(sort_key: ProcessSortKey) -> &'static str {
     match sort_key {
-        ThreadSortKey::CreatedAt => "Created at",
-        ThreadSortKey::UpdatedAt => "Updated at",
+        ProcessSortKey::CreatedAt => "Created at",
+        ProcessSortKey::UpdatedAt => "Updated at",
     }
 }
 
@@ -272,8 +272,8 @@ struct PickerState {
     show_all: bool,
     filter_cwd: Option<PathBuf>,
     action: SessionPickerAction,
-    sort_key: ThreadSortKey,
-    thread_name_cache: HashMap<ThreadId, Option<String>>,
+    sort_key: ProcessSortKey,
+    process_name_cache: HashMap<ProcessId, Option<String>>,
     inline_error: Option<String>,
 }
 
@@ -330,8 +330,8 @@ impl SearchState {
 struct Row {
     path: PathBuf,
     preview: String,
-    thread_id: Option<ThreadId>,
-    thread_name: Option<String>,
+    process_id: Option<ProcessId>,
+    process_name: Option<String>,
     created_at: Option<DateTime<Utc>>,
     updated_at: Option<DateTime<Utc>>,
     cwd: Option<PathBuf>,
@@ -340,15 +340,15 @@ struct Row {
 
 impl Row {
     fn display_preview(&self) -> &str {
-        self.thread_name.as_deref().unwrap_or(&self.preview)
+        self.process_name.as_deref().unwrap_or(&self.preview)
     }
 
     fn matches_query(&self, query: &str) -> bool {
         if self.preview.to_lowercase().contains(query) {
             return true;
         }
-        if let Some(thread_name) = self.thread_name.as_ref()
-            && thread_name.to_lowercase().contains(query)
+        if let Some(process_name) = self.process_name.as_ref()
+            && process_name.to_lowercase().contains(query)
         {
             return true;
         }
@@ -390,8 +390,8 @@ impl PickerState {
             show_all,
             filter_cwd,
             action,
-            sort_key: ThreadSortKey::UpdatedAt,
-            thread_name_cache: HashMap::new(),
+            sort_key: ProcessSortKey::UpdatedAt,
+            process_name_cache: HashMap::new(),
             inline_error: None,
         }
     }
@@ -414,18 +414,18 @@ impl PickerState {
             KeyCode::Enter => {
                 if let Some(row) = self.filtered_rows.get(self.selected) {
                     let path = row.path.clone();
-                    let thread_id = match row.thread_id {
-                        Some(thread_id) => Some(thread_id),
+                    let process_id = match row.process_id {
+                        Some(process_id) => Some(process_id),
                         None => {
-                            crate::resolve_session_thread_id(
+                            crate::resolve_session_process_id(
                                 path.as_path(),
                                 /*id_str_if_uuid*/ None,
                             )
                             .await
                         }
                     };
-                    if let Some(thread_id) = thread_id {
-                        return Ok(Some(self.action.selection(path, thread_id)));
+                    if let Some(process_id) = process_id {
+                        return Ok(Some(self.action.selection(path, process_id)));
                     }
                     self.inline_error = Some(format!(
                         "Failed to read session metadata from {}",
@@ -542,7 +542,7 @@ impl PickerState {
                 self.pagination.loading = LoadingState::Idle;
                 let page = page.map_err(color_eyre::Report::from)?;
                 self.ingest_page(page);
-                self.update_thread_names().await;
+                self.update_process_names().await;
                 let completed_token = pending.search_token.or(search_token);
                 self.continue_search_if_token_matches(completed_token);
             }
@@ -557,7 +557,7 @@ impl PickerState {
         self.pagination.loading = LoadingState::Idle;
     }
 
-    fn ingest_page(&mut self, page: ThreadsPage) {
+    fn ingest_page(&mut self, page: ProcessesPage) {
         if let Some(cursor) = page.next_cursor.clone() {
             self.pagination.next_cursor = Some(cursor);
         } else {
@@ -581,40 +581,40 @@ impl PickerState {
         self.apply_filter();
     }
 
-    async fn update_thread_names(&mut self) {
+    async fn update_process_names(&mut self) {
         let mut missing_ids = HashSet::new();
         for row in &self.all_rows {
-            let Some(thread_id) = row.thread_id else {
+            let Some(process_id) = row.process_id else {
                 continue;
             };
-            if self.thread_name_cache.contains_key(&thread_id) {
+            if self.process_name_cache.contains_key(&process_id) {
                 continue;
             }
-            missing_ids.insert(thread_id);
+            missing_ids.insert(process_id);
         }
 
         if missing_ids.is_empty() {
             return;
         }
 
-        let names = find_thread_names_by_ids(&self.codex_home, &missing_ids)
+        let names = find_process_names_by_ids(&self.codex_home, &missing_ids)
             .await
             .unwrap_or_default();
-        for thread_id in missing_ids {
-            let thread_name = names.get(&thread_id).cloned();
-            self.thread_name_cache.insert(thread_id, thread_name);
+        for process_id in missing_ids {
+            let process_name = names.get(&process_id).cloned();
+            self.process_name_cache.insert(process_id, process_name);
         }
 
         let mut updated = false;
         for row in self.all_rows.iter_mut() {
-            let Some(thread_id) = row.thread_id else {
+            let Some(process_id) = row.process_id else {
                 continue;
             };
-            let thread_name = self.thread_name_cache.get(&thread_id).cloned().flatten();
-            if row.thread_name == thread_name {
+            let process_name = self.process_name_cache.get(&process_id).cloned().flatten();
+            if row.process_name == process_name {
                 continue;
             }
-            row.thread_name = thread_name;
+            row.process_name = process_name;
             updated = true;
         }
 
@@ -814,18 +814,18 @@ impl PickerState {
     /// beginning with the new sort key.
     fn toggle_sort_key(&mut self) {
         self.sort_key = match self.sort_key {
-            ThreadSortKey::CreatedAt => ThreadSortKey::UpdatedAt,
-            ThreadSortKey::UpdatedAt => ThreadSortKey::CreatedAt,
+            ProcessSortKey::CreatedAt => ProcessSortKey::UpdatedAt,
+            ProcessSortKey::UpdatedAt => ProcessSortKey::CreatedAt,
         };
         self.start_initial_load();
     }
 }
 
-fn rows_from_items(items: Vec<ThreadItem>) -> Vec<Row> {
+fn rows_from_items(items: Vec<ProcessItem>) -> Vec<Row> {
     items.into_iter().map(|item| head_to_row(&item)).collect()
 }
 
-fn head_to_row(item: &ThreadItem) -> Row {
+fn head_to_row(item: &ProcessItem) -> Row {
     let created_at = item.created_at.as_deref().and_then(parse_timestamp_str);
     let updated_at = item
         .updated_at
@@ -844,8 +844,8 @@ fn head_to_row(item: &ThreadItem) -> Row {
     Row {
         path: item.path.clone(),
         preview,
-        thread_id: item.thread_id,
-        thread_name: None,
+        process_id: item.process_id,
+        process_name: None,
         created_at,
         updated_at,
         cwd: item.cwd.clone(),
@@ -1153,7 +1153,7 @@ fn render_column_headers(
     frame: &mut crate::custom_terminal::Frame,
     area: Rect,
     metrics: &ColumnMetrics,
-    sort_key: ThreadSortKey,
+    sort_key: ProcessSortKey,
 ) {
     if area.height == 0 {
         return;
@@ -1296,7 +1296,7 @@ fn calculate_column_metrics(rows: &[Row], include_cwd: bool) -> ColumnMetrics {
 fn column_visibility(
     area_width: u16,
     metrics: &ColumnMetrics,
-    sort_key: ThreadSortKey,
+    sort_key: ProcessSortKey,
 ) -> ColumnVisibility {
     const MIN_PREVIEW_WIDTH: usize = 10;
 
@@ -1324,12 +1324,12 @@ fn column_visibility(
     let show_created = if show_both {
         metrics.max_created_width > 0
     } else {
-        sort_key == ThreadSortKey::CreatedAt
+        sort_key == ProcessSortKey::CreatedAt
     };
     let show_updated = if show_both {
         metrics.max_updated_width > 0
     } else {
-        sort_key == ThreadSortKey::UpdatedAt
+        sort_key == ProcessSortKey::UpdatedAt
     };
 
     ColumnVisibility {
@@ -1344,7 +1344,7 @@ fn column_visibility(
 mod tests {
     use super::*;
     use chrono::Duration;
-    use chaos_ipc::ThreadId;
+    use chaos_ipc::ProcessId;
 
     use crossterm::event::KeyCode;
     use crossterm::event::KeyEvent;
@@ -1359,8 +1359,8 @@ mod tests {
     use std::sync::Arc;
     use std::sync::Mutex;
 
-    fn make_item(path: &str, ts: &str, preview: &str) -> ThreadItem {
-        ThreadItem {
+    fn make_item(path: &str, ts: &str, preview: &str) -> ProcessItem {
+        ProcessItem {
             path: PathBuf::from(path),
             first_user_message: Some(preview.to_string()),
             created_at: Some(ts.to_string()),
@@ -1375,12 +1375,12 @@ mod tests {
     }
 
     fn page(
-        items: Vec<ThreadItem>,
+        items: Vec<ProcessItem>,
         next_cursor: Option<Cursor>,
         num_scanned_files: usize,
         reached_scan_cap: bool,
-    ) -> ThreadsPage {
-        ThreadsPage {
+    ) -> ProcessesPage {
+        ProcessesPage {
             items,
             next_cursor,
             num_scanned_files,
@@ -1423,7 +1423,7 @@ mod tests {
     //         );
     //         let path = dir.join(filename);
     //         let meta = SessionMeta {
-    //             id: ThreadId::new(),
+    //             id: ProcessId::new(),
     //             forked_from_id: None,
     //             timestamp: ts.to_rfc3339(),
     //             cwd: PathBuf::from("/tmp"),
@@ -1466,7 +1466,7 @@ mod tests {
     //         tempdir.path(),
     //         PAGE_SIZE,
     //         None,
-    //         ThreadSortKey::UpdatedAt,
+    //         ProcessSortKey::UpdatedAt,
     //         INTERACTIVE_SESSION_SOURCES,
     //         Some(&[String::from("openai")]),
     //         "openai",
@@ -1488,7 +1488,7 @@ mod tests {
 
     #[test]
     fn head_to_row_uses_first_user_message() {
-        let item = ThreadItem {
+        let item = ProcessItem {
             path: PathBuf::from("/tmp/a.jsonl"),
             first_user_message: Some("real question".to_string()),
             created_at: Some("2025-01-01T00:00:00Z".into()),
@@ -1502,14 +1502,14 @@ mod tests {
     #[test]
     fn rows_from_items_preserves_backend_order() {
         // Construct two items with different timestamps and real user text.
-        let a = ThreadItem {
+        let a = ProcessItem {
             path: PathBuf::from("/tmp/a.jsonl"),
             first_user_message: Some("A".to_string()),
             created_at: Some("2025-01-01T00:00:00Z".into()),
             updated_at: Some("2025-01-01T00:00:00Z".into()),
             ..Default::default()
         };
-        let b = ThreadItem {
+        let b = ProcessItem {
             path: PathBuf::from("/tmp/b.jsonl"),
             first_user_message: Some("B".to_string()),
             created_at: Some("2025-01-02T00:00:00Z".into()),
@@ -1525,7 +1525,7 @@ mod tests {
 
     #[test]
     fn row_uses_tail_timestamp_for_updated_at() {
-        let item = ThreadItem {
+        let item = ProcessItem {
             path: PathBuf::from("/tmp/a.jsonl"),
             first_user_message: Some("Hello".to_string()),
             created_at: Some("2025-01-01T00:00:00Z".into()),
@@ -1546,12 +1546,12 @@ mod tests {
     }
 
     #[test]
-    fn row_display_preview_prefers_thread_name() {
+    fn row_display_preview_prefers_process_name() {
         let row = Row {
             path: PathBuf::from("/tmp/a.jsonl"),
             preview: String::from("first message"),
-            thread_id: None,
-            thread_name: Some(String::from("My session")),
+            process_id: None,
+            process_name: Some(String::from("My session")),
             created_at: None,
             updated_at: None,
             cwd: None,
@@ -1584,8 +1584,8 @@ mod tests {
             Row {
                 path: PathBuf::from("/tmp/a.jsonl"),
                 preview: String::from("Fix resume picker timestamps"),
-                thread_id: None,
-                thread_name: None,
+                process_id: None,
+                process_name: None,
                 created_at: Some(now - Duration::minutes(16)),
                 updated_at: Some(now - Duration::seconds(42)),
                 cwd: None,
@@ -1594,8 +1594,8 @@ mod tests {
             Row {
                 path: PathBuf::from("/tmp/b.jsonl"),
                 preview: String::from("Investigate lazy pagination cap"),
-                thread_id: None,
-                thread_name: None,
+                process_id: None,
+                process_name: None,
                 created_at: Some(now - Duration::hours(1)),
                 updated_at: Some(now - Duration::minutes(35)),
                 cwd: None,
@@ -1604,8 +1604,8 @@ mod tests {
             Row {
                 path: PathBuf::from("/tmp/c.jsonl"),
                 preview: String::from("Explain the codebase"),
-                thread_id: None,
-                thread_name: None,
+                process_id: None,
+                process_name: None,
                 created_at: Some(now - Duration::hours(2)),
                 updated_at: Some(now - Duration::hours(2)),
                 cwd: None,
@@ -1775,7 +1775,7 @@ mod tests {
     //         &state.codex_home,
     //         PAGE_SIZE,
     //         None,
-    //         ThreadSortKey::CreatedAt,
+    //         ProcessSortKey::CreatedAt,
     //         INTERACTIVE_SESSION_SOURCES,
     //         Some(&[String::from("openai")]),
     //         "openai",
@@ -1850,7 +1850,7 @@ mod tests {
     // }
 
     #[tokio::test]
-    async fn resume_picker_thread_names_snapshot() {
+    async fn resume_picker_process_names_snapshot() {
         use crate::custom_terminal::Terminal;
         use crate::test_backend::VT100Backend;
         use ratatui::layout::Constraint;
@@ -1860,18 +1860,18 @@ mod tests {
         let session_index_path = tempdir.path().join("session_index.jsonl");
 
         let id1 =
-            ThreadId::from_string("11111111-1111-1111-1111-111111111111").expect("thread id 1");
+            ProcessId::from_string("11111111-1111-1111-1111-111111111111").expect("thread id 1");
         let id2 =
-            ThreadId::from_string("22222222-2222-2222-2222-222222222222").expect("thread id 2");
+            ProcessId::from_string("22222222-2222-2222-2222-222222222222").expect("thread id 2");
         let entries = vec![
             json!({
                 "id": id1,
-                "thread_name": "Keep this for now",
+                "process_name": "Keep this for now",
                 "updated_at": "2025-01-01T00:00:00Z",
             }),
             json!({
                 "id": id2,
-                "thread_name": "Named thread",
+                "process_name": "Named thread",
                 "updated_at": "2025-01-01T00:00:00Z",
             }),
         ];
@@ -1898,8 +1898,8 @@ mod tests {
             Row {
                 path: PathBuf::from("/tmp/a.jsonl"),
                 preview: String::from("First message preview"),
-                thread_id: Some(id1),
-                thread_name: None,
+                process_id: Some(id1),
+                process_name: None,
                 created_at: None,
                 updated_at: Some(now - Duration::days(2)),
                 cwd: None,
@@ -1908,8 +1908,8 @@ mod tests {
             Row {
                 path: PathBuf::from("/tmp/b.jsonl"),
                 preview: String::from("Second message preview"),
-                thread_id: Some(id2),
-                thread_name: None,
+                process_id: Some(id2),
+                process_name: None,
                 created_at: None,
                 updated_at: Some(now - Duration::days(3)),
                 cwd: None,
@@ -1923,7 +1923,7 @@ mod tests {
         state.scroll_top = 0;
         state.update_view_rows(2);
 
-        state.update_thread_names().await;
+        state.update_process_names().await;
 
         let metrics = calculate_column_metrics(&state.filtered_rows, state.show_all);
 
@@ -1944,7 +1944,7 @@ mod tests {
         terminal.flush().expect("flush");
 
         let snapshot = terminal.backend().to_string();
-        assert_snapshot!("resume_picker_thread_names", snapshot);
+        assert_snapshot!("resume_picker_process_names", snapshot);
     }
 
     #[test]
@@ -2058,7 +2058,7 @@ mod tests {
             labels: Vec::new(),
         };
 
-        let created = column_visibility(30, &metrics, ThreadSortKey::CreatedAt);
+        let created = column_visibility(30, &metrics, ProcessSortKey::CreatedAt);
         assert_eq!(
             created,
             ColumnVisibility {
@@ -2069,7 +2069,7 @@ mod tests {
             }
         );
 
-        let updated = column_visibility(30, &metrics, ThreadSortKey::UpdatedAt);
+        let updated = column_visibility(30, &metrics, ProcessSortKey::UpdatedAt);
         assert_eq!(
             updated,
             ColumnVisibility {
@@ -2080,7 +2080,7 @@ mod tests {
             }
         );
 
-        let wide = column_visibility(40, &metrics, ThreadSortKey::CreatedAt);
+        let wide = column_visibility(40, &metrics, ProcessSortKey::CreatedAt);
         assert_eq!(
             wide,
             ColumnVisibility {
@@ -2114,7 +2114,7 @@ mod tests {
         {
             let guard = recorded_requests.lock().unwrap();
             assert_eq!(guard.len(), 1);
-            assert_eq!(guard[0].sort_key, ThreadSortKey::UpdatedAt);
+            assert_eq!(guard[0].sort_key, ProcessSortKey::UpdatedAt);
         }
 
         state
@@ -2124,7 +2124,7 @@ mod tests {
 
         let guard = recorded_requests.lock().unwrap();
         assert_eq!(guard.len(), 2);
-        assert_eq!(guard[1].sort_key, ThreadSortKey::CreatedAt);
+        assert_eq!(guard[1].sort_key, ProcessSortKey::CreatedAt);
     }
 
     #[tokio::test]
@@ -2188,8 +2188,8 @@ mod tests {
         let row = Row {
             path: PathBuf::from("/tmp/missing.jsonl"),
             preview: String::from("missing metadata"),
-            thread_id: None,
-            thread_name: None,
+            process_id: None,
+            process_name: None,
             created_at: None,
             updated_at: None,
             cwd: None,

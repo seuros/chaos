@@ -1,15 +1,15 @@
 use anyhow::Result;
-use chaos_ipc::ThreadId;
+use chaos_ipc::ProcessId;
 use sqlx::Row;
 use sqlx::sqlite::SqliteRow;
 use std::path::PathBuf;
 
-use super::ThreadMetadata;
+use super::ProcessMetadata;
 
 /// Stored stage-1 memory extraction output for a single thread.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct Stage1Output {
-    pub thread_id: ThreadId,
+    pub process_id: ProcessId,
     pub rollout_path: PathBuf,
     pub source_updated_at: jiff::Timestamp,
     pub raw_memory: String,
@@ -22,7 +22,7 @@ pub struct Stage1Output {
 
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct Stage1OutputRef {
-    pub thread_id: ThreadId,
+    pub process_id: ProcessId,
     pub source_updated_at: jiff::Timestamp,
     pub rollout_slug: Option<String>,
 }
@@ -31,13 +31,13 @@ pub struct Stage1OutputRef {
 pub struct Phase2InputSelection {
     pub selected: Vec<Stage1Output>,
     pub previous_selected: Vec<Stage1Output>,
-    pub retained_thread_ids: Vec<ThreadId>,
+    pub retained_process_ids: Vec<ProcessId>,
     pub removed: Vec<Stage1OutputRef>,
 }
 
 #[derive(Debug)]
 pub(crate) struct Stage1OutputRow {
-    thread_id: String,
+    process_id: String,
     rollout_path: String,
     source_updated_at: i64,
     raw_memory: String,
@@ -51,7 +51,7 @@ pub(crate) struct Stage1OutputRow {
 impl Stage1OutputRow {
     pub(crate) fn try_from_row(row: &SqliteRow) -> Result<Self> {
         Ok(Self {
-            thread_id: row.try_get("thread_id")?,
+            process_id: row.try_get("process_id")?,
             rollout_path: row.try_get("rollout_path")?,
             source_updated_at: row.try_get("source_updated_at")?,
             raw_memory: row.try_get("raw_memory")?,
@@ -69,7 +69,7 @@ impl TryFrom<Stage1OutputRow> for Stage1Output {
 
     fn try_from(row: Stage1OutputRow) -> std::result::Result<Self, Self::Error> {
         Ok(Self {
-            thread_id: ThreadId::try_from(row.thread_id)?,
+            process_id: ProcessId::try_from(row.process_id)?,
             rollout_path: PathBuf::from(row.rollout_path),
             source_updated_at: epoch_seconds_to_datetime(row.source_updated_at)?,
             raw_memory: row.raw_memory,
@@ -88,12 +88,12 @@ fn epoch_seconds_to_datetime(secs: i64) -> Result<jiff::Timestamp> {
 }
 
 pub(crate) fn stage1_output_ref_from_parts(
-    thread_id: String,
+    process_id: String,
     source_updated_at: i64,
     rollout_slug: Option<String>,
 ) -> Result<Stage1OutputRef> {
     Ok(Stage1OutputRef {
-        thread_id: ThreadId::try_from(thread_id)?,
+        process_id: ProcessId::try_from(process_id)?,
         source_updated_at: epoch_seconds_to_datetime(source_updated_at)?,
         rollout_slug,
     })
@@ -117,7 +117,7 @@ pub enum Stage1JobClaimOutcome {
 /// Claimed stage-1 job with thread metadata.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct Stage1JobClaim {
-    pub thread: ThreadMetadata,
+    pub thread: ProcessMetadata,
     pub ownership_token: String,
 }
 

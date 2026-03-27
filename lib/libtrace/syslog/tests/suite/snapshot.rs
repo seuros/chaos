@@ -5,7 +5,7 @@ use chaos_syslog::TelemetryAuthMode;
 use chaos_syslog::metrics::MetricsClient;
 use chaos_syslog::metrics::MetricsConfig;
 use chaos_syslog::metrics::Result;
-use chaos_ipc::ThreadId;
+use chaos_ipc::ProcessId;
 use chaos_ipc::protocol::SessionSource;
 use opentelemetry_sdk::metrics::InMemoryMetricExporter;
 use opentelemetry_sdk::metrics::data::AggregatedMetrics;
@@ -70,7 +70,7 @@ fn manager_snapshot_metrics_collects_without_shutdown() -> Result<()> {
         .with_runtime_reader();
     let metrics = MetricsClient::new(config)?;
     let manager = SessionTelemetry::new(
-        ThreadId::new(),
+        ProcessId::new(),
         "gpt-5.1",
         "gpt-5.1",
         Some("account-id".to_string()),

@@ -7,7 +7,7 @@
 use crate::history_cell::PlainHistoryCell;
 use crate::render::line_utils::prefix_lines;
 use crate::text_formatting::truncate_text;
-use chaos_ipc::ThreadId;
+use chaos_ipc::ProcessId;
 use chaos_ipc::openai_models::ReasoningEffort as ReasoningEffortConfig;
 use chaos_ipc::protocol::AgentStatus;
 use chaos_ipc::protocol::CollabAgentInteractionEndEvent;
@@ -36,7 +36,7 @@ const COLLAB_AGENT_ERROR_PREVIEW_GRAPHEMES: usize = 160;
 const COLLAB_AGENT_RESPONSE_PREVIEW_GRAPHEMES: usize = 240;
 
 #[derive(Debug, Clone, PartialEq, Eq)]
-pub(crate) struct AgentPickerThreadEntry {
+pub(crate) struct AgentPickerProcessEntry {
     /// Human-friendly nickname shown in picker rows and footer labels.
     pub(crate) agent_nickname: Option<String>,
     /// Agent type shown in brackets when present, for example `worker`.
@@ -47,7 +47,7 @@ pub(crate) struct AgentPickerThreadEntry {
 
 #[derive(Clone, Copy)]
 struct AgentLabel<'a> {
-    thread_id: Option<ThreadId>,
+    process_id: Option<ProcessId>,
     nickname: Option<&'a str>,
     role: Option<&'a str>,
 }
@@ -177,8 +177,8 @@ pub(crate) fn spawn_end(
 ) -> PlainHistoryCell {
     let CollabAgentSpawnEndEvent {
         call_id: _,
-        sender_thread_id: _,
-        new_thread_id,
+        sender_process_id: _,
+        new_process_id,
         new_agent_nickname,
         new_agent_role,
         prompt,
@@ -186,11 +186,11 @@ pub(crate) fn spawn_end(
         ..
     } = ev;
 
-    let title = match new_thread_id {
-        Some(thread_id) => title_with_agent(
+    let title = match new_process_id {
+        Some(process_id) => title_with_agent(
             "Spawned",
             AgentLabel {
-                thread_id: Some(thread_id),
+                process_id: Some(process_id),
                 nickname: new_agent_nickname.as_deref(),
                 role: new_agent_role.as_deref(),
             },
@@ -209,8 +209,8 @@ pub(crate) fn spawn_end(
 pub(crate) fn interaction_end(ev: CollabAgentInteractionEndEvent) -> PlainHistoryCell {
     let CollabAgentInteractionEndEvent {
         call_id: _,
-        sender_thread_id: _,
-        receiver_thread_id,
+        sender_process_id: _,
+        receiver_process_id,
         receiver_agent_nickname,
         receiver_agent_role,
         prompt,
@@ -220,7 +220,7 @@ pub(crate) fn interaction_end(ev: CollabAgentInteractionEndEvent) -> PlainHistor
     let title = title_with_agent(
         "Sent input to",
         AgentLabel {
-            thread_id: Some(receiver_thread_id),
+            process_id: Some(receiver_process_id),
             nickname: receiver_agent_nickname.as_deref(),
             role: receiver_agent_role.as_deref(),
         },
@@ -236,12 +236,12 @@ pub(crate) fn interaction_end(ev: CollabAgentInteractionEndEvent) -> PlainHistor
 
 pub(crate) fn waiting_begin(ev: CollabWaitingBeginEvent) -> PlainHistoryCell {
     let CollabWaitingBeginEvent {
-        sender_thread_id: _,
-        receiver_thread_ids,
+        sender_process_id: _,
+        receiver_process_ids,
         receiver_agents,
         call_id: _,
     } = ev;
-    let receiver_agents = merge_wait_receivers(&receiver_thread_ids, receiver_agents);
+    let receiver_agents = merge_wait_receivers(&receiver_process_ids, receiver_agents);
 
     let title = match receiver_agents.as_slice() {
         [receiver] => title_with_agent(
@@ -268,7 +268,7 @@ pub(crate) fn waiting_begin(ev: CollabWaitingBeginEvent) -> PlainHistoryCell {
 pub(crate) fn waiting_end(ev: CollabWaitingEndEvent) -> PlainHistoryCell {
     let CollabWaitingEndEvent {
         call_id: _,
-        sender_thread_id: _,
+        sender_process_id: _,
         agent_statuses,
         statuses,
     } = ev;
@@ -279,8 +279,8 @@ pub(crate) fn waiting_end(ev: CollabWaitingEndEvent) -> PlainHistoryCell {
 pub(crate) fn close_end(ev: CollabCloseEndEvent) -> PlainHistoryCell {
     let CollabCloseEndEvent {
         call_id: _,
-        sender_thread_id: _,
-        receiver_thread_id,
+        sender_process_id: _,
+        receiver_process_id,
         receiver_agent_nickname,
         receiver_agent_role,
         status: _,
@@ -290,7 +290,7 @@ pub(crate) fn close_end(ev: CollabCloseEndEvent) -> PlainHistoryCell {
         title_with_agent(
             "Closed",
             AgentLabel {
-                thread_id: Some(receiver_thread_id),
+                process_id: Some(receiver_process_id),
                 nickname: receiver_agent_nickname.as_deref(),
                 role: receiver_agent_role.as_deref(),
             },
@@ -303,8 +303,8 @@ pub(crate) fn close_end(ev: CollabCloseEndEvent) -> PlainHistoryCell {
 pub(crate) fn resume_begin(ev: CollabResumeBeginEvent) -> PlainHistoryCell {
     let CollabResumeBeginEvent {
         call_id: _,
-        sender_thread_id: _,
-        receiver_thread_id,
+        sender_process_id: _,
+        receiver_process_id,
         receiver_agent_nickname,
         receiver_agent_role,
     } = ev;
@@ -313,7 +313,7 @@ pub(crate) fn resume_begin(ev: CollabResumeBeginEvent) -> PlainHistoryCell {
         title_with_agent(
             "Resuming",
             AgentLabel {
-                thread_id: Some(receiver_thread_id),
+                process_id: Some(receiver_process_id),
                 nickname: receiver_agent_nickname.as_deref(),
                 role: receiver_agent_role.as_deref(),
             },
@@ -326,8 +326,8 @@ pub(crate) fn resume_begin(ev: CollabResumeBeginEvent) -> PlainHistoryCell {
 pub(crate) fn resume_end(ev: CollabResumeEndEvent) -> PlainHistoryCell {
     let CollabResumeEndEvent {
         call_id: _,
-        sender_thread_id: _,
-        receiver_thread_id,
+        sender_process_id: _,
+        receiver_process_id,
         receiver_agent_nickname,
         receiver_agent_role,
         status,
@@ -337,7 +337,7 @@ pub(crate) fn resume_end(ev: CollabResumeEndEvent) -> PlainHistoryCell {
         title_with_agent(
             "Resumed",
             AgentLabel {
-                thread_id: Some(receiver_thread_id),
+                process_id: Some(receiver_process_id),
                 nickname: receiver_agent_nickname.as_deref(),
                 role: receiver_agent_role.as_deref(),
             },
@@ -379,7 +379,7 @@ fn title_spans_line(mut spans: Vec<Span<'static>>) -> Line<'static> {
 
 fn agent_label_from_ref(agent: &CollabAgentRef) -> AgentLabel<'_> {
     AgentLabel {
-        thread_id: Some(agent.thread_id),
+        process_id: Some(agent.process_id),
         nickname: agent.agent_nickname.as_deref(),
         role: agent.agent_role.as_deref(),
     }
@@ -399,8 +399,8 @@ fn agent_label_spans(agent: AgentLabel<'_>) -> Vec<Span<'static>> {
 
     if let Some(nickname) = nickname {
         spans.push(Span::from(nickname.to_string()).cyan().bold());
-    } else if let Some(thread_id) = agent.thread_id {
-        spans.push(Span::from(thread_id.to_string()).cyan());
+    } else if let Some(process_id) = agent.process_id {
+        spans.push(Span::from(process_id.to_string()).cyan());
     } else {
         spans.push(Span::from("agent").cyan());
     }
@@ -445,14 +445,14 @@ fn prompt_line(prompt: &str) -> Option<Line<'static>> {
 }
 
 fn merge_wait_receivers(
-    receiver_thread_ids: &[ThreadId],
+    receiver_process_ids: &[ProcessId],
     mut receiver_agents: Vec<CollabAgentRef>,
 ) -> Vec<CollabAgentRef> {
     if receiver_agents.is_empty() {
-        return receiver_thread_ids
+        return receiver_process_ids
             .iter()
-            .map(|thread_id| CollabAgentRef {
-                thread_id: *thread_id,
+            .map(|process_id| CollabAgentRef {
+                process_id: *process_id,
                 agent_nickname: None,
                 agent_role: None,
             })
@@ -461,12 +461,12 @@ fn merge_wait_receivers(
 
     let mut seen = receiver_agents
         .iter()
-        .map(|agent| agent.thread_id)
+        .map(|agent| agent.process_id)
         .collect::<HashSet<_>>();
-    for thread_id in receiver_thread_ids {
-        if seen.insert(*thread_id) {
+    for process_id in receiver_process_ids {
+        if seen.insert(*process_id) {
             receiver_agents.push(CollabAgentRef {
-                thread_id: *thread_id,
+                process_id: *process_id,
                 agent_nickname: None,
                 agent_role: None,
             });
@@ -476,7 +476,7 @@ fn merge_wait_receivers(
 }
 
 fn wait_complete_lines(
-    statuses: &HashMap<ThreadId, AgentStatus>,
+    statuses: &HashMap<ProcessId, AgentStatus>,
     agent_statuses: &[CollabAgentStatusEntry],
 ) -> Vec<Line<'static>> {
     if statuses.is_empty() && agent_statuses.is_empty() {
@@ -486,32 +486,32 @@ fn wait_complete_lines(
     let entries = if agent_statuses.is_empty() {
         let mut entries = statuses
             .iter()
-            .map(|(thread_id, status)| CollabAgentStatusEntry {
-                thread_id: *thread_id,
+            .map(|(process_id, status)| CollabAgentStatusEntry {
+                process_id: *process_id,
                 agent_nickname: None,
                 agent_role: None,
                 status: status.clone(),
             })
             .collect::<Vec<_>>();
-        entries.sort_by(|left, right| left.thread_id.to_string().cmp(&right.thread_id.to_string()));
+        entries.sort_by(|left, right| left.process_id.to_string().cmp(&right.process_id.to_string()));
         entries
     } else {
         let mut entries = agent_statuses.to_vec();
         let seen = entries
             .iter()
-            .map(|entry| entry.thread_id)
+            .map(|entry| entry.process_id)
             .collect::<HashSet<_>>();
         let mut extras = statuses
             .iter()
-            .filter(|(thread_id, _)| !seen.contains(thread_id))
-            .map(|(thread_id, status)| CollabAgentStatusEntry {
-                thread_id: *thread_id,
+            .filter(|(process_id, _)| !seen.contains(process_id))
+            .map(|(process_id, status)| CollabAgentStatusEntry {
+                process_id: *process_id,
                 agent_nickname: None,
                 agent_role: None,
                 status: status.clone(),
             })
             .collect::<Vec<_>>();
-        extras.sort_by(|left, right| left.thread_id.to_string().cmp(&right.thread_id.to_string()));
+        extras.sort_by(|left, right| left.process_id.to_string().cmp(&right.process_id.to_string()));
         entries.extend(extras);
         entries
     };
@@ -520,13 +520,13 @@ fn wait_complete_lines(
         .into_iter()
         .map(|entry| {
             let CollabAgentStatusEntry {
-                thread_id,
+                process_id,
                 agent_nickname,
                 agent_role,
                 status,
             } = entry;
             let mut spans = agent_label_spans(AgentLabel {
-                thread_id: Some(thread_id),
+                process_id: Some(process_id),
                 nickname: agent_nickname.as_deref(),
                 role: agent_role.as_deref(),
             });
@@ -594,18 +594,18 @@ mod tests {
 
     #[test]
     fn collab_events_snapshot() {
-        let sender_thread_id = ThreadId::from_string("00000000-0000-0000-0000-000000000001")
+        let sender_process_id = ProcessId::from_string("00000000-0000-0000-0000-000000000001")
             .expect("valid sender thread id");
-        let robie_id = ThreadId::from_string("00000000-0000-0000-0000-000000000002")
+        let robie_id = ProcessId::from_string("00000000-0000-0000-0000-000000000002")
             .expect("valid robie thread id");
-        let bob_id = ThreadId::from_string("00000000-0000-0000-0000-000000000003")
+        let bob_id = ProcessId::from_string("00000000-0000-0000-0000-000000000003")
             .expect("valid bob thread id");
 
         let spawn = spawn_end(
             CollabAgentSpawnEndEvent {
                 call_id: "call-spawn".to_string(),
-                sender_thread_id,
-                new_thread_id: Some(robie_id),
+                sender_process_id,
+                new_process_id: Some(robie_id),
                 new_agent_nickname: Some("Robie".to_string()),
                 new_agent_role: Some("explorer".to_string()),
                 prompt: "Compute 11! and reply with just the integer result.".to_string(),
@@ -621,8 +621,8 @@ mod tests {
 
         let send = interaction_end(CollabAgentInteractionEndEvent {
             call_id: "call-send".to_string(),
-            sender_thread_id,
-            receiver_thread_id: robie_id,
+            sender_process_id,
+            receiver_process_id: robie_id,
             receiver_agent_nickname: Some("Robie".to_string()),
             receiver_agent_role: Some("explorer".to_string()),
             prompt: "Please continue and return the answer only.".to_string(),
@@ -630,10 +630,10 @@ mod tests {
         });
 
         let waiting = waiting_begin(CollabWaitingBeginEvent {
-            sender_thread_id,
-            receiver_thread_ids: vec![robie_id],
+            sender_process_id,
+            receiver_process_ids: vec![robie_id],
             receiver_agents: vec![CollabAgentRef {
-                thread_id: robie_id,
+                process_id: robie_id,
                 agent_nickname: Some("Robie".to_string()),
                 agent_role: Some("explorer".to_string()),
             }],
@@ -647,17 +647,17 @@ mod tests {
         );
         statuses.insert(bob_id, AgentStatus::Errored("tool timeout".to_string()));
         let finished = waiting_end(CollabWaitingEndEvent {
-            sender_thread_id,
+            sender_process_id,
             call_id: "call-wait".to_string(),
             agent_statuses: vec![
                 CollabAgentStatusEntry {
-                    thread_id: robie_id,
+                    process_id: robie_id,
                     agent_nickname: Some("Robie".to_string()),
                     agent_role: Some("explorer".to_string()),
                     status: AgentStatus::Completed(Some("39916800".to_string())),
                 },
                 CollabAgentStatusEntry {
-                    thread_id: bob_id,
+                    process_id: bob_id,
                     agent_nickname: Some("Bob".to_string()),
                     agent_role: Some("worker".to_string()),
                     status: AgentStatus::Errored("tool timeout".to_string()),
@@ -668,8 +668,8 @@ mod tests {
 
         let close = close_end(CollabCloseEndEvent {
             call_id: "call-close".to_string(),
-            sender_thread_id,
-            receiver_thread_id: robie_id,
+            sender_process_id,
+            receiver_process_id: robie_id,
             receiver_agent_nickname: Some("Robie".to_string()),
             receiver_agent_role: Some("explorer".to_string()),
             status: AgentStatus::Completed(Some("39916800".to_string())),
@@ -735,15 +735,15 @@ mod tests {
 
     #[test]
     fn title_styles_nickname_and_role() {
-        let sender_thread_id = ThreadId::from_string("00000000-0000-0000-0000-000000000001")
+        let sender_process_id = ProcessId::from_string("00000000-0000-0000-0000-000000000001")
             .expect("valid sender thread id");
-        let robie_id = ThreadId::from_string("00000000-0000-0000-0000-000000000002")
+        let robie_id = ProcessId::from_string("00000000-0000-0000-0000-000000000002")
             .expect("valid robie thread id");
         let cell = spawn_end(
             CollabAgentSpawnEndEvent {
                 call_id: "call-spawn".to_string(),
-                sender_thread_id,
-                new_thread_id: Some(robie_id),
+                sender_process_id,
+                new_process_id: Some(robie_id),
                 new_agent_nickname: Some("Robie".to_string()),
                 new_agent_role: Some("explorer".to_string()),
                 prompt: String::new(),
@@ -771,15 +771,15 @@ mod tests {
 
     #[test]
     fn collab_resume_interrupted_snapshot() {
-        let sender_thread_id = ThreadId::from_string("00000000-0000-0000-0000-000000000001")
+        let sender_process_id = ProcessId::from_string("00000000-0000-0000-0000-000000000001")
             .expect("valid sender thread id");
-        let robie_id = ThreadId::from_string("00000000-0000-0000-0000-000000000002")
+        let robie_id = ProcessId::from_string("00000000-0000-0000-0000-000000000002")
             .expect("valid robie thread id");
 
         let cell = resume_end(CollabResumeEndEvent {
             call_id: "call-resume".to_string(),
-            sender_thread_id,
-            receiver_thread_id: robie_id,
+            sender_process_id,
+            receiver_process_id: robie_id,
             receiver_agent_nickname: Some("Robie".to_string()),
             receiver_agent_role: Some("explorer".to_string()),
             status: AgentStatus::Interrupted,

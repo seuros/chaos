@@ -680,7 +680,7 @@ pub enum McpServerElicitationAction {
 #[serde(rename_all = "camelCase")]
 #[ts(export_to = "v2/")]
 pub struct McpServerElicitationRequestParams {
-    pub thread_id: String,
+    pub process_id: String,
     /// Active Codex turn when this elicitation was observed, if app-server could correlate one.
     ///
     /// This is nullable because MCP models elicitation as a standalone server-to-client request

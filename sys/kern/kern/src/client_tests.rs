@@ -3,7 +3,7 @@ use super::ModelClient;
 use super::PendingUnauthorizedRetry;
 use super::UnauthorizedRecoveryExecution;
 use chaos_syslog::SessionTelemetry;
-use chaos_ipc::ThreadId;
+use chaos_ipc::ProcessId;
 use chaos_ipc::openai_models::ModelInfo;
 use chaos_ipc::protocol::SessionSource;
 use chaos_ipc::protocol::SubAgentSource;
@@ -17,7 +17,7 @@ fn test_model_client(session_source: SessionSource) -> ModelClient {
     );
     ModelClient::new(
         None,
-        ThreadId::new(),
+        ProcessId::new(),
         provider,
         session_source,
         None,
@@ -60,7 +60,7 @@ fn test_model_info() -> ModelInfo {
 
 fn test_session_telemetry() -> SessionTelemetry {
     SessionTelemetry::new(
-        ThreadId::new(),
+        ProcessId::new(),
         "gpt-test",
         "gpt-test",
         None,

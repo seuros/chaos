@@ -17,16 +17,23 @@ pub(crate) mod truncation;
 
 pub use chaos_ipc::protocol::SessionMeta;
 pub(crate) use error::map_session_init_error;
-pub use list::find_archived_thread_path_by_id_str;
-pub use list::find_thread_path_by_id_str;
-#[deprecated(note = "use find_thread_path_by_id_str")]
-pub use list::find_thread_path_by_id_str as find_conversation_path_by_id_str;
+pub use list::find_archived_process_path_by_id_str;
+pub use list::find_process_path_by_id_str;
+pub use list::ProcessItem;
+pub use list::ProcessListConfig;
+pub use list::ProcessListLayout;
+pub use list::ProcessSortKey;
+pub use list::ProcessesPage;
+pub use list::get_processes;
+pub use list::get_processes_in_root;
 pub use list::rollout_date_parts;
 pub use recorder::RolloutRecorder;
 pub use recorder::RolloutRecorderParams;
-pub use session_index::append_thread_name;
-pub use session_index::find_thread_name_by_id;
-pub use session_index::find_thread_path_by_name_str;
+pub use session_index::append_process_name;
+pub use session_index::find_process_id_by_name;
+pub use session_index::find_process_name_by_id;
+pub use session_index::find_process_names_by_ids;
+pub use session_index::find_process_path_by_name_str;
 
 #[cfg(test)]
 pub mod tests;

@@ -81,7 +81,7 @@ fn write_plugin_mcp_plugin(home: &TempDir, command: &str) {
 async fn build_plugin_test_codex(
     server: &MockServer,
     codex_home: Arc<TempDir>,
-) -> Result<Arc<chaos_kern::CodexThread>> {
+) -> Result<Arc<chaos_kern::Process>> {
     let mut builder = test_codex()
         .with_home(codex_home)
         .with_auth(CodexAuth::from_api_key("Test API Key"));
@@ -95,7 +95,7 @@ async fn build_plugin_test_codex(
 async fn build_analytics_plugin_test_codex(
     server: &MockServer,
     codex_home: Arc<TempDir>,
-) -> Result<Arc<chaos_kern::CodexThread>> {
+) -> Result<Arc<chaos_kern::Process>> {
     let chatgpt_base_url = server.uri();
     let mut builder = test_codex()
         .with_home(codex_home)
@@ -169,7 +169,7 @@ async fn explicit_plugin_mentions_track_plugin_used_analytics() -> Result<()> {
         serde_json::json!(chaos_kern::default_client::originator().value)
     );
     assert_eq!(event["event_params"]["model_slug"], "gpt-5");
-    assert!(event["event_params"]["thread_id"].as_str().is_some());
+    assert!(event["event_params"]["process_id"].as_str().is_some());
     assert!(event["event_params"]["turn_id"].as_str().is_some());
 
     Ok(())

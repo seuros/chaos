@@ -63,7 +63,6 @@ use chaos_getopt::format_env_display::format_env_display;
 use image::DynamicImage;
 use image::ImageReader;
 use ratatui::prelude::*;
-use ratatui::style::Color;
 use ratatui::style::Modifier;
 use ratatui::style::Style;
 use ratatui::style::Styled;
@@ -2491,7 +2490,7 @@ mod tests {
     use chaos_kern::config::types::McpServerTransportConfig;
     use chaos_syslog::RuntimeMetricTotals;
     use chaos_syslog::RuntimeMetricsSummary;
-    use chaos_ipc::ThreadId;
+    use chaos_ipc::ProcessId;
     use chaos_ipc::account::PlanType;
     use chaos_ipc::models::WebSearchAction;
     use chaos_ipc::parse_command::ParsedCommand;
@@ -2578,9 +2577,9 @@ mod tests {
 
     fn session_configured_event(model: &str) -> SessionConfiguredEvent {
         SessionConfiguredEvent {
-            session_id: ThreadId::new(),
+            session_id: ProcessId::new(),
             forked_from_id: None,
-            thread_name: None,
+            process_name: None,
             model: model.to_string(),
             model_provider_id: "test-provider".to_string(),
             service_tier: None,

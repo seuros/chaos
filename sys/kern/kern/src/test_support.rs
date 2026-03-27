@@ -16,11 +16,11 @@ use std::sync::LazyLock;
 use crate::AuthManager;
 use crate::CodexAuth;
 use crate::ModelProviderInfo;
-use crate::ThreadManager;
+use crate::ProcessTable;
 use crate::config::Config;
 use crate::models_manager::collaboration_mode_presets;
 use crate::models_manager::manager::ModelsManager;
-use crate::thread_manager;
+use crate::process_table;
 use crate::unified_exec;
 
 static TEST_MODEL_PRESETS: LazyLock<Vec<ModelPreset>> = LazyLock::new(|| {
@@ -33,8 +33,8 @@ static TEST_MODEL_PRESETS: LazyLock<Vec<ModelPreset>> = LazyLock::new(|| {
     presets
 });
 
-pub fn set_thread_manager_test_mode(enabled: bool) {
-    thread_manager::set_thread_manager_test_mode_for_tests(enabled);
+pub fn set_process_table_test_mode(enabled: bool) {
+    process_table::set_process_table_test_mode_for_tests(enabled);
 }
 
 pub fn set_deterministic_process_ids(enabled: bool) {
@@ -49,19 +49,19 @@ pub fn auth_manager_from_auth_with_home(auth: CodexAuth, codex_home: PathBuf) ->
     AuthManager::from_auth_for_testing_with_home(auth, codex_home)
 }
 
-pub fn thread_manager_with_models_provider(
+pub fn process_table_with_models_provider(
     auth: CodexAuth,
     provider: ModelProviderInfo,
-) -> ThreadManager {
-    ThreadManager::with_models_provider_for_tests(auth, provider)
+) -> ProcessTable {
+    ProcessTable::with_models_provider_for_tests(auth, provider)
 }
 
-pub fn thread_manager_with_models_provider_and_home(
+pub fn process_table_with_models_provider_and_home(
     auth: CodexAuth,
     provider: ModelProviderInfo,
     codex_home: PathBuf,
-) -> ThreadManager {
-    ThreadManager::with_models_provider_and_home_for_tests(auth, provider, codex_home)
+) -> ProcessTable {
+    ProcessTable::with_models_provider_and_home_for_tests(auth, provider, codex_home)
 }
 
 pub fn models_manager_with_provider(

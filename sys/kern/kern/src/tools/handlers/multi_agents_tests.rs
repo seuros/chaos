@@ -1,7 +1,7 @@
 use super::*;
 use crate::AuthManager;
 use crate::CodexAuth;
-use crate::ThreadManager;
+use crate::ProcessTable;
 use crate::built_in_model_providers;
 use crate::codex::make_session_and_context;
 use crate::config::DEFAULT_AGENT_MAX_DEPTH;
@@ -16,7 +16,7 @@ use crate::protocol::SessionSource;
 use crate::protocol::SubAgentSource;
 use crate::tools::context::ToolOutput;
 use crate::turn_diff_tracker::TurnDiffTracker;
-use chaos_ipc::ThreadId;
+use chaos_ipc::ProcessId;
 use chaos_ipc::models::ContentItem;
 use chaos_ipc::models::FunctionCallOutputBody;
 use chaos_ipc::models::ResponseInputItem;
@@ -56,8 +56,8 @@ fn function_payload(args: serde_json::Value) -> ToolPayload {
     }
 }
 
-fn thread_manager() -> ThreadManager {
-    ThreadManager::with_models_provider_for_tests(
+fn process_table() -> ProcessTable {
+    ProcessTable::with_models_provider_for_tests(
         CodexAuth::from_api_key("dummy"),
         built_in_model_providers(/* openai_base_url */ None)["openai"].clone(),
     )
@@ -161,7 +161,7 @@ async fn spawn_agent_uses_explorer_role_and_preserves_approval_policy() {
     }
 
     let (mut session, mut turn) = make_session_and_context().await;
-    let manager = thread_manager();
+    let manager = process_table();
     session.services.agent_control = manager.agent_control();
     let mut config = (*turn.config).clone();
     let provider = built_in_model_providers(/* openai_base_url */ None)["ollama"].clone();
@@ -202,7 +202,7 @@ async fn spawn_agent_uses_explorer_role_and_preserves_approval_policy() {
             .is_some_and(|nickname| !nickname.is_empty())
     );
     let snapshot = manager
-        .get_thread(agent_id)
+        .get_process(agent_id)
         .await
         .expect("spawned agent thread should exist")
         .config_snapshot()
@@ -253,7 +253,7 @@ async fn spawn_agent_reapplies_runtime_sandbox_after_role_config() {
     }
 
     let (mut session, mut turn) = make_session_and_context().await;
-    let manager = thread_manager();
+    let manager = process_table();
     session.services.agent_control = manager.agent_control();
     let expected_sandbox = pick_allowed_sandbox_policy(
         &turn.config.permissions.sandbox_policy,
@@ -301,7 +301,7 @@ async fn spawn_agent_reapplies_runtime_sandbox_after_role_config() {
     );
 
     let snapshot = manager
-        .get_thread(agent_id)
+        .get_process(agent_id)
         .await
         .expect("spawned agent thread should exist")
         .config_snapshot()
@@ -309,7 +309,7 @@ async fn spawn_agent_reapplies_runtime_sandbox_after_role_config() {
     assert_eq!(snapshot.sandbox_policy, expected_sandbox);
     assert_eq!(snapshot.approval_policy, AskForApproval::OnRequest);
     let child_thread = manager
-        .get_thread(agent_id)
+        .get_process(agent_id)
         .await
         .expect("spawned agent thread should exist");
     let child_turn = child_thread.codex.session.new_default_turn().await;
@@ -326,12 +326,12 @@ async fn spawn_agent_reapplies_runtime_sandbox_after_role_config() {
 #[tokio::test]
 async fn spawn_agent_rejects_when_depth_limit_exceeded() {
     let (mut session, mut turn) = make_session_and_context().await;
-    let manager = thread_manager();
+    let manager = process_table();
     session.services.agent_control = manager.agent_control();
 
     let max_depth = turn.config.agent_max_depth;
-    turn.session_source = SessionSource::SubAgent(SubAgentSource::ThreadSpawn {
-        parent_thread_id: session.conversation_id,
+    turn.session_source = SessionSource::SubAgent(SubAgentSource::ProcessSpawn {
+        parent_process_id: session.conversation_id,
         depth: max_depth,
         agent_nickname: None,
         agent_role: None,
@@ -363,14 +363,14 @@ async fn spawn_agent_allows_depth_up_to_configured_max_depth() {
     }
 
     let (mut session, mut turn) = make_session_and_context().await;
-    let manager = thread_manager();
+    let manager = process_table();
     session.services.agent_control = manager.agent_control();
 
     let mut config = (*turn.config).clone();
     config.agent_max_depth = DEFAULT_AGENT_MAX_DEPTH + 1;
     turn.config = Arc::new(config);
-    turn.session_source = SessionSource::SubAgent(SubAgentSource::ThreadSpawn {
-        parent_thread_id: session.conversation_id,
+    turn.session_source = SessionSource::SubAgent(SubAgentSource::ProcessSpawn {
+        parent_process_id: session.conversation_id,
         depth: DEFAULT_AGENT_MAX_DEPTH,
         agent_nickname: None,
         agent_role: None,
@@ -406,7 +406,7 @@ async fn send_input_rejects_empty_message() {
         Arc::new(session),
         Arc::new(turn),
         "send_input",
-        function_payload(json!({"id": ThreadId::new().to_string(), "message": ""})),
+        function_payload(json!({"id": ProcessId::new().to_string(), "message": ""})),
     );
     let Err(err) = SendInputHandler.handle(invocation).await else {
         panic!("empty message should be rejected");
@@ -425,7 +425,7 @@ async fn send_input_rejects_when_message_and_items_are_both_set() {
         Arc::new(turn),
         "send_input",
         function_payload(json!({
-            "id": ThreadId::new().to_string(),
+            "id": ProcessId::new().to_string(),
             "message": "hello",
             "items": [{"type": "mention", "name": "drive", "path": "app://drive"}]
         })),
@@ -462,9 +462,9 @@ async fn send_input_rejects_invalid_id() {
 #[tokio::test]
 async fn send_input_reports_missing_agent() {
     let (mut session, turn) = make_session_and_context().await;
-    let manager = thread_manager();
+    let manager = process_table();
     session.services.agent_control = manager.agent_control();
-    let agent_id = ThreadId::new();
+    let agent_id = ProcessId::new();
     let invocation = invocation(
         Arc::new(session),
         Arc::new(turn),
@@ -483,11 +483,11 @@ async fn send_input_reports_missing_agent() {
 #[tokio::test]
 async fn send_input_interrupts_before_prompt() {
     let (mut session, turn) = make_session_and_context().await;
-    let manager = thread_manager();
+    let manager = process_table();
     session.services.agent_control = manager.agent_control();
     let config = turn.config.as_ref().clone();
-    let thread = manager.start_thread(config).await.expect("start thread");
-    let agent_id = thread.thread_id;
+    let thread = manager.start_process(config).await.expect("start thread");
+    let agent_id = thread.process_id;
     let invocation = invocation(
         Arc::new(session),
         Arc::new(turn),
@@ -513,7 +513,7 @@ async fn send_input_interrupts_before_prompt() {
     assert!(matches!(ops_for_agent[1], Op::UserInput { .. }));
 
     let _ = thread
-        .thread
+        .process
         .submit(Op::Shutdown {})
         .await
         .expect("shutdown should submit");
@@ -522,11 +522,11 @@ async fn send_input_interrupts_before_prompt() {
 #[tokio::test]
 async fn send_input_accepts_structured_items() {
     let (mut session, turn) = make_session_and_context().await;
-    let manager = thread_manager();
+    let manager = process_table();
     session.services.agent_control = manager.agent_control();
     let config = turn.config.as_ref().clone();
-    let thread = manager.start_thread(config).await.expect("start thread");
-    let agent_id = thread.thread_id;
+    let thread = manager.start_process(config).await.expect("start thread");
+    let agent_id = thread.process_id;
     let invocation = invocation(
         Arc::new(session),
         Arc::new(turn),
@@ -564,7 +564,7 @@ async fn send_input_accepts_structured_items() {
     assert_eq!(captured, Some((agent_id, expected)));
 
     let _ = thread
-        .thread
+        .process
         .submit(Op::Shutdown {})
         .await
         .expect("shutdown should submit");
@@ -591,9 +591,9 @@ async fn resume_agent_rejects_invalid_id() {
 #[tokio::test]
 async fn resume_agent_reports_missing_agent() {
     let (mut session, turn) = make_session_and_context().await;
-    let manager = thread_manager();
+    let manager = process_table();
     session.services.agent_control = manager.agent_control();
-    let agent_id = ThreadId::new();
+    let agent_id = ProcessId::new();
     let invocation = invocation(
         Arc::new(session),
         Arc::new(turn),
@@ -612,11 +612,11 @@ async fn resume_agent_reports_missing_agent() {
 #[tokio::test]
 async fn resume_agent_noops_for_active_agent() {
     let (mut session, turn) = make_session_and_context().await;
-    let manager = thread_manager();
+    let manager = process_table();
     session.services.agent_control = manager.agent_control();
     let config = turn.config.as_ref().clone();
-    let thread = manager.start_thread(config).await.expect("start thread");
-    let agent_id = thread.thread_id;
+    let thread = manager.start_process(config).await.expect("start thread");
+    let agent_id = thread.process_id;
     let status_before = manager.agent_control().get_status(agent_id).await;
     let invocation = invocation(
         Arc::new(session),
@@ -635,11 +635,11 @@ async fn resume_agent_noops_for_active_agent() {
     assert_eq!(result.status, status_before);
     assert_eq!(success, Some(true));
 
-    let thread_ids = manager.list_thread_ids().await;
-    assert_eq!(thread_ids, vec![agent_id]);
+    let process_ids = manager.list_process_ids().await;
+    assert_eq!(process_ids, vec![agent_id]);
 
     let _ = thread
-        .thread
+        .process
         .submit(Op::Shutdown {})
         .await
         .expect("shutdown should submit");
@@ -648,11 +648,11 @@ async fn resume_agent_noops_for_active_agent() {
 #[tokio::test]
 async fn resume_agent_restores_closed_agent_and_accepts_send_input() {
     let (mut session, turn) = make_session_and_context().await;
-    let manager = thread_manager();
+    let manager = process_table();
     session.services.agent_control = manager.agent_control();
     let config = turn.config.as_ref().clone();
     let thread = manager
-        .resume_thread_with_history(
+        .resume_process_with_history(
             config,
             InitialHistory::Forked(vec![RolloutItem::ResponseItem(ResponseItem::Message {
                 id: None,
@@ -669,7 +669,7 @@ async fn resume_agent_restores_closed_agent_and_accepts_send_input() {
         )
         .await
         .expect("start thread");
-    let agent_id = thread.thread_id;
+    let agent_id = thread.process_id;
     let _ = manager
         .agent_control()
         .shutdown_agent(agent_id)
@@ -728,12 +728,12 @@ async fn resume_agent_restores_closed_agent_and_accepts_send_input() {
 #[tokio::test]
 async fn resume_agent_rejects_when_depth_limit_exceeded() {
     let (mut session, mut turn) = make_session_and_context().await;
-    let manager = thread_manager();
+    let manager = process_table();
     session.services.agent_control = manager.agent_control();
 
     let max_depth = turn.config.agent_max_depth;
-    turn.session_source = SessionSource::SubAgent(SubAgentSource::ThreadSpawn {
-        parent_thread_id: session.conversation_id,
+    turn.session_source = SessionSource::SubAgent(SubAgentSource::ProcessSpawn {
+        parent_process_id: session.conversation_id,
         depth: max_depth,
         agent_nickname: None,
         agent_role: None,
@@ -743,7 +743,7 @@ async fn resume_agent_rejects_when_depth_limit_exceeded() {
         Arc::new(session),
         Arc::new(turn),
         "resume_agent",
-        function_payload(json!({"id": ThreadId::new().to_string()})),
+        function_payload(json!({"id": ProcessId::new().to_string()})),
     );
     let Err(err) = ResumeAgentHandler.handle(invocation).await else {
         panic!("resume should fail when depth limit exceeded");
@@ -764,7 +764,7 @@ async fn wait_agent_rejects_non_positive_timeout() {
         Arc::new(turn),
         "wait_agent",
         function_payload(json!({
-            "ids": [ThreadId::new().to_string()],
+            "ids": [ProcessId::new().to_string()],
             "timeout_ms": 0
         })),
     );
@@ -816,10 +816,10 @@ async fn wait_agent_rejects_empty_ids() {
 #[tokio::test]
 async fn wait_agent_returns_not_found_for_missing_agents() {
     let (mut session, turn) = make_session_and_context().await;
-    let manager = thread_manager();
+    let manager = process_table();
     session.services.agent_control = manager.agent_control();
-    let id_a = ThreadId::new();
-    let id_b = ThreadId::new();
+    let id_a = ProcessId::new();
+    let id_b = ProcessId::new();
     let invocation = invocation(
         Arc::new(session),
         Arc::new(turn),
@@ -849,11 +849,11 @@ async fn wait_agent_returns_not_found_for_missing_agents() {
 #[tokio::test]
 async fn wait_agent_times_out_when_status_is_not_final() {
     let (mut session, turn) = make_session_and_context().await;
-    let manager = thread_manager();
+    let manager = process_table();
     session.services.agent_control = manager.agent_control();
     let config = turn.config.as_ref().clone();
-    let thread = manager.start_thread(config).await.expect("start thread");
-    let agent_id = thread.thread_id;
+    let thread = manager.start_process(config).await.expect("start thread");
+    let agent_id = thread.process_id;
     let invocation = invocation(
         Arc::new(session),
         Arc::new(turn),
@@ -880,7 +880,7 @@ async fn wait_agent_times_out_when_status_is_not_final() {
     assert_eq!(success, None);
 
     let _ = thread
-        .thread
+        .process
         .submit(Op::Shutdown {})
         .await
         .expect("shutdown should submit");
@@ -889,11 +889,11 @@ async fn wait_agent_times_out_when_status_is_not_final() {
 #[tokio::test]
 async fn wait_agent_clamps_short_timeouts_to_minimum() {
     let (mut session, turn) = make_session_and_context().await;
-    let manager = thread_manager();
+    let manager = process_table();
     session.services.agent_control = manager.agent_control();
     let config = turn.config.as_ref().clone();
-    let thread = manager.start_thread(config).await.expect("start thread");
-    let agent_id = thread.thread_id;
+    let thread = manager.start_process(config).await.expect("start thread");
+    let agent_id = thread.process_id;
     let invocation = invocation(
         Arc::new(session),
         Arc::new(turn),
@@ -915,7 +915,7 @@ async fn wait_agent_clamps_short_timeouts_to_minimum() {
     );
 
     let _ = thread
-        .thread
+        .process
         .submit(Op::Shutdown {})
         .await
         .expect("shutdown should submit");
@@ -924,11 +924,11 @@ async fn wait_agent_clamps_short_timeouts_to_minimum() {
 #[tokio::test]
 async fn wait_agent_returns_final_status_without_timeout() {
     let (mut session, turn) = make_session_and_context().await;
-    let manager = thread_manager();
+    let manager = process_table();
     session.services.agent_control = manager.agent_control();
     let config = turn.config.as_ref().clone();
-    let thread = manager.start_thread(config).await.expect("start thread");
-    let agent_id = thread.thread_id;
+    let thread = manager.start_process(config).await.expect("start thread");
+    let agent_id = thread.process_id;
     let mut status_rx = manager
         .agent_control()
         .subscribe_status(agent_id)
@@ -936,7 +936,7 @@ async fn wait_agent_returns_final_status_without_timeout() {
         .expect("subscribe should succeed");
 
     let _ = thread
-        .thread
+        .process
         .submit(Op::Shutdown {})
         .await
         .expect("shutdown should submit");
@@ -973,11 +973,11 @@ async fn wait_agent_returns_final_status_without_timeout() {
 #[tokio::test]
 async fn close_agent_submits_shutdown_and_returns_status() {
     let (mut session, turn) = make_session_and_context().await;
-    let manager = thread_manager();
+    let manager = process_table();
     session.services.agent_control = manager.agent_control();
     let config = turn.config.as_ref().clone();
-    let thread = manager.start_thread(config).await.expect("start thread");
-    let agent_id = thread.thread_id;
+    let thread = manager.start_process(config).await.expect("start thread");
+    let agent_id = thread.process_id;
     let status_before = manager.agent_control().get_status(agent_id).await;
 
     let invocation = invocation(

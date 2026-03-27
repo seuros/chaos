@@ -14,7 +14,7 @@ use crate::models_manager::model_info;
 use crate::shell::default_user_shell;
 use crate::tools::format_exec_output_str;
 
-use chaos_ipc::ThreadId;
+use chaos_ipc::ProcessId;
 use chaos_ipc::models::FunctionCallOutputBody;
 use chaos_ipc::models::FunctionCallOutputPayload;
 use chaos_ipc::permissions::FileSystemAccessMode;
@@ -783,7 +783,7 @@ async fn record_initial_history_reconstructs_resumed_transcript() {
 
     session
         .record_initial_history(InitialHistory::Resumed(ResumedHistory {
-            conversation_id: ThreadId::default(),
+            conversation_id: ProcessId::default(),
             history: rollout_items,
             rollout_path: PathBuf::from("/tmp/resume.jsonl"),
         }))
@@ -812,7 +812,7 @@ async fn resumed_history_injects_initial_context_on_first_context_update_only() 
 
     session
         .record_initial_history(InitialHistory::Resumed(ResumedHistory {
-            conversation_id: ThreadId::default(),
+            conversation_id: ProcessId::default(),
             history: rollout_items,
             rollout_path: PathBuf::from("/tmp/resume.jsonl"),
         }))
@@ -905,7 +905,7 @@ async fn record_initial_history_seeds_token_info_from_rollout() {
 
     session
         .record_initial_history(InitialHistory::Resumed(ResumedHistory {
-            conversation_id: ThreadId::default(),
+            conversation_id: ProcessId::default(),
             history: rollout_items,
             rollout_path: PathBuf::from("/tmp/resume.jsonl"),
         }))
@@ -1062,7 +1062,7 @@ async fn record_initial_history_forked_hydrates_previous_turn_settings() {
 }
 
 #[tokio::test]
-async fn thread_rollback_drops_last_turn_from_history() {
+async fn process_rollback_drops_last_turn_from_history() {
     let (sess, tc, rx) = make_session_and_context_with_rx().await;
     let rollout_path = attach_rollout_recorder(&sess).await;
 
@@ -1095,9 +1095,9 @@ async fn thread_rollback_drops_last_turn_from_history() {
         state.set_reference_context_item(Some(tc.to_turn_context_item()));
     }
 
-    handlers::thread_rollback(&sess, "sub-1".to_string(), 1).await;
+    handlers::process_rollback(&sess, "sub-1".to_string(), 1).await;
 
-    let rollback_event = wait_for_thread_rolled_back(&rx).await;
+    let rollback_event = wait_for_process_rolled_back(&rx).await;
     assert_eq!(rollback_event.num_turns, 1);
 
     let mut expected = Vec::new();
@@ -1118,14 +1118,14 @@ async fn thread_rollback_drops_last_turn_from_history() {
     assert!(resumed.history.iter().any(|item| {
         matches!(
             item,
-            RolloutItem::EventMsg(EventMsg::ThreadRolledBack(rollback))
+            RolloutItem::EventMsg(EventMsg::ProcessRolledBack(rollback))
             if rollback.num_turns == 1
         )
     }));
 }
 
 #[tokio::test]
-async fn thread_rollback_clears_history_when_num_turns_exceeds_existing_turns() {
+async fn process_rollback_clears_history_when_num_turns_exceeds_existing_turns() {
     let (sess, tc, rx) = make_session_and_context_with_rx().await;
     attach_rollout_recorder(&sess).await;
 
@@ -1142,9 +1142,9 @@ async fn thread_rollback_clears_history_when_num_turns_exceeds_existing_turns() 
         .collect();
     sess.persist_rollout_items(&rollout_items).await;
 
-    handlers::thread_rollback(&sess, "sub-1".to_string(), 99).await;
+    handlers::process_rollback(&sess, "sub-1".to_string(), 99).await;
 
-    let rollback_event = wait_for_thread_rolled_back(&rx).await;
+    let rollback_event = wait_for_process_rolled_back(&rx).await;
     assert_eq!(rollback_event.num_turns, 99);
 
     let history = sess.clone_history().await;
@@ -1152,29 +1152,29 @@ async fn thread_rollback_clears_history_when_num_turns_exceeds_existing_turns() 
 }
 
 #[tokio::test]
-async fn thread_rollback_fails_without_persisted_rollout_path() {
+async fn process_rollback_fails_without_persisted_rollout_path() {
     let (sess, tc, rx) = make_session_and_context_with_rx().await;
 
     let initial_context = sess.build_initial_context(tc.as_ref()).await;
     sess.record_into_history(&initial_context, tc.as_ref())
         .await;
 
-    handlers::thread_rollback(&sess, "sub-1".to_string(), 1).await;
+    handlers::process_rollback(&sess, "sub-1".to_string(), 1).await;
 
-    let error_event = wait_for_thread_rollback_failed(&rx).await;
+    let error_event = wait_for_process_rollback_failed(&rx).await;
     assert_eq!(
         error_event.message,
         "thread rollback requires a persisted rollout path"
     );
     assert_eq!(
         error_event.codex_error_info,
-        Some(CodexErrorInfo::ThreadRollbackFailed)
+        Some(CodexErrorInfo::ProcessRollbackFailed)
     );
     assert_eq!(sess.clone_history().await.raw_items(), initial_context);
 }
 
 #[tokio::test]
-async fn thread_rollback_recomputes_previous_turn_settings_and_reference_context_from_replay() {
+async fn process_rollback_recomputes_previous_turn_settings_and_reference_context_from_replay() {
     let (sess, tc, rx) = make_session_and_context_with_rx().await;
     attach_rollout_recorder(&sess).await;
 
@@ -1252,8 +1252,8 @@ async fn thread_rollback_recomputes_previous_turn_settings_and_reference_context
     }))
     .await;
 
-    handlers::thread_rollback(&sess, "sub-1".to_string(), 1).await;
-    let rollback_event = wait_for_thread_rolled_back(&rx).await;
+    handlers::process_rollback(&sess, "sub-1".to_string(), 1).await;
+    let rollback_event = wait_for_process_rolled_back(&rx).await;
     assert_eq!(rollback_event.num_turns, 1);
 
     assert_eq!(
@@ -1275,7 +1275,7 @@ async fn thread_rollback_recomputes_previous_turn_settings_and_reference_context
 }
 
 #[tokio::test]
-async fn thread_rollback_restores_cleared_reference_context_item_after_compaction() {
+async fn process_rollback_restores_cleared_reference_context_item_after_compaction() {
     let (sess, tc, rx) = make_session_and_context_with_rx().await;
     attach_rollout_recorder(&sess).await;
 
@@ -1359,8 +1359,8 @@ async fn thread_rollback_restores_cleared_reference_context_item_after_compactio
     )
     .await;
 
-    handlers::thread_rollback(&sess, "sub-1".to_string(), 1).await;
-    let rollback_event = wait_for_thread_rolled_back(&rx).await;
+    handlers::process_rollback(&sess, "sub-1".to_string(), 1).await;
+    let rollback_event = wait_for_process_rolled_back(&rx).await;
     assert_eq!(rollback_event.num_turns, 1);
 
     assert_eq!(sess.clone_history().await.raw_items(), compacted_history);
@@ -1368,7 +1368,7 @@ async fn thread_rollback_restores_cleared_reference_context_item_after_compactio
 }
 
 #[tokio::test]
-async fn thread_rollback_persists_marker_and_replays_cumulatively() {
+async fn process_rollback_persists_marker_and_replays_cumulatively() {
     let (sess, tc, rx) = make_session_and_context_with_rx().await;
     let rollout_path = attach_rollout_recorder(&sess).await;
     let turn_context_item = tc.to_turn_context_item();
@@ -1437,11 +1437,11 @@ async fn thread_rollback_persists_marker_and_replays_cumulatively() {
     ])
     .await;
 
-    handlers::thread_rollback(&sess, "sub-1".to_string(), 1).await;
-    let first_rollback = wait_for_thread_rolled_back(&rx).await;
+    handlers::process_rollback(&sess, "sub-1".to_string(), 1).await;
+    let first_rollback = wait_for_process_rolled_back(&rx).await;
     assert_eq!(first_rollback.num_turns, 1);
-    handlers::thread_rollback(&sess, "sub-1".to_string(), 1).await;
-    let second_rollback = wait_for_thread_rolled_back(&rx).await;
+    handlers::process_rollback(&sess, "sub-1".to_string(), 1).await;
+    let second_rollback = wait_for_process_rolled_back(&rx).await;
     assert_eq!(second_rollback.num_turns, 1);
 
     assert_eq!(
@@ -1461,13 +1461,13 @@ async fn thread_rollback_persists_marker_and_replays_cumulatively() {
     let rollback_markers = resumed
         .history
         .iter()
-        .filter(|item| matches!(item, RolloutItem::EventMsg(EventMsg::ThreadRolledBack(_))))
+        .filter(|item| matches!(item, RolloutItem::EventMsg(EventMsg::ProcessRolledBack(_))))
         .count();
     assert_eq!(rollback_markers, 2);
 }
 
 #[tokio::test]
-async fn thread_rollback_fails_when_turn_in_progress() {
+async fn process_rollback_fails_when_turn_in_progress() {
     let (sess, tc, rx) = make_session_and_context_with_rx().await;
 
     let initial_context = sess.build_initial_context(tc.as_ref()).await;
@@ -1475,12 +1475,12 @@ async fn thread_rollback_fails_when_turn_in_progress() {
         .await;
 
     *sess.active_turn.lock().await = Some(crate::state::ActiveTurn::default());
-    handlers::thread_rollback(&sess, "sub-1".to_string(), 1).await;
+    handlers::process_rollback(&sess, "sub-1".to_string(), 1).await;
 
-    let error_event = wait_for_thread_rollback_failed(&rx).await;
+    let error_event = wait_for_process_rollback_failed(&rx).await;
     assert_eq!(
         error_event.codex_error_info,
-        Some(CodexErrorInfo::ThreadRollbackFailed)
+        Some(CodexErrorInfo::ProcessRollbackFailed)
     );
 
     let history = sess.clone_history().await;
@@ -1488,20 +1488,20 @@ async fn thread_rollback_fails_when_turn_in_progress() {
 }
 
 #[tokio::test]
-async fn thread_rollback_fails_when_num_turns_is_zero() {
+async fn process_rollback_fails_when_num_turns_is_zero() {
     let (sess, tc, rx) = make_session_and_context_with_rx().await;
 
     let initial_context = sess.build_initial_context(tc.as_ref()).await;
     sess.record_into_history(&initial_context, tc.as_ref())
         .await;
 
-    handlers::thread_rollback(&sess, "sub-1".to_string(), 0).await;
+    handlers::process_rollback(&sess, "sub-1".to_string(), 0).await;
 
-    let error_event = wait_for_thread_rollback_failed(&rx).await;
+    let error_event = wait_for_process_rollback_failed(&rx).await;
     assert_eq!(error_event.message, "num_turns must be >= 1");
     assert_eq!(
         error_event.codex_error_info,
-        Some(CodexErrorInfo::ThreadRollbackFailed)
+        Some(CodexErrorInfo::ProcessRollbackFailed)
     );
 
     let history = sess.clone_history().await;
@@ -1545,7 +1545,7 @@ async fn set_rate_limits_retains_previous_credits() {
         windows_sandbox_level: WindowsSandboxLevel::Disabled,
         cwd: config.cwd.clone(),
         codex_home: config.codex_home.clone(),
-        thread_name: None,
+        process_name: None,
         original_config_do_not_use: Arc::clone(&config),
         metrics_service_name: None,
         app_server_client_name: None,
@@ -1642,7 +1642,7 @@ async fn set_rate_limits_updates_plan_type_when_present() {
         windows_sandbox_level: WindowsSandboxLevel::Disabled,
         cwd: config.cwd.clone(),
         codex_home: config.codex_home.clone(),
-        thread_name: None,
+        process_name: None,
         original_config_do_not_use: Arc::clone(&config),
         metrics_service_name: None,
         app_server_client_name: None,
@@ -1848,9 +1848,9 @@ fn success_flag_true_with_no_error_and_content_used() {
     assert_eq!(expected, got);
 }
 
-async fn wait_for_thread_rolled_back(
+async fn wait_for_process_rolled_back(
     rx: &async_channel::Receiver<Event>,
-) -> crate::protocol::ThreadRolledBackEvent {
+) -> crate::protocol::ProcessRolledBackEvent {
     let deadline = StdDuration::from_secs(2);
     let start = std::time::Instant::now();
     loop {
@@ -1860,13 +1860,13 @@ async fn wait_for_thread_rolled_back(
             .expect("timeout waiting for event")
             .expect("event");
         match evt.msg {
-            EventMsg::ThreadRolledBack(payload) => return payload,
+            EventMsg::ProcessRolledBack(payload) => return payload,
             _ => continue,
         }
     }
 }
 
-async fn wait_for_thread_rollback_failed(rx: &async_channel::Receiver<Event>) -> ErrorEvent {
+async fn wait_for_process_rollback_failed(rx: &async_channel::Receiver<Event>) -> ErrorEvent {
     let deadline = StdDuration::from_secs(2);
     let start = std::time::Instant::now();
     loop {
@@ -1877,7 +1877,7 @@ async fn wait_for_thread_rollback_failed(rx: &async_channel::Receiver<Event>) ->
             .expect("event");
         match evt.msg {
             EventMsg::Error(payload)
-                if payload.codex_error_info == Some(CodexErrorInfo::ThreadRollbackFailed) =>
+                if payload.codex_error_info == Some(CodexErrorInfo::ProcessRollbackFailed) =>
             {
                 return payload;
             }
@@ -1891,7 +1891,7 @@ async fn attach_rollout_recorder(session: &Arc<Session>) -> PathBuf {
     let recorder = RolloutRecorder::new(
         config.as_ref(),
         RolloutRecorderParams::new(
-            ThreadId::default(),
+            ProcessId::default(),
             None,
             SessionSource::Exec,
             BaseInstructions::default(),
@@ -1941,7 +1941,7 @@ async fn build_test_config(codex_home: &Path) -> Config {
 }
 
 fn session_telemetry(
-    conversation_id: ThreadId,
+    conversation_id: ProcessId,
     config: &Config,
     model_info: &ModelInfo,
     session_source: SessionSource,
@@ -1997,7 +1997,7 @@ pub(crate) async fn make_session_configuration_for_tests() -> SessionConfigurati
         windows_sandbox_level: WindowsSandboxLevel::Disabled,
         cwd: config.cwd.clone(),
         codex_home: config.codex_home.clone(),
-        thread_name: None,
+        process_name: None,
         original_config_do_not_use: Arc::clone(&config),
         metrics_service_name: None,
         app_server_client_name: None,
@@ -2226,7 +2226,7 @@ async fn session_new_fails_when_zsh_fork_enabled_without_zsh_path() {
         windows_sandbox_level: WindowsSandboxLevel::Disabled,
         cwd: config.cwd.clone(),
         codex_home: config.codex_home.clone(),
-        thread_name: None,
+        process_name: None,
         original_config_do_not_use: Arc::clone(&config),
         metrics_service_name: None,
         app_server_client_name: None,
@@ -2277,7 +2277,7 @@ pub(crate) async fn make_session_and_context() -> (Session, TurnContext) {
     let codex_home = tempfile::tempdir().expect("create temp dir");
     let config = build_test_config(codex_home.path()).await;
     let config = Arc::new(config);
-    let conversation_id = ThreadId::default();
+    let conversation_id = ProcessId::default();
     let auth_manager = AuthManager::from_auth_for_testing(CodexAuth::from_api_key("Test API Key"));
     let models_manager = Arc::new(ModelsManager::new(
         config.codex_home.clone(),
@@ -2320,7 +2320,7 @@ pub(crate) async fn make_session_and_context() -> (Session, TurnContext) {
         windows_sandbox_level: WindowsSandboxLevel::Disabled,
         cwd: config.cwd.clone(),
         codex_home: config.codex_home.clone(),
-        thread_name: None,
+        process_name: None,
         original_config_do_not_use: Arc::clone(&config),
         metrics_service_name: None,
         app_server_client_name: None,
@@ -3035,7 +3035,7 @@ pub(crate) async fn make_session_and_context_with_dynamic_tools_and_rx(
     let codex_home = tempfile::tempdir().expect("create temp dir");
     let config = build_test_config(codex_home.path()).await;
     let config = Arc::new(config);
-    let conversation_id = ThreadId::default();
+    let conversation_id = ProcessId::default();
     let auth_manager = AuthManager::from_auth_for_testing(CodexAuth::from_api_key("Test API Key"));
     let models_manager = Arc::new(ModelsManager::new(
         config.codex_home.clone(),
@@ -3078,7 +3078,7 @@ pub(crate) async fn make_session_and_context_with_dynamic_tools_and_rx(
         windows_sandbox_level: WindowsSandboxLevel::Disabled,
         cwd: config.cwd.clone(),
         codex_home: config.codex_home.clone(),
-        thread_name: None,
+        process_name: None,
         original_config_do_not_use: Arc::clone(&config),
         metrics_service_name: None,
         app_server_client_name: None,
@@ -3577,7 +3577,7 @@ async fn record_context_updates_and_set_reference_context_item_persists_baseline
     let recorder = RolloutRecorder::new(
         config.as_ref(),
         RolloutRecorderParams::new(
-            ThreadId::default(),
+            ProcessId::default(),
             None,
             SessionSource::Exec,
             BaseInstructions::default(),
@@ -3673,7 +3673,7 @@ async fn record_context_updates_and_set_reference_context_item_persists_full_rei
     let recorder = RolloutRecorder::new(
         config.as_ref(),
         RolloutRecorderParams::new(
-            ThreadId::default(),
+            ProcessId::default(),
             None,
             SessionSource::Exec,
             BaseInstructions::default(),

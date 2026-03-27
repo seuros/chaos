@@ -39,7 +39,7 @@ fn build_tool_suggestion_elicitation_request_uses_expected_shape() {
     assert_eq!(
             request,
             McpServerElicitationRequestParams {
-                thread_id: "thread-1".to_string(),
+                process_id: "thread-1".to_string(),
                 turn_id: Some("turn-1".to_string()),
                 server_name: CODEX_APPS_MCP_SERVER_NAME.to_string(),
                 request: McpServerElicitationRequest::Form {

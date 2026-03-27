@@ -25,12 +25,12 @@ use crate::exec_events::McpToolCallItemResult;
 use crate::exec_events::McpToolCallStatus;
 use crate::exec_events::PatchApplyStatus;
 use crate::exec_events::PatchChangeKind;
+use crate::exec_events::ProcessErrorEvent;
+use crate::exec_events::ProcessEvent;
 use crate::exec_events::ReasoningItem;
-use crate::exec_events::ThreadErrorEvent;
-use crate::exec_events::ThreadEvent;
-use crate::exec_events::ThreadItem;
-use crate::exec_events::ThreadItemDetails;
-use crate::exec_events::ThreadStartedEvent;
+use crate::exec_events::ProcessItem;
+use crate::exec_events::ProcessItemDetails;
+use crate::exec_events::ProcessStartedEvent;
 use crate::exec_events::TodoItem;
 use crate::exec_events::TodoListItem;
 use crate::exec_events::TurnCompletedEvent;
@@ -69,7 +69,7 @@ pub struct EventProcessorWithJsonOutput {
     running_mcp_tool_calls: HashMap<String, RunningMcpToolCall>,
     running_collab_tool_calls: HashMap<String, RunningCollabToolCall>,
     running_web_search_calls: HashMap<String, String>,
-    last_critical_error: Option<ThreadErrorEvent>,
+    last_critical_error: Option<ProcessErrorEvent>,
 }
 
 #[derive(Debug, Clone)]
@@ -116,10 +116,10 @@ impl EventProcessorWithJsonOutput {
         }
     }
 
-    pub fn collect_thread_events(&mut self, event: &protocol::Event) -> Vec<ThreadEvent> {
+    pub fn collect_process_events(&mut self, event: &protocol::Event) -> Vec<ProcessEvent> {
         match &event.msg {
             protocol::EventMsg::SessionConfigured(ev) => self.handle_session_configured(ev),
-            protocol::EventMsg::ThreadNameUpdated(_) => Vec::new(),
+            protocol::EventMsg::ProcessNameUpdated(_) => Vec::new(),
             protocol::EventMsg::AgentMessage(ev) => self.handle_agent_message(ev),
             protocol::EventMsg::ItemCompleted(protocol::ItemCompletedEvent {
                 item: chaos_ipc::items::TurnItem::Plan(item),
@@ -162,20 +162,20 @@ impl EventProcessorWithJsonOutput {
             protocol::EventMsg::TurnStarted(ev) => self.handle_task_started(ev),
             protocol::EventMsg::TurnComplete(_) => self.handle_task_complete(),
             protocol::EventMsg::Error(ev) => {
-                let error = ThreadErrorEvent {
+                let error = ProcessErrorEvent {
                     message: ev.message.clone(),
                 };
                 self.last_critical_error = Some(error.clone());
-                vec![ThreadEvent::Error(error)]
+                vec![ProcessEvent::Error(error)]
             }
             protocol::EventMsg::Warning(ev) => {
-                let item = ThreadItem {
+                let item = ProcessItem {
                     id: self.get_next_item_id(),
-                    details: ThreadItemDetails::Error(ErrorItem {
+                    details: ProcessItemDetails::Error(ErrorItem {
                         message: ev.message.clone(),
                     }),
                 };
-                vec![ThreadEvent::ItemCompleted(ItemCompletedEvent { item })]
+                vec![ProcessEvent::ItemCompleted(ItemCompletedEvent { item })]
             }
             protocol::EventMsg::StreamError(ev) => {
                 let message = match &ev.additional_details {
@@ -184,7 +184,7 @@ impl EventProcessorWithJsonOutput {
                     }
                     _ => ev.message.clone(),
                 };
-                vec![ThreadEvent::Error(ThreadErrorEvent { message })]
+                vec![ProcessEvent::Error(ProcessErrorEvent { message })]
             }
             protocol::EventMsg::PlanUpdate(ev) => self.handle_plan_update(ev),
             _ => Vec::new(),
@@ -202,49 +202,49 @@ impl EventProcessorWithJsonOutput {
     fn handle_session_configured(
         &self,
         payload: &protocol::SessionConfiguredEvent,
-    ) -> Vec<ThreadEvent> {
-        vec![ThreadEvent::ThreadStarted(ThreadStartedEvent {
-            thread_id: payload.session_id.to_string(),
+    ) -> Vec<ProcessEvent> {
+        vec![ProcessEvent::ProcessStarted(ProcessStartedEvent {
+            process_id: payload.session_id.to_string(),
         })]
     }
 
-    fn handle_web_search_begin(&mut self, ev: &protocol::WebSearchBeginEvent) -> Vec<ThreadEvent> {
+    fn handle_web_search_begin(&mut self, ev: &protocol::WebSearchBeginEvent) -> Vec<ProcessEvent> {
         if self.running_web_search_calls.contains_key(&ev.call_id) {
             return Vec::new();
         }
         let item_id = self.get_next_item_id();
         self.running_web_search_calls
             .insert(ev.call_id.clone(), item_id.clone());
-        let item = ThreadItem {
+        let item = ProcessItem {
             id: item_id,
-            details: ThreadItemDetails::WebSearch(WebSearchItem {
+            details: ProcessItemDetails::WebSearch(WebSearchItem {
                 id: ev.call_id.clone(),
                 query: String::new(),
                 action: WebSearchAction::Other,
             }),
         };
 
-        vec![ThreadEvent::ItemStarted(ItemStartedEvent { item })]
+        vec![ProcessEvent::ItemStarted(ItemStartedEvent { item })]
     }
 
-    fn handle_web_search_end(&mut self, ev: &protocol::WebSearchEndEvent) -> Vec<ThreadEvent> {
+    fn handle_web_search_end(&mut self, ev: &protocol::WebSearchEndEvent) -> Vec<ProcessEvent> {
         let item_id = self
             .running_web_search_calls
             .remove(&ev.call_id)
             .unwrap_or_else(|| self.get_next_item_id());
-        let item = ThreadItem {
+        let item = ProcessItem {
             id: item_id,
-            details: ThreadItemDetails::WebSearch(WebSearchItem {
+            details: ProcessItemDetails::WebSearch(WebSearchItem {
                 id: ev.call_id.clone(),
                 query: ev.query.clone(),
                 action: ev.action.clone(),
             }),
         };
 
-        vec![ThreadEvent::ItemCompleted(ItemCompletedEvent { item })]
+        vec![ProcessEvent::ItemCompleted(ItemCompletedEvent { item })]
     }
 
-    fn handle_output_chunk(&mut self, _call_id: &str, _chunk: &[u8]) -> Vec<ThreadEvent> {
+    fn handle_output_chunk(&mut self, _call_id: &str, _chunk: &[u8]) -> Vec<ProcessEvent> {
         //TODO see how we want to process them
         vec![]
     }
@@ -252,38 +252,38 @@ impl EventProcessorWithJsonOutput {
     fn handle_terminal_interaction(
         &mut self,
         _ev: &protocol::TerminalInteractionEvent,
-    ) -> Vec<ThreadEvent> {
+    ) -> Vec<ProcessEvent> {
         //TODO see how we want to process them
         vec![]
     }
 
-    fn handle_agent_message(&self, payload: &protocol::AgentMessageEvent) -> Vec<ThreadEvent> {
-        let item = ThreadItem {
+    fn handle_agent_message(&self, payload: &protocol::AgentMessageEvent) -> Vec<ProcessEvent> {
+        let item = ProcessItem {
             id: self.get_next_item_id(),
 
-            details: ThreadItemDetails::AgentMessage(AgentMessageItem {
+            details: ProcessItemDetails::AgentMessage(AgentMessageItem {
                 text: payload.message.clone(),
             }),
         };
 
-        vec![ThreadEvent::ItemCompleted(ItemCompletedEvent { item })]
+        vec![ProcessEvent::ItemCompleted(ItemCompletedEvent { item })]
     }
 
-    fn handle_reasoning_event(&self, ev: &protocol::AgentReasoningEvent) -> Vec<ThreadEvent> {
-        let item = ThreadItem {
+    fn handle_reasoning_event(&self, ev: &protocol::AgentReasoningEvent) -> Vec<ProcessEvent> {
+        let item = ProcessItem {
             id: self.get_next_item_id(),
 
-            details: ThreadItemDetails::Reasoning(ReasoningItem {
+            details: ProcessItemDetails::Reasoning(ReasoningItem {
                 text: ev.text.clone(),
             }),
         };
 
-        vec![ThreadEvent::ItemCompleted(ItemCompletedEvent { item })]
+        vec![ProcessEvent::ItemCompleted(ItemCompletedEvent { item })]
     }
     fn handle_exec_command_begin(
         &mut self,
         ev: &protocol::ExecCommandBeginEvent,
-    ) -> Vec<ThreadEvent> {
+    ) -> Vec<ProcessEvent> {
         let item_id = self.get_next_item_id();
 
         let command_string = match shlex::try_join(ev.command.iter().map(String::as_str)) {
@@ -306,9 +306,9 @@ impl EventProcessorWithJsonOutput {
             },
         );
 
-        let item = ThreadItem {
+        let item = ProcessItem {
             id: item_id,
-            details: ThreadItemDetails::CommandExecution(CommandExecutionItem {
+            details: ProcessItemDetails::CommandExecution(CommandExecutionItem {
                 command: command_string,
                 aggregated_output: String::new(),
                 exit_code: None,
@@ -316,13 +316,13 @@ impl EventProcessorWithJsonOutput {
             }),
         };
 
-        vec![ThreadEvent::ItemStarted(ItemStartedEvent { item })]
+        vec![ProcessEvent::ItemStarted(ItemStartedEvent { item })]
     }
 
     fn handle_mcp_tool_call_begin(
         &mut self,
         ev: &protocol::McpToolCallBeginEvent,
-    ) -> Vec<ThreadEvent> {
+    ) -> Vec<ProcessEvent> {
         let item_id = self.get_next_item_id();
         let server = ev.invocation.server.clone();
         let tool = ev.invocation.tool.clone();
@@ -338,9 +338,9 @@ impl EventProcessorWithJsonOutput {
             },
         );
 
-        let item = ThreadItem {
+        let item = ProcessItem {
             id: item_id,
-            details: ThreadItemDetails::McpToolCall(McpToolCallItem {
+            details: ProcessItemDetails::McpToolCall(McpToolCallItem {
                 server,
                 tool,
                 arguments,
@@ -350,10 +350,10 @@ impl EventProcessorWithJsonOutput {
             }),
         };
 
-        vec![ThreadEvent::ItemStarted(ItemStartedEvent { item })]
+        vec![ProcessEvent::ItemStarted(ItemStartedEvent { item })]
     }
 
-    fn handle_mcp_tool_call_end(&mut self, ev: &protocol::McpToolCallEndEvent) -> Vec<ThreadEvent> {
+    fn handle_mcp_tool_call_end(&mut self, ev: &protocol::McpToolCallEndEvent) -> Vec<ProcessEvent> {
         let status = if ev.is_success() {
             McpToolCallStatus::Completed
         } else {
@@ -398,9 +398,9 @@ impl EventProcessorWithJsonOutput {
             ),
         };
 
-        let item = ThreadItem {
+        let item = ProcessItem {
             id: item_id,
-            details: ThreadItemDetails::McpToolCall(McpToolCallItem {
+            details: ProcessItemDetails::McpToolCall(McpToolCallItem {
                 server,
                 tool,
                 arguments,
@@ -410,21 +410,21 @@ impl EventProcessorWithJsonOutput {
             }),
         };
 
-        vec![ThreadEvent::ItemCompleted(ItemCompletedEvent { item })]
+        vec![ProcessEvent::ItemCompleted(ItemCompletedEvent { item })]
     }
 
-    fn handle_collab_spawn_begin(&mut self, ev: &CollabAgentSpawnBeginEvent) -> Vec<ThreadEvent> {
+    fn handle_collab_spawn_begin(&mut self, ev: &CollabAgentSpawnBeginEvent) -> Vec<ProcessEvent> {
         self.start_collab_tool_call(
             &ev.call_id,
             CollabTool::SpawnAgent,
-            ev.sender_thread_id.to_string(),
+            ev.sender_process_id.to_string(),
             Vec::new(),
             Some(ev.prompt.clone()),
         )
     }
 
-    fn handle_collab_spawn_end(&mut self, ev: &CollabAgentSpawnEndEvent) -> Vec<ThreadEvent> {
-        let (receiver_thread_ids, agents_states) = match ev.new_thread_id {
+    fn handle_collab_spawn_end(&mut self, ev: &CollabAgentSpawnEndEvent) -> Vec<ProcessEvent> {
+        let (receiver_process_ids, agents_states) = match ev.new_process_id {
             Some(id) => {
                 let receiver_id = id.to_string();
                 let agent_state = CollabAgentState::from(ev.status.clone());
@@ -435,7 +435,7 @@ impl EventProcessorWithJsonOutput {
             }
             None => (Vec::new(), HashMap::new()),
         };
-        let status = if ev.new_thread_id.is_some() && !is_collab_failure(&ev.status) {
+        let status = if ev.new_process_id.is_some() && !is_collab_failure(&ev.status) {
             CollabToolCallStatus::Completed
         } else {
             CollabToolCallStatus::Failed
@@ -443,8 +443,8 @@ impl EventProcessorWithJsonOutput {
         self.finish_collab_tool_call(
             &ev.call_id,
             CollabTool::SpawnAgent,
-            ev.sender_thread_id.to_string(),
-            receiver_thread_ids,
+            ev.sender_process_id.to_string(),
+            receiver_process_ids,
             Some(ev.prompt.clone()),
             agents_states,
             status,
@@ -454,12 +454,12 @@ impl EventProcessorWithJsonOutput {
     fn handle_collab_interaction_begin(
         &mut self,
         ev: &CollabAgentInteractionBeginEvent,
-    ) -> Vec<ThreadEvent> {
+    ) -> Vec<ProcessEvent> {
         self.start_collab_tool_call(
             &ev.call_id,
             CollabTool::SendInput,
-            ev.sender_thread_id.to_string(),
-            vec![ev.receiver_thread_id.to_string()],
+            ev.sender_process_id.to_string(),
+            vec![ev.receiver_process_id.to_string()],
             Some(ev.prompt.clone()),
         )
     }
@@ -467,8 +467,8 @@ impl EventProcessorWithJsonOutput {
     fn handle_collab_interaction_end(
         &mut self,
         ev: &CollabAgentInteractionEndEvent,
-    ) -> Vec<ThreadEvent> {
-        let receiver_id = ev.receiver_thread_id.to_string();
+    ) -> Vec<ProcessEvent> {
+        let receiver_id = ev.receiver_process_id.to_string();
         let agent_state = CollabAgentState::from(ev.status.clone());
         let status = if is_collab_failure(&ev.status) {
             CollabToolCallStatus::Failed
@@ -478,7 +478,7 @@ impl EventProcessorWithJsonOutput {
         self.finish_collab_tool_call(
             &ev.call_id,
             CollabTool::SendInput,
-            ev.sender_thread_id.to_string(),
+            ev.sender_process_id.to_string(),
             vec![receiver_id.clone()],
             Some(ev.prompt.clone()),
             [(receiver_id, agent_state)].into_iter().collect(),
@@ -486,12 +486,12 @@ impl EventProcessorWithJsonOutput {
         )
     }
 
-    fn handle_collab_wait_begin(&mut self, ev: &CollabWaitingBeginEvent) -> Vec<ThreadEvent> {
+    fn handle_collab_wait_begin(&mut self, ev: &CollabWaitingBeginEvent) -> Vec<ProcessEvent> {
         self.start_collab_tool_call(
             &ev.call_id,
             CollabTool::Wait,
-            ev.sender_thread_id.to_string(),
-            ev.receiver_thread_ids
+            ev.sender_process_id.to_string(),
+            ev.receiver_process_ids
                 .iter()
                 .map(ToString::to_string)
                 .collect(),
@@ -499,24 +499,24 @@ impl EventProcessorWithJsonOutput {
         )
     }
 
-    fn handle_collab_wait_end(&mut self, ev: &CollabWaitingEndEvent) -> Vec<ThreadEvent> {
+    fn handle_collab_wait_end(&mut self, ev: &CollabWaitingEndEvent) -> Vec<ProcessEvent> {
         let status = if ev.statuses.values().any(is_collab_failure) {
             CollabToolCallStatus::Failed
         } else {
             CollabToolCallStatus::Completed
         };
-        let mut receiver_thread_ids = ev
+        let mut receiver_process_ids = ev
             .statuses
             .keys()
             .map(ToString::to_string)
             .collect::<Vec<_>>();
-        receiver_thread_ids.sort();
+        receiver_process_ids.sort();
         let agents_states = ev
             .statuses
             .iter()
-            .map(|(thread_id, status)| {
+            .map(|(process_id, status)| {
                 (
-                    thread_id.to_string(),
+                    process_id.to_string(),
                     CollabAgentState::from(status.clone()),
                 )
             })
@@ -524,26 +524,26 @@ impl EventProcessorWithJsonOutput {
         self.finish_collab_tool_call(
             &ev.call_id,
             CollabTool::Wait,
-            ev.sender_thread_id.to_string(),
-            receiver_thread_ids,
+            ev.sender_process_id.to_string(),
+            receiver_process_ids,
             /*prompt*/ None,
             agents_states,
             status,
         )
     }
 
-    fn handle_collab_close_begin(&mut self, ev: &CollabCloseBeginEvent) -> Vec<ThreadEvent> {
+    fn handle_collab_close_begin(&mut self, ev: &CollabCloseBeginEvent) -> Vec<ProcessEvent> {
         self.start_collab_tool_call(
             &ev.call_id,
             CollabTool::CloseAgent,
-            ev.sender_thread_id.to_string(),
-            vec![ev.receiver_thread_id.to_string()],
+            ev.sender_process_id.to_string(),
+            vec![ev.receiver_process_id.to_string()],
             /*prompt*/ None,
         )
     }
 
-    fn handle_collab_close_end(&mut self, ev: &CollabCloseEndEvent) -> Vec<ThreadEvent> {
-        let receiver_id = ev.receiver_thread_id.to_string();
+    fn handle_collab_close_end(&mut self, ev: &CollabCloseEndEvent) -> Vec<ProcessEvent> {
+        let receiver_id = ev.receiver_process_id.to_string();
         let agent_state = CollabAgentState::from(ev.status.clone());
         let status = if is_collab_failure(&ev.status) {
             CollabToolCallStatus::Failed
@@ -553,7 +553,7 @@ impl EventProcessorWithJsonOutput {
         self.finish_collab_tool_call(
             &ev.call_id,
             CollabTool::CloseAgent,
-            ev.sender_thread_id.to_string(),
+            ev.sender_process_id.to_string(),
             vec![receiver_id.clone()],
             /*prompt*/ None,
             [(receiver_id, agent_state)].into_iter().collect(),
@@ -565,10 +565,10 @@ impl EventProcessorWithJsonOutput {
         &mut self,
         call_id: &str,
         tool: CollabTool,
-        sender_thread_id: String,
-        receiver_thread_ids: Vec<String>,
+        sender_process_id: String,
+        receiver_process_ids: Vec<String>,
         prompt: Option<String>,
-    ) -> Vec<ThreadEvent> {
+    ) -> Vec<ProcessEvent> {
         let item_id = self.get_next_item_id();
         self.running_collab_tool_calls.insert(
             call_id.to_string(),
@@ -577,18 +577,18 @@ impl EventProcessorWithJsonOutput {
                 item_id: item_id.clone(),
             },
         );
-        let item = ThreadItem {
+        let item = ProcessItem {
             id: item_id,
-            details: ThreadItemDetails::CollabToolCall(CollabToolCallItem {
+            details: ProcessItemDetails::CollabToolCall(CollabToolCallItem {
                 tool,
-                sender_thread_id,
-                receiver_thread_ids,
+                sender_process_id,
+                receiver_process_ids,
                 prompt,
                 agents_states: HashMap::new(),
                 status: CollabToolCallStatus::InProgress,
             }),
         };
-        vec![ThreadEvent::ItemStarted(ItemStartedEvent { item })]
+        vec![ProcessEvent::ItemStarted(ItemStartedEvent { item })]
     }
 
     #[allow(clippy::too_many_arguments)]
@@ -596,12 +596,12 @@ impl EventProcessorWithJsonOutput {
         &mut self,
         call_id: &str,
         tool: CollabTool,
-        sender_thread_id: String,
-        receiver_thread_ids: Vec<String>,
+        sender_process_id: String,
+        receiver_process_ids: Vec<String>,
         prompt: Option<String>,
         agents_states: HashMap<String, CollabAgentState>,
         status: CollabToolCallStatus,
-    ) -> Vec<ThreadEvent> {
+    ) -> Vec<ProcessEvent> {
         let (tool, item_id) = match self.running_collab_tool_calls.remove(call_id) {
             Some(running) => (running.tool, running.item_id),
             None => {
@@ -612,24 +612,24 @@ impl EventProcessorWithJsonOutput {
                 (tool, self.get_next_item_id())
             }
         };
-        let item = ThreadItem {
+        let item = ProcessItem {
             id: item_id,
-            details: ThreadItemDetails::CollabToolCall(CollabToolCallItem {
+            details: ProcessItemDetails::CollabToolCall(CollabToolCallItem {
                 tool,
-                sender_thread_id,
-                receiver_thread_ids,
+                sender_process_id,
+                receiver_process_ids,
                 prompt,
                 agents_states,
                 status,
             }),
         };
-        vec![ThreadEvent::ItemCompleted(ItemCompletedEvent { item })]
+        vec![ProcessEvent::ItemCompleted(ItemCompletedEvent { item })]
     }
 
     fn handle_patch_apply_begin(
         &mut self,
         ev: &protocol::PatchApplyBeginEvent,
-    ) -> Vec<ThreadEvent> {
+    ) -> Vec<ProcessEvent> {
         self.running_patch_applies
             .insert(ev.call_id.clone(), ev.clone());
 
@@ -644,17 +644,17 @@ impl EventProcessorWithJsonOutput {
         }
     }
 
-    fn handle_patch_apply_end(&mut self, ev: &protocol::PatchApplyEndEvent) -> Vec<ThreadEvent> {
+    fn handle_patch_apply_end(&mut self, ev: &protocol::PatchApplyEndEvent) -> Vec<ProcessEvent> {
         if let Some(running_patch_apply) = self.running_patch_applies.remove(&ev.call_id) {
             let status = if ev.success {
                 PatchApplyStatus::Completed
             } else {
                 PatchApplyStatus::Failed
             };
-            let item = ThreadItem {
+            let item = ProcessItem {
                 id: self.get_next_item_id(),
 
-                details: ThreadItemDetails::FileChange(FileChangeItem {
+                details: ProcessItemDetails::FileChange(FileChangeItem {
                     changes: running_patch_apply
                         .changes
                         .iter()
@@ -667,13 +667,13 @@ impl EventProcessorWithJsonOutput {
                 }),
             };
 
-            return vec![ThreadEvent::ItemCompleted(ItemCompletedEvent { item })];
+            return vec![ProcessEvent::ItemCompleted(ItemCompletedEvent { item })];
         }
 
         Vec::new()
     }
 
-    fn handle_exec_command_end(&mut self, ev: &protocol::ExecCommandEndEvent) -> Vec<ThreadEvent> {
+    fn handle_exec_command_end(&mut self, ev: &protocol::ExecCommandEndEvent) -> Vec<ProcessEvent> {
         let Some(RunningCommand {
             command,
             item_id,
@@ -696,10 +696,10 @@ impl EventProcessorWithJsonOutput {
         } else {
             ev.aggregated_output.clone()
         };
-        let item = ThreadItem {
+        let item = ProcessItem {
             id: item_id,
 
-            details: ThreadItemDetails::CommandExecution(CommandExecutionItem {
+            details: ProcessItemDetails::CommandExecution(CommandExecutionItem {
                 command,
                 aggregated_output,
                 exit_code: Some(ev.exit_code),
@@ -707,7 +707,7 @@ impl EventProcessorWithJsonOutput {
             }),
         };
 
-        vec![ThreadEvent::ItemCompleted(ItemCompletedEvent { item })]
+        vec![ProcessEvent::ItemCompleted(ItemCompletedEvent { item })]
     }
 
     fn todo_items_from_plan(&self, args: &UpdatePlanArgs) -> Vec<TodoItem> {
@@ -720,16 +720,16 @@ impl EventProcessorWithJsonOutput {
             .collect()
     }
 
-    fn handle_plan_update(&mut self, args: &UpdatePlanArgs) -> Vec<ThreadEvent> {
+    fn handle_plan_update(&mut self, args: &UpdatePlanArgs) -> Vec<ProcessEvent> {
         let items = self.todo_items_from_plan(args);
 
         if let Some(running) = &mut self.running_todo_list {
             running.items = items.clone();
-            let item = ThreadItem {
+            let item = ProcessItem {
                 id: running.item_id.clone(),
-                details: ThreadItemDetails::TodoList(TodoListItem { items }),
+                details: ProcessItemDetails::TodoList(TodoListItem { items }),
             };
-            return vec![ThreadEvent::ItemUpdated(ItemUpdatedEvent { item })];
+            return vec![ProcessEvent::ItemUpdated(ItemUpdatedEvent { item })];
         }
 
         let item_id = self.get_next_item_id();
@@ -737,19 +737,19 @@ impl EventProcessorWithJsonOutput {
             item_id: item_id.clone(),
             items: items.clone(),
         });
-        let item = ThreadItem {
+        let item = ProcessItem {
             id: item_id,
-            details: ThreadItemDetails::TodoList(TodoListItem { items }),
+            details: ProcessItemDetails::TodoList(TodoListItem { items }),
         };
-        vec![ThreadEvent::ItemStarted(ItemStartedEvent { item })]
+        vec![ProcessEvent::ItemStarted(ItemStartedEvent { item })]
     }
 
-    fn handle_task_started(&mut self, _: &protocol::TurnStartedEvent) -> Vec<ThreadEvent> {
+    fn handle_task_started(&mut self, _: &protocol::TurnStartedEvent) -> Vec<ProcessEvent> {
         self.last_critical_error = None;
-        vec![ThreadEvent::TurnStarted(TurnStartedEvent {})]
+        vec![ProcessEvent::TurnStarted(TurnStartedEvent {})]
     }
 
-    fn handle_task_complete(&mut self) -> Vec<ThreadEvent> {
+    fn handle_task_complete(&mut self) -> Vec<ProcessEvent> {
         let usage = if let Some(u) = &self.last_total_token_usage {
             Usage {
                 input_tokens: u.input_tokens,
@@ -763,34 +763,34 @@ impl EventProcessorWithJsonOutput {
         let mut items = Vec::new();
 
         if let Some(running) = self.running_todo_list.take() {
-            let item = ThreadItem {
+            let item = ProcessItem {
                 id: running.item_id,
-                details: ThreadItemDetails::TodoList(TodoListItem {
+                details: ProcessItemDetails::TodoList(TodoListItem {
                     items: running.items,
                 }),
             };
-            items.push(ThreadEvent::ItemCompleted(ItemCompletedEvent { item }));
+            items.push(ProcessEvent::ItemCompleted(ItemCompletedEvent { item }));
         }
 
         if !self.running_commands.is_empty() {
             for (_, running) in self.running_commands.drain() {
-                let item = ThreadItem {
+                let item = ProcessItem {
                     id: running.item_id,
-                    details: ThreadItemDetails::CommandExecution(CommandExecutionItem {
+                    details: ProcessItemDetails::CommandExecution(CommandExecutionItem {
                         command: running.command,
                         aggregated_output: running.aggregated_output,
                         exit_code: None,
                         status: CommandExecutionStatus::Completed,
                     }),
                 };
-                items.push(ThreadEvent::ItemCompleted(ItemCompletedEvent { item }));
+                items.push(ProcessEvent::ItemCompleted(ItemCompletedEvent { item }));
             }
         }
 
         if let Some(error) = self.last_critical_error.take() {
-            items.push(ThreadEvent::TurnFailed(TurnFailedEvent { error }));
+            items.push(ProcessEvent::TurnFailed(TurnFailedEvent { error }));
         } else {
-            items.push(ThreadEvent::TurnCompleted(TurnCompletedEvent { usage }));
+            items.push(ProcessEvent::TurnCompleted(TurnCompletedEvent { usage }));
         }
 
         items
@@ -849,7 +849,7 @@ impl EventProcessor for EventProcessorWithJsonOutput {
 
     #[allow(clippy::print_stdout)]
     fn process_event(&mut self, event: protocol::Event) -> CodexStatus {
-        let aggregated = self.collect_thread_events(&event);
+        let aggregated = self.collect_process_events(&event);
         for conv_event in aggregated {
             match serde_json::to_string(&conv_event) {
                 Ok(line) => {

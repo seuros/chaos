@@ -4,7 +4,7 @@ use chaos_kern::config::ConfigToml;
 use chaos_kern::personality_migration::PERSONALITY_MIGRATION_FILENAME;
 use chaos_kern::personality_migration::PersonalityMigrationStatus;
 use chaos_kern::personality_migration::maybe_migrate_personality;
-use chaos_ipc::ThreadId;
+use chaos_ipc::ProcessId;
 use chaos_ipc::config_types::Personality;
 use chaos_ipc::protocol::EventMsg;
 use chaos_ipc::protocol::RolloutItem;
@@ -27,39 +27,39 @@ async fn read_config_toml(codex_home: &Path) -> io::Result<ConfigToml> {
 }
 
 async fn write_session_with_user_event(codex_home: &Path) -> io::Result<()> {
-    let thread_id = ThreadId::new();
+    let process_id = ProcessId::new();
     let dir = codex_home
         .join(SESSIONS_SUBDIR)
         .join("2025")
         .join("01")
         .join("01");
-    write_rollout_with_user_event(&dir, thread_id).await
+    write_rollout_with_user_event(&dir, process_id).await
 }
 
 async fn write_archived_session_with_user_event(codex_home: &Path) -> io::Result<()> {
-    let thread_id = ThreadId::new();
+    let process_id = ProcessId::new();
     let dir = codex_home.join(ARCHIVED_SESSIONS_SUBDIR);
-    write_rollout_with_user_event(&dir, thread_id).await
+    write_rollout_with_user_event(&dir, process_id).await
 }
 
 async fn write_session_with_meta_only(codex_home: &Path) -> io::Result<()> {
-    let thread_id = ThreadId::new();
+    let process_id = ProcessId::new();
     let dir = codex_home
         .join(SESSIONS_SUBDIR)
         .join("2025")
         .join("01")
         .join("01");
-    write_rollout_with_meta_only(&dir, thread_id).await
+    write_rollout_with_meta_only(&dir, process_id).await
 }
 
-async fn write_rollout_with_user_event(dir: &Path, thread_id: ThreadId) -> io::Result<()> {
+async fn write_rollout_with_user_event(dir: &Path, process_id: ProcessId) -> io::Result<()> {
     tokio::fs::create_dir_all(&dir).await?;
-    let file_path = dir.join(format!("rollout-{TEST_TIMESTAMP}-{thread_id}.jsonl"));
+    let file_path = dir.join(format!("rollout-{TEST_TIMESTAMP}-{process_id}.jsonl"));
     let mut file = tokio::fs::File::create(&file_path).await?;
 
     let session_meta = SessionMetaLine {
         meta: SessionMeta {
-            id: thread_id,
+            id: process_id,
             forked_from_id: None,
             timestamp: TEST_TIMESTAMP.to_string(),
             cwd: std::path::PathBuf::from("."),
@@ -96,14 +96,14 @@ async fn write_rollout_with_user_event(dir: &Path, thread_id: ThreadId) -> io::R
     Ok(())
 }
 
-async fn write_rollout_with_meta_only(dir: &Path, thread_id: ThreadId) -> io::Result<()> {
+async fn write_rollout_with_meta_only(dir: &Path, process_id: ProcessId) -> io::Result<()> {
     tokio::fs::create_dir_all(&dir).await?;
-    let file_path = dir.join(format!("rollout-{TEST_TIMESTAMP}-{thread_id}.jsonl"));
+    let file_path = dir.join(format!("rollout-{TEST_TIMESTAMP}-{process_id}.jsonl"));
     let mut file = tokio::fs::File::create(&file_path).await?;
 
     let session_meta = SessionMetaLine {
         meta: SessionMeta {
-            id: thread_id,
+            id: process_id,
             forked_from_id: None,
             timestamp: TEST_TIMESTAMP.to_string(),
             cwd: std::path::PathBuf::from("."),

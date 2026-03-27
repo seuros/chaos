@@ -486,7 +486,7 @@ async fn stdio_image_responses_are_sanitized_for_text_only_model() -> anyhow::Re
         .await?;
 
     fixture
-        .thread_manager
+        .process_table
         .get_models_manager()
         .list_models(RefreshStrategy::Online)
         .await;

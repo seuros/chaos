@@ -1,5 +1,5 @@
 use async_trait::async_trait;
-use chaos_ipc::ThreadId;
+use chaos_ipc::ProcessId;
 use chaos_ipc::models::ShellCommandToolCallParams;
 use chaos_ipc::models::ShellToolCallParams;
 use std::sync::Arc;
@@ -64,13 +64,13 @@ impl ShellHandler {
     fn to_exec_params(
         params: &ShellToolCallParams,
         turn_context: &TurnContext,
-        thread_id: ThreadId,
+        process_id: ProcessId,
     ) -> ExecParams {
         ExecParams {
             command: params.command.clone(),
             cwd: turn_context.resolve_path(params.workdir.clone()),
             expiration: params.timeout_ms.into(),
-            env: create_env(&turn_context.shell_environment_policy, Some(thread_id)),
+            env: create_env(&turn_context.shell_environment_policy, Some(process_id)),
             network: turn_context.network.clone(),
             sandbox_permissions: params.sandbox_permissions.unwrap_or_default(),
             justification: params.justification.clone(),
@@ -108,7 +108,7 @@ impl ShellCommandHandler {
         params: &ShellCommandToolCallParams,
         session: &crate::codex::Session,
         turn_context: &TurnContext,
-        thread_id: ThreadId,
+        process_id: ProcessId,
         allow_login_shell: bool,
     ) -> Result<ExecParams, FunctionCallError> {
         let shell = session.user_shell();
@@ -119,7 +119,7 @@ impl ShellCommandHandler {
             command,
             cwd: turn_context.resolve_path(params.workdir.clone()),
             expiration: params.timeout_ms.into(),
-            env: create_env(&turn_context.shell_environment_policy, Some(thread_id)),
+            env: create_env(&turn_context.shell_environment_policy, Some(process_id)),
             network: turn_context.network.clone(),
             sandbox_permissions: params.sandbox_permissions.unwrap_or_default(),
             justification: params.justification.clone(),

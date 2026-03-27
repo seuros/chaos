@@ -1,5 +1,5 @@
 use super::*;
-use chaos_ipc::ThreadId;
+use chaos_ipc::ProcessId;
 use chaos_ipc::protocol::EventMsg;
 use chaos_ipc::protocol::RolloutItem;
 use chaos_ipc::protocol::RolloutLine;
@@ -19,19 +19,19 @@ async fn read_config_toml(codex_home: &Path) -> io::Result<ConfigToml> {
 }
 
 async fn write_session_with_user_event(codex_home: &Path) -> io::Result<()> {
-    let thread_id = ThreadId::new();
+    let process_id = ProcessId::new();
     let dir = codex_home
         .join(SESSIONS_SUBDIR)
         .join("2025")
         .join("01")
         .join("01");
     tokio::fs::create_dir_all(&dir).await?;
-    let file_path = dir.join(format!("rollout-{TEST_TIMESTAMP}-{thread_id}.jsonl"));
+    let file_path = dir.join(format!("rollout-{TEST_TIMESTAMP}-{process_id}.jsonl"));
     let mut file = tokio::fs::File::create(&file_path).await?;
 
     let session_meta = SessionMetaLine {
         meta: SessionMeta {
-            id: thread_id,
+            id: process_id,
             forked_from_id: None,
             timestamp: TEST_TIMESTAMP.to_string(),
             cwd: std::path::PathBuf::from("."),

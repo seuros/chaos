@@ -110,7 +110,7 @@ async fn shell_command_approval_triggers_elicitation() -> anyhow::Result<()> {
             workdir_for_shell_function_call.path(),
             codex_request_id.to_string(),
             params.meta.codex_event_id.clone(),
-            params.meta.thread_id,
+            params.meta.process_id,
         )?
     );
 
@@ -162,7 +162,7 @@ async fn shell_command_approval_triggers_elicitation() -> anyhow::Result<()> {
                 }
             ],
             "structuredContent": {
-                "threadId": params.meta.thread_id,
+                "processId": params.meta.process_id,
                 "content": "File created!"
             }
         })
@@ -178,7 +178,7 @@ fn create_expected_elicitation_request_params(
     workdir: &Path,
     codex_mcp_tool_call_id: String,
     codex_event_id: String,
-    thread_id: chaos_ipc::ThreadId,
+    process_id: chaos_ipc::ProcessId,
 ) -> anyhow::Result<serde_json::Value> {
     let expected_message = format!(
         "Allow Codex to run `{}` in `{}`?",
@@ -190,7 +190,7 @@ fn create_expected_elicitation_request_params(
         message: expected_message,
         requested_schema: json!({"type":"object","properties":{}}),
         meta: ExecApprovalElicitRequestMeta {
-            thread_id,
+            process_id,
             codex_elicitation: "exec-approval".to_string(),
             codex_mcp_tool_call_id,
             codex_event_id,
@@ -278,7 +278,7 @@ async fn patch_approval_triggers_elicitation() -> anyhow::Result<()> {
             None, // No reason expected
             codex_request_id.to_string(),
             params.meta.codex_event_id.clone(),
-            params.meta.thread_id,
+            params.meta.process_id,
         )?
     );
 
@@ -320,7 +320,7 @@ async fn patch_approval_triggers_elicitation() -> anyhow::Result<()> {
                 }
             ],
             "structuredContent": {
-                "threadId": params.meta.thread_id,
+                "processId": params.meta.process_id,
                 "content": "Patch has been applied successfully!"
             }
         })
@@ -373,11 +373,11 @@ async fn codex_tool_passes_base_instructions() -> anyhow::Result<()> {
         .result
         .as_ref()
         .ok_or_else(|| anyhow::anyhow!("result should be present"))?;
-    let thread_id = result
+    let process_id = result
         .get("structuredContent")
-        .and_then(|value| value.get("threadId"))
+        .and_then(|value| value.get("processId"))
         .and_then(serde_json::Value::as_str)
-        .context("codex tool response should include structuredContent.threadId")?;
+        .context("codex tool response should include structuredContent.processId")?;
     assert_eq!(codex_response.jsonrpc, "2.0");
     assert_eq!(codex_response.id, json!(codex_request_id));
     assert_eq!(
@@ -390,7 +390,7 @@ async fn codex_tool_passes_base_instructions() -> anyhow::Result<()> {
                 }
             ],
             "structuredContent": {
-                "threadId": thread_id,
+                "processId": process_id,
                 "content": "Enjoy!"
             }
         })
@@ -450,7 +450,7 @@ fn create_expected_patch_approval_elicitation_request_params(
     reason: Option<String>,
     codex_mcp_tool_call_id: String,
     codex_event_id: String,
-    thread_id: chaos_ipc::ThreadId,
+    process_id: chaos_ipc::ProcessId,
 ) -> anyhow::Result<serde_json::Value> {
     let mut message_lines = Vec::new();
     if let Some(r) = &reason {
@@ -461,7 +461,7 @@ fn create_expected_patch_approval_elicitation_request_params(
         message: message_lines.join("\n"),
         requested_schema: json!({"type":"object","properties":{}}),
         meta: PatchApprovalElicitRequestMeta {
-            thread_id,
+            process_id,
             codex_elicitation: "patch-approval".to_string(),
             codex_mcp_tool_call_id,
             codex_event_id,

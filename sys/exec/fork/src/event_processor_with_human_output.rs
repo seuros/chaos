@@ -694,7 +694,7 @@ impl EventProcessor for EventProcessorWithHumanOutput {
             }
             EventMsg::CollabAgentSpawnBegin(CollabAgentSpawnBeginEvent {
                 call_id,
-                sender_thread_id: _,
+                sender_process_id: _,
                 prompt,
                 ..
             }) => {
@@ -708,13 +708,13 @@ impl EventProcessor for EventProcessorWithHumanOutput {
             }
             EventMsg::CollabAgentSpawnEnd(CollabAgentSpawnEndEvent {
                 call_id,
-                sender_thread_id: _,
-                new_thread_id,
+                sender_process_id: _,
+                new_process_id,
                 prompt,
                 status,
                 ..
             }) => {
-                let success = new_thread_id.is_some() && !is_collab_status_failure(&status);
+                let success = new_process_id.is_some() && !is_collab_status_failure(&status);
                 let title_style = if success { self.green } else { self.red };
                 let title = format!(
                     "{} {}:",
@@ -722,14 +722,14 @@ impl EventProcessor for EventProcessorWithHumanOutput {
                     format_collab_status(&status)
                 );
                 ts_msg!(self, "{}", title.style(title_style));
-                if let Some(new_thread_id) = new_thread_id {
-                    eprintln!("  agent: {}", new_thread_id.to_string().style(self.dimmed));
+                if let Some(new_process_id) = new_process_id {
+                    eprintln!("  agent: {}", new_process_id.to_string().style(self.dimmed));
                 }
             }
             EventMsg::CollabAgentInteractionBegin(CollabAgentInteractionBeginEvent {
                 call_id,
-                sender_thread_id: _,
-                receiver_thread_id,
+                sender_process_id: _,
+                receiver_process_id,
                 prompt,
             }) => {
                 ts_msg!(
@@ -741,13 +741,13 @@ impl EventProcessor for EventProcessorWithHumanOutput {
                 );
                 eprintln!(
                     "  receiver: {}",
-                    receiver_thread_id.to_string().style(self.dimmed)
+                    receiver_process_id.to_string().style(self.dimmed)
                 );
             }
             EventMsg::CollabAgentInteractionEnd(CollabAgentInteractionEndEvent {
                 call_id,
-                sender_thread_id: _,
-                receiver_thread_id,
+                sender_process_id: _,
+                receiver_process_id,
                 prompt,
                 status,
                 ..
@@ -762,12 +762,12 @@ impl EventProcessor for EventProcessorWithHumanOutput {
                 ts_msg!(self, "{}", title.style(title_style));
                 eprintln!(
                     "  receiver: {}",
-                    receiver_thread_id.to_string().style(self.dimmed)
+                    receiver_process_id.to_string().style(self.dimmed)
                 );
             }
             EventMsg::CollabWaitingBegin(CollabWaitingBeginEvent {
-                sender_thread_id: _,
-                receiver_thread_ids,
+                sender_process_id: _,
+                receiver_process_ids,
                 call_id,
                 ..
             }) => {
@@ -779,11 +779,11 @@ impl EventProcessor for EventProcessorWithHumanOutput {
                 );
                 eprintln!(
                     "  receivers: {}",
-                    format_receiver_list(&receiver_thread_ids).style(self.dimmed)
+                    format_receiver_list(&receiver_process_ids).style(self.dimmed)
                 );
             }
             EventMsg::CollabWaitingEnd(CollabWaitingEndEvent {
-                sender_thread_id: _,
+                sender_process_id: _,
                 call_id,
                 statuses,
                 ..
@@ -807,21 +807,21 @@ impl EventProcessor for EventProcessorWithHumanOutput {
                 ts_msg!(self, "{}", title.style(title_style));
                 let mut sorted = statuses
                     .into_iter()
-                    .map(|(thread_id, status)| (thread_id.to_string(), status))
+                    .map(|(process_id, status)| (process_id.to_string(), status))
                     .collect::<Vec<_>>();
                 sorted.sort_by(|(left, _), (right, _)| left.cmp(right));
-                for (thread_id, status) in sorted {
+                for (process_id, status) in sorted {
                     eprintln!(
                         "  {} {}",
-                        thread_id.style(self.dimmed),
+                        process_id.style(self.dimmed),
                         format_collab_status(&status).style(style_for_agent_status(&status, self))
                     );
                 }
             }
             EventMsg::CollabCloseBegin(CollabCloseBeginEvent {
                 call_id,
-                sender_thread_id: _,
-                receiver_thread_id,
+                sender_process_id: _,
+                receiver_process_id,
             }) => {
                 ts_msg!(
                     self,
@@ -832,13 +832,13 @@ impl EventProcessor for EventProcessorWithHumanOutput {
                 );
                 eprintln!(
                     "  receiver: {}",
-                    receiver_thread_id.to_string().style(self.dimmed)
+                    receiver_process_id.to_string().style(self.dimmed)
                 );
             }
             EventMsg::CollabCloseEnd(CollabCloseEndEvent {
                 call_id,
-                sender_thread_id: _,
-                receiver_thread_id,
+                sender_process_id: _,
+                receiver_process_id,
                 status,
                 ..
             }) => {
@@ -852,13 +852,13 @@ impl EventProcessor for EventProcessorWithHumanOutput {
                 ts_msg!(self, "{}", title.style(title_style));
                 eprintln!(
                     "  receiver: {}",
-                    receiver_thread_id.to_string().style(self.dimmed)
+                    receiver_process_id.to_string().style(self.dimmed)
                 );
             }
             EventMsg::HookStarted(event) => self.render_hook_started(event),
             EventMsg::HookCompleted(event) => self.render_hook_completed(event),
             EventMsg::ShutdownComplete => return CodexStatus::Shutdown,
-            EventMsg::ThreadNameUpdated(_)
+            EventMsg::ProcessNameUpdated(_)
             | EventMsg::ExecApprovalRequest(_)
             | EventMsg::ApplyPatchApprovalRequest(_)
             | EventMsg::TerminalInteraction(_)
@@ -885,7 +885,7 @@ impl EventProcessor for EventProcessorWithHumanOutput {
             | EventMsg::SkillsUpdateAvailable
             | EventMsg::UndoCompleted(_)
             | EventMsg::UndoStarted(_)
-            | EventMsg::ThreadRolledBack(_)
+            | EventMsg::ProcessRolledBack(_)
             | EventMsg::RequestUserInput(_)
             | EventMsg::RequestPermissions(_)
             | EventMsg::CollabResumeBegin(_)
@@ -1015,7 +1015,7 @@ impl EventProcessorWithHumanOutput {
             EventMsg::HookCompleted(event) => !Self::should_print_hook_completed(event),
             _ => matches!(
                 msg,
-                EventMsg::ThreadNameUpdated(_)
+                EventMsg::ProcessNameUpdated(_)
                     | EventMsg::TokenCount(_)
                     | EventMsg::TurnStarted(_)
                     | EventMsg::ExecApprovalRequest(_)
@@ -1044,7 +1044,7 @@ impl EventProcessorWithHumanOutput {
                     | EventMsg::SkillsUpdateAvailable
                     | EventMsg::UndoCompleted(_)
                     | EventMsg::UndoStarted(_)
-                    | EventMsg::ThreadRolledBack(_)
+                    | EventMsg::ProcessRolledBack(_)
                     | EventMsg::RequestUserInput(_)
                     | EventMsg::RequestPermissions(_)
                     | EventMsg::ElicitationComplete(_)
@@ -1296,7 +1296,7 @@ fn is_collab_status_failure(status: &AgentStatus) -> bool {
     matches!(status, AgentStatus::Errored(_) | AgentStatus::NotFound)
 }
 
-fn format_receiver_list(ids: &[chaos_ipc::ThreadId]) -> String {
+fn format_receiver_list(ids: &[chaos_ipc::ProcessId]) -> String {
     if ids.is_empty() {
         return "none".to_string();
     }

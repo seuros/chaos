@@ -1,15 +1,15 @@
 use crate::config::Config;
 use crate::path_utils::normalize_for_path_comparison;
 use crate::rollout::list::Cursor;
-use crate::rollout::list::ThreadSortKey;
+use crate::rollout::list::ProcessSortKey;
 use crate::rollout::metadata;
 use jiff::Timestamp;
-use chaos_ipc::ThreadId;
+use chaos_ipc::ProcessId;
 use chaos_ipc::dynamic_tools::DynamicToolSpec;
 use chaos_ipc::protocol::RolloutItem;
 use chaos_ipc::protocol::SessionSource;
 pub use chaos_proc::LogEntry;
-use chaos_proc::ThreadMetadataBuilder;
+use chaos_proc::ProcessMetadataBuilder;
 use serde_json::Value;
 use std::path::Path;
 use std::path::PathBuf;
@@ -164,17 +164,17 @@ pub(crate) fn normalize_cwd_for_state_db(cwd: &Path) -> PathBuf {
 
 /// List thread ids from SQLite for parity checks without rollout scanning.
 #[allow(clippy::too_many_arguments)]
-pub async fn list_thread_ids_db(
+pub async fn list_process_ids_db(
     context: Option<&chaos_proc::StateRuntime>,
     codex_home: &Path,
     page_size: usize,
     cursor: Option<&Cursor>,
-    sort_key: ThreadSortKey,
+    sort_key: ProcessSortKey,
     allowed_sources: &[SessionSource],
     model_providers: Option<&[String]>,
     archived_only: bool,
     stage: &str,
-) -> Option<Vec<ThreadId>> {
+) -> Option<Vec<ProcessId>> {
     let ctx = context?;
     if ctx.codex_home() != codex_home {
         warn!(
@@ -195,12 +195,12 @@ pub async fn list_thread_ids_db(
         .collect();
     let model_providers = model_providers.map(<[String]>::to_vec);
     match ctx
-        .list_thread_ids(
+        .list_process_ids(
             page_size,
             anchor.as_ref(),
             match sort_key {
-                ThreadSortKey::CreatedAt => chaos_proc::SortKey::CreatedAt,
-                ThreadSortKey::UpdatedAt => chaos_proc::SortKey::UpdatedAt,
+                ProcessSortKey::CreatedAt => chaos_proc::SortKey::CreatedAt,
+                ProcessSortKey::UpdatedAt => chaos_proc::SortKey::UpdatedAt,
             },
             allowed_sources.as_slice(),
             model_providers.as_deref(),
@@ -210,25 +210,25 @@ pub async fn list_thread_ids_db(
     {
         Ok(ids) => Some(ids),
         Err(err) => {
-            warn!("state db list_thread_ids failed during {stage}: {err}");
+            warn!("state db list_process_ids failed during {stage}: {err}");
             None
         }
     }
 }
 
-/// List thread metadata from SQLite without rollout directory traversal.
+/// List process metadata from SQLite without rollout directory traversal.
 #[allow(clippy::too_many_arguments)]
-pub async fn list_threads_db(
+pub async fn list_processes_db(
     context: Option<&chaos_proc::StateRuntime>,
     codex_home: &Path,
     page_size: usize,
     cursor: Option<&Cursor>,
-    sort_key: ThreadSortKey,
+    sort_key: ProcessSortKey,
     allowed_sources: &[SessionSource],
     model_providers: Option<&[String]>,
     archived: bool,
     search_term: Option<&str>,
-) -> Option<chaos_proc::ThreadsPage> {
+) -> Option<chaos_proc::ProcessesPage> {
     let ctx = context?;
     if ctx.codex_home() != codex_home {
         warn!(
@@ -249,12 +249,12 @@ pub async fn list_threads_db(
         .collect();
     let model_providers = model_providers.map(<[String]>::to_vec);
     match ctx
-        .list_threads(
+        .list_processes(
             page_size,
             anchor.as_ref(),
             match sort_key {
-                ThreadSortKey::CreatedAt => chaos_proc::SortKey::CreatedAt,
-                ThreadSortKey::UpdatedAt => chaos_proc::SortKey::UpdatedAt,
+                ProcessSortKey::CreatedAt => chaos_proc::SortKey::CreatedAt,
+                ProcessSortKey::UpdatedAt => chaos_proc::SortKey::UpdatedAt,
             },
             allowed_sources.as_slice(),
             model_providers.as_deref(),
@@ -273,19 +273,19 @@ pub async fn list_threads_db(
                     valid_items.push(item);
                 } else {
                     warn!(
-                        "state db list_threads returned stale rollout path for thread {}: {}",
+                        "state db list_processes returned stale rollout path for process {}: {}",
                         item.id,
                         item.rollout_path.display()
                     );
-                    warn!("state db discrepancy during list_threads_db: stale_db_path_dropped");
-                    let _ = ctx.delete_thread(item.id).await;
+                    warn!("state db discrepancy during list_processes_db: stale_db_path_dropped");
+                    let _ = ctx.delete_process(item.id).await;
                 }
             }
             page.items = valid_items;
             Some(page)
         }
         Err(err) => {
-            warn!("state db list_threads failed: {err}");
+            warn!("state db list_processes failed: {err}");
             None
         }
     }
@@ -294,12 +294,12 @@ pub async fn list_threads_db(
 /// Look up the rollout path for a thread id using SQLite.
 pub async fn find_rollout_path_by_id(
     context: Option<&chaos_proc::StateRuntime>,
-    thread_id: ThreadId,
+    process_id: ProcessId,
     archived_only: Option<bool>,
     stage: &str,
 ) -> Option<PathBuf> {
     let ctx = context?;
-    ctx.find_rollout_path_by_id(thread_id, archived_only)
+    ctx.find_rollout_path_by_id(process_id, archived_only)
         .await
         .unwrap_or_else(|err| {
             warn!("state db find_rollout_path_by_id failed during {stage}: {err}");
@@ -310,11 +310,11 @@ pub async fn find_rollout_path_by_id(
 /// Get dynamic tools for a thread id using SQLite.
 pub async fn get_dynamic_tools(
     context: Option<&chaos_proc::StateRuntime>,
-    thread_id: ThreadId,
+    process_id: ProcessId,
     stage: &str,
 ) -> Option<Vec<DynamicToolSpec>> {
     let ctx = context?;
-    match ctx.get_dynamic_tools(thread_id).await {
+    match ctx.get_dynamic_tools(process_id).await {
         Ok(tools) => tools,
         Err(err) => {
             warn!("state db get_dynamic_tools failed during {stage}: {err}");
@@ -326,28 +326,28 @@ pub async fn get_dynamic_tools(
 /// Persist dynamic tools for a thread id using SQLite, if none exist yet.
 pub async fn persist_dynamic_tools(
     context: Option<&chaos_proc::StateRuntime>,
-    thread_id: ThreadId,
+    process_id: ProcessId,
     tools: Option<&[DynamicToolSpec]>,
     stage: &str,
 ) {
     let Some(ctx) = context else {
         return;
     };
-    if let Err(err) = ctx.persist_dynamic_tools(thread_id, tools).await {
+    if let Err(err) = ctx.persist_dynamic_tools(process_id, tools).await {
         warn!("state db persist_dynamic_tools failed during {stage}: {err}");
     }
 }
 
-pub async fn mark_thread_memory_mode_polluted(
+pub async fn mark_process_memory_mode_polluted(
     context: Option<&chaos_proc::StateRuntime>,
-    thread_id: ThreadId,
+    process_id: ProcessId,
     stage: &str,
 ) {
     let Some(ctx) = context else {
         return;
     };
-    if let Err(err) = ctx.mark_thread_memory_mode_polluted(thread_id).await {
-        warn!("state db mark_thread_memory_mode_polluted failed during {stage}: {err}");
+    if let Err(err) = ctx.mark_process_memory_mode_polluted(process_id).await {
+        warn!("state db mark_process_memory_mode_polluted failed during {stage}: {err}");
     }
 }
 
@@ -356,10 +356,10 @@ pub async fn reconcile_rollout(
     context: Option<&chaos_proc::StateRuntime>,
     rollout_path: &Path,
     default_provider: &str,
-    builder: Option<&ThreadMetadataBuilder>,
+    builder: Option<&ProcessMetadataBuilder>,
     items: &[RolloutItem],
     archived_only: Option<bool>,
-    new_thread_memory_mode: Option<&str>,
+    new_process_memory_mode: Option<&str>,
 ) {
     let Some(ctx) = context else {
         return;
@@ -372,7 +372,7 @@ pub async fn reconcile_rollout(
             builder,
             items,
             "reconcile_rollout",
-            new_thread_memory_mode,
+            new_process_memory_mode,
             /*updated_at_override*/ None,
         )
         .await;
@@ -392,7 +392,7 @@ pub async fn reconcile_rollout(
     let mut metadata = outcome.metadata;
     let memory_mode = outcome.memory_mode.unwrap_or_else(|| "enabled".to_string());
     metadata.cwd = normalize_cwd_for_state_db(&metadata.cwd);
-    if let Ok(Some(existing_metadata)) = ctx.get_thread(metadata.id).await {
+    if let Ok(Some(existing_metadata)) = ctx.get_process(metadata.id).await {
         metadata.prefer_existing_git_info(&existing_metadata);
     }
     match archived_only {
@@ -404,7 +404,7 @@ pub async fn reconcile_rollout(
         }
         Some(true) | None => {}
     }
-    if let Err(err) = ctx.upsert_thread(&metadata).await {
+    if let Err(err) = ctx.upsert_process(&metadata).await {
         warn!(
             "state db reconcile_rollout upsert failed {}: {err}",
             rollout_path.display()
@@ -412,7 +412,7 @@ pub async fn reconcile_rollout(
         return;
     }
     if let Err(err) = ctx
-        .set_thread_memory_mode(metadata.id, memory_mode.as_str())
+        .set_process_memory_mode(metadata.id, memory_mode.as_str())
         .await
     {
         warn!(
@@ -440,7 +440,7 @@ pub async fn reconcile_rollout(
 /// Repair a thread's rollout path after filesystem fallback succeeds.
 pub async fn read_repair_rollout_path(
     context: Option<&chaos_proc::StateRuntime>,
-    thread_id: Option<ThreadId>,
+    process_id: Option<ProcessId>,
     archived_only: Option<bool>,
     rollout_path: &Path,
 ) {
@@ -451,8 +451,8 @@ pub async fn read_repair_rollout_path(
     // Fast path: update an existing metadata row in place, but avoid writes when
     // read-repair computes no effective change.
     let mut saw_existing_metadata = false;
-    if let Some(thread_id) = thread_id
-        && let Ok(Some(metadata)) = ctx.get_thread(thread_id).await
+    if let Some(process_id) = process_id
+        && let Ok(Some(metadata)) = ctx.get_process(process_id).await
     {
         saw_existing_metadata = true;
         let mut repaired = metadata.clone();
@@ -471,7 +471,7 @@ pub async fn read_repair_rollout_path(
             return;
         }
         warn!("state db discrepancy during read_repair_rollout_path: upsert_needed (fast path)");
-        if let Err(err) = ctx.upsert_thread(&repaired).await {
+        if let Err(err) = ctx.upsert_process(&repaired).await {
             warn!(
                 "state db read-repair upsert failed for {}: {err}",
                 rollout_path.display()
@@ -498,7 +498,7 @@ pub async fn read_repair_rollout_path(
         /*builder*/ None,
         &[],
         archived_only,
-        /*new_thread_memory_mode*/ None,
+        /*new_process_memory_mode*/ None,
     )
     .await;
 }
@@ -509,10 +509,10 @@ pub async fn apply_rollout_items(
     context: Option<&chaos_proc::StateRuntime>,
     rollout_path: &Path,
     _default_provider: &str,
-    builder: Option<&ThreadMetadataBuilder>,
+    builder: Option<&ProcessMetadataBuilder>,
     items: &[RolloutItem],
     stage: &str,
-    new_thread_memory_mode: Option<&str>,
+    new_process_memory_mode: Option<&str>,
     updated_at_override: Option<Timestamp>,
 ) {
     let Some(ctx) = context else {
@@ -535,7 +535,7 @@ pub async fn apply_rollout_items(
     builder.rollout_path = rollout_path.to_path_buf();
     builder.cwd = normalize_cwd_for_state_db(&builder.cwd);
     if let Err(err) = ctx
-        .apply_rollout_items(&builder, items, new_thread_memory_mode, updated_at_override)
+        .apply_rollout_items(&builder, items, new_process_memory_mode, updated_at_override)
         .await
     {
         warn!(
@@ -545,22 +545,22 @@ pub async fn apply_rollout_items(
     }
 }
 
-pub async fn touch_thread_updated_at(
+pub async fn touch_process_updated_at(
     context: Option<&chaos_proc::StateRuntime>,
-    thread_id: Option<ThreadId>,
+    process_id: Option<ProcessId>,
     updated_at: Timestamp,
     stage: &str,
 ) -> bool {
     let Some(ctx) = context else {
         return false;
     };
-    let Some(thread_id) = thread_id else {
+    let Some(process_id) = process_id else {
         return false;
     };
-    ctx.touch_thread_updated_at(thread_id, updated_at)
+    ctx.touch_process_updated_at(process_id, updated_at)
         .await
         .unwrap_or_else(|err| {
-            warn!("state db touch_thread_updated_at failed during {stage} for {thread_id}: {err}");
+            warn!("state db touch_process_updated_at failed during {stage} for {process_id}: {err}");
             false
         })
 }

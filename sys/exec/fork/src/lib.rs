@@ -15,9 +15,8 @@ pub use cli::Command;
 pub use cli::ReviewArgs;
 use chaos_argv::Arg0DispatchPaths;
 use chaos_kern::AuthManager;
-use chaos_kern::CodexThread;
-use chaos_kern::NewThread;
-use chaos_kern::ThreadManager;
+use chaos_kern::Process;
+use chaos_kern::ProcessTable;
 use chaos_kern::auth::enforce_login_restrictions;
 use chaos_kern::check_execpolicy_for_warnings;
 use chaos_kern::config::Config;
@@ -68,8 +67,8 @@ use crate::event_processor::CodexStatus;
 use crate::event_processor::EventProcessor;
 use chaos_kern::default_client::set_default_client_residency_requirement;
 use chaos_kern::default_client::set_default_originator;
-use chaos_kern::find_thread_path_by_id_str;
-use chaos_kern::find_thread_path_by_name_str;
+use chaos_kern::find_process_path_by_id_str;
+use chaos_kern::find_process_path_by_name_str;
 
 const DEFAULT_ANALYTICS_ENABLED: bool = true;
 
@@ -84,7 +83,7 @@ enum InitialOperation {
 }
 
 struct ExecRunArgs {
-    thread_manager: Arc<ThreadManager>,
+    process_table: Arc<ProcessTable>,
     auth_manager: Arc<AuthManager>,
     command: Option<ExecCommand>,
     config: Config,
@@ -362,7 +361,7 @@ pub async fn run_main(cli: Cli, arg0_paths: Arg0DispatchPaths) -> anyhow::Result
         true, // enable_codex_api_key_env
         config.cli_auth_credentials_store_mode,
     );
-    let thread_manager = Arc::new(ThreadManager::new(
+    let process_table = Arc::new(ProcessTable::new(
         &config,
         auth_manager.clone(),
         SessionSource::Exec,
@@ -374,7 +373,7 @@ pub async fn run_main(cli: Cli, arg0_paths: Arg0DispatchPaths) -> anyhow::Result
     ));
 
     run_exec_session(ExecRunArgs {
-        thread_manager,
+        process_table,
         auth_manager,
         command,
         config,
@@ -397,7 +396,7 @@ pub async fn run_main(cli: Cli, arg0_paths: Arg0DispatchPaths) -> anyhow::Result
 
 async fn run_exec_session(args: ExecRunArgs) -> anyhow::Result<()> {
     let ExecRunArgs {
-        thread_manager,
+        process_table,
         auth_manager,
         command,
         config,
@@ -464,39 +463,36 @@ async fn run_exec_session(args: ExecRunArgs) -> anyhow::Result<()> {
         std::process::exit(1);
     }
 
-    // Start or resume a thread directly via the ThreadManager.
-    let NewThread {
-        thread,
-        session_configured,
-        ..
-    } = if let Some(ExecCommand::Resume(ref resume_args)) = command {
+    // Start or resume a process directly via the ProcessTable.
+    let new_process = if let Some(ExecCommand::Resume(ref resume_args)) = command {
         let resume_path = resolve_resume_path(&config, resume_args).await?;
 
         if let Some(path) = resume_path {
-            thread_manager
-                .resume_thread_from_rollout(
+            process_table
+                .resume_process_from_rollout(
                     config.clone(),
                     path,
                     auth_manager.clone(),
                     /*parent_trace*/ None,
                 )
                 .await
-                .map_err(|err| anyhow::anyhow!("failed to resume thread: {err}"))?
+                .map_err(|err| anyhow::anyhow!("failed to resume process: {err}"))?
         } else {
-            thread_manager
-                .start_thread(config.clone())
+            process_table
+                .start_process(config.clone())
                 .await
-                .map_err(|err| anyhow::anyhow!("failed to start thread: {err}"))?
+                .map_err(|err| anyhow::anyhow!("failed to start process: {err}"))?
         }
     } else {
-        thread_manager
-            .start_thread(config.clone())
+        process_table
+            .start_process(config.clone())
             .await
-            .map_err(|err| anyhow::anyhow!("failed to start thread: {err}"))?
+            .map_err(|err| anyhow::anyhow!("failed to start process: {err}"))?
     };
+    let (_, thread, session_configured) = new_process.into_parts();
 
-    let primary_thread_id_for_span = session_configured.session_id.to_string();
-    exec_span.record("thread.id", primary_thread_id_for_span.as_str());
+    let primary_process_id_for_span = session_configured.session_id.to_string();
+    exec_span.record("thread.id", primary_process_id_for_span.as_str());
 
     let (initial_operation, prompt_summary) = match (command.as_ref(), prompt, images) {
         (Some(ExecCommand::Review(review_cli)), _, _) => {
@@ -572,7 +568,7 @@ async fn run_exec_session(args: ExecRunArgs) -> anyhow::Result<()> {
         }
     });
 
-    // Submit the initial operation to the thread.
+    // Submit the initial operation to the process.
     let task_id = match initial_operation {
         InitialOperation::UserTurn {
             items,
@@ -625,7 +621,7 @@ async fn run_exec_session(args: ExecRunArgs) -> anyhow::Result<()> {
     .await;
 
     if let Err(err) = thread.shutdown_and_wait().await {
-        warn!("thread shutdown failed: {err}");
+        warn!("process shutdown failed: {err}");
     }
     event_processor.print_final_output();
     if error_seen {
@@ -635,10 +631,10 @@ async fn run_exec_session(args: ExecRunArgs) -> anyhow::Result<()> {
     Ok(())
 }
 
-/// Core event loop: reads events from the CodexThread and dispatches them
+/// Core event loop: reads events from the process and dispatches them
 /// to the event processor, handling interrupts and shutdown.
 async fn run_event_loop(
-    thread: &Arc<CodexThread>,
+    thread: &Arc<Process>,
     event_processor: &mut dyn EventProcessor,
     task_id: &str,
     required_mcp_servers: &HashSet<String>,
@@ -730,11 +726,11 @@ async fn resolve_resume_path(
         } else {
             Some(config.cwd.as_path())
         };
-        match chaos_kern::RolloutRecorder::find_latest_thread_path(
+        match chaos_kern::RolloutRecorder::find_latest_process_path(
             config,
             /*page_size*/ 1,
             /*cursor*/ None,
-            chaos_kern::ThreadSortKey::UpdatedAt,
+            chaos_kern::ProcessSortKey::UpdatedAt,
             &[],
             Some(default_provider_filter.as_slice()),
             &config.model_provider_id,
@@ -744,16 +740,16 @@ async fn resolve_resume_path(
         {
             Ok(path) => Ok(path),
             Err(e) => {
-                error!("Error listing threads: {e}");
+                error!("Error listing processes: {e}");
                 Ok(None)
             }
         }
     } else if let Some(id_str) = args.session_id.as_deref() {
         if Uuid::parse_str(id_str).is_ok() {
-            let path = find_thread_path_by_id_str(&config.codex_home, id_str).await?;
+            let path = find_process_path_by_id_str(&config.codex_home, id_str).await?;
             Ok(path)
         } else {
-            let path = find_thread_path_by_name_str(&config.codex_home, id_str).await?;
+            let path = find_process_path_by_name_str(&config.codex_home, id_str).await?;
             Ok(path)
         }
     } else {

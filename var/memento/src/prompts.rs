@@ -62,7 +62,7 @@ pub fn build_consolidation_prompt(memory_root: &Path, selection: &Phase2InputSel
 }
 
 fn render_phase2_input_selection(selection: &Phase2InputSelection) -> String {
-    let retained = selection.retained_thread_ids.len();
+    let retained = selection.retained_process_ids.len();
     let added = selection.selected.len().saturating_sub(retained);
     let selected = if selection.selected.is_empty() {
         "- none".to_string()
@@ -73,7 +73,7 @@ fn render_phase2_input_selection(selection: &Phase2InputSelection) -> String {
             .map(|item| {
                 render_selected_input_line(
                     item,
-                    selection.retained_thread_ids.contains(&item.thread_id),
+                    selection.retained_process_ids.contains(&item.process_id),
                 )
             })
             .collect::<Vec<_>>()
@@ -102,14 +102,14 @@ fn render_selected_input_line(item: &Stage1Output, retained: bool) -> String {
     let rollout_summary_file = format!(
         "rollout_summaries/{}.md",
         rollout_summary_file_stem_from_parts(
-            item.thread_id,
+            item.process_id,
             item.source_updated_at,
             item.rollout_slug.as_deref(),
         )
     );
     format!(
-        "- [{status}] thread_id={}, rollout_summary_file={rollout_summary_file}",
-        item.thread_id
+        "- [{status}] process_id={}, rollout_summary_file={rollout_summary_file}",
+        item.process_id
     )
 }
 
@@ -117,14 +117,14 @@ fn render_removed_input_line(item: &Stage1OutputRef) -> String {
     let rollout_summary_file = format!(
         "rollout_summaries/{}.md",
         rollout_summary_file_stem_from_parts(
-            item.thread_id,
+            item.process_id,
             item.source_updated_at,
             item.rollout_slug.as_deref(),
         )
     );
     format!(
-        "- thread_id={}, rollout_summary_file={rollout_summary_file}",
-        item.thread_id
+        "- process_id={}, rollout_summary_file={rollout_summary_file}",
+        item.process_id
     )
 }
 

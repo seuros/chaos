@@ -9,7 +9,7 @@ use chaos_kern::ResponseEvent;
 use chaos_kern::WireApi;
 use chaos_syslog::SessionTelemetry;
 use chaos_syslog::TelemetryAuthMode;
-use chaos_ipc::ThreadId;
+use chaos_ipc::ProcessId;
 use chaos_ipc::config_types::ReasoningSummary;
 use chaos_ipc::models::ContentItem;
 use chaos_ipc::models::ResponseItem;
@@ -67,7 +67,7 @@ async fn responses_stream_includes_subagent_header_on_review() {
     config.model = Some(model.clone());
     let config = Arc::new(config);
 
-    let conversation_id = ThreadId::new();
+    let conversation_id = ProcessId::new();
     let auth_mode = TelemetryAuthMode::Chatgpt;
     let session_source = SessionSource::SubAgent(SubAgentSource::Review);
     let model_info =
@@ -179,7 +179,7 @@ async fn responses_stream_includes_subagent_header_on_other() {
     config.model = Some(model.clone());
     let config = Arc::new(config);
 
-    let conversation_id = ThreadId::new();
+    let conversation_id = ProcessId::new();
     let auth_mode = TelemetryAuthMode::Chatgpt;
     let session_source = SessionSource::SubAgent(SubAgentSource::Other("my-task".to_string()));
     let model_info =
@@ -288,7 +288,7 @@ async fn responses_respects_model_info_overrides_from_config() {
     let model = config.model.clone().expect("model configured");
     let config = Arc::new(config);
 
-    let conversation_id = ThreadId::new();
+    let conversation_id = ProcessId::new();
     let auth_mode =
         chaos_kern::test_support::auth_manager_from_auth(CodexAuth::from_api_key("Test API Key"))
             .auth_mode()

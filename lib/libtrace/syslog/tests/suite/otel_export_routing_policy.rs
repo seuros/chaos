@@ -17,7 +17,7 @@ use tracing_subscriber::Layer;
 use tracing_subscriber::filter::filter_fn;
 use tracing_subscriber::layer::SubscriberExt;
 
-use chaos_ipc::ThreadId;
+use chaos_ipc::ProcessId;
 use chaos_ipc::protocol::SessionSource;
 use chaos_ipc::user_input::UserInput;
 
@@ -104,7 +104,7 @@ fn otel_export_routing_policy_routes_user_prompt_log_and_trace_events() {
     tracing::subscriber::with_default(subscriber, || {
         tracing::callsite::rebuild_interest_cache();
         let manager = SessionTelemetry::new(
-            ThreadId::new(),
+            ProcessId::new(),
             "gpt-5.1",
             "gpt-5.1",
             Some("account-id".to_string()),
@@ -213,7 +213,7 @@ fn otel_export_routing_policy_routes_tool_result_log_and_trace_events() {
     tracing::subscriber::with_default(subscriber, || {
         tracing::callsite::rebuild_interest_cache();
         let manager = SessionTelemetry::new(
-            ThreadId::new(),
+            ProcessId::new(),
             "gpt-5.1",
             "gpt-5.1",
             Some("account-id".to_string()),
@@ -326,7 +326,7 @@ fn otel_export_routing_policy_routes_auth_recovery_log_and_trace_events() {
     tracing::subscriber::with_default(subscriber, || {
         tracing::callsite::rebuild_interest_cache();
         let manager = SessionTelemetry::new(
-            ThreadId::new(),
+            ProcessId::new(),
             "gpt-5.1",
             "gpt-5.1",
             Some("account-id".to_string()),
@@ -472,7 +472,7 @@ fn otel_export_routing_policy_routes_api_request_auth_observability() {
     tracing::subscriber::with_default(subscriber, || {
         tracing::callsite::rebuild_interest_cache();
         let manager = SessionTelemetry::new(
-            ThreadId::new(),
+            ProcessId::new(),
             "gpt-5.1",
             "gpt-5.1",
             Some("account-id".to_string()),
@@ -604,7 +604,7 @@ fn otel_export_routing_policy_routes_websocket_connect_auth_observability() {
     tracing::subscriber::with_default(subscriber, || {
         tracing::callsite::rebuild_interest_cache();
         let manager = SessionTelemetry::new(
-            ThreadId::new(),
+            ProcessId::new(),
             "gpt-5.1",
             "gpt-5.1",
             Some("account-id".to_string()),
@@ -708,7 +708,7 @@ fn otel_export_routing_policy_routes_websocket_request_transport_observability()
     tracing::subscriber::with_default(subscriber, || {
         tracing::callsite::rebuild_interest_cache();
         let manager = SessionTelemetry::new(
-            ThreadId::new(),
+            ProcessId::new(),
             "gpt-5.1",
             "gpt-5.1",
             Some("account-id".to_string()),

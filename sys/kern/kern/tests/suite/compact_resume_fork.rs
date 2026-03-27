@@ -11,8 +11,8 @@ use super::compact::COMPACT_WARNING_MESSAGE;
 use super::compact::FIRST_REPLY;
 use super::compact::SUMMARY_TEXT;
 use anyhow::Result;
-use chaos_kern::CodexThread;
-use chaos_kern::ThreadManager;
+use chaos_kern::Process;
+use chaos_kern::ProcessTable;
 use chaos_kern::compact::SUMMARIZATION_PROMPT;
 use chaos_kern::config::Config;
 use chaos_kern::spawn::CODEX_SANDBOX_NETWORK_DISABLED_ENV_VAR;
@@ -177,7 +177,7 @@ async fn compact_resume_and_fork_preserve_model_history_view() {
         "compact+resume test expects resumed path {resumed_path:?} to exist",
     );
 
-    let forked = fork_thread(&manager, &config, resumed_path, 2).await;
+    let forked = fork_process(&manager, &config, resumed_path, 2).await;
     user_turn(&forked, "AFTER_FORK").await;
 
     // 3. Capture the requests to the model and validate the history slices.
@@ -332,7 +332,7 @@ async fn compact_resume_after_second_compaction_preserves_history() -> Result<()
         "second compact test expects resumed path {resumed_path:?} to exist",
     );
 
-    let forked = fork_thread(&manager, &config, resumed_path, 3).await;
+    let forked = fork_process(&manager, &config, resumed_path, 3).await;
     user_turn(&forked, "AFTER_FORK").await;
 
     compact_conversation(&forked).await;
@@ -448,12 +448,12 @@ async fn snapshot_rollback_past_compaction_replays_append_only_history() -> Resu
     compact_conversation(&base).await;
     user_turn(&base, EDITED_AFTER_COMPACT).await;
 
-    base.submit(Op::ThreadRollback { num_turns: 1 })
+    base.submit(Op::ProcessRollback { num_turns: 1 })
         .await
-        .expect("submit thread rollback");
+        .expect("submit process rollback");
     let rollback_event =
-        wait_for_event(&base, |ev| matches!(ev, EventMsg::ThreadRolledBack(_))).await;
-    let EventMsg::ThreadRolledBack(rollback_event) = rollback_event else {
+        wait_for_event(&base, |ev| matches!(ev, EventMsg::ProcessRolledBack(_))).await;
+    let EventMsg::ProcessRolledBack(rollback_event) = rollback_event else {
         panic!("expected thread rolled back event");
     };
     assert_eq!(rollback_event.num_turns, 1);
@@ -626,7 +626,7 @@ async fn mount_second_compact_flow(server: &MockServer) -> Vec<ResponseMock> {
 async fn start_test_conversation(
     server: &MockServer,
     model: Option<&str>,
-) -> (Arc<TempDir>, Config, Arc<ThreadManager>, Arc<CodexThread>) {
+) -> (Arc<TempDir>, Config, Arc<ProcessTable>, Arc<Process>) {
     let base_url = format!("{}/v1", server.uri());
     let model = model.map(str::to_string);
     let mut builder = test_codex().with_config(move |config| {
@@ -640,10 +640,10 @@ async fn start_test_conversation(
     let test = Box::pin(builder.build(server))
         .await
         .expect("create conversation");
-    (test.home, test.config, test.thread_manager, test.codex)
+    (test.home, test.config, test.process_table, test.codex)
 }
 
-async fn user_turn(conversation: &Arc<CodexThread>, text: &str) {
+async fn user_turn(conversation: &Arc<Process>, text: &str) {
     conversation
         .submit(Op::UserInput {
             items: vec![UserInput::Text {
@@ -657,7 +657,7 @@ async fn user_turn(conversation: &Arc<CodexThread>, text: &str) {
     wait_for_event(conversation, |ev| matches!(ev, EventMsg::TurnComplete(_))).await;
 }
 
-async fn compact_conversation(conversation: &Arc<CodexThread>) {
+async fn compact_conversation(conversation: &Arc<Process>) {
     conversation
         .submit(Op::Compact)
         .await
@@ -676,32 +676,32 @@ async fn compact_conversation(conversation: &Arc<CodexThread>) {
     wait_for_event(conversation, |ev| matches!(ev, EventMsg::TurnComplete(_))).await;
 }
 
-fn fetch_conversation_path(conversation: &Arc<CodexThread>) -> std::path::PathBuf {
+fn fetch_conversation_path(conversation: &Arc<Process>) -> std::path::PathBuf {
     conversation.rollout_path().expect("rollout path")
 }
 
 async fn resume_conversation(
-    manager: &ThreadManager,
+    manager: &ProcessTable,
     config: &Config,
     path: std::path::PathBuf,
-) -> Arc<CodexThread> {
+) -> Arc<Process> {
     let auth_manager = chaos_kern::test_support::auth_manager_from_auth(
         chaos_kern::CodexAuth::from_api_key("dummy"),
     );
-    Box::pin(manager.resume_thread_from_rollout(config.clone(), path, auth_manager, None))
+    Box::pin(manager.resume_process_from_rollout(config.clone(), path, auth_manager, None))
         .await
         .expect("resume conversation")
         .thread
 }
 
 #[cfg(test)]
-async fn fork_thread(
-    manager: &ThreadManager,
+async fn fork_process(
+    manager: &ProcessTable,
     config: &Config,
     path: std::path::PathBuf,
     nth_user_message: usize,
-) -> Arc<CodexThread> {
-    Box::pin(manager.fork_thread(nth_user_message, config.clone(), path, false, None))
+) -> Arc<Process> {
+    Box::pin(manager.fork_process(nth_user_message, config.clone(), path, false, None))
         .await
         .expect("fork conversation")
         .thread

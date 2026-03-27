@@ -1,6 +1,6 @@
 //! MCP resources exposing Chaos sessions via `chaos://sessions`.
 //!
-//! Uses the shared StateRuntime singleton for thread metadata queries.
+//! Uses the shared StateRuntime singleton for process metadata queries.
 
 use mcp_host::prelude::*;
 use mcp_host::registry::router::{McpResourceRouter, McpResourceTemplateRouter};
@@ -23,7 +23,7 @@ fn sessions_list_handler<'a>(
         let sessions: Vec<serde_json::Value> = match &server.state_runtime {
             Some(rt) => {
                 let page = rt
-                    .list_threads(
+                    .list_processes(
                         50,
                         None,
                         chaos_proc::SortKey::UpdatedAt,
@@ -38,7 +38,7 @@ fn sessions_list_handler<'a>(
                 page.iter()
                     .map(|t| {
                         json!({
-                            "thread_id": t.id.to_string(),
+                            "process_id": t.id.to_string(),
                             "title": t.title,
                             "source": t.source,
                             "cwd": t.cwd,
@@ -49,13 +49,13 @@ fn sessions_list_handler<'a>(
                     .collect()
             }
             None => {
-                let thread_ids = server.thread_manager.list_thread_ids().await;
-                let names = server.thread_names.lock().await;
-                thread_ids
+                let process_ids = server.process_table.list_process_ids().await;
+                let names = server.process_names.lock().await;
+                process_ids
                     .iter()
                     .map(|id| {
                         let name = names.get(id).cloned();
-                        json!({ "thread_id": id.to_string(), "title": name })
+                        json!({ "process_id": id.to_string(), "title": name })
                     })
                     .collect()
             }
@@ -74,7 +74,7 @@ fn sessions_resource_info() -> ResourceInfo {
     ResourceInfo {
         uri: "chaos://sessions".to_string(),
         name: "sessions".to_string(),
-        description: Some("List all Chaos threads".to_string()),
+        description: Some("List all Chaos processes".to_string()),
         mime_type: Some("application/json".to_string()),
     }
 }
@@ -96,19 +96,19 @@ fn session_detail_handler<'a>(
             .ok_or_else(|| ResourceError::InvalidUri("missing 'id' parameter".into()))?
             .clone();
 
-        let thread_id = chaos_ipc::ThreadId::from_string(&id)
-            .map_err(|e| ResourceError::NotFound(format!("invalid thread_id: {e}")))?;
+        let process_id = chaos_ipc::ProcessId::from_string(&id)
+            .map_err(|e| ResourceError::NotFound(format!("invalid process_id: {e}")))?;
 
         let info = match &server.state_runtime {
             Some(rt) => {
                 let t = rt
-                    .get_thread(thread_id)
+                    .get_process(process_id)
                     .await
                     .ok()
                     .flatten()
-                    .ok_or_else(|| ResourceError::NotFound(format!("thread not found: {id}")))?;
+                    .ok_or_else(|| ResourceError::NotFound(format!("process not found: {id}")))?;
                 json!({
-                    "thread_id": t.id.to_string(),
+                    "process_id": t.id.to_string(),
                     "title": t.title,
                     "source": t.source,
                     "cwd": t.cwd,
@@ -124,13 +124,13 @@ fn session_detail_handler<'a>(
             }
             None => {
                 server
-                    .thread_manager
-                    .get_thread(thread_id)
+                    .process_table
+                    .get_process(process_id)
                     .await
-                    .map_err(|e| ResourceError::NotFound(format!("thread not found: {e}")))?;
-                let title = server.thread_names.lock().await.get(&thread_id).cloned();
+                    .map_err(|e| ResourceError::NotFound(format!("process not found: {e}")))?;
+                let title = server.process_names.lock().await.get(&process_id).cloned();
                 json!({
-                    "thread_id": thread_id.to_string(),
+                    "process_id": process_id.to_string(),
                     "title": title,
                     "status": "active",
                 })
@@ -150,7 +150,7 @@ fn session_template_info() -> ResourceTemplateInfo {
         uri_template: "chaos://sessions/{id}".to_string(),
         name: "session_detail".to_string(),
         title: None,
-        description: Some("Details for a specific Chaos thread".to_string()),
+        description: Some("Details for a specific Chaos process".to_string()),
         mime_type: Some("application/json".to_string()),
     }
 }

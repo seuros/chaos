@@ -6,7 +6,7 @@ use std::sync::Arc;
 use anyhow::Context;
 use anyhow::Result;
 use anyhow::bail;
-use chaos_kern::CodexThread;
+use chaos_kern::Process;
 use chaos_kern::features::Feature;
 use chaos_ipc::protocol::EventMsg;
 use chaos_ipc::protocol::Op;
@@ -109,7 +109,7 @@ async fn run_apply_patch_turn(
     harness.submit(prompt).await
 }
 
-async fn invoke_undo(codex: &Arc<CodexThread>) -> Result<UndoCompletedEvent> {
+async fn invoke_undo(codex: &Arc<Process>) -> Result<UndoCompletedEvent> {
     codex.submit(Op::Undo).await?;
     let event = wait_for_event_match(codex, |msg| match msg {
         EventMsg::UndoCompleted(done) => Some(done.clone()),
@@ -119,7 +119,7 @@ async fn invoke_undo(codex: &Arc<CodexThread>) -> Result<UndoCompletedEvent> {
     Ok(event)
 }
 
-async fn expect_successful_undo(codex: &Arc<CodexThread>) -> Result<UndoCompletedEvent> {
+async fn expect_successful_undo(codex: &Arc<Process>) -> Result<UndoCompletedEvent> {
     let event = invoke_undo(codex).await?;
     assert!(
         event.success,
@@ -129,7 +129,7 @@ async fn expect_successful_undo(codex: &Arc<CodexThread>) -> Result<UndoComplete
     Ok(event)
 }
 
-async fn expect_failed_undo(codex: &Arc<CodexThread>) -> Result<UndoCompletedEvent> {
+async fn expect_failed_undo(codex: &Arc<Process>) -> Result<UndoCompletedEvent> {
     let event = invoke_undo(codex).await?;
     assert!(
         !event.success,

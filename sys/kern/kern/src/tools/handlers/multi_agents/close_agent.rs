@@ -36,8 +36,8 @@ impl ToolHandler for Handler {
                 &turn,
                 CollabCloseBeginEvent {
                     call_id: call_id.clone(),
-                    sender_thread_id: session.conversation_id,
-                    receiver_thread_id: agent_id,
+                    sender_process_id: session.conversation_id,
+                    receiver_process_id: agent_id,
                 }
                 .into(),
             )
@@ -56,8 +56,8 @@ impl ToolHandler for Handler {
                         &turn,
                         CollabCloseEndEvent {
                             call_id: call_id.clone(),
-                            sender_thread_id: session.conversation_id,
-                            receiver_thread_id: agent_id,
+                            sender_process_id: session.conversation_id,
+                            receiver_process_id: agent_id,
                             receiver_agent_nickname: receiver_agent_nickname.clone(),
                             receiver_agent_role: receiver_agent_role.clone(),
                             status,
@@ -84,8 +84,8 @@ impl ToolHandler for Handler {
                 &turn,
                 CollabCloseEndEvent {
                     call_id,
-                    sender_thread_id: session.conversation_id,
-                    receiver_thread_id: agent_id,
+                    sender_process_id: session.conversation_id,
+                    receiver_process_id: agent_id,
                     receiver_agent_nickname,
                     receiver_agent_role,
                     status: status.clone(),

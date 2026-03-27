@@ -45,21 +45,21 @@ Use `chaos mcp` to manage MCP servers in `~/.codex/config.toml`.
 
 ## Overview
 
-Chaos exposes MCP-compatible methods to manage threads, turns, config, and approvals. The types live in `protocol/src/protocol.rs` and `protocol/src/api/`.
+Chaos exposes MCP-compatible methods to manage processes, turns, config, and approvals.
 
 Primary RPCs:
-- `thread/start`, `thread/resume`, `thread/fork`, `thread/read`, `thread/list`
-- `turn/start`, `turn/steer`, `turn/interrupt`
+- `chaos` tool for create-or-resume process execution
+- `chaos://sessions` and `chaos://sessions/{id}` resources for process discovery
 - `config/read`, `config/value/write`, `config/batchWrite`
 - `model/list`
 
 Notifications:
-- `thread/started`, `turn/completed`
-- `codex/event/*` stream notifications for live agent events
+- `codex/event` stream notifications for live agent events
+- `notifications/progress` for long-running tool calls
 
-## Threads and turns
+## Processes and turns
 
-Use the thread and turn APIs for all integrations. `thread/start` creates a thread, `turn/start` submits user input, `turn/interrupt` stops an in-flight turn, and `thread/list` / `thread/read` expose persisted history.
+Use the `chaos` tool to start a new process or resume an existing one. Each tool call can target a specific `processId`, and `chaos://sessions` exposes persisted process metadata.
 
 ## Models
 
@@ -84,7 +84,7 @@ The `codex` and `codex-reply` tools return standard MCP `CallToolResult` payload
 {
   "content": [{ "type": "text", "text": "Hello from Chaos" }],
   "structuredContent": {
-    "threadId": "019bbed6-1e9e-7f31-984c-a05b65045719",
+    "processId": "019bbed6-1e9e-7f31-984c-a05b65045719",
     "content": "Hello from Chaos"
   }
 }

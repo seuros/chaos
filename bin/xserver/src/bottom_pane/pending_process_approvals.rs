@@ -8,44 +8,44 @@ use crate::render::renderable::Renderable;
 use crate::wrapping::RtOptions;
 use crate::wrapping::adaptive_wrap_lines;
 
-/// Widget that lists inactive threads with outstanding approval requests.
-pub(crate) struct PendingThreadApprovals {
-    threads: Vec<String>,
+/// Widget that lists inactive processes with outstanding approval requests.
+pub(crate) struct PendingProcessApprovals {
+    processes: Vec<String>,
 }
 
-impl PendingThreadApprovals {
+impl PendingProcessApprovals {
     pub(crate) fn new() -> Self {
         Self {
-            threads: Vec::new(),
+            processes: Vec::new(),
         }
     }
 
-    pub(crate) fn set_threads(&mut self, threads: Vec<String>) -> bool {
-        if self.threads == threads {
+    pub(crate) fn set_processes(&mut self, processes: Vec<String>) -> bool {
+        if self.processes == processes {
             return false;
         }
-        self.threads = threads;
+        self.processes = processes;
         true
     }
 
     pub(crate) fn is_empty(&self) -> bool {
-        self.threads.is_empty()
+        self.processes.is_empty()
     }
 
     #[cfg(test)]
-    pub(crate) fn threads(&self) -> &[String] {
-        &self.threads
+    pub(crate) fn processes(&self) -> &[String] {
+        &self.processes
     }
 
     fn as_renderable(&self, width: u16) -> Box<dyn Renderable> {
-        if self.threads.is_empty() || width < 4 {
+        if self.processes.is_empty() || width < 4 {
             return Box::new(());
         }
 
         let mut lines = Vec::new();
-        for thread in self.threads.iter().take(3) {
+        for process in self.processes.iter().take(3) {
             let wrapped = adaptive_wrap_lines(
-                std::iter::once(Line::from(format!("Approval needed in {thread}"))),
+                std::iter::once(Line::from(format!("Approval needed in {process}"))),
                 RtOptions::new(width as usize)
                     .initial_indent(Line::from(vec!["  ".into(), "!".red().bold(), " ".into()]))
                     .subsequent_indent(Line::from("    ")),
@@ -53,7 +53,7 @@ impl PendingThreadApprovals {
             lines.extend(wrapped);
         }
 
-        if self.threads.len() > 3 {
+        if self.processes.len() > 3 {
             lines.push(Line::from("    ...".dim().italic()));
         }
 
@@ -61,7 +61,7 @@ impl PendingThreadApprovals {
             Line::from(vec![
                 "    ".into(),
                 "/agent".cyan().bold(),
-                " to switch threads".dim(),
+                " to switch processes".dim(),
             ])
             .dim(),
         );
@@ -70,7 +70,7 @@ impl PendingThreadApprovals {
     }
 }
 
-impl Renderable for PendingThreadApprovals {
+impl Renderable for PendingProcessApprovals {
     fn render(&self, area: Rect, buf: &mut Buffer) {
         if area.is_empty() {
             return;
@@ -90,7 +90,7 @@ mod tests {
     use insta::assert_snapshot;
     use pretty_assertions::assert_eq;
 
-    fn snapshot_rows(widget: &PendingThreadApprovals, width: u16) -> String {
+    fn snapshot_rows(widget: &PendingProcessApprovals, width: u16) -> String {
         let height = widget.desired_height(width);
         let mut buf = Buffer::empty(Rect::new(0, 0, width, height));
         widget.render(Rect::new(0, 0, width, height), &mut buf);
@@ -107,27 +107,27 @@ mod tests {
 
     #[test]
     fn desired_height_empty() {
-        let widget = PendingThreadApprovals::new();
+        let widget = PendingProcessApprovals::new();
         assert_eq!(widget.desired_height(40), 0);
     }
 
     #[test]
-    fn render_single_thread_snapshot() {
-        let mut widget = PendingThreadApprovals::new();
-        widget.set_threads(vec!["Robie [explorer]".to_string()]);
+    fn render_single_process_snapshot() {
+        let mut widget = PendingProcessApprovals::new();
+        widget.set_processes(vec!["Robie [explorer]".to_string()]);
 
         assert_snapshot!(
             snapshot_rows(&widget, 40).replace(' ', "."),
             @r"
 ..!.Approval.needed.in.Robie.[explorer].
-..../agent.to.switch.threads............"
+..../agent.to.switch.processes.........."
         );
     }
 
     #[test]
-    fn render_multiple_threads_snapshot() {
-        let mut widget = PendingThreadApprovals::new();
-        widget.set_threads(vec![
+    fn render_multiple_processes_snapshot() {
+        let mut widget = PendingProcessApprovals::new();
+        widget.set_processes(vec![
             "Main [default]".to_string(),
             "Robie [explorer]".to_string(),
             "Inspector".to_string(),
@@ -141,7 +141,7 @@ mod tests {
 ..!.Approval.needed.in.Robie.[explorer].....
 ..!.Approval.needed.in.Inspector............
 ............................................
-..../agent.to.switch.threads................"
+..../agent.to.switch.processes.............."
         );
     }
 }

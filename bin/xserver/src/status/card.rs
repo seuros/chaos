@@ -7,7 +7,7 @@ use chrono::DateTime;
 use chrono::Local;
 use chaos_kern::WireApi;
 use chaos_kern::config::Config;
-use chaos_ipc::ThreadId;
+use chaos_ipc::ProcessId;
 use chaos_ipc::account::PlanType;
 use chaos_ipc::openai_models::ReasoningEffort;
 use chaos_ipc::protocol::AskForApproval;
@@ -69,7 +69,7 @@ struct StatusHistoryCell {
     collaboration_mode: Option<String>,
     model_provider: Option<String>,
     account: Option<StatusAccountDisplay>,
-    thread_name: Option<String>,
+    process_name: Option<String>,
     session_id: Option<String>,
     forked_from: Option<String>,
     token_usage: StatusTokenUsageData,
@@ -83,9 +83,9 @@ pub(crate) fn new_status_output(
     auth_manager: &AuthManager,
     token_info: Option<&TokenUsageInfo>,
     total_usage: &TokenUsage,
-    session_id: &Option<ThreadId>,
-    thread_name: Option<String>,
-    forked_from: Option<ThreadId>,
+    session_id: &Option<ProcessId>,
+    process_name: Option<String>,
+    forked_from: Option<ProcessId>,
     rate_limits: Option<&RateLimitSnapshotDisplay>,
     plan_type: Option<PlanType>,
     now: DateTime<Local>,
@@ -100,7 +100,7 @@ pub(crate) fn new_status_output(
         token_info,
         total_usage,
         session_id,
-        thread_name,
+        process_name,
         forked_from,
         snapshots,
         plan_type,
@@ -117,9 +117,9 @@ pub(crate) fn new_status_output_with_rate_limits(
     auth_manager: &AuthManager,
     token_info: Option<&TokenUsageInfo>,
     total_usage: &TokenUsage,
-    session_id: &Option<ThreadId>,
-    thread_name: Option<String>,
-    forked_from: Option<ThreadId>,
+    session_id: &Option<ProcessId>,
+    process_name: Option<String>,
+    forked_from: Option<ProcessId>,
     rate_limits: &[RateLimitSnapshotDisplay],
     plan_type: Option<PlanType>,
     now: DateTime<Local>,
@@ -134,7 +134,7 @@ pub(crate) fn new_status_output_with_rate_limits(
         token_info,
         total_usage,
         session_id,
-        thread_name,
+        process_name,
         forked_from,
         rate_limits,
         plan_type,
@@ -154,9 +154,9 @@ impl StatusHistoryCell {
         auth_manager: &AuthManager,
         token_info: Option<&TokenUsageInfo>,
         total_usage: &TokenUsage,
-        session_id: &Option<ThreadId>,
-        thread_name: Option<String>,
-        forked_from: Option<ThreadId>,
+        session_id: &Option<ProcessId>,
+        process_name: Option<String>,
+        forked_from: Option<ProcessId>,
         rate_limits: &[RateLimitSnapshotDisplay],
         plan_type: Option<PlanType>,
         now: DateTime<Local>,
@@ -262,7 +262,7 @@ impl StatusHistoryCell {
             collaboration_mode: collaboration_mode.map(ToString::to_string),
             model_provider,
             account,
-            thread_name,
+            process_name,
             session_id,
             forked_from,
             token_usage,
@@ -442,7 +442,7 @@ impl HistoryCell for StatusHistoryCell {
             .map(str::to_string)
             .collect();
         let mut seen: BTreeSet<String> = labels.iter().cloned().collect();
-        let thread_name = self.thread_name.as_deref().filter(|name| !name.is_empty());
+        let process_name = self.process_name.as_deref().filter(|name| !name.is_empty());
 
         if self.model_provider.is_some() {
             push_label(&mut labels, &mut seen, "Model provider");
@@ -450,7 +450,7 @@ impl HistoryCell for StatusHistoryCell {
         if account_value.is_some() {
             push_label(&mut labels, &mut seen, "Account");
         }
-        if thread_name.is_some() {
+        if process_name.is_some() {
             push_label(&mut labels, &mut seen, "Thread name");
         }
         if self.session_id.is_some() {
@@ -510,8 +510,8 @@ impl HistoryCell for StatusHistoryCell {
             lines.push(formatter.line("Account", vec![Span::from(account_value)]));
         }
 
-        if let Some(thread_name) = thread_name {
-            lines.push(formatter.line("Thread name", vec![Span::from(thread_name.to_string())]));
+        if let Some(process_name) = process_name {
+            lines.push(formatter.line("Thread name", vec![Span::from(process_name.to_string())]));
         }
         if let Some(collab_mode) = self.collaboration_mode.as_ref() {
             lines.push(formatter.line("Collaboration mode", vec![Span::from(collab_mode.clone())]));

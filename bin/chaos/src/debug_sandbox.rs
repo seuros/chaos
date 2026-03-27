@@ -143,7 +143,7 @@ async fn run_command_under_sandbox(
     let stdio_policy = StdioPolicy::Inherit;
     let env = create_env(
         &config.permissions.shell_environment_policy,
-        /*thread_id*/ None,
+        /*process_id*/ None,
     );
 
     #[cfg(target_os = "macos")]

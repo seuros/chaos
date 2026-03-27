@@ -1,4 +1,4 @@
-//! Thread name index — append-only JSONL mapping thread IDs to names.
+//! Process name index — append-only JSONL mapping process IDs to names.
 
 use std::collections::HashMap;
 use std::collections::HashSet;
@@ -9,7 +9,7 @@ use std::io::SeekFrom;
 use std::path::Path;
 use std::path::PathBuf;
 
-use chaos_ipc::ThreadId;
+use chaos_ipc::ProcessId;
 use serde::Deserialize;
 use serde::Serialize;
 use tokio::io::AsyncBufReadExt;
@@ -20,16 +20,17 @@ const READ_CHUNK_SIZE: usize = 8192;
 
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
 pub struct SessionIndexEntry {
-    pub id: ThreadId,
-    pub thread_name: String,
+    pub id: ProcessId,
+    #[serde(rename = "process_name")]
+    pub process_name: String,
     pub updated_at: String,
 }
 
-/// Append a thread name update to the session index.
+/// Append a process name update to the session index.
 /// The index is append-only; the most recent entry wins when resolving names or ids.
-pub async fn append_thread_name(
+pub async fn append_process_name(
     codex_home: &Path,
-    thread_id: ThreadId,
+    process_id: ProcessId,
     name: &str,
 ) -> std::io::Result<()> {
     use time::OffsetDateTime;
@@ -39,8 +40,8 @@ pub async fn append_thread_name(
         .format(&Rfc3339)
         .unwrap_or_else(|_| "unknown".to_string());
     let entry = SessionIndexEntry {
-        id: thread_id,
-        thread_name: name.to_string(),
+        id: process_id,
+        process_name: name.to_string(),
         updated_at,
     };
     append_session_index_entry(codex_home, &entry).await
@@ -65,36 +66,36 @@ pub async fn append_session_index_entry(
     Ok(())
 }
 
-/// Find the latest thread name for a thread id, if any.
-pub async fn find_thread_name_by_id(
+/// Find the latest process name for a process id, if any.
+pub async fn find_process_name_by_id(
     codex_home: &Path,
-    thread_id: &ThreadId,
+    process_id: &ProcessId,
 ) -> std::io::Result<Option<String>> {
     let path = session_index_path(codex_home);
     if !path.exists() {
         return Ok(None);
     }
-    let id = *thread_id;
+    let id = *process_id;
     let entry = tokio::task::spawn_blocking(move || scan_index_from_end_by_id(&path, &id))
         .await
         .map_err(std::io::Error::other)??;
-    Ok(entry.map(|entry| entry.thread_name))
+    Ok(entry.map(|entry| entry.process_name))
 }
 
-/// Find the latest thread names for a batch of thread ids.
-pub async fn find_thread_names_by_ids(
+/// Find the latest process names for a batch of process ids.
+pub async fn find_process_names_by_ids(
     codex_home: &Path,
-    thread_ids: &HashSet<ThreadId>,
-) -> std::io::Result<HashMap<ThreadId, String>> {
+    process_ids: &HashSet<ProcessId>,
+) -> std::io::Result<HashMap<ProcessId, String>> {
     let path = session_index_path(codex_home);
-    if thread_ids.is_empty() || !path.exists() {
+    if process_ids.is_empty() || !path.exists() {
         return Ok(HashMap::new());
     }
 
     let file = tokio::fs::File::open(&path).await?;
     let reader = tokio::io::BufReader::new(file);
     let mut lines = reader.lines();
-    let mut names = HashMap::with_capacity(thread_ids.len());
+    let mut names = HashMap::with_capacity(process_ids.len());
 
     while let Some(line) = lines.next_line().await? {
         let trimmed = line.trim();
@@ -104,8 +105,8 @@ pub async fn find_thread_names_by_ids(
         let Ok(entry) = serde_json::from_str::<SessionIndexEntry>(trimmed) else {
             continue;
         };
-        let name = entry.thread_name.trim();
-        if !name.is_empty() && thread_ids.contains(&entry.id) {
+        let name = entry.process_name.trim();
+        if !name.is_empty() && process_ids.contains(&entry.id) {
             names.insert(entry.id, name.to_string());
         }
     }
@@ -113,11 +114,11 @@ pub async fn find_thread_names_by_ids(
     Ok(names)
 }
 
-/// Find the most recently updated thread id for a thread name, if any.
-pub async fn find_thread_id_by_name(
+/// Find the most recently updated process id for a process name, if any.
+pub async fn find_process_id_by_name(
     codex_home: &Path,
     name: &str,
-) -> std::io::Result<Option<ThreadId>> {
+) -> std::io::Result<Option<ProcessId>> {
     if name.trim().is_empty() {
         return Ok(None);
     }
@@ -138,16 +139,16 @@ fn session_index_path(codex_home: &Path) -> PathBuf {
 
 fn scan_index_from_end_by_id(
     path: &Path,
-    thread_id: &ThreadId,
+    process_id: &ProcessId,
 ) -> std::io::Result<Option<SessionIndexEntry>> {
-    scan_index_from_end(path, |entry| entry.id == *thread_id)
+    scan_index_from_end(path, |entry| entry.id == *process_id)
 }
 
 fn scan_index_from_end_by_name(
     path: &Path,
     name: &str,
 ) -> std::io::Result<Option<SessionIndexEntry>> {
-    scan_index_from_end(path, |entry| entry.thread_name == name)
+    scan_index_from_end(path, |entry| entry.process_name == name)
 }
 
 fn scan_index_from_end<F>(

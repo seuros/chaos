@@ -11,6 +11,7 @@
 // -- Feature-gated re-exports -------------------------------------------------
 
 #[cfg(feature = "syntax")]
+#[allow(unused_imports)]
 pub use chaos_highlight::{
     adaptive_default_theme_name, configured_theme_name, current_syntax_theme,
     diff_scope_background_rgbs, exceeds_highlight_limits, highlight_bash_to_lines,

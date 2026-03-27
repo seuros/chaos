@@ -59,7 +59,7 @@ use codex_api::error::ApiError;
 use codex_api::requests::responses::Compression;
 use chaos_syslog::SessionTelemetry;
 
-use chaos_ipc::ThreadId;
+use chaos_ipc::ProcessId;
 use chaos_ipc::config_types::ReasoningSummary as ReasoningSummaryConfig;
 use chaos_ipc::config_types::ServiceTier;
 use chaos_ipc::config_types::Verbosity as VerbosityConfig;
@@ -133,7 +133,7 @@ pub fn ws_version_from_features(config: &Config) -> bool {
 #[derive(Debug)]
 struct ModelClientState {
     auth_manager: Option<Arc<AuthManager>>,
-    conversation_id: ThreadId,
+    conversation_id: ProcessId,
     provider: ModelProviderInfo,
     session_source: SessionSource,
     model_verbosity: Option<VerbosityConfig>,
@@ -255,7 +255,7 @@ impl ModelClient {
     /// are passed to [`ModelClientSession::stream`] (and other turn-scoped methods) explicitly.
     pub fn new(
         auth_manager: Option<Arc<AuthManager>>,
-        conversation_id: ThreadId,
+        conversation_id: ProcessId,
         provider: ModelProviderInfo,
         session_source: SessionSource,
         model_verbosity: Option<VerbosityConfig>,
@@ -435,7 +435,7 @@ impl ModelClient {
                 crate::protocol::SubAgentSource::MemoryConsolidation => {
                     "memory_consolidation".to_string()
                 }
-                crate::protocol::SubAgentSource::ThreadSpawn { .. } => "collab_spawn".to_string(),
+                crate::protocol::SubAgentSource::ProcessSpawn { .. } => "collab_spawn".to_string(),
                 crate::protocol::SubAgentSource::Other(label) => label.clone(),
             };
             if let Ok(val) = HeaderValue::from_str(&subagent) {

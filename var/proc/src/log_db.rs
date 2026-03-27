@@ -94,7 +94,7 @@ where
 
         if let Some(span) = ctx.span(id) {
             span.extensions_mut().insert(SpanLogContext {
-                thread_id: visitor.thread_id,
+                process_id: visitor.process_id,
             });
         }
     }
@@ -108,17 +108,17 @@ where
         let mut visitor = SpanFieldVisitor::default();
         values.record(&mut visitor);
 
-        if visitor.thread_id.is_none() {
+        if visitor.process_id.is_none() {
             return;
         }
 
         if let Some(span) = ctx.span(id) {
             let mut extensions = span.extensions_mut();
             if let Some(log_context) = extensions.get_mut::<SpanLogContext>() {
-                log_context.thread_id = visitor.thread_id;
+                log_context.process_id = visitor.process_id;
             } else {
                 extensions.insert(SpanLogContext {
-                    thread_id: visitor.thread_id,
+                    process_id: visitor.process_id,
                 });
             }
         }
@@ -128,10 +128,10 @@ where
         let metadata = event.metadata();
         let mut visitor = MessageVisitor::default();
         event.record(&mut visitor);
-        let thread_id = visitor
-            .thread_id
+        let process_id = visitor
+            .process_id
             .clone()
-            .or_else(|| event_thread_id(event, &ctx));
+            .or_else(|| event_process_id(event, &ctx));
 
         let now = SystemTime::now()
             .duration_since(UNIX_EPOCH)
@@ -142,7 +142,7 @@ where
             level: metadata.level().as_str().to_string(),
             target: metadata.target().to_string(),
             message: visitor.message,
-            thread_id,
+            process_id,
             process_uuid: Some(self.process_uuid.clone()),
             module_path: metadata.module_path().map(ToString::to_string),
             file: metadata.file().map(ToString::to_string),
@@ -160,18 +160,18 @@ enum LogDbCommand {
 
 #[derive(Clone, Debug, Default)]
 struct SpanLogContext {
-    thread_id: Option<String>,
+    process_id: Option<String>,
 }
 
 #[derive(Default)]
 struct SpanFieldVisitor {
-    thread_id: Option<String>,
+    process_id: Option<String>,
 }
 
 impl SpanFieldVisitor {
     fn record_field(&mut self, field: &Field, value: String) {
-        if field.name() == "thread_id" && self.thread_id.is_none() {
-            self.thread_id = Some(value);
+        if field.name() == "process_id" && self.process_id.is_none() {
+            self.process_id = Some(value);
         }
     }
 }
@@ -206,25 +206,25 @@ impl Visit for SpanFieldVisitor {
     }
 }
 
-fn event_thread_id<S>(
+fn event_process_id<S>(
     event: &Event<'_>,
     ctx: &tracing_subscriber::layer::Context<'_, S>,
 ) -> Option<String>
 where
     S: tracing::Subscriber + for<'a> LookupSpan<'a>,
 {
-    let mut thread_id = None;
+    let mut process_id = None;
     if let Some(scope) = ctx.event_scope(event) {
         for span in scope.from_root() {
             let extensions = span.extensions();
             if let Some(log_context) = extensions.get::<SpanLogContext>()
-                && log_context.thread_id.is_some()
+                && log_context.process_id.is_some()
             {
-                thread_id = log_context.thread_id.clone();
+                process_id = log_context.process_id.clone();
             }
         }
     }
-    thread_id
+    process_id
 }
 
 fn current_process_log_uuid() -> &'static str {
@@ -287,7 +287,7 @@ async fn run_retention_cleanup(state_db: std::sync::Arc<StateRuntime>) {
 #[derive(Default)]
 struct MessageVisitor {
     message: Option<String>,
-    thread_id: Option<String>,
+    process_id: Option<String>,
 }
 
 impl MessageVisitor {
@@ -295,8 +295,8 @@ impl MessageVisitor {
         if field.name() == "message" && self.message.is_none() {
             self.message = Some(value.clone());
         }
-        if field.name() == "thread_id" && self.thread_id.is_none() {
-            self.thread_id = Some(value);
+        if field.name() == "process_id" && self.process_id.is_none() {
+            self.process_id = Some(value);
         }
     }
 }
@@ -410,11 +410,11 @@ mod tests {
             );
         let guard = subscriber.set_default();
 
-        tracing::trace!("threadless-before");
-        tracing::info_span!("feedback-thread", thread_id = "thread-1").in_scope(|| {
-            tracing::info!("thread-scoped");
+        tracing::trace!("processless-before");
+        tracing::info_span!("feedback-thread", process_id = "thread-1").in_scope(|| {
+            tracing::info!("process-scoped");
         });
-        tracing::debug!("threadless-after");
+        tracing::debug!("processless-after");
 
         drop(guard);
 
@@ -422,7 +422,7 @@ mod tests {
         // `.without_time()`. Compare bodies after stripping the SQLite prefix.
         let feedback_logs = writer
             .snapshot()
-            .replace("feedback-thread{thread_id=\"thread-1\"}: ", "");
+            .replace("feedback-thread{process_id=\"thread-1\"}: ", "");
         let strip_sqlite_timestamp = |logs: &str| {
             logs.lines()
                 .map(|line| {

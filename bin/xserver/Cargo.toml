@@ -110,6 +110,7 @@ chrono = { workspace = true, features = ["serde"] }
 insta = { workspace = true }
 pretty_assertions = { workspace = true }
 rand = { workspace = true }
+rustls = { workspace = true }
 serial_test = { workspace = true }
 vt100 = { workspace = true }
 uuid = { workspace = true }

@@ -73,7 +73,7 @@ async fn responses_mode_stream_cli() {
     //     home.path(),
     //     10,
     //     None,
-    //     chaos_kern::ThreadSortKey::UpdatedAt,
+    //     chaos_kern::ProcessSortKey::UpdatedAt,
     //     &[],
     //     Some(provider_filter.as_slice()),
     //     "mock",
@@ -84,7 +84,7 @@ async fn responses_mode_stream_cli() {
     //     !page.items.is_empty(),
     //     "expected at least one session to be listed"
     // );
-    // assert!(page.items[0].thread_id.is_some(), "missing thread_id");
+    // assert!(page.items[0].process_id.is_some(), "missing process_id");
     // assert!(page.items[0].created_at.is_some(), "missing created_at");
 }
 

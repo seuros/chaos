@@ -394,15 +394,15 @@ mod job {
 
         pub(in crate::memories) async fn failed(
             session: &Session,
-            thread_id: chaos_ipc::ThreadId,
+            process_id: chaos_ipc::ProcessId,
             ownership_token: &str,
             reason: &str,
         ) {
-            tracing::warn!("Phase 1 job failed for thread {thread_id}: {reason}");
+            tracing::warn!("Phase 1 job failed for thread {process_id}: {reason}");
             if let Some(state_db) = session.services.state_db.as_deref() {
                 let _ = state_db
                     .mark_stage1_job_failed(
-                        thread_id,
+                        process_id,
                         ownership_token,
                         reason,
                         phase_one::JOB_RETRY_DELAY_SECONDS,
@@ -413,7 +413,7 @@ mod job {
 
         pub(in crate::memories) async fn no_output(
             session: &Session,
-            thread_id: chaos_ipc::ThreadId,
+            process_id: chaos_ipc::ProcessId,
             ownership_token: &str,
         ) -> JobOutcome {
             let Some(state_db) = session.services.state_db.as_deref() else {
@@ -421,7 +421,7 @@ mod job {
             };
 
             if state_db
-                .mark_stage1_job_succeeded_no_output(thread_id, ownership_token)
+                .mark_stage1_job_succeeded_no_output(process_id, ownership_token)
                 .await
                 .unwrap_or(false)
             {
@@ -433,7 +433,7 @@ mod job {
 
         pub(in crate::memories) async fn success(
             session: &Session,
-            thread_id: chaos_ipc::ThreadId,
+            process_id: chaos_ipc::ProcessId,
             ownership_token: &str,
             source_updated_at: i64,
             raw_memory: &str,
@@ -446,7 +446,7 @@ mod job {
 
             if state_db
                 .mark_stage1_job_succeeded(
-                    thread_id,
+                    process_id,
                     ownership_token,
                     source_updated_at,
                     raw_memory,

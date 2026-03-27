@@ -5,6 +5,12 @@ use serde::Serialize;
 use serde_json::Value as JsonValue;
 use ts_rs::TS;
 
+/// Session-scoped local tool registration used by Chaos host apps.
+///
+/// This is intentionally *not* an MCP `Tool` definition: there is no MCP
+/// initialize handshake, no `tools/list`, and no `notifications/tools/list_changed`
+/// lifecycle attached to this type. Callers that need negotiated MCP semantics
+/// should expose a real MCP server instead of sending extra MCP-only fields here.
 #[derive(Debug, Clone, Serialize, PartialEq, JsonSchema, TS)]
 #[serde(rename_all = "camelCase")]
 pub struct DynamicToolSpec {
@@ -43,6 +49,7 @@ pub enum DynamicToolCallOutputContentItem {
 
 #[derive(Deserialize)]
 #[serde(rename_all = "camelCase")]
+#[serde(deny_unknown_fields)]
 struct DynamicToolSpecDe {
     name: String,
     description: String,
@@ -127,5 +134,29 @@ mod tests {
         let actual: DynamicToolSpec = serde_json::from_value(value).expect("deserialize");
 
         assert!(actual.defer_loading);
+    }
+
+    #[test]
+    fn dynamic_tool_spec_rejects_mcp_only_fields() {
+        let value = json!({
+            "name": "lookup_ticket",
+            "description": "Fetch a ticket",
+            "inputSchema": {
+                "type": "object",
+                "properties": {
+                    "id": { "type": "string" }
+                }
+            },
+            "outputSchema": {
+                "type": "object"
+            }
+        });
+
+        let err = serde_json::from_value::<DynamicToolSpec>(value).expect_err("should reject");
+
+        assert!(
+            err.to_string().contains("outputSchema"),
+            "unexpected error: {err}"
+        );
     }
 }

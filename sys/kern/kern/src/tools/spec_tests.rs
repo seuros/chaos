@@ -8,6 +8,7 @@ use crate::tools::ToolRouter;
 use crate::tools::registry::ConfiguredToolSpec;
 use crate::tools::router::ToolRouterParams;
 use chaos_ipc::api::AppInfo;
+use chaos_ipc::dynamic_tools::DynamicToolSpec;
 use chaos_ipc::openai_models::InputModality;
 use chaos_ipc::openai_models::ModelInfo;
 use chaos_ipc::openai_models::ModelsResponse;
@@ -17,7 +18,6 @@ use codex_api::sanitize::JsonSchema;
 use codex_api::sanitize::ResponsesApiTool;
 use codex_api::sanitize::mcp_call_tool_result_output_schema;
 use codex_api::sanitize::parse_tool_input_schema;
-use codex_api::sanitize::sanitize_json_schema;
 use pretty_assertions::assert_eq;
 use std::path::PathBuf;
 
@@ -245,6 +245,38 @@ fn deferred_responses_api_tool_serializes_with_defer_loading() {
                 "additionalProperties": false,
             }
         })
+    );
+}
+
+#[test]
+fn dynamic_tool_to_openai_tool_keeps_output_schema_absent() {
+    let tool = DynamicToolSpec {
+        name: "lookup_ticket".to_string(),
+        description: "Fetch a ticket".to_string(),
+        input_schema: serde_json::json!({
+            "type": "object",
+            "properties": {
+                "id": {"type": "string"}
+            },
+            "required": ["id"]
+        }),
+        defer_loading: false,
+    };
+
+    let openai_tool = dynamic_tool_to_openai_tool(&tool).expect("convert dynamic tool");
+
+    assert_eq!(openai_tool.output_schema, None);
+    assert_eq!(openai_tool.defer_loading, None);
+    assert_eq!(
+        openai_tool.parameters,
+        JsonSchema::Object {
+            properties: BTreeMap::from([(
+                "id".to_string(),
+                JsonSchema::String { description: None }
+            )]),
+            required: Some(vec!["id".to_string()]),
+            additional_properties: None,
+        }
     );
 }
 

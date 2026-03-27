@@ -4766,9 +4766,9 @@ dependencies = [
 
 [[package]]
 name = "mcp-host"
-version = "0.1.20"
+version = "0.1.22"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "b844d100289762141f358fc6ee4e7aacda047c0667d53a9293d4bb42dbb2ff29"
+checksum = "9787a70000ec2ef401195465339426268b8c103ccdc8f017d88c0650cfc1d2f7"
 dependencies = [
  "arc-swap",
  "base64 0.22.1",
@@ -4784,7 +4784,7 @@ dependencies = [
  "schemars 1.2.1",
  "serde",
  "serde_json",
- "state-machines 0.8.1",
+ "state-machines 0.9.0",
  "thiserror 2.0.18",
  "throttle-machines",
  "tokio",
@@ -4794,9 +4794,9 @@ dependencies = [
 
 [[package]]
 name = "mcp-host-macros"
-version = "0.1.20"
+version = "0.1.22"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "126b617a7ff0e57b070c772222d865dff32e9e40a49d3a1bb1fd708a7c9b4559"
+checksum = "f98c2098ec1a55e3d95aac1065a7d78033d68123055bcb0aed82d2655e7fdcff"
 dependencies = [
  "darling",
  "proc-macro2",

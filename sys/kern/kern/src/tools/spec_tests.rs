@@ -455,6 +455,23 @@ fn test_full_toolset_specs_for_gpt5_codex_unified_exec_web_search() {
         expected.insert(tool_name(&spec).to_string(), spec);
     }
 
+    // Arsenal tools — registered from the arsenal crate at boot.
+    for info in chaos_arsenal::tools::tool_infos() {
+        let mut schema = info.input_schema.clone();
+        sanitize_json_schema(&mut schema);
+        let input_schema: JsonSchema = serde_json::from_value(schema)
+            .unwrap_or_else(|e| panic!("arsenal tool {} has invalid schema: {e}", info.name));
+        let spec = ToolSpec::Function(ResponsesApiTool {
+            name: info.name.clone(),
+            description: info.description.unwrap_or_default(),
+            strict: false,
+            defer_loading: None,
+            parameters: input_schema,
+            output_schema: None,
+        });
+        expected.insert(tool_name(&spec).to_string(), spec);
+    }
+
     if config.exec_permission_approvals_enabled {
         let spec = create_request_permissions_tool();
         expected.insert(tool_name(&spec).to_string(), spec);
@@ -1110,6 +1127,9 @@ fn test_build_specs_gpt5_codex_default() {
             "update_plan",
             "request_user_input",
             "apply_patch",
+            "read_file",
+            "grep_files",
+            "list_dir",
             "web_search",
             "view_image",
             "spawn_agent",
@@ -1133,6 +1153,9 @@ fn test_build_specs_gpt51_codex_default() {
             "update_plan",
             "request_user_input",
             "apply_patch",
+            "read_file",
+            "grep_files",
+            "list_dir",
             "web_search",
             "view_image",
             "spawn_agent",
@@ -1158,6 +1181,9 @@ fn test_build_specs_gpt5_codex_unified_exec_web_search() {
             "update_plan",
             "request_user_input",
             "apply_patch",
+            "read_file",
+            "grep_files",
+            "list_dir",
             "web_search",
             "view_image",
             "spawn_agent",
@@ -1183,6 +1209,9 @@ fn test_build_specs_gpt51_codex_unified_exec_web_search() {
             "update_plan",
             "request_user_input",
             "apply_patch",
+            "read_file",
+            "grep_files",
+            "list_dir",
             "web_search",
             "view_image",
             "spawn_agent",
@@ -1206,6 +1235,9 @@ fn test_gpt_5_1_codex_max_defaults() {
             "update_plan",
             "request_user_input",
             "apply_patch",
+            "read_file",
+            "grep_files",
+            "list_dir",
             "web_search",
             "view_image",
             "spawn_agent",
@@ -1229,6 +1261,9 @@ fn test_codex_5_1_mini_defaults() {
             "update_plan",
             "request_user_input",
             "apply_patch",
+            "read_file",
+            "grep_files",
+            "list_dir",
             "web_search",
             "view_image",
             "spawn_agent",
@@ -1251,6 +1286,9 @@ fn test_gpt_5_defaults() {
         &[
             "update_plan",
             "request_user_input",
+            "read_file",
+            "grep_files",
+            "list_dir",
             "web_search",
             "view_image",
             "spawn_agent",
@@ -1274,6 +1312,9 @@ fn test_gpt_5_1_defaults() {
             "update_plan",
             "request_user_input",
             "apply_patch",
+            "read_file",
+            "grep_files",
+            "list_dir",
             "web_search",
             "view_image",
             "spawn_agent",
@@ -1299,6 +1340,9 @@ fn test_gpt_5_1_codex_max_unified_exec_web_search() {
             "update_plan",
             "request_user_input",
             "apply_patch",
+            "read_file",
+            "grep_files",
+            "list_dir",
             "web_search",
             "view_image",
             "spawn_agent",

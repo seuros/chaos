@@ -7,20 +7,19 @@ use crate::tools::context::ToolPayload;
 use crate::tools::handlers::parse_arguments;
 use crate::tools::registry::ToolHandler;
 use crate::tools::registry::ToolKind;
-use async_trait::async_trait;
 use chaos_ipc::dynamic_tools::DynamicToolCallRequest;
 use chaos_ipc::dynamic_tools::DynamicToolResponse;
 use chaos_ipc::models::FunctionCallOutputContentItem;
 use chaos_ipc::protocol::DynamicToolCallResponseEvent;
 use chaos_ipc::protocol::EventMsg;
 use serde_json::Value;
+use std::future::Future;
 use std::time::Instant;
 use tokio::sync::oneshot;
 use tracing::warn;
 
 pub struct DynamicToolHandler;
 
-#[async_trait]
 impl ToolHandler for DynamicToolHandler {
     type Output = FunctionToolOutput;
 
@@ -28,8 +27,8 @@ impl ToolHandler for DynamicToolHandler {
         ToolKind::Function
     }
 
-    async fn is_mutating(&self, _invocation: &ToolInvocation) -> bool {
-        true
+    fn is_mutating(&self, _invocation: &ToolInvocation) -> impl Future<Output = bool> + Send + '_ {
+        async { true }
     }
 
     async fn handle(&self, invocation: ToolInvocation) -> Result<Self::Output, FunctionCallError> {

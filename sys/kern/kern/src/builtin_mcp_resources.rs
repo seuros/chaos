@@ -1,4 +1,3 @@
-use async_trait::async_trait;
 use chaos_ipc::ProcessId;
 use serde::Serialize;
 use serde_json::json;
@@ -178,7 +177,7 @@ pub async fn crons_json_from_pool(pool: Option<&SqlitePool>) -> Result<String, S
     chaos_cron::resource::list_crons(pool).await
 }
 
-#[async_trait]
+#[allow(async_fn_in_trait)]
 pub trait ChaosBuiltinResourceBackend {
     async fn sessions_json(&self) -> Result<String, String>;
     async fn session_detail_json(&self, process_id: ProcessId) -> Result<String, String>;

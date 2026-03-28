@@ -5,7 +5,6 @@ use crate::tools::context::ToolPayload;
 use crate::tools::handlers::parse_arguments;
 use crate::tools::registry::ToolHandler;
 use crate::tools::registry::ToolKind;
-use async_trait::async_trait;
 use chaos_ipc::config_types::ModeKind;
 use chaos_ipc::config_types::TUI_VISIBLE_COLLABORATION_MODES;
 use chaos_ipc::request_user_input::RequestUserInputArgs;
@@ -55,7 +54,6 @@ pub struct RequestUserInputHandler {
     pub default_mode_request_user_input: bool,
 }
 
-#[async_trait]
 impl ToolHandler for RequestUserInputHandler {
     type Output = FunctionToolOutput;
 

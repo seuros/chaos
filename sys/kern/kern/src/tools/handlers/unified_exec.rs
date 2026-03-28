@@ -24,9 +24,9 @@ use crate::unified_exec::ExecCommandRequest;
 use crate::unified_exec::UnifiedExecContext;
 use crate::unified_exec::UnifiedExecProcessManager;
 use crate::unified_exec::WriteStdinRequest;
-use async_trait::async_trait;
 use chaos_ipc::models::PermissionProfile;
 use serde::Deserialize;
+use std::future::Future;
 use std::path::PathBuf;
 use std::sync::Arc;
 
@@ -81,7 +81,6 @@ fn default_tty() -> bool {
     false
 }
 
-#[async_trait]
 impl ToolHandler for UnifiedExecHandler {
     type Output = ExecCommandToolOutput;
 
@@ -93,28 +92,28 @@ impl ToolHandler for UnifiedExecHandler {
         matches!(payload, ToolPayload::Function { .. })
     }
 
-    async fn is_mutating(&self, invocation: &ToolInvocation) -> bool {
+    fn is_mutating(&self, invocation: &ToolInvocation) -> impl Future<Output = bool> + Send + '_ {
         let ToolPayload::Function { arguments } = &invocation.payload else {
             tracing::error!(
                 "This should never happen, invocation payload is wrong: {:?}",
                 invocation.payload
             );
-            return true;
+            return std::future::ready(true);
         };
 
-        let Ok(params) = serde_json::from_str::<ExecCommandArgs>(arguments) else {
-            return true;
+        let result = match serde_json::from_str::<ExecCommandArgs>(arguments) {
+            Ok(params) => match get_command(
+                &params,
+                invocation.session.user_shell(),
+                &invocation.turn.tools_config.unified_exec_shell_mode,
+                invocation.turn.tools_config.allow_login_shell,
+            ) {
+                Ok(command) => !is_known_safe_command(&command),
+                Err(_) => true,
+            },
+            Err(_) => true,
         };
-        let command = match get_command(
-            &params,
-            invocation.session.user_shell(),
-            &invocation.turn.tools_config.unified_exec_shell_mode,
-            invocation.turn.tools_config.allow_login_shell,
-        ) {
-            Ok(command) => command,
-            Err(_) => return true,
-        };
-        !is_known_safe_command(&command)
+        std::future::ready(result)
     }
 
     async fn handle(&self, invocation: ToolInvocation) -> Result<Self::Output, FunctionCallError> {

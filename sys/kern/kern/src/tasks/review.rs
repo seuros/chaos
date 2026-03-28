@@ -1,6 +1,7 @@
+use std::future::Future;
+use std::pin::Pin;
 use std::sync::Arc;
 
-use async_trait::async_trait;
 use chaos_ipc::config_types::WebSearchMode;
 use chaos_ipc::items::TurnItem;
 use chaos_ipc::models::ContentItem;
@@ -38,7 +39,6 @@ impl ReviewTask {
     }
 }
 
-#[async_trait]
 impl SessionTask for ReviewTask {
     fn kind(&self) -> TaskKind {
         TaskKind::Review
@@ -48,39 +48,48 @@ impl SessionTask for ReviewTask {
         "session_task.review"
     }
 
-    async fn run(
+    fn run(
         self: Arc<Self>,
         session: Arc<SessionTaskContext>,
         ctx: Arc<TurnContext>,
         input: Vec<UserInput>,
         cancellation_token: CancellationToken,
-    ) -> Option<String> {
-        let _ = session.session.services.session_telemetry.counter(
-            "codex.task.review",
-            /*inc*/ 1,
-            &[],
-        );
+    ) -> Pin<Box<dyn Future<Output = Option<String>> + Send>> {
+        Box::pin(async move {
+            let _ = session.session.services.session_telemetry.counter(
+                "codex.task.review",
+                /*inc*/ 1,
+                &[],
+            );
 
-        // Start sub-codex conversation and get the receiver for events.
-        let output = match start_review_conversation(
-            session.clone(),
-            ctx.clone(),
-            input,
-            cancellation_token.clone(),
-        )
-        .await
-        {
-            Some(receiver) => process_review_events(session.clone(), ctx.clone(), receiver).await,
-            None => None,
-        };
-        if !cancellation_token.is_cancelled() {
-            exit_review_mode(session.clone_session(), output.clone(), ctx.clone()).await;
-        }
-        None
+            let output = match start_review_conversation(
+                session.clone(),
+                ctx.clone(),
+                input,
+                cancellation_token.clone(),
+            )
+            .await
+            {
+                Some(receiver) => {
+                    process_review_events(session.clone(), ctx.clone(), receiver).await
+                }
+                None => None,
+            };
+            if !cancellation_token.is_cancelled() {
+                exit_review_mode(session.clone_session(), output.clone(), ctx.clone()).await;
+            }
+            None
+        })
     }
 
-    async fn abort(&self, session: Arc<SessionTaskContext>, ctx: Arc<TurnContext>) {
-        exit_review_mode(session.clone_session(), /*review_output*/ None, ctx).await;
+    fn abort(
+        &self,
+        session: Arc<SessionTaskContext>,
+        ctx: Arc<TurnContext>,
+    ) -> Pin<Box<dyn Future<Output = ()> + Send + '_>> {
+        Box::pin(async move {
+            exit_review_mode(session.clone_session(), /*review_output*/ None, ctx).await;
+        })
     }
 }
 

@@ -1,4 +1,3 @@
-use async_trait::async_trait;
 use chaos_ipc::request_permissions::RequestPermissionsArgs;
 
 use crate::function_tool::FunctionCallError;
@@ -17,7 +16,6 @@ pub(crate) fn request_permissions_tool_description() -> String {
 
 pub struct RequestPermissionsHandler;
 
-#[async_trait]
 impl ToolHandler for RequestPermissionsHandler {
     type Output = FunctionToolOutput;
 

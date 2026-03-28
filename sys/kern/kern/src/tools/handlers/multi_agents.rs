@@ -21,7 +21,6 @@ use crate::tools::context::ToolPayload;
 use crate::tools::handlers::parse_arguments;
 use crate::tools::registry::ToolHandler;
 use crate::tools::registry::ToolKind;
-use async_trait::async_trait;
 use chaos_ipc::ProcessId;
 use chaos_ipc::models::BaseInstructions;
 use chaos_ipc::models::ResponseInputItem;

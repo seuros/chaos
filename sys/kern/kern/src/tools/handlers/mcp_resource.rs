@@ -3,7 +3,6 @@ use std::sync::Arc;
 use std::time::Duration;
 use std::time::Instant;
 
-use async_trait::async_trait;
 use chaos_ipc::mcp::CallToolResult;
 use chaos_ipc::models::function_call_output_content_items_to_text;
 use mcp_guest::ListResourceTemplatesResult;
@@ -248,7 +247,6 @@ struct KernelBuiltinResourceBackend<'a> {
     turn: &'a TurnContext,
 }
 
-#[async_trait]
 impl builtin_mcp_resources::ChaosBuiltinResourceBackend for KernelBuiltinResourceBackend<'_> {
     async fn sessions_json(&self) -> Result<String, String> {
         let state_db = self.session.state_db();
@@ -300,7 +298,6 @@ struct ReadResourcePayload {
     result: ReadResourceResult,
 }
 
-#[async_trait]
 impl ToolHandler for McpResourceHandler {
     type Output = FunctionToolOutput;
 

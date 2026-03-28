@@ -2,7 +2,6 @@ use crate::error::TransportError;
 use crate::request::Request;
 use crate::request::RequestCompression;
 use crate::request::Response;
-use async_trait::async_trait;
 use bytes::Bytes;
 use futures::stream::BoxStream;
 use http::HeaderMap;
@@ -26,7 +25,7 @@ pub struct StreamResponse {
     pub bytes: ByteStream,
 }
 
-#[async_trait]
+#[allow(async_fn_in_trait)]
 pub trait HttpTransport: Send + Sync {
     async fn execute(&self, req: Request) -> Result<Response, TransportError>;
     async fn stream(&self, req: Request) -> Result<StreamResponse, TransportError>;
@@ -158,7 +157,6 @@ fn inject_trace_headers(headers: &mut HeaderMap) {
     });
 }
 
-#[async_trait]
 impl HttpTransport for RamaTransport {
     async fn execute(&self, req: Request) -> Result<Response, TransportError> {
         if enabled!(Level::TRACE) {

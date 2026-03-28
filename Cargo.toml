@@ -200,7 +200,6 @@ assert_cmd = "2"
 assert_matches = "1.5.0"
 async-channel = "2.3.1"
 async-stream = "0.3.6"
-async-trait = "0.1.89"
 axum = { version = "0.8", default-features = false }
 base64 = "0.22.1"
 chaos-apropos = { path = "lib/libutil/apropos" }

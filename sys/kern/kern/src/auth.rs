@@ -1,6 +1,5 @@
 mod storage;
 
-use async_trait::async_trait;
 use http::StatusCode;
 use jiff::Timestamp;
 use jiff::ToSpan;
@@ -10,8 +9,10 @@ use serde::Serialize;
 use serial_test::serial;
 use std::env;
 use std::fmt::Debug;
+use std::future::Future;
 use std::path::Path;
 use std::path::PathBuf;
+use std::pin::Pin;
 use std::sync::Arc;
 use std::sync::Mutex;
 use std::sync::RwLock;
@@ -131,12 +132,11 @@ pub struct ExternalAuthRefreshContext {
     pub previous_account_id: Option<String>,
 }
 
-#[async_trait]
 pub trait ExternalAuthRefresher: Send + Sync {
-    async fn refresh(
+    fn refresh(
         &self,
         context: ExternalAuthRefreshContext,
-    ) -> std::io::Result<ExternalAuthTokens>;
+    ) -> Pin<Box<dyn Future<Output = std::io::Result<ExternalAuthTokens>> + Send + '_>>;
 }
 
 impl RefreshTokenError {

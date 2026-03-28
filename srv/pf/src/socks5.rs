@@ -494,15 +494,16 @@ mod tests {
     use crate::runtime::ConfigState;
     use crate::state::NetworkProxyConstraints;
     use crate::state::build_config_state;
-    use async_trait::async_trait;
     use pretty_assertions::assert_eq;
     use rama_core::extensions::Extensions;
     use rama_core::extensions::ExtensionsMut;
     use rama_net::address::HostWithPort;
     use rama_net::address::SocketAddress;
     use rama_socks5::server::udp::RelayDirection;
+    use std::future::Future;
     use std::net::IpAddr;
     use std::net::Ipv4Addr;
+    use std::pin::Pin;
     use std::sync::Arc;
 
     #[derive(Clone)]
@@ -510,14 +511,19 @@ mod tests {
         state: ConfigState,
     }
 
-    #[async_trait]
     impl ConfigReloader for StaticReloader {
-        async fn maybe_reload(&self) -> anyhow::Result<Option<ConfigState>> {
-            Ok(None)
+        fn maybe_reload(
+            &self,
+        ) -> Pin<Box<dyn Future<Output = anyhow::Result<Option<ConfigState>>> + Send + '_>>
+        {
+            Box::pin(async { Ok(None) })
         }
 
-        async fn reload_now(&self) -> anyhow::Result<ConfigState> {
-            Ok(self.state.clone())
+        fn reload_now(
+            &self,
+        ) -> Pin<Box<dyn Future<Output = anyhow::Result<ConfigState>> + Send + '_>> {
+            let state = self.state.clone();
+            Box::pin(async move { Ok(state) })
         }
 
         fn source_label(&self) -> String {

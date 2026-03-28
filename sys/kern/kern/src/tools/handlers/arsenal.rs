@@ -5,8 +5,6 @@
 //! for all of them.  The kernel never owns per-tool schemas or adapters;
 //! arsenal is the sole source of truth.
 
-use async_trait::async_trait;
-
 use crate::function_tool::FunctionCallError;
 use crate::tools::context::FunctionToolOutput;
 use crate::tools::context::ToolInvocation;
@@ -16,7 +14,6 @@ use crate::tools::registry::ToolKind;
 
 pub struct ArsenalHandler;
 
-#[async_trait]
 impl ToolHandler for ArsenalHandler {
     type Output = FunctionToolOutput;
 

@@ -17,7 +17,7 @@ pub struct Token(i32);
 
 const LOCK_TIMEOUT: Duration = Duration::from_millis(1000);
 
-#[async_trait::async_trait]
+#[allow(async_fn_in_trait)]
 pub trait Readiness: Send + Sync + 'static {
     /// Returns true if the flag is currently marked ready. At least one token needs to be marked
     /// as ready before.
@@ -92,7 +92,6 @@ impl fmt::Debug for ReadinessFlag {
     }
 }
 
-#[async_trait::async_trait]
 impl Readiness for ReadinessFlag {
     fn is_ready(&self) -> bool {
         if self.load_ready() {

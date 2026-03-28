@@ -1,4 +1,5 @@
 use std::collections::HashMap;
+use std::pin::Pin;
 use std::sync::Arc;
 use std::time::Duration;
 use std::time::Instant;
@@ -11,7 +12,6 @@ use crate::sandbox_tags::sandbox_tag;
 use crate::tools::context::ToolInvocation;
 use crate::tools::context::ToolOutput;
 use crate::tools::context::ToolPayload;
-use async_trait::async_trait;
 use chaos_dtrace::HookEvent;
 use chaos_dtrace::HookEventAfterToolUse;
 use chaos_dtrace::HookPayload;
@@ -21,6 +21,7 @@ use chaos_dtrace::HookToolInputLocalShell;
 use chaos_dtrace::HookToolKind;
 use chaos_ipc::models::ResponseInputItem;
 use chaos_ready::Readiness;
+use std::future::Future;
 use tracing::warn;
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq, Hash)]
@@ -29,7 +30,6 @@ pub enum ToolKind {
     Mcp,
 }
 
-#[async_trait]
 pub trait ToolHandler: Send + Sync {
     type Output: ToolOutput + 'static;
 
@@ -48,13 +48,16 @@ pub trait ToolHandler: Send + Sync {
     /// user (through file system, OS operations, ...).
     /// This function must remains defensive and return `true` if a doubt exist on the
     /// exact effect of a ToolInvocation.
-    async fn is_mutating(&self, _invocation: &ToolInvocation) -> bool {
-        false
+    fn is_mutating(&self, _invocation: &ToolInvocation) -> impl Future<Output = bool> + Send + '_ {
+        async { false }
     }
 
     /// Perform the actual [ToolInvocation] and returns a [ToolOutput] containing
     /// the final output to return to the model.
-    async fn handle(&self, invocation: ToolInvocation) -> Result<Self::Output, FunctionCallError>;
+    fn handle(
+        &self,
+        invocation: ToolInvocation,
+    ) -> impl Future<Output = Result<Self::Output, FunctionCallError>> + Send + '_;
 }
 
 pub(crate) struct AnyToolResult {
@@ -83,19 +86,20 @@ impl AnyToolResult {
     }
 }
 
-#[async_trait]
 trait AnyToolHandler: Send + Sync {
     fn matches_kind(&self, payload: &ToolPayload) -> bool;
 
-    async fn is_mutating(&self, invocation: &ToolInvocation) -> bool;
+    fn is_mutating<'a>(
+        &'a self,
+        invocation: &'a ToolInvocation,
+    ) -> Pin<Box<dyn Future<Output = bool> + Send + 'a>>;
 
-    async fn handle_any(
+    fn handle_any(
         &self,
         invocation: ToolInvocation,
-    ) -> Result<AnyToolResult, FunctionCallError>;
+    ) -> Pin<Box<dyn Future<Output = Result<AnyToolResult, FunctionCallError>> + Send + '_>>;
 }
 
-#[async_trait]
 impl<T> AnyToolHandler for T
 where
     T: ToolHandler,
@@ -104,21 +108,26 @@ where
         ToolHandler::matches_kind(self, payload)
     }
 
-    async fn is_mutating(&self, invocation: &ToolInvocation) -> bool {
-        ToolHandler::is_mutating(self, invocation).await
+    fn is_mutating<'a>(
+        &'a self,
+        invocation: &'a ToolInvocation,
+    ) -> Pin<Box<dyn Future<Output = bool> + Send + 'a>> {
+        Box::pin(ToolHandler::is_mutating(self, invocation))
     }
 
-    async fn handle_any(
+    fn handle_any(
         &self,
         invocation: ToolInvocation,
-    ) -> Result<AnyToolResult, FunctionCallError> {
-        let call_id = invocation.call_id.clone();
-        let payload = invocation.payload.clone();
-        let output = self.handle(invocation).await?;
-        Ok(AnyToolResult {
-            call_id,
-            payload,
-            result: Box::new(output),
+    ) -> Pin<Box<dyn Future<Output = Result<AnyToolResult, FunctionCallError>> + Send + '_>> {
+        Box::pin(async move {
+            let call_id = invocation.call_id.clone();
+            let payload = invocation.payload.clone();
+            let output = self.handle(invocation).await?;
+            Ok(AnyToolResult {
+                call_id,
+                payload,
+                result: Box::new(output),
+            })
         })
     }
 }

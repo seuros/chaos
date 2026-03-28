@@ -508,6 +508,21 @@ fn test_full_toolset_specs_for_gpt5_codex_unified_exec_web_search() {
         expected.insert(tool_name(&spec).to_string(), spec);
     }
 
+    // Cron tools — registered from the cron crate at boot.
+    for info in chaos_cron::tool_infos() {
+        let input_schema = parse_tool_input_schema(&info.input_schema)
+            .unwrap_or_else(|e| panic!("cron tool {} has invalid schema: {e}", info.name));
+        let spec = ToolSpec::Function(ResponsesApiTool {
+            name: info.name.clone(),
+            description: info.description.unwrap_or_default(),
+            strict: false,
+            defer_loading: None,
+            parameters: input_schema,
+            output_schema: None,
+        });
+        expected.insert(tool_name(&spec).to_string(), spec);
+    }
+
     if config.exec_permission_approvals_enabled {
         let spec = create_request_permissions_tool();
         expected.insert(tool_name(&spec).to_string(), spec);

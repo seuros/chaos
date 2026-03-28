@@ -1,6 +1,7 @@
 pub(crate) mod agent_jobs;
 pub mod apply_patch;
 mod arsenal;
+mod cron;
 mod dynamic;
 mod mcp;
 mod mcp_resource;
@@ -31,6 +32,7 @@ pub use apply_patch::ApplyPatchHandler;
 pub use arsenal::ArsenalHandler;
 use chaos_ipc::models::PermissionProfile;
 use chaos_ipc::protocol::AskForApproval;
+pub use cron::CronHandler;
 pub use dynamic::DynamicToolHandler;
 pub use mcp::McpHandler;
 pub use mcp_resource::McpResourceHandler;

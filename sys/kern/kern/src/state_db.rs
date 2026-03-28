@@ -11,6 +11,7 @@ pub use chaos_proc::LogEntry;
 use chaos_proc::ProcessMetadataBuilder;
 use jiff::Timestamp;
 use serde_json::Value;
+use sqlx::SqlitePool;
 use std::path::Path;
 use std::path::PathBuf;
 use std::sync::Arc;
@@ -55,7 +56,38 @@ pub(crate) async fn init(config: &Config) -> Option<StateDbHandle> {
             metadata::backfill_sessions(runtime_for_backfill.as_ref(), &config).await;
         });
     }
+
+    // Spawn the process-wide cron scheduler if the chaos pool is available.
+    if let Some(chaos_pool) = runtime.chaos_pool() {
+        chaos_cron::spawn_scheduler(chaos_pool.to_owned(), chaos_cron::shell_executor());
+    }
+
     Some(runtime)
+}
+
+/// Resolve the shared chaos.sqlite pool, opening it lazily when the state runtime
+/// is unavailable.
+///
+/// Cron jobs live in the main chaos DB rather than the per-session runtime, so
+/// callers should use this even for sessions that are otherwise ephemeral.
+pub async fn resolve_chaos_pool(
+    existing_pool: Option<SqlitePool>,
+    sqlite_home: &Path,
+) -> Option<SqlitePool> {
+    if let Some(pool) = existing_pool {
+        return Some(pool);
+    }
+
+    match chaos_proc::open_chaos_db(sqlite_home).await {
+        Ok(pool) => Some(pool),
+        Err(err) => {
+            warn!(
+                "failed to open chaos db on demand at {}: {err}",
+                chaos_proc::chaos_db_path(sqlite_home).display()
+            );
+            None
+        }
+    }
 }
 
 /// Get the DB if the feature is enabled and the DB exists.

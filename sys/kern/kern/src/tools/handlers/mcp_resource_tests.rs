@@ -1,4 +1,5 @@
 use super::*;
+use crate::builtin_mcp_resources;
 use pretty_assertions::assert_eq;
 use serde_json::json;
 
@@ -121,5 +122,67 @@ fn template_with_server_serializes_server_field() {
             "uriTemplate": "memo://{id}",
             "name": "memo"
         })
+    );
+}
+
+#[test]
+fn merge_inline_resources_adds_local_chaos_crons_resource() {
+    let merged = merge_inline_resources(HashMap::new());
+
+    let resources = merged
+        .get(CHAOS_INLINE_SERVER_NAME)
+        .expect("inline chaos resources should exist");
+
+    assert_eq!(resources.len(), 2);
+    assert_eq!(resources[0].uri, builtin_mcp_resources::CHAOS_SESSIONS_URI);
+    assert_eq!(resources[0].name, "sessions");
+    assert_eq!(
+        resources[0].mime_type.as_deref(),
+        Some(builtin_mcp_resources::JSON_MIME_TYPE)
+    );
+    assert_eq!(resources[1].uri, builtin_mcp_resources::CHAOS_CRONS_URI);
+    assert_eq!(resources[1].name, "crons");
+    assert_eq!(
+        resources[1].mime_type.as_deref(),
+        Some(builtin_mcp_resources::JSON_MIME_TYPE)
+    );
+}
+
+#[test]
+fn inline_text_resource_result_wraps_json_text_content() {
+    let result =
+        inline_text_resource_result(builtin_mcp_resources::CHAOS_CRONS_URI, "[]".to_string());
+
+    assert_eq!(
+        result,
+        ReadResourceResult {
+            contents: vec![ResourceContents::Text(ResourceContentsText {
+                uri: builtin_mcp_resources::CHAOS_CRONS_URI.to_string(),
+                mime_type: Some(builtin_mcp_resources::JSON_MIME_TYPE.to_string()),
+                text: "[]".to_string(),
+                meta: None,
+            })],
+            meta: None,
+        }
+    );
+}
+
+#[test]
+fn merge_inline_resource_templates_adds_session_detail_template() {
+    let merged = merge_inline_resource_templates(HashMap::new());
+
+    let templates = merged
+        .get(CHAOS_INLINE_SERVER_NAME)
+        .expect("inline chaos templates should exist");
+
+    assert_eq!(templates.len(), 1);
+    assert_eq!(
+        templates[0].uri_template,
+        builtin_mcp_resources::CHAOS_SESSIONS_URI_TEMPLATE
+    );
+    assert_eq!(templates[0].name, "session_detail");
+    assert_eq!(
+        templates[0].description.as_deref(),
+        Some("Details for a specific Chaos process")
     );
 }

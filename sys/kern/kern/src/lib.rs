@@ -11,6 +11,7 @@ mod apply_patch;
 mod apps;
 mod arc_monitor;
 pub mod auth;
+pub mod builtin_mcp_resources;
 mod client;
 mod client_common;
 pub mod codex;

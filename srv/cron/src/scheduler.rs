@@ -1,0 +1,167 @@
+//! Tick-based scheduler that polls for due jobs and executes them.
+
+use std::future::Future;
+use std::pin::Pin;
+use std::sync::{Arc, OnceLock};
+
+use crate::job::CronJob;
+use crate::schedule::Schedule;
+use crate::store::CronStore;
+use sqlx::SqlitePool;
+use tokio::sync::watch;
+use tracing::{error, info, warn};
+
+/// Default tick interval for the scheduler (30 seconds).
+const DEFAULT_TICK_INTERVAL: std::time::Duration = std::time::Duration::from_secs(30);
+
+/// Callback that receives a due job and executes it. Returns Ok(output) on
+/// success or Err(message) on failure. The scheduler logs the outcome either
+/// way and always advances next_run_at afterward.
+pub type JobExecutor = Arc<
+    dyn Fn(&CronJob) -> Pin<Box<dyn Future<Output = Result<String, String>> + Send>> + Send + Sync,
+>;
+
+/// Default executor — runs job.command as a shell command via `sh -c`.
+pub fn shell_executor() -> JobExecutor {
+    Arc::new(|job: &CronJob| {
+        let command = job.command.clone();
+        let job_id = job.id.clone();
+        Box::pin(async move {
+            let output = tokio::process::Command::new("sh")
+                .arg("-c")
+                .arg(&command)
+                .output()
+                .await
+                .map_err(|e| format!("failed to spawn command for job {job_id}: {e}"))?;
+
+            let stdout = String::from_utf8_lossy(&output.stdout);
+            let stderr = String::from_utf8_lossy(&output.stderr);
+
+            if output.status.success() {
+                Ok(format!("{stdout}{stderr}").trim().to_string())
+            } else {
+                Err(format!(
+                    "job {job_id} exited with {}: {stderr}",
+                    output.status
+                ))
+            }
+        })
+    })
+}
+
+/// Process-wide scheduler guard. Ensures only one scheduler runs per process,
+/// even when multiple sessions are created.
+static SCHEDULER_GUARD: OnceLock<watch::Sender<bool>> = OnceLock::new();
+
+/// Spawn the global cron scheduler if it hasn't been started yet.
+///
+/// Uses `OnceLock` to guarantee at most one scheduler instance per process.
+/// Returns the shutdown sender on first call, `None` on subsequent calls.
+/// The scheduler runs in a background `tokio::spawn` task until the shutdown
+/// sender is dropped or `true` is sent.
+pub fn spawn_global(
+    pool: SqlitePool,
+    executor: JobExecutor,
+) -> Option<&'static watch::Sender<bool>> {
+    // Try to initialize the guard. If it's already set, another session
+    // already started the scheduler — return None.
+    SCHEDULER_GUARD.get_or_init(|| {
+        let (shutdown_tx, shutdown_rx) = Scheduler::shutdown_channel();
+        let store = CronStore::new(pool);
+        let scheduler = Scheduler::new(store, executor, DEFAULT_TICK_INTERVAL, shutdown_rx);
+        tokio::spawn(scheduler.run());
+        shutdown_tx
+    });
+    // Return None if we weren't the first caller. The caller doesn't
+    // need the sender — the scheduler self-manages.
+    None
+}
+
+/// The scheduler runs a background tick loop, checking for due jobs
+/// and dispatching them for execution.
+pub struct Scheduler {
+    store: CronStore,
+    executor: JobExecutor,
+    tick_interval: std::time::Duration,
+    shutdown_rx: watch::Receiver<bool>,
+}
+
+impl Scheduler {
+    pub fn new(
+        store: CronStore,
+        executor: JobExecutor,
+        tick_interval: std::time::Duration,
+        shutdown_rx: watch::Receiver<bool>,
+    ) -> Self {
+        Self {
+            store,
+            executor,
+            tick_interval,
+            shutdown_rx,
+        }
+    }
+
+    /// Run the scheduler loop until shutdown is signalled.
+    pub async fn run(mut self) {
+        info!(
+            "cron scheduler started, tick interval: {:?}",
+            self.tick_interval
+        );
+        let mut interval = tokio::time::interval(self.tick_interval);
+
+        loop {
+            tokio::select! {
+                _ = interval.tick() => {
+                    self.tick().await;
+                }
+                _ = self.shutdown_rx.changed() => {
+                    if *self.shutdown_rx.borrow() {
+                        info!("cron scheduler shutting down");
+                        break;
+                    }
+                }
+            }
+        }
+    }
+
+    async fn tick(&self) {
+        let now_ts = jiff::Timestamp::now();
+        let now = now_ts.as_second();
+        let jobs = match self.store.due_jobs(now).await {
+            Ok(jobs) => jobs,
+            Err(err) => {
+                warn!("cron tick: failed to fetch due jobs: {err}");
+                return;
+            }
+        };
+
+        for job in &jobs {
+            info!(job_id = %job.id, name = %job.name, "executing cron job");
+
+            // Execute the command before advancing next_run_at.
+            match (self.executor)(job).await {
+                Ok(output) => {
+                    if !output.is_empty() {
+                        info!(job_id = %job.id, "cron job output: {output}");
+                    }
+                }
+                Err(msg) => {
+                    error!(job_id = %job.id, "cron job failed: {msg}");
+                }
+            }
+
+            let next_run_at = Schedule::parse(&job.schedule)
+                .and_then(|s| s.next_after(now_ts))
+                .ok();
+
+            if let Err(err) = self.store.mark_run(&job.id, next_run_at).await {
+                warn!(job_id = %job.id, "failed to mark job run: {err}");
+            }
+        }
+    }
+
+    /// Create a shutdown channel pair. Send `true` to stop the scheduler.
+    pub fn shutdown_channel() -> (watch::Sender<bool>, watch::Receiver<bool>) {
+        watch::channel(false)
+    }
+}

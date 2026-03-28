@@ -22,7 +22,6 @@ use mcp_host::protocol::types::JsonRpcMessage;
 use mcp_host::protocol::types::JsonRpcRequest;
 use mcp_host::protocol::types::JsonRpcResponse;
 use mcp_host::protocol::types::RequestId;
-use mcp_host::protocol::version::ProtocolVersion;
 use pretty_assertions::assert_eq;
 use serde_json::json;
 use tokio::process::Command;
@@ -52,9 +51,9 @@ impl McpProcess {
         codex_home: &Path,
         env_overrides: &[(&str, Option<&str>)],
     ) -> anyhow::Result<Self> {
-        let program = chaos_which::cargo_bin("chaos-mcphost")
-            .context("should find binary for chaos-mcphost")?;
+        let program = chaos_which::cargo_bin("chaos").context("should find binary for chaos")?;
         let mut cmd = Command::new(program);
+        cmd.arg("mcp").arg("serve");
 
         cmd.stdin(Stdio::piped());
         cmd.stdout(Stdio::piped());
@@ -140,12 +139,18 @@ impl McpProcess {
                     "tools": {
                         "listChanged": true
                     },
+                    "resources": {
+                        "listChanged": true,
+                        "subscribe": false,
+                        "listTemplates": true
+                    },
                 },
+                "instructions": "Chaos — provider-agnostic coding agent",
                 "serverInfo": {
                     "name": "chaos-mcp-server",
                     "version": env!("CARGO_PKG_VERSION")
                 },
-                "protocolVersion": ProtocolVersion::V_2025_06_18
+                "protocolVersion": "2025-11-25"
             })
         );
 
@@ -428,7 +433,7 @@ impl McpProcess {
 
 impl Drop for McpProcess {
     fn drop(&mut self) {
-        // These tests spawn a `chaos-mcphost` child process.
+        // These tests spawn a `chaos mcp serve` child process.
         //
         // We keep that child alive for the test and rely on Tokio's `kill_on_drop(true)` when this
         // helper is dropped. Tokio documents kill-on-drop as best-effort: dropping requests

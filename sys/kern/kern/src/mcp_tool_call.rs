@@ -18,14 +18,12 @@ use crate::codex::TurnContext;
 use crate::config::edit::ConfigEdit;
 use crate::config::edit::ConfigEditsBuilder;
 use crate::config::types::AppToolApproval;
-use crate::connectors;
 use crate::features::Feature;
 use crate::guardian::GuardianApprovalRequest;
 use crate::guardian::GuardianMcpAnnotations;
 use crate::guardian::guardian_approval_request_to_json;
 use crate::guardian::review_approval_request;
 use crate::guardian::routes_approval_to_guardian;
-use crate::mcp::CODEX_APPS_MCP_SERVER_NAME;
 use crate::mcp_tool_approval_templates::RenderedMcpToolApprovalParam;
 use crate::mcp_tool_approval_templates::render_mcp_tool_approval_template;
 use crate::protocol::EventMsg;
@@ -83,42 +81,6 @@ pub(crate) async fn handle_mcp_tool_call(
 
     let metadata =
         lookup_mcp_tool_metadata(sess.as_ref(), turn_context.as_ref(), &server, &tool_name).await;
-    let app_tool_policy = if server == CODEX_APPS_MCP_SERVER_NAME {
-        connectors::app_tool_policy(
-            &turn_context.config,
-            metadata
-                .as_ref()
-                .and_then(|metadata| metadata.connector_id.as_deref()),
-            &tool_name,
-            metadata
-                .as_ref()
-                .and_then(|metadata| metadata.tool_title.as_deref()),
-            metadata
-                .as_ref()
-                .and_then(|metadata| metadata.annotations.as_ref()),
-        )
-    } else {
-        connectors::AppToolPolicy::default()
-    };
-
-    if server == CODEX_APPS_MCP_SERVER_NAME && !app_tool_policy.enabled {
-        let result = notify_mcp_tool_call_skip(
-            sess.as_ref(),
-            turn_context.as_ref(),
-            &call_id,
-            invocation,
-            "MCP tool call blocked by app configuration".to_string(),
-            /*already_started*/ false,
-        )
-        .await;
-        let status = if result.is_ok() { "ok" } else { "error" };
-        turn_context.session_telemetry.counter(
-            "codex.mcp.call",
-            /*inc*/ 1,
-            &[("status", status)],
-        );
-        return CallToolResult::from_result(result);
-    }
     let request_meta = build_mcp_tool_call_request_meta(&server, metadata.as_ref());
 
     let tool_call_begin_event = EventMsg::McpToolCallBegin(McpToolCallBeginEvent {
@@ -133,7 +95,7 @@ pub(crate) async fn handle_mcp_tool_call(
         &call_id,
         &invocation,
         metadata.as_ref(),
-        app_tool_policy.approval,
+        AppToolApproval::Auto,
     )
     .await
     {
@@ -334,23 +296,11 @@ async fn maybe_track_codex_app_used(
     server: &str,
     tool_name: &str,
 ) {
-    if server != CODEX_APPS_MCP_SERVER_NAME {
-        return;
-    }
     let metadata = lookup_mcp_app_usage_metadata(sess, server, tool_name).await;
     let (connector_id, app_name) = metadata
         .map(|metadata| (metadata.connector_id, metadata.app_name))
         .unwrap_or((None, None));
-    let invocation_type = if let Some(connector_id) = connector_id.as_deref() {
-        let mentioned_connector_ids = sess.get_connector_selection().await;
-        if mentioned_connector_ids.contains(connector_id) {
-            InvocationType::Explicit
-        } else {
-            InvocationType::Implicit
-        }
-    } else {
-        InvocationType::Implicit
-    };
+    let invocation_type = InvocationType::Implicit;
 
     let tracking = build_track_events_context(
         turn_context.model_info.slug.clone(),
@@ -390,13 +340,9 @@ pub(crate) struct McpToolApprovalMetadata {
 const MCP_TOOL_CODEX_APPS_META_KEY: &str = "_codex_apps";
 
 fn build_mcp_tool_call_request_meta(
-    server: &str,
+    _server: &str,
     metadata: Option<&McpToolApprovalMetadata>,
 ) -> Option<serde_json::Value> {
-    if server != CODEX_APPS_MCP_SERVER_NAME {
-        return None;
-    }
-
     let codex_apps_meta = metadata.and_then(|metadata| metadata.codex_apps_meta.as_ref())?;
 
     Some(serde_json::json!({
@@ -669,9 +615,6 @@ fn session_mcp_tool_approval_key(
     }
 
     let connector_id = metadata.and_then(|metadata| metadata.connector_id.clone());
-    if invocation.server == CODEX_APPS_MCP_SERVER_NAME && connector_id.is_none() {
-        return None;
-    }
 
     Some(McpToolApprovalKey {
         server: invocation.server.clone(),
@@ -685,10 +628,6 @@ fn persistent_mcp_tool_approval_key(
     metadata: Option<&McpToolApprovalMetadata>,
     approval_mode: AppToolApproval,
 ) -> Option<McpToolApprovalKey> {
-    if invocation.server != CODEX_APPS_MCP_SERVER_NAME {
-        return None;
-    }
-
     session_mcp_tool_approval_key(invocation, metadata, approval_mode)
         .filter(|key| key.connector_id.is_some())
 }
@@ -738,7 +677,7 @@ fn is_full_access_mode(turn_context: &TurnContext) -> bool {
 
 pub(crate) async fn lookup_mcp_tool_metadata(
     sess: &Session,
-    turn_context: &TurnContext,
+    _turn_context: &TurnContext,
     server: &str,
     tool_name: &str,
 ) -> Option<McpToolApprovalMetadata> {
@@ -753,29 +692,7 @@ pub(crate) async fn lookup_mcp_tool_metadata(
     let tool_info = tools
         .into_values()
         .find(|tool_info| tool_info.server_name == server && tool_info.tool.name == tool_name)?;
-    let connector_description = if server == CODEX_APPS_MCP_SERVER_NAME {
-        let connectors = match connectors::list_cached_accessible_connectors_from_mcp_tools(
-            turn_context.config.as_ref(),
-        )
-        .await
-        {
-            Some(connectors) => Some(connectors),
-            None => {
-                connectors::list_accessible_connectors_from_mcp_tools(turn_context.config.as_ref())
-                    .await
-                    .ok()
-            }
-        };
-        connectors.and_then(|connectors| {
-            let connector_id = tool_info.connector_id.as_deref()?;
-            connectors
-                .into_iter()
-                .find(|connector| connector.id == connector_id)
-                .and_then(|connector| connector.description)
-        })
-    } else {
-        None
-    };
+    let connector_description = tool_info.connector_description.clone();
 
     Some(McpToolApprovalMetadata {
         annotations: tool_info.tool.annotations,
@@ -874,13 +791,7 @@ fn build_mcp_tool_approval_fallback_message(
         .map(str::trim)
         .filter(|name| !name.is_empty())
         .map(ToString::to_string)
-        .unwrap_or_else(|| {
-            if server == CODEX_APPS_MCP_SERVER_NAME {
-                "this app".to_string()
-            } else {
-                format!("the {server} MCP server")
-            }
-        });
+        .unwrap_or_else(|| format!("the {server} MCP server"));
     format!("Allow {actor} to run tool \"{tool_name}\"?")
 }
 
@@ -936,7 +847,7 @@ fn build_mcp_tool_approval_elicitation_request(
 }
 
 fn build_mcp_tool_approval_elicitation_meta(
-    server: &str,
+    _server: &str,
     metadata: Option<&McpToolApprovalMetadata>,
     tool_params: Option<&serde_json::Value>,
     tool_params_display: Option<&[RenderedMcpToolApprovalParam]>,
@@ -987,10 +898,9 @@ fn build_mcp_tool_approval_elicitation_meta(
                 serde_json::Value::String(tool_description.clone()),
             );
         }
-        if server == CODEX_APPS_MCP_SERVER_NAME
-            && (metadata.connector_id.is_some()
-                || metadata.connector_name.is_some()
-                || metadata.connector_description.is_some())
+        if metadata.connector_id.is_some()
+            || metadata.connector_name.is_some()
+            || metadata.connector_description.is_some()
         {
             meta.insert(
                 MCP_TOOL_APPROVAL_SOURCE_KEY.to_string(),

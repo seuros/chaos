@@ -9,7 +9,6 @@ use crate::config_loader::RequirementSource;
 use crate::config_loader::Sourced;
 use crate::exec::ExecToolCallOutput;
 use crate::function_tool::FunctionCallError;
-use crate::mcp_connection_manager::ToolInfo;
 use crate::models_manager::model_info;
 use crate::shell::default_user_shell;
 use crate::tools::format_exec_output_str;
@@ -55,7 +54,6 @@ use crate::tools::handlers::UnifiedExecHandler;
 use crate::tools::registry::ToolHandler;
 use crate::tools::router::ToolCallSource;
 use crate::turn_diff_tracker::TurnDiffTracker;
-use chaos_ipc::api::AppInfo;
 use chaos_ipc::models::BaseInstructions;
 use chaos_ipc::models::ContentItem;
 use chaos_ipc::models::DeveloperInstructions;
@@ -81,7 +79,6 @@ use tokio::time::sleep;
 use tracing_opentelemetry::OpenTelemetrySpanExt;
 use tracing_subscriber::prelude::*;
 
-use crate::mcp_connection_manager::McpToolInfo;
 use chaos_ipc::mcp::CallToolResult as McpCallToolResult;
 use pretty_assertions::assert_eq;
 use serde::Deserialize;
@@ -172,24 +169,6 @@ fn test_tool_runtime(session: Arc<Session>, turn_context: Arc<TurnContext>) -> T
     ToolCallRuntime::new(router, session, turn_context, tracker)
 }
 
-fn make_connector(id: &str, name: &str) -> AppInfo {
-    AppInfo {
-        id: id.to_string(),
-        name: name.to_string(),
-        description: None,
-        logo_url: None,
-        logo_url_dark: None,
-        distribution_channel: None,
-        branding: None,
-        app_metadata: None,
-        labels: None,
-        install_url: None,
-        is_accessible: true,
-        is_enabled: true,
-        plugin_display_names: Vec::new(),
-    }
-}
-
 #[test]
 fn assistant_message_stream_parsers_can_be_seeded_from_output_item_added_text() {
     let mut parsers = AssistantMessageStreamParsers::new(false);
@@ -250,43 +229,6 @@ fn assistant_message_stream_parsers_seed_plan_parser_across_added_and_delta_boun
     );
     assert_eq!(tail.visible_text, "");
     assert!(tail.plan_segments.is_empty());
-}
-
-fn make_mcp_tool(
-    server_name: &str,
-    tool_name: &str,
-    connector_id: Option<&str>,
-    connector_name: Option<&str>,
-) -> ToolInfo {
-    let tool_namespace = if server_name == CODEX_APPS_MCP_SERVER_NAME {
-        connector_name
-            .map(crate::connectors::sanitize_name)
-            .map(|connector_name| format!("mcp__{server_name}__{connector_name}"))
-            .unwrap_or_else(|| server_name.to_string())
-    } else {
-        server_name.to_string()
-    };
-
-    ToolInfo {
-        server_name: server_name.to_string(),
-        tool_name: tool_name.to_string(),
-        tool_namespace,
-        tool: McpToolInfo {
-            name: tool_name.to_string(),
-            title: None,
-            description: Some(format!("Test tool: {tool_name}")),
-            input_schema: serde_json::json!({}),
-            output_schema: None,
-            annotations: None,
-            execution: None,
-            icons: None,
-            meta: None,
-        },
-        connector_id: connector_id.map(str::to_string),
-        connector_name: connector_name.map(str::to_string),
-        plugin_display_names: Vec::new(),
-        connector_description: None,
-    }
 }
 
 #[test]
@@ -451,282 +393,6 @@ async fn get_base_instructions_no_user_content() {
         let base_instructions = session.get_base_instructions().await;
         assert_eq!(base_instructions.text, model_info.base_instructions);
     }
-}
-
-#[tokio::test]
-async fn reload_user_config_layer_updates_effective_apps_config() {
-    let (session, _turn_context) = make_session_and_context().await;
-    let codex_home = session.codex_home().await;
-    std::fs::create_dir_all(&codex_home).expect("create codex home");
-    let config_toml_path = codex_home.join(CONFIG_TOML_FILE);
-    std::fs::write(
-        &config_toml_path,
-        "[apps.calendar]\nenabled = false\ndestructive_enabled = false\n",
-    )
-    .expect("write user config");
-
-    session.reload_user_config_layer().await;
-
-    let config = session.get_config().await;
-    let apps_toml = config
-        .config_layer_stack
-        .effective_config()
-        .as_table()
-        .and_then(|table| table.get("apps"))
-        .cloned()
-        .expect("apps table");
-    let apps = crate::config::types::AppsConfigToml::deserialize(apps_toml)
-        .expect("deserialize apps config");
-    let app = apps
-        .apps
-        .get("calendar")
-        .expect("calendar app config exists");
-
-    assert!(!app.enabled);
-    assert_eq!(app.destructive_enabled, Some(false));
-}
-
-#[test]
-fn filter_connectors_for_input_skips_duplicate_slug_mentions() {
-    let connectors = vec![
-        make_connector("one", "Foo Bar"),
-        make_connector("two", "Foo-Bar"),
-    ];
-    let input = vec![user_message("use $foo-bar")];
-    let explicitly_enabled_connectors = HashSet::new();
-    let skill_name_counts_lower = HashMap::new();
-
-    let selected = filter_connectors_for_input(
-        &connectors,
-        &input,
-        &explicitly_enabled_connectors,
-        &skill_name_counts_lower,
-    );
-
-    assert_eq!(selected, Vec::new());
-}
-
-#[test]
-fn filter_connectors_for_input_skips_when_skill_name_conflicts() {
-    let connectors = vec![make_connector("one", "Todoist")];
-    let input = vec![user_message("use $todoist")];
-    let explicitly_enabled_connectors = HashSet::new();
-    let skill_name_counts_lower = HashMap::from([("todoist".to_string(), 1)]);
-
-    let selected = filter_connectors_for_input(
-        &connectors,
-        &input,
-        &explicitly_enabled_connectors,
-        &skill_name_counts_lower,
-    );
-
-    assert_eq!(selected, Vec::new());
-}
-
-#[test]
-fn filter_connectors_for_input_skips_disabled_connectors() {
-    let mut connector = make_connector("calendar", "Calendar");
-    connector.is_enabled = false;
-    let input = vec![user_message("use $calendar")];
-    let explicitly_enabled_connectors = HashSet::new();
-    let selected = filter_connectors_for_input(
-        &[connector],
-        &input,
-        &explicitly_enabled_connectors,
-        &HashMap::new(),
-    );
-
-    assert_eq!(selected, Vec::new());
-}
-
-#[test]
-fn collect_explicit_app_ids_from_skill_items_includes_linked_mentions() {
-    let connectors = vec![make_connector("calendar", "Calendar")];
-    let skill_items = vec![skill_message(
-        "<skill>\n<name>demo</name>\n<path>/tmp/skills/demo/SKILL.md</path>\nuse [$calendar](app://calendar)\n</skill>",
-    )];
-
-    let connector_ids =
-        collect_explicit_app_ids_from_skill_items(&skill_items, &connectors, &HashMap::new());
-
-    assert_eq!(connector_ids, HashSet::from(["calendar".to_string()]));
-}
-
-#[test]
-fn collect_explicit_app_ids_from_skill_items_resolves_unambiguous_plain_mentions() {
-    let connectors = vec![make_connector("calendar", "Calendar")];
-    let skill_items = vec![skill_message(
-        "<skill>\n<name>demo</name>\n<path>/tmp/skills/demo/SKILL.md</path>\nuse $calendar\n</skill>",
-    )];
-
-    let connector_ids =
-        collect_explicit_app_ids_from_skill_items(&skill_items, &connectors, &HashMap::new());
-
-    assert_eq!(connector_ids, HashSet::from(["calendar".to_string()]));
-}
-
-#[test]
-fn collect_explicit_app_ids_from_skill_items_skips_plain_mentions_with_skill_conflicts() {
-    let connectors = vec![make_connector("calendar", "Calendar")];
-    let skill_items = vec![skill_message(
-        "<skill>\n<name>demo</name>\n<path>/tmp/skills/demo/SKILL.md</path>\nuse $calendar\n</skill>",
-    )];
-    let skill_name_counts_lower = HashMap::from([("calendar".to_string(), 1)]);
-
-    let connector_ids = collect_explicit_app_ids_from_skill_items(
-        &skill_items,
-        &connectors,
-        &skill_name_counts_lower,
-    );
-
-    assert_eq!(connector_ids, HashSet::<String>::new());
-}
-
-#[test]
-fn non_app_mcp_tools_remain_visible_without_search_selection() {
-    let mcp_tools = HashMap::from([
-        (
-            "mcp__codex_apps__calendar_create_event".to_string(),
-            make_mcp_tool(
-                CODEX_APPS_MCP_SERVER_NAME,
-                "calendar_create_event",
-                Some("calendar"),
-                Some("Calendar"),
-            ),
-        ),
-        (
-            "mcp__rmcp__echo".to_string(),
-            make_mcp_tool("rmcp", "echo", None, None),
-        ),
-    ]);
-
-    let mut selected_mcp_tools = mcp_tools
-        .iter()
-        .filter(|(_, tool)| tool.server_name != CODEX_APPS_MCP_SERVER_NAME)
-        .map(|(name, tool)| (name.clone(), tool.clone()))
-        .collect::<HashMap<_, _>>();
-
-    let connectors = connectors::accessible_connectors_from_mcp_tools(&mcp_tools);
-    let explicitly_enabled_connectors = HashSet::new();
-    let connectors = filter_connectors_for_input(
-        &connectors,
-        &[user_message("run echo")],
-        &explicitly_enabled_connectors,
-        &HashMap::new(),
-    );
-    let config = test_config();
-    selected_mcp_tools.extend(filter_codex_apps_mcp_tools(
-        &mcp_tools,
-        &connectors,
-        &config,
-    ));
-
-    let mut tool_names: Vec<String> = selected_mcp_tools.into_keys().collect();
-    tool_names.sort();
-    assert_eq!(tool_names, vec!["mcp__rmcp__echo".to_string()]);
-}
-
-#[test]
-fn search_tool_selection_keeps_codex_apps_tools_without_mentions() {
-    let selected_tool_names = [
-        "mcp__codex_apps__calendar_create_event".to_string(),
-        "mcp__rmcp__echo".to_string(),
-    ];
-    let mcp_tools = HashMap::from([
-        (
-            "mcp__codex_apps__calendar_create_event".to_string(),
-            make_mcp_tool(
-                CODEX_APPS_MCP_SERVER_NAME,
-                "calendar_create_event",
-                Some("calendar"),
-                Some("Calendar"),
-            ),
-        ),
-        (
-            "mcp__rmcp__echo".to_string(),
-            make_mcp_tool("rmcp", "echo", None, None),
-        ),
-    ]);
-
-    let mut selected_mcp_tools = mcp_tools
-        .iter()
-        .filter(|(name, _)| selected_tool_names.contains(name))
-        .map(|(name, tool)| (name.clone(), tool.clone()))
-        .collect::<HashMap<_, _>>();
-    let connectors = connectors::accessible_connectors_from_mcp_tools(&mcp_tools);
-    let explicitly_enabled_connectors = HashSet::new();
-    let connectors = filter_connectors_for_input(
-        &connectors,
-        &[user_message("run the selected tools")],
-        &explicitly_enabled_connectors,
-        &HashMap::new(),
-    );
-    let config = test_config();
-    selected_mcp_tools.extend(filter_codex_apps_mcp_tools(
-        &mcp_tools,
-        &connectors,
-        &config,
-    ));
-
-    let mut tool_names: Vec<String> = selected_mcp_tools.into_keys().collect();
-    tool_names.sort();
-    assert_eq!(
-        tool_names,
-        vec![
-            "mcp__codex_apps__calendar_create_event".to_string(),
-            "mcp__rmcp__echo".to_string(),
-        ]
-    );
-}
-
-#[test]
-fn apps_mentions_add_codex_apps_tools_to_search_selected_set() {
-    let selected_tool_names = ["mcp__rmcp__echo".to_string()];
-    let mcp_tools = HashMap::from([
-        (
-            "mcp__codex_apps__calendar_create_event".to_string(),
-            make_mcp_tool(
-                CODEX_APPS_MCP_SERVER_NAME,
-                "calendar_create_event",
-                Some("calendar"),
-                Some("Calendar"),
-            ),
-        ),
-        (
-            "mcp__rmcp__echo".to_string(),
-            make_mcp_tool("rmcp", "echo", None, None),
-        ),
-    ]);
-
-    let mut selected_mcp_tools = mcp_tools
-        .iter()
-        .filter(|(name, _)| selected_tool_names.contains(name))
-        .map(|(name, tool)| (name.clone(), tool.clone()))
-        .collect::<HashMap<_, _>>();
-    let connectors = connectors::accessible_connectors_from_mcp_tools(&mcp_tools);
-    let explicitly_enabled_connectors = HashSet::new();
-    let connectors = filter_connectors_for_input(
-        &connectors,
-        &[user_message("use $calendar and then echo the response")],
-        &explicitly_enabled_connectors,
-        &HashMap::new(),
-    );
-    let config = test_config();
-    selected_mcp_tools.extend(filter_codex_apps_mcp_tools(
-        &mcp_tools,
-        &connectors,
-        &config,
-    ));
-
-    let mut tool_names: Vec<String> = selected_mcp_tools.into_keys().collect();
-    tool_names.sort();
-    assert_eq!(
-        tool_names,
-        vec![
-            "mcp__codex_apps__calendar_create_event".to_string(),
-            "mcp__rmcp__echo".to_string(),
-        ]
-    );
 }
 
 #[tokio::test]

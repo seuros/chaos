@@ -15,7 +15,7 @@ use chaos_ipc::mcp::RequestId as McpRequestId;
 use chaos_ipc::openai_models::ModelPreset;
 use chaos_ipc::protocol::ElicitationAction;
 use chaos_ipc::protocol::Event;
-use chaos_kern::connectors::AppInfo;
+use chaos_ipc::api::AppInfo;
 use chaos_locate::FileMatch;
 use chaos_sudoers::ApprovalPreset;
 

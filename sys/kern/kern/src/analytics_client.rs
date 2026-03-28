@@ -31,6 +31,7 @@ pub(crate) fn build_track_events_context(
 #[derive(Clone, Copy, Debug, Serialize)]
 #[serde(rename_all = "lowercase")]
 pub(crate) enum InvocationType {
+    #[allow(dead_code)]
     Explicit,
     Implicit,
 }
@@ -60,9 +61,6 @@ impl AnalyticsEventsQueue {
         tokio::spawn(async move {
             while let Some(job) = receiver.recv().await {
                 match job {
-                    TrackEventsJob::AppMentioned(job) => {
-                        send_track_app_mentioned(&auth_manager, job).await;
-                    }
                     TrackEventsJob::AppUsed(job) => {
                         send_track_app_used(&auth_manager, job).await;
                     }
@@ -136,19 +134,6 @@ impl AnalyticsEventsClient {
         }
     }
 
-    pub(crate) fn track_app_mentioned(
-        &self,
-        tracking: TrackEventsContext,
-        mentions: Vec<AppInvocation>,
-    ) {
-        track_app_mentioned(
-            &self.queue,
-            Arc::clone(&self.config),
-            Some(tracking),
-            mentions,
-        );
-    }
-
     pub(crate) fn track_app_used(&self, tracking: TrackEventsContext, app: AppInvocation) {
         track_app_used(&self.queue, Arc::clone(&self.config), Some(tracking), app);
     }
@@ -204,19 +189,12 @@ impl AnalyticsEventsClient {
 }
 
 enum TrackEventsJob {
-    AppMentioned(TrackAppMentionedJob),
     AppUsed(TrackAppUsedJob),
     PluginUsed(TrackPluginUsedJob),
     PluginInstalled(TrackPluginManagementJob),
     PluginUninstalled(TrackPluginManagementJob),
     PluginEnabled(TrackPluginManagementJob),
     PluginDisabled(TrackPluginManagementJob),
-}
-
-struct TrackAppMentionedJob {
-    config: Arc<Config>,
-    tracking: TrackEventsContext,
-    mentions: Vec<AppInvocation>,
 }
 
 struct TrackAppUsedJob {
@@ -256,6 +234,7 @@ struct TrackEventsRequest {
 #[derive(Serialize)]
 #[serde(untagged)]
 enum TrackEventRequest {
+    #[allow(dead_code)]
     AppMentioned(CodexAppMentionedEventRequest),
     AppUsed(CodexAppUsedEventRequest),
     PluginUsed(CodexPluginUsedEventRequest),
@@ -318,29 +297,6 @@ struct CodexPluginEventRequest {
 struct CodexPluginUsedEventRequest {
     event_type: &'static str,
     event_params: CodexPluginUsedMetadata,
-}
-
-pub(crate) fn track_app_mentioned(
-    queue: &AnalyticsEventsQueue,
-    config: Arc<Config>,
-    tracking: Option<TrackEventsContext>,
-    mentions: Vec<AppInvocation>,
-) {
-    if config.analytics_enabled == Some(false) {
-        return;
-    }
-    let Some(tracking) = tracking else {
-        return;
-    };
-    if mentions.is_empty() {
-        return;
-    }
-    let job = TrackEventsJob::AppMentioned(TrackAppMentionedJob {
-        config,
-        tracking,
-        mentions,
-    });
-    queue.try_send(job);
 }
 
 pub(crate) fn track_app_used(
@@ -406,26 +362,6 @@ fn track_plugin_management(
         PluginManagementEventType::Disabled => TrackEventsJob::PluginDisabled(job),
     };
     queue.try_send(job);
-}
-
-async fn send_track_app_mentioned(auth_manager: &AuthManager, job: TrackAppMentionedJob) {
-    let TrackAppMentionedJob {
-        config,
-        tracking,
-        mentions,
-    } = job;
-    let events = mentions
-        .into_iter()
-        .map(|mention| {
-            let event_params = codex_app_metadata(&tracking, mention);
-            TrackEventRequest::AppMentioned(CodexAppMentionedEventRequest {
-                event_type: "codex_app_mentioned",
-                event_params,
-            })
-        })
-        .collect::<Vec<_>>();
-
-    send_track_events(auth_manager, config, events).await;
 }
 
 async fn send_track_app_used(auth_manager: &AuthManager, job: TrackAppUsedJob) {

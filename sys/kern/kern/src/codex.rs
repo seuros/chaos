@@ -13,17 +13,14 @@ use crate::agent::AgentControl;
 use crate::agent::AgentStatus;
 use crate::agent::agent_status_from_event;
 use crate::analytics_client::AnalyticsEventsClient;
-use crate::analytics_client::AppInvocation;
-use crate::analytics_client::InvocationType;
 use crate::analytics_client::build_track_events_context;
-use crate::apps::render_apps_section;
 use crate::compact;
 use crate::compact::InitialContextInjection;
+use crate::compact::collect_user_messages;
 use crate::compact::run_inline_auto_compact_task;
 use crate::compact::should_use_remote_compact_task;
 use crate::compact_remote::run_inline_remote_auto_compact_task;
 use crate::config::ManagedFeatures;
-use crate::connectors;
 use crate::exec_policy::ExecPolicyManager;
 use crate::features::FEATURES;
 use crate::features::Feature;
@@ -150,7 +147,6 @@ use crate::client::ModelClient;
 use crate::client::ModelClientSession;
 use crate::client_common::Prompt;
 use crate::client_common::ResponseEvent;
-use crate::compact::collect_user_messages;
 use crate::config::Config;
 use crate::config::Constrained;
 use crate::config::ConstraintResult;
@@ -198,20 +194,12 @@ use crate::file_watcher::FileWatcherEvent;
 use crate::git_info::get_git_repo_root;
 use crate::guardian::GuardianReviewSessionManager;
 use crate::instructions::UserInstructions;
-use crate::mcp::CODEX_APPS_MCP_SERVER_NAME;
 use crate::mcp::McpManager;
 use crate::mcp::auth::compute_auth_statuses;
 use crate::mcp::maybe_prompt_and_install_mcp_dependencies;
-use crate::mcp::with_codex_apps_mcp;
 use crate::mcp_connection_manager::McpConnectionManager;
-use crate::mcp_connection_manager::codex_apps_tools_cache_key;
-use crate::mcp_connection_manager::filter_non_codex_apps_mcp_tools_only;
 use crate::memories;
-use crate::mentions::build_connector_slug_counts;
-use crate::mentions::build_skill_name_counts;
-use crate::mentions::collect_explicit_app_ids;
 use crate::mentions::collect_explicit_plugin_mentions;
-use crate::mentions::collect_tool_mentions_from_messages;
 use crate::network_policy_decision::execpolicy_network_rule_amendment;
 use crate::plugins::PluginsManager;
 use crate::plugins::build_plugin_injections;
@@ -269,9 +257,6 @@ use crate::skills::SkillsManager;
 use crate::skills::build_skill_injections;
 use crate::skills::collect_env_var_dependencies;
 use crate::skills::collect_explicit_skill_mentions;
-use crate::skills::injection::ToolMentionKind;
-use crate::skills::injection::app_id_from_path;
-use crate::skills::injection::tool_kind_for_path;
 use crate::skills::resolve_skill_dependencies_for_turn;
 use crate::state::ActiveTurn;
 use crate::state::SessionServices;
@@ -284,7 +269,6 @@ use crate::tasks::SessionTask;
 use crate::tasks::SessionTaskContext;
 use crate::tools::ToolRouter;
 use crate::tools::context::SharedTurnDiffTracker;
-use crate::tools::discoverable::DiscoverableTool;
 use crate::tools::network_approval::NetworkApprovalService;
 use crate::tools::network_approval::build_blocked_request_observer;
 use crate::tools::network_approval::build_network_policy_decider;
@@ -366,8 +350,6 @@ pub(crate) const INITIAL_SUBMIT_ID: &str = "";
 pub(crate) const SUBMISSION_CHANNEL_CAPACITY: usize = 512;
 const CYBER_VERIFY_URL: &str = "https://chatgpt.com/cyber";
 const CYBER_SAFETY_URL: &str = "https://developers.openai.com/codex/concepts/cyber-safety";
-const DIRECT_APP_TOOL_EXPOSURE_THRESHOLD: usize = 100;
-
 impl Codex {
     /// Spawn a new [`Codex`] and initialize the session.
     pub(crate) async fn spawn(args: CodexSpawnArgs) -> CodexResult<CodexSpawnOk> {
@@ -1438,7 +1420,7 @@ impl Session {
         let mcp_manager_for_mcp = Arc::clone(&mcp_manager);
         let auth_and_mcp_fut = async move {
             let auth = auth_manager_clone.auth().await;
-            let mcp_servers = mcp_manager_for_mcp.effective_servers(&config_for_mcp, auth.as_ref());
+            let mcp_servers = mcp_manager_for_mcp.effective_servers(&config_for_mcp);
             let auth_statuses = compute_auth_statuses(
                 mcp_servers.iter(),
                 config_for_mcp.mcp_oauth_credentials_store_mode,
@@ -1816,7 +1798,6 @@ impl Session {
         required_mcp_servers.sort();
         let enabled_mcp_server_count = mcp_servers.values().filter(|server| server.enabled).count();
         let required_mcp_server_count = required_mcp_servers.len();
-        let tool_plugin_provenance = mcp_manager.tool_plugin_provenance(config.as_ref());
         {
             let mut cancel_guard = sess.services.mcp_startup_cancellation_token.lock().await;
             cancel_guard.cancel();
@@ -1830,8 +1811,6 @@ impl Session {
             tx_event.clone(),
             sandbox_state,
             config.codex_home.clone(),
-            codex_apps_tools_cache_key(auth),
-            tool_plugin_provenance,
         )
         .instrument(info_span!(
             "session_init.mcp_manager_init",
@@ -1968,27 +1947,6 @@ impl Session {
         BaseInstructions {
             text: state.session_configuration.base_instructions.clone(),
         }
-    }
-
-    // Merges connector IDs into the session-level explicit connector selection.
-    pub(crate) async fn merge_connector_selection(
-        &self,
-        connector_ids: HashSet<String>,
-    ) -> HashSet<String> {
-        let mut state = self.state.lock().await;
-        state.merge_connector_selection(connector_ids)
-    }
-
-    // Returns the connector IDs currently selected for this session.
-    pub(crate) async fn get_connector_selection(&self) -> HashSet<String> {
-        let state = self.state.lock().await;
-        state.get_connector_selection()
-    }
-
-    // Clears connector IDs that were accumulated for explicit selection.
-    pub(crate) async fn clear_connector_selection(&self) {
-        let mut state = self.state.lock().await;
-        state.clear_connector_selection();
     }
 
     async fn record_initial_history(&self, conversation_history: InitialHistory) {
@@ -2380,7 +2338,6 @@ impl Session {
             self,
             startup_turn_context.as_ref(),
             &[],
-            &HashSet::new(),
             /*skills_outcome*/ None,
             &startup_cancellation_token,
         )
@@ -3388,9 +3345,6 @@ impl Session {
                 );
             }
         }
-        if turn_context.apps_enabled() {
-            developer_sections.push(render_apps_section());
-        }
         let implicit_skills = turn_context
             .turn_skills
             .outcome
@@ -3882,13 +3836,7 @@ impl Session {
         mcp_servers: HashMap<String, McpServerConfig>,
         store_mode: OAuthCredentialsStoreMode,
     ) {
-        let auth = self.services.auth_manager.auth().await;
         let config = self.get_config().await;
-        let tool_plugin_provenance = self
-            .services
-            .mcp_manager
-            .tool_plugin_provenance(config.as_ref());
-        let mcp_servers = with_codex_apps_mcp(mcp_servers, false, auth.as_ref(), config.as_ref());
         let auth_statuses = compute_auth_statuses(mcp_servers.iter(), store_mode).await;
         let sandbox_state = SandboxState {
             sandbox_policy: turn_context.sandbox_policy.get().clone(),
@@ -3910,8 +3858,6 @@ impl Session {
             self.get_tx_event(),
             sandbox_state,
             config.codex_home.clone(),
-            codex_apps_tools_cache_key(auth.as_ref()),
-            tool_plugin_provenance,
         )
         .await;
         {
@@ -4565,11 +4511,11 @@ mod handlers {
 
     pub async fn list_mcp_tools(sess: &Session, config: &Arc<Config>, sub_id: String) {
         let mcp_connection_manager = sess.services.mcp_connection_manager.read().await;
-        let auth = sess.services.auth_manager.auth().await;
+        let _auth = sess.services.auth_manager.auth().await;
         let mcp_servers = sess
             .services
             .mcp_manager
-            .effective_servers(config, auth.as_ref());
+            .effective_servers(config);
         let snapshot = collect_mcp_snapshot_from_manager(
             &mcp_connection_manager,
             compute_auth_statuses(mcp_servers.iter(), config.mcp_oauth_credentials_store_mode)
@@ -5338,27 +5284,12 @@ pub(crate) async fn run_turn(
     } else {
         HashMap::new()
     };
-    let available_connectors = if turn_context.apps_enabled() {
-        let connectors = connectors::merge_plugin_apps_with_accessible(
-            loaded_plugins.effective_apps(),
-            connectors::accessible_connectors_from_mcp_tools(&mcp_tools),
-        );
-        connectors::with_app_enabled_state(connectors, &turn_context.config)
-    } else {
-        Vec::new()
-    };
-    let connector_slug_counts = build_connector_slug_counts(&available_connectors);
-    let skill_name_counts_lower = skills_outcome
-        .as_ref()
-        .map_or_else(HashMap::new, |outcome| {
-            build_skill_name_counts(&outcome.skills, &outcome.disabled_paths).1
-        });
     let mentioned_skills = skills_outcome.as_ref().map_or_else(Vec::new, |outcome| {
         collect_explicit_skill_mentions(
             &input,
             &outcome.skills,
             &outcome.disabled_paths,
-            &connector_slug_counts,
+            &HashMap::new(),
         )
     });
     let config = turn_context.config.clone();
@@ -5401,57 +5332,17 @@ pub(crate) async fn run_turn(
             .await;
     }
 
-    let plugin_items =
-        build_plugin_injections(&mentioned_plugins, &mcp_tools, &available_connectors);
+    let plugin_items = build_plugin_injections(&mentioned_plugins, &mcp_tools);
     let mentioned_plugin_metadata = mentioned_plugins
         .iter()
         .filter_map(crate::plugins::PluginCapabilitySummary::telemetry_metadata)
         .collect::<Vec<_>>();
 
-    let mut explicitly_enabled_connectors = collect_explicit_app_ids(&input);
-    explicitly_enabled_connectors.extend(collect_explicit_app_ids_from_skill_items(
-        &skill_items,
-        &available_connectors,
-        &skill_name_counts_lower,
-    ));
-    // Explicit plugin mentions can make a plugin's enabled apps callable for
-    // this turn without persisting those connectors as sticky user selections.
-    let mut turn_enabled_connectors = explicitly_enabled_connectors.clone();
-    turn_enabled_connectors.extend(
-        mentioned_plugins
-            .iter()
-            .flat_map(|plugin| plugin.app_connector_ids.iter())
-            .map(|connector_id| connector_id.0.clone())
-            .filter(|connector_id| {
-                available_connectors
-                    .iter()
-                    .any(|connector| connector.is_enabled && connector.id == *connector_id)
-            }),
-    );
-    let connector_names_by_id = available_connectors
-        .iter()
-        .map(|connector| (connector.id.as_str(), connector.name.as_str()))
-        .collect::<HashMap<&str, &str>>();
-    let mentioned_app_invocations = explicitly_enabled_connectors
-        .iter()
-        .map(|connector_id| AppInvocation {
-            connector_id: Some(connector_id.clone()),
-            app_name: connector_names_by_id
-                .get(connector_id.as_str())
-                .map(|name| (*name).to_string()),
-            invocation_type: Some(InvocationType::Explicit),
-        })
-        .collect::<Vec<_>>();
-    sess.services
-        .analytics_events_client
-        .track_app_mentioned(tracking.clone(), mentioned_app_invocations);
     for plugin in mentioned_plugin_metadata {
         sess.services
             .analytics_events_client
             .track_plugin_used(tracking.clone(), plugin);
     }
-    sess.merge_connector_selection(explicitly_enabled_connectors.clone())
-        .await;
 
     let initial_input_for_turn: ResponseInputItem = ResponseInputItem::from(input.clone());
     let response_item: ResponseItem = initial_input_for_turn.clone().into();
@@ -5591,7 +5482,6 @@ pub(crate) async fn run_turn(
             &mut client_session,
             turn_metadata_header.as_deref(),
             sampling_request_input,
-            &turn_enabled_connectors,
             skills_outcome,
             &mut server_model_warning_emitted_for_turn,
             cancellation_token.child_token(),
@@ -5880,162 +5770,6 @@ async fn run_auto_compact(
     Ok(())
 }
 
-fn collect_explicit_app_ids_from_skill_items(
-    skill_items: &[ResponseItem],
-    connectors: &[connectors::AppInfo],
-    skill_name_counts_lower: &HashMap<String, usize>,
-) -> HashSet<String> {
-    if skill_items.is_empty() || connectors.is_empty() {
-        return HashSet::new();
-    }
-
-    let skill_messages = skill_items
-        .iter()
-        .filter_map(|item| match item {
-            ResponseItem::Message { content, .. } => {
-                content.iter().find_map(|content_item| match content_item {
-                    ContentItem::InputText { text } => Some(text.clone()),
-                    _ => None,
-                })
-            }
-            _ => None,
-        })
-        .collect::<Vec<String>>();
-    if skill_messages.is_empty() {
-        return HashSet::new();
-    }
-
-    let mentions = collect_tool_mentions_from_messages(&skill_messages);
-    let mention_names_lower = mentions
-        .plain_names
-        .iter()
-        .map(|name| name.to_ascii_lowercase())
-        .collect::<HashSet<String>>();
-    let mut connector_ids = mentions
-        .paths
-        .iter()
-        .filter(|path| tool_kind_for_path(path) == ToolMentionKind::App)
-        .filter_map(|path| app_id_from_path(path).map(str::to_string))
-        .collect::<HashSet<String>>();
-
-    let connector_slug_counts = build_connector_slug_counts(connectors);
-    for connector in connectors {
-        let slug = connectors::connector_mention_slug(connector);
-        let connector_count = connector_slug_counts.get(&slug).copied().unwrap_or(0);
-        let skill_count = skill_name_counts_lower.get(&slug).copied().unwrap_or(0);
-        if connector_count == 1 && skill_count == 0 && mention_names_lower.contains(&slug) {
-            connector_ids.insert(connector.id.clone());
-        }
-    }
-
-    connector_ids
-}
-
-fn filter_connectors_for_input(
-    connectors: &[connectors::AppInfo],
-    input: &[ResponseItem],
-    explicitly_enabled_connectors: &HashSet<String>,
-    skill_name_counts_lower: &HashMap<String, usize>,
-) -> Vec<connectors::AppInfo> {
-    let connectors: Vec<connectors::AppInfo> = connectors
-        .iter()
-        .filter(|connector| connector.is_enabled)
-        .cloned()
-        .collect::<Vec<_>>();
-    if connectors.is_empty() {
-        return Vec::new();
-    }
-
-    let user_messages = collect_user_messages(input);
-    if user_messages.is_empty() && explicitly_enabled_connectors.is_empty() {
-        return Vec::new();
-    }
-
-    let mentions = collect_tool_mentions_from_messages(&user_messages);
-    let mention_names_lower = mentions
-        .plain_names
-        .iter()
-        .map(|name| name.to_ascii_lowercase())
-        .collect::<HashSet<String>>();
-
-    let connector_slug_counts = build_connector_slug_counts(&connectors);
-    let mut allowed_connector_ids = explicitly_enabled_connectors.clone();
-    for path in mentions
-        .paths
-        .iter()
-        .filter(|path| tool_kind_for_path(path) == ToolMentionKind::App)
-    {
-        if let Some(connector_id) = app_id_from_path(path) {
-            allowed_connector_ids.insert(connector_id.to_string());
-        }
-    }
-
-    connectors
-        .into_iter()
-        .filter(|connector| {
-            connector_inserted_in_messages(
-                connector,
-                &mention_names_lower,
-                &allowed_connector_ids,
-                &connector_slug_counts,
-                skill_name_counts_lower,
-            )
-        })
-        .collect()
-}
-
-fn connector_inserted_in_messages(
-    connector: &connectors::AppInfo,
-    mention_names_lower: &HashSet<String>,
-    allowed_connector_ids: &HashSet<String>,
-    connector_slug_counts: &HashMap<String, usize>,
-    skill_name_counts_lower: &HashMap<String, usize>,
-) -> bool {
-    if allowed_connector_ids.contains(&connector.id) {
-        return true;
-    }
-
-    let mention_slug = connectors::connector_mention_slug(connector);
-    let connector_count = connector_slug_counts
-        .get(&mention_slug)
-        .copied()
-        .unwrap_or(0);
-    let skill_count = skill_name_counts_lower
-        .get(&mention_slug)
-        .copied()
-        .unwrap_or(0);
-    connector_count == 1 && skill_count == 0 && mention_names_lower.contains(&mention_slug)
-}
-
-fn filter_codex_apps_mcp_tools(
-    mcp_tools: &HashMap<String, crate::mcp_connection_manager::ToolInfo>,
-    connectors: &[connectors::AppInfo],
-    config: &Config,
-) -> HashMap<String, crate::mcp_connection_manager::ToolInfo> {
-    let allowed: HashSet<&str> = connectors
-        .iter()
-        .map(|connector| connector.id.as_str())
-        .collect();
-
-    mcp_tools
-        .iter()
-        .filter(|(_, tool)| {
-            if tool.server_name != CODEX_APPS_MCP_SERVER_NAME {
-                return false;
-            }
-            let Some(connector_id) = codex_apps_connector_id(tool) else {
-                return false;
-            };
-            allowed.contains(connector_id) && connectors::codex_app_tool_is_enabled(config, tool)
-        })
-        .map(|(name, tool)| (name.clone(), tool.clone()))
-        .collect()
-}
-
-fn codex_apps_connector_id(tool: &crate::mcp_connection_manager::ToolInfo) -> Option<&str> {
-    tool.connector_id.as_deref()
-}
-
 fn build_prompt(
     input: Vec<ResponseItem>,
     router: &ToolRouter,
@@ -6083,7 +5817,6 @@ async fn run_sampling_request(
     client_session: &mut ModelClientSession,
     turn_metadata_header: Option<&str>,
     input: Vec<ResponseItem>,
-    explicitly_enabled_connectors: &HashSet<String>,
     skills_outcome: Option<&SkillLoadOutcome>,
     server_model_warning_emitted_for_turn: &mut bool,
     cancellation_token: CancellationToken,
@@ -6092,7 +5825,6 @@ async fn run_sampling_request(
         sess.as_ref(),
         turn_context.as_ref(),
         &input,
-        explicitly_enabled_connectors,
         skills_outcome,
         &cancellation_token,
     )
@@ -6207,114 +5939,17 @@ async fn run_sampling_request(
 pub(crate) async fn built_tools(
     sess: &Session,
     turn_context: &TurnContext,
-    input: &[ResponseItem],
-    explicitly_enabled_connectors: &HashSet<String>,
-    skills_outcome: Option<&SkillLoadOutcome>,
+    _input: &[ResponseItem],
+    _skills_outcome: Option<&SkillLoadOutcome>,
     cancellation_token: &CancellationToken,
 ) -> CodexResult<Arc<ToolRouter>> {
     let mcp_connection_manager = sess.services.mcp_connection_manager.read().await;
     let has_mcp_servers = mcp_connection_manager.has_servers();
-    let mut mcp_tools = mcp_connection_manager
+    let mcp_tools = mcp_connection_manager
         .list_all_tools()
         .or_cancel(cancellation_token)
         .await?;
     drop(mcp_connection_manager);
-    let loaded_plugins = sess
-        .services
-        .plugins_manager
-        .plugins_for_config(&turn_context.config);
-
-    let mut effective_explicitly_enabled_connectors = explicitly_enabled_connectors.clone();
-    effective_explicitly_enabled_connectors.extend(sess.get_connector_selection().await);
-
-    let apps_enabled = turn_context.apps_enabled();
-    let accessible_connectors =
-        apps_enabled.then(|| connectors::accessible_connectors_from_mcp_tools(&mcp_tools));
-    let accessible_connectors_with_enabled_state =
-        accessible_connectors.as_ref().map(|connectors| {
-            connectors::with_app_enabled_state(connectors.clone(), &turn_context.config)
-        });
-    let connectors = if apps_enabled {
-        let connectors = connectors::merge_plugin_apps_with_accessible(
-            loaded_plugins.effective_apps(),
-            accessible_connectors.clone().unwrap_or_default(),
-        );
-        Some(connectors::with_app_enabled_state(
-            connectors,
-            &turn_context.config,
-        ))
-    } else {
-        None
-    };
-    let auth = sess.services.auth_manager.auth().await;
-    let discoverable_tools = if apps_enabled
-        && turn_context.tools_config.search_tool
-        && turn_context.tools_config.tool_suggest
-    {
-        if let Some(accessible_connectors) = accessible_connectors_with_enabled_state.as_ref() {
-            match connectors::list_tool_suggest_discoverable_tools_with_auth(
-                &turn_context.config,
-                auth.as_ref(),
-                accessible_connectors.as_slice(),
-            )
-            .await
-            {
-                Ok(connectors) if connectors.is_empty() => None,
-                Ok(connectors) => {
-                    Some(connectors.into_iter().map(DiscoverableTool::from).collect())
-                }
-                Err(err) => {
-                    warn!("failed to load discoverable tool suggestions: {err:#}");
-                    None
-                }
-            }
-        } else {
-            None
-        }
-    } else {
-        None
-    };
-
-    let app_tools = connectors.as_ref().map(|connectors| {
-        filter_codex_apps_mcp_tools(&mcp_tools, connectors, &turn_context.config)
-    });
-
-    if let Some(connectors) = connectors.as_ref() {
-        let skill_name_counts_lower = skills_outcome.map_or_else(HashMap::new, |outcome| {
-            build_skill_name_counts(&outcome.skills, &outcome.disabled_paths).1
-        });
-
-        let explicitly_enabled = filter_connectors_for_input(
-            connectors,
-            input,
-            &effective_explicitly_enabled_connectors,
-            &skill_name_counts_lower,
-        );
-
-        let mut selected_mcp_tools = filter_non_codex_apps_mcp_tools_only(&mcp_tools);
-        selected_mcp_tools.extend(filter_codex_apps_mcp_tools(
-            &mcp_tools,
-            explicitly_enabled.as_ref(),
-            &turn_context.config,
-        ));
-
-        mcp_tools = selected_mcp_tools;
-    }
-
-    // Expose app tools directly when tool_search is disabled, or when tool_search
-    // is enabled but the accessible app tool set stays below the direct-exposure threshold.
-    let expose_app_tools_directly = !turn_context.tools_config.search_tool
-        || app_tools
-            .as_ref()
-            .is_some_and(|tools| tools.len() < DIRECT_APP_TOOL_EXPOSURE_THRESHOLD);
-    if expose_app_tools_directly && let Some(app_tools) = app_tools.as_ref() {
-        mcp_tools.extend(app_tools.clone());
-    }
-    let app_tools = if expose_app_tools_directly {
-        None
-    } else {
-        app_tools
-    };
 
     Ok(Arc::new(ToolRouter::from_config(
         &turn_context.tools_config,
@@ -6325,8 +5960,8 @@ pub(crate) async fn built_tools(
                     .map(|(name, tool)| (name, tool.tool))
                     .collect()
             }),
-            app_tools,
-            discoverable_tools,
+            app_tools: None,
+            discoverable_tools: None,
             dynamic_tools: turn_context.dynamic_tools.as_slice(),
         },
     )))

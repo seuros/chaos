@@ -8,7 +8,6 @@
 mod analytics_client;
 pub mod api_bridge;
 mod apply_patch;
-mod apps;
 mod arc_monitor;
 pub mod auth;
 pub mod builtin_mcp_resources;
@@ -26,7 +25,6 @@ mod codex_delegate;
 mod command_canonicalization;
 pub mod config;
 pub mod config_loader;
-pub mod connectors;
 mod context_manager;
 mod contextual_user_message;
 pub mod custom_prompts;

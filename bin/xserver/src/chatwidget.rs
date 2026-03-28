@@ -123,7 +123,7 @@ use chaos_kern::config::ConstraintResult;
 use chaos_kern::config::types::ApprovalsReviewer;
 use chaos_kern::config::types::Notifications;
 use chaos_kern::config_loader::ConfigLayerStackOrdering;
-use chaos_kern::connectors;
+use chaos_ipc::api::AppInfo;
 use chaos_kern::features::FEATURES;
 use chaos_kern::features::Feature;
 use chaos_kern::find_process_name_by_id;
@@ -5858,62 +5858,12 @@ impl ChatWidget {
             return;
         }
 
-        self.connectors_prefetch_in_flight = true;
-        if !matches!(self.connectors_cache, ConnectorsCacheState::Ready(_)) {
-            self.connectors_cache = ConnectorsCacheState::Loading;
-        }
-
-        let config = self.config.clone();
-        let app_event_tx = self.app_event_tx.clone();
-        tokio::spawn(async move {
-            let accessible_result =
-                match connectors::list_accessible_connectors_from_mcp_tools_with_options_and_status(
-                    &config,
-                    force_refetch,
-                )
-                .await
-                {
-                    Ok(connectors) => connectors,
-                    Err(err) => {
-                        app_event_tx.send(AppEvent::ConnectorsLoaded {
-                            result: Err(format!("Failed to load apps: {err}")),
-                            is_final: true,
-                        });
-                        return;
-                    }
-                };
-            let should_schedule_force_refetch =
-                !force_refetch && !accessible_result.codex_apps_ready;
-            let accessible_connectors = accessible_result.connectors;
-
-            app_event_tx.send(AppEvent::ConnectorsLoaded {
-                result: Ok(ConnectorsSnapshot {
-                    connectors: accessible_connectors.clone(),
-                }),
-                is_final: false,
-            });
-
-            let result: Result<ConnectorsSnapshot, String> = async {
-                let all_connectors =
-                    connectors::list_all_connectors_with_options(&config, force_refetch).await?;
-                let connectors =
-                    connectors::merge_connectors(all_connectors, accessible_connectors);
-                Ok(ConnectorsSnapshot { connectors })
-            }
-            .await
-            .map_err(|err: anyhow::Error| format!("Failed to load apps: {err}"));
-
-            app_event_tx.send(AppEvent::ConnectorsLoaded {
-                result,
-                is_final: true,
-            });
-
-            if should_schedule_force_refetch {
-                app_event_tx.send(AppEvent::RefreshConnectors {
-                    force_refetch: true,
-                });
-            }
-        });
+        // Connectors infrastructure removed — return empty results immediately.
+        self.connectors_prefetch_in_flight = false;
+        let snapshot = ConnectorsSnapshot {
+            connectors: Vec::new(),
+        };
+        self.connectors_cache = ConnectorsCacheState::Ready(snapshot);
     }
 
     fn lower_cost_preset(&self) -> Option<ModelPreset> {
@@ -7391,7 +7341,7 @@ impl ChatWidget {
         false
     }
 
-    fn connectors_for_mentions(&self) -> Option<&[connectors::AppInfo]> {
+    fn connectors_for_mentions(&self) -> Option<&[AppInfo]> {
         if !self.connectors_enabled() {
             return None;
         }
@@ -7489,7 +7439,7 @@ impl ChatWidget {
             self.config.codex_home.clone(),
         )));
         if mcp_manager
-            .effective_servers(&self.config, /*auth*/ None)
+            .effective_servers(&self.config)
             .is_empty()
         {
             self.add_to_history(history_cell::empty_mcp_output());
@@ -7543,7 +7493,7 @@ impl ChatWidget {
     }
 
     #[allow(dead_code)]
-    fn open_connectors_popup(&mut self, connectors: &[connectors::AppInfo]) {
+    fn open_connectors_popup(&mut self, connectors: &[AppInfo]) {
         self.bottom_pane.show_selection_view(
             self.connectors_popup_params(connectors, /*selected_connector_id*/ None),
         );
@@ -7570,7 +7520,7 @@ impl ChatWidget {
 
     fn connectors_popup_params(
         &self,
-        connectors: &[connectors::AppInfo],
+        connectors: &[AppInfo],
         selected_connector_id: Option<&str>,
     ) -> SelectionViewParams {
         let total = connectors.len();
@@ -7593,7 +7543,7 @@ impl ChatWidget {
         });
         let mut items: Vec<SelectionItem> = Vec::with_capacity(connectors.len());
         for connector in connectors {
-            let connector_label = connectors::connector_display_label(connector);
+            let connector_label = connector.name.clone();
             let connector_title = connector_label.clone();
             let link_description = Self::connector_description(connector);
             let description = Self::connector_brief_description(connector);
@@ -7667,7 +7617,7 @@ impl ChatWidget {
         }
     }
 
-    fn refresh_connectors_popup_if_open(&mut self, connectors: &[connectors::AppInfo]) {
+    fn refresh_connectors_popup_if_open(&mut self, connectors: &[AppInfo]) {
         let selected_connector_id =
             if let (Some(selected_index), ConnectorsCacheState::Ready(snapshot)) = (
                 self.bottom_pane
@@ -7695,7 +7645,7 @@ impl ChatWidget {
         ])
     }
 
-    fn connector_brief_description(connector: &connectors::AppInfo) -> String {
+    fn connector_brief_description(connector: &AppInfo) -> String {
         let status_label = Self::connector_status_label(connector);
         match Self::connector_description(connector) {
             Some(description) => format!("{status_label} · {description}"),
@@ -7703,7 +7653,7 @@ impl ChatWidget {
         }
     }
 
-    fn connector_status_label(connector: &connectors::AppInfo) -> &'static str {
+    fn connector_status_label(connector: &AppInfo) -> &'static str {
         if connector.is_accessible {
             if connector.is_enabled {
                 "Installed"
@@ -7715,7 +7665,7 @@ impl ChatWidget {
         }
     }
 
-    fn connector_description(connector: &connectors::AppInfo) -> Option<String> {
+    fn connector_description(connector: &AppInfo) -> Option<String> {
         connector
             .description
             .as_deref()
@@ -7982,12 +7932,7 @@ impl ChatWidget {
 
         match result {
             Ok(mut snapshot) => {
-                if !is_final {
-                    snapshot.connectors =
-                        connectors::merge_connectors(Vec::new(), snapshot.connectors);
-                }
-                snapshot.connectors =
-                    connectors::with_app_enabled_state(snapshot.connectors, &self.config);
+                // Connectors infrastructure removed — pass through as-is.
                 if let ConnectorsCacheState::Ready(existing_snapshot) = &self.connectors_cache {
                     let enabled_by_id: HashMap<&str, bool> = existing_snapshot
                         .connectors

@@ -3,7 +3,7 @@ use std::sync::Arc;
 
 use crate::AuthManager;
 use crate::RolloutRecorder;
-use crate::agent::AgentControl;
+use crate::minions::AgentControl;
 use crate::analytics_client::AnalyticsEventsClient;
 use crate::client::ModelClient;
 use crate::config::StartedNetworkProxy;

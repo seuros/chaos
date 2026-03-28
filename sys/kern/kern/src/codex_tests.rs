@@ -1774,7 +1774,7 @@ enabled = false
             nickname_candidates: None,
         },
     );
-    crate::agent::role::apply_role_to_config(&mut child_config, Some("custom"))
+    crate::minions::role::apply_role_to_config(&mut child_config, Some("custom"))
         .await
         .expect("custom role should apply");
 

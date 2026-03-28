@@ -2,6 +2,7 @@ pub(crate) mod control;
 mod guards;
 pub(crate) mod role;
 pub(crate) mod status;
+pub(crate) mod tools;
 
 pub(crate) use chaos_ipc::protocol::AgentStatus;
 pub(crate) use control::AgentControl;

@@ -424,7 +424,7 @@ task_outcome: success
 mod consolidation_tests {
     use crate::CodexAuth;
     use crate::ProcessTable;
-    use crate::agent::AgentControl;
+    use crate::minions::AgentControl;
     use crate::codex::Session;
     use crate::codex::make_session_and_context;
     use crate::config::Config;

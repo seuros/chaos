@@ -19,7 +19,7 @@ mod compact_remote;
 mod process;
 pub use process::Process;
 pub use process::ProcessConfigSnapshot;
-mod agent;
+mod minions;
 pub mod capsicum;
 mod codex_delegate;
 mod command_canonicalization;

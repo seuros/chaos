@@ -2,7 +2,7 @@ use crate::AuthManager;
 use crate::CodexAuth;
 use crate::ModelProviderInfo;
 use crate::OPENAI_PROVIDER_ID;
-use crate::agent::AgentControl;
+use crate::minions::AgentControl;
 use crate::codex::Codex;
 use crate::codex::CodexSpawnArgs;
 use crate::codex::CodexSpawnOk;

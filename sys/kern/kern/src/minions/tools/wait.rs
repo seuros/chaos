@@ -1,5 +1,5 @@
 use super::*;
-use crate::agent::status::is_final;
+use crate::minions::status::is_final;
 use futures::FutureExt;
 use futures::StreamExt;
 use futures::stream::FuturesUnordered;

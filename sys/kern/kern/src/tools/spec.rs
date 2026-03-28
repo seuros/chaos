@@ -20,9 +20,9 @@ use crate::tools::handlers::TOOL_SUGGEST_TOOL_NAME;
 use crate::tools::handlers::agent_jobs::BatchJobHandler;
 use crate::tools::handlers::apply_patch::create_apply_patch_freeform_tool;
 use crate::tools::handlers::apply_patch::create_apply_patch_json_tool;
-use crate::tools::handlers::multi_agents::DEFAULT_WAIT_TIMEOUT_MS;
-use crate::tools::handlers::multi_agents::MAX_WAIT_TIMEOUT_MS;
-use crate::tools::handlers::multi_agents::MIN_WAIT_TIMEOUT_MS;
+use crate::minions::tools::DEFAULT_WAIT_TIMEOUT_MS;
+use crate::minions::tools::MAX_WAIT_TIMEOUT_MS;
+use crate::minions::tools::MIN_WAIT_TIMEOUT_MS;
 use crate::tools::handlers::request_permissions_tool_description;
 use crate::tools::handlers::request_user_input_tool_description;
 use crate::tools::registry::ToolRegistryBuilder;
@@ -885,7 +885,7 @@ fn create_spawn_agent_tool(config: &ToolsConfig) -> ToolSpec {
         (
             "agent_type".to_string(),
             JsonSchema::String {
-                description: Some(crate::agent::role::spawn_tool_spec::build(
+                description: Some(crate::minions::role::spawn_tool_spec::build(
                     &config.agent_roles,
                 )),
             },
@@ -1887,11 +1887,11 @@ pub(crate) fn build_specs_with_discoverable_tools(
     use crate::tools::handlers::ToolSuggestHandler;
     use crate::tools::handlers::UnifiedExecHandler;
     use crate::tools::handlers::ViewImageHandler;
-    use crate::tools::handlers::multi_agents::CloseAgentHandler;
-    use crate::tools::handlers::multi_agents::ResumeAgentHandler;
-    use crate::tools::handlers::multi_agents::SendInputHandler;
-    use crate::tools::handlers::multi_agents::SpawnAgentHandler;
-    use crate::tools::handlers::multi_agents::WaitAgentHandler;
+    use crate::minions::tools::CloseAgentHandler;
+    use crate::minions::tools::ResumeAgentHandler;
+    use crate::minions::tools::SendInputHandler;
+    use crate::minions::tools::SpawnAgentHandler;
+    use crate::minions::tools::WaitAgentHandler;
     use std::sync::Arc;
 
     let mut builder = ToolRegistryBuilder::new();

@@ -5,8 +5,8 @@
 //! config, inherit runtime-only state such as provider, approval policy, sandbox, and cwd, and
 //! then optionally layer role-specific config on top.
 
-use crate::agent::AgentStatus;
-use crate::agent::exceeds_process_spawn_depth_limit;
+use crate::minions::AgentStatus;
+use crate::minions::exceeds_process_spawn_depth_limit;
 use crate::codex::Session;
 use crate::codex::TurnContext;
 use crate::config::Config;
@@ -95,10 +95,15 @@ where
         .to_response_item(call_id, payload)
 }
 
+#[path = "tools/close_agent.rs"]
 pub mod close_agent;
+#[path = "tools/resume_agent.rs"]
 mod resume_agent;
+#[path = "tools/send_input.rs"]
 mod send_input;
+#[path = "tools/spawn.rs"]
 mod spawn;
+#[path = "tools/wait.rs"]
 pub(crate) mod wait;
 
 fn agent_id(id: &str) -> Result<ProcessId, FunctionCallError> {
@@ -408,5 +413,5 @@ fn validate_spawn_agent_reasoning_effort(
 }
 
 #[cfg(test)]
-#[path = "multi_agents_tests.rs"]
+#[path = "tools_tests.rs"]
 mod tests;

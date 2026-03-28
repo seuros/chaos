@@ -1,6 +1,6 @@
-use crate::agent::exceeds_process_spawn_depth_limit;
-use crate::agent::next_process_spawn_depth;
-use crate::agent::status::is_final;
+use crate::minions::exceeds_process_spawn_depth_limit;
+use crate::minions::next_process_spawn_depth;
+use crate::minions::status::is_final;
 use crate::codex::Session;
 use crate::codex::TurnContext;
 use crate::config::Config;
@@ -9,7 +9,7 @@ use crate::function_tool::FunctionCallError;
 use crate::tools::context::FunctionToolOutput;
 use crate::tools::context::ToolInvocation;
 use crate::tools::context::ToolPayload;
-use crate::tools::handlers::multi_agents::build_agent_spawn_config;
+use crate::minions::tools::build_agent_spawn_config;
 use crate::tools::handlers::parse_arguments;
 use crate::tools::registry::ToolHandler;
 use crate::tools::registry::ToolKind;

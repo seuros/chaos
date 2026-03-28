@@ -2,7 +2,7 @@ use super::*;
 use crate::CodexAuth;
 use crate::Process;
 use crate::ProcessTable;
-use crate::agent::agent_status_from_event;
+use crate::minions::agent_status_from_event;
 use crate::config::AgentRoleConfig;
 use crate::config::Config;
 use crate::config::ConfigBuilder;

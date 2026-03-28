@@ -88,7 +88,9 @@ pub fn warning() -> Style {
 
 /// Error text (red phosphor).
 pub fn error() -> Style {
-    Style::default().fg(palette().error).add_modifier(Modifier::BOLD)
+    Style::default()
+        .fg(palette().error)
+        .add_modifier(Modifier::BOLD)
 }
 
 /// Success / approved text.

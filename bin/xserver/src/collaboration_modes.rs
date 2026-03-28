@@ -1,6 +1,6 @@
-use chaos_kern::models_manager::manager::ModelsManager;
 use chaos_ipc::config_types::CollaborationModeMask;
 use chaos_ipc::config_types::ModeKind;
+use chaos_kern::models_manager::manager::ModelsManager;
 
 fn filtered_presets(models_manager: &ModelsManager) -> Vec<CollaborationModeMask> {
     models_manager

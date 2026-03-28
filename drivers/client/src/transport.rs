@@ -8,10 +8,10 @@ use futures::stream::BoxStream;
 use http::HeaderMap;
 use http::StatusCode;
 use rama::Service;
+use rama::error::extra::OpaqueError;
 use rama::http::Body;
 use rama::http::body::util::BodyExt;
 use rama::service::BoxService;
-use rama::error::extra::OpaqueError;
 use std::sync::Arc;
 use tokio::sync::Mutex;
 use tracing::Level;
@@ -61,8 +61,8 @@ impl RamaTransport {
             timeout: _timeout, // TODO: rama per-request timeout via layer
         } = req;
 
-        let http_method = http::Method::from_bytes(method.as_str().as_bytes())
-            .unwrap_or(http::Method::GET);
+        let http_method =
+            http::Method::from_bytes(method.as_str().as_bytes()).unwrap_or(http::Method::GET);
 
         let rama_body = if let Some(body) = body {
             if compression != RequestCompression::None {
@@ -122,9 +122,7 @@ impl RamaTransport {
         // Inject trace headers.
         inject_trace_headers(&mut headers);
 
-        let mut builder = rama::http::Request::builder()
-            .method(http_method)
-            .uri(&url);
+        let mut builder = rama::http::Request::builder().method(http_method).uri(&url);
 
         for (key, value) in headers.iter() {
             builder = builder.header(key, value);
@@ -156,10 +154,7 @@ fn inject_trace_headers(headers: &mut HeaderMap) {
     }
 
     global::get_text_map_propagator(|prop| {
-        prop.inject_context(
-            &Span::current().context(),
-            &mut HeaderMapInjector(headers),
-        );
+        prop.inject_context(&Span::current().context(), &mut HeaderMapInjector(headers));
     });
 }
 
@@ -251,10 +246,9 @@ impl HttpTransport for RamaTransport {
         }
 
         let body_stream = response.into_body().into_data_stream();
-        let stream = tokio_stream::StreamExt::map(
-            body_stream,
-            |result: Result<Bytes, _>| result.map_err(|err| TransportError::Network(err.to_string())),
-        );
+        let stream = tokio_stream::StreamExt::map(body_stream, |result: Result<Bytes, _>| {
+            result.map_err(|err| TransportError::Network(err.to_string()))
+        });
 
         Ok(StreamResponse {
             status,

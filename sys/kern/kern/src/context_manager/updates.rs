@@ -3,13 +3,13 @@ use crate::codex::TurnContext;
 use crate::environment_context::EnvironmentContext;
 use crate::features::Feature;
 use crate::shell::Shell;
-use chaos_selinux::Policy;
 use chaos_ipc::config_types::Personality;
 use chaos_ipc::models::ContentItem;
 use chaos_ipc::models::DeveloperInstructions;
 use chaos_ipc::models::ResponseItem;
 use chaos_ipc::openai_models::ModelInfo;
 use chaos_ipc::protocol::TurnContextItem;
+use chaos_selinux::Policy;
 
 fn build_environment_update_item(
     previous: Option<&TurnContextItem>,

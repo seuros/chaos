@@ -389,13 +389,11 @@ mod tests {
         let mut store = ProcessEventStore::new(8);
         let request = Event {
             id: "ev-1".to_string(),
-            msg: EventMsg::RequestUserInput(
-                chaos_ipc::request_user_input::RequestUserInputEvent {
-                    call_id: "call-1".to_string(),
-                    turn_id: "turn-1".to_string(),
-                    questions: Vec::new(),
-                },
-            ),
+            msg: EventMsg::RequestUserInput(chaos_ipc::request_user_input::RequestUserInputEvent {
+                call_id: "call-1".to_string(),
+                turn_id: "turn-1".to_string(),
+                questions: Vec::new(),
+            }),
         };
 
         store.push_event(request);
@@ -413,13 +411,11 @@ mod tests {
         let mut store = ProcessEventStore::new(8);
         store.push_event(Event {
             id: "ev-1".to_string(),
-            msg: EventMsg::RequestUserInput(
-                chaos_ipc::request_user_input::RequestUserInputEvent {
-                    call_id: "call-1".to_string(),
-                    turn_id: "turn-1".to_string(),
-                    questions: Vec::new(),
-                },
-            ),
+            msg: EventMsg::RequestUserInput(chaos_ipc::request_user_input::RequestUserInputEvent {
+                call_id: "call-1".to_string(),
+                turn_id: "turn-1".to_string(),
+                questions: Vec::new(),
+            }),
         });
 
         store.note_outbound_op(&Op::UserInputAnswer {
@@ -441,23 +437,21 @@ mod tests {
         let mut store = ProcessEventStore::new(8);
         store.push_event(Event {
             id: "ev-1".to_string(),
-            msg: EventMsg::ExecApprovalRequest(
-                chaos_ipc::protocol::ExecApprovalRequestEvent {
-                    call_id: "call-1".to_string(),
-                    approval_id: Some("approval-1".to_string()),
-                    turn_id: "turn-1".to_string(),
-                    command: vec!["echo".to_string(), "hi".to_string()],
-                    cwd: PathBuf::from("/tmp"),
-                    reason: None,
-                    network_approval_context: None,
-                    proposed_execpolicy_amendment: None,
-                    proposed_network_policy_amendments: None,
-                    additional_permissions: None,
-                    skill_metadata: None,
-                    available_decisions: None,
-                    parsed_cmd: Vec::new(),
-                },
-            ),
+            msg: EventMsg::ExecApprovalRequest(chaos_ipc::protocol::ExecApprovalRequestEvent {
+                call_id: "call-1".to_string(),
+                approval_id: Some("approval-1".to_string()),
+                turn_id: "turn-1".to_string(),
+                command: vec!["echo".to_string(), "hi".to_string()],
+                cwd: PathBuf::from("/tmp"),
+                reason: None,
+                network_approval_context: None,
+                proposed_execpolicy_amendment: None,
+                proposed_network_policy_amendments: None,
+                additional_permissions: None,
+                skill_metadata: None,
+                available_decisions: None,
+                parsed_cmd: Vec::new(),
+            }),
         });
 
         store.note_outbound_op(&Op::ExecApproval {
@@ -478,13 +472,11 @@ mod tests {
         let mut store = ProcessEventStore::new(8);
         store.push_event(Event {
             id: "ev-1".to_string(),
-            msg: EventMsg::RequestUserInput(
-                chaos_ipc::request_user_input::RequestUserInputEvent {
-                    call_id: "call-1".to_string(),
-                    turn_id: "turn-1".to_string(),
-                    questions: Vec::new(),
-                },
-            ),
+            msg: EventMsg::RequestUserInput(chaos_ipc::request_user_input::RequestUserInputEvent {
+                call_id: "call-1".to_string(),
+                turn_id: "turn-1".to_string(),
+                questions: Vec::new(),
+            }),
         });
 
         store.note_outbound_op(&Op::UserInputAnswer {
@@ -496,13 +488,11 @@ mod tests {
 
         store.push_event(Event {
             id: "ev-2".to_string(),
-            msg: EventMsg::RequestUserInput(
-                chaos_ipc::request_user_input::RequestUserInputEvent {
-                    call_id: "call-2".to_string(),
-                    turn_id: "turn-1".to_string(),
-                    questions: Vec::new(),
-                },
-            ),
+            msg: EventMsg::RequestUserInput(chaos_ipc::request_user_input::RequestUserInputEvent {
+                call_id: "call-2".to_string(),
+                turn_id: "turn-1".to_string(),
+                questions: Vec::new(),
+            }),
         });
 
         let snapshot = store.snapshot();
@@ -518,23 +508,19 @@ mod tests {
         let mut store = ProcessEventStore::new(8);
         store.push_event(Event {
             id: "ev-1".to_string(),
-            msg: EventMsg::RequestUserInput(
-                chaos_ipc::request_user_input::RequestUserInputEvent {
-                    call_id: "call-1".to_string(),
-                    turn_id: "turn-1".to_string(),
-                    questions: Vec::new(),
-                },
-            ),
+            msg: EventMsg::RequestUserInput(chaos_ipc::request_user_input::RequestUserInputEvent {
+                call_id: "call-1".to_string(),
+                turn_id: "turn-1".to_string(),
+                questions: Vec::new(),
+            }),
         });
         store.push_event(Event {
             id: "ev-2".to_string(),
-            msg: EventMsg::RequestUserInput(
-                chaos_ipc::request_user_input::RequestUserInputEvent {
-                    call_id: "call-2".to_string(),
-                    turn_id: "turn-1".to_string(),
-                    questions: Vec::new(),
-                },
-            ),
+            msg: EventMsg::RequestUserInput(chaos_ipc::request_user_input::RequestUserInputEvent {
+                call_id: "call-2".to_string(),
+                turn_id: "turn-1".to_string(),
+                questions: Vec::new(),
+            }),
         });
 
         store.note_outbound_op(&Op::UserInputAnswer {
@@ -585,23 +571,21 @@ mod tests {
         let mut store = ProcessEventStore::new(8);
         store.push_event(Event {
             id: "ev-1".to_string(),
-            msg: EventMsg::ExecApprovalRequest(
-                chaos_ipc::protocol::ExecApprovalRequestEvent {
-                    call_id: "exec-call-1".to_string(),
-                    approval_id: Some("approval-1".to_string()),
-                    turn_id: "turn-1".to_string(),
-                    command: vec!["echo".to_string(), "hi".to_string()],
-                    cwd: PathBuf::from("/tmp"),
-                    reason: None,
-                    network_approval_context: None,
-                    proposed_execpolicy_amendment: None,
-                    proposed_network_policy_amendments: None,
-                    additional_permissions: None,
-                    skill_metadata: None,
-                    available_decisions: None,
-                    parsed_cmd: Vec::new(),
-                },
-            ),
+            msg: EventMsg::ExecApprovalRequest(chaos_ipc::protocol::ExecApprovalRequestEvent {
+                call_id: "exec-call-1".to_string(),
+                approval_id: Some("approval-1".to_string()),
+                turn_id: "turn-1".to_string(),
+                command: vec!["echo".to_string(), "hi".to_string()],
+                cwd: PathBuf::from("/tmp"),
+                reason: None,
+                network_approval_context: None,
+                proposed_execpolicy_amendment: None,
+                proposed_network_policy_amendments: None,
+                additional_permissions: None,
+                skill_metadata: None,
+                available_decisions: None,
+                parsed_cmd: Vec::new(),
+            }),
         });
         store.push_event(Event {
             id: "ev-2".to_string(),
@@ -675,23 +659,21 @@ mod tests {
 
         store.push_event(Event {
             id: "ev-1".to_string(),
-            msg: EventMsg::ExecApprovalRequest(
-                chaos_ipc::protocol::ExecApprovalRequestEvent {
-                    call_id: "call-1".to_string(),
-                    approval_id: None,
-                    turn_id: "turn-1".to_string(),
-                    command: vec!["echo".to_string(), "hi".to_string()],
-                    cwd: PathBuf::from("/tmp"),
-                    reason: None,
-                    network_approval_context: None,
-                    proposed_execpolicy_amendment: None,
-                    proposed_network_policy_amendments: None,
-                    additional_permissions: None,
-                    skill_metadata: None,
-                    available_decisions: None,
-                    parsed_cmd: Vec::new(),
-                },
-            ),
+            msg: EventMsg::ExecApprovalRequest(chaos_ipc::protocol::ExecApprovalRequestEvent {
+                call_id: "call-1".to_string(),
+                approval_id: None,
+                turn_id: "turn-1".to_string(),
+                command: vec!["echo".to_string(), "hi".to_string()],
+                cwd: PathBuf::from("/tmp"),
+                reason: None,
+                network_approval_context: None,
+                proposed_execpolicy_amendment: None,
+                proposed_network_policy_amendments: None,
+                additional_permissions: None,
+                skill_metadata: None,
+                available_decisions: None,
+                parsed_cmd: Vec::new(),
+            }),
         });
 
         assert_eq!(store.has_pending_process_approvals(), true);
@@ -710,13 +692,11 @@ mod tests {
         let mut store = ProcessEventStore::new(8);
         store.push_event(Event {
             id: "ev-1".to_string(),
-            msg: EventMsg::RequestUserInput(
-                chaos_ipc::request_user_input::RequestUserInputEvent {
-                    call_id: "call-1".to_string(),
-                    turn_id: "turn-1".to_string(),
-                    questions: Vec::new(),
-                },
-            ),
+            msg: EventMsg::RequestUserInput(chaos_ipc::request_user_input::RequestUserInputEvent {
+                call_id: "call-1".to_string(),
+                turn_id: "turn-1".to_string(),
+                questions: Vec::new(),
+            }),
         });
 
         assert_eq!(store.has_pending_process_approvals(), false);

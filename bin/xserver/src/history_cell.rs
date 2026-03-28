@@ -36,12 +36,7 @@ use crate::wrapping::RtOptions;
 use crate::wrapping::adaptive_wrap_line;
 use crate::wrapping::adaptive_wrap_lines;
 use base64::Engine;
-use chaos_kern::config::Config;
-use chaos_kern::config::types::McpServerTransportConfig;
-use chaos_kern::mcp::McpManager;
-use chaos_kern::plugins::PluginsManager;
-use chaos_kern::web_search::web_search_detail;
-use chaos_syslog::RuntimeMetricsSummary;
+use chaos_getopt::format_env_display::format_env_display;
 use chaos_ipc::account::PlanType;
 use chaos_ipc::config_types::ServiceTier;
 use chaos_ipc::mcp::Resource;
@@ -59,7 +54,12 @@ use chaos_ipc::protocol::SessionConfiguredEvent;
 use chaos_ipc::request_user_input::RequestUserInputAnswer;
 use chaos_ipc::request_user_input::RequestUserInputQuestion;
 use chaos_ipc::user_input::TextElement;
-use chaos_getopt::format_env_display::format_env_display;
+use chaos_kern::config::Config;
+use chaos_kern::config::types::McpServerTransportConfig;
+use chaos_kern::mcp::McpManager;
+use chaos_kern::plugins::PluginsManager;
+use chaos_kern::web_search::web_search_detail;
+use chaos_syslog::RuntimeMetricsSummary;
 use image::DynamicImage;
 use image::ImageReader;
 use ratatui::prelude::*;
@@ -982,7 +982,13 @@ fn with_border_internal(
     let mut out = Vec::with_capacity(lines.len() + 2);
     let border_inner_width = content_width + 2;
     let border_style = crate::theme::border();
-    out.push(vec![Span::styled(format!("╭{}╮", "─".repeat(border_inner_width)), border_style)].into());
+    out.push(
+        vec![Span::styled(
+            format!("╭{}╮", "─".repeat(border_inner_width)),
+            border_style,
+        )]
+        .into(),
+    );
 
     for line in lines.into_iter() {
         let used_width: usize = line
@@ -1000,7 +1006,13 @@ fn with_border_internal(
         out.push(Line::from(spans));
     }
 
-    out.push(vec![Span::styled(format!("╰{}╯", "─".repeat(border_inner_width)), border_style)].into());
+    out.push(
+        vec![Span::styled(
+            format!("╰{}╯", "─".repeat(border_inner_width)),
+            border_style,
+        )]
+        .into(),
+    );
 
     out
 }
@@ -1094,7 +1106,10 @@ pub(crate) fn new_session_info(
             Line::from(vec![
                 Span::from("  "),
                 Span::styled("/init", cmd_style),
-                Span::styled(" - create an AGENTS.md file with instructions for Chaos", desc_style),
+                Span::styled(
+                    " - create an AGENTS.md file with instructions for Chaos",
+                    desc_style,
+                ),
             ]),
             Line::from(vec![
                 Span::from("  "),
@@ -1109,7 +1124,10 @@ pub(crate) fn new_session_info(
             Line::from(vec![
                 Span::from("  "),
                 Span::styled("/model", cmd_style),
-                Span::styled(" - choose what model and reasoning effort to use", desc_style),
+                Span::styled(
+                    " - choose what model and reasoning effort to use",
+                    desc_style,
+                ),
             ]),
             Line::from(vec![
                 Span::from("  "),
@@ -1286,8 +1304,14 @@ impl HistoryCell for SessionHeaderHistoryCell {
                 spans.push(Span::styled("fast", Style::default().fg(p.warning)));
             }
             spans.push(Span::styled("   ", crate::theme::dim()));
-            spans.push(Span::styled(CHANGE_MODEL_HINT_COMMAND, Style::default().fg(p.accent)));
-            spans.push(Span::styled(CHANGE_MODEL_HINT_EXPLANATION, crate::theme::dim()));
+            spans.push(Span::styled(
+                CHANGE_MODEL_HINT_COMMAND,
+                Style::default().fg(p.accent),
+            ));
+            spans.push(Span::styled(
+                CHANGE_MODEL_HINT_EXPLANATION,
+                crate::theme::dim(),
+            ));
             spans
         };
 
@@ -1296,7 +1320,10 @@ impl HistoryCell for SessionHeaderHistoryCell {
         let dir_prefix_width = UnicodeWidthStr::width(dir_prefix.as_str());
         let dir_max_width = inner_width.saturating_sub(dir_prefix_width);
         let dir = self.format_directory(Some(dir_max_width));
-        let dir_spans = vec![Span::styled(dir_prefix, crate::theme::dim()), Span::styled(dir, Style::default().fg(p.fg))];
+        let dir_spans = vec![
+            Span::styled(dir_prefix, crate::theme::dim()),
+            Span::styled(dir, Style::default().fg(p.fg)),
+        ];
 
         let lines = vec![
             make_row(title_spans),
@@ -2025,7 +2052,9 @@ impl HistoryCell for RequestUserInputResultCell {
                 width,
                 "  ↳ ".cyan().dim(),
                 "    ".dim(),
-                Style::default().fg(crate::theme::cyan()).add_modifier(Modifier::DIM),
+                Style::default()
+                    .fg(crate::theme::cyan())
+                    .add_modifier(Modifier::DIM),
             ));
         }
 
@@ -2484,12 +2513,6 @@ mod tests {
     use crate::exec_cell::CommandOutput;
     use crate::exec_cell::ExecCall;
     use crate::exec_cell::ExecCell;
-    use chaos_kern::config::Config;
-    use chaos_kern::config::ConfigBuilder;
-    use chaos_kern::config::types::McpServerConfig;
-    use chaos_kern::config::types::McpServerTransportConfig;
-    use chaos_syslog::RuntimeMetricTotals;
-    use chaos_syslog::RuntimeMetricsSummary;
     use chaos_ipc::ProcessId;
     use chaos_ipc::account::PlanType;
     use chaos_ipc::models::WebSearchAction;
@@ -2498,6 +2521,12 @@ mod tests {
     use chaos_ipc::protocol::McpAuthStatus;
     use chaos_ipc::protocol::SandboxPolicy;
     use chaos_ipc::protocol::SessionConfiguredEvent;
+    use chaos_kern::config::Config;
+    use chaos_kern::config::ConfigBuilder;
+    use chaos_kern::config::types::McpServerConfig;
+    use chaos_kern::config::types::McpServerTransportConfig;
+    use chaos_syslog::RuntimeMetricTotals;
+    use chaos_syslog::RuntimeMetricsSummary;
     use dirs::home_dir;
     use pretty_assertions::assert_eq;
     use serde_json::json;

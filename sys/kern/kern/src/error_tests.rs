@@ -1,10 +1,10 @@
 use super::*;
 use crate::exec::StreamOutput;
+use chaos_ipc::protocol::RateLimitWindow;
+use http::StatusCode;
 use jiff::Timestamp;
 use jiff::ToSpan;
-use chaos_ipc::protocol::RateLimitWindow;
 use pretty_assertions::assert_eq;
-use http::StatusCode;
 
 fn rate_limit_snapshot() -> RateLimitSnapshot {
     let primary_reset_at = "2024-01-01T01:00:00Z"
@@ -59,10 +59,7 @@ fn usage_limit_reached_error_formats_plus_plan() {
 #[test]
 fn server_overloaded_maps_to_protocol() {
     let err = CodexErr::ServerOverloaded;
-    assert_eq!(
-        err.to_chaos_ipc_error(),
-        CodexErrorInfo::ServerOverloaded
-    );
+    assert_eq!(err.to_chaos_ipc_error(), CodexErrorInfo::ServerOverloaded);
 }
 
 #[test]
@@ -433,7 +430,11 @@ fn unexpected_status_includes_identity_auth_details() {
 #[test]
 fn usage_limit_reached_includes_hours_and_minutes() {
     let base: Timestamp = "2024-01-01T00:00:00Z".parse().unwrap();
-    let resets_at = base.checked_add(3.hours()).unwrap().checked_add(32.minutes()).unwrap();
+    let resets_at = base
+        .checked_add(3.hours())
+        .unwrap()
+        .checked_add(32.minutes())
+        .unwrap();
     with_now_override(base, move || {
         let expected_time = format_retry_timestamp(&resets_at);
         let err = UsageLimitReachedError {
@@ -452,7 +453,13 @@ fn usage_limit_reached_includes_hours_and_minutes() {
 #[test]
 fn usage_limit_reached_includes_days_hours_minutes() {
     let base: Timestamp = "2024-01-01T00:00:00Z".parse().unwrap();
-    let resets_at = base.checked_add(2.days()).unwrap().checked_add(3.hours()).unwrap().checked_add(5.minutes()).unwrap();
+    let resets_at = base
+        .checked_add(2.days())
+        .unwrap()
+        .checked_add(3.hours())
+        .unwrap()
+        .checked_add(5.minutes())
+        .unwrap();
     with_now_override(base, move || {
         let expected_time = format_retry_timestamp(&resets_at);
         let err = UsageLimitReachedError {

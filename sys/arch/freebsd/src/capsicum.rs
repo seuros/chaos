@@ -163,7 +163,10 @@ mod tests {
             false,
             false,
         );
-        assert!(result.is_ok(), "restricted policies should pass through with warnings");
+        assert!(
+            result.is_ok(),
+            "restricted policies should pass through with warnings"
+        );
     }
 
     #[test]
@@ -174,7 +177,10 @@ mod tests {
             false,
             false,
         );
-        assert!(result.is_ok(), "workspace-write policy should pass through with warnings");
+        assert!(
+            result.is_ok(),
+            "workspace-write policy should pass through with warnings"
+        );
     }
 
     #[test]
@@ -185,7 +191,10 @@ mod tests {
             false,
             false,
         );
-        assert!(result.is_ok(), "network-only restriction should pass through with warnings");
+        assert!(
+            result.is_ok(),
+            "network-only restriction should pass through with warnings"
+        );
     }
 
     #[test]
@@ -196,7 +205,10 @@ mod tests {
             true,
             true,
         );
-        assert!(result.is_ok(), "managed proxy mode should pass through with warnings");
+        assert!(
+            result.is_ok(),
+            "managed proxy mode should pass through with warnings"
+        );
     }
 
     #[test]
@@ -207,6 +219,9 @@ mod tests {
             false,
             false,
         );
-        assert!(result.is_ok(), "RootAccess should succeed with procctl hardening");
+        assert!(
+            result.is_ok(),
+            "RootAccess should succeed with procctl hardening"
+        );
     }
 }

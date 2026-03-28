@@ -10,27 +10,27 @@
 
 use std::path::PathBuf;
 
-use chaos_kern::connectors::AppInfo;
-use chaos_locate::FileMatch;
 use chaos_ipc::ProcessId;
 use chaos_ipc::mcp::RequestId as McpRequestId;
 use chaos_ipc::openai_models::ModelPreset;
 use chaos_ipc::protocol::ElicitationAction;
 use chaos_ipc::protocol::Event;
+use chaos_kern::connectors::AppInfo;
+use chaos_locate::FileMatch;
 use chaos_sudoers::ApprovalPreset;
 
 use crate::bottom_pane::ApprovalRequest;
 use crate::bottom_pane::StatusLineItem;
 use crate::history_cell::HistoryCell;
 
-use chaos_kern::config::types::ApprovalsReviewer;
-use chaos_kern::features::Feature;
 use chaos_ipc::config_types::CollaborationModeMask;
 use chaos_ipc::config_types::Personality;
 use chaos_ipc::config_types::ServiceTier;
 use chaos_ipc::openai_models::ReasoningEffort;
 use chaos_ipc::protocol::AskForApproval;
 use chaos_ipc::protocol::SandboxPolicy;
+use chaos_kern::config::types::ApprovalsReviewer;
+use chaos_kern::features::Feature;
 
 #[derive(Debug, Clone)]
 pub(crate) struct ConnectorsSnapshot {

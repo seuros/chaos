@@ -458,7 +458,10 @@ mod tests {
 
         // First span colored, rest plain.
         let line: Line<'static> = Line::from(vec![
-            Span::styled("1. ", ratatui::style::Style::default().fg(crate::theme::light_blue())),
+            Span::styled(
+                "1. ",
+                ratatui::style::Style::default().fg(crate::theme::light_blue()),
+            ),
             Span::raw("Hello world"),
         ]);
 

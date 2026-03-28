@@ -472,11 +472,9 @@ impl PatchActionTransfer {
             .iter()
             .map(|(path, change)| {
                 let transfer = match change {
-                    chaos_diff::ApplyPatchFileChange::Add { content } => {
-                        PatchChangeTransfer::Add {
-                            content: content.clone(),
-                        }
-                    }
+                    chaos_diff::ApplyPatchFileChange::Add { content } => PatchChangeTransfer::Add {
+                        content: content.clone(),
+                    },
                     chaos_diff::ApplyPatchFileChange::Delete { content } => {
                         PatchChangeTransfer::Delete {
                             content: content.clone(),

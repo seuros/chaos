@@ -177,9 +177,7 @@ impl RequestUserInputOverlay {
         self.current_idx
     }
 
-    fn current_question(
-        &self,
-    ) -> Option<&chaos_ipc::request_user_input::RequestUserInputQuestion> {
+    fn current_question(&self) -> Option<&chaos_ipc::request_user_input::RequestUserInputQuestion> {
         self.request.questions.get(self.current_index())
     }
 

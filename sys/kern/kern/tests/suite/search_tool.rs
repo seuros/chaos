@@ -1,12 +1,12 @@
 #![allow(clippy::unwrap_used, clippy::expect_used)]
 
 use anyhow::Result;
-use chaos_kern::CodexAuth;
-use chaos_kern::config::Config;
-use chaos_kern::features::Feature;
 use chaos_ipc::openai_models::ModelsResponse;
 use chaos_ipc::protocol::AskForApproval;
 use chaos_ipc::protocol::SandboxPolicy;
+use chaos_kern::CodexAuth;
+use chaos_kern::config::Config;
+use chaos_kern::features::Feature;
 use core_test_support::apps_test_server::AppsTestServer;
 use core_test_support::responses::ev_assistant_message;
 use core_test_support::responses::ev_completed;

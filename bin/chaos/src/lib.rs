@@ -2,8 +2,8 @@ pub mod debug_sandbox;
 mod exit_status;
 pub mod login;
 
-use clap::Parser;
 use chaos_getopt::CliConfigOverrides;
+use clap::Parser;
 
 #[derive(Debug, Parser)]
 pub struct SeatbeltCommand {

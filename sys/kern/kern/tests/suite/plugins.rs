@@ -5,9 +5,9 @@ use std::time::Duration;
 use std::time::Instant;
 
 use anyhow::Result;
-use chaos_kern::CodexAuth;
 use chaos_ipc::protocol::EventMsg;
 use chaos_ipc::protocol::Op;
+use chaos_kern::CodexAuth;
 use core_test_support::responses::ev_completed;
 use core_test_support::responses::ev_response_created;
 use core_test_support::responses::mount_sse_once;

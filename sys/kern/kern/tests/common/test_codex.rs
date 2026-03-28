@@ -5,14 +5,6 @@ use std::sync::Arc;
 
 use anyhow::Context;
 use anyhow::Result;
-use chaos_kern::CodexAuth;
-use chaos_kern::Process;
-use chaos_kern::ModelProviderInfo;
-use chaos_kern::ProcessTable;
-use chaos_kern::built_in_model_providers;
-use chaos_kern::config::Config;
-use chaos_kern::features::Feature;
-use chaos_kern::models_manager::collaboration_mode_presets::CollaborationModesConfig;
 use chaos_ipc::config_types::ServiceTier;
 use chaos_ipc::openai_models::ModelsResponse;
 use chaos_ipc::protocol::AskForApproval;
@@ -22,6 +14,14 @@ use chaos_ipc::protocol::SandboxPolicy;
 use chaos_ipc::protocol::SessionConfiguredEvent;
 use chaos_ipc::protocol::SessionSource;
 use chaos_ipc::user_input::UserInput;
+use chaos_kern::CodexAuth;
+use chaos_kern::ModelProviderInfo;
+use chaos_kern::Process;
+use chaos_kern::ProcessTable;
+use chaos_kern::built_in_model_providers;
+use chaos_kern::config::Config;
+use chaos_kern::features::Feature;
+use chaos_kern::models_manager::collaboration_mode_presets::CollaborationModesConfig;
 use serde_json::Value;
 use tempfile::TempDir;
 use wiremock::MockServer;
@@ -276,8 +276,8 @@ fn ensure_test_model_catalog(config: &mut Config) -> Result<()> {
         return Ok(());
     }
 
-    let bundled_models_path = chaos_which::find_resource!("../../models.json")
-        .context("bundled models.json")?;
+    let bundled_models_path =
+        chaos_which::find_resource!("../../models.json").context("bundled models.json")?;
     let bundled_models_contents =
         std::fs::read_to_string(&bundled_models_path).with_context(|| {
             format!(
@@ -330,12 +330,8 @@ impl TestCodex {
     }
 
     pub async fn submit_turn(&self, prompt: &str) -> Result<()> {
-        self.submit_turn_with_policies(
-            prompt,
-            AskForApproval::Never,
-            SandboxPolicy::RootAccess,
-        )
-        .await
+        self.submit_turn_with_policies(prompt, AskForApproval::Never, SandboxPolicy::RootAccess)
+            .await
     }
 
     pub async fn submit_turn_with_policy(

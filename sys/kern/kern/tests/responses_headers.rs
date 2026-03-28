@@ -1,6 +1,12 @@
 use std::process::Command;
 use std::sync::Arc;
 
+use chaos_ipc::ProcessId;
+use chaos_ipc::config_types::ReasoningSummary;
+use chaos_ipc::models::ContentItem;
+use chaos_ipc::models::ResponseItem;
+use chaos_ipc::protocol::SessionSource;
+use chaos_ipc::protocol::SubAgentSource;
 use chaos_kern::CodexAuth;
 use chaos_kern::ModelClient;
 use chaos_kern::ModelProviderInfo;
@@ -9,12 +15,6 @@ use chaos_kern::ResponseEvent;
 use chaos_kern::WireApi;
 use chaos_syslog::SessionTelemetry;
 use chaos_syslog::TelemetryAuthMode;
-use chaos_ipc::ProcessId;
-use chaos_ipc::config_types::ReasoningSummary;
-use chaos_ipc::models::ContentItem;
-use chaos_ipc::models::ResponseItem;
-use chaos_ipc::protocol::SessionSource;
-use chaos_ipc::protocol::SubAgentSource;
 use core_test_support::load_default_config_for_test;
 use core_test_support::responses;
 use core_test_support::test_codex::test_codex;

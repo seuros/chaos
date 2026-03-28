@@ -1,9 +1,9 @@
+use chaos_ipc::config_types::ServiceTier;
+use chaos_ipc::models::FunctionCallOutputPayload;
 use codex_api::ResponsesApiRequest;
 use codex_api::common::OpenAiVerbosity;
 use codex_api::common::TextControls;
 use codex_api::create_text_param_for_request;
-use chaos_ipc::config_types::ServiceTier;
-use chaos_ipc::models::FunctionCallOutputPayload;
 use pretty_assertions::assert_eq;
 
 use super::*;

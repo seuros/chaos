@@ -3,12 +3,12 @@ use super::processes::push_process_order_and_limit;
 use super::*;
 use crate::model::Phase2InputSelection;
 use crate::model::Phase2JobClaimOutcome;
+use crate::model::ProcessRow;
 use crate::model::Stage1JobClaim;
 use crate::model::Stage1JobClaimOutcome;
 use crate::model::Stage1Output;
 use crate::model::Stage1OutputRow;
 use crate::model::Stage1StartupClaimParams;
-use crate::model::ProcessRow;
 use crate::model::stage1_output_ref_from_parts;
 use jiff::ToSpan;
 use sqlx::Executor;
@@ -155,8 +155,14 @@ WHERE process_id = ?
 
         let worker_id = current_process_id;
         let current_process_id = worker_id.to_string();
-        let max_age_cutoff = jiff::Timestamp::now().checked_sub(max_age_days.max(0).days()).expect("age cutoff").as_second();
-        let idle_cutoff = jiff::Timestamp::now().checked_sub(min_rollout_idle_hours.max(0).hours()).expect("idle cutoff").as_second();
+        let max_age_cutoff = jiff::Timestamp::now()
+            .checked_sub(max_age_days.max(0).days())
+            .expect("age cutoff")
+            .as_second();
+        let idle_cutoff = jiff::Timestamp::now()
+            .checked_sub(min_rollout_idle_hours.max(0).hours())
+            .expect("idle cutoff")
+            .as_second();
 
         let mut builder = QueryBuilder::<Sqlite>::new(
             r#"
@@ -311,7 +317,10 @@ LIMIT ?
             return Ok(0);
         }
 
-        let cutoff = jiff::Timestamp::now().checked_sub(max_unused_days.max(0).days()).expect("unused cutoff").as_second();
+        let cutoff = jiff::Timestamp::now()
+            .checked_sub(max_unused_days.max(0).days())
+            .expect("unused cutoff")
+            .as_second();
         let rows_affected = sqlx::query(
             r#"
 DELETE FROM stage1_outputs
@@ -365,7 +374,10 @@ WHERE process_id IN (
         if n == 0 {
             return Ok(Phase2InputSelection::default());
         }
-        let cutoff = jiff::Timestamp::now().checked_sub(max_unused_days.max(0).days()).expect("unused cutoff").as_second();
+        let cutoff = jiff::Timestamp::now()
+            .checked_sub(max_unused_days.max(0).days())
+            .expect("unused cutoff")
+            .as_second();
 
         let current_rows = sqlx::query(
             r#"
@@ -1285,8 +1297,8 @@ mod tests {
     use crate::model::Phase2JobClaimOutcome;
     use crate::model::Stage1JobClaimOutcome;
     use crate::model::Stage1StartupClaimParams;
-    use jiff::ToSpan;
     use chaos_ipc::ProcessId;
+    use jiff::ToSpan;
     use pretty_assertions::assert_eq;
     use sqlx::Row;
     use std::sync::Arc;
@@ -1533,8 +1545,16 @@ mod tests {
 
         let now = jiff::Timestamp::now();
         let fresh_at = now.checked_sub(1.hours()).unwrap();
-        let just_under_idle_at = now.checked_sub(12.hours()).unwrap().checked_add(1.minutes()).unwrap();
-        let eligible_idle_at = now.checked_sub(12.hours()).unwrap().checked_sub(1.minutes()).unwrap();
+        let just_under_idle_at = now
+            .checked_sub(12.hours())
+            .unwrap()
+            .checked_add(1.minutes())
+            .unwrap();
+        let eligible_idle_at = now
+            .checked_sub(12.hours())
+            .unwrap()
+            .checked_sub(1.minutes())
+            .unwrap();
         let old_at = now.checked_sub(31.days()).unwrap();
 
         let current_process_id =
@@ -1739,8 +1759,11 @@ mod tests {
             .await
             .expect("upsert current thread");
 
-        let mut disabled =
-            test_process_metadata(&codex_home, disabled_process_id, codex_home.join("disabled"));
+        let mut disabled = test_process_metadata(
+            &codex_home,
+            disabled_process_id,
+            codex_home.join("disabled"),
+        );
         disabled.created_at = eligible_at;
         disabled.updated_at = eligible_at;
         runtime
@@ -1840,8 +1863,11 @@ mod tests {
             .await
             .expect("enqueue global consolidation");
 
-        let mut disabled =
-            test_process_metadata(&codex_home, disabled_process_id, codex_home.join("disabled"));
+        let mut disabled = test_process_metadata(
+            &codex_home,
+            disabled_process_id,
+            codex_home.join("disabled"),
+        );
         disabled.created_at = now;
         disabled.updated_at = now;
         runtime
@@ -1919,7 +1945,8 @@ mod tests {
         let total_candidates = 80usize;
 
         for idx in 0..total_candidates {
-            let process_id = ProcessId::from_string(&Uuid::new_v4().to_string()).expect("thread id");
+            let process_id =
+                ProcessId::from_string(&Uuid::new_v4().to_string()).expect("thread id");
             let mut metadata = test_process_metadata(
                 &codex_home,
                 process_id,
@@ -2040,7 +2067,8 @@ WHERE kind = 'memory_stage1'
 
         let eligible_at = jiff::Timestamp::now().checked_sub(13.hours()).unwrap();
         for idx in 0..200 {
-            let process_id = ProcessId::from_string(&Uuid::new_v4().to_string()).expect("thread id");
+            let process_id =
+                ProcessId::from_string(&Uuid::new_v4().to_string()).expect("thread id");
             let mut metadata = test_process_metadata(
                 &codex_home,
                 process_id,
@@ -2282,7 +2310,14 @@ WHERE kind = 'memory_stage1'
         };
         assert!(
             runtime
-                .mark_stage1_job_succeeded(process_id, first_token.as_str(), 100, "raw", "sum", None)
+                .mark_stage1_job_succeeded(
+                    process_id,
+                    first_token.as_str(),
+                    100,
+                    "raw",
+                    "sum",
+                    None
+                )
                 .await
                 .expect("mark initial stage1 succeeded"),
             "initial stage1 success should create stage1 output"
@@ -3807,9 +3842,17 @@ VALUES (?, ?, ?, ?, ?)
         }
 
         for (process_id, usage_count, last_usage) in [
-            (thread_a, Some(9_i64), Some(now.checked_sub(31.days()).unwrap())),
+            (
+                thread_a,
+                Some(9_i64),
+                Some(now.checked_sub(31.days()).unwrap()),
+            ),
             (thread_b, None, None),
-            (thread_c, Some(1_i64), Some(now.checked_sub(1.days()).unwrap())),
+            (
+                thread_c,
+                Some(1_i64),
+                Some(now.checked_sub(1.days()).unwrap()),
+            ),
         ] {
             sqlx::query(
                 "UPDATE stage1_outputs SET usage_count = ?, last_usage = ? WHERE process_id = ?",
@@ -3952,26 +3995,10 @@ VALUES (?, ?, ?, ?, ?)
 
         let now = jiff::Timestamp::now().as_second();
         for (process_id, source_updated_at, summary) in [
-            (
-                stale_unused,
-                now - 60 * 86400,
-                "stale-unused",
-            ),
-            (
-                stale_used,
-                now - 50 * 86400,
-                "stale-used",
-            ),
-            (
-                stale_selected,
-                now - 45 * 86400,
-                "stale-selected",
-            ),
-            (
-                fresh_used,
-                now - 10 * 86400,
-                "fresh-used",
-            ),
+            (stale_unused, now - 60 * 86400, "stale-unused"),
+            (stale_used, now - 50 * 86400, "stale-used"),
+            (stale_selected, now - 45 * 86400, "stale-selected"),
+            (fresh_used, now - 10 * 86400, "fresh-used"),
         ] {
             let claim = runtime
                 .try_claim_stage1_job(process_id, owner, source_updated_at, 3600, 64)

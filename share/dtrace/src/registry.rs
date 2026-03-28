@@ -98,10 +98,7 @@ impl Hooks {
         self.engine.run_session_start(request, turn_id).await
     }
 
-    pub fn preview_stop(
-        &self,
-        request: &StopRequest,
-    ) -> Vec<chaos_ipc::protocol::HookRunSummary> {
+    pub fn preview_stop(&self, request: &StopRequest) -> Vec<chaos_ipc::protocol::HookRunSummary> {
         self.engine.preview_stop(request)
     }
 

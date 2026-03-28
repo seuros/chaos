@@ -1,7 +1,7 @@
 //! OpenTelemetry HttpClient implementation backed by rama.
 
-use rama::bytes::Bytes;
 use rama::Service;
+use rama::bytes::Bytes;
 use rama::error::extra::OpaqueError;
 use rama::http::Body;
 use rama::http::body::util::BodyExt;
@@ -36,7 +36,20 @@ impl fmt::Debug for RamaOtelClient {
 }
 
 impl opentelemetry_http::HttpClient for RamaOtelClient {
-    fn send_bytes<'life0, 'async_trait>(&'life0 self, request: http::Request<Bytes>) -> std::pin::Pin<Box<dyn std::future::Future<Output = Result<http::Response<Bytes>, HttpError>> + Send + 'async_trait>> where Self: 'async_trait, 'life0: 'async_trait {
+    fn send_bytes<'life0, 'async_trait>(
+        &'life0 self,
+        request: http::Request<Bytes>,
+    ) -> std::pin::Pin<
+        Box<
+            dyn std::future::Future<Output = Result<http::Response<Bytes>, HttpError>>
+                + Send
+                + 'async_trait,
+        >,
+    >
+    where
+        Self: 'async_trait,
+        'life0: 'async_trait,
+    {
         let inner = self.inner.clone();
         Box::pin(async move {
             let (parts, body) = request.into_parts();

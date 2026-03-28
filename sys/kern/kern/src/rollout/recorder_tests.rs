@@ -1,7 +1,6 @@
 use super::*;
 use crate::config::ConfigBuilder;
 use crate::features::Feature;
-use jiff::Timestamp;
 use chaos_ipc::config_types::ReasoningSummary as ReasoningSummaryConfig;
 use chaos_ipc::protocol::AgentMessageEvent;
 use chaos_ipc::protocol::AskForApproval;
@@ -9,6 +8,7 @@ use chaos_ipc::protocol::EventMsg;
 use chaos_ipc::protocol::SandboxPolicy;
 use chaos_ipc::protocol::TurnContextItem;
 use chaos_ipc::protocol::UserMessageEvent;
+use jiff::Timestamp;
 use pretty_assertions::assert_eq;
 use std::fs::File;
 use std::fs::{self};
@@ -340,12 +340,10 @@ async fn list_threads_db_enabled_drops_missing_rollout_paths() -> std::io::Resul
         "sessions/2099/01/01/rollout-2099-01-01T00-00-00-{uuid}.jsonl"
     ));
 
-    let runtime = chaos_proc::StateRuntime::init(
-        home.path().to_path_buf(),
-        config.model_provider_id.clone(),
-    )
-    .await
-    .expect("state db should initialize");
+    let runtime =
+        chaos_proc::StateRuntime::init(home.path().to_path_buf(), config.model_provider_id.clone())
+            .await
+            .expect("state db should initialize");
     runtime
         .mark_backfill_complete(None)
         .await
@@ -406,12 +404,10 @@ async fn list_threads_db_enabled_repairs_stale_rollout_paths() -> std::io::Resul
         "sessions/2099/01/01/rollout-2099-01-01T00-00-00-{uuid}.jsonl"
     ));
 
-    let runtime = chaos_proc::StateRuntime::init(
-        home.path().to_path_buf(),
-        config.model_provider_id.clone(),
-    )
-    .await
-    .expect("state db should initialize");
+    let runtime =
+        chaos_proc::StateRuntime::init(home.path().to_path_buf(), config.model_provider_id.clone())
+            .await
+            .expect("state db should initialize");
     runtime
         .mark_backfill_complete(None)
         .await

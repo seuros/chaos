@@ -3,11 +3,6 @@
 use std::sync::Arc;
 
 use anyhow::Result;
-use chaos_kern::CodexAuth;
-use chaos_kern::ModelProviderInfo;
-use chaos_kern::built_in_model_providers;
-use chaos_kern::models_manager::manager::ModelsManager;
-use chaos_kern::models_manager::manager::RefreshStrategy;
 use chaos_ipc::config_types::ReasoningSummary;
 use chaos_ipc::openai_models::ConfigShellToolType;
 use chaos_ipc::openai_models::ModelInfo;
@@ -24,6 +19,11 @@ use chaos_ipc::protocol::ExecCommandSource;
 use chaos_ipc::protocol::Op;
 use chaos_ipc::protocol::SandboxPolicy;
 use chaos_ipc::user_input::UserInput;
+use chaos_kern::CodexAuth;
+use chaos_kern::ModelProviderInfo;
+use chaos_kern::built_in_model_providers;
+use chaos_kern::models_manager::manager::ModelsManager;
+use chaos_kern::models_manager::manager::RefreshStrategy;
 use core_test_support::load_default_config_for_test;
 use core_test_support::responses::ev_assistant_message;
 use core_test_support::responses::ev_completed;

@@ -5,9 +5,9 @@ use std::path::PathBuf;
 use crate::analytics_client::AnalyticsEventsClient;
 use crate::analytics_client::TrackEventsContext;
 use crate::skills::SkillMetadata;
-use chaos_syslog::SessionTelemetry;
 use chaos_ipc::models::ResponseItem;
 use chaos_ipc::user_input::UserInput;
+use chaos_syslog::SessionTelemetry;
 
 #[derive(Debug, Default)]
 pub(crate) struct SkillInjections {

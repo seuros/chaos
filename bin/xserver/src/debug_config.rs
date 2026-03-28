@@ -1,4 +1,6 @@
 use crate::history_cell::PlainHistoryCell;
+use chaos_ipc::api::ConfigLayerSource;
+use chaos_ipc::protocol::SessionNetworkProxyRuntime;
 use chaos_kern::config::Config;
 use chaos_kern::config_loader::ConfigLayerEntry;
 use chaos_kern::config_loader::ConfigLayerStack;
@@ -8,8 +10,6 @@ use chaos_kern::config_loader::RequirementSource;
 use chaos_kern::config_loader::ResidencyRequirement;
 use chaos_kern::config_loader::SandboxModeRequirement;
 use chaos_kern::config_loader::WebSearchModeRequirement;
-use chaos_ipc::api::ConfigLayerSource;
-use chaos_ipc::protocol::SessionNetworkProxyRuntime;
 use ratatui::style::Stylize;
 use ratatui::text::Line;
 use toml::Value as TomlValue;
@@ -390,6 +390,10 @@ fn format_network_constraints(network: &NetworkConstraints) -> String {
 mod tests {
     use super::render_debug_config_lines;
     use super::session_all_proxy_url;
+    use chaos_ipc::api::ConfigLayerSource;
+    use chaos_ipc::config_types::WebSearchMode;
+    use chaos_ipc::protocol::AskForApproval;
+    use chaos_ipc::protocol::SandboxPolicy;
     use chaos_kern::config::Constrained;
     use chaos_kern::config_loader::ConfigLayerEntry;
     use chaos_kern::config_loader::ConfigLayerStack;
@@ -404,10 +408,6 @@ mod tests {
     use chaos_kern::config_loader::SandboxModeRequirement;
     use chaos_kern::config_loader::Sourced;
     use chaos_kern::config_loader::WebSearchModeRequirement;
-    use chaos_ipc::api::ConfigLayerSource;
-    use chaos_ipc::config_types::WebSearchMode;
-    use chaos_ipc::protocol::AskForApproval;
-    use chaos_ipc::protocol::SandboxPolicy;
     use chaos_realpath::AbsolutePathBuf;
     use ratatui::text::Line;
     use std::collections::BTreeMap;

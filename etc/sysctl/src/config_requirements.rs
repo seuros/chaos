@@ -677,11 +677,11 @@ impl TryFrom<ConfigRequirementsWithSources> for ConfigRequirements {
 mod tests {
     use super::*;
     use anyhow::Result;
+    use chaos_ipc::protocol::NetworkAccess;
+    use chaos_realpath::AbsolutePathBuf;
     use chaos_selinux::Decision;
     use chaos_selinux::Evaluation;
     use chaos_selinux::RuleMatch;
-    use chaos_ipc::protocol::NetworkAccess;
-    use chaos_realpath::AbsolutePathBuf;
     use pretty_assertions::assert_eq;
     use toml::from_str;
 

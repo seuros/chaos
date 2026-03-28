@@ -1,13 +1,5 @@
 #![cfg(target_os = "linux")]
 #![allow(clippy::unwrap_used)]
-use chaos_kern::config::types::ShellEnvironmentPolicy;
-use chaos_kern::error::CodexErr;
-use chaos_kern::error::Result;
-use chaos_kern::error::SandboxErr;
-use chaos_kern::exec::ExecParams;
-use chaos_kern::exec::process_exec_tool_call;
-use chaos_kern::exec_env::create_env;
-use chaos_kern::sandboxing::SandboxPermissions;
 use chaos_ipc::permissions::FileSystemAccessMode;
 use chaos_ipc::permissions::FileSystemPath;
 use chaos_ipc::permissions::FileSystemSandboxEntry;
@@ -16,6 +8,14 @@ use chaos_ipc::permissions::FileSystemSpecialPath;
 use chaos_ipc::permissions::NetworkSandboxPolicy;
 use chaos_ipc::protocol::ReadOnlyAccess;
 use chaos_ipc::protocol::SandboxPolicy;
+use chaos_kern::config::types::ShellEnvironmentPolicy;
+use chaos_kern::error::CodexErr;
+use chaos_kern::error::Result;
+use chaos_kern::error::SandboxErr;
+use chaos_kern::exec::ExecParams;
+use chaos_kern::exec::process_exec_tool_call;
+use chaos_kern::exec_env::create_env;
+use chaos_kern::sandboxing::SandboxPermissions;
 use chaos_realpath::AbsolutePathBuf;
 use pretty_assertions::assert_eq;
 use std::collections::HashMap;

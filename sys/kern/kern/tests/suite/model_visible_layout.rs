@@ -4,13 +4,13 @@ use std::fs;
 use std::sync::Arc;
 
 use anyhow::Result;
-use chaos_kern::config::types::Personality;
-use chaos_kern::features::Feature;
 use chaos_ipc::protocol::AskForApproval;
 use chaos_ipc::protocol::EventMsg;
 use chaos_ipc::protocol::Op;
 use chaos_ipc::protocol::SandboxPolicy;
 use chaos_ipc::user_input::UserInput;
+use chaos_kern::config::types::Personality;
+use chaos_kern::features::Feature;
 use core_test_support::context_snapshot;
 use core_test_support::context_snapshot::ContextSnapshotOptions;
 use core_test_support::context_snapshot::ContextSnapshotRenderMode;

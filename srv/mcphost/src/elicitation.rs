@@ -1,12 +1,12 @@
 use std::sync::Arc;
 
 use crate::outgoing_message::ErrorData;
-use chaos_kern::Process;
 use chaos_ipc::approvals::ElicitationAction as CoreElicitationAction;
 use chaos_ipc::approvals::ElicitationRequest as CoreElicitationRequest;
 use chaos_ipc::approvals::ElicitationRequestEvent;
 use chaos_ipc::protocol::Op;
 use chaos_ipc::protocol::ReviewDecision;
+use chaos_kern::Process;
 use serde::Deserialize;
 use serde::Serialize;
 use serde_json::Value;

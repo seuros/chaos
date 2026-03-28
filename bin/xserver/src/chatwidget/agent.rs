@@ -1,11 +1,11 @@
 use std::sync::Arc;
 
-use chaos_kern::Process;
-use chaos_kern::ProcessTable;
-use chaos_kern::config::Config;
 use chaos_ipc::protocol::Event;
 use chaos_ipc::protocol::EventMsg;
 use chaos_ipc::protocol::Op;
+use chaos_kern::Process;
+use chaos_kern::ProcessTable;
+use chaos_kern::config::Config;
 use tokio::sync::mpsc::UnboundedSender;
 use tokio::sync::mpsc::unbounded_channel;
 

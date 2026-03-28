@@ -1,10 +1,4 @@
 #![allow(clippy::expect_used)]
-use chaos_kern::CodexAuth;
-use chaos_kern::ModelProviderInfo;
-use chaos_kern::built_in_model_providers;
-use chaos_kern::compact::SUMMARIZATION_PROMPT;
-use chaos_kern::compact::SUMMARY_PREFIX;
-use chaos_kern::config::Config;
 use chaos_ipc::items::TurnItem;
 use chaos_ipc::openai_models::ModelInfo;
 use chaos_ipc::openai_models::ModelsResponse;
@@ -18,6 +12,12 @@ use chaos_ipc::protocol::RolloutLine;
 use chaos_ipc::protocol::SandboxPolicy;
 use chaos_ipc::protocol::WarningEvent;
 use chaos_ipc::user_input::UserInput;
+use chaos_kern::CodexAuth;
+use chaos_kern::ModelProviderInfo;
+use chaos_kern::built_in_model_providers;
+use chaos_kern::compact::SUMMARIZATION_PROMPT;
+use chaos_kern::compact::SUMMARY_PREFIX;
+use chaos_kern::config::Config;
 use core_test_support::context_snapshot;
 use core_test_support::context_snapshot::ContextSnapshotOptions;
 use core_test_support::context_snapshot::ContextSnapshotRenderMode;

@@ -2,10 +2,10 @@ use std::path::PathBuf;
 use std::time::Duration;
 
 use anyhow::Context;
-use clap::Parser;
 use chaos_proc::LogQuery;
 use chaos_proc::LogRow;
 use chaos_proc::StateRuntime;
+use clap::Parser;
 use dirs::home_dir;
 use owo_colors::OwoColorize;
 

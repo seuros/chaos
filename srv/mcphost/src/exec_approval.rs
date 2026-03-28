@@ -2,11 +2,11 @@ use std::path::PathBuf;
 use std::sync::Arc;
 
 use crate::outgoing_message::ErrorData;
-use chaos_kern::Process;
 use chaos_ipc::ProcessId;
 use chaos_ipc::parse_command::ParsedCommand;
 use chaos_ipc::protocol::Op;
 use chaos_ipc::protocol::ReviewDecision;
+use chaos_kern::Process;
 use mcp_host::protocol::types::RequestId;
 use serde::Deserialize;
 use serde::Serialize;

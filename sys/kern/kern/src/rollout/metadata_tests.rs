@@ -1,5 +1,4 @@
 use super::*;
-use jiff::Timestamp;
 use chaos_ipc::ProcessId;
 use chaos_ipc::protocol::CompactedItem;
 use chaos_ipc::protocol::GitInfo;
@@ -10,6 +9,7 @@ use chaos_ipc::protocol::SessionMetaLine;
 use chaos_ipc::protocol::SessionSource;
 use chaos_proc::BackfillStatus;
 use chaos_proc::ProcessMetadataBuilder;
+use jiff::Timestamp;
 use pretty_assertions::assert_eq;
 use std::fs::File;
 use std::io::Write;

@@ -6,12 +6,12 @@
 //! mode via [`ApplyGitRequest::preflight`] and inspect the resulting paths to
 //! learn what would change before applying for real.
 
-use std::sync::LazyLock;
 use regex::Regex;
 use std::ffi::OsStr;
 use std::io;
 use std::path::Path;
 use std::path::PathBuf;
+use std::sync::LazyLock;
 
 /// Parameters for invoking [`apply_git_patch`].
 #[derive(Debug, Clone)]
@@ -379,8 +379,9 @@ pub fn parse_git_apply_output(
 
     static APPLIED_CLEAN: LazyLock<Regex> =
         LazyLock::new(|| regex_ci("^Applied patch(?: to)?\\s+(?P<path>.+?)\\s+cleanly\\.?$"));
-    static APPLIED_CONFLICTS: LazyLock<Regex> =
-        LazyLock::new(|| regex_ci("^Applied patch(?: to)?\\s+(?P<path>.+?)\\s+with conflicts\\.?$"));
+    static APPLIED_CONFLICTS: LazyLock<Regex> = LazyLock::new(|| {
+        regex_ci("^Applied patch(?: to)?\\s+(?P<path>.+?)\\s+with conflicts\\.?$")
+    });
     static APPLYING_WITH_REJECTS: LazyLock<Regex> = LazyLock::new(|| {
         regex_ci("^Applying patch\\s+(?P<path>.+?)\\s+with\\s+\\d+\\s+rejects?\\.{0,3}$")
     });
@@ -412,8 +413,9 @@ pub fn parse_git_apply_output(
     });
     static FILE_EXISTS: LazyLock<Regex> =
         LazyLock::new(|| regex_ci("^error:\\s+patch failed:\\s+(?P<path>.+?)\\s+File exists"));
-    static RENAMED_DELETED: LazyLock<Regex> =
-        LazyLock::new(|| regex_ci("^error:\\s+path\\s+(?P<path>.+?)\\s+has been renamed\\/deleted"));
+    static RENAMED_DELETED: LazyLock<Regex> = LazyLock::new(|| {
+        regex_ci("^error:\\s+path\\s+(?P<path>.+?)\\s+has been renamed\\/deleted")
+    });
     static CANNOT_APPLY_BINARY: LazyLock<Regex> = LazyLock::new(|| {
         regex_ci(
             "^error:\\s+cannot apply binary patch to\\s+['\\\"]?(?P<path>.+?)['\\\"]?\\s+without full index line$",

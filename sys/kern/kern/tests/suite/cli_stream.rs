@@ -1,6 +1,6 @@
 use assert_cmd::Command as AssertCommand;
-use chaos_kern::auth::CODEX_API_KEY_ENV_VAR;
 use chaos_ipc::protocol::GitInfo;
+use chaos_kern::auth::CODEX_API_KEY_ENV_VAR;
 use chaos_which::find_resource;
 use core_test_support::fs_wait;
 use core_test_support::responses;

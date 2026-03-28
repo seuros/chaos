@@ -55,11 +55,6 @@ use crate::tools::handlers::UnifiedExecHandler;
 use crate::tools::registry::ToolHandler;
 use crate::tools::router::ToolCallSource;
 use crate::turn_diff_tracker::TurnDiffTracker;
-use chaos_selinux::Decision;
-use chaos_selinux::NetworkRuleProtocol;
-use chaos_selinux::Policy;
-use chaos_pf::NetworkProxyConfig;
-use chaos_syslog::TelemetryAuthMode;
 use chaos_ipc::api::AppInfo;
 use chaos_ipc::models::BaseInstructions;
 use chaos_ipc::models::ContentItem;
@@ -69,6 +64,11 @@ use chaos_ipc::models::ResponseItem;
 use chaos_ipc::openai_models::ModelsResponse;
 use chaos_ipc::protocol::Submission;
 use chaos_ipc::protocol::W3cTraceContext;
+use chaos_pf::NetworkProxyConfig;
+use chaos_selinux::Decision;
+use chaos_selinux::NetworkRuleProtocol;
+use chaos_selinux::Policy;
+use chaos_syslog::TelemetryAuthMode;
 use opentelemetry::trace::TraceContextExt;
 use opentelemetry::trace::TraceId;
 use opentelemetry::trace::TracerProvider as _;
@@ -2016,8 +2016,7 @@ async fn session_configuration_apply_preserves_split_file_system_policy_on_cwd_o
     let original_cwd = project_root.join("subdir");
     let docs_dir = original_cwd.join("docs");
     std::fs::create_dir_all(&docs_dir).expect("create docs dir");
-    let docs_dir =
-        chaos_realpath::AbsolutePathBuf::from_absolute_path(&docs_dir).expect("docs");
+    let docs_dir = chaos_realpath::AbsolutePathBuf::from_absolute_path(&docs_dir).expect("docs");
 
     session_configuration.cwd = original_cwd;
     session_configuration.sandbox_policy =
@@ -2140,8 +2139,7 @@ async fn session_configuration_apply_rederives_legacy_file_system_policy_on_cwd_
     let original_cwd = project_root.join("subdir");
     let docs_dir = original_cwd.join("docs");
     std::fs::create_dir_all(&docs_dir).expect("create docs dir");
-    let docs_dir =
-        chaos_realpath::AbsolutePathBuf::from_absolute_path(&docs_dir).expect("docs");
+    let docs_dir = chaos_realpath::AbsolutePathBuf::from_absolute_path(&docs_dir).expect("docs");
 
     session_configuration.cwd = original_cwd;
     session_configuration.sandbox_policy =
@@ -2575,12 +2573,10 @@ async fn request_permissions_is_auto_denied_when_granular_policy_blocks_tool_req
 
     assert_eq!(
         response,
-        Some(
-            chaos_ipc::request_permissions::RequestPermissionsResponse {
-                permissions: RequestPermissionProfile::default(),
-                scope: PermissionGrantScope::Turn,
-            }
-        )
+        Some(chaos_ipc::request_permissions::RequestPermissionsResponse {
+            permissions: RequestPermissionProfile::default(),
+            scope: PermissionGrantScope::Turn,
+        })
     );
     assert!(
         tokio::time::timeout(StdDuration::from_millis(100), rx.recv())
@@ -2823,7 +2819,8 @@ async fn spawn_task_turn_span_inherits_dispatch_trace_context() {
         .expect("turn task should capture the current span trace context");
     let submission_context =
         chaos_syslog::context_from_w3c_trace_context(&submission_trace).expect("submission");
-    let task_context = chaos_syslog::context_from_w3c_trace_context(&task_trace).expect("task trace");
+    let task_context =
+        chaos_syslog::context_from_w3c_trace_context(&task_trace).expect("task trace");
 
     assert_eq!(
         task_context.span().span_context().trace_id(),

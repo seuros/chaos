@@ -1,7 +1,10 @@
 use super::*;
 
 impl StateRuntime {
-    pub async fn get_process(&self, id: ProcessId) -> anyhow::Result<Option<crate::ProcessMetadata>> {
+    pub async fn get_process(
+        &self,
+        id: ProcessId,
+    ) -> anyhow::Result<Option<crate::ProcessMetadata>> {
         let row = sqlx::query(
             r#"
 SELECT
@@ -672,8 +675,8 @@ mod tests {
         let runtime = StateRuntime::init(codex_home.clone(), "test-provider".to_string())
             .await
             .expect("state db should initialize");
-        let process_id =
-            ProcessId::from_string("00000000-0000-0000-0000-000000000123").expect("valid thread id");
+        let process_id = ProcessId::from_string("00000000-0000-0000-0000-000000000123")
+            .expect("valid thread id");
         let mut metadata = test_process_metadata(&codex_home, process_id, codex_home.clone());
 
         runtime
@@ -710,8 +713,8 @@ mod tests {
         let runtime = StateRuntime::init(codex_home.clone(), "test-provider".to_string())
             .await
             .expect("state db should initialize");
-        let process_id =
-            ProcessId::from_string("00000000-0000-0000-0000-000000000456").expect("valid thread id");
+        let process_id = ProcessId::from_string("00000000-0000-0000-0000-000000000456")
+            .expect("valid thread id");
         let metadata = test_process_metadata(&codex_home, process_id, codex_home.clone());
 
         runtime
@@ -762,8 +765,8 @@ mod tests {
         let runtime = StateRuntime::init(codex_home.clone(), "test-provider".to_string())
             .await
             .expect("state db should initialize");
-        let process_id =
-            ProcessId::from_string("00000000-0000-0000-0000-000000000457").expect("valid thread id");
+        let process_id = ProcessId::from_string("00000000-0000-0000-0000-000000000457")
+            .expect("valid thread id");
         let mut metadata = test_process_metadata(&codex_home, process_id, codex_home.clone());
         metadata.git_branch = Some("sqlite-branch".to_string());
 
@@ -826,8 +829,8 @@ mod tests {
         let runtime = StateRuntime::init(codex_home.clone(), "test-provider".to_string())
             .await
             .expect("state db should initialize");
-        let process_id =
-            ProcessId::from_string("00000000-0000-0000-0000-000000000789").expect("valid thread id");
+        let process_id = ProcessId::from_string("00000000-0000-0000-0000-000000000789")
+            .expect("valid thread id");
         let metadata = test_process_metadata(&codex_home, process_id, codex_home.clone());
 
         runtime
@@ -835,9 +838,8 @@ mod tests {
             .await
             .expect("initial upsert should succeed");
 
-        let updated_at = datetime_to_epoch_seconds(
-            jiff::Timestamp::new(1_700_000_100, 0).expect("timestamp"),
-        );
+        let updated_at =
+            datetime_to_epoch_seconds(jiff::Timestamp::new(1_700_000_100, 0).expect("timestamp"));
         sqlx::query(
             "UPDATE processes SET updated_at = ?, tokens_used = ?, first_user_message = ? WHERE id = ?",
         )
@@ -885,8 +887,8 @@ mod tests {
         let runtime = StateRuntime::init(codex_home.clone(), "test-provider".to_string())
             .await
             .expect("state db should initialize");
-        let process_id =
-            ProcessId::from_string("00000000-0000-0000-0000-000000000791").expect("valid thread id");
+        let process_id = ProcessId::from_string("00000000-0000-0000-0000-000000000791")
+            .expect("valid thread id");
 
         let mut existing = test_process_metadata(&codex_home, process_id, codex_home.clone());
         existing.tokens_used = 123;
@@ -930,8 +932,8 @@ mod tests {
         let runtime = StateRuntime::init(codex_home.clone(), "test-provider".to_string())
             .await
             .expect("state db should initialize");
-        let process_id =
-            ProcessId::from_string("00000000-0000-0000-0000-000000000790").expect("valid thread id");
+        let process_id = ProcessId::from_string("00000000-0000-0000-0000-000000000790")
+            .expect("valid thread id");
         let mut metadata = test_process_metadata(&codex_home, process_id, codex_home.clone());
         metadata.git_sha = Some("abc123".to_string());
         metadata.git_branch = Some("feature/branch".to_string());
@@ -964,8 +966,8 @@ mod tests {
         let runtime = StateRuntime::init(codex_home.clone(), "test-provider".to_string())
             .await
             .expect("state db should initialize");
-        let process_id =
-            ProcessId::from_string("00000000-0000-0000-0000-000000000791").expect("valid thread id");
+        let process_id = ProcessId::from_string("00000000-0000-0000-0000-000000000791")
+            .expect("valid thread id");
         let mut metadata = test_process_metadata(&codex_home, process_id, codex_home.clone());
         metadata.title = "original title".to_string();
         metadata.first_user_message = Some("first-user-message".to_string());
@@ -1001,8 +1003,8 @@ mod tests {
         let runtime = StateRuntime::init(codex_home.clone(), "test-provider".to_string())
             .await
             .expect("state db should initialize");
-        let process_id =
-            ProcessId::from_string("00000000-0000-0000-0000-000000000792").expect("valid thread id");
+        let process_id = ProcessId::from_string("00000000-0000-0000-0000-000000000792")
+            .expect("valid thread id");
         let metadata = test_process_metadata(&codex_home, process_id, codex_home.clone());
 
         runtime
@@ -1032,8 +1034,7 @@ mod tests {
                 rate_limits: None,
             },
         ))];
-        let override_updated_at =
-            jiff::Timestamp::new(1_700_001_234, 0).expect("timestamp");
+        let override_updated_at = jiff::Timestamp::new(1_700_001_234, 0).expect("timestamp");
 
         runtime
             .apply_rollout_items(&builder, &items, None, Some(override_updated_at))

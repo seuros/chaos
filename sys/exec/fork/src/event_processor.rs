@@ -1,8 +1,8 @@
 use std::path::Path;
 
-use chaos_kern::config::Config;
 use chaos_ipc::protocol::Event;
 use chaos_ipc::protocol::SessionConfiguredEvent;
+use chaos_kern::config::Config;
 
 pub(crate) enum CodexStatus {
     Running,

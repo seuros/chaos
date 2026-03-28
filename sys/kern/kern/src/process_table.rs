@@ -7,7 +7,6 @@ use crate::codex::Codex;
 use crate::codex::CodexSpawnArgs;
 use crate::codex::CodexSpawnOk;
 use crate::codex::INITIAL_SUBMIT_ID;
-use crate::process::Process;
 use crate::config::Config;
 use crate::error::CodexErr;
 use crate::error::Result as CodexResult;
@@ -17,6 +16,7 @@ use crate::mcp::McpManager;
 use crate::models_manager::collaboration_mode_presets::CollaborationModesConfig;
 use crate::models_manager::manager::ModelsManager;
 use crate::plugins::PluginsManager;
+use crate::process::Process;
 use crate::protocol::Event;
 use crate::protocol::EventMsg;
 use crate::protocol::SessionConfiguredEvent;
@@ -448,10 +448,7 @@ impl ProcessTable {
     /// Tries to shut down all tracked processes concurrently within the provided timeout.
     /// Processes that complete shutdown are removed from the manager; incomplete shutdowns
     /// remain tracked so callers can retry or inspect them later.
-    pub async fn shutdown_all_processes_bounded(
-        &self,
-        timeout: Duration,
-    ) -> ProcessShutdownReport {
+    pub async fn shutdown_all_processes_bounded(&self, timeout: Duration) -> ProcessShutdownReport {
         let processes = {
             let processes = self.state.processes.read().await;
             processes
@@ -463,8 +460,7 @@ impl ProcessTable {
         let mut shutdowns = processes
             .into_iter()
             .map(|(process_id, process)| async move {
-                let outcome =
-                    match tokio::time::timeout(timeout, process.shutdown_and_wait()).await
+                let outcome = match tokio::time::timeout(timeout, process.shutdown_and_wait()).await
                 {
                     Ok(Ok(())) => ShutdownOutcome::Complete,
                     Ok(Err(_)) => ShutdownOutcome::SubmitFailed,

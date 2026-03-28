@@ -1,13 +1,13 @@
 #![allow(clippy::unwrap_used, clippy::expect_used)]
 
-use chaos_sysctl::CONFIG_TOML_FILE;
-use chaos_kern::CodexAuth;
-use chaos_kern::NewProcess;
-use chaos_kern::features::Feature;
 use chaos_ipc::protocol::EventMsg;
 use chaos_ipc::protocol::InitialHistory;
 use chaos_ipc::protocol::WarningEvent;
+use chaos_kern::CodexAuth;
+use chaos_kern::NewProcess;
+use chaos_kern::features::Feature;
 use chaos_realpath::AbsolutePathBuf;
+use chaos_sysctl::CONFIG_TOML_FILE;
 use core::time::Duration;
 use core_test_support::load_default_config_for_test;
 use core_test_support::wait_for_event;

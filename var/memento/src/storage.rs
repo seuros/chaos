@@ -88,12 +88,8 @@ async fn rebuild_raw_memories_file(
     body.push_str("Merged stage-1 raw memories (latest first):\n\n");
     for memory in retained {
         writeln!(body, "## Process `{}`", memory.process_id).map_err(raw_memories_format_error)?;
-        writeln!(
-            body,
-            "updated_at: {}",
-            memory.source_updated_at.to_string()
-        )
-        .map_err(raw_memories_format_error)?;
+        writeln!(body, "updated_at: {}", memory.source_updated_at.to_string())
+            .map_err(raw_memories_format_error)?;
         writeln!(body, "cwd: {}", memory.cwd.display()).map_err(raw_memories_format_error)?;
         writeln!(body, "rollout_path: {}", memory.rollout_path.display())
             .map_err(raw_memories_format_error)?;
@@ -147,12 +143,8 @@ async fn write_rollout_summary_for_thread(
 
     let mut body = String::new();
     writeln!(body, "process_id: {}", memory.process_id).map_err(rollout_summary_format_error)?;
-    writeln!(
-        body,
-        "updated_at: {}",
-        memory.source_updated_at.to_string()
-    )
-    .map_err(rollout_summary_format_error)?;
+    writeln!(body, "updated_at: {}", memory.source_updated_at.to_string())
+        .map_err(rollout_summary_format_error)?;
     writeln!(body, "rollout_path: {}", memory.rollout_path.display())
         .map_err(rollout_summary_format_error)?;
     writeln!(body, "cwd: {}", memory.cwd.display()).map_err(rollout_summary_format_error)?;

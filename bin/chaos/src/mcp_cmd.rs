@@ -5,7 +5,9 @@ use anyhow::Context;
 use anyhow::Result;
 use anyhow::anyhow;
 use anyhow::bail;
-use clap::ArgGroup;
+use chaos_getopt::CliConfigOverrides;
+use chaos_getopt::format_env_display::format_env_display;
+use chaos_ipc::protocol::McpAuthStatus;
 use chaos_kern::config::Config;
 use chaos_kern::config::edit::ConfigEditsBuilder;
 use chaos_kern::config::find_codex_home;
@@ -21,9 +23,7 @@ use chaos_kern::mcp::auth::oauth_login_support;
 use chaos_kern::mcp::auth::resolve_oauth_scopes;
 use chaos_kern::mcp::oauth_types::OAuthCredentialsStoreMode;
 use chaos_kern::plugins::PluginsManager;
-use chaos_ipc::protocol::McpAuthStatus;
-use chaos_getopt::CliConfigOverrides;
-use chaos_getopt::format_env_display::format_env_display;
+use clap::ArgGroup;
 
 /// Subcommands:
 /// - `list`   — list configured servers (with `--json`)

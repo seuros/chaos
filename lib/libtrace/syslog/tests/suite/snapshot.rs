@@ -1,12 +1,12 @@
 use crate::harness::attributes_to_map;
 use crate::harness::find_metric;
+use chaos_ipc::ProcessId;
+use chaos_ipc::protocol::SessionSource;
 use chaos_syslog::SessionTelemetry;
 use chaos_syslog::TelemetryAuthMode;
 use chaos_syslog::metrics::MetricsClient;
 use chaos_syslog::metrics::MetricsConfig;
 use chaos_syslog::metrics::Result;
-use chaos_ipc::ProcessId;
-use chaos_ipc::protocol::SessionSource;
 use opentelemetry_sdk::metrics::InMemoryMetricExporter;
 use opentelemetry_sdk::metrics::data::AggregatedMetrics;
 use opentelemetry_sdk::metrics::data::MetricData;

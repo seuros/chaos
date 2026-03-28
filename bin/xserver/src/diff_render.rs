@@ -92,10 +92,10 @@ use crate::terminal_palette::default_bg;
 use crate::terminal_palette::indexed_color;
 use crate::terminal_palette::rgb_color;
 use crate::terminal_palette::stdout_color_level;
+use chaos_ipc::protocol::FileChange;
 use chaos_kern::git_info::get_git_repo_root;
 use chaos_kern::terminal::TerminalName;
 use chaos_kern::terminal::terminal_info;
-use chaos_ipc::protocol::FileChange;
 
 /// Classifies a diff line for gutter sign rendering and style selection.
 ///
@@ -1271,7 +1271,9 @@ fn style_add(
         (DiffTheme::Light, DiffColorLevel::TrueColor, None)
         | (DiffTheme::Light, DiffColorLevel::Ansi256, None) => Style::default(),
         (DiffTheme::Dark, DiffColorLevel::TrueColor, None)
-        | (DiffTheme::Dark, DiffColorLevel::Ansi256, None) => Style::default().fg(crate::theme::green()),
+        | (DiffTheme::Dark, DiffColorLevel::Ansi256, None) => {
+            Style::default().fg(crate::theme::green())
+        }
     }
 }
 
@@ -1295,7 +1297,9 @@ fn style_del(
         (DiffTheme::Light, DiffColorLevel::TrueColor, None)
         | (DiffTheme::Light, DiffColorLevel::Ansi256, None) => Style::default(),
         (DiffTheme::Dark, DiffColorLevel::TrueColor, None)
-        | (DiffTheme::Dark, DiffColorLevel::Ansi256, None) => Style::default().fg(crate::theme::red()),
+        | (DiffTheme::Dark, DiffColorLevel::Ansi256, None) => {
+            Style::default().fg(crate::theme::red())
+        }
     }
 }
 

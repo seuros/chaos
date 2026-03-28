@@ -27,10 +27,10 @@ use crate::exec_events::PatchApplyStatus;
 use crate::exec_events::PatchChangeKind;
 use crate::exec_events::ProcessErrorEvent;
 use crate::exec_events::ProcessEvent;
-use crate::exec_events::ReasoningItem;
 use crate::exec_events::ProcessItem;
 use crate::exec_events::ProcessItemDetails;
 use crate::exec_events::ProcessStartedEvent;
+use crate::exec_events::ReasoningItem;
 use crate::exec_events::TodoItem;
 use crate::exec_events::TodoListItem;
 use crate::exec_events::TurnCompletedEvent;
@@ -38,7 +38,6 @@ use crate::exec_events::TurnFailedEvent;
 use crate::exec_events::TurnStartedEvent;
 use crate::exec_events::Usage;
 use crate::exec_events::WebSearchItem;
-use chaos_kern::config::Config;
 use chaos_ipc::models::WebSearchAction;
 use chaos_ipc::plan_tool::StepStatus;
 use chaos_ipc::plan_tool::UpdatePlanArgs;
@@ -52,6 +51,7 @@ use chaos_ipc::protocol::CollabCloseBeginEvent;
 use chaos_ipc::protocol::CollabCloseEndEvent;
 use chaos_ipc::protocol::CollabWaitingBeginEvent;
 use chaos_ipc::protocol::CollabWaitingEndEvent;
+use chaos_kern::config::Config;
 use serde_json::Value as JsonValue;
 use tracing::error;
 use tracing::warn;
@@ -353,7 +353,10 @@ impl EventProcessorWithJsonOutput {
         vec![ProcessEvent::ItemStarted(ItemStartedEvent { item })]
     }
 
-    fn handle_mcp_tool_call_end(&mut self, ev: &protocol::McpToolCallEndEvent) -> Vec<ProcessEvent> {
+    fn handle_mcp_tool_call_end(
+        &mut self,
+        ev: &protocol::McpToolCallEndEvent,
+    ) -> Vec<ProcessEvent> {
         let status = if ev.is_success() {
             McpToolCallStatus::Completed
         } else {

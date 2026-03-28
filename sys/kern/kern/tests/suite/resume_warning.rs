@@ -1,7 +1,5 @@
 #![allow(clippy::unwrap_used, clippy::expect_used)]
 
-use chaos_kern::CodexAuth;
-use chaos_kern::NewProcess;
 use chaos_ipc::ProcessId;
 use chaos_ipc::config_types::ModeKind;
 use chaos_ipc::config_types::ReasoningSummary;
@@ -14,6 +12,8 @@ use chaos_ipc::protocol::TurnContextItem;
 use chaos_ipc::protocol::TurnStartedEvent;
 use chaos_ipc::protocol::UserMessageEvent;
 use chaos_ipc::protocol::WarningEvent;
+use chaos_kern::CodexAuth;
+use chaos_kern::NewProcess;
 use core::time::Duration;
 use core_test_support::load_default_config_for_test;
 use core_test_support::wait_for_event;

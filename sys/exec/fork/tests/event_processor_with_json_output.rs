@@ -17,12 +17,12 @@ use chaos_fork::exec_events::McpToolCallItemResult;
 use chaos_fork::exec_events::McpToolCallStatus;
 use chaos_fork::exec_events::PatchApplyStatus;
 use chaos_fork::exec_events::PatchChangeKind;
+use chaos_fork::exec_events::ProcessErrorEvent;
 use chaos_fork::exec_events::ProcessEvent;
-use chaos_fork::exec_events::ReasoningItem;
 use chaos_fork::exec_events::ProcessItem;
 use chaos_fork::exec_events::ProcessItemDetails;
 use chaos_fork::exec_events::ProcessStartedEvent;
-use chaos_fork::exec_events::ProcessErrorEvent;
+use chaos_fork::exec_events::ReasoningItem;
 use chaos_fork::exec_events::TodoItem as ExecTodoItem;
 use chaos_fork::exec_events::TodoListItem as ExecTodoListItem;
 use chaos_fork::exec_events::TurnCompletedEvent;
@@ -616,9 +616,13 @@ fn collab_spawn_begin_and_end_emit_item_events() {
 fn collab_wait_end_without_begin_synthesizes_failed_item() {
     let mut ep = EventProcessorWithJsonOutput::new(None);
     let sender_process_id = ProcessId::from_string("67e55044-10b1-426f-9247-bb680e5fe0c8").unwrap();
-    let running_process_id = ProcessId::from_string("3f76d2a0-943e-4f43-8a38-b289c9c6c3d1").unwrap();
+    let running_process_id =
+        ProcessId::from_string("3f76d2a0-943e-4f43-8a38-b289c9c6c3d1").unwrap();
     let failed_process_id = ProcessId::from_string("c1dfd96e-1f0c-4f26-9b4f-1aa02c2d3c4d").unwrap();
-    let mut receiver_process_ids = vec![running_process_id.to_string(), failed_process_id.to_string()];
+    let mut receiver_process_ids = vec![
+        running_process_id.to_string(),
+        failed_process_id.to_string(),
+    ];
     receiver_process_ids.sort();
     let mut statuses = std::collections::HashMap::new();
     statuses.insert(

@@ -124,9 +124,7 @@ async fn skill_load_errors_surface_in_session_configured() -> Result<()> {
         .await?;
     let response =
         core_test_support::wait_for_event_match(test.codex.as_ref(), |event| match event {
-            chaos_ipc::protocol::EventMsg::ListSkillsResponse(response) => {
-                Some(response.clone())
-            }
+            chaos_ipc::protocol::EventMsg::ListSkillsResponse(response) => Some(response.clone()),
             _ => None,
         })
         .await;
@@ -194,9 +192,7 @@ async fn list_skills_includes_system_cache_entries() -> Result<()> {
         .await?;
     let response =
         core_test_support::wait_for_event_match(test.codex.as_ref(), |event| match event {
-            chaos_ipc::protocol::EventMsg::ListSkillsResponse(response) => {
-                Some(response.clone())
-            }
+            chaos_ipc::protocol::EventMsg::ListSkillsResponse(response) => Some(response.clone()),
             _ => None,
         })
         .await;

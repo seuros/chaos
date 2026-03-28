@@ -9,8 +9,8 @@ use std::num::NonZero;
 use std::path::Path;
 use std::path::PathBuf;
 
-use chaos_locate as file_search;
 use chaos_ipc::ProcessId;
+use chaos_locate as file_search;
 use time::OffsetDateTime;
 
 use super::ARCHIVED_SESSIONS_SUBDIR;

@@ -120,8 +120,8 @@ pub fn new_script_env(lua: &Lua) -> LuaResult<mlua::Table> {
 
     // Safe scalar builtins — share references (these are functions, immutable).
     let safe_functions: &[&str] = &[
-        "assert", "error", "ipairs", "next", "pairs", "pcall", "print", "select",
-        "tonumber", "tostring", "type", "unpack", "xpcall",
+        "assert", "error", "ipairs", "next", "pairs", "pcall", "print", "select", "tonumber",
+        "tostring", "type", "unpack", "xpcall",
     ];
     for name in safe_functions {
         if let Ok(val) = globals.raw_get::<mlua::Value>(*name) {

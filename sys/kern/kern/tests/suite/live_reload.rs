@@ -6,13 +6,13 @@ use std::path::PathBuf;
 use std::time::Duration;
 
 use anyhow::Result;
-use chaos_kern::config::ProjectConfig;
 use chaos_ipc::config_types::TrustLevel;
 use chaos_ipc::protocol::AskForApproval;
 use chaos_ipc::protocol::EventMsg;
 use chaos_ipc::protocol::Op;
 use chaos_ipc::protocol::SandboxPolicy;
 use chaos_ipc::user_input::UserInput;
+use chaos_kern::config::ProjectConfig;
 use core_test_support::responses;
 use core_test_support::responses::ResponsesRequest;
 use core_test_support::responses::mount_sse_sequence;

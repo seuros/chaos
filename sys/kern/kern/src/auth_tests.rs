@@ -9,8 +9,8 @@ use crate::token_data::PlanType as InternalPlanType;
 use chaos_ipc::account::PlanType as AccountPlanType;
 
 use base64::Engine;
-use jiff::Timestamp;
 use chaos_ipc::config_types::ForcedLoginMethod;
+use jiff::Timestamp;
 use pretty_assertions::assert_eq;
 use serde::Serialize;
 use serde_json::json;

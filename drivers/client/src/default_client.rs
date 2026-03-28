@@ -1,15 +1,15 @@
 use bytes::Bytes;
+use http::Error as HttpError;
 use http::HeaderMap;
 use http::HeaderName;
 use http::HeaderValue;
 use http::Method;
-use http::Error as HttpError;
 use opentelemetry::global;
 use opentelemetry::propagation::Injector;
 use rama::Service;
+use rama::error::extra::OpaqueError;
 use rama::http::Body;
 use rama::http::body::util::BodyExt;
-use rama::error::extra::OpaqueError;
 use rama::service::BoxService;
 use serde::Serialize;
 use std::fmt::Display;
@@ -105,10 +105,7 @@ impl CodexRequestBuilder {
     where
         T: Display,
     {
-        self.header(
-            http::header::AUTHORIZATION,
-            format!("Bearer {token}"),
-        )
+        self.header(http::header::AUTHORIZATION, format!("Bearer {token}"))
     }
 
     pub fn timeout(self, _timeout: std::time::Duration) -> Self {
@@ -236,10 +233,7 @@ fn inject_trace_headers(headers: &mut HeaderMap) {
     }
 
     global::get_text_map_propagator(|prop| {
-        prop.inject_context(
-            &Span::current().context(),
-            &mut HeaderMapInjector(headers),
-        );
+        prop.inject_context(&Span::current().context(), &mut HeaderMapInjector(headers));
     });
 }
 

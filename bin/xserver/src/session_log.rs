@@ -6,8 +6,8 @@ use std::sync::LazyLock;
 use std::sync::Mutex;
 use std::sync::OnceLock;
 
-use chaos_kern::config::Config;
 use chaos_ipc::protocol::Op;
+use chaos_kern::config::Config;
 use serde::Serialize;
 use serde_json::json;
 

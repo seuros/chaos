@@ -1,11 +1,11 @@
 //! Verifies that the agent retries when the SSE stream terminates before
 //! delivering a `response.completed` event.
 
-use chaos_kern::ModelProviderInfo;
-use chaos_kern::WireApi;
 use chaos_ipc::protocol::EventMsg;
 use chaos_ipc::protocol::Op;
 use chaos_ipc::user_input::UserInput;
+use chaos_kern::ModelProviderInfo;
+use chaos_kern::WireApi;
 use chaos_which::find_resource;
 use core_test_support::load_sse_fixture;
 use core_test_support::responses;

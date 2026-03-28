@@ -13,11 +13,10 @@
 #[cfg(feature = "syntax")]
 #[allow(unused_imports)]
 pub use chaos_highlight::{
-    adaptive_default_theme_name, configured_theme_name, current_syntax_theme,
-    diff_scope_background_rgbs, exceeds_highlight_limits, highlight_bash_to_lines,
-    highlight_code_to_lines, highlight_code_to_styled_spans, list_available_themes,
-    resolve_theme_by_name, set_syntax_theme, validate_theme_name,
-    DiffScopeBackgroundRgbs, ThemeEntry,
+    DiffScopeBackgroundRgbs, ThemeEntry, adaptive_default_theme_name, configured_theme_name,
+    current_syntax_theme, diff_scope_background_rgbs, exceeds_highlight_limits,
+    highlight_bash_to_lines, highlight_code_to_lines, highlight_code_to_styled_spans,
+    list_available_themes, resolve_theme_by_name, set_syntax_theme, validate_theme_name,
 };
 
 /// Wrapper around [`chaos_highlight::set_theme_override`] that injects
@@ -84,10 +83,7 @@ mod stubs {
         Theme
     }
 
-    pub fn resolve_theme_by_name(
-        _name: &str,
-        _codex_home: Option<&Path>,
-    ) -> Option<Theme> {
+    pub fn resolve_theme_by_name(_name: &str, _codex_home: Option<&Path>) -> Option<Theme> {
         None
     }
 

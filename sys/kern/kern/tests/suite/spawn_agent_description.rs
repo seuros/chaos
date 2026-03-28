@@ -1,10 +1,6 @@
 #![allow(clippy::unwrap_used, clippy::expect_used)]
 
 use anyhow::Result;
-use chaos_kern::CodexAuth;
-use chaos_kern::features::Feature;
-use chaos_kern::models_manager::manager::ModelsManager;
-use chaos_kern::models_manager::manager::RefreshStrategy;
 use chaos_ipc::config_types::ReasoningSummary;
 use chaos_ipc::openai_models::ConfigShellToolType;
 use chaos_ipc::openai_models::ModelInfo;
@@ -14,6 +10,10 @@ use chaos_ipc::openai_models::ReasoningEffort;
 use chaos_ipc::openai_models::ReasoningEffortPreset;
 use chaos_ipc::openai_models::TruncationPolicyConfig;
 use chaos_ipc::openai_models::default_input_modalities;
+use chaos_kern::CodexAuth;
+use chaos_kern::features::Feature;
+use chaos_kern::models_manager::manager::ModelsManager;
+use chaos_kern::models_manager::manager::RefreshStrategy;
 use core_test_support::responses::ev_completed;
 use core_test_support::responses::ev_response_created;
 use core_test_support::responses::mount_models_once;

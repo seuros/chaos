@@ -5,6 +5,7 @@ use std::sync::Arc;
 
 use anyhow::Context;
 use anyhow::Result;
+use chaos_realpath::AbsolutePathBuf;
 use chaos_selinux::Decision;
 use chaos_selinux::Error;
 use chaos_selinux::Evaluation;
@@ -18,7 +19,6 @@ use chaos_selinux::blocking_append_allow_prefix_rule;
 use chaos_selinux::rule::PatternToken;
 use chaos_selinux::rule::PrefixPattern;
 use chaos_selinux::rule::PrefixRule;
-use chaos_realpath::AbsolutePathBuf;
 use pretty_assertions::assert_eq;
 use tempfile::tempdir;
 
@@ -232,10 +232,7 @@ prefix_rule {
     let err = parser
         .parse("test.rules", policy_src)
         .expect_err("expected parse error");
-    assert!(
-        err.to_string()
-            .contains("justification cannot be empty")
-    );
+    assert!(err.to_string().contains("justification cannot be empty"));
 }
 
 #[test]
@@ -706,8 +703,9 @@ host_executable {name = "git", paths = {"git"}}
 fn host_executable_rejects_name_with_path_separator() {
     let git_path = host_absolute_path(&["usr", "bin", "git"]);
     let git_path_literal = lua_string(&git_path);
-    let policy_src =
-        format!(r#"host_executable {{name = "{git_path_literal}", paths = {{"{git_path_literal}"}}}}"#);
+    let policy_src = format!(
+        r#"host_executable {{name = "{git_path_literal}", paths = {{"{git_path_literal}"}}}}"#
+    );
     let mut parser = PolicyParser::new();
     let err = parser
         .parse("test.rules", &policy_src)
@@ -722,7 +720,8 @@ fn host_executable_rejects_name_with_path_separator() {
 fn host_executable_rejects_path_with_wrong_basename() {
     let rg_path = host_absolute_path(&["usr", "bin", "rg"]);
     let rg_path_literal = lua_string(&rg_path);
-    let policy_src = format!(r#"host_executable {{name = "git", paths = {{"{rg_path_literal}"}}}}"#);
+    let policy_src =
+        format!(r#"host_executable {{name = "git", paths = {{"{rg_path_literal}"}}}}"#);
     let mut parser = PolicyParser::new();
     let err = parser
         .parse("test.rules", &policy_src)

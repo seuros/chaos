@@ -6,10 +6,10 @@ use std::time::Instant;
 
 use anyhow::Context;
 use anyhow::Result;
-use chaos_kern::features::Feature;
-use chaos_kern::sandboxing::SandboxPermissions;
 use chaos_ipc::protocol::AskForApproval;
 use chaos_ipc::protocol::SandboxPolicy;
+use chaos_kern::features::Feature;
+use chaos_kern::sandboxing::SandboxPermissions;
 use core_test_support::assert_regex_match;
 use core_test_support::responses::ev_assistant_message;
 use core_test_support::responses::ev_completed;

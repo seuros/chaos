@@ -1,9 +1,9 @@
 mod storage;
 
 use async_trait::async_trait;
+use http::StatusCode;
 use jiff::Timestamp;
 use jiff::ToSpan;
-use http::StatusCode;
 use serde::Deserialize;
 use serde::Serialize;
 #[cfg(test)]
@@ -16,9 +16,9 @@ use std::sync::Arc;
 use std::sync::Mutex;
 use std::sync::RwLock;
 
-use chaos_syslog::TelemetryAuthMode;
 use chaos_ipc::api::AuthMode as ApiAuthMode;
 use chaos_ipc::config_types::ForcedLoginMethod;
+use chaos_syslog::TelemetryAuthMode;
 
 pub use crate::auth::storage::AuthCredentialsStoreMode;
 pub use crate::auth::storage::AuthDotJson;
@@ -32,8 +32,8 @@ use crate::token_data::PlanType as InternalPlanType;
 use crate::token_data::TokenData;
 use crate::token_data::parse_chatgpt_jwt_claims;
 use crate::util::try_parse_error_message;
-use codex_client::CodexHttpClient;
 use chaos_ipc::account::PlanType as AccountPlanType;
+use codex_client::CodexHttpClient;
 use serde_json::Value;
 use thiserror::Error;
 
@@ -1386,7 +1386,11 @@ impl AuthManager {
             Some(last_refresh) => last_refresh,
             None => return Ok(false),
         };
-        if last_refresh >= Timestamp::now().checked_sub(TOKEN_REFRESH_INTERVAL.days()).unwrap_or(Timestamp::now()) {
+        if last_refresh
+            >= Timestamp::now()
+                .checked_sub(TOKEN_REFRESH_INTERVAL.days())
+                .unwrap_or(Timestamp::now())
+        {
             return Ok(false);
         }
         self.refresh_and_persist_chatgpt_token(chatgpt_auth, tokens.refresh_token)

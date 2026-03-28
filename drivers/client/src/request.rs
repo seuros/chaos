@@ -1,6 +1,6 @@
 use bytes::Bytes;
-use http::Method;
 use http::HeaderMap;
+use http::Method;
 use serde::Serialize;
 use serde_json::Value;
 use std::time::Duration;

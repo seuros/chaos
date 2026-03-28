@@ -16,9 +16,7 @@ use tracing;
 
 use crate::api::{self, ScriptRegistrations, SessionInfo};
 use crate::discovery;
-use crate::handle::{
-    HallucinateHandle, HookResult, LuaRequest, LuaTool, ReloadResult, ToolResult,
-};
+use crate::handle::{HallucinateHandle, HookResult, LuaRequest, LuaTool, ReloadResult, ToolResult};
 use crate::sandbox::{self, Deadline};
 
 /// Default per-invocation execution deadline.
@@ -80,10 +78,7 @@ impl HallucinateEngine {
             }
         }
         if !paths.is_empty() {
-            tracing::info!(
-                count = paths.len(),
-                "hallucinate: loaded lua scripts"
-            );
+            tracing::info!(count = paths.len(), "hallucinate: loaded lua scripts");
         }
     }
 
@@ -99,8 +94,7 @@ impl HallucinateEngine {
         let env = sandbox::new_script_env(&self.lua)?;
         let regs = Arc::new(Mutex::new(ScriptRegistrations::new()));
 
-        let chaos_table =
-            api::create_chaos_table(&self.lua, &self.info, &regs, script_name)?;
+        let chaos_table = api::create_chaos_table(&self.lua, &self.info, &regs, script_name)?;
         env.set("chaos", chaos_table)?;
 
         // Execute the script in its sandboxed env.

@@ -6,12 +6,12 @@ use std::io::Result as IoResult;
 use std::sync::Arc;
 
 use chaos_argv::Arg0DispatchPaths;
+use chaos_getopt::CliConfigOverrides;
+use chaos_ipc::protocol::SessionSource;
 use chaos_kern::AuthManager;
 use chaos_kern::ProcessTable;
 use chaos_kern::config::Config;
 use chaos_kern::models_manager::collaboration_mode_presets::CollaborationModesConfig;
-use chaos_ipc::protocol::SessionSource;
-use chaos_getopt::CliConfigOverrides;
 use mcp_host::prelude::*;
 use tokio::sync::Mutex;
 use tracing_subscriber::EnvFilter;

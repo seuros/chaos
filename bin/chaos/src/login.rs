@@ -7,6 +7,8 @@
 //! into a one-shot CLI command while still producing a durable `codex-login.log` artifact that
 //! support can request from users.
 
+use chaos_getopt::CliConfigOverrides;
+use chaos_ipc::config_types::ForcedLoginMethod;
 use chaos_kern::CodexAuth;
 use chaos_kern::auth::AuthCredentialsStoreMode;
 use chaos_kern::auth::AuthMode;
@@ -17,8 +19,6 @@ use chaos_kern::config::Config;
 use chaos_pam::ServerOptions;
 use chaos_pam::run_device_code_login;
 use chaos_pam::run_login_server;
-use chaos_ipc::config_types::ForcedLoginMethod;
-use chaos_getopt::CliConfigOverrides;
 use std::fs::OpenOptions;
 use std::io::IsTerminal;
 use std::io::Read;

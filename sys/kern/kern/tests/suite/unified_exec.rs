@@ -4,13 +4,13 @@ use std::fs;
 
 use anyhow::Context;
 use anyhow::Result;
-use chaos_kern::features::Feature;
 use chaos_ipc::protocol::AskForApproval;
 use chaos_ipc::protocol::EventMsg;
 use chaos_ipc::protocol::ExecCommandSource;
 use chaos_ipc::protocol::Op;
 use chaos_ipc::protocol::SandboxPolicy;
 use chaos_ipc::user_input::UserInput;
+use chaos_kern::features::Feature;
 use core_test_support::assert_regex_match;
 use core_test_support::process::process_is_alive;
 use core_test_support::process::wait_for_pid_file;

@@ -10,12 +10,12 @@ use crate::LOGS_DB_VERSION;
 use crate::LogEntry;
 use crate::LogQuery;
 use crate::LogRow;
-use crate::STATE_DB_FILENAME;
-use crate::STATE_DB_VERSION;
-use crate::SortKey;
 use crate::ProcessMetadata;
 use crate::ProcessMetadataBuilder;
 use crate::ProcessesPage;
+use crate::STATE_DB_FILENAME;
+use crate::STATE_DB_VERSION;
+use crate::SortKey;
 use crate::apply_rollout_item;
 use crate::migrations::LOGS_MIGRATOR;
 use crate::migrations::STATE_MIGRATOR;
@@ -51,9 +51,9 @@ mod agent_jobs;
 mod backfill;
 mod logs;
 mod memories;
+mod processes;
 #[cfg(test)]
 mod test_support;
-mod processes;
 
 // "Partition" is the retention bucket we cap at 10 MiB:
 // - one bucket per non-null process_id

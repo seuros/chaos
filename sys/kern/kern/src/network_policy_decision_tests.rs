@@ -1,7 +1,7 @@
 use super::*;
-use chaos_pf::BlockedRequest;
 use chaos_ipc::approvals::NetworkPolicyAmendment;
 use chaos_ipc::approvals::NetworkPolicyRuleAction;
+use chaos_pf::BlockedRequest;
 use pretty_assertions::assert_eq;
 
 #[test]

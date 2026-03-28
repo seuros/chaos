@@ -2,8 +2,6 @@
 #![cfg(target_os = "macos")]
 
 use anyhow::Result;
-use chaos_kern::config::Constrained;
-use chaos_kern::features::Feature;
 use chaos_ipc::models::FileSystemPermissions;
 use chaos_ipc::protocol::AskForApproval;
 use chaos_ipc::protocol::EventMsg;
@@ -14,6 +12,8 @@ use chaos_ipc::request_permissions::PermissionGrantScope;
 use chaos_ipc::request_permissions::RequestPermissionProfile;
 use chaos_ipc::request_permissions::RequestPermissionsResponse;
 use chaos_ipc::user_input::UserInput;
+use chaos_kern::config::Constrained;
+use chaos_kern::features::Feature;
 use chaos_realpath::AbsolutePathBuf;
 use core_test_support::responses::ev_apply_patch_function_call;
 use core_test_support::responses::ev_assistant_message;

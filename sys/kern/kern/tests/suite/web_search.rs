@@ -1,8 +1,8 @@
 #![allow(clippy::unwrap_used)]
 
-use chaos_kern::features::Feature;
 use chaos_ipc::config_types::WebSearchMode;
 use chaos_ipc::protocol::SandboxPolicy;
+use chaos_kern::features::Feature;
 use core_test_support::responses;
 use core_test_support::responses::start_mock_server;
 use core_test_support::skip_if_no_network;
@@ -256,12 +256,9 @@ location = { country = "US", city = "New York", timezone = "America/New_York" }
         .await
         .expect("create test Codex conversation");
 
-    test.submit_turn_with_policy(
-        "hello configured web search",
-        SandboxPolicy::RootAccess,
-    )
-    .await
-    .expect("submit turn");
+    test.submit_turn_with_policy("hello configured web search", SandboxPolicy::RootAccess)
+        .await
+        .expect("submit turn");
 
     let body = resp_mock.single_request().body_json();
     let tool = find_web_search_tool(&body);

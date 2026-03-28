@@ -1,5 +1,3 @@
-use chaos_kern::config::Constrained;
-use chaos_kern::sandboxing::SandboxPermissions;
 use chaos_ipc::protocol::AskForApproval;
 use chaos_ipc::protocol::EventMsg;
 use chaos_ipc::protocol::Op;
@@ -7,6 +5,8 @@ use chaos_ipc::protocol::ReviewDecision;
 use chaos_ipc::protocol::ReviewRequest;
 use chaos_ipc::protocol::ReviewTarget;
 use chaos_ipc::protocol::SandboxPolicy;
+use chaos_kern::config::Constrained;
+use chaos_kern::sandboxing::SandboxPermissions;
 use core_test_support::responses::ev_apply_patch_function_call;
 use core_test_support::responses::ev_assistant_message;
 use core_test_support::responses::ev_completed;

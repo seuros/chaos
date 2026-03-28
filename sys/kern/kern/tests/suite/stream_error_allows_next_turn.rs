@@ -1,8 +1,8 @@
-use chaos_kern::ModelProviderInfo;
-use chaos_kern::WireApi;
 use chaos_ipc::protocol::EventMsg;
 use chaos_ipc::protocol::Op;
 use chaos_ipc::user_input::UserInput;
+use chaos_kern::ModelProviderInfo;
+use chaos_kern::WireApi;
 use core_test_support::responses::ev_completed;
 use core_test_support::responses::ev_response_created;
 use core_test_support::responses::sse;

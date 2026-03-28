@@ -19,10 +19,10 @@ use crate::protocol::NetworkAccess;
 use crate::protocol::SandboxPolicy;
 use crate::protocol::WritableRoot;
 use crate::user_input::UserInput;
-use chaos_selinux::Policy;
-use chaos_scm::GhostCommit;
-use chaos_realpath::AbsolutePathBuf;
 use chaos_pixbuf::error::ImageProcessingError;
+use chaos_realpath::AbsolutePathBuf;
+use chaos_scm::GhostCommit;
+use chaos_selinux::Policy;
 use schemars::JsonSchema;
 
 use crate::mcp::CallToolResult;

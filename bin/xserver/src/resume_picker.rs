@@ -10,18 +10,18 @@ use crate::text_formatting::truncate_text;
 use crate::tui::FrameRequester;
 use crate::tui::Tui;
 use crate::tui::TuiEvent;
-use chrono::DateTime;
-use chrono::Utc;
+use chaos_ipc::ProcessId;
 use chaos_kern::Cursor;
 use chaos_kern::INTERACTIVE_SESSION_SOURCES;
-use chaos_kern::RolloutRecorder;
 use chaos_kern::ProcessItem;
 use chaos_kern::ProcessSortKey;
 use chaos_kern::ProcessesPage;
+use chaos_kern::RolloutRecorder;
 use chaos_kern::config::Config;
 use chaos_kern::find_process_names_by_ids;
 use chaos_kern::path_utils;
-use chaos_ipc::ProcessId;
+use chrono::DateTime;
+use chrono::Utc;
 use color_eyre::eyre::Result;
 use crossterm::event::KeyCode;
 use crossterm::event::KeyEvent;
@@ -1343,8 +1343,8 @@ fn column_visibility(
 #[cfg(test)]
 mod tests {
     use super::*;
-    use chrono::Duration;
     use chaos_ipc::ProcessId;
+    use chrono::Duration;
 
     use crossterm::event::KeyCode;
     use crossterm::event::KeyEvent;

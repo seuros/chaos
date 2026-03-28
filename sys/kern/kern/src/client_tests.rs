@@ -2,11 +2,11 @@ use super::AuthRequestTelemetryContext;
 use super::ModelClient;
 use super::PendingUnauthorizedRetry;
 use super::UnauthorizedRecoveryExecution;
-use chaos_syslog::SessionTelemetry;
 use chaos_ipc::ProcessId;
 use chaos_ipc::openai_models::ModelInfo;
 use chaos_ipc::protocol::SessionSource;
 use chaos_ipc::protocol::SubAgentSource;
+use chaos_syslog::SessionTelemetry;
 use pretty_assertions::assert_eq;
 use serde_json::json;
 

@@ -1,10 +1,10 @@
-use chaos_traits::MementoConfig;
 use crate::codex::Session;
 use crate::config::Config;
 use crate::features::Feature;
-use crate::memories::extraction;
 use crate::memories::consolidation;
+use crate::memories::extraction;
 use chaos_ipc::protocol::SessionSource;
+use chaos_traits::MementoConfig;
 use std::sync::Arc;
 use tracing::warn;
 

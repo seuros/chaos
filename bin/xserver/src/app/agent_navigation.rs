@@ -141,7 +141,11 @@ impl AgentNavigationState {
     pub(crate) fn ordered_processes(&self) -> Vec<(ProcessId, &AgentPickerProcessEntry)> {
         self.order
             .iter()
-            .filter_map(|process_id| self.processes.get(process_id).map(|entry| (*process_id, entry)))
+            .filter_map(|process_id| {
+                self.processes
+                    .get(process_id)
+                    .map(|entry| (*process_id, entry))
+            })
             .collect()
     }
 

@@ -1,3 +1,5 @@
+use chaos_ipc::ProcessId;
+use chaos_ipc::protocol::SessionSource;
 use chaos_syslog::RuntimeMetricTotals;
 use chaos_syslog::RuntimeMetricsSummary;
 use chaos_syslog::SessionTelemetry;
@@ -5,8 +7,6 @@ use chaos_syslog::TelemetryAuthMode;
 use chaos_syslog::metrics::MetricsClient;
 use chaos_syslog::metrics::MetricsConfig;
 use chaos_syslog::metrics::Result;
-use chaos_ipc::ProcessId;
-use chaos_ipc::protocol::SessionSource;
 use eventsource_stream::Event as StreamEvent;
 use opentelemetry_sdk::metrics::InMemoryMetricExporter;
 use pretty_assertions::assert_eq;

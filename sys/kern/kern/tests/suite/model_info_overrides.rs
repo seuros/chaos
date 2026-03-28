@@ -1,7 +1,7 @@
+use chaos_ipc::openai_models::TruncationPolicyConfig;
 use chaos_kern::CodexAuth;
 use chaos_kern::models_manager::collaboration_mode_presets::CollaborationModesConfig;
 use chaos_kern::models_manager::manager::ModelsManager;
-use chaos_ipc::openai_models::TruncationPolicyConfig;
 use core_test_support::load_default_config_for_test;
 use pretty_assertions::assert_eq;
 use tempfile::TempDir;

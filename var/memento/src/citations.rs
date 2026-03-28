@@ -46,7 +46,10 @@ mod tests {
             "<memory_citation>\n<citation_entries>\nMEMORY.md:1-2|note=[x]\n</citation_entries>\n<process_ids>\n{first}\nnot-a-uuid\n{second}\n</process_ids>\n</memory_citation>"
         )];
 
-        assert_eq!(get_process_id_from_citations(citations), vec![first, second]);
+        assert_eq!(
+            get_process_id_from_citations(citations),
+            vec![first, second]
+        );
     }
 
     #[test]

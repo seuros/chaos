@@ -6,10 +6,10 @@ use std::io::Error as IoError;
 use std::path::Path;
 use std::path::PathBuf;
 
-use jiff::Timestamp;
 use chaos_ipc::ProcessId;
 use chaos_ipc::dynamic_tools::DynamicToolSpec;
 use chaos_ipc::models::BaseInstructions;
+use jiff::Timestamp;
 use serde_json::Value;
 use time::OffsetDateTime;
 use time::format_description::FormatItem;
@@ -38,7 +38,6 @@ use super::list::parse_timestamp_uuid_from_filename;
 use super::metadata;
 use super::policy::EventPersistenceMode;
 use super::policy::is_persisted_response_item;
-use chaos_traits::RolloutConfig;
 use crate::default_client::originator;
 use crate::git_info::collect_git_info;
 use crate::path_utils;
@@ -54,8 +53,9 @@ use chaos_ipc::protocol::RolloutLine;
 use chaos_ipc::protocol::SessionMeta;
 use chaos_ipc::protocol::SessionMetaLine;
 use chaos_ipc::protocol::SessionSource;
-use chaos_proc::StateRuntime;
 use chaos_proc::ProcessMetadataBuilder;
+use chaos_proc::StateRuntime;
+use chaos_traits::RolloutConfig;
 
 /// Records all [`ResponseItem`]s for a session and flushes them to disk after
 /// every update.
@@ -255,7 +255,8 @@ impl RolloutRecorder {
             .await?
         };
 
-        let state_db_ctx = state_db::get_state_db_for(config.sqlite_home(), config.model_provider_id()).await;
+        let state_db_ctx =
+            state_db::get_state_db_for(config.sqlite_home(), config.model_provider_id()).await;
         if state_db_ctx.is_none() {
             // Keep legacy behavior when SQLite is unavailable: return filesystem results
             // at the requested page size.
@@ -307,7 +308,8 @@ impl RolloutRecorder {
         filter_cwd: Option<&Path>,
     ) -> std::io::Result<Option<PathBuf>> {
         let codex_home = config.codex_home();
-        let state_db_ctx = state_db::get_state_db_for(config.sqlite_home(), config.model_provider_id()).await;
+        let state_db_ctx =
+            state_db::get_state_db_for(config.sqlite_home(), config.model_provider_id()).await;
         if state_db_ctx.is_some() {
             let mut db_cursor = cursor.cloned();
             loop {

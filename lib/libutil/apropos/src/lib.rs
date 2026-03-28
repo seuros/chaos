@@ -128,17 +128,18 @@ impl<Id> Corpus<Id> {
                 }
 
                 if score > 0.0 {
-                    Some(SearchResult {
-                        id: &doc.id,
-                        score,
-                    })
+                    Some(SearchResult { id: &doc.id, score })
                 } else {
                     None
                 }
             })
             .collect();
 
-        scored.sort_by(|a, b| b.score.partial_cmp(&a.score).unwrap_or(std::cmp::Ordering::Equal));
+        scored.sort_by(|a, b| {
+            b.score
+                .partial_cmp(&a.score)
+                .unwrap_or(std::cmp::Ordering::Equal)
+        });
         scored.truncate(limit);
         scored
     }

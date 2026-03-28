@@ -27,8 +27,8 @@ use std::path::PathBuf;
 use std::sync::Arc;
 use std::sync::Weak;
 
-use chaos_pf::NetworkProxy;
 use chaos_ipc::models::PermissionProfile;
+use chaos_pf::NetworkProxy;
 use rand::Rng;
 use rand::rng;
 use tokio::sync::Mutex;

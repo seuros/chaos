@@ -131,11 +131,8 @@ async fn shell_output_stays_json_without_freeform_apply_patch(
     let responses = shell_responses(call_id, vec!["/bin/echo", "shell json"], output_type)?;
     let mock = mount_sse_sequence(&server, responses).await;
 
-    test.submit_turn_with_policy(
-        "run the json shell command",
-        SandboxPolicy::RootAccess,
-    )
-    .await?;
+    test.submit_turn_with_policy("run the json shell command", SandboxPolicy::RootAccess)
+        .await?;
 
     let req = mock.last_request().expect("shell output request recorded");
     let output_item = req.function_call_output(call_id);
@@ -236,11 +233,8 @@ async fn shell_output_preserves_fixture_json_without_serialization(
     )?;
     let mock = mount_sse_sequence(&server, responses).await;
 
-    test.submit_turn_with_policy(
-        "read the fixture JSON with sed",
-        SandboxPolicy::RootAccess,
-    )
-    .await?;
+    test.submit_turn_with_policy("read the fixture JSON with sed", SandboxPolicy::RootAccess)
+        .await?;
 
     let req = mock.last_request().expect("shell output request recorded");
     let output_item = req.function_call_output(call_id);
@@ -470,10 +464,7 @@ async fn apply_patch_custom_tool_output_is_structured(
 
     harness
         .test()
-        .submit_turn_with_policy(
-            "apply the patch via custom tool",
-            SandboxPolicy::RootAccess,
-        )
+        .submit_turn_with_policy("apply the patch via custom tool", SandboxPolicy::RootAccess)
         .await?;
 
     let output = harness.apply_patch_output(call_id, output_type).await;
@@ -704,11 +695,8 @@ async fn shell_output_is_structured_for_nonzero_exit(output_type: ShellModelOutp
     let responses = shell_responses(call_id, vec!["/bin/sh", "-c", "exit 42"], output_type)?;
     let mock = mount_sse_sequence(&server, responses).await;
 
-    test.submit_turn_with_policy(
-        "run the failing shell command",
-        SandboxPolicy::RootAccess,
-    )
-    .await?;
+    test.submit_turn_with_policy("run the failing shell command", SandboxPolicy::RootAccess)
+        .await?;
 
     let req = mock.last_request().expect("shell output request recorded");
     let output_item = req.function_call_output(call_id);
@@ -908,11 +896,8 @@ async fn local_shell_call_output_is_structured() -> Result<()> {
     ];
     let mock = mount_sse_sequence(&server, responses).await;
 
-    test.submit_turn_with_policy(
-        "run the local shell command",
-        SandboxPolicy::RootAccess,
-    )
-    .await?;
+    test.submit_turn_with_policy("run the local shell command", SandboxPolicy::RootAccess)
+        .await?;
 
     let req = mock
         .last_request()

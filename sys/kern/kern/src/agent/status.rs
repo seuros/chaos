@@ -8,9 +8,7 @@ pub(crate) fn agent_status_from_event(msg: &EventMsg) -> Option<AgentStatus> {
         EventMsg::TurnStarted(_) => Some(AgentStatus::Running),
         EventMsg::TurnComplete(ev) => Some(AgentStatus::Completed(ev.last_agent_message.clone())),
         EventMsg::TurnAborted(ev) => match ev.reason {
-            chaos_ipc::protocol::TurnAbortReason::Interrupted => {
-                Some(AgentStatus::Interrupted)
-            }
+            chaos_ipc::protocol::TurnAbortReason::Interrupted => Some(AgentStatus::Interrupted),
             _ => Some(AgentStatus::Errored(format!("{:?}", ev.reason))),
         },
         EventMsg::Error(ev) => Some(AgentStatus::Errored(ev.message.clone())),

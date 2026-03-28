@@ -10,7 +10,6 @@ use crate::memories::prompts::build_consolidation_prompt;
 use crate::memories::storage::rebuild_raw_memories_file_from_memories;
 use crate::memories::storage::rollout_summary_file_stem;
 use crate::memories::storage::sync_rollout_summaries_from_memories;
-use chaos_sysctl::Constrained;
 use chaos_ipc::ProcessId;
 use chaos_ipc::protocol::AskForApproval;
 use chaos_ipc::protocol::SandboxPolicy;
@@ -21,6 +20,7 @@ use chaos_ipc::user_input::UserInput;
 use chaos_proc::Stage1Output;
 use chaos_proc::StateRuntime;
 use chaos_realpath::AbsolutePathBuf;
+use chaos_sysctl::Constrained;
 use std::collections::HashSet;
 use std::sync::Arc;
 use std::time::Duration;
@@ -160,9 +160,7 @@ pub(super) async fn run(session: &Arc<Session>, config: Arc<Config>) {
     emit_metrics(session, counters);
 }
 
-fn artifact_memories_for_phase2(
-    selection: &chaos_proc::Phase2InputSelection,
-) -> Vec<Stage1Output> {
+fn artifact_memories_for_phase2(selection: &chaos_proc::Phase2InputSelection) -> Vec<Stage1Output> {
     let mut seen = HashSet::new();
     let mut memories = selection.selected.clone();
     for memory in &selection.selected {

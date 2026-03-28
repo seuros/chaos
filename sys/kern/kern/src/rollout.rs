@@ -17,13 +17,13 @@ pub(crate) mod truncation;
 
 pub use chaos_ipc::protocol::SessionMeta;
 pub(crate) use error::map_session_init_error;
-pub use list::find_archived_process_path_by_id_str;
-pub use list::find_process_path_by_id_str;
 pub use list::ProcessItem;
 pub use list::ProcessListConfig;
 pub use list::ProcessListLayout;
 pub use list::ProcessSortKey;
 pub use list::ProcessesPage;
+pub use list::find_archived_process_path_by_id_str;
+pub use list::find_process_path_by_id_str;
 pub use list::get_processes;
 pub use list::get_processes_in_root;
 pub use list::rollout_date_parts;

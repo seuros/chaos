@@ -18,9 +18,9 @@ use std::sync::Mutex;
 use tracing::warn;
 
 use crate::token_data::TokenData;
+use chaos_ipc::api::AuthMode;
 use chaos_keyring::DefaultKeyringStore;
 use chaos_keyring::KeyringStore;
-use chaos_ipc::api::AuthMode;
 use std::sync::LazyLock;
 
 pub use chaos_sysctl::types::AuthCredentialsStoreMode;

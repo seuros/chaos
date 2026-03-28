@@ -27,11 +27,11 @@ use crate::render::renderable::Renderable;
 use crate::render::renderable::RenderableItem;
 use crate::tui::FrameRequester;
 use bottom_pane_view::BottomPaneView;
+use chaos_ipc::request_user_input::RequestUserInputEvent;
+use chaos_ipc::user_input::TextElement;
 use chaos_kern::features::Features;
 use chaos_kern::plugins::PluginCapabilitySummary;
 use chaos_locate::FileMatch;
-use chaos_ipc::request_user_input::RequestUserInputEvent;
-use chaos_ipc::user_input::TextElement;
 use crossterm::event::KeyCode;
 use crossterm::event::KeyEvent;
 use crossterm::event::KeyEventKind;
@@ -135,10 +135,10 @@ pub(crate) enum CancellationEvent {
 }
 
 use crate::bottom_pane::prompt_args::parse_slash_name;
+use chaos_ipc::custom_prompts::CustomPrompt;
 pub(crate) use chat_composer::ChatComposer;
 pub(crate) use chat_composer::ChatComposerConfig;
 pub(crate) use chat_composer::InputResult;
-use chaos_ipc::custom_prompts::CustomPrompt;
 
 use crate::status_indicator_widget::StatusDetailsCapitalization;
 use crate::status_indicator_widget::StatusIndicatorWidget;

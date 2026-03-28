@@ -1,10 +1,10 @@
 use crate::client_common::tools::ToolSpec;
 use crate::config::types::Personality;
 use crate::error::Result;
-pub use codex_api::common::ResponseEvent;
 use chaos_ipc::models::BaseInstructions;
 use chaos_ipc::models::FunctionCallOutputBody;
 use chaos_ipc::models::ResponseItem;
+pub use codex_api::common::ResponseEvent;
 use futures::Stream;
 use serde::Deserialize;
 use serde_json::Value;
@@ -153,11 +153,11 @@ fn strip_total_output_header(output: &str) -> Option<(&str, u32)> {
 }
 
 pub(crate) mod tools {
-    use codex_api::sanitize::JsonSchema;
     use chaos_ipc::config_types::WebSearchContextSize;
     use chaos_ipc::config_types::WebSearchFilters as ConfigWebSearchFilters;
     use chaos_ipc::config_types::WebSearchUserLocation as ConfigWebSearchUserLocation;
     use chaos_ipc::config_types::WebSearchUserLocationType;
+    use codex_api::sanitize::JsonSchema;
     use serde::Deserialize;
     use serde::Serialize;
 

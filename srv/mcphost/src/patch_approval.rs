@@ -3,11 +3,11 @@ use std::path::PathBuf;
 use std::sync::Arc;
 
 use crate::outgoing_message::ErrorData;
-use chaos_kern::Process;
 use chaos_ipc::ProcessId;
 use chaos_ipc::protocol::FileChange;
 use chaos_ipc::protocol::Op;
 use chaos_ipc::protocol::ReviewDecision;
+use chaos_kern::Process;
 use mcp_host::protocol::types::RequestId;
 use serde::Deserialize;
 use serde::Serialize;
@@ -145,11 +145,7 @@ pub(crate) async fn on_patch_approval_response(
     submit_patch_approval(approval_id, response.review_decision(), codex).await;
 }
 
-async fn submit_patch_approval(
-    approval_id: String,
-    decision: ReviewDecision,
-    codex: Arc<Process>,
-) {
+async fn submit_patch_approval(approval_id: String, decision: ReviewDecision, codex: Arc<Process>) {
     if let Err(err) = codex
         .submit(Op::PatchApproval {
             id: approval_id,

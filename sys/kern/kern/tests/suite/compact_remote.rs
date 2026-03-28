@@ -4,8 +4,6 @@ use std::fs;
 use std::path::PathBuf;
 
 use anyhow::Result;
-use chaos_kern::CodexAuth;
-use chaos_kern::compact::SUMMARY_PREFIX;
 use chaos_ipc::items::TurnItem;
 use chaos_ipc::models::ContentItem;
 use chaos_ipc::models::ResponseItem;
@@ -16,6 +14,8 @@ use chaos_ipc::protocol::Op;
 use chaos_ipc::protocol::RolloutItem;
 use chaos_ipc::protocol::RolloutLine;
 use chaos_ipc::user_input::UserInput;
+use chaos_kern::CodexAuth;
+use chaos_kern::compact::SUMMARY_PREFIX;
 use core_test_support::context_snapshot;
 use core_test_support::context_snapshot::ContextSnapshotOptions;
 use core_test_support::context_snapshot::ContextSnapshotRenderMode;

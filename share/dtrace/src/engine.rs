@@ -7,8 +7,8 @@ pub(crate) mod schema_loader;
 
 use std::path::PathBuf;
 
-use chaos_sysctl::ConfigLayerStack;
 use chaos_ipc::protocol::HookRunSummary;
+use chaos_sysctl::ConfigLayerStack;
 
 use crate::events::session_start::SessionStartOutcome;
 use crate::events::session_start::SessionStartRequest;

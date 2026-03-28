@@ -1,9 +1,7 @@
-use chaos_traits::RolloutConfig;
 use crate::rollout;
 use crate::rollout::list::parse_timestamp_uuid_from_filename;
 use crate::rollout::recorder::RolloutRecorder;
 use crate::state_db::normalize_cwd_for_state_db;
-use jiff::Timestamp;
 use chaos_ipc::ProcessId;
 use chaos_ipc::protocol::AskForApproval;
 use chaos_ipc::protocol::RolloutItem;
@@ -19,6 +17,8 @@ use chaos_proc::DB_METRIC_BACKFILL_DURATION_MS;
 use chaos_proc::ExtractionOutcome;
 use chaos_proc::ProcessMetadataBuilder;
 use chaos_proc::apply_rollout_item;
+use chaos_traits::RolloutConfig;
+use jiff::Timestamp;
 use std::path::Path;
 use std::path::PathBuf;
 use tracing::info;
@@ -126,7 +126,10 @@ pub(crate) async fn extract_metadata_from_rollout(
     })
 }
 
-pub(crate) async fn backfill_sessions(runtime: &chaos_proc::StateRuntime, config: &impl RolloutConfig) {
+pub(crate) async fn backfill_sessions(
+    runtime: &chaos_proc::StateRuntime,
+    config: &impl RolloutConfig,
+) {
     let metric_client = chaos_syslog::metrics::global();
     let timer = metric_client
         .as_ref()
@@ -222,9 +225,7 @@ pub(crate) async fn backfill_sessions(runtime: &chaos_proc::StateRuntime, config
     for batch in rollout_paths.chunks(BACKFILL_BATCH_SIZE) {
         for rollout in batch {
             stats.scanned = stats.scanned.saturating_add(1);
-            match extract_metadata_from_rollout(&rollout.path, config.model_provider_id())
-                .await
-            {
+            match extract_metadata_from_rollout(&rollout.path, config.model_provider_id()).await {
                 Ok(outcome) => {
                     if outcome.parse_errors > 0
                         && let Some(ref metric_client) = metric_client

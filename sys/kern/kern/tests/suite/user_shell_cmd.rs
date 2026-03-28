@@ -1,5 +1,4 @@
 use anyhow::Context;
-use chaos_kern::features::Feature;
 use chaos_ipc::permissions::NetworkSandboxPolicy;
 use chaos_ipc::protocol::AskForApproval;
 use chaos_ipc::protocol::EventMsg;
@@ -10,6 +9,7 @@ use chaos_ipc::protocol::Op;
 use chaos_ipc::protocol::SandboxPolicy;
 use chaos_ipc::protocol::TurnAbortReason;
 use chaos_ipc::user_input::UserInput;
+use chaos_kern::features::Feature;
 use core_test_support::assert_regex_match;
 use core_test_support::responses;
 use core_test_support::responses::ev_assistant_message;

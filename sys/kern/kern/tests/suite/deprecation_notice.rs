@@ -1,12 +1,12 @@
 use anyhow::Ok;
+use chaos_ipc::api::ConfigLayerSource;
+use chaos_ipc::protocol::DeprecationNoticeEvent;
+use chaos_ipc::protocol::EventMsg;
 use chaos_kern::config_loader::ConfigLayerEntry;
 use chaos_kern::config_loader::ConfigLayerStack;
 use chaos_kern::config_loader::ConfigRequirements;
 use chaos_kern::config_loader::ConfigRequirementsToml;
 use chaos_kern::features::Feature;
-use chaos_ipc::api::ConfigLayerSource;
-use chaos_ipc::protocol::DeprecationNoticeEvent;
-use chaos_ipc::protocol::EventMsg;
 use core_test_support::responses::start_mock_server;
 use core_test_support::skip_if_no_network;
 use core_test_support::test_absolute_path;

@@ -2,7 +2,6 @@
 
 use std::collections::HashMap;
 
-use chaos_kern::features::Feature;
 use chaos_ipc::config_types::CollaborationMode;
 use chaos_ipc::config_types::ModeKind;
 use chaos_ipc::config_types::Settings;
@@ -13,6 +12,7 @@ use chaos_ipc::protocol::SandboxPolicy;
 use chaos_ipc::request_user_input::RequestUserInputAnswer;
 use chaos_ipc::request_user_input::RequestUserInputResponse;
 use chaos_ipc::user_input::UserInput;
+use chaos_kern::features::Feature;
 use core_test_support::responses;
 use core_test_support::responses::ResponsesRequest;
 use core_test_support::responses::ev_assistant_message;

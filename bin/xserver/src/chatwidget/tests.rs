@@ -15,21 +15,6 @@ use crate::history_cell::UserHistoryCell;
 use crate::test_backend::VT100Backend;
 use crate::tui::FrameRequester;
 use assert_matches::assert_matches;
-use chaos_kern::CodexAuth;
-use chaos_kern::config::ApprovalsReviewer;
-use chaos_kern::config::Config;
-use chaos_kern::config::ConfigBuilder;
-use chaos_kern::config::Constrained;
-use chaos_kern::config::ConstraintError;
-use chaos_kern::config::types::Notifications;
-use chaos_kern::config_loader::RequirementSource;
-use chaos_kern::features::FEATURES;
-use chaos_kern::features::Feature;
-use chaos_kern::models_manager::collaboration_mode_presets::CollaborationModesConfig;
-use chaos_kern::models_manager::manager::ModelsManager;
-use chaos_kern::terminal::TerminalName;
-use chaos_syslog::RuntimeMetricsSummary;
-use chaos_syslog::SessionTelemetry;
 use chaos_ipc::ProcessId;
 use chaos_ipc::account::PlanType;
 use chaos_ipc::config_types::CollaborationMode;
@@ -83,6 +68,7 @@ use chaos_ipc::protocol::Op;
 use chaos_ipc::protocol::PatchApplyBeginEvent;
 use chaos_ipc::protocol::PatchApplyEndEvent;
 use chaos_ipc::protocol::PatchApplyStatus as CorePatchApplyStatus;
+use chaos_ipc::protocol::ProcessRolledBackEvent;
 use chaos_ipc::protocol::RateLimitWindow;
 use chaos_ipc::protocol::ReadOnlyAccess;
 use chaos_ipc::protocol::ReviewRequest;
@@ -91,7 +77,6 @@ use chaos_ipc::protocol::SessionConfiguredEvent;
 use chaos_ipc::protocol::SessionSource;
 use chaos_ipc::protocol::StreamErrorEvent;
 use chaos_ipc::protocol::TerminalInteractionEvent;
-use chaos_ipc::protocol::ProcessRolledBackEvent;
 use chaos_ipc::protocol::TokenCountEvent;
 use chaos_ipc::protocol::TokenUsage;
 use chaos_ipc::protocol::TokenUsageInfo;
@@ -106,8 +91,23 @@ use chaos_ipc::request_user_input::RequestUserInputQuestion;
 use chaos_ipc::request_user_input::RequestUserInputQuestionOption;
 use chaos_ipc::user_input::TextElement;
 use chaos_ipc::user_input::UserInput;
+use chaos_kern::CodexAuth;
+use chaos_kern::config::ApprovalsReviewer;
+use chaos_kern::config::Config;
+use chaos_kern::config::ConfigBuilder;
+use chaos_kern::config::Constrained;
+use chaos_kern::config::ConstraintError;
+use chaos_kern::config::types::Notifications;
+use chaos_kern::config_loader::RequirementSource;
+use chaos_kern::features::FEATURES;
+use chaos_kern::features::Feature;
+use chaos_kern::models_manager::collaboration_mode_presets::CollaborationModesConfig;
+use chaos_kern::models_manager::manager::ModelsManager;
+use chaos_kern::terminal::TerminalName;
 use chaos_realpath::AbsolutePathBuf;
 use chaos_sudoers::builtin_approval_presets;
+use chaos_syslog::RuntimeMetricsSummary;
+use chaos_syslog::SessionTelemetry;
 use crossterm::event::KeyCode;
 use crossterm::event::KeyEvent;
 use crossterm::event::KeyModifiers;
@@ -562,7 +562,9 @@ async fn forked_process_history_line_includes_name_and_id_snapshot() {
             match rx.recv().await {
                 Some(AppEvent::InsertHistoryCell(cell)) => break cell,
                 Some(_) => continue,
-                None => panic!("app event channel closed before forked process history was emitted"),
+                None => {
+                    panic!("app event channel closed before forked process history was emitted")
+                }
             }
         }
     })
@@ -593,7 +595,9 @@ async fn forked_process_history_line_without_name_shows_id_once_snapshot() {
             match rx.recv().await {
                 Some(AppEvent::InsertHistoryCell(cell)) => break cell,
                 Some(_) => continue,
-                None => panic!("app event channel closed before forked process history was emitted"),
+                None => {
+                    panic!("app event channel closed before forked process history was emitted")
+                }
             }
         }
     })
@@ -3392,8 +3396,7 @@ fn begin_exec_with_source(
     // Build the full command vec and parse it using core's parser,
     // then convert to protocol variants for the event payload.
     let command = vec!["bash".to_string(), "-lc".to_string(), raw_cmd.to_string()];
-    let parsed_cmd: Vec<ParsedCommand> =
-        chaos_sh::parse_command::parse_command(&command);
+    let parsed_cmd: Vec<ParsedCommand> = chaos_sh::parse_command::parse_command(&command);
     let cwd = std::env::current_dir().unwrap_or_else(|_| PathBuf::from("."));
     let interaction_input = None;
     let event = ExecCommandBeginEvent {

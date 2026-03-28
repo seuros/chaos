@@ -30,8 +30,8 @@ use ratatui::widgets::Paragraph;
 use ratatui::widgets::WidgetRef;
 use ratatui::widgets::Wrap;
 
-use chaos_kern::auth::AuthMode;
 use chaos_ipc::config_types::ForcedLoginMethod;
+use chaos_kern::auth::AuthMode;
 use std::sync::RwLock;
 
 use crate::LoginStatus;

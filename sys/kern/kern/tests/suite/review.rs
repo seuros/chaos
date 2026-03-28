@@ -1,7 +1,3 @@
-use chaos_kern::Process;
-use chaos_kern::REVIEW_PROMPT;
-use chaos_kern::config::Config;
-use chaos_kern::review_format::render_review_output_text;
 use chaos_ipc::models::ContentItem;
 use chaos_ipc::models::ResponseItem;
 use chaos_ipc::protocol::ENVIRONMENT_CONTEXT_OPEN_TAG;
@@ -17,6 +13,10 @@ use chaos_ipc::protocol::ReviewTarget;
 use chaos_ipc::protocol::RolloutItem;
 use chaos_ipc::protocol::RolloutLine;
 use chaos_ipc::user_input::UserInput;
+use chaos_kern::Process;
+use chaos_kern::REVIEW_PROMPT;
+use chaos_kern::config::Config;
+use chaos_kern::review_format::render_review_output_text;
 use core_test_support::load_sse_fixture_with_id_from_str;
 use core_test_support::responses::ResponseMock;
 use core_test_support::responses::mount_sse_sequence;

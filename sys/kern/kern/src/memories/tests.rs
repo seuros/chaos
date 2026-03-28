@@ -6,9 +6,9 @@ use crate::memories::ensure_layout;
 use crate::memories::memory_root;
 use crate::memories::raw_memories_file;
 use crate::memories::rollout_summaries_dir;
-use jiff::Timestamp;
 use chaos_ipc::ProcessId;
 use chaos_proc::Stage1Output;
+use jiff::Timestamp;
 use pretty_assertions::assert_eq;
 use serde_json::Value;
 use std::path::PathBuf;
@@ -429,20 +429,20 @@ mod consolidation_tests {
     use crate::codex::make_session_and_context;
     use crate::config::Config;
     use crate::config::test_config;
-    use crate::memories::memory_root;
     use crate::memories::consolidation;
+    use crate::memories::memory_root;
     use crate::memories::raw_memories_file;
     use crate::memories::rollout_summaries_dir;
-    use jiff::Timestamp;
-    use chaos_sysctl::Constrained;
     use chaos_ipc::ProcessId;
     use chaos_ipc::protocol::AskForApproval;
     use chaos_ipc::protocol::Op;
     use chaos_ipc::protocol::SandboxPolicy;
     use chaos_ipc::protocol::SessionSource;
     use chaos_proc::Phase2JobClaimOutcome;
-    use chaos_proc::Stage1Output;
     use chaos_proc::ProcessMetadataBuilder;
+    use chaos_proc::Stage1Output;
+    use chaos_sysctl::Constrained;
+    use jiff::Timestamp;
     use std::path::PathBuf;
     use std::sync::Arc;
     use tempfile::TempDir;
@@ -640,7 +640,9 @@ mod consolidation_tests {
     #[tokio::test]
     async fn dispatch_reclaims_stale_global_lock_and_starts_consolidation() {
         let harness = DispatchHarness::new().await;
-        harness.seed_stage1_output(Timestamp::now().as_second()).await;
+        harness
+            .seed_stage1_output(Timestamp::now().as_second())
+            .await;
 
         let stale_claim = harness
             .state_db
@@ -878,7 +880,9 @@ mod consolidation_tests {
         let process_id = ProcessId::new();
         let mut metadata_builder = ProcessMetadataBuilder::new(
             process_id,
-            config.codex_home.join(format!("rollout-{process_id}.jsonl")),
+            config
+                .codex_home
+                .join(format!("rollout-{process_id}.jsonl")),
             Timestamp::now(),
             SessionSource::Cli,
         );

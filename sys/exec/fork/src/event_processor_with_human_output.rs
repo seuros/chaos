@@ -1,5 +1,3 @@
-use chaos_kern::config::Config;
-use chaos_kern::web_search::web_search_detail;
 use chaos_ipc::items::TurnItem;
 use chaos_ipc::num_format::format_with_separators;
 use chaos_ipc::protocol::AgentMessageEvent;
@@ -39,6 +37,8 @@ use chaos_ipc::protocol::TurnCompleteEvent;
 use chaos_ipc::protocol::TurnDiffEvent;
 use chaos_ipc::protocol::WarningEvent;
 use chaos_ipc::protocol::WebSearchEndEvent;
+use chaos_kern::config::Config;
+use chaos_kern::web_search::web_search_detail;
 use chaos_uptime::format_duration;
 use chaos_uptime::format_elapsed;
 use owo_colors::OwoColorize;
@@ -248,9 +248,7 @@ impl EventProcessor for EventProcessorWithHumanOutput {
                 let status_text = match update.status {
                     chaos_ipc::protocol::McpStartupStatus::Starting => "starting".to_string(),
                     chaos_ipc::protocol::McpStartupStatus::Ready => "ready".to_string(),
-                    chaos_ipc::protocol::McpStartupStatus::Cancelled => {
-                        "cancelled".to_string()
-                    }
+                    chaos_ipc::protocol::McpStartupStatus::Cancelled => "cancelled".to_string(),
                     chaos_ipc::protocol::McpStartupStatus::Failed { ref error } => {
                         format!("failed: {error}")
                     }

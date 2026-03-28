@@ -1,6 +1,6 @@
 use crate::config_loader::NetworkConstraints;
 use async_trait::async_trait;
-use chaos_selinux::Policy;
+use chaos_ipc::protocol::SandboxPolicy;
 use chaos_pf::BlockedRequestObserver;
 use chaos_pf::ConfigReloader;
 use chaos_pf::ConfigState;
@@ -16,7 +16,7 @@ use chaos_pf::build_config_state;
 use chaos_pf::host_and_port_from_network_addr;
 use chaos_pf::normalize_host;
 use chaos_pf::validate_policy_against_constraints;
-use chaos_ipc::protocol::SandboxPolicy;
+use chaos_selinux::Policy;
 use std::collections::HashSet;
 use std::sync::Arc;
 

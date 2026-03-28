@@ -1,7 +1,6 @@
 #![allow(clippy::unwrap_used, clippy::expect_used)]
 
 use anyhow::Result;
-use chaos_kern::features::Feature;
 use chaos_ipc::config_types::CollaborationMode;
 use chaos_ipc::config_types::ModeKind;
 use chaos_ipc::config_types::Settings;
@@ -10,6 +9,7 @@ use chaos_ipc::protocol::EventMsg;
 use chaos_ipc::protocol::Op;
 use chaos_ipc::protocol::SandboxPolicy;
 use chaos_ipc::user_input::UserInput;
+use chaos_kern::features::Feature;
 use core_test_support::responses::ev_assistant_message;
 use core_test_support::responses::ev_completed;
 use core_test_support::responses::ev_function_call;

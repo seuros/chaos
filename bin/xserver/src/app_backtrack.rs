@@ -215,7 +215,8 @@ impl App {
             selection,
             process_id: self.chat_widget.process_id(),
         });
-        self.chat_widget.submit_op(Op::ProcessRollback { num_turns });
+        self.chat_widget
+            .submit_op(Op::ProcessRollback { num_turns });
         self.chat_widget.set_remote_image_urls(remote_image_urls);
         if !prefill.is_empty()
             || !text_elements.is_empty()

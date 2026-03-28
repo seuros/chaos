@@ -2,13 +2,13 @@
 
 use anyhow::Context;
 use anyhow::Result;
-use chaos_kern::config::types::McpServerConfig;
-use chaos_kern::config::types::McpServerTransportConfig;
 use chaos_ipc::protocol::AskForApproval;
 use chaos_ipc::protocol::EventMsg;
 use chaos_ipc::protocol::Op;
 use chaos_ipc::protocol::SandboxPolicy;
 use chaos_ipc::user_input::UserInput;
+use chaos_kern::config::types::McpServerConfig;
+use chaos_kern::config::types::McpServerTransportConfig;
 use core_test_support::assert_regex_match;
 use core_test_support::responses;
 use core_test_support::responses::ev_assistant_message;

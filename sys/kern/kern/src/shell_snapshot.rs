@@ -14,8 +14,8 @@ use anyhow::Context;
 use anyhow::Result;
 use anyhow::anyhow;
 use anyhow::bail;
-use chaos_syslog::SessionTelemetry;
 use chaos_ipc::ProcessId;
+use chaos_syslog::SessionTelemetry;
 use tokio::fs;
 use tokio::process::Command;
 use tokio::sync::watch;
@@ -455,7 +455,10 @@ fi
 /// Removes shell snapshots that either lack a matching session rollout file or
 /// whose rollouts have not been updated within the retention window.
 /// The active session id is exempt from cleanup.
-pub async fn cleanup_stale_snapshots(codex_home: &Path, active_session_id: ProcessId) -> Result<()> {
+pub async fn cleanup_stale_snapshots(
+    codex_home: &Path,
+    active_session_id: ProcessId,
+) -> Result<()> {
     let snapshot_dir = codex_home.join(SNAPSHOT_DIR);
 
     let mut entries = match fs::read_dir(&snapshot_dir).await {

@@ -4,14 +4,14 @@ use std::collections::HashMap;
 use std::path::Path;
 use std::sync::Arc;
 
+use chaos_ipc::config_types::ServiceTier;
+use chaos_ipc::protocol::AskForApproval;
+use chaos_ipc::protocol::SandboxPolicy;
 use chaos_sysctl::Constrained;
 use chaos_sysctl::features::Features;
 use chaos_sysctl::types::McpServerConfig;
 use chaos_sysctl::types::MemoriesConfig;
 use chaos_sysctl::types::OAuthCredentialsStoreMode;
-use chaos_ipc::config_types::ServiceTier;
-use chaos_ipc::protocol::AskForApproval;
-use chaos_ipc::protocol::SandboxPolicy;
 
 /// Minimal config surface for rollout persistence (recorder, metadata, list).
 pub trait RolloutConfig: Send + Sync {

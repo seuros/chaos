@@ -5,14 +5,14 @@ use std::path::Component;
 use std::path::Path;
 use std::path::PathBuf;
 
-use chaos_pf::NetworkMode;
-use chaos_pf::NetworkProxyConfig;
 use chaos_ipc::permissions::FileSystemAccessMode;
 use chaos_ipc::permissions::FileSystemPath;
 use chaos_ipc::permissions::FileSystemSandboxEntry;
 use chaos_ipc::permissions::FileSystemSandboxPolicy;
 use chaos_ipc::permissions::FileSystemSpecialPath;
 use chaos_ipc::permissions::NetworkSandboxPolicy;
+use chaos_pf::NetworkMode;
+use chaos_pf::NetworkProxyConfig;
 use chaos_realpath::AbsolutePathBuf;
 use schemars::JsonSchema;
 use serde::Deserialize;

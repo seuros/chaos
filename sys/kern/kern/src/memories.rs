@@ -5,11 +5,11 @@
 //! - **Consolidation**: merge/deduplicate raw memories via a sub-agent.
 
 pub(crate) mod citations;
+mod consolidation;
 mod control;
 mod extraction;
-mod consolidation;
-pub(crate) mod prompts;
 mod pipeline;
+pub(crate) mod prompts;
 mod storage;
 #[cfg(test)]
 mod tests;

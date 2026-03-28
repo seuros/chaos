@@ -1,6 +1,6 @@
-use chaos_scm::merge_base_with_head;
 use chaos_ipc::protocol::ReviewRequest;
 use chaos_ipc::protocol::ReviewTarget;
+use chaos_scm::merge_base_with_head;
 use std::path::Path;
 
 #[derive(Clone, Debug, PartialEq)]

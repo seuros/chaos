@@ -1,15 +1,6 @@
 #![allow(clippy::unwrap_used, clippy::expect_used)]
 
 use anyhow::Result;
-use chaos_kern::config::Constrained;
-use chaos_kern::config_loader::ConfigLayerStack;
-use chaos_kern::config_loader::ConfigLayerStackOrdering;
-use chaos_kern::config_loader::NetworkConstraints;
-use chaos_kern::config_loader::NetworkRequirementsToml;
-use chaos_kern::config_loader::RequirementSource;
-use chaos_kern::config_loader::Sourced;
-use chaos_kern::features::Feature;
-use chaos_kern::sandboxing::SandboxPermissions;
 use chaos_ipc::approvals::NetworkApprovalProtocol;
 use chaos_ipc::approvals::NetworkPolicyAmendment;
 use chaos_ipc::approvals::NetworkPolicyRuleAction;
@@ -22,6 +13,15 @@ use chaos_ipc::protocol::Op;
 use chaos_ipc::protocol::ReviewDecision;
 use chaos_ipc::protocol::SandboxPolicy;
 use chaos_ipc::user_input::UserInput;
+use chaos_kern::config::Constrained;
+use chaos_kern::config_loader::ConfigLayerStack;
+use chaos_kern::config_loader::ConfigLayerStackOrdering;
+use chaos_kern::config_loader::NetworkConstraints;
+use chaos_kern::config_loader::NetworkRequirementsToml;
+use chaos_kern::config_loader::RequirementSource;
+use chaos_kern::config_loader::Sourced;
+use chaos_kern::features::Feature;
+use chaos_kern::sandboxing::SandboxPermissions;
 use core_test_support::responses::ev_apply_patch_function_call;
 use core_test_support::responses::ev_assistant_message;
 use core_test_support::responses::ev_completed;

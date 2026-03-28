@@ -24,7 +24,15 @@ use crate::rule::validate_not_match_examples;
 
 /// Globals stripped from the policy Lua VM. Policy files are config, not scripts.
 const DANGEROUS_GLOBALS: &[&str] = &[
-    "os", "io", "debug", "package", "loadfile", "dofile", "collectgarbage", "require", "load",
+    "os",
+    "io",
+    "debug",
+    "package",
+    "loadfile",
+    "dofile",
+    "collectgarbage",
+    "require",
+    "load",
 ];
 
 pub struct PolicyParser {
@@ -243,27 +251,25 @@ fn handle_prefix_rule(builder: &RefCell<PolicyBuilder>, args: &Table) -> Result<
         Err(e) => {
             return Err(Error::InvalidRule(format!(
                 "invalid 'justification' field: {e}"
-            )))
+            )));
         }
     };
 
-    let matches: Vec<Vec<String>> =
-        match args.get::<Option<Table>>("match") {
-            Ok(Some(tbl)) => parse_examples_from_table(&tbl)?,
-            Ok(None) => Vec::new(),
-            Err(e) => return Err(Error::InvalidExample(format!(
-                "invalid 'match' field: {e}"
-            ))),
-        };
+    let matches: Vec<Vec<String>> = match args.get::<Option<Table>>("match") {
+        Ok(Some(tbl)) => parse_examples_from_table(&tbl)?,
+        Ok(None) => Vec::new(),
+        Err(e) => return Err(Error::InvalidExample(format!("invalid 'match' field: {e}"))),
+    };
 
-    let not_matches: Vec<Vec<String>> =
-        match args.get::<Option<Table>>("not_match") {
-            Ok(Some(tbl)) => parse_examples_from_table(&tbl)?,
-            Ok(None) => Vec::new(),
-            Err(e) => return Err(Error::InvalidExample(format!(
+    let not_matches: Vec<Vec<String>> = match args.get::<Option<Table>>("not_match") {
+        Ok(Some(tbl)) => parse_examples_from_table(&tbl)?,
+        Ok(None) => Vec::new(),
+        Err(e) => {
+            return Err(Error::InvalidExample(format!(
                 "invalid 'not_match' field: {e}"
-            ))),
-        };
+            )));
+        }
+    };
 
     let (first_token, remaining_tokens) = pattern_tokens
         .split_first()
@@ -317,7 +323,7 @@ fn handle_network_rule(builder: &RefCell<PolicyBuilder>, args: &Table) -> Result
         Err(e) => {
             return Err(Error::InvalidRule(format!(
                 "invalid 'justification' field: {e}"
-            )))
+            )));
         }
     };
 
@@ -412,8 +418,7 @@ fn parse_pattern_token_from_value(value: &Value) -> Result<PatternToken> {
 fn parse_examples_from_table(table: &Table) -> Result<Vec<Vec<String>>> {
     let mut examples = Vec::new();
     for pair in table.sequence_values::<Value>() {
-        let value =
-            pair.map_err(|e| Error::InvalidExample(format!("bad example element: {e}")))?;
+        let value = pair.map_err(|e| Error::InvalidExample(format!("bad example element: {e}")))?;
         examples.push(parse_example_from_value(&value)?);
     }
     Ok(examples)
@@ -452,9 +457,8 @@ fn parse_string_example(raw: &str) -> Result<Vec<String>> {
 fn parse_list_example_from_table(table: &Table) -> Result<Vec<String>> {
     let mut tokens = Vec::new();
     for pair in table.sequence_values::<String>() {
-        let s = pair.map_err(|e| {
-            Error::InvalidExample(format!("example tokens must be strings: {e}"))
-        })?;
+        let s = pair
+            .map_err(|e| Error::InvalidExample(format!("example tokens must be strings: {e}")))?;
         tokens.push(s);
     }
     if tokens.is_empty() {

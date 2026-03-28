@@ -4,11 +4,11 @@ use std::path::PathBuf;
 use crate::ModelClient;
 use crate::error::CodexErr;
 use crate::error::Result;
-use codex_api::RawMemory as ApiRawMemory;
-use codex_api::RawMemoryMetadata as ApiRawMemoryMetadata;
-use chaos_syslog::SessionTelemetry;
 use chaos_ipc::openai_models::ModelInfo;
 use chaos_ipc::openai_models::ReasoningEffort as ReasoningEffortConfig;
+use chaos_syslog::SessionTelemetry;
+use codex_api::RawMemory as ApiRawMemory;
+use codex_api::RawMemoryMetadata as ApiRawMemoryMetadata;
 use serde_json::Map;
 use serde_json::Value;
 

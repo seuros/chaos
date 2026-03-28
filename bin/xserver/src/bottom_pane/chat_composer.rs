@@ -182,13 +182,13 @@ use crate::render::RectExt;
 use crate::render::renderable::Renderable;
 use crate::slash_command::SlashCommand;
 use crate::style::user_message_style;
+use chaos_glob::fuzzy_match;
 use chaos_ipc::custom_prompts::CustomPrompt;
 use chaos_ipc::custom_prompts::PROMPTS_CMD_PREFIX;
 use chaos_ipc::models::local_image_label_text;
 use chaos_ipc::user_input::ByteRange;
 use chaos_ipc::user_input::MAX_USER_INPUT_TEXT_CHARS;
 use chaos_ipc::user_input::TextElement;
-use chaos_glob::fuzzy_match;
 
 use crate::app_event::AppEvent;
 use crate::app_event::ConnectorsSnapshot;
@@ -3584,10 +3584,10 @@ fn prompt_selection_action(
 #[cfg(test)]
 mod tests {
     use super::*;
+    use chaos_kern::connectors::AppInfo;
     use image::ImageBuffer;
     use image::Rgba;
     use pretty_assertions::assert_eq;
-    use chaos_kern::connectors::AppInfo;
     use std::path::PathBuf;
     use tempfile::tempdir;
 

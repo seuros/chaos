@@ -32,24 +32,6 @@ use crate::resume_picker::SessionSelection;
 use crate::tui;
 use crate::tui::TuiEvent;
 use crate::version::CHAOS_VERSION;
-use chaos_termcap::ansi_escape_line;
-use chaos_kern::AuthManager;
-use chaos_kern::CodexAuth;
-use chaos_kern::ProcessTable;
-use chaos_kern::config::Config;
-use chaos_kern::config::ConfigBuilder;
-use chaos_kern::config::ConfigOverrides;
-use chaos_kern::config::edit::ConfigEdit;
-use chaos_kern::config::edit::ConfigEditsBuilder;
-use chaos_kern::config::types::ApprovalsReviewer;
-use chaos_kern::config::types::ModelAvailabilityNuxConfig;
-use chaos_kern::config_loader::ConfigLayerStackOrdering;
-use chaos_kern::features::Feature;
-use chaos_kern::models_manager::manager::RefreshStrategy;
-use chaos_kern::models_manager::model_presets::HIDE_GPT_5_1_CODEX_MAX_MIGRATION_PROMPT_CONFIG;
-use chaos_kern::models_manager::model_presets::HIDE_GPT5_1_MIGRATION_PROMPT_CONFIG;
-use chaos_syslog::SessionTelemetry;
-use chaos_syslog::TelemetryAuthMode;
 use chaos_ipc::ProcessId;
 use chaos_ipc::api::ConfigLayerSource;
 use chaos_ipc::config_types::Personality;
@@ -67,7 +49,25 @@ use chaos_ipc::protocol::SandboxPolicy;
 use chaos_ipc::protocol::SessionConfiguredEvent;
 use chaos_ipc::protocol::SessionSource;
 use chaos_ipc::protocol::TokenUsage;
+use chaos_kern::AuthManager;
+use chaos_kern::CodexAuth;
+use chaos_kern::ProcessTable;
+use chaos_kern::config::Config;
+use chaos_kern::config::ConfigBuilder;
+use chaos_kern::config::ConfigOverrides;
+use chaos_kern::config::edit::ConfigEdit;
+use chaos_kern::config::edit::ConfigEditsBuilder;
+use chaos_kern::config::types::ApprovalsReviewer;
+use chaos_kern::config::types::ModelAvailabilityNuxConfig;
+use chaos_kern::config_loader::ConfigLayerStackOrdering;
+use chaos_kern::features::Feature;
+use chaos_kern::models_manager::manager::RefreshStrategy;
+use chaos_kern::models_manager::model_presets::HIDE_GPT_5_1_CODEX_MAX_MIGRATION_PROMPT_CONFIG;
+use chaos_kern::models_manager::model_presets::HIDE_GPT5_1_MIGRATION_PROMPT_CONFIG;
 use chaos_realpath::AbsolutePathBuf;
+use chaos_syslog::SessionTelemetry;
+use chaos_syslog::TelemetryAuthMode;
+use chaos_termcap::ansi_escape_line;
 use color_eyre::eyre::Result;
 use color_eyre::eyre::WrapErr;
 use crossterm::event::KeyCode;
@@ -1512,7 +1512,8 @@ impl App {
 
             let pending = std::mem::take(&mut self.pending_primary_events);
             for pending_event in pending {
-                self.enqueue_process_event(process_id, pending_event).await?;
+                self.enqueue_process_event(process_id, pending_event)
+                    .await?;
             }
         } else {
             self.pending_primary_events.push_back(event);
@@ -1627,7 +1628,11 @@ impl App {
         self.sync_active_agent_label();
     }
 
-    async fn select_agent_process(&mut self, tui: &mut tui::Tui, process_id: ProcessId) -> Result<()> {
+    async fn select_agent_process(
+        &mut self,
+        tui: &mut tui::Tui,
+        process_id: ProcessId,
+    ) -> Result<()> {
         if self.active_process_id == Some(process_id) {
             return Ok(());
         }
@@ -2334,8 +2339,11 @@ impl App {
                                     self.config.clone(),
                                 );
                                 let (_, process, session_configured) = resumed.into_parts();
-                                self.chat_widget =
-                                    ChatWidget::new_from_existing(init, process, session_configured);
+                                self.chat_widget = ChatWidget::new_from_existing(
+                                    init,
+                                    process,
+                                    session_configured,
+                                );
                                 self.reset_process_event_state();
                                 if let Some(summary) = summary {
                                     let mut lines: Vec<Line<'static>> =
@@ -2403,8 +2411,11 @@ impl App {
                                     self.config.clone(),
                                 );
                                 let (_, process, session_configured) = forked.into_parts();
-                                self.chat_widget =
-                                    ChatWidget::new_from_existing(init, process, session_configured);
+                                self.chat_widget = ChatWidget::new_from_existing(
+                                    init,
+                                    process,
+                                    session_configured,
+                                );
                                 self.reset_process_event_state();
                                 if let Some(summary) = summary {
                                     let mut lines: Vec<Line<'static>> =
@@ -3171,7 +3182,11 @@ impl App {
     /// This function enforces shutdown intent routing: unexpected non-primary
     /// thread shutdowns fail over to the primary thread, while user-requested
     /// app exits consume only the tracked shutdown completion and then proceed.
-    async fn handle_active_process_event(&mut self, tui: &mut tui::Tui, event: Event) -> Result<()> {
+    async fn handle_active_process_event(
+        &mut self,
+        tui: &mut tui::Tui,
+        event: Event,
+    ) -> Result<()> {
         // Capture this before any potential thread switch: we only want to clear
         // the exit marker when the currently active thread acknowledges shutdown.
         let pending_shutdown_exit_completed = matches!(&event.msg, EventMsg::ShutdownComplete)
@@ -3270,7 +3285,10 @@ impl App {
                         break;
                     }
                 };
-                app_event_tx.send(AppEvent::ProcessEvent { process_id: process_id, event });
+                app_event_tx.send(AppEvent::ProcessEvent {
+                    process_id: process_id,
+                    event,
+                });
             }
         });
         self.process_event_listener_tasks
@@ -3559,11 +3577,6 @@ mod tests {
     use crate::history_cell::new_session_info;
     use crate::multi_agents::AgentPickerProcessEntry;
     use assert_matches::assert_matches;
-    use chaos_kern::CodexAuth;
-    use chaos_kern::config::ConfigBuilder;
-    use chaos_kern::config::ConfigOverrides;
-    use chaos_kern::config::types::ModelAvailabilityNuxConfig;
-    use chaos_syslog::SessionTelemetry;
     use chaos_ipc::ProcessId;
     use chaos_ipc::config_types::CollaborationMode;
     use chaos_ipc::config_types::CollaborationModeMask;
@@ -3574,10 +3587,10 @@ mod tests {
     use chaos_ipc::protocol::AskForApproval;
     use chaos_ipc::protocol::Event;
     use chaos_ipc::protocol::EventMsg;
+    use chaos_ipc::protocol::ProcessRolledBackEvent;
     use chaos_ipc::protocol::SandboxPolicy;
     use chaos_ipc::protocol::SessionConfiguredEvent;
     use chaos_ipc::protocol::SessionSource;
-    use chaos_ipc::protocol::ProcessRolledBackEvent;
     use chaos_ipc::protocol::TurnAbortReason;
     use chaos_ipc::protocol::TurnAbortedEvent;
     use chaos_ipc::protocol::TurnCompleteEvent;
@@ -3585,6 +3598,11 @@ mod tests {
     use chaos_ipc::protocol::UserMessageEvent;
     use chaos_ipc::user_input::TextElement;
     use chaos_ipc::user_input::UserInput;
+    use chaos_kern::CodexAuth;
+    use chaos_kern::config::ConfigBuilder;
+    use chaos_kern::config::ConfigOverrides;
+    use chaos_kern::config::types::ModelAvailabilityNuxConfig;
+    use chaos_syslog::SessionTelemetry;
     use crossterm::event::KeyModifiers;
     use insta::assert_snapshot;
     use pretty_assertions::assert_eq;
@@ -3703,23 +3721,21 @@ mod tests {
         let process_id = ProcessId::new();
         let approval_event = Event {
             id: "approval-event".to_string(),
-            msg: EventMsg::ExecApprovalRequest(
-                chaos_ipc::protocol::ExecApprovalRequestEvent {
-                    call_id: "call-1".to_string(),
-                    approval_id: None,
-                    turn_id: "turn-1".to_string(),
-                    command: vec!["echo".to_string(), "hello".to_string()],
-                    cwd: PathBuf::from("/tmp/project"),
-                    reason: Some("needs approval".to_string()),
-                    network_approval_context: None,
-                    proposed_execpolicy_amendment: None,
-                    proposed_network_policy_amendments: None,
-                    additional_permissions: None,
-                    skill_metadata: None,
-                    available_decisions: None,
-                    parsed_cmd: Vec::new(),
-                },
-            ),
+            msg: EventMsg::ExecApprovalRequest(chaos_ipc::protocol::ExecApprovalRequestEvent {
+                call_id: "call-1".to_string(),
+                approval_id: None,
+                turn_id: "turn-1".to_string(),
+                command: vec!["echo".to_string(), "hello".to_string()],
+                cwd: PathBuf::from("/tmp/project"),
+                reason: Some("needs approval".to_string()),
+                network_approval_context: None,
+                proposed_execpolicy_amendment: None,
+                proposed_network_policy_amendments: None,
+                additional_permissions: None,
+                skill_metadata: None,
+                available_decisions: None,
+                parsed_cmd: Vec::new(),
+            }),
         };
         let session_configured_event = Event {
             id: "session-configured".to_string(),
@@ -5318,23 +5334,21 @@ guardian_approval = true
             let mut store = agent_channel.store.lock().await;
             store.push_event(Event {
                 id: "ev-1".to_string(),
-                msg: EventMsg::ExecApprovalRequest(
-                    chaos_ipc::protocol::ExecApprovalRequestEvent {
-                        call_id: "call-1".to_string(),
-                        approval_id: None,
-                        turn_id: "turn-1".to_string(),
-                        command: vec!["echo".to_string(), "hi".to_string()],
-                        cwd: PathBuf::from("/tmp"),
-                        reason: None,
-                        network_approval_context: None,
-                        proposed_execpolicy_amendment: None,
-                        proposed_network_policy_amendments: None,
-                        additional_permissions: None,
-                        skill_metadata: None,
-                        available_decisions: None,
-                        parsed_cmd: Vec::new(),
-                    },
-                ),
+                msg: EventMsg::ExecApprovalRequest(chaos_ipc::protocol::ExecApprovalRequestEvent {
+                    call_id: "call-1".to_string(),
+                    approval_id: None,
+                    turn_id: "turn-1".to_string(),
+                    command: vec!["echo".to_string(), "hi".to_string()],
+                    cwd: PathBuf::from("/tmp"),
+                    reason: None,
+                    network_approval_context: None,
+                    proposed_execpolicy_amendment: None,
+                    proposed_network_policy_amendments: None,
+                    additional_permissions: None,
+                    skill_metadata: None,
+                    available_decisions: None,
+                    parsed_cmd: Vec::new(),
+                }),
             });
         }
         app.process_event_channels
@@ -5407,23 +5421,21 @@ guardian_approval = true
             agent_process_id,
             Event {
                 id: "ev-approval".to_string(),
-                msg: EventMsg::ExecApprovalRequest(
-                    chaos_ipc::protocol::ExecApprovalRequestEvent {
-                        call_id: "call-approval".to_string(),
-                        approval_id: None,
-                        turn_id: "turn-approval".to_string(),
-                        command: vec!["echo".to_string(), "hi".to_string()],
-                        cwd: PathBuf::from("/tmp/agent"),
-                        reason: Some("need approval".to_string()),
-                        network_approval_context: None,
-                        proposed_execpolicy_amendment: None,
-                        proposed_network_policy_amendments: None,
-                        additional_permissions: None,
-                        skill_metadata: None,
-                        available_decisions: None,
-                        parsed_cmd: Vec::new(),
-                    },
-                ),
+                msg: EventMsg::ExecApprovalRequest(chaos_ipc::protocol::ExecApprovalRequestEvent {
+                    call_id: "call-approval".to_string(),
+                    approval_id: None,
+                    turn_id: "turn-approval".to_string(),
+                    command: vec!["echo".to_string(), "hi".to_string()],
+                    cwd: PathBuf::from("/tmp/agent"),
+                    reason: Some("need approval".to_string()),
+                    network_approval_context: None,
+                    proposed_execpolicy_amendment: None,
+                    proposed_network_policy_amendments: None,
+                    additional_permissions: None,
+                    skill_metadata: None,
+                    available_decisions: None,
+                    parsed_cmd: Vec::new(),
+                }),
             },
         )
         .await?;
@@ -5439,8 +5451,8 @@ guardian_approval = true
 
     #[test]
     fn agent_picker_item_name_snapshot() {
-        let process_id =
-            ProcessId::from_string("00000000-0000-0000-0000-000000000123").expect("valid thread id");
+        let process_id = ProcessId::from_string("00000000-0000-0000-0000-000000000123")
+            .expect("valid thread id");
         let snapshot = [
             format!(
                 "{} | {}",

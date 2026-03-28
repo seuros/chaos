@@ -3,13 +3,13 @@ use crate::path_utils::normalize_for_path_comparison;
 use crate::rollout::list::Cursor;
 use crate::rollout::list::ProcessSortKey;
 use crate::rollout::metadata;
-use jiff::Timestamp;
 use chaos_ipc::ProcessId;
 use chaos_ipc::dynamic_tools::DynamicToolSpec;
 use chaos_ipc::protocol::RolloutItem;
 use chaos_ipc::protocol::SessionSource;
 pub use chaos_proc::LogEntry;
 use chaos_proc::ProcessMetadataBuilder;
+use jiff::Timestamp;
 use serde_json::Value;
 use std::path::Path;
 use std::path::PathBuf;
@@ -72,12 +72,10 @@ pub async fn get_state_db_for(
     if !tokio::fs::try_exists(&state_path).await.unwrap_or(false) {
         return None;
     }
-    let runtime = chaos_proc::StateRuntime::init(
-        sqlite_home.to_path_buf(),
-        model_provider_id.to_string(),
-    )
-    .await
-    .ok()?;
+    let runtime =
+        chaos_proc::StateRuntime::init(sqlite_home.to_path_buf(), model_provider_id.to_string())
+            .await
+            .ok()?;
     require_backfill_complete(runtime, sqlite_home).await
 }
 
@@ -535,7 +533,12 @@ pub async fn apply_rollout_items(
     builder.rollout_path = rollout_path.to_path_buf();
     builder.cwd = normalize_cwd_for_state_db(&builder.cwd);
     if let Err(err) = ctx
-        .apply_rollout_items(&builder, items, new_process_memory_mode, updated_at_override)
+        .apply_rollout_items(
+            &builder,
+            items,
+            new_process_memory_mode,
+            updated_at_override,
+        )
         .await
     {
         warn!(
@@ -560,7 +563,9 @@ pub async fn touch_process_updated_at(
     ctx.touch_process_updated_at(process_id, updated_at)
         .await
         .unwrap_or_else(|err| {
-            warn!("state db touch_process_updated_at failed during {stage} for {process_id}: {err}");
+            warn!(
+                "state db touch_process_updated_at failed during {stage} for {process_id}: {err}"
+            );
             false
         })
 }

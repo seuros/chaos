@@ -1,10 +1,10 @@
 use std::path::PathBuf;
 use std::sync::Arc;
 
-use jiff::Timestamp;
 use chaos_ipc::ProcessId;
 use chaos_ipc::models::SandboxPermissions;
 use futures::future::BoxFuture;
+use jiff::Timestamp;
 use serde::Serialize;
 use serde::Serializer;
 
@@ -159,9 +159,9 @@ pub enum HookEvent {
 mod tests {
     use std::path::PathBuf;
 
-    use jiff::Timestamp;
     use chaos_ipc::ProcessId;
     use chaos_ipc::models::SandboxPermissions;
+    use jiff::Timestamp;
     use pretty_assertions::assert_eq;
     use serde_json::json;
 

@@ -1,8 +1,8 @@
 use std::path::PathBuf;
 
+use chaos_ipc::config_types::TrustLevel;
 use chaos_kern::config::set_project_trust_level;
 use chaos_kern::git_info::resolve_root_git_project_for_trust;
-use chaos_ipc::config_types::TrustLevel;
 use crossterm::event::KeyCode;
 use crossterm::event::KeyEvent;
 use crossterm::event::KeyEventKind;

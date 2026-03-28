@@ -3,11 +3,11 @@ use std::path::Path;
 
 use anyhow::Context;
 use anyhow::Result;
-use chaos_kern::features::Feature;
 use chaos_ipc::models::ContentItem;
 use chaos_ipc::models::ResponseItem;
 use chaos_ipc::protocol::RolloutItem;
 use chaos_ipc::protocol::RolloutLine;
+use chaos_kern::features::Feature;
 use core_test_support::responses::ev_assistant_message;
 use core_test_support::responses::ev_completed;
 use core_test_support::responses::ev_response_created;

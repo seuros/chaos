@@ -1,10 +1,10 @@
 use std::time::Duration;
 use std::time::Instant;
 
-use chaos_syslog::metrics::names::TURN_TTFM_DURATION_METRIC;
-use chaos_syslog::metrics::names::TURN_TTFT_DURATION_METRIC;
 use chaos_ipc::items::TurnItem;
 use chaos_ipc::models::ResponseItem;
+use chaos_syslog::metrics::names::TURN_TTFM_DURATION_METRIC;
+use chaos_syslog::metrics::names::TURN_TTFT_DURATION_METRIC;
 use tokio::sync::Mutex;
 
 use crate::ResponseEvent;
@@ -132,9 +132,7 @@ fn response_item_records_turn_ttft(item: &ResponseItem) -> bool {
             }) || content.as_ref().is_some_and(|entries| {
                 entries.iter().any(|entry| match entry {
                     chaos_ipc::models::ReasoningItemContent::ReasoningText { text }
-                    | chaos_ipc::models::ReasoningItemContent::Text { text } => {
-                        !text.is_empty()
-                    }
+                    | chaos_ipc::models::ReasoningItemContent::Text { text } => !text.is_empty(),
                 })
             })
         }

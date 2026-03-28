@@ -1,12 +1,12 @@
 use crate::exec_command::relativize_to_home;
 use crate::text_formatting;
-use chrono::DateTime;
-use chrono::Local;
+use chaos_ipc::account::PlanType;
 use chaos_kern::AuthManager;
 use chaos_kern::auth::AuthMode as CoreAuthMode;
 use chaos_kern::config::Config;
 use chaos_kern::project_doc::discover_project_doc_paths;
-use chaos_ipc::account::PlanType;
+use chrono::DateTime;
+use chrono::Local;
 use std::path::Path;
 use unicode_width::UnicodeWidthStr;
 

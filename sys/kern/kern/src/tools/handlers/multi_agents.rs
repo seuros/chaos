@@ -139,7 +139,11 @@ fn build_wait_agent_statuses(
             status: status.clone(),
         })
         .collect::<Vec<_>>();
-    extras.sort_by(|left, right| left.process_id.to_string().cmp(&right.process_id.to_string()));
+    extras.sort_by(|left, right| {
+        left.process_id
+            .to_string()
+            .cmp(&right.process_id.to_string())
+    });
     entries.extend(extras);
     entries
 }

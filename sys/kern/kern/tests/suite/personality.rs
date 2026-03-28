@@ -1,7 +1,3 @@
-use chaos_kern::config::types::Personality;
-use chaos_kern::features::Feature;
-use chaos_kern::models_manager::manager::ModelsManager;
-use chaos_kern::models_manager::manager::RefreshStrategy;
 use chaos_ipc::config_types::ReasoningSummary;
 use chaos_ipc::openai_models::ConfigShellToolType;
 use chaos_ipc::openai_models::ModelInfo;
@@ -18,6 +14,10 @@ use chaos_ipc::protocol::EventMsg;
 use chaos_ipc::protocol::Op;
 use chaos_ipc::protocol::SandboxPolicy;
 use chaos_ipc::user_input::UserInput;
+use chaos_kern::config::types::Personality;
+use chaos_kern::features::Feature;
+use chaos_kern::models_manager::manager::ModelsManager;
+use chaos_kern::models_manager::manager::RefreshStrategy;
 use core_test_support::load_default_config_for_test;
 use core_test_support::responses::mount_models_once;
 use core_test_support::responses::mount_sse_once;

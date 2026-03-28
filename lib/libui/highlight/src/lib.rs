@@ -672,10 +672,7 @@ pub fn highlight_bash_to_lines(script: &str) -> Vec<Line<'static>> {
 /// Each inner `Vec<Span>` corresponds to one source line.  Styles are derived
 /// from the active theme but backgrounds are intentionally omitted so the
 /// terminal's own background shows through.
-pub fn highlight_code_to_styled_spans(
-    code: &str,
-    lang: &str,
-) -> Option<Vec<Vec<Span<'static>>>> {
+pub fn highlight_code_to_styled_spans(code: &str, lang: &str) -> Option<Vec<Vec<Span<'static>>>> {
     highlight_to_line_spans(code, lang)
 }
 

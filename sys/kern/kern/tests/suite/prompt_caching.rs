@@ -1,9 +1,6 @@
 #![allow(clippy::unwrap_used)]
 
 use chaos_diff::APPLY_PATCH_TOOL_INSTRUCTIONS;
-use chaos_kern::features::Feature;
-use chaos_kern::shell::Shell;
-use chaos_kern::shell::default_user_shell;
 use chaos_ipc::config_types::CollaborationMode;
 use chaos_ipc::config_types::ModeKind;
 use chaos_ipc::config_types::ReasoningSummary;
@@ -16,6 +13,9 @@ use chaos_ipc::protocol::EventMsg;
 use chaos_ipc::protocol::Op;
 use chaos_ipc::protocol::SandboxPolicy;
 use chaos_ipc::user_input::UserInput;
+use chaos_kern::features::Feature;
+use chaos_kern::shell::Shell;
+use chaos_kern::shell::default_user_shell;
 use chaos_realpath::AbsolutePathBuf;
 use core_test_support::responses::ev_completed;
 use core_test_support::responses::ev_response_created;

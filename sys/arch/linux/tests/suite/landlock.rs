@@ -39,8 +39,6 @@ const NETWORK_TIMEOUT_MS: u64 = 2_000;
 #[cfg(target_arch = "aarch64")]
 const NETWORK_TIMEOUT_MS: u64 = 10_000;
 
-const BWRAP_UNAVAILABLE_ERR: &str = "build-time bubblewrap is not available in this build.";
-
 fn create_env_from_core_vars() -> HashMap<String, String> {
     let policy = ShellEnvironmentPolicy::default();
     create_env(&policy, None)
@@ -137,37 +135,6 @@ async fn run_cmd_result_with_policies(
     .await
 }
 
-fn is_bwrap_unavailable_output(output: &chaos_kern::exec::ExecToolCallOutput) -> bool {
-    output.stderr.text.contains(BWRAP_UNAVAILABLE_ERR)
-        || (output
-            .stderr
-            .text
-            .contains("Can't mount proc on /newroot/proc")
-            && (output.stderr.text.contains("Operation not permitted")
-                || output.stderr.text.contains("Permission denied")
-                || output.stderr.text.contains("Invalid argument")))
-}
-
-async fn should_skip_bwrap_tests() -> bool {
-    match run_cmd_result_with_writable_roots(
-        &["bash", "-lc", "true"],
-        &[],
-        NETWORK_TIMEOUT_MS,
-        true,
-    )
-    .await
-    {
-        Ok(output) => is_bwrap_unavailable_output(&output),
-        Err(CodexErr::Sandbox(SandboxErr::Denied { output, .. })) => {
-            is_bwrap_unavailable_output(&output)
-        }
-        // Probe timeouts are not actionable for the bwrap-specific assertions below;
-        // skip rather than fail the whole suite.
-        Err(CodexErr::Sandbox(SandboxErr::Timeout { .. })) => true,
-        Err(err) => panic!("bwrap availability probe failed unexpectedly: {err:?}"),
-    }
-}
-
 fn expect_denied(
     result: Result<chaos_kern::exec::ExecToolCallOutput>,
     context: &str,
@@ -202,11 +169,6 @@ async fn test_root_write() {
 
 #[tokio::test]
 async fn test_dev_null_write() {
-    if should_skip_bwrap_tests().await {
-        eprintln!("skipping bwrap test: bwrap sandbox prerequisites are unavailable");
-        return;
-    }
-
     let output = run_cmd_result_with_writable_roots(
         &["bash", "-lc", "echo blah > /dev/null"],
         &[],
@@ -222,12 +184,7 @@ async fn test_dev_null_write() {
 }
 
 #[tokio::test]
-async fn bwrap_populates_minimal_dev_nodes() {
-    if should_skip_bwrap_tests().await {
-        eprintln!("skipping bwrap test: bwrap sandbox prerequisites are unavailable");
-        return;
-    }
-
+async fn linux_sandbox_populates_minimal_dev_nodes() {
     let output = run_cmd_result_with_writable_roots(
         &[
             "bash",
@@ -245,20 +202,16 @@ async fn bwrap_populates_minimal_dev_nodes() {
 }
 
 #[tokio::test]
-async fn bwrap_preserves_writable_dev_shm_bind_mount() {
-    if should_skip_bwrap_tests().await {
-        eprintln!("skipping bwrap test: bwrap sandbox prerequisites are unavailable");
-        return;
-    }
+async fn linux_sandbox_preserves_writable_dev_shm_bind_mount() {
     if !std::path::Path::new("/dev/shm").exists() {
-        eprintln!("skipping bwrap test: /dev/shm is unavailable in this environment");
+        eprintln!("skipping Linux sandbox test: /dev/shm is unavailable in this environment");
         return;
     }
 
     let target_file = match NamedTempFile::new_in("/dev/shm") {
         Ok(file) => file,
         Err(err) => {
-            eprintln!("skipping bwrap test: failed to create /dev/shm temp file: {err}");
+            eprintln!("skipping Linux sandbox test: failed to create /dev/shm temp file: {err}");
             return;
         }
     };
@@ -414,12 +367,7 @@ async fn sandbox_blocks_nc() {
 }
 
 #[tokio::test]
-async fn sandbox_blocks_git_and_codex_writes_inside_writable_root() {
-    if should_skip_bwrap_tests().await {
-        eprintln!("skipping bwrap test: bwrap sandbox prerequisites are unavailable");
-        return;
-    }
-
+async fn workspace_write_currently_allows_git_and_codex_writes_on_linux_landlock_backend() {
     let tmpdir = tempfile::tempdir().expect("tempdir");
     let dot_git = tmpdir.path().join(".git");
     let dot_codex = tmpdir.path().join(".codex");
@@ -429,46 +377,38 @@ async fn sandbox_blocks_git_and_codex_writes_inside_writable_root() {
     let git_target = dot_git.join("config");
     let codex_target = dot_codex.join("config.toml");
 
-    let git_output = expect_denied(
-        run_cmd_result_with_writable_roots(
-            &[
-                "bash",
-                "-lc",
-                &format!("echo denied > {}", git_target.to_string_lossy()),
-            ],
-            &[tmpdir.path().to_path_buf()],
-            LONG_TIMEOUT_MS,
-            true,
-        )
-        .await,
-        ".git write should be denied under bubblewrap",
-    );
+    let git_output = run_cmd_result_with_writable_roots(
+        &[
+            "bash",
+            "-lc",
+            &format!("echo allowed > {}", git_target.to_string_lossy()),
+        ],
+        &[tmpdir.path().to_path_buf()],
+        LONG_TIMEOUT_MS,
+        true,
+    )
+    .await
+    .expect("workspace-write should execute even though .git is not specially protected");
 
-    let codex_output = expect_denied(
-        run_cmd_result_with_writable_roots(
-            &[
-                "bash",
-                "-lc",
-                &format!("echo denied > {}", codex_target.to_string_lossy()),
-            ],
-            &[tmpdir.path().to_path_buf()],
-            LONG_TIMEOUT_MS,
-            true,
-        )
-        .await,
-        ".codex write should be denied under bubblewrap",
-    );
-    assert_ne!(git_output.exit_code, 0);
-    assert_ne!(codex_output.exit_code, 0);
+    let codex_output = run_cmd_result_with_writable_roots(
+        &[
+            "bash",
+            "-lc",
+            &format!("echo allowed > {}", codex_target.to_string_lossy()),
+        ],
+        &[tmpdir.path().to_path_buf()],
+        LONG_TIMEOUT_MS,
+        true,
+    )
+    .await
+    .expect("workspace-write should execute even though .codex is not specially protected");
+
+    assert_eq!(git_output.exit_code, 0);
+    assert_eq!(codex_output.exit_code, 0);
 }
 
 #[tokio::test]
-async fn sandbox_blocks_codex_symlink_replacement_attack() {
-    if should_skip_bwrap_tests().await {
-        eprintln!("skipping bwrap test: bwrap sandbox prerequisites are unavailable");
-        return;
-    }
-
+async fn workspace_write_currently_allows_codex_symlink_replacement_on_linux_landlock_backend() {
     use std::os::unix::fs::symlink;
 
     let tmpdir = tempfile::tempdir().expect("tempdir");
@@ -480,30 +420,25 @@ async fn sandbox_blocks_codex_symlink_replacement_attack() {
 
     let codex_target = dot_codex.join("config.toml");
 
-    let codex_output = expect_denied(
-        run_cmd_result_with_writable_roots(
-            &[
-                "bash",
-                "-lc",
-                &format!("echo denied > {}", codex_target.to_string_lossy()),
-            ],
-            &[tmpdir.path().to_path_buf()],
-            LONG_TIMEOUT_MS,
-            true,
-        )
-        .await,
-        ".codex symlink replacement should be denied",
+    let codex_output = run_cmd_result_with_writable_roots(
+        &[
+            "bash",
+            "-lc",
+            &format!("echo allowed > {}", codex_target.to_string_lossy()),
+        ],
+        &[tmpdir.path().to_path_buf()],
+        LONG_TIMEOUT_MS,
+        true,
+    )
+    .await
+    .expect(
+        "workspace-write should execute even though symlinked .codex is not specially protected",
     );
-    assert_ne!(codex_output.exit_code, 0);
+    assert_eq!(codex_output.exit_code, 0);
 }
 
 #[tokio::test]
-async fn sandbox_blocks_explicit_split_policy_carveouts_under_bwrap() {
-    if should_skip_bwrap_tests().await {
-        eprintln!("skipping bwrap test: bwrap sandbox prerequisites are unavailable");
-        return;
-    }
-
+async fn linux_landlock_rejects_explicit_split_policy_carveouts() {
     let tmpdir = tempfile::tempdir().expect("tempdir");
     let blocked = tmpdir.path().join("blocked");
     std::fs::create_dir_all(&blocked).expect("create blocked dir");
@@ -562,19 +497,14 @@ async fn sandbox_blocks_explicit_split_policy_carveouts_under_bwrap() {
             LONG_TIMEOUT_MS,
         )
         .await,
-        "explicit split-policy carveout should be denied under bubblewrap",
+        "explicit split-policy carveout should be rejected by the Linux landlock backend",
     );
 
     assert_ne!(output.exit_code, 0);
 }
 
 #[tokio::test]
-async fn sandbox_reenables_writable_subpaths_under_unreadable_parents() {
-    if should_skip_bwrap_tests().await {
-        eprintln!("skipping bwrap test: bwrap sandbox prerequisites are unavailable");
-        return;
-    }
-
+async fn linux_landlock_rejects_nested_writable_carveouts_inside_unreadable_parents() {
     let tmpdir = tempfile::tempdir().expect("tempdir");
     let blocked = tmpdir.path().join("blocked");
     let allowed = blocked.join("allowed");
@@ -627,35 +557,31 @@ async fn sandbox_reenables_writable_subpaths_under_unreadable_parents() {
             access: FileSystemAccessMode::Write,
         },
     ]);
-    let output = run_cmd_result_with_policies(
-        &[
-            "bash",
-            "-lc",
-            &format!(
-                "printf allowed > {} && cat {}",
-                allowed_target.to_string_lossy(),
-                allowed_target.to_string_lossy()
-            ),
-        ],
-        sandbox_policy,
-        file_system_sandbox_policy,
-        NetworkSandboxPolicy::Enabled,
-        LONG_TIMEOUT_MS,
-    )
-    .await
-    .expect("nested writable carveout should execute under bubblewrap");
+    let output = expect_denied(
+        run_cmd_result_with_policies(
+            &[
+                "bash",
+                "-lc",
+                &format!(
+                    "printf allowed > {} && cat {}",
+                    allowed_target.to_string_lossy(),
+                    allowed_target.to_string_lossy()
+                ),
+            ],
+            sandbox_policy,
+            file_system_sandbox_policy,
+            NetworkSandboxPolicy::Enabled,
+            LONG_TIMEOUT_MS,
+        )
+        .await,
+        "nested writable carveout should be rejected by the Linux landlock backend",
+    );
 
-    assert_eq!(output.exit_code, 0);
-    assert_eq!(output.stdout.text.trim(), "allowed");
+    assert_ne!(output.exit_code, 0);
 }
 
 #[tokio::test]
-async fn sandbox_blocks_root_read_carveouts_under_bwrap() {
-    if should_skip_bwrap_tests().await {
-        eprintln!("skipping bwrap test: bwrap sandbox prerequisites are unavailable");
-        return;
-    }
-
+async fn linux_landlock_rejects_root_read_carveouts() {
     let tmpdir = tempfile::tempdir().expect("tempdir");
     let blocked = tmpdir.path().join("blocked");
     std::fs::create_dir_all(&blocked).expect("create blocked dir");
@@ -693,7 +619,7 @@ async fn sandbox_blocks_root_read_carveouts_under_bwrap() {
             LONG_TIMEOUT_MS,
         )
         .await,
-        "root-read carveout should be denied under bubblewrap",
+        "root-read carveout should be rejected by the Linux landlock backend",
     );
 
     assert_ne!(output.exit_code, 0);

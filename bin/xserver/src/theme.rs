@@ -136,16 +136,12 @@ pub fn yellow() -> Color {
 
 /// Diff addition line style — green on dark green background.
 pub fn diff_add() -> Style {
-    Style::default()
-        .fg(Color::Black)
-        .bg(palette().success)
+    Style::default().fg(Color::Black).bg(palette().success)
 }
 
 /// Diff deletion line style — red on dark red background.
 pub fn diff_del() -> Style {
-    Style::default()
-        .fg(Color::Black)
-        .bg(palette().error)
+    Style::default().fg(Color::Black).bg(palette().error)
 }
 
 /// Diff context / unchanged line style.

@@ -185,10 +185,12 @@ async fn resource_templates_are_listed_after_initialize() -> Result<()> {
     let templates = resp.result.as_ref().unwrap()["resourceTemplates"]
         .as_array()
         .expect("resourceTemplates array");
-    assert!(templates
-        .iter()
-        .filter_map(|template| template["uriTemplate"].as_str())
-        .any(|uri_template| uri_template == "chaos://sessions/{id}"));
+    assert!(
+        templates
+            .iter()
+            .filter_map(|template| template["uriTemplate"].as_str())
+            .any(|uri_template| uri_template == "chaos://sessions/{id}")
+    );
 
     Ok(())
 }

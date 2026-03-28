@@ -671,12 +671,12 @@ async fn run_ratatui_app(
         {
             Ok(Some(path)) => {
                 match resolve_session_process_id(path.as_path(), /*id_str_if_uuid*/ None).await {
-                        Some(process_id) => {
-                            resume_picker::SessionSelection::Resume(resume_picker::SessionTarget {
-                                path,
-                                process_id,
-                            })
-                        }
+                    Some(process_id) => {
+                        resume_picker::SessionSelection::Resume(resume_picker::SessionTarget {
+                            path,
+                            process_id,
+                        })
+                    }
                     None => {
                         let rollout_path = path.display();
                         error!(

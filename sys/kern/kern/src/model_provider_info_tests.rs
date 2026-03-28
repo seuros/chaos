@@ -43,9 +43,10 @@ query_params = { api-version = "2025-04-01-preview" }
         env_key_instructions: None,
         experimental_bearer_token: None,
         wire_api: WireApi::Responses,
-        query_params: Some(HashMap::from([
-            ("api-version".to_string(), "2025-04-01-preview".to_string()),
-        ])),
+        query_params: Some(HashMap::from([(
+            "api-version".to_string(),
+            "2025-04-01-preview".to_string(),
+        )])),
         http_headers: None,
         env_http_headers: None,
         request_max_retries: None,
@@ -76,12 +77,14 @@ env_http_headers = { "X-Example-Env-Header" = "EXAMPLE_ENV_VAR" }
         experimental_bearer_token: None,
         wire_api: WireApi::Responses,
         query_params: None,
-        http_headers: Some(HashMap::from([
-            ("X-Example-Header".to_string(), "example-value".to_string()),
-        ])),
-        env_http_headers: Some(HashMap::from([
-            ("X-Example-Env-Header".to_string(), "EXAMPLE_ENV_VAR".to_string()),
-        ])),
+        http_headers: Some(HashMap::from([(
+            "X-Example-Header".to_string(),
+            "example-value".to_string(),
+        )])),
+        env_http_headers: Some(HashMap::from([(
+            "X-Example-Env-Header".to_string(),
+            "EXAMPLE_ENV_VAR".to_string(),
+        )])),
         request_max_retries: None,
         stream_max_retries: None,
         stream_idle_timeout_ms: None,

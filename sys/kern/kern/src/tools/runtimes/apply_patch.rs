@@ -288,6 +288,7 @@ impl ApplyPatchRuntime {
                 true,  // apply_landlock_fs
                 false, // allow_network_for_proxy
                 false, // proxy_routed_network
+                &[],
             );
 
             let result = match sandbox_result {

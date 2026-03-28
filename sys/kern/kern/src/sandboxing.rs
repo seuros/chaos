@@ -37,9 +37,9 @@ use chaos_ipc::protocol::NetworkAccess;
 use chaos_ipc::protocol::ReadOnlyAccess;
 use chaos_pf::NetworkProxy;
 use chaos_realpath::AbsolutePathBuf;
-use std::fs::canonicalize;
 use std::collections::HashMap;
 use std::collections::HashSet;
+use std::fs::canonicalize;
 use std::path::Path;
 use std::path::PathBuf;
 
@@ -586,7 +586,7 @@ impl SandboxManager {
             #[cfg(target_os = "macos")]
             alcatraz_macos_exe,
             #[cfg(not(target_os = "macos"))]
-            alcatraz_macos_exe: _,
+                alcatraz_macos_exe: _,
             alcatraz_linux_exe,
             alcatraz_freebsd_exe,
         } = request;

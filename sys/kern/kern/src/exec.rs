@@ -213,7 +213,10 @@ pub async fn process_exec_tool_call(
 
 /// Transform a portable exec request into the concrete argv/env that should be
 /// spawned under the requested sandbox policy.
-pub fn build_exec_request(params: ExecParams, sandbox: ExecSandboxContext<'_>) -> Result<ExecRequest> {
+pub fn build_exec_request(
+    params: ExecParams,
+    sandbox: ExecSandboxContext<'_>,
+) -> Result<ExecRequest> {
     let ExecSandboxContext {
         sandbox_policy,
         file_system_sandbox_policy,

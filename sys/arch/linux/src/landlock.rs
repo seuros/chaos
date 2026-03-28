@@ -17,8 +17,10 @@ use landlock::ABI;
 #[allow(unused_imports)]
 use landlock::Access;
 use landlock::AccessFs;
+use landlock::AccessNet;
 use landlock::CompatLevel;
 use landlock::Compatible;
+use landlock::NetPort;
 use landlock::Ruleset;
 use landlock::RulesetAttr;
 use landlock::RulesetCreatedAttr;
@@ -47,6 +49,7 @@ pub fn apply_sandbox_policy_to_current_thread(
     apply_landlock_fs: bool,
     allow_network_for_proxy: bool,
     proxy_routed_network: bool,
+    allowed_proxy_ports: &[u16],
 ) -> Result<()> {
     check_minimum_kernel_version()?;
 
@@ -55,16 +58,14 @@ pub fn apply_sandbox_policy_to_current_thread(
         allow_network_for_proxy,
         proxy_routed_network,
     );
+    let apply_proxy_port_landlock = proxy_routed_network && !allowed_proxy_ports.is_empty();
 
     // `PR_SET_NO_NEW_PRIVS` is required for both seccomp and landlock.
     if network_seccomp_mode.is_some()
+        || apply_proxy_port_landlock
         || (apply_landlock_fs && !sandbox_policy.has_full_disk_write_access())
     {
         set_no_new_privs()?;
-    }
-
-    if let Some(mode) = network_seccomp_mode {
-        install_network_seccomp_filter_on_current_thread(mode)?;
     }
 
     if apply_landlock_fs && !sandbox_policy.has_full_disk_write_access() {
@@ -81,6 +82,14 @@ pub fn apply_sandbox_policy_to_current_thread(
             .map(|writable_root| writable_root.root)
             .collect();
         install_filesystem_landlock_rules_on_current_thread(writable_roots)?;
+    }
+
+    if apply_proxy_port_landlock {
+        install_network_landlock_rules_on_current_thread(allowed_proxy_ports)?;
+    }
+
+    if let Some(mode) = network_seccomp_mode {
+        install_network_seccomp_filter_on_current_thread(mode)?;
     }
 
     Ok(())
@@ -210,11 +219,11 @@ fn install_network_seccomp_filter_on_current_thread(mode: NetworkSeccompMode) ->
             rules.insert(libc::SYS_socketpair, vec![unix_only_rule]);
         }
         NetworkSeccompMode::ProxyRouted => {
-            // In proxy-routed mode we allow IP sockets in the isolated
-            // namespace (used to reach the local TCP bridge) but deny all
-            // other socket families, including AF_UNIX. This prevents
-            // bypassing the routed bridge via new Unix sockets and narrows the
-            // socket surface in proxy-only mode.
+            // In proxy-routed mode we allow IP sockets needed to reach the
+            // configured loopback proxy ports, but deny all other socket
+            // families, including AF_UNIX. This narrows the socket surface for
+            // proxy-only mode while native Landlock TCP rules enforce the
+            // allowed destination ports.
             let deny_non_ip_socket = SeccompRule::new(vec![
                 SeccompCondition::new(
                     0,
@@ -256,6 +265,25 @@ fn install_network_seccomp_filter_on_current_thread(mode: NetworkSeccompMode) ->
     let prog: BpfProgram = filter.try_into()?;
 
     apply_filter(&prog)?;
+
+    Ok(())
+}
+
+fn install_network_landlock_rules_on_current_thread(allowed_proxy_ports: &[u16]) -> Result<()> {
+    let mut ruleset = Ruleset::default()
+        .set_compatibility(CompatLevel::BestEffort)
+        .handle_access(AccessNet::ConnectTcp)?
+        .create()?
+        .set_no_new_privs(true);
+
+    for port in allowed_proxy_ports {
+        ruleset = ruleset.add_rule(NetPort::new(*port, AccessNet::ConnectTcp))?;
+    }
+
+    let status = ruleset.restrict_self()?;
+    if status.ruleset == landlock::RulesetStatus::NotEnforced {
+        return Err(AlcatrazError::LandlockRestrict);
+    }
 
     Ok(())
 }

@@ -1,5 +1,10 @@
 use super::*;
 use crate::codex::make_session_and_context;
+
+/// Test-local stand-in: the real constant was removed because all MCP servers
+/// are now treated equally. Tests that were written against the old apps server
+/// keep this name so the approval/metadata plumbing is still exercised.
+const CODEX_APPS_MCP_SERVER_NAME: &str = "test-apps-server";
 use crate::config::ApprovalsReviewer;
 use crate::config::ConfigToml;
 use crate::config::types::AppConfig;

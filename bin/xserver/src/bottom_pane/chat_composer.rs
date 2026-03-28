@@ -3584,7 +3584,7 @@ fn prompt_selection_action(
 #[cfg(test)]
 mod tests {
     use super::*;
-    use chaos_kern::connectors::AppInfo;
+    use chaos_ipc::api::AppInfo;
     use image::ImageBuffer;
     use image::Rgba;
     use pretty_assertions::assert_eq;

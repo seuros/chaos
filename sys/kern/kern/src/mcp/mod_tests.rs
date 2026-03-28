@@ -1,5 +1,8 @@
 use super::*;
 use crate::config::CONFIG_TOML_FILE;
+
+/// Test-local stand-in after the global constant was removed.
+const CODEX_APPS_MCP_SERVER_NAME: &str = "test-apps-server";
 use crate::config::ConfigBuilder;
 use crate::features::Feature;
 use crate::plugins::AppConnectorId;

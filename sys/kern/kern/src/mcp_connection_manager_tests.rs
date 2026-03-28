@@ -4,17 +4,12 @@ use chaos_ipc::protocol::GranularApprovalConfig;
 use chaos_ipc::protocol::McpAuthStatus;
 use std::collections::HashSet;
 use std::sync::Arc;
-use tempfile::tempdir;
 
 fn create_test_tool(server_name: &str, tool_name: &str) -> ToolInfo {
     ToolInfo {
         server_name: server_name.to_string(),
         tool_name: tool_name.to_string(),
-        tool_namespace: if server_name == CODEX_APPS_MCP_SERVER_NAME {
-            format!("mcp__{server_name}__")
-        } else {
-            server_name.to_string()
-        },
+        tool_namespace: server_name.to_string(),
         tool: McpToolInfo {
             name: tool_name.to_string(),
             title: None,
@@ -30,33 +25,6 @@ fn create_test_tool(server_name: &str, tool_name: &str) -> ToolInfo {
         connector_name: None,
         plugin_display_names: Vec::new(),
         connector_description: None,
-    }
-}
-
-fn create_test_tool_with_connector(
-    server_name: &str,
-    tool_name: &str,
-    connector_id: &str,
-    connector_name: Option<&str>,
-) -> ToolInfo {
-    let mut tool = create_test_tool(server_name, tool_name);
-    tool.connector_id = Some(connector_id.to_string());
-    tool.connector_name = connector_name.map(ToOwned::to_owned);
-    tool
-}
-
-fn create_codex_apps_tools_cache_context(
-    codex_home: PathBuf,
-    account_id: Option<&str>,
-    chatgpt_user_id: Option<&str>,
-) -> CodexAppsToolsCacheContext {
-    CodexAppsToolsCacheContext {
-        codex_home,
-        user_key: CodexAppsToolsCacheKey {
-            account_id: account_id.map(ToOwned::to_owned),
-            chatgpt_user_id: chatgpt_user_id.map(ToOwned::to_owned),
-            is_workspace_account: false,
-        },
     }
 }
 
@@ -253,233 +221,28 @@ fn filter_tools_applies_per_server_filters() {
     assert_eq!(filtered[0].tool_name, "tool_a");
 }
 
-#[test]
-fn codex_apps_tools_cache_is_overwritten_by_last_write() {
-    let codex_home = tempdir().expect("tempdir");
-    let cache_context = create_codex_apps_tools_cache_context(
-        codex_home.path().to_path_buf(),
-        Some("account-one"),
-        Some("user-one"),
-    );
-    let tools_gateway_1 = vec![create_test_tool(CODEX_APPS_MCP_SERVER_NAME, "one")];
-    let tools_gateway_2 = vec![create_test_tool(CODEX_APPS_MCP_SERVER_NAME, "two")];
-
-    write_cached_codex_apps_tools(&cache_context, &tools_gateway_1);
-    let cached_gateway_1 =
-        read_cached_codex_apps_tools(&cache_context).expect("cache entry exists for first write");
-    assert_eq!(cached_gateway_1[0].tool_name, "one");
-
-    write_cached_codex_apps_tools(&cache_context, &tools_gateway_2);
-    let cached_gateway_2 =
-        read_cached_codex_apps_tools(&cache_context).expect("cache entry exists for second write");
-    assert_eq!(cached_gateway_2[0].tool_name, "two");
-}
-
-#[test]
-fn codex_apps_tools_cache_is_scoped_per_user() {
-    let codex_home = tempdir().expect("tempdir");
-    let cache_context_user_1 = create_codex_apps_tools_cache_context(
-        codex_home.path().to_path_buf(),
-        Some("account-one"),
-        Some("user-one"),
-    );
-    let cache_context_user_2 = create_codex_apps_tools_cache_context(
-        codex_home.path().to_path_buf(),
-        Some("account-two"),
-        Some("user-two"),
-    );
-    let tools_user_1 = vec![create_test_tool(CODEX_APPS_MCP_SERVER_NAME, "one")];
-    let tools_user_2 = vec![create_test_tool(CODEX_APPS_MCP_SERVER_NAME, "two")];
-
-    write_cached_codex_apps_tools(&cache_context_user_1, &tools_user_1);
-    write_cached_codex_apps_tools(&cache_context_user_2, &tools_user_2);
-
-    let read_user_1 =
-        read_cached_codex_apps_tools(&cache_context_user_1).expect("cache entry for user one");
-    let read_user_2 =
-        read_cached_codex_apps_tools(&cache_context_user_2).expect("cache entry for user two");
-
-    assert_eq!(read_user_1[0].tool_name, "one");
-    assert_eq!(read_user_2[0].tool_name, "two");
-    assert_ne!(
-        cache_context_user_1.cache_path(),
-        cache_context_user_2.cache_path(),
-        "each user should get an isolated cache file"
-    );
-}
-
-#[test]
-fn codex_apps_tools_cache_filters_disallowed_connectors() {
-    let codex_home = tempdir().expect("tempdir");
-    let cache_context = create_codex_apps_tools_cache_context(
-        codex_home.path().to_path_buf(),
-        Some("account-one"),
-        Some("user-one"),
-    );
-    let tools = vec![
-        create_test_tool_with_connector(
-            CODEX_APPS_MCP_SERVER_NAME,
-            "blocked_tool",
-            "connector_openai_hidden",
-            Some("Hidden"),
-        ),
-        create_test_tool_with_connector(
-            CODEX_APPS_MCP_SERVER_NAME,
-            "allowed_tool",
-            "calendar",
-            Some("Calendar"),
-        ),
-    ];
-
-    write_cached_codex_apps_tools(&cache_context, &tools);
-    let cached = read_cached_codex_apps_tools(&cache_context).expect("cache entry exists for user");
-
-    assert_eq!(cached.len(), 1);
-    assert_eq!(cached[0].tool_name, "allowed_tool");
-    assert_eq!(cached[0].connector_id.as_deref(), Some("calendar"));
-}
-
-#[test]
-fn codex_apps_tools_cache_is_ignored_when_schema_version_mismatches() {
-    let codex_home = tempdir().expect("tempdir");
-    let cache_context = create_codex_apps_tools_cache_context(
-        codex_home.path().to_path_buf(),
-        Some("account-one"),
-        Some("user-one"),
-    );
-    let cache_path = cache_context.cache_path();
-    if let Some(parent) = cache_path.parent() {
-        std::fs::create_dir_all(parent).expect("create parent");
-    }
-    let bytes = serde_json::to_vec_pretty(&serde_json::json!({
-        "schema_version": CODEX_APPS_TOOLS_CACHE_SCHEMA_VERSION + 1,
-        "tools": [create_test_tool(CODEX_APPS_MCP_SERVER_NAME, "one")],
-    }))
-    .expect("serialize");
-    std::fs::write(cache_path, bytes).expect("write");
-
-    assert!(read_cached_codex_apps_tools(&cache_context).is_none());
-}
-
-#[test]
-fn codex_apps_tools_cache_is_ignored_when_json_is_invalid() {
-    let codex_home = tempdir().expect("tempdir");
-    let cache_context = create_codex_apps_tools_cache_context(
-        codex_home.path().to_path_buf(),
-        Some("account-one"),
-        Some("user-one"),
-    );
-    let cache_path = cache_context.cache_path();
-    if let Some(parent) = cache_path.parent() {
-        std::fs::create_dir_all(parent).expect("create parent");
-    }
-    std::fs::write(cache_path, b"{not json").expect("write");
-
-    assert!(read_cached_codex_apps_tools(&cache_context).is_none());
-}
-
-#[test]
-fn startup_cached_codex_apps_tools_loads_from_disk_cache() {
-    let codex_home = tempdir().expect("tempdir");
-    let cache_context = create_codex_apps_tools_cache_context(
-        codex_home.path().to_path_buf(),
-        Some("account-one"),
-        Some("user-one"),
-    );
-    let cached_tools = vec![create_test_tool(
-        CODEX_APPS_MCP_SERVER_NAME,
-        "calendar_search",
-    )];
-    write_cached_codex_apps_tools(&cache_context, &cached_tools);
-
-    let startup_snapshot = load_startup_cached_codex_apps_tools_snapshot(
-        CODEX_APPS_MCP_SERVER_NAME,
-        Some(&cache_context),
-    );
-    let startup_tools = startup_snapshot.expect("expected startup snapshot to load from cache");
-
-    assert_eq!(startup_tools.len(), 1);
-    assert_eq!(startup_tools[0].server_name, CODEX_APPS_MCP_SERVER_NAME);
-    assert_eq!(startup_tools[0].tool_name, "calendar_search");
-}
-
-#[test]
-fn store_managed_tools_refreshes_codex_apps_cache_used_by_listed_tools() {
-    let codex_home = tempdir().expect("tempdir");
-    let cache_context = create_codex_apps_tools_cache_context(
-        codex_home.path().to_path_buf(),
-        Some("account-one"),
-        Some("user-one"),
-    );
-    let tool_filter = ToolFilter::default();
-    let tools_arc = Arc::new(std::sync::RwLock::new(Vec::new()));
-
-    write_cached_codex_apps_tools(
-        &cache_context,
-        &[create_test_tool(CODEX_APPS_MCP_SERVER_NAME, "stale_tool")],
-    );
-    *tools_arc
-        .write()
-        .unwrap_or_else(std::sync::PoisonError::into_inner) =
-        vec![create_test_tool(CODEX_APPS_MCP_SERVER_NAME, "memory_tool")];
-
-    let (before_refresh, cache_tag) = select_listed_tools(
-        tools_arc
-            .read()
-            .unwrap_or_else(std::sync::PoisonError::into_inner)
-            .clone(),
-        &tool_filter,
-        Some(&cache_context),
-    );
-    assert_eq!(cache_tag, Some("hit"));
-    assert_eq!(before_refresh[0].tool_name, "stale_tool");
-
-    store_managed_tools(
-        CODEX_APPS_MCP_SERVER_NAME,
-        Some(&cache_context),
-        &tool_filter,
-        &tools_arc,
-        vec![create_test_tool(CODEX_APPS_MCP_SERVER_NAME, "fresh_tool")],
-    );
-
-    let (after_refresh, cache_tag) = select_listed_tools(
-        tools_arc
-            .read()
-            .unwrap_or_else(std::sync::PoisonError::into_inner)
-            .clone(),
-        &tool_filter,
-        Some(&cache_context),
-    );
-    assert_eq!(cache_tag, Some("hit"));
-    assert_eq!(after_refresh[0].tool_name, "fresh_tool");
-}
-
 #[tokio::test]
 async fn list_all_tools_uses_startup_snapshot_while_client_is_pending() {
-    let startup_tools = vec![create_test_tool(
-        CODEX_APPS_MCP_SERVER_NAME,
-        "calendar_create_event",
-    )];
+    let startup_tools = vec![create_test_tool("test_server", "calendar_create_event")];
     let pending_client = futures::future::pending::<Result<ManagedClient, StartupOutcomeError>>()
         .boxed()
         .shared();
     let approval_policy = Constrained::allow_any(AskForApproval::OnFailure);
     let mut manager = McpConnectionManager::new_uninitialized(&approval_policy);
     manager.clients.insert(
-        CODEX_APPS_MCP_SERVER_NAME.to_string(),
+        "test_server".to_string(),
         AsyncManagedClient {
             client: pending_client,
             startup_snapshot: Some(startup_tools),
             startup_complete: Arc::new(std::sync::atomic::AtomicBool::new(false)),
-            tool_plugin_provenance: Arc::new(ToolPluginProvenance::default()),
         },
     );
 
     let tools = manager.list_all_tools().await;
     let tool = tools
-        .get("mcp__codex_apps__calendar_create_event")
+        .get("mcp__test_server__calendar_create_event")
         .expect("tool from startup cache");
-    assert_eq!(tool.server_name, CODEX_APPS_MCP_SERVER_NAME);
+    assert_eq!(tool.server_name, "test_server");
     assert_eq!(tool.tool_name, "calendar_create_event");
 }
 
@@ -491,12 +254,11 @@ async fn list_all_tools_blocks_while_client_is_pending_without_startup_snapshot(
     let approval_policy = Constrained::allow_any(AskForApproval::OnFailure);
     let mut manager = McpConnectionManager::new_uninitialized(&approval_policy);
     manager.clients.insert(
-        CODEX_APPS_MCP_SERVER_NAME.to_string(),
+        "test_server".to_string(),
         AsyncManagedClient {
             client: pending_client,
             startup_snapshot: None,
             startup_complete: Arc::new(std::sync::atomic::AtomicBool::new(false)),
-            tool_plugin_provenance: Arc::new(ToolPluginProvenance::default()),
         },
     );
 
@@ -513,12 +275,11 @@ async fn list_all_tools_does_not_block_when_startup_snapshot_cache_hit_is_empty(
     let approval_policy = Constrained::allow_any(AskForApproval::OnFailure);
     let mut manager = McpConnectionManager::new_uninitialized(&approval_policy);
     manager.clients.insert(
-        CODEX_APPS_MCP_SERVER_NAME.to_string(),
+        "test_server".to_string(),
         AsyncManagedClient {
             client: pending_client,
             startup_snapshot: Some(Vec::new()),
             startup_complete: Arc::new(std::sync::atomic::AtomicBool::new(false)),
-            tool_plugin_provenance: Arc::new(ToolPluginProvenance::default()),
         },
     );
 
@@ -530,10 +291,7 @@ async fn list_all_tools_does_not_block_when_startup_snapshot_cache_hit_is_empty(
 
 #[tokio::test]
 async fn list_all_tools_uses_startup_snapshot_when_client_startup_fails() {
-    let startup_tools = vec![create_test_tool(
-        CODEX_APPS_MCP_SERVER_NAME,
-        "calendar_create_event",
-    )];
+    let startup_tools = vec![create_test_tool("test_server", "calendar_create_event")];
     let failed_client = futures::future::ready::<Result<ManagedClient, StartupOutcomeError>>(Err(
         StartupOutcomeError::Failed {
             error: "startup failed".to_string(),
@@ -545,20 +303,19 @@ async fn list_all_tools_uses_startup_snapshot_when_client_startup_fails() {
     let mut manager = McpConnectionManager::new_uninitialized(&approval_policy);
     let startup_complete = Arc::new(std::sync::atomic::AtomicBool::new(true));
     manager.clients.insert(
-        CODEX_APPS_MCP_SERVER_NAME.to_string(),
+        "test_server".to_string(),
         AsyncManagedClient {
             client: failed_client,
             startup_snapshot: Some(startup_tools),
             startup_complete,
-            tool_plugin_provenance: Arc::new(ToolPluginProvenance::default()),
         },
     );
 
     let tools = manager.list_all_tools().await;
     let tool = tools
-        .get("mcp__codex_apps__calendar_create_event")
+        .get("mcp__test_server__calendar_create_event")
         .expect("tool from startup cache");
-    assert_eq!(tool.server_name, CODEX_APPS_MCP_SERVER_NAME);
+    assert_eq!(tool.server_name, "test_server");
     assert_eq!(tool.tool_name, "calendar_create_event");
 }
 

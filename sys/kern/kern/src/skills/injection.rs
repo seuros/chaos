@@ -82,6 +82,7 @@ fn is_skill_filename(path: &str) -> bool {
     file_name.eq_ignore_ascii_case(SKILL_FILENAME)
 }
 
+#[allow(dead_code)]
 pub(crate) fn app_id_from_path(path: &str) -> Option<&str> {
     path.strip_prefix(APP_PATH_PREFIX)
         .filter(|value| !value.is_empty())

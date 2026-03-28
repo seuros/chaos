@@ -31,6 +31,7 @@ pub(crate) struct SessionState {
     previous_turn_settings: Option<PreviousTurnSettings>,
     /// Startup regular task pre-created during session initialization.
     pub(crate) startup_regular_task: Option<JoinHandle<CodexResult<RegularTask>>>,
+    #[allow(dead_code)]
     pub(crate) active_connector_selection: HashSet<String>,
     pub(crate) pending_session_start_source: Option<chaos_dtrace::SessionStartSource>,
     granted_permissions: Option<PermissionProfile>,
@@ -157,6 +158,7 @@ impl SessionState {
     }
 
     // Adds connector IDs to the active set and returns the merged selection.
+    #[allow(dead_code)]
     pub(crate) fn merge_connector_selection<I>(&mut self, connector_ids: I) -> HashSet<String>
     where
         I: IntoIterator<Item = String>,
@@ -166,11 +168,13 @@ impl SessionState {
     }
 
     // Returns the current connector selection tracked on session state.
+    #[allow(dead_code)]
     pub(crate) fn get_connector_selection(&self) -> HashSet<String> {
         self.active_connector_selection.clone()
     }
 
     // Removes all currently tracked connector selections.
+    #[allow(dead_code)]
     pub(crate) fn clear_connector_selection(&mut self) {
         self.active_connector_selection.clear();
     }

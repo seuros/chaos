@@ -1,5 +1,7 @@
 use super::*;
-use crate::mcp::CODEX_APPS_MCP_SERVER_NAME;
+
+/// Test-local stand-in after the global constant was removed.
+const CODEX_APPS_MCP_SERVER_NAME: &str = "test-apps-server";
 use crate::mcp_connection_manager::McpToolInfo;
 use pretty_assertions::assert_eq;
 use serde_json::json;

@@ -4,7 +4,6 @@ use crate::client_common::tools::ToolSpec;
 use crate::config::AgentRoleConfig;
 use crate::features::Feature;
 use crate::features::Features;
-use crate::mcp::CODEX_APPS_MCP_SERVER_NAME;
 use crate::mcp_connection_manager::ToolInfo;
 use crate::models_manager::collaboration_mode_presets::CollaborationModesConfig;
 use crate::original_image_detail::can_request_original_image_detail;
@@ -1460,10 +1459,6 @@ fn create_tool_search_tool(app_tools: &HashMap<String, ToolInfo>) -> ToolSpec {
     ]);
     let mut app_descriptions = BTreeMap::new();
     for tool in app_tools.values() {
-        if tool.server_name != CODEX_APPS_MCP_SERVER_NAME {
-            continue;
-        }
-
         let Some(connector_name) = tool
             .connector_name
             .as_deref()

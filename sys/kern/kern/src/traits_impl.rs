@@ -134,7 +134,7 @@ impl TelemetrySource for Session {
 
 impl chaos_traits::AgentSpawner for Session {
     fn conversation_id(&self) -> ProcessId {
-        self.conversation_id.clone()
+        self.conversation_id
     }
 
     async fn spawn_agent(

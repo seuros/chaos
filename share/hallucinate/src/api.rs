@@ -23,7 +23,7 @@ pub struct SessionInfo {
 
 /// Shared mutable state collected from script registration calls.
 /// The engine reads this after loading each script.
-#[derive(Debug)]
+#[derive(Debug, Default)]
 pub struct ScriptRegistrations {
     /// Hook event name → list of Lua function registry keys.
     pub hooks: HashMap<String, Vec<RegistryKey>>,
@@ -33,10 +33,7 @@ pub struct ScriptRegistrations {
 
 impl ScriptRegistrations {
     pub fn new() -> Self {
-        Self {
-            hooks: HashMap::new(),
-            tools: HashMap::new(),
-        }
+        Self::default()
     }
 }
 

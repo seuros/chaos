@@ -61,6 +61,18 @@ pub(crate) struct SessionOutcome {
 /// Shared cache for process names observed from ProcessNameUpdated events.
 pub(crate) type ProcessNameCache = Arc<Mutex<HashMap<ProcessId, String>>>;
 
+pub(crate) struct RunChaosSessionArgs {
+    pub request_id: RequestId,
+    pub prompt: String,
+    pub config: Option<CodexConfig>,
+    pub existing_process_id: Option<ProcessId>,
+    pub outgoing: Arc<OutgoingMessageSender>,
+    pub process_table: Arc<ProcessTable>,
+    pub running_requests: Arc<Mutex<HashMap<RequestId, ProcessId>>>,
+    pub process_names: ProcessNameCache,
+    pub progress_token: Option<String>,
+}
+
 /// Resolved process — either newly created or resumed from an existing ID.
 struct ResolvedProcess {
     process_id: ProcessId,
@@ -73,17 +85,19 @@ struct ResolvedProcess {
 /// to the appropriate `ToolOutput`. Notifications are streamed via `outgoing`.
 /// If `progress_token` is provided, MCP progress notifications are sent at
 /// key milestones so the client can display status.
-pub(crate) async fn run_chaos_session(
-    request_id: RequestId,
-    prompt: String,
-    config: Option<CodexConfig>,
-    existing_process_id: Option<ProcessId>,
-    outgoing: Arc<OutgoingMessageSender>,
-    process_table: Arc<ProcessTable>,
-    running_requests: Arc<Mutex<HashMap<RequestId, ProcessId>>>,
-    process_names: ProcessNameCache,
-    progress_token: Option<String>,
-) -> SessionOutcome {
+pub(crate) async fn run_chaos_session(args: RunChaosSessionArgs) -> SessionOutcome {
+    let RunChaosSessionArgs {
+        request_id,
+        prompt,
+        config,
+        existing_process_id,
+        outgoing,
+        process_table,
+        running_requests,
+        process_names,
+        progress_token,
+    } = args;
+
     // Send progress if the client requested it.
     let progress = progress_token
         .as_ref()
@@ -108,7 +122,13 @@ pub(crate) async fn run_chaos_session(
             }
         },
         None => {
-            let config = config.expect("config required for new processes");
+            let Some(config) = config else {
+                return SessionOutcome {
+                    process_id: ProcessId::new(),
+                    text: "config required for new processes".to_string(),
+                    is_error: true,
+                };
+            };
             match process_table.start_process(config).await {
                 Ok(new_process) => {
                     let (process_id, process, session_configured) = new_process.into_parts();

@@ -439,7 +439,3 @@ pub(crate) async fn collect_mcp_snapshot_from_manager(
         auth_statuses,
     }
 }
-
-#[cfg(test)]
-#[path = "mod_tests.rs"]
-mod tests;

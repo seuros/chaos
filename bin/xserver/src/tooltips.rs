@@ -19,7 +19,7 @@ pub(crate) fn get_tooltip(
 
     let mut rng = rand::rng();
     tips.get(rng.random_range(0..tips.len()))
-        .map(|s| s.to_string())
+        .map(std::string::ToString::to_string)
 }
 
 #[cfg(test)]

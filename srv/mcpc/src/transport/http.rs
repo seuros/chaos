@@ -143,7 +143,7 @@ impl HttpTransportInner {
         message: &JsonRpcMessage,
         deliver_inbound: bool,
     ) -> Result<(), GuestError> {
-        let initialize_request = is_initialize_request(&message);
+        let initialize_request = is_initialize_request(message);
         if initialize_request {
             *self.cached_initialize.lock().await = Some(message.clone());
         }
@@ -296,10 +296,10 @@ impl HttpTransportInner {
         }
 
         let mut guard = self.sse_task.lock().await;
-        if let Some(handle) = guard.as_ref() {
-            if !handle.is_finished() {
-                return;
-            }
+        if let Some(handle) = guard.as_ref()
+            && !handle.is_finished()
+        {
+            return;
         }
 
         let this = Arc::clone(self);
@@ -337,11 +337,11 @@ impl HttpTransportInner {
 
             match response.status() {
                 StatusCode::OK => {
-                    if let Some(content_type) = header_value(response.headers(), CONTENT_TYPE) {
-                        if !content_type.starts_with("text/event-stream") {
-                            tracing::warn!(content_type, "unexpected sse content type");
-                            break;
-                        }
+                    if let Some(content_type) = header_value(response.headers(), CONTENT_TYPE)
+                        && !content_type.starts_with("text/event-stream")
+                    {
+                        tracing::warn!(content_type, "unexpected sse content type");
+                        break;
                     }
 
                     if let Err(error) = self.consume_sse_response(response, true, false, true).await
@@ -661,7 +661,7 @@ fn is_initialized_notification(message: &JsonRpcMessage) -> bool {
     )
 }
 
-fn header_value<'a>(headers: &'a rama::http::HeaderMap, name: impl AsRef<str>) -> Option<&'a str> {
+fn header_value(headers: &rama::http::HeaderMap, name: impl AsRef<str>) -> Option<&str> {
     headers
         .get(name.as_ref())
         .and_then(|value| value.to_str().ok())

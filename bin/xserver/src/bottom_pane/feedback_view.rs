@@ -702,7 +702,7 @@ mod tests {
 
     #[test]
     fn should_show_feedback_connectivity_details_only_for_non_good_result_with_diagnostics() {
-        let diagnostics = FeedbackDiagnostics::default();
+        let diagnostics = FeedbackDiagnostics;
 
         assert_eq!(
             should_show_feedback_connectivity_details(FeedbackCategory::Bug, &diagnostics),
@@ -715,7 +715,7 @@ mod tests {
         assert_eq!(
             should_show_feedback_connectivity_details(
                 FeedbackCategory::BadResult,
-                &FeedbackDiagnostics::default()
+                &FeedbackDiagnostics
             ),
             false
         );

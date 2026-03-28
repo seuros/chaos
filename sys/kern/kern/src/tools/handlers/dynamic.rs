@@ -13,7 +13,6 @@ use chaos_ipc::models::FunctionCallOutputContentItem;
 use chaos_ipc::protocol::DynamicToolCallResponseEvent;
 use chaos_ipc::protocol::EventMsg;
 use serde_json::Value;
-use std::future::Future;
 use std::time::Instant;
 use tokio::sync::oneshot;
 use tracing::warn;
@@ -27,8 +26,11 @@ impl ToolHandler for DynamicToolHandler {
         ToolKind::Function
     }
 
-    fn is_mutating(&self, _invocation: &ToolInvocation) -> impl Future<Output = bool> + Send + '_ {
-        async { true }
+    fn is_mutating(
+        &self,
+        _invocation: &ToolInvocation,
+    ) -> impl std::future::Future<Output = bool> + Send + '_ {
+        std::future::ready(true)
     }
 
     async fn handle(&self, invocation: ToolInvocation) -> Result<Self::Output, FunctionCallError> {

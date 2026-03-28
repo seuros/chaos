@@ -52,11 +52,13 @@ pub async fn run_command_under_seatbelt(
         full_auto,
         command,
         config_overrides,
-        alcatraz_macos_exe,
-        alcatraz_linux_exe,
-        alcatraz_freebsd_exe,
-        SandboxType::Seatbelt,
-        log_denials,
+        SandboxExecutionConfig {
+            alcatraz_macos_exe,
+            alcatraz_linux_exe,
+            alcatraz_freebsd_exe,
+            sandbox_type: SandboxType::Seatbelt,
+            log_denials,
+        },
     )
     .await
 }
@@ -85,11 +87,13 @@ pub async fn run_command_under_landlock(
         full_auto,
         command,
         config_overrides,
-        None,
-        alcatraz_linux_exe,
-        alcatraz_freebsd_exe,
-        SandboxType::Landlock,
-        /*log_denials*/ false,
+        SandboxExecutionConfig {
+            alcatraz_macos_exe: None,
+            alcatraz_linux_exe,
+            alcatraz_freebsd_exe,
+            sandbox_type: SandboxType::Landlock,
+            log_denials: false,
+        },
     )
     .await
 }
@@ -109,11 +113,13 @@ pub async fn run_command_under_capsicum(
         full_auto,
         command,
         config_overrides,
-        None,
-        alcatraz_linux_exe,
-        alcatraz_freebsd_exe,
-        SandboxType::Capsicum,
-        /*log_denials*/ false,
+        SandboxExecutionConfig {
+            alcatraz_macos_exe: None,
+            alcatraz_linux_exe,
+            alcatraz_freebsd_exe,
+            sandbox_type: SandboxType::Capsicum,
+            log_denials: false,
+        },
     )
     .await
 }
@@ -126,16 +132,28 @@ enum SandboxType {
     Capsicum,
 }
 
-async fn run_command_under_sandbox(
-    full_auto: bool,
-    command: Vec<String>,
-    config_overrides: CliConfigOverrides,
+struct SandboxExecutionConfig {
     alcatraz_macos_exe: Option<PathBuf>,
     alcatraz_linux_exe: Option<PathBuf>,
     alcatraz_freebsd_exe: Option<PathBuf>,
     sandbox_type: SandboxType,
     log_denials: bool,
+}
+
+async fn run_command_under_sandbox(
+    full_auto: bool,
+    command: Vec<String>,
+    config_overrides: CliConfigOverrides,
+    execution: SandboxExecutionConfig,
 ) -> anyhow::Result<()> {
+    let SandboxExecutionConfig {
+        alcatraz_macos_exe,
+        alcatraz_linux_exe,
+        alcatraz_freebsd_exe,
+        sandbox_type,
+        log_denials,
+    } = execution;
+
     let sandbox_mode = create_sandbox_mode(full_auto);
     let config = Config::load_with_cli_overrides_and_harness_overrides(
         config_overrides

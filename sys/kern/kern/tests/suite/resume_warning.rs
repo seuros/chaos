@@ -94,7 +94,7 @@ async fn emits_warning_when_resumed_model_differs() {
 
     // Act: resume the conversation.
     let NewProcess {
-        thread: conversation,
+        process: conversation,
         ..
     } = process_table
         .resume_process_with_history(config, initial_history, auth_manager, false, None)

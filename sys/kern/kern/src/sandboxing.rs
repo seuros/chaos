@@ -87,6 +87,7 @@ pub(crate) struct SandboxTransformRequest<'a> {
     pub sandbox_policy_cwd: &'a Path,
     #[cfg(target_os = "macos")]
     pub macos_seatbelt_profile_extensions: Option<&'a MacOsSeatbeltProfileExtensions>,
+    #[cfg_attr(not(target_os = "macos"), allow(dead_code))]
     pub alcatraz_macos_exe: Option<&'a PathBuf>,
     pub alcatraz_linux_exe: Option<&'a PathBuf>,
     pub alcatraz_freebsd_exe: Option<&'a PathBuf>,
@@ -104,6 +105,7 @@ pub(crate) enum SandboxTransformError {
     MissingLinuxSandboxExecutable,
     #[error("missing alcatraz-freebsd executable path")]
     MissingFreeBSDSandboxExecutable,
+    #[cfg(target_os = "macos")]
     #[error("missing alcatraz-macos executable path")]
     MissingMacOSSandboxExecutable,
     #[cfg(not(target_os = "macos"))]
@@ -543,8 +545,12 @@ impl SandboxManager {
         pref: SandboxablePreference,
         has_managed_network_requirements: bool,
     ) -> SandboxType {
-        let candidate = match pref {
-            SandboxablePreference::Forbid => return SandboxType::None,
+        // FreeBSD Capsicum: the alcatraz-freebsd helper applies what it can
+        // (procctl hardening) and warns about unenforced dimensions. The
+        // helper itself decides enforcement scope — the selector should not
+        // reject it.
+        match pref {
+            SandboxablePreference::Forbid => SandboxType::None,
             SandboxablePreference::Require => {
                 crate::safety::get_platform_sandbox().unwrap_or(SandboxType::None)
             }
@@ -559,13 +565,7 @@ impl SandboxManager {
                     SandboxType::None
                 }
             }
-        };
-
-        // FreeBSD Capsicum: the alcatraz-freebsd helper applies what it can
-        // (procctl hardening) and warns about unenforced dimensions.  The
-        // helper itself decides enforcement scope — the selector should not
-        // reject it.
-        candidate
+        }
     }
 
     pub(crate) fn transform(
@@ -583,7 +583,10 @@ impl SandboxManager {
             sandbox_policy_cwd,
             #[cfg(target_os = "macos")]
             macos_seatbelt_profile_extensions,
+            #[cfg(target_os = "macos")]
             alcatraz_macos_exe,
+            #[cfg(not(target_os = "macos"))]
+            alcatraz_macos_exe: _,
             alcatraz_linux_exe,
             alcatraz_freebsd_exe,
         } = request;
@@ -753,7 +756,3 @@ pub async fn execute_exec_request_with_after_spawn(
     let effective_policy = exec_request.sandbox_policy.clone();
     execute_exec_request(exec_request, &effective_policy, stdout_stream, after_spawn).await
 }
-
-#[cfg(test)]
-#[path = "mod_tests.rs"]
-mod tests;

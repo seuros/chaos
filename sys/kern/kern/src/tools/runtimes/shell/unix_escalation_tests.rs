@@ -20,7 +20,6 @@ use crate::protocol::GranularApprovalConfig;
 use crate::protocol::ReadOnlyAccess;
 use crate::protocol::SandboxPolicy;
 use crate::sandboxing::SandboxPermissions;
-#[cfg(target_os = "macos")]
 use crate::skills::SkillMetadata;
 use chaos_doas::EscalationExecution;
 use chaos_doas::EscalationPermissions;

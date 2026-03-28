@@ -687,7 +687,7 @@ async fn prefers_apikey_when_config_prefers_apikey_even_with_chatgpt_tokens() {
                 .enabled(Feature::DefaultModeRequestUserInput),
         },
     );
-    let NewProcess { thread: codex, .. } = process_table
+    let NewProcess { process: codex, .. } = process_table
         .start_process(config)
         .await
         .expect("create new conversation");

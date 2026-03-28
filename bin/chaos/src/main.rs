@@ -332,6 +332,12 @@ fn main() -> anyhow::Result<()> {
     // Install the ring CryptoProvider process-wide before any TLS operation.
     let _ = rama::tls::rustls::dep::rustls::crypto::ring::default_provider().install_default();
 
+    // Register the platform-specific credential store for keyring operations.
+    #[cfg(target_os = "linux")]
+    alcatraz_linux::register_keyring_store();
+    #[cfg(target_os = "freebsd")]
+    alcatraz_freebsd::register_keyring_store();
+
     arg0_dispatch_or_else(|arg0_paths: Arg0DispatchPaths| async move {
         cli_main(arg0_paths).await?;
         Ok(())

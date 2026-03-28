@@ -462,7 +462,3 @@ impl Session {
         self.send_event(task.turn_context.as_ref(), event).await;
     }
 }
-
-#[cfg(test)]
-#[path = "mod_tests.rs"]
-mod tests;

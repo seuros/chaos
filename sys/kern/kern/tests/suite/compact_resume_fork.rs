@@ -691,7 +691,7 @@ async fn resume_conversation(
     Box::pin(manager.resume_process_from_rollout(config.clone(), path, auth_manager, None))
         .await
         .expect("resume conversation")
-        .thread
+        .process
 }
 
 #[cfg(test)]
@@ -704,5 +704,5 @@ async fn fork_process(
     Box::pin(manager.fork_process(nth_user_message, config.clone(), path, false, None))
         .await
         .expect("fork conversation")
-        .thread
+        .process
 }

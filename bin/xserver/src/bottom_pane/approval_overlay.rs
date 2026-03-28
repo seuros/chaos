@@ -289,7 +289,7 @@ impl ApprovalOverlay {
         }
         let process_id = request.process_id();
         self.app_event_tx.send(AppEvent::SubmitProcessOp {
-            process_id: process_id,
+            process_id,
             op: Op::ExecApproval {
                 id: id.to_string(),
                 turn_id: None,
@@ -332,7 +332,7 @@ impl ApprovalOverlay {
         }
         let process_id = request.process_id();
         self.app_event_tx.send(AppEvent::SubmitProcessOp {
-            process_id: process_id,
+            process_id,
             op: Op::RequestPermissionsResponse {
                 id: call_id.to_string(),
                 response: chaos_ipc::request_permissions::RequestPermissionsResponse {
@@ -352,7 +352,7 @@ impl ApprovalOverlay {
             return;
         };
         self.app_event_tx.send(AppEvent::SubmitProcessOp {
-            process_id: process_id,
+            process_id,
             op: Op::PatchApproval {
                 id: id.to_string(),
                 decision,
@@ -374,7 +374,7 @@ impl ApprovalOverlay {
             return;
         };
         self.app_event_tx.send(AppEvent::SubmitProcessOp {
-            process_id: process_id,
+            process_id,
             op: Op::ResolveElicitation {
                 server_name: server_name.to_string(),
                 request_id: request_id.clone(),

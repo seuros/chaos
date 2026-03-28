@@ -183,7 +183,7 @@ pub async fn run_main(
     mcp_server
         .run(StdioTransport::new())
         .await
-        .map_err(|e| std::io::Error::new(ErrorKind::Other, format!("mcp server error: {e}")))?;
+        .map_err(|e| std::io::Error::other(format!("mcp server error: {e}")))?;
 
     Ok(())
 }

@@ -240,7 +240,10 @@ indexmap = "2.12.0"
 insta = "1.46.3"
 inventory = "0.3.19"
 itertools = "0.14.0"
-keyring = { version = "3.6", default-features = false }
+keyring-core = "0.7"
+apple-native-keyring-store = "0.2"
+linux-keyutils-keyring-store = "0.2"
+dbus-secret-service-keyring-store = { version = "0.3", features = ["crypto-rust"] }
 landlock = "0.4.4"
 libc = "0.2.182"
 log = "0.4"

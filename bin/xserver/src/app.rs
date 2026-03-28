@@ -3286,7 +3286,7 @@ impl App {
                     }
                 };
                 app_event_tx.send(AppEvent::ProcessEvent {
-                    process_id: process_id,
+                    process_id,
                     event,
                 });
             }

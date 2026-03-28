@@ -1,4 +1,5 @@
 use std::collections::BTreeMap;
+use std::future::Future;
 use std::path::Path;
 
 use crate::apply_patch;
@@ -28,7 +29,6 @@ use crate::tools::runtimes::apply_patch::ApplyPatchRequest;
 use crate::tools::runtimes::apply_patch::ApplyPatchRuntime;
 use crate::tools::sandboxing::ToolCtx;
 use crate::tools::spec::ApplyPatchToolArgs;
-use async_trait::async_trait;
 use chaos_diff::ApplyPatchAction;
 use chaos_diff::ApplyPatchFileChange;
 use chaos_ipc::models::FileSystemPermissions;
@@ -123,7 +123,6 @@ async fn effective_patch_permissions(
     )
 }
 
-#[async_trait]
 impl ToolHandler for ApplyPatchHandler {
     type Output = FunctionToolOutput;
 
@@ -138,8 +137,8 @@ impl ToolHandler for ApplyPatchHandler {
         )
     }
 
-    async fn is_mutating(&self, _invocation: &ToolInvocation) -> bool {
-        true
+    fn is_mutating(&self, _invocation: &ToolInvocation) -> impl Future<Output = bool> + Send + '_ {
+        async { true }
     }
 
     async fn handle(&self, invocation: ToolInvocation) -> Result<Self::Output, FunctionCallError> {

@@ -5,8 +5,6 @@
 //! The handler pulls the chaos DB pool from the session's StateRuntime or opens
 //! the shared chaos DB on demand.
 
-use async_trait::async_trait;
-
 use crate::function_tool::FunctionCallError;
 use crate::state_db::resolve_chaos_pool;
 use crate::tools::context::FunctionToolOutput;
@@ -17,7 +15,6 @@ use crate::tools::registry::ToolKind;
 
 pub struct CronHandler;
 
-#[async_trait]
 impl ToolHandler for CronHandler {
     type Output = FunctionToolOutput;
 

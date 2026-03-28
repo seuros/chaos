@@ -66,7 +66,6 @@ struct CompactHistoryResponse {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use async_trait::async_trait;
     use codex_client::Request;
     use codex_client::Response;
     use codex_client::StreamResponse;
@@ -75,7 +74,6 @@ mod tests {
     #[derive(Clone, Default)]
     struct DummyTransport;
 
-    #[async_trait]
     impl HttpTransport for DummyTransport {
         async fn execute(&self, _req: Request) -> Result<Response, TransportError> {
             Err(TransportError::Build("execute should not run".to_string()))

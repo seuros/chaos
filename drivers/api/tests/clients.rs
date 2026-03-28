@@ -3,7 +3,6 @@ use std::sync::Mutex;
 use std::time::Duration;
 
 use anyhow::Result;
-use async_trait::async_trait;
 use bytes::Bytes;
 use chaos_ipc::models::ContentItem;
 use chaos_ipc::models::ResponseItem;
@@ -68,7 +67,6 @@ impl RecordingTransport {
     }
 }
 
-#[async_trait]
 impl HttpTransport for RecordingTransport {
     async fn execute(&self, _req: Request) -> Result<Response, TransportError> {
         Err(TransportError::Build("execute should not run".to_string()))
@@ -163,7 +161,6 @@ impl FlakyTransport {
     }
 }
 
-#[async_trait]
 impl HttpTransport for FlakyTransport {
     async fn execute(&self, _req: Request) -> Result<Response, TransportError> {
         Err(TransportError::Build("execute should not run".to_string()))

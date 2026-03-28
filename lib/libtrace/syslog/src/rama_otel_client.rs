@@ -7,6 +7,8 @@ use rama::http::Body;
 use rama::http::body::util::BodyExt;
 use rama::service::BoxService;
 use std::fmt;
+use std::future::Future;
+use std::pin::Pin;
 use std::sync::Arc;
 use tokio::sync::Mutex;
 
@@ -36,22 +38,16 @@ impl fmt::Debug for RamaOtelClient {
 }
 
 impl opentelemetry_http::HttpClient for RamaOtelClient {
-    fn send_bytes<'life0, 'async_trait>(
+    fn send_bytes<'life0, 'otel>(
         &'life0 self,
         request: http::Request<Bytes>,
-    ) -> std::pin::Pin<
-        Box<
-            dyn std::future::Future<Output = Result<http::Response<Bytes>, HttpError>>
-                + Send
-                + 'async_trait,
-        >,
-    >
+    ) -> Pin<Box<dyn Future<Output = Result<http::Response<Bytes>, HttpError>> + Send + 'otel>>
     where
-        Self: 'async_trait,
-        'life0: 'async_trait,
+        'life0: 'otel,
+        Self: 'otel,
     {
-        let inner = self.inner.clone();
         Box::pin(async move {
+            let inner = self.inner.clone();
             let (parts, body) = request.into_parts();
             let rama_body = Body::from(body.to_vec());
             let rama_request = rama::http::Request::from_parts(parts.into(), rama_body);

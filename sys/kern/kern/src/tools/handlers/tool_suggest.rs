@@ -1,7 +1,6 @@
 use std::collections::BTreeMap;
 use std::collections::HashSet;
 
-use async_trait::async_trait;
 use chaos_ipc::api::AppInfo;
 use chaos_ipc::api::McpElicitationObjectType;
 use chaos_ipc::api::McpElicitationSchema;
@@ -62,7 +61,6 @@ struct ToolSuggestMeta<'a> {
     install_url: &'a str,
 }
 
-#[async_trait]
 impl ToolHandler for ToolSuggestHandler {
     type Output = FunctionToolOutput;
 

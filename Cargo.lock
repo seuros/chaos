@@ -1207,7 +1207,6 @@ name = "chaos-doas"
 version = "47.0.0"
 dependencies = [
  "anyhow",
- "async-trait",
  "chaos-ipc",
  "chaos-realpath",
  "clap",
@@ -1245,7 +1244,6 @@ dependencies = [
 name = "chaos-epoll"
 version = "47.0.0"
 dependencies = [
- "async-trait",
  "pretty_assertions",
  "tokio",
  "tokio-util",
@@ -1383,7 +1381,6 @@ dependencies = [
  "assert_cmd",
  "assert_matches",
  "async-channel",
- "async-trait",
  "base64 0.22.1",
  "chaos-apropos",
  "chaos-argv",
@@ -1524,7 +1521,6 @@ name = "chaos-mcphost"
 version = "47.0.0"
 dependencies = [
  "anyhow",
- "async-trait",
  "chaos-argv",
  "chaos-conv",
  "chaos-cron",
@@ -1615,7 +1611,6 @@ name = "chaos-pf"
 version = "47.0.0"
 dependencies = [
  "anyhow",
- "async-trait",
  "chaos-pwd",
  "chaos-realpath",
  "clap",
@@ -1696,7 +1691,6 @@ dependencies = [
 name = "chaos-ration"
 version = "47.0.0"
 dependencies = [
- "async-trait",
  "chrono",
  "serde",
  "thiserror 2.0.18",
@@ -1708,7 +1702,6 @@ name = "chaos-ready"
 version = "47.0.0"
 dependencies = [
  "assert_matches",
- "async-trait",
  "thiserror 2.0.18",
  "time",
  "tokio",
@@ -2157,7 +2150,6 @@ version = "47.0.0"
 dependencies = [
  "anyhow",
  "assert_matches",
- "async-trait",
  "base64 0.22.1",
  "bytes",
  "chaos-abi",
@@ -2185,7 +2177,6 @@ dependencies = [
 name = "codex-client"
 version = "47.0.0"
 dependencies = [
- "async-trait",
  "bytes",
  "chaos-which",
  "eventsource-stream",

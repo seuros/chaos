@@ -3,9 +3,9 @@ use crate::runtime::HostBlockDecision;
 use crate::runtime::HostBlockReason;
 use crate::state::NetworkProxyState;
 use anyhow::Result;
-use async_trait::async_trait;
 use jiff::Timestamp;
 use std::future::Future;
+use std::pin::Pin;
 use std::sync::Arc;
 
 const AUDIT_TARGET: &str = "chaos_syslog.network_proxy";
@@ -264,26 +264,32 @@ fn audit_timestamp() -> String {
 /// If `command` or `exec_policy_hint` is provided, callers can map exec-policy
 /// approvals to network access (e.g., allow all requests for commands matching
 /// approved prefixes like `curl *`).
-#[async_trait]
 pub trait NetworkPolicyDecider: Send + Sync + 'static {
-    async fn decide(&self, req: NetworkPolicyRequest) -> NetworkDecision;
+    fn decide(
+        &self,
+        req: NetworkPolicyRequest,
+    ) -> Pin<Box<dyn Future<Output = NetworkDecision> + Send + '_>>;
 }
 
-#[async_trait]
 impl<D: NetworkPolicyDecider + ?Sized> NetworkPolicyDecider for Arc<D> {
-    async fn decide(&self, req: NetworkPolicyRequest) -> NetworkDecision {
-        (**self).decide(req).await
+    fn decide(
+        &self,
+        req: NetworkPolicyRequest,
+    ) -> Pin<Box<dyn Future<Output = NetworkDecision> + Send + '_>> {
+        Box::pin(async move { (**self).decide(req).await })
     }
 }
 
-#[async_trait]
 impl<F, Fut> NetworkPolicyDecider for F
 where
     F: Fn(NetworkPolicyRequest) -> Fut + Send + Sync + 'static,
     Fut: Future<Output = NetworkDecision> + Send,
 {
-    async fn decide(&self, req: NetworkPolicyRequest) -> NetworkDecision {
-        (self)(req).await
+    fn decide(
+        &self,
+        req: NetworkPolicyRequest,
+    ) -> Pin<Box<dyn Future<Output = NetworkDecision> + Send + '_>> {
+        Box::pin(async move { (self)(req).await })
     }
 }
 
@@ -561,14 +567,19 @@ mod tests {
         state: ConfigState,
     }
 
-    #[async_trait]
     impl ConfigReloader for StaticReloader {
-        async fn maybe_reload(&self) -> anyhow::Result<Option<ConfigState>> {
-            Ok(None)
+        fn maybe_reload(
+            &self,
+        ) -> Pin<Box<dyn Future<Output = anyhow::Result<Option<ConfigState>>> + Send + '_>>
+        {
+            Box::pin(async { Ok(None) })
         }
 
-        async fn reload_now(&self) -> anyhow::Result<ConfigState> {
-            Ok(self.state.clone())
+        fn reload_now(
+            &self,
+        ) -> Pin<Box<dyn Future<Output = anyhow::Result<ConfigState>> + Send + '_>> {
+            let state = self.state.clone();
+            Box::pin(async move { Ok(state) })
         }
 
         fn source_label(&self) -> String {

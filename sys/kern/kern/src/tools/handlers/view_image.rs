@@ -1,4 +1,3 @@
-use async_trait::async_trait;
 use chaos_ipc::models::ContentItem;
 use chaos_ipc::models::FunctionCallOutputContentItem;
 use chaos_ipc::models::ImageDetail;
@@ -35,7 +34,6 @@ enum ViewImageDetail {
     Original,
 }
 
-#[async_trait]
 impl ToolHandler for ViewImageHandler {
     type Output = FunctionToolOutput;
 

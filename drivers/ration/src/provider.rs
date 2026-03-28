@@ -2,7 +2,7 @@ use crate::{RationError, Usage};
 
 /// The trait vendors implement. Chaos doesn't know about providers —
 /// providers know about Chaos.
-#[async_trait::async_trait]
+#[allow(async_fn_in_trait)]
 pub trait UsageProvider: Send + Sync {
     /// Provider identifier (e.g., "anthropic", "openai", "local-ollama").
     fn name(&self) -> &str;

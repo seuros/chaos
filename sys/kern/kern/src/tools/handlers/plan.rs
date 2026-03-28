@@ -8,7 +8,6 @@ use crate::tools::context::ToolInvocation;
 use crate::tools::context::ToolPayload;
 use crate::tools::registry::ToolHandler;
 use crate::tools::registry::ToolKind;
-use async_trait::async_trait;
 use chaos_ipc::config_types::ModeKind;
 use chaos_ipc::plan_tool::UpdatePlanArgs;
 use chaos_ipc::protocol::EventMsg;
@@ -62,7 +61,6 @@ At most one step can be in_progress at a time.
     })
 });
 
-#[async_trait]
 impl ToolHandler for PlanHandler {
     type Output = FunctionToolOutput;
 

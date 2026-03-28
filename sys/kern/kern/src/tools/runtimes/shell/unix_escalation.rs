@@ -49,7 +49,9 @@ use chaos_selinux::RuleMatch;
 use chaos_sh::bash::parse_shell_lc_plain_commands;
 use chaos_sh::bash::parse_shell_lc_single_command_prefix;
 use std::collections::HashMap;
+use std::future::Future;
 use std::path::PathBuf;
+use std::pin::Pin;
 use std::sync::Arc;
 use std::time::Duration;
 use tokio::sync::RwLock;
@@ -615,136 +617,142 @@ impl CoreShellActionProvider {
 // execve interception.
 const ENABLE_INTERCEPTED_EXEC_POLICY_SHELL_WRAPPER_PARSING: bool = false;
 
-#[async_trait::async_trait]
 impl EscalationPolicy for CoreShellActionProvider {
-    async fn determine_action(
+    fn determine_action(
         &self,
         program: &AbsolutePathBuf,
         argv: &[String],
         workdir: &AbsolutePathBuf,
-    ) -> anyhow::Result<EscalationDecision> {
-        tracing::debug!(
-            "Determining escalation action for command {program:?} with args {argv:?} in {workdir:?}"
-        );
-
-        // Check to see whether `program` has an existing entry in
-        // `execve_session_approvals`. If so, we can skip policy checks and user
-        // prompts and go straight to allowing execution.
-        let approval = {
-            self.session
-                .services
-                .execve_session_approvals
-                .read()
-                .await
-                .get(program)
-                .cloned()
-        };
-        if let Some(approval) = approval {
+    ) -> Pin<Box<dyn Future<Output = anyhow::Result<EscalationDecision>> + Send + '_>> {
+        let program = program.clone();
+        let argv = argv.to_vec();
+        let workdir = workdir.clone();
+        Box::pin(async move {
             tracing::debug!(
-                "Found session approval for {program:?}, allowing execution without further checks"
+                "Determining escalation action for command {program:?} with args {argv:?} in {workdir:?}"
             );
-            let execution = approval
-                .skill
-                .as_ref()
-                .map(Self::skill_escalation_execution)
-                .unwrap_or(EscalationExecution::TurnDefault);
 
-            return Ok(EscalationDecision::escalate(execution));
-        }
-
-        // In the usual case, the execve wrapper reports the command being
-        // executed in `program`, so a direct skill lookup is sufficient.
-        if let Some(skill) = self.find_skill(program).await {
-            // For now, scripts that look like they belong to skills bypass
-            // general exec policy evaluation. Permissionless skills inherit the
-            // turn sandbox directly; skills with declared permissions still
-            // prompt here before applying their permission profile.
-            let prompt_permissions = skill.permission_profile.clone();
-            if prompt_permissions
-                .as_ref()
-                .is_none_or(PermissionProfile::is_empty)
-            {
-                tracing::debug!(
-                    "Matched {program:?} to permissionless skill {skill:?}, inheriting turn sandbox"
-                );
-                return Ok(EscalationDecision::escalate(
-                    EscalationExecution::TurnDefault,
-                ));
-            }
-            tracing::debug!("Matched {program:?} to skill {skill:?}, prompting for approval");
-            let needs_escalation = true;
-            let decision_source = DecisionSource::SkillScript {
-                skill: skill.clone(),
+            // Check to see whether `program` has an existing entry in
+            // `execve_session_approvals`. If so, we can skip policy checks and user
+            // prompts and go straight to allowing execution.
+            let approval = {
+                self.session
+                    .services
+                    .execve_session_approvals
+                    .read()
+                    .await
+                    .get(&program)
+                    .cloned()
             };
-            return self
-                .process_decision(
-                    Decision::Prompt,
-                    needs_escalation,
-                    program,
-                    argv,
-                    workdir,
-                    prompt_permissions,
-                    Self::skill_escalation_execution(&skill),
-                    decision_source,
+            if let Some(approval) = approval {
+                tracing::debug!(
+                    "Found session approval for {program:?}, allowing execution without further checks"
+                );
+                let execution = approval
+                    .skill
+                    .as_ref()
+                    .map(Self::skill_escalation_execution)
+                    .unwrap_or(EscalationExecution::TurnDefault);
+
+                return Ok(EscalationDecision::escalate(execution));
+            }
+
+            // In the usual case, the execve wrapper reports the command being
+            // executed in `program`, so a direct skill lookup is sufficient.
+            if let Some(skill) = self.find_skill(&program).await {
+                // For now, scripts that look like they belong to skills bypass
+                // general exec policy evaluation. Permissionless skills inherit the
+                // turn sandbox directly; skills with declared permissions still
+                // prompt here before applying their permission profile.
+                let prompt_permissions = skill.permission_profile.clone();
+                if prompt_permissions
+                    .as_ref()
+                    .is_none_or(PermissionProfile::is_empty)
+                {
+                    tracing::debug!(
+                        "Matched {program:?} to permissionless skill {skill:?}, inheriting turn sandbox"
+                    );
+                    return Ok(EscalationDecision::escalate(
+                        EscalationExecution::TurnDefault,
+                    ));
+                }
+                tracing::debug!("Matched {program:?} to skill {skill:?}, prompting for approval");
+                let needs_escalation = true;
+                let decision_source = DecisionSource::SkillScript {
+                    skill: skill.clone(),
+                };
+                return self
+                    .process_decision(
+                        Decision::Prompt,
+                        needs_escalation,
+                        &program,
+                        &argv,
+                        &workdir,
+                        prompt_permissions,
+                        Self::skill_escalation_execution(&skill),
+                        decision_source,
+                    )
+                    .await;
+            }
+
+            let evaluation = {
+                let policy = self.policy.read().await;
+                evaluate_intercepted_exec_policy(
+                    &policy,
+                    &program,
+                    &argv,
+                    InterceptedExecPolicyContext {
+                        approval_policy: self.approval_policy,
+                        sandbox_policy: &self.sandbox_policy,
+                        file_system_sandbox_policy: &self.file_system_sandbox_policy,
+                        sandbox_permissions: self.approval_sandbox_permissions,
+                        enable_shell_wrapper_parsing:
+                            ENABLE_INTERCEPTED_EXEC_POLICY_SHELL_WRAPPER_PARSING,
+                    },
                 )
-                .await;
-        }
+            };
+            // When true, means the Evaluation was due to *.rules, not the
+            // fallback function.
+            let decision_driven_by_policy =
+                Self::decision_driven_by_policy(&evaluation.matched_rules, evaluation.decision);
+            let needs_escalation = self.sandbox_permissions.requires_escalated_permissions()
+                || decision_driven_by_policy;
 
-        let evaluation = {
-            let policy = self.policy.read().await;
-            evaluate_intercepted_exec_policy(
-                &policy,
-                program,
-                argv,
-                InterceptedExecPolicyContext {
-                    approval_policy: self.approval_policy,
-                    sandbox_policy: &self.sandbox_policy,
-                    file_system_sandbox_policy: &self.file_system_sandbox_policy,
-                    sandbox_permissions: self.approval_sandbox_permissions,
-                    enable_shell_wrapper_parsing:
-                        ENABLE_INTERCEPTED_EXEC_POLICY_SHELL_WRAPPER_PARSING,
-                },
+            let decision_source = if decision_driven_by_policy {
+                DecisionSource::PrefixRule
+            } else {
+                DecisionSource::UnmatchedCommandFallback
+            };
+            let escalation_execution = match decision_source {
+                DecisionSource::PrefixRule => EscalationExecution::Unsandboxed,
+                DecisionSource::UnmatchedCommandFallback => {
+                    Self::shell_request_escalation_execution(
+                        self.sandbox_permissions,
+                        &self.sandbox_policy,
+                        &self.file_system_sandbox_policy,
+                        self.network_sandbox_policy,
+                        self.prompt_permissions.as_ref(),
+                        self.turn
+                            .config
+                            .permissions
+                            .macos_seatbelt_profile_extensions
+                            .as_ref(),
+                    )
+                }
+                DecisionSource::SkillScript { .. } => unreachable!("handled above"),
+            };
+            self.process_decision(
+                evaluation.decision,
+                needs_escalation,
+                &program,
+                &argv,
+                &workdir,
+                self.prompt_permissions.clone(),
+                escalation_execution,
+                decision_source,
             )
-        };
-        // When true, means the Evaluation was due to *.rules, not the
-        // fallback function.
-        let decision_driven_by_policy =
-            Self::decision_driven_by_policy(&evaluation.matched_rules, evaluation.decision);
-        let needs_escalation =
-            self.sandbox_permissions.requires_escalated_permissions() || decision_driven_by_policy;
-
-        let decision_source = if decision_driven_by_policy {
-            DecisionSource::PrefixRule
-        } else {
-            DecisionSource::UnmatchedCommandFallback
-        };
-        let escalation_execution = match decision_source {
-            DecisionSource::PrefixRule => EscalationExecution::Unsandboxed,
-            DecisionSource::UnmatchedCommandFallback => Self::shell_request_escalation_execution(
-                self.sandbox_permissions,
-                &self.sandbox_policy,
-                &self.file_system_sandbox_policy,
-                self.network_sandbox_policy,
-                self.prompt_permissions.as_ref(),
-                self.turn
-                    .config
-                    .permissions
-                    .macos_seatbelt_profile_extensions
-                    .as_ref(),
-            ),
-            DecisionSource::SkillScript { .. } => unreachable!("handled above"),
-        };
-        self.process_decision(
-            evaluation.decision,
-            needs_escalation,
-            program,
-            argv,
-            workdir,
-            self.prompt_permissions.clone(),
-            escalation_execution,
-            decision_source,
-        )
-        .await
+            .await
+        })
     }
 }
 
@@ -874,130 +882,138 @@ struct PrepareSandboxedExecParams<'a> {
     macos_seatbelt_profile_extensions: Option<&'a MacOsSeatbeltProfileExtensions>,
 }
 
-#[async_trait::async_trait]
 impl ShellCommandExecutor for CoreShellCommandExecutor {
-    async fn run(
+    fn run(
         &self,
         _command: Vec<String>,
         _cwd: PathBuf,
         env_overlay: HashMap<String, String>,
         cancel_rx: CancellationToken,
         after_spawn: Option<Box<dyn FnOnce() + Send>>,
-    ) -> anyhow::Result<ExecResult> {
-        let mut exec_env = self.env.clone();
-        // `env_overlay` comes from `EscalationSession::env()`, so merge only the
-        // wrapper/socket variables into the base shell environment.
-        for var in ["CODEX_ESCALATE_SOCKET", "EXEC_WRAPPER", "BASH_EXEC_WRAPPER"] {
-            if let Some(value) = env_overlay.get(var) {
-                exec_env.insert(var.to_string(), value.clone());
+    ) -> Pin<Box<dyn Future<Output = anyhow::Result<ExecResult>> + Send + '_>> {
+        Box::pin(async move {
+            let mut exec_env = self.env.clone();
+            // `env_overlay` comes from `EscalationSession::env()`, so merge only the
+            // wrapper/socket variables into the base shell environment.
+            for var in ["CODEX_ESCALATE_SOCKET", "EXEC_WRAPPER", "BASH_EXEC_WRAPPER"] {
+                if let Some(value) = env_overlay.get(var) {
+                    exec_env.insert(var.to_string(), value.clone());
+                }
             }
-        }
 
-        let result = crate::sandboxing::execute_exec_request_with_after_spawn(
-            crate::sandboxing::ExecRequest {
-                command: self.command.clone(),
-                cwd: self.cwd.clone(),
-                env: exec_env,
-                network: self.network.clone(),
-                expiration: ExecExpiration::Cancellation(cancel_rx),
-                sandbox: self.sandbox,
-                sandbox_permissions: self.sandbox_permissions,
-                sandbox_policy: self.sandbox_policy.clone(),
-                file_system_sandbox_policy: self.file_system_sandbox_policy.clone(),
-                network_sandbox_policy: self.network_sandbox_policy,
-                justification: self.justification.clone(),
-                arg0: self.arg0.clone(),
-            },
-            /*stdout_stream*/ None,
-            after_spawn,
-        )
-        .await?;
+            let result = crate::sandboxing::execute_exec_request_with_after_spawn(
+                crate::sandboxing::ExecRequest {
+                    command: self.command.clone(),
+                    cwd: self.cwd.clone(),
+                    env: exec_env,
+                    network: self.network.clone(),
+                    expiration: ExecExpiration::Cancellation(cancel_rx),
+                    sandbox: self.sandbox,
+                    sandbox_permissions: self.sandbox_permissions,
+                    sandbox_policy: self.sandbox_policy.clone(),
+                    file_system_sandbox_policy: self.file_system_sandbox_policy.clone(),
+                    network_sandbox_policy: self.network_sandbox_policy,
+                    justification: self.justification.clone(),
+                    arg0: self.arg0.clone(),
+                },
+                /*stdout_stream*/ None,
+                after_spawn,
+            )
+            .await?;
 
-        Ok(ExecResult {
-            exit_code: result.exit_code,
-            stdout: result.stdout.text,
-            stderr: result.stderr.text,
-            output: result.aggregated_output.text,
-            duration: result.duration,
-            timed_out: result.timed_out,
+            Ok(ExecResult {
+                exit_code: result.exit_code,
+                stdout: result.stdout.text,
+                stderr: result.stderr.text,
+                output: result.aggregated_output.text,
+                duration: result.duration,
+                timed_out: result.timed_out,
+            })
         })
     }
 
-    async fn prepare_escalated_exec(
+    fn prepare_escalated_exec(
         &self,
         program: &AbsolutePathBuf,
         argv: &[String],
         workdir: &AbsolutePathBuf,
         env: HashMap<String, String>,
         execution: EscalationExecution,
-    ) -> anyhow::Result<PreparedExec> {
-        let command = join_program_and_argv(program, argv);
-        let Some(first_arg) = argv.first() else {
-            return Err(anyhow::anyhow!(
-                "intercepted exec request must contain argv[0]"
-            ));
-        };
+    ) -> Pin<Box<dyn Future<Output = anyhow::Result<PreparedExec>> + Send + '_>> {
+        let program = program.clone();
+        let argv = argv.to_vec();
+        let workdir = workdir.clone();
+        Box::pin(async move {
+            let command = join_program_and_argv(&program, &argv);
+            let Some(first_arg) = argv.first() else {
+                return Err(anyhow::anyhow!(
+                    "intercepted exec request must contain argv[0]"
+                ));
+            };
 
-        let prepared = match execution {
-            EscalationExecution::Unsandboxed => PreparedExec {
-                command,
-                cwd: workdir.to_path_buf(),
-                env,
-                arg0: Some(first_arg.clone()),
-            },
-            EscalationExecution::TurnDefault => {
-                self.prepare_sandboxed_exec(PrepareSandboxedExecParams {
+            let prepared = match execution {
+                EscalationExecution::Unsandboxed => PreparedExec {
                     command,
-                    workdir,
+                    cwd: workdir.to_path_buf(),
                     env,
-                    sandbox_policy: &self.sandbox_policy,
-                    file_system_sandbox_policy: &self.file_system_sandbox_policy,
-                    network_sandbox_policy: self.network_sandbox_policy,
-                    additional_permissions: None,
-                    #[cfg(target_os = "macos")]
-                    macos_seatbelt_profile_extensions: self
-                        .macos_seatbelt_profile_extensions
-                        .as_ref(),
-                })?
-            }
-            EscalationExecution::Permissions(EscalationPermissions::PermissionProfile(
-                permission_profile,
-            )) => {
-                // Merge additive permissions into the existing turn/request sandbox policy.
-                // On macOS, additional profile extensions are unioned with the turn defaults.
-                self.prepare_sandboxed_exec(PrepareSandboxedExecParams {
-                    command,
-                    workdir,
-                    env,
-                    sandbox_policy: &self.sandbox_policy,
-                    file_system_sandbox_policy: &self.file_system_sandbox_policy,
-                    network_sandbox_policy: self.network_sandbox_policy,
-                    additional_permissions: Some(permission_profile),
-                    #[cfg(target_os = "macos")]
-                    macos_seatbelt_profile_extensions: self
-                        .macos_seatbelt_profile_extensions
-                        .as_ref(),
-                })?
-            }
-            EscalationExecution::Permissions(EscalationPermissions::Permissions(permissions)) => {
-                // Use a fully specified sandbox policy instead of merging into the turn policy.
-                self.prepare_sandboxed_exec(PrepareSandboxedExecParams {
-                    command,
-                    workdir,
-                    env,
-                    sandbox_policy: &permissions.sandbox_policy,
-                    file_system_sandbox_policy: &permissions.file_system_sandbox_policy,
-                    network_sandbox_policy: permissions.network_sandbox_policy,
-                    additional_permissions: None,
-                    #[cfg(target_os = "macos")]
-                    macos_seatbelt_profile_extensions: permissions
-                        .macos_seatbelt_profile_extensions
-                        .as_ref(),
-                })?
-            }
-        };
+                    arg0: Some(first_arg.clone()),
+                },
+                EscalationExecution::TurnDefault => {
+                    self.prepare_sandboxed_exec(PrepareSandboxedExecParams {
+                        command,
+                        workdir: &workdir,
+                        env,
+                        sandbox_policy: &self.sandbox_policy,
+                        file_system_sandbox_policy: &self.file_system_sandbox_policy,
+                        network_sandbox_policy: self.network_sandbox_policy,
+                        additional_permissions: None,
+                        #[cfg(target_os = "macos")]
+                        macos_seatbelt_profile_extensions: self
+                            .macos_seatbelt_profile_extensions
+                            .as_ref(),
+                    })?
+                }
+                EscalationExecution::Permissions(EscalationPermissions::PermissionProfile(
+                    permission_profile,
+                )) => {
+                    // Merge additive permissions into the existing turn/request sandbox policy.
+                    // On macOS, additional profile extensions are unioned with the turn defaults.
+                    self.prepare_sandboxed_exec(PrepareSandboxedExecParams {
+                        command,
+                        workdir: &workdir,
+                        env,
+                        sandbox_policy: &self.sandbox_policy,
+                        file_system_sandbox_policy: &self.file_system_sandbox_policy,
+                        network_sandbox_policy: self.network_sandbox_policy,
+                        additional_permissions: Some(permission_profile),
+                        #[cfg(target_os = "macos")]
+                        macos_seatbelt_profile_extensions: self
+                            .macos_seatbelt_profile_extensions
+                            .as_ref(),
+                    })?
+                }
+                EscalationExecution::Permissions(EscalationPermissions::Permissions(
+                    permissions,
+                )) => {
+                    // Use a fully specified sandbox policy instead of merging into the turn policy.
+                    self.prepare_sandboxed_exec(PrepareSandboxedExecParams {
+                        command,
+                        workdir: &workdir,
+                        env,
+                        sandbox_policy: &permissions.sandbox_policy,
+                        file_system_sandbox_policy: &permissions.file_system_sandbox_policy,
+                        network_sandbox_policy: permissions.network_sandbox_policy,
+                        additional_permissions: None,
+                        #[cfg(target_os = "macos")]
+                        macos_seatbelt_profile_extensions: permissions
+                            .macos_seatbelt_profile_extensions
+                            .as_ref(),
+                    })?
+                }
+            };
 
-        Ok(prepared)
+            Ok(prepared)
+        })
     }
 }
 

@@ -12,7 +12,6 @@ use crate::exec_policy::format_exec_policy_error_with_source;
 use crate::exec_policy::load_exec_policy;
 use anyhow::Context;
 use anyhow::Result;
-use async_trait::async_trait;
 use chaos_ipc::api::ConfigLayerSource;
 use chaos_pf::ConfigReloader;
 use chaos_pf::ConfigState;
@@ -25,7 +24,9 @@ use chaos_pf::normalize_host;
 use chaos_pf::validate_policy_against_constraints;
 use chaos_sysctl::CONFIG_TOML_FILE;
 use serde::Deserialize;
+use std::future::Future;
 use std::path::PathBuf;
+use std::pin::Pin;
 use std::sync::Arc;
 use tokio::sync::RwLock;
 
@@ -287,28 +288,33 @@ impl MtimeConfigReloader {
     }
 }
 
-#[async_trait]
 impl ConfigReloader for MtimeConfigReloader {
     fn source_label(&self) -> String {
         "config layers".to_string()
     }
 
-    async fn maybe_reload(&self) -> Result<Option<ConfigState>> {
-        if !self.needs_reload().await {
-            return Ok(None);
-        }
+    fn maybe_reload(
+        &self,
+    ) -> Pin<Box<dyn Future<Output = Result<Option<ConfigState>>> + Send + '_>> {
+        Box::pin(async move {
+            if !self.needs_reload().await {
+                return Ok(None);
+            }
 
-        let (state, layer_mtimes) = build_config_state_with_mtimes().await?;
-        let mut guard = self.layer_mtimes.write().await;
-        *guard = layer_mtimes;
-        Ok(Some(state))
+            let (state, layer_mtimes) = build_config_state_with_mtimes().await?;
+            let mut guard = self.layer_mtimes.write().await;
+            *guard = layer_mtimes;
+            Ok(Some(state))
+        })
     }
 
-    async fn reload_now(&self) -> Result<ConfigState> {
-        let (state, layer_mtimes) = build_config_state_with_mtimes().await?;
-        let mut guard = self.layer_mtimes.write().await;
-        *guard = layer_mtimes;
-        Ok(state)
+    fn reload_now(&self) -> Pin<Box<dyn Future<Output = Result<ConfigState>> + Send + '_>> {
+        Box::pin(async move {
+            let (state, layer_mtimes) = build_config_state_with_mtimes().await?;
+            let mut guard = self.layer_mtimes.write().await;
+            *guard = layer_mtimes;
+            Ok(state)
+        })
     }
 }
 

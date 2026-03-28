@@ -9,7 +9,6 @@ use crate::tools::context::ToolSearchOutput;
 use crate::tools::registry::ToolHandler;
 use crate::tools::registry::ToolKind;
 use crate::tools::spec::mcp_tool_to_deferred_openai_tool;
-use async_trait::async_trait;
 use chaos_apropos::Corpus;
 use chaos_apropos::Document;
 use std::collections::BTreeMap;
@@ -31,7 +30,6 @@ impl ToolSearchHandler {
     }
 }
 
-#[async_trait]
 impl ToolHandler for ToolSearchHandler {
     type Output = ToolSearchOutput;
 

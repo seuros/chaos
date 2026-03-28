@@ -1,3 +1,5 @@
+use std::future::Future;
+use std::pin::Pin;
 use std::sync::Arc;
 use std::sync::Mutex;
 
@@ -8,7 +10,6 @@ use crate::codex::TurnContext;
 use crate::codex::run_turn;
 use crate::error::Result as CodexResult;
 use crate::state::TaskKind;
-use async_trait::async_trait;
 use chaos_ipc::user_input::UserInput;
 use tokio_util::sync::CancellationToken;
 use tracing::Instrument;
@@ -62,7 +63,6 @@ impl RegularTask {
     }
 }
 
-#[async_trait]
 impl SessionTask for RegularTask {
     fn kind(&self) -> TaskKind {
         TaskKind::Regular
@@ -72,25 +72,27 @@ impl SessionTask for RegularTask {
         "session_task.turn"
     }
 
-    async fn run(
+    fn run(
         self: Arc<Self>,
         session: Arc<SessionTaskContext>,
         ctx: Arc<TurnContext>,
         input: Vec<UserInput>,
         cancellation_token: CancellationToken,
-    ) -> Option<String> {
-        let sess = session.clone_session();
-        let run_turn_span = trace_span!("run_turn");
-        sess.set_server_reasoning_included(/*included*/ false).await;
-        let prewarmed_client_session = self.take_prewarmed_session().await;
-        run_turn(
-            sess,
-            ctx,
-            input,
-            prewarmed_client_session,
-            cancellation_token,
-        )
-        .instrument(run_turn_span)
-        .await
+    ) -> Pin<Box<dyn Future<Output = Option<String>> + Send>> {
+        Box::pin(async move {
+            let sess = session.clone_session();
+            let run_turn_span = trace_span!("run_turn");
+            sess.set_server_reasoning_included(/*included*/ false).await;
+            let prewarmed_client_session = self.take_prewarmed_session().await;
+            run_turn(
+                sess,
+                ctx,
+                input,
+                prewarmed_client_session,
+                cancellation_token,
+            )
+            .instrument(run_turn_span)
+            .await
+        })
     }
 }

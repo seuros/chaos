@@ -8,7 +8,6 @@ use crate::agent::next_process_spawn_depth;
 
 pub(crate) struct Handler;
 
-#[async_trait]
 impl ToolHandler for Handler {
     type Output = SpawnAgentResult;
 

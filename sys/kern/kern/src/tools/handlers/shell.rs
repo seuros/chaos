@@ -1,7 +1,7 @@
-use async_trait::async_trait;
 use chaos_ipc::ProcessId;
 use chaos_ipc::models::ShellCommandToolCallParams;
 use chaos_ipc::models::ShellToolCallParams;
+use std::future::Future;
 use std::sync::Arc;
 
 use crate::codex::TurnContext;
@@ -138,7 +138,6 @@ impl From<ShellCommandBackendConfig> for ShellCommandHandler {
     }
 }
 
-#[async_trait]
 impl ToolHandler for ShellHandler {
     type Output = FunctionToolOutput;
 
@@ -153,8 +152,8 @@ impl ToolHandler for ShellHandler {
         )
     }
 
-    async fn is_mutating(&self, invocation: &ToolInvocation) -> bool {
-        match &invocation.payload {
+    fn is_mutating(&self, invocation: &ToolInvocation) -> impl Future<Output = bool> + Send + '_ {
+        let result = match &invocation.payload {
             ToolPayload::Function { arguments } => {
                 serde_json::from_str::<ShellToolCallParams>(arguments)
                     .map(|params| !is_known_safe_command(&params.command))
@@ -162,7 +161,8 @@ impl ToolHandler for ShellHandler {
             }
             ToolPayload::LocalShell { params } => !is_known_safe_command(&params.command),
             _ => true, // unknown payloads => assume mutating
-        }
+        };
+        std::future::ready(result)
     }
 
     async fn handle(&self, invocation: ToolInvocation) -> Result<Self::Output, FunctionCallError> {
@@ -222,7 +222,6 @@ impl ToolHandler for ShellHandler {
     }
 }
 
-#[async_trait]
 impl ToolHandler for ShellCommandHandler {
     type Output = FunctionToolOutput;
 
@@ -234,12 +233,12 @@ impl ToolHandler for ShellCommandHandler {
         matches!(payload, ToolPayload::Function { .. })
     }
 
-    async fn is_mutating(&self, invocation: &ToolInvocation) -> bool {
+    fn is_mutating(&self, invocation: &ToolInvocation) -> impl Future<Output = bool> + Send + '_ {
         let ToolPayload::Function { arguments } = &invocation.payload else {
-            return true;
+            return std::future::ready(true);
         };
 
-        serde_json::from_str::<ShellCommandToolCallParams>(arguments)
+        let result = serde_json::from_str::<ShellCommandToolCallParams>(arguments)
             .map(|params| {
                 let use_login_shell = match Self::resolve_use_login_shell(
                     params.login,
@@ -252,7 +251,8 @@ impl ToolHandler for ShellCommandHandler {
                 let command = Self::base_command(shell.as_ref(), &params.command, use_login_shell);
                 !is_known_safe_command(&command)
             })
-            .unwrap_or(true)
+            .unwrap_or(true);
+        std::future::ready(result)
     }
 
     async fn handle(&self, invocation: ToolInvocation) -> Result<Self::Output, FunctionCallError> {

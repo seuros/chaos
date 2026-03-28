@@ -1,5 +1,4 @@
 use crate::config_loader::NetworkConstraints;
-use async_trait::async_trait;
 use chaos_ipc::protocol::SandboxPolicy;
 use chaos_pf::BlockedRequestObserver;
 use chaos_pf::ConfigReloader;
@@ -18,6 +17,8 @@ use chaos_pf::normalize_host;
 use chaos_pf::validate_policy_against_constraints;
 use chaos_selinux::Policy;
 use std::collections::HashSet;
+use std::future::Future;
+use std::pin::Pin;
 use std::sync::Arc;
 
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -56,14 +57,16 @@ impl StaticNetworkProxyReloader {
     }
 }
 
-#[async_trait]
 impl ConfigReloader for StaticNetworkProxyReloader {
-    async fn maybe_reload(&self) -> anyhow::Result<Option<ConfigState>> {
-        Ok(None)
+    fn maybe_reload(
+        &self,
+    ) -> Pin<Box<dyn Future<Output = anyhow::Result<Option<ConfigState>>> + Send + '_>> {
+        Box::pin(async { Ok(None) })
     }
 
-    async fn reload_now(&self) -> anyhow::Result<ConfigState> {
-        Ok(self.state.clone())
+    fn reload_now(&self) -> Pin<Box<dyn Future<Output = anyhow::Result<ConfigState>> + Send + '_>> {
+        let state = self.state.clone();
+        Box::pin(async move { Ok(state) })
     }
 
     fn source_label(&self) -> String {

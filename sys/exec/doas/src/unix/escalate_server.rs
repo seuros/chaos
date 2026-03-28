@@ -1,6 +1,8 @@
 use std::collections::HashMap;
+use std::future::Future;
 use std::os::fd::AsRawFd;
 use std::path::PathBuf;
+use std::pin::Pin;
 use std::process::Stdio;
 use std::sync::Arc;
 use std::sync::Mutex;
@@ -32,7 +34,6 @@ use crate::unix::socket::AsyncSocket;
 /// This lets `shell-escalation` own the Unix escalation protocol while the caller
 /// keeps control over process spawning, output capture, and sandbox integration.
 /// Implementations can capture any sandbox state they need.
-#[async_trait::async_trait]
 pub trait ShellCommandExecutor: Send + Sync {
     /// Runs the requested shell command and returns the captured result.
     ///
@@ -42,24 +43,24 @@ pub trait ShellCommandExecutor: Send + Sync {
     /// for the shell process. `after_spawn` should be invoked immediately after
     /// the shell process has been spawned so the parent copy of the inherited
     /// escalation socket can be closed.
-    async fn run(
+    fn run(
         &self,
         command: Vec<String>,
         cwd: PathBuf,
         env_overlay: HashMap<String, String>,
         cancel_rx: CancellationToken,
         after_spawn: Option<Box<dyn FnOnce() + Send>>,
-    ) -> anyhow::Result<ExecResult>;
+    ) -> Pin<Box<dyn Future<Output = anyhow::Result<ExecResult>> + Send + '_>>;
 
     /// Prepares an escalated subcommand for execution on the server side.
-    async fn prepare_escalated_exec(
+    fn prepare_escalated_exec(
         &self,
         program: &AbsolutePathBuf,
         argv: &[String],
         workdir: &AbsolutePathBuf,
         env: HashMap<String, String>,
         execution: EscalationExecution,
-    ) -> anyhow::Result<PreparedExec>;
+    ) -> Pin<Box<dyn Future<Output = anyhow::Result<PreparedExec>> + Send + '_>>;
 }
 
 #[derive(Debug, serde::Deserialize, serde::Serialize)]
@@ -406,15 +407,15 @@ mod tests {
         decision: EscalationDecision,
     }
 
-    #[async_trait::async_trait]
     impl EscalationPolicy for DeterministicEscalationPolicy {
-        async fn determine_action(
+        fn determine_action(
             &self,
             _file: &AbsolutePathBuf,
             _argv: &[String],
             _workdir: &AbsolutePathBuf,
-        ) -> anyhow::Result<EscalationDecision> {
-            Ok(self.decision.clone())
+        ) -> Pin<Box<dyn Future<Output = anyhow::Result<EscalationDecision>> + Send + '_>> {
+            let decision = self.decision.clone();
+            Box::pin(async move { Ok(decision) })
         }
     }
 
@@ -423,50 +424,61 @@ mod tests {
         expected_workdir: AbsolutePathBuf,
     }
 
-    #[async_trait::async_trait]
     impl EscalationPolicy for AssertingEscalationPolicy {
-        async fn determine_action(
+        fn determine_action(
             &self,
             file: &AbsolutePathBuf,
             _argv: &[String],
             workdir: &AbsolutePathBuf,
-        ) -> anyhow::Result<EscalationDecision> {
-            assert_eq!(file, &self.expected_file);
-            assert_eq!(workdir, &self.expected_workdir);
-            Ok(EscalationDecision::run())
+        ) -> Pin<Box<dyn Future<Output = anyhow::Result<EscalationDecision>> + Send + '_>> {
+            let expected_file = self.expected_file.clone();
+            let expected_workdir = self.expected_workdir.clone();
+            let file = file.clone();
+            let workdir = workdir.clone();
+            Box::pin(async move {
+                assert_eq!(file, expected_file);
+                assert_eq!(workdir, expected_workdir);
+                Ok(EscalationDecision::run())
+            })
         }
     }
 
     struct ForwardingShellCommandExecutor;
 
-    #[async_trait::async_trait]
     impl ShellCommandExecutor for ForwardingShellCommandExecutor {
-        async fn run(
+        fn run(
             &self,
             _command: Vec<String>,
             _cwd: PathBuf,
             _env_overlay: HashMap<String, String>,
             _cancel_rx: CancellationToken,
             _after_spawn: Option<Box<dyn FnOnce() + Send>>,
-        ) -> anyhow::Result<ExecResult> {
-            unreachable!("run() is not used by handle_escalate_session_with_policy() tests")
+        ) -> Pin<Box<dyn Future<Output = anyhow::Result<ExecResult>> + Send + '_>> {
+            Box::pin(async {
+                unreachable!("run() is not used by handle_escalate_session_with_policy() tests")
+            })
         }
 
-        async fn prepare_escalated_exec(
+        fn prepare_escalated_exec(
             &self,
             program: &AbsolutePathBuf,
             argv: &[String],
             workdir: &AbsolutePathBuf,
             env: HashMap<String, String>,
             _execution: EscalationExecution,
-        ) -> anyhow::Result<PreparedExec> {
-            Ok(PreparedExec {
-                command: std::iter::once(program.to_string_lossy().to_string())
-                    .chain(argv.iter().skip(1).cloned())
-                    .collect(),
-                cwd: workdir.to_path_buf(),
-                env,
-                arg0: argv.first().cloned(),
+        ) -> Pin<Box<dyn Future<Output = anyhow::Result<PreparedExec>> + Send + '_>> {
+            let command = std::iter::once(program.to_string_lossy().to_string())
+                .chain(argv.iter().skip(1).cloned())
+                .collect();
+            let cwd = workdir.to_path_buf();
+            let arg0 = argv.first().cloned();
+            Box::pin(async move {
+                Ok(PreparedExec {
+                    command,
+                    cwd,
+                    env,
+                    arg0,
+                })
             })
         }
     }
@@ -475,38 +487,45 @@ mod tests {
         expected_permissions: EscalationPermissions,
     }
 
-    #[async_trait::async_trait]
     impl ShellCommandExecutor for PermissionAssertingShellCommandExecutor {
-        async fn run(
+        fn run(
             &self,
             _command: Vec<String>,
             _cwd: PathBuf,
             _env_overlay: HashMap<String, String>,
             _cancel_rx: CancellationToken,
             _after_spawn: Option<Box<dyn FnOnce() + Send>>,
-        ) -> anyhow::Result<ExecResult> {
-            unreachable!("run() is not used by handle_escalate_session_with_policy() tests")
+        ) -> Pin<Box<dyn Future<Output = anyhow::Result<ExecResult>> + Send + '_>> {
+            Box::pin(async {
+                unreachable!("run() is not used by handle_escalate_session_with_policy() tests")
+            })
         }
 
-        async fn prepare_escalated_exec(
+        fn prepare_escalated_exec(
             &self,
             program: &AbsolutePathBuf,
             argv: &[String],
             workdir: &AbsolutePathBuf,
             env: HashMap<String, String>,
             execution: EscalationExecution,
-        ) -> anyhow::Result<PreparedExec> {
-            assert_eq!(
-                execution,
-                EscalationExecution::Permissions(self.expected_permissions.clone())
-            );
-            Ok(PreparedExec {
-                command: std::iter::once(program.to_string_lossy().to_string())
-                    .chain(argv.iter().skip(1).cloned())
-                    .collect(),
-                cwd: workdir.to_path_buf(),
-                env,
-                arg0: argv.first().cloned(),
+        ) -> Pin<Box<dyn Future<Output = anyhow::Result<PreparedExec>> + Send + '_>> {
+            let expected_permissions = self.expected_permissions.clone();
+            let command = std::iter::once(program.to_string_lossy().to_string())
+                .chain(argv.iter().skip(1).cloned())
+                .collect();
+            let cwd = workdir.to_path_buf();
+            let arg0 = argv.first().cloned();
+            Box::pin(async move {
+                assert_eq!(
+                    execution,
+                    EscalationExecution::Permissions(expected_permissions)
+                );
+                Ok(PreparedExec {
+                    command,
+                    cwd,
+                    env,
+                    arg0,
+                })
             })
         }
     }
@@ -539,42 +558,43 @@ mod tests {
         after_spawn_invoked: Arc<AtomicBool>,
     }
 
-    #[async_trait::async_trait]
     impl ShellCommandExecutor for AfterSpawnAssertingShellCommandExecutor {
-        async fn run(
+        fn run(
             &self,
             _command: Vec<String>,
             _cwd: PathBuf,
             env_overlay: HashMap<String, String>,
             _cancel_rx: CancellationToken,
             after_spawn: Option<Box<dyn FnOnce() + Send>>,
-        ) -> anyhow::Result<ExecResult> {
-            let socket_fd = env_overlay
-                .get(ESCALATE_SOCKET_ENV_VAR)
-                .expect("session should export shell escalation socket")
-                .parse::<i32>()?;
-            assert_ne!(unsafe { libc::fcntl(socket_fd, libc::F_GETFD) }, -1);
-            after_spawn.expect("one-shot exec should install an after-spawn hook")();
-            self.after_spawn_invoked.store(true, Ordering::Relaxed);
-            Ok(ExecResult {
-                exit_code: 0,
-                stdout: String::new(),
-                stderr: String::new(),
-                output: String::new(),
-                duration: Duration::ZERO,
-                timed_out: false,
+        ) -> Pin<Box<dyn Future<Output = anyhow::Result<ExecResult>> + Send + '_>> {
+            Box::pin(async move {
+                let socket_fd = env_overlay
+                    .get(ESCALATE_SOCKET_ENV_VAR)
+                    .expect("session should export shell escalation socket")
+                    .parse::<i32>()?;
+                assert_ne!(unsafe { libc::fcntl(socket_fd, libc::F_GETFD) }, -1);
+                after_spawn.expect("one-shot exec should install an after-spawn hook")();
+                self.after_spawn_invoked.store(true, Ordering::Relaxed);
+                Ok(ExecResult {
+                    exit_code: 0,
+                    stdout: String::new(),
+                    stderr: String::new(),
+                    output: String::new(),
+                    duration: Duration::ZERO,
+                    timed_out: false,
+                })
             })
         }
 
-        async fn prepare_escalated_exec(
+        fn prepare_escalated_exec(
             &self,
             _program: &AbsolutePathBuf,
             _argv: &[String],
             _workdir: &AbsolutePathBuf,
             _env: HashMap<String, String>,
             _execution: EscalationExecution,
-        ) -> anyhow::Result<PreparedExec> {
-            unreachable!("prepare_escalated_exec() is not used by exec() tests")
+        ) -> Pin<Box<dyn Future<Output = anyhow::Result<PreparedExec>> + Send + '_>> {
+            Box::pin(async { unreachable!("prepare_escalated_exec() is not used by exec() tests") })
         }
     }
 

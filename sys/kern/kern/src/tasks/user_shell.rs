@@ -1,7 +1,8 @@
+use std::future::Future;
+use std::pin::Pin;
 use std::sync::Arc;
 use std::time::Duration;
 
-use async_trait::async_trait;
 use chaos_epoll::CancelErr;
 use chaos_epoll::OrCancelExt;
 use chaos_ipc::user_input::UserInput;
@@ -62,7 +63,6 @@ impl UserShellCommandTask {
     }
 }
 
-#[async_trait]
 impl SessionTask for UserShellCommandTask {
     fn kind(&self) -> TaskKind {
         TaskKind::Regular
@@ -72,22 +72,24 @@ impl SessionTask for UserShellCommandTask {
         "session_task.user_shell"
     }
 
-    async fn run(
+    fn run(
         self: Arc<Self>,
         session: Arc<SessionTaskContext>,
         turn_context: Arc<TurnContext>,
         _input: Vec<UserInput>,
         cancellation_token: CancellationToken,
-    ) -> Option<String> {
-        execute_user_shell_command(
-            session.clone_session(),
-            turn_context,
-            self.command.clone(),
-            cancellation_token,
-            UserShellCommandMode::StandaloneTurn,
-        )
-        .await;
-        None
+    ) -> Pin<Box<dyn Future<Output = Option<String>> + Send>> {
+        Box::pin(async move {
+            execute_user_shell_command(
+                session.clone_session(),
+                turn_context,
+                self.command.clone(),
+                cancellation_token,
+                UserShellCommandMode::StandaloneTurn,
+            )
+            .await;
+            None
+        })
     }
 }
 

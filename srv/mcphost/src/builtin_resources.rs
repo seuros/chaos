@@ -3,7 +3,6 @@
 use std::future::Future;
 use std::pin::Pin;
 
-use async_trait::async_trait;
 use chaos_ipc::ProcessId;
 use chaos_kern::builtin_mcp_resources;
 use mcp_host::prelude::*;
@@ -25,7 +24,6 @@ struct McpHostBuiltinResourceBackend<'a> {
     server: &'a ChaosMcpServer,
 }
 
-#[async_trait]
 impl builtin_mcp_resources::ChaosBuiltinResourceBackend for McpHostBuiltinResourceBackend<'_> {
     async fn sessions_json(&self) -> Result<String, String> {
         if let Some(state_runtime) = self.server.state_runtime.as_ref() {

@@ -58,7 +58,6 @@ chaos-wchar = { workspace = true }
 chaos-lex = { workspace = true }
 csv = { workspace = true }
 dirs = { workspace = true }
-dunce = { workspace = true }
 encoding_rs = { workspace = true }
 env-flags = { workspace = true }
 eventsource-stream = { workspace = true }
@@ -146,7 +145,6 @@ chaos-which = { workspace = true }
 core_test_support = { workspace = true }
 ctor = { workspace = true }
 insta = { workspace = true }
-maplit = { workspace = true }
 opentelemetry = { workspace = true }
 predicates = { workspace = true }
 pretty_assertions = { workspace = true }

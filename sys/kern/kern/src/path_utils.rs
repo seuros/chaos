@@ -23,7 +23,7 @@ fn normalize_for_wsl(path: PathBuf) -> PathBuf {
 
 fn normalize_for_native_workdir_with_flag(path: PathBuf, is_windows: bool) -> PathBuf {
     if is_windows {
-        dunce::simplified(&path).to_path_buf()
+        path.to_path_buf()
     } else {
         path
     }

@@ -229,9 +229,9 @@ async fn project_root_markers_are_honored_for_agents_discovery() {
 
     let discovery = discover_project_doc_paths(&cfg).expect("discover paths");
     let expected_parent =
-        dunce::canonicalize(root.path().join("AGENTS.md")).expect("canonical parent doc path");
+        std::fs::canonicalize(root.path().join("AGENTS.md")).expect("canonical parent doc path");
     let expected_child =
-        dunce::canonicalize(cfg.cwd.join("AGENTS.md")).expect("canonical child doc path");
+        std::fs::canonicalize(cfg.cwd.join("AGENTS.md")).expect("canonical child doc path");
     assert_eq!(discovery.len(), 2);
     assert_eq!(discovery[0], expected_parent);
     assert_eq!(discovery[1], expected_child);

@@ -16,7 +16,7 @@ use chaos_realpath::AbsolutePathBuf;
 use chaos_realpath::AbsolutePathBufGuard;
 use chaos_sysctl::CONFIG_TOML_FILE;
 use chaos_sysctl::ConfigRequirementsWithSources;
-use dunce::canonicalize as normalize_path;
+use std::fs::canonicalize as normalize_path;
 use serde::Deserialize;
 use std::io;
 use std::path::Path;

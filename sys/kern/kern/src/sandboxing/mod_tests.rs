@@ -31,7 +31,7 @@ use chaos_ipc::permissions::FileSystemSandboxPolicy;
 use chaos_ipc::permissions::FileSystemSpecialPath;
 use chaos_ipc::permissions::NetworkSandboxPolicy;
 use chaos_realpath::AbsolutePathBuf;
-use dunce::canonicalize;
+use std::fs::canonicalize;
 use pretty_assertions::assert_eq;
 use std::collections::HashMap;
 use tempfile::TempDir;

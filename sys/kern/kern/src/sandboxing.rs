@@ -37,7 +37,7 @@ use chaos_ipc::protocol::NetworkAccess;
 use chaos_ipc::protocol::ReadOnlyAccess;
 use chaos_pf::NetworkProxy;
 use chaos_realpath::AbsolutePathBuf;
-use dunce::canonicalize;
+use std::fs::canonicalize;
 use std::collections::HashMap;
 use std::collections::HashSet;
 use std::path::Path;

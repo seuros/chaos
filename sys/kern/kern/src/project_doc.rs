@@ -22,7 +22,7 @@ use crate::config_loader::merge_toml_values;
 use crate::config_loader::project_root_markers_from_config;
 use crate::features::Feature;
 use chaos_ipc::api::ConfigLayerSource;
-use dunce::canonicalize as normalize_path;
+use std::fs::canonicalize as normalize_path;
 use std::path::PathBuf;
 use tokio::io::AsyncReadExt;
 use toml::Value as TomlValue;

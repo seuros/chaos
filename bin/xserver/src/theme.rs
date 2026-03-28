@@ -35,16 +35,16 @@ pub struct Palette {
 
 /// Default Chaos green phosphor palette.
 pub const PHOSPHOR: Palette = Palette {
-    bg: Color::Rgb(10, 15, 10),
-    fg: Color::Rgb(51, 255, 51),
-    dim: Color::Rgb(26, 138, 26),
-    highlight: Color::Rgb(85, 255, 85),
-    user_msg_bg: Color::Rgb(15, 30, 15),
-    border: Color::Rgb(13, 94, 13),
-    warning: Color::Rgb(255, 183, 51),
-    error: Color::Rgb(255, 51, 51),
-    success: Color::Rgb(51, 255, 51),
-    accent: Color::Rgb(51, 255, 51),
+    bg: Color::Black,
+    fg: Color::LightGreen,
+    dim: Color::Green,
+    highlight: Color::LightGreen,
+    user_msg_bg: Color::DarkGray,
+    border: Color::Green,
+    warning: Color::Yellow,
+    error: Color::LightRed,
+    success: Color::LightGreen,
+    accent: Color::LightGreen,
 };
 
 /// Active palette. Change this to swap the entire theme.
@@ -137,15 +137,15 @@ pub fn yellow() -> Color {
 /// Diff addition line style — green on dark green background.
 pub fn diff_add() -> Style {
     Style::default()
-        .fg(palette().success)
-        .bg(Color::Rgb(10, 30, 10))
+        .fg(Color::Black)
+        .bg(palette().success)
 }
 
 /// Diff deletion line style — red on dark red background.
 pub fn diff_del() -> Style {
     Style::default()
-        .fg(palette().error)
-        .bg(Color::Rgb(30, 10, 10))
+        .fg(Color::Black)
+        .bg(palette().error)
 }
 
 /// Diff context / unchanged line style.
@@ -168,7 +168,7 @@ pub fn status_bar() -> Style {
 /// Scanline effect — alternating row dimming for CRT feel.
 /// Apply to even-numbered rows for the phosphor scanline look.
 pub fn scanline(row: u16) -> Style {
-    if row % 2 == 0 {
+    if row.is_multiple_of(2) {
         Style::default()
     } else {
         Style::default().add_modifier(Modifier::DIM)

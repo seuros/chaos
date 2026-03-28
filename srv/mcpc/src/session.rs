@@ -115,7 +115,7 @@ impl McpSession {
                     .command_tx
                     .send(RuntimeCommand::Cancel {
                         request_id,
-                        reason: Some(format!("request timed out after {:?}", timeout)),
+                        reason: Some(format!("request timed out after {timeout:?}")),
                     })
                     .await;
                 Err(GuestError::Timeout(timeout))

@@ -145,7 +145,7 @@ impl ToolHandler for ToolSuggestHandler {
                 ))
             })?;
 
-        let request_id = RequestId::String(format!("tool_suggestion_{call_id}").into());
+        let request_id = RequestId::String(format!("tool_suggestion_{call_id}"));
         let params = build_tool_suggestion_elicitation_request(
             session.conversation_id.to_string(),
             turn.sub_id.clone(),

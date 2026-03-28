@@ -191,7 +191,7 @@ impl CodexResponse {
             .into_body()
             .collect()
             .await
-            .map(|c| c.to_bytes())
+            .map(rama::http::body::util::Collected::to_bytes)
             .map_err(|e| CodexClientError::Body(e.to_string()))
     }
 

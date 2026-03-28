@@ -39,7 +39,7 @@ async fn emits_warning_when_unstable_features_enabled_via_config() {
         chaos_kern::test_support::auth_manager_from_auth(CodexAuth::from_api_key("test"));
 
     let NewProcess {
-        thread: conversation,
+        process: conversation,
         ..
     } = process_table
         .resume_process_with_history(config, InitialHistory::New, auth_manager, false, None)
@@ -80,7 +80,7 @@ async fn suppresses_warning_when_configured() {
         chaos_kern::test_support::auth_manager_from_auth(CodexAuth::from_api_key("test"));
 
     let NewProcess {
-        thread: conversation,
+        process: conversation,
         ..
     } = process_table
         .resume_process_with_history(config, InitialHistory::New, auth_manager, false, None)

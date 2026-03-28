@@ -56,7 +56,7 @@ impl SessionTask for ReviewTask {
         cancellation_token: CancellationToken,
     ) -> Pin<Box<dyn Future<Output = Option<String>> + Send>> {
         Box::pin(async move {
-            let _ = session.session.services.session_telemetry.counter(
+            session.session.services.session_telemetry.counter(
                 "codex.task.review",
                 /*inc*/ 1,
                 &[],

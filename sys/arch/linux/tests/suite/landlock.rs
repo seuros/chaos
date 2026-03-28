@@ -120,6 +120,8 @@ async fn run_cmd_result_with_policies(
     };
     let sandbox_program = env!("CARGO_BIN_EXE_alcatraz-linux");
     let alcatraz_linux_exe = Some(PathBuf::from(sandbox_program));
+    let alcatraz_macos_exe: Option<PathBuf> = None;
+    let alcatraz_freebsd_exe: Option<PathBuf> = None;
 
     process_exec_tool_call(
         params,
@@ -127,7 +129,9 @@ async fn run_cmd_result_with_policies(
         &file_system_sandbox_policy,
         network_sandbox_policy,
         sandbox_cwd.as_path(),
+        &alcatraz_macos_exe,
         &alcatraz_linux_exe,
+        &alcatraz_freebsd_exe,
         None,
     )
     .await
@@ -348,13 +352,17 @@ async fn assert_network_blocked(cmd: &[&str]) {
     let sandbox_policy = SandboxPolicy::new_read_only_policy();
     let sandbox_program = env!("CARGO_BIN_EXE_alcatraz-linux");
     let alcatraz_linux_exe: Option<PathBuf> = Some(PathBuf::from(sandbox_program));
+    let alcatraz_macos_exe: Option<PathBuf> = None;
+    let alcatraz_freebsd_exe: Option<PathBuf> = None;
     let result = process_exec_tool_call(
         params,
         &sandbox_policy,
         &FileSystemSandboxPolicy::from(&sandbox_policy),
         NetworkSandboxPolicy::from(&sandbox_policy),
         sandbox_cwd.as_path(),
+        &alcatraz_macos_exe,
         &alcatraz_linux_exe,
+        &alcatraz_freebsd_exe,
         None,
     )
     .await;

@@ -55,6 +55,8 @@ use crate::tools::handlers::UnifiedExecHandler;
 use crate::tools::registry::ToolHandler;
 use crate::tools::router::ToolCallSource;
 use crate::turn_diff_tracker::TurnDiffTracker;
+use std::future::Future;
+use std::pin::Pin;
 use chaos_ipc::api::AppInfo;
 use chaos_ipc::models::BaseInstructions;
 use chaos_ipc::models::ContentItem;
@@ -2746,19 +2748,21 @@ async fn spawn_task_turn_span_inherits_dispatch_trace_context() {
             "session_task.trace_capture"
         }
 
-        async fn run(
+        fn run(
             self: Arc<Self>,
             _session: Arc<SessionTaskContext>,
             _ctx: Arc<TurnContext>,
             _input: Vec<UserInput>,
             _cancellation_token: CancellationToken,
-        ) -> Option<String> {
-            let mut trace = self
-                .captured_trace
-                .lock()
-                .unwrap_or_else(std::sync::PoisonError::into_inner);
-            *trace = current_span_w3c_trace_context();
-            None
+        ) -> Pin<Box<dyn Future<Output = Option<String>> + Send>> {
+            Box::pin(async move {
+                let mut trace = self
+                    .captured_trace
+                    .lock()
+                    .unwrap_or_else(std::sync::PoisonError::into_inner);
+                *trace = current_span_w3c_trace_context();
+                None
+            })
         }
     }
 
@@ -3777,20 +3781,22 @@ impl SessionTask for NeverEndingTask {
         "session_task.never_ending"
     }
 
-    async fn run(
+    fn run(
         self: Arc<Self>,
         _session: Arc<SessionTaskContext>,
         _ctx: Arc<TurnContext>,
         _input: Vec<UserInput>,
         cancellation_token: CancellationToken,
-    ) -> Option<String> {
-        if self.listen_to_cancellation_token {
-            cancellation_token.cancelled().await;
-            return None;
-        }
-        loop {
-            sleep(Duration::from_secs(60)).await;
-        }
+    ) -> Pin<Box<dyn Future<Output = Option<String>> + Send>> {
+        Box::pin(async move {
+            if self.listen_to_cancellation_token {
+                cancellation_token.cancelled().await;
+                return None;
+            }
+            loop {
+                sleep(Duration::from_secs(60)).await;
+            }
+        })
     }
 }
 

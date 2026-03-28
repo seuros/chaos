@@ -32,7 +32,7 @@ fn collect_lua_files(dir: &Path, out: &mut Vec<PathBuf>) {
     };
 
     let mut lua_files: Vec<PathBuf> = entries
-        .filter_map(|e| e.ok())
+        .filter_map(Result::ok)
         .map(|e| e.path())
         .filter(|p| p.extension().is_some_and(|ext| ext == "lua"))
         .filter(|p| p.is_file())

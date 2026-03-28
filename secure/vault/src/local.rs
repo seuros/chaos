@@ -313,7 +313,7 @@ fn parse_canonical_key(canonical_key: &str) -> Option<SecretListEntry> {
 mod tests {
     use super::*;
     use chaos_keyring::tests::MockKeyringStore;
-    use keyring::Error as KeyringError;
+    use keyring_core::Error as KeyringError;
     use pretty_assertions::assert_eq;
 
     #[test]

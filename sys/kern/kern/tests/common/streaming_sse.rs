@@ -593,7 +593,7 @@ data: {"type":"response.completed","response":{"id":"resp-1"}}
 
         let client = codex_client::CodexHttpClient::default_client();
         let resp = client
-            .post(url)
+            .post(&url)
             .json(&payload)
             .send()
             .await

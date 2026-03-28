@@ -958,10 +958,10 @@ impl UnauthorizedRecovery {
             return "not_chatgpt_auth";
         }
 
-        if let RecoveryMachine::External(_) = &self.machine {
-            if !self.manager.has_external_auth_refresher() {
-                return "no_external_refresher";
-            }
+        if let RecoveryMachine::External(_) = &self.machine
+            && !self.manager.has_external_auth_refresher()
+        {
+            return "no_external_refresher";
         }
 
         let is_done = match &self.machine {

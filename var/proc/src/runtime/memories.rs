@@ -157,11 +157,11 @@ WHERE process_id = ?
         let current_process_id = worker_id.to_string();
         let max_age_cutoff = jiff::Timestamp::now()
             .checked_sub(max_age_days.max(0).days())
-            .expect("age cutoff")
+            .unwrap_or(jiff::Timestamp::UNIX_EPOCH)
             .as_second();
         let idle_cutoff = jiff::Timestamp::now()
             .checked_sub(min_rollout_idle_hours.max(0).hours())
-            .expect("idle cutoff")
+            .unwrap_or(jiff::Timestamp::UNIX_EPOCH)
             .as_second();
 
         let mut builder = QueryBuilder::<Sqlite>::new(
@@ -319,7 +319,7 @@ LIMIT ?
 
         let cutoff = jiff::Timestamp::now()
             .checked_sub(max_unused_days.max(0).days())
-            .expect("unused cutoff")
+            .unwrap_or(jiff::Timestamp::UNIX_EPOCH)
             .as_second();
         let rows_affected = sqlx::query(
             r#"
@@ -376,7 +376,7 @@ WHERE process_id IN (
         }
         let cutoff = jiff::Timestamp::now()
             .checked_sub(max_unused_days.max(0).days())
-            .expect("unused cutoff")
+            .unwrap_or(jiff::Timestamp::UNIX_EPOCH)
             .as_second();
 
         let current_rows = sqlx::query(
@@ -3858,7 +3858,7 @@ VALUES (?, ?, ?, ?, ?)
                 "UPDATE stage1_outputs SET usage_count = ?, last_usage = ? WHERE process_id = ?",
             )
             .bind(usage_count)
-            .bind(last_usage.map(|value| value.as_second()))
+            .bind(last_usage.map(jiff::Timestamp::as_second))
             .bind(process_id.to_string())
             .execute(runtime.pool.as_ref())
             .await

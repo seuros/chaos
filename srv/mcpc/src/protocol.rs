@@ -1086,10 +1086,9 @@ where
         if value
             .as_object()
             .is_some_and(|object| object.contains_key("task"))
+            && let Ok(task) = serde_json::from_value::<CreateTaskResult>(value.clone())
         {
-            if let Ok(task) = serde_json::from_value::<CreateTaskResult>(value.clone()) {
-                return Ok(Self::Task(task));
-            }
+            return Ok(Self::Task(task));
         }
 
         serde_json::from_value::<T>(value.clone())

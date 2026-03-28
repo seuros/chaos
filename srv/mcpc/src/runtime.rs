@@ -211,10 +211,10 @@ async fn handle_runtime_command(
         } => {
             pending_outgoing.insert(request_id.clone(), response_tx);
             let request = JsonRpcRequest::new(request_id.to_value(), method, params);
-            if let Err(error) = transport.send(JsonRpcMessage::Request(request)).await {
-                if let Some(response_tx) = pending_outgoing.remove(&request_id) {
-                    let _ = response_tx.send(Err(error));
-                }
+            if let Err(error) = transport.send(JsonRpcMessage::Request(request)).await
+                && let Some(response_tx) = pending_outgoing.remove(&request_id)
+            {
+                let _ = response_tx.send(Err(error));
             }
             false
         }
@@ -280,10 +280,10 @@ async fn dispatch_preinit_notification(
 ) {
     match McpMethod::from(notification.method.as_str()) {
         McpMethod::NotificationsMessage => {
-            if let Some(params) = notification.params {
-                if let Ok(params) = serde_json::from_value::<LogMessageNotificationParams>(params) {
-                    handler.on_log_message(params).await;
-                }
+            if let Some(params) = notification.params
+                && let Ok(params) = serde_json::from_value::<LogMessageNotificationParams>(params)
+            {
+                handler.on_log_message(params).await;
             }
         }
         _ => {
@@ -478,7 +478,7 @@ fn guest_error_to_jsonrpc(error: GuestError) -> JsonRpcError {
         }
         GuestError::Cancelled => JsonRpcError::new(-32000, "request cancelled"),
         GuestError::Timeout(duration) => {
-            JsonRpcError::new(-32000, format!("request timed out after {:?}", duration))
+            JsonRpcError::new(-32000, format!("request timed out after {duration:?}"))
         }
         GuestError::VersionMismatch { sent, server } => JsonRpcError::new(
             -32000,

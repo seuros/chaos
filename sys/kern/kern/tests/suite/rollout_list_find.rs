@@ -15,7 +15,7 @@ use chaos_kern::find_process_path_by_id_str;
 use chaos_kern::find_process_path_by_name_str;
 use chaos_proc::ProcessMetadataBuilder;
 use chaos_proc::StateRuntime;
-use chrono::Utc;
+use jiff::Timestamp;
 use pretty_assertions::assert_eq;
 use tempfile::TempDir;
 use uuid::Uuid;
@@ -64,7 +64,7 @@ async fn upsert_process_metadata(codex_home: &Path, process_id: ProcessId, rollo
     let mut builder = ProcessMetadataBuilder::new(
         process_id,
         rollout_path,
-        Utc::now(),
+        Timestamp::now(),
         SessionSource::default(),
     );
     builder.cwd = codex_home.to_path_buf();

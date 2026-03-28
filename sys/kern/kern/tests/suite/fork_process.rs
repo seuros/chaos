@@ -107,7 +107,7 @@ async fn fork_process_twice_drops_to_first_message() {
 
     // Fork once with n=1 → drops the last user input and everything after.
     let NewProcess {
-        thread: codex_fork1,
+        process: codex_fork1,
         ..
     } = process_table
         .fork_process(1, config_for_fork.clone(), base_path.clone(), false, None)
@@ -126,7 +126,7 @@ async fn fork_process_twice_drops_to_first_message() {
 
     // Fork again with n=0 → drops the (new) last user message, leaving only the first.
     let NewProcess {
-        thread: codex_fork2,
+        process: codex_fork2,
         ..
     } = process_table
         .fork_process(0, config_for_fork.clone(), fork1_path.clone(), false, None)

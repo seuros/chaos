@@ -172,6 +172,16 @@ pub struct StdoutStream {
     pub tx_event: Sender<Event>,
 }
 
+pub struct ExecSandboxContext<'a> {
+    pub sandbox_policy: &'a SandboxPolicy,
+    pub file_system_sandbox_policy: &'a FileSystemSandboxPolicy,
+    pub network_sandbox_policy: NetworkSandboxPolicy,
+    pub sandbox_cwd: &'a Path,
+    pub alcatraz_macos_exe: &'a Option<PathBuf>,
+    pub alcatraz_linux_exe: &'a Option<PathBuf>,
+    pub alcatraz_freebsd_exe: &'a Option<PathBuf>,
+}
+
 #[allow(clippy::too_many_arguments)]
 pub async fn process_exec_tool_call(
     params: ExecParams,
@@ -186,13 +196,15 @@ pub async fn process_exec_tool_call(
 ) -> Result<ExecToolCallOutput> {
     let exec_req = build_exec_request(
         params,
-        sandbox_policy,
-        file_system_sandbox_policy,
-        network_sandbox_policy,
-        sandbox_cwd,
-        alcatraz_macos_exe,
-        alcatraz_linux_exe,
-        alcatraz_freebsd_exe,
+        ExecSandboxContext {
+            sandbox_policy,
+            file_system_sandbox_policy,
+            network_sandbox_policy,
+            sandbox_cwd,
+            alcatraz_macos_exe,
+            alcatraz_linux_exe,
+            alcatraz_freebsd_exe,
+        },
     )?;
 
     // Route through the sandboxing module for a single, unified execution path.
@@ -201,16 +213,17 @@ pub async fn process_exec_tool_call(
 
 /// Transform a portable exec request into the concrete argv/env that should be
 /// spawned under the requested sandbox policy.
-pub fn build_exec_request(
-    params: ExecParams,
-    sandbox_policy: &SandboxPolicy,
-    file_system_sandbox_policy: &FileSystemSandboxPolicy,
-    network_sandbox_policy: NetworkSandboxPolicy,
-    sandbox_cwd: &Path,
-    alcatraz_macos_exe: &Option<PathBuf>,
-    alcatraz_linux_exe: &Option<PathBuf>,
-    alcatraz_freebsd_exe: &Option<PathBuf>,
-) -> Result<ExecRequest> {
+pub fn build_exec_request(params: ExecParams, sandbox: ExecSandboxContext<'_>) -> Result<ExecRequest> {
+    let ExecSandboxContext {
+        sandbox_policy,
+        file_system_sandbox_policy,
+        network_sandbox_policy,
+        sandbox_cwd,
+        alcatraz_macos_exe,
+        alcatraz_linux_exe,
+        alcatraz_freebsd_exe,
+    } = sandbox;
+
     let enforce_managed_network = params.network.is_some();
     let sandbox_type = select_process_exec_tool_sandbox_type(
         file_system_sandbox_policy,
@@ -386,6 +399,7 @@ pub(crate) mod errors {
     impl From<SandboxTransformError> for CodexErr {
         fn from(err: SandboxTransformError) -> Self {
             match err {
+                #[cfg(target_os = "macos")]
                 SandboxTransformError::MissingMacOSSandboxExecutable => {
                     CodexErr::UnsupportedOperation(
                         "alcatraz-macos executable not found".to_string(),

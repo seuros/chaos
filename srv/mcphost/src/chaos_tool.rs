@@ -224,17 +224,17 @@ impl ChaosMcpServer {
 
         let progress_token = ctx.progress_token().map(String::from);
 
-        let outcome = chaos_runner::run_chaos_session(
+        let outcome = chaos_runner::run_chaos_session(chaos_runner::RunChaosSessionArgs {
             request_id,
             prompt,
             config,
             existing_process_id,
-            self.outgoing.clone(),
-            self.process_table.clone(),
-            self.running_requests.clone(),
-            self.process_names.clone(),
+            outgoing: self.outgoing.clone(),
+            process_table: self.process_table.clone(),
+            running_requests: self.running_requests.clone(),
+            process_names: self.process_names.clone(),
             progress_token,
-        )
+        })
         .await;
 
         // Track the process for auto-resume on next call from this session.
@@ -260,7 +260,13 @@ impl ChaosMcpServer {
 
 fn chaos_input_schema() -> serde_json::Value {
     let schema = schemars::schema_for!(ChaosToolParams);
-    let mut schema_value = serde_json::to_value(&schema).expect("schema serializes");
+    let mut schema_value = match serde_json::to_value(&schema) {
+        Ok(value) => value,
+        Err(error) => {
+            tracing::warn!(error = %error, "failed to serialize chaos tool schema");
+            return json!({ "type": "object" });
+        }
+    };
 
     // Extract only the keys MCP needs.
     if let serde_json::Value::Object(ref mut obj) = schema_value {

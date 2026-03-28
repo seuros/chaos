@@ -6916,7 +6916,7 @@ async fn feedback_upload_consent_popup_snapshot() {
         chat.app_event_tx.clone(),
         crate::app_event::FeedbackCategory::Bug,
         chat.current_rollout_path.clone(),
-        &crate::bottom_pane::FeedbackDiagnostics::default(),
+        &crate::bottom_pane::FeedbackDiagnostics,
     ));
 
     let popup = render_bottom_popup(&chat, 80);
@@ -6931,7 +6931,7 @@ async fn feedback_good_result_consent_popup_includes_connectivity_diagnostics_fi
         chat.app_event_tx.clone(),
         crate::app_event::FeedbackCategory::GoodResult,
         chat.current_rollout_path.clone(),
-        &crate::bottom_pane::FeedbackDiagnostics::default(),
+        &crate::bottom_pane::FeedbackDiagnostics,
     ));
 
     let popup = render_bottom_popup(&chat, 80);

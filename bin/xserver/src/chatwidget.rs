@@ -1524,7 +1524,7 @@ impl ChatWidget {
             self.app_event_tx.clone(),
             category,
             self.current_rollout_path.clone(),
-            &crate::bottom_pane::FeedbackDiagnostics::default(),
+            &crate::bottom_pane::FeedbackDiagnostics,
         );
         self.bottom_pane.show_selection_view(params);
         self.request_redraw();

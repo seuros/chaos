@@ -4,8 +4,6 @@ use chaos_ipc::protocol::EventMsg;
 use chaos_ipc::protocol::Op;
 use chaos_ipc::protocol::SessionSource;
 use chaos_kern::features::Feature;
-use chrono::Duration as ChronoDuration;
-use chrono::Utc;
 use core_test_support::responses::ResponseMock;
 use core_test_support::responses::ResponsesRequest;
 use core_test_support::responses::ev_assistant_message;
@@ -19,6 +17,8 @@ use core_test_support::responses::start_mock_server;
 use core_test_support::test_codex::TestCodex;
 use core_test_support::test_codex::test_codex;
 use core_test_support::wait_for_event;
+use jiff::Timestamp;
+use jiff::ToSpan;
 use pretty_assertions::assert_eq;
 use std::path::Path;
 use std::sync::Arc;
@@ -32,11 +32,11 @@ async fn memories_startup_phase2_tracks_added_and_removed_inputs_across_runs() -
     let home = Arc::new(TempDir::new()?);
     let db = init_state_db(&home).await?;
 
-    let now = Utc::now();
+    let now = Timestamp::now();
     let process_a = seed_stage1_output(
         db.as_ref(),
         home.path(),
-        now - ChronoDuration::hours(2),
+        now.checked_sub(2.hours()).unwrap(),
         "raw memory A",
         "rollout summary A",
         "rollout-a",
@@ -92,7 +92,7 @@ async fn memories_startup_phase2_tracks_added_and_removed_inputs_across_runs() -
     let process_b = seed_stage1_output(
         db.as_ref(),
         home.path(),
-        now - ChronoDuration::hours(1),
+        now.checked_sub(1.hours()).unwrap(),
         "raw memory B",
         "rollout summary B",
         "rollout-b",
@@ -211,7 +211,7 @@ async fn web_search_pollution_moves_selected_thread_into_removed_phase2_inputs()
     seed_stage1_output_for_existing_thread(
         db.as_ref(),
         process_id,
-        updated_at.timestamp(),
+        updated_at.as_second(),
         "raw memory seeded for web search pollution",
         "rollout summary seeded for web search pollution",
         Some("pollution-rollout"),
@@ -347,7 +347,7 @@ async fn init_state_db(home: &Arc<TempDir>) -> Result<Arc<chaos_proc::StateRunti
 async fn seed_stage1_output(
     db: &chaos_proc::StateRuntime,
     codex_home: &Path,
-    updated_at: chrono::DateTime<Utc>,
+    updated_at: Timestamp,
     raw_memory: &str,
     rollout_summary: &str,
     rollout_slug: &str,
@@ -368,7 +368,7 @@ async fn seed_stage1_output(
     seed_stage1_output_for_existing_thread(
         db,
         process_id,
-        updated_at.timestamp(),
+        updated_at.as_second(),
         raw_memory,
         rollout_summary,
         Some(rollout_slug),

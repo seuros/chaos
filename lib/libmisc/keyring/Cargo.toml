@@ -9,15 +9,5 @@ publish.workspace = true
 workspace = true
 
 [dependencies]
-keyring = { workspace = true, features = ["crypto-rust"] }
+keyring-core = { workspace = true }
 tracing = { workspace = true }
-
-[target.'cfg(target_os = "linux")'.dependencies]
-keyring = { workspace = true, features = ["linux-native-async-persistent"] }
-
-[target.'cfg(target_os = "macos")'.dependencies]
-keyring = { workspace = true, features = ["apple-native"] }
-
-
-[target.'cfg(any(target_os = "freebsd", target_os = "openbsd"))'.dependencies]
-keyring = { workspace = true, features = ["sync-secret-service"] }

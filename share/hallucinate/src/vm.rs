@@ -180,7 +180,7 @@ impl HallucinateEngine {
         match func.call::<Value>(lua_args) {
             Ok(result) => {
                 let output = match result {
-                    Value::String(s) => s.to_string_lossy().to_string(),
+                    Value::String(s) => s.to_string_lossy(),
                     other => format!("{other:?}"),
                 };
                 ToolResult {

@@ -185,11 +185,10 @@ async fn resource_templates_are_listed_after_initialize() -> Result<()> {
     let templates = resp.result.as_ref().unwrap()["resourceTemplates"]
         .as_array()
         .expect("resourceTemplates array");
-    let uri_templates: Vec<&str> = templates
+    assert!(templates
         .iter()
         .filter_map(|template| template["uriTemplate"].as_str())
-        .collect();
-    assert!(uri_templates.contains(&"chaos://sessions/{id}"));
+        .any(|uri_template| uri_template == "chaos://sessions/{id}"));
 
     Ok(())
 }

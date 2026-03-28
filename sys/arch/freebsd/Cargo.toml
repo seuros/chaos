@@ -21,6 +21,8 @@ alcatraz-base = { workspace = true }
 clap = { workspace = true, features = ["derive"] }
 chaos-ipc = { workspace = true }
 chaos-realpath = { workspace = true }
+dbus-secret-service-keyring-store = { workspace = true }
+keyring-core = { workspace = true }
 libc = { workspace = true }
 serde = { workspace = true, features = ["derive"] }
 serde_json = { workspace = true }

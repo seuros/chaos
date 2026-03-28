@@ -17,8 +17,8 @@ pub mod context_snapshot;
 pub mod process;
 pub mod responses;
 pub mod streaming_sse;
-pub mod test_codex;
 pub mod test_chaos_fork;
+pub mod test_codex;
 pub mod ws_accept;
 
 #[ctor]
@@ -108,7 +108,18 @@ fn default_test_overrides() -> ConfigOverrides {
     }
 }
 
-#[cfg(not(target_os = "linux"))]
+#[cfg(target_os = "macos")]
+fn default_test_overrides() -> ConfigOverrides {
+    ConfigOverrides {
+        alcatraz_macos_exe: Some(
+            chaos_which::cargo_bin("alcatraz-macos")
+                .expect("should find binary for alcatraz-macos"),
+        ),
+        ..ConfigOverrides::default()
+    }
+}
+
+#[cfg(not(any(target_os = "linux", target_os = "macos")))]
 fn default_test_overrides() -> ConfigOverrides {
     ConfigOverrides::default()
 }
@@ -161,10 +172,7 @@ pub fn load_sse_fixture_with_id_from_str(raw: &str, id: &str) -> String {
         .collect()
 }
 
-pub async fn wait_for_event<F>(
-    codex: &Process,
-    predicate: F,
-) -> chaos_ipc::protocol::EventMsg
+pub async fn wait_for_event<F>(codex: &Process, predicate: F) -> chaos_ipc::protocol::EventMsg
 where
     F: FnMut(&chaos_ipc::protocol::EventMsg) -> bool,
 {

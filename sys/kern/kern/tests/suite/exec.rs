@@ -3,15 +3,15 @@
 use std::collections::HashMap;
 use std::string::ToString;
 
+use chaos_ipc::permissions::FileSystemSandboxPolicy;
+use chaos_ipc::permissions::NetworkSandboxPolicy;
+use chaos_ipc::protocol::SandboxPolicy;
 use chaos_kern::exec::ExecParams;
 use chaos_kern::exec::ExecToolCallOutput;
 use chaos_kern::exec::SandboxType;
 use chaos_kern::exec::process_exec_tool_call;
 use chaos_kern::sandboxing::SandboxPermissions;
 use chaos_kern::spawn::CODEX_SANDBOX_ENV_VAR;
-use chaos_ipc::permissions::FileSystemSandboxPolicy;
-use chaos_ipc::permissions::NetworkSandboxPolicy;
-use chaos_ipc::protocol::SandboxPolicy;
 use tempfile::TempDir;
 
 use chaos_kern::error::Result;
@@ -52,7 +52,8 @@ async fn run_test_cmd(tmp: TempDir, cmd: Vec<&str>) -> Result<ExecToolCallOutput
         NetworkSandboxPolicy::from(&policy),
         tmp.path(),
         &None,
-        false,
+        &None,
+        &None,
         None,
     )
     .await

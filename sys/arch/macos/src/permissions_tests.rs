@@ -1,9 +1,9 @@
-use super::intersect_macos_automation_permission;
-use super::intersect_macos_seatbelt_profile_extensions;
-use super::merge_macos_seatbelt_profile_extensions;
-use super::union_macos_automation_permission;
-use super::union_macos_contacts_permission;
-use super::union_macos_preferences_permission;
+use super::intersect_automation_permission;
+use super::intersect_seatbelt_profile_extensions;
+use super::merge_seatbelt_profile_extensions;
+use super::union_automation_permission;
+use super::union_contacts_permission;
+use super::union_preferences_permission;
 use chaos_ipc::models::MacOsAutomationPermission;
 use chaos_ipc::models::MacOsContactsPermission;
 use chaos_ipc::models::MacOsPreferencesPermission;
@@ -36,8 +36,7 @@ fn merge_extensions_widens_permissions() {
         macos_contacts: MacOsContactsPermission::ReadWrite,
     };
 
-    let merged =
-        merge_macos_seatbelt_profile_extensions(Some(&base), Some(&requested)).expect("merge");
+    let merged = merge_seatbelt_profile_extensions(Some(&base), Some(&requested)).expect("merge");
 
     assert_eq!(
         merged,
@@ -57,34 +56,34 @@ fn merge_extensions_widens_permissions() {
 }
 
 #[test]
-fn union_macos_preferences_permission_does_not_downgrade() {
+fn union_preferences_permission_does_not_downgrade() {
     let base = MacOsPreferencesPermission::ReadWrite;
     let requested = MacOsPreferencesPermission::ReadOnly;
 
-    let merged = union_macos_preferences_permission(&base, &requested);
+    let merged = union_preferences_permission(&base, &requested);
 
     assert_eq!(merged, MacOsPreferencesPermission::ReadWrite);
 }
 
 #[test]
-fn union_macos_automation_permission_all_is_dominant() {
+fn union_automation_permission_all_is_dominant() {
     let base = MacOsAutomationPermission::BundleIds(vec!["com.apple.Notes".to_string()]);
     let requested = MacOsAutomationPermission::All;
 
-    let merged = union_macos_automation_permission(&base, &requested);
+    let merged = union_automation_permission(&base, &requested);
 
     assert_eq!(merged, MacOsAutomationPermission::All);
 }
 
 #[test]
-fn intersect_macos_automation_permission_keeps_common_bundle_ids() {
+fn intersect_automation_permission_keeps_common_bundle_ids() {
     let requested = MacOsAutomationPermission::BundleIds(vec![
         "com.apple.Notes".to_string(),
         "com.apple.Calendar".to_string(),
     ]);
     let granted = MacOsAutomationPermission::BundleIds(vec!["com.apple.Notes".to_string()]);
 
-    let intersected = intersect_macos_automation_permission(&requested, &granted);
+    let intersected = intersect_automation_permission(&requested, &granted);
 
     assert_eq!(
         intersected,
@@ -93,7 +92,7 @@ fn intersect_macos_automation_permission_keeps_common_bundle_ids() {
 }
 
 #[test]
-fn intersect_macos_seatbelt_profile_extensions_preserves_default_grant() {
+fn intersect_seatbelt_profile_extensions_preserves_default_grant() {
     let requested = MacOsSeatbeltProfileExtensions {
         macos_preferences: MacOsPreferencesPermission::ReadWrite,
         macos_automation: MacOsAutomationPermission::BundleIds(vec!["com.apple.Notes".to_string()]),
@@ -105,17 +104,17 @@ fn intersect_macos_seatbelt_profile_extensions_preserves_default_grant() {
     };
     let granted = MacOsSeatbeltProfileExtensions::default();
 
-    let intersected = intersect_macos_seatbelt_profile_extensions(Some(requested), Some(granted));
+    let intersected = intersect_seatbelt_profile_extensions(Some(requested), Some(granted));
 
     assert_eq!(intersected, Some(MacOsSeatbeltProfileExtensions::default()));
 }
 
 #[test]
-fn union_macos_contacts_permission_does_not_downgrade() {
+fn union_contacts_permission_does_not_downgrade() {
     let base = MacOsContactsPermission::ReadWrite;
     let requested = MacOsContactsPermission::ReadOnly;
 
-    let merged = union_macos_contacts_permission(&base, &requested);
+    let merged = union_contacts_permission(&base, &requested);
 
     assert_eq!(merged, MacOsContactsPermission::ReadWrite);
 }

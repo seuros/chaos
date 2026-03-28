@@ -6,8 +6,6 @@ sandbox placement and transformation of portable CommandSpec into a
 ready‑to‑spawn environment.
 */
 
-pub(crate) mod macos_permissions;
-
 use crate::exec::ExecExpiration;
 use crate::exec::ExecToolCallOutput;
 use crate::exec::SandboxType;
@@ -17,14 +15,13 @@ use crate::landlock::allow_network_for_proxy;
 use crate::landlock::create_linux_sandbox_command_args_for_policies;
 use crate::protocol::SandboxPolicy;
 #[cfg(target_os = "macos")]
-use crate::seatbelt::MACOS_PATH_TO_SEATBELT_EXECUTABLE;
-#[cfg(target_os = "macos")]
-use crate::seatbelt::create_seatbelt_command_args_for_policies_with_extensions;
-#[cfg(target_os = "macos")]
 use crate::spawn::CODEX_SANDBOX_ENV_VAR;
 use crate::spawn::CODEX_SANDBOX_NETWORK_DISABLED_ENV_VAR;
 use crate::tools::sandboxing::SandboxablePreference;
-use chaos_pf::NetworkProxy;
+use alcatraz_macos::permissions::intersect_seatbelt_profile_extensions;
+use alcatraz_macos::permissions::merge_seatbelt_profile_extensions;
+#[cfg(target_os = "macos")]
+use alcatraz_macos::seatbelt::create_seatbelt_command_args_for_policies_with_extensions;
 use chaos_ipc::models::FileSystemPermissions;
 use chaos_ipc::models::MacOsSeatbeltProfileExtensions;
 use chaos_ipc::models::NetworkPermissions;
@@ -38,10 +35,9 @@ use chaos_ipc::permissions::FileSystemSandboxPolicy;
 use chaos_ipc::permissions::NetworkSandboxPolicy;
 use chaos_ipc::protocol::NetworkAccess;
 use chaos_ipc::protocol::ReadOnlyAccess;
+use chaos_pf::NetworkProxy;
 use chaos_realpath::AbsolutePathBuf;
 use dunce::canonicalize;
-use macos_permissions::intersect_macos_seatbelt_profile_extensions;
-use macos_permissions::merge_macos_seatbelt_profile_extensions;
 use std::collections::HashMap;
 use std::collections::HashSet;
 use std::path::Path;
@@ -91,6 +87,7 @@ pub(crate) struct SandboxTransformRequest<'a> {
     pub sandbox_policy_cwd: &'a Path,
     #[cfg(target_os = "macos")]
     pub macos_seatbelt_profile_extensions: Option<&'a MacOsSeatbeltProfileExtensions>,
+    pub alcatraz_macos_exe: Option<&'a PathBuf>,
     pub alcatraz_linux_exe: Option<&'a PathBuf>,
     pub alcatraz_freebsd_exe: Option<&'a PathBuf>,
 }
@@ -107,6 +104,8 @@ pub(crate) enum SandboxTransformError {
     MissingLinuxSandboxExecutable,
     #[error("missing alcatraz-freebsd executable path")]
     MissingFreeBSDSandboxExecutable,
+    #[error("missing alcatraz-macos executable path")]
+    MissingMacOSSandboxExecutable,
     #[cfg(not(target_os = "macos"))]
     #[error("seatbelt sandbox is only available on macOS")]
     SeatbeltUnavailable,
@@ -136,7 +135,7 @@ impl EffectiveSandboxPermissions {
                 sandbox_policy,
                 additional_permissions,
             ),
-            macos_seatbelt_profile_extensions: merge_macos_seatbelt_profile_extensions(
+            macos_seatbelt_profile_extensions: merge_seatbelt_profile_extensions(
                 macos_seatbelt_profile_extensions,
                 additional_permissions.macos.as_ref(),
             ),
@@ -208,10 +207,8 @@ pub(crate) fn merge_permission_profiles(
                 (None, Some(permissions)) => Some(permissions.clone()),
                 (None, None) => None,
             };
-            let macos = merge_macos_seatbelt_profile_extensions(
-                base.macos.as_ref(),
-                permissions.macos.as_ref(),
-            );
+            let macos =
+                merge_seatbelt_profile_extensions(base.macos.as_ref(), permissions.macos.as_ref());
 
             Some(PermissionProfile {
                 network,
@@ -269,7 +266,7 @@ pub fn intersect_permission_profiles(
         _ => None,
     };
 
-    let macos = intersect_macos_seatbelt_profile_extensions(requested.macos, granted.macos);
+    let macos = intersect_seatbelt_profile_extensions(requested.macos, granted.macos);
 
     PermissionProfile {
         network,
@@ -586,6 +583,7 @@ impl SandboxManager {
             sandbox_policy_cwd,
             #[cfg(target_os = "macos")]
             macos_seatbelt_profile_extensions,
+            alcatraz_macos_exe,
             alcatraz_linux_exe,
             alcatraz_freebsd_exe,
         } = request;
@@ -640,6 +638,8 @@ impl SandboxManager {
             SandboxType::None => (command, HashMap::new(), None),
             #[cfg(target_os = "macos")]
             SandboxType::MacosSeatbelt => {
+                let exe = alcatraz_macos_exe
+                    .ok_or(SandboxTransformError::MissingMacOSSandboxExecutable)?;
                 let mut seatbelt_env = HashMap::new();
                 seatbelt_env.insert(CODEX_SANDBOX_ENV_VAR.to_string(), "seatbelt".to_string());
                 let mut args = create_seatbelt_command_args_for_policies_with_extensions(
@@ -652,9 +652,13 @@ impl SandboxManager {
                     _effective_macos_seatbelt_profile_extensions.as_ref(),
                 );
                 let mut full_command = Vec::with_capacity(1 + args.len());
-                full_command.push(MACOS_PATH_TO_SEATBELT_EXECUTABLE.to_string());
+                full_command.push(exe.to_string_lossy().to_string());
                 full_command.append(&mut args);
-                (full_command, seatbelt_env, None)
+                (
+                    full_command,
+                    seatbelt_env,
+                    Some("alcatraz-macos".to_string()),
+                )
             }
             #[cfg(not(target_os = "macos"))]
             SandboxType::MacosSeatbelt => return Err(SandboxTransformError::SeatbeltUnavailable),

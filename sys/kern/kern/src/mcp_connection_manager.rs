@@ -27,7 +27,6 @@ use anyhow::anyhow;
 use async_channel::Sender;
 use chaos_epoll::CancelErr;
 use chaos_epoll::OrCancelExt;
-use chaos_sysctl::Constrained;
 use chaos_ipc::approvals::ElicitationCompleteEvent;
 use chaos_ipc::approvals::ElicitationRequest;
 use chaos_ipc::approvals::ElicitationRequestEvent;
@@ -41,6 +40,7 @@ use chaos_ipc::protocol::McpStartupFailure;
 use chaos_ipc::protocol::McpStartupStatus;
 use chaos_ipc::protocol::McpStartupUpdateEvent;
 use chaos_ipc::protocol::SandboxPolicy;
+use chaos_sysctl::Constrained;
 use futures::future::BoxFuture;
 use futures::future::FutureExt;
 use futures::future::Shared;
@@ -673,6 +673,7 @@ pub const MCP_SANDBOX_STATE_LOGGER: &str = "chaos/alcatraz-state";
 #[serde(rename_all = "camelCase")]
 pub struct SandboxState {
     pub sandbox_policy: SandboxPolicy,
+    pub alcatraz_macos_exe: Option<PathBuf>,
     pub alcatraz_linux_exe: Option<PathBuf>,
     pub alcatraz_freebsd_exe: Option<PathBuf>,
     pub sandbox_cwd: PathBuf,

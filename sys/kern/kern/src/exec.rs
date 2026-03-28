@@ -32,9 +32,9 @@ use crate::spawn::StdioPolicy;
 use crate::spawn::spawn_child_async;
 use crate::text_encoding::bytes_to_string_smart;
 use crate::tools::sandboxing::SandboxablePreference;
-use chaos_pf::NetworkProxy;
 use chaos_ipc::permissions::FileSystemSandboxPolicy;
 use chaos_ipc::permissions::NetworkSandboxPolicy;
+use chaos_pf::NetworkProxy;
 use chaos_pty::DEFAULT_OUTPUT_BYTES_CAP;
 use chaos_pty::process_group::kill_child_process_group;
 
@@ -179,6 +179,7 @@ pub async fn process_exec_tool_call(
     file_system_sandbox_policy: &FileSystemSandboxPolicy,
     network_sandbox_policy: NetworkSandboxPolicy,
     sandbox_cwd: &Path,
+    alcatraz_macos_exe: &Option<PathBuf>,
     alcatraz_linux_exe: &Option<PathBuf>,
     alcatraz_freebsd_exe: &Option<PathBuf>,
     stdout_stream: Option<StdoutStream>,
@@ -189,6 +190,7 @@ pub async fn process_exec_tool_call(
         file_system_sandbox_policy,
         network_sandbox_policy,
         sandbox_cwd,
+        alcatraz_macos_exe,
         alcatraz_linux_exe,
         alcatraz_freebsd_exe,
     )?;
@@ -205,6 +207,7 @@ pub fn build_exec_request(
     file_system_sandbox_policy: &FileSystemSandboxPolicy,
     network_sandbox_policy: NetworkSandboxPolicy,
     sandbox_cwd: &Path,
+    alcatraz_macos_exe: &Option<PathBuf>,
     alcatraz_linux_exe: &Option<PathBuf>,
     alcatraz_freebsd_exe: &Option<PathBuf>,
 ) -> Result<ExecRequest> {
@@ -260,6 +263,7 @@ pub fn build_exec_request(
             sandbox_policy_cwd: sandbox_cwd,
             #[cfg(target_os = "macos")]
             macos_seatbelt_profile_extensions: None,
+            alcatraz_macos_exe: alcatraz_macos_exe.as_ref(),
             alcatraz_linux_exe: alcatraz_linux_exe.as_ref(),
             alcatraz_freebsd_exe: alcatraz_freebsd_exe.as_ref(),
         })
@@ -382,6 +386,11 @@ pub(crate) mod errors {
     impl From<SandboxTransformError> for CodexErr {
         fn from(err: SandboxTransformError) -> Self {
             match err {
+                SandboxTransformError::MissingMacOSSandboxExecutable => {
+                    CodexErr::UnsupportedOperation(
+                        "alcatraz-macos executable not found".to_string(),
+                    )
+                }
                 SandboxTransformError::MissingLinuxSandboxExecutable => {
                     CodexErr::LandlockSandboxExecutableNotProvided
                 }

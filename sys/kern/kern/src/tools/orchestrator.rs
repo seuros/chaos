@@ -26,10 +26,10 @@ use crate::tools::sandboxing::ToolCtx;
 use crate::tools::sandboxing::ToolError;
 use crate::tools::sandboxing::ToolRuntime;
 use crate::tools::sandboxing::default_exec_approval_requirement;
-use chaos_syslog::ToolDecisionSource;
 use chaos_ipc::protocol::AskForApproval;
 use chaos_ipc::protocol::NetworkPolicyRuleAction;
 use chaos_ipc::protocol::ReviewDecision;
+use chaos_syslog::ToolDecisionSource;
 
 pub(crate) struct ToolOrchestrator {
     sandbox: SandboxManager,
@@ -191,6 +191,7 @@ impl ToolOrchestrator {
             enforce_managed_network: has_managed_network_requirements,
             manager: &self.sandbox,
             sandbox_cwd: &turn_ctx.cwd,
+            alcatraz_macos_exe: turn_ctx.alcatraz_macos_exe.as_ref(),
             alcatraz_linux_exe: turn_ctx.alcatraz_linux_exe.as_ref(),
             alcatraz_freebsd_exe: turn_ctx.alcatraz_freebsd_exe.as_ref(),
         };
@@ -312,6 +313,7 @@ impl ToolOrchestrator {
                     enforce_managed_network: has_managed_network_requirements,
                     manager: &self.sandbox,
                     sandbox_cwd: &turn_ctx.cwd,
+                    alcatraz_macos_exe: None,
                     alcatraz_linux_exe: None,
                     alcatraz_freebsd_exe: None,
                 };

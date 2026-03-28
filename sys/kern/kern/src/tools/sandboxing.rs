@@ -15,7 +15,6 @@ use crate::sandboxing::SandboxPermissions;
 use crate::sandboxing::SandboxTransformError;
 use crate::state::SessionServices;
 use crate::tools::network_approval::NetworkApprovalSpec;
-use chaos_pf::NetworkProxy;
 use chaos_ipc::approvals::ExecPolicyAmendment;
 use chaos_ipc::approvals::NetworkApprovalContext;
 use chaos_ipc::permissions::FileSystemSandboxKind;
@@ -23,6 +22,7 @@ use chaos_ipc::permissions::FileSystemSandboxPolicy;
 use chaos_ipc::permissions::NetworkSandboxPolicy;
 use chaos_ipc::protocol::AskForApproval;
 use chaos_ipc::protocol::ReviewDecision;
+use chaos_pf::NetworkProxy;
 use futures::Future;
 use futures::future::BoxFuture;
 use serde::Serialize;
@@ -330,6 +330,7 @@ pub(crate) struct SandboxAttempt<'a> {
     pub enforce_managed_network: bool,
     pub(crate) manager: &'a SandboxManager,
     pub(crate) sandbox_cwd: &'a Path,
+    pub alcatraz_macos_exe: Option<&'a std::path::PathBuf>,
     pub alcatraz_linux_exe: Option<&'a std::path::PathBuf>,
     pub alcatraz_freebsd_exe: Option<&'a std::path::PathBuf>,
 }
@@ -352,6 +353,7 @@ impl<'a> SandboxAttempt<'a> {
                 sandbox_policy_cwd: self.sandbox_cwd,
                 #[cfg(target_os = "macos")]
                 macos_seatbelt_profile_extensions: None,
+                alcatraz_macos_exe: self.alcatraz_macos_exe,
                 alcatraz_linux_exe: self.alcatraz_linux_exe,
                 alcatraz_freebsd_exe: self.alcatraz_freebsd_exe,
             })

@@ -1,6 +1,14 @@
 #![cfg(unix)]
-use chaos_kern::spawn::StdioPolicy;
+#[cfg(target_os = "macos")]
+use alcatraz_macos::seatbelt::create_seatbelt_command_args;
+#[cfg(target_os = "macos")]
+use chaos_ipc::permissions::NetworkSandboxPolicy;
 use chaos_ipc::protocol::SandboxPolicy;
+#[cfg(target_os = "macos")]
+use chaos_kern::spawn::CODEX_SANDBOX_ENV_VAR;
+#[cfg(target_os = "macos")]
+use chaos_kern::spawn::CODEX_SANDBOX_NETWORK_DISABLED_ENV_VAR;
+use chaos_kern::spawn::StdioPolicy;
 use chaos_realpath::AbsolutePathBuf;
 use std::collections::HashMap;
 use std::future::Future;
@@ -8,8 +16,12 @@ use std::io;
 use std::path::Path;
 use std::path::PathBuf;
 use std::process::ExitStatus;
+#[cfg(target_os = "macos")]
+use std::process::Stdio;
 use tokio::fs::create_dir_all;
 use tokio::process::Child;
+#[cfg(target_os = "macos")]
+use tokio::process::Command;
 
 #[cfg(target_os = "macos")]
 async fn spawn_command_under_sandbox(
@@ -18,19 +30,38 @@ async fn spawn_command_under_sandbox(
     sandbox_policy: &SandboxPolicy,
     sandbox_cwd: &Path,
     stdio_policy: StdioPolicy,
-    env: HashMap<String, String>,
+    mut env: HashMap<String, String>,
 ) -> std::io::Result<Child> {
-    use chaos_kern::seatbelt::spawn_command_under_seatbelt;
-    spawn_command_under_seatbelt(
-        command,
-        command_cwd,
-        sandbox_policy,
-        sandbox_cwd,
-        stdio_policy,
-        None,
-        env,
-    )
-    .await
+    let alcatraz_macos_exe = chaos_which::cargo_bin("alcatraz-macos")
+        .map_err(|err| io::Error::new(io::ErrorKind::NotFound, err))?;
+    let args = create_seatbelt_command_args(command, sandbox_policy, sandbox_cwd, false, None);
+
+    env.insert(CODEX_SANDBOX_ENV_VAR.to_string(), "seatbelt".to_string());
+    if !NetworkSandboxPolicy::from(sandbox_policy).is_enabled() {
+        env.insert(
+            CODEX_SANDBOX_NETWORK_DISABLED_ENV_VAR.to_string(),
+            "1".to_string(),
+        );
+    }
+
+    let mut cmd = Command::new(alcatraz_macos_exe);
+    cmd.arg0("alcatraz-macos");
+    cmd.args(args);
+    cmd.current_dir(command_cwd);
+    cmd.env_clear();
+    cmd.envs(env);
+    match stdio_policy {
+        StdioPolicy::RedirectForShellTool => {
+            cmd.stdin(Stdio::null());
+            cmd.stdout(Stdio::piped()).stderr(Stdio::piped());
+        }
+        StdioPolicy::Inherit => {
+            cmd.stdin(Stdio::inherit())
+                .stdout(Stdio::inherit())
+                .stderr(Stdio::inherit());
+        }
+    }
+    cmd.kill_on_drop(true).spawn()
 }
 
 #[cfg(target_os = "linux")]

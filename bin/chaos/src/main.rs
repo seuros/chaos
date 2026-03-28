@@ -1,7 +1,3 @@
-use clap::CommandFactory;
-use clap::Parser;
-use clap_complete::Shell;
-use clap_complete::generate;
 use chaos_argv::Arg0DispatchPaths;
 use chaos_argv::arg0_dispatch_or_else;
 use chaos_boot::login::read_api_key_from_stdin;
@@ -13,11 +9,15 @@ use chaos_boot::login::run_logout;
 use chaos_fork::Cli as ExecCli;
 use chaos_fork::Command as ExecCommand;
 use chaos_fork::ReviewArgs;
+use chaos_getopt::CliConfigOverrides;
 use chaos_selinux::ExecPolicyCheckCommand;
 use chaos_xserver::AppExitInfo;
 use chaos_xserver::Cli as TuiCli;
 use chaos_xserver::ExitReason;
-use chaos_getopt::CliConfigOverrides;
+use clap::CommandFactory;
+use clap::Parser;
+use clap_complete::Shell;
+use clap_complete::generate;
 use owo_colors::OwoColorize;
 use std::io::IsTerminal;
 use supports_color::Stream;
@@ -478,6 +478,7 @@ async fn cli_main(arg0_paths: Arg0DispatchPaths) -> anyhow::Result<()> {
             {
                 chaos_boot::debug_sandbox::run_command_under_seatbelt(
                     sandbox_cmd.into_seatbelt(),
+                    arg0_paths.alcatraz_macos_exe.clone(),
                     arg0_paths.alcatraz_linux_exe.clone(),
                     arg0_paths.alcatraz_freebsd_exe.clone(),
                 )
@@ -521,6 +522,7 @@ async fn cli_main(arg0_paths: Arg0DispatchPaths) -> anyhow::Result<()> {
                 // Thread through relevant top-level flags (at minimum, `--profile`).
                 let overrides = ConfigOverrides {
                     config_profile: interactive.config_profile.clone(),
+                    alcatraz_macos_exe: arg0_paths.alcatraz_macos_exe.clone(),
                     ..Default::default()
                 };
 

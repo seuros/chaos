@@ -47,6 +47,7 @@ uuid = { workspace = true }
 
 [dev-dependencies]
 assert_cmd = { workspace = true }
+alcatraz-macos = { workspace = true }
 chaos-diff = { workspace = true }
 chaos-which = { workspace = true }
 core_test_support = { workspace = true }

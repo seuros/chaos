@@ -7,7 +7,7 @@ use chaos_ipc::models::MacOsSeatbeltProfileExtensions;
 
 /// Merges macOS seatbelt profile extensions by taking the permissive union of
 /// each permission field.
-pub(crate) fn merge_macos_seatbelt_profile_extensions(
+pub fn merge_seatbelt_profile_extensions(
     base: Option<&MacOsSeatbeltProfileExtensions>,
     permissions: Option<&MacOsSeatbeltProfileExtensions>,
 ) -> Option<MacOsSeatbeltProfileExtensions> {
@@ -17,11 +17,11 @@ pub(crate) fn merge_macos_seatbelt_profile_extensions(
 
     match base {
         Some(base) => Some(MacOsSeatbeltProfileExtensions {
-            macos_preferences: union_macos_preferences_permission(
+            macos_preferences: union_preferences_permission(
                 &base.macos_preferences,
                 &permissions.macos_preferences,
             ),
-            macos_automation: union_macos_automation_permission(
+            macos_automation: union_automation_permission(
                 &base.macos_automation,
                 &permissions.macos_automation,
             ),
@@ -29,7 +29,7 @@ pub(crate) fn merge_macos_seatbelt_profile_extensions(
             macos_accessibility: base.macos_accessibility || permissions.macos_accessibility,
             macos_calendar: base.macos_calendar || permissions.macos_calendar,
             macos_reminders: base.macos_reminders || permissions.macos_reminders,
-            macos_contacts: union_macos_contacts_permission(
+            macos_contacts: union_contacts_permission(
                 &base.macos_contacts,
                 &permissions.macos_contacts,
             ),
@@ -38,13 +38,13 @@ pub(crate) fn merge_macos_seatbelt_profile_extensions(
     }
 }
 
-pub(crate) fn intersect_macos_seatbelt_profile_extensions(
+pub fn intersect_seatbelt_profile_extensions(
     requested: Option<MacOsSeatbeltProfileExtensions>,
     granted: Option<MacOsSeatbeltProfileExtensions>,
 ) -> Option<MacOsSeatbeltProfileExtensions> {
     match (requested, granted) {
         (Some(requested), Some(granted)) => {
-            let macos_automation = intersect_macos_automation_permission(
+            let macos_automation = intersect_automation_permission(
                 &requested.macos_automation,
                 &granted.macos_automation,
             );
@@ -68,7 +68,7 @@ pub(crate) fn intersect_macos_seatbelt_profile_extensions(
 ///
 /// The larger rank wins: `None < ReadOnly < ReadWrite`. When both sides have
 /// the same rank, this keeps `base`.
-fn union_macos_preferences_permission(
+fn union_preferences_permission(
     base: &MacOsPreferencesPermission,
     requested: &MacOsPreferencesPermission,
 ) -> MacOsPreferencesPermission {
@@ -79,7 +79,7 @@ fn union_macos_preferences_permission(
     }
 }
 
-fn union_macos_contacts_permission(
+fn union_contacts_permission(
     base: &MacOsContactsPermission,
     requested: &MacOsContactsPermission,
 ) -> MacOsContactsPermission {
@@ -94,7 +94,7 @@ fn union_macos_contacts_permission(
 ///
 /// `All` wins over everything, `None` yields to the other side, and two bundle
 /// ID allowlists are unioned together.
-fn union_macos_automation_permission(
+fn union_automation_permission(
     base: &MacOsAutomationPermission,
     requested: &MacOsAutomationPermission,
 ) -> MacOsAutomationPermission {
@@ -119,7 +119,7 @@ fn union_macos_automation_permission(
     }
 }
 
-fn intersect_macos_automation_permission(
+fn intersect_automation_permission(
     requested: &MacOsAutomationPermission,
     granted: &MacOsAutomationPermission,
 ) -> MacOsAutomationPermission {
@@ -149,6 +149,6 @@ fn intersect_macos_automation_permission(
     }
 }
 
-#[cfg(all(test, target_os = "macos"))]
-#[path = "macos_permissions_tests.rs"]
+#[cfg(test)]
+#[path = "permissions_tests.rs"]
 mod tests;

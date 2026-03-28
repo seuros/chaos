@@ -1,5 +1,5 @@
 use super::*;
-use crate::agent::next_process_spawn_depth;
+use crate::minions::next_process_spawn_depth;
 
 pub(crate) struct Handler;
 

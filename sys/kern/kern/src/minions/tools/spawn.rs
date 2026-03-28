@@ -1,10 +1,10 @@
 use super::*;
-use crate::agent::control::SpawnAgentOptions;
-use crate::agent::role::DEFAULT_ROLE_NAME;
-use crate::agent::role::apply_role_to_config;
+use crate::minions::control::SpawnAgentOptions;
+use crate::minions::role::DEFAULT_ROLE_NAME;
+use crate::minions::role::apply_role_to_config;
 
-use crate::agent::exceeds_process_spawn_depth_limit;
-use crate::agent::next_process_spawn_depth;
+use crate::minions::exceeds_process_spawn_depth_limit;
+use crate::minions::next_process_spawn_depth;
 
 pub(crate) struct Handler;
 
@@ -33,7 +33,7 @@ impl ToolHandler for Handler {
             .agent_type
             .as_deref()
             .map(str::trim)
-            .filter(|role| !role.is_empty());
+            .filter(|role: &&str| !role.is_empty());
         let input_items = parse_collab_input(args.message, args.items)?;
         let prompt = input_preview(&input_items);
         let session_source = turn.session_source.clone();

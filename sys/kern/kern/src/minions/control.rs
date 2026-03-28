@@ -1,8 +1,8 @@
-use crate::agent::AgentStatus;
-use crate::agent::guards::Guards;
-use crate::agent::role::DEFAULT_ROLE_NAME;
-use crate::agent::role::resolve_role_config;
-use crate::agent::status::is_final;
+use crate::minions::AgentStatus;
+use crate::minions::guards::Guards;
+use crate::minions::role::DEFAULT_ROLE_NAME;
+use crate::minions::role::resolve_role_config;
+use crate::minions::status::is_final;
 use crate::error::CodexErr;
 use crate::error::Result as CodexResult;
 use crate::find_process_path_by_id_str;

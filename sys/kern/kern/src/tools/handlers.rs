@@ -5,7 +5,6 @@ mod cron;
 mod dynamic;
 mod mcp;
 mod mcp_resource;
-pub(crate) mod multi_agents;
 mod plan;
 mod request_permissions;
 mod request_user_input;
@@ -52,7 +51,7 @@ pub use tool_suggest::ToolSuggestHandler;
 pub use unified_exec::UnifiedExecHandler;
 pub use view_image::ViewImageHandler;
 
-fn parse_arguments<T>(arguments: &str) -> Result<T, FunctionCallError>
+pub(crate) fn parse_arguments<T>(arguments: &str) -> Result<T, FunctionCallError>
 where
     T: for<'de> Deserialize<'de>,
 {

@@ -1425,7 +1425,6 @@ dependencies = [
  "csv",
  "ctor",
  "dirs",
- "dunce",
  "encoding_rs",
  "env-flags",
  "eventsource-stream",
@@ -1439,7 +1438,6 @@ dependencies = [
  "keyring",
  "landlock",
  "libc",
- "maplit",
  "mcp-guest",
  "notify",
  "openssl-sys",
@@ -1974,7 +1972,6 @@ dependencies = [
  "derive_more",
  "diffy",
  "dirs",
- "dunce",
  "image",
  "insta",
  "itertools 0.14.0",
@@ -4839,12 +4836,6 @@ dependencies = [
  "nix 0.29.0",
  "winapi",
 ]
-
-[[package]]
-name = "maplit"
-version = "1.0.2"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "3e2e65a1a2e43cfcb47a895c4c8b10d1f4a61097f9f254f183aee60cad9c651d"
 
 [[package]]
 name = "matchers"

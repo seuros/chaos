@@ -1,6 +1,6 @@
 use super::*;
 use crate::config::types::ShellEnvironmentPolicyInherit;
-use maplit::hashmap;
+use std::collections::HashMap;
 
 fn make_vars(pairs: &[(&str, &str)]) -> Vec<(String, String)> {
     pairs
@@ -22,12 +22,12 @@ fn test_core_inherit_defaults_keep_sensitive_vars() {
     let process_id = ProcessId::new();
     let result = populate_env(vars, &policy, Some(process_id));
 
-    let mut expected: HashMap<String, String> = hashmap! {
-        "PATH".to_string() => "/usr/bin".to_string(),
-        "HOME".to_string() => "/home/user".to_string(),
-        "API_KEY".to_string() => "secret".to_string(),
-        "SECRET_TOKEN".to_string() => "t".to_string(),
-    };
+    let mut expected: HashMap<String, String> = HashMap::from([
+        ("PATH".to_string(), "/usr/bin".to_string()),
+        ("HOME".to_string(), "/home/user".to_string()),
+        ("API_KEY".to_string(), "secret".to_string()),
+        ("SECRET_TOKEN".to_string(), "t".to_string()),
+    ]);
     expected.insert(CODEX_THREAD_ID_ENV_VAR.to_string(), process_id.to_string());
 
     assert_eq!(result, expected);
@@ -49,10 +49,10 @@ fn test_core_inherit_with_default_excludes_enabled() {
     let process_id = ProcessId::new();
     let result = populate_env(vars, &policy, Some(process_id));
 
-    let mut expected: HashMap<String, String> = hashmap! {
-        "PATH".to_string() => "/usr/bin".to_string(),
-        "HOME".to_string() => "/home/user".to_string(),
-    };
+    let mut expected: HashMap<String, String> = HashMap::from([
+        ("PATH".to_string(), "/usr/bin".to_string()),
+        ("HOME".to_string(), "/home/user".to_string()),
+    ]);
     expected.insert(CODEX_THREAD_ID_ENV_VAR.to_string(), process_id.to_string());
 
     assert_eq!(result, expected);
@@ -72,9 +72,9 @@ fn test_include_only() {
     let process_id = ProcessId::new();
     let result = populate_env(vars, &policy, Some(process_id));
 
-    let mut expected: HashMap<String, String> = hashmap! {
-        "PATH".to_string() => "/usr/bin".to_string(),
-    };
+    let mut expected: HashMap<String, String> = HashMap::from([
+        ("PATH".to_string(), "/usr/bin".to_string()),
+    ]);
     expected.insert(CODEX_THREAD_ID_ENV_VAR.to_string(), process_id.to_string());
 
     assert_eq!(result, expected);
@@ -93,10 +93,10 @@ fn test_set_overrides() {
     let process_id = ProcessId::new();
     let result = populate_env(vars, &policy, Some(process_id));
 
-    let mut expected: HashMap<String, String> = hashmap! {
-        "PATH".to_string() => "/usr/bin".to_string(),
-        "NEW_VAR".to_string() => "42".to_string(),
-    };
+    let mut expected: HashMap<String, String> = HashMap::from([
+        ("PATH".to_string(), "/usr/bin".to_string()),
+        ("NEW_VAR".to_string(), "42".to_string()),
+    ]);
     expected.insert(CODEX_THREAD_ID_ENV_VAR.to_string(), process_id.to_string());
 
     assert_eq!(result, expected);
@@ -109,9 +109,9 @@ fn populate_env_inserts_process_id() {
     let process_id = ProcessId::new();
     let result = populate_env(vars, &policy, Some(process_id));
 
-    let mut expected: HashMap<String, String> = hashmap! {
-        "PATH".to_string() => "/usr/bin".to_string(),
-    };
+    let mut expected: HashMap<String, String> = HashMap::from([
+        ("PATH".to_string(), "/usr/bin".to_string()),
+    ]);
     expected.insert(CODEX_THREAD_ID_ENV_VAR.to_string(), process_id.to_string());
 
     assert_eq!(result, expected);
@@ -123,9 +123,9 @@ fn populate_env_omits_process_id_when_missing() {
     let policy = ShellEnvironmentPolicy::default();
     let result = populate_env(vars, &policy, None);
 
-    let expected: HashMap<String, String> = hashmap! {
-        "PATH".to_string() => "/usr/bin".to_string(),
-    };
+    let expected: HashMap<String, String> = HashMap::from([
+        ("PATH".to_string(), "/usr/bin".to_string()),
+    ]);
 
     assert_eq!(result, expected);
 }
@@ -159,9 +159,9 @@ fn test_inherit_all_with_default_excludes() {
 
     let process_id = ProcessId::new();
     let result = populate_env(vars, &policy, Some(process_id));
-    let mut expected: HashMap<String, String> = hashmap! {
-        "PATH".to_string() => "/usr/bin".to_string(),
-    };
+    let mut expected: HashMap<String, String> = HashMap::from([
+        ("PATH".to_string(), "/usr/bin".to_string()),
+    ]);
     expected.insert(CODEX_THREAD_ID_ENV_VAR.to_string(), process_id.to_string());
     assert_eq!(result, expected);
 }
@@ -181,9 +181,9 @@ fn test_inherit_none() {
 
     let process_id = ProcessId::new();
     let result = populate_env(vars, &policy, Some(process_id));
-    let mut expected: HashMap<String, String> = hashmap! {
-        "ONLY_VAR".to_string() => "yes".to_string(),
-    };
+    let mut expected: HashMap<String, String> = HashMap::from([
+        ("ONLY_VAR".to_string(), "yes".to_string()),
+    ]);
     expected.insert(CODEX_THREAD_ID_ENV_VAR.to_string(), process_id.to_string());
     assert_eq!(result, expected);
 }

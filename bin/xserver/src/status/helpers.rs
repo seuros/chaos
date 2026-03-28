@@ -13,7 +13,7 @@ use unicode_width::UnicodeWidthStr;
 use super::account::StatusAccountDisplay;
 
 fn normalize_agents_display_path(path: &Path) -> String {
-    dunce::simplified(path).display().to_string()
+    path.display().to_string()
 }
 
 pub(crate) fn compose_model_display(

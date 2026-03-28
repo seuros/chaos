@@ -7,20 +7,20 @@ This crate is responsible for producing:
   - the `chaos-fork` CLI can check if its arg0 is `alcatraz-linux` and, if so, execute as if it were `alcatraz-linux`
   - this should also be true of the `codex` multitool CLI
 
-On Linux, the bubblewrap pipeline uses the vendored bubblewrap path compiled
-into this binary.
-
 **Current Behavior**
 - Legacy `SandboxPolicy` / `sandbox_mode` configs remain supported.
-- Landlock is the sole filesystem sandbox pipeline on Linux.
+- Landlock is the Linux filesystem sandbox pipeline.
 - The helper applies `PR_SET_NO_NEW_PRIVS` and a seccomp network filter
   in-process.
-- Protected subpaths under writable roots (for example `.git`, resolved
-  `gitdir:`, and `.codex`) are enforced via Landlock rules.
-- In managed proxy mode, the helper sets up an internal TCP->UDS->TCP routing
-  bridge so tool traffic reaches only configured proxy endpoints.
-- In managed proxy mode, after the bridge is live, seccomp blocks new
-  AF_UNIX/socketpair creation for the user command.
+- Protected writable-root subpath carveouts such as `.git`, resolved `gitdir:`,
+  and `.codex` are not currently enforced by the pure-Rust Linux backend.
+- Split filesystem policies that need direct runtime carveouts are rejected
+  instead of being silently approximated.
+- In managed proxy mode, the helper fails closed unless loopback proxy
+  environment variables are present.
+- In managed proxy mode, seccomp blocks new AF_UNIX/socketpair creation for the
+  user command and Landlock limits outbound TCP connections to the configured
+  proxy ports.
 
 **Notes**
 - The CLI surface still uses legacy names like `codex debug landlock`.

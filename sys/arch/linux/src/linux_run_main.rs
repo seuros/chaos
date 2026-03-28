@@ -1,4 +1,6 @@
 use clap::Parser;
+use std::collections::BTreeSet;
+use std::env;
 use std::ffi::CString;
 use std::fmt;
 use std::path::Path;
@@ -8,6 +10,33 @@ use crate::landlock::apply_sandbox_policy_to_current_thread;
 use chaos_ipc::protocol::FileSystemSandboxPolicy;
 use chaos_ipc::protocol::NetworkSandboxPolicy;
 use chaos_ipc::protocol::SandboxPolicy;
+use url::Url;
+
+const MANAGED_PROXY_ENV_ERROR: &str = "managed proxy mode requires proxy environment variables";
+const UNSUPPORTED_SPLIT_POLICY_ERROR: &str = "split filesystem sandbox policies that require direct runtime enforcement are not supported by the Linux sandbox backend";
+const PROXY_ENV_KEYS: &[&str] = &[
+    "HTTP_PROXY",
+    "HTTPS_PROXY",
+    "ALL_PROXY",
+    "FTP_PROXY",
+    "http_proxy",
+    "https_proxy",
+    "all_proxy",
+    "ftp_proxy",
+    "YARN_HTTP_PROXY",
+    "YARN_HTTPS_PROXY",
+    "NPM_CONFIG_HTTP_PROXY",
+    "NPM_CONFIG_HTTPS_PROXY",
+    "NPM_CONFIG_PROXY",
+    "npm_config_http_proxy",
+    "npm_config_https_proxy",
+    "npm_config_proxy",
+    "BUNDLE_HTTP_PROXY",
+    "BUNDLE_HTTPS_PROXY",
+    "PIP_PROXY",
+    "DOCKER_HTTP_PROXY",
+    "DOCKER_HTTPS_PROXY",
+];
 
 #[derive(Debug, Parser)]
 /// CLI surface for the Linux sandbox helper.
@@ -96,6 +125,23 @@ pub fn run_main() -> ! {
         std::process::exit(1);
     });
 
+    let allowed_proxy_ports = if allow_network_for_proxy {
+        proxy_loopback_ports_from_env()
+    } else {
+        Vec::new()
+    };
+    if allow_network_for_proxy && allowed_proxy_ports.is_empty() {
+        eprintln!("alcatraz-linux: {MANAGED_PROXY_ENV_ERROR}");
+        std::process::exit(1);
+    }
+
+    if file_system_sandbox_policy
+        .needs_direct_runtime_enforcement(network_sandbox_policy, sandbox_policy_cwd.as_path())
+    {
+        eprintln!("alcatraz-linux: {UNSUPPORTED_SPLIT_POLICY_ERROR}");
+        std::process::exit(1);
+    }
+
     let apply_landlock_fs =
         !file_system_sandbox_policy.has_full_disk_write_access() || allow_network_for_proxy;
 
@@ -105,13 +151,14 @@ pub fn run_main() -> ! {
         &sandbox_policy_cwd,
         apply_landlock_fs,
         allow_network_for_proxy,
-        /*proxy_routed_network*/ false,
+        /*proxy_routed_network*/ allow_network_for_proxy,
+        &allowed_proxy_ports,
     ) {
         eprintln!("alcatraz-linux: {e}");
         std::process::exit(1);
     }
 
-    exec_or_panic(command);
+    exec_or_exit(command);
 }
 
 #[derive(Debug, Clone)]
@@ -266,8 +313,61 @@ fn file_system_sandbox_policies_match_semantics(
             == derived.get_unreadable_roots_with_cwd(sandbox_policy_cwd)
 }
 
-/// Exec the provided argv, panicking with context if it fails.
-fn exec_or_panic(command: Vec<String>) -> ! {
+fn proxy_url_env_value(key: &str) -> Option<String> {
+    env::var(key)
+        .ok()
+        .or_else(|| env::var(key.to_ascii_lowercase()).ok())
+}
+
+fn is_loopback_host(host: &str) -> bool {
+    host.eq_ignore_ascii_case("localhost") || host == "127.0.0.1" || host == "::1"
+}
+
+fn proxy_scheme_default_port(scheme: &str) -> u16 {
+    match scheme {
+        "https" => 443,
+        "socks5" | "socks5h" | "socks4" | "socks4a" => 1080,
+        _ => 80,
+    }
+}
+
+fn proxy_loopback_ports_from_env() -> Vec<u16> {
+    let mut ports = BTreeSet::new();
+    for key in PROXY_ENV_KEYS {
+        let Some(proxy_url) = proxy_url_env_value(key) else {
+            continue;
+        };
+        let trimmed = proxy_url.trim();
+        if trimmed.is_empty() {
+            continue;
+        }
+
+        let candidate = if trimmed.contains("://") {
+            trimmed.to_string()
+        } else {
+            format!("http://{trimmed}")
+        };
+        let Ok(parsed) = Url::parse(&candidate) else {
+            continue;
+        };
+        let Some(host) = parsed.host_str() else {
+            continue;
+        };
+        if !is_loopback_host(host) {
+            continue;
+        }
+
+        let scheme = parsed.scheme().to_ascii_lowercase();
+        let port = parsed
+            .port()
+            .unwrap_or_else(|| proxy_scheme_default_port(scheme.as_str()));
+        ports.insert(port);
+    }
+    ports.into_iter().collect()
+}
+
+/// Exec the provided argv, exiting with context if it fails.
+fn exec_or_exit(command: Vec<String>) -> ! {
     #[expect(clippy::expect_used)]
     let c_command =
         CString::new(command[0].as_str()).expect("Failed to convert command to CString");
@@ -286,7 +386,11 @@ fn exec_or_panic(command: Vec<String>) -> ! {
 
     // If execvp returns, there was an error.
     let err = std::io::Error::last_os_error();
-    panic!("Failed to execvp {}: {err}", command[0].as_str());
+    eprintln!(
+        "alcatraz-linux: failed to exec {}: {err}",
+        command[0].as_str()
+    );
+    std::process::exit(1);
 }
 
 #[cfg(test)]

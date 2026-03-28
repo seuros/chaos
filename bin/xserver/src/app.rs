@@ -3285,10 +3285,7 @@ impl App {
                         break;
                     }
                 };
-                app_event_tx.send(AppEvent::ProcessEvent {
-                    process_id,
-                    event,
-                });
+                app_event_tx.send(AppEvent::ProcessEvent { process_id, event });
             }
         });
         self.process_event_listener_tasks

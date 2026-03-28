@@ -10,20 +10,11 @@ use std::io::Read;
 use std::io::Write;
 use std::net::Ipv4Addr;
 use std::net::TcpListener;
-use std::process::Output;
-use std::process::Stdio;
+use std::process::{Output, Stdio};
 use std::time::Duration;
 use tokio::process::Command;
 
-const BWRAP_UNAVAILABLE_ERR: &str = "build-time bubblewrap is not available in this build.";
 const NETWORK_TIMEOUT_MS: u64 = 4_000;
-const MANAGED_PROXY_PERMISSION_ERR_SNIPPETS: &[&str] = &[
-    "loopback: Failed RTM_NEWADDR",
-    "loopback: Failed RTM_NEWLINK",
-    "setting up uid map: Permission denied",
-    "No permissions to create a new namespace",
-    "error isolating Linux network namespace for proxy mode",
-];
 
 const PROXY_ENV_KEYS: &[&str] = &[
     "HTTP_PROXY",
@@ -53,63 +44,6 @@ fn strip_proxy_env(env: &mut HashMap<String, String>) {
         let lower = key.to_ascii_lowercase();
         env.remove(lower.as_str());
     }
-}
-
-fn is_bwrap_unavailable_output(output: &Output) -> bool {
-    String::from_utf8_lossy(&output.stderr).contains(BWRAP_UNAVAILABLE_ERR)
-}
-
-async fn should_skip_bwrap_tests() -> bool {
-    let mut env = create_env_from_core_vars();
-    strip_proxy_env(&mut env);
-
-    let output = run_linux_sandbox_direct(
-        &["bash", "-c", "true"],
-        &SandboxPolicy::new_read_only_policy(),
-        false,
-        env,
-        NETWORK_TIMEOUT_MS,
-    )
-    .await;
-    is_bwrap_unavailable_output(&output)
-}
-
-fn is_managed_proxy_permission_error(stderr: &str) -> bool {
-    MANAGED_PROXY_PERMISSION_ERR_SNIPPETS
-        .iter()
-        .any(|snippet| stderr.contains(snippet))
-}
-
-async fn managed_proxy_skip_reason() -> Option<String> {
-    if should_skip_bwrap_tests().await {
-        return Some("vendored bwrap was not built in this environment".to_string());
-    }
-
-    let mut env = create_env_from_core_vars();
-    strip_proxy_env(&mut env);
-    env.insert("HTTP_PROXY".to_string(), "http://127.0.0.1:9".to_string());
-
-    let output = run_linux_sandbox_direct(
-        &["bash", "-c", "true"],
-        &SandboxPolicy::RootAccess,
-        true,
-        env,
-        NETWORK_TIMEOUT_MS,
-    )
-    .await;
-    if output.status.success() {
-        return None;
-    }
-
-    let stderr = String::from_utf8_lossy(&output.stderr);
-    if is_managed_proxy_permission_error(stderr.as_ref()) {
-        return Some(format!(
-            "managed proxy requires kernel namespace privileges unavailable here: {}",
-            stderr.trim()
-        ));
-    }
-
-    None
 }
 
 async fn run_linux_sandbox_direct(
@@ -160,11 +94,6 @@ async fn run_linux_sandbox_direct(
 
 #[tokio::test]
 async fn managed_proxy_mode_fails_closed_without_proxy_env() {
-    if let Some(skip_reason) = managed_proxy_skip_reason().await {
-        eprintln!("skipping managed proxy test: {skip_reason}");
-        return;
-    }
-
     let mut env = create_env_from_core_vars();
     strip_proxy_env(&mut env);
 
@@ -186,17 +115,13 @@ async fn managed_proxy_mode_fails_closed_without_proxy_env() {
 }
 
 #[tokio::test]
-async fn managed_proxy_mode_routes_through_bridge_and_blocks_direct_egress() {
-    if let Some(skip_reason) = managed_proxy_skip_reason().await {
-        eprintln!("skipping managed proxy test: {skip_reason}");
-        return;
-    }
-
+async fn managed_proxy_mode_allows_proxy_port_and_blocks_other_tcp_ports() {
     let listener = TcpListener::bind((Ipv4Addr::LOCALHOST, 0)).expect("bind proxy listener");
     let proxy_port = listener
         .local_addr()
         .expect("proxy listener local addr")
         .port();
+    let blocked_port = if proxy_port == 80 { 81 } else { 80 };
     let (request_tx, request_rx) = std::sync::mpsc::channel();
     std::thread::spawn(move || {
         let (mut stream, _) = listener.accept().expect("accept proxy connection");
@@ -243,7 +168,7 @@ async fn managed_proxy_mode_routes_through_bridge_and_blocks_direct_egress() {
     let stdout = String::from_utf8_lossy(&routed_output.stdout);
     assert!(
         stdout.contains("HTTP/1.1 200 OK"),
-        "expected bridge-routed proxy response, got stdout: {stdout}"
+        "expected proxy response from configured loopback port, got stdout: {stdout}"
     );
 
     let request = request_rx
@@ -255,7 +180,11 @@ async fn managed_proxy_mode_routes_through_bridge_and_blocks_direct_egress() {
     );
 
     let direct_egress_output = run_linux_sandbox_direct(
-        &["bash", "-c", "echo hi > /dev/tcp/192.0.2.1/80"],
+        &[
+            "bash",
+            "-c",
+            &format!("echo hi > /dev/tcp/192.0.2.1/{blocked_port}"),
+        ],
         &SandboxPolicy::RootAccess,
         true,
         env,
@@ -267,11 +196,6 @@ async fn managed_proxy_mode_routes_through_bridge_and_blocks_direct_egress() {
 
 #[tokio::test]
 async fn managed_proxy_mode_denies_af_unix_creation_for_user_command() {
-    if let Some(skip_reason) = managed_proxy_skip_reason().await {
-        eprintln!("skipping managed proxy test: {skip_reason}");
-        return;
-    }
-
     let python_available = Command::new("bash")
         .arg("-c")
         .arg("command -v python3 >/dev/null")

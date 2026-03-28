@@ -431,7 +431,10 @@ async fn resume_and_fork_append_permissions_messages() -> Result<()> {
             final_output_json_schema: None,
         })
         .await?;
-    wait_for_event(&forked.process, |ev| matches!(ev, EventMsg::TurnComplete(_))).await;
+    wait_for_event(&forked.process, |ev| {
+        matches!(ev, EventMsg::TurnComplete(_))
+    })
+    .await;
 
     let body4 = req4.single_request().body_json();
     let input4 = body4["input"].as_array().expect("input array");

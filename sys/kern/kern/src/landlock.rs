@@ -67,10 +67,10 @@ pub(crate) fn allow_network_for_proxy(enforce_managed_network: bool) -> bool {
 /// Converts the sandbox policies into the CLI invocation for
 /// `alcatraz-linux`.
 ///
-/// The helper performs the actual sandboxing (bubblewrap by default + seccomp) after
-/// parsing these arguments. Policy JSON flags are emitted before helper feature
-/// flags so the argv order matches the helper's CLI shape. See
-/// `docs/linux_sandbox.md` for the Linux semantics.
+/// The helper performs the actual sandboxing (Landlock + seccomp) after parsing
+/// these arguments. Policy JSON flags are emitted before helper feature flags
+/// so the argv order matches the helper's CLI shape. See `docs/linux_sandbox.md`
+/// for the Linux semantics.
 pub(crate) fn create_linux_sandbox_command_args_for_policies(
     command: Vec<String>,
     sandbox_policy: &SandboxPolicy,

@@ -156,10 +156,7 @@ pub mod tests {
         }
 
         pub fn contains(&self, account: &str) -> bool {
-            let guard = self
-                .accounts
-                .lock()
-                .unwrap_or_else(PoisonError::into_inner);
+            let guard = self.accounts.lock().unwrap_or_else(PoisonError::into_inner);
             guard.contains(account)
         }
     }
@@ -185,7 +182,9 @@ pub mod tests {
             value: &str,
         ) -> Result<(), CredentialStoreError> {
             let entry = Entry::new(service, account).map_err(CredentialStoreError::new)?;
-            entry.set_password(value).map_err(CredentialStoreError::new)?;
+            entry
+                .set_password(value)
+                .map_err(CredentialStoreError::new)?;
             self.accounts
                 .lock()
                 .unwrap_or_else(PoisonError::into_inner)

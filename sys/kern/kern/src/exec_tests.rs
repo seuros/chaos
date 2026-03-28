@@ -297,6 +297,7 @@ async fn process_exec_tool_call_respects_cancellation_token() -> Result<()> {
         cwd.as_path(),
         &None,
         &None,
+        &None,
         None,
     )
     .await;

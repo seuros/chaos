@@ -7,12 +7,18 @@ use additional_dirs::add_dir_warning_message;
 use app::App;
 pub use app::AppExitInfo;
 pub use app::ExitReason;
+use chaos_ipc::ProcessId;
+use chaos_ipc::config_types::AltScreenMode;
+use chaos_ipc::config_types::SandboxMode;
+use chaos_ipc::protocol::AskForApproval;
+use chaos_ipc::protocol::RolloutItem;
+use chaos_ipc::protocol::RolloutLine;
 use chaos_kern::AuthManager;
 use chaos_kern::CodexAuth;
 use chaos_kern::INTERACTIVE_SESSION_SOURCES;
+use chaos_kern::ProcessSortKey;
 use chaos_kern::ProcessTable;
 use chaos_kern::RolloutRecorder;
-use chaos_kern::ProcessSortKey;
 use chaos_kern::auth::AuthMode;
 use chaos_kern::auth::enforce_login_restrictions;
 use chaos_kern::check_execpolicy_for_warnings;
@@ -36,12 +42,6 @@ use chaos_kern::path_utils;
 use chaos_kern::read_session_meta_line;
 use chaos_kern::state_db::get_state_db;
 use chaos_kern::terminal::Multiplexer;
-use chaos_ipc::ProcessId;
-use chaos_ipc::config_types::AltScreenMode;
-use chaos_ipc::config_types::SandboxMode;
-use chaos_ipc::protocol::AskForApproval;
-use chaos_ipc::protocol::RolloutItem;
-use chaos_ipc::protocol::RolloutLine;
 use chaos_proc::log_db;
 use chaos_realpath::AbsolutePathBuf;
 use cwd_prompt::CwdPromptAction;
@@ -106,8 +106,8 @@ mod status_indicator_widget;
 mod streaming;
 mod style;
 mod terminal_palette;
-pub(crate) mod theme;
 mod text_formatting;
+pub(crate) mod theme;
 mod theme_picker;
 mod tooltips;
 mod tui;
@@ -121,8 +121,8 @@ pub mod test_backend;
 use crate::onboarding::onboarding_screen::OnboardingScreenArgs;
 use crate::onboarding::onboarding_screen::run_onboarding_app;
 use crate::tui::Tui;
-pub use cli::Cli;
 use chaos_argv::Arg0DispatchPaths;
+pub use cli::Cli;
 pub use markdown_render::render_markdown_text;
 pub use public_widgets::composer_input::ComposerAction;
 pub use public_widgets::composer_input::ComposerInput;
@@ -166,10 +166,7 @@ pub async fn run_main(
             Some(AskForApproval::OnRequest),
         )
     } else if cli.dangerously_bypass_approvals_and_sandbox {
-        (
-            Some(SandboxMode::RootAccess),
-            Some(AskForApproval::Never),
-        )
+        (Some(SandboxMode::RootAccess), Some(AskForApproval::Never))
     } else {
         (
             cli.sandbox_mode.map(Into::<SandboxMode>::into),
@@ -281,6 +278,7 @@ pub async fn run_main(
         config_profile: cli.config_profile.clone(),
         alcatraz_linux_exe: arg0_paths.alcatraz_linux_exe.clone(),
         alcatraz_freebsd_exe: arg0_paths.alcatraz_freebsd_exe.clone(),
+        alcatraz_macos_exe: arg0_paths.alcatraz_macos_exe.clone(),
         main_execve_wrapper_exe: arg0_paths.main_execve_wrapper_exe.clone(),
         show_raw_agent_reasoning: cli.oss.then_some(true),
         additional_writable_roots: additional_dirs,
@@ -638,15 +636,13 @@ async fn run_ratatui_app(
         };
         match path {
             Some(path) => {
-                let process_id = match resolve_session_process_id(
-                    path.as_path(),
-                    is_uuid.then_some(id_str),
-                )
-                .await
-                {
-                    Some(process_id) => process_id,
-                    None => return missing_session_exit(id_str, "resume"),
-                };
+                let process_id =
+                    match resolve_session_process_id(path.as_path(), is_uuid.then_some(id_str))
+                        .await
+                    {
+                        Some(process_id) => process_id,
+                        None => return missing_session_exit(id_str, "resume"),
+                    };
                 resume_picker::SessionSelection::Resume(resume_picker::SessionTarget {
                     path,
                     process_id: process_id,
@@ -1060,10 +1056,6 @@ fn should_show_login_screen(login_status: LoginStatus, config: &Config) -> bool 
 #[cfg(test)]
 mod tests {
     use super::*;
-    use chaos_kern::config::ConfigBuilder;
-    use chaos_kern::config::ConfigOverrides;
-    use chaos_kern::config::ProjectConfig;
-    use chaos_kern::features::Feature;
     use chaos_ipc::protocol::AskForApproval;
     use chaos_ipc::protocol::RolloutItem;
     use chaos_ipc::protocol::RolloutLine;
@@ -1071,6 +1063,10 @@ mod tests {
     use chaos_ipc::protocol::SessionMetaLine;
     use chaos_ipc::protocol::SessionSource;
     use chaos_ipc::protocol::TurnContextItem;
+    use chaos_kern::config::ConfigBuilder;
+    use chaos_kern::config::ConfigOverrides;
+    use chaos_kern::config::ProjectConfig;
+    use chaos_kern::features::Feature;
     use pretty_assertions::assert_eq;
     use tempfile::TempDir;
 
@@ -1392,10 +1388,7 @@ trust_level = "untrusted"
         let mut builder = chaos_proc::ProcessMetadataBuilder::new(
             process_id,
             rollout_path.clone(),
-            chrono::Utc::now()
-                .to_rfc3339()
-                .parse()
-                .expect("timestamp"),
+            chrono::Utc::now().to_rfc3339().parse().expect("timestamp"),
             SessionSource::Cli,
         );
         builder.cwd = sqlite_cwd.clone();

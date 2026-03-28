@@ -3,18 +3,30 @@ mod pid_tracker;
 #[cfg(target_os = "macos")]
 mod seatbelt;
 
+#[cfg(target_os = "macos")]
+use alcatraz_macos::seatbelt::create_seatbelt_command_args;
 use std::path::PathBuf;
+#[cfg(target_os = "macos")]
+use std::process::Stdio;
 
+use chaos_getopt::CliConfigOverrides;
+use chaos_ipc::config_types::SandboxMode;
+#[cfg(target_os = "macos")]
+use chaos_ipc::permissions::NetworkSandboxPolicy;
 use chaos_kern::config::Config;
 use chaos_kern::config::ConfigOverrides;
 use chaos_kern::config::NetworkProxyAuditMetadata;
 use chaos_kern::exec_env::create_env;
 use chaos_kern::landlock::spawn_command_under_linux_sandbox;
 #[cfg(target_os = "macos")]
-use chaos_kern::seatbelt::spawn_command_under_seatbelt;
+use chaos_kern::spawn::CODEX_SANDBOX_ENV_VAR;
+#[cfg(target_os = "macos")]
+use chaos_kern::spawn::CODEX_SANDBOX_NETWORK_DISABLED_ENV_VAR;
 use chaos_kern::spawn::StdioPolicy;
-use chaos_ipc::config_types::SandboxMode;
-use chaos_getopt::CliConfigOverrides;
+#[cfg(target_os = "macos")]
+use tokio::process::Child;
+#[cfg(target_os = "macos")]
+use tokio::process::Command;
 
 use crate::LandlockCommand;
 use crate::SeatbeltCommand;
@@ -26,6 +38,7 @@ use seatbelt::DenialLogger;
 #[cfg(target_os = "macos")]
 pub async fn run_command_under_seatbelt(
     command: SeatbeltCommand,
+    alcatraz_macos_exe: Option<PathBuf>,
     alcatraz_linux_exe: Option<PathBuf>,
     alcatraz_freebsd_exe: Option<PathBuf>,
 ) -> anyhow::Result<()> {
@@ -39,6 +52,7 @@ pub async fn run_command_under_seatbelt(
         full_auto,
         command,
         config_overrides,
+        alcatraz_macos_exe,
         alcatraz_linux_exe,
         alcatraz_freebsd_exe,
         SandboxType::Seatbelt,
@@ -50,6 +64,7 @@ pub async fn run_command_under_seatbelt(
 #[cfg(not(target_os = "macos"))]
 pub async fn run_command_under_seatbelt(
     _command: SeatbeltCommand,
+    _alcatraz_macos_exe: Option<PathBuf>,
     _alcatraz_linux_exe: Option<PathBuf>,
     _alcatraz_freebsd_exe: Option<PathBuf>,
 ) -> anyhow::Result<()> {
@@ -70,6 +85,7 @@ pub async fn run_command_under_landlock(
         full_auto,
         command,
         config_overrides,
+        None,
         alcatraz_linux_exe,
         alcatraz_freebsd_exe,
         SandboxType::Landlock,
@@ -93,6 +109,7 @@ pub async fn run_command_under_capsicum(
         full_auto,
         command,
         config_overrides,
+        None,
         alcatraz_linux_exe,
         alcatraz_freebsd_exe,
         SandboxType::Capsicum,
@@ -113,6 +130,7 @@ async fn run_command_under_sandbox(
     full_auto: bool,
     command: Vec<String>,
     config_overrides: CliConfigOverrides,
+    alcatraz_macos_exe: Option<PathBuf>,
     alcatraz_linux_exe: Option<PathBuf>,
     alcatraz_freebsd_exe: Option<PathBuf>,
     sandbox_type: SandboxType,
@@ -125,6 +143,7 @@ async fn run_command_under_sandbox(
             .map_err(anyhow::Error::msg)?,
         ConfigOverrides {
             sandbox_mode: Some(sandbox_mode),
+            alcatraz_macos_exe,
             alcatraz_linux_exe,
             alcatraz_freebsd_exe,
             ..Default::default()
@@ -175,12 +194,18 @@ async fn run_command_under_sandbox(
     let mut child = match sandbox_type {
         #[cfg(target_os = "macos")]
         SandboxType::Seatbelt => {
-            spawn_command_under_seatbelt(
+            #[expect(clippy::expect_used)]
+            let alcatraz_macos_exe = config
+                .alcatraz_macos_exe
+                .expect("alcatraz-macos executable not found");
+            spawn_command_under_macos_seatbelt(
+                alcatraz_macos_exe,
                 command,
                 cwd,
                 config.permissions.sandbox_policy.get(),
                 sandbox_policy_cwd.as_path(),
                 stdio_policy,
+                managed_network_requirements_enabled,
                 network.as_ref(),
                 env,
             )
@@ -254,4 +279,57 @@ pub fn create_sandbox_mode(full_auto: bool) -> SandboxMode {
     } else {
         SandboxMode::ReadOnly
     }
+}
+
+#[cfg(target_os = "macos")]
+async fn spawn_command_under_macos_seatbelt(
+    alcatraz_macos_exe: PathBuf,
+    command: Vec<String>,
+    command_cwd: PathBuf,
+    sandbox_policy: &chaos_ipc::protocol::SandboxPolicy,
+    sandbox_cwd: &std::path::Path,
+    stdio_policy: StdioPolicy,
+    enforce_managed_network: bool,
+    network: Option<&chaos_pf::NetworkProxy>,
+    mut env: std::collections::HashMap<String, String>,
+) -> std::io::Result<Child> {
+    let args = create_seatbelt_command_args(
+        command,
+        sandbox_policy,
+        sandbox_cwd,
+        enforce_managed_network,
+        network,
+    );
+
+    if let Some(network) = network {
+        network.apply_to_env(&mut env);
+    }
+    env.insert(CODEX_SANDBOX_ENV_VAR.to_string(), "seatbelt".to_string());
+    if !NetworkSandboxPolicy::from(sandbox_policy).is_enabled() {
+        env.insert(
+            CODEX_SANDBOX_NETWORK_DISABLED_ENV_VAR.to_string(),
+            "1".to_string(),
+        );
+    }
+
+    let mut cmd = Command::new(&alcatraz_macos_exe);
+    cmd.arg0("alcatraz-macos");
+    cmd.args(args);
+    cmd.current_dir(command_cwd);
+    cmd.env_clear();
+    cmd.envs(env);
+
+    match stdio_policy {
+        StdioPolicy::RedirectForShellTool => {
+            cmd.stdin(Stdio::null());
+            cmd.stdout(Stdio::piped()).stderr(Stdio::piped());
+        }
+        StdioPolicy::Inherit => {
+            cmd.stdin(Stdio::inherit())
+                .stdout(Stdio::inherit())
+                .stderr(Stdio::inherit());
+        }
+    }
+
+    cmd.kill_on_drop(true).spawn()
 }

@@ -9,6 +9,7 @@ members = [
     "sys/arch/base",
     "sys/arch/linux",
     "sys/arch/freebsd",
+    "sys/arch/macos",
     # sys/exec — process execution
     "sys/exec/fork",
     "sys/exec/sh",
@@ -108,6 +109,7 @@ chaos-traits = { path = "sys/kern/traits" }
 alcatraz-base = { path = "sys/arch/base" }
 alcatraz-linux = { path = "sys/arch/linux" }
 alcatraz-freebsd = { path = "sys/arch/freebsd" }
+alcatraz-macos = { path = "sys/arch/macos" }
 chaos-fork = { path = "sys/exec/fork" }
 chaos-sh = { path = "sys/exec/sh" }
 chaos-doas = { path = "sys/exec/doas" }

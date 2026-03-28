@@ -3,15 +3,20 @@
 //! Tests for the macOS sandboxing that are specific to Seatbelt.
 //! Tests that apply to both Mac and Linux sandboxing should go in sandbox.rs.
 
+use alcatraz_macos::seatbelt::create_seatbelt_command_args;
 use std::collections::HashMap;
 use std::path::Path;
 use std::path::PathBuf;
+use std::process::Stdio;
 
-use chaos_kern::seatbelt::spawn_command_under_seatbelt;
-use chaos_kern::spawn::CODEX_SANDBOX_ENV_VAR;
-use chaos_kern::spawn::StdioPolicy;
+use chaos_ipc::permissions::NetworkSandboxPolicy;
 use chaos_ipc::protocol::SandboxPolicy;
+use chaos_kern::spawn::CODEX_SANDBOX_ENV_VAR;
+use chaos_kern::spawn::CODEX_SANDBOX_NETWORK_DISABLED_ENV_VAR;
+use chaos_kern::spawn::StdioPolicy;
 use tempfile::TempDir;
+use tokio::process::Child;
+use tokio::process::Command;
 
 struct TestScenario {
     repo_parent: PathBuf,
@@ -25,6 +30,47 @@ struct TestExpectations {
     file_outside_repo_is_writable: bool,
     file_in_repo_root_is_writable: bool,
     file_in_dot_git_dir_is_writable: bool,
+}
+
+async fn spawn_command_under_seatbelt(
+    command: Vec<String>,
+    command_cwd: PathBuf,
+    sandbox_policy: &SandboxPolicy,
+    sandbox_cwd: &Path,
+    stdio_policy: StdioPolicy,
+    _network: Option<&chaos_pf::NetworkProxy>,
+    mut env: HashMap<String, String>,
+) -> std::io::Result<Child> {
+    let alcatraz_macos_exe = chaos_which::cargo_bin("alcatraz-macos")
+        .map_err(|err| std::io::Error::new(std::io::ErrorKind::NotFound, err))?;
+    let args = create_seatbelt_command_args(command, sandbox_policy, sandbox_cwd, false, None);
+
+    env.insert(CODEX_SANDBOX_ENV_VAR.to_string(), "seatbelt".to_string());
+    if !NetworkSandboxPolicy::from(sandbox_policy).is_enabled() {
+        env.insert(
+            CODEX_SANDBOX_NETWORK_DISABLED_ENV_VAR.to_string(),
+            "1".to_string(),
+        );
+    }
+
+    let mut cmd = Command::new(alcatraz_macos_exe);
+    cmd.arg0("alcatraz-macos");
+    cmd.args(args);
+    cmd.current_dir(command_cwd);
+    cmd.env_clear();
+    cmd.envs(env);
+    match stdio_policy {
+        StdioPolicy::RedirectForShellTool => {
+            cmd.stdin(Stdio::null());
+            cmd.stdout(Stdio::piped()).stderr(Stdio::piped());
+        }
+        StdioPolicy::Inherit => {
+            cmd.stdin(Stdio::inherit())
+                .stdout(Stdio::inherit())
+                .stderr(Stdio::inherit());
+        }
+    }
+    cmd.kill_on_drop(true).spawn()
 }
 
 impl TestScenario {

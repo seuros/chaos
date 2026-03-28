@@ -99,10 +99,10 @@ pub mod profile;
 pub mod schema;
 pub mod service;
 pub mod types;
+pub use chaos_pf::NetworkProxyAuditMetadata;
 pub use chaos_sysctl::Constrained;
 pub use chaos_sysctl::ConstraintError;
 pub use chaos_sysctl::ConstraintResult;
-pub use chaos_pf::NetworkProxyAuditMetadata;
 
 pub use managed_features::ManagedFeatures;
 pub use network_proxy_spec::NetworkProxySpec;
@@ -413,6 +413,14 @@ pub struct Config {
     ///
     /// When this program is invoked, arg0 will be set to `alcatraz-freebsd`.
     pub alcatraz_freebsd_exe: Option<PathBuf>,
+
+    /// Path to the `alcatraz-macos` executable. This must be set if
+    /// [`crate::exec::SandboxType::MacosSeatbelt`] is used. Note that this
+    /// cannot be set in the config file: it must be set in code via
+    /// [`ConfigOverrides`].
+    ///
+    /// When this program is invoked, arg0 will be set to `alcatraz-macos`.
+    pub alcatraz_macos_exe: Option<PathBuf>,
 
     /// Path to the `codex-execve-wrapper` executable used for shell
     /// escalation. This cannot be set in the config file: it must be set in
@@ -1600,6 +1608,7 @@ pub struct ConfigOverrides {
     pub config_profile: Option<String>,
     pub alcatraz_linux_exe: Option<PathBuf>,
     pub alcatraz_freebsd_exe: Option<PathBuf>,
+    pub alcatraz_macos_exe: Option<PathBuf>,
     pub main_execve_wrapper_exe: Option<PathBuf>,
     pub zsh_path: Option<PathBuf>,
     pub base_instructions: Option<String>,
@@ -1718,9 +1727,7 @@ pub(crate) fn resolve_web_search_mode_for_turn(
 ) -> WebSearchMode {
     let preferred = web_search_mode.value();
 
-    if matches!(sandbox_policy, SandboxPolicy::RootAccess)
-        && preferred != WebSearchMode::Disabled
-    {
+    if matches!(sandbox_policy, SandboxPolicy::RootAccess) && preferred != WebSearchMode::Disabled {
         for mode in [
             WebSearchMode::Live,
             WebSearchMode::Cached,
@@ -1797,6 +1804,7 @@ impl Config {
             config_profile: config_profile_key,
             alcatraz_linux_exe,
             alcatraz_freebsd_exe,
+            alcatraz_macos_exe,
             main_execve_wrapper_exe,
             zsh_path: zsh_path_override,
             base_instructions,
@@ -2351,6 +2359,7 @@ impl Config {
             file_opener: cfg.file_opener.unwrap_or(UriBasedFileOpener::VsCode),
             alcatraz_linux_exe,
             alcatraz_freebsd_exe,
+            alcatraz_macos_exe,
             main_execve_wrapper_exe,
             zsh_path,
 

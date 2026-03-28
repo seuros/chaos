@@ -10,10 +10,15 @@ mod event_processor_with_human_output;
 pub mod event_processor_with_jsonl_output;
 pub mod exec_events;
 
-pub use cli::Cli;
-pub use cli::Command;
-pub use cli::ReviewArgs;
 use chaos_argv::Arg0DispatchPaths;
+use chaos_ipc::config_types::SandboxMode;
+use chaos_ipc::protocol::AskForApproval;
+use chaos_ipc::protocol::EventMsg;
+use chaos_ipc::protocol::Op;
+use chaos_ipc::protocol::ReviewRequest;
+use chaos_ipc::protocol::ReviewTarget;
+use chaos_ipc::protocol::SessionSource;
+use chaos_ipc::user_input::UserInput;
 use chaos_kern::AuthManager;
 use chaos_kern::Process;
 use chaos_kern::ProcessTable;
@@ -31,17 +36,12 @@ use chaos_kern::features::Feature;
 use chaos_kern::format_exec_policy_error_with_source;
 use chaos_kern::git_info::get_git_repo_root;
 use chaos_kern::models_manager::collaboration_mode_presets::CollaborationModesConfig;
+use chaos_realpath::AbsolutePathBuf;
 use chaos_syslog::set_parent_from_context;
 use chaos_syslog::traceparent_context_from_env;
-use chaos_ipc::config_types::SandboxMode;
-use chaos_ipc::protocol::AskForApproval;
-use chaos_ipc::protocol::EventMsg;
-use chaos_ipc::protocol::Op;
-use chaos_ipc::protocol::ReviewRequest;
-use chaos_ipc::protocol::ReviewTarget;
-use chaos_ipc::protocol::SessionSource;
-use chaos_ipc::user_input::UserInput;
-use chaos_realpath::AbsolutePathBuf;
+pub use cli::Cli;
+pub use cli::Command;
+pub use cli::ReviewArgs;
 use event_processor_with_human_output::EventProcessorWithHumanOutput;
 use event_processor_with_jsonl_output::EventProcessorWithJsonOutput;
 use serde_json::Value;
@@ -282,6 +282,7 @@ pub async fn run_main(cli: Cli, arg0_paths: Arg0DispatchPaths) -> anyhow::Result
         service_tier: None,
         alcatraz_linux_exe: arg0_paths.alcatraz_linux_exe.clone(),
         alcatraz_freebsd_exe: arg0_paths.alcatraz_freebsd_exe.clone(),
+        alcatraz_macos_exe: arg0_paths.alcatraz_macos_exe.clone(),
         main_execve_wrapper_exe: arg0_paths.main_execve_wrapper_exe.clone(),
         zsh_path: None,
         base_instructions: None,
@@ -684,8 +685,7 @@ async fn run_event_loop(
             }
             EventMsg::McpStartupUpdate(update) => {
                 if required_mcp_servers.contains(&update.server)
-                    && let chaos_ipc::protocol::McpStartupStatus::Failed { error } =
-                        &update.status
+                    && let chaos_ipc::protocol::McpStartupStatus::Failed { error } = &update.status
                 {
                     *error_seen = true;
                     eprintln!(

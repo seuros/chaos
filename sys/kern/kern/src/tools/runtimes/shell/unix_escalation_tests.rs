@@ -21,14 +21,13 @@ use crate::protocol::ReadOnlyAccess;
 use crate::protocol::SandboxPolicy;
 use crate::sandboxing::SandboxPermissions;
 #[cfg(target_os = "macos")]
-use crate::seatbelt::MACOS_PATH_TO_SEATBELT_EXECUTABLE;
 use crate::skills::SkillMetadata;
-use chaos_selinux::Decision;
-use chaos_selinux::Evaluation;
-use chaos_selinux::PolicyParser;
-use chaos_selinux::RuleMatch;
+use chaos_doas::EscalationExecution;
+use chaos_doas::EscalationPermissions;
+use chaos_doas::ExecResult;
+use chaos_doas::Permissions as EscalatedPermissions;
 #[cfg(target_os = "macos")]
-use chaos_ipc::config_types::WindowsSandboxLevel;
+use chaos_doas::ShellCommandExecutor;
 use chaos_ipc::models::FileSystemPermissions;
 use chaos_ipc::models::MacOsPreferencesPermission;
 use chaos_ipc::models::MacOsSeatbeltProfileExtensions;
@@ -40,13 +39,11 @@ use chaos_ipc::permissions::FileSystemSandboxPolicy;
 use chaos_ipc::permissions::FileSystemSpecialPath;
 use chaos_ipc::permissions::NetworkSandboxPolicy;
 use chaos_ipc::protocol::SkillScope;
-use chaos_doas::EscalationExecution;
-use chaos_doas::EscalationPermissions;
-use chaos_doas::ExecResult;
-use chaos_doas::Permissions as EscalatedPermissions;
-#[cfg(target_os = "macos")]
-use chaos_doas::ShellCommandExecutor;
 use chaos_realpath::AbsolutePathBuf;
+use chaos_selinux::Decision;
+use chaos_selinux::Evaluation;
+use chaos_selinux::PolicyParser;
+use chaos_selinux::RuleMatch;
 use pretty_assertions::assert_eq;
 #[cfg(target_os = "macos")]
 use std::collections::HashMap;
@@ -643,6 +640,9 @@ host_executable {{name = "git", paths = {{"{allowed_git_literal}"}}}}
 }
 
 #[cfg(target_os = "macos")]
+const TEST_ALCATRAZ_MACOS_EXE: &str = "/tmp/alcatraz-macos-test";
+
+#[cfg(target_os = "macos")]
 #[tokio::test]
 async fn prepare_escalated_exec_turn_default_preserves_macos_seatbelt_extensions() {
     let cwd = AbsolutePathBuf::from_absolute_path(std::env::temp_dir()).unwrap();
@@ -655,7 +655,6 @@ async fn prepare_escalated_exec_turn_default_preserves_macos_seatbelt_extensions
         sandbox_policy: SandboxPolicy::new_read_only_policy(),
         file_system_sandbox_policy: read_only_file_system_sandbox_policy(),
         network_sandbox_policy: NetworkSandboxPolicy::Restricted,
-        windows_sandbox_level: WindowsSandboxLevel::Disabled,
         sandbox_permissions: SandboxPermissions::UseDefault,
         justification: None,
         arg0: None,
@@ -664,7 +663,9 @@ async fn prepare_escalated_exec_turn_default_preserves_macos_seatbelt_extensions
             macos_preferences: MacOsPreferencesPermission::ReadWrite,
             ..Default::default()
         }),
+        alcatraz_macos_exe: Some(PathBuf::from(TEST_ALCATRAZ_MACOS_EXE)),
         alcatraz_linux_exe: None,
+        alcatraz_freebsd_exe: None,
     };
 
     let prepared = executor
@@ -680,7 +681,7 @@ async fn prepare_escalated_exec_turn_default_preserves_macos_seatbelt_extensions
 
     assert_eq!(
         prepared.command.first().map(String::as_str),
-        Some(MACOS_PATH_TO_SEATBELT_EXECUTABLE)
+        Some(TEST_ALCATRAZ_MACOS_EXE)
     );
     assert_eq!(prepared.command.get(1).map(String::as_str), Some("-p"));
     assert!(
@@ -706,13 +707,14 @@ async fn prepare_escalated_exec_permissions_preserve_macos_seatbelt_extensions()
         sandbox_policy: SandboxPolicy::RootAccess,
         file_system_sandbox_policy: unrestricted_file_system_sandbox_policy(),
         network_sandbox_policy: NetworkSandboxPolicy::Enabled,
-        windows_sandbox_level: WindowsSandboxLevel::Disabled,
         sandbox_permissions: SandboxPermissions::UseDefault,
         justification: None,
         arg0: None,
         sandbox_policy_cwd: cwd.to_path_buf(),
         macos_seatbelt_profile_extensions: None,
+        alcatraz_macos_exe: Some(PathBuf::from(TEST_ALCATRAZ_MACOS_EXE)),
         alcatraz_linux_exe: None,
+        alcatraz_freebsd_exe: None,
     };
 
     let permissions = Permissions {
@@ -751,7 +753,7 @@ async fn prepare_escalated_exec_permissions_preserve_macos_seatbelt_extensions()
 
     assert_eq!(
         prepared.command.first().map(String::as_str),
-        Some(MACOS_PATH_TO_SEATBELT_EXECUTABLE)
+        Some(TEST_ALCATRAZ_MACOS_EXE)
     );
     assert_eq!(prepared.command.get(1).map(String::as_str), Some("-p"));
     assert!(
@@ -778,7 +780,6 @@ async fn prepare_escalated_exec_permission_profile_unions_turn_and_requested_mac
         sandbox_policy: sandbox_policy.clone(),
         file_system_sandbox_policy: read_only_file_system_sandbox_policy(),
         network_sandbox_policy: NetworkSandboxPolicy::from(&sandbox_policy),
-        windows_sandbox_level: WindowsSandboxLevel::Disabled,
         sandbox_permissions: SandboxPermissions::UseDefault,
         justification: None,
         arg0: None,
@@ -787,7 +788,9 @@ async fn prepare_escalated_exec_permission_profile_unions_turn_and_requested_mac
             macos_preferences: MacOsPreferencesPermission::ReadOnly,
             ..Default::default()
         }),
+        alcatraz_macos_exe: Some(PathBuf::from(TEST_ALCATRAZ_MACOS_EXE)),
         alcatraz_linux_exe: None,
+        alcatraz_freebsd_exe: None,
     };
 
     let prepared = executor
@@ -816,7 +819,7 @@ async fn prepare_escalated_exec_permission_profile_unions_turn_and_requested_mac
         .expect("seatbelt policy should be present");
     assert_eq!(
         prepared.command.first().map(String::as_str),
-        Some(MACOS_PATH_TO_SEATBELT_EXECUTABLE)
+        Some(TEST_ALCATRAZ_MACOS_EXE)
     );
     assert_eq!(prepared.command.get(1).map(String::as_str), Some("-p"));
     assert!(

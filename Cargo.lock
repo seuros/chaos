@@ -151,6 +151,21 @@ dependencies = [
 ]
 
 [[package]]
+name = "alcatraz-macos"
+version = "47.0.0"
+dependencies = [
+ "chaos-ipc",
+ "chaos-pf",
+ "chaos-realpath",
+ "dirs",
+ "libc",
+ "pretty_assertions",
+ "tempfile",
+ "tracing",
+ "url",
+]
+
+[[package]]
 name = "alloc-no-stdlib"
 version = "2.0.4"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -1036,6 +1051,7 @@ version = "47.0.0"
 dependencies = [
  "alcatraz-freebsd",
  "alcatraz-linux",
+ "alcatraz-macos",
  "anyhow",
  "chaos-diff",
  "chaos-doas",
@@ -1073,6 +1089,7 @@ dependencies = [
 name = "chaos-cli"
 version = "47.0.0"
 dependencies = [
+ "alcatraz-macos",
  "anyhow",
  "assert_cmd",
  "assert_matches",
@@ -1083,6 +1100,7 @@ dependencies = [
  "chaos-kern",
  "chaos-mcphost",
  "chaos-pam",
+ "chaos-pf",
  "chaos-selinux",
  "chaos-sysctl",
  "chaos-which",
@@ -1217,6 +1235,7 @@ dependencies = [
 name = "chaos-fork"
 version = "47.0.0"
 dependencies = [
+ "alcatraz-macos",
  "anyhow",
  "assert_cmd",
  "chaos-argv",
@@ -1337,6 +1356,7 @@ name = "chaos-kern"
 version = "47.0.0"
 dependencies = [
  "alcatraz-linux",
+ "alcatraz-macos",
  "anyhow",
  "arc-swap",
  "askama",

@@ -19,22 +19,6 @@ use crate::tools::sandboxing::SandboxAttempt;
 use crate::tools::sandboxing::SandboxablePreference;
 use crate::tools::sandboxing::ToolCtx;
 use crate::tools::sandboxing::ToolError;
-use chaos_selinux::Decision;
-use chaos_selinux::Evaluation;
-use chaos_selinux::MatchOptions;
-use chaos_selinux::Policy;
-use chaos_selinux::RuleMatch;
-use chaos_ipc::models::MacOsSeatbeltProfileExtensions;
-use chaos_ipc::models::PermissionProfile;
-use chaos_ipc::permissions::FileSystemSandboxPolicy;
-use chaos_ipc::permissions::NetworkSandboxPolicy;
-use chaos_ipc::protocol::AskForApproval;
-use chaos_ipc::protocol::ExecApprovalRequestSkillMetadata;
-use chaos_ipc::protocol::NetworkPolicyRuleAction;
-use chaos_ipc::protocol::ReviewDecision;
-use chaos_ipc::protocol::SandboxPolicy;
-use chaos_sh::bash::parse_shell_lc_plain_commands;
-use chaos_sh::bash::parse_shell_lc_single_command_prefix;
 use chaos_doas::EscalateServer;
 use chaos_doas::EscalationDecision;
 use chaos_doas::EscalationExecution;
@@ -47,7 +31,23 @@ use chaos_doas::Permissions as EscalatedPermissions;
 use chaos_doas::PreparedExec;
 use chaos_doas::ShellCommandExecutor;
 use chaos_doas::Stopwatch;
+use chaos_ipc::models::MacOsSeatbeltProfileExtensions;
+use chaos_ipc::models::PermissionProfile;
+use chaos_ipc::permissions::FileSystemSandboxPolicy;
+use chaos_ipc::permissions::NetworkSandboxPolicy;
+use chaos_ipc::protocol::AskForApproval;
+use chaos_ipc::protocol::ExecApprovalRequestSkillMetadata;
+use chaos_ipc::protocol::NetworkPolicyRuleAction;
+use chaos_ipc::protocol::ReviewDecision;
+use chaos_ipc::protocol::SandboxPolicy;
 use chaos_realpath::AbsolutePathBuf;
+use chaos_selinux::Decision;
+use chaos_selinux::Evaluation;
+use chaos_selinux::MatchOptions;
+use chaos_selinux::Policy;
+use chaos_selinux::RuleMatch;
+use chaos_sh::bash::parse_shell_lc_plain_commands;
+use chaos_sh::bash::parse_shell_lc_single_command_prefix;
 use std::collections::HashMap;
 use std::path::PathBuf;
 use std::sync::Arc;
@@ -158,6 +158,7 @@ pub(super) async fn try_run_zsh_fork(
             .permissions
             .macos_seatbelt_profile_extensions
             .clone(),
+        alcatraz_macos_exe: ctx.turn.alcatraz_macos_exe.clone(),
         alcatraz_linux_exe: ctx.turn.alcatraz_linux_exe.clone(),
         alcatraz_freebsd_exe: ctx.turn.alcatraz_freebsd_exe.clone(),
     };
@@ -263,6 +264,7 @@ pub(crate) async fn prepare_unified_exec_zsh_fork(
             .permissions
             .macos_seatbelt_profile_extensions
             .clone(),
+        alcatraz_macos_exe: ctx.turn.alcatraz_macos_exe.clone(),
         alcatraz_linux_exe: ctx.turn.alcatraz_linux_exe.clone(),
         alcatraz_freebsd_exe: ctx.turn.alcatraz_freebsd_exe.clone(),
     };
@@ -855,6 +857,7 @@ struct CoreShellCommandExecutor {
     sandbox_policy_cwd: PathBuf,
     #[cfg_attr(not(target_os = "macos"), allow(dead_code))]
     macos_seatbelt_profile_extensions: Option<MacOsSeatbeltProfileExtensions>,
+    alcatraz_macos_exe: Option<PathBuf>,
     alcatraz_linux_exe: Option<PathBuf>,
     alcatraz_freebsd_exe: Option<PathBuf>,
 }
@@ -1050,6 +1053,7 @@ impl CoreShellCommandExecutor {
                 sandbox_policy_cwd: &self.sandbox_policy_cwd,
                 #[cfg(target_os = "macos")]
                 macos_seatbelt_profile_extensions,
+                alcatraz_macos_exe: self.alcatraz_macos_exe.as_ref(),
                 alcatraz_linux_exe: self.alcatraz_linux_exe.as_ref(),
                 alcatraz_freebsd_exe: self.alcatraz_freebsd_exe.as_ref(),
             })?;

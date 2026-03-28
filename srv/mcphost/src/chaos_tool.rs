@@ -8,13 +8,13 @@ use std::path::PathBuf;
 use std::sync::Arc;
 
 use chaos_argv::Arg0DispatchPaths;
-use chaos_kern::ProcessTable;
-use chaos_kern::config::Config;
-use chaos_kern::config::ConfigOverrides;
+use chaos_conv::json_to_toml;
 use chaos_ipc::ProcessId;
 use chaos_ipc::config_types::SandboxMode;
 use chaos_ipc::protocol::AskForApproval;
-use chaos_conv::json_to_toml;
+use chaos_kern::ProcessTable;
+use chaos_kern::config::Config;
+use chaos_kern::config::ConfigOverrides;
 use mcp_host::prelude::*;
 use mcp_host::registry::router::{McpToolRouter, tool_info_with_output};
 use schemars::JsonSchema;
@@ -159,6 +159,7 @@ impl ChaosToolParams {
             sandbox_mode: sandbox.map(Into::into),
             alcatraz_linux_exe: arg0_paths.alcatraz_linux_exe.clone(),
             alcatraz_freebsd_exe: arg0_paths.alcatraz_freebsd_exe.clone(),
+            alcatraz_macos_exe: arg0_paths.alcatraz_macos_exe.clone(),
             main_execve_wrapper_exe: arg0_paths.main_execve_wrapper_exe.clone(),
             base_instructions,
             developer_instructions,
@@ -202,7 +203,11 @@ impl ChaosMcpServer {
             ),
             None => {
                 // Auto-resume: reuse the last process for this session
-                self.session_processes.lock().await.get(&session_id).copied()
+                self.session_processes
+                    .lock()
+                    .await
+                    .get(&session_id)
+                    .copied()
             }
         };
 
@@ -316,7 +321,10 @@ mod tests {
         let input = tool_json.get("inputSchema").expect("inputSchema");
         let props = input.get("properties").expect("properties");
         assert!(props.get("prompt").is_some(), "prompt field required");
-        assert!(props.get("process-id").is_some(), "process-id field required");
+        assert!(
+            props.get("process-id").is_some(),
+            "process-id field required"
+        );
         assert_eq!(tool_json.get("name"), Some(&json!("chaos")));
     }
 }

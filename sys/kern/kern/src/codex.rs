@@ -51,20 +51,12 @@ use crate::util::error_or_panic;
 use crate::ws_version_from_features;
 use async_channel::Receiver;
 use async_channel::Sender;
-use jiff::Timestamp;
-use jiff::Zoned;
 use chaos_dtrace::HookEvent;
 use chaos_dtrace::HookEventAfterAgent;
 use chaos_dtrace::HookPayload;
 use chaos_dtrace::HookResult;
 use chaos_dtrace::Hooks;
 use chaos_dtrace::HooksConfig;
-use chaos_pf::NetworkProxy;
-use chaos_pf::NetworkProxyAuditMetadata;
-use chaos_pf::normalize_host;
-use chaos_syslog::current_span_trace_id;
-use chaos_syslog::current_span_w3c_trace_context;
-use chaos_syslog::set_parent_from_w3c_trace_context;
 use chaos_ipc::ProcessId;
 use chaos_ipc::api::McpServerElicitationRequest;
 use chaos_ipc::api::McpServerElicitationRequestParams;
@@ -115,10 +107,18 @@ use chaos_lex::AssistantTextStreamParser;
 use chaos_lex::ProposedPlanSegment;
 use chaos_lex::extract_proposed_plan_text;
 use chaos_lex::strip_citations;
+use chaos_pf::NetworkProxy;
+use chaos_pf::NetworkProxyAuditMetadata;
+use chaos_pf::normalize_host;
+use chaos_syslog::current_span_trace_id;
+use chaos_syslog::current_span_w3c_trace_context;
+use chaos_syslog::set_parent_from_w3c_trace_context;
 use futures::future::BoxFuture;
 use futures::future::Shared;
 use futures::prelude::*;
 use futures::stream::FuturesOrdered;
+use jiff::Timestamp;
+use jiff::Zoned;
 use mcp_guest::ListResourceTemplatesResult;
 use mcp_guest::ListResourcesResult;
 use mcp_guest::PaginatedRequestParams;
@@ -151,7 +151,6 @@ use crate::client::ModelClient;
 use crate::client::ModelClientSession;
 use crate::client_common::Prompt;
 use crate::client_common::ResponseEvent;
-use crate::process::ProcessConfigSnapshot;
 use crate::compact::collect_user_messages;
 use crate::config::Config;
 use crate::config::Constrained;
@@ -168,6 +167,7 @@ use crate::error::CodexErr;
 use crate::error::Result as CodexResult;
 #[cfg(test)]
 use crate::exec::StreamOutput;
+use crate::process::ProcessConfigSnapshot;
 use chaos_sysctl::CONFIG_TOML_FILE;
 
 mod rollout_reconstruction;
@@ -301,9 +301,6 @@ use crate::turn_timing::record_turn_ttft_metric;
 use crate::unified_exec::UnifiedExecProcessManager;
 use crate::util::backoff;
 use chaos_epoll::OrCancelExt;
-use chaos_syslog::SessionTelemetry;
-use chaos_syslog::TelemetryAuthMode;
-use chaos_syslog::metrics::names::THREAD_STARTED_METRIC;
 use chaos_ipc::config_types::CollaborationMode;
 use chaos_ipc::config_types::Personality;
 use chaos_ipc::config_types::ReasoningSummary as ReasoningSummaryConfig;
@@ -317,9 +314,12 @@ use chaos_ipc::openai_models::ReasoningEffort as ReasoningEffortConfig;
 use chaos_ipc::protocol::CodexErrorInfo;
 use chaos_ipc::protocol::InitialHistory;
 use chaos_ipc::user_input::UserInput;
-use chaos_realpath::AbsolutePathBuf;
 use chaos_ready::Readiness;
 use chaos_ready::ReadinessFlag;
+use chaos_realpath::AbsolutePathBuf;
+use chaos_syslog::SessionTelemetry;
+use chaos_syslog::TelemetryAuthMode;
+use chaos_syslog::metrics::names::THREAD_STARTED_METRIC;
 
 /// The high-level interface to the Codex system.
 /// It operates as a queue pair where you send submissions and receive events.
@@ -759,6 +759,7 @@ pub(crate) struct TurnContext {
     pub(crate) features: ManagedFeatures,
     pub(crate) ghost_snapshot: GhostSnapshotConfig,
     pub(crate) final_output_json_schema: Option<Value>,
+    pub(crate) alcatraz_macos_exe: Option<PathBuf>,
     pub(crate) alcatraz_linux_exe: Option<PathBuf>,
     pub(crate) alcatraz_freebsd_exe: Option<PathBuf>,
     pub(crate) tool_call_gate: Arc<ReadinessFlag>,
@@ -863,6 +864,7 @@ impl TurnContext {
             features,
             ghost_snapshot: self.ghost_snapshot.clone(),
             final_output_json_schema: self.final_output_json_schema.clone(),
+            alcatraz_macos_exe: self.alcatraz_macos_exe.clone(),
             alcatraz_linux_exe: self.alcatraz_linux_exe.clone(),
             alcatraz_freebsd_exe: self.alcatraz_freebsd_exe.clone(),
             tool_call_gate: Arc::new(ReadinessFlag::new()),
@@ -1305,6 +1307,7 @@ impl Session {
             features: per_turn_config.features.clone(),
             ghost_snapshot: per_turn_config.ghost_snapshot.clone(),
             final_output_json_schema: None,
+            alcatraz_macos_exe: per_turn_config.alcatraz_macos_exe.clone(),
             alcatraz_linux_exe: per_turn_config.alcatraz_linux_exe.clone(),
             alcatraz_freebsd_exe: per_turn_config.alcatraz_freebsd_exe.clone(),
             tool_call_gate: Arc::new(ReadinessFlag::new()),
@@ -1801,6 +1804,7 @@ impl Session {
         // MCP server immediately after it becomes ready (avoiding blocking).
         let sandbox_state = SandboxState {
             sandbox_policy: session_configuration.sandbox_policy.get().clone(),
+            alcatraz_macos_exe: config.alcatraz_macos_exe.clone(),
             alcatraz_linux_exe: config.alcatraz_linux_exe.clone(),
             alcatraz_freebsd_exe: config.alcatraz_freebsd_exe.clone(),
             sandbox_cwd: session_configuration.cwd.clone(),
@@ -2259,6 +2263,7 @@ impl Session {
         if sandbox_policy_changed {
             let sandbox_state = SandboxState {
                 sandbox_policy: per_turn_config.permissions.sandbox_policy.get().clone(),
+                alcatraz_macos_exe: per_turn_config.alcatraz_macos_exe.clone(),
                 alcatraz_linux_exe: per_turn_config.alcatraz_linux_exe.clone(),
                 alcatraz_freebsd_exe: per_turn_config.alcatraz_freebsd_exe.clone(),
                 sandbox_cwd: per_turn_config.cwd.clone(),
@@ -3895,6 +3900,7 @@ impl Session {
         let auth_statuses = compute_auth_statuses(mcp_servers.iter(), store_mode).await;
         let sandbox_state = SandboxState {
             sandbox_policy: turn_context.sandbox_policy.get().clone(),
+            alcatraz_macos_exe: turn_context.alcatraz_macos_exe.clone(),
             alcatraz_linux_exe: turn_context.alcatraz_linux_exe.clone(),
             alcatraz_freebsd_exe: turn_context.alcatraz_freebsd_exe.clone(),
             sandbox_cwd: turn_context.cwd.clone(),
@@ -4239,6 +4245,8 @@ mod handlers {
     use chaos_ipc::protocol::ListSkillsResponseEvent;
     use chaos_ipc::protocol::McpServerRefreshConfig;
     use chaos_ipc::protocol::Op;
+    use chaos_ipc::protocol::ProcessNameUpdatedEvent;
+    use chaos_ipc::protocol::ProcessRolledBackEvent;
     use chaos_ipc::protocol::RemoteSkillDownloadedEvent;
     use chaos_ipc::protocol::RemoteSkillHazelnutScope;
     use chaos_ipc::protocol::RemoteSkillProductSurface;
@@ -4247,8 +4255,6 @@ mod handlers {
     use chaos_ipc::protocol::ReviewRequest;
     use chaos_ipc::protocol::RolloutItem;
     use chaos_ipc::protocol::SkillsListEntry;
-    use chaos_ipc::protocol::ProcessNameUpdatedEvent;
-    use chaos_ipc::protocol::ProcessRolledBackEvent;
     use chaos_ipc::protocol::TurnAbortReason;
     use chaos_ipc::protocol::WarningEvent;
     use chaos_ipc::request_permissions::RequestPermissionsResponse;
@@ -5174,6 +5180,7 @@ async fn spawn_review_thread(
         shell_environment_policy: parent_turn_context.shell_environment_policy.clone(),
         cwd: parent_turn_context.cwd.clone(),
         final_output_json_schema: None,
+        alcatraz_macos_exe: parent_turn_context.alcatraz_macos_exe.clone(),
         alcatraz_linux_exe: parent_turn_context.alcatraz_linux_exe.clone(),
         alcatraz_freebsd_exe: parent_turn_context.alcatraz_freebsd_exe.clone(),
         tool_call_gate: Arc::new(ReadinessFlag::new()),

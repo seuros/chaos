@@ -1,5 +1,8 @@
 #![cfg(target_os = "macos")]
 
+use chaos_ipc::permissions::FileSystemSandboxPolicy;
+use chaos_ipc::permissions::NetworkSandboxPolicy;
+use chaos_ipc::protocol::SandboxPolicy;
 use chaos_pf::NetworkProxy;
 use chaos_pf::PROXY_URL_ENV_KEYS;
 use chaos_pf::has_proxy_url_env_vars;
@@ -11,61 +14,18 @@ use std::collections::HashMap;
 use std::ffi::CStr;
 use std::path::Path;
 use std::path::PathBuf;
-use tokio::process::Child;
 use tracing::warn;
 use url::Url;
 
-use crate::protocol::SandboxPolicy;
 use crate::seatbelt_permissions::MacOsSeatbeltProfileExtensions;
 use crate::seatbelt_permissions::build_seatbelt_extensions;
-use crate::spawn::CODEX_SANDBOX_ENV_VAR;
-use crate::spawn::SpawnChildRequest;
-use crate::spawn::StdioPolicy;
-use crate::spawn::spawn_child_async;
-use chaos_ipc::permissions::FileSystemSandboxPolicy;
-use chaos_ipc::permissions::NetworkSandboxPolicy;
+
+pub const MACOS_PATH_TO_SEATBELT_EXECUTABLE: &str = "/usr/bin/sandbox-exec";
 
 const MACOS_SEATBELT_BASE_POLICY: &str = include_str!("seatbelt_base_policy.sbpl");
 const MACOS_SEATBELT_NETWORK_POLICY: &str = include_str!("seatbelt_network_policy.sbpl");
 const MACOS_RESTRICTED_READ_ONLY_PLATFORM_DEFAULTS: &str =
     include_str!("restricted_read_only_platform_defaults.sbpl");
-
-/// When working with `sandbox-exec`, only consider `sandbox-exec` in `/usr/bin`
-/// to defend against an attacker trying to inject a malicious version on the
-/// PATH. If /usr/bin/sandbox-exec has been tampered with, then the attacker
-/// already has root access.
-pub(crate) const MACOS_PATH_TO_SEATBELT_EXECUTABLE: &str = "/usr/bin/sandbox-exec";
-
-pub async fn spawn_command_under_seatbelt(
-    command: Vec<String>,
-    command_cwd: PathBuf,
-    sandbox_policy: &SandboxPolicy,
-    sandbox_policy_cwd: &Path,
-    stdio_policy: StdioPolicy,
-    network: Option<&NetworkProxy>,
-    mut env: HashMap<String, String>,
-) -> std::io::Result<Child> {
-    let args = create_seatbelt_command_args(
-        command,
-        sandbox_policy,
-        sandbox_policy_cwd,
-        /*enforce_managed_network*/ false,
-        network,
-    );
-    let arg0 = None;
-    env.insert(CODEX_SANDBOX_ENV_VAR.to_string(), "seatbelt".to_string());
-    spawn_child_async(SpawnChildRequest {
-        program: PathBuf::from(MACOS_PATH_TO_SEATBELT_EXECUTABLE),
-        args,
-        arg0,
-        cwd: command_cwd,
-        network_sandbox_policy: NetworkSandboxPolicy::from(sandbox_policy),
-        network,
-        stdio_policy,
-        env,
-    })
-    .await
-}
 
 fn is_loopback_host(host: &str) -> bool {
     host.eq_ignore_ascii_case("localhost") || host == "127.0.0.1" || host == "::1"
@@ -330,7 +290,7 @@ fn dynamic_network_policy_for_network(
     }
 }
 
-pub(crate) fn create_seatbelt_command_args(
+pub fn create_seatbelt_command_args(
     command: Vec<String>,
     sandbox_policy: &SandboxPolicy,
     sandbox_policy_cwd: &Path,
@@ -405,7 +365,7 @@ fn build_seatbelt_access_policy(
 }
 
 #[cfg_attr(not(test), allow(dead_code))]
-pub(crate) fn create_seatbelt_command_args_with_extensions(
+pub fn create_seatbelt_command_args_with_extensions(
     command: Vec<String>,
     sandbox_policy: &SandboxPolicy,
     sandbox_policy_cwd: &Path,
@@ -424,7 +384,7 @@ pub(crate) fn create_seatbelt_command_args_with_extensions(
     )
 }
 
-pub(crate) fn create_seatbelt_command_args_for_policies_with_extensions(
+pub fn create_seatbelt_command_args_for_policies_with_extensions(
     command: Vec<String>,
     file_system_sandbox_policy: &FileSystemSandboxPolicy,
     network_sandbox_policy: NetworkSandboxPolicy,
@@ -546,7 +506,7 @@ pub(crate) fn create_seatbelt_command_args_for_policies_with_extensions(
     let dir_params = [
         file_read_dir_params,
         file_write_dir_params,
-        macos_dir_params(),
+        platform_dir_params(),
         unix_socket_dir_params(&proxy),
         seatbelt_extensions.dir_params,
     ]
@@ -561,6 +521,10 @@ pub(crate) fn create_seatbelt_command_args_for_policies_with_extensions(
     seatbelt_args.extend(command);
     seatbelt_args
 }
+
+#[cfg(test)]
+#[path = "seatbelt_tests.rs"]
+mod tests;
 
 /// Wraps libc::confstr to return a String.
 fn confstr(name: libc::c_int) -> Option<String> {
@@ -581,13 +545,9 @@ fn confstr_path(name: libc::c_int) -> Option<PathBuf> {
     path.canonicalize().ok().or(Some(path))
 }
 
-fn macos_dir_params() -> Vec<(String, PathBuf)> {
+fn platform_dir_params() -> Vec<(String, PathBuf)> {
     if let Some(p) = confstr_path(libc::_CS_DARWIN_USER_CACHE_DIR) {
         return vec![("DARWIN_USER_CACHE_DIR".to_string(), p)];
     }
     vec![]
 }
-
-#[cfg(test)]
-#[path = "seatbelt_tests.rs"]
-mod tests;

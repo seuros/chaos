@@ -10,6 +10,7 @@ use tempfile::TempDir;
 
 const LINUX_SANDBOX_ARG0: &str = "alcatraz-linux";
 const FREEBSD_SANDBOX_ARG0: &str = "alcatraz-freebsd";
+const MACOS_SANDBOX_ARG0: &str = "alcatraz-macos";
 const APPLY_PATCH_ARG0: &str = "apply_patch";
 const MISSPELLED_APPLY_PATCH_ARG0: &str = "applypatch";
 const EXECVE_WRAPPER_ARG0: &str = "codex-execve-wrapper";
@@ -20,6 +21,7 @@ const TOKIO_WORKER_STACK_SIZE_BYTES: usize = 16 * 1024 * 1024;
 pub struct Arg0DispatchPaths {
     pub alcatraz_linux_exe: Option<PathBuf>,
     pub alcatraz_freebsd_exe: Option<PathBuf>,
+    pub alcatraz_macos_exe: Option<PathBuf>,
     pub main_execve_wrapper_exe: Option<PathBuf>,
 }
 
@@ -69,9 +71,8 @@ pub fn arg0_dispatch() -> Option<Arg0PathEntryGuard> {
             Ok(runtime) => runtime,
             Err(_) => std::process::exit(1),
         };
-        let exit_code = runtime.block_on(
-            chaos_doas::run_shell_escalation_execve_wrapper(file, argv),
-        );
+        let exit_code =
+            runtime.block_on(chaos_doas::run_shell_escalation_execve_wrapper(file, argv));
         match exit_code {
             Ok(exit_code) => std::process::exit(exit_code),
             Err(_) => std::process::exit(1),
@@ -84,6 +85,9 @@ pub fn arg0_dispatch() -> Option<Arg0PathEntryGuard> {
     } else if exe_name == FREEBSD_SANDBOX_ARG0 {
         // Safety: [`run_main`] never returns.
         alcatraz_freebsd::run_main();
+    } else if exe_name == MACOS_SANDBOX_ARG0 {
+        // Safety: [`run_main`] never returns.
+        alcatraz_macos::run_main();
     } else if exe_name == APPLY_PATCH_ARG0 || exe_name == MISSPELLED_APPLY_PATCH_ARG0 {
         chaos_diff::main();
     }
@@ -126,17 +130,18 @@ pub fn arg0_dispatch() -> Option<Arg0PathEntryGuard> {
 /// While we want to deploy the Codex CLI as a single executable for simplicity,
 /// we also want to expose some of its functionality as distinct CLIs, so we use
 /// the "arg0 trick" to determine which CLI to dispatch. This effectively allows
-/// us to simulate deploying multiple executables as a single binary on Mac and
-/// Linux (but not Windows).
+/// us to simulate deploying multiple executables as a single binary on macOS,
+/// Linux, and FreeBSD (but not Windows).
 ///
 /// When the current executable is invoked through the hard-link or alias named
-/// `alcatraz-linux` we *directly* execute
-/// [`alcatraz_linux::run_main`] (which never returns). Otherwise we:
+/// `alcatraz-linux`, `alcatraz-freebsd`, or `alcatraz-macos` we *directly*
+/// execute the corresponding helper `run_main()` (which never returns).
+/// Otherwise we:
 ///
 /// 1.  Load `.env` values from `~/.codex/.env` before creating any threads.
 /// 2.  Construct a Tokio multi-thread runtime.
 /// 3.  Derive the path to the current executable (so children can re-invoke the
-///     sandbox) when running on Linux.
+///     sandbox) when running on Linux, FreeBSD, or macOS.
 /// 4.  Execute the provided async `main_fn` inside that runtime, forwarding any
 ///     error. Note that `main_fn` receives [`Arg0DispatchPaths`], which
 ///     contains the helper executable paths needed to construct
@@ -170,10 +175,19 @@ where
                 None
             },
             alcatraz_freebsd_exe: if cfg!(target_os = "freebsd") {
-                current_exe.or_else(|| {
+                current_exe.clone().or_else(|| {
                     path_entry
                         .as_ref()
                         .and_then(|path_entry| path_entry.paths().alcatraz_freebsd_exe.clone())
+                })
+            } else {
+                None
+            },
+            alcatraz_macos_exe: if cfg!(target_os = "macos") {
+                current_exe.clone().or_else(|| {
+                    path_entry
+                        .as_ref()
+                        .and_then(|path_entry| path_entry.paths().alcatraz_macos_exe.clone())
                 })
             } else {
                 None
@@ -289,6 +303,8 @@ pub fn prepend_path_entry_for_codex_aliases() -> std::io::Result<Arg0PathEntryGu
         LINUX_SANDBOX_ARG0,
         #[cfg(target_os = "freebsd")]
         FREEBSD_SANDBOX_ARG0,
+        #[cfg(target_os = "macos")]
+        MACOS_SANDBOX_ARG0,
         EXECVE_WRAPPER_ARG0,
     ] {
         let exe = std::env::current_exe()?;
@@ -329,6 +345,16 @@ pub fn prepend_path_entry_for_codex_aliases() -> std::io::Result<Arg0PathEntryGu
                 Some(path.join(FREEBSD_SANDBOX_ARG0))
             }
             #[cfg(not(target_os = "freebsd"))]
+            {
+                None
+            }
+        },
+        alcatraz_macos_exe: {
+            #[cfg(target_os = "macos")]
+            {
+                Some(path.join(MACOS_SANDBOX_ARG0))
+            }
+            #[cfg(not(target_os = "macos"))]
             {
                 None
             }

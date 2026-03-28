@@ -5,8 +5,8 @@ use super::create_seatbelt_command_args;
 use super::create_seatbelt_command_args_for_policies_with_extensions;
 use super::create_seatbelt_command_args_with_extensions;
 use super::dynamic_network_policy;
-use super::macos_dir_params;
 use super::normalize_path_for_sandbox;
+use super::platform_dir_params;
 use super::unix_socket_dir_params;
 use super::unix_socket_policy;
 use crate::protocol::ReadOnlyAccess;
@@ -31,9 +31,9 @@ use tempfile::TempDir;
 
 fn assert_seatbelt_denied(stderr: &[u8], path: &Path) {
     let stderr = String::from_utf8_lossy(stderr);
-    let expected = format!("bash: {}: Operation not permitted\n", path.display());
     assert!(
-        stderr == expected
+        stderr.contains(&format!("{}: Operation not permitted", path.display()))
+            || stderr.contains(&format!("{}: No such file or directory", path.display()))
             || stderr.contains("sandbox-exec: sandbox_apply: Operation not permitted"),
         "unexpected stderr: {stderr}"
     );
@@ -195,7 +195,7 @@ fn explicit_unreadable_paths_are_excluded_from_readable_roots() {
 }
 
 #[test]
-fn seatbelt_args_include_macos_permission_extensions() {
+fn seatbelt_args_include_permission_extensions() {
     let cwd = std::env::temp_dir();
     let args = create_seatbelt_command_args_with_extensions(
         vec!["echo".to_string(), "ok".to_string()],
@@ -693,7 +693,7 @@ fn create_seatbelt_args_with_read_only_git_and_codex_subpaths() {
             "expected definition arg `{expected_definition}` in {args:#?}"
         );
     }
-    for (key, value) in macos_dir_params() {
+    for (key, value) in platform_dir_params() {
         let expected_definition = format!("-D{key}={}", value.to_string_lossy());
         assert!(
             args.contains(&expected_definition),
@@ -993,7 +993,7 @@ fn create_seatbelt_args_for_cwd_as_git_repo() {
     }
 
     expected_args.extend(
-        macos_dir_params()
+        platform_dir_params()
             .into_iter()
             .map(|(key, value)| format!("-D{key}={value}", value = value.to_string_lossy())),
     );

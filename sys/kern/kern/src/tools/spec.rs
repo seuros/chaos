@@ -1878,6 +1878,7 @@ pub(crate) fn build_specs_with_discoverable_tools(
 ) -> ToolRegistryBuilder {
     use crate::tools::handlers::ApplyPatchHandler;
     use crate::tools::handlers::ArsenalHandler;
+    use crate::tools::handlers::CronHandler;
     use crate::tools::handlers::DynamicToolHandler;
     use crate::tools::handlers::McpHandler;
     use crate::tools::handlers::McpResourceHandler;
@@ -2091,6 +2092,29 @@ pub(crate) fn build_specs_with_discoverable_tools(
                 /*supports_parallel_tool_calls*/ true,
             );
             builder.register_handler(&info.name, arsenal_handler.clone());
+        }
+    }
+
+    // Cron tools — discovered from the cron crate at boot.
+    {
+        let cron_handler = Arc::new(CronHandler);
+        for info in chaos_cron::tool_infos() {
+            let input_schema = parse_tool_input_schema(&info.input_schema)
+                .unwrap_or_else(|e| panic!("cron tool {} has invalid schema: {e}", info.name));
+            let spec = ToolSpec::Function(ResponsesApiTool {
+                name: info.name.clone(),
+                description: info.description.unwrap_or_default(),
+                strict: false,
+                defer_loading: None,
+                parameters: input_schema,
+                output_schema: None,
+            });
+            push_tool_spec(
+                &mut builder,
+                spec,
+                /*supports_parallel_tool_calls*/ false,
+            );
+            builder.register_handler(&info.name, cron_handler.clone());
         }
     }
 

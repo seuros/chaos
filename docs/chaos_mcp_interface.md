@@ -50,6 +50,7 @@ Chaos exposes MCP-compatible methods to manage processes, turns, config, and app
 Primary RPCs:
 - `chaos` tool for create-or-resume process execution
 - `chaos://sessions` and `chaos://sessions/{id}` resources for process discovery
+- `chaos://crons` resource for scheduled job discovery
 - `config/read`, `config/value/write`, `config/batchWrite`
 - `model/list`
 

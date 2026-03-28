@@ -45,8 +45,11 @@ pub use model::Stage1JobClaimOutcome;
 pub use model::Stage1Output;
 pub use model::Stage1OutputRef;
 pub use model::Stage1StartupClaimParams;
+pub use runtime::chaos_db_filename;
+pub use runtime::chaos_db_path;
 pub use runtime::logs_db_filename;
 pub use runtime::logs_db_path;
+pub use runtime::open_chaos_db;
 pub use runtime::state_db_filename;
 pub use runtime::state_db_path;
 
@@ -57,6 +60,9 @@ pub const LOGS_DB_FILENAME: &str = "logs";
 pub const LOGS_DB_VERSION: u32 = 1;
 pub const STATE_DB_FILENAME: &str = "state";
 pub const STATE_DB_VERSION: u32 = 5;
+
+pub const CHAOS_DB_FILENAME: &str = "chaos";
+pub const CHAOS_DB_VERSION: u32 = 1;
 
 /// Errors encountered during DB operations. Tags: [stage]
 pub const DB_ERROR_METRIC: &str = "codex.db.error";

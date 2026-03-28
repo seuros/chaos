@@ -1,0 +1,33 @@
+[package]
+name = "chaos-cron"
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+publish.workspace = true
+
+[lib]
+doctest = false
+name = "chaos_cron"
+path = "src/lib.rs"
+
+[dependencies]
+anyhow = { workspace = true }
+chaos-proc = { workspace = true }
+chrono = { workspace = true }
+croner = { workspace = true }
+jiff = { workspace = true }
+mcp-host = { workspace = true, features = ["macros"] }
+schemars = "1.0.0-alpha.20"
+serde = { workspace = true, features = ["derive"] }
+serde_json = { workspace = true }
+sqlx = { workspace = true }
+tokio = { workspace = true, features = ["macros", "process", "rt", "sync", "time"] }
+tracing = { workspace = true }
+uuid = { workspace = true, features = ["v4"] }
+
+[dev-dependencies]
+tempfile = { workspace = true }
+tokio = { workspace = true, features = ["macros", "rt-multi-thread", "test-util"] }
+
+[lints]
+workspace = true

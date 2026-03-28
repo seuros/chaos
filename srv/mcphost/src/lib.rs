@@ -17,13 +17,13 @@ use tokio::sync::Mutex;
 use tracing_subscriber::EnvFilter;
 use tracing_subscriber::prelude::*;
 
+mod builtin_resources;
 mod chaos_runner;
 mod chaos_tool;
 mod elicitation;
 mod exec_approval;
 mod outgoing_message;
 mod patch_approval;
-mod session_resources;
 
 use crate::chaos_tool::ChaosMcpServer;
 use crate::outgoing_message::OutgoingMessage;
@@ -148,9 +148,9 @@ pub async fn run_main(
         state_runtime,
     });
     chaos_tool::tool_router().register_all(mcp_server.tool_registry(), chaos_server.clone());
-    session_resources::resource_router()
+    builtin_resources::resource_router()
         .register_all(mcp_server.resource_manager(), chaos_server.clone());
-    session_resources::resource_template_router()
+    builtin_resources::resource_template_router()
         .register_all(mcp_server.resource_manager(), chaos_server);
 
     // Spawn a task to forward outgoing messages as notifications via mcp-host.

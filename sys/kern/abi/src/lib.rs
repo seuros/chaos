@@ -9,6 +9,7 @@
 pub mod adapter;
 pub mod error;
 pub mod event;
+pub mod models;
 pub mod reasoning;
 pub mod request;
 pub mod stream;
@@ -19,6 +20,10 @@ pub use adapter::AdapterFuture;
 pub use adapter::ModelAdapter;
 pub use error::AbiError;
 pub use event::TurnEvent;
+pub use models::AbiModelInfo;
+pub use models::AdapterCapabilities;
+pub use models::ListModelsError;
+pub use models::ListModelsFuture;
 pub use reasoning::ReasoningConfig;
 pub use request::TurnRequest;
 pub use stream::TurnStream;

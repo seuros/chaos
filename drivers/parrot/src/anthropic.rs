@@ -175,6 +175,25 @@ impl ModelAdapter for AnthropicAdapter {
     fn provider_name(&self) -> &str {
         "Anthropic"
     }
+
+    fn capabilities(&self) -> chaos_abi::AdapterCapabilities {
+        chaos_abi::AdapterCapabilities {
+            can_list_models: true,
+        }
+    }
+
+    fn list_models(&self) -> chaos_abi::ListModelsFuture<'_> {
+        Box::pin(async {
+            let url = self.provider.url_for_path("/models");
+            let headers = self.build_headers().map_err(|e| {
+                chaos_abi::ListModelsError::Failed {
+                    message: e.to_string(),
+                }
+            })?;
+
+            fetch_anthropic_models(&url, &headers).await
+        })
+    }
 }
 
 // ── Request building ───────────────────────────────────────────────
@@ -796,6 +815,144 @@ where
             }
         }
     }
+}
+
+// ── Model discovery ───────────────────────────────────────────────
+
+/// Fetch model list from an Anthropic-compatible `/models` endpoint.
+///
+/// The response shape is `{ "data": [{ "id", "display_name", ... }] }`.
+/// Works on api.anthropic.com (the original) and Z.ai (who at least
+/// added their own models to the response). MiniMax and Kimi copied
+/// the wire format but forgot to implement discovery, so they 404
+/// here and get `ListModelsError::Unsupported`. You can clone the
+/// protocol but apparently not the whole API surface.
+async fn fetch_anthropic_models(
+    url: &str,
+    headers: &HeaderMap,
+) -> Result<Vec<chaos_abi::AbiModelInfo>, chaos_abi::ListModelsError> {
+    use rama::Service;
+    use rama::http::Body;
+    use rama::http::Request;
+    use rama::http::StatusCode;
+    use rama::http::body::util::BodyExt;
+    use rama::http::client::EasyHttpWebClient;
+    use serde::Deserialize;
+
+    #[derive(Deserialize)]
+    struct ModelsResponse {
+        data: Vec<ModelEntry>,
+    }
+
+    #[derive(Deserialize)]
+    struct ModelEntry {
+        id: String,
+        #[serde(default)]
+        display_name: Option<String>,
+        #[serde(default)]
+        max_input_tokens: Option<i64>,
+        #[serde(default)]
+        max_tokens: Option<i64>,
+        #[serde(default)]
+        capabilities: Option<Capabilities>,
+    }
+
+    #[derive(Deserialize)]
+    struct Capabilities {
+        #[serde(default)]
+        thinking: Option<Supported>,
+        #[serde(default)]
+        image_input: Option<Supported>,
+        #[serde(default)]
+        structured_outputs: Option<Supported>,
+        #[serde(default)]
+        effort: Option<Supported>,
+    }
+
+    #[derive(Deserialize)]
+    struct Supported {
+        #[serde(default)]
+        supported: bool,
+    }
+
+    let client = EasyHttpWebClient::default();
+    let mut builder = Request::builder().method("GET").uri(url);
+    // Copy auth and version headers, skip content-type/accept (not needed for GET)
+    for (name, value) in headers.iter() {
+        let dominated = name == http::header::CONTENT_TYPE || name == http::header::ACCEPT;
+        if !dominated {
+            builder = builder.header(name, value);
+        }
+    }
+    let request = builder.body(Body::empty()).map_err(|e| {
+        chaos_abi::ListModelsError::Failed {
+            message: e.to_string(),
+        }
+    })?;
+
+    let response = client.serve(request).await.map_err(|e| {
+        chaos_abi::ListModelsError::Failed {
+            message: format!("transport: {e}"),
+        }
+    })?;
+
+    let status = response.status();
+    if status == StatusCode::NOT_FOUND {
+        return Err(chaos_abi::ListModelsError::Unsupported);
+    }
+    if status != StatusCode::OK {
+        let body = response
+            .into_body()
+            .collect()
+            .await
+            .map(|b| String::from_utf8_lossy(&b.to_bytes()).to_string())
+            .unwrap_or_default();
+        return Err(chaos_abi::ListModelsError::Failed {
+            message: format!("HTTP {status}: {body}"),
+        });
+    }
+
+    let body = response
+        .into_body()
+        .collect()
+        .await
+        .map_err(|e| chaos_abi::ListModelsError::Failed {
+            message: e.to_string(),
+        })?
+        .to_bytes();
+
+    let resp: ModelsResponse =
+        serde_json::from_slice(&body).map_err(|e| chaos_abi::ListModelsError::Failed {
+            message: format!("parse: {e}"),
+        })?;
+
+    let models = resp
+        .data
+        .into_iter()
+        .map(|m| {
+            let caps = m.capabilities.as_ref();
+            chaos_abi::AbiModelInfo {
+                id: m.id.clone(),
+                display_name: m.display_name.unwrap_or_else(|| m.id),
+                max_input_tokens: m.max_input_tokens,
+                max_output_tokens: m.max_tokens,
+                supports_thinking: caps
+                    .and_then(|c| c.thinking.as_ref())
+                    .is_some_and(|s| s.supported),
+                supports_images: caps
+                    .and_then(|c| c.image_input.as_ref())
+                    .is_some_and(|s| s.supported),
+                supports_structured_output: caps
+                    .and_then(|c| c.structured_outputs.as_ref())
+                    .is_some_and(|s| s.supported),
+                supports_reasoning_effort: caps
+                    .and_then(|c| c.effort.as_ref())
+                    .is_some_and(|s| s.supported),
+            }
+        })
+        .collect();
+
+    Ok(models)
 }
 
 #[cfg(test)]

@@ -67,8 +67,12 @@ impl<'de> Deserialize<'de> for WireApi {
 }
 
 /// Returns true if the provider's base URL indicates it speaks the Anthropic
-/// Messages wire format. Catches `api.anthropic.com`, MiniMax `/anthropic`,
-/// Z.ai `/api/anthropic`, and any other Anthropic-compatible endpoint.
+/// Messages wire format.
+///
+/// Catches the real `api.anthropic.com` and the clones who bolted
+/// `/anthropic` onto their base URL — MiniMax (`api.minimax.io/anthropic`),
+/// Kimi (`api.moonshot.ai/anthropic`), Z.ai (`api.z.ai/api/anthropic`).
+/// Imitation is the sincerest form of not having your own wire format.
 pub fn is_anthropic_wire(base_url: Option<&str>) -> bool {
     base_url.map(|u| u.contains("anthropic")).unwrap_or(false)
 }

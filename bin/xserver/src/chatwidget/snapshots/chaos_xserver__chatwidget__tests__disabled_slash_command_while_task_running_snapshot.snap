@@ -1,0 +1,6 @@
+---
+source: bin/xserver/src/chatwidget/tests.rs
+assertion_line: 7028
+expression: blob
+---
+■ '/model' is disabled while a task is in progress.

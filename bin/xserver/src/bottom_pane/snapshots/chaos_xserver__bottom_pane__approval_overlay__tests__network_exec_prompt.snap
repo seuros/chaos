@@ -1,0 +1,42 @@
+---
+source: bin/xserver/src/bottom_pane/approval_overlay.rs
+expression: "format!(\"{buf:?}\")"
+---
+Buffer {
+    area: Rect { x: 0, y: 0, width: 100, height: 12 },
+    content: [
+        "                                                                                                    ",
+        "  Do you want to approve network access to "example.com"?                                           ",
+        "                                                                                                    ",
+        "  Reason: network request blocked                                                                   ",
+        "                                                                                                    ",
+        "                                                                                                    ",
+        "› 1. Yes, just this once (y)                                                                        ",
+        "  2. Yes, and allow this host for this conversation (a)                                             ",
+        "  3. Yes, and allow this host in the future (p)                                                     ",
+        "  4. No, and tell Codex what to do differently (esc)                                                ",
+        "                                                                                                    ",
+        "  Press enter to confirm or esc to cancel                                                           ",
+    ],
+    styles: [
+        x: 0, y: 0, fg: LightGreen, bg: DarkGray, underline: Reset, modifier: NONE,
+        x: 2, y: 1, fg: LightGreen, bg: DarkGray, underline: Reset, modifier: BOLD,
+        x: 57, y: 1, fg: LightGreen, bg: DarkGray, underline: Reset, modifier: NONE,
+        x: 10, y: 3, fg: LightGreen, bg: DarkGray, underline: Reset, modifier: ITALIC,
+        x: 33, y: 3, fg: LightGreen, bg: DarkGray, underline: Reset, modifier: NONE,
+        x: 0, y: 6, fg: LightGreen, bg: DarkGray, underline: Reset, modifier: BOLD,
+        x: 28, y: 6, fg: LightGreen, bg: DarkGray, underline: Reset, modifier: NONE,
+        x: 53, y: 7, fg: Green, bg: DarkGray, underline: Reset, modifier: DIM,
+        x: 54, y: 7, fg: LightGreen, bg: DarkGray, underline: Reset, modifier: NONE,
+        x: 45, y: 8, fg: Green, bg: DarkGray, underline: Reset, modifier: DIM,
+        x: 46, y: 8, fg: LightGreen, bg: DarkGray, underline: Reset, modifier: NONE,
+        x: 48, y: 9, fg: Green, bg: DarkGray, underline: Reset, modifier: DIM,
+        x: 51, y: 9, fg: LightGreen, bg: DarkGray, underline: Reset, modifier: NONE,
+        x: 0, y: 11, fg: Reset, bg: Reset, underline: Reset, modifier: NONE,
+        x: 2, y: 11, fg: Reset, bg: Reset, underline: Reset, modifier: DIM,
+        x: 8, y: 11, fg: Green, bg: Reset, underline: Reset, modifier: DIM,
+        x: 13, y: 11, fg: Reset, bg: Reset, underline: Reset, modifier: DIM,
+        x: 28, y: 11, fg: Green, bg: Reset, underline: Reset, modifier: DIM,
+        x: 31, y: 11, fg: Reset, bg: Reset, underline: Reset, modifier: DIM,
+    ]
+}

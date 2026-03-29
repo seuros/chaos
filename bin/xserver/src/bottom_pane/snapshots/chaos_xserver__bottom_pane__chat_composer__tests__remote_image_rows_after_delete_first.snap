@@ -1,0 +1,13 @@
+---
+source: bin/xserver/src/bottom_pane/chat_composer.rs
+expression: terminal.backend()
+---
+"                                                                                                    "
+"  [Image #1]                                                                                        "
+"                                                                                                    "
+"› describe these                                                                                    "
+"                                                                                                    "
+"                                                                                                    "
+"                                                                                                    "
+"                                                                                                    "
+"                                                                                 100% context left  "

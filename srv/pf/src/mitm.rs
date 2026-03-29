@@ -19,11 +19,8 @@ use rama::bytes::Bytes;
 use rama::error::BoxError;
 use rama::extensions::ExtensionsRef;
 use rama::futures::stream::Stream;
-use rama::rt::Executor;
-use rama::service::service_fn;
 use rama::http::Body;
 use rama::http::BodyDataStream;
-use rama::http::HeaderValue;
 use rama::http::Request;
 use rama::http::Response;
 use rama::http::StatusCode;
@@ -31,10 +28,12 @@ use rama::http::Uri;
 use rama::http::header::HOST;
 use rama::http::layer::remove_header::RemoveRequestHeaderLayer;
 use rama::http::layer::remove_header::RemoveResponseHeaderLayer;
-use rama::http::server::HttpServer;
 use rama::http::layer::upgrade::Upgraded;
+use rama::http::server::HttpServer;
 use rama::net::proxy::ProxyTarget;
 use rama::net::stream::SocketInfo;
+use rama::rt::Executor;
+use rama::service::service_fn;
 use rama::tls::rustls::server::TlsAcceptorData;
 use rama::tls::rustls::server::TlsAcceptorLayer;
 use std::pin::Pin;
@@ -199,21 +198,16 @@ async fn forward_request(req: Request, request_ctx: &MitmRequestContext) -> Resu
         return Ok(response);
     }
 
-    let target_host = request_ctx.policy.target_host.clone();
-    let target_port = request_ctx.policy.target_port;
     let mitm = request_ctx.mitm.clone();
 
     let method = req.method().as_str().to_string();
-    let path = path_and_query(req.uri());
     let log_path = path_for_log(req.uri());
+    let authority = authority_header_value(
+        &request_ctx.policy.target_host,
+        request_ctx.policy.target_port,
+    );
 
-    let (mut parts, body) = req.into_parts();
-    let authority = authority_header_value(&target_host, target_port);
-    parts.uri = build_https_uri(&authority, &path)?;
-    parts
-        .headers
-        .insert(HOST, HeaderValue::from_str(&authority)?);
-
+    let (parts, body) = req.into_parts();
     let inspect = mitm.inspect_enabled();
     let max_body_bytes = mitm.max_body_bytes();
     let body = if inspect {
@@ -230,6 +224,9 @@ async fn forward_request(req: Request, request_ctx: &MitmRequestContext) -> Resu
         body
     };
 
+    // Preserve the request context derived from the original CONNECT target and let Rama's client
+    // normalize authority/scheme/header details per HTTP version instead of rebuilding URIs by
+    // hand. This matches Rama's own MITM proxy examples more closely.
     let upstream_req = Request::from_parts(parts, body);
     let upstream_resp = mitm.upstream.serve(upstream_req).await?;
     respond_with_inspection(
@@ -459,18 +456,6 @@ fn authority_header_value(host: &str, port: u16) -> String {
     } else {
         format!("{host}:{port}")
     }
-}
-
-fn build_https_uri(authority: &str, path: &str) -> Result<Uri> {
-    let target = format!("https://{authority}{path}");
-    Ok(target.parse()?)
-}
-
-fn path_and_query(uri: &Uri) -> String {
-    uri.path_and_query()
-        .map(rama::http::uri::PathAndQuery::as_str)
-        .unwrap_or("/")
-        .to_string()
 }
 
 fn path_for_log(uri: &Uri) -> String {

@@ -36,9 +36,6 @@ use rama::error::BoxError;
 use rama::error::ErrorExt as _;
 use rama::extensions::ExtensionsMut;
 use rama::extensions::ExtensionsRef;
-use rama::layer::AddInputExtensionLayer;
-use rama::rt::Executor;
-use rama::service::service_fn;
 use rama::http::Body;
 use rama::http::HeaderMap;
 use rama::http::HeaderName;
@@ -46,26 +43,30 @@ use rama::http::HeaderValue;
 use rama::http::Request;
 use rama::http::Response;
 use rama::http::StatusCode;
+use rama::http::client::proxy::layer::HttpProxyConnector;
 use rama::http::header;
 use rama::http::headers::HeaderMapExt;
 use rama::http::headers::Host;
 use rama::http::layer::remove_header::RemoveResponseHeaderLayer;
-use rama::http::matcher::MethodMatcher;
-use rama::http::client::proxy::layer::HttpProxyConnector;
-use rama::http::server::HttpServer;
+use rama::http::layer::upgrade::DefaultHttpProxyConnectReplyService;
 use rama::http::layer::upgrade::UpgradeLayer;
 use rama::http::layer::upgrade::Upgraded;
+use rama::http::matcher::MethodMatcher;
+use rama::http::server::HttpServer;
+use rama::layer::AddInputExtensionLayer;
 use rama::net::Protocol;
 use rama::net::address::ProxyAddress;
 use rama::net::client::ConnectorService;
 use rama::net::client::EstablishedClientConnection;
 use rama::net::http::RequestContext;
-use rama::io::BridgeIo;
 use rama::net::proxy::IoForwardService;
 use rama::net::proxy::ProxyTarget;
 use rama::net::stream::SocketInfo;
+use rama::rt::Executor;
+use rama::service::service_fn;
 use rama::tcp::client::Request as TcpRequest;
 use rama::tcp::client::service::TcpConnector;
+use rama::tcp::proxy::IoToProxyBridgeIoLayer;
 use rama::tcp::server::TcpListener;
 use rama::tls::rustls::client::TlsConnectorDataBuilder;
 use rama::tls::rustls::client::TlsConnectorLayer;
@@ -300,13 +301,24 @@ async fn http_connect_accept(
         req.extensions_mut().insert(mitm_state);
     }
 
-    Ok((
-        Response::builder()
-            .status(StatusCode::OK)
-            .body(Body::empty())
-            .unwrap_or_else(|_| Response::new(Body::empty())),
-        req,
-    ))
+    DefaultHttpProxyConnectReplyService::new().serve(req).await
+}
+
+#[derive(Clone)]
+struct HttpsTunnelConnector<C> {
+    inner: C,
+}
+
+impl<C> Service<TcpRequest> for HttpsTunnelConnector<C>
+where
+    C: ConnectorService<TcpRequest> + Clone,
+{
+    type Output = EstablishedClientConnection<C::Connection, TcpRequest>;
+    type Error = C::Error;
+
+    async fn serve(&self, req: TcpRequest) -> Result<Self::Output, Self::Error> {
+        self.inner.connect(req.with_protocol(Protocol::HTTPS)).await
+    }
 }
 
 async fn http_connect_proxy(upgraded: Upgraded) -> Result<(), Infallible> {
@@ -371,7 +383,7 @@ async fn http_connect_proxy(upgraded: Upgraded) -> Result<(), Infallible> {
 }
 
 async fn forward_connect_tunnel(
-    upgraded: Upgraded,
+    mut upgraded: Upgraded,
     proxy: Option<ProxyAddress>,
 ) -> Result<(), BoxError> {
     let authority = upgraded
@@ -380,13 +392,6 @@ async fn forward_connect_tunnel(
         .map(|target| target.0.clone())
         .ok_or_else(|| BoxError::from("missing forward authority"))?;
 
-    let mut extensions = upgraded.extensions().clone();
-    if let Some(proxy) = proxy {
-        extensions.insert(proxy);
-    }
-
-    let req = TcpRequest::new_with_extensions(authority.clone(), extensions)
-        .with_protocol(Protocol::HTTPS);
     let proxy_connector = HttpProxyConnector::optional(TcpConnector::new(Executor::default()));
     let tls_config = TlsConnectorDataBuilder::new()
         .with_alpn_protocols_http_auto()
@@ -394,14 +399,13 @@ async fn forward_connect_tunnel(
     let connector = TlsConnectorLayer::tunnel(None)
         .with_connector_data(tls_config)
         .into_layer(proxy_connector);
-    let EstablishedClientConnection { conn: target, .. } = connector
-        .connect(req)
-        .await
-        .map_err(|err| err.with_context(|| format!("establish CONNECT tunnel to {authority}")))?;
-
-    let bridge = BridgeIo(upgraded, target);
-    IoForwardService::default()
-        .serve(bridge)
+    let connector = HttpsTunnelConnector { inner: connector };
+    if let Some(proxy) = proxy {
+        upgraded.extensions_mut().insert(proxy);
+    }
+    IoToProxyBridgeIoLayer::extension_proxy_target_with_connector(connector)
+        .into_layer(IoForwardService::new())
+        .serve(upgraded)
         .await
         .map_err(|err| err.with_context(|| format!("forward CONNECT tunnel to {authority}")))
 }

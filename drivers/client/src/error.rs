@@ -1,5 +1,5 @@
-use http::HeaderMap;
-use http::StatusCode;
+use rama::http::HeaderMap;
+use rama::http::StatusCode;
 use thiserror::Error;
 
 #[derive(Debug, Error)]

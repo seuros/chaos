@@ -1,5 +1,5 @@
 use crate::error::TransportError;
-use http::StatusCode;
+use rama::http::StatusCode;
 use std::time::Duration;
 
 /// API specific telemetry.

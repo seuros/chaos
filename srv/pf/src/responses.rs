@@ -6,9 +6,9 @@ use crate::reasons::REASON_METHOD_NOT_ALLOWED;
 use crate::reasons::REASON_MITM_REQUIRED;
 use crate::reasons::REASON_NOT_ALLOWED;
 use crate::reasons::REASON_NOT_ALLOWED_LOCAL;
-use rama_http::Body;
-use rama_http::Response;
-use rama_http::StatusCode;
+use rama::http::Body;
+use rama::http::Response;
+use rama::http::StatusCode;
 use serde::Serialize;
 use tracing::error;
 

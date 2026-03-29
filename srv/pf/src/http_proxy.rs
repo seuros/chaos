@@ -30,45 +30,45 @@ use crate::upstream::UpstreamClient;
 use crate::upstream::proxy_for_connect;
 use anyhow::Context as _;
 use anyhow::Result;
-use rama_core::Layer;
-use rama_core::Service;
-use rama_core::error::BoxError;
-use rama_core::error::ErrorExt as _;
-use rama_core::error::OpaqueError;
-use rama_core::extensions::ExtensionsMut;
-use rama_core::extensions::ExtensionsRef;
-use rama_core::layer::AddInputExtensionLayer;
-use rama_core::service::service_fn;
-use rama_http::Body;
-use rama_http::HeaderMap;
-use rama_http::HeaderName;
-use rama_http::HeaderValue;
-use rama_http::Request;
-use rama_http::Response;
-use rama_http::StatusCode;
-use rama_http::header;
-use rama_http::headers::HeaderMapExt;
-use rama_http::headers::Host;
-use rama_http::layer::remove_header::RemoveResponseHeaderLayer;
-use rama_http::matcher::MethodMatcher;
-use rama_http_backend::client::proxy::layer::HttpProxyConnector;
-use rama_http_backend::server::HttpServer;
-use rama_http_backend::server::layer::upgrade::UpgradeLayer;
-use rama_http_backend::server::layer::upgrade::Upgraded;
-use rama_net::Protocol;
-use rama_net::address::ProxyAddress;
-use rama_net::client::ConnectorService;
-use rama_net::client::EstablishedClientConnection;
-use rama_net::http::RequestContext;
-use rama_net::proxy::ProxyRequest;
-use rama_net::proxy::ProxyTarget;
-use rama_net::proxy::StreamForwardService;
-use rama_net::stream::SocketInfo;
-use rama_tcp::client::Request as TcpRequest;
-use rama_tcp::client::service::TcpConnector;
-use rama_tcp::server::TcpListener;
-use rama_tls_rustls::client::TlsConnectorDataBuilder;
-use rama_tls_rustls::client::TlsConnectorLayer;
+use rama::Layer;
+use rama::Service;
+use rama::error::BoxError;
+use rama::error::ErrorExt as _;
+use rama::extensions::ExtensionsMut;
+use rama::extensions::ExtensionsRef;
+use rama::layer::AddInputExtensionLayer;
+use rama::rt::Executor;
+use rama::service::service_fn;
+use rama::http::Body;
+use rama::http::HeaderMap;
+use rama::http::HeaderName;
+use rama::http::HeaderValue;
+use rama::http::Request;
+use rama::http::Response;
+use rama::http::StatusCode;
+use rama::http::header;
+use rama::http::headers::HeaderMapExt;
+use rama::http::headers::Host;
+use rama::http::layer::remove_header::RemoveResponseHeaderLayer;
+use rama::http::matcher::MethodMatcher;
+use rama::http::client::proxy::layer::HttpProxyConnector;
+use rama::http::server::HttpServer;
+use rama::http::layer::upgrade::UpgradeLayer;
+use rama::http::layer::upgrade::Upgraded;
+use rama::net::Protocol;
+use rama::net::address::ProxyAddress;
+use rama::net::client::ConnectorService;
+use rama::net::client::EstablishedClientConnection;
+use rama::net::http::RequestContext;
+use rama::io::BridgeIo;
+use rama::net::proxy::IoForwardService;
+use rama::net::proxy::ProxyTarget;
+use rama::net::stream::SocketInfo;
+use rama::tcp::client::Request as TcpRequest;
+use rama::tcp::client::service::TcpConnector;
+use rama::tcp::server::TcpListener;
+use rama::tls::rustls::client::TlsConnectorDataBuilder;
+use rama::tls::rustls::client::TlsConnectorLayer;
 use serde::Serialize;
 use std::convert::Infallible;
 use std::net::SocketAddr;
@@ -83,15 +83,11 @@ pub async fn run_http_proxy(
     addr: SocketAddr,
     policy_decider: Option<Arc<dyn NetworkPolicyDecider>>,
 ) -> Result<()> {
-    let listener = TcpListener::build()
-        .bind(addr)
+    let exec = Executor::default();
+    let listener = TcpListener::build(exec)
+        .bind_address(addr)
         .await
-        // Rama's `BoxError` is a `Box<dyn Error + Send + Sync>` without an explicit `'static`
-        // lifetime bound, which means it doesn't satisfy `anyhow::Context`'s `StdError` constraint.
-        // Wrap it in Rama's `OpaqueError` so we can preserve the original error as a source and
-        // still use `anyhow` for chaining.
-        .map_err(rama_core::error::OpaqueError::from)
-        .map_err(anyhow::Error::from)
+        .map_err(|err| anyhow::anyhow!("{err}"))
         .with_context(|| format!("bind HTTP proxy: {addr}"))?;
 
     run_http_proxy_with_listener(state, listener, policy_decider).await
@@ -102,8 +98,9 @@ pub async fn run_http_proxy_with_std_listener(
     listener: StdTcpListener,
     policy_decider: Option<Arc<dyn NetworkPolicyDecider>>,
 ) -> Result<()> {
-    let listener =
-        TcpListener::try_from(listener).context("convert std listener to HTTP proxy listener")?;
+    let exec = Executor::default();
+    let listener = TcpListener::try_from_std_tcp_listener(listener, exec)
+        .context("convert std listener to HTTP proxy listener")?;
     run_http_proxy_with_listener(state, listener, policy_decider).await
 }
 
@@ -120,9 +117,10 @@ async fn run_http_proxy_with_listener(
     // forces every accepted socket through the HTTP version sniffing pre-read path before proxy
     // request parsing, which can stall some local clients on macOS before CONNECT/absolute-form
     // handling runs at all.
-    let http_service = HttpServer::http1().service(
+    let http_service = HttpServer::new_http1(Executor::default()).service(
         (
             UpgradeLayer::new(
+                Executor::default(),
                 MethodMatcher::CONNECT,
                 service_fn({
                     let policy_decider = policy_decider.clone();
@@ -380,7 +378,7 @@ async fn forward_connect_tunnel(
         .extensions()
         .get::<ProxyTarget>()
         .map(|target| target.0.clone())
-        .ok_or_else(|| OpaqueError::from_display("missing forward authority").into_boxed())?;
+        .ok_or_else(|| BoxError::from("missing forward authority"))?;
 
     let mut extensions = upgraded.extensions().clone();
     if let Some(proxy) = proxy {
@@ -389,32 +387,23 @@ async fn forward_connect_tunnel(
 
     let req = TcpRequest::new_with_extensions(authority.clone(), extensions)
         .with_protocol(Protocol::HTTPS);
-    let proxy_connector = HttpProxyConnector::optional(TcpConnector::new());
+    let proxy_connector = HttpProxyConnector::optional(TcpConnector::new(Executor::default()));
     let tls_config = TlsConnectorDataBuilder::new()
         .with_alpn_protocols_http_auto()
         .build();
     let connector = TlsConnectorLayer::tunnel(None)
         .with_connector_data(tls_config)
         .into_layer(proxy_connector);
-    let EstablishedClientConnection { conn: target, .. } =
-        connector.connect(req).await.map_err(|err| {
-            OpaqueError::from_boxed(err)
-                .with_context(|| format!("establish CONNECT tunnel to {authority}"))
-                .into_boxed()
-        })?;
-
-    let proxy_req = ProxyRequest {
-        source: upgraded,
-        target,
-    };
-    StreamForwardService::default()
-        .serve(proxy_req)
+    let EstablishedClientConnection { conn: target, .. } = connector
+        .connect(req)
         .await
-        .map_err(|err| {
-            OpaqueError::from_boxed(err.into())
-                .with_context(|| format!("forward CONNECT tunnel to {authority}"))
-                .into_boxed()
-        })
+        .map_err(|err| err.with_context(|| format!("establish CONNECT tunnel to {authority}")))?;
+
+    let bridge = BridgeIo(upgraded, target);
+    IoForwardService::default()
+        .serve(bridge)
+        .await
+        .map_err(|err| err.with_context(|| format!("forward CONNECT tunnel to {authority}")))
 }
 
 async fn http_plain_proxy(
@@ -752,7 +741,7 @@ async fn proxy_via_unix_socket(req: Request, socket_path: &str) -> Result<Respon
         let path = parts
             .uri
             .path_and_query()
-            .map(rama_http::uri::PathAndQuery::as_str)
+            .map(rama::http::uri::PathAndQuery::as_str)
             .unwrap_or("/");
         parts.uri = path
             .parse()
@@ -986,8 +975,8 @@ mod tests {
     use crate::config::NetworkProxySettings;
     use crate::runtime::network_proxy_state_for_policy;
     use pretty_assertions::assert_eq;
-    use rama_http::Method;
-    use rama_http::Request;
+    use rama::http::Method;
+    use rama::http::Request;
     use std::net::Ipv4Addr;
     use std::net::TcpListener as StdTcpListener;
     use std::sync::Arc;

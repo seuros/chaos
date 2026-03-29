@@ -19,23 +19,24 @@ use crate::state::BlockedRequestArgs;
 use crate::state::NetworkProxyState;
 use anyhow::Context as _;
 use anyhow::Result;
-use rama_core::Layer;
-use rama_core::Service;
-use rama_core::error::BoxError;
-use rama_core::extensions::ExtensionsRef;
-use rama_core::layer::AddInputExtensionLayer;
-use rama_core::service::service_fn;
-use rama_net::client::EstablishedClientConnection;
-use rama_net::stream::SocketInfo;
-use rama_socks5::Socks5Acceptor;
-use rama_socks5::server::DefaultConnector;
-use rama_socks5::server::DefaultUdpRelay;
-use rama_socks5::server::udp::RelayRequest;
-use rama_socks5::server::udp::RelayResponse;
-use rama_tcp::TcpStream;
-use rama_tcp::client::Request as TcpRequest;
-use rama_tcp::client::service::TcpConnector;
-use rama_tcp::server::TcpListener;
+use rama::Layer;
+use rama::Service;
+use rama::error::BoxError;
+use rama::extensions::ExtensionsRef;
+use rama::layer::AddInputExtensionLayer;
+use rama::rt::Executor;
+use rama::service::service_fn;
+use rama::net::client::EstablishedClientConnection;
+use rama::net::stream::SocketInfo;
+use rama::proxy::socks5::Socks5Acceptor;
+use rama::proxy::socks5::server::DefaultConnector;
+use rama::proxy::socks5::server::DefaultUdpRelay;
+use rama::proxy::socks5::server::udp::RelayRequest;
+use rama::proxy::socks5::server::udp::RelayResponse;
+use rama::tcp::TcpStream;
+use rama::tcp::client::Request as TcpRequest;
+use rama::tcp::client::service::TcpConnector;
+use rama::tcp::server::TcpListener;
 use std::io;
 use std::net::SocketAddr;
 use std::net::TcpListener as StdTcpListener;
@@ -50,12 +51,11 @@ pub async fn run_socks5(
     policy_decider: Option<Arc<dyn NetworkPolicyDecider>>,
     enable_socks5_udp: bool,
 ) -> Result<()> {
-    let listener = TcpListener::build()
-        .bind(addr)
+    let exec = Executor::default();
+    let listener = TcpListener::build(exec)
+        .bind_address(addr)
         .await
-        // See `http_proxy.rs` for details on why we wrap `BoxError` before converting to anyhow.
-        .map_err(rama_core::error::OpaqueError::from)
-        .map_err(anyhow::Error::from)
+        .map_err(|err| anyhow::anyhow!("{err}"))
         .with_context(|| format!("bind SOCKS5 proxy: {addr}"))?;
 
     run_socks5_with_listener(state, listener, policy_decider, enable_socks5_udp).await
@@ -67,8 +67,9 @@ pub async fn run_socks5_with_std_listener(
     policy_decider: Option<Arc<dyn NetworkPolicyDecider>>,
     enable_socks5_udp: bool,
 ) -> Result<()> {
-    let listener =
-        TcpListener::try_from(listener).context("convert std listener to SOCKS5 proxy listener")?;
+    let exec = Executor::default();
+    let listener = TcpListener::try_from_std_tcp_listener(listener, exec)
+        .context("convert std listener to SOCKS5 proxy listener")?;
     run_socks5_with_listener(state, listener, policy_decider, enable_socks5_udp).await
 }
 
@@ -105,7 +106,7 @@ async fn run_socks5_with_listener(
     });
 
     let socks_connector = DefaultConnector::default().with_connector(policy_tcp_connector);
-    let base = Socks5Acceptor::new().with_connector(socks_connector);
+    let base = Socks5Acceptor::new(Executor::default()).with_connector(socks_connector);
 
     if enable_socks5_udp {
         let udp_state = state.clone();
@@ -495,11 +496,11 @@ mod tests {
     use crate::state::NetworkProxyConstraints;
     use crate::state::build_config_state;
     use pretty_assertions::assert_eq;
-    use rama_core::extensions::Extensions;
-    use rama_core::extensions::ExtensionsMut;
-    use rama_net::address::HostWithPort;
-    use rama_net::address::SocketAddress;
-    use rama_socks5::server::udp::RelayDirection;
+    use rama::extensions::Extensions;
+    use rama::extensions::ExtensionsMut;
+    use rama::net::address::HostWithPort;
+    use rama::net::address::SocketAddress;
+    use rama::proxy::socks5::server::udp::RelayDirection;
     use std::future::Future;
     use std::net::IpAddr;
     use std::net::Ipv4Addr;

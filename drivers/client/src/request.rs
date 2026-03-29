@@ -1,6 +1,7 @@
 use bytes::Bytes;
-use http::HeaderMap;
-use http::Method;
+use rama::http::HeaderMap;
+use rama::http::Method;
+use rama::http::StatusCode;
 use serde::Serialize;
 use serde_json::Value;
 use std::time::Duration;
@@ -47,7 +48,7 @@ impl Request {
 
 #[derive(Debug, Clone)]
 pub struct Response {
-    pub status: http::StatusCode,
+    pub status: StatusCode,
     pub headers: HeaderMap,
     pub body: Bytes,
 }

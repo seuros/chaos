@@ -5,10 +5,10 @@ use crate::reasons::REASON_METHOD_NOT_ALLOWED;
 use crate::reasons::REASON_NOT_ALLOWED_LOCAL;
 use crate::runtime::network_proxy_state_for_policy;
 use pretty_assertions::assert_eq;
-use rama_http::Body;
-use rama_http::Method;
-use rama_http::Request;
-use rama_http::StatusCode;
+use rama::http::Body;
+use rama::http::Method;
+use rama::http::Request;
+use rama::http::StatusCode;
 
 fn policy_ctx(
     app_state: Arc<NetworkProxyState>,

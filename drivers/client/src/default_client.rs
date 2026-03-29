@@ -1,9 +1,9 @@
 use bytes::Bytes;
-use http::Error as HttpError;
-use http::HeaderMap;
-use http::HeaderName;
-use http::HeaderValue;
-use http::Method;
+use rama::http::HeaderMap;
+use rama::http::HeaderName;
+use rama::http::HeaderValue;
+use rama::http::HttpError;
+use rama::http::Method;
 use opentelemetry::global;
 use opentelemetry::propagation::Injector;
 use rama::Service;
@@ -117,7 +117,7 @@ impl CodexRequestBuilder {
     where
         T: Display,
     {
-        self.header(http::header::AUTHORIZATION, format!("Bearer {token}"))
+        self.header(rama::http::header::AUTHORIZATION, format!("Bearer {token}"))
     }
 
     pub fn timeout(self, _timeout: std::time::Duration) -> Self {
@@ -132,7 +132,7 @@ impl CodexRequestBuilder {
         if let Ok(bytes) = serde_json::to_vec(value) {
             self.body = Some(bytes);
             self.headers.insert(
-                http::header::CONTENT_TYPE,
+                rama::http::header::CONTENT_TYPE,
                 HeaderValue::from_static("application/json"),
             );
         }
@@ -195,7 +195,7 @@ pub struct CodexResponse {
 }
 
 impl CodexResponse {
-    pub fn status(&self) -> http::StatusCode {
+    pub fn status(&self) -> rama::http::StatusCode {
         self.inner.status()
     }
 

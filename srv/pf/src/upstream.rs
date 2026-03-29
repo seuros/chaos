@@ -1,28 +1,28 @@
-use rama_core::Layer;
-use rama_core::Service;
-use rama_core::error::BoxError;
-use rama_core::error::ErrorContext as _;
-use rama_core::error::OpaqueError;
-use rama_core::extensions::ExtensionsMut;
-use rama_core::extensions::ExtensionsRef;
-use rama_core::service::BoxService;
-use rama_http::Body;
-use rama_http::Request;
-use rama_http::Response;
-use rama_http::layer::version_adapter::RequestVersionAdapter;
-use rama_http_backend::client::HttpClientService;
-use rama_http_backend::client::HttpConnector;
-use rama_http_backend::client::proxy::layer::HttpProxyConnectorLayer;
-use rama_net::address::ProxyAddress;
-use rama_net::client::EstablishedClientConnection;
-use rama_net::http::RequestContext;
-use rama_tcp::client::service::TcpConnector;
-use rama_tls_rustls::client::TlsConnectorDataBuilder;
-use rama_tls_rustls::client::TlsConnectorLayer;
+use rama::Layer;
+use rama::Service;
+use rama::error::ErrorContext as _;
+use rama::error::extra::OpaqueError;
+use rama::extensions::ExtensionsMut;
+use rama::extensions::ExtensionsRef;
+use rama::service::BoxService;
+use rama::http::Body;
+use rama::http::Request;
+use rama::http::Response;
+use rama::http::layer::version_adapter::RequestVersionAdapter;
+use rama::http::client::HttpClientService;
+use rama::http::client::HttpConnector;
+use rama::http::client::proxy::layer::HttpProxyConnectorLayer;
+use rama::net::address::ProxyAddress;
+use rama::rt::Executor;
+use rama::net::client::EstablishedClientConnection;
+use rama::net::http::RequestContext;
+use rama::tcp::client::service::TcpConnector;
+use rama::tls::rustls::client::TlsConnectorDataBuilder;
+use rama::tls::rustls::client::TlsConnectorLayer;
 use tracing::warn;
 
 #[cfg(target_os = "macos")]
-use rama_unix::client::UnixConnector;
+use rama::unix::client::UnixConnector;
 
 #[derive(Clone, Default)]
 struct ProxyConfig {
@@ -72,7 +72,7 @@ fn read_proxy_env(keys: &[&str]) -> Option<ProxyAddress> {
                 if proxy
                     .protocol
                     .as_ref()
-                    .map(rama_net::Protocol::is_http)
+                    .map(rama::net::Protocol::is_http)
                     .unwrap_or(true)
                 {
                     return Some(proxy);
@@ -96,7 +96,7 @@ pub(crate) struct UpstreamClient {
     connector: BoxService<
         Request<Body>,
         EstablishedClientConnection<HttpClientService<Body>, Request<Body>>,
-        BoxError,
+        OpaqueError,
     >,
     proxy_config: ProxyConfig,
 }
@@ -141,11 +141,7 @@ impl Service<Request<Body>> for UpstreamClient {
         let EstablishedClientConnection {
             input: mut req,
             conn: http_connection,
-        } = self
-            .connector
-            .serve(req)
-            .await
-            .map_err(OpaqueError::from_boxed)?;
+        } = self.connector.serve(req).await.into_opaque_error()?;
 
         req.extensions_mut()
             .extend(http_connection.extensions().clone());
@@ -153,15 +149,15 @@ impl Service<Request<Body>> for UpstreamClient {
         http_connection
             .serve(req)
             .await
-            .map_err(OpaqueError::from_boxed)
             .with_context(|| format!("http request failure for uri: {uri}"))
+            .into_opaque_error()
     }
 }
 
 fn build_http_connector() -> BoxService<
     Request<Body>,
     EstablishedClientConnection<HttpClientService<Body>, Request<Body>>,
-    BoxError,
+    OpaqueError,
 > {
     let transport = TcpConnector::default();
     let proxy = HttpProxyConnectorLayer::optional().into_layer(transport);
@@ -172,7 +168,7 @@ fn build_http_connector() -> BoxService<
         .with_connector_data(tls_config)
         .into_layer(proxy);
     let tls = RequestVersionAdapter::new(tls);
-    let connector = HttpConnector::new(tls);
+    let connector = HttpConnector::new(tls, Executor::default());
     connector.boxed()
 }
 
@@ -182,9 +178,9 @@ fn build_unix_connector(
 ) -> BoxService<
     Request<Body>,
     EstablishedClientConnection<HttpClientService<Body>, Request<Body>>,
-    BoxError,
+    OpaqueError,
 > {
     let transport = UnixConnector::fixed(path);
-    let connector = HttpConnector::new(transport);
+    let connector = HttpConnector::new(transport, Executor::default());
     connector.boxed()
 }

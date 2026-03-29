@@ -4,8 +4,8 @@ use crate::request::RequestCompression;
 use crate::request::Response;
 use bytes::Bytes;
 use futures::stream::BoxStream;
-use http::HeaderMap;
-use http::StatusCode;
+use rama::http::HeaderMap;
+use rama::http::StatusCode;
 use rama::Service;
 use rama::error::extra::OpaqueError;
 use rama::http::Body;
@@ -64,11 +64,11 @@ impl RamaTransport {
         } = req;
 
         let http_method =
-            http::Method::from_bytes(method.as_str().as_bytes()).unwrap_or(http::Method::GET);
+            rama::http::Method::from_bytes(method.as_str().as_bytes()).unwrap_or(rama::http::Method::GET);
 
         let rama_body = if let Some(body) = body {
             if compression != RequestCompression::None {
-                if headers.contains_key(http::header::CONTENT_ENCODING) {
+                if headers.contains_key(rama::http::header::CONTENT_ENCODING) {
                     return Err(TransportError::Build(
                         "request compression was requested but content-encoding is already set"
                             .to_string(),
@@ -84,17 +84,17 @@ impl RamaTransport {
                     RequestCompression::Zstd => (
                         zstd::stream::encode_all(std::io::Cursor::new(json), 3)
                             .map_err(|err| TransportError::Build(err.to_string()))?,
-                        http::HeaderValue::from_static("zstd"),
+                        rama::http::HeaderValue::from_static("zstd"),
                     ),
                 };
                 let post_compression_bytes = compressed.len();
                 let compression_duration = compression_start.elapsed();
 
-                headers.insert(http::header::CONTENT_ENCODING, content_encoding);
-                if !headers.contains_key(http::header::CONTENT_TYPE) {
+                headers.insert(rama::http::header::CONTENT_ENCODING, content_encoding);
+                if !headers.contains_key(rama::http::header::CONTENT_TYPE) {
                     headers.insert(
-                        http::header::CONTENT_TYPE,
-                        http::HeaderValue::from_static("application/json"),
+                        rama::http::header::CONTENT_TYPE,
+                        rama::http::HeaderValue::from_static("application/json"),
                     );
                 }
 
@@ -107,10 +107,10 @@ impl RamaTransport {
 
                 Body::from(compressed)
             } else {
-                if !headers.contains_key(http::header::CONTENT_TYPE) {
+                if !headers.contains_key(rama::http::header::CONTENT_TYPE) {
                     headers.insert(
-                        http::header::CONTENT_TYPE,
-                        http::HeaderValue::from_static("application/json"),
+                        rama::http::header::CONTENT_TYPE,
+                        rama::http::HeaderValue::from_static("application/json"),
                     );
                 }
                 let json_bytes = serde_json::to_vec(&body)
@@ -147,8 +147,8 @@ fn inject_trace_headers(headers: &mut HeaderMap) {
     impl Injector for HeaderMapInjector<'_> {
         fn set(&mut self, key: &str, value: String) {
             if let (Ok(name), Ok(val)) = (
-                http::HeaderName::from_bytes(key.as_bytes()),
-                http::HeaderValue::from_str(&value),
+                rama::http::HeaderName::from_bytes(key.as_bytes()),
+                rama::http::HeaderValue::from_str(&value),
             ) {
                 self.0.insert(name, val);
             }

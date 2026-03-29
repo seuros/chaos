@@ -56,6 +56,7 @@ use chaos_parrot::common::Reasoning;
 use chaos_parrot::common::ResponsesWsRequest;
 use chaos_parrot::create_text_param_for_request;
 use chaos_parrot::error::ApiError;
+use chaos_parrot::anthropic::AnthropicAdapter;
 use chaos_parrot::openai::OpenAiAdapter;
 use chaos_parrot::requests::responses::Compression;
 use chaos_syslog::SessionTelemetry;
@@ -107,7 +108,7 @@ use crate::error::CodexErr;
 use crate::error::Result;
 use crate::flags::CODEX_RS_SSE_FIXTURE;
 use crate::model_provider_info::ModelProviderInfo;
-use crate::model_provider_info::WireApi;
+
 use crate::response_debug_context::extract_response_debug_context;
 use crate::response_debug_context::extract_response_debug_context_from_api_error;
 use crate::response_debug_context::telemetry_api_error_message;
@@ -1354,6 +1355,80 @@ impl ModelClientSession {
         }
     }
 
+    /// Streams a turn via the Anthropic Messages API.
+    ///
+    /// This path is HTTP/SSE only — no WebSocket, no sticky routing, no incremental
+    /// request reuse. Each follow-up sends full conversation history.
+    #[allow(clippy::too_many_arguments)]
+    #[instrument(
+        name = "model_client.stream_anthropic_messages",
+        level = "info",
+        skip_all,
+        fields(
+            model = %model_info.slug,
+            wire_api = "anthropic_messages",
+            transport = "anthropic_http",
+        )
+    )]
+    async fn stream_anthropic_messages(
+        &self,
+        prompt: &Prompt,
+        model_info: &ModelInfo,
+        session_telemetry: &SessionTelemetry,
+        effort: Option<ReasoningEffortConfig>,
+        summary: ReasoningSummaryConfig,
+        service_tier: Option<ServiceTier>,
+    ) -> Result<ResponseStream> {
+        let client_setup = self.client.current_client_setup().await?;
+
+        // Build the neutral ABI turn request — same path as the HTTP Responses adapter.
+        let options = self.build_responses_options(None, Compression::None);
+        let turn_request = self.build_http_turn_request(
+            &client_setup.api_provider,
+            prompt,
+            model_info,
+            effort,
+            summary,
+            service_tier,
+            &options,
+        )?;
+
+        // Resolve the API key from the provider config.
+        let api_key = self
+            .client
+            .state
+            .provider
+            .api_key()
+            .map_err(|e| CodexErr::InvalidRequest(format!("Anthropic API key: {e}")))?
+            .or_else(|| {
+                self.client
+                    .state
+                    .provider
+                    .experimental_bearer_token
+                    .clone()
+            })
+            .unwrap_or_default();
+
+        let adapter = AnthropicAdapter::new(
+            client_setup.api_provider,
+            api_key,
+            Some(model_info.slug.clone()),
+        );
+
+        match adapter.stream(turn_request).await {
+            Ok(stream) => {
+                let response_events = stream.map(|event| {
+                    event
+                        .map(ResponseEvent::from)
+                        .map_err(abi_error_to_api_error)
+                });
+                let (stream, _) = map_response_stream(response_events, session_telemetry.clone());
+                Ok(stream)
+            }
+            Err(err) => Err(map_api_error(abi_error_to_api_error(err))),
+        }
+    }
+
     #[allow(clippy::too_many_arguments)]
     /// Streams a single model request within the current turn.
     ///
@@ -1371,31 +1446,26 @@ impl ModelClientSession {
         service_tier: Option<ServiceTier>,
         turn_metadata_header: Option<&str>,
     ) -> Result<ResponseStream> {
-        let wire_api = self.client.state.provider.wire_api;
-        match wire_api {
-            WireApi::Responses => {
-                if self.client.responses_websocket_enabled(model_info) {
-                    match self
-                        .stream_responses_websocket(
-                            prompt,
-                            model_info,
-                            session_telemetry,
-                            effort,
-                            summary,
-                            service_tier,
-                            turn_metadata_header,
-                            /*warmup*/ false,
-                        )
-                        .await?
-                    {
-                        WebsocketStreamOutcome::Stream(stream) => return Ok(stream),
-                        WebsocketStreamOutcome::FallbackToHttp => {
-                            self.try_switch_fallback_transport(session_telemetry, model_info);
-                        }
-                    }
-                }
+        // Detect Anthropic wire format from the provider's base URL.
+        if crate::model_provider_info::is_anthropic_wire(
+            self.client.state.provider.base_url.as_deref(),
+        ) {
+            return self
+                .stream_anthropic_messages(
+                    prompt,
+                    model_info,
+                    session_telemetry,
+                    effort,
+                    summary,
+                    service_tier,
+                )
+                .await;
+        }
 
-                self.stream_responses_api(
+        // Default: Responses wire format (OpenAI-compatible).
+        if self.client.responses_websocket_enabled(model_info) {
+            match self
+                .stream_responses_websocket(
                     prompt,
                     model_info,
                     session_telemetry,
@@ -1403,10 +1473,27 @@ impl ModelClientSession {
                     summary,
                     service_tier,
                     turn_metadata_header,
+                    /*warmup*/ false,
                 )
-                .await
+                .await?
+            {
+                WebsocketStreamOutcome::Stream(stream) => return Ok(stream),
+                WebsocketStreamOutcome::FallbackToHttp => {
+                    self.try_switch_fallback_transport(session_telemetry, model_info);
+                }
             }
         }
+
+        self.stream_responses_api(
+            prompt,
+            model_info,
+            session_telemetry,
+            effort,
+            summary,
+            service_tier,
+            turn_metadata_header,
+        )
+        .await
     }
 
     /// Permanently disables WebSockets for this Codex session and resets WebSocket state.

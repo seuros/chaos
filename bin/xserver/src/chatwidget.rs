@@ -56,7 +56,7 @@ use chaos_ipc::config_types::CollaborationMode;
 use chaos_ipc::config_types::CollaborationModeMask;
 use chaos_ipc::config_types::ModeKind;
 use chaos_ipc::config_types::Personality;
-use chaos_ipc::config_types::ServiceTier;
+
 use chaos_ipc::config_types::Settings;
 use chaos_ipc::items::AgentMessageContent;
 use chaos_ipc::items::AgentMessageItem;
@@ -275,7 +275,6 @@ use chaos_ipc::plan_tool::UpdatePlanArgs;
 use chaos_ipc::protocol::AskForApproval;
 use chaos_ipc::protocol::SandboxPolicy;
 use chaos_kern::AuthManager;
-use chaos_kern::CodexAuth;
 use chaos_kern::ProcessTable;
 use chaos_locate::FileMatch;
 use chaos_sudoers::ApprovalPreset;
@@ -300,7 +299,6 @@ struct PendingSteerCompareKey {
 const USER_SHELL_COMMAND_HELP_TITLE: &str = "Prefix a command with ! to run it locally";
 const USER_SHELL_COMMAND_HELP_HINT: &str = "Example: !ls";
 const DEFAULT_OPENAI_BASE_URL: &str = "https://api.openai.com/v1";
-const FAST_STATUS_MODEL: &str = "gpt-5.4";
 const DEFAULT_STATUS_LINE_ITEMS: [&str; 3] =
     ["model-with-reasoning", "context-remaining", "current-dir"];
 // Track information about an in-flight exec command.
@@ -1379,11 +1377,9 @@ impl ChatWidget {
             mask.reasoning_effort = Some(event.reasoning_effort);
         }
         self.refresh_model_display();
-        self.sync_fast_command_enabled();
         self.sync_personality_command_enabled();
         self.refresh_plugin_mentions();
         let startup_tooltip_override = self.startup_tooltip_override.take();
-        let show_fast_status = self.should_show_fast_status(&model_for_header, event.service_tier);
         let session_info_cell = history_cell::new_session_info(
             &self.config,
             &model_for_header,
@@ -1393,7 +1389,6 @@ impl ChatWidget {
             self.auth_manager
                 .auth_cached()
                 .and_then(|auth| auth.account_plan_type()),
-            show_fast_status,
         );
         self.apply_session_info_cell(session_info_cell);
 
@@ -3635,7 +3630,6 @@ impl ChatWidget {
         widget
             .bottom_pane
             .set_collaboration_modes_enabled(/*enabled*/ true);
-        widget.sync_fast_command_enabled();
         widget.sync_personality_command_enabled();
         widget
             .bottom_pane
@@ -3800,7 +3794,6 @@ impl ChatWidget {
         widget
             .bottom_pane
             .set_collaboration_modes_enabled(/*enabled*/ true);
-        widget.sync_fast_command_enabled();
         widget.sync_personality_command_enabled();
         widget
             .bottom_pane
@@ -3965,7 +3958,6 @@ impl ChatWidget {
         widget
             .bottom_pane
             .set_collaboration_modes_enabled(/*enabled*/ true);
-        widget.sync_fast_command_enabled();
         widget.sync_personality_command_enabled();
         widget
             .bottom_pane
@@ -4268,14 +4260,6 @@ impl ChatWidget {
             SlashCommand::Model => {
                 self.open_model_popup();
             }
-            SlashCommand::Fast => {
-                let next_tier = if matches!(self.config.service_tier, Some(ServiceTier::Fast)) {
-                    None
-                } else {
-                    Some(ServiceTier::Fast)
-                };
-                self.set_service_tier_selection(next_tier);
-            }
             SlashCommand::Personality => {
                 self.open_personality_popup();
             }
@@ -4492,31 +4476,6 @@ impl ChatWidget {
 
         let trimmed = args.trim();
         match cmd {
-            SlashCommand::Fast => {
-                if trimmed.is_empty() {
-                    self.dispatch_command(cmd);
-                    return;
-                }
-                match trimmed.to_ascii_lowercase().as_str() {
-                    "on" => self.set_service_tier_selection(Some(ServiceTier::Fast)),
-                    "off" => self.set_service_tier_selection(/*service_tier*/ None),
-                    "status" => {
-                        let status = if matches!(self.config.service_tier, Some(ServiceTier::Fast))
-                        {
-                            "on"
-                        } else {
-                            "off"
-                        };
-                        self.add_info_message(
-                            format!("Fast mode is {status}."),
-                            /*hint*/ None,
-                        );
-                    }
-                    _ => {
-                        self.add_error_message("Usage: /fast [on|off|status]".to_string());
-                    }
-                }
-            }
             SlashCommand::Rename if !trimmed.is_empty() => {
                 self.session_telemetry
                     .counter("codex.process.rename", /*inc*/ 1, &[]);
@@ -5686,14 +5645,7 @@ impl ChatWidget {
             StatusLineItem::ModelWithReasoning => {
                 let label =
                     Self::status_line_reasoning_effort_label(self.effective_reasoning_effort());
-                let fast_label = if self
-                    .should_show_fast_status(self.current_model(), self.config.service_tier)
-                {
-                    " fast"
-                } else {
-                    ""
-                };
-                Some(format!("{} {label}{fast_label}", self.model_display_name()))
+                Some(format!("{} {label}", self.model_display_name()))
             }
             StatusLineItem::CurrentDir => {
                 Some(format_directory_display(
@@ -5753,13 +5705,6 @@ impl ChatWidget {
                 format_tokens_compact(self.status_line_total_usage().output_tokens)
             )),
             StatusLineItem::SessionId => self.process_id.map(|id| id.to_string()),
-            StatusLineItem::FastMode => Some(
-                if matches!(self.config.service_tier, Some(ServiceTier::Fast)) {
-                    "Fast on".to_string()
-                } else {
-                    "Fast off".to_string()
-                },
-            ),
         }
     }
 
@@ -6957,9 +6902,6 @@ impl ChatWidget {
             );
         }
         let enabled = self.config.features.enabled(feature);
-        if feature == Feature::FastMode {
-            self.sync_fast_command_enabled();
-        }
         if feature == Feature::Personality {
             self.sync_personality_command_enabled();
         }
@@ -7027,32 +6969,6 @@ impl ChatWidget {
         self.config.personality = Some(personality);
     }
 
-    /// Set Fast mode in the widget's config copy.
-    pub(crate) fn set_service_tier(&mut self, service_tier: Option<ServiceTier>) {
-        self.config.service_tier = service_tier;
-    }
-
-    pub(crate) fn current_service_tier(&self) -> Option<ServiceTier> {
-        self.config.service_tier
-    }
-
-    pub(crate) fn should_show_fast_status(
-        &self,
-        model: &str,
-        service_tier: Option<ServiceTier>,
-    ) -> bool {
-        model == FAST_STATUS_MODEL
-            && matches!(service_tier, Some(ServiceTier::Fast))
-            && self
-                .auth_manager
-                .auth_cached()
-                .as_ref()
-                .is_some_and(CodexAuth::is_chatgpt_auth)
-    }
-
-    fn fast_mode_enabled(&self) -> bool {
-        self.config.features.enabled(Feature::FastMode)
-    }
 
     /// Set the syntax theme override in the widget's config copy.
     pub(crate) fn set_tui_theme(&mut self, theme: Option<String>) {
@@ -7074,26 +6990,6 @@ impl ChatWidget {
         self.refresh_model_display();
     }
 
-    fn set_service_tier_selection(&mut self, service_tier: Option<ServiceTier>) {
-        self.set_service_tier(service_tier);
-        self.app_event_tx
-            .send(AppEvent::CodexOp(Op::OverrideTurnContext {
-                cwd: None,
-                approval_policy: None,
-                approvals_reviewer: None,
-                sandbox_policy: None,
-                windows_sandbox_level: None,
-                model: None,
-                effort: None,
-                summary: None,
-                service_tier: Some(service_tier),
-                collaboration_mode: None,
-                personality: None,
-            }));
-        self.app_event_tx
-            .send(AppEvent::PersistServiceTierSelection { service_tier });
-    }
-
     pub(crate) fn current_model(&self) -> &str {
         if !self.collaboration_modes_enabled() {
             return self.current_collaboration_mode.model();
@@ -7102,11 +6998,6 @@ impl ChatWidget {
             .as_ref()
             .and_then(|mask| mask.model.as_deref())
             .unwrap_or_else(|| self.current_collaboration_mode.model())
-    }
-
-    fn sync_fast_command_enabled(&mut self) {
-        self.bottom_pane
-            .set_fast_command_enabled(self.fast_mode_enabled());
     }
 
     fn sync_personality_command_enabled(&mut self) {
@@ -7372,7 +7263,6 @@ impl ChatWidget {
             DEFAULT_MODEL_DISPLAY_NAME.to_string(),
             placeholder_style,
             /*reasoning_effort*/ None,
-            /*show_fast_status*/ false,
             config.cwd.clone(),
             CHAOS_VERSION,
         ))

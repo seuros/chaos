@@ -20,7 +20,6 @@ use chaos_ipc::account::PlanType;
 use chaos_ipc::config_types::CollaborationMode;
 use chaos_ipc::config_types::ModeKind;
 use chaos_ipc::config_types::Personality;
-use chaos_ipc::config_types::ServiceTier;
 use chaos_ipc::config_types::Settings;
 use chaos_ipc::items::AgentMessageContent;
 use chaos_ipc::items::AgentMessageItem;
@@ -7030,90 +7029,6 @@ async fn disabled_slash_command_while_task_running_snapshot() {
 }
 
 #[tokio::test]
-async fn fast_slash_command_updates_and_persists_local_service_tier() {
-    let (mut chat, mut rx, mut op_rx) = make_chatwidget_manual(Some("gpt-5.3-codex")).await;
-    chat.set_feature_enabled(Feature::FastMode, true);
-
-    chat.dispatch_command(SlashCommand::Fast);
-
-    let events = std::iter::from_fn(|| rx.try_recv().ok()).collect::<Vec<_>>();
-    assert!(
-        events.iter().any(|event| matches!(
-            event,
-            AppEvent::CodexOp(Op::OverrideTurnContext {
-                service_tier: Some(Some(ServiceTier::Fast)),
-                ..
-            })
-        )),
-        "expected fast-mode override app event; events: {events:?}"
-    );
-    assert!(
-        events.iter().any(|event| matches!(
-            event,
-            AppEvent::PersistServiceTierSelection {
-                service_tier: Some(ServiceTier::Fast),
-            }
-        )),
-        "expected fast-mode persistence app event; events: {events:?}"
-    );
-
-    assert_matches!(op_rx.try_recv(), Err(TryRecvError::Empty));
-}
-
-#[tokio::test]
-async fn user_turn_carries_service_tier_after_fast_toggle() {
-    let (mut chat, mut rx, mut op_rx) = make_chatwidget_manual(Some("gpt-5.3-codex")).await;
-    chat.process_id = Some(ProcessId::new());
-    set_chatgpt_auth(&mut chat);
-    chat.set_feature_enabled(Feature::FastMode, true);
-
-    chat.dispatch_command(SlashCommand::Fast);
-
-    let _events = std::iter::from_fn(|| rx.try_recv().ok()).collect::<Vec<_>>();
-
-    chat.bottom_pane
-        .set_composer_text("hello".to_string(), Vec::new(), Vec::new());
-    chat.handle_key_event(KeyEvent::from(KeyCode::Enter));
-
-    match next_submit_op(&mut op_rx) {
-        Op::UserTurn {
-            service_tier: Some(Some(ServiceTier::Fast)),
-            ..
-        } => {}
-        other => panic!("expected Op::UserTurn with fast service tier, got {other:?}"),
-    }
-}
-
-#[tokio::test]
-async fn fast_status_indicator_requires_chatgpt_auth() {
-    let (mut chat, _rx, _op_rx) = make_chatwidget_manual(Some("gpt-5.4")).await;
-    chat.set_service_tier(Some(ServiceTier::Fast));
-
-    assert!(!chat.should_show_fast_status(chat.current_model(), chat.current_service_tier(),));
-
-    set_chatgpt_auth(&mut chat);
-
-    assert!(chat.should_show_fast_status(chat.current_model(), chat.current_service_tier(),));
-}
-
-#[tokio::test]
-async fn fast_status_indicator_is_hidden_for_non_gpt54_model() {
-    let (mut chat, _rx, _op_rx) = make_chatwidget_manual(Some("gpt-5.3-codex")).await;
-    chat.set_service_tier(Some(ServiceTier::Fast));
-    set_chatgpt_auth(&mut chat);
-
-    assert!(!chat.should_show_fast_status(chat.current_model(), chat.current_service_tier(),));
-}
-
-#[tokio::test]
-async fn fast_status_indicator_is_hidden_when_fast_mode_is_off() {
-    let (mut chat, _rx, _op_rx) = make_chatwidget_manual(Some("gpt-5.4")).await;
-    set_chatgpt_auth(&mut chat);
-
-    assert!(!chat.should_show_fast_status(chat.current_model(), chat.current_service_tier(),));
-}
-
-#[tokio::test]
 async fn approvals_popup_shows_disabled_presets() {
     let (mut chat, _rx, _op_rx) = make_chatwidget_manual(None).await;
 
@@ -9212,97 +9127,6 @@ async fn status_line_branch_refreshes_after_interrupt() {
     });
 
     assert!(chat.status_line_branch_pending);
-}
-
-#[tokio::test]
-async fn status_line_fast_mode_renders_on_and_off() {
-    let (mut chat, _rx, _op_rx) = make_chatwidget_manual(None).await;
-    chat.config.tui_status_line = Some(vec!["fast-mode".to_string()]);
-
-    chat.refresh_status_line();
-    assert_eq!(status_line_text(&chat), Some("Fast off".to_string()));
-
-    chat.set_service_tier(Some(ServiceTier::Fast));
-    chat.refresh_status_line();
-    assert_eq!(status_line_text(&chat), Some("Fast on".to_string()));
-}
-
-#[tokio::test]
-async fn status_line_fast_mode_footer_snapshot() {
-    use ratatui::Terminal;
-    use ratatui::backend::TestBackend;
-
-    let (mut chat, _rx, _op_rx) = make_chatwidget_manual(None).await;
-    chat.show_welcome_banner = false;
-    chat.config.tui_status_line = Some(vec!["fast-mode".to_string()]);
-    chat.set_service_tier(Some(ServiceTier::Fast));
-    chat.refresh_status_line();
-
-    let width = 80;
-    let height = chat.desired_height(width);
-    let mut terminal = Terminal::new(TestBackend::new(width, height)).expect("create terminal");
-    terminal
-        .draw(|f| chat.render(f.area(), f.buffer_mut()))
-        .expect("draw fast-mode footer");
-    assert_snapshot!("status_line_fast_mode_footer", terminal.backend());
-}
-
-#[tokio::test]
-async fn status_line_model_with_reasoning_includes_fast_for_gpt54_only() {
-    let (mut chat, _rx, _op_rx) = make_chatwidget_manual(Some("gpt-5.4")).await;
-    chat.config.cwd = PathBuf::from("/tmp/project");
-    chat.config.tui_status_line = Some(vec![
-        "model-with-reasoning".to_string(),
-        "context-remaining".to_string(),
-        "current-dir".to_string(),
-    ]);
-    chat.set_reasoning_effort(Some(ReasoningEffortConfig::XHigh));
-    chat.set_service_tier(Some(ServiceTier::Fast));
-    set_chatgpt_auth(&mut chat);
-    chat.refresh_status_line();
-
-    assert_eq!(
-        status_line_text(&chat),
-        Some("gpt-5.4 xhigh fast · 100% left · /tmp/project".to_string())
-    );
-
-    chat.set_model("gpt-5.3-codex");
-    chat.refresh_status_line();
-
-    assert_eq!(
-        status_line_text(&chat),
-        Some("gpt-5.3-codex xhigh · 100% left · /tmp/project".to_string())
-    );
-}
-
-#[tokio::test]
-async fn status_line_model_with_reasoning_fast_footer_snapshot() {
-    use ratatui::Terminal;
-    use ratatui::backend::TestBackend;
-
-    let (mut chat, _rx, _op_rx) = make_chatwidget_manual(Some("gpt-5.4")).await;
-    chat.show_welcome_banner = false;
-    chat.config.cwd = PathBuf::from("/tmp/project");
-    chat.config.tui_status_line = Some(vec![
-        "model-with-reasoning".to_string(),
-        "context-remaining".to_string(),
-        "current-dir".to_string(),
-    ]);
-    chat.set_reasoning_effort(Some(ReasoningEffortConfig::XHigh));
-    chat.set_service_tier(Some(ServiceTier::Fast));
-    set_chatgpt_auth(&mut chat);
-    chat.refresh_status_line();
-
-    let width = 80;
-    let height = chat.desired_height(width);
-    let mut terminal = Terminal::new(TestBackend::new(width, height)).expect("create terminal");
-    terminal
-        .draw(|f| chat.render(f.area(), f.buffer_mut()))
-        .expect("draw model-with-reasoning footer");
-    assert_snapshot!(
-        "status_line_model_with_reasoning_fast_footer",
-        terminal.backend()
-    );
 }
 
 #[tokio::test]

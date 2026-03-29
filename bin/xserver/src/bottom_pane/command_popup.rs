@@ -38,7 +38,6 @@ pub(crate) struct CommandPopup {
 pub(crate) struct CommandPopupFlags {
     pub(crate) collaboration_modes_enabled: bool,
     pub(crate) connectors_enabled: bool,
-    pub(crate) fast_command_enabled: bool,
     pub(crate) personality_command_enabled: bool,
     pub(crate) windows_degraded_sandbox_active: bool,
 }
@@ -48,7 +47,6 @@ impl From<CommandPopupFlags> for slash_commands::BuiltinCommandFlags {
         Self {
             collaboration_modes_enabled: value.collaboration_modes_enabled,
             connectors_enabled: value.connectors_enabled,
-            fast_command_enabled: value.fast_command_enabled,
             personality_command_enabled: value.personality_command_enabled,
             allow_elevate_sandbox: value.windows_degraded_sandbox_active,
         }
@@ -505,7 +503,6 @@ mod tests {
             CommandPopupFlags {
                 collaboration_modes_enabled: true,
                 connectors_enabled: false,
-                fast_command_enabled: false,
                 personality_command_enabled: true,
                 windows_degraded_sandbox_active: false,
             },
@@ -525,7 +522,6 @@ mod tests {
             CommandPopupFlags {
                 collaboration_modes_enabled: true,
                 connectors_enabled: false,
-                fast_command_enabled: false,
                 personality_command_enabled: true,
                 windows_degraded_sandbox_active: false,
             },
@@ -545,7 +541,6 @@ mod tests {
             CommandPopupFlags {
                 collaboration_modes_enabled: true,
                 connectors_enabled: false,
-                fast_command_enabled: false,
                 personality_command_enabled: false,
                 windows_degraded_sandbox_active: false,
             },
@@ -573,7 +568,6 @@ mod tests {
             CommandPopupFlags {
                 collaboration_modes_enabled: true,
                 connectors_enabled: false,
-                fast_command_enabled: false,
                 personality_command_enabled: true,
                 windows_degraded_sandbox_active: false,
             },

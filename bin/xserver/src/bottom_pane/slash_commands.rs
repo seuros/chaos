@@ -15,7 +15,6 @@ pub(crate) struct BuiltinCommandFlags {
     pub(crate) collaboration_modes_enabled: bool,
     #[allow(dead_code)]
     pub(crate) connectors_enabled: bool,
-    pub(crate) fast_command_enabled: bool,
     pub(crate) personality_command_enabled: bool,
     pub(crate) allow_elevate_sandbox: bool,
 }
@@ -29,7 +28,6 @@ pub(crate) fn builtins_for_input(flags: BuiltinCommandFlags) -> Vec<(&'static st
             flags.collaboration_modes_enabled
                 || !matches!(*cmd, SlashCommand::Collab | SlashCommand::Plan)
         })
-        .filter(|(_, cmd)| flags.fast_command_enabled || *cmd != SlashCommand::Fast)
         .filter(|(_, cmd)| flags.personality_command_enabled || *cmd != SlashCommand::Personality)
         .collect()
 }
@@ -59,7 +57,6 @@ mod tests {
         BuiltinCommandFlags {
             collaboration_modes_enabled: true,
             connectors_enabled: true,
-            fast_command_enabled: true,
             personality_command_enabled: true,
             allow_elevate_sandbox: true,
         }
@@ -95,10 +92,4 @@ mod tests {
         );
     }
 
-    #[test]
-    fn fast_command_is_hidden_when_disabled() {
-        let mut flags = all_enabled_flags();
-        flags.fast_command_enabled = false;
-        assert_eq!(find_builtin_command("fast", flags), None);
-    }
 }

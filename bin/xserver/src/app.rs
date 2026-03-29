@@ -1068,10 +1068,6 @@ impl App {
         history_cell::SessionHeaderHistoryCell::new(
             self.chat_widget.current_model().to_string(),
             self.chat_widget.current_reasoning_effort(),
-            self.chat_widget.should_show_fast_status(
-                self.chat_widget.current_model(),
-                self.chat_widget.current_service_tier(),
-            ),
             self.config.cwd.clone(),
             version,
         )
@@ -1771,9 +1767,7 @@ impl App {
     }
 
     fn fresh_session_config(&self) -> Config {
-        let mut config = self.config.clone();
-        config.service_tier = self.chat_widget.current_service_tier();
-        config
+        self.config.clone()
     }
 
     async fn drain_active_process_events(&mut self, tui: &mut tui::Tui) -> Result<()> {
@@ -2725,39 +2719,6 @@ impl App {
                         } else {
                             self.chat_widget.add_error_message(format!(
                                 "Failed to save default personality: {err}"
-                            ));
-                        }
-                    }
-                }
-            }
-            AppEvent::PersistServiceTierSelection { service_tier } => {
-                self.refresh_status_line();
-                let profile = self.active_profile.as_deref();
-                match ConfigEditsBuilder::new(&self.config.codex_home)
-                    .with_profile(profile)
-                    .set_service_tier(service_tier)
-                    .apply()
-                    .await
-                {
-                    Ok(()) => {
-                        let status = if service_tier.is_some() { "on" } else { "off" };
-                        let mut message = format!("Fast mode set to {status}");
-                        if let Some(profile) = profile {
-                            message.push_str(" for ");
-                            message.push_str(profile);
-                            message.push_str(" profile");
-                        }
-                        self.chat_widget.add_info_message(message, /*hint*/ None);
-                    }
-                    Err(err) => {
-                        tracing::error!(error = %err, "failed to persist fast mode selection");
-                        if let Some(profile) = profile {
-                            self.chat_widget.add_error_message(format!(
-                                "Failed to save Fast mode for profile `{profile}`: {err}"
-                            ));
-                        } else {
-                            self.chat_widget.add_error_message(format!(
-                                "Failed to save default Fast mode: {err}"
                             ));
                         }
                     }
@@ -5630,7 +5591,6 @@ guardian_approval = true
                 is_first,
                 None,
                 None,
-                false,
             )) as Arc<dyn HistoryCell>
         };
 
@@ -5684,31 +5644,7 @@ guardian_approval = true
         assert_snapshot!("clear_ui_after_long_transcript_fresh_header_only", rendered);
     }
 
-    #[tokio::test]
-    async fn clear_ui_header_shows_fast_status_only_for_gpt54() {
-        let mut app = make_test_app().await;
-        app.config.cwd = PathBuf::from("/tmp/project");
-        app.chat_widget.set_model("gpt-5.4");
-        app.chat_widget
-            .set_reasoning_effort(Some(ReasoningEffortConfig::XHigh));
-        app.chat_widget
-            .set_service_tier(Some(chaos_ipc::config_types::ServiceTier::Fast));
-        set_chatgpt_auth(&mut app.chat_widget);
 
-        let rendered = app
-            .clear_ui_header_lines_with_version(80, "<VERSION>")
-            .iter()
-            .map(|line| {
-                line.spans
-                    .iter()
-                    .map(|span| span.content.as_ref())
-                    .collect::<String>()
-            })
-            .collect::<Vec<_>>()
-            .join("\n");
-
-        assert_snapshot!("clear_ui_header_fast_status_gpt54_only", rendered);
-    }
 
     async fn make_test_app() -> App {
         let (chat_widget, app_event_tx, _rx, _op_rx) = make_chatwidget_manual_with_sender().await;
@@ -6333,20 +6269,6 @@ guardian_approval = true
     }
 
     #[tokio::test]
-    async fn fresh_session_config_uses_current_service_tier() {
-        let mut app = make_test_app().await;
-        app.chat_widget
-            .set_service_tier(Some(chaos_ipc::config_types::ServiceTier::Fast));
-
-        let config = app.fresh_session_config();
-
-        assert_eq!(
-            config.service_tier,
-            Some(chaos_ipc::config_types::ServiceTier::Fast)
-        );
-    }
-
-    #[tokio::test]
     async fn backtrack_selection_with_duplicate_history_targets_unique_turn() {
         let (mut app, _app_event_rx, mut op_rx) = make_test_app_with_channels().await;
 
@@ -6395,7 +6317,6 @@ guardian_approval = true
                 is_first,
                 None,
                 None,
-                false,
             )) as Arc<dyn HistoryCell>
         };
 

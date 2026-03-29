@@ -1041,7 +1041,7 @@ pub enum McpServerElicitationRequest {
 #[ts(export_to = "v2/")]
 pub struct McpServerElicitationRequestResponse {
     pub action: McpServerElicitationAction,
-    /// Structured user input for accepted elicitations, mirroring RMCP `CreateElicitationResult`.
+    /// Structured user input for accepted elicitations, mirroring MCP `CreateElicitationResult`.
     ///
     /// This is nullable because decline/cancel responses have no content.
     pub content: Option<JsonValue>,

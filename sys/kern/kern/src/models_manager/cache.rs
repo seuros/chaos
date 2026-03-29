@@ -1,28 +1,34 @@
 use chaos_ipc::openai_models::ModelInfo;
+use chaos_proc::chaos_db_path;
+use chaos_proc::open_chaos_db;
 use jiff::Timestamp;
 use serde::Deserialize;
 use serde::Serialize;
+use sqlx::Row;
+use sqlx::SqlitePool;
 use std::io;
 use std::io::ErrorKind;
 use std::path::PathBuf;
 use std::time::Duration;
-use tokio::fs;
+use tokio::sync::OnceCell;
 use tracing::error;
 use tracing::info;
 
-/// Manages loading and saving of models cache to disk.
+/// Manages loading and saving of model catalogs in the Chaos-native SQLite DB.
 #[derive(Debug)]
 pub(crate) struct ModelsCacheManager {
-    cache_path: PathBuf,
+    sqlite_home: PathBuf,
     cache_ttl: Duration,
+    chaos_pool: OnceCell<Option<SqlitePool>>,
 }
 
 impl ModelsCacheManager {
-    /// Create a new cache manager with the given path and TTL.
-    pub(crate) fn new(cache_path: PathBuf, cache_ttl: Duration) -> Self {
+    /// Create a new cache manager backed by the Chaos-native SQLite database.
+    pub(crate) fn new(sqlite_home: PathBuf, cache_ttl: Duration) -> Self {
         Self {
-            cache_path,
+            sqlite_home,
             cache_ttl,
+            chaos_pool: OnceCell::new(),
         }
     }
 
@@ -33,12 +39,13 @@ impl ModelsCacheManager {
         expected_version: &str,
         expected_scope: &ModelsCacheScope,
     ) -> Option<ModelsCache> {
+        let cache_db_path = chaos_db_path(&self.sqlite_home);
         info!(
-                cache_path = %self.cache_path.display(),
+                cache_db_path = %cache_db_path.display(),
                 expected_version,
             "models cache: attempting load_fresh"
         );
-        let cache = match self.load().await {
+        let cache = match self.load(expected_scope).await {
             Ok(cache) => cache?,
             Err(err) => {
                 error!("failed to load models cache: {err}");
@@ -46,34 +53,23 @@ impl ModelsCacheManager {
             }
         };
         info!(
-            cache_path = %self.cache_path.display(),
+            cache_db_path = %cache_db_path.display(),
             cached_version = ?cache.client_version,
             fetched_at = %cache.fetched_at,
-            "models cache: loaded cache file"
+            "models cache: loaded cache row"
         );
         if cache.client_version.as_deref() != Some(expected_version) {
             info!(
-                cache_path = %self.cache_path.display(),
+                cache_db_path = %cache_db_path.display(),
                 expected_version,
                 cached_version = ?cache.client_version,
                 "models cache: cache version mismatch"
             );
             return None;
         }
-        if cache.scope.as_ref() != Some(expected_scope) {
-            info!(
-                cache_path = %self.cache_path.display(),
-                expected_provider_name = %expected_scope.provider_name,
-                expected_wire_api = %expected_scope.wire_api,
-                expected_base_url = %expected_scope.base_url,
-                cached_scope = ?cache.scope,
-                "models cache: provider scope mismatch"
-            );
-            return None;
-        }
         if !cache.is_fresh(self.cache_ttl) {
             info!(
-                cache_path = %self.cache_path.display(),
+                cache_db_path = %cache_db_path.display(),
                 cache_ttl_secs = self.cache_ttl.as_secs(),
                 fetched_at = %cache.fetched_at,
                 "models cache: cache is stale"
@@ -81,7 +77,7 @@ impl ModelsCacheManager {
             return None;
         }
         info!(
-            cache_path = %self.cache_path.display(),
+            cache_db_path = %cache_db_path.display(),
             cache_ttl_secs = self.cache_ttl.as_secs(),
             "models cache: cache hit"
         );
@@ -113,39 +109,101 @@ impl ModelsCacheManager {
         &self,
         expected_scope: &ModelsCacheScope,
     ) -> io::Result<()> {
-        let mut cache = match self.load().await? {
+        let mut cache = match self.load(expected_scope).await? {
             Some(cache) => cache,
             None => return Err(io::Error::new(ErrorKind::NotFound, "cache not found")),
         };
-        if cache.scope.as_ref() != Some(expected_scope) {
-            return Err(io::Error::new(
-                ErrorKind::InvalidData,
-                "cache scope mismatch",
-            ));
-        }
         cache.fetched_at = Timestamp::now();
         self.save_internal(&cache).await
     }
 
-    async fn load(&self) -> io::Result<Option<ModelsCache>> {
-        match fs::read(&self.cache_path).await {
-            Ok(contents) => {
-                let cache = serde_json::from_slice(&contents)
-                    .map_err(|err| io::Error::new(ErrorKind::InvalidData, err.to_string()))?;
-                Ok(Some(cache))
-            }
-            Err(err) if err.kind() == ErrorKind::NotFound => Ok(None),
-            Err(err) => Err(err),
-        }
+    async fn load(&self, scope: &ModelsCacheScope) -> io::Result<Option<ModelsCache>> {
+        let Some(pool) = self.chaos_pool().await else {
+            return Ok(None);
+        };
+
+        let row = sqlx::query(
+            "SELECT fetched_at, etag, client_version, models_json \
+             FROM model_catalog_cache \
+             WHERE provider_name = ? AND wire_api = ? AND base_url = ?",
+        )
+        .bind(&scope.provider_name)
+        .bind(&scope.wire_api)
+        .bind(&scope.base_url)
+        .fetch_optional(&pool)
+        .await
+        .map_err(io::Error::other)?;
+
+        let Some(row) = row else {
+            return Ok(None);
+        };
+
+        let fetched_at = row.get::<i64, _>("fetched_at");
+        let fetched_at = Timestamp::from_second(fetched_at).map_err(io::Error::other)?;
+        let models_json = row.get::<String, _>("models_json");
+        let models = serde_json::from_str(&models_json)
+            .map_err(|err| io::Error::new(ErrorKind::InvalidData, err.to_string()))?;
+
+        Ok(Some(ModelsCache {
+            fetched_at,
+            etag: row.get::<Option<String>, _>("etag"),
+            client_version: row.get::<Option<String>, _>("client_version"),
+            scope: Some(scope.clone()),
+            models,
+        }))
     }
 
     async fn save_internal(&self, cache: &ModelsCache) -> io::Result<()> {
-        if let Some(parent) = self.cache_path.parent() {
-            fs::create_dir_all(parent).await?;
-        }
-        let json = serde_json::to_vec_pretty(cache)
+        let Some(scope) = cache.scope.as_ref() else {
+            return Err(io::Error::new(
+                ErrorKind::InvalidInput,
+                "cache scope is required",
+            ));
+        };
+        let Some(pool) = self.chaos_pool().await else {
+            return Err(io::Error::other("chaos db unavailable"));
+        };
+        let models_json = serde_json::to_string(&cache.models)
             .map_err(|err| io::Error::new(ErrorKind::InvalidData, err.to_string()))?;
-        fs::write(&self.cache_path, json).await
+        sqlx::query(
+            "INSERT INTO model_catalog_cache \
+                (provider_name, wire_api, base_url, fetched_at, etag, client_version, models_json) \
+             VALUES (?, ?, ?, ?, ?, ?, ?) \
+             ON CONFLICT(provider_name, wire_api, base_url) DO UPDATE SET \
+                fetched_at = excluded.fetched_at, \
+                etag = excluded.etag, \
+                client_version = excluded.client_version, \
+                models_json = excluded.models_json",
+        )
+        .bind(&scope.provider_name)
+        .bind(&scope.wire_api)
+        .bind(&scope.base_url)
+        .bind(cache.fetched_at.as_second())
+        .bind(cache.etag.as_deref())
+        .bind(cache.client_version.as_deref())
+        .bind(models_json)
+        .execute(&pool)
+        .await
+        .map(|_| ())
+        .map_err(io::Error::other)
+    }
+
+    async fn chaos_pool(&self) -> Option<SqlitePool> {
+        self.chaos_pool
+            .get_or_init(|| async {
+                match open_chaos_db(&self.sqlite_home).await {
+                    Ok(pool) => Some(pool),
+                    Err(err) => {
+                        error!(
+                            "failed to open chaos db for model cache at {}: {err}",
+                            chaos_db_path(&self.sqlite_home).display()
+                        );
+                        None
+                    }
+                }
+            })
+            .await
+            .clone()
     }
 
     #[cfg(test)]
@@ -155,12 +213,12 @@ impl ModelsCacheManager {
     }
 
     #[cfg(test)]
-    /// Manipulate cache file for testing. Allows setting a custom fetched_at timestamp.
+    /// Manipulate the newest cached catalog for testing. Allows setting a custom fetched_at timestamp.
     pub(crate) async fn manipulate_cache_for_test<F>(&self, f: F) -> io::Result<()>
     where
         F: FnOnce(&mut Timestamp),
     {
-        let mut cache = match self.load().await? {
+        let mut cache = match self.load_first_for_test().await? {
             Some(cache) => cache,
             None => return Err(io::Error::new(ErrorKind::NotFound, "cache not found")),
         };
@@ -169,17 +227,55 @@ impl ModelsCacheManager {
     }
 
     #[cfg(test)]
-    /// Mutate the full cache contents for testing.
+    /// Mutate the newest cached catalog for testing.
     pub(crate) async fn mutate_cache_for_test<F>(&self, f: F) -> io::Result<()>
     where
         F: FnOnce(&mut ModelsCache),
     {
-        let mut cache = match self.load().await? {
+        let mut cache = match self.load_first_for_test().await? {
             Some(cache) => cache,
             None => return Err(io::Error::new(ErrorKind::NotFound, "cache not found")),
         };
         f(&mut cache);
         self.save_internal(&cache).await
+    }
+
+    #[cfg(test)]
+    async fn load_first_for_test(&self) -> io::Result<Option<ModelsCache>> {
+        let Some(pool) = self.chaos_pool().await else {
+            return Ok(None);
+        };
+        let row = sqlx::query(
+            "SELECT provider_name, wire_api, base_url, fetched_at, etag, client_version, models_json \
+             FROM model_catalog_cache \
+             ORDER BY fetched_at DESC \
+             LIMIT 1",
+        )
+        .fetch_optional(&pool)
+        .await
+        .map_err(io::Error::other)?;
+        let Some(row) = row else {
+            return Ok(None);
+        };
+
+        let scope = ModelsCacheScope {
+            provider_name: row.get::<String, _>("provider_name"),
+            wire_api: row.get::<String, _>("wire_api"),
+            base_url: row.get::<String, _>("base_url"),
+        };
+        let fetched_at =
+            Timestamp::from_second(row.get::<i64, _>("fetched_at")).map_err(io::Error::other)?;
+        let models_json = row.get::<String, _>("models_json");
+        let models = serde_json::from_str(&models_json)
+            .map_err(|err| io::Error::new(ErrorKind::InvalidData, err.to_string()))?;
+
+        Ok(Some(ModelsCache {
+            fetched_at,
+            etag: row.get::<Option<String>, _>("etag"),
+            client_version: row.get::<Option<String>, _>("client_version"),
+            scope: Some(scope),
+            models,
+        }))
     }
 }
 

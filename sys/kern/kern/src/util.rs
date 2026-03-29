@@ -3,7 +3,7 @@ use std::path::PathBuf;
 use std::time::Duration;
 
 use chaos_ipc::ProcessId;
-use rand::Rng;
+use rand::RngExt;
 use tracing::debug;
 use tracing::error;
 

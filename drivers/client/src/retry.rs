@@ -1,6 +1,6 @@
 use crate::error::TransportError;
 use crate::request::Request;
-use rand::Rng;
+use rand::RngExt;
 use std::future::Future;
 use std::time::Duration;
 use tokio::time::sleep;

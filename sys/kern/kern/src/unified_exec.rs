@@ -29,7 +29,7 @@ use std::sync::Weak;
 
 use chaos_ipc::models::PermissionProfile;
 use chaos_pf::NetworkProxy;
-use rand::Rng;
+use rand::RngExt;
 use rand::rng;
 use tokio::sync::Mutex;
 

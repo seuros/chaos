@@ -246,7 +246,7 @@ fn codex_apps_tool_question_uses_fallback_app_label() {
 
     assert_eq!(
         question.question,
-        "Allow this app to run tool \"run_action\"?"
+        "Allow the test-apps-server MCP server to run tool \"run_action\"?"
     );
 }
 

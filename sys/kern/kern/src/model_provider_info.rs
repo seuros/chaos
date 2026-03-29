@@ -70,9 +70,7 @@ impl<'de> Deserialize<'de> for WireApi {
 /// Messages wire format. Catches `api.anthropic.com`, MiniMax `/anthropic`,
 /// Z.ai `/api/anthropic`, and any other Anthropic-compatible endpoint.
 pub fn is_anthropic_wire(base_url: Option<&str>) -> bool {
-    base_url
-        .map(|u| u.contains("anthropic"))
-        .unwrap_or(false)
+    base_url.map(|u| u.contains("anthropic")).unwrap_or(false)
 }
 
 /// Serializable representation of a provider definition.

@@ -51,12 +51,13 @@ use chaos_parrot::ResponsesWebsocketConnection as ApiWebSocketConnection;
 use chaos_parrot::SseTelemetry;
 use chaos_parrot::TransportError;
 use chaos_parrot::WebsocketTelemetry;
+use chaos_parrot::anthropic::AnthropicAdapter;
+use chaos_parrot::anthropic::AnthropicAuth;
 use chaos_parrot::build_conversation_headers;
 use chaos_parrot::common::Reasoning;
 use chaos_parrot::common::ResponsesWsRequest;
 use chaos_parrot::create_text_param_for_request;
 use chaos_parrot::error::ApiError;
-use chaos_parrot::anthropic::AnthropicAdapter;
 use chaos_parrot::openai::OpenAiAdapter;
 use chaos_parrot::requests::responses::Compression;
 use chaos_syslog::SessionTelemetry;
@@ -1393,25 +1394,11 @@ impl ModelClientSession {
             &options,
         )?;
 
-        // Resolve the API key from the provider config.
-        let api_key = self
-            .client
-            .state
-            .provider
-            .api_key()
-            .map_err(|e| CodexErr::InvalidRequest(format!("Anthropic API key: {e}")))?
-            .or_else(|| {
-                self.client
-                    .state
-                    .provider
-                    .experimental_bearer_token
-                    .clone()
-            })
-            .unwrap_or_default();
+        let auth = self.resolve_anthropic_auth()?;
 
         let adapter = AnthropicAdapter::new(
             client_setup.api_provider,
-            api_key,
+            auth,
             Some(model_info.slug.clone()),
         );
 
@@ -1494,6 +1481,21 @@ impl ModelClientSession {
             turn_metadata_header,
         )
         .await
+    }
+
+    fn resolve_anthropic_auth(&self) -> Result<AnthropicAuth> {
+        if let Some(api_key) = self.client.state.provider.api_key()? {
+            return Ok(AnthropicAuth::ApiKey(api_key));
+        }
+
+        if let Some(token) = self.client.state.provider.experimental_bearer_token.clone() {
+            return Ok(AnthropicAuth::BearerToken(token));
+        }
+
+        Err(CodexErr::InvalidRequest(format!(
+            "Anthropic Messages provider `{}` requires `env_key` or `experimental_bearer_token`",
+            self.client.state.provider.name
+        )))
     }
 
     /// Permanently disables WebSockets for this Codex session and resets WebSocket state.

@@ -4,6 +4,7 @@
 //! wire format and streams `TurnEvent`s back from the SSE response.
 
 use crate::provider::Provider;
+use bytes::Bytes;
 use chaos_abi::AbiError;
 use chaos_abi::AdapterFuture;
 use chaos_abi::ContentItem;
@@ -16,10 +17,18 @@ use chaos_abi::TurnStream;
 use http::HeaderMap;
 use serde::Serialize;
 use serde_json::Value;
+use std::time::Duration;
 use tokio::sync::mpsc;
+use tokio::time::timeout;
 
 const DEFAULT_MAX_TOKENS: u64 = 8192;
 const ANTHROPIC_VERSION: &str = "2023-06-01";
+
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub enum AnthropicAuth {
+    ApiKey(String),
+    BearerToken(String),
+}
 
 /// Adapter for the Anthropic Messages API.
 ///
@@ -28,16 +37,16 @@ const ANTHROPIC_VERSION: &str = "2023-06-01";
 #[derive(Debug, Clone)]
 pub struct AnthropicAdapter {
     provider: Provider,
-    api_key: String,
+    auth: AnthropicAuth,
     default_model: Option<String>,
 }
 
 impl AnthropicAdapter {
     /// Create an adapter backed by a fully-configured provider.
-    pub fn new(provider: Provider, api_key: String, default_model: Option<String>) -> Self {
+    pub fn new(provider: Provider, auth: AnthropicAuth, default_model: Option<String>) -> Self {
         Self {
             provider,
-            api_key,
+            auth,
             default_model,
         }
     }
@@ -65,7 +74,7 @@ impl AnthropicAdapter {
             },
             stream_idle_timeout: Duration::from_secs(300),
         };
-        Self::new(provider, api_key, default_model)
+        Self::new(provider, AnthropicAuth::ApiKey(api_key), default_model)
     }
 
     fn messages_url(&self) -> String {
@@ -83,10 +92,36 @@ impl AnthropicAdapter {
     }
 
     /// Build the merged header map: provider headers + Anthropic-specific headers.
-    fn build_headers(&self) -> HeaderMap {
+    fn build_headers(&self) -> Result<HeaderMap, AbiError> {
         let mut headers = self.provider.headers.clone();
-        if let Ok(v) = http::HeaderValue::from_str(&self.api_key) {
-            headers.insert("x-api-key", v);
+        match &self.auth {
+            AnthropicAuth::ApiKey(api_key) => {
+                if api_key.trim().is_empty() {
+                    return Err(AbiError::InvalidRequest {
+                        message: "Anthropic Messages requires a non-empty API key".to_string(),
+                    });
+                }
+                let value = http::HeaderValue::from_str(api_key).map_err(|err| {
+                    AbiError::InvalidRequest {
+                        message: format!("invalid Anthropic API key header value: {err}"),
+                    }
+                })?;
+                headers.insert("x-api-key", value);
+            }
+            AnthropicAuth::BearerToken(token) => {
+                if token.trim().is_empty() {
+                    return Err(AbiError::InvalidRequest {
+                        message: "Anthropic Messages requires a non-empty bearer token".to_string(),
+                    });
+                }
+                let value =
+                    http::HeaderValue::from_str(&format!("Bearer {token}")).map_err(|err| {
+                        AbiError::InvalidRequest {
+                            message: format!("invalid Anthropic authorization header: {err}"),
+                        }
+                    })?;
+                headers.insert(http::header::AUTHORIZATION, value);
+            }
         }
         headers.insert(
             "anthropic-version",
@@ -100,7 +135,7 @@ impl AnthropicAdapter {
             http::header::ACCEPT,
             http::HeaderValue::from_static("text/event-stream"),
         );
-        headers
+        Ok(headers)
     }
 }
 
@@ -119,13 +154,16 @@ impl ModelAdapter for AnthropicAdapter {
             let url = self.messages_url();
             let model = self.model_for_request(&request.model);
             let body = build_request_body(&request, &model)?;
-            let headers = self.build_headers();
+            let headers = self.build_headers()?;
             let retry = self.provider.retry.clone();
+            let idle_timeout = self.provider.stream_idle_timeout;
 
             let (tx, rx) = mpsc::channel(64);
 
             tokio::spawn(async move {
-                if let Err(e) = run_sse_stream(&url, &headers, &body, &retry, tx.clone()).await {
+                if let Err(e) =
+                    run_sse_stream(&url, &headers, &body, &retry, idle_timeout, tx.clone()).await
+                {
                     let _ = tx.send(Err(e)).await;
                 }
             });
@@ -537,9 +575,7 @@ fn parse_sse_event(
                 Ok(vec![TurnEvent::OutputItemDone(ResponseItem::Message {
                     id: None,
                     role: "assistant".to_string(),
-                    content: vec![ContentItem::OutputText {
-                        text: acc.text,
-                    }],
+                    content: vec![ContentItem::OutputText { text: acc.text }],
                     phase: None,
                     end_turn: None,
                 })])
@@ -612,6 +648,7 @@ async fn run_sse_stream(
     headers: &HeaderMap,
     body: &Value,
     retry: &crate::provider::RetryConfig,
+    idle_timeout: Duration,
     tx: mpsc::Sender<Result<TurnEvent, AbiError>>,
 ) -> Result<(), AbiError> {
     use rama::Service;
@@ -639,11 +676,12 @@ async fn run_sse_stream(
         for (name, value) in headers.iter() {
             builder = builder.header(name, value);
         }
-        let request = builder
-            .body(Body::from(body_bytes.clone()))
-            .map_err(|e| AbiError::InvalidRequest {
-                message: e.to_string(),
-            })?;
+        let request =
+            builder
+                .body(Body::from(body_bytes.clone()))
+                .map_err(|e| AbiError::InvalidRequest {
+                    message: e.to_string(),
+                })?;
 
         let response = match client.serve(request).await {
             Ok(r) => r,
@@ -686,64 +724,155 @@ async fn run_sse_stream(
             });
         }
 
-        // Success — stream SSE events
-        let mut tool_acc: Option<ToolUseAccumulator> = None;
-        let mut text_acc: Option<TextAccumulator> = None;
-        let mut buffer = String::new();
-        let mut data_stream = response.into_body().into_data_stream();
-
-        use futures::StreamExt;
-        while let Some(chunk) = data_stream.next().await {
-            let chunk = chunk.map_err(|e| AbiError::Stream(e.to_string()))?;
-            let text = String::from_utf8_lossy(&chunk);
-            buffer.push_str(&text);
-
-            while let Some(pos) = buffer.find("\n\n") {
-                let event_block = buffer[..pos].to_string();
-                buffer = buffer[pos + 2..].to_string();
-
-                let mut event_type = None;
-                let mut data = None;
-                for line in event_block.lines() {
-                    if let Some(rest) = line.strip_prefix("event: ") {
-                        event_type = Some(rest.trim().to_string());
-                    } else if let Some(rest) = line.strip_prefix("data: ") {
-                        data = Some(rest.trim().to_string());
-                    }
-                }
-
-                let Some(event_type) = event_type else {
-                    continue;
-                };
-                let Some(data) = data else { continue };
-                let Ok(json) = serde_json::from_str::<Value>(&data) else {
-                    continue;
-                };
-
-                let events = match parse_sse_event(&event_type, &json, &mut tool_acc, &mut text_acc) {
-                    Ok(events) => events,
-                    Err(err) => {
-                        let _ = tx.send(Err(err)).await;
-                        return Ok(());
-                    }
-                };
-                for event in events {
-                    let is_done = matches!(&event, TurnEvent::Completed { .. });
-                    if tx.send(Ok(event)).await.is_err() {
-                        return Ok(());
-                    }
-                    if is_done {
-                        return Ok(());
-                    }
-                }
-            }
-        }
-
-        return Ok(());
+        return process_sse_data_stream(response.into_body().into_data_stream(), idle_timeout, tx)
+            .await;
     }
 
     Err(AbiError::Transport {
         status: 0,
         message: "all retry attempts exhausted".to_string(),
     })
+}
+
+async fn process_sse_data_stream<S, E>(
+    mut data_stream: S,
+    idle_timeout: Duration,
+    tx: mpsc::Sender<Result<TurnEvent, AbiError>>,
+) -> Result<(), AbiError>
+where
+    S: futures::Stream<Item = Result<Bytes, E>> + Unpin,
+    E: std::fmt::Display,
+{
+    let mut tool_acc: Option<ToolUseAccumulator> = None;
+    let mut text_acc: Option<TextAccumulator> = None;
+    let mut buffer = String::new();
+
+    use futures::StreamExt;
+    loop {
+        let chunk = match timeout(idle_timeout, data_stream.next()).await {
+            Ok(Some(Ok(chunk))) => chunk,
+            Ok(Some(Err(err))) => return Err(AbiError::Stream(err.to_string())),
+            Ok(None) => {
+                return Err(AbiError::Stream(
+                    "stream closed before Anthropic completion".to_string(),
+                ));
+            }
+            Err(_) => return Err(AbiError::Stream("idle timeout waiting for SSE".to_string())),
+        };
+        let text = String::from_utf8_lossy(&chunk);
+        buffer.push_str(&text);
+
+        while let Some(pos) = buffer.find("\n\n") {
+            let event_block = buffer[..pos].to_string();
+            buffer = buffer[pos + 2..].to_string();
+
+            let mut event_type = None;
+            let mut data = None;
+            for line in event_block.lines() {
+                if let Some(rest) = line.strip_prefix("event: ") {
+                    event_type = Some(rest.trim().to_string());
+                } else if let Some(rest) = line.strip_prefix("data: ") {
+                    data = Some(rest.trim().to_string());
+                }
+            }
+
+            let Some(event_type) = event_type else {
+                continue;
+            };
+            let Some(data) = data else { continue };
+            let Ok(json) = serde_json::from_str::<Value>(&data) else {
+                continue;
+            };
+
+            let events = parse_sse_event(&event_type, &json, &mut tool_acc, &mut text_acc)?;
+            for event in events {
+                let is_done = matches!(&event, TurnEvent::Completed { .. });
+                if tx.send(Ok(event)).await.is_err() {
+                    return Ok(());
+                }
+                if is_done {
+                    return Ok(());
+                }
+            }
+        }
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use futures::stream;
+    use http::header::AUTHORIZATION;
+    use std::time::Duration;
+
+    fn test_provider() -> Provider {
+        use crate::provider::RetryConfig;
+
+        Provider {
+            name: "Anthropic".to_string(),
+            base_url: "https://api.anthropic.com/v1".to_string(),
+            query_params: None,
+            headers: HeaderMap::new(),
+            retry: RetryConfig {
+                max_attempts: 1,
+                base_delay: Duration::from_millis(1),
+                retry_429: true,
+                retry_5xx: true,
+                retry_transport: true,
+            },
+            stream_idle_timeout: Duration::from_millis(10),
+        }
+    }
+
+    #[test]
+    fn build_headers_uses_x_api_key_for_api_key_auth() {
+        let adapter = AnthropicAdapter::new(
+            test_provider(),
+            AnthropicAuth::ApiKey("sk-ant".to_string()),
+            None,
+        );
+
+        let headers = adapter.build_headers().expect("headers should build");
+
+        assert_eq!(
+            headers
+                .get("x-api-key")
+                .and_then(|value| value.to_str().ok()),
+            Some("sk-ant")
+        );
+        assert!(headers.get(AUTHORIZATION).is_none());
+    }
+
+    #[test]
+    fn build_headers_uses_bearer_for_bearer_auth() {
+        let adapter = AnthropicAdapter::new(
+            test_provider(),
+            AnthropicAuth::BearerToken("tok-ant".to_string()),
+            None,
+        );
+
+        let headers = adapter.build_headers().expect("headers should build");
+
+        assert_eq!(
+            headers
+                .get(AUTHORIZATION)
+                .and_then(|value| value.to_str().ok()),
+            Some("Bearer tok-ant")
+        );
+        assert!(headers.get("x-api-key").is_none());
+    }
+
+    #[tokio::test]
+    async fn process_sse_data_stream_times_out_when_idle() {
+        let (tx, _rx) = mpsc::channel(4);
+        let stream = stream::pending::<Result<Bytes, std::io::Error>>();
+
+        let err = process_sse_data_stream(stream, Duration::from_millis(5), tx)
+            .await
+            .expect_err("idle stream should time out");
+
+        assert!(
+            matches!(err, AbiError::Stream(message) if message == "idle timeout waiting for SSE")
+        );
+    }
 }

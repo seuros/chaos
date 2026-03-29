@@ -63,11 +63,13 @@ pub fn adapter_for_wire(
     default_model: Option<String>,
 ) -> Option<Box<dyn ModelAdapter>> {
     match wire {
-        "anthropic_messages" => Some(Box::new(anthropic::AnthropicAdapter::from_base_url_and_api_key(
-            base_url,
-            api_key,
-            default_model,
-        ))),
+        "anthropic_messages" => Some(Box::new(
+            anthropic::AnthropicAdapter::from_base_url_and_api_key(
+                base_url,
+                api_key,
+                default_model,
+            ),
+        )),
         "responses" => Some(Box::new(openai::OpenAiAdapter::from_base_url_and_api_key(
             base_url,
             api_key,

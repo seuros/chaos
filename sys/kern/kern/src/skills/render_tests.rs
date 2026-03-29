@@ -27,12 +27,9 @@ fn render_skills_section_returns_none_for_empty_skills() {
 
 #[test]
 fn render_skills_section_includes_summary_and_path() {
-    let rendered = render_skills_section(&[skill(
-        "demo",
-        "build charts",
-        "/tmp/skills/demo/SKILL.md",
-    )])
-    .expect("skills section should render");
+    let rendered =
+        render_skills_section(&[skill("demo", "build charts", "/tmp/skills/demo/SKILL.md")])
+            .expect("skills section should render");
 
     let expected = "<skills_instructions>\n## Skills\nSkills are reusable local capabilities available in this session. Use them when they clearly match the task.\n### Available skills\n- demo: build charts (/tmp/skills/demo/SKILL.md)\n</skills_instructions>";
 

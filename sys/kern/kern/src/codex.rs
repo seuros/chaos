@@ -9,9 +9,6 @@ use std::sync::atomic::AtomicU64;
 use crate::AuthManager;
 use crate::CodexAuth;
 use crate::SandboxState;
-use crate::minions::AgentControl;
-use crate::minions::AgentStatus;
-use crate::minions::agent_status_from_event;
 use crate::analytics_client::AnalyticsEventsClient;
 use crate::analytics_client::build_track_events_context;
 use crate::compact;
@@ -26,6 +23,9 @@ use crate::features::FEATURES;
 use crate::features::Feature;
 use crate::features::maybe_push_unstable_features_warning;
 use crate::mcp::oauth_types::OAuthCredentialsStoreMode;
+use crate::minions::AgentControl;
+use crate::minions::AgentStatus;
+use crate::minions::agent_status_from_event;
 #[cfg(test)]
 use crate::models_manager::collaboration_mode_presets::CollaborationModesConfig;
 use crate::models_manager::manager::ModelsManager;
@@ -4512,10 +4512,7 @@ mod handlers {
     pub async fn list_mcp_tools(sess: &Session, config: &Arc<Config>, sub_id: String) {
         let mcp_connection_manager = sess.services.mcp_connection_manager.read().await;
         let _auth = sess.services.auth_manager.auth().await;
-        let mcp_servers = sess
-            .services
-            .mcp_manager
-            .effective_servers(config);
+        let mcp_servers = sess.services.mcp_manager.effective_servers(config);
         let snapshot = collect_mcp_snapshot_from_manager(
             &mcp_connection_manager,
             compute_auth_statuses(mcp_servers.iter(), config.mcp_oauth_credentials_store_mode)

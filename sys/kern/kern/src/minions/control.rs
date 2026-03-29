@@ -1,11 +1,11 @@
+use crate::error::CodexErr;
+use crate::error::Result as CodexResult;
+use crate::find_process_path_by_id_str;
 use crate::minions::AgentStatus;
 use crate::minions::guards::Guards;
 use crate::minions::role::DEFAULT_ROLE_NAME;
 use crate::minions::role::resolve_role_config;
 use crate::minions::status::is_final;
-use crate::error::CodexErr;
-use crate::error::Result as CodexResult;
-use crate::find_process_path_by_id_str;
 use crate::process_table::ProcessTableState;
 use crate::rollout::RolloutRecorder;
 use crate::session_prefix::format_subagent_context_line;

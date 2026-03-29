@@ -1,4 +1,3 @@
-use crate::minions::AgentStatus;
 use crate::codex::Codex;
 use crate::codex::SteerInputError;
 use crate::config::ConstraintResult;
@@ -6,6 +5,7 @@ use crate::error::CodexErr;
 use crate::error::Result as CodexResult;
 use crate::features::Feature;
 use crate::file_watcher::WatchRegistration;
+use crate::minions::AgentStatus;
 use crate::protocol::Event;
 use crate::protocol::Op;
 use crate::protocol::Submission;

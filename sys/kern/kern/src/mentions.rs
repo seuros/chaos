@@ -32,7 +32,10 @@ fn collect_tool_mentions_from_messages_with_sigil(
         plain_names.extend(mentions.plain_names().map(str::to_string));
         paths.extend(mentions.paths().map(str::to_string));
     }
-    CollectedToolMentions { _plain_names: plain_names, paths }
+    CollectedToolMentions {
+        _plain_names: plain_names,
+        paths,
+    }
 }
 
 #[allow(dead_code)]

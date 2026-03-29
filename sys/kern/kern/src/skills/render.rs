@@ -14,7 +14,10 @@ pub fn render_skills_section(skills: &[SkillMetadata]) -> Option<String> {
     ];
 
     lines.extend(skills.iter().map(|skill| {
-        let description = skill.short_description.as_deref().unwrap_or(&skill.description);
+        let description = skill
+            .short_description
+            .as_deref()
+            .unwrap_or(&skill.description);
         let path = skill.path_to_skills_md.to_string_lossy().replace('\\', "/");
         if description.is_empty() {
             format!("- {} ({path})", skill.name)

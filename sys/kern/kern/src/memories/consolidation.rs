@@ -1,5 +1,3 @@
-use crate::minions::AgentStatus;
-use crate::minions::status::is_final as is_final_agent_status;
 use crate::codex::Session;
 use crate::config::Config;
 use crate::features::Feature;
@@ -10,6 +8,8 @@ use crate::memories::prompts::build_consolidation_prompt;
 use crate::memories::storage::rebuild_raw_memories_file_from_memories;
 use crate::memories::storage::rollout_summary_file_stem;
 use crate::memories::storage::sync_rollout_summaries_from_memories;
+use crate::minions::AgentStatus;
+use crate::minions::status::is_final as is_final_agent_status;
 use chaos_ipc::ProcessId;
 use chaos_ipc::protocol::AskForApproval;
 use chaos_ipc::protocol::SandboxPolicy;

@@ -349,11 +349,7 @@ impl ClientHandler for ChaosClientHandler {
             .await
             {
                 Ok(tools) => {
-                    store_managed_tools(
-                        &self.tool_filter,
-                        &self.tools_arc,
-                        tools,
-                    );
+                    store_managed_tools(&self.tool_filter, &self.tools_arc, tools);
                 }
                 Err(err) => {
                     warn!(
@@ -501,15 +497,14 @@ impl AsyncManagedClient {
     }
 
     async fn listed_tools(&self) -> Option<Vec<ToolInfo>> {
-        let tools = if let Some(startup_tools) = self.startup_snapshot_while_initializing() {
+        if let Some(startup_tools) = self.startup_snapshot_while_initializing() {
             Some(startup_tools)
         } else {
             match self.client().await {
                 Ok(client) => Some(client.listed_tools()),
                 Err(_) => self.startup_snapshot.clone(),
             }
-        };
-        tools
+        }
     }
 
     async fn notify_sandbox_state_change(&self, sandbox_state: &SandboxState) -> Result<()> {
@@ -1283,11 +1278,7 @@ async fn make_managed_client(
         fetch_start.elapsed(),
         &[],
     );
-    store_managed_tools(
-        &tool_filter,
-        &tools_arc,
-        tools,
-    );
+    store_managed_tools(&tool_filter, &tools_arc, tools);
 
     Ok(ManagedClient {
         session,

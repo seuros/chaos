@@ -93,9 +93,7 @@ pub(crate) fn collect_explicit_skill_mentions(
                     mentioned_paths.insert(normalize_string_path(path));
                 }
             }
-            UserInput::Text { .. }
-            | UserInput::Image { .. }
-            | UserInput::LocalImage { .. } => {}
+            UserInput::Text { .. } | UserInput::Image { .. } | UserInput::LocalImage { .. } => {}
             _ => {}
         }
     }

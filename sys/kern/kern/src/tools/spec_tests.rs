@@ -1826,7 +1826,7 @@ fn search_tool_description_lists_each_codex_apps_connector_once() {
                 ),
             ),
             (
-                "mcp__rmcp__echo".to_string(),
+                "mcp__mcp_test__echo".to_string(),
                 mcp_tool("echo", "Echo", serde_json::json!({"type": "object"})),
             ),
         ])),
@@ -1887,11 +1887,11 @@ fn search_tool_description_lists_each_codex_apps_connector_once() {
                 },
             ),
             (
-                "mcp__rmcp__echo".to_string(),
+                "mcp__mcp_test__echo".to_string(),
                 ToolInfo {
-                    server_name: "rmcp".to_string(),
+                    server_name: "mcp_test".to_string(),
                     tool_name: "echo".to_string(),
-                    tool_namespace: "rmcp".to_string(),
+                    tool_namespace: "mcp_test".to_string(),
                     tool: mcp_tool("echo", "Echo", serde_json::json!({"type": "object"})),
                     connector_id: None,
                     connector_name: None,
@@ -1917,7 +1917,7 @@ fn search_tool_description_lists_each_codex_apps_connector_once() {
             .count(),
         1
     );
-    assert!(!description.contains("mcp__rmcp__echo"));
+    assert!(!description.contains("mcp__mcp_test__echo"));
 }
 
 #[test]

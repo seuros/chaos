@@ -121,7 +121,7 @@ pub struct CallToolResult {
 // === Adapter helpers ===
 //
 // These types and conversions intentionally live in `codex-protocol` so other crates can convert
-// “wire-shaped” MCP JSON (typically coming from rmcp model structs serialized with serde) into our
+// “wire-shaped” MCP JSON (typically coming from MCP model structs serialized with serde) into our
 // TS/JsonSchema-friendly protocol types without depending on `mcp-types`.
 
 fn deserialize_lossy_opt_i64<'de, D>(deserializer: D) -> Result<Option<i64>, D::Error>

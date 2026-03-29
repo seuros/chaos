@@ -304,8 +304,8 @@ async fn mcp_tool_call_output_exceeds_limit_truncated_for_model() -> Result<()> 
 
     let server = start_mock_server().await;
 
-    let call_id = "rmcp-truncated";
-    let server_name = "rmcp";
+    let call_id = "mcp_test-truncated";
+    let server_name = "mcp_test";
     let tool_name = format!("mcp__{server_name}__echo");
 
     // Build a very large message to exceed 10KiB once serialized.
@@ -324,14 +324,14 @@ async fn mcp_tool_call_output_exceeds_limit_truncated_for_model() -> Result<()> 
     let mock2 = mount_sse_once(
         &server,
         sse(vec![
-            responses::ev_assistant_message("msg-1", "rmcp echo tool completed."),
+            responses::ev_assistant_message("msg-1", "mcp_test echo tool completed."),
             responses::ev_completed("resp-2"),
         ]),
     )
     .await;
 
-    // Compile the rmcp stdio test server and configure it.
-    let rmcp_test_server_bin = stdio_server_bin()?;
+    // Compile the mcp_test stdio test server and configure it.
+    let mcp_test_test_server_bin = stdio_server_bin()?;
 
     let mut builder = test_codex().with_config(move |config| {
         let mut servers = config.mcp_servers.get().clone();
@@ -339,7 +339,7 @@ async fn mcp_tool_call_output_exceeds_limit_truncated_for_model() -> Result<()> 
             server_name.to_string(),
             chaos_kern::config::types::McpServerConfig {
                 transport: chaos_kern::config::types::McpServerTransportConfig::Stdio {
-                    command: rmcp_test_server_bin,
+                    command: mcp_test_test_server_bin,
                     args: Vec::new(),
                     env: None,
                     env_vars: Vec::new(),
@@ -366,7 +366,7 @@ async fn mcp_tool_call_output_exceeds_limit_truncated_for_model() -> Result<()> 
 
     fixture
         .submit_turn_with_policy(
-            "call the rmcp echo tool with a very large message",
+            "call the mcp_test echo tool with a very large message",
             SandboxPolicy::new_read_only_policy(),
         )
         .await?;
@@ -375,7 +375,7 @@ async fn mcp_tool_call_output_exceeds_limit_truncated_for_model() -> Result<()> 
     let output = mock2
         .single_request()
         .function_call_output_text(call_id)
-        .context("function_call_output present for rmcp call")?;
+        .context("function_call_output present for mcp_test call")?;
 
     assert!(
         !output.contains("Total output lines:"),
@@ -397,8 +397,8 @@ async fn mcp_image_output_preserves_image_and_no_text_summary() -> Result<()> {
 
     let server = start_mock_server().await;
 
-    let call_id = "rmcp-image-no-trunc";
-    let server_name = "rmcp";
+    let call_id = "mcp_test-image-no-trunc";
+    let server_name = "mcp_test";
     let tool_name = format!("mcp__{server_name}__image");
 
     mount_sse_once(
@@ -419,8 +419,8 @@ async fn mcp_image_output_preserves_image_and_no_text_summary() -> Result<()> {
     )
     .await;
 
-    // Build the stdio rmcp server and pass a tiny PNG via data URL so it can construct ImageContent.
-    let rmcp_test_server_bin = stdio_server_bin()?;
+    // Build the stdio mcp_test server and pass a tiny PNG via data URL so it can construct ImageContent.
+    let mcp_test_test_server_bin = stdio_server_bin()?;
 
     // 1x1 PNG data URL
     let openai_png = "data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mP8/x8AAwMB/ee9bQAAAABJRU5ErkJggg==";
@@ -431,7 +431,7 @@ async fn mcp_image_output_preserves_image_and_no_text_summary() -> Result<()> {
             server_name.to_string(),
             McpServerConfig {
                 transport: McpServerTransportConfig::Stdio {
-                    command: rmcp_test_server_bin,
+                    command: mcp_test_test_server_bin,
                     args: Vec::new(),
                     env: Some(HashMap::from([(
                         "MCP_TEST_IMAGE_DATA_URL".to_string(),
@@ -463,7 +463,7 @@ async fn mcp_image_output_preserves_image_and_no_text_summary() -> Result<()> {
         .codex
         .submit(Op::UserTurn {
             items: vec![UserInput::Text {
-                text: "call the rmcp image tool".into(),
+                text: "call the mcp_test image tool".into(),
                 text_elements: Vec::new(),
             }],
             final_output_json_schema: None,
@@ -668,8 +668,8 @@ async fn mcp_tool_call_output_not_truncated_with_custom_limit() -> Result<()> {
 
     let server = start_mock_server().await;
 
-    let call_id = "rmcp-untruncated";
-    let server_name = "rmcp";
+    let call_id = "mcp_test-untruncated";
+    let server_name = "mcp_test";
     let tool_name = format!("mcp__{server_name}__echo");
     let large_msg = "a".repeat(80_000);
     let args_json = serde_json::json!({ "message": large_msg });
@@ -686,13 +686,13 @@ async fn mcp_tool_call_output_not_truncated_with_custom_limit() -> Result<()> {
     let mock2 = mount_sse_once(
         &server,
         sse(vec![
-            responses::ev_assistant_message("msg-1", "rmcp echo tool completed."),
+            responses::ev_assistant_message("msg-1", "mcp_test echo tool completed."),
             responses::ev_completed("resp-2"),
         ]),
     )
     .await;
 
-    let rmcp_test_server_bin = stdio_server_bin()?;
+    let mcp_test_test_server_bin = stdio_server_bin()?;
 
     let mut builder = test_codex().with_config(move |config| {
         config.tool_output_token_limit = Some(50_000);
@@ -701,7 +701,7 @@ async fn mcp_tool_call_output_not_truncated_with_custom_limit() -> Result<()> {
             server_name.to_string(),
             chaos_kern::config::types::McpServerConfig {
                 transport: chaos_kern::config::types::McpServerTransportConfig::Stdio {
-                    command: rmcp_test_server_bin,
+                    command: mcp_test_test_server_bin,
                     args: Vec::new(),
                     env: None,
                     env_vars: Vec::new(),
@@ -727,7 +727,7 @@ async fn mcp_tool_call_output_not_truncated_with_custom_limit() -> Result<()> {
 
     fixture
         .submit_turn_with_policy(
-            "call the rmcp echo tool with a very large message",
+            "call the mcp_test echo tool with a very large message",
             SandboxPolicy::new_read_only_policy(),
         )
         .await?;
@@ -735,7 +735,7 @@ async fn mcp_tool_call_output_not_truncated_with_custom_limit() -> Result<()> {
     let output = mock2
         .single_request()
         .function_call_output_text(call_id)
-        .context("function_call_output present for rmcp call")?;
+        .context("function_call_output present for mcp_test call")?;
 
     let expected_echo = format!("ECHOING: {large_msg}");
     let expected_output = serde_json::to_string(&json!({ "echo": expected_echo }))?;
@@ -747,7 +747,7 @@ async fn mcp_tool_call_output_not_truncated_with_custom_limit() -> Result<()> {
     let parsed: Value = serde_json::from_str(&output)?;
     let echo_str = parsed["echo"]
         .as_str()
-        .context("echo field should be a string in rmcp echo output")?;
+        .context("echo field should be a string in mcp_test echo output")?;
     assert_eq!(
         echo_str.len(),
         expected_echo.len(),

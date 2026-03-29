@@ -156,8 +156,8 @@ mod resume;
 mod resume_warning;
 #[path = "suite/review.rs"]
 mod review;
-#[path = "suite/rmcp_client.rs"]
-mod rmcp_client;
+#[path = "suite/mcp_client.rs"]
+mod mcp_client;
 #[path = "suite/rollout_list_find.rs"]
 mod rollout_list_find;
 #[path = "suite/safety_check_downgrade.rs"]

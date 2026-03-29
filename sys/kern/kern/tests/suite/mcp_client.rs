@@ -52,11 +52,11 @@ use tokio::time::sleep;
 
 static OPENAI_PNG: &str = "data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAAD0AAAA9CAYAAAAeYmHpAAAE6klEQVR4Aeyau44UVxCGx1fZsmRLlm3Zoe0XcGQ5cUiCCIgJeS9CHgAhMkISQnIuGQgJEkBcxLW+nqnZ6uqqc+nuWRC7q/P3qetf9e+MtOwyX25O4Nep6JPyop++0qev9HrfgZ+F6r2DuB/vHOrt/UIkqdDHYvujOW6fO7h/CNEI+a5jc+pBR8uy0jVFsziYu5HtfSUk+Io34q921hLNctFSX0gwww+S8wce8K1LfCU+cYW4888aov8NxqvQILUPPReLOrm6zyLxa4i+6VZuFbJo8d1MOHZm+7VUtB/aIvhPWc/3SWg49JcwFLlHxuXKjtyloo+YNhuW3VS+WPBuUEMvCFKjEDVgFBQHXrnazpqiSxNZCkQ1kYiozsbm9Oz7l4i2Il7vGccGNWAc3XosDrZe/9P3ZnMmzHNEQw4smf8RQ87XEAMsC7Az0Au+dgXerfH4+sHvEc0SYGic8WBBUGqFH2gN7yDrazy7m2pbRTeRmU3+MjZmr1h6LJgPbGy23SI6GlYT0brQ71IY8Us4PNQCm+zepSbaD2BY9xCaAsD9IIj/IzFmKMSdHHonwdZATbTnYREf6/VZGER98N9yCWIvXQwXDoDdhZJoT8jwLnJXDB9w4Sb3e6nK5ndzlkTLnP3JBu4LKkbrYrU69gCVceV0JvpyuW1xlsUVngzhwMetn/XamtTORF9IO5YnWNiyeF9zCAfqR3fUW+vZZKLtgP+ts8BmQRBREAdRDhH3o8QuRh/YucNFz2BEjxbRN6LGzphfKmvP6v6QhqIQyZ8XNJ0W0X83MR1PEcJBNO2KC2Z1TW/v244scp9FwRViZxIOBF0Lctk7ZVSavdLvRlV1hz/ysUi9sr8CIcB3nvWBwA93ykTz18eAYxQ6N/K2DkPA1lv3iXCwmDUT7YkjIby9siXueIJj9H+pzSqJ9oIuJWTUgSSt4WO7o/9GGg0viR4VinNRUDoIj34xoCd6pxD3aK3zfdbnx5v1J3ZNNEJsE0sBG7N27ReDrJc4sFxz7dI/ZAbOmmiKvHBitQXpAdR6+F7v+/ol/tOouUV01EeMZQF2BoQDn6dP4XNr+j9GZEtEK1/L8pFw7bd3a53tsTa7WD+054jOFmPg1XBKPQgnqFfmFcy32ZRvjmiIIQTYFvyDxQ8nH8WIwwGwlyDjDznnilYyFr6njrlZwsKkBpO59A7OwgdzPEWRm+G+oeb7IfyNuzjEEVLrOVxJsxvxwF8kmCM6I2QYmJunz4u4TrADpfl7mlbRTWQ7VmrBzh3+C9f6Grc3YoGN9dg/SXFthpRsT6vobfXRs2VBlgBHXVMLHjDNbIZv1sZ9+X3hB09cXdH1JKViyG0+W9bWZDa/r2f9zAFR71sTzGpMSWz2iI4YssWjWo3REy1MDGjdwe5e0dFSiAC1JakBvu4/CUS8Eh6dqHdU0Or0ioY3W5ClSqDXAy7/6SRfgw8vt4I+tbvvNtFT2kVDhY5+IGb1rCqYaXNF08vSALsXCPmt0kQNqJT1p5eI1mkIV/BxCY1z85lOzeFbPBQHURkkPTlwTYK9gTVE25l84IbFFN+YJDHjdpn0gq6mrHht0dkcjbM4UL9283O5p77GN+SPW/QwVB4IUYg7Or+Kp7naR6qktP98LNF2UxWo9yObPIT9KYg+hK4i56no4rfnM0qeyFf6AwAAAP//trwR3wAAAAZJREFUAwBZ0sR75itw5gAAAABJRU5ErkJggg==";
 
-fn assert_rmcp_success(result_is_error: Option<bool>) {
+fn assert_mcp_success(result_is_error: Option<bool>) {
     assert_ne!(
         result_is_error,
         Some(true),
-        "rmcp tool result should not be marked as an error"
+        "mcp_test tool result should not be marked as an error"
     );
 }
 
@@ -85,7 +85,7 @@ async fn stdio_server_round_trip() -> anyhow::Result<()> {
     let server = responses::start_mock_server().await;
 
     let call_id = "call-123";
-    let server_name = "rmcp";
+    let server_name = "mcp_test";
     let tool_name = format!("mcp__{server_name}__echo");
 
     mount_sse_once(
@@ -100,14 +100,14 @@ async fn stdio_server_round_trip() -> anyhow::Result<()> {
     mount_sse_once(
         &server,
         responses::sse(vec![
-            responses::ev_assistant_message("msg-1", "rmcp echo tool completed successfully."),
+            responses::ev_assistant_message("msg-1", "mcp_test echo tool completed successfully."),
             responses::ev_completed("resp-2"),
         ]),
     )
     .await;
 
     let expected_env_value = "propagated-env";
-    let rmcp_test_server_bin = stdio_server_bin()?;
+    let mcp_test_test_server_bin = stdio_server_bin()?;
 
     let fixture = test_codex()
         .with_config(move |config| {
@@ -116,7 +116,7 @@ async fn stdio_server_round_trip() -> anyhow::Result<()> {
                 server_name.to_string(),
                 McpServerConfig {
                     transport: McpServerTransportConfig::Stdio {
-                        command: rmcp_test_server_bin,
+                        command: mcp_test_test_server_bin,
                         args: Vec::new(),
                         env: Some(HashMap::from([(
                             "MCP_TEST_VALUE".to_string(),
@@ -149,7 +149,7 @@ async fn stdio_server_round_trip() -> anyhow::Result<()> {
         .codex
         .submit(Op::UserTurn {
             items: vec![UserInput::Text {
-                text: "call the rmcp echo tool".into(),
+                text: "call the mcp_test echo tool".into(),
                 text_elements: Vec::new(),
             }],
             final_output_json_schema: None,
@@ -187,8 +187,8 @@ async fn stdio_server_round_trip() -> anyhow::Result<()> {
     let result = end
         .result
         .as_ref()
-        .expect("rmcp echo tool should return success");
-    assert_rmcp_success(result.is_error);
+        .expect("mcp_test echo tool should return success");
+    assert_mcp_success(result.is_error);
     assert!(
         result.content.is_empty(),
         "content should default to an empty array"
@@ -227,7 +227,7 @@ async fn stdio_image_responses_round_trip() -> anyhow::Result<()> {
     let server = responses::start_mock_server().await;
 
     let call_id = "img-1";
-    let server_name = "rmcp";
+    let server_name = "mcp_test";
     let tool_name = format!("mcp__{server_name}__image");
 
     // First stream: model decides to call the image tool.
@@ -244,14 +244,14 @@ async fn stdio_image_responses_round_trip() -> anyhow::Result<()> {
     let final_mock = mount_sse_once(
         &server,
         responses::sse(vec![
-            responses::ev_assistant_message("msg-1", "rmcp image tool completed successfully."),
+            responses::ev_assistant_message("msg-1", "mcp_test image tool completed successfully."),
             responses::ev_completed("resp-2"),
         ]),
     )
     .await;
 
-    // Build the stdio rmcp server and pass the image as data URL so it can construct ImageContent.
-    let rmcp_test_server_bin = stdio_server_bin()?;
+    // Build the stdio mcp_test server and pass the image as data URL so it can construct ImageContent.
+    let mcp_test_test_server_bin = stdio_server_bin()?;
 
     let fixture = test_codex()
         .with_config(move |config| {
@@ -260,7 +260,7 @@ async fn stdio_image_responses_round_trip() -> anyhow::Result<()> {
                 server_name.to_string(),
                 McpServerConfig {
                     transport: McpServerTransportConfig::Stdio {
-                        command: rmcp_test_server_bin,
+                        command: mcp_test_test_server_bin,
                         args: Vec::new(),
                         env: Some(HashMap::from([(
                             "MCP_TEST_IMAGE_DATA_URL".to_string(),
@@ -318,7 +318,7 @@ async fn stdio_image_responses_round_trip() -> anyhow::Result<()> {
         .codex
         .submit(Op::UserTurn {
             items: vec![UserInput::Text {
-                text: "call the rmcp image tool".into(),
+                text: "call the mcp_test image tool".into(),
                 text_elements: Vec::new(),
             }],
             final_output_json_schema: None,
@@ -370,8 +370,8 @@ async fn stdio_image_responses_round_trip() -> anyhow::Result<()> {
             arguments: Some(json!({})),
         }
     );
-    let result = end.result.expect("rmcp image tool should return success");
-    assert_rmcp_success(result.is_error);
+    let result = end.result.expect("mcp_test image tool should return success");
+    assert_mcp_success(result.is_error);
     assert_eq!(result.content.len(), 1);
     let base64_only = OPENAI_PNG
         .strip_prefix("data:image/png;base64,")
@@ -407,9 +407,9 @@ async fn stdio_image_responses_are_sanitized_for_text_only_model() -> anyhow::Re
     let server = responses::start_mock_server().await;
 
     let call_id = "img-text-only-1";
-    let server_name = "rmcp";
+    let server_name = "mcp_test";
     let tool_name = format!("mcp__{server_name}__image");
-    let text_only_model_slug = "rmcp-text-only-model";
+    let text_only_model_slug = "mcp_test-text-only-model";
 
     let models_mock = mount_models_once(
         &server,
@@ -467,13 +467,13 @@ async fn stdio_image_responses_are_sanitized_for_text_only_model() -> anyhow::Re
     let final_mock = mount_sse_once(
         &server,
         responses::sse(vec![
-            responses::ev_assistant_message("msg-1", "rmcp image tool completed successfully."),
+            responses::ev_assistant_message("msg-1", "mcp_test image tool completed successfully."),
             responses::ev_completed("resp-2"),
         ]),
     )
     .await;
 
-    let rmcp_test_server_bin = stdio_server_bin()?;
+    let mcp_test_test_server_bin = stdio_server_bin()?;
 
     let fixture = test_codex()
         .with_auth(CodexAuth::create_dummy_chatgpt_auth_for_testing())
@@ -483,7 +483,7 @@ async fn stdio_image_responses_are_sanitized_for_text_only_model() -> anyhow::Re
                 server_name.to_string(),
                 McpServerConfig {
                     transport: McpServerTransportConfig::Stdio {
-                        command: rmcp_test_server_bin,
+                        command: mcp_test_test_server_bin,
                         args: Vec::new(),
                         env: Some(HashMap::from([(
                             "MCP_TEST_IMAGE_DATA_URL".to_string(),
@@ -522,7 +522,7 @@ async fn stdio_image_responses_are_sanitized_for_text_only_model() -> anyhow::Re
         .codex
         .submit(Op::UserTurn {
             items: vec![UserInput::Text {
-                text: "call the rmcp image tool".into(),
+                text: "call the mcp_test image tool".into(),
                 text_elements: Vec::new(),
             }],
             final_output_json_schema: None,
@@ -574,7 +574,7 @@ async fn stdio_server_propagates_whitelisted_env_vars() -> anyhow::Result<()> {
     let server = responses::start_mock_server().await;
 
     let call_id = "call-1234";
-    let server_name = "rmcp_whitelist";
+    let server_name = "mcp_test_whitelist";
     let tool_name = format!("mcp__{server_name}__echo");
 
     mount_sse_once(
@@ -589,7 +589,7 @@ async fn stdio_server_propagates_whitelisted_env_vars() -> anyhow::Result<()> {
     mount_sse_once(
         &server,
         responses::sse(vec![
-            responses::ev_assistant_message("msg-1", "rmcp echo tool completed successfully."),
+            responses::ev_assistant_message("msg-1", "mcp_test echo tool completed successfully."),
             responses::ev_completed("resp-2"),
         ]),
     )
@@ -597,7 +597,7 @@ async fn stdio_server_propagates_whitelisted_env_vars() -> anyhow::Result<()> {
 
     let expected_env_value = "propagated-env-from-whitelist";
     let _guard = EnvVarGuard::set("MCP_TEST_VALUE", OsStr::new(expected_env_value));
-    let rmcp_test_server_bin = stdio_server_bin()?;
+    let mcp_test_test_server_bin = stdio_server_bin()?;
 
     let fixture = test_codex()
         .with_config(move |config| {
@@ -606,7 +606,7 @@ async fn stdio_server_propagates_whitelisted_env_vars() -> anyhow::Result<()> {
                 server_name.to_string(),
                 McpServerConfig {
                     transport: McpServerTransportConfig::Stdio {
-                        command: rmcp_test_server_bin,
+                        command: mcp_test_test_server_bin,
                         args: Vec::new(),
                         env: None,
                         env_vars: vec!["MCP_TEST_VALUE".to_string()],
@@ -636,7 +636,7 @@ async fn stdio_server_propagates_whitelisted_env_vars() -> anyhow::Result<()> {
         .codex
         .submit(Op::UserTurn {
             items: vec![UserInput::Text {
-                text: "call the rmcp echo tool".into(),
+                text: "call the mcp_test echo tool".into(),
                 text_elements: Vec::new(),
             }],
             final_output_json_schema: None,
@@ -674,8 +674,8 @@ async fn stdio_server_propagates_whitelisted_env_vars() -> anyhow::Result<()> {
     let result = end
         .result
         .as_ref()
-        .expect("rmcp echo tool should return success");
-    assert_rmcp_success(result.is_error);
+        .expect("mcp_test echo tool should return success");
+    assert_mcp_success(result.is_error);
     assert!(
         result.content.is_empty(),
         "content should default to an empty array"
@@ -713,7 +713,7 @@ async fn streamable_http_tool_call_round_trip() -> anyhow::Result<()> {
     let server = responses::start_mock_server().await;
 
     let call_id = "call-456";
-    let server_name = "rmcp_http";
+    let server_name = "mcp_test_http";
     let tool_name = format!("mcp__{server_name}__echo");
 
     mount_sse_once(
@@ -730,7 +730,7 @@ async fn streamable_http_tool_call_round_trip() -> anyhow::Result<()> {
         responses::sse(vec![
             responses::ev_assistant_message(
                 "msg-1",
-                "rmcp streamable http echo tool completed successfully.",
+                "mcp_test streamable http echo tool completed successfully.",
             ),
             responses::ev_completed("resp-2"),
         ]),
@@ -738,7 +738,7 @@ async fn streamable_http_tool_call_round_trip() -> anyhow::Result<()> {
     .await;
 
     let expected_env_value = "propagated-env-http";
-    let Some(rmcp_http_server_bin) = streamable_http_server_bin()? else {
+    let Some(mcp_test_http_server_bin) = streamable_http_server_bin()? else {
         return Ok(());
     };
 
@@ -748,7 +748,7 @@ async fn streamable_http_tool_call_round_trip() -> anyhow::Result<()> {
     let bind_addr = format!("127.0.0.1:{port}");
     let server_url = format!("http://{bind_addr}/mcp");
 
-    let mut http_server_child = Command::new(&rmcp_http_server_bin)
+    let mut http_server_child = Command::new(&mcp_test_http_server_bin)
         .kill_on_drop(true)
         .env("MCP_STREAMABLE_HTTP_BIND_ADDR", &bind_addr)
         .env("MCP_TEST_VALUE", expected_env_value)
@@ -793,7 +793,7 @@ async fn streamable_http_tool_call_round_trip() -> anyhow::Result<()> {
         .codex
         .submit(Op::UserTurn {
             items: vec![UserInput::Text {
-                text: "call the rmcp streamable http echo tool".into(),
+                text: "call the mcp_test streamable http echo tool".into(),
                 text_elements: Vec::new(),
             }],
             final_output_json_schema: None,
@@ -831,8 +831,8 @@ async fn streamable_http_tool_call_round_trip() -> anyhow::Result<()> {
     let result = end
         .result
         .as_ref()
-        .expect("rmcp echo tool should return success");
-    assert_rmcp_success(result.is_error);
+        .expect("mcp_test echo tool should return success");
+    assert_mcp_success(result.is_error);
     assert!(
         result.content.is_empty(),
         "content should default to an empty array"
@@ -910,7 +910,7 @@ async fn streamable_http_with_oauth_round_trip_impl() -> anyhow::Result<()> {
     let server = responses::start_mock_server().await;
 
     let call_id = "call-789";
-    let server_name = "rmcp_http_oauth";
+    let server_name = "mcp_test_http_oauth";
     let tool_name = format!("mcp__{server_name}__echo");
 
     mount_sse_once(
@@ -927,7 +927,7 @@ async fn streamable_http_with_oauth_round_trip_impl() -> anyhow::Result<()> {
         responses::sse(vec![
             responses::ev_assistant_message(
                 "msg-1",
-                "rmcp streamable http oauth echo tool completed successfully.",
+                "mcp_test streamable http oauth echo tool completed successfully.",
             ),
             responses::ev_completed("resp-2"),
         ]),
@@ -938,7 +938,7 @@ async fn streamable_http_with_oauth_round_trip_impl() -> anyhow::Result<()> {
     let expected_token = "initial-access-token";
     let client_id = "test-client-id";
     let refresh_token = "initial-refresh-token";
-    let Some(rmcp_http_server_bin) = streamable_http_server_bin()? else {
+    let Some(mcp_test_http_server_bin) = streamable_http_server_bin()? else {
         return Ok(());
     };
 
@@ -948,7 +948,7 @@ async fn streamable_http_with_oauth_round_trip_impl() -> anyhow::Result<()> {
     let bind_addr = format!("127.0.0.1:{port}");
     let server_url = format!("http://{bind_addr}/mcp");
 
-    let mut http_server_child = Command::new(&rmcp_http_server_bin)
+    let mut http_server_child = Command::new(&mcp_test_http_server_bin)
         .kill_on_drop(true)
         .env("MCP_STREAMABLE_HTTP_BIND_ADDR", &bind_addr)
         .env("MCP_EXPECT_BEARER", expected_token)
@@ -1035,7 +1035,7 @@ async fn streamable_http_with_oauth_round_trip_impl() -> anyhow::Result<()> {
         .codex
         .submit(Op::UserTurn {
             items: vec![UserInput::Text {
-                text: "call the rmcp streamable http oauth echo tool".into(),
+                text: "call the mcp_test streamable http oauth echo tool".into(),
                 text_elements: Vec::new(),
             }],
             final_output_json_schema: None,
@@ -1073,8 +1073,8 @@ async fn streamable_http_with_oauth_round_trip_impl() -> anyhow::Result<()> {
     let result = end
         .result
         .as_ref()
-        .expect("rmcp echo tool should return success");
-    assert_rmcp_success(result.is_error);
+        .expect("mcp_test echo tool should return success");
+    assert_mcp_success(result.is_error);
     assert!(
         result.content.is_empty(),
         "content should default to an empty array"

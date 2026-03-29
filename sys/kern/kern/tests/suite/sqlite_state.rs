@@ -323,7 +323,7 @@ async fn mcp_call_marks_process_memory_mode_polluted_when_configured() -> Result
 
     let server = start_mock_server().await;
     let call_id = "call-123";
-    let server_name = "rmcp";
+    let server_name = "mcp_test";
     let tool_name = format!("mcp__{server_name}__echo");
     mount_sse_once(
         &server,
@@ -337,13 +337,13 @@ async fn mcp_call_marks_process_memory_mode_polluted_when_configured() -> Result
     mount_sse_once(
         &server,
         responses::sse(vec![
-            responses::ev_assistant_message("msg-1", "rmcp echo tool completed."),
+            responses::ev_assistant_message("msg-1", "mcp_test echo tool completed."),
             ev_completed("resp-2"),
         ]),
     )
     .await;
 
-    let rmcp_test_server_bin = stdio_server_bin()?;
+    let mcp_test_test_server_bin = stdio_server_bin()?;
     let mut builder = test_codex().with_config(move |config| {
         config
             .features
@@ -356,7 +356,7 @@ async fn mcp_call_marks_process_memory_mode_polluted_when_configured() -> Result
             server_name.to_string(),
             McpServerConfig {
                 transport: McpServerTransportConfig::Stdio {
-                    command: rmcp_test_server_bin,
+                    command: mcp_test_test_server_bin,
                     args: Vec::new(),
                     env: Some(HashMap::from([(
                         "MCP_TEST_VALUE".to_string(),
@@ -388,7 +388,7 @@ async fn mcp_call_marks_process_memory_mode_polluted_when_configured() -> Result
     test.codex
         .submit(Op::UserTurn {
             items: vec![UserInput::Text {
-                text: "call the rmcp echo tool".to_string(),
+                text: "call the mcp_test echo tool".to_string(),
                 text_elements: Vec::new(),
             }],
             final_output_json_schema: None,

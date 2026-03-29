@@ -18,6 +18,7 @@ codex-client = { workspace = true }
 chaos-realpath = { workspace = true }
 chaos-which = { workspace = true }
 ctor = { workspace = true }
+futures = { workspace = true }
 http = { workspace = true }
 notify = { workspace = true }
 rama = { workspace = true }
@@ -26,6 +27,7 @@ serde_json = { workspace = true }
 sha1 = { workspace = true }
 tempfile = { workspace = true }
 tokio = { workspace = true, features = ["io-util", "net", "time"] }
+tokio-tungstenite = { workspace = true }
 walkdir = { workspace = true }
 wiremock = { workspace = true }
 shlex = { workspace = true }

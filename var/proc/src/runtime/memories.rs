@@ -23,6 +23,10 @@ const MEMORY_CONSOLIDATION_JOB_KEY: &str = "global";
 
 const DEFAULT_RETRY_REMAINING: i64 = 3;
 
+fn whole_days_as_hours(days: i64) -> jiff::Span {
+    days.saturating_mul(24).hours()
+}
+
 impl StateRuntime {
     /// Deletes all persisted memory state in one transaction.
     ///
@@ -156,7 +160,7 @@ WHERE process_id = ?
         let worker_id = current_process_id;
         let current_process_id = worker_id.to_string();
         let max_age_cutoff = jiff::Timestamp::now()
-            .checked_sub(max_age_days.max(0).days())
+            .checked_sub(whole_days_as_hours(max_age_days.max(0)))
             .unwrap_or(jiff::Timestamp::UNIX_EPOCH)
             .as_second();
         let idle_cutoff = jiff::Timestamp::now()
@@ -318,7 +322,7 @@ LIMIT ?
         }
 
         let cutoff = jiff::Timestamp::now()
-            .checked_sub(max_unused_days.max(0).days())
+            .checked_sub(whole_days_as_hours(max_unused_days.max(0)))
             .unwrap_or(jiff::Timestamp::UNIX_EPOCH)
             .as_second();
         let rows_affected = sqlx::query(
@@ -375,7 +379,7 @@ WHERE process_id IN (
             return Ok(Phase2InputSelection::default());
         }
         let cutoff = jiff::Timestamp::now()
-            .checked_sub(max_unused_days.max(0).days())
+            .checked_sub(whole_days_as_hours(max_unused_days.max(0)))
             .unwrap_or(jiff::Timestamp::UNIX_EPOCH)
             .as_second();
 
@@ -1294,6 +1298,7 @@ mod tests {
     use super::StateRuntime;
     use super::test_support::test_process_metadata;
     use super::test_support::unique_temp_dir;
+    use super::whole_days_as_hours;
     use crate::model::Phase2JobClaimOutcome;
     use crate::model::Stage1JobClaimOutcome;
     use crate::model::Stage1StartupClaimParams;
@@ -1555,7 +1560,7 @@ mod tests {
             .unwrap()
             .checked_sub(1.minutes())
             .unwrap();
-        let old_at = now.checked_sub(31.days()).unwrap();
+        let old_at = now.checked_sub(whole_days_as_hours(31)).unwrap();
 
         let current_process_id =
             ProcessId::from_string(&Uuid::new_v4().to_string()).expect("current thread id");
@@ -3721,9 +3726,21 @@ VALUES (?, ?, ?, ?, ?)
         }
 
         for (process_id, generated_at, summary) in [
-            (thread_a, now.checked_sub(3.days()).unwrap(), "summary-a"),
-            (thread_b, now.checked_sub(2.days()).unwrap(), "summary-b"),
-            (thread_c, now.checked_sub(1.days()).unwrap(), "summary-c"),
+            (
+                thread_a,
+                now.checked_sub(whole_days_as_hours(3)).unwrap(),
+                "summary-a",
+            ),
+            (
+                thread_b,
+                now.checked_sub(whole_days_as_hours(2)).unwrap(),
+                "summary-b",
+            ),
+            (
+                thread_c,
+                now.checked_sub(whole_days_as_hours(1)).unwrap(),
+                "summary-c",
+            ),
         ] {
             let source_updated_at = generated_at.as_second();
             let claim = runtime
@@ -3751,8 +3768,8 @@ VALUES (?, ?, ?, ?, ?)
         }
 
         for (process_id, usage_count, last_usage) in [
-            (thread_a, 5_i64, now.checked_sub(10.days()).unwrap()),
-            (thread_b, 5_i64, now.checked_sub(1.days()).unwrap()),
+            (thread_a, 5_i64, now.checked_sub(whole_days_as_hours(10)).unwrap()),
+            (thread_b, 5_i64, now.checked_sub(whole_days_as_hours(1)).unwrap()),
             (thread_c, 1_i64, now.checked_sub(1.hours()).unwrap()),
         ] {
             sqlx::query(
@@ -3812,9 +3829,21 @@ VALUES (?, ?, ?, ?, ?)
         }
 
         for (process_id, generated_at, summary) in [
-            (thread_a, now.checked_sub(40.days()).unwrap(), "summary-a"),
-            (thread_b, now.checked_sub(2.days()).unwrap(), "summary-b"),
-            (thread_c, now.checked_sub(50.days()).unwrap(), "summary-c"),
+            (
+                thread_a,
+                now.checked_sub(whole_days_as_hours(40)).unwrap(),
+                "summary-a",
+            ),
+            (
+                thread_b,
+                now.checked_sub(whole_days_as_hours(2)).unwrap(),
+                "summary-b",
+            ),
+            (
+                thread_c,
+                now.checked_sub(whole_days_as_hours(50)).unwrap(),
+                "summary-c",
+            ),
         ] {
             let source_updated_at = generated_at.as_second();
             let claim = runtime
@@ -3845,13 +3874,13 @@ VALUES (?, ?, ?, ?, ?)
             (
                 thread_a,
                 Some(9_i64),
-                Some(now.checked_sub(31.days()).unwrap()),
+                Some(now.checked_sub(whole_days_as_hours(31)).unwrap()),
             ),
             (thread_b, None, None),
             (
                 thread_c,
                 Some(1_i64),
-                Some(now.checked_sub(1.days()).unwrap()),
+                Some(now.checked_sub(whole_days_as_hours(1)).unwrap()),
             ),
         ] {
             sqlx::query(

@@ -50,6 +50,7 @@ const MODEL: &str = "gpt-5.2-codex";
 const OPENAI_BETA_HEADER: &str = "OpenAI-Beta";
 const WS_V2_BETA_HEADER_VALUE: &str = "responses_websockets=2026-02-06";
 const X_CLIENT_REQUEST_ID_HEADER: &str = "x-client-request-id";
+const X_CODEX_TURN_STATE_HEADER: &str = "x-codex-turn-state";
 
 struct WebsocketTestHarness {
     _codex_home: TempDir,
@@ -204,10 +205,10 @@ async fn responses_websocket_reuses_connection_after_session_drop() {
 async fn responses_websocket_preconnect_is_reused_even_with_header_changes() {
     skip_if_no_network!();
 
-    let server = start_websocket_server(vec![vec![vec![
-        ev_response_created("resp-1"),
-        ev_completed("resp-1"),
-    ]]])
+    let server = start_websocket_server(vec![
+        vec![vec![ev_response_created("warm-1"), ev_completed("warm-1")]],
+        vec![vec![ev_response_created("resp-1"), ev_completed("resp-1")]],
+    ])
     .await;
 
     let harness = websocket_harness(&server).await;
@@ -311,10 +312,10 @@ async fn responses_websocket_request_prewarm_is_reused_even_with_header_changes(
 async fn responses_websocket_prewarm_uses_v2_when_model_prefers_websockets_and_feature_disabled() {
     skip_if_no_network!();
 
-    let server = start_websocket_server(vec![vec![vec![
-        ev_response_created("resp-1"),
-        ev_completed("resp-1"),
-    ]]])
+    let server = start_websocket_server(vec![
+        vec![vec![ev_response_created("warm-1"), ev_completed("warm-1")]],
+        vec![vec![ev_response_created("resp-1"), ev_completed("resp-1")]],
+    ])
     .await;
 
     let harness = websocket_harness_with_options(&server, false, false, false, true).await;
@@ -348,16 +349,29 @@ async fn responses_websocket_prewarm_uses_v2_when_model_prefers_websockets_and_f
             .any(|value| value == WS_V2_BETA_HEADER_VALUE)
     );
     stream_until_complete(&mut client_session, &harness, &prompt).await;
-    assert_eq!(server.handshakes().len(), 1);
-    let connection = server.single_connection();
-    assert_eq!(connection.len(), 1);
-    let prewarm = connection
+    assert_eq!(server.handshakes().len(), 2);
+    let connections = server.connections();
+    let prewarm_connection = connections.first().expect("missing prewarm connection");
+    assert_eq!(prewarm_connection.len(), 1);
+    let prewarm = prewarm_connection
         .first()
         .expect("missing prewarm request")
+        .body_json();
+    let follow_up_connection = connections.get(1).expect("missing follow-up connection");
+    assert_eq!(follow_up_connection.len(), 1);
+    let follow_up = follow_up_connection
+        .first()
+        .expect("missing follow-up request")
         .body_json();
     assert_eq!(prewarm["type"].as_str(), Some("response.create"));
     assert_eq!(
         prewarm["input"],
+        serde_json::to_value(&prompt.input).unwrap()
+    );
+    assert_eq!(follow_up["type"].as_str(), Some("response.create"));
+    assert_eq!(follow_up.get("previous_response_id"), None);
+    assert_eq!(
+        follow_up["input"],
         serde_json::to_value(&prompt.input).unwrap()
     );
 
@@ -692,6 +706,45 @@ async fn responses_websocket_emits_reasoning_included_event() {
     }
 
     assert!(saw_reasoning_included);
+    server.shutdown().await;
+}
+
+#[tokio::test(flavor = "multi_thread", worker_threads = 2)]
+async fn responses_websocket_replays_turn_state_after_reconnect() {
+    skip_if_no_network!();
+
+    let server = start_websocket_server_with_headers(vec![
+        WebSocketConnectionConfig {
+            requests: vec![vec![ev_response_created("resp-1"), ev_completed("resp-1")]],
+            response_headers: vec![("X-Codex-Turn-State".to_string(), "ts-1".to_string())],
+            accept_delay: None,
+            close_after_requests: true,
+        },
+        WebSocketConnectionConfig {
+            requests: vec![vec![ev_response_created("resp-2"), ev_completed("resp-2")]],
+            response_headers: Vec::new(),
+            accept_delay: None,
+            close_after_requests: true,
+        },
+    ])
+    .await;
+
+    let harness = websocket_harness(&server).await;
+    let mut client_session = harness.client.new_session();
+    let first_prompt = prompt_with_input(vec![message_item("hello")]);
+    let second_prompt = prompt_with_input(vec![message_item("again")]);
+
+    stream_until_complete(&mut client_session, &harness, &first_prompt).await;
+    stream_until_complete(&mut client_session, &harness, &second_prompt).await;
+
+    let handshakes = server.handshakes();
+    assert_eq!(handshakes.len(), 2);
+    assert_eq!(handshakes[0].header(X_CODEX_TURN_STATE_HEADER), None);
+    assert_eq!(
+        handshakes[1].header(X_CODEX_TURN_STATE_HEADER),
+        Some("ts-1".to_string())
+    );
+
     server.shutdown().await;
 }
 

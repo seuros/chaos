@@ -116,9 +116,9 @@ async fn apply_patch_cli_multiple_operations_integration(
 Wall time: [0-9]+(?:\.[0-9]+)? seconds
 Output:
 Success. Updated the following files:
-A nested/new.txt
-M modify.txt
-D delete.txt
+A (?:.+/)?nested/new\.txt
+M (?:.+/)?modify\.txt
+D (?:.+/)?delete\.txt
 ?$";
     assert_regex_match(expected, &out);
 

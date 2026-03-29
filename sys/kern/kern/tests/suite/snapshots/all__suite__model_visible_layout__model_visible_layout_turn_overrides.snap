@@ -1,5 +1,6 @@
 ---
-source: core/tests/suite/model_visible_layout.rs
+source: sys/kern/kern/tests/suite/model_visible_layout.rs
+assertion_line: 163
 expression: "format_labeled_requests_snapshot(\"Second turn changes cwd, approval policy, and personality while keeping model constant.\",\n&[(\"First Request (Baseline)\", &requests[0]),\n(\"Second Request (Turn Overrides)\", &requests[1]),])"
 ---
 Scenario: Second turn changes cwd, approval policy, and personality while keeping model constant.

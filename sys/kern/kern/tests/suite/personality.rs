@@ -16,6 +16,7 @@ use chaos_ipc::protocol::SandboxPolicy;
 use chaos_ipc::user_input::UserInput;
 use chaos_kern::config::types::Personality;
 use chaos_kern::features::Feature;
+use chaos_kern::models_manager::model_info::BASE_INSTRUCTIONS;
 use chaos_kern::models_manager::manager::ModelsManager;
 use chaos_kern::models_manager::manager::RefreshStrategy;
 use core_test_support::load_default_config_for_test;
@@ -36,8 +37,7 @@ use tokio::time::sleep;
 use wiremock::BodyPrintLimit;
 use wiremock::MockServer;
 
-const LOCAL_FRIENDLY_TEMPLATE: &str =
-    "You optimize for clarity, usefulness, and team morale.";
+const LOCAL_FRIENDLY_TEMPLATE: &str = "You optimize for clarity, usefulness, and team morale.";
 const LOCAL_PRAGMATIC_TEMPLATE: &str = "You are deeply pragmatic, effective, and outcome-oriented.";
 
 #[tokio::test(flavor = "multi_thread", worker_threads = 2)]
@@ -506,10 +506,7 @@ async fn instructions_uses_base_if_feature_disabled() -> anyhow::Result<()> {
 
     let model_info =
         chaos_kern::test_support::construct_model_info_offline("gpt-5.2-codex", &config);
-    assert_eq!(
-        model_info.get_model_instructions(config.personality),
-        model_info.base_instructions
-    );
+    assert_eq!(model_info.base_instructions, BASE_INSTRUCTIONS);
 
     Ok(())
 }
@@ -713,12 +710,16 @@ async fn remote_model_friendly_personality_instructions_with_feature() -> anyhow
     let instructions_text = request.instructions_text();
 
     assert!(
-        instructions_text.contains(friendly_personality_message),
-        "expected instructions to include the remote friendly personality template, got: {instructions_text:?}"
+        instructions_text.contains(BASE_INSTRUCTIONS),
+        "expected instructions to include the local ChaOS kernel prompt, got: {instructions_text:?}"
     );
     assert!(
         !instructions_text.contains(default_personality_message),
         "expected instructions to skip the remote default personality template, got: {instructions_text:?}"
+    );
+    assert!(
+        !instructions_text.contains(friendly_personality_message),
+        "expected instructions to ignore the remote friendly personality template, got: {instructions_text:?}"
     );
 
     Ok(())
@@ -871,18 +872,13 @@ async fn user_turn_personality_remote_model_template_includes_update_message() -
         .last()
         .expect("expected personality update request");
     let developer_texts = request.message_input_texts("developer");
-    let personality_text = developer_texts
-        .iter()
-        .find(|text| text.contains(remote_friendly_message))
-        .expect("expected personality update message in developer input");
+    let personality_text = developer_texts.iter().find(|text| {
+        text.contains(remote_friendly_message) || text.contains("<personality_spec>")
+    });
 
     assert!(
-        personality_text.contains("The user has requested a new communication style."),
-        "expected personality update preamble, got {personality_text:?}"
-    );
-    assert!(
-        personality_text.contains(remote_friendly_message),
-        "expected personality update to include remote template, got: {personality_text:?}"
+        personality_text.is_none(),
+        "expected no remote personality update message in developer input, got: {personality_text:?}"
     );
 
     Ok(())

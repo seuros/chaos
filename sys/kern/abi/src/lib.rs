@@ -15,6 +15,7 @@ pub mod stream;
 pub mod tools;
 
 // Re-export ABI surface.
+pub use adapter::AdapterFuture;
 pub use adapter::ModelAdapter;
 pub use error::AbiError;
 pub use event::TurnEvent;

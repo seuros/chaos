@@ -4,9 +4,21 @@ version.workspace = true
 edition.workspace = true
 license.workspace = true
 publish.workspace = true
+description = "Provider adapters — translate chaos-abi into wire formats"
 
 [lints]
 workspace = true
 
 [dependencies]
 chaos-abi = { workspace = true }
+chaos-ipc = { workspace = true }
+codex-client = { workspace = true }
+futures = { workspace = true }
+rama = { workspace = true }
+serde = { workspace = true, features = ["derive"] }
+serde_json = { workspace = true }
+tokio = { workspace = true, features = ["sync", "macros"] }
+tracing = { workspace = true }
+
+[dev-dependencies]
+tokio = { workspace = true, features = ["rt-multi-thread", "macros"] }

@@ -206,7 +206,16 @@ impl ResponsesWebsocketConnection {
     }
 
     pub async fn is_closed(&self) -> bool {
-        self.stream.lock().await.is_none()
+        let mut guard = self.stream.lock().await;
+        if guard
+            .as_ref()
+            .is_some_and(|ws_stream| ws_stream.pump_task.is_finished())
+        {
+            let closed_stream = guard.take();
+            drop(closed_stream);
+            return true;
+        }
+        guard.is_none()
     }
 
     #[instrument(
@@ -389,24 +398,16 @@ async fn connect_websocket(
         response_parts.headers
     );
 
-    let reasoning_included = response_parts
-        .headers
-        .contains_key(X_REASONING_INCLUDED_HEADER);
-    let models_etag = response_parts
-        .headers
-        .get(X_MODELS_ETAG_HEADER)
-        .and_then(|value| value.to_str().ok())
+    let reasoning_included =
+        header_value_case_insensitive(&response_parts.headers, X_REASONING_INCLUDED_HEADER)
+            .is_some();
+    let models_etag = header_value_case_insensitive(&response_parts.headers, X_MODELS_ETAG_HEADER)
         .map(ToString::to_string);
-    let server_model = response_parts
-        .headers
-        .get(OPENAI_MODEL_HEADER)
-        .and_then(|value| value.to_str().ok())
+    let server_model = header_value_case_insensitive(&response_parts.headers, OPENAI_MODEL_HEADER)
         .map(ToString::to_string);
     if let Some(turn_state) = turn_state
-        && let Some(header_value) = response_parts
-            .headers
-            .get(X_CODEX_TURN_STATE_HEADER)
-            .and_then(|value| value.to_str().ok())
+        && let Some(header_value) =
+            header_value_case_insensitive(&response_parts.headers, X_CODEX_TURN_STATE_HEADER)
     {
         let _ = turn_state.set(header_value.to_string());
     }
@@ -416,6 +417,16 @@ async fn connect_websocket(
         models_etag,
         server_model,
     ))
+}
+
+fn header_value_case_insensitive<'a>(headers: &'a HeaderMap, name: &str) -> Option<&'a str> {
+    headers.iter().find_map(|(header_name, value)| {
+        header_name
+            .as_str()
+            .eq_ignore_ascii_case(name)
+            .then(|| value.to_str().ok())
+            .flatten()
+    })
 }
 
 fn map_handshake_error(err: HandshakeError, url: &Url) -> ApiError {

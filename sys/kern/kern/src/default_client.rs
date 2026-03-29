@@ -3,6 +3,7 @@ use codex_client::CodexHttpClient;
 pub use codex_client::CodexRequestBuilder;
 use http::HeaderMap;
 use http::HeaderValue;
+use http::header::USER_AGENT;
 use std::sync::LazyLock;
 use std::sync::Mutex;
 use std::sync::RwLock;
@@ -179,7 +180,7 @@ fn sanitize_user_agent(candidate: String, fallback: &str) -> String {
 pub fn create_client() -> CodexHttpClient {
     // TODO: wire in custom CA via rustls config when CODEX_CA_CERTIFICATE is set.
     // For now, use the default rama client which uses the system root store.
-    CodexHttpClient::default_client()
+    CodexHttpClient::default_client().with_default_headers(default_headers())
 }
 
 /// Builds the default rama HTTP client used for ordinary ChaOS HTTP traffic.
@@ -193,6 +194,9 @@ pub fn build_http_client() -> CodexHttpClient {
 pub fn default_headers() -> HeaderMap {
     let mut headers = HeaderMap::new();
     headers.insert("originator", originator().header_value);
+    if let Ok(user_agent) = HeaderValue::from_str(&get_codex_user_agent()) {
+        headers.insert(USER_AGENT, user_agent);
+    }
     if let Ok(guard) = REQUIREMENTS_RESIDENCY.read()
         && let Some(requirement) = guard.as_ref()
         && !headers.contains_key(RESIDENCY_HEADER_NAME)

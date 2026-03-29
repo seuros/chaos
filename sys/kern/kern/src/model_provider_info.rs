@@ -12,6 +12,7 @@ use codex_api::provider::RetryConfig as ApiRetryConfig;
 use http::HeaderMap;
 use http::header::HeaderName;
 use http::header::HeaderValue;
+use http::header::USER_AGENT;
 use schemars::JsonSchema;
 use serde::Deserialize;
 use serde::Serialize;
@@ -126,9 +127,12 @@ pub struct ModelProviderInfo {
 
 impl ModelProviderInfo {
     fn build_header_map(&self) -> crate::error::Result<HeaderMap> {
-        let capacity = self.http_headers.as_ref().map_or(0, HashMap::len)
-            + self.env_http_headers.as_ref().map_or(0, HashMap::len);
-        let mut headers = HeaderMap::with_capacity(capacity);
+        let mut headers = crate::default_client::default_headers();
+        if let Ok(user_agent) =
+            HeaderValue::from_str(&crate::default_client::get_codex_user_agent())
+        {
+            headers.insert(USER_AGENT, user_agent);
+        }
         if let Some(extra) = &self.http_headers {
             for (k, v) in extra {
                 if let (Ok(name), Ok(value)) = (HeaderName::try_from(k), HeaderValue::try_from(v)) {

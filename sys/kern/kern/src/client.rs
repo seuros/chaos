@@ -427,7 +427,7 @@ impl ModelClient {
     }
 
     fn build_subagent_headers(&self) -> ApiHeaderMap {
-        let mut extra_headers = ApiHeaderMap::new();
+        let mut extra_headers = crate::default_client::default_headers();
         if let SessionSource::SubAgent(sub) = &self.state.session_source {
             let subagent = match sub {
                 crate::protocol::SubAgentSource::Review => "review".to_string(),
@@ -726,14 +726,16 @@ impl ModelClientSession {
     ) -> ApiResponsesOptions {
         let turn_metadata_header = parse_turn_metadata_header(turn_metadata_header);
         let conversation_id = self.client.state.conversation_id.to_string();
+        let mut extra_headers = crate::default_client::default_headers();
+        extra_headers.extend(build_responses_headers(
+            self.client.state.beta_features_header.as_deref(),
+            Some(&self.turn_state),
+            turn_metadata_header.as_ref(),
+        ));
         ApiResponsesOptions {
             conversation_id: Some(conversation_id),
             session_source: Some(self.client.state.session_source.clone()),
-            extra_headers: build_responses_headers(
-                self.client.state.beta_features_header.as_deref(),
-                Some(&self.turn_state),
-                turn_metadata_header.as_ref(),
-            ),
+            extra_headers,
             compression,
             turn_state: Some(Arc::clone(&self.turn_state)),
         }

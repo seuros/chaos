@@ -17,6 +17,8 @@ use tracing::Level;
 use tracing::enabled;
 use tracing::trace;
 
+use crate::ensure_rustls_crypto_provider;
+
 pub type ByteStream = BoxStream<'static, Result<Bytes, TransportError>>;
 
 pub struct StreamResponse {
@@ -47,6 +49,7 @@ impl RamaTransport {
 
     pub fn default_client() -> Self {
         use rama::Service;
+        ensure_rustls_crypto_provider();
         Self::new(rama::http::client::EasyHttpWebClient::default().boxed())
     }
 

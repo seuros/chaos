@@ -18,6 +18,8 @@ use tokio::sync::Mutex;
 use tracing::Span;
 use tracing_opentelemetry::OpenTelemetrySpanExt;
 
+use crate::ensure_rustls_crypto_provider;
+
 type RamaClient = BoxService<rama::http::Request, rama::http::Response, OpaqueError>;
 
 /// HTTP client wrapper backed by rama. Provides convenience methods
@@ -25,6 +27,7 @@ type RamaClient = BoxService<rama::http::Request, rama::http::Response, OpaqueEr
 #[derive(Clone)]
 pub struct CodexHttpClient {
     inner: Arc<Mutex<RamaClient>>,
+    default_headers: HeaderMap,
 }
 
 impl std::fmt::Debug for CodexHttpClient {
@@ -37,11 +40,13 @@ impl CodexHttpClient {
     pub fn new(client: RamaClient) -> Self {
         Self {
             inner: Arc::new(Mutex::new(client)),
+            default_headers: HeaderMap::new(),
         }
     }
 
     pub fn default_client() -> Self {
         use rama::Service;
+        ensure_rustls_crypto_provider();
         Self::new(rama::http::client::EasyHttpWebClient::default().boxed())
     }
 
@@ -58,9 +63,15 @@ impl CodexHttpClient {
             client: self.inner.clone(),
             method,
             url: url.to_string(),
+            default_headers: self.default_headers.clone(),
             headers: HeaderMap::new(),
             body: None,
         }
+    }
+
+    pub fn with_default_headers(mut self, headers: HeaderMap) -> Self {
+        self.default_headers = headers;
+        self
     }
 }
 
@@ -69,6 +80,7 @@ pub struct CodexRequestBuilder {
     client: Arc<Mutex<RamaClient>>,
     method: Method,
     url: String,
+    default_headers: HeaderMap,
     headers: HeaderMap,
     body: Option<Vec<u8>>,
 }
@@ -132,9 +144,14 @@ impl CodexRequestBuilder {
         self
     }
 
-    pub async fn send(mut self) -> Result<CodexResponse, CodexClientError> {
+    pub async fn send(self) -> Result<CodexResponse, CodexClientError> {
+        let mut headers = self.default_headers;
+        for (key, value) in &self.headers {
+            headers.insert(key, value.clone());
+        }
+
         // Inject trace headers.
-        inject_trace_headers(&mut self.headers);
+        inject_trace_headers(&mut headers);
 
         let rama_body = match self.body {
             Some(bytes) => Body::from(bytes),
@@ -145,7 +162,7 @@ impl CodexRequestBuilder {
             .method(self.method.clone())
             .uri(&self.url);
 
-        for (key, value) in self.headers.iter() {
+        for (key, value) in headers.iter() {
             builder = builder.header(key, value);
         }
 

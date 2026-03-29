@@ -454,9 +454,7 @@ fn usage_limit_reached_includes_hours_and_minutes() {
 fn usage_limit_reached_includes_days_hours_minutes() {
     let base: Timestamp = "2024-01-01T00:00:00Z".parse().unwrap();
     let resets_at = base
-        .checked_add(2.days())
-        .unwrap()
-        .checked_add(3.hours())
+        .checked_add(51.hours())
         .unwrap()
         .checked_add(5.minutes())
         .unwrap();

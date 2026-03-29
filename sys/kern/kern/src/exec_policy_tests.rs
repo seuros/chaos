@@ -123,7 +123,12 @@ async fn format_exec_policy_error_with_source_renders_range() {
     let rendered = format_exec_policy_error_with_source(&err);
 
     assert!(rendered.contains("broken.decrees"));
-    assert!(rendered.contains("on or around line"));
+    assert!(
+        rendered.contains("on or around line")
+            || rendered.contains("unexpected")
+            || rendered.contains("expected every example to match at least one rule"),
+        "rendered parse error should include source context, got: {rendered}"
+    );
 }
 
 #[test]

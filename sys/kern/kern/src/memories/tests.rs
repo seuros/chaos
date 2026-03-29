@@ -207,7 +207,7 @@ async fn sync_rollout_summaries_and_raw_memories_file_keeps_latest_memories_only
     assert!(raw_memories.contains(&format!(
         "rollout_summary_file: {canonical_rollout_summary_file}"
     )));
-    let process_header = format!("## Thread `{keep_id}`");
+    let process_header = format!("## Process `{keep_id}`");
     let process_pos = raw_memories
         .find(&process_header)
         .expect("thread header should exist");
@@ -424,7 +424,6 @@ task_outcome: success
 mod consolidation_tests {
     use crate::CodexAuth;
     use crate::ProcessTable;
-    use crate::minions::AgentControl;
     use crate::codex::Session;
     use crate::codex::make_session_and_context;
     use crate::config::Config;
@@ -433,6 +432,7 @@ mod consolidation_tests {
     use crate::memories::memory_root;
     use crate::memories::raw_memories_file;
     use crate::memories::rollout_summaries_dir;
+    use crate::minions::AgentControl;
     use chaos_ipc::ProcessId;
     use chaos_ipc::protocol::AskForApproval;
     use chaos_ipc::protocol::Op;

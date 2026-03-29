@@ -1,5 +1,7 @@
+use super::cache::ModelsCache;
 use super::cache::ModelsCacheManager;
 use super::cache::ModelsCacheScope;
+use super::discovery_machine::ModelDiscoveryWorkflow;
 use crate::api_bridge::auth_provider_from_auth;
 use crate::api_bridge::map_api_error;
 use crate::auth::AuthManager;
@@ -40,6 +42,15 @@ use tracing::instrument;
 const DEFAULT_MODEL_CACHE_TTL: Duration = Duration::from_secs(300);
 const MODELS_REFRESH_TIMEOUT: Duration = Duration::from_secs(5);
 const MODELS_ENDPOINT: &str = "/models";
+
+enum FetchedCatalog {
+    Live {
+        models: Vec<ModelInfo>,
+        etag: Option<String>,
+    },
+    Unsupported,
+}
+
 #[derive(Clone)]
 struct ModelsRequestTelemetry {
     auth_mode: Option<String>,
@@ -394,34 +405,69 @@ impl ModelsManager {
             return Ok(());
         }
 
+        let mut workflow = ModelDiscoveryWorkflow::new();
+        workflow.begin(refresh_strategy);
+
         match refresh_strategy {
             RefreshStrategy::Offline => {
-                self.try_load_cache().await;
+                if let Some(cache) = self.load_fresh_cache().await {
+                    workflow.record_cache_hit();
+                    self.apply_cache_entry(cache).await;
+                } else {
+                    workflow.record_cache_miss();
+                }
                 Ok(())
             }
             RefreshStrategy::OnlineIfUncached => {
-                if self.try_load_cache().await {
+                if let Some(cache) = self.load_fresh_cache().await {
+                    workflow.record_cache_hit();
+                    self.apply_cache_entry(cache).await;
                     info!("models cache: using cached models");
                     return Ok(());
                 }
+                workflow.record_cache_miss();
                 info!("models cache: cache miss, fetching from provider");
-                self.fetch_and_update_models().await
+                workflow.record_fetch_started();
+                self.fetch_and_update_models(&mut workflow).await
             }
-            RefreshStrategy::Online => {
-                self.fetch_and_update_models().await
+            RefreshStrategy::Online => self.fetch_and_update_models(&mut workflow).await,
+        }
+    }
+
+    async fn fetch_and_update_models(
+        &self,
+        workflow: &mut ModelDiscoveryWorkflow,
+    ) -> CoreResult<()> {
+        let _timer =
+            chaos_syslog::start_global_timer("codex.remote_models.fetch_update.duration_ms", &[]);
+
+        match self.fetch_catalog().await {
+            Ok(FetchedCatalog::Live { models, etag }) => {
+                workflow.record_live_catalog();
+                self.apply_live_catalog(models, etag).await;
+                Ok(())
+            }
+            Ok(FetchedCatalog::Unsupported) => {
+                workflow.record_unsupported_catalog();
+                self.apply_unsupported_catalog().await;
+                Ok(())
+            }
+            Err(err) => {
+                workflow.record_failed();
+                Err(err)
             }
         }
     }
 
-    async fn fetch_and_update_models(&self) -> CoreResult<()> {
-        let _timer =
-            chaos_syslog::start_global_timer("codex.remote_models.fetch_update.duration_ms", &[]);
-
+    async fn fetch_catalog(&self) -> CoreResult<FetchedCatalog> {
         // Anthropic-compatible providers get models through the adapter path.
         if crate::model_provider_info::is_anthropic_wire(self.provider.base_url.as_deref()) {
-            return self.fetch_and_update_models_via_adapter().await;
+            return self.fetch_catalog_via_adapter().await;
         }
+        self.fetch_catalog_via_models_client().await
+    }
 
+    async fn fetch_catalog_via_models_client(&self) -> CoreResult<FetchedCatalog> {
         let auth = self.auth_manager.auth().await;
         let auth_mode = auth.as_ref().map(CodexAuth::auth_mode);
         let api_provider = self.provider.to_api_provider(auth_mode)?;
@@ -444,16 +490,11 @@ impl ModelsManager {
         .map_err(|_| CodexErr::Timeout)?
         .map_err(map_api_error)?;
 
-        self.apply_remote_models(models.clone()).await;
-        *self.etag.write().await = etag.clone();
-        self.cache_manager
-            .persist_cache(&models, etag, client_version, self.cache_scope())
-            .await;
-        Ok(())
+        Ok(FetchedCatalog::Live { models, etag })
     }
 
     /// Fetch models via the ABI adapter (Anthropic-compatible providers).
-    async fn fetch_and_update_models_via_adapter(&self) -> CoreResult<()> {
+    async fn fetch_catalog_via_adapter(&self) -> CoreResult<FetchedCatalog> {
         use chaos_abi::ListModelsError;
         use chaos_abi::ModelAdapter;
         use chaos_parrot::anthropic::AnthropicAdapter;
@@ -485,31 +526,16 @@ impl ModelsManager {
             Ok(models) => {
                 let kern_models: Vec<ModelInfo> =
                     models.iter().map(model_info::model_info_from_abi).collect();
-                let client_version = crate::models_manager::client_version_to_whole();
                 info!(
                     count = kern_models.len(),
                     "fetched models via Anthropic adapter"
                 );
-                self.apply_remote_models(kern_models.clone()).await;
-                *self.etag.write().await = None;
-                self.cache_manager
-                    .persist_cache(&kern_models, None, client_version, self.cache_scope())
-                    .await;
-                Ok(())
+                Ok(FetchedCatalog::Live {
+                    models: kern_models,
+                    etag: None,
+                })
             }
-            Err(ListModelsError::Unsupported) => {
-                let empty_models: Vec<ModelInfo> = Vec::new();
-                let client_version = crate::models_manager::client_version_to_whole();
-                info!(
-                    "provider does not support model listing, caching empty provider catalog"
-                );
-                self.apply_remote_models(empty_models.clone()).await;
-                *self.etag.write().await = None;
-                self.cache_manager
-                    .persist_cache(&empty_models, None, client_version, self.cache_scope())
-                    .await;
-                Ok(())
-            }
+            Err(ListModelsError::Unsupported) => Ok(FetchedCatalog::Unsupported),
             Err(ListModelsError::Failed { message }) => {
                 error!("Anthropic model listing failed: {message}");
                 Err(CodexErr::Stream(message, None))
@@ -521,14 +547,44 @@ impl ModelsManager {
         self.etag.read().await.clone()
     }
 
+    async fn apply_live_catalog(&self, models: Vec<ModelInfo>, etag: Option<String>) {
+        let client_version = crate::models_manager::client_version_to_whole();
+        self.apply_remote_models(models.clone()).await;
+        *self.etag.write().await = etag.clone();
+        self.cache_manager
+            .persist_cache(&models, etag, client_version, self.cache_scope())
+            .await;
+    }
+
+    async fn apply_unsupported_catalog(&self) {
+        let empty_models: Vec<ModelInfo> = Vec::new();
+        let client_version = crate::models_manager::client_version_to_whole();
+        info!("provider does not support model listing, caching empty provider catalog");
+        self.apply_remote_models(empty_models.clone()).await;
+        *self.etag.write().await = None;
+        self.cache_manager
+            .persist_cache(&empty_models, None, client_version, self.cache_scope())
+            .await;
+    }
+
     /// Replace the cached remote models with freshly fetched ones.
     async fn apply_remote_models(&self, models: Vec<ModelInfo>) {
         *self.remote_models.write().await = models;
     }
 
+    async fn apply_cache_entry(&self, cache: ModelsCache) {
+        let ModelsCache { models, etag, .. } = cache;
+        *self.etag.write().await = etag.clone();
+        self.apply_remote_models(models.clone()).await;
+        info!(
+            models_count = models.len(),
+            etag = ?etag,
+            "models cache: cache entry applied"
+        );
+    }
 
     /// Attempt to satisfy the refresh from the cache when it matches the provider and TTL.
-    async fn try_load_cache(&self) -> bool {
+    async fn load_fresh_cache(&self) -> Option<ModelsCache> {
         let _timer =
             chaos_syslog::start_global_timer("codex.remote_models.load_cache.duration_ms", &[]);
         let client_version = crate::models_manager::client_version_to_whole();
@@ -541,18 +597,10 @@ impl ModelsManager {
             Some(cache) => cache,
             None => {
                 info!("models cache: no usable cache entry");
-                return false;
+                return None;
             }
         };
-        let models = cache.models.clone();
-        *self.etag.write().await = cache.etag.clone();
-        self.apply_remote_models(models.clone()).await;
-        info!(
-            models_count = models.len(),
-            etag = ?cache.etag,
-            "models cache: cache entry applied"
-        );
-        true
+        Some(cache)
     }
 
     /// Cold-boot fallback: load from the bundled models.json.

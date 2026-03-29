@@ -182,7 +182,7 @@ pub fn create_client() -> CodexHttpClient {
     CodexHttpClient::default_client()
 }
 
-/// Builds the default rama HTTP client used for ordinary Chaos HTTP traffic.
+/// Builds the default rama HTTP client used for ordinary ChaOS HTTP traffic.
 ///
 /// This is the infallible entry point for call sites that previously used
 /// `build_http_client()`. Returns a CodexHttpClient backed by rama.

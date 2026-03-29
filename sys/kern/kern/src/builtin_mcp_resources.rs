@@ -44,7 +44,7 @@ const RESOURCE_SPECS: [ChaosBuiltinResourceSpec; 2] = [
         kind: ChaosBuiltinResourceKind::Sessions,
         uri: CHAOS_SESSIONS_URI,
         name: "sessions",
-        description: "List all Chaos processes",
+        description: "List all ChaOS processes",
         mime_type: JSON_MIME_TYPE,
     },
     ChaosBuiltinResourceSpec {
@@ -61,7 +61,7 @@ const RESOURCE_TEMPLATE_SPECS: [ChaosBuiltinResourceTemplateSpec; 1] =
         kind: ChaosBuiltinResourceTemplateKind::SessionDetail,
         uri_template: CHAOS_SESSIONS_URI_TEMPLATE,
         name: "session_detail",
-        description: "Details for a specific Chaos process",
+        description: "Details for a specific ChaOS process",
         mime_type: JSON_MIME_TYPE,
     }];
 
@@ -121,7 +121,7 @@ pub async fn sessions_json_from_state_db(
                     None,
                 )
                 .await
-                .map_err(|err| format!("failed to list Chaos processes: {err}"))?;
+                .map_err(|err| format!("failed to list ChaOS processes: {err}"))?;
             page.items
                 .iter()
                 .map(|process| {
@@ -139,7 +139,7 @@ pub async fn sessions_json_from_state_db(
         None => Vec::new(),
     };
 
-    to_pretty_json(&sessions, "Chaos processes")
+    to_pretty_json(&sessions, "ChaOS processes")
 }
 
 pub async fn session_detail_json_from_state_db(
@@ -147,11 +147,11 @@ pub async fn session_detail_json_from_state_db(
     process_id: ProcessId,
 ) -> Result<String, String> {
     let runtime = state_db
-        .ok_or_else(|| "Chaos session resources require a persisted state database".to_string())?;
+        .ok_or_else(|| "ChaOS session resources require a persisted state database".to_string())?;
     let process = runtime
         .get_process(process_id)
         .await
-        .map_err(|err| format!("failed to read Chaos process {process_id}: {err}"))?
+        .map_err(|err| format!("failed to read ChaOS process {process_id}: {err}"))?
         .ok_or_else(|| format!("process not found: {process_id}"))?;
 
     to_pretty_json(
@@ -169,7 +169,7 @@ pub async fn session_detail_json_from_state_db(
             "first_user_message": process.first_user_message,
             "git_branch": process.git_branch,
         }),
-        "Chaos process",
+        "ChaOS process",
     )
 }
 

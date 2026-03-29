@@ -285,7 +285,7 @@ async fn read_inline_resource(
         .await
         .map_err(FunctionCallError::RespondToModel)?;
     let content = content.ok_or_else(|| {
-        FunctionCallError::RespondToModel(format!("unknown inline Chaos resource: {uri}"))
+        FunctionCallError::RespondToModel(format!("unknown inline ChaOS resource: {uri}"))
     })?;
     Ok(inline_text_resource_result(uri.to_string(), content))
 }

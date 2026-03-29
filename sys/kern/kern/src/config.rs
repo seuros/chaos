@@ -254,7 +254,7 @@ pub struct Config {
     /// Compact prompt override.
     pub compact_prompt: Option<String>,
 
-    /// Optional external notifier command. When set, Chaos will spawn this
+    /// Optional external notifier command. When set, ChaOS will spawn this
     /// program after each completed *turn* (i.e. when the agent finishes
     /// processing a user submission). The value must be the full command
     /// broken into argv tokens **without** the trailing JSON argument - Codex

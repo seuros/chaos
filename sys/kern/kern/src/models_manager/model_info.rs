@@ -14,10 +14,10 @@ use crate::truncate::approx_bytes_for_tokens;
 use tracing::warn;
 
 pub const BASE_INSTRUCTIONS: &str = include_str!("../../prompt.md");
-const DEFAULT_PERSONALITY_HEADER: &str = "You are Chaos, a coding agent. You and the user share the same workspace and collaborate to achieve the user's goals.";
+const DEFAULT_PERSONALITY_HEADER: &str = "You are running inside ChaOS. ChaOS is a local model kernel. The operator defines your role. If the task uses a workspace, you share it with the operator.";
 const LOCAL_FRIENDLY_TEMPLATE: &str =
-    "You optimize for team morale and being a supportive teammate as much as code quality.";
-const LOCAL_PRAGMATIC_TEMPLATE: &str = "You are a deeply pragmatic, effective software engineer.";
+    "You optimize for clarity, usefulness, and team morale.";
+const LOCAL_PRAGMATIC_TEMPLATE: &str = "You are deeply pragmatic, effective, and outcome-oriented.";
 const PERSONALITY_PLACEHOLDER: &str = "{{ personality }}";
 
 pub(crate) fn with_config_overrides(mut model: ModelInfo, config: &Config) -> ModelInfo {
@@ -51,7 +51,7 @@ pub(crate) fn with_config_overrides(mut model: ModelInfo, config: &Config) -> Mo
         model.model_messages = None;
     } else {
         // Always override server-supplied instructions with the local prompt.
-        // The server sends OpenAI-branded personality; Chaos has its own identity.
+        // The server sends OpenAI-branded personality; ChaOS has its own identity.
         model.base_instructions = BASE_INSTRUCTIONS.to_string();
         model.model_messages = None;
     }

@@ -183,6 +183,6 @@ fn merge_inline_resource_templates_adds_session_detail_template() {
     assert_eq!(templates[0].name, "session_detail");
     assert_eq!(
         templates[0].description.as_deref(),
-        Some("Details for a specific Chaos process")
+        Some("Details for a specific ChaOS process")
     );
 }

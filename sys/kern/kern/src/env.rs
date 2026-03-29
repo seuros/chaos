@@ -4,7 +4,7 @@ fn env_var_set(key: &str) -> bool {
     std::env::var(key).is_ok_and(|v| !v.trim().is_empty())
 }
 
-/// Returns true when Chaos is likely running headless (CI, SSH, no display).
+/// Returns true when ChaOS is likely running headless (CI, SSH, no display).
 ///
 /// Used by frontends to skip flows that require a browser (e.g. device-code auth).
 pub fn is_headless_environment() -> bool {

@@ -37,8 +37,8 @@ use wiremock::BodyPrintLimit;
 use wiremock::MockServer;
 
 const LOCAL_FRIENDLY_TEMPLATE: &str =
-    "You optimize for team morale and being a supportive teammate as much as code quality.";
-const LOCAL_PRAGMATIC_TEMPLATE: &str = "You are a deeply pragmatic, effective software engineer.";
+    "You optimize for clarity, usefulness, and team morale.";
+const LOCAL_PRAGMATIC_TEMPLATE: &str = "You are deeply pragmatic, effective, and outcome-oriented.";
 
 #[tokio::test(flavor = "multi_thread", worker_threads = 2)]
 async fn personality_does_not_mutate_base_instructions_without_template() {

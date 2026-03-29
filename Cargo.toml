@@ -412,4 +412,3 @@ opt-level = 0
 
 # Uncomment to debug local changes.
 # ratatui = { path = "../../ratatui" }
-# rmcp = { path = "../../rust-sdk/crates/rmcp" }

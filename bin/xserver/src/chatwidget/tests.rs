@@ -8,7 +8,6 @@ use super::*;
 use crate::app_event::AppEvent;
 use crate::app_event::ExitMode;
 use crate::app_event_sender::AppEventSender;
-use crate::bottom_pane::FeedbackAudience;
 use crate::bottom_pane::LocalImageAttachment;
 use crate::bottom_pane::MentionBinding;
 use crate::history_cell::UserHistoryCell;
@@ -1710,9 +1709,7 @@ async fn helpers_are_available_and_do_not_panic() {
         enhanced_keys_supported: false,
         auth_manager,
         models_manager: process_table.get_models_manager(),
-        feedback: crate::bottom_pane::FeedbackSnapshot::default(),
         is_first_run: true,
-        feedback_audience: FeedbackAudience::External,
         model: Some(resolved_model),
         startup_tooltip_override: None,
         status_line_invalid_items_warned: Arc::new(AtomicBool::new(false)),
@@ -1860,8 +1857,6 @@ async fn make_chatwidget_manual(
         last_separator_elapsed_secs: None,
         turn_runtime_metrics: RuntimeMetricsSummary::default(),
         last_rendered_width: std::cell::Cell::new(None),
-        feedback: crate::bottom_pane::FeedbackSnapshot::default(),
-        feedback_audience: FeedbackAudience::External,
         current_rollout_path: None,
         current_cwd: None,
         session_network_proxy: None,
@@ -2021,10 +2016,6 @@ async fn collab_spawn_end_shows_requested_model_and_effort() {
         rendered.contains("Spawned Robie [explorer] (gpt-5 high)"),
         "expected spawn line to include agent metadata and requested model, got {rendered:?}"
     );
-}
-
-fn status_line_text(chat: &ChatWidget) -> Option<String> {
-    chat.status_line_text()
 }
 
 fn make_token_info(total_tokens: i64, context_window: i64) -> TokenUsageInfo {
@@ -5561,9 +5552,7 @@ async fn collaboration_modes_defaults_to_code_on_startup() {
         enhanced_keys_supported: false,
         auth_manager,
         models_manager: process_table.get_models_manager(),
-        feedback: crate::bottom_pane::FeedbackSnapshot::default(),
         is_first_run: true,
-        feedback_audience: FeedbackAudience::External,
         model: Some(resolved_model.clone()),
         startup_tooltip_override: None,
         status_line_invalid_items_warned: Arc::new(AtomicBool::new(false)),
@@ -5611,9 +5600,7 @@ async fn experimental_mode_plan_is_ignored_on_startup() {
         enhanced_keys_supported: false,
         auth_manager,
         models_manager: process_table.get_models_manager(),
-        feedback: crate::bottom_pane::FeedbackSnapshot::default(),
         is_first_run: true,
-        feedback_audience: FeedbackAudience::External,
         model: Some(resolved_model.clone()),
         startup_tooltip_override: None,
         status_line_invalid_items_warned: Arc::new(AtomicBool::new(false)),
@@ -6346,7 +6333,7 @@ async fn interrupt_exec_marks_failed_snapshot() {
 }
 
 // Snapshot test: after an interrupted turn, a gentle error message is inserted
-// suggesting the user to tell the model what to do differently and to use /feedback.
+// suggesting the user to tell the model what to do differently.
 #[tokio::test]
 async fn interrupted_turn_error_message_snapshot() {
     let (mut chat, mut rx, _op_rx) = make_chatwidget_manual(None).await;
@@ -6894,47 +6881,6 @@ async fn single_reasoning_option_skips_selection() {
             .any(|ev| matches!(ev, AppEvent::UpdateReasoningEffort(Some(effort)) if *effort == ReasoningEffortConfig::High)),
         "expected reasoning effort to be applied automatically; events: {events:?}"
     );
-}
-
-#[tokio::test]
-async fn feedback_selection_popup_snapshot() {
-    let (mut chat, _rx, _op_rx) = make_chatwidget_manual(None).await;
-
-    // Open the feedback category selection popup via slash command.
-    chat.dispatch_command(SlashCommand::Feedback);
-
-    let popup = render_bottom_popup(&chat, 80);
-    assert_snapshot!("feedback_selection_popup", popup);
-}
-
-#[tokio::test]
-async fn feedback_upload_consent_popup_snapshot() {
-    let (mut chat, _rx, _op_rx) = make_chatwidget_manual(None).await;
-
-    chat.show_selection_view(crate::bottom_pane::feedback_upload_consent_params(
-        chat.app_event_tx.clone(),
-        crate::app_event::FeedbackCategory::Bug,
-        chat.current_rollout_path.clone(),
-        &crate::bottom_pane::FeedbackDiagnostics,
-    ));
-
-    let popup = render_bottom_popup(&chat, 80);
-    assert_snapshot!("feedback_upload_consent_popup", popup);
-}
-
-#[tokio::test]
-async fn feedback_good_result_consent_popup_includes_connectivity_diagnostics_filename() {
-    let (mut chat, _rx, _op_rx) = make_chatwidget_manual(None).await;
-
-    chat.show_selection_view(crate::bottom_pane::feedback_upload_consent_params(
-        chat.app_event_tx.clone(),
-        crate::app_event::FeedbackCategory::GoodResult,
-        chat.current_rollout_path.clone(),
-        &crate::bottom_pane::FeedbackDiagnostics,
-    ));
-
-    let popup = render_bottom_popup(&chat, 80);
-    assert_snapshot!("feedback_good_result_consent_popup", popup);
 }
 
 #[tokio::test]

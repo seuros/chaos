@@ -3,7 +3,6 @@ use crate::app_event::AppEvent;
 use crate::app_event::ExitMode;
 use crate::app_event_sender::AppEventSender;
 use crate::bottom_pane::ApprovalRequest;
-use crate::bottom_pane::FeedbackAudience;
 use crate::bottom_pane::McpServerElicitationFormRequest;
 use crate::bottom_pane::SelectionItem;
 use crate::bottom_pane::SelectionViewParams;
@@ -649,9 +648,6 @@ pub(crate) struct App {
     /// This is used after a confirmed thread rollback to ensure scrollback reflects the trimmed
     /// transcript cells.
     pub(crate) backtrack_render_pending: bool,
-    #[allow(dead_code)]
-    pub(crate) feedback: crate::bottom_pane::FeedbackSnapshot,
-    feedback_audience: FeedbackAudience,
     /// One-shot guard used while switching threads.
     ///
     /// We set this when intentionally stopping the current thread before moving
@@ -710,9 +706,7 @@ impl App {
             enhanced_keys_supported: self.enhanced_keys_supported,
             auth_manager: self.auth_manager.clone(),
             models_manager: self.server.get_models_manager(),
-            feedback: self.feedback.clone(),
             is_first_run: false,
-            feedback_audience: self.feedback_audience,
             model: Some(self.chat_widget.current_model().to_string()),
             startup_tooltip_override: None,
             status_line_invalid_items_warned: self.status_line_invalid_items_warned.clone(),
@@ -1745,9 +1739,7 @@ impl App {
             enhanced_keys_supported: self.enhanced_keys_supported,
             auth_manager: self.auth_manager.clone(),
             models_manager: self.server.get_models_manager(),
-            feedback: self.feedback.clone(),
             is_first_run: false,
-            feedback_audience: self.feedback_audience,
             model: Some(model),
             startup_tooltip_override: None,
             status_line_invalid_items_warned: self.status_line_invalid_items_warned.clone(),
@@ -1878,7 +1870,6 @@ impl App {
         initial_prompt: Option<String>,
         initial_images: Vec<PathBuf>,
         session_selection: SessionSelection,
-        feedback: crate::bottom_pane::FeedbackSnapshot,
         is_first_run: bool,
     ) -> Result<AppExitInfo> {
         use tokio_stream::StreamExt;
@@ -1915,17 +1906,6 @@ impl App {
         }
         let auth = auth_manager.auth().await;
         let auth_ref = auth.as_ref();
-        // Determine who should see internal Slack routing. We treat
-        // `@openai.com` emails as employees and default to `External` when the
-        // email is unavailable (for example, API key auth).
-        let feedback_audience = if auth_ref
-            .and_then(CodexAuth::get_account_email)
-            .is_some_and(|email| email.ends_with("@openai.com"))
-        {
-            FeedbackAudience::OpenAiEmployee
-        } else {
-            FeedbackAudience::External
-        };
         let auth_mode = auth_ref
             .map(CodexAuth::auth_mode)
             .map(TelemetryAuthMode::from);
@@ -1972,9 +1952,7 @@ impl App {
                     enhanced_keys_supported,
                     auth_manager: auth_manager.clone(),
                     models_manager: process_table.get_models_manager(),
-                    feedback: feedback.clone(),
                     is_first_run,
-                    feedback_audience,
                     model: Some(model.clone()),
                     startup_tooltip_override,
                     status_line_invalid_items_warned: status_line_invalid_items_warned.clone(),
@@ -2008,9 +1986,7 @@ impl App {
                     enhanced_keys_supported,
                     auth_manager: auth_manager.clone(),
                     models_manager: process_table.get_models_manager(),
-                    feedback: feedback.clone(),
                     is_first_run,
-                    feedback_audience,
                     model: config.model.clone(),
                     startup_tooltip_override: None,
                     status_line_invalid_items_warned: status_line_invalid_items_warned.clone(),
@@ -2051,9 +2027,7 @@ impl App {
                     enhanced_keys_supported,
                     auth_manager: auth_manager.clone(),
                     models_manager: process_table.get_models_manager(),
-                    feedback: feedback.clone(),
                     is_first_run,
-                    feedback_audience,
                     model: config.model.clone(),
                     startup_tooltip_override: None,
                     status_line_invalid_items_warned: status_line_invalid_items_warned.clone(),
@@ -2087,8 +2061,6 @@ impl App {
             status_line_invalid_items_warned: status_line_invalid_items_warned.clone(),
             backtrack: BacktrackState::default(),
             backtrack_render_pending: false,
-            feedback: feedback.clone(),
-            feedback_audience,
             suppress_shutdown_complete: false,
             pending_shutdown_exit_process_id: None,
 
@@ -2633,15 +2605,6 @@ impl App {
             } => {
                 self.chat_widget
                     .open_full_access_confirmation(preset, return_to_permissions);
-            }
-            AppEvent::OpenFeedbackNote {
-                category,
-                include_logs,
-            } => {
-                self.chat_widget.open_feedback_note(category, include_logs);
-            }
-            AppEvent::OpenFeedbackConsent { category } => {
-                self.chat_widget.open_feedback_consent(category);
             }
             AppEvent::LaunchExternalEditor => {
                 if self.chat_widget.external_editor_state() == ExternalEditorState::Active {
@@ -3527,7 +3490,6 @@ mod tests {
     use crate::app_backtrack::BacktrackState;
     use crate::app_backtrack::user_count;
     use crate::chatwidget::tests::make_chatwidget_manual_with_sender;
-    use crate::chatwidget::tests::set_chatgpt_auth;
     use crate::file_search::FileSearchManager;
     use crate::history_cell::AgentMessageCell;
     use crate::history_cell::HistoryCell;
@@ -5684,8 +5646,6 @@ guardian_approval = true
             status_line_invalid_items_warned: Arc::new(AtomicBool::new(false)),
             backtrack: BacktrackState::default(),
             backtrack_render_pending: false,
-            feedback: crate::bottom_pane::FeedbackSnapshot::default(),
-            feedback_audience: FeedbackAudience::External,
             suppress_shutdown_complete: false,
             pending_shutdown_exit_process_id: None,
 
@@ -5743,8 +5703,6 @@ guardian_approval = true
                 status_line_invalid_items_warned: Arc::new(AtomicBool::new(false)),
                 backtrack: BacktrackState::default(),
                 backtrack_render_pending: false,
-                feedback: crate::bottom_pane::FeedbackSnapshot::default(),
-                feedback_audience: FeedbackAudience::External,
                 suppress_shutdown_complete: false,
                 pending_shutdown_exit_process_id: None,
 

@@ -804,7 +804,6 @@ async fn run_ratatui_app(
         prompt,
         images,
         session_selection,
-        crate::bottom_pane::FeedbackSnapshot::default(),
         should_show_trust_screen, // Proxy to: is it a first run in this directory?
     )
     .await;

@@ -267,17 +267,6 @@ pub(crate) enum AppEvent {
     /// Open the approval popup.
     FullScreenApprovalRequest(ApprovalRequest),
 
-    /// Open the feedback note entry overlay after the user selects a category.
-    OpenFeedbackNote {
-        category: FeedbackCategory,
-        include_logs: bool,
-    },
-
-    /// Open the upload consent popup for feedback after selecting a category.
-    OpenFeedbackConsent {
-        category: FeedbackCategory,
-    },
-
     /// Launch the external editor after a normal draw has completed.
     LaunchExternalEditor,
 
@@ -313,13 +302,4 @@ pub(crate) enum ExitMode {
     /// This skips `Op::Shutdown`, so any in-flight work may be dropped and
     /// cleanup that normally runs before `ShutdownComplete` can be missed.
     Immediate,
-}
-
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
-pub(crate) enum FeedbackCategory {
-    BadResult,
-    GoodResult,
-    Bug,
-    SafetyCheck,
-    Other,
 }

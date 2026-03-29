@@ -87,13 +87,6 @@ pub(crate) use list_selection_view::SelectionViewParams;
 pub(crate) use list_selection_view::SideContentWidth;
 pub(crate) use list_selection_view::popup_content_width;
 pub(crate) use list_selection_view::side_by_side_layout_widths;
-mod feedback_view;
-pub(crate) use feedback_view::FeedbackAudience;
-pub(crate) use feedback_view::FeedbackDiagnostics;
-pub(crate) use feedback_view::FeedbackSnapshot;
-pub(crate) use feedback_view::feedback_disabled_params;
-pub(crate) use feedback_view::feedback_selection_params;
-pub(crate) use feedback_view::feedback_upload_consent_params;
 pub(crate) use status_line_setup::StatusLineItem;
 pub(crate) use status_line_setup::StatusLinePreviewData;
 pub(crate) use status_line_setup::StatusLineSetupView;
@@ -105,7 +98,6 @@ mod scroll_state;
 mod selection_popup_common;
 mod textarea;
 mod unified_exec_footer;
-pub(crate) use feedback_view::FeedbackNoteView;
 
 /// How long the "press again to quit" hint stays visible.
 ///

@@ -172,6 +172,9 @@ async fn new_uses_configured_openai_provider_for_model_refresh() {
         .get_mut("openai")
         .expect("openai provider should exist")
         .base_url = Some(server.uri());
+    // ProcessTable now uses model_provider (the active provider) for
+    // model discovery, not the hardcoded "openai" entry.
+    config.model_provider.base_url = Some(server.uri());
 
     let auth_manager =
         AuthManager::from_auth_for_testing(CodexAuth::create_dummy_chatgpt_auth_for_testing());

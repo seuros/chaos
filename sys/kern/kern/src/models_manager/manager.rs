@@ -291,8 +291,19 @@ impl ModelsManager {
 
     // todo(aibrahim): look if we can tighten it to pub(crate)
     /// Look up model metadata, applying remote overrides and config adjustments.
+    ///
+    /// For Anthropic providers, triggers an on-demand refresh so that models
+    /// fetched from the adapter are available for lookup.
     #[instrument(level = "info", skip(self, config), fields(model = model))]
     pub async fn get_model_info(&self, model: &str, config: &Config) -> ModelInfo {
+        if crate::model_provider_info::is_anthropic_wire(self.provider.base_url.as_deref()) {
+            if let Err(err) = self
+                .refresh_available_models(RefreshStrategy::OnlineIfUncached)
+                .await
+            {
+                error!("failed to refresh Anthropic models: {err}");
+            }
+        }
         let remote_models = self.get_remote_models().await;
         Self::construct_model_info_from_candidates(model, &remote_models, config)
     }
@@ -377,7 +388,11 @@ impl ModelsManager {
             return Ok(());
         }
 
-        if self.auth_manager.auth_mode() != Some(AuthMode::Chatgpt) {
+        let is_anthropic =
+            crate::model_provider_info::is_anthropic_wire(self.provider.base_url.as_deref());
+
+        // Non-ChatGPT, non-Anthropic providers use bundled/cached metadata only.
+        if !is_anthropic && self.auth_manager.auth_mode() != Some(AuthMode::Chatgpt) {
             if matches!(
                 refresh_strategy,
                 RefreshStrategy::Offline | RefreshStrategy::OnlineIfUncached
@@ -385,6 +400,15 @@ impl ModelsManager {
                 self.try_load_cache().await;
             }
             return Ok(());
+        }
+
+        // TODO(GPT): The models cache is not provider-scoped. It was written
+        // by the OpenAI path and happily serves stale GPT metadata when an
+        // Anthropic provider asks for models. Fix the cache to key on
+        // provider name or base_url so switching providers does not poison
+        // the catalog. Until then, Anthropic providers bypass the cache.
+        if is_anthropic && refresh_strategy != RefreshStrategy::Offline {
+            return self.fetch_and_update_models().await;
         }
 
         match refresh_strategy {
@@ -412,6 +436,12 @@ impl ModelsManager {
     async fn fetch_and_update_models(&self) -> CoreResult<()> {
         let _timer =
             chaos_syslog::start_global_timer("codex.remote_models.fetch_update.duration_ms", &[]);
+
+        // Anthropic-compatible providers get models through the adapter path.
+        if crate::model_provider_info::is_anthropic_wire(self.provider.base_url.as_deref()) {
+            return self.fetch_and_update_models_via_adapter().await;
+        }
+
         let auth = self.auth_manager.auth().await;
         let auth_mode = auth.as_ref().map(CodexAuth::auth_mode);
         let api_provider = self.provider.to_api_provider(auth_mode)?;
@@ -440,6 +470,59 @@ impl ModelsManager {
             .persist_cache(&models, etag, client_version)
             .await;
         Ok(())
+    }
+
+    /// Fetch models via the ABI adapter (Anthropic-compatible providers).
+    async fn fetch_and_update_models_via_adapter(&self) -> CoreResult<()> {
+        use chaos_abi::ListModelsError;
+        use chaos_abi::ModelAdapter;
+        use chaos_parrot::anthropic::AnthropicAdapter;
+        use chaos_parrot::anthropic::AnthropicAuth;
+
+        let auth_mode = self.auth_manager.auth().await;
+        let auth_mode_ref = auth_mode.as_ref().map(CodexAuth::auth_mode);
+        let api_provider = self.provider.to_api_provider(auth_mode_ref)?;
+
+        // Resolve auth the same way client.rs does.
+        let adapter_auth = if let Some(api_key) = self.provider.api_key()? {
+            AnthropicAuth::ApiKey(api_key)
+        } else if let Some(token) = self.provider.experimental_bearer_token.clone() {
+            AnthropicAuth::BearerToken(token)
+        } else {
+            return Err(CodexErr::InvalidRequest(format!(
+                "Anthropic provider `{}` requires `env_key` or `experimental_bearer_token`",
+                self.provider.name
+            )));
+        };
+
+        let adapter = AnthropicAdapter::new(api_provider, adapter_auth, None);
+
+        let abi_models = timeout(MODELS_REFRESH_TIMEOUT, adapter.list_models())
+            .await
+            .map_err(|_| CodexErr::Timeout)?;
+
+        match abi_models {
+            Ok(models) => {
+                let kern_models: Vec<ModelInfo> = models
+                    .iter()
+                    .map(model_info::model_info_from_abi)
+                    .collect();
+                info!(
+                    count = kern_models.len(),
+                    "fetched models via Anthropic adapter"
+                );
+                self.apply_remote_models(kern_models).await;
+                Ok(())
+            }
+            Err(ListModelsError::Unsupported) => {
+                info!("provider does not support model listing, using bundled metadata");
+                Ok(())
+            }
+            Err(ListModelsError::Failed { message }) => {
+                error!("Anthropic model listing failed: {message}");
+                Err(CodexErr::Stream(message, None))
+            }
+        }
     }
 
     async fn get_etag(&self) -> Option<String> {

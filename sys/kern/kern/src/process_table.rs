@@ -1,7 +1,7 @@
 use crate::AuthManager;
 use crate::CodexAuth;
 use crate::ModelProviderInfo;
-use crate::OPENAI_PROVIDER_ID;
+
 use crate::codex::Codex;
 use crate::codex::CodexSpawnArgs;
 use crate::codex::CodexSpawnOk;
@@ -183,11 +183,13 @@ impl ProcessTable {
         collaboration_modes_config: CollaborationModesConfig,
     ) -> Self {
         let codex_home = config.codex_home.clone();
-        let openai_models_provider = config
-            .model_providers
-            .get(OPENAI_PROVIDER_ID)
-            .cloned()
-            .unwrap_or_else(|| ModelProviderInfo::create_openai_provider(/*base_url*/ None));
+        // Use the active model provider for discovery, not hardcoded OpenAI.
+        // TODO(GPT): this was always hardcoded to OPENAI_PROVIDER_ID which
+        // meant Anthropic (and every other provider) got OpenAI's stale
+        // model catalog. The active provider is the one the user configured.
+        let models_provider = config
+            .model_provider
+            .clone();
         let (process_created_tx, _) = broadcast::channel(PROCESS_CREATED_CHANNEL_CAPACITY);
         let plugins_manager = Arc::new(PluginsManager::new(codex_home.clone()));
         let mcp_manager = Arc::new(McpManager::new(Arc::clone(&plugins_manager)));
@@ -206,7 +208,7 @@ impl ProcessTable {
                     auth_manager.clone(),
                     config.model_catalog.clone(),
                     collaboration_modes_config,
-                    openai_models_provider,
+                    models_provider,
                 )),
                 skills_manager,
                 plugins_manager,

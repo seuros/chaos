@@ -1,5 +1,6 @@
 pub mod cache;
 pub mod collaboration_mode_presets;
+pub(crate) mod discovery_machine;
 pub mod manager;
 pub mod model_info;
 pub mod model_presets;

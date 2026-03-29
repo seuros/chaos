@@ -22,6 +22,7 @@ pub use error::AbiError;
 pub use event::TurnEvent;
 pub use models::AbiModelInfo;
 pub use models::AdapterCapabilities;
+
 pub use models::ListModelsError;
 pub use models::ListModelsFuture;
 pub use reasoning::ReasoningConfig;

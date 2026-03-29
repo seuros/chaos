@@ -550,6 +550,7 @@ impl ModelsManager {
         Ok(response.models)
     }
 
+
     /// Attempt to satisfy the refresh from the cache when it matches the provider and TTL.
     async fn try_load_cache(&self) -> bool {
         let _timer =

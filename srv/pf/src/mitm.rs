@@ -13,30 +13,30 @@ use crate::upstream::UpstreamClient;
 use anyhow::Context as _;
 use anyhow::Result;
 use anyhow::anyhow;
-use rama_core::Layer;
-use rama_core::Service;
-use rama_core::bytes::Bytes;
-use rama_core::error::BoxError;
-use rama_core::extensions::ExtensionsRef;
-use rama_core::futures::stream::Stream;
-use rama_core::rt::Executor;
-use rama_core::service::service_fn;
-use rama_http::Body;
-use rama_http::BodyDataStream;
-use rama_http::HeaderValue;
-use rama_http::Request;
-use rama_http::Response;
-use rama_http::StatusCode;
-use rama_http::Uri;
-use rama_http::header::HOST;
-use rama_http::layer::remove_header::RemoveRequestHeaderLayer;
-use rama_http::layer::remove_header::RemoveResponseHeaderLayer;
-use rama_http_backend::server::HttpServer;
-use rama_http_backend::server::layer::upgrade::Upgraded;
-use rama_net::proxy::ProxyTarget;
-use rama_net::stream::SocketInfo;
-use rama_tls_rustls::server::TlsAcceptorData;
-use rama_tls_rustls::server::TlsAcceptorLayer;
+use rama::Layer;
+use rama::Service;
+use rama::bytes::Bytes;
+use rama::error::BoxError;
+use rama::extensions::ExtensionsRef;
+use rama::futures::stream::Stream;
+use rama::rt::Executor;
+use rama::service::service_fn;
+use rama::http::Body;
+use rama::http::BodyDataStream;
+use rama::http::HeaderValue;
+use rama::http::Request;
+use rama::http::Response;
+use rama::http::StatusCode;
+use rama::http::Uri;
+use rama::http::header::HOST;
+use rama::http::layer::remove_header::RemoveRequestHeaderLayer;
+use rama::http::layer::remove_header::RemoveResponseHeaderLayer;
+use rama::http::server::HttpServer;
+use rama::http::layer::upgrade::Upgraded;
+use rama::net::proxy::ProxyTarget;
+use rama::net::stream::SocketInfo;
+use rama::tls::rustls::server::TlsAcceptorData;
+use rama::tls::rustls::server::TlsAcceptorLayer;
 use std::pin::Pin;
 use std::sync::Arc;
 use std::task::Context as TaskContext;
@@ -468,7 +468,7 @@ fn build_https_uri(authority: &str, path: &str) -> Result<Uri> {
 
 fn path_and_query(uri: &Uri) -> String {
     uri.path_and_query()
-        .map(rama_http::uri::PathAndQuery::as_str)
+        .map(rama::http::uri::PathAndQuery::as_str)
         .unwrap_or("/")
         .to_string()
 }

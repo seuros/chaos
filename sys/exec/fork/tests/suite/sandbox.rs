@@ -74,7 +74,7 @@ async fn spawn_command_under_sandbox(
     env: HashMap<String, String>,
 ) -> std::io::Result<Child> {
     use chaos_kern::landlock::spawn_command_under_linux_sandbox;
-    let alcatraz_linux_exe = chaos_which::cargo_bin("codex-exec")
+    let alcatraz_linux_exe = chaos_which::cargo_bin("chaos")
         .map_err(|err| io::Error::new(io::ErrorKind::NotFound, err))?;
     spawn_command_under_linux_sandbox(
         alcatraz_linux_exe,

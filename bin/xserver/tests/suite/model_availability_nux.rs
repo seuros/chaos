@@ -66,10 +66,10 @@ trust_level = "trusted"
 
     let fixture_path =
         chaos_which::find_resource!("../../sys/kern/kern/tests/cli_responses_fixture.sse")?;
-    let codex = if let Ok(path) = chaos_which::cargo_bin("codex") {
+    let codex = if let Ok(path) = chaos_which::cargo_bin("chaos") {
         path
     } else {
-        let fallback = repo_root.join("codex-rs/target/debug/codex");
+        let fallback = repo_root.join("target/debug/chaos");
         if fallback.is_file() {
             fallback
         } else {

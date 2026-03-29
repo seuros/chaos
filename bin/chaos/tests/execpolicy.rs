@@ -24,7 +24,7 @@ prefix_rule {
 "#,
     )?;
 
-    let output = Command::new(chaos_which::cargo_bin("codex")?)
+    let output = Command::new(chaos_which::cargo_bin("chaos")?)
         .env("CODEX_HOME", codex_home.path())
         .args([
             "execpolicy",
@@ -81,7 +81,7 @@ prefix_rule {
 "#,
     )?;
 
-    let output = Command::new(chaos_which::cargo_bin("codex")?)
+    let output = Command::new(chaos_which::cargo_bin("chaos")?)
         .env("CODEX_HOME", codex_home.path())
         .args([
             "execpolicy",

@@ -12,7 +12,7 @@ use serde_json::json;
 use tempfile::TempDir;
 
 fn codex_command(codex_home: &Path) -> Result<assert_cmd::Command> {
-    let mut cmd = assert_cmd::Command::new(chaos_which::cargo_bin("codex")?);
+    let mut cmd = assert_cmd::Command::new(chaos_which::cargo_bin("chaos")?);
     cmd.env("CODEX_HOME", codex_home);
     Ok(cmd)
 }

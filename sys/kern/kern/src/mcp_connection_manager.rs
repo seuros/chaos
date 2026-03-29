@@ -136,7 +136,11 @@ fn sha1_hex(s: &str) -> String {
     let mut hasher = Sha1::new();
     hasher.update(s.as_bytes());
     let sha1 = hasher.finalize();
-    format!("{sha1:x}")
+    digest_hex(&sha1)
+}
+
+fn digest_hex(bytes: &[u8]) -> String {
+    bytes.iter().map(|byte| format!("{byte:02x}")).collect()
 }
 
 fn mcp_client_implementation_version() -> &'static str {

@@ -8,13 +8,12 @@ use base64::Engine;
 use chaos_ipc::models::ContentItem;
 use chaos_ipc::models::ResponseItem;
 use chaos_ipc::openai_models::ModelsResponse;
-use rama::http::ws::Message;
 use serde_json::Value;
 use tokio::net::TcpListener;
 use tokio::sync::Notify;
 use tokio::sync::oneshot;
 
-use crate::ws_accept::{WsHandshakeRequest, accept_ws_with_handler};
+use crate::ws_accept::{Message, WsHandshakeRequest, accept_ws_with_handler};
 use wiremock::BodyPrintLimit;
 use wiremock::Match;
 use wiremock::Mock;
@@ -1338,7 +1337,7 @@ pub async fn start_websocket_server_with_headers(
 
 fn parse_ws_request_body(message: Message) -> Option<Value> {
     match message {
-        Message::Text(text) => serde_json::from_str(&text).ok(),
+        Message::Text(text) => serde_json::from_str(text.as_ref()).ok(),
         Message::Binary(bytes) => serde_json::from_slice(&bytes).ok(),
         _ => None,
     }

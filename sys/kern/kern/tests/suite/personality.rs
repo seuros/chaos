@@ -16,9 +16,9 @@ use chaos_ipc::protocol::SandboxPolicy;
 use chaos_ipc::user_input::UserInput;
 use chaos_kern::config::types::Personality;
 use chaos_kern::features::Feature;
-use chaos_kern::models_manager::model_info::BASE_INSTRUCTIONS;
 use chaos_kern::models_manager::manager::ModelsManager;
 use chaos_kern::models_manager::manager::RefreshStrategy;
+use chaos_kern::models_manager::model_info::BASE_INSTRUCTIONS;
 use core_test_support::load_default_config_for_test;
 use core_test_support::responses::mount_models_once;
 use core_test_support::responses::mount_sse_once;
@@ -872,9 +872,9 @@ async fn user_turn_personality_remote_model_template_includes_update_message() -
         .last()
         .expect("expected personality update request");
     let developer_texts = request.message_input_texts("developer");
-    let personality_text = developer_texts.iter().find(|text| {
-        text.contains(remote_friendly_message) || text.contains("<personality_spec>")
-    });
+    let personality_text = developer_texts
+        .iter()
+        .find(|text| text.contains(remote_friendly_message) || text.contains("<personality_spec>"));
 
     assert!(
         personality_text.is_none(),

@@ -39,10 +39,7 @@ impl McpManager {
         configured_mcp_servers(config, self.plugins_manager.as_ref())
     }
 
-    pub fn effective_servers(
-        &self,
-        config: &Config,
-    ) -> HashMap<String, McpServerConfig> {
+    pub fn effective_servers(&self, config: &Config) -> HashMap<String, McpServerConfig> {
         configured_mcp_servers(config, self.plugins_manager.as_ref())
     }
 }

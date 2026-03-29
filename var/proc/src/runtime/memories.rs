@@ -3768,8 +3768,16 @@ VALUES (?, ?, ?, ?, ?)
         }
 
         for (process_id, usage_count, last_usage) in [
-            (thread_a, 5_i64, now.checked_sub(whole_days_as_hours(10)).unwrap()),
-            (thread_b, 5_i64, now.checked_sub(whole_days_as_hours(1)).unwrap()),
+            (
+                thread_a,
+                5_i64,
+                now.checked_sub(whole_days_as_hours(10)).unwrap(),
+            ),
+            (
+                thread_b,
+                5_i64,
+                now.checked_sub(whole_days_as_hours(1)).unwrap(),
+            ),
             (thread_c, 1_i64, now.checked_sub(1.hours()).unwrap()),
         ] {
             sqlx::query(

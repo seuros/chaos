@@ -385,7 +385,11 @@ async fn with_additional_permissions_requires_approval_under_on_request() -> Res
 
     let result = parse_result(&results.single_request().function_call_output(call_id));
     if cfg!(target_os = "linux") {
-        assert_eq!(result.exit_code, Some(1), "unexpected Linux exit code: {result:?}");
+        assert_eq!(
+            result.exit_code,
+            Some(1),
+            "unexpected Linux exit code: {result:?}"
+        );
         assert!(
             result.stdout.contains(
                 "split filesystem sandbox policies that require direct runtime enforcement are not supported by the Linux sandbox backend"
@@ -588,7 +592,11 @@ async fn relative_additional_permissions_resolve_against_tool_workdir() -> Resul
 
     let result = parse_result(&results.single_request().function_call_output(call_id));
     if cfg!(target_os = "linux") {
-        assert_eq!(result.exit_code, Some(1), "unexpected Linux exit code: {result:?}");
+        assert_eq!(
+            result.exit_code,
+            Some(1),
+            "unexpected Linux exit code: {result:?}"
+        );
         assert!(
             result.stdout.contains(
                 "split filesystem sandbox policies that require direct runtime enforcement are not supported by the Linux sandbox backend"

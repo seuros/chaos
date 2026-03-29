@@ -5,6 +5,9 @@ use crate::config::AgentRoleConfig;
 use crate::features::Feature;
 use crate::features::Features;
 use crate::mcp_connection_manager::ToolInfo;
+use crate::minions::tools::DEFAULT_WAIT_TIMEOUT_MS;
+use crate::minions::tools::MAX_WAIT_TIMEOUT_MS;
+use crate::minions::tools::MIN_WAIT_TIMEOUT_MS;
 use crate::models_manager::collaboration_mode_presets::CollaborationModesConfig;
 use crate::original_image_detail::can_request_original_image_detail;
 use crate::shell::Shell;
@@ -20,9 +23,6 @@ use crate::tools::handlers::TOOL_SUGGEST_TOOL_NAME;
 use crate::tools::handlers::agent_jobs::BatchJobHandler;
 use crate::tools::handlers::apply_patch::create_apply_patch_freeform_tool;
 use crate::tools::handlers::apply_patch::create_apply_patch_json_tool;
-use crate::minions::tools::DEFAULT_WAIT_TIMEOUT_MS;
-use crate::minions::tools::MAX_WAIT_TIMEOUT_MS;
-use crate::minions::tools::MIN_WAIT_TIMEOUT_MS;
 use crate::tools::handlers::request_permissions_tool_description;
 use crate::tools::handlers::request_user_input_tool_description;
 use crate::tools::registry::ToolRegistryBuilder;
@@ -1871,6 +1871,11 @@ pub(crate) fn build_specs_with_discoverable_tools(
     discoverable_tools: Option<Vec<DiscoverableTool>>,
     dynamic_tools: &[DynamicToolSpec],
 ) -> ToolRegistryBuilder {
+    use crate::minions::tools::CloseAgentHandler;
+    use crate::minions::tools::ResumeAgentHandler;
+    use crate::minions::tools::SendInputHandler;
+    use crate::minions::tools::SpawnAgentHandler;
+    use crate::minions::tools::WaitAgentHandler;
     use crate::tools::handlers::ApplyPatchHandler;
     use crate::tools::handlers::ArsenalHandler;
     use crate::tools::handlers::CronHandler;
@@ -1887,11 +1892,6 @@ pub(crate) fn build_specs_with_discoverable_tools(
     use crate::tools::handlers::ToolSuggestHandler;
     use crate::tools::handlers::UnifiedExecHandler;
     use crate::tools::handlers::ViewImageHandler;
-    use crate::minions::tools::CloseAgentHandler;
-    use crate::minions::tools::ResumeAgentHandler;
-    use crate::minions::tools::SendInputHandler;
-    use crate::minions::tools::SpawnAgentHandler;
-    use crate::minions::tools::WaitAgentHandler;
     use std::sync::Arc;
 
     let mut builder = ToolRegistryBuilder::new();

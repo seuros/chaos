@@ -1,0 +1,24 @@
+---
+source: bin/xserver/src/chatwidget/tests.rs
+expression: term.backend().vt100().screen().contents()
+---
+@
+c
+o
+r
+e
+/
+s
+r
+c
+/
+c
+
+o
+d
+e
+x
+.
+r
+s
+https://example.com

@@ -3,15 +3,15 @@
 //! Translates chaos-abi `TurnRequest` into Anthropic's `/v1/messages`
 //! wire format and streams `TurnEvent`s back from the SSE response.
 
-use chaos_abi::AdapterFuture;
 use chaos_abi::AbiError;
-use chaos_abi::ModelAdapter;
-use chaos_abi::TurnRequest;
-use chaos_abi::TurnStream;
-use chaos_abi::TurnEvent;
+use chaos_abi::AdapterFuture;
 use chaos_abi::ContentItem;
+use chaos_abi::ModelAdapter;
 use chaos_abi::ResponseItem;
 use chaos_abi::TokenUsage;
+use chaos_abi::TurnEvent;
+use chaos_abi::TurnRequest;
+use chaos_abi::TurnStream;
 use serde::Serialize;
 use serde_json::Value;
 use tokio::sync::mpsc;
@@ -129,11 +129,15 @@ fn build_request_body(request: &TurnRequest, model: &str) -> Result<Value, AbiEr
         messages,
         tools,
     })
-    .map_err(|e| AbiError::InvalidRequest { message: e.to_string() })?;
-
-    let obj = body.as_object_mut().ok_or_else(|| AbiError::InvalidRequest {
-        message: "request body is not an object".to_string(),
+    .map_err(|e| AbiError::InvalidRequest {
+        message: e.to_string(),
     })?;
+
+    let obj = body
+        .as_object_mut()
+        .ok_or_else(|| AbiError::InvalidRequest {
+            message: "request body is not an object".to_string(),
+        })?;
 
     // parallel_tool_calls → tool_choice.disable_parallel_tool_use (inverted)
     if !request.parallel_tool_calls && !request.tools.is_empty() {
@@ -148,7 +152,11 @@ fn build_request_body(request: &TurnRequest, model: &str) -> Result<Value, AbiEr
 
     // reasoning → thinking config
     if let Some(ref _reasoning) = request.reasoning {
-        if let Some(budget) = request.extensions.get("thinking_budget_tokens").and_then(|v| v.as_u64()) {
+        if let Some(budget) = request
+            .extensions
+            .get("thinking_budget_tokens")
+            .and_then(|v| v.as_u64())
+        {
             obj.insert(
                 "thinking".to_string(),
                 serde_json::json!({
@@ -238,15 +246,17 @@ fn convert_input_to_messages(input: &[ResponseItem]) -> Vec<AnthropicMessage> {
             ResponseItem::FunctionCallOutput {
                 call_id, output, ..
             }
-            | ResponseItem::CustomToolCallOutput { call_id, output, .. } => {
+            | ResponseItem::CustomToolCallOutput {
+                call_id, output, ..
+            } => {
                 let content_text = match &output.body {
                     chaos_ipc::models::FunctionCallOutputBody::Text(text) => text.clone(),
                     chaos_ipc::models::FunctionCallOutputBody::ContentItems(items) => items
                         .iter()
                         .filter_map(|c| match c {
-                            chaos_ipc::models::FunctionCallOutputContentItem::InputText { text } => {
-                                Some(text.as_str())
-                            }
+                            chaos_ipc::models::FunctionCallOutputContentItem::InputText {
+                                text,
+                            } => Some(text.as_str()),
                             _ => None,
                         })
                         .collect::<Vec<_>>()
@@ -262,14 +272,10 @@ fn convert_input_to_messages(input: &[ResponseItem]) -> Vec<AnthropicMessage> {
                 });
             }
             ResponseItem::LocalShellCall {
-                call_id,
-                action,
-                ..
+                call_id, action, ..
             } => {
                 let cmd = match action {
-                    chaos_ipc::models::LocalShellAction::Exec(exec) => {
-                        exec.command.join(" ")
-                    }
+                    chaos_ipc::models::LocalShellAction::Exec(exec) => exec.command.join(" "),
                 };
                 if let Some(call_id) = call_id {
                     messages.push(AnthropicMessage {
@@ -435,17 +441,19 @@ fn parse_sse_event(
         "content_block_stop" => {
             // If we were accumulating a tool_use, emit it now
             if let Some(acc) = tool_acc.take() {
-                Ok(vec![TurnEvent::OutputItemDone(ResponseItem::FunctionCall {
-                    id: None,
-                    name: acc.name,
-                    arguments: if acc.input_json.is_empty() {
-                        "{}".to_string()
-                    } else {
-                        acc.input_json
+                Ok(vec![TurnEvent::OutputItemDone(
+                    ResponseItem::FunctionCall {
+                        id: None,
+                        name: acc.name,
+                        arguments: if acc.input_json.is_empty() {
+                            "{}".to_string()
+                        } else {
+                            acc.input_json
+                        },
+                        call_id: acc.id,
+                        namespace: None,
                     },
-                    call_id: acc.id,
-                    namespace: None,
-                })])
+                )])
             } else {
                 Ok(vec![])
             }
@@ -516,15 +524,16 @@ async fn run_sse_stream(
     body: &Value,
     tx: mpsc::Sender<Result<TurnEvent, AbiError>>,
 ) -> Result<(), AbiError> {
+    use rama::Service;
     use rama::http::Body;
     use rama::http::Request;
     use rama::http::StatusCode;
     use rama::http::body::util::BodyExt;
     use rama::http::client::EasyHttpWebClient;
-    use rama::Service;
 
-    let body_bytes = serde_json::to_vec(body)
-        .map_err(|e| AbiError::InvalidRequest { message: e.to_string() })?;
+    let body_bytes = serde_json::to_vec(body).map_err(|e| AbiError::InvalidRequest {
+        message: e.to_string(),
+    })?;
 
     let client = EasyHttpWebClient::default();
     let request = Request::builder()
@@ -535,7 +544,9 @@ async fn run_sse_stream(
         .header("content-type", "application/json")
         .header("accept", "text/event-stream")
         .body(Body::from(body_bytes))
-        .map_err(|e| AbiError::InvalidRequest { message: e.to_string() })?;
+        .map_err(|e| AbiError::InvalidRequest {
+            message: e.to_string(),
+        })?;
 
     let response = client
         .serve(request)

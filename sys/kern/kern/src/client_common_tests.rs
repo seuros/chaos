@@ -1,9 +1,9 @@
 use chaos_ipc::config_types::ServiceTier;
 use chaos_ipc::models::FunctionCallOutputPayload;
-use codex_api::ResponsesApiRequest;
-use codex_api::common::OpenAiVerbosity;
-use codex_api::common::TextControls;
-use codex_api::create_text_param_for_request;
+use chaos_parrot::ResponsesApiRequest;
+use chaos_parrot::common::OpenAiVerbosity;
+use chaos_parrot::common::TextControls;
+use chaos_parrot::create_text_param_for_request;
 use pretty_assertions::assert_eq;
 
 use super::*;
@@ -207,7 +207,7 @@ fn tool_search_output_namespace_serializes_with_deferred_child_tools() {
                 description: "Create a calendar event.".to_string(),
                 strict: false,
                 defer_loading: Some(true),
-                parameters: codex_api::sanitize::JsonSchema::Object {
+                parameters: chaos_parrot::sanitize::JsonSchema::Object {
                     properties: Default::default(),
                     required: None,
                     additional_properties: None,

@@ -427,10 +427,10 @@ fn supports_image_generation(model_info: &ModelInfo) -> bool {
     model_info.input_modalities.contains(&InputModality::Image)
 }
 
-use codex_api::sanitize::JsonSchema;
-use codex_api::sanitize::ResponsesApiTool;
-use codex_api::sanitize::mcp_tool_to_responses_api_tool;
-use codex_api::sanitize::parse_tool_input_schema;
+use chaos_parrot::sanitize::JsonSchema;
+use chaos_parrot::sanitize::ResponsesApiTool;
+use chaos_parrot::sanitize::mcp_tool_to_responses_api_tool;
+use chaos_parrot::sanitize::parse_tool_input_schema;
 
 fn create_network_permissions_schema() -> JsonSchema {
     JsonSchema::Object {

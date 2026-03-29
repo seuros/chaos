@@ -24,7 +24,8 @@ chaos-apropos = { workspace = true }
 chardetng = { workspace = true }
 jiff = { workspace = true }
 clap = { workspace = true, features = ["derive"] }
-codex-api = { workspace = true }
+chaos-parrot = { workspace = true }
+chaos-abi = { workspace = true }
 chaos-diff = { workspace = true }
 chaos-git = { workspace = true }
 chaos-arsenal = { workspace = true }

@@ -370,7 +370,9 @@ async fn stdio_image_responses_round_trip() -> anyhow::Result<()> {
             arguments: Some(json!({})),
         }
     );
-    let result = end.result.expect("mcp_test image tool should return success");
+    let result = end
+        .result
+        .expect("mcp_test image tool should return success");
     assert_mcp_success(result.is_error);
     assert_eq!(result.content.len(), 1);
     let base64_only = OPENAI_PNG

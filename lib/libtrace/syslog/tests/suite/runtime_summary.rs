@@ -77,14 +77,14 @@ fn runtime_metrics_summary_collects_tool_api_and_streaming_metrics() -> Result<(
     manager.log_sse_event(&sse_response, Duration::from_millis(120));
     let ws_response: std::result::Result<
         Option<std::result::Result<Message, BoxError>>,
-        codex_api::ApiError,
+        chaos_parrot::ApiError,
     > = Ok(Some(Ok(Message::Text(
         r#"{"type":"response.created"}"#.into(),
     ))));
     manager.record_websocket_event(&ws_response, Duration::from_millis(80));
     let ws_timing_response: std::result::Result<
         Option<std::result::Result<Message, BoxError>>,
-        codex_api::ApiError,
+        chaos_parrot::ApiError,
     > = Ok(Some(Ok(Message::Text(
         r#"{"type":"responsesapi.websocket_timing","timing_metrics":{"responses_duration_excl_engine_and_client_tool_time_ms":124,"engine_service_total_ms":457,"engine_iapi_ttft_total_ms":211,"engine_service_ttft_total_ms":233,"engine_iapi_tbt_across_engine_calls_ms":377,"engine_service_tbt_across_engine_calls_ms":399}}"#
             .into(),

@@ -6,6 +6,8 @@ use chaos_ipc::config_types::Verbosity;
 use chaos_ipc::models::ResponseItem;
 use serde_json::Map;
 use serde_json::Value;
+use std::sync::Arc;
+use std::sync::OnceLock;
 
 /// A provider-agnostic turn request.
 ///
@@ -36,6 +38,10 @@ pub struct TurnRequest {
 
     /// Verbosity hint for models that support it.
     pub verbosity: Option<Verbosity>,
+
+    /// Optional per-turn state slot used by transports that need to cache a
+    /// sticky routing token across multiple requests within the same turn.
+    pub turn_state: Option<Arc<OnceLock<String>>>,
 
     /// Provider-opaque extension bag.
     ///

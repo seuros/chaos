@@ -11,7 +11,7 @@ use crate::tools::registry::ToolKind;
 use chaos_ipc::config_types::ModeKind;
 use chaos_ipc::plan_tool::UpdatePlanArgs;
 use chaos_ipc::protocol::EventMsg;
-use codex_api::sanitize::JsonSchema;
+use chaos_parrot::sanitize::JsonSchema;
 use std::collections::BTreeMap;
 use std::sync::LazyLock;
 

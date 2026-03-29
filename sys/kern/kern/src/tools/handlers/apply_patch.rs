@@ -32,8 +32,8 @@ use chaos_diff::ApplyPatchAction;
 use chaos_diff::ApplyPatchFileChange;
 use chaos_ipc::models::FileSystemPermissions;
 use chaos_ipc::models::PermissionProfile;
+use chaos_parrot::sanitize::JsonSchema;
 use chaos_realpath::AbsolutePathBuf;
-use codex_api::sanitize::JsonSchema;
 use std::collections::BTreeSet;
 use std::sync::Arc;
 

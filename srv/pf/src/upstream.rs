@@ -1,24 +1,15 @@
-use rama::Layer;
 use rama::Service;
 use rama::error::ErrorContext as _;
 use rama::error::extra::OpaqueError;
 use rama::extensions::ExtensionsMut;
-use rama::extensions::ExtensionsRef;
-use rama::service::BoxService;
 use rama::http::Body;
 use rama::http::Request;
 use rama::http::Response;
-use rama::http::layer::version_adapter::RequestVersionAdapter;
-use rama::http::client::HttpClientService;
-use rama::http::client::HttpConnector;
-use rama::http::client::proxy::layer::HttpProxyConnectorLayer;
+use rama::http::client::EasyHttpWebClient;
 use rama::net::address::ProxyAddress;
-use rama::rt::Executor;
-use rama::net::client::EstablishedClientConnection;
 use rama::net::http::RequestContext;
-use rama::tcp::client::service::TcpConnector;
-use rama::tls::rustls::client::TlsConnectorDataBuilder;
-use rama::tls::rustls::client::TlsConnectorLayer;
+use rama::rt::Executor;
+use rama::service::BoxService;
 use tracing::warn;
 
 #[cfg(target_os = "macos")]
@@ -91,13 +82,11 @@ pub(crate) fn proxy_for_connect() -> Option<ProxyAddress> {
     ProxyConfig::from_env().proxy_for_protocol(/*is_secure*/ true)
 }
 
+type RamaHttpClient = BoxService<Request<Body>, Response, OpaqueError>;
+
 #[derive(Clone)]
 pub(crate) struct UpstreamClient {
-    connector: BoxService<
-        Request<Body>,
-        EstablishedClientConnection<HttpClientService<Body>, Request<Body>>,
-        OpaqueError,
-    >,
+    client: RamaHttpClient,
     proxy_config: ProxyConfig,
 }
 
@@ -112,17 +101,17 @@ impl UpstreamClient {
 
     #[cfg(target_os = "macos")]
     pub(crate) fn unix_socket(path: &str) -> Self {
-        let connector = build_unix_connector(path);
+        let client = build_unix_client(path);
         Self {
-            connector,
+            client,
             proxy_config: ProxyConfig::default(),
         }
     }
 
     fn new(proxy_config: ProxyConfig) -> Self {
-        let connector = build_http_connector();
+        let client = build_http_client();
         Self {
-            connector,
+            client,
             proxy_config,
         }
     }
@@ -138,15 +127,7 @@ impl Service<Request<Body>> for UpstreamClient {
         }
 
         let uri = req.uri().clone();
-        let EstablishedClientConnection {
-            input: mut req,
-            conn: http_connection,
-        } = self.connector.serve(req).await.into_opaque_error()?;
-
-        req.extensions_mut()
-            .extend(http_connection.extensions().clone());
-
-        http_connection
+        self.client
             .serve(req)
             .await
             .with_context(|| format!("http request failure for uri: {uri}"))
@@ -154,33 +135,18 @@ impl Service<Request<Body>> for UpstreamClient {
     }
 }
 
-fn build_http_connector() -> BoxService<
-    Request<Body>,
-    EstablishedClientConnection<HttpClientService<Body>, Request<Body>>,
-    OpaqueError,
-> {
-    let transport = TcpConnector::default();
-    let proxy = HttpProxyConnectorLayer::optional().into_layer(transport);
-    let tls_config = TlsConnectorDataBuilder::new()
-        .with_alpn_protocols_http_auto()
-        .build();
-    let tls = TlsConnectorLayer::auto()
-        .with_connector_data(tls_config)
-        .into_layer(proxy);
-    let tls = RequestVersionAdapter::new(tls);
-    let connector = HttpConnector::new(tls, Executor::default());
-    connector.boxed()
+fn build_http_client() -> RamaHttpClient {
+    EasyHttpWebClient::default_with_executor(Executor::default()).boxed()
 }
 
 #[cfg(target_os = "macos")]
-fn build_unix_connector(
-    path: &str,
-) -> BoxService<
-    Request<Body>,
-    EstablishedClientConnection<HttpClientService<Body>, Request<Body>>,
-    OpaqueError,
-> {
-    let transport = UnixConnector::fixed(path);
-    let connector = HttpConnector::new(transport, Executor::default());
-    connector.boxed()
+fn build_unix_client(path: &str) -> RamaHttpClient {
+    EasyHttpWebClient::connector_builder()
+        .with_custom_transport_connector(UnixConnector::fixed(path))
+        .without_tls_proxy_support()
+        .without_proxy_support()
+        .without_tls_support()
+        .with_default_http_connector::<Body>(Executor::default())
+        .build_client()
+        .boxed()
 }

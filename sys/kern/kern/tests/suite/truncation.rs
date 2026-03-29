@@ -737,13 +737,14 @@ async fn mcp_tool_call_output_not_truncated_with_custom_limit() -> Result<()> {
         .function_call_output_text(call_id)
         .context("function_call_output present for rmcp call")?;
 
-    let parsed: Value = serde_json::from_str(&output)?;
-    assert_eq!(
-        output.len(),
-        80031,
-        "parsed MCP output should retain its serialized length"
-    );
     let expected_echo = format!("ECHOING: {large_msg}");
+    let expected_output = serde_json::to_string(&json!({ "echo": expected_echo }))?;
+    assert_eq!(
+        output, expected_output,
+        "MCP output should retain its serialized structured payload"
+    );
+
+    let parsed: Value = serde_json::from_str(&output)?;
     let echo_str = parsed["echo"]
         .as_str()
         .context("echo field should be a string in rmcp echo output")?;

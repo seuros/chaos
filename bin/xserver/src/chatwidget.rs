@@ -210,7 +210,6 @@ use crate::bottom_pane::ColumnWidthMode;
 use crate::bottom_pane::DOUBLE_PRESS_QUIT_SHORTCUT_ENABLED;
 use crate::bottom_pane::ExperimentalFeatureItem;
 use crate::bottom_pane::ExperimentalFeaturesView;
-use crate::bottom_pane::FeedbackAudience;
 use crate::bottom_pane::InputResult;
 use crate::bottom_pane::LocalImageAttachment;
 use crate::bottom_pane::McpServerElicitationFormRequest;
@@ -465,10 +464,7 @@ pub(crate) struct ChatWidgetInit {
     pub(crate) enhanced_keys_supported: bool,
     pub(crate) auth_manager: Arc<AuthManager>,
     pub(crate) models_manager: Arc<ModelsManager>,
-    #[allow(dead_code)]
-    pub(crate) feedback: crate::bottom_pane::FeedbackSnapshot,
     pub(crate) is_first_run: bool,
-    pub(crate) feedback_audience: FeedbackAudience,
     pub(crate) model: Option<String>,
     pub(crate) startup_tooltip_override: Option<String>,
     // Shared latch so we only warn once about invalid status-line item IDs.
@@ -770,10 +766,6 @@ pub(crate) struct ChatWidget {
     // Runtime metrics accumulated across delta snapshots for the active turn.
     turn_runtime_metrics: RuntimeMetricsSummary,
     last_rendered_width: std::cell::Cell<Option<usize>>,
-    // TODO(feedback): upload not yet supported
-    #[allow(dead_code)]
-    feedback: crate::bottom_pane::FeedbackSnapshot,
-    feedback_audience: FeedbackAudience,
     // Current session rollout path (if known)
     current_rollout_path: Option<PathBuf>,
     // Current working directory (if known)
@@ -1462,67 +1454,9 @@ impl ChatWidget {
         }
     }
 
-    pub(crate) fn open_feedback_note(
-        &mut self,
-        category: crate::app_event::FeedbackCategory,
-        include_logs: bool,
-    ) {
-        if let Some(chatgpt_user_id) = self
-            .auth_manager
-            .auth_cached()
-            .and_then(|auth| auth.get_chatgpt_user_id())
-        {
-            tracing::info!(target: "feedback_tags", chatgpt_user_id);
-        }
-        let snapshot =
-            crate::bottom_pane::FeedbackSnapshot::new(self.process_id.map(|id| id.to_string()));
-        self.show_feedback_note(category, include_logs, snapshot);
-    }
-
-    fn show_feedback_note(
-        &mut self,
-        category: crate::app_event::FeedbackCategory,
-        include_logs: bool,
-        snapshot: crate::bottom_pane::FeedbackSnapshot,
-    ) {
-        let rollout = if include_logs {
-            self.current_rollout_path.clone()
-        } else {
-            None
-        };
-        let view = crate::bottom_pane::FeedbackNoteView::new(
-            category,
-            snapshot,
-            rollout,
-            self.app_event_tx.clone(),
-            include_logs,
-            self.feedback_audience,
-        );
-        self.bottom_pane.show_view(Box::new(view));
-        self.request_redraw();
-    }
-
     pub(crate) fn open_app_link_view(&mut self, params: crate::bottom_pane::AppLinkViewParams) {
         let view = crate::bottom_pane::AppLinkView::new(params, self.app_event_tx.clone());
         self.bottom_pane.show_view(Box::new(view));
-        self.request_redraw();
-    }
-
-    pub(crate) fn open_feedback_consent(&mut self, category: crate::app_event::FeedbackCategory) {
-        if let Some(chatgpt_user_id) = self
-            .auth_manager
-            .auth_cached()
-            .and_then(|auth| auth.get_chatgpt_user_id())
-        {
-            tracing::info!(target: "feedback_tags", chatgpt_user_id);
-        }
-        let params = crate::bottom_pane::feedback_upload_consent_params(
-            self.app_event_tx.clone(),
-            category,
-            self.current_rollout_path.clone(),
-            &crate::bottom_pane::FeedbackDiagnostics,
-        );
-        self.bottom_pane.show_selection_view(params);
         self.request_redraw();
     }
 
@@ -2154,7 +2088,7 @@ impl ChatWidget {
                 ));
             } else {
                 self.add_to_history(history_cell::new_error_event(
-                    "Conversation interrupted - tell the model what to do differently. Something went wrong? Hit `/feedback` to report the issue.".to_owned(),
+                    "Conversation interrupted - tell the model what to do differently.".to_owned(),
                 ));
             }
         }
@@ -3490,9 +3424,7 @@ impl ChatWidget {
             enhanced_keys_supported,
             auth_manager,
             models_manager,
-            feedback,
             is_first_run,
-            feedback_audience,
             model,
             startup_tooltip_override,
             status_line_invalid_items_warned,
@@ -3610,8 +3542,6 @@ impl ChatWidget {
             last_separator_elapsed_secs: None,
             turn_runtime_metrics: RuntimeMetricsSummary::default(),
             last_rendered_width: std::cell::Cell::new(None),
-            feedback,
-            feedback_audience,
             current_rollout_path: None,
             current_cwd,
             session_network_proxy: None,
@@ -3655,9 +3585,7 @@ impl ChatWidget {
             enhanced_keys_supported,
             auth_manager,
             models_manager,
-            feedback,
             is_first_run,
-            feedback_audience,
             model,
             startup_tooltip_override,
             status_line_invalid_items_warned,
@@ -3774,8 +3702,6 @@ impl ChatWidget {
             last_separator_elapsed_secs: None,
             turn_runtime_metrics: RuntimeMetricsSummary::default(),
             last_rendered_width: std::cell::Cell::new(None),
-            feedback,
-            feedback_audience,
             current_rollout_path: None,
             current_cwd,
             session_network_proxy: None,
@@ -3819,9 +3745,7 @@ impl ChatWidget {
             enhanced_keys_supported,
             auth_manager,
             models_manager,
-            feedback,
             is_first_run: _,
-            feedback_audience,
             model,
             startup_tooltip_override: _,
             status_line_invalid_items_warned,
@@ -3938,8 +3862,6 @@ impl ChatWidget {
             last_separator_elapsed_secs: None,
             turn_runtime_metrics: RuntimeMetricsSummary::default(),
             last_rendered_width: std::cell::Cell::new(None),
-            feedback,
-            feedback_audience,
             current_rollout_path: None,
             current_cwd,
             session_network_proxy: None,
@@ -4208,19 +4130,6 @@ impl ChatWidget {
             return;
         }
         match cmd {
-            SlashCommand::Feedback => {
-                if !self.config.feedback_enabled {
-                    let params = crate::bottom_pane::feedback_disabled_params();
-                    self.bottom_pane.show_selection_view(params);
-                    self.request_redraw();
-                    return;
-                }
-                // Step 1: pick a category (UI built in feedback_view)
-                let params =
-                    crate::bottom_pane::feedback_selection_params(self.app_event_tx.clone());
-                self.bottom_pane.show_selection_view(params);
-                self.request_redraw();
-            }
             SlashCommand::New => {
                 self.app_event_tx.send(AppEvent::NewSession);
             }

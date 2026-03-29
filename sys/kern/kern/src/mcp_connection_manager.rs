@@ -1183,7 +1183,7 @@ async fn make_managed_client(
         "chaos-mcp-client",
         mcp_client_implementation_version(),
     )
-    .with_title("Chaos");
+    .with_title("ChaOS");
 
     let capabilities = mcp_guest::protocol::ClientCapabilities {
         experimental: None,

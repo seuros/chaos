@@ -51,7 +51,7 @@ pub struct Process {
 }
 
 /// Conduit for the bidirectional stream of messages that compose a process
-/// (formerly called a thread, and earlier a conversation) in Chaos.
+/// (formerly called a thread, and earlier a conversation) in ChaOS.
 impl Process {
     pub(crate) fn new(
         codex: Codex,

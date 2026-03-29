@@ -137,6 +137,17 @@ pub struct ModelProviderInfo {
 }
 
 impl ModelProviderInfo {
+    pub(crate) fn effective_base_url(&self, auth_mode: Option<AuthMode>) -> String {
+        let default_base_url = if matches!(auth_mode, Some(AuthMode::Chatgpt)) {
+            "https://chatgpt.com/backend-api/codex"
+        } else {
+            "https://api.openai.com/v1"
+        };
+        self.base_url
+            .clone()
+            .unwrap_or_else(|| default_base_url.to_string())
+    }
+
     fn build_header_map(&self) -> crate::error::Result<HeaderMap> {
         let mut headers = crate::default_client::default_headers();
         if let Ok(user_agent) =
@@ -171,16 +182,6 @@ impl ModelProviderInfo {
         &self,
         auth_mode: Option<AuthMode>,
     ) -> crate::error::Result<ApiProvider> {
-        let default_base_url = if matches!(auth_mode, Some(AuthMode::Chatgpt)) {
-            "https://chatgpt.com/backend-api/codex"
-        } else {
-            "https://api.openai.com/v1"
-        };
-        let base_url = self
-            .base_url
-            .clone()
-            .unwrap_or_else(|| default_base_url.to_string());
-
         let headers = self.build_header_map()?;
         let retry = ApiRetryConfig {
             max_attempts: self.request_max_retries(),
@@ -192,7 +193,7 @@ impl ModelProviderInfo {
 
         Ok(ApiProvider {
             name: self.name.clone(),
-            base_url,
+            base_url: self.effective_base_url(auth_mode),
             query_params: self.query_params.clone(),
             headers,
             retry,

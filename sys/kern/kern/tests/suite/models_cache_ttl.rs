@@ -137,6 +137,7 @@ async fn renews_cache_ttl_on_matching_models_etag() -> Result<()> {
 #[tokio::test(flavor = "multi_thread", worker_threads = 2)]
 async fn uses_cache_when_version_matches() -> Result<()> {
     let server = MockServer::start().await;
+    let server_uri = format!("{}/v1", server.uri());
     let cached_model = test_remote_model(VERSIONED_MODEL, 1);
     let models_mock = responses::mount_models_once(
         &server,
@@ -153,6 +154,7 @@ async fn uses_cache_when_version_matches() -> Result<()> {
                 fetched_at: Utc::now(),
                 etag: None,
                 client_version: Some(chaos_kern::models_manager::client_version_to_whole()),
+                scope: Some(cache_scope_for(server_uri.clone())),
                 models: vec![cached_model],
             };
             let cache_path = home.join(CACHE_FILE);
@@ -184,6 +186,7 @@ async fn uses_cache_when_version_matches() -> Result<()> {
 #[tokio::test(flavor = "multi_thread", worker_threads = 2)]
 async fn refreshes_when_cache_version_missing() -> Result<()> {
     let server = MockServer::start().await;
+    let server_uri = format!("{}/v1", server.uri());
     let cached_model = test_remote_model(MISSING_VERSION_MODEL, 1);
     let models_mock = responses::mount_models_once(
         &server,
@@ -200,6 +203,7 @@ async fn refreshes_when_cache_version_missing() -> Result<()> {
                 fetched_at: Utc::now(),
                 etag: None,
                 client_version: None,
+                scope: Some(cache_scope_for(server_uri.clone())),
                 models: vec![cached_model],
             };
             let cache_path = home.join(CACHE_FILE);
@@ -231,6 +235,7 @@ async fn refreshes_when_cache_version_missing() -> Result<()> {
 #[tokio::test(flavor = "multi_thread", worker_threads = 2)]
 async fn refreshes_when_cache_version_differs() -> Result<()> {
     let server = MockServer::start().await;
+    let server_uri = format!("{}/v1", server.uri());
     let cached_model = test_remote_model(DIFFERENT_VERSION_MODEL, 1);
     let models_response = ModelsResponse {
         models: vec![test_remote_model("remote-different", 2)],
@@ -248,6 +253,7 @@ async fn refreshes_when_cache_version_differs() -> Result<()> {
                 fetched_at: Utc::now(),
                 etag: None,
                 client_version: Some(format!("{client_version}-diff")),
+                scope: Some(cache_scope_for(server_uri.clone())),
                 models: vec![cached_model],
             };
             let cache_path = home.join(CACHE_FILE);
@@ -310,7 +316,24 @@ struct ModelsCache {
     etag: Option<String>,
     #[serde(default)]
     client_version: Option<String>,
+    #[serde(default)]
+    scope: Option<ModelsCacheScope>,
     models: Vec<ModelInfo>,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+struct ModelsCacheScope {
+    provider_name: String,
+    wire_api: String,
+    base_url: String,
+}
+
+fn cache_scope_for(base_url: String) -> ModelsCacheScope {
+    ModelsCacheScope {
+        provider_name: "OpenAI".to_string(),
+        wire_api: "responses".to_string(),
+        base_url,
+    }
 }
 
 fn test_remote_model(slug: &str, priority: i32) -> ModelInfo {

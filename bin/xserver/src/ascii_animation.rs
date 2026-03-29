@@ -2,7 +2,7 @@ use std::convert::TryFrom;
 use std::time::Duration;
 use std::time::Instant;
 
-use rand::Rng as _;
+use rand::RngExt as _;
 
 use crate::frames::ALL_VARIANTS;
 use crate::frames::FRAME_TICK_DEFAULT;

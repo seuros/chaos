@@ -216,6 +216,16 @@ where
             Event::End(tag) => self.end_tag(tag),
             Event::Text(text) => self.text(text),
             Event::Code(code) => self.code(code),
+            Event::InlineMath(math) => self.code(math),
+            Event::DisplayMath(math) => {
+                if self.needs_newline {
+                    self.push_line(Line::default());
+                    self.needs_newline = false;
+                }
+                self.code(math);
+                self.push_line(Line::default());
+                self.needs_newline = true;
+            }
             Event::SoftBreak => self.soft_break(),
             Event::HardBreak => self.hard_break(),
             Event::Rule => {
@@ -254,7 +264,7 @@ where
         match tag {
             Tag::Paragraph => self.start_paragraph(),
             Tag::Heading { level, .. } => self.start_heading(level),
-            Tag::BlockQuote => self.start_blockquote(),
+            Tag::BlockQuote(_) => self.start_blockquote(),
             Tag::CodeBlock(kind) => {
                 let indent = match kind {
                     CodeBlockKind::Fenced(_) => None,
@@ -274,11 +284,16 @@ where
             Tag::Link { dest_url, .. } => self.push_link(dest_url.to_string()),
             Tag::HtmlBlock
             | Tag::FootnoteDefinition(_)
+            | Tag::DefinitionList
+            | Tag::DefinitionListTitle
+            | Tag::DefinitionListDefinition
             | Tag::Table(_)
             | Tag::TableHead
             | Tag::TableRow
             | Tag::TableCell
             | Tag::Image { .. }
+            | Tag::Superscript
+            | Tag::Subscript
             | Tag::MetadataBlock(_) => {}
         }
     }
@@ -287,7 +302,7 @@ where
         match tag {
             TagEnd::Paragraph => self.end_paragraph(),
             TagEnd::Heading(_) => self.end_heading(),
-            TagEnd::BlockQuote => self.end_blockquote(),
+            TagEnd::BlockQuote(_) => self.end_blockquote(),
             TagEnd::CodeBlock => self.end_codeblock(),
             TagEnd::List(_) => self.end_list(),
             TagEnd::Item => {
@@ -298,11 +313,16 @@ where
             TagEnd::Link => self.pop_link(),
             TagEnd::HtmlBlock
             | TagEnd::FootnoteDefinition
+            | TagEnd::DefinitionList
+            | TagEnd::DefinitionListTitle
+            | TagEnd::DefinitionListDefinition
             | TagEnd::Table
             | TagEnd::TableHead
             | TagEnd::TableRow
             | TagEnd::TableCell
             | TagEnd::Image
+            | TagEnd::Superscript
+            | TagEnd::Subscript
             | TagEnd::MetadataBlock(_) => {}
         }
     }

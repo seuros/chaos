@@ -20,8 +20,8 @@ use anyhow::Result;
 use base64::Engine as _;
 use base64::engine::general_purpose::STANDARD as BASE64_STANDARD;
 use chaos_keyring::KeyringStore;
-use rand::TryRngCore;
-use rand::rngs::OsRng;
+use rand::TryRng;
+use rand::rngs::SysRng;
 use serde::Deserialize;
 use serde::Serialize;
 use tracing::warn;
@@ -252,7 +252,7 @@ fn write_file_atomically(path: &Path, contents: &[u8]) -> Result<()> {
 
 fn generate_passphrase() -> Result<SecretString> {
     let mut bytes = [0_u8; 32];
-    let mut rng = OsRng;
+    let mut rng = SysRng;
     rng.try_fill_bytes(&mut bytes)
         .context("failed to generate random secrets key")?;
     // Base64 keeps the keyring payload ASCII-safe without reducing entropy.

@@ -180,8 +180,8 @@ async fn plugin_mcp_tools_are_listed() -> Result<()> {
     skip_if_no_network!(Ok(()));
     let server = start_mock_server().await;
     let codex_home = Arc::new(TempDir::new()?);
-    let rmcp_test_server_bin = stdio_server_bin()?;
-    write_plugin_mcp_plugin(codex_home.as_ref(), &rmcp_test_server_bin);
+    let mcp_test_test_server_bin = stdio_server_bin()?;
+    write_plugin_mcp_plugin(codex_home.as_ref(), &mcp_test_test_server_bin);
     let codex = build_plugin_test_codex(&server, codex_home).await?;
 
     let tools_ready_deadline = Instant::now() + Duration::from_secs(30);

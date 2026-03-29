@@ -498,7 +498,16 @@ impl ModelsManager {
                 Ok(())
             }
             Err(ListModelsError::Unsupported) => {
-                info!("provider does not support model listing, using bundled metadata");
+                let empty_models: Vec<ModelInfo> = Vec::new();
+                let client_version = crate::models_manager::client_version_to_whole();
+                info!(
+                    "provider does not support model listing, caching empty provider catalog"
+                );
+                self.apply_remote_models(empty_models.clone()).await;
+                *self.etag.write().await = None;
+                self.cache_manager
+                    .persist_cache(&empty_models, None, client_version, self.cache_scope())
+                    .await;
                 Ok(())
             }
             Err(ListModelsError::Failed { message }) => {

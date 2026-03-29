@@ -1,9 +1,13 @@
 use std::collections::HashMap;
 use std::collections::HashSet;
+use std::fs;
+use std::path::Path;
 use std::path::PathBuf;
 
 use crate::analytics_client::AnalyticsEventsClient;
 use crate::analytics_client::TrackEventsContext;
+use crate::instructions::SkillInstructions;
+use crate::mention_syntax::TOOL_MENTION_SIGIL;
 use crate::skills::SkillMetadata;
 use chaos_ipc::models::ResponseItem;
 use chaos_ipc::user_input::UserInput;
@@ -16,21 +20,111 @@ pub(crate) struct SkillInjections {
 }
 
 pub(crate) async fn build_skill_injections(
-    _mentioned_skills: &[SkillMetadata],
-    _otel: Option<&SessionTelemetry>,
-    _analytics_client: &AnalyticsEventsClient,
-    _tracking: TrackEventsContext,
+    mentioned_skills: &[SkillMetadata],
+    otel: Option<&SessionTelemetry>,
+    analytics_client: &AnalyticsEventsClient,
+    tracking: TrackEventsContext,
 ) -> SkillInjections {
-    SkillInjections::default()
+    let _ = otel;
+    let _ = analytics_client;
+    let _ = tracking;
+
+    let mut items = Vec::with_capacity(mentioned_skills.len());
+    let mut warnings = Vec::new();
+
+    for skill in mentioned_skills {
+        match fs::read_to_string(&skill.path_to_skills_md) {
+            Ok(contents) => items.push(
+                SkillInstructions {
+                    name: skill.name.clone(),
+                    path: skill.path_to_skills_md.to_string_lossy().into_owned(),
+                    contents: strip_frontmatter(&contents).to_string(),
+                }
+                .into(),
+            ),
+            Err(err) => warnings.push(format!(
+                "Failed to load skill `{}` from {}: {err}",
+                skill.name,
+                skill.path_to_skills_md.display()
+            )),
+        }
+    }
+
+    SkillInjections { items, warnings }
 }
 
 pub(crate) fn collect_explicit_skill_mentions(
-    _inputs: &[UserInput],
-    _skills: &[SkillMetadata],
-    _disabled_paths: &HashSet<PathBuf>,
-    _connector_slug_counts: &HashMap<String, usize>,
+    inputs: &[UserInput],
+    skills: &[SkillMetadata],
+    disabled_paths: &HashSet<PathBuf>,
+    connector_slug_counts: &HashMap<String, usize>,
 ) -> Vec<SkillMetadata> {
-    Vec::new()
+    let _ = connector_slug_counts;
+    if skills.is_empty() {
+        return Vec::new();
+    }
+
+    let messages = inputs
+        .iter()
+        .filter_map(|item| match item {
+            UserInput::Text { text, .. } => Some(text.as_str()),
+            _ => None,
+        })
+        .collect::<Vec<_>>();
+
+    let mut mentioned_names = HashSet::new();
+    let mut mentioned_paths = HashSet::new();
+
+    for input in inputs {
+        match input {
+            UserInput::Skill { name, path } => {
+                mentioned_names.insert(name.clone());
+                mentioned_paths.insert(normalize_path(path));
+            }
+            UserInput::Mention { name, path } => {
+                if tool_kind_for_path(path) != ToolMentionKind::Skill {
+                    continue;
+                }
+                mentioned_names.insert(name.clone());
+                if let Some(skill_name) = skill_name_from_tool_path(path) {
+                    mentioned_names.insert(skill_name.to_string());
+                }
+                if is_skill_filename(path) {
+                    mentioned_paths.insert(normalize_string_path(path));
+                }
+            }
+            UserInput::Text { .. }
+            | UserInput::Image { .. }
+            | UserInput::LocalImage { .. } => {}
+            _ => {}
+        }
+    }
+
+    for message in messages {
+        let mentions = extract_tool_mentions_with_sigil(message, TOOL_MENTION_SIGIL);
+        mentioned_names.extend(mentions.plain_names().map(str::to_string));
+        for path in mentions.paths() {
+            if tool_kind_for_path(path) != ToolMentionKind::Skill {
+                continue;
+            }
+            if let Some(skill_name) = skill_name_from_tool_path(path) {
+                mentioned_names.insert(skill_name.to_string());
+            }
+            if is_skill_filename(path) {
+                mentioned_paths.insert(normalize_string_path(path));
+            }
+        }
+    }
+
+    skills
+        .iter()
+        .filter(|skill| !disabled_paths.contains(&skill.path_to_skills_md))
+        .filter(|skill| {
+            mentioned_names.contains(skill.name.as_str())
+                || mentioned_paths.contains(&normalize_path(&skill.path_to_skills_md))
+        })
+        .cloned()
+        .collect()
 }
 
 pub(crate) struct ToolMentions<'a> {
@@ -75,6 +169,30 @@ pub(crate) fn tool_kind_for_path(path: &str) -> ToolMentionKind {
     } else {
         ToolMentionKind::Other
     }
+}
+
+fn normalize_path(path: impl AsRef<Path>) -> PathBuf {
+    std::fs::canonicalize(path.as_ref()).unwrap_or_else(|_| path.as_ref().to_path_buf())
+}
+
+fn normalize_string_path(path: &str) -> PathBuf {
+    std::fs::canonicalize(path).unwrap_or_else(|_| PathBuf::from(path))
+}
+
+fn skill_name_from_tool_path(path: &str) -> Option<&str> {
+    path.strip_prefix(SKILL_PATH_PREFIX)
+        .and_then(|value| value.rsplit('/').next())
+        .filter(|value| !value.is_empty())
+}
+
+fn strip_frontmatter(contents: &str) -> &str {
+    let Some(rest) = contents.strip_prefix("---\n") else {
+        return contents.trim();
+    };
+    let Some((_, body)) = rest.split_once("\n---\n") else {
+        return contents.trim();
+    };
+    body.trim()
 }
 
 fn is_skill_filename(path: &str) -> bool {

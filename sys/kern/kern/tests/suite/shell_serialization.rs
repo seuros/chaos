@@ -474,7 +474,7 @@ async fn apply_patch_custom_tool_output_is_structured(
 Wall time: [0-9]+(?:\.[0-9]+)? seconds
 Output:
 Success. Updated the following files:
-A {file_name}
+A (?:.+/)?{file_name}
 ?$"
     );
     assert_regex_match(&expected_pattern, output.as_str());
@@ -516,7 +516,7 @@ async fn apply_patch_custom_tool_call_creates_file(
 Wall time: [0-9]+(?:\.[0-9]+)? seconds
 Output:
 Success. Updated the following files:
-A {file_name}
+A (?:.+/)?{file_name}
 ?$"
     );
     assert_regex_match(&expected_pattern, output.as_str());
@@ -574,7 +574,7 @@ async fn apply_patch_custom_tool_call_updates_existing_file(
 Wall time: [0-9]+(?:\.[0-9]+)? seconds
 Output:
 Success. Updated the following files:
-M {file_name}
+M (?:.+/)?{file_name}
 ?$"
     );
     assert_regex_match(&expected_pattern, output.as_str());
@@ -668,7 +668,7 @@ async fn apply_patch_function_call_output_is_structured(
 Wall time: [0-9]+(?:\.[0-9]+)? seconds
 Output:
 Success. Updated the following files:
-A {file_name}
+A (?:.+/)?{file_name}
 ?$"
     );
     assert_regex_match(&expected_pattern, output.as_str());

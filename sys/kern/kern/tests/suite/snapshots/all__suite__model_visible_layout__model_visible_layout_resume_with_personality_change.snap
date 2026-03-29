@@ -1,5 +1,6 @@
 ---
-source: core/tests/suite/model_visible_layout.rs
+source: sys/kern/kern/tests/suite/model_visible_layout.rs
+assertion_line: 372
 expression: "format_labeled_requests_snapshot(\"First post-resume turn where resumed config model differs from rollout and personality changes.\",\n&[(\"Last Request Before Resume\", &initial_request),\n(\"First Request After Resume\", &resumed_request),])"
 ---
 Scenario: First post-resume turn where resumed config model differs from rollout and personality changes.

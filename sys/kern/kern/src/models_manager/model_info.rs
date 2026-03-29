@@ -15,8 +15,7 @@ use tracing::warn;
 
 pub const BASE_INSTRUCTIONS: &str = include_str!("../../prompt.md");
 const DEFAULT_PERSONALITY_HEADER: &str = "You are running inside ChaOS. ChaOS is a local model kernel. The operator defines your role. If the task uses a workspace, you share it with the operator.";
-const LOCAL_FRIENDLY_TEMPLATE: &str =
-    "You optimize for clarity, usefulness, and team morale.";
+const LOCAL_FRIENDLY_TEMPLATE: &str = "You optimize for clarity, usefulness, and team morale.";
 const LOCAL_PRAGMATIC_TEMPLATE: &str = "You are deeply pragmatic, effective, and outcome-oriented.";
 const PERSONALITY_PLACEHOLDER: &str = "{{ personality }}";
 
@@ -53,7 +52,7 @@ pub(crate) fn with_config_overrides(mut model: ModelInfo, config: &Config) -> Mo
         // Always override server-supplied instructions with the local prompt.
         // The server sends OpenAI-branded personality; ChaOS has its own identity.
         model.base_instructions = BASE_INSTRUCTIONS.to_string();
-        model.model_messages = None;
+        model.model_messages = local_personality_messages_for_slug(model.slug.as_str());
     }
 
     model

@@ -1388,7 +1388,7 @@ impl AuthManager {
         };
         if last_refresh
             >= Timestamp::now()
-                .checked_sub(TOKEN_REFRESH_INTERVAL.days())
+                .checked_sub(TOKEN_REFRESH_INTERVAL.saturating_mul(24).hours())
                 .unwrap_or(Timestamp::now())
         {
             return Ok(false);

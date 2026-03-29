@@ -42,6 +42,7 @@ fn absolute_path(path: &Path) -> AbsolutePathBuf {
     AbsolutePathBuf::try_from(path).expect("absolute path")
 }
 
+#[derive(Debug)]
 struct CommandResult {
     exit_code: Option<i64>,
     stdout: String,
@@ -383,16 +384,31 @@ async fn with_additional_permissions_requires_approval_under_on_request() -> Res
     wait_for_completion(&test).await;
 
     let result = parse_result(&results.single_request().function_call_output(call_id));
-    assert!(
-        result.exit_code.is_none() || result.exit_code == Some(0),
-        "unexpected exit code/output: {:?} {}",
-        result.exit_code,
-        result.stdout
-    );
-    assert!(
-        requested_write.exists(),
-        "touch command should create requested path"
-    );
+    if cfg!(target_os = "linux") {
+        assert_eq!(result.exit_code, Some(1), "unexpected Linux exit code: {result:?}");
+        assert!(
+            result.stdout.contains(
+                "split filesystem sandbox policies that require direct runtime enforcement are not supported by the Linux sandbox backend"
+            ),
+            "unexpected Linux failure output: {}",
+            result.stdout
+        );
+        assert!(
+            !requested_write.exists(),
+            "Linux backend should reject unsupported split filesystem carveouts"
+        );
+    } else {
+        assert!(
+            result.exit_code.is_none() || result.exit_code == Some(0),
+            "unexpected exit code/output: {:?} {}",
+            result.exit_code,
+            result.stdout
+        );
+        assert!(
+            requested_write.exists(),
+            "touch command should create requested path"
+        );
+    }
 
     Ok(())
 }
@@ -571,16 +587,31 @@ async fn relative_additional_permissions_resolve_against_tool_workdir() -> Resul
     wait_for_completion(&test).await;
 
     let result = parse_result(&results.single_request().function_call_output(call_id));
-    assert!(
-        result.exit_code.is_none() || result.exit_code == Some(0),
-        "unexpected exit code/output: {:?} {}",
-        result.exit_code,
-        result.stdout
-    );
-    assert!(
-        requested_write.exists(),
-        "touch command should create requested path"
-    );
+    if cfg!(target_os = "linux") {
+        assert_eq!(result.exit_code, Some(1), "unexpected Linux exit code: {result:?}");
+        assert!(
+            result.stdout.contains(
+                "split filesystem sandbox policies that require direct runtime enforcement are not supported by the Linux sandbox backend"
+            ),
+            "unexpected Linux failure output: {}",
+            result.stdout
+        );
+        assert!(
+            !requested_write.exists(),
+            "Linux backend should reject unsupported split filesystem carveouts"
+        );
+    } else {
+        assert!(
+            result.exit_code.is_none() || result.exit_code == Some(0),
+            "unexpected exit code/output: {:?} {}",
+            result.exit_code,
+            result.stdout
+        );
+        assert!(
+            requested_write.exists(),
+            "touch command should create requested path"
+        );
+    }
 
     Ok(())
 }

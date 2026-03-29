@@ -278,7 +278,7 @@ async fn flush(state_db: &std::sync::Arc<StateRuntime>, buffer: &mut Vec<LogEntr
 }
 
 async fn run_retention_cleanup(state_db: std::sync::Arc<StateRuntime>) {
-    let Ok(cutoff) = jiff::Timestamp::now().checked_sub(LOG_RETENTION_DAYS.days()) else {
+    let Ok(cutoff) = jiff::Timestamp::now().checked_sub(LOG_RETENTION_DAYS.saturating_mul(24).hours()) else {
         return;
     };
     let _ = state_db.delete_logs_before(cutoff.as_second()).await;

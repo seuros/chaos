@@ -1,4 +1,4 @@
-use rand::Rng;
+use rand::RngExt;
 
 const RAW_TOOLTIPS: &str = include_str!("../tooltips.txt");
 

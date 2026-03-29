@@ -48,6 +48,7 @@ use crate::version::CHAOS_VERSION;
 use chaos_amphetamine::SleepInhibitor;
 use chaos_ipc::ProcessId;
 use chaos_ipc::account::PlanType;
+use chaos_ipc::api::AppInfo;
 use chaos_ipc::api::ConfigLayerSource;
 use chaos_ipc::approvals::ElicitationRequest;
 use chaos_ipc::approvals::ElicitationRequestEvent;
@@ -123,7 +124,6 @@ use chaos_kern::config::ConstraintResult;
 use chaos_kern::config::types::ApprovalsReviewer;
 use chaos_kern::config::types::Notifications;
 use chaos_kern::config_loader::ConfigLayerStackOrdering;
-use chaos_ipc::api::AppInfo;
 use chaos_kern::features::FEATURES;
 use chaos_kern::features::Feature;
 use chaos_kern::find_process_name_by_id;
@@ -142,7 +142,7 @@ use crossterm::event::KeyCode;
 use crossterm::event::KeyEvent;
 use crossterm::event::KeyEventKind;
 use crossterm::event::KeyModifiers;
-use rand::Rng;
+use rand::RngExt;
 use ratatui::buffer::Buffer;
 use ratatui::layout::Rect;
 use ratatui::style::Modifier;
@@ -490,6 +490,7 @@ enum RateLimitSwitchPromptState {
 enum ConnectorsCacheState {
     #[default]
     Uninitialized,
+    #[expect(dead_code)]
     Loading,
     Ready(ConnectorsSnapshot),
     Failed(#[allow(dead_code)] String),
@@ -7438,10 +7439,7 @@ impl ChatWidget {
         let mcp_manager = McpManager::new(Arc::new(PluginsManager::new(
             self.config.codex_home.clone(),
         )));
-        if mcp_manager
-            .effective_servers(&self.config)
-            .is_empty()
-        {
+        if mcp_manager.effective_servers(&self.config).is_empty() {
             self.add_to_history(history_cell::empty_mcp_output());
         } else {
             self.submit_op(Op::ListMcpTools);

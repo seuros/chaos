@@ -3,6 +3,7 @@
 //! Translates chaos-abi `TurnRequest` into Anthropic's `/v1/messages`
 //! wire format and streams `TurnEvent`s back from the SSE response.
 
+use crate::provider::Provider;
 use chaos_abi::AbiError;
 use chaos_abi::AdapterFuture;
 use chaos_abi::ContentItem;
@@ -12,6 +13,7 @@ use chaos_abi::TokenUsage;
 use chaos_abi::TurnEvent;
 use chaos_abi::TurnRequest;
 use chaos_abi::TurnStream;
+use http::HeaderMap;
 use serde::Serialize;
 use serde_json::Value;
 use tokio::sync::mpsc;
@@ -20,25 +22,54 @@ const DEFAULT_MAX_TOKENS: u64 = 8192;
 const ANTHROPIC_VERSION: &str = "2023-06-01";
 
 /// Adapter for the Anthropic Messages API.
+///
+/// Uses the provider's headers, retry config, and query params so that
+/// kern's provider configuration surface is honored end-to-end.
 #[derive(Debug, Clone)]
 pub struct AnthropicAdapter {
-    base_url: String,
+    provider: Provider,
     api_key: String,
     default_model: Option<String>,
 }
 
 impl AnthropicAdapter {
-    pub fn new(base_url: String, api_key: String, default_model: Option<String>) -> Self {
+    /// Create an adapter backed by a fully-configured provider.
+    pub fn new(provider: Provider, api_key: String, default_model: Option<String>) -> Self {
         Self {
-            base_url,
+            provider,
             api_key,
             default_model,
         }
     }
 
+    /// Convenience constructor for standalone use (tests, adapter_for_wire).
+    pub fn from_base_url_and_api_key(
+        base_url: String,
+        api_key: String,
+        default_model: Option<String>,
+    ) -> Self {
+        use crate::provider::RetryConfig;
+        use std::time::Duration;
+
+        let provider = Provider {
+            name: "Anthropic".to_string(),
+            base_url,
+            query_params: None,
+            headers: HeaderMap::new(),
+            retry: RetryConfig {
+                max_attempts: 4,
+                base_delay: Duration::from_millis(200),
+                retry_429: true,
+                retry_5xx: true,
+                retry_transport: true,
+            },
+            stream_idle_timeout: Duration::from_secs(300),
+        };
+        Self::new(provider, api_key, default_model)
+    }
+
     fn messages_url(&self) -> String {
-        let base = self.base_url.trim_end_matches('/');
-        format!("{base}/messages")
+        self.provider.url_for_path("/messages")
     }
 
     fn model_for_request(&self, request_model: &str) -> String {
@@ -50,20 +81,51 @@ impl AnthropicAdapter {
             request_model.to_string()
         }
     }
+
+    /// Build the merged header map: provider headers + Anthropic-specific headers.
+    fn build_headers(&self) -> HeaderMap {
+        let mut headers = self.provider.headers.clone();
+        if let Ok(v) = http::HeaderValue::from_str(&self.api_key) {
+            headers.insert("x-api-key", v);
+        }
+        headers.insert(
+            "anthropic-version",
+            http::HeaderValue::from_static(ANTHROPIC_VERSION),
+        );
+        headers.insert(
+            http::header::CONTENT_TYPE,
+            http::HeaderValue::from_static("application/json"),
+        );
+        headers.insert(
+            http::header::ACCEPT,
+            http::HeaderValue::from_static("text/event-stream"),
+        );
+        headers
+    }
 }
 
 impl ModelAdapter for AnthropicAdapter {
     fn stream(&self, request: TurnRequest) -> AdapterFuture<'_> {
         Box::pin(async move {
+            if request.output_schema.is_some() {
+                return Err(AbiError::InvalidRequest {
+                    message: "structured output (output_schema) is not yet supported for \
+                              Anthropic Messages — remove output_schema or use a Responses \
+                              provider"
+                        .to_string(),
+                });
+            }
+
             let url = self.messages_url();
             let model = self.model_for_request(&request.model);
             let body = build_request_body(&request, &model)?;
+            let headers = self.build_headers();
+            let retry = self.provider.retry.clone();
 
             let (tx, rx) = mpsc::channel(64);
 
-            let api_key = self.api_key.clone();
             tokio::spawn(async move {
-                if let Err(e) = run_sse_stream(&url, &api_key, &body, tx.clone()).await {
+                if let Err(e) = run_sse_stream(&url, &headers, &body, &retry, tx.clone()).await {
                     let _ = tx.send(Err(e)).await;
                 }
             });
@@ -167,23 +229,8 @@ fn build_request_body(request: &TurnRequest, model: &str) -> Result<Value, AbiEr
         }
     }
 
-    // output_schema → structured output via tool_choice forced
-    if let Some(ref schema) = request.output_schema {
-        obj.entry("tools".to_string())
-            .or_insert_with(|| serde_json::json!([]))
-            .as_array_mut()
-            .map(|tools_arr| {
-                tools_arr.push(serde_json::json!({
-                    "name": "_structured_output",
-                    "description": "Return structured output matching the schema",
-                    "input_schema": schema,
-                }));
-            });
-        obj.insert(
-            "tool_choice".to_string(),
-            serde_json::json!({"type": "tool", "name": "_structured_output"}),
-        );
-    }
+    // output_schema is guarded at the adapter level — reject before we get here.
+    // The previous synthetic _structured_output tool was not production-safe.
 
     Ok(body)
 }
@@ -220,8 +267,14 @@ fn convert_input_to_messages(input: &[ResponseItem]) -> Vec<AnthropicMessage> {
                 let content_value: Vec<Value> =
                     content.iter().filter_map(convert_content_item).collect();
                 if !content_value.is_empty() {
+                    // Anthropic only accepts "user" or "assistant". Map OpenAI's
+                    // "developer" / "system" roles to "user".
+                    let anthropic_role = match role.as_str() {
+                        "assistant" => "assistant",
+                        _ => "user",
+                    };
                     messages.push(AnthropicMessage {
-                        role: role.clone(),
+                        role: anthropic_role.to_string(),
                         content: Value::Array(content_value),
                     });
                 }
@@ -345,6 +398,13 @@ struct ToolUseAccumulator {
     input_json: String,
 }
 
+/// In-flight text accumulator. We buffer text deltas so we can emit
+/// a complete `OutputItemDone(Message{...})` at `content_block_stop`.
+#[derive(Default)]
+struct TextAccumulator {
+    text: String,
+}
+
 /// Parse a single SSE event block into zero or more TurnEvents.
 ///
 /// Anthropic SSE event lifecycle for a tool call:
@@ -365,6 +425,7 @@ fn parse_sse_event(
     event_type: &str,
     json: &Value,
     tool_acc: &mut Option<ToolUseAccumulator>,
+    text_acc: &mut Option<TextAccumulator>,
 ) -> Result<Vec<TurnEvent>, AbiError> {
     match event_type {
         "message_start" => {
@@ -381,24 +442,38 @@ fn parse_sse_event(
                 .pointer("/content_block/type")
                 .and_then(Value::as_str)
                 .unwrap_or("");
-            if block_type == "tool_use" {
-                let id = json
-                    .pointer("/content_block/id")
-                    .and_then(Value::as_str)
-                    .unwrap_or("")
-                    .to_string();
-                let name = json
-                    .pointer("/content_block/name")
-                    .and_then(Value::as_str)
-                    .unwrap_or("")
-                    .to_string();
-                *tool_acc = Some(ToolUseAccumulator {
-                    id,
-                    name,
-                    input_json: String::new(),
-                });
+            match block_type {
+                "tool_use" => {
+                    let id = json
+                        .pointer("/content_block/id")
+                        .and_then(Value::as_str)
+                        .unwrap_or("")
+                        .to_string();
+                    let name = json
+                        .pointer("/content_block/name")
+                        .and_then(Value::as_str)
+                        .unwrap_or("")
+                        .to_string();
+                    *tool_acc = Some(ToolUseAccumulator {
+                        id,
+                        name,
+                        input_json: String::new(),
+                    });
+                    Ok(vec![])
+                }
+                "text" => {
+                    // Kern needs OutputItemAdded before any OutputTextDelta.
+                    *text_acc = Some(TextAccumulator::default());
+                    Ok(vec![TurnEvent::OutputItemAdded(ResponseItem::Message {
+                        id: None,
+                        role: "assistant".to_string(),
+                        content: vec![],
+                        phase: None,
+                        end_turn: None,
+                    })])
+                }
+                _ => Ok(vec![]),
             }
-            Ok(vec![])
         }
 
         "content_block_delta" => {
@@ -409,6 +484,9 @@ fn parse_sse_event(
             match delta_type {
                 "text_delta" => {
                     if let Some(text) = json.pointer("/delta/text").and_then(Value::as_str) {
+                        if let Some(acc) = text_acc.as_mut() {
+                            acc.text.push_str(text);
+                        }
                         Ok(vec![TurnEvent::OutputTextDelta(text.to_string())])
                     } else {
                         Ok(vec![])
@@ -439,8 +517,8 @@ fn parse_sse_event(
         }
 
         "content_block_stop" => {
-            // If we were accumulating a tool_use, emit it now
             if let Some(acc) = tool_acc.take() {
+                // Tool use block finished — emit the completed function call.
                 Ok(vec![TurnEvent::OutputItemDone(
                     ResponseItem::FunctionCall {
                         id: None,
@@ -454,6 +532,17 @@ fn parse_sse_event(
                         namespace: None,
                     },
                 )])
+            } else if let Some(acc) = text_acc.take() {
+                // Text block finished — emit the completed message.
+                Ok(vec![TurnEvent::OutputItemDone(ResponseItem::Message {
+                    id: None,
+                    role: "assistant".to_string(),
+                    content: vec![ContentItem::OutputText {
+                        text: acc.text,
+                    }],
+                    phase: None,
+                    end_turn: None,
+                })])
             } else {
                 Ok(vec![])
             }
@@ -520,8 +609,9 @@ fn parse_sse_event(
 
 async fn run_sse_stream(
     url: &str,
-    api_key: &str,
+    headers: &HeaderMap,
     body: &Value,
+    retry: &crate::provider::RetryConfig,
     tx: mpsc::Sender<Result<TurnEvent, AbiError>>,
 ) -> Result<(), AbiError> {
     use rama::Service;
@@ -535,95 +625,125 @@ async fn run_sse_stream(
         message: e.to_string(),
     })?;
 
-    let client = EasyHttpWebClient::default();
-    let request = Request::builder()
-        .method("POST")
-        .uri(url)
-        .header("x-api-key", api_key)
-        .header("anthropic-version", ANTHROPIC_VERSION)
-        .header("content-type", "application/json")
-        .header("accept", "text/event-stream")
-        .body(Body::from(body_bytes))
-        .map_err(|e| AbiError::InvalidRequest {
-            message: e.to_string(),
-        })?;
+    let max_attempts = retry.max_attempts.max(1);
+    let base_delay = retry.base_delay;
 
-    let response = client
-        .serve(request)
-        .await
-        .map_err(|e| AbiError::Transport {
-            status: 0,
-            message: e.to_string(),
-        })?;
+    for attempt in 0..max_attempts {
+        if attempt > 0 {
+            let delay = base_delay * 2u32.saturating_pow(attempt.saturating_sub(1) as u32);
+            tokio::time::sleep(delay).await;
+        }
 
-    let status = response.status();
-    if status != StatusCode::OK {
-        let body_bytes = response
-            .into_body()
-            .collect()
-            .await
-            .map_err(|e| AbiError::Transport {
-                status: status.as_u16(),
+        let client = EasyHttpWebClient::default();
+        let mut builder = Request::builder().method("POST").uri(url);
+        for (name, value) in headers.iter() {
+            builder = builder.header(name, value);
+        }
+        let request = builder
+            .body(Body::from(body_bytes.clone()))
+            .map_err(|e| AbiError::InvalidRequest {
                 message: e.to_string(),
-            })?
-            .to_bytes();
-        let body_text = String::from_utf8_lossy(&body_bytes);
-        return Err(AbiError::Transport {
-            status: status.as_u16(),
-            message: body_text.to_string(),
-        });
-    }
+            })?;
 
-    let mut tool_acc: Option<ToolUseAccumulator> = None;
-    let mut buffer = String::new();
-    let mut data_stream = response.into_body().into_data_stream();
-
-    use futures::StreamExt;
-    while let Some(chunk) = data_stream.next().await {
-        let chunk = chunk.map_err(|e| AbiError::Stream(e.to_string()))?;
-        let text = String::from_utf8_lossy(&chunk);
-        buffer.push_str(&text);
-
-        while let Some(pos) = buffer.find("\n\n") {
-            let event_block = buffer[..pos].to_string();
-            buffer = buffer[pos + 2..].to_string();
-
-            let mut event_type = None;
-            let mut data = None;
-            for line in event_block.lines() {
-                if let Some(rest) = line.strip_prefix("event: ") {
-                    event_type = Some(rest.trim().to_string());
-                } else if let Some(rest) = line.strip_prefix("data: ") {
-                    data = Some(rest.trim().to_string());
+        let response = match client.serve(request).await {
+            Ok(r) => r,
+            Err(e) => {
+                if retry.retry_transport && attempt + 1 < max_attempts {
+                    tracing::warn!(attempt, "Anthropic transport error, retrying: {e}");
+                    continue;
                 }
+                return Err(AbiError::Transport {
+                    status: 0,
+                    message: e.to_string(),
+                });
+            }
+        };
+
+        let status = response.status();
+        if status != StatusCode::OK {
+            let err_body = response
+                .into_body()
+                .collect()
+                .await
+                .map_err(|e| AbiError::Transport {
+                    status: status.as_u16(),
+                    message: e.to_string(),
+                })?
+                .to_bytes();
+            let body_text = String::from_utf8_lossy(&err_body);
+
+            // Retry on 429 / 5xx if configured
+            let retryable = (status == StatusCode::TOO_MANY_REQUESTS && retry.retry_429)
+                || (status.is_server_error() && retry.retry_5xx);
+            if retryable && attempt + 1 < max_attempts {
+                tracing::warn!(attempt, status = %status, "Anthropic retryable error, retrying");
+                continue;
             }
 
-            let Some(event_type) = event_type else {
-                continue;
-            };
-            let Some(data) = data else { continue };
-            let Ok(json) = serde_json::from_str::<Value>(&data) else {
-                continue;
-            };
+            return Err(AbiError::Transport {
+                status: status.as_u16(),
+                message: body_text.to_string(),
+            });
+        }
 
-            let events = match parse_sse_event(&event_type, &json, &mut tool_acc) {
-                Ok(events) => events,
-                Err(err) => {
-                    let _ = tx.send(Err(err)).await;
-                    return Ok(());
+        // Success — stream SSE events
+        let mut tool_acc: Option<ToolUseAccumulator> = None;
+        let mut text_acc: Option<TextAccumulator> = None;
+        let mut buffer = String::new();
+        let mut data_stream = response.into_body().into_data_stream();
+
+        use futures::StreamExt;
+        while let Some(chunk) = data_stream.next().await {
+            let chunk = chunk.map_err(|e| AbiError::Stream(e.to_string()))?;
+            let text = String::from_utf8_lossy(&chunk);
+            buffer.push_str(&text);
+
+            while let Some(pos) = buffer.find("\n\n") {
+                let event_block = buffer[..pos].to_string();
+                buffer = buffer[pos + 2..].to_string();
+
+                let mut event_type = None;
+                let mut data = None;
+                for line in event_block.lines() {
+                    if let Some(rest) = line.strip_prefix("event: ") {
+                        event_type = Some(rest.trim().to_string());
+                    } else if let Some(rest) = line.strip_prefix("data: ") {
+                        data = Some(rest.trim().to_string());
+                    }
                 }
-            };
-            for event in events {
-                let is_done = matches!(&event, TurnEvent::Completed { .. });
-                if tx.send(Ok(event)).await.is_err() {
-                    return Ok(());
-                }
-                if is_done {
-                    return Ok(());
+
+                let Some(event_type) = event_type else {
+                    continue;
+                };
+                let Some(data) = data else { continue };
+                let Ok(json) = serde_json::from_str::<Value>(&data) else {
+                    continue;
+                };
+
+                let events = match parse_sse_event(&event_type, &json, &mut tool_acc, &mut text_acc) {
+                    Ok(events) => events,
+                    Err(err) => {
+                        let _ = tx.send(Err(err)).await;
+                        return Ok(());
+                    }
+                };
+                for event in events {
+                    let is_done = matches!(&event, TurnEvent::Completed { .. });
+                    if tx.send(Ok(event)).await.is_err() {
+                        return Ok(());
+                    }
+                    if is_done {
+                        return Ok(());
+                    }
                 }
             }
         }
+
+        return Ok(());
     }
 
-    Ok(())
+    Err(AbiError::Transport {
+        status: 0,
+        message: "all retry attempts exhausted".to_string(),
+    })
 }

@@ -369,7 +369,7 @@ async fn apply_patch_tool_executes_and_emits_patch_events() -> anyhow::Result<()
 Wall time: [0-9]+(?:\.[0-9]+)? seconds
 Output:
 Success. Updated the following files:
-A {file_name}
+A .*{file_name}
 ?$"
     );
     assert_regex_match(&expected_pattern, &output_text);

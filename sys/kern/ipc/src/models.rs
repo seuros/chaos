@@ -140,7 +140,7 @@ pub enum MacOsAutomationPermission {
     BundleIds(Vec<String>),
 }
 
-#[derive(Debug, Deserialize)]
+#[derive(Debug, Deserialize, JsonSchema)]
 #[serde(untagged)]
 enum MacOsAutomationPermissionDe {
     Mode(String),

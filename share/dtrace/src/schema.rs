@@ -1,16 +1,15 @@
-use schemars::JsonSchema;
-use schemars::r#gen::SchemaGenerator;
-use schemars::r#gen::SchemaSettings;
-use schemars::schema::InstanceType;
-use schemars::schema::RootSchema;
-use schemars::schema::Schema;
-use schemars::schema::SchemaObject;
 use serde::Deserialize;
 use serde::Serialize;
 use serde_json::Map;
 use serde_json::Value;
+use std::borrow::Cow;
 use std::path::Path;
 use std::path::PathBuf;
+
+use schemars::JsonSchema;
+use schemars::Schema;
+use schemars::SchemaGenerator;
+use schemars::generate::SchemaSettings;
 
 const GENERATED_DIR: &str = "generated";
 const SESSION_START_INPUT_FIXTURE: &str = "session-start.command.input.schema.json";
@@ -33,15 +32,20 @@ impl NullableString {
 }
 
 impl JsonSchema for NullableString {
-    fn schema_name() -> String {
-        "NullableString".to_string()
+    fn schema_name() -> Cow<'static, str> {
+        "NullableString".into()
     }
 
     fn json_schema(_gen: &mut SchemaGenerator) -> Schema {
-        Schema::Object(SchemaObject {
-            instance_type: Some(vec![InstanceType::String, InstanceType::Null].into()),
-            ..Default::default()
-        })
+        let mut schema = Schema::default();
+        schema.insert(
+            "type".to_string(),
+            Value::Array(vec![
+                Value::String("string".to_string()),
+                Value::String("null".to_string()),
+            ]),
+        );
+        schema
     }
 }
 
@@ -228,17 +232,16 @@ where
     let schema = schema_for_type::<T>();
     let value = serde_json::to_value(schema)?;
     let value = canonicalize_json(&value);
-    Ok(serde_json::to_vec_pretty(&value)?)
+    let mut json = serde_json::to_vec_pretty(&value)?;
+    json.push(b'\n');
+    Ok(json)
 }
 
-fn schema_for_type<T>() -> RootSchema
+fn schema_for_type<T>() -> Schema
 where
     T: JsonSchema,
 {
     SchemaSettings::draft07()
-        .with(|settings| {
-            settings.option_add_null_type = false;
-        })
         .into_generator()
         .into_root_schema_for::<T>()
 }
@@ -251,11 +254,36 @@ fn canonicalize_json(value: &Value) -> Value {
             entries.sort_by(|(left, _), (right, _)| left.cmp(right));
             let mut sorted = Map::with_capacity(map.len());
             for (key, child) in entries {
-                sorted.insert(key.clone(), canonicalize_json(child));
+                sorted.insert(key.clone(), canonicalize_object_child(key, child));
             }
             Value::Object(sorted)
         }
         _ => value.clone(),
+    }
+}
+
+fn canonicalize_object_child(key: &str, value: &Value) -> Value {
+    let value = canonicalize_json(value);
+    if key == "required" {
+        return sort_string_array(value);
+    }
+    value
+}
+
+fn sort_string_array(value: Value) -> Value {
+    match value {
+        Value::Array(items) => {
+            let mut strings = Vec::with_capacity(items.len());
+            for item in &items {
+                let Some(value) = item.as_str() else {
+                    return Value::Array(items);
+                };
+                strings.push(value.to_string());
+            }
+            strings.sort();
+            Value::Array(strings.into_iter().map(Value::String).collect())
+        }
+        other => other,
     }
 }
 
@@ -282,26 +310,25 @@ fn session_start_source_schema(_gen: &mut SchemaGenerator) -> Schema {
 }
 
 fn string_const_schema(value: &str) -> Schema {
-    let mut schema = SchemaObject {
-        instance_type: Some(InstanceType::String.into()),
-        ..Default::default()
-    };
-    schema.const_value = Some(Value::String(value.to_string()));
-    Schema::Object(schema)
+    let mut schema = Schema::default();
+    schema.insert("type".to_string(), Value::String("string".to_string()));
+    schema.insert("const".to_string(), Value::String(value.to_string()));
+    schema
 }
 
 fn string_enum_schema(values: &[&str]) -> Schema {
-    let mut schema = SchemaObject {
-        instance_type: Some(InstanceType::String.into()),
-        ..Default::default()
-    };
-    schema.enum_values = Some(
-        values
-            .iter()
-            .map(|value| Value::String((*value).to_string()))
-            .collect(),
+    let mut schema = Schema::default();
+    schema.insert("type".to_string(), Value::String("string".to_string()));
+    schema.insert(
+        "enum".to_string(),
+        Value::Array(
+            values
+                .iter()
+                .map(|value| Value::String((*value).to_string()))
+                .collect(),
+        ),
     );
-    Schema::Object(schema)
+    schema
 }
 
 fn default_continue() -> bool {
@@ -337,7 +364,10 @@ mod tests {
     }
 
     fn normalize_newlines(value: &str) -> String {
-        value.replace("\r\n", "\n")
+        value
+            .replace("\r\n", "\n")
+            .trim_end_matches('\n')
+            .to_string()
     }
 
     #[test]

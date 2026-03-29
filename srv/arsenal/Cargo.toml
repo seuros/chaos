@@ -16,7 +16,7 @@ workspace = true
 [dependencies]
 chaos-wchar = { workspace = true }
 mcp-host = { workspace = true, features = ["macros"] }
-schemars = "1.0.0-alpha.20"
+schemars = "1.2.1"
 serde = { workspace = true, features = ["derive"] }
 serde_json = { workspace = true }
 tokio = { workspace = true, features = ["fs", "io-util", "process"] }

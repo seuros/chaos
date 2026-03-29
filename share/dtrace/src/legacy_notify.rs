@@ -15,6 +15,7 @@ use crate::command_from_argv;
 enum UserNotification {
     #[serde(rename_all = "kebab-case")]
     AgentTurnComplete {
+        #[serde(rename = "thread-id")]
         process_id: String,
         turn_id: String,
         cwd: String,

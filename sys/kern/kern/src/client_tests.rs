@@ -6,6 +6,7 @@ use chaos_ipc::ProcessId;
 use chaos_ipc::openai_models::ModelInfo;
 use chaos_ipc::protocol::SessionSource;
 use chaos_ipc::protocol::SubAgentSource;
+use chaos_parrot::anthropic::AnthropicAuth;
 use chaos_syslog::SessionTelemetry;
 use pretty_assertions::assert_eq;
 use serde_json::json;
@@ -73,6 +74,25 @@ fn test_session_telemetry() -> SessionTelemetry {
     )
 }
 
+fn test_anthropic_provider() -> crate::model_provider_info::ModelProviderInfo {
+    crate::model_provider_info::ModelProviderInfo {
+        name: "anthropic".into(),
+        base_url: Some("https://api.anthropic.com/v1".into()),
+        env_key: None,
+        env_key_instructions: None,
+        experimental_bearer_token: None,
+        wire_api: crate::model_provider_info::WireApi::Responses,
+        query_params: None,
+        http_headers: None,
+        env_http_headers: None,
+        request_max_retries: None,
+        stream_max_retries: None,
+        stream_idle_timeout_ms: None,
+        requires_openai_auth: false,
+        supports_websockets: false,
+    }
+}
+
 #[test]
 fn build_subagent_headers_sets_other_subagent_label() {
     let client = test_model_client(SessionSource::SubAgent(SubAgentSource::Other(
@@ -115,4 +135,53 @@ fn auth_request_telemetry_context_tracks_attached_auth_and_retry_phase() {
     assert!(auth_context.retry_after_unauthorized);
     assert_eq!(auth_context.recovery_mode, Some("managed"));
     assert_eq!(auth_context.recovery_phase, Some("refresh_token"));
+}
+
+#[test]
+fn resolve_anthropic_auth_uses_bearer_token_from_provider_config() {
+    let mut provider = test_anthropic_provider();
+    provider.experimental_bearer_token = Some("anthropic-bearer".to_string());
+    let client = ModelClient::new(
+        None,
+        ProcessId::new(),
+        provider,
+        SessionSource::Cli,
+        None,
+        false,
+        false,
+        false,
+        None,
+    );
+    let session = client.new_session();
+
+    let auth = session
+        .resolve_anthropic_auth()
+        .expect("bearer token should resolve");
+
+    assert_eq!(
+        auth,
+        AnthropicAuth::BearerToken("anthropic-bearer".to_string())
+    );
+}
+
+#[test]
+fn resolve_anthropic_auth_errors_when_provider_has_no_static_auth() {
+    let client = ModelClient::new(
+        None,
+        ProcessId::new(),
+        test_anthropic_provider(),
+        SessionSource::Cli,
+        None,
+        false,
+        false,
+        false,
+        None,
+    );
+    let session = client.new_session();
+
+    let err = session
+        .resolve_anthropic_auth()
+        .expect_err("missing auth should fail locally");
+
+    assert!(matches!(err, crate::error::CodexErr::InvalidRequest(_)));
 }

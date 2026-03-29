@@ -1,9 +1,10 @@
 use crate::config::ConfigToml;
-use schemars::r#gen::SchemaSettings;
-use schemars::schema::RootSchema;
 use serde_json::Map;
 use serde_json::Value;
 use std::path::Path;
+
+use schemars::Schema;
+use schemars::generate::SchemaSettings;
 
 // Re-export schema helpers from codex-config so existing `schema_with` paths
 // continue to resolve through `crate::config::schema::*`.
@@ -11,11 +12,8 @@ pub(crate) use chaos_sysctl::schema::features_schema;
 pub(crate) use chaos_sysctl::schema::mcp_servers_schema;
 
 /// Build the config schema for `config.toml`.
-pub fn config_schema() -> RootSchema {
+pub fn config_schema() -> Schema {
     SchemaSettings::draft07()
-        .with(|settings| {
-            settings.option_add_null_type = false;
-        })
         .into_generator()
         .into_root_schema_for::<ConfigToml>()
 }

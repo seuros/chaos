@@ -1,48 +1,41 @@
 use crate::features::FEATURES;
 use crate::features::legacy_feature_keys;
 use crate::types::RawMcpServerConfig;
-use schemars::r#gen::SchemaGenerator;
-use schemars::schema::InstanceType;
-use schemars::schema::ObjectValidation;
-use schemars::schema::Schema;
-use schemars::schema::SchemaObject;
+use schemars::Schema;
+use schemars::SchemaGenerator;
+use serde_json::Map;
+use serde_json::Value;
 
 /// Schema for the `[features]` map with known + legacy keys only.
 pub fn features_schema(schema_gen: &mut SchemaGenerator) -> Schema {
-    let mut object = SchemaObject {
-        instance_type: Some(InstanceType::Object.into()),
-        ..Default::default()
-    };
-
-    let mut validation = ObjectValidation::default();
+    let mut properties = Map::new();
     for feature in FEATURES {
-        validation
-            .properties
-            .insert(feature.key.to_string(), schema_gen.subschema_for::<bool>());
+        properties.insert(
+            feature.key.to_string(),
+            schema_gen.subschema_for::<bool>().to_value(),
+        );
     }
     for legacy_key in legacy_feature_keys() {
-        validation
-            .properties
-            .insert(legacy_key.to_string(), schema_gen.subschema_for::<bool>());
+        properties.insert(
+            legacy_key.to_string(),
+            schema_gen.subschema_for::<bool>().to_value(),
+        );
     }
-    validation.additional_properties = Some(Box::new(Schema::Bool(false)));
-    object.object = Some(Box::new(validation));
 
-    Schema::Object(object)
+    let mut schema = Schema::default();
+    schema.insert("type".to_string(), Value::String("object".to_string()));
+    schema.insert("properties".to_string(), Value::Object(properties));
+    schema.insert("additionalProperties".to_string(), false.into());
+    schema
 }
 
 /// Schema for the `[mcp_servers]` map using the raw input shape.
 pub fn mcp_servers_schema(schema_gen: &mut SchemaGenerator) -> Schema {
-    let mut object = SchemaObject {
-        instance_type: Some(InstanceType::Object.into()),
-        ..Default::default()
-    };
-
-    let validation = ObjectValidation {
-        additional_properties: Some(Box::new(schema_gen.subschema_for::<RawMcpServerConfig>())),
-        ..Default::default()
-    };
-    object.object = Some(Box::new(validation));
-
-    Schema::Object(object)
+    let mut schema = Schema::default();
+    schema.insert("type".to_string(), Value::String("object".to_string()));
+    schema.insert(
+        "additionalProperties".to_string(),
+        schema_gen.subschema_for::<RawMcpServerConfig>().to_value(),
+    );
+    schema
 }

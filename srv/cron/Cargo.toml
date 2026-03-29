@@ -17,7 +17,7 @@ chrono = { workspace = true }
 croner = { workspace = true }
 jiff = { workspace = true }
 mcp-host = { workspace = true, features = ["macros"] }
-schemars = "1.0.0-alpha.20"
+schemars = "1.2.1"
 serde = { workspace = true, features = ["derive"] }
 serde_json = { workspace = true }
 sqlx = { workspace = true }

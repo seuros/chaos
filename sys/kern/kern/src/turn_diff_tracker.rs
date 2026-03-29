@@ -67,10 +67,10 @@ impl TurnDiffTracker {
                     let mode_val = mode.unwrap_or(FileMode::Regular);
                     let content = blob_bytes(path, mode_val).unwrap_or_default();
                     let oid = if mode == Some(FileMode::Symlink) {
-                        format!("{:x}", git_blob_sha1_hex_bytes(&content))
+                        digest_hex(&git_blob_sha1_hex_bytes(&content))
                     } else {
                         self.git_blob_oid_for_path(path)
-                            .unwrap_or_else(|| format!("{:x}", git_blob_sha1_hex_bytes(&content)))
+                            .unwrap_or_else(|| digest_hex(&git_blob_sha1_hex_bytes(&content)))
                     };
                     Some(BaselineFileInfo {
                         path: path.clone(),
@@ -267,10 +267,10 @@ impl TurnDiffTracker {
         // Compute right oid before borrowing baseline content.
         let right_oid = if let Some(b) = right_bytes.as_ref() {
             if current_mode == FileMode::Symlink {
-                format!("{:x}", git_blob_sha1_hex_bytes(b))
+                digest_hex(&git_blob_sha1_hex_bytes(b))
             } else {
                 self.git_blob_oid_for_path(&current_external_path)
-                    .unwrap_or_else(|| format!("{:x}", git_blob_sha1_hex_bytes(b)))
+                    .unwrap_or_else(|| digest_hex(&git_blob_sha1_hex_bytes(b)))
             }
         } else {
             ZERO_OID.to_string()
@@ -369,6 +369,10 @@ fn git_blob_sha1_hex_bytes(data: &[u8]) -> Output<sha1::Sha1> {
     hasher.update(header.as_bytes());
     hasher.update(data);
     hasher.finalize()
+}
+
+fn digest_hex(bytes: &[u8]) -> String {
+    bytes.iter().map(|byte| format!("{byte:02x}")).collect()
 }
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]

@@ -5,7 +5,7 @@ use tempfile::tempdir;
 /// Compute the Git SHA-1 blob object ID for the given content (string).
 /// This delegates to the bytes version to avoid UTF-8 lossy conversions here.
 fn git_blob_sha1_hex(data: &str) -> String {
-    format!("{:x}", git_blob_sha1_hex_bytes(data.as_bytes()))
+    digest_hex(&git_blob_sha1_hex_bytes(data.as_bytes()))
 }
 
 fn normalize_diff_for_test(input: &str, root: &Path) -> String {
@@ -344,8 +344,8 @@ fn binary_files_differ_update() {
     let diff = acc.get_unified_diff().unwrap().unwrap();
     let diff = normalize_diff_for_test(&diff, dir.path());
     let expected = {
-        let left_oid = format!("{:x}", git_blob_sha1_hex_bytes(&left_bytes));
-        let right_oid = format!("{:x}", git_blob_sha1_hex_bytes(&right_bytes));
+        let left_oid = digest_hex(&git_blob_sha1_hex_bytes(&left_bytes));
+        let right_oid = digest_hex(&git_blob_sha1_hex_bytes(&right_bytes));
         format!(
             r#"diff --git a/<TMP>/bin.dat b/<TMP>/bin.dat
 index {left_oid}..{right_oid}

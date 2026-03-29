@@ -97,19 +97,16 @@ async fn get_model_info_tracks_fallback_usage() {
         .await
         .expect("load default test config");
     let auth_manager = AuthManager::from_auth_for_testing(CodexAuth::from_api_key("Test API Key"));
+    let test_catalog = ModelsResponse {
+        models: vec![remote_model("test-model", "Test Model", 1)],
+    };
     let manager = ModelsManager::new(
         codex_home.path().to_path_buf(),
         auth_manager,
-        None,
+        Some(test_catalog),
         CollaborationModesConfig::default(),
     );
-    let known_slug = manager
-        .get_remote_models()
-        .await
-        .first()
-        .expect("bundled models should include at least one model")
-        .slug
-        .clone();
+    let known_slug = "test-model".to_string();
 
     let known = manager.get_model_info(known_slug.as_str(), &config).await;
     assert!(!known.used_fallback_model_metadata);
@@ -192,19 +189,16 @@ async fn get_model_info_rejects_multi_segment_namespace_suffix_matching() {
         .await
         .expect("load default test config");
     let auth_manager = AuthManager::from_auth_for_testing(CodexAuth::from_api_key("Test API Key"));
+    let test_catalog = ModelsResponse {
+        models: vec![remote_model("test-model", "Test Model", 1)],
+    };
     let manager = ModelsManager::new(
         codex_home.path().to_path_buf(),
         auth_manager,
-        None,
+        Some(test_catalog),
         CollaborationModesConfig::default(),
     );
-    let known_slug = manager
-        .get_remote_models()
-        .await
-        .first()
-        .expect("bundled models should include at least one model")
-        .slug
-        .clone();
+    let known_slug = "test-model".to_string();
     let namespaced_model = format!("ns1/ns2/{known_slug}");
 
     let model_info = manager.get_model_info(&namespaced_model, &config).await;
@@ -603,13 +597,15 @@ async fn refresh_available_models_drops_removed_remote_models() {
 }
 
 #[tokio::test]
-async fn refresh_available_models_skips_network_without_chatgpt_auth() {
+async fn refresh_available_models_fetches_regardless_of_auth_mode() {
+    // Chaos fetches models from any provider regardless of auth mode.
+    // No more ChatGPT auth gate — the adapter is the source of truth.
     let server = MockServer::start().await;
-    let dynamic_slug = "dynamic-model-only-for-test-noauth";
+    let dynamic_slug = "dynamic-model-for-all-auth";
     let models_mock = mount_models_once(
         &server,
         ModelsResponse {
-            models: vec![remote_model(dynamic_slug, "No Auth", 1)],
+            models: vec![remote_model(dynamic_slug, "Any Auth", 1)],
         },
     )
     .await;
@@ -630,18 +626,18 @@ async fn refresh_available_models_skips_network_without_chatgpt_auth() {
     manager
         .refresh_available_models(RefreshStrategy::Online)
         .await
-        .expect("refresh should no-op without chatgpt auth");
+        .expect("refresh should fetch from provider");
     let cached_remote = manager.get_remote_models().await;
     assert!(
-        !cached_remote
+        cached_remote
             .iter()
             .any(|candidate| candidate.slug == dynamic_slug),
-        "remote refresh should be skipped without chatgpt auth"
+        "models should be fetched regardless of auth mode"
     );
     assert_eq!(
         models_mock.requests().len(),
-        0,
-        "no auth should avoid /models requests"
+        1,
+        "provider should be queried for models"
     );
 }
 

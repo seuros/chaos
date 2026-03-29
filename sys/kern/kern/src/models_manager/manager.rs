@@ -199,12 +199,12 @@ impl ModelsManager {
         } else {
             CatalogMode::Default
         };
+        // Start with the provided catalog, or fall back to the bundled
+        // models.json for cold-boot compatibility. The adapter fetch
+        // supersedes this on first successful refresh.
         let remote_models = model_catalog
             .map(|catalog| catalog.models)
-            .unwrap_or_else(|| {
-                Self::load_remote_models_from_file()
-                    .unwrap_or_else(|err| panic!("failed to load bundled models.json: {err}"))
-            });
+            .unwrap_or_else(|| Self::load_bundled_models_fallback());
         Self {
             remote_models: RwLock::new(remote_models),
             catalog_mode,
@@ -385,43 +385,29 @@ impl ModelsManager {
     }
 
     /// Refresh available models according to the specified strategy.
+    ///
+    /// No bundled JSON fallback. If the DB is empty, we fetch from the
+    /// provider. The adapter is the source of truth, the DB is the cache.
     async fn refresh_available_models(&self, refresh_strategy: RefreshStrategy) -> CoreResult<()> {
         // don't override the custom model catalog if one was provided by the user
         if matches!(self.catalog_mode, CatalogMode::Custom) {
             return Ok(());
         }
 
-        let is_anthropic =
-            crate::model_provider_info::is_anthropic_wire(self.provider.base_url.as_deref());
-
-        // Non-ChatGPT, non-Anthropic providers use bundled/cached metadata only.
-        if !is_anthropic && self.auth_manager.auth_mode() != Some(AuthMode::Chatgpt) {
-            if matches!(
-                refresh_strategy,
-                RefreshStrategy::Offline | RefreshStrategy::OnlineIfUncached
-            ) {
-                self.try_load_cache().await;
-            }
-            return Ok(());
-        }
-
         match refresh_strategy {
             RefreshStrategy::Offline => {
-                // Only try to load from cache, never fetch
                 self.try_load_cache().await;
                 Ok(())
             }
             RefreshStrategy::OnlineIfUncached => {
-                // Try cache first, fall back to online if unavailable
                 if self.try_load_cache().await {
-                    info!("models cache: using cached models for OnlineIfUncached");
+                    info!("models cache: using cached models");
                     return Ok(());
                 }
-                info!("models cache: cache miss, fetching remote models");
+                info!("models cache: cache miss, fetching from provider");
                 self.fetch_and_update_models().await
             }
             RefreshStrategy::Online => {
-                // Always fetch from network
                 self.fetch_and_update_models().await
             }
         }
@@ -526,27 +512,11 @@ impl ModelsManager {
         self.etag.read().await.clone()
     }
 
-    /// Replace the cached remote models and rebuild the derived presets list.
+    /// Replace the cached remote models with freshly fetched ones.
     async fn apply_remote_models(&self, models: Vec<ModelInfo>) {
-        let mut existing_models = Self::load_remote_models_from_file().unwrap_or_default();
-        for model in models {
-            if let Some(existing_index) = existing_models
-                .iter()
-                .position(|existing| existing.slug == model.slug)
-            {
-                existing_models[existing_index] = model;
-            } else {
-                existing_models.push(model);
-            }
-        }
-        *self.remote_models.write().await = existing_models;
+        *self.remote_models.write().await = models;
     }
 
-    fn load_remote_models_from_file() -> Result<Vec<ModelInfo>, std::io::Error> {
-        let file_contents = include_str!("../../models.json");
-        let response: ModelsResponse = serde_json::from_str(file_contents)?;
-        Ok(response.models)
-    }
 
     /// Attempt to satisfy the refresh from the cache when it matches the provider and TTL.
     async fn try_load_cache(&self) -> bool {
@@ -574,6 +544,20 @@ impl ModelsManager {
             "models cache: cache entry applied"
         );
         true
+    }
+
+    /// Cold-boot fallback: load from the bundled models.json.
+    ///
+    /// This exists only so the kernel has something to show before
+    /// the first async adapter fetch completes. Once the DB is
+    /// populated, this is never consulted again.
+    fn load_bundled_models_fallback() -> Vec<ModelInfo> {
+        let file_contents = include_str!("../../models.json");
+        let response: ModelsResponse = match serde_json::from_str(file_contents) {
+            Ok(r) => r,
+            Err(_) => return Vec::new(),
+        };
+        response.models
     }
 
     fn cache_scope(&self) -> ModelsCacheScope {
@@ -624,18 +608,9 @@ impl ModelsManager {
 
     /// Get model identifier without consulting remote state or cache.
     pub(crate) fn get_model_offline_for_tests(model: Option<&str>) -> String {
-        if let Some(model) = model {
-            return model.to_string();
-        }
-        let mut models = Self::load_remote_models_from_file().unwrap_or_default();
-        models.sort_by(|a, b| a.priority.cmp(&b.priority));
-        let presets: Vec<ModelPreset> = models.into_iter().map(Into::into).collect();
-        presets
-            .iter()
-            .find(|preset| preset.show_in_picker)
-            .or_else(|| presets.first())
-            .map(|preset| preset.model.clone())
-            .unwrap_or_default()
+        model
+            .map(String::from)
+            .unwrap_or_else(|| "gpt-5.2-codex".to_string())
     }
 
     /// Build `ModelInfo` without consulting remote state or cache.

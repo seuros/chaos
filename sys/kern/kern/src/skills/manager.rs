@@ -1,48 +1,218 @@
+use std::collections::HashMap;
+use std::collections::HashSet;
 use std::path::Path;
 use std::path::PathBuf;
+use std::sync::Arc;
+use std::sync::RwLock;
 
+use chaos_ipc::api::ConfigLayerSource;
+use chaos_ipc::protocol::SkillScope;
+use chaos_realpath::AbsolutePathBuf;
+use toml::Value as TomlValue;
 use tracing::info;
+use tracing::warn;
 
 use crate::config::Config;
 use crate::config::types::SkillsConfig;
+use crate::config_loader::CloudRequirementsLoader;
+use crate::config_loader::ConfigLayerStackOrdering;
+use crate::config_loader::LoaderOverrides;
+use crate::config_loader::load_config_layers_state;
+use crate::plugins::PluginsManager;
 use crate::skills::SkillLoadOutcome;
 use crate::skills::loader::SkillRoot;
+use crate::skills::loader::load_skills_from_roots;
+use crate::skills::loader::skill_roots;
+use crate::skills::system::install_system_skills;
+use crate::skills::system::uninstall_system_skills;
 
-pub struct SkillsManager;
+pub struct SkillsManager {
+    codex_home: PathBuf,
+    plugins_manager: Arc<PluginsManager>,
+    cache_by_cwd: RwLock<HashMap<PathBuf, SkillLoadOutcome>>,
+    cache_by_config: RwLock<HashMap<ConfigSkillsCacheKey, SkillLoadOutcome>>,
+}
 
 impl SkillsManager {
     pub fn new(
-        _codex_home: PathBuf,
-        _plugins_manager: std::sync::Arc<crate::plugins::PluginsManager>,
-        _bundled_skills_enabled: bool,
+        codex_home: PathBuf,
+        plugins_manager: Arc<PluginsManager>,
+        bundled_skills_enabled: bool,
     ) -> Self {
-        Self
+        let manager = Self {
+            codex_home,
+            plugins_manager,
+            cache_by_cwd: RwLock::new(HashMap::new()),
+            cache_by_config: RwLock::new(HashMap::new()),
+        };
+        if !bundled_skills_enabled {
+            uninstall_system_skills(&manager.codex_home);
+        } else if let Err(err) = install_system_skills(&manager.codex_home) {
+            tracing::error!("failed to install system skills: {err}");
+        }
+        manager
     }
 
-    pub fn skills_for_config(&self, _config: &Config) -> SkillLoadOutcome {
-        SkillLoadOutcome::default()
+    pub fn skills_for_config(&self, config: &Config) -> SkillLoadOutcome {
+        let roots = self.skill_roots_for_config(config);
+        let cache_key = config_skills_cache_key(&roots, &config.config_layer_stack);
+        if let Some(outcome) = self.cached_outcome_for_config(&cache_key) {
+            return outcome;
+        }
+
+        let outcome =
+            finalize_skill_outcome(load_skills_from_roots(roots), &config.config_layer_stack);
+        let mut cache = self
+            .cache_by_config
+            .write()
+            .unwrap_or_else(std::sync::PoisonError::into_inner);
+        cache.insert(cache_key, outcome.clone());
+        outcome
     }
 
-    pub(crate) fn skill_roots_for_config(&self, _config: &Config) -> Vec<SkillRoot> {
-        Vec::new()
+    pub(crate) fn skill_roots_for_config(&self, config: &Config) -> Vec<SkillRoot> {
+        let loaded_plugins = self.plugins_manager.plugins_for_config(config);
+        let mut roots = skill_roots(
+            &config.config_layer_stack,
+            &config.cwd,
+            loaded_plugins.effective_skill_roots(),
+        );
+        if !config.bundled_skills_enabled() {
+            roots.retain(|root| root.scope != SkillScope::System);
+        }
+        roots
     }
 
-    pub async fn skills_for_cwd(&self, _cwd: &Path, _force_reload: bool) -> SkillLoadOutcome {
-        SkillLoadOutcome::default()
+    pub async fn skills_for_cwd(&self, cwd: &Path, force_reload: bool) -> SkillLoadOutcome {
+        if !force_reload && let Some(outcome) = self.cached_outcome_for_cwd(cwd) {
+            return outcome;
+        }
+
+        self.skills_for_cwd_with_extra_user_roots(cwd, force_reload, &[])
+            .await
     }
 
     pub async fn skills_for_cwd_with_extra_user_roots(
         &self,
-        _cwd: &Path,
-        _force_reload: bool,
-        _extra_user_roots: &[PathBuf],
+        cwd: &Path,
+        force_reload: bool,
+        extra_user_roots: &[PathBuf],
     ) -> SkillLoadOutcome {
-        SkillLoadOutcome::default()
+        if !force_reload && let Some(outcome) = self.cached_outcome_for_cwd(cwd) {
+            return outcome;
+        }
+        let normalized_extra_user_roots = normalize_extra_user_roots(extra_user_roots);
+
+        let cwd_abs = match AbsolutePathBuf::try_from(cwd) {
+            Ok(cwd_abs) => cwd_abs,
+            Err(err) => {
+                return SkillLoadOutcome {
+                    errors: vec![crate::skills::model::SkillError {
+                        path: cwd.to_path_buf(),
+                        message: err.to_string(),
+                    }],
+                    ..Default::default()
+                };
+            }
+        };
+
+        let cli_overrides: Vec<(String, TomlValue)> = Vec::new();
+        let config_layer_stack = match load_config_layers_state(
+            &self.codex_home,
+            Some(cwd_abs),
+            &cli_overrides,
+            LoaderOverrides::default(),
+            CloudRequirementsLoader::default(),
+        )
+        .await
+        {
+            Ok(config_layer_stack) => config_layer_stack,
+            Err(err) => {
+                return SkillLoadOutcome {
+                    errors: vec![crate::skills::model::SkillError {
+                        path: cwd.to_path_buf(),
+                        message: err.to_string(),
+                    }],
+                    ..Default::default()
+                };
+            }
+        };
+
+        let loaded_plugins =
+            self.plugins_manager
+                .plugins_for_layer_stack(cwd, &config_layer_stack, force_reload);
+        let mut roots = skill_roots(
+            &config_layer_stack,
+            cwd,
+            loaded_plugins.effective_skill_roots(),
+        );
+        if !bundled_skills_enabled_from_stack(&config_layer_stack) {
+            roots.retain(|root| root.scope != SkillScope::System);
+        }
+        roots.extend(
+            normalized_extra_user_roots
+                .iter()
+                .cloned()
+                .map(|path| SkillRoot {
+                    path,
+                    scope: SkillScope::User,
+                }),
+        );
+        let outcome = load_skills_from_roots(roots);
+        let outcome = finalize_skill_outcome(outcome, &config_layer_stack);
+        let mut cache = self
+            .cache_by_cwd
+            .write()
+            .unwrap_or_else(std::sync::PoisonError::into_inner);
+        cache.insert(cwd.to_path_buf(), outcome.clone());
+        outcome
     }
 
     pub fn clear_cache(&self) {
-        info!("skills cache cleared (0 entries)");
+        let cleared_cwd = {
+            let mut cache = self
+                .cache_by_cwd
+                .write()
+                .unwrap_or_else(std::sync::PoisonError::into_inner);
+            let cleared = cache.len();
+            cache.clear();
+            cleared
+        };
+        let cleared_config = {
+            let mut cache = self
+                .cache_by_config
+                .write()
+                .unwrap_or_else(std::sync::PoisonError::into_inner);
+            let cleared = cache.len();
+            cache.clear();
+            cleared
+        };
+        let cleared = cleared_cwd + cleared_config;
+        info!("skills cache cleared ({cleared} entries)");
     }
+
+    fn cached_outcome_for_cwd(&self, cwd: &Path) -> Option<SkillLoadOutcome> {
+        match self.cache_by_cwd.read() {
+            Ok(cache) => cache.get(cwd).cloned(),
+            Err(err) => err.into_inner().get(cwd).cloned(),
+        }
+    }
+
+    fn cached_outcome_for_config(
+        &self,
+        cache_key: &ConfigSkillsCacheKey,
+    ) -> Option<SkillLoadOutcome> {
+        match self.cache_by_config.read() {
+            Ok(cache) => cache.get(cache_key).cloned(),
+            Err(err) => err.into_inner().get(cache_key).cloned(),
+        }
+    }
+}
+
+#[derive(Debug, Clone, PartialEq, Eq, Hash)]
+struct ConfigSkillsCacheKey {
+    roots: Vec<(PathBuf, u8)>,
+    disabled_paths: Vec<PathBuf>,
 }
 
 pub(crate) fn bundled_skills_enabled_from_stack(
@@ -59,10 +229,96 @@ pub(crate) fn bundled_skills_enabled_from_stack(
     let skills: SkillsConfig = match skills_value.clone().try_into() {
         Ok(skills) => skills,
         Err(err) => {
-            tracing::warn!("invalid skills config: {err}");
+            warn!("invalid skills config: {err}");
             return true;
         }
     };
 
     skills.bundled.unwrap_or_default().enabled
+}
+
+fn disabled_paths_from_stack(
+    config_layer_stack: &crate::config_loader::ConfigLayerStack,
+) -> HashSet<PathBuf> {
+    let mut configs = HashMap::new();
+    for layer in config_layer_stack.get_layers(
+        ConfigLayerStackOrdering::LowestPrecedenceFirst,
+        /*include_disabled*/ true,
+    ) {
+        if !matches!(
+            layer.name,
+            ConfigLayerSource::User { .. } | ConfigLayerSource::SessionFlags
+        ) {
+            continue;
+        }
+
+        let Some(skills_value) = layer.config.get("skills") else {
+            continue;
+        };
+        let skills: SkillsConfig = match skills_value.clone().try_into() {
+            Ok(skills) => skills,
+            Err(err) => {
+                warn!("invalid skills config: {err}");
+                continue;
+            }
+        };
+
+        for entry in skills.config {
+            let path = normalize_override_path(entry.path.as_path());
+            configs.insert(path, entry.enabled);
+        }
+    }
+
+    configs
+        .into_iter()
+        .filter_map(|(path, enabled)| (!enabled).then_some(path))
+        .collect()
+}
+
+fn config_skills_cache_key(
+    roots: &[SkillRoot],
+    config_layer_stack: &crate::config_loader::ConfigLayerStack,
+) -> ConfigSkillsCacheKey {
+    let mut disabled_paths: Vec<PathBuf> = disabled_paths_from_stack(config_layer_stack)
+        .into_iter()
+        .collect();
+    disabled_paths.sort_unstable();
+
+    ConfigSkillsCacheKey {
+        roots: roots
+            .iter()
+            .map(|root| {
+                let scope_rank = match root.scope {
+                    SkillScope::Repo => 0,
+                    SkillScope::User => 1,
+                    SkillScope::System => 2,
+                    SkillScope::Admin => 3,
+                };
+                (root.path.clone(), scope_rank)
+            })
+            .collect(),
+        disabled_paths,
+    }
+}
+
+fn finalize_skill_outcome(
+    mut outcome: SkillLoadOutcome,
+    config_layer_stack: &crate::config_loader::ConfigLayerStack,
+) -> SkillLoadOutcome {
+    outcome.disabled_paths = disabled_paths_from_stack(config_layer_stack);
+    outcome
+}
+
+fn normalize_override_path(path: &Path) -> PathBuf {
+    std::fs::canonicalize(path).unwrap_or_else(|_| path.to_path_buf())
+}
+
+fn normalize_extra_user_roots(extra_user_roots: &[PathBuf]) -> Vec<PathBuf> {
+    let mut normalized: Vec<PathBuf> = extra_user_roots
+        .iter()
+        .map(|path| std::fs::canonicalize(path).unwrap_or_else(|_| path.clone()))
+        .collect();
+    normalized.sort_unstable();
+    normalized.dedup();
+    normalized
 }

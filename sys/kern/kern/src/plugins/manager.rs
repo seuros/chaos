@@ -34,6 +34,7 @@ use crate::skills::loader::SkillRoot;
 use crate::skills::loader::load_skills_from_roots;
 use chaos_ipc::api::ConfigValueWriteParams;
 use chaos_ipc::api::MergeStrategy;
+use chaos_ipc::protocol::SkillScope;
 use chaos_realpath::AbsolutePathBuf;
 use serde::Deserialize;
 use serde_json::Map as JsonMap;
@@ -525,8 +526,11 @@ impl PluginsManager {
         let description = manifest.description.clone();
         let manifest_paths = plugin_manifest_paths(&manifest, source_path.as_path());
         let skill_roots = plugin_skill_roots(source_path.as_path(), &manifest_paths);
-        let skills =
-            load_skills_from_roots(skill_roots.into_iter().map(|path| SkillRoot { path })).skills;
+        let skills = load_skills_from_roots(skill_roots.into_iter().map(|path| SkillRoot {
+            path,
+            scope: SkillScope::User,
+        }))
+        .skills;
         let apps = load_plugin_apps(source_path.as_path());
         let mcp_config_paths = plugin_mcp_config_paths(source_path.as_path(), &manifest_paths);
         let mut mcp_server_names = Vec::new();

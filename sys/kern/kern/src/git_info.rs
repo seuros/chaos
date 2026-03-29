@@ -19,23 +19,21 @@ use tokio::time::timeout;
 ///
 /// The check walks up the directory hierarchy looking for a `.git` file or
 /// directory (note `.git` can be a file that contains a `gitdir` entry). This
-/// approach does **not** require the `git` binary or the `git2` crate and is
+/// approach does **not** require the `git` binary or the `git2` crate and is
 /// therefore fairly lightweight.
 ///
-/// Note that this does **not** detect *work‑trees* created with
-/// `git worktree add` where the checkout lives outside the main repository
+/// Note that this does **not** detect *work-trees* created with
+/// `git worktree add` where the checkout lives outside the main repository
 /// directory. If you need Codex to work from such a checkout simply pass the
 /// `--allow-no-git-exec` CLI flag that disables the repo requirement.
 pub fn get_git_repo_root(base_dir: &Path) -> Option<PathBuf> {
-    let base = if base_dir.is_dir() {
-        base_dir
-    } else {
-        base_dir.parent()?
-    };
-    find_ancestor_git_entry(base).map(|(repo_root, _)| repo_root)
+    chaos_git::repo_info(base_dir)
+        .ok()
+        .map(|info| info.root)
 }
 
-/// Timeout for git commands to prevent freezing on large repositories
+/// Timeout for git commands to prevent freezing on large repositories.
+/// Retained for `git_diff_to_remote` which still shells out.
 const GIT_COMMAND_TIMEOUT: TokioDuration = TokioDuration::from_secs(5);
 
 #[derive(Serialize, Deserialize, Clone, Debug)]
@@ -44,27 +42,11 @@ pub struct GitDiffToRemote {
     pub diff: String,
 }
 
-/// Collect git repository information from the given working directory using command-line git.
-/// Returns None if no git repository is found or if git operations fail.
-/// Uses timeouts to prevent freezing on large repositories.
-/// All git commands (except the initial repo check) run in parallel for better performance.
+/// Collect git repository information from the given working directory using
+/// `chaos-git` (pure-Rust, no subprocess). Returns None if no git repository
+/// is found.
 pub async fn collect_git_info(cwd: &Path) -> Option<GitInfo> {
-    // Check if we're in a git repository first
-    let is_git_repo = run_git_command_with_timeout(&["rev-parse", "--git-dir"], cwd)
-        .await?
-        .status
-        .success();
-
-    if !is_git_repo {
-        return None;
-    }
-
-    // Run all git info collection commands in parallel
-    let (commit_result, branch_result, url_result) = tokio::join!(
-        run_git_command_with_timeout(&["rev-parse", "HEAD"], cwd),
-        run_git_command_with_timeout(&["rev-parse", "--abbrev-ref", "HEAD"], cwd),
-        run_git_command_with_timeout(&["remote", "get-url", "origin"], cwd)
-    );
+    let info = chaos_git::repo_info(cwd).ok()?;
 
     let mut git_info = GitInfo {
         commit_hash: None,
@@ -72,110 +54,35 @@ pub async fn collect_git_info(cwd: &Path) -> Option<GitInfo> {
         repository_url: None,
     };
 
-    // Process commit hash
-    if let Some(output) = commit_result
-        && output.status.success()
-        && let Ok(hash) = String::from_utf8(output.stdout)
-    {
-        git_info.commit_hash = Some(hash.trim().to_string());
-    }
-
-    // Process branch name
-    if let Some(output) = branch_result
-        && output.status.success()
-        && let Ok(branch) = String::from_utf8(output.stdout)
-    {
-        let branch = branch.trim();
-        if branch != "HEAD" {
-            git_info.branch = Some(branch.to_string());
-        }
-    }
-
-    // Process repository URL
-    if let Some(output) = url_result
-        && output.status.success()
-        && let Ok(url) = String::from_utf8(output.stdout)
-    {
-        git_info.repository_url = Some(url.trim().to_string());
-    }
+    git_info.commit_hash = info.head_sha;
+    git_info.branch = info.branch;
+    git_info.repository_url = info.remote_url;
 
     Some(git_info)
 }
 
 /// Collect fetch remotes in a multi-root-friendly format: {"origin": "https://..."}.
 pub async fn get_git_remote_urls(cwd: &Path) -> Option<BTreeMap<String, String>> {
-    let is_git_repo = run_git_command_with_timeout(&["rev-parse", "--git-dir"], cwd)
-        .await?
-        .status
-        .success();
-    if !is_git_repo {
-        return None;
+    let remote_info = chaos_git::remotes(cwd).ok()?;
+    if remote_info.remotes.is_empty() {
+        None
+    } else {
+        Some(remote_info.remotes)
     }
-
-    get_git_remote_urls_assume_git_repo(cwd).await
 }
 
 /// Collect fetch remotes without checking whether `cwd` is in a git repo.
 pub async fn get_git_remote_urls_assume_git_repo(cwd: &Path) -> Option<BTreeMap<String, String>> {
-    let output = run_git_command_with_timeout(&["remote", "-v"], cwd).await?;
-    if !output.status.success() {
-        return None;
-    }
-
-    let stdout = String::from_utf8(output.stdout).ok()?;
-    parse_git_remote_urls(stdout.as_str())
+    get_git_remote_urls(cwd).await
 }
 
-/// Return the current HEAD commit hash without checking whether `cwd` is in a git repo.
+/// Return the current HEAD commit hash.
 pub async fn get_head_commit_hash(cwd: &Path) -> Option<String> {
-    let output = run_git_command_with_timeout(&["rev-parse", "HEAD"], cwd).await?;
-    if !output.status.success() {
-        return None;
-    }
-
-    let stdout = String::from_utf8(output.stdout).ok()?;
-    let hash = stdout.trim();
-    if hash.is_empty() {
-        None
-    } else {
-        Some(hash.to_string())
-    }
+    chaos_git::repo_info(cwd).ok()?.head_sha
 }
 
 pub async fn get_has_changes(cwd: &Path) -> Option<bool> {
-    let output = run_git_command_with_timeout(&["status", "--porcelain"], cwd).await?;
-    if !output.status.success() {
-        return None;
-    }
-
-    Some(!output.stdout.is_empty())
-}
-
-fn parse_git_remote_urls(stdout: &str) -> Option<BTreeMap<String, String>> {
-    let mut remotes = BTreeMap::new();
-    for line in stdout.lines() {
-        let Some(fetch_line) = line.strip_suffix(" (fetch)") else {
-            continue;
-        };
-
-        let Some((name, url_part)) = fetch_line
-            .split_once('\t')
-            .or_else(|| fetch_line.split_once(' '))
-        else {
-            continue;
-        };
-
-        let url = url_part.trim_start();
-        if !url.is_empty() {
-            remotes.insert(name.to_string(), url.to_string());
-        }
-    }
-
-    if remotes.is_empty() {
-        None
-    } else {
-        Some(remotes)
-    }
+    chaos_git::repo_info(cwd).ok().map(|info| info.has_changes)
 }
 
 /// A minimal commit summary entry used for pickers (subject + timestamp + sha).
@@ -192,52 +99,26 @@ pub struct CommitLogEntry {
 /// Each entry contains the SHA, commit timestamp (seconds), and subject line.
 /// Returns an empty vector if not in a git repo or on error/timeout.
 pub async fn recent_commits(cwd: &Path, limit: usize) -> Vec<CommitLogEntry> {
-    // Ensure we're in a git repo first to avoid noisy errors.
-    let Some(out) = run_git_command_with_timeout(&["rev-parse", "--git-dir"], cwd).await else {
-        return Vec::new();
+    let entries = match chaos_git::log(cwd, Some(limit), None) {
+        Ok(v) => v,
+        Err(_) => return Vec::new(),
     };
-    if !out.status.success() {
-        return Vec::new();
-    }
-
-    let fmt = "%H%x1f%ct%x1f%s"; // <sha> <US> <commit_time> <US> <subject>
-    let limit_arg = (limit > 0).then(|| limit.to_string());
-    let mut args: Vec<String> = vec!["log".to_string()];
-    if let Some(n) = &limit_arg {
-        args.push("-n".to_string());
-        args.push(n.clone());
-    }
-    args.push(format!("--pretty=format:{fmt}"));
-    let arg_refs: Vec<&str> = args.iter().map(String::as_str).collect();
-    let Some(log_out) = run_git_command_with_timeout(&arg_refs, cwd).await else {
-        return Vec::new();
-    };
-    if !log_out.status.success() {
-        return Vec::new();
-    }
-
-    let text = String::from_utf8_lossy(&log_out.stdout);
-    let mut entries: Vec<CommitLogEntry> = Vec::new();
-    for line in text.lines() {
-        let mut parts = line.split('\u{001f}');
-        let sha = parts.next().unwrap_or("").trim();
-        let ts_s = parts.next().unwrap_or("").trim();
-        let subject = parts.next().unwrap_or("").trim();
-        if sha.is_empty() || ts_s.is_empty() {
-            continue;
-        }
-        let timestamp = ts_s.parse::<i64>().unwrap_or(0);
-        entries.push(CommitLogEntry {
-            sha: sha.to_string(),
-            timestamp,
-            subject: subject.to_string(),
-        });
-    }
 
     entries
+        .into_iter()
+        .map(|e| CommitLogEntry {
+            sha: e.sha,
+            timestamp: e.timestamp,
+            subject: e.subject,
+        })
+        .collect()
 }
 
 /// Returns the closest git sha to HEAD that is on a remote as well as the diff to that sha.
+///
+/// This function still shells out to `git(1)` because it relies on complex
+/// branch ancestry and rev-list distance logic that `chaos-git` does not
+/// replicate yet.
 pub async fn git_diff_to_remote(cwd: &Path) -> Option<GitDiffToRemote> {
     get_git_repo_root(cwd)?;
 
@@ -252,7 +133,8 @@ pub async fn git_diff_to_remote(cwd: &Path) -> Option<GitDiffToRemote> {
     })
 }
 
-/// Run a git command with a timeout to prevent blocking on large repositories
+/// Run a git command with a timeout to prevent blocking on large repositories.
+/// Retained for `git_diff_to_remote` and its helpers.
 async fn run_git_command_with_timeout(args: &[&str], cwd: &Path) -> Option<std::process::Output> {
     let mut command = Command::new("git");
     command
@@ -285,91 +167,15 @@ async fn get_git_remotes(cwd: &Path) -> Option<Vec<String>> {
     Some(remotes)
 }
 
-/// Attempt to determine the repository's default branch name.
-///
-/// Preference order:
-/// 1) The symbolic ref at `refs/remotes/<remote>/HEAD` for the first remote (origin prioritized)
-/// 2) `git remote show <remote>` parsed for "HEAD branch: <name>"
-/// 3) Local fallback to existing `main` or `master` if present
-async fn get_default_branch(cwd: &Path) -> Option<String> {
-    // Prefer the first remote (with origin prioritized)
-    let remotes = get_git_remotes(cwd).await.unwrap_or_default();
-    for remote in remotes {
-        // Try symbolic-ref, which returns something like: refs/remotes/origin/main
-        if let Some(symref_output) = run_git_command_with_timeout(
-            &[
-                "symbolic-ref",
-                "--quiet",
-                &format!("refs/remotes/{remote}/HEAD"),
-            ],
-            cwd,
-        )
-        .await
-            && symref_output.status.success()
-            && let Ok(sym) = String::from_utf8(symref_output.stdout)
-        {
-            let trimmed = sym.trim();
-            if let Some((_, name)) = trimmed.rsplit_once('/') {
-                return Some(name.to_string());
-            }
-        }
-
-        // Fall back to parsing `git remote show <remote>` output
-        if let Some(show_output) =
-            run_git_command_with_timeout(&["remote", "show", &remote], cwd).await
-            && show_output.status.success()
-            && let Ok(text) = String::from_utf8(show_output.stdout)
-        {
-            for line in text.lines() {
-                let line = line.trim();
-                if let Some(rest) = line.strip_prefix("HEAD branch:") {
-                    let name = rest.trim();
-                    if !name.is_empty() {
-                        return Some(name.to_string());
-                    }
-                }
-            }
-        }
-    }
-
-    // No remote-derived default; try common local defaults if they exist
-    get_default_branch_local(cwd).await
-}
-
 /// Determine the repository's default branch name, if available.
 ///
-/// This inspects remote configuration first (including the symbolic `HEAD`
-/// reference) and falls back to common local defaults such as `main` or
-/// `master`. Returns `None` when the information cannot be determined, for
-/// example when the current directory is not inside a Git repository.
+/// Uses `chaos-git` to inspect remote configuration and common local defaults.
 pub async fn default_branch_name(cwd: &Path) -> Option<String> {
-    get_default_branch(cwd).await
-}
-
-/// Attempt to determine the repository's default branch name from local branches.
-async fn get_default_branch_local(cwd: &Path) -> Option<String> {
-    for candidate in ["main", "master"] {
-        if let Some(verify) = run_git_command_with_timeout(
-            &[
-                "rev-parse",
-                "--verify",
-                "--quiet",
-                &format!("refs/heads/{candidate}"),
-            ],
-            cwd,
-        )
-        .await
-            && verify.status.success()
-        {
-            return Some(candidate.to_string());
-        }
-    }
-
-    None
+    chaos_git::repo_info(cwd).ok()?.default_branch
 }
 
 /// Build an ancestry of branches starting at the current branch and ending at the
-/// repository's default branch (if determinable)..
+/// repository's default branch (if determinable).
 async fn branch_ancestry(cwd: &Path) -> Option<Vec<String>> {
     // Discover current branch (ignore detached HEAD by treating it as None)
     let current_branch = run_git_command_with_timeout(&["rev-parse", "--abbrev-ref", "HEAD"], cwd)
@@ -385,7 +191,7 @@ async fn branch_ancestry(cwd: &Path) -> Option<Vec<String>> {
         .filter(|s| s != "HEAD");
 
     // Discover default branch
-    let default_branch = get_default_branch(cwd).await;
+    let default_branch = default_branch_name(cwd).await;
 
     let mut ancestry: Vec<String> = Vec::new();
     let mut seen: HashSet<String> = HashSet::new();
@@ -653,41 +459,18 @@ fn canonicalize_or_raw(path: PathBuf) -> PathBuf {
 /// Returns a list of local git branches.
 /// Includes the default branch at the beginning of the list, if it exists.
 pub async fn local_git_branches(cwd: &Path) -> Vec<String> {
-    let mut branches: Vec<String> = if let Some(out) =
-        run_git_command_with_timeout(&["branch", "--format=%(refname:short)"], cwd).await
-        && out.status.success()
-    {
-        String::from_utf8_lossy(&out.stdout)
-            .lines()
-            .map(|s| s.trim().to_string())
-            .filter(|s| !s.is_empty())
-            .collect()
-    } else {
-        Vec::new()
+    let info = match chaos_git::branches(cwd) {
+        Ok(v) => v,
+        Err(_) => return Vec::new(),
     };
 
-    branches.sort_unstable();
-
-    if let Some(base) = get_default_branch_local(cwd).await
-        && let Some(pos) = branches.iter().position(|name| name == &base)
-    {
-        let base_branch = branches.remove(pos);
-        branches.insert(0, base_branch);
-    }
-
-    branches
+    // The chaos-git crate already sorts and puts the default branch first.
+    info.local
 }
 
 /// Returns the current checked out branch name.
 pub async fn current_branch_name(cwd: &Path) -> Option<String> {
-    let out = run_git_command_with_timeout(&["branch", "--show-current"], cwd).await?;
-    if !out.status.success() {
-        return None;
-    }
-    String::from_utf8(out.stdout)
-        .ok()
-        .map(|s| s.trim().to_string())
-        .filter(|name| !name.is_empty())
+    chaos_git::branches(cwd).ok()?.current
 }
 
 #[cfg(test)]

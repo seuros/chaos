@@ -1,0 +1,23 @@
+[package]
+name = "chaos-git"
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+publish.workspace = true
+
+[lints]
+workspace = true
+
+[dependencies]
+gix = { version = "0.72", features = [
+    "max-performance-safe",
+    "blob-diff",
+    "status",
+    "revision",
+] }
+serde = { workspace = true, features = ["derive"] }
+serde_json = { workspace = true }
+thiserror = { workspace = true }
+
+[dev-dependencies]
+tempfile = { workspace = true }

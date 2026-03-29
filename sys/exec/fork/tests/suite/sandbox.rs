@@ -171,15 +171,15 @@ async fn python_multiprocessing_lock_works_under_sandbox() {
     };
 
     let python_code = r#"import multiprocessing
-from multiprocessing import Lock, Process
 
 def f(lock):
     with lock:
         print("Lock acquired in child process")
 
 if __name__ == '__main__':
-    lock = Lock()
-    p = Process(target=f, args=(lock,))
+    ctx = multiprocessing.get_context("fork")
+    lock = ctx.Lock()
+    p = ctx.Process(target=f, args=(lock,))
     p.start()
     p.join()
 "#;

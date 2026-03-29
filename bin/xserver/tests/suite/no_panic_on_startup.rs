@@ -52,7 +52,7 @@ async fn run_codex_cli(
     codex_home: impl AsRef<Path>,
     cwd: impl AsRef<Path>,
 ) -> anyhow::Result<CodexCliOutput> {
-    let codex_cli = chaos_which::cargo_bin("codex")?;
+    let codex_cli = chaos_which::cargo_bin("chaos")?;
     let mut env = HashMap::new();
     env.insert(
         "CODEX_HOME".to_string(),

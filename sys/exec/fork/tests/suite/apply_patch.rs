@@ -13,9 +13,9 @@ use std::fs;
 use std::process::Command;
 use tempfile::tempdir;
 
-/// While we may add an `apply-patch` subcommand to the `codex` CLI multitool
-/// at some point, we must ensure that the smaller `codex-exec` CLI can still
-/// emulate the `apply_patch` CLI.
+/// While we may add an `apply-patch` subcommand to the `chaos` CLI multitool
+/// at some point, we must ensure that the main binary can still emulate the
+/// `apply_patch` CLI through the secret exec entrypoint.
 #[test]
 fn test_standalone_exec_cli_can_use_apply_patch() -> anyhow::Result<()> {
     let tmp = tempdir()?;
@@ -23,7 +23,7 @@ fn test_standalone_exec_cli_can_use_apply_patch() -> anyhow::Result<()> {
     let absolute_path = tmp.path().join(relative_path);
     fs::write(&absolute_path, "original content\n")?;
 
-    Command::new(chaos_which::cargo_bin("codex-exec")?)
+    Command::new(chaos_which::cargo_bin("chaos")?)
         .arg(CODEX_CORE_APPLY_PATCH_ARG1)
         .arg(
             r#"*** Begin Patch

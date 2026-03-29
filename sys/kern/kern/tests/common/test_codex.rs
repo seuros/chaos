@@ -240,7 +240,7 @@ impl TestCodexBuilder {
         for hook in self.pre_build_hooks.drain(..) {
             hook(home.path());
         }
-        if let Ok(path) = chaos_which::cargo_bin("codex") {
+        if let Ok(path) = chaos_which::cargo_bin("chaos") {
             config.alcatraz_linux_exe = Some(path);
         } else if let Ok(exe) = std::env::current_exe()
             && let Some(path) = exe

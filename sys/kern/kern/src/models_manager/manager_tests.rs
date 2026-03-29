@@ -531,6 +531,42 @@ async fn refresh_available_models_uses_cache_for_anthropic_provider() {
 }
 
 #[tokio::test]
+async fn unsupported_anthropic_provider_caches_empty_catalog_instead_of_bundled_models() {
+    let server = MockServer::start().await;
+    Mock::given(method("GET"))
+        .and(path("/anthropic/models"))
+        .respond_with(ResponseTemplate::new(404))
+        .expect(1)
+        .mount(&server)
+        .await;
+
+    let codex_home = tempdir().expect("temp dir");
+    let auth_manager = AuthManager::from_auth_for_testing(CodexAuth::from_api_key("Test API Key"));
+    let manager = ModelsManager::with_provider_for_tests(
+        codex_home.path().to_path_buf(),
+        auth_manager,
+        anthropic_provider_for(format!("{}/anthropic", server.uri())),
+    );
+
+    manager
+        .refresh_available_models(RefreshStrategy::OnlineIfUncached)
+        .await
+        .expect("unsupported anthropic refresh should not fail");
+
+    assert!(
+        manager.get_remote_models().await.is_empty(),
+        "unsupported provider should not inherit bundled OpenAI models"
+    );
+    assert!(
+        manager
+            .list_models(RefreshStrategy::OnlineIfUncached)
+            .await
+            .is_empty(),
+        "cached unsupported provider should stay empty until real discovery exists"
+    );
+}
+
+#[tokio::test]
 async fn refresh_available_models_drops_removed_remote_models() {
     let server = MockServer::start().await;
     let initial_models = vec![remote_model("remote-old", "Remote Old", 1)];

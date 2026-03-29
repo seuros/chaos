@@ -47,6 +47,7 @@ chaos-pf = { workspace = true }
 chaos-syslog = { workspace = true }
 chaos-ipc = { workspace = true }
 mcp-guest = { workspace = true, features = ["http"] }
+mcp-host = { workspace = true }
 chaos-proc = { workspace = true }
 chaos-realpath = { workspace = true }
 chaos-tmpfs = { workspace = true }

@@ -1,6 +1,8 @@
 use crate::config::types::EnvironmentVariablePattern;
 use crate::config::types::ShellEnvironmentPolicy;
 use crate::config::types::ShellEnvironmentPolicyInherit;
+use crate::spawn::CODEX_SANDBOX_ENV_VAR;
+use crate::spawn::CODEX_SANDBOX_NETWORK_DISABLED_ENV_VAR;
 use chaos_ipc::ProcessId;
 use std::collections::HashMap;
 use std::collections::HashSet;
@@ -77,7 +79,13 @@ where
         env_map.retain(|k, _| matches_any(k, &policy.include_only));
     }
 
-    // Step 6 – Populate the thread ID environment variable when provided.
+    // Step 6 – Strip reserved sandbox markers inherited from the parent
+    // process. These are runtime implementation details and must be re-added
+    // only by the actual spawn/sandbox path that applies to this child.
+    env_map.remove(CODEX_SANDBOX_ENV_VAR);
+    env_map.remove(CODEX_SANDBOX_NETWORK_DISABLED_ENV_VAR);
+
+    // Step 7 – Populate the thread ID environment variable when provided.
     if let Some(process_id) = process_id {
         env_map.insert(CODEX_THREAD_ID_ENV_VAR.to_string(), process_id.to_string());
     }

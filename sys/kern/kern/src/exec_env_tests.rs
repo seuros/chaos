@@ -182,3 +182,25 @@ fn test_inherit_none() {
     expected.insert(CODEX_THREAD_ID_ENV_VAR.to_string(), process_id.to_string());
     assert_eq!(result, expected);
 }
+
+#[test]
+fn populate_env_strips_reserved_sandbox_markers() {
+    let vars = make_vars(&[
+        ("PATH", "/usr/bin"),
+        (crate::spawn::CODEX_SANDBOX_ENV_VAR, "seatbelt"),
+        (crate::spawn::CODEX_SANDBOX_NETWORK_DISABLED_ENV_VAR, "1"),
+    ]);
+
+    let policy = ShellEnvironmentPolicy {
+        inherit: ShellEnvironmentPolicyInherit::All,
+        ignore_default_excludes: true,
+        ..Default::default()
+    };
+
+    let result = populate_env(vars, &policy, None);
+
+    let expected: HashMap<String, String> =
+        HashMap::from([("PATH".to_string(), "/usr/bin".to_string())]);
+
+    assert_eq!(result, expected);
+}

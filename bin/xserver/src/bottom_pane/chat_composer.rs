@@ -346,7 +346,6 @@ pub(crate) struct ChatComposer {
     config: ChatComposerConfig,
     collaboration_mode_indicator: Option<CollaborationModeIndicator>,
     connectors_enabled: bool,
-    fast_command_enabled: bool,
     personality_command_enabled: bool,
     windows_degraded_sandbox_active: bool,
     status_line_value: Option<Line<'static>>,
@@ -381,7 +380,6 @@ impl ChatComposer {
         BuiltinCommandFlags {
             collaboration_modes_enabled: self.collaboration_modes_enabled,
             connectors_enabled: self.connectors_enabled,
-            fast_command_enabled: self.fast_command_enabled,
             personality_command_enabled: self.personality_command_enabled,
             allow_elevate_sandbox: self.windows_degraded_sandbox_active,
         }
@@ -458,7 +456,6 @@ impl ChatComposer {
             config,
             collaboration_mode_indicator: None,
             connectors_enabled: false,
-            fast_command_enabled: false,
             personality_command_enabled: false,
             windows_degraded_sandbox_active: false,
             status_line_value: None,
@@ -515,10 +512,6 @@ impl ChatComposer {
 
     pub fn set_connectors_enabled(&mut self, enabled: bool) {
         self.connectors_enabled = enabled;
-    }
-
-    pub fn set_fast_command_enabled(&mut self, enabled: bool) {
-        self.fast_command_enabled = enabled;
     }
 
     pub fn set_collaboration_mode_indicator(
@@ -3043,14 +3036,12 @@ impl ChatComposer {
                 if is_editing_slash_command_name {
                     let collaboration_modes_enabled = self.collaboration_modes_enabled;
                     let connectors_enabled = self.connectors_enabled;
-                    let fast_command_enabled = self.fast_command_enabled;
                     let personality_command_enabled = self.personality_command_enabled;
                     let mut command_popup = CommandPopup::new(
                         self.custom_prompts.clone(),
                         CommandPopupFlags {
                             collaboration_modes_enabled,
                             connectors_enabled,
-                            fast_command_enabled,
                             personality_command_enabled,
                             windows_degraded_sandbox_active: self.windows_degraded_sandbox_active,
                         },

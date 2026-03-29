@@ -25,7 +25,6 @@ use crate::history_cell::HistoryCell;
 
 use chaos_ipc::config_types::CollaborationModeMask;
 use chaos_ipc::config_types::Personality;
-use chaos_ipc::config_types::ServiceTier;
 use chaos_ipc::openai_models::ReasoningEffort;
 use chaos_ipc::protocol::AskForApproval;
 use chaos_ipc::protocol::SandboxPolicy;
@@ -176,11 +175,6 @@ pub(crate) enum AppEvent {
     /// Persist the selected personality to the appropriate config.
     PersistPersonalitySelection {
         personality: Personality,
-    },
-
-    /// Persist the selected service tier to the appropriate config.
-    PersistServiceTierSelection {
-        service_tier: Option<ServiceTier>,
     },
 
     /// Open the reasoning selection popup after picking a model.

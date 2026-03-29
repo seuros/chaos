@@ -1,5 +1,6 @@
 use std::path::Path;
 
+use gix::bstr::ByteSlice;
 use serde::Serialize;
 
 use crate::error::GitError;
@@ -58,24 +59,22 @@ pub fn log(
             .try_into_commit()
             .map_err(|e| GitError::Operation(e.to_string()))?;
 
-        let decoded = commit
-            .decode()
-            .map_err(|e| GitError::Operation(e.to_string()))?;
-
-        // In gix 0.72, SignatureRef.time is &str (raw git timestamp)
-        let timestamp = decoded
-            .committer
-            .time
-            .parse::<i64>()
-            .unwrap_or(0);
-        let author = decoded.author.name.to_string();
-        let subject = decoded
-            .message
-            .to_string()
-            .lines()
-            .next()
-            .unwrap_or("")
-            .to_string();
+        let timestamp = commit
+            .time()
+            .map_err(|e| GitError::Operation(e.to_string()))?
+            .seconds;
+        let author = commit
+            .author()
+            .map_err(|e| GitError::Operation(e.to_string()))?
+            .name
+            .to_str_lossy()
+            .into_owned();
+        let subject = commit
+            .message()
+            .map_err(|e| GitError::Operation(e.to_string()))?
+            .title
+            .to_str_lossy()
+            .into_owned();
 
         entries.push(LogEntry {
             sha,

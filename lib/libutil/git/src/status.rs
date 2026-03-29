@@ -1,3 +1,4 @@
+use std::ops::ControlFlow;
 use std::path::Path;
 
 use gix::bstr::BString;
@@ -85,7 +86,7 @@ fn collect_staged(repo: &gix::Repository) -> Result<Vec<FileStatus>, GitError> {
                 ChangeRef::Rewrite { location, .. } => location.to_string(),
             };
             staged.push(FileStatus { path });
-            Ok::<_, std::convert::Infallible>(gix::diff::index::Action::Continue)
+            Ok::<_, std::convert::Infallible>(ControlFlow::Continue(()))
         },
     )
     .map_err(|e| GitError::Operation(e.to_string()))?;

@@ -33,16 +33,14 @@ pub fn info(cwd: &Path) -> Result<RepoInfo, GitError> {
 
     let remote_url = repo
         .find_default_remote(gix::remote::Direction::Fetch)
-        .and_then(|r| r.ok())
+        .and_then(std::result::Result::ok)
         .and_then(|remote| {
             remote
                 .url(gix::remote::Direction::Fetch)
                 .map(|u| u.to_bstring().to_string())
         });
 
-    let has_changes = repo
-        .is_dirty()
-        .unwrap_or(false);
+    let has_changes = repo.is_dirty().unwrap_or(false);
 
     let default_branch = detect_default_branch(&repo);
 
@@ -61,12 +59,12 @@ fn detect_default_branch(repo: &gix::Repository) -> Option<String> {
     if let Some(Ok(remote)) = repo.find_default_remote(gix::remote::Direction::Fetch) {
         let remote_name = remote.name()?.as_bstr().to_string();
         let head_ref_name = format!("refs/remotes/{remote_name}/HEAD");
-        if let Ok(reference) = repo.find_reference(&head_ref_name) {
-            if let Some(target) = reference.target().try_name() {
-                let name = target.as_bstr().to_string();
-                if let Some(branch) = name.rsplit('/').next() {
-                    return Some(branch.to_owned());
-                }
+        if let Ok(reference) = repo.find_reference(&head_ref_name)
+            && let Some(target) = reference.target().try_name()
+        {
+            let name = target.as_bstr().to_string();
+            if let Some(branch) = name.rsplit('/').next() {
+                return Some(branch.to_owned());
             }
         }
     }

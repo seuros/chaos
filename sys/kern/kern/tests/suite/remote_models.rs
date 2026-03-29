@@ -24,6 +24,7 @@ use chaos_kern::ModelProviderInfo;
 use chaos_kern::built_in_model_providers;
 use chaos_kern::models_manager::manager::ModelsManager;
 use chaos_kern::models_manager::manager::RefreshStrategy;
+use chaos_kern::models_manager::model_info::BASE_INSTRUCTIONS;
 use core_test_support::load_default_config_for_test;
 use core_test_support::responses::ev_assistant_message;
 use core_test_support::responses::ev_completed;
@@ -107,7 +108,8 @@ async fn remote_models_get_model_info_uses_longest_matching_prefix() -> Result<(
     let model_info = manager.get_model_info("gpt-5.3-codex-test", &config).await;
 
     assert_eq!(model_info.slug, "gpt-5.3-codex-test");
-    assert_eq!(model_info.base_instructions, specific.base_instructions);
+    assert_eq!(model_info.display_name, specific.display_name);
+    assert_eq!(model_info.base_instructions, BASE_INSTRUCTIONS);
 
     Ok(())
 }

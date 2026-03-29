@@ -126,6 +126,7 @@ fn assistant_message(text: &str) -> ResponseItem {
     }
 }
 
+#[expect(dead_code)]
 fn skill_message(text: &str) -> ResponseItem {
     ResponseItem::Message {
         id: None,

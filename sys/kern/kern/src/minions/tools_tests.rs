@@ -164,8 +164,8 @@ async fn spawn_agent_uses_explorer_role_and_preserves_approval_policy() {
     let manager = process_table();
     session.services.agent_control = manager.agent_control();
     let mut config = (*turn.config).clone();
-    let provider = built_in_model_providers(/* openai_base_url */ None)["ollama"].clone();
-    config.model_provider_id = "ollama".to_string();
+    let provider = built_in_model_providers(/* openai_base_url */ None)["openai"].clone();
+    config.model_provider_id = "openai".to_string();
     config.model_provider = provider.clone();
     config
         .permissions
@@ -208,7 +208,7 @@ async fn spawn_agent_uses_explorer_role_and_preserves_approval_policy() {
         .config_snapshot()
         .await;
     assert_eq!(snapshot.approval_policy, AskForApproval::OnRequest);
-    assert_eq!(snapshot.model_provider_id, "ollama");
+    assert_eq!(snapshot.model_provider_id, "openai");
 }
 
 #[tokio::test]

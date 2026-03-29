@@ -31,34 +31,42 @@ use std::sync::atomic::AtomicBool;
 use std::sync::atomic::Ordering;
 
 use crate::api_bridge::CoreAuthProvider;
+use crate::api_bridge::abi_error_to_api_error;
 use crate::api_bridge::auth_provider_from_auth;
 use crate::api_bridge::map_api_error;
 use crate::auth::UnauthorizedRecovery;
+use chaos_parrot::CompactClient as ApiCompactClient;
+use chaos_parrot::CompactionInput as ApiCompactionInput;
+use chaos_parrot::MemoriesClient as ApiMemoriesClient;
+use chaos_parrot::MemorySummarizeInput as ApiMemorySummarizeInput;
+use chaos_parrot::MemorySummarizeOutput as ApiMemorySummarizeOutput;
+use chaos_parrot::RamaTransport;
+use chaos_parrot::RawMemory as ApiRawMemory;
+use chaos_parrot::RequestTelemetry;
+use chaos_parrot::ResponseCreateWsRequest;
+use chaos_parrot::ResponsesApiRequest;
+use chaos_parrot::ResponsesOptions as ApiResponsesOptions;
+use chaos_parrot::ResponsesWebsocketClient as ApiWebSocketResponsesClient;
+use chaos_parrot::ResponsesWebsocketConnection as ApiWebSocketConnection;
+use chaos_parrot::SseTelemetry;
+use chaos_parrot::TransportError;
+use chaos_parrot::WebsocketTelemetry;
+use chaos_parrot::build_conversation_headers;
+use chaos_parrot::common::Reasoning;
+use chaos_parrot::common::ResponsesWsRequest;
+use chaos_parrot::create_text_param_for_request;
+use chaos_parrot::error::ApiError;
+use chaos_parrot::openai::OpenAiAdapter;
+use chaos_parrot::requests::responses::Compression;
 use chaos_syslog::SessionTelemetry;
-use codex_api::CompactClient as ApiCompactClient;
-use codex_api::CompactionInput as ApiCompactionInput;
-use codex_api::MemoriesClient as ApiMemoriesClient;
-use codex_api::MemorySummarizeInput as ApiMemorySummarizeInput;
-use codex_api::MemorySummarizeOutput as ApiMemorySummarizeOutput;
-use codex_api::RamaTransport;
-use codex_api::RawMemory as ApiRawMemory;
-use codex_api::RequestTelemetry;
-use codex_api::ResponseCreateWsRequest;
-use codex_api::ResponsesApiRequest;
-use codex_api::ResponsesClient as ApiResponsesClient;
-use codex_api::ResponsesOptions as ApiResponsesOptions;
-use codex_api::ResponsesWebsocketClient as ApiWebSocketResponsesClient;
-use codex_api::ResponsesWebsocketConnection as ApiWebSocketConnection;
-use codex_api::SseTelemetry;
-use codex_api::TransportError;
-use codex_api::WebsocketTelemetry;
-use codex_api::build_conversation_headers;
-use codex_api::common::Reasoning;
-use codex_api::common::ResponsesWsRequest;
-use codex_api::create_text_param_for_request;
-use codex_api::error::ApiError;
-use codex_api::requests::responses::Compression;
 
+use chaos_abi::AbiError;
+use chaos_abi::FreeformToolDef;
+use chaos_abi::FunctionToolDef;
+use chaos_abi::ModelAdapter;
+use chaos_abi::ReasoningConfig as AbiReasoningConfig;
+use chaos_abi::ToolDef as AbiToolDef;
+use chaos_abi::TurnRequest as AbiTurnRequest;
 use chaos_ipc::ProcessId;
 use chaos_ipc::config_types::ReasoningSummary as ReasoningSummaryConfig;
 use chaos_ipc::config_types::ServiceTier;
@@ -92,6 +100,7 @@ use crate::auth::RefreshTokenError;
 use crate::client_common::Prompt;
 use crate::client_common::ResponseEvent;
 use crate::client_common::ResponseStream;
+use crate::client_common::tools::ToolSpec;
 use crate::config::Config;
 
 use crate::error::CodexErr;
@@ -107,6 +116,7 @@ use crate::tools::spec::create_tools_json_for_responses_api;
 use crate::util::FeedbackRequestTags;
 use crate::util::emit_feedback_auth_recovery_tags;
 use crate::util::emit_feedback_request_tags;
+use serde_json::json;
 
 pub const OPENAI_BETA_HEADER: &str = "OpenAI-Beta";
 pub const X_CODEX_TURN_STATE_HEADER: &str = "x-codex-turn-state";
@@ -151,7 +161,7 @@ struct ModelClientState {
 /// share the same auth/provider setup flow.
 struct CurrentClientSetup {
     auth: Option<CodexAuth>,
-    api_provider: codex_api::Provider,
+    api_provider: chaos_parrot::Provider,
     api_auth: CoreAuthProvider,
 }
 
@@ -525,7 +535,7 @@ impl ModelClient {
     async fn connect_websocket(
         &self,
         session_telemetry: &SessionTelemetry,
-        api_provider: codex_api::Provider,
+        api_provider: chaos_parrot::Provider,
         api_auth: CoreAuthProvider,
         turn_state: Option<Arc<OnceLock<String>>>,
         turn_metadata_header: Option<&str>,
@@ -648,7 +658,7 @@ impl ModelClientSession {
 
     fn build_responses_request(
         &self,
-        provider: &codex_api::Provider,
+        provider: &chaos_parrot::Provider,
         prompt: &Prompt,
         model_info: &ModelInfo,
         effort: Option<ReasoningEffortConfig>,
@@ -712,6 +722,103 @@ impl ModelClientSession {
             text,
         };
         Ok(request)
+    }
+
+    fn build_http_turn_request(
+        &self,
+        provider: &chaos_parrot::Provider,
+        prompt: &Prompt,
+        model_info: &ModelInfo,
+        effort: Option<ReasoningEffortConfig>,
+        summary: ReasoningSummaryConfig,
+        service_tier: Option<ServiceTier>,
+        options: &ApiResponsesOptions,
+    ) -> Result<AbiTurnRequest> {
+        let input = prompt.get_formatted_input();
+        let openai_tools = create_tools_json_for_responses_api(&prompt.tools)?;
+        let tools = prompt
+            .tools
+            .iter()
+            .filter_map(tool_spec_to_abi_tool)
+            .collect::<Vec<_>>();
+        let verbosity = if model_info.support_verbosity {
+            self.client
+                .state
+                .model_verbosity
+                .or(model_info.default_verbosity)
+        } else {
+            if self.client.state.model_verbosity.is_some() {
+                warn!(
+                    "model_verbosity is set but ignored as the model does not support verbosity: {}",
+                    model_info.slug
+                );
+            }
+            None
+        };
+        let reasoning = if model_info.supports_reasoning_summaries {
+            Some(AbiReasoningConfig {
+                effort: effort.or(model_info.default_reasoning_level),
+                summary: if summary == ReasoningSummaryConfig::None {
+                    None
+                } else {
+                    Some(summary)
+                },
+            })
+        } else {
+            None
+        };
+
+        let mut request_headers = serde_json::Map::new();
+        for (name, value) in &options.extra_headers {
+            if let Ok(value) = value.to_str() {
+                request_headers.insert(name.as_str().to_string(), json!(value));
+            }
+        }
+
+        let mut extensions = serde_json::Map::new();
+        extensions.insert(
+            "store".to_string(),
+            json!(provider.is_azure_responses_endpoint()),
+        );
+        extensions.insert(
+            "prompt_cache_key".to_string(),
+            json!(self.client.state.conversation_id.to_string()),
+        );
+        extensions.insert(
+            "openai_tools".to_string(),
+            serde_json::Value::Array(openai_tools),
+        );
+        extensions.insert(
+            "request_headers".to_string(),
+            serde_json::Value::Object(request_headers),
+        );
+        extensions.insert(
+            "compression".to_string(),
+            json!(match options.compression {
+                Compression::None => "none",
+                Compression::Zstd => "zstd",
+            }),
+        );
+        if let Some(service_tier) = match service_tier {
+            Some(ServiceTier::Fast) => Some("priority".to_string()),
+            Some(other) => Some(other.to_string()),
+            None => None,
+        } {
+            extensions.insert("service_tier".to_string(), json!(service_tier));
+        }
+
+        Ok(AbiTurnRequest {
+            model: model_info.slug.clone(),
+            instructions: prompt.base_instructions.text.clone(),
+            input,
+            tools,
+            parallel_tool_calls: prompt.parallel_tool_calls,
+            reasoning,
+            output_schema: prompt.output_schema.clone(),
+            verbosity,
+            turn_state: options.turn_state.clone(),
+            extensions,
+        })
     }
 
     #[allow(clippy::too_many_arguments)]
@@ -967,7 +1074,7 @@ impl ModelClientSession {
     ) -> Result<ResponseStream> {
         if let Some(path) = &*CODEX_RS_SSE_FIXTURE {
             warn!(path, "Streaming from fixture");
-            let stream = codex_api::stream_from_fixture(
+            let stream = chaos_parrot::stream_from_fixture(
                 path,
                 self.client.state.provider.stream_idle_timeout(),
             )
@@ -983,6 +1090,7 @@ impl ModelClientSession {
         let mut pending_retry = PendingUnauthorizedRetry::default();
         loop {
             let client_setup = self.client.current_client_setup().await?;
+            let provider_for_errors = client_setup.api_provider.clone();
             let transport = RamaTransport::default_client();
             let request_auth_context = AuthRequestTelemetryContext::new(
                 client_setup.auth.as_ref().map(CodexAuth::auth_mode),
@@ -996,31 +1104,45 @@ impl ModelClientSession {
             );
             let compression = self.responses_request_compression(client_setup.auth.as_ref());
             let options = self.build_responses_options(turn_metadata_header, compression);
-
-            let request = self.build_responses_request(
+            let turn_request = self.build_http_turn_request(
                 &client_setup.api_provider,
                 prompt,
                 model_info,
                 effort,
                 summary,
                 service_tier,
+                &options,
             )?;
-            let client = ApiResponsesClient::new(
+            let adapter = OpenAiAdapter::new(
                 transport,
                 client_setup.api_provider,
                 client_setup.api_auth,
+                Some(model_info.slug.clone()),
             )
+            .with_options(options.clone())
             .with_telemetry(Some(request_telemetry), Some(sse_telemetry));
-            let stream_result = client.stream_request(request, options).await;
+            let stream_result = adapter.stream(turn_request).await;
 
             match stream_result {
                 Ok(stream) => {
-                    let (stream, _) = map_response_stream(stream, session_telemetry.clone());
+                    let response_events = stream.map(|event| {
+                        event
+                            .map(ResponseEvent::from)
+                            .map_err(abi_error_to_api_error)
+                    });
+                    let (stream, _) =
+                        map_response_stream(response_events, session_telemetry.clone());
                     return Ok(stream);
                 }
-                Err(ApiError::Transport(
-                    unauthorized_transport @ TransportError::Http { status, .. },
-                )) if status == StatusCode::UNAUTHORIZED => {
+                Err(AbiError::Transport { status, message })
+                    if status == StatusCode::UNAUTHORIZED.as_u16() =>
+                {
+                    let unauthorized_transport = TransportError::Http {
+                        status: StatusCode::UNAUTHORIZED,
+                        url: Some(provider_for_errors.url_for_path("responses")),
+                        headers: None,
+                        body: Some(message),
+                    };
                     pending_retry = PendingUnauthorizedRetry::from_recovery(
                         handle_unauthorized(
                             unauthorized_transport,
@@ -1031,7 +1153,7 @@ impl ModelClientSession {
                     );
                     continue;
                 }
-                Err(err) => return Err(map_api_error(err)),
+                Err(err) => return Err(map_api_error(abi_error_to_api_error(err))),
             }
         }
     }
@@ -1334,6 +1456,25 @@ fn build_ws_client_metadata(turn_metadata_header: Option<&str>) -> Option<HashMa
     Some(client_metadata)
 }
 
+fn tool_spec_to_abi_tool(tool: &ToolSpec) -> Option<AbiToolDef> {
+    match tool {
+        ToolSpec::Function(tool) => Some(AbiToolDef::Function(FunctionToolDef {
+            name: tool.name.clone(),
+            description: tool.description.clone(),
+            parameters: serde_json::to_value(&tool.parameters).ok()?,
+            strict: tool.strict,
+        })),
+        ToolSpec::Freeform(tool) => Some(AbiToolDef::Freeform(FreeformToolDef {
+            name: tool.name.clone(),
+            description: tool.description.clone(),
+            format_type: tool.format.r#type.clone(),
+            syntax: tool.format.syntax.clone(),
+            definition: tool.format.definition.clone(),
+        })),
+        _ => None,
+    }
+}
+
 /// Builds the extra headers attached to Responses API requests.
 ///
 /// These headers implement Codex-specific conventions:
@@ -1506,7 +1647,7 @@ impl AuthRequestTelemetryContext {
 
 struct WebsocketConnectParams<'a> {
     session_telemetry: &'a SessionTelemetry,
-    api_provider: codex_api::Provider,
+    api_provider: chaos_parrot::Provider,
     api_auth: CoreAuthProvider,
     turn_metadata_header: Option<&'a str>,
     options: &'a ApiResponsesOptions,

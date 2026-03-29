@@ -7,8 +7,8 @@
 
 use crate::auth::AuthMode;
 use crate::error::EnvVarError;
-use codex_api::Provider as ApiProvider;
-use codex_api::provider::RetryConfig as ApiRetryConfig;
+use chaos_parrot::Provider as ApiProvider;
+use chaos_parrot::provider::RetryConfig as ApiRetryConfig;
 use http::HeaderMap;
 use http::header::HeaderName;
 use http::header::HeaderValue;

@@ -28,7 +28,7 @@ pub struct ResponsesClient<T: HttpTransport, A: AuthProvider> {
     sse_telemetry: Option<Arc<dyn SseTelemetry>>,
 }
 
-#[derive(Default)]
+#[derive(Default, Clone)]
 pub struct ResponsesOptions {
     pub conversation_id: Option<String>,
     pub session_source: Option<SessionSource>,

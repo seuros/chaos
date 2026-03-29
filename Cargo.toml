@@ -26,7 +26,6 @@ members = [
     # drivers/ — external service adapters
     "drivers/parrot",
     "drivers/ration",
-    "drivers/api",
     "drivers/client",
 
     # srv/ — services
@@ -127,7 +126,6 @@ chaos-vault = { path = "secure/vault" }
 # Internal — drivers/
 chaos-parrot = { path = "drivers/parrot" }
 chaos-ration = { path = "drivers/ration" }
-codex-api = { path = "drivers/api" }
 codex-client = { path = "drivers/client" }
 
 # Internal — srv/

@@ -103,7 +103,7 @@ pub struct ResponsesApiTool {
 /// Takes the provider-neutral fields (description, input_schema, output_schema)
 /// and produces the OpenAI-specific tool definition with sanitized schemas.
 /// The kernel calls this with fields destructured from `McpToolInfo` so that
-/// `codex-api` never depends on MCP types.
+/// `chaos-parrot` never depends on MCP types.
 pub fn mcp_tool_to_responses_api_tool(
     name: String,
     description: Option<String>,

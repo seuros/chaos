@@ -4,11 +4,11 @@ use crate::request::RequestCompression;
 use crate::request::Response;
 use bytes::Bytes;
 use futures::stream::BoxStream;
-use rama::http::HeaderMap;
-use rama::http::StatusCode;
 use rama::Service;
 use rama::error::extra::OpaqueError;
 use rama::http::Body;
+use rama::http::HeaderMap;
+use rama::http::StatusCode;
 use rama::http::body::util::BodyExt;
 use rama::service::BoxService;
 use std::sync::Arc;
@@ -63,8 +63,8 @@ impl RamaTransport {
             timeout: _timeout, // TODO: rama per-request timeout via layer
         } = req;
 
-        let http_method =
-            rama::http::Method::from_bytes(method.as_str().as_bytes()).unwrap_or(rama::http::Method::GET);
+        let http_method = rama::http::Method::from_bytes(method.as_str().as_bytes())
+            .unwrap_or(rama::http::Method::GET);
 
         let rama_body = if let Some(body) = body {
             if compression != RequestCompression::None {

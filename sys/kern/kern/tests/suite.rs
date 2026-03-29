@@ -108,6 +108,8 @@ mod list_dir;
 mod live_cli;
 #[path = "suite/live_reload.rs"]
 mod live_reload;
+#[path = "suite/mcp_client.rs"]
+mod mcp_client;
 #[path = "suite/memories.rs"]
 mod memories;
 #[path = "suite/model_info_overrides.rs"]
@@ -156,8 +158,6 @@ mod resume;
 mod resume_warning;
 #[path = "suite/review.rs"]
 mod review;
-#[path = "suite/mcp_client.rs"]
-mod mcp_client;
 #[path = "suite/rollout_list_find.rs"]
 mod rollout_list_find;
 #[path = "suite/safety_check_downgrade.rs"]

@@ -23,7 +23,12 @@ use serde_json::Value;
 
 impl From<TurnRequest> for ResponsesApiRequest {
     fn from(req: TurnRequest) -> Self {
-        let tools: Vec<Value> = req.tools.into_iter().map(tool_def_to_openai).collect();
+        let tools: Vec<Value> = req
+            .extensions
+            .get("openai_tools")
+            .and_then(Value::as_array)
+            .cloned()
+            .unwrap_or_else(|| req.tools.into_iter().map(tool_def_to_openai).collect());
 
         let reasoning = req.reasoning.map(|r| Reasoning {
             effort: r.effort,
@@ -223,9 +228,15 @@ impl From<crate::error::ApiError> for AbiError {
                 AbiError::InvalidRequest { message }
             }
             crate::error::ApiError::Stream(msg) => AbiError::Stream(msg),
-            crate::error::ApiError::Transport(t) => AbiError::Transport {
-                status: 0,
-                message: t.to_string(),
+            crate::error::ApiError::Transport(t) => match t {
+                crate::TransportError::Http { status, body, .. } => AbiError::Transport {
+                    status: status.as_u16(),
+                    message: body.unwrap_or_else(|| status.to_string()),
+                },
+                other => AbiError::Transport {
+                    status: 0,
+                    message: other.to_string(),
+                },
             },
             crate::error::ApiError::Api { status, message } => AbiError::Transport {
                 status: status.as_u16(),
@@ -268,6 +279,7 @@ mod tests {
             }),
             output_schema: None,
             verbosity: None,
+            turn_state: None,
             extensions: serde_json::Map::new(),
         };
 
@@ -304,6 +316,7 @@ mod tests {
             reasoning: None,
             output_schema: None,
             verbosity: None,
+            turn_state: None,
             extensions,
         };
 
@@ -315,11 +328,59 @@ mod tests {
     }
 
     #[test]
+    fn openai_tools_extension_overrides_neutral_tool_conversion() {
+        let mut extensions = serde_json::Map::new();
+        extensions.insert(
+            "openai_tools".to_string(),
+            json!([{
+                "type": "local_shell"
+            }]),
+        );
+
+        let req = TurnRequest {
+            model: "gpt-4o".to_string(),
+            instructions: String::new(),
+            input: vec![],
+            tools: vec![ToolDef::Function(FunctionToolDef {
+                name: "should_not_be_used".to_string(),
+                description: "ignored".to_string(),
+                parameters: json!({"type": "object"}),
+                strict: false,
+            })],
+            parallel_tool_calls: false,
+            reasoning: None,
+            output_schema: None,
+            verbosity: None,
+            turn_state: None,
+            extensions,
+        };
+
+        let api_req: ResponsesApiRequest = req.into();
+        assert_eq!(api_req.tools, vec![json!({"type": "local_shell"})]);
+    }
+
+    #[test]
     fn response_event_roundtrips_through_turn_event() {
         let event = ResponseEvent::OutputTextDelta("hello".to_string());
         let turn: TurnEvent = event.into();
         let back: ResponseEvent = turn.into();
         assert!(matches!(back, ResponseEvent::OutputTextDelta(ref s) if s == "hello"));
+    }
+
+    #[test]
+    fn http_transport_status_is_preserved_in_abi_error() {
+        let err = crate::error::ApiError::Transport(crate::TransportError::Http {
+            status: http::StatusCode::UNAUTHORIZED,
+            url: Some("https://api.openai.com/v1/responses".to_string()),
+            headers: None,
+            body: Some("unauthorized".to_string()),
+        });
+
+        let abi: AbiError = err.into();
+        assert!(matches!(
+            abi,
+            AbiError::Transport { status: 401, message } if message == "unauthorized"
+        ));
     }
 
     #[test]

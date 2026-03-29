@@ -4,7 +4,7 @@ use crate::error::Result;
 use chaos_ipc::models::BaseInstructions;
 use chaos_ipc::models::FunctionCallOutputBody;
 use chaos_ipc::models::ResponseItem;
-pub use codex_api::common::ResponseEvent;
+pub use chaos_parrot::common::ResponseEvent;
 use futures::Stream;
 use serde::Deserialize;
 use serde_json::Value;
@@ -157,7 +157,7 @@ pub(crate) mod tools {
     use chaos_ipc::config_types::WebSearchFilters as ConfigWebSearchFilters;
     use chaos_ipc::config_types::WebSearchUserLocation as ConfigWebSearchUserLocation;
     use chaos_ipc::config_types::WebSearchUserLocationType;
-    use codex_api::sanitize::JsonSchema;
+    use chaos_parrot::sanitize::JsonSchema;
     use serde::Deserialize;
     use serde::Serialize;
 
@@ -266,7 +266,7 @@ pub(crate) mod tools {
         pub(crate) definition: String,
     }
 
-    pub use codex_api::sanitize::ResponsesApiTool;
+    pub use chaos_parrot::sanitize::ResponsesApiTool;
 
     #[derive(Debug, Clone, Serialize, PartialEq)]
     #[serde(tag = "type")]

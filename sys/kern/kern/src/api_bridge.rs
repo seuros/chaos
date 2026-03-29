@@ -1,9 +1,10 @@
 use base64::Engine;
-use codex_api::AuthProvider as ApiAuthProvider;
-use codex_api::TransportError;
-use codex_api::error::ApiError;
-use codex_api::rate_limits::parse_promo_message;
-use codex_api::rate_limits::parse_rate_limit_for_limit;
+use chaos_abi::AbiError;
+use chaos_parrot::AuthProvider as ApiAuthProvider;
+use chaos_parrot::TransportError;
+use chaos_parrot::error::ApiError;
+use chaos_parrot::rate_limits::parse_promo_message;
+use chaos_parrot::rate_limits::parse_rate_limit_for_limit;
 use http::HeaderMap;
 use jiff::Timestamp;
 use serde::Deserialize;
@@ -119,6 +120,25 @@ pub(crate) fn map_api_error(err: ApiError) -> CodexErr {
             }
         },
         ApiError::RateLimit(msg) => CodexErr::Stream(msg, None),
+    }
+}
+
+pub(crate) fn abi_error_to_api_error(err: AbiError) -> ApiError {
+    match err {
+        AbiError::ContextWindowExceeded => ApiError::ContextWindowExceeded,
+        AbiError::QuotaExceeded => ApiError::QuotaExceeded,
+        AbiError::UsageNotIncluded => ApiError::UsageNotIncluded,
+        AbiError::ServerOverloaded => ApiError::ServerOverloaded,
+        AbiError::InvalidRequest { message } => ApiError::InvalidRequest { message },
+        AbiError::Stream(message) => ApiError::Stream(message),
+        AbiError::Transport { status, message } => ApiError::Transport(TransportError::Http {
+            status: http::StatusCode::from_u16(status)
+                .unwrap_or(http::StatusCode::INTERNAL_SERVER_ERROR),
+            url: None,
+            headers: None,
+            body: Some(message),
+        }),
+        AbiError::Retryable { message, delay } => ApiError::Retryable { message, delay },
     }
 }
 

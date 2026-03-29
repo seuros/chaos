@@ -1441,6 +1441,14 @@ name = "chaos-parrot"
 version = "47.0.0"
 dependencies = [
  "chaos-abi",
+ "chaos-ipc",
+ "codex-client",
+ "futures",
+ "rama",
+ "serde",
+ "serde_json",
+ "tokio",
+ "tracing",
 ]
 
 [[package]]

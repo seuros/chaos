@@ -26,6 +26,7 @@ jiff = { workspace = true }
 clap = { workspace = true, features = ["derive"] }
 codex-api = { workspace = true }
 chaos-diff = { workspace = true }
+chaos-git = { workspace = true }
 chaos-arsenal = { workspace = true }
 chaos-cron = { workspace = true }
 chaos-concierge = { workspace = true }

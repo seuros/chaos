@@ -75,6 +75,7 @@ members = [
     "lib/libutil/uptime",
     "lib/libutil/glob",
     "lib/libutil/scm",
+    "lib/libutil/git",
     "lib/libutil/pwd",
     "lib/libutil/pixbuf",
     "lib/libutil/conv",
@@ -167,6 +168,7 @@ chaos-snitch = { path = "lib/libtrace/snitch" }
 chaos-termcap = { path = "lib/libui/termcap" }
 chaos-highlight = { path = "lib/libui/highlight" }
 chaos-scm = { path = "lib/libutil/scm" }
+chaos-git = { path = "lib/libutil/git" }
 chaos-realpath = { path = "lib/libutil/realpath" }
 chaos-sudoers = { path = "lib/libutil/sudoers" }
 chaos-tmpfs = { path = "lib/libutil/tmpfs" }

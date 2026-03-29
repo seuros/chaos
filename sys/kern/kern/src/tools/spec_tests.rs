@@ -748,7 +748,7 @@ fn view_image_tool_includes_detail_with_original_detail_feature() {
 }
 
 #[test]
-fn test_build_specs_artifact_tool_enabled() {
+fn test_build_specs_artifact_tool_is_not_exposed() {
     let mut config = test_config();
     let runtime_root = tempfile::TempDir::new().expect("create temp codex home");
     config.codex_home = runtime_root.path().to_path_buf();
@@ -766,7 +766,7 @@ fn test_build_specs_artifact_tool_enabled() {
         windows_sandbox_level: WindowsSandboxLevel::Disabled,
     });
     let (tools, _) = build_specs(&tools_config, None, None, &[]).build();
-    assert_contains_tool_names(&tools, &["artifacts"]);
+    assert_lacks_tool_name(&tools, "artifacts");
 }
 
 #[test]
@@ -1266,6 +1266,8 @@ fn test_build_specs_gpt5_codex_default() {
             "read_file",
             "grep_files",
             "list_dir",
+            "cron_create",
+            "cron_toggle",
             "web_search",
             "view_image",
             "spawn_agent",
@@ -1292,6 +1294,8 @@ fn test_build_specs_gpt51_codex_default() {
             "read_file",
             "grep_files",
             "list_dir",
+            "cron_create",
+            "cron_toggle",
             "web_search",
             "view_image",
             "spawn_agent",
@@ -1320,6 +1324,8 @@ fn test_build_specs_gpt5_codex_unified_exec_web_search() {
             "read_file",
             "grep_files",
             "list_dir",
+            "cron_create",
+            "cron_toggle",
             "web_search",
             "view_image",
             "spawn_agent",
@@ -1348,6 +1354,8 @@ fn test_build_specs_gpt51_codex_unified_exec_web_search() {
             "read_file",
             "grep_files",
             "list_dir",
+            "cron_create",
+            "cron_toggle",
             "web_search",
             "view_image",
             "spawn_agent",
@@ -1374,6 +1382,8 @@ fn test_gpt_5_1_codex_max_defaults() {
             "read_file",
             "grep_files",
             "list_dir",
+            "cron_create",
+            "cron_toggle",
             "web_search",
             "view_image",
             "spawn_agent",
@@ -1400,6 +1410,8 @@ fn test_codex_5_1_mini_defaults() {
             "read_file",
             "grep_files",
             "list_dir",
+            "cron_create",
+            "cron_toggle",
             "web_search",
             "view_image",
             "spawn_agent",
@@ -1425,6 +1437,8 @@ fn test_gpt_5_defaults() {
             "read_file",
             "grep_files",
             "list_dir",
+            "cron_create",
+            "cron_toggle",
             "web_search",
             "view_image",
             "spawn_agent",
@@ -1451,6 +1465,8 @@ fn test_gpt_5_1_defaults() {
             "read_file",
             "grep_files",
             "list_dir",
+            "cron_create",
+            "cron_toggle",
             "web_search",
             "view_image",
             "spawn_agent",
@@ -1479,6 +1495,8 @@ fn test_gpt_5_1_codex_max_unified_exec_web_search() {
             "read_file",
             "grep_files",
             "list_dir",
+            "cron_create",
+            "cron_toggle",
             "web_search",
             "view_image",
             "spawn_agent",

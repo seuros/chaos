@@ -1,4 +1,4 @@
-use rand::Rng;
+use rand::RngExt;
 use std::cmp::Reverse;
 use std::collections::HashMap;
 use std::collections::HashSet;

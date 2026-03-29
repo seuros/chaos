@@ -35,7 +35,7 @@ use chaos_kern::default_client::originator;
 use chaos_kern::token_data::TokenData;
 use chaos_kern::token_data::parse_chatgpt_jwt_claims;
 use codex_client::CodexHttpClient;
-use rand::RngCore;
+use rand::Rng;
 use serde_json::Value as JsonValue;
 use tiny_http::Header;
 use tiny_http::Request;

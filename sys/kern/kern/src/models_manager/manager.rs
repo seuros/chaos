@@ -37,7 +37,6 @@ use tracing::error;
 use tracing::info;
 use tracing::instrument;
 
-const MODEL_CACHE_FILE: &str = "models_cache.json";
 const DEFAULT_MODEL_CACHE_TTL: Duration = Duration::from_secs(300);
 const MODELS_REFRESH_TIMEOUT: Duration = Duration::from_secs(5);
 const MODELS_ENDPOINT: &str = "/models";
@@ -194,8 +193,7 @@ impl ModelsManager {
         collaboration_modes_config: CollaborationModesConfig,
         provider: ModelProviderInfo,
     ) -> Self {
-        let cache_path = codex_home.join(MODEL_CACHE_FILE);
-        let cache_manager = ModelsCacheManager::new(cache_path, DEFAULT_MODEL_CACHE_TTL);
+        let cache_manager = ModelsCacheManager::new(codex_home.clone(), DEFAULT_MODEL_CACHE_TTL);
         let catalog_mode = if model_catalog.is_some() {
             CatalogMode::Custom
         } else {
@@ -549,7 +547,6 @@ impl ModelsManager {
         let response: ModelsResponse = serde_json::from_str(file_contents)?;
         Ok(response.models)
     }
-
 
     /// Attempt to satisfy the refresh from the cache when it matches the provider and TTL.
     async fn try_load_cache(&self) -> bool {

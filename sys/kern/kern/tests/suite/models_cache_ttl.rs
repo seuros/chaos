@@ -1,4 +1,3 @@
-use std::path::Path;
 use std::sync::Arc;
 
 use anyhow::Result;
@@ -16,7 +15,9 @@ use chaos_ipc::protocol::Op;
 use chaos_ipc::protocol::SandboxPolicy;
 use chaos_ipc::user_input::UserInput;
 use chaos_kern::CodexAuth;
+use chaos_kern::ModelProviderInfo;
 use chaos_kern::models_manager::manager::RefreshStrategy;
+use chaos_proc::open_chaos_db;
 use chrono::DateTime;
 use chrono::TimeZone;
 use chrono::Utc;
@@ -31,10 +32,10 @@ use core_test_support::wait_for_event;
 use pretty_assertions::assert_eq;
 use serde::Deserialize;
 use serde::Serialize;
+use sqlx::Row;
 use wiremock::MockServer;
 
 const ETAG: &str = "\"models-etag-ttl\"";
-const CACHE_FILE: &str = "models_cache.json";
 const REMOTE_MODEL: &str = "codex-test-ttl";
 const VERSIONED_MODEL: &str = "codex-test-versioned";
 const MISSING_VERSION_MODEL: &str = "codex-test-missing-version";
@@ -71,9 +72,9 @@ async fn renews_cache_ttl_on_matching_models_etag() -> Result<()> {
         .list_models(RefreshStrategy::OnlineIfUncached)
         .await;
 
-    let cache_path = config.codex_home.join(CACHE_FILE);
+    let cache_scope = cache_scope_for_provider(&config.model_provider);
     let stale_time = Utc.timestamp_opt(0, 0).single().expect("valid epoch");
-    rewrite_cache_timestamp(&cache_path, stale_time).await?;
+    rewrite_cache_timestamp(config.codex_home.as_path(), &cache_scope, stale_time).await?;
 
     // Trigger responses with matching ETag, which should renew the cache TTL without another /models.
     let response_body = sse(vec![
@@ -108,7 +109,7 @@ async fn renews_cache_ttl_on_matching_models_etag() -> Result<()> {
 
     let _ = wait_for_event(&codex, |event| matches!(event, EventMsg::TurnComplete(_))).await;
 
-    let refreshed_cache = read_cache(&cache_path).await?;
+    let refreshed_cache = read_cache(config.codex_home.as_path(), &cache_scope).await?;
     assert!(
         refreshed_cache.fetched_at > stale_time,
         "cache TTL should be renewed"
@@ -137,7 +138,6 @@ async fn renews_cache_ttl_on_matching_models_etag() -> Result<()> {
 #[tokio::test(flavor = "multi_thread", worker_threads = 2)]
 async fn uses_cache_when_version_matches() -> Result<()> {
     let server = MockServer::start().await;
-    let server_uri = format!("{}/v1", server.uri());
     let cached_model = test_remote_model(VERSIONED_MODEL, 1);
     let models_mock = responses::mount_models_once(
         &server,
@@ -148,17 +148,17 @@ async fn uses_cache_when_version_matches() -> Result<()> {
     .await;
 
     let mut builder = test_codex().with_auth(CodexAuth::create_dummy_chatgpt_auth_for_testing());
+    let server_uri = format!("{}/v1", server.uri());
     builder = builder
         .with_pre_build_hook(move |home| {
             let cache = ModelsCache {
                 fetched_at: Utc::now(),
                 etag: None,
                 client_version: Some(chaos_kern::models_manager::client_version_to_whole()),
-                scope: Some(cache_scope_for(server_uri.clone())),
+                scope: Some(cache_scope_for_base_url(server_uri.clone())),
                 models: vec![cached_model],
             };
-            let cache_path = home.join(CACHE_FILE);
-            write_cache_sync(&cache_path, &cache).expect("write cache");
+            write_cache_sync(home, &cache).expect("write cache");
         })
         .with_config(|config| {
             config.model_provider.request_max_retries = Some(0);
@@ -186,7 +186,6 @@ async fn uses_cache_when_version_matches() -> Result<()> {
 #[tokio::test(flavor = "multi_thread", worker_threads = 2)]
 async fn refreshes_when_cache_version_missing() -> Result<()> {
     let server = MockServer::start().await;
-    let server_uri = format!("{}/v1", server.uri());
     let cached_model = test_remote_model(MISSING_VERSION_MODEL, 1);
     let models_mock = responses::mount_models_once(
         &server,
@@ -197,17 +196,17 @@ async fn refreshes_when_cache_version_missing() -> Result<()> {
     .await;
 
     let mut builder = test_codex().with_auth(CodexAuth::create_dummy_chatgpt_auth_for_testing());
+    let server_uri = format!("{}/v1", server.uri());
     builder = builder
         .with_pre_build_hook(move |home| {
             let cache = ModelsCache {
                 fetched_at: Utc::now(),
                 etag: None,
                 client_version: None,
-                scope: Some(cache_scope_for(server_uri.clone())),
+                scope: Some(cache_scope_for_base_url(server_uri.clone())),
                 models: vec![cached_model],
             };
-            let cache_path = home.join(CACHE_FILE);
-            write_cache_sync(&cache_path, &cache).expect("write cache");
+            write_cache_sync(home, &cache).expect("write cache");
         })
         .with_config(|config| {
             config.model_provider.request_max_retries = Some(0);
@@ -235,7 +234,6 @@ async fn refreshes_when_cache_version_missing() -> Result<()> {
 #[tokio::test(flavor = "multi_thread", worker_threads = 2)]
 async fn refreshes_when_cache_version_differs() -> Result<()> {
     let server = MockServer::start().await;
-    let server_uri = format!("{}/v1", server.uri());
     let cached_model = test_remote_model(DIFFERENT_VERSION_MODEL, 1);
     let models_response = ModelsResponse {
         models: vec![test_remote_model("remote-different", 2)],
@@ -246,6 +244,7 @@ async fn refreshes_when_cache_version_differs() -> Result<()> {
     }
 
     let mut builder = test_codex().with_auth(CodexAuth::create_dummy_chatgpt_auth_for_testing());
+    let server_uri = format!("{}/v1", server.uri());
     builder = builder
         .with_pre_build_hook(move |home| {
             let client_version = chaos_kern::models_manager::client_version_to_whole();
@@ -253,11 +252,10 @@ async fn refreshes_when_cache_version_differs() -> Result<()> {
                 fetched_at: Utc::now(),
                 etag: None,
                 client_version: Some(format!("{client_version}-diff")),
-                scope: Some(cache_scope_for(server_uri.clone())),
+                scope: Some(cache_scope_for_base_url(server_uri.clone())),
                 models: vec![cached_model],
             };
-            let cache_path = home.join(CACHE_FILE);
-            write_cache_sync(&cache_path, &cache).expect("write cache");
+            write_cache_sync(home, &cache).expect("write cache");
         })
         .with_config(|config| {
             config.model_provider.request_max_retries = Some(0);
@@ -284,29 +282,75 @@ async fn refreshes_when_cache_version_differs() -> Result<()> {
     Ok(())
 }
 
-async fn rewrite_cache_timestamp(path: &Path, fetched_at: DateTime<Utc>) -> Result<()> {
-    let mut cache = read_cache(path).await?;
+async fn rewrite_cache_timestamp(
+    sqlite_home: &std::path::Path,
+    scope: &ModelsCacheScope,
+    fetched_at: DateTime<Utc>,
+) -> Result<()> {
+    let mut cache = read_cache(sqlite_home, scope).await?;
     cache.fetched_at = fetched_at;
-    write_cache(path, &cache).await?;
+    write_cache(sqlite_home, &cache).await?;
     Ok(())
 }
 
-async fn read_cache(path: &Path) -> Result<ModelsCache> {
-    let contents = tokio::fs::read(path).await?;
-    let cache = serde_json::from_slice(&contents)?;
-    Ok(cache)
+async fn read_cache(
+    sqlite_home: &std::path::Path,
+    scope: &ModelsCacheScope,
+) -> Result<ModelsCache> {
+    let pool = open_chaos_db(sqlite_home).await?;
+    let row = sqlx::query(
+        "SELECT fetched_at, etag, client_version, models_json \
+         FROM model_catalog_cache \
+         WHERE provider_name = ? AND wire_api = ? AND base_url = ?",
+    )
+    .bind(&scope.provider_name)
+    .bind(&scope.wire_api)
+    .bind(&scope.base_url)
+    .fetch_one(&pool)
+    .await?;
+    let models_json = row.get::<String, _>("models_json");
+    Ok(ModelsCache {
+        fetched_at: Utc
+            .timestamp_opt(row.get::<i64, _>("fetched_at"), 0)
+            .single()
+            .expect("valid timestamp"),
+        etag: row.get::<Option<String>, _>("etag"),
+        client_version: row.get::<Option<String>, _>("client_version"),
+        scope: Some(scope.clone()),
+        models: serde_json::from_str(&models_json)?,
+    })
 }
 
-async fn write_cache(path: &Path, cache: &ModelsCache) -> Result<()> {
-    let contents = serde_json::to_vec_pretty(cache)?;
-    tokio::fs::write(path, contents).await?;
+async fn write_cache(sqlite_home: &std::path::Path, cache: &ModelsCache) -> Result<()> {
+    let scope = cache.scope.as_ref().expect("cache scope");
+    let pool = open_chaos_db(sqlite_home).await?;
+    let models_json = serde_json::to_string(&cache.models)?;
+    sqlx::query(
+        "INSERT INTO model_catalog_cache \
+            (provider_name, wire_api, base_url, fetched_at, etag, client_version, models_json) \
+         VALUES (?, ?, ?, ?, ?, ?, ?) \
+         ON CONFLICT(provider_name, wire_api, base_url) DO UPDATE SET \
+            fetched_at = excluded.fetched_at, \
+            etag = excluded.etag, \
+            client_version = excluded.client_version, \
+            models_json = excluded.models_json",
+    )
+    .bind(&scope.provider_name)
+    .bind(&scope.wire_api)
+    .bind(&scope.base_url)
+    .bind(cache.fetched_at.timestamp())
+    .bind(cache.etag.as_deref())
+    .bind(cache.client_version.as_deref())
+    .bind(models_json)
+    .execute(&pool)
+    .await?;
     Ok(())
 }
 
-fn write_cache_sync(path: &Path, cache: &ModelsCache) -> Result<()> {
-    let contents = serde_json::to_vec_pretty(cache)?;
-    std::fs::write(path, contents)?;
-    Ok(())
+fn write_cache_sync(sqlite_home: &std::path::Path, cache: &ModelsCache) -> Result<()> {
+    tokio::task::block_in_place(|| {
+        tokio::runtime::Handle::current().block_on(write_cache(sqlite_home, cache))
+    })
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -328,7 +372,18 @@ struct ModelsCacheScope {
     base_url: String,
 }
 
-fn cache_scope_for(base_url: String) -> ModelsCacheScope {
+fn cache_scope_for_provider(provider: &ModelProviderInfo) -> ModelsCacheScope {
+    ModelsCacheScope {
+        provider_name: provider.name.clone(),
+        wire_api: provider.wire_api.to_string(),
+        base_url: provider
+            .base_url
+            .clone()
+            .expect("test provider should have base_url"),
+    }
+}
+
+fn cache_scope_for_base_url(base_url: String) -> ModelsCacheScope {
     ModelsCacheScope {
         provider_name: "OpenAI".to_string(),
         wire_api: "responses".to_string(),

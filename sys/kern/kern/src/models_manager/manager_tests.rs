@@ -10,7 +10,11 @@ use jiff::ToSpan;
 use pretty_assertions::assert_eq;
 use serde_json::json;
 use tempfile::tempdir;
+use wiremock::Mock;
 use wiremock::MockServer;
+use wiremock::ResponseTemplate;
+use wiremock::matchers::method;
+use wiremock::matchers::path;
 
 fn remote_model(slug: &str, display: &str, priority: i32) -> ModelInfo {
     remote_model_with_visibility(slug, display, priority, "list")
@@ -74,6 +78,13 @@ fn provider_for(base_url: String) -> ModelProviderInfo {
         stream_idle_timeout_ms: Some(5_000),
         requires_openai_auth: false,
         supports_websockets: false,
+    }
+}
+
+fn anthropic_provider_for(base_url: String) -> ModelProviderInfo {
+    ModelProviderInfo {
+        experimental_bearer_token: Some("test-bearer-token".into()),
+        ..provider_for(base_url)
     }
 }
 
@@ -418,6 +429,110 @@ async fn refresh_available_models_refetches_when_version_mismatch() {
         refreshed_mock.requests().len(),
         1,
         "version mismatch should fetch /models once"
+    );
+}
+
+#[tokio::test]
+async fn refresh_available_models_refetches_when_provider_scope_changes() {
+    let server_a = MockServer::start().await;
+    let server_b = MockServer::start().await;
+    let initial_models = vec![remote_model("from-a", "From A", 1)];
+    let updated_models = vec![remote_model("from-b", "From B", 2)];
+    let initial_mock = mount_models_once(
+        &server_a,
+        ModelsResponse {
+            models: initial_models.clone(),
+        },
+    )
+    .await;
+    let refreshed_mock = mount_models_once(
+        &server_b,
+        ModelsResponse {
+            models: updated_models.clone(),
+        },
+    )
+    .await;
+
+    let codex_home = tempdir().expect("temp dir");
+    let auth_manager =
+        AuthManager::from_auth_for_testing(CodexAuth::create_dummy_chatgpt_auth_for_testing());
+    let manager_a = ModelsManager::with_provider_for_tests(
+        codex_home.path().to_path_buf(),
+        auth_manager.clone(),
+        provider_for(server_a.uri()),
+    );
+
+    manager_a
+        .refresh_available_models(RefreshStrategy::OnlineIfUncached)
+        .await
+        .expect("initial refresh succeeds");
+    assert_models_contain(&manager_a.get_remote_models().await, &initial_models);
+
+    let manager_b = ModelsManager::with_provider_for_tests(
+        codex_home.path().to_path_buf(),
+        auth_manager,
+        provider_for(server_b.uri()),
+    );
+
+    manager_b
+        .refresh_available_models(RefreshStrategy::OnlineIfUncached)
+        .await
+        .expect("provider-scoped refresh succeeds");
+
+    assert_models_contain(&manager_b.get_remote_models().await, &updated_models);
+    assert_eq!(initial_mock.requests().len(), 1);
+    assert_eq!(
+        refreshed_mock.requests().len(),
+        1,
+        "provider scope mismatch should force a fresh /models fetch"
+    );
+}
+
+#[tokio::test]
+async fn refresh_available_models_uses_cache_for_anthropic_provider() {
+    let server = MockServer::start().await;
+    let response_body = json!({
+        "data": [{
+            "id": "claude-cache-test",
+            "display_name": "Claude Cache Test",
+            "max_input_tokens": 200000,
+            "max_tokens": 8192,
+            "capabilities": {
+                "thinking": { "supported": true },
+                "image_input": { "supported": true },
+                "structured_outputs": { "supported": true },
+                "effort": { "supported": true }
+            }
+        }]
+    });
+    Mock::given(method("GET"))
+        .and(path("/anthropic/models"))
+        .respond_with(ResponseTemplate::new(200).set_body_json(response_body))
+        .expect(1)
+        .mount(&server)
+        .await;
+
+    let codex_home = tempdir().expect("temp dir");
+    let auth_manager = AuthManager::from_auth_for_testing(CodexAuth::from_api_key("Test API Key"));
+    let manager = ModelsManager::with_provider_for_tests(
+        codex_home.path().to_path_buf(),
+        auth_manager,
+        anthropic_provider_for(format!("{}/anthropic", server.uri())),
+    );
+
+    manager
+        .refresh_available_models(RefreshStrategy::OnlineIfUncached)
+        .await
+        .expect("initial anthropic refresh succeeds");
+    manager
+        .refresh_available_models(RefreshStrategy::OnlineIfUncached)
+        .await
+        .expect("cached anthropic refresh succeeds");
+
+    let models = manager.get_remote_models().await;
+    assert!(
+        models.iter().any(|model| model.slug == "claude-cache-test"),
+        "expected discovered anthropic model to be cached"
     );
 }
 

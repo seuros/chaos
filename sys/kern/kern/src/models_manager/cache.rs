@@ -26,8 +26,13 @@ impl ModelsCacheManager {
         }
     }
 
-    /// Attempt to load a fresh cache entry. Returns `None` if the cache doesn't exist or is stale.
-    pub(crate) async fn load_fresh(&self, expected_version: &str) -> Option<ModelsCache> {
+    /// Attempt to load a fresh cache entry. Returns `None` if the cache doesn't exist, is stale,
+    /// or was written for a different provider scope.
+    pub(crate) async fn load_fresh(
+        &self,
+        expected_version: &str,
+        expected_scope: &ModelsCacheScope,
+    ) -> Option<ModelsCache> {
         info!(
                 cache_path = %self.cache_path.display(),
                 expected_version,
@@ -55,6 +60,17 @@ impl ModelsCacheManager {
             );
             return None;
         }
+        if cache.scope.as_ref() != Some(expected_scope) {
+            info!(
+                cache_path = %self.cache_path.display(),
+                expected_provider_name = %expected_scope.provider_name,
+                expected_wire_api = %expected_scope.wire_api,
+                expected_base_url = %expected_scope.base_url,
+                cached_scope = ?cache.scope,
+                "models cache: provider scope mismatch"
+            );
+            return None;
+        }
         if !cache.is_fresh(self.cache_ttl) {
             info!(
                 cache_path = %self.cache_path.display(),
@@ -78,11 +94,13 @@ impl ModelsCacheManager {
         models: &[ModelInfo],
         etag: Option<String>,
         client_version: String,
+        scope: ModelsCacheScope,
     ) {
         let cache = ModelsCache {
             fetched_at: Timestamp::now(),
             etag,
             client_version: Some(client_version),
+            scope: Some(scope),
             models: models.to_vec(),
         };
         if let Err(err) = self.save_internal(&cache).await {
@@ -91,11 +109,20 @@ impl ModelsCacheManager {
     }
 
     /// Renew the cache TTL by updating the fetched_at timestamp to now.
-    pub(crate) async fn renew_cache_ttl(&self) -> io::Result<()> {
+    pub(crate) async fn renew_cache_ttl(
+        &self,
+        expected_scope: &ModelsCacheScope,
+    ) -> io::Result<()> {
         let mut cache = match self.load().await? {
             Some(cache) => cache,
             None => return Err(io::Error::new(ErrorKind::NotFound, "cache not found")),
         };
+        if cache.scope.as_ref() != Some(expected_scope) {
+            return Err(io::Error::new(
+                ErrorKind::InvalidData,
+                "cache scope mismatch",
+            ));
+        }
         cache.fetched_at = Timestamp::now();
         self.save_internal(&cache).await
     }
@@ -164,7 +191,17 @@ pub(crate) struct ModelsCache {
     pub(crate) etag: Option<String>,
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub(crate) client_version: Option<String>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub(crate) scope: Option<ModelsCacheScope>,
     pub(crate) models: Vec<ModelInfo>,
+}
+
+/// Provider identity for a cached model catalog.
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
+pub(crate) struct ModelsCacheScope {
+    pub(crate) provider_name: String,
+    pub(crate) wire_api: String,
+    pub(crate) base_url: String,
 }
 
 impl ModelsCache {

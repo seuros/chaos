@@ -1,4 +1,5 @@
 use super::cache::ModelsCacheManager;
+use super::cache::ModelsCacheScope;
 use crate::api_bridge::auth_provider_from_auth;
 use crate::api_bridge::map_api_error;
 use crate::auth::AuthManager;
@@ -371,7 +372,11 @@ impl ModelsManager {
     pub(crate) async fn refresh_if_new_etag(&self, etag: String) {
         let current_etag = self.get_etag().await;
         if current_etag.clone().is_some() && current_etag.as_deref() == Some(etag.as_str()) {
-            if let Err(err) = self.cache_manager.renew_cache_ttl().await {
+            if let Err(err) = self
+                .cache_manager
+                .renew_cache_ttl(&self.cache_scope())
+                .await
+            {
                 error!("failed to renew cache TTL: {err}");
             }
             return;
@@ -400,15 +405,6 @@ impl ModelsManager {
                 self.try_load_cache().await;
             }
             return Ok(());
-        }
-
-        // TODO(GPT): The models cache is not provider-scoped. It was written
-        // by the OpenAI path and happily serves stale GPT metadata when an
-        // Anthropic provider asks for models. Fix the cache to key on
-        // provider name or base_url so switching providers does not poison
-        // the catalog. Until then, Anthropic providers bypass the cache.
-        if is_anthropic && refresh_strategy != RefreshStrategy::Offline {
-            return self.fetch_and_update_models().await;
         }
 
         match refresh_strategy {
@@ -467,7 +463,7 @@ impl ModelsManager {
         self.apply_remote_models(models.clone()).await;
         *self.etag.write().await = etag.clone();
         self.cache_manager
-            .persist_cache(&models, etag, client_version)
+            .persist_cache(&models, etag, client_version, self.cache_scope())
             .await;
         Ok(())
     }
@@ -503,15 +499,18 @@ impl ModelsManager {
 
         match abi_models {
             Ok(models) => {
-                let kern_models: Vec<ModelInfo> = models
-                    .iter()
-                    .map(model_info::model_info_from_abi)
-                    .collect();
+                let kern_models: Vec<ModelInfo> =
+                    models.iter().map(model_info::model_info_from_abi).collect();
+                let client_version = crate::models_manager::client_version_to_whole();
                 info!(
                     count = kern_models.len(),
                     "fetched models via Anthropic adapter"
                 );
-                self.apply_remote_models(kern_models).await;
+                self.apply_remote_models(kern_models.clone()).await;
+                *self.etag.write().await = None;
+                self.cache_manager
+                    .persist_cache(&kern_models, None, client_version, self.cache_scope())
+                    .await;
                 Ok(())
             }
             Err(ListModelsError::Unsupported) => {
@@ -557,7 +556,11 @@ impl ModelsManager {
             chaos_syslog::start_global_timer("codex.remote_models.load_cache.duration_ms", &[]);
         let client_version = crate::models_manager::client_version_to_whole();
         info!(client_version, "models cache: evaluating cache eligibility");
-        let cache = match self.cache_manager.load_fresh(&client_version).await {
+        let cache = match self
+            .cache_manager
+            .load_fresh(&client_version, &self.cache_scope())
+            .await
+        {
             Some(cache) => cache,
             None => {
                 info!("models cache: no usable cache entry");
@@ -573,6 +576,16 @@ impl ModelsManager {
             "models cache: cache entry applied"
         );
         true
+    }
+
+    fn cache_scope(&self) -> ModelsCacheScope {
+        ModelsCacheScope {
+            provider_name: self.provider.name.clone(),
+            wire_api: self.provider.wire_api.to_string(),
+            base_url: self
+                .provider
+                .effective_base_url(self.auth_manager.auth_mode()),
+        }
     }
 
     /// Build picker-ready presets from the active catalog snapshot.

@@ -14,7 +14,10 @@
       "properties": {
         "additionalContext": {
           "default": null,
-          "type": "string"
+          "type": [
+            "string",
+            "null"
+          ]
         },
         "hookEventName": {
           "$ref": "#/definitions/HookEventNameWire"
@@ -32,16 +35,22 @@
       "type": "boolean"
     },
     "hookSpecificOutput": {
-      "allOf": [
+      "anyOf": [
         {
           "$ref": "#/definitions/SessionStartHookSpecificOutputWire"
+        },
+        {
+          "type": "null"
         }
       ],
       "default": null
     },
     "stopReason": {
       "default": null,
-      "type": "string"
+      "type": [
+        "string",
+        "null"
+      ]
     },
     "suppressOutput": {
       "default": false,
@@ -49,7 +58,10 @@
     },
     "systemMessage": {
       "default": null,
-      "type": "string"
+      "type": [
+        "string",
+        "null"
+      ]
     }
   },
   "title": "session-start.command.output",

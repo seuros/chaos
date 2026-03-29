@@ -10,8 +10,9 @@ use tempfile::tempdir;
 #[test]
 fn test_apply_patch_scenarios() -> anyhow::Result<()> {
     let scenarios_dir = repo_root()?
-        .join("codex-rs")
-        .join("apply-patch")
+        .join("lib")
+        .join("libfs")
+        .join("diff")
         .join("tests")
         .join("fixtures")
         .join("scenarios");

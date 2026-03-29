@@ -1,5 +1,5 @@
 #[path = "harness.rs"]
-mod harness;
+pub mod harness;
 
 #[path = "suite/manager_metrics.rs"]
 mod manager_metrics;

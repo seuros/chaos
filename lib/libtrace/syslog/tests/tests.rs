@@ -1,2 +1,3 @@
-mod harness;
 mod suite;
+
+pub use suite::harness;

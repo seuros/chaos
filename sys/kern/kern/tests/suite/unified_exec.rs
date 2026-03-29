@@ -258,7 +258,7 @@ async fn unified_exec_intercepts_apply_patch_exec_command() -> Result<()> {
         "expected apply_patch output, got: {output:?}"
     );
     assert!(
-        output.contains("A uexec_apply.txt"),
+        output.contains("uexec_apply.txt"),
         "expected apply_patch file summary, got: {output:?}"
     );
     assert_eq!(

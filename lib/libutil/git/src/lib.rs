@@ -17,23 +17,23 @@
 //! - `log` — commit history with optional limit and branch
 //! - `blame` — per-line attribution for a file
 
+mod blame;
+mod branches;
+mod diff;
+mod error;
+mod log;
+mod remotes;
 mod repo;
 mod status;
-mod branches;
-mod remotes;
-mod diff;
-mod log;
-mod blame;
-mod error;
 
+pub use blame::{BlameLine, blame};
+pub use branches::BranchInfo;
+pub use diff::diff;
 pub use error::GitError;
+pub use log::{LogEntry, log};
+pub use remotes::RemoteInfo;
 pub use repo::RepoInfo;
 pub use status::{FileStatus, StatusInfo};
-pub use branches::BranchInfo;
-pub use remotes::RemoteInfo;
-pub use diff::diff;
-pub use log::{LogEntry, log};
-pub use blame::{BlameLine, blame};
 
 use std::path::Path;
 

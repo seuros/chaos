@@ -49,13 +49,12 @@ pub fn diff(cwd: &Path, base: Option<&str>, paths: Option<&[&str]>) -> Result<St
                     continue;
                 }
                 out.push_str(&format!("--- /dev/null\n+++ b/{path}\n"));
-                if entry_mode.is_blob() {
-                    if let Ok(obj) = repo.find_object(id) {
-                        if let Ok(s) = std::str::from_utf8(&obj.data) {
-                            for line in s.lines() {
-                                out.push_str(&format!("+{line}\n"));
-                            }
-                        }
+                if entry_mode.is_blob()
+                    && let Ok(obj) = repo.find_object(id)
+                    && let Ok(s) = std::str::from_utf8(&obj.data)
+                {
+                    for line in s.lines() {
+                        out.push_str(&format!("+{line}\n"));
                     }
                 }
             }
@@ -70,13 +69,12 @@ pub fn diff(cwd: &Path, base: Option<&str>, paths: Option<&[&str]>) -> Result<St
                     continue;
                 }
                 out.push_str(&format!("--- a/{path}\n+++ /dev/null\n"));
-                if entry_mode.is_blob() {
-                    if let Ok(obj) = repo.find_object(id) {
-                        if let Ok(s) = std::str::from_utf8(&obj.data) {
-                            for line in s.lines() {
-                                out.push_str(&format!("-{line}\n"));
-                            }
-                        }
+                if entry_mode.is_blob()
+                    && let Ok(obj) = repo.find_object(id)
+                    && let Ok(s) = std::str::from_utf8(&obj.data)
+                {
+                    for line in s.lines() {
+                        out.push_str(&format!("-{line}\n"));
                     }
                 }
             }
@@ -93,17 +91,16 @@ pub fn diff(cwd: &Path, base: Option<&str>, paths: Option<&[&str]>) -> Result<St
                 out.push_str(&format!("--- a/{path}\n+++ b/{path}\n"));
                 if let (Ok(old_obj), Ok(new_obj)) =
                     (repo.find_object(previous_id), repo.find_object(id))
-                {
-                    if let (Ok(old_s), Ok(new_s)) = (
+                    && let (Ok(old_s), Ok(new_s)) = (
                         std::str::from_utf8(&old_obj.data),
                         std::str::from_utf8(&new_obj.data),
-                    ) {
-                        for line in old_s.lines() {
-                            out.push_str(&format!("-{line}\n"));
-                        }
-                        for line in new_s.lines() {
-                            out.push_str(&format!("+{line}\n"));
-                        }
+                    )
+                {
+                    for line in old_s.lines() {
+                        out.push_str(&format!("-{line}\n"));
+                    }
+                    for line in new_s.lines() {
+                        out.push_str(&format!("+{line}\n"));
                     }
                 }
             }

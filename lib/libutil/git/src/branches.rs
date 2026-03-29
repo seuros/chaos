@@ -46,11 +46,11 @@ pub fn collect(cwd: &Path) -> Result<BranchInfo, GitError> {
     remote.sort_unstable();
 
     // Put default branch first in local list
-    if let Some(ref def) = default {
-        if let Some(pos) = local.iter().position(|b| b == def) {
-            let branch = local.remove(pos);
-            local.insert(0, branch);
-        }
+    if let Some(ref def) = default
+        && let Some(pos) = local.iter().position(|b| b == def)
+    {
+        let branch = local.remove(pos);
+        local.insert(0, branch);
     }
 
     Ok(BranchInfo {

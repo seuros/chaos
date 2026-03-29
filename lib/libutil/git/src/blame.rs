@@ -55,10 +55,10 @@ pub fn blame(
 
     for (i, line) in content.lines().enumerate() {
         let line_no = i + 1;
-        if let Some((start, end)) = lines {
-            if line_no < start || line_no > end {
-                continue;
-            }
+        if let Some((start, end)) = lines
+            && (line_no < start || line_no > end)
+        {
+            continue;
         }
         result.push(BlameLine {
             sha: head_sha_short.to_string(),

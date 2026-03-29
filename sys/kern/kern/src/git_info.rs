@@ -27,9 +27,7 @@ use tokio::time::timeout;
 /// directory. If you need Codex to work from such a checkout simply pass the
 /// `--allow-no-git-exec` CLI flag that disables the repo requirement.
 pub fn get_git_repo_root(base_dir: &Path) -> Option<PathBuf> {
-    chaos_git::repo_info(base_dir)
-        .ok()
-        .map(|info| info.root)
+    chaos_git::repo_info(base_dir).ok().map(|info| info.root)
 }
 
 /// Timeout for git commands to prevent freezing on large repositories.
@@ -82,7 +80,9 @@ pub async fn get_head_commit_hash(cwd: &Path) -> Option<String> {
 }
 
 pub async fn get_has_changes(cwd: &Path) -> Option<bool> {
-    chaos_git::repo_info(cwd).ok().map(|info| info.has_changes)
+    chaos_git::status(cwd).ok().map(|status| {
+        !(status.staged.is_empty() && status.unstaged.is_empty() && status.untracked.is_empty())
+    })
 }
 
 /// A minimal commit summary entry used for pickers (subject + timestamp + sha).
@@ -109,7 +109,7 @@ pub async fn recent_commits(cwd: &Path, limit: usize) -> Vec<CommitLogEntry> {
         .map(|e| CommitLogEntry {
             sha: e.sha,
             timestamp: e.timestamp,
-            subject: e.subject,
+            subject: e.subject.trim_end_matches('\n').to_string(),
         })
         .collect()
 }

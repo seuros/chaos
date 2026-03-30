@@ -30,7 +30,6 @@ use chaos_kern::config::Config;
 use chaos_kern::config::ConfigOverrides;
 use chaos_kern::config::edit::ConfigEditsBuilder;
 use chaos_kern::config::find_chaos_home;
-use chaos_kern::features::Stage;
 use chaos_kern::features::is_known_feature_key;
 use chaos_kern::terminal::TerminalName;
 
@@ -317,15 +316,6 @@ struct FeatureSetArgs {
     feature: String,
 }
 
-fn stage_str(stage: chaos_kern::features::Stage) -> &'static str {
-    use chaos_kern::features::Stage;
-    match stage {
-        Stage::UnderDevelopment => "under development",
-        Stage::Experimental { .. } => "experimental",
-        Stage::Stable => "stable",
-    }
-}
-
 fn main() -> anyhow::Result<()> {
     // Install the ring CryptoProvider process-wide before any TLS operation.
     let _ = rama::tls::rustls::dep::rustls::crypto::ring::default_provider().install_default();
@@ -537,19 +527,16 @@ async fn cli_main(arg0_paths: Arg0DispatchPaths) -> anyhow::Result<()> {
                 .await?;
                 let mut rows = Vec::with_capacity(chaos_kern::features::FEATURES.len());
                 let mut name_width = 0;
-                let mut stage_width = 0;
                 for def in chaos_kern::features::FEATURES.iter() {
                     let name = def.key;
-                    let stage = stage_str(def.stage);
                     let enabled = config.features.enabled(def.id);
                     name_width = name_width.max(name.len());
-                    stage_width = stage_width.max(stage.len());
-                    rows.push((name, stage, enabled));
+                    rows.push((name, enabled));
                 }
-                rows.sort_unstable_by_key(|(name, _, _)| *name);
+                rows.sort_unstable_by_key(|(name, _)| *name);
 
-                for (name, stage, enabled) in rows {
-                    println!("{name:<name_width$}  {stage:<stage_width$}  {enabled}");
+                for (name, enabled) in rows {
+                    println!("{name:<name_width$}  {enabled}");
                 }
             }
             FeaturesSubcommand::Enable(FeatureSetArgs { feature }) => {
@@ -573,7 +560,6 @@ async fn enable_feature_in_config(interactive: &TuiCli, feature: &str) -> anyhow
         .apply()
         .await?;
     println!("Enabled feature `{feature}` in config.toml.");
-    maybe_print_under_development_feature_warning(&chaos_home, interactive, feature);
     Ok(())
 }
 
@@ -587,32 +573,6 @@ async fn disable_feature_in_config(interactive: &TuiCli, feature: &str) -> anyho
         .await?;
     println!("Disabled feature `{feature}` in config.toml.");
     Ok(())
-}
-
-fn maybe_print_under_development_feature_warning(
-    chaos_home: &std::path::Path,
-    interactive: &TuiCli,
-    feature: &str,
-) {
-    if interactive.config_profile.is_some() {
-        return;
-    }
-
-    let Some(spec) = chaos_kern::features::FEATURES
-        .iter()
-        .find(|spec| spec.key == feature)
-    else {
-        return;
-    };
-    if !matches!(spec.stage, Stage::UnderDevelopment) {
-        return;
-    }
-
-    let config_path = chaos_home.join(chaos_sysctl::CONFIG_TOML_FILE);
-    eprintln!(
-        "Under-development features enabled: {feature}. Under-development features are incomplete and may behave unpredictably. To suppress this warning, set `suppress_unstable_features_warning = true` in {}.",
-        config_path.display()
-    );
 }
 
 /// Prepend root-level overrides so they have lower precedence than
@@ -1128,29 +1088,29 @@ mod tests {
     #[test]
     fn feature_toggles_known_features_generate_overrides() {
         let toggles = FeatureToggles {
-            enable: vec!["web_search_request".to_string()],
+            enable: vec!["shell_tool".to_string()],
             disable: vec!["unified_exec".to_string()],
         };
         let overrides = toggles.to_overrides().expect("valid features");
         assert_eq!(
             overrides,
             vec![
-                "features.web_search_request=true".to_string(),
+                "features.shell_tool=true".to_string(),
                 "features.unified_exec=false".to_string(),
             ]
         );
     }
 
     #[test]
-    fn feature_toggles_accept_legacy_linux_sandbox_flag() {
+    fn feature_toggles_accept_legacy_alias() {
         let toggles = FeatureToggles {
-            enable: vec!["use_linux_sandbox_bwrap".to_string()],
+            enable: vec!["collab".to_string()],
             disable: Vec::new(),
         };
         let overrides = toggles.to_overrides().expect("valid features");
         assert_eq!(
             overrides,
-            vec!["features.use_linux_sandbox_bwrap=true".to_string(),]
+            vec!["features.collab=true".to_string(),]
         );
     }
 

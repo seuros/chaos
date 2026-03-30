@@ -1,6 +1,5 @@
 use super::*;
 use crate::config::ConfigBuilder;
-use crate::features::Feature;
 use std::fs;
 use std::path::PathBuf;
 use tempfile::TempDir;
@@ -326,10 +325,6 @@ async fn skills_are_not_appended_to_project_doc() {
 async fn apps_feature_does_not_emit_user_instructions_by_itself() {
     let tmp = tempfile::tempdir().expect("tempdir");
     let mut cfg = make_config(&tmp, 4096, None).await;
-    cfg.features
-        .enable(Feature::Apps)
-        .expect("test config should allow apps");
-
     let res = get_user_instructions(&cfg).await;
     assert_eq!(res, None);
 }
@@ -340,10 +335,6 @@ async fn apps_feature_does_not_append_to_project_doc_user_instructions() {
     fs::write(tmp.path().join("AGENTS.md"), "base doc").unwrap();
 
     let mut cfg = make_config(&tmp, 4096, None).await;
-    cfg.features
-        .enable(Feature::Apps)
-        .expect("test config should allow apps");
-
     let res = get_user_instructions(&cfg)
         .await
         .expect("instructions expected");

@@ -89,11 +89,7 @@ impl CliConfigOverrides {
 }
 
 fn canonicalize_override_key(key: &str) -> String {
-    if key == "use_legacy_landlock" {
-        "features.use_legacy_landlock".to_string()
-    } else {
-        key.to_string()
-    }
+    key.to_string()
 }
 
 /// Apply a single override onto `root`, creating intermediate objects as

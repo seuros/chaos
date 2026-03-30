@@ -96,11 +96,6 @@ fn codex_apps_server_config_uses_legacy_codex_apps_path() {
     let mut servers = with_codex_apps_mcp(HashMap::new(), false, None, &config);
     assert!(!servers.contains_key(CODEX_APPS_MCP_SERVER_NAME));
 
-    config
-        .features
-        .enable(Feature::Apps)
-        .expect("test config should allow apps");
-
     servers = with_codex_apps_mcp(servers, true, None, &config);
     let server = servers
         .get(CODEX_APPS_MCP_SERVER_NAME)

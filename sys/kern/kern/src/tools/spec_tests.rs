@@ -775,7 +775,6 @@ fn test_build_specs_agent_job_worker_tools_enabled() {
     let mut features = Features::with_defaults();
     features.enable(Feature::SpawnCsv);
     features.normalize_dependencies();
-    features.enable(Feature::Sqlite);
     let available_models = Vec::new();
     let tools_config = ToolsConfig::new(&ToolsConfigParams {
         model_info: &model_info,
@@ -1801,7 +1800,6 @@ fn test_build_specs_mcp_tools_sorted_by_name() {
 fn search_tool_description_lists_each_codex_apps_connector_once() {
     let model_info = search_capable_model_info();
     let mut features = Features::with_defaults();
-    features.enable(Feature::Apps);
     let available_models = Vec::new();
     let tools_config = ToolsConfig::new(&ToolsConfigParams {
         model_info: &model_info,
@@ -1969,7 +1967,6 @@ fn search_tool_requires_model_capability_only() {
 fn tool_suggest_is_not_registered_without_feature_flag() {
     let model_info = search_capable_model_info();
     let mut features = Features::with_defaults();
-    features.enable(Feature::Apps);
     let available_models = Vec::new();
     let tools_config = ToolsConfig::new(&ToolsConfigParams {
         model_info: &model_info,
@@ -2004,7 +2001,6 @@ fn tool_suggest_is_not_registered_without_feature_flag() {
 fn search_tool_description_handles_no_enabled_apps() {
     let model_info = search_capable_model_info();
     let mut features = Features::with_defaults();
-    features.enable(Feature::Apps);
     let available_models = Vec::new();
     let tools_config = ToolsConfig::new(&ToolsConfigParams {
         model_info: &model_info,
@@ -2030,7 +2026,6 @@ fn search_tool_description_handles_no_enabled_apps() {
 fn search_tool_description_falls_back_to_connector_name_without_description() {
     let model_info = search_capable_model_info();
     let mut features = Features::with_defaults();
-    features.enable(Feature::Apps);
     let available_models = Vec::new();
     let tools_config = ToolsConfig::new(&ToolsConfigParams {
         model_info: &model_info,
@@ -2077,7 +2072,6 @@ fn search_tool_description_falls_back_to_connector_name_without_description() {
 fn search_tool_registers_namespaced_app_tool_aliases() {
     let model_info = search_capable_model_info();
     let mut features = Features::with_defaults();
-    features.enable(Feature::Apps);
     let available_models = Vec::new();
     let tools_config = ToolsConfig::new(&ToolsConfigParams {
         model_info: &model_info,
@@ -2140,7 +2134,6 @@ fn search_tool_registers_namespaced_app_tool_aliases() {
 fn tool_suggest_description_lists_discoverable_tools() {
     let model_info = search_capable_model_info();
     let mut features = Features::with_defaults();
-    features.enable(Feature::Apps);
     features.enable(Feature::ToolSuggest);
     let available_models = Vec::new();
     let tools_config = ToolsConfig::new(&ToolsConfigParams {

@@ -1428,14 +1428,13 @@ fn web_search_mode_defaults_to_none_if_unset() {
 }
 
 #[test]
-fn web_search_mode_prefers_profile_over_legacy_flags() {
+fn web_search_mode_prefers_profile_over_config() {
     let cfg = ConfigToml::default();
     let profile = ConfigProfile {
         web_search: Some(WebSearchMode::Live),
         ..Default::default()
     };
-    let mut features = Features::with_defaults();
-    features.enable(Feature::WebSearchCached);
+    let features = Features::with_defaults();
 
     assert_eq!(
         resolve_web_search_mode(&cfg, &profile, &features),
@@ -1444,14 +1443,13 @@ fn web_search_mode_prefers_profile_over_legacy_flags() {
 }
 
 #[test]
-fn web_search_mode_disabled_overrides_legacy_request() {
+fn web_search_mode_disabled_from_config() {
     let cfg = ConfigToml {
         web_search: Some(WebSearchMode::Disabled),
         ..Default::default()
     };
     let profile = ConfigProfile::default();
-    let mut features = Features::with_defaults();
-    features.enable(Feature::WebSearchRequest);
+    let features = Features::with_defaults();
 
     assert_eq!(
         resolve_web_search_mode(&cfg, &profile, &features),
@@ -2774,7 +2772,7 @@ async fn set_feature_enabled_updates_profile() -> anyhow::Result<()> {
 
     ConfigEditsBuilder::new(chaos_home.path())
         .with_profile(Some("dev"))
-        .set_feature_enabled("steer", true)
+        .set_feature_enabled("shell_tool", true)
         .apply()
         .await?;
 
@@ -2789,14 +2787,14 @@ async fn set_feature_enabled_updates_profile() -> anyhow::Result<()> {
         profile
             .features
             .as_ref()
-            .and_then(|features| features.entries.get("steer")),
+            .and_then(|features| features.entries.get("shell_tool")),
         Some(&true),
     );
     assert_eq!(
         parsed
             .features
             .as_ref()
-            .and_then(|features| features.entries.get("steer")),
+            .and_then(|features| features.entries.get("shell_tool")),
         None,
     );
 
@@ -2810,13 +2808,13 @@ async fn set_feature_enabled_persists_default_false_feature_disable_in_profile()
 
     ConfigEditsBuilder::new(chaos_home.path())
         .with_profile(Some("dev"))
-        .set_feature_enabled("steer", true)
+        .set_feature_enabled("shell_tool", true)
         .apply()
         .await?;
 
     ConfigEditsBuilder::new(chaos_home.path())
         .with_profile(Some("dev"))
-        .set_feature_enabled("steer", false)
+        .set_feature_enabled("shell_tool", false)
         .apply()
         .await?;
 
@@ -2831,14 +2829,14 @@ async fn set_feature_enabled_persists_default_false_feature_disable_in_profile()
         profile
             .features
             .as_ref()
-            .and_then(|features| features.entries.get("steer")),
+            .and_then(|features| features.entries.get("shell_tool")),
         Some(&false),
     );
     assert_eq!(
         parsed
             .features
             .as_ref()
-            .and_then(|features| features.entries.get("steer")),
+            .and_then(|features| features.entries.get("shell_tool")),
         None,
     );
 
@@ -2850,13 +2848,13 @@ async fn set_feature_enabled_profile_disable_overrides_root_enable() -> anyhow::
     let chaos_home = TempDir::new()?;
 
     ConfigEditsBuilder::new(chaos_home.path())
-        .set_feature_enabled("steer", true)
+        .set_feature_enabled("shell_tool", true)
         .apply()
         .await?;
 
     ConfigEditsBuilder::new(chaos_home.path())
         .with_profile(Some("dev"))
-        .set_feature_enabled("steer", false)
+        .set_feature_enabled("shell_tool", false)
         .apply()
         .await?;
 
@@ -2871,14 +2869,14 @@ async fn set_feature_enabled_profile_disable_overrides_root_enable() -> anyhow::
         parsed
             .features
             .as_ref()
-            .and_then(|features| features.entries.get("steer")),
+            .and_then(|features| features.entries.get("shell_tool")),
         Some(&true),
     );
     assert_eq!(
         profile
             .features
             .as_ref()
-            .and_then(|features| features.entries.get("steer")),
+            .and_then(|features| features.entries.get("shell_tool")),
         Some(&false),
     );
 
@@ -4228,7 +4226,7 @@ fn test_precedence_fixture_with_o3_profile() -> std::io::Result<()> {
             background_terminal_max_timeout: DEFAULT_MAX_BACKGROUND_TERMINAL_TIMEOUT_MS,
             ghost_snapshot: GhostSnapshotConfig::default(),
             features: Features::with_defaults().into(),
-            suppress_unstable_features_warning: false,
+
             active_profile: Some("o3".to_string()),
             active_project: ProjectConfig { trust_level: None },
             windows_wsl_setup_acknowledged: false,

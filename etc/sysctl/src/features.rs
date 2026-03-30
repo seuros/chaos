@@ -11,57 +11,11 @@ use std::collections::BTreeMap;
 use std::collections::BTreeSet;
 use tracing::info;
 
-/// High-level lifecycle stage for a feature.
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
-pub enum Stage {
-    /// Features that are still under development, not ready for external use
-    UnderDevelopment,
-    /// Experimental features made available to users through the `/experimental` menu
-    Experimental {
-        name: &'static str,
-        menu_description: &'static str,
-        announcement: &'static str,
-    },
-    /// Stable features. The feature flag is kept for ad-hoc enabling/disabling
-    Stable,
-}
-
-impl Stage {
-    pub fn experimental_menu_name(self) -> Option<&'static str> {
-        match self {
-            Stage::Experimental { name, .. } => Some(name),
-            _ => None,
-        }
-    }
-
-    pub fn experimental_menu_description(self) -> Option<&'static str> {
-        match self {
-            Stage::Experimental {
-                menu_description, ..
-            } => Some(menu_description),
-            _ => None,
-        }
-    }
-
-    pub fn experimental_announcement(self) -> Option<&'static str> {
-        match self {
-            Stage::Experimental {
-                announcement: "", ..
-            } => None,
-            Stage::Experimental { announcement, .. } => Some(announcement),
-            _ => None,
-        }
-    }
-}
-
 /// Unique features toggled via configuration.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash)]
 pub enum Feature {
-    // Stable.
     GhostCommit,
     ShellTool,
-
-    // Experimental
     UnifiedExec,
     ShellZshFork,
     ApplyPatchFreeform,
@@ -94,10 +48,6 @@ pub enum Feature {
 impl Feature {
     pub fn key(self) -> &'static str {
         self.info().key
-    }
-
-    pub fn stage(self) -> Stage {
-        self.info().stage
     }
 
     pub fn default_enabled(self) -> bool {
@@ -284,194 +234,39 @@ pub struct FeaturesToml {
 pub struct FeatureSpec {
     pub id: Feature,
     pub key: &'static str,
-    pub stage: Stage,
     pub default_enabled: bool,
 }
 
 pub const FEATURES: &[FeatureSpec] = &[
-    // Stable features.
-    FeatureSpec {
-        id: Feature::GhostCommit,
-        key: "undo",
-        stage: Stage::Stable,
-        default_enabled: false,
-    },
-    FeatureSpec {
-        id: Feature::ShellTool,
-        key: "shell_tool",
-        stage: Stage::Stable,
-        default_enabled: true,
-    },
-    FeatureSpec {
-        id: Feature::UnifiedExec,
-        key: "unified_exec",
-        stage: Stage::Stable,
-        default_enabled: true,
-    },
-    FeatureSpec {
-        id: Feature::ShellZshFork,
-        key: "shell_zsh_fork",
-        stage: Stage::UnderDevelopment,
-        default_enabled: false,
-    },
-    FeatureSpec {
-        id: Feature::ShellSnapshot,
-        key: "shell_snapshot",
-        stage: Stage::Stable,
-        default_enabled: true,
-    },
-    FeatureSpec {
-        id: Feature::CodexGitCommit,
-        key: "chaos_scm_commit",
-        stage: Stage::UnderDevelopment,
-        default_enabled: false,
-    },
-    FeatureSpec {
-        id: Feature::RuntimeMetrics,
-        key: "runtime_metrics",
-        stage: Stage::UnderDevelopment,
-        default_enabled: false,
-    },
-    FeatureSpec {
-        id: Feature::MemoryTool,
-        key: "memories",
-        stage: Stage::UnderDevelopment,
-        default_enabled: false,
-    },
-    FeatureSpec {
-        id: Feature::ChildAgentsMd,
-        key: "child_agents_md",
-        stage: Stage::UnderDevelopment,
-        default_enabled: false,
-    },
-    FeatureSpec {
-        id: Feature::ImageDetailOriginal,
-        key: "image_detail_original",
-        stage: Stage::UnderDevelopment,
-        default_enabled: false,
-    },
-    FeatureSpec {
-        id: Feature::ApplyPatchFreeform,
-        key: "apply_patch_freeform",
-        stage: Stage::UnderDevelopment,
-        default_enabled: false,
-    },
-    FeatureSpec {
-        id: Feature::ExecPermissionApprovals,
-        key: "exec_permission_approvals",
-        stage: Stage::UnderDevelopment,
-        default_enabled: false,
-    },
-    FeatureSpec {
-        id: Feature::CodexHooks,
-        key: "chaos_dtrace",
-        stage: Stage::UnderDevelopment,
-        default_enabled: false,
-    },
-    FeatureSpec {
-        id: Feature::RequestPermissionsTool,
-        key: "request_permissions_tool",
-        stage: Stage::UnderDevelopment,
-        default_enabled: false,
-    },
-    FeatureSpec {
-        id: Feature::EnableRequestCompression,
-        key: "enable_request_compression",
-        stage: Stage::Stable,
-        default_enabled: true,
-    },
-    FeatureSpec {
-        id: Feature::Collab,
-        key: "multi_agent",
-        stage: Stage::Stable,
-        default_enabled: true,
-    },
-    FeatureSpec {
-        id: Feature::SpawnCsv,
-        key: "enable_fanout",
-        stage: Stage::UnderDevelopment,
-        default_enabled: false,
-    },
-    FeatureSpec {
-        id: Feature::ToolSuggest,
-        key: "tool_suggest",
-        stage: Stage::UnderDevelopment,
-        default_enabled: false,
-    },
-    FeatureSpec {
-        id: Feature::ImageGeneration,
-        key: "image_generation",
-        stage: Stage::UnderDevelopment,
-        default_enabled: false,
-    },
-    FeatureSpec {
-        id: Feature::SkillMcpDependencyInstall,
-        key: "skill_mcp_dependency_install",
-        stage: Stage::Stable,
-        default_enabled: true,
-    },
-    FeatureSpec {
-        id: Feature::SkillEnvVarDependencyPrompt,
-        key: "skill_env_var_dependency_prompt",
-        stage: Stage::UnderDevelopment,
-        default_enabled: false,
-    },
-    FeatureSpec {
-        id: Feature::DefaultModeRequestUserInput,
-        key: "default_mode_request_user_input",
-        stage: Stage::UnderDevelopment,
-        default_enabled: false,
-    },
-    FeatureSpec {
-        id: Feature::ToolCallMcpElicitation,
-        key: "tool_call_mcp_elicitation",
-        stage: Stage::UnderDevelopment,
-        default_enabled: false,
-    },
-    FeatureSpec {
-        id: Feature::Personality,
-        key: "personality",
-        stage: Stage::Stable,
-        default_enabled: true,
-    },
-    FeatureSpec {
-        id: Feature::Artifact,
-        key: "artifact",
-        stage: Stage::UnderDevelopment,
-        default_enabled: false,
-    },
-    FeatureSpec {
-        id: Feature::FastMode,
-        key: "fast_mode",
-        stage: Stage::Stable,
-        default_enabled: true,
-    },
-    FeatureSpec {
-        id: Feature::PreventIdleSleep,
-        key: "prevent_idle_sleep",
-        stage: if cfg!(any(target_os = "macos", target_os = "linux")) {
-            Stage::Experimental {
-                name: "Prevent sleep while running",
-                menu_description: "Keep your computer awake while Codex is running a thread.",
-                announcement: "NEW: Prevent sleep while running is now available in /experimental.",
-            }
-        } else {
-            Stage::UnderDevelopment
-        },
-        default_enabled: false,
-    },
-    FeatureSpec {
-        id: Feature::ResponsesWebsockets,
-        key: "responses_websockets",
-        stage: Stage::UnderDevelopment,
-        default_enabled: false,
-    },
-    FeatureSpec {
-        id: Feature::ResponsesWebsocketsV2,
-        key: "responses_websockets_v2",
-        stage: Stage::UnderDevelopment,
-        default_enabled: false,
-    },
+    FeatureSpec { id: Feature::GhostCommit, key: "undo", default_enabled: false },
+    FeatureSpec { id: Feature::ShellTool, key: "shell_tool", default_enabled: true },
+    FeatureSpec { id: Feature::UnifiedExec, key: "unified_exec", default_enabled: true },
+    FeatureSpec { id: Feature::ShellZshFork, key: "shell_zsh_fork", default_enabled: false },
+    FeatureSpec { id: Feature::ShellSnapshot, key: "shell_snapshot", default_enabled: true },
+    FeatureSpec { id: Feature::CodexGitCommit, key: "chaos_scm_commit", default_enabled: false },
+    FeatureSpec { id: Feature::RuntimeMetrics, key: "runtime_metrics", default_enabled: false },
+    FeatureSpec { id: Feature::MemoryTool, key: "memories", default_enabled: false },
+    FeatureSpec { id: Feature::ChildAgentsMd, key: "child_agents_md", default_enabled: false },
+    FeatureSpec { id: Feature::ImageDetailOriginal, key: "image_detail_original", default_enabled: false },
+    FeatureSpec { id: Feature::ApplyPatchFreeform, key: "apply_patch_freeform", default_enabled: false },
+    FeatureSpec { id: Feature::ExecPermissionApprovals, key: "exec_permission_approvals", default_enabled: false },
+    FeatureSpec { id: Feature::CodexHooks, key: "chaos_dtrace", default_enabled: false },
+    FeatureSpec { id: Feature::RequestPermissionsTool, key: "request_permissions_tool", default_enabled: false },
+    FeatureSpec { id: Feature::EnableRequestCompression, key: "enable_request_compression", default_enabled: true },
+    FeatureSpec { id: Feature::Collab, key: "multi_agent", default_enabled: true },
+    FeatureSpec { id: Feature::SpawnCsv, key: "enable_fanout", default_enabled: false },
+    FeatureSpec { id: Feature::ToolSuggest, key: "tool_suggest", default_enabled: false },
+    FeatureSpec { id: Feature::ImageGeneration, key: "image_generation", default_enabled: false },
+    FeatureSpec { id: Feature::SkillMcpDependencyInstall, key: "skill_mcp_dependency_install", default_enabled: true },
+    FeatureSpec { id: Feature::SkillEnvVarDependencyPrompt, key: "skill_env_var_dependency_prompt", default_enabled: false },
+    FeatureSpec { id: Feature::DefaultModeRequestUserInput, key: "default_mode_request_user_input", default_enabled: false },
+    FeatureSpec { id: Feature::ToolCallMcpElicitation, key: "tool_call_mcp_elicitation", default_enabled: false },
+    FeatureSpec { id: Feature::Personality, key: "personality", default_enabled: true },
+    FeatureSpec { id: Feature::Artifact, key: "artifact", default_enabled: false },
+    FeatureSpec { id: Feature::FastMode, key: "fast_mode", default_enabled: true },
+    FeatureSpec { id: Feature::PreventIdleSleep, key: "prevent_idle_sleep", default_enabled: false },
+    FeatureSpec { id: Feature::ResponsesWebsockets, key: "responses_websockets", default_enabled: false },
+    FeatureSpec { id: Feature::ResponsesWebsocketsV2, key: "responses_websockets_v2", default_enabled: false },
 ];
 
 // ===== Legacy feature aliases =====

@@ -6,7 +6,6 @@ use chaos_ipc::protocol::AskForApproval;
 use chaos_ipc::protocol::SandboxPolicy;
 use chaos_kern::ChaosAuth;
 use chaos_kern::config::Config;
-use chaos_kern::features::Feature;
 use core_test_support::apps_test_server::AppsTestServer;
 use core_test_support::responses::ev_assistant_message;
 use core_test_support::responses::ev_completed;
@@ -38,10 +37,6 @@ fn tool_names(body: &Value) -> Vec<String> {
 }
 
 fn configure_apps(config: &mut Config, apps_base_url: &str) {
-    config
-        .features
-        .enable(Feature::Apps)
-        .expect("test config should allow feature update");
     config.chatgpt_base_url = apps_base_url.to_string();
     config.model = Some("gpt-5-codex".to_string());
 

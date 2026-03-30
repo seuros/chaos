@@ -19,9 +19,7 @@ use crate::compact::should_use_remote_compact_task;
 use crate::compact_remote::run_inline_remote_auto_compact_task;
 use crate::config::ManagedFeatures;
 use crate::exec_policy::ExecPolicyManager;
-use crate::features::FEATURES;
 use crate::features::Feature;
-use crate::features::maybe_push_unstable_features_warning;
 use crate::mcp::oauth_types::OAuthCredentialsStoreMode;
 use crate::minions::AgentControl;
 use crate::minions::AgentStatus;
@@ -1059,29 +1057,10 @@ pub(crate) struct SessionSettingsUpdate {
 impl Session {
     /// Builds the `x-codex-beta-features` header value for this session.
     ///
-    /// `ModelClient` is session-scoped and intentionally does not depend on the full `Config`, so
-    /// we precompute the comma-separated list of enabled experimental feature keys at session
-    /// creation time and thread it into the client.
-    fn build_model_client_beta_features_header(config: &Config) -> Option<String> {
-        let beta_features_header = FEATURES
-            .iter()
-            .filter_map(|spec| {
-                if spec.stage.experimental_menu_description().is_some()
-                    && config.features.enabled(spec.id)
-                {
-                    Some(spec.key)
-                } else {
-                    None
-                }
-            })
-            .collect::<Vec<_>>()
-            .join(",");
-
-        if beta_features_header.is_empty() {
-            None
-        } else {
-            Some(beta_features_header)
-        }
+    /// With stages removed, there are no experimental-menu features to advertise.
+    /// Kept as a named function so callers do not need to change.
+    fn build_model_client_beta_features_header(_config: &Config) -> Option<String> {
+        None
     }
 
     async fn start_managed_network_proxy(
@@ -1458,7 +1437,7 @@ impl Session {
                 }),
             });
         }
-        maybe_push_unstable_features_warning(&config, &mut post_session_configured_events);
+
         if config.permissions.approval_policy.value() == AskForApproval::OnFailure {
             post_session_configured_events.push(Event {
                 id: "".to_owned(),

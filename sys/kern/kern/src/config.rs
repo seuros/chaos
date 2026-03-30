@@ -87,7 +87,6 @@ use crate::config::permissions::network_proxy_config_from_profile_network;
 use crate::config::profile::ConfigProfile;
 use chaos_pf::NetworkProxyConfig;
 use toml::Value as TomlValue;
-use toml_edit::value;
 
 pub(crate) mod agent_roles;
 pub mod edit;
@@ -636,11 +635,6 @@ impl ConfigBuilder {
     }
 }
 
-fn config_scope_segments(scope: &[String], key: &str) -> Vec<String> {
-    let mut segments = scope.to_vec();
-    segments.push(key.to_string());
-    segments
-}
 
 fn feature_scope_segments(scope: &[String], feature_key: &str) -> Vec<String> {
     let mut segments = scope.to_vec();
@@ -653,45 +647,26 @@ fn push_smart_approvals_alias_migration_edits(
     edits: &mut Vec<ConfigEdit>,
     scope: &[String],
     features: &FeaturesToml,
-    approvals_reviewer_missing: bool,
 ) {
-    let Some(alias_enabled) = features.entries.get("smart_approvals").copied() else {
+    if features.entries.get("smart_approvals").is_none() {
         return;
-    };
-    let canonical_enabled = features
-        .entries
-        .get("guardian_approval")
-        .copied()
-        .unwrap_or(alias_enabled);
-
-    if !features.entries.contains_key("guardian_approval") {
-        edits.push(ConfigEdit::SetPath {
-            segments: feature_scope_segments(scope, "guardian_approval"),
-            value: value(alias_enabled),
-        });
     }
-    if canonical_enabled && approvals_reviewer_missing {
-        edits.push(ConfigEdit::SetPath {
-            segments: config_scope_segments(scope, "approvals_reviewer"),
-            value: value(ApprovalsReviewer::GuardianSubagent.to_string()),
-        });
-    }
+    // Remove the deprecated smart_approvals key. The guardian approval
+    // system it pointed to has been removed entirely.
     edits.push(ConfigEdit::ClearPath {
         segments: feature_scope_segments(scope, "smart_approvals"),
     });
+    // Also clean up any lingering guardian_approval flag.
+    if features.entries.contains_key("guardian_approval") {
+        edits.push(ConfigEdit::ClearPath {
+            segments: feature_scope_segments(scope, "guardian_approval"),
+        });
+    }
 }
 
-/// Rewrites the legacy `smart_approvals` feature flag to
-/// `guardian_approval` in `config.toml` before normal config loading.
-///
-/// If the old key is present, this preserves its value by setting
-/// `guardian_approval = <alias value>` when the new key is not already present.
-/// Because the deprecated flag historically meant "turn guardian review on",
-/// this migration also backfills `approvals_reviewer = "guardian_subagent"`
-/// in the same scope when that reviewer is not already configured there and the
-/// migrated feature value is `true`.
-/// In all cases it removes the deprecated `smart_approvals` entry so future
-/// loads only see the canonical feature flag name.
+/// Removes the legacy `smart_approvals` and `guardian_approval` feature
+/// flags from `config.toml` since the guardian approval system has been
+/// removed.
 async fn maybe_migrate_smart_approvals_alias(chaos_home: &Path) -> std::io::Result<bool> {
     let config_path = chaos_home.join(CONFIG_TOML_FILE);
     if !tokio::fs::try_exists(&config_path).await? {
@@ -711,7 +686,6 @@ async fn maybe_migrate_smart_approvals_alias(chaos_home: &Path) -> std::io::Resu
             &mut edits,
             &root_scope,
             features,
-            config_toml.approvals_reviewer.is_none(),
         );
     }
 
@@ -722,7 +696,6 @@ async fn maybe_migrate_smart_approvals_alias(chaos_home: &Path) -> std::io::Resu
                 &mut edits,
                 &scope,
                 features,
-                profile.approvals_reviewer.is_none(),
             );
         }
     }
@@ -736,7 +709,7 @@ async fn maybe_migrate_smart_approvals_alias(chaos_home: &Path) -> std::io::Resu
         .apply()
         .await
         .map_err(|err| {
-            std::io::Error::other(format!("failed to migrate guardian_approval alias: {err}"))
+            std::io::Error::other(format!("failed to clean up deprecated approval aliases: {err}"))
         })?;
     Ok(true)
 }

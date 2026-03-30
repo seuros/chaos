@@ -195,7 +195,7 @@ use crate::feedback_tags;
 use crate::file_watcher::FileWatcher;
 use crate::file_watcher::FileWatcherEvent;
 use crate::git_info::get_git_repo_root;
-use crate::guardian::GuardianReviewSessionManager;
+
 use crate::instructions::UserInstructions;
 use crate::mcp::McpManager;
 use crate::mcp::auth::compute_auth_statuses;
@@ -412,16 +412,9 @@ impl Chaos {
 
         let user_instructions = get_user_instructions(&config).await;
 
-        let exec_policy = if crate::guardian::is_guardian_reviewer_source(&session_source) {
-            // Guardian review should rely on the built-in shell safety checks,
-            // not on caller-provided exec-policy rules that could shape the
-            // reviewer or silently auto-approve commands.
-            ExecPolicyManager::default()
-        } else {
-            ExecPolicyManager::load(&config.config_layer_stack)
-                .await
-                .map_err(|err| ChaosErr::Fatal(format!("failed to load rules: {err}")))?
-        };
+        let exec_policy = ExecPolicyManager::load(&config.config_layer_stack)
+            .await
+            .map_err(|err| ChaosErr::Fatal(format!("failed to load rules: {err}")))?;
 
         let config = Arc::new(config);
         let refresh_strategy = match session_source {
@@ -684,7 +677,7 @@ pub(crate) struct Session {
     features: ManagedFeatures,
     pending_mcp_server_refresh_config: Mutex<Option<McpServerRefreshConfig>>,
     pub(crate) active_turn: Mutex<Option<ActiveTurn>>,
-    pub(crate) guardian_review_session: GuardianReviewSessionManager,
+
     pub(crate) services: SessionServices,
     next_internal_sub_id: AtomicU64,
 }
@@ -1727,7 +1720,6 @@ impl Session {
             features: config.features.clone(),
             pending_mcp_server_refresh_config: Mutex::new(None),
             active_turn: Mutex::new(None),
-            guardian_review_session: GuardianReviewSessionManager::default(),
             services,
             next_internal_sub_id: AtomicU64::new(0),
         });
@@ -3252,7 +3244,7 @@ impl Session {
             previous_turn_settings,
             collaboration_mode,
             base_instructions,
-            session_source,
+            _session_source,
         ) = {
             let state = self.state.lock().await;
             (
@@ -3286,13 +3278,7 @@ impl Session {
             )
             .into_text(),
         );
-        let separate_guardian_developer_message =
-            crate::guardian::is_guardian_reviewer_source(&session_source);
-        // Keep the guardian policy prompt out of the aggregated developer bundle so it
-        // stays isolated as its own top-level developer message for guardian subagents.
-        if !separate_guardian_developer_message
-            && let Some(developer_instructions) = turn_context.developer_instructions.as_deref()
-        {
+        if let Some(developer_instructions) = turn_context.developer_instructions.as_deref() {
             developer_sections.push(developer_instructions.to_string());
         }
         // Add developer instructions for memories.
@@ -3365,17 +3351,6 @@ impl Session {
             crate::context_manager::updates::build_contextual_user_message(contextual_user_sections)
         {
             items.push(contextual_user_message);
-        }
-        // Emit the guardian policy prompt as a separate developer item so the guardian
-        // subagent sees a distinct, easy-to-audit instruction block.
-        if separate_guardian_developer_message
-            && let Some(developer_instructions) = turn_context.developer_instructions.as_deref()
-            && let Some(guardian_developer_message) =
-                crate::context_manager::updates::build_developer_update_item(vec![
-                    developer_instructions.to_string(),
-                ])
-        {
-            items.push(guardian_developer_message);
         }
         items
     }
@@ -4119,9 +4094,7 @@ async fn submission_loop(sess: Arc<Session>, config: Arc<Config>, rx_sub: Receiv
             break;
         }
     }
-    // Also drain cached guardian state if the submission loop exits because
-    // the channel closed without receiving an explicit shutdown op.
-    sess.guardian_review_session.shutdown().await;
+
     debug!("Agent loop exited");
 }
 
@@ -4906,7 +4879,6 @@ mod handlers {
             .unified_exec_manager
             .terminate_all_processes()
             .await;
-        sess.guardian_review_session.shutdown().await;
         info!("Shutting down Chaos instance");
         let history = sess.clone_history().await;
         let turn_count = history

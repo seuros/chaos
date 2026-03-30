@@ -8,9 +8,6 @@ use crate::command_canonicalization::canonicalize_command_for_approval;
 use crate::error::ChaosErr;
 use crate::error::SandboxErr;
 use crate::exec::ExecExpiration;
-use crate::guardian::GuardianApprovalRequest;
-use crate::guardian::review_approval_request;
-use crate::guardian::routes_approval_to_guardian;
 use crate::sandboxing::SandboxPermissions;
 use crate::tools::network_approval::NetworkApprovalMode;
 use crate::tools::network_approval::NetworkApprovalSpec;
@@ -117,23 +114,6 @@ impl Approvable<UnifiedExecRequest> for UnifiedExecRuntime<'_> {
         let retry_reason = ctx.retry_reason.clone();
         let reason = retry_reason.clone().or_else(|| req.justification.clone());
         Box::pin(async move {
-            if routes_approval_to_guardian(turn) {
-                return review_approval_request(
-                    session,
-                    turn,
-                    GuardianApprovalRequest::ExecCommand {
-                        id: call_id,
-                        command,
-                        cwd,
-                        sandbox_permissions: req.sandbox_permissions,
-                        additional_permissions: req.additional_permissions.clone(),
-                        justification: req.justification.clone(),
-                        tty: req.tty,
-                    },
-                    retry_reason,
-                )
-                .await;
-            }
             with_cached_approval(&session.services, "unified_exec", keys, || async move {
                 let available_decisions = None;
                 session

@@ -96,7 +96,7 @@ fn additional_permissions_allow_bypass_sandbox_first_attempt_when_execpolicy_ski
 }
 
 #[test]
-fn guardian_bypasses_sandbox_for_explicit_escalation_on_first_attempt() {
+fn explicit_escalation_bypasses_sandbox_on_first_attempt() {
     assert_eq!(
         sandbox_override_for_first_attempt(
             SandboxPermissions::RequireEscalated,

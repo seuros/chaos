@@ -2774,7 +2774,7 @@ async fn set_feature_enabled_updates_profile() -> anyhow::Result<()> {
 
     ConfigEditsBuilder::new(chaos_home.path())
         .with_profile(Some("dev"))
-        .set_feature_enabled("guardian_approval", true)
+        .set_feature_enabled("steer", true)
         .apply()
         .await?;
 
@@ -2789,14 +2789,14 @@ async fn set_feature_enabled_updates_profile() -> anyhow::Result<()> {
         profile
             .features
             .as_ref()
-            .and_then(|features| features.entries.get("guardian_approval")),
+            .and_then(|features| features.entries.get("steer")),
         Some(&true),
     );
     assert_eq!(
         parsed
             .features
             .as_ref()
-            .and_then(|features| features.entries.get("guardian_approval")),
+            .and_then(|features| features.entries.get("steer")),
         None,
     );
 
@@ -2810,13 +2810,13 @@ async fn set_feature_enabled_persists_default_false_feature_disable_in_profile()
 
     ConfigEditsBuilder::new(chaos_home.path())
         .with_profile(Some("dev"))
-        .set_feature_enabled("guardian_approval", true)
+        .set_feature_enabled("steer", true)
         .apply()
         .await?;
 
     ConfigEditsBuilder::new(chaos_home.path())
         .with_profile(Some("dev"))
-        .set_feature_enabled("guardian_approval", false)
+        .set_feature_enabled("steer", false)
         .apply()
         .await?;
 
@@ -2831,14 +2831,14 @@ async fn set_feature_enabled_persists_default_false_feature_disable_in_profile()
         profile
             .features
             .as_ref()
-            .and_then(|features| features.entries.get("guardian_approval")),
+            .and_then(|features| features.entries.get("steer")),
         Some(&false),
     );
     assert_eq!(
         parsed
             .features
             .as_ref()
-            .and_then(|features| features.entries.get("guardian_approval")),
+            .and_then(|features| features.entries.get("steer")),
         None,
     );
 
@@ -2850,13 +2850,13 @@ async fn set_feature_enabled_profile_disable_overrides_root_enable() -> anyhow::
     let chaos_home = TempDir::new()?;
 
     ConfigEditsBuilder::new(chaos_home.path())
-        .set_feature_enabled("guardian_approval", true)
+        .set_feature_enabled("steer", true)
         .apply()
         .await?;
 
     ConfigEditsBuilder::new(chaos_home.path())
         .with_profile(Some("dev"))
-        .set_feature_enabled("guardian_approval", false)
+        .set_feature_enabled("steer", false)
         .apply()
         .await?;
 
@@ -2871,14 +2871,14 @@ async fn set_feature_enabled_profile_disable_overrides_root_enable() -> anyhow::
         parsed
             .features
             .as_ref()
-            .and_then(|features| features.entries.get("guardian_approval")),
+            .and_then(|features| features.entries.get("steer")),
         Some(&true),
     );
     assert_eq!(
         profile
             .features
             .as_ref()
-            .and_then(|features| features.entries.get("guardian_approval")),
+            .and_then(|features| features.entries.get("steer")),
         Some(&false),
     );
 
@@ -5426,232 +5426,6 @@ async fn approvals_reviewer_defaults_to_manual_only_without_guardian_feature() -
     Ok(())
 }
 
-#[tokio::test]
-async fn approvals_reviewer_stays_manual_only_when_guardian_feature_is_enabled()
--> std::io::Result<()> {
-    let chaos_home = TempDir::new()?;
-    std::fs::write(
-        chaos_home.path().join(CONFIG_TOML_FILE),
-        r#"[features]
-guardian_approval = true
-"#,
-    )?;
-
-    let config = ConfigBuilder::default()
-        .chaos_home(chaos_home.path().to_path_buf())
-        .fallback_cwd(Some(chaos_home.path().to_path_buf()))
-        .build()
-        .await?;
-
-    assert_eq!(config.approvals_reviewer, ApprovalsReviewer::User);
-    Ok(())
-}
-
-#[tokio::test]
-async fn approvals_reviewer_can_be_set_in_config_without_guardian_approval() -> std::io::Result<()>
-{
-    let chaos_home = TempDir::new()?;
-    std::fs::write(
-        chaos_home.path().join(CONFIG_TOML_FILE),
-        r#"approvals_reviewer = "user"
-"#,
-    )?;
-
-    let config = ConfigBuilder::default()
-        .chaos_home(chaos_home.path().to_path_buf())
-        .fallback_cwd(Some(chaos_home.path().to_path_buf()))
-        .build()
-        .await?;
-
-    assert_eq!(config.approvals_reviewer, ApprovalsReviewer::User);
-    Ok(())
-}
-
-#[tokio::test]
-async fn approvals_reviewer_can_be_set_in_profile_without_guardian_approval() -> std::io::Result<()>
-{
-    let chaos_home = TempDir::new()?;
-    std::fs::write(
-        chaos_home.path().join(CONFIG_TOML_FILE),
-        r#"profile = "guardian"
-
-[profiles.guardian]
-approvals_reviewer = "guardian_subagent"
-"#,
-    )?;
-
-    let config = ConfigBuilder::default()
-        .chaos_home(chaos_home.path().to_path_buf())
-        .fallback_cwd(Some(chaos_home.path().to_path_buf()))
-        .build()
-        .await?;
-
-    assert_eq!(
-        config.approvals_reviewer,
-        ApprovalsReviewer::GuardianSubagent
-    );
-    Ok(())
-}
-
-#[tokio::test]
-async fn smart_approvals_alias_is_migrated_to_guardian_approval() -> std::io::Result<()> {
-    let chaos_home = TempDir::new()?;
-    std::fs::write(
-        chaos_home.path().join(CONFIG_TOML_FILE),
-        r#"[features]
-smart_approvals = true
-"#,
-    )?;
-
-    let config = ConfigBuilder::default()
-        .chaos_home(chaos_home.path().to_path_buf())
-        .fallback_cwd(Some(chaos_home.path().to_path_buf()))
-        .build()
-        .await?;
-
-    assert!(config.features.enabled(Feature::GuardianApproval));
-    assert_eq!(config.features.legacy_feature_usages().count(), 0);
-    assert_eq!(
-        config.approvals_reviewer,
-        ApprovalsReviewer::GuardianSubagent
-    );
-
-    let serialized = tokio::fs::read_to_string(chaos_home.path().join(CONFIG_TOML_FILE)).await?;
-    assert!(serialized.contains("guardian_approval = true"));
-    assert!(serialized.contains("approvals_reviewer = \"guardian_subagent\""));
-    assert!(!serialized.contains("smart_approvals"));
-
-    Ok(())
-}
-
-#[tokio::test]
-async fn smart_approvals_alias_is_migrated_in_profiles() -> std::io::Result<()> {
-    let chaos_home = TempDir::new()?;
-    std::fs::write(
-        chaos_home.path().join(CONFIG_TOML_FILE),
-        r#"profile = "guardian"
-
-[profiles.guardian.features]
-smart_approvals = true
-"#,
-    )?;
-
-    let config = ConfigBuilder::default()
-        .chaos_home(chaos_home.path().to_path_buf())
-        .fallback_cwd(Some(chaos_home.path().to_path_buf()))
-        .build()
-        .await?;
-
-    assert!(config.features.enabled(Feature::GuardianApproval));
-    assert_eq!(config.features.legacy_feature_usages().count(), 0);
-    assert_eq!(
-        config.approvals_reviewer,
-        ApprovalsReviewer::GuardianSubagent
-    );
-
-    let serialized = tokio::fs::read_to_string(chaos_home.path().join(CONFIG_TOML_FILE)).await?;
-    assert!(serialized.contains("[profiles.guardian.features]"));
-    assert!(serialized.contains("guardian_approval = true"));
-    assert!(serialized.contains("approvals_reviewer = \"guardian_subagent\""));
-    assert!(!serialized.contains("smart_approvals"));
-
-    Ok(())
-}
-
-#[tokio::test]
-async fn smart_approvals_alias_migration_preserves_disabled_profile_override() -> std::io::Result<()>
-{
-    let chaos_home = TempDir::new()?;
-    std::fs::write(
-        chaos_home.path().join(CONFIG_TOML_FILE),
-        r#"[features]
-guardian_approval = true
-
-[profiles.guardian.features]
-smart_approvals = false
-"#,
-    )?;
-
-    let config = ConfigBuilder::default()
-        .chaos_home(chaos_home.path().to_path_buf())
-        .fallback_cwd(Some(chaos_home.path().to_path_buf()))
-        .harness_overrides(ConfigOverrides {
-            config_profile: Some("guardian".to_string()),
-            ..Default::default()
-        })
-        .build()
-        .await?;
-
-    assert!(!config.features.enabled(Feature::GuardianApproval));
-    assert_eq!(config.features.legacy_feature_usages().count(), 0);
-    assert_eq!(config.approvals_reviewer, ApprovalsReviewer::User);
-
-    let serialized = tokio::fs::read_to_string(chaos_home.path().join(CONFIG_TOML_FILE)).await?;
-    assert!(serialized.contains("[profiles.guardian.features]"));
-    assert!(serialized.contains("guardian_approval = false"));
-    assert!(!serialized.contains("smart_approvals"));
-
-    Ok(())
-}
-
-#[tokio::test]
-async fn smart_approvals_alias_migration_preserves_existing_approvals_reviewer()
--> std::io::Result<()> {
-    let chaos_home = TempDir::new()?;
-    std::fs::write(
-        chaos_home.path().join(CONFIG_TOML_FILE),
-        r#"approvals_reviewer = "user"
-
-[features]
-smart_approvals = true
-"#,
-    )?;
-
-    let config = ConfigBuilder::default()
-        .chaos_home(chaos_home.path().to_path_buf())
-        .fallback_cwd(Some(chaos_home.path().to_path_buf()))
-        .build()
-        .await?;
-
-    assert!(config.features.enabled(Feature::GuardianApproval));
-    assert_eq!(config.approvals_reviewer, ApprovalsReviewer::User);
-
-    let serialized = tokio::fs::read_to_string(chaos_home.path().join(CONFIG_TOML_FILE)).await?;
-    assert!(serialized.contains("guardian_approval = true"));
-    assert!(serialized.contains("approvals_reviewer = \"user\""));
-    assert!(!serialized.contains("smart_approvals"));
-
-    Ok(())
-}
-
-#[tokio::test]
-async fn smart_approvals_alias_migration_does_not_override_canonical_disabled_flag()
--> std::io::Result<()> {
-    let chaos_home = TempDir::new()?;
-    std::fs::write(
-        chaos_home.path().join(CONFIG_TOML_FILE),
-        r#"[features]
-guardian_approval = false
-smart_approvals = true
-"#,
-    )?;
-
-    let config = ConfigBuilder::default()
-        .chaos_home(chaos_home.path().to_path_buf())
-        .fallback_cwd(Some(chaos_home.path().to_path_buf()))
-        .build()
-        .await?;
-
-    assert!(!config.features.enabled(Feature::GuardianApproval));
-    assert_eq!(config.approvals_reviewer, ApprovalsReviewer::User);
-
-    let serialized = tokio::fs::read_to_string(chaos_home.path().join(CONFIG_TOML_FILE)).await?;
-    assert!(serialized.contains("guardian_approval = false"));
-    assert!(!serialized.contains("approvals_reviewer = \"guardian_subagent\""));
-    assert!(!serialized.contains("smart_approvals"));
-
-    Ok(())
-}
 
 #[tokio::test]
 async fn feature_requirements_normalize_runtime_feature_mutations() -> std::io::Result<()> {

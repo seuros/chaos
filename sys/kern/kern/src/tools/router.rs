@@ -46,8 +46,10 @@ pub(crate) struct ToolRouterParams<'a> {
     pub(crate) app_tools: Option<HashMap<String, ToolInfo>>,
     pub(crate) discoverable_tools: Option<Vec<DiscoverableTool>>,
     pub(crate) dynamic_tools: &'a [DynamicToolSpec],
-    /// Tools from the catalog (arsenal, cron, etc.) with their source module name.
+    /// Tools from the catalog (arsenal, cron, hallucinate, etc.) with their source module name.
     pub(crate) catalog_tools: Vec<(String, chaos_traits::catalog::CatalogTool)>,
+    /// Optional hallucinate scripting engine handle (for script-defined tool execution).
+    pub(crate) hallucinate: Option<chaos_hallucinate::HallucinateHandle>,
 }
 
 impl ToolRouter {
@@ -58,6 +60,7 @@ impl ToolRouter {
             discoverable_tools,
             dynamic_tools,
             catalog_tools,
+            hallucinate,
         } = params;
         let builder = build_specs_with_discoverable_tools(
             config,
@@ -66,6 +69,7 @@ impl ToolRouter {
             discoverable_tools,
             dynamic_tools,
             catalog_tools,
+            hallucinate,
         );
         let (specs, registry) = builder.build();
         let model_visible_specs = specs

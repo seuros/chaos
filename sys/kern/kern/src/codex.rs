@@ -4509,7 +4509,7 @@ mod handlers {
     pub async fn list_all_tools(sess: &Session, _config: &Arc<Config>, sub_id: String) {
         use chaos_ipc::protocol::{AllToolsResponseEvent, ToolSummary};
 
-        let tools: Vec<ToolSummary> = {
+        let mut tools: Vec<ToolSummary> = {
             let catalog = sess
                 .services
                 .catalog
@@ -4531,6 +4531,17 @@ mod handlers {
                 })
                 .collect()
         };
+
+        // Include script-defined tools from the hallucinate engine.
+        if let Some(ref handle) = sess.services.hallucinate {
+            for tool in handle.list_tools().await {
+                tools.push(ToolSummary {
+                    name: tool.name,
+                    description: tool.description,
+                    source: "hallucinate".to_string(),
+                });
+            }
+        }
 
         let event = Event {
             id: sub_id,
@@ -5941,7 +5952,7 @@ pub(crate) async fn built_tools(
     drop(mcp_connection_manager);
 
     // Read static module tools from the catalog.
-    let catalog_tools = {
+    let mut catalog_tools = {
         let catalog = sess
             .services
             .catalog
@@ -5969,6 +5980,22 @@ pub(crate) async fn built_tools(
             .collect::<Vec<_>>()
     };
 
+    // Add script tools from the hallucinate engine (Lua/WASM user scripts).
+    if let Some(ref handle) = sess.services.hallucinate {
+        let script_tools = handle.list_tools().await;
+        for tool in script_tools {
+            catalog_tools.push((
+                "hallucinate".to_string(),
+                chaos_traits::catalog::CatalogTool {
+                    name: tool.name,
+                    description: tool.description,
+                    input_schema: tool.input_schema,
+                    annotations: None,
+                },
+            ));
+        }
+    }
+
     Ok(Arc::new(ToolRouter::from_config(
         &turn_context.tools_config,
         ToolRouterParams {
@@ -5982,6 +6009,7 @@ pub(crate) async fn built_tools(
             discoverable_tools: None,
             dynamic_tools: turn_context.dynamic_tools.as_slice(),
             catalog_tools,
+            hallucinate: sess.services.hallucinate.clone(),
         },
     )))
 }

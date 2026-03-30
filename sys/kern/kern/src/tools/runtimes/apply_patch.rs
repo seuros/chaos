@@ -11,9 +11,6 @@
 //! implementation (alcatraz-macos, alcatraz-freebsd, etc.).
 use crate::exec::ExecToolCallOutput;
 use crate::exec::StreamOutput;
-use crate::guardian::GuardianApprovalRequest;
-use crate::guardian::review_approval_request;
-use crate::guardian::routes_approval_to_guardian;
 use crate::tools::sandboxing::Approvable;
 use crate::tools::sandboxing::ApprovalCtx;
 use crate::tools::sandboxing::ExecApprovalRequirement;
@@ -52,19 +49,6 @@ pub struct ApplyPatchRuntime;
 impl ApplyPatchRuntime {
     pub fn new() -> Self {
         Self
-    }
-
-    fn build_guardian_review_request(
-        req: &ApplyPatchRequest,
-        call_id: &str,
-    ) -> GuardianApprovalRequest {
-        GuardianApprovalRequest::ApplyPatch {
-            id: call_id.to_string(),
-            cwd: req.action.cwd.clone(),
-            files: req.file_paths.clone(),
-            change_count: req.changes.len(),
-            patch: req.action.patch.clone(),
-        }
     }
 
     /// Call `apply_action()` directly without sandboxing. Used on non-Linux
@@ -123,10 +107,6 @@ impl Approvable<ApplyPatchRequest> for ApplyPatchRuntime {
         let approval_keys = self.approval_keys(req);
         let changes = req.changes.clone();
         Box::pin(async move {
-            if routes_approval_to_guardian(turn) {
-                let action = ApplyPatchRuntime::build_guardian_review_request(req, ctx.call_id);
-                return review_approval_request(session, turn, action, retry_reason).await;
-            }
             if req.permissions_preapproved && retry_reason.is_none() {
                 return ReviewDecision::Approved;
             }

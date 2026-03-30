@@ -19,11 +19,6 @@ use crate::config::edit::ConfigEdit;
 use crate::config::edit::ConfigEditsBuilder;
 use crate::config::types::AppToolApproval;
 use crate::features::Feature;
-use crate::guardian::GuardianApprovalRequest;
-use crate::guardian::GuardianMcpAnnotations;
-use crate::guardian::guardian_approval_request_to_json;
-use crate::guardian::review_approval_request;
-use crate::guardian::routes_approval_to_guardian;
 use crate::mcp_tool_approval_templates::RenderedMcpToolApprovalParam;
 use crate::mcp_tool_approval_templates::render_mcp_tool_approval_template;
 use crate::protocol::EventMsg;
@@ -369,11 +364,6 @@ struct McpToolApprovalElicitationRequest<'a> {
 pub(crate) const MCP_TOOL_APPROVAL_QUESTION_ID_PREFIX: &str = "mcp_tool_call_approval";
 pub(crate) const MCP_TOOL_APPROVAL_ACCEPT: &str = "Allow";
 pub(crate) const MCP_TOOL_APPROVAL_ACCEPT_FOR_SESSION: &str = "Allow for this session";
-// Internal-only token used when guardian auto-reviews delegated MCP approvals on the
-// RequestUserInput compatibility path. That legacy MCP prompt has allow/cancel labels but no
-// real "Decline" answer, so this lets guardian denials round-trip distinctly from user cancel.
-// This is not a user-facing option.
-pub(crate) const MCP_TOOL_APPROVAL_DECLINE_SYNTHETIC: &str = "__codex_mcp_decline__";
 const MCP_TOOL_APPROVAL_ACCEPT_AND_REMEMBER: &str = "Allow and don't ask me again";
 const MCP_TOOL_APPROVAL_CANCEL: &str = "Cancel";
 const MCP_TOOL_APPROVAL_KIND_KEY: &str = "codex_approval_kind";
@@ -391,11 +381,6 @@ const MCP_TOOL_APPROVAL_TOOL_DESCRIPTION_KEY: &str = "tool_description";
 const MCP_TOOL_APPROVAL_TOOL_PARAMS_KEY: &str = "tool_params";
 const MCP_TOOL_APPROVAL_TOOL_PARAMS_DISPLAY_KEY: &str = "tool_params_display";
 
-pub(crate) fn is_mcp_tool_approval_question_id(question_id: &str) -> bool {
-    question_id
-        .strip_prefix(MCP_TOOL_APPROVAL_QUESTION_ID_PREFIX)
-        .is_some_and(|suffix| suffix.starts_with('_'))
-}
 
 #[derive(Clone, Debug, PartialEq, Eq, Serialize)]
 struct McpToolApprovalKey {
@@ -469,26 +454,6 @@ async fn maybe_request_mcp_tool_approval(
         .config
         .features
         .enabled(Feature::ToolCallMcpElicitation);
-
-    if routes_approval_to_guardian(turn_context) {
-        let decision = review_approval_request(
-            sess,
-            turn_context,
-            build_guardian_mcp_tool_review_request(call_id, invocation, metadata),
-            monitor_reason.clone(),
-        )
-        .await;
-        let decision = mcp_tool_approval_decision_from_guardian(decision);
-        apply_mcp_tool_approval_decision(
-            sess,
-            turn_context,
-            &decision,
-            session_approval_key,
-            persistent_approval_key,
-        )
-        .await;
-        return Some(decision);
-    }
 
     let prompt_options = mcp_tool_approval_prompt_options(
         session_approval_key.as_ref(),
@@ -595,14 +560,14 @@ fn prepare_arc_request_action(
     invocation: &McpInvocation,
     metadata: Option<&McpToolApprovalMetadata>,
 ) -> serde_json::Value {
-    let request = build_guardian_mcp_tool_review_request("arc-monitor", invocation, metadata);
-    match guardian_approval_request_to_json(&request) {
-        Ok(action) => action,
-        Err(error) => {
-            error!(error = %error, "failed to serialize guardian MCP approval request for ARC");
-            serde_json::Value::Null
-        }
-    }
+    serde_json::json!({
+        "type": "mcp_tool_call",
+        "server": invocation.server,
+        "tool_name": invocation.tool,
+        "arguments": invocation.arguments,
+        "connector_id": metadata.and_then(|m| m.connector_id.as_deref()),
+        "connector_name": metadata.and_then(|m| m.connector_name.as_deref()),
+    })
 }
 
 fn session_mcp_tool_approval_key(
@@ -632,40 +597,6 @@ fn persistent_mcp_tool_approval_key(
         .filter(|key| key.connector_id.is_some())
 }
 
-pub(crate) fn build_guardian_mcp_tool_review_request(
-    call_id: &str,
-    invocation: &McpInvocation,
-    metadata: Option<&McpToolApprovalMetadata>,
-) -> GuardianApprovalRequest {
-    GuardianApprovalRequest::McpToolCall {
-        id: call_id.to_string(),
-        server: invocation.server.clone(),
-        tool_name: invocation.tool.clone(),
-        arguments: invocation.arguments.clone(),
-        connector_id: metadata.and_then(|metadata| metadata.connector_id.clone()),
-        connector_name: metadata.and_then(|metadata| metadata.connector_name.clone()),
-        connector_description: metadata.and_then(|metadata| metadata.connector_description.clone()),
-        tool_title: metadata.and_then(|metadata| metadata.tool_title.clone()),
-        tool_description: metadata.and_then(|metadata| metadata.tool_description.clone()),
-        annotations: metadata
-            .and_then(|metadata| metadata.annotations.as_ref())
-            .map(|annotations| GuardianMcpAnnotations {
-                destructive_hint: annotations.destructive_hint,
-                open_world_hint: annotations.open_world_hint,
-                read_only_hint: annotations.read_only_hint,
-            }),
-    }
-}
-
-fn mcp_tool_approval_decision_from_guardian(decision: ReviewDecision) -> McpToolApprovalDecision {
-    match decision {
-        ReviewDecision::Approved
-        | ReviewDecision::ApprovedExecpolicyAmendment { .. }
-        | ReviewDecision::NetworkPolicyAmendment { .. } => McpToolApprovalDecision::Accept,
-        ReviewDecision::ApprovedForSession => McpToolApprovalDecision::AcceptForSession,
-        ReviewDecision::Denied | ReviewDecision::Abort => McpToolApprovalDecision::Decline,
-    }
-}
 
 fn is_full_access_mode(turn_context: &TurnContext) -> bool {
     matches!(turn_context.approval_policy.value(), AskForApproval::Never)
@@ -1041,11 +972,6 @@ fn parse_mcp_tool_approval_response(
         return McpToolApprovalDecision::Cancel;
     };
     if answers
-        .iter()
-        .any(|answer| answer == MCP_TOOL_APPROVAL_DECLINE_SYNTHETIC)
-    {
-        McpToolApprovalDecision::Decline
-    } else if answers
         .iter()
         .any(|answer| answer == MCP_TOOL_APPROVAL_ACCEPT_FOR_SESSION)
     {

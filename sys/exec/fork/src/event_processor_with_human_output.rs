@@ -232,7 +232,7 @@ impl EventProcessor for EventProcessorWithHumanOutput {
                     "warning:".style(self.yellow).style(self.bold)
                 );
             }
-            EventMsg::GuardianAssessment(_) => {}
+
             EventMsg::ModelReroute(_) => {}
             EventMsg::DeprecationNotice(DeprecationNoticeEvent { summary, details }) => {
                 ts_msg!(
@@ -1048,7 +1048,6 @@ impl EventProcessorWithHumanOutput {
                     | EventMsg::ElicitationComplete(_)
                     | EventMsg::DynamicToolCallRequest(_)
                     | EventMsg::DynamicToolCallResponse(_)
-                    | EventMsg::GuardianAssessment(_)
             ),
         }
     }
@@ -1061,7 +1060,6 @@ impl EventProcessorWithHumanOutput {
             msg,
             EventMsg::Error(_)
                 | EventMsg::Warning(_)
-                | EventMsg::GuardianAssessment(_)
                 | EventMsg::DeprecationNotice(_)
                 | EventMsg::StreamError(_)
                 | EventMsg::TurnComplete(_)

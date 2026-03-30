@@ -9,8 +9,6 @@ caching).
 use crate::error::ChaosErr;
 use crate::error::SandboxErr;
 use crate::exec::ExecToolCallOutput;
-use crate::guardian::GUARDIAN_REJECTION_MESSAGE;
-use crate::guardian::routes_approval_to_guardian;
 use crate::network_policy_decision::network_approval_context_from_payload;
 use crate::sandboxing::SandboxManager;
 use crate::tools::network_approval::DeferredNetworkApproval;
@@ -141,11 +139,7 @@ impl ToolOrchestrator {
 
                 match decision {
                     ReviewDecision::Denied | ReviewDecision::Abort => {
-                        let reason = if routes_approval_to_guardian(turn_ctx) {
-                            GUARDIAN_REJECTION_MESSAGE.to_string()
-                        } else {
-                            "rejected by user".to_string()
-                        };
+                        let reason = "rejected by user".to_string();
                         return Err(ToolError::Rejected(reason));
                     }
                     ReviewDecision::Approved
@@ -284,11 +278,7 @@ impl ToolOrchestrator {
 
                     match decision {
                         ReviewDecision::Denied | ReviewDecision::Abort => {
-                            let reason = if routes_approval_to_guardian(turn_ctx) {
-                                GUARDIAN_REJECTION_MESSAGE.to_string()
-                            } else {
-                                "rejected by user".to_string()
-                            };
+                            let reason = "rejected by user".to_string();
                             return Err(ToolError::Rejected(reason));
                         }
                         ReviewDecision::Approved

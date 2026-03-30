@@ -84,8 +84,7 @@ use chaos_ipc::protocol::ExecCommandEndEvent;
 use chaos_ipc::protocol::ExecCommandOutputDeltaEvent;
 use chaos_ipc::protocol::ExecCommandSource;
 use chaos_ipc::protocol::ExitedReviewModeEvent;
-use chaos_ipc::protocol::GuardianAssessmentEvent;
-use chaos_ipc::protocol::GuardianAssessmentStatus;
+
 use chaos_ipc::protocol::ImageGenerationBeginEvent;
 use chaos_ipc::protocol::ImageGenerationEndEvent;
 use chaos_ipc::protocol::ListCustomPromptsResponseEvent;
@@ -528,20 +527,6 @@ impl StatusIndicatorState {
         }
     }
 
-    fn is_guardian_review(&self) -> bool {
-        self.header == "Reviewing approval request" || self.header.starts_with("Reviewing ")
-    }
-}
-
-#[derive(Clone, Debug, Default, PartialEq, Eq)]
-struct PendingGuardianReviewStatus {
-    entries: Vec<PendingGuardianReviewStatusEntry>,
-}
-
-#[derive(Clone, Debug, PartialEq, Eq)]
-struct PendingGuardianReviewStatusEntry {
-    id: String,
-    detail: String,
 }
 
 #[derive(Clone, Debug, PartialEq, Eq)]
@@ -551,62 +536,6 @@ struct PreClampSelection {
     plan_mode_reasoning_effort: Option<ReasoningEffortConfig>,
 }
 
-impl PendingGuardianReviewStatus {
-    fn start_or_update(&mut self, id: String, detail: String) {
-        if let Some(existing) = self.entries.iter_mut().find(|entry| entry.id == id) {
-            existing.detail = detail;
-        } else {
-            self.entries
-                .push(PendingGuardianReviewStatusEntry { id, detail });
-        }
-    }
-
-    fn finish(&mut self, id: &str) -> bool {
-        let original_len = self.entries.len();
-        self.entries.retain(|entry| entry.id != id);
-        self.entries.len() != original_len
-    }
-
-    fn is_empty(&self) -> bool {
-        self.entries.is_empty()
-    }
-
-    // Guardian review status is derived from the full set of currently pending
-    // review entries. The generic status cache on `ChatWidget` stores whichever
-    // footer is currently rendered; this helper computes the guardian-specific
-    // footer snapshot that should replace it while reviews remain in flight.
-    fn status_indicator_state(&self) -> Option<StatusIndicatorState> {
-        let details = if self.entries.len() == 1 {
-            self.entries.first().map(|entry| entry.detail.clone())
-        } else if self.entries.is_empty() {
-            None
-        } else {
-            let mut lines = self
-                .entries
-                .iter()
-                .take(3)
-                .map(|entry| format!("• {}", entry.detail))
-                .collect::<Vec<_>>();
-            let remaining = self.entries.len().saturating_sub(3);
-            if remaining > 0 {
-                lines.push(format!("+{remaining} more"));
-            }
-            Some(lines.join("\n"))
-        };
-        let details = details?;
-        let header = if self.entries.len() == 1 {
-            String::from("Reviewing approval request")
-        } else {
-            format!("Reviewing {} approval requests", self.entries.len())
-        };
-        let details_max_lines = if self.entries.len() == 1 { 1 } else { 4 };
-        Some(StatusIndicatorState {
-            header,
-            details: Some(details),
-            details_max_lines,
-        })
-    }
-}
 
 /// Maintains the per-session UI state and interaction state machines for the chat screen.
 ///
@@ -694,9 +623,7 @@ pub(crate) struct ChatWidget {
     // details here so transient stream interruptions can restore the footer
     // exactly as it was shown.
     current_status: StatusIndicatorState,
-    // Guardian review keeps its own pending set so it can derive a single
-    // footer summary from one or more in-flight review events.
-    pending_guardian_review_status: PendingGuardianReviewStatus,
+
     // Previous status header to restore after a transient stream retry.
     retry_status_header: Option<String>,
     // Set when commentary output completes; once stream queues go idle we restore the status row.
@@ -2273,226 +2200,6 @@ impl ChatWidget {
         );
     }
 
-    /// Handle guardian review lifecycle events for the current thread.
-    ///
-    /// In-progress assessments temporarily own the live status footer so the
-    /// user can see what is being reviewed, including parallel review
-    /// aggregation. Terminal assessments clear or update that footer state and
-    /// render the final approved/denied history cell when guardian returns a
-    /// decision.
-    fn on_guardian_assessment(&mut self, ev: GuardianAssessmentEvent) {
-        // Guardian emits a compact JSON action payload; map the stable fields we
-        // care about into a short footer/history summary without depending on
-        // the full raw JSON shape in the rest of the widget.
-        let guardian_action_summary = |action: &serde_json::Value| {
-            let tool = action.get("tool").and_then(serde_json::Value::as_str)?;
-            match tool {
-                "shell" | "exec_command" => match action.get("command") {
-                    Some(serde_json::Value::String(command)) => Some(command.clone()),
-                    Some(serde_json::Value::Array(command)) => {
-                        let args = command
-                            .iter()
-                            .map(serde_json::Value::as_str)
-                            .collect::<Option<Vec<_>>>()?;
-                        shlex::try_join(args.iter().copied())
-                            .ok()
-                            .or_else(|| Some(args.join(" ")))
-                    }
-                    _ => None,
-                },
-                "apply_patch" => {
-                    let files = action
-                        .get("files")
-                        .and_then(serde_json::Value::as_array)
-                        .map(|files| {
-                            files
-                                .iter()
-                                .filter_map(serde_json::Value::as_str)
-                                .collect::<Vec<_>>()
-                        })
-                        .unwrap_or_default();
-                    let change_count = action
-                        .get("change_count")
-                        .and_then(serde_json::Value::as_u64)
-                        .unwrap_or(files.len() as u64);
-                    Some(if files.len() == 1 {
-                        format!("apply_patch touching {}", files[0])
-                    } else {
-                        format!(
-                            "apply_patch touching {change_count} changes across {} files",
-                            files.len()
-                        )
-                    })
-                }
-                "network_access" => action
-                    .get("target")
-                    .and_then(serde_json::Value::as_str)
-                    .map(|target| format!("network access to {target}")),
-                "mcp_tool_call" => {
-                    let tool_name = action
-                        .get("tool_name")
-                        .and_then(serde_json::Value::as_str)?;
-                    let label = action
-                        .get("connector_name")
-                        .and_then(serde_json::Value::as_str)
-                        .or_else(|| action.get("server").and_then(serde_json::Value::as_str))
-                        .unwrap_or("unknown server");
-                    Some(format!("MCP {tool_name} on {label}"))
-                }
-                _ => None,
-            }
-        };
-        let guardian_command = |action: &serde_json::Value| match action.get("command") {
-            Some(serde_json::Value::Array(command)) => Some(
-                command
-                    .iter()
-                    .filter_map(serde_json::Value::as_str)
-                    .map(ToOwned::to_owned)
-                    .collect::<Vec<_>>(),
-            )
-            .filter(|command| !command.is_empty()),
-            Some(serde_json::Value::String(command)) => shlex::split(command)
-                .filter(|command| !command.is_empty())
-                .or_else(|| Some(vec![command.clone()])),
-            _ => None,
-        };
-
-        if ev.status == GuardianAssessmentStatus::InProgress
-            && let Some(action) = ev.action.as_ref()
-            && let Some(detail) = guardian_action_summary(action)
-        {
-            // In-progress assessments own the live footer state while the
-            // review is pending. Parallel reviews are aggregated into one
-            // footer summary by `PendingGuardianReviewStatus`.
-            self.bottom_pane.ensure_status_indicator();
-            self.bottom_pane
-                .set_interrupt_hint_visible(/*visible*/ true);
-            self.pending_guardian_review_status
-                .start_or_update(ev.id.clone(), detail);
-            if let Some(status) = self.pending_guardian_review_status.status_indicator_state() {
-                self.set_status(
-                    status.header,
-                    status.details,
-                    StatusDetailsCapitalization::Preserve,
-                    status.details_max_lines,
-                );
-            }
-            self.request_redraw();
-            return;
-        }
-
-        // Terminal assessments remove the matching pending footer entry first,
-        // then render the final approved/denied history cell below.
-        if self.pending_guardian_review_status.finish(&ev.id) {
-            if let Some(status) = self.pending_guardian_review_status.status_indicator_state() {
-                self.set_status(
-                    status.header,
-                    status.details,
-                    StatusDetailsCapitalization::Preserve,
-                    status.details_max_lines,
-                );
-            } else if self.current_status.is_guardian_review() {
-                self.set_status_header(String::from("Working"));
-            }
-        } else if self.pending_guardian_review_status.is_empty()
-            && self.current_status.is_guardian_review()
-        {
-            self.set_status_header(String::from("Working"));
-        }
-
-        if ev.status == GuardianAssessmentStatus::Approved {
-            let Some(action) = ev.action else {
-                return;
-            };
-
-            let cell = if let Some(command) = guardian_command(&action) {
-                history_cell::new_approval_decision_cell(
-                    command,
-                    chaos_ipc::protocol::ReviewDecision::Approved,
-                    history_cell::ApprovalDecisionActor::Guardian,
-                )
-            } else if let Some(summary) = guardian_action_summary(&action) {
-                history_cell::new_guardian_approved_action_request(summary)
-            } else {
-                let summary = serde_json::to_string(&action)
-                    .unwrap_or_else(|_| "<unrenderable guardian action>".to_string());
-                history_cell::new_guardian_approved_action_request(summary)
-            };
-
-            self.add_boxed_history(cell);
-            self.request_redraw();
-            return;
-        }
-
-        if ev.status != GuardianAssessmentStatus::Denied {
-            return;
-        }
-        let Some(action) = ev.action else {
-            return;
-        };
-
-        let tool = action.get("tool").and_then(serde_json::Value::as_str);
-        let cell = if let Some(command) = guardian_command(&action) {
-            history_cell::new_approval_decision_cell(
-                command,
-                chaos_ipc::protocol::ReviewDecision::Denied,
-                history_cell::ApprovalDecisionActor::Guardian,
-            )
-        } else {
-            match tool {
-                Some("apply_patch") => {
-                    let files = action
-                        .get("files")
-                        .and_then(serde_json::Value::as_array)
-                        .map(|files| {
-                            files
-                                .iter()
-                                .filter_map(serde_json::Value::as_str)
-                                .map(ToOwned::to_owned)
-                                .collect::<Vec<_>>()
-                        })
-                        .unwrap_or_default();
-                    let change_count = action
-                        .get("change_count")
-                        .and_then(serde_json::Value::as_u64)
-                        .and_then(|count| usize::try_from(count).ok())
-                        .unwrap_or(files.len());
-                    history_cell::new_guardian_denied_patch_request(files, change_count)
-                }
-                Some("mcp_tool_call") => {
-                    let server = action
-                        .get("server")
-                        .and_then(serde_json::Value::as_str)
-                        .unwrap_or("unknown server");
-                    let tool_name = action
-                        .get("tool_name")
-                        .and_then(serde_json::Value::as_str)
-                        .unwrap_or("unknown tool");
-                    history_cell::new_guardian_denied_action_request(format!(
-                        "codex to call MCP tool {server}.{tool_name}"
-                    ))
-                }
-                Some("network_access") => {
-                    let target = action
-                        .get("target")
-                        .and_then(serde_json::Value::as_str)
-                        .or_else(|| action.get("host").and_then(serde_json::Value::as_str))
-                        .unwrap_or("network target");
-                    history_cell::new_guardian_denied_action_request(format!(
-                        "codex to access {target}"
-                    ))
-                }
-                _ => {
-                    let summary = serde_json::to_string(&action)
-                        .unwrap_or_else(|_| "<unrenderable guardian action>".to_string());
-                    history_cell::new_guardian_denied_action_request(summary)
-                }
-            }
-        };
-
-        self.add_boxed_history(cell);
-        self.request_redraw();
-    }
 
     fn on_elicitation_request(&mut self, ev: ElicitationRequestEvent) {
         let ev2 = ev.clone();
@@ -3516,7 +3223,7 @@ impl ChatWidget {
             reasoning_buffer: String::new(),
             full_reasoning_buffer: String::new(),
             current_status: StatusIndicatorState::working(),
-            pending_guardian_review_status: PendingGuardianReviewStatus::default(),
+
             retry_status_header: None,
             pending_status_indicator_restore: false,
             suppress_queue_autosend: false,
@@ -3676,7 +3383,7 @@ impl ChatWidget {
             reasoning_buffer: String::new(),
             full_reasoning_buffer: String::new(),
             current_status: StatusIndicatorState::working(),
-            pending_guardian_review_status: PendingGuardianReviewStatus::default(),
+
             retry_status_header: None,
             pending_status_indicator_restore: false,
             suppress_queue_autosend: false,
@@ -3836,7 +3543,7 @@ impl ChatWidget {
             reasoning_buffer: String::new(),
             full_reasoning_buffer: String::new(),
             current_status: StatusIndicatorState::working(),
-            pending_guardian_review_status: PendingGuardianReviewStatus::default(),
+
             retry_status_header: None,
             pending_status_indicator_restore: false,
             suppress_queue_autosend: false,
@@ -4898,7 +4605,6 @@ impl ChatWidget {
                 self.on_rate_limit_snapshot(ev.rate_limits);
             }
             EventMsg::Warning(WarningEvent { message }) => self.on_warning(message),
-            EventMsg::GuardianAssessment(ev) => self.on_guardian_assessment(ev),
             EventMsg::ModelReroute(_) => {}
             EventMsg::Error(ErrorEvent {
                 message,
@@ -6580,23 +6286,12 @@ impl ChatWidget {
         let include_read_only = false;
         let current_approval = self.config.permissions.approval_policy.value();
         let current_sandbox = self.config.permissions.sandbox_policy.get();
-        let guardian_approval_enabled = self.config.features.enabled(Feature::GuardianApproval);
-        let current_review_policy = self.config.approvals_reviewer;
         let mut items: Vec<SelectionItem> = Vec::new();
         let presets: Vec<ApprovalPreset> = builtin_approval_presets();
 
         let windows_degraded_sandbox_enabled = false;
         let show_elevate_sandbox_hint = false;
 
-        let guardian_disabled_reason = |enabled: bool| {
-            let mut next_features = self.config.features.get().clone();
-            next_features.set_enabled(Feature::GuardianApproval, enabled);
-            self.config
-                .features
-                .can_set(&next_features)
-                .err()
-                .map(|err| err.to_string())
-        };
 
         for preset in presets.into_iter() {
             if !include_read_only && preset.id == "read-only" {
@@ -6618,9 +6313,7 @@ impl ChatWidget {
                 Ok(()) => None,
                 Err(err) => Some(err.to_string()),
             };
-            let default_disabled_reason = approval_disabled_reason
-                .clone()
-                .or_else(|| guardian_disabled_reason(false));
+            let default_disabled_reason = approval_disabled_reason.clone();
             let requires_confirmation = preset.id == "full-access"
                 && !self
                     .config
@@ -6647,39 +6340,14 @@ impl ChatWidget {
                 items.push(SelectionItem {
                     name: base_name.clone(),
                     description: base_description.clone(),
-                    is_current: current_review_policy == ApprovalsReviewer::User
-                        && Self::preset_matches_current(current_approval, current_sandbox, &preset),
+                    is_current: Self::preset_matches_current(current_approval, current_sandbox, &preset),
                     actions: default_actions,
                     dismiss_on_select: true,
                     disabled_reason: default_disabled_reason,
                     ..Default::default()
                 });
 
-                if guardian_approval_enabled {
-                    items.push(SelectionItem {
-                        name: "Guardian Approvals".to_string(),
-                        description: Some(
-                            "Same workspace-write permissions as Default, but eligible `on-request` approvals are routed through the guardian reviewer subagent."
-                                .to_string(),
-                        ),
-                        is_current: current_review_policy == ApprovalsReviewer::GuardianSubagent
-                            && Self::preset_matches_current(
-                                current_approval,
-                                current_sandbox,
-                                &preset,
-                            ),
-                        actions: Self::approval_preset_actions(
-                            preset.approval,
-                            preset.sandbox.clone(),
-                            "Guardian Approvals".to_string(),
-                            ApprovalsReviewer::GuardianSubagent,
-                        ),
-                        dismiss_on_select: true,
-                        disabled_reason: approval_disabled_reason
-                            .or_else(|| guardian_disabled_reason(true)),
-                        ..Default::default()
-                    });
-                }
+
             } else {
                 items.push(SelectionItem {
                     name: base_name,

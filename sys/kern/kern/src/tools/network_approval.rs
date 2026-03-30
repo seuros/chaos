@@ -1,8 +1,4 @@
 use crate::chaos::Session;
-use crate::guardian::GUARDIAN_REJECTION_MESSAGE;
-use crate::guardian::GuardianApprovalRequest;
-use crate::guardian::review_approval_request;
-use crate::guardian::routes_approval_to_guardian;
 use crate::network_policy_decision::denied_network_policy_message;
 use crate::tools::sandboxing::ToolError;
 use chaos_ipc::approvals::NetworkApprovalContext;
@@ -350,26 +346,7 @@ impl NetworkApprovalService {
             protocol,
         };
         let owner_call = self.resolve_single_active_call().await;
-        let approval_decision = if routes_approval_to_guardian(&turn_context) {
-            // TODO(ccunningham): Attach guardian network reviews to the reviewed tool item
-            // lifecycle instead of this temporary standalone network approval id.
-            review_approval_request(
-                &session,
-                &turn_context,
-                GuardianApprovalRequest::NetworkAccess {
-                    id: Self::approval_id_for_key(&key),
-                    turn_id: owner_call
-                        .as_ref()
-                        .map_or_else(|| turn_context.sub_id.clone(), |call| call.turn_id.clone()),
-                    target,
-                    host: request.host,
-                    protocol,
-                    port: key.port,
-                },
-                Some(policy_denial_message.clone()),
-            )
-            .await
-        } else {
+        let approval_decision = {
             let approval_id = Self::approval_id_for_key(&key);
             let prompt_command = vec!["network-access".to_string(), target.clone()];
             let available_decisions = None;
@@ -469,17 +446,7 @@ impl NetworkApprovalService {
                 }
             },
             ReviewDecision::Denied | ReviewDecision::Abort => {
-                if routes_approval_to_guardian(&turn_context) {
-                    if let Some(owner_call) = owner_call.as_ref() {
-                        self.record_call_outcome(
-                            &owner_call.registration_id,
-                            NetworkApprovalOutcome::DeniedByPolicy(
-                                GUARDIAN_REJECTION_MESSAGE.to_string(),
-                            ),
-                        )
-                        .await;
-                    }
-                } else if let Some(owner_call) = owner_call.as_ref() {
+                if let Some(owner_call) = owner_call.as_ref() {
                     self.record_call_outcome(
                         &owner_call.registration_id,
                         NetworkApprovalOutcome::DeniedByUser,

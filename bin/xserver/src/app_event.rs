@@ -286,6 +286,9 @@ pub(crate) enum AppEvent {
     SyntaxThemeSelected {
         name: String,
     },
+
+    /// All-tools response received from the kernel, forwarded to TileManager.
+    AllToolsReceived(chaos_ipc::protocol::AllToolsResponseEvent),
 }
 
 /// The exit strategy requested by the UI layer.

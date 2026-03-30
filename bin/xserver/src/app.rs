@@ -32,6 +32,8 @@ use crate::side_panel::LOG_PANEL_BACKFILL_LIMIT;
 use crate::side_panel::LOG_PANEL_POLL_INTERVAL;
 use crate::side_panel::LogPanelState;
 use crate::side_panel::split_main_and_panel;
+use crate::panes::tool_list::ToolListPane;
+use crate::tile_manager::{PaneKind, TileManager};
 use crate::tui;
 use crate::tui::TuiEvent;
 use crate::version::CHAOS_VERSION;
@@ -81,7 +83,9 @@ use crossterm::event::KeyEventKind;
 use ratatui::style::Stylize;
 use ratatui::text::Line;
 use ratatui::widgets::Paragraph;
+use ratatui::widgets::StatefulWidget;
 use ratatui::widgets::Wrap;
+use ratatui_hypertile::{HypertileWidget, PaneId};
 use std::collections::BTreeMap;
 use std::collections::HashMap;
 use std::collections::HashSet;
@@ -614,6 +618,8 @@ pub(crate) struct App {
     runtime_approval_policy_override: Option<AskForApproval>,
     runtime_sandbox_policy_override: Option<SandboxPolicy>,
 
+    pub(crate) tile_manager: TileManager,
+    pub(crate) tool_list_pane: ToolListPane,
     pub(crate) file_search: FileSearchManager,
     log_state_db: Option<Arc<StateRuntime>>,
     log_state_db_init_error: Option<String>,
@@ -1882,6 +1888,8 @@ impl App {
             harness_overrides,
             runtime_approval_policy_override: None,
             runtime_sandbox_policy_override: None,
+            tile_manager: TileManager::new(),
+            tool_list_pane: ToolListPane::new(),
             file_search,
             log_state_db,
             log_state_db_init_error: None,
@@ -2055,14 +2063,55 @@ impl App {
                     tui.draw(
                         self.chat_widget.desired_height(chat_area.width),
                         |frame| {
-                            let (chat_area, log_area) =
+                            let (main_area, log_area) =
                                 split_main_and_panel(frame.area(), self.log_panel.is_visible());
-                            self.chat_widget.render(chat_area, frame.buffer);
+
+                            if self.tile_manager.is_single_pane() {
+                                // Fast path: no tiling overhead, identical to pre-hypertile.
+                                self.chat_widget.render(main_area, frame.buffer);
+                                if let Some((x, y)) = self.chat_widget.cursor_pos(main_area) {
+                                    frame.set_cursor_position((x, y));
+                                }
+                            } else {
+                                // Tiled layout: HypertileWidget dispatches to per-pane renderers.
+                                // We must split the borrows to satisfy the borrow checker:
+                                // the closure captures pane_map (immutable) while render()
+                                // takes hypertile (mutable).
+                                let chat_widget = &self.chat_widget;
+                                let tool_list_pane = &self.tool_list_pane;
+                                let pane_map = &self.tile_manager.pane_map;
+                                let hypertile = &mut self.tile_manager.hypertile;
+                                HypertileWidget::new(|pane, buf| {
+                                    match pane_map.get(&pane.id) {
+                                        Some(PaneKind::Chat) => {
+                                            chat_widget.render(pane.rect, buf);
+                                        }
+                                        Some(PaneKind::ToolList) => {
+                                            tool_list_pane.render(pane.rect, buf);
+                                        }
+                                        // Future pane kinds (McpActivity, McpManagement)
+                                        // will be handled here in later phases.
+                                        _ => {}
+                                    }
+                                })
+                                .render(main_area, frame.buffer, hypertile);
+
+                                // Place cursor in chat pane if focused.
+                                if self.tile_manager.focused() == Some(PaneId::ROOT) {
+                                    if let Some(chat_rect) =
+                                        self.tile_manager.hypertile_mut().pane_rect(PaneId::ROOT)
+                                    {
+                                        if let Some((x, y)) =
+                                            self.chat_widget.cursor_pos(chat_rect)
+                                        {
+                                            frame.set_cursor_position((x, y));
+                                        }
+                                    }
+                                }
+                            }
+
                             if let Some(log_area) = log_area {
                                 self.log_panel.render(log_area, frame.buffer);
-                            }
-                            if let Some((x, y)) = self.chat_widget.cursor_pos(chat_area) {
-                                frame.set_cursor_position((x, y));
                             }
                         },
                     )?;
@@ -2895,6 +2944,9 @@ impl App {
                     }
                 }
             }
+            AppEvent::AllToolsReceived(ev) => {
+                self.on_all_tools_received(tui, ev);
+            }
         }
         Ok(AppRunControl::Continue)
     }
@@ -3226,6 +3278,79 @@ impl App {
             return;
         }
 
+        // Tiling shortcuts — only active when multiple panes are open.
+        if !self.tile_manager.is_single_pane()
+            && self.overlay.is_none()
+            && self.chat_widget.no_modal_or_popup_active()
+            && key_event.kind == KeyEventKind::Press
+        {
+            use crossterm::event::KeyModifiers;
+            use ratatui::layout::Direction;
+            use ratatui_hypertile::{HypertileAction, Towards};
+
+            let alt = key_event.modifiers.contains(KeyModifiers::ALT);
+            let alt_shift = key_event
+                .modifiers
+                .contains(KeyModifiers::ALT | KeyModifiers::SHIFT);
+
+            let tiling_action = match (key_event.code, alt, alt_shift) {
+                // Alt+h/j/k/l — focus direction
+                (KeyCode::Char('h'), true, false) => Some(HypertileAction::FocusDirection {
+                    direction: Direction::Horizontal,
+                    towards: Towards::Start,
+                }),
+                (KeyCode::Char('l'), true, false) => Some(HypertileAction::FocusDirection {
+                    direction: Direction::Horizontal,
+                    towards: Towards::End,
+                }),
+                (KeyCode::Char('k'), true, false) => Some(HypertileAction::FocusDirection {
+                    direction: Direction::Vertical,
+                    towards: Towards::Start,
+                }),
+                (KeyCode::Char('j'), true, false) => Some(HypertileAction::FocusDirection {
+                    direction: Direction::Vertical,
+                    towards: Towards::End,
+                }),
+                // Alt+Shift+H/J/K/L — resize focused pane
+                (KeyCode::Char('H'), _, true) => {
+                    Some(HypertileAction::ResizeFocused { delta: -0.05 })
+                }
+                (KeyCode::Char('L'), _, true) => {
+                    Some(HypertileAction::ResizeFocused { delta: 0.05 })
+                }
+                (KeyCode::Char('K'), _, true) => {
+                    Some(HypertileAction::ResizeFocused { delta: -0.05 })
+                }
+                (KeyCode::Char('J'), _, true) => {
+                    Some(HypertileAction::ResizeFocused { delta: 0.05 })
+                }
+                // Alt+q — close auxiliary panes (tries focused first, then last opened)
+                (KeyCode::Char('q'), true, false) => {
+                    // Try closing focused first; if it's Chat, close the last auxiliary.
+                    if self.tile_manager.close_focused().is_none() {
+                        self.tile_manager.close_last_auxiliary();
+                    }
+                    tui.frame_requester().schedule_frame();
+                    return;
+                }
+                // Alt+w — close all auxiliary panes, return to single chat
+                (KeyCode::Char('w'), true, false) => {
+                    self.tile_manager.close_all_auxiliary();
+                    tui.frame_requester().schedule_frame();
+                    return;
+                }
+                // Alt+Enter — cycle focus
+                (KeyCode::Enter, true, false) => Some(HypertileAction::FocusNext),
+                _ => None,
+            };
+
+            if let Some(action) = tiling_action {
+                self.tile_manager.apply_action(action);
+                tui.frame_requester().schedule_frame();
+                return;
+            }
+        }
+
         match key_event {
             KeyEvent {
                 code: KeyCode::Char('o'),
@@ -3374,6 +3499,19 @@ impl App {
 
     fn refresh_status_line(&mut self) {
         self.chat_widget.refresh_status_line();
+    }
+
+    fn on_all_tools_received(
+        &mut self,
+        tui: &mut tui::Tui,
+        ev: chaos_ipc::protocol::AllToolsResponseEvent,
+    ) {
+        use ratatui::layout::Direction;
+        // Open (or re-focus) the tools pane.
+        self.tile_manager
+            .open_or_focus(PaneKind::ToolList, Direction::Horizontal);
+        self.tool_list_pane.set_tools(ev.tools);
+        tui.frame_requester().schedule_frame();
     }
 
     async fn toggle_log_panel(&mut self, tui: &mut tui::Tui) {
@@ -5102,6 +5240,8 @@ mod tests {
             harness_overrides: ConfigOverrides::default(),
             runtime_approval_policy_override: None,
             runtime_sandbox_policy_override: None,
+            tile_manager: TileManager::new(),
+            tool_list_pane: ToolListPane::new(),
             file_search,
             log_state_db: None,
             log_state_db_init_error: None,
@@ -5162,6 +5302,8 @@ mod tests {
                 harness_overrides: ConfigOverrides::default(),
                 runtime_approval_policy_override: None,
                 runtime_sandbox_policy_override: None,
+                tile_manager: TileManager::new(),
+                tool_list_pane: ToolListPane::new(),
                 file_search,
                 log_state_db: None,
                 log_state_db_init_error: None,

@@ -1021,6 +1021,16 @@ fn assert_model_tools(
             app_tools: None,
             discoverable_tools: None,
             dynamic_tools: &[],
+            catalog_tools: {
+                use chaos_traits::catalog::CatalogRegistration;
+                inventory::iter::<CatalogRegistration>
+                    .into_iter()
+                    .flat_map(|reg| {
+                        let name = reg.name.to_string();
+                        (reg.tools)().into_iter().map(move |t| (name.clone(), t))
+                    })
+                    .collect()
+            },
         },
     );
     let model_visible_specs = router.model_visible_specs();
@@ -1987,6 +1997,7 @@ fn tool_suggest_is_not_registered_without_feature_flag() {
             "Plan events and schedules.",
         )]),
         &[],
+        vec![],
     )
     .build();
 
@@ -2165,6 +2176,7 @@ fn tool_suggest_description_lists_discoverable_tools() {
         None,
         Some(discoverable_tools),
         &[],
+        vec![],
     )
     .build();
 

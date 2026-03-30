@@ -46,6 +46,8 @@ pub(crate) struct ToolRouterParams<'a> {
     pub(crate) app_tools: Option<HashMap<String, ToolInfo>>,
     pub(crate) discoverable_tools: Option<Vec<DiscoverableTool>>,
     pub(crate) dynamic_tools: &'a [DynamicToolSpec],
+    /// Tools from the catalog (arsenal, cron, etc.) with their source module name.
+    pub(crate) catalog_tools: Vec<(String, chaos_traits::catalog::CatalogTool)>,
 }
 
 impl ToolRouter {
@@ -55,6 +57,7 @@ impl ToolRouter {
             app_tools,
             discoverable_tools,
             dynamic_tools,
+            catalog_tools,
         } = params;
         let builder = build_specs_with_discoverable_tools(
             config,
@@ -62,6 +65,7 @@ impl ToolRouter {
             app_tools,
             discoverable_tools,
             dynamic_tools,
+            catalog_tools,
         );
         let (specs, registry) = builder.build();
         let model_visible_specs = specs

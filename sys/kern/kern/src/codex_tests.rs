@@ -161,6 +161,7 @@ fn test_tool_runtime(session: Arc<Session>, turn_context: Arc<TurnContext>) -> T
             app_tools: None,
             discoverable_tools: None,
             dynamic_tools: turn_context.dynamic_tools.as_slice(),
+            catalog_tools: vec![],
         },
     ));
     let tracker = Arc::new(tokio::sync::Mutex::new(TurnDiffTracker::new()));
@@ -1854,6 +1855,9 @@ pub(crate) async fn make_session_and_context() -> (Session, TurnContext) {
 
     let file_watcher = Arc::new(FileWatcher::noop());
     let services = SessionServices {
+        catalog: Arc::new(std::sync::RwLock::new(
+            crate::catalog::Catalog::from_inventory(),
+        )),
         mcp_connection_manager: Arc::new(RwLock::new(
             McpConnectionManager::new_mcp_connection_manager_for_tests(
                 &config.permissions.approval_policy,
@@ -2496,6 +2500,9 @@ pub(crate) async fn make_session_and_context_with_dynamic_tools_and_rx(
 
     let file_watcher = Arc::new(FileWatcher::noop());
     let services = SessionServices {
+        catalog: Arc::new(std::sync::RwLock::new(
+            crate::catalog::Catalog::from_inventory(),
+        )),
         mcp_connection_manager: Arc::new(RwLock::new(
             McpConnectionManager::new_mcp_connection_manager_for_tests(
                 &config.permissions.approval_policy,
@@ -3548,6 +3555,7 @@ async fn fatal_tool_error_stops_turn_and_reports_error() {
             app_tools,
             discoverable_tools: None,
             dynamic_tools: turn_context.dynamic_tools.as_slice(),
+            catalog_tools: vec![],
         },
     );
     let item = ResponseItem::CustomToolCall {

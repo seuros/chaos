@@ -2,6 +2,7 @@ use std::collections::HashMap;
 use std::sync::Arc;
 
 use crate::AuthManager;
+use crate::catalog::Catalog;
 use crate::RolloutRecorder;
 use crate::analytics_client::AnalyticsEventsClient;
 use crate::client::ModelClient;
@@ -28,6 +29,7 @@ use tokio::sync::watch;
 use tokio_util::sync::CancellationToken;
 
 pub(crate) struct SessionServices {
+    pub(crate) catalog: Arc<std::sync::RwLock<Catalog>>,
     pub(crate) mcp_connection_manager: Arc<RwLock<McpConnectionManager>>,
     pub(crate) mcp_startup_cancellation_token: Mutex<CancellationToken>,
     pub(crate) unified_exec_manager: UnifiedExecProcessManager,

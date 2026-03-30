@@ -249,7 +249,7 @@ version = "1.1.5"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "40c48f72fd53cd289104fc64099abca73db4166ad86ea0b4341abe65af83dadc"
 dependencies = [
- "windows-sys 0.61.2",
+ "windows-sys 0.60.2",
 ]
 
 [[package]]
@@ -260,7 +260,7 @@ checksum = "291e6a250ff86cd4a820112fb8898808a366d8f9f58ce16d1f538353ad55747d"
 dependencies = [
  "anstyle",
  "once_cell_polyfill",
- "windows-sys 0.61.2",
+ "windows-sys 0.60.2",
 ]
 
 [[package]]
@@ -575,6 +575,8 @@ dependencies = [
  "cexpr",
  "clang-sys",
  "itertools 0.13.0",
+ "log",
+ "prettyplease",
  "proc-macro2",
  "quote",
  "regex",
@@ -858,7 +860,7 @@ version = "47.0.0"
 name = "chaos-amphetamine"
 version = "47.0.0"
 dependencies = [
- "core-foundation 0.10.1",
+ "core-foundation",
  "libc",
  "tracing",
 ]
@@ -1054,7 +1056,7 @@ dependencies = [
  "pretty_assertions",
  "serde",
  "serde_json",
- "socket2 0.6.3",
+ "socket2",
  "tempfile",
  "tokio",
  "tokio-util",
@@ -1298,7 +1300,7 @@ dependencies = [
  "chrono",
  "clap",
  "codex-client",
- "core-foundation 0.10.1",
+ "core-foundation",
  "core_test_support",
  "csv",
  "ctor",
@@ -2242,16 +2244,6 @@ dependencies = [
 
 [[package]]
 name = "core-foundation"
-version = "0.9.4"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "91e195e091a93c46f7102ec7818a2aa394e1e1771c3ab4825963fa03e45afb8f"
-dependencies = [
- "core-foundation-sys",
- "libc",
-]
-
-[[package]]
-name = "core-foundation"
 version = "0.10.1"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "b2a6cd9ae233e7f62ba4e9353e81a88df7fc8a5987b8d445b4d90c879bd156f6"
@@ -2337,12 +2329,6 @@ checksum = "9481c1c90cbf2ac953f07c8d4a58aa3945c425b7185c9154d67a65e4230da511"
 dependencies = [
  "cfg-if",
 ]
-
-[[package]]
-name = "critical-section"
-version = "1.2.0"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "790eea4361631c5e7d22598ecd5723ff611904e3344ce8720784c93e3d83d40b"
 
 [[package]]
 name = "croner"
@@ -2832,7 +2818,7 @@ dependencies = [
  "libc",
  "option-ext",
  "redox_users",
- "windows-sys 0.61.2",
+ "windows-sys 0.59.0",
 ]
 
 [[package]]
@@ -3005,7 +2991,7 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "39cab71617ae0d63f51a36d69f866391735b51691dbda63cf6f96d042b63efeb"
 dependencies = [
  "libc",
- "windows-sys 0.61.2",
+ "windows-sys 0.59.0",
 ]
 
 [[package]]
@@ -4621,78 +4607,6 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "7f24254aa9a54b5c858eaee2f5bccdb46aaf0e486a595ed5fd8f86ba55232a70"
 
 [[package]]
-name = "hickory-net"
-version = "0.26.0-beta.2"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "8940344dcb7661324de724f758667c0d82ae949eadc8e0cd892fd8e1ae9f0066"
-dependencies = [
- "async-trait",
- "cfg-if",
- "data-encoding",
- "futures-channel",
- "futures-io",
- "futures-util",
- "hickory-proto",
- "idna",
- "ipnet",
- "jni",
- "rand 0.10.0",
- "thiserror 2.0.18",
- "tinyvec",
- "tokio",
- "tracing",
- "url",
-]
-
-[[package]]
-name = "hickory-proto"
-version = "0.26.0-beta.2"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "c9c79297a62e5af257ab070fde9fdda42bf1bae7db1b1d13b7ab74ce7fc539c6"
-dependencies = [
- "data-encoding",
- "idna",
- "ipnet",
- "jni",
- "once_cell",
- "prefix-trie",
- "rand 0.10.0",
- "ring",
- "serde",
- "thiserror 2.0.18",
- "tinyvec",
- "tracing",
- "url",
-]
-
-[[package]]
-name = "hickory-resolver"
-version = "0.26.0-beta.2"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "a502eee93257bd726344e3361529e3f11df33314e7c32b62a9f46a17a300faf6"
-dependencies = [
- "cfg-if",
- "futures-util",
- "hickory-net",
- "hickory-proto",
- "ipconfig",
- "ipnet",
- "jni",
- "moka",
- "ndk-context",
- "once_cell",
- "parking_lot",
- "rand 0.10.0",
- "resolv-conf",
- "serde",
- "smallvec",
- "system-configuration",
- "thiserror 2.0.18",
- "tokio",
- "tracing",
-]
-
-[[package]]
 name = "hkdf"
 version = "0.12.4"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -4838,7 +4752,7 @@ dependencies = [
  "libc",
  "percent-encoding",
  "pin-project-lite",
- "socket2 0.6.3",
+ "socket2",
  "tokio",
  "tower-service",
  "tracing",
@@ -5286,25 +5200,10 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "4b3f7cef34251886990511df1c61443aa928499d598a9473929ab5a90a527304"
 
 [[package]]
-name = "ipconfig"
-version = "0.3.2"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "b58db92f96b720de98181bbbe63c831e87005ab460c1bf306eb2622b4707997f"
-dependencies = [
- "socket2 0.5.10",
- "widestring",
- "windows-sys 0.48.0",
- "winreg 0.50.0",
-]
-
-[[package]]
 name = "ipnet"
 version = "2.12.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "d98f6fed1fde3f8c21bc40a1abb88dd75e67924f9cffc3ef95607bad8017f8e2"
-dependencies = [
- "serde",
-]
 
 [[package]]
 name = "iri-string"
@@ -5364,7 +5263,7 @@ dependencies = [
  "portable-atomic",
  "portable-atomic-util",
  "serde_core",
- "windows-sys 0.61.2",
+ "windows-sys 0.59.0",
 ]
 
 [[package]]
@@ -6113,7 +6012,7 @@ version = "0.50.3"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "7957b9740744892f114936ab4a57b3f487491bbeafaf8083688b16841a4240e5"
 dependencies = [
- "windows-sys 0.61.2",
+ "windows-sys 0.59.0",
 ]
 
 [[package]]
@@ -6461,10 +6360,6 @@ name = "once_cell"
 version = "1.21.4"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "9f7c3e4beb33f85d45ae3e3a1792185706c8e16d043238c593331cc7cd313b50"
-dependencies = [
- "critical-section",
- "portable-atomic",
-]
 
 [[package]]
 name = "once_cell_polyfill"
@@ -6685,7 +6580,7 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "7d8fae84b431384b68627d0f9b3b1245fcf9f46f6c0e3dc902e9dce64edd1967"
 dependencies = [
  "libc",
- "windows-sys 0.61.2",
+ "windows-sys 0.59.0",
 ]
 
 [[package]]
@@ -7023,7 +6918,7 @@ dependencies = [
  "shared_library",
  "shell-words",
  "winapi",
- "winreg 0.10.1",
+ "winreg",
 ]
 
 [[package]]
@@ -7086,17 +6981,6 @@ checksum = "d0de1b847b39c8131db0467e9df1ff60e6d0562ab8e9a16e568ad0fdb372e2f2"
 dependencies = [
  "predicates-core",
  "termtree",
-]
-
-[[package]]
-name = "prefix-trie"
-version = "0.8.2"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "23370be78b7e5bcbb0cab4a02047eb040279a693c78daad04c2c5f1c24a83503"
-dependencies = [
- "either",
- "ipnet",
- "num-traits",
 ]
 
 [[package]]
@@ -7398,11 +7282,10 @@ dependencies = [
 [[package]]
 name = "rama"
 version = "0.3.0-rc1"
-source = "git+https://github.com/plabayo/rama.git#c564ae4363a090163ff6ef4e5b38d86c49e880b5"
+source = "git+https://github.com/plabayo/rama.git#fec686723b3044134882999a863a8a1987c853c9"
 dependencies = [
  "ahash",
  "base64 0.22.1",
- "opentelemetry-otlp",
  "pin-project-lite",
  "rama-core",
  "rama-crypto",
@@ -7467,7 +7350,7 @@ dependencies = [
 [[package]]
 name = "rama-core"
 version = "0.3.0-rc1"
-source = "git+https://github.com/plabayo/rama.git#c564ae4363a090163ff6ef4e5b38d86c49e880b5"
+source = "git+https://github.com/plabayo/rama.git#fec686723b3044134882999a863a8a1987c853c9"
 dependencies = [
  "ahash",
  "asynk-strim",
@@ -7491,7 +7374,7 @@ dependencies = [
 [[package]]
 name = "rama-crypto"
 version = "0.3.0-rc1"
-source = "git+https://github.com/plabayo/rama.git#c564ae4363a090163ff6ef4e5b38d86c49e880b5"
+source = "git+https://github.com/plabayo/rama.git#fec686723b3044134882999a863a8a1987c853c9"
 dependencies = [
  "base64 0.22.1",
  "rama-core",
@@ -7506,32 +7389,33 @@ dependencies = [
 [[package]]
 name = "rama-dns"
 version = "0.3.0-rc1"
-source = "git+https://github.com/plabayo/rama.git#c564ae4363a090163ff6ef4e5b38d86c49e880b5"
+source = "git+https://github.com/plabayo/rama.git#fec686723b3044134882999a863a8a1987c853c9"
 dependencies = [
  "ahash",
- "hickory-resolver",
+ "bindgen",
  "libc",
+ "moka",
  "parking_lot",
  "pin-project-lite",
  "rama-core",
  "rama-net",
  "rama-utils",
  "rand 0.10.0",
- "serde",
- "serde_json",
  "tokio",
+ "windows-sys 0.61.2",
 ]
 
 [[package]]
 name = "rama-error"
 version = "0.3.0-rc1"
-source = "git+https://github.com/plabayo/rama.git#c564ae4363a090163ff6ef4e5b38d86c49e880b5"
+source = "git+https://github.com/plabayo/rama.git#fec686723b3044134882999a863a8a1987c853c9"
 
 [[package]]
 name = "rama-grpc"
 version = "0.3.0-rc1"
-source = "git+https://github.com/plabayo/rama.git#c564ae4363a090163ff6ef4e5b38d86c49e880b5"
+source = "git+https://github.com/plabayo/rama.git#fec686723b3044134882999a863a8a1987c853c9"
 dependencies = [
+ "arc-swap",
  "base64 0.22.1",
  "flate2",
  "parking_lot",
@@ -7554,7 +7438,7 @@ dependencies = [
 [[package]]
 name = "rama-grpc-build"
 version = "0.3.0-rc1"
-source = "git+https://github.com/plabayo/rama.git#c564ae4363a090163ff6ef4e5b38d86c49e880b5"
+source = "git+https://github.com/plabayo/rama.git#fec686723b3044134882999a863a8a1987c853c9"
 dependencies = [
  "prettyplease",
  "proc-macro-crate",
@@ -7570,13 +7454,12 @@ dependencies = [
 [[package]]
 name = "rama-http"
 version = "0.3.0-rc1"
-source = "git+https://github.com/plabayo/rama.git#c564ae4363a090163ff6ef4e5b38d86c49e880b5"
+source = "git+https://github.com/plabayo/rama.git#fec686723b3044134882999a863a8a1987c853c9"
 dependencies = [
  "ahash",
  "async-compression",
  "base64 0.22.1",
  "bitflags 2.11.0",
- "chrono",
  "compression-codecs",
  "compression-core",
  "const_format",
@@ -7586,6 +7469,7 @@ dependencies = [
  "http-range-header",
  "httpdate",
  "iri-string",
+ "jiff",
  "matchit",
  "parking_lot",
  "pin-project-lite",
@@ -7607,7 +7491,7 @@ dependencies = [
 [[package]]
 name = "rama-http-backend"
 version = "0.3.0-rc1"
-source = "git+https://github.com/plabayo/rama.git#c564ae4363a090163ff6ef4e5b38d86c49e880b5"
+source = "git+https://github.com/plabayo/rama.git#fec686723b3044134882999a863a8a1987c853c9"
 dependencies = [
  "pin-project-lite",
  "rama-core",
@@ -7626,7 +7510,7 @@ dependencies = [
 [[package]]
 name = "rama-http-core"
 version = "0.3.0-rc1"
-source = "git+https://github.com/plabayo/rama.git#c564ae4363a090163ff6ef4e5b38d86c49e880b5"
+source = "git+https://github.com/plabayo/rama.git#fec686723b3044134882999a863a8a1987c853c9"
 dependencies = [
  "ahash",
  "atomic-waker",
@@ -7651,13 +7535,13 @@ dependencies = [
 [[package]]
 name = "rama-http-headers"
 version = "0.3.0-rc1"
-source = "git+https://github.com/plabayo/rama.git#c564ae4363a090163ff6ef4e5b38d86c49e880b5"
+source = "git+https://github.com/plabayo/rama.git#fec686723b3044134882999a863a8a1987c853c9"
 dependencies = [
  "ahash",
  "base64 0.22.1",
- "chrono",
  "const_format",
  "httpdate",
+ "jiff",
  "rama-core",
  "rama-http-types",
  "rama-macros",
@@ -7671,7 +7555,7 @@ dependencies = [
 [[package]]
 name = "rama-http-types"
 version = "0.3.0-rc1"
-source = "git+https://github.com/plabayo/rama.git#c564ae4363a090163ff6ef4e5b38d86c49e880b5"
+source = "git+https://github.com/plabayo/rama.git#fec686723b3044134882999a863a8a1987c853c9"
 dependencies = [
  "ahash",
  "bytes",
@@ -7699,7 +7583,7 @@ dependencies = [
 [[package]]
 name = "rama-macros"
 version = "0.3.0-rc1"
-source = "git+https://github.com/plabayo/rama.git#c564ae4363a090163ff6ef4e5b38d86c49e880b5"
+source = "git+https://github.com/plabayo/rama.git#fec686723b3044134882999a863a8a1987c853c9"
 dependencies = [
  "proc-macro-crate",
  "proc-macro2",
@@ -7710,7 +7594,7 @@ dependencies = [
 [[package]]
 name = "rama-net"
 version = "0.3.0-rc1"
-source = "git+https://github.com/plabayo/rama.git#c564ae4363a090163ff6ef4e5b38d86c49e880b5"
+source = "git+https://github.com/plabayo/rama.git#fec686723b3044134882999a863a8a1987c853c9"
 dependencies = [
  "ahash",
  "const_format",
@@ -7731,7 +7615,7 @@ dependencies = [
  "rama-utils",
  "serde",
  "sha2 0.10.9",
- "socket2 0.6.3",
+ "socket2",
  "tokio",
  "tokio-util",
 ]
@@ -7739,7 +7623,7 @@ dependencies = [
 [[package]]
 name = "rama-socks5"
 version = "0.3.0-rc1"
-source = "git+https://github.com/plabayo/rama.git#c564ae4363a090163ff6ef4e5b38d86c49e880b5"
+source = "git+https://github.com/plabayo/rama.git#fec686723b3044134882999a863a8a1987c853c9"
 dependencies = [
  "byteorder",
  "rama-core",
@@ -7754,7 +7638,7 @@ dependencies = [
 [[package]]
 name = "rama-tcp"
 version = "0.3.0-rc1"
-source = "git+https://github.com/plabayo/rama.git#c564ae4363a090163ff6ef4e5b38d86c49e880b5"
+source = "git+https://github.com/plabayo/rama.git#fec686723b3044134882999a863a8a1987c853c9"
 dependencies = [
  "pin-project-lite",
  "rama-core",
@@ -7769,7 +7653,7 @@ dependencies = [
 [[package]]
 name = "rama-tls-boring"
 version = "0.3.0-rc1"
-source = "git+https://github.com/plabayo/rama.git#c564ae4363a090163ff6ef4e5b38d86c49e880b5"
+source = "git+https://github.com/plabayo/rama.git#fec686723b3044134882999a863a8a1987c853c9"
 dependencies = [
  "ahash",
  "brotli",
@@ -7794,7 +7678,7 @@ dependencies = [
 [[package]]
 name = "rama-tls-rustls"
 version = "0.3.0-rc1"
-source = "git+https://github.com/plabayo/rama.git#c564ae4363a090163ff6ef4e5b38d86c49e880b5"
+source = "git+https://github.com/plabayo/rama.git#fec686723b3044134882999a863a8a1987c853c9"
 dependencies = [
  "pin-project-lite",
  "rama-core",
@@ -7814,7 +7698,7 @@ dependencies = [
 [[package]]
 name = "rama-ua"
 version = "0.3.0-rc1"
-source = "git+https://github.com/plabayo/rama.git#c564ae4363a090163ff6ef4e5b38d86c49e880b5"
+source = "git+https://github.com/plabayo/rama.git#fec686723b3044134882999a863a8a1987c853c9"
 dependencies = [
  "ahash",
  "itertools 0.14.0",
@@ -7831,7 +7715,7 @@ dependencies = [
 [[package]]
 name = "rama-udp"
 version = "0.3.0-rc1"
-source = "git+https://github.com/plabayo/rama.git#c564ae4363a090163ff6ef4e5b38d86c49e880b5"
+source = "git+https://github.com/plabayo/rama.git#fec686723b3044134882999a863a8a1987c853c9"
 dependencies = [
  "rama-core",
  "rama-dns",
@@ -7843,7 +7727,7 @@ dependencies = [
 [[package]]
 name = "rama-unix"
 version = "0.3.0-rc1"
-source = "git+https://github.com/plabayo/rama.git#c564ae4363a090163ff6ef4e5b38d86c49e880b5"
+source = "git+https://github.com/plabayo/rama.git#fec686723b3044134882999a863a8a1987c853c9"
 dependencies = [
  "libc",
  "pin-project-lite",
@@ -7855,7 +7739,7 @@ dependencies = [
 [[package]]
 name = "rama-utils"
 version = "0.3.0-rc1"
-source = "git+https://github.com/plabayo/rama.git#c564ae4363a090163ff6ef4e5b38d86c49e880b5"
+source = "git+https://github.com/plabayo/rama.git#fec686723b3044134882999a863a8a1987c853c9"
 dependencies = [
  "const_format",
  "parking_lot",
@@ -7872,7 +7756,7 @@ dependencies = [
 [[package]]
 name = "rama-ws"
 version = "0.3.0-rc1"
-source = "git+https://github.com/plabayo/rama.git#c564ae4363a090163ff6ef4e5b38d86c49e880b5"
+source = "git+https://github.com/plabayo/rama.git#fec686723b3044134882999a863a8a1987c853c9"
 dependencies = [
  "flate2",
  "rama-core",
@@ -8224,12 +8108,6 @@ dependencies = [
 ]
 
 [[package]]
-name = "resolv-conf"
-version = "0.7.6"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "1e061d1b48cb8d38042de4ae0a7a6401009d6143dc80d2e2d6f31f0bdd6470c7"
-
-[[package]]
 name = "ring"
 version = "0.17.14"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -8343,7 +8221,7 @@ dependencies = [
  "errno",
  "libc",
  "linux-raw-sys",
- "windows-sys 0.61.2",
+ "windows-sys 0.59.0",
 ]
 
 [[package]]
@@ -8532,7 +8410,7 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "b7f4bc775c73d9a02cde8bf7b2ec4c9d12743edf609006c7facc23998404cd1d"
 dependencies = [
  "bitflags 2.11.0",
- "core-foundation 0.10.1",
+ "core-foundation",
  "core-foundation-sys",
  "libc",
  "security-framework-sys",
@@ -8969,22 +8847,12 @@ dependencies = [
 
 [[package]]
 name = "socket2"
-version = "0.5.10"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "e22376abed350d73dd1cd119b57ffccad95b4e585a7cda43e286245ce23c0678"
-dependencies = [
- "libc",
- "windows-sys 0.52.0",
-]
-
-[[package]]
-name = "socket2"
 version = "0.6.3"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "3a766e1110788c36f4fa1c2b71b387a7815aa65f88ce0229841826633d93723e"
 dependencies = [
  "libc",
- "windows-sys 0.61.2",
+ "windows-sys 0.60.2",
 ]
 
 [[package]]
@@ -9423,27 +9291,6 @@ dependencies = [
 ]
 
 [[package]]
-name = "system-configuration"
-version = "0.7.0"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "a13f3d0daba03132c0aa9767f98351b3488edc2c100cda2d2ec2b04f3d8d3c8b"
-dependencies = [
- "bitflags 2.11.0",
- "core-foundation 0.9.4",
- "system-configuration-sys",
-]
-
-[[package]]
-name = "system-configuration-sys"
-version = "0.6.0"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "8e1d1b10ced5ca923a1fcb8d03e96b8d3268065d724548c0211415ff6ac6bac4"
-dependencies = [
- "core-foundation-sys",
- "libc",
-]
-
-[[package]]
 name = "tagptr"
 version = "0.2.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -9459,7 +9306,7 @@ dependencies = [
  "getrandom 0.4.2",
  "once_cell",
  "rustix",
- "windows-sys 0.61.2",
+ "windows-sys 0.59.0",
 ]
 
 [[package]]
@@ -9779,7 +9626,7 @@ dependencies = [
  "parking_lot",
  "pin-project-lite",
  "signal-hook-registry",
- "socket2 0.6.3",
+ "socket2",
  "tokio-macros",
  "windows-sys 0.61.2",
 ]
@@ -10116,7 +9963,6 @@ version = "0.3.23"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "cb7f578e5945fb242538965c2d0b04418d38ec25c79d160cd279bf0731c8d319"
 dependencies = [
- "chrono",
  "matchers",
  "nu-ansi-term",
  "once_cell",
@@ -10424,7 +10270,6 @@ dependencies = [
  "idna",
  "percent-encoding",
  "serde",
- "serde_derive",
 ]
 
 [[package]]
@@ -10754,7 +10599,7 @@ version = "1.2.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "fe985f41e291eecef5e5c0770a18d28390addb03331c043964d9e916453d6f16"
 dependencies = [
- "core-foundation 0.10.1",
+ "core-foundation",
  "jni",
  "log",
  "ndk-context",
@@ -10880,12 +10725,6 @@ dependencies = [
 ]
 
 [[package]]
-name = "widestring"
-version = "1.2.1"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "72069c3113ab32ab29e5584db3c6ec55d416895e60715417b5b883a357c3e471"
-
-[[package]]
 name = "wildcard"
 version = "0.3.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -10922,7 +10761,7 @@ version = "0.1.11"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "c2a7b1c03c876122aa43f3020e6c3c3ee5c05081c9a00739faf7503aeba10d22"
 dependencies = [
- "windows-sys 0.61.2",
+ "windows-sys 0.59.0",
 ]
 
 [[package]]
@@ -11246,16 +11085,6 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "80d0f4e272c85def139476380b12f9ac60926689dd2e01d4923222f40580869d"
 dependencies = [
  "winapi",
-]
-
-[[package]]
-name = "winreg"
-version = "0.50.0"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "524e57b2c537c0f9b1e69f1965311ec12182b4122e45035b1508cd24d2adadb1"
-dependencies = [
- "cfg-if",
- "windows-sys 0.48.0",
 ]
 
 [[package]]

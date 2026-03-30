@@ -77,6 +77,7 @@ use chaos_ipc::models::format_allow_prefixes;
 use chaos_ipc::openai_models::ModelInfo;
 use chaos_ipc::permissions::FileSystemSandboxPolicy;
 use chaos_ipc::permissions::NetworkSandboxPolicy;
+use chaos_ipc::protocol::AgentMessageEvent;
 use chaos_ipc::protocol::FileChange;
 use chaos_ipc::protocol::HasLegacyEvent;
 use chaos_ipc::protocol::ItemCompletedEvent;
@@ -1715,6 +1716,7 @@ impl Session {
                 conversation_id,
                 session_configuration.provider.clone(),
                 session_configuration.session_source.clone(),
+                session_configuration.approval_policy.value(),
                 config.model_verbosity,
                 ws_version_from_features(config.as_ref()),
                 config.features.enabled(Feature::EnableRequestCompression),
@@ -2269,7 +2271,9 @@ impl Session {
     }
 
     pub(crate) async fn maybe_emit_unknown_model_warning_for_turn(&self, tc: &TurnContext) {
-        if tc.model_info.used_fallback_model_metadata {
+        if tc.model_info.used_fallback_model_metadata
+            && !self.services.model_client.is_clamped()
+        {
             self.send_event(
                 tc,
                 EventMsg::Warning(WarningEvent {
@@ -3948,6 +3952,14 @@ async fn submission_loop(sess: Arc<Session>, config: Arc<Config>, rx_sub: Receiv
                             /*developer_instructions*/ None,
                         )
                     };
+                    // If clamped and model changed, forward to claude subprocess.
+                    if sess.services.model_client.is_clamped()
+                        && let Some(ref model_slug) = model
+                        && let Err(e) = sess.services.model_client
+                            .set_clamp_model(model_slug).await
+                    {
+                        warn!("failed to set clamped model: {e}");
+                    }
                     handlers::override_turn_context(
                         &sess,
                         sub.id.clone(),
@@ -3964,6 +3976,19 @@ async fn submission_loop(sess: Arc<Session>, config: Arc<Config>, rx_sub: Receiv
                             ..Default::default()
                         },
                     )
+                    .await;
+                    false
+                }
+                Op::SetClamped { enabled } => {
+                    sess.services.model_client.set_clamped(enabled).await;
+                    let mode = if enabled { "clamped (Claude Code MAX)" } else { "direct API" };
+                    sess.send_event_raw(Event {
+                        id: sub.id.clone(),
+                        msg: EventMsg::AgentMessage(AgentMessageEvent {
+                            message: format!("Transport switched to {mode}."),
+                            phase: None,
+                        }),
+                    })
                     .await;
                     false
                 }

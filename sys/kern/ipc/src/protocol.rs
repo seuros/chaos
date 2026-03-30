@@ -262,6 +262,11 @@ pub enum Op {
         personality: Option<Personality>,
     },
 
+    /// Toggle clamped mode (Claude Code subprocess as transport).
+    SetClamped {
+        enabled: bool,
+    },
+
     /// Approve a command execution
     ExecApproval {
         /// The id of the submission we are approving
@@ -428,6 +433,7 @@ impl Op {
             Self::UserInput { .. } => "user_input",
             Self::UserTurn { .. } => "user_turn",
             Self::OverrideTurnContext { .. } => "override_turn_context",
+            Self::SetClamped { .. } => "set_clamped",
             Self::ExecApproval { .. } => "exec_approval",
             Self::PatchApproval { .. } => "patch_approval",
             Self::ResolveElicitation { .. } => "resolve_elicitation",

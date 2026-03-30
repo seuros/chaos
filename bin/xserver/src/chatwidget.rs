@@ -4303,6 +4303,26 @@ impl ChatWidget {
             SlashCommand::Mcp => {
                 self.add_mcp_output();
             }
+            SlashCommand::Clamp => {
+                // Toggle clamped mode — Claude Code subprocess as transport.
+                let is_clamped = crate::theme::is_clamped();
+                let new_state = !is_clamped;
+                crate::theme::set_clamped(new_state);
+                self.app_event_tx
+                    .send(AppEvent::CodexOp(Op::SetClamped { enabled: new_state }));
+                if new_state {
+                    self.add_info_message(
+                        "Clamped: using Claude Code MAX subscription as transport."
+                            .to_string(),
+                        Some("Type /clamp again to switch back".to_string()),
+                    );
+                } else {
+                    self.add_info_message(
+                        "Unclamped: using direct API transport.".to_string(),
+                        None,
+                    );
+                }
+            }
             SlashCommand::TestApproval => {
                 use chaos_ipc::protocol::EventMsg;
                 use std::collections::HashMap;
@@ -5392,6 +5412,7 @@ impl ChatWidget {
             collaboration_mode,
             reasoning_effort_override,
         ));
+
     }
 
     pub(crate) fn add_debug_config_output(&mut self) {
@@ -5822,14 +5843,79 @@ impl ChatWidget {
             return;
         }
 
-        let presets: Vec<ModelPreset> = match self.models_manager.try_list_models() {
-            Ok(models) => models,
-            Err(_) => {
+        let presets: Vec<ModelPreset> = if crate::theme::is_clamped() {
+            use chaos_ipc::openai_models::ReasoningEffort;
+            use chaos_ipc::openai_models::ReasoningEffortPreset;
+
+            // Build presets from the real Claude Code init response.
+            let cached = chaos_clamp::cached_models();
+            if let Some(models_json) = cached.as_ref().and_then(|v| v.as_array()) {
+                models_json
+                    .iter()
+                    .map(|m| {
+                        let value = m.get("value").and_then(|v| v.as_str()).unwrap_or("default");
+                        let display = m.get("displayName").and_then(|v| v.as_str()).unwrap_or(value);
+                        let desc = m.get("description").and_then(|v| v.as_str()).unwrap_or("");
+                        let is_default = value == "default";
+                        let efforts: Vec<ReasoningEffortPreset> = m
+                            .get("supportedEffortLevels")
+                            .and_then(|v| v.as_array())
+                            .map(|arr| {
+                                arr.iter()
+                                    .filter_map(|e| {
+                                        let s = e.as_str()?;
+                                        let effort = match s {
+                                            "low" => ReasoningEffort::Low,
+                                            "medium" => ReasoningEffort::Medium,
+                                            "high" => ReasoningEffort::High,
+                                            _ => return None,
+                                        };
+                                        Some(ReasoningEffortPreset {
+                                            effort,
+                                            description: s.to_string(),
+                                        })
+                                    })
+                                    .collect()
+                            })
+                            .unwrap_or_default();
+                        ModelPreset {
+                            id: value.to_string(),
+                            model: value.to_string(),
+                            display_name: display.to_string(),
+                            description: desc.to_string(),
+                            default_reasoning_effort: ReasoningEffort::Medium,
+                            supported_reasoning_efforts: efforts,
+                            supports_personality: false,
+                            is_default,
+                            upgrade: None,
+                            show_in_picker: true,
+                            availability_nux: None,
+                            supported_in_api: true,
+                            input_modalities: vec![],
+                        }
+                    })
+                    .collect()
+            } else {
+                // No cached models yet — subprocess hasn't been spawned.
                 self.add_info_message(
-                    "Models are being updated; please try /model again in a moment.".to_string(),
-                    /*hint*/ None,
+                    "Send a message first to initialize the Claude Code subprocess, \
+                     then try /model again."
+                        .to_string(),
+                    None,
                 );
                 return;
+            }
+        } else {
+            match self.models_manager.try_list_models() {
+                Ok(models) => models,
+                Err(_) => {
+                    self.add_info_message(
+                        "Models are being updated; please try /model again in a moment."
+                            .to_string(),
+                        /*hint*/ None,
+                    );
+                    return;
+                }
             }
         };
         self.open_model_popup_with_presets(presets);

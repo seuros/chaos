@@ -1655,6 +1655,7 @@ async fn websocket_harness_with_options(
         conversation_id,
         provider.clone(),
         SessionSource::Exec,
+        chaos_ipc::protocol::AskForApproval::OnRequest,
         config.model_verbosity,
         ws_version_from_features(&config),
         false,

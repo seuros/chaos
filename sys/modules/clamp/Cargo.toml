@@ -1,0 +1,25 @@
+[package]
+name = "chaos-clamp"
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+publish.workspace = true
+description = "Claude Code subprocess module — use MAX subscription as transport"
+
+[lints]
+workspace = true
+
+[dependencies]
+chaos-abi = { workspace = true }
+chaos-ipc = { workspace = true }
+futures = { workspace = true }
+serde = { workspace = true, features = ["derive"] }
+serde_json = { workspace = true }
+thiserror = { workspace = true }
+tokio = { workspace = true, features = ["io-util", "macros", "process", "rt", "sync", "time"] }
+tracing = { workspace = true }
+which = { workspace = true }
+
+[dev-dependencies]
+serde_json = { workspace = true }
+tokio = { workspace = true, features = ["rt-multi-thread", "macros"] }

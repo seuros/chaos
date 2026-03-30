@@ -4,9 +4,24 @@
 //! the entire terminal.
 #![allow(dead_code)]
 
+use std::sync::atomic::{AtomicBool, Ordering};
+
 use ratatui::style::Color;
 use ratatui::style::Modifier;
 use ratatui::style::Style;
+
+/// Global clamped-mode flag — when true, the theme switches to Anthropic orange.
+static CLAMPED: AtomicBool = AtomicBool::new(false);
+
+/// Set clamped mode (switches theme to Anthropic orange).
+pub fn set_clamped(clamped: bool) {
+    CLAMPED.store(clamped, Ordering::Relaxed);
+}
+
+/// Whether the UI is in clamped mode.
+pub fn is_clamped() -> bool {
+    CLAMPED.load(Ordering::Relaxed)
+}
 
 /// The Chaos terminal palette. Every color used in the TUI should come from
 /// here so the theme can be swapped in one place.
@@ -47,9 +62,23 @@ pub const PHOSPHOR: Palette = Palette {
     accent: Color::LightGreen,
 };
 
-/// Active palette. Change this to swap the entire theme.
+/// Anthropic orange palette — used when clamped to Claude Code MAX.
+pub const ANTHROPIC: Palette = Palette {
+    bg: Color::Black,
+    fg: Color::Rgb(255, 176, 102),        // warm orange text
+    dim: Color::Rgb(180, 120, 60),         // muted orange
+    highlight: Color::Rgb(255, 140, 50),   // bright Anthropic orange
+    user_msg_bg: Color::DarkGray,
+    border: Color::Rgb(204, 120, 50),      // orange border
+    warning: Color::Yellow,
+    error: Color::LightRed,
+    success: Color::Rgb(255, 176, 102),    // orange success
+    accent: Color::Rgb(255, 140, 50),      // Anthropic orange accent
+};
+
+/// Active palette. Switches to Anthropic orange when clamped.
 pub fn palette() -> &'static Palette {
-    &PHOSPHOR
+    if is_clamped() { &ANTHROPIC } else { &PHOSPHOR }
 }
 
 // --- Semantic styles built from the palette ---

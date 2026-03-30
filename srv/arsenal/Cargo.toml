@@ -14,7 +14,9 @@ path = "src/lib.rs"
 workspace = true
 
 [dependencies]
+chaos-traits = { workspace = true }
 chaos-wchar = { workspace = true }
+inventory = { workspace = true }
 mcp-host = { workspace = true, features = ["macros"] }
 schemars = "1.2.1"
 serde = { workspace = true, features = ["derive"] }

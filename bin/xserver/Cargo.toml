@@ -29,6 +29,7 @@ clap = { workspace = true, features = ["derive"] }
 chaos-highlight = { workspace = true, optional = true }
 chaos-termcap = { workspace = true }
 chaos-argv = { workspace = true }
+chaos-clamp = { workspace = true }
 chaos-kern = { workspace = true }
 chaos-locate = { workspace = true }
 chaos-pam = { workspace = true }

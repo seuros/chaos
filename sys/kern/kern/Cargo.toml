@@ -25,7 +25,9 @@ chardetng = { workspace = true }
 jiff = { workspace = true }
 clap = { workspace = true, features = ["derive"] }
 chaos-parrot = { workspace = true }
+chaos-clamp = { workspace = true }
 chaos-abi = { workspace = true }
+tokio-stream = { workspace = true }
 chaos-diff = { workspace = true }
 chaos-git = { workspace = true }
 chaos-arsenal = { workspace = true }

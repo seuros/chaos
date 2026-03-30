@@ -472,35 +472,78 @@ impl HistoryCell for StatusHistoryCell {
         let formatter = FieldFormatter::from_labels(labels.iter().map(String::as_str));
         let value_width = formatter.value_width(available_inner_width);
 
-        let note_first_line = Line::from(vec![
-            Span::from("Visit ").cyan(),
-            "https://chatgpt.com/codex/settings/usage"
-                .cyan()
-                .underlined(),
-            Span::from(" for up-to-date").cyan(),
-        ]);
-        let note_second_line = Line::from(vec![
-            Span::from("information on rate limits and credits").cyan(),
-        ]);
-        let note_lines = adaptive_wrap_lines(
-            [note_first_line, note_second_line],
-            RtOptions::new(available_inner_width),
-        );
-        lines.extend(note_lines);
+        if crate::theme::is_clamped() {
+            let note_line = Line::from(vec![
+                Span::from("Transport: ").cyan(),
+                Span::from("Claude Code MAX (clamped)")
+                    .fg(ratatui::style::Color::Rgb(255, 140, 50))
+                    .bold(),
+            ]);
+            lines.push(note_line);
+
+            // Show subprocess PID/RAM/uptime if running.
+            if let Ok(out) = std::process::Command::new("ps")
+                .args(["-o", "pid=,rss=,etime=", "-C", "claude"])
+                .output()
+            {
+                let stdout = String::from_utf8_lossy(&out.stdout);
+                if let Some(line) = stdout.lines().next() {
+                    let parts: Vec<&str> = line.split_whitespace().collect();
+                    if parts.len() >= 3 {
+                        let pid = parts[0];
+                        let rss_kb: u64 = parts[1].parse().unwrap_or(0);
+                        let rss_mb = rss_kb / 1024;
+                        let elapsed = parts[2];
+                        lines.push(Line::from(vec![
+                            Span::from(format!("  PID {pid}  ")).dim(),
+                            Span::from(format!("RAM {rss_mb}MB  ")).dim(),
+                            Span::from(format!("Uptime {elapsed}")).dim(),
+                        ]));
+                    }
+                }
+            }
+        } else {
+            let note_first_line = Line::from(vec![
+                Span::from("Visit ").cyan(),
+                "https://chatgpt.com/codex/settings/usage"
+                    .cyan()
+                    .underlined(),
+                Span::from(" for up-to-date").cyan(),
+            ]);
+            let note_second_line = Line::from(vec![
+                Span::from("information on rate limits and credits").cyan(),
+            ]);
+            let note_lines = adaptive_wrap_lines(
+                [note_first_line, note_second_line],
+                RtOptions::new(available_inner_width),
+            );
+            lines.extend(note_lines);
+        }
         lines.push(Line::from(Vec::<Span<'static>>::new()));
 
-        let mut model_spans = vec![Span::from(self.model_name.clone())];
-        if !self.model_details.is_empty() {
-            model_spans.push(Span::from(" (").dim());
-            model_spans.push(Span::from(self.model_details.join(", ")).dim());
-            model_spans.push(Span::from(")").dim());
-        }
+        let model_spans = if crate::theme::is_clamped() {
+            vec![
+                Span::from("claude-sonnet-4-6")
+                    .fg(ratatui::style::Color::Rgb(255, 140, 50)),
+                Span::from(" (via MAX subscription)").dim(),
+            ]
+        } else {
+            let mut spans = vec![Span::from(self.model_name.clone())];
+            if !self.model_details.is_empty() {
+                spans.push(Span::from(" (").dim());
+                spans.push(Span::from(self.model_details.join(", ")).dim());
+                spans.push(Span::from(")").dim());
+            }
+            spans
+        };
 
         let directory_value = format_directory_display(&self.directory, Some(value_width));
 
         lines.push(formatter.line("Model", model_spans));
-        if let Some(model_provider) = self.model_provider.as_ref() {
-            lines.push(formatter.line("Model provider", vec![Span::from(model_provider.clone())]));
+        if !crate::theme::is_clamped() {
+            if let Some(model_provider) = self.model_provider.as_ref() {
+                lines.push(formatter.line("Model provider", vec![Span::from(model_provider.clone())]));
+            }
         }
         lines.push(formatter.line("Directory", vec![Span::from(directory_value)]));
         lines.push(formatter.line("Permissions", vec![Span::from(self.permissions.clone())]));

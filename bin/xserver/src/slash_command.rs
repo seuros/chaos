@@ -39,6 +39,7 @@ pub enum SlashCommand {
     Statusline,
     Theme,
     Mcp,
+    Clamp,
     Logout,
     Quit,
     Exit,
@@ -95,6 +96,7 @@ impl SlashCommand {
             }
             SlashCommand::Experimental => "toggle experimental features",
             SlashCommand::Mcp => "list configured MCP tools",
+            SlashCommand::Clamp => "use Claude Code MAX subscription as transport",
             SlashCommand::Logout => "log out of Codex",
             SlashCommand::TestApproval => "test approval request",
         }
@@ -152,6 +154,7 @@ impl SlashCommand {
             | SlashCommand::Exit => true,
             SlashCommand::TestApproval => true,
             SlashCommand::Collab => true,
+            SlashCommand::Clamp => true,
             SlashCommand::Agent | SlashCommand::MultiAgents => true,
             SlashCommand::Statusline => false,
             SlashCommand::Theme => false,
@@ -163,6 +166,12 @@ impl SlashCommand {
             SlashCommand::SandboxReadRoot => false,
             SlashCommand::Copy => true,
             SlashCommand::TestApproval => cfg!(debug_assertions),
+            SlashCommand::Clamp => std::process::Command::new("claude")
+                .arg("-v")
+                .stdout(std::process::Stdio::null())
+                .stderr(std::process::Stdio::null())
+                .status()
+                .is_ok(),
             _ => true,
         }
     }

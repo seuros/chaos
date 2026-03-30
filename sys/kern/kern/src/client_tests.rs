@@ -2,8 +2,15 @@ use super::AuthRequestTelemetryContext;
 use super::ModelClient;
 use super::PendingUnauthorizedRetry;
 use super::UnauthorizedRecoveryExecution;
+use super::clamp_permission_mode;
+use super::render_clamp_full_prompt;
+use super::render_latest_clamp_user_message;
 use chaos_ipc::ProcessId;
+use chaos_ipc::models::ContentItem;
+use chaos_ipc::models::FunctionCallOutputPayload;
+use chaos_ipc::models::ResponseItem;
 use chaos_ipc::openai_models::ModelInfo;
+use chaos_ipc::protocol::AskForApproval;
 use chaos_ipc::protocol::SessionSource;
 use chaos_ipc::protocol::SubAgentSource;
 use chaos_parrot::anthropic::AnthropicAuth;
@@ -21,6 +28,7 @@ fn test_model_client(session_source: SessionSource) -> ModelClient {
         ProcessId::new(),
         provider,
         session_source,
+        AskForApproval::OnRequest,
         None,
         false,
         false,
@@ -146,6 +154,7 @@ fn resolve_anthropic_auth_uses_bearer_token_from_provider_config() {
         ProcessId::new(),
         provider,
         SessionSource::Cli,
+        AskForApproval::OnRequest,
         None,
         false,
         false,
@@ -171,6 +180,7 @@ fn resolve_anthropic_auth_errors_when_provider_has_no_static_auth() {
         ProcessId::new(),
         test_anthropic_provider(),
         SessionSource::Cli,
+        AskForApproval::OnRequest,
         None,
         false,
         false,
@@ -184,4 +194,109 @@ fn resolve_anthropic_auth_errors_when_provider_has_no_static_auth() {
         .expect_err("missing auth should fail locally");
 
     assert!(matches!(err, crate::error::CodexErr::InvalidRequest(_)));
+}
+
+#[test]
+fn clamp_permission_mode_matches_codex_session_start_mapping() {
+    assert_eq!(
+        clamp_permission_mode(AskForApproval::Never),
+        "bypassPermissions"
+    );
+    assert_eq!(
+        clamp_permission_mode(AskForApproval::OnRequest),
+        "default"
+    );
+    assert_eq!(
+        clamp_permission_mode(AskForApproval::OnFailure),
+        "default"
+    );
+}
+
+#[test]
+fn render_clamp_full_prompt_preserves_prior_messages_and_tool_outputs() {
+    let prompt = crate::client_common::Prompt {
+        input: vec![
+            ResponseItem::Message {
+                id: None,
+                role: "user".into(),
+                content: vec![
+                    ContentItem::InputText {
+                        text: "look at this".into(),
+                    },
+                    ContentItem::InputImage {
+                        image_url: "data:image/png;base64,AAAA".into(),
+                    },
+                ],
+                end_turn: None,
+                phase: None,
+            },
+            ResponseItem::FunctionCall {
+                id: None,
+                name: "shell".into(),
+                namespace: None,
+                arguments: "{\"command\":[\"pwd\"]}".into(),
+                call_id: "call_123".into(),
+            },
+            ResponseItem::FunctionCallOutput {
+                call_id: "call_123".into(),
+                output: FunctionCallOutputPayload::from_text("/workspace\n".into()),
+            },
+            ResponseItem::Message {
+                id: None,
+                role: "assistant".into(),
+                content: vec![ContentItem::OutputText {
+                    text: "I checked it.".into(),
+                }],
+                end_turn: Some(true),
+                phase: None,
+            },
+        ],
+        ..Default::default()
+    };
+
+    let rendered = render_clamp_full_prompt(&prompt);
+
+    assert!(rendered.contains("look at this"));
+    assert!(rendered.contains("[image: inline data omitted]"));
+    assert!(rendered.contains("<function_call name=\"shell\""));
+    assert!(rendered.contains("/workspace"));
+    assert!(rendered.contains("I checked it."));
+}
+
+#[test]
+fn render_latest_clamp_user_message_keeps_non_text_content() {
+    let prompt = crate::client_common::Prompt {
+        input: vec![
+            ResponseItem::Message {
+                id: None,
+                role: "assistant".into(),
+                content: vec![ContentItem::OutputText {
+                    text: "Earlier answer".into(),
+                }],
+                end_turn: Some(true),
+                phase: None,
+            },
+            ResponseItem::Message {
+                id: None,
+                role: "user".into(),
+                content: vec![
+                    ContentItem::InputText {
+                        text: "latest prompt".into(),
+                    },
+                    ContentItem::InputImage {
+                        image_url: "https://example.com/cat.png".into(),
+                    },
+                ],
+                end_turn: None,
+                phase: None,
+            },
+        ],
+        ..Default::default()
+    };
+
+    let rendered = render_latest_clamp_user_message(&prompt);
+
+    assert!(rendered.contains("latest prompt"));
+    assert!(rendered.contains("[image: https://example.com/cat.png]"));
+    assert!(!rendered.contains("Earlier answer"));
 }

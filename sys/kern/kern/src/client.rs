@@ -73,9 +73,11 @@ use chaos_ipc::ProcessId;
 use chaos_ipc::config_types::ReasoningSummary as ReasoningSummaryConfig;
 use chaos_ipc::config_types::ServiceTier;
 use chaos_ipc::config_types::Verbosity as VerbosityConfig;
+use chaos_ipc::models::ContentItem;
 use chaos_ipc::models::ResponseItem;
 use chaos_ipc::openai_models::ModelInfo;
 use chaos_ipc::openai_models::ReasoningEffort as ReasoningEffortConfig;
+use chaos_ipc::protocol::AskForApproval;
 use chaos_ipc::protocol::SessionSource;
 use eventsource_stream::Event;
 use eventsource_stream::EventStreamError;
@@ -148,12 +150,17 @@ struct ModelClientState {
     conversation_id: ProcessId,
     provider: ModelProviderInfo,
     session_source: SessionSource,
+    approval_policy: AskForApproval,
     model_verbosity: Option<VerbosityConfig>,
     responses_websockets_enabled_by_feature: bool,
     enable_request_compression: bool,
     include_timing_metrics: bool,
     beta_features_header: Option<String>,
     disable_websockets: AtomicBool,
+    /// When true, route all turns through the Claude Code subprocess (clamped mode).
+    clamped: AtomicBool,
+    /// Persistent Claude Code subprocess for clamped mode.
+    clamp_transport: tokio::sync::Mutex<Option<chaos_clamp::ClampTransport>>,
     cached_websocket_session: StdMutex<WebsocketSession>,
 }
 
@@ -277,6 +284,7 @@ impl ModelClient {
         conversation_id: ProcessId,
         provider: ModelProviderInfo,
         session_source: SessionSource,
+        approval_policy: AskForApproval,
         model_verbosity: Option<VerbosityConfig>,
         responses_websockets_enabled_by_feature: bool,
         enable_request_compression: bool,
@@ -289,12 +297,15 @@ impl ModelClient {
                 conversation_id,
                 provider,
                 session_source,
+                approval_policy,
                 model_verbosity,
                 responses_websockets_enabled_by_feature,
                 enable_request_compression,
                 include_timing_metrics,
                 beta_features_header,
                 disable_websockets: AtomicBool::new(false),
+                clamped: AtomicBool::new(false),
+                clamp_transport: tokio::sync::Mutex::new(None),
                 cached_websocket_session: StdMutex::new(WebsocketSession::default()),
             }),
         }
@@ -327,6 +338,53 @@ impl ModelClient {
             .cached_websocket_session
             .lock()
             .unwrap_or_else(std::sync::PoisonError::into_inner) = websocket_session;
+    }
+
+    /// Toggle clamped mode (Claude Code subprocess as transport).
+    pub async fn set_clamped(&self, clamped: bool) {
+        let was_clamped = self.state.clamped.swap(clamped, Ordering::Relaxed);
+        if !clamped && was_clamped {
+            let transport = {
+                let mut guard = self.state.clamp_transport.lock().await;
+                guard.take()
+            };
+            if let Some(transport) = transport
+                && let Err(err) = transport.shutdown().await
+            {
+                warn!("failed to shut down clamped transport: {err}");
+            }
+        }
+    }
+
+    /// Whether the client is in clamped mode.
+    pub fn is_clamped(&self) -> bool {
+        self.state.clamped.load(Ordering::Relaxed)
+    }
+
+    /// Get info about the clamped Claude Code subprocess (if running).
+    pub async fn clamp_info(&self) -> Option<chaos_clamp::ClampInfo> {
+        let guard = self.state.clamp_transport.lock().await;
+        guard.as_ref().and_then(chaos_clamp::ClampTransport::info)
+    }
+
+    /// Switch the model on the clamped Claude Code subprocess.
+    pub async fn set_clamp_model(&self, model: &str) -> std::result::Result<(), String> {
+        let mut guard = self.state.clamp_transport.lock().await;
+        if let Some(transport) = guard.as_mut() {
+            transport
+                .set_model(model)
+                .await
+                .map(|_| ())
+                .map_err(|e| e.to_string())
+        } else {
+            Err("clamp transport not running".to_string())
+        }
+    }
+
+    /// Get the initialization response from the clamped subprocess (models, commands, etc.).
+    pub async fn clamp_init_response(&self) -> Option<serde_json::Value> {
+        let guard = self.state.clamp_transport.lock().await;
+        guard.as_ref().and_then(|t| t.init_response().cloned())
     }
 
     /// Compacts the current conversation history using the Compact endpoint.
@@ -653,6 +711,194 @@ impl Drop for ModelClientSession {
         self.client
             .store_cached_websocket_session(websocket_session);
     }
+}
+
+fn clamp_permission_mode(approval_policy: AskForApproval) -> String {
+    match approval_policy {
+        AskForApproval::Never => "bypassPermissions",
+        AskForApproval::UnlessTrusted
+        | AskForApproval::OnFailure
+        | AskForApproval::OnRequest
+        | AskForApproval::Granular(_) => "default",
+    }
+    .to_string()
+}
+
+fn render_clamp_content_items(content: &[ContentItem]) -> String {
+    content
+        .iter()
+        .map(|item| match item {
+            ContentItem::InputText { text } | ContentItem::OutputText { text } => text.clone(),
+            ContentItem::InputImage { image_url } => {
+                if image_url.starts_with("data:") {
+                    "[image: inline data omitted]".to_string()
+                } else {
+                    format!("[image: {image_url}]")
+                }
+            }
+        })
+        .collect::<Vec<_>>()
+        .join("\n")
+}
+
+fn render_json_pretty<T: serde::Serialize>(value: &T) -> String {
+    serde_json::to_string_pretty(value).unwrap_or_else(|err| format!("<serialization error: {err}>"))
+}
+
+fn clamp_elide_large_text(text: &str) -> String {
+    const MAX_CHARS: usize = 8_000;
+    let mut chars = text.chars();
+    let preview: String = chars.by_ref().take(MAX_CHARS).collect();
+    if chars.next().is_some() {
+        format!("{preview}\n...[truncated {} chars]", text.chars().count() - MAX_CHARS)
+    } else {
+        preview
+    }
+}
+
+fn render_clamp_response_item(item: &ResponseItem) -> Option<String> {
+    match item {
+        ResponseItem::Message { role, content, .. } => Some(format!(
+            "<message role=\"{role}\">\n{}\n</message>",
+            render_clamp_content_items(content)
+        )),
+        ResponseItem::Reasoning { summary, .. } => {
+            let text = summary
+                .iter()
+                .map(|entry| match entry {
+                    chaos_ipc::models::ReasoningItemReasoningSummary::SummaryText { text } => {
+                        text.as_str()
+                    }
+                })
+                .filter(|text| !text.trim().is_empty())
+                .collect::<Vec<_>>()
+                .join("\n");
+            (!text.is_empty()).then(|| format!("<reasoning_summary>\n{text}\n</reasoning_summary>"))
+        }
+        ResponseItem::LocalShellCall {
+            call_id,
+            status,
+            action,
+            ..
+        } => Some(format!(
+            "<local_shell_call call_id=\"{}\" status=\"{}\">\n{}\n</local_shell_call>",
+            call_id.as_deref().unwrap_or(""),
+            serde_json::to_string(status).unwrap_or_else(|_| "\"unknown\"".to_string()),
+            render_json_pretty(action)
+        )),
+        ResponseItem::FunctionCall {
+            name,
+            call_id,
+            arguments,
+            namespace,
+            ..
+        } => Some(format!(
+            "<function_call name=\"{name}\" namespace=\"{}\" call_id=\"{call_id}\">\n{}\n</function_call>",
+            namespace.as_deref().unwrap_or(""),
+            arguments
+        )),
+        ResponseItem::ToolSearchCall {
+            call_id,
+            status,
+            execution,
+            arguments,
+            ..
+        } => Some(format!(
+            "<tool_search_call call_id=\"{}\" status=\"{}\" execution=\"{execution}\">\n{}\n</tool_search_call>",
+            call_id.as_deref().unwrap_or(""),
+            status.as_deref().unwrap_or(""),
+            render_json_pretty(arguments)
+        )),
+        ResponseItem::FunctionCallOutput { call_id, output }
+        | ResponseItem::CustomToolCallOutput { call_id, output } => Some(format!(
+            "<tool_output call_id=\"{call_id}\">\n{}\n</tool_output>",
+            clamp_elide_large_text(
+                &output
+                    .body
+                    .to_text()
+                    .unwrap_or_else(|| render_json_pretty(output))
+            )
+        )),
+        ResponseItem::CustomToolCall {
+            call_id,
+            name,
+            input,
+            status,
+            ..
+        } => Some(format!(
+            "<custom_tool_call name=\"{name}\" call_id=\"{call_id}\" status=\"{}\">\n{input}\n</custom_tool_call>",
+            status.as_deref().unwrap_or("")
+        )),
+        ResponseItem::ToolSearchOutput {
+            call_id,
+            status,
+            execution,
+            tools,
+        } => Some(format!(
+            "<tool_search_output call_id=\"{}\" status=\"{status}\" execution=\"{execution}\">\n{}\n</tool_search_output>",
+            call_id.as_deref().unwrap_or(""),
+            render_json_pretty(tools)
+        )),
+        ResponseItem::WebSearchCall { status, action, .. } => Some(format!(
+            "<web_search_call status=\"{}\">\n{}\n</web_search_call>",
+            status.as_deref().unwrap_or(""),
+            action
+                .as_ref()
+                .map(render_json_pretty)
+                .unwrap_or_default()
+        )),
+        ResponseItem::ImageGenerationCall {
+            status,
+            revised_prompt,
+            result,
+            ..
+        } => Some(format!(
+            "<image_generation_call status=\"{status}\">\nrevised_prompt: {}\nresult: {}\n</image_generation_call>",
+            revised_prompt.as_deref().unwrap_or(""),
+            clamp_elide_large_text(result)
+        )),
+        ResponseItem::GhostSnapshot { .. } => {
+            Some("<ghost_snapshot>[omitted]</ghost_snapshot>".to_string())
+        }
+        ResponseItem::Compaction { .. } => Some("<compaction>[omitted]</compaction>".to_string()),
+        ResponseItem::Other => Some("<other_response_item />".to_string()),
+    }
+}
+
+fn render_clamp_full_prompt(prompt: &Prompt) -> String {
+    let rendered_items = prompt
+        .get_formatted_input()
+        .iter()
+        .filter_map(render_clamp_response_item)
+        .collect::<Vec<_>>();
+
+    if rendered_items.is_empty() {
+        return "Chaos restored an empty conversation state. Respond to the latest user request."
+            .to_string();
+    }
+
+    format!(
+        "Chaos restored the current Codex conversation state after connecting Claude Code.\n\
+Treat the transcript below as authoritative prior context, including tool calls and tool outputs that already happened.\n\
+Continue from the latest user request instead of restarting the conversation.\n\n\
+<conversation_state>\n{}\n</conversation_state>",
+        rendered_items.join("\n\n")
+    )
+}
+
+fn render_latest_clamp_user_message(prompt: &Prompt) -> String {
+    prompt
+        .get_formatted_input()
+        .iter()
+        .rev()
+        .find_map(|item| match item {
+            ResponseItem::Message { role, content, .. } if role == "user" => {
+                let rendered = render_clamp_content_items(content);
+                (!rendered.is_empty()).then_some(rendered)
+            }
+            _ => None,
+        })
+        .unwrap_or_else(|| render_clamp_full_prompt(prompt))
 }
 
 impl ModelClientSession {
@@ -1362,6 +1608,196 @@ impl ModelClientSession {
         }
     }
 
+    /// Streams a turn via a clamped Claude Code subprocess.
+    ///
+    /// The Claude Code CLI is driven as a headless subprocess using the
+    /// stream-json control protocol. The user's MAX subscription provides
+    /// the LLM tokens; Chaos provides tools, UI, and orchestration.
+    #[instrument(
+        name = "model_client.stream_clamped",
+        level = "info",
+        skip_all,
+        fields(
+            model = %model_info.slug,
+            wire_api = "clamped",
+            transport = "claude_subprocess",
+        )
+    )]
+    async fn stream_clamped(
+        &self,
+        prompt: &Prompt,
+        model_info: &ModelInfo,
+        session_telemetry: &SessionTelemetry,
+    ) -> Result<ResponseStream> {
+        use chaos_clamp::{ClampConfig, ClampTransport, Message as ClampMessage};
+        let system_prompt = prompt.base_instructions.text.clone();
+        let full_prompt_state = render_clamp_full_prompt(prompt);
+        let latest_user_content = render_latest_clamp_user_message(prompt);
+        let clamp_model_slug = model_info.slug.clone();
+
+        // Get or create the persistent transport.
+        // The transport lives on ModelClientState and persists across turns,
+        // so Claude Code keeps conversation context.
+        let clamp_state = Arc::clone(&self.client.state);
+
+        let (tx_event, rx_event) = mpsc::channel::<std::result::Result<ResponseEvent, ApiError>>(256);
+
+        let session_telemetry = session_telemetry.clone();
+        tokio::spawn(async move {
+            let mut guard = clamp_state.clamp_transport.lock().await;
+            let mut spawned_fresh = false;
+
+            // Spawn + initialize on first use; reuse on subsequent turns.
+            if guard.is_none() {
+                let config = ClampConfig {
+                    system_prompt: Some(system_prompt),
+                    permission_mode: Some(clamp_permission_mode(clamp_state.approval_policy)),
+                    allow_claude_code_tools: false,
+                    ..Default::default()
+                };
+                match ClampTransport::spawn(config).await {
+                    Ok(mut t) => {
+                        if let Err(e) = t.initialize().await {
+                            let _ = tx_event
+                                .send(Err(ApiError::Stream(format!("clamp init failed: {e}"))))
+                                .await;
+                            return;
+                        }
+                        // Cache the models list for the TUI model picker.
+                        if let Some(models) = t.init_response()
+                            .and_then(|r| r.get("models").cloned())
+                        {
+                            chaos_clamp::set_cached_models(models);
+                        }
+                        spawned_fresh = true;
+                        *guard = Some(t);
+                    }
+                    Err(e) => {
+                        let _ = tx_event
+                            .send(Err(ApiError::Stream(format!("clamp spawn failed: {e}"))))
+                            .await;
+                        return;
+                    }
+                }
+            }
+
+            let Some(transport) = guard.as_mut() else {
+                let _ = tx_event
+                    .send(Err(ApiError::Stream(
+                        "clamp transport missing after initialization".to_string(),
+                    )))
+                    .await;
+                return;
+            };
+
+            if let Err(e) = transport.set_model(&clamp_model_slug).await {
+                *guard = None;
+                let _ = tx_event
+                    .send(Err(ApiError::Stream(format!("clamp set_model failed: {e}"))))
+                    .await;
+                return;
+            }
+
+            let _ = tx_event.send(Ok(ResponseEvent::Created)).await;
+
+            // Kern expects an OutputItemAdded before any OutputTextDelta.
+            let _ = tx_event
+                .send(Ok(ResponseEvent::OutputItemAdded(
+                    ResponseItem::Message {
+                        id: None,
+                        role: "assistant".to_string(),
+                        content: vec![],
+                        end_turn: None,
+                        phase: None,
+                    },
+                )))
+                .await;
+
+            let content = if spawned_fresh {
+                full_prompt_state.as_str()
+            } else {
+                latest_user_content.as_str()
+            };
+
+            if let Err(e) = transport.send_user_message(content).await {
+                // Transport broke — tear it down so next turn respawns.
+                *guard = None;
+                let _ = tx_event
+                    .send(Err(ApiError::Stream(format!("clamp send failed: {e}"))))
+                    .await;
+                return;
+            }
+
+            // Read messages until the turn completes.
+            let mut full_text = String::new();
+            loop {
+                match transport.next_message().await {
+                    Ok(Some(ClampMessage::Assistant { message })) => {
+                        if let Some(content) = message.get("content").and_then(|c| c.as_array()) {
+                            for block in content {
+                                if let Some(text) = block.get("text").and_then(|t| t.as_str()) {
+                                    full_text.push_str(text);
+                                    let _ = tx_event
+                                        .send(Ok(ResponseEvent::OutputTextDelta(text.to_string())))
+                                        .await;
+                                }
+                            }
+                        }
+                    }
+                    Ok(Some(ClampMessage::Result { session_id, .. })) => {
+                        let _ = tx_event
+                            .send(Ok(ResponseEvent::OutputItemDone(
+                                ResponseItem::Message {
+                                    id: None,
+                                    role: "assistant".to_string(),
+                                    content: vec![ContentItem::OutputText {
+                                        text: full_text,
+                                    }],
+                                    end_turn: Some(true),
+                                    phase: None,
+                                },
+                            )))
+                            .await;
+                        let response_id = session_id.unwrap_or_else(|| "clamped".to_string());
+                        let _ = tx_event
+                            .send(Ok(ResponseEvent::Completed {
+                                response_id,
+                                token_usage: None,
+                            }))
+                            .await;
+                        break;
+                    }
+                    Ok(Some(ClampMessage::System { .. })) => {}
+                    Ok(Some(_)) => {}
+                    Ok(None) => {
+                        // Subprocess exited — tear down so next turn respawns.
+                        *guard = None;
+                        let _ = tx_event
+                            .send(Ok(ResponseEvent::Completed {
+                                response_id: "clamped-eof".to_string(),
+                                token_usage: None,
+                            }))
+                            .await;
+                        break;
+                    }
+                    Err(e) => {
+                        *guard = None;
+                        let _ = tx_event
+                            .send(Err(ApiError::Stream(format!("clamp error: {e}"))))
+                            .await;
+                        break;
+                    }
+                }
+            }
+            // Don't shutdown — keep transport alive for next turn.
+            // guard drops here, releasing the mutex.
+        });
+
+        let stream = tokio_stream::wrappers::ReceiverStream::new(rx_event);
+        let (response_stream, _) = map_response_stream(stream, session_telemetry);
+        Ok(response_stream)
+    }
+
     /// Streams a turn via the Anthropic Messages API.
     ///
     /// This path is HTTP/SSE only — no WebSocket, no sticky routing, no incremental
@@ -1441,6 +1877,17 @@ impl ModelClientSession {
         service_tier: Option<ServiceTier>,
         turn_metadata_header: Option<&str>,
     ) -> Result<ResponseStream> {
+        // Clamped mode: route through Claude Code subprocess.
+        if self.client.state.clamped.load(Ordering::Relaxed) {
+            return self
+                .stream_clamped(
+                    prompt,
+                    model_info,
+                    session_telemetry,
+                )
+                .await;
+        }
+
         // Detect Anthropic wire format from the provider's base URL.
         if crate::model_provider_info::is_anthropic_wire(
             self.client.state.provider.base_url.as_deref(),

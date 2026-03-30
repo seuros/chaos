@@ -908,6 +908,21 @@ dependencies = [
 ]
 
 [[package]]
+name = "chaos-clamp"
+version = "47.0.0"
+dependencies = [
+ "chaos-abi",
+ "chaos-ipc",
+ "futures",
+ "serde",
+ "serde_json",
+ "thiserror 2.0.18",
+ "tokio",
+ "tracing",
+ "which",
+]
+
+[[package]]
 name = "chaos-cli"
 version = "47.0.0"
 dependencies = [
@@ -1244,6 +1259,7 @@ dependencies = [
  "chaos-argv",
  "chaos-arsenal",
  "chaos-check",
+ "chaos-clamp",
  "chaos-concierge",
  "chaos-cron",
  "chaos-diff",
@@ -1328,6 +1344,7 @@ dependencies = [
  "thiserror 2.0.18",
  "time",
  "tokio",
+ "tokio-stream",
  "tokio-util",
  "toml 1.1.0+spec-1.1.0",
  "toml_edit",
@@ -1806,6 +1823,7 @@ dependencies = [
  "base64 0.22.1",
  "chaos-amphetamine",
  "chaos-argv",
+ "chaos-clamp",
  "chaos-cli",
  "chaos-getopt",
  "chaos-glob",

@@ -2060,8 +2060,16 @@ impl App {
                         self.log_panel
                             .set_viewport_height(log_area.height.saturating_sub(2));
                     }
+                    // When tiled, the viewport must be tall enough for the
+                    // auxiliary panes, not just the chat content.
+                    let desired = self.chat_widget.desired_height(chat_area.width);
+                    let draw_height = if self.tile_manager.is_single_pane() {
+                        desired
+                    } else {
+                        desired.max(terminal_size.height)
+                    };
                     tui.draw(
-                        self.chat_widget.desired_height(chat_area.width),
+                        draw_height,
                         |frame| {
                             let (main_area, log_area) =
                                 split_main_and_panel(frame.area(), self.log_panel.is_visible());
@@ -2073,10 +2081,8 @@ impl App {
                                     frame.set_cursor_position((x, y));
                                 }
                             } else {
-                                // Tiled layout: HypertileWidget dispatches to per-pane renderers.
-                                // We must split the borrows to satisfy the borrow checker:
-                                // the closure captures pane_map (immutable) while render()
-                                // takes hypertile (mutable).
+                                // Tiled layout: split main_area and dispatch to
+                                // per-pane renderers via hypertile.
                                 let chat_widget = &self.chat_widget;
                                 let tool_list_pane = &self.tool_list_pane;
                                 let pane_map = &self.tile_manager.pane_map;
@@ -2089,14 +2095,12 @@ impl App {
                                         Some(PaneKind::ToolList) => {
                                             tool_list_pane.render(pane.rect, buf);
                                         }
-                                        // Future pane kinds (McpActivity, McpManagement)
-                                        // will be handled here in later phases.
                                         _ => {}
                                     }
                                 })
                                 .render(main_area, frame.buffer, hypertile);
 
-                                // Place cursor in chat pane if focused.
+                                // Place cursor in chat pane.
                                 if self.tile_manager.focused() == Some(PaneId::ROOT) {
                                     if let Some(chat_rect) =
                                         self.tile_manager.hypertile_mut().pane_rect(PaneId::ROOT)
@@ -3507,10 +3511,14 @@ impl App {
         ev: chaos_ipc::protocol::AllToolsResponseEvent,
     ) {
         use ratatui::layout::Direction;
-        // Open (or re-focus) the tools pane.
-        self.tile_manager
-            .open_or_focus(PaneKind::ToolList, Direction::Horizontal);
-        self.tool_list_pane.set_tools(ev.tools);
+        // Toggle: if already open, close it; otherwise open.
+        if self.tile_manager.find_pane(PaneKind::ToolList).is_some() {
+            self.tile_manager.close_kind(PaneKind::ToolList);
+        } else {
+            self.tile_manager
+                .open_or_focus(PaneKind::ToolList, Direction::Horizontal);
+            self.tool_list_pane.set_tools(ev.tools);
+        }
         tui.frame_requester().schedule_frame();
     }
 

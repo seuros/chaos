@@ -160,8 +160,7 @@ mod turn_state;
 mod undo;
 #[path = "suite/unified_exec.rs"]
 mod unified_exec;
-#[path = "suite/unstable_features_warning.rs"]
-mod unstable_features_warning;
+
 #[path = "suite/user_notification.rs"]
 mod user_notification;
 #[path = "suite/user_shell_cmd.rs"]

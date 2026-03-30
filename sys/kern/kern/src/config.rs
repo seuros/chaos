@@ -501,9 +501,6 @@ pub struct Config {
     /// Centralized feature flags; source of truth for feature gating.
     pub features: ManagedFeatures,
 
-    /// When `true`, suppress warnings about unstable (under development) features.
-    pub suppress_unstable_features_warning: bool,
-
     /// The active profile name used to derive this `Config` (if any).
     pub active_profile: Option<String>,
 
@@ -2352,9 +2349,6 @@ impl Config {
             background_terminal_max_timeout,
             ghost_snapshot,
             features,
-            suppress_unstable_features_warning: cfg
-                .suppress_unstable_features_warning
-                .unwrap_or(false),
             active_profile: active_profile_name,
             active_project,
             windows_wsl_setup_acknowledged: cfg.windows_wsl_setup_acknowledged.unwrap_or(false),

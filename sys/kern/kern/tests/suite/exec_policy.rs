@@ -161,12 +161,7 @@ async fn execpolicy_blocks_shell_invocation() -> Result<()> {
 #[tokio::test(flavor = "multi_thread", worker_threads = 2)]
 async fn shell_command_empty_script_with_collaboration_mode_does_not_panic() -> Result<()> {
     let server = start_mock_server().await;
-    let mut builder = test_codex().with_model("gpt-5").with_config(|config| {
-        config
-            .features
-            .enable(Feature::CollaborationModes)
-            .expect("test config should allow feature update");
-    });
+    let mut builder = test_codex().with_model("gpt-5");
     let test = builder.build(&server).await?;
     let call_id = "shell-empty-script-collab";
     let args = json!({
@@ -221,10 +216,6 @@ async fn unified_exec_empty_script_with_collaboration_mode_does_not_panic() -> R
             .features
             .enable(Feature::UnifiedExec)
             .expect("test config should allow feature update");
-        config
-            .features
-            .enable(Feature::CollaborationModes)
-            .expect("test config should allow feature update");
     });
     let test = builder.build(&server).await?;
     let call_id = "unified-exec-empty-script-collab";
@@ -275,12 +266,7 @@ async fn unified_exec_empty_script_with_collaboration_mode_does_not_panic() -> R
 #[tokio::test(flavor = "multi_thread", worker_threads = 2)]
 async fn shell_command_whitespace_script_with_collaboration_mode_does_not_panic() -> Result<()> {
     let server = start_mock_server().await;
-    let mut builder = test_codex().with_model("gpt-5").with_config(|config| {
-        config
-            .features
-            .enable(Feature::CollaborationModes)
-            .expect("test config should allow feature update");
-    });
+    let mut builder = test_codex().with_model("gpt-5");
     let test = builder.build(&server).await?;
     let call_id = "shell-whitespace-script-collab";
     let args = json!({
@@ -334,10 +320,6 @@ async fn unified_exec_whitespace_script_with_collaboration_mode_does_not_panic()
         config
             .features
             .enable(Feature::UnifiedExec)
-            .expect("test config should allow feature update");
-        config
-            .features
-            .enable(Feature::CollaborationModes)
             .expect("test config should allow feature update");
     });
     let test = builder.build(&server).await?;

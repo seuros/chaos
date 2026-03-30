@@ -2,7 +2,6 @@
 
 use chaos_ipc::config_types::WebSearchMode;
 use chaos_ipc::protocol::SandboxPolicy;
-use chaos_kern::features::Feature;
 use core_test_support::responses;
 use core_test_support::responses::start_mock_server;
 use core_test_support::skip_if_no_network;
@@ -77,10 +76,6 @@ async fn web_search_mode_takes_precedence_over_legacy_flags() {
         .with_model("gpt-5-codex")
         .with_config(|config| {
             config
-                .features
-                .enable(Feature::WebSearchRequest)
-                .expect("test config should allow feature update");
-            config
                 .web_search_mode
                 .set(WebSearchMode::Cached)
                 .expect("test web_search_mode should satisfy constraints");
@@ -124,14 +119,6 @@ async fn web_search_mode_defaults_to_cached_when_features_disabled() {
                 .web_search_mode
                 .set(WebSearchMode::Cached)
                 .expect("test web_search_mode should satisfy constraints");
-            config
-                .features
-                .disable(Feature::WebSearchCached)
-                .expect("test config should allow feature update");
-            config
-                .features
-                .disable(Feature::WebSearchRequest)
-                .expect("test config should allow feature update");
         });
     let test = builder
         .build(&server)
@@ -181,14 +168,6 @@ async fn web_search_mode_updates_between_turns_with_sandbox_policy() {
                 .web_search_mode
                 .set(WebSearchMode::Cached)
                 .expect("test web_search_mode should satisfy constraints");
-            config
-                .features
-                .disable(Feature::WebSearchCached)
-                .expect("test config should allow feature update");
-            config
-                .features
-                .disable(Feature::WebSearchRequest)
-                .expect("test config should allow feature update");
         });
     let test = builder
         .build(&server)

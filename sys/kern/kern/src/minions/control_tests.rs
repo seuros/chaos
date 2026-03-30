@@ -7,7 +7,6 @@ use crate::config::Config;
 use crate::config::ConfigBuilder;
 use crate::config_loader::LoaderOverrides;
 use crate::contextual_user_message::SUBAGENT_NOTIFICATION_OPEN_TAG;
-use crate::features::Feature;
 use crate::minions::agent_status_from_event;
 use assert_matches::assert_matches;
 use chaos_ipc::config_types::ModeKind;
@@ -964,10 +963,6 @@ async fn spawn_process_subagent_uses_role_specific_nickname_candidates() {
 #[tokio::test]
 async fn resume_process_subagent_restores_stored_nickname_and_role() {
     let (home, mut config) = test_config().await;
-    config
-        .features
-        .enable(Feature::Sqlite)
-        .expect("test config should allow sqlite");
     let manager = ProcessTable::with_models_provider_and_home_for_tests(
         ChaosAuth::from_api_key("dummy"),
         config.model_provider.clone(),

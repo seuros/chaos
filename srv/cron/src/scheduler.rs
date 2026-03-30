@@ -126,8 +126,7 @@ impl Scheduler {
 
     async fn tick(&self) {
         let now_ts = jiff::Timestamp::now();
-        let now = now_ts.as_second();
-        let jobs = match self.store.due_jobs(now).await {
+        let jobs = match self.store.due_now().await {
             Ok(jobs) => jobs,
             Err(err) => {
                 warn!("cron tick: failed to fetch due jobs: {err}");

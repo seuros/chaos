@@ -127,29 +127,47 @@ impl CronStore {
     }
 
     /// Toggle a job's enabled state.
+    /// When transitioning from disabled to enabled, recomputes `next_run_at`
+    /// from the schedule. Re-applying the current state is a no-op.
+    /// The `cron_jobs_touch` trigger auto-updates `updated_at`.
     pub async fn set_enabled(&self, id: &str, enabled: bool) -> anyhow::Result<()> {
-        let now = jiff::Timestamp::now().as_second();
-        sqlx::query("UPDATE cron_jobs SET enabled = ?, updated_at = ? WHERE id = ?")
-            .bind(enabled)
-            .bind(now)
-            .bind(id)
-            .execute(&self.pool)
-            .await?;
+        let job = self
+            .get(id)
+            .await?
+            .ok_or_else(|| anyhow::anyhow!("job not found: {id}"))?;
+        if job.enabled == enabled {
+            return Ok(());
+        }
+
+        if enabled {
+            let now_ts = jiff::Timestamp::now();
+            let next_run_at = Schedule::parse(&job.schedule)
+                .and_then(|s| s.next_after(now_ts))
+                .ok();
+            sqlx::query("UPDATE cron_jobs SET enabled = 1, next_run_at = ? WHERE id = ?")
+                .bind(next_run_at)
+                .bind(id)
+                .execute(&self.pool)
+                .await?;
+        } else {
+            sqlx::query("UPDATE cron_jobs SET enabled = 0 WHERE id = ?")
+                .bind(id)
+                .execute(&self.pool)
+                .await?;
+        }
         Ok(())
     }
 
     /// Record that a job just ran and set the next run time.
+    /// The `cron_jobs_touch` trigger auto-updates `updated_at`.
     pub async fn mark_run(&self, id: &str, next_run_at: Option<i64>) -> anyhow::Result<()> {
         let now = jiff::Timestamp::now().as_second();
-        sqlx::query(
-            "UPDATE cron_jobs SET last_run_at = ?, next_run_at = ?, updated_at = ? WHERE id = ?",
-        )
-        .bind(now)
-        .bind(next_run_at)
-        .bind(now)
-        .bind(id)
-        .execute(&self.pool)
-        .await?;
+        sqlx::query("UPDATE cron_jobs SET last_run_at = ?, next_run_at = ? WHERE id = ?")
+            .bind(now)
+            .bind(next_run_at)
+            .bind(id)
+            .execute(&self.pool)
+            .await?;
         Ok(())
     }
 
@@ -163,6 +181,8 @@ impl CronStore {
     }
 
     /// Fetch all enabled jobs whose next_run_at is at or before the given timestamp.
+    /// Uses the `due_cron_jobs` view when querying for "right now", falls back to
+    /// a parameterised query for arbitrary timestamps (tests, replay).
     pub async fn due_jobs(&self, now: i64) -> anyhow::Result<Vec<CronJob>> {
         let rows = sqlx::query(
             "SELECT id, name, schedule, command, scope, project_path, session_id, enabled, last_run_at, next_run_at, created_at, updated_at
@@ -171,6 +191,19 @@ impl CronStore {
              ORDER BY next_run_at ASC",
         )
         .bind(now)
+        .fetch_all(&self.pool)
+        .await?;
+
+        let jobs = rows.iter().map(row_to_job).collect();
+        Ok(jobs)
+    }
+
+    /// Fetch all jobs due right now using the `due_cron_jobs` view.
+    pub async fn due_now(&self) -> anyhow::Result<Vec<CronJob>> {
+        let rows = sqlx::query(
+            "SELECT id, name, schedule, command, scope, project_path, session_id, enabled, last_run_at, next_run_at, created_at, updated_at
+             FROM due_cron_jobs",
+        )
         .fetch_all(&self.pool)
         .await?;
 
@@ -311,5 +344,71 @@ mod tests {
         let due = store.due_jobs(1).await.expect("list due jobs");
         assert_eq!(due.len(), 1);
         assert_eq!(due[0].session_id.as_deref(), Some("session-123"));
+    }
+
+    #[tokio::test]
+    async fn enabled_jobs_can_clear_next_run_at_after_running() {
+        let temp_dir = tempfile::tempdir().expect("create temp dir");
+        let pool = chaos_proc::open_chaos_db(temp_dir.path())
+            .await
+            .expect("open chaos db");
+        let store = CronStore::new(pool);
+
+        let job = store
+            .create(&test_params("clear-next-run"))
+            .await
+            .expect("create cron job");
+
+        store
+            .mark_run(&job.id, None)
+            .await
+            .expect("mark job run without another occurrence");
+
+        let refreshed = store
+            .get(&job.id)
+            .await
+            .expect("get cron job")
+            .expect("job exists");
+        assert!(refreshed.enabled, "job should remain enabled");
+        assert!(
+            refreshed.last_run_at.is_some(),
+            "last_run_at should be updated"
+        );
+        assert_eq!(refreshed.next_run_at, None);
+    }
+
+    #[tokio::test]
+    async fn enabling_an_already_enabled_job_preserves_next_run_at() {
+        let temp_dir = tempfile::tempdir().expect("create temp dir");
+        let pool = chaos_proc::open_chaos_db(temp_dir.path())
+            .await
+            .expect("open chaos db");
+        let store = CronStore::new(pool.clone());
+
+        let job = store
+            .create(&test_params("idempotent-enable"))
+            .await
+            .expect("create cron job");
+
+        let expected_next_run_at = 4_242_424_242_i64;
+        sqlx::query("UPDATE cron_jobs SET next_run_at = ? WHERE id = ?")
+            .bind(expected_next_run_at)
+            .bind(&job.id)
+            .execute(&pool)
+            .await
+            .expect("set sentinel next_run_at");
+
+        store
+            .set_enabled(&job.id, true)
+            .await
+            .expect("re-enable already enabled job");
+
+        let refreshed = store
+            .get(&job.id)
+            .await
+            .expect("get cron job")
+            .expect("job exists");
+        assert!(refreshed.enabled, "job should remain enabled");
+        assert_eq!(refreshed.next_run_at, Some(expected_next_run_at));
     }
 }

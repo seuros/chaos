@@ -2,11 +2,10 @@
 //!
 //! Mirrors the arsenal pattern: the kernel discovers cron's tools at boot via
 //! `chaos_cron::tool_infos()` and registers this handler for all of them.
-//! The handler pulls the chaos DB pool from the session's StateRuntime or opens
-//! the shared chaos DB on demand.
+//! The handler resolves a cron storage provider from the session's StateRuntime
+//! or opens the shared chaos DB on demand.
 
 use crate::function_tool::FunctionCallError;
-use crate::state_db::resolve_chaos_pool;
 use crate::tools::context::FunctionToolOutput;
 use crate::tools::context::ToolInvocation;
 use crate::tools::context::ToolPayload;
@@ -44,12 +43,16 @@ impl ToolHandler for CronHandler {
             FunctionCallError::RespondToModel(format!("invalid JSON arguments: {e}"))
         })?;
 
-        // Get the chaos DB pool from the session's StateRuntime.
+        // Resolve the cron storage provider from the session's StateRuntime.
         let existing_chaos_pool = session
             .state_db()
             .and_then(|db| db.chaos_pool().map(std::borrow::ToOwned::to_owned));
-        let chaos_pool =
-            resolve_chaos_pool(existing_chaos_pool, turn.config.sqlite_home.as_path()).await;
+        let provider = chaos_storage::ChaosStorageProvider::from_optional_sqlite(
+            existing_chaos_pool.as_ref(),
+            Some(turn.config.sqlite_home.as_path()),
+        )
+        .await
+        .map_err(FunctionCallError::RespondToModel)?;
 
         // Build owner context from the current session/turn for scope isolation.
         let owner = chaos_cron::OwnerContext {
@@ -63,14 +66,14 @@ impl ToolHandler for CronHandler {
                     serde_json::from_value(args_value)
                         .map_err(|e| format!("invalid arguments: {e}"))
                         .map_err(FunctionCallError::RespondToModel)?;
-                chaos_cron::tools::create::execute(&params, chaos_pool.as_ref(), &owner).await
+                chaos_cron::tools::create::execute(&params, Some(&provider), &owner).await
             }
             "cron_toggle" => {
                 let params: chaos_cron::tools::toggle::CronToggleParams =
                     serde_json::from_value(args_value)
                         .map_err(|e| format!("invalid arguments: {e}"))
                         .map_err(FunctionCallError::RespondToModel)?;
-                chaos_cron::tools::toggle::execute(&params, chaos_pool.as_ref()).await
+                chaos_cron::tools::toggle::execute(&params, Some(&provider)).await
             }
             other => Err(format!("unknown cron tool: {other}")),
         };
@@ -84,17 +87,18 @@ impl ToolHandler for CronHandler {
 
 #[cfg(test)]
 mod tests {
-    use crate::state_db::resolve_chaos_pool;
+    use chaos_storage::ChaosStorageProvider;
 
     #[tokio::test]
-    async fn resolves_chaos_pool_on_demand_for_persistent_sessions() {
+    async fn resolves_cron_storage_provider_on_demand_for_persistent_sessions() {
         let temp_dir = tempfile::tempdir().expect("create temp dir");
 
-        let pool = resolve_chaos_pool(None, temp_dir.path()).await;
+        let provider =
+            ChaosStorageProvider::from_optional_sqlite(None, Some(temp_dir.path())).await;
 
         assert!(
-            pool.is_some(),
-            "persistent sessions should open chaos db lazily"
+            provider.is_ok(),
+            "persistent sessions should resolve cron storage lazily"
         );
         assert!(
             tokio::fs::try_exists(&chaos_proc::chaos_db_path(temp_dir.path()))
@@ -105,12 +109,16 @@ mod tests {
     }
 
     #[tokio::test]
-    async fn resolves_chaos_pool_on_demand_for_ephemeral_sessions_too() {
+    async fn resolves_cron_storage_provider_on_demand_for_ephemeral_sessions_too() {
         let temp_dir = tempfile::tempdir().expect("create temp dir");
 
-        let pool = resolve_chaos_pool(None, temp_dir.path()).await;
+        let provider =
+            ChaosStorageProvider::from_optional_sqlite(None, Some(temp_dir.path())).await;
 
-        assert!(pool.is_some(), "cron should always use the shared chaos db");
+        assert!(
+            provider.is_ok(),
+            "cron should always resolve the shared storage provider"
+        );
         assert!(
             tokio::fs::try_exists(&chaos_proc::chaos_db_path(temp_dir.path()))
                 .await

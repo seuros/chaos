@@ -3,11 +3,12 @@
 use mcp_host::prelude::*;
 use schemars::JsonSchema;
 use serde::Deserialize;
-use sqlx::SqlitePool;
 
 use crate::CronCtx;
 use crate::CronServer;
-use crate::store::CronStore;
+use crate::CronStorage;
+use crate::SqliteCronStorage;
+use chaos_storage::ChaosStorageProvider;
 
 /// Parameters for the cron_toggle tool.
 #[derive(Debug, Deserialize, JsonSchema)]
@@ -38,14 +39,20 @@ impl CronServer {
 /// Standalone execution — callable from both MCP and kernel adapter.
 pub async fn execute(
     params: &CronToggleParams,
-    pool: Option<&SqlitePool>,
+    provider: Option<&ChaosStorageProvider>,
 ) -> Result<String, String> {
-    let Some(pool) = pool else {
-        return Err("chaos DB unavailable — cannot toggle cron jobs".to_string());
+    let provider = match provider {
+        Some(provider) => provider.clone(),
+        None => ChaosStorageProvider::from_env(None).await?,
     };
+    let storage = SqliteCronStorage::from_provider(&provider)?;
+    execute_with_storage(params, &storage).await
+}
 
-    let store = CronStore::new(pool.to_owned());
-
+async fn execute_with_storage<S: CronStorage>(
+    params: &CronToggleParams,
+    store: &S,
+) -> Result<String, String> {
     // Verify the job exists first.
     let job = store
         .get(&params.id)

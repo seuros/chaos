@@ -76,12 +76,17 @@ impl builtin_mcp_resources::ChaosBuiltinResourceBackend for McpHostBuiltinResour
     }
 
     async fn crons_json(&self) -> Result<String, String> {
-        let chaos_pool = self
+        let existing_chaos_pool = self
             .server
             .state_runtime
             .as_ref()
-            .and_then(|rt| rt.chaos_pool());
-        builtin_mcp_resources::crons_json_from_pool(chaos_pool).await
+            .and_then(|rt| rt.chaos_pool().map(std::borrow::ToOwned::to_owned));
+        let provider = chaos_storage::ChaosStorageProvider::from_optional_sqlite(
+            existing_chaos_pool.as_ref(),
+            Some(&self.server.sqlite_home),
+        )
+        .await?;
+        chaos_cron::resource::list_crons(Some(&provider)).await
     }
 }
 

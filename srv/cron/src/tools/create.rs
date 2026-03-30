@@ -3,12 +3,13 @@
 use mcp_host::prelude::*;
 use schemars::JsonSchema;
 use serde::Deserialize;
-use sqlx::SqlitePool;
 
 use crate::CronCtx;
 use crate::CronServer;
+use crate::CronStorage;
+use crate::SqliteCronStorage;
 use crate::job::CreateJobParams;
-use crate::store::CronStore;
+use chaos_storage::ChaosStorageProvider;
 
 /// Parameters for the cron_create tool.
 #[derive(Debug, Deserialize, JsonSchema)]
@@ -47,10 +48,16 @@ impl CronServer {
     #[mcp_tool(name = "cron_create")]
     async fn cron_create(
         &self,
-        _ctx: CronCtx<'_>,
+        ctx: CronCtx<'_>,
         params: Parameters<CronCreateParams>,
     ) -> ToolResult {
-        match execute(&params.0, None, &OwnerContext::default()).await {
+        let owner = OwnerContext {
+            project_path: ctx
+                .environment
+                .map(|environment| environment.cwd().to_string_lossy().to_string()),
+            session_id: Some(ctx.session.id.clone()),
+        };
+        match execute(&params.0, None, &owner).await {
             Ok(text) => Ok(ToolOutput::text(text)),
             Err(msg) => Err(ToolError::Execution(msg)),
         }
@@ -59,11 +66,26 @@ impl CronServer {
 
 /// Standalone execution — callable from both MCP and kernel adapter.
 ///
-/// When `pool` is `Some`, the job is persisted to chaos.sqlite.
-/// When `None`, validation-only mode (returns what would be created).
+/// When `pool` is `Some`, the job is persisted to `chaos.sqlite`.
+/// When `None`, standalone mode falls back to `$CODEX_SQLITE_HOME`.
+/// Missing DB access is treated as an execution error rather than a
+/// validation-only success, because cron jobs are always expected to persist.
 pub async fn execute(
     params: &CronCreateParams,
-    pool: Option<&SqlitePool>,
+    provider: Option<&ChaosStorageProvider>,
+    owner: &OwnerContext,
+) -> Result<String, String> {
+    let provider = match provider {
+        Some(provider) => provider.clone(),
+        None => ChaosStorageProvider::from_env(None).await?,
+    };
+    let storage = SqliteCronStorage::from_provider(&provider)?;
+    execute_with_storage(params, &storage, owner).await
+}
+
+async fn execute_with_storage<S: CronStorage>(
+    params: &CronCreateParams,
+    storage: &S,
     owner: &OwnerContext,
 ) -> Result<String, String> {
     // Validate the schedule parses
@@ -94,29 +116,21 @@ pub async fn execute(
         session_id,
     };
 
-    if let Some(pool) = pool {
-        let store = CronStore::new(pool.clone());
-        let job = store
-            .create(&create_params)
-            .await
-            .map_err(|e| format!("failed to persist cron job: {e}"))?;
+    let job = storage
+        .create(&create_params)
+        .await
+        .map_err(|e| format!("failed to persist cron job: {e}"))?;
 
-        Ok(format!(
-            "Cron job created (id: {}):\n  name: {}\n  schedule: {}\n  command: {}\n  scope: {}\n  next_run_at: {}",
-            job.id,
-            job.name,
-            job.schedule,
-            job.command,
-            job.scope,
-            job.next_run_at
-                .map_or("none".to_string(), |t| t.to_string()),
-        ))
-    } else {
-        Ok(format!(
-            "Cron job validated (chaos DB unavailable, not persisted):\n  name: {}\n  schedule: {}\n  command: {}\n  scope: {}",
-            create_params.name, create_params.schedule, create_params.command, scope,
-        ))
-    }
+    Ok(format!(
+        "Cron job created (id: {}):\n  name: {}\n  schedule: {}\n  command: {}\n  scope: {}\n  next_run_at: {}",
+        job.id,
+        job.name,
+        job.schedule,
+        job.command,
+        job.scope,
+        job.next_run_at
+            .map_or("none".to_string(), |t| t.to_string()),
+    ))
 }
 
 /// Returns the auto-generated `ToolInfo` for schema extraction by core.

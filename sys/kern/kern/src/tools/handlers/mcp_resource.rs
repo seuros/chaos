@@ -18,7 +18,6 @@ use serde::Deserialize;
 use serde::Serialize;
 use serde::de::DeserializeOwned;
 use serde_json::Value;
-use sqlx::SqlitePool;
 
 use crate::builtin_mcp_resources;
 use crate::codex::Session;
@@ -28,7 +27,6 @@ use crate::protocol::EventMsg;
 use crate::protocol::McpInvocation;
 use crate::protocol::McpToolCallBeginEvent;
 use crate::protocol::McpToolCallEndEvent;
-use crate::state_db::resolve_chaos_pool as resolve_shared_chaos_pool;
 use crate::tools::context::FunctionToolOutput;
 use crate::tools::context::ToolInvocation;
 use crate::tools::context::ToolPayload;
@@ -263,16 +261,23 @@ impl builtin_mcp_resources::ChaosBuiltinResourceBackend for KernelBuiltinResourc
     }
 
     async fn crons_json(&self) -> Result<String, String> {
-        let chaos_pool = resolve_chaos_pool(self.session, self.turn).await;
-        builtin_mcp_resources::crons_json_from_pool(chaos_pool.as_ref()).await
+        let provider = resolve_chaos_storage_provider(self.session, self.turn).await?;
+        builtin_mcp_resources::crons_json_from_provider(Some(&provider)).await
     }
 }
 
-async fn resolve_chaos_pool(session: &Session, turn: &TurnContext) -> Option<SqlitePool> {
+async fn resolve_chaos_storage_provider(
+    session: &Session,
+    turn: &TurnContext,
+) -> Result<chaos_storage::ChaosStorageProvider, String> {
     let existing_pool = session
         .state_db()
         .and_then(|db| db.chaos_pool().map(std::borrow::ToOwned::to_owned));
-    resolve_shared_chaos_pool(existing_pool, turn.config.sqlite_home.as_path()).await
+    chaos_storage::ChaosStorageProvider::from_optional_sqlite(
+        existing_pool.as_ref(),
+        Some(turn.config.sqlite_home.as_path()),
+    )
+    .await
 }
 
 async fn read_inline_resource(

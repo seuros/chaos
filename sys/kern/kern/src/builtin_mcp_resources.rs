@@ -1,7 +1,7 @@
 use chaos_ipc::ProcessId;
+use chaos_storage::ChaosStorageProvider;
 use serde::Serialize;
 use serde_json::json;
-use sqlx::SqlitePool;
 
 use crate::state_db::StateDbHandle;
 
@@ -173,8 +173,10 @@ pub async fn session_detail_json_from_state_db(
     )
 }
 
-pub async fn crons_json_from_pool(pool: Option<&SqlitePool>) -> Result<String, String> {
-    chaos_cron::resource::list_crons(pool).await
+pub async fn crons_json_from_provider(
+    provider: Option<&ChaosStorageProvider>,
+) -> Result<String, String> {
+    chaos_cron::resource::list_crons(provider).await
 }
 
 #[allow(async_fn_in_trait)]

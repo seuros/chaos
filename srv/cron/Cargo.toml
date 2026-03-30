@@ -13,6 +13,7 @@ path = "src/lib.rs"
 [dependencies]
 anyhow = { workspace = true }
 chaos-proc = { workspace = true }
+chaos-storage = { workspace = true }
 chrono = { workspace = true }
 croner = { workspace = true }
 jiff = { workspace = true }

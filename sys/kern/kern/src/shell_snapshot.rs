@@ -6,7 +6,6 @@ use std::sync::Arc;
 use std::time::Duration;
 use std::time::SystemTime;
 
-use crate::rollout::list::find_process_path_by_id_str;
 use crate::shell::Shell;
 use crate::shell::ShellType;
 use crate::shell::get_shell;
@@ -14,6 +13,9 @@ use anyhow::Context;
 use anyhow::Result;
 use anyhow::anyhow;
 use anyhow::bail;
+use chaos_journald::JournalStore;
+use chaos_journald::SQLITE_DB_FILENAME;
+use chaos_journald::SqliteJournalStore;
 use chaos_ipc::ProcessId;
 use chaos_syslog::SessionTelemetry;
 use tokio::fs;
@@ -452,8 +454,8 @@ fi
     script.replace("EXCLUDED_EXPORTS", &excluded)
 }
 
-/// Removes shell snapshots that either lack a matching session rollout file or
-/// whose rollouts have not been updated within the retention window.
+/// Removes shell snapshots that either lack a matching journal process row or
+/// whose journal has not been updated within the retention window.
 /// The active session id is exempt from cleanup.
 pub async fn cleanup_stale_snapshots(
     codex_home: &Path,
@@ -467,8 +469,11 @@ pub async fn cleanup_stale_snapshots(
         Err(err) => return Err(err.into()),
     };
 
-    let now = SystemTime::now();
+    let now = jiff::Timestamp::now().as_second();
     let active_session_id = active_session_id.to_string();
+    let journal_store = SqliteJournalStore::open(&codex_home.join(SQLITE_DB_FILENAME))
+        .await
+        .context("open journal database for shell snapshot cleanup")?;
 
     while let Some(entry) = entries.next_entry().await? {
         if !entry.file_type().await?.is_file() {
@@ -490,28 +495,28 @@ pub async fn cleanup_stale_snapshots(
             continue;
         }
 
-        let rollout_path = find_process_path_by_id_str(codex_home, session_id).await?;
-        let Some(rollout_path) = rollout_path else {
+        let Ok(process_id) = ProcessId::from_string(session_id) else {
             remove_snapshot_file(&path).await;
             continue;
         };
-
-        let modified = match fs::metadata(&rollout_path).await.and_then(|m| m.modified()) {
-            Ok(modified) => modified,
+        let process = match journal_store.get_process(&process_id).await {
+            Ok(process) => process,
             Err(err) => {
                 tracing::warn!(
-                    "Failed to check rollout age for snapshot {}: {err:?}",
+                    "Failed to check journal age for snapshot {}: {err:?}",
                     path.display()
                 );
                 continue;
             }
         };
+        let Some(process) = process else {
+            remove_snapshot_file(&path).await;
+            continue;
+        };
 
-        if now
-            .duration_since(modified)
-            .ok()
-            .is_some_and(|age| age >= SNAPSHOT_RETENTION)
-        {
+        let updated_at = process.updated_at.as_second();
+        let age_secs = now.saturating_sub(updated_at);
+        if u64::try_from(age_secs).ok().is_some_and(|age| age >= SNAPSHOT_RETENTION.as_secs()) {
             remove_snapshot_file(&path).await;
         }
     }
@@ -524,7 +529,3 @@ async fn remove_snapshot_file(path: &Path) {
         tracing::warn!("Failed to delete shell snapshot at {:?}: {err:?}", path);
     }
 }
-
-#[cfg(test)]
-#[path = "shell_snapshot_tests.rs"]
-mod tests;

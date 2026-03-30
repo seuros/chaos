@@ -16,6 +16,7 @@ use chaos_ipc::config_types::ReasoningSummary as ReasoningSummaryConfig;
 use chaos_ipc::config_types::ServiceTier;
 use chaos_ipc::models::BaseInstructions;
 use chaos_ipc::models::ContentItem;
+use chaos_ipc::ProcessId;
 use chaos_ipc::models::ResponseItem;
 use chaos_ipc::openai_models::ModelInfo;
 use chaos_ipc::openai_models::ReasoningEffort as ReasoningEffortConfig;
@@ -265,7 +266,7 @@ mod job {
         let thread = claim.thread;
         let (stage_one_output, token_usage) = match sample(
             session,
-            &thread.rollout_path,
+            thread.id,
             &thread.cwd,
             stage_one_context,
         )
@@ -312,12 +313,14 @@ mod job {
     /// Extract the rollout and perform the actual sampling.
     async fn sample(
         session: &Session,
-        rollout_path: &Path,
+        process_id: ProcessId,
         rollout_cwd: &Path,
         stage_one_context: &RequestContext,
     ) -> anyhow::Result<(StageOneOutput, Option<TokenUsage>)> {
-        let (rollout_items, _, _) = RolloutRecorder::load_rollout_items(rollout_path).await?;
+        let history = RolloutRecorder::get_rollout_history_for_process(process_id).await?;
+        let rollout_items = history.get_rollout_items();
         let rollout_contents = serialize_filtered_rollout_response_items(&rollout_items)?;
+        let process_ref = process_id.to_string();
 
         let prompt = Prompt {
             input: vec![ResponseItem::Message {
@@ -326,7 +329,7 @@ mod job {
                 content: vec![ContentItem::InputText {
                     text: build_stage_one_input_message(
                         &stage_one_context.model_info,
-                        rollout_path,
+                        &process_ref,
                         rollout_cwd,
                         &rollout_contents,
                     )?,

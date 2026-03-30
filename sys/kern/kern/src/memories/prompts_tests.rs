@@ -15,7 +15,7 @@ fn build_stage_one_input_message_truncates_rollout_using_model_context_window() 
     let expected_truncated = token_truncate(&input, expected_rollout_token_limit);
     let message = build_stage_one_input_message(
         &model_info,
-        Path::new("/tmp/rollout.jsonl"),
+        "process://test",
         Path::new("/tmp"),
         &input,
     )
@@ -35,7 +35,7 @@ fn build_stage_one_input_message_uses_default_limit_when_model_context_window_mi
     let expected_truncated = token_truncate(&input, DEFAULT_STAGE_ONE_ROLLOUT_TOKEN_LIMIT);
     let message = build_stage_one_input_message(
         &model_info,
-        Path::new("/tmp/rollout.jsonl"),
+        "process://test",
         Path::new("/tmp"),
         &input,
     )

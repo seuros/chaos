@@ -1962,16 +1962,15 @@ impl App {
             }
             SessionSelection::Resume(target_session) => {
                 let resumed = process_table
-                    .resume_process_from_rollout(
+                    .resume_process(
                         config.clone(),
-                        target_session.path.clone(),
+                        target_session.process_id,
                         auth_manager.clone(),
                         /*parent_trace*/ None,
                     )
                     .await
                     .wrap_err_with(|| {
-                        let path_display = target_session.path.display();
-                        format!("Failed to resume session from {path_display}")
+                        format!("Failed to resume session {}", target_session.process_id)
                     })?;
                 let init = crate::chatwidget::ChatWidgetInit {
                     config: config.clone(),
@@ -2002,17 +2001,16 @@ impl App {
                     &[("source", "cli_subcommand")],
                 );
                 let forked = process_table
-                    .fork_process(
+                    .fork_process_by_id(
                         usize::MAX,
                         config.clone(),
-                        target_session.path.clone(),
+                        target_session.process_id,
                         /*persist_extended_history*/ false,
                         /*parent_trace*/ None,
                     )
                     .await
                     .wrap_err_with(|| {
-                        let path_display = target_session.path.display();
-                        format!("Failed to fork session from {path_display}")
+                        format!("Failed to fork session {}", target_session.process_id)
                     })?;
                 let init = crate::chatwidget::ChatWidgetInit {
                     config: config.clone(),
@@ -2255,7 +2253,6 @@ impl App {
                             &self.config,
                             &current_cwd,
                             target_session.process_id,
-                            &target_session.path,
                             CwdPromptAction::Resume,
                             /*allow_prompt*/ true,
                         )
@@ -2287,9 +2284,9 @@ impl App {
                         );
                         match self
                             .server
-                            .resume_process_from_rollout(
+                            .resume_process(
                                 resume_config.clone(),
-                                target_session.path.clone(),
+                                target_session.process_id,
                                 self.auth_manager.clone(),
                                 /*parent_trace*/ None,
                             )
@@ -2325,9 +2322,9 @@ impl App {
                                 }
                             }
                             Err(err) => {
-                                let path_display = target_session.path.display();
                                 self.chat_widget.add_error_message(format!(
-                                    "Failed to resume session from {path_display}: {err}"
+                                    "Failed to resume session {}: {err}",
+                                    target_session.process_id
                                 ));
                             }
                         }
@@ -2353,61 +2350,51 @@ impl App {
                 );
                 self.chat_widget
                     .add_plain_history_lines(vec!["/fork".magenta().into()]);
-                if let Some(path) = self.chat_widget.rollout_path() {
+                if let Some(process_id) = self.chat_widget.process_id() {
                     self.refresh_in_memory_config_from_disk_best_effort("forking the process")
                         .await;
-                    // Fresh threads expose a precomputed path, but the file is
-                    // materialized lazily on first user message.
-                    if path.exists() {
-                        match self
-                            .server
-                            .fork_process(
-                                usize::MAX,
+                    match self
+                        .server
+                        .fork_process_by_id(
+                            usize::MAX,
+                            self.config.clone(),
+                            process_id,
+                            /*persist_extended_history*/ false,
+                            /*parent_trace*/ None,
+                        )
+                        .await
+                    {
+                        Ok(forked) => {
+                            self.shutdown_current_process().await;
+                            let init = self.chatwidget_init_for_forked_or_resumed_process(
+                                tui,
                                 self.config.clone(),
-                                path.clone(),
-                                /*persist_extended_history*/ false,
-                                /*parent_trace*/ None,
-                            )
-                            .await
-                        {
-                            Ok(forked) => {
-                                self.shutdown_current_process().await;
-                                let init = self.chatwidget_init_for_forked_or_resumed_process(
-                                    tui,
-                                    self.config.clone(),
-                                );
-                                let (_, process, session_configured) = forked.into_parts();
-                                self.chat_widget = ChatWidget::new_from_existing(
-                                    init,
-                                    process,
-                                    session_configured,
-                                );
-                                self.reset_process_event_state();
-                                if let Some(summary) = summary {
-                                    let mut lines: Vec<Line<'static>> =
-                                        vec![summary.usage_line.clone().into()];
-                                    if let Some(command) = summary.resume_command {
-                                        let spans = vec![
-                                            "To continue this session, run ".into(),
-                                            command.cyan(),
-                                        ];
-                                        lines.push(spans.into());
-                                    }
-                                    self.chat_widget.add_plain_history_lines(lines);
+                            );
+                            let (_, process, session_configured) = forked.into_parts();
+                            self.chat_widget = ChatWidget::new_from_existing(
+                                init,
+                                process,
+                                session_configured,
+                            );
+                            self.reset_process_event_state();
+                            if let Some(summary) = summary {
+                                let mut lines: Vec<Line<'static>> =
+                                    vec![summary.usage_line.clone().into()];
+                                if let Some(command) = summary.resume_command {
+                                    let spans = vec![
+                                        "To continue this session, run ".into(),
+                                        command.cyan(),
+                                    ];
+                                    lines.push(spans.into());
                                 }
-                            }
-                            Err(err) => {
-                                let path_display = path.display();
-                                self.chat_widget.add_error_message(format!(
-                                    "Failed to fork current session from {path_display}: {err}"
-                                ));
+                                self.chat_widget.add_plain_history_lines(lines);
                             }
                         }
-                    } else {
-                        self.chat_widget.add_error_message(
-                            "A process must contain at least one turn before it can be forked."
-                                .to_string(),
-                        );
+                        Err(err) => {
+                            self.chat_widget.add_error_message(format!(
+                                "Failed to fork current session {process_id}: {err}"
+                            ));
+                        }
                     }
                 } else {
                     self.chat_widget.add_error_message(
@@ -3193,7 +3180,6 @@ impl App {
                 history_entry_count: 0,
                 initial_messages: None,
                 network_proxy: None,
-                rollout_path: thread.rollout_path(),
             }),
         };
         let channel =
@@ -3565,7 +3551,6 @@ mod tests {
         assert_eq!(
             App::should_wait_for_initial_session(&SessionSelection::Resume(
                 crate::resume_picker::SessionTarget {
-                    path: PathBuf::from("/tmp/restore"),
                     process_id: ProcessId::new(),
                 }
             )),
@@ -3574,7 +3559,6 @@ mod tests {
         assert_eq!(
             App::should_wait_for_initial_session(&SessionSelection::Fork(
                 crate::resume_picker::SessionTarget {
-                    path: PathBuf::from("/tmp/fork"),
                     process_id: ProcessId::new(),
                 }
             )),
@@ -3614,7 +3598,6 @@ mod tests {
     fn startup_waiting_gate_not_applied_for_resume_or_fork_session_selection() {
         let wait_for_resume = App::should_wait_for_initial_session(&SessionSelection::Resume(
             crate::resume_picker::SessionTarget {
-                path: PathBuf::from("/tmp/restore"),
                 process_id: ProcessId::new(),
             },
         ));
@@ -3624,7 +3607,6 @@ mod tests {
         );
         let wait_for_fork = App::should_wait_for_initial_session(&SessionSelection::Fork(
             crate::resume_picker::SessionTarget {
-                path: PathBuf::from("/tmp/fork"),
                 process_id: ProcessId::new(),
             },
         ));
@@ -3675,7 +3657,6 @@ mod tests {
                 history_entry_count: 0,
                 initial_messages: None,
                 network_proxy: None,
-                rollout_path: Some(PathBuf::new()),
             }),
         };
 
@@ -3848,7 +3829,6 @@ mod tests {
                         history_entry_count: 0,
                         initial_messages: None,
                         network_proxy: None,
-                        rollout_path: Some(PathBuf::new()),
                     }),
                 },
             ),
@@ -3926,7 +3906,6 @@ mod tests {
                 history_entry_count: 0,
                 initial_messages: None,
                 network_proxy: None,
-                rollout_path: Some(PathBuf::new()),
             }),
         };
         app.chat_widget
@@ -4008,7 +3987,6 @@ mod tests {
                 history_entry_count: 0,
                 initial_messages: None,
                 network_proxy: None,
-                rollout_path: Some(PathBuf::new()),
             }),
         };
         app.chat_widget
@@ -4089,7 +4067,6 @@ mod tests {
                 history_entry_count: 0,
                 initial_messages: None,
                 network_proxy: None,
-                rollout_path: Some(PathBuf::new()),
             }),
         };
         app.chat_widget
@@ -4164,7 +4141,6 @@ mod tests {
                 history_entry_count: 0,
                 initial_messages: None,
                 network_proxy: None,
-                rollout_path: Some(PathBuf::new()),
             }),
         };
         app.chat_widget
@@ -4278,7 +4254,6 @@ mod tests {
                         history_entry_count: 0,
                         initial_messages: None,
                         network_proxy: None,
-                        rollout_path: Some(PathBuf::new()),
                     }),
                 },
             ),
@@ -4348,7 +4323,6 @@ mod tests {
                 history_entry_count: 0,
                 initial_messages: None,
                 network_proxy: None,
-                rollout_path: Some(PathBuf::new()),
             }),
         };
         app.chat_widget
@@ -4452,7 +4426,6 @@ mod tests {
                 history_entry_count: 0,
                 initial_messages: None,
                 network_proxy: None,
-                rollout_path: Some(PathBuf::new()),
             }),
         };
         app.chat_widget
@@ -4529,7 +4502,6 @@ mod tests {
                 history_entry_count: 0,
                 initial_messages: None,
                 network_proxy: None,
-                rollout_path: Some(PathBuf::new()),
             }),
         };
         app.chat_widget
@@ -5325,7 +5297,6 @@ guardian_approval = true
                         history_entry_count: 0,
                         initial_messages: None,
                         network_proxy: None,
-                        rollout_path: Some(PathBuf::from("/tmp/agent-rollout.jsonl")),
                     }),
                 },
             ),
@@ -5544,7 +5515,6 @@ guardian_approval = true
                 history_entry_count: 0,
                 initial_messages: None,
                 network_proxy: None,
-                rollout_path: Some(PathBuf::new()),
             };
             Arc::new(new_session_info(
                 app.chat_widget.config_ref(),
@@ -5605,8 +5575,6 @@ guardian_approval = true
         let rendered = render_clear_ui_header_after_long_transcript_for_snapshot().await;
         assert_snapshot!("clear_ui_after_long_transcript_fresh_header_only", rendered);
     }
-
-
 
     async fn make_test_app() -> App {
         let (chat_widget, app_event_tx, _rx, _op_rx) = make_chatwidget_manual_with_sender().await;
@@ -6164,7 +6132,6 @@ guardian_approval = true
                 history_entry_count: 0,
                 initial_messages: None,
                 network_proxy: None,
-                rollout_path: Some(PathBuf::new()),
             }),
         });
 
@@ -6266,7 +6233,6 @@ guardian_approval = true
                 history_entry_count: 0,
                 initial_messages: None,
                 network_proxy: None,
-                rollout_path: Some(PathBuf::new()),
             };
             Arc::new(new_session_info(
                 app.chat_widget.config_ref(),
@@ -6325,7 +6291,6 @@ guardian_approval = true
                 history_entry_count: 0,
                 initial_messages: None,
                 network_proxy: None,
-                rollout_path: Some(PathBuf::new()),
             }),
         });
 
@@ -6418,7 +6383,6 @@ guardian_approval = true
                 history_entry_count: 0,
                 initial_messages: None,
                 network_proxy: None,
-                rollout_path: Some(PathBuf::new()),
             }),
         });
 
@@ -6504,7 +6468,6 @@ guardian_approval = true
                     }),
                 ]),
                 network_proxy: None,
-                rollout_path: Some(PathBuf::new()),
             }),
         });
 
@@ -6578,7 +6541,6 @@ guardian_approval = true
                     }),
                 ]),
                 network_proxy: None,
-                rollout_path: Some(PathBuf::new()),
             }),
         });
 
@@ -6693,7 +6655,6 @@ guardian_approval = true
             history_entry_count: 0,
             initial_messages: None,
             network_proxy: None,
-            rollout_path: Some(PathBuf::new()),
         };
 
         app.chat_widget.handle_codex_event(Event {
@@ -6763,7 +6724,6 @@ guardian_approval = true
                 history_entry_count: 0,
                 initial_messages: None,
                 network_proxy: None,
-                rollout_path: Some(PathBuf::new()),
             }),
         });
         app.chat_widget
@@ -6818,7 +6778,7 @@ guardian_approval = true
         );
         assert_eq!(
             summary.resume_command,
-            Some("codex resume 123e4567-e89b-12d3-a456-426614174000".to_string())
+            Some("chaos resume 123e4567-e89b-12d3-a456-426614174000".to_string())
         );
     }
 
@@ -6836,7 +6796,7 @@ guardian_approval = true
             .expect("summary");
         assert_eq!(
             summary.resume_command,
-            Some("codex resume my-session".to_string())
+            Some("chaos resume my-session".to_string())
         );
     }
 }

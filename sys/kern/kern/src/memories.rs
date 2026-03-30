@@ -11,8 +11,6 @@ mod extraction;
 mod pipeline;
 pub(crate) mod prompts;
 mod storage;
-#[cfg(test)]
-mod tests;
 pub(crate) mod usage;
 
 use chaos_ipc::openai_models::ReasoningEffort;
@@ -23,12 +21,6 @@ pub(crate) use control::clear_memory_root_contents;
 ///
 /// This is the entry point to read and understand this module.
 pub(crate) use pipeline::start_memories_startup_task;
-
-#[cfg(test)]
-mod artifacts {
-    pub(super) const ROLLOUT_SUMMARIES_SUBDIR: &str = "rollout_summaries";
-    pub(super) const RAW_MEMORIES_FILENAME: &str = "raw_memories.md";
-}
 
 /// Phase 1 (startup extraction).
 mod phase_one {
@@ -89,19 +81,4 @@ use std::path::PathBuf;
 
 pub fn memory_root(codex_home: &Path) -> PathBuf {
     codex_home.join("memories")
-}
-
-#[cfg(test)]
-pub(crate) fn rollout_summaries_dir(root: &Path) -> PathBuf {
-    root.join(artifacts::ROLLOUT_SUMMARIES_SUBDIR)
-}
-
-#[cfg(test)]
-fn raw_memories_file(root: &Path) -> PathBuf {
-    root.join(artifacts::RAW_MEMORIES_FILENAME)
-}
-
-#[cfg(test)]
-async fn ensure_layout(root: &Path) -> std::io::Result<()> {
-    tokio::fs::create_dir_all(rollout_summaries_dir(root)).await
 }

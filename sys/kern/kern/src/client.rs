@@ -224,6 +224,13 @@ pub struct ModelClientSession {
     turn_state: Arc<OnceLock<String>>,
 }
 
+struct HttpTurnRequestConfig<'a> {
+    effort: Option<ReasoningEffortConfig>,
+    summary: ReasoningSummaryConfig,
+    service_tier: Option<ServiceTier>,
+    options: &'a ApiResponsesOptions,
+}
+
 #[derive(Debug, Clone)]
 struct LastResponse {
     response_id: String,
@@ -731,10 +738,7 @@ impl ModelClientSession {
         provider: &chaos_parrot::Provider,
         prompt: &Prompt,
         model_info: &ModelInfo,
-        effort: Option<ReasoningEffortConfig>,
-        summary: ReasoningSummaryConfig,
-        service_tier: Option<ServiceTier>,
-        options: &ApiResponsesOptions,
+        config: HttpTurnRequestConfig<'_>,
     ) -> Result<AbiTurnRequest> {
         let input = prompt.get_formatted_input();
         let openai_tools = create_tools_json_for_responses_api(&prompt.tools)?;
@@ -759,11 +763,11 @@ impl ModelClientSession {
         };
         let reasoning = if model_info.supports_reasoning_summaries {
             Some(AbiReasoningConfig {
-                effort: effort.or(model_info.default_reasoning_level),
-                summary: if summary == ReasoningSummaryConfig::None {
+                effort: config.effort.or(model_info.default_reasoning_level),
+                summary: if config.summary == ReasoningSummaryConfig::None {
                     None
                 } else {
-                    Some(summary)
+                    Some(config.summary)
                 },
             })
         } else {
@@ -771,7 +775,7 @@ impl ModelClientSession {
         };
 
         let mut request_headers = serde_json::Map::new();
-        for (name, value) in &options.extra_headers {
+        for (name, value) in &config.options.extra_headers {
             if let Ok(value) = value.to_str() {
                 request_headers.insert(name.as_str().to_string(), json!(value));
             }
@@ -796,12 +800,12 @@ impl ModelClientSession {
         );
         extensions.insert(
             "compression".to_string(),
-            json!(match options.compression {
+            json!(match config.options.compression {
                 Compression::None => "none",
                 Compression::Zstd => "zstd",
             }),
         );
-        if let Some(service_tier) = match service_tier {
+        if let Some(service_tier) = match config.service_tier {
             Some(ServiceTier::Fast) => Some("priority".to_string()),
             Some(other) => Some(other.to_string()),
             None => None,
@@ -818,7 +822,7 @@ impl ModelClientSession {
             reasoning,
             output_schema: prompt.output_schema.clone(),
             verbosity,
-            turn_state: options.turn_state.clone(),
+            turn_state: config.options.turn_state.clone(),
             extensions,
         })
     }
@@ -1110,10 +1114,12 @@ impl ModelClientSession {
                 &client_setup.api_provider,
                 prompt,
                 model_info,
-                effort,
-                summary,
-                service_tier,
-                &options,
+                HttpTurnRequestConfig {
+                    effort,
+                    summary,
+                    service_tier,
+                    options: &options,
+                },
             )?;
             let adapter = OpenAiAdapter::new(
                 transport,
@@ -1388,10 +1394,12 @@ impl ModelClientSession {
             &client_setup.api_provider,
             prompt,
             model_info,
-            effort,
-            summary,
-            service_tier,
-            &options,
+            HttpTurnRequestConfig {
+                effort,
+                summary,
+                service_tier,
+                options: &options,
+            },
         )?;
 
         let auth = self.resolve_anthropic_auth()?;

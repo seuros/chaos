@@ -127,7 +127,7 @@ Under `{{ memory_root }}/`:
     context.
   - source of rollout-level metadata needed for MEMORY.md `### rollout_summary_files`
     annotations;
-    you should be able to find `cwd`, `rollout_path`, and `updated_at` there.
+    you should be able to find `cwd`, `process_id`, and `updated_at` there.
 - `MEMORY.md`
   - merged memories; produce a lightly clustered version if applicable
 - `rollout_summaries/*.md`
@@ -217,7 +217,7 @@ Body format (strict):
   `## Failures and how to do differently` when they are meaningful. These sections are
   consolidated from the represented tasks and should preserve the good stuff without flattening
   it into generic summaries.
-- Every `## Task <n>` section MUST include only task-local rollout files and task-local keywords.
+- Every `## Task <n>` section MUST include only task-local summary files and task-local keywords.
 - Use `-` bullets for lists and task subsections. Do not use `*`.
 - No bolding text in the memory body.
 
@@ -227,7 +227,7 @@ Required task-oriented body shape (strict):
 
 ### rollout_summary_files
 
-- <rollout_summaries/file1.md> (cwd=<path>, rollout_path=<path>, updated_at=<timestamp>, process_id=<process_id>, <optional status/usefulness note>)
+- <rollout_summaries/file1.md> (cwd=<path>, process_id=<process_id>, updated_at=<timestamp>, <optional status/usefulness note>)
 
 ### keywords
 
@@ -275,7 +275,7 @@ Schema rules (strict):
   - Keep entries retrieval-friendly, but not shallow.
   - Do not emit placeholder values (`# Task Group: misc`, `scope: general`, `## Task 1: task`, etc.).
 - B) Task boundaries and clustering
-  - Primary organization unit is the task (`## Task <n>`), not the rollout file.
+  - Primary organization unit is the task (`## Task <n>`), not the summary file.
   - Default mapping: one coherent rollout summary -> one MEMORY block -> one `## Task 1`.
   - If a rollout contains multiple distinct tasks, split them into multiple `## Task <n>`
     sections. If those tasks belong to different task families, split into separate
@@ -303,7 +303,7 @@ Schema rules (strict):
   - Treat task-level `Failures and how to do differently:` from Phase 1 as the main source for
     block-level `## Failures and how to do differently`.
   - `### rollout_summary_files` must be task-local (not a block-wide catch-all list).
-  - Each rollout annotation must include `cwd=<path>`, `rollout_path=<path>`, and
+  - Each summary annotation must include `cwd=<path>`, `process_id=<process_id>`, and
     `updated_at=<timestamp>`.
     If missing from a rollout summary, recover them from `raw_memories.md`.
   - Major block-level guidance should be traceable to rollout summaries listed in the task

@@ -3,14 +3,13 @@ use chaos_ipc::ProcessId;
 use sqlx::Row;
 use sqlx::sqlite::SqliteRow;
 use std::path::PathBuf;
-
 use super::ProcessMetadata;
 
 /// Stored stage-1 memory extraction output for a single thread.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct Stage1Output {
     pub process_id: ProcessId,
-    pub rollout_path: PathBuf,
+    pub process_ref: String,
     pub source_updated_at: jiff::Timestamp,
     pub raw_memory: String,
     pub rollout_summary: String,
@@ -38,7 +37,7 @@ pub struct Phase2InputSelection {
 #[derive(Debug)]
 pub(crate) struct Stage1OutputRow {
     process_id: String,
-    rollout_path: String,
+    process_ref: String,
     source_updated_at: i64,
     raw_memory: String,
     rollout_summary: String,
@@ -52,7 +51,7 @@ impl Stage1OutputRow {
     pub(crate) fn try_from_row(row: &SqliteRow) -> Result<Self> {
         Ok(Self {
             process_id: row.try_get("process_id")?,
-            rollout_path: row.try_get("rollout_path")?,
+            process_ref: row.try_get("process_ref")?,
             source_updated_at: row.try_get("source_updated_at")?,
             raw_memory: row.try_get("raw_memory")?,
             rollout_summary: row.try_get("rollout_summary")?,
@@ -70,7 +69,7 @@ impl TryFrom<Stage1OutputRow> for Stage1Output {
     fn try_from(row: Stage1OutputRow) -> std::result::Result<Self, Self::Error> {
         Ok(Self {
             process_id: ProcessId::try_from(row.process_id)?,
-            rollout_path: PathBuf::from(row.rollout_path),
+            process_ref: row.process_ref,
             source_updated_at: epoch_seconds_to_datetime(row.source_updated_at)?,
             raw_memory: row.raw_memory,
             rollout_summary: row.rollout_summary,

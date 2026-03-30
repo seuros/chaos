@@ -32,7 +32,7 @@ use crate::models_manager::manager::ModelsManager;
 use crate::models_manager::manager::RefreshStrategy;
 use crate::parse_command::parse_command;
 use crate::parse_turn_item;
-use crate::rollout::session_index;
+use crate::rollout::process_names;
 use crate::skills::render_skills_section;
 use crate::stream_events_utils::HandleOutputCtx;
 use crate::stream_events_utils::handle_non_tool_response_item;
@@ -245,7 +245,6 @@ use crate::protocol::WarningEvent;
 use crate::rollout::RolloutRecorder;
 use crate::rollout::RolloutRecorderParams;
 use crate::rollout::map_session_init_error;
-use crate::rollout::metadata;
 use crate::rollout::policy::EventPersistenceMode;
 use crate::shell;
 use crate::shell_snapshot::ShellSnapshot;
@@ -1356,7 +1355,8 @@ impl Session {
             InitialHistory::Resumed(resumed_history) => (
                 resumed_history.conversation_id,
                 RolloutRecorderParams::resume(
-                    resumed_history.rollout_path.clone(),
+                    resumed_history.conversation_id,
+                    session_source,
                     if session_configuration.persist_extended_history {
                         EventPersistenceMode::Extended
                     } else {
@@ -1366,11 +1366,7 @@ impl Session {
             ),
         };
         let state_builder = match &initial_history {
-            InitialHistory::Resumed(resumed) => metadata::builder_from_items(
-                resumed.history.as_slice(),
-                resumed.rollout_path.as_path(),
-            ),
-            InitialHistory::New | InitialHistory::Forked(_) => None,
+            InitialHistory::Resumed(_) | InitialHistory::New | InitialHistory::Forked(_) => None,
         };
 
         // Kick off independent async setup tasks in parallel to reduce startup latency.
@@ -1444,10 +1440,6 @@ impl Session {
             error!("failed to initialize rollout recorder: {e:#}");
             e
         })?;
-        let rollout_path = rollout_recorder
-            .as_ref()
-            .map(|rec| rec.rollout_path.clone());
-
         let mut post_session_configured_events = Vec::<Event>::new();
 
         for usage in config.features.legacy_feature_usages() {
@@ -1589,7 +1581,7 @@ impl Session {
             tx
         };
         let process_name =
-            match session_index::find_process_name_by_id(&config.codex_home, &conversation_id)
+            match process_names::find_process_name_by_id(&config.codex_home, &conversation_id)
                 .instrument(info_span!(
                     "session_init.process_name_lookup",
                     otel.name = "session_init.process_name_lookup",
@@ -1771,7 +1763,6 @@ impl Session {
                 history_entry_count,
                 initial_messages,
                 network_proxy: session_network_proxy,
-                rollout_path,
             }),
         })
         .chain(post_session_configured_events.into_iter());
@@ -1887,7 +1878,7 @@ impl Session {
         self.services.state_db.clone()
     }
 
-    /// Ensure rollout file writes are durably flushed.
+    /// Ensure persisted session history writes are durably flushed.
     pub(crate) async fn flush_rollout(&self) {
         let recorder = {
             let guard = self.services.rollout.lock().await;
@@ -1991,7 +1982,7 @@ impl Session {
                     .await;
                 }
 
-                // Seed usage info from the recorded rollout so UIs can show token counts
+                // Seed usage info from the persisted session history so UIs can show token counts
                 // immediately on resume/fork.
                 if let Some(info) = Self::last_token_info_from_rollout(&rollout_items) {
                     let mut state = self.state.lock().await;
@@ -2008,7 +1999,7 @@ impl Session {
                 self.apply_rollout_reconstruction(&turn_context, &rollout_items)
                     .await;
 
-                // Seed usage info from the recorded rollout so UIs can show token counts
+                // Seed usage info from the persisted session history so UIs can show token counts
                 // immediately on resume/fork.
                 if let Some(info) = Self::last_token_info_from_rollout(&rollout_items) {
                     let mut state = self.state.lock().await;
@@ -3815,14 +3806,6 @@ impl Session {
         Arc::clone(&self.services.user_shell)
     }
 
-    pub(crate) async fn current_rollout_path(&self) -> Option<PathBuf> {
-        let recorder = {
-            let guard = self.services.rollout.lock().await;
-            guard.clone()
-        };
-        recorder.map(|recorder| recorder.rollout_path().to_path_buf())
-    }
-
     pub(crate) async fn take_pending_session_start_source(
         &self,
     ) -> Option<chaos_dtrace::SessionStartSource> {
@@ -4167,7 +4150,7 @@ mod handlers {
     use crate::mcp::collect_mcp_snapshot_from_manager;
     use crate::review_prompts::resolve_review_request;
     use crate::rollout::RolloutRecorder;
-    use crate::rollout::session_index;
+    use crate::rollout::process_names;
     use crate::tasks::CompactTask;
     use crate::tasks::UndoTask;
     use crate::tasks::UserShellCommandMode;
@@ -4774,35 +4757,27 @@ mod handlers {
         }
 
         let turn_context = sess.new_default_turn_with_sub_id(sub_id).await;
-        let rollout_path = {
-            let recorder = {
-                let guard = sess.services.rollout.lock().await;
-                guard.clone()
-            };
-            let Some(recorder) = recorder else {
-                sess.send_event_raw(Event {
-                    id: turn_context.sub_id.clone(),
-                    msg: EventMsg::Error(ErrorEvent {
-                        message: "thread rollback requires a persisted rollout path".to_string(),
-                        codex_error_info: Some(CodexErrorInfo::ProcessRollbackFailed),
-                    }),
-                })
-                .await;
-                return;
-            };
-            recorder.rollout_path().to_path_buf()
-        };
-        if let Some(recorder) = {
+        let recorder = {
             let guard = sess.services.rollout.lock().await;
             guard.clone()
-        } && let Err(err) = recorder.flush().await
-        {
+        };
+        let Some(recorder) = recorder else {
+            sess.send_event_raw(Event {
+                id: turn_context.sub_id.clone(),
+                msg: EventMsg::Error(ErrorEvent {
+                    message: "thread rollback requires persisted session history".to_string(),
+                    codex_error_info: Some(CodexErrorInfo::ProcessRollbackFailed),
+                }),
+            })
+            .await;
+            return;
+        };
+        if let Err(err) = recorder.flush().await {
             sess.send_event_raw(Event {
                 id: turn_context.sub_id.clone(),
                 msg: EventMsg::Error(ErrorEvent {
                     message: format!(
-                        "failed to flush rollout `{}` for rollback replay: {err}",
-                        rollout_path.display()
+                        "failed to flush persisted session history for rollback replay: {err}"
                     ),
                     codex_error_info: Some(CodexErrorInfo::ProcessRollbackFailed),
                 }),
@@ -4812,23 +4787,22 @@ mod handlers {
         }
 
         let initial_history =
-            match RolloutRecorder::get_rollout_history(rollout_path.as_path()).await {
-                Ok(history) => history,
-                Err(err) => {
-                    sess.send_event_raw(Event {
-                        id: turn_context.sub_id.clone(),
-                        msg: EventMsg::Error(ErrorEvent {
-                            message: format!(
-                                "failed to load rollout `{}` for rollback replay: {err}",
-                                rollout_path.display()
-                            ),
-                            codex_error_info: Some(CodexErrorInfo::ProcessRollbackFailed),
-                        }),
-                    })
-                    .await;
-                    return;
-                }
-            };
+            match RolloutRecorder::get_rollout_history_for_process(sess.conversation_id).await {
+            Ok(history) => history,
+            Err(err) => {
+                sess.send_event_raw(Event {
+                    id: turn_context.sub_id.clone(),
+                    msg: EventMsg::Error(ErrorEvent {
+                        message: format!(
+                            "failed to load persisted session history for rollback replay: {err}"
+                        ),
+                        codex_error_info: Some(CodexErrorInfo::ProcessRollbackFailed),
+                    }),
+                })
+                .await;
+                return;
+            }
+        };
 
         let rollback_event = ProcessRolledBackEvent { num_turns };
         let rollback_msg = EventMsg::ProcessRolledBack(rollback_event.clone());
@@ -4851,12 +4825,9 @@ mod handlers {
         .await;
     }
 
-    /// Persists the process name in the session index, updates in-memory state, and emits
+    /// Persists the explicit process name in SQLite, updates in-memory state, and emits
     /// a `ProcessNameUpdated` event on success.
-    ///
-    /// This appends the name to `CODEX_HOME/sessions_index.jsonl` via `session_index::append_process_name` for the
-    /// current `process_id`, then updates `SessionConfiguration::process_name`.
-    ///
+    /// It then updates `SessionConfiguration::process_name`.
     /// Returns an error event if the name is empty or session persistence is disabled.
     pub async fn set_process_name(sess: &Arc<Session>, sub_id: String, name: String) {
         let Some(name) = crate::util::normalize_process_name(&name) else {
@@ -4889,7 +4860,7 @@ mod handlers {
 
         let codex_home = sess.codex_home().await;
         if let Err(e) =
-            session_index::append_process_name(&codex_home, sess.conversation_id, &name).await
+            process_names::append_process_name(&codex_home, sess.conversation_id, &name).await
         {
             let event = Event {
                 id: sub_id,
@@ -4937,8 +4908,7 @@ mod handlers {
             &[],
         );
 
-        // Gracefully flush and shutdown rollout recorder on session end so tests
-        // that inspect the rollout file do not race with the background writer.
+        // Gracefully flush and shutdown the session history recorder on session end.
         let recorder_opt = {
             let mut guard = sess.services.rollout.lock().await;
             guard.take()
@@ -5389,7 +5359,7 @@ pub(crate) async fn run_turn(
             let session_start_request = chaos_dtrace::SessionStartRequest {
                 session_id: sess.conversation_id,
                 cwd: turn_context.cwd.clone(),
-                transcript_path: sess.current_rollout_path().await,
+                transcript_path: None,
                 model: turn_context.model_info.slug.clone(),
                 permission_mode: session_start_permission_mode,
                 source: session_start_source,
@@ -5535,7 +5505,7 @@ pub(crate) async fn run_turn(
                         session_id: sess.conversation_id,
                         turn_id: turn_context.sub_id.clone(),
                         cwd: turn_context.cwd.clone(),
-                        transcript_path: sess.current_rollout_path().await,
+                        transcript_path: None,
                         model: turn_context.model_info.slug.clone(),
                         permission_mode: stop_hook_permission_mode,
                         stop_hook_active,
@@ -6772,12 +6742,11 @@ pub(super) fn get_last_assistant_message_from_turn(responses: &[ResponseItem]) -
 
 use crate::memories::prompts::build_memory_tool_developer_instructions;
 #[cfg(test)]
+#[path = "codex_tests.rs"]
+mod tests;
+#[cfg(test)]
 pub(crate) use tests::make_session_and_context;
 #[cfg(test)]
 pub(crate) use tests::make_session_and_context_with_rx;
 #[cfg(test)]
 pub(crate) use tests::make_session_configuration_for_tests;
-
-#[cfg(test)]
-#[path = "codex_tests.rs"]
-mod tests;

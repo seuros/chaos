@@ -766,8 +766,6 @@ pub(crate) struct ChatWidget {
     // Runtime metrics accumulated across delta snapshots for the active turn.
     turn_runtime_metrics: RuntimeMetricsSummary,
     last_rendered_width: std::cell::Cell<Option<usize>>,
-    // Current session rollout path (if known)
-    current_rollout_path: Option<PathBuf>,
     // Current working directory (if known)
     current_cwd: Option<PathBuf>,
     // Runtime network proxy bind addresses from SessionConfigured.
@@ -1330,7 +1328,6 @@ impl ChatWidget {
         self.process_id = Some(event.session_id);
         self.process_name = event.process_name.clone();
         self.forked_from = event.forked_from_id;
-        self.current_rollout_path = event.rollout_path.clone();
         self.current_cwd = Some(event.cwd.clone());
         self.config.cwd = event.cwd.clone();
         if let Err(err) = self
@@ -3542,7 +3539,6 @@ impl ChatWidget {
             last_separator_elapsed_secs: None,
             turn_runtime_metrics: RuntimeMetricsSummary::default(),
             last_rendered_width: std::cell::Cell::new(None),
-            current_rollout_path: None,
             current_cwd,
             session_network_proxy: None,
             status_line_invalid_items_warned,
@@ -3702,7 +3698,6 @@ impl ChatWidget {
             last_separator_elapsed_secs: None,
             turn_runtime_metrics: RuntimeMetricsSummary::default(),
             last_rendered_width: std::cell::Cell::new(None),
-            current_rollout_path: None,
             current_cwd,
             session_network_proxy: None,
             status_line_invalid_items_warned,
@@ -3862,7 +3857,6 @@ impl ChatWidget {
             last_separator_elapsed_secs: None,
             turn_runtime_metrics: RuntimeMetricsSummary::default(),
             last_rendered_width: std::cell::Cell::new(None),
-            current_rollout_path: None,
             current_cwd,
             session_network_proxy: None,
             status_line_invalid_items_warned,
@@ -4308,19 +4302,6 @@ impl ChatWidget {
             }
             SlashCommand::Mcp => {
                 self.add_mcp_output();
-            }
-            SlashCommand::Rollout => {
-                if let Some(path) = self.rollout_path() {
-                    self.add_info_message(
-                        format!("Current rollout path: {}", path.display()),
-                        /*hint*/ None,
-                    );
-                } else {
-                    self.add_info_message(
-                        "Rollout path is not available yet.".to_string(),
-                        /*hint*/ None,
-                    );
-                }
             }
             SlashCommand::TestApproval => {
                 use chaos_ipc::protocol::EventMsg;
@@ -6878,7 +6859,6 @@ impl ChatWidget {
         self.config.personality = Some(personality);
     }
 
-
     /// Set the syntax theme override in the widget's config copy.
     pub(crate) fn set_tui_theme(&mut self, theme: Option<String>) {
         self.config.tui_theme = theme;
@@ -7222,7 +7202,7 @@ impl ChatWidget {
 
     fn rename_confirmation_cell(name: &str, process_id: Option<ProcessId>) -> PlainHistoryCell {
         let resume_cmd = chaos_kern::util::resume_command(Some(name), process_id)
-            .unwrap_or_else(|| format!("codex resume {name}"));
+            .unwrap_or_else(|| format!("chaos resume {name}"));
         let name = name.to_string();
         let line = vec![
             "• ".into(),
@@ -7984,15 +7964,6 @@ impl ChatWidget {
 
     pub(crate) fn process_name(&self) -> Option<String> {
         self.process_name.clone()
-    }
-
-    /// Returns the current thread's precomputed rollout path.
-    ///
-    /// For fresh non-ephemeral threads this path may exist before the file is
-    /// materialized; rollout persistence is deferred until the first user
-    /// message is recorded.
-    pub(crate) fn rollout_path(&self) -> Option<PathBuf> {
-        self.current_rollout_path.clone()
     }
 
     /// Returns a cache key describing the current in-flight active cell for the transcript overlay.

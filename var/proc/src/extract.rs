@@ -326,7 +326,6 @@ mod tests {
         let created_at = jiff::Timestamp::new(1_735_689_600, 0).expect("timestamp");
         ProcessMetadata {
             id,
-            rollout_path: PathBuf::from("/tmp/a.jsonl"),
             created_at,
             updated_at: created_at,
             source: "cli".to_string(),

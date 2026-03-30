@@ -25,13 +25,13 @@ pub(super) fn build_consolidation_prompt(
 /// Builds the stage-1 user message containing rollout metadata and content.
 pub(super) fn build_stage_one_input_message(
     model_info: &ModelInfo,
-    rollout_path: &Path,
+    process_ref: &str,
     rollout_cwd: &Path,
     rollout_contents: &str,
 ) -> anyhow::Result<String> {
     chaos_memento::prompts::build_stage_one_input_message(
         model_info,
-        rollout_path,
+        process_ref,
         rollout_cwd,
         rollout_contents,
         token_truncate,

@@ -1,40 +1,34 @@
-//! Persist Codex session rollouts (.jsonl) so sessions can be replayed or inspected later.
+//! Persist session history into journald so sessions can be replayed later.
 
-use std::fs::File;
-use std::fs::{self};
 use std::io::Error as IoError;
 use std::path::Path;
 use std::path::PathBuf;
+use std::time::{Duration, Instant};
 
 use chaos_ipc::ProcessId;
 use chaos_ipc::dynamic_tools::DynamicToolSpec;
 use chaos_ipc::models::BaseInstructions;
+use chaos_journald::AppendBatchInput as JournalAppendBatchInput;
+use chaos_journald::CreateProcessInput as JournalCreateProcessInput;
+use chaos_journald::ErrorCode as JournalErrorCode;
+use chaos_journald::JournalClientError;
+use chaos_journald::JournalEntry;
+use chaos_journald::JournalRpcClient;
 use jiff::Timestamp;
-use serde_json::Value;
 use time::OffsetDateTime;
 use time::format_description::FormatItem;
-use time::format_description::well_known::Rfc3339;
 use time::macros::format_description;
-use tokio::io::AsyncWriteExt;
 use tokio::sync::mpsc::Sender;
 use tokio::sync::mpsc::{self};
 use tokio::sync::oneshot;
 use tracing::info;
-use tracing::trace;
 use tracing::warn;
+use uuid::Uuid;
 
-use super::ARCHIVED_SESSIONS_SUBDIR;
-use super::SESSIONS_SUBDIR;
 use super::list::Cursor;
 use super::list::ProcessItem;
-use super::list::ProcessListConfig;
-use super::list::ProcessListLayout;
 use super::list::ProcessSortKey;
 use super::list::ProcessesPage;
-use super::list::get_processes;
-use super::list::get_processes_in_root;
-use super::list::parse_cursor;
-use super::list::parse_timestamp_uuid_from_filename;
 use super::metadata;
 use super::policy::EventPersistenceMode;
 use super::policy::is_persisted_response_item;
@@ -49,27 +43,18 @@ use chaos_ipc::protocol::EventMsg;
 use chaos_ipc::protocol::InitialHistory;
 use chaos_ipc::protocol::ResumedHistory;
 use chaos_ipc::protocol::RolloutItem;
-use chaos_ipc::protocol::RolloutLine;
 use chaos_ipc::protocol::SessionMeta;
 use chaos_ipc::protocol::SessionMetaLine;
 use chaos_ipc::protocol::SessionSource;
+use chaos_journald::LoadedJournal;
+use chaos_journald::ProcessRecord as JournalProcessRecord;
 use chaos_proc::ProcessMetadataBuilder;
 use chaos_proc::StateRuntime;
 use chaos_traits::RolloutConfig;
 
-/// Records all [`ResponseItem`]s for a session and flushes them to disk after
-/// every update.
-///
-/// Rollouts are recorded as JSONL and can be inspected with tools such as:
-///
-/// ```ignore
-/// $ jq -C . ~/.codex/sessions/rollout-2025-05-07T17-24-21-5973b6c0-94b8-487b-a530-2aeb6098ae0e.jsonl
-/// $ fx ~/.codex/sessions/rollout-2025-05-07T17-24-21-5973b6c0-94b8-487b-a530-2aeb6098ae0e.jsonl
-/// ```
 #[derive(Clone)]
 pub struct RolloutRecorder {
     tx: Sender<RolloutCmd>,
-    pub(crate) rollout_path: PathBuf,
     state_db: Option<StateDbHandle>,
     event_persistence_mode: EventPersistenceMode,
 }
@@ -85,7 +70,8 @@ pub enum RolloutRecorderParams {
         event_persistence_mode: EventPersistenceMode,
     },
     Resume {
-        path: PathBuf,
+        conversation_id: ProcessId,
+        source: SessionSource,
         event_persistence_mode: EventPersistenceMode,
     },
 }
@@ -123,9 +109,14 @@ impl RolloutRecorderParams {
         }
     }
 
-    pub fn resume(path: PathBuf, event_persistence_mode: EventPersistenceMode) -> Self {
+    pub fn resume(
+        conversation_id: ProcessId,
+        source: SessionSource,
+        event_persistence_mode: EventPersistenceMode,
+    ) -> Self {
         Self::Resume {
-            path,
+            conversation_id,
+            source,
             event_persistence_mode,
         }
     }
@@ -159,7 +150,7 @@ fn sanitize_rollout_item_for_persistence(
 }
 
 impl RolloutRecorder {
-    /// List processes (rollout files) under the provided Codex home directory.
+    /// List processes persisted in journald.
     #[allow(clippy::too_many_arguments)]
     pub async fn list_processes(
         config: &impl RolloutConfig,
@@ -171,7 +162,7 @@ impl RolloutRecorder {
         default_provider: &str,
         search_term: Option<&str>,
     ) -> std::io::Result<ProcessesPage> {
-        Self::list_processes_with_db_fallback(
+        Self::list_processes_from_journal(
             config,
             page_size,
             cursor,
@@ -185,7 +176,7 @@ impl RolloutRecorder {
         .await
     }
 
-    /// List archived processes (rollout files) under the archived sessions directory.
+    /// List archived processes persisted in journald.
     #[allow(clippy::too_many_arguments)]
     pub async fn list_archived_processes(
         config: &impl RolloutConfig,
@@ -197,7 +188,7 @@ impl RolloutRecorder {
         default_provider: &str,
         search_term: Option<&str>,
     ) -> std::io::Result<ProcessesPage> {
-        Self::list_processes_with_db_fallback(
+        Self::list_processes_from_journal(
             config,
             page_size,
             cursor,
@@ -212,93 +203,74 @@ impl RolloutRecorder {
     }
 
     #[allow(clippy::too_many_arguments)]
-    async fn list_processes_with_db_fallback(
-        config: &impl RolloutConfig,
+    async fn list_processes_from_journal(
+        _config: &impl RolloutConfig,
         page_size: usize,
         cursor: Option<&Cursor>,
         sort_key: ProcessSortKey,
         allowed_sources: &[SessionSource],
         model_providers: Option<&[String]>,
-        default_provider: &str,
+        _default_provider: &str,
         archived: bool,
         search_term: Option<&str>,
     ) -> std::io::Result<ProcessesPage> {
-        let codex_home = config.codex_home();
-        // Filesystem-first listing intentionally overfetches so we can repair stale/missing
-        // SQLite rollout paths before the final DB-backed page is returned.
-        let fs_page_size = page_size.saturating_mul(2).max(page_size);
-        let fs_page = if archived {
-            let root = codex_home.join(ARCHIVED_SESSIONS_SUBDIR);
-            get_processes_in_root(
-                root,
-                fs_page_size,
-                cursor,
-                sort_key,
-                ProcessListConfig {
-                    allowed_sources,
-                    model_providers,
-                    default_provider,
-                    layout: ProcessListLayout::Flat,
-                },
-            )
-            .await?
-        } else {
-            get_processes(
-                codex_home,
-                fs_page_size,
-                cursor,
-                sort_key,
-                allowed_sources,
-                model_providers,
-                default_provider,
-            )
-            .await?
-        };
+        let client = journal_client_from_env_or_bootstrap()
+            .await
+            .map_err(IoError::other)?;
+        let mut records = client
+            .list_processes(Some(archived))
+            .await
+            .map_err(IoError::other)?;
+        records.retain(|record| journal_record_matches_filters(record, allowed_sources, model_providers));
+        sort_journal_records(&mut records, sort_key);
 
-        let state_db_ctx =
-            state_db::get_state_db_for(config.sqlite_home(), config.model_provider_id()).await;
-        if state_db_ctx.is_none() {
-            // Keep legacy behavior when SQLite is unavailable: return filesystem results
-            // at the requested page size.
-            return Ok(truncate_fs_page(fs_page, page_size, sort_key));
+        let mut items = Vec::with_capacity(page_size);
+        let mut scanned = 0usize;
+        let mut next_cursor = None;
+        let mut last_returned_cursor = None;
+        let search_term = search_term.map(str::to_lowercase);
+        for record in records {
+            scanned = scanned.saturating_add(1);
+            if journal_record_is_before_cursor(&record, cursor, sort_key) {
+                continue;
+            }
+
+            let Some(process_id) = process_uuid(&record.process_id) else {
+                continue;
+            };
+            let loaded = client
+                .load_journal(record.process_id)
+                .await
+                .map_err(IoError::other)?;
+            let Some(item) =
+                journal_process_item_from_loaded(&record, loaded, search_term.as_deref())
+            else {
+                continue;
+            };
+
+            if items.len() == page_size {
+                next_cursor = last_returned_cursor.clone();
+                break;
+            }
+            items.push(item);
+            last_returned_cursor = Some(Cursor::new(
+                journal_record_sort_timestamp(&record, sort_key),
+                process_id,
+            ));
         }
 
-        // Warm the DB by repairing every filesystem hit before querying SQLite.
-        for item in &fs_page.items {
-            state_db::read_repair_rollout_path(
-                state_db_ctx.as_deref(),
-                item.process_id,
-                Some(archived),
-                item.path.as_path(),
-            )
-            .await;
-        }
-
-        if let Some(db_page) = state_db::list_processes_db(
-            state_db_ctx.as_deref(),
-            codex_home,
-            page_size,
-            cursor,
-            sort_key,
-            allowed_sources,
-            model_providers,
-            archived,
-            search_term,
-        )
-        .await
-        {
-            return Ok(threads_page_from_db(db_page));
-        }
-        // If SQLite listing still fails, return the filesystem page rather than failing the list.
-        tracing::error!("Falling back on rollout system");
-        tracing::warn!("state db discrepancy during list_processes_with_db_fallback: falling_back");
-        Ok(truncate_fs_page(fs_page, page_size, sort_key))
+        Ok(ProcessesPage {
+            items,
+            next_cursor,
+            num_scanned_records: scanned,
+            reached_scan_limit: false,
+        })
     }
 
-    /// Find the newest recorded process path, optionally filtering to a matching cwd.
+    /// Find the newest recorded process id, optionally filtering to a matching cwd.
     #[allow(clippy::too_many_arguments)]
-    pub async fn find_latest_process_path(
-        config: &impl RolloutConfig,
+    pub async fn find_latest_process_id(
+        _config: &impl RolloutConfig,
         page_size: usize,
         cursor: Option<&Cursor>,
         sort_key: ProcessSortKey,
@@ -306,142 +278,124 @@ impl RolloutRecorder {
         model_providers: Option<&[String]>,
         default_provider: &str,
         filter_cwd: Option<&Path>,
-    ) -> std::io::Result<Option<PathBuf>> {
-        let codex_home = config.codex_home();
-        let state_db_ctx =
-            state_db::get_state_db_for(config.sqlite_home(), config.model_provider_id()).await;
-        if state_db_ctx.is_some() {
-            let mut db_cursor = cursor.cloned();
-            loop {
-                let Some(db_page) = state_db::list_processes_db(
-                    state_db_ctx.as_deref(),
-                    codex_home,
-                    page_size,
-                    db_cursor.as_ref(),
-                    sort_key,
-                    allowed_sources,
-                    model_providers,
-                    /*archived*/ false,
-                    /*search_term*/ None,
-                )
-                .await
-                else {
-                    break;
-                };
-                if let Some(path) =
-                    select_resume_path_from_db_page(&db_page, filter_cwd, default_provider).await
-                {
-                    return Ok(Some(path));
-                }
-                db_cursor = db_page.next_anchor.map(super::list::cursor_from_anchor);
-                if db_cursor.is_none() {
-                    break;
-                }
-            }
-        }
+    ) -> std::io::Result<Option<ProcessId>> {
+        let client = journal_client_from_env_or_bootstrap()
+            .await
+            .map_err(IoError::other)?;
+        let mut records = client
+            .list_processes(Some(false))
+            .await
+            .map_err(IoError::other)?;
+        records.retain(|record| journal_record_matches_filters(record, allowed_sources, model_providers));
+        sort_journal_records(&mut records, sort_key);
 
-        let mut cursor = cursor.cloned();
-        loop {
-            let page = get_processes(
-                codex_home,
-                page_size,
-                cursor.as_ref(),
-                sort_key,
-                allowed_sources,
-                model_providers,
-                default_provider,
-            )
-            .await?;
-            if let Some(path) = select_resume_path(&page, filter_cwd, default_provider).await {
-                return Ok(Some(path));
+        let mut matched = 0usize;
+        for record in records {
+            if journal_record_is_before_cursor(&record, cursor, sort_key) {
+                continue;
             }
-            cursor = page.next_cursor;
-            if cursor.is_none() {
-                return Ok(None);
+            if let Some(cwd) = filter_cwd
+                && !cwd_matches(record.cwd.as_path(), cwd)
+            {
+                continue;
             }
+            matched = matched.saturating_add(1);
+            if matched > page_size {
+                break;
+            }
+            return Ok(Some(record.process_id));
         }
+        let _ = default_provider;
+        Ok(None)
     }
 
     /// Attempt to create a new [`RolloutRecorder`].
     ///
-    /// For newly created sessions, this precomputes path/metadata and defers
-    /// file creation/open until an explicit `persist()` call.
-    ///
-    /// For resumed sessions, this immediately opens the existing rollout file.
+    /// Newly created sessions defer persistence until `persist()` is called.
+    /// Resumed sessions append new items immediately.
     pub async fn new(
         config: &impl RolloutConfig,
         params: RolloutRecorderParams,
         state_db_ctx: Option<StateDbHandle>,
         state_builder: Option<ProcessMetadataBuilder>,
     ) -> std::io::Result<Self> {
-        let (file, deferred_log_file_info, rollout_path, meta, event_persistence_mode) =
-            match params {
-                RolloutRecorderParams::Create {
-                    conversation_id,
+        let (meta, event_persistence_mode, journal_sink, persisted) = match params {
+            RolloutRecorderParams::Create {
+                conversation_id,
+                forked_from_id,
+                source,
+                base_instructions,
+                dynamic_tools,
+                event_persistence_mode,
+            } => {
+                let session_id = conversation_id;
+                let started_at = OffsetDateTime::now_utc();
+                let journal_source = source.clone();
+
+                let timestamp_format: &[FormatItem] = format_description!(
+                    "[year]-[month]-[day]T[hour]:[minute]:[second].[subsecond digits:3]Z"
+                );
+                let timestamp = started_at
+                    .to_offset(time::UtcOffset::UTC)
+                    .format(timestamp_format)
+                    .map_err(|e| IoError::other(format!("failed to format timestamp: {e}")))?;
+
+                let session_meta = SessionMeta {
+                    id: session_id,
                     forked_from_id,
+                    timestamp,
+                    cwd: config.cwd().to_path_buf(),
+                    originator: originator().value,
+                    cli_version: env!("CARGO_PKG_VERSION").to_string(),
+                    agent_nickname: source.get_nickname(),
+                    agent_role: source.get_agent_role(),
                     source,
-                    base_instructions,
-                    dynamic_tools,
+                    model_provider: Some(config.model_provider_id().to_string()),
+                    base_instructions: Some(base_instructions),
+                    dynamic_tools: if dynamic_tools.is_empty() {
+                        None
+                    } else {
+                        Some(dynamic_tools)
+                    },
+                    memory_mode: (!config.generate_memories()).then_some("disabled".to_string()),
+                };
+
+                (
+                    Some(session_meta),
                     event_persistence_mode,
-                } => {
-                    let log_file_info = precompute_log_file_info(config, conversation_id)?;
-                    let path = log_file_info.path.clone();
-                    let session_id = log_file_info.conversation_id;
-                    let started_at = log_file_info.timestamp;
-
-                    let timestamp_format: &[FormatItem] = format_description!(
-                        "[year]-[month]-[day]T[hour]:[minute]:[second].[subsecond digits:3]Z"
-                    );
-                    let timestamp = started_at
-                        .to_offset(time::UtcOffset::UTC)
-                        .format(timestamp_format)
-                        .map_err(|e| IoError::other(format!("failed to format timestamp: {e}")))?;
-
-                    let session_meta = SessionMeta {
-                        id: session_id,
-                        forked_from_id,
-                        timestamp,
+                    JournalSink::pending(PendingJournalConfig {
+                        process_id: conversation_id,
+                        source: journal_source,
                         cwd: config.cwd().to_path_buf(),
-                        originator: originator().value,
+                        created_at: Timestamp::now(),
+                        model_provider: config.model_provider_id().to_string(),
                         cli_version: env!("CARGO_PKG_VERSION").to_string(),
-                        agent_nickname: source.get_nickname(),
-                        agent_role: source.get_agent_role(),
+                        owner_id: Uuid::now_v7().to_string(),
+                    }),
+                    false,
+                )
+            }
+            RolloutRecorderParams::Resume {
+                conversation_id,
+                source,
+                event_persistence_mode,
+            } => {
+                (
+                    None,
+                    event_persistence_mode,
+                    JournalSink::pending(PendingJournalConfig {
+                        process_id: conversation_id,
                         source,
-                        model_provider: Some(config.model_provider_id().to_string()),
-                        base_instructions: Some(base_instructions),
-                        dynamic_tools: if dynamic_tools.is_empty() {
-                            None
-                        } else {
-                            Some(dynamic_tools)
-                        },
-                        memory_mode: (!config.generate_memories())
-                            .then_some("disabled".to_string()),
-                    };
-
-                    (
-                        None,
-                        Some(log_file_info),
-                        path,
-                        Some(session_meta),
-                        event_persistence_mode,
-                    )
-                }
-                RolloutRecorderParams::Resume {
-                    path,
-                    event_persistence_mode,
-                } => (
-                    Some(
-                        tokio::fs::OpenOptions::new()
-                            .append(true)
-                            .open(&path)
-                            .await?,
-                    ),
-                    None,
-                    path,
-                    None,
-                    event_persistence_mode,
-                ),
-            };
+                        cwd: config.cwd().to_path_buf(),
+                        created_at: Timestamp::now(),
+                        model_provider: config.model_provider_id().to_string(),
+                        cli_version: env!("CARGO_PKG_VERSION").to_string(),
+                        owner_id: Uuid::now_v7().to_string(),
+                    }),
+                    true,
+                )
+            }
+        };
 
         // Clone the cwd for the spawned task to collect git info asynchronously
         let cwd = config.cwd().to_path_buf();
@@ -450,32 +404,23 @@ impl RolloutRecorder {
         // future will yield, which is fine – we only need to ensure we do not
         // perform *blocking* I/O on the caller's thread.
         let (tx, rx) = mpsc::channel::<RolloutCmd>(256);
-        // Spawn a Tokio task that owns the file handle and performs async
-        // writes. Using `tokio::fs::File` keeps everything on the async I/O
-        // driver instead of blocking the runtime.
         tokio::task::spawn(rollout_writer(
-            file,
-            deferred_log_file_info,
+            persisted,
             rx,
             meta,
             cwd,
-            rollout_path.clone(),
             state_db_ctx.clone(),
             state_builder,
             config.model_provider_id().to_string(),
             config.generate_memories(),
+            journal_sink,
         ));
 
         Ok(Self {
             tx,
-            rollout_path,
             state_db: state_db_ctx,
             event_persistence_mode,
         })
-    }
-
-    pub fn rollout_path(&self) -> &Path {
-        self.rollout_path.as_path()
     }
 
     pub fn state_db(&self) -> Option<StateDbHandle> {
@@ -504,7 +449,7 @@ impl RolloutRecorder {
             .map_err(|e| IoError::other(format!("failed to queue rollout items: {e}")))
     }
 
-    /// Materialize the rollout file and persist all buffered items.
+    /// Materialize persisted history and commit all buffered items.
     ///
     /// This is idempotent; after first materialization, repeated calls are no-ops.
     pub async fn persist(&self) -> std::io::Result<()> {
@@ -528,86 +473,75 @@ impl RolloutRecorder {
             .map_err(|e| IoError::other(format!("failed waiting for rollout flush: {e}")))
     }
 
-    pub(crate) async fn load_rollout_items(
-        path: &Path,
-    ) -> std::io::Result<(Vec<RolloutItem>, Option<ProcessId>, usize)> {
-        trace!("Resuming rollout from {path:?}");
-        let text = tokio::fs::read_to_string(path).await?;
-        if text.trim().is_empty() {
-            return Err(IoError::other("empty session file"));
-        }
-
-        let mut items: Vec<RolloutItem> = Vec::new();
-        let mut process_id: Option<ProcessId> = None;
-        let mut parse_errors = 0usize;
-        for line in text.lines() {
-            if line.trim().is_empty() {
-                continue;
+    pub async fn get_rollout_history_for_process(process_id: ProcessId) -> std::io::Result<InitialHistory> {
+        let client = journal_client_from_env_or_bootstrap()
+            .await
+            .map_err(IoError::other)?;
+        let loaded = match client.load_journal(process_id).await {
+            Ok(loaded) => loaded,
+            Err(JournalClientError::Remote(payload)) if payload.code == JournalErrorCode::NotFound => {
+                return Err(IoError::other(format!(
+                    "journald has no process row for resume target {process_id}; import this session into the journal before resuming it"
+                )));
             }
-            let v: Value = match serde_json::from_str(line) {
-                Ok(v) => v,
-                Err(e) => {
-                    warn!("failed to parse line as JSON: {line:?}, error: {e}");
-                    parse_errors = parse_errors.saturating_add(1);
-                    continue;
-                }
-            };
-
-            // Parse the rollout line structure
-            match serde_json::from_value::<RolloutLine>(v.clone()) {
-                Ok(rollout_line) => match rollout_line.item {
-                    RolloutItem::SessionMeta(session_meta_line) => {
-                        // Use the FIRST SessionMeta encountered in the file as the canonical
-                        // thread id and main session information. Keep all items intact.
-                        if process_id.is_none() {
-                            process_id = Some(session_meta_line.meta.id);
-                        }
-                        items.push(RolloutItem::SessionMeta(session_meta_line));
-                    }
-                    RolloutItem::ResponseItem(item) => {
-                        items.push(RolloutItem::ResponseItem(item));
-                    }
-                    RolloutItem::Compacted(item) => {
-                        items.push(RolloutItem::Compacted(item));
-                    }
-                    RolloutItem::TurnContext(item) => {
-                        items.push(RolloutItem::TurnContext(item));
-                    }
-                    RolloutItem::EventMsg(_ev) => {
-                        items.push(RolloutItem::EventMsg(_ev));
-                    }
-                },
-                Err(e) => {
-                    trace!("failed to parse rollout line: {e}");
-                    parse_errors = parse_errors.saturating_add(1);
-                }
+            Err(err) => {
+                return Err(IoError::other(format!(
+                    "failed to load resume history from journald for {process_id}: {err}"
+                )));
             }
-        }
-
-        tracing::debug!(
-            "Resumed rollout with {} items, thread ID: {:?}, parse errors: {}",
-            items.len(),
-            process_id,
-            parse_errors,
+        };
+        let history: Vec<RolloutItem> = loaded.items.into_iter().map(|entry| entry.item).collect();
+        info!(
+            process_id = %process_id,
+            journal_items = history.len(),
+            "Resumed process history directly from journal"
         );
-        Ok((items, process_id, parse_errors))
+        Ok(InitialHistory::Resumed(ResumedHistory {
+            conversation_id: process_id,
+            history,
+        }))
     }
 
-    pub async fn get_rollout_history(path: &Path) -> std::io::Result<InitialHistory> {
-        let (items, process_id, _parse_errors) = Self::load_rollout_items(path).await?;
-        let conversation_id = process_id
-            .ok_or_else(|| IoError::other("failed to parse thread ID from rollout file"))?;
+    pub async fn journal_contains_process(process_id: ProcessId) -> std::io::Result<bool> {
+        let client = journal_client_from_env_or_bootstrap()
+            .await
+            .map_err(IoError::other)?;
+        client
+            .get_process(process_id)
+            .await
+            .map(|process| process.is_some())
+            .map_err(IoError::other)
+    }
 
-        if items.is_empty() {
-            return Ok(InitialHistory::New);
+    pub async fn read_process_cwd_from_journal(
+        process_id: ProcessId,
+    ) -> std::io::Result<Option<PathBuf>> {
+        let client = journal_client_from_env_or_bootstrap()
+            .await
+            .map_err(IoError::other)?;
+        let loaded = match client.load_journal(process_id).await {
+            Ok(loaded) => loaded,
+            Err(JournalClientError::Remote(payload)) if payload.code == JournalErrorCode::NotFound => {
+                return Ok(None);
+            }
+            Err(err) => {
+                return Err(IoError::other(format!(
+                    "failed to load journal history for cwd lookup on {process_id}: {err}"
+                )));
+            }
+        };
+
+        for entry in loaded.items.iter().rev() {
+            if let RolloutItem::TurnContext(item) = &entry.item {
+                return Ok(Some(item.cwd.clone()));
+            }
         }
-
-        info!("Resumed rollout successfully from {path:?}");
-        Ok(InitialHistory::Resumed(ResumedHistory {
-            conversation_id,
-            history: items,
-            rollout_path: path.to_path_buf(),
-        }))
+        for entry in loaded.items {
+            if let RolloutItem::SessionMeta(item) = entry.item {
+                return Ok(Some(item.meta.cwd));
+            }
+        }
+        Ok(None)
     }
 
     pub async fn shutdown(&self) -> std::io::Result<()> {
@@ -627,122 +561,381 @@ impl RolloutRecorder {
     }
 }
 
-fn truncate_fs_page(
-    mut page: ProcessesPage,
-    page_size: usize,
-    sort_key: ProcessSortKey,
-) -> ProcessesPage {
-    if page.items.len() <= page_size {
-        return page;
+const JOURNALD_SOCKET_ENV: &str = "CHAOS_JOURNALD_SOCKET";
+const JOURNALD_BIN_ENV: &str = "CHAOS_JOURNALD_BIN";
+const JOURNAL_LEASE_TTL: Duration = Duration::from_secs(30);
+const JOURNAL_LEASE_REFRESH_INTERVAL: Duration = Duration::from_secs(10);
+
+#[derive(Clone)]
+struct PendingJournalConfig {
+    process_id: ProcessId,
+    source: SessionSource,
+    cwd: PathBuf,
+    created_at: Timestamp,
+    model_provider: String,
+    cli_version: String,
+    owner_id: String,
+}
+
+enum JournalSink {
+    Disabled,
+    Pending(PendingJournalConfig),
+    Active(ActiveJournalWriter),
+}
+
+struct ActiveJournalWriter {
+    client: JournalRpcClient,
+    process_id: ProcessId,
+    owner_id: String,
+    lease_token: String,
+    next_seq: i64,
+    last_lease_refresh: Instant,
+}
+
+impl JournalSink {
+    fn pending(config: PendingJournalConfig) -> Self {
+        Self::Pending(config)
     }
-    page.items.truncate(page_size);
-    page.next_cursor = page.items.last().and_then(|item| {
-        let file_name = item.path.file_name()?.to_str()?;
-        let (created_at, id) = parse_timestamp_uuid_from_filename(file_name)?;
-        let cursor_token = match sort_key {
-            ProcessSortKey::CreatedAt => format!("{}|{id}", created_at.format(&Rfc3339).ok()?),
-            ProcessSortKey::UpdatedAt => format!("{}|{id}", item.updated_at.as_deref()?),
+
+    async fn append_items(&mut self, items: &[RolloutItem]) {
+        if items.is_empty() {
+            return;
+        }
+
+        let pending = match std::mem::replace(self, Self::Disabled) {
+            Self::Disabled => {
+                *self = Self::Disabled;
+                return;
+            }
+            Self::Pending(config) => match ActiveJournalWriter::connect(config).await {
+                Ok(writer) => writer,
+                Err(err) => {
+                    warn!("failed to initialize journald dual-write sink: {err}");
+                    *self = Self::Disabled;
+                    return;
+                }
+            },
+            Self::Active(writer) => writer,
         };
-        parse_cursor(cursor_token.as_str())
+
+        let mut writer = pending;
+        if let Err(err) = writer.append_items(items).await {
+            warn!("journald dual-write disabled after append failure: {err}");
+            *self = Self::Disabled;
+            return;
+        }
+
+        *self = Self::Active(writer);
+    }
+
+    async fn shutdown(&mut self) {
+        let state = std::mem::replace(self, Self::Disabled);
+        if let Self::Active(writer) = state
+            && let Err(err) = writer.release_lease().await
+        {
+            warn!("failed to release journald lease: {err}");
+        }
+    }
+}
+
+impl ActiveJournalWriter {
+    async fn connect(config: PendingJournalConfig) -> Result<Self, String> {
+        let client = journal_client_from_env_or_bootstrap().await?;
+
+        let create_input = JournalCreateProcessInput {
+            process_id: config.process_id,
+            parent: None,
+            source: config.source.clone(),
+            cwd: config.cwd.clone(),
+            created_at: config.created_at,
+            title: None,
+            model_provider: Some(config.model_provider.clone()),
+            cli_version: Some(config.cli_version.clone()),
+        };
+
+        match client.create_process(create_input).await {
+            Ok(_) => {}
+            Err(JournalClientError::Remote(payload))
+                if payload.code == JournalErrorCode::AlreadyExists => {}
+            Err(err) => {
+                return Err(format!("create_process failed: {err}"));
+            }
+        }
+
+        let lease = client
+            .acquire_lease(
+                config.process_id,
+                config.owner_id.clone(),
+                JOURNAL_LEASE_TTL.as_millis() as u64,
+            )
+            .await
+            .map_err(|err| format!("acquire_lease failed: {err}"))?;
+        let loaded = client
+            .load_journal(config.process_id)
+            .await
+            .map_err(|err| format!("load_journal failed: {err}"))?;
+
+        Ok(Self {
+            client,
+            process_id: config.process_id,
+            owner_id: config.owner_id,
+            lease_token: lease.lease_token,
+            next_seq: loaded.next_seq,
+            last_lease_refresh: Instant::now(),
+        })
+    }
+
+    async fn append_items(&mut self, items: &[RolloutItem]) -> Result<(), String> {
+        self.ensure_lease().await?;
+
+        let expected_next_seq = self.next_seq;
+        let journal_items = items
+            .iter()
+            .cloned()
+            .enumerate()
+            .map(|(offset, item)| JournalEntry {
+                seq: expected_next_seq + offset as i64,
+                recorded_at: Timestamp::now(),
+                item,
+            })
+            .collect();
+
+        let result = self
+            .client
+            .append_batch(JournalAppendBatchInput {
+                process_id: self.process_id,
+                owner_id: self.owner_id.clone(),
+                lease_token: self.lease_token.clone(),
+                expected_next_seq,
+                items: journal_items,
+            })
+            .await
+            .map_err(|err| format!("append_batch failed: {err}"))?;
+
+        self.next_seq = result.next_seq;
+        Ok(())
+    }
+
+    async fn ensure_lease(&mut self) -> Result<(), String> {
+        if self.last_lease_refresh.elapsed() < JOURNAL_LEASE_REFRESH_INTERVAL {
+            return Ok(());
+        }
+
+        match self
+            .client
+            .heartbeat_lease(
+                self.process_id,
+                self.owner_id.clone(),
+                self.lease_token.clone(),
+                JOURNAL_LEASE_TTL.as_millis() as u64,
+            )
+            .await
+        {
+            Ok(lease) => {
+                self.lease_token = lease.lease_token;
+                self.last_lease_refresh = Instant::now();
+                Ok(())
+            }
+            Err(JournalClientError::Remote(payload))
+                if matches!(
+                    payload.code,
+                    JournalErrorCode::LeaseExpired | JournalErrorCode::InvalidLease
+                ) =>
+            {
+                let lease = self
+                    .client
+                    .acquire_lease(
+                        self.process_id,
+                        self.owner_id.clone(),
+                        JOURNAL_LEASE_TTL.as_millis() as u64,
+                    )
+                    .await
+                    .map_err(|err| format!("reacquire_lease failed: {err}"))?;
+                let loaded = self
+                    .client
+                    .load_journal(self.process_id)
+                    .await
+                    .map_err(|err| format!("reload_journal after lease refresh failed: {err}"))?;
+                self.lease_token = lease.lease_token;
+                self.next_seq = loaded.next_seq;
+                self.last_lease_refresh = Instant::now();
+                Ok(())
+            }
+            Err(err) => Err(format!("heartbeat_lease failed: {err}")),
+        }
+    }
+
+    async fn release_lease(self) -> Result<(), String> {
+        self.client
+            .release_lease(self.process_id, self.owner_id, self.lease_token)
+            .await
+            .map_err(|err| format!("release_lease failed: {err}"))
+    }
+}
+
+async fn journal_client_from_env_or_bootstrap() -> Result<JournalRpcClient, String> {
+    if let Some(socket_path) = std::env::var_os(JOURNALD_SOCKET_ENV)
+        && !socket_path.is_empty()
+    {
+        return Ok(JournalRpcClient::new(PathBuf::from(socket_path)));
+    }
+
+    let binary_path = std::env::var_os(JOURNALD_BIN_ENV)
+        .filter(|path| !path.is_empty())
+        .map(PathBuf::from);
+    let (client, _paths) = JournalRpcClient::default_or_bootstrap(binary_path.as_deref())
+        .await
+        .map_err(|err| err.to_string())?;
+    Ok(client)
+}
+
+fn journal_record_matches_filters(
+    record: &JournalProcessRecord,
+    allowed_sources: &[SessionSource],
+    model_providers: Option<&[String]>,
+) -> bool {
+    if !allowed_sources.is_empty() && !allowed_sources.contains(&record.source) {
+        return false;
+    }
+    if let Some(model_providers) = model_providers
+        && !model_providers.iter().any(|provider| provider == &record.model_provider)
+    {
+        return false;
+    }
+    true
+}
+
+fn sort_journal_records(records: &mut [JournalProcessRecord], sort_key: ProcessSortKey) {
+    records.sort_by(|left, right| {
+        journal_record_sort_timestamp(right, sort_key)
+            .cmp(&journal_record_sort_timestamp(left, sort_key))
+            .then_with(|| {
+                process_uuid(&right.process_id)
+                    .unwrap_or(Uuid::nil())
+                    .cmp(&process_uuid(&left.process_id).unwrap_or(Uuid::nil()))
+            })
     });
-    page
 }
 
-struct LogFileInfo {
-    /// Full path to the rollout file.
-    path: PathBuf,
-
-    /// Session ID (also embedded in filename).
-    conversation_id: ProcessId,
-
-    /// Timestamp for the start of the session.
-    timestamp: OffsetDateTime,
-}
-
-fn precompute_log_file_info(
-    config: &impl RolloutConfig,
-    conversation_id: ProcessId,
-) -> std::io::Result<LogFileInfo> {
-    // Resolve ~/.codex/sessions/YYYY/MM/DD path.
-    let timestamp = OffsetDateTime::now_local()
-        .map_err(|e| IoError::other(format!("failed to get local time: {e}")))?;
-    let mut dir = config.codex_home().to_path_buf();
-    dir.push(SESSIONS_SUBDIR);
-    dir.push(timestamp.year().to_string());
-    dir.push(format!("{:02}", u8::from(timestamp.month())));
-    dir.push(format!("{:02}", timestamp.day()));
-
-    // Custom format for YYYY-MM-DDThh-mm-ss. Use `-` instead of `:` for
-    // compatibility with filesystems that do not allow colons in filenames.
-    let format: &[FormatItem] =
-        format_description!("[year]-[month]-[day]T[hour]-[minute]-[second]");
-    let date_str = timestamp
-        .format(format)
-        .map_err(|e| IoError::other(format!("failed to format timestamp: {e}")))?;
-
-    let filename = format!("rollout-{date_str}-{conversation_id}.jsonl");
-
-    let path = dir.join(filename);
-
-    Ok(LogFileInfo {
-        path,
-        conversation_id,
-        timestamp,
-    })
-}
-
-fn open_log_file(path: &Path) -> std::io::Result<File> {
-    let Some(parent) = path.parent() else {
-        return Err(IoError::other(format!(
-            "rollout path has no parent: {}",
-            path.display()
-        )));
+fn journal_record_sort_timestamp(
+    record: &JournalProcessRecord,
+    sort_key: ProcessSortKey,
+) -> OffsetDateTime {
+    let seconds = match sort_key {
+        ProcessSortKey::CreatedAt => record.created_at.as_second(),
+        ProcessSortKey::UpdatedAt => record.updated_at.as_second(),
     };
-    fs::create_dir_all(parent)?;
-    std::fs::OpenOptions::new()
-        .append(true)
-        .create(true)
-        .open(path)
+    OffsetDateTime::from_unix_timestamp(seconds).unwrap_or(OffsetDateTime::UNIX_EPOCH)
+}
+
+fn journal_record_is_before_cursor(
+    record: &JournalProcessRecord,
+    cursor: Option<&Cursor>,
+    sort_key: ProcessSortKey,
+) -> bool {
+    let Some(cursor) = cursor else {
+        return false;
+    };
+    let ts = journal_record_sort_timestamp(record, sort_key);
+    let id = process_uuid(&record.process_id).unwrap_or(Uuid::nil());
+    ts > cursor.ts() || (ts == cursor.ts() && id >= cursor.id())
+}
+
+fn process_uuid(process_id: &ProcessId) -> Option<Uuid> {
+    Uuid::parse_str(&process_id.to_string()).ok()
+}
+
+fn journal_process_item_from_loaded(
+    record: &JournalProcessRecord,
+    loaded: LoadedJournal,
+    search_term: Option<&str>,
+) -> Option<ProcessItem> {
+    let mut first_user_message = None;
+    let mut saw_user_event = false;
+    let mut git_branch = None;
+    let mut git_sha = None;
+    let mut git_origin_url = None;
+
+    for entry in loaded.items {
+        match entry.item {
+            RolloutItem::SessionMeta(session_meta_line) => {
+                if let Some(git) = session_meta_line.git {
+                    if git_branch.is_none() {
+                        git_branch = git.branch;
+                    }
+                    if git_sha.is_none() {
+                        git_sha = git.commit_hash;
+                    }
+                    if git_origin_url.is_none() {
+                        git_origin_url = git.repository_url;
+                    }
+                }
+            }
+            RolloutItem::EventMsg(EventMsg::UserMessage(user_message)) => {
+                saw_user_event = true;
+                if first_user_message.is_none() {
+                    first_user_message = Some(user_message.message);
+                }
+            }
+            RolloutItem::ResponseItem(_)
+            | RolloutItem::Compacted(_)
+            | RolloutItem::TurnContext(_)
+            | RolloutItem::EventMsg(_) => {}
+        }
+    }
+
+    if !saw_user_event {
+        return None;
+    }
+
+    if let Some(term) = search_term {
+        let term = term.trim();
+        if !term.is_empty() {
+            let preview_match = first_user_message
+                .as_ref()
+                .is_some_and(|message| message.to_lowercase().contains(term));
+            let title_match = record.title.to_lowercase().contains(term);
+            let cwd_match = record.cwd.to_string_lossy().to_lowercase().contains(term);
+            let branch_match = git_branch
+                .as_ref()
+                .is_some_and(|branch| branch.to_lowercase().contains(term));
+            if !(preview_match || title_match || cwd_match || branch_match) {
+                return None;
+            }
+        }
+    }
+
+    Some(ProcessItem {
+        process_id: Some(record.process_id),
+        first_user_message,
+        cwd: Some(record.cwd.clone()),
+        git_branch,
+        git_sha,
+        git_origin_url,
+        source: Some(record.source.clone()),
+        agent_nickname: record.agent_nickname.clone(),
+        agent_role: record.agent_role.clone(),
+        model_provider: Some(record.model_provider.clone()),
+        cli_version: record.cli_version.clone(),
+        created_at: Some(record.created_at.to_string()),
+        updated_at: Some(record.updated_at.to_string()),
+    })
 }
 
 #[allow(clippy::too_many_arguments)]
 async fn rollout_writer(
-    file: Option<tokio::fs::File>,
-    mut deferred_log_file_info: Option<LogFileInfo>,
+    mut persisted: bool,
     mut rx: mpsc::Receiver<RolloutCmd>,
     mut meta: Option<SessionMeta>,
     cwd: std::path::PathBuf,
-    rollout_path: PathBuf,
     state_db_ctx: Option<StateDbHandle>,
     mut state_builder: Option<ProcessMetadataBuilder>,
     default_provider: String,
     generate_memories: bool,
+    mut journal_sink: JournalSink,
 ) -> std::io::Result<()> {
-    let mut writer = file.map(|file| JsonlWriter { file });
     let mut buffered_items = Vec::<RolloutItem>::new();
-    if let Some(builder) = state_builder.as_mut() {
-        builder.rollout_path = rollout_path.clone();
-    }
 
-    // Resumed sessions already have a file handle open, so session metadata can
-    // be written immediately if present.
-    if writer.is_some()
-        && let Some(session_meta) = meta.take()
-    {
-        write_session_meta(
-            writer.as_mut(),
-            session_meta,
-            &cwd,
-            &rollout_path,
-            state_db_ctx.as_deref(),
-            &mut state_builder,
-            default_provider.as_str(),
-            generate_memories,
-        )
-        .await?;
-    }
-
-    // Process rollout commands
     while let Some(cmd) = rx.recv().await {
         match cmd {
             RolloutCmd::AddItems(items) => {
@@ -750,101 +943,72 @@ async fn rollout_writer(
                     continue;
                 }
 
-                if writer.is_none() {
+                if !persisted {
                     buffered_items.extend(items);
                     continue;
                 }
 
                 write_and_reconcile_items(
-                    writer.as_mut(),
                     items.as_slice(),
-                    &rollout_path,
                     state_db_ctx.as_deref(),
                     state_builder.as_ref(),
                     default_provider.as_str(),
+                    &mut journal_sink,
                 )
                 .await?;
             }
             RolloutCmd::Persist { ack } => {
-                if writer.is_none() {
-                    let result = async {
-                        let Some(log_file_info) = deferred_log_file_info.take() else {
-                            return Err(IoError::other(
-                                "deferred rollout recorder missing log file metadata",
-                            ));
-                        };
-                        let file = open_log_file(log_file_info.path.as_path())?;
-                        writer = Some(JsonlWriter {
-                            file: tokio::fs::File::from_std(file),
-                        });
-
-                        if let Some(session_meta) = meta.take() {
-                            write_session_meta(
-                                writer.as_mut(),
-                                session_meta,
-                                &cwd,
-                                &rollout_path,
-                                state_db_ctx.as_deref(),
-                                &mut state_builder,
-                                default_provider.as_str(),
-                                generate_memories,
-                            )
-                            .await?;
-                        }
-
-                        if !buffered_items.is_empty() {
-                            write_and_reconcile_items(
-                                writer.as_mut(),
-                                buffered_items.as_slice(),
-                                &rollout_path,
-                                state_db_ctx.as_deref(),
-                                state_builder.as_ref(),
-                                default_provider.as_str(),
-                            )
-                            .await?;
-                            buffered_items.clear();
-                        }
-
-                        Ok(())
+                if !persisted {
+                    if let Some(session_meta) = meta.take() {
+                        write_session_meta(
+                            session_meta,
+                            &cwd,
+                            state_db_ctx.as_deref(),
+                            &mut state_builder,
+                            default_provider.as_str(),
+                            generate_memories,
+                            &mut journal_sink,
+                        )
+                        .await?;
                     }
-                    .await;
-
-                    if let Err(err) = result {
-                        let _ = ack.send(());
-                        return Err(err);
+                    if !buffered_items.is_empty() {
+                        write_and_reconcile_items(
+                            buffered_items.as_slice(),
+                            state_db_ctx.as_deref(),
+                            state_builder.as_ref(),
+                            default_provider.as_str(),
+                            &mut journal_sink,
+                        )
+                        .await?;
+                        buffered_items.clear();
                     }
+                    persisted = true;
                 }
                 let _ = ack.send(());
             }
             RolloutCmd::Flush { ack } => {
-                // Deferred fresh threads may not have an initialized file yet.
-                if let Some(writer) = writer.as_mut()
-                    && let Err(e) = writer.file.flush().await
-                {
-                    let _ = ack.send(());
-                    return Err(e);
-                }
                 let _ = ack.send(());
             }
             RolloutCmd::Shutdown { ack } => {
+                journal_sink.shutdown().await;
                 let _ = ack.send(());
             }
         }
     }
 
+    journal_sink.shutdown().await;
     Ok(())
 }
 
 #[allow(clippy::too_many_arguments)]
 async fn write_session_meta(
-    mut writer: Option<&mut JsonlWriter>,
     session_meta: SessionMeta,
     cwd: &Path,
-    rollout_path: &Path,
     state_db_ctx: Option<&StateRuntime>,
     state_builder: &mut Option<ProcessMetadataBuilder>,
     default_provider: &str,
     generate_memories: bool,
+    journal_sink: &mut JournalSink,
 ) -> std::io::Result<()> {
     let git_info = collect_git_info(cwd).await;
     let session_meta_line = SessionMetaLine {
@@ -852,16 +1016,15 @@ async fn write_session_meta(
         git: git_info,
     };
     if state_db_ctx.is_some() {
-        *state_builder = metadata::builder_from_session_meta(&session_meta_line, rollout_path);
+        *state_builder = metadata::builder_from_session_meta(&session_meta_line);
     }
 
     let rollout_item = RolloutItem::SessionMeta(session_meta_line);
-    if let Some(writer) = writer.as_mut() {
-        writer.write_rollout_item(&rollout_item).await?;
-    }
+    journal_sink
+        .append_items(std::slice::from_ref(&rollout_item))
+        .await;
     sync_process_state_after_write(
         state_db_ctx,
-        rollout_path,
         state_builder.as_ref(),
         std::slice::from_ref(&rollout_item),
         default_provider,
@@ -872,21 +1035,15 @@ async fn write_session_meta(
 }
 
 async fn write_and_reconcile_items(
-    mut writer: Option<&mut JsonlWriter>,
     items: &[RolloutItem],
-    rollout_path: &Path,
     state_db_ctx: Option<&StateRuntime>,
     state_builder: Option<&ProcessMetadataBuilder>,
     default_provider: &str,
+    journal_sink: &mut JournalSink,
 ) -> std::io::Result<()> {
-    if let Some(writer) = writer.as_mut() {
-        for item in items {
-            writer.write_rollout_item(item).await?;
-        }
-    }
+    journal_sink.append_items(items).await;
     sync_process_state_after_write(
         state_db_ctx,
-        rollout_path,
         state_builder,
         items,
         default_provider,
@@ -898,7 +1055,6 @@ async fn write_and_reconcile_items(
 
 async fn sync_process_state_after_write(
     state_db_ctx: Option<&StateRuntime>,
-    rollout_path: &Path,
     state_builder: Option<&ProcessMetadataBuilder>,
     items: &[RolloutItem],
     default_provider: &str,
@@ -912,7 +1068,6 @@ async fn sync_process_state_after_write(
     {
         state_db::apply_rollout_items(
             state_db_ctx,
-            rollout_path,
             default_provider,
             state_builder,
             items,
@@ -926,7 +1081,7 @@ async fn sync_process_state_after_write(
 
     let process_id = state_builder
         .map(|builder| builder.id)
-        .or_else(|| metadata::builder_from_items(items, rollout_path).map(|builder| builder.id));
+        .or_else(|| metadata::builder_from_items(items).map(|builder| builder.id));
     if state_db::touch_process_updated_at(state_db_ctx, process_id, updated_at, "rollout_writer")
         .await
     {
@@ -934,7 +1089,6 @@ async fn sync_process_state_after_write(
     }
     state_db::apply_rollout_items(
         state_db_ctx,
-        rollout_path,
         default_provider,
         state_builder,
         items,
@@ -943,155 +1097,6 @@ async fn sync_process_state_after_write(
         Some(updated_at),
     )
     .await;
-}
-
-struct JsonlWriter {
-    file: tokio::fs::File,
-}
-
-#[derive(serde::Serialize)]
-struct RolloutLineRef<'a> {
-    timestamp: String,
-    #[serde(flatten)]
-    item: &'a RolloutItem,
-}
-
-impl JsonlWriter {
-    async fn write_rollout_item(&mut self, rollout_item: &RolloutItem) -> std::io::Result<()> {
-        let timestamp_format: &[FormatItem] = format_description!(
-            "[year]-[month]-[day]T[hour]:[minute]:[second].[subsecond digits:3]Z"
-        );
-        let timestamp = OffsetDateTime::now_utc()
-            .format(timestamp_format)
-            .map_err(|e| IoError::other(format!("failed to format timestamp: {e}")))?;
-
-        let line = RolloutLineRef {
-            timestamp,
-            item: rollout_item,
-        };
-        self.write_line(&line).await
-    }
-    async fn write_line(&mut self, item: &impl serde::Serialize) -> std::io::Result<()> {
-        let mut json = serde_json::to_string(item)?;
-        json.push('\n');
-        self.file.write_all(json.as_bytes()).await?;
-        self.file.flush().await?;
-        Ok(())
-    }
-}
-
-/// Convert a `chaos_proc::ProcessesPage` into a `ProcessesPage`.
-///
-/// This cannot be a `From` impl due to the orphan rule (both types are
-/// foreign to codex-core after the chaos-rollout extraction).
-fn threads_page_from_db(db_page: chaos_proc::ProcessesPage) -> ProcessesPage {
-    let items = db_page
-        .items
-        .into_iter()
-        .map(|item| ProcessItem {
-            path: item.rollout_path,
-            process_id: Some(item.id),
-            first_user_message: item.first_user_message,
-            cwd: Some(item.cwd),
-            git_branch: item.git_branch,
-            git_sha: item.git_sha,
-            git_origin_url: item.git_origin_url,
-            source: Some(
-                serde_json::from_str(item.source.as_str())
-                    .or_else(|_| serde_json::from_value(Value::String(item.source)))
-                    .unwrap_or(SessionSource::Unknown),
-            ),
-            agent_nickname: item.agent_nickname,
-            agent_role: item.agent_role,
-            model_provider: Some(item.model_provider),
-            cli_version: Some(item.cli_version),
-            created_at: Some(item.created_at.to_string()),
-            updated_at: Some(item.updated_at.to_string()),
-        })
-        .collect();
-    ProcessesPage {
-        items,
-        next_cursor: db_page.next_anchor.map(super::list::cursor_from_anchor),
-        num_scanned_files: db_page.num_scanned_rows,
-        reached_scan_cap: false,
-    }
-}
-
-async fn select_resume_path(
-    page: &ProcessesPage,
-    filter_cwd: Option<&Path>,
-    default_provider: &str,
-) -> Option<PathBuf> {
-    match filter_cwd {
-        Some(cwd) => {
-            for item in &page.items {
-                if resume_candidate_matches_cwd(
-                    item.path.as_path(),
-                    item.cwd.as_deref(),
-                    cwd,
-                    default_provider,
-                )
-                .await
-                {
-                    return Some(item.path.clone());
-                }
-            }
-            None
-        }
-        None => page.items.first().map(|item| item.path.clone()),
-    }
-}
-
-async fn resume_candidate_matches_cwd(
-    rollout_path: &Path,
-    cached_cwd: Option<&Path>,
-    cwd: &Path,
-    default_provider: &str,
-) -> bool {
-    if cached_cwd.is_some_and(|session_cwd| cwd_matches(session_cwd, cwd)) {
-        return true;
-    }
-
-    if let Ok((items, _, _)) = RolloutRecorder::load_rollout_items(rollout_path).await
-        && let Some(latest_turn_context_cwd) = items.iter().rev().find_map(|item| match item {
-            RolloutItem::TurnContext(turn_context) => Some(turn_context.cwd.as_path()),
-            RolloutItem::SessionMeta(_)
-            | RolloutItem::ResponseItem(_)
-            | RolloutItem::Compacted(_)
-            | RolloutItem::EventMsg(_) => None,
-        })
-    {
-        return cwd_matches(latest_turn_context_cwd, cwd);
-    }
-
-    metadata::extract_metadata_from_rollout(rollout_path, default_provider)
-        .await
-        .is_ok_and(|outcome| cwd_matches(outcome.metadata.cwd.as_path(), cwd))
-}
-
-async fn select_resume_path_from_db_page(
-    page: &chaos_proc::ProcessesPage,
-    filter_cwd: Option<&Path>,
-    default_provider: &str,
-) -> Option<PathBuf> {
-    match filter_cwd {
-        Some(cwd) => {
-            for item in &page.items {
-                if resume_candidate_matches_cwd(
-                    item.rollout_path.as_path(),
-                    Some(item.cwd.as_path()),
-                    cwd,
-                    default_provider,
-                )
-                .await
-                {
-                    return Some(item.rollout_path.clone());
-                }
-            }
-            None
-        }
-        None => page.items.first().map(|item| item.rollout_path.clone()),
-    }
 }
 
 fn cwd_matches(session_cwd: &Path, cwd: &Path) -> bool {
@@ -1103,7 +1108,3 @@ fn cwd_matches(session_cwd: &Path, cwd: &Path) -> bool {
     }
     session_cwd == cwd
 }
-
-#[cfg(test)]
-#[path = "recorder_tests.rs"]
-mod tests;

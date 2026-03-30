@@ -9,12 +9,8 @@ mod auth_env;
 mod ephemeral;
 #[path = "suite/mcp_required_exit.rs"]
 mod mcp_required_exit;
-#[path = "suite/originator.rs"]
-mod originator;
 #[path = "suite/output_schema.rs"]
 mod output_schema;
-#[path = "suite/resume.rs"]
-mod resume;
 #[path = "suite/sandbox.rs"]
 mod sandbox;
 #[path = "suite/server_error_exit.rs"]

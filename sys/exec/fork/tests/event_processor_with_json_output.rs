@@ -85,7 +85,6 @@ fn session_configured_produces_process_started_event() {
     let mut ep = EventProcessorWithJsonOutput::new(None);
     let session_id =
         chaos_ipc::ProcessId::from_string("67e55044-10b1-426f-9247-bb680e5fe0c8").unwrap();
-    let rollout_path = PathBuf::from("/tmp/rollout.json");
     let ev = event(
         "e1",
         EventMsg::SessionConfigured(SessionConfiguredEvent {
@@ -104,7 +103,6 @@ fn session_configured_produces_process_started_event() {
             history_entry_count: 0,
             initial_messages: None,
             network_proxy: None,
-            rollout_path: Some(rollout_path),
         }),
     );
     let out = ep.collect_process_events(&ev);

@@ -313,7 +313,7 @@ async fn read_cache(
         fetched_at: Utc
             .timestamp_opt(row.get::<i64, _>("fetched_at"), 0)
             .single()
-            .expect("valid timestamp"),
+            .ok_or_else(|| anyhow::anyhow!("valid timestamp expected"))?,
         etag: row.get::<Option<String>, _>("etag"),
         client_version: row.get::<Option<String>, _>("client_version"),
         scope: Some(scope.clone()),
@@ -322,7 +322,10 @@ async fn read_cache(
 }
 
 async fn write_cache(sqlite_home: &std::path::Path, cache: &ModelsCache) -> Result<()> {
-    let scope = cache.scope.as_ref().expect("cache scope");
+    let scope = cache
+        .scope
+        .as_ref()
+        .ok_or_else(|| anyhow::anyhow!("cache scope expected"))?;
     let pool = open_chaos_db(sqlite_home).await?;
     let models_json = serde_json::to_string(&cache.models)?;
     sqlx::query(
@@ -379,7 +382,7 @@ fn cache_scope_for_provider(provider: &ModelProviderInfo) -> ModelsCacheScope {
         base_url: provider
             .base_url
             .clone()
-            .expect("test provider should have base_url"),
+            .unwrap_or_else(|| panic!("test provider should have base_url")),
     }
 }
 

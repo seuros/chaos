@@ -70,7 +70,5 @@ pub struct AdapterCapabilities {
 
 /// Future type for the async model listing.
 pub type ListModelsFuture<'a> = std::pin::Pin<
-    Box<
-        dyn std::future::Future<Output = Result<Vec<AbiModelInfo>, ListModelsError>> + Send + 'a,
-    >,
+    Box<dyn std::future::Future<Output = Result<Vec<AbiModelInfo>, ListModelsError>> + Send + 'a>,
 >;

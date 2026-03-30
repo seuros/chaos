@@ -26,7 +26,6 @@ use crate::model::AgentJobRow;
 use crate::model::ProcessRow;
 use crate::model::anchor_from_item;
 use crate::model::datetime_to_epoch_seconds;
-use crate::paths::file_modified_time_utc;
 use chaos_ipc::ProcessId;
 use chaos_ipc::dynamic_tools::DynamicToolSpec;
 use chaos_ipc::protocol::RolloutItem;

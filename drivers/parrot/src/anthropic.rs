@@ -185,11 +185,11 @@ impl ModelAdapter for AnthropicAdapter {
     fn list_models(&self) -> chaos_abi::ListModelsFuture<'_> {
         Box::pin(async {
             let url = self.provider.url_for_path("/models");
-            let headers = self.build_headers().map_err(|e| {
-                chaos_abi::ListModelsError::Failed {
+            let headers = self
+                .build_headers()
+                .map_err(|e| chaos_abi::ListModelsError::Failed {
                     message: e.to_string(),
-                }
-            })?;
+                })?;
 
             fetch_anthropic_models(&url, &headers).await
         })
@@ -228,7 +228,7 @@ fn build_request_body(request: &TurnRequest, model: &str) -> Result<Value, AbiEr
     let max_tokens = request
         .extensions
         .get("max_tokens")
-        .and_then(|v| v.as_u64())
+        .and_then(Value::as_u64)
         .unwrap_or(DEFAULT_MAX_TOKENS);
 
     let system = if request.instructions.is_empty() {
@@ -270,20 +270,19 @@ fn build_request_body(request: &TurnRequest, model: &str) -> Result<Value, AbiEr
     }
 
     // reasoning → thinking config
-    if let Some(ref _reasoning) = request.reasoning {
-        if let Some(budget) = request
+    if let Some(ref _reasoning) = request.reasoning
+        && let Some(budget) = request
             .extensions
             .get("thinking_budget_tokens")
-            .and_then(|v| v.as_u64())
-        {
-            obj.insert(
-                "thinking".to_string(),
-                serde_json::json!({
-                    "type": "enabled",
-                    "budget_tokens": budget,
-                }),
-            );
-        }
+            .and_then(Value::as_u64)
+    {
+        obj.insert(
+            "thinking".to_string(),
+            serde_json::json!({
+                "type": "enabled",
+                "budget_tokens": budget,
+            }),
+        );
     }
 
     // output_schema is guarded at the adapter level — reject before we get here.
@@ -560,12 +559,11 @@ fn parse_sse_event(
                     }
                 }
                 "input_json_delta" => {
-                    if let Some(acc) = tool_acc.as_mut() {
-                        if let Some(chunk) =
+                    if let Some(acc) = tool_acc.as_mut()
+                        && let Some(chunk) =
                             json.pointer("/delta/partial_json").and_then(Value::as_str)
-                        {
-                            acc.input_json.push_str(chunk);
-                        }
+                    {
+                        acc.input_json.push_str(chunk);
                     }
                     Ok(vec![])
                 }
@@ -884,17 +882,18 @@ async fn fetch_anthropic_models(
             builder = builder.header(name, value);
         }
     }
-    let request = builder.body(Body::empty()).map_err(|e| {
-        chaos_abi::ListModelsError::Failed {
+    let request = builder
+        .body(Body::empty())
+        .map_err(|e| chaos_abi::ListModelsError::Failed {
             message: e.to_string(),
-        }
-    })?;
+        })?;
 
-    let response = client.serve(request).await.map_err(|e| {
-        chaos_abi::ListModelsError::Failed {
+    let response = client
+        .serve(request)
+        .await
+        .map_err(|e| chaos_abi::ListModelsError::Failed {
             message: format!("transport: {e}"),
-        }
-    })?;
+        })?;
 
     let status = response.status();
     if status == StatusCode::NOT_FOUND {
@@ -933,7 +932,7 @@ async fn fetch_anthropic_models(
             let caps = m.capabilities.as_ref();
             chaos_abi::AbiModelInfo {
                 id: m.id.clone(),
-                display_name: m.display_name.unwrap_or_else(|| m.id),
+                display_name: m.display_name.unwrap_or(m.id),
                 max_input_tokens: m.max_input_tokens,
                 max_output_tokens: m.max_tokens,
                 supports_thinking: caps

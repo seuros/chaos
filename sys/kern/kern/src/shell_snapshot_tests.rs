@@ -306,7 +306,7 @@ async fn linux_sh_snapshot_includes_sections() -> Result<()> {
     Ok(())
 }
 
-async fn write_rollout_stub(codex_home: &Path, session_id: ProcessId) -> Result<PathBuf> {
+async fn write_session_file_stub(codex_home: &Path, session_id: ProcessId) -> Result<PathBuf> {
     let dir = codex_home
         .join("sessions")
         .join("2025")
@@ -331,7 +331,7 @@ async fn cleanup_stale_snapshots_removes_orphans_and_keeps_live() -> Result<()> 
     let orphan_snapshot = snapshot_dir.join(format!("{orphan_session}.sh"));
     let invalid_snapshot = snapshot_dir.join("not-a-snapshot.txt");
 
-    write_rollout_stub(codex_home, live_session).await?;
+    write_session_file_stub(codex_home, live_session).await?;
     fs::write(&live_snapshot, "live").await?;
     fs::write(&orphan_snapshot, "orphan").await?;
     fs::write(&invalid_snapshot, "invalid").await?;
@@ -346,7 +346,7 @@ async fn cleanup_stale_snapshots_removes_orphans_and_keeps_live() -> Result<()> 
 
 #[cfg(unix)]
 #[tokio::test]
-async fn cleanup_stale_snapshots_removes_stale_rollouts() -> Result<()> {
+async fn cleanup_stale_snapshots_removes_stale_sessions() -> Result<()> {
     let dir = tempdir()?;
     let codex_home = dir.path();
     let snapshot_dir = codex_home.join(SNAPSHOT_DIR);
@@ -354,10 +354,10 @@ async fn cleanup_stale_snapshots_removes_stale_rollouts() -> Result<()> {
 
     let stale_session = ProcessId::new();
     let stale_snapshot = snapshot_dir.join(format!("{stale_session}.sh"));
-    let rollout_path = write_rollout_stub(codex_home, stale_session).await?;
+    let session_file = write_session_file_stub(codex_home, stale_session).await?;
     fs::write(&stale_snapshot, "stale").await?;
 
-    set_file_mtime(&rollout_path, SNAPSHOT_RETENTION + Duration::from_secs(60))?;
+    set_file_mtime(&session_file, SNAPSHOT_RETENTION + Duration::from_secs(60))?;
 
     cleanup_stale_snapshots(codex_home, ProcessId::new()).await?;
 
@@ -375,10 +375,10 @@ async fn cleanup_stale_snapshots_skips_active_session() -> Result<()> {
 
     let active_session = ProcessId::new();
     let active_snapshot = snapshot_dir.join(format!("{active_session}.sh"));
-    let rollout_path = write_rollout_stub(codex_home, active_session).await?;
+    let session_file = write_session_file_stub(codex_home, active_session).await?;
     fs::write(&active_snapshot, "active").await?;
 
-    set_file_mtime(&rollout_path, SNAPSHOT_RETENTION + Duration::from_secs(60))?;
+    set_file_mtime(&session_file, SNAPSHOT_RETENTION + Duration::from_secs(60))?;
 
     cleanup_stale_snapshots(codex_home, active_session).await?;
 

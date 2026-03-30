@@ -348,7 +348,7 @@ fn normalize_process_name_trims_and_rejects_empty() {
 fn resume_command_prefers_name_over_id() {
     let process_id = ProcessId::from_string("123e4567-e89b-12d3-a456-426614174000").unwrap();
     let command = resume_command(Some("my-thread"), Some(process_id));
-    assert_eq!(command, Some("codex resume my-thread".to_string()));
+    assert_eq!(command, Some("chaos resume my-thread".to_string()));
 }
 
 #[test]
@@ -357,7 +357,7 @@ fn resume_command_with_only_id() {
     let command = resume_command(None, Some(process_id));
     assert_eq!(
         command,
-        Some("codex resume 123e4567-e89b-12d3-a456-426614174000".to_string())
+        Some("chaos resume 123e4567-e89b-12d3-a456-426614174000".to_string())
     );
 }
 
@@ -372,12 +372,12 @@ fn resume_command_quotes_process_name_when_needed() {
     let command = resume_command(Some("-starts-with-dash"), None);
     assert_eq!(
         command,
-        Some("codex resume -- -starts-with-dash".to_string())
+        Some("chaos resume -- -starts-with-dash".to_string())
     );
 
     let command = resume_command(Some("two words"), None);
-    assert_eq!(command, Some("codex resume 'two words'".to_string()));
+    assert_eq!(command, Some("chaos resume 'two words'".to_string()));
 
     let command = resume_command(Some("quote'case"), None);
-    assert_eq!(command, Some("codex resume \"quote'case\"".to_string()));
+    assert_eq!(command, Some("chaos resume \"quote'case\"".to_string()));
 }

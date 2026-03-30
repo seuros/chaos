@@ -1,142 +1,121 @@
-//! Thread listing — thin shim over `chaos_rollout::list`.
-//!
-//! Pure filesystem scanning, parsing, and pagination live in the `chaos-rollout`
-//! crate. This module re-exports those types and adds the state_db-dependent
-//! lookup functions that require codex-core infrastructure.
+//! Journal-backed process listing types and cursor helpers.
 
-use std::io;
-use std::num::NonZero;
-use std::path::Path;
 use std::path::PathBuf;
 
 use chaos_ipc::ProcessId;
-use chaos_locate as file_search;
+use chaos_ipc::protocol::SessionSource;
 use time::OffsetDateTime;
+use time::PrimitiveDateTime;
+use time::format_description::FormatItem;
+use time::format_description::well_known::Rfc3339;
+use time::macros::format_description;
+use uuid::Uuid;
 
-use super::ARCHIVED_SESSIONS_SUBDIR;
-use super::SESSIONS_SUBDIR;
-use crate::state_db;
-
-// Re-export the shared process-listing types and helpers from chaos-rollout.
-pub use chaos_rollout::list::Cursor;
-pub use chaos_rollout::list::ProcessItem;
-pub use chaos_rollout::list::ProcessListConfig;
-pub use chaos_rollout::list::ProcessListLayout;
-pub use chaos_rollout::list::ProcessSortKey;
-pub use chaos_rollout::list::ProcessesPage;
-pub use chaos_rollout::list::get_processes;
-pub use chaos_rollout::list::get_processes_in_root;
-pub use chaos_rollout::list::parse_cursor;
-pub use chaos_rollout::list::parse_timestamp_uuid_from_filename;
-pub use chaos_rollout::list::read_head_for_summary;
-pub use chaos_rollout::list::read_session_meta_line;
-pub use chaos_rollout::list::rollout_date_parts;
-
-/// Bridge: convert a `chaos_proc::Anchor` into a `Cursor`.
-///
-/// This cannot be a `From` impl due to the orphan rule (both types are
-/// foreign to codex-core).
-pub fn cursor_from_anchor(anchor: chaos_proc::Anchor) -> Cursor {
-    let ts = OffsetDateTime::from_unix_timestamp(anchor.ts.as_second())
-        .unwrap_or(OffsetDateTime::UNIX_EPOCH);
-    Cursor::new(ts, anchor.id)
+/// Returned page of process summaries.
+#[derive(Debug, Clone, Default, PartialEq, Eq)]
+pub struct ProcessesPage {
+    /// Process summaries ordered newest first.
+    pub items: Vec<ProcessItem>,
+    /// Opaque pagination token to resume after the last item, or `None` if end.
+    pub next_cursor: Option<Cursor>,
+    /// Total number of records touched while scanning this request.
+    pub num_scanned_records: usize,
+    /// True if a hard scan limit was hit; consider resuming with `next_cursor`.
+    pub reached_scan_limit: bool,
 }
 
-// ---------------------------------------------------------------------------
-// state_db-dependent lookup functions (cannot move to chaos-rollout)
-// ---------------------------------------------------------------------------
+/// Summary information for a process.
+#[derive(Debug, Clone, PartialEq, Eq, Default)]
+pub struct ProcessItem {
+    /// Process ID from persisted session metadata.
+    pub process_id: Option<ProcessId>,
+    /// First user message captured for this process, if any.
+    pub first_user_message: Option<String>,
+    /// Working directory from persisted session metadata.
+    pub cwd: Option<PathBuf>,
+    /// Git branch from persisted session metadata.
+    pub git_branch: Option<String>,
+    /// Git commit SHA from persisted session metadata.
+    pub git_sha: Option<String>,
+    /// Git origin URL from persisted session metadata.
+    pub git_origin_url: Option<String>,
+    /// Session source from persisted session metadata.
+    pub source: Option<SessionSource>,
+    /// Random unique nickname from session metadata for AgentControl-spawned sub-agents.
+    pub agent_nickname: Option<String>,
+    /// Role (agent_role) from session metadata for AgentControl-spawned sub-agents.
+    pub agent_role: Option<String>,
+    /// Model provider from session metadata.
+    pub model_provider: Option<String>,
+    /// CLI version from session metadata.
+    pub cli_version: Option<String>,
+    /// RFC3339 timestamp string for when the session was created, if available.
+    pub created_at: Option<String>,
+    /// RFC3339 timestamp string for the most recent update.
+    pub updated_at: Option<String>,
+}
 
-async fn find_process_path_by_id_str_in_subdir(
-    codex_home: &Path,
-    subdir: &str,
-    id_str: &str,
-) -> io::Result<Option<PathBuf>> {
-    // Validate UUID format early.
-    if uuid::Uuid::parse_str(id_str).is_err() {
-        return Ok(None);
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum ProcessSortKey {
+    CreatedAt,
+    UpdatedAt,
+}
+
+/// Pagination cursor identifying a process by timestamp and UUID.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct Cursor {
+    ts: OffsetDateTime,
+    id: Uuid,
+}
+
+impl Cursor {
+    pub fn new(ts: OffsetDateTime, id: Uuid) -> Self {
+        Self { ts, id }
     }
 
-    // Prefer DB lookup, then fall back to rollout file search.
-    // TODO(jif): sqlite migration phase 1
-    let archived_only = match subdir {
-        SESSIONS_SUBDIR => Some(false),
-        ARCHIVED_SESSIONS_SUBDIR => Some(true),
-        _ => None,
-    };
-    let process_id = ProcessId::from_string(id_str).ok();
-    let state_db_ctx = state_db::open_if_present(codex_home, "").await;
-    if let Some(state_db_ctx) = state_db_ctx.as_deref()
-        && let Some(process_id) = process_id
-        && let Some(db_path) = state_db::find_rollout_path_by_id(
-            Some(state_db_ctx),
-            process_id,
-            archived_only,
-            "find_path_query",
-        )
-        .await
+    pub fn ts(&self) -> OffsetDateTime {
+        self.ts
+    }
+
+    pub fn id(&self) -> Uuid {
+        self.id
+    }
+}
+
+impl serde::Serialize for Cursor {
+    fn serialize<S>(&self, serializer: S) -> Result<S::Ok, S::Error>
+    where
+        S: serde::Serializer,
     {
-        if tokio::fs::try_exists(&db_path).await.unwrap_or(false) {
-            return Ok(Some(db_path));
-        }
-        tracing::error!(
-            "state db returned stale rollout path for process {id_str}: {}",
-            db_path.display()
-        );
-        tracing::warn!(
-            "state db discrepancy during find_process_path_by_id_str_in_subdir: stale_db_path"
-        );
+        let ts_str = self
+            .ts
+            .format(&Rfc3339)
+            .map_err(|e| serde::ser::Error::custom(format!("format error: {e}")))?;
+        serializer.serialize_str(&format!("{ts_str}|{}", self.id))
     }
-
-    let mut root = codex_home.to_path_buf();
-    root.push(subdir);
-    if !root.exists() {
-        return Ok(None);
-    }
-    // This is safe because we know the values are valid.
-    #[allow(clippy::unwrap_used)]
-    let limit = NonZero::new(1).unwrap();
-    let options = file_search::FileSearchOptions {
-        limit,
-        compute_indices: false,
-        respect_gitignore: false,
-        ..Default::default()
-    };
-
-    let results = file_search::run(id_str, vec![root], options, /*cancel_flag*/ None)
-        .map_err(|e| io::Error::other(format!("file search failed: {e}")))?;
-
-    let found = results.matches.into_iter().next().map(|m| m.full_path());
-    if let Some(found_path) = found.as_ref() {
-        tracing::debug!("state db missing rollout path for process {id_str}");
-        tracing::warn!(
-            "state db discrepancy during find_process_path_by_id_str_in_subdir: falling_back"
-        );
-        state_db::read_repair_rollout_path(
-            state_db_ctx.as_deref(),
-            process_id,
-            archived_only,
-            found_path.as_path(),
-        )
-        .await;
-    }
-
-    Ok(found)
 }
 
-/// Locate a recorded process rollout file by its UUID string using the existing
-/// paginated listing implementation. Returns `Ok(Some(path))` if found, `Ok(None)` if not present
-/// or the id is invalid.
-pub async fn find_process_path_by_id_str(
-    codex_home: &Path,
-    id_str: &str,
-) -> io::Result<Option<PathBuf>> {
-    find_process_path_by_id_str_in_subdir(codex_home, SESSIONS_SUBDIR, id_str).await
+impl<'de> serde::Deserialize<'de> for Cursor {
+    fn deserialize<D>(deserializer: D) -> Result<Self, D::Error>
+    where
+        D: serde::Deserializer<'de>,
+    {
+        let s = String::deserialize(deserializer)?;
+        parse_cursor(&s).ok_or_else(|| serde::de::Error::custom("invalid cursor"))
+    }
 }
 
-/// Locate an archived process rollout file by its UUID string.
-pub async fn find_archived_process_path_by_id_str(
-    codex_home: &Path,
-    id_str: &str,
-) -> io::Result<Option<PathBuf>> {
-    find_process_path_by_id_str_in_subdir(codex_home, ARCHIVED_SESSIONS_SUBDIR, id_str).await
+/// Pagination cursor token format: "<ts>|<uuid>" where `ts` uses RFC3339 or
+/// the historical `YYYY-MM-DDThh-mm-ss` UTC format.
+pub fn parse_cursor(token: &str) -> Option<Cursor> {
+    let (ts_str, uuid_str) = token.split_once('|')?;
+    let id = Uuid::parse_str(uuid_str).ok()?;
+    let ts = OffsetDateTime::parse(ts_str, &Rfc3339).ok().or_else(|| {
+        let format: &[FormatItem] =
+            format_description!("[year]-[month]-[day]T[hour]-[minute]-[second]");
+        PrimitiveDateTime::parse(ts_str, format)
+            .ok()
+            .map(PrimitiveDateTime::assume_utc)
+    })?;
+    Some(Cursor::new(ts, id))
 }

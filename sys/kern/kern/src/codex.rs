@@ -1635,6 +1635,19 @@ impl Session {
             });
         }
 
+        // Spawn the hallucinate scripting engine (Lua/WASM user scripts).
+        let hallucinate = match chaos_hallucinate::spawn(chaos_hallucinate::SessionInfo {
+            session_id: conversation_id.to_string(),
+            cwd: session_configuration.cwd.to_string_lossy().to_string(),
+            provider: session_configuration.provider.name.clone(),
+        }) {
+            Ok(handle) => Some(handle),
+            Err(e) => {
+                tracing::warn!("hallucinate engine failed to start: {e}");
+                None
+            }
+        };
+
         let services = SessionServices {
             catalog: Arc::new(std::sync::RwLock::new(
                 crate::catalog::Catalog::from_inventory(),
@@ -1677,6 +1690,7 @@ impl Session {
             network_proxy,
             network_approval: Arc::clone(&network_approval),
             state_db: state_db_ctx.clone(),
+            hallucinate,
             model_client: ModelClient::new(
                 Some(Arc::clone(&auth_manager)),
                 conversation_id,

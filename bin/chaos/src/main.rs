@@ -323,8 +323,6 @@ fn stage_str(stage: chaos_kern::features::Stage) -> &'static str {
         Stage::UnderDevelopment => "under development",
         Stage::Experimental { .. } => "experimental",
         Stage::Stable => "stable",
-        Stage::Deprecated => "deprecated",
-        Stage::Removed => "removed",
     }
 }
 

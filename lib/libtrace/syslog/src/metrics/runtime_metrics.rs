@@ -16,10 +16,10 @@ use crate::metrics::names::WEBSOCKET_EVENT_COUNT_METRIC;
 use crate::metrics::names::WEBSOCKET_EVENT_DURATION_METRIC;
 use crate::metrics::names::WEBSOCKET_REQUEST_COUNT_METRIC;
 use crate::metrics::names::WEBSOCKET_REQUEST_DURATION_METRIC;
-use opentelemetry_sdk::metrics::data::AggregatedMetrics;
-use opentelemetry_sdk::metrics::data::Metric;
-use opentelemetry_sdk::metrics::data::MetricData;
-use opentelemetry_sdk::metrics::data::ResourceMetrics;
+use rama::telemetry::opentelemetry::sdk::metrics::data::AggregatedMetrics;
+use rama::telemetry::opentelemetry::sdk::metrics::data::Metric;
+use rama::telemetry::opentelemetry::sdk::metrics::data::MetricData;
+use rama::telemetry::opentelemetry::sdk::metrics::data::ResourceMetrics;
 
 #[derive(Debug, Clone, Copy, Default, PartialEq, Eq)]
 pub struct RuntimeMetricTotals {
@@ -172,7 +172,7 @@ impl RuntimeMetricsSummary {
 fn sum_counter(snapshot: &ResourceMetrics, name: &str) -> u64 {
     snapshot
         .scope_metrics()
-        .flat_map(opentelemetry_sdk::metrics::data::ScopeMetrics::metrics)
+        .flat_map(rama::telemetry::opentelemetry::sdk::metrics::data::ScopeMetrics::metrics)
         .filter(|metric| metric.name() == name)
         .map(sum_counter_metric)
         .sum()
@@ -182,7 +182,7 @@ fn sum_counter_metric(metric: &Metric) -> u64 {
     match metric.data() {
         AggregatedMetrics::U64(MetricData::Sum(sum)) => sum
             .data_points()
-            .map(opentelemetry_sdk::metrics::data::SumDataPoint::value)
+            .map(rama::telemetry::opentelemetry::sdk::metrics::data::SumDataPoint::value)
             .sum(),
         _ => 0,
     }
@@ -191,7 +191,7 @@ fn sum_counter_metric(metric: &Metric) -> u64 {
 fn sum_histogram_ms(snapshot: &ResourceMetrics, name: &str) -> u64 {
     snapshot
         .scope_metrics()
-        .flat_map(opentelemetry_sdk::metrics::data::ScopeMetrics::metrics)
+        .flat_map(rama::telemetry::opentelemetry::sdk::metrics::data::ScopeMetrics::metrics)
         .filter(|metric| metric.name() == name)
         .map(sum_histogram_metric_ms)
         .sum()

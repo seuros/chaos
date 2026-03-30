@@ -2,7 +2,7 @@ use crate::config::OtelExporter;
 use crate::metrics::Result;
 use crate::metrics::validation::validate_tag_key;
 use crate::metrics::validation::validate_tag_value;
-use opentelemetry_sdk::metrics::InMemoryMetricExporter;
+use rama::telemetry::opentelemetry::sdk::metrics::InMemoryMetricExporter;
 use std::collections::BTreeMap;
 use std::time::Duration;
 

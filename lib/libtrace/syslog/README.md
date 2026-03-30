@@ -79,7 +79,7 @@ manager.user_prompt(&prompt_items);
 Modes:
 
 - OTLP: exports metrics via the OpenTelemetry OTLP exporter (HTTP or gRPC).
-- In-memory: records via `opentelemetry_sdk::metrics::InMemoryMetricExporter` for tests/assertions; call `shutdown()` to flush.
+- In-memory: records via `rama::telemetry::opentelemetry::sdk::metrics::InMemoryMetricExporter` for tests/assertions; call `shutdown()` to flush.
 
 `chaos-syslog` also provides `OtelExporter::Statsig`, a shorthand for exporting OTLP/HTTP JSON metrics
 to Statsig using Codex-internal defaults.

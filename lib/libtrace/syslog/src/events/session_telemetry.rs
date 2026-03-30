@@ -41,7 +41,7 @@ use chaos_parrot::ApiError;
 use chaos_parrot::ResponseEvent;
 use eventsource_stream::Event as StreamEvent;
 use eventsource_stream::EventStreamError as StreamError;
-use opentelemetry_sdk::metrics::data::ResourceMetrics;
+use rama::telemetry::opentelemetry::sdk::metrics::data::ResourceMetrics;
 use std::borrow::Cow;
 use std::future::Future;
 use std::time::Duration;

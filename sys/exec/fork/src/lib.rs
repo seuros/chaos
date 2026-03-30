@@ -940,11 +940,11 @@ fn build_review_request(args: &ReviewArgs) -> anyhow::Result<ReviewRequest> {
 mod tests {
     use super::*;
     use chaos_syslog::set_parent_from_w3c_trace_context;
-    use opentelemetry::trace::TraceContextExt;
-    use opentelemetry::trace::TraceId;
-    use opentelemetry::trace::TracerProvider as _;
-    use opentelemetry_sdk::trace::SdkTracerProvider;
     use pretty_assertions::assert_eq;
+    use rama::telemetry::opentelemetry::sdk::trace::SdkTracerProvider;
+    use rama::telemetry::opentelemetry::trace::TraceContextExt;
+    use rama::telemetry::opentelemetry::trace::TraceId;
+    use rama::telemetry::opentelemetry::trace::TracerProvider as _;
     use tracing_opentelemetry::OpenTelemetrySpanExt;
 
     fn test_tracing_subscriber() -> impl tracing::Subscriber + Send + Sync {

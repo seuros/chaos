@@ -137,8 +137,8 @@ impl RamaTransport {
 }
 
 fn inject_trace_headers(headers: &mut HeaderMap) {
-    use opentelemetry::global;
-    use opentelemetry::propagation::Injector;
+    use rama::telemetry::opentelemetry::global;
+    use rama::telemetry::opentelemetry::propagation::Injector;
     use tracing::Span;
     use tracing_opentelemetry::OpenTelemetrySpanExt;
 

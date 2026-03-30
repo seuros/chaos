@@ -7,10 +7,10 @@ use chaos_syslog::TelemetryAuthMode;
 use chaos_syslog::metrics::MetricsClient;
 use chaos_syslog::metrics::MetricsConfig;
 use chaos_syslog::metrics::Result;
-use opentelemetry_sdk::metrics::InMemoryMetricExporter;
-use opentelemetry_sdk::metrics::data::AggregatedMetrics;
-use opentelemetry_sdk::metrics::data::MetricData;
 use pretty_assertions::assert_eq;
+use rama::telemetry::opentelemetry::sdk::metrics::InMemoryMetricExporter;
+use rama::telemetry::opentelemetry::sdk::metrics::data::AggregatedMetrics;
+use rama::telemetry::opentelemetry::sdk::metrics::data::MetricData;
 use std::collections::BTreeMap;
 
 #[test]

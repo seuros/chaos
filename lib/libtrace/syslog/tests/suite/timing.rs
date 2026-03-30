@@ -58,12 +58,12 @@ fn timer_result_records_success() -> Result<()> {
     let attrs = attributes_to_map(
         match crate::harness::find_metric(&resource_metrics, "codex.request_latency").and_then(
             |metric| match metric.data() {
-                opentelemetry_sdk::metrics::data::AggregatedMetrics::F64(
-                    opentelemetry_sdk::metrics::data::MetricData::Histogram(histogram),
+                rama::telemetry::opentelemetry::sdk::metrics::data::AggregatedMetrics::F64(
+                    rama::telemetry::opentelemetry::sdk::metrics::data::MetricData::Histogram(histogram),
                 ) => histogram
                     .data_points()
                     .next()
-                    .map(opentelemetry_sdk::metrics::data::HistogramDataPoint::attributes),
+                    .map(rama::telemetry::opentelemetry::sdk::metrics::data::HistogramDataPoint::attributes),
                 _ => None,
             },
         ) {

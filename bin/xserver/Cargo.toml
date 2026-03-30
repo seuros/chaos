@@ -55,6 +55,7 @@ jiff = { workspace = true }
 pathdiff = { workspace = true }
 pulldown-cmark = { workspace = true }
 rand = { workspace = true }
+ratatui-hypertile = { workspace = true }
 ratatui = { workspace = true, features = [
     "scrolling-regions",
     "unstable-backend-writer",

@@ -4014,6 +4014,9 @@ impl ChatWidget {
             SlashCommand::Mcp => {
                 self.add_mcp_output();
             }
+            SlashCommand::Tools => {
+                self.submit_op(Op::ListAllTools);
+            }
             SlashCommand::Clamp => {
                 // Toggle clamped mode — Claude Code subprocess as transport.
                 let is_clamped = crate::theme::is_clamped();
@@ -4674,6 +4677,7 @@ impl ChatWidget {
             EventMsg::WebSearchEnd(ev) => self.on_web_search_end(ev),
             EventMsg::GetHistoryEntryResponse(ev) => self.on_get_history_entry_response(ev),
             EventMsg::McpListToolsResponse(ev) => self.on_list_mcp_tools(ev),
+            EventMsg::AllToolsResponse(ev) => self.on_all_tools_response(ev),
             EventMsg::ListCustomPromptsResponse(ev) => self.on_list_custom_prompts(ev),
             EventMsg::ListSkillsResponse(_) => {}
             EventMsg::ListRemoteSkillsResponse(_) | EventMsg::RemoteSkillDownloaded(_) => {}
@@ -7426,6 +7430,12 @@ impl ChatWidget {
             return false;
         }
         true
+    }
+
+    fn on_all_tools_response(&mut self, ev: chaos_ipc::protocol::AllToolsResponseEvent) {
+        // Forward to the app layer where the TileManager can open/populate the tools pane.
+        self.app_event_tx
+            .send(AppEvent::AllToolsReceived(ev));
     }
 
     fn on_list_mcp_tools(&mut self, ev: McpListToolsResponseEvent) {

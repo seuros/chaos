@@ -38,6 +38,7 @@ pub enum SlashCommand {
     Statusline,
     Theme,
     Mcp,
+    Tools,
     Clamp,
     Logout,
     Quit,
@@ -94,6 +95,7 @@ impl SlashCommand {
                 "let sandbox read a directory: /sandbox-add-read-dir <absolute_path>"
             }
             SlashCommand::Mcp => "list configured MCP tools",
+            SlashCommand::Tools => "show all tools visible to the model",
             SlashCommand::Clamp => "use Claude Code MAX subscription as transport",
             SlashCommand::Logout => "log out of Chaos",
             SlashCommand::TestApproval => "test approval request",
@@ -147,6 +149,7 @@ impl SlashCommand {
             | SlashCommand::Ps
             | SlashCommand::Stop
             | SlashCommand::Mcp
+            | SlashCommand::Tools
             | SlashCommand::Quit
             | SlashCommand::Exit => true,
             SlashCommand::TestApproval => true,

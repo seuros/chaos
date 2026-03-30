@@ -276,6 +276,7 @@ pulldown-cmark = "0.13"
 rama = { git = "https://github.com/plabayo/rama.git", features = ["http-full", "rustls", "ring", "compression", "socks5", "opentelemetry"] }
 rand = "0.10"
 ratatui = "0.30.0"
+ratatui-hypertile = "0.3.0"
 ratatui-macros = "0.7.0"
 regex = "1.12.3"
 regex-lite = "0.1.9"

@@ -863,6 +863,7 @@ impl EventProcessor for EventProcessorWithHumanOutput {
             | EventMsg::ExecCommandOutputDelta(_)
             | EventMsg::GetHistoryEntryResponse(_)
             | EventMsg::McpListToolsResponse(_)
+            | EventMsg::AllToolsResponse(_)
             | EventMsg::ListCustomPromptsResponse(_)
             | EventMsg::ListSkillsResponse(_)
             | EventMsg::ListRemoteSkillsResponse(_)

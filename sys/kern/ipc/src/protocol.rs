@@ -339,6 +339,10 @@ pub enum Op {
     /// Reply is delivered via `EventMsg::McpListToolsResponse`.
     ListMcpTools,
 
+    /// Request all tools visible to the model (builtins + arsenal + cron + MCP).
+    /// Reply is delivered via `EventMsg::AllToolsResponse`.
+    ListAllTools,
+
     /// Request MCP servers to reinitialize and refresh cached tool lists.
     RefreshMcpServers { config: McpServerRefreshConfig },
 
@@ -439,6 +443,7 @@ impl Op {
             Self::AddToHistory { .. } => "add_to_history",
             Self::GetHistoryEntryRequest { .. } => "get_history_entry_request",
             Self::ListMcpTools => "list_mcp_tools",
+            Self::ListAllTools => "list_all_tools",
             Self::RefreshMcpServers { .. } => "refresh_mcp_servers",
             Self::ReloadUserConfig => "reload_user_config",
             Self::ListCustomPrompts => "list_custom_prompts",
@@ -1197,6 +1202,9 @@ pub enum EventMsg {
 
     /// List of MCP tools available to the agent.
     McpListToolsResponse(McpListToolsResponseEvent),
+
+    /// All tools visible to the model (builtins + arsenal + cron + MCP).
+    AllToolsResponse(AllToolsResponseEvent),
 
     /// List of custom prompts available to the agent.
     ListCustomPromptsResponse(ListCustomPromptsResponseEvent),
@@ -2749,6 +2757,23 @@ pub struct McpListToolsResponseEvent {
     pub resource_templates: std::collections::HashMap<String, Vec<McpResourceTemplate>>,
     /// Authentication status for each configured MCP server.
     pub auth_statuses: std::collections::HashMap<String, McpAuthStatus>,
+}
+
+/// A single tool entry in the all-tools response.
+#[derive(Debug, Clone, Deserialize, Serialize, JsonSchema, TS)]
+pub struct ToolSummary {
+    /// Tool name as the model sees it.
+    pub name: String,
+    /// Human-readable description.
+    pub description: String,
+    /// Origin: "builtin", "arsenal", "cron", or "mcp:<server>".
+    pub source: String,
+}
+
+/// Response to `Op::ListAllTools`.
+#[derive(Debug, Clone, Deserialize, Serialize, JsonSchema, TS)]
+pub struct AllToolsResponseEvent {
+    pub tools: Vec<ToolSummary>,
 }
 
 #[derive(Debug, Clone, Deserialize, Serialize, JsonSchema, TS)]

@@ -4015,6 +4015,10 @@ async fn submission_loop(sess: Arc<Session>, config: Arc<Config>, rx_sub: Receiv
                     handlers::list_mcp_tools(&sess, &config, sub.id.clone()).await;
                     false
                 }
+                Op::ListAllTools => {
+                    handlers::list_all_tools(&sess, &config, sub.id.clone()).await;
+                    false
+                }
                 Op::RefreshMcpServers { config } => {
                     handlers::refresh_mcp_servers(&sess, config).await;
                     false
@@ -4486,6 +4490,39 @@ mod handlers {
 
     pub async fn reload_user_config(sess: &Arc<Session>) {
         sess.reload_user_config_layer().await;
+    }
+
+    pub async fn list_all_tools(sess: &Session, _config: &Arc<Config>, sub_id: String) {
+        use chaos_ipc::protocol::{AllToolsResponseEvent, ToolSummary};
+
+        let tools: Vec<ToolSummary> = {
+            let catalog = sess
+                .services
+                .catalog
+                .read()
+                .unwrap_or_else(std::sync::PoisonError::into_inner);
+            catalog
+                .tools()
+                .iter()
+                .map(|(source, tool)| {
+                    let source_str = match source {
+                        crate::catalog::CatalogSource::Module(name) => name.clone(),
+                        crate::catalog::CatalogSource::Mcp(name) => format!("mcp:{name}"),
+                    };
+                    ToolSummary {
+                        name: tool.name.clone(),
+                        description: tool.description.clone(),
+                        source: source_str,
+                    }
+                })
+                .collect()
+        };
+
+        let event = Event {
+            id: sub_id,
+            msg: EventMsg::AllToolsResponse(AllToolsResponseEvent { tools }),
+        };
+        sess.send_event_raw(event).await;
     }
 
     pub async fn list_mcp_tools(sess: &Session, config: &Arc<Config>, sub_id: String) {

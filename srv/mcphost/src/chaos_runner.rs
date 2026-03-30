@@ -365,6 +365,7 @@ async fn run_event_loop(
                     | EventMsg::McpToolCallBegin(_)
                     | EventMsg::McpToolCallEnd(_)
                     | EventMsg::McpListToolsResponse(_)
+                    | EventMsg::AllToolsResponse(_)
                     | EventMsg::ListCustomPromptsResponse(_)
                     | EventMsg::ListSkillsResponse(_)
                     | EventMsg::ListRemoteSkillsResponse(_)

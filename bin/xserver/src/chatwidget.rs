@@ -124,7 +124,6 @@ use chaos_kern::config::ConstraintResult;
 use chaos_kern::config::types::ApprovalsReviewer;
 use chaos_kern::config::types::Notifications;
 use chaos_kern::config_loader::ConfigLayerStackOrdering;
-use chaos_kern::features::FEATURES;
 use chaos_kern::features::Feature;
 use chaos_kern::find_process_name_by_id;
 use chaos_kern::git_info::current_branch_name;
@@ -207,8 +206,6 @@ use crate::bottom_pane::CancellationEvent;
 use crate::bottom_pane::CollaborationModeIndicator;
 use crate::bottom_pane::ColumnWidthMode;
 use crate::bottom_pane::DOUBLE_PRESS_QUIT_SHORTCUT_ENABLED;
-use crate::bottom_pane::ExperimentalFeatureItem;
-use crate::bottom_pane::ExperimentalFeaturesView;
 use crate::bottom_pane::InputResult;
 use crate::bottom_pane::LocalImageAttachment;
 use crate::bottom_pane::McpServerElicitationFormRequest;
@@ -4220,9 +4217,6 @@ impl ChatWidget {
                     "Usage: /sandbox-add-read-dir <absolute-directory-path>".to_string(),
                 );
             }
-            SlashCommand::Experimental => {
-                self.open_experimental_popup();
-            }
             SlashCommand::Quit | SlashCommand::Exit => {
                 self.request_quit_without_confirmation();
             }
@@ -6720,25 +6714,6 @@ impl ChatWidget {
             header: Box::new(()),
             ..Default::default()
         });
-    }
-
-    pub(crate) fn open_experimental_popup(&mut self) {
-        let features: Vec<ExperimentalFeatureItem> = FEATURES
-            .iter()
-            .filter_map(|spec| {
-                let name = spec.stage.experimental_menu_name()?;
-                let description = spec.stage.experimental_menu_description()?;
-                Some(ExperimentalFeatureItem {
-                    feature: spec.id,
-                    name: name.to_string(),
-                    description: description.to_string(),
-                    enabled: self.config.features.enabled(spec.id),
-                })
-            })
-            .collect();
-
-        let view = ExperimentalFeaturesView::new(features, self.app_event_tx.clone());
-        self.bottom_pane.show_view(Box::new(view));
     }
 
     fn approval_preset_actions(

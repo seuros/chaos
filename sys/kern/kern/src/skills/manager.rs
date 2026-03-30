@@ -2,7 +2,6 @@ use std::collections::HashMap;
 use std::collections::HashSet;
 use std::path::Path;
 use std::path::PathBuf;
-use std::sync::Arc;
 use std::sync::RwLock;
 
 use chaos_ipc::api::ConfigLayerSource;

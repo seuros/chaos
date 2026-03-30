@@ -69,7 +69,7 @@ pub async fn collect_mcp_snapshot(config: &Config) -> McpListToolsResponseEvent 
     };
 
     // Snapshot collection uses a throwaway catalog — notifications are irrelevant here.
-    let snapshot_catalog = std::sync::Arc::new(std::sync::RwLock::new(
+    let snapshot_catalog = Arc::new(std::sync::RwLock::new(
         crate::catalog::Catalog::from_inventory(),
     ));
     let (mcp_connection_manager, cancel_token) = McpConnectionManager::new(

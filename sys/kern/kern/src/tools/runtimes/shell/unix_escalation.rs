@@ -416,7 +416,7 @@ impl CoreShellActionProvider {
         let turn = self.turn.clone();
         let call_id = self.call_id.clone();
         let approval_id = Some(Uuid::new_v4().to_string());
-        let tool_name = self.tool_name;
+        let _tool_name = self.tool_name;
         Ok(stopwatch
             .pause_for(async move {
                 let available_decisions = vec![

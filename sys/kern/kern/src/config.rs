@@ -1636,7 +1636,7 @@ pub fn resolve_oss_provider(
 fn resolve_web_search_mode(
     config_toml: &ConfigToml,
     config_profile: &ConfigProfile,
-    features: &Features,
+    _features: &Features,
 ) -> Option<WebSearchMode> {
     if let Some(mode) = config_profile.web_search.or(config_toml.web_search) {
         return Some(mode);

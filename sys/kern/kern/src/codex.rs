@@ -5223,7 +5223,7 @@ pub(crate) async fn run_turn(
     sess.record_context_updates_and_set_reference_context_item(turn_context.as_ref())
         .await;
 
-    let mcp_tools = if turn_context.apps_enabled() {
+    let _mcp_tools = if turn_context.apps_enabled() {
         match sess
             .services
             .mcp_connection_manager

@@ -263,9 +263,7 @@ pub enum Op {
     },
 
     /// Toggle clamped mode (Claude Code subprocess as transport).
-    SetClamped {
-        enabled: bool,
-    },
+    SetClamped { enabled: bool },
 
     /// Approve a command execution
     ExecApproval {

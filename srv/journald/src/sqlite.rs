@@ -419,10 +419,7 @@ impl JournalStore for SqliteJournalStore {
         })
     }
 
-    async fn load_journal(
-        &self,
-        process_id: &ProcessId,
-    ) -> Result<LoadedJournal, JournalError> {
+    async fn load_journal(&self, process_id: &ProcessId) -> Result<LoadedJournal, JournalError> {
         let process = self
             .get_process(process_id)
             .await?

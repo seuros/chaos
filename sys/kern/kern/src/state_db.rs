@@ -1,8 +1,8 @@
 use crate::config::Config;
 use crate::path_utils::normalize_for_path_comparison;
-use crate::rollout::metadata;
 use crate::rollout::list::Cursor;
 use crate::rollout::list::ProcessSortKey;
+use crate::rollout::metadata;
 use chaos_ipc::ProcessId;
 use chaos_ipc::dynamic_tools::DynamicToolSpec;
 use chaos_ipc::protocol::RolloutItem;
@@ -323,9 +323,7 @@ pub async fn apply_rollout_items(
         None => match metadata::builder_from_items(items) {
             Some(builder) => builder,
             None => {
-                warn!(
-                    "state db apply_rollout_items missing builder during {stage}"
-                );
+                warn!("state db apply_rollout_items missing builder during {stage}");
                 warn!("state db discrepancy during apply_rollout_items: {stage}, missing_builder");
                 return;
             }

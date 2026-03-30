@@ -15,8 +15,7 @@ use tokio::sync::{mpsc, oneshot};
 use tracing::{debug, error, info, warn};
 
 use crate::protocol::{
-    ControlResponse, Message, UserMessage,
-    control_request_envelope, initialize_request,
+    ControlResponse, Message, UserMessage, control_request_envelope, initialize_request,
 };
 
 /// Configuration for spawning the Claude Code subprocess.
@@ -349,10 +348,7 @@ impl ClampTransport {
     }
 
     /// Send a control request and wait for the response.
-    pub async fn send_control_request(
-        &mut self,
-        request: Value,
-    ) -> Result<Value, ClampError> {
+    pub async fn send_control_request(&mut self, request: Value) -> Result<Value, ClampError> {
         let id = self.next_request_id();
         let envelope = control_request_envelope(&id, request);
         let (tx, rx) = oneshot::channel();
@@ -597,8 +593,10 @@ impl ClampTransport {
             }
             _ => {
                 warn!(subtype, "unhandled control request subtype");
-                let response =
-                    ControlResponse::error(request_id, format!("unsupported control request: {subtype}"));
+                let response = ControlResponse::error(
+                    request_id,
+                    format!("unsupported control request: {subtype}"),
+                );
                 self.write_json(&serde_json::to_value(response)?).await?;
             }
         }

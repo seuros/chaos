@@ -126,13 +126,11 @@ where
                     })
                 })
             }
-            JournalRequest::GetProcess(GetProcessRequest { process_id }) => self
-                .store
-                .get_process(&process_id)
-                .await
-                .map(|process| JournalResponse::GetProcess(Box::new(GetProcessResponse {
-                    process,
-                }))),
+            JournalRequest::GetProcess(GetProcessRequest { process_id }) => {
+                self.store.get_process(&process_id).await.map(|process| {
+                    JournalResponse::GetProcess(Box::new(GetProcessResponse { process }))
+                })
+            }
             JournalRequest::ListProcesses(ListProcessesRequest { archived }) => self
                 .store
                 .list_processes(archived)

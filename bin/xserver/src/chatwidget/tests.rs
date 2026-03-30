@@ -1731,6 +1731,7 @@ async fn make_chatwidget_manual(
         active_cell: None,
         active_cell_revision: 0,
         config: cfg,
+        pre_clamp_selection: None,
         current_collaboration_mode,
         active_collaboration_mask,
         auth_manager,
@@ -2541,6 +2542,81 @@ async fn plan_reasoning_scope_popup_all_modes_persists_global_and_plan_override(
         )),
         "expected global model reasoning selection persistence; events: {events:?}"
     );
+}
+
+#[test]
+fn queue_persist_model_selection_skips_clamped_writes() {
+    let (raw_tx, mut rx) = unbounded_channel();
+    let tx = AppEventSender::new(raw_tx);
+
+    ChatWidget::queue_persist_model_selection(
+        &tx,
+        "claude-sonnet-4-5".to_string(),
+        Some(ReasoningEffortConfig::High),
+        /*clamped*/ true,
+    );
+
+    assert_matches!(rx.try_recv(), Err(TryRecvError::Empty));
+}
+
+#[test]
+fn queue_persist_model_selection_emits_when_unclamped() {
+    let (raw_tx, mut rx) = unbounded_channel();
+    let tx = AppEventSender::new(raw_tx);
+
+    ChatWidget::queue_persist_model_selection(
+        &tx,
+        "gpt-5".to_string(),
+        Some(ReasoningEffortConfig::Medium),
+        /*clamped*/ false,
+    );
+
+    assert_matches!(
+        rx.try_recv(),
+        Ok(AppEvent::PersistModelSelection {
+            model,
+            effort: Some(ReasoningEffortConfig::Medium)
+        }) if model == "gpt-5"
+    );
+}
+
+#[tokio::test]
+async fn restore_pre_clamp_selection_replays_model_and_reasoning_state() {
+    let (mut chat, mut rx, _op_rx) = make_chatwidget_manual(Some("gpt-5")).await;
+    chat.set_reasoning_effort(Some(ReasoningEffortConfig::Low));
+    chat.set_plan_mode_reasoning_effort(Some(ReasoningEffortConfig::Medium));
+    chat.capture_pre_clamp_selection();
+
+    chat.set_model("claude-sonnet-4-5");
+    chat.set_reasoning_effort(Some(ReasoningEffortConfig::High));
+    chat.set_plan_mode_reasoning_effort(Some(ReasoningEffortConfig::XHigh));
+    chat.restore_pre_clamp_selection();
+
+    let events = std::iter::from_fn(|| rx.try_recv().ok()).collect::<Vec<_>>();
+    assert!(
+        events.iter().any(|event| matches!(
+            event,
+            AppEvent::UpdateModel(model) if model == "gpt-5"
+        )),
+        "expected pre-clamp model restore; events: {events:?}"
+    );
+    assert!(
+        events.iter().any(|event| matches!(
+            event,
+            AppEvent::UpdateReasoningEffort(Some(ReasoningEffortConfig::Low))
+        )),
+        "expected global reasoning restore; events: {events:?}"
+    );
+    assert!(
+        events.iter().any(|event| matches!(
+            event,
+            AppEvent::UpdatePlanModeReasoningEffort(Some(ReasoningEffortConfig::Medium))
+        )),
+        "expected plan reasoning restore; events: {events:?}"
+    );
+
+    chat.restore_pre_clamp_selection();
+    assert_matches!(rx.try_recv(), Err(TryRecvError::Empty));
 }
 
 #[test]

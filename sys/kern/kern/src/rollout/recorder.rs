@@ -221,7 +221,9 @@ impl RolloutRecorder {
             .list_processes(Some(archived))
             .await
             .map_err(IoError::other)?;
-        records.retain(|record| journal_record_matches_filters(record, allowed_sources, model_providers));
+        records.retain(|record| {
+            journal_record_matches_filters(record, allowed_sources, model_providers)
+        });
         sort_journal_records(&mut records, sort_key);
 
         let mut items = Vec::with_capacity(page_size);
@@ -286,7 +288,9 @@ impl RolloutRecorder {
             .list_processes(Some(false))
             .await
             .map_err(IoError::other)?;
-        records.retain(|record| journal_record_matches_filters(record, allowed_sources, model_providers));
+        records.retain(|record| {
+            journal_record_matches_filters(record, allowed_sources, model_providers)
+        });
         sort_journal_records(&mut records, sort_key);
 
         let mut matched = 0usize;
@@ -379,22 +383,20 @@ impl RolloutRecorder {
                 conversation_id,
                 source,
                 event_persistence_mode,
-            } => {
-                (
-                    None,
-                    event_persistence_mode,
-                    JournalSink::pending(PendingJournalConfig {
-                        process_id: conversation_id,
-                        source,
-                        cwd: config.cwd().to_path_buf(),
-                        created_at: Timestamp::now(),
-                        model_provider: config.model_provider_id().to_string(),
-                        cli_version: env!("CARGO_PKG_VERSION").to_string(),
-                        owner_id: Uuid::now_v7().to_string(),
-                    }),
-                    true,
-                )
-            }
+            } => (
+                None,
+                event_persistence_mode,
+                JournalSink::pending(PendingJournalConfig {
+                    process_id: conversation_id,
+                    source,
+                    cwd: config.cwd().to_path_buf(),
+                    created_at: Timestamp::now(),
+                    model_provider: config.model_provider_id().to_string(),
+                    cli_version: env!("CARGO_PKG_VERSION").to_string(),
+                    owner_id: Uuid::now_v7().to_string(),
+                }),
+                true,
+            ),
         };
 
         // Clone the cwd for the spawned task to collect git info asynchronously
@@ -473,13 +475,17 @@ impl RolloutRecorder {
             .map_err(|e| IoError::other(format!("failed waiting for rollout flush: {e}")))
     }
 
-    pub async fn get_rollout_history_for_process(process_id: ProcessId) -> std::io::Result<InitialHistory> {
+    pub async fn get_rollout_history_for_process(
+        process_id: ProcessId,
+    ) -> std::io::Result<InitialHistory> {
         let client = journal_client_from_env_or_bootstrap()
             .await
             .map_err(IoError::other)?;
         let loaded = match client.load_journal(process_id).await {
             Ok(loaded) => loaded,
-            Err(JournalClientError::Remote(payload)) if payload.code == JournalErrorCode::NotFound => {
+            Err(JournalClientError::Remote(payload))
+                if payload.code == JournalErrorCode::NotFound =>
+            {
                 return Err(IoError::other(format!(
                     "journald has no process row for resume target {process_id}; import this session into the journal before resuming it"
                 )));
@@ -521,7 +527,9 @@ impl RolloutRecorder {
             .map_err(IoError::other)?;
         let loaded = match client.load_journal(process_id).await {
             Ok(loaded) => loaded,
-            Err(JournalClientError::Remote(payload)) if payload.code == JournalErrorCode::NotFound => {
+            Err(JournalClientError::Remote(payload))
+                if payload.code == JournalErrorCode::NotFound =>
+            {
                 return Ok(None);
             }
             Err(err) => {
@@ -798,7 +806,9 @@ fn journal_record_matches_filters(
         return false;
     }
     if let Some(model_providers) = model_providers
-        && !model_providers.iter().any(|provider| provider == &record.model_provider)
+        && !model_providers
+            .iter()
+            .any(|provider| provider == &record.model_provider)
     {
         return false;
     }

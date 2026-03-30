@@ -136,10 +136,7 @@ pub enum Message {
 
     /// A control request from Claude Code (hook callback, permission, MCP).
     #[serde(rename = "control_request")]
-    ControlRequestIncoming {
-        request_id: String,
-        request: Value,
-    },
+    ControlRequestIncoming { request_id: String, request: Value },
 
     /// A cancel request for a pending control request.
     #[serde(rename = "control_cancel_request")]

@@ -1,9 +1,9 @@
+use super::ProcessMetadata;
 use anyhow::Result;
 use chaos_ipc::ProcessId;
 use sqlx::Row;
 use sqlx::sqlite::SqliteRow;
 use std::path::PathBuf;
-use super::ProcessMetadata;
 
 /// Stored stage-1 memory extraction output for a single thread.
 #[derive(Debug, Clone, PartialEq, Eq)]

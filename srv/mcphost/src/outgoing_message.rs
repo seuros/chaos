@@ -197,6 +197,7 @@ pub(crate) struct OutgoingError {
 mod tests {
     use std::path::PathBuf;
 
+    use super::*;
     use anyhow::Result;
     use chaos_ipc::ProcessId;
     use chaos_ipc::openai_models::ReasoningEffort;
@@ -206,7 +207,6 @@ mod tests {
     use chaos_ipc::protocol::SessionConfiguredEvent;
     use pretty_assertions::assert_eq;
     use serde_json::json;
-    use super::*;
 
     #[test]
     fn outgoing_request_serializes_as_jsonrpc_request() {

@@ -548,6 +548,13 @@ struct PendingGuardianReviewStatusEntry {
     detail: String,
 }
 
+#[derive(Clone, Debug, PartialEq, Eq)]
+struct PreClampSelection {
+    model: String,
+    reasoning_effort: Option<ReasoningEffortConfig>,
+    plan_mode_reasoning_effort: Option<ReasoningEffortConfig>,
+}
+
 impl PendingGuardianReviewStatus {
     fn start_or_update(&mut self, id: String, detail: String) {
         if let Some(existing) = self.entries.iter_mut().find(|entry| entry.id == id) {
@@ -633,6 +640,8 @@ pub(crate) struct ChatWidget {
     /// where the overlay may briefly treat new tail content as already cached.
     active_cell_revision: u64,
     config: Config,
+    /// Session-local state to restore when `/clamp` is toggled off.
+    pre_clamp_selection: Option<PreClampSelection>,
     /// The unmasked collaboration mode settings (always Default mode).
     ///
     /// Masks are applied on top of this base mode to derive the effective mode.
@@ -3477,6 +3486,7 @@ impl ChatWidget {
             active_cell,
             active_cell_revision: 0,
             config,
+            pre_clamp_selection: None,
             current_collaboration_mode,
             active_collaboration_mask,
             auth_manager,
@@ -3636,6 +3646,7 @@ impl ChatWidget {
             active_cell,
             active_cell_revision: 0,
             config,
+            pre_clamp_selection: None,
             current_collaboration_mode,
             active_collaboration_mask,
             auth_manager,
@@ -3795,6 +3806,7 @@ impl ChatWidget {
             active_cell: None,
             active_cell_revision: 0,
             config,
+            pre_clamp_selection: None,
             current_collaboration_mode,
             active_collaboration_mask,
             auth_manager,
@@ -4311,12 +4323,15 @@ impl ChatWidget {
                 self.app_event_tx
                     .send(AppEvent::CodexOp(Op::SetClamped { enabled: new_state }));
                 if new_state {
+                    // Save the current direct-API selection before clamping so we can
+                    // restore it when switching transports back off.
+                    self.capture_pre_clamp_selection();
                     self.add_info_message(
-                        "Clamped: using Claude Code MAX subscription as transport."
-                            .to_string(),
+                        "Clamped: using Claude Code MAX subscription as transport.".to_string(),
                         Some("Type /clamp again to switch back".to_string()),
                     );
                 } else {
+                    self.restore_pre_clamp_selection();
                     self.add_info_message(
                         "Unclamped: using direct API transport.".to_string(),
                         None,
@@ -5854,7 +5869,10 @@ impl ChatWidget {
                     .iter()
                     .map(|m| {
                         let value = m.get("value").and_then(|v| v.as_str()).unwrap_or("default");
-                        let display = m.get("displayName").and_then(|v| v.as_str()).unwrap_or(value);
+                        let display = m
+                            .get("displayName")
+                            .and_then(|v| v.as_str())
+                            .unwrap_or(value);
                         let desc = m.get("description").and_then(|v| v.as_str()).unwrap_or("");
                         let is_default = value == "default";
                         let efforts: Vec<ReasoningEffortPreset> = m
@@ -6233,10 +6251,12 @@ impl ChatWidget {
 
             tx.send(AppEvent::UpdateModel(model_for_action.clone()));
             tx.send(AppEvent::UpdateReasoningEffort(effort_for_action));
-            tx.send(AppEvent::PersistModelSelection {
-                model: model_for_action.clone(),
-                effort: effort_for_action,
-            });
+            Self::queue_persist_model_selection(
+                tx,
+                model_for_action.clone(),
+                effort_for_action,
+                crate::theme::is_clamped(),
+            );
         })]
     }
 
@@ -6313,10 +6333,12 @@ impl ChatWidget {
             tx.send(AppEvent::UpdateReasoningEffort(effort));
             tx.send(AppEvent::UpdatePlanModeReasoningEffort(effort));
             tx.send(AppEvent::PersistPlanModeReasoningEffort(effort));
-            tx.send(AppEvent::PersistModelSelection {
-                model: model.clone(),
+            Self::queue_persist_model_selection(
+                tx,
+                model.clone(),
                 effort,
-            });
+                crate::theme::is_clamped(),
+            );
         })];
 
         self.bottom_pane.show_selection_view(SelectionViewParams {
@@ -6481,10 +6503,12 @@ impl ChatWidget {
                 } else {
                     tx.send(AppEvent::UpdateModel(model_for_action.clone()));
                     tx.send(AppEvent::UpdateReasoningEffort(choice_effort));
-                    tx.send(AppEvent::PersistModelSelection {
-                        model: model_for_action.clone(),
-                        effort: choice_effort,
-                    });
+                    Self::queue_persist_model_selection(
+                        tx,
+                        model_for_action.clone(),
+                        choice_effort,
+                        crate::theme::is_clamped(),
+                    );
                 }
             })];
 
@@ -6534,10 +6558,50 @@ impl ChatWidget {
             .send(AppEvent::UpdateReasoningEffort(effort));
     }
 
+    fn queue_persist_model_selection(
+        tx: &AppEventSender,
+        model: String,
+        effort: Option<ReasoningEffortConfig>,
+        clamped: bool,
+    ) {
+        if clamped {
+            return;
+        }
+
+        tx.send(AppEvent::PersistModelSelection { model, effort });
+    }
+
     fn apply_model_and_effort(&self, model: String, effort: Option<ReasoningEffortConfig>) {
         self.apply_model_and_effort_without_persist(model.clone(), effort);
+        Self::queue_persist_model_selection(
+            &self.app_event_tx,
+            model,
+            effort,
+            crate::theme::is_clamped(),
+        );
+    }
+
+    fn capture_pre_clamp_selection(&mut self) {
+        self.pre_clamp_selection = Some(PreClampSelection {
+            model: self.current_model().to_string(),
+            reasoning_effort: self.current_collaboration_mode.reasoning_effort(),
+            plan_mode_reasoning_effort: self.config.plan_mode_reasoning_effort,
+        });
+    }
+
+    fn restore_pre_clamp_selection(&mut self) {
+        let Some(previous) = self.pre_clamp_selection.take() else {
+            return;
+        };
+
         self.app_event_tx
-            .send(AppEvent::PersistModelSelection { model, effort });
+            .send(AppEvent::UpdateModel(previous.model));
+        self.app_event_tx
+            .send(AppEvent::UpdateReasoningEffort(previous.reasoning_effort));
+        self.app_event_tx
+            .send(AppEvent::UpdatePlanModeReasoningEffort(
+                previous.plan_mode_reasoning_effort,
+            ));
     }
 
     /// Open the permissions popup (alias for /permissions).

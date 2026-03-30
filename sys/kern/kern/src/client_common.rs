@@ -210,6 +210,18 @@ pub(crate) mod tools {
                 ToolSpec::Freeform(tool) => tool.name.as_str(),
             }
         }
+
+        #[allow(dead_code)]
+        pub(crate) fn description(&self) -> &str {
+            match self {
+                ToolSpec::Function(tool) => tool.description.as_str(),
+                ToolSpec::ToolSearch { description, .. } => description.as_str(),
+                ToolSpec::LocalShell {} => "Local shell execution",
+                ToolSpec::ImageGeneration { .. } => "Generate images",
+                ToolSpec::WebSearch { .. } => "Search the web",
+                ToolSpec::Freeform(tool) => tool.description.as_str(),
+            }
+        }
     }
 
     #[derive(Debug, Clone, Serialize, PartialEq)]

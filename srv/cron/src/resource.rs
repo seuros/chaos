@@ -1,17 +1,21 @@
 //! MCP resource: chaos://crons — exposes cron jobs as a readable resource.
 
-use sqlx::SqlitePool;
+use crate::CronStorage;
+use crate::SqliteCronStorage;
+use chaos_storage::ChaosStorageProvider;
 
-use crate::store::CronStore;
-
-/// List all cron jobs as a JSON string. Returns `"[]"` when the pool is unavailable.
-pub async fn list_crons(pool: Option<&SqlitePool>) -> Result<String, String> {
-    let Some(pool) = pool else {
-        return Ok("[]".to_string());
+/// List all cron jobs as a JSON string.
+pub async fn list_crons(provider: Option<&ChaosStorageProvider>) -> Result<String, String> {
+    let provider = match provider {
+        Some(provider) => provider.clone(),
+        None => ChaosStorageProvider::from_env(None).await?,
     };
+    let storage = SqliteCronStorage::from_provider(&provider)?;
+    list_crons_with_storage(&storage).await
+}
 
-    let store = CronStore::new(pool.to_owned());
-    let jobs = store
+async fn list_crons_with_storage<S: CronStorage>(storage: &S) -> Result<String, String> {
+    let jobs = storage
         .list(None, None)
         .await
         .map_err(|e| format!("failed to list cron jobs: {e}"))?;

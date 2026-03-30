@@ -1,0 +1,22 @@
+[package]
+name = "chaos-storage"
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+publish.workspace = true
+
+[lib]
+doctest = false
+name = "chaos_storage"
+path = "src/lib.rs"
+
+[dependencies]
+chaos-proc = { workspace = true }
+sqlx = { workspace = true }
+
+[dev-dependencies]
+tempfile = { workspace = true }
+tokio = { workspace = true, features = ["fs", "macros", "rt-multi-thread"] }
+
+[lints]
+workspace = true

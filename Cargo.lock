@@ -996,6 +996,7 @@ version = "47.0.0"
 dependencies = [
  "anyhow",
  "chaos-proc",
+ "chaos-storage",
  "chrono",
  "croner",
  "jiff",
@@ -1284,6 +1285,7 @@ dependencies = [
  "chaos-scm",
  "chaos-selinux",
  "chaos-sh",
+ "chaos-storage",
  "chaos-sysctl",
  "chaos-syslog",
  "chaos-tmpfs",
@@ -1406,6 +1408,7 @@ dependencies = [
  "chaos-kern",
  "chaos-proc",
  "chaos-sh",
+ "chaos-storage",
  "core_test_support",
  "mcp-host",
  "mcp_test_support",
@@ -1660,6 +1663,16 @@ dependencies = [
 [[package]]
 name = "chaos-snitch"
 version = "47.0.0"
+
+[[package]]
+name = "chaos-storage"
+version = "47.0.0"
+dependencies = [
+ "chaos-proc",
+ "sqlx",
+ "tempfile",
+ "tokio",
+]
 
 [[package]]
 name = "chaos-sudoers"

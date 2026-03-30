@@ -5,6 +5,7 @@ members = [
     "sys/kern/abi",
     "sys/kern/ipc",
     "sys/kern/traits",
+    "sys/storage",
     # sys/arch — platform sandboxes
     "sys/arch/base",
     "sys/arch/linux",
@@ -109,6 +110,7 @@ chaos-kern = { path = "sys/kern/kern" }
 chaos-abi = { path = "sys/kern/abi" }
 chaos-ipc = { path = "sys/kern/ipc" }
 chaos-traits = { path = "sys/kern/traits" }
+chaos-storage = { path = "sys/storage" }
 alcatraz-base = { path = "sys/arch/base" }
 alcatraz-linux = { path = "sys/arch/linux" }
 alcatraz-freebsd = { path = "sys/arch/freebsd" }

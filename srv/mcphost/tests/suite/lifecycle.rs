@@ -1,6 +1,8 @@
 use std::time::Duration;
 
 use anyhow::Result;
+use chaos_cron::{CreateJobParams, CronScope, CronStore};
+use chaos_proc::open_chaos_db;
 use mcp_host::protocol::types::ErrorCode;
 use mcp_host::protocol::types::JsonRpcMessage;
 use pretty_assertions::assert_eq;
@@ -227,6 +229,54 @@ async fn cron_resource_can_be_read_after_initialize() -> Result<()> {
             ]
         })
     );
+
+    Ok(())
+}
+
+#[tokio::test(flavor = "multi_thread", worker_threads = 2)]
+async fn cron_resource_reads_jobs_from_chaos_db_even_without_preopened_state_runtime() -> Result<()>
+{
+    let (codex_home, mut mcp) = spawn_mcp_process().await?;
+
+    let pool = open_chaos_db(codex_home.path()).await?;
+    let store = CronStore::new(pool);
+    store
+        .create(&CreateJobParams {
+            name: "persisted job".to_string(),
+            schedule: "5m".to_string(),
+            command: "echo hi".to_string(),
+            scope: CronScope::Project,
+            project_path: Some("/tmp/project".to_string()),
+            session_id: None,
+        })
+        .await?;
+
+    mcp.initialize().await?;
+
+    let request_id = mcp
+        .send_custom_request("resources/read", Some(json!({ "uri": "chaos://crons" })))
+        .await?;
+    let message = timeout(
+        DEFAULT_READ_TIMEOUT,
+        mcp.read_stream_until_response_or_error_message(request_id.clone()),
+    )
+    .await??;
+
+    let JsonRpcMessage::Response(resp) = message else {
+        anyhow::bail!("expected JSON-RPC response, got: {message:?}");
+    };
+    assert_eq!(resp.id, request_id.to_value());
+    assert!(resp.error.is_none(), "unexpected error: {:?}", resp.error);
+
+    let text = resp.result.as_ref().unwrap()["contents"][0]["text"]
+        .as_str()
+        .expect("cron resource text");
+    let crons: serde_json::Value = serde_json::from_str(text)?;
+    let items = crons.as_array().expect("cron list array");
+    assert_eq!(items.len(), 1);
+    assert_eq!(items[0]["name"], json!("persisted job"));
+    assert_eq!(items[0]["scope"], json!("project"));
+    assert_eq!(items[0]["command"], json!("echo hi"));
 
     Ok(())
 }

@@ -142,6 +142,7 @@ pub async fn run_main(
         process_table,
         outgoing,
         arg0_paths,
+        sqlite_home: config.sqlite_home.clone(),
         running_requests: Arc::new(Mutex::new(std::collections::HashMap::new())),
         session_processes: Arc::new(Mutex::new(std::collections::HashMap::new())),
         process_names: Arc::new(Mutex::new(std::collections::HashMap::new())),

@@ -13,9 +13,18 @@ fn crons_list_handler<'a>(
 > {
     let _ = ctx;
     Box::pin(async move {
-        let chaos_pool = server.state_runtime.as_ref().and_then(|rt| rt.chaos_pool());
+        let existing_chaos_pool = server
+            .state_runtime
+            .as_ref()
+            .and_then(|rt| rt.chaos_pool().map(std::borrow::ToOwned::to_owned));
+        let provider = chaos_storage::ChaosStorageProvider::from_optional_sqlite(
+            existing_chaos_pool.as_ref(),
+            Some(&server.sqlite_home),
+        )
+        .await
+        .map_err(ResourceError::Internal)?;
 
-        let content = match chaos_cron::resource::list_crons(chaos_pool).await {
+        let content = match chaos_cron::resource::list_crons(Some(&provider)).await {
             Ok(json) => json,
             Err(msg) => return Err(ResourceError::Internal(msg)),
         };

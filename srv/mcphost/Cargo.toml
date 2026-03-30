@@ -18,6 +18,7 @@ chaos-argv = { workspace = true }
 chaos-cron = { workspace = true }
 chaos-kern = { workspace = true }
 chaos-ipc = { workspace = true }
+chaos-storage = { workspace = true }
 chaos-sh = { workspace = true }
 chaos-proc = { workspace = true }
 chaos-getopt = { workspace = true }

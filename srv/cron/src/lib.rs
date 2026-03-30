@@ -1,6 +1,7 @@
 //! Chaos cron — scheduled task execution for project, session, and agent scopes.
 
 mod job;
+mod provider;
 pub mod resource;
 mod schedule;
 mod scheduler;
@@ -10,6 +11,8 @@ pub mod tools;
 pub use job::CreateJobParams;
 pub use job::CronJob;
 pub use job::CronScope;
+pub(crate) use provider::CronStorage;
+pub(crate) use provider::SqliteCronStorage;
 pub use schedule::Schedule;
 pub use scheduler::Scheduler;
 pub use scheduler::shell_executor;

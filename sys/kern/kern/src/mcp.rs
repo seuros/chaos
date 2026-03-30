@@ -68,6 +68,10 @@ pub async fn collect_mcp_snapshot(config: &Config) -> McpListToolsResponseEvent 
         sandbox_cwd: env::current_dir().unwrap_or_else(|_| PathBuf::from("/")),
     };
 
+    // Snapshot collection uses a throwaway catalog — notifications are irrelevant here.
+    let snapshot_catalog = std::sync::Arc::new(std::sync::RwLock::new(
+        crate::catalog::Catalog::from_inventory(),
+    ));
     let (mcp_connection_manager, cancel_token) = McpConnectionManager::new(
         &mcp_servers,
         config.mcp_oauth_credentials_store_mode,
@@ -76,6 +80,7 @@ pub async fn collect_mcp_snapshot(config: &Config) -> McpListToolsResponseEvent 
         tx_event,
         sandbox_state,
         config.chaos_home.clone(),
+        snapshot_catalog,
     )
     .await;
 

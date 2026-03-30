@@ -406,9 +406,7 @@ impl ProcessTable {
         auth_manager: Arc<AuthManager>,
         parent_trace: Option<W3cTraceContext>,
     ) -> CodexResult<NewProcess> {
-        let initial_history =
-            RolloutRecorder::get_rollout_history_for_process(process_id)
-                .await?;
+        let initial_history = RolloutRecorder::get_rollout_history_for_process(process_id).await?;
         Box::pin(self.resume_process_with_history(
             config,
             initial_history,
@@ -506,9 +504,7 @@ impl ProcessTable {
         persist_extended_history: bool,
         parent_trace: Option<W3cTraceContext>,
     ) -> CodexResult<NewProcess> {
-        let history =
-            RolloutRecorder::get_rollout_history_for_process(process_id)
-                .await?;
+        let history = RolloutRecorder::get_rollout_history_for_process(process_id).await?;
         let history = truncate_before_nth_user_message(history, nth_user_message);
         Box::pin(self.state.spawn_process(
             config,
@@ -616,9 +612,7 @@ impl ProcessTableState {
         session_source: SessionSource,
         inherited_shell_snapshot: Option<Arc<ShellSnapshot>>,
     ) -> CodexResult<NewProcess> {
-        let initial_history =
-            RolloutRecorder::get_rollout_history_for_process(process_id)
-                .await?;
+        let initial_history = RolloutRecorder::get_rollout_history_for_process(process_id).await?;
         Box::pin(self.spawn_process_with_source(
             config,
             initial_history,
@@ -744,10 +738,7 @@ impl ProcessTableState {
             }
         };
 
-        let process = Arc::new(Process::new(
-            codex,
-            watch_registration,
-        ));
+        let process = Arc::new(Process::new(codex, watch_registration));
         let mut processes = self.processes.write().await;
         processes.insert(process_id, process.clone());
 

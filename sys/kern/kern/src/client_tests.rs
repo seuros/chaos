@@ -202,14 +202,8 @@ fn clamp_permission_mode_matches_codex_session_start_mapping() {
         clamp_permission_mode(AskForApproval::Never),
         "bypassPermissions"
     );
-    assert_eq!(
-        clamp_permission_mode(AskForApproval::OnRequest),
-        "default"
-    );
-    assert_eq!(
-        clamp_permission_mode(AskForApproval::OnFailure),
-        "default"
-    );
+    assert_eq!(clamp_permission_mode(AskForApproval::OnRequest), "default");
+    assert_eq!(clamp_permission_mode(AskForApproval::OnFailure), "default");
 }
 
 #[test]

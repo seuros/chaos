@@ -60,7 +60,12 @@ pub async fn ensure_sqlite_journald_running(binary_path: Option<&Path>) -> Resul
     if socket_exists(paths.socket_path.as_path()).await {
         tokio::fs::remove_file(paths.socket_path.as_path())
             .await
-            .with_context(|| format!("remove incompatible journal socket {}", paths.socket_path.display()))?;
+            .with_context(|| {
+                format!(
+                    "remove incompatible journal socket {}",
+                    paths.socket_path.display()
+                )
+            })?;
     }
     spawn_detached_journald(executable.as_path(), &paths)
         .with_context(|| format!("spawn detached journald {}", executable.display()))?;

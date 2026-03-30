@@ -13,13 +13,9 @@ fn build_stage_one_input_message_truncates_rollout_using_model_context_window() 
     )
     .unwrap();
     let expected_truncated = token_truncate(&input, expected_rollout_token_limit);
-    let message = build_stage_one_input_message(
-        &model_info,
-        "process://test",
-        Path::new("/tmp"),
-        &input,
-    )
-    .unwrap();
+    let message =
+        build_stage_one_input_message(&model_info, "process://test", Path::new("/tmp"), &input)
+            .unwrap();
 
     assert!(expected_truncated.contains("tokens truncated"));
     assert!(expected_truncated.starts_with('a'));
@@ -33,13 +29,9 @@ fn build_stage_one_input_message_uses_default_limit_when_model_context_window_mi
     let mut model_info = model_info_from_slug("gpt-5.2-codex");
     model_info.context_window = None;
     let expected_truncated = token_truncate(&input, DEFAULT_STAGE_ONE_ROLLOUT_TOKEN_LIMIT);
-    let message = build_stage_one_input_message(
-        &model_info,
-        "process://test",
-        Path::new("/tmp"),
-        &input,
-    )
-    .unwrap();
+    let message =
+        build_stage_one_input_message(&model_info, "process://test", Path::new("/tmp"), &input)
+            .unwrap();
 
     assert!(message.contains(&expected_truncated));
 }

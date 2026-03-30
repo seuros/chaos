@@ -2271,9 +2271,7 @@ impl Session {
     }
 
     pub(crate) async fn maybe_emit_unknown_model_warning_for_turn(&self, tc: &TurnContext) {
-        if tc.model_info.used_fallback_model_metadata
-            && !self.services.model_client.is_clamped()
-        {
+        if tc.model_info.used_fallback_model_metadata && !self.services.model_client.is_clamped() {
             self.send_event(
                 tc,
                 EventMsg::Warning(WarningEvent {
@@ -3955,8 +3953,7 @@ async fn submission_loop(sess: Arc<Session>, config: Arc<Config>, rx_sub: Receiv
                     // If clamped and model changed, forward to claude subprocess.
                     if sess.services.model_client.is_clamped()
                         && let Some(ref model_slug) = model
-                        && let Err(e) = sess.services.model_client
-                            .set_clamp_model(model_slug).await
+                        && let Err(e) = sess.services.model_client.set_clamp_model(model_slug).await
                     {
                         warn!("failed to set clamped model: {e}");
                     }
@@ -3981,7 +3978,11 @@ async fn submission_loop(sess: Arc<Session>, config: Arc<Config>, rx_sub: Receiv
                 }
                 Op::SetClamped { enabled } => {
                     sess.services.model_client.set_clamped(enabled).await;
-                    let mode = if enabled { "clamped (Claude Code MAX)" } else { "direct API" };
+                    let mode = if enabled {
+                        "clamped (Claude Code MAX)"
+                    } else {
+                        "direct API"
+                    };
                     sess.send_event_raw(Event {
                         id: sub.id.clone(),
                         msg: EventMsg::AgentMessage(AgentMessageEvent {
@@ -4813,9 +4814,9 @@ mod handlers {
 
         let initial_history =
             match RolloutRecorder::get_rollout_history_for_process(sess.conversation_id).await {
-            Ok(history) => history,
-            Err(err) => {
-                sess.send_event_raw(Event {
+                Ok(history) => history,
+                Err(err) => {
+                    sess.send_event_raw(Event {
                     id: turn_context.sub_id.clone(),
                     msg: EventMsg::Error(ErrorEvent {
                         message: format!(
@@ -4825,9 +4826,9 @@ mod handlers {
                     }),
                 })
                 .await;
-                return;
-            }
-        };
+                    return;
+                }
+            };
 
         let rollback_event = ProcessRolledBackEvent { num_turns };
         let rollback_msg = EventMsg::ProcessRolledBack(rollback_event.clone());

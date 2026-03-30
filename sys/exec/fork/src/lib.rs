@@ -11,6 +11,7 @@ pub mod event_processor_with_jsonl_output;
 pub mod exec_events;
 
 use chaos_argv::Arg0DispatchPaths;
+use chaos_ipc::ProcessId;
 use chaos_ipc::config_types::SandboxMode;
 use chaos_ipc::protocol::AskForApproval;
 use chaos_ipc::protocol::EventMsg;
@@ -19,7 +20,6 @@ use chaos_ipc::protocol::ReviewRequest;
 use chaos_ipc::protocol::ReviewTarget;
 use chaos_ipc::protocol::SessionSource;
 use chaos_ipc::user_input::UserInput;
-use chaos_ipc::ProcessId;
 use chaos_kern::AuthManager;
 use chaos_kern::Process;
 use chaos_kern::ProcessTable;
@@ -752,7 +752,8 @@ async fn resolve_resume_process_id(
                 Ok(None)
             }
         } else {
-            let process_id = chaos_kern::find_process_id_by_name(&config.codex_home, id_str).await?;
+            let process_id =
+                chaos_kern::find_process_id_by_name(&config.codex_home, id_str).await?;
             if let Some(process_id) = process_id
                 && chaos_kern::RolloutRecorder::journal_contains_process(process_id).await?
             {

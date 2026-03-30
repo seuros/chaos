@@ -91,8 +91,7 @@ async fn rebuild_raw_memories_file(
         writeln!(body, "updated_at: {}", memory.source_updated_at)
             .map_err(raw_memories_format_error)?;
         writeln!(body, "cwd: {}", memory.cwd.display()).map_err(raw_memories_format_error)?;
-        writeln!(body, "process_ref: {}", memory.process_ref)
-            .map_err(raw_memories_format_error)?;
+        writeln!(body, "process_ref: {}", memory.process_ref).map_err(raw_memories_format_error)?;
         let rollout_summary_file = format!("{}.md", rollout_summary_file_stem(memory));
         writeln!(body, "rollout_summary_file: {rollout_summary_file}")
             .map_err(raw_memories_format_error)?;
@@ -145,8 +144,7 @@ async fn write_rollout_summary_for_thread(
     writeln!(body, "process_id: {}", memory.process_id).map_err(rollout_summary_format_error)?;
     writeln!(body, "updated_at: {}", memory.source_updated_at)
         .map_err(rollout_summary_format_error)?;
-    writeln!(body, "process_ref: {}", memory.process_ref)
-        .map_err(rollout_summary_format_error)?;
+    writeln!(body, "process_ref: {}", memory.process_ref).map_err(rollout_summary_format_error)?;
     writeln!(body, "cwd: {}", memory.cwd.display()).map_err(rollout_summary_format_error)?;
     if let Some(git_branch) = memory.git_branch.as_deref() {
         writeln!(body, "git_branch: {git_branch}").map_err(rollout_summary_format_error)?;

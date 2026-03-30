@@ -112,14 +112,13 @@ LIMIT 1
         process_id: ProcessId,
         process_name: Option<&str>,
     ) -> anyhow::Result<bool> {
-        let result = sqlx::query(
-            "UPDATE processes SET process_name = ?, updated_at = ? WHERE id = ?",
-        )
-        .bind(process_name)
-        .bind(datetime_to_epoch_seconds(jiff::Timestamp::now()))
-        .bind(process_id.to_string())
-        .execute(self.pool.as_ref())
-        .await?;
+        let result =
+            sqlx::query("UPDATE processes SET process_name = ?, updated_at = ? WHERE id = ?")
+                .bind(process_name)
+                .bind(datetime_to_epoch_seconds(jiff::Timestamp::now()))
+                .bind(process_id.to_string())
+                .execute(self.pool.as_ref())
+                .await?;
         Ok(result.rows_affected() > 0)
     }
 
@@ -571,10 +570,7 @@ ON CONFLICT(process_id, position) DO NOTHING
     }
 
     /// Mark a thread as unarchived using the underlying database.
-    pub async fn mark_unarchived(
-        &self,
-        process_id: ProcessId,
-    ) -> anyhow::Result<()> {
+    pub async fn mark_unarchived(&self, process_id: ProcessId) -> anyhow::Result<()> {
         let Some(mut metadata) = self.get_process(process_id).await? else {
             return Ok(());
         };
@@ -760,7 +756,8 @@ mod tests {
             .await
             .expect("initial upsert should succeed");
 
-        let builder = ProcessMetadataBuilder::new(process_id, metadata.created_at, SessionSource::Cli);
+        let builder =
+            ProcessMetadataBuilder::new(process_id, metadata.created_at, SessionSource::Cli);
         let items = vec![RolloutItem::SessionMeta(SessionMetaLine {
             meta: SessionMeta {
                 id: process_id,
@@ -809,7 +806,8 @@ mod tests {
             .expect("initial upsert should succeed");
 
         let created_at = metadata.created_at.to_string();
-        let builder = ProcessMetadataBuilder::new(process_id, metadata.created_at, SessionSource::Cli);
+        let builder =
+            ProcessMetadataBuilder::new(process_id, metadata.created_at, SessionSource::Cli);
         let items = vec![RolloutItem::SessionMeta(SessionMetaLine {
             meta: SessionMeta {
                 id: process_id,
@@ -1040,7 +1038,8 @@ mod tests {
             .await
             .expect("initial upsert should succeed");
 
-        let builder = ProcessMetadataBuilder::new(process_id, metadata.created_at, SessionSource::Cli);
+        let builder =
+            ProcessMetadataBuilder::new(process_id, metadata.created_at, SessionSource::Cli);
         let items = vec![RolloutItem::EventMsg(EventMsg::TokenCount(
             chaos_ipc::protocol::TokenCountEvent {
                 info: Some(chaos_ipc::protocol::TokenUsageInfo {

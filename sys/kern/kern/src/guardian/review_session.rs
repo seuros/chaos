@@ -524,9 +524,7 @@ async fn load_rollout_items_for_fork(
     session: &Session,
 ) -> anyhow::Result<Option<Vec<RolloutItem>>> {
     session.flush_rollout().await;
-    let history =
-        RolloutRecorder::get_rollout_history_for_process(session.conversation_id)
-            .await?;
+    let history = RolloutRecorder::get_rollout_history_for_process(session.conversation_id).await?;
     Ok(Some(history.get_rollout_items()))
 }
 

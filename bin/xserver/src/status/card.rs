@@ -523,8 +523,7 @@ impl HistoryCell for StatusHistoryCell {
 
         let model_spans = if crate::theme::is_clamped() {
             vec![
-                Span::from("claude-sonnet-4-6")
-                    .fg(ratatui::style::Color::Rgb(255, 140, 50)),
+                Span::from("claude-sonnet-4-6").fg(ratatui::style::Color::Rgb(255, 140, 50)),
                 Span::from(" (via MAX subscription)").dim(),
             ]
         } else {
@@ -542,7 +541,9 @@ impl HistoryCell for StatusHistoryCell {
         lines.push(formatter.line("Model", model_spans));
         if !crate::theme::is_clamped() {
             if let Some(model_provider) = self.model_provider.as_ref() {
-                lines.push(formatter.line("Model provider", vec![Span::from(model_provider.clone())]));
+                lines.push(
+                    formatter.line("Model provider", vec![Span::from(model_provider.clone())]),
+                );
             }
         }
         lines.push(formatter.line("Directory", vec![Span::from(directory_value)]));

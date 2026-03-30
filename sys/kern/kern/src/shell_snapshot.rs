@@ -13,10 +13,10 @@ use anyhow::Context;
 use anyhow::Result;
 use anyhow::anyhow;
 use anyhow::bail;
+use chaos_ipc::ProcessId;
 use chaos_journald::JournalStore;
 use chaos_journald::SQLITE_DB_FILENAME;
 use chaos_journald::SqliteJournalStore;
-use chaos_ipc::ProcessId;
 use chaos_syslog::SessionTelemetry;
 use tokio::fs;
 use tokio::process::Command;
@@ -516,7 +516,10 @@ pub async fn cleanup_stale_snapshots(
 
         let updated_at = process.updated_at.as_second();
         let age_secs = now.saturating_sub(updated_at);
-        if u64::try_from(age_secs).ok().is_some_and(|age| age >= SNAPSHOT_RETENTION.as_secs()) {
+        if u64::try_from(age_secs)
+            .ok()
+            .is_some_and(|age| age >= SNAPSHOT_RETENTION.as_secs())
+        {
             remove_snapshot_file(&path).await;
         }
     }

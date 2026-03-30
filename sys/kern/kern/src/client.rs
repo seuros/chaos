@@ -742,7 +742,8 @@ fn render_clamp_content_items(content: &[ContentItem]) -> String {
 }
 
 fn render_json_pretty<T: serde::Serialize>(value: &T) -> String {
-    serde_json::to_string_pretty(value).unwrap_or_else(|err| format!("<serialization error: {err}>"))
+    serde_json::to_string_pretty(value)
+        .unwrap_or_else(|err| format!("<serialization error: {err}>"))
 }
 
 fn clamp_elide_large_text(text: &str) -> String {
@@ -750,7 +751,10 @@ fn clamp_elide_large_text(text: &str) -> String {
     let mut chars = text.chars();
     let preview: String = chars.by_ref().take(MAX_CHARS).collect();
     if chars.next().is_some() {
-        format!("{preview}\n...[truncated {} chars]", text.chars().count() - MAX_CHARS)
+        format!(
+            "{preview}\n...[truncated {} chars]",
+            text.chars().count() - MAX_CHARS
+        )
     } else {
         preview
     }
@@ -842,10 +846,7 @@ fn render_clamp_response_item(item: &ResponseItem) -> Option<String> {
         ResponseItem::WebSearchCall { status, action, .. } => Some(format!(
             "<web_search_call status=\"{}\">\n{}\n</web_search_call>",
             status.as_deref().unwrap_or(""),
-            action
-                .as_ref()
-                .map(render_json_pretty)
-                .unwrap_or_default()
+            action.as_ref().map(render_json_pretty).unwrap_or_default()
         )),
         ResponseItem::ImageGenerationCall {
             status,
@@ -1640,7 +1641,8 @@ impl ModelClientSession {
         // so Claude Code keeps conversation context.
         let clamp_state = Arc::clone(&self.client.state);
 
-        let (tx_event, rx_event) = mpsc::channel::<std::result::Result<ResponseEvent, ApiError>>(256);
+        let (tx_event, rx_event) =
+            mpsc::channel::<std::result::Result<ResponseEvent, ApiError>>(256);
 
         let session_telemetry = session_telemetry.clone();
         tokio::spawn(async move {
@@ -1664,8 +1666,8 @@ impl ModelClientSession {
                             return;
                         }
                         // Cache the models list for the TUI model picker.
-                        if let Some(models) = t.init_response()
-                            .and_then(|r| r.get("models").cloned())
+                        if let Some(models) =
+                            t.init_response().and_then(|r| r.get("models").cloned())
                         {
                             chaos_clamp::set_cached_models(models);
                         }
@@ -1693,7 +1695,9 @@ impl ModelClientSession {
             if let Err(e) = transport.set_model(&clamp_model_slug).await {
                 *guard = None;
                 let _ = tx_event
-                    .send(Err(ApiError::Stream(format!("clamp set_model failed: {e}"))))
+                    .send(Err(ApiError::Stream(format!(
+                        "clamp set_model failed: {e}"
+                    ))))
                     .await;
                 return;
             }
@@ -1702,15 +1706,13 @@ impl ModelClientSession {
 
             // Kern expects an OutputItemAdded before any OutputTextDelta.
             let _ = tx_event
-                .send(Ok(ResponseEvent::OutputItemAdded(
-                    ResponseItem::Message {
-                        id: None,
-                        role: "assistant".to_string(),
-                        content: vec![],
-                        end_turn: None,
-                        phase: None,
-                    },
-                )))
+                .send(Ok(ResponseEvent::OutputItemAdded(ResponseItem::Message {
+                    id: None,
+                    role: "assistant".to_string(),
+                    content: vec![],
+                    end_turn: None,
+                    phase: None,
+                })))
                 .await;
 
             let content = if spawned_fresh {
@@ -1746,17 +1748,13 @@ impl ModelClientSession {
                     }
                     Ok(Some(ClampMessage::Result { session_id, .. })) => {
                         let _ = tx_event
-                            .send(Ok(ResponseEvent::OutputItemDone(
-                                ResponseItem::Message {
-                                    id: None,
-                                    role: "assistant".to_string(),
-                                    content: vec![ContentItem::OutputText {
-                                        text: full_text,
-                                    }],
-                                    end_turn: Some(true),
-                                    phase: None,
-                                },
-                            )))
+                            .send(Ok(ResponseEvent::OutputItemDone(ResponseItem::Message {
+                                id: None,
+                                role: "assistant".to_string(),
+                                content: vec![ContentItem::OutputText { text: full_text }],
+                                end_turn: Some(true),
+                                phase: None,
+                            })))
                             .await;
                         let response_id = session_id.unwrap_or_else(|| "clamped".to_string());
                         let _ = tx_event
@@ -1880,11 +1878,7 @@ impl ModelClientSession {
         // Clamped mode: route through Claude Code subprocess.
         if self.client.state.clamped.load(Ordering::Relaxed) {
             return self
-                .stream_clamped(
-                    prompt,
-                    model_info,
-                    session_telemetry,
-                )
+                .stream_clamped(prompt, model_info, session_telemetry)
                 .await;
         }
 

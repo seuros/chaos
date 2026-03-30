@@ -40,9 +40,7 @@ async fn clamp_round_trip() {
             Message::Assistant { message } => {
                 eprintln!("[test] assistant: {message}");
             }
-            Message::Result {
-                total_cost_usd, ..
-            } => {
+            Message::Result { total_cost_usd, .. } => {
                 eprintln!("[test] turn complete (cost: {total_cost_usd:?})");
                 got_result = true;
                 break;

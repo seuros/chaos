@@ -4,7 +4,9 @@ use std::sync::Arc;
 
 use chaos_ipc::ProcessId;
 
-async fn open_state_db(codex_home: &Path) -> std::io::Result<Option<Arc<chaos_proc::StateRuntime>>> {
+async fn open_state_db(
+    codex_home: &Path,
+) -> std::io::Result<Option<Arc<chaos_proc::StateRuntime>>> {
     let db_path = chaos_proc::state_db_path(codex_home);
     if !tokio::fs::try_exists(&db_path).await? {
         return Ok(None);

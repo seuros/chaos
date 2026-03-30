@@ -1570,11 +1570,7 @@ mod tests {
         let duplicate_process_id = ProcessId::new();
         state.ingest_page(page(
             vec![
-                make_item_with_id(
-                    duplicate_process_id,
-                    "2025-01-03T00:00:00Z",
-                    "third",
-                ),
+                make_item_with_id(duplicate_process_id, "2025-01-03T00:00:00Z", "third"),
                 make_item("2025-01-02T00:00:00Z", "second"),
             ],
             Some(cursor_from_str(
@@ -1586,11 +1582,7 @@ mod tests {
 
         state.ingest_page(page(
             vec![
-                make_item_with_id(
-                    duplicate_process_id,
-                    "2025-01-03T00:00:00Z",
-                    "duplicate",
-                ),
+                make_item_with_id(duplicate_process_id, "2025-01-03T00:00:00Z", "duplicate"),
                 make_item("2025-01-01T00:00:00Z", "first"),
             ],
             Some(cursor_from_str(

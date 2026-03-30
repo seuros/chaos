@@ -2371,11 +2371,8 @@ impl App {
                                 self.config.clone(),
                             );
                             let (_, process, session_configured) = forked.into_parts();
-                            self.chat_widget = ChatWidget::new_from_existing(
-                                init,
-                                process,
-                                session_configured,
-                            );
+                            self.chat_widget =
+                                ChatWidget::new_from_existing(init, process, session_configured);
                             self.reset_process_event_state();
                             if let Some(summary) = summary {
                                 let mut lines: Vec<Line<'static>> =
@@ -2599,6 +2596,11 @@ impl App {
                 }
             }
             AppEvent::PersistModelSelection { model, effort } => {
+                if crate::theme::is_clamped() {
+                    tracing::debug!(%model, "skipping model persistence while clamped");
+                    return Ok(AppRunControl::Continue);
+                }
+
                 let profile = self.active_profile.as_deref();
                 match ConfigEditsBuilder::new(&self.config.codex_home)
                     .with_profile(profile)

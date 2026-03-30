@@ -126,11 +126,7 @@ pub struct ProcessMetadataBuilder {
 
 impl ProcessMetadataBuilder {
     /// Create a new builder with required fields and sensible defaults.
-    pub fn new(
-        id: ProcessId,
-        created_at: jiff::Timestamp,
-        source: SessionSource,
-    ) -> Self {
+    pub fn new(id: ProcessId, created_at: jiff::Timestamp, source: SessionSource) -> Self {
         Self {
             id,
             created_at,

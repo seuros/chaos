@@ -12,11 +12,11 @@ use crate::memories::phase_one::PRUNE_BATCH_SIZE;
 use crate::memories::prompts::build_stage_one_input_message;
 use crate::rollout::INTERACTIVE_SESSION_SOURCES;
 use crate::rollout::policy::should_persist_response_item_for_memories;
+use chaos_ipc::ProcessId;
 use chaos_ipc::config_types::ReasoningSummary as ReasoningSummaryConfig;
 use chaos_ipc::config_types::ServiceTier;
 use chaos_ipc::models::BaseInstructions;
 use chaos_ipc::models::ContentItem;
-use chaos_ipc::ProcessId;
 use chaos_ipc::models::ResponseItem;
 use chaos_ipc::openai_models::ModelInfo;
 use chaos_ipc::openai_models::ReasoningEffort as ReasoningEffortConfig;
@@ -264,29 +264,23 @@ mod job {
         stage_one_context: &RequestContext,
     ) -> JobResult {
         let thread = claim.thread;
-        let (stage_one_output, token_usage) = match sample(
-            session,
-            thread.id,
-            &thread.cwd,
-            stage_one_context,
-        )
-        .await
-        {
-            Ok(output) => output,
-            Err(reason) => {
-                result::failed(
-                    session,
-                    thread.id,
-                    &claim.ownership_token,
-                    &reason.to_string(),
-                )
-                .await;
-                return JobResult {
-                    outcome: JobOutcome::Failed,
-                    token_usage: None,
-                };
-            }
-        };
+        let (stage_one_output, token_usage) =
+            match sample(session, thread.id, &thread.cwd, stage_one_context).await {
+                Ok(output) => output,
+                Err(reason) => {
+                    result::failed(
+                        session,
+                        thread.id,
+                        &claim.ownership_token,
+                        &reason.to_string(),
+                    )
+                    .await;
+                    return JobResult {
+                        outcome: JobOutcome::Failed,
+                        token_usage: None,
+                    };
+                }
+            };
 
         if stage_one_output.raw_memory.is_empty() || stage_one_output.rollout_summary.is_empty() {
             return JobResult {

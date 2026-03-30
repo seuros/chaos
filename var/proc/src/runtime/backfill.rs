@@ -232,10 +232,7 @@ mod tests {
             .await
             .expect("get running backfill state");
         assert_eq!(running.status, crate::BackfillStatus::Running);
-        assert_eq!(
-            running.last_watermark,
-            Some("cursor-a".to_string())
-        );
+        assert_eq!(running.last_watermark, Some("cursor-a".to_string()));
         assert_eq!(running.last_success_at, None);
 
         runtime
@@ -247,10 +244,7 @@ mod tests {
             .await
             .expect("get completed backfill state");
         assert_eq!(completed.status, crate::BackfillStatus::Complete);
-        assert_eq!(
-            completed.last_watermark,
-            Some("cursor-b".to_string())
-        );
+        assert_eq!(completed.last_watermark, Some("cursor-b".to_string()));
         assert!(completed.last_success_at.is_some());
 
         let _ = tokio::fs::remove_dir_all(codex_home).await;

@@ -52,10 +52,7 @@ pub struct Process {
 /// Conduit for the bidirectional stream of messages that compose a process
 /// (formerly called a thread, and earlier a conversation) in ChaOS.
 impl Process {
-    pub(crate) fn new(
-        codex: Codex,
-        watch_registration: WatchRegistration,
-    ) -> Self {
+    pub(crate) fn new(codex: Codex, watch_registration: WatchRegistration) -> Self {
         Self {
             codex,
             out_of_band_elicitation_count: Mutex::new(0),

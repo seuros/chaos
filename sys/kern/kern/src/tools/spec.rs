@@ -1839,7 +1839,7 @@ pub(crate) fn build_specs(
                     .map(move |t| (name.clone(), t))
             })
             .collect();
-    build_specs_with_discoverable_tools(config, mcp_tools, app_tools, None, dynamic_tools, catalog_tools)
+    build_specs_with_discoverable_tools(config, mcp_tools, app_tools, None, dynamic_tools, catalog_tools, None)
 }
 
 pub(crate) fn build_specs_with_discoverable_tools(
@@ -1849,7 +1849,9 @@ pub(crate) fn build_specs_with_discoverable_tools(
     discoverable_tools: Option<Vec<DiscoverableTool>>,
     dynamic_tools: &[DynamicToolSpec],
     catalog_tools: Vec<(String, chaos_traits::catalog::CatalogTool)>,
+    hallucinate: Option<chaos_hallucinate::HallucinateHandle>,
 ) -> ToolRegistryBuilder {
+    use crate::tools::handlers::HallucinateHandler;
     use crate::minions::tools::CloseAgentHandler;
     use crate::minions::tools::ResumeAgentHandler;
     use crate::minions::tools::SendInputHandler;
@@ -2069,6 +2071,12 @@ pub(crate) fn build_specs_with_discoverable_tools(
             match source.as_str() {
                 "arsenal" => builder.register_handler(&tool.name, arsenal_handler.clone()),
                 "cron" => builder.register_handler(&tool.name, cron_handler.clone()),
+                "hallucinate" => {
+                    if let Some(ref handle) = hallucinate {
+                        let handler = Arc::new(HallucinateHandler { handle: handle.clone() });
+                        builder.register_handler(&tool.name, handler);
+                    }
+                }
                 _ => builder.register_handler(&tool.name, arsenal_handler.clone()),
             }
         }

@@ -202,7 +202,6 @@ use crate::clipboard_paste::pasted_image_format;
 use crate::history_cell;
 use crate::tui::FrameRequester;
 use crate::ui_consts::LIVE_PREFIX_COLS;
-use chaos_kern::plugins::PluginCapabilitySummary;
 use chaos_locate::FileMatch;
 use std::cell::RefCell;
 use std::collections::HashMap;
@@ -337,7 +336,6 @@ pub(crate) struct ChatComposer {
     footer_flash: Option<FooterFlash>,
     context_window_percent: Option<i64>,
     context_window_used_tokens: Option<i64>,
-    plugins: Option<Vec<PluginCapabilitySummary>>,
     connectors_snapshot: Option<ConnectorsSnapshot>,
     dismissed_mention_popup_token: Option<String>,
     mention_bindings: HashMap<u64, ComposerMentionBinding>,
@@ -447,7 +445,6 @@ impl ChatComposer {
             footer_flash: None,
             context_window_percent: None,
             context_window_used_tokens: None,
-            plugins: None,
             connectors_snapshot: None,
             dismissed_mention_popup_token: None,
             mention_bindings: HashMap::new(),
@@ -469,11 +466,6 @@ impl ChatComposer {
 
     pub(crate) fn set_frame_requester(&mut self, frame_requester: FrameRequester) {
         self.frame_requester = Some(frame_requester);
-    }
-
-    pub fn set_plugin_mentions(&mut self, plugins: Option<Vec<PluginCapabilitySummary>>) {
-        self.plugins = plugins;
-        self.sync_popups();
     }
 
     /// Toggle composer-side image paste handling.
@@ -1706,21 +1698,12 @@ impl ChatComposer {
         (rebuilt, rebuilt_elements)
     }
 
-    pub fn plugins(&self) -> Option<&Vec<PluginCapabilitySummary>> {
-        self.plugins.as_ref()
-    }
-
     fn mentions_enabled(&self) -> bool {
-        let plugins_ready = self
-            .plugins
-            .as_ref()
-            .is_some_and(|plugins| !plugins.is_empty());
-        let connectors_ready = self.connectors_enabled
+        self.connectors_enabled
             && self
                 .connectors_snapshot
                 .as_ref()
-                .is_some_and(|snapshot| !snapshot.connectors.is_empty());
-        plugins_ready || connectors_ready
+                .is_some_and(|snapshot| !snapshot.connectors.is_empty())
     }
 
     /// Extract a token prefixed with `prefix` under the cursor, if any.
@@ -4361,7 +4344,6 @@ mod tests {
             install_url: Some("https://example.test/notion".to_string()),
             is_accessible: true,
             is_enabled: false,
-            plugin_display_names: Vec::new(),
         }];
         composer.set_connector_mentions(Some(ConnectorsSnapshot { connectors }));
 
@@ -4398,7 +4380,6 @@ mod tests {
             install_url: Some("https://example.test/notion".to_string()),
             is_accessible: true,
             is_enabled: false,
-            plugin_display_names: Vec::new(),
         }];
         composer.set_connector_mentions(Some(ConnectorsSnapshot { connectors }));
 

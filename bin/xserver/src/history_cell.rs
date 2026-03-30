@@ -56,7 +56,6 @@ use chaos_ipc::user_input::TextElement;
 use chaos_kern::config::Config;
 use chaos_kern::config::types::McpServerTransportConfig;
 use chaos_kern::mcp::McpManager;
-use chaos_kern::plugins::PluginsManager;
 use chaos_kern::web_search::web_search_detail;
 use chaos_syslog::RuntimeMetricsSummary;
 use image::DynamicImage;
@@ -1771,7 +1770,7 @@ pub(crate) fn new_mcp_tools_output(
         lines.push("".into());
     }
 
-    let mcp_manager = McpManager::new(Arc::new(PluginsManager::new(config.chaos_home.clone())));
+    let mcp_manager = McpManager::new();
     let effective_servers = mcp_manager.effective_servers(config);
     let mut servers: Vec<_> = effective_servers.iter().collect();
     servers.sort_by(|(a, _), (b, _)| a.cmp(b));

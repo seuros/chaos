@@ -18,7 +18,6 @@ use crate::config_loader::CloudRequirementsLoader;
 use crate::config_loader::ConfigLayerStackOrdering;
 use crate::config_loader::LoaderOverrides;
 use crate::config_loader::load_config_layers_state;
-use crate::plugins::PluginsManager;
 use crate::skills::SkillLoadOutcome;
 use crate::skills::loader::SkillRoot;
 use crate::skills::loader::load_skills_from_roots;
@@ -28,7 +27,6 @@ use crate::skills::system::uninstall_system_skills;
 
 pub struct SkillsManager {
     chaos_home: PathBuf,
-    plugins_manager: Arc<PluginsManager>,
     cache_by_cwd: RwLock<HashMap<PathBuf, SkillLoadOutcome>>,
     cache_by_config: RwLock<HashMap<ConfigSkillsCacheKey, SkillLoadOutcome>>,
 }
@@ -36,12 +34,10 @@ pub struct SkillsManager {
 impl SkillsManager {
     pub fn new(
         chaos_home: PathBuf,
-        plugins_manager: Arc<PluginsManager>,
         bundled_skills_enabled: bool,
     ) -> Self {
         let manager = Self {
             chaos_home,
-            plugins_manager,
             cache_by_cwd: RwLock::new(HashMap::new()),
             cache_by_config: RwLock::new(HashMap::new()),
         };
@@ -71,11 +67,9 @@ impl SkillsManager {
     }
 
     pub(crate) fn skill_roots_for_config(&self, config: &Config) -> Vec<SkillRoot> {
-        let loaded_plugins = self.plugins_manager.plugins_for_config(config);
         let mut roots = skill_roots(
             &config.config_layer_stack,
             &config.cwd,
-            loaded_plugins.effective_skill_roots(),
         );
         if !config.bundled_skills_enabled() {
             roots.retain(|root| root.scope != SkillScope::System);
@@ -138,13 +132,9 @@ impl SkillsManager {
             }
         };
 
-        let loaded_plugins =
-            self.plugins_manager
-                .plugins_for_layer_stack(cwd, &config_layer_stack, force_reload);
         let mut roots = skill_roots(
             &config_layer_stack,
             cwd,
-            loaded_plugins.effective_skill_roots(),
         );
         if !bundled_skills_enabled_from_stack(&config_layer_stack) {
             roots.retain(|root| root.scope != SkillScope::System);

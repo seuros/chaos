@@ -133,7 +133,6 @@ enum McpServerElicitationResponseMode {
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub(crate) enum ToolSuggestionToolType {
     Connector,
-    Plugin,
 }
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
@@ -350,7 +349,6 @@ fn parse_tool_suggestion_request(meta: Option<&Value>) -> Option<ToolSuggestionR
 
     let tool_type = match meta.get(TOOL_TYPE_KEY).and_then(Value::as_str) {
         Some("connector") => ToolSuggestionToolType::Connector,
-        Some("plugin") => ToolSuggestionToolType::Plugin,
         _ => return None,
     };
     let suggest_type = match meta

@@ -423,10 +423,6 @@ mod tests {
                 {
                     "type": "input_text",
                     "text": "<skills_instructions>\n## Skills\nbody\n</skills_instructions>"
-                },
-                {
-                    "type": "input_text",
-                    "text": "<plugins_instructions>\n## Plugins\nbody\n</plugins_instructions>"
                 }
             ]
         })];
@@ -438,7 +434,7 @@ mod tests {
 
         assert_eq!(
             rendered,
-            "00:message/developer[3]:\n    [01] <APPS_INSTRUCTIONS>\n    [02] <SKILLS_INSTRUCTIONS>\n    [03] <PLUGINS_INSTRUCTIONS>"
+            "00:message/developer[2]:\n    [01] <APPS_INSTRUCTIONS>\n    [02] <SKILLS_INSTRUCTIONS>"
         );
     }
 
@@ -449,8 +445,7 @@ mod tests {
             "role": "developer",
             "content": [
                 { "type": "input_text", "text": "<permissions instructions>\n...</permissions instructions>" },
-                { "type": "input_text", "text": "<skills_instructions>\n## Skills\n...</skills_instructions>" },
-                { "type": "input_text", "text": "<plugins_instructions>\n## Plugins\n...</plugins_instructions>" }
+                { "type": "input_text", "text": "<skills_instructions>\n## Skills\n...</skills_instructions>" }
             ]
         })];
 

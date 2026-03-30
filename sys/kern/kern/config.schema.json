@@ -458,9 +458,6 @@
             "personality": {
               "type": "boolean"
             },
-            "plugins": {
-              "type": "boolean"
-            },
             "prevent_idle_sleep": {
               "type": "boolean"
             },
@@ -1495,16 +1492,6 @@
       ],
       "type": "string"
     },
-    "PluginConfig": {
-      "additionalProperties": false,
-      "properties": {
-        "enabled": {
-          "default": true,
-          "type": "boolean"
-        }
-      },
-      "type": "object"
-    },
     "ProjectConfig": {
       "additionalProperties": false,
       "properties": {
@@ -2456,9 +2443,6 @@
         "personality": {
           "type": "boolean"
         },
-        "plugins": {
-          "type": "boolean"
-        },
         "prevent_idle_sleep": {
           "type": "boolean"
         },
@@ -2853,14 +2837,6 @@
           "type": "null"
         }
       ]
-    },
-    "plugins": {
-      "additionalProperties": {
-        "$ref": "#/definitions/PluginConfig"
-      },
-      "default": {},
-      "description": "User-level plugin config entries keyed by plugin name.",
-      "type": "object"
     },
     "profile": {
       "description": "Profile to use from the `profiles` map.",

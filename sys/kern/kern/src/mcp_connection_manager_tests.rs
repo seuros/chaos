@@ -23,7 +23,6 @@ fn create_test_tool(server_name: &str, tool_name: &str) -> ToolInfo {
         },
         connector_id: None,
         connector_name: None,
-        plugin_display_names: Vec::new(),
         connector_description: None,
     }
 }

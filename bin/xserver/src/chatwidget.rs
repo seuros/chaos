@@ -132,7 +132,6 @@ use chaos_kern::git_info::get_git_repo_root;
 use chaos_kern::git_info::local_git_branches;
 use chaos_kern::mcp::McpManager;
 use chaos_kern::models_manager::manager::ModelsManager;
-use chaos_kern::plugins::PluginsManager;
 use chaos_kern::project_doc::DEFAULT_PROJECT_DOC_FILENAME;
 use chaos_kern::terminal::TerminalName;
 use chaos_kern::terminal::terminal_info;
@@ -1376,7 +1375,6 @@ impl ChatWidget {
         }
         self.refresh_model_display();
         self.sync_personality_command_enabled();
-        self.refresh_plugin_mentions();
         let startup_tooltip_override = self.startup_tooltip_override.take();
         let session_info_cell = history_cell::new_session_info(
             &self.config,
@@ -4643,32 +4641,6 @@ impl ChatWidget {
             });
         }
 
-        let mut selected_plugin_ids: HashSet<String> = HashSet::new();
-
-        if let Some(plugins) = self.plugins_for_mentions() {
-            for binding in &mention_bindings {
-                let Some(plugin_config_name) = binding
-                    .path
-                    .strip_prefix("plugin://")
-                    .filter(|id| !id.is_empty())
-                else {
-                    continue;
-                };
-                if !selected_plugin_ids.insert(plugin_config_name.to_string()) {
-                    continue;
-                }
-                if let Some(plugin) = plugins
-                    .iter()
-                    .find(|plugin| plugin.config_name == plugin_config_name)
-                {
-                    items.push(UserInput::Mention {
-                        name: plugin.display_name.clone(),
-                        path: binding.path.clone(),
-                    });
-                }
-            }
-        }
-
         let mut selected_app_ids: HashSet<String> = HashSet::new();
         if let Some(apps) = self.connectors_for_mentions() {
             for binding in &mention_bindings {
@@ -6945,9 +6917,6 @@ impl ChatWidget {
         if feature == Feature::Personality {
             self.sync_personality_command_enabled();
         }
-        if feature == Feature::Plugins {
-            self.refresh_plugin_mentions();
-        }
         if feature == Feature::PreventIdleSleep {
             self.turn_sleep_inhibitor = SleepInhibitor::new(enabled);
             self.turn_sleep_inhibitor
@@ -7287,14 +7256,6 @@ impl ChatWidget {
         }
     }
 
-    fn plugins_for_mentions(&self) -> Option<&[chaos_kern::plugins::PluginCapabilitySummary]> {
-        if !self.config.features.enabled(Feature::Plugins) {
-            return None;
-        }
-
-        self.bottom_pane.plugins().map(Vec::as_slice)
-    }
-
     /// Build a placeholder header cell while the session is configuring.
     fn placeholder_session_header_cell(config: &Config) -> Box<dyn HistoryCell> {
         let placeholder_style = Style::default().add_modifier(Modifier::DIM | Modifier::ITALIC);
@@ -7365,9 +7326,7 @@ impl ChatWidget {
     }
 
     pub(crate) fn add_mcp_output(&mut self) {
-        let mcp_manager = McpManager::new(Arc::new(PluginsManager::new(
-            self.config.chaos_home.clone(),
-        )));
+        let mcp_manager = McpManager::new();
         if mcp_manager.effective_servers(&self.config).is_empty() {
             self.add_to_history(history_cell::empty_mcp_output());
         } else {
@@ -7927,19 +7886,6 @@ impl ChatWidget {
         self.refresh_connectors_popup_if_open(&snapshot.connectors);
         self.connectors_cache = ConnectorsCacheState::Ready(snapshot.clone());
         self.bottom_pane.set_connectors_snapshot(Some(snapshot));
-    }
-
-    fn refresh_plugin_mentions(&mut self) {
-        if !self.config.features.enabled(Feature::Plugins) {
-            self.bottom_pane.set_plugin_mentions(/*plugins*/ None);
-            return;
-        }
-
-        let plugins = PluginsManager::new(self.config.chaos_home.clone())
-            .plugins_for_config(&self.config)
-            .capability_summaries()
-            .to_vec();
-        self.bottom_pane.set_plugin_mentions(Some(plugins));
     }
 
     pub(crate) fn open_review_popup(&mut self) {

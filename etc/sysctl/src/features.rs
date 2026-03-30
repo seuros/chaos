@@ -91,7 +91,6 @@ pub enum Feature {
     SpawnCsv,
     Apps,
     ToolSuggest,
-    Plugins,
     ImageGeneration,
     SkillMcpDependencyInstall,
     SkillEnvVarDependencyPrompt,
@@ -513,12 +512,6 @@ pub const FEATURES: &[FeatureSpec] = &[
     FeatureSpec {
         id: Feature::ToolSuggest,
         key: "tool_suggest",
-        stage: Stage::UnderDevelopment,
-        default_enabled: false,
-    },
-    FeatureSpec {
-        id: Feature::Plugins,
-        key: "plugins",
         stage: Stage::UnderDevelopment,
         default_enabled: false,
     },

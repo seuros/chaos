@@ -1,4 +1,3 @@
-use crate::plugins::PluginCapabilitySummary;
 use chaos_ipc::api::AppInfo;
 use serde::Deserialize;
 use serde::Serialize;
@@ -7,14 +6,12 @@ use serde::Serialize;
 #[serde(rename_all = "snake_case")]
 pub(crate) enum DiscoverableToolType {
     Connector,
-    Plugin,
 }
 
 impl DiscoverableToolType {
     pub(crate) fn as_str(self) -> &'static str {
         match self {
             Self::Connector => "connector",
-            Self::Plugin => "plugin",
         }
     }
 }
@@ -38,35 +35,30 @@ impl DiscoverableToolAction {
 #[derive(Clone, Debug, PartialEq)]
 pub(crate) enum DiscoverableTool {
     Connector(Box<AppInfo>),
-    Plugin(Box<DiscoverablePluginInfo>),
 }
 
 impl DiscoverableTool {
     pub(crate) fn tool_type(&self) -> DiscoverableToolType {
         match self {
             Self::Connector(_) => DiscoverableToolType::Connector,
-            Self::Plugin(_) => DiscoverableToolType::Plugin,
         }
     }
 
     pub(crate) fn id(&self) -> &str {
         match self {
             Self::Connector(connector) => connector.id.as_str(),
-            Self::Plugin(plugin) => plugin.id.as_str(),
         }
     }
 
     pub(crate) fn name(&self) -> &str {
         match self {
             Self::Connector(connector) => connector.name.as_str(),
-            Self::Plugin(plugin) => plugin.name.as_str(),
         }
     }
 
     pub(crate) fn description(&self) -> Option<&str> {
         match self {
             Self::Connector(connector) => connector.description.as_deref(),
-            Self::Plugin(plugin) => plugin.description.as_deref(),
         }
     }
 }
@@ -74,38 +66,5 @@ impl DiscoverableTool {
 impl From<AppInfo> for DiscoverableTool {
     fn from(value: AppInfo) -> Self {
         Self::Connector(Box::new(value))
-    }
-}
-
-impl From<DiscoverablePluginInfo> for DiscoverableTool {
-    fn from(value: DiscoverablePluginInfo) -> Self {
-        Self::Plugin(Box::new(value))
-    }
-}
-
-#[derive(Clone, Debug, PartialEq, Eq)]
-pub(crate) struct DiscoverablePluginInfo {
-    pub(crate) id: String,
-    pub(crate) name: String,
-    pub(crate) description: Option<String>,
-    pub(crate) has_skills: bool,
-    pub(crate) mcp_server_names: Vec<String>,
-    pub(crate) app_connector_ids: Vec<String>,
-}
-
-impl From<PluginCapabilitySummary> for DiscoverablePluginInfo {
-    fn from(value: PluginCapabilitySummary) -> Self {
-        Self {
-            id: value.config_name,
-            name: value.display_name,
-            description: value.description,
-            has_skills: value.has_skills,
-            mcp_server_names: value.mcp_server_names,
-            app_connector_ids: value
-                .app_connector_ids
-                .into_iter()
-                .map(|connector_id| connector_id.0)
-                .collect(),
-        }
     }
 }

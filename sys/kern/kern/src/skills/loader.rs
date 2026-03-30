@@ -209,13 +209,11 @@ where
 pub(crate) fn skill_roots(
     config_layer_stack: &ConfigLayerStack,
     cwd: &Path,
-    plugin_skill_roots: Vec<PathBuf>,
 ) -> Vec<SkillRoot> {
     skill_roots_with_home_dir(
         config_layer_stack,
         cwd,
         home_dir().as_deref(),
-        plugin_skill_roots,
     )
 }
 
@@ -223,13 +221,8 @@ fn skill_roots_with_home_dir(
     config_layer_stack: &ConfigLayerStack,
     cwd: &Path,
     home_dir: Option<&Path>,
-    plugin_skill_roots: Vec<PathBuf>,
 ) -> Vec<SkillRoot> {
     let mut roots = skill_roots_from_layer_stack_inner(config_layer_stack, home_dir);
-    roots.extend(plugin_skill_roots.into_iter().map(|path| SkillRoot {
-        path,
-        scope: SkillScope::User,
-    }));
     roots.extend(repo_agents_skill_roots(config_layer_stack, cwd));
     dedupe_skill_roots_by_path(&mut roots);
     roots

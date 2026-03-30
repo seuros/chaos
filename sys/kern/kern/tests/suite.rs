@@ -108,8 +108,6 @@ mod otel;
 mod pending_input;
 #[path = "suite/personality.rs"]
 mod personality;
-#[path = "suite/plugins.rs"]
-mod plugins;
 #[path = "suite/prompt_caching.rs"]
 mod prompt_caching;
 #[path = "suite/quota_exceeded.rs"]

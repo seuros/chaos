@@ -59,7 +59,6 @@ fn discoverable_connector(id: &str, name: &str, description: &str) -> Discoverab
         install_url: Some(format!("https://chatgpt.com/apps/{slug}/{id}")),
         is_accessible: false,
         is_enabled: true,
-        plugin_display_names: Vec::new(),
     }))
 }
 
@@ -1844,8 +1843,7 @@ fn search_tool_description_lists_each_codex_apps_connector_once() {
                     ),
                     connector_id: Some("calendar".to_string()),
                     connector_name: Some("Calendar".to_string()),
-                    plugin_display_names: Vec::new(),
-                    connector_description: Some(
+                                connector_description: Some(
                         "Plan events and manage your calendar.".to_string(),
                     ),
                 },
@@ -1863,8 +1861,7 @@ fn search_tool_description_lists_each_codex_apps_connector_once() {
                     ),
                     connector_id: Some("calendar".to_string()),
                     connector_name: Some("Calendar".to_string()),
-                    plugin_display_names: Vec::new(),
-                    connector_description: Some(
+                                connector_description: Some(
                         "Plan events and manage your calendar.".to_string(),
                     ),
                 },
@@ -1882,8 +1879,7 @@ fn search_tool_description_lists_each_codex_apps_connector_once() {
                     ),
                     connector_id: Some("gmail".to_string()),
                     connector_name: Some("Gmail".to_string()),
-                    plugin_display_names: Vec::new(),
-                    connector_description: Some("Find and summarize email threads.".to_string()),
+                                connector_description: Some("Find and summarize email threads.".to_string()),
                 },
             ),
             (
@@ -1895,8 +1891,7 @@ fn search_tool_description_lists_each_codex_apps_connector_once() {
                     tool: mcp_tool("echo", "Echo", serde_json::json!({"type": "object"})),
                     connector_id: None,
                     connector_name: None,
-                    plugin_display_names: Vec::new(),
-                    connector_description: None,
+                                connector_description: None,
                 },
             ),
         ])),
@@ -1937,8 +1932,7 @@ fn search_tool_requires_model_capability_only() {
             connector_id: Some("calendar".to_string()),
             connector_name: Some("Calendar".to_string()),
             connector_description: None,
-            plugin_display_names: Vec::new(),
-        },
+            },
     )]));
 
     let features = Features::with_defaults();
@@ -2064,8 +2058,7 @@ fn search_tool_description_falls_back_to_connector_name_without_description() {
                 ),
                 connector_id: Some("calendar".to_string()),
                 connector_name: Some("Calendar".to_string()),
-                plugin_display_names: Vec::new(),
-                connector_description: None,
+                        connector_description: None,
             },
         )])),
         &[],
@@ -2114,8 +2107,7 @@ fn search_tool_registers_namespaced_app_tool_aliases() {
                     connector_id: Some("calendar".to_string()),
                     connector_name: Some("Calendar".to_string()),
                     connector_description: None,
-                    plugin_display_names: Vec::new(),
-                },
+                            },
             ),
             (
                 "mcp__codex_apps__calendar_list_events".to_string(),
@@ -2131,8 +2123,7 @@ fn search_tool_registers_namespaced_app_tool_aliases() {
                     connector_id: Some("calendar".to_string()),
                     connector_name: Some("Calendar".to_string()),
                     connector_description: None,
-                    plugin_display_names: Vec::new(),
-                },
+                            },
             ),
         ])),
         &[],
@@ -2173,14 +2164,6 @@ fn tool_suggest_description_lists_discoverable_tools() {
             "Gmail",
             "Find and summarize email threads.",
         ),
-        DiscoverableTool::Plugin(Box::new(DiscoverablePluginInfo {
-            id: "sample@test".to_string(),
-            name: "Sample Plugin".to_string(),
-            description: None,
-            has_skills: true,
-            mcp_server_names: vec!["sample-docs".to_string()],
-            app_connector_ids: vec!["connector_sample".to_string()],
-        })),
     ];
 
     let (tools, _) = build_specs_with_discoverable_tools(
@@ -2203,13 +2186,8 @@ fn tool_suggest_description_lists_discoverable_tools() {
     };
     assert!(description.contains("Google Calendar"));
     assert!(description.contains("Gmail"));
-    assert!(description.contains("Sample Plugin"));
     assert!(description.contains("Plan events and schedules."));
     assert!(description.contains("Find and summarize email threads."));
-    assert!(description.contains("id: `sample@test`, type: plugin, action: enable"));
-    assert!(
-        description.contains("skills; MCP servers: sample-docs; app connectors: connector_sample")
-    );
     assert!(description.contains("DO NOT explore or recommend tools that are not on this list."));
     let JsonSchema::Object { required, .. } = parameters else {
         panic!("expected object parameters");

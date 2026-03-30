@@ -411,13 +411,11 @@ async fn guardian_subagent_does_not_inherit_parent_exec_policy_rules() {
         None,
         CollaborationModesConfig::default(),
     ));
-    let plugins_manager = Arc::new(PluginsManager::new(config.chaos_home.clone()));
     let skills_manager = Arc::new(SkillsManager::new(
         config.chaos_home.clone(),
-        Arc::clone(&plugins_manager),
         true,
     ));
-    let mcp_manager = Arc::new(McpManager::new(Arc::clone(&plugins_manager)));
+    let mcp_manager = Arc::new(McpManager::new());
     let file_watcher = Arc::new(FileWatcher::noop());
 
     let ChaosSpawnOk { chaos, .. } = Chaos::spawn(ChaosSpawnArgs {
@@ -425,7 +423,6 @@ async fn guardian_subagent_does_not_inherit_parent_exec_policy_rules() {
         auth_manager,
         models_manager,
         skills_manager,
-        plugins_manager,
         mcp_manager,
         file_watcher,
         conversation_history: InitialHistory::New,

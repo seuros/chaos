@@ -30,7 +30,6 @@ use bottom_pane_view::BottomPaneView;
 use chaos_ipc::request_user_input::RequestUserInputEvent;
 use chaos_ipc::user_input::TextElement;
 use chaos_kern::features::Features;
-use chaos_kern::plugins::PluginCapabilitySummary;
 use chaos_locate::FileMatch;
 use crossterm::event::KeyCode;
 use crossterm::event::KeyEvent;
@@ -239,11 +238,6 @@ impl BottomPane {
         self.request_redraw();
     }
 
-    pub fn set_plugin_mentions(&mut self, plugins: Option<Vec<PluginCapabilitySummary>>) {
-        self.composer.set_plugin_mentions(plugins);
-        self.request_redraw();
-    }
-
     pub fn take_mention_bindings(&mut self) -> Vec<MentionBinding> {
         self.composer.take_mention_bindings()
     }
@@ -291,10 +285,6 @@ impl BottomPane {
 
     pub fn status_widget(&self) -> Option<&StatusIndicatorWidget> {
         self.status.as_ref()
-    }
-
-    pub fn plugins(&self) -> Option<&Vec<PluginCapabilitySummary>> {
-        self.composer.plugins()
     }
 
     #[cfg(test)]

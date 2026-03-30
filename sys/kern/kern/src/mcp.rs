@@ -21,43 +21,28 @@ use crate::config::types::McpServerConfig;
 use crate::mcp::auth::compute_auth_statuses;
 use crate::mcp_connection_manager::McpConnectionManager;
 use crate::mcp_connection_manager::SandboxState;
-use crate::plugins::PluginsManager;
 
 const MCP_TOOL_NAME_PREFIX: &str = "mcp";
 const MCP_TOOL_NAME_DELIMITER: &str = "__";
 
-pub struct McpManager {
-    plugins_manager: Arc<PluginsManager>,
-}
+pub struct McpManager;
 
 impl McpManager {
-    pub fn new(plugins_manager: Arc<PluginsManager>) -> Self {
-        Self { plugins_manager }
+    pub fn new() -> Self {
+        Self
     }
 
     pub fn configured_servers(&self, config: &Config) -> HashMap<String, McpServerConfig> {
-        configured_mcp_servers(config, self.plugins_manager.as_ref())
+        config.mcp_servers.get().clone()
     }
 
     pub fn effective_servers(&self, config: &Config) -> HashMap<String, McpServerConfig> {
-        configured_mcp_servers(config, self.plugins_manager.as_ref())
+        config.mcp_servers.get().clone()
     }
-}
-
-fn configured_mcp_servers(
-    config: &Config,
-    plugins_manager: &PluginsManager,
-) -> HashMap<String, McpServerConfig> {
-    let loaded_plugins = plugins_manager.plugins_for_config(config);
-    let mut servers = config.mcp_servers.get().clone();
-    for (name, plugin_server) in loaded_plugins.effective_mcp_servers() {
-        servers.entry(name).or_insert(plugin_server);
-    }
-    servers
 }
 
 pub async fn collect_mcp_snapshot(config: &Config) -> McpListToolsResponseEvent {
-    let mcp_manager = McpManager::new(Arc::new(PluginsManager::new(config.chaos_home.clone())));
+    let mcp_manager = McpManager::new();
     let mcp_servers = mcp_manager.effective_servers(config);
     if mcp_servers.is_empty() {
         return McpListToolsResponseEvent {

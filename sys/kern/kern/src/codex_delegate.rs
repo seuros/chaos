@@ -78,7 +78,6 @@ pub(crate) async fn run_chaos_process_interactive(
         auth_manager,
         models_manager,
         skills_manager: Arc::clone(&parent_session.services.skills_manager),
-        plugins_manager: Arc::clone(&parent_session.services.plugins_manager),
         mcp_manager: Arc::clone(&parent_session.services.mcp_manager),
         file_watcher: Arc::clone(&parent_session.services.file_watcher),
         conversation_history: initial_history.unwrap_or(InitialHistory::New),

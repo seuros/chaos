@@ -1,7 +1,6 @@
 use std::collections::HashMap;
 use std::collections::VecDeque;
 
-use chaos_kern::mention_syntax::PLUGIN_TEXT_MENTION_SIGIL;
 use chaos_kern::mention_syntax::TOOL_MENTION_SIGIL;
 
 #[derive(Clone, Debug, PartialEq, Eq)]
@@ -108,19 +107,10 @@ fn parse_history_linked_mention<'a>(
     text_bytes: &[u8],
     start: usize,
 ) -> Option<(&'a str, &'a str, usize)> {
-    // TUI writes `$name`, but may read plugin `[@name](plugin://...)` links from other clients.
     if let Some(mention @ (name, path, _)) =
         parse_linked_tool_mention(text, text_bytes, start, TOOL_MENTION_SIGIL)
         && !is_common_env_var(name)
         && is_tool_path(path)
-    {
-        return Some(mention);
-    }
-
-    if let Some(mention @ (name, path, _)) =
-        parse_linked_tool_mention(text, text_bytes, start, PLUGIN_TEXT_MENTION_SIGIL)
-        && !is_common_env_var(name)
-        && path.starts_with("plugin://")
     {
         return Some(mention);
     }
@@ -210,7 +200,6 @@ fn is_common_env_var(name: &str) -> bool {
 fn is_tool_path(path: &str) -> bool {
     path.starts_with("app://")
         || path.starts_with("mcp://")
-        || path.starts_with("plugin://")
         || path.starts_with("skill://")
         || path
             .rsplit(['/', '\\'])
@@ -226,19 +215,15 @@ mod tests {
     #[test]
     fn decode_history_mentions_restores_visible_tokens() {
         let decoded = decode_history_mentions(
-            "Use [$figma](app://figma-1), [$sample](plugin://sample@test), and [$figma](/tmp/figma/SKILL.md).",
+            "Use [$figma](app://figma-1) and [$figma](/tmp/figma/SKILL.md).",
         );
-        assert_eq!(decoded.text, "Use $figma, $sample, and $figma.");
+        assert_eq!(decoded.text, "Use $figma and $figma.");
         assert_eq!(
             decoded.mentions,
             vec![
                 LinkedMention {
                     mention: "figma".to_string(),
                     path: "app://figma-1".to_string(),
-                },
-                LinkedMention {
-                    mention: "sample".to_string(),
-                    path: "plugin://sample@test".to_string(),
                 },
                 LinkedMention {
                     mention: "figma".to_string(),
@@ -249,28 +234,7 @@ mod tests {
     }
 
     #[test]
-    fn decode_history_mentions_restores_plugin_links_with_at_sigil() {
-        let decoded = decode_history_mentions(
-            "Use [@sample](plugin://sample@test) and [$figma](app://figma-1).",
-        );
-        assert_eq!(decoded.text, "Use $sample and $figma.");
-        assert_eq!(
-            decoded.mentions,
-            vec![
-                LinkedMention {
-                    mention: "sample".to_string(),
-                    path: "plugin://sample@test".to_string(),
-                },
-                LinkedMention {
-                    mention: "figma".to_string(),
-                    path: "app://figma-1".to_string(),
-                },
-            ]
-        );
-    }
-
-    #[test]
-    fn decode_history_mentions_ignores_at_sigil_for_non_plugin_paths() {
+    fn decode_history_mentions_ignores_at_sigil_links() {
         let decoded = decode_history_mentions("Use [@figma](app://figma-1).");
 
         assert_eq!(decoded.text, "Use [@figma](app://figma-1).");
@@ -289,7 +253,7 @@ mod tests {
                 },
                 LinkedMention {
                     mention: "sample".to_string(),
-                    path: "plugin://sample@test".to_string(),
+                    path: "mcp://sample-server".to_string(),
                 },
                 LinkedMention {
                     mention: "figma".to_string(),
@@ -299,7 +263,7 @@ mod tests {
         );
         assert_eq!(
             encoded,
-            "[$figma](app://figma-app) then [$sample](plugin://sample@test) then [$figma](/tmp/figma/SKILL.md) then $other"
+            "[$figma](app://figma-app) then [$sample](mcp://sample-server) then [$figma](/tmp/figma/SKILL.md) then $other"
         );
     }
 }

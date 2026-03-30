@@ -202,11 +202,7 @@ use crate::mcp::auth::compute_auth_statuses;
 use crate::mcp::maybe_prompt_and_install_mcp_dependencies;
 use crate::mcp_connection_manager::McpConnectionManager;
 use crate::memories;
-use crate::mentions::collect_explicit_plugin_mentions;
 use crate::network_policy_decision::execpolicy_network_rule_amendment;
-use crate::plugins::PluginsManager;
-use crate::plugins::build_plugin_injections;
-use crate::plugins::render_plugins_section;
 use crate::project_doc::get_user_instructions;
 use crate::protocol::AgentMessageContentDeltaEvent;
 use crate::protocol::AgentReasoningSectionBreakEvent;
@@ -335,7 +331,6 @@ pub(crate) struct ChaosSpawnArgs {
     pub(crate) auth_manager: Arc<AuthManager>,
     pub(crate) models_manager: Arc<ModelsManager>,
     pub(crate) skills_manager: Arc<SkillsManager>,
-    pub(crate) plugins_manager: Arc<PluginsManager>,
     pub(crate) mcp_manager: Arc<McpManager>,
     pub(crate) file_watcher: Arc<FileWatcher>,
     pub(crate) conversation_history: InitialHistory,
@@ -384,7 +379,6 @@ impl Chaos {
             auth_manager,
             models_manager,
             skills_manager,
-            plugins_manager,
             mcp_manager,
             file_watcher,
             conversation_history,
@@ -537,7 +531,6 @@ impl Chaos {
             conversation_history,
             session_source_clone,
             skills_manager,
-            plugins_manager,
             mcp_manager.clone(),
             file_watcher,
             agent_control,
@@ -1315,7 +1308,6 @@ impl Session {
         initial_history: InitialHistory,
         session_source: SessionSource,
         skills_manager: Arc<SkillsManager>,
-        plugins_manager: Arc<PluginsManager>,
         mcp_manager: Arc<McpManager>,
         file_watcher: Arc<FileWatcher>,
         agent_control: AgentControl,
@@ -1704,7 +1696,6 @@ impl Session {
             tool_approvals: Mutex::new(ApprovalStore::default()),
             execve_session_approvals: RwLock::new(HashMap::new()),
             skills_manager,
-            plugins_manager: Arc::clone(&plugins_manager),
             mcp_manager: Arc::clone(&mcp_manager),
             file_watcher,
             agent_control,
@@ -2404,7 +2395,6 @@ impl Session {
             .with_user_config(&config_toml_path, user_config);
         state.session_configuration.original_config_do_not_use = Arc::new(config);
         self.services.skills_manager.clear_cache();
-        self.services.plugins_manager.clear_cache();
     }
 
     pub(crate) async fn new_default_turn_with_sub_id(&self, sub_id: String) -> Arc<TurnContext> {
@@ -3344,14 +3334,6 @@ impl Session {
             .allowed_skills_for_implicit_invocation();
         if let Some(skills_section) = render_skills_section(&implicit_skills) {
             developer_sections.push(skills_section);
-        }
-        let loaded_plugins = self
-            .services
-            .plugins_manager
-            .plugins_for_config(&turn_context.config);
-        if let Some(plugin_section) = render_plugins_section(loaded_plugins.capability_summaries())
-        {
-            developer_sections.push(plugin_section);
         }
         if let Some(user_instructions) = turn_context.user_instructions.as_deref() {
             contextual_user_sections.push(
@@ -5253,18 +5235,7 @@ pub(crate) async fn run_turn(
     sess.record_context_updates_and_set_reference_context_item(turn_context.as_ref())
         .await;
 
-    let loaded_plugins = sess
-        .services
-        .plugins_manager
-        .plugins_for_config(&turn_context.config);
-    // Structured plugin:// mentions are resolved from the current session's
-    // enabled plugins, then converted into turn-scoped guidance below.
-    let mentioned_plugins =
-        collect_explicit_plugin_mentions(&input, loaded_plugins.capability_summaries());
-    let mcp_tools = if turn_context.apps_enabled() || !mentioned_plugins.is_empty() {
-        // Plugin mentions need raw MCP/app inventory even when app tools
-        // are normally hidden so we can describe the plugin's currently
-        // usable capabilities for this turn.
+    let mcp_tools = if turn_context.apps_enabled() {
         match sess
             .services
             .mcp_connection_manager
@@ -5275,8 +5246,7 @@ pub(crate) async fn run_turn(
             .await
         {
             Ok(mcp_tools) => mcp_tools,
-            Err(_) if turn_context.apps_enabled() => return None,
-            Err(_) => HashMap::new(),
+            Err(_) => return None,
         }
     } else {
         HashMap::new()
@@ -5329,18 +5299,6 @@ pub(crate) async fn run_turn(
             .await;
     }
 
-    let plugin_items = build_plugin_injections(&mentioned_plugins, &mcp_tools);
-    let mentioned_plugin_metadata = mentioned_plugins
-        .iter()
-        .filter_map(crate::plugins::PluginCapabilitySummary::telemetry_metadata)
-        .collect::<Vec<_>>();
-
-    for plugin in mentioned_plugin_metadata {
-        sess.services
-            .analytics_events_client
-            .track_plugin_used(tracking.clone(), plugin);
-    }
-
     let initial_input_for_turn: ResponseInputItem = ResponseInputItem::from(input.clone());
     let response_item: ResponseItem = initial_input_for_turn.clone().into();
     sess.record_user_prompt_and_emit_turn_item(turn_context.as_ref(), &input, response_item)
@@ -5357,11 +5315,6 @@ pub(crate) async fn run_turn(
         sess.record_conversation_items(&turn_context, &skill_items)
             .await;
     }
-    if !plugin_items.is_empty() {
-        sess.record_conversation_items(&turn_context, &plugin_items)
-            .await;
-    }
-
     sess.maybe_start_ghost_snapshot(Arc::clone(&turn_context), cancellation_token.child_token())
         .await;
     let mut last_agent_message: Option<String> = None;

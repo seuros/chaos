@@ -629,37 +629,6 @@ pub struct AppInfo {
     /// ```
     #[serde(default = "default_enabled")]
     pub is_enabled: bool,
-    #[serde(default)]
-    pub plugin_display_names: Vec<String>,
-}
-
-// ===========================================================================
-// Plugins
-// ===========================================================================
-
-#[derive(Serialize, Deserialize, Debug, Clone, Copy, PartialEq, Eq, JsonSchema, TS)]
-#[ts(export_to = "v2/")]
-pub enum PluginInstallPolicy {
-    #[serde(rename = "NOT_AVAILABLE")]
-    #[ts(rename = "NOT_AVAILABLE")]
-    NotAvailable,
-    #[serde(rename = "AVAILABLE")]
-    #[ts(rename = "AVAILABLE")]
-    Available,
-    #[serde(rename = "INSTALLED_BY_DEFAULT")]
-    #[ts(rename = "INSTALLED_BY_DEFAULT")]
-    InstalledByDefault,
-}
-
-#[derive(Serialize, Deserialize, Debug, Clone, Copy, PartialEq, Eq, JsonSchema, TS)]
-#[ts(export_to = "v2/")]
-pub enum PluginAuthPolicy {
-    #[serde(rename = "ON_INSTALL")]
-    #[ts(rename = "ON_INSTALL")]
-    OnInstall,
-    #[serde(rename = "ON_USE")]
-    #[ts(rename = "ON_USE")]
-    OnUse,
 }
 
 // ===========================================================================

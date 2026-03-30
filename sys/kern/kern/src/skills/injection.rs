@@ -144,14 +144,12 @@ impl<'a> ToolMentions<'a> {
 pub(crate) enum ToolMentionKind {
     App,
     Mcp,
-    Plugin,
     Skill,
     Other,
 }
 
 pub(crate) const APP_PATH_PREFIX: &str = "app://";
 pub(crate) const MCP_PATH_PREFIX: &str = "mcp://";
-pub(crate) const PLUGIN_PATH_PREFIX: &str = "plugin://";
 const SKILL_PATH_PREFIX: &str = "skill://";
 const SKILL_FILENAME: &str = "SKILL.md";
 
@@ -160,8 +158,6 @@ pub(crate) fn tool_kind_for_path(path: &str) -> ToolMentionKind {
         ToolMentionKind::App
     } else if path.starts_with(MCP_PATH_PREFIX) {
         ToolMentionKind::Mcp
-    } else if path.starts_with(PLUGIN_PATH_PREFIX) {
-        ToolMentionKind::Plugin
     } else if path.starts_with(SKILL_PATH_PREFIX) || is_skill_filename(path) {
         ToolMentionKind::Skill
     } else {
@@ -201,11 +197,6 @@ fn is_skill_filename(path: &str) -> bool {
 #[allow(dead_code)]
 pub(crate) fn app_id_from_path(path: &str) -> Option<&str> {
     path.strip_prefix(APP_PATH_PREFIX)
-        .filter(|value| !value.is_empty())
-}
-
-pub(crate) fn plugin_config_name_from_path(path: &str) -> Option<&str> {
-    path.strip_prefix(PLUGIN_PATH_PREFIX)
         .filter(|value| !value.is_empty())
 }
 

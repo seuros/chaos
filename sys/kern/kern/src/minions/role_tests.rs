@@ -2,7 +2,6 @@ use super::*;
 use crate::config::CONFIG_TOML_FILE;
 use crate::config::ConfigBuilder;
 use crate::config_loader::ConfigLayerStackOrdering;
-use crate::plugins::PluginsManager;
 use crate::skills::SkillsManager;
 use chaos_ipc::config_types::ReasoningSummary;
 use chaos_ipc::config_types::Verbosity;
@@ -626,8 +625,7 @@ enabled = false
         .await
         .expect("custom role should apply");
 
-    let plugins_manager = Arc::new(PluginsManager::new(home.path().to_path_buf()));
-    let skills_manager = SkillsManager::new(home.path().to_path_buf(), plugins_manager, true);
+    let skills_manager = SkillsManager::new(home.path().to_path_buf(), true);
     let outcome = skills_manager.skills_for_config(&config);
     let skill = outcome
         .skills

@@ -202,8 +202,6 @@ pub(crate) struct ToolInfo {
     pub(crate) tool: McpToolInfo,
     pub(crate) connector_id: Option<String>,
     pub(crate) connector_name: Option<String>,
-    #[serde(default)]
-    pub(crate) plugin_display_names: Vec<String>,
     pub(crate) connector_description: Option<String>,
 }
 
@@ -1328,7 +1326,6 @@ fn guest_tool_to_tool_info(server_name: &str, guest_tool: McpToolInfo) -> ToolIn
         tool: guest_tool,
         connector_id,
         connector_name,
-        plugin_display_names: Vec::new(),
         connector_description,
     }
 }

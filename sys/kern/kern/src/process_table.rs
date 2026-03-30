@@ -15,7 +15,6 @@ use crate::mcp::McpManager;
 use crate::minions::AgentControl;
 use crate::models_manager::collaboration_mode_presets::CollaborationModesConfig;
 use crate::models_manager::manager::ModelsManager;
-use crate::plugins::PluginsManager;
 use crate::process::Process;
 use crate::protocol::Event;
 use crate::protocol::EventMsg;
@@ -167,7 +166,6 @@ pub(crate) struct ProcessTableState {
     auth_manager: Arc<AuthManager>,
     models_manager: Arc<ModelsManager>,
     skills_manager: Arc<SkillsManager>,
-    plugins_manager: Arc<PluginsManager>,
     mcp_manager: Arc<McpManager>,
     file_watcher: Arc<FileWatcher>,
     session_source: SessionSource,
@@ -189,11 +187,9 @@ impl ProcessTable {
         // model catalog. The active provider is the one the user configured.
         let models_provider = config.model_provider.clone();
         let (process_created_tx, _) = broadcast::channel(PROCESS_CREATED_CHANNEL_CAPACITY);
-        let plugins_manager = Arc::new(PluginsManager::new(chaos_home.clone()));
-        let mcp_manager = Arc::new(McpManager::new(Arc::clone(&plugins_manager)));
+        let mcp_manager = Arc::new(McpManager::new());
         let skills_manager = Arc::new(SkillsManager::new(
             chaos_home.clone(),
-            Arc::clone(&plugins_manager),
             config.bundled_skills_enabled(),
         ));
         let file_watcher = build_file_watcher(chaos_home.clone(), Arc::clone(&skills_manager));
@@ -209,7 +205,6 @@ impl ProcessTable {
                     models_provider,
                 )),
                 skills_manager,
-                plugins_manager,
                 mcp_manager,
                 file_watcher,
                 auth_manager,
@@ -250,11 +245,9 @@ impl ProcessTable {
         set_process_table_test_mode_for_tests(/*enabled*/ true);
         let auth_manager = AuthManager::from_auth_for_testing(auth);
         let (process_created_tx, _) = broadcast::channel(PROCESS_CREATED_CHANNEL_CAPACITY);
-        let plugins_manager = Arc::new(PluginsManager::new(chaos_home.clone()));
-        let mcp_manager = Arc::new(McpManager::new(Arc::clone(&plugins_manager)));
+        let mcp_manager = Arc::new(McpManager::new());
         let skills_manager = Arc::new(SkillsManager::new(
             chaos_home.clone(),
-            Arc::clone(&plugins_manager),
             /*bundled_skills_enabled*/ true,
         ));
         let file_watcher = build_file_watcher(chaos_home.clone(), Arc::clone(&skills_manager));
@@ -268,7 +261,6 @@ impl ProcessTable {
                     provider,
                 )),
                 skills_manager,
-                plugins_manager,
                 mcp_manager,
                 file_watcher,
                 auth_manager,
@@ -286,10 +278,6 @@ impl ProcessTable {
 
     pub fn skills_manager(&self) -> Arc<SkillsManager> {
         self.state.skills_manager.clone()
-    }
-
-    pub fn plugins_manager(&self) -> Arc<PluginsManager> {
-        self.state.plugins_manager.clone()
     }
 
     pub fn mcp_manager(&self) -> Arc<McpManager> {
@@ -709,7 +697,6 @@ impl ProcessTableState {
             auth_manager,
             models_manager: Arc::clone(&self.models_manager),
             skills_manager: Arc::clone(&self.skills_manager),
-            plugins_manager: Arc::clone(&self.plugins_manager),
             mcp_manager: Arc::clone(&self.mcp_manager),
             file_watcher: Arc::clone(&self.file_watcher),
             conversation_history: initial_history,

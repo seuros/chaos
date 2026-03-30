@@ -12,10 +12,8 @@ use crate::models_manager::collaboration_mode_presets::CollaborationModesConfig;
 use crate::original_image_detail::can_request_original_image_detail;
 use crate::shell::Shell;
 use crate::shell::ShellType;
-use crate::tools::discoverable::DiscoverablePluginInfo;
 use crate::tools::discoverable::DiscoverableTool;
 use crate::tools::discoverable::DiscoverableToolAction;
-use crate::tools::discoverable::DiscoverableToolType;
 use crate::tools::handlers::PLAN_TOOL;
 use crate::tools::handlers::TOOL_SEARCH_DEFAULT_LIMIT;
 use crate::tools::handlers::TOOL_SEARCH_TOOL_NAME;
@@ -843,7 +841,7 @@ fn create_collab_input_items_schema() -> JsonSchema {
             "path".to_string(),
             JsonSchema::String {
                 description: Some(
-                    "Path when type is local_image/skill, or structured mention target such as app://<connector-id> or plugin://<plugin-name>@<marketplace-name> when type is mention."
+                    "Path when type is local_image/skill, or structured mention target such as app://<connector-id> when type is mention."
                         .to_string(),
                 ),
             },
@@ -1527,7 +1525,7 @@ fn create_tool_suggest_tool(discoverable_tools: &[DiscoverableTool]) -> ToolSpec
             "tool_type".to_string(),
             JsonSchema::String {
                 description: Some(
-                    "Type of discoverable tool to suggest. Use \"connector\" or \"plugin\"."
+                    "Type of discoverable tool to suggest. Use \"connector\"."
                         .to_string(),
                 ),
             },
@@ -1544,7 +1542,7 @@ fn create_tool_suggest_tool(discoverable_tools: &[DiscoverableTool]) -> ToolSpec
             "tool_id".to_string(),
             JsonSchema::String {
                 description: Some(format!(
-                    "Connector or plugin id to suggest. Must be one of: {discoverable_tool_ids}."
+                    "Connector id to suggest. Must be one of: {discoverable_tool_ids}."
                 )),
             },
         ),
@@ -1597,14 +1595,8 @@ fn format_discoverable_tools(discoverable_tools: &[DiscoverableTool]) -> String 
                 .description()
                 .filter(|description| !description.trim().is_empty())
                 .map(ToString::to_string)
-                .unwrap_or_else(|| match &tool {
-                    DiscoverableTool::Connector(_) => "No description provided.".to_string(),
-                    DiscoverableTool::Plugin(plugin) => format_plugin_summary(plugin.as_ref()),
-                });
-            let default_action = match tool.tool_type() {
-                DiscoverableToolType::Connector => DiscoverableToolAction::Install,
-                DiscoverableToolType::Plugin => DiscoverableToolAction::Enable,
-            };
+                .unwrap_or_else(|| "No description provided.".to_string());
+            let default_action = DiscoverableToolAction::Install;
             format!(
                 "- {} (id: `{}`, type: {}, action: {}): {}",
                 tool.name(),
@@ -1616,31 +1608,6 @@ fn format_discoverable_tools(discoverable_tools: &[DiscoverableTool]) -> String 
         })
         .collect::<Vec<_>>()
         .join("\n")
-}
-
-fn format_plugin_summary(plugin: &DiscoverablePluginInfo) -> String {
-    let mut details = Vec::new();
-    if plugin.has_skills {
-        details.push("skills".to_string());
-    }
-    if !plugin.mcp_server_names.is_empty() {
-        details.push(format!(
-            "MCP servers: {}",
-            plugin.mcp_server_names.join(", ")
-        ));
-    }
-    if !plugin.app_connector_ids.is_empty() {
-        details.push(format!(
-            "app connectors: {}",
-            plugin.app_connector_ids.join(", ")
-        ));
-    }
-
-    if details.is_empty() {
-        "No description provided.".to_string()
-    } else {
-        details.join("; ")
-    }
 }
 
 #[allow(dead_code)]

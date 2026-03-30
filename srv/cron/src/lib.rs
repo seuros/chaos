@@ -20,7 +20,26 @@ pub use scheduler::spawn_global as spawn_scheduler;
 pub use store::CronStore;
 pub use tools::create::OwnerContext;
 
+use chaos_traits::catalog::{CatalogRegistration, CatalogTool};
 use mcp_host::prelude::*;
+
+inventory::submit! {
+    CatalogRegistration {
+        name: "cron",
+        tools: || {
+            tool_infos().into_iter().map(|info| CatalogTool {
+                name: info.name,
+                description: info.description.unwrap_or_default(),
+                input_schema: info.input_schema,
+                annotations: info.annotations
+                    .and_then(|a| serde_json::to_value(a).ok()),
+            }).collect()
+        },
+        resources: || vec![],
+        resource_templates: || vec![],
+        prompts: || vec![],
+    }
+}
 
 /// MCP server state for cron tools.
 pub struct CronServer;

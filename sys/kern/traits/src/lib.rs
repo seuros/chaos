@@ -5,6 +5,7 @@
 //! `codex-core`, breaking the circular dependency.
 
 pub mod agent;
+pub mod catalog;
 pub mod config;
 pub mod event_bus;
 pub mod model;

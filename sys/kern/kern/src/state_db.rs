@@ -97,13 +97,13 @@ pub async fn get_state_db_for(
 /// Open the state runtime when the SQLite file exists, without feature gating.
 ///
 /// This is used for parity checks during the SQLite migration phase.
-pub async fn open_if_present(codex_home: &Path, default_provider: &str) -> Option<StateDbHandle> {
-    let db_path = chaos_proc::state_db_path(codex_home);
+pub async fn open_if_present(chaos_home: &Path, default_provider: &str) -> Option<StateDbHandle> {
+    let db_path = chaos_proc::state_db_path(chaos_home);
     if !tokio::fs::try_exists(&db_path).await.unwrap_or(false) {
         return None;
     }
     let runtime =
-        chaos_proc::StateRuntime::init(codex_home.to_path_buf(), default_provider.to_string())
+        chaos_proc::StateRuntime::init(chaos_home.to_path_buf(), default_provider.to_string())
             .await
             .ok()?;
     Some(runtime)
@@ -155,7 +155,7 @@ pub(crate) fn normalize_cwd_for_state_db(cwd: &Path) -> PathBuf {
 #[allow(clippy::too_many_arguments)]
 pub async fn list_process_ids_db(
     context: Option<&chaos_proc::StateRuntime>,
-    codex_home: &Path,
+    chaos_home: &Path,
     page_size: usize,
     cursor: Option<&Cursor>,
     sort_key: ProcessSortKey,
@@ -165,11 +165,11 @@ pub async fn list_process_ids_db(
     stage: &str,
 ) -> Option<Vec<ProcessId>> {
     let ctx = context?;
-    if ctx.codex_home() != codex_home {
+    if ctx.chaos_home() != chaos_home {
         warn!(
-            "state db codex_home mismatch: expected {}, got {}",
-            ctx.codex_home().display(),
-            codex_home.display()
+            "state db chaos_home mismatch: expected {}, got {}",
+            ctx.chaos_home().display(),
+            chaos_home.display()
         );
     }
 
@@ -209,7 +209,7 @@ pub async fn list_process_ids_db(
 #[allow(clippy::too_many_arguments)]
 pub async fn list_processes_db(
     context: Option<&chaos_proc::StateRuntime>,
-    codex_home: &Path,
+    chaos_home: &Path,
     page_size: usize,
     cursor: Option<&Cursor>,
     sort_key: ProcessSortKey,
@@ -219,11 +219,11 @@ pub async fn list_processes_db(
     search_term: Option<&str>,
 ) -> Option<chaos_proc::ProcessesPage> {
     let ctx = context?;
-    if ctx.codex_home() != codex_home {
+    if ctx.chaos_home() != chaos_home {
         warn!(
-            "state db codex_home mismatch: expected {}, got {}",
-            ctx.codex_home().display(),
-            codex_home.display()
+            "state db chaos_home mismatch: expected {}, got {}",
+            ctx.chaos_home().display(),
+            chaos_home.display()
         );
     }
 

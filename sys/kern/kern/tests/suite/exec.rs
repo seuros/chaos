@@ -11,7 +11,7 @@ use chaos_kern::exec::ExecToolCallOutput;
 use chaos_kern::exec::SandboxType;
 use chaos_kern::exec::process_exec_tool_call;
 use chaos_kern::sandboxing::SandboxPermissions;
-use chaos_kern::spawn::CODEX_SANDBOX_ENV_VAR;
+use chaos_kern::spawn::CHAOS_SANDBOX_ENV_VAR;
 use tempfile::TempDir;
 
 use chaos_kern::error::Result;
@@ -19,8 +19,8 @@ use chaos_kern::error::Result;
 use chaos_kern::get_platform_sandbox;
 
 fn skip_test() -> bool {
-    if std::env::var(CODEX_SANDBOX_ENV_VAR) == Ok("seatbelt".to_string()) {
-        eprintln!("{CODEX_SANDBOX_ENV_VAR} is set to 'seatbelt', skipping test.");
+    if std::env::var(CHAOS_SANDBOX_ENV_VAR) == Ok("seatbelt".to_string()) {
+        eprintln!("{CHAOS_SANDBOX_ENV_VAR} is set to 'seatbelt', skipping test.");
         return true;
     }
 

@@ -1,4 +1,4 @@
-use crate::error::CodexErr;
+use crate::error::ChaosErr;
 use crate::error::Result;
 use chaos_ipc::ProcessId;
 use chaos_ipc::protocol::SessionSource;
@@ -73,7 +73,7 @@ impl Guards {
     ) -> Result<SpawnReservation> {
         if let Some(max_threads) = max_threads {
             if !self.try_increment_spawned(max_threads) {
-                return Err(CodexErr::AgentLimitReached { max_threads });
+                return Err(ChaosErr::AgentLimitReached { max_threads });
             }
         } else {
             self.total_count.fetch_add(1, Ordering::AcqRel);
@@ -195,7 +195,7 @@ impl SpawnReservation {
             .state
             .reserve_agent_nickname(names, preferred)
             .ok_or_else(|| {
-                CodexErr::UnsupportedOperation("no available agent nicknames".to_string())
+                ChaosErr::UnsupportedOperation("no available agent nicknames".to_string())
             })?;
         self.reserved_agent_nickname = Some(agent_nickname.clone());
         Ok(agent_nickname)

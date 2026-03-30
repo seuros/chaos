@@ -222,7 +222,7 @@ impl ApplyPatchRuntime {
         req: &ApplyPatchRequest,
         attempt: &SandboxAttempt<'_>,
     ) -> Result<ExecToolCallOutput, ToolError> {
-        use crate::error::CodexErr;
+        use crate::error::ChaosErr;
         use crate::error::SandboxErr;
         use crate::sandboxing::EffectiveSandboxPermissions;
         use std::io::Read as _;
@@ -378,7 +378,7 @@ impl ApplyPatchRuntime {
         // propagate as SandboxErr::Denied so the orchestrator can trigger
         // the approval/retry flow.
         if crate::exec::is_likely_sandbox_denied(sandbox_type, &output) {
-            return Err(ToolError::Codex(CodexErr::Sandbox(SandboxErr::Denied {
+            return Err(ToolError::Chaos(ChaosErr::Sandbox(SandboxErr::Denied {
                 output: Box::new(output),
                 network_policy_decision: None,
             })));

@@ -17,7 +17,7 @@ use std::time::Duration;
 use thiserror::Error;
 use tokio::task::JoinError;
 
-pub type Result<T> = std::result::Result<T, CodexErr>;
+pub type Result<T> = std::result::Result<T, ChaosErr>;
 
 /// Limit UI error messages to a reasonable size while keeping useful context.
 const ERROR_MESSAGE_UI_MAX_BYTES: usize = 2 * 1024; // 2 KiB
@@ -58,7 +58,7 @@ pub enum SandboxErr {
 }
 
 #[derive(Error, Debug)]
-pub enum CodexErr {
+pub enum ChaosErr {
     #[error("turn aborted. Tell the model what to do differently and try again.")]
     TurnAborted,
 
@@ -182,47 +182,47 @@ pub enum CodexErr {
     EnvVar(EnvVarError),
 }
 
-impl From<CancelErr> for CodexErr {
+impl From<CancelErr> for ChaosErr {
     fn from(_: CancelErr) -> Self {
-        CodexErr::TurnAborted
+        ChaosErr::TurnAborted
     }
 }
 
-impl CodexErr {
+impl ChaosErr {
     pub fn is_retryable(&self) -> bool {
         match self {
-            CodexErr::TurnAborted
-            | CodexErr::Interrupted
-            | CodexErr::EnvVar(_)
-            | CodexErr::Fatal(_)
-            | CodexErr::UsageNotIncluded
-            | CodexErr::QuotaExceeded
-            | CodexErr::InvalidImageRequest()
-            | CodexErr::InvalidRequest(_)
-            | CodexErr::RefreshTokenFailed(_)
-            | CodexErr::UnsupportedOperation(_)
-            | CodexErr::Sandbox(_)
-            | CodexErr::LandlockSandboxExecutableNotProvided
-            | CodexErr::RetryLimit(_)
-            | CodexErr::ContextWindowExceeded
-            | CodexErr::ProcessNotFound(_)
-            | CodexErr::AgentLimitReached { .. }
-            | CodexErr::Spawn
-            | CodexErr::SessionConfiguredNotFirstEvent
-            | CodexErr::UsageLimitReached(_)
-            | CodexErr::ServerOverloaded => false,
-            CodexErr::Stream(..)
-            | CodexErr::Timeout
-            | CodexErr::UnexpectedStatus(_)
-            | CodexErr::ResponseStreamFailed(_)
-            | CodexErr::ConnectionFailed(_)
-            | CodexErr::InternalServerError
-            | CodexErr::InternalAgentDied
-            | CodexErr::Io(_)
-            | CodexErr::Json(_)
-            | CodexErr::TokioJoin(_) => true,
+            ChaosErr::TurnAborted
+            | ChaosErr::Interrupted
+            | ChaosErr::EnvVar(_)
+            | ChaosErr::Fatal(_)
+            | ChaosErr::UsageNotIncluded
+            | ChaosErr::QuotaExceeded
+            | ChaosErr::InvalidImageRequest()
+            | ChaosErr::InvalidRequest(_)
+            | ChaosErr::RefreshTokenFailed(_)
+            | ChaosErr::UnsupportedOperation(_)
+            | ChaosErr::Sandbox(_)
+            | ChaosErr::LandlockSandboxExecutableNotProvided
+            | ChaosErr::RetryLimit(_)
+            | ChaosErr::ContextWindowExceeded
+            | ChaosErr::ProcessNotFound(_)
+            | ChaosErr::AgentLimitReached { .. }
+            | ChaosErr::Spawn
+            | ChaosErr::SessionConfiguredNotFirstEvent
+            | ChaosErr::UsageLimitReached(_)
+            | ChaosErr::ServerOverloaded => false,
+            ChaosErr::Stream(..)
+            | ChaosErr::Timeout
+            | ChaosErr::UnexpectedStatus(_)
+            | ChaosErr::ResponseStreamFailed(_)
+            | ChaosErr::ConnectionFailed(_)
+            | ChaosErr::InternalServerError
+            | ChaosErr::InternalAgentDied
+            | ChaosErr::Io(_)
+            | ChaosErr::Json(_)
+            | ChaosErr::TokioJoin(_) => true,
             #[cfg(target_os = "linux")]
-            CodexErr::LandlockRuleset(_) | CodexErr::LandlockPathFd(_) => false,
+            ChaosErr::LandlockRuleset(_) | ChaosErr::LandlockPathFd(_) => false,
         }
     }
 }
@@ -568,8 +568,8 @@ impl std::fmt::Display for EnvVarError {
     }
 }
 
-impl CodexErr {
-    /// Minimal shim so that existing `e.downcast_ref::<CodexErr>()` checks continue to compile
+impl ChaosErr {
+    /// Minimal shim so that existing `e.downcast_ref::<ChaosErr>()` checks continue to compile
     /// after replacing `anyhow::Error` in the return signature. This mirrors the behavior of
     /// `anyhow::Error::downcast_ref` but works directly on our concrete enum.
     pub fn downcast_ref<T: std::any::Any>(&self) -> Option<&T> {
@@ -579,28 +579,28 @@ impl CodexErr {
     /// Translate core error to client-facing protocol error.
     pub fn to_chaos_ipc_error(&self) -> CodexErrorInfo {
         match self {
-            CodexErr::ContextWindowExceeded => CodexErrorInfo::ContextWindowExceeded,
-            CodexErr::UsageLimitReached(_)
-            | CodexErr::QuotaExceeded
-            | CodexErr::UsageNotIncluded => CodexErrorInfo::UsageLimitExceeded,
-            CodexErr::ServerOverloaded => CodexErrorInfo::ServerOverloaded,
-            CodexErr::RetryLimit(_) => CodexErrorInfo::ResponseTooManyFailedAttempts {
+            ChaosErr::ContextWindowExceeded => CodexErrorInfo::ContextWindowExceeded,
+            ChaosErr::UsageLimitReached(_)
+            | ChaosErr::QuotaExceeded
+            | ChaosErr::UsageNotIncluded => CodexErrorInfo::UsageLimitExceeded,
+            ChaosErr::ServerOverloaded => CodexErrorInfo::ServerOverloaded,
+            ChaosErr::RetryLimit(_) => CodexErrorInfo::ResponseTooManyFailedAttempts {
                 http_status_code: self.http_status_code_value(),
             },
-            CodexErr::ConnectionFailed(_) => CodexErrorInfo::HttpConnectionFailed {
+            ChaosErr::ConnectionFailed(_) => CodexErrorInfo::HttpConnectionFailed {
                 http_status_code: self.http_status_code_value(),
             },
-            CodexErr::ResponseStreamFailed(_) => CodexErrorInfo::ResponseStreamConnectionFailed {
+            ChaosErr::ResponseStreamFailed(_) => CodexErrorInfo::ResponseStreamConnectionFailed {
                 http_status_code: self.http_status_code_value(),
             },
-            CodexErr::RefreshTokenFailed(_) => CodexErrorInfo::Unauthorized,
-            CodexErr::SessionConfiguredNotFirstEvent
-            | CodexErr::InternalServerError
-            | CodexErr::InternalAgentDied => CodexErrorInfo::InternalServerError,
-            CodexErr::UnsupportedOperation(_)
-            | CodexErr::ProcessNotFound(_)
-            | CodexErr::AgentLimitReached { .. } => CodexErrorInfo::BadRequest,
-            CodexErr::Sandbox(_) => CodexErrorInfo::SandboxError,
+            ChaosErr::RefreshTokenFailed(_) => CodexErrorInfo::Unauthorized,
+            ChaosErr::SessionConfiguredNotFirstEvent
+            | ChaosErr::InternalServerError
+            | ChaosErr::InternalAgentDied => CodexErrorInfo::InternalServerError,
+            ChaosErr::UnsupportedOperation(_)
+            | ChaosErr::ProcessNotFound(_)
+            | ChaosErr::AgentLimitReached { .. } => CodexErrorInfo::BadRequest,
+            ChaosErr::Sandbox(_) => CodexErrorInfo::SandboxError,
             _ => CodexErrorInfo::Other,
         }
     }
@@ -619,19 +619,19 @@ impl CodexErr {
 
     pub fn http_status_code_value(&self) -> Option<u16> {
         let http_status_code = match self {
-            CodexErr::RetryLimit(err) => Some(err.status),
-            CodexErr::UnexpectedStatus(err) => Some(err.status),
-            CodexErr::ConnectionFailed(_) => None,
-            CodexErr::ResponseStreamFailed(_) => None,
+            ChaosErr::RetryLimit(err) => Some(err.status),
+            ChaosErr::UnexpectedStatus(err) => Some(err.status),
+            ChaosErr::ConnectionFailed(_) => None,
+            ChaosErr::ResponseStreamFailed(_) => None,
             _ => None,
         };
         http_status_code.as_ref().map(StatusCode::as_u16)
     }
 }
 
-pub fn get_error_message_ui(e: &CodexErr) -> String {
+pub fn get_error_message_ui(e: &ChaosErr) -> String {
     let message = match e {
-        CodexErr::Sandbox(SandboxErr::Denied { output, .. }) => {
+        ChaosErr::Sandbox(SandboxErr::Denied { output, .. }) => {
             let aggregated = output.aggregated_output.text.trim();
             if !aggregated.is_empty() {
                 output.aggregated_output.text.clone()
@@ -650,7 +650,7 @@ pub fn get_error_message_ui(e: &CodexErr) -> String {
             }
         }
         // Timeouts are not sandbox errors from a UX perspective; present them plainly
-        CodexErr::Sandbox(SandboxErr::Timeout { output }) => {
+        ChaosErr::Sandbox(SandboxErr::Timeout { output }) => {
             format!(
                 "error: command timed out after {} ms",
                 output.duration.as_millis()

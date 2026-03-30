@@ -41,7 +41,7 @@ Place a `.mcp.json` in your project root. This format is understood by Chaos, Cl
 
 ### `config.toml` (Chaos-specific)
 
-Use `chaos mcp` to manage MCP servers in `~/.codex/config.toml`.
+Use `chaos mcp` to manage MCP servers in `~/.chaos/config.toml`.
 
 ## Overview
 

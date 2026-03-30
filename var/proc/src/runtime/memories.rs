@@ -1310,13 +1310,13 @@ mod tests {
 
     #[tokio::test]
     async fn stage1_claim_skips_when_up_to_date() {
-        let codex_home = unique_temp_dir();
-        let runtime = StateRuntime::init(codex_home.clone(), "test-provider".to_string())
+        let chaos_home = unique_temp_dir();
+        let runtime = StateRuntime::init(chaos_home.clone(), "test-provider".to_string())
             .await
             .expect("initialize runtime");
 
         let process_id = ProcessId::from_string(&Uuid::new_v4().to_string()).expect("thread id");
-        let metadata = test_process_metadata(&codex_home, process_id, codex_home.join("a"));
+        let metadata = test_process_metadata(&chaos_home, process_id, chaos_home.join("a"));
         runtime
             .upsert_process(&metadata)
             .await
@@ -1364,22 +1364,22 @@ mod tests {
             "newer source_updated_at should be claimable"
         );
 
-        let _ = tokio::fs::remove_dir_all(codex_home).await;
+        let _ = tokio::fs::remove_dir_all(chaos_home).await;
     }
 
     #[tokio::test]
     async fn stage1_running_stale_can_be_stolen_but_fresh_running_is_skipped() {
-        let codex_home = unique_temp_dir();
-        let runtime = StateRuntime::init(codex_home.clone(), "test-provider".to_string())
+        let chaos_home = unique_temp_dir();
+        let runtime = StateRuntime::init(chaos_home.clone(), "test-provider".to_string())
             .await
             .expect("initialize runtime");
 
         let process_id = ProcessId::from_string(&Uuid::new_v4().to_string()).expect("thread id");
         let owner_a = ProcessId::from_string(&Uuid::new_v4().to_string()).expect("owner id");
         let owner_b = ProcessId::from_string(&Uuid::new_v4().to_string()).expect("owner id");
-        let cwd = codex_home.join("workspace");
+        let cwd = chaos_home.join("workspace");
         runtime
-            .upsert_process(&test_process_metadata(&codex_home, process_id, cwd))
+            .upsert_process(&test_process_metadata(&chaos_home, process_id, cwd))
             .await
             .expect("upsert thread");
 
@@ -1410,22 +1410,22 @@ mod tests {
             Stage1JobClaimOutcome::Claimed { .. }
         ));
 
-        let _ = tokio::fs::remove_dir_all(codex_home).await;
+        let _ = tokio::fs::remove_dir_all(chaos_home).await;
     }
 
     #[tokio::test]
     async fn stage1_concurrent_claim_for_same_thread_is_conflict_safe() {
-        let codex_home = unique_temp_dir();
-        let runtime = StateRuntime::init(codex_home.clone(), "test-provider".to_string())
+        let chaos_home = unique_temp_dir();
+        let runtime = StateRuntime::init(chaos_home.clone(), "test-provider".to_string())
             .await
             .expect("initialize runtime");
 
         let process_id = ProcessId::from_string(&Uuid::new_v4().to_string()).expect("thread id");
         runtime
             .upsert_process(&test_process_metadata(
-                &codex_home,
+                &chaos_home,
                 process_id,
-                codex_home.join("workspace"),
+                chaos_home.join("workspace"),
             ))
             .await
             .expect("upsert thread");
@@ -1475,13 +1475,13 @@ mod tests {
             "unexpected claim outcomes: {claim_outcomes:?}"
         );
 
-        let _ = tokio::fs::remove_dir_all(codex_home).await;
+        let _ = tokio::fs::remove_dir_all(chaos_home).await;
     }
 
     #[tokio::test]
     async fn stage1_concurrent_claims_respect_running_cap() {
-        let codex_home = unique_temp_dir();
-        let runtime = StateRuntime::init(codex_home.clone(), "test-provider".to_string())
+        let chaos_home = unique_temp_dir();
+        let runtime = StateRuntime::init(chaos_home.clone(), "test-provider".to_string())
             .await
             .expect("initialize runtime");
 
@@ -1489,17 +1489,17 @@ mod tests {
         let thread_b = ProcessId::from_string(&Uuid::new_v4().to_string()).expect("thread id");
         runtime
             .upsert_process(&test_process_metadata(
-                &codex_home,
+                &chaos_home,
                 thread_a,
-                codex_home.join("workspace-a"),
+                chaos_home.join("workspace-a"),
             ))
             .await
             .expect("upsert thread a");
         runtime
             .upsert_process(&test_process_metadata(
-                &codex_home,
+                &chaos_home,
                 thread_b,
-                codex_home.join("workspace-b"),
+                chaos_home.join("workspace-b"),
             ))
             .await
             .expect("upsert thread b");
@@ -1537,13 +1537,13 @@ mod tests {
             "one concurrent claim should be throttled by running cap: {claim_outcomes:?}"
         );
 
-        let _ = tokio::fs::remove_dir_all(codex_home).await;
+        let _ = tokio::fs::remove_dir_all(chaos_home).await;
     }
 
     #[tokio::test]
     async fn claim_stage1_jobs_filters_by_age_idle_and_current_process() {
-        let codex_home = unique_temp_dir();
-        let runtime = StateRuntime::init(codex_home.clone(), "test-provider".to_string())
+        let chaos_home = unique_temp_dir();
+        let runtime = StateRuntime::init(chaos_home.clone(), "test-provider".to_string())
             .await
             .expect("initialize runtime");
 
@@ -1573,7 +1573,7 @@ mod tests {
             ProcessId::from_string(&Uuid::new_v4().to_string()).expect("old thread id");
 
         let mut current =
-            test_process_metadata(&codex_home, current_process_id, codex_home.join("current"));
+            test_process_metadata(&chaos_home, current_process_id, chaos_home.join("current"));
         current.created_at = now;
         current.updated_at = now;
         runtime
@@ -1582,15 +1582,15 @@ mod tests {
             .expect("upsert current");
 
         let mut fresh =
-            test_process_metadata(&codex_home, fresh_process_id, codex_home.join("fresh"));
+            test_process_metadata(&chaos_home, fresh_process_id, chaos_home.join("fresh"));
         fresh.created_at = fresh_at;
         fresh.updated_at = fresh_at;
         runtime.upsert_process(&fresh).await.expect("upsert fresh");
 
         let mut just_under_idle = test_process_metadata(
-            &codex_home,
+            &chaos_home,
             just_under_idle_process_id,
-            codex_home.join("just-under-idle"),
+            chaos_home.join("just-under-idle"),
         );
         just_under_idle.created_at = just_under_idle_at;
         just_under_idle.updated_at = just_under_idle_at;
@@ -1600,9 +1600,9 @@ mod tests {
             .expect("upsert just-under-idle");
 
         let mut eligible_idle = test_process_metadata(
-            &codex_home,
+            &chaos_home,
             eligible_idle_process_id,
-            codex_home.join("eligible-idle"),
+            chaos_home.join("eligible-idle"),
         );
         eligible_idle.created_at = eligible_idle_at;
         eligible_idle.updated_at = eligible_idle_at;
@@ -1611,7 +1611,7 @@ mod tests {
             .await
             .expect("upsert eligible-idle");
 
-        let mut old = test_process_metadata(&codex_home, old_process_id, codex_home.join("old"));
+        let mut old = test_process_metadata(&chaos_home, old_process_id, chaos_home.join("old"));
         old.created_at = old_at;
         old.updated_at = old_at;
         runtime.upsert_process(&old).await.expect("upsert old");
@@ -1635,13 +1635,13 @@ mod tests {
         assert_eq!(claims.len(), 1);
         assert_eq!(claims[0].thread.id, eligible_idle_process_id);
 
-        let _ = tokio::fs::remove_dir_all(codex_home).await;
+        let _ = tokio::fs::remove_dir_all(chaos_home).await;
     }
 
     #[tokio::test]
     async fn claim_stage1_jobs_prefilters_threads_with_up_to_date_memory() {
-        let codex_home = unique_temp_dir();
-        let runtime = StateRuntime::init(codex_home.clone(), "test-provider".to_string())
+        let chaos_home = unique_temp_dir();
+        let runtime = StateRuntime::init(chaos_home.clone(), "test-provider".to_string())
             .await
             .expect("initialize runtime");
 
@@ -1658,7 +1658,7 @@ mod tests {
         let worker_id = ProcessId::from_string(&Uuid::new_v4().to_string()).expect("worker id");
 
         let mut current =
-            test_process_metadata(&codex_home, current_process_id, codex_home.join("current"));
+            test_process_metadata(&chaos_home, current_process_id, chaos_home.join("current"));
         current.created_at = now;
         current.updated_at = now;
         runtime
@@ -1667,9 +1667,9 @@ mod tests {
             .expect("upsert current thread");
 
         let mut up_to_date = test_process_metadata(
-            &codex_home,
+            &chaos_home,
             up_to_date_process_id,
-            codex_home.join("up-to-date"),
+            chaos_home.join("up-to-date"),
         );
         up_to_date.created_at = eligible_newer_at;
         up_to_date.updated_at = eligible_newer_at;
@@ -1708,7 +1708,7 @@ mod tests {
         );
 
         let mut stale =
-            test_process_metadata(&codex_home, stale_process_id, codex_home.join("stale"));
+            test_process_metadata(&chaos_home, stale_process_id, chaos_home.join("stale"));
         stale.created_at = eligible_older_at;
         stale.updated_at = eligible_older_at;
         runtime
@@ -1734,13 +1734,13 @@ mod tests {
         assert_eq!(claims.len(), 1);
         assert_eq!(claims[0].thread.id, stale_process_id);
 
-        let _ = tokio::fs::remove_dir_all(codex_home).await;
+        let _ = tokio::fs::remove_dir_all(chaos_home).await;
     }
 
     #[tokio::test]
     async fn claim_stage1_jobs_skips_threads_with_disabled_memory_mode() {
-        let codex_home = unique_temp_dir();
-        let runtime = StateRuntime::init(codex_home.clone(), "test-provider".to_string())
+        let chaos_home = unique_temp_dir();
+        let runtime = StateRuntime::init(chaos_home.clone(), "test-provider".to_string())
             .await
             .expect("initialize runtime");
 
@@ -1755,7 +1755,7 @@ mod tests {
             ProcessId::from_string(&Uuid::new_v4().to_string()).expect("enabled thread id");
 
         let mut current =
-            test_process_metadata(&codex_home, current_process_id, codex_home.join("current"));
+            test_process_metadata(&chaos_home, current_process_id, chaos_home.join("current"));
         current.created_at = now;
         current.updated_at = now;
         runtime
@@ -1764,9 +1764,9 @@ mod tests {
             .expect("upsert current thread");
 
         let mut disabled = test_process_metadata(
-            &codex_home,
+            &chaos_home,
             disabled_process_id,
-            codex_home.join("disabled"),
+            chaos_home.join("disabled"),
         );
         disabled.created_at = eligible_at;
         disabled.updated_at = eligible_at;
@@ -1781,7 +1781,7 @@ mod tests {
             .expect("disable thread memory mode");
 
         let mut enabled =
-            test_process_metadata(&codex_home, enabled_process_id, codex_home.join("enabled"));
+            test_process_metadata(&chaos_home, enabled_process_id, chaos_home.join("enabled"));
         enabled.created_at = eligible_at;
         enabled.updated_at = eligible_at;
         runtime
@@ -1808,13 +1808,13 @@ mod tests {
         assert_eq!(claims.len(), 1);
         assert_eq!(claims[0].thread.id, enabled_process_id);
 
-        let _ = tokio::fs::remove_dir_all(codex_home).await;
+        let _ = tokio::fs::remove_dir_all(chaos_home).await;
     }
 
     #[tokio::test]
     async fn reset_memory_data_for_fresh_start_clears_rows_and_disables_processes() {
-        let codex_home = unique_temp_dir();
-        let runtime = StateRuntime::init(codex_home.clone(), "test-provider".to_string())
+        let chaos_home = unique_temp_dir();
+        let runtime = StateRuntime::init(chaos_home.clone(), "test-provider".to_string())
             .await
             .expect("initialize runtime");
 
@@ -1826,7 +1826,7 @@ mod tests {
             ProcessId::from_string(&Uuid::new_v4().to_string()).expect("disabled thread id");
 
         let mut enabled =
-            test_process_metadata(&codex_home, enabled_process_id, codex_home.join("enabled"));
+            test_process_metadata(&chaos_home, enabled_process_id, chaos_home.join("enabled"));
         enabled.created_at = now;
         enabled.updated_at = now;
         runtime
@@ -1868,9 +1868,9 @@ mod tests {
             .expect("enqueue global consolidation");
 
         let mut disabled = test_process_metadata(
-            &codex_home,
+            &chaos_home,
             disabled_process_id,
-            codex_home.join("disabled"),
+            chaos_home.join("disabled"),
         );
         disabled.created_at = now;
         disabled.updated_at = now;
@@ -1920,13 +1920,13 @@ mod tests {
                 .expect("read disabled thread memory mode");
         assert_eq!(disabled_memory_mode, "disabled");
 
-        let _ = tokio::fs::remove_dir_all(codex_home).await;
+        let _ = tokio::fs::remove_dir_all(chaos_home).await;
     }
 
     #[tokio::test]
     async fn claim_stage1_jobs_enforces_global_running_cap() {
-        let codex_home = unique_temp_dir();
-        let runtime = StateRuntime::init(codex_home.clone(), "test-provider".to_string())
+        let chaos_home = unique_temp_dir();
+        let runtime = StateRuntime::init(chaos_home.clone(), "test-provider".to_string())
             .await
             .expect("initialize runtime");
 
@@ -1934,9 +1934,9 @@ mod tests {
             ProcessId::from_string(&Uuid::new_v4().to_string()).expect("current thread id");
         runtime
             .upsert_process(&test_process_metadata(
-                &codex_home,
+                &chaos_home,
                 current_process_id,
-                codex_home.join("current"),
+                chaos_home.join("current"),
             ))
             .await
             .expect("upsert current");
@@ -1952,9 +1952,9 @@ mod tests {
             let process_id =
                 ProcessId::from_string(&Uuid::new_v4().to_string()).expect("thread id");
             let mut metadata = test_process_metadata(
-                &codex_home,
+                &chaos_home,
                 process_id,
-                codex_home.join(format!("thread-{idx}")),
+                chaos_home.join(format!("thread-{idx}")),
             );
             metadata.created_at = eligible_at.checked_sub((idx as i64).seconds()).unwrap();
             metadata.updated_at = eligible_at.checked_sub((idx as i64).seconds()).unwrap();
@@ -2048,20 +2048,20 @@ WHERE kind = 'memory_stage1'
             .expect("claim stage1 jobs with cap reached");
         assert_eq!(more_claims.len(), 0);
 
-        let _ = tokio::fs::remove_dir_all(codex_home).await;
+        let _ = tokio::fs::remove_dir_all(chaos_home).await;
     }
 
     #[tokio::test]
     async fn claim_stage1_jobs_processes_two_full_batches_across_startup_passes() {
-        let codex_home = unique_temp_dir();
-        let runtime = StateRuntime::init(codex_home.clone(), "test-provider".to_string())
+        let chaos_home = unique_temp_dir();
+        let runtime = StateRuntime::init(chaos_home.clone(), "test-provider".to_string())
             .await
             .expect("initialize runtime");
 
         let current_process_id =
             ProcessId::from_string(&Uuid::new_v4().to_string()).expect("current thread id");
         let mut current =
-            test_process_metadata(&codex_home, current_process_id, codex_home.join("current"));
+            test_process_metadata(&chaos_home, current_process_id, chaos_home.join("current"));
         current.created_at = jiff::Timestamp::now();
         current.updated_at = jiff::Timestamp::now();
         runtime
@@ -2074,9 +2074,9 @@ WHERE kind = 'memory_stage1'
             let process_id =
                 ProcessId::from_string(&Uuid::new_v4().to_string()).expect("thread id");
             let mut metadata = test_process_metadata(
-                &codex_home,
+                &chaos_home,
                 process_id,
-                codex_home.join(format!("thread-{idx}")),
+                chaos_home.join(format!("thread-{idx}")),
             );
             metadata.created_at = eligible_at.checked_sub((idx as i64).seconds()).unwrap();
             metadata.updated_at = eligible_at.checked_sub((idx as i64).seconds()).unwrap();
@@ -2136,21 +2136,21 @@ WHERE kind = 'memory_stage1'
             .expect("second stage1 startup claim");
         assert_eq!(second_claims.len(), 64);
 
-        let _ = tokio::fs::remove_dir_all(codex_home).await;
+        let _ = tokio::fs::remove_dir_all(chaos_home).await;
     }
 
     #[tokio::test]
     async fn stage1_output_cascades_on_thread_delete() {
-        let codex_home = unique_temp_dir();
-        let runtime = StateRuntime::init(codex_home.clone(), "test-provider".to_string())
+        let chaos_home = unique_temp_dir();
+        let runtime = StateRuntime::init(chaos_home.clone(), "test-provider".to_string())
             .await
             .expect("initialize runtime");
 
         let process_id = ProcessId::from_string(&Uuid::new_v4().to_string()).expect("thread id");
         let owner = ProcessId::from_string(&Uuid::new_v4().to_string()).expect("owner id");
-        let cwd = codex_home.join("workspace");
+        let cwd = chaos_home.join("workspace");
         runtime
-            .upsert_process(&test_process_metadata(&codex_home, process_id, cwd))
+            .upsert_process(&test_process_metadata(&chaos_home, process_id, cwd))
             .await
             .expect("upsert thread");
 
@@ -2203,13 +2203,13 @@ WHERE kind = 'memory_stage1'
                 .expect("count value");
         assert_eq!(count_after, 0);
 
-        let _ = tokio::fs::remove_dir_all(codex_home).await;
+        let _ = tokio::fs::remove_dir_all(chaos_home).await;
     }
 
     #[tokio::test]
     async fn mark_stage1_job_succeeded_no_output_skips_phase2_when_output_was_already_absent() {
-        let codex_home = unique_temp_dir();
-        let runtime = StateRuntime::init(codex_home.clone(), "test-provider".to_string())
+        let chaos_home = unique_temp_dir();
+        let runtime = StateRuntime::init(chaos_home.clone(), "test-provider".to_string())
             .await
             .expect("initialize runtime");
 
@@ -2218,9 +2218,9 @@ WHERE kind = 'memory_stage1'
         let owner_b = ProcessId::from_string(&Uuid::new_v4().to_string()).expect("owner id");
         runtime
             .upsert_process(&test_process_metadata(
-                &codex_home,
+                &chaos_home,
                 process_id,
-                codex_home.join("workspace"),
+                chaos_home.join("workspace"),
             ))
             .await
             .expect("upsert thread");
@@ -2282,13 +2282,13 @@ WHERE kind = 'memory_stage1'
             "phase2 should remain clean when no-output deleted nothing"
         );
 
-        let _ = tokio::fs::remove_dir_all(codex_home).await;
+        let _ = tokio::fs::remove_dir_all(chaos_home).await;
     }
 
     #[tokio::test]
     async fn mark_stage1_job_succeeded_no_output_enqueues_phase2_when_deleting_output() {
-        let codex_home = unique_temp_dir();
-        let runtime = StateRuntime::init(codex_home.clone(), "test-provider".to_string())
+        let chaos_home = unique_temp_dir();
+        let runtime = StateRuntime::init(chaos_home.clone(), "test-provider".to_string())
             .await
             .expect("initialize runtime");
 
@@ -2297,9 +2297,9 @@ WHERE kind = 'memory_stage1'
         let owner_b = ProcessId::from_string(&Uuid::new_v4().to_string()).expect("owner id");
         runtime
             .upsert_process(&test_process_metadata(
-                &codex_home,
+                &chaos_home,
                 process_id,
-                codex_home.join("workspace"),
+                chaos_home.join("workspace"),
             ))
             .await
             .expect("upsert thread");
@@ -2400,13 +2400,13 @@ WHERE kind = 'memory_stage1'
                 .expect("mark phase2 succeeded after no-output delete")
         );
 
-        let _ = tokio::fs::remove_dir_all(codex_home).await;
+        let _ = tokio::fs::remove_dir_all(chaos_home).await;
     }
 
     #[tokio::test]
     async fn stage1_retry_exhaustion_does_not_block_newer_watermark() {
-        let codex_home = unique_temp_dir();
-        let runtime = StateRuntime::init(codex_home.clone(), "test-provider".to_string())
+        let chaos_home = unique_temp_dir();
+        let runtime = StateRuntime::init(chaos_home.clone(), "test-provider".to_string())
             .await
             .expect("initialize runtime");
 
@@ -2414,9 +2414,9 @@ WHERE kind = 'memory_stage1'
         let owner = ProcessId::from_string(&Uuid::new_v4().to_string()).expect("owner id");
         runtime
             .upsert_process(&test_process_metadata(
-                &codex_home,
+                &chaos_home,
                 process_id,
-                codex_home.join("workspace"),
+                chaos_home.join("workspace"),
             ))
             .await
             .expect("upsert thread");
@@ -2482,13 +2482,13 @@ WHERE kind = 'memory_stage1'
             101
         );
 
-        let _ = tokio::fs::remove_dir_all(codex_home).await;
+        let _ = tokio::fs::remove_dir_all(chaos_home).await;
     }
 
     #[tokio::test]
     async fn phase2_global_consolidation_reruns_when_watermark_advances() {
-        let codex_home = unique_temp_dir();
-        let runtime = StateRuntime::init(codex_home.clone(), "test-provider".to_string())
+        let chaos_home = unique_temp_dir();
+        let runtime = StateRuntime::init(chaos_home.clone(), "test-provider".to_string())
             .await
             .expect("initialize runtime");
 
@@ -2538,13 +2538,13 @@ WHERE kind = 'memory_stage1'
             "advanced watermark should be claimable"
         );
 
-        let _ = tokio::fs::remove_dir_all(codex_home).await;
+        let _ = tokio::fs::remove_dir_all(chaos_home).await;
     }
 
     #[tokio::test]
     async fn list_stage1_outputs_for_global_returns_latest_outputs() {
-        let codex_home = unique_temp_dir();
-        let runtime = StateRuntime::init(codex_home.clone(), "test-provider".to_string())
+        let chaos_home = unique_temp_dir();
+        let runtime = StateRuntime::init(chaos_home.clone(), "test-provider".to_string())
             .await
             .expect("initialize runtime");
 
@@ -2553,14 +2553,14 @@ WHERE kind = 'memory_stage1'
         let owner = ProcessId::from_string(&Uuid::new_v4().to_string()).expect("owner id");
         runtime
             .upsert_process(&test_process_metadata(
-                &codex_home,
+                &chaos_home,
                 process_id_a,
-                codex_home.join("workspace-a"),
+                chaos_home.join("workspace-a"),
             ))
             .await
             .expect("upsert thread a");
         let mut metadata_b =
-            test_process_metadata(&codex_home, process_id_b, codex_home.join("workspace-b"));
+            test_process_metadata(&chaos_home, process_id_b, chaos_home.join("workspace-b"));
         metadata_b.git_branch = Some("feature/stage1-b".to_string());
         runtime
             .upsert_process(&metadata_b)
@@ -2621,21 +2621,21 @@ WHERE kind = 'memory_stage1'
         assert_eq!(outputs[0].process_id, process_id_b);
         assert_eq!(outputs[0].rollout_summary, "summary b");
         assert_eq!(outputs[0].rollout_slug.as_deref(), Some("rollout-b"));
-        assert_eq!(outputs[0].cwd, codex_home.join("workspace-b"));
+        assert_eq!(outputs[0].cwd, chaos_home.join("workspace-b"));
         assert_eq!(outputs[0].git_branch.as_deref(), Some("feature/stage1-b"));
         assert_eq!(outputs[1].process_id, process_id_a);
         assert_eq!(outputs[1].rollout_summary, "summary a");
         assert_eq!(outputs[1].rollout_slug, None);
-        assert_eq!(outputs[1].cwd, codex_home.join("workspace-a"));
+        assert_eq!(outputs[1].cwd, chaos_home.join("workspace-a"));
         assert_eq!(outputs[1].git_branch, None);
 
-        let _ = tokio::fs::remove_dir_all(codex_home).await;
+        let _ = tokio::fs::remove_dir_all(chaos_home).await;
     }
 
     #[tokio::test]
     async fn list_stage1_outputs_for_global_skips_empty_payloads() {
-        let codex_home = unique_temp_dir();
-        let runtime = StateRuntime::init(codex_home.clone(), "test-provider".to_string())
+        let chaos_home = unique_temp_dir();
+        let runtime = StateRuntime::init(chaos_home.clone(), "test-provider".to_string())
             .await
             .expect("initialize runtime");
 
@@ -2645,17 +2645,17 @@ WHERE kind = 'memory_stage1'
             ProcessId::from_string(&Uuid::new_v4().to_string()).expect("thread id");
         runtime
             .upsert_process(&test_process_metadata(
-                &codex_home,
+                &chaos_home,
                 process_id_non_empty,
-                codex_home.join("workspace-non-empty"),
+                chaos_home.join("workspace-non-empty"),
             ))
             .await
             .expect("upsert non-empty thread");
         runtime
             .upsert_process(&test_process_metadata(
-                &codex_home,
+                &chaos_home,
                 process_id_empty,
-                codex_home.join("workspace-empty"),
+                chaos_home.join("workspace-empty"),
             ))
             .await
             .expect("upsert empty thread");
@@ -2696,15 +2696,15 @@ VALUES (?, ?, ?, ?, ?)
         assert_eq!(outputs.len(), 1);
         assert_eq!(outputs[0].process_id, process_id_non_empty);
         assert_eq!(outputs[0].rollout_summary, "summary");
-        assert_eq!(outputs[0].cwd, codex_home.join("workspace-non-empty"));
+        assert_eq!(outputs[0].cwd, chaos_home.join("workspace-non-empty"));
 
-        let _ = tokio::fs::remove_dir_all(codex_home).await;
+        let _ = tokio::fs::remove_dir_all(chaos_home).await;
     }
 
     #[tokio::test]
     async fn list_stage1_outputs_for_global_skips_polluted_processes() {
-        let codex_home = unique_temp_dir();
-        let runtime = StateRuntime::init(codex_home.clone(), "test-provider".to_string())
+        let chaos_home = unique_temp_dir();
+        let runtime = StateRuntime::init(chaos_home.clone(), "test-provider".to_string())
             .await
             .expect("initialize runtime");
 
@@ -2720,9 +2720,9 @@ VALUES (?, ?, ?, ?, ?)
         ] {
             runtime
                 .upsert_process(&test_process_metadata(
-                    &codex_home,
+                    &chaos_home,
                     process_id,
-                    codex_home.join(workspace),
+                    chaos_home.join(workspace),
                 ))
                 .await
                 .expect("upsert thread");
@@ -2763,13 +2763,13 @@ VALUES (?, ?, ?, ?, ?)
         assert_eq!(outputs.len(), 1);
         assert_eq!(outputs[0].process_id, process_id_enabled);
 
-        let _ = tokio::fs::remove_dir_all(codex_home).await;
+        let _ = tokio::fs::remove_dir_all(chaos_home).await;
     }
 
     #[tokio::test]
     async fn get_phase2_input_selection_reports_added_retained_and_removed_rows() {
-        let codex_home = unique_temp_dir();
-        let runtime = StateRuntime::init(codex_home.clone(), "test-provider".to_string())
+        let chaos_home = unique_temp_dir();
+        let runtime = StateRuntime::init(chaos_home.clone(), "test-provider".to_string())
             .await
             .expect("initialize runtime");
 
@@ -2785,9 +2785,9 @@ VALUES (?, ?, ?, ?, ?)
         ] {
             runtime
                 .upsert_process(&test_process_metadata(
-                    &codex_home,
+                    &chaos_home,
                     process_id,
-                    codex_home.join(workspace),
+                    chaos_home.join(workspace),
                 ))
                 .await
                 .expect("upsert thread");
@@ -2872,13 +2872,13 @@ VALUES (?, ?, ?, ?, ?)
             Some("rollout-a")
         );
 
-        let _ = tokio::fs::remove_dir_all(codex_home).await;
+        let _ = tokio::fs::remove_dir_all(chaos_home).await;
     }
 
     #[tokio::test]
     async fn get_phase2_input_selection_marks_polluted_previous_selection_as_removed() {
-        let codex_home = unique_temp_dir();
-        let runtime = StateRuntime::init(codex_home.clone(), "test-provider".to_string())
+        let chaos_home = unique_temp_dir();
+        let runtime = StateRuntime::init(chaos_home.clone(), "test-provider".to_string())
             .await
             .expect("initialize runtime");
 
@@ -2891,9 +2891,9 @@ VALUES (?, ?, ?, ?, ?)
         for (process_id, updated_at) in [(process_id_enabled, 100), (process_id_polluted, 101)] {
             runtime
                 .upsert_process(&test_process_metadata(
-                    &codex_home,
+                    &chaos_home,
                     process_id,
-                    codex_home.join(process_id.to_string()),
+                    chaos_home.join(process_id.to_string()),
                 ))
                 .await
                 .expect("upsert thread");
@@ -2978,13 +2978,13 @@ VALUES (?, ?, ?, ?, ?)
         assert_eq!(selection.removed.len(), 1);
         assert_eq!(selection.removed[0].process_id, process_id_polluted);
 
-        let _ = tokio::fs::remove_dir_all(codex_home).await;
+        let _ = tokio::fs::remove_dir_all(chaos_home).await;
     }
 
     #[tokio::test]
     async fn mark_process_memory_mode_polluted_enqueues_phase2_for_selected_processes() {
-        let codex_home = unique_temp_dir();
-        let runtime = StateRuntime::init(codex_home.clone(), "test-provider".to_string())
+        let chaos_home = unique_temp_dir();
+        let runtime = StateRuntime::init(chaos_home.clone(), "test-provider".to_string())
             .await
             .expect("initialize runtime");
 
@@ -2992,9 +2992,9 @@ VALUES (?, ?, ?, ?, ?)
         let owner = ProcessId::from_string(&Uuid::new_v4().to_string()).expect("owner id");
         runtime
             .upsert_process(&test_process_metadata(
-                &codex_home,
+                &chaos_home,
                 process_id,
-                codex_home.join("workspace"),
+                chaos_home.join("workspace"),
             ))
             .await
             .expect("upsert thread");
@@ -3063,13 +3063,13 @@ VALUES (?, ?, ?, ?, ?)
             .expect("claim phase2 after pollution");
         assert!(matches!(next_claim, Phase2JobClaimOutcome::Claimed { .. }));
 
-        let _ = tokio::fs::remove_dir_all(codex_home).await;
+        let _ = tokio::fs::remove_dir_all(chaos_home).await;
     }
 
     #[tokio::test]
     async fn get_phase2_input_selection_treats_regenerated_selected_rows_as_added() {
-        let codex_home = unique_temp_dir();
-        let runtime = StateRuntime::init(codex_home.clone(), "test-provider".to_string())
+        let chaos_home = unique_temp_dir();
+        let runtime = StateRuntime::init(chaos_home.clone(), "test-provider".to_string())
             .await
             .expect("initialize runtime");
 
@@ -3077,9 +3077,9 @@ VALUES (?, ?, ?, ?, ?)
         let owner = ProcessId::from_string(&Uuid::new_v4().to_string()).expect("owner id");
         runtime
             .upsert_process(&test_process_metadata(
-                &codex_home,
+                &chaos_home,
                 process_id,
-                codex_home.join("workspace"),
+                chaos_home.join("workspace"),
             ))
             .await
             .expect("upsert thread");
@@ -3179,13 +3179,13 @@ VALUES (?, ?, ?, ?, ?)
         assert_eq!(selected_for_phase2, 1);
         assert_eq!(selected_for_phase2_source_updated_at, Some(100));
 
-        let _ = tokio::fs::remove_dir_all(codex_home).await;
+        let _ = tokio::fs::remove_dir_all(chaos_home).await;
     }
 
     #[tokio::test]
     async fn get_phase2_input_selection_reports_regenerated_previous_selection_as_removed() {
-        let codex_home = unique_temp_dir();
-        let runtime = StateRuntime::init(codex_home.clone(), "test-provider".to_string())
+        let chaos_home = unique_temp_dir();
+        let runtime = StateRuntime::init(chaos_home.clone(), "test-provider".to_string())
             .await
             .expect("initialize runtime");
 
@@ -3203,9 +3203,9 @@ VALUES (?, ?, ?, ?, ?)
         ] {
             runtime
                 .upsert_process(&test_process_metadata(
-                    &codex_home,
+                    &chaos_home,
                     process_id,
-                    codex_home.join(workspace),
+                    chaos_home.join(workspace),
                 ))
                 .await
                 .expect("upsert thread");
@@ -3334,13 +3334,13 @@ VALUES (?, ?, ?, ?, ?)
             vec![(process_id_a, 102), (process_id_b, 101)]
         );
 
-        let _ = tokio::fs::remove_dir_all(codex_home).await;
+        let _ = tokio::fs::remove_dir_all(chaos_home).await;
     }
 
     #[tokio::test]
     async fn mark_global_phase2_job_succeeded_updates_selected_snapshot_timestamp() {
-        let codex_home = unique_temp_dir();
-        let runtime = StateRuntime::init(codex_home.clone(), "test-provider".to_string())
+        let chaos_home = unique_temp_dir();
+        let runtime = StateRuntime::init(chaos_home.clone(), "test-provider".to_string())
             .await
             .expect("initialize runtime");
 
@@ -3348,9 +3348,9 @@ VALUES (?, ?, ?, ?, ?)
         let owner = ProcessId::from_string(&Uuid::new_v4().to_string()).expect("owner id");
         runtime
             .upsert_process(&test_process_metadata(
-                &codex_home,
+                &chaos_home,
                 process_id,
-                codex_home.join("workspace"),
+                chaos_home.join("workspace"),
             ))
             .await
             .expect("upsert thread");
@@ -3476,13 +3476,13 @@ VALUES (?, ?, ?, ?, ?)
         assert_eq!(selected_for_phase2, 1);
         assert_eq!(selected_for_phase2_source_updated_at, Some(101));
 
-        let _ = tokio::fs::remove_dir_all(codex_home).await;
+        let _ = tokio::fs::remove_dir_all(chaos_home).await;
     }
 
     #[tokio::test]
     async fn mark_global_phase2_job_succeeded_only_marks_exact_selected_snapshots() {
-        let codex_home = unique_temp_dir();
-        let runtime = StateRuntime::init(codex_home.clone(), "test-provider".to_string())
+        let chaos_home = unique_temp_dir();
+        let runtime = StateRuntime::init(chaos_home.clone(), "test-provider".to_string())
             .await
             .expect("initialize runtime");
 
@@ -3490,9 +3490,9 @@ VALUES (?, ?, ?, ?, ?)
         let owner = ProcessId::from_string(&Uuid::new_v4().to_string()).expect("owner id");
         runtime
             .upsert_process(&test_process_metadata(
-                &codex_home,
+                &chaos_home,
                 process_id,
-                codex_home.join("workspace"),
+                chaos_home.join("workspace"),
             ))
             .await
             .expect("upsert thread");
@@ -3591,13 +3591,13 @@ VALUES (?, ?, ?, ?, ?)
         assert_eq!(selection.selected[0].source_updated_at.as_second(), 101);
         assert!(selection.retained_process_ids.is_empty());
 
-        let _ = tokio::fs::remove_dir_all(codex_home).await;
+        let _ = tokio::fs::remove_dir_all(chaos_home).await;
     }
 
     #[tokio::test]
     async fn record_stage1_output_usage_updates_usage_metadata() {
-        let codex_home = unique_temp_dir();
-        let runtime = StateRuntime::init(codex_home.clone(), "test-provider".to_string())
+        let chaos_home = unique_temp_dir();
+        let runtime = StateRuntime::init(chaos_home.clone(), "test-provider".to_string())
             .await
             .expect("initialize runtime");
 
@@ -3608,17 +3608,17 @@ VALUES (?, ?, ?, ?, ?)
 
         runtime
             .upsert_process(&test_process_metadata(
-                &codex_home,
+                &chaos_home,
                 thread_a,
-                codex_home.join("workspace-a"),
+                chaos_home.join("workspace-a"),
             ))
             .await
             .expect("upsert thread a");
         runtime
             .upsert_process(&test_process_metadata(
-                &codex_home,
+                &chaos_home,
                 thread_b,
-                codex_home.join("workspace-b"),
+                chaos_home.join("workspace-b"),
             ))
             .await
             .expect("upsert thread b");
@@ -3690,13 +3690,13 @@ VALUES (?, ?, ?, ?, ?)
         assert_eq!(last_usage_a, last_usage_b);
         assert!(last_usage_a > 0);
 
-        let _ = tokio::fs::remove_dir_all(codex_home).await;
+        let _ = tokio::fs::remove_dir_all(chaos_home).await;
     }
 
     #[tokio::test]
     async fn get_phase2_input_selection_prioritizes_usage_count_then_recent_usage() {
-        let codex_home = unique_temp_dir();
-        let runtime = StateRuntime::init(codex_home.clone(), "test-provider".to_string())
+        let chaos_home = unique_temp_dir();
+        let runtime = StateRuntime::init(chaos_home.clone(), "test-provider".to_string())
             .await
             .expect("initialize runtime");
 
@@ -3713,9 +3713,9 @@ VALUES (?, ?, ?, ?, ?)
         ] {
             runtime
                 .upsert_process(&test_process_metadata(
-                    &codex_home,
+                    &chaos_home,
                     process_id,
-                    codex_home.join(workspace),
+                    chaos_home.join(workspace),
                 ))
                 .await
                 .expect("upsert thread");
@@ -3801,13 +3801,13 @@ VALUES (?, ?, ?, ?, ?)
             vec![thread_b, thread_a, thread_c]
         );
 
-        let _ = tokio::fs::remove_dir_all(codex_home).await;
+        let _ = tokio::fs::remove_dir_all(chaos_home).await;
     }
 
     #[tokio::test]
     async fn get_phase2_input_selection_excludes_stale_used_memories_but_keeps_fresh_never_used() {
-        let codex_home = unique_temp_dir();
-        let runtime = StateRuntime::init(codex_home.clone(), "test-provider".to_string())
+        let chaos_home = unique_temp_dir();
+        let runtime = StateRuntime::init(chaos_home.clone(), "test-provider".to_string())
             .await
             .expect("initialize runtime");
 
@@ -3824,9 +3824,9 @@ VALUES (?, ?, ?, ?, ?)
         ] {
             runtime
                 .upsert_process(&test_process_metadata(
-                    &codex_home,
+                    &chaos_home,
                     process_id,
-                    codex_home.join(workspace),
+                    chaos_home.join(workspace),
                 ))
                 .await
                 .expect("upsert thread");
@@ -3912,13 +3912,13 @@ VALUES (?, ?, ?, ?, ?)
             vec![thread_c, thread_b]
         );
 
-        let _ = tokio::fs::remove_dir_all(codex_home).await;
+        let _ = tokio::fs::remove_dir_all(chaos_home).await;
     }
 
     #[tokio::test]
     async fn get_phase2_input_selection_prefers_recent_thread_updates_over_recent_generation() {
-        let codex_home = unique_temp_dir();
-        let runtime = StateRuntime::init(codex_home.clone(), "test-provider".to_string())
+        let chaos_home = unique_temp_dir();
+        let runtime = StateRuntime::init(chaos_home.clone(), "test-provider".to_string())
             .await
             .expect("initialize runtime");
 
@@ -3934,9 +3934,9 @@ VALUES (?, ?, ?, ?, ?)
         ] {
             runtime
                 .upsert_process(&test_process_metadata(
-                    &codex_home,
+                    &chaos_home,
                     process_id,
-                    codex_home.join(workspace),
+                    chaos_home.join(workspace),
                 ))
                 .await
                 .expect("upsert thread");
@@ -3992,13 +3992,13 @@ VALUES (?, ?, ?, ?, ?)
         assert_eq!(selection.selected[0].process_id, newer_thread);
         assert_eq!(selection.selected[0].source_updated_at.as_second(), 200);
 
-        let _ = tokio::fs::remove_dir_all(codex_home).await;
+        let _ = tokio::fs::remove_dir_all(chaos_home).await;
     }
 
     #[tokio::test]
     async fn prune_stage1_outputs_for_retention_prunes_stale_unselected_rows_only() {
-        let codex_home = unique_temp_dir();
-        let runtime = StateRuntime::init(codex_home.clone(), "test-provider".to_string())
+        let chaos_home = unique_temp_dir();
+        let runtime = StateRuntime::init(chaos_home.clone(), "test-provider".to_string())
             .await
             .expect("initialize runtime");
 
@@ -4018,9 +4018,9 @@ VALUES (?, ?, ?, ?, ?)
         ] {
             runtime
                 .upsert_process(&test_process_metadata(
-                    &codex_home,
+                    &chaos_home,
                     process_id,
-                    codex_home.join(workspace),
+                    chaos_home.join(workspace),
                 ))
                 .await
                 .expect("upsert thread");
@@ -4112,13 +4112,13 @@ VALUES (?, ?, ?, ?, ?)
                 .expect("count stage1 jobs after prune");
         assert_eq!(after_jobs_count, before_jobs_count);
 
-        let _ = tokio::fs::remove_dir_all(codex_home).await;
+        let _ = tokio::fs::remove_dir_all(chaos_home).await;
     }
 
     #[tokio::test]
     async fn prune_stage1_outputs_for_retention_respects_batch_limit() {
-        let codex_home = unique_temp_dir();
-        let runtime = StateRuntime::init(codex_home.clone(), "test-provider".to_string())
+        let chaos_home = unique_temp_dir();
+        let runtime = StateRuntime::init(chaos_home.clone(), "test-provider".to_string())
             .await
             .expect("initialize runtime");
 
@@ -4134,9 +4134,9 @@ VALUES (?, ?, ?, ?, ?)
         ] {
             runtime
                 .upsert_process(&test_process_metadata(
-                    &codex_home,
+                    &chaos_home,
                     process_id,
-                    codex_home.join(workspace),
+                    chaos_home.join(workspace),
                 ))
                 .await
                 .expect("upsert thread");
@@ -4184,13 +4184,13 @@ VALUES (?, ?, ?, ?, ?)
             .expect("count remaining stage1 outputs");
         assert_eq!(remaining_count, 1);
 
-        let _ = tokio::fs::remove_dir_all(codex_home).await;
+        let _ = tokio::fs::remove_dir_all(chaos_home).await;
     }
 
     #[tokio::test]
     async fn mark_stage1_job_succeeded_enqueues_global_consolidation() {
-        let codex_home = unique_temp_dir();
-        let runtime = StateRuntime::init(codex_home.clone(), "test-provider".to_string())
+        let chaos_home = unique_temp_dir();
+        let runtime = StateRuntime::init(chaos_home.clone(), "test-provider".to_string())
             .await
             .expect("initialize runtime");
 
@@ -4200,17 +4200,17 @@ VALUES (?, ?, ?, ?, ?)
 
         runtime
             .upsert_process(&test_process_metadata(
-                &codex_home,
+                &chaos_home,
                 thread_a,
-                codex_home.join("workspace-a"),
+                chaos_home.join("workspace-a"),
             ))
             .await
             .expect("upsert thread a");
         runtime
             .upsert_process(&test_process_metadata(
-                &codex_home,
+                &chaos_home,
                 thread_b,
-                codex_home.join("workspace-b"),
+                chaos_home.join("workspace-b"),
             ))
             .await
             .expect("upsert thread b");
@@ -4273,13 +4273,13 @@ VALUES (?, ?, ?, ?, ?)
         };
         assert_eq!(input_watermark, 101);
 
-        let _ = tokio::fs::remove_dir_all(codex_home).await;
+        let _ = tokio::fs::remove_dir_all(chaos_home).await;
     }
 
     #[tokio::test]
     async fn phase2_global_lock_allows_only_one_fresh_runner() {
-        let codex_home = unique_temp_dir();
-        let runtime = StateRuntime::init(codex_home.clone(), "test-provider".to_string())
+        let chaos_home = unique_temp_dir();
+        let runtime = StateRuntime::init(chaos_home.clone(), "test-provider".to_string())
             .await
             .expect("initialize runtime");
 
@@ -4306,13 +4306,13 @@ VALUES (?, ?, ?, ?, ?)
             .expect("claim global lock from second owner");
         assert_eq!(second_claim, Phase2JobClaimOutcome::SkippedRunning);
 
-        let _ = tokio::fs::remove_dir_all(codex_home).await;
+        let _ = tokio::fs::remove_dir_all(chaos_home).await;
     }
 
     #[tokio::test]
     async fn phase2_global_lock_stale_lease_allows_takeover() {
-        let codex_home = unique_temp_dir();
-        let runtime = StateRuntime::init(codex_home.clone(), "test-provider".to_string())
+        let chaos_home = unique_temp_dir();
+        let runtime = StateRuntime::init(chaos_home.clone(), "test-provider".to_string())
             .await
             .expect("initialize runtime");
 
@@ -4373,13 +4373,13 @@ VALUES (?, ?, ?, ?, ?)
             "takeover owner should finalize consolidation"
         );
 
-        let _ = tokio::fs::remove_dir_all(codex_home).await;
+        let _ = tokio::fs::remove_dir_all(chaos_home).await;
     }
 
     #[tokio::test]
     async fn phase2_backfilled_inputs_below_last_success_still_become_dirty() {
-        let codex_home = unique_temp_dir();
-        let runtime = StateRuntime::init(codex_home.clone(), "test-provider".to_string())
+        let chaos_home = unique_temp_dir();
+        let runtime = StateRuntime::init(chaos_home.clone(), "test-provider".to_string())
             .await
             .expect("initialize runtime");
 
@@ -4432,13 +4432,13 @@ VALUES (?, ?, ?, ?, ?)
             other => panic!("unexpected backfilled phase2 claim outcome: {other:?}"),
         }
 
-        let _ = tokio::fs::remove_dir_all(codex_home).await;
+        let _ = tokio::fs::remove_dir_all(chaos_home).await;
     }
 
     #[tokio::test]
     async fn phase2_failure_fallback_updates_unowned_running_job() {
-        let codex_home = unique_temp_dir();
-        let runtime = StateRuntime::init(codex_home.clone(), "test-provider".to_string())
+        let chaos_home = unique_temp_dir();
+        let runtime = StateRuntime::init(chaos_home.clone(), "test-provider".to_string())
             .await
             .expect("initialize runtime");
 
@@ -4488,6 +4488,6 @@ VALUES (?, ?, ?, ?, ?)
             .expect("claim after fallback failure");
         assert_eq!(claim, Phase2JobClaimOutcome::SkippedNotDirty);
 
-        let _ = tokio::fs::remove_dir_all(codex_home).await;
+        let _ = tokio::fs::remove_dir_all(chaos_home).await;
     }
 }

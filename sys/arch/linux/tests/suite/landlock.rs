@@ -9,7 +9,7 @@ use chaos_ipc::permissions::NetworkSandboxPolicy;
 use chaos_ipc::protocol::ReadOnlyAccess;
 use chaos_ipc::protocol::SandboxPolicy;
 use chaos_kern::config::types::ShellEnvironmentPolicy;
-use chaos_kern::error::CodexErr;
+use chaos_kern::error::ChaosErr;
 use chaos_kern::error::Result;
 use chaos_kern::error::SandboxErr;
 use chaos_kern::exec::ExecParams;
@@ -144,7 +144,7 @@ fn expect_denied(
             assert_ne!(output.exit_code, 0, "{context}: expected nonzero exit code");
             output
         }
-        Err(CodexErr::Sandbox(SandboxErr::Denied { output, .. })) => *output,
+        Err(ChaosErr::Sandbox(SandboxErr::Denied { output, .. })) => *output,
         Err(err) => panic!("{context}: {err:?}"),
     }
 }
@@ -322,7 +322,7 @@ async fn assert_network_blocked(cmd: &[&str]) {
 
     let output = match result {
         Ok(output) => output,
-        Err(CodexErr::Sandbox(SandboxErr::Denied { output, .. })) => *output,
+        Err(ChaosErr::Sandbox(SandboxErr::Denied { output, .. })) => *output,
         _ => {
             panic!("expected sandbox denied error, got: {result:?}");
         }
@@ -367,15 +367,15 @@ async fn sandbox_blocks_nc() {
 }
 
 #[tokio::test]
-async fn workspace_write_currently_allows_git_and_codex_writes_on_linux_landlock_backend() {
+async fn workspace_write_currently_allows_git_and_chaos_writes_on_linux_landlock_backend() {
     let tmpdir = tempfile::tempdir().expect("tempdir");
     let dot_git = tmpdir.path().join(".git");
-    let dot_codex = tmpdir.path().join(".codex");
+    let dot_chaos = tmpdir.path().join(".chaos");
     std::fs::create_dir_all(&dot_git).expect("create .git");
-    std::fs::create_dir_all(&dot_codex).expect("create .codex");
+    std::fs::create_dir_all(&dot_chaos).expect("create .chaos");
 
     let git_target = dot_git.join("config");
-    let codex_target = dot_codex.join("config.toml");
+    let chaos_target = dot_chaos.join("config.toml");
 
     let git_output = run_cmd_result_with_writable_roots(
         &[
@@ -390,41 +390,41 @@ async fn workspace_write_currently_allows_git_and_codex_writes_on_linux_landlock
     .await
     .expect("workspace-write should execute even though .git is not specially protected");
 
-    let codex_output = run_cmd_result_with_writable_roots(
+    let chaos_output = run_cmd_result_with_writable_roots(
         &[
             "bash",
             "-lc",
-            &format!("echo allowed > {}", codex_target.to_string_lossy()),
+            &format!("echo allowed > {}", chaos_target.to_string_lossy()),
         ],
         &[tmpdir.path().to_path_buf()],
         LONG_TIMEOUT_MS,
         true,
     )
     .await
-    .expect("workspace-write should execute even though .codex is not specially protected");
+    .expect("workspace-write should execute even though .chaos is not specially protected");
 
     assert_eq!(git_output.exit_code, 0);
-    assert_eq!(codex_output.exit_code, 0);
+    assert_eq!(chaos_output.exit_code, 0);
 }
 
 #[tokio::test]
-async fn workspace_write_currently_allows_codex_symlink_replacement_on_linux_landlock_backend() {
+async fn workspace_write_currently_allows_chaos_symlink_replacement_on_linux_landlock_backend() {
     use std::os::unix::fs::symlink;
 
     let tmpdir = tempfile::tempdir().expect("tempdir");
-    let decoy = tmpdir.path().join("decoy-codex");
+    let decoy = tmpdir.path().join("decoy-chaos");
     std::fs::create_dir_all(&decoy).expect("create decoy dir");
 
-    let dot_codex = tmpdir.path().join(".codex");
-    symlink(&decoy, &dot_codex).expect("create .codex symlink");
+    let dot_chaos = tmpdir.path().join(".chaos");
+    symlink(&decoy, &dot_chaos).expect("create .chaos symlink");
 
-    let codex_target = dot_codex.join("config.toml");
+    let chaos_target = dot_chaos.join("config.toml");
 
-    let codex_output = run_cmd_result_with_writable_roots(
+    let chaos_output = run_cmd_result_with_writable_roots(
         &[
             "bash",
             "-lc",
-            &format!("echo allowed > {}", codex_target.to_string_lossy()),
+            &format!("echo allowed > {}", chaos_target.to_string_lossy()),
         ],
         &[tmpdir.path().to_path_buf()],
         LONG_TIMEOUT_MS,
@@ -432,9 +432,9 @@ async fn workspace_write_currently_allows_codex_symlink_replacement_on_linux_lan
     )
     .await
     .expect(
-        "workspace-write should execute even though symlinked .codex is not specially protected",
+        "workspace-write should execute even though symlinked .chaos is not specially protected",
     );
-    assert_eq!(codex_output.exit_code, 0);
+    assert_eq!(chaos_output.exit_code, 0);
 }
 
 #[tokio::test]

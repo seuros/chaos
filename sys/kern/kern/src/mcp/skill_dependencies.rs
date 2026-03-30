@@ -1,7 +1,7 @@
 use tokio_util::sync::CancellationToken;
 
-use crate::codex::Session;
-use crate::codex::TurnContext;
+use crate::chaos::Session;
+use crate::chaos::TurnContext;
 use crate::skills::SkillMetadata;
 
 pub(crate) async fn maybe_prompt_and_install_mcp_dependencies(

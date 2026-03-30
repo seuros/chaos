@@ -17,9 +17,9 @@ use chaos_ipc::protocol::ReviewOutputEvent;
 use chaos_ipc::protocol::SubAgentSource;
 use tokio_util::sync::CancellationToken;
 
-use crate::codex::Session;
-use crate::codex::TurnContext;
-use crate::codex_delegate::run_codex_process_one_shot;
+use crate::chaos::Session;
+use crate::chaos::TurnContext;
+use crate::chaos_delegate::run_chaos_process_one_shot;
 use crate::config::Constrained;
 use crate::features::Feature;
 use crate::review_format::format_review_findings_block;
@@ -121,7 +121,7 @@ async fn start_review_conversation(
         .clone()
         .unwrap_or_else(|| ctx.model_info.slug.clone());
     sub_agent_config.model = Some(model);
-    (run_codex_process_one_shot(
+    (run_chaos_process_one_shot(
         sub_agent_config,
         session.auth_manager(),
         session.models_manager(),

@@ -21,7 +21,7 @@ use chaos_ipc::protocol::TurnCompleteEvent;
 use chaos_ipc::user_input::UserInput;
 use chaos_kern::Process;
 use chaos_kern::ProcessTable;
-use chaos_kern::config::Config as CodexConfig;
+use chaos_kern::config::Config as ChaosConfig;
 use mcp_host::protocol::types::RequestId;
 use tokio::sync::Mutex;
 
@@ -64,7 +64,7 @@ pub(crate) type ProcessNameCache = Arc<Mutex<HashMap<ProcessId, String>>>;
 pub(crate) struct RunChaosSessionArgs {
     pub request_id: RequestId,
     pub prompt: String,
-    pub config: Option<CodexConfig>,
+    pub config: Option<ChaosConfig>,
     pub existing_process_id: Option<ProcessId>,
     pub outgoing: Arc<OutgoingMessageSender>,
     pub process_table: Arc<ProcessTable>,
@@ -153,7 +153,7 @@ pub(crate) async fn run_chaos_session(args: RunChaosSessionArgs) -> SessionOutco
                 Err(e) => {
                     return SessionOutcome {
                         process_id: ProcessId::new(),
-                        text: format!("Failed to start Codex session: {e}"),
+                        text: format!("Failed to start Chaos session: {e}"),
                         is_error: true,
                     };
                 }
@@ -426,7 +426,7 @@ async fn run_event_loop(
             Err(e) => {
                 return SessionOutcome {
                     process_id,
-                    text: format!("Codex runtime error: {e}"),
+                    text: format!("Chaos runtime error: {e}"),
                     is_error: true,
                 };
             }

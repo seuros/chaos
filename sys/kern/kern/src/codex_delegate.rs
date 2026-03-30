@@ -31,14 +31,14 @@ use tokio::time::timeout;
 use tokio_util::sync::CancellationToken;
 
 use crate::AuthManager;
-use crate::codex::Codex;
-use crate::codex::CodexSpawnArgs;
-use crate::codex::CodexSpawnOk;
-use crate::codex::SUBMISSION_CHANNEL_CAPACITY;
-use crate::codex::Session;
-use crate::codex::TurnContext;
+use crate::chaos::Chaos;
+use crate::chaos::ChaosSpawnArgs;
+use crate::chaos::ChaosSpawnOk;
+use crate::chaos::SUBMISSION_CHANNEL_CAPACITY;
+use crate::chaos::Session;
+use crate::chaos::TurnContext;
 use crate::config::Config;
-use crate::error::CodexErr;
+use crate::error::ChaosErr;
 use crate::guardian::GuardianApprovalRequest;
 use crate::guardian::review_approval_request_with_cancel;
 use crate::guardian::routes_approval_to_guardian;
@@ -52,15 +52,15 @@ use crate::models_manager::manager::ModelsManager;
 use chaos_ipc::protocol::InitialHistory;
 
 #[cfg(test)]
-use crate::codex::completed_session_loop_termination;
+use crate::chaos::completed_session_loop_termination;
 
-/// Start an interactive sub-Codex thread and return IO channels.
+/// Start an interactive sub-Chaos thread and return IO channels.
 ///
 /// The returned `events_rx` yields non-approval events emitted by the sub-agent.
 /// Approval requests are handled via `parent_session` and are not surfaced.
 /// The returned `ops_tx` allows the caller to submit additional `Op`s to the sub-agent.
 #[allow(clippy::too_many_arguments)]
-pub(crate) async fn run_codex_process_interactive(
+pub(crate) async fn run_chaos_process_interactive(
     config: Config,
     auth_manager: Arc<AuthManager>,
     models_manager: Arc<ModelsManager>,
@@ -69,11 +69,11 @@ pub(crate) async fn run_codex_process_interactive(
     cancel_token: CancellationToken,
     subagent_source: SubAgentSource,
     initial_history: Option<InitialHistory>,
-) -> Result<Codex, CodexErr> {
+) -> Result<Chaos, ChaosErr> {
     let (tx_sub, rx_sub) = async_channel::bounded(SUBMISSION_CHANNEL_CAPACITY);
     let (tx_ops, rx_ops) = async_channel::bounded(SUBMISSION_CHANNEL_CAPACITY);
 
-    let CodexSpawnOk { codex, .. } = Codex::spawn(CodexSpawnArgs {
+    let ChaosSpawnOk { chaos, .. } = Chaos::spawn(ChaosSpawnArgs {
         config,
         auth_manager,
         models_manager,
@@ -91,7 +91,7 @@ pub(crate) async fn run_codex_process_interactive(
         parent_trace: None,
     })
     .await?;
-    let codex = Arc::new(codex);
+    let codex = Arc::new(chaos);
 
     // Use a child token so parent cancel cascades but we can scope it to this task
     let cancel_token_events = cancel_token.child_token();
@@ -124,7 +124,7 @@ pub(crate) async fn run_codex_process_interactive(
         forward_ops(codex_for_ops, rx_ops, cancel_token_ops).await;
     });
 
-    Ok(Codex {
+    Ok(Chaos {
         tx_sub: tx_ops,
         rx_event: rx_sub,
         agent_status: codex.agent_status.clone(),
@@ -137,7 +137,7 @@ pub(crate) async fn run_codex_process_interactive(
 ///
 /// Internally calls the interactive variant, then immediately submits the provided input.
 #[allow(clippy::too_many_arguments)]
-pub(crate) async fn run_codex_process_one_shot(
+pub(crate) async fn run_chaos_process_one_shot(
     config: Config,
     auth_manager: Arc<AuthManager>,
     models_manager: Arc<ModelsManager>,
@@ -148,11 +148,11 @@ pub(crate) async fn run_codex_process_one_shot(
     subagent_source: SubAgentSource,
     final_output_json_schema: Option<Value>,
     initial_history: Option<InitialHistory>,
-) -> Result<Codex, CodexErr> {
+) -> Result<Chaos, ChaosErr> {
     // Use a child token so we can stop the delegate after completion without
     // requiring the caller to cancel the parent token.
     let child_cancel = cancel_token.child_token();
-    let io = run_codex_process_interactive(
+    let io = run_chaos_process_interactive(
         config,
         auth_manager,
         models_manager,
@@ -205,7 +205,7 @@ pub(crate) async fn run_codex_process_one_shot(
     let (tx_closed, rx_closed) = async_channel::bounded(SUBMISSION_CHANNEL_CAPACITY);
     drop(rx_closed);
 
-    Ok(Codex {
+    Ok(Chaos {
         rx_event: rx_bridge,
         tx_sub: tx_closed,
         agent_status,
@@ -215,7 +215,7 @@ pub(crate) async fn run_codex_process_one_shot(
 }
 
 async fn forward_events(
-    codex: Arc<Codex>,
+    codex: Arc<Chaos>,
     tx_sub: Sender<Event>,
     parent_session: Arc<Session>,
     parent_ctx: Arc<TurnContext>,
@@ -365,7 +365,7 @@ async fn forward_events(
 }
 
 /// Ask the delegate to stop and drain its events so background sends do not hit a closed channel.
-async fn shutdown_delegate(codex: &Codex) {
+async fn shutdown_delegate(codex: &Chaos) {
     let _ = codex.submit(Op::Interrupt).await;
     let _ = codex.submit(Op::Shutdown {}).await;
 
@@ -383,7 +383,7 @@ async fn shutdown_delegate(codex: &Codex) {
 }
 
 async fn forward_event_or_shutdown(
-    codex: &Codex,
+    codex: &Chaos,
     tx_sub: &Sender<Event>,
     cancel_token: &CancellationToken,
     event: Event,
@@ -399,7 +399,7 @@ async fn forward_event_or_shutdown(
 
 /// Forward ops from a caller to a sub-agent, respecting cancellation.
 async fn forward_ops(
-    codex: Arc<Codex>,
+    codex: Arc<Chaos>,
     rx_ops: Receiver<Submission>,
     cancel_token_ops: CancellationToken,
 ) {
@@ -414,7 +414,7 @@ async fn forward_ops(
 
 /// Handle an ExecApprovalRequest by consulting the parent session and replying.
 async fn handle_exec_approval(
-    codex: &Codex,
+    codex: &Chaos,
     turn_id: String,
     parent_session: &Arc<Session>,
     parent_ctx: &Arc<TurnContext>,
@@ -497,7 +497,7 @@ async fn handle_exec_approval(
 
 /// Handle an ApplyPatchApprovalRequest by consulting the parent session and replying.
 async fn handle_patch_approval(
-    codex: &Codex,
+    codex: &Chaos,
     _id: String,
     parent_session: &Arc<Session>,
     parent_ctx: &Arc<TurnContext>,
@@ -600,7 +600,7 @@ async fn handle_patch_approval(
 }
 
 async fn handle_request_user_input(
-    codex: &Codex,
+    codex: &Chaos,
     id: String,
     parent_session: &Arc<Session>,
     parent_ctx: &Arc<TurnContext>,
@@ -743,7 +743,7 @@ fn spawn_guardian_review(
 }
 
 async fn handle_request_permissions(
-    codex: &Codex,
+    codex: &Chaos,
     parent_session: &Arc<Session>,
     parent_ctx: &Arc<TurnContext>,
     event: RequestPermissionsEvent,

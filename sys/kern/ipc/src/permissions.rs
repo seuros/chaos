@@ -418,8 +418,8 @@ impl FileSystemSandboxPolicy {
             // as separate WritableRoot values and are checked independently.
             // Preserve symlink path components that live under the writable root
             // so downstream sandboxes can still mask the symlink inode itself.
-            // Example: if `<root>/.codex -> <root>/decoy`, bwrap must still see
-            // `<root>/.codex`, not only the resolved `<root>/decoy`.
+            // Example: if `<root>/.chaos -> <root>/decoy`, bwrap must still see
+            // `<root>/.chaos`, not only the resolved `<root>/decoy`.
             read_only_subpaths.extend(
                 resolved_entries
                     .iter()
@@ -474,7 +474,7 @@ impl FileSystemSandboxPolicy {
             WritableRoot {
                 root,
                 // Preserve literal in-root protected paths like `.git` and
-                // `.codex` so downstream sandboxes can still detect and mask
+                // `.chaos` so downstream sandboxes can still detect and mask
                 // the symlink itself instead of only its resolved target.
                 read_only_subpaths: dedup_absolute_paths(
                     read_only_subpaths,
@@ -1047,9 +1047,9 @@ fn default_read_only_subpaths_for_writable_root(
         subpaths.push(top_level_git);
     }
 
-    // Make .agents/skills and .codex/config.toml and related files read-only
-    // to the agent, by default.
-    for subdir in &[".agents", ".codex"] {
+    // Make .agents/skills and the project config folder (.chaos) read-only to
+    // the agent, by default.
+    for subdir in &[".agents", ".chaos"] {
         #[allow(clippy::expect_used)]
         let top_level_codex = writable_root.join(subdir).expect("valid relative path");
         if top_level_codex.as_path().is_dir() {
@@ -1176,10 +1176,10 @@ mod tests {
         let real_root = cwd.path().join("real");
         let link_root = cwd.path().join("link");
         let blocked = real_root.join("blocked");
-        let codex_dir = real_root.join(".codex");
+        let chaos_dir = real_root.join(".chaos");
 
         fs::create_dir_all(&blocked).expect("create blocked");
-        fs::create_dir_all(&codex_dir).expect("create .codex");
+        fs::create_dir_all(&chaos_dir).expect("create .chaos");
         symlink_dir(&real_root, &link_root).expect("create symlinked root");
 
         let link_root =
@@ -1194,9 +1194,9 @@ mod tests {
         )
         .expect("absolute canonical blocked");
         let expected_codex = AbsolutePathBuf::from_absolute_path(
-            codex_dir.canonicalize().expect("canonicalize .codex"),
+            chaos_dir.canonicalize().expect("canonicalize .chaos"),
         )
-        .expect("absolute canonical .codex");
+        .expect("absolute canonical .chaos");
 
         let policy = FileSystemSandboxPolicy::restricted(vec![
             FileSystemSandboxEntry {
@@ -1235,18 +1235,18 @@ mod tests {
         let cwd = TempDir::new().expect("tempdir");
         let root = cwd.path().join("root");
         let decoy = root.join("decoy-codex");
-        let dot_codex = root.join(".codex");
+        let dot_chaos = root.join(".chaos");
         fs::create_dir_all(&decoy).expect("create decoy");
-        symlink_dir(&decoy, &dot_codex).expect("create .codex symlink");
+        symlink_dir(&decoy, &dot_chaos).expect("create .chaos symlink");
 
         let root = AbsolutePathBuf::from_absolute_path(&root).expect("absolute root");
         let expected_dot_codex = AbsolutePathBuf::from_absolute_path(
             root.as_path()
                 .canonicalize()
                 .expect("canonicalize root")
-                .join(".codex"),
+                .join(".chaos"),
         )
-        .expect("absolute .codex symlink");
+        .expect("absolute .chaos symlink");
         let unexpected_decoy =
             AbsolutePathBuf::from_absolute_path(decoy.canonicalize().expect("canonicalize decoy"))
                 .expect("absolute canonical decoy");
@@ -1436,10 +1436,10 @@ mod tests {
         let real_tmpdir = cwd.path().join("real-tmpdir");
         let link_tmpdir = cwd.path().join("link-tmpdir");
         let blocked = real_tmpdir.join("blocked");
-        let codex_dir = real_tmpdir.join(".codex");
+        let chaos_dir = real_tmpdir.join(".chaos");
 
         fs::create_dir_all(&blocked).expect("create blocked");
-        fs::create_dir_all(&codex_dir).expect("create .codex");
+        fs::create_dir_all(&chaos_dir).expect("create .chaos");
         symlink_dir(&real_tmpdir, &link_tmpdir).expect("create symlinked tmpdir");
 
         let link_blocked =
@@ -1455,9 +1455,9 @@ mod tests {
         )
         .expect("absolute canonical blocked");
         let expected_codex = AbsolutePathBuf::from_absolute_path(
-            codex_dir.canonicalize().expect("canonicalize .codex"),
+            chaos_dir.canonicalize().expect("canonicalize .chaos"),
         )
-        .expect("absolute canonical .codex");
+        .expect("absolute canonical .chaos");
 
         unsafe {
             std::env::set_var("TMPDIR", &link_tmpdir);

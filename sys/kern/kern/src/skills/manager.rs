@@ -27,7 +27,7 @@ use crate::skills::system::install_system_skills;
 use crate::skills::system::uninstall_system_skills;
 
 pub struct SkillsManager {
-    codex_home: PathBuf,
+    chaos_home: PathBuf,
     plugins_manager: Arc<PluginsManager>,
     cache_by_cwd: RwLock<HashMap<PathBuf, SkillLoadOutcome>>,
     cache_by_config: RwLock<HashMap<ConfigSkillsCacheKey, SkillLoadOutcome>>,
@@ -35,19 +35,19 @@ pub struct SkillsManager {
 
 impl SkillsManager {
     pub fn new(
-        codex_home: PathBuf,
+        chaos_home: PathBuf,
         plugins_manager: Arc<PluginsManager>,
         bundled_skills_enabled: bool,
     ) -> Self {
         let manager = Self {
-            codex_home,
+            chaos_home,
             plugins_manager,
             cache_by_cwd: RwLock::new(HashMap::new()),
             cache_by_config: RwLock::new(HashMap::new()),
         };
         if !bundled_skills_enabled {
-            uninstall_system_skills(&manager.codex_home);
-        } else if let Err(err) = install_system_skills(&manager.codex_home) {
+            uninstall_system_skills(&manager.chaos_home);
+        } else if let Err(err) = install_system_skills(&manager.chaos_home) {
             tracing::error!("failed to install system skills: {err}");
         }
         manager
@@ -118,7 +118,7 @@ impl SkillsManager {
 
         let cli_overrides: Vec<(String, TomlValue)> = Vec::new();
         let config_layer_stack = match load_config_layers_state(
-            &self.codex_home,
+            &self.chaos_home,
             Some(cwd_abs),
             &cli_overrides,
             LoaderOverrides::default(),

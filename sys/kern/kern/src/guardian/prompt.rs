@@ -4,7 +4,7 @@ use chaos_ipc::models::ResponseItem;
 use chaos_ipc::user_input::UserInput;
 use serde_json::Value;
 
-use crate::codex::Session;
+use crate::chaos::Session;
 use crate::compact::content_items_to_text;
 use crate::event_mapping::is_contextual_user_message_content;
 use crate::truncate::approx_bytes_for_tokens;

@@ -30,10 +30,10 @@ just build
 
 Chaos honors the `RUST_LOG` environment variable.
 
-The TUI defaults to `RUST_LOG=codex_core=info,codex_tui=info,codex_rmcp_client=info` and writes logs to `~/.codex/log/codex-tui.log`. Override with `-c log_dir=...`.
+The TUI defaults to `RUST_LOG=codex_core=info,codex_tui=info,codex_rmcp_client=info` and writes logs to `~/.chaos/log/codex-tui.log`. Override with `-c log_dir=...`.
 
 ```bash
-tail -F ~/.codex/log/codex-tui.log
+tail -F ~/.chaos/log/codex-tui.log
 ```
 
 The non-interactive mode (`codex exec`) defaults to `RUST_LOG=error`, printed inline.

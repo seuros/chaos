@@ -290,17 +290,17 @@ impl PluginLoadOutcome {
 }
 
 pub struct PluginsManager {
-    codex_home: PathBuf,
+    chaos_home: PathBuf,
     store: PluginStore,
     cache_by_cwd: RwLock<HashMap<PathBuf, PluginLoadOutcome>>,
     analytics_events_client: RwLock<Option<AnalyticsEventsClient>>,
 }
 
 impl PluginsManager {
-    pub fn new(codex_home: PathBuf) -> Self {
+    pub fn new(chaos_home: PathBuf) -> Self {
         Self {
-            codex_home: codex_home.clone(),
-            store: PluginStore::new(codex_home),
+            chaos_home: chaos_home.clone(),
+            store: PluginStore::new(chaos_home),
             cache_by_cwd: RwLock::new(HashMap::new()),
             analytics_events_client: RwLock::new(None),
         }
@@ -374,7 +374,7 @@ impl PluginsManager {
         .await
         .map_err(PluginInstallError::join)??;
 
-        ConfigService::new_with_defaults(self.codex_home.clone())
+        ConfigService::new_with_defaults(self.chaos_home.clone())
             .write_value(ConfigValueWriteParams {
                 key_path: format!("plugins.{}", result.plugin_id.as_key()),
                 value: json!({
@@ -412,14 +412,14 @@ impl PluginsManager {
         let plugin_telemetry = self
             .store
             .active_plugin_root(&plugin_id)
-            .map(|_| installed_plugin_telemetry_metadata(self.codex_home.as_path(), &plugin_id));
+            .map(|_| installed_plugin_telemetry_metadata(self.chaos_home.as_path(), &plugin_id));
         let store = self.store.clone();
         let plugin_id_for_store = plugin_id.clone();
         tokio::task::spawn_blocking(move || store.uninstall(&plugin_id_for_store))
             .await
             .map_err(PluginUninstallError::join)??;
 
-        ConfigEditsBuilder::new(&self.codex_home)
+        ConfigEditsBuilder::new(&self.chaos_home)
             .with_edits([ConfigEdit::ClearPath {
                 segments: vec!["plugins".to_string(), plugin_id.as_key()],
             }])
@@ -978,10 +978,10 @@ pub fn plugin_telemetry_metadata_from_root(
 }
 
 pub fn installed_plugin_telemetry_metadata(
-    codex_home: &Path,
+    chaos_home: &Path,
     plugin_id: &PluginId,
 ) -> PluginTelemetryMetadata {
-    let store = PluginStore::new(codex_home.to_path_buf());
+    let store = PluginStore::new(chaos_home.to_path_buf());
     let Some(plugin_root) = store.active_plugin_root(plugin_id) else {
         return PluginTelemetryMetadata::from_plugin_id(plugin_id);
     };

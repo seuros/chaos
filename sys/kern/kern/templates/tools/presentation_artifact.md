@@ -126,7 +126,7 @@ Comment threads are supported through `set_comment_author`, `add_comment_thread`
 
 Charts support richer series metadata plus `update_chart` and `add_chart_series`, including legend, axis, data-label, marker, fill, and per-point override state.
 
-Exported PPTX files embed Codex metadata so rich text, comment threads, and advanced table/chart state round-trip through `export_pptx` and `import_pptx` even when the base OOXML representation is lossy.
+Exported PPTX files embed Chaos metadata so rich text, comment threads, and advanced table/chart state round-trip through `export_pptx` and `import_pptx` even when the base OOXML representation is lossy.
 
 Example patch recording:
 `{"artifact_id":"presentation_x","actions":[{"action":"record_patch","args":{"operations":[{"action":"add_text_shape","args":{"slide_index":0,"text":"Headline","position":{"left":48,"top":48,"width":320,"height":72}}},{"action":"set_slide_background","args":{"slide_index":0,"fill":"#F7F1E8"}}]}}]}`

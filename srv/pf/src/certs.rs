@@ -1,7 +1,7 @@
 use anyhow::Context as _;
 use anyhow::Result;
 use anyhow::anyhow;
-use chaos_pwd::find_codex_home;
+use chaos_pwd::find_chaos_home;
 use rama::net::tls::ApplicationProtocol;
 use rama::tls::rustls::dep::pki_types::CertificateDer;
 use rama::tls::rustls::dep::pki_types::PrivateKeyDer;
@@ -97,9 +97,9 @@ const MANAGED_MITM_CA_CERT: &str = "ca.pem";
 const MANAGED_MITM_CA_KEY: &str = "ca.key";
 
 fn managed_ca_paths() -> Result<(PathBuf, PathBuf)> {
-    let codex_home =
-        find_codex_home().context("failed to resolve CODEX_HOME for managed MITM CA")?;
-    let proxy_dir = codex_home.join(MANAGED_MITM_CA_DIR);
+    let chaos_home =
+        find_chaos_home().context("failed to resolve CODEX_HOME for managed MITM CA")?;
+    let proxy_dir = chaos_home.join(MANAGED_MITM_CA_DIR);
     Ok((
         proxy_dir.join(MANAGED_MITM_CA_CERT),
         proxy_dir.join(MANAGED_MITM_CA_KEY),

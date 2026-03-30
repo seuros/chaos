@@ -1,8 +1,8 @@
 use super::head_tail_buffer::HeadTailBuffer;
 use super::*;
-use crate::codex::Session;
-use crate::codex::TurnContext;
-use crate::codex::make_session_and_context;
+use crate::chaos::Session;
+use crate::chaos::TurnContext;
+use crate::chaos::make_session_and_context;
 use crate::protocol::AskForApproval;
 use crate::protocol::SandboxPolicy;
 use crate::tools::context::ExecCommandToolOutput;

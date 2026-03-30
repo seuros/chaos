@@ -39,8 +39,8 @@ pub(super) fn build_stage_one_input_message(
 }
 
 /// Build prompt used for read path.
-pub(crate) async fn build_memory_tool_developer_instructions(codex_home: &Path) -> Option<String> {
-    chaos_memento::prompts::build_memory_tool_developer_instructions(codex_home, token_truncate)
+pub(crate) async fn build_memory_tool_developer_instructions(chaos_home: &Path) -> Option<String> {
+    chaos_memento::prompts::build_memory_tool_developer_instructions(chaos_home, token_truncate)
         .await
 }
 

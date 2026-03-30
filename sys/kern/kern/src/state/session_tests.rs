@@ -1,5 +1,5 @@
 use super::*;
-use crate::codex::make_session_configuration_for_tests;
+use crate::chaos::make_session_configuration_for_tests;
 use crate::protocol::RateLimitWindow;
 use pretty_assertions::assert_eq;
 

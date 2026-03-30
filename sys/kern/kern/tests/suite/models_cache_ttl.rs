@@ -14,13 +14,10 @@ use chaos_ipc::protocol::EventMsg;
 use chaos_ipc::protocol::Op;
 use chaos_ipc::protocol::SandboxPolicy;
 use chaos_ipc::user_input::UserInput;
-use chaos_kern::CodexAuth;
+use chaos_kern::ChaosAuth;
 use chaos_kern::ModelProviderInfo;
 use chaos_kern::models_manager::manager::RefreshStrategy;
 use chaos_proc::open_chaos_db;
-use chrono::DateTime;
-use chrono::TimeZone;
-use chrono::Utc;
 use core_test_support::responses;
 use core_test_support::responses::ev_assistant_message;
 use core_test_support::responses::ev_completed;
@@ -29,6 +26,7 @@ use core_test_support::responses::sse;
 use core_test_support::responses::sse_response;
 use core_test_support::test_codex::test_codex;
 use core_test_support::wait_for_event;
+use jiff::Timestamp;
 use pretty_assertions::assert_eq;
 use serde::Deserialize;
 use serde::Serialize;
@@ -55,7 +53,7 @@ async fn renews_cache_ttl_on_matching_models_etag() -> Result<()> {
     )
     .await;
 
-    let mut builder = test_codex().with_auth(CodexAuth::create_dummy_chatgpt_auth_for_testing());
+    let mut builder = test_codex().with_auth(ChaosAuth::create_dummy_chatgpt_auth_for_testing());
     builder = builder.with_config(|config| {
         config.model = Some("gpt-5".to_string());
         config.model_provider.request_max_retries = Some(0);
@@ -73,8 +71,8 @@ async fn renews_cache_ttl_on_matching_models_etag() -> Result<()> {
         .await;
 
     let cache_scope = cache_scope_for_provider(&config.model_provider);
-    let stale_time = Utc.timestamp_opt(0, 0).single().expect("valid epoch");
-    rewrite_cache_timestamp(config.codex_home.as_path(), &cache_scope, stale_time).await?;
+    let stale_time = Timestamp::from_second(0).expect("valid epoch");
+    rewrite_cache_timestamp(config.chaos_home.as_path(), &cache_scope, stale_time).await?;
 
     // Trigger responses with matching ETag, which should renew the cache TTL without another /models.
     let response_body = sse(vec![
@@ -109,7 +107,7 @@ async fn renews_cache_ttl_on_matching_models_etag() -> Result<()> {
 
     let _ = wait_for_event(&codex, |event| matches!(event, EventMsg::TurnComplete(_))).await;
 
-    let refreshed_cache = read_cache(config.codex_home.as_path(), &cache_scope).await?;
+    let refreshed_cache = read_cache(config.chaos_home.as_path(), &cache_scope).await?;
     assert!(
         refreshed_cache.fetched_at > stale_time,
         "cache TTL should be renewed"
@@ -147,12 +145,12 @@ async fn uses_cache_when_version_matches() -> Result<()> {
     )
     .await;
 
-    let mut builder = test_codex().with_auth(CodexAuth::create_dummy_chatgpt_auth_for_testing());
+    let mut builder = test_codex().with_auth(ChaosAuth::create_dummy_chatgpt_auth_for_testing());
     let server_uri = format!("{}/v1", server.uri());
     builder = builder
         .with_pre_build_hook(move |home| {
             let cache = ModelsCache {
-                fetched_at: Utc::now(),
+                fetched_at: Timestamp::now(),
                 etag: None,
                 client_version: Some(chaos_kern::models_manager::client_version_to_whole()),
                 scope: Some(cache_scope_for_base_url(server_uri.clone())),
@@ -195,12 +193,12 @@ async fn refreshes_when_cache_version_missing() -> Result<()> {
     )
     .await;
 
-    let mut builder = test_codex().with_auth(CodexAuth::create_dummy_chatgpt_auth_for_testing());
+    let mut builder = test_codex().with_auth(ChaosAuth::create_dummy_chatgpt_auth_for_testing());
     let server_uri = format!("{}/v1", server.uri());
     builder = builder
         .with_pre_build_hook(move |home| {
             let cache = ModelsCache {
-                fetched_at: Utc::now(),
+                fetched_at: Timestamp::now(),
                 etag: None,
                 client_version: None,
                 scope: Some(cache_scope_for_base_url(server_uri.clone())),
@@ -243,13 +241,13 @@ async fn refreshes_when_cache_version_differs() -> Result<()> {
         models_mocks.push(responses::mount_models_once(&server, models_response.clone()).await);
     }
 
-    let mut builder = test_codex().with_auth(CodexAuth::create_dummy_chatgpt_auth_for_testing());
+    let mut builder = test_codex().with_auth(ChaosAuth::create_dummy_chatgpt_auth_for_testing());
     let server_uri = format!("{}/v1", server.uri());
     builder = builder
         .with_pre_build_hook(move |home| {
             let client_version = chaos_kern::models_manager::client_version_to_whole();
             let cache = ModelsCache {
-                fetched_at: Utc::now(),
+                fetched_at: Timestamp::now(),
                 etag: None,
                 client_version: Some(format!("{client_version}-diff")),
                 scope: Some(cache_scope_for_base_url(server_uri.clone())),
@@ -285,7 +283,7 @@ async fn refreshes_when_cache_version_differs() -> Result<()> {
 async fn rewrite_cache_timestamp(
     sqlite_home: &std::path::Path,
     scope: &ModelsCacheScope,
-    fetched_at: DateTime<Utc>,
+    fetched_at: Timestamp,
 ) -> Result<()> {
     let mut cache = read_cache(sqlite_home, scope).await?;
     cache.fetched_at = fetched_at;
@@ -310,10 +308,8 @@ async fn read_cache(
     .await?;
     let models_json = row.get::<String, _>("models_json");
     Ok(ModelsCache {
-        fetched_at: Utc
-            .timestamp_opt(row.get::<i64, _>("fetched_at"), 0)
-            .single()
-            .ok_or_else(|| anyhow::anyhow!("valid timestamp expected"))?,
+        fetched_at: Timestamp::from_second(row.get::<i64, _>("fetched_at"))
+            .map_err(|_| anyhow::anyhow!("valid timestamp expected"))?,
         etag: row.get::<Option<String>, _>("etag"),
         client_version: row.get::<Option<String>, _>("client_version"),
         scope: Some(scope.clone()),
@@ -341,7 +337,7 @@ async fn write_cache(sqlite_home: &std::path::Path, cache: &ModelsCache) -> Resu
     .bind(&scope.provider_name)
     .bind(&scope.wire_api)
     .bind(&scope.base_url)
-    .bind(cache.fetched_at.timestamp())
+    .bind(cache.fetched_at.as_second())
     .bind(cache.etag.as_deref())
     .bind(cache.client_version.as_deref())
     .bind(models_json)
@@ -358,7 +354,7 @@ fn write_cache_sync(sqlite_home: &std::path::Path, cache: &ModelsCache) -> Resul
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
 struct ModelsCache {
-    fetched_at: DateTime<Utc>,
+    fetched_at: Timestamp,
     #[serde(default)]
     etag: Option<String>,
     #[serde(default)]

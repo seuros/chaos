@@ -4,7 +4,7 @@ use std::sync::Arc;
 use chaos_ipc::models::ShellCommandToolCallParams;
 use pretty_assertions::assert_eq;
 
-use crate::codex::make_session_and_context;
+use crate::chaos::make_session_and_context;
 use crate::exec_env::create_env;
 use crate::is_safe_command::is_known_safe_command;
 use crate::sandboxing::SandboxPermissions;

@@ -15,7 +15,7 @@ use tokio::io::BufReader;
 use tokio::process::Child;
 use tokio_util::sync::CancellationToken;
 
-use crate::error::CodexErr;
+use crate::error::ChaosErr;
 use crate::error::Result;
 use crate::error::SandboxErr;
 use crate::protocol::Event;
@@ -249,7 +249,7 @@ pub fn build_exec_request(
         network.apply_to_env(&mut env);
     }
     let (program, args) = command.split_first().ok_or_else(|| {
-        CodexErr::Io(io::Error::new(
+        ChaosErr::Io(io::Error::new(
             io::ErrorKind::InvalidInput,
             "command args are empty",
         ))
@@ -283,7 +283,7 @@ pub fn build_exec_request(
             alcatraz_linux_exe: alcatraz_linux_exe.as_ref(),
             alcatraz_freebsd_exe: alcatraz_freebsd_exe.as_ref(),
         })
-        .map_err(CodexErr::from)?;
+        .map_err(ChaosErr::from)?;
     Ok(exec_req)
 }
 
@@ -336,7 +336,7 @@ pub(crate) async fn execute_exec_request(
 }
 
 fn finalize_exec_result(
-    raw_output_result: std::result::Result<RawExecToolCallOutput, CodexErr>,
+    raw_output_result: std::result::Result<RawExecToolCallOutput, ChaosErr>,
     sandbox_type: SandboxType,
     duration: Duration,
 ) -> Result<ExecToolCallOutput> {
@@ -351,7 +351,7 @@ fn finalize_exec_result(
                     if signal == TIMEOUT_CODE {
                         timed_out = true;
                     } else {
-                        return Err(CodexErr::Sandbox(SandboxErr::Signal(signal)));
+                        return Err(ChaosErr::Sandbox(SandboxErr::Signal(signal)));
                     }
                 }
             }
@@ -374,13 +374,13 @@ fn finalize_exec_result(
             };
 
             if timed_out {
-                return Err(CodexErr::Sandbox(SandboxErr::Timeout {
+                return Err(ChaosErr::Sandbox(SandboxErr::Timeout {
                     output: Box::new(exec_output),
                 }));
             }
 
             if is_likely_sandbox_denied(sandbox_type, &exec_output) {
-                return Err(CodexErr::Sandbox(SandboxErr::Denied {
+                return Err(ChaosErr::Sandbox(SandboxErr::Denied {
                     output: Box::new(exec_output),
                     network_policy_decision: None,
                 }));
@@ -396,28 +396,28 @@ fn finalize_exec_result(
 }
 
 pub(crate) mod errors {
-    use super::CodexErr;
+    use super::ChaosErr;
     use crate::sandboxing::SandboxTransformError;
 
-    impl From<SandboxTransformError> for CodexErr {
+    impl From<SandboxTransformError> for ChaosErr {
         fn from(err: SandboxTransformError) -> Self {
             match err {
                 #[cfg(target_os = "macos")]
                 SandboxTransformError::MissingMacOSSandboxExecutable => {
-                    CodexErr::UnsupportedOperation(
+                    ChaosErr::UnsupportedOperation(
                         "alcatraz-macos executable not found".to_string(),
                     )
                 }
                 SandboxTransformError::MissingLinuxSandboxExecutable => {
-                    CodexErr::LandlockSandboxExecutableNotProvided
+                    ChaosErr::LandlockSandboxExecutableNotProvided
                 }
                 SandboxTransformError::MissingFreeBSDSandboxExecutable => {
-                    CodexErr::UnsupportedOperation(
+                    ChaosErr::UnsupportedOperation(
                         "alcatraz-freebsd executable not found".to_string(),
                     )
                 }
                 #[cfg(not(target_os = "macos"))]
-                SandboxTransformError::SeatbeltUnavailable => CodexErr::UnsupportedOperation(
+                SandboxTransformError::SeatbeltUnavailable => ChaosErr::UnsupportedOperation(
                     "seatbelt sandbox is only available on macOS".to_string(),
                 ),
             }
@@ -622,7 +622,7 @@ async fn exec(
     }
 
     let (program, args) = command.split_first().ok_or_else(|| {
-        CodexErr::Io(io::Error::new(
+        ChaosErr::Io(io::Error::new(
             io::ErrorKind::InvalidInput,
             "command args are empty",
         ))
@@ -660,12 +660,12 @@ async fn consume_truncated_output(
     // we treat it as an exceptional I/O error
 
     let stdout_reader = child.stdout.take().ok_or_else(|| {
-        CodexErr::Io(io::Error::other(
+        ChaosErr::Io(io::Error::other(
             "stdout pipe was unexpectedly not available",
         ))
     })?;
     let stderr_reader = child.stderr.take().ok_or_else(|| {
-        CodexErr::Io(io::Error::other(
+        ChaosErr::Io(io::Error::other(
             "stderr pipe was unexpectedly not available",
         ))
     })?;

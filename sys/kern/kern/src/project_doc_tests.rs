@@ -11,9 +11,9 @@ use tempfile::TempDir;
 /// value is cleared to mimic a scenario where no system instructions have
 /// been configured.
 async fn make_config(root: &TempDir, limit: usize, instructions: Option<&str>) -> Config {
-    let codex_home = TempDir::new().unwrap();
+    let chaos_home = TempDir::new().unwrap();
     let mut config = ConfigBuilder::default()
-        .codex_home(codex_home.path().to_path_buf())
+        .chaos_home(chaos_home.path().to_path_buf())
         .build()
         .await
         .expect("defaults for test should always succeed");
@@ -45,7 +45,7 @@ async fn make_config_with_project_root_markers(
     instructions: Option<&str>,
     markers: &[&str],
 ) -> Config {
-    let codex_home = TempDir::new().unwrap();
+    let chaos_home = TempDir::new().unwrap();
     let cli_overrides = vec![(
         "project_root_markers".to_string(),
         TomlValue::Array(
@@ -56,7 +56,7 @@ async fn make_config_with_project_root_markers(
         ),
     )];
     let mut config = ConfigBuilder::default()
-        .codex_home(codex_home.path().to_path_buf())
+        .chaos_home(chaos_home.path().to_path_buf())
         .cli_overrides(cli_overrides)
         .build()
         .await
@@ -311,7 +311,7 @@ async fn skills_are_not_appended_to_project_doc() {
 
     let cfg = make_config(&tmp, 4096, None).await;
     create_skill(
-        cfg.codex_home.clone(),
+        cfg.chaos_home.clone(),
         "pdf-processing",
         "extract from pdfs",
     );
@@ -350,8 +350,8 @@ async fn apps_feature_does_not_append_to_project_doc_user_instructions() {
     assert_eq!(res, "base doc");
 }
 
-fn create_skill(codex_home: PathBuf, name: &str, description: &str) {
-    let skill_dir = codex_home.join(format!("skills/{name}"));
+fn create_skill(chaos_home: PathBuf, name: &str, description: &str) {
+    let skill_dir = chaos_home.join(format!("skills/{name}"));
     fs::create_dir_all(&skill_dir).unwrap();
     let content = format!("---\nname: {name}\ndescription: {description}\n---\n\n# Body\n");
     fs::write(skill_dir.join("SKILL.md"), content).unwrap();

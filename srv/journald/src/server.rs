@@ -25,16 +25,16 @@ pub struct JournalServerConfig {
 }
 
 impl JournalServerConfig {
-    pub fn from_codex_home(codex_home: &Path) -> Self {
+    pub fn from_codex_home(chaos_home: &Path) -> Self {
         Self {
             socket_path: default_socket_path_in(),
-            sqlite_db_path: sqlite_db_path_in(codex_home),
+            sqlite_db_path: sqlite_db_path_in(chaos_home),
         }
     }
 
     pub fn discover() -> std::io::Result<Self> {
-        let codex_home = chaos_pwd::find_codex_home()?;
-        Ok(Self::from_codex_home(codex_home.as_path()))
+        let chaos_home = chaos_pwd::find_chaos_home()?;
+        Ok(Self::from_codex_home(chaos_home.as_path()))
     }
 }
 
@@ -59,8 +59,8 @@ pub fn default_socket_runtime_dir() -> std::io::Result<PathBuf> {
 }
 
 pub fn sqlite_db_path() -> std::io::Result<PathBuf> {
-    let codex_home = chaos_pwd::find_codex_home()?;
-    Ok(sqlite_db_path_in(codex_home.as_path()))
+    let chaos_home = chaos_pwd::find_chaos_home()?;
+    Ok(sqlite_db_path_in(chaos_home.as_path()))
 }
 
 pub async fn run_sqlite_journal_server(config: JournalServerConfig) -> Result<()> {
@@ -142,8 +142,8 @@ fn default_socket_path_in() -> PathBuf {
         .join(DEFAULT_SOCKET_FILENAME)
 }
 
-fn sqlite_db_path_in(codex_home: &Path) -> PathBuf {
-    codex_home.join(SQLITE_DB_FILENAME)
+fn sqlite_db_path_in(chaos_home: &Path) -> PathBuf {
+    chaos_home.join(SQLITE_DB_FILENAME)
 }
 
 async fn remove_stale_socket(path: &Path) -> Result<()> {

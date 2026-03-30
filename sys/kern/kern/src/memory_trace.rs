@@ -2,7 +2,7 @@ use std::path::Path;
 use std::path::PathBuf;
 
 use crate::ModelClient;
-use crate::error::CodexErr;
+use crate::error::ChaosErr;
 use crate::error::Result;
 use chaos_ipc::openai_models::ModelInfo;
 use chaos_ipc::openai_models::ReasoningEffort as ReasoningEffortConfig;
@@ -54,7 +54,7 @@ pub async fn build_memories_from_trace_files(
         .summarize_memories(raw_memories, model_info, effort, session_telemetry)
         .await?;
     if output.len() != prepared.len() {
-        return Err(CodexErr::InvalidRequest(format!(
+        return Err(ChaosErr::InvalidRequest(format!(
             "unexpected memory summarize output length: expected {}, got {}",
             prepared.len(),
             output.len()
@@ -116,7 +116,7 @@ fn load_trace_items(path: &Path, text: &str) -> Result<Vec<Value>> {
             .filter(serde_json::Value::is_object)
             .collect::<Vec<_>>();
         if dict_items.is_empty() {
-            return Err(CodexErr::InvalidRequest(format!(
+            return Err(ChaosErr::InvalidRequest(format!(
                 "no object items found in trace file: {}",
                 path.display()
             )));
@@ -145,7 +145,7 @@ fn load_trace_items(path: &Path, text: &str) -> Result<Vec<Value>> {
     }
 
     if parsed_items.is_empty() {
-        return Err(CodexErr::InvalidRequest(format!(
+        return Err(ChaosErr::InvalidRequest(format!(
             "no JSON items parsed from trace file: {}",
             path.display()
         )));
@@ -193,7 +193,7 @@ fn normalize_trace_items(items: Vec<Value>, path: &Path) -> Result<Vec<Value>> {
     }
 
     if normalized.is_empty() {
-        return Err(CodexErr::InvalidRequest(format!(
+        return Err(ChaosErr::InvalidRequest(format!(
             "no valid trace items after normalization: {}",
             path.display()
         )));

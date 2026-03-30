@@ -14,8 +14,7 @@ use chaos_ipc::protocol::TokenUsageInfo;
 use chaos_jail_report::summarize_sandbox_policy;
 use chaos_kern::WireApi;
 use chaos_kern::config::Config;
-use chrono::DateTime;
-use chrono::Local;
+use jiff::Timestamp;
 use ratatui::prelude::*;
 use ratatui::style::Stylize;
 use std::collections::BTreeSet;
@@ -88,7 +87,7 @@ pub(crate) fn new_status_output(
     forked_from: Option<ProcessId>,
     rate_limits: Option<&RateLimitSnapshotDisplay>,
     plan_type: Option<PlanType>,
-    now: DateTime<Local>,
+    now: Timestamp,
     model_name: &str,
     collaboration_mode: Option<&str>,
     reasoning_effort_override: Option<Option<ReasoningEffort>>,
@@ -122,7 +121,7 @@ pub(crate) fn new_status_output_with_rate_limits(
     forked_from: Option<ProcessId>,
     rate_limits: &[RateLimitSnapshotDisplay],
     plan_type: Option<PlanType>,
-    now: DateTime<Local>,
+    now: Timestamp,
     model_name: &str,
     collaboration_mode: Option<&str>,
     reasoning_effort_override: Option<Option<ReasoningEffort>>,
@@ -159,7 +158,7 @@ impl StatusHistoryCell {
         forked_from: Option<ProcessId>,
         rate_limits: &[RateLimitSnapshotDisplay],
         plan_type: Option<PlanType>,
-        now: DateTime<Local>,
+        now: Timestamp,
         model_name: &str,
         collaboration_mode: Option<&str>,
         reasoning_effort_override: Option<Option<ReasoningEffort>>,

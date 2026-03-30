@@ -50,12 +50,12 @@ fn plugin_config_toml(enabled: bool, plugins_feature_enabled: bool) -> String {
     toml::to_string(&Value::Table(root)).expect("plugin test config should serialize")
 }
 
-fn load_plugins_from_config(config_toml: &str, codex_home: &Path) -> PluginLoadOutcome {
-    write_file(&codex_home.join(CONFIG_TOML_FILE), config_toml);
+fn load_plugins_from_config(config_toml: &str, chaos_home: &Path) -> PluginLoadOutcome {
+    write_file(&chaos_home.join(CONFIG_TOML_FILE), config_toml);
     let stack = ConfigLayerStack::new(
         vec![ConfigLayerEntry::new(
             ConfigLayerSource::User {
-                file: AbsolutePathBuf::try_from(codex_home.join(CONFIG_TOML_FILE)).unwrap(),
+                file: AbsolutePathBuf::try_from(chaos_home.join(CONFIG_TOML_FILE)).unwrap(),
             },
             toml::from_str(config_toml).expect("plugin test config should parse"),
         )],
@@ -63,12 +63,12 @@ fn load_plugins_from_config(config_toml: &str, codex_home: &Path) -> PluginLoadO
         ConfigRequirementsToml::default(),
     )
     .expect("config layer stack should build");
-    PluginsManager::new(codex_home.to_path_buf()).plugins_for_layer_stack(codex_home, &stack, false)
+    PluginsManager::new(chaos_home.to_path_buf()).plugins_for_layer_stack(chaos_home, &stack, false)
 }
 
-async fn load_config(codex_home: &Path, cwd: &Path) -> crate::config::Config {
+async fn load_config(chaos_home: &Path, cwd: &Path) -> crate::config::Config {
     ConfigBuilder::default()
-        .codex_home(codex_home.to_path_buf())
+        .chaos_home(chaos_home.to_path_buf())
         .fallback_cwd(Some(cwd.to_path_buf()))
         .build()
         .await
@@ -77,8 +77,8 @@ async fn load_config(codex_home: &Path, cwd: &Path) -> crate::config::Config {
 
 #[test]
 fn load_plugins_loads_default_skills_and_mcp_servers() {
-    let codex_home = TempDir::new().unwrap();
-    let plugin_root = codex_home
+    let chaos_home = TempDir::new().unwrap();
+    let plugin_root = chaos_home
         .path()
         .join("plugins/cache")
         .join("test/sample/local");
@@ -120,7 +120,7 @@ fn load_plugins_loads_default_skills_and_mcp_servers() {
 }"#,
     );
 
-    let outcome = load_plugins_from_config(&plugin_config_toml(true, true), codex_home.path());
+    let outcome = load_plugins_from_config(&plugin_config_toml(true, true), chaos_home.path());
 
     assert_eq!(
         outcome.plugins,
@@ -181,8 +181,8 @@ fn load_plugins_loads_default_skills_and_mcp_servers() {
 
 #[test]
 fn plugin_telemetry_metadata_uses_default_mcp_config_path() {
-    let codex_home = TempDir::new().unwrap();
-    let plugin_root = codex_home
+    let chaos_home = TempDir::new().unwrap();
+    let plugin_root = chaos_home
         .path()
         .join("plugins/cache")
         .join("test/sample/local");
@@ -225,8 +225,8 @@ fn plugin_telemetry_metadata_uses_default_mcp_config_path() {
 
 #[test]
 fn capability_summary_sanitizes_plugin_descriptions_to_one_line() {
-    let codex_home = TempDir::new().unwrap();
-    let plugin_root = codex_home
+    let chaos_home = TempDir::new().unwrap();
+    let plugin_root = chaos_home
         .path()
         .join("plugins/cache")
         .join("test/sample/local");
@@ -243,7 +243,7 @@ fn capability_summary_sanitizes_plugin_descriptions_to_one_line() {
         "---\nname: sample-search\ndescription: search sample data\n---\n",
     );
 
-    let outcome = load_plugins_from_config(&plugin_config_toml(true, true), codex_home.path());
+    let outcome = load_plugins_from_config(&plugin_config_toml(true, true), chaos_home.path());
 
     assert_eq!(
         outcome.plugins[0].manifest_description.as_deref(),
@@ -257,8 +257,8 @@ fn capability_summary_sanitizes_plugin_descriptions_to_one_line() {
 
 #[test]
 fn capability_summary_truncates_overlong_plugin_descriptions() {
-    let codex_home = TempDir::new().unwrap();
-    let plugin_root = codex_home
+    let chaos_home = TempDir::new().unwrap();
+    let plugin_root = chaos_home
         .path()
         .join("plugins/cache")
         .join("test/sample/local");
@@ -278,7 +278,7 @@ fn capability_summary_truncates_overlong_plugin_descriptions() {
         "---\nname: sample-search\ndescription: search sample data\n---\n",
     );
 
-    let outcome = load_plugins_from_config(&plugin_config_toml(true, true), codex_home.path());
+    let outcome = load_plugins_from_config(&plugin_config_toml(true, true), chaos_home.path());
 
     assert_eq!(
         outcome.plugins[0].manifest_description.as_deref(),
@@ -292,8 +292,8 @@ fn capability_summary_truncates_overlong_plugin_descriptions() {
 
 #[test]
 fn load_plugins_uses_manifest_configured_component_paths() {
-    let codex_home = TempDir::new().unwrap();
-    let plugin_root = codex_home
+    let chaos_home = TempDir::new().unwrap();
+    let plugin_root = chaos_home
         .path()
         .join("plugins/cache")
         .join("test/sample/local");
@@ -358,7 +358,7 @@ fn load_plugins_uses_manifest_configured_component_paths() {
 }"#,
     );
 
-    let outcome = load_plugins_from_config(&plugin_config_toml(true, true), codex_home.path());
+    let outcome = load_plugins_from_config(&plugin_config_toml(true, true), chaos_home.path());
 
     assert_eq!(
         outcome.plugins[0].skill_roots,
@@ -398,8 +398,8 @@ fn load_plugins_uses_manifest_configured_component_paths() {
 
 #[test]
 fn load_plugins_ignores_manifest_component_paths_without_dot_slash() {
-    let codex_home = TempDir::new().unwrap();
-    let plugin_root = codex_home
+    let chaos_home = TempDir::new().unwrap();
+    let plugin_root = chaos_home
         .path()
         .join("plugins/cache")
         .join("test/sample/local");
@@ -464,7 +464,7 @@ fn load_plugins_ignores_manifest_component_paths_without_dot_slash() {
 }"#,
     );
 
-    let outcome = load_plugins_from_config(&plugin_config_toml(true, true), codex_home.path());
+    let outcome = load_plugins_from_config(&plugin_config_toml(true, true), chaos_home.path());
 
     assert_eq!(
         outcome.plugins[0].skill_roots,
@@ -501,8 +501,8 @@ fn load_plugins_ignores_manifest_component_paths_without_dot_slash() {
 
 #[test]
 fn load_plugins_preserves_disabled_plugins_without_effective_contributions() {
-    let codex_home = TempDir::new().unwrap();
-    let plugin_root = codex_home
+    let chaos_home = TempDir::new().unwrap();
+    let plugin_root = chaos_home
         .path()
         .join("plugins/cache")
         .join("test/sample/local");
@@ -523,7 +523,7 @@ fn load_plugins_preserves_disabled_plugins_without_effective_contributions() {
 }"#,
     );
 
-    let outcome = load_plugins_from_config(&plugin_config_toml(false, true), codex_home.path());
+    let outcome = load_plugins_from_config(&plugin_config_toml(false, true), chaos_home.path());
 
     assert_eq!(
         outcome.plugins,
@@ -545,12 +545,12 @@ fn load_plugins_preserves_disabled_plugins_without_effective_contributions() {
 
 #[test]
 fn effective_apps_dedupes_connector_ids_across_plugins() {
-    let codex_home = TempDir::new().unwrap();
-    let plugin_a_root = codex_home
+    let chaos_home = TempDir::new().unwrap();
+    let plugin_a_root = chaos_home
         .path()
         .join("plugins/cache")
         .join("test/plugin-a/local");
-    let plugin_b_root = codex_home
+    let plugin_b_root = chaos_home
         .path()
         .join("plugins/cache")
         .join("test/plugin-b/local");
@@ -606,7 +606,7 @@ fn effective_apps_dedupes_connector_ids_across_plugins() {
     let config_toml =
         toml::to_string(&Value::Table(root)).expect("plugin test config should serialize");
 
-    let outcome = load_plugins_from_config(&config_toml, codex_home.path());
+    let outcome = load_plugins_from_config(&config_toml, chaos_home.path());
 
     assert_eq!(
         outcome.effective_apps(),
@@ -619,7 +619,7 @@ fn effective_apps_dedupes_connector_ids_across_plugins() {
 
 #[test]
 fn capability_index_filters_inactive_and_zero_capability_plugins() {
-    let codex_home = TempDir::new().unwrap();
+    let chaos_home = TempDir::new().unwrap();
     let connector = |id: &str| AppConnectorId(id.to_string());
     let http_server = |url: &str| McpServerConfig {
         transport: McpServerTransportConfig::StreamableHttp {
@@ -642,7 +642,7 @@ fn capability_index_filters_inactive_and_zero_capability_plugins() {
         config_name: config_name.to_string(),
         manifest_name: Some(manifest_name.to_string()),
         manifest_description: None,
-        root: AbsolutePathBuf::try_from(codex_home.path().join(dir_name)).unwrap(),
+        root: AbsolutePathBuf::try_from(chaos_home.path().join(dir_name)).unwrap(),
         enabled: true,
         skill_roots: Vec::new(),
         mcp_servers: HashMap::new(),
@@ -657,7 +657,7 @@ fn capability_index_filters_inactive_and_zero_capability_plugins() {
     };
     let outcome = PluginLoadOutcome::from_plugins(vec![
         LoadedPlugin {
-            skill_roots: vec![codex_home.path().join("skills-plugin/skills")],
+            skill_roots: vec![chaos_home.path().join("skills-plugin/skills")],
             ..plugin("skills@test", "skills-plugin", "skills-plugin")
         },
         LoadedPlugin {
@@ -673,7 +673,7 @@ fn capability_index_filters_inactive_and_zero_capability_plugins() {
         plugin("empty@test", "empty-plugin", "empty-plugin"),
         LoadedPlugin {
             enabled: false,
-            skill_roots: vec![codex_home.path().join("disabled-plugin/skills")],
+            skill_roots: vec![chaos_home.path().join("disabled-plugin/skills")],
             apps: vec![connector("connector_hidden")],
             ..plugin("disabled@test", "disabled-plugin", "disabled-plugin")
         },
@@ -710,8 +710,8 @@ fn capability_index_filters_inactive_and_zero_capability_plugins() {
 
 #[test]
 fn load_plugins_returns_empty_when_feature_disabled() {
-    let codex_home = TempDir::new().unwrap();
-    let plugin_root = codex_home
+    let chaos_home = TempDir::new().unwrap();
+    let plugin_root = chaos_home
         .path()
         .join("plugins/cache")
         .join("test/sample/local");
@@ -725,15 +725,15 @@ fn load_plugins_returns_empty_when_feature_disabled() {
         "---\nname: sample-search\ndescription: search sample data\n---\n",
     );
 
-    let outcome = load_plugins_from_config(&plugin_config_toml(true, false), codex_home.path());
+    let outcome = load_plugins_from_config(&plugin_config_toml(true, false), chaos_home.path());
 
     assert_eq!(outcome, PluginLoadOutcome::default());
 }
 
 #[test]
 fn load_plugins_rejects_invalid_plugin_keys() {
-    let codex_home = TempDir::new().unwrap();
-    let plugin_root = codex_home
+    let chaos_home = TempDir::new().unwrap();
+    let plugin_root = chaos_home
         .path()
         .join("plugins/cache")
         .join("test/sample/local");
@@ -757,7 +757,7 @@ fn load_plugins_rejects_invalid_plugin_keys() {
 
     let outcome = load_plugins_from_config(
         &toml::to_string(&Value::Table(root)).expect("plugin test config should serialize"),
-        codex_home.path(),
+        chaos_home.path(),
     );
 
     assert_eq!(outcome.plugins.len(), 1);
@@ -1174,9 +1174,9 @@ enabled = true
 
 #[test]
 fn load_plugins_ignores_project_config_files() {
-    let codex_home = TempDir::new().unwrap();
-    let project_root = codex_home.path().join("project");
-    let plugin_root = codex_home
+    let chaos_home = TempDir::new().unwrap();
+    let project_root = chaos_home.path().join("project");
+    let plugin_root = chaos_home
         .path()
         .join("plugins/cache")
         .join("test/sample/local");
@@ -1202,7 +1202,7 @@ fn load_plugins_ignores_project_config_files() {
     )
     .expect("config layer stack should build");
 
-    let outcome = PluginsManager::new(codex_home.path().to_path_buf()).plugins_for_layer_stack(
+    let outcome = PluginsManager::new(chaos_home.path().to_path_buf()).plugins_for_layer_stack(
         &project_root,
         &stack,
         false,

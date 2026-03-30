@@ -1,6 +1,6 @@
 use std::sync::Arc;
 
-use crate::codex::make_session_and_context;
+use crate::chaos::make_session_and_context;
 use crate::tools::context::ToolPayload;
 use chaos_ipc::models::ResponseItem;
 

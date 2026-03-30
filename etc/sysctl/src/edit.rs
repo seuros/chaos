@@ -735,7 +735,7 @@ pub fn set_project_trust_level_inner(
 
 /// Persist edits using a blocking strategy.
 pub fn apply_blocking(
-    codex_home: &Path,
+    chaos_home: &Path,
     profile: Option<&str>,
     edits: &[ConfigEdit],
 ) -> anyhow::Result<()> {
@@ -743,7 +743,7 @@ pub fn apply_blocking(
         return Ok(());
     }
 
-    let config_path = codex_home.join(CONFIG_TOML_FILE);
+    let config_path = chaos_home.join(CONFIG_TOML_FILE);
     let write_paths = resolve_symlink_write_paths(&config_path)?;
     let serialized = match write_paths.read_path {
         Some(path) => match std::fs::read_to_string(&path) {
@@ -789,13 +789,13 @@ pub fn apply_blocking(
 
 /// Persist edits asynchronously by offloading the blocking writer.
 pub async fn apply(
-    codex_home: &Path,
+    chaos_home: &Path,
     profile: Option<&str>,
     edits: Vec<ConfigEdit>,
 ) -> anyhow::Result<()> {
-    let codex_home = codex_home.to_path_buf();
+    let chaos_home = chaos_home.to_path_buf();
     let profile = profile.map(ToOwned::to_owned);
-    task::spawn_blocking(move || apply_blocking(&codex_home, profile.as_deref(), &edits))
+    task::spawn_blocking(move || apply_blocking(&chaos_home, profile.as_deref(), &edits))
         .await
         .context("config persistence task panicked")?
 }
@@ -803,15 +803,15 @@ pub async fn apply(
 /// Fluent builder to batch config edits and apply them atomically.
 #[derive(Default)]
 pub struct ConfigEditsBuilder {
-    codex_home: PathBuf,
+    chaos_home: PathBuf,
     profile: Option<String>,
     edits: Vec<ConfigEdit>,
 }
 
 impl ConfigEditsBuilder {
-    pub fn new(codex_home: &Path) -> Self {
+    pub fn new(chaos_home: &Path) -> Self {
         Self {
-            codex_home: codex_home.to_path_buf(),
+            chaos_home: chaos_home.to_path_buf(),
             profile: None,
             edits: Vec::new(),
         }
@@ -993,13 +993,13 @@ impl ConfigEditsBuilder {
 
     /// Apply edits on a blocking thread.
     pub fn apply_blocking(self) -> anyhow::Result<()> {
-        apply_blocking(&self.codex_home, self.profile.as_deref(), &self.edits)
+        apply_blocking(&self.chaos_home, self.profile.as_deref(), &self.edits)
     }
 
     /// Apply edits asynchronously via a blocking offload.
     pub async fn apply(self) -> anyhow::Result<()> {
         task::spawn_blocking(move || {
-            apply_blocking(&self.codex_home, self.profile.as_deref(), &self.edits)
+            apply_blocking(&self.chaos_home, self.profile.as_deref(), &self.edits)
         })
         .await
         .context("config persistence task panicked")?

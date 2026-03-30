@@ -5,7 +5,7 @@ Handles approval + sandbox orchestration for unified exec requests, delegating t
 the process manager to spawn PTYs once an ExecRequest is prepared.
 */
 use crate::command_canonicalization::canonicalize_command_for_approval;
-use crate::error::CodexErr;
+use crate::error::ChaosErr;
 use crate::error::SandboxErr;
 use crate::exec::ExecExpiration;
 use crate::guardian::GuardianApprovalRequest;
@@ -215,7 +215,7 @@ impl<'a> ToolRuntime<UnifiedExecRequest, UnifiedExecProcess> for UnifiedExecRunt
             .map_err(|_| ToolError::Rejected("missing command line for PTY".to_string()))?;
             let exec_env = attempt
                 .env_for(spec, req.network.as_ref())
-                .map_err(|err| ToolError::Codex(err.into()))?;
+                .map_err(|err| ToolError::Chaos(err.into()))?;
             match zsh_fork_backend::maybe_prepare_unified_exec(
                 req,
                 attempt,
@@ -236,7 +236,7 @@ impl<'a> ToolRuntime<UnifiedExecRequest, UnifiedExecProcess> for UnifiedExecRunt
                         .await
                         .map_err(|err| match err {
                             UnifiedExecError::SandboxDenied { output, .. } => {
-                                ToolError::Codex(CodexErr::Sandbox(SandboxErr::Denied {
+                                ToolError::Chaos(ChaosErr::Sandbox(SandboxErr::Denied {
                                     output: Box::new(output),
                                     network_policy_decision: None,
                                 }))
@@ -263,13 +263,13 @@ impl<'a> ToolRuntime<UnifiedExecRequest, UnifiedExecProcess> for UnifiedExecRunt
         .map_err(|_| ToolError::Rejected("missing command line for PTY".to_string()))?;
         let exec_env = attempt
             .env_for(spec, req.network.as_ref())
-            .map_err(|err| ToolError::Codex(err.into()))?;
+            .map_err(|err| ToolError::Chaos(err.into()))?;
         self.manager
             .open_session_with_exec_env(&exec_env, req.tty, Box::new(NoopSpawnLifecycle))
             .await
             .map_err(|err| match err {
                 UnifiedExecError::SandboxDenied { output, .. } => {
-                    ToolError::Codex(CodexErr::Sandbox(SandboxErr::Denied {
+                    ToolError::Chaos(ChaosErr::Sandbox(SandboxErr::Denied {
                         output: Box::new(output),
                         network_policy_decision: None,
                     }))

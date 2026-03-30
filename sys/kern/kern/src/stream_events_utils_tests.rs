@@ -1,8 +1,8 @@
 use super::handle_non_tool_response_item;
 use super::last_assistant_message_from_item;
 use super::save_image_generation_result;
-use crate::codex::make_session_and_context;
-use crate::error::CodexErr;
+use crate::chaos::make_session_and_context;
+use crate::error::ChaosErr;
 use chaos_ipc::items::TurnItem;
 use chaos_ipc::models::ContentItem;
 use chaos_ipc::models::ResponseItem;
@@ -89,7 +89,7 @@ async fn save_image_generation_result_rejects_data_url_payload() {
     let err = save_image_generation_result("ig_456", result)
         .await
         .expect_err("data url payload should error");
-    assert!(matches!(err, CodexErr::InvalidRequest(_)));
+    assert!(matches!(err, ChaosErr::InvalidRequest(_)));
 }
 
 #[tokio::test]
@@ -125,7 +125,7 @@ async fn save_image_generation_result_rejects_non_standard_base64() {
     let err = save_image_generation_result("ig_urlsafe", "_-8")
         .await
         .expect_err("non-standard base64 should error");
-    assert!(matches!(err, CodexErr::InvalidRequest(_)));
+    assert!(matches!(err, ChaosErr::InvalidRequest(_)));
 }
 
 #[tokio::test]
@@ -133,5 +133,5 @@ async fn save_image_generation_result_rejects_non_base64_data_urls() {
     let err = save_image_generation_result("ig_svg", "data:image/svg+xml,<svg/>")
         .await
         .expect_err("non-base64 data url should error");
-    assert!(matches!(err, CodexErr::InvalidRequest(_)));
+    assert!(matches!(err, ChaosErr::InvalidRequest(_)));
 }

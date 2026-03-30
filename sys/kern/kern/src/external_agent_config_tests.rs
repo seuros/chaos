@@ -5,18 +5,18 @@ use tempfile::TempDir;
 fn fixture_paths() -> (TempDir, PathBuf, PathBuf) {
     let root = TempDir::new().expect("create tempdir");
     let claude_home = root.path().join(".claude");
-    let codex_home = root.path().join(".codex");
-    (root, claude_home, codex_home)
+    let chaos_home = root.path().join(".chaos");
+    (root, claude_home, chaos_home)
 }
 
-fn service_for_paths(claude_home: PathBuf, codex_home: PathBuf) -> ExternalAgentConfigService {
-    ExternalAgentConfigService::new_for_test(codex_home, claude_home)
+fn service_for_paths(claude_home: PathBuf, chaos_home: PathBuf) -> ExternalAgentConfigService {
+    ExternalAgentConfigService::new_for_test(chaos_home, claude_home)
 }
 
 #[test]
 fn detect_home_lists_config_skills_and_agents_md() {
-    let (_root, claude_home, codex_home) = fixture_paths();
-    let agents_skills = codex_home
+    let (_root, claude_home, chaos_home) = fixture_paths();
+    let agents_skills = chaos_home
         .parent()
         .map(|parent| parent.join(".agents").join("skills"))
         .unwrap_or_else(|| PathBuf::from(".agents").join("skills"));
@@ -28,7 +28,7 @@ fn detect_home_lists_config_skills_and_agents_md() {
     )
     .expect("write settings");
 
-    let items = service_for_paths(claude_home.clone(), codex_home.clone())
+    let items = service_for_paths(claude_home.clone(), chaos_home.clone())
         .detect(ExternalAgentConfigDetectOptions {
             include_home: true,
             cwds: None,
@@ -41,7 +41,7 @@ fn detect_home_lists_config_skills_and_agents_md() {
             description: format!(
                 "Migrate {} into {}",
                 claude_home.join("settings.json").display(),
-                codex_home.join("config.toml").display()
+                chaos_home.join("config.toml").display()
             ),
             cwd: None,
         },
@@ -59,7 +59,7 @@ fn detect_home_lists_config_skills_and_agents_md() {
             description: format!(
                 "Import {} to {}",
                 claude_home.join("CLAUDE.md").display(),
-                codex_home.join("AGENTS.md").display()
+                chaos_home.join("AGENTS.md").display()
             ),
             cwd: None,
         },
@@ -77,7 +77,7 @@ fn detect_repo_lists_agents_md_for_each_cwd() {
     fs::create_dir_all(&nested).expect("create nested");
     fs::write(repo_root.join("CLAUDE.md"), "Claude code guidance").expect("write source");
 
-    let items = service_for_paths(root.path().join(".claude"), root.path().join(".codex"))
+    let items = service_for_paths(root.path().join(".claude"), root.path().join(".chaos"))
         .detect(ExternalAgentConfigDetectOptions {
             include_home: false,
             cwds: Some(vec![nested, repo_root.clone()]),
@@ -110,8 +110,8 @@ fn detect_repo_lists_agents_md_for_each_cwd() {
 
 #[test]
 fn import_home_migrates_supported_config_fields_skills_and_agents_md() {
-    let (_root, claude_home, codex_home) = fixture_paths();
-    let agents_skills = codex_home
+    let (_root, claude_home, chaos_home) = fixture_paths();
+    let agents_skills = chaos_home
         .parent()
         .map(|parent| parent.join(".agents").join("skills"))
         .unwrap_or_else(|| PathBuf::from(".agents").join("skills"));
@@ -128,7 +128,7 @@ fn import_home_migrates_supported_config_fields_skills_and_agents_md() {
     .expect("write skill");
     fs::write(claude_home.join("CLAUDE.md"), "Claude code guidance").expect("write agents");
 
-    service_for_paths(claude_home, codex_home.clone())
+    service_for_paths(claude_home, chaos_home.clone())
         .import(vec![
             ExternalAgentConfigMigrationItem {
                 item_type: ExternalAgentConfigMigrationItemType::AgentsMd,
@@ -149,12 +149,12 @@ fn import_home_migrates_supported_config_fields_skills_and_agents_md() {
         .expect("import");
 
     assert_eq!(
-        fs::read_to_string(codex_home.join("AGENTS.md")).expect("read agents"),
+        fs::read_to_string(chaos_home.join("AGENTS.md")).expect("read agents"),
         "Codex guidance"
     );
 
     assert_eq!(
-        fs::read_to_string(codex_home.join("config.toml")).expect("read config"),
+        fs::read_to_string(chaos_home.join("config.toml")).expect("read config"),
         "sandbox_mode = \"workspace-write\"\n\n[shell_environment_policy]\ninherit = \"core\"\n\n[shell_environment_policy.set]\nCI = \"false\"\nFOO = \"bar\"\nMAX_RETRIES = \"3\"\nMY_TEAM = \"codex\"\n"
     );
     assert_eq!(
@@ -166,7 +166,7 @@ fn import_home_migrates_supported_config_fields_skills_and_agents_md() {
 
 #[test]
 fn import_home_skips_empty_config_migration() {
-    let (_root, claude_home, codex_home) = fixture_paths();
+    let (_root, claude_home, chaos_home) = fixture_paths();
     fs::create_dir_all(&claude_home).expect("create claude home");
     fs::write(
         claude_home.join("settings.json"),
@@ -174,7 +174,7 @@ fn import_home_skips_empty_config_migration() {
     )
     .expect("write settings");
 
-    service_for_paths(claude_home, codex_home.clone())
+    service_for_paths(claude_home, chaos_home.clone())
         .import(vec![ExternalAgentConfigMigrationItem {
             item_type: ExternalAgentConfigMigrationItemType::Config,
             description: String::new(),
@@ -182,21 +182,21 @@ fn import_home_skips_empty_config_migration() {
         }])
         .expect("import");
 
-    assert!(!codex_home.join("config.toml").exists());
+    assert!(!chaos_home.join("config.toml").exists());
 }
 
 #[test]
 fn detect_home_skips_config_when_target_already_has_supported_fields() {
-    let (_root, claude_home, codex_home) = fixture_paths();
+    let (_root, claude_home, chaos_home) = fixture_paths();
     fs::create_dir_all(&claude_home).expect("create claude home");
-    fs::create_dir_all(&codex_home).expect("create codex home");
+    fs::create_dir_all(&chaos_home).expect("create chaos home");
     fs::write(
         claude_home.join("settings.json"),
         r#"{"env":{"FOO":"bar"},"sandbox":{"enabled":true}}"#,
     )
     .expect("write settings");
     fs::write(
-        codex_home.join("config.toml"),
+        chaos_home.join("config.toml"),
         r#"
             sandbox_mode = "workspace-write"
 
@@ -209,7 +209,7 @@ fn detect_home_skips_config_when_target_already_has_supported_fields() {
     )
     .expect("write config");
 
-    let items = service_for_paths(claude_home, codex_home)
+    let items = service_for_paths(claude_home, chaos_home)
         .detect(ExternalAgentConfigDetectOptions {
             include_home: true,
             cwds: None,
@@ -221,15 +221,15 @@ fn detect_home_skips_config_when_target_already_has_supported_fields() {
 
 #[test]
 fn detect_home_skips_skills_when_all_skill_directories_exist() {
-    let (_root, claude_home, codex_home) = fixture_paths();
-    let agents_skills = codex_home
+    let (_root, claude_home, chaos_home) = fixture_paths();
+    let agents_skills = chaos_home
         .parent()
         .map(|parent| parent.join(".agents").join("skills"))
         .unwrap_or_else(|| PathBuf::from(".agents").join("skills"));
     fs::create_dir_all(claude_home.join("skills").join("skill-a")).expect("create source");
     fs::create_dir_all(agents_skills.join("skill-a")).expect("create target");
 
-    let items = service_for_paths(claude_home, codex_home)
+    let items = service_for_paths(claude_home, chaos_home)
         .detect(ExternalAgentConfigDetectOptions {
             include_home: true,
             cwds: None,
@@ -258,7 +258,7 @@ fn import_repo_agents_md_rewrites_terms_and_skips_non_empty_targets() {
     )
     .expect("write target");
 
-    service_for_paths(root.path().join(".claude"), root.path().join(".codex"))
+    service_for_paths(root.path().join(".claude"), root.path().join(".chaos"))
         .import(vec![
             ExternalAgentConfigMigrationItem {
                 item_type: ExternalAgentConfigMigrationItemType::AgentsMd,
@@ -292,7 +292,7 @@ fn import_repo_agents_md_overwrites_empty_targets() {
     fs::write(repo_root.join("CLAUDE.md"), "Claude code guidance").expect("write source");
     fs::write(repo_root.join("AGENTS.md"), " \n\t").expect("write empty target");
 
-    service_for_paths(root.path().join(".claude"), root.path().join(".codex"))
+    service_for_paths(root.path().join(".claude"), root.path().join(".chaos"))
         .import(vec![ExternalAgentConfigMigrationItem {
             item_type: ExternalAgentConfigMigrationItemType::AgentsMd,
             description: String::new(),
@@ -319,7 +319,7 @@ fn detect_repo_prefers_non_empty_dot_claude_agents_source() {
     )
     .expect("write dot claude source");
 
-    let items = service_for_paths(root.path().join(".claude"), root.path().join(".codex"))
+    let items = service_for_paths(root.path().join(".claude"), root.path().join(".chaos"))
         .detect(ExternalAgentConfigDetectOptions {
             include_home: false,
             cwds: Some(vec![repo_root.clone()]),
@@ -353,7 +353,7 @@ fn import_repo_uses_non_empty_dot_claude_agents_source() {
     )
     .expect("write dot claude source");
 
-    service_for_paths(root.path().join(".claude"), root.path().join(".codex"))
+    service_for_paths(root.path().join(".claude"), root.path().join(".chaos"))
         .import(vec![ExternalAgentConfigMigrationItem {
             item_type: ExternalAgentConfigMigrationItemType::AgentsMd,
             description: String::new(),
@@ -380,8 +380,8 @@ fn migration_metric_tags_for_skills_include_skills_count() {
 
 #[test]
 fn import_skills_returns_only_new_skill_directory_count() {
-    let (_root, claude_home, codex_home) = fixture_paths();
-    let agents_skills = codex_home
+    let (_root, claude_home, chaos_home) = fixture_paths();
+    let agents_skills = chaos_home
         .parent()
         .map(|parent| parent.join(".agents").join("skills"))
         .unwrap_or_else(|| PathBuf::from(".agents").join("skills"));
@@ -389,7 +389,7 @@ fn import_skills_returns_only_new_skill_directory_count() {
     fs::create_dir_all(claude_home.join("skills").join("skill-b")).expect("create source b");
     fs::create_dir_all(agents_skills.join("skill-a")).expect("create existing target");
 
-    let copied_count = service_for_paths(claude_home, codex_home)
+    let copied_count = service_for_paths(claude_home, chaos_home)
         .import_skills(None)
         .expect("import skills");
 

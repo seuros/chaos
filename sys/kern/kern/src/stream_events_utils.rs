@@ -9,9 +9,9 @@ use chaos_ipc::items::TurnItem;
 use chaos_lex::strip_citations;
 use tokio_util::sync::CancellationToken;
 
-use crate::codex::Session;
-use crate::codex::TurnContext;
-use crate::error::CodexErr;
+use crate::chaos::Session;
+use crate::chaos::TurnContext;
+use crate::error::ChaosErr;
 use crate::error::Result;
 use crate::function_tool::FunctionCallError;
 use crate::memories::citations::get_process_id_from_citations;
@@ -58,7 +58,7 @@ async fn save_image_generation_result(call_id: &str, result: &str) -> Result<Pat
     let bytes = BASE64_STANDARD
         .decode(result.trim().as_bytes())
         .map_err(|err| {
-            CodexErr::InvalidRequest(format!("invalid image generation payload: {err}"))
+            ChaosErr::InvalidRequest(format!("invalid image generation payload: {err}"))
         })?;
     let mut file_stem: String = call_id
         .chars()
@@ -268,7 +268,7 @@ pub(crate) async fn handle_output_item_done(
         }
         // A fatal error occurred; surface it back into history.
         Err(FunctionCallError::Fatal(message)) => {
-            return Err(CodexErr::Fatal(message));
+            return Err(ChaosErr::Fatal(message));
         }
     }
 

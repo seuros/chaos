@@ -237,7 +237,7 @@ async fn web_search_tool_config_from_config_toml_is_forwarded_to_request() {
     ]);
     let resp_mock = responses::mount_sse_once(&server, sse).await;
 
-    let home = Arc::new(tempfile::TempDir::new().expect("create codex home"));
+    let home = Arc::new(tempfile::TempDir::new().expect("create chaos home"));
     std::fs::write(
         home.path().join("config.toml"),
         r#"web_search = "live"

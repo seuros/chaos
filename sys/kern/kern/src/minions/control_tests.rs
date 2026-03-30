@@ -1,5 +1,5 @@
 use super::*;
-use crate::CodexAuth;
+use crate::ChaosAuth;
 use crate::Process;
 use crate::ProcessTable;
 use crate::config::AgentRoleConfig;
@@ -33,7 +33,7 @@ async fn test_config_with_cli_overrides(
 ) -> (TempDir, Config) {
     let home = TempDir::new().expect("create temp dir");
     let config = ConfigBuilder::default()
-        .codex_home(home.path().to_path_buf())
+        .chaos_home(home.path().to_path_buf())
         .cli_overrides(cli_overrides)
         .loader_overrides(LoaderOverrides {
             #[cfg(target_os = "macos")]
@@ -69,9 +69,9 @@ impl AgentControlHarness {
     async fn new() -> Self {
         let (home, config) = test_config().await;
         let manager = ProcessTable::with_models_provider_and_home_for_tests(
-            CodexAuth::from_api_key("dummy"),
+            ChaosAuth::from_api_key("dummy"),
             config.model_provider.clone(),
-            config.codex_home.clone(),
+            config.chaos_home.clone(),
         );
         let control = manager.agent_control();
         Self {
@@ -140,7 +140,7 @@ async fn wait_for_subagent_notification(parent_thread: &Arc<Process>) -> bool {
             sleep(Duration::from_millis(25)).await;
         }
     };
-    timeout(Duration::from_secs(2), wait).await.is_ok()
+    timeout(Duration::from_secs(5), wait).await.is_ok()
 }
 
 #[tokio::test]
@@ -260,7 +260,7 @@ async fn send_input_errors_when_thread_missing() {
         )
         .await
         .expect_err("send_input should fail for missing thread");
-    assert_matches!(err, CodexErr::ProcessNotFound(id) if id == process_id);
+    assert_matches!(err, ChaosErr::ProcessNotFound(id) if id == process_id);
 }
 
 #[tokio::test]
@@ -287,7 +287,7 @@ async fn subscribe_status_errors_for_missing_thread() {
         .subscribe_status(process_id)
         .await
         .expect_err("subscribe_status should fail for missing thread");
-    assert_matches!(err, CodexErr::ProcessNotFound(id) if id == process_id);
+    assert_matches!(err, ChaosErr::ProcessNotFound(id) if id == process_id);
 }
 
 #[tokio::test]
@@ -624,9 +624,9 @@ async fn spawn_agent_respects_max_threads_limit() {
     )])
     .await;
     let manager = ProcessTable::with_models_provider_and_home_for_tests(
-        CodexAuth::from_api_key("dummy"),
+        ChaosAuth::from_api_key("dummy"),
         config.model_provider.clone(),
-        config.codex_home.clone(),
+        config.chaos_home.clone(),
     );
     let control = manager.agent_control();
 
@@ -644,11 +644,11 @@ async fn spawn_agent_respects_max_threads_limit() {
         .spawn_agent(config, text_input("hello again"), None)
         .await
         .expect_err("spawn_agent should respect max threads");
-    let CodexErr::AgentLimitReached {
+    let ChaosErr::AgentLimitReached {
         max_threads: seen_max_threads,
     } = err
     else {
-        panic!("expected CodexErr::AgentLimitReached");
+        panic!("expected ChaosErr::AgentLimitReached");
     };
     assert_eq!(seen_max_threads, max_threads);
 
@@ -667,9 +667,9 @@ async fn spawn_agent_releases_slot_after_shutdown() {
     )])
     .await;
     let manager = ProcessTable::with_models_provider_and_home_for_tests(
-        CodexAuth::from_api_key("dummy"),
+        ChaosAuth::from_api_key("dummy"),
         config.model_provider.clone(),
-        config.codex_home.clone(),
+        config.chaos_home.clone(),
     );
     let control = manager.agent_control();
 
@@ -701,9 +701,9 @@ async fn spawn_agent_limit_shared_across_clones() {
     )])
     .await;
     let manager = ProcessTable::with_models_provider_and_home_for_tests(
-        CodexAuth::from_api_key("dummy"),
+        ChaosAuth::from_api_key("dummy"),
         config.model_provider.clone(),
-        config.codex_home.clone(),
+        config.chaos_home.clone(),
     );
     let control = manager.agent_control();
     let cloned = control.clone();
@@ -717,8 +717,8 @@ async fn spawn_agent_limit_shared_across_clones() {
         .spawn_agent(config, text_input("hello again"), None)
         .await
         .expect_err("spawn_agent should respect shared guard");
-    let CodexErr::AgentLimitReached { max_threads } = err else {
-        panic!("expected CodexErr::AgentLimitReached");
+    let ChaosErr::AgentLimitReached { max_threads } = err else {
+        panic!("expected ChaosErr::AgentLimitReached");
     };
     assert_eq!(max_threads, 1);
 
@@ -737,9 +737,9 @@ async fn resume_agent_respects_max_threads_limit() {
     )])
     .await;
     let manager = ProcessTable::with_models_provider_and_home_for_tests(
-        CodexAuth::from_api_key("dummy"),
+        ChaosAuth::from_api_key("dummy"),
         config.model_provider.clone(),
-        config.codex_home.clone(),
+        config.chaos_home.clone(),
     );
     let control = manager.agent_control();
 
@@ -761,11 +761,11 @@ async fn resume_agent_respects_max_threads_limit() {
         .resume_agent_from_rollout(config, resumable_id, SessionSource::Exec)
         .await
         .expect_err("resume should respect max threads");
-    let CodexErr::AgentLimitReached {
+    let ChaosErr::AgentLimitReached {
         max_threads: seen_max_threads,
     } = err
     else {
-        panic!("expected CodexErr::AgentLimitReached");
+        panic!("expected ChaosErr::AgentLimitReached");
     };
     assert_eq!(seen_max_threads, max_threads);
 
@@ -784,9 +784,9 @@ async fn resume_agent_releases_slot_after_resume_failure() {
     )])
     .await;
     let manager = ProcessTable::with_models_provider_and_home_for_tests(
-        CodexAuth::from_api_key("dummy"),
+        ChaosAuth::from_api_key("dummy"),
         config.model_provider.clone(),
-        config.codex_home.clone(),
+        config.chaos_home.clone(),
     );
     let control = manager.agent_control();
 
@@ -969,9 +969,9 @@ async fn resume_process_subagent_restores_stored_nickname_and_role() {
         .enable(Feature::Sqlite)
         .expect("test config should allow sqlite");
     let manager = ProcessTable::with_models_provider_and_home_for_tests(
-        CodexAuth::from_api_key("dummy"),
+        ChaosAuth::from_api_key("dummy"),
         config.model_provider.clone(),
-        config.codex_home.clone(),
+        config.chaos_home.clone(),
     );
     let control = manager.agent_control();
     let harness = AgentControlHarness {

@@ -24,7 +24,6 @@ workspace = true
 [dependencies]
 anyhow = { workspace = true }
 base64 = { workspace = true }
-chrono = { workspace = true, features = ["serde"] }
 clap = { workspace = true, features = ["derive"] }
 chaos-highlight = { workspace = true, optional = true }
 chaos-termcap = { workspace = true }
@@ -52,6 +51,7 @@ diffy = { workspace = true }
 dirs = { workspace = true }
 image = { workspace = true, features = ["jpeg", "png", "gif", "webp"] }
 itertools = { workspace = true }
+jiff = { workspace = true }
 pathdiff = { workspace = true }
 pulldown-cmark = { workspace = true }
 rand = { workspace = true }
@@ -106,7 +106,6 @@ chaos-kern = { workspace = true }
 chaos-which = { workspace = true }
 chaos-pty = { workspace = true }
 assert_matches = { workspace = true }
-chrono = { workspace = true, features = ["serde"] }
 insta = { workspace = true }
 pretty_assertions = { workspace = true }
 rand = { workspace = true }

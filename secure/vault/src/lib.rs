@@ -98,24 +98,24 @@ pub struct SecretsManager {
 }
 
 impl SecretsManager {
-    pub fn new(codex_home: PathBuf, backend_kind: SecretsBackendKind) -> Self {
+    pub fn new(chaos_home: PathBuf, backend_kind: SecretsBackendKind) -> Self {
         let backend: Arc<dyn SecretsBackend> = match backend_kind {
             SecretsBackendKind::Local => {
                 let keyring_store: Arc<dyn KeyringStore> = Arc::new(DefaultKeyringStore);
-                Arc::new(LocalSecretsBackend::new(codex_home, keyring_store))
+                Arc::new(LocalSecretsBackend::new(chaos_home, keyring_store))
             }
         };
         Self { backend }
     }
 
     pub fn new_with_keyring_store(
-        codex_home: PathBuf,
+        chaos_home: PathBuf,
         backend_kind: SecretsBackendKind,
         keyring_store: Arc<dyn KeyringStore>,
     ) -> Self {
         let backend: Arc<dyn SecretsBackend> = match backend_kind {
             SecretsBackendKind::Local => {
-                Arc::new(LocalSecretsBackend::new(codex_home, keyring_store))
+                Arc::new(LocalSecretsBackend::new(chaos_home, keyring_store))
             }
         };
         Self { backend }
@@ -177,10 +177,10 @@ fn get_git_repo_root(base_dir: &Path) -> Option<PathBuf> {
     None
 }
 
-pub(crate) fn compute_keyring_account(codex_home: &Path) -> String {
-    let canonical = codex_home
+pub(crate) fn compute_keyring_account(chaos_home: &Path) -> String {
+    let canonical = chaos_home
         .canonicalize()
-        .unwrap_or_else(|_| codex_home.to_path_buf())
+        .unwrap_or_else(|_| chaos_home.to_path_buf())
         .to_string_lossy()
         .into_owned();
     let mut hasher = Sha256::new();
@@ -225,10 +225,10 @@ mod tests {
 
     #[test]
     fn manager_round_trips_local_backend() -> Result<()> {
-        let codex_home = tempfile::tempdir().expect("tempdir");
+        let chaos_home = tempfile::tempdir().expect("tempdir");
         let keyring = Arc::new(MockKeyringStore::default());
         let manager = SecretsManager::new_with_keyring_store(
-            codex_home.path().to_path_buf(),
+            chaos_home.path().to_path_buf(),
             SecretsBackendKind::Local,
             keyring,
         );

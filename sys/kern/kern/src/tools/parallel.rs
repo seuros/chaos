@@ -9,9 +9,9 @@ use tracing::Instrument;
 use tracing::instrument;
 use tracing::trace_span;
 
-use crate::codex::Session;
-use crate::codex::TurnContext;
-use crate::error::CodexErr;
+use crate::chaos::Session;
+use crate::chaos::TurnContext;
+use crate::error::ChaosErr;
 use crate::function_tool::FunctionCallError;
 use crate::tools::context::AbortedToolOutput;
 use crate::tools::context::SharedTurnDiffTracker;
@@ -51,7 +51,7 @@ impl ToolCallRuntime {
         self,
         call: ToolCall,
         cancellation_token: CancellationToken,
-    ) -> impl std::future::Future<Output = Result<ResponseInputItem, CodexErr>> {
+    ) -> impl std::future::Future<Output = Result<ResponseInputItem, ChaosErr>> {
         let future =
             self.handle_tool_call_with_source(call, ToolCallSource::Direct, cancellation_token);
         async move { future.await.map(AnyToolResult::into_response) }.in_current_span()
@@ -63,7 +63,7 @@ impl ToolCallRuntime {
         call: ToolCall,
         source: ToolCallSource,
         cancellation_token: CancellationToken,
-    ) -> impl std::future::Future<Output = Result<AnyToolResult, CodexErr>> {
+    ) -> impl std::future::Future<Output = Result<AnyToolResult, ChaosErr>> {
         let supports_parallel = self.router.tool_supports_parallel(&call.tool_name);
         let router = Arc::clone(&self.router);
         let session = Arc::clone(&self.session);
@@ -112,9 +112,9 @@ impl ToolCallRuntime {
         async move {
             match handle.await {
                 Ok(Ok(response)) => Ok(response),
-                Ok(Err(FunctionCallError::Fatal(message))) => Err(CodexErr::Fatal(message)),
-                Ok(Err(other)) => Err(CodexErr::Fatal(other.to_string())),
-                Err(err) => Err(CodexErr::Fatal(format!(
+                Ok(Err(FunctionCallError::Fatal(message))) => Err(ChaosErr::Fatal(message)),
+                Ok(Err(other)) => Err(ChaosErr::Fatal(other.to_string())),
+                Err(err) => Err(ChaosErr::Fatal(format!(
                     "tool task failed to receive: {err:?}"
                 ))),
             }

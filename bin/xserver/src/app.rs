@@ -28,6 +28,10 @@ use crate::pager_overlay::Overlay;
 use crate::render::highlight::highlight_bash_to_lines;
 use crate::render::renderable::Renderable;
 use crate::resume_picker::SessionSelection;
+use crate::side_panel::LOG_PANEL_BACKFILL_LIMIT;
+use crate::side_panel::LOG_PANEL_POLL_INTERVAL;
+use crate::side_panel::LogPanelState;
+use crate::side_panel::split_main_and_panel;
 use crate::tui;
 use crate::tui::TuiEvent;
 use crate::version::CHAOS_VERSION;
@@ -49,7 +53,7 @@ use chaos_ipc::protocol::SessionConfiguredEvent;
 use chaos_ipc::protocol::SessionSource;
 use chaos_ipc::protocol::TokenUsage;
 use chaos_kern::AuthManager;
-use chaos_kern::CodexAuth;
+use chaos_kern::ChaosAuth;
 use chaos_kern::ProcessTable;
 use chaos_kern::config::Config;
 use chaos_kern::config::ConfigBuilder;
@@ -63,6 +67,8 @@ use chaos_kern::features::Feature;
 use chaos_kern::models_manager::manager::RefreshStrategy;
 use chaos_kern::models_manager::model_presets::HIDE_GPT_5_1_CODEX_MAX_MIGRATION_PROMPT_CONFIG;
 use chaos_kern::models_manager::model_presets::HIDE_GPT5_1_MIGRATION_PROMPT_CONFIG;
+use chaos_proc::LogQuery;
+use chaos_proc::StateRuntime;
 use chaos_realpath::AbsolutePathBuf;
 use chaos_syslog::SessionTelemetry;
 use chaos_syslog::TelemetryAuthMode;
@@ -87,6 +93,7 @@ use std::sync::atomic::AtomicBool;
 use std::sync::atomic::Ordering;
 use std::thread;
 use std::time::Duration;
+use std::time::Instant;
 use tokio::select;
 use tokio::sync::Mutex;
 use tokio::sync::broadcast;
@@ -490,7 +497,7 @@ async fn prepare_startup_tooltip_override(
     let mut updated_shown_count = config.model_availability_nux.shown_count.clone();
     updated_shown_count.insert(tooltip_override.model_slug.clone(), next_count);
 
-    if let Err(err) = ConfigEditsBuilder::new(&config.codex_home)
+    if let Err(err) = ConfigEditsBuilder::new(&config.chaos_home)
         .set_model_availability_nux_count(&updated_shown_count)
         .apply()
         .await
@@ -626,6 +633,9 @@ pub(crate) struct App {
     runtime_sandbox_policy_override: Option<SandboxPolicy>,
 
     pub(crate) file_search: FileSearchManager,
+    log_state_db: Option<Arc<StateRuntime>>,
+    log_state_db_init_error: Option<String>,
+    log_panel: LogPanelState,
 
     pub(crate) transcript_cells: Vec<Arc<dyn HistoryCell>>,
 
@@ -719,7 +729,7 @@ impl App {
         overrides.cwd = Some(cwd.clone());
         let cwd_display = cwd.display().to_string();
         ConfigBuilder::default()
-            .codex_home(self.config.codex_home.clone())
+            .chaos_home(self.config.chaos_home.clone())
             .cli_overrides(self.cli_kv_overrides.clone())
             .harness_overrides(overrides)
             .build()
@@ -867,7 +877,7 @@ impl App {
             (root_blocks_disable, profile_configured)
         };
         let mut permissions_history_label: Option<&'static str> = None;
-        let mut builder = ConfigEditsBuilder::new(&self.config.codex_home)
+        let mut builder = ConfigEditsBuilder::new(&self.config.chaos_home)
             .with_profile(self.active_profile.as_deref());
 
         for (feature, enabled) in updates {
@@ -1863,6 +1873,7 @@ impl App {
         tui: &mut tui::Tui,
         auth_manager: Arc<AuthManager>,
         process_table: Arc<ProcessTable>,
+        log_state_db: Option<Arc<StateRuntime>>,
         mut config: Config,
         cli_kv_overrides: Vec<(String, TomlValue)>,
         harness_overrides: ConfigOverrides,
@@ -1907,14 +1918,14 @@ impl App {
         let auth = auth_manager.auth().await;
         let auth_ref = auth.as_ref();
         let auth_mode = auth_ref
-            .map(CodexAuth::auth_mode)
+            .map(ChaosAuth::auth_mode)
             .map(TelemetryAuthMode::from);
         let session_telemetry = SessionTelemetry::new(
             ProcessId::new(),
             model.as_str(),
             model.as_str(),
-            auth_ref.and_then(CodexAuth::get_account_id),
-            auth_ref.and_then(CodexAuth::get_account_email),
+            auth_ref.and_then(ChaosAuth::get_account_id),
+            auth_ref.and_then(ChaosAuth::get_account_email),
             auth_mode,
             chaos_kern::default_client::originator().value,
             config.otel.log_user_prompt,
@@ -2050,6 +2061,9 @@ impl App {
             runtime_approval_policy_override: None,
             runtime_sandbox_policy_override: None,
             file_search,
+            log_state_db,
+            log_state_db_init_error: None,
+            log_panel: LogPanelState::default(),
             enhanced_keys_supported,
             transcript_cells: Vec::new(),
             overlay: None,
@@ -2207,15 +2221,33 @@ impl App {
                     }
                     // Allow widgets to process any pending timers before rendering.
                     self.chat_widget.pre_draw_tick();
+                    let terminal_size = tui.terminal.size()?;
+                    self.refresh_log_panel_if_needed(tui, terminal_size.into())
+                        .await;
+                    let (chat_area, log_area) =
+                        split_main_and_panel(terminal_size.into(), self.log_panel.is_visible());
+                    if let Some(log_area) = log_area {
+                        self.log_panel
+                            .set_viewport_height(log_area.height.saturating_sub(2));
+                    }
                     tui.draw(
-                        self.chat_widget.desired_height(tui.terminal.size()?.width),
+                        self.chat_widget.desired_height(chat_area.width),
                         |frame| {
-                            self.chat_widget.render(frame.area(), frame.buffer);
-                            if let Some((x, y)) = self.chat_widget.cursor_pos(frame.area()) {
+                            let (chat_area, log_area) =
+                                split_main_and_panel(frame.area(), self.log_panel.is_visible());
+                            self.chat_widget.render(chat_area, frame.buffer);
+                            if let Some(log_area) = log_area {
+                                self.log_panel.render(log_area, frame.buffer);
+                            }
+                            if let Some((x, y)) = self.chat_widget.cursor_pos(chat_area) {
                                 frame.set_cursor_position((x, y));
                             }
                         },
                     )?;
+                    if self.log_panel.is_visible() {
+                        tui.frame_requester()
+                            .schedule_frame_in(LOG_PANEL_POLL_INTERVAL);
+                    }
                     if self.chat_widget.external_editor_state() == ExternalEditorState::Requested {
                         self.chat_widget
                             .set_external_editor_state(ExternalEditorState::Active);
@@ -2455,7 +2487,7 @@ impl App {
             AppEvent::CommitTick => {
                 self.chat_widget.on_commit_tick();
             }
-            AppEvent::CodexEvent(event) => {
+            AppEvent::ChaosEvent(event) => {
                 self.enqueue_primary_event(event).await?;
             }
             AppEvent::ProcessEvent { process_id, event } => {
@@ -2467,7 +2499,7 @@ impl App {
             AppEvent::FatalExitRequest(message) => {
                 return Ok(AppRunControl::Exit(ExitReason::Fatal(message)));
             }
-            AppEvent::CodexOp(op) => {
+            AppEvent::ChaosOp(op) => {
                 let replay_state_op =
                     ProcessEventStore::op_can_change_pending_replay_state(&op).then(|| op.clone());
                 let submitted = self.chat_widget.submit_op(op);
@@ -2602,7 +2634,7 @@ impl App {
                 }
 
                 let profile = self.active_profile.as_deref();
-                match ConfigEditsBuilder::new(&self.config.codex_home)
+                match ConfigEditsBuilder::new(&self.config.chaos_home)
                     .with_profile(profile)
                     .set_model(Some(model.as_str()), effort)
                     .apply()
@@ -2643,7 +2675,7 @@ impl App {
             }
             AppEvent::PersistPersonalitySelection { personality } => {
                 let profile = self.active_profile.as_deref();
-                match ConfigEditsBuilder::new(&self.config.codex_home)
+                match ConfigEditsBuilder::new(&self.config.chaos_home)
                     .with_profile(profile)
                     .set_personality(Some(personality))
                     .apply()
@@ -2727,7 +2759,7 @@ impl App {
                 } else {
                     vec!["approvals_reviewer".to_string()]
                 };
-                if let Err(err) = ConfigEditsBuilder::new(&self.config.codex_home)
+                if let Err(err) = ConfigEditsBuilder::new(&self.config.chaos_home)
                     .with_profile(profile)
                     .with_edits([ConfigEdit::SetPath {
                         segments,
@@ -2759,7 +2791,7 @@ impl App {
                 self.refresh_status_line();
             }
             AppEvent::PersistFullAccessWarningAcknowledged => {
-                if let Err(err) = ConfigEditsBuilder::new(&self.config.codex_home)
+                if let Err(err) = ConfigEditsBuilder::new(&self.config.chaos_home)
                     .set_hide_full_access_warning(/*acknowledged*/ true)
                     .apply()
                     .await
@@ -2774,7 +2806,7 @@ impl App {
                 }
             }
             AppEvent::PersistRateLimitSwitchPromptHidden => {
-                if let Err(err) = ConfigEditsBuilder::new(&self.config.codex_home)
+                if let Err(err) = ConfigEditsBuilder::new(&self.config.chaos_home)
                     .set_hide_rate_limit_model_nudge(/*acknowledged*/ true)
                     .apply()
                     .await
@@ -2807,7 +2839,7 @@ impl App {
                 } else {
                     ConfigEdit::ClearPath { segments }
                 };
-                if let Err(err) = ConfigEditsBuilder::new(&self.config.codex_home)
+                if let Err(err) = ConfigEditsBuilder::new(&self.config.chaos_home)
                     .with_edits([edit])
                     .apply()
                     .await
@@ -2831,7 +2863,7 @@ impl App {
                 from_model,
                 to_model,
             } => {
-                if let Err(err) = ConfigEditsBuilder::new(&self.config.codex_home)
+                if let Err(err) = ConfigEditsBuilder::new(&self.config.chaos_home)
                     .record_model_migration_seen(from_model.as_str(), to_model.as_str())
                     .apply()
                     .await
@@ -2884,7 +2916,7 @@ impl App {
                         },
                     ]
                 };
-                match ConfigEditsBuilder::new(&self.config.codex_home)
+                match ConfigEditsBuilder::new(&self.config.chaos_home)
                     .with_edits(edits)
                     .apply()
                     .await
@@ -2990,7 +3022,7 @@ impl App {
             AppEvent::StatusLineSetup { items } => {
                 let ids = items.iter().map(ToString::to_string).collect::<Vec<_>>();
                 let edit = chaos_kern::config::edit::status_line_items_edit(&ids);
-                let apply_result = ConfigEditsBuilder::new(&self.config.codex_home)
+                let apply_result = ConfigEditsBuilder::new(&self.config.chaos_home)
                     .with_edits([edit])
                     .apply()
                     .await;
@@ -3015,7 +3047,7 @@ impl App {
             }
             AppEvent::SyntaxThemeSelected { name } => {
                 let edit = chaos_kern::config::edit::syntax_theme_edit(&name);
-                let apply_result = ConfigEditsBuilder::new(&self.config.codex_home)
+                let apply_result = ConfigEditsBuilder::new(&self.config.chaos_home)
                     .with_edits([edit])
                     .apply()
                     .await;
@@ -3027,7 +3059,7 @@ impl App {
                         // navigating, the runtime theme must still be applied.
                         if let Some(theme) = crate::render::highlight::resolve_theme_by_name(
                             &name,
-                            Some(&self.config.codex_home),
+                            Some(&self.config.chaos_home),
                         ) {
                             crate::render::highlight::set_syntax_theme(theme);
                         }
@@ -3247,7 +3279,7 @@ impl App {
     fn restore_runtime_theme_from_config(&self) {
         if let Some(name) = self.config.tui_theme.as_deref()
             && let Some(theme) =
-                crate::render::highlight::resolve_theme_by_name(name, Some(&self.config.codex_home))
+                crate::render::highlight::resolve_theme_by_name(name, Some(&self.config.chaos_home))
         {
             crate::render::highlight::set_syntax_theme(theme);
             return;
@@ -3256,7 +3288,7 @@ impl App {
         let auto_theme_name = crate::render::highlight::adaptive_default_theme_name();
         if let Some(theme) = crate::render::highlight::resolve_theme_by_name(
             auto_theme_name,
-            Some(&self.config.codex_home),
+            Some(&self.config.chaos_home),
         ) {
             crate::render::highlight::set_syntax_theme(theme);
         }
@@ -3276,7 +3308,7 @@ impl App {
             Err(external_editor::EditorError::MissingEditor) => {
                 self.chat_widget
                     .add_to_history(history_cell::new_error_event(
-                    "Cannot open external editor: set $VISUAL or $EDITOR before starting Codex."
+                    "Cannot open external editor: set $VISUAL or $EDITOR before starting Chaos."
                         .to_string(),
                 ));
                 self.reset_external_editor_state(tui);
@@ -3374,6 +3406,58 @@ impl App {
 
         match key_event {
             KeyEvent {
+                code: KeyCode::Char('o'),
+                modifiers: crossterm::event::KeyModifiers::CONTROL,
+                kind: KeyEventKind::Press,
+                ..
+            } if self.overlay.is_none() && self.chat_widget.no_modal_or_popup_active() => {
+                self.toggle_log_panel(tui).await;
+            }
+            KeyEvent {
+                code: KeyCode::PageUp,
+                kind: KeyEventKind::Press | KeyEventKind::Repeat,
+                ..
+            } if self.log_panel.is_visible()
+                && self.overlay.is_none()
+                && self.chat_widget.no_modal_or_popup_active() =>
+            {
+                self.log_panel.scroll_up(8);
+                tui.frame_requester().schedule_frame();
+            }
+            KeyEvent {
+                code: KeyCode::PageDown,
+                kind: KeyEventKind::Press | KeyEventKind::Repeat,
+                ..
+            } if self.log_panel.is_visible()
+                && self.overlay.is_none()
+                && self.chat_widget.no_modal_or_popup_active() =>
+            {
+                self.log_panel.scroll_down(8);
+                tui.frame_requester().schedule_frame();
+            }
+            KeyEvent {
+                code: KeyCode::Home,
+                kind: KeyEventKind::Press | KeyEventKind::Repeat,
+                ..
+            } if self.log_panel.is_visible()
+                && self.overlay.is_none()
+                && self.chat_widget.no_modal_or_popup_active() =>
+            {
+                self.log_panel.scroll_to_start();
+                tui.frame_requester().schedule_frame();
+            }
+            KeyEvent {
+                code: KeyCode::End,
+                kind: KeyEventKind::Press | KeyEventKind::Repeat,
+                ..
+            } if self.log_panel.is_visible()
+                && self.overlay.is_none()
+                && self.chat_widget.no_modal_or_popup_active() =>
+            {
+                self.log_panel.scroll_to_end();
+                tui.frame_requester().schedule_frame();
+            }
+            KeyEvent {
                 code: KeyCode::Char('t'),
                 modifiers: crossterm::event::KeyModifiers::CONTROL,
                 kind: KeyEventKind::Press,
@@ -3469,6 +3553,124 @@ impl App {
     fn refresh_status_line(&mut self) {
         self.chat_widget.refresh_status_line();
     }
+
+    async fn toggle_log_panel(&mut self, tui: &mut tui::Tui) {
+        let visible = self.log_panel.toggle();
+        if visible {
+            self.reload_log_panel_backfill().await;
+        }
+        tui.frame_requester().schedule_frame();
+    }
+
+    async fn refresh_log_panel_if_needed(&mut self, tui: &mut tui::Tui, area: ratatui::layout::Rect) {
+        if !self.log_panel.is_visible() {
+            return;
+        }
+        let (_, log_area) = split_main_and_panel(area, true);
+        let Some(log_area) = log_area else {
+            return;
+        };
+        self.log_panel
+            .set_viewport_height(log_area.height.saturating_sub(2));
+
+        let current_process_id = self.current_displayed_process_id();
+        if self.log_panel.set_process_id(current_process_id) {
+            self.reload_log_panel_backfill().await;
+            tui.frame_requester().schedule_frame();
+            return;
+        }
+
+        if self.log_panel.should_poll(Instant::now()) {
+            self.poll_log_panel().await;
+        }
+    }
+
+    async fn reload_log_panel_backfill(&mut self) {
+        let Some(state_db) = self.ensure_log_state_db().await else {
+            return;
+        };
+        let Some(process_id) = self.log_panel.process_id() else {
+            self.log_panel
+                .replace_batch(chaos_proc::LogTailBatch::default());
+            self.log_panel.schedule_next_poll(Instant::now());
+            return;
+        };
+        match state_db
+            .tail_backfill(&Self::log_query_for_process(process_id), LOG_PANEL_BACKFILL_LIMIT)
+            .await
+        {
+            Ok(batch) => {
+                self.log_panel.replace_batch(batch);
+                self.log_panel.schedule_next_poll(Instant::now());
+            }
+            Err(err) => {
+                self.log_panel
+                    .set_error(format!("Failed to load logs: {err}"));
+            }
+        }
+    }
+
+    async fn poll_log_panel(&mut self) {
+        let Some(state_db) = self.ensure_log_state_db().await else {
+            return;
+        };
+        let Some(process_id) = self.log_panel.process_id() else {
+            self.log_panel.schedule_next_poll(Instant::now());
+            return;
+        };
+        let cursor = self.log_panel.cursor();
+        match state_db
+            .tail_poll(&Self::log_query_for_process(process_id), &cursor, None)
+            .await
+        {
+            Ok(batch) => {
+                self.log_panel.append_batch(batch);
+                self.log_panel.schedule_next_poll(Instant::now());
+            }
+            Err(err) => {
+                self.log_panel
+                    .set_error(format!("Failed to refresh logs: {err}"));
+            }
+        }
+    }
+
+    fn log_query_for_process(process_id: ProcessId) -> LogQuery {
+        LogQuery {
+            related_to_process_id: Some(process_id.to_string()),
+            include_related_processless: true,
+            ..Default::default()
+        }
+    }
+
+    async fn ensure_log_state_db(&mut self) -> Option<Arc<StateRuntime>> {
+        if let Some(state_db) = self.log_state_db.clone() {
+            return Some(state_db);
+        }
+
+        let sqlite_home = self.config.sqlite_home.clone();
+        let model_provider_id = self.config.model_provider_id.clone();
+        match StateRuntime::init(sqlite_home.clone(), model_provider_id).await {
+            Ok(state_db) => {
+                self.log_state_db_init_error = None;
+                self.log_state_db = Some(state_db.clone());
+                Some(state_db)
+            }
+            Err(err) => {
+                let message = format!(
+                    "Failed to initialize logs DB at {}: {err}",
+                    sqlite_home.display()
+                );
+                tracing::warn!(
+                    error = %err,
+                    sqlite_home = %sqlite_home.display(),
+                    "failed to lazily initialize log/state runtime for xserver"
+                );
+                self.log_state_db_init_error = Some(message.clone());
+                self.log_panel.set_error(message);
+                None
+            }
+        }
+    }
 }
 
 #[cfg(test)]
@@ -3506,7 +3708,7 @@ mod tests {
     use chaos_ipc::protocol::UserMessageEvent;
     use chaos_ipc::user_input::TextElement;
     use chaos_ipc::user_input::UserInput;
-    use chaos_kern::CodexAuth;
+    use chaos_kern::ChaosAuth;
     use chaos_kern::config::ConfigBuilder;
     use chaos_kern::config::ConfigOverrides;
     use chaos_kern::config::types::ModelAvailabilityNuxConfig;
@@ -4665,8 +4867,8 @@ mod tests {
     #[tokio::test]
     async fn update_feature_flags_enabling_guardian_selects_guardian_approvals() -> Result<()> {
         let (mut app, mut app_event_rx, mut op_rx) = make_test_app_with_channels().await;
-        let codex_home = tempdir()?;
-        app.config.codex_home = codex_home.path().to_path_buf();
+        let chaos_home = tempdir()?;
+        app.config.chaos_home = chaos_home.path().to_path_buf();
         let guardian_approvals = guardian_approvals_mode();
 
         app.update_feature_flags(vec![(Feature::GuardianApproval, true)])
@@ -4737,7 +4939,7 @@ mod tests {
             .join("\n");
         assert!(rendered.contains("Permissions updated to Guardian Approvals"));
 
-        let config = std::fs::read_to_string(codex_home.path().join("config.toml"))?;
+        let config = std::fs::read_to_string(chaos_home.path().join("config.toml"))?;
         assert!(config.contains("guardian_approval = true"));
         assert!(config.contains("approvals_reviewer = \"guardian_subagent\""));
         assert!(config.contains("approval_policy = \"on-request\""));
@@ -4749,9 +4951,9 @@ mod tests {
     async fn update_feature_flags_disabling_guardian_clears_review_policy_and_restores_default()
     -> Result<()> {
         let (mut app, mut app_event_rx, mut op_rx) = make_test_app_with_channels().await;
-        let codex_home = tempdir()?;
-        app.config.codex_home = codex_home.path().to_path_buf();
-        let config_toml_path = AbsolutePathBuf::try_from(codex_home.path().join("config.toml"))?;
+        let chaos_home = tempdir()?;
+        app.config.chaos_home = chaos_home.path().to_path_buf();
+        let config_toml_path = AbsolutePathBuf::try_from(chaos_home.path().join("config.toml"))?;
         let config_toml = "approvals_reviewer = \"guardian_subagent\"\napproval_policy = \"on-request\"\nsandbox_mode = \"workspace-write\"\n\n[features]\nguardian_approval = true\n";
         std::fs::write(config_toml_path.as_path(), config_toml)?;
         let user_config = toml::from_str::<TomlValue>(config_toml)?;
@@ -4828,7 +5030,7 @@ mod tests {
             .join("\n");
         assert!(rendered.contains("Permissions updated to Default"));
 
-        let config = std::fs::read_to_string(codex_home.path().join("config.toml"))?;
+        let config = std::fs::read_to_string(chaos_home.path().join("config.toml"))?;
         assert!(!config.contains("guardian_approval = true"));
         assert!(!config.contains("approvals_reviewer ="));
         assert!(config.contains("approval_policy = \"on-request\""));
@@ -4840,10 +5042,10 @@ mod tests {
     async fn update_feature_flags_enabling_guardian_overrides_explicit_manual_review_policy()
     -> Result<()> {
         let (mut app, _app_event_rx, mut op_rx) = make_test_app_with_channels().await;
-        let codex_home = tempdir()?;
-        app.config.codex_home = codex_home.path().to_path_buf();
+        let chaos_home = tempdir()?;
+        app.config.chaos_home = chaos_home.path().to_path_buf();
         let guardian_approvals = guardian_approvals_mode();
-        let config_toml_path = AbsolutePathBuf::try_from(codex_home.path().join("config.toml"))?;
+        let config_toml_path = AbsolutePathBuf::try_from(chaos_home.path().join("config.toml"))?;
         let config_toml = "approvals_reviewer = \"user\"\n";
         std::fs::write(config_toml_path.as_path(), config_toml)?;
         let user_config = toml::from_str::<TomlValue>(config_toml)?;
@@ -4896,7 +5098,7 @@ mod tests {
             })
         );
 
-        let config = std::fs::read_to_string(codex_home.path().join("config.toml"))?;
+        let config = std::fs::read_to_string(chaos_home.path().join("config.toml"))?;
         assert!(config.contains("approvals_reviewer = \"guardian_subagent\""));
         assert!(config.contains("guardian_approval = true"));
         assert!(config.contains("approval_policy = \"on-request\""));
@@ -4908,9 +5110,9 @@ mod tests {
     async fn update_feature_flags_disabling_guardian_clears_manual_review_policy_without_history()
     -> Result<()> {
         let (mut app, mut app_event_rx, mut op_rx) = make_test_app_with_channels().await;
-        let codex_home = tempdir()?;
-        app.config.codex_home = codex_home.path().to_path_buf();
-        let config_toml_path = AbsolutePathBuf::try_from(codex_home.path().join("config.toml"))?;
+        let chaos_home = tempdir()?;
+        app.config.chaos_home = chaos_home.path().to_path_buf();
+        let config_toml_path = AbsolutePathBuf::try_from(chaos_home.path().join("config.toml"))?;
         let config_toml = "approvals_reviewer = \"user\"\napproval_policy = \"on-request\"\nsandbox_mode = \"workspace-write\"\n\n[features]\nguardian_approval = true\n";
         std::fs::write(config_toml_path.as_path(), config_toml)?;
         let user_config = toml::from_str::<TomlValue>(config_toml)?;
@@ -4957,7 +5159,7 @@ mod tests {
             "manual review should not emit a permissions history update when the effective state stays default"
         );
 
-        let config = std::fs::read_to_string(codex_home.path().join("config.toml"))?;
+        let config = std::fs::read_to_string(chaos_home.path().join("config.toml"))?;
         assert!(!config.contains("guardian_approval = true"));
         assert!(!config.contains("approvals_reviewer ="));
         Ok(())
@@ -4967,11 +5169,11 @@ mod tests {
     async fn update_feature_flags_enabling_guardian_in_profile_sets_profile_auto_review_policy()
     -> Result<()> {
         let (mut app, _app_event_rx, mut op_rx) = make_test_app_with_channels().await;
-        let codex_home = tempdir()?;
-        app.config.codex_home = codex_home.path().to_path_buf();
+        let chaos_home = tempdir()?;
+        app.config.chaos_home = chaos_home.path().to_path_buf();
         let guardian_approvals = guardian_approvals_mode();
         app.active_profile = Some("guardian".to_string());
-        let config_toml_path = AbsolutePathBuf::try_from(codex_home.path().join("config.toml"))?;
+        let config_toml_path = AbsolutePathBuf::try_from(chaos_home.path().join("config.toml"))?;
         let config_toml = "profile = \"guardian\"\napprovals_reviewer = \"user\"\n";
         std::fs::write(config_toml_path.as_path(), config_toml)?;
         let user_config = toml::from_str::<TomlValue>(config_toml)?;
@@ -5012,7 +5214,7 @@ mod tests {
             })
         );
 
-        let config = std::fs::read_to_string(codex_home.path().join("config.toml"))?;
+        let config = std::fs::read_to_string(chaos_home.path().join("config.toml"))?;
         let config_value = toml::from_str::<TomlValue>(&config)?;
         let profile_config = config_value
             .as_table()
@@ -5038,10 +5240,10 @@ mod tests {
     async fn update_feature_flags_disabling_guardian_in_profile_allows_inherited_user_reviewer()
     -> Result<()> {
         let (mut app, mut app_event_rx, mut op_rx) = make_test_app_with_channels().await;
-        let codex_home = tempdir()?;
-        app.config.codex_home = codex_home.path().to_path_buf();
+        let chaos_home = tempdir()?;
+        app.config.chaos_home = chaos_home.path().to_path_buf();
         app.active_profile = Some("guardian".to_string());
-        let config_toml_path = AbsolutePathBuf::try_from(codex_home.path().join("config.toml"))?;
+        let config_toml_path = AbsolutePathBuf::try_from(chaos_home.path().join("config.toml"))?;
         let config_toml = r#"
 profile = "guardian"
 approvals_reviewer = "user"
@@ -5110,7 +5312,7 @@ guardian_approval = true
             .join("\n");
         assert!(rendered.contains("Permissions updated to Default"));
 
-        let config = std::fs::read_to_string(codex_home.path().join("config.toml"))?;
+        let config = std::fs::read_to_string(chaos_home.path().join("config.toml"))?;
         assert!(!config.contains("guardian_approval = true"));
         assert!(!config.contains("guardian_subagent"));
         assert_eq!(
@@ -5126,10 +5328,10 @@ guardian_approval = true
     async fn update_feature_flags_disabling_guardian_in_profile_keeps_inherited_non_user_reviewer_enabled()
     -> Result<()> {
         let (mut app, mut app_event_rx, mut op_rx) = make_test_app_with_channels().await;
-        let codex_home = tempdir()?;
-        app.config.codex_home = codex_home.path().to_path_buf();
+        let chaos_home = tempdir()?;
+        app.config.chaos_home = chaos_home.path().to_path_buf();
         app.active_profile = Some("guardian".to_string());
-        let config_toml_path = AbsolutePathBuf::try_from(codex_home.path().join("config.toml"))?;
+        let config_toml_path = AbsolutePathBuf::try_from(chaos_home.path().join("config.toml"))?;
         let config_toml = "profile = \"guardian\"\napprovals_reviewer = \"guardian_subagent\"\n\n[features]\nguardian_approval = true\n";
         std::fs::write(config_toml_path.as_path(), config_toml)?;
         let user_config = toml::from_str::<TomlValue>(config_toml)?;
@@ -5180,7 +5382,7 @@ guardian_approval = true
             "blocking disable with inherited guardian review should not emit a permissions history update: {app_events:?}"
         );
 
-        let config = std::fs::read_to_string(codex_home.path().join("config.toml"))?;
+        let config = std::fs::read_to_string(chaos_home.path().join("config.toml"))?;
         assert!(config.contains("guardian_approval = true"));
         assert_eq!(
             toml::from_str::<TomlValue>(&config)?
@@ -5583,12 +5785,12 @@ guardian_approval = true
         let config = chat_widget.config_ref().clone();
         let server = Arc::new(
             chaos_kern::test_support::process_table_with_models_provider(
-                CodexAuth::from_api_key("Test API Key"),
+                ChaosAuth::from_api_key("Test API Key"),
                 config.model_provider.clone(),
             ),
         );
         let auth_manager = chaos_kern::test_support::auth_manager_from_auth(
-            CodexAuth::from_api_key("Test API Key"),
+            ChaosAuth::from_api_key("Test API Key"),
         );
         let file_search = FileSearchManager::new(config.cwd.clone(), app_event_tx.clone());
         let model = chaos_kern::test_support::get_model_offline(config.model.as_deref());
@@ -5607,6 +5809,9 @@ guardian_approval = true
             runtime_approval_policy_override: None,
             runtime_sandbox_policy_override: None,
             file_search,
+            log_state_db: None,
+            log_state_db_init_error: None,
+            log_panel: LogPanelState::default(),
             transcript_cells: Vec::new(),
             overlay: None,
             deferred_history_lines: Vec::new(),
@@ -5639,12 +5844,12 @@ guardian_approval = true
         let config = chat_widget.config_ref().clone();
         let server = Arc::new(
             chaos_kern::test_support::process_table_with_models_provider(
-                CodexAuth::from_api_key("Test API Key"),
+                ChaosAuth::from_api_key("Test API Key"),
                 config.model_provider.clone(),
             ),
         );
         let auth_manager = chaos_kern::test_support::auth_manager_from_auth(
-            CodexAuth::from_api_key("Test API Key"),
+            ChaosAuth::from_api_key("Test API Key"),
         );
         let file_search = FileSearchManager::new(config.cwd.clone(), app_event_tx.clone());
         let model = chaos_kern::test_support::get_model_offline(config.model.as_deref());
@@ -5664,6 +5869,9 @@ guardian_approval = true
                 runtime_approval_policy_override: None,
                 runtime_sandbox_policy_override: None,
                 file_search,
+                log_state_db: None,
+                log_state_db_init_error: None,
+                log_panel: LogPanelState::default(),
                 transcript_cells: Vec::new(),
                 overlay: None,
                 deferred_history_lines: Vec::new(),
@@ -5977,9 +6185,9 @@ guardian_approval = true
 
     #[tokio::test]
     async fn model_migration_prompt_shows_for_hidden_model() {
-        let codex_home = tempdir().expect("temp codex home");
+        let chaos_home = tempdir().expect("temp chaos home");
         let config = ConfigBuilder::default()
-            .codex_home(codex_home.path().to_path_buf())
+            .chaos_home(chaos_home.path().to_path_buf())
             .build()
             .await
             .expect("config");
@@ -6057,13 +6265,13 @@ guardian_approval = true
     #[tokio::test]
     async fn refresh_in_memory_config_from_disk_loads_latest_apps_state() -> Result<()> {
         let mut app = make_test_app().await;
-        let codex_home = tempdir()?;
-        app.config.codex_home = codex_home.path().to_path_buf();
+        let chaos_home = tempdir()?;
+        app.config.chaos_home = chaos_home.path().to_path_buf();
         let app_id = "unit_test_refresh_in_memory_config_connector".to_string();
 
         assert_eq!(app_enabled_in_effective_config(&app.config, &app_id), None);
 
-        ConfigEditsBuilder::new(&app.config.codex_home)
+        ConfigEditsBuilder::new(&app.config.chaos_home)
             .with_edits([
                 ConfigEdit::SetPath {
                     segments: vec!["apps".to_string(), app_id.clone(), "enabled".to_string()],
@@ -6097,9 +6305,9 @@ guardian_approval = true
     async fn refresh_in_memory_config_from_disk_best_effort_keeps_current_config_on_error()
     -> Result<()> {
         let mut app = make_test_app().await;
-        let codex_home = tempdir()?;
-        app.config.codex_home = codex_home.path().to_path_buf();
-        std::fs::write(codex_home.path().join("config.toml"), "[broken")?;
+        let chaos_home = tempdir()?;
+        app.config.chaos_home = chaos_home.path().to_path_buf();
+        std::fs::write(chaos_home.path().join("config.toml"), "[broken")?;
         let original_config = app.config.clone();
 
         app.refresh_in_memory_config_from_disk_best_effort("starting a new thread")
@@ -6150,9 +6358,9 @@ guardian_approval = true
     async fn rebuild_config_for_resume_or_fallback_uses_current_config_on_same_cwd_error()
     -> Result<()> {
         let mut app = make_test_app().await;
-        let codex_home = tempdir()?;
-        app.config.codex_home = codex_home.path().to_path_buf();
-        std::fs::write(codex_home.path().join("config.toml"), "[broken")?;
+        let chaos_home = tempdir()?;
+        app.config.chaos_home = chaos_home.path().to_path_buf();
+        std::fs::write(chaos_home.path().join("config.toml"), "[broken")?;
         let current_config = app.config.clone();
         let current_cwd = current_config.cwd.clone();
 
@@ -6167,9 +6375,9 @@ guardian_approval = true
     #[tokio::test]
     async fn rebuild_config_for_resume_or_fallback_errors_when_cwd_changes() -> Result<()> {
         let mut app = make_test_app().await;
-        let codex_home = tempdir()?;
-        app.config.codex_home = codex_home.path().to_path_buf();
-        std::fs::write(codex_home.path().join("config.toml"), "[broken")?;
+        let chaos_home = tempdir()?;
+        app.config.chaos_home = chaos_home.path().to_path_buf();
+        std::fs::write(chaos_home.path().join("config.toml"), "[broken")?;
         let current_cwd = app.config.cwd.clone();
         let next_cwd_tmp = tempdir()?;
         let next_cwd = next_cwd_tmp.path().to_path_buf();

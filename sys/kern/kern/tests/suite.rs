@@ -12,7 +12,7 @@ struct TestCodexAliasesGuard {
     _previous_codex_home: Option<OsString>,
 }
 
-const CODEX_HOME_ENV_VAR: &str = "CODEX_HOME";
+const CHAOS_HOME_ENV_VAR: &str = "CHAOS_HOME";
 
 // This code runs before any other tests are run.
 // It allows the test binary to behave like codex and dispatch to apply_patch and alcatraz-linux
@@ -21,34 +21,34 @@ const CODEX_HOME_ENV_VAR: &str = "CODEX_HOME";
 #[ctor]
 pub static CODEX_ALIASES_TEMP_DIR: TestCodexAliasesGuard = unsafe {
     #[allow(clippy::unwrap_used)]
-    let codex_home = tempfile::Builder::new()
+    let chaos_home = tempfile::Builder::new()
         .prefix("codex-core-tests")
         .tempdir()
         .unwrap();
-    let previous_codex_home = std::env::var_os(CODEX_HOME_ENV_VAR);
-    // arg0_dispatch() creates helper links under CODEX_HOME/tmp. Point it at a
-    // test-owned temp dir so startup never mutates the developer's real ~/.codex.
+    let previous_codex_home = std::env::var_os(CHAOS_HOME_ENV_VAR);
+    // arg0_dispatch() creates helper links under CHAOS_HOME/tmp. Point it at a
+    // test-owned temp dir so startup never mutates the developer's real ~/.chaos.
     //
     // Safety: #[ctor] runs before tests start, so no test threads exist yet.
     unsafe {
-        std::env::set_var(CODEX_HOME_ENV_VAR, codex_home.path());
+        std::env::set_var(CHAOS_HOME_ENV_VAR, chaos_home.path());
     }
 
     #[allow(clippy::unwrap_used)]
     let arg0 = arg0_dispatch().unwrap();
     // Restore the process environment immediately so later tests observe the
-    // same CODEX_HOME state they started with.
+    // same CHAOS_HOME state they started with.
     match previous_codex_home.as_ref() {
         Some(value) => unsafe {
-            std::env::set_var(CODEX_HOME_ENV_VAR, value);
+            std::env::set_var(CHAOS_HOME_ENV_VAR, value);
         },
         None => unsafe {
-            std::env::remove_var(CODEX_HOME_ENV_VAR);
+            std::env::remove_var(CHAOS_HOME_ENV_VAR);
         },
     }
 
     TestCodexAliasesGuard {
-        _codex_home: codex_home,
+        _codex_home: chaos_home,
         _arg0: arg0,
         _previous_codex_home: previous_codex_home,
     }

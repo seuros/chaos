@@ -306,8 +306,8 @@ async fn linux_sh_snapshot_includes_sections() -> Result<()> {
     Ok(())
 }
 
-async fn write_session_file_stub(codex_home: &Path, session_id: ProcessId) -> Result<PathBuf> {
-    let dir = codex_home
+async fn write_session_file_stub(chaos_home: &Path, session_id: ProcessId) -> Result<PathBuf> {
+    let dir = chaos_home
         .join("sessions")
         .join("2025")
         .join("01")
@@ -321,8 +321,8 @@ async fn write_session_file_stub(codex_home: &Path, session_id: ProcessId) -> Re
 #[tokio::test]
 async fn cleanup_stale_snapshots_removes_orphans_and_keeps_live() -> Result<()> {
     let dir = tempdir()?;
-    let codex_home = dir.path();
-    let snapshot_dir = codex_home.join(SNAPSHOT_DIR);
+    let chaos_home = dir.path();
+    let snapshot_dir = chaos_home.join(SNAPSHOT_DIR);
     fs::create_dir_all(&snapshot_dir).await?;
 
     let live_session = ProcessId::new();
@@ -331,12 +331,12 @@ async fn cleanup_stale_snapshots_removes_orphans_and_keeps_live() -> Result<()> 
     let orphan_snapshot = snapshot_dir.join(format!("{orphan_session}.sh"));
     let invalid_snapshot = snapshot_dir.join("not-a-snapshot.txt");
 
-    write_session_file_stub(codex_home, live_session).await?;
+    write_session_file_stub(chaos_home, live_session).await?;
     fs::write(&live_snapshot, "live").await?;
     fs::write(&orphan_snapshot, "orphan").await?;
     fs::write(&invalid_snapshot, "invalid").await?;
 
-    cleanup_stale_snapshots(codex_home, ProcessId::new()).await?;
+    cleanup_stale_snapshots(chaos_home, ProcessId::new()).await?;
 
     assert_eq!(live_snapshot.exists(), true);
     assert_eq!(orphan_snapshot.exists(), false);
@@ -348,18 +348,18 @@ async fn cleanup_stale_snapshots_removes_orphans_and_keeps_live() -> Result<()> 
 #[tokio::test]
 async fn cleanup_stale_snapshots_removes_stale_sessions() -> Result<()> {
     let dir = tempdir()?;
-    let codex_home = dir.path();
-    let snapshot_dir = codex_home.join(SNAPSHOT_DIR);
+    let chaos_home = dir.path();
+    let snapshot_dir = chaos_home.join(SNAPSHOT_DIR);
     fs::create_dir_all(&snapshot_dir).await?;
 
     let stale_session = ProcessId::new();
     let stale_snapshot = snapshot_dir.join(format!("{stale_session}.sh"));
-    let session_file = write_session_file_stub(codex_home, stale_session).await?;
+    let session_file = write_session_file_stub(chaos_home, stale_session).await?;
     fs::write(&stale_snapshot, "stale").await?;
 
     set_file_mtime(&session_file, SNAPSHOT_RETENTION + Duration::from_secs(60))?;
 
-    cleanup_stale_snapshots(codex_home, ProcessId::new()).await?;
+    cleanup_stale_snapshots(chaos_home, ProcessId::new()).await?;
 
     assert_eq!(stale_snapshot.exists(), false);
     Ok(())
@@ -369,18 +369,18 @@ async fn cleanup_stale_snapshots_removes_stale_sessions() -> Result<()> {
 #[tokio::test]
 async fn cleanup_stale_snapshots_skips_active_session() -> Result<()> {
     let dir = tempdir()?;
-    let codex_home = dir.path();
-    let snapshot_dir = codex_home.join(SNAPSHOT_DIR);
+    let chaos_home = dir.path();
+    let snapshot_dir = chaos_home.join(SNAPSHOT_DIR);
     fs::create_dir_all(&snapshot_dir).await?;
 
     let active_session = ProcessId::new();
     let active_snapshot = snapshot_dir.join(format!("{active_session}.sh"));
-    let session_file = write_session_file_stub(codex_home, active_session).await?;
+    let session_file = write_session_file_stub(chaos_home, active_session).await?;
     fs::write(&active_snapshot, "active").await?;
 
     set_file_mtime(&session_file, SNAPSHOT_RETENTION + Duration::from_secs(60))?;
 
-    cleanup_stale_snapshots(codex_home, active_session).await?;
+    cleanup_stale_snapshots(chaos_home, active_session).await?;
 
     assert_eq!(active_snapshot.exists(), true);
     Ok(())

@@ -7,7 +7,7 @@ use std::sync::Arc;
 use std::sync::atomic::AtomicU64;
 
 use crate::AuthManager;
-use crate::CodexAuth;
+use crate::ChaosAuth;
 use crate::SandboxState;
 use crate::analytics_client::AnalyticsEventsClient;
 use crate::analytics_client::build_track_events_context;
@@ -159,15 +159,17 @@ use crate::config::types::ShellEnvironmentPolicy;
 use crate::context_manager::ContextManager;
 use crate::context_manager::TotalTokenUsageBreakdown;
 use crate::environment_context::EnvironmentContext;
-use crate::error::CodexErr;
-use crate::error::Result as CodexResult;
+use crate::error::ChaosErr;
+use crate::error::Result as ChaosResult;
 #[cfg(test)]
 use crate::exec::StreamOutput;
 use crate::process::ProcessConfigSnapshot;
 use chaos_sysctl::CONFIG_TOML_FILE;
 
+#[path = "codex/rollout_reconstruction.rs"]
 mod rollout_reconstruction;
 #[cfg(test)]
+#[path = "codex/rollout_reconstruction_tests.rs"]
 mod rollout_reconstruction_tests;
 
 #[derive(Debug, PartialEq)]
@@ -304,9 +306,9 @@ use chaos_syslog::SessionTelemetry;
 use chaos_syslog::TelemetryAuthMode;
 use chaos_syslog::metrics::names::THREAD_STARTED_METRIC;
 
-/// The high-level interface to the Codex system.
+/// The high-level interface to the Chaos system.
 /// It operates as a queue pair where you send submissions and receive events.
-pub struct Codex {
+pub struct Chaos {
     pub(crate) tx_sub: Sender<Submission>,
     pub(crate) rx_event: Receiver<Event>,
     // Last known status of the agent.
@@ -319,16 +321,16 @@ pub struct Codex {
 
 pub(crate) type SessionLoopTermination = Shared<BoxFuture<'static, ()>>;
 
-/// Wrapper returned by [`Codex::spawn`] containing the spawned [`Codex`],
+/// Wrapper returned by [`Chaos::spawn`] containing the spawned [`Chaos`],
 /// the submission id for the initial `ConfigureSession` request and the
 /// unique session id.
-pub struct CodexSpawnOk {
-    pub codex: Codex,
+pub struct ChaosSpawnOk {
+    pub chaos: Chaos,
     pub process_id: ProcessId,
     pub conversation_id: ProcessId,
 }
 
-pub(crate) struct CodexSpawnArgs {
+pub(crate) struct ChaosSpawnArgs {
     pub(crate) config: Config,
     pub(crate) auth_manager: Arc<AuthManager>,
     pub(crate) models_manager: Arc<ModelsManager>,
@@ -350,9 +352,9 @@ pub(crate) const INITIAL_SUBMIT_ID: &str = "";
 pub(crate) const SUBMISSION_CHANNEL_CAPACITY: usize = 512;
 const CYBER_VERIFY_URL: &str = "https://chatgpt.com/cyber";
 const CYBER_SAFETY_URL: &str = "https://developers.openai.com/codex/concepts/cyber-safety";
-impl Codex {
-    /// Spawn a new [`Codex`] and initialize the session.
-    pub(crate) async fn spawn(args: CodexSpawnArgs) -> CodexResult<CodexSpawnOk> {
+impl Chaos {
+    /// Spawn a new [`Chaos`] and initialize the session.
+    pub(crate) async fn spawn(args: ChaosSpawnArgs) -> ChaosResult<ChaosSpawnOk> {
         let parent_trace = match args.parent_trace {
             Some(trace) => {
                 if chaos_syslog::context_from_w3c_trace_context(&trace).is_some() {
@@ -368,7 +370,7 @@ impl Codex {
         if let Some(trace) = parent_trace.as_ref() {
             let _ = set_parent_from_w3c_trace_context(&process_spawn_span, trace);
         }
-        Self::spawn_internal(CodexSpawnArgs {
+        Self::spawn_internal(ChaosSpawnArgs {
             parent_trace,
             ..args
         })
@@ -376,8 +378,8 @@ impl Codex {
         .await
     }
 
-    async fn spawn_internal(args: CodexSpawnArgs) -> CodexResult<CodexSpawnOk> {
-        let CodexSpawnArgs {
+    async fn spawn_internal(args: ChaosSpawnArgs) -> ChaosResult<ChaosSpawnOk> {
+        let ChaosSpawnArgs {
             mut config,
             auth_manager,
             models_manager,
@@ -424,7 +426,7 @@ impl Codex {
         } else {
             ExecPolicyManager::load(&config.config_layer_stack)
                 .await
-                .map_err(|err| CodexErr::Fatal(format!("failed to load rules: {err}")))?
+                .map_err(|err| ChaosErr::Fatal(format!("failed to load rules: {err}")))?
         };
 
         let config = Arc::new(config);
@@ -509,7 +511,7 @@ impl Codex {
             network_sandbox_policy: config.permissions.network_sandbox_policy,
             windows_sandbox_level: WindowsSandboxLevel::Disabled,
             cwd: config.cwd.clone(),
-            codex_home: config.codex_home.clone(),
+            chaos_home: config.chaos_home.clone(),
             process_name: None,
             original_config_do_not_use: Arc::clone(&config),
             metrics_service_name,
@@ -520,7 +522,7 @@ impl Codex {
             inherited_shell_snapshot,
         };
 
-        // Generate a unique ID for the lifetime of this Codex session.
+        // Generate a unique ID for the lifetime of this Chaos session.
         let session_source_clone = session_configuration.session_source.clone();
         let (agent_status_tx, agent_status_rx) = watch::channel(AgentStatus::PendingInit);
 
@@ -543,7 +545,7 @@ impl Codex {
         .await
         .map_err(|e| {
             error!("Failed to create session: {e:#}");
-            map_session_init_error(&e, &config.codex_home)
+            map_session_init_error(&e, &config.chaos_home)
         })?;
         let process_id = session.conversation_id;
 
@@ -554,7 +556,7 @@ impl Codex {
                 .instrument(info_span!("session_loop", process_id = %process_id))
                 .await;
         });
-        let codex = Codex {
+        let codex = Chaos {
             tx_sub,
             rx_event,
             agent_status: agent_status_rx,
@@ -562,15 +564,15 @@ impl Codex {
             session_loop_termination: session_loop_termination_from_handle(session_loop_handle),
         };
 
-        Ok(CodexSpawnOk {
-            codex,
+        Ok(ChaosSpawnOk {
+            chaos: codex,
             process_id,
             conversation_id: process_id,
         })
     }
 
     /// Submit the `op` wrapped in a `Submission` with a unique ID.
-    pub async fn submit(&self, op: Op) -> CodexResult<String> {
+    pub async fn submit(&self, op: Op) -> ChaosResult<String> {
         self.submit_with_trace(op, /*trace*/ None).await
     }
 
@@ -578,7 +580,7 @@ impl Codex {
         &self,
         op: Op,
         trace: Option<W3cTraceContext>,
-    ) -> CodexResult<String> {
+    ) -> ChaosResult<String> {
         let id = Uuid::now_v7().to_string();
         let sub = Submission {
             id: id.clone(),
@@ -589,36 +591,36 @@ impl Codex {
         Ok(id)
     }
 
-    /// Use sparingly: prefer `submit()` so Codex is responsible for generating
+    /// Use sparingly: prefer `submit()` so Chaos is responsible for generating
     /// unique IDs for each submission.
-    pub async fn submit_with_id(&self, mut sub: Submission) -> CodexResult<()> {
+    pub async fn submit_with_id(&self, mut sub: Submission) -> ChaosResult<()> {
         if sub.trace.is_none() {
             sub.trace = current_span_w3c_trace_context();
         }
         self.tx_sub
             .send(sub)
             .await
-            .map_err(|_| CodexErr::InternalAgentDied)?;
+            .map_err(|_| ChaosErr::InternalAgentDied)?;
         Ok(())
     }
 
-    pub async fn shutdown_and_wait(&self) -> CodexResult<()> {
+    pub async fn shutdown_and_wait(&self) -> ChaosResult<()> {
         let session_loop_termination = self.session_loop_termination.clone();
         match self.submit(Op::Shutdown).await {
             Ok(_) => {}
-            Err(CodexErr::InternalAgentDied) => {}
+            Err(ChaosErr::InternalAgentDied) => {}
             Err(err) => return Err(err),
         }
         session_loop_termination.await;
         Ok(())
     }
 
-    pub async fn next_event(&self) -> CodexResult<Event> {
+    pub async fn next_event(&self) -> ChaosResult<Event> {
         let event = self
             .rx_event
             .recv()
             .await
-            .map_err(|_| CodexErr::InternalAgentDied)?;
+            .map_err(|_| ChaosErr::InternalAgentDied)?;
         Ok(event)
     }
 
@@ -959,8 +961,8 @@ pub(crate) struct SessionConfiguration {
     /// `ConfigureSession` operation so that the business-logic layer can
     /// operate deterministically.
     cwd: PathBuf,
-    /// Directory containing all Codex state for this session.
-    codex_home: PathBuf,
+    /// Directory containing all Chaos state for this session.
+    chaos_home: PathBuf,
     /// Optional user-facing name for the thread, updated during the session.
     process_name: Option<String>,
 
@@ -977,8 +979,8 @@ pub(crate) struct SessionConfiguration {
 }
 
 impl SessionConfiguration {
-    pub(crate) fn codex_home(&self) -> &PathBuf {
-        &self.codex_home
+    pub(crate) fn chaos_home(&self) -> &PathBuf {
+        &self.chaos_home
     }
 
     fn process_config_snapshot(&self) -> ProcessConfigSnapshot {
@@ -1166,9 +1168,9 @@ impl Session {
         per_turn_config
     }
 
-    pub(crate) async fn codex_home(&self) -> PathBuf {
+    pub(crate) async fn chaos_home(&self) -> PathBuf {
         let state = self.state.lock().await;
-        state.session_configuration.codex_home().clone()
+        state.session_configuration.chaos_home().clone()
     }
 
     pub(crate) fn subscribe_out_of_band_elicitation_pause_state(&self) -> watch::Receiver<bool> {
@@ -1400,18 +1402,6 @@ impl Session {
             session_configuration.session_source,
             SessionSource::SubAgent(_)
         );
-        let history_meta_fut = async {
-            if is_subagent {
-                (0, 0)
-            } else {
-                crate::message_history::history_metadata(&config).await
-            }
-        }
-        .instrument(info_span!(
-            "session_init.history_metadata",
-            otel.name = "session_init.history_metadata",
-            session_init.is_subagent = is_subagent,
-        ));
         let auth_manager_clone = Arc::clone(&auth_manager);
         let config_for_mcp = Arc::clone(&config);
         let mcp_manager_for_mcp = Arc::clone(&mcp_manager);
@@ -1431,16 +1421,26 @@ impl Session {
         ));
 
         // Join all independent futures.
-        let (
-            rollout_recorder_and_state_db,
-            (history_log_id, history_entry_count),
-            (auth, mcp_servers, auth_statuses),
-        ) = tokio::join!(rollout_fut, history_meta_fut, auth_and_mcp_fut);
+        let (rollout_recorder_and_state_db, (auth, mcp_servers, auth_statuses)) =
+            tokio::join!(rollout_fut, auth_and_mcp_fut);
 
         let (rollout_recorder, state_db_ctx) = rollout_recorder_and_state_db.map_err(|e| {
             error!("failed to initialize rollout recorder: {e:#}");
             e
         })?;
+        let (history_log_id, history_entry_count) = async {
+            if is_subagent {
+                (0, 0)
+            } else {
+                crate::message_history::history_metadata(state_db_ctx.as_deref()).await
+            }
+        }
+        .instrument(info_span!(
+            "session_init.history_metadata",
+            otel.name = "session_init.history_metadata",
+            session_init.is_subagent = is_subagent,
+        ))
+        .await;
         let mut post_session_configured_events = Vec::<Event>::new();
 
         for usage in config.features.legacy_feature_usages() {
@@ -1484,9 +1484,9 @@ impl Session {
         }
 
         let auth = auth.as_ref();
-        let auth_mode = auth.map(CodexAuth::auth_mode).map(TelemetryAuthMode::from);
-        let account_id = auth.and_then(CodexAuth::get_account_id);
-        let account_email = auth.and_then(CodexAuth::get_account_email);
+        let auth_mode = auth.map(ChaosAuth::auth_mode).map(TelemetryAuthMode::from);
+        let account_id = auth.and_then(ChaosAuth::get_account_id);
+        let account_email = auth.and_then(ChaosAuth::get_account_email);
         let originator = crate::default_client::originator().value;
         let terminal_type = terminal::user_agent();
         let session_model = session_configuration.collaboration_mode.model().to_string();
@@ -1569,7 +1569,7 @@ impl Session {
                 tx
             } else {
                 ShellSnapshot::start_snapshotting(
-                    config.codex_home.clone(),
+                    config.chaos_home.clone(),
                     conversation_id,
                     session_configuration.cwd.clone(),
                     &mut default_shell,
@@ -1582,7 +1582,7 @@ impl Session {
             tx
         };
         let process_name =
-            match process_names::find_process_name_by_id(&config.codex_home, &conversation_id)
+            match process_names::find_process_name_by_id(&config.chaos_home, &conversation_id)
                 .instrument(info_span!(
                     "session_init.process_name_lookup",
                     otel.name = "session_init.process_name_lookup",
@@ -1803,7 +1803,7 @@ impl Session {
             &session_configuration.approval_policy,
             tx_event.clone(),
             sandbox_state,
-            config.codex_home.clone(),
+            config.chaos_home.clone(),
         )
         .instrument(info_span!(
             "session_init.mcp_manager_init",
@@ -1977,7 +1977,7 @@ impl Session {
                         EventMsg::Warning(WarningEvent {
                             message: format!(
                                 "This session was recorded with model `{prev}` but is resuming with `{curr}`. \
-                         Consider switching back to `{prev}` as it may affect Codex performance."
+                         Consider switching back to `{prev}` as it may affect Chaos performance."
                             ),
                         }),
                     )
@@ -2076,7 +2076,7 @@ impl Session {
         &self,
         previous_cwd: &Path,
         next_cwd: &Path,
-        codex_home: &Path,
+        chaos_home: &Path,
         session_source: &SessionSource,
     ) {
         if previous_cwd == next_cwd {
@@ -2095,7 +2095,7 @@ impl Session {
         }
 
         ShellSnapshot::refresh_snapshot(
-            codex_home.to_path_buf(),
+            chaos_home.to_path_buf(),
             self.conversation_id,
             next_cwd.to_path_buf(),
             self.services.user_shell.as_ref().clone(),
@@ -2114,7 +2114,7 @@ impl Session {
             Ok(updated) => {
                 let previous_cwd = state.session_configuration.cwd.clone();
                 let next_cwd = updated.cwd.clone();
-                let codex_home = updated.codex_home.clone();
+                let chaos_home = updated.chaos_home.clone();
                 let session_source = updated.session_source.clone();
                 state.session_configuration = updated;
                 drop(state);
@@ -2122,7 +2122,7 @@ impl Session {
                 self.maybe_refresh_shell_snapshot_for_cwd(
                     &previous_cwd,
                     &next_cwd,
-                    &codex_home,
+                    &chaos_home,
                     &session_source,
                 );
 
@@ -2144,7 +2144,7 @@ impl Session {
             session_configuration,
             sandbox_policy_changed,
             previous_cwd,
-            codex_home,
+            chaos_home,
             session_source,
         ) = {
             let mut state = self.state.lock().await;
@@ -2153,14 +2153,14 @@ impl Session {
                     let previous_cwd = state.session_configuration.cwd.clone();
                     let sandbox_policy_changed =
                         state.session_configuration.sandbox_policy != next.sandbox_policy;
-                    let codex_home = next.codex_home.clone();
+                    let chaos_home = next.chaos_home.clone();
                     let session_source = next.session_source.clone();
                     state.session_configuration = next.clone();
                     (
                         next,
                         sandbox_policy_changed,
                         previous_cwd,
-                        codex_home,
+                        chaos_home,
                         session_source,
                     )
                 }
@@ -2182,7 +2182,7 @@ impl Session {
         self.maybe_refresh_shell_snapshot_for_cwd(
             &previous_cwd,
             &session_configuration.cwd,
-            &codex_home,
+            &chaos_home,
             &session_source,
         );
 
@@ -2311,7 +2311,7 @@ impl Session {
 
     async fn schedule_startup_prewarm(self: &Arc<Self>, base_instructions: String) {
         let sess = Arc::clone(self);
-        let startup_regular_task: JoinHandle<CodexResult<RegularTask>> =
+        let startup_regular_task: JoinHandle<ChaosResult<RegularTask>> =
             tokio::spawn(
                 async move { sess.schedule_startup_prewarm_inner(base_instructions).await },
             );
@@ -2322,7 +2322,7 @@ impl Session {
     async fn schedule_startup_prewarm_inner(
         self: &Arc<Self>,
         base_instructions: String,
-    ) -> CodexResult<RegularTask> {
+    ) -> ChaosResult<RegularTask> {
         let startup_turn_context = self
             .new_default_turn_with_sub_id(INITIAL_SUBMIT_ID.to_owned())
             .await;
@@ -2368,7 +2368,7 @@ impl Session {
             let state = self.state.lock().await;
             state
                 .session_configuration
-                .codex_home
+                .chaos_home
                 .join(CONFIG_TOML_FILE)
         };
 
@@ -2517,17 +2517,17 @@ impl Session {
         &self,
         amendment: &ExecPolicyAmendment,
     ) -> Result<(), ExecPolicyUpdateError> {
-        let codex_home = self
+        let chaos_home = self
             .state
             .lock()
             .await
             .session_configuration
-            .codex_home()
+            .chaos_home()
             .clone();
 
         self.services
             .exec_policy
-            .append_amendment_and_update(&codex_home, amendment)
+            .append_amendment_and_update(&chaos_home, amendment)
             .await?;
 
         Ok(())
@@ -2589,12 +2589,12 @@ impl Session {
     ) -> anyhow::Result<()> {
         let host =
             Self::validated_network_policy_amendment_host(amendment, network_approval_context)?;
-        let codex_home = self
+        let chaos_home = self
             .state
             .lock()
             .await
             .session_configuration
-            .codex_home()
+            .chaos_home()
             .clone();
         let execpolicy_amendment =
             execpolicy_network_rule_amendment(amendment, network_approval_context, &host);
@@ -2616,7 +2616,7 @@ impl Session {
         self.services
             .exec_policy
             .append_network_rule_and_update(
-                &codex_home,
+                &chaos_home,
                 &host,
                 execpolicy_amendment.protocol,
                 execpolicy_amendment.decision,
@@ -3309,7 +3309,7 @@ impl Session {
         if turn_context.features.enabled(Feature::MemoryTool)
             && turn_context.config.memories.use_memories
             && let Some(memory_prompt) =
-                build_memory_tool_developer_instructions(&turn_context.config.codex_home).await
+                build_memory_tool_developer_instructions(&turn_context.config.chaos_home).await
         {
             developer_sections.push(memory_prompt);
         }
@@ -3597,7 +3597,7 @@ impl Session {
         &self,
         turn_context: &TurnContext,
         message: impl Into<String>,
-        codex_error: CodexErr,
+        codex_error: ChaosErr,
     ) {
         let additional_details = codex_error.to_string();
         let codex_error_info = CodexErrorInfo::ResponseStreamDisconnected {
@@ -3842,7 +3842,7 @@ impl Session {
             &turn_context.config.permissions.approval_policy,
             self.get_tx_event(),
             sandbox_state,
-            config.codex_home.clone(),
+            config.chaos_home.clone(),
         )
         .await;
         {
@@ -4165,11 +4165,11 @@ fn submission_dispatch_span(sub: &Submission) -> tracing::Span {
 
 /// Operation handlers
 mod handlers {
-    use crate::codex::Session;
-    use crate::codex::SessionSettingsUpdate;
-    use crate::codex::SteerInputError;
+    use crate::chaos::Session;
+    use crate::chaos::SessionSettingsUpdate;
+    use crate::chaos::SteerInputError;
 
-    use crate::codex::spawn_review_thread;
+    use crate::chaos::spawn_review_thread;
     use crate::config::Config;
 
     use crate::mcp::auth::compute_auth_statuses;
@@ -4191,9 +4191,11 @@ mod handlers {
     use chaos_ipc::protocol::ListRemoteSkillsResponseEvent;
     use chaos_ipc::protocol::ListSkillsResponseEvent;
     use chaos_ipc::protocol::McpServerRefreshConfig;
+    use chaos_ipc::protocol::InitialHistory;
     use chaos_ipc::protocol::Op;
     use chaos_ipc::protocol::ProcessNameUpdatedEvent;
     use chaos_ipc::protocol::ProcessRolledBackEvent;
+    use chaos_ipc::protocol::ResumedHistory;
     use chaos_ipc::protocol::RemoteSkillDownloadedEvent;
     use chaos_ipc::protocol::RemoteSkillHazelnutScope;
     use chaos_ipc::protocol::RemoteSkillProductSurface;
@@ -4465,8 +4467,11 @@ mod handlers {
     pub async fn add_to_history(sess: &Arc<Session>, config: &Arc<Config>, text: String) {
         let id = sess.conversation_id;
         let config = Arc::clone(config);
+        let state_db = sess.services.state_db.clone();
         tokio::spawn(async move {
-            if let Err(e) = crate::message_history::append_entry(&text, &id, &config).await {
+            if let Err(e) =
+                crate::message_history::append_entry(&text, &id, state_db.as_deref(), &config).await
+            {
                 warn!("failed to append to message history: {e}");
             }
         });
@@ -4479,16 +4484,12 @@ mod handlers {
         offset: usize,
         log_id: u64,
     ) {
-        let config = Arc::clone(config);
         let sess_clone = Arc::clone(sess);
+        let state_db = sess.services.state_db.clone();
+        let _config = Arc::clone(config);
 
         tokio::spawn(async move {
-            // Run lookup in blocking thread because it does file IO + locking.
-            let entry_opt = tokio::task::spawn_blocking(move || {
-                crate::message_history::lookup(log_id, offset, &config)
-            })
-            .await
-            .unwrap_or(None);
+            let entry_opt = crate::message_history::lookup(log_id, offset, state_db.as_deref()).await;
 
             let event = Event {
                 id: sub_id,
@@ -4496,11 +4497,7 @@ mod handlers {
                     crate::protocol::GetHistoryEntryResponseEvent {
                         offset,
                         log_id,
-                        entry: entry_opt.map(|e| chaos_ipc::message_history::HistoryEntry {
-                            conversation_id: e.session_id,
-                            ts: e.ts,
-                            text: e.text,
-                        }),
+                        entry: entry_opt,
                     },
                 ),
             };
@@ -4707,7 +4704,7 @@ mod handlers {
             errors.push("state db unavailable; memory rows were not cleared".to_string());
         }
 
-        let memory_root = crate::memories::memory_root(&config.codex_home);
+        let memory_root = crate::memories::memory_root(&config.chaos_home);
         if let Err(err) = crate::memories::clear_memory_root_contents(&memory_root).await {
             errors.push(format!(
                 "failed clearing memory directory {}: {err}",
@@ -4816,17 +4813,24 @@ mod handlers {
             match RolloutRecorder::get_rollout_history_for_process(sess.conversation_id).await {
                 Ok(history) => history,
                 Err(err) => {
-                    sess.send_event_raw(Event {
-                    id: turn_context.sub_id.clone(),
-                    msg: EventMsg::Error(ErrorEvent {
-                        message: format!(
-                            "failed to load persisted session history for rollback replay: {err}"
-                        ),
-                        codex_error_info: Some(CodexErrorInfo::ProcessRollbackFailed),
-                    }),
-                })
-                .await;
-                    return;
+                    let live_rollout_items = recorder.snapshot_rollout_items();
+                    if live_rollout_items.is_empty() {
+                        sess.send_event_raw(Event {
+                            id: turn_context.sub_id.clone(),
+                            msg: EventMsg::Error(ErrorEvent {
+                                message: format!(
+                                    "failed to load persisted session history for rollback replay: {err}"
+                                ),
+                                codex_error_info: Some(CodexErrorInfo::ProcessRollbackFailed),
+                            }),
+                        })
+                        .await;
+                        return;
+                    }
+                    InitialHistory::Resumed(ResumedHistory {
+                        conversation_id: sess.conversation_id,
+                        history: live_rollout_items,
+                    })
                 }
             };
 
@@ -4884,9 +4888,9 @@ mod handlers {
             return;
         };
 
-        let codex_home = sess.codex_home().await;
+        let chaos_home = sess.chaos_home().await;
         if let Err(e) =
-            process_names::append_process_name(&codex_home, sess.conversation_id, &name).await
+            process_names::append_process_name(&chaos_home, sess.conversation_id, &name).await
         {
             let event = Event {
                 id: sub_id,
@@ -4921,7 +4925,7 @@ mod handlers {
             .terminate_all_processes()
             .await;
         sess.guardian_review_session.shutdown().await;
-        info!("Shutting down Codex instance");
+        info!("Shutting down Chaos instance");
         let history = sess.clone_history().await;
         let turn_count = history
             .raw_items()
@@ -5639,11 +5643,11 @@ pub(crate) async fn run_turn(
                 }
                 continue;
             }
-            Err(CodexErr::TurnAborted) => {
+            Err(ChaosErr::TurnAborted) => {
                 // Aborted turn is reported via a different event.
                 break;
             }
-            Err(CodexErr::InvalidImageRequest()) => {
+            Err(ChaosErr::InvalidImageRequest()) => {
                 let mut state = sess.state.lock().await;
                 error_or_panic(
                     "Invalid image detected; sanitizing tool output to prevent poisoning",
@@ -5675,7 +5679,7 @@ pub(crate) async fn run_turn(
 async fn run_pre_sampling_compact(
     sess: &Arc<Session>,
     turn_context: &Arc<TurnContext>,
-) -> CodexResult<()> {
+) -> ChaosResult<()> {
     let total_usage_tokens_before_compaction = sess.get_total_token_usage().await;
     maybe_run_previous_model_inline_compact(
         sess,
@@ -5705,7 +5709,7 @@ async fn maybe_run_previous_model_inline_compact(
     sess: &Arc<Session>,
     turn_context: &Arc<TurnContext>,
     total_usage_tokens: i64,
-) -> CodexResult<bool> {
+) -> ChaosResult<bool> {
     let Some(previous_turn_settings) = sess.previous_turn_settings().await else {
         return Ok(false);
     };
@@ -5744,7 +5748,7 @@ async fn run_auto_compact(
     sess: &Arc<Session>,
     turn_context: &Arc<TurnContext>,
     initial_context_injection: InitialContextInjection,
-) -> CodexResult<()> {
+) -> ChaosResult<()> {
     if should_use_remote_compact_task(&turn_context.provider) {
         run_inline_remote_auto_compact_task(
             Arc::clone(sess),
@@ -5813,7 +5817,7 @@ async fn run_sampling_request(
     skills_outcome: Option<&SkillLoadOutcome>,
     server_model_warning_emitted_for_turn: &mut bool,
     cancellation_token: CancellationToken,
-) -> CodexResult<SamplingRequestResult> {
+) -> ChaosResult<SamplingRequestResult> {
     let router = built_tools(
         sess.as_ref(),
         turn_context.as_ref(),
@@ -5855,16 +5859,16 @@ async fn run_sampling_request(
             Ok(output) => {
                 return Ok(output);
             }
-            Err(CodexErr::ContextWindowExceeded) => {
+            Err(ChaosErr::ContextWindowExceeded) => {
                 sess.set_total_tokens_full(&turn_context).await;
-                return Err(CodexErr::ContextWindowExceeded);
+                return Err(ChaosErr::ContextWindowExceeded);
             }
-            Err(CodexErr::UsageLimitReached(e)) => {
+            Err(ChaosErr::UsageLimitReached(e)) => {
                 let rate_limits = e.rate_limits.clone();
                 if let Some(rate_limits) = rate_limits {
                     sess.update_rate_limits(&turn_context, *rate_limits).await;
                 }
-                return Err(CodexErr::UsageLimitReached(e));
+                return Err(ChaosErr::UsageLimitReached(e));
             }
             Err(err) => err,
         };
@@ -5894,7 +5898,7 @@ async fn run_sampling_request(
         if retries < max_retries {
             retries += 1;
             let delay = match &err {
-                CodexErr::Stream(_, requested_delay) => {
+                ChaosErr::Stream(_, requested_delay) => {
                     requested_delay.unwrap_or_else(|| backoff(retries))
                 }
                 _ => backoff(retries),
@@ -5935,7 +5939,7 @@ pub(crate) async fn built_tools(
     _input: &[ResponseItem],
     _skills_outcome: Option<&SkillLoadOutcome>,
     cancellation_token: &CancellationToken,
-) -> CodexResult<Arc<ToolRouter>> {
+) -> ChaosResult<Arc<ToolRouter>> {
     let mcp_connection_manager = sess.services.mcp_connection_manager.read().await;
     let has_mcp_servers = mcp_connection_manager.has_servers();
     let mcp_tools = mcp_connection_manager
@@ -6397,10 +6401,10 @@ async fn handle_assistant_item_done_in_plan_mode(
 }
 
 async fn drain_in_flight(
-    in_flight: &mut FuturesOrdered<BoxFuture<'static, CodexResult<ResponseInputItem>>>,
+    in_flight: &mut FuturesOrdered<BoxFuture<'static, ChaosResult<ResponseInputItem>>>,
     sess: Arc<Session>,
     turn_context: Arc<TurnContext>,
-) -> CodexResult<()> {
+) -> ChaosResult<()> {
     while let Some(res) = in_flight.next().await {
         match res {
             Ok(response_input) => {
@@ -6433,7 +6437,7 @@ async fn try_run_sampling_request(
     server_model_warning_emitted_for_turn: &mut bool,
     prompt: &Prompt,
     cancellation_token: CancellationToken,
-) -> CodexResult<SamplingRequestResult> {
+) -> ChaosResult<SamplingRequestResult> {
     feedback_tags!(
         model = turn_context.model_info.slug.clone(),
         approval_policy = turn_context.approval_policy.value(),
@@ -6455,7 +6459,7 @@ async fn try_run_sampling_request(
         .instrument(trace_span!("stream_request"))
         .or_cancel(&cancellation_token)
         .await??;
-    let mut in_flight: FuturesOrdered<BoxFuture<'static, CodexResult<ResponseInputItem>>> =
+    let mut in_flight: FuturesOrdered<BoxFuture<'static, ChaosResult<ResponseInputItem>>> =
         FuturesOrdered::new();
     let mut needs_follow_up = false;
     let mut last_agent_message: Option<String> = None;
@@ -6465,7 +6469,7 @@ async fn try_run_sampling_request(
     let mut assistant_message_stream_parsers = AssistantMessageStreamParsers::new(plan_mode);
     let mut plan_mode_state = plan_mode.then(|| PlanModeStreamState::new(&turn_context.sub_id));
     let receiving_span = trace_span!("receiving_stream");
-    let outcome: CodexResult<SamplingRequestResult> = loop {
+    let outcome: ChaosResult<SamplingRequestResult> = loop {
         let handle_responses = trace_span!(
             parent: &receiving_span,
             "handle_responses",
@@ -6481,13 +6485,13 @@ async fn try_run_sampling_request(
             .await
         {
             Ok(event) => event,
-            Err(chaos_epoll::CancelErr::Cancelled) => break Err(CodexErr::TurnAborted),
+            Err(chaos_epoll::CancelErr::Cancelled) => break Err(ChaosErr::TurnAborted),
         };
 
         let event = match event {
             Some(res) => res?,
             None => {
-                break Err(CodexErr::Stream(
+                break Err(ChaosErr::Stream(
                     "stream closed before response.completed".into(),
                     None,
                 ));
@@ -6740,7 +6744,7 @@ async fn try_run_sampling_request(
     drain_in_flight(&mut in_flight, sess.clone(), turn_context.clone()).await?;
 
     if cancellation_token.is_cancelled() {
-        return Err(CodexErr::TurnAborted);
+        return Err(ChaosErr::TurnAborted);
     }
 
     if should_emit_turn_diff {

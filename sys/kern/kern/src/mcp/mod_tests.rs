@@ -184,8 +184,8 @@ fn codex_apps_server_config_uses_legacy_codex_apps_path() {
 
 #[tokio::test]
 async fn effective_mcp_servers_include_plugins_without_overriding_user_config() {
-    let codex_home = tempfile::tempdir().expect("tempdir");
-    let plugin_root = codex_home
+    let chaos_home = tempfile::tempdir().expect("tempdir");
+    let plugin_root = chaos_home
         .path()
         .join("plugins/cache")
         .join("test/sample/local");
@@ -209,12 +209,12 @@ async fn effective_mcp_servers_include_plugins_without_overriding_user_config() 
 }"#,
     );
     write_file(
-        &codex_home.path().join(CONFIG_TOML_FILE),
+        &chaos_home.path().join(CONFIG_TOML_FILE),
         &plugin_config_toml(),
     );
 
     let mut config = ConfigBuilder::default()
-        .codex_home(codex_home.path().to_path_buf())
+        .chaos_home(chaos_home.path().to_path_buf())
         .build()
         .await
         .expect("config should load");
@@ -245,7 +245,7 @@ async fn effective_mcp_servers_include_plugins_without_overriding_user_config() 
         .set(configured_servers)
         .expect("test config should accept MCP servers");
 
-    let mcp_manager = McpManager::new(Arc::new(PluginsManager::new(config.codex_home.clone())));
+    let mcp_manager = McpManager::new(Arc::new(PluginsManager::new(config.chaos_home.clone())));
     let effective = mcp_manager.effective_servers(&config, None);
 
     let sample = effective.get("sample").expect("user server should exist");

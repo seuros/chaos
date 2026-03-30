@@ -1296,7 +1296,6 @@ dependencies = [
  "chaos-wchar",
  "chaos-which",
  "chardetng",
- "chrono",
  "clap",
  "codex-client",
  "core-foundation",
@@ -1585,7 +1584,6 @@ dependencies = [
 name = "chaos-ration"
 version = "47.0.0"
 dependencies = [
- "chrono",
  "serde",
  "thiserror 2.0.18",
  "tokio",
@@ -1853,7 +1851,6 @@ dependencies = [
  "chaos-uptime",
  "chaos-wchar",
  "chaos-which",
- "chrono",
  "clap",
  "color-eyre",
  "crossterm",
@@ -1863,6 +1860,7 @@ dependencies = [
  "image",
  "insta",
  "itertools 0.14.0",
+ "jiff",
  "libc",
  "mcp-guest",
  "pathdiff",

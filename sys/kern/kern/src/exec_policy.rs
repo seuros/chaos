@@ -280,10 +280,10 @@ impl ExecPolicyManager {
 
     pub(crate) async fn append_amendment_and_update(
         &self,
-        codex_home: &Path,
+        chaos_home: &Path,
         amendment: &ExecPolicyAmendment,
     ) -> Result<(), ExecPolicyUpdateError> {
-        let policy_path = default_policy_path(codex_home);
+        let policy_path = default_policy_path(chaos_home);
         let prefix = amendment.command.clone();
         spawn_blocking({
             let policy_path = policy_path.clone();
@@ -305,13 +305,13 @@ impl ExecPolicyManager {
 
     pub(crate) async fn append_network_rule_and_update(
         &self,
-        codex_home: &Path,
+        chaos_home: &Path,
         host: &str,
         protocol: NetworkRuleProtocol,
         decision: Decision,
         justification: Option<String>,
     ) -> Result<(), ExecPolicyUpdateError> {
-        let policy_path = default_policy_path(codex_home);
+        let policy_path = default_policy_path(chaos_home);
         let host = host.to_string();
         spawn_blocking({
             let policy_path = policy_path.clone();
@@ -564,8 +564,8 @@ pub fn render_decision_for_unmatched_command(
     }
 }
 
-fn default_policy_path(codex_home: &Path) -> PathBuf {
-    codex_home.join(RULES_DIR_NAME).join(DEFAULT_POLICY_FILE)
+fn default_policy_path(chaos_home: &Path) -> PathBuf {
+    chaos_home.join(RULES_DIR_NAME).join(DEFAULT_POLICY_FILE)
 }
 
 fn commands_for_exec_policy(command: &[String]) -> (Vec<Vec<String>>, bool) {

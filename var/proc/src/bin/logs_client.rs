@@ -4,20 +4,21 @@ use std::time::Duration;
 use anyhow::Context;
 use chaos_proc::LogQuery;
 use chaos_proc::LogRow;
+use chaos_proc::LogTailCursor;
 use chaos_proc::StateRuntime;
 use clap::Parser;
-use dirs::home_dir;
 use owo_colors::OwoColorize;
 
 #[derive(Debug, Parser)]
 #[command(name = "codex-state-logs")]
-#[command(about = "Tail Codex logs from the dedicated logs SQLite DB with simple filters")]
+#[command(about = "Tail Chaos logs from the dedicated logs SQLite DB with simple filters")]
 struct Args {
-    /// Path to CODEX_HOME. Defaults to $CODEX_HOME or ~/.codex.
-    #[arg(long, env = "CODEX_HOME")]
-    codex_home: Option<PathBuf>,
+    /// Path to the ChaOS home directory. Defaults to `CHAOS_HOME`, then
+    /// `~/.chaos`.
+    #[arg(long)]
+    chaos_home: Option<PathBuf>,
 
-    /// Direct path to the logs SQLite database. Overrides --codex-home.
+    /// Direct path to the logs SQLite database. Overrides --chaos-home.
     #[arg(long)]
     db: Option<PathBuf>,
 
@@ -83,25 +84,22 @@ async fn main() -> anyhow::Result<()> {
     let args = Args::parse();
     let db_path = resolve_db_path(&args)?;
     let filter = build_filter(&args)?;
-    let codex_home = db_path
+    let chaos_home = db_path
         .parent()
         .map(ToOwned::to_owned)
         .unwrap_or_else(|| PathBuf::from("."));
-    let runtime = StateRuntime::init(codex_home, "logs-client".to_string()).await?;
+    let runtime = StateRuntime::init(chaos_home, "logs-client".to_string()).await?;
 
-    let mut last_id =
+    let mut cursor =
         print_backfill(runtime.as_ref(), &filter, args.backfill, args.compact).await?;
-    if last_id == 0 {
-        last_id = fetch_max_id(runtime.as_ref(), &filter).await?;
-    }
 
     let poll_interval = Duration::from_millis(args.poll_ms);
     loop {
-        let rows = fetch_new_rows(runtime.as_ref(), &filter, last_id).await?;
-        for row in rows {
-            last_id = last_id.max(row.id);
+        let polled = fetch_new_rows(runtime.as_ref(), &filter, &cursor).await?;
+        for row in &polled.rows {
             println!("{}", format_row(&row, args.compact));
         }
+        cursor = polled.cursor;
         tokio::time::sleep(poll_interval).await;
     }
 }
@@ -111,15 +109,26 @@ fn resolve_db_path(args: &Args) -> anyhow::Result<PathBuf> {
         return Ok(db.clone());
     }
 
-    let codex_home = args.codex_home.clone().unwrap_or_else(default_codex_home);
-    Ok(chaos_proc::logs_db_path(codex_home.as_path()))
+    let chaos_home = args
+        .chaos_home
+        .clone()
+        .or_else(resolve_home_from_env)
+        .unwrap_or_else(default_codex_home);
+    Ok(chaos_proc::logs_db_path(chaos_home.as_path()))
+}
+
+fn resolve_home_from_env() -> Option<PathBuf> {
+    if let Ok(value) = std::env::var("CHAOS_HOME") {
+        let trimmed = value.trim();
+        if !trimmed.is_empty() {
+            return Some(PathBuf::from(trimmed));
+        }
+    }
+    None
 }
 
 fn default_codex_home() -> PathBuf {
-    if let Some(home) = home_dir() {
-        return home.join(".codex");
-    }
-    PathBuf::from(".codex")
+    PathBuf::from(".chaos")
 }
 
 fn build_filter(args: &Args) -> anyhow::Result<LogFilter> {
@@ -184,35 +193,22 @@ async fn print_backfill(
     filter: &LogFilter,
     backfill: usize,
     compact: bool,
-) -> anyhow::Result<i64> {
-    if backfill == 0 {
-        return Ok(0);
-    }
-
-    let mut rows = fetch_backfill(runtime, filter, backfill).await?;
-    rows.reverse();
-
-    let mut last_id = 0;
-    for row in rows {
-        last_id = last_id.max(row.id);
+) -> anyhow::Result<LogTailCursor> {
+    let backfill_batch = fetch_backfill(runtime, filter, backfill).await?;
+    for row in backfill_batch.rows {
         println!("{}", format_row(&row, compact));
     }
-    Ok(last_id)
+    Ok(backfill_batch.cursor)
 }
 
 async fn fetch_backfill(
     runtime: &StateRuntime,
     filter: &LogFilter,
     backfill: usize,
-) -> anyhow::Result<Vec<LogRow>> {
-    let query = to_log_query(
-        filter,
-        Some(backfill),
-        /*after_id*/ None,
-        /*descending*/ true,
-    );
+) -> anyhow::Result<chaos_proc::LogTailBatch> {
+    let query = to_log_query(filter);
     runtime
-        .query_logs(&query)
+        .tail_backfill(&query, backfill)
         .await
         .context("failed to fetch backfill logs")
 }
@@ -220,36 +216,16 @@ async fn fetch_backfill(
 async fn fetch_new_rows(
     runtime: &StateRuntime,
     filter: &LogFilter,
-    last_id: i64,
-) -> anyhow::Result<Vec<LogRow>> {
-    let query = to_log_query(
-        filter,
-        /*limit*/ None,
-        Some(last_id),
-        /*descending*/ false,
-    );
+    cursor: &LogTailCursor,
+) -> anyhow::Result<chaos_proc::LogTailBatch> {
+    let query = to_log_query(filter);
     runtime
-        .query_logs(&query)
+        .tail_poll(&query, cursor, None)
         .await
         .context("failed to fetch new logs")
 }
 
-async fn fetch_max_id(runtime: &StateRuntime, filter: &LogFilter) -> anyhow::Result<i64> {
-    let query = to_log_query(
-        filter, /*limit*/ None, /*after_id*/ None, /*descending*/ false,
-    );
-    runtime
-        .max_log_id(&query)
-        .await
-        .context("failed to fetch max log id")
-}
-
-fn to_log_query(
-    filter: &LogFilter,
-    limit: Option<usize>,
-    after_id: Option<i64>,
-    descending: bool,
-) -> LogQuery {
+fn to_log_query(filter: &LogFilter) -> LogQuery {
     LogQuery {
         level_upper: filter.level_upper.clone(),
         from_ts: filter.from_ts,
@@ -259,9 +235,11 @@ fn to_log_query(
         process_ids: filter.process_ids.clone(),
         search: filter.search.clone(),
         include_processless: filter.include_processless,
-        after_id,
-        limit,
-        descending,
+        related_to_process_id: None,
+        include_related_processless: false,
+        after_id: None,
+        limit: None,
+        descending: false,
     }
 }
 

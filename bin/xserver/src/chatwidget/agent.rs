@@ -39,7 +39,7 @@ pub(crate) fn spawn_agent(
             Err(err) => {
                 let message = format!("Failed to initialize codex: {err}");
                 tracing::error!("{message}");
-                app_event_tx_clone.send(AppEvent::CodexEvent(Event {
+                app_event_tx_clone.send(AppEvent::ChaosEvent(Event {
                     id: "".to_string(),
                     msg: EventMsg::Error(err.to_error_event(/*message_prefix*/ None)),
                 }));
@@ -57,7 +57,7 @@ pub(crate) fn spawn_agent(
             id: "".to_string(),
             msg: chaos_ipc::protocol::EventMsg::SessionConfigured(session_configured),
         };
-        app_event_tx_clone.send(AppEvent::CodexEvent(ev));
+        app_event_tx_clone.send(AppEvent::ChaosEvent(ev));
 
         let process_clone = thread.clone();
         tokio::spawn(async move {
@@ -71,7 +71,7 @@ pub(crate) fn spawn_agent(
 
         while let Ok(event) = thread.next_event().await {
             let is_shutdown_complete = matches!(event.msg, EventMsg::ShutdownComplete);
-            app_event_tx_clone.send(AppEvent::CodexEvent(event));
+            app_event_tx_clone.send(AppEvent::ChaosEvent(event));
             if is_shutdown_complete {
                 // ShutdownComplete is terminal for a thread; drop this receiver task so
                 // the Arc<Process> can be released and thread resources can clean up.
@@ -102,7 +102,7 @@ pub(crate) fn spawn_agent_from_existing(
             id: "".to_string(),
             msg: chaos_ipc::protocol::EventMsg::SessionConfigured(session_configured),
         };
-        app_event_tx_clone.send(AppEvent::CodexEvent(ev));
+        app_event_tx_clone.send(AppEvent::ChaosEvent(ev));
 
         let process_clone = thread.clone();
         tokio::spawn(async move {
@@ -116,7 +116,7 @@ pub(crate) fn spawn_agent_from_existing(
 
         while let Ok(event) = thread.next_event().await {
             let is_shutdown_complete = matches!(event.msg, EventMsg::ShutdownComplete);
-            app_event_tx_clone.send(AppEvent::CodexEvent(event));
+            app_event_tx_clone.send(AppEvent::ChaosEvent(event));
             if is_shutdown_complete {
                 // ShutdownComplete is terminal for a thread; drop this receiver task so
                 // the Arc<Process> can be released and thread resources can clean up.

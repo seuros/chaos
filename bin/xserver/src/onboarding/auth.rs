@@ -198,7 +198,7 @@ pub(crate) struct AuthModeWidget {
     pub highlighted_mode: SignInOption,
     pub error: Option<String>,
     pub sign_in_state: Arc<RwLock<SignInState>>,
-    pub codex_home: PathBuf,
+    pub chaos_home: PathBuf,
     pub cli_auth_credentials_store_mode: AuthCredentialsStoreMode,
     pub login_status: LoginStatus,
     pub auth_manager: Arc<AuthManager>,
@@ -294,7 +294,7 @@ impl AuthModeWidget {
         let mut lines: Vec<Line> = vec![
             Line::from(vec![
                 "  ".into(),
-                "Sign in with ChatGPT to use Codex as part of your paid plan".into(),
+                "Sign in with ChatGPT to use Chaos as part of your paid plan".into(),
             ]),
             Line::from(vec![
                 "  ".into(),
@@ -440,26 +440,17 @@ impl AuthModeWidget {
 
     fn render_chatgpt_success_message(&self, area: Rect, buf: &mut Buffer) {
         let lines = vec![
-            "✓ Signed in with your ChatGPT account".fg(crate::theme::green()).into(),
+            "✓ Authenticated".fg(crate::theme::green()).into(),
             "".into(),
-            "  Before you start:".into(),
+            "  Before you proceed:".into(),
             "".into(),
-            "  Decide how much autonomy you want to grant Codex".into(),
-            Line::from(vec![
-                "  For more details see the ".into(),
-                "\u{1b}]8;;https://developers.openai.com/codex/security\u{7}Codex docs\u{1b}]8;;\u{7}".underlined(),
-            ])
-            .dim(),
+            "  Tools:        none destructive by default.".into(),
+            "  Permissions:  none granted by default.".into(),
+            "  Mistakes:     yours, not the model's.".into(),
             "".into(),
-            "  Codex can make mistakes".into(),
-            "  Review the code it writes and commands it runs".dim().into(),
-            "".into(),
-            "  Powered by your ChatGPT account".into(),
-            Line::from(vec![
-                "  Uses your plan's rate limits and ".into(),
-                "\u{1b}]8;;https://chatgpt.com/#settings\u{7}training data preferences\u{1b}]8;;\u{7}".underlined(),
-            ])
-            .dim(),
+            "  Every tool the model sees, you mounted.".dim().into(),
+            "  Every action it takes, you permitted.".dim().into(),
+            "  The harness warns. It does not intervene.".dim().into(),
             "".into(),
             "  Press Enter to continue".fg(crate::theme::cyan()).into(),
         ];
@@ -485,7 +476,7 @@ impl AuthModeWidget {
         let lines = vec![
             "✓ API key configured".fg(crate::theme::green()).into(),
             "".into(),
-            "  Codex will use usage-based billing with your API key.".into(),
+            "  Chaos will use usage-based billing with your API key.".into(),
         ];
 
         Paragraph::new(lines)
@@ -674,7 +665,7 @@ impl AuthModeWidget {
             return;
         }
         match login_with_api_key(
-            &self.codex_home,
+            &self.chaos_home,
             &api_key,
             self.cli_auth_credentials_store_mode,
         ) {
@@ -724,7 +715,7 @@ impl AuthModeWidget {
 
         self.error = None;
         let opts = ServerOptions::new(
-            self.codex_home.clone(),
+            self.chaos_home.clone(),
             CLIENT_ID.to_string(),
             self.forced_chatgpt_workspace_id.clone(),
             self.cli_auth_credentials_store_mode,
@@ -777,7 +768,7 @@ impl AuthModeWidget {
 
         self.error = None;
         let opts = ServerOptions::new(
-            self.codex_home.clone(),
+            self.chaos_home.clone(),
             CLIENT_ID.to_string(),
             self.forced_chatgpt_workspace_id.clone(),
             self.cli_auth_credentials_store_mode,
@@ -838,14 +829,14 @@ mod tests {
     use chaos_kern::auth::AuthCredentialsStoreMode;
 
     fn widget_forced_chatgpt() -> (AuthModeWidget, TempDir) {
-        let codex_home = TempDir::new().unwrap();
-        let codex_home_path = codex_home.path().to_path_buf();
+        let chaos_home = TempDir::new().unwrap();
+        let codex_home_path = chaos_home.path().to_path_buf();
         let widget = AuthModeWidget {
             request_frame: FrameRequester::test_dummy(),
             highlighted_mode: SignInOption::ChatGpt,
             error: None,
             sign_in_state: Arc::new(RwLock::new(SignInState::PickMode)),
-            codex_home: codex_home_path.clone(),
+            chaos_home: codex_home_path.clone(),
             cli_auth_credentials_store_mode: AuthCredentialsStoreMode::File,
             login_status: LoginStatus::NotAuthenticated,
             auth_manager: AuthManager::shared(
@@ -857,7 +848,7 @@ mod tests {
             forced_login_method: Some(ForcedLoginMethod::Chatgpt),
             animations_enabled: true,
         };
-        (widget, codex_home)
+        (widget, chaos_home)
     }
 
     #[test]

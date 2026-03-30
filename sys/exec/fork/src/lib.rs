@@ -28,7 +28,7 @@ use chaos_kern::check_execpolicy_for_warnings;
 use chaos_kern::config::Config;
 use chaos_kern::config::ConfigBuilder;
 use chaos_kern::config::ConfigOverrides;
-use chaos_kern::config::find_codex_home;
+use chaos_kern::config::find_chaos_home;
 use chaos_kern::config::load_config_as_toml_with_cli_overrides;
 use chaos_kern::config::resolve_oss_provider;
 use chaos_kern::config_loader::ConfigLoadError;
@@ -203,17 +203,17 @@ pub async fn run_main(cli: Cli, arg0_paths: Arg0DispatchPaths) -> anyhow::Result
 
     // we load config.toml here to determine project state.
     #[allow(clippy::print_stderr)]
-    let codex_home = match find_codex_home() {
-        Ok(codex_home) => codex_home,
+    let chaos_home = match find_chaos_home() {
+        Ok(chaos_home) => chaos_home,
         Err(err) => {
-            eprintln!("Error finding codex home: {err}");
+            eprintln!("Error finding chaos home: {err}");
             std::process::exit(1);
         }
     };
 
     #[allow(clippy::print_stderr)]
     let config_toml = match load_config_as_toml_with_cli_overrides(
-        &codex_home,
+        &chaos_home,
         &config_cwd,
         cli_kv_overrides.clone(),
     )
@@ -357,7 +357,7 @@ pub async fn run_main(cli: Cli, arg0_paths: Arg0DispatchPaths) -> anyhow::Result
 
     // Create core managers directly (same pattern as the TUI).
     let auth_manager = AuthManager::shared(
-        config.codex_home.clone(),
+        config.chaos_home.clone(),
         true, // enable_codex_api_key_env
         config.cli_auth_credentials_store_mode,
     );
@@ -753,7 +753,7 @@ async fn resolve_resume_process_id(
             }
         } else {
             let process_id =
-                chaos_kern::find_process_id_by_name(&config.codex_home, id_str).await?;
+                chaos_kern::find_process_id_by_name(&config.chaos_home, id_str).await?;
             if let Some(process_id) = process_id
                 && chaos_kern::RolloutRecorder::journal_contains_process(process_id).await?
             {

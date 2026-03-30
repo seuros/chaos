@@ -15,7 +15,7 @@ pub use server::run_login_server;
 // Re-export commonly used auth types and helpers from codex-core for compatibility
 pub use chaos_ipc::api::AuthMode;
 pub use chaos_kern::AuthManager;
-pub use chaos_kern::CodexAuth;
+pub use chaos_kern::ChaosAuth;
 pub use chaos_kern::auth::AuthDotJson;
 pub use chaos_kern::auth::CLIENT_ID;
 pub use chaos_kern::auth::CODEX_API_KEY_ENV_VAR;

@@ -25,7 +25,7 @@ use chaos_traits::RolloutConfig;
 use chaos_traits::StateAccess;
 use chaos_traits::TelemetrySource;
 
-use crate::codex::Session;
+use crate::chaos::Session;
 use crate::config::Config;
 
 // ---------------------------------------------------------------------------
@@ -33,8 +33,8 @@ use crate::config::Config;
 // ---------------------------------------------------------------------------
 
 impl RolloutConfig for Config {
-    fn codex_home(&self) -> &Path {
-        &self.codex_home
+    fn chaos_home(&self) -> &Path {
+        &self.chaos_home
     }
 
     fn sqlite_home(&self) -> &Path {
@@ -55,8 +55,8 @@ impl RolloutConfig for Config {
 }
 
 impl MementoConfig for Config {
-    fn codex_home(&self) -> &Path {
-        &self.codex_home
+    fn chaos_home(&self) -> &Path {
+        &self.chaos_home
     }
 
     fn cwd(&self) -> &Path {
@@ -89,8 +89,8 @@ impl MementoConfig for Config {
 }
 
 impl ConciergeConfig for Config {
-    fn codex_home(&self) -> &Path {
-        &self.codex_home
+    fn chaos_home(&self) -> &Path {
+        &self.chaos_home
     }
 
     fn mcp_servers(&self) -> &Constrained<HashMap<String, McpServerConfig>> {

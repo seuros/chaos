@@ -57,7 +57,7 @@ fn configured_mcp_servers(
 }
 
 pub async fn collect_mcp_snapshot(config: &Config) -> McpListToolsResponseEvent {
-    let mcp_manager = McpManager::new(Arc::new(PluginsManager::new(config.codex_home.clone())));
+    let mcp_manager = McpManager::new(Arc::new(PluginsManager::new(config.chaos_home.clone())));
     let mcp_servers = mcp_manager.effective_servers(config);
     if mcp_servers.is_empty() {
         return McpListToolsResponseEvent {
@@ -90,7 +90,7 @@ pub async fn collect_mcp_snapshot(config: &Config) -> McpListToolsResponseEvent 
         &config.permissions.approval_policy,
         tx_event,
         sandbox_state,
-        config.codex_home.clone(),
+        config.chaos_home.clone(),
     )
     .await;
 

@@ -3,7 +3,7 @@ source: bin/xserver/src/bottom_pane/chat_composer.rs
 expression: terminal.backend()
 ---
 "                                                            "
-"› Ask Codex to do anything                                  "
+"› Ask Chaos to do anything                                  "
 "                                                            "
 "                                                            "
 "                                                            "

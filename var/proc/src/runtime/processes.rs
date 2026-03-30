@@ -705,13 +705,13 @@ mod tests {
 
     #[tokio::test]
     async fn upsert_thread_keeps_creation_memory_mode_for_existing_rows() {
-        let codex_home = unique_temp_dir();
-        let runtime = StateRuntime::init(codex_home.clone(), "test-provider".to_string())
+        let chaos_home = unique_temp_dir();
+        let runtime = StateRuntime::init(chaos_home.clone(), "test-provider".to_string())
             .await
             .expect("state db should initialize");
         let process_id = ProcessId::from_string("00000000-0000-0000-0000-000000000123")
             .expect("valid thread id");
-        let mut metadata = test_process_metadata(&codex_home, process_id, codex_home.clone());
+        let mut metadata = test_process_metadata(&chaos_home, process_id, chaos_home.clone());
 
         runtime
             .upsert_process_with_creation_memory_mode(&metadata, Some("disabled"))
@@ -743,13 +743,13 @@ mod tests {
 
     #[tokio::test]
     async fn apply_rollout_items_restores_memory_mode_from_session_meta() {
-        let codex_home = unique_temp_dir();
-        let runtime = StateRuntime::init(codex_home.clone(), "test-provider".to_string())
+        let chaos_home = unique_temp_dir();
+        let runtime = StateRuntime::init(chaos_home.clone(), "test-provider".to_string())
             .await
             .expect("state db should initialize");
         let process_id = ProcessId::from_string("00000000-0000-0000-0000-000000000456")
             .expect("valid thread id");
-        let metadata = test_process_metadata(&codex_home, process_id, codex_home.clone());
+        let metadata = test_process_metadata(&chaos_home, process_id, chaos_home.clone());
 
         runtime
             .upsert_process(&metadata)
@@ -791,13 +791,13 @@ mod tests {
 
     #[tokio::test]
     async fn apply_rollout_items_preserves_existing_git_branch_and_fills_missing_git_fields() {
-        let codex_home = unique_temp_dir();
-        let runtime = StateRuntime::init(codex_home.clone(), "test-provider".to_string())
+        let chaos_home = unique_temp_dir();
+        let runtime = StateRuntime::init(chaos_home.clone(), "test-provider".to_string())
             .await
             .expect("state db should initialize");
         let process_id = ProcessId::from_string("00000000-0000-0000-0000-000000000457")
             .expect("valid thread id");
-        let mut metadata = test_process_metadata(&codex_home, process_id, codex_home.clone());
+        let mut metadata = test_process_metadata(&chaos_home, process_id, chaos_home.clone());
         metadata.git_branch = Some("sqlite-branch".to_string());
 
         runtime
@@ -851,13 +851,13 @@ mod tests {
 
     #[tokio::test]
     async fn update_process_git_info_preserves_newer_non_git_metadata() {
-        let codex_home = unique_temp_dir();
-        let runtime = StateRuntime::init(codex_home.clone(), "test-provider".to_string())
+        let chaos_home = unique_temp_dir();
+        let runtime = StateRuntime::init(chaos_home.clone(), "test-provider".to_string())
             .await
             .expect("state db should initialize");
         let process_id = ProcessId::from_string("00000000-0000-0000-0000-000000000789")
             .expect("valid thread id");
-        let metadata = test_process_metadata(&codex_home, process_id, codex_home.clone());
+        let metadata = test_process_metadata(&chaos_home, process_id, chaos_home.clone());
 
         runtime
             .upsert_process(&metadata)
@@ -909,14 +909,14 @@ mod tests {
 
     #[tokio::test]
     async fn insert_thread_if_absent_preserves_existing_metadata() {
-        let codex_home = unique_temp_dir();
-        let runtime = StateRuntime::init(codex_home.clone(), "test-provider".to_string())
+        let chaos_home = unique_temp_dir();
+        let runtime = StateRuntime::init(chaos_home.clone(), "test-provider".to_string())
             .await
             .expect("state db should initialize");
         let process_id = ProcessId::from_string("00000000-0000-0000-0000-000000000791")
             .expect("valid thread id");
 
-        let mut existing = test_process_metadata(&codex_home, process_id, codex_home.clone());
+        let mut existing = test_process_metadata(&chaos_home, process_id, chaos_home.clone());
         existing.tokens_used = 123;
         existing.first_user_message = Some("newer preview".to_string());
         existing.updated_at = jiff::Timestamp::new(1_700_000_100, 0).expect("timestamp");
@@ -925,7 +925,7 @@ mod tests {
             .await
             .expect("initial upsert should succeed");
 
-        let mut fallback = test_process_metadata(&codex_home, process_id, codex_home.clone());
+        let mut fallback = test_process_metadata(&chaos_home, process_id, chaos_home.clone());
         fallback.tokens_used = 0;
         fallback.first_user_message = None;
         fallback.updated_at = jiff::Timestamp::new(1_700_000_000, 0).expect("timestamp");
@@ -954,13 +954,13 @@ mod tests {
 
     #[tokio::test]
     async fn update_process_git_info_can_clear_fields() {
-        let codex_home = unique_temp_dir();
-        let runtime = StateRuntime::init(codex_home.clone(), "test-provider".to_string())
+        let chaos_home = unique_temp_dir();
+        let runtime = StateRuntime::init(chaos_home.clone(), "test-provider".to_string())
             .await
             .expect("state db should initialize");
         let process_id = ProcessId::from_string("00000000-0000-0000-0000-000000000790")
             .expect("valid thread id");
-        let mut metadata = test_process_metadata(&codex_home, process_id, codex_home.clone());
+        let mut metadata = test_process_metadata(&chaos_home, process_id, chaos_home.clone());
         metadata.git_sha = Some("abc123".to_string());
         metadata.git_branch = Some("feature/branch".to_string());
         metadata.git_origin_url = Some("git@example.com:openai/codex.git".to_string());
@@ -988,13 +988,13 @@ mod tests {
 
     #[tokio::test]
     async fn touch_process_updated_at_updates_only_updated_at() {
-        let codex_home = unique_temp_dir();
-        let runtime = StateRuntime::init(codex_home.clone(), "test-provider".to_string())
+        let chaos_home = unique_temp_dir();
+        let runtime = StateRuntime::init(chaos_home.clone(), "test-provider".to_string())
             .await
             .expect("state db should initialize");
         let process_id = ProcessId::from_string("00000000-0000-0000-0000-000000000791")
             .expect("valid thread id");
-        let mut metadata = test_process_metadata(&codex_home, process_id, codex_home.clone());
+        let mut metadata = test_process_metadata(&chaos_home, process_id, chaos_home.clone());
         metadata.title = "original title".to_string();
         metadata.first_user_message = Some("first-user-message".to_string());
 
@@ -1025,13 +1025,13 @@ mod tests {
 
     #[tokio::test]
     async fn apply_rollout_items_uses_override_updated_at_when_provided() {
-        let codex_home = unique_temp_dir();
-        let runtime = StateRuntime::init(codex_home.clone(), "test-provider".to_string())
+        let chaos_home = unique_temp_dir();
+        let runtime = StateRuntime::init(chaos_home.clone(), "test-provider".to_string())
             .await
             .expect("state db should initialize");
         let process_id = ProcessId::from_string("00000000-0000-0000-0000-000000000792")
             .expect("valid thread id");
-        let metadata = test_process_metadata(&codex_home, process_id, codex_home.clone());
+        let metadata = test_process_metadata(&chaos_home, process_id, chaos_home.clone());
 
         runtime
             .upsert_process(&metadata)

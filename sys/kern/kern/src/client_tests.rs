@@ -193,7 +193,7 @@ fn resolve_anthropic_auth_errors_when_provider_has_no_static_auth() {
         .resolve_anthropic_auth()
         .expect_err("missing auth should fail locally");
 
-    assert!(matches!(err, crate::error::CodexErr::InvalidRequest(_)));
+    assert!(matches!(err, crate::error::ChaosErr::InvalidRequest(_)));
 }
 
 #[test]

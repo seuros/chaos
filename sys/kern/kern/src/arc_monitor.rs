@@ -5,8 +5,8 @@ use serde::Deserialize;
 use serde::Serialize;
 use tracing::warn;
 
-use crate::codex::Session;
-use crate::codex::TurnContext;
+use crate::chaos::Session;
+use crate::chaos::TurnContext;
 use crate::compact::content_items_to_text;
 use crate::default_client::build_http_client;
 use crate::event_mapping::is_contextual_user_message_content;
@@ -147,7 +147,7 @@ pub(crate) async fn monitor_action(
         .bearer_auth(token);
     if let Some(account_id) = auth
         .as_ref()
-        .and_then(crate::auth::CodexAuth::get_account_id)
+        .and_then(crate::auth::ChaosAuth::get_account_id)
     {
         request = request.header("chatgpt-account-id", account_id);
     }

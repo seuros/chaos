@@ -750,8 +750,8 @@ fn view_image_tool_includes_detail_with_original_detail_feature() {
 #[test]
 fn test_build_specs_artifact_tool_is_not_exposed() {
     let mut config = test_config();
-    let runtime_root = tempfile::TempDir::new().expect("create temp codex home");
-    config.codex_home = runtime_root.path().to_path_buf();
+    let runtime_root = tempfile::TempDir::new().expect("create temp chaos home");
+    config.chaos_home = runtime_root.path().to_path_buf();
     let model_info = ModelsManager::construct_model_info_offline_for_tests("gpt-5-codex", &config);
     let mut features = Features::with_defaults();
     features.enable(Feature::Artifact);

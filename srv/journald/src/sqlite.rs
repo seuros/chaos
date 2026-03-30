@@ -52,7 +52,7 @@ impl SqliteJournalStore {
     }
 
     pub async fn default() -> Result<Self, JournalError> {
-        let dir = chaos_pwd::find_codex_home()?;
+        let dir = chaos_pwd::find_chaos_home()?;
         tokio::fs::create_dir_all(&dir).await?;
         let path = dir.join(crate::model::SQLITE_DB_FILENAME);
         Self::open(&path).await

@@ -278,7 +278,7 @@ use chaos_kern::ProcessTable;
 use chaos_locate::FileMatch;
 use chaos_sudoers::ApprovalPreset;
 use chaos_sudoers::builtin_approval_presets;
-use chrono::Local;
+use jiff::Timestamp;
 use strum::IntoEnumIterator;
 
 #[derive(Clone, Debug, PartialEq)]
@@ -1411,7 +1411,7 @@ impl ChatWidget {
 
     fn emit_forked_process_event(&self, forked_from_id: ProcessId) {
         let app_event_tx = self.app_event_tx.clone();
-        let codex_home = self.config.codex_home.clone();
+        let chaos_home = self.config.chaos_home.clone();
         tokio::spawn(async move {
             let forked_from_id_text = forked_from_id.to_string();
             let send_name_and_id = |name: String| {
@@ -1440,7 +1440,7 @@ impl ChatWidget {
                 )));
             };
 
-            match find_process_name_by_id(&codex_home, &forked_from_id).await {
+            match find_process_name_by_id(&chaos_home, &forked_from_id).await {
                 Ok(Some(name)) if !name.trim().is_empty() => {
                     send_name_and_id(name);
                 }
@@ -1941,7 +1941,7 @@ impl ChatWidget {
             }
 
             let display =
-                rate_limit_snapshot_display_for_limit(&snapshot, limit_label, Local::now());
+                rate_limit_snapshot_display_for_limit(&snapshot, limit_label, Timestamp::now());
             self.rate_limit_snapshots_by_limit_id
                 .insert(limit_id, display);
 
@@ -1985,7 +1985,7 @@ impl ChatWidget {
         self.finalize_turn();
 
         let message = if message.trim().is_empty() {
-            "Codex is currently experiencing high load.".to_string()
+            "Chaos is currently experiencing high load.".to_string()
         } else {
             message
         };
@@ -4162,7 +4162,7 @@ impl ChatWidget {
             }
             SlashCommand::Compact => {
                 self.clear_token_usage();
-                self.app_event_tx.send(AppEvent::CodexOp(Op::Compact));
+                self.app_event_tx.send(AppEvent::ChaosOp(Op::Compact));
             }
             SlashCommand::Review => {
                 self.open_review_popup();
@@ -4230,7 +4230,7 @@ impl ChatWidget {
             }
             SlashCommand::Logout => {
                 if let Err(e) = chaos_kern::auth::logout(
-                    &self.config.codex_home,
+                    &self.config.chaos_home,
                     self.config.cli_auth_credentials_store_mode,
                 ) {
                     tracing::error!("failed to logout: {e}");
@@ -4238,7 +4238,7 @@ impl ChatWidget {
                 self.request_quit_without_confirmation();
             }
             // SlashCommand::Undo => {
-            //     self.app_event_tx.send(AppEvent::CodexOp(Op::Undo));
+            //     self.app_event_tx.send(AppEvent::ChaosOp(Op::Undo));
             // }
             SlashCommand::Diff => {
                 self.add_diff_in_progress();
@@ -4260,7 +4260,7 @@ impl ChatWidget {
             SlashCommand::Copy => {
                 let Some(text) = self.last_copyable_output.as_deref() else {
                     self.add_info_message(
-                        "`/copy` is unavailable before the first Codex output or right after a rollback."
+                        "`/copy` is unavailable before the first Chaos output or right after a rollback."
                             .to_string(),
                         /*hint*/ None,
                     );
@@ -4276,7 +4276,7 @@ impl ChatWidget {
                                 .to_string(),
                         );
                         self.add_info_message(
-                            "Copied latest Codex output to clipboard.".to_string(),
+                            "Copied latest Chaos output to clipboard.".to_string(),
                             hint,
                         );
                     }
@@ -4321,7 +4321,7 @@ impl ChatWidget {
                 let new_state = !is_clamped;
                 crate::theme::set_clamped(new_state);
                 self.app_event_tx
-                    .send(AppEvent::CodexOp(Op::SetClamped { enabled: new_state }));
+                    .send(AppEvent::ChaosOp(Op::SetClamped { enabled: new_state }));
                 if new_state {
                     // Save the current direct-API selection before clamping so we can
                     // restore it when switching transports back off.
@@ -4345,7 +4345,7 @@ impl ChatWidget {
                 use chaos_ipc::protocol::ApplyPatchApprovalRequestEvent;
                 use chaos_ipc::protocol::FileChange;
 
-                self.app_event_tx.send(AppEvent::CodexEvent(Event {
+                self.app_event_tx.send(AppEvent::ChaosEvent(Event {
                     id: "1".to_string(),
                     // msg: EventMsg::ExecApprovalRequest(ExecApprovalRequestEvent {
                     //     call_id: "1".to_string(),
@@ -4418,7 +4418,7 @@ impl ChatWidget {
                 self.add_boxed_history(Box::new(cell));
                 self.request_redraw();
                 self.app_event_tx
-                    .send(AppEvent::CodexOp(Op::SetProcessName { name }));
+                    .send(AppEvent::ChaosOp(Op::SetProcessName { name }));
                 self.bottom_pane.drain_pending_submission_state();
             }
             SlashCommand::Plan if !trimmed.is_empty() => {
@@ -4498,7 +4498,7 @@ impl ChatWidget {
                 };
                 let cell = Self::rename_confirmation_cell(&name, process_id);
                 tx.send(AppEvent::InsertHistoryCell(Box::new(cell)));
-                tx.send(AppEvent::CodexOp(Op::SetProcessName { name }));
+                tx.send(AppEvent::ChaosOp(Op::SetProcessName { name }));
             }),
         );
 
@@ -5422,7 +5422,7 @@ impl ChatWidget {
             self.forked_from,
             rate_limit_snapshots.as_slice(),
             self.plan_type,
-            Local::now(),
+            Timestamp::now(),
             self.model_display_name(),
             collaboration_mode,
             reasoning_effort_override,
@@ -5451,14 +5451,14 @@ impl ChatWidget {
     }
 
     fn open_theme_picker(&mut self) {
-        let codex_home = chaos_kern::config::find_codex_home().ok();
+        let chaos_home = chaos_kern::config::find_chaos_home().ok();
         let terminal_width = self
             .last_rendered_width
             .get()
             .and_then(|width| u16::try_from(width).ok());
         let params = crate::theme_picker::build_theme_picker_params(
             self.config.tui_theme.as_deref(),
-            codex_home.as_deref(),
+            chaos_home.as_deref(),
             terminal_width,
         );
         self.bottom_pane.show_selection_view(params);
@@ -5618,7 +5618,7 @@ impl ChatWidget {
                     .unwrap_or_else(|| "weekly".to_string());
                 self.status_line_limit_display(window, &label)
             }
-            StatusLineItem::CodexVersion => Some(CHAOS_VERSION.to_string()),
+            StatusLineItem::ChaosVersion => Some(CHAOS_VERSION.to_string()),
             StatusLineItem::ContextWindowSize => self
                 .status_line_context_window_size()
                 .map(|cws| format!("{} window", format_tokens_compact(cws))),
@@ -5778,7 +5778,7 @@ impl ChatWidget {
         let default_effort: ReasoningEffortConfig = preset.default_reasoning_effort;
 
         let switch_actions: Vec<SelectionAction> = vec![Box::new(move |tx| {
-            tx.send(AppEvent::CodexOp(Op::OverrideTurnContext {
+            tx.send(AppEvent::ChaosOp(Op::OverrideTurnContext {
                 cwd: None,
                 approval_policy: None,
                 approvals_reviewer: None,
@@ -5968,7 +5968,7 @@ impl ChatWidget {
                 let name = Self::personality_label(personality).to_string();
                 let description = Some(Self::personality_description(personality).to_string());
                 let actions: Vec<SelectionAction> = vec![Box::new(move |tx| {
-                    tx.send(AppEvent::CodexOp(Op::OverrideTurnContext {
+                    tx.send(AppEvent::ChaosOp(Op::OverrideTurnContext {
                         cwd: None,
                         approval_policy: None,
                         approvals_reviewer: None,
@@ -5998,7 +5998,7 @@ impl ChatWidget {
 
         let mut header = ColumnRenderable::new();
         header.push(Line::from("Select Personality".bold()));
-        header.push(Line::from("Choose a communication style for Codex.".dim()));
+        header.push(Line::from("Choose a communication style for Chaos.".dim()));
 
         self.bottom_pane.show_selection_view(SelectionViewParams {
             header: Box::new(header),
@@ -6777,7 +6777,7 @@ impl ChatWidget {
     ) -> Vec<SelectionAction> {
         vec![Box::new(move |tx| {
             let sandbox_clone = sandbox.clone();
-            tx.send(AppEvent::CodexOp(Op::OverrideTurnContext {
+            tx.send(AppEvent::ChaosOp(Op::OverrideTurnContext {
                 cwd: None,
                 approval_policy: Some(approval),
                 approvals_reviewer: Some(approvals_reviewer),
@@ -6848,7 +6848,7 @@ impl ChatWidget {
         let mut header_children: Vec<Box<dyn Renderable>> = Vec::new();
         let title_line = Line::from("Enable full access?").bold();
         let info_line = Line::from(vec![
-            "When Codex runs with full access, it can edit any file on your computer and run commands with network, without your approval. "
+            "When Chaos runs with full access, it can edit any file on your computer and run commands with network, without your approval. "
                 .into(),
             "Exercise caution when enabling full access. This significantly increases the risk of data loss, leaks, or unexpected behavior."
                 .fg(crate::theme::red()),
@@ -7366,7 +7366,7 @@ impl ChatWidget {
 
     pub(crate) fn add_mcp_output(&mut self) {
         let mcp_manager = McpManager::new(Arc::new(PluginsManager::new(
-            self.config.codex_home.clone(),
+            self.config.chaos_home.clone(),
         )));
         if mcp_manager.effective_servers(&self.config).is_empty() {
             self.add_to_history(history_cell::empty_mcp_output());
@@ -7494,7 +7494,7 @@ impl ChatWidget {
             let instructions = if connector.is_accessible {
                 "Manage this app in your browser."
             } else {
-                "Install this app in your browser, then reload Codex."
+                "Install this app in your browser, then reload Chaos."
             };
             if let Some(install_url) = connector.install_url.clone() {
                 let app_id = connector.id.clone();
@@ -7935,7 +7935,7 @@ impl ChatWidget {
             return;
         }
 
-        let plugins = PluginsManager::new(self.config.codex_home.clone())
+        let plugins = PluginsManager::new(self.config.chaos_home.clone())
             .plugins_for_config(&self.config)
             .capability_summaries()
             .to_vec();
@@ -7961,7 +7961,7 @@ impl ChatWidget {
         items.push(SelectionItem {
             name: "Review uncommitted changes".to_string(),
             actions: vec![Box::new(move |tx: &AppEventSender| {
-                tx.send(AppEvent::CodexOp(Op::Review {
+                tx.send(AppEvent::ChaosOp(Op::Review {
                     review_request: ReviewRequest {
                         target: ReviewTarget::UncommittedChanges,
                         user_facing_hint: None,
@@ -8014,7 +8014,7 @@ impl ChatWidget {
             items.push(SelectionItem {
                 name: format!("{current_branch} -> {branch}"),
                 actions: vec![Box::new(move |tx3: &AppEventSender| {
-                    tx3.send(AppEvent::CodexOp(Op::Review {
+                    tx3.send(AppEvent::ChaosOp(Op::Review {
                         review_request: ReviewRequest {
                             target: ReviewTarget::BaseBranch {
                                 branch: branch.clone(),
@@ -8051,7 +8051,7 @@ impl ChatWidget {
             items.push(SelectionItem {
                 name: subject.clone(),
                 actions: vec![Box::new(move |tx3: &AppEventSender| {
-                    tx3.send(AppEvent::CodexOp(Op::Review {
+                    tx3.send(AppEvent::ChaosOp(Op::Review {
                         review_request: ReviewRequest {
                             target: ReviewTarget::Commit {
                                 sha: sha.clone(),
@@ -8088,7 +8088,7 @@ impl ChatWidget {
                 if trimmed.is_empty() {
                     return;
                 }
-                tx.send(AppEvent::CodexOp(Op::Review {
+                tx.send(AppEvent::ChaosOp(Op::Review {
                     review_request: ReviewRequest {
                         target: ReviewTarget::Custom {
                             instructions: trimmed,
@@ -8244,7 +8244,7 @@ impl Notification {
             }
             Notification::EditApprovalRequested { cwd, changes } => {
                 format!(
-                    "Codex wants to edit {}",
+                    "Chaos wants to edit {}",
                     if changes.len() == 1 {
                         #[allow(clippy::unwrap_used)]
                         display_path_for(changes.first().unwrap(), cwd)
@@ -8396,7 +8396,7 @@ pub(crate) fn show_review_commit_picker_with_entries(
         items.push(SelectionItem {
             name: subject.clone(),
             actions: vec![Box::new(move |tx3: &AppEventSender| {
-                tx3.send(AppEvent::CodexOp(Op::Review {
+                tx3.send(AppEvent::ChaosOp(Op::Review {
                     review_request: ReviewRequest {
                         target: ReviewTarget::Commit {
                             sha: sha.clone(),

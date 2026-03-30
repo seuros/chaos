@@ -58,7 +58,7 @@ fn usage_limit_reached_error_formats_plus_plan() {
 
 #[test]
 fn server_overloaded_maps_to_protocol() {
-    let err = CodexErr::ServerOverloaded;
+    let err = ChaosErr::ServerOverloaded;
     assert_eq!(err.to_chaos_ipc_error(), CodexErrorInfo::ServerOverloaded);
 }
 
@@ -72,7 +72,7 @@ fn sandbox_denied_uses_aggregated_output_when_stderr_empty() {
         duration: Duration::from_millis(10),
         timed_out: false,
     };
-    let err = CodexErr::Sandbox(SandboxErr::Denied {
+    let err = ChaosErr::Sandbox(SandboxErr::Denied {
         output: Box::new(output),
         network_policy_decision: None,
     });
@@ -89,7 +89,7 @@ fn sandbox_denied_reports_both_streams_when_available() {
         duration: Duration::from_millis(10),
         timed_out: false,
     };
-    let err = CodexErr::Sandbox(SandboxErr::Denied {
+    let err = ChaosErr::Sandbox(SandboxErr::Denied {
         output: Box::new(output),
         network_policy_decision: None,
     });
@@ -106,7 +106,7 @@ fn sandbox_denied_reports_stdout_when_no_stderr() {
         duration: Duration::from_millis(8),
         timed_out: false,
     };
-    let err = CodexErr::Sandbox(SandboxErr::Denied {
+    let err = ChaosErr::Sandbox(SandboxErr::Denied {
         output: Box::new(output),
         network_policy_decision: None,
     });
@@ -117,7 +117,7 @@ fn sandbox_denied_reports_stdout_when_no_stderr() {
 fn to_error_event_handles_response_stream_failed() {
     let source: Box<dyn std::error::Error + Send + Sync> =
         Box::new(std::io::Error::other("stream connection lost"));
-    let err = CodexErr::ResponseStreamFailed(ResponseStreamFailed {
+    let err = ChaosErr::ResponseStreamFailed(ResponseStreamFailed {
         source,
         request_id: Some("req-123".to_string()),
     });
@@ -144,7 +144,7 @@ fn sandbox_denied_reports_exit_code_when_no_output_available() {
         duration: Duration::from_millis(5),
         timed_out: false,
     };
-    let err = CodexErr::Sandbox(SandboxErr::Denied {
+    let err = ChaosErr::Sandbox(SandboxErr::Denied {
         output: Box::new(output),
         network_policy_decision: None,
     });

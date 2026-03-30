@@ -12,7 +12,7 @@ use chaos_ipc::protocol::EventMsg;
 use chaos_ipc::protocol::Op;
 use chaos_ipc::protocol::SessionSource;
 use chaos_ipc::user_input::UserInput;
-use chaos_kern::CodexAuth;
+use chaos_kern::ChaosAuth;
 use chaos_kern::ModelClient;
 use chaos_kern::ModelClientSession;
 use chaos_kern::ModelProviderInfo;
@@ -1597,8 +1597,8 @@ async fn websocket_harness_with_options(
     prefer_websockets: bool,
 ) -> WebsocketTestHarness {
     let provider = websocket_provider(server);
-    let codex_home = TempDir::new().unwrap();
-    let mut config = load_default_config_for_test(&codex_home).await;
+    let chaos_home = TempDir::new().unwrap();
+    let mut config = load_default_config_for_test(&chaos_home).await;
     config.model = Some(MODEL.to_string());
     if websocket_enabled {
         config
@@ -1628,7 +1628,7 @@ async fn websocket_harness_with_options(
     model_info.prefer_websockets = prefer_websockets;
     let conversation_id = ProcessId::new();
     let auth_manager =
-        chaos_kern::test_support::auth_manager_from_auth(CodexAuth::from_api_key("Test API Key"));
+        chaos_kern::test_support::auth_manager_from_auth(ChaosAuth::from_api_key("Test API Key"));
     let exporter = InMemoryMetricExporter::default();
     let metrics = MetricsClient::new(
         MetricsConfig::in_memory("test", "codex-core", env!("CARGO_PKG_VERSION"), exporter)
@@ -1664,7 +1664,7 @@ async fn websocket_harness_with_options(
     );
 
     WebsocketTestHarness {
-        _codex_home: codex_home,
+        _codex_home: chaos_home,
         client,
         conversation_id,
         model_info,

@@ -1,7 +1,7 @@
 use std::sync::Arc;
 
-use crate::codex::Session;
-use crate::codex::TurnContext;
+use crate::chaos::Session;
+use crate::chaos::TurnContext;
 use crate::skills::SkillMetadata;
 
 #[derive(Debug, Clone, PartialEq, Eq)]

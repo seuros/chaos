@@ -1,7 +1,7 @@
-use crate::codex::Session;
-use crate::codex::TurnContext;
+use crate::chaos::Session;
+use crate::chaos::TurnContext;
 use crate::config::Config;
-use crate::error::CodexErr;
+use crate::error::ChaosErr;
 use crate::function_tool::FunctionCallError;
 use crate::minions::exceeds_process_spawn_depth_limit;
 use crate::minions::next_process_spawn_depth;
@@ -633,7 +633,7 @@ async fn run_agent_job_loop(
                     .await
                 {
                     Ok(process_id) => process_id,
-                    Err(CodexErr::AgentLimitReached { .. }) => {
+                    Err(ChaosErr::AgentLimitReached { .. }) => {
                         db.mark_agent_job_item_pending(
                             job_id.as_str(),
                             item.item_id.as_str(),

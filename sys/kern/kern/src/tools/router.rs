@@ -1,6 +1,6 @@
 use crate::client_common::tools::ToolSpec;
-use crate::codex::Session;
-use crate::codex::TurnContext;
+use crate::chaos::Session;
+use crate::chaos::TurnContext;
 use crate::function_tool::FunctionCallError;
 use crate::mcp_connection_manager::McpToolInfo;
 use crate::mcp_connection_manager::ToolInfo;

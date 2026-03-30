@@ -79,6 +79,6 @@ mod metrics {
 use std::path::Path;
 use std::path::PathBuf;
 
-pub fn memory_root(codex_home: &Path) -> PathBuf {
-    codex_home.join("memories")
+pub fn memory_root(chaos_home: &Path) -> PathBuf {
+    chaos_home.join("memories")
 }

@@ -7,7 +7,7 @@ use chaos_ipc::models::ContentItem;
 use chaos_ipc::models::ResponseItem;
 use chaos_ipc::protocol::SessionSource;
 use chaos_ipc::protocol::SubAgentSource;
-use chaos_kern::CodexAuth;
+use chaos_kern::ChaosAuth;
 use chaos_kern::ModelClient;
 use chaos_kern::ModelProviderInfo;
 use chaos_kern::Prompt;
@@ -57,8 +57,8 @@ async fn responses_stream_includes_subagent_header_on_review() {
         supports_websockets: false,
     };
 
-    let codex_home = TempDir::new().expect("failed to create TempDir");
-    let mut config = load_default_config_for_test(&codex_home).await;
+    let chaos_home = TempDir::new().expect("failed to create TempDir");
+    let mut config = load_default_config_for_test(&chaos_home).await;
     config.model_provider_id = provider.name.clone();
     config.model_provider = provider.clone();
     let effort = config.model_reasoning_effort;
@@ -170,8 +170,8 @@ async fn responses_stream_includes_subagent_header_on_other() {
         supports_websockets: false,
     };
 
-    let codex_home = TempDir::new().expect("failed to create TempDir");
-    let mut config = load_default_config_for_test(&codex_home).await;
+    let chaos_home = TempDir::new().expect("failed to create TempDir");
+    let mut config = load_default_config_for_test(&chaos_home).await;
     config.model_provider_id = provider.name.clone();
     config.model_provider = provider.clone();
     let effort = config.model_reasoning_effort;
@@ -278,8 +278,8 @@ async fn responses_respects_model_info_overrides_from_config() {
         supports_websockets: false,
     };
 
-    let codex_home = TempDir::new().expect("failed to create TempDir");
-    let mut config = load_default_config_for_test(&codex_home).await;
+    let chaos_home = TempDir::new().expect("failed to create TempDir");
+    let mut config = load_default_config_for_test(&chaos_home).await;
     config.model = Some("gpt-3.5-turbo".to_string());
     config.model_provider_id = provider.name.clone();
     config.model_provider = provider.clone();
@@ -292,7 +292,7 @@ async fn responses_respects_model_info_overrides_from_config() {
 
     let conversation_id = ProcessId::new();
     let auth_mode =
-        chaos_kern::test_support::auth_manager_from_auth(CodexAuth::from_api_key("Test API Key"))
+        chaos_kern::test_support::auth_manager_from_auth(ChaosAuth::from_api_key("Test API Key"))
             .auth_mode()
             .map(TelemetryAuthMode::from);
     let session_source =

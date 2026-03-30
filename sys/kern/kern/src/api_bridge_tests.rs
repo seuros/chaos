@@ -5,7 +5,7 @@ use pretty_assertions::assert_eq;
 #[test]
 fn map_api_error_maps_server_overloaded() {
     let err = map_api_error(ApiError::ServerOverloaded);
-    assert!(matches!(err, CodexErr::ServerOverloaded));
+    assert!(matches!(err, ChaosErr::ServerOverloaded));
 }
 
 #[test]
@@ -23,7 +23,7 @@ fn map_api_error_maps_server_overloaded_from_503_body() {
         body: Some(body),
     }));
 
-    assert!(matches!(err, CodexErr::ServerOverloaded));
+    assert!(matches!(err, ChaosErr::ServerOverloaded));
 }
 
 #[test]
@@ -51,8 +51,8 @@ fn map_api_error_maps_usage_limit_limit_name_header() {
         body: Some(body),
     }));
 
-    let CodexErr::UsageLimitReached(usage_limit) = err else {
-        panic!("expected CodexErr::UsageLimitReached, got {err:?}");
+    let ChaosErr::UsageLimitReached(usage_limit) = err else {
+        panic!("expected ChaosErr::UsageLimitReached, got {err:?}");
     };
     assert_eq!(
         usage_limit
@@ -84,8 +84,8 @@ fn map_api_error_does_not_fallback_limit_name_to_limit_id() {
         body: Some(body),
     }));
 
-    let CodexErr::UsageLimitReached(usage_limit) = err else {
-        panic!("expected CodexErr::UsageLimitReached, got {err:?}");
+    let ChaosErr::UsageLimitReached(usage_limit) = err else {
+        panic!("expected ChaosErr::UsageLimitReached, got {err:?}");
     };
     assert_eq!(
         usage_limit
@@ -119,8 +119,8 @@ fn map_api_error_extracts_identity_auth_details_from_headers() {
         body: Some(r#"{"detail":"Unauthorized"}"#.to_string()),
     }));
 
-    let CodexErr::UnexpectedStatus(err) = err else {
-        panic!("expected CodexErr::UnexpectedStatus, got {err:?}");
+    let ChaosErr::UnexpectedStatus(err) = err else {
+        panic!("expected ChaosErr::UnexpectedStatus, got {err:?}");
     };
     assert_eq!(err.request_id.as_deref(), Some("req-401"));
     assert_eq!(err.cf_ray.as_deref(), Some("ray-401"));

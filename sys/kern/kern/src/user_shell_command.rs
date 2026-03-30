@@ -2,7 +2,7 @@ use std::time::Duration;
 
 use chaos_ipc::models::ResponseItem;
 
-use crate::codex::TurnContext;
+use crate::chaos::TurnContext;
 use crate::contextual_user_message::USER_SHELL_COMMAND_FRAGMENT;
 use crate::exec::ExecToolCallOutput;
 use crate::tools::format_exec_output_str;

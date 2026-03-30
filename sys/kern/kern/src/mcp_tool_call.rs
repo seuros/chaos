@@ -13,8 +13,8 @@ use crate::analytics_client::InvocationType;
 use crate::analytics_client::build_track_events_context;
 use crate::arc_monitor::ArcMonitorOutcome;
 use crate::arc_monitor::monitor_action;
-use crate::codex::Session;
-use crate::codex::TurnContext;
+use crate::chaos::Session;
+use crate::chaos::TurnContext;
 use crate::config::edit::ConfigEdit;
 use crate::config::edit::ConfigEditsBuilder;
 use crate::config::types::AppToolApproval;
@@ -1130,7 +1130,7 @@ async fn maybe_persist_mcp_tool_approval(
     let tool_name = key.tool_name.clone();
 
     if let Err(err) =
-        persist_codex_app_tool_approval(&turn_context.config.codex_home, &connector_id, &tool_name)
+        persist_codex_app_tool_approval(&turn_context.config.chaos_home, &connector_id, &tool_name)
             .await
     {
         error!(
@@ -1148,11 +1148,11 @@ async fn maybe_persist_mcp_tool_approval(
 }
 
 async fn persist_codex_app_tool_approval(
-    codex_home: &Path,
+    chaos_home: &Path,
     connector_id: &str,
     tool_name: &str,
 ) -> anyhow::Result<()> {
-    ConfigEditsBuilder::new(codex_home)
+    ConfigEditsBuilder::new(chaos_home)
         .with_edits([ConfigEdit::SetPath {
             segments: vec![
                 "apps".to_string(),

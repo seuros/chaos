@@ -5,11 +5,11 @@ use crate::Prompt;
 use crate::client::ModelClientSession;
 use crate::client_common::ResponseEvent;
 #[cfg(test)]
-use crate::codex::PreviousTurnSettings;
-use crate::codex::Session;
-use crate::codex::TurnContext;
-use crate::codex::get_last_assistant_message_from_turn;
-use crate::error::CodexErr;
+use crate::chaos::PreviousTurnSettings;
+use crate::chaos::Session;
+use crate::chaos::TurnContext;
+use crate::chaos::get_last_assistant_message_from_turn;
+use crate::error::ChaosErr;
 use crate::error::Result as CodexResult;
 use crate::protocol::CompactedItem;
 use crate::protocol::EventMsg;
@@ -148,10 +148,10 @@ async fn run_compact_task_inner(
                 }
                 break;
             }
-            Err(CodexErr::Interrupted) => {
-                return Err(CodexErr::Interrupted);
+            Err(ChaosErr::Interrupted) => {
+                return Err(ChaosErr::Interrupted);
             }
-            Err(e @ CodexErr::ContextWindowExceeded) => {
+            Err(e @ ChaosErr::ContextWindowExceeded) => {
                 if turn_input_len > 1 {
                     // Trim from the beginning to preserve cache (prefix-based) and keep recent messages intact.
                     error!(
@@ -410,7 +410,7 @@ async fn drain_to_completed(
     loop {
         let maybe_event = stream.next().await;
         let Some(event) = maybe_event else {
-            return Err(CodexErr::Stream(
+            return Err(ChaosErr::Stream(
                 "stream closed before response.completed".into(),
                 None,
             ));

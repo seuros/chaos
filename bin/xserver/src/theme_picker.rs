@@ -1,7 +1,7 @@
 //! Builds the `/theme` picker dialog for the TUI.
 //!
 //! The picker lists all bundled themes plus any custom `.tmTheme` files found
-//! under `{CODEX_HOME}/themes/`.  It provides:
+//! under `{CHAOS_HOME}/themes/`.  It provides:
 //!
 //! - **Live preview:** the `on_selection_changed` callback swaps the runtime
 //!   syntax theme as the user navigates, giving instant visual feedback in both
@@ -282,8 +282,8 @@ fn subtitle_available_width(terminal_width: Option<u16>) -> usize {
     }
 }
 
-fn theme_picker_subtitle(codex_home: Option<&Path>, terminal_width: Option<u16>) -> String {
-    let themes_dir = codex_home.map(|home| home.join("themes"));
+fn theme_picker_subtitle(chaos_home: Option<&Path>, terminal_width: Option<u16>) -> String {
+    let themes_dir = chaos_home.map(|home| home.join("themes"));
     let themes_dir_display = themes_dir
         .as_deref()
         .map(|path| format_directory_display(path, /*max_width*/ None));
@@ -313,14 +313,14 @@ fn theme_picker_subtitle(codex_home: Option<&Path>, terminal_width: Option<u16>)
 /// highlights the most likely intended entry.
 pub(crate) fn build_theme_picker_params(
     current_name: Option<&str>,
-    codex_home: Option<&Path>,
+    chaos_home: Option<&Path>,
     terminal_width: Option<u16>,
 ) -> SelectionViewParams {
     // Snapshot the current theme so we can restore on cancel.
     let original_theme = highlight::current_syntax_theme();
 
-    let entries = highlight::list_available_themes(codex_home);
-    let codex_home_owned = codex_home.map(Path::to_path_buf);
+    let entries = highlight::list_available_themes(chaos_home);
+    let codex_home_owned = chaos_home.map(Path::to_path_buf);
 
     // Resolve the effective theme name: honor explicit config only when it is
     // currently available; otherwise fall back to configured/default selection
@@ -585,9 +585,9 @@ mod tests {
     #[test]
     fn subtitle_uses_tilde_path_when_codex_home_under_home_directory() {
         let home = dirs::home_dir().expect("home directory should be available");
-        let codex_home = home.join(".codex");
+        let chaos_home = home.join(".chaos");
 
-        let subtitle = theme_picker_subtitle(Some(&codex_home), Some(200));
+        let subtitle = theme_picker_subtitle(Some(&chaos_home), Some(200));
 
         assert!(subtitle.contains("~"));
         assert!(subtitle.contains("directory"));
@@ -597,9 +597,9 @@ mod tests {
     fn subtitle_falls_back_when_tilde_path_subtitle_is_too_wide() {
         let home = dirs::home_dir().expect("home directory should be available");
         let long_segment = "a".repeat(120);
-        let codex_home = home.join(long_segment).join(".codex");
+        let chaos_home = home.join(long_segment).join(".chaos");
 
-        let subtitle = theme_picker_subtitle(Some(&codex_home), Some(140));
+        let subtitle = theme_picker_subtitle(Some(&chaos_home), Some(140));
 
         assert_eq!(subtitle, PREVIEW_FALLBACK_SUBTITLE);
     }
@@ -613,9 +613,9 @@ mod tests {
     #[test]
     fn subtitle_falls_back_for_94_column_terminal_side_by_side_layout() {
         let home = dirs::home_dir().expect("home directory should be available");
-        let codex_home = home.join(".codex");
+        let chaos_home = home.join(".chaos");
 
-        let subtitle = theme_picker_subtitle(Some(&codex_home), Some(94));
+        let subtitle = theme_picker_subtitle(Some(&chaos_home), Some(94));
 
         assert_eq!(subtitle, PREVIEW_FALLBACK_SUBTITLE);
     }

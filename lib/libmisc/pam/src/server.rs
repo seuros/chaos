@@ -52,7 +52,7 @@ const DEFAULT_PORT: u16 = 1455;
 /// Options for launching the local login callback server.
 #[derive(Debug, Clone)]
 pub struct ServerOptions {
-    pub codex_home: PathBuf,
+    pub chaos_home: PathBuf,
     pub client_id: String,
     pub issuer: String,
     pub port: u16,
@@ -65,13 +65,13 @@ pub struct ServerOptions {
 impl ServerOptions {
     /// Creates a server configuration with the default issuer and port.
     pub fn new(
-        codex_home: PathBuf,
+        chaos_home: PathBuf,
         client_id: String,
         forced_chatgpt_workspace_id: Option<String>,
         cli_auth_credentials_store_mode: AuthCredentialsStoreMode,
     ) -> Self {
         Self {
-            codex_home,
+            chaos_home,
             client_id,
             issuer: DEFAULT_ISSUER.to_string(),
             port: DEFAULT_PORT,
@@ -343,7 +343,7 @@ async fn process_request(
                         .await
                         .ok();
                     if let Err(err) = persist_tokens_async(
-                        &opts.codex_home,
+                        &opts.chaos_home,
                         api_key.clone(),
                         tokens.id_token.clone(),
                         tokens.access_token.clone(),
@@ -740,7 +740,7 @@ pub(crate) async fn exchange_code_for_tokens(
 
 /// Persists exchanged credentials using the configured local auth store.
 pub(crate) async fn persist_tokens_async(
-    codex_home: &Path,
+    chaos_home: &Path,
     api_key: Option<String>,
     id_token: String,
     access_token: String,
@@ -748,7 +748,7 @@ pub(crate) async fn persist_tokens_async(
     auth_credentials_store_mode: AuthCredentialsStoreMode,
 ) -> io::Result<()> {
     // Reuse existing synchronous logic but run it off the async runtime.
-    let codex_home = codex_home.to_path_buf();
+    let chaos_home = chaos_home.to_path_buf();
     tokio::task::spawn_blocking(move || {
         let mut tokens = TokenData {
             id_token: parse_chatgpt_jwt_claims(&id_token).map_err(io::Error::other)?,
@@ -768,7 +768,7 @@ pub(crate) async fn persist_tokens_async(
             tokens: Some(tokens),
             last_refresh: Some(jiff::Timestamp::now()),
         };
-        save_auth(&codex_home, &auth, auth_credentials_store_mode)
+        save_auth(&chaos_home, &auth, auth_credentials_store_mode)
     })
     .await
     .map_err(|e| io::Error::other(format!("persist task failed: {e}")))?

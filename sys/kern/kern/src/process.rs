@@ -1,8 +1,8 @@
-use crate::codex::Codex;
-use crate::codex::SteerInputError;
+use crate::chaos::Chaos;
+use crate::chaos::SteerInputError;
 use crate::config::ConstraintResult;
-use crate::error::CodexErr;
-use crate::error::Result as CodexResult;
+use crate::error::ChaosErr;
+use crate::error::Result as ChaosResult;
 use crate::features::Feature;
 use crate::file_watcher::WatchRegistration;
 use crate::minions::AgentStatus;
@@ -44,7 +44,7 @@ pub struct ProcessConfigSnapshot {
 }
 
 pub struct Process {
-    pub(crate) codex: Codex,
+    pub(crate) codex: Chaos,
     out_of_band_elicitation_count: Mutex<u64>,
     _watch_registration: WatchRegistration,
 }
@@ -52,7 +52,7 @@ pub struct Process {
 /// Conduit for the bidirectional stream of messages that compose a process
 /// (formerly called a thread, and earlier a conversation) in ChaOS.
 impl Process {
-    pub(crate) fn new(codex: Codex, watch_registration: WatchRegistration) -> Self {
+    pub(crate) fn new(codex: Chaos, watch_registration: WatchRegistration) -> Self {
         Self {
             codex,
             out_of_band_elicitation_count: Mutex::new(0),
@@ -60,11 +60,11 @@ impl Process {
         }
     }
 
-    pub async fn submit(&self, op: Op) -> CodexResult<String> {
+    pub async fn submit(&self, op: Op) -> ChaosResult<String> {
         self.codex.submit(op).await
     }
 
-    pub async fn shutdown_and_wait(&self) -> CodexResult<()> {
+    pub async fn shutdown_and_wait(&self) -> ChaosResult<()> {
         self.codex.shutdown_and_wait().await
     }
 
@@ -72,7 +72,7 @@ impl Process {
         &self,
         op: Op,
         trace: Option<W3cTraceContext>,
-    ) -> CodexResult<String> {
+    ) -> ChaosResult<String> {
         self.codex.submit_with_trace(op, trace).await
     }
 
@@ -94,11 +94,11 @@ impl Process {
     }
 
     /// Use sparingly: this is intended to be removed soon.
-    pub async fn submit_with_id(&self, sub: Submission) -> CodexResult<()> {
+    pub async fn submit_with_id(&self, sub: Submission) -> ChaosResult<()> {
         self.codex.submit_with_id(sub).await
     }
 
-    pub async fn next_event(&self) -> CodexResult<Event> {
+    pub async fn next_event(&self) -> ChaosResult<Event> {
         self.codex.next_event().await
     }
 
@@ -153,11 +153,11 @@ impl Process {
         self.codex.enabled(feature)
     }
 
-    pub async fn increment_out_of_band_elicitation_count(&self) -> CodexResult<u64> {
+    pub async fn increment_out_of_band_elicitation_count(&self) -> ChaosResult<u64> {
         let mut guard = self.out_of_band_elicitation_count.lock().await;
         let was_zero = *guard == 0;
         *guard = guard.checked_add(1).ok_or_else(|| {
-            CodexErr::Fatal("out-of-band elicitation count overflowed".to_string())
+            ChaosErr::Fatal("out-of-band elicitation count overflowed".to_string())
         })?;
 
         if was_zero {
@@ -169,10 +169,10 @@ impl Process {
         Ok(*guard)
     }
 
-    pub async fn decrement_out_of_band_elicitation_count(&self) -> CodexResult<u64> {
+    pub async fn decrement_out_of_band_elicitation_count(&self) -> ChaosResult<u64> {
         let mut guard = self.out_of_band_elicitation_count.lock().await;
         if *guard == 0 {
-            return Err(CodexErr::InvalidRequest(
+            return Err(ChaosErr::InvalidRequest(
                 "out-of-band elicitation count is already zero".to_string(),
             ));
         }

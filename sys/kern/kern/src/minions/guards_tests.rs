@@ -58,8 +58,8 @@ fn commit_holds_slot_until_release() {
         Ok(_) => panic!("limit should be enforced"),
         Err(err) => err,
     };
-    let CodexErr::AgentLimitReached { max_threads } = err else {
-        panic!("expected CodexErr::AgentLimitReached");
+    let ChaosErr::AgentLimitReached { max_threads } = err else {
+        panic!("expected ChaosErr::AgentLimitReached");
     };
     assert_eq!(max_threads, 1);
 
@@ -83,8 +83,8 @@ fn release_ignores_unknown_process_id() {
         Ok(_) => panic!("limit should still be enforced"),
         Err(err) => err,
     };
-    let CodexErr::AgentLimitReached { max_threads } = err else {
-        panic!("expected CodexErr::AgentLimitReached");
+    let ChaosErr::AgentLimitReached { max_threads } = err else {
+        panic!("expected ChaosErr::AgentLimitReached");
     };
     assert_eq!(max_threads, 1);
 
@@ -114,8 +114,8 @@ fn release_is_idempotent_for_registered_processes() {
         Ok(_) => panic!("limit should still be enforced"),
         Err(err) => err,
     };
-    let CodexErr::AgentLimitReached { max_threads } = err else {
-        panic!("expected CodexErr::AgentLimitReached");
+    let ChaosErr::AgentLimitReached { max_threads } = err else {
+        panic!("expected ChaosErr::AgentLimitReached");
     };
     assert_eq!(max_threads, 1);
 

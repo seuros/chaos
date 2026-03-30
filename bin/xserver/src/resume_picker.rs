@@ -20,8 +20,7 @@ use chaos_kern::RolloutRecorder;
 use chaos_kern::config::Config;
 use chaos_kern::find_process_names_by_ids;
 use chaos_kern::path_utils;
-use chrono::DateTime;
-use chrono::Utc;
+use jiff::Timestamp;
 use color_eyre::eyre::Result;
 use crossterm::event::KeyCode;
 use crossterm::event::KeyEvent;
@@ -144,7 +143,7 @@ async fn run_session_picker(
     let (bg_tx, bg_rx) = mpsc::unbounded_channel();
 
     let default_provider = config.model_provider_id.to_string();
-    let codex_home = config.codex_home.as_path();
+    let chaos_home = config.chaos_home.as_path();
     let filter_cwd = if show_all {
         None
     } else {
@@ -178,7 +177,7 @@ async fn run_session_picker(
     });
 
     let mut state = PickerState::new(
-        codex_home.to_path_buf(),
+        chaos_home.to_path_buf(),
         alt.tui.frame_requester(),
         page_loader,
         default_provider.clone(),
@@ -253,7 +252,7 @@ impl Drop for AltScreenGuard<'_> {
 }
 
 struct PickerState {
-    codex_home: PathBuf,
+    chaos_home: PathBuf,
     requester: FrameRequester,
     pagination: PaginationState,
     all_rows: Vec<Row>,
@@ -330,8 +329,8 @@ struct Row {
     preview: String,
     process_id: ProcessId,
     process_name: Option<String>,
-    created_at: Option<DateTime<Utc>>,
-    updated_at: Option<DateTime<Utc>>,
+    created_at: Option<Timestamp>,
+    updated_at: Option<Timestamp>,
     cwd: Option<PathBuf>,
     git_branch: Option<String>,
 }
@@ -356,7 +355,7 @@ impl Row {
 
 impl PickerState {
     fn new(
-        codex_home: PathBuf,
+        chaos_home: PathBuf,
         requester: FrameRequester,
         page_loader: PageLoader,
         default_provider: String,
@@ -365,7 +364,7 @@ impl PickerState {
         action: SessionPickerAction,
     ) -> Self {
         Self {
-            codex_home,
+            chaos_home,
             requester,
             pagination: PaginationState {
                 next_cursor: None,
@@ -575,7 +574,7 @@ impl PickerState {
             return;
         }
 
-        let names = find_process_names_by_ids(&self.codex_home, &missing_ids)
+        let names = find_process_names_by_ids(&self.chaos_home, &missing_ids)
             .await
             .unwrap_or_default();
         for process_id in missing_ids {
@@ -841,10 +840,8 @@ fn paths_match(a: &Path, b: &Path) -> bool {
     a == b
 }
 
-fn parse_timestamp_str(ts: &str) -> Option<DateTime<Utc>> {
-    chrono::DateTime::parse_from_rfc3339(ts)
-        .map(|dt| dt.with_timezone(&Utc))
-        .ok()
+fn parse_timestamp_str(ts: &str) -> Option<Timestamp> {
+    ts.parse().ok()
 }
 
 fn draw_picker(tui: &mut Tui, state: &PickerState) -> std::io::Result<()> {
@@ -1077,10 +1074,8 @@ fn render_empty_state_line(state: &PickerState) -> Line<'static> {
     vec!["No sessions yet".italic().dim()].into()
 }
 
-fn human_time_ago(ts: DateTime<Utc>) -> String {
-    let now = Utc::now();
-    let delta = now - ts;
-    let secs = delta.num_seconds();
+fn human_time_ago(ts: Timestamp) -> String {
+    let secs = (Timestamp::now().as_second() - ts.as_second()).max(0);
     if secs < 60 {
         let n = secs.max(0);
         if n == 1 {
@@ -1322,7 +1317,8 @@ fn column_visibility(
 mod tests {
     use super::*;
     use chaos_ipc::ProcessId;
-    use chrono::Duration;
+    use jiff::Timestamp;
+    use jiff::ToSpan;
 
     use crossterm::event::KeyCode;
     use crossterm::event::KeyEvent;
@@ -1414,12 +1410,8 @@ mod tests {
         };
 
         let row = head_to_row(&item);
-        let expected_created = chrono::DateTime::parse_from_rfc3339("2025-01-01T00:00:00Z")
-            .unwrap()
-            .with_timezone(&Utc);
-        let expected_updated = chrono::DateTime::parse_from_rfc3339("2025-01-01T01:00:00Z")
-            .unwrap()
-            .with_timezone(&Utc);
+        let expected_created = "2025-01-01T00:00:00Z".parse::<Timestamp>().unwrap();
+        let expected_updated = "2025-01-01T01:00:00Z".parse::<Timestamp>().unwrap();
 
         assert_eq!(row.created_at, Some(expected_created));
         assert_eq!(row.updated_at, Some(expected_updated));
@@ -1458,14 +1450,14 @@ mod tests {
             SessionPickerAction::Resume,
         );
 
-        let now = Utc::now();
+        let now = Timestamp::now();
         let rows = vec![
             Row {
                 preview: String::from("Fix resume picker timestamps"),
                 process_id: ProcessId::new(),
                 process_name: None,
-                created_at: Some(now - Duration::minutes(16)),
-                updated_at: Some(now - Duration::seconds(42)),
+                created_at: Some(now.checked_sub(16.minutes()).unwrap()),
+                updated_at: Some(now.checked_sub(42.seconds()).unwrap()),
                 cwd: None,
                 git_branch: None,
             },
@@ -1473,8 +1465,8 @@ mod tests {
                 preview: String::from("Investigate lazy pagination cap"),
                 process_id: ProcessId::new(),
                 process_name: None,
-                created_at: Some(now - Duration::hours(1)),
-                updated_at: Some(now - Duration::minutes(35)),
+                created_at: Some(now.checked_sub(1.hours()).unwrap()),
+                updated_at: Some(now.checked_sub(35.minutes()).unwrap()),
                 cwd: None,
                 git_branch: None,
             },
@@ -1482,8 +1474,8 @@ mod tests {
                 preview: String::from("Explain the codebase"),
                 process_id: ProcessId::new(),
                 process_name: None,
-                created_at: Some(now - Duration::hours(2)),
-                updated_at: Some(now - Duration::hours(2)),
+                created_at: Some(now.checked_sub(2.hours()).unwrap()),
+                updated_at: Some(now.checked_sub(2.hours()).unwrap()),
                 cwd: None,
                 git_branch: None,
             },

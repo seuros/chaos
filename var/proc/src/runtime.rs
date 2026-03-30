@@ -52,6 +52,7 @@ use tracing::warn;
 mod agent_jobs;
 mod backfill;
 mod logs;
+mod message_history;
 mod memories;
 mod processes;
 #[cfg(test)]
@@ -66,7 +67,7 @@ const LOG_PARTITION_ROW_LIMIT: i64 = 1_000;
 
 #[derive(Clone)]
 pub struct StateRuntime {
-    codex_home: PathBuf,
+    chaos_home: PathBuf,
     default_provider: String,
     pool: Arc<sqlx::SqlitePool>,
     logs_pool: Arc<sqlx::SqlitePool>,
@@ -74,31 +75,31 @@ pub struct StateRuntime {
 }
 
 impl StateRuntime {
-    /// Initialize the state runtime using the provided Codex home and default provider.
+    /// Initialize the state runtime using the provided ChaOS home and default provider.
     ///
-    /// This opens (and migrates) the SQLite databases under `codex_home`,
+    /// This opens (and migrates) the SQLite databases under `chaos_home`,
     /// keeping logs in a dedicated file to reduce lock contention with the
     /// rest of the state store.
-    pub async fn init(codex_home: PathBuf, default_provider: String) -> anyhow::Result<Arc<Self>> {
-        tokio::fs::create_dir_all(&codex_home).await?;
+    pub async fn init(chaos_home: PathBuf, default_provider: String) -> anyhow::Result<Arc<Self>> {
+        tokio::fs::create_dir_all(&chaos_home).await?;
         let current_state_name = state_db_filename();
         let current_logs_name = logs_db_filename();
         remove_legacy_db_files(
-            &codex_home,
+            &chaos_home,
             current_state_name.as_str(),
             STATE_DB_FILENAME,
             "state",
         )
         .await;
         remove_legacy_db_files(
-            &codex_home,
+            &chaos_home,
             current_logs_name.as_str(),
             LOGS_DB_FILENAME,
             "logs",
         )
         .await;
-        let state_path = state_db_path(codex_home.as_path());
-        let logs_path = logs_db_path(codex_home.as_path());
+        let state_path = state_db_path(chaos_home.as_path());
+        let logs_path = logs_db_path(chaos_home.as_path());
         let pool = match open_sqlite(&state_path, &STATE_MIGRATOR).await {
             Ok(db) => Arc::new(db),
             Err(err) => {
@@ -113,8 +114,8 @@ impl StateRuntime {
                 return Err(err);
             }
         };
-        let chaos_path = chaos_db_path(codex_home.as_path());
-        let chaos_pool = match open_chaos_db(codex_home.as_path()).await {
+        let chaos_path = chaos_db_path(chaos_home.as_path());
+        let chaos_pool = match open_chaos_db(chaos_home.as_path()).await {
             Ok(db) => Some(Arc::new(db)),
             Err(err) => {
                 warn!(
@@ -128,15 +129,15 @@ impl StateRuntime {
             pool,
             logs_pool,
             chaos_pool,
-            codex_home,
+            chaos_home,
             default_provider,
         });
         Ok(runtime)
     }
 
-    /// Return the configured Codex home directory for this runtime.
-    pub fn codex_home(&self) -> &Path {
-        self.codex_home.as_path()
+    /// Return the configured ChaOS home directory for this runtime.
+    pub fn chaos_home(&self) -> &Path {
+        self.chaos_home.as_path()
     }
 
     /// Return a reference to the Chaos-native SQLite pool, if available.
@@ -160,8 +161,38 @@ async fn open_sqlite(path: &Path, migrator: &'static Migrator) -> anyhow::Result
         .max_connections(5)
         .connect_with(options)
         .await?;
-    migrator.run(&pool).await?;
+    if let Err(err) = migrator.run(&pool).await {
+        if is_modified_migration_error(&err) && has_existing_user_schema(&pool).await.unwrap_or(false) {
+            warn!(
+                db_path = %path.display(),
+                error = %err,
+                "ignoring sqlx migration checksum mismatch for existing local database"
+            );
+        } else {
+            return Err(err.into());
+        }
+    }
     Ok(pool)
+}
+
+fn is_modified_migration_error(err: &sqlx::migrate::MigrateError) -> bool {
+    err.to_string()
+        .contains("was previously applied but has been modified")
+}
+
+async fn has_existing_user_schema(pool: &SqlitePool) -> anyhow::Result<bool> {
+    let count: i64 = sqlx::query_scalar(
+        r#"
+SELECT COUNT(*)
+FROM sqlite_master
+WHERE type IN ('table', 'view')
+  AND name NOT LIKE 'sqlite_%'
+  AND name != '_sqlx_migrations'
+        "#,
+    )
+    .fetch_one(pool)
+    .await?;
+    Ok(count > 0)
 }
 
 fn db_filename(base_name: &str, version: u32) -> String {
@@ -172,42 +203,42 @@ pub fn state_db_filename() -> String {
     db_filename(STATE_DB_FILENAME, STATE_DB_VERSION)
 }
 
-pub fn state_db_path(codex_home: &Path) -> PathBuf {
-    codex_home.join(state_db_filename())
+pub fn state_db_path(chaos_home: &Path) -> PathBuf {
+    chaos_home.join(state_db_filename())
 }
 
 pub fn logs_db_filename() -> String {
     db_filename(LOGS_DB_FILENAME, LOGS_DB_VERSION)
 }
 
-pub fn logs_db_path(codex_home: &Path) -> PathBuf {
-    codex_home.join(logs_db_filename())
+pub fn logs_db_path(chaos_home: &Path) -> PathBuf {
+    chaos_home.join(logs_db_filename())
 }
 
 pub fn chaos_db_filename() -> String {
     db_filename(CHAOS_DB_FILENAME, CHAOS_DB_VERSION)
 }
 
-pub fn chaos_db_path(codex_home: &Path) -> PathBuf {
-    codex_home.join(chaos_db_filename())
+pub fn chaos_db_path(chaos_home: &Path) -> PathBuf {
+    chaos_home.join(chaos_db_filename())
 }
 
-pub async fn open_chaos_db(codex_home: &Path) -> anyhow::Result<SqlitePool> {
-    open_sqlite(&chaos_db_path(codex_home), &CHAOS_MIGRATOR).await
+pub async fn open_chaos_db(chaos_home: &Path) -> anyhow::Result<SqlitePool> {
+    open_sqlite(&chaos_db_path(chaos_home), &CHAOS_MIGRATOR).await
 }
 
 async fn remove_legacy_db_files(
-    codex_home: &Path,
+    chaos_home: &Path,
     current_name: &str,
     base_name: &str,
     db_label: &str,
 ) {
-    let mut entries = match tokio::fs::read_dir(codex_home).await {
+    let mut entries = match tokio::fs::read_dir(chaos_home).await {
         Ok(entries) => entries,
         Err(err) => {
             warn!(
-                "failed to read codex_home for {db_label} db cleanup {}: {err}",
-                codex_home.display(),
+                "failed to read chaos_home for {db_label} db cleanup {}: {err}",
+                chaos_home.display(),
             );
             return;
         }
@@ -270,17 +301,17 @@ mod tests {
 
     #[tokio::test]
     async fn init_survives_chaos_db_open_failure() {
-        let codex_home = test_support::unique_temp_dir();
-        tokio::fs::create_dir_all(&codex_home)
+        let chaos_home = test_support::unique_temp_dir();
+        tokio::fs::create_dir_all(&chaos_home)
             .await
-            .expect("create temp codex home");
+            .expect("create temp chaos home");
 
-        let blocking_chaos_path = codex_home.join(chaos_db_filename());
+        let blocking_chaos_path = chaos_home.join(chaos_db_filename());
         tokio::fs::create_dir_all(&blocking_chaos_path)
             .await
             .expect("create blocking chaos path");
 
-        let runtime = StateRuntime::init(codex_home.clone(), "test-provider".to_string())
+        let runtime = StateRuntime::init(chaos_home.clone(), "test-provider".to_string())
             .await
             .expect("state runtime should still initialize");
 
@@ -293,19 +324,19 @@ mod tests {
             "state db should remain usable when only chaos db init fails"
         );
 
-        tokio::fs::remove_dir_all(&codex_home)
+        tokio::fs::remove_dir_all(&chaos_home)
             .await
-            .expect("cleanup temp codex home");
+            .expect("cleanup temp chaos home");
     }
 
     #[tokio::test]
     async fn open_chaos_db_creates_schema() {
-        let codex_home = test_support::unique_temp_dir();
-        tokio::fs::create_dir_all(&codex_home)
+        let chaos_home = test_support::unique_temp_dir();
+        tokio::fs::create_dir_all(&chaos_home)
             .await
-            .expect("create temp codex home");
+            .expect("create temp chaos home");
 
-        let pool = open_chaos_db(codex_home.as_path())
+        let pool = open_chaos_db(chaos_home.as_path())
             .await
             .expect("open chaos db");
 
@@ -319,14 +350,14 @@ mod tests {
         let table_name: String = row.get("name");
         assert_eq!(table_name, "cron_jobs");
         assert!(
-            tokio::fs::try_exists(&chaos_db_path(codex_home.as_path()))
+            tokio::fs::try_exists(&chaos_db_path(chaos_home.as_path()))
                 .await
                 .expect("stat chaos db"),
             "chaos db file should be created on demand"
         );
 
-        tokio::fs::remove_dir_all(&codex_home)
+        tokio::fs::remove_dir_all(&chaos_home)
             .await
-            .expect("cleanup temp codex home");
+            .expect("cleanup temp chaos home");
     }
 }

@@ -1,5 +1,5 @@
 use super::*;
-use crate::codex::make_session_and_context;
+use crate::chaos::make_session_and_context;
 use chaos_ipc::models::ContentItem;
 use chaos_ipc::models::ResponseItem;
 use pretty_assertions::assert_eq;

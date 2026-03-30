@@ -19,7 +19,7 @@ async fn test_config_with_cli_overrides(
     let home = TempDir::new().expect("create temp dir");
     let home_path = home.path().to_path_buf();
     let config = ConfigBuilder::default()
-        .codex_home(home_path.clone())
+        .chaos_home(home_path.clone())
         .cli_overrides(cli_overrides)
         .fallback_cwd(Some(home_path))
         .build()
@@ -212,7 +212,7 @@ model_provider = "test-provider"
     .await
     .expect("write config.toml");
     let mut config = ConfigBuilder::default()
-        .codex_home(home.path().to_path_buf())
+        .chaos_home(home.path().to_path_buf())
         .harness_overrides(ConfigOverrides {
             config_profile: Some("test-profile".to_string()),
             ..Default::default()
@@ -261,7 +261,7 @@ model_verbosity = "low"
     .await
     .expect("write config.toml");
     let mut config = ConfigBuilder::default()
-        .codex_home(home.path().to_path_buf())
+        .chaos_home(home.path().to_path_buf())
         .harness_overrides(ConfigOverrides {
             config_profile: Some("base-profile".to_string()),
             ..Default::default()
@@ -332,7 +332,7 @@ model_provider = "role-provider"
     .await
     .expect("write config.toml");
     let mut config = ConfigBuilder::default()
-        .codex_home(home.path().to_path_buf())
+        .chaos_home(home.path().to_path_buf())
         .harness_overrides(ConfigOverrides {
             config_profile: Some("base-profile".to_string()),
             ..Default::default()
@@ -390,7 +390,7 @@ model_provider = "base-provider"
     .await
     .expect("write config.toml");
     let mut config = ConfigBuilder::default()
-        .codex_home(home.path().to_path_buf())
+        .chaos_home(home.path().to_path_buf())
         .harness_overrides(ConfigOverrides {
             config_profile: Some("base-profile".to_string()),
             ..Default::default()
@@ -449,7 +449,7 @@ model_reasoning_effort = "low"
     .await
     .expect("write config.toml");
     let mut config = ConfigBuilder::default()
-        .codex_home(home.path().to_path_buf())
+        .chaos_home(home.path().to_path_buf())
         .harness_overrides(ConfigOverrides {
             config_profile: Some("base-profile".to_string()),
             ..Default::default()

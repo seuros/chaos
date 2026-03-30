@@ -92,7 +92,7 @@ impl ToolHandler for Handler {
                     }
                     status_rxs.push((*id, rx));
                 }
-                Err(CodexErr::ProcessNotFound(_)) => {
+                Err(ChaosErr::ProcessNotFound(_)) => {
                     initial_final_statuses.push((*id, AgentStatus::NotFound));
                 }
                 Err(err) => {

@@ -58,9 +58,9 @@ pub use chaos_sysctl::merge_toml_values;
 pub(crate) use chaos_sysctl::version_for_toml;
 
 /// On Unix systems, load default settings from this file path, if present.
-/// Note that /etc/codex/ is treated as a "config folder," so subfolders such
+/// Note that /etc/chaos/ is treated as a "config folder," so subfolders such
 /// as skills/ and rules/ will also be honored.
-pub const SYSTEM_CONFIG_TOML_FILE_UNIX: &str = "/etc/codex/config.toml";
+pub const SYSTEM_CONFIG_TOML_FILE_UNIX: &str = "/etc/chaos/config.toml";
 
 const DEFAULT_PROJECT_ROOT_MARKERS: &[&str] = &[".git"];
 
@@ -81,7 +81,7 @@ pub(crate) async fn first_layer_config_error_from_entries(
 ///
 /// - cloud:    managed cloud requirements
 /// - admin:    managed preferences (*)
-/// - system    `/etc/codex/requirements.toml` (Unix) or
+/// - system    `/etc/chaos/requirements.toml` (Unix) or
 ///   `%ProgramData%\OpenAI\Codex\requirements.toml` (Windows)
 ///
 /// For backwards compatibility, we also load from
@@ -90,12 +90,14 @@ pub(crate) async fn first_layer_config_error_from_entries(
 /// Configuration is built up from multiple layers in the following order:
 ///
 /// - admin:    managed preferences (*)
-/// - system    `/etc/codex/config.toml` (Unix) or
+/// - system    `/etc/chaos/config.toml` (Unix) or
 ///   `%ProgramData%\OpenAI\Codex\config.toml` (Windows)
-/// - user      `${CODEX_HOME}/config.toml`
+/// - user      `${CHAOS_HOME}/config.toml`
 /// - cwd       `${PWD}/config.toml` (loaded but disabled when the directory is untrusted)
-/// - tree      parent directories up to root looking for `./.codex/config.toml` (loaded but disabled when untrusted)
-/// - repo      `$(git rev-parse --show-toplevel)/.codex/config.toml` (loaded but disabled when untrusted)
+/// - tree      parent directories up to root looking for `./.chaos/config.toml`
+///             (loaded but disabled when untrusted)
+/// - repo      `$(git rev-parse --show-toplevel)/.chaos/config.toml` (loaded
+///             but disabled when untrusted)
 /// - runtime   e.g., --config flags, model selector in UI
 ///
 /// (*) Only available on macOS via managed device profiles.
@@ -107,7 +109,7 @@ pub(crate) async fn first_layer_config_error_from_entries(
 /// thread-agnostic config loading (e.g., for the app server's `/config`
 /// endpoint) should `cwd` be `None`.
 pub async fn load_config_layers_state(
-    codex_home: &Path,
+    chaos_home: &Path,
     cwd: Option<AbsolutePathBuf>,
     cli_overrides: &[(String, TomlValue)],
     overrides: LoaderOverrides,
@@ -135,7 +137,7 @@ pub async fn load_config_layers_state(
 
     // Make a best-effort to support the legacy `managed_config.toml` as a
     // requirements specification.
-    let loaded_config_layers = layer_io::load_config_layers_internal(codex_home, overrides).await?;
+    let loaded_config_layers = layer_io::load_config_layers_internal(chaos_home, overrides).await?;
     load_requirements_from_legacy_scheme(
         &mut config_requirements_toml,
         loaded_config_layers.clone(),
@@ -151,7 +153,7 @@ pub async fn load_config_layers_state(
         let base_dir = cwd
             .as_ref()
             .map(AbsolutePathBuf::as_path)
-            .unwrap_or(codex_home);
+            .unwrap_or(chaos_home);
         Some(resolve_relative_paths_in_config_toml(
             cli_overrides_layer,
             base_dir,
@@ -173,10 +175,10 @@ pub async fn load_config_layers_state(
         .await?;
     layers.push(system_layer);
 
-    // Add a layer for $CODEX_HOME/config.toml if it exists. Note if the file
+    // Add a layer for $CHAOS_HOME/config.toml if it exists. Note if the file
     // exists, but is malformed, then this error should be propagated to the
     // user.
-    let user_file = AbsolutePathBuf::resolve_path_against_base(CONFIG_TOML_FILE, codex_home)?;
+    let user_file = AbsolutePathBuf::resolve_path_against_base(CONFIG_TOML_FILE, chaos_home)?;
     let user_layer = load_config_toml_for_required_layer(&user_file, |config_toml| {
         ConfigLayerEntry::new(
             ConfigLayerSource::User {
@@ -214,7 +216,7 @@ pub async fn load_config_layers_state(
             &merged_so_far,
             &cwd,
             &project_root_markers,
-            codex_home,
+            chaos_home,
             &user_file,
         )
         .await
@@ -239,7 +241,7 @@ pub async fn load_config_layers_state(
             &cwd,
             &project_trust_context.project_root,
             &project_trust_context,
-            codex_home,
+            chaos_home,
         )
         .await?;
         layers.extend(project_layers);
@@ -383,7 +385,7 @@ async fn load_requirements_toml(
 }
 
 fn system_requirements_toml_file() -> io::Result<AbsolutePathBuf> {
-    AbsolutePathBuf::from_absolute_path(Path::new("/etc/codex/requirements.toml"))
+    AbsolutePathBuf::from_absolute_path(Path::new("/etc/chaos/requirements.toml"))
 }
 
 fn system_config_toml_file() -> io::Result<AbsolutePathBuf> {
@@ -561,13 +563,13 @@ impl ProjectTrustContext {
 
 fn project_layer_entry(
     trust_context: &ProjectTrustContext,
-    dot_codex_folder: &AbsolutePathBuf,
+    dot_chaos_folder: &AbsolutePathBuf,
     layer_dir: &AbsolutePathBuf,
     config: TomlValue,
     config_toml_exists: bool,
 ) -> ConfigLayerEntry {
     let source = ConfigLayerSource::Project {
-        dot_codex_folder: dot_codex_folder.clone(),
+        dot_codex_folder: dot_chaos_folder.clone(),
     };
 
     if config_toml_exists && let Some(reason) = trust_context.disabled_reason_for_dir(layer_dir) {
@@ -703,11 +705,11 @@ async fn load_project_layers(
     cwd: &AbsolutePathBuf,
     project_root: &AbsolutePathBuf,
     trust_context: &ProjectTrustContext,
-    codex_home: &Path,
+    chaos_home: &Path,
 ) -> io::Result<Vec<ConfigLayerEntry>> {
-    let codex_home_abs = AbsolutePathBuf::from_absolute_path(codex_home)?;
-    let codex_home_normalized =
-        normalize_path(codex_home_abs.as_path()).unwrap_or_else(|_| codex_home_abs.to_path_buf());
+    let chaos_home_abs = AbsolutePathBuf::from_absolute_path(chaos_home)?;
+    let chaos_home_normalized =
+        normalize_path(chaos_home_abs.as_path()).unwrap_or_else(|_| chaos_home_abs.to_path_buf());
     let mut dirs = cwd
         .as_path()
         .ancestors()
@@ -726,8 +728,8 @@ async fn load_project_layers(
 
     let mut layers = Vec::new();
     for dir in dirs {
-        let dot_codex = dir.join(".codex");
-        if !tokio::fs::metadata(&dot_codex)
+        let dot_chaos = dir.join(".chaos");
+        if !tokio::fs::metadata(&dot_chaos)
             .await
             .map(|meta| meta.is_dir())
             .unwrap_or(false)
@@ -737,13 +739,13 @@ async fn load_project_layers(
 
         let layer_dir = AbsolutePathBuf::from_absolute_path(dir)?;
         let decision = trust_context.decision_for_dir(&layer_dir);
-        let dot_codex_abs = AbsolutePathBuf::from_absolute_path(&dot_codex)?;
-        let dot_codex_normalized =
-            normalize_path(dot_codex_abs.as_path()).unwrap_or_else(|_| dot_codex_abs.to_path_buf());
-        if dot_codex_abs == codex_home_abs || dot_codex_normalized == codex_home_normalized {
+        let dot_chaos_abs = AbsolutePathBuf::from_absolute_path(&dot_chaos)?;
+        let dot_chaos_normalized =
+            normalize_path(dot_chaos_abs.as_path()).unwrap_or_else(|_| dot_chaos_abs.to_path_buf());
+        if dot_chaos_abs == chaos_home_abs || dot_chaos_normalized == chaos_home_normalized {
             continue;
         }
-        let config_file = dot_codex_abs.join(CONFIG_TOML_FILE)?;
+        let config_file = dot_chaos_abs.join(CONFIG_TOML_FILE)?;
         match tokio::fs::read_to_string(&config_file).await {
             Ok(contents) => {
                 let config: TomlValue = match toml::from_str(&contents) {
@@ -760,7 +762,7 @@ async fn load_project_layers(
                         }
                         layers.push(project_layer_entry(
                             trust_context,
-                            &dot_codex_abs,
+                            &dot_chaos_abs,
                             &layer_dir,
                             TomlValue::Table(toml::map::Map::new()),
                             /*config_toml_exists*/ true,
@@ -769,10 +771,10 @@ async fn load_project_layers(
                     }
                 };
                 let config =
-                    resolve_relative_paths_in_config_toml(config, dot_codex_abs.as_path())?;
+                    resolve_relative_paths_in_config_toml(config, dot_chaos_abs.as_path())?;
                 let entry = project_layer_entry(
                     trust_context,
-                    &dot_codex_abs,
+                    &dot_chaos_abs,
                     &layer_dir,
                     config,
                     /*config_toml_exists*/ true,
@@ -786,7 +788,7 @@ async fn load_project_layers(
                     // that are significant in the overall ConfigLayerStack.
                     layers.push(project_layer_entry(
                         trust_context,
-                        &dot_codex_abs,
+                        &dot_chaos_abs,
                         &layer_dir,
                         TomlValue::Table(toml::map::Map::new()),
                         /*config_toml_exists*/ false,
@@ -805,8 +807,9 @@ async fn load_project_layers(
     Ok(layers)
 }
 
+
 /// The legacy mechanism for specifying admin-enforced configuration is to read
-/// from a file like `/etc/codex/managed_config.toml` that has the same
+/// from a file like `/etc/chaos/managed_config.toml` that has the same
 /// structure as `config.toml` where fields like `approval_policy` can specify
 /// exactly one value rather than a list of allowed values.
 ///

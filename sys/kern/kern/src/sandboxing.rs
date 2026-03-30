@@ -15,8 +15,8 @@ use crate::landlock::allow_network_for_proxy;
 use crate::landlock::create_linux_sandbox_command_args_for_policies;
 use crate::protocol::SandboxPolicy;
 #[cfg(target_os = "macos")]
-use crate::spawn::CODEX_SANDBOX_ENV_VAR;
-use crate::spawn::CODEX_SANDBOX_NETWORK_DISABLED_ENV_VAR;
+use crate::spawn::CHAOS_SANDBOX_ENV_VAR;
+use crate::spawn::CHAOS_SANDBOX_NETWORK_DISABLED_ENV_VAR;
 use crate::tools::sandboxing::SandboxablePreference;
 use alcatraz_macos::permissions::intersect_seatbelt_profile_extensions;
 use alcatraz_macos::permissions::merge_seatbelt_profile_extensions;
@@ -628,7 +628,7 @@ impl SandboxManager {
         let mut env = spec.env;
         if !effective_network_policy.is_enabled() {
             env.insert(
-                CODEX_SANDBOX_NETWORK_DISABLED_ENV_VAR.to_string(),
+                CHAOS_SANDBOX_NETWORK_DISABLED_ENV_VAR.to_string(),
                 "1".to_string(),
             );
         }
@@ -644,7 +644,7 @@ impl SandboxManager {
                 let exe = alcatraz_macos_exe
                     .ok_or(SandboxTransformError::MissingMacOSSandboxExecutable)?;
                 let mut seatbelt_env = HashMap::new();
-                seatbelt_env.insert(CODEX_SANDBOX_ENV_VAR.to_string(), "seatbelt".to_string());
+                seatbelt_env.insert(CHAOS_SANDBOX_ENV_VAR.to_string(), "seatbelt".to_string());
                 let mut args = create_seatbelt_command_args_for_policies_with_extensions(
                     command.clone(),
                     &effective_file_system_policy,

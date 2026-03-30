@@ -86,7 +86,7 @@ async fn load_role_layer_toml(
             .map(str::to_owned)
             .ok_or(anyhow!("No corresponding config content"))?;
         let role_config_toml: TomlValue = toml::from_str(&role_config_contents)?;
-        (role_config_toml, config.codex_home.as_path())
+        (role_config_toml, config.chaos_home.as_path())
     } else {
         let role_config_contents = tokio::fs::read_to_string(config_file).await?;
         let role_config_base = config_file
@@ -162,7 +162,7 @@ mod reload {
         let mut next_config = Config::load_config_with_layer_stack(
             merged_config,
             reload_overrides(config, preserve_current_provider),
-            config.codex_home.clone(),
+            config.chaos_home.clone(),
             config_layer_stack,
         )?;
         if preserve_current_profile {
@@ -224,7 +224,7 @@ mod reload {
     ) -> anyhow::Result<crate::config::ConfigToml> {
         Ok(deserialize_config_toml_with_base(
             config_layer_stack.effective_config(),
-            &config.codex_home,
+            &config.chaos_home,
         )?)
     }
 

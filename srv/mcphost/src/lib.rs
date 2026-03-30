@@ -91,7 +91,7 @@ pub async fn run_main(
 
     // Build ProcessTable.
     let auth_manager = AuthManager::shared(
-        config.codex_home.clone(),
+        config.chaos_home.clone(),
         false,
         config.cli_auth_credentials_store_mode,
     );
@@ -205,9 +205,9 @@ mod tests {
 
     #[tokio::test]
     async fn mcp_server_builds_otel_provider_with_logs_traces_and_metrics() -> anyhow::Result<()> {
-        let codex_home = TempDir::new()?;
+        let chaos_home = TempDir::new()?;
         let mut config = ConfigBuilder::default()
-            .codex_home(codex_home.path().to_path_buf())
+            .chaos_home(chaos_home.path().to_path_buf())
             .build()
             .await?;
         let exporter = OtelExporterKind::OtlpGrpc {

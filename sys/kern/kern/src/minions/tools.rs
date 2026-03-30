@@ -5,10 +5,10 @@
 //! config, inherit runtime-only state such as provider, approval policy, sandbox, and cwd, and
 //! then optionally layer role-specific config on top.
 
-use crate::codex::Session;
-use crate::codex::TurnContext;
+use crate::chaos::Session;
+use crate::chaos::TurnContext;
 use crate::config::Config;
-use crate::error::CodexErr;
+use crate::error::ChaosErr;
 use crate::features::Feature;
 use crate::function_tool::FunctionCallError;
 use crate::minions::AgentStatus;
@@ -152,24 +152,24 @@ fn build_wait_agent_statuses(
     entries
 }
 
-fn collab_spawn_error(err: CodexErr) -> FunctionCallError {
+fn collab_spawn_error(err: ChaosErr) -> FunctionCallError {
     match err {
-        CodexErr::UnsupportedOperation(_) => {
+        ChaosErr::UnsupportedOperation(_) => {
             FunctionCallError::RespondToModel("collab manager unavailable".to_string())
         }
         err => FunctionCallError::RespondToModel(format!("collab spawn failed: {err}")),
     }
 }
 
-fn collab_agent_error(agent_id: ProcessId, err: CodexErr) -> FunctionCallError {
+fn collab_agent_error(agent_id: ProcessId, err: ChaosErr) -> FunctionCallError {
     match err {
-        CodexErr::ProcessNotFound(id) => {
+        ChaosErr::ProcessNotFound(id) => {
             FunctionCallError::RespondToModel(format!("agent with id {id} not found"))
         }
-        CodexErr::InternalAgentDied => {
+        ChaosErr::InternalAgentDied => {
             FunctionCallError::RespondToModel(format!("agent with id {agent_id} is closed"))
         }
-        CodexErr::UnsupportedOperation(_) => {
+        ChaosErr::UnsupportedOperation(_) => {
             FunctionCallError::RespondToModel("collab manager unavailable".to_string())
         }
         err => FunctionCallError::RespondToModel(format!("collab tool failed: {err}")),

@@ -4,7 +4,7 @@ use chaos_ipc::models::ShellToolCallParams;
 use std::future::Future;
 use std::sync::Arc;
 
-use crate::codex::TurnContext;
+use crate::chaos::TurnContext;
 use crate::exec::ExecParams;
 use crate::exec_env::create_env;
 use crate::exec_policy::ExecApprovalRequest;
@@ -52,7 +52,7 @@ struct RunExecLikeArgs {
     exec_params: ExecParams,
     additional_permissions: Option<PermissionProfile>,
     prefix_rule: Option<Vec<String>>,
-    session: Arc<crate::codex::Session>,
+    session: Arc<crate::chaos::Session>,
     turn: Arc<TurnContext>,
     tracker: crate::tools::context::SharedTurnDiffTracker,
     call_id: String,
@@ -106,7 +106,7 @@ impl ShellCommandHandler {
 
     fn to_exec_params(
         params: &ShellCommandToolCallParams,
-        session: &crate::codex::Session,
+        session: &crate::chaos::Session,
         turn_context: &TurnContext,
         process_id: ProcessId,
         allow_login_shell: bool,

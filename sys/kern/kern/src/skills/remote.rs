@@ -1,7 +1,7 @@
 use anyhow::Result;
 use std::path::PathBuf;
 
-use crate::auth::CodexAuth;
+use crate::auth::ChaosAuth;
 use crate::config::Config;
 use chaos_ipc::protocol::RemoteSkillHazelnutScope;
 use chaos_ipc::protocol::RemoteSkillProductSurface;
@@ -21,7 +21,7 @@ pub struct RemoteSkillDownloadResult {
 
 pub async fn list_remote_skills(
     _config: &Config,
-    _auth: Option<&CodexAuth>,
+    _auth: Option<&ChaosAuth>,
     _hazelnut_scope: RemoteSkillHazelnutScope,
     _product_surface: RemoteSkillProductSurface,
     _enabled: Option<bool>,
@@ -31,7 +31,7 @@ pub async fn list_remote_skills(
 
 pub async fn export_remote_skill(
     _config: &Config,
-    _auth: Option<&CodexAuth>,
+    _auth: Option<&ChaosAuth>,
     _hazelnut_id: &str,
 ) -> Result<RemoteSkillDownloadResult> {
     anyhow::bail!("remote skill export is not available (skills system stubbed)")

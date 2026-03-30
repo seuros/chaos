@@ -13,14 +13,16 @@ pub mod auth;
 pub mod builtin_mcp_resources;
 mod client;
 mod client_common;
-pub mod codex;
-pub use codex::SteerInputError;
+#[path = "codex.rs"]
+pub mod chaos;
+pub use chaos::SteerInputError;
 mod compact_remote;
 mod process;
 pub use process::Process;
 pub use process::ProcessConfigSnapshot;
 pub mod capsicum;
-mod codex_delegate;
+#[path = "codex_delegate.rs"]
+mod chaos_delegate;
 mod command_canonicalization;
 pub mod config;
 pub mod config_loader;
@@ -89,7 +91,7 @@ pub use process_table::ProcessTable;
 // Re-export common auth types for workspace consumers
 pub use analytics_client::AnalyticsEventsClient;
 pub use auth::AuthManager;
-pub use auth::CodexAuth;
+pub use auth::ChaosAuth;
 pub mod default_client;
 pub mod project_doc;
 mod rollout;

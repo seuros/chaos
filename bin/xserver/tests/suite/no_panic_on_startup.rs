@@ -9,9 +9,9 @@ use tokio::time::timeout;
 #[ignore = "TODO(mbolin): flaky"]
 async fn malformed_rules_should_not_panic() -> anyhow::Result<()> {
     let tmp = tempfile::tempdir()?;
-    let codex_home = tmp.path();
+    let chaos_home = tmp.path();
     std::fs::write(
-        codex_home.join("rules"),
+        chaos_home.join("rules"),
         "rules should be a directory not a file",
     )?;
 
@@ -28,10 +28,10 @@ model_provider = "ollama"
 "#,
         cwd = cwd.display()
     );
-    std::fs::write(codex_home.join("config.toml"), config_contents)?;
+    std::fs::write(chaos_home.join("config.toml"), config_contents)?;
 
-    let CodexCliOutput { exit_code, output } = run_codex_cli(codex_home, cwd).await?;
-    assert_ne!(0, exit_code, "Codex CLI should exit nonzero.");
+    let ChaosCliOutput { exit_code, output } = run_chaos_cli(chaos_home, cwd).await?;
+    assert_ne!(0, exit_code, "Chaos CLI should exit nonzero.");
     assert!(
         output.contains("ERROR: Failed to initialize codex:"),
         "expected startup error in output, got: {output}"
@@ -43,25 +43,25 @@ model_provider = "ollama"
     Ok(())
 }
 
-struct CodexCliOutput {
+struct ChaosCliOutput {
     exit_code: i32,
     output: String,
 }
 
-async fn run_codex_cli(
-    codex_home: impl AsRef<Path>,
+async fn run_chaos_cli(
+    chaos_home: impl AsRef<Path>,
     cwd: impl AsRef<Path>,
-) -> anyhow::Result<CodexCliOutput> {
-    let codex_cli = chaos_which::cargo_bin("chaos")?;
+) -> anyhow::Result<ChaosCliOutput> {
+    let chaos_cli = chaos_which::cargo_bin("chaos")?;
     let mut env = HashMap::new();
     env.insert(
-        "CODEX_HOME".to_string(),
-        codex_home.as_ref().display().to_string(),
+        "CHAOS_HOME".to_string(),
+        chaos_home.as_ref().display().to_string(),
     );
 
     let args = vec!["-c".to_string(), "analytics.enabled=false".to_string()];
     let spawned = chaos_pty::spawn_pty_process(
-        codex_cli.to_string_lossy().as_ref(),
+        chaos_cli.to_string_lossy().as_ref(),
         &args,
         cwd.as_ref(),
         &env,
@@ -115,7 +115,7 @@ async fn run_codex_cli(
     }
 
     let output = String::from_utf8_lossy(&output);
-    Ok(CodexCliOutput {
+    Ok(ChaosCliOutput {
         exit_code,
         output: output.to_string(),
     })

@@ -14,10 +14,10 @@ use chaos_ipc::protocol::TokenUsageInfo;
 use chaos_kern::AuthManager;
 use chaos_kern::config::Config;
 use chaos_kern::config::ConfigBuilder;
-use chrono::Duration as ChronoDuration;
-use chrono::TimeZone;
-use chrono::Utc;
 use insta::assert_snapshot;
+use jiff::civil::date;
+use jiff::Timestamp;
+use jiff::ToSpan;
 use pretty_assertions::assert_eq;
 use ratatui::prelude::*;
 use std::path::PathBuf;
@@ -25,7 +25,7 @@ use tempfile::TempDir;
 
 async fn test_config(temp_home: &TempDir) -> Config {
     ConfigBuilder::default()
-        .codex_home(temp_home.path().to_path_buf())
+        .chaos_home(temp_home.path().to_path_buf())
         .build()
         .await
         .expect("load config")
@@ -33,7 +33,7 @@ async fn test_config(temp_home: &TempDir) -> Config {
 
 fn test_auth_manager(config: &Config) -> AuthManager {
     AuthManager::new(
-        config.codex_home.clone(),
+        config.chaos_home.clone(),
         false,
         config.cli_auth_credentials_store_mode,
     )
@@ -84,9 +84,20 @@ fn sanitize_directory(lines: Vec<String>) -> Vec<String> {
         .collect()
 }
 
-fn reset_at_from(captured_at: &chrono::DateTime<chrono::Local>, seconds: i64) -> i64 {
-    (*captured_at + ChronoDuration::seconds(seconds))
-        .with_timezone(&Utc)
+fn reset_at_from(captured_at: &Timestamp, seconds: i64) -> i64 {
+    captured_at
+        .checked_add(seconds.seconds())
+        .expect("timestamp math should succeed")
+        .as_second()
+}
+
+fn local_ts(year: i16, month: i8, day: i8, hour: i8, minute: i8, second: i8) -> Timestamp {
+    let tz = jiff::tz::TimeZone::system();
+    let tz_name = tz.iana_name().unwrap_or("UTC");
+    date(year, month, day)
+        .at(hour, minute, second, 0)
+        .in_tz(tz_name)
+        .expect("timestamp")
         .timestamp()
 }
 
@@ -120,10 +131,7 @@ async fn status_snapshot_includes_reasoning_details() {
         total_tokens: 2_250,
     };
 
-    let captured_at = chrono::Local
-        .with_ymd_and_hms(2024, 1, 2, 3, 4, 5)
-        .single()
-        .expect("timestamp");
+    let captured_at = local_ts(2024, 1, 2, 3, 4, 5);
     let snapshot = RateLimitSnapshot {
         limit_id: None,
         limit_name: None,
@@ -192,10 +200,7 @@ async fn status_permissions_non_default_workspace_write_is_custom() {
 
     let auth_manager = test_auth_manager(&config);
     let usage = TokenUsage::default();
-    let captured_at = chrono::Local
-        .with_ymd_and_hms(2024, 1, 2, 3, 4, 5)
-        .single()
-        .expect("timestamp");
+    let captured_at = local_ts(2024, 1, 2, 3, 4, 5);
     let model_slug = chaos_kern::test_support::get_model_offline(config.model.as_deref());
 
     let composite = new_status_output(
@@ -248,10 +253,7 @@ async fn status_snapshot_includes_forked_from() {
         total_tokens: 1_200,
     };
 
-    let captured_at = chrono::Local
-        .with_ymd_and_hms(2024, 8, 9, 10, 11, 12)
-        .single()
-        .expect("valid time");
+    let captured_at = local_ts(2024, 8, 9, 10, 11, 12);
 
     let model_slug = chaos_kern::test_support::get_model_offline(config.model.as_deref());
     let token_info = token_info_for(&model_slug, &config, &usage);
@@ -297,10 +299,7 @@ async fn status_snapshot_includes_monthly_limit() {
         total_tokens: 1_200,
     };
 
-    let captured_at = chrono::Local
-        .with_ymd_and_hms(2024, 5, 6, 7, 8, 9)
-        .single()
-        .expect("timestamp");
+    let captured_at = local_ts(2024, 5, 6, 7, 8, 9);
     let snapshot = RateLimitSnapshot {
         limit_id: None,
         limit_name: None,
@@ -343,10 +342,7 @@ async fn status_snapshot_shows_unlimited_credits() {
     let config = test_config(&temp_home).await;
     let auth_manager = test_auth_manager(&config);
     let usage = TokenUsage::default();
-    let captured_at = chrono::Local
-        .with_ymd_and_hms(2024, 2, 3, 4, 5, 6)
-        .single()
-        .expect("timestamp");
+    let captured_at = local_ts(2024, 2, 3, 4, 5, 6);
     let snapshot = RateLimitSnapshot {
         limit_id: None,
         limit_name: None,
@@ -392,10 +388,7 @@ async fn status_snapshot_shows_positive_credits() {
     let config = test_config(&temp_home).await;
     let auth_manager = test_auth_manager(&config);
     let usage = TokenUsage::default();
-    let captured_at = chrono::Local
-        .with_ymd_and_hms(2024, 3, 4, 5, 6, 7)
-        .single()
-        .expect("timestamp");
+    let captured_at = local_ts(2024, 3, 4, 5, 6, 7);
     let snapshot = RateLimitSnapshot {
         limit_id: None,
         limit_name: None,
@@ -441,10 +434,7 @@ async fn status_snapshot_hides_zero_credits() {
     let config = test_config(&temp_home).await;
     let auth_manager = test_auth_manager(&config);
     let usage = TokenUsage::default();
-    let captured_at = chrono::Local
-        .with_ymd_and_hms(2024, 4, 5, 6, 7, 8)
-        .single()
-        .expect("timestamp");
+    let captured_at = local_ts(2024, 4, 5, 6, 7, 8);
     let snapshot = RateLimitSnapshot {
         limit_id: None,
         limit_name: None,
@@ -488,10 +478,7 @@ async fn status_snapshot_hides_when_has_no_credits_flag() {
     let config = test_config(&temp_home).await;
     let auth_manager = test_auth_manager(&config);
     let usage = TokenUsage::default();
-    let captured_at = chrono::Local
-        .with_ymd_and_hms(2024, 5, 6, 7, 8, 9)
-        .single()
-        .expect("timestamp");
+    let captured_at = local_ts(2024, 5, 6, 7, 8, 9);
     let snapshot = RateLimitSnapshot {
         limit_id: None,
         limit_name: None,
@@ -545,10 +532,7 @@ async fn status_card_token_usage_excludes_cached_tokens() {
         total_tokens: 2_100,
     };
 
-    let now = chrono::Local
-        .with_ymd_and_hms(2024, 1, 1, 0, 0, 0)
-        .single()
-        .expect("timestamp");
+    let now = local_ts(2024, 1, 1, 0, 0, 0);
 
     let model_slug = chaos_kern::test_support::get_model_offline(config.model.as_deref());
     let token_info = token_info_for(&model_slug, &config, &usage);
@@ -593,10 +577,7 @@ async fn status_snapshot_truncates_in_narrow_terminal() {
         total_tokens: 2_250,
     };
 
-    let captured_at = chrono::Local
-        .with_ymd_and_hms(2024, 1, 2, 3, 4, 5)
-        .single()
-        .expect("timestamp");
+    let captured_at = local_ts(2024, 1, 2, 3, 4, 5);
     let snapshot = RateLimitSnapshot {
         limit_id: None,
         limit_name: None,
@@ -651,10 +632,7 @@ async fn status_snapshot_shows_missing_limits_message() {
         total_tokens: 750,
     };
 
-    let now = chrono::Local
-        .with_ymd_and_hms(2024, 2, 3, 4, 5, 6)
-        .single()
-        .expect("timestamp");
+    let now = local_ts(2024, 2, 3, 4, 5, 6);
 
     let model_slug = chaos_kern::test_support::get_model_offline(config.model.as_deref());
     let token_info = token_info_for(&model_slug, &config, &usage);
@@ -694,10 +672,7 @@ async fn status_snapshot_includes_credits_and_limits() {
         total_tokens: 2_200,
     };
 
-    let captured_at = chrono::Local
-        .with_ymd_and_hms(2024, 7, 8, 9, 10, 11)
-        .single()
-        .expect("timestamp");
+    let captured_at = local_ts(2024, 7, 8, 9, 10, 11);
     let snapshot = RateLimitSnapshot {
         limit_id: None,
         limit_name: None,
@@ -766,10 +741,7 @@ async fn status_snapshot_shows_empty_limits_message() {
         credits: None,
         plan_type: None,
     };
-    let captured_at = chrono::Local
-        .with_ymd_and_hms(2024, 6, 7, 8, 9, 10)
-        .single()
-        .expect("timestamp");
+    let captured_at = local_ts(2024, 6, 7, 8, 9, 10);
     let rate_display = rate_limit_snapshot_display(&snapshot, captured_at);
 
     let model_slug = chaos_kern::test_support::get_model_offline(config.model.as_deref());
@@ -810,10 +782,7 @@ async fn status_snapshot_shows_stale_limits_message() {
         total_tokens: 2_250,
     };
 
-    let captured_at = chrono::Local
-        .with_ymd_and_hms(2024, 1, 2, 3, 4, 5)
-        .single()
-        .expect("timestamp");
+    let captured_at = local_ts(2024, 1, 2, 3, 4, 5);
     let snapshot = RateLimitSnapshot {
         limit_id: None,
         limit_name: None,
@@ -831,7 +800,7 @@ async fn status_snapshot_shows_stale_limits_message() {
         plan_type: None,
     };
     let rate_display = rate_limit_snapshot_display(&snapshot, captured_at);
-    let now = captured_at + ChronoDuration::minutes(20);
+    let now = captured_at.checked_add(20.minutes()).expect("timestamp");
 
     let model_slug = chaos_kern::test_support::get_model_offline(config.model.as_deref());
     let token_info = token_info_for(&model_slug, &config, &usage);
@@ -871,10 +840,7 @@ async fn status_snapshot_cached_limits_hide_credits_without_flag() {
         total_tokens: 1_450,
     };
 
-    let captured_at = chrono::Local
-        .with_ymd_and_hms(2024, 9, 10, 11, 12, 13)
-        .single()
-        .expect("timestamp");
+    let captured_at = local_ts(2024, 9, 10, 11, 12, 13);
     let snapshot = RateLimitSnapshot {
         limit_id: None,
         limit_name: None,
@@ -896,7 +862,7 @@ async fn status_snapshot_cached_limits_hide_credits_without_flag() {
         plan_type: None,
     };
     let rate_display = rate_limit_snapshot_display(&snapshot, captured_at);
-    let now = captured_at + ChronoDuration::minutes(20);
+    let now = captured_at.checked_add(20.minutes()).expect("timestamp");
 
     let model_slug = chaos_kern::test_support::get_model_offline(config.model.as_deref());
     let token_info = token_info_for(&model_slug, &config, &usage);
@@ -942,10 +908,7 @@ async fn status_context_window_uses_last_usage() {
         total_tokens: 13_679,
     };
 
-    let now = chrono::Local
-        .with_ymd_and_hms(2024, 6, 1, 12, 0, 0)
-        .single()
-        .expect("timestamp");
+    let now = local_ts(2024, 6, 1, 12, 0, 0);
 
     let model_slug = chaos_kern::test_support::get_model_offline(config.model.as_deref());
     let token_info = TokenUsageInfo {

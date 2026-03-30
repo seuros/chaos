@@ -39,7 +39,7 @@ pub(crate) struct ConnectorsSnapshot {
 #[allow(clippy::large_enum_variant)]
 #[derive(Debug)]
 pub(crate) enum AppEvent {
-    CodexEvent(Event),
+    ChaosEvent(Event),
     /// Open the agent picker for switching active processes.
     OpenAgentPicker,
     /// Switch the active process to the selected agent.
@@ -83,7 +83,7 @@ pub(crate) enum AppEvent {
 
     /// Forward an `Op` to the Agent. Using an `AppEvent` for this avoids
     /// bubbling channels through layers of widgets.
-    CodexOp(chaos_ipc::protocol::Op),
+    ChaosOp(chaos_ipc::protocol::Op),
 
     /// Kick off an asynchronous file search for the given query (text after
     /// the `@`). Previous searches may be cancelled by the app layer so there

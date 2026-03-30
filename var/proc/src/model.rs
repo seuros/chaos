@@ -16,6 +16,8 @@ pub use backfill_state::BackfillStatus;
 pub use log::LogEntry;
 pub use log::LogQuery;
 pub use log::LogRow;
+pub use log::LogTailBatch;
+pub use log::LogTailCursor;
 pub use memories::Phase2InputSelection;
 pub use memories::Phase2JobClaimOutcome;
 pub use memories::Stage1JobClaim;

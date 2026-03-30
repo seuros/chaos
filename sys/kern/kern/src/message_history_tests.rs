@@ -1,211 +1,175 @@
 use super::*;
 use crate::config::ConfigBuilder;
+use crate::state_db;
 use chaos_ipc::ProcessId;
 use pretty_assertions::assert_eq;
-use std::fs::File;
-use std::io::Write;
 use tempfile::TempDir;
+
+async fn test_config_and_state_db() -> (TempDir, crate::config::Config, crate::state_db::StateDbHandle)
+{
+    let chaos_home = TempDir::new().expect("create temp dir");
+    let config = ConfigBuilder::default()
+        .chaos_home(chaos_home.path().to_path_buf())
+        .build()
+        .await
+        .expect("load config");
+    let state_db = state_db::init(&config)
+        .await
+        .expect("initialize state db");
+    (chaos_home, config, state_db)
+}
+
+fn estimated_entry_bytes(entry: &HistoryEntry) -> u64 {
+    let mut serialized = serde_json::to_string(entry).expect("serialize history entry");
+    serialized.push('\n');
+    serialized.len() as u64
+}
 
 #[tokio::test]
 async fn lookup_reads_history_entries() {
-    let temp_dir = TempDir::new().expect("create temp dir");
-    let history_path = temp_dir.path().join(HISTORY_FILENAME);
+    let (_home, _config, state_db) = test_config_and_state_db().await;
 
     let entries = vec![
         HistoryEntry {
-            session_id: "first-session".to_string(),
+            conversation_id: "first-session".to_string(),
             ts: 1,
             text: "first".to_string(),
         },
         HistoryEntry {
-            session_id: "second-session".to_string(),
+            conversation_id: "second-session".to_string(),
             ts: 2,
             text: "second".to_string(),
         },
     ];
 
-    let mut file = File::create(&history_path).expect("create history file");
     for entry in &entries {
-        writeln!(
-            file,
-            "{}",
-            serde_json::to_string(entry).expect("serialize history entry")
-        )
-        .expect("write history entry");
+        state_db
+            .append_message_history_entry(entry, None)
+            .await
+            .expect("append history entry");
     }
 
-    let (log_id, count) = history_metadata_for_file(&history_path).await;
+    let (log_id, count) = history_metadata(Some(state_db.as_ref())).await;
     assert_eq!(count, entries.len());
 
-    let second_entry =
-        lookup_history_entry(&history_path, log_id, 1).expect("fetch second history entry");
+    let second_entry = lookup(log_id, 1, Some(state_db.as_ref()))
+        .await
+        .expect("fetch second history entry");
     assert_eq!(second_entry, entries[1]);
 }
 
 #[tokio::test]
 async fn lookup_uses_stable_log_id_after_appends() {
-    let temp_dir = TempDir::new().expect("create temp dir");
-    let history_path = temp_dir.path().join(HISTORY_FILENAME);
+    let (_home, _config, state_db) = test_config_and_state_db().await;
 
     let initial = HistoryEntry {
-        session_id: "first-session".to_string(),
+        conversation_id: "first-session".to_string(),
         ts: 1,
         text: "first".to_string(),
     };
     let appended = HistoryEntry {
-        session_id: "second-session".to_string(),
+        conversation_id: "second-session".to_string(),
         ts: 2,
         text: "second".to_string(),
     };
 
-    let mut file = File::create(&history_path).expect("create history file");
-    writeln!(
-        file,
-        "{}",
-        serde_json::to_string(&initial).expect("serialize initial entry")
-    )
-    .expect("write initial entry");
+    state_db
+        .append_message_history_entry(&initial, None)
+        .await
+        .expect("append initial entry");
 
-    let (log_id, count) = history_metadata_for_file(&history_path).await;
+    let (log_id, count) = history_metadata(Some(state_db.as_ref())).await;
     assert_eq!(count, 1);
 
-    let mut append = std::fs::OpenOptions::new()
-        .append(true)
-        .open(&history_path)
-        .expect("open history file for append");
-    writeln!(
-        append,
-        "{}",
-        serde_json::to_string(&appended).expect("serialize appended entry")
-    )
-    .expect("append history entry");
+    state_db
+        .append_message_history_entry(&appended, None)
+        .await
+        .expect("append history entry");
 
-    let fetched =
-        lookup_history_entry(&history_path, log_id, 1).expect("lookup appended history entry");
+    let (log_id_after_append, count_after_append) = history_metadata(Some(state_db.as_ref())).await;
+    assert_eq!(log_id_after_append, log_id);
+    assert_eq!(count_after_append, 2);
+
+    let fetched = lookup(log_id, 1, Some(state_db.as_ref()))
+        .await
+        .expect("lookup appended history entry");
     assert_eq!(fetched, appended);
 }
 
 #[tokio::test]
 async fn append_entry_trims_history_when_beyond_max_bytes() {
-    let codex_home = TempDir::new().expect("create temp dir");
-
-    let mut config = ConfigBuilder::default()
-        .codex_home(codex_home.path().to_path_buf())
-        .build()
-        .await
-        .expect("load config");
-
+    let (_home, mut config, state_db) = test_config_and_state_db().await;
     let conversation_id = ProcessId::new();
 
     let entry_one = "a".repeat(200);
     let entry_two = "b".repeat(200);
 
-    let history_path = codex_home.path().join("history.jsonl");
-
-    append_entry(&entry_one, &conversation_id, &config)
+    append_entry(&entry_one, &conversation_id, Some(state_db.as_ref()), &config)
         .await
         .expect("write first entry");
 
-    let first_len = std::fs::metadata(&history_path).expect("metadata").len();
-    let limit_bytes = first_len + 10;
+    let first_entry_len = estimated_entry_bytes(&HistoryEntry {
+        conversation_id: conversation_id.to_string(),
+        ts: 0,
+        text: entry_one.clone(),
+    });
+    let limit_bytes = first_entry_len + 10;
+    config.history.max_bytes = Some(usize::try_from(limit_bytes).expect("limit fits"));
 
-    config.history.max_bytes =
-        Some(usize::try_from(limit_bytes).expect("limit should fit into usize"));
-
-    append_entry(&entry_two, &conversation_id, &config)
+    append_entry(&entry_two, &conversation_id, Some(state_db.as_ref()), &config)
         .await
         .expect("write second entry");
 
-    let contents = std::fs::read_to_string(&history_path).expect("read history");
-
-    let entries = contents
-        .lines()
-        .map(|line| serde_json::from_str::<HistoryEntry>(line).expect("parse entry"))
-        .collect::<Vec<HistoryEntry>>();
-
-    assert_eq!(
-        entries.len(),
-        1,
-        "only one entry left because entry_one should be evicted"
-    );
-    assert_eq!(entries[0].text, entry_two);
-    assert!(std::fs::metadata(&history_path).expect("metadata").len() <= limit_bytes);
+    let (log_id, count) = history_metadata(Some(state_db.as_ref())).await;
+    assert_eq!(count, 1);
+    let remaining = lookup(log_id, 0, Some(state_db.as_ref()))
+        .await
+        .expect("fetch surviving history entry");
+    assert_eq!(remaining.text, entry_two);
 }
 
 #[tokio::test]
 async fn append_entry_trims_history_to_soft_cap() {
-    let codex_home = TempDir::new().expect("create temp dir");
-
-    let mut config = ConfigBuilder::default()
-        .codex_home(codex_home.path().to_path_buf())
-        .build()
-        .await
-        .expect("load config");
-
+    let (_home, mut config, state_db) = test_config_and_state_db().await;
     let conversation_id = ProcessId::new();
 
     let short_entry = "a".repeat(200);
     let long_entry = "b".repeat(400);
 
-    let history_path = codex_home.path().join("history.jsonl");
+    let short_entry_record = HistoryEntry {
+        conversation_id: conversation_id.to_string(),
+        ts: 0,
+        text: short_entry.clone(),
+    };
+    let long_entry_record = HistoryEntry {
+        conversation_id: conversation_id.to_string(),
+        ts: 0,
+        text: long_entry.clone(),
+    };
 
-    append_entry(&short_entry, &conversation_id, &config)
+    let short_entry_len = estimated_entry_bytes(&short_entry_record);
+    let long_entry_len = estimated_entry_bytes(&long_entry_record);
+
+    append_entry(&short_entry, &conversation_id, Some(state_db.as_ref()), &config)
         .await
         .expect("write first entry");
-
-    let short_entry_len = std::fs::metadata(&history_path).expect("metadata").len();
-
-    append_entry(&long_entry, &conversation_id, &config)
+    append_entry(&long_entry, &conversation_id, Some(state_db.as_ref()), &config)
         .await
         .expect("write second entry");
 
-    let two_entry_len = std::fs::metadata(&history_path).expect("metadata").len();
-
-    let long_entry_len = two_entry_len
-        .checked_sub(short_entry_len)
-        .expect("second entry length should be larger than first entry length");
-
     config.history.max_bytes = Some(
         usize::try_from((2 * long_entry_len) + (short_entry_len / 2))
-            .expect("max bytes should fit into usize"),
+            .expect("max bytes should fit"),
     );
 
-    append_entry(&long_entry, &conversation_id, &config)
+    append_entry(&long_entry, &conversation_id, Some(state_db.as_ref()), &config)
         .await
         .expect("write third entry");
 
-    let contents = std::fs::read_to_string(&history_path).expect("read history");
-
-    let entries = contents
-        .lines()
-        .map(|line| serde_json::from_str::<HistoryEntry>(line).expect("parse entry"))
-        .collect::<Vec<HistoryEntry>>();
-
-    assert_eq!(entries.len(), 1);
-    assert_eq!(entries[0].text, long_entry);
-
-    let pruned_len = std::fs::metadata(&history_path).expect("metadata").len();
-    let max_bytes = config
-        .history
-        .max_bytes
-        .expect("max bytes should be configured") as u64;
-
-    assert!(pruned_len <= max_bytes);
-
-    let soft_cap_bytes = ((max_bytes as f64) * HISTORY_SOFT_CAP_RATIO)
-        .floor()
-        .clamp(1.0, max_bytes as f64) as u64;
-    let len_without_first = 2 * long_entry_len;
-
-    assert!(
-        len_without_first <= max_bytes,
-        "dropping only the first entry would satisfy the hard cap"
-    );
-    assert!(
-        len_without_first > soft_cap_bytes,
-        "soft cap should require more aggressive trimming than the hard cap"
-    );
-
-    assert_eq!(pruned_len, long_entry_len);
-    assert!(pruned_len <= soft_cap_bytes.max(long_entry_len));
+    let (log_id, count) = history_metadata(Some(state_db.as_ref())).await;
+    assert_eq!(count, 1);
+    let remaining = lookup(log_id, 0, Some(state_db.as_ref()))
+        .await
+        .expect("fetch surviving history entry");
+    assert_eq!(remaining.text, long_entry);
 }

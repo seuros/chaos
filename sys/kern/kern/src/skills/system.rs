@@ -6,12 +6,12 @@ const SYSTEM_SKILLS: &[(&str, &str)] = &[(
     include_str!("builtins/skill-creator/SKILL.md"),
 )];
 
-pub(crate) fn system_cache_root_dir(codex_home: &Path) -> PathBuf {
-    codex_home.join("skills").join(".system")
+pub(crate) fn system_cache_root_dir(chaos_home: &Path) -> PathBuf {
+    chaos_home.join("skills").join(".system")
 }
 
-pub(crate) fn install_system_skills(codex_home: &Path) -> std::io::Result<()> {
-    let root = system_cache_root_dir(codex_home);
+pub(crate) fn install_system_skills(chaos_home: &Path) -> std::io::Result<()> {
+    let root = system_cache_root_dir(chaos_home);
     std::fs::create_dir_all(&root)?;
 
     for (name, contents) in SYSTEM_SKILLS {
@@ -23,6 +23,6 @@ pub(crate) fn install_system_skills(codex_home: &Path) -> std::io::Result<()> {
     Ok(())
 }
 
-pub(crate) fn uninstall_system_skills(codex_home: &Path) {
-    let _ = std::fs::remove_dir_all(system_cache_root_dir(codex_home));
+pub(crate) fn uninstall_system_skills(chaos_home: &Path) {
+    let _ = std::fs::remove_dir_all(system_cache_root_dir(chaos_home));
 }

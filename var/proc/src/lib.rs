@@ -12,6 +12,8 @@ mod runtime;
 pub use model::LogEntry;
 pub use model::LogQuery;
 pub use model::LogRow;
+pub use model::LogTailBatch;
+pub use model::LogTailCursor;
 pub use model::Phase2InputSelection;
 pub use model::Phase2JobClaimOutcome;
 /// Preferred entrypoint: owns configuration and metrics.
@@ -52,7 +54,17 @@ pub use runtime::state_db_filename;
 pub use runtime::state_db_path;
 
 /// Environment variable for overriding the SQLite state database home directory.
-pub const SQLITE_HOME_ENV: &str = "CODEX_SQLITE_HOME";
+pub const SQLITE_HOME_ENV: &str = "CHAOS_SQLITE_HOME";
+
+pub fn sqlite_home_env_value() -> Option<String> {
+    if let Ok(value) = std::env::var(SQLITE_HOME_ENV) {
+        let trimmed = value.trim();
+        if !trimmed.is_empty() {
+            return Some(trimmed.to_string());
+        }
+    }
+    None
+}
 
 pub const LOGS_DB_FILENAME: &str = "logs";
 pub const LOGS_DB_VERSION: u32 = 1;

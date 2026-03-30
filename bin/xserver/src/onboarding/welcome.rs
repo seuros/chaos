@@ -85,8 +85,26 @@ impl Widget for &WelcomeWidget {
         lines.push(Line::from(vec![
             "  ".into(),
             "Welcome to ".into(),
-            "Codex".bold(),
-            ", OpenAI's command-line coding agent".into(),
+            "Chaos".bold(),
+            " — AI harness for operators who read before they run.".into(),
+        ]));
+        lines.push("".into());
+        lines.push(Line::from(vec![
+            "  Default tools: ".into(),
+            "none destructive.".bold(),
+        ]));
+        lines.push(Line::from(vec![
+            "  Default permissions: ".into(),
+            "none granted.".bold(),
+        ]));
+        lines.push(Line::from(vec![
+            "  Mistakes: ".into(),
+            "yours, not the model's.".bold(),
+        ]));
+        lines.push("".into());
+        lines.push(Line::from(vec![
+            "  ".into(),
+            "You were warned.".dim(),
         ]));
 
         Paragraph::new(lines)

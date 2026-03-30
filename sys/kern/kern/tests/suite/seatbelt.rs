@@ -11,8 +11,8 @@ use std::process::Stdio;
 
 use chaos_ipc::permissions::NetworkSandboxPolicy;
 use chaos_ipc::protocol::SandboxPolicy;
-use chaos_kern::spawn::CODEX_SANDBOX_ENV_VAR;
-use chaos_kern::spawn::CODEX_SANDBOX_NETWORK_DISABLED_ENV_VAR;
+use chaos_kern::spawn::CHAOS_SANDBOX_ENV_VAR;
+use chaos_kern::spawn::CHAOS_SANDBOX_NETWORK_DISABLED_ENV_VAR;
 use chaos_kern::spawn::StdioPolicy;
 use tempfile::TempDir;
 use tokio::process::Child;
@@ -45,10 +45,10 @@ async fn spawn_command_under_seatbelt(
         .map_err(|err| std::io::Error::new(std::io::ErrorKind::NotFound, err))?;
     let args = create_seatbelt_command_args(command, sandbox_policy, sandbox_cwd, false, None);
 
-    env.insert(CODEX_SANDBOX_ENV_VAR.to_string(), "seatbelt".to_string());
+    env.insert(CHAOS_SANDBOX_ENV_VAR.to_string(), "seatbelt".to_string());
     if !NetworkSandboxPolicy::from(sandbox_policy).is_enabled() {
         env.insert(
-            CODEX_SANDBOX_NETWORK_DISABLED_ENV_VAR.to_string(),
+            CHAOS_SANDBOX_NETWORK_DISABLED_ENV_VAR.to_string(),
             "1".to_string(),
         );
     }
@@ -75,8 +75,8 @@ async fn spawn_command_under_seatbelt(
 
 impl TestScenario {
     async fn run_test(&self, policy: &SandboxPolicy, expectations: TestExpectations) {
-        if std::env::var(CODEX_SANDBOX_ENV_VAR) == Ok("seatbelt".to_string()) {
-            eprintln!("{CODEX_SANDBOX_ENV_VAR} is set to 'seatbelt', skipping test.");
+        if std::env::var(CHAOS_SANDBOX_ENV_VAR) == Ok("seatbelt".to_string()) {
+            eprintln!("{CHAOS_SANDBOX_ENV_VAR} is set to 'seatbelt', skipping test.");
             return;
         }
 
@@ -209,8 +209,8 @@ async fn read_only_forbids_all_writes() {
 
 #[tokio::test]
 async fn openpty_works_under_seatbelt() {
-    if std::env::var(CODEX_SANDBOX_ENV_VAR) == Ok("seatbelt".to_string()) {
-        eprintln!("{CODEX_SANDBOX_ENV_VAR} is set to 'seatbelt', skipping test.");
+    if std::env::var(CHAOS_SANDBOX_ENV_VAR) == Ok("seatbelt".to_string()) {
+        eprintln!("{CHAOS_SANDBOX_ENV_VAR} is set to 'seatbelt', skipping test.");
         return;
     }
 
@@ -253,8 +253,8 @@ assert os.read(master, 4) == b"ping""#
 
 #[tokio::test]
 async fn java_home_finds_runtime_under_seatbelt() {
-    if std::env::var(CODEX_SANDBOX_ENV_VAR) == Ok("seatbelt".to_string()) {
-        eprintln!("{CODEX_SANDBOX_ENV_VAR} is set to 'seatbelt', skipping test.");
+    if std::env::var(CHAOS_SANDBOX_ENV_VAR) == Ok("seatbelt".to_string()) {
+        eprintln!("{CHAOS_SANDBOX_ENV_VAR} is set to 'seatbelt', skipping test.");
         return;
     }
 
@@ -283,7 +283,7 @@ async fn java_home_finds_runtime_under_seatbelt() {
 
     let mut env: HashMap<String, String> = std::env::vars().collect();
     env.remove("JAVA_HOME");
-    env.remove(CODEX_SANDBOX_ENV_VAR);
+    env.remove(CHAOS_SANDBOX_ENV_VAR);
 
     let child = spawn_command_under_seatbelt(
         vec![java_home_path.to_string_lossy().to_string()],

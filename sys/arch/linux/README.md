@@ -2,7 +2,7 @@
 
 This crate is responsible for producing:
 
-- a `alcatraz-linux` standalone executable for Linux that is bundled with the Node.js version of the Codex CLI
+- a `alcatraz-linux` standalone executable for Linux that is bundled with the Node.js version of the Chaos CLI
 - a lib crate that exposes the business logic of the executable as `run_main()` so that
   - the `chaos-fork` CLI can check if its arg0 is `alcatraz-linux` and, if so, execute as if it were `alcatraz-linux`
   - this should also be true of the `codex` multitool CLI
@@ -13,7 +13,7 @@ This crate is responsible for producing:
 - The helper applies `PR_SET_NO_NEW_PRIVS` and a seccomp network filter
   in-process.
 - Protected writable-root subpath carveouts such as `.git`, resolved `gitdir:`,
-  and `.codex` are not currently enforced by the pure-Rust Linux backend.
+  and `.chaos` are not currently enforced by the pure-Rust Linux backend.
 - Split filesystem policies that need direct runtime carveouts are rejected
   instead of being silently approximated.
 - In managed proxy mode, the helper fails closed unless loopback proxy

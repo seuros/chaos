@@ -1108,10 +1108,7 @@ mod tests {
             disable: Vec::new(),
         };
         let overrides = toggles.to_overrides().expect("valid features");
-        assert_eq!(
-            overrides,
-            vec!["features.collab=true".to_string(),]
-        );
+        assert_eq!(overrides, vec!["features.collab=true".to_string(),]);
     }
 
     #[test]

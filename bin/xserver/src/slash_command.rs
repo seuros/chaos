@@ -19,7 +19,6 @@ pub enum SlashCommand {
     ElevateSandbox,
     #[strum(serialize = "sandbox-add-read-dir")]
     SandboxReadRoot,
-    Experimental,
     Review,
     Rename,
     New,
@@ -94,7 +93,6 @@ impl SlashCommand {
             SlashCommand::SandboxReadRoot => {
                 "let sandbox read a directory: /sandbox-add-read-dir <absolute_path>"
             }
-            SlashCommand::Experimental => "toggle experimental features",
             SlashCommand::Mcp => "list configured MCP tools",
             SlashCommand::Clamp => "use Claude Code MAX subscription as transport",
             SlashCommand::Logout => "log out of Chaos",
@@ -134,7 +132,6 @@ impl SlashCommand {
             | SlashCommand::Permissions
             | SlashCommand::ElevateSandbox
             | SlashCommand::SandboxReadRoot
-            | SlashCommand::Experimental
             | SlashCommand::Review
             | SlashCommand::Plan
             | SlashCommand::Clear

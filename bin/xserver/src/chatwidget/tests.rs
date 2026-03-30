@@ -97,7 +97,6 @@ use chaos_kern::config::Constrained;
 use chaos_kern::config::ConstraintError;
 use chaos_kern::config::types::Notifications;
 use chaos_kern::config_loader::RequirementSource;
-use chaos_kern::features::FEATURES;
 use chaos_kern::features::Feature;
 use chaos_kern::models_manager::collaboration_mode_presets::CollaborationModesConfig;
 use chaos_kern::models_manager::manager::ModelsManager;
@@ -3196,7 +3195,6 @@ async fn plan_implementation_popup_skips_when_rate_limit_prompt_pending() {
     );
 }
 
-// (removed experimental resize snapshot test)
 
 #[tokio::test]
 async fn exec_approval_emits_proposed_command_and_decision_history() {
@@ -5508,54 +5506,6 @@ async fn collaboration_modes_defaults_to_code_on_startup() {
 }
 
 #[tokio::test]
-async fn experimental_mode_plan_is_ignored_on_startup() {
-    let chaos_home = tempdir().expect("tempdir");
-    let cfg = ConfigBuilder::default()
-        .chaos_home(chaos_home.path().to_path_buf())
-        .cli_overrides(vec![
-            (
-                "features.collaboration_modes".to_string(),
-                TomlValue::Boolean(true),
-            ),
-            (
-                "tui.experimental_mode".to_string(),
-                TomlValue::String("plan".to_string()),
-            ),
-        ])
-        .build()
-        .await
-        .expect("config");
-    let resolved_model = chaos_kern::test_support::get_model_offline(cfg.model.as_deref());
-    let session_telemetry = test_session_telemetry(&cfg, resolved_model.as_str());
-    let process_table = Arc::new(
-        chaos_kern::test_support::process_table_with_models_provider(
-            ChaosAuth::from_api_key("test"),
-            cfg.model_provider.clone(),
-        ),
-    );
-    let auth_manager =
-        chaos_kern::test_support::auth_manager_from_auth(ChaosAuth::from_api_key("test"));
-    let init = ChatWidgetInit {
-        config: cfg,
-        frame_requester: FrameRequester::test_dummy(),
-        app_event_tx: AppEventSender::new(unbounded_channel::<AppEvent>().0),
-        initial_user_message: None,
-        enhanced_keys_supported: false,
-        auth_manager,
-        models_manager: process_table.get_models_manager(),
-        is_first_run: true,
-        model: Some(resolved_model.clone()),
-        startup_tooltip_override: None,
-        status_line_invalid_items_warned: Arc::new(AtomicBool::new(false)),
-        session_telemetry,
-    };
-
-    let chat = ChatWidget::new(init, process_table);
-    assert_eq!(chat.active_collaboration_mode_kind(), ModeKind::Default);
-    assert_eq!(chat.current_model(), resolved_model);
-}
-
-#[tokio::test]
 async fn set_model_updates_active_collaboration_mask() {
     let (mut chat, _rx, _op_rx) = make_chatwidget_manual(Some("gpt-5.1")).await;
     chat.set_feature_enabled(Feature::CollaborationModes, true);
@@ -6434,100 +6384,6 @@ fn render_bottom_popup(chat: &ChatWidget, width: u16) -> String {
 }
 
 #[tokio::test]
-async fn experimental_features_popup_snapshot() {
-    let (mut chat, _rx, _op_rx) = make_chatwidget_manual(None).await;
-
-    let features = vec![
-        ExperimentalFeatureItem {
-            feature: Feature::GhostCommit,
-            name: "Ghost snapshots".to_string(),
-            description: "Capture undo snapshots each turn.".to_string(),
-            enabled: false,
-        },
-        ExperimentalFeatureItem {
-            feature: Feature::ShellTool,
-            name: "Shell tool".to_string(),
-            description: "Allow the model to run shell commands.".to_string(),
-            enabled: true,
-        },
-    ];
-    let view = ExperimentalFeaturesView::new(features, chat.app_event_tx.clone());
-    chat.bottom_pane.show_view(Box::new(view));
-
-    let popup = render_bottom_popup(&chat, 80);
-    assert_snapshot!("experimental_features_popup", popup);
-}
-
-#[tokio::test]
-async fn experimental_features_toggle_saves_on_exit() {
-    let (mut chat, mut rx, _op_rx) = make_chatwidget_manual(None).await;
-
-    let expected_feature = Feature::GhostCommit;
-    let view = ExperimentalFeaturesView::new(
-        vec![ExperimentalFeatureItem {
-            feature: expected_feature,
-            name: "Ghost snapshots".to_string(),
-            description: "Capture undo snapshots each turn.".to_string(),
-            enabled: false,
-        }],
-        chat.app_event_tx.clone(),
-    );
-    chat.bottom_pane.show_view(Box::new(view));
-
-    chat.handle_key_event(KeyEvent::new(KeyCode::Char(' '), KeyModifiers::NONE));
-
-    assert!(
-        rx.try_recv().is_err(),
-        "expected no updates until saving the popup"
-    );
-
-    chat.handle_key_event(KeyEvent::new(KeyCode::Enter, KeyModifiers::NONE));
-
-    let mut updates = None;
-    while let Ok(event) = rx.try_recv() {
-        if let AppEvent::UpdateFeatureFlags {
-            updates: event_updates,
-        } = event
-        {
-            updates = Some(event_updates);
-            break;
-        }
-    }
-
-    let updates = updates.expect("expected UpdateFeatureFlags event");
-    assert_eq!(updates, vec![(expected_feature, true)]);
-}
-
-#[tokio::test]
-async fn experimental_popup_includes_guardian_approval() {
-    let (mut chat, _rx, _op_rx) = make_chatwidget_manual(None).await;
-    let guardian_stage = FEATURES
-        .iter()
-        .find(|spec| spec.id == Feature::GuardianApproval)
-        .map(|spec| spec.stage)
-        .expect("expected guardian approval feature metadata");
-    let guardian_name = guardian_stage
-        .experimental_menu_name()
-        .expect("expected guardian approval experimental menu name");
-    let guardian_description = guardian_stage
-        .experimental_menu_description()
-        .expect("expected guardian approval experimental description");
-
-    chat.open_experimental_popup();
-
-    let popup = render_bottom_popup(&chat, 120);
-    let normalized_popup = popup.split_whitespace().collect::<Vec<_>>().join(" ");
-    assert!(
-        popup.contains(guardian_name),
-        "expected guardian approvals entry in experimental popup, got:\n{popup}"
-    );
-    assert!(
-        normalized_popup.contains(guardian_description),
-        "expected guardian approvals description in experimental popup, got:\n{popup}"
-    );
-}
-
-#[tokio::test]
 async fn multi_agent_enable_prompt_snapshot() {
     let (mut chat, _rx, _op_rx) = make_chatwidget_manual(None).await;
 
@@ -7096,7 +6952,7 @@ async fn permissions_selection_hides_guardian_approvals_when_feature_disabled() 
 
     assert!(
         !popup.contains("Guardian Approvals"),
-        "expected Guardian Approvals to stay hidden until the experimental feature is enabled: {popup}"
+        "expected Guardian Approvals to stay hidden when feature is not enabled: {popup}"
     );
 }
 
@@ -7122,7 +6978,7 @@ async fn permissions_selection_hides_guardian_approvals_when_feature_disabled_ev
 
     assert!(
         !popup.contains("Guardian Approvals"),
-        "expected Guardian Approvals to stay hidden when the experimental feature is disabled: {popup}"
+        "expected Guardian Approvals to stay hidden when feature is disabled: {popup}"
     );
 }
 

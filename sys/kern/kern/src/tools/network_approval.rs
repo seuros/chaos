@@ -157,6 +157,7 @@ impl PendingHostApproval {
 
 struct ActiveNetworkApprovalCall {
     registration_id: String,
+    #[allow(dead_code)]
     turn_id: String,
 }
 
@@ -183,6 +184,7 @@ impl Default for NetworkApprovalService {
 impl NetworkApprovalService {
     /// Replace the target session's approval cache with the source session's
     /// currently approved hosts.
+    #[allow(dead_code)]
     pub(crate) async fn sync_session_approved_hosts_to(&self, other: &Self) {
         let approved_hosts = self.session_approved_hosts.lock().await.clone();
         let mut other_approved_hosts = other.session_approved_hosts.lock().await;

@@ -527,6 +527,7 @@ struct AsyncManagedClient {
 }
 
 impl AsyncManagedClient {
+    #[allow(clippy::too_many_arguments)]
     fn new(
         server_name: String,
         config: McpServerConfig,
@@ -652,7 +653,7 @@ impl McpConnectionManager {
         }
     }
 
-    #[allow(clippy::new_ret_no_self)]
+    #[allow(clippy::new_ret_no_self, clippy::too_many_arguments)]
     pub async fn new(
         mcp_servers: &HashMap<String, McpServerConfig>,
         store_mode: OAuthCredentialsStoreMode,

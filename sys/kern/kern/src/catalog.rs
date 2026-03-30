@@ -134,17 +134,20 @@ impl Catalog {
         &self.tools
     }
 
-    /// All registered resources.
+    /// All registered resources. Used by TUI /tools and IPC ListCatalog.
+    #[allow(dead_code)]
     pub(crate) fn resources(&self) -> &[(CatalogSource, CatalogResource)] {
         &self.resources
     }
 
-    /// All registered resource templates.
+    /// All registered resource templates. Used by TUI /tools and IPC ListCatalog.
+    #[allow(dead_code)]
     pub(crate) fn resource_templates(&self) -> &[(CatalogSource, CatalogResourceTemplate)] {
         &self.resource_templates
     }
 
-    /// All registered prompts.
+    /// All registered prompts. Used by TUI /tools and IPC ListCatalog.
+    #[allow(dead_code)]
     pub(crate) fn prompts(&self) -> &[(CatalogSource, CatalogPrompt)] {
         &self.prompts
     }

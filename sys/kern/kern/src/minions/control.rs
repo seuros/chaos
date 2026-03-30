@@ -1,6 +1,5 @@
 use crate::error::CodexErr;
 use crate::error::Result as CodexResult;
-use crate::find_process_path_by_id_str;
 use crate::minions::AgentStatus;
 use crate::minions::guards::Guards;
 use crate::minions::role::DEFAULT_ROLE_NAME;
@@ -144,7 +143,7 @@ impl AgentControl {
                     let parent_thread = state.get_process(parent_process_id).await.ok();
                     if let Some(parent_thread) = parent_thread.as_ref() {
                         // `record_conversation_items` only queues rollout writes asynchronously.
-                        // Flush/materialize the live parent before snapshotting JSONL for a fork.
+                        // Flush the live parent before snapshotting history for a fork.
                         parent_thread
                             .codex
                             .session
@@ -152,21 +151,8 @@ impl AgentControl {
                             .await;
                         parent_thread.codex.session.flush_rollout().await;
                     }
-                    let rollout_path = parent_thread
-                        .as_ref()
-                        .and_then(|parent_thread| parent_thread.rollout_path())
-                        .or(find_process_path_by_id_str(
-                            config.codex_home.as_path(),
-                            &parent_process_id.to_string(),
-                        )
-                        .await?)
-                        .ok_or_else(|| {
-                            CodexErr::Fatal(format!(
-                                "parent thread rollout unavailable for fork: {parent_process_id}"
-                            ))
-                        })?;
                     let mut forked_rollout_items =
-                        RolloutRecorder::get_rollout_history(&rollout_path)
+                        RolloutRecorder::get_rollout_history_for_process(parent_process_id)
                             .await?
                             .get_rollout_items();
                     let mut output = FunctionCallOutputPayload::from_text(
@@ -219,7 +205,7 @@ impl AgentControl {
         Ok(process_id)
     }
 
-    /// Resume an existing agent thread from a recorded rollout file.
+    /// Resume an existing agent thread from persisted journal history.
     pub(crate) async fn resume_agent_from_rollout(
         &self,
         config: crate::config::Config,
@@ -271,15 +257,10 @@ impl AgentControl {
         let inherited_shell_snapshot = self
             .inherited_shell_snapshot_for_source(&state, Some(&session_source))
             .await;
-        let rollout_path =
-            find_process_path_by_id_str(config.codex_home.as_path(), &process_id.to_string())
-                .await?
-                .ok_or_else(|| CodexErr::ProcessNotFound(process_id))?;
-
         let resumed_process = state
-            .resume_process_from_rollout_with_source(
+            .resume_process_with_source(
                 config,
-                rollout_path,
+                process_id,
                 self.clone(),
                 session_source,
                 inherited_shell_snapshot,

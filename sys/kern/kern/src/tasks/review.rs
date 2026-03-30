@@ -276,7 +276,7 @@ pub(crate) async fn exit_review_mode(
         .await;
 
     // Review turns can run before any regular user turn, so explicitly
-    // materialize rollout persistence. Do this after emitting review output so
-    // file creation + git metadata collection cannot delay client-facing items.
+    // materialize persisted session state. Do this after emitting review output
+    // so journal/bootstrap work cannot delay client-facing items.
     session.ensure_rollout_materialized().await;
 }

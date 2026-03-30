@@ -45,7 +45,6 @@ pub struct ProcessConfigSnapshot {
 
 pub struct Process {
     pub(crate) codex: Codex,
-    rollout_path: Option<PathBuf>,
     out_of_band_elicitation_count: Mutex<u64>,
     _watch_registration: WatchRegistration,
 }
@@ -55,12 +54,10 @@ pub struct Process {
 impl Process {
     pub(crate) fn new(
         codex: Codex,
-        rollout_path: Option<PathBuf>,
         watch_registration: WatchRegistration,
     ) -> Self {
         Self {
             codex,
-            rollout_path,
             out_of_band_elicitation_count: Mutex::new(0),
             _watch_registration: watch_registration,
         }
@@ -145,10 +142,6 @@ impl Process {
             .session
             .record_conversation_items(turn_context.as_ref(), &items)
             .await;
-    }
-
-    pub fn rollout_path(&self) -> Option<PathBuf> {
-        self.rollout_path.clone()
     }
 
     pub fn state_db(&self) -> Option<StateDbHandle> {

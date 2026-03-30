@@ -9,7 +9,6 @@ impl StateRuntime {
             r#"
 SELECT
     id,
-    rollout_path,
     created_at,
     updated_at,
     source,
@@ -46,6 +45,84 @@ WHERE id = ?
         Ok(row.and_then(|row| row.try_get("memory_mode").ok()))
     }
 
+    pub async fn get_process_name(&self, id: ProcessId) -> anyhow::Result<Option<String>> {
+        let row = sqlx::query(
+            "SELECT process_name FROM processes WHERE id = ? AND process_name IS NOT NULL AND trim(process_name) <> ''",
+        )
+        .bind(id.to_string())
+        .fetch_optional(self.pool.as_ref())
+        .await?;
+        Ok(row.and_then(|row| row.try_get("process_name").ok()))
+    }
+
+    pub async fn get_process_names(
+        &self,
+        ids: &std::collections::HashSet<ProcessId>,
+    ) -> anyhow::Result<std::collections::HashMap<ProcessId, String>> {
+        if ids.is_empty() {
+            return Ok(std::collections::HashMap::new());
+        }
+
+        let mut builder = QueryBuilder::<Sqlite>::new(
+            "SELECT id, process_name FROM processes WHERE process_name IS NOT NULL AND trim(process_name) <> '' AND id IN (",
+        );
+        {
+            let mut separated = builder.separated(", ");
+            for id in ids {
+                separated.push_bind(id.to_string());
+            }
+        }
+        builder.push(")");
+
+        let rows = builder.build().fetch_all(self.pool.as_ref()).await?;
+        let mut out = std::collections::HashMap::with_capacity(rows.len());
+        for row in rows {
+            let id: String = row.try_get("id")?;
+            let process_name: String = row.try_get("process_name")?;
+            out.insert(ProcessId::try_from(id)?, process_name);
+        }
+        Ok(out)
+    }
+
+    pub async fn find_process_id_by_name(&self, name: &str) -> anyhow::Result<Option<ProcessId>> {
+        if name.trim().is_empty() {
+            return Ok(None);
+        }
+        let row = sqlx::query(
+            r#"
+SELECT id
+FROM processes
+WHERE process_name = ?
+ORDER BY updated_at DESC, created_at DESC
+LIMIT 1
+            "#,
+        )
+        .bind(name)
+        .fetch_optional(self.pool.as_ref())
+        .await?;
+        row.map(|row| row.try_get::<String, _>("id"))
+            .transpose()?
+            .map(ProcessId::try_from)
+            .transpose()
+            .map_err(Into::into)
+    }
+
+    pub async fn set_process_name(
+        &self,
+        process_id: ProcessId,
+        process_name: Option<&str>,
+    ) -> anyhow::Result<bool> {
+        let result = sqlx::query(
+            "UPDATE processes SET process_name = ?, updated_at = ? WHERE id = ?",
+        )
+        .bind(process_name)
+        .bind(datetime_to_epoch_seconds(jiff::Timestamp::now()))
+        .bind(process_id.to_string())
+        .execute(self.pool.as_ref())
+        .await?;
+        Ok(result.rows_affected() > 0)
+    }
+
     /// Get dynamic tools for a thread, if present.
     pub async fn get_dynamic_tools(
         &self,
@@ -79,30 +156,6 @@ ORDER BY position ASC
         Ok(Some(tools))
     }
 
-    /// Find a rollout path by thread id using the underlying database.
-    pub async fn find_rollout_path_by_id(
-        &self,
-        id: ProcessId,
-        archived_only: Option<bool>,
-    ) -> anyhow::Result<Option<PathBuf>> {
-        let mut builder =
-            QueryBuilder::<Sqlite>::new("SELECT rollout_path FROM processes WHERE id = ");
-        builder.push_bind(id.to_string());
-        match archived_only {
-            Some(true) => {
-                builder.push(" AND archived = 1");
-            }
-            Some(false) => {
-                builder.push(" AND archived = 0");
-            }
-            None => {}
-        }
-        let row = builder.build().fetch_optional(self.pool.as_ref()).await?;
-        Ok(row
-            .and_then(|r| r.try_get::<String, _>("rollout_path").ok())
-            .map(PathBuf::from))
-    }
-
     /// List processes using the underlying database.
     #[allow(clippy::too_many_arguments)]
     pub async fn list_processes(
@@ -121,7 +174,6 @@ ORDER BY position ASC
             r#"
 SELECT
     id,
-    rollout_path,
     created_at,
     updated_at,
     source,
@@ -219,7 +271,6 @@ FROM processes
             r#"
 INSERT INTO processes (
     id,
-    rollout_path,
     created_at,
     updated_at,
     source,
@@ -239,12 +290,11 @@ INSERT INTO processes (
     git_branch,
     git_origin_url,
     memory_mode
-) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
 ON CONFLICT(id) DO NOTHING
             "#,
         )
         .bind(metadata.id.to_string())
-        .bind(metadata.rollout_path.display().to_string())
         .bind(datetime_to_epoch_seconds(metadata.created_at))
         .bind(datetime_to_epoch_seconds(metadata.updated_at))
         .bind(metadata.source.as_str())
@@ -333,7 +383,6 @@ WHERE id = ?
             r#"
 INSERT INTO processes (
     id,
-    rollout_path,
     created_at,
     updated_at,
     source,
@@ -353,9 +402,8 @@ INSERT INTO processes (
     git_branch,
     git_origin_url,
     memory_mode
-) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
 ON CONFLICT(id) DO UPDATE SET
-    rollout_path = excluded.rollout_path,
     created_at = excluded.created_at,
     updated_at = excluded.updated_at,
     source = excluded.source,
@@ -377,7 +425,6 @@ ON CONFLICT(id) DO UPDATE SET
             "#,
         )
         .bind(metadata.id.to_string())
-        .bind(metadata.rollout_path.display().to_string())
         .bind(datetime_to_epoch_seconds(metadata.created_at))
         .bind(datetime_to_epoch_seconds(metadata.updated_at))
         .bind(metadata.source.as_str())
@@ -463,7 +510,6 @@ ON CONFLICT(process_id, position) DO NOTHING
         let mut metadata = existing_metadata
             .clone()
             .unwrap_or_else(|| builder.build(&self.default_provider));
-        metadata.rollout_path = builder.rollout_path.clone();
         for item in items {
             apply_rollout_item(&mut metadata, item, &self.default_provider);
         }
@@ -472,7 +518,7 @@ ON CONFLICT(process_id, position) DO NOTHING
         }
         let updated_at = match updated_at_override {
             Some(updated_at) => Some(updated_at),
-            None => file_modified_time_utc(builder.rollout_path.as_path()).await,
+            None => Some(jiff::Timestamp::now()),
         };
         if let Some(updated_at) = updated_at {
             metadata.updated_at = updated_at;
@@ -508,17 +554,13 @@ ON CONFLICT(process_id, position) DO NOTHING
     pub async fn mark_archived(
         &self,
         process_id: ProcessId,
-        rollout_path: &Path,
         archived_at: jiff::Timestamp,
     ) -> anyhow::Result<()> {
         let Some(mut metadata) = self.get_process(process_id).await? else {
             return Ok(());
         };
         metadata.archived_at = Some(archived_at);
-        metadata.rollout_path = rollout_path.to_path_buf();
-        if let Some(updated_at) = file_modified_time_utc(rollout_path).await {
-            metadata.updated_at = updated_at;
-        }
+        metadata.updated_at = archived_at;
         if metadata.id != process_id {
             warn!(
                 "thread id mismatch during archive: expected {process_id}, got {}",
@@ -532,16 +574,12 @@ ON CONFLICT(process_id, position) DO NOTHING
     pub async fn mark_unarchived(
         &self,
         process_id: ProcessId,
-        rollout_path: &Path,
     ) -> anyhow::Result<()> {
         let Some(mut metadata) = self.get_process(process_id).await? else {
             return Ok(());
         };
         metadata.archived_at = None;
-        metadata.rollout_path = rollout_path.to_path_buf();
-        if let Some(updated_at) = file_modified_time_utc(rollout_path).await {
-            metadata.updated_at = updated_at;
-        }
+        metadata.updated_at = jiff::Timestamp::now();
         if metadata.id != process_id {
             warn!(
                 "thread id mismatch during unarchive: expected {process_id}, got {}",
@@ -722,12 +760,7 @@ mod tests {
             .await
             .expect("initial upsert should succeed");
 
-        let builder = ProcessMetadataBuilder::new(
-            process_id,
-            metadata.rollout_path.clone(),
-            metadata.created_at,
-            SessionSource::Cli,
-        );
+        let builder = ProcessMetadataBuilder::new(process_id, metadata.created_at, SessionSource::Cli);
         let items = vec![RolloutItem::SessionMeta(SessionMetaLine {
             meta: SessionMeta {
                 id: process_id,
@@ -776,12 +809,7 @@ mod tests {
             .expect("initial upsert should succeed");
 
         let created_at = metadata.created_at.to_string();
-        let builder = ProcessMetadataBuilder::new(
-            process_id,
-            metadata.rollout_path.clone(),
-            metadata.created_at,
-            SessionSource::Cli,
-        );
+        let builder = ProcessMetadataBuilder::new(process_id, metadata.created_at, SessionSource::Cli);
         let items = vec![RolloutItem::SessionMeta(SessionMetaLine {
             meta: SessionMeta {
                 id: process_id,
@@ -1012,12 +1040,7 @@ mod tests {
             .await
             .expect("initial upsert should succeed");
 
-        let builder = ProcessMetadataBuilder::new(
-            process_id,
-            metadata.rollout_path.clone(),
-            metadata.created_at,
-            SessionSource::Cli,
-        );
+        let builder = ProcessMetadataBuilder::new(process_id, metadata.created_at, SessionSource::Cli);
         let items = vec![RolloutItem::EventMsg(EventMsg::TokenCount(
             chaos_ipc::protocol::TokenCountEvent {
                 info: Some(chaos_ipc::protocol::TokenUsageInfo {

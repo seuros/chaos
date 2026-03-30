@@ -66,38 +66,20 @@ mod apply_patch_cli;
 mod approvals;
 #[path = "suite/auth_refresh.rs"]
 mod auth_refresh;
-#[path = "suite/cli_stream.rs"]
-mod cli_stream;
-#[path = "suite/client.rs"]
-mod client;
 #[path = "suite/client_websockets.rs"]
 mod client_websockets;
 #[path = "suite/codex_delegate.rs"]
 mod codex_delegate;
-#[path = "suite/collaboration_instructions.rs"]
-mod collaboration_instructions;
-#[path = "suite/compact.rs"]
-mod compact;
-#[path = "suite/compact_remote.rs"]
-mod compact_remote;
-#[path = "suite/compact_resume_fork.rs"]
-mod compact_resume_fork;
 #[path = "suite/deprecation_notice.rs"]
 mod deprecation_notice;
 #[path = "suite/exec.rs"]
 mod exec;
 #[path = "suite/exec_policy.rs"]
 mod exec_policy;
-#[path = "suite/fork_process.rs"]
-mod fork_process;
 #[path = "suite/grep_files.rs"]
 mod grep_files;
 #[path = "suite/hierarchical_agents.rs"]
 mod hierarchical_agents;
-#[path = "suite/hooks.rs"]
-mod hooks;
-#[path = "suite/image_rollout.rs"]
-mod image_rollout;
 #[path = "suite/items.rs"]
 mod items;
 #[path = "suite/json_result.rs"]
@@ -110,16 +92,12 @@ mod live_cli;
 mod live_reload;
 #[path = "suite/mcp_client.rs"]
 mod mcp_client;
-#[path = "suite/memories.rs"]
-mod memories;
 #[path = "suite/model_info_overrides.rs"]
 mod model_info_overrides;
 #[path = "suite/model_overrides.rs"]
 mod model_overrides;
 #[path = "suite/model_switching.rs"]
 mod model_switching;
-#[path = "suite/model_visible_layout.rs"]
-mod model_visible_layout;
 #[path = "suite/models_cache_ttl.rs"]
 mod models_cache_ttl;
 #[path = "suite/models_etag_responses.rs"]
@@ -128,12 +106,8 @@ mod models_etag_responses;
 mod otel;
 #[path = "suite/pending_input.rs"]
 mod pending_input;
-#[path = "suite/permissions_messages.rs"]
-mod permissions_messages;
 #[path = "suite/personality.rs"]
 mod personality;
-#[path = "suite/personality_migration.rs"]
-mod personality_migration;
 #[path = "suite/plugins.rs"]
 mod plugins;
 #[path = "suite/prompt_caching.rs"]
@@ -152,14 +126,6 @@ mod request_permissions;
 mod request_permissions_tool;
 #[path = "suite/request_user_input.rs"]
 mod request_user_input;
-#[path = "suite/resume.rs"]
-mod resume;
-#[path = "suite/resume_warning.rs"]
-mod resume_warning;
-#[path = "suite/review.rs"]
-mod review;
-#[path = "suite/rollout_list_find.rs"]
-mod rollout_list_find;
 #[path = "suite/safety_check_downgrade.rs"]
 mod safety_check_downgrade;
 #[path = "suite/search_tool.rs"]
@@ -176,14 +142,10 @@ mod shell_snapshot;
 mod skills;
 #[path = "suite/spawn_agent_description.rs"]
 mod spawn_agent_description;
-#[path = "suite/sqlite_state.rs"]
-mod sqlite_state;
 #[path = "suite/stream_error_allows_next_turn.rs"]
 mod stream_error_allows_next_turn;
 #[path = "suite/stream_no_completed.rs"]
 mod stream_no_completed;
-#[path = "suite/subagent_notifications.rs"]
-mod subagent_notifications;
 #[path = "suite/text_encoding_fix.rs"]
 mod text_encoding_fix;
 #[path = "suite/tool_harness.rs"]

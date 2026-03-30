@@ -71,7 +71,7 @@ pub struct Cli {
     #[arg(long = "add-dir", value_name = "DIR", value_hint = clap::ValueHint::DirPath)]
     pub add_dir: Vec<PathBuf>,
 
-    /// Run without persisting session files to disk.
+    /// Run without persisting session history.
     #[arg(long = "ephemeral", global = true, default_value_t = false)]
     pub ephemeral: bool,
 

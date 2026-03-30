@@ -5,6 +5,7 @@ use std::sync::Arc;
 
 use anyhow::Context;
 use anyhow::Result;
+use chaos_ipc::ProcessId;
 use chaos_ipc::config_types::ServiceTier;
 use chaos_ipc::openai_models::ModelsResponse;
 use chaos_ipc::protocol::AskForApproval;
@@ -150,16 +151,16 @@ impl TestCodexBuilder {
         &mut self,
         server: &wiremock::MockServer,
         home: Arc<TempDir>,
-        rollout_path: PathBuf,
+        process_id: ProcessId,
     ) -> anyhow::Result<TestCodex> {
-        Box::pin(self.build_with_home(server, home, Some(rollout_path))).await
+        Box::pin(self.build_with_home(server, home, Some(process_id))).await
     }
 
     async fn build_with_home(
         &mut self,
         server: &wiremock::MockServer,
         home: Arc<TempDir>,
-        resume_from: Option<PathBuf>,
+        resume_from: Option<ProcessId>,
     ) -> anyhow::Result<TestCodex> {
         let base_url = format!("{}/v1", server.uri());
         let (config, cwd) = self.prepare_config(base_url, &home).await?;
@@ -170,7 +171,7 @@ impl TestCodexBuilder {
         &mut self,
         base_url: String,
         home: Arc<TempDir>,
-        resume_from: Option<PathBuf>,
+        resume_from: Option<ProcessId>,
     ) -> anyhow::Result<TestCodex> {
         let (config, cwd) = self.prepare_config(base_url, &home).await?;
         Box::pin(self.build_from_config(config, cwd, home, resume_from)).await
@@ -181,7 +182,7 @@ impl TestCodexBuilder {
         config: Config,
         cwd: Arc<TempDir>,
         home: Arc<TempDir>,
-        resume_from: Option<PathBuf>,
+        resume_from: Option<ProcessId>,
     ) -> anyhow::Result<TestCodex> {
         let auth = self.auth.clone();
         let process_table = if config.model_catalog.is_some() {
@@ -201,11 +202,11 @@ impl TestCodexBuilder {
         let process_table = Arc::new(process_table);
 
         let new_conversation = match resume_from {
-            Some(path) => {
+            Some(process_id) => {
                 let auth_manager = chaos_kern::test_support::auth_manager_from_auth(auth);
-                Box::pin(process_table.resume_process_from_rollout(
+                Box::pin(process_table.resume_process(
                     config.clone(),
-                    path,
+                    process_id,
                     auth_manager,
                     /*parent_trace*/ None,
                 ))

@@ -1137,12 +1137,7 @@ pub(crate) fn new_session_info(
     } else {
         if config.show_tooltips
             && let Some(tooltips) = tooltip_override
-                .or_else(|| {
-                    tooltips::get_tooltip(
-                        auth_plan,
-                        false,
-                    )
-                })
+                .or_else(|| tooltips::get_tooltip(auth_plan, false))
                 .map(|tip| TooltipHistoryCell::new(tip, &config.cwd))
         {
             parts.push(Box::new(tooltips));
@@ -2609,7 +2604,6 @@ mod tests {
             history_entry_count: 0,
             initial_messages: None,
             network_proxy: None,
-            rollout_path: Some(PathBuf::new()),
         }
     }
 

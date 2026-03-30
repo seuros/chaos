@@ -1,12 +1,8 @@
 use crate::config::ConfigToml;
 use crate::config::edit::ConfigEditsBuilder;
-use crate::rollout::ARCHIVED_SESSIONS_SUBDIR;
-use crate::rollout::SESSIONS_SUBDIR;
-use crate::rollout::list::ProcessListConfig;
-use crate::rollout::list::ProcessListLayout;
 use crate::rollout::list::ProcessSortKey;
-use crate::rollout::list::get_processes_in_root;
 use crate::state_db;
+use chaos_journald::JournalRpcClient;
 use chaos_ipc::config_types::Personality;
 use chaos_ipc::protocol::SessionSource;
 use std::io;
@@ -83,38 +79,27 @@ async fn has_recorded_sessions(codex_home: &Path, default_provider: &str) -> io:
     {
         return Ok(true);
     }
-
-    let sessions = get_processes_in_root(
-        codex_home.join(SESSIONS_SUBDIR),
-        /*page_size*/ 1,
-        /*cursor*/ None,
-        ProcessSortKey::CreatedAt,
-        ProcessListConfig {
-            allowed_sources,
-            model_providers: None,
-            default_provider,
-            layout: ProcessListLayout::NestedByDate,
-        },
-    )
-    .await?;
-    if !sessions.items.is_empty() {
+    let (client, _paths) = match JournalRpcClient::default_or_bootstrap(None).await {
+        Ok(client) => client,
+        Err(err) => {
+            return Err(io::Error::other(format!(
+                "failed to connect to journald while checking recorded sessions: {err}"
+            )));
+        }
+    };
+    let _ = (default_provider, allowed_sources, ProcessSortKey::CreatedAt);
+    let sessions = client
+        .list_processes(Some(false))
+        .await
+        .map_err(io::Error::other)?;
+    if !sessions.is_empty() {
         return Ok(true);
     }
-
-    let archived_sessions = get_processes_in_root(
-        codex_home.join(ARCHIVED_SESSIONS_SUBDIR),
-        /*page_size*/ 1,
-        /*cursor*/ None,
-        ProcessSortKey::CreatedAt,
-        ProcessListConfig {
-            allowed_sources,
-            model_providers: None,
-            default_provider,
-            layout: ProcessListLayout::Flat,
-        },
-    )
-    .await?;
-    Ok(!archived_sessions.items.is_empty())
+    let archived_sessions = client
+        .list_processes(Some(true))
+        .await
+        .map_err(io::Error::other)?;
+    Ok(!archived_sessions.is_empty())
 }
 
 async fn create_marker(marker_path: &Path) -> io::Result<()> {
@@ -129,7 +114,3 @@ async fn create_marker(marker_path: &Path) -> io::Result<()> {
         Err(err) => Err(err),
     }
 }
-
-#[cfg(test)]
-#[path = "personality_migration_tests.rs"]
-mod tests;

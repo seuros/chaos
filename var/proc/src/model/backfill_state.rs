@@ -2,12 +2,12 @@ use anyhow::Result;
 use sqlx::Row;
 use sqlx::sqlite::SqliteRow;
 
-/// Persisted lifecycle state for rollout metadata backfill.
+/// Persisted lifecycle state for session-metadata backfill.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct BackfillState {
     /// Current lifecycle status.
     pub status: BackfillStatus,
-    /// Last processed rollout watermark.
+    /// Last processed metadata watermark.
     pub last_watermark: Option<String>,
     /// Last successful completion time.
     pub last_success_at: Option<jiff::Timestamp>,

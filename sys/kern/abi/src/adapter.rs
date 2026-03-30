@@ -10,8 +10,8 @@ use std::pin::Pin;
 
 use crate::error::AbiError;
 use crate::models::AdapterCapabilities;
-use crate::models::ListModelsFuture;
 use crate::models::ListModelsError;
+use crate::models::ListModelsFuture;
 use crate::request::TurnRequest;
 use crate::stream::TurnStream;
 

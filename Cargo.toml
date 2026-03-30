@@ -33,6 +33,7 @@ members = [
     "srv/mcpc",
     "srv/arsenal",
     "srv/daemon",
+    "srv/journald",
     "srv/pf",
     "srv/cron",
 
@@ -46,7 +47,6 @@ members = [
 
     # var/ — runtime state
     "var/proc",
-    "var/rollout",
     "var/memento",
 
     # share/ — extensions + data
@@ -133,6 +133,7 @@ chaos-mcphost = { path = "srv/mcphost" }
 mcp-guest = { path = "srv/mcpc" }
 chaos-arsenal = { path = "srv/arsenal" }
 chaos-daemon = { path = "srv/daemon" }
+chaos-journald = { path = "srv/journald" }
 chaos-pf = { path = "srv/pf" }
 chaos-cron = { path = "srv/cron" }
 
@@ -146,7 +147,6 @@ chaos-sysctl = { path = "etc/sysctl" }
 
 # Internal — var/
 chaos-proc = { path = "var/proc" }
-chaos-rollout = { path = "var/rollout" }
 chaos-memento = { path = "var/memento" }
 
 # Internal — share/

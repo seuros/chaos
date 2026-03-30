@@ -37,24 +37,22 @@ pub struct ProcessesPage {
     pub num_scanned_rows: usize,
 }
 
-/// The outcome of extracting metadata from a rollout.
+/// The outcome of extracting metadata from persisted process history.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct ExtractionOutcome {
     /// The extracted thread metadata.
     pub metadata: ProcessMetadata,
-    /// The explicit thread memory mode from rollout metadata, if present.
+    /// The explicit thread memory mode from persisted session metadata, if present.
     pub memory_mode: Option<String>,
-    /// The number of rollout lines that failed to parse.
+    /// The number of persisted items that failed to parse.
     pub parse_errors: usize,
 }
 
-/// Canonical thread metadata derived from rollout files.
+/// Canonical thread metadata derived from persisted session history.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct ProcessMetadata {
     /// The thread identifier.
     pub id: ProcessId,
-    /// The absolute rollout path on disk.
-    pub rollout_path: PathBuf,
     /// The creation timestamp.
     pub created_at: jiff::Timestamp,
     /// The last update timestamp.
@@ -91,13 +89,11 @@ pub struct ProcessMetadata {
     pub git_origin_url: Option<String>,
 }
 
-/// Builder data required to construct [`ProcessMetadata`] without parsing filenames.
+/// Builder data required to construct [`ProcessMetadata`].
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct ProcessMetadataBuilder {
     /// The thread identifier.
     pub id: ProcessId,
-    /// The absolute rollout path on disk.
-    pub rollout_path: PathBuf,
     /// The creation timestamp.
     pub created_at: jiff::Timestamp,
     /// The last update timestamp, if known.
@@ -132,13 +128,11 @@ impl ProcessMetadataBuilder {
     /// Create a new builder with required fields and sensible defaults.
     pub fn new(
         id: ProcessId,
-        rollout_path: PathBuf,
         created_at: jiff::Timestamp,
         source: SessionSource,
     ) -> Self {
         Self {
             id,
-            rollout_path,
             created_at,
             updated_at: None,
             source,
@@ -168,7 +162,6 @@ impl ProcessMetadataBuilder {
             .unwrap_or(created_at);
         ProcessMetadata {
             id: self.id,
-            rollout_path: self.rollout_path.clone(),
             created_at,
             updated_at,
             source,
@@ -212,9 +205,6 @@ impl ProcessMetadata {
         let mut diffs = Vec::new();
         if self.id != other.id {
             diffs.push("id");
-        }
-        if self.rollout_path != other.rollout_path {
-            diffs.push("rollout_path");
         }
         if self.created_at != other.created_at {
             diffs.push("created_at");
@@ -278,7 +268,6 @@ fn canonicalize_datetime(dt: jiff::Timestamp) -> jiff::Timestamp {
 #[derive(Debug)]
 pub(crate) struct ProcessRow {
     id: String,
-    rollout_path: String,
     created_at: i64,
     updated_at: i64,
     source: String,
@@ -302,7 +291,6 @@ impl ProcessRow {
     pub(crate) fn try_from_row(row: &SqliteRow) -> Result<Self> {
         Ok(Self {
             id: row.try_get("id")?,
-            rollout_path: row.try_get("rollout_path")?,
             created_at: row.try_get("created_at")?,
             updated_at: row.try_get("updated_at")?,
             source: row.try_get("source")?,
@@ -330,7 +318,6 @@ impl TryFrom<ProcessRow> for ProcessMetadata {
     fn try_from(row: ProcessRow) -> std::result::Result<Self, Self::Error> {
         let ProcessRow {
             id,
-            rollout_path,
             created_at,
             updated_at,
             source,
@@ -351,7 +338,6 @@ impl TryFrom<ProcessRow> for ProcessMetadata {
         } = row;
         Ok(Self {
             id: ProcessId::try_from(id)?,
-            rollout_path: PathBuf::from(rollout_path),
             created_at: epoch_seconds_to_datetime(created_at)?,
             updated_at: epoch_seconds_to_datetime(updated_at)?,
             source,
@@ -394,7 +380,7 @@ pub(crate) fn epoch_seconds_to_datetime(secs: i64) -> Result<jiff::Timestamp> {
 /// Statistics about a backfill operation.
 #[derive(Debug, Clone)]
 pub struct BackfillStats {
-    /// The number of rollout files scanned.
+    /// The number of persisted process records scanned.
     pub scanned: usize,
     /// The number of rows upserted successfully.
     pub upserted: usize,

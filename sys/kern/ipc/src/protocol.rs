@@ -384,7 +384,7 @@ pub enum Op {
     /// Trigger a single pass of the startup memory pipeline.
     UpdateMemories,
 
-    /// Set a user-facing process name in the persisted rollout metadata.
+    /// Set a user-facing process name in persisted session metadata.
     /// This is a local-only operation handled by codex-core; it does not
     /// involve the model.
     #[serde(rename = "set_process_name")]
@@ -2057,7 +2057,6 @@ pub struct ConversationPathResponseEvent {
 pub struct ResumedHistory {
     pub conversation_id: ProcessId,
     pub history: Vec<RolloutItem>,
-    pub rollout_path: PathBuf,
 }
 
 #[derive(Debug, Clone, Deserialize, Serialize, JsonSchema, TS)]
@@ -3010,10 +3009,6 @@ pub struct SessionConfiguredEvent {
     #[serde(default, skip_serializing_if = "Option::is_none")]
     #[ts(optional)]
     pub network_proxy: Option<SessionNetworkProxyRuntime>,
-
-    /// Path in which the rollout is stored. Can be `None` for ephemeral threads
-    #[serde(skip_serializing_if = "Option::is_none")]
-    pub rollout_path: Option<PathBuf>,
 }
 
 #[derive(Debug, Clone, Deserialize, Serialize, JsonSchema, TS)]
@@ -3346,7 +3341,6 @@ mod tests {
     use pretty_assertions::assert_eq;
     use serde_json::json;
     use std::path::PathBuf;
-    use tempfile::NamedTempFile;
     use tempfile::TempDir;
 
     fn sorted_writable_roots(roots: Vec<WritableRoot>) -> Vec<(PathBuf, Vec<PathBuf>)> {
@@ -4179,7 +4173,6 @@ mod tests {
     #[test]
     fn serialize_event() -> Result<()> {
         let conversation_id = ProcessId::from_string("67e55044-10b1-426f-9247-bb680e5fe0c8")?;
-        let rollout_file = NamedTempFile::new()?;
         let event = Event {
             id: "1234".to_string(),
             msg: EventMsg::SessionConfigured(SessionConfiguredEvent {
@@ -4198,7 +4191,6 @@ mod tests {
                 history_entry_count: 0,
                 initial_messages: None,
                 network_proxy: None,
-                rollout_path: Some(rollout_file.path().to_path_buf()),
             }),
         };
 
@@ -4218,7 +4210,6 @@ mod tests {
                 "reasoning_effort": "medium",
                 "history_log_id": 0,
                 "history_entry_count": 0,
-                "rollout_path": format!("{}", rollout_file.path().display()),
             }
         });
         assert_eq!(expected, serde_json::to_value(&event)?);

@@ -15,7 +15,7 @@ WHERE id = 1
         crate::BackfillState::try_from_row(&row)
     }
 
-    /// Attempt to claim ownership of rollout metadata backfill.
+    /// Attempt to claim ownership of persisted session metadata backfill.
     ///
     /// Returns `true` when this runtime claimed the backfill worker slot.
     /// Returns `false` if backfill is already complete or currently owned by a
@@ -43,7 +43,7 @@ WHERE id = 1
         Ok(result.rows_affected() == 1)
     }
 
-    /// Mark rollout metadata backfill as running.
+    /// Mark persisted session metadata backfill as running.
     pub async fn mark_backfill_running(&self) -> anyhow::Result<()> {
         self.ensure_backfill_state_row().await?;
         sqlx::query(
@@ -60,7 +60,7 @@ WHERE id = 1
         Ok(())
     }
 
-    /// Persist rollout metadata backfill progress.
+    /// Persist session metadata backfill progress.
     pub async fn checkpoint_backfill(&self, watermark: &str) -> anyhow::Result<()> {
         self.ensure_backfill_state_row().await?;
         sqlx::query(
@@ -78,7 +78,7 @@ WHERE id = 1
         Ok(())
     }
 
-    /// Mark rollout metadata backfill as complete.
+    /// Mark session metadata backfill as complete.
     pub async fn mark_backfill_complete(&self, last_watermark: Option<&str>) -> anyhow::Result<()> {
         self.ensure_backfill_state_row().await?;
         let now = jiff::Timestamp::now().as_second();
@@ -223,7 +223,7 @@ mod tests {
             .await
             .expect("mark backfill running");
         runtime
-            .checkpoint_backfill("sessions/2026/01/27/rollout-a.jsonl")
+            .checkpoint_backfill("cursor-a")
             .await
             .expect("checkpoint backfill");
 
@@ -234,12 +234,12 @@ mod tests {
         assert_eq!(running.status, crate::BackfillStatus::Running);
         assert_eq!(
             running.last_watermark,
-            Some("sessions/2026/01/27/rollout-a.jsonl".to_string())
+            Some("cursor-a".to_string())
         );
         assert_eq!(running.last_success_at, None);
 
         runtime
-            .mark_backfill_complete(Some("sessions/2026/01/28/rollout-b.jsonl"))
+            .mark_backfill_complete(Some("cursor-b"))
             .await
             .expect("mark backfill complete");
         let completed = runtime
@@ -249,7 +249,7 @@ mod tests {
         assert_eq!(completed.status, crate::BackfillStatus::Complete);
         assert_eq!(
             completed.last_watermark,
-            Some("sessions/2026/01/28/rollout-b.jsonl".to_string())
+            Some("cursor-b".to_string())
         );
         assert!(completed.last_success_at.is_some());
 

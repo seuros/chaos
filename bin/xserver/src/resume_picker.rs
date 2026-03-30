@@ -42,7 +42,6 @@ const LOAD_NEAR_THRESHOLD: usize = 5;
 
 #[derive(Debug, Clone)]
 pub struct SessionTarget {
-    pub path: PathBuf,
     pub process_id: ProcessId,
 }
 
@@ -75,8 +74,8 @@ impl SessionPickerAction {
         }
     }
 
-    fn selection(self, path: PathBuf, process_id: ProcessId) -> SessionSelection {
-        let target_session = SessionTarget { path, process_id };
+    fn selection(self, process_id: ProcessId) -> SessionSelection {
+        let target_session = SessionTarget { process_id };
         match self {
             SessionPickerAction::Resume => SessionSelection::Resume(target_session),
             SessionPickerAction::Fork => SessionSelection::Fork(target_session),
@@ -103,7 +102,7 @@ enum BackgroundEvent {
     },
 }
 
-/// Interactive session picker that lists recorded rollout files with simple
+/// Interactive session picker that lists persisted sessions with simple
 /// search and pagination.
 ///
 /// The picker displays sessions in a table with timestamp columns (created/updated),
@@ -259,7 +258,7 @@ struct PickerState {
     pagination: PaginationState,
     all_rows: Vec<Row>,
     filtered_rows: Vec<Row>,
-    seen_paths: HashSet<PathBuf>,
+    seen_process_ids: HashSet<ProcessId>,
     selected: usize,
     scroll_top: usize,
     query: String,
@@ -279,8 +278,8 @@ struct PickerState {
 
 struct PaginationState {
     next_cursor: Option<Cursor>,
-    num_scanned_files: usize,
-    reached_scan_cap: bool,
+    num_scanned_records: usize,
+    reached_scan_limit: bool,
     loading: LoadingState,
 }
 
@@ -328,9 +327,8 @@ impl SearchState {
 
 #[derive(Clone)]
 struct Row {
-    path: PathBuf,
     preview: String,
-    process_id: Option<ProcessId>,
+    process_id: ProcessId,
     process_name: Option<String>,
     created_at: Option<DateTime<Utc>>,
     updated_at: Option<DateTime<Utc>>,
@@ -371,13 +369,13 @@ impl PickerState {
             requester,
             pagination: PaginationState {
                 next_cursor: None,
-                num_scanned_files: 0,
-                reached_scan_cap: false,
+                num_scanned_records: 0,
+                reached_scan_limit: false,
                 loading: LoadingState::Idle,
             },
             all_rows: Vec::new(),
             filtered_rows: Vec::new(),
-            seen_paths: HashSet::new(),
+            seen_process_ids: HashSet::new(),
             selected: 0,
             scroll_top: 0,
             query: String::new(),
@@ -413,25 +411,7 @@ impl PickerState {
             }
             KeyCode::Enter => {
                 if let Some(row) = self.filtered_rows.get(self.selected) {
-                    let path = row.path.clone();
-                    let process_id = match row.process_id {
-                        Some(process_id) => Some(process_id),
-                        None => {
-                            crate::resolve_session_process_id(
-                                path.as_path(),
-                                /*id_str_if_uuid*/ None,
-                            )
-                            .await
-                        }
-                    };
-                    if let Some(process_id) = process_id {
-                        return Ok(Some(self.action.selection(path, process_id)));
-                    }
-                    self.inline_error = Some(format!(
-                        "Failed to read session metadata from {}",
-                        path.display()
-                    ));
-                    self.request_frame();
+                    return Ok(Some(self.action.selection(row.process_id)));
                 }
             }
             KeyCode::Up => {
@@ -497,7 +477,7 @@ impl PickerState {
         self.reset_pagination();
         self.all_rows.clear();
         self.filtered_rows.clear();
-        self.seen_paths.clear();
+        self.seen_process_ids.clear();
         self.selected = 0;
 
         let search_token = if self.query.is_empty() {
@@ -552,8 +532,8 @@ impl PickerState {
 
     fn reset_pagination(&mut self) {
         self.pagination.next_cursor = None;
-        self.pagination.num_scanned_files = 0;
-        self.pagination.reached_scan_cap = false;
+        self.pagination.num_scanned_records = 0;
+        self.pagination.reached_scan_limit = false;
         self.pagination.loading = LoadingState::Idle;
     }
 
@@ -563,17 +543,17 @@ impl PickerState {
         } else {
             self.pagination.next_cursor = None;
         }
-        self.pagination.num_scanned_files = self
+        self.pagination.num_scanned_records = self
             .pagination
-            .num_scanned_files
-            .saturating_add(page.num_scanned_files);
-        if page.reached_scan_cap {
-            self.pagination.reached_scan_cap = true;
+            .num_scanned_records
+            .saturating_add(page.num_scanned_records);
+        if page.reached_scan_limit {
+            self.pagination.reached_scan_limit = true;
         }
 
         let rows = rows_from_items(page.items);
         for row in rows {
-            if self.seen_paths.insert(row.path.clone()) {
+            if self.seen_process_ids.insert(row.process_id) {
                 self.all_rows.push(row);
             }
         }
@@ -584,9 +564,7 @@ impl PickerState {
     async fn update_process_names(&mut self) {
         let mut missing_ids = HashSet::new();
         for row in &self.all_rows {
-            let Some(process_id) = row.process_id else {
-                continue;
-            };
+            let process_id = row.process_id;
             if self.process_name_cache.contains_key(&process_id) {
                 continue;
             }
@@ -607,9 +585,7 @@ impl PickerState {
 
         let mut updated = false;
         for row in self.all_rows.iter_mut() {
-            let Some(process_id) = row.process_id else {
-                continue;
-            };
+            let process_id = row.process_id;
             let process_name = self.process_name_cache.get(&process_id).cloned().flatten();
             if row.process_name == process_name {
                 continue;
@@ -672,7 +648,7 @@ impl PickerState {
             self.search_state = SearchState::Idle;
             return;
         }
-        if self.pagination.reached_scan_cap || self.pagination.next_cursor.is_none() {
+        if self.pagination.reached_scan_limit || self.pagination.next_cursor.is_none() {
             self.search_state = SearchState::Idle;
             return;
         }
@@ -689,7 +665,7 @@ impl PickerState {
             self.search_state = SearchState::Idle;
             return;
         }
-        if self.pagination.reached_scan_cap || self.pagination.next_cursor.is_none() {
+        if self.pagination.reached_scan_limit || self.pagination.next_cursor.is_none() {
             self.search_state = SearchState::Idle;
             return;
         }
@@ -840,11 +816,13 @@ fn head_to_row(item: &ProcessItem) -> Row {
         .filter(|s| !s.is_empty())
         .map(str::to_string)
         .unwrap_or_else(|| String::from("(no message yet)"));
+    let Some(process_id) = item.process_id else {
+        panic!("journal-backed session picker rows must carry process ids");
+    };
 
     Row {
-        path: item.path.clone(),
         preview,
-        process_id: item.process_id,
+        process_id,
         process_name: None,
         created_at,
         updated_at,
@@ -1078,17 +1056,17 @@ fn render_empty_state_line(state: &PickerState) -> Line<'static> {
         {
             return vec!["Searching…".italic().dim()].into();
         }
-        if state.pagination.reached_scan_cap {
+        if state.pagination.reached_scan_limit {
             let msg = format!(
                 "Search scanned first {} sessions; more may exist",
-                state.pagination.num_scanned_files
+                state.pagination.num_scanned_records
             );
             return vec![Span::from(msg).italic().dim()].into();
         }
         return vec!["No results for your search".italic().dim()].into();
     }
 
-    if state.all_rows.is_empty() && state.pagination.num_scanned_files == 0 {
+    if state.all_rows.is_empty() && state.pagination.num_scanned_records == 0 {
         return vec!["No sessions yet".italic().dim()].into();
     }
 
@@ -1351,17 +1329,17 @@ mod tests {
     use crossterm::event::KeyModifiers;
     use insta::assert_snapshot;
     use pretty_assertions::assert_eq;
-    use serde_json::json;
-    use std::fs::FileTimes;
-    use std::fs::OpenOptions;
-    use std::path::Path;
     use std::path::PathBuf;
     use std::sync::Arc;
     use std::sync::Mutex;
 
-    fn make_item(path: &str, ts: &str, preview: &str) -> ProcessItem {
+    fn make_item(ts: &str, preview: &str) -> ProcessItem {
+        make_item_with_id(ProcessId::new(), ts, preview)
+    }
+
+    fn make_item_with_id(process_id: ProcessId, ts: &str, preview: &str) -> ProcessItem {
         ProcessItem {
-            path: PathBuf::from(path),
+            process_id: Some(process_id),
             first_user_message: Some(preview.to_string()),
             created_at: Some(ts.to_string()),
             updated_at: Some(ts.to_string()),
@@ -1377,119 +1355,21 @@ mod tests {
     fn page(
         items: Vec<ProcessItem>,
         next_cursor: Option<Cursor>,
-        num_scanned_files: usize,
-        reached_scan_cap: bool,
+        num_scanned_records: usize,
+        reached_scan_limit: bool,
     ) -> ProcessesPage {
         ProcessesPage {
             items,
             next_cursor,
-            num_scanned_files,
-            reached_scan_cap,
+            num_scanned_records,
+            reached_scan_limit,
         }
     }
-
-    #[allow(dead_code)]
-    fn set_rollout_mtime(path: &Path, updated_at: DateTime<Utc>) {
-        let times = FileTimes::new().set_modified(updated_at.into());
-        OpenOptions::new()
-            .append(true)
-            .open(path)
-            .expect("open rollout")
-            .set_times(times)
-            .expect("set times");
-    }
-
-    // TODO(jif) fix
-    // #[tokio::test]
-    // async fn resume_picker_orders_by_updated_at() {
-    //     use uuid::Uuid;
-    //
-    //     let tempdir = tempfile::tempdir().expect("tempdir");
-    //     let sessions_root = tempdir.path().join("sessions");
-    //     std::fs::create_dir_all(&sessions_root).expect("mkdir sessions root");
-    //
-    //     let now = Utc::now();
-    //
-    //     let write_rollout = |ts: DateTime<Utc>, preview: &str| -> PathBuf {
-    //         let dir = sessions_root
-    //             .join(ts.format("%Y").to_string())
-    //             .join(ts.format("%m").to_string())
-    //             .join(ts.format("%d").to_string());
-    //         std::fs::create_dir_all(&dir).expect("mkdir date dirs");
-    //         let filename = format!(
-    //             "rollout-{}-{}.jsonl",
-    //             ts.format("%Y-%m-%dT%H-%M-%S"),
-    //             Uuid::new_v4()
-    //         );
-    //         let path = dir.join(filename);
-    //         let meta = SessionMeta {
-    //             id: ProcessId::new(),
-    //             forked_from_id: None,
-    //             timestamp: ts.to_rfc3339(),
-    //             cwd: PathBuf::from("/tmp"),
-    //             originator: String::from("user"),
-    //             cli_version: String::from("0.0.0"),
-    //             source: SessionSource::Cli,
-    //             model_provider: Some(String::from("openai")),
-    //             base_instructions: None,
-    //             dynamic_tools: None,
-    //         };
-    //         let meta_line = RolloutLine {
-    //             timestamp: ts.to_rfc3339(),
-    //             item: RolloutItem::SessionMeta(SessionMetaLine { meta, git: None }),
-    //         };
-    //         let user_line = RolloutLine {
-    //             timestamp: ts.to_rfc3339(),
-    //             item: RolloutItem::EventMsg(EventMsg::UserMessage(UserMessageEvent {
-    //                 message: preview.to_string(),
-    //                 images: None,
-    //                 text_elements: Vec::new(),
-    //                 local_images: Vec::new(),
-    //             })),
-    //         };
-    //         let meta_json = serde_json::to_string(&meta_line).expect("serialize meta");
-    //         let user_json = serde_json::to_string(&user_line).expect("serialize user");
-    //         std::fs::write(&path, format!("{meta_json}\n{user_json}\n")).expect("write rollout");
-    //         path
-    //     };
-    //
-    //     let created_a = now - Duration::minutes(1);
-    //     let created_b = now - Duration::minutes(2);
-    //
-    //     let path_a = write_rollout(created_a, "A (created newer)");
-    //     let path_b = write_rollout(created_b, "B (created older)");
-    //
-    //     set_rollout_mtime(&path_a, now - Duration::minutes(10));
-    //     set_rollout_mtime(&path_b, now - Duration::seconds(10));
-    //
-    //     let page = RolloutRecorder::list_threads(
-    //         tempdir.path(),
-    //         PAGE_SIZE,
-    //         None,
-    //         ProcessSortKey::UpdatedAt,
-    //         INTERACTIVE_SESSION_SOURCES,
-    //         Some(&[String::from("openai")]),
-    //         "openai",
-    //     )
-    //     .await
-    //     .expect("list threads");
-    //
-    //     let rows = rows_from_items(page.items);
-    //     let previews: Vec<String> = rows.iter().map(|row| row.preview.clone()).collect();
-    //
-    //     assert_eq!(
-    //         previews,
-    //         vec![
-    //             "B (created older)".to_string(),
-    //             "A (created newer)".to_string()
-    //         ]
-    //     );
-    // }
 
     #[test]
     fn head_to_row_uses_first_user_message() {
         let item = ProcessItem {
-            path: PathBuf::from("/tmp/a.jsonl"),
+            process_id: Some(ProcessId::new()),
             first_user_message: Some("real question".to_string()),
             created_at: Some("2025-01-01T00:00:00Z".into()),
             updated_at: Some("2025-01-01T00:00:00Z".into()),
@@ -1503,14 +1383,14 @@ mod tests {
     fn rows_from_items_preserves_backend_order() {
         // Construct two items with different timestamps and real user text.
         let a = ProcessItem {
-            path: PathBuf::from("/tmp/a.jsonl"),
+            process_id: Some(ProcessId::new()),
             first_user_message: Some("A".to_string()),
             created_at: Some("2025-01-01T00:00:00Z".into()),
             updated_at: Some("2025-01-01T00:00:00Z".into()),
             ..Default::default()
         };
         let b = ProcessItem {
-            path: PathBuf::from("/tmp/b.jsonl"),
+            process_id: Some(ProcessId::new()),
             first_user_message: Some("B".to_string()),
             created_at: Some("2025-01-02T00:00:00Z".into()),
             updated_at: Some("2025-01-02T00:00:00Z".into()),
@@ -1526,7 +1406,7 @@ mod tests {
     #[test]
     fn row_uses_tail_timestamp_for_updated_at() {
         let item = ProcessItem {
-            path: PathBuf::from("/tmp/a.jsonl"),
+            process_id: Some(ProcessId::new()),
             first_user_message: Some("Hello".to_string()),
             created_at: Some("2025-01-01T00:00:00Z".into()),
             updated_at: Some("2025-01-01T01:00:00Z".into()),
@@ -1548,9 +1428,8 @@ mod tests {
     #[test]
     fn row_display_preview_prefers_process_name() {
         let row = Row {
-            path: PathBuf::from("/tmp/a.jsonl"),
             preview: String::from("first message"),
-            process_id: None,
+            process_id: ProcessId::new(),
             process_name: Some(String::from("My session")),
             created_at: None,
             updated_at: None,
@@ -1582,9 +1461,8 @@ mod tests {
         let now = Utc::now();
         let rows = vec![
             Row {
-                path: PathBuf::from("/tmp/a.jsonl"),
                 preview: String::from("Fix resume picker timestamps"),
-                process_id: None,
+                process_id: ProcessId::new(),
                 process_name: None,
                 created_at: Some(now - Duration::minutes(16)),
                 updated_at: Some(now - Duration::seconds(42)),
@@ -1592,9 +1470,8 @@ mod tests {
                 git_branch: None,
             },
             Row {
-                path: PathBuf::from("/tmp/b.jsonl"),
                 preview: String::from("Investigate lazy pagination cap"),
-                process_id: None,
+                process_id: ProcessId::new(),
                 process_name: None,
                 created_at: Some(now - Duration::hours(1)),
                 updated_at: Some(now - Duration::minutes(35)),
@@ -1602,9 +1479,8 @@ mod tests {
                 git_branch: None,
             },
             Row {
-                path: PathBuf::from("/tmp/c.jsonl"),
                 preview: String::from("Explain the codebase"),
-                process_id: None,
+                process_id: ProcessId::new(),
                 process_name: None,
                 created_at: Some(now - Duration::hours(2)),
                 updated_at: Some(now - Duration::hours(2)),
@@ -1657,7 +1533,7 @@ mod tests {
             SessionPickerAction::Resume,
         );
         state.inline_error = Some(String::from(
-            "Failed to read session metadata from /tmp/missing.jsonl",
+            "Failed to read session metadata from missing fixture",
         ));
 
         let width: u16 = 80;
@@ -1677,276 +1553,6 @@ mod tests {
         assert_snapshot!("resume_picker_search_error", snapshot);
     }
 
-    // TODO(jif) fix
-    // #[tokio::test]
-    // async fn resume_picker_screen_snapshot() {
-    //     use crate::custom_terminal::Terminal;
-    //     use crate::test_backend::VT100Backend;
-    //     use uuid::Uuid;
-    //
-    //     // Create real rollout files so the snapshot uses the actual listing pipeline.
-    //     let tempdir = tempfile::tempdir().expect("tempdir");
-    //     let sessions_root = tempdir.path().join("sessions");
-    //     std::fs::create_dir_all(&sessions_root).expect("mkdir sessions root");
-    //
-    //     let now = Utc::now();
-    //
-    //     // Helper to write a rollout file with minimal meta + one user message.
-    //     let write_rollout = |ts: DateTime<Utc>, cwd: &str, branch: &str, preview: &str| {
-    //         let dir = sessions_root
-    //             .join(ts.format("%Y").to_string())
-    //             .join(ts.format("%m").to_string())
-    //             .join(ts.format("%d").to_string());
-    //         std::fs::create_dir_all(&dir).expect("mkdir date dirs");
-    //         let filename = format!(
-    //             "rollout-{}-{}.jsonl",
-    //             ts.format("%Y-%m-%dT%H-%M-%S"),
-    //             Uuid::new_v4()
-    //         );
-    //         let path = dir.join(filename);
-    //         let meta = serde_json::json!({
-    //             "timestamp": ts.to_rfc3339(),
-    //             "item": {
-    //                 "SessionMeta": {
-    //                     "meta": {
-    //                         "id": Uuid::new_v4(),
-    //                         "timestamp": ts.to_rfc3339(),
-    //                         "cwd": cwd,
-    //                         "originator": "user",
-    //                         "cli_version": "0.0.0",
-    //                         "source": "Cli",
-    //                         "model_provider": "openai",
-    //                     }
-    //                 }
-    //             }
-    //         });
-    //         let user = serde_json::json!({
-    //             "timestamp": ts.to_rfc3339(),
-    //             "item": {
-    //                 "EventMsg": {
-    //                     "UserMessage": {
-    //                         "message": preview,
-    //                         "images": null
-    //                     }
-    //                 }
-    //             }
-    //         });
-    //         let branch_meta = serde_json::json!({
-    //             "timestamp": ts.to_rfc3339(),
-    //             "item": {
-    //                 "EventMsg": {
-    //                     "SessionMeta": {
-    //                         "meta": {
-    //                             "git_branch": branch
-    //                         }
-    //                     }
-    //                 }
-    //             }
-    //         });
-    //         std::fs::write(&path, format!("{meta}\n{user}\n{branch_meta}\n"))
-    //             .expect("write rollout");
-    //     };
-    //
-    //     write_rollout(
-    //         now - Duration::seconds(42),
-    //         "/tmp/project",
-    //         "feature/resume",
-    //         "Fix resume picker timestamps",
-    //     );
-    //     write_rollout(
-    //         now - Duration::minutes(35),
-    //         "/tmp/other",
-    //         "main",
-    //         "Investigate lazy pagination cap",
-    //     );
-    //
-    //     let loader: PageLoader = Arc::new(|_| {});
-    //     let mut state = PickerState::new(
-    //         PathBuf::from("/tmp"),
-    //         FrameRequester::test_dummy(),
-    //         loader,
-    //         String::from("openai"),
-    //         true,
-    //         None,
-    //         SessionPickerAction::Resume,
-    //     );
-    //
-    //     let page = RolloutRecorder::list_threads(
-    //         &state.codex_home,
-    //         PAGE_SIZE,
-    //         None,
-    //         ProcessSortKey::CreatedAt,
-    //         INTERACTIVE_SESSION_SOURCES,
-    //         Some(&[String::from("openai")]),
-    //         "openai",
-    //     )
-    //     .await
-    //     .expect("list conversations");
-    //
-    //     let rows = rows_from_items(page.items);
-    //     state.all_rows = rows.clone();
-    //     state.filtered_rows = rows;
-    //     state.view_rows = Some(4);
-    //     state.selected = 0;
-    //     state.scroll_top = 0;
-    //     state.update_view_rows(4);
-    //
-    //     let metrics = calculate_column_metrics(&state.filtered_rows, state.show_all);
-    //
-    //     let width: u16 = 80;
-    //     let height: u16 = 9;
-    //     let backend = VT100Backend::new(width, height);
-    //     let mut terminal = Terminal::with_options(backend).expect("terminal");
-    //     terminal.set_viewport_area(Rect::new(0, 0, width, height));
-    //
-    //     {
-    //         let mut frame = terminal.get_frame();
-    //         let area = frame.area();
-    //         let [header, search, columns, list, hint] = Layout::vertical([
-    //             Constraint::Length(1),
-    //             Constraint::Length(1),
-    //             Constraint::Length(1),
-    //             Constraint::Min(area.height.saturating_sub(4)),
-    //             Constraint::Length(1),
-    //         ])
-    //         .areas(area);
-    //
-    //         frame.render_widget_ref(
-    //             Line::from(vec![
-    //                 "Resume a previous session".bold().cyan(),
-    //                 "  ".into(),
-    //                 "Sort:".dim(),
-    //                 " ".into(),
-    //                 "Created at".magenta(),
-    //             ]),
-    //             header,
-    //         );
-    //
-    //         frame.render_widget_ref(Line::from("Type to search".dim()), search);
-    //
-    //         render_column_headers(&mut frame, columns, &metrics, state.sort_key);
-    //         render_list(&mut frame, list, &state, &metrics);
-    //
-    //         let hint_line: Line = vec![
-    //             key_hint::plain(KeyCode::Enter).into(),
-    //             " to resume ".dim(),
-    //             "    ".dim(),
-    //             key_hint::plain(KeyCode::Esc).into(),
-    //             " to start new ".dim(),
-    //             "    ".dim(),
-    //             key_hint::ctrl(KeyCode::Char('c')).into(),
-    //             " to quit ".dim(),
-    //             "    ".dim(),
-    //             key_hint::plain(KeyCode::Tab).into(),
-    //             " to toggle sort ".dim(),
-    //         ]
-    //         .into();
-    //         frame.render_widget_ref(hint_line, hint);
-    //     }
-    //     terminal.flush().expect("flush");
-    //
-    //     let snapshot = terminal.backend().to_string();
-    //     assert_snapshot!("resume_picker_screen", snapshot);
-    // }
-
-    #[tokio::test]
-    async fn resume_picker_process_names_snapshot() {
-        use crate::custom_terminal::Terminal;
-        use crate::test_backend::VT100Backend;
-        use ratatui::layout::Constraint;
-        use ratatui::layout::Layout;
-
-        let tempdir = tempfile::tempdir().expect("tempdir");
-        let session_index_path = tempdir.path().join("session_index.jsonl");
-
-        let id1 =
-            ProcessId::from_string("11111111-1111-1111-1111-111111111111").expect("thread id 1");
-        let id2 =
-            ProcessId::from_string("22222222-2222-2222-2222-222222222222").expect("thread id 2");
-        let entries = vec![
-            json!({
-                "id": id1,
-                "process_name": "Keep this for now",
-                "updated_at": "2025-01-01T00:00:00Z",
-            }),
-            json!({
-                "id": id2,
-                "process_name": "Named thread",
-                "updated_at": "2025-01-01T00:00:00Z",
-            }),
-        ];
-        let mut out = String::new();
-        for entry in entries {
-            out.push_str(&serde_json::to_string(&entry).expect("session index entry"));
-            out.push('\n');
-        }
-        std::fs::write(&session_index_path, out).expect("write session index");
-
-        let loader: PageLoader = Arc::new(|_| {});
-        let mut state = PickerState::new(
-            tempdir.path().to_path_buf(),
-            FrameRequester::test_dummy(),
-            loader,
-            String::from("openai"),
-            true,
-            None,
-            SessionPickerAction::Resume,
-        );
-
-        let now = Utc::now();
-        let rows = vec![
-            Row {
-                path: PathBuf::from("/tmp/a.jsonl"),
-                preview: String::from("First message preview"),
-                process_id: Some(id1),
-                process_name: None,
-                created_at: None,
-                updated_at: Some(now - Duration::days(2)),
-                cwd: None,
-                git_branch: None,
-            },
-            Row {
-                path: PathBuf::from("/tmp/b.jsonl"),
-                preview: String::from("Second message preview"),
-                process_id: Some(id2),
-                process_name: None,
-                created_at: None,
-                updated_at: Some(now - Duration::days(3)),
-                cwd: None,
-                git_branch: None,
-            },
-        ];
-        state.all_rows = rows.clone();
-        state.filtered_rows = rows;
-        state.view_rows = Some(2);
-        state.selected = 0;
-        state.scroll_top = 0;
-        state.update_view_rows(2);
-
-        state.update_process_names().await;
-
-        let metrics = calculate_column_metrics(&state.filtered_rows, state.show_all);
-
-        let width: u16 = 80;
-        let height: u16 = 5;
-        let backend = VT100Backend::new(width, height);
-        let mut terminal = Terminal::with_options(backend).expect("terminal");
-        terminal.set_viewport_area(Rect::new(0, 0, width, height));
-
-        {
-            let mut frame = terminal.get_frame();
-            let area = frame.area();
-            let segments =
-                Layout::vertical([Constraint::Length(1), Constraint::Min(1)]).split(area);
-            render_column_headers(&mut frame, segments[0], &metrics, state.sort_key);
-            render_list(&mut frame, segments[1], &state, &metrics);
-        }
-        terminal.flush().expect("flush");
-
-        let snapshot = terminal.backend().to_string();
-        assert_snapshot!("resume_picker_process_names", snapshot);
-    }
-
     #[test]
     fn pageless_scrolling_deduplicates_and_keeps_order() {
         let loader: PageLoader = Arc::new(|_| {});
@@ -1961,10 +1567,15 @@ mod tests {
         );
 
         state.reset_pagination();
+        let duplicate_process_id = ProcessId::new();
         state.ingest_page(page(
             vec![
-                make_item("/tmp/a.jsonl", "2025-01-03T00:00:00Z", "third"),
-                make_item("/tmp/b.jsonl", "2025-01-02T00:00:00Z", "second"),
+                make_item_with_id(
+                    duplicate_process_id,
+                    "2025-01-03T00:00:00Z",
+                    "third",
+                ),
+                make_item("2025-01-02T00:00:00Z", "second"),
             ],
             Some(cursor_from_str(
                 "2025-01-02T00-00-00|00000000-0000-0000-0000-000000000000",
@@ -1975,8 +1586,12 @@ mod tests {
 
         state.ingest_page(page(
             vec![
-                make_item("/tmp/a.jsonl", "2025-01-03T00:00:00Z", "duplicate"),
-                make_item("/tmp/c.jsonl", "2025-01-01T00:00:00Z", "first"),
+                make_item_with_id(
+                    duplicate_process_id,
+                    "2025-01-03T00:00:00Z",
+                    "duplicate",
+                ),
+                make_item("2025-01-01T00:00:00Z", "first"),
             ],
             Some(cursor_from_str(
                 "2025-01-01T00-00-00|00000000-0000-0000-0000-000000000001",
@@ -1986,11 +1601,7 @@ mod tests {
         ));
 
         state.ingest_page(page(
-            vec![make_item(
-                "/tmp/d.jsonl",
-                "2024-12-31T23:00:00Z",
-                "very old",
-            )],
+            vec![make_item("2024-12-31T23:00:00Z", "very old")],
             None,
             1,
             false,
@@ -2003,12 +1614,12 @@ mod tests {
             .collect();
         assert_eq!(previews, vec!["third", "second", "first", "very old"]);
 
-        let unique_paths = state
+        let unique_process_ids = state
             .filtered_rows
             .iter()
-            .map(|row| row.path.clone())
+            .map(|row| row.process_id)
             .collect::<std::collections::HashSet<_>>();
-        assert_eq!(unique_paths.len(), 4);
+        assert_eq!(unique_process_ids.len(), 4);
     }
 
     #[test]
@@ -2031,8 +1642,8 @@ mod tests {
         state.reset_pagination();
         state.ingest_page(page(
             vec![
-                make_item("/tmp/a.jsonl", "2025-01-01T00:00:00Z", "one"),
-                make_item("/tmp/b.jsonl", "2025-01-02T00:00:00Z", "two"),
+                make_item("2025-01-01T00:00:00Z", "one"),
+                make_item("2025-01-02T00:00:00Z", "two"),
             ],
             Some(cursor_from_str(
                 "2025-01-03T00-00-00|00000000-0000-0000-0000-000000000000",
@@ -2144,8 +1755,7 @@ mod tests {
         for idx in 0..20 {
             let ts = format!("2025-01-{:02}T00:00:00Z", idx + 1);
             let preview = format!("item-{idx}");
-            let path = format!("/tmp/item-{idx}.jsonl");
-            items.push(make_item(&path, &ts, &preview));
+            items.push(make_item(&ts, &preview));
         }
 
         state.reset_pagination();
@@ -2173,7 +1783,7 @@ mod tests {
     }
 
     #[tokio::test]
-    async fn enter_on_row_without_resolvable_thread_id_shows_inline_error() {
+    async fn enter_on_row_selects_process_id() {
         let loader: PageLoader = Arc::new(|_| {});
         let mut state = PickerState::new(
             PathBuf::from("/tmp"),
@@ -2185,10 +1795,10 @@ mod tests {
             SessionPickerAction::Resume,
         );
 
+        let process_id = ProcessId::new();
         let row = Row {
-            path: PathBuf::from("/tmp/missing.jsonl"),
             preview: String::from("missing metadata"),
-            process_id: None,
+            process_id,
             process_name: None,
             created_at: None,
             updated_at: None,
@@ -2203,13 +1813,12 @@ mod tests {
             .await
             .expect("enter should not abort the picker");
 
-        assert!(selection.is_none());
-        assert_eq!(
-            state.inline_error,
-            Some(String::from(
-                "Failed to read session metadata from /tmp/missing.jsonl"
-            ))
-        );
+        assert!(matches!(
+            selection,
+            Some(SessionSelection::Resume(SessionTarget { process_id: selected }))
+                if selected == process_id
+        ));
+        assert_eq!(state.inline_error, None);
     }
 
     #[tokio::test]
@@ -2229,8 +1838,7 @@ mod tests {
         for idx in 0..10 {
             let ts = format!("2025-02-{:02}T00:00:00Z", idx + 1);
             let preview = format!("item-{idx}");
-            let path = format!("/tmp/item-{idx}.jsonl");
-            items.push(make_item(&path, &ts, &preview));
+            items.push(make_item(&ts, &preview));
         }
 
         state.reset_pagination();
@@ -2271,11 +1879,7 @@ mod tests {
         );
         state.reset_pagination();
         state.ingest_page(page(
-            vec![make_item(
-                "/tmp/start.jsonl",
-                "2025-01-01T00:00:00Z",
-                "alpha",
-            )],
+            vec![make_item("2025-01-01T00:00:00Z", "alpha")],
             Some(cursor_from_str(
                 "2025-01-02T00-00-00|00000000-0000-0000-0000-000000000000",
             )),
@@ -2296,7 +1900,7 @@ mod tests {
                 request_token: first_request.request_token,
                 search_token: first_request.search_token,
                 page: Ok(page(
-                    vec![make_item("/tmp/beta.jsonl", "2025-01-02T00:00:00Z", "beta")],
+                    vec![make_item("2025-01-02T00:00:00Z", "beta")],
                     Some(cursor_from_str(
                         "2025-01-03T00-00-00|00000000-0000-0000-0000-000000000001",
                     )),
@@ -2320,11 +1924,7 @@ mod tests {
                 request_token: second_request.request_token,
                 search_token: second_request.search_token,
                 page: Ok(page(
-                    vec![make_item(
-                        "/tmp/match.jsonl",
-                        "2025-01-03T00:00:00Z",
-                        "target log",
-                    )],
+                    vec![make_item("2025-01-03T00:00:00Z", "target log")],
                     Some(cursor_from_str(
                         "2025-01-04T00-00-00|00000000-0000-0000-0000-000000000002",
                     )),
@@ -2367,6 +1967,6 @@ mod tests {
 
         assert!(state.filtered_rows.is_empty());
         assert!(!state.search_state.is_active());
-        assert!(state.pagination.reached_scan_cap);
+        assert!(state.pagination.reached_scan_limit);
     }
 }

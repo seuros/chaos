@@ -42,7 +42,6 @@ pub enum SlashCommand {
     Logout,
     Quit,
     Exit,
-    Rollout,
     Ps,
     #[strum(to_string = "stop", serialize = "clean")]
     Stop,
@@ -97,7 +96,6 @@ impl SlashCommand {
             SlashCommand::Experimental => "toggle experimental features",
             SlashCommand::Mcp => "list configured MCP tools",
             SlashCommand::Logout => "log out of Codex",
-            SlashCommand::Rollout => "print the rollout file path",
             SlashCommand::TestApproval => "test approval request",
         }
     }
@@ -152,7 +150,6 @@ impl SlashCommand {
             | SlashCommand::Mcp
             | SlashCommand::Quit
             | SlashCommand::Exit => true,
-            SlashCommand::Rollout => true,
             SlashCommand::TestApproval => true,
             SlashCommand::Collab => true,
             SlashCommand::Agent | SlashCommand::MultiAgents => true,
@@ -165,7 +162,7 @@ impl SlashCommand {
         match self {
             SlashCommand::SandboxReadRoot => false,
             SlashCommand::Copy => true,
-            SlashCommand::Rollout | SlashCommand::TestApproval => cfg!(debug_assertions),
+            SlashCommand::TestApproval => cfg!(debug_assertions),
             _ => true,
         }
     }

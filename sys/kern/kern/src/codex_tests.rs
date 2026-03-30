@@ -83,7 +83,6 @@ use chaos_ipc::mcp::CallToolResult as McpCallToolResult;
 use pretty_assertions::assert_eq;
 use serde::Deserialize;
 use serde_json::json;
-use std::path::PathBuf;
 use std::sync::Arc;
 use std::sync::Once;
 use std::time::Duration as StdDuration;
@@ -454,7 +453,6 @@ async fn record_initial_history_reconstructs_resumed_transcript() {
         .record_initial_history(InitialHistory::Resumed(ResumedHistory {
             conversation_id: ProcessId::default(),
             history: rollout_items,
-            rollout_path: PathBuf::from("/tmp/resume.jsonl"),
         }))
         .await;
 
@@ -483,7 +481,6 @@ async fn resumed_history_injects_initial_context_on_first_context_update_only() 
         .record_initial_history(InitialHistory::Resumed(ResumedHistory {
             conversation_id: ProcessId::default(),
             history: rollout_items,
-            rollout_path: PathBuf::from("/tmp/resume.jsonl"),
         }))
         .await;
 
@@ -576,7 +573,6 @@ async fn record_initial_history_seeds_token_info_from_rollout() {
         .record_initial_history(InitialHistory::Resumed(ResumedHistory {
             conversation_id: ProcessId::default(),
             history: rollout_items,
-            rollout_path: PathBuf::from("/tmp/resume.jsonl"),
         }))
         .await;
 
@@ -731,69 +727,6 @@ async fn record_initial_history_forked_hydrates_previous_turn_settings() {
 }
 
 #[tokio::test]
-async fn process_rollback_drops_last_turn_from_history() {
-    let (sess, tc, rx) = make_session_and_context_with_rx().await;
-    let rollout_path = attach_rollout_recorder(&sess).await;
-
-    let initial_context = sess.build_initial_context(tc.as_ref()).await;
-    let turn_1 = vec![
-        user_message("turn 1 user"),
-        assistant_message("turn 1 assistant"),
-    ];
-    let turn_2 = vec![
-        user_message("turn 2 user"),
-        assistant_message("turn 2 assistant"),
-    ];
-    let mut full_history = Vec::new();
-    full_history.extend(initial_context.clone());
-    full_history.extend(turn_1.clone());
-    full_history.extend(turn_2);
-    sess.replace_history(full_history.clone(), Some(tc.to_turn_context_item()))
-        .await;
-    let rollout_items: Vec<RolloutItem> = full_history
-        .into_iter()
-        .map(RolloutItem::ResponseItem)
-        .collect();
-    sess.persist_rollout_items(&rollout_items).await;
-    sess.set_previous_turn_settings(Some(PreviousTurnSettings {
-        model: "stale-model".to_string(),
-    }))
-    .await;
-    {
-        let mut state = sess.state.lock().await;
-        state.set_reference_context_item(Some(tc.to_turn_context_item()));
-    }
-
-    handlers::process_rollback(&sess, "sub-1".to_string(), 1).await;
-
-    let rollback_event = wait_for_process_rolled_back(&rx).await;
-    assert_eq!(rollback_event.num_turns, 1);
-
-    let mut expected = Vec::new();
-    expected.extend(initial_context);
-    expected.extend(turn_1);
-
-    let history = sess.clone_history().await;
-    assert_eq!(expected, history.raw_items());
-    assert_eq!(sess.previous_turn_settings().await, None);
-    assert!(sess.reference_context_item().await.is_none());
-
-    let InitialHistory::Resumed(resumed) = RolloutRecorder::get_rollout_history(&rollout_path)
-        .await
-        .expect("read rollout history")
-    else {
-        panic!("expected resumed rollout history");
-    };
-    assert!(resumed.history.iter().any(|item| {
-        matches!(
-            item,
-            RolloutItem::EventMsg(EventMsg::ProcessRolledBack(rollback))
-            if rollback.num_turns == 1
-        )
-    }));
-}
-
-#[tokio::test]
 async fn process_rollback_clears_history_when_num_turns_exceeds_existing_turns() {
     let (sess, tc, rx) = make_session_and_context_with_rx().await;
     attach_rollout_recorder(&sess).await;
@@ -821,7 +754,7 @@ async fn process_rollback_clears_history_when_num_turns_exceeds_existing_turns()
 }
 
 #[tokio::test]
-async fn process_rollback_fails_without_persisted_rollout_path() {
+async fn process_rollback_fails_without_persisted_session_history() {
     let (sess, tc, rx) = make_session_and_context_with_rx().await;
 
     let initial_context = sess.build_initial_context(tc.as_ref()).await;
@@ -833,7 +766,7 @@ async fn process_rollback_fails_without_persisted_rollout_path() {
     let error_event = wait_for_process_rollback_failed(&rx).await;
     assert_eq!(
         error_event.message,
-        "thread rollback requires a persisted rollout path"
+        "thread rollback requires persisted session history"
     );
     assert_eq!(
         error_event.codex_error_info,
@@ -1034,105 +967,6 @@ async fn process_rollback_restores_cleared_reference_context_item_after_compacti
 
     assert_eq!(sess.clone_history().await.raw_items(), compacted_history);
     assert!(sess.reference_context_item().await.is_none());
-}
-
-#[tokio::test]
-async fn process_rollback_persists_marker_and_replays_cumulatively() {
-    let (sess, tc, rx) = make_session_and_context_with_rx().await;
-    let rollout_path = attach_rollout_recorder(&sess).await;
-    let turn_context_item = tc.to_turn_context_item();
-
-    sess.persist_rollout_items(&[
-        RolloutItem::EventMsg(EventMsg::TurnStarted(
-            chaos_ipc::protocol::TurnStartedEvent {
-                turn_id: "turn-1".to_string(),
-                model_context_window: Some(128_000),
-                collaboration_mode_kind: ModeKind::Default,
-            },
-        )),
-        RolloutItem::EventMsg(EventMsg::UserMessage(UserMessageEvent {
-            message: "turn 1 user".to_string(),
-            images: None,
-            local_images: Vec::new(),
-            text_elements: Vec::new(),
-        })),
-        RolloutItem::TurnContext(turn_context_item.clone()),
-        RolloutItem::ResponseItem(user_message("turn 1 user")),
-        RolloutItem::ResponseItem(assistant_message("turn 1 assistant")),
-        RolloutItem::EventMsg(EventMsg::TurnComplete(TurnCompleteEvent {
-            turn_id: "turn-1".to_string(),
-            last_agent_message: None,
-        })),
-        RolloutItem::EventMsg(EventMsg::TurnStarted(
-            chaos_ipc::protocol::TurnStartedEvent {
-                turn_id: "turn-2".to_string(),
-                model_context_window: Some(128_000),
-                collaboration_mode_kind: ModeKind::Default,
-            },
-        )),
-        RolloutItem::EventMsg(EventMsg::UserMessage(UserMessageEvent {
-            message: "turn 2 user".to_string(),
-            images: None,
-            local_images: Vec::new(),
-            text_elements: Vec::new(),
-        })),
-        RolloutItem::TurnContext(turn_context_item.clone()),
-        RolloutItem::ResponseItem(user_message("turn 2 user")),
-        RolloutItem::ResponseItem(assistant_message("turn 2 assistant")),
-        RolloutItem::EventMsg(EventMsg::TurnComplete(TurnCompleteEvent {
-            turn_id: "turn-2".to_string(),
-            last_agent_message: None,
-        })),
-        RolloutItem::EventMsg(EventMsg::TurnStarted(
-            chaos_ipc::protocol::TurnStartedEvent {
-                turn_id: "turn-3".to_string(),
-                model_context_window: Some(128_000),
-                collaboration_mode_kind: ModeKind::Default,
-            },
-        )),
-        RolloutItem::EventMsg(EventMsg::UserMessage(UserMessageEvent {
-            message: "turn 3 user".to_string(),
-            images: None,
-            local_images: Vec::new(),
-            text_elements: Vec::new(),
-        })),
-        RolloutItem::TurnContext(turn_context_item),
-        RolloutItem::ResponseItem(user_message("turn 3 user")),
-        RolloutItem::ResponseItem(assistant_message("turn 3 assistant")),
-        RolloutItem::EventMsg(EventMsg::TurnComplete(TurnCompleteEvent {
-            turn_id: "turn-3".to_string(),
-            last_agent_message: None,
-        })),
-    ])
-    .await;
-
-    handlers::process_rollback(&sess, "sub-1".to_string(), 1).await;
-    let first_rollback = wait_for_process_rolled_back(&rx).await;
-    assert_eq!(first_rollback.num_turns, 1);
-    handlers::process_rollback(&sess, "sub-1".to_string(), 1).await;
-    let second_rollback = wait_for_process_rolled_back(&rx).await;
-    assert_eq!(second_rollback.num_turns, 1);
-
-    assert_eq!(
-        sess.clone_history().await.raw_items(),
-        vec![
-            user_message("turn 1 user"),
-            assistant_message("turn 1 assistant")
-        ]
-    );
-
-    let InitialHistory::Resumed(resumed) = RolloutRecorder::get_rollout_history(&rollout_path)
-        .await
-        .expect("read rollout history")
-    else {
-        panic!("expected resumed rollout history");
-    };
-    let rollback_markers = resumed
-        .history
-        .iter()
-        .filter(|item| matches!(item, RolloutItem::EventMsg(EventMsg::ProcessRolledBack(_))))
-        .count();
-    assert_eq!(rollback_markers, 2);
 }
 
 #[tokio::test]
@@ -1555,12 +1389,13 @@ async fn wait_for_process_rollback_failed(rx: &async_channel::Receiver<Event>) -
     }
 }
 
-async fn attach_rollout_recorder(session: &Arc<Session>) -> PathBuf {
+async fn attach_rollout_recorder(session: &Arc<Session>) -> ProcessId {
     let config = session.get_config().await;
+    let process_id = ProcessId::default();
     let recorder = RolloutRecorder::new(
         config.as_ref(),
         RolloutRecorderParams::new(
-            ProcessId::default(),
+            process_id,
             None,
             SessionSource::Exec,
             BaseInstructions::default(),
@@ -1572,14 +1407,13 @@ async fn attach_rollout_recorder(session: &Arc<Session>) -> PathBuf {
     )
     .await
     .expect("create rollout recorder");
-    let rollout_path = recorder.rollout_path().to_path_buf();
     {
         let mut rollout = session.services.rollout.lock().await;
         *rollout = Some(recorder);
     }
     session.ensure_rollout_materialized().await;
     session.flush_rollout().await;
-    rollout_path
+    process_id
 }
 
 fn text_block(s: &str) -> serde_json::Value {
@@ -3241,10 +3075,11 @@ async fn record_context_updates_and_set_reference_context_item_persists_baseline
         state.set_reference_context_item(Some(previous_context_item.clone()));
     }
     let config = session.get_config().await;
+    let process_id = ProcessId::default();
     let recorder = RolloutRecorder::new(
         config.as_ref(),
         RolloutRecorderParams::new(
-            ProcessId::default(),
+            process_id,
             None,
             SessionSource::Exec,
             BaseInstructions::default(),
@@ -3256,7 +3091,6 @@ async fn record_context_updates_and_set_reference_context_item_persists_baseline
     )
     .await
     .expect("create rollout recorder");
-    let rollout_path = recorder.rollout_path().to_path_buf();
     {
         let mut rollout = session.services.rollout.lock().await;
         *rollout = Some(recorder);
@@ -3284,7 +3118,7 @@ async fn record_context_updates_and_set_reference_context_item_persists_baseline
     session.ensure_rollout_materialized().await;
     session.flush_rollout().await;
 
-    let InitialHistory::Resumed(resumed) = RolloutRecorder::get_rollout_history(&rollout_path)
+    let InitialHistory::Resumed(resumed) = RolloutRecorder::get_rollout_history_for_process(process_id)
         .await
         .expect("read rollout history")
     else {
@@ -3337,10 +3171,11 @@ async fn record_context_updates_and_set_reference_context_item_persists_full_rei
         .with_model(next_model.to_string(), &session.services.models_manager)
         .await;
     let config = session.get_config().await;
+    let process_id = ProcessId::default();
     let recorder = RolloutRecorder::new(
         config.as_ref(),
         RolloutRecorderParams::new(
-            ProcessId::default(),
+            process_id,
             None,
             SessionSource::Exec,
             BaseInstructions::default(),
@@ -3352,7 +3187,6 @@ async fn record_context_updates_and_set_reference_context_item_persists_full_rei
     )
     .await
     .expect("create rollout recorder");
-    let rollout_path = recorder.rollout_path().to_path_buf();
     {
         let mut rollout = session.services.rollout.lock().await;
         *rollout = Some(recorder);
@@ -3384,7 +3218,7 @@ async fn record_context_updates_and_set_reference_context_item_persists_full_rei
     session.ensure_rollout_materialized().await;
     session.flush_rollout().await;
 
-    let InitialHistory::Resumed(resumed) = RolloutRecorder::get_rollout_history(&rollout_path)
+    let InitialHistory::Resumed(resumed) = RolloutRecorder::get_rollout_history_for_process(process_id)
         .await
         .expect("read rollout history")
     else {

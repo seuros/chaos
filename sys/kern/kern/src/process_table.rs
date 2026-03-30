@@ -187,9 +187,7 @@ impl ProcessTable {
         // TODO(GPT): this was always hardcoded to OPENAI_PROVIDER_ID which
         // meant Anthropic (and every other provider) got OpenAI's stale
         // model catalog. The active provider is the one the user configured.
-        let models_provider = config
-            .model_provider
-            .clone();
+        let models_provider = config.model_provider.clone();
         let (process_created_tx, _) = broadcast::channel(PROCESS_CREATED_CHANNEL_CAPACITY);
         let plugins_manager = Arc::new(PluginsManager::new(codex_home.clone()));
         let mcp_manager = Arc::new(McpManager::new(Arc::clone(&plugins_manager)));
@@ -401,14 +399,16 @@ impl ProcessTable {
         .await
     }
 
-    pub async fn resume_process_from_rollout(
+    pub async fn resume_process(
         &self,
         config: Config,
-        rollout_path: PathBuf,
+        process_id: ProcessId,
         auth_manager: Arc<AuthManager>,
         parent_trace: Option<W3cTraceContext>,
     ) -> CodexResult<NewProcess> {
-        let initial_history = RolloutRecorder::get_rollout_history(&rollout_path).await?;
+        let initial_history =
+            RolloutRecorder::get_rollout_history_for_process(process_id)
+                .await?;
         Box::pin(self.resume_process_with_history(
             config,
             initial_history,
@@ -498,19 +498,17 @@ impl ProcessTable {
         report
     }
 
-    /// Fork an existing process by taking messages up to the given position (not including
-    /// the message at the given position) and starting a new process with identical
-    /// configuration (unless overridden by the caller's `config`). The new process will have
-    /// a fresh id. Pass `usize::MAX` to keep the full rollout history.
-    pub async fn fork_process(
+    pub async fn fork_process_by_id(
         &self,
         nth_user_message: usize,
         config: Config,
-        path: PathBuf,
+        process_id: ProcessId,
         persist_extended_history: bool,
         parent_trace: Option<W3cTraceContext>,
     ) -> CodexResult<NewProcess> {
-        let history = RolloutRecorder::get_rollout_history(&path).await?;
+        let history =
+            RolloutRecorder::get_rollout_history_for_process(process_id)
+                .await?;
         let history = truncate_before_nth_user_message(history, nth_user_message);
         Box::pin(self.state.spawn_process(
             config,
@@ -610,15 +608,17 @@ impl ProcessTableState {
         .await
     }
 
-    pub(crate) async fn resume_process_from_rollout_with_source(
+    pub(crate) async fn resume_process_with_source(
         &self,
         config: Config,
-        rollout_path: PathBuf,
+        process_id: ProcessId,
         agent_control: AgentControl,
         session_source: SessionSource,
         inherited_shell_snapshot: Option<Arc<ShellSnapshot>>,
     ) -> CodexResult<NewProcess> {
-        let initial_history = RolloutRecorder::get_rollout_history(&rollout_path).await?;
+        let initial_history =
+            RolloutRecorder::get_rollout_history_for_process(process_id)
+                .await?;
         Box::pin(self.spawn_process_with_source(
             config,
             initial_history,
@@ -746,7 +746,6 @@ impl ProcessTableState {
 
         let process = Arc::new(Process::new(
             codex,
-            session_configured.rollout_path.clone(),
             watch_registration,
         ));
         let mut processes = self.processes.write().await;

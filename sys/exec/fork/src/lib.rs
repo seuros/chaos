@@ -19,6 +19,7 @@ use chaos_ipc::protocol::ReviewRequest;
 use chaos_ipc::protocol::ReviewTarget;
 use chaos_ipc::protocol::SessionSource;
 use chaos_ipc::user_input::UserInput;
+use chaos_ipc::ProcessId;
 use chaos_kern::AuthManager;
 use chaos_kern::Process;
 use chaos_kern::ProcessTable;
@@ -67,8 +68,6 @@ use crate::event_processor::CodexStatus;
 use crate::event_processor::EventProcessor;
 use chaos_kern::default_client::set_default_client_residency_requirement;
 use chaos_kern::default_client::set_default_originator;
-use chaos_kern::find_process_path_by_id_str;
-use chaos_kern::find_process_path_by_name_str;
 
 const DEFAULT_ANALYTICS_ENABLED: bool = true;
 
@@ -466,13 +465,13 @@ async fn run_exec_session(args: ExecRunArgs) -> anyhow::Result<()> {
 
     // Start or resume a process directly via the ProcessTable.
     let new_process = if let Some(ExecCommand::Resume(ref resume_args)) = command {
-        let resume_path = resolve_resume_path(&config, resume_args).await?;
+        let resume_process_id = resolve_resume_process_id(&config, resume_args).await?;
 
-        if let Some(path) = resume_path {
+        if let Some(process_id) = resume_process_id {
             process_table
-                .resume_process_from_rollout(
+                .resume_process(
                     config.clone(),
-                    path,
+                    process_id,
                     auth_manager.clone(),
                     /*parent_trace*/ None,
                 )
@@ -715,10 +714,10 @@ async fn run_event_loop(
     }
 }
 
-async fn resolve_resume_path(
+async fn resolve_resume_process_id(
     config: &Config,
     args: &crate::cli::ResumeArgs,
-) -> anyhow::Result<Option<PathBuf>> {
+) -> anyhow::Result<Option<ProcessId>> {
     if args.last {
         let default_provider_filter = vec![config.model_provider_id.clone()];
         let filter_cwd = if args.all {
@@ -726,7 +725,7 @@ async fn resolve_resume_path(
         } else {
             Some(config.cwd.as_path())
         };
-        match chaos_kern::RolloutRecorder::find_latest_process_path(
+        match chaos_kern::RolloutRecorder::find_latest_process_id(
             config,
             /*page_size*/ 1,
             /*cursor*/ None,
@@ -738,7 +737,7 @@ async fn resolve_resume_path(
         )
         .await
         {
-            Ok(path) => Ok(path),
+            Ok(process_id) => Ok(process_id),
             Err(e) => {
                 error!("Error listing processes: {e}");
                 Ok(None)
@@ -746,11 +745,21 @@ async fn resolve_resume_path(
         }
     } else if let Some(id_str) = args.session_id.as_deref() {
         if Uuid::parse_str(id_str).is_ok() {
-            let path = find_process_path_by_id_str(&config.codex_home, id_str).await?;
-            Ok(path)
+            let process_id = ProcessId::from_string(id_str)?;
+            if chaos_kern::RolloutRecorder::journal_contains_process(process_id).await? {
+                Ok(Some(process_id))
+            } else {
+                Ok(None)
+            }
         } else {
-            let path = find_process_path_by_name_str(&config.codex_home, id_str).await?;
-            Ok(path)
+            let process_id = chaos_kern::find_process_id_by_name(&config.codex_home, id_str).await?;
+            if let Some(process_id) = process_id
+                && chaos_kern::RolloutRecorder::journal_contains_process(process_id).await?
+            {
+                Ok(Some(process_id))
+            } else {
+                Ok(None)
+            }
         }
     } else {
         Ok(None)

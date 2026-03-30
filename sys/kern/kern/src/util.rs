@@ -197,9 +197,9 @@ pub fn resume_command(process_name: Option<&str>, process_id: Option<ProcessId>)
         let needs_double_dash = target.starts_with('-');
         let escaped = shlex_join(&[target]);
         if needs_double_dash {
-            format!("codex resume -- {escaped}")
+            format!("chaos resume -- {escaped}")
         } else {
-            format!("codex resume {escaped}")
+            format!("chaos resume {escaped}")
         }
     })
 }

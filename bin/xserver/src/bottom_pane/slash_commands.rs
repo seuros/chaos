@@ -91,5 +91,4 @@ mod tests {
             Some(SlashCommand::Stop)
         );
     }
-
 }

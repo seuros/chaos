@@ -33,7 +33,7 @@ struct ConsolidationPromptTemplate<'a> {
 #[derive(Template)]
 #[template(path = "memories/stage_one_input.md", escape = "none")]
 struct StageOneInputTemplate<'a> {
-    rollout_path: &'a str,
+    process_ref: &'a str,
     rollout_cwd: &'a str,
     rollout_contents: &'a str,
 }
@@ -135,7 +135,7 @@ fn render_removed_input_line(item: &Stage1OutputRef) -> String {
 /// `(text, token_limit)` and returns the (possibly truncated) text.
 pub fn build_stage_one_input_message(
     model_info: &ModelInfo,
-    rollout_path: &Path,
+    process_ref: &str,
     rollout_cwd: &Path,
     rollout_contents: &str,
     truncate_fn: impl Fn(&str, usize) -> String,
@@ -149,10 +149,9 @@ pub fn build_stage_one_input_message(
         .unwrap_or(DEFAULT_STAGE_ONE_ROLLOUT_TOKEN_LIMIT);
     let truncated_rollout_contents = truncate_fn(rollout_contents, rollout_token_limit);
 
-    let rollout_path = rollout_path.display().to_string();
     let rollout_cwd = rollout_cwd.display().to_string();
     Ok(StageOneInputTemplate {
-        rollout_path: &rollout_path,
+        process_ref,
         rollout_cwd: &rollout_cwd,
         rollout_contents: &truncated_rollout_contents,
     }

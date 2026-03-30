@@ -31,14 +31,13 @@ pub(super) fn unique_temp_dir() -> PathBuf {
 
 #[cfg(test)]
 pub(super) fn test_process_metadata(
-    codex_home: &Path,
+    _codex_home: &Path,
     process_id: ProcessId,
     cwd: PathBuf,
 ) -> ProcessMetadata {
     let now = jiff::Timestamp::from_second(1_700_000_000).expect("timestamp");
     ProcessMetadata {
         id: process_id,
-        rollout_path: codex_home.join(format!("rollout-{process_id}.jsonl")),
         created_at: now,
         updated_at: now,
         source: "cli".to_string(),

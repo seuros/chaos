@@ -204,7 +204,7 @@ impl ModelsManager {
         collaboration_modes_config: CollaborationModesConfig,
         provider: ModelProviderInfo,
     ) -> Self {
-        let cache_manager = ModelsCacheManager::new(codex_home.clone(), DEFAULT_MODEL_CACHE_TTL);
+        let cache_manager = ModelsCacheManager::new(codex_home, DEFAULT_MODEL_CACHE_TTL);
         let catalog_mode = if model_catalog.is_some() {
             CatalogMode::Custom
         } else {
@@ -215,7 +215,7 @@ impl ModelsManager {
         // supersedes this on first successful refresh.
         let remote_models = model_catalog
             .map(|catalog| catalog.models)
-            .unwrap_or_else(|| Self::load_bundled_models_fallback());
+            .unwrap_or_else(Self::load_bundled_models_fallback);
         Self {
             remote_models: RwLock::new(remote_models),
             catalog_mode,
@@ -306,13 +306,12 @@ impl ModelsManager {
     /// fetched from the adapter are available for lookup.
     #[instrument(level = "info", skip(self, config), fields(model = model))]
     pub async fn get_model_info(&self, model: &str, config: &Config) -> ModelInfo {
-        if crate::model_provider_info::is_anthropic_wire(self.provider.base_url.as_deref()) {
-            if let Err(err) = self
+        if crate::model_provider_info::is_anthropic_wire(self.provider.base_url.as_deref())
+            && let Err(err) = self
                 .refresh_available_models(RefreshStrategy::OnlineIfUncached)
                 .await
-            {
-                error!("failed to refresh Anthropic models: {err}");
-            }
+        {
+            error!("failed to refresh Anthropic models: {err}");
         }
         let remote_models = self.get_remote_models().await;
         Self::construct_model_info_from_candidates(model, &remote_models, config)

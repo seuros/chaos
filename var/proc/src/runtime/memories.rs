@@ -172,7 +172,6 @@ WHERE process_id = ?
             r#"
 SELECT
     id,
-    rollout_path,
     created_at,
     updated_at,
     source,
@@ -263,7 +262,7 @@ LEFT JOIN jobs
     ///
     /// Query behavior:
     /// - filters out rows where both `raw_memory` and `rollout_summary` are blank
-    /// - joins `processes` to include thread `cwd`, `rollout_path`, and `git_branch`
+    /// - joins `processes` to include thread `cwd` and `git_branch`
     /// - orders by `source_updated_at DESC, process_id DESC`
     /// - applies `LIMIT n`
     pub async fn list_stage1_outputs_for_global(
@@ -278,7 +277,7 @@ LEFT JOIN jobs
             r#"
 SELECT
     so.process_id,
-    COALESCE(t.rollout_path, '') AS rollout_path,
+    so.process_id AS process_ref,
     so.source_updated_at,
     so.raw_memory,
     so.rollout_summary,
@@ -387,7 +386,7 @@ WHERE process_id IN (
             r#"
 SELECT
     so.process_id,
-    COALESCE(t.rollout_path, '') AS rollout_path,
+    so.process_id AS process_ref,
     so.source_updated_at,
     so.raw_memory,
     so.rollout_summary,
@@ -442,7 +441,7 @@ LIMIT ?
             r#"
 SELECT
     so.process_id,
-    COALESCE(t.rollout_path, '') AS rollout_path,
+    so.process_id AS process_ref,
     so.source_updated_at,
     so.raw_memory,
     so.rollout_summary,
@@ -2862,10 +2861,7 @@ VALUES (?, ?, ?, ?, ?)
         assert_eq!(selection.selected.len(), 2);
         assert_eq!(selection.previous_selected.len(), 2);
         assert_eq!(selection.selected[0].process_id, process_id_c);
-        assert_eq!(
-            selection.selected[0].rollout_path,
-            codex_home.join(format!("rollout-{process_id_c}.jsonl"))
-        );
+        assert_eq!(selection.selected[0].process_ref, process_id_c.to_string());
         assert_eq!(selection.selected[1].process_id, process_id_b);
         assert_eq!(selection.retained_process_ids, vec![process_id_c]);
 

@@ -115,7 +115,6 @@ use std::collections::BTreeMap;
 use std::collections::HashSet;
 use std::path::PathBuf;
 use std::sync::OnceLock;
-use tempfile::NamedTempFile;
 use tempfile::tempdir;
 use tokio::sync::mpsc::error::TryRecvError;
 use tokio::sync::mpsc::unbounded_channel;
@@ -160,7 +159,6 @@ async fn resumed_initial_messages_render_history() {
     let (mut chat, mut rx, _ops) = make_chatwidget_manual(None).await;
 
     let conversation_id = ProcessId::new();
-    let rollout_file = NamedTempFile::new().unwrap();
     let configured = chaos_ipc::protocol::SessionConfiguredEvent {
         session_id: conversation_id,
         forked_from_id: None,
@@ -188,7 +186,6 @@ async fn resumed_initial_messages_render_history() {
             }),
         ]),
         network_proxy: None,
-        rollout_path: Some(rollout_file.path().to_path_buf()),
     };
 
     chat.handle_codex_event(Event {
@@ -270,7 +267,6 @@ async fn replayed_user_message_preserves_text_elements_and_local_images() {
     let local_images = vec![PathBuf::from("/tmp/replay.png")];
 
     let conversation_id = ProcessId::new();
-    let rollout_file = NamedTempFile::new().unwrap();
     let configured = chaos_ipc::protocol::SessionConfiguredEvent {
         session_id: conversation_id,
         forked_from_id: None,
@@ -292,7 +288,6 @@ async fn replayed_user_message_preserves_text_elements_and_local_images() {
             local_images: local_images.clone(),
         })]),
         network_proxy: None,
-        rollout_path: Some(rollout_file.path().to_path_buf()),
     };
 
     chat.handle_codex_event(Event {
@@ -331,7 +326,6 @@ async fn replayed_user_message_preserves_remote_image_urls() {
     let remote_image_urls = vec!["https://example.com/image.png".to_string()];
 
     let conversation_id = ProcessId::new();
-    let rollout_file = NamedTempFile::new().unwrap();
     let configured = chaos_ipc::protocol::SessionConfiguredEvent {
         session_id: conversation_id,
         forked_from_id: None,
@@ -353,7 +347,6 @@ async fn replayed_user_message_preserves_remote_image_urls() {
             local_images: Vec::new(),
         })]),
         network_proxy: None,
-        rollout_path: Some(rollout_file.path().to_path_buf()),
     };
 
     chat.handle_codex_event(Event {
@@ -416,7 +409,6 @@ async fn session_configured_syncs_widget_config_permissions_and_cwd() {
         history_entry_count: 0,
         initial_messages: None,
         network_proxy: None,
-        rollout_path: None,
     };
 
     chat.handle_codex_event(Event {
@@ -442,7 +434,6 @@ async fn replayed_user_message_with_only_remote_images_renders_history_cell() {
     let remote_image_urls = vec!["https://example.com/remote-only.png".to_string()];
 
     let conversation_id = ProcessId::new();
-    let rollout_file = NamedTempFile::new().unwrap();
     let configured = chaos_ipc::protocol::SessionConfiguredEvent {
         session_id: conversation_id,
         forked_from_id: None,
@@ -464,7 +455,6 @@ async fn replayed_user_message_with_only_remote_images_renders_history_cell() {
             local_images: Vec::new(),
         })]),
         network_proxy: None,
-        rollout_path: Some(rollout_file.path().to_path_buf()),
     };
 
     chat.handle_codex_event(Event {
@@ -495,7 +485,6 @@ async fn replayed_user_message_with_only_local_images_does_not_render_history_ce
     let local_images = vec![PathBuf::from("/tmp/replay-local-only.png")];
 
     let conversation_id = ProcessId::new();
-    let rollout_file = NamedTempFile::new().unwrap();
     let configured = chaos_ipc::protocol::SessionConfiguredEvent {
         session_id: conversation_id,
         forked_from_id: None,
@@ -517,7 +506,6 @@ async fn replayed_user_message_with_only_local_images_does_not_render_history_ce
             local_images,
         })]),
         network_proxy: None,
-        rollout_path: Some(rollout_file.path().to_path_buf()),
     };
 
     chat.handle_codex_event(Event {
@@ -536,45 +524,6 @@ async fn replayed_user_message_with_only_local_images_does_not_render_history_ce
     }
 
     assert!(!found_user_history_cell);
-}
-
-#[tokio::test]
-async fn forked_process_history_line_includes_name_and_id_snapshot() {
-    let (chat, mut rx, _op_rx) = make_chatwidget_manual(None).await;
-    let mut chat = chat;
-    let temp = tempdir().expect("tempdir");
-    chat.config.codex_home = temp.path().to_path_buf();
-
-    let forked_from_id =
-        ProcessId::from_string("e9f18a88-8081-4e51-9d4e-8af5cde2d8dd").expect("forked id");
-    let session_index_entry = format!(
-        "{{\"id\":\"{forked_from_id}\",\"process_name\":\"named-thread\",\"updated_at\":\"2024-01-02T00:00:00Z\"}}\n"
-    );
-    std::fs::write(temp.path().join("session_index.jsonl"), session_index_entry)
-        .expect("write session index");
-
-    chat.emit_forked_process_event(forked_from_id);
-
-    let history_cell = tokio::time::timeout(std::time::Duration::from_secs(2), async {
-        loop {
-            match rx.recv().await {
-                Some(AppEvent::InsertHistoryCell(cell)) => break cell,
-                Some(_) => continue,
-                None => {
-                    panic!("app event channel closed before forked process history was emitted")
-                }
-            }
-        }
-    })
-    .await
-    .expect("timed out waiting for forked process history");
-    let combined = lines_to_single_string(&history_cell.display_lines(80));
-
-    assert!(
-        combined.contains("Process forked from"),
-        "expected forked process message in history"
-    );
-    assert_snapshot!("forked_process_history_line", combined);
 }
 
 #[tokio::test]
@@ -611,7 +560,6 @@ async fn submission_preserves_text_elements_and_local_images() {
     let (mut chat, mut rx, mut op_rx) = make_chatwidget_manual(None).await;
 
     let conversation_id = ProcessId::new();
-    let rollout_file = NamedTempFile::new().unwrap();
     let configured = chaos_ipc::protocol::SessionConfiguredEvent {
         session_id: conversation_id,
         forked_from_id: None,
@@ -628,7 +576,6 @@ async fn submission_preserves_text_elements_and_local_images() {
         history_entry_count: 0,
         initial_messages: None,
         network_proxy: None,
-        rollout_path: Some(rollout_file.path().to_path_buf()),
     };
     chat.handle_codex_event(Event {
         id: "initial".into(),
@@ -695,7 +642,6 @@ async fn submission_with_remote_and_local_images_keeps_local_placeholder_numberi
     let (mut chat, mut rx, mut op_rx) = make_chatwidget_manual(None).await;
 
     let conversation_id = ProcessId::new();
-    let rollout_file = NamedTempFile::new().unwrap();
     let configured = chaos_ipc::protocol::SessionConfiguredEvent {
         session_id: conversation_id,
         forked_from_id: None,
@@ -712,7 +658,6 @@ async fn submission_with_remote_and_local_images_keeps_local_placeholder_numberi
         history_entry_count: 0,
         initial_messages: None,
         network_proxy: None,
-        rollout_path: Some(rollout_file.path().to_path_buf()),
     };
     chat.handle_codex_event(Event {
         id: "initial".into(),
@@ -790,7 +735,6 @@ async fn enter_with_only_remote_images_submits_user_turn() {
     let (mut chat, mut rx, mut op_rx) = make_chatwidget_manual(None).await;
 
     let conversation_id = ProcessId::new();
-    let rollout_file = NamedTempFile::new().unwrap();
     let configured = chaos_ipc::protocol::SessionConfiguredEvent {
         session_id: conversation_id,
         forked_from_id: None,
@@ -807,7 +751,6 @@ async fn enter_with_only_remote_images_submits_user_turn() {
         history_entry_count: 0,
         initial_messages: None,
         network_proxy: None,
-        rollout_path: Some(rollout_file.path().to_path_buf()),
     };
     chat.handle_codex_event(Event {
         id: "initial".into(),
@@ -855,7 +798,6 @@ async fn shift_enter_with_only_remote_images_does_not_submit_user_turn() {
     let (mut chat, mut rx, mut op_rx) = make_chatwidget_manual(None).await;
 
     let conversation_id = ProcessId::new();
-    let rollout_file = NamedTempFile::new().unwrap();
     let configured = chaos_ipc::protocol::SessionConfiguredEvent {
         session_id: conversation_id,
         forked_from_id: None,
@@ -872,7 +814,6 @@ async fn shift_enter_with_only_remote_images_does_not_submit_user_turn() {
         history_entry_count: 0,
         initial_messages: None,
         network_proxy: None,
-        rollout_path: Some(rollout_file.path().to_path_buf()),
     };
     chat.handle_codex_event(Event {
         id: "initial".into(),
@@ -895,7 +836,6 @@ async fn enter_with_only_remote_images_does_not_submit_when_modal_is_active() {
     let (mut chat, mut rx, mut op_rx) = make_chatwidget_manual(None).await;
 
     let conversation_id = ProcessId::new();
-    let rollout_file = NamedTempFile::new().unwrap();
     let configured = chaos_ipc::protocol::SessionConfiguredEvent {
         session_id: conversation_id,
         forked_from_id: None,
@@ -912,7 +852,6 @@ async fn enter_with_only_remote_images_does_not_submit_when_modal_is_active() {
         history_entry_count: 0,
         initial_messages: None,
         network_proxy: None,
-        rollout_path: Some(rollout_file.path().to_path_buf()),
     };
     chat.handle_codex_event(Event {
         id: "initial".into(),
@@ -935,7 +874,6 @@ async fn enter_with_only_remote_images_does_not_submit_when_input_disabled() {
     let (mut chat, mut rx, mut op_rx) = make_chatwidget_manual(None).await;
 
     let conversation_id = ProcessId::new();
-    let rollout_file = NamedTempFile::new().unwrap();
     let configured = chaos_ipc::protocol::SessionConfiguredEvent {
         session_id: conversation_id,
         forked_from_id: None,
@@ -952,7 +890,6 @@ async fn enter_with_only_remote_images_does_not_submit_when_input_disabled() {
         history_entry_count: 0,
         initial_messages: None,
         network_proxy: None,
-        rollout_path: Some(rollout_file.path().to_path_buf()),
     };
     chat.handle_codex_event(Event {
         id: "initial".into(),
@@ -1857,7 +1794,6 @@ async fn make_chatwidget_manual(
         last_separator_elapsed_secs: None,
         turn_runtime_metrics: RuntimeMetricsSummary::default(),
         last_rendered_width: std::cell::Cell::new(None),
-        current_rollout_path: None,
         current_cwd: None,
         session_network_proxy: None,
         status_line_invalid_items_warned: Arc::new(AtomicBool::new(false)),
@@ -4218,7 +4154,6 @@ async fn item_completed_pops_pending_steer_with_local_image_and_text_elements() 
 async fn submit_user_message_emits_structured_plugin_mentions_from_bindings() {
     let (mut chat, _rx, mut op_rx) = make_chatwidget_manual(None).await;
     let conversation_id = ProcessId::new();
-    let rollout_file = NamedTempFile::new().unwrap();
     let configured = chaos_ipc::protocol::SessionConfiguredEvent {
         session_id: conversation_id,
         forked_from_id: None,
@@ -4235,7 +4170,6 @@ async fn submit_user_message_emits_structured_plugin_mentions_from_bindings() {
         history_entry_count: 0,
         initial_messages: None,
         network_proxy: None,
-        rollout_path: Some(rollout_file.path().to_path_buf()),
     };
     chat.handle_codex_event(Event {
         id: "initial".into(),
@@ -5496,7 +5430,6 @@ async fn plan_slash_command_with_args_submits_prompt_in_plan_mode() {
         history_entry_count: 0,
         initial_messages: None,
         network_proxy: None,
-        rollout_path: None,
     };
     chat.handle_codex_event(Event {
         id: "configured".into(),
@@ -6030,42 +5963,6 @@ async fn slash_fork_requests_current_fork() {
     chat.dispatch_command(SlashCommand::Fork);
 
     assert_matches!(rx.try_recv(), Ok(AppEvent::ForkCurrentSession));
-}
-
-#[tokio::test]
-async fn slash_rollout_displays_current_path() {
-    let (mut chat, mut rx, _op_rx) = make_chatwidget_manual(None).await;
-    let rollout_path = PathBuf::from("/tmp/codex-test-rollout.jsonl");
-    chat.current_rollout_path = Some(rollout_path.clone());
-
-    chat.dispatch_command(SlashCommand::Rollout);
-
-    let cells = drain_insert_history(&mut rx);
-    assert_eq!(cells.len(), 1, "expected info message for rollout path");
-    let rendered = lines_to_single_string(&cells[0]);
-    assert!(
-        rendered.contains(&rollout_path.display().to_string()),
-        "expected rollout path to be shown: {rendered}"
-    );
-}
-
-#[tokio::test]
-async fn slash_rollout_handles_missing_path() {
-    let (mut chat, mut rx, _op_rx) = make_chatwidget_manual(None).await;
-
-    chat.dispatch_command(SlashCommand::Rollout);
-
-    let cells = drain_insert_history(&mut rx);
-    assert_eq!(
-        cells.len(),
-        1,
-        "expected info message explaining missing path"
-    );
-    let rendered = lines_to_single_string(&cells[0]);
-    assert!(
-        rendered.contains("not available"),
-        "expected missing rollout path message: {rendered}"
-    );
 }
 
 #[tokio::test]
@@ -7246,7 +7143,6 @@ async fn permissions_selection_marks_guardian_approvals_current_after_session_co
             history_entry_count: 0,
             initial_messages: None,
             network_proxy: None,
-            rollout_path: Some(PathBuf::new()),
         }),
     });
 
@@ -7296,7 +7192,6 @@ async fn permissions_selection_marks_guardian_approvals_current_with_custom_work
             history_entry_count: 0,
             initial_messages: None,
             network_proxy: None,
-            rollout_path: Some(PathBuf::new()),
         }),
     });
 

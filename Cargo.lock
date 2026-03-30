@@ -1205,6 +1205,28 @@ dependencies = [
 ]
 
 [[package]]
+name = "chaos-journald"
+version = "47.0.0"
+dependencies = [
+ "anyhow",
+ "chaos-ipc",
+ "chaos-pwd",
+ "clap",
+ "jiff",
+ "libc",
+ "rama",
+ "serde",
+ "serde_json",
+ "sqlx",
+ "tempfile",
+ "thiserror 2.0.18",
+ "tokio",
+ "tracing",
+ "tracing-subscriber",
+ "uuid",
+]
+
+[[package]]
 name = "chaos-kern"
 version = "47.0.0"
 dependencies = [
@@ -1230,6 +1252,7 @@ dependencies = [
  "chaos-epoll",
  "chaos-git",
  "chaos-ipc",
+ "chaos-journald",
  "chaos-keyring",
  "chaos-lex",
  "chaos-locate",
@@ -1242,7 +1265,6 @@ dependencies = [
  "chaos-pwd",
  "chaos-ready",
  "chaos-realpath",
- "chaos-rollout",
  "chaos-scm",
  "chaos-selinux",
  "chaos-sh",
@@ -1572,23 +1594,6 @@ dependencies = [
  "serde_json",
  "tempfile",
  "ts-rs",
-]
-
-[[package]]
-name = "chaos-rollout"
-version = "47.0.0"
-dependencies = [
- "anyhow",
- "chaos-ipc",
- "chaos-sysctl",
- "pretty_assertions",
- "serde",
- "serde_json",
- "tempfile",
- "time",
- "tokio",
- "tracing",
- "uuid",
 ]
 
 [[package]]

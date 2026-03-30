@@ -1,8 +1,8 @@
 use crate::config::Config;
 use crate::path_utils::normalize_for_path_comparison;
+use crate::rollout::metadata;
 use crate::rollout::list::Cursor;
 use crate::rollout::list::ProcessSortKey;
-use crate::rollout::metadata;
 use chaos_ipc::ProcessId;
 use chaos_ipc::dynamic_tools::DynamicToolSpec;
 use chaos_ipc::protocol::RolloutItem;
@@ -21,7 +21,7 @@ use uuid::Uuid;
 /// Core-facing handle to the SQLite-backed state runtime.
 pub type StateDbHandle = Arc<chaos_proc::StateRuntime>;
 
-/// Initialize the state runtime for thread state persistence and backfill checks. To only be used
+/// Initialize the state runtime for thread state persistence. To only be used
 /// inside `core`. The initialization should not be done anywhere else.
 pub(crate) async fn init(config: &Config) -> Option<StateDbHandle> {
     let runtime = match chaos_proc::StateRuntime::init(
@@ -39,23 +39,6 @@ pub(crate) async fn init(config: &Config) -> Option<StateDbHandle> {
             return None;
         }
     };
-    let backfill_state = match runtime.get_backfill_state().await {
-        Ok(state) => state,
-        Err(err) => {
-            warn!(
-                "failed to read backfill state at {}: {err}",
-                config.codex_home.display()
-            );
-            return None;
-        }
-    };
-    if backfill_state.status != chaos_proc::BackfillStatus::Complete {
-        let runtime_for_backfill = runtime.clone();
-        let config = config.clone();
-        tokio::spawn(async move {
-            metadata::backfill_sessions(runtime_for_backfill.as_ref(), &config).await;
-        });
-    }
 
     // Spawn the process-wide cron scheduler if the chaos pool is available.
     if let Some(chaos_pool) = runtime.chaos_pool() {
@@ -108,7 +91,7 @@ pub async fn get_state_db_for(
         chaos_proc::StateRuntime::init(sqlite_home.to_path_buf(), model_provider_id.to_string())
             .await
             .ok()?;
-    require_backfill_complete(runtime, sqlite_home).await
+    Some(runtime)
 }
 
 /// Open the state runtime when the SQLite file exists, without feature gating.
@@ -123,31 +106,7 @@ pub async fn open_if_present(codex_home: &Path, default_provider: &str) -> Optio
         chaos_proc::StateRuntime::init(codex_home.to_path_buf(), default_provider.to_string())
             .await
             .ok()?;
-    require_backfill_complete(runtime, codex_home).await
-}
-
-async fn require_backfill_complete(
-    runtime: StateDbHandle,
-    codex_home: &Path,
-) -> Option<StateDbHandle> {
-    match runtime.get_backfill_state().await {
-        Ok(state) if state.status == chaos_proc::BackfillStatus::Complete => Some(runtime),
-        Ok(state) => {
-            warn!(
-                "state db backfill not complete at {} (status: {})",
-                codex_home.display(),
-                state.status.as_str()
-            );
-            None
-        }
-        Err(err) => {
-            warn!(
-                "failed to read backfill state at {}: {err}",
-                codex_home.display()
-            );
-            None
-        }
-    }
+    Some(runtime)
 }
 
 fn cursor_to_anchor(cursor: Option<&Cursor>) -> Option<chaos_proc::Anchor> {
@@ -293,48 +252,12 @@ pub async fn list_processes_db(
         )
         .await
     {
-        Ok(mut page) => {
-            let mut valid_items = Vec::with_capacity(page.items.len());
-            for item in page.items {
-                if tokio::fs::try_exists(&item.rollout_path)
-                    .await
-                    .unwrap_or(false)
-                {
-                    valid_items.push(item);
-                } else {
-                    warn!(
-                        "state db list_processes returned stale rollout path for process {}: {}",
-                        item.id,
-                        item.rollout_path.display()
-                    );
-                    warn!("state db discrepancy during list_processes_db: stale_db_path_dropped");
-                    let _ = ctx.delete_process(item.id).await;
-                }
-            }
-            page.items = valid_items;
-            Some(page)
-        }
+        Ok(page) => Some(page),
         Err(err) => {
             warn!("state db list_processes failed: {err}");
             None
         }
     }
-}
-
-/// Look up the rollout path for a thread id using SQLite.
-pub async fn find_rollout_path_by_id(
-    context: Option<&chaos_proc::StateRuntime>,
-    process_id: ProcessId,
-    archived_only: Option<bool>,
-    stage: &str,
-) -> Option<PathBuf> {
-    let ctx = context?;
-    ctx.find_rollout_path_by_id(process_id, archived_only)
-        .await
-        .unwrap_or_else(|err| {
-            warn!("state db find_rollout_path_by_id failed during {stage}: {err}");
-            None
-        })
 }
 
 /// Get dynamic tools for a thread id using SQLite.
@@ -381,163 +304,10 @@ pub async fn mark_process_memory_mode_polluted(
     }
 }
 
-/// Reconcile rollout items into SQLite, falling back to scanning the rollout file.
-pub async fn reconcile_rollout(
-    context: Option<&chaos_proc::StateRuntime>,
-    rollout_path: &Path,
-    default_provider: &str,
-    builder: Option<&ProcessMetadataBuilder>,
-    items: &[RolloutItem],
-    archived_only: Option<bool>,
-    new_process_memory_mode: Option<&str>,
-) {
-    let Some(ctx) = context else {
-        return;
-    };
-    if builder.is_some() || !items.is_empty() {
-        apply_rollout_items(
-            Some(ctx),
-            rollout_path,
-            default_provider,
-            builder,
-            items,
-            "reconcile_rollout",
-            new_process_memory_mode,
-            /*updated_at_override*/ None,
-        )
-        .await;
-        return;
-    }
-    let outcome =
-        match metadata::extract_metadata_from_rollout(rollout_path, default_provider).await {
-            Ok(outcome) => outcome,
-            Err(err) => {
-                warn!(
-                    "state db reconcile_rollout extraction failed {}: {err}",
-                    rollout_path.display()
-                );
-                return;
-            }
-        };
-    let mut metadata = outcome.metadata;
-    let memory_mode = outcome.memory_mode.unwrap_or_else(|| "enabled".to_string());
-    metadata.cwd = normalize_cwd_for_state_db(&metadata.cwd);
-    if let Ok(Some(existing_metadata)) = ctx.get_process(metadata.id).await {
-        metadata.prefer_existing_git_info(&existing_metadata);
-    }
-    match archived_only {
-        Some(true) if metadata.archived_at.is_none() => {
-            metadata.archived_at = Some(metadata.updated_at);
-        }
-        Some(false) => {
-            metadata.archived_at = None;
-        }
-        Some(true) | None => {}
-    }
-    if let Err(err) = ctx.upsert_process(&metadata).await {
-        warn!(
-            "state db reconcile_rollout upsert failed {}: {err}",
-            rollout_path.display()
-        );
-        return;
-    }
-    if let Err(err) = ctx
-        .set_process_memory_mode(metadata.id, memory_mode.as_str())
-        .await
-    {
-        warn!(
-            "state db reconcile_rollout memory_mode update failed {}: {err}",
-            rollout_path.display()
-        );
-        return;
-    }
-    if let Ok(meta_line) = crate::rollout::list::read_session_meta_line(rollout_path).await {
-        persist_dynamic_tools(
-            Some(ctx),
-            meta_line.meta.id,
-            meta_line.meta.dynamic_tools.as_deref(),
-            "reconcile_rollout",
-        )
-        .await;
-    } else {
-        warn!(
-            "state db reconcile_rollout missing session meta {}",
-            rollout_path.display()
-        );
-    }
-}
-
-/// Repair a thread's rollout path after filesystem fallback succeeds.
-pub async fn read_repair_rollout_path(
-    context: Option<&chaos_proc::StateRuntime>,
-    process_id: Option<ProcessId>,
-    archived_only: Option<bool>,
-    rollout_path: &Path,
-) {
-    let Some(ctx) = context else {
-        return;
-    };
-
-    // Fast path: update an existing metadata row in place, but avoid writes when
-    // read-repair computes no effective change.
-    let mut saw_existing_metadata = false;
-    if let Some(process_id) = process_id
-        && let Ok(Some(metadata)) = ctx.get_process(process_id).await
-    {
-        saw_existing_metadata = true;
-        let mut repaired = metadata.clone();
-        repaired.rollout_path = rollout_path.to_path_buf();
-        repaired.cwd = normalize_cwd_for_state_db(&repaired.cwd);
-        match archived_only {
-            Some(true) if repaired.archived_at.is_none() => {
-                repaired.archived_at = Some(repaired.updated_at);
-            }
-            Some(false) => {
-                repaired.archived_at = None;
-            }
-            Some(true) | None => {}
-        }
-        if repaired == metadata {
-            return;
-        }
-        warn!("state db discrepancy during read_repair_rollout_path: upsert_needed (fast path)");
-        if let Err(err) = ctx.upsert_process(&repaired).await {
-            warn!(
-                "state db read-repair upsert failed for {}: {err}",
-                rollout_path.display()
-            );
-        } else {
-            return;
-        }
-    }
-
-    // Slow path: when the row is missing/unreadable (or direct upsert failed),
-    // rebuild metadata from rollout contents and reconcile it into SQLite.
-    if !saw_existing_metadata {
-        warn!("state db discrepancy during read_repair_rollout_path: upsert_needed (slow path)");
-    }
-    let default_provider = crate::rollout::list::read_session_meta_line(rollout_path)
-        .await
-        .ok()
-        .and_then(|meta| meta.meta.model_provider)
-        .unwrap_or_default();
-    reconcile_rollout(
-        Some(ctx),
-        rollout_path,
-        default_provider.as_str(),
-        /*builder*/ None,
-        &[],
-        archived_only,
-        /*new_process_memory_mode*/ None,
-    )
-    .await;
-}
-
-/// Apply rollout items incrementally to SQLite.
+/// Apply persisted session items incrementally to SQLite.
 #[allow(clippy::too_many_arguments)]
 pub async fn apply_rollout_items(
     context: Option<&chaos_proc::StateRuntime>,
-    rollout_path: &Path,
     _default_provider: &str,
     builder: Option<&ProcessMetadataBuilder>,
     items: &[RolloutItem],
@@ -550,19 +320,17 @@ pub async fn apply_rollout_items(
     };
     let mut builder = match builder {
         Some(builder) => builder.clone(),
-        None => match metadata::builder_from_items(items, rollout_path) {
+        None => match metadata::builder_from_items(items) {
             Some(builder) => builder,
             None => {
                 warn!(
-                    "state db apply_rollout_items missing builder during {stage}: {}",
-                    rollout_path.display()
+                    "state db apply_rollout_items missing builder during {stage}"
                 );
                 warn!("state db discrepancy during apply_rollout_items: {stage}, missing_builder");
                 return;
             }
         },
     };
-    builder.rollout_path = rollout_path.to_path_buf();
     builder.cwd = normalize_cwd_for_state_db(&builder.cwd);
     if let Err(err) = ctx
         .apply_rollout_items(
@@ -573,10 +341,7 @@ pub async fn apply_rollout_items(
         )
         .await
     {
-        warn!(
-            "state db apply_rollout_items failed during {stage} for {}: {err}",
-            rollout_path.display()
-        );
+        warn!("state db apply_rollout_items failed during {stage}: {err}");
     }
 }
 

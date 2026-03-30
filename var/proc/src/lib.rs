@@ -1,14 +1,12 @@
-//! SQLite-backed state for rollout metadata.
+//! SQLite-backed state for persisted session metadata.
 //!
-//! This crate is intentionally small and focused: it extracts rollout metadata
-//! from JSONL rollouts and mirrors it into a local SQLite database. Backfill
-//! orchestration and rollout scanning live in `codex-core`.
+//! This crate owns the local process metadata, memories, and log indexes derived
+//! from persisted session history. Session replay itself lives in journald.
 
 mod extract;
 pub mod log_db;
 mod migrations;
 mod model;
-mod paths;
 mod runtime;
 
 pub use model::LogEntry;

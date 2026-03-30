@@ -11,8 +11,6 @@ use chaos_ipc::ProcessId;
 use chaos_ipc::config_types::AltScreenMode;
 use chaos_ipc::config_types::SandboxMode;
 use chaos_ipc::protocol::AskForApproval;
-use chaos_ipc::protocol::RolloutItem;
-use chaos_ipc::protocol::RolloutLine;
 use chaos_kern::AuthManager;
 use chaos_kern::CodexAuth;
 use chaos_kern::INTERACTIVE_SESSION_SOURCES;
@@ -34,12 +32,10 @@ use chaos_kern::config_loader::LoaderOverrides;
 use chaos_kern::config_loader::format_config_error_with_source;
 use chaos_kern::default_client::set_default_client_residency_requirement;
 use chaos_kern::features::Feature;
-use chaos_kern::find_process_path_by_id_str;
-use chaos_kern::find_process_path_by_name_str;
+use chaos_kern::find_process_id_by_name;
 use chaos_kern::format_exec_policy_error_with_source;
 use chaos_kern::models_manager::collaboration_mode_presets::CollaborationModesConfig;
 use chaos_kern::path_utils;
-use chaos_kern::read_session_meta_line;
 use chaos_kern::state_db::get_state_db;
 use chaos_kern::terminal::Multiplexer;
 use chaos_proc::log_db;
@@ -52,6 +48,7 @@ use std::path::Path;
 use std::path::PathBuf;
 use std::sync::Arc;
 use tracing::error;
+use tracing::warn;
 use tracing_appender::non_blocking;
 use tracing_subscriber::EnvFilter;
 use tracing_subscriber::prelude::*;
@@ -529,7 +526,7 @@ async fn run_ratatui_app(
             process_id: None,
             process_name: None,
             exit_reason: ExitReason::Fatal(format!(
-                "No saved session found with ID {id_str}. Run `codex {action}` without an ID to choose from existing sessions."
+                "No saved session found with ID {id_str}. Run `chaos {action}` without an ID to choose from existing sessions."
             )),
         })
     };
@@ -537,25 +534,9 @@ async fn run_ratatui_app(
     let use_fork = cli.fork_picker || cli.fork_last || cli.fork_session_id.is_some();
     let session_selection = if use_fork {
         if let Some(id_str) = cli.fork_session_id.as_deref() {
-            let is_uuid = Uuid::parse_str(id_str).is_ok();
-            let path = if is_uuid {
-                find_process_path_by_id_str(&config.codex_home, id_str).await?
-            } else {
-                find_process_path_by_name_str(&config.codex_home, id_str).await?
-            };
-            match path {
-                Some(path) => {
-                    let process_id =
-                        match resolve_session_process_id(path.as_path(), is_uuid.then_some(id_str))
-                            .await
-                        {
-                            Some(process_id) => process_id,
-                            None => return missing_session_exit(id_str, "fork"),
-                        };
-                    resume_picker::SessionSelection::Fork(resume_picker::SessionTarget {
-                        path,
-                        process_id,
-                    })
+            match resolve_saved_process_id(&config.codex_home, id_str).await? {
+                Some(process_id) => {
+                    resume_picker::SessionSelection::Fork(resume_picker::SessionTarget { process_id })
                 }
                 None => return missing_session_exit(id_str, "fork"),
             }
@@ -574,38 +555,14 @@ async fn run_ratatui_app(
             .await
             {
                 Ok(page) => match page.items.first() {
-                    Some(item) => {
-                        match resolve_session_process_id(
-                            item.path.as_path(),
-                            /*id_str_if_uuid*/ None,
-                        )
-                        .await
-                        {
-                            Some(process_id) => resume_picker::SessionSelection::Fork(
-                                resume_picker::SessionTarget {
-                                    path: item.path.clone(),
-                                    process_id,
-                                },
-                            ),
-                            None => {
-                                let rollout_path = item.path.display();
-                                error!(
-                                    "Error reading session metadata from latest rollout: {rollout_path}"
-                                );
-                                restore();
-                                session_log::log_session_end();
-                                let _ = tui.terminal.clear();
-                                return Ok(AppExitInfo {
-                                    token_usage: chaos_ipc::protocol::TokenUsage::default(),
-                                    process_id: None,
-                                    process_name: None,
-                                    exit_reason: ExitReason::Fatal(format!(
-                                        "Found latest saved session at {rollout_path}, but failed to read its metadata. Run `codex fork` to choose from existing sessions."
-                                    )),
-                                });
-                            }
+                    Some(item) => match item.process_id {
+                        Some(process_id) => {
+                            resume_picker::SessionSelection::Fork(resume_picker::SessionTarget {
+                                process_id,
+                            })
                         }
-                    }
+                        None => resume_picker::SessionSelection::StartFresh,
+                    },
                     None => resume_picker::SessionSelection::StartFresh,
                 },
                 Err(_) => resume_picker::SessionSelection::StartFresh,
@@ -628,25 +585,9 @@ async fn run_ratatui_app(
             resume_picker::SessionSelection::StartFresh
         }
     } else if let Some(id_str) = cli.resume_session_id.as_deref() {
-        let is_uuid = Uuid::parse_str(id_str).is_ok();
-        let path = if is_uuid {
-            find_process_path_by_id_str(&config.codex_home, id_str).await?
-        } else {
-            find_process_path_by_name_str(&config.codex_home, id_str).await?
-        };
-        match path {
-            Some(path) => {
-                let process_id =
-                    match resolve_session_process_id(path.as_path(), is_uuid.then_some(id_str))
-                        .await
-                    {
-                        Some(process_id) => process_id,
-                        None => return missing_session_exit(id_str, "resume"),
-                    };
-                resume_picker::SessionSelection::Resume(resume_picker::SessionTarget {
-                    path,
-                    process_id,
-                })
+        match resolve_saved_process_id(&config.codex_home, id_str).await? {
+            Some(process_id) => {
+                resume_picker::SessionSelection::Resume(resume_picker::SessionTarget { process_id })
             }
             None => return missing_session_exit(id_str, "resume"),
         }
@@ -657,7 +598,7 @@ async fn run_ratatui_app(
         } else {
             Some(config.cwd.as_path())
         };
-        match RolloutRecorder::find_latest_process_path(
+        match RolloutRecorder::list_processes(
             &config,
             /*page_size*/ 1,
             /*cursor*/ None,
@@ -665,38 +606,28 @@ async fn run_ratatui_app(
             INTERACTIVE_SESSION_SOURCES,
             Some(provider_filter.as_slice()),
             &config.model_provider_id,
-            filter_cwd,
+            /*search_term*/ None,
         )
         .await
         {
-            Ok(Some(path)) => {
-                match resolve_session_process_id(path.as_path(), /*id_str_if_uuid*/ None).await {
+            Ok(page) => match page.items.into_iter().find(|item| {
+                match (filter_cwd, item.cwd.as_deref()) {
+                    (Some(filter_cwd), Some(item_cwd)) => !cwds_differ(filter_cwd, item_cwd),
+                    (Some(_), None) => false,
+                    (None, _) => true,
+                }
+            }) {
+                Some(item) => match item.process_id {
                     Some(process_id) => {
                         resume_picker::SessionSelection::Resume(resume_picker::SessionTarget {
-                            path,
                             process_id,
                         })
                     }
-                    None => {
-                        let rollout_path = path.display();
-                        error!(
-                            "Error reading session metadata from latest rollout: {rollout_path}"
-                        );
-                        restore();
-                        session_log::log_session_end();
-                        let _ = tui.terminal.clear();
-                        return Ok(AppExitInfo {
-                            token_usage: chaos_ipc::protocol::TokenUsage::default(),
-                            process_id: None,
-                            process_name: None,
-                            exit_reason: ExitReason::Fatal(format!(
-                                "Found latest saved session at {rollout_path}, but failed to read its metadata. Run `codex resume` to choose from existing sessions."
-                            )),
-                        });
-                    }
-                }
-            }
-            _ => resume_picker::SessionSelection::StartFresh,
+                    None => resume_picker::SessionSelection::StartFresh,
+                },
+                None => resume_picker::SessionSelection::StartFresh,
+            },
+            Err(_) => resume_picker::SessionSelection::StartFresh,
         }
     } else if cli.resume_picker {
         match resume_picker::run_resume_picker(&mut tui, &config, cli.resume_show_all).await? {
@@ -734,7 +665,6 @@ async fn run_ratatui_app(
                 &config,
                 &current_cwd,
                 target_session.process_id,
-                &target_session.path,
                 action,
                 allow_prompt,
             )
@@ -815,23 +745,25 @@ async fn run_ratatui_app(
     app_result
 }
 
-pub(crate) async fn resolve_session_process_id(
-    path: &Path,
-    id_str_if_uuid: Option<&str>,
-) -> Option<ProcessId> {
-    match id_str_if_uuid {
-        Some(id_str) => ProcessId::from_string(id_str).ok(),
-        None => read_session_meta_line(path)
-            .await
-            .ok()
-            .map(|meta_line| meta_line.meta.id),
+async fn resolve_saved_process_id(codex_home: &Path, id_str: &str) -> std::io::Result<Option<ProcessId>> {
+    let process_id = if Uuid::parse_str(id_str).is_ok() {
+        ProcessId::from_string(id_str).ok()
+    } else {
+        find_process_id_by_name(codex_home, id_str).await?
+    };
+    let Some(process_id) = process_id else {
+        return Ok(None);
+    };
+    if RolloutRecorder::journal_contains_process(process_id).await? {
+        Ok(Some(process_id))
+    } else {
+        Ok(None)
     }
 }
 
-pub(crate) async fn read_session_cwd(
+pub(crate) async fn read_session_cwd_by_process_id(
     config: &Config,
     process_id: ProcessId,
-    path: &Path,
 ) -> Option<PathBuf> {
     if let Some(state_db_ctx) = get_state_db(config).await
         && let Ok(Some(metadata)) = state_db_ctx.get_process(process_id).await
@@ -839,43 +771,17 @@ pub(crate) async fn read_session_cwd(
         return Some(metadata.cwd);
     }
 
-    // Prefer the latest TurnContext cwd so resume/fork reflects the most recent
-    // session directory (for the changed-cwd prompt) when DB data is unavailable.
-    // The alternative would be mutating the SessionMeta line when the session cwd
-    // changes, but the rollout is an append-only JSONL log and rewriting the head
-    // would be error-prone.
-    if let Some(cwd) = parse_latest_turn_context_cwd(path).await {
-        return Some(cwd);
-    }
-    match read_session_meta_line(path).await {
-        Ok(meta_line) => Some(meta_line.meta.cwd),
+    match RolloutRecorder::read_process_cwd_from_journal(process_id).await {
+        Ok(cwd) => cwd,
         Err(err) => {
-            let rollout_path = path.display().to_string();
-            tracing::warn!(
-                %rollout_path,
+            warn!(
+                %process_id,
                 %err,
-                "Failed to read session metadata from rollout"
+                "Failed to read session cwd from journal"
             );
             None
         }
     }
-}
-
-async fn parse_latest_turn_context_cwd(path: &Path) -> Option<PathBuf> {
-    let text = tokio::fs::read_to_string(path).await.ok()?;
-    for line in text.lines().rev() {
-        let trimmed = line.trim();
-        if trimmed.is_empty() {
-            continue;
-        }
-        let Ok(rollout_line) = serde_json::from_str::<RolloutLine>(trimmed) else {
-            continue;
-        };
-        if let RolloutItem::TurnContext(item) = rollout_line.item {
-            return Some(item.cwd);
-        }
-    }
-    None
 }
 
 pub(crate) fn cwds_differ(current_cwd: &Path, session_cwd: &Path) -> bool {
@@ -898,11 +804,10 @@ pub(crate) async fn resolve_cwd_for_resume_or_fork(
     config: &Config,
     current_cwd: &Path,
     process_id: ProcessId,
-    path: &Path,
     action: CwdPromptAction,
     allow_prompt: bool,
 ) -> color_eyre::Result<ResolveCwdOutcome> {
-    let Some(history_cwd) = read_session_cwd(config, process_id, path).await else {
+    let Some(history_cwd) = read_session_cwd_by_process_id(config, process_id).await else {
         return Ok(ResolveCwdOutcome::Continue(None));
     };
     if allow_prompt && cwds_differ(current_cwd, &history_cwd) {
@@ -1056,16 +961,9 @@ fn should_show_login_screen(login_status: LoginStatus, config: &Config) -> bool 
 mod tests {
     use super::*;
     use chaos_ipc::protocol::AskForApproval;
-    use chaos_ipc::protocol::RolloutItem;
-    use chaos_ipc::protocol::RolloutLine;
-    use chaos_ipc::protocol::SessionMeta;
-    use chaos_ipc::protocol::SessionMetaLine;
-    use chaos_ipc::protocol::SessionSource;
-    use chaos_ipc::protocol::TurnContextItem;
     use chaos_kern::config::ConfigBuilder;
     use chaos_kern::config::ConfigOverrides;
     use chaos_kern::config::ProjectConfig;
-    use chaos_kern::features::Feature;
     use pretty_assertions::assert_eq;
     use tempfile::TempDir;
 
@@ -1112,110 +1010,6 @@ mod tests {
         Ok(())
     }
 
-    fn build_turn_context(config: &Config, cwd: PathBuf) -> TurnContextItem {
-        let model = config
-            .model
-            .clone()
-            .unwrap_or_else(|| "gpt-5.1".to_string());
-        TurnContextItem {
-            turn_id: None,
-            trace_id: None,
-            cwd,
-            current_date: None,
-            timezone: None,
-            approval_policy: config.permissions.approval_policy.value(),
-            sandbox_policy: config.permissions.sandbox_policy.get().clone(),
-            network: None,
-            model,
-            personality: None,
-            collaboration_mode: None,
-            effort: config.model_reasoning_effort,
-            summary: config
-                .model_reasoning_summary
-                .unwrap_or(chaos_ipc::config_types::ReasoningSummary::Auto),
-            user_instructions: None,
-            developer_instructions: None,
-            final_output_json_schema: None,
-            truncation_policy: None,
-        }
-    }
-
-    #[tokio::test]
-    async fn read_session_cwd_prefers_latest_turn_context() -> std::io::Result<()> {
-        let temp_dir = TempDir::new()?;
-        let config = build_config(&temp_dir).await?;
-        let first = temp_dir.path().join("first");
-        let second = temp_dir.path().join("second");
-        std::fs::create_dir_all(&first)?;
-        std::fs::create_dir_all(&second)?;
-
-        let rollout_path = temp_dir.path().join("rollout.jsonl");
-        let lines = vec![
-            RolloutLine {
-                timestamp: "t0".to_string(),
-                item: RolloutItem::TurnContext(build_turn_context(&config, first)),
-            },
-            RolloutLine {
-                timestamp: "t1".to_string(),
-                item: RolloutItem::TurnContext(build_turn_context(&config, second.clone())),
-            },
-        ];
-        let mut text = String::new();
-        for line in lines {
-            text.push_str(&serde_json::to_string(&line).expect("serialize rollout"));
-            text.push('\n');
-        }
-        std::fs::write(&rollout_path, text)?;
-
-        let cwd = read_session_cwd(&config, ProcessId::new(), &rollout_path)
-            .await
-            .expect("expected cwd");
-        assert_eq!(cwd, second);
-        Ok(())
-    }
-
-    #[tokio::test]
-    async fn should_prompt_when_meta_matches_current_but_latest_turn_differs() -> std::io::Result<()>
-    {
-        let temp_dir = TempDir::new()?;
-        let config = build_config(&temp_dir).await?;
-        let current = temp_dir.path().join("current");
-        let latest = temp_dir.path().join("latest");
-        std::fs::create_dir_all(&current)?;
-        std::fs::create_dir_all(&latest)?;
-
-        let rollout_path = temp_dir.path().join("rollout.jsonl");
-        let session_meta = SessionMeta {
-            cwd: current.clone(),
-            ..SessionMeta::default()
-        };
-        let lines = vec![
-            RolloutLine {
-                timestamp: "t0".to_string(),
-                item: RolloutItem::SessionMeta(SessionMetaLine {
-                    meta: session_meta,
-                    git: None,
-                }),
-            },
-            RolloutLine {
-                timestamp: "t1".to_string(),
-                item: RolloutItem::TurnContext(build_turn_context(&config, latest.clone())),
-            },
-        ];
-        let mut text = String::new();
-        for line in lines {
-            text.push_str(&serde_json::to_string(&line).expect("serialize rollout"));
-            text.push('\n');
-        }
-        std::fs::write(&rollout_path, text)?;
-
-        let session_cwd = read_session_cwd(&config, ProcessId::new(), &rollout_path)
-            .await
-            .expect("expected cwd");
-        assert_eq!(session_cwd, latest);
-        assert!(cwds_differ(&current, &session_cwd));
-        Ok(())
-    }
 
     #[tokio::test]
     async fn config_rebuild_changes_trust_defaults_with_cwd() -> std::io::Result<()> {
@@ -1313,94 +1107,4 @@ trust_level = "untrusted"
         Ok(())
     }
 
-    #[tokio::test]
-    async fn read_session_cwd_falls_back_to_session_meta() -> std::io::Result<()> {
-        let temp_dir = TempDir::new()?;
-        let config = build_config(&temp_dir).await?;
-        let session_cwd = temp_dir.path().join("session");
-        std::fs::create_dir_all(&session_cwd)?;
-
-        let rollout_path = temp_dir.path().join("rollout.jsonl");
-        let session_meta = SessionMeta {
-            cwd: session_cwd.clone(),
-            ..SessionMeta::default()
-        };
-        let meta_line = RolloutLine {
-            timestamp: "t0".to_string(),
-            item: RolloutItem::SessionMeta(SessionMetaLine {
-                meta: session_meta,
-                git: None,
-            }),
-        };
-        let text = format!(
-            "{}\n",
-            serde_json::to_string(&meta_line).expect("serialize meta")
-        );
-        std::fs::write(&rollout_path, text)?;
-
-        let cwd = read_session_cwd(&config, ProcessId::new(), &rollout_path)
-            .await
-            .expect("expected cwd");
-        assert_eq!(cwd, session_cwd);
-        Ok(())
-    }
-
-    #[tokio::test]
-    async fn read_session_cwd_prefers_sqlite_when_process_id_present() -> std::io::Result<()> {
-        let temp_dir = TempDir::new()?;
-        let mut config = build_config(&temp_dir).await?;
-        config
-            .features
-            .enable(Feature::Sqlite)
-            .expect("test config should allow sqlite");
-
-        let process_id = ProcessId::new();
-        let rollout_cwd = temp_dir.path().join("rollout-cwd");
-        let sqlite_cwd = temp_dir.path().join("sqlite-cwd");
-        std::fs::create_dir_all(&rollout_cwd)?;
-        std::fs::create_dir_all(&sqlite_cwd)?;
-
-        let rollout_path = temp_dir.path().join("rollout.jsonl");
-        let rollout_line = RolloutLine {
-            timestamp: "t0".to_string(),
-            item: RolloutItem::TurnContext(build_turn_context(&config, rollout_cwd)),
-        };
-        std::fs::write(
-            &rollout_path,
-            format!(
-                "{}\n",
-                serde_json::to_string(&rollout_line).expect("serialize rollout")
-            ),
-        )?;
-
-        let runtime = chaos_proc::StateRuntime::init(
-            config.codex_home.clone(),
-            config.model_provider_id.clone(),
-        )
-        .await
-        .map_err(std::io::Error::other)?;
-        runtime
-            .mark_backfill_complete(None)
-            .await
-            .map_err(std::io::Error::other)?;
-
-        let mut builder = chaos_proc::ProcessMetadataBuilder::new(
-            process_id,
-            rollout_path.clone(),
-            chrono::Utc::now().to_rfc3339().parse().expect("timestamp"),
-            SessionSource::Cli,
-        );
-        builder.cwd = sqlite_cwd.clone();
-        let metadata = builder.build(config.model_provider_id.as_str());
-        runtime
-            .upsert_process(&metadata)
-            .await
-            .map_err(std::io::Error::other)?;
-
-        let cwd = read_session_cwd(&config, process_id, &rollout_path)
-            .await
-            .expect("expected cwd");
-        assert_eq!(cwd, sqlite_cwd);
-        Ok(())
-    }
 }

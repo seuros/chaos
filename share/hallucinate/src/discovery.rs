@@ -1,12 +1,17 @@
-//! Script discovery — finds `.lua` files from config layer directories.
+//! Script discovery — finds script files from config layer directories.
 //!
 //! Scripts are loaded from well-known paths in lexicographic order:
-//!   1. `~/.config/chaos/scripts/*.lua`  (user layer)
-//!   2. `.chaos/scripts/*.lua`           (project layer — higher precedence)
+//!   1. `~/.config/chaos/scripts/*`  (user layer)
+//!   2. `.chaos/scripts/*`           (project layer — higher precedence)
+//!
+//! Supported extensions: `.lua`, `.wasm`
 
 use std::path::{Path, PathBuf};
 
-/// Discover Lua scripts from the standard config directories.
+/// Known script extensions and their engine backends.
+const SCRIPT_EXTENSIONS: &[&str] = &["lua", "wasm"];
+
+/// Discover scripts from the standard config directories.
 ///
 /// Returns paths sorted lexicographically within each layer.
 /// Project-layer scripts come after user-layer scripts so they
@@ -16,30 +21,42 @@ pub fn discover_scripts(cwd: &Path) -> Vec<PathBuf> {
 
     // User layer: ~/.config/chaos/scripts/
     if let Some(config_dir) = dirs() {
-        collect_lua_files(&config_dir.join("scripts"), &mut scripts);
+        collect_script_files(&config_dir.join("scripts"), &mut scripts);
     }
 
     // Project layer: .chaos/scripts/
-    collect_lua_files(&cwd.join(".chaos").join("scripts"), &mut scripts);
+    collect_script_files(&cwd.join(".chaos").join("scripts"), &mut scripts);
 
     scripts
 }
 
-/// Collect all `.lua` files from a directory, sorted by name.
-fn collect_lua_files(dir: &Path, out: &mut Vec<PathBuf>) {
+/// Discover scripts filtered to a specific extension.
+pub fn discover_scripts_by_ext(cwd: &Path, ext: &str) -> Vec<PathBuf> {
+    discover_scripts(cwd)
+        .into_iter()
+        .filter(|p| p.extension().is_some_and(|e| e == ext))
+        .collect()
+}
+
+/// Collect all script files from a directory, sorted by name.
+fn collect_script_files(dir: &Path, out: &mut Vec<PathBuf>) {
     let Ok(entries) = std::fs::read_dir(dir) else {
         return;
     };
 
-    let mut lua_files: Vec<PathBuf> = entries
+    let mut files: Vec<PathBuf> = entries
         .filter_map(Result::ok)
         .map(|e| e.path())
-        .filter(|p| p.extension().is_some_and(|ext| ext == "lua"))
+        .filter(|p| {
+            p.extension()
+                .and_then(|e| e.to_str())
+                .is_some_and(|ext| SCRIPT_EXTENSIONS.contains(&ext))
+        })
         .filter(|p| p.is_file())
         .collect();
 
-    lua_files.sort();
-    out.extend(lua_files);
+    files.sort();
+    out.extend(files);
 }
 
 /// Return the Chaos config directory (`~/.config/chaos`).

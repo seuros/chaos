@@ -1,8 +1,9 @@
-//! Async handle to the Hallucinate Lua engine.
+//! Async handle to the Hallucinate script engine.
 //!
 //! `HallucinateHandle` is the cheaply-cloneable interface the kernel uses
-//! to talk to the Lua VM thread. All communication goes through an mpsc
-//! channel; responses come back via oneshot.
+//! to talk to the script engine thread. All communication goes through an
+//! mpsc channel; responses come back via oneshot. Engine-agnostic — works
+//! with Lua, WASM, or any backend that implements `ScriptEngine`.
 
 use serde_json::Value as JsonValue;
 use tokio::sync::{mpsc, oneshot};
@@ -18,9 +19,9 @@ pub enum HookResult {
     FailedAbort(String),
 }
 
-/// A tool defined by a Lua script.
+/// A tool defined by a script (Lua, WASM, or any engine).
 #[derive(Debug, Clone)]
-pub struct LuaTool {
+pub struct ScriptTool {
     pub name: String,
     pub description: String,
     pub input_schema: JsonValue,
@@ -35,7 +36,7 @@ pub struct ToolResult {
 
 /// Requests sent from the async world to the engine thread.
 #[derive(Debug)]
-pub enum LuaRequest {
+pub enum ScriptRequest {
     /// Dispatch a hook event to all registered Lua handlers.
     DispatchHook {
         event: String,
@@ -50,7 +51,7 @@ pub enum LuaRequest {
     },
     /// Return all tools registered by Lua scripts.
     ListTools {
-        reply: oneshot::Sender<Vec<LuaTool>>,
+        reply: oneshot::Sender<Vec<ScriptTool>>,
     },
     /// Reload all scripts from disk.
     Reload {
@@ -70,12 +71,12 @@ pub struct ReloadResult {
 /// Async handle to the Hallucinate engine. Clone-friendly.
 #[derive(Clone)]
 pub struct HallucinateHandle {
-    tx: mpsc::Sender<LuaRequest>,
+    tx: mpsc::Sender<ScriptRequest>,
 }
 
 impl HallucinateHandle {
     /// Create a new handle from a channel sender.
-    pub fn new(tx: mpsc::Sender<LuaRequest>) -> Self {
+    pub fn new(tx: mpsc::Sender<ScriptRequest>) -> Self {
         Self { tx }
     }
 
@@ -83,7 +84,7 @@ impl HallucinateHandle {
     /// is unreachable (graceful degradation).
     pub async fn dispatch_hook(&self, event: &str, payload: JsonValue) -> HookResult {
         let (reply_tx, reply_rx) = oneshot::channel();
-        let req = LuaRequest::DispatchHook {
+        let req = ScriptRequest::DispatchHook {
             event: event.to_owned(),
             payload,
             reply: reply_tx,
@@ -97,7 +98,7 @@ impl HallucinateHandle {
     /// Call a Lua-defined tool by name.
     pub async fn call_tool(&self, name: &str, args: JsonValue) -> ToolResult {
         let (reply_tx, reply_rx) = oneshot::channel();
-        let req = LuaRequest::CallTool {
+        let req = ScriptRequest::CallTool {
             name: name.to_owned(),
             args,
             reply: reply_tx,
@@ -115,9 +116,9 @@ impl HallucinateHandle {
     }
 
     /// Get all tools registered by Lua scripts.
-    pub async fn list_tools(&self) -> Vec<LuaTool> {
+    pub async fn list_tools(&self) -> Vec<ScriptTool> {
         let (reply_tx, reply_rx) = oneshot::channel();
-        let req = LuaRequest::ListTools { reply: reply_tx };
+        let req = ScriptRequest::ListTools { reply: reply_tx };
         if self.tx.send(req).await.is_err() {
             return Vec::new();
         }
@@ -127,7 +128,7 @@ impl HallucinateHandle {
     /// Trigger a hot-reload of all scripts.
     pub async fn reload(&self) -> ReloadResult {
         let (reply_tx, reply_rx) = oneshot::channel();
-        let req = LuaRequest::Reload { reply: reply_tx };
+        let req = ScriptRequest::Reload { reply: reply_tx };
         if self.tx.send(req).await.is_err() {
             return ReloadResult {
                 scripts_loaded: 0,
@@ -142,6 +143,6 @@ impl HallucinateHandle {
 
     /// Request engine shutdown.
     pub async fn shutdown(&self) {
-        let _ = self.tx.send(LuaRequest::Shutdown).await;
+        let _ = self.tx.send(ScriptRequest::Shutdown).await;
     }
 }

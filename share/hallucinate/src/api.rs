@@ -11,7 +11,7 @@ use mlua::{Function, Lua, LuaSerdeExt, RegistryKey, Result as LuaResult, Table, 
 use serde_json::Value as JsonValue;
 use tracing;
 
-use crate::handle::LuaTool;
+use crate::handle::ScriptTool;
 
 /// Read-only session info injected into every script's `chaos` table.
 #[derive(Debug, Clone)]
@@ -28,7 +28,7 @@ pub struct ScriptRegistrations {
     /// Hook event name → list of Lua function registry keys.
     pub hooks: HashMap<String, Vec<RegistryKey>>,
     /// Tool name → (spec, handler registry key).
-    pub tools: HashMap<String, (LuaTool, RegistryKey)>,
+    pub tools: HashMap<String, (ScriptTool, RegistryKey)>,
 }
 
 impl ScriptRegistrations {
@@ -84,7 +84,7 @@ pub fn create_chaos_table(
             let schema_json = json_from_lua_value(lua, &input_schema)?;
             let handler_key = lua.create_registry_value(handler)?;
 
-            let tool = LuaTool {
+            let tool = ScriptTool {
                 name: name.clone(),
                 description,
                 input_schema: schema_json,

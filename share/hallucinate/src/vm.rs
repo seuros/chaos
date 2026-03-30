@@ -1,6 +1,6 @@
 //! Hallucinate engine — owns the Lua VM, runs on a dedicated thread.
 //!
-//! The engine receives `LuaRequest` messages via an mpsc channel and
+//! The engine receives `ScriptRequest` messages via an mpsc channel and
 //! dispatches them to the sandboxed Lua state. Each script gets its own
 //! `_ENV` table for namespace isolation.
 
@@ -16,7 +16,7 @@ use tracing;
 
 use crate::api::{self, ScriptRegistrations, SessionInfo};
 use crate::discovery;
-use crate::handle::{HallucinateHandle, HookResult, LuaRequest, LuaTool, ReloadResult, ToolResult};
+use crate::handle::{HallucinateHandle, HookResult, ScriptRequest, ScriptTool, ReloadResult, ToolResult};
 use crate::sandbox::{self, Deadline};
 
 /// Default per-invocation execution deadline.
@@ -36,7 +36,7 @@ pub struct HallucinateEngine {
     /// Hook event name → list of handler registry keys.
     hooks: HashMap<String, Vec<RegistryKey>>,
     /// Tool name → (spec, handler key).
-    tools: HashMap<String, (LuaTool, RegistryKey)>,
+    tools: HashMap<String, (ScriptTool, RegistryKey)>,
     /// Session info shared with scripts.
     info: Arc<SessionInfo>,
     /// Working directory (for script discovery).
@@ -196,7 +196,7 @@ impl HallucinateEngine {
     }
 
     /// List all tools registered by scripts.
-    fn list_tools(&self) -> Vec<LuaTool> {
+    fn list_tools(&self) -> Vec<ScriptTool> {
         self.tools.values().map(|(spec, _)| spec.clone()).collect()
     }
 
@@ -237,10 +237,10 @@ impl HallucinateEngine {
     }
 
     /// Run the engine recv loop. Blocks until shutdown.
-    pub fn run(mut self, mut rx: mpsc::Receiver<LuaRequest>) {
+    pub fn run(mut self, mut rx: mpsc::Receiver<ScriptRequest>) {
         while let Some(req) = rx.blocking_recv() {
             match req {
-                LuaRequest::DispatchHook {
+                ScriptRequest::DispatchHook {
                     event,
                     payload,
                     reply,
@@ -248,18 +248,18 @@ impl HallucinateEngine {
                     let result = self.dispatch_hook(&event, &payload);
                     let _ = reply.send(result);
                 }
-                LuaRequest::CallTool { name, args, reply } => {
+                ScriptRequest::CallTool { name, args, reply } => {
                     let result = self.call_tool(&name, &args);
                     let _ = reply.send(result);
                 }
-                LuaRequest::ListTools { reply } => {
+                ScriptRequest::ListTools { reply } => {
                     let _ = reply.send(self.list_tools());
                 }
-                LuaRequest::Reload { reply } => {
+                ScriptRequest::Reload { reply } => {
                     let result = self.reload();
                     let _ = reply.send(result);
                 }
-                LuaRequest::Shutdown => {
+                ScriptRequest::Shutdown => {
                     tracing::info!("hallucinate engine shutting down");
                     break;
                 }

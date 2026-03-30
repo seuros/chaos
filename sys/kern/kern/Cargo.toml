@@ -71,6 +71,7 @@ futures = { workspace = true }
 http = { workspace = true }
 iana-time-zone = { workspace = true }
 image = { workspace = true, features = ["jpeg", "png", "webp"] }
+inventory = { workspace = true }
 indexmap = { workspace = true }
 libc = { workspace = true }
 notify = { workspace = true }

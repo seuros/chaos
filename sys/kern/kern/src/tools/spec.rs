@@ -1828,7 +1828,18 @@ pub(crate) fn build_specs(
     app_tools: Option<HashMap<String, ToolInfo>>,
     dynamic_tools: &[DynamicToolSpec],
 ) -> ToolRegistryBuilder {
-    build_specs_with_discoverable_tools(config, mcp_tools, app_tools, None, dynamic_tools)
+    use chaos_traits::catalog::CatalogRegistration;
+    let catalog_tools: Vec<(String, chaos_traits::catalog::CatalogTool)> =
+        inventory::iter::<CatalogRegistration>
+            .into_iter()
+            .flat_map(|reg| {
+                let name = reg.name.to_string();
+                (reg.tools)()
+                    .into_iter()
+                    .map(move |t| (name.clone(), t))
+            })
+            .collect();
+    build_specs_with_discoverable_tools(config, mcp_tools, app_tools, None, dynamic_tools, catalog_tools)
 }
 
 pub(crate) fn build_specs_with_discoverable_tools(
@@ -1837,6 +1848,7 @@ pub(crate) fn build_specs_with_discoverable_tools(
     app_tools: Option<HashMap<String, ToolInfo>>,
     discoverable_tools: Option<Vec<DiscoverableTool>>,
     dynamic_tools: &[DynamicToolSpec],
+    catalog_tools: Vec<(String, chaos_traits::catalog::CatalogTool)>,
 ) -> ToolRegistryBuilder {
     use crate::minions::tools::CloseAgentHandler;
     use crate::minions::tools::ResumeAgentHandler;
@@ -2033,50 +2045,32 @@ pub(crate) fn build_specs_with_discoverable_tools(
         builder.register_handler("apply_patch", apply_patch_handler);
     }
 
-    // Arsenal tools — discovered from the arsenal crate at boot.
-    // Schemas come from #[mcp_tool] macros; the kernel never hand-builds them.
+    // Catalog tools — registered by modules (arsenal, cron, etc.) via inventory.
+    // The kernel does not import these crates for schema; it reads from the catalog.
+    // Sort by source then name for deterministic ordering (inventory iter order is linker-dependent).
     {
         let arsenal_handler = Arc::new(ArsenalHandler);
-        for info in chaos_arsenal::tools::tool_infos() {
-            let input_schema = parse_tool_input_schema(&info.input_schema)
-                .unwrap_or_else(|e| panic!("arsenal tool {} has invalid schema: {e}", info.name));
-            let spec = ToolSpec::Function(ResponsesApiTool {
-                name: info.name.clone(),
-                description: info.description.unwrap_or_default(),
-                strict: false,
-                defer_loading: None,
-                parameters: input_schema,
-                output_schema: None,
-            });
-            push_tool_spec(
-                &mut builder,
-                spec,
-                /*supports_parallel_tool_calls*/ true,
-            );
-            builder.register_handler(&info.name, arsenal_handler.clone());
-        }
-    }
-
-    // Cron tools — discovered from the cron crate at boot.
-    {
         let cron_handler = Arc::new(CronHandler);
-        for info in chaos_cron::tool_infos() {
-            let input_schema = parse_tool_input_schema(&info.input_schema)
-                .unwrap_or_else(|e| panic!("cron tool {} has invalid schema: {e}", info.name));
+        let mut catalog_tools = catalog_tools;
+        catalog_tools.sort_by(|(sa, _), (sb, _)| sa.cmp(sb));
+        for (source, tool) in catalog_tools {
+            let input_schema = parse_tool_input_schema(&tool.input_schema)
+                .unwrap_or_else(|e| panic!("catalog tool {} has invalid schema: {e}", tool.name));
             let spec = ToolSpec::Function(ResponsesApiTool {
-                name: info.name.clone(),
-                description: info.description.unwrap_or_default(),
+                name: tool.name.clone(),
+                description: tool.description,
                 strict: false,
                 defer_loading: None,
                 parameters: input_schema,
                 output_schema: None,
             });
-            push_tool_spec(
-                &mut builder,
-                spec,
-                /*supports_parallel_tool_calls*/ false,
-            );
-            builder.register_handler(&info.name, cron_handler.clone());
+            let parallel = source != "cron";
+            push_tool_spec(&mut builder, spec, parallel);
+            match source.as_str() {
+                "arsenal" => builder.register_handler(&tool.name, arsenal_handler.clone()),
+                "cron" => builder.register_handler(&tool.name, cron_handler.clone()),
+                _ => builder.register_handler(&tool.name, arsenal_handler.clone()),
+            }
         }
     }
 

@@ -11,6 +11,7 @@ mod apply_patch;
 mod arc_monitor;
 pub mod auth;
 pub mod builtin_mcp_resources;
+pub(crate) mod catalog;
 mod client;
 mod client_common;
 #[path = "codex.rs"]

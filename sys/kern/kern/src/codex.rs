@@ -1636,6 +1636,9 @@ impl Session {
         }
 
         let services = SessionServices {
+            catalog: Arc::new(std::sync::RwLock::new(
+                crate::catalog::Catalog::from_inventory(),
+            )),
             // Initialize the MCP connection manager with an uninitialized
             // instance. It will be replaced with one created via
             // McpConnectionManager::new() once all its constructor args are
@@ -1777,6 +1780,22 @@ impl Session {
         {
             let mut manager_guard = sess.services.mcp_connection_manager.write().await;
             *manager_guard = mcp_connection_manager;
+        }
+        // Sync MCP tools into the catalog.
+        {
+            let mcp_mgr = sess.services.mcp_connection_manager.read().await;
+            let mcp_tools = mcp_mgr.list_all_tools().await;
+            let mut catalog = sess
+                .services
+                .catalog
+                .write()
+                .unwrap_or_else(std::sync::PoisonError::into_inner);
+            for (_fq_name, tool_info) in &mcp_tools {
+                catalog.register_mcp_tools(
+                    &tool_info.server_name,
+                    vec![crate::catalog::mcp_tool_info_to_catalog_tool(tool_info)],
+                );
+            }
         }
         {
             let mut cancel_guard = sess.services.mcp_startup_cancellation_token.lock().await;
@@ -3791,6 +3810,24 @@ impl Session {
 
         let mut manager = self.services.mcp_connection_manager.write().await;
         *manager = refreshed_manager;
+
+        // Re-sync MCP tools into catalog after refresh.
+        let mcp_tools = manager.list_all_tools().await;
+        {
+            let mut catalog = self
+                .services
+                .catalog
+                .write()
+                .unwrap_or_else(std::sync::PoisonError::into_inner);
+            // Clear all previous MCP entries and re-register.
+            catalog.clear_all_mcp();
+            for (_fq_name, tool_info) in &mcp_tools {
+                catalog.register_mcp_tools(
+                    &tool_info.server_name,
+                    vec![crate::catalog::mcp_tool_info_to_catalog_tool(tool_info)],
+                );
+            }
+        }
     }
 
     async fn refresh_mcp_servers_if_requested(&self, turn_context: &TurnContext) {
@@ -5850,6 +5887,35 @@ pub(crate) async fn built_tools(
         .await?;
     drop(mcp_connection_manager);
 
+    // Read static module tools from the catalog.
+    let catalog_tools = {
+        let catalog = sess
+            .services
+            .catalog
+            .read()
+            .unwrap_or_else(std::sync::PoisonError::into_inner);
+        catalog
+            .tools()
+            .iter()
+            .filter(|(s, _)| matches!(s, crate::catalog::CatalogSource::Module(_)))
+            .map(|(s, t)| {
+                let source_name = match s {
+                    crate::catalog::CatalogSource::Module(name) => name.clone(),
+                    crate::catalog::CatalogSource::Mcp(name) => name.clone(),
+                };
+                (
+                    source_name,
+                    chaos_traits::catalog::CatalogTool {
+                        name: t.name.clone(),
+                        description: t.description.clone(),
+                        input_schema: t.input_schema.clone(),
+                        annotations: t.annotations.clone(),
+                    },
+                )
+            })
+            .collect::<Vec<_>>()
+    };
+
     Ok(Arc::new(ToolRouter::from_config(
         &turn_context.tools_config,
         ToolRouterParams {
@@ -5862,6 +5928,7 @@ pub(crate) async fn built_tools(
             app_tools: None,
             discoverable_tools: None,
             dynamic_tools: turn_context.dynamic_tools.as_slice(),
+            catalog_tools,
         },
     )))
 }

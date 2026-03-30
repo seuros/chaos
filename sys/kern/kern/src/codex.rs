@@ -1769,6 +1769,7 @@ impl Session {
             tx_event.clone(),
             sandbox_state,
             config.chaos_home.clone(),
+            Arc::clone(&sess.services.catalog),
         )
         .instrument(info_span!(
             "session_init.mcp_manager_init",
@@ -3798,6 +3799,7 @@ impl Session {
             self.get_tx_event(),
             sandbox_state,
             config.chaos_home.clone(),
+            Arc::clone(&self.services.catalog),
         )
         .await;
         {

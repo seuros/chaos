@@ -259,6 +259,8 @@ struct ChaosClientHandler {
     /// The session is set after connect. We need it for re-listing tools
     /// when the server sends a tools/list_changed notification.
     session: Arc<tokio::sync::RwLock<Option<McpSession>>>,
+    /// Shared catalog for updating on list_changed notifications.
+    catalog: Arc<StdRwLock<crate::catalog::Catalog>>,
 }
 
 impl ClientHandler for ChaosClientHandler {
@@ -347,7 +349,20 @@ impl ClientHandler for ChaosClientHandler {
             .await
             {
                 Ok(tools) => {
+                    // Update the per-server tool store (used by ToolRouter).
                     store_managed_tools(&self.tool_filter, &self.tools_arc, tools);
+
+                    // Sync to catalog: drop old entries, re-register from the refreshed store.
+                    if let Ok(store) = self.tools_arc.read() {
+                        let catalog_tools: Vec<_> = store
+                            .iter()
+                            .map(crate::catalog::mcp_tool_info_to_catalog_tool)
+                            .collect();
+                        if let Ok(mut catalog) = self.catalog.write() {
+                            catalog.unregister_mcp(&self.server_name);
+                            catalog.register_mcp_tools(&self.server_name, catalog_tools);
+                        }
+                    }
                 }
                 Err(err) => {
                     warn!(
@@ -355,6 +370,80 @@ impl ClientHandler for ChaosClientHandler {
                         self.server_name
                     );
                 }
+            }
+        })
+    }
+
+    fn on_resources_list_changed(&self) -> ClientHandlerFuture<'_> {
+        Box::pin(async move {
+            let session_guard = self.session.read().await;
+            let Some(session) = session_guard.as_ref() else {
+                return;
+            };
+
+            // Re-list resources and resource templates from the server.
+            let resources = match session.list_resources().await {
+                Ok(list) => list
+                    .iter()
+                    .map(crate::catalog::mcp_resource_to_catalog)
+                    .collect(),
+                Err(err) => {
+                    warn!(
+                        "Failed to refresh resource list for '{}': {err}",
+                        self.server_name
+                    );
+                    return;
+                }
+            };
+
+            let templates = match session.list_resource_templates().await {
+                Ok(list) => list
+                    .iter()
+                    .map(crate::catalog::mcp_resource_template_to_catalog)
+                    .collect(),
+                Err(err) => {
+                    warn!(
+                        "Failed to refresh resource template list for '{}': {err}",
+                        self.server_name
+                    );
+                    Vec::new()
+                }
+            };
+
+            if let Ok(mut catalog) = self.catalog.write() {
+                // Unregister clears tools+resources+templates+prompts for the server,
+                // so we only clear resources/templates selectively here.
+                catalog.unregister_mcp_resources(&self.server_name);
+                catalog.register_mcp_resources(&self.server_name, resources);
+                catalog.register_mcp_resource_templates(&self.server_name, templates);
+            }
+        })
+    }
+
+    fn on_prompts_list_changed(&self) -> ClientHandlerFuture<'_> {
+        Box::pin(async move {
+            let session_guard = self.session.read().await;
+            let Some(session) = session_guard.as_ref() else {
+                return;
+            };
+
+            let prompts = match session.list_prompts().await {
+                Ok(result) => result
+                    .iter()
+                    .map(crate::catalog::mcp_prompt_to_catalog)
+                    .collect(),
+                Err(err) => {
+                    warn!(
+                        "Failed to refresh prompt list for '{}': {err}",
+                        self.server_name
+                    );
+                    return;
+                }
+            };
+
+            if let Ok(mut catalog) = self.catalog.write() {
+                catalog.unregister_mcp_prompts(&self.server_name);
+                catalog.register_mcp_prompts(&self.server_name, prompts);
             }
         })
     }
@@ -445,6 +534,7 @@ impl AsyncManagedClient {
         cancel_token: CancellationToken,
         tx_event: Sender<Event>,
         elicitation_requests: ElicitationRequestManager,
+        catalog: Arc<StdRwLock<crate::catalog::Catalog>>,
     ) -> Self {
         let tool_filter = ToolFilter::from_config(&config);
         let startup_tool_filter = tool_filter;
@@ -463,6 +553,7 @@ impl AsyncManagedClient {
                         tool_filter: startup_tool_filter,
                         tx_event,
                         elicitation_requests,
+                        catalog,
                     },
                 )
                 .or_cancel(&cancel_token)
@@ -570,6 +661,7 @@ impl McpConnectionManager {
         tx_event: Sender<Event>,
         initial_sandbox_state: SandboxState,
         _codex_home: PathBuf,
+        catalog: Arc<StdRwLock<crate::catalog::Catalog>>,
     ) -> (Self, CancellationToken) {
         let cancel_token = CancellationToken::new();
         let mut clients = HashMap::new();
@@ -597,6 +689,7 @@ impl McpConnectionManager {
                 cancel_token.clone(),
                 tx_event.clone(),
                 elicitation_requests.clone(),
+                Arc::clone(&catalog),
             );
             clients.insert(server_name.clone(), async_managed_client.clone());
             let tx_event = tx_event.clone();
@@ -1104,6 +1197,7 @@ struct MakeClientParams {
     tool_filter: ToolFilter,
     tx_event: Sender<Event>,
     elicitation_requests: ElicitationRequestManager,
+    catalog: Arc<StdRwLock<crate::catalog::Catalog>>,
 }
 
 /// Build an env HashMap for a stdio MCP server child process.
@@ -1157,6 +1251,7 @@ async fn make_managed_client(
         tool_filter,
         tx_event,
         elicitation_requests,
+        catalog,
     } = params;
 
     let tool_timeout = config.tool_timeout_sec.unwrap_or(DEFAULT_TOOL_TIMEOUT);
@@ -1174,6 +1269,7 @@ async fn make_managed_client(
         tool_filter: tool_filter.clone(),
         tool_timeout,
         session: Arc::clone(&session_holder),
+        catalog,
     };
 
     let client_info = mcp_guest::protocol::Implementation::new(

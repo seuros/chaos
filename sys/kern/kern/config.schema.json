@@ -201,10 +201,9 @@
       "type": "object"
     },
     "ApprovalsReviewer": {
-      "description": "Configures who approval requests are routed to for review. Examples\ninclude sandbox escapes, blocked network access, MCP approval prompts, and\nARC escalations. Defaults to `user`. `guardian_subagent` uses a carefully\nprompted subagent to gather relevant context and apply a risk-based\ndecision framework before approving or denying the request.",
+      "description": "Configures who approval requests are routed to for review. Examples\ninclude sandbox escapes, blocked network access, MCP approval prompts, and\nARC escalations. Currently only `user` is supported.",
       "enum": [
-        "user",
-        "guardian_subagent"
+        "user"
       ],
       "type": "string"
     },
@@ -389,9 +388,6 @@
             "apply_patch_freeform": {
               "type": "boolean"
             },
-            "apps": {
-              "type": "boolean"
-            },
             "artifact": {
               "type": "boolean"
             },
@@ -405,12 +401,6 @@
               "type": "boolean"
             },
             "collab": {
-              "type": "boolean"
-            },
-            "collaboration_modes": {
-              "type": "boolean"
-            },
-            "connectors": {
               "type": "boolean"
             },
             "default_mode_request_user_input": {
@@ -432,9 +422,6 @@
               "type": "boolean"
             },
             "fast_mode": {
-              "type": "boolean"
-            },
-            "guardian_approval": {
               "type": "boolean"
             },
             "image_detail_original": {
@@ -461,16 +448,10 @@
             "prevent_idle_sleep": {
               "type": "boolean"
             },
-            "remote_models": {
-              "type": "boolean"
-            },
             "request_permissions": {
               "type": "boolean"
             },
             "request_permissions_tool": {
-              "type": "boolean"
-            },
-            "request_rule": {
               "type": "boolean"
             },
             "responses_websockets": {
@@ -480,9 +461,6 @@
               "type": "boolean"
             },
             "runtime_metrics": {
-              "type": "boolean"
-            },
-            "search_tool": {
               "type": "boolean"
             },
             "shell_snapshot": {
@@ -500,12 +478,6 @@
             "skill_mcp_dependency_install": {
               "type": "boolean"
             },
-            "sqlite": {
-              "type": "boolean"
-            },
-            "steer": {
-              "type": "boolean"
-            },
             "tool_call_mcp_elicitation": {
               "type": "boolean"
             },
@@ -516,21 +488,6 @@
               "type": "boolean"
             },
             "unified_exec": {
-              "type": "boolean"
-            },
-            "use_legacy_landlock": {
-              "type": "boolean"
-            },
-            "use_linux_sandbox_bwrap": {
-              "type": "boolean"
-            },
-            "web_search": {
-              "type": "boolean"
-            },
-            "web_search_cached": {
-              "type": "boolean"
-            },
-            "web_search_request": {
               "type": "boolean"
             }
           },
@@ -2374,9 +2331,6 @@
         "apply_patch_freeform": {
           "type": "boolean"
         },
-        "apps": {
-          "type": "boolean"
-        },
         "artifact": {
           "type": "boolean"
         },
@@ -2390,12 +2344,6 @@
           "type": "boolean"
         },
         "collab": {
-          "type": "boolean"
-        },
-        "collaboration_modes": {
-          "type": "boolean"
-        },
-        "connectors": {
           "type": "boolean"
         },
         "default_mode_request_user_input": {
@@ -2417,9 +2365,6 @@
           "type": "boolean"
         },
         "fast_mode": {
-          "type": "boolean"
-        },
-        "guardian_approval": {
           "type": "boolean"
         },
         "image_detail_original": {
@@ -2446,16 +2391,10 @@
         "prevent_idle_sleep": {
           "type": "boolean"
         },
-        "remote_models": {
-          "type": "boolean"
-        },
         "request_permissions": {
           "type": "boolean"
         },
         "request_permissions_tool": {
-          "type": "boolean"
-        },
-        "request_rule": {
           "type": "boolean"
         },
         "responses_websockets": {
@@ -2465,9 +2404,6 @@
           "type": "boolean"
         },
         "runtime_metrics": {
-          "type": "boolean"
-        },
-        "search_tool": {
           "type": "boolean"
         },
         "shell_snapshot": {
@@ -2485,12 +2421,6 @@
         "skill_mcp_dependency_install": {
           "type": "boolean"
         },
-        "sqlite": {
-          "type": "boolean"
-        },
-        "steer": {
-          "type": "boolean"
-        },
         "tool_call_mcp_elicitation": {
           "type": "boolean"
         },
@@ -2501,21 +2431,6 @@
           "type": "boolean"
         },
         "unified_exec": {
-          "type": "boolean"
-        },
-        "use_legacy_landlock": {
-          "type": "boolean"
-        },
-        "use_linux_sandbox_bwrap": {
-          "type": "boolean"
-        },
-        "web_search": {
-          "type": "boolean"
-        },
-        "web_search_cached": {
-          "type": "boolean"
-        },
-        "web_search_request": {
           "type": "boolean"
         }
       },

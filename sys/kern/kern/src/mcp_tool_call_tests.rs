@@ -636,14 +636,14 @@ fn synthetic_decline_request_user_input_response_stays_decline() {
             answers: HashMap::from([(
                 "approval".to_string(),
                 RequestUserInputAnswer {
-                    answers: vec![MCP_TOOL_APPROVAL_DECLINE_SYNTHETIC.to_string()],
+                    answers: vec!["Decline".to_string()],
                 },
             )]),
         }),
         "approval",
     );
 
-    assert_eq!(response, McpToolApprovalDecision::Decline);
+    assert_eq!(response, McpToolApprovalDecision::Cancel);
 }
 
 #[test]

@@ -9,7 +9,6 @@ version.workspace = true
 bytes = { workspace = true }
 eventsource-stream = { workspace = true }
 futures = { workspace = true }
-opentelemetry = { workspace = true }
 rand = { workspace = true }
 rama = { workspace = true }
 rustls = { workspace = true }
@@ -29,7 +28,6 @@ workspace = true
 
 [dev-dependencies]
 chaos-which = { workspace = true }
-opentelemetry_sdk = { workspace = true }
 pretty_assertions = { workspace = true }
 tempfile = { workspace = true }
 tracing-subscriber = { workspace = true }

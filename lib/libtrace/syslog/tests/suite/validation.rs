@@ -2,7 +2,7 @@ use chaos_syslog::metrics::MetricsClient;
 use chaos_syslog::metrics::MetricsConfig;
 use chaos_syslog::metrics::MetricsError;
 use chaos_syslog::metrics::Result;
-use opentelemetry_sdk::metrics::InMemoryMetricExporter;
+use rama::telemetry::opentelemetry::sdk::metrics::InMemoryMetricExporter;
 
 fn build_in_memory_client() -> Result<MetricsClient> {
     let exporter = InMemoryMetricExporter::default();

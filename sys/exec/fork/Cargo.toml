@@ -52,11 +52,10 @@ chaos-diff = { workspace = true }
 chaos-which = { workspace = true }
 core_test_support = { workspace = true }
 libc = { workspace = true }
-opentelemetry = { workspace = true }
-opentelemetry_sdk = { workspace = true }
 predicates = { workspace = true }
 pretty_assertions = { workspace = true }
 mcp-guest = { workspace = true }
+rama = { workspace = true }
 tempfile = { workspace = true }
 tracing-opentelemetry = { workspace = true }
 uuid = { workspace = true }

@@ -3,12 +3,12 @@
 use chaos_syslog::metrics::MetricsClient;
 use chaos_syslog::metrics::MetricsConfig;
 use chaos_syslog::metrics::Result;
-use opentelemetry::KeyValue;
-use opentelemetry_sdk::metrics::InMemoryMetricExporter;
-use opentelemetry_sdk::metrics::data::AggregatedMetrics;
-use opentelemetry_sdk::metrics::data::Metric;
-use opentelemetry_sdk::metrics::data::MetricData;
-use opentelemetry_sdk::metrics::data::ResourceMetrics;
+use rama::telemetry::opentelemetry::KeyValue;
+use rama::telemetry::opentelemetry::sdk::metrics::InMemoryMetricExporter;
+use rama::telemetry::opentelemetry::sdk::metrics::data::AggregatedMetrics;
+use rama::telemetry::opentelemetry::sdk::metrics::data::Metric;
+use rama::telemetry::opentelemetry::sdk::metrics::data::MetricData;
+use rama::telemetry::opentelemetry::sdk::metrics::data::ResourceMetrics;
 use std::collections::BTreeMap;
 
 pub(crate) fn build_metrics_with_defaults(

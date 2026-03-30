@@ -8,10 +8,10 @@ use chaos_syslog::metrics::MetricsClient;
 use chaos_syslog::metrics::MetricsConfig;
 use chaos_syslog::metrics::Result;
 use eventsource_stream::Event as StreamEvent;
-use opentelemetry_sdk::metrics::InMemoryMetricExporter;
 use pretty_assertions::assert_eq;
 use rama::error::BoxError;
 use rama::http::ws::Message;
+use rama::telemetry::opentelemetry::sdk::metrics::InMemoryMetricExporter;
 use std::time::Duration;
 
 #[test]

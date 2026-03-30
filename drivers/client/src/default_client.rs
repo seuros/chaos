@@ -1,6 +1,4 @@
 use bytes::Bytes;
-use opentelemetry::global;
-use opentelemetry::propagation::Injector;
 use rama::Service;
 use rama::error::extra::OpaqueError;
 use rama::http::Body;
@@ -11,6 +9,8 @@ use rama::http::HttpError;
 use rama::http::Method;
 use rama::http::body::util::BodyExt;
 use rama::service::BoxService;
+use rama::telemetry::opentelemetry::global;
+use rama::telemetry::opentelemetry::propagation::Injector;
 use serde::Serialize;
 use std::fmt::Display;
 use std::sync::Arc;
@@ -257,12 +257,12 @@ fn inject_trace_headers(headers: &mut HeaderMap) {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use opentelemetry::propagation::Extractor;
-    use opentelemetry::propagation::TextMapPropagator;
-    use opentelemetry::trace::TraceContextExt;
-    use opentelemetry::trace::TracerProvider;
-    use opentelemetry_sdk::propagation::TraceContextPropagator;
-    use opentelemetry_sdk::trace::SdkTracerProvider;
+    use rama::telemetry::opentelemetry::propagation::Extractor;
+    use rama::telemetry::opentelemetry::propagation::TextMapPropagator;
+    use rama::telemetry::opentelemetry::sdk::propagation::TraceContextPropagator;
+    use rama::telemetry::opentelemetry::sdk::trace::SdkTracerProvider;
+    use rama::telemetry::opentelemetry::trace::TraceContextExt;
+    use rama::telemetry::opentelemetry::trace::TracerProvider;
     use tracing::trace_span;
     use tracing_subscriber::layer::SubscriberExt;
     use tracing_subscriber::util::SubscriberInitExt;

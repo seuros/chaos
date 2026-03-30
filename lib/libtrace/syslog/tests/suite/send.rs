@@ -21,15 +21,17 @@ fn send_builds_payload_with_tags_and_histograms() -> Result<()> {
 
     let counter = find_metric(&resource_metrics, "codex.turns").expect("counter metric missing");
     let counter_attributes = match counter.data() {
-        opentelemetry_sdk::metrics::data::AggregatedMetrics::U64(data) => match data {
-            opentelemetry_sdk::metrics::data::MetricData::Sum(sum) => {
-                let points: Vec<_> = sum.data_points().collect();
-                assert_eq!(points.len(), 1);
-                assert_eq!(points[0].value(), 1);
-                attributes_to_map(points[0].attributes())
+        rama::telemetry::opentelemetry::sdk::metrics::data::AggregatedMetrics::U64(data) => {
+            match data {
+                rama::telemetry::opentelemetry::sdk::metrics::data::MetricData::Sum(sum) => {
+                    let points: Vec<_> = sum.data_points().collect();
+                    assert_eq!(points.len(), 1);
+                    assert_eq!(points[0].value(), 1);
+                    attributes_to_map(points[0].attributes())
+                }
+                _ => panic!("unexpected counter aggregation"),
             }
-            _ => panic!("unexpected counter aggregation"),
-        },
+        }
         _ => panic!("unexpected counter data type"),
     };
 
@@ -50,12 +52,12 @@ fn send_builds_payload_with_tags_and_histograms() -> Result<()> {
     let histogram_attrs = attributes_to_map(
         match find_metric(&resource_metrics, "codex.tool_latency").and_then(|metric| {
             match metric.data() {
-                opentelemetry_sdk::metrics::data::AggregatedMetrics::F64(
-                    opentelemetry_sdk::metrics::data::MetricData::Histogram(histogram),
+                rama::telemetry::opentelemetry::sdk::metrics::data::AggregatedMetrics::F64(
+                    rama::telemetry::opentelemetry::sdk::metrics::data::MetricData::Histogram(histogram),
                 ) => histogram
                     .data_points()
                     .next()
-                    .map(opentelemetry_sdk::metrics::data::HistogramDataPoint::attributes),
+                    .map(rama::telemetry::opentelemetry::sdk::metrics::data::HistogramDataPoint::attributes),
                 _ => None,
             }
         }) {
@@ -94,14 +96,16 @@ fn send_merges_default_tags_per_line() -> Result<()> {
     let alpha_metric =
         find_metric(&resource_metrics, "codex.alpha").expect("codex.alpha metric missing");
     let alpha_point = match alpha_metric.data() {
-        opentelemetry_sdk::metrics::data::AggregatedMetrics::U64(data) => match data {
-            opentelemetry_sdk::metrics::data::MetricData::Sum(sum) => {
-                let points: Vec<_> = sum.data_points().collect();
-                assert_eq!(points.len(), 1);
-                points[0]
+        rama::telemetry::opentelemetry::sdk::metrics::data::AggregatedMetrics::U64(data) => {
+            match data {
+                rama::telemetry::opentelemetry::sdk::metrics::data::MetricData::Sum(sum) => {
+                    let points: Vec<_> = sum.data_points().collect();
+                    assert_eq!(points.len(), 1);
+                    points[0]
+                }
+                _ => panic!("unexpected counter aggregation"),
             }
-            _ => panic!("unexpected counter aggregation"),
-        },
+        }
         _ => panic!("unexpected counter data type"),
     };
     assert_eq!(alpha_point.value(), 1);
@@ -117,14 +121,16 @@ fn send_merges_default_tags_per_line() -> Result<()> {
     let beta_metric =
         find_metric(&resource_metrics, "codex.beta").expect("codex.beta metric missing");
     let beta_point = match beta_metric.data() {
-        opentelemetry_sdk::metrics::data::AggregatedMetrics::U64(data) => match data {
-            opentelemetry_sdk::metrics::data::MetricData::Sum(sum) => {
-                let points: Vec<_> = sum.data_points().collect();
-                assert_eq!(points.len(), 1);
-                points[0]
+        rama::telemetry::opentelemetry::sdk::metrics::data::AggregatedMetrics::U64(data) => {
+            match data {
+                rama::telemetry::opentelemetry::sdk::metrics::data::MetricData::Sum(sum) => {
+                    let points: Vec<_> = sum.data_points().collect();
+                    assert_eq!(points.len(), 1);
+                    points[0]
+                }
+                _ => panic!("unexpected counter aggregation"),
             }
-            _ => panic!("unexpected counter aggregation"),
-        },
+        }
         _ => panic!("unexpected counter data type"),
     };
     assert_eq!(beta_point.value(), 2);
@@ -151,12 +157,14 @@ fn client_sends_enqueued_metric() -> Result<()> {
     let resource_metrics = latest_metrics(&exporter);
     let counter = find_metric(&resource_metrics, "codex.turns").expect("counter metric missing");
     let points = match counter.data() {
-        opentelemetry_sdk::metrics::data::AggregatedMetrics::U64(data) => match data {
-            opentelemetry_sdk::metrics::data::MetricData::Sum(sum) => {
-                sum.data_points().collect::<Vec<_>>()
+        rama::telemetry::opentelemetry::sdk::metrics::data::AggregatedMetrics::U64(data) => {
+            match data {
+                rama::telemetry::opentelemetry::sdk::metrics::data::MetricData::Sum(sum) => {
+                    sum.data_points().collect::<Vec<_>>()
+                }
+                _ => panic!("unexpected counter aggregation"),
             }
-            _ => panic!("unexpected counter aggregation"),
-        },
+        }
         _ => panic!("unexpected counter data type"),
     };
     assert_eq!(points.len(), 1);
@@ -179,12 +187,14 @@ fn shutdown_flushes_in_memory_exporter() -> Result<()> {
     let resource_metrics = latest_metrics(&exporter);
     let counter = find_metric(&resource_metrics, "codex.turns").expect("counter metric missing");
     let points = match counter.data() {
-        opentelemetry_sdk::metrics::data::AggregatedMetrics::U64(data) => match data {
-            opentelemetry_sdk::metrics::data::MetricData::Sum(sum) => {
-                sum.data_points().collect::<Vec<_>>()
+        rama::telemetry::opentelemetry::sdk::metrics::data::AggregatedMetrics::U64(data) => {
+            match data {
+                rama::telemetry::opentelemetry::sdk::metrics::data::MetricData::Sum(sum) => {
+                    sum.data_points().collect::<Vec<_>>()
+                }
+                _ => panic!("unexpected counter aggregation"),
             }
-            _ => panic!("unexpected counter aggregation"),
-        },
+        }
         _ => panic!("unexpected counter data type"),
     };
     assert_eq!(points.len(), 1);

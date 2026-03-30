@@ -1,15 +1,15 @@
 use chaos_syslog::OtelProvider;
 use chaos_syslog::SessionTelemetry;
 use chaos_syslog::TelemetryAuthMode;
-use opentelemetry::KeyValue;
-use opentelemetry::logs::AnyValue;
-use opentelemetry::trace::TracerProvider as _;
-use opentelemetry_sdk::logs::InMemoryLogExporter;
-use opentelemetry_sdk::logs::SdkLogRecord;
-use opentelemetry_sdk::logs::SdkLoggerProvider;
-use opentelemetry_sdk::trace::InMemorySpanExporter;
-use opentelemetry_sdk::trace::SdkTracerProvider;
 use pretty_assertions::assert_eq;
+use rama::telemetry::opentelemetry::KeyValue;
+use rama::telemetry::opentelemetry::logs::AnyValue;
+use rama::telemetry::opentelemetry::sdk::logs::InMemoryLogExporter;
+use rama::telemetry::opentelemetry::sdk::logs::SdkLogRecord;
+use rama::telemetry::opentelemetry::sdk::logs::SdkLoggerProvider;
+use rama::telemetry::opentelemetry::sdk::trace::InMemorySpanExporter;
+use rama::telemetry::opentelemetry::sdk::trace::SdkTracerProvider;
+use rama::telemetry::opentelemetry::trace::TracerProvider as _;
 use std::borrow::Cow;
 use std::collections::BTreeMap;
 use std::path::PathBuf;
@@ -28,7 +28,9 @@ fn log_attributes(record: &SdkLogRecord) -> BTreeMap<String, String> {
         .collect()
 }
 
-fn span_event_attributes(event: &opentelemetry::trace::Event) -> BTreeMap<String, String> {
+fn span_event_attributes(
+    event: &rama::telemetry::opentelemetry::trace::Event,
+) -> BTreeMap<String, String> {
     event
         .attributes
         .iter()
@@ -50,9 +52,9 @@ fn any_value_to_string(value: &AnyValue) -> String {
 }
 
 fn find_log_by_event_name<'a>(
-    logs: &'a [opentelemetry_sdk::logs::in_memory_exporter::LogDataWithResource],
+    logs: &'a [rama::telemetry::opentelemetry::sdk::logs::in_memory_exporter::LogDataWithResource],
     event_name: &str,
-) -> &'a opentelemetry_sdk::logs::in_memory_exporter::LogDataWithResource {
+) -> &'a rama::telemetry::opentelemetry::sdk::logs::in_memory_exporter::LogDataWithResource {
     logs.iter()
         .find(|log| {
             log_attributes(&log.record)
@@ -63,9 +65,9 @@ fn find_log_by_event_name<'a>(
 }
 
 fn find_span_event_by_name_attr<'a>(
-    events: &'a [opentelemetry::trace::Event],
+    events: &'a [rama::telemetry::opentelemetry::trace::Event],
     event_name: &str,
-) -> &'a opentelemetry::trace::Event {
+) -> &'a rama::telemetry::opentelemetry::trace::Event {
     events
         .iter()
         .find(|event| {

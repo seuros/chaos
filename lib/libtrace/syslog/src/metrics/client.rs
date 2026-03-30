@@ -10,11 +10,6 @@ use crate::metrics::validation::validate_tag_key;
 use crate::metrics::validation::validate_tag_value;
 use crate::metrics::validation::validate_tags;
 use chaos_wchar::sanitize_metric_tag_value;
-use opentelemetry::KeyValue;
-use opentelemetry::metrics::Counter;
-use opentelemetry::metrics::Histogram;
-use opentelemetry::metrics::Meter;
-use opentelemetry::metrics::MeterProvider as _;
 use opentelemetry_otlp::OTEL_EXPORTER_OTLP_METRICS_TIMEOUT;
 use opentelemetry_otlp::Protocol;
 use opentelemetry_otlp::WithExportConfig;
@@ -22,16 +17,21 @@ use opentelemetry_otlp::WithHttpConfig;
 use opentelemetry_otlp::WithTonicConfig;
 use opentelemetry_otlp::tonic_types::metadata::MetadataMap;
 use opentelemetry_otlp::tonic_types::transport::ClientTlsConfig;
-use opentelemetry_sdk::Resource;
-use opentelemetry_sdk::metrics::InstrumentKind;
-use opentelemetry_sdk::metrics::ManualReader;
-use opentelemetry_sdk::metrics::PeriodicReader;
-use opentelemetry_sdk::metrics::Pipeline;
-use opentelemetry_sdk::metrics::SdkMeterProvider;
-use opentelemetry_sdk::metrics::Temporality;
-use opentelemetry_sdk::metrics::data::ResourceMetrics;
-use opentelemetry_sdk::metrics::reader::MetricReader;
-use opentelemetry_semantic_conventions as semconv;
+use rama::telemetry::opentelemetry::KeyValue;
+use rama::telemetry::opentelemetry::metrics::Counter;
+use rama::telemetry::opentelemetry::metrics::Histogram;
+use rama::telemetry::opentelemetry::metrics::Meter;
+use rama::telemetry::opentelemetry::metrics::MeterProvider as _;
+use rama::telemetry::opentelemetry::sdk::Resource;
+use rama::telemetry::opentelemetry::sdk::metrics::InstrumentKind;
+use rama::telemetry::opentelemetry::sdk::metrics::ManualReader;
+use rama::telemetry::opentelemetry::sdk::metrics::PeriodicReader;
+use rama::telemetry::opentelemetry::sdk::metrics::Pipeline;
+use rama::telemetry::opentelemetry::sdk::metrics::SdkMeterProvider;
+use rama::telemetry::opentelemetry::sdk::metrics::Temporality;
+use rama::telemetry::opentelemetry::sdk::metrics::data::ResourceMetrics;
+use rama::telemetry::opentelemetry::sdk::metrics::reader::MetricReader;
+use rama::telemetry::opentelemetry::semantic_conventions as semconv;
 use std::collections::BTreeMap;
 use std::collections::HashMap;
 use std::sync::Arc;
@@ -61,15 +61,21 @@ impl MetricReader for SharedManualReader {
         self.inner.register_pipeline(pipeline);
     }
 
-    fn collect(&self, rm: &mut ResourceMetrics) -> opentelemetry_sdk::error::OTelSdkResult {
+    fn collect(
+        &self,
+        rm: &mut ResourceMetrics,
+    ) -> rama::telemetry::opentelemetry::sdk::error::OTelSdkResult {
         self.inner.collect(rm)
     }
 
-    fn force_flush(&self) -> opentelemetry_sdk::error::OTelSdkResult {
+    fn force_flush(&self) -> rama::telemetry::opentelemetry::sdk::error::OTelSdkResult {
         self.inner.force_flush()
     }
 
-    fn shutdown_with_timeout(&self, timeout: Duration) -> opentelemetry_sdk::error::OTelSdkResult {
+    fn shutdown_with_timeout(
+        &self,
+        timeout: Duration,
+    ) -> rama::telemetry::opentelemetry::sdk::error::OTelSdkResult {
         self.inner.shutdown_with_timeout(timeout)
     }
 
@@ -313,7 +319,7 @@ fn build_provider<E>(
     runtime_reader: Option<Arc<ManualReader>>,
 ) -> (SdkMeterProvider, Meter)
 where
-    E: opentelemetry_sdk::metrics::exporter::PushMetricExporter + 'static,
+    E: rama::telemetry::opentelemetry::sdk::metrics::exporter::PushMetricExporter + 'static,
 {
     let mut reader_builder = PeriodicReader::builder(exporter);
     if let Some(interval) = interval {

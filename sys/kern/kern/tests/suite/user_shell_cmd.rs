@@ -243,7 +243,7 @@ async fn user_shell_command_history_is_persisted_and_shared_with_model() -> anyh
     });
     let test = builder.build(&server).await?;
 
-    let command = r#"sh -c "printf '%s' \"${CODEX_SANDBOX:-not-set}\"""#.to_string();
+    let command = r#"sh -c "printf '%s' \"${CHAOS_SANDBOX:-not-set}\"""#.to_string();
 
     test.codex
         .submit(Op::RunUserShellCommand {
@@ -320,7 +320,7 @@ async fn user_shell_command_does_not_set_network_sandbox_env_var() -> anyhow::Re
     let test = builder.build(&server).await?;
 
     let command =
-        r#"sh -c "printf '%s' \"${CODEX_SANDBOX_NETWORK_DISABLED:-not-set}\"""#.to_string();
+        r#"sh -c "printf '%s' \"${CHAOS_SANDBOX_NETWORK_DISABLED:-not-set}\"""#.to_string();
 
     test.codex
         .submit(Op::RunUserShellCommand { command })
@@ -388,7 +388,7 @@ async fn user_shell_command_output_is_truncated_in_history() -> anyhow::Result<(
     let escaped_head = escape(&head);
     let escaped_tail = escape(&tail);
     let expected_pattern = format!(
-        r"(?m)\A<user_shell_command>\n<command>\n{escaped_command}\n</command>\n<result>\nExit code: 0\nDuration: [0-9]+(?:\.[0-9]+)? seconds\nOutput:\nTotal output lines: 400\n\n{escaped_head}70…[0-9]+ chars truncated…351\n{escaped_tail}\n</result>\n</user_shell_command>\z"
+        r"(?m)\A<user_shell_command>\n<command>\n{escaped_command}\n</command>\n<result>\nExit code: 0\nDuration: [0-9]+(?:\.[0-9]+)? seconds\nOutput:\nTotal output lines: 400\n\n{escaped_head}70…[0-9]+ tokens truncated…351\n{escaped_tail}\n</result>\n</user_shell_command>\z"
     );
     assert_regex_match(&expected_pattern, &command_message);
 

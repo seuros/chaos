@@ -16,7 +16,7 @@ use mcp_guest::protocol::ElicitationResponse;
 use mcp_guest::protocol::RequestId;
 use tokio::sync::oneshot;
 
-use crate::codex::TurnContext;
+use crate::chaos::TurnContext;
 use crate::protocol::ReviewDecision;
 use crate::protocol::TokenUsage;
 use crate::sandboxing::merge_permission_profiles;

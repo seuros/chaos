@@ -1,5 +1,5 @@
-use crate::codex::Session;
-use crate::codex::TurnContext;
+use crate::chaos::Session;
+use crate::chaos::TurnContext;
 
 pub(crate) async fn maybe_emit_implicit_skill_invocation(
     _sess: &Session,

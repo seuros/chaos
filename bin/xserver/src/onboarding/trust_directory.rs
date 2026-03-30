@@ -25,7 +25,7 @@ use crate::selection_list::selection_option_row;
 
 use super::onboarding_screen::StepState;
 pub(crate) struct TrustDirectoryWidget {
-    pub codex_home: PathBuf,
+    pub chaos_home: PathBuf,
     pub cwd: PathBuf,
     pub show_windows_create_sandbox_hint: bool,
     pub should_quit: bool,
@@ -144,7 +144,7 @@ impl TrustDirectoryWidget {
     fn handle_trust(&mut self) {
         let target =
             resolve_root_git_project_for_trust(&self.cwd).unwrap_or_else(|| self.cwd.clone());
-        if let Err(e) = set_project_trust_level(&self.codex_home, &target, TrustLevel::Trusted) {
+        if let Err(e) = set_project_trust_level(&self.chaos_home, &target, TrustLevel::Trusted) {
             tracing::error!("Failed to set project trusted: {e:?}");
             self.error = Some(format!("Failed to set trust for {}: {e}", target.display()));
         }
@@ -178,9 +178,9 @@ mod tests {
 
     #[test]
     fn release_event_does_not_change_selection() {
-        let codex_home = TempDir::new().expect("temp home");
+        let chaos_home = TempDir::new().expect("temp home");
         let mut widget = TrustDirectoryWidget {
-            codex_home: codex_home.path().to_path_buf(),
+            chaos_home: chaos_home.path().to_path_buf(),
             cwd: PathBuf::from("."),
             show_windows_create_sandbox_hint: false,
             should_quit: false,
@@ -203,9 +203,9 @@ mod tests {
 
     #[test]
     fn renders_snapshot_for_git_repo() {
-        let codex_home = TempDir::new().expect("temp home");
+        let chaos_home = TempDir::new().expect("temp home");
         let widget = TrustDirectoryWidget {
-            codex_home: codex_home.path().to_path_buf(),
+            chaos_home: chaos_home.path().to_path_buf(),
             cwd: PathBuf::from("/workspace/project"),
             show_windows_create_sandbox_hint: false,
             should_quit: false,

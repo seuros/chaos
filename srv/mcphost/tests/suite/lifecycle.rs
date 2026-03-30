@@ -15,9 +15,9 @@ use mcp_test_support::McpProcess;
 const DEFAULT_READ_TIMEOUT: Duration = Duration::from_secs(20);
 
 async fn spawn_mcp_process() -> Result<(TempDir, McpProcess)> {
-    let codex_home = TempDir::new()?;
-    let mcp = McpProcess::new(codex_home.path()).await?;
-    Ok((codex_home, mcp))
+    let chaos_home = TempDir::new()?;
+    let mcp = McpProcess::new(chaos_home.path()).await?;
+    Ok((chaos_home, mcp))
 }
 
 #[tokio::test(flavor = "multi_thread", worker_threads = 2)]
@@ -236,9 +236,9 @@ async fn cron_resource_can_be_read_after_initialize() -> Result<()> {
 #[tokio::test(flavor = "multi_thread", worker_threads = 2)]
 async fn cron_resource_reads_jobs_from_chaos_db_even_without_preopened_state_runtime() -> Result<()>
 {
-    let (codex_home, mut mcp) = spawn_mcp_process().await?;
+    let (chaos_home, mut mcp) = spawn_mcp_process().await?;
 
-    let pool = open_chaos_db(codex_home.path()).await?;
+    let pool = open_chaos_db(chaos_home.path()).await?;
     let store = CronStore::new(pool);
     store
         .create(&CreateJobParams {

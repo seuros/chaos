@@ -99,7 +99,7 @@ use tracing::warn;
 
 use crate::AuthManager;
 use crate::auth::AuthMode;
-use crate::auth::CodexAuth;
+use crate::auth::ChaosAuth;
 use crate::auth::RefreshTokenError;
 use crate::client_common::Prompt;
 use crate::client_common::ResponseEvent;
@@ -107,7 +107,7 @@ use crate::client_common::ResponseStream;
 use crate::client_common::tools::ToolSpec;
 use crate::config::Config;
 
-use crate::error::CodexErr;
+use crate::error::ChaosErr;
 use crate::error::Result;
 use crate::flags::CODEX_RS_SSE_FIXTURE;
 use crate::model_provider_info::ModelProviderInfo;
@@ -169,7 +169,7 @@ struct ModelClientState {
 /// Keeping this as a single bundle ensures prewarm and normal request paths
 /// share the same auth/provider setup flow.
 struct CurrentClientSetup {
-    auth: Option<CodexAuth>,
+    auth: Option<ChaosAuth>,
     api_provider: chaos_parrot::Provider,
     api_auth: CoreAuthProvider,
 }
@@ -410,7 +410,7 @@ impl ModelClient {
         let request_telemetry = Self::build_request_telemetry(
             session_telemetry,
             AuthRequestTelemetryContext::new(
-                client_setup.auth.as_ref().map(CodexAuth::auth_mode),
+                client_setup.auth.as_ref().map(ChaosAuth::auth_mode),
                 &client_setup.api_auth,
                 PendingUnauthorizedRetry::default(),
             ),
@@ -478,7 +478,7 @@ impl ModelClient {
         let request_telemetry = Self::build_request_telemetry(
             session_telemetry,
             AuthRequestTelemetryContext::new(
-                client_setup.auth.as_ref().map(CodexAuth::auth_mode),
+                client_setup.auth.as_ref().map(ChaosAuth::auth_mode),
                 &client_setup.api_auth,
                 PendingUnauthorizedRetry::default(),
             ),
@@ -585,7 +585,7 @@ impl ModelClient {
         let api_provider = self
             .state
             .provider
-            .to_api_provider(auth.as_ref().map(CodexAuth::auth_mode))?;
+            .to_api_provider(auth.as_ref().map(ChaosAuth::auth_mode))?;
         let api_auth = auth_provider_from_auth(auth.clone(), &self.state.provider)?;
         Ok(CurrentClientSetup {
             auth,
@@ -1199,7 +1199,7 @@ impl ModelClientSession {
             ))
         })?;
         let auth_context = AuthRequestTelemetryContext::new(
-            client_setup.auth.as_ref().map(CodexAuth::auth_mode),
+            client_setup.auth.as_ref().map(ChaosAuth::auth_mode),
             &client_setup.api_auth,
             PendingUnauthorizedRetry::default(),
         );
@@ -1286,9 +1286,9 @@ impl ModelClientSession {
             ))
     }
 
-    fn responses_request_compression(&self, auth: Option<&crate::auth::CodexAuth>) -> Compression {
+    fn responses_request_compression(&self, auth: Option<&crate::auth::ChaosAuth>) -> Compression {
         if self.client.state.enable_request_compression
-            && auth.is_some_and(CodexAuth::is_chatgpt_auth)
+            && auth.is_some_and(ChaosAuth::is_chatgpt_auth)
             && self.client.state.provider.is_openai()
         {
             Compression::Zstd
@@ -1346,7 +1346,7 @@ impl ModelClientSession {
             let provider_for_errors = client_setup.api_provider.clone();
             let transport = RamaTransport::default_client();
             let request_auth_context = AuthRequestTelemetryContext::new(
-                client_setup.auth.as_ref().map(CodexAuth::auth_mode),
+                client_setup.auth.as_ref().map(ChaosAuth::auth_mode),
                 &client_setup.api_auth,
                 pending_retry,
             );
@@ -1448,7 +1448,7 @@ impl ModelClientSession {
         loop {
             let client_setup = self.client.current_client_setup().await?;
             let request_auth_context = AuthRequestTelemetryContext::new(
-                client_setup.auth.as_ref().map(CodexAuth::auth_mode),
+                client_setup.auth.as_ref().map(ChaosAuth::auth_mode),
                 &client_setup.api_auth,
                 pending_retry,
             );
@@ -1941,7 +1941,7 @@ impl ModelClientSession {
             return Ok(AnthropicAuth::BearerToken(token));
         }
 
-        Err(CodexErr::InvalidRequest(format!(
+        Err(ChaosErr::InvalidRequest(format!(
             "Anthropic Messages provider `{}` requires `env_key` or `experimental_bearer_token`",
             self.client.state.provider.name
         )))
@@ -2129,7 +2129,7 @@ where
 /// Handles a 401 response by optionally refreshing ChatGPT tokens once.
 ///
 /// When refresh succeeds, the caller should retry the API call; otherwise
-/// the mapped `CodexErr` is returned to the caller.
+/// the mapped `ChaosErr` is returned to the caller.
 #[derive(Clone, Copy, Debug)]
 struct UnauthorizedRecoveryExecution {
     mode: &'static str,
@@ -2249,7 +2249,7 @@ async fn handle_unauthorized(
                     debug.auth_error.as_deref(),
                     debug.auth_error_code.as_deref(),
                 );
-                Err(CodexErr::RefreshTokenFailed(failed))
+                Err(ChaosErr::RefreshTokenFailed(failed))
             }
             Err(RefreshTokenError::Transient(other)) => {
                 session_telemetry.record_auth_recovery(
@@ -2272,7 +2272,7 @@ async fn handle_unauthorized(
                     debug.auth_error.as_deref(),
                     debug.auth_error_code.as_deref(),
                 );
-                Err(CodexErr::Io(other))
+                Err(ChaosErr::Io(other))
             }
         };
     }

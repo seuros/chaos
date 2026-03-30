@@ -14,7 +14,7 @@ use chaos_ipc::protocol::EventMsg;
 use chaos_ipc::protocol::Op;
 use chaos_ipc::protocol::SandboxPolicy;
 use chaos_ipc::user_input::UserInput;
-use chaos_kern::CodexAuth;
+use chaos_kern::ChaosAuth;
 use chaos_kern::features::Feature;
 use core_test_support::responses;
 use core_test_support::responses::ev_assistant_message;
@@ -1077,7 +1077,7 @@ async fn view_image_tool_returns_unsupported_message_for_text_only_model() -> an
     .await;
 
     let TestCodex { codex, cwd, .. } = test_codex()
-        .with_auth(CodexAuth::create_dummy_chatgpt_auth_for_testing())
+        .with_auth(ChaosAuth::create_dummy_chatgpt_auth_for_testing())
         .with_config(|config| {
             config.model = Some(model_slug.to_string());
         })

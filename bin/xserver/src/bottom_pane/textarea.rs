@@ -1398,6 +1398,7 @@ impl TextArea {
 mod tests {
     use super::*;
     // crossterm types are intentionally not imported here to avoid unused warnings
+    use jiff::Timestamp;
     use pretty_assertions::assert_eq;
     use rand::prelude::*;
 
@@ -2194,12 +2195,15 @@ mod tests {
         // Seed the RNG based on the current day in Pacific Time (PST/PDT). This
         // keeps the fuzz test deterministic within a day while still varying
         // day-to-day to improve coverage.
-        let pst_today_seed: u64 = (chrono::Utc::now() - chrono::Duration::hours(8))
-            .date_naive()
-            .and_hms_opt(0, 0, 0)
-            .unwrap()
-            .and_utc()
-            .timestamp() as u64;
+        use jiff::ToSpan;
+        let pst_today_seed: u64 = Timestamp::now()
+            .checked_sub(8.hours())
+            .expect("8 hour offset should be representable")
+            .to_zoned(jiff::tz::TimeZone::UTC)
+            .strftime("%Y%m%d")
+            .to_string()
+            .parse()
+            .expect("date seed should parse");
         let mut rng = rand::rngs::StdRng::seed_from_u64(pst_today_seed);
 
         for _case in 0..500 {

@@ -42,8 +42,8 @@ const LOCAL_PRAGMATIC_TEMPLATE: &str = "You are deeply pragmatic, effective, and
 
 #[tokio::test(flavor = "multi_thread", worker_threads = 2)]
 async fn personality_does_not_mutate_base_instructions_without_template() {
-    let codex_home = TempDir::new().expect("create temp dir");
-    let mut config = load_default_config_for_test(&codex_home).await;
+    let chaos_home = TempDir::new().expect("create temp dir");
+    let mut config = load_default_config_for_test(&chaos_home).await;
     config
         .features
         .enable(Feature::Personality)
@@ -59,8 +59,8 @@ async fn personality_does_not_mutate_base_instructions_without_template() {
 
 #[tokio::test(flavor = "multi_thread", worker_threads = 2)]
 async fn base_instructions_override_disables_personality_template() {
-    let codex_home = TempDir::new().expect("create temp dir");
-    let mut config = load_default_config_for_test(&codex_home).await;
+    let chaos_home = TempDir::new().expect("create temp dir");
+    let mut config = load_default_config_for_test(&chaos_home).await;
     config
         .features
         .enable(Feature::Personality)
@@ -496,8 +496,8 @@ async fn user_turn_personality_same_value_does_not_add_update_message() -> anyho
 
 #[tokio::test(flavor = "multi_thread", worker_threads = 2)]
 async fn instructions_uses_base_if_feature_disabled() -> anyhow::Result<()> {
-    let codex_home = TempDir::new().expect("create temp dir");
-    let mut config = load_default_config_for_test(&codex_home).await;
+    let chaos_home = TempDir::new().expect("create temp dir");
+    let mut config = load_default_config_for_test(&chaos_home).await;
     config
         .features
         .disable(Feature::Personality)
@@ -672,7 +672,7 @@ async fn remote_model_friendly_personality_instructions_with_feature() -> anyhow
     let resp_mock = mount_sse_once(&server, sse_completed("resp-1")).await;
 
     let mut builder = test_codex()
-        .with_auth(chaos_kern::CodexAuth::create_dummy_chatgpt_auth_for_testing())
+        .with_auth(chaos_kern::ChaosAuth::create_dummy_chatgpt_auth_for_testing())
         .with_config(|config| {
             config
                 .features
@@ -796,7 +796,7 @@ async fn user_turn_personality_remote_model_template_includes_update_message() -
     .await;
 
     let mut builder = test_codex()
-        .with_auth(chaos_kern::CodexAuth::create_dummy_chatgpt_auth_for_testing())
+        .with_auth(chaos_kern::ChaosAuth::create_dummy_chatgpt_auth_for_testing())
         .with_config(|config| {
             config
                 .features

@@ -4,7 +4,7 @@ use anyhow::Result;
 use chaos_ipc::openai_models::ModelsResponse;
 use chaos_ipc::protocol::AskForApproval;
 use chaos_ipc::protocol::SandboxPolicy;
-use chaos_kern::CodexAuth;
+use chaos_kern::ChaosAuth;
 use chaos_kern::config::Config;
 use chaos_kern::features::Feature;
 use core_test_support::apps_test_server::AppsTestServer;
@@ -73,7 +73,7 @@ async fn search_tool_is_hidden_for_api_key_auth() -> Result<()> {
     .await;
 
     let mut builder = test_codex()
-        .with_auth(CodexAuth::from_api_key("Test API Key"))
+        .with_auth(ChaosAuth::from_api_key("Test API Key"))
         .with_config(move |config| configure_apps(config, apps_server.chatgpt_base_url.as_str()));
     let test = builder.build(&server).await?;
 

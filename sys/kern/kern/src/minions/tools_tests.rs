@@ -1,9 +1,9 @@
 use super::*;
 use crate::AuthManager;
-use crate::CodexAuth;
+use crate::ChaosAuth;
 use crate::ProcessTable;
 use crate::built_in_model_providers;
-use crate::codex::make_session_and_context;
+use crate::chaos::make_session_and_context;
 use crate::config::DEFAULT_AGENT_MAX_DEPTH;
 use crate::config::types::ShellEnvironmentPolicy;
 use crate::function_tool::FunctionCallError;
@@ -34,7 +34,7 @@ use tokio::sync::Mutex;
 use tokio::time::timeout;
 
 fn invocation(
-    session: Arc<crate::codex::Session>,
+    session: Arc<crate::chaos::Session>,
     turn: Arc<TurnContext>,
     tool_name: &str,
     payload: ToolPayload,
@@ -58,7 +58,7 @@ fn function_payload(args: serde_json::Value) -> ToolPayload {
 
 fn process_table() -> ProcessTable {
     ProcessTable::with_models_provider_for_tests(
-        CodexAuth::from_api_key("dummy"),
+        ChaosAuth::from_api_key("dummy"),
         built_in_model_providers(/* openai_base_url */ None)["openai"].clone(),
     )
 }
@@ -663,7 +663,7 @@ async fn resume_agent_restores_closed_agent_and_accepts_send_input() {
                 end_turn: None,
                 phase: None,
             })]),
-            AuthManager::from_auth_for_testing(CodexAuth::from_api_key("dummy")),
+            AuthManager::from_auth_for_testing(ChaosAuth::from_api_key("dummy")),
             false,
             None,
         )

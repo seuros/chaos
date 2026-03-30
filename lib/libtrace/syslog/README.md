@@ -1,6 +1,6 @@
 # chaos-syslog
 
-`chaos-syslog` is the OpenTelemetry integration crate for Codex. It provides:
+`chaos-syslog` is the OpenTelemetry integration crate for Chaos. It provides:
 
 - Provider wiring for log/trace/metric exporters (`codex_otel::OtelProvider`
   and `codex_otel::provider`).
@@ -25,7 +25,7 @@ let settings = OtelSettings {
     environment: "dev".to_string(),
     service_name: "codex-cli".to_string(),
     service_version: env!("CARGO_PKG_VERSION").to_string(),
-    codex_home: std::path::PathBuf::from("/tmp"),
+    chaos_home: std::path::PathBuf::from("/tmp"),
     exporter: OtelExporter::OtlpHttp {
         endpoint: "https://otlp.example.com".to_string(),
         headers: std::collections::HashMap::new(),
@@ -52,7 +52,7 @@ if let Some(provider) = OtelProvider::from(&settings)? {
 ## SessionTelemetry (events)
 
 `SessionTelemetry` adds consistent metadata to tracing events and helps record
-Codex-specific session events. Rich session/business events should go through
+Chaos-specific session events. Rich session/business events should go through
 `SessionTelemetry`; subsystem-owned audit events can stay with the owning subsystem.
 
 ```rust
@@ -82,7 +82,7 @@ Modes:
 - In-memory: records via `rama::telemetry::opentelemetry::sdk::metrics::InMemoryMetricExporter` for tests/assertions; call `shutdown()` to flush.
 
 `chaos-syslog` also provides `OtelExporter::Statsig`, a shorthand for exporting OTLP/HTTP JSON metrics
-to Statsig using Codex-internal defaults.
+to Statsig using Chaos-internal defaults.
 
 Statsig ingestion (OTLP/HTTP JSON) example:
 

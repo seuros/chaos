@@ -7,7 +7,7 @@ use chaos_ipc::protocol::EventMsg;
 use chaos_ipc::protocol::Op;
 use chaos_ipc::protocol::SandboxPolicy;
 use chaos_ipc::user_input::UserInput;
-use chaos_kern::CodexAuth;
+use chaos_kern::ChaosAuth;
 use core_test_support::responses;
 use core_test_support::responses::ev_assistant_message;
 use core_test_support::responses::ev_completed;
@@ -39,7 +39,7 @@ async fn refresh_models_on_models_etag_mismatch_and_avoid_duplicate_models_fetch
     )
     .await;
 
-    let auth = CodexAuth::create_dummy_chatgpt_auth_for_testing();
+    let auth = ChaosAuth::create_dummy_chatgpt_auth_for_testing();
     let mut builder = test_codex()
         .with_auth(auth)
         .with_model("gpt-5")

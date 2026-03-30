@@ -1,11 +1,11 @@
 use crate::Prompt;
 use crate::RolloutRecorder;
-use crate::codex::Session;
-use crate::codex::TurnContext;
+use crate::chaos::Session;
+use crate::chaos::TurnContext;
 use crate::config::Config;
 use crate::config::types::MemoriesConfig;
 use crate::contextual_user_message::is_memory_excluded_contextual_user_fragment;
-use crate::error::CodexErr;
+use crate::error::ChaosErr;
 use crate::memories::metrics;
 use crate::memories::phase_one;
 use crate::memories::phase_one::PRUNE_BATCH_SIZE;
@@ -475,7 +475,7 @@ mod job {
             })
             .collect::<Vec<_>>();
         serde_json::to_string(&filtered).map_err(|err| {
-            CodexErr::InvalidRequest(format!("failed to serialize rollout memory: {err}"))
+            ChaosErr::InvalidRequest(format!("failed to serialize rollout memory: {err}"))
         })
     }
 

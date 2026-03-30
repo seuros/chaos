@@ -1,5 +1,5 @@
 use super::*;
-use crate::CodexAuth;
+use crate::ChaosAuth;
 use crate::config::ConfigBuilder;
 use crate::config::test_config;
 use crate::config_loader::ConfigLayerStack;
@@ -1013,8 +1013,8 @@ async fn process_rollback_fails_when_num_turns_is_zero() {
 
 #[tokio::test]
 async fn set_rate_limits_retains_previous_credits() {
-    let codex_home = tempfile::tempdir().expect("create temp dir");
-    let config = build_test_config(codex_home.path()).await;
+    let chaos_home = tempfile::tempdir().expect("create temp dir");
+    let config = build_test_config(chaos_home.path()).await;
     let config = Arc::new(config);
     let model = ModelsManager::get_model_offline_for_tests(config.model.as_deref());
     let model_info = ModelsManager::construct_model_info_offline_for_tests(model.as_str(), &config);
@@ -1047,7 +1047,7 @@ async fn set_rate_limits_retains_previous_credits() {
         network_sandbox_policy: config.permissions.network_sandbox_policy,
         windows_sandbox_level: WindowsSandboxLevel::Disabled,
         cwd: config.cwd.clone(),
-        codex_home: config.codex_home.clone(),
+        chaos_home: config.chaos_home.clone(),
         process_name: None,
         original_config_do_not_use: Arc::clone(&config),
         metrics_service_name: None,
@@ -1110,8 +1110,8 @@ async fn set_rate_limits_retains_previous_credits() {
 
 #[tokio::test]
 async fn set_rate_limits_updates_plan_type_when_present() {
-    let codex_home = tempfile::tempdir().expect("create temp dir");
-    let config = build_test_config(codex_home.path()).await;
+    let chaos_home = tempfile::tempdir().expect("create temp dir");
+    let config = build_test_config(chaos_home.path()).await;
     let config = Arc::new(config);
     let model = ModelsManager::get_model_offline_for_tests(config.model.as_deref());
     let model_info = ModelsManager::construct_model_info_offline_for_tests(model.as_str(), &config);
@@ -1144,7 +1144,7 @@ async fn set_rate_limits_updates_plan_type_when_present() {
         network_sandbox_policy: config.permissions.network_sandbox_policy,
         windows_sandbox_level: WindowsSandboxLevel::Disabled,
         cwd: config.cwd.clone(),
-        codex_home: config.codex_home.clone(),
+        chaos_home: config.chaos_home.clone(),
         process_name: None,
         original_config_do_not_use: Arc::clone(&config),
         metrics_service_name: None,
@@ -1356,12 +1356,19 @@ async fn wait_for_process_rolled_back(
 ) -> crate::protocol::ProcessRolledBackEvent {
     let deadline = StdDuration::from_secs(2);
     let start = std::time::Instant::now();
+    let mut last_event = None;
     loop {
         let remaining = deadline.saturating_sub(start.elapsed());
         let evt = tokio::time::timeout(remaining, rx.recv())
             .await
-            .expect("timeout waiting for event")
+            .unwrap_or_else(|_| panic!("timeout waiting for event; last_event={last_event:?}"))
             .expect("event");
+        if let EventMsg::Error(payload) = &evt.msg
+            && payload.codex_error_info == Some(CodexErrorInfo::ProcessRollbackFailed)
+        {
+            panic!("rollback emitted error instead of success: {payload:?}");
+        }
+        last_event = Some(evt.msg.clone());
         match evt.msg {
             EventMsg::ProcessRolledBack(payload) => return payload,
             _ => continue,
@@ -1435,9 +1442,9 @@ fn init_test_tracing() {
     });
 }
 
-async fn build_test_config(codex_home: &Path) -> Config {
+async fn build_test_config(chaos_home: &Path) -> Config {
     ConfigBuilder::default()
-        .codex_home(codex_home.to_path_buf())
+        .chaos_home(chaos_home.to_path_buf())
         .build()
         .await
         .expect("load default test config")
@@ -1464,8 +1471,8 @@ fn session_telemetry(
 }
 
 pub(crate) async fn make_session_configuration_for_tests() -> SessionConfiguration {
-    let codex_home = tempfile::tempdir().expect("create temp dir");
-    let config = build_test_config(codex_home.path()).await;
+    let chaos_home = tempfile::tempdir().expect("create temp dir");
+    let config = build_test_config(chaos_home.path()).await;
     let config = Arc::new(config);
     let model = ModelsManager::get_model_offline_for_tests(config.model.as_deref());
     let model_info = ModelsManager::construct_model_info_offline_for_tests(model.as_str(), &config);
@@ -1499,7 +1506,7 @@ pub(crate) async fn make_session_configuration_for_tests() -> SessionConfigurati
         network_sandbox_policy: config.permissions.network_sandbox_policy,
         windows_sandbox_level: WindowsSandboxLevel::Disabled,
         cwd: config.cwd.clone(),
-        codex_home: config.codex_home.clone(),
+        chaos_home: config.chaos_home.clone(),
         process_name: None,
         original_config_do_not_use: Arc::clone(&config),
         metrics_service_name: None,
@@ -1563,8 +1570,8 @@ async fn session_configuration_apply_preserves_split_file_system_policy_on_cwd_o
 async fn new_default_turn_uses_config_aware_skills_for_role_overrides() {
     let (session, _turn_context) = make_session_and_context().await;
     let parent_config = session.get_config().await;
-    let codex_home = parent_config.codex_home.clone();
-    let skill_dir = codex_home.join("skills").join("demo");
+    let chaos_home = parent_config.chaos_home.clone();
+    let skill_dir = chaos_home.join("skills").join("demo");
     std::fs::create_dir_all(&skill_dir).expect("create skill dir");
     let skill_path = skill_dir.join("SKILL.md");
     std::fs::write(
@@ -1585,7 +1592,7 @@ async fn new_default_turn_uses_config_aware_skills_for_role_overrides() {
         .expect("demo skill should be discovered");
     assert_eq!(parent_outcome.is_skill_enabled(parent_skill), true);
 
-    let role_path = codex_home.join("skills-role.toml");
+    let role_path = chaos_home.join("skills-role.toml");
     std::fs::write(
         &role_path,
         format!(
@@ -1680,8 +1687,8 @@ async fn session_configuration_apply_rederives_legacy_file_system_policy_on_cwd_
 
 #[tokio::test]
 async fn session_new_fails_when_zsh_fork_enabled_without_zsh_path() {
-    let codex_home = tempfile::tempdir().expect("create temp dir");
-    let mut config = build_test_config(codex_home.path()).await;
+    let chaos_home = tempfile::tempdir().expect("create temp dir");
+    let mut config = build_test_config(chaos_home.path()).await;
     config
         .features
         .enable(Feature::ShellZshFork)
@@ -1689,9 +1696,9 @@ async fn session_new_fails_when_zsh_fork_enabled_without_zsh_path() {
     config.zsh_path = None;
     let config = Arc::new(config);
 
-    let auth_manager = AuthManager::from_auth_for_testing(CodexAuth::from_api_key("Test API Key"));
+    let auth_manager = AuthManager::from_auth_for_testing(ChaosAuth::from_api_key("Test API Key"));
     let models_manager = Arc::new(ModelsManager::new(
-        config.codex_home.clone(),
+        config.chaos_home.clone(),
         auth_manager.clone(),
         None,
         CollaborationModesConfig::default(),
@@ -1726,7 +1733,7 @@ async fn session_new_fails_when_zsh_fork_enabled_without_zsh_path() {
         network_sandbox_policy: config.permissions.network_sandbox_policy,
         windows_sandbox_level: WindowsSandboxLevel::Disabled,
         cwd: config.cwd.clone(),
-        codex_home: config.codex_home.clone(),
+        chaos_home: config.chaos_home.clone(),
         process_name: None,
         original_config_do_not_use: Arc::clone(&config),
         metrics_service_name: None,
@@ -1739,10 +1746,10 @@ async fn session_new_fails_when_zsh_fork_enabled_without_zsh_path() {
 
     let (tx_event, _rx_event) = async_channel::unbounded();
     let (agent_status_tx, _agent_status_rx) = watch::channel(AgentStatus::PendingInit);
-    let plugins_manager = Arc::new(PluginsManager::new(config.codex_home.clone()));
+    let plugins_manager = Arc::new(PluginsManager::new(config.chaos_home.clone()));
     let mcp_manager = Arc::new(McpManager::new(Arc::clone(&plugins_manager)));
     let skills_manager = Arc::new(SkillsManager::new(
-        config.codex_home.clone(),
+        config.chaos_home.clone(),
         Arc::clone(&plugins_manager),
         true,
     ));
@@ -1775,13 +1782,13 @@ async fn session_new_fails_when_zsh_fork_enabled_without_zsh_path() {
 // todo: use online model info
 pub(crate) async fn make_session_and_context() -> (Session, TurnContext) {
     let (tx_event, _rx_event) = async_channel::unbounded();
-    let codex_home = tempfile::tempdir().expect("create temp dir");
-    let config = build_test_config(codex_home.path()).await;
+    let chaos_home = tempfile::tempdir().expect("create temp dir");
+    let config = build_test_config(chaos_home.path()).await;
     let config = Arc::new(config);
     let conversation_id = ProcessId::default();
-    let auth_manager = AuthManager::from_auth_for_testing(CodexAuth::from_api_key("Test API Key"));
+    let auth_manager = AuthManager::from_auth_for_testing(ChaosAuth::from_api_key("Test API Key"));
     let models_manager = Arc::new(ModelsManager::new(
-        config.codex_home.clone(),
+        config.chaos_home.clone(),
         auth_manager.clone(),
         None,
         CollaborationModesConfig::default(),
@@ -1820,7 +1827,7 @@ pub(crate) async fn make_session_and_context() -> (Session, TurnContext) {
         network_sandbox_policy: config.permissions.network_sandbox_policy,
         windows_sandbox_level: WindowsSandboxLevel::Disabled,
         cwd: config.cwd.clone(),
-        codex_home: config.codex_home.clone(),
+        chaos_home: config.chaos_home.clone(),
         process_name: None,
         original_config_do_not_use: Arc::clone(&config),
         metrics_service_name: None,
@@ -1843,10 +1850,10 @@ pub(crate) async fn make_session_and_context() -> (Session, TurnContext) {
     );
 
     let state = SessionState::new(session_configuration.clone());
-    let plugins_manager = Arc::new(PluginsManager::new(config.codex_home.clone()));
+    let plugins_manager = Arc::new(PluginsManager::new(config.chaos_home.clone()));
     let mcp_manager = Arc::new(McpManager::new(Arc::clone(&plugins_manager)));
     let skills_manager = Arc::new(SkillsManager::new(
-        config.codex_home.clone(),
+        config.chaos_home.clone(),
         Arc::clone(&plugins_manager),
         true,
     ));
@@ -2096,7 +2103,7 @@ async fn submit_with_id_captures_current_span_trace_context() {
     let (tx_sub, rx_sub) = async_channel::bounded(1);
     let (_tx_event, rx_event) = async_channel::unbounded();
     let (_agent_status_tx, agent_status) = watch::channel(AgentStatus::PendingInit);
-    let codex = Codex {
+    let codex = Chaos {
         tx_sub,
         rx_event,
         agent_status,
@@ -2348,7 +2355,7 @@ async fn shutdown_and_wait_allows_multiple_waiters() {
         assert_eq!(shutdown.op, Op::Shutdown);
         tokio::time::sleep(StdDuration::from_millis(50)).await;
     });
-    let codex = Arc::new(Codex {
+    let codex = Arc::new(Chaos {
         tx_sub,
         rx_event,
         agent_status,
@@ -2386,7 +2393,7 @@ async fn shutdown_and_wait_waits_when_shutdown_is_already_in_progress() {
     let session_loop_handle = tokio::spawn(async move {
         let _ = shutdown_complete_rx.await;
     });
-    let codex = Arc::new(Codex {
+    let codex = Arc::new(Chaos {
         tx_sub,
         rx_event,
         agent_status,
@@ -2424,7 +2431,7 @@ async fn shutdown_and_wait_shuts_down_cached_guardian_subagent() {
     let parent_session_loop_handle = tokio::spawn(async move {
         submission_loop(parent_session_for_loop, parent_config, parent_rx_sub).await;
     });
-    let parent_codex = Codex {
+    let parent_codex = Chaos {
         tx_sub: parent_tx_sub,
         rx_event: parent_rx_event,
         agent_status: parent_agent_status,
@@ -2447,7 +2454,7 @@ async fn shutdown_and_wait_shuts_down_cached_guardian_subagent() {
             .send(())
             .expect("child shutdown signal should be delivered");
     });
-    let child_codex = Codex {
+    let child_codex = Chaos {
         tx_sub: child_tx_sub,
         rx_event: child_rx_event,
         agent_status: child_agent_status,
@@ -2481,7 +2488,7 @@ async fn shutdown_and_wait_shuts_down_tracked_ephemeral_guardian_review() {
     let parent_session_loop_handle = tokio::spawn(async move {
         submission_loop(parent_session_for_loop, parent_config, parent_rx_sub).await;
     });
-    let parent_codex = Codex {
+    let parent_codex = Chaos {
         tx_sub: parent_tx_sub,
         rx_event: parent_rx_event,
         agent_status: parent_agent_status,
@@ -2504,7 +2511,7 @@ async fn shutdown_and_wait_shuts_down_tracked_ephemeral_guardian_review() {
             .send(())
             .expect("child shutdown signal should be delivered");
     });
-    let child_codex = Codex {
+    let child_codex = Chaos {
         tx_sub: child_tx_sub,
         rx_event: child_rx_event,
         agent_status: child_agent_status,
@@ -2534,13 +2541,13 @@ pub(crate) async fn make_session_and_context_with_dynamic_tools_and_rx(
     async_channel::Receiver<Event>,
 ) {
     let (tx_event, rx_event) = async_channel::unbounded();
-    let codex_home = tempfile::tempdir().expect("create temp dir");
-    let config = build_test_config(codex_home.path()).await;
+    let chaos_home = tempfile::tempdir().expect("create temp dir");
+    let config = build_test_config(chaos_home.path()).await;
     let config = Arc::new(config);
     let conversation_id = ProcessId::default();
-    let auth_manager = AuthManager::from_auth_for_testing(CodexAuth::from_api_key("Test API Key"));
+    let auth_manager = AuthManager::from_auth_for_testing(ChaosAuth::from_api_key("Test API Key"));
     let models_manager = Arc::new(ModelsManager::new(
-        config.codex_home.clone(),
+        config.chaos_home.clone(),
         auth_manager.clone(),
         None,
         CollaborationModesConfig::default(),
@@ -2579,7 +2586,7 @@ pub(crate) async fn make_session_and_context_with_dynamic_tools_and_rx(
         network_sandbox_policy: config.permissions.network_sandbox_policy,
         windows_sandbox_level: WindowsSandboxLevel::Disabled,
         cwd: config.cwd.clone(),
-        codex_home: config.codex_home.clone(),
+        chaos_home: config.chaos_home.clone(),
         process_name: None,
         original_config_do_not_use: Arc::clone(&config),
         metrics_service_name: None,
@@ -2602,10 +2609,10 @@ pub(crate) async fn make_session_and_context_with_dynamic_tools_and_rx(
     );
 
     let state = SessionState::new(session_configuration.clone());
-    let plugins_manager = Arc::new(PluginsManager::new(config.codex_home.clone()));
+    let plugins_manager = Arc::new(PluginsManager::new(config.chaos_home.clone()));
     let mcp_manager = Arc::new(McpManager::new(Arc::clone(&plugins_manager)));
     let skills_manager = Arc::new(SkillsManager::new(
-        config.codex_home.clone(),
+        config.chaos_home.clone(),
         Arc::clone(&plugins_manager),
         true,
     ));

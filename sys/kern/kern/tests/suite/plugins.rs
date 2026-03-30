@@ -7,7 +7,7 @@ use std::time::Instant;
 use anyhow::Result;
 use chaos_ipc::protocol::EventMsg;
 use chaos_ipc::protocol::Op;
-use chaos_kern::CodexAuth;
+use chaos_kern::ChaosAuth;
 use core_test_support::responses::ev_completed;
 use core_test_support::responses::ev_response_created;
 use core_test_support::responses::mount_sse_once;
@@ -80,11 +80,11 @@ fn write_plugin_mcp_plugin(home: &TempDir, command: &str) {
 
 async fn build_plugin_test_codex(
     server: &MockServer,
-    codex_home: Arc<TempDir>,
+    chaos_home: Arc<TempDir>,
 ) -> Result<Arc<chaos_kern::Process>> {
     let mut builder = test_codex()
-        .with_home(codex_home)
-        .with_auth(CodexAuth::from_api_key("Test API Key"));
+        .with_home(chaos_home)
+        .with_auth(ChaosAuth::from_api_key("Test API Key"));
     Ok(builder
         .build(server)
         .await
@@ -94,12 +94,12 @@ async fn build_plugin_test_codex(
 
 async fn build_analytics_plugin_test_codex(
     server: &MockServer,
-    codex_home: Arc<TempDir>,
+    chaos_home: Arc<TempDir>,
 ) -> Result<Arc<chaos_kern::Process>> {
     let chatgpt_base_url = server.uri();
     let mut builder = test_codex()
-        .with_home(codex_home)
-        .with_auth(CodexAuth::create_dummy_chatgpt_auth_for_testing())
+        .with_home(chaos_home)
+        .with_auth(ChaosAuth::create_dummy_chatgpt_auth_for_testing())
         .with_model("gpt-5")
         .with_config(move |config| {
             config.chatgpt_base_url = chatgpt_base_url;
@@ -121,9 +121,9 @@ async fn explicit_plugin_mentions_track_plugin_used_analytics() -> Result<()> {
     )
     .await;
 
-    let codex_home = Arc::new(TempDir::new()?);
-    write_plugin_skill_plugin(codex_home.as_ref());
-    let codex = build_analytics_plugin_test_codex(&server, codex_home).await?;
+    let chaos_home = Arc::new(TempDir::new()?);
+    write_plugin_skill_plugin(chaos_home.as_ref());
+    let codex = build_analytics_plugin_test_codex(&server, chaos_home).await?;
 
     codex
         .submit(Op::UserInput {
@@ -179,10 +179,10 @@ async fn explicit_plugin_mentions_track_plugin_used_analytics() -> Result<()> {
 async fn plugin_mcp_tools_are_listed() -> Result<()> {
     skip_if_no_network!(Ok(()));
     let server = start_mock_server().await;
-    let codex_home = Arc::new(TempDir::new()?);
+    let chaos_home = Arc::new(TempDir::new()?);
     let mcp_test_test_server_bin = stdio_server_bin()?;
-    write_plugin_mcp_plugin(codex_home.as_ref(), &mcp_test_test_server_bin);
-    let codex = build_plugin_test_codex(&server, codex_home).await?;
+    write_plugin_mcp_plugin(chaos_home.as_ref(), &mcp_test_test_server_bin);
+    let codex = build_plugin_test_codex(&server, chaos_home).await?;
 
     let tools_ready_deadline = Instant::now() + Duration::from_secs(30);
     loop {

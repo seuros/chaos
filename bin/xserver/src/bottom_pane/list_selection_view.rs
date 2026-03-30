@@ -1045,14 +1045,14 @@ mod tests {
         let items = vec![
             SelectionItem {
                 name: "Read Only".to_string(),
-                description: Some("Codex can read files".to_string()),
+                description: Some("Chaos can read files".to_string()),
                 is_current: true,
                 dismiss_on_select: true,
                 ..Default::default()
             },
             SelectionItem {
                 name: "Full Access".to_string(),
-                description: Some("Codex can edit files".to_string()),
+                description: Some("Chaos can edit files".to_string()),
                 is_current: false,
                 dismiss_on_select: true,
                 ..Default::default()
@@ -1160,7 +1160,7 @@ mod tests {
 
     #[test]
     fn renders_blank_line_between_subtitle_and_items() {
-        let view = make_selection_view(Some("Switch between Codex approval presets"));
+        let view = make_selection_view(Some("Switch between Chaos approval presets"));
         assert_snapshot!("list_selection_spacing_with_subtitle", render_lines(&view));
     }
 
@@ -1169,9 +1169,9 @@ mod tests {
         let (tx_raw, _rx) = unbounded_channel::<AppEvent>();
         let tx = AppEventSender::new(tx_raw);
         let home = dirs::home_dir().expect("home directory should be available");
-        let codex_home = home.join(".codex");
+        let chaos_home = home.join(".chaos");
         let params =
-            crate::theme_picker::build_theme_picker_params(None, Some(&codex_home), Some(94));
+            crate::theme_picker::build_theme_picker_params(None, Some(&chaos_home), Some(94));
         let view = ListSelectionView::new(params, tx);
 
         let rendered = render_lines_in_area(&view, 94, 35);
@@ -1236,7 +1236,7 @@ mod tests {
         let tx = AppEventSender::new(tx_raw);
         let items = vec![SelectionItem {
             name: "Read Only".to_string(),
-            description: Some("Codex can read files".to_string()),
+            description: Some("Chaos can read files".to_string()),
             is_current: true,
             dismiss_on_select: true,
             ..Default::default()
@@ -1268,7 +1268,7 @@ mod tests {
         let tx = AppEventSender::new(tx_raw);
         let items = vec![SelectionItem {
             name: "Read Only".to_string(),
-            description: Some("Codex can read files".to_string()),
+            description: Some("Chaos can read files".to_string()),
             is_current: false,
             dismiss_on_select: true,
             ..Default::default()

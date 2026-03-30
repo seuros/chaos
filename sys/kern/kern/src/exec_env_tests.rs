@@ -28,7 +28,7 @@ fn test_core_inherit_defaults_keep_sensitive_vars() {
         ("API_KEY".to_string(), "secret".to_string()),
         ("SECRET_TOKEN".to_string(), "t".to_string()),
     ]);
-    expected.insert(CODEX_THREAD_ID_ENV_VAR.to_string(), process_id.to_string());
+    expected.insert(CHAOS_THREAD_ID_ENV_VAR.to_string(), process_id.to_string());
 
     assert_eq!(result, expected);
 }
@@ -53,7 +53,7 @@ fn test_core_inherit_with_default_excludes_enabled() {
         ("PATH".to_string(), "/usr/bin".to_string()),
         ("HOME".to_string(), "/home/user".to_string()),
     ]);
-    expected.insert(CODEX_THREAD_ID_ENV_VAR.to_string(), process_id.to_string());
+    expected.insert(CHAOS_THREAD_ID_ENV_VAR.to_string(), process_id.to_string());
 
     assert_eq!(result, expected);
 }
@@ -74,7 +74,7 @@ fn test_include_only() {
 
     let mut expected: HashMap<String, String> =
         HashMap::from([("PATH".to_string(), "/usr/bin".to_string())]);
-    expected.insert(CODEX_THREAD_ID_ENV_VAR.to_string(), process_id.to_string());
+    expected.insert(CHAOS_THREAD_ID_ENV_VAR.to_string(), process_id.to_string());
 
     assert_eq!(result, expected);
 }
@@ -96,7 +96,7 @@ fn test_set_overrides() {
         ("PATH".to_string(), "/usr/bin".to_string()),
         ("NEW_VAR".to_string(), "42".to_string()),
     ]);
-    expected.insert(CODEX_THREAD_ID_ENV_VAR.to_string(), process_id.to_string());
+    expected.insert(CHAOS_THREAD_ID_ENV_VAR.to_string(), process_id.to_string());
 
     assert_eq!(result, expected);
 }
@@ -110,7 +110,7 @@ fn populate_env_inserts_process_id() {
 
     let mut expected: HashMap<String, String> =
         HashMap::from([("PATH".to_string(), "/usr/bin".to_string())]);
-    expected.insert(CODEX_THREAD_ID_ENV_VAR.to_string(), process_id.to_string());
+    expected.insert(CHAOS_THREAD_ID_ENV_VAR.to_string(), process_id.to_string());
 
     assert_eq!(result, expected);
 }
@@ -140,7 +140,7 @@ fn test_inherit_all() {
     let process_id = ProcessId::new();
     let result = populate_env(vars.clone(), &policy, Some(process_id));
     let mut expected: HashMap<String, String> = vars.into_iter().collect();
-    expected.insert(CODEX_THREAD_ID_ENV_VAR.to_string(), process_id.to_string());
+    expected.insert(CHAOS_THREAD_ID_ENV_VAR.to_string(), process_id.to_string());
     assert_eq!(result, expected);
 }
 
@@ -158,7 +158,7 @@ fn test_inherit_all_with_default_excludes() {
     let result = populate_env(vars, &policy, Some(process_id));
     let mut expected: HashMap<String, String> =
         HashMap::from([("PATH".to_string(), "/usr/bin".to_string())]);
-    expected.insert(CODEX_THREAD_ID_ENV_VAR.to_string(), process_id.to_string());
+    expected.insert(CHAOS_THREAD_ID_ENV_VAR.to_string(), process_id.to_string());
     assert_eq!(result, expected);
 }
 
@@ -179,7 +179,7 @@ fn test_inherit_none() {
     let result = populate_env(vars, &policy, Some(process_id));
     let mut expected: HashMap<String, String> =
         HashMap::from([("ONLY_VAR".to_string(), "yes".to_string())]);
-    expected.insert(CODEX_THREAD_ID_ENV_VAR.to_string(), process_id.to_string());
+    expected.insert(CHAOS_THREAD_ID_ENV_VAR.to_string(), process_id.to_string());
     assert_eq!(result, expected);
 }
 
@@ -187,8 +187,8 @@ fn test_inherit_none() {
 fn populate_env_strips_reserved_sandbox_markers() {
     let vars = make_vars(&[
         ("PATH", "/usr/bin"),
-        (crate::spawn::CODEX_SANDBOX_ENV_VAR, "seatbelt"),
-        (crate::spawn::CODEX_SANDBOX_NETWORK_DISABLED_ENV_VAR, "1"),
+        (crate::spawn::CHAOS_SANDBOX_ENV_VAR, "seatbelt"),
+        (crate::spawn::CHAOS_SANDBOX_NETWORK_DISABLED_ENV_VAR, "1"),
     ]);
 
     let policy = ShellEnvironmentPolicy {

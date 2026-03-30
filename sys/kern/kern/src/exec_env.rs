@@ -1,13 +1,13 @@
 use crate::config::types::EnvironmentVariablePattern;
 use crate::config::types::ShellEnvironmentPolicy;
 use crate::config::types::ShellEnvironmentPolicyInherit;
-use crate::spawn::CODEX_SANDBOX_ENV_VAR;
-use crate::spawn::CODEX_SANDBOX_NETWORK_DISABLED_ENV_VAR;
+use crate::spawn::CHAOS_SANDBOX_ENV_VAR;
+use crate::spawn::CHAOS_SANDBOX_NETWORK_DISABLED_ENV_VAR;
 use chaos_ipc::ProcessId;
 use std::collections::HashMap;
 use std::collections::HashSet;
 
-pub const CODEX_THREAD_ID_ENV_VAR: &str = "CODEX_THREAD_ID";
+pub const CHAOS_THREAD_ID_ENV_VAR: &str = "CHAOS_THREAD_ID";
 
 /// Construct an environment map based on the rules in the specified policy. The
 /// resulting map can be passed directly to `Command::envs()` after calling
@@ -17,7 +17,7 @@ pub const CODEX_THREAD_ID_ENV_VAR: &str = "CODEX_THREAD_ID";
 /// The derivation follows the algorithm documented in the struct-level comment
 /// for [`ShellEnvironmentPolicy`].
 ///
-/// `CODEX_THREAD_ID` is injected when a thread id is provided, even when
+/// `CHAOS_THREAD_ID` is injected when a thread id is provided, even when
 /// `include_only` is set.
 pub fn create_env(
     policy: &ShellEnvironmentPolicy,
@@ -82,12 +82,12 @@ where
     // Step 6 – Strip reserved sandbox markers inherited from the parent
     // process. These are runtime implementation details and must be re-added
     // only by the actual spawn/sandbox path that applies to this child.
-    env_map.remove(CODEX_SANDBOX_ENV_VAR);
-    env_map.remove(CODEX_SANDBOX_NETWORK_DISABLED_ENV_VAR);
+    env_map.remove(CHAOS_SANDBOX_ENV_VAR);
+    env_map.remove(CHAOS_SANDBOX_NETWORK_DISABLED_ENV_VAR);
 
     // Step 7 – Populate the thread ID environment variable when provided.
     if let Some(process_id) = process_id {
-        env_map.insert(CODEX_THREAD_ID_ENV_VAR.to_string(), process_id.to_string());
+        env_map.insert(CHAOS_THREAD_ID_ENV_VAR.to_string(), process_id.to_string());
     }
 
     env_map

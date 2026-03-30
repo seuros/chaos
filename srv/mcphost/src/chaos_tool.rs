@@ -50,7 +50,7 @@ pub(crate) struct ChaosMcpServer {
 #[derive(Debug, Clone, Serialize, Deserialize, JsonSchema, Default)]
 #[serde(rename_all = "kebab-case")]
 pub struct ChaosToolParams {
-    /// The user prompt to send to Codex.
+    /// The user prompt to send to Chaos.
     pub prompt: String,
 
     /// Process ID to resume a specific process.

@@ -459,7 +459,7 @@ flattering judgments, or isolated interactions into durable user-profile claims.
 For example, include (when known):
 
 - What they do / care about most (roles, recurring projects, goals)
-- Typical workflows and tools (how they like to work, how they use Codex/agents, preferred formats)
+- Typical workflows and tools (how they like to work, how they use Chaos/agents, preferred formats)
 - Communication preferences (tone, structure, what annoys them, what “good” looks like)
 - Reusable constraints and gotchas (env quirks, constraints, defaults, “always/never” rules)
 - Repeatedly observed follow-up patterns that future agents can proactively satisfy

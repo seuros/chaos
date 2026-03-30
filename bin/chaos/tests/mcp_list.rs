@@ -11,17 +11,17 @@ use serde_json::Value as JsonValue;
 use serde_json::json;
 use tempfile::TempDir;
 
-fn codex_command(codex_home: &Path) -> Result<assert_cmd::Command> {
+fn codex_command(chaos_home: &Path) -> Result<assert_cmd::Command> {
     let mut cmd = assert_cmd::Command::new(chaos_which::cargo_bin("chaos")?);
-    cmd.env("CODEX_HOME", codex_home);
+    cmd.env("CHAOS_HOME", chaos_home);
     Ok(cmd)
 }
 
 #[test]
 fn list_shows_empty_state() -> Result<()> {
-    let codex_home = TempDir::new()?;
+    let chaos_home = TempDir::new()?;
 
-    let mut cmd = codex_command(codex_home.path())?;
+    let mut cmd = codex_command(chaos_home.path())?;
     let output = cmd.args(["mcp", "list"]).output()?;
     assert!(output.status.success());
     let stdout = String::from_utf8(output.stdout)?;
@@ -32,9 +32,9 @@ fn list_shows_empty_state() -> Result<()> {
 
 #[tokio::test]
 async fn list_and_get_render_expected_output() -> Result<()> {
-    let codex_home = TempDir::new()?;
+    let chaos_home = TempDir::new()?;
 
-    let mut add = codex_command(codex_home.path())?;
+    let mut add = codex_command(chaos_home.path())?;
     add.args([
         "mcp",
         "add",
@@ -49,7 +49,7 @@ async fn list_and_get_render_expected_output() -> Result<()> {
     .assert()
     .success();
 
-    let mut servers = load_global_mcp_servers(codex_home.path()).await?;
+    let mut servers = load_global_mcp_servers(chaos_home.path()).await?;
     let docs_entry = servers
         .get_mut("docs")
         .expect("docs server should exist after add");
@@ -59,11 +59,11 @@ async fn list_and_get_render_expected_output() -> Result<()> {
         }
         other => panic!("unexpected transport: {other:?}"),
     }
-    ConfigEditsBuilder::new(codex_home.path())
+    ConfigEditsBuilder::new(chaos_home.path())
         .replace_mcp_servers(&servers)
         .apply_blocking()?;
 
-    let mut list_cmd = codex_command(codex_home.path())?;
+    let mut list_cmd = codex_command(chaos_home.path())?;
     let list_output = list_cmd.args(["mcp", "list"]).output()?;
     assert!(list_output.status.success());
     let stdout = String::from_utf8(list_output.stdout)?;
@@ -78,7 +78,7 @@ async fn list_and_get_render_expected_output() -> Result<()> {
     assert!(stdout.contains("enabled"));
     assert!(stdout.contains("Unsupported"));
 
-    let mut list_json_cmd = codex_command(codex_home.path())?;
+    let mut list_json_cmd = codex_command(chaos_home.path())?;
     let json_output = list_json_cmd.args(["mcp", "list", "--json"]).output()?;
     assert!(json_output.status.success());
     let stdout = String::from_utf8(json_output.stdout)?;
@@ -114,7 +114,7 @@ async fn list_and_get_render_expected_output() -> Result<()> {
         )
     );
 
-    let mut get_cmd = codex_command(codex_home.path())?;
+    let mut get_cmd = codex_command(chaos_home.path())?;
     let get_output = get_cmd.args(["mcp", "get", "docs"]).output()?;
     assert!(get_output.status.success());
     let stdout = String::from_utf8(get_output.stdout)?;
@@ -128,7 +128,7 @@ async fn list_and_get_render_expected_output() -> Result<()> {
     assert!(stdout.contains("enabled: true"));
     assert!(stdout.contains("remove: codex mcp remove docs"));
 
-    let mut get_json_cmd = codex_command(codex_home.path())?;
+    let mut get_json_cmd = codex_command(chaos_home.path())?;
     get_json_cmd
         .args(["mcp", "get", "docs", "--json"])
         .assert()
@@ -140,23 +140,23 @@ async fn list_and_get_render_expected_output() -> Result<()> {
 
 #[tokio::test]
 async fn get_disabled_server_shows_single_line() -> Result<()> {
-    let codex_home = TempDir::new()?;
+    let chaos_home = TempDir::new()?;
 
-    let mut add = codex_command(codex_home.path())?;
+    let mut add = codex_command(chaos_home.path())?;
     add.args(["mcp", "add", "docs", "--", "docs-server"])
         .assert()
         .success();
 
-    let mut servers = load_global_mcp_servers(codex_home.path()).await?;
+    let mut servers = load_global_mcp_servers(chaos_home.path()).await?;
     let docs = servers
         .get_mut("docs")
         .expect("docs server should exist after add");
     docs.enabled = false;
-    ConfigEditsBuilder::new(codex_home.path())
+    ConfigEditsBuilder::new(chaos_home.path())
         .replace_mcp_servers(&servers)
         .apply_blocking()?;
 
-    let mut get_cmd = codex_command(codex_home.path())?;
+    let mut get_cmd = codex_command(chaos_home.path())?;
     let get_output = get_cmd.args(["mcp", "get", "docs"]).output()?;
     assert!(get_output.status.success());
     let stdout = String::from_utf8(get_output.stdout)?;

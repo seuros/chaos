@@ -1,16 +1,16 @@
 use std::sync::Arc;
 
 use crate::Prompt;
-use crate::codex::Session;
-use crate::codex::TurnContext;
-use crate::codex::built_tools;
+use crate::chaos::Session;
+use crate::chaos::TurnContext;
+use crate::chaos::built_tools;
 use crate::compact::InitialContextInjection;
 use crate::compact::insert_initial_context_before_last_real_user_or_summary;
 use crate::context_manager::ContextManager;
 use crate::context_manager::TotalTokenUsageBreakdown;
 use crate::context_manager::estimate_response_item_model_visible_bytes;
 use crate::context_manager::is_codex_generated_item;
-use crate::error::CodexErr;
+use crate::error::ChaosErr;
 use crate::error::Result as CodexResult;
 use crate::protocol::CompactedItem;
 use crate::protocol::EventMsg;
@@ -253,7 +253,7 @@ fn log_remote_compact_failure(
     turn_context: &TurnContext,
     log_data: &CompactRequestLogData,
     total_usage_breakdown: TotalTokenUsageBreakdown,
-    err: &CodexErr,
+    err: &ChaosErr,
 ) {
     error!(
         turn_id = %turn_context.sub_id,

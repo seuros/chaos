@@ -14,7 +14,7 @@ use chaos_ipc::openai_models::ModelsResponse;
 use std::sync::LazyLock;
 
 use crate::AuthManager;
-use crate::CodexAuth;
+use crate::ChaosAuth;
 use crate::ModelProviderInfo;
 use crate::ProcessTable;
 use crate::config::Config;
@@ -41,35 +41,35 @@ pub fn set_deterministic_process_ids(enabled: bool) {
     unified_exec::set_deterministic_process_ids_for_tests(enabled);
 }
 
-pub fn auth_manager_from_auth(auth: CodexAuth) -> Arc<AuthManager> {
+pub fn auth_manager_from_auth(auth: ChaosAuth) -> Arc<AuthManager> {
     AuthManager::from_auth_for_testing(auth)
 }
 
-pub fn auth_manager_from_auth_with_home(auth: CodexAuth, codex_home: PathBuf) -> Arc<AuthManager> {
-    AuthManager::from_auth_for_testing_with_home(auth, codex_home)
+pub fn auth_manager_from_auth_with_home(auth: ChaosAuth, chaos_home: PathBuf) -> Arc<AuthManager> {
+    AuthManager::from_auth_for_testing_with_home(auth, chaos_home)
 }
 
 pub fn process_table_with_models_provider(
-    auth: CodexAuth,
+    auth: ChaosAuth,
     provider: ModelProviderInfo,
 ) -> ProcessTable {
     ProcessTable::with_models_provider_for_tests(auth, provider)
 }
 
 pub fn process_table_with_models_provider_and_home(
-    auth: CodexAuth,
+    auth: ChaosAuth,
     provider: ModelProviderInfo,
-    codex_home: PathBuf,
+    chaos_home: PathBuf,
 ) -> ProcessTable {
-    ProcessTable::with_models_provider_and_home_for_tests(auth, provider, codex_home)
+    ProcessTable::with_models_provider_and_home_for_tests(auth, provider, chaos_home)
 }
 
 pub fn models_manager_with_provider(
-    codex_home: PathBuf,
+    chaos_home: PathBuf,
     auth_manager: Arc<AuthManager>,
     provider: ModelProviderInfo,
 ) -> ModelsManager {
-    ModelsManager::with_provider_for_tests(codex_home, auth_manager, provider)
+    ModelsManager::with_provider_for_tests(chaos_home, auth_manager, provider)
 }
 
 pub fn get_model_offline(model: Option<&str>) -> String {

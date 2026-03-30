@@ -1,5 +1,5 @@
 use super::*;
-use crate::codex::make_session_and_context;
+use crate::chaos::make_session_and_context;
 use crate::config::test_config;
 use crate::models_manager::collaboration_mode_presets::CollaborationModesConfig;
 use crate::models_manager::manager::RefreshStrategy;
@@ -124,14 +124,14 @@ async fn ignores_session_prefix_messages_when_truncating() {
 async fn shutdown_all_threads_bounded_submits_shutdown_to_every_thread() {
     let temp_dir = tempdir().expect("tempdir");
     let mut config = test_config();
-    config.codex_home = temp_dir.path().join("codex-home");
-    config.cwd = config.codex_home.clone();
-    std::fs::create_dir_all(&config.codex_home).expect("create codex home");
+    config.chaos_home = temp_dir.path().join("codex-home");
+    config.cwd = config.chaos_home.clone();
+    std::fs::create_dir_all(&config.chaos_home).expect("create chaos home");
 
     let manager = ProcessTable::with_models_provider_and_home_for_tests(
-        CodexAuth::from_api_key("dummy"),
+        ChaosAuth::from_api_key("dummy"),
         config.model_provider.clone(),
-        config.codex_home.clone(),
+        config.chaos_home.clone(),
     );
     let thread_1 = manager
         .start_process(config.clone())
@@ -163,9 +163,9 @@ async fn new_uses_configured_openai_provider_for_model_refresh() {
 
     let temp_dir = tempdir().expect("tempdir");
     let mut config = test_config();
-    config.codex_home = temp_dir.path().join("codex-home");
-    config.cwd = config.codex_home.clone();
-    std::fs::create_dir_all(&config.codex_home).expect("create codex home");
+    config.chaos_home = temp_dir.path().join("codex-home");
+    config.cwd = config.chaos_home.clone();
+    std::fs::create_dir_all(&config.chaos_home).expect("create chaos home");
     config.model_catalog = None;
     config
         .model_providers
@@ -177,7 +177,7 @@ async fn new_uses_configured_openai_provider_for_model_refresh() {
     config.model_provider.base_url = Some(server.uri());
 
     let auth_manager =
-        AuthManager::from_auth_for_testing(CodexAuth::create_dummy_chatgpt_auth_for_testing());
+        AuthManager::from_auth_for_testing(ChaosAuth::create_dummy_chatgpt_auth_for_testing());
     let manager = ProcessTable::new(
         &config,
         auth_manager,

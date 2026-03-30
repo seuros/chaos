@@ -19,7 +19,7 @@ use chaos_ipc::protocol::ExecCommandSource;
 use chaos_ipc::protocol::Op;
 use chaos_ipc::protocol::SandboxPolicy;
 use chaos_ipc::user_input::UserInput;
-use chaos_kern::CodexAuth;
+use chaos_kern::ChaosAuth;
 use chaos_kern::ModelProviderInfo;
 use chaos_kern::built_in_model_providers;
 use chaos_kern::models_manager::manager::ModelsManager;
@@ -89,16 +89,16 @@ async fn remote_models_get_model_info_uses_longest_matching_prefix() -> Result<(
     )
     .await;
 
-    let codex_home = TempDir::new()?;
-    let config = load_default_config_for_test(&codex_home).await;
+    let chaos_home = TempDir::new()?;
+    let config = load_default_config_for_test(&chaos_home).await;
 
-    let auth = CodexAuth::create_dummy_chatgpt_auth_for_testing();
+    let auth = ChaosAuth::create_dummy_chatgpt_auth_for_testing();
     let provider = ModelProviderInfo {
         base_url: Some(format!("{}/v1", server.uri())),
         ..built_in_model_providers(/* openai_base_url */ None)["openai"].clone()
     };
     let manager = chaos_kern::test_support::models_manager_with_provider(
-        codex_home.path().to_path_buf(),
+        chaos_home.path().to_path_buf(),
         chaos_kern::test_support::auth_manager_from_auth(auth),
         provider,
     );
@@ -158,7 +158,7 @@ async fn remote_models_long_model_slug_is_sent_with_high_reasoning() -> Result<(
     let TestCodex {
         codex, cwd, config, ..
     } = test_codex()
-        .with_auth(CodexAuth::create_dummy_chatgpt_auth_for_testing())
+        .with_auth(ChaosAuth::create_dummy_chatgpt_auth_for_testing())
         .with_config(|config| {
             config.model = Some(requested_model.to_string());
         })
@@ -322,7 +322,7 @@ async fn remote_models_remote_model_uses_unified_exec() -> Result<()> {
     .await;
 
     let mut builder = test_codex()
-        .with_auth(CodexAuth::create_dummy_chatgpt_auth_for_testing())
+        .with_auth(ChaosAuth::create_dummy_chatgpt_auth_for_testing())
         .with_config(|config| {
             config.model = Some("gpt-5.1".to_string());
         });
@@ -445,7 +445,7 @@ async fn remote_models_truncation_policy_without_override_preserves_remote() -> 
     .await;
 
     let mut builder = test_codex()
-        .with_auth(CodexAuth::create_dummy_chatgpt_auth_for_testing())
+        .with_auth(ChaosAuth::create_dummy_chatgpt_auth_for_testing())
         .with_config(|config| {
             config.model = Some("gpt-5.1".to_string());
         });
@@ -489,7 +489,7 @@ async fn remote_models_truncation_policy_with_tool_output_override() -> Result<(
     .await;
 
     let mut builder = test_codex()
-        .with_auth(CodexAuth::create_dummy_chatgpt_auth_for_testing())
+        .with_auth(ChaosAuth::create_dummy_chatgpt_auth_for_testing())
         .with_config(|config| {
             config.model = Some("gpt-5.1".to_string());
             config.tool_output_token_limit = Some(50);
@@ -575,7 +575,7 @@ async fn remote_models_apply_remote_base_instructions() -> Result<()> {
     .await;
 
     let mut builder = test_codex()
-        .with_auth(CodexAuth::create_dummy_chatgpt_auth_for_testing())
+        .with_auth(ChaosAuth::create_dummy_chatgpt_auth_for_testing())
         .with_config(|config| {
             config.model = Some("gpt-5.1".to_string());
         });
@@ -650,15 +650,15 @@ async fn remote_models_do_not_append_removed_builtin_presets() -> Result<()> {
     )
     .await;
 
-    let codex_home = TempDir::new()?;
+    let chaos_home = TempDir::new()?;
 
-    let auth = CodexAuth::create_dummy_chatgpt_auth_for_testing();
+    let auth = ChaosAuth::create_dummy_chatgpt_auth_for_testing();
     let provider = ModelProviderInfo {
         base_url: Some(format!("{}/v1", server.uri())),
         ..built_in_model_providers(/* openai_base_url */ None)["openai"].clone()
     };
     let manager = chaos_kern::test_support::models_manager_with_provider(
-        codex_home.path().to_path_buf(),
+        chaos_home.path().to_path_buf(),
         chaos_kern::test_support::auth_manager_from_auth(auth),
         provider,
     );
@@ -705,15 +705,15 @@ async fn remote_models_merge_adds_new_high_priority_first() -> Result<()> {
     )
     .await;
 
-    let codex_home = TempDir::new()?;
+    let chaos_home = TempDir::new()?;
 
-    let auth = CodexAuth::create_dummy_chatgpt_auth_for_testing();
+    let auth = ChaosAuth::create_dummy_chatgpt_auth_for_testing();
     let provider = ModelProviderInfo {
         base_url: Some(format!("{}/v1", server.uri())),
         ..built_in_model_providers(/* openai_base_url */ None)["openai"].clone()
     };
     let manager = chaos_kern::test_support::models_manager_with_provider(
-        codex_home.path().to_path_buf(),
+        chaos_home.path().to_path_buf(),
         chaos_kern::test_support::auth_manager_from_auth(auth),
         provider,
     );
@@ -752,15 +752,15 @@ async fn remote_models_merge_replaces_overlapping_model() -> Result<()> {
     )
     .await;
 
-    let codex_home = TempDir::new()?;
+    let chaos_home = TempDir::new()?;
 
-    let auth = CodexAuth::create_dummy_chatgpt_auth_for_testing();
+    let auth = ChaosAuth::create_dummy_chatgpt_auth_for_testing();
     let provider = ModelProviderInfo {
         base_url: Some(format!("{}/v1", server.uri())),
         ..built_in_model_providers(/* openai_base_url */ None)["openai"].clone()
     };
     let manager = chaos_kern::test_support::models_manager_with_provider(
-        codex_home.path().to_path_buf(),
+        chaos_home.path().to_path_buf(),
         chaos_kern::test_support::auth_manager_from_auth(auth),
         provider,
     );
@@ -796,15 +796,15 @@ async fn remote_models_merge_preserves_bundled_models_on_empty_response() -> Res
     let server = MockServer::start().await;
     let _models_mock = mount_models_once(&server, ModelsResponse { models: Vec::new() }).await;
 
-    let codex_home = TempDir::new()?;
+    let chaos_home = TempDir::new()?;
 
-    let auth = CodexAuth::create_dummy_chatgpt_auth_for_testing();
+    let auth = ChaosAuth::create_dummy_chatgpt_auth_for_testing();
     let provider = ModelProviderInfo {
         base_url: Some(format!("{}/v1", server.uri())),
         ..built_in_model_providers(/* openai_base_url */ None)["openai"].clone()
     };
     let manager = chaos_kern::test_support::models_manager_with_provider(
-        codex_home.path().to_path_buf(),
+        chaos_home.path().to_path_buf(),
         chaos_kern::test_support::auth_manager_from_auth(auth),
         provider,
     );
@@ -837,15 +837,15 @@ async fn remote_models_request_times_out_after_5s() -> Result<()> {
     )
     .await;
 
-    let codex_home = TempDir::new()?;
+    let chaos_home = TempDir::new()?;
 
-    let auth = CodexAuth::create_dummy_chatgpt_auth_for_testing();
+    let auth = ChaosAuth::create_dummy_chatgpt_auth_for_testing();
     let provider = ModelProviderInfo {
         base_url: Some(format!("{}/v1", server.uri())),
         ..built_in_model_providers(/* openai_base_url */ None)["openai"].clone()
     };
     let manager = chaos_kern::test_support::models_manager_with_provider(
-        codex_home.path().to_path_buf(),
+        chaos_home.path().to_path_buf(),
         chaos_kern::test_support::auth_manager_from_auth(auth),
         provider,
     );
@@ -903,15 +903,15 @@ async fn remote_models_hide_picker_only_models() -> Result<()> {
     )
     .await;
 
-    let codex_home = TempDir::new()?;
+    let chaos_home = TempDir::new()?;
 
-    let auth = CodexAuth::create_dummy_chatgpt_auth_for_testing();
+    let auth = ChaosAuth::create_dummy_chatgpt_auth_for_testing();
     let provider = ModelProviderInfo {
         base_url: Some(format!("{}/v1", server.uri())),
         ..built_in_model_providers(/* openai_base_url */ None)["openai"].clone()
     };
     let manager = chaos_kern::test_support::models_manager_with_provider(
-        codex_home.path().to_path_buf(),
+        chaos_home.path().to_path_buf(),
         chaos_kern::test_support::auth_manager_from_auth(auth),
         provider,
     );

@@ -10,7 +10,7 @@ use std::time::Duration;
 use std::time::SystemTime;
 use std::time::UNIX_EPOCH;
 
-use chaos_kern::CodexAuth;
+use chaos_kern::ChaosAuth;
 use chaos_kern::config::types::McpServerConfig;
 use chaos_kern::config::types::McpServerTransportConfig;
 use chaos_kern::models_manager::manager::RefreshStrategy;
@@ -478,7 +478,7 @@ async fn stdio_image_responses_are_sanitized_for_text_only_model() -> anyhow::Re
     let mcp_test_test_server_bin = stdio_server_bin()?;
 
     let fixture = test_codex()
-        .with_auth(CodexAuth::create_dummy_chatgpt_auth_for_testing())
+        .with_auth(ChaosAuth::create_dummy_chatgpt_auth_for_testing())
         .with_config(move |config| {
             let mut servers = config.mcp_servers.get().clone();
             servers.insert(
@@ -879,10 +879,10 @@ async fn streamable_http_tool_call_round_trip() -> anyhow::Result<()> {
     Ok(())
 }
 
-/// This test writes to a fallback credentials file in CODEX_HOME.
-/// Ideally, we wouldn't need to serialize the test but it's much more cumbersome to wire CODEX_HOME through the code.
+/// This test writes to a credentials file in CHAOS_HOME.
+/// Ideally, we wouldn't need to serialize the test but it's much more cumbersome to wire CHAOS_HOME through the code.
 #[test]
-#[serial(codex_home)]
+#[serial(chaos_home)]
 fn streamable_http_with_oauth_round_trip() -> anyhow::Result<()> {
     const TEST_STACK_SIZE_BYTES: usize = 8 * 1024 * 1024;
 
@@ -961,7 +961,7 @@ async fn streamable_http_with_oauth_round_trip_impl() -> anyhow::Result<()> {
         .await?;
 
     let temp_home = Arc::new(tempdir()?);
-    let _codex_home_guard = EnvVarGuard::set("CODEX_HOME", temp_home.path().as_os_str());
+    let _codex_home_guard = EnvVarGuard::set("CHAOS_HOME", temp_home.path().as_os_str());
     write_fallback_oauth_tokens(
         temp_home.path(),
         server_name,

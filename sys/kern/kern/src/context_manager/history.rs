@@ -1,4 +1,4 @@
-use crate::codex::TurnContext;
+use crate::chaos::TurnContext;
 use crate::context_manager::normalize;
 use crate::event_mapping::is_contextual_user_message_content;
 use crate::truncate::TruncationPolicy;

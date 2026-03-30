@@ -1,5 +1,5 @@
 use super::*;
-use crate::CodexAuth;
+use crate::ChaosAuth;
 use crate::auth::AuthCredentialsStoreMode;
 use crate::config::ConfigBuilder;
 use crate::model_provider_info::WireApi;
@@ -90,18 +90,18 @@ fn anthropic_provider_for(base_url: String) -> ModelProviderInfo {
 
 #[tokio::test]
 async fn get_model_info_tracks_fallback_usage() {
-    let codex_home = tempdir().expect("temp dir");
+    let chaos_home = tempdir().expect("temp dir");
     let config = ConfigBuilder::default()
-        .codex_home(codex_home.path().to_path_buf())
+        .chaos_home(chaos_home.path().to_path_buf())
         .build()
         .await
         .expect("load default test config");
-    let auth_manager = AuthManager::from_auth_for_testing(CodexAuth::from_api_key("Test API Key"));
+    let auth_manager = AuthManager::from_auth_for_testing(ChaosAuth::from_api_key("Test API Key"));
     let test_catalog = ModelsResponse {
         models: vec![remote_model("test-model", "Test Model", 1)],
     };
     let manager = ModelsManager::new(
-        codex_home.path().to_path_buf(),
+        chaos_home.path().to_path_buf(),
         auth_manager,
         Some(test_catalog),
         CollaborationModesConfig::default(),
@@ -121,18 +121,18 @@ async fn get_model_info_tracks_fallback_usage() {
 
 #[tokio::test]
 async fn get_model_info_uses_custom_catalog() {
-    let codex_home = tempdir().expect("temp dir");
+    let chaos_home = tempdir().expect("temp dir");
     let config = ConfigBuilder::default()
-        .codex_home(codex_home.path().to_path_buf())
+        .chaos_home(chaos_home.path().to_path_buf())
         .build()
         .await
         .expect("load default test config");
     let mut overlay = remote_model("gpt-overlay", "Overlay", 0);
     overlay.supports_image_detail_original = true;
 
-    let auth_manager = AuthManager::from_auth_for_testing(CodexAuth::from_api_key("Test API Key"));
+    let auth_manager = AuthManager::from_auth_for_testing(ChaosAuth::from_api_key("Test API Key"));
     let manager = ModelsManager::new(
-        codex_home.path().to_path_buf(),
+        chaos_home.path().to_path_buf(),
         auth_manager,
         Some(ModelsResponse {
             models: vec![overlay],
@@ -154,17 +154,17 @@ async fn get_model_info_uses_custom_catalog() {
 
 #[tokio::test]
 async fn get_model_info_matches_namespaced_suffix() {
-    let codex_home = tempdir().expect("temp dir");
+    let chaos_home = tempdir().expect("temp dir");
     let config = ConfigBuilder::default()
-        .codex_home(codex_home.path().to_path_buf())
+        .chaos_home(chaos_home.path().to_path_buf())
         .build()
         .await
         .expect("load default test config");
     let mut remote = remote_model("gpt-image", "Image", 0);
     remote.supports_image_detail_original = true;
-    let auth_manager = AuthManager::from_auth_for_testing(CodexAuth::from_api_key("Test API Key"));
+    let auth_manager = AuthManager::from_auth_for_testing(ChaosAuth::from_api_key("Test API Key"));
     let manager = ModelsManager::new(
-        codex_home.path().to_path_buf(),
+        chaos_home.path().to_path_buf(),
         auth_manager,
         Some(ModelsResponse {
             models: vec![remote],
@@ -182,18 +182,18 @@ async fn get_model_info_matches_namespaced_suffix() {
 
 #[tokio::test]
 async fn get_model_info_rejects_multi_segment_namespace_suffix_matching() {
-    let codex_home = tempdir().expect("temp dir");
+    let chaos_home = tempdir().expect("temp dir");
     let config = ConfigBuilder::default()
-        .codex_home(codex_home.path().to_path_buf())
+        .chaos_home(chaos_home.path().to_path_buf())
         .build()
         .await
         .expect("load default test config");
-    let auth_manager = AuthManager::from_auth_for_testing(CodexAuth::from_api_key("Test API Key"));
+    let auth_manager = AuthManager::from_auth_for_testing(ChaosAuth::from_api_key("Test API Key"));
     let test_catalog = ModelsResponse {
         models: vec![remote_model("test-model", "Test Model", 1)],
     };
     let manager = ModelsManager::new(
-        codex_home.path().to_path_buf(),
+        chaos_home.path().to_path_buf(),
         auth_manager,
         Some(test_catalog),
         CollaborationModesConfig::default(),
@@ -222,12 +222,12 @@ async fn refresh_available_models_sorts_by_priority() {
     )
     .await;
 
-    let codex_home = tempdir().expect("temp dir");
+    let chaos_home = tempdir().expect("temp dir");
     let auth_manager =
-        AuthManager::from_auth_for_testing(CodexAuth::create_dummy_chatgpt_auth_for_testing());
+        AuthManager::from_auth_for_testing(ChaosAuth::create_dummy_chatgpt_auth_for_testing());
     let provider = provider_for(server.uri());
     let manager = ModelsManager::with_provider_for_tests(
-        codex_home.path().to_path_buf(),
+        chaos_home.path().to_path_buf(),
         auth_manager,
         provider,
     );
@@ -271,12 +271,12 @@ async fn refresh_available_models_uses_cache_when_fresh() {
     )
     .await;
 
-    let codex_home = tempdir().expect("temp dir");
+    let chaos_home = tempdir().expect("temp dir");
     let auth_manager =
-        AuthManager::from_auth_for_testing(CodexAuth::create_dummy_chatgpt_auth_for_testing());
+        AuthManager::from_auth_for_testing(ChaosAuth::create_dummy_chatgpt_auth_for_testing());
     let provider = provider_for(server.uri());
     let manager = ModelsManager::with_provider_for_tests(
-        codex_home.path().to_path_buf(),
+        chaos_home.path().to_path_buf(),
         auth_manager,
         provider,
     );
@@ -312,12 +312,12 @@ async fn refresh_available_models_refetches_when_cache_stale() {
     )
     .await;
 
-    let codex_home = tempdir().expect("temp dir");
+    let chaos_home = tempdir().expect("temp dir");
     let auth_manager =
-        AuthManager::from_auth_for_testing(CodexAuth::create_dummy_chatgpt_auth_for_testing());
+        AuthManager::from_auth_for_testing(ChaosAuth::create_dummy_chatgpt_auth_for_testing());
     let provider = provider_for(server.uri());
     let manager = ModelsManager::with_provider_for_tests(
-        codex_home.path().to_path_buf(),
+        chaos_home.path().to_path_buf(),
         auth_manager,
         provider,
     );
@@ -375,12 +375,12 @@ async fn refresh_available_models_refetches_when_version_mismatch() {
     )
     .await;
 
-    let codex_home = tempdir().expect("temp dir");
+    let chaos_home = tempdir().expect("temp dir");
     let auth_manager =
-        AuthManager::from_auth_for_testing(CodexAuth::create_dummy_chatgpt_auth_for_testing());
+        AuthManager::from_auth_for_testing(ChaosAuth::create_dummy_chatgpt_auth_for_testing());
     let provider = provider_for(server.uri());
     let manager = ModelsManager::with_provider_for_tests(
-        codex_home.path().to_path_buf(),
+        chaos_home.path().to_path_buf(),
         auth_manager,
         provider,
     );
@@ -447,11 +447,11 @@ async fn refresh_available_models_refetches_when_provider_scope_changes() {
     )
     .await;
 
-    let codex_home = tempdir().expect("temp dir");
+    let chaos_home = tempdir().expect("temp dir");
     let auth_manager =
-        AuthManager::from_auth_for_testing(CodexAuth::create_dummy_chatgpt_auth_for_testing());
+        AuthManager::from_auth_for_testing(ChaosAuth::create_dummy_chatgpt_auth_for_testing());
     let manager_a = ModelsManager::with_provider_for_tests(
-        codex_home.path().to_path_buf(),
+        chaos_home.path().to_path_buf(),
         auth_manager.clone(),
         provider_for(server_a.uri()),
     );
@@ -463,7 +463,7 @@ async fn refresh_available_models_refetches_when_provider_scope_changes() {
     assert_models_contain(&manager_a.get_remote_models().await, &initial_models);
 
     let manager_b = ModelsManager::with_provider_for_tests(
-        codex_home.path().to_path_buf(),
+        chaos_home.path().to_path_buf(),
         auth_manager,
         provider_for(server_b.uri()),
     );
@@ -506,10 +506,10 @@ async fn refresh_available_models_uses_cache_for_anthropic_provider() {
         .mount(&server)
         .await;
 
-    let codex_home = tempdir().expect("temp dir");
-    let auth_manager = AuthManager::from_auth_for_testing(CodexAuth::from_api_key("Test API Key"));
+    let chaos_home = tempdir().expect("temp dir");
+    let auth_manager = AuthManager::from_auth_for_testing(ChaosAuth::from_api_key("Test API Key"));
     let manager = ModelsManager::with_provider_for_tests(
-        codex_home.path().to_path_buf(),
+        chaos_home.path().to_path_buf(),
         auth_manager,
         anthropic_provider_for(format!("{}/anthropic", server.uri())),
     );
@@ -540,10 +540,10 @@ async fn unsupported_anthropic_provider_caches_empty_catalog_instead_of_bundled_
         .mount(&server)
         .await;
 
-    let codex_home = tempdir().expect("temp dir");
-    let auth_manager = AuthManager::from_auth_for_testing(CodexAuth::from_api_key("Test API Key"));
+    let chaos_home = tempdir().expect("temp dir");
+    let auth_manager = AuthManager::from_auth_for_testing(ChaosAuth::from_api_key("Test API Key"));
     let manager = ModelsManager::with_provider_for_tests(
-        codex_home.path().to_path_buf(),
+        chaos_home.path().to_path_buf(),
         auth_manager,
         anthropic_provider_for(format!("{}/anthropic", server.uri())),
     );
@@ -578,12 +578,12 @@ async fn refresh_available_models_drops_removed_remote_models() {
     )
     .await;
 
-    let codex_home = tempdir().expect("temp dir");
+    let chaos_home = tempdir().expect("temp dir");
     let auth_manager =
-        AuthManager::from_auth_for_testing(CodexAuth::create_dummy_chatgpt_auth_for_testing());
+        AuthManager::from_auth_for_testing(ChaosAuth::create_dummy_chatgpt_auth_for_testing());
     let provider = provider_for(server.uri());
     let mut manager = ModelsManager::with_provider_for_tests(
-        codex_home.path().to_path_buf(),
+        chaos_home.path().to_path_buf(),
         auth_manager,
         provider,
     );
@@ -646,15 +646,15 @@ async fn refresh_available_models_fetches_regardless_of_auth_mode() {
     )
     .await;
 
-    let codex_home = tempdir().expect("temp dir");
+    let chaos_home = tempdir().expect("temp dir");
     let auth_manager = Arc::new(AuthManager::new(
-        codex_home.path().to_path_buf(),
+        chaos_home.path().to_path_buf(),
         false,
         AuthCredentialsStoreMode::File,
     ));
     let provider = provider_for(server.uri());
     let manager = ModelsManager::with_provider_for_tests(
-        codex_home.path().to_path_buf(),
+        chaos_home.path().to_path_buf(),
         auth_manager,
         provider,
     );
@@ -679,11 +679,11 @@ async fn refresh_available_models_fetches_regardless_of_auth_mode() {
 
 #[test]
 fn build_available_models_picks_default_after_hiding_hidden_models() {
-    let codex_home = tempdir().expect("temp dir");
-    let auth_manager = AuthManager::from_auth_for_testing(CodexAuth::from_api_key("Test API Key"));
+    let chaos_home = tempdir().expect("temp dir");
+    let auth_manager = AuthManager::from_auth_for_testing(ChaosAuth::from_api_key("Test API Key"));
     let provider = provider_for("http://example.test".to_string());
     let manager = ModelsManager::with_provider_for_tests(
-        codex_home.path().to_path_buf(),
+        chaos_home.path().to_path_buf(),
         auth_manager,
         provider,
     );

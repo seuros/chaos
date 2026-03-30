@@ -247,10 +247,10 @@ impl ToolRuntime<ShellRequest, ExecToolCallOutput> for ShellRuntime {
         )?;
         let env = attempt
             .env_for(spec, req.network.as_ref())
-            .map_err(|err| ToolError::Codex(err.into()))?;
+            .map_err(|err| ToolError::Chaos(err.into()))?;
         let out = execute_env(env, Self::stdout_stream(ctx))
             .await
-            .map_err(ToolError::Codex)?;
+            .map_err(ToolError::Chaos)?;
         Ok(out)
     }
 }

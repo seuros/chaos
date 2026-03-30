@@ -22,7 +22,7 @@ use serde_json::Value;
 use std::path::Path;
 use std::path::PathBuf;
 
-use crate::codex::Session;
+use crate::chaos::Session;
 use crate::function_tool::FunctionCallError;
 use crate::sandboxing::SandboxPermissions;
 use crate::sandboxing::merge_permission_profiles;

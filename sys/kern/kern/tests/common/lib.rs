@@ -88,9 +88,9 @@ pub fn test_tmp_path_buf() -> PathBuf {
 /// Returns a default `Config` whose on-disk state is confined to the provided
 /// temporary directory. Using a per-test directory keeps tests hermetic and
 /// avoids clobbering a developer’s real `~/.codex`.
-pub async fn load_default_config_for_test(codex_home: &TempDir) -> Config {
+pub async fn load_default_config_for_test(chaos_home: &TempDir) -> Config {
     ConfigBuilder::default()
-        .codex_home(codex_home.path().to_path_buf())
+        .chaos_home(chaos_home.path().to_path_buf())
         .harness_overrides(default_test_overrides())
         .build()
         .await
@@ -211,11 +211,11 @@ where
 }
 
 pub fn sandbox_env_var() -> &'static str {
-    chaos_kern::spawn::CODEX_SANDBOX_ENV_VAR
+    chaos_kern::spawn::CHAOS_SANDBOX_ENV_VAR
 }
 
 pub fn sandbox_network_env_var() -> &'static str {
-    chaos_kern::spawn::CODEX_SANDBOX_NETWORK_DISABLED_ENV_VAR
+    chaos_kern::spawn::CHAOS_SANDBOX_NETWORK_DISABLED_ENV_VAR
 }
 
 pub fn format_with_current_shell(command: &str) -> Vec<String> {

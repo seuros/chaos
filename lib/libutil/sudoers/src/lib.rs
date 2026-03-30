@@ -24,7 +24,7 @@ pub fn builtin_approval_presets() -> Vec<ApprovalPreset> {
         ApprovalPreset {
             id: "read-only",
             label: "Read Only",
-            description: "Codex can read files in the current workspace. Approval is required to edit files or access the internet.",
+            description: "Chaos can read files in the current workspace. Approval is required to edit files or access the internet.",
             approval: AskForApproval::OnRequest,
             sandbox: SandboxPolicy::new_read_only_policy(),
         },
@@ -38,7 +38,7 @@ pub fn builtin_approval_presets() -> Vec<ApprovalPreset> {
         ApprovalPreset {
             id: "full-access",
             label: "Full Access",
-            description: "Codex can edit files outside this workspace and access the internet without asking for approval. Exercise caution when using.",
+            description: "Chaos can edit files outside this workspace and access the internet without asking for approval. Exercise caution when using.",
             approval: AskForApproval::Never,
             sandbox: SandboxPolicy::RootAccess,
         },

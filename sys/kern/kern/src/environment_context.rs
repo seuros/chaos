@@ -1,4 +1,4 @@
-use crate::codex::TurnContext;
+use crate::chaos::TurnContext;
 use crate::contextual_user_message::ENVIRONMENT_CONTEXT_FRAGMENT;
 use crate::shell::Shell;
 use chaos_ipc::models::ResponseItem;

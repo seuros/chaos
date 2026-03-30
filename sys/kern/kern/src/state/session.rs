@@ -6,8 +6,8 @@ use std::collections::HashMap;
 use std::collections::HashSet;
 use tokio::task::JoinHandle;
 
-use crate::codex::PreviousTurnSettings;
-use crate::codex::SessionConfiguration;
+use crate::chaos::PreviousTurnSettings;
+use crate::chaos::SessionConfiguration;
 use crate::context_manager::ContextManager;
 use crate::error::Result as CodexResult;
 use crate::protocol::RateLimitSnapshot;

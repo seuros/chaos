@@ -1,7 +1,7 @@
 use chaos_ipc::protocol::EventMsg;
 use chaos_ipc::protocol::Op;
 use chaos_ipc::user_input::UserInput;
-use chaos_kern::CodexAuth;
+use chaos_kern::ChaosAuth;
 use chaos_kern::features::Feature;
 use core_test_support::responses::ev_completed;
 use core_test_support::responses::ev_response_created;
@@ -26,7 +26,7 @@ async fn request_body_is_zstd_compressed_for_codex_backend_when_enabled() -> any
 
     let base_url = format!("{}/backend-api/codex/v1", server.uri());
     let mut builder = test_codex()
-        .with_auth(CodexAuth::create_dummy_chatgpt_auth_for_testing())
+        .with_auth(ChaosAuth::create_dummy_chatgpt_auth_for_testing())
         .with_config(move |config| {
             config
                 .features

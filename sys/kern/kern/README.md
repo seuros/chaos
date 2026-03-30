@@ -1,6 +1,6 @@
 # chaos-kern
 
-This crate implements the business logic for Codex. It is designed to be used by the various Codex UIs written in Rust.
+This crate implements the business logic for Chaos. It is designed to be used by the various Chaos UIs written in Rust.
 
 ## Dependencies
 
@@ -12,7 +12,7 @@ Expects `/usr/bin/sandbox-exec` to be present.
 
 When using the workspace-write sandbox policy, the Seatbelt profile allows
 writes under the configured writable roots while keeping `.git` (directory or
-pointer file), the resolved `gitdir:` target, and `.codex` read-only.
+pointer file), the resolved `gitdir:` target, and `.chaos` read-only.
 
 Network access and filesystem read/write roots are controlled by
 `SandboxPolicy`. Seatbelt consumes the resolved policy and enforces it.

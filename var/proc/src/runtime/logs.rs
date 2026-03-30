@@ -1,4 +1,6 @@
 use super::*;
+use crate::LogTailBatch;
+use crate::LogTailCursor;
 
 impl StateRuntime {
     pub async fn insert_log(&self, entry: &LogEntry) -> anyhow::Result<()> {
@@ -308,6 +310,78 @@ WHERE id IN (
         Ok(rows)
     }
 
+    /// Return the most recent matching logs in ascending order.
+    ///
+    /// Internally this queries newest-first for efficiency, then reverses the
+    /// result so consumers can render in natural chronological order.
+    pub async fn recent_logs(&self, query: &LogQuery, limit: usize) -> anyhow::Result<Vec<LogRow>> {
+        if limit == 0 {
+            return Ok(Vec::new());
+        }
+
+        let mut recent_query = query.clone();
+        recent_query.limit = Some(limit);
+        recent_query.after_id = None;
+        recent_query.descending = true;
+
+        let mut rows = self.query_logs(&recent_query).await?;
+        rows.reverse();
+        Ok(rows)
+    }
+
+    /// Return a backfill batch for a tailing consumer, plus the cursor to use
+    /// for subsequent incremental polls.
+    pub async fn tail_backfill(
+        &self,
+        query: &LogQuery,
+        limit: usize,
+    ) -> anyhow::Result<LogTailBatch> {
+        let rows = self.recent_logs(query, limit).await?;
+        let last_id = rows
+            .last()
+            .map(|row| row.id)
+            .unwrap_or(self.max_log_id(query).await?);
+        Ok(LogTailBatch {
+            rows,
+            cursor: LogTailCursor { last_id },
+        })
+    }
+
+    /// Return matching logs that were inserted after the provided row id.
+    ///
+    /// Results are always returned in ascending order so callers can append
+    /// them directly to a live view.
+    pub async fn query_logs_after(
+        &self,
+        query: &LogQuery,
+        after_id: i64,
+        limit: Option<usize>,
+    ) -> anyhow::Result<Vec<LogRow>> {
+        let mut next_query = query.clone();
+        next_query.after_id = Some(after_id);
+        next_query.limit = limit;
+        next_query.descending = false;
+        self.query_logs(&next_query).await
+    }
+
+    /// Poll for rows after the provided cursor and return the advanced cursor.
+    pub async fn tail_poll(
+        &self,
+        query: &LogQuery,
+        cursor: &LogTailCursor,
+        limit: Option<usize>,
+    ) -> anyhow::Result<LogTailBatch> {
+        let rows = self.query_logs_after(query, cursor.last_id, limit).await?;
+        let last_id = rows
+            .last()
+            .map(|row| row.id)
+            .unwrap_or(cursor.last_id);
+        Ok(LogTailBatch {
+            rows,
+            cursor: LogTailCursor { last_id },
+        })
+    }
+
     /// Query per-thread feedback logs, capped to the per-thread SQLite retention budget.
     pub async fn query_feedback_logs(&self, process_id: &str) -> anyhow::Result<Vec<u8>> {
         let max_bytes = LOG_PARTITION_SIZE_LIMIT_BYTES;
@@ -408,24 +482,41 @@ fn push_log_filters<'a>(builder: &mut QueryBuilder<'a, Sqlite>, query: &'a LogQu
     }
     push_like_filters(builder, "module_path", &query.module_like);
     push_like_filters(builder, "file", &query.file_like);
-    let has_process_filter = !query.process_ids.is_empty() || query.include_processless;
-    if has_process_filter {
+    if let Some(process_id) = query.related_to_process_id.as_ref() {
         builder.push(" AND (");
-        let mut needs_or = false;
-        for process_id in &query.process_ids {
-            if needs_or {
-                builder.push(" OR ");
-            }
-            builder.push("process_id = ").push_bind(process_id.as_str());
-            needs_or = true;
-        }
-        if query.include_processless {
-            if needs_or {
-                builder.push(" OR ");
-            }
-            builder.push("process_id IS NULL");
+        builder.push("process_id = ").push_bind(process_id.as_str());
+        if query.include_related_processless {
+            builder.push(" OR (process_id IS NULL AND process_uuid IN (");
+            builder.push(
+                "SELECT process_uuid FROM logs WHERE process_id = ",
+            );
+            builder.push_bind(process_id.as_str());
+            builder.push(
+                " AND process_uuid IS NOT NULL ORDER BY ts DESC, ts_nanos DESC, id DESC LIMIT 1",
+            );
+            builder.push("))");
         }
         builder.push(")");
+    } else {
+        let has_process_filter = !query.process_ids.is_empty() || query.include_processless;
+        if has_process_filter {
+            builder.push(" AND (");
+            let mut needs_or = false;
+            for process_id in &query.process_ids {
+                if needs_or {
+                    builder.push(" OR ");
+                }
+                builder.push("process_id = ").push_bind(process_id.as_str());
+                needs_or = true;
+            }
+            if query.include_processless {
+                if needs_or {
+                    builder.push(" OR ");
+                }
+                builder.push("process_id IS NULL");
+            }
+            builder.push(")");
+        }
     }
     if let Some(after_id) = query.after_id {
         builder.push(" AND id > ").push_bind(after_id);
@@ -494,8 +585,8 @@ mod tests {
 
     #[tokio::test]
     async fn insert_logs_use_dedicated_log_database() {
-        let codex_home = unique_temp_dir();
-        let runtime = StateRuntime::init(codex_home.clone(), "test-provider".to_string())
+        let chaos_home = unique_temp_dir();
+        let runtime = StateRuntime::init(chaos_home.clone(), "test-provider".to_string())
             .await
             .expect("initialize runtime");
 
@@ -515,19 +606,19 @@ mod tests {
             .await
             .expect("insert test logs");
 
-        let state_count = log_row_count(state_db_path(codex_home.as_path()).as_path()).await;
-        let logs_count = log_row_count(logs_db_path(codex_home.as_path()).as_path()).await;
+        let state_count = log_row_count(state_db_path(chaos_home.as_path()).as_path()).await;
+        let logs_count = log_row_count(logs_db_path(chaos_home.as_path()).as_path()).await;
 
         assert_eq!(state_count, 0);
         assert_eq!(logs_count, 1);
 
-        let _ = tokio::fs::remove_dir_all(codex_home).await;
+        let _ = tokio::fs::remove_dir_all(chaos_home).await;
     }
 
     #[tokio::test]
     async fn query_logs_with_search_matches_substring() {
-        let codex_home = unique_temp_dir();
-        let runtime = StateRuntime::init(codex_home.clone(), "test-provider".to_string())
+        let chaos_home = unique_temp_dir();
+        let runtime = StateRuntime::init(chaos_home.clone(), "test-provider".to_string())
             .await
             .expect("initialize runtime");
 
@@ -572,13 +663,326 @@ mod tests {
         assert_eq!(rows.len(), 1);
         assert_eq!(rows[0].message.as_deref(), Some("alphabet"));
 
-        let _ = tokio::fs::remove_dir_all(codex_home).await;
+        let _ = tokio::fs::remove_dir_all(chaos_home).await;
+    }
+
+    #[tokio::test]
+    async fn recent_logs_returns_latest_rows_in_ascending_order() {
+        let chaos_home = unique_temp_dir();
+        let runtime = StateRuntime::init(chaos_home.clone(), "test-provider".to_string())
+            .await
+            .expect("initialize runtime");
+
+        runtime
+            .insert_logs(&[
+                LogEntry {
+                    ts: 10,
+                    ts_nanos: 0,
+                    level: "INFO".to_string(),
+                    target: "cli".to_string(),
+                    message: Some("first".to_string()),
+                    process_id: Some("thread-1".to_string()),
+                    process_uuid: None,
+                    file: Some("main.rs".to_string()),
+                    line: Some(1),
+                    module_path: None,
+                },
+                LogEntry {
+                    ts: 11,
+                    ts_nanos: 0,
+                    level: "INFO".to_string(),
+                    target: "cli".to_string(),
+                    message: Some("second".to_string()),
+                    process_id: Some("thread-1".to_string()),
+                    process_uuid: None,
+                    file: Some("main.rs".to_string()),
+                    line: Some(2),
+                    module_path: None,
+                },
+                LogEntry {
+                    ts: 12,
+                    ts_nanos: 0,
+                    level: "INFO".to_string(),
+                    target: "cli".to_string(),
+                    message: Some("third".to_string()),
+                    process_id: Some("thread-1".to_string()),
+                    process_uuid: None,
+                    file: Some("main.rs".to_string()),
+                    line: Some(3),
+                    module_path: None,
+                },
+            ])
+            .await
+            .expect("insert test logs");
+
+        let rows = runtime
+            .recent_logs(&LogQuery::default(), 2)
+            .await
+            .expect("query recent logs");
+
+        let messages = rows
+            .iter()
+            .map(|row| row.message.as_deref().unwrap_or_default())
+            .collect::<Vec<_>>();
+        assert_eq!(messages, vec!["second", "third"]);
+
+        let _ = tokio::fs::remove_dir_all(chaos_home).await;
+    }
+
+    #[tokio::test]
+    async fn query_logs_after_returns_only_newer_rows_in_ascending_order() {
+        let chaos_home = unique_temp_dir();
+        let runtime = StateRuntime::init(chaos_home.clone(), "test-provider".to_string())
+            .await
+            .expect("initialize runtime");
+
+        runtime
+            .insert_logs(&[
+                LogEntry {
+                    ts: 20,
+                    ts_nanos: 0,
+                    level: "INFO".to_string(),
+                    target: "cli".to_string(),
+                    message: Some("one".to_string()),
+                    process_id: Some("thread-1".to_string()),
+                    process_uuid: None,
+                    file: Some("main.rs".to_string()),
+                    line: Some(1),
+                    module_path: None,
+                },
+                LogEntry {
+                    ts: 21,
+                    ts_nanos: 0,
+                    level: "INFO".to_string(),
+                    target: "cli".to_string(),
+                    message: Some("two".to_string()),
+                    process_id: Some("thread-1".to_string()),
+                    process_uuid: None,
+                    file: Some("main.rs".to_string()),
+                    line: Some(2),
+                    module_path: None,
+                },
+                LogEntry {
+                    ts: 22,
+                    ts_nanos: 0,
+                    level: "INFO".to_string(),
+                    target: "cli".to_string(),
+                    message: Some("three".to_string()),
+                    process_id: Some("thread-1".to_string()),
+                    process_uuid: None,
+                    file: Some("main.rs".to_string()),
+                    line: Some(3),
+                    module_path: None,
+                },
+            ])
+            .await
+            .expect("insert test logs");
+
+        let backfill = runtime
+            .recent_logs(&LogQuery::default(), 2)
+            .await
+            .expect("query recent logs");
+        let last_id = backfill.last().map(|row| row.id).unwrap_or(0);
+
+        runtime
+            .insert_log(&LogEntry {
+                ts: 23,
+                ts_nanos: 0,
+                level: "INFO".to_string(),
+                target: "cli".to_string(),
+                message: Some("four".to_string()),
+                process_id: Some("thread-1".to_string()),
+                process_uuid: None,
+                file: Some("main.rs".to_string()),
+                line: Some(4),
+                module_path: None,
+            })
+            .await
+            .expect("insert newer log");
+
+        let rows = runtime
+            .query_logs_after(&LogQuery::default(), last_id, None)
+            .await
+            .expect("query newer logs");
+
+        let messages = rows
+            .iter()
+            .map(|row| row.message.as_deref().unwrap_or_default())
+            .collect::<Vec<_>>();
+        assert_eq!(messages, vec!["four"]);
+
+        let _ = tokio::fs::remove_dir_all(chaos_home).await;
+    }
+
+    #[tokio::test]
+    async fn tail_backfill_and_poll_advance_cursor_for_live_consumers() {
+        let chaos_home = unique_temp_dir();
+        let runtime = StateRuntime::init(chaos_home.clone(), "test-provider".to_string())
+            .await
+            .expect("initialize runtime");
+
+        runtime
+            .insert_logs(&[
+                LogEntry {
+                    ts: 30,
+                    ts_nanos: 0,
+                    level: "INFO".to_string(),
+                    target: "cli".to_string(),
+                    message: Some("one".to_string()),
+                    process_id: Some("thread-1".to_string()),
+                    process_uuid: None,
+                    file: Some("main.rs".to_string()),
+                    line: Some(1),
+                    module_path: None,
+                },
+                LogEntry {
+                    ts: 31,
+                    ts_nanos: 0,
+                    level: "INFO".to_string(),
+                    target: "cli".to_string(),
+                    message: Some("two".to_string()),
+                    process_id: Some("thread-1".to_string()),
+                    process_uuid: None,
+                    file: Some("main.rs".to_string()),
+                    line: Some(2),
+                    module_path: None,
+                },
+            ])
+            .await
+            .expect("insert initial logs");
+
+        let backfill = runtime
+            .tail_backfill(&LogQuery::default(), 1)
+            .await
+            .expect("tail backfill");
+        assert_eq!(backfill.rows.len(), 1);
+        assert_eq!(backfill.rows[0].message.as_deref(), Some("two"));
+
+        runtime
+            .insert_log(&LogEntry {
+                ts: 32,
+                ts_nanos: 0,
+                level: "INFO".to_string(),
+                target: "cli".to_string(),
+                message: Some("three".to_string()),
+                process_id: Some("thread-1".to_string()),
+                process_uuid: None,
+                file: Some("main.rs".to_string()),
+                line: Some(3),
+                module_path: None,
+            })
+            .await
+            .expect("insert follow-up log");
+
+        let polled = runtime
+            .tail_poll(&LogQuery::default(), &backfill.cursor, None)
+            .await
+            .expect("tail poll");
+        assert_eq!(polled.rows.len(), 1);
+        assert_eq!(polled.rows[0].message.as_deref(), Some("three"));
+        assert!(polled.cursor.last_id > backfill.cursor.last_id);
+
+        let _ = tokio::fs::remove_dir_all(chaos_home).await;
+    }
+
+    #[tokio::test]
+    async fn related_process_query_includes_latest_processless_companion_logs_only() {
+        let chaos_home = unique_temp_dir();
+        let runtime = StateRuntime::init(chaos_home.clone(), "test-provider".to_string())
+            .await
+            .expect("initialize runtime");
+
+        runtime
+            .insert_logs(&[
+                LogEntry {
+                    ts: 40,
+                    ts_nanos: 0,
+                    level: "INFO".to_string(),
+                    target: "cli".to_string(),
+                    message: Some("old-thread".to_string()),
+                    process_id: Some("thread-1".to_string()),
+                    process_uuid: Some("proc-old".to_string()),
+                    file: Some("main.rs".to_string()),
+                    line: Some(1),
+                    module_path: None,
+                },
+                LogEntry {
+                    ts: 41,
+                    ts_nanos: 0,
+                    level: "INFO".to_string(),
+                    target: "cli".to_string(),
+                    message: Some("old-processless".to_string()),
+                    process_id: None,
+                    process_uuid: Some("proc-old".to_string()),
+                    file: Some("main.rs".to_string()),
+                    line: Some(2),
+                    module_path: None,
+                },
+                LogEntry {
+                    ts: 42,
+                    ts_nanos: 0,
+                    level: "INFO".to_string(),
+                    target: "cli".to_string(),
+                    message: Some("new-thread".to_string()),
+                    process_id: Some("thread-1".to_string()),
+                    process_uuid: Some("proc-new".to_string()),
+                    file: Some("main.rs".to_string()),
+                    line: Some(3),
+                    module_path: None,
+                },
+                LogEntry {
+                    ts: 43,
+                    ts_nanos: 0,
+                    level: "INFO".to_string(),
+                    target: "cli".to_string(),
+                    message: Some("new-processless".to_string()),
+                    process_id: None,
+                    process_uuid: Some("proc-new".to_string()),
+                    file: Some("main.rs".to_string()),
+                    line: Some(4),
+                    module_path: None,
+                },
+                LogEntry {
+                    ts: 44,
+                    ts_nanos: 0,
+                    level: "INFO".to_string(),
+                    target: "cli".to_string(),
+                    message: Some("other-processless".to_string()),
+                    process_id: None,
+                    process_uuid: Some("proc-other".to_string()),
+                    file: Some("main.rs".to_string()),
+                    line: Some(5),
+                    module_path: None,
+                },
+            ])
+            .await
+            .expect("insert scoped logs");
+
+        let rows = runtime
+            .query_logs(&LogQuery {
+                related_to_process_id: Some("thread-1".to_string()),
+                include_related_processless: true,
+                ..Default::default()
+            })
+            .await
+            .expect("query related logs");
+
+        let messages = rows
+            .iter()
+            .map(|row| row.message.as_deref().unwrap_or_default())
+            .collect::<Vec<_>>();
+        assert_eq!(
+            messages,
+            vec!["old-thread", "new-thread", "new-processless"]
+        );
+
+        let _ = tokio::fs::remove_dir_all(chaos_home).await;
     }
 
     #[tokio::test]
     async fn insert_logs_prunes_old_rows_when_thread_exceeds_size_limit() {
-        let codex_home = unique_temp_dir();
-        let runtime = StateRuntime::init(codex_home.clone(), "test-provider".to_string())
+        let chaos_home = unique_temp_dir();
+        let runtime = StateRuntime::init(chaos_home.clone(), "test-provider".to_string())
             .await
             .expect("initialize runtime");
 
@@ -624,13 +1028,13 @@ mod tests {
         assert_eq!(rows.len(), 1);
         assert_eq!(rows[0].ts, 2);
 
-        let _ = tokio::fs::remove_dir_all(codex_home).await;
+        let _ = tokio::fs::remove_dir_all(chaos_home).await;
     }
 
     #[tokio::test]
     async fn insert_logs_prunes_single_thread_row_when_it_exceeds_size_limit() {
-        let codex_home = unique_temp_dir();
-        let runtime = StateRuntime::init(codex_home.clone(), "test-provider".to_string())
+        let chaos_home = unique_temp_dir();
+        let runtime = StateRuntime::init(chaos_home.clone(), "test-provider".to_string())
             .await
             .expect("initialize runtime");
 
@@ -661,13 +1065,13 @@ mod tests {
 
         assert!(rows.is_empty());
 
-        let _ = tokio::fs::remove_dir_all(codex_home).await;
+        let _ = tokio::fs::remove_dir_all(chaos_home).await;
     }
 
     #[tokio::test]
     async fn insert_logs_prunes_processless_rows_per_process_uuid_only() {
-        let codex_home = unique_temp_dir();
-        let runtime = StateRuntime::init(codex_home.clone(), "test-provider".to_string())
+        let chaos_home = unique_temp_dir();
+        let runtime = StateRuntime::init(chaos_home.clone(), "test-provider".to_string())
             .await
             .expect("initialize runtime");
 
@@ -727,13 +1131,13 @@ mod tests {
         timestamps.sort_unstable();
         assert_eq!(timestamps, vec![2, 3]);
 
-        let _ = tokio::fs::remove_dir_all(codex_home).await;
+        let _ = tokio::fs::remove_dir_all(chaos_home).await;
     }
 
     #[tokio::test]
     async fn insert_logs_prunes_single_processless_process_row_when_it_exceeds_size_limit() {
-        let codex_home = unique_temp_dir();
-        let runtime = StateRuntime::init(codex_home.clone(), "test-provider".to_string())
+        let chaos_home = unique_temp_dir();
+        let runtime = StateRuntime::init(chaos_home.clone(), "test-provider".to_string())
             .await
             .expect("initialize runtime");
 
@@ -764,13 +1168,13 @@ mod tests {
 
         assert!(rows.is_empty());
 
-        let _ = tokio::fs::remove_dir_all(codex_home).await;
+        let _ = tokio::fs::remove_dir_all(chaos_home).await;
     }
 
     #[tokio::test]
     async fn insert_logs_prunes_processless_rows_with_null_process_uuid() {
-        let codex_home = unique_temp_dir();
-        let runtime = StateRuntime::init(codex_home.clone(), "test-provider".to_string())
+        let chaos_home = unique_temp_dir();
+        let runtime = StateRuntime::init(chaos_home.clone(), "test-provider".to_string())
             .await
             .expect("initialize runtime");
 
@@ -829,13 +1233,13 @@ mod tests {
         timestamps.sort_unstable();
         assert_eq!(timestamps, vec![2, 3]);
 
-        let _ = tokio::fs::remove_dir_all(codex_home).await;
+        let _ = tokio::fs::remove_dir_all(chaos_home).await;
     }
 
     #[tokio::test]
     async fn insert_logs_prunes_single_processless_null_process_row_when_it_exceeds_limit() {
-        let codex_home = unique_temp_dir();
-        let runtime = StateRuntime::init(codex_home.clone(), "test-provider".to_string())
+        let chaos_home = unique_temp_dir();
+        let runtime = StateRuntime::init(chaos_home.clone(), "test-provider".to_string())
             .await
             .expect("initialize runtime");
 
@@ -866,13 +1270,13 @@ mod tests {
 
         assert!(rows.is_empty());
 
-        let _ = tokio::fs::remove_dir_all(codex_home).await;
+        let _ = tokio::fs::remove_dir_all(chaos_home).await;
     }
 
     #[tokio::test]
     async fn insert_logs_prunes_old_rows_when_thread_exceeds_row_limit() {
-        let codex_home = unique_temp_dir();
-        let runtime = StateRuntime::init(codex_home.clone(), "test-provider".to_string())
+        let chaos_home = unique_temp_dir();
+        let runtime = StateRuntime::init(chaos_home.clone(), "test-provider".to_string())
             .await
             .expect("initialize runtime");
 
@@ -908,13 +1312,13 @@ mod tests {
         assert_eq!(timestamps.first().copied(), Some(2));
         assert_eq!(timestamps.last().copied(), Some(1_001));
 
-        let _ = tokio::fs::remove_dir_all(codex_home).await;
+        let _ = tokio::fs::remove_dir_all(chaos_home).await;
     }
 
     #[tokio::test]
     async fn insert_logs_prunes_old_processless_rows_when_process_exceeds_row_limit() {
-        let codex_home = unique_temp_dir();
-        let runtime = StateRuntime::init(codex_home.clone(), "test-provider".to_string())
+        let chaos_home = unique_temp_dir();
+        let runtime = StateRuntime::init(chaos_home.clone(), "test-provider".to_string())
             .await
             .expect("initialize runtime");
 
@@ -954,13 +1358,13 @@ mod tests {
         assert_eq!(timestamps.first().copied(), Some(2));
         assert_eq!(timestamps.last().copied(), Some(1_001));
 
-        let _ = tokio::fs::remove_dir_all(codex_home).await;
+        let _ = tokio::fs::remove_dir_all(chaos_home).await;
     }
 
     #[tokio::test]
     async fn insert_logs_prunes_old_processless_null_process_rows_when_row_limit_exceeded() {
-        let codex_home = unique_temp_dir();
-        let runtime = StateRuntime::init(codex_home.clone(), "test-provider".to_string())
+        let chaos_home = unique_temp_dir();
+        let runtime = StateRuntime::init(chaos_home.clone(), "test-provider".to_string())
             .await
             .expect("initialize runtime");
 
@@ -1000,13 +1404,13 @@ mod tests {
         assert_eq!(timestamps.first().copied(), Some(2));
         assert_eq!(timestamps.last().copied(), Some(1_001));
 
-        let _ = tokio::fs::remove_dir_all(codex_home).await;
+        let _ = tokio::fs::remove_dir_all(chaos_home).await;
     }
 
     #[tokio::test]
     async fn query_feedback_logs_returns_newest_lines_within_limit_in_order() {
-        let codex_home = unique_temp_dir();
-        let runtime = StateRuntime::init(codex_home.clone(), "test-provider".to_string())
+        let chaos_home = unique_temp_dir();
+        let runtime = StateRuntime::init(chaos_home.clone(), "test-provider".to_string())
             .await
             .expect("initialize runtime");
 
@@ -1062,13 +1466,13 @@ mod tests {
             "1970-01-01T00:00:01.000000Z  INFO alpha\n1970-01-01T00:00:02.000000Z  INFO bravo\n1970-01-01T00:00:03.000000Z  INFO charlie\n"
         );
 
-        let _ = tokio::fs::remove_dir_all(codex_home).await;
+        let _ = tokio::fs::remove_dir_all(chaos_home).await;
     }
 
     #[tokio::test]
     async fn query_feedback_logs_excludes_oversized_newest_row() {
-        let codex_home = unique_temp_dir();
-        let runtime = StateRuntime::init(codex_home.clone(), "test-provider".to_string())
+        let chaos_home = unique_temp_dir();
+        let runtime = StateRuntime::init(chaos_home.clone(), "test-provider".to_string())
             .await
             .expect("initialize runtime");
         let eleven_mebibytes = "z".repeat(11 * 1024 * 1024);
@@ -1110,13 +1514,13 @@ mod tests {
 
         assert_eq!(bytes, Vec::<u8>::new());
 
-        let _ = tokio::fs::remove_dir_all(codex_home).await;
+        let _ = tokio::fs::remove_dir_all(chaos_home).await;
     }
 
     #[tokio::test]
     async fn query_feedback_logs_includes_processless_rows_from_same_process() {
-        let codex_home = unique_temp_dir();
-        let runtime = StateRuntime::init(codex_home.clone(), "test-provider".to_string())
+        let chaos_home = unique_temp_dir();
+        let runtime = StateRuntime::init(chaos_home.clone(), "test-provider".to_string())
             .await
             .expect("initialize runtime");
 
@@ -1184,13 +1588,13 @@ mod tests {
             "1970-01-01T00:00:01.000000Z  INFO processless-before\n1970-01-01T00:00:02.000000Z  INFO process-scoped\n1970-01-01T00:00:03.000000Z  INFO processless-after\n"
         );
 
-        let _ = tokio::fs::remove_dir_all(codex_home).await;
+        let _ = tokio::fs::remove_dir_all(chaos_home).await;
     }
 
     #[tokio::test]
     async fn query_feedback_logs_excludes_processless_rows_from_prior_processes() {
-        let codex_home = unique_temp_dir();
-        let runtime = StateRuntime::init(codex_home.clone(), "test-provider".to_string())
+        let chaos_home = unique_temp_dir();
+        let runtime = StateRuntime::init(chaos_home.clone(), "test-provider".to_string())
             .await
             .expect("initialize runtime");
 
@@ -1258,13 +1662,13 @@ mod tests {
             "1970-01-01T00:00:02.000000Z  INFO old-process-thread\n1970-01-01T00:00:03.000000Z  INFO new-process-thread\n1970-01-01T00:00:04.000000Z  INFO new-process-processless\n"
         );
 
-        let _ = tokio::fs::remove_dir_all(codex_home).await;
+        let _ = tokio::fs::remove_dir_all(chaos_home).await;
     }
 
     #[tokio::test]
     async fn query_feedback_logs_keeps_newest_suffix_across_process_and_processless_logs() {
-        let codex_home = unique_temp_dir();
-        let runtime = StateRuntime::init(codex_home.clone(), "test-provider".to_string())
+        let chaos_home = unique_temp_dir();
+        let runtime = StateRuntime::init(chaos_home.clone(), "test-provider".to_string())
             .await
             .expect("initialize runtime");
         let thread_marker = "process-scoped-oldest";
@@ -1330,6 +1734,6 @@ mod tests {
         assert!(logs.contains(processless_newer_marker));
         assert_eq!(logs.matches('\n').count(), 2);
 
-        let _ = tokio::fs::remove_dir_all(codex_home).await;
+        let _ = tokio::fs::remove_dir_all(chaos_home).await;
     }
 }

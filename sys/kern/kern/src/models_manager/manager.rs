@@ -6,9 +6,9 @@ use crate::api_bridge::auth_provider_from_auth;
 use crate::api_bridge::map_api_error;
 use crate::auth::AuthManager;
 use crate::auth::AuthMode;
-use crate::auth::CodexAuth;
+use crate::auth::ChaosAuth;
 use crate::config::Config;
-use crate::error::CodexErr;
+use crate::error::ChaosErr;
 use crate::error::Result as CoreResult;
 use crate::model_provider_info::ModelProviderInfo;
 use crate::models_manager::collaboration_mode_presets::CollaborationModesConfig;
@@ -28,6 +28,7 @@ use chaos_parrot::RequestTelemetry;
 use chaos_parrot::TransportError;
 use chaos_syslog::TelemetryAuthMode;
 use http::HeaderMap;
+use std::collections::HashMap;
 use std::fmt;
 use std::path::PathBuf;
 use std::sync::Arc;
@@ -178,17 +179,17 @@ pub struct ModelsManager {
 impl ModelsManager {
     /// Construct a manager scoped to the provided `AuthManager`.
     ///
-    /// Uses `codex_home` to store cached model metadata and initializes with bundled catalog
+    /// Uses `chaos_home` to store cached model metadata and initializes with bundled catalog
     /// When `model_catalog` is provided, it becomes the authoritative remote model list and
     /// background refreshes from `/models` are disabled.
     pub fn new(
-        codex_home: PathBuf,
+        chaos_home: PathBuf,
         auth_manager: Arc<AuthManager>,
         model_catalog: Option<ModelsResponse>,
         collaboration_modes_config: CollaborationModesConfig,
     ) -> Self {
         Self::new_with_provider(
-            codex_home,
+            chaos_home,
             auth_manager,
             model_catalog,
             collaboration_modes_config,
@@ -198,13 +199,13 @@ impl ModelsManager {
 
     /// Construct a manager with an explicit provider used for remote model refreshes.
     pub fn new_with_provider(
-        codex_home: PathBuf,
+        chaos_home: PathBuf,
         auth_manager: Arc<AuthManager>,
         model_catalog: Option<ModelsResponse>,
         collaboration_modes_config: CollaborationModesConfig,
         provider: ModelProviderInfo,
     ) -> Self {
-        let cache_manager = ModelsCacheManager::new(codex_home, DEFAULT_MODEL_CACHE_TTL);
+        let cache_manager = ModelsCacheManager::new(chaos_home, DEFAULT_MODEL_CACHE_TTL);
         let catalog_mode = if model_catalog.is_some() {
             CatalogMode::Custom
         } else {
@@ -468,7 +469,7 @@ impl ModelsManager {
 
     async fn fetch_catalog_via_models_client(&self) -> CoreResult<FetchedCatalog> {
         let auth = self.auth_manager.auth().await;
-        let auth_mode = auth.as_ref().map(CodexAuth::auth_mode);
+        let auth_mode = auth.as_ref().map(ChaosAuth::auth_mode);
         let api_provider = self.provider.to_api_provider(auth_mode)?;
         let api_auth = auth_provider_from_auth(auth.clone(), &self.provider)?;
         let transport = RamaTransport::default_client();
@@ -486,7 +487,7 @@ impl ModelsManager {
             client.list_models(&client_version, HeaderMap::new()),
         )
         .await
-        .map_err(|_| CodexErr::Timeout)?
+        .map_err(|_| ChaosErr::Timeout)?
         .map_err(map_api_error)?;
 
         Ok(FetchedCatalog::Live { models, etag })
@@ -500,7 +501,7 @@ impl ModelsManager {
         use chaos_parrot::anthropic::AnthropicAuth;
 
         let auth_mode = self.auth_manager.auth().await;
-        let auth_mode_ref = auth_mode.as_ref().map(CodexAuth::auth_mode);
+        let auth_mode_ref = auth_mode.as_ref().map(ChaosAuth::auth_mode);
         let api_provider = self.provider.to_api_provider(auth_mode_ref)?;
 
         // Resolve auth the same way client.rs does.
@@ -509,7 +510,7 @@ impl ModelsManager {
         } else if let Some(token) = self.provider.experimental_bearer_token.clone() {
             AnthropicAuth::BearerToken(token)
         } else {
-            return Err(CodexErr::InvalidRequest(format!(
+            return Err(ChaosErr::InvalidRequest(format!(
                 "Anthropic provider `{}` requires `env_key` or `experimental_bearer_token`",
                 self.provider.name
             )));
@@ -519,7 +520,7 @@ impl ModelsManager {
 
         let abi_models = timeout(MODELS_REFRESH_TIMEOUT, adapter.list_models())
             .await
-            .map_err(|_| CodexErr::Timeout)?;
+            .map_err(|_| ChaosErr::Timeout)?;
 
         match abi_models {
             Ok(models) => {
@@ -537,7 +538,7 @@ impl ModelsManager {
             Err(ListModelsError::Unsupported) => Ok(FetchedCatalog::Unsupported),
             Err(ListModelsError::Failed { message }) => {
                 error!("Anthropic model listing failed: {message}");
-                Err(CodexErr::Stream(message, None))
+                Err(ChaosErr::Stream(message, None))
             }
         }
     }
@@ -566,9 +567,18 @@ impl ModelsManager {
             .await;
     }
 
-    /// Replace the cached remote models with freshly fetched ones.
+    /// Rebuild the active catalog by overlaying fetched models onto the bundled base catalog.
+    ///
+    /// This preserves bundled models when the remote `/models` payload omits them, while still
+    /// allowing remote entries to override overlapping bundled metadata by slug.
     async fn apply_remote_models(&self, models: Vec<ModelInfo>) {
-        *self.remote_models.write().await = models;
+        let next_models =
+            if crate::model_provider_info::is_anthropic_wire(self.provider.base_url.as_deref()) {
+                models
+            } else {
+                Self::merge_with_bundled_models(models)
+            };
+        *self.remote_models.write().await = next_models;
     }
 
     async fn apply_cache_entry(&self, cache: ModelsCache) {
@@ -616,6 +626,26 @@ impl ModelsManager {
         response.models
     }
 
+    fn merge_with_bundled_models(models: Vec<ModelInfo>) -> Vec<ModelInfo> {
+        let mut merged = Self::load_bundled_models_fallback();
+        let mut index_by_slug: HashMap<String, usize> = merged
+            .iter()
+            .enumerate()
+            .map(|(idx, model)| (model.slug.clone(), idx))
+            .collect();
+
+        for model in models {
+            if let Some(existing_idx) = index_by_slug.get(&model.slug).copied() {
+                merged[existing_idx] = model;
+            } else {
+                index_by_slug.insert(model.slug.clone(), merged.len());
+                merged.push(model);
+            }
+        }
+
+        merged
+    }
+
     fn cache_scope(&self) -> ModelsCacheScope {
         ModelsCacheScope {
             provider_name: self.provider.name.clone(),
@@ -649,12 +679,12 @@ impl ModelsManager {
 
     /// Construct a manager with a specific provider for testing.
     pub(crate) fn with_provider_for_tests(
-        codex_home: PathBuf,
+        chaos_home: PathBuf,
         auth_manager: Arc<AuthManager>,
         provider: ModelProviderInfo,
     ) -> Self {
         Self::new_with_provider(
-            codex_home,
+            chaos_home,
             auth_manager,
             /*model_catalog*/ None,
             CollaborationModesConfig::default(),

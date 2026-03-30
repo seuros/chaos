@@ -10,7 +10,7 @@ use tokio_util::sync::CancellationToken;
 use tracing::error;
 use uuid::Uuid;
 
-use crate::codex::TurnContext;
+use crate::chaos::TurnContext;
 use crate::exec::ExecToolCallOutput;
 use crate::exec::SandboxType;
 use crate::exec::StdoutStream;
@@ -34,7 +34,7 @@ use crate::user_shell_command::user_shell_command_record_item;
 
 use super::SessionTask;
 use super::SessionTaskContext;
-use crate::codex::Session;
+use crate::chaos::Session;
 use chaos_ipc::models::ResponseInputItem;
 use chaos_ipc::models::ResponseItem;
 use chaos_ipc::permissions::FileSystemSandboxPolicy;

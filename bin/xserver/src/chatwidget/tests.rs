@@ -89,7 +89,7 @@ use chaos_ipc::request_user_input::RequestUserInputQuestion;
 use chaos_ipc::request_user_input::RequestUserInputQuestionOption;
 use chaos_ipc::user_input::TextElement;
 use chaos_ipc::user_input::UserInput;
-use chaos_kern::CodexAuth;
+use chaos_kern::ChaosAuth;
 use chaos_kern::config::ApprovalsReviewer;
 use chaos_kern::config::Config;
 use chaos_kern::config::ConfigBuilder;
@@ -122,9 +122,9 @@ use toml::Value as TomlValue;
 
 async fn test_config() -> Config {
     // Use base defaults to avoid depending on host state.
-    let codex_home = std::env::temp_dir();
+    let chaos_home = std::env::temp_dir();
     ConfigBuilder::default()
-        .codex_home(codex_home.clone())
+        .chaos_home(chaos_home.clone())
         .build()
         .await
         .expect("config")
@@ -531,7 +531,7 @@ async fn forked_process_history_line_without_name_shows_id_once_snapshot() {
     let (chat, mut rx, _op_rx) = make_chatwidget_manual(None).await;
     let mut chat = chat;
     let temp = tempdir().expect("tempdir");
-    chat.config.codex_home = temp.path().to_path_buf();
+    chat.config.chaos_home = temp.path().to_path_buf();
 
     let forked_from_id =
         ProcessId::from_string("019c2d47-4935-7423-a190-05691f566092").expect("forked id");
@@ -1632,12 +1632,12 @@ async fn helpers_are_available_and_do_not_panic() {
     let session_telemetry = test_session_telemetry(&cfg, resolved_model.as_str());
     let process_table = Arc::new(
         chaos_kern::test_support::process_table_with_models_provider(
-            CodexAuth::from_api_key("test"),
+            ChaosAuth::from_api_key("test"),
             cfg.model_provider.clone(),
         ),
     );
     let auth_manager =
-        chaos_kern::test_support::auth_manager_from_auth(CodexAuth::from_api_key("test"));
+        chaos_kern::test_support::auth_manager_from_auth(ChaosAuth::from_api_key("test"));
     let init = ChatWidgetInit {
         config: cfg,
         frame_requester: FrameRequester::test_dummy(),
@@ -1699,16 +1699,16 @@ async fn make_chatwidget_manual(
         frame_requester: FrameRequester::test_dummy(),
         has_input_focus: true,
         enhanced_keys_supported: false,
-        placeholder_text: "Ask Codex to do anything".to_string(),
+        placeholder_text: "Ask Chaos to do anything".to_string(),
         disable_paste_burst: false,
         animations_enabled: cfg.animations,
     });
     bottom.set_collaboration_modes_enabled(true);
     let auth_manager =
-        chaos_kern::test_support::auth_manager_from_auth(CodexAuth::from_api_key("test"));
-    let codex_home = cfg.codex_home.clone();
+        chaos_kern::test_support::auth_manager_from_auth(ChaosAuth::from_api_key("test"));
+    let chaos_home = cfg.chaos_home.clone();
     let models_manager = Arc::new(ModelsManager::new(
-        codex_home,
+        chaos_home,
         auth_manager.clone(),
         None,
         CollaborationModesConfig::default(),
@@ -1853,10 +1853,10 @@ fn assert_no_submit_op(op_rx: &mut tokio::sync::mpsc::UnboundedReceiver<Op>) {
 
 pub(crate) fn set_chatgpt_auth(chat: &mut ChatWidget) {
     chat.auth_manager = chaos_kern::test_support::auth_manager_from_auth(
-        CodexAuth::create_dummy_chatgpt_auth_for_testing(),
+        ChaosAuth::create_dummy_chatgpt_auth_for_testing(),
     );
     chat.models_manager = Arc::new(ModelsManager::new(
-        chat.config.codex_home.clone(),
+        chat.config.chaos_home.clone(),
         chat.auth_manager.clone(),
         None,
         CollaborationModesConfig::default(),
@@ -2188,7 +2188,7 @@ async fn rate_limit_snapshots_keep_separate_entries_per_limit_id() {
 async fn rate_limit_switch_prompt_skips_when_on_lower_cost_model() {
     let (mut chat, _, _) = make_chatwidget_manual(Some(NUDGE_MODEL_SLUG)).await;
     chat.auth_manager = chaos_kern::test_support::auth_manager_from_auth(
-        CodexAuth::create_dummy_chatgpt_auth_for_testing(),
+        ChaosAuth::create_dummy_chatgpt_auth_for_testing(),
     );
 
     chat.on_rate_limit_snapshot(Some(snapshot(95.0)));
@@ -2201,7 +2201,7 @@ async fn rate_limit_switch_prompt_skips_when_on_lower_cost_model() {
 
 #[tokio::test]
 async fn rate_limit_switch_prompt_skips_non_codex_limit() {
-    let auth = CodexAuth::create_dummy_chatgpt_auth_for_testing();
+    let auth = ChaosAuth::create_dummy_chatgpt_auth_for_testing();
     let (mut chat, _, _) = make_chatwidget_manual(Some("gpt-5")).await;
     chat.auth_manager = chaos_kern::test_support::auth_manager_from_auth(auth);
 
@@ -2226,7 +2226,7 @@ async fn rate_limit_switch_prompt_skips_non_codex_limit() {
 
 #[tokio::test]
 async fn rate_limit_switch_prompt_shows_once_per_session() {
-    let auth = CodexAuth::create_dummy_chatgpt_auth_for_testing();
+    let auth = ChaosAuth::create_dummy_chatgpt_auth_for_testing();
     let (mut chat, _, _) = make_chatwidget_manual(Some("gpt-5")).await;
     chat.auth_manager = chaos_kern::test_support::auth_manager_from_auth(auth);
 
@@ -2250,7 +2250,7 @@ async fn rate_limit_switch_prompt_shows_once_per_session() {
 
 #[tokio::test]
 async fn rate_limit_switch_prompt_respects_hidden_notice() {
-    let auth = CodexAuth::create_dummy_chatgpt_auth_for_testing();
+    let auth = ChaosAuth::create_dummy_chatgpt_auth_for_testing();
     let (mut chat, _, _) = make_chatwidget_manual(Some("gpt-5")).await;
     chat.auth_manager = chaos_kern::test_support::auth_manager_from_auth(auth);
     chat.config.notices.hide_rate_limit_model_nudge = Some(true);
@@ -2265,7 +2265,7 @@ async fn rate_limit_switch_prompt_respects_hidden_notice() {
 
 #[tokio::test]
 async fn rate_limit_switch_prompt_defers_until_task_complete() {
-    let auth = CodexAuth::create_dummy_chatgpt_auth_for_testing();
+    let auth = ChaosAuth::create_dummy_chatgpt_auth_for_testing();
     let (mut chat, _, _) = make_chatwidget_manual(Some("gpt-5")).await;
     chat.auth_manager = chaos_kern::test_support::auth_manager_from_auth(auth);
 
@@ -2288,7 +2288,7 @@ async fn rate_limit_switch_prompt_defers_until_task_complete() {
 async fn rate_limit_switch_prompt_popup_snapshot() {
     let (mut chat, _rx, _op_rx) = make_chatwidget_manual(Some("gpt-5")).await;
     chat.auth_manager = chaos_kern::test_support::auth_manager_from_auth(
-        CodexAuth::create_dummy_chatgpt_auth_for_testing(),
+        ChaosAuth::create_dummy_chatgpt_auth_for_testing(),
     );
 
     chat.on_rate_limit_snapshot(Some(snapshot(92.0)));
@@ -3166,7 +3166,7 @@ async fn plan_implementation_popup_shows_after_new_plan_follows_steer() {
 async fn plan_implementation_popup_skips_when_rate_limit_prompt_pending() {
     let (mut chat, _rx, _op_rx) = make_chatwidget_manual(Some("gpt-5")).await;
     chat.auth_manager = chaos_kern::test_support::auth_manager_from_auth(
-        CodexAuth::create_dummy_chatgpt_auth_for_testing(),
+        ChaosAuth::create_dummy_chatgpt_auth_for_testing(),
     );
     chat.set_feature_enabled(Feature::CollaborationModes, true);
     let plan_mask =
@@ -5311,7 +5311,7 @@ async fn slash_init_skips_when_project_doc_exists() {
 
     match op_rx.try_recv() {
         Err(TryRecvError::Empty) => {}
-        other => panic!("expected no Codex op to be sent, got {other:?}"),
+        other => panic!("expected no Chaos op to be sent, got {other:?}"),
     }
 
     let cells = drain_insert_history(&mut rx);
@@ -5533,9 +5533,9 @@ async fn plan_slash_command_with_args_submits_prompt_in_plan_mode() {
 
 #[tokio::test]
 async fn collaboration_modes_defaults_to_code_on_startup() {
-    let codex_home = tempdir().expect("tempdir");
+    let chaos_home = tempdir().expect("tempdir");
     let cfg = ConfigBuilder::default()
-        .codex_home(codex_home.path().to_path_buf())
+        .chaos_home(chaos_home.path().to_path_buf())
         .cli_overrides(vec![(
             "features.collaboration_modes".to_string(),
             TomlValue::Boolean(true),
@@ -5547,12 +5547,12 @@ async fn collaboration_modes_defaults_to_code_on_startup() {
     let session_telemetry = test_session_telemetry(&cfg, resolved_model.as_str());
     let process_table = Arc::new(
         chaos_kern::test_support::process_table_with_models_provider(
-            CodexAuth::from_api_key("test"),
+            ChaosAuth::from_api_key("test"),
             cfg.model_provider.clone(),
         ),
     );
     let auth_manager =
-        chaos_kern::test_support::auth_manager_from_auth(CodexAuth::from_api_key("test"));
+        chaos_kern::test_support::auth_manager_from_auth(ChaosAuth::from_api_key("test"));
     let init = ChatWidgetInit {
         config: cfg,
         frame_requester: FrameRequester::test_dummy(),
@@ -5575,9 +5575,9 @@ async fn collaboration_modes_defaults_to_code_on_startup() {
 
 #[tokio::test]
 async fn experimental_mode_plan_is_ignored_on_startup() {
-    let codex_home = tempdir().expect("tempdir");
+    let chaos_home = tempdir().expect("tempdir");
     let cfg = ConfigBuilder::default()
-        .codex_home(codex_home.path().to_path_buf())
+        .chaos_home(chaos_home.path().to_path_buf())
         .cli_overrides(vec![
             (
                 "features.collaboration_modes".to_string(),
@@ -5595,12 +5595,12 @@ async fn experimental_mode_plan_is_ignored_on_startup() {
     let session_telemetry = test_session_telemetry(&cfg, resolved_model.as_str());
     let process_table = Arc::new(
         chaos_kern::test_support::process_table_with_models_provider(
-            CodexAuth::from_api_key("test"),
+            ChaosAuth::from_api_key("test"),
             cfg.model_provider.clone(),
         ),
     );
     let auth_manager =
-        chaos_kern::test_support::auth_manager_from_auth(CodexAuth::from_api_key("test"));
+        chaos_kern::test_support::auth_manager_from_auth(ChaosAuth::from_api_key("test"));
     let init = ChatWidgetInit {
         config: cfg,
         frame_requester: FrameRequester::test_dummy(),
@@ -5811,7 +5811,7 @@ async fn slash_copy_reports_when_no_copyable_output_exists() {
     assert_snapshot!("slash_copy_no_output_info_message", rendered);
     assert!(
         rendered.contains(
-            "`/copy` is unavailable before the first Codex output or right after a rollback."
+            "`/copy` is unavailable before the first Chaos output or right after a rollback."
         ),
         "expected no-output message, got {rendered:?}"
     );
@@ -5883,7 +5883,7 @@ async fn slash_copy_is_unavailable_when_legacy_agent_message_is_not_repeated_on_
     let rendered = lines_to_single_string(&cells[0]);
     assert!(
         rendered.contains(
-            "`/copy` is unavailable before the first Codex output or right after a rollback."
+            "`/copy` is unavailable before the first Chaos output or right after a rollback."
         ),
         "expected unavailable message, got {rendered:?}"
     );
@@ -5912,7 +5912,7 @@ async fn slash_copy_is_unavailable_when_legacy_agent_message_item_is_not_repeate
     let rendered = lines_to_single_string(&cells[0]);
     assert!(
         rendered.contains(
-            "`/copy` is unavailable before the first Codex output or right after a rollback."
+            "`/copy` is unavailable before the first Chaos output or right after a rollback."
         ),
         "expected unavailable message, got {rendered:?}"
     );
@@ -5944,7 +5944,7 @@ async fn slash_copy_does_not_return_stale_output_after_process_rollback() {
     let rendered = lines_to_single_string(&cells[0]);
     assert!(
         rendered.contains(
-            "`/copy` is unavailable before the first Codex output or right after a rollback."
+            "`/copy` is unavailable before the first Chaos output or right after a rollback."
         ),
         "expected rollback-cleared copy state message, got {rendered:?}"
     );
@@ -6204,10 +6204,10 @@ async fn custom_prompt_submit_sends_review_op() {
     chat.handle_paste("  please audit dependencies  ".to_string());
     chat.handle_key_event(KeyEvent::new(KeyCode::Enter, KeyModifiers::NONE));
 
-    // Expect AppEvent::CodexOp(Op::Review { .. }) with trimmed prompt
+    // Expect AppEvent::ChaosOp(Op::Review { .. }) with trimmed prompt
     let evt = rx.try_recv().expect("expected one app event");
     match evt {
-        AppEvent::CodexOp(Op::Review { review_request }) => {
+        AppEvent::ChaosOp(Op::Review { review_request }) => {
             assert_eq!(
                 review_request,
                 ReviewRequest {
@@ -6231,7 +6231,7 @@ async fn custom_prompt_enter_empty_does_not_send() {
     // Enter without any text
     chat.handle_key_event(KeyEvent::new(KeyCode::Enter, KeyModifiers::NONE));
 
-    // No AppEvent::CodexOp should be sent
+    // No AppEvent::ChaosOp should be sent
     assert!(rx.try_recv().is_err(), "no app event should be sent");
 }
 
@@ -7031,7 +7031,7 @@ async fn approvals_popup_navigation_skips_disabled() {
     assert!(
         app_events.iter().any(|ev| matches!(
             ev,
-            AppEvent::CodexOp(Op::OverrideTurnContext {
+            AppEvent::ChaosOp(Op::OverrideTurnContext {
                 approval_policy: Some(AskForApproval::OnRequest),
                 personality: None,
                 ..
@@ -7042,7 +7042,7 @@ async fn approvals_popup_navigation_skips_disabled() {
     assert!(
         !app_events.iter().any(|ev| matches!(
             ev,
-            AppEvent::CodexOp(Op::OverrideTurnContext {
+            AppEvent::ChaosOp(Op::OverrideTurnContext {
                 approval_policy: Some(AskForApproval::Never),
                 personality: None,
                 ..
@@ -7354,7 +7354,7 @@ async fn permissions_selection_sends_approvals_reviewer_in_override_turn_context
 
     let op = std::iter::from_fn(|| rx.try_recv().ok())
         .find_map(|event| match event {
-            AppEvent::CodexOp(op @ Op::OverrideTurnContext { .. }) => Some(op),
+            AppEvent::ChaosOp(op @ Op::OverrideTurnContext { .. }) => Some(op),
             _ => None,
         })
         .expect("expected OverrideTurnContext op");

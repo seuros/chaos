@@ -20,10 +20,10 @@ use tokio::sync::Mutex;
 use tokio_util::sync::CancellationToken;
 use tracing::warn;
 
-use crate::codex::Codex;
-use crate::codex::Session;
-use crate::codex::TurnContext;
-use crate::codex_delegate::run_codex_process_interactive;
+use crate::chaos::Chaos;
+use crate::chaos::Session;
+use crate::chaos::TurnContext;
+use crate::chaos_delegate::run_chaos_process_interactive;
 use crate::config::Config;
 use crate::config::Constrained;
 use crate::config::ManagedFeatures;
@@ -73,7 +73,7 @@ struct GuardianReviewSessionState {
 }
 
 struct GuardianReviewSession {
-    codex: Codex,
+    codex: Chaos,
     cancel_token: CancellationToken,
     reuse_key: GuardianReviewSessionReuseKey,
     review_lock: Mutex<()>,
@@ -332,7 +332,7 @@ impl GuardianReviewSessionManager {
     }
 
     #[cfg(test)]
-    pub(crate) async fn cache_for_test(&self, codex: Codex) {
+    pub(crate) async fn cache_for_test(&self, codex: Chaos) {
         let reuse_key = GuardianReviewSessionReuseKey::from_spawn_config(
             codex.session.get_config().await.as_ref(),
         );
@@ -346,7 +346,7 @@ impl GuardianReviewSessionManager {
     }
 
     #[cfg(test)]
-    pub(crate) async fn register_ephemeral_for_test(&self, codex: Codex) {
+    pub(crate) async fn register_ephemeral_for_test(&self, codex: Chaos) {
         let reuse_key = GuardianReviewSessionReuseKey::from_spawn_config(
             codex.session.get_config().await.as_ref(),
         );
@@ -448,7 +448,7 @@ async fn spawn_guardian_review_session(
     cancel_token: CancellationToken,
     initial_history: Option<InitialHistory>,
 ) -> anyhow::Result<GuardianReviewSession> {
-    let codex = run_codex_process_interactive(
+    let codex = run_chaos_process_interactive(
         spawn_config,
         params.parent_session.services.auth_manager.clone(),
         params.parent_session.services.models_manager.clone(),
@@ -661,7 +661,7 @@ async fn run_before_review_deadline_with_cancel<T>(
     result
 }
 
-async fn interrupt_and_drain_turn(codex: &Codex) -> anyhow::Result<()> {
+async fn interrupt_and_drain_turn(codex: &Chaos) -> anyhow::Result<()> {
     let _ = codex.submit(Op::Interrupt).await;
 
     tokio::time::timeout(GUARDIAN_INTERRUPT_DRAIN_TIMEOUT, async {

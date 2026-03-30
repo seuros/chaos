@@ -1,6 +1,6 @@
 # `chaos-kern` config loader
 
-This module is the canonical place to **load and describe Codex configuration layers** (user config, CLI/session overrides, managed config, and MDM-managed preferences) and to produce:
+This module is the canonical place to **load and describe Chaos configuration layers** (user config, CLI/session overrides, managed config, and MDM-managed preferences) and to produce:
 
 - An **effective merged** TOML config.
 - **Per-key origins** metadata (which layer “wins” for a given key).
@@ -10,7 +10,7 @@ This module is the canonical place to **load and describe Codex configuration la
 
 Exported from `chaos_kern::config_loader`:
 
-- `load_config_layers_state(codex_home, cwd_opt, cli_overrides, overrides, cloud_requirements) -> ConfigLayerStack`
+- `load_config_layers_state(chaos_home, cwd_opt, cli_overrides, overrides, cloud_requirements) -> ConfigLayerStack`
 - `ConfigLayerStack`
   - `effective_config() -> toml::Value`
   - `origins() -> HashMap<String, ConfigLayerMetadata>`
@@ -45,7 +45,7 @@ use toml::Value as TomlValue;
 let cli_overrides: Vec<(String, TomlValue)> = Vec::new();
 let cwd = AbsolutePathBuf::current_dir()?;
 let layers = load_config_layers_state(
-    &codex_home,
+    &chaos_home,
     Some(cwd),
     &cli_overrides,
     LoaderOverrides::default(),

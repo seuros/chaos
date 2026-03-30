@@ -1,6 +1,6 @@
 use crate::config::NetworkToml;
 use crate::config::PermissionsToml;
-use crate::config::find_codex_home;
+use crate::config::find_chaos_home;
 use crate::config::resolve_permission_profile;
 use crate::config_loader::CloudRequirementsLoader;
 use crate::config_loader::ConfigLayerStack;
@@ -42,11 +42,11 @@ pub async fn build_network_proxy_state_and_reloader() -> Result<(ConfigState, Mt
 }
 
 async fn build_config_state_with_mtimes() -> Result<(ConfigState, Vec<LayerMtime>)> {
-    let codex_home = find_codex_home().context("failed to resolve CODEX_HOME")?;
+    let chaos_home = find_chaos_home().context("failed to resolve CHAOS_HOME")?;
     let cli_overrides = Vec::new();
     let overrides = LoaderOverrides::default();
     let config_layer_stack = load_config_layers_state(
-        &codex_home,
+        &chaos_home,
         /*cwd*/ None,
         &cli_overrides,
         overrides,

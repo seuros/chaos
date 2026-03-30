@@ -38,7 +38,7 @@ const EXCLUDED_EXPORT_VARS: &[&str] = &["PWD", "OLDPWD"];
 
 impl ShellSnapshot {
     pub fn start_snapshotting(
-        codex_home: PathBuf,
+        chaos_home: PathBuf,
         session_id: ProcessId,
         session_cwd: PathBuf,
         shell: &mut Shell,
@@ -48,7 +48,7 @@ impl ShellSnapshot {
         shell.shell_snapshot = shell_snapshot_rx;
 
         Self::spawn_snapshot_task(
-            codex_home,
+            chaos_home,
             session_id,
             session_cwd,
             shell.clone(),
@@ -60,7 +60,7 @@ impl ShellSnapshot {
     }
 
     pub fn refresh_snapshot(
-        codex_home: PathBuf,
+        chaos_home: PathBuf,
         session_id: ProcessId,
         session_cwd: PathBuf,
         shell: Shell,
@@ -68,7 +68,7 @@ impl ShellSnapshot {
         session_telemetry: SessionTelemetry,
     ) {
         Self::spawn_snapshot_task(
-            codex_home,
+            chaos_home,
             session_id,
             session_cwd,
             shell,
@@ -78,7 +78,7 @@ impl ShellSnapshot {
     }
 
     fn spawn_snapshot_task(
-        codex_home: PathBuf,
+        chaos_home: PathBuf,
         session_id: ProcessId,
         session_cwd: PathBuf,
         snapshot_shell: Shell,
@@ -90,7 +90,7 @@ impl ShellSnapshot {
             async move {
                 let timer = session_telemetry.start_timer("codex.shell_snapshot.duration_ms", &[]);
                 let snapshot = ShellSnapshot::try_new(
-                    &codex_home,
+                    &chaos_home,
                     session_id,
                     session_cwd.as_path(),
                     &snapshot_shell,
@@ -112,29 +112,29 @@ impl ShellSnapshot {
     }
 
     async fn try_new(
-        codex_home: &Path,
+        chaos_home: &Path,
         session_id: ProcessId,
         session_cwd: &Path,
         shell: &Shell,
     ) -> std::result::Result<Self, &'static str> {
         // File to store the snapshot
         let extension = "sh";
-        let path = codex_home
+        let path = chaos_home
             .join(SNAPSHOT_DIR)
             .join(format!("{session_id}.{extension}"));
         let nonce = SystemTime::now()
             .duration_since(SystemTime::UNIX_EPOCH)
             .map(|duration| duration.as_nanos())
             .unwrap_or(0);
-        let temp_path = codex_home
+        let temp_path = chaos_home
             .join(SNAPSHOT_DIR)
             .join(format!("{session_id}.tmp-{nonce}"));
 
         // Clean the (unlikely) leaked snapshot files.
-        let codex_home = codex_home.to_path_buf();
+        let chaos_home = chaos_home.to_path_buf();
         let cleanup_session_id = session_id;
         tokio::spawn(async move {
-            if let Err(err) = cleanup_stale_snapshots(&codex_home, cleanup_session_id).await {
+            if let Err(err) = cleanup_stale_snapshots(&chaos_home, cleanup_session_id).await {
                 tracing::warn!("Failed to clean up shell snapshots: {err:?}");
             }
         });
@@ -458,10 +458,10 @@ fi
 /// whose journal has not been updated within the retention window.
 /// The active session id is exempt from cleanup.
 pub async fn cleanup_stale_snapshots(
-    codex_home: &Path,
+    chaos_home: &Path,
     active_session_id: ProcessId,
 ) -> Result<()> {
-    let snapshot_dir = codex_home.join(SNAPSHOT_DIR);
+    let snapshot_dir = chaos_home.join(SNAPSHOT_DIR);
 
     let mut entries = match fs::read_dir(&snapshot_dir).await {
         Ok(entries) => entries,
@@ -471,7 +471,7 @@ pub async fn cleanup_stale_snapshots(
 
     let now = jiff::Timestamp::now().as_second();
     let active_session_id = active_session_id.to_string();
-    let journal_store = SqliteJournalStore::open(&codex_home.join(SQLITE_DB_FILENAME))
+    let journal_store = SqliteJournalStore::open(&chaos_home.join(SQLITE_DB_FILENAME))
         .await
         .context("open journal database for shell snapshot cleanup")?;
 

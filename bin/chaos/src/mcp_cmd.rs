@@ -10,7 +10,7 @@ use chaos_getopt::format_env_display::format_env_display;
 use chaos_ipc::protocol::McpAuthStatus;
 use chaos_kern::config::Config;
 use chaos_kern::config::edit::ConfigEditsBuilder;
-use chaos_kern::config::find_codex_home;
+use chaos_kern::config::find_chaos_home;
 use chaos_kern::config::load_global_mcp_servers;
 use chaos_kern::config::types::McpServerConfig;
 use chaos_kern::config::types::McpServerTransportConfig;
@@ -28,7 +28,7 @@ use clap::ArgGroup;
 /// Subcommands:
 /// - `list`   — list configured servers (with `--json`)
 /// - `get`    — show a single server (with `--json`)
-/// - `add`    — add a server launcher entry to `~/.codex/config.toml`
+/// - `add`    — add a server launcher entry to `~/.chaos/config.toml`
 /// - `remove` — delete a server entry
 /// - `login`  — authenticate with MCP server using OAuth
 /// - `logout` — remove OAuth credentials for MCP server
@@ -236,10 +236,10 @@ async fn run_add(config_overrides: &CliConfigOverrides, add_args: AddArgs) -> Re
 
     validate_server_name(&name)?;
 
-    let codex_home = find_codex_home().context("failed to resolve CODEX_HOME")?;
-    let mut servers = load_global_mcp_servers(&codex_home)
+    let chaos_home = find_chaos_home().context("failed to resolve CHAOS_HOME")?;
+    let mut servers = load_global_mcp_servers(&chaos_home)
         .await
-        .with_context(|| format!("failed to load MCP servers from {}", codex_home.display()))?;
+        .with_context(|| format!("failed to load MCP servers from {}", chaos_home.display()))?;
 
     let transport = match transport_args {
         AddMcpTransportArgs {
@@ -295,11 +295,11 @@ async fn run_add(config_overrides: &CliConfigOverrides, add_args: AddArgs) -> Re
 
     servers.insert(name.clone(), new_entry);
 
-    ConfigEditsBuilder::new(&codex_home)
+    ConfigEditsBuilder::new(&chaos_home)
         .replace_mcp_servers(&servers)
         .apply()
         .await
-        .with_context(|| format!("failed to write MCP servers to {}", codex_home.display()))?;
+        .with_context(|| format!("failed to write MCP servers to {}", chaos_home.display()))?;
 
     println!("Added global MCP server '{name}'.");
 
@@ -343,19 +343,19 @@ async fn run_remove(config_overrides: &CliConfigOverrides, remove_args: RemoveAr
 
     validate_server_name(&name)?;
 
-    let codex_home = find_codex_home().context("failed to resolve CODEX_HOME")?;
-    let mut servers = load_global_mcp_servers(&codex_home)
+    let chaos_home = find_chaos_home().context("failed to resolve CHAOS_HOME")?;
+    let mut servers = load_global_mcp_servers(&chaos_home)
         .await
-        .with_context(|| format!("failed to load MCP servers from {}", codex_home.display()))?;
+        .with_context(|| format!("failed to load MCP servers from {}", chaos_home.display()))?;
 
     let removed = servers.remove(&name).is_some();
 
     if removed {
-        ConfigEditsBuilder::new(&codex_home)
+        ConfigEditsBuilder::new(&chaos_home)
             .replace_mcp_servers(&servers)
             .apply()
             .await
-            .with_context(|| format!("failed to write MCP servers to {}", codex_home.display()))?;
+            .with_context(|| format!("failed to write MCP servers to {}", chaos_home.display()))?;
     }
 
     if removed {
@@ -374,7 +374,7 @@ async fn run_login(config_overrides: &CliConfigOverrides, login_args: LoginArgs)
     let config = Config::load_with_cli_overrides(overrides)
         .await
         .context("failed to load configuration")?;
-    let mcp_manager = McpManager::new(Arc::new(PluginsManager::new(config.codex_home.clone())));
+    let mcp_manager = McpManager::new(Arc::new(PluginsManager::new(config.chaos_home.clone())));
     let mcp_servers = mcp_manager.effective_servers(&config);
 
     let LoginArgs { name, scopes } = login_args;
@@ -425,7 +425,7 @@ async fn run_logout(config_overrides: &CliConfigOverrides, logout_args: LogoutAr
     let config = Config::load_with_cli_overrides(overrides)
         .await
         .context("failed to load configuration")?;
-    let mcp_manager = McpManager::new(Arc::new(PluginsManager::new(config.codex_home.clone())));
+    let mcp_manager = McpManager::new(Arc::new(PluginsManager::new(config.chaos_home.clone())));
     let mcp_servers = mcp_manager.effective_servers(&config);
 
     let LogoutArgs { name } = logout_args;
@@ -455,7 +455,7 @@ async fn run_list(config_overrides: &CliConfigOverrides, list_args: ListArgs) ->
     let config = Config::load_with_cli_overrides(overrides)
         .await
         .context("failed to load configuration")?;
-    let mcp_manager = McpManager::new(Arc::new(PluginsManager::new(config.codex_home.clone())));
+    let mcp_manager = McpManager::new(Arc::new(PluginsManager::new(config.chaos_home.clone())));
     let mcp_servers = mcp_manager.effective_servers(&config);
 
     let mut entries: Vec<_> = mcp_servers.iter().collect();
@@ -704,7 +704,7 @@ async fn run_get(config_overrides: &CliConfigOverrides, get_args: GetArgs) -> Re
     let config = Config::load_with_cli_overrides(overrides)
         .await
         .context("failed to load configuration")?;
-    let mcp_manager = McpManager::new(Arc::new(PluginsManager::new(config.codex_home.clone())));
+    let mcp_manager = McpManager::new(Arc::new(PluginsManager::new(config.chaos_home.clone())));
     let mcp_servers = mcp_manager.effective_servers(&config);
 
     let Some(server) = mcp_servers.get(&get_args.name) else {

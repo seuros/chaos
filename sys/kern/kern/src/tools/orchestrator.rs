@@ -6,7 +6,7 @@ simple sequence for any ToolRuntime: approval → select sandbox → attempt →
 retry with an escalated sandbox strategy on denial (no re‑approval thanks to
 caching).
 */
-use crate::error::CodexErr;
+use crate::error::ChaosErr;
 use crate::error::SandboxErr;
 use crate::exec::ExecToolCallOutput;
 use crate::guardian::GUARDIAN_REJECTION_MESSAGE;
@@ -102,7 +102,7 @@ impl ToolOrchestrator {
         tool: &mut T,
         req: &Rq,
         tool_ctx: &ToolCtx,
-        turn_ctx: &crate::codex::TurnContext,
+        turn_ctx: &crate::chaos::TurnContext,
         approval_policy: AskForApproval,
     ) -> Result<OrchestratorRunResult<Out>, ToolError>
     where
@@ -212,7 +212,7 @@ impl ToolOrchestrator {
                     deferred_network_approval: first_deferred_network_approval,
                 })
             }
-            Err(ToolError::Codex(CodexErr::Sandbox(SandboxErr::Denied {
+            Err(ToolError::Chaos(ChaosErr::Sandbox(SandboxErr::Denied {
                 output,
                 network_policy_decision,
             }))) => {
@@ -224,13 +224,13 @@ impl ToolOrchestrator {
                     None
                 };
                 if network_policy_decision.is_some() && network_approval_context.is_none() {
-                    return Err(ToolError::Codex(CodexErr::Sandbox(SandboxErr::Denied {
+                    return Err(ToolError::Chaos(ChaosErr::Sandbox(SandboxErr::Denied {
                         output,
                         network_policy_decision,
                     })));
                 }
                 if !tool.escalate_on_failure() {
-                    return Err(ToolError::Codex(CodexErr::Sandbox(SandboxErr::Denied {
+                    return Err(ToolError::Chaos(ChaosErr::Sandbox(SandboxErr::Denied {
                         output,
                         network_policy_decision,
                     })));
@@ -250,7 +250,7 @@ impl ToolOrchestrator {
                                 ExecApprovalRequirement::NeedsApproval { .. }
                             );
                     if !allow_on_request_network_prompt {
-                        return Err(ToolError::Codex(CodexErr::Sandbox(SandboxErr::Denied {
+                        return Err(ToolError::Chaos(ChaosErr::Sandbox(SandboxErr::Denied {
                             output,
                             network_policy_decision,
                         })));

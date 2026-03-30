@@ -162,10 +162,10 @@ pub fn build_stage_one_input_message(
 /// instructions. The caller provides a `truncate_fn` that accepts
 /// `(text, token_limit)` and returns the (possibly truncated) text.
 pub async fn build_memory_tool_developer_instructions(
-    codex_home: &Path,
+    chaos_home: &Path,
     truncate_fn: impl Fn(&str, usize) -> String,
 ) -> Option<String> {
-    let base_path = codex_home.join("memories");
+    let base_path = chaos_home.join("memories");
     let memory_summary_path = base_path.join("memory_summary.md");
     let memory_summary = fs::read_to_string(&memory_summary_path)
         .await

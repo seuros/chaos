@@ -25,10 +25,10 @@ pub use chaos_highlight::{
 #[cfg(feature = "syntax")]
 pub fn set_theme_override(
     name: Option<String>,
-    codex_home: Option<std::path::PathBuf>,
+    chaos_home: Option<std::path::PathBuf>,
 ) -> Option<String> {
     let is_light = crate::terminal_palette::default_bg().map(crate::color::is_light);
-    chaos_highlight::set_theme_override(name, codex_home, is_light)
+    chaos_highlight::set_theme_override(name, chaos_home, is_light)
 }
 
 // -- Stubs when the `syntax` feature is disabled ------------------------------

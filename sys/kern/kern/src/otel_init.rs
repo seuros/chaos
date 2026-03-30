@@ -83,7 +83,7 @@ pub fn build_provider(
     OtelProvider::from(&OtelSettings {
         service_name: service_name.to_string(),
         service_version: service_version.to_string(),
-        codex_home: config.codex_home.clone(),
+        chaos_home: config.chaos_home.clone(),
         environment: config.otel.environment.to_string(),
         exporter,
         trace_exporter,

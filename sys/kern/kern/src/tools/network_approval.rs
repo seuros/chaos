@@ -1,4 +1,4 @@
-use crate::codex::Session;
+use crate::chaos::Session;
 use crate::guardian::GUARDIAN_REJECTION_MESSAGE;
 use crate::guardian::GuardianApprovalRequest;
 use crate::guardian::review_approval_request;
@@ -269,7 +269,7 @@ impl NetworkApprovalService {
             .await;
     }
 
-    async fn active_turn_context(session: &Session) -> Option<Arc<crate::codex::TurnContext>> {
+    async fn active_turn_context(session: &Session) -> Option<Arc<crate::chaos::TurnContext>> {
         let active_turn = session.active_turn.lock().await;
         active_turn
             .as_ref()

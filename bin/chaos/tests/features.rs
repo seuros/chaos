@@ -5,23 +5,23 @@ use predicates::str::contains;
 use pretty_assertions::assert_eq;
 use tempfile::TempDir;
 
-fn codex_command(codex_home: &Path) -> Result<assert_cmd::Command> {
+fn codex_command(chaos_home: &Path) -> Result<assert_cmd::Command> {
     let mut cmd = assert_cmd::Command::new(chaos_which::cargo_bin("chaos")?);
-    cmd.env("CODEX_HOME", codex_home);
+    cmd.env("CHAOS_HOME", chaos_home);
     Ok(cmd)
 }
 
 #[tokio::test]
 async fn features_enable_writes_feature_flag_to_config() -> Result<()> {
-    let codex_home = TempDir::new()?;
+    let chaos_home = TempDir::new()?;
 
-    let mut cmd = codex_command(codex_home.path())?;
+    let mut cmd = codex_command(chaos_home.path())?;
     cmd.args(["features", "enable", "unified_exec"])
         .assert()
         .success()
         .stdout(contains("Enabled feature `unified_exec` in config.toml."));
 
-    let config = std::fs::read_to_string(codex_home.path().join("config.toml"))?;
+    let config = std::fs::read_to_string(chaos_home.path().join("config.toml"))?;
     assert!(config.contains("[features]"));
     assert!(config.contains("unified_exec = true"));
 
@@ -30,15 +30,15 @@ async fn features_enable_writes_feature_flag_to_config() -> Result<()> {
 
 #[tokio::test]
 async fn features_disable_writes_feature_flag_to_config() -> Result<()> {
-    let codex_home = TempDir::new()?;
+    let chaos_home = TempDir::new()?;
 
-    let mut cmd = codex_command(codex_home.path())?;
+    let mut cmd = codex_command(chaos_home.path())?;
     cmd.args(["features", "disable", "shell_tool"])
         .assert()
         .success()
         .stdout(contains("Disabled feature `shell_tool` in config.toml."));
 
-    let config = std::fs::read_to_string(codex_home.path().join("config.toml"))?;
+    let config = std::fs::read_to_string(chaos_home.path().join("config.toml"))?;
     assert!(config.contains("[features]"));
     assert!(config.contains("shell_tool = false"));
 
@@ -47,9 +47,9 @@ async fn features_disable_writes_feature_flag_to_config() -> Result<()> {
 
 #[tokio::test]
 async fn features_enable_under_development_feature_prints_warning() -> Result<()> {
-    let codex_home = TempDir::new()?;
+    let chaos_home = TempDir::new()?;
 
-    let mut cmd = codex_command(codex_home.path())?;
+    let mut cmd = codex_command(chaos_home.path())?;
     cmd.args(["features", "enable", "runtime_metrics"])
         .assert()
         .success()
@@ -62,9 +62,9 @@ async fn features_enable_under_development_feature_prints_warning() -> Result<()
 
 #[tokio::test]
 async fn features_list_is_sorted_alphabetically_by_feature_name() -> Result<()> {
-    let codex_home = TempDir::new()?;
+    let chaos_home = TempDir::new()?;
 
-    let mut cmd = codex_command(codex_home.path())?;
+    let mut cmd = codex_command(chaos_home.path())?;
     let output = cmd
         .args(["features", "list"])
         .assert()

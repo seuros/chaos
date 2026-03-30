@@ -1,4 +1,7 @@
 # chaos-proc
 
 SQLite-backed /proc for agent state. Indexes rollout metadata,
-thread history, backfill progress, and job claims into local DB.
+thread history, backfill progress, job claims, and tracing logs into local DB.
+
+This crate is also the backend home for log tailing/query APIs used by
+dmesg-style viewers and other local log consumers.

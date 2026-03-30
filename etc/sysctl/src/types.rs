@@ -333,15 +333,15 @@ impl UriBasedFileOpener {
     }
 }
 
-/// Settings that govern if and what will be written to `~/.codex/history.jsonl`.
+/// Settings that govern if and what will be written to the persistent message-history store.
 #[derive(Serialize, Deserialize, Debug, Clone, PartialEq, Default, JsonSchema)]
 #[schemars(deny_unknown_fields)]
 pub struct History {
     /// If true, history entries will not be written to disk.
     pub persistence: HistoryPersistence,
 
-    /// If set, the maximum size of the history file in bytes. The oldest entries
-    /// are dropped once the file exceeds this limit.
+    /// If set, the maximum size of the persistent message-history store in bytes.
+    /// The oldest entries are dropped once the store exceeds this limit.
     pub max_bytes: Option<usize>,
 }
 
@@ -361,7 +361,7 @@ pub enum HistoryPersistence {
 #[derive(Serialize, Deserialize, Debug, Clone, PartialEq, Default, JsonSchema)]
 #[schemars(deny_unknown_fields)]
 pub struct AnalyticsConfigToml {
-    /// When `false`, disables analytics across Codex product surfaces in this profile.
+    /// When `false`, disables analytics across Chaos product surfaces in this profile.
     pub enabled: Option<bool>,
 }
 
@@ -733,7 +733,7 @@ pub struct Tui {
     /// Syntax highlighting theme name (kebab-case).
     ///
     /// When set, overrides automatic light/dark theme detection.
-    /// Use `/theme` in the TUI or see `$CODEX_HOME/themes` for custom themes.
+    /// Use `/theme` in the TUI or see `$CHAOS_HOME/themes` for custom themes.
     #[serde(default)]
     pub theme: Option<String>,
 
@@ -991,29 +991,29 @@ where
     })
 }
 
-/// Determine where Codex should store CLI auth credentials.
+/// Determine where Chaos should store CLI auth credentials.
 #[derive(Debug, Default, Copy, Clone, PartialEq, Eq, Serialize, Deserialize, JsonSchema)]
 #[serde(rename_all = "lowercase")]
 pub enum AuthCredentialsStoreMode {
     #[default]
-    /// Persist credentials in CODEX_HOME/auth.json.
+    /// Persist credentials in CHAOS_HOME/auth.json.
     File,
     /// Persist credentials in the keyring. Fail if unavailable.
     Keyring,
-    /// Use keyring when available; otherwise, fall back to a file in CODEX_HOME.
+    /// Use keyring when available; otherwise, fall back to a file in CHAOS_HOME.
     Auto,
     /// Store credentials in memory only for the current process.
     Ephemeral,
 }
 
-/// Determine where Codex should store and read MCP OAuth credentials.
+/// Determine where Chaos should store and read MCP OAuth credentials.
 #[derive(Debug, Default, Copy, Clone, PartialEq, Eq, Serialize, Deserialize, JsonSchema)]
 #[serde(rename_all = "lowercase")]
 pub enum OAuthCredentialsStoreMode {
     /// `Keyring` when available; otherwise, `File`.
     #[default]
     Auto,
-    /// CODEX_HOME/.credentials.json
+    /// CHAOS_HOME/.credentials.json
     File,
     /// Keyring when available, otherwise fail.
     Keyring,

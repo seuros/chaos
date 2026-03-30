@@ -1,0 +1,17 @@
+---
+source: bin/xserver/src/side_panel.rs
+assertion_line: 351
+expression: terminal.backend().to_string()
+---
+┌ Logs 019d40be ─────────────────────────┐
+│follow • 3 rows • Ctrl+O close          │
+│22:13:20 INFO  chaos::test boot         │
+│22:13:21 INFO  chaos::test tick         │
+│22:13:22 INFO  chaos::test ready        │
+│                                        │
+│                                        │
+│                                        │
+│                                        │
+│                                        │
+│                                        │
+└────────────────────────────────────────┘

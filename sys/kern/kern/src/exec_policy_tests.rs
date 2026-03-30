@@ -1083,12 +1083,12 @@ async fn heuristics_apply_when_other_commands_match_policy() {
 
 #[tokio::test]
 async fn append_execpolicy_amendment_updates_policy_and_file() {
-    let codex_home = tempdir().expect("create temp dir");
+    let chaos_home = tempdir().expect("create temp dir");
     let prefix = vec!["echo".to_string(), "hello".to_string()];
     let manager = ExecPolicyManager::default();
 
     manager
-        .append_amendment_and_update(codex_home.path(), &ExecPolicyAmendment::from(prefix))
+        .append_amendment_and_update(chaos_home.path(), &ExecPolicyAmendment::from(prefix))
         .await
         .expect("update policy");
     let updated_policy = manager.current();
@@ -1105,7 +1105,7 @@ async fn append_execpolicy_amendment_updates_policy_and_file() {
         }
     ));
 
-    let contents = fs::read_to_string(default_policy_path(codex_home.path()))
+    let contents = fs::read_to_string(default_policy_path(chaos_home.path()))
         .expect("policy file should have been created");
     assert_eq!(
         contents,
@@ -1116,11 +1116,11 @@ async fn append_execpolicy_amendment_updates_policy_and_file() {
 
 #[tokio::test]
 async fn append_execpolicy_amendment_rejects_empty_prefix() {
-    let codex_home = tempdir().expect("create temp dir");
+    let chaos_home = tempdir().expect("create temp dir");
     let manager = ExecPolicyManager::default();
 
     let result = manager
-        .append_amendment_and_update(codex_home.path(), &ExecPolicyAmendment::from(vec![]))
+        .append_amendment_and_update(chaos_home.path(), &ExecPolicyAmendment::from(vec![]))
         .await;
 
     assert!(matches!(

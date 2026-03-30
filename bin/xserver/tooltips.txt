@@ -1,19 +1,19 @@
 Use /compact when the conversation gets long to summarize history and free up context.
 Start a fresh idea with /new; the previous session stays in history.
 Switch models or reasoning effort quickly with /model.
-Use /permissions to control when Codex asks for confirmation.
+Use /permissions to control when Chaos asks for confirmation.
 Run /review to get a code review of your current changes.
-Use /skills to list available skills or ask Codex to use one.
+Use /skills to list available skills or ask Chaos to use one.
 Use /status to see the current model, approvals, and token usage.
 Use /statusline to configure which items appear in the status line.
 Use /fork to branch the current chat into a new thread.
 Use /init to create an AGENTS.md with project-specific guidance.
 Use /mcp to list configured MCP tools.
-Use /personality to customize how Codex communicates.
+Use /personality to customize how Chaos communicates.
 Use /rename to rename your threads for easier thread resuming.
-You can run any shell command from Codex using `!` (e.g. `!ls`)
+You can run any shell command from Chaos using `!` (e.g. `!ls`)
 Type / to open the command popup; Tab autocompletes slash commands.
 When the composer is empty, press Esc to step back and edit your last message; Enter confirms.
 Press Tab to queue a message when a task is running; otherwise it sends immediately (except `!`).
 Paste an image with Ctrl+V to attach it to your next message.
-You can resume a previous conversation by running `codex resume`
+You can resume a previous conversation by running `chaos resume`

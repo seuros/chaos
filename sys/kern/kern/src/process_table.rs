@@ -1,14 +1,14 @@
 use crate::AuthManager;
-use crate::CodexAuth;
+use crate::ChaosAuth;
 use crate::ModelProviderInfo;
 
-use crate::codex::Codex;
-use crate::codex::CodexSpawnArgs;
-use crate::codex::CodexSpawnOk;
-use crate::codex::INITIAL_SUBMIT_ID;
+use crate::chaos::Chaos;
+use crate::chaos::ChaosSpawnArgs;
+use crate::chaos::ChaosSpawnOk;
+use crate::chaos::INITIAL_SUBMIT_ID;
 use crate::config::Config;
-use crate::error::CodexErr;
-use crate::error::Result as CodexResult;
+use crate::error::ChaosErr;
+use crate::error::Result as ChaosResult;
 use crate::file_watcher::FileWatcher;
 use crate::file_watcher::FileWatcherEvent;
 use crate::mcp::McpManager;
@@ -76,7 +76,7 @@ impl Drop for TempCodexHomeGuard {
     }
 }
 
-fn build_file_watcher(codex_home: PathBuf, skills_manager: Arc<SkillsManager>) -> Arc<FileWatcher> {
+fn build_file_watcher(chaos_home: PathBuf, skills_manager: Arc<SkillsManager>) -> Arc<FileWatcher> {
     if should_use_process_table_test_behavior()
         && let Ok(handle) = Handle::try_current()
         && handle.runtime_flavor() == RuntimeFlavor::CurrentThread
@@ -87,7 +87,7 @@ fn build_file_watcher(codex_home: PathBuf, skills_manager: Arc<SkillsManager>) -
         return Arc::new(FileWatcher::noop());
     }
 
-    let file_watcher = match FileWatcher::new(codex_home) {
+    let file_watcher = match FileWatcher::new(chaos_home) {
         Ok(file_watcher) => Arc::new(file_watcher),
         Err(err) => {
             warn!("failed to initialize file watcher: {err}");
@@ -182,27 +182,27 @@ impl ProcessTable {
         session_source: SessionSource,
         collaboration_modes_config: CollaborationModesConfig,
     ) -> Self {
-        let codex_home = config.codex_home.clone();
+        let chaos_home = config.chaos_home.clone();
         // Use the active model provider for discovery, not hardcoded OpenAI.
         // TODO(GPT): this was always hardcoded to OPENAI_PROVIDER_ID which
         // meant Anthropic (and every other provider) got OpenAI's stale
         // model catalog. The active provider is the one the user configured.
         let models_provider = config.model_provider.clone();
         let (process_created_tx, _) = broadcast::channel(PROCESS_CREATED_CHANNEL_CAPACITY);
-        let plugins_manager = Arc::new(PluginsManager::new(codex_home.clone()));
+        let plugins_manager = Arc::new(PluginsManager::new(chaos_home.clone()));
         let mcp_manager = Arc::new(McpManager::new(Arc::clone(&plugins_manager)));
         let skills_manager = Arc::new(SkillsManager::new(
-            codex_home.clone(),
+            chaos_home.clone(),
             Arc::clone(&plugins_manager),
             config.bundled_skills_enabled(),
         ));
-        let file_watcher = build_file_watcher(codex_home.clone(), Arc::clone(&skills_manager));
+        let file_watcher = build_file_watcher(chaos_home.clone(), Arc::clone(&skills_manager));
         Self {
             state: Arc::new(ProcessTableState {
                 processes: Arc::new(RwLock::new(HashMap::new())),
                 process_created_tx,
                 models_manager: Arc::new(ModelsManager::new_with_provider(
-                    codex_home,
+                    chaos_home,
                     auth_manager.clone(),
                     config.model_catalog.clone(),
                     collaboration_modes_config,
@@ -221,49 +221,49 @@ impl ProcessTable {
         }
     }
 
-    /// Construct with a dummy AuthManager containing the provided CodexAuth.
+    /// Construct with a dummy AuthManager containing the provided ChaosAuth.
     /// Used for integration tests: should not be used by ordinary business logic.
     pub(crate) fn with_models_provider_for_tests(
-        auth: CodexAuth,
+        auth: ChaosAuth,
         provider: ModelProviderInfo,
     ) -> Self {
         set_process_table_test_mode_for_tests(/*enabled*/ true);
-        let codex_home = std::env::temp_dir().join(format!(
+        let chaos_home = std::env::temp_dir().join(format!(
             "codex-thread-manager-test-{}",
             uuid::Uuid::new_v4()
         ));
-        std::fs::create_dir_all(&codex_home)
-            .unwrap_or_else(|err| panic!("temp codex home dir create failed: {err}"));
+        std::fs::create_dir_all(&chaos_home)
+            .unwrap_or_else(|err| panic!("temp chaos home dir create failed: {err}"));
         let mut manager =
-            Self::with_models_provider_and_home_for_tests(auth, provider, codex_home.clone());
-        manager._test_codex_home_guard = Some(TempCodexHomeGuard { path: codex_home });
+            Self::with_models_provider_and_home_for_tests(auth, provider, chaos_home.clone());
+        manager._test_codex_home_guard = Some(TempCodexHomeGuard { path: chaos_home });
         manager
     }
 
-    /// Construct with a dummy AuthManager containing the provided CodexAuth and codex home.
+    /// Construct with a dummy AuthManager containing the provided ChaosAuth and chaos home.
     /// Used for integration tests: should not be used by ordinary business logic.
     pub(crate) fn with_models_provider_and_home_for_tests(
-        auth: CodexAuth,
+        auth: ChaosAuth,
         provider: ModelProviderInfo,
-        codex_home: PathBuf,
+        chaos_home: PathBuf,
     ) -> Self {
         set_process_table_test_mode_for_tests(/*enabled*/ true);
         let auth_manager = AuthManager::from_auth_for_testing(auth);
         let (process_created_tx, _) = broadcast::channel(PROCESS_CREATED_CHANNEL_CAPACITY);
-        let plugins_manager = Arc::new(PluginsManager::new(codex_home.clone()));
+        let plugins_manager = Arc::new(PluginsManager::new(chaos_home.clone()));
         let mcp_manager = Arc::new(McpManager::new(Arc::clone(&plugins_manager)));
         let skills_manager = Arc::new(SkillsManager::new(
-            codex_home.clone(),
+            chaos_home.clone(),
             Arc::clone(&plugins_manager),
             /*bundled_skills_enabled*/ true,
         ));
-        let file_watcher = build_file_watcher(codex_home.clone(), Arc::clone(&skills_manager));
+        let file_watcher = build_file_watcher(chaos_home.clone(), Arc::clone(&skills_manager));
         Self {
             state: Arc::new(ProcessTableState {
                 processes: Arc::new(RwLock::new(HashMap::new())),
                 process_created_tx,
                 models_manager: Arc::new(ModelsManager::with_provider_for_tests(
-                    codex_home,
+                    chaos_home,
                     auth_manager.clone(),
                     provider,
                 )),
@@ -347,11 +347,11 @@ impl ProcessTable {
         self.state.process_created_tx.subscribe()
     }
 
-    pub async fn get_process(&self, process_id: ProcessId) -> CodexResult<Arc<Process>> {
+    pub async fn get_process(&self, process_id: ProcessId) -> ChaosResult<Arc<Process>> {
         self.state.get_process(process_id).await
     }
 
-    pub async fn start_process(&self, config: Config) -> CodexResult<NewProcess> {
+    pub async fn start_process(&self, config: Config) -> ChaosResult<NewProcess> {
         // Box delegated thread-spawn futures so these convenience wrappers do
         // not inline the full spawn path into every caller's async state.
         Box::pin(self.start_process_with_tools(
@@ -367,7 +367,7 @@ impl ProcessTable {
         config: Config,
         dynamic_tools: Vec<chaos_ipc::dynamic_tools::DynamicToolSpec>,
         persist_extended_history: bool,
-    ) -> CodexResult<NewProcess> {
+    ) -> ChaosResult<NewProcess> {
         Box::pin(self.start_process_with_tools_and_service_name(
             config,
             dynamic_tools,
@@ -385,7 +385,7 @@ impl ProcessTable {
         persist_extended_history: bool,
         metrics_service_name: Option<String>,
         parent_trace: Option<W3cTraceContext>,
-    ) -> CodexResult<NewProcess> {
+    ) -> ChaosResult<NewProcess> {
         Box::pin(self.state.spawn_process(
             config,
             InitialHistory::New,
@@ -405,7 +405,7 @@ impl ProcessTable {
         process_id: ProcessId,
         auth_manager: Arc<AuthManager>,
         parent_trace: Option<W3cTraceContext>,
-    ) -> CodexResult<NewProcess> {
+    ) -> ChaosResult<NewProcess> {
         let initial_history = RolloutRecorder::get_rollout_history_for_process(process_id).await?;
         Box::pin(self.resume_process_with_history(
             config,
@@ -424,7 +424,7 @@ impl ProcessTable {
         auth_manager: Arc<AuthManager>,
         persist_extended_history: bool,
         parent_trace: Option<W3cTraceContext>,
-    ) -> CodexResult<NewProcess> {
+    ) -> ChaosResult<NewProcess> {
         Box::pin(self.state.spawn_process(
             config,
             initial_history,
@@ -503,7 +503,7 @@ impl ProcessTable {
         process_id: ProcessId,
         persist_extended_history: bool,
         parent_trace: Option<W3cTraceContext>,
-    ) -> CodexResult<NewProcess> {
+    ) -> ChaosResult<NewProcess> {
         let history = RolloutRecorder::get_rollout_history_for_process(process_id).await?;
         let history = truncate_before_nth_user_message(history, nth_user_message);
         Box::pin(self.state.spawn_process(
@@ -539,16 +539,16 @@ impl ProcessTableState {
     }
 
     /// Fetch a process by ID or return ProcessNotFound.
-    pub(crate) async fn get_process(&self, process_id: ProcessId) -> CodexResult<Arc<Process>> {
+    pub(crate) async fn get_process(&self, process_id: ProcessId) -> ChaosResult<Arc<Process>> {
         let processes = self.processes.read().await;
         processes
             .get(&process_id)
             .cloned()
-            .ok_or_else(|| CodexErr::ProcessNotFound(process_id))
+            .ok_or_else(|| ChaosErr::ProcessNotFound(process_id))
     }
 
     /// Send an operation to a process by ID.
-    pub(crate) async fn send_op(&self, process_id: ProcessId, op: Op) -> CodexResult<String> {
+    pub(crate) async fn send_op(&self, process_id: ProcessId, op: Op) -> ChaosResult<String> {
         let process = self.get_process(process_id).await?;
         if let Some(ops_log) = &self.ops_log
             && let Ok(mut log) = ops_log.lock()
@@ -568,7 +568,7 @@ impl ProcessTableState {
         &self,
         config: Config,
         agent_control: AgentControl,
-    ) -> CodexResult<NewProcess> {
+    ) -> ChaosResult<NewProcess> {
         Box::pin(self.spawn_new_process_with_source(
             config,
             agent_control,
@@ -588,7 +588,7 @@ impl ProcessTableState {
         persist_extended_history: bool,
         metrics_service_name: Option<String>,
         inherited_shell_snapshot: Option<Arc<ShellSnapshot>>,
-    ) -> CodexResult<NewProcess> {
+    ) -> ChaosResult<NewProcess> {
         Box::pin(self.spawn_process_with_source(
             config,
             InitialHistory::New,
@@ -611,7 +611,10 @@ impl ProcessTableState {
         agent_control: AgentControl,
         session_source: SessionSource,
         inherited_shell_snapshot: Option<Arc<ShellSnapshot>>,
-    ) -> CodexResult<NewProcess> {
+    ) -> ChaosResult<NewProcess> {
+        if !RolloutRecorder::journal_contains_process(process_id).await? {
+            return Err(ChaosErr::ProcessNotFound(process_id));
+        }
         let initial_history = RolloutRecorder::get_rollout_history_for_process(process_id).await?;
         Box::pin(self.spawn_process_with_source(
             config,
@@ -636,7 +639,7 @@ impl ProcessTableState {
         session_source: SessionSource,
         persist_extended_history: bool,
         inherited_shell_snapshot: Option<Arc<ShellSnapshot>>,
-    ) -> CodexResult<NewProcess> {
+    ) -> ChaosResult<NewProcess> {
         Box::pin(self.spawn_process_with_source(
             config,
             initial_history,
@@ -664,7 +667,7 @@ impl ProcessTableState {
         persist_extended_history: bool,
         metrics_service_name: Option<String>,
         parent_trace: Option<W3cTraceContext>,
-    ) -> CodexResult<NewProcess> {
+    ) -> ChaosResult<NewProcess> {
         Box::pin(self.spawn_process_with_source(
             config,
             initial_history,
@@ -693,13 +696,15 @@ impl ProcessTableState {
         metrics_service_name: Option<String>,
         inherited_shell_snapshot: Option<Arc<ShellSnapshot>>,
         parent_trace: Option<W3cTraceContext>,
-    ) -> CodexResult<NewProcess> {
+    ) -> ChaosResult<NewProcess> {
         let watch_registration = self
             .file_watcher
             .register_config(&config, self.skills_manager.as_ref());
-        let CodexSpawnOk {
-            codex, process_id, ..
-        } = Codex::spawn(CodexSpawnArgs {
+        let ChaosSpawnOk {
+            chaos: codex,
+            process_id,
+            ..
+        } = Chaos::spawn(ChaosSpawnArgs {
             config,
             auth_manager,
             models_manager: Arc::clone(&self.models_manager),
@@ -723,10 +728,10 @@ impl ProcessTableState {
 
     async fn finalize_process_spawn(
         &self,
-        codex: Codex,
+        codex: Chaos,
         process_id: ProcessId,
         watch_registration: crate::file_watcher::WatchRegistration,
-    ) -> CodexResult<NewProcess> {
+    ) -> ChaosResult<NewProcess> {
         let event = codex.next_event().await?;
         let session_configured = match event {
             Event {
@@ -734,7 +739,7 @@ impl ProcessTableState {
                 msg: EventMsg::SessionConfigured(session_configured),
             } if id == INITIAL_SUBMIT_ID => session_configured,
             _ => {
-                return Err(CodexErr::SessionConfiguredNotFirstEvent);
+                return Err(ChaosErr::SessionConfiguredNotFirstEvent);
             }
         };
 

@@ -436,8 +436,8 @@ mod tests {
 
     #[test]
     fn debug_config_output_lists_all_layers_including_disabled() {
-        let system_file = absolute_path("/etc/codex/config.toml");
-        let project_folder = absolute_path("/repo/.codex");
+        let system_file = absolute_path("/etc/chaos/config.toml");
+        let project_folder = absolute_path("/repo/.chaos");
 
         let layers = vec![
             ConfigLayerEntry::new(
@@ -469,7 +469,7 @@ mod tests {
 
     #[test]
     fn debug_config_output_lists_requirement_sources() {
-        let requirements_file = absolute_path("/etc/codex/requirements.toml");
+        let requirements_file = absolute_path("/etc/chaos/requirements.toml");
 
         let requirements = ConfigRequirements {
             approval_policy: ConstrainedWithSource::new(
@@ -531,7 +531,7 @@ mod tests {
             network: None,
         };
 
-        let user_file = absolute_path("/home/alice/.codex/config.toml");
+        let user_file = absolute_path("/home/alice/.chaos/config.toml");
         let stack = ConfigLayerStack::new(
             vec![ConfigLayerEntry::new(
                 ConfigLayerSource::User { file: user_file },

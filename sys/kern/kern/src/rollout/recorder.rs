@@ -3,6 +3,7 @@
 use std::io::Error as IoError;
 use std::path::Path;
 use std::path::PathBuf;
+use std::sync::{Arc, Mutex};
 use std::time::{Duration, Instant};
 
 use chaos_ipc::ProcessId;
@@ -57,6 +58,7 @@ pub struct RolloutRecorder {
     tx: Sender<RolloutCmd>,
     state_db: Option<StateDbHandle>,
     event_persistence_mode: EventPersistenceMode,
+    live_rollout_items: Arc<Mutex<Vec<RolloutItem>>>,
 }
 
 #[derive(Clone)]
@@ -422,6 +424,7 @@ impl RolloutRecorder {
             tx,
             state_db: state_db_ctx,
             event_persistence_mode,
+            live_rollout_items: Arc::new(Mutex::new(Vec::new())),
         })
     }
 
@@ -445,10 +448,21 @@ impl RolloutRecorder {
         if filtered.is_empty() {
             return Ok(());
         }
+        self.live_rollout_items
+            .lock()
+            .expect("live rollout items lock poisoned")
+            .extend(filtered.iter().cloned());
         self.tx
             .send(RolloutCmd::AddItems(filtered))
             .await
             .map_err(|e| IoError::other(format!("failed to queue rollout items: {e}")))
+    }
+
+    pub fn snapshot_rollout_items(&self) -> Vec<RolloutItem> {
+        self.live_rollout_items
+            .lock()
+            .expect("live rollout items lock poisoned")
+            .clone()
     }
 
     /// Materialize persisted history and commit all buffered items.

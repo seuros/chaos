@@ -181,7 +181,7 @@ fn create_expected_elicitation_request_params(
     process_id: chaos_ipc::ProcessId,
 ) -> anyhow::Result<serde_json::Value> {
     let expected_message = format!(
-        "Allow Codex to run `{}` in `{}`?",
+        "Allow Chaos to run `{}` in `{}`?",
         shlex::try_join(command.iter().map(std::convert::AsRef::as_ref))?,
         workdir.to_string_lossy()
     );
@@ -349,9 +349,9 @@ async fn codex_tool_passes_base_instructions() -> anyhow::Result<()> {
             .await;
 
     // Run `codex mcp` with a specific config.toml.
-    let codex_home = TempDir::new()?;
-    create_config_toml(codex_home.path(), &server.uri())?;
-    let mut mcp_process = McpProcess::new(codex_home.path()).await?;
+    let chaos_home = TempDir::new()?;
+    create_config_toml(chaos_home.path(), &server.uri())?;
+    let mut mcp_process = McpProcess::new(chaos_home.path()).await?;
     timeout(DEFAULT_READ_TIMEOUT, mcp_process.initialize()).await??;
 
     // Send a "codex" tool request, which should hit the responses endpoint.
@@ -456,7 +456,7 @@ fn create_expected_patch_approval_elicitation_request_params(
     if let Some(r) = &reason {
         message_lines.push(r.clone());
     }
-    message_lines.push("Allow Codex to apply proposed code changes?".to_string());
+    message_lines.push("Allow Chaos to apply proposed code changes?".to_string());
     let params_json = serde_json::to_value(PatchApprovalElicitRequestParams {
         message: message_lines.join("\n"),
         requested_schema: json!({"type":"object","properties":{}}),
@@ -508,9 +508,9 @@ async fn shell_command_without_elicitation_capability_is_denied() -> anyhow::Res
         create_final_assistant_message_sse_response("Command rejected.")?,
     ])
     .await;
-    let codex_home = TempDir::new()?;
-    create_config_toml(codex_home.path(), &server.uri())?;
-    let mut mcp_process = McpProcess::new(codex_home.path()).await?;
+    let chaos_home = TempDir::new()?;
+    create_config_toml(chaos_home.path(), &server.uri())?;
+    let mut mcp_process = McpProcess::new(chaos_home.path()).await?;
     timeout(
         DEFAULT_READ_TIMEOUT,
         mcp_process.initialize_without_elicitation(),
@@ -593,22 +593,22 @@ pub struct McpHandle {
 
 async fn create_mcp_process(responses: Vec<String>) -> anyhow::Result<McpHandle> {
     let server = create_mock_responses_server(responses).await;
-    let codex_home = TempDir::new()?;
-    create_config_toml(codex_home.path(), &server.uri())?;
-    let mut mcp_process = McpProcess::new(codex_home.path()).await?;
+    let chaos_home = TempDir::new()?;
+    create_config_toml(chaos_home.path(), &server.uri())?;
+    let mut mcp_process = McpProcess::new(chaos_home.path()).await?;
     timeout(DEFAULT_READ_TIMEOUT, mcp_process.initialize()).await??;
     Ok(McpHandle {
         process: mcp_process,
         server,
-        dir: codex_home,
+        dir: chaos_home,
     })
 }
 
 /// Create a Codex config that uses the mock server as the model provider.
 /// It also uses `approval_policy = "untrusted"` so that we exercise the
 /// elicitation code path for shell commands.
-fn create_config_toml(codex_home: &Path, server_uri: &str) -> std::io::Result<()> {
-    let config_toml = codex_home.join("config.toml");
+fn create_config_toml(chaos_home: &Path, server_uri: &str) -> std::io::Result<()> {
+    let config_toml = chaos_home.join("config.toml");
     std::fs::write(
         config_toml,
         format!(

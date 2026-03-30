@@ -33,23 +33,23 @@ pub struct ExternalAgentConfigMigrationItem {
 
 #[derive(Clone)]
 pub struct ExternalAgentConfigService {
-    codex_home: PathBuf,
+    chaos_home: PathBuf,
     claude_home: PathBuf,
 }
 
 impl ExternalAgentConfigService {
-    pub fn new(codex_home: PathBuf) -> Self {
+    pub fn new(chaos_home: PathBuf) -> Self {
         let claude_home = default_claude_home();
         Self {
-            codex_home,
+            chaos_home,
             claude_home,
         }
     }
 
     #[cfg(test)]
-    fn new_for_test(codex_home: PathBuf, claude_home: PathBuf) -> Self {
+    fn new_for_test(chaos_home: PathBuf, claude_home: PathBuf) -> Self {
         Self {
-            codex_home,
+            chaos_home,
             claude_home,
         }
     }
@@ -118,8 +118,8 @@ impl ExternalAgentConfigService {
             |repo_root| repo_root.join(".claude").join("settings.json"),
         );
         let target_config = repo_root.map_or_else(
-            || self.codex_home.join("config.toml"),
-            |repo_root| repo_root.join(".codex").join("config.toml"),
+            || self.chaos_home.join("config.toml"),
+            |repo_root| repo_root.join(".chaos").join("config.toml"),
         );
         if source_settings.is_file() {
             let raw_settings = fs::read_to_string(&source_settings)?;
@@ -192,7 +192,7 @@ impl ExternalAgentConfigService {
             is_non_empty_text_file(&path)?.then_some(path)
         };
         let target_agents_md = repo_root.map_or_else(
-            || self.codex_home.join("AGENTS.md"),
+            || self.chaos_home.join("AGENTS.md"),
             |repo_root| repo_root.join("AGENTS.md"),
         );
         if let Some(source_agents_md) = source_agents_md
@@ -218,7 +218,7 @@ impl ExternalAgentConfigService {
     }
 
     fn home_target_skills_dir(&self) -> PathBuf {
-        self.codex_home
+        self.chaos_home
             .parent()
             .map(|parent| parent.join(".agents").join("skills"))
             .unwrap_or_else(|| PathBuf::from(".agents").join("skills"))
@@ -228,14 +228,14 @@ impl ExternalAgentConfigService {
         let (source_settings, target_config) = if let Some(repo_root) = find_repo_root(cwd)? {
             (
                 repo_root.join(".claude").join("settings.json"),
-                repo_root.join(".codex").join("config.toml"),
+                repo_root.join(".chaos").join("config.toml"),
             )
         } else if cwd.is_some_and(|cwd| !cwd.as_os_str().is_empty()) {
             return Ok(());
         } else {
             (
                 self.claude_home.join("settings.json"),
-                self.codex_home.join("config.toml"),
+                self.chaos_home.join("config.toml"),
             )
         };
         if !source_settings.is_file() {
@@ -327,7 +327,7 @@ impl ExternalAgentConfigService {
         } else {
             (
                 self.claude_home.join("CLAUDE.md"),
-                self.codex_home.join("AGENTS.md"),
+                self.chaos_home.join("AGENTS.md"),
             )
         };
         if !is_non_empty_text_file(&source_agents_md)?

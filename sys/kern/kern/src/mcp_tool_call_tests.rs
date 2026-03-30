@@ -1,5 +1,5 @@
 use super::*;
-use crate::codex::make_session_and_context;
+use crate::chaos::make_session_and_context;
 
 /// Test-local stand-in: the real constant was removed because all MCP servers
 /// are now treated equally. Tests that were written against the old apps server
@@ -866,8 +866,8 @@ async fn persist_codex_app_tool_approval_writes_tool_override() {
 #[tokio::test]
 async fn maybe_persist_mcp_tool_approval_reloads_session_config() {
     let (session, turn_context) = make_session_and_context().await;
-    let codex_home = session.codex_home().await;
-    std::fs::create_dir_all(&codex_home).expect("create codex home");
+    let chaos_home = session.chaos_home().await;
+    std::fs::create_dir_all(&chaos_home).expect("create chaos home");
     let key = McpToolApprovalKey {
         server: CODEX_APPS_MCP_SERVER_NAME.to_string(),
         connector_id: Some("calendar".to_string()),
@@ -963,7 +963,7 @@ async fn approve_mode_blocks_when_arc_returns_interrupt_for_model() {
 
     let (session, mut turn_context) = make_session_and_context().await;
     turn_context.auth_manager = Some(crate::test_support::auth_manager_from_auth(
-        crate::CodexAuth::create_dummy_chatgpt_auth_for_testing(),
+        crate::ChaosAuth::create_dummy_chatgpt_auth_for_testing(),
     ));
     let mut config = (*turn_context.config).clone();
     config.chatgpt_base_url = server.uri();
@@ -1052,7 +1052,7 @@ async fn approve_mode_routes_arc_ask_user_to_guardian_when_guardian_reviewer_is_
 
     let (mut session, mut turn_context) = make_session_and_context().await;
     turn_context.auth_manager = Some(crate::test_support::auth_manager_from_auth(
-        crate::CodexAuth::create_dummy_chatgpt_auth_for_testing(),
+        crate::ChaosAuth::create_dummy_chatgpt_auth_for_testing(),
     ));
     turn_context
         .approval_policy
@@ -1064,7 +1064,7 @@ async fn approve_mode_routes_arc_ask_user_to_guardian_when_guardian_reviewer_is_
     config.approvals_reviewer = ApprovalsReviewer::GuardianSubagent;
     let config = Arc::new(config);
     let models_manager = Arc::new(crate::test_support::models_manager_with_provider(
-        config.codex_home.clone(),
+        config.chaos_home.clone(),
         Arc::clone(&session.services.auth_manager),
         config.model_provider.clone(),
     ));

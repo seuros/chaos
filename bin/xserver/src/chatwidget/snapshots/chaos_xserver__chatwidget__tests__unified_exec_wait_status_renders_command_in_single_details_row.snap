@@ -6,6 +6,6 @@ expression: rendered
   └ cargo test -p codex-core -- --exact…
 
 
-› Ask Codex to do anything
+› Ask Chaos to do anything
 
   ? for shortcuts            100% context left

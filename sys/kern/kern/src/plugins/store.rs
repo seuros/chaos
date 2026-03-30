@@ -70,9 +70,9 @@ pub struct PluginStore {
 }
 
 impl PluginStore {
-    pub fn new(codex_home: PathBuf) -> Self {
+    pub fn new(chaos_home: PathBuf) -> Self {
         Self {
-            root: AbsolutePathBuf::try_from(codex_home.join(PLUGINS_CACHE_DIR))
+            root: AbsolutePathBuf::try_from(chaos_home.join(PLUGINS_CACHE_DIR))
                 .unwrap_or_else(|err| panic!("plugin cache root should be absolute: {err}")),
         }
     }

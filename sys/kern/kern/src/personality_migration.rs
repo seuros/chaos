@@ -21,10 +21,10 @@ pub enum PersonalityMigrationStatus {
 }
 
 pub async fn maybe_migrate_personality(
-    codex_home: &Path,
+    chaos_home: &Path,
     config_toml: &ConfigToml,
 ) -> io::Result<PersonalityMigrationStatus> {
-    let marker_path = codex_home.join(PERSONALITY_MIGRATION_FILENAME);
+    let marker_path = chaos_home.join(PERSONALITY_MIGRATION_FILENAME);
     if tokio::fs::try_exists(&marker_path).await? {
         return Ok(PersonalityMigrationStatus::SkippedMarker);
     }
@@ -42,12 +42,12 @@ pub async fn maybe_migrate_personality(
         .or_else(|| config_toml.model_provider.clone())
         .unwrap_or_else(|| "openai".to_string());
 
-    if !has_recorded_sessions(codex_home, model_provider_id.as_str()).await? {
+    if !has_recorded_sessions(chaos_home, model_provider_id.as_str()).await? {
         create_marker(&marker_path).await?;
         return Ok(PersonalityMigrationStatus::SkippedNoSessions);
     }
 
-    ConfigEditsBuilder::new(codex_home)
+    ConfigEditsBuilder::new(chaos_home)
         .set_personality(Some(Personality::Pragmatic))
         .apply()
         .await
@@ -59,13 +59,13 @@ pub async fn maybe_migrate_personality(
     Ok(PersonalityMigrationStatus::Applied)
 }
 
-async fn has_recorded_sessions(codex_home: &Path, default_provider: &str) -> io::Result<bool> {
+async fn has_recorded_sessions(chaos_home: &Path, default_provider: &str) -> io::Result<bool> {
     let allowed_sources: &[SessionSource] = &[];
 
-    if let Some(state_db_ctx) = state_db::open_if_present(codex_home, default_provider).await
+    if let Some(state_db_ctx) = state_db::open_if_present(chaos_home, default_provider).await
         && let Some(ids) = state_db::list_process_ids_db(
             Some(state_db_ctx.as_ref()),
-            codex_home,
+            chaos_home,
             /*page_size*/ 1,
             /*cursor*/ None,
             ProcessSortKey::CreatedAt,

@@ -12,7 +12,7 @@ use tokio::time::timeout;
 #[tokio::test]
 async fn resume_startup_does_not_consume_model_availability_nux_count() -> Result<()> {
     let repo_root = chaos_which::repo_root()?;
-    let codex_home = tempdir()?;
+    let chaos_home = tempdir()?;
 
     let source_catalog_path = chaos_which::find_resource!("../../sys/kern/kern/models.json")?;
     let source_catalog = std::fs::read_to_string(&source_catalog_path)?;
@@ -42,7 +42,7 @@ async fn resume_startup_does_not_consume_model_availability_nux_count() -> Resul
         }),
     );
 
-    let custom_catalog_path = codex_home.path().join("catalog.json");
+    let custom_catalog_path = chaos_home.path().join("catalog.json");
     std::fs::write(
         &custom_catalog_path,
         serde_json::to_string(&source_catalog)?,
@@ -62,7 +62,7 @@ trust_level = "trusted"
 "{model_slug}" = 1
 "#
     );
-    std::fs::write(codex_home.path().join("config.toml"), config_contents)?;
+    std::fs::write(chaos_home.path().join("config.toml"), config_contents)?;
 
     let fixture_path =
         chaos_which::find_resource!("../../sys/kern/kern/tests/cli_responses_fixture.sse")?;
@@ -84,7 +84,7 @@ trust_level = "trusted"
         .arg("-C")
         .arg(&repo_root)
         .arg("seed session for resume")
-        .env("CODEX_HOME", codex_home.path())
+        .env("CHAOS_HOME", chaos_home.path())
         .env("OPENAI_API_KEY", "dummy")
         .env("CODEX_RS_SSE_FIXTURE", fixture_path)
         .env("OPENAI_BASE_URL", "http://unused.local")
@@ -98,8 +98,8 @@ trust_level = "trusted"
 
     let mut env = HashMap::new();
     env.insert(
-        "CODEX_HOME".to_string(),
-        codex_home.path().display().to_string(),
+        "CHAOS_HOME".to_string(),
+        chaos_home.path().display().to_string(),
     );
     env.insert("OPENAI_API_KEY".to_string(), "dummy".to_string());
 
@@ -177,7 +177,7 @@ trust_level = "trusted"
         String::from_utf8_lossy(&output)
     );
 
-    let config_contents = std::fs::read_to_string(codex_home.path().join("config.toml"))?;
+    let config_contents = std::fs::read_to_string(chaos_home.path().join("config.toml"))?;
     let config: toml::Value = toml::from_str(&config_contents)?;
     let shown_count = config
         .get("tui")

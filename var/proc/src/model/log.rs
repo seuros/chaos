@@ -15,7 +15,7 @@ pub struct LogEntry {
     pub line: Option<i64>,
 }
 
-#[derive(Clone, Debug, FromRow)]
+#[derive(Clone, Debug, PartialEq, Eq, FromRow)]
 pub struct LogRow {
     pub id: i64,
     pub ts: i64,
@@ -29,6 +29,17 @@ pub struct LogRow {
     pub line: Option<i64>,
 }
 
+#[derive(Clone, Debug, Default, PartialEq, Eq)]
+pub struct LogTailCursor {
+    pub last_id: i64,
+}
+
+#[derive(Clone, Debug, Default, PartialEq, Eq)]
+pub struct LogTailBatch {
+    pub rows: Vec<LogRow>,
+    pub cursor: LogTailCursor,
+}
+
 #[derive(Clone, Debug, Default)]
 pub struct LogQuery {
     pub level_upper: Option<String>,
@@ -39,6 +50,11 @@ pub struct LogQuery {
     pub process_ids: Vec<String>,
     pub search: Option<String>,
     pub include_processless: bool,
+    /// When set, scope results to a single process and optionally include
+    /// processless companion logs from that process's latest process UUID.
+    pub related_to_process_id: Option<String>,
+    /// Only meaningful when `related_to_process_id` is set.
+    pub include_related_processless: bool,
     pub after_id: Option<i64>,
     pub limit: Option<usize>,
     pub descending: bool,

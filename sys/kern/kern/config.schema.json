@@ -98,7 +98,7 @@
       "description": "Analytics settings loaded from config.toml. Fields are optional so we can apply defaults.",
       "properties": {
         "enabled": {
-          "description": "When `false`, disables analytics across Codex product surfaces in this profile.",
+          "description": "When `false`, disables analytics across Chaos product surfaces in this profile.",
           "type": [
             "boolean",
             "null"
@@ -285,11 +285,11 @@
       ]
     },
     "AuthCredentialsStoreMode": {
-      "description": "Determine where Codex should store CLI auth credentials.",
+      "description": "Determine where Chaos should store CLI auth credentials.",
       "oneOf": [
         {
           "const": "file",
-          "description": "Persist credentials in CODEX_HOME/auth.json.",
+          "description": "Persist credentials in CHAOS_HOME/auth.json.",
           "type": "string"
         },
         {
@@ -299,7 +299,7 @@
         },
         {
           "const": "auto",
-          "description": "Use keyring when available; otherwise, fall back to a file in CODEX_HOME.",
+          "description": "Use keyring when available; otherwise, fall back to a file in CHAOS_HOME.",
           "type": "string"
         },
         {
@@ -818,10 +818,10 @@
     },
     "History": {
       "additionalProperties": false,
-      "description": "Settings that govern if and what will be written to `~/.codex/history.jsonl`.",
+      "description": "Settings that govern if and what will be written to the persistent message-history store.",
       "properties": {
         "max_bytes": {
-          "description": "If set, the maximum size of the history file in bytes. The oldest entries\nare dropped once the file exceeds this limit.",
+          "description": "If set, the maximum size of the persistent message-history store in bytes.\nThe oldest entries are dropped once the store exceeds this limit.",
           "format": "uint",
           "minimum": 0,
           "type": [
@@ -1238,7 +1238,7 @@
       ]
     },
     "OAuthCredentialsStoreMode": {
-      "description": "Determine where Codex should store and read MCP OAuth credentials.",
+      "description": "Determine where Chaos should store and read MCP OAuth credentials.",
       "oneOf": [
         {
           "const": "auto",
@@ -1247,7 +1247,7 @@
         },
         {
           "const": "file",
-          "description": "CODEX_HOME/.credentials.json",
+          "description": "CHAOS_HOME/.credentials.json",
           "type": "string"
         },
         {
@@ -2030,7 +2030,7 @@
         },
         "theme": {
           "default": null,
-          "description": "Syntax highlighting theme name (kebab-case).\n\nWhen set, overrides automatic light/dark theme detection.\nUse `/theme` in the TUI or see `$CODEX_HOME/themes` for custom themes.",
+          "description": "Syntax highlighting theme name (kebab-case).\n\nWhen set, overrides automatic light/dark theme detection.\nUse `/theme` in the TUI or see `$CHAOS_HOME/themes` for custom themes.",
           "type": [
             "string",
             "null"
@@ -2188,7 +2188,7 @@
       ]
     }
   },
-  "description": "Base config deserialized from ~/.codex/config.toml.",
+  "description": "Base config deserialized from ~/.chaos/config.toml.",
   "properties": {
     "agents": {
       "anyOf": [
@@ -2217,7 +2217,7 @@
           "type": "null"
         }
       ],
-      "description": "When `false`, disables analytics across Codex product surfaces in this machine.\nDefaults to `true`."
+      "description": "When `false`, disables analytics across Chaos product surfaces in this machine.\nDefaults to `true`."
     },
     "approval_policy": {
       "anyOf": [
@@ -2291,7 +2291,7 @@
         }
       ],
       "default": null,
-      "description": "Preferred backend for storing CLI auth credentials.\nfile (default): Use a file in the Codex home directory.\nkeyring: Use an OS-specific keyring service.\nauto: Use the keyring if available, otherwise use a file."
+      "description": "Preferred backend for storing CLI auth credentials.\nfile (default): Use a file in the Chaos home directory.\nkeyring: Use an OS-specific keyring service.\nauto: Use the keyring if available, otherwise use a file."
     },
     "compact_prompt": {
       "description": "Compact prompt used for history compaction.",
@@ -2608,7 +2608,7 @@
         }
       ],
       "default": null,
-      "description": "Settings that govern if and what will be written to `~/.codex/history.jsonl`."
+      "description": "Settings that govern if and what will be written to the persistent\nmessage-history store."
     },
     "instructions": {
       "description": "System instructions.",
@@ -2626,10 +2626,10 @@
           "type": "null"
         }
       ],
-      "description": "Directory where Codex writes log files, for example `codex-tui.log`.\nDefaults to `$CODEX_HOME/log`."
+      "description": "Directory where Chaos writes log files, for example `chaos-tui.log`.\nDefaults to `$CHAOS_HOME/log`."
     },
     "mcp_oauth_callback_port": {
-      "description": "Optional fixed port for the local HTTP callback server used during MCP OAuth login.\nWhen unset, Codex will bind to an ephemeral port chosen by the OS.",
+      "description": "Optional fixed port for the local HTTP callback server used during MCP OAuth login.\nWhen unset, Chaos will bind to an ephemeral port chosen by the OS.",
       "format": "uint16",
       "maximum": 65535,
       "minimum": 0,
@@ -2655,14 +2655,14 @@
         }
       ],
       "default": null,
-      "description": "Preferred backend for storing MCP OAuth credentials.\nkeyring: Use an OS-specific keyring service.\nfile: Use a file in the Codex home directory.\nauto (default): Use the OS-specific keyring service if available, otherwise use a file."
+      "description": "Preferred backend for storing MCP OAuth credentials.\nkeyring: Use an OS-specific keyring service.\nfile: Use a file in the Chaos home directory.\nauto (default): Use the OS-specific keyring service if available, otherwise use a file."
     },
     "mcp_servers": {
       "additionalProperties": {
         "$ref": "#/definitions/RawMcpServerConfig"
       },
       "default": {},
-      "description": "Definition for MCP servers that Codex can reach out to for tool calls.",
+      "description": "Definition for MCP servers that Chaos can reach out to for tool calls.",
       "type": "object"
     },
     "memories": {
@@ -2898,7 +2898,7 @@
     },
     "project_root_markers": {
       "default": null,
-      "description": "Markers used to detect the project root when searching parent\ndirectories for `.codex` folders. Defaults to [\".git\"] when unset.",
+      "description": "Markers used to detect the project root when searching parent\ndirectories for `.chaos` folders. Defaults to [\".git\"] when unset.",
       "items": {
         "type": "string"
       },
@@ -3010,7 +3010,7 @@
           "type": "null"
         }
       ],
-      "description": "Directory where Codex stores the SQLite state DB.\nDefaults to `$CODEX_SQLITE_HOME` when set. Otherwise uses `$CODEX_HOME`."
+      "description": "Directory where Chaos stores the SQLite state DB.\nDefaults to `$CHAOS_SQLITE_HOME` when set. Otherwise uses `$CHAOS_HOME`."
     },
     "suppress_unstable_features_warning": {
       "description": "Suppress warnings about unstable (under development) features.",

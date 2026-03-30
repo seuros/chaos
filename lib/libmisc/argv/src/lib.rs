@@ -5,7 +5,7 @@ use std::path::Path;
 use std::path::PathBuf;
 
 use chaos_diff::CODEX_CORE_APPLY_PATCH_ARG1;
-use chaos_pwd::find_codex_home;
+use chaos_pwd::find_chaos_home;
 use tempfile::TempDir;
 
 const LINUX_SANDBOX_ARG0: &str = "alcatraz-linux";
@@ -138,7 +138,7 @@ pub fn arg0_dispatch() -> Option<Arg0PathEntryGuard> {
 /// execute the corresponding helper `run_main()` (which never returns).
 /// Otherwise we:
 ///
-/// 1.  Load `.env` values from `~/.codex/.env` before creating any threads.
+/// 1.  Load `.env` values from `~/.chaos/.env` before creating any threads.
 /// 2.  Construct a Tokio multi-thread runtime.
 /// 3.  Derive the path to the current executable (so children can re-invoke the
 ///     sandbox) when running on Linux, FreeBSD, or macOS.
@@ -208,27 +208,31 @@ fn build_runtime() -> anyhow::Result<tokio::runtime::Runtime> {
     Ok(builder.build()?)
 }
 
-const ILLEGAL_ENV_VAR_PREFIX: &str = "CODEX_";
+const ILLEGAL_ENV_VAR_PREFIXES: [&str; 2] = ["CHAOS_", "CODEX_"];
 
-/// Load env vars from ~/.codex/.env.
+/// Load env vars from ~/.chaos/.env.
 ///
 /// Security: Do not allow `.env` files to create or modify any variables
-/// with names starting with `CODEX_`.
+/// with names starting with `CHAOS_` or `CODEX_`.
 fn load_dotenv() {
-    if let Ok(codex_home) = find_codex_home()
-        && let Ok(iter) = dotenvy::from_path_iter(codex_home.join(".env"))
+    if let Ok(chaos_home) = find_chaos_home()
+        && let Ok(iter) = dotenvy::from_path_iter(chaos_home.join(".env"))
     {
         set_filtered(iter);
     }
 }
 
-/// Helper to set vars from a dotenvy iterator while filtering out `CODEX_` keys.
+/// Helper to set vars from a dotenvy iterator while filtering out reserved keys.
 fn set_filtered<I>(iter: I)
 where
     I: IntoIterator<Item = Result<(String, String), dotenvy::Error>>,
 {
     for (key, value) in iter.into_iter().flatten() {
-        if !key.to_ascii_uppercase().starts_with(ILLEGAL_ENV_VAR_PREFIX) {
+        let key_upper = key.to_ascii_uppercase();
+        if !ILLEGAL_ENV_VAR_PREFIXES
+            .iter()
+            .any(|prefix| key_upper.starts_with(prefix))
+        {
             // It is safe to call set_var() because our process is
             // single-threaded at this point in its execution.
             unsafe { std::env::set_var(&key, &value) };
@@ -251,24 +255,24 @@ where
 /// IMPORTANT: This function modifies the PATH environment variable, so it MUST
 /// be called before multiple threads are spawned.
 pub fn prepend_path_entry_for_codex_aliases() -> std::io::Result<Arg0PathEntryGuard> {
-    let codex_home = find_codex_home()?;
+    let chaos_home = find_chaos_home()?;
     #[cfg(not(debug_assertions))]
     {
         // Guard against placing helpers in system temp directories outside debug builds.
         let temp_root = std::env::temp_dir();
-        if codex_home.starts_with(&temp_root) {
+        if chaos_home.starts_with(&temp_root) {
             return Err(std::io::Error::new(
                 std::io::ErrorKind::InvalidInput,
                 format!(
-                    "Refusing to create helper binaries under temporary dir {temp_root:?} (codex_home: {codex_home:?})"
+                    "Refusing to create helper binaries under temporary dir {temp_root:?} (chaos_home: {chaos_home:?})"
                 ),
             ));
         }
     }
 
-    std::fs::create_dir_all(&codex_home)?;
-    // Use a CODEX_HOME-scoped temp root to avoid cluttering the top-level directory.
-    let temp_root = codex_home.join("tmp").join("arg0");
+    std::fs::create_dir_all(&chaos_home)?;
+    // Use a CHAOS_HOME-scoped temp root to avoid cluttering the top-level directory.
+    let temp_root = chaos_home.join("tmp").join("arg0");
     std::fs::create_dir_all(&temp_root)?;
     {
         use std::os::unix::fs::PermissionsExt;

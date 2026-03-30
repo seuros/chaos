@@ -12,7 +12,7 @@ use chaos_ipc::config_types::AltScreenMode;
 use chaos_ipc::config_types::SandboxMode;
 use chaos_ipc::protocol::AskForApproval;
 use chaos_kern::AuthManager;
-use chaos_kern::CodexAuth;
+use chaos_kern::ChaosAuth;
 use chaos_kern::INTERACTIVE_SESSION_SOURCES;
 use chaos_kern::ProcessSortKey;
 use chaos_kern::ProcessTable;
@@ -23,7 +23,7 @@ use chaos_kern::check_execpolicy_for_warnings;
 use chaos_kern::config::Config;
 use chaos_kern::config::ConfigBuilder;
 use chaos_kern::config::ConfigOverrides;
-use chaos_kern::config::find_codex_home;
+use chaos_kern::config::find_chaos_home;
 use chaos_kern::config::load_config_as_toml_with_cli_overrides;
 use chaos_kern::config::resolve_oss_provider;
 use chaos_kern::config_loader::CloudRequirementsLoader;
@@ -39,6 +39,7 @@ use chaos_kern::path_utils;
 use chaos_kern::state_db::get_state_db;
 use chaos_kern::terminal::Multiplexer;
 use chaos_proc::log_db;
+use chaos_proc::StateRuntime;
 use chaos_realpath::AbsolutePathBuf;
 use cwd_prompt::CwdPromptAction;
 use cwd_prompt::CwdPromptOutcome;
@@ -97,6 +98,7 @@ mod resume_picker;
 mod selection_list;
 mod session_log;
 mod shimmer;
+mod side_panel;
 mod slash_command;
 mod status;
 mod status_indicator_widget;
@@ -132,7 +134,7 @@ struct CoreManagers {
 
 fn create_core_managers(config: &Config) -> CoreManagers {
     let auth_manager = AuthManager::shared(
-        config.codex_home.clone(),
+        config.chaos_home.clone(),
         false, // enable_codex_api_key_env
         config.cli_auth_credentials_store_mode,
     );
@@ -195,10 +197,10 @@ pub async fn run_main(
 
     // we load config.toml here to determine project state.
     #[allow(clippy::print_stderr)]
-    let codex_home = match find_codex_home() {
-        Ok(codex_home) => codex_home.to_path_buf(),
+    let chaos_home = match find_chaos_home() {
+        Ok(chaos_home) => chaos_home.to_path_buf(),
         Err(err) => {
-            eprintln!("Error finding codex home: {err}");
+            eprintln!("Error finding chaos home: {err}");
             std::process::exit(1);
         }
     };
@@ -211,7 +213,7 @@ pub async fn run_main(
 
     #[allow(clippy::print_stderr)]
     let config_toml = match load_config_as_toml_with_cli_overrides(
-        &codex_home,
+        &chaos_home,
         &config_cwd,
         cli_kv_overrides.clone(),
     )
@@ -236,7 +238,7 @@ pub async fn run_main(
     };
 
     if let Err(err) =
-        chaos_kern::personality_migration::maybe_migrate_personality(&codex_home, &config_toml)
+        chaos_kern::personality_migration::maybe_migrate_personality(&chaos_home, &config_toml)
             .await
     {
         tracing::warn!(error = %err, "failed to run personality migration");
@@ -405,9 +407,25 @@ pub async fn run_main(
 
     let otel_tracing_layer = otel.as_ref().and_then(|o| o.tracing_layer());
 
-    let log_db_layer = chaos_kern::state_db::get_state_db(&config)
-        .await
-        .map(|db| log_db::start(db).with_filter(env_filter()));
+    let log_state_db = match StateRuntime::init(
+        config.sqlite_home.clone(),
+        config.model_provider_id.clone(),
+    )
+    .await
+    {
+        Ok(db) => Some(db),
+        Err(err) => {
+            tracing::warn!(
+                error = %err,
+                sqlite_home = %config.sqlite_home.display(),
+                "failed to initialize log/state runtime for xserver"
+            );
+            None
+        }
+    };
+    let log_db_layer = log_state_db
+        .as_ref()
+        .map(|db| log_db::start(db.clone()).with_filter(env_filter()));
 
     let _ = tracing_subscriber::registry()
         .with(file_layer)
@@ -424,6 +442,7 @@ pub async fn run_main(
         overrides,
         cli_kv_overrides,
         cloud_requirements,
+        log_state_db,
     )
     .await
     .map_err(|err| std::io::Error::other(err.to_string()))
@@ -438,6 +457,7 @@ async fn run_ratatui_app(
     overrides: ConfigOverrides,
     cli_kv_overrides: Vec<(String, toml::Value)>,
     mut cloud_requirements: CloudRequirementsLoader,
+    log_state_db: Option<Arc<StateRuntime>>,
 ) -> color_eyre::Result<AppExitInfo> {
     color_eyre::install()?;
 
@@ -459,7 +479,7 @@ async fn run_ratatui_app(
     session_log::maybe_init(&initial_config);
 
     let auth_manager = AuthManager::shared(
-        initial_config.codex_home.clone(),
+        initial_config.chaos_home.clone(),
         /*enable_codex_api_key_env*/ false,
         initial_config.cli_auth_credentials_store_mode,
     );
@@ -535,7 +555,7 @@ async fn run_ratatui_app(
     let session_selection =
         if use_fork {
             if let Some(id_str) = cli.fork_session_id.as_deref() {
-                match resolve_saved_process_id(&config.codex_home, id_str).await? {
+                match resolve_saved_process_id(&config.chaos_home, id_str).await? {
                     Some(process_id) => {
                         resume_picker::SessionSelection::Fork(resume_picker::SessionTarget {
                             process_id,
@@ -586,7 +606,7 @@ async fn run_ratatui_app(
                 resume_picker::SessionSelection::StartFresh
             }
         } else if let Some(id_str) = cli.resume_session_id.as_deref() {
-            match resolve_saved_process_id(&config.codex_home, id_str).await? {
+            match resolve_saved_process_id(&config.chaos_home, id_str).await? {
                 Some(process_id) => {
                     resume_picker::SessionSelection::Resume(resume_picker::SessionTarget {
                         process_id,
@@ -707,7 +727,7 @@ async fn run_ratatui_app(
     // this must happen after the last possible reload.
     if let Some(w) = crate::render::highlight::set_theme_override(
         config.tui_theme.clone(),
-        find_codex_home().ok(),
+        find_chaos_home().ok(),
     ) {
         config.startup_warnings.push(w);
     }
@@ -730,6 +750,7 @@ async fn run_ratatui_app(
         &mut tui,
         managers.auth_manager,
         managers.process_table,
+        log_state_db,
         config,
         cli_kv_overrides.clone(),
         overrides.clone(),
@@ -749,13 +770,13 @@ async fn run_ratatui_app(
 }
 
 async fn resolve_saved_process_id(
-    codex_home: &Path,
+    chaos_home: &Path,
     id_str: &str,
 ) -> std::io::Result<Option<ProcessId>> {
     let process_id = if Uuid::parse_str(id_str).is_ok() {
         ProcessId::from_string(id_str).ok()
     } else {
-        find_process_id_by_name(codex_home, id_str).await?
+        find_process_id_by_name(chaos_home, id_str).await?
     };
     let Some(process_id) = process_id else {
         return Ok(None);
@@ -885,8 +906,8 @@ fn get_login_status(config: &Config) -> LoginStatus {
     if config.model_provider.requires_openai_auth {
         // Reading the OpenAI API key is an async operation because it may need
         // to refresh the token. Block on it.
-        let codex_home = config.codex_home.clone();
-        match CodexAuth::from_auth_storage(&codex_home, config.cli_auth_credentials_store_mode) {
+        let chaos_home = config.chaos_home.clone();
+        match ChaosAuth::from_auth_storage(&chaos_home, config.cli_auth_credentials_store_mode) {
             Ok(Some(auth)) => LoginStatus::AuthMode(auth.auth_mode()),
             Ok(None) => LoginStatus::NotAuthenticated,
             Err(err) => {
@@ -975,7 +996,7 @@ mod tests {
 
     async fn build_config(temp_dir: &TempDir) -> std::io::Result<Config> {
         ConfigBuilder::default()
-            .codex_home(temp_dir.path().to_path_buf())
+            .chaos_home(temp_dir.path().to_path_buf())
             .build()
             .await
     }
@@ -988,7 +1009,7 @@ mod tests {
 
         // AuthManager::shared always returns the same Arc for a given home.
         let auth2 = AuthManager::shared(
-            config.codex_home.clone(),
+            config.chaos_home.clone(),
             false,
             config.cli_auth_credentials_store_mode,
         );
@@ -1019,7 +1040,7 @@ mod tests {
     #[tokio::test]
     async fn config_rebuild_changes_trust_defaults_with_cwd() -> std::io::Result<()> {
         let temp_dir = TempDir::new()?;
-        let codex_home = temp_dir.path().to_path_buf();
+        let chaos_home = temp_dir.path().to_path_buf();
         let trusted = temp_dir.path().join("trusted");
         let untrusted = temp_dir.path().join("untrusted");
         std::fs::create_dir_all(&trusted)?;
@@ -1043,7 +1064,7 @@ trust_level = "untrusted"
             ..Default::default()
         };
         let trusted_config = ConfigBuilder::default()
-            .codex_home(codex_home.clone())
+            .chaos_home(chaos_home.clone())
             .harness_overrides(trusted_overrides.clone())
             .build()
             .await?;
@@ -1057,7 +1078,7 @@ trust_level = "untrusted"
             ..trusted_overrides
         };
         let untrusted_config = ConfigBuilder::default()
-            .codex_home(codex_home)
+            .chaos_home(chaos_home)
             .harness_overrides(untrusted_overrides)
             .build()
             .await?;

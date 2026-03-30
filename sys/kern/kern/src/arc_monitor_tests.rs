@@ -13,7 +13,7 @@ use wiremock::matchers::method;
 use wiremock::matchers::path;
 
 use super::*;
-use crate::codex::make_session_and_context;
+use crate::chaos::make_session_and_context;
 use chaos_ipc::models::ContentItem;
 use chaos_ipc::models::LocalShellAction;
 use chaos_ipc::models::LocalShellExecAction;
@@ -252,7 +252,7 @@ async fn monitor_action_posts_expected_arc_request() {
     let server = MockServer::start().await;
     let (session, mut turn_context) = make_session_and_context().await;
     turn_context.auth_manager = Some(crate::test_support::auth_manager_from_auth(
-        crate::CodexAuth::create_dummy_chatgpt_auth_for_testing(),
+        crate::ChaosAuth::create_dummy_chatgpt_auth_for_testing(),
     ));
     turn_context.developer_instructions = Some("Developer policy".to_string());
     turn_context.user_instructions = Some("User policy".to_string());
@@ -403,7 +403,7 @@ async fn monitor_action_rejects_legacy_response_fields() {
 
     let (session, mut turn_context) = make_session_and_context().await;
     turn_context.auth_manager = Some(crate::test_support::auth_manager_from_auth(
-        crate::CodexAuth::create_dummy_chatgpt_auth_for_testing(),
+        crate::ChaosAuth::create_dummy_chatgpt_auth_for_testing(),
     ));
     let mut config = (*turn_context.config).clone();
     config.chatgpt_base_url = server.uri();

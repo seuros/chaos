@@ -8,6 +8,7 @@ use std::sync::OnceLock;
 
 use chaos_ipc::protocol::Op;
 use chaos_kern::config::Config;
+use jiff::Timestamp;
 use serde::Serialize;
 use serde_json::json;
 
@@ -74,7 +75,10 @@ impl SessionLogger {
 
 fn now_ts() -> String {
     // RFC3339 for readability; consumers can parse as needed.
-    chrono::Utc::now().to_rfc3339_opts(chrono::SecondsFormat::Millis, true)
+    Timestamp::now()
+        .to_zoned(jiff::tz::TimeZone::UTC)
+        .strftime("%Y-%m-%dT%H:%M:%S%.3fZ")
+        .to_string()
 }
 
 pub(crate) fn maybe_init(config: &Config) {
@@ -94,7 +98,9 @@ pub(crate) fn maybe_init(config: &Config) {
         };
         let filename = format!(
             "session-{}.jsonl",
-            chrono::Utc::now().format("%Y%m%dT%H%M%SZ")
+            Timestamp::now()
+                .to_zoned(jiff::tz::TimeZone::UTC)
+                .strftime("%Y%m%dT%H%M%SZ")
         );
         p.push(filename);
         p
@@ -125,7 +131,7 @@ pub(crate) fn log_inbound_app_event(event: &AppEvent) {
     }
 
     match event {
-        AppEvent::CodexEvent(ev) => {
+        AppEvent::ChaosEvent(ev) => {
             write_record("to_tui", "codex_event", ev);
         }
         AppEvent::NewSession => {

@@ -33,8 +33,8 @@ use rand::RngExt;
 use rand::rng;
 use tokio::sync::Mutex;
 
-use crate::codex::Session;
-use crate::codex::TurnContext;
+use crate::chaos::Session;
+use crate::chaos::TurnContext;
 use crate::sandboxing::SandboxPermissions;
 
 mod async_watcher;

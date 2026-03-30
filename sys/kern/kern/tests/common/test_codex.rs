@@ -15,7 +15,7 @@ use chaos_ipc::protocol::SandboxPolicy;
 use chaos_ipc::protocol::SessionConfiguredEvent;
 use chaos_ipc::protocol::SessionSource;
 use chaos_ipc::user_input::UserInput;
-use chaos_kern::CodexAuth;
+use chaos_kern::ChaosAuth;
 use chaos_kern::ModelProviderInfo;
 use chaos_kern::Process;
 use chaos_kern::ProcessTable;
@@ -62,7 +62,7 @@ pub enum ShellModelOutput {
 
 pub struct TestCodexBuilder {
     config_mutators: Vec<Box<ConfigMutator>>,
-    auth: CodexAuth,
+    auth: ChaosAuth,
     pre_build_hooks: Vec<Box<PreBuildHook>>,
     home: Option<Arc<TempDir>>,
 }
@@ -76,7 +76,7 @@ impl TestCodexBuilder {
         self
     }
 
-    pub fn with_auth(mut self, auth: CodexAuth) -> Self {
+    pub fn with_auth(mut self, auth: ChaosAuth) -> Self {
         self.auth = auth;
         self
     }
@@ -139,6 +139,12 @@ impl TestCodexBuilder {
         self.config_mutators.push(Box::new(move |config| {
             config.model_provider.base_url = Some(base_url_clone);
             config.experimental_realtime_ws_model = Some("realtime-test-model".to_string());
+            if config.model_catalog.is_none() {
+                let bundled_models: ModelsResponse =
+                    serde_json::from_str(include_str!("../../models.json"))
+                        .expect("bundled models.json should parse");
+                config.model_catalog = Some(bundled_models);
+            }
             config
                 .features
                 .enable(Feature::ResponsesWebsockets)
@@ -196,7 +202,7 @@ impl TestCodexBuilder {
             chaos_kern::test_support::process_table_with_models_provider_and_home(
                 auth.clone(),
                 config.model_provider.clone(),
-                config.codex_home.clone(),
+                config.chaos_home.clone(),
             )
         };
         let process_table = Arc::new(process_table);
@@ -323,7 +329,7 @@ impl TestCodex {
     }
 
     pub fn codex_home_path(&self) -> &Path {
-        self.config.codex_home.as_path()
+        self.config.chaos_home.as_path()
     }
 
     pub fn workspace_path(&self, rel: impl AsRef<Path>) -> PathBuf {
@@ -556,7 +562,7 @@ fn function_call_output<'a>(bodies: &'a [Value], call_id: &str) -> &'a Value {
 pub fn test_codex() -> TestCodexBuilder {
     TestCodexBuilder {
         config_mutators: vec![],
-        auth: CodexAuth::from_api_key("dummy"),
+        auth: ChaosAuth::from_api_key("dummy"),
         pre_build_hooks: vec![],
         home: None,
     }

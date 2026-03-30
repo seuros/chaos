@@ -3,7 +3,7 @@
 use chaos_ipc::protocol::EventMsg;
 use chaos_ipc::protocol::InitialHistory;
 use chaos_ipc::protocol::WarningEvent;
-use chaos_kern::CodexAuth;
+use chaos_kern::ChaosAuth;
 use chaos_kern::NewProcess;
 use chaos_kern::features::Feature;
 use chaos_realpath::AbsolutePathBuf;
@@ -24,7 +24,7 @@ async fn emits_warning_when_unstable_features_enabled_via_config() {
         .enable(Feature::ChildAgentsMd)
         .expect("test config should allow feature update");
     let user_config_path =
-        AbsolutePathBuf::from_absolute_path(config.codex_home.join(CONFIG_TOML_FILE))
+        AbsolutePathBuf::from_absolute_path(config.chaos_home.join(CONFIG_TOML_FILE))
             .expect("absolute user config path");
     config.config_layer_stack = config.config_layer_stack.with_user_config(
         &user_config_path,
@@ -32,11 +32,11 @@ async fn emits_warning_when_unstable_features_enabled_via_config() {
     );
 
     let process_table = chaos_kern::test_support::process_table_with_models_provider(
-        CodexAuth::from_api_key("test"),
+        ChaosAuth::from_api_key("test"),
         config.model_provider.clone(),
     );
     let auth_manager =
-        chaos_kern::test_support::auth_manager_from_auth(CodexAuth::from_api_key("test"));
+        chaos_kern::test_support::auth_manager_from_auth(ChaosAuth::from_api_key("test"));
 
     let NewProcess {
         process: conversation,
@@ -65,7 +65,7 @@ async fn suppresses_warning_when_configured() {
         .expect("test config should allow feature update");
     config.suppress_unstable_features_warning = true;
     let user_config_path =
-        AbsolutePathBuf::from_absolute_path(config.codex_home.join(CONFIG_TOML_FILE))
+        AbsolutePathBuf::from_absolute_path(config.chaos_home.join(CONFIG_TOML_FILE))
             .expect("absolute user config path");
     config.config_layer_stack = config.config_layer_stack.with_user_config(
         &user_config_path,
@@ -73,11 +73,11 @@ async fn suppresses_warning_when_configured() {
     );
 
     let process_table = chaos_kern::test_support::process_table_with_models_provider(
-        CodexAuth::from_api_key("test"),
+        ChaosAuth::from_api_key("test"),
         config.model_provider.clone(),
     );
     let auth_manager =
-        chaos_kern::test_support::auth_manager_from_auth(CodexAuth::from_api_key("test"));
+        chaos_kern::test_support::auth_manager_from_auth(ChaosAuth::from_api_key("test"));
 
     let NewProcess {
         process: conversation,

@@ -10,10 +10,10 @@ use toml::Value as TomlValue;
 #[test]
 fn blocking_set_model_top_level() {
     let tmp = tempdir().expect("tmpdir");
-    let codex_home = tmp.path();
+    let chaos_home = tmp.path();
 
     apply_blocking(
-        codex_home,
+        chaos_home,
         None,
         &[ConfigEdit::SetModel {
             model: Some("gpt-5.1-codex".to_string()),
@@ -22,7 +22,7 @@ fn blocking_set_model_top_level() {
     )
     .expect("persist");
 
-    let contents = std::fs::read_to_string(codex_home.join(CONFIG_TOML_FILE)).expect("read config");
+    let contents = std::fs::read_to_string(chaos_home.join(CONFIG_TOML_FILE)).expect("read config");
     let expected = r#"model = "gpt-5.1-codex"
 model_reasoning_effort = "high"
 "#;
@@ -32,9 +32,9 @@ model_reasoning_effort = "high"
 #[test]
 fn builder_with_edits_applies_custom_paths() {
     let tmp = tempdir().expect("tmpdir");
-    let codex_home = tmp.path();
+    let chaos_home = tmp.path();
 
-    ConfigEditsBuilder::new(codex_home)
+    ConfigEditsBuilder::new(chaos_home)
         .with_edits(vec![ConfigEdit::SetPath {
             segments: vec!["enabled".to_string()],
             value: value(true),
@@ -42,22 +42,22 @@ fn builder_with_edits_applies_custom_paths() {
         .apply_blocking()
         .expect("persist");
 
-    let contents = std::fs::read_to_string(codex_home.join(CONFIG_TOML_FILE)).expect("read config");
+    let contents = std::fs::read_to_string(chaos_home.join(CONFIG_TOML_FILE)).expect("read config");
     assert_eq!(contents, "enabled = true\n");
 }
 
 #[test]
 fn set_model_availability_nux_count_writes_shown_count() {
     let tmp = tempdir().expect("tmpdir");
-    let codex_home = tmp.path();
+    let chaos_home = tmp.path();
     let shown_count = HashMap::from([("gpt-foo".to_string(), 4)]);
 
-    ConfigEditsBuilder::new(codex_home)
+    ConfigEditsBuilder::new(chaos_home)
         .set_model_availability_nux_count(&shown_count)
         .apply_blocking()
         .expect("persist");
 
-    let contents = std::fs::read_to_string(codex_home.join(CONFIG_TOML_FILE)).expect("read config");
+    let contents = std::fs::read_to_string(chaos_home.join(CONFIG_TOML_FILE)).expect("read config");
     let expected = r#"[tui.model_availability_nux]
 gpt-foo = 4
 "#;
@@ -67,9 +67,9 @@ gpt-foo = 4
 #[test]
 fn set_skill_config_writes_disabled_entry() {
     let tmp = tempdir().expect("tmpdir");
-    let codex_home = tmp.path();
+    let chaos_home = tmp.path();
 
-    ConfigEditsBuilder::new(codex_home)
+    ConfigEditsBuilder::new(chaos_home)
         .with_edits([ConfigEdit::SetSkillConfig {
             path: PathBuf::from("/tmp/skills/demo/SKILL.md"),
             enabled: false,
@@ -77,7 +77,7 @@ fn set_skill_config_writes_disabled_entry() {
         .apply_blocking()
         .expect("persist");
 
-    let contents = std::fs::read_to_string(codex_home.join(CONFIG_TOML_FILE)).expect("read config");
+    let contents = std::fs::read_to_string(chaos_home.join(CONFIG_TOML_FILE)).expect("read config");
     let expected = r#"[[skills.config]]
 path = "/tmp/skills/demo/SKILL.md"
 enabled = false
@@ -88,9 +88,9 @@ enabled = false
 #[test]
 fn set_skill_config_removes_entry_when_enabled() {
     let tmp = tempdir().expect("tmpdir");
-    let codex_home = tmp.path();
+    let chaos_home = tmp.path();
     std::fs::write(
-        codex_home.join(CONFIG_TOML_FILE),
+        chaos_home.join(CONFIG_TOML_FILE),
         r#"[[skills.config]]
 path = "/tmp/skills/demo/SKILL.md"
 enabled = false
@@ -98,7 +98,7 @@ enabled = false
     )
     .expect("seed config");
 
-    ConfigEditsBuilder::new(codex_home)
+    ConfigEditsBuilder::new(chaos_home)
         .with_edits([ConfigEdit::SetSkillConfig {
             path: PathBuf::from("/tmp/skills/demo/SKILL.md"),
             enabled: true,
@@ -106,18 +106,18 @@ enabled = false
         .apply_blocking()
         .expect("persist");
 
-    let contents = std::fs::read_to_string(codex_home.join(CONFIG_TOML_FILE)).expect("read config");
+    let contents = std::fs::read_to_string(chaos_home.join(CONFIG_TOML_FILE)).expect("read config");
     assert_eq!(contents, "");
 }
 
 #[test]
 fn blocking_set_model_preserves_inline_table_contents() {
     let tmp = tempdir().expect("tmpdir");
-    let codex_home = tmp.path();
+    let chaos_home = tmp.path();
 
     // Seed with inline tables for profiles to simulate common user config.
     std::fs::write(
-        codex_home.join(CONFIG_TOML_FILE),
+        chaos_home.join(CONFIG_TOML_FILE),
         r#"profile = "fast"
 
 profiles = { fast = { model = "gpt-4o", sandbox_mode = "strict" } }
@@ -126,7 +126,7 @@ profiles = { fast = { model = "gpt-4o", sandbox_mode = "strict" } }
     .expect("seed");
 
     apply_blocking(
-        codex_home,
+        chaos_home,
         None,
         &[ConfigEdit::SetModel {
             model: Some("o4-mini".to_string()),
@@ -135,7 +135,7 @@ profiles = { fast = { model = "gpt-4o", sandbox_mode = "strict" } }
     )
     .expect("persist");
 
-    let raw = std::fs::read_to_string(codex_home.join(CONFIG_TOML_FILE)).expect("read config");
+    let raw = std::fs::read_to_string(chaos_home.join(CONFIG_TOML_FILE)).expect("read config");
     let value: TomlValue = toml::from_str(&raw).expect("parse config");
 
     // Ensure sandbox_mode is preserved under profiles.fast and model updated.
@@ -161,17 +161,17 @@ profiles = { fast = { model = "gpt-4o", sandbox_mode = "strict" } }
 #[test]
 fn blocking_set_model_writes_through_symlink_chain() {
     let tmp = tempdir().expect("tmpdir");
-    let codex_home = tmp.path();
+    let chaos_home = tmp.path();
     let target_dir = tempdir().expect("target dir");
     let target_path = target_dir.path().join(CONFIG_TOML_FILE);
-    let link_path = codex_home.join("config-link.toml");
-    let config_path = codex_home.join(CONFIG_TOML_FILE);
+    let link_path = chaos_home.join("config-link.toml");
+    let config_path = chaos_home.join(CONFIG_TOML_FILE);
 
     symlink(&target_path, &link_path).expect("symlink link");
     symlink("config-link.toml", &config_path).expect("symlink config");
 
     apply_blocking(
-        codex_home,
+        chaos_home,
         None,
         &[ConfigEdit::SetModel {
             model: Some("gpt-5.1-codex".to_string()),
@@ -194,17 +194,17 @@ model_reasoning_effort = "high"
 #[test]
 fn blocking_set_model_replaces_symlink_on_cycle() {
     let tmp = tempdir().expect("tmpdir");
-    let codex_home = tmp.path();
-    let link_a = codex_home.join("a.toml");
-    let link_b = codex_home.join("b.toml");
-    let config_path = codex_home.join(CONFIG_TOML_FILE);
+    let chaos_home = tmp.path();
+    let link_a = chaos_home.join("a.toml");
+    let link_b = chaos_home.join("b.toml");
+    let config_path = chaos_home.join(CONFIG_TOML_FILE);
 
     symlink("b.toml", &link_a).expect("symlink a");
     symlink("a.toml", &link_b).expect("symlink b");
     symlink("a.toml", &config_path).expect("symlink config");
 
     apply_blocking(
-        codex_home,
+        chaos_home,
         None,
         &[ConfigEdit::SetModel {
             model: Some("gpt-5.1-codex".to_string()),
@@ -225,7 +225,7 @@ fn blocking_set_model_replaces_symlink_on_cycle() {
 #[test]
 fn batch_write_table_upsert_preserves_inline_comments() {
     let tmp = tempdir().expect("tmpdir");
-    let codex_home = tmp.path();
+    let chaos_home = tmp.path();
     let original = r#"approval_policy = "never"
 
 [mcp_servers.linear]
@@ -240,10 +240,10 @@ foo = "bar"
 # ok 3
 network_access = false
 "#;
-    std::fs::write(codex_home.join(CONFIG_TOML_FILE), original).expect("seed config");
+    std::fs::write(chaos_home.join(CONFIG_TOML_FILE), original).expect("seed config");
 
     apply_blocking(
-        codex_home,
+        chaos_home,
         None,
         &[
             ConfigEdit::SetPath {
@@ -265,7 +265,7 @@ network_access = false
     )
     .expect("apply");
 
-    let updated = std::fs::read_to_string(codex_home.join(CONFIG_TOML_FILE)).expect("read config");
+    let updated = std::fs::read_to_string(chaos_home.join(CONFIG_TOML_FILE)).expect("read config");
     let expected = r#"approval_policy = "never"
 
 [mcp_servers.linear]
@@ -286,10 +286,10 @@ network_access = true
 #[test]
 fn blocking_clear_model_removes_inline_table_entry() {
     let tmp = tempdir().expect("tmpdir");
-    let codex_home = tmp.path();
+    let chaos_home = tmp.path();
 
     std::fs::write(
-        codex_home.join(CONFIG_TOML_FILE),
+        chaos_home.join(CONFIG_TOML_FILE),
         r#"profile = "fast"
 
 profiles = { fast = { model = "gpt-4o", sandbox_mode = "strict" } }
@@ -298,7 +298,7 @@ profiles = { fast = { model = "gpt-4o", sandbox_mode = "strict" } }
     .expect("seed");
 
     apply_blocking(
-        codex_home,
+        chaos_home,
         None,
         &[ConfigEdit::SetModel {
             model: None,
@@ -307,7 +307,7 @@ profiles = { fast = { model = "gpt-4o", sandbox_mode = "strict" } }
     )
     .expect("persist");
 
-    let contents = std::fs::read_to_string(codex_home.join(CONFIG_TOML_FILE)).expect("read config");
+    let contents = std::fs::read_to_string(chaos_home.join(CONFIG_TOML_FILE)).expect("read config");
     let expected = r#"profile = "fast"
 
 [profiles.fast]
@@ -320,9 +320,9 @@ model_reasoning_effort = "high"
 #[test]
 fn blocking_set_model_scopes_to_active_profile() {
     let tmp = tempdir().expect("tmpdir");
-    let codex_home = tmp.path();
+    let chaos_home = tmp.path();
     std::fs::write(
-        codex_home.join(CONFIG_TOML_FILE),
+        chaos_home.join(CONFIG_TOML_FILE),
         r#"profile = "team"
 
 [profiles.team]
@@ -332,7 +332,7 @@ model_reasoning_effort = "low"
     .expect("seed");
 
     apply_blocking(
-        codex_home,
+        chaos_home,
         None,
         &[ConfigEdit::SetModel {
             model: Some("o5-preview".to_string()),
@@ -341,7 +341,7 @@ model_reasoning_effort = "low"
     )
     .expect("persist");
 
-    let contents = std::fs::read_to_string(codex_home.join(CONFIG_TOML_FILE)).expect("read config");
+    let contents = std::fs::read_to_string(chaos_home.join(CONFIG_TOML_FILE)).expect("read config");
     let expected = r#"profile = "team"
 
 [profiles.team]
@@ -354,9 +354,9 @@ model = "o5-preview"
 #[test]
 fn blocking_set_model_with_explicit_profile() {
     let tmp = tempdir().expect("tmpdir");
-    let codex_home = tmp.path();
+    let chaos_home = tmp.path();
     std::fs::write(
-        codex_home.join(CONFIG_TOML_FILE),
+        chaos_home.join(CONFIG_TOML_FILE),
         r#"[profiles."team a"]
 model = "gpt-5.1-codex"
 "#,
@@ -364,7 +364,7 @@ model = "gpt-5.1-codex"
     .expect("seed");
 
     apply_blocking(
-        codex_home,
+        chaos_home,
         Some("team a"),
         &[ConfigEdit::SetModel {
             model: Some("o4-mini".to_string()),
@@ -373,7 +373,7 @@ model = "gpt-5.1-codex"
     )
     .expect("persist");
 
-    let contents = std::fs::read_to_string(codex_home.join(CONFIG_TOML_FILE)).expect("read config");
+    let contents = std::fs::read_to_string(chaos_home.join(CONFIG_TOML_FILE)).expect("read config");
     let expected = r#"[profiles."team a"]
 model = "o4-mini"
 "#;
@@ -383,9 +383,9 @@ model = "o4-mini"
 #[test]
 fn blocking_set_hide_full_access_warning_preserves_table() {
     let tmp = tempdir().expect("tmpdir");
-    let codex_home = tmp.path();
+    let chaos_home = tmp.path();
     std::fs::write(
-        codex_home.join(CONFIG_TOML_FILE),
+        chaos_home.join(CONFIG_TOML_FILE),
         r#"# Global comment
 
 [notice]
@@ -396,13 +396,13 @@ existing = "value"
     .expect("seed");
 
     apply_blocking(
-        codex_home,
+        chaos_home,
         None,
         &[ConfigEdit::SetNoticeHideFullAccessWarning(true)],
     )
     .expect("persist");
 
-    let contents = std::fs::read_to_string(codex_home.join(CONFIG_TOML_FILE)).expect("read config");
+    let contents = std::fs::read_to_string(chaos_home.join(CONFIG_TOML_FILE)).expect("read config");
     let expected = r#"# Global comment
 
 [notice]
@@ -416,9 +416,9 @@ hide_full_access_warning = true
 #[test]
 fn blocking_set_hide_rate_limit_model_nudge_preserves_table() {
     let tmp = tempdir().expect("tmpdir");
-    let codex_home = tmp.path();
+    let chaos_home = tmp.path();
     std::fs::write(
-        codex_home.join(CONFIG_TOML_FILE),
+        chaos_home.join(CONFIG_TOML_FILE),
         r#"[notice]
 existing = "value"
 "#,
@@ -426,13 +426,13 @@ existing = "value"
     .expect("seed");
 
     apply_blocking(
-        codex_home,
+        chaos_home,
         None,
         &[ConfigEdit::SetNoticeHideRateLimitModelNudge(true)],
     )
     .expect("persist");
 
-    let contents = std::fs::read_to_string(codex_home.join(CONFIG_TOML_FILE)).expect("read config");
+    let contents = std::fs::read_to_string(chaos_home.join(CONFIG_TOML_FILE)).expect("read config");
     let expected = r#"[notice]
 existing = "value"
 hide_rate_limit_model_nudge = true
@@ -443,16 +443,16 @@ hide_rate_limit_model_nudge = true
 #[test]
 fn blocking_set_hide_gpt5_1_migration_prompt_preserves_table() {
     let tmp = tempdir().expect("tmpdir");
-    let codex_home = tmp.path();
+    let chaos_home = tmp.path();
     std::fs::write(
-        codex_home.join(CONFIG_TOML_FILE),
+        chaos_home.join(CONFIG_TOML_FILE),
         r#"[notice]
 existing = "value"
 "#,
     )
     .expect("seed");
     apply_blocking(
-        codex_home,
+        chaos_home,
         None,
         &[ConfigEdit::SetNoticeHideModelMigrationPrompt(
             "hide_gpt5_1_migration_prompt".to_string(),
@@ -461,7 +461,7 @@ existing = "value"
     )
     .expect("persist");
 
-    let contents = std::fs::read_to_string(codex_home.join(CONFIG_TOML_FILE)).expect("read config");
+    let contents = std::fs::read_to_string(chaos_home.join(CONFIG_TOML_FILE)).expect("read config");
     let expected = r#"[notice]
 existing = "value"
 hide_gpt5_1_migration_prompt = true
@@ -472,16 +472,16 @@ hide_gpt5_1_migration_prompt = true
 #[test]
 fn blocking_set_hide_gpt_5_1_codex_max_migration_prompt_preserves_table() {
     let tmp = tempdir().expect("tmpdir");
-    let codex_home = tmp.path();
+    let chaos_home = tmp.path();
     std::fs::write(
-        codex_home.join(CONFIG_TOML_FILE),
+        chaos_home.join(CONFIG_TOML_FILE),
         r#"[notice]
 existing = "value"
 "#,
     )
     .expect("seed");
     apply_blocking(
-        codex_home,
+        chaos_home,
         None,
         &[ConfigEdit::SetNoticeHideModelMigrationPrompt(
             "hide_gpt-5.1-codex-max_migration_prompt".to_string(),
@@ -490,7 +490,7 @@ existing = "value"
     )
     .expect("persist");
 
-    let contents = std::fs::read_to_string(codex_home.join(CONFIG_TOML_FILE)).expect("read config");
+    let contents = std::fs::read_to_string(chaos_home.join(CONFIG_TOML_FILE)).expect("read config");
     let expected = r#"[notice]
 existing = "value"
 "hide_gpt-5.1-codex-max_migration_prompt" = true
@@ -501,16 +501,16 @@ existing = "value"
 #[test]
 fn blocking_record_model_migration_seen_preserves_table() {
     let tmp = tempdir().expect("tmpdir");
-    let codex_home = tmp.path();
+    let chaos_home = tmp.path();
     std::fs::write(
-        codex_home.join(CONFIG_TOML_FILE),
+        chaos_home.join(CONFIG_TOML_FILE),
         r#"[notice]
 existing = "value"
 "#,
     )
     .expect("seed");
     apply_blocking(
-        codex_home,
+        chaos_home,
         None,
         &[ConfigEdit::RecordModelMigrationSeen {
             from: "gpt-5".to_string(),
@@ -519,7 +519,7 @@ existing = "value"
     )
     .expect("persist");
 
-    let contents = std::fs::read_to_string(codex_home.join(CONFIG_TOML_FILE)).expect("read config");
+    let contents = std::fs::read_to_string(chaos_home.join(CONFIG_TOML_FILE)).expect("read config");
     let expected = r#"[notice]
 existing = "value"
 
@@ -532,7 +532,7 @@ gpt-5 = "gpt-5.1"
 #[test]
 fn blocking_replace_mcp_servers_round_trips() {
     let tmp = tempdir().expect("tmpdir");
-    let codex_home = tmp.path();
+    let chaos_home = tmp.path();
 
     let mut servers = BTreeMap::new();
     servers.insert(
@@ -590,13 +590,13 @@ fn blocking_replace_mcp_servers_round_trips() {
     );
 
     apply_blocking(
-        codex_home,
+        chaos_home,
         None,
         &[ConfigEdit::ReplaceMcpServers(servers.clone())],
     )
     .expect("persist");
 
-    let raw = std::fs::read_to_string(codex_home.join(CONFIG_TOML_FILE)).expect("read config");
+    let raw = std::fs::read_to_string(chaos_home.join(CONFIG_TOML_FILE)).expect("read config");
     let expected = "\
 [mcp_servers.http]
 url = \"https://example.com\"
@@ -625,9 +625,9 @@ B = \"2\"
 #[test]
 fn blocking_replace_mcp_servers_preserves_inline_comments() {
     let tmp = tempdir().expect("tmpdir");
-    let codex_home = tmp.path();
+    let chaos_home = tmp.path();
     std::fs::write(
-        codex_home.join(CONFIG_TOML_FILE),
+        chaos_home.join(CONFIG_TOML_FILE),
         r#"[mcp_servers]
 # keep me
 foo = { command = "cmd" }
@@ -658,9 +658,9 @@ foo = { command = "cmd" }
         },
     );
 
-    apply_blocking(codex_home, None, &[ConfigEdit::ReplaceMcpServers(servers)]).expect("persist");
+    apply_blocking(chaos_home, None, &[ConfigEdit::ReplaceMcpServers(servers)]).expect("persist");
 
-    let contents = std::fs::read_to_string(codex_home.join(CONFIG_TOML_FILE)).expect("read config");
+    let contents = std::fs::read_to_string(chaos_home.join(CONFIG_TOML_FILE)).expect("read config");
     let expected = r#"[mcp_servers]
 # keep me
 foo = { command = "cmd" }
@@ -671,9 +671,9 @@ foo = { command = "cmd" }
 #[test]
 fn blocking_replace_mcp_servers_preserves_inline_comment_suffix() {
     let tmp = tempdir().expect("tmpdir");
-    let codex_home = tmp.path();
+    let chaos_home = tmp.path();
     std::fs::write(
-        codex_home.join(CONFIG_TOML_FILE),
+        chaos_home.join(CONFIG_TOML_FILE),
         r#"[mcp_servers]
 foo = { command = "cmd" } # keep me
 "#,
@@ -703,9 +703,9 @@ foo = { command = "cmd" } # keep me
         },
     );
 
-    apply_blocking(codex_home, None, &[ConfigEdit::ReplaceMcpServers(servers)]).expect("persist");
+    apply_blocking(chaos_home, None, &[ConfigEdit::ReplaceMcpServers(servers)]).expect("persist");
 
-    let contents = std::fs::read_to_string(codex_home.join(CONFIG_TOML_FILE)).expect("read config");
+    let contents = std::fs::read_to_string(chaos_home.join(CONFIG_TOML_FILE)).expect("read config");
     let expected = r#"[mcp_servers]
 foo = { command = "cmd" , enabled = false } # keep me
 "#;
@@ -715,9 +715,9 @@ foo = { command = "cmd" , enabled = false } # keep me
 #[test]
 fn blocking_replace_mcp_servers_preserves_inline_comment_after_removing_keys() {
     let tmp = tempdir().expect("tmpdir");
-    let codex_home = tmp.path();
+    let chaos_home = tmp.path();
     std::fs::write(
-        codex_home.join(CONFIG_TOML_FILE),
+        chaos_home.join(CONFIG_TOML_FILE),
         r#"[mcp_servers]
 foo = { command = "cmd", args = ["--flag"] } # keep me
 "#,
@@ -747,9 +747,9 @@ foo = { command = "cmd", args = ["--flag"] } # keep me
         },
     );
 
-    apply_blocking(codex_home, None, &[ConfigEdit::ReplaceMcpServers(servers)]).expect("persist");
+    apply_blocking(chaos_home, None, &[ConfigEdit::ReplaceMcpServers(servers)]).expect("persist");
 
-    let contents = std::fs::read_to_string(codex_home.join(CONFIG_TOML_FILE)).expect("read config");
+    let contents = std::fs::read_to_string(chaos_home.join(CONFIG_TOML_FILE)).expect("read config");
     let expected = r#"[mcp_servers]
 foo = { command = "cmd"} # keep me
 "#;
@@ -759,9 +759,9 @@ foo = { command = "cmd"} # keep me
 #[test]
 fn blocking_replace_mcp_servers_preserves_inline_comment_prefix_on_update() {
     let tmp = tempdir().expect("tmpdir");
-    let codex_home = tmp.path();
+    let chaos_home = tmp.path();
     std::fs::write(
-        codex_home.join(CONFIG_TOML_FILE),
+        chaos_home.join(CONFIG_TOML_FILE),
         r#"[mcp_servers]
 # keep me
 foo = { command = "cmd" }
@@ -792,9 +792,9 @@ foo = { command = "cmd" }
         },
     );
 
-    apply_blocking(codex_home, None, &[ConfigEdit::ReplaceMcpServers(servers)]).expect("persist");
+    apply_blocking(chaos_home, None, &[ConfigEdit::ReplaceMcpServers(servers)]).expect("persist");
 
-    let contents = std::fs::read_to_string(codex_home.join(CONFIG_TOML_FILE)).expect("read config");
+    let contents = std::fs::read_to_string(chaos_home.join(CONFIG_TOML_FILE)).expect("read config");
     let expected = r#"[mcp_servers]
 # keep me
 foo = { command = "cmd" , enabled = false }
@@ -805,10 +805,10 @@ foo = { command = "cmd" , enabled = false }
 #[test]
 fn blocking_clear_path_noop_when_missing() {
     let tmp = tempdir().expect("tmpdir");
-    let codex_home = tmp.path();
+    let chaos_home = tmp.path();
 
     apply_blocking(
-        codex_home,
+        chaos_home,
         None,
         &[ConfigEdit::ClearPath {
             segments: vec!["missing".to_string()],
@@ -817,7 +817,7 @@ fn blocking_clear_path_noop_when_missing() {
     .expect("apply");
 
     assert!(
-        !codex_home.join(CONFIG_TOML_FILE).exists(),
+        !chaos_home.join(CONFIG_TOML_FILE).exists(),
         "config.toml should not be created on noop"
     );
 }
@@ -825,11 +825,11 @@ fn blocking_clear_path_noop_when_missing() {
 #[test]
 fn blocking_set_path_updates_notifications() {
     let tmp = tempdir().expect("tmpdir");
-    let codex_home = tmp.path();
+    let chaos_home = tmp.path();
 
     let item = value(false);
     apply_blocking(
-        codex_home,
+        chaos_home,
         None,
         &[ConfigEdit::SetPath {
             segments: vec!["tui".to_string(), "notifications".to_string()],
@@ -838,7 +838,7 @@ fn blocking_set_path_updates_notifications() {
     )
     .expect("apply");
 
-    let raw = std::fs::read_to_string(codex_home.join(CONFIG_TOML_FILE)).expect("read config");
+    let raw = std::fs::read_to_string(chaos_home.join(CONFIG_TOML_FILE)).expect("read config");
     let config: TomlValue = toml::from_str(&raw).expect("parse config");
     let notifications = config
         .get("tui")
@@ -851,15 +851,15 @@ fn blocking_set_path_updates_notifications() {
 #[tokio::test]
 async fn async_builder_set_model_persists() {
     let tmp = tempdir().expect("tmpdir");
-    let codex_home = tmp.path().to_path_buf();
+    let chaos_home = tmp.path().to_path_buf();
 
-    ConfigEditsBuilder::new(&codex_home)
+    ConfigEditsBuilder::new(&chaos_home)
         .set_model(Some("gpt-5.1-codex"), Some(ReasoningEffort::High))
         .apply()
         .await
         .expect("persist");
 
-    let contents = std::fs::read_to_string(codex_home.join(CONFIG_TOML_FILE)).expect("read config");
+    let contents = std::fs::read_to_string(chaos_home.join(CONFIG_TOML_FILE)).expect("read config");
     let expected = r#"model = "gpt-5.1-codex"
 model_reasoning_effort = "high"
 "#;
@@ -869,49 +869,49 @@ model_reasoning_effort = "high"
 #[test]
 fn blocking_builder_set_model_round_trips_back_and_forth() {
     let tmp = tempdir().expect("tmpdir");
-    let codex_home = tmp.path();
+    let chaos_home = tmp.path();
 
     let initial_expected = r#"model = "o4-mini"
 model_reasoning_effort = "low"
 "#;
-    ConfigEditsBuilder::new(codex_home)
+    ConfigEditsBuilder::new(chaos_home)
         .set_model(Some("o4-mini"), Some(ReasoningEffort::Low))
         .apply_blocking()
         .expect("persist initial");
     let mut contents =
-        std::fs::read_to_string(codex_home.join(CONFIG_TOML_FILE)).expect("read config");
+        std::fs::read_to_string(chaos_home.join(CONFIG_TOML_FILE)).expect("read config");
     assert_eq!(contents, initial_expected);
 
     let updated_expected = r#"model = "gpt-5.1-codex"
 model_reasoning_effort = "high"
 "#;
-    ConfigEditsBuilder::new(codex_home)
+    ConfigEditsBuilder::new(chaos_home)
         .set_model(Some("gpt-5.1-codex"), Some(ReasoningEffort::High))
         .apply_blocking()
         .expect("persist update");
-    contents = std::fs::read_to_string(codex_home.join(CONFIG_TOML_FILE)).expect("read config");
+    contents = std::fs::read_to_string(chaos_home.join(CONFIG_TOML_FILE)).expect("read config");
     assert_eq!(contents, updated_expected);
 
-    ConfigEditsBuilder::new(codex_home)
+    ConfigEditsBuilder::new(chaos_home)
         .set_model(Some("o4-mini"), Some(ReasoningEffort::Low))
         .apply_blocking()
         .expect("persist revert");
-    contents = std::fs::read_to_string(codex_home.join(CONFIG_TOML_FILE)).expect("read config");
+    contents = std::fs::read_to_string(chaos_home.join(CONFIG_TOML_FILE)).expect("read config");
     assert_eq!(contents, initial_expected);
 }
 
 #[tokio::test]
 async fn blocking_set_asynchronous_helpers_available() {
     let tmp = tempdir().expect("tmpdir");
-    let codex_home = tmp.path().to_path_buf();
+    let chaos_home = tmp.path().to_path_buf();
 
-    ConfigEditsBuilder::new(&codex_home)
+    ConfigEditsBuilder::new(&chaos_home)
         .set_hide_full_access_warning(true)
         .apply()
         .await
         .expect("persist");
 
-    let raw = std::fs::read_to_string(codex_home.join(CONFIG_TOML_FILE)).expect("read config");
+    let raw = std::fs::read_to_string(chaos_home.join(CONFIG_TOML_FILE)).expect("read config");
     let notice = toml::from_str::<TomlValue>(&raw)
         .expect("parse config")
         .get("notice")
@@ -924,15 +924,15 @@ async fn blocking_set_asynchronous_helpers_available() {
 #[test]
 fn blocking_builder_set_realtime_audio_persists_and_clears() {
     let tmp = tempdir().expect("tmpdir");
-    let codex_home = tmp.path();
+    let chaos_home = tmp.path();
 
-    ConfigEditsBuilder::new(codex_home)
+    ConfigEditsBuilder::new(chaos_home)
         .set_realtime_microphone(Some("USB Mic"))
         .set_realtime_speaker(Some("Desk Speakers"))
         .apply_blocking()
         .expect("persist realtime audio");
 
-    let raw = std::fs::read_to_string(codex_home.join(CONFIG_TOML_FILE)).expect("read config");
+    let raw = std::fs::read_to_string(chaos_home.join(CONFIG_TOML_FILE)).expect("read config");
     let config: TomlValue = toml::from_str(&raw).expect("parse config");
     let realtime_audio = config
         .get("audio")
@@ -947,12 +947,12 @@ fn blocking_builder_set_realtime_audio_persists_and_clears() {
         Some("Desk Speakers")
     );
 
-    ConfigEditsBuilder::new(codex_home)
+    ConfigEditsBuilder::new(chaos_home)
         .set_realtime_microphone(None)
         .apply_blocking()
         .expect("clear realtime microphone");
 
-    let raw = std::fs::read_to_string(codex_home.join(CONFIG_TOML_FILE)).expect("read config");
+    let raw = std::fs::read_to_string(chaos_home.join(CONFIG_TOML_FILE)).expect("read config");
     let config: TomlValue = toml::from_str(&raw).expect("parse config");
     let realtime_audio = config
         .get("audio")
@@ -968,20 +968,20 @@ fn blocking_builder_set_realtime_audio_persists_and_clears() {
 #[test]
 fn replace_mcp_servers_blocking_clears_table_when_empty() {
     let tmp = tempdir().expect("tmpdir");
-    let codex_home = tmp.path();
+    let chaos_home = tmp.path();
     std::fs::write(
-        codex_home.join(CONFIG_TOML_FILE),
+        chaos_home.join(CONFIG_TOML_FILE),
         "[mcp_servers]\nfoo = { command = \"cmd\" }\n",
     )
     .expect("seed");
 
     apply_blocking(
-        codex_home,
+        chaos_home,
         None,
         &[ConfigEdit::ReplaceMcpServers(BTreeMap::new())],
     )
     .expect("persist");
 
-    let contents = std::fs::read_to_string(codex_home.join(CONFIG_TOML_FILE)).expect("read config");
+    let contents = std::fs::read_to_string(chaos_home.join(CONFIG_TOML_FILE)).expect("read config");
     assert!(!contents.contains("mcp_servers"));
 }

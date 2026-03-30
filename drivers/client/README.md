@@ -1,6 +1,6 @@
 # codex-client
 
-Generic transport layer that wraps HTTP requests, retries, and streaming primitives without any Codex/OpenAI awareness.
+Generic transport layer that wraps HTTP requests, retries, and streaming primitives without any Chaos/OpenAI awareness.
 
 - Defines `HttpTransport` and a default `ReqwestTransport` plus thin `Request`/`Response` types.
 - Provides retry utilities (`RetryPolicy`, `RetryOn`, `run_with_retry`, `backoff`) that callers plug into for unary and streaming calls.

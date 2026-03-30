@@ -11,8 +11,8 @@ use chaos_ipc::protocol::SubAgentSource;
 use chaos_ipc::protocol::WarningEvent;
 use tokio_util::sync::CancellationToken;
 
-use crate::codex::Session;
-use crate::codex::TurnContext;
+use crate::chaos::Session;
+use crate::chaos::TurnContext;
 
 use super::GUARDIAN_APPROVAL_RISK_THRESHOLD;
 use super::GUARDIAN_REVIEWER_NAME;

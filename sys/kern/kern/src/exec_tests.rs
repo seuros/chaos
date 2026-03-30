@@ -302,7 +302,7 @@ async fn process_exec_tool_call_respects_cancellation_token() -> Result<()> {
     )
     .await;
     let output = match result {
-        Err(CodexErr::Sandbox(SandboxErr::Timeout { output })) => output,
+        Err(ChaosErr::Sandbox(SandboxErr::Timeout { output })) => output,
         other => panic!("expected timeout error, got {other:?}"),
     };
     assert!(output.timed_out);

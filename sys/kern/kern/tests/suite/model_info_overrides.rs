@@ -1,5 +1,5 @@
 use chaos_ipc::openai_models::TruncationPolicyConfig;
-use chaos_kern::CodexAuth;
+use chaos_kern::ChaosAuth;
 use chaos_kern::models_manager::collaboration_mode_presets::CollaborationModesConfig;
 use chaos_kern::models_manager::manager::ModelsManager;
 use core_test_support::load_default_config_for_test;
@@ -8,13 +8,13 @@ use tempfile::TempDir;
 
 #[tokio::test(flavor = "multi_thread", worker_threads = 2)]
 async fn offline_model_info_without_tool_output_override() {
-    let codex_home = TempDir::new().expect("create temp dir");
-    let config = load_default_config_for_test(&codex_home).await;
+    let chaos_home = TempDir::new().expect("create temp dir");
+    let config = load_default_config_for_test(&chaos_home).await;
     let auth_manager = chaos_kern::test_support::auth_manager_from_auth(
-        CodexAuth::create_dummy_chatgpt_auth_for_testing(),
+        ChaosAuth::create_dummy_chatgpt_auth_for_testing(),
     );
     let manager = ModelsManager::new(
-        config.codex_home.clone(),
+        config.chaos_home.clone(),
         auth_manager,
         None,
         CollaborationModesConfig::default(),
@@ -30,14 +30,14 @@ async fn offline_model_info_without_tool_output_override() {
 
 #[tokio::test(flavor = "multi_thread", worker_threads = 2)]
 async fn offline_model_info_with_tool_output_override() {
-    let codex_home = TempDir::new().expect("create temp dir");
-    let mut config = load_default_config_for_test(&codex_home).await;
+    let chaos_home = TempDir::new().expect("create temp dir");
+    let mut config = load_default_config_for_test(&chaos_home).await;
     config.tool_output_token_limit = Some(123);
     let auth_manager = chaos_kern::test_support::auth_manager_from_auth(
-        CodexAuth::create_dummy_chatgpt_auth_for_testing(),
+        ChaosAuth::create_dummy_chatgpt_auth_for_testing(),
     );
     let manager = ModelsManager::new(
-        config.codex_home.clone(),
+        config.chaos_home.clone(),
         auth_manager,
         None,
         CollaborationModesConfig::default(),

@@ -15,7 +15,7 @@ use chaos_sysctl::types::OAuthCredentialsStoreMode;
 
 /// Minimal config surface for rollout persistence (recorder, metadata, list).
 pub trait RolloutConfig: Send + Sync {
-    fn codex_home(&self) -> &Path;
+    fn chaos_home(&self) -> &Path;
     fn sqlite_home(&self) -> &Path;
     fn cwd(&self) -> &Path;
     fn model_provider_id(&self) -> &str;
@@ -23,8 +23,8 @@ pub trait RolloutConfig: Send + Sync {
 }
 
 impl<T: RolloutConfig> RolloutConfig for Arc<T> {
-    fn codex_home(&self) -> &Path {
-        (**self).codex_home()
+    fn chaos_home(&self) -> &Path {
+        (**self).chaos_home()
     }
     fn sqlite_home(&self) -> &Path {
         (**self).sqlite_home()
@@ -42,7 +42,7 @@ impl<T: RolloutConfig> RolloutConfig for Arc<T> {
 
 /// Config surface for the memory subsystem (phase1, phase2, start).
 pub trait MementoConfig: Send + Sync {
-    fn codex_home(&self) -> &Path;
+    fn chaos_home(&self) -> &Path;
     fn cwd(&self) -> &Path;
     fn ephemeral(&self) -> bool;
     fn memories(&self) -> &MemoriesConfig;
@@ -53,8 +53,8 @@ pub trait MementoConfig: Send + Sync {
 }
 
 impl<T: MementoConfig> MementoConfig for Arc<T> {
-    fn codex_home(&self) -> &Path {
-        (**self).codex_home()
+    fn chaos_home(&self) -> &Path {
+        (**self).chaos_home()
     }
     fn cwd(&self) -> &Path {
         (**self).cwd()
@@ -81,7 +81,7 @@ impl<T: MementoConfig> MementoConfig for Arc<T> {
 
 /// Config surface for MCP connection management (concierge).
 pub trait ConciergeConfig: Send + Sync {
-    fn codex_home(&self) -> &Path;
+    fn chaos_home(&self) -> &Path;
     fn mcp_servers(&self) -> &Constrained<HashMap<String, McpServerConfig>>;
     fn mcp_oauth_credentials_store_mode(&self) -> OAuthCredentialsStoreMode;
     fn mcp_oauth_callback_port(&self) -> Option<u16>;
@@ -89,8 +89,8 @@ pub trait ConciergeConfig: Send + Sync {
 }
 
 impl<T: ConciergeConfig> ConciergeConfig for Arc<T> {
-    fn codex_home(&self) -> &Path {
-        (**self).codex_home()
+    fn chaos_home(&self) -> &Path {
+        (**self).chaos_home()
     }
     fn mcp_servers(&self) -> &Constrained<HashMap<String, McpServerConfig>> {
         (**self).mcp_servers()

@@ -10,7 +10,7 @@ use chaos_ipc::openai_models::ReasoningEffort;
 use chaos_ipc::openai_models::ReasoningEffortPreset;
 use chaos_ipc::openai_models::TruncationPolicyConfig;
 use chaos_ipc::openai_models::default_input_modalities;
-use chaos_kern::CodexAuth;
+use chaos_kern::ChaosAuth;
 use chaos_kern::features::Feature;
 use chaos_kern::models_manager::manager::ModelsManager;
 use chaos_kern::models_manager::manager::RefreshStrategy;
@@ -147,7 +147,7 @@ async fn spawn_agent_description_lists_visible_models_and_reasoning_efforts() ->
     .await;
 
     let mut builder = test_codex()
-        .with_auth(CodexAuth::create_dummy_chatgpt_auth_for_testing())
+        .with_auth(ChaosAuth::create_dummy_chatgpt_auth_for_testing())
         .with_model("visible-model")
         .with_config(|config| {
             config

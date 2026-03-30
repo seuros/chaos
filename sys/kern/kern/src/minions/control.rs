@@ -1,4 +1,4 @@
-use crate::error::CodexErr;
+use crate::error::ChaosErr;
 use crate::error::Result as CodexResult;
 use crate::minions::AgentStatus;
 use crate::minions::guards::Guards;
@@ -136,7 +136,7 @@ impl AgentControl {
                         ..
                     }) = session_source.clone()
                     else {
-                        return Err(CodexErr::Fatal(
+                        return Err(ChaosErr::Fatal(
                             "spawn_agent fork requires a thread-spawn session source".to_string(),
                         ));
                     };
@@ -292,7 +292,7 @@ impl AgentControl {
                 },
             )
             .await;
-        if matches!(result, Err(CodexErr::InternalAgentDied)) {
+        if matches!(result, Err(ChaosErr::InternalAgentDied)) {
             let _ = state.remove_process(&agent_id).await;
             self.state.release_spawned_thread(agent_id);
         }
@@ -450,7 +450,7 @@ impl AgentControl {
     fn upgrade(&self) -> CodexResult<Arc<ProcessTableState>> {
         self.manager
             .upgrade()
-            .ok_or_else(|| CodexErr::UnsupportedOperation("thread manager dropped".to_string()))
+            .ok_or_else(|| ChaosErr::UnsupportedOperation("thread manager dropped".to_string()))
     }
 
     async fn inherited_shell_snapshot_for_source(

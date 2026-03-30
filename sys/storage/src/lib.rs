@@ -47,7 +47,7 @@ impl ChaosStorageProvider {
         Ok(Self::from_sqlite_pool(pool))
     }
 
-    /// Resolve a provider from an existing pool or `$CODEX_SQLITE_HOME`.
+    /// Resolve a provider from an existing pool or `$CHAOS_SQLITE_HOME`.
     pub async fn from_env(existing_pool: Option<&SqlitePool>) -> Result<Self, String> {
         let sqlite_home = resolve_sqlite_home_from_env();
         Self::from_optional_sqlite(existing_pool, sqlite_home.as_deref()).await
@@ -63,13 +63,7 @@ impl ChaosStorageProvider {
 }
 
 fn resolve_sqlite_home_from_env() -> Option<PathBuf> {
-    let raw = std::env::var(chaos_proc::SQLITE_HOME_ENV).ok()?;
-    let trimmed = raw.trim();
-    if trimmed.is_empty() {
-        return None;
-    }
-
-    let path = PathBuf::from(trimmed);
+    let path = PathBuf::from(chaos_proc::sqlite_home_env_value()?);
     if path.is_absolute() {
         Some(path)
     } else {

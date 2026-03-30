@@ -5,8 +5,7 @@ use chaos_kern::AuthManager;
 use chaos_kern::auth::AuthMode as CoreAuthMode;
 use chaos_kern::config::Config;
 use chaos_kern::project_doc::discover_project_doc_paths;
-use chrono::DateTime;
-use chrono::Local;
+use jiff::Timestamp;
 use std::path::Path;
 use unicode_width::UnicodeWidthStr;
 
@@ -166,12 +165,14 @@ pub(crate) fn format_directory_display(directory: &Path, max_width: Option<usize
     formatted
 }
 
-pub(crate) fn format_reset_timestamp(dt: DateTime<Local>, captured_at: DateTime<Local>) -> String {
-    let time = dt.format("%H:%M").to_string();
-    if dt.date_naive() == captured_at.date_naive() {
+pub(crate) fn format_reset_timestamp(dt: Timestamp, captured_at: Timestamp) -> String {
+    let local_dt = dt.to_zoned(jiff::tz::TimeZone::system());
+    let local_captured_at = captured_at.to_zoned(jiff::tz::TimeZone::system());
+    let time = local_dt.strftime("%H:%M").to_string();
+    if local_dt.strftime("%Y-%m-%d").to_string() == local_captured_at.strftime("%Y-%m-%d").to_string() {
         time
     } else {
-        format!("{time} on {}", dt.format("%-d %b"))
+        format!("{time} on {}", local_dt.strftime("%-d %b"))
     }
 }
 

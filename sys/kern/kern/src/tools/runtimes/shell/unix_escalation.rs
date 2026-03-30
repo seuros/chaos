@@ -1,5 +1,5 @@
 use super::ShellRequest;
-use crate::error::CodexErr;
+use crate::error::ChaosErr;
 use crate::error::SandboxErr;
 use crate::exec::ExecExpiration;
 use crate::exec::ExecToolCallOutput;
@@ -118,7 +118,7 @@ pub(super) async fn try_run_zsh_fork(
     )?;
     let sandbox_exec_request = attempt
         .env_for(spec, req.network.as_ref())
-        .map_err(|err| ToolError::Codex(err.into()))?;
+        .map_err(|err| ToolError::Chaos(err.into()))?;
     let crate::sandboxing::ExecRequest {
         command,
         cwd: sandbox_cwd,
@@ -307,8 +307,8 @@ pub(crate) async fn prepare_unified_exec_zsh_fork(
 
 struct CoreShellActionProvider {
     policy: Arc<RwLock<Policy>>,
-    session: Arc<crate::codex::Session>,
-    turn: Arc<crate::codex::TurnContext>,
+    session: Arc<crate::chaos::Session>,
+    turn: Arc<crate::chaos::TurnContext>,
     call_id: String,
     tool_name: &'static str,
     approval_policy: AskForApproval,
@@ -1132,13 +1132,13 @@ fn map_exec_result(
     };
 
     if result.timed_out {
-        return Err(ToolError::Codex(CodexErr::Sandbox(SandboxErr::Timeout {
+        return Err(ToolError::Chaos(ChaosErr::Sandbox(SandboxErr::Timeout {
             output: Box::new(output),
         })));
     }
 
     if is_likely_sandbox_denied(sandbox, &output) {
-        return Err(ToolError::Codex(CodexErr::Sandbox(SandboxErr::Denied {
+        return Err(ToolError::Chaos(ChaosErr::Sandbox(SandboxErr::Denied {
             output: Box::new(output),
             network_policy_decision: None,
         })));

@@ -1,6 +1,6 @@
 # chaos-pf
 
-`chaos-pf` is Codex's local network policy enforcement proxy. It runs:
+`chaos-pf` is Chaos's local network policy enforcement proxy. It runs:
 
 - an HTTP proxy (default `127.0.0.1:3128`)
 - a SOCKS5 proxy (default `127.0.0.1:8081`, enabled by default)
@@ -11,7 +11,7 @@ It enforces an allow/deny policy and a "limited" mode intended for read-only net
 
 ### 1) Configure
 
-`chaos-pf` reads from Codex's merged `config.toml` (via `chaos-kern` config loading).
+`chaos-pf` reads from Chaos's merged `config.toml` (via `chaos-kern` config loading).
 
 Network settings live under the selected permissions profile. Example config:
 
@@ -139,7 +139,7 @@ the decider can auto-allow network requests originating from that command.
 
 ## OTEL Audit Events (embedded/managed)
 
-When `chaos-pf` is embedded in managed Codex runtime, policy decisions emit structured
+When `chaos-pf` is embedded in managed Chaos runtime, policy decisions emit structured
 OTEL-compatible events with `target=codex_otel.network_proxy`.
 
 Event name:

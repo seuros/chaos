@@ -10,23 +10,23 @@ use jiff::Timestamp;
 use serde::Deserialize;
 use serde_json::Value;
 
-use crate::auth::CodexAuth;
-use crate::error::CodexErr;
+use crate::auth::ChaosAuth;
+use crate::error::ChaosErr;
 use crate::error::RetryLimitReachedError;
 use crate::error::UnexpectedResponseError;
 use crate::error::UsageLimitReachedError;
 use crate::model_provider_info::ModelProviderInfo;
 use crate::token_data::PlanType;
 
-pub(crate) fn map_api_error(err: ApiError) -> CodexErr {
+pub(crate) fn map_api_error(err: ApiError) -> ChaosErr {
     match err {
-        ApiError::ContextWindowExceeded => CodexErr::ContextWindowExceeded,
-        ApiError::QuotaExceeded => CodexErr::QuotaExceeded,
-        ApiError::UsageNotIncluded => CodexErr::UsageNotIncluded,
-        ApiError::Retryable { message, delay } => CodexErr::Stream(message, delay),
-        ApiError::Stream(msg) => CodexErr::Stream(msg, None),
-        ApiError::ServerOverloaded => CodexErr::ServerOverloaded,
-        ApiError::Api { status, message } => CodexErr::UnexpectedStatus(UnexpectedResponseError {
+        ApiError::ContextWindowExceeded => ChaosErr::ContextWindowExceeded,
+        ApiError::QuotaExceeded => ChaosErr::QuotaExceeded,
+        ApiError::UsageNotIncluded => ChaosErr::UsageNotIncluded,
+        ApiError::Retryable { message, delay } => ChaosErr::Stream(message, delay),
+        ApiError::Stream(msg) => ChaosErr::Stream(msg, None),
+        ApiError::ServerOverloaded => ChaosErr::ServerOverloaded,
+        ApiError::Api { status, message } => ChaosErr::UnexpectedStatus(UnexpectedResponseError {
             status,
             body: message,
             url: None,
@@ -35,7 +35,7 @@ pub(crate) fn map_api_error(err: ApiError) -> CodexErr {
             identity_authorization_error: None,
             identity_error_code: None,
         }),
-        ApiError::InvalidRequest { message } => CodexErr::InvalidRequest(message),
+        ApiError::InvalidRequest { message } => ChaosErr::InvalidRequest(message),
         ApiError::Transport(transport) => match transport {
             TransportError::Http {
                 status,
@@ -55,19 +55,19 @@ pub(crate) fn map_api_error(err: ApiError) -> CodexErr {
                         Some("server_is_overloaded" | "slow_down")
                     )
                 {
-                    return CodexErr::ServerOverloaded;
+                    return ChaosErr::ServerOverloaded;
                 }
 
                 if status == http::StatusCode::BAD_REQUEST {
                     if body_text
                         .contains("The image data you provided does not represent a valid image")
                     {
-                        CodexErr::InvalidImageRequest()
+                        ChaosErr::InvalidImageRequest()
                     } else {
-                        CodexErr::InvalidRequest(body_text)
+                        ChaosErr::InvalidRequest(body_text)
                     }
                 } else if status == http::StatusCode::INTERNAL_SERVER_ERROR {
-                    CodexErr::InternalServerError
+                    ChaosErr::InternalServerError
                 } else if status == http::StatusCode::TOO_MANY_REQUESTS {
                     if let Ok(err) = serde_json::from_str::<UsageErrorResponse>(&body_text) {
                         if err.error.error_type.as_deref() == Some("usage_limit_reached") {
@@ -80,23 +80,23 @@ pub(crate) fn map_api_error(err: ApiError) -> CodexErr {
                                 .error
                                 .resets_at
                                 .and_then(|seconds| Timestamp::from_second(seconds).ok());
-                            return CodexErr::UsageLimitReached(UsageLimitReachedError {
+                            return ChaosErr::UsageLimitReached(UsageLimitReachedError {
                                 plan_type: err.error.plan_type,
                                 resets_at,
                                 rate_limits: rate_limits.map(Box::new),
                                 promo_message,
                             });
                         } else if err.error.error_type.as_deref() == Some("usage_not_included") {
-                            return CodexErr::UsageNotIncluded;
+                            return ChaosErr::UsageNotIncluded;
                         }
                     }
 
-                    CodexErr::RetryLimit(RetryLimitReachedError {
+                    ChaosErr::RetryLimit(RetryLimitReachedError {
                         status,
                         request_id: extract_request_tracking_id(headers.as_ref()),
                     })
                 } else {
-                    CodexErr::UnexpectedStatus(UnexpectedResponseError {
+                    ChaosErr::UnexpectedStatus(UnexpectedResponseError {
                         status,
                         body: body_text,
                         url,
@@ -110,16 +110,16 @@ pub(crate) fn map_api_error(err: ApiError) -> CodexErr {
                     })
                 }
             }
-            TransportError::RetryLimit => CodexErr::RetryLimit(RetryLimitReachedError {
+            TransportError::RetryLimit => ChaosErr::RetryLimit(RetryLimitReachedError {
                 status: http::StatusCode::INTERNAL_SERVER_ERROR,
                 request_id: None,
             }),
-            TransportError::Timeout => CodexErr::Timeout,
+            TransportError::Timeout => ChaosErr::Timeout,
             TransportError::Network(msg) | TransportError::Build(msg) => {
-                CodexErr::Stream(msg, None)
+                ChaosErr::Stream(msg, None)
             }
         },
-        ApiError::RateLimit(msg) => CodexErr::Stream(msg, None),
+        ApiError::RateLimit(msg) => ChaosErr::Stream(msg, None),
     }
 }
 
@@ -184,7 +184,7 @@ fn extract_x_error_json_code(headers: Option<&HeaderMap>) -> Option<String> {
 }
 
 pub(crate) fn auth_provider_from_auth(
-    auth: Option<CodexAuth>,
+    auth: Option<ChaosAuth>,
     provider: &ModelProviderInfo,
 ) -> crate::error::Result<CoreAuthProvider> {
     if let Some(api_key) = provider.api_key()? {

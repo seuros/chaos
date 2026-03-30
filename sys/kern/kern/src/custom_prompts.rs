@@ -4,10 +4,10 @@ use std::path::Path;
 use std::path::PathBuf;
 use tokio::fs;
 
-/// Return the default prompts directory: `$CODEX_HOME/prompts`.
-/// If `CODEX_HOME` cannot be resolved, returns `None`.
+/// Return the default prompts directory: `$CHAOS_HOME/prompts`.
+/// If `CHAOS_HOME` cannot be resolved, returns `None`.
 pub fn default_prompts_dir() -> Option<PathBuf> {
-    crate::config::find_codex_home()
+    crate::config::find_chaos_home()
         .ok()
         .map(|home| home.join("prompts"))
 }

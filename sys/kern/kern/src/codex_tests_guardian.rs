@@ -95,7 +95,7 @@ async fn guardian_allows_shell_additional_permissions_requests_past_policy_valid
     config.model_provider.base_url = Some(format!("{}/v1", server.uri()));
     let config = Arc::new(config);
     let models_manager = Arc::new(crate::test_support::models_manager_with_provider(
-        config.codex_home.clone(),
+        config.chaos_home.clone(),
         Arc::clone(&session.services.auth_manager),
         config.model_provider.clone(),
     ));
@@ -360,7 +360,7 @@ async fn shell_handler_allows_sticky_turn_permissions_without_inline_request_per
 
 #[tokio::test]
 async fn guardian_subagent_does_not_inherit_parent_exec_policy_rules() {
-    let codex_home = tempdir().expect("create codex home");
+    let chaos_home = tempdir().expect("create chaos home");
     let project_dir = tempdir().expect("create project dir");
     let rules_dir = project_dir.path().join("rules");
     fs::create_dir_all(&rules_dir).expect("create rules dir");
@@ -370,7 +370,7 @@ async fn guardian_subagent_does_not_inherit_parent_exec_policy_rules() {
     )
     .expect("write policy file");
 
-    let mut config = build_test_config(codex_home.path()).await;
+    let mut config = build_test_config(chaos_home.path()).await;
     config.cwd = project_dir.path().to_path_buf();
     config.config_layer_stack = ConfigLayerStack::new(
         vec![ConfigLayerEntry::new(
@@ -404,23 +404,23 @@ async fn guardian_subagent_does_not_inherit_parent_exec_policy_rules() {
         }
     );
 
-    let auth_manager = AuthManager::from_auth_for_testing(CodexAuth::from_api_key("Test API Key"));
+    let auth_manager = AuthManager::from_auth_for_testing(ChaosAuth::from_api_key("Test API Key"));
     let models_manager = Arc::new(ModelsManager::new(
-        config.codex_home.clone(),
+        config.chaos_home.clone(),
         auth_manager.clone(),
         None,
         CollaborationModesConfig::default(),
     ));
-    let plugins_manager = Arc::new(PluginsManager::new(config.codex_home.clone()));
+    let plugins_manager = Arc::new(PluginsManager::new(config.chaos_home.clone()));
     let skills_manager = Arc::new(SkillsManager::new(
-        config.codex_home.clone(),
+        config.chaos_home.clone(),
         Arc::clone(&plugins_manager),
         true,
     ));
     let mcp_manager = Arc::new(McpManager::new(Arc::clone(&plugins_manager)));
     let file_watcher = Arc::new(FileWatcher::noop());
 
-    let CodexSpawnOk { codex, .. } = Codex::spawn(CodexSpawnArgs {
+    let ChaosSpawnOk { chaos, .. } = Chaos::spawn(ChaosSpawnArgs {
         config,
         auth_manager,
         models_manager,
@@ -443,7 +443,7 @@ async fn guardian_subagent_does_not_inherit_parent_exec_policy_rules() {
     .expect("spawn guardian subagent");
 
     assert_eq!(
-        codex
+        chaos
             .session
             .services
             .exec_policy
@@ -458,5 +458,5 @@ async fn guardian_subagent_does_not_inherit_parent_exec_policy_rules() {
         }
     );
 
-    drop(codex);
+    drop(chaos);
 }

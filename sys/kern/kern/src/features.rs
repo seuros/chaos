@@ -55,9 +55,6 @@ pub fn features_from_config(
 /// Emit feature flag state to telemetry.
 pub fn emit_feature_metrics(features: &Features, otel: &SessionTelemetry) {
     for feature in FEATURES {
-        if matches!(feature.stage, Stage::Removed) {
-            continue;
-        }
         if features.enabled(feature.id) != feature.default_enabled {
             otel.counter(
                 "codex.feature.state",

@@ -24,10 +24,6 @@ pub enum Stage {
     },
     /// Stable features. The feature flag is kept for ad-hoc enabling/disabling
     Stable,
-    /// Deprecated feature that should not be used anymore.
-    Deprecated,
-    /// The feature flag is useless but kept for backward compatibility reason.
-    Removed,
 }
 
 impl Stage {
@@ -72,32 +68,20 @@ pub enum Feature {
     ExecPermissionApprovals,
     CodexHooks,
     RequestPermissionsTool,
-    WebSearchRequest,
-    WebSearchCached,
-    SearchTool,
-    UseLinuxSandboxBwrap,
-    UseLegacyLandlock,
-    RequestRule,
-    RemoteModels,
     ShellSnapshot,
     CodexGitCommit,
     RuntimeMetrics,
-    Sqlite,
     MemoryTool,
     ChildAgentsMd,
     ImageDetailOriginal,
     EnableRequestCompression,
     Collab,
     SpawnCsv,
-    Apps,
     ToolSuggest,
     ImageGeneration,
     SkillMcpDependencyInstall,
     SkillEnvVarDependencyPrompt,
-    Steer,
     DefaultModeRequestUserInput,
-
-    CollaborationModes,
     ToolCallMcpElicitation,
     Personality,
     Artifact,
@@ -146,7 +130,6 @@ pub struct Features {
 #[derive(Debug, Clone, Default)]
 pub struct FeatureOverrides {
     pub include_apply_patch_tool: Option<bool>,
-    pub web_search_request: Option<bool>,
 }
 
 impl FeatureOverrides {
@@ -156,14 +139,6 @@ impl FeatureOverrides {
             ..Default::default()
         }
         .apply(features);
-        if let Some(enabled) = self.web_search_request {
-            if enabled {
-                features.enable(Feature::WebSearchRequest);
-            } else {
-                features.disable(Feature::WebSearchRequest);
-            }
-            features.record_legacy_usage("web_search_request", Feature::WebSearchRequest);
-        }
     }
 }
 
@@ -228,21 +203,6 @@ impl Features {
     /// Apply a table of key -> bool toggles (e.g. from TOML).
     pub fn apply_map(&mut self, m: &BTreeMap<String, bool>) {
         for (k, v) in m {
-            match k.as_str() {
-                "web_search_request" => {
-                    self.record_legacy_usage_force(
-                        "features.web_search_request",
-                        Feature::WebSearchRequest,
-                    );
-                }
-                "web_search_cached" => {
-                    self.record_legacy_usage_force(
-                        "features.web_search_cached",
-                        Feature::WebSearchCached,
-                    );
-                }
-                _ => {}
-            }
             match feature_for_key(k) {
                 Some(feat) => {
                     if k != feat.key() {
@@ -274,43 +234,20 @@ impl Features {
 
 fn legacy_usage_notice(alias: &str, feature: Feature) -> (String, Option<String>) {
     let canonical = feature.key();
-    match feature {
-        Feature::WebSearchRequest | Feature::WebSearchCached => {
-            let label = match alias {
-                "web_search" => "[features].web_search",
-                "features.web_search_request" | "web_search_request" => {
-                    "[features].web_search_request"
-                }
-                "features.web_search_cached" | "web_search_cached" => {
-                    "[features].web_search_cached"
-                }
-                _ => alias,
-            };
-            let summary =
-                format!("`{label}` is deprecated because web search is enabled by default.");
-            (summary, Some(web_search_details().to_string()))
-        }
-        _ => {
-            let label = if alias.contains('.') || alias.starts_with('[') {
-                alias.to_string()
-            } else {
-                format!("[features].{alias}")
-            };
-            let summary = format!("`{label}` is deprecated. Use `[features].{canonical}` instead.");
-            let details = if alias == canonical {
-                None
-            } else {
-                Some(format!(
-                    "Enable it with `--enable {canonical}` or `[features].{canonical}` in config.toml. See https://developers.openai.com/codex/config-basic#feature-flags for details."
-                ))
-            };
-            (summary, details)
-        }
-    }
-}
-
-fn web_search_details() -> &'static str {
-    "Set `web_search` to `\"live\"`, `\"cached\"`, or `\"disabled\"` at the top level (or under a profile) in config.toml if you want to override it."
+    let label = if alias.contains('.') || alias.starts_with('[') {
+        alias.to_string()
+    } else {
+        format!("[features].{alias}")
+    };
+    let summary = format!("`{label}` is deprecated. Use `[features].{canonical}` instead.");
+    let details = if alias == canonical {
+        None
+    } else {
+        Some(format!(
+            "Enable it with `--enable {canonical}` or `[features].{canonical}` in config.toml. See https://developers.openai.com/codex/config-basic#feature-flags for details."
+        ))
+    };
+    (summary, details)
 }
 
 /// Keys accepted in `[features]` tables.
@@ -384,24 +321,6 @@ pub const FEATURES: &[FeatureSpec] = &[
         default_enabled: true,
     },
     FeatureSpec {
-        id: Feature::WebSearchRequest,
-        key: "web_search_request",
-        stage: Stage::Deprecated,
-        default_enabled: false,
-    },
-    FeatureSpec {
-        id: Feature::WebSearchCached,
-        key: "web_search_cached",
-        stage: Stage::Deprecated,
-        default_enabled: false,
-    },
-    FeatureSpec {
-        id: Feature::SearchTool,
-        key: "search_tool",
-        stage: Stage::Removed,
-        default_enabled: false,
-    },
-    FeatureSpec {
         id: Feature::CodexGitCommit,
         key: "chaos_scm_commit",
         stage: Stage::UnderDevelopment,
@@ -412,12 +331,6 @@ pub const FEATURES: &[FeatureSpec] = &[
         key: "runtime_metrics",
         stage: Stage::UnderDevelopment,
         default_enabled: false,
-    },
-    FeatureSpec {
-        id: Feature::Sqlite,
-        key: "sqlite",
-        stage: Stage::Removed,
-        default_enabled: true,
     },
     FeatureSpec {
         id: Feature::MemoryTool,
@@ -462,30 +375,6 @@ pub const FEATURES: &[FeatureSpec] = &[
         default_enabled: false,
     },
     FeatureSpec {
-        id: Feature::UseLinuxSandboxBwrap,
-        key: "use_linux_sandbox_bwrap",
-        stage: Stage::Removed,
-        default_enabled: false,
-    },
-    FeatureSpec {
-        id: Feature::UseLegacyLandlock,
-        key: "use_legacy_landlock",
-        stage: Stage::Removed,
-        default_enabled: false,
-    },
-    FeatureSpec {
-        id: Feature::RequestRule,
-        key: "request_rule",
-        stage: Stage::Removed,
-        default_enabled: false,
-    },
-    FeatureSpec {
-        id: Feature::RemoteModels,
-        key: "remote_models",
-        stage: Stage::Removed,
-        default_enabled: false,
-    },
-    FeatureSpec {
         id: Feature::EnableRequestCompression,
         key: "enable_request_compression",
         stage: Stage::Stable,
@@ -501,12 +390,6 @@ pub const FEATURES: &[FeatureSpec] = &[
         id: Feature::SpawnCsv,
         key: "enable_fanout",
         stage: Stage::UnderDevelopment,
-        default_enabled: false,
-    },
-    FeatureSpec {
-        id: Feature::Apps,
-        key: "apps",
-        stage: Stage::Removed,
         default_enabled: false,
     },
     FeatureSpec {
@@ -534,22 +417,10 @@ pub const FEATURES: &[FeatureSpec] = &[
         default_enabled: false,
     },
     FeatureSpec {
-        id: Feature::Steer,
-        key: "steer",
-        stage: Stage::Removed,
-        default_enabled: true,
-    },
-    FeatureSpec {
         id: Feature::DefaultModeRequestUserInput,
         key: "default_mode_request_user_input",
         stage: Stage::UnderDevelopment,
         default_enabled: false,
-    },
-    FeatureSpec {
-        id: Feature::CollaborationModes,
-        key: "collaboration_modes",
-        stage: Stage::Removed,
-        default_enabled: true,
     },
     FeatureSpec {
         id: Feature::ToolCallMcpElicitation,
@@ -613,10 +484,6 @@ struct Alias {
 
 const ALIASES: &[Alias] = &[
     Alias {
-        legacy_key: "connectors",
-        feature: Feature::Apps,
-    },
-    Alias {
         legacy_key: "experimental_use_unified_exec_tool",
         feature: Feature::UnifiedExec,
     },
@@ -631,10 +498,6 @@ const ALIASES: &[Alias] = &[
     Alias {
         legacy_key: "request_permissions",
         feature: Feature::ExecPermissionApprovals,
-    },
-    Alias {
-        legacy_key: "web_search",
-        feature: Feature::WebSearchRequest,
     },
     Alias {
         legacy_key: "collab",

@@ -4972,9 +4972,7 @@ async fn spawn_review_thread(
         .get_model_info(&model, &config)
         .await;
     // For reviews, disable web_search and view_image regardless of global settings.
-    let mut review_features = sess.features.clone();
-    let _ = review_features.disable(crate::features::Feature::WebSearchRequest);
-    let _ = review_features.disable(crate::features::Feature::WebSearchCached);
+    let review_features = sess.features.clone();
     let review_web_search_mode = WebSearchMode::Disabled;
     let tools_config = ToolsConfig::new(&ToolsConfigParams {
         model_info: &review_model_info,

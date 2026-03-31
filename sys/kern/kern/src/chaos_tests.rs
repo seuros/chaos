@@ -87,7 +87,6 @@ use std::sync::Arc;
 use std::sync::Once;
 use std::time::Duration as StdDuration;
 
-
 use chaos_ipc::models::function_call_output_content_items_to_text;
 
 fn expect_text_tool_output(output: &FunctionToolOutput) -> String {
@@ -162,6 +161,7 @@ fn test_tool_runtime(session: Arc<Session>, turn_context: Arc<TurnContext>) -> T
             discoverable_tools: None,
             dynamic_tools: turn_context.dynamic_tools.as_slice(),
             catalog_tools: vec![],
+            hallucinate: None,
         },
     ));
     let tracker = Arc::new(tokio::sync::Mutex::new(TurnDiffTracker::new()));
@@ -1746,10 +1746,7 @@ async fn session_new_fails_when_zsh_fork_enabled_without_zsh_path() {
     let (tx_event, _rx_event) = async_channel::unbounded();
     let (agent_status_tx, _agent_status_rx) = watch::channel(AgentStatus::PendingInit);
     let mcp_manager = Arc::new(McpManager::new());
-    let skills_manager = Arc::new(SkillsManager::new(
-        config.chaos_home.clone(),
-        true,
-    ));
+    let skills_manager = Arc::new(SkillsManager::new(config.chaos_home.clone(), true));
     let result = Session::new(
         session_configuration,
         Arc::clone(&config),
@@ -1847,10 +1844,7 @@ pub(crate) async fn make_session_and_context() -> (Session, TurnContext) {
 
     let state = SessionState::new(session_configuration.clone());
     let mcp_manager = Arc::new(McpManager::new());
-    let skills_manager = Arc::new(SkillsManager::new(
-        config.chaos_home.clone(),
-        true,
-    ));
+    let skills_manager = Arc::new(SkillsManager::new(config.chaos_home.clone(), true));
     let network_approval = Arc::new(NetworkApprovalService::default());
 
     let file_watcher = Arc::new(FileWatcher::noop());
@@ -1906,6 +1900,7 @@ pub(crate) async fn make_session_and_context() -> (Session, TurnContext) {
             config.features.enabled(Feature::RuntimeMetrics),
             Session::build_model_client_beta_features_header(config.as_ref()),
         ),
+        hallucinate: None,
     };
 
     let skills_outcome = Arc::new(services.skills_manager.skills_for_config(&per_turn_config));
@@ -2492,10 +2487,7 @@ pub(crate) async fn make_session_and_context_with_dynamic_tools_and_rx(
 
     let state = SessionState::new(session_configuration.clone());
     let mcp_manager = Arc::new(McpManager::new());
-    let skills_manager = Arc::new(SkillsManager::new(
-        config.chaos_home.clone(),
-        true,
-    ));
+    let skills_manager = Arc::new(SkillsManager::new(config.chaos_home.clone(), true));
     let network_approval = Arc::new(NetworkApprovalService::default());
 
     let file_watcher = Arc::new(FileWatcher::noop());
@@ -2551,6 +2543,7 @@ pub(crate) async fn make_session_and_context_with_dynamic_tools_and_rx(
             config.features.enabled(Feature::RuntimeMetrics),
             Session::build_model_client_beta_features_header(config.as_ref()),
         ),
+        hallucinate: None,
     };
 
     let skills_outcome = Arc::new(services.skills_manager.skills_for_config(&per_turn_config));
@@ -3556,6 +3549,7 @@ async fn fatal_tool_error_stops_turn_and_reports_error() {
             discoverable_tools: None,
             dynamic_tools: turn_context.dynamic_tools.as_slice(),
             catalog_tools: vec![],
+            hallucinate: None,
         },
     );
     let item = ResponseItem::CustomToolCall {

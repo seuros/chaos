@@ -26,4 +26,3 @@ fn wants_no_sandbox_approval_granular_respects_sandbox_flag() {
         }))
     );
 }
-

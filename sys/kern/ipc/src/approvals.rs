@@ -84,7 +84,6 @@ pub enum NetworkPolicyRuleAction {
     Deny,
 }
 
-
 #[derive(Debug, Clone, Deserialize, Serialize, PartialEq, Eq, JsonSchema, TS)]
 pub struct NetworkPolicyAmendment {
     pub host: String,
@@ -97,7 +96,6 @@ pub struct NetworkPolicyAmendment {
 pub struct ExecApprovalRequestSkillMetadata {
     pub path_to_skills_md: PathBuf,
 }
-
 
 #[derive(Debug, Clone, Deserialize, Serialize, JsonSchema, TS)]
 pub struct ExecApprovalRequestEvent {

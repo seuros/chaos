@@ -381,7 +381,6 @@ const MCP_TOOL_APPROVAL_TOOL_DESCRIPTION_KEY: &str = "tool_description";
 const MCP_TOOL_APPROVAL_TOOL_PARAMS_KEY: &str = "tool_params";
 const MCP_TOOL_APPROVAL_TOOL_PARAMS_DISPLAY_KEY: &str = "tool_params_display";
 
-
 #[derive(Clone, Debug, PartialEq, Eq, Serialize)]
 struct McpToolApprovalKey {
     server: String,
@@ -596,7 +595,6 @@ fn persistent_mcp_tool_approval_key(
     session_mcp_tool_approval_key(invocation, metadata, approval_mode)
         .filter(|key| key.connector_id.is_some())
 }
-
 
 fn is_full_access_mode(turn_context: &TurnContext) -> bool {
     matches!(turn_context.approval_policy.value(), AskForApproval::Never)

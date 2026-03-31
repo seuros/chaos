@@ -102,10 +102,7 @@ impl Widget for &WelcomeWidget {
             "yours, not the model's.".bold(),
         ]));
         lines.push("".into());
-        lines.push(Line::from(vec![
-            "  ".into(),
-            "You were warned.".dim(),
-        ]));
+        lines.push(Line::from(vec!["  ".into(), "You were warned.".dim()]));
 
         Paragraph::new(lines)
             .wrap(Wrap { trim: false })

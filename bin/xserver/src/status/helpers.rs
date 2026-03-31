@@ -169,7 +169,9 @@ pub(crate) fn format_reset_timestamp(dt: Timestamp, captured_at: Timestamp) -> S
     let local_dt = dt.to_zoned(jiff::tz::TimeZone::system());
     let local_captured_at = captured_at.to_zoned(jiff::tz::TimeZone::system());
     let time = local_dt.strftime("%H:%M").to_string();
-    if local_dt.strftime("%Y-%m-%d").to_string() == local_captured_at.strftime("%Y-%m-%d").to_string() {
+    if local_dt.strftime("%Y-%m-%d").to_string()
+        == local_captured_at.strftime("%Y-%m-%d").to_string()
+    {
         time
     } else {
         format!("{time} on {}", local_dt.strftime("%-d %b"))

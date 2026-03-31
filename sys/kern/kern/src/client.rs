@@ -24,9 +24,12 @@
 //! fails, normal stream retry/fallback logic handles recovery on the same turn.
 
 use std::collections::HashMap;
+use std::path::Path;
+use std::path::PathBuf;
 use std::sync::Arc;
 use std::sync::Mutex as StdMutex;
 use std::sync::OnceLock;
+use std::sync::Weak;
 use std::sync::atomic::AtomicBool;
 use std::sync::atomic::Ordering;
 
@@ -74,11 +77,18 @@ use chaos_ipc::config_types::ReasoningSummary as ReasoningSummaryConfig;
 use chaos_ipc::config_types::ServiceTier;
 use chaos_ipc::config_types::Verbosity as VerbosityConfig;
 use chaos_ipc::models::ContentItem;
+use chaos_ipc::models::FileSystemPermissions;
+use chaos_ipc::models::PermissionProfile;
 use chaos_ipc::models::ResponseItem;
 use chaos_ipc::openai_models::ModelInfo;
 use chaos_ipc::openai_models::ReasoningEffort as ReasoningEffortConfig;
+use chaos_ipc::permissions::FileSystemSandboxPolicy;
 use chaos_ipc::protocol::AskForApproval;
+use chaos_ipc::protocol::EventMsg;
 use chaos_ipc::protocol::SessionSource;
+use chaos_ipc::protocol::WarningEvent;
+use chaos_ipc::request_permissions::RequestPermissionProfile;
+use chaos_ipc::request_permissions::RequestPermissionsArgs;
 use eventsource_stream::Event;
 use eventsource_stream::EventStreamError;
 use futures::StreamExt;
@@ -106,6 +116,7 @@ use crate::client_common::ResponseEvent;
 use crate::client_common::ResponseStream;
 use crate::client_common::tools::ToolSpec;
 use crate::config::Config;
+use crate::exec_policy::ExecApprovalRequest;
 
 use crate::error::ChaosErr;
 use crate::error::Result;
@@ -120,6 +131,7 @@ use crate::tools::spec::create_tools_json_for_responses_api;
 use crate::util::FeedbackRequestTags;
 use crate::util::emit_feedback_auth_recovery_tags;
 use crate::util::emit_feedback_request_tags;
+use serde_json::Value;
 use serde_json::json;
 
 pub const OPENAI_BETA_HEADER: &str = "OpenAI-Beta";
@@ -161,6 +173,10 @@ struct ModelClientState {
     clamped: AtomicBool,
     /// Persistent Claude Code subprocess for clamped mode.
     clamp_transport: tokio::sync::Mutex<Option<chaos_clamp::ClampTransport>>,
+    /// Session-bound MCP bridge for clamp subprocesses.
+    clamp_mcp_bridge: tokio::sync::Mutex<Option<crate::clamp_bridge::ClampSessionBridge>>,
+    /// Back-reference to the owning session for clamp-side MCP routing.
+    session: StdMutex<Weak<crate::chaos::Session>>,
     cached_websocket_session: StdMutex<WebsocketSession>,
 }
 
@@ -306,9 +322,56 @@ impl ModelClient {
                 disable_websockets: AtomicBool::new(false),
                 clamped: AtomicBool::new(false),
                 clamp_transport: tokio::sync::Mutex::new(None),
+                clamp_mcp_bridge: tokio::sync::Mutex::new(None),
+                session: StdMutex::new(Weak::new()),
                 cached_websocket_session: StdMutex::new(WebsocketSession::default()),
             }),
         }
+    }
+
+    pub(crate) fn bind_session(&self, session: &Arc<crate::chaos::Session>) {
+        *self
+            .state
+            .session
+            .lock()
+            .unwrap_or_else(std::sync::PoisonError::into_inner) = Arc::downgrade(session);
+    }
+
+    async fn ensure_clamp_mcp_bridge(&self) -> std::result::Result<(PathBuf, String), String> {
+        if let Some(existing) = self
+            .state
+            .clamp_mcp_bridge
+            .lock()
+            .await
+            .as_ref()
+            .map(|bridge| {
+                (
+                    bridge.socket_path().to_path_buf(),
+                    bridge.token().to_string(),
+                )
+            })
+        {
+            return Ok(existing);
+        }
+
+        let session = self
+            .state
+            .session
+            .lock()
+            .unwrap_or_else(std::sync::PoisonError::into_inner)
+            .clone();
+        let bridge = crate::clamp_bridge::ClampSessionBridge::spawn(session)
+            .await
+            .map_err(|err| format!("failed to start clamp MCP bridge: {err}"))?;
+        let output = (
+            bridge.socket_path().to_path_buf(),
+            bridge.token().to_string(),
+        );
+        let mut guard = self.state.clamp_mcp_bridge.lock().await;
+        if guard.is_none() {
+            *guard = Some(bridge);
+        }
+        Ok(output)
     }
 
     /// Creates a fresh turn-scoped streaming session.
@@ -348,10 +411,19 @@ impl ModelClient {
                 let mut guard = self.state.clamp_transport.lock().await;
                 guard.take()
             };
+            let bridge = {
+                let mut guard = self.state.clamp_mcp_bridge.lock().await;
+                guard.take()
+            };
             if let Some(transport) = transport
                 && let Err(err) = transport.shutdown().await
             {
                 warn!("failed to shut down clamped transport: {err}");
+            }
+            if let Some(bridge) = bridge
+                && let Err(err) = bridge.shutdown().await
+            {
+                warn!("failed to shut down clamp MCP bridge: {err}");
             }
         }
     }
@@ -722,6 +794,473 @@ fn clamp_permission_mode(approval_policy: AskForApproval) -> String {
         | AskForApproval::Granular(_) => "default",
     }
     .to_string()
+}
+
+fn build_clamp_mcp_config(socket_path: &Path, token: &str) -> Value {
+    let command = std::env::current_exe()
+        .ok()
+        .map(|path| path.to_string_lossy().into_owned())
+        .filter(|path| !path.is_empty())
+        .unwrap_or_else(|| "chaos".to_string());
+    serde_json::json!({
+        "mcpServers": {
+            "chaos": {
+                "command": command,
+                "args": ["clamp-session-bridge"],
+                "env": {
+                    "CHAOS_CLAMP_MCP_SOCKET": socket_path.to_string_lossy(),
+                    "CHAOS_CLAMP_MCP_TOKEN": token
+                }
+            }
+        }
+    })
+}
+
+pub(crate) const CLAMP_NATIVE_PASSTHROUGH_TOOLS: &[&str] = &["WebSearch", "WebFetch"];
+const CLAMP_LOCAL_BUILTIN_TOOLS: &[&str] = &[
+    "Bash",
+    "Read",
+    "Write",
+    "Edit",
+    "MultiEdit",
+    "NotebookRead",
+    "NotebookEdit",
+    "Glob",
+    "Grep",
+    "LS",
+];
+const CLAMP_UNSUPPORTED_BUILTIN_TOOLS: &[&str] = &["Task", "TodoRead", "TodoWrite"];
+
+pub(crate) fn build_clamp_disallowed_tools() -> Vec<String> {
+    CLAMP_LOCAL_BUILTIN_TOOLS
+        .iter()
+        .chain(CLAMP_UNSUPPORTED_BUILTIN_TOOLS.iter())
+        .map(|tool| (*tool).to_string())
+        .collect()
+}
+
+#[derive(Debug, Clone, PartialEq, Eq)]
+enum ClampToolPermissionDecision {
+    Allow,
+    AskPermissions {
+        permissions: PermissionProfile,
+        reason: String,
+    },
+    AskCommandApproval {
+        command: Vec<String>,
+        reason: String,
+    },
+    Deny(String),
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+enum ClampLocalToolKind {
+    Shell,
+    FsRead,
+    FsWrite,
+    FsReadPathOptional,
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+enum ClampToolRouting {
+    Passthrough,
+    Local {
+        local_tool_name: &'static str,
+        kind: ClampLocalToolKind,
+    },
+}
+
+fn clamp_tool_routing(tool_name: &str) -> Option<ClampToolRouting> {
+    if CLAMP_NATIVE_PASSTHROUGH_TOOLS.contains(&tool_name) {
+        return Some(ClampToolRouting::Passthrough);
+    }
+
+    match tool_name {
+        // Route the rest through our local registry categories.
+        "Bash" => Some(ClampToolRouting::Local {
+            local_tool_name: "exec_command",
+            kind: ClampLocalToolKind::Shell,
+        }),
+        "Read" => Some(ClampToolRouting::Local {
+            local_tool_name: "read_file",
+            kind: ClampLocalToolKind::FsRead,
+        }),
+        "NotebookRead" => Some(ClampToolRouting::Local {
+            local_tool_name: "read_file",
+            kind: ClampLocalToolKind::FsRead,
+        }),
+        "Write" | "Edit" | "MultiEdit" | "NotebookEdit" => Some(ClampToolRouting::Local {
+            local_tool_name: "apply_patch",
+            kind: ClampLocalToolKind::FsWrite,
+        }),
+        "Glob" | "Grep" | "LS" => Some(ClampToolRouting::Local {
+            local_tool_name: "read_file",
+            kind: ClampLocalToolKind::FsReadPathOptional,
+        }),
+        _ => None,
+    }
+}
+
+fn clamp_permission_allow_response(input: Value) -> Value {
+    serde_json::json!({
+        "behavior": "allow",
+        "updatedInput": input
+    })
+}
+
+fn clamp_permission_deny_response(message: impl Into<String>) -> Value {
+    serde_json::json!({
+        "behavior": "deny",
+        "message": message.into()
+    })
+}
+
+fn clamp_resolve_input_path(
+    input: &Value,
+    cwd: &std::path::Path,
+    keys: &[&str],
+) -> Option<chaos_realpath::AbsolutePathBuf> {
+    let object = input.as_object()?;
+    keys.iter()
+        .find_map(|key| object.get(*key))
+        .and_then(|value| value.as_str())
+        .and_then(|path| chaos_realpath::AbsolutePathBuf::resolve_path_against_base(path, cwd).ok())
+}
+
+fn clamp_read_permission(path: chaos_realpath::AbsolutePathBuf) -> PermissionProfile {
+    PermissionProfile {
+        network: None,
+        file_system: Some(FileSystemPermissions {
+            read: Some(vec![path]),
+            write: None,
+        }),
+        macos: None,
+    }
+}
+
+fn clamp_write_permission(path: chaos_realpath::AbsolutePathBuf) -> PermissionProfile {
+    PermissionProfile {
+        network: None,
+        file_system: Some(FileSystemPermissions {
+            read: None,
+            write: Some(vec![path]),
+        }),
+        macos: None,
+    }
+}
+
+fn clamp_effective_file_system_policy(
+    turn: &crate::chaos::TurnContext,
+    granted_permissions: Option<&PermissionProfile>,
+) -> FileSystemSandboxPolicy {
+    crate::sandboxing::effective_file_system_sandbox_policy(
+        &turn.file_system_sandbox_policy,
+        granted_permissions,
+    )
+}
+
+fn clamp_tool_permission_decision(
+    tool_name: &str,
+    input: &Value,
+    cwd: &std::path::Path,
+    file_system_policy: &FileSystemSandboxPolicy,
+) -> ClampToolPermissionDecision {
+    let Some(routing) = clamp_tool_routing(tool_name) else {
+        return ClampToolPermissionDecision::Deny(format!(
+            "Claude Code built-in tool '{tool_name}' is not supported in clamp mode; use Chaos-managed tools instead."
+        ));
+    };
+
+    match routing {
+        ClampToolRouting::Passthrough => ClampToolPermissionDecision::Allow,
+        ClampToolRouting::Local {
+            local_tool_name,
+            kind: ClampLocalToolKind::Shell,
+        } => {
+            let command = input
+                .get("command")
+                .and_then(|value| value.as_str())
+                .map(str::trim)
+                .filter(|value| !value.is_empty());
+            match command {
+                Some(command) => ClampToolPermissionDecision::AskCommandApproval {
+                    command: vec![
+                        "/bin/sh".to_string(),
+                        "-lc".to_string(),
+                        command.to_string(),
+                    ],
+                    reason: format!(
+                        "Claude Code {tool_name} routes through local tool '{local_tool_name}' and requests permission to run a shell command."
+                    ),
+                },
+                None => ClampToolPermissionDecision::Deny(format!(
+                    "Claude Code {tool_name} request is missing a command."
+                )),
+            }
+        }
+        ClampToolRouting::Local {
+            local_tool_name,
+            kind: ClampLocalToolKind::FsRead,
+        } => match clamp_resolve_input_path(input, cwd, &["file_path", "path"]) {
+            Some(path) if file_system_policy.can_read_path_with_cwd(path.as_path(), cwd) => {
+                ClampToolPermissionDecision::Allow
+            }
+            Some(path) => ClampToolPermissionDecision::AskPermissions {
+                permissions: clamp_read_permission(path),
+                reason: format!(
+                    "Claude Code {tool_name} routes through local tool '{local_tool_name}' and requests filesystem read access."
+                ),
+            },
+            None => ClampToolPermissionDecision::Deny(format!(
+                "Claude Code {tool_name} request is missing a readable path."
+            )),
+        },
+        ClampToolRouting::Local {
+            local_tool_name,
+            kind: ClampLocalToolKind::FsWrite,
+        } => match clamp_resolve_input_path(input, cwd, &["file_path", "path"]) {
+            Some(path) if file_system_policy.can_write_path_with_cwd(path.as_path(), cwd) => {
+                ClampToolPermissionDecision::Allow
+            }
+            Some(path) => ClampToolPermissionDecision::AskPermissions {
+                permissions: clamp_write_permission(path),
+                reason: format!(
+                    "Claude Code {tool_name} routes through local tool '{local_tool_name}' and requests filesystem write access."
+                ),
+            },
+            None => ClampToolPermissionDecision::Deny(format!(
+                "Claude Code {tool_name} request is missing a writable path."
+            )),
+        },
+        ClampToolRouting::Local {
+            local_tool_name,
+            kind: ClampLocalToolKind::FsReadPathOptional,
+        } => match clamp_resolve_input_path(input, cwd, &["path"]) {
+            Some(path) if file_system_policy.can_read_path_with_cwd(path.as_path(), cwd) => {
+                ClampToolPermissionDecision::Allow
+            }
+            Some(path) => ClampToolPermissionDecision::AskPermissions {
+                permissions: clamp_read_permission(path),
+                reason: format!(
+                    "Claude Code {tool_name} routes through local tool '{local_tool_name}' and requests filesystem read access."
+                ),
+            },
+            None => ClampToolPermissionDecision::Allow,
+        },
+    }
+}
+
+pub(crate) async fn active_clamp_turn_context(
+    session: &crate::chaos::Session,
+) -> Option<Arc<crate::chaos::TurnContext>> {
+    let active = session.active_turn.lock().await;
+    let (_, task) = active.as_ref()?.tasks.first()?;
+    Some(Arc::clone(&task.turn_context))
+}
+
+async fn handle_clamp_mcp_message(
+    session: Weak<crate::chaos::Session>,
+    server_name: String,
+    message: Value,
+) -> std::result::Result<Value, String> {
+    let Some(session) = session.upgrade() else {
+        return Err("session closed".to_string());
+    };
+
+    let id = message.get("id").cloned().unwrap_or(Value::Null);
+    let method = message
+        .get("method")
+        .and_then(|v| v.as_str())
+        .ok_or_else(|| "missing MCP method".to_string())?;
+
+    match method {
+        "tools/call" => {
+            let params = message
+                .get("params")
+                .and_then(|v| v.as_object())
+                .ok_or_else(|| "missing MCP params".to_string())?;
+            let tool_name = params
+                .get("name")
+                .and_then(|v| v.as_str())
+                .ok_or_else(|| "missing MCP tool name".to_string())?
+                .to_string();
+            let arguments = params
+                .get("arguments")
+                .cloned()
+                .unwrap_or_else(|| serde_json::json!({}));
+            let raw_arguments = serde_json::to_string(&arguments)
+                .map_err(|err| format!("failed to serialize MCP arguments: {err}"))?;
+            let turn_context = active_clamp_turn_context(&session)
+                .await
+                .ok_or_else(|| "no active turn for clamp MCP tool call".to_string())?;
+            let call_id = format!("clamp_mcp_{}", uuid::Uuid::now_v7());
+            let result = crate::mcp_tool_call::handle_mcp_tool_call(
+                Arc::clone(&session),
+                &turn_context,
+                call_id,
+                server_name,
+                tool_name,
+                raw_arguments,
+            )
+            .await;
+            let result_value = serde_json::to_value(&result)
+                .map_err(|err| format!("failed to serialize MCP result: {err}"))?;
+            Ok(serde_json::json!({
+                "jsonrpc": "2.0",
+                "id": id,
+                "result": result_value
+            }))
+        }
+        _ => Ok(serde_json::json!({
+            "jsonrpc": "2.0",
+            "id": id,
+            "error": {
+                "code": -32601,
+                "message": format!("unsupported clamp MCP method: {method}")
+            }
+        })),
+    }
+}
+
+async fn handle_clamp_tool_permission(
+    session: Weak<crate::chaos::Session>,
+    tool_name: String,
+    input: Value,
+    tool_use_id: Option<String>,
+) -> std::result::Result<Value, String> {
+    let Some(session) = session.upgrade() else {
+        return Err("session closed".to_string());
+    };
+    let turn_context = active_clamp_turn_context(&session)
+        .await
+        .ok_or_else(|| "no active turn for clamp tool permission".to_string())?;
+    let granted_permissions = crate::sandboxing::merge_permission_profiles(
+        session.granted_session_permissions().await.as_ref(),
+        session.granted_turn_permissions().await.as_ref(),
+    );
+    let file_system_policy =
+        clamp_effective_file_system_policy(&turn_context, granted_permissions.as_ref());
+    let decision = clamp_tool_permission_decision(
+        &tool_name,
+        &input,
+        turn_context.cwd.as_path(),
+        &file_system_policy,
+    );
+    let call_id = tool_use_id.unwrap_or_else(|| format!("clamp_tool_{}", uuid::Uuid::now_v7()));
+
+    match decision {
+        ClampToolPermissionDecision::Allow => Ok(clamp_permission_allow_response(input)),
+        ClampToolPermissionDecision::Deny(message) => Ok(clamp_permission_deny_response(message)),
+        ClampToolPermissionDecision::AskPermissions {
+            permissions,
+            reason,
+        } => {
+            let response = session
+                .request_permissions(
+                    turn_context.as_ref(),
+                    call_id,
+                    RequestPermissionsArgs {
+                        reason: Some(reason.clone()),
+                        permissions: RequestPermissionProfile::from(permissions.clone()),
+                    },
+                )
+                .await
+                .ok_or_else(|| "clamp permission request cancelled".to_string())?;
+            let granted = crate::sandboxing::intersect_permission_profiles(
+                permissions.clone(),
+                response.permissions.into(),
+            );
+            if granted == permissions {
+                Ok(clamp_permission_allow_response(input))
+            } else {
+                Ok(clamp_permission_deny_response(format!(
+                    "{reason} Access was not granted."
+                )))
+            }
+        }
+        ClampToolPermissionDecision::AskCommandApproval { command, reason } => {
+            let exec_approval_requirement = session
+                .services
+                .exec_policy
+                .create_exec_approval_requirement_for_command(ExecApprovalRequest {
+                    command: &command,
+                    approval_policy: turn_context.approval_policy.value(),
+                    sandbox_policy: turn_context.sandbox_policy.get(),
+                    file_system_sandbox_policy: &turn_context.file_system_sandbox_policy,
+                    sandbox_permissions: chaos_ipc::models::SandboxPermissions::UseDefault,
+                    prefix_rule: None,
+                })
+                .await;
+            match exec_approval_requirement {
+                crate::tools::sandboxing::ExecApprovalRequirement::Skip { .. } => {
+                    Ok(clamp_permission_allow_response(input))
+                }
+                crate::tools::sandboxing::ExecApprovalRequirement::Forbidden { reason } => {
+                    Ok(clamp_permission_deny_response(reason))
+                }
+                crate::tools::sandboxing::ExecApprovalRequirement::NeedsApproval {
+                    reason: approval_reason,
+                    proposed_execpolicy_amendment,
+                } => {
+                    let review_decision = session
+                        .request_command_approval(
+                            turn_context.as_ref(),
+                            call_id,
+                            None,
+                            command,
+                            turn_context.cwd.clone(),
+                            approval_reason.or(Some(reason)),
+                            None,
+                            proposed_execpolicy_amendment,
+                            None,
+                            None,
+                            None,
+                        )
+                        .await;
+                    if matches!(
+                        review_decision,
+                        chaos_ipc::protocol::ReviewDecision::Approved
+                            | chaos_ipc::protocol::ReviewDecision::ApprovedForSession
+                    ) {
+                        Ok(clamp_permission_allow_response(input))
+                    } else {
+                        Ok(clamp_permission_deny_response(
+                            "Command execution was not approved.",
+                        ))
+                    }
+                }
+            }
+        }
+    }
+}
+
+async fn handle_clamp_hook_callback(
+    session: Weak<crate::chaos::Session>,
+    callback_id: String,
+    _input: Value,
+    tool_use_id: Option<String>,
+) -> std::result::Result<Value, String> {
+    let Some(session) = session.upgrade() else {
+        return Err("session closed".to_string());
+    };
+    if let Some(turn_context) = active_clamp_turn_context(&session).await {
+        session
+            .send_event(
+                turn_context.as_ref(),
+                EventMsg::Warning(WarningEvent {
+                    message: format!(
+                        "Clamp received unexpected Claude hook callback '{}'{}; clamp sessions do not currently register callback hooks.",
+                        callback_id,
+                        tool_use_id
+                            .as_deref()
+                            .map(|id| format!(" (tool_use_id: {id})"))
+                            .unwrap_or_default()
+                    ),
+                }),
+            )
+            .await;
+    }
+    Ok(serde_json::json!({}))
 }
 
 fn render_clamp_content_items(content: &[ContentItem]) -> String {
@@ -1635,6 +2174,7 @@ impl ModelClientSession {
         let full_prompt_state = render_clamp_full_prompt(prompt);
         let latest_user_content = render_latest_clamp_user_message(prompt);
         let clamp_model_slug = model_info.slug.clone();
+        let client = self.client.clone();
 
         // Get or create the persistent transport.
         // The transport lives on ModelClientState and persists across turns,
@@ -1648,13 +2188,56 @@ impl ModelClientSession {
         tokio::spawn(async move {
             let mut guard = clamp_state.clamp_transport.lock().await;
             let mut spawned_fresh = false;
+            let session = clamp_state
+                .session
+                .lock()
+                .unwrap_or_else(std::sync::PoisonError::into_inner)
+                .clone();
 
             // Spawn + initialize on first use; reuse on subsequent turns.
             if guard.is_none() {
+                let permission_session = session.clone();
+                let hook_session = session.clone();
+                let mcp_session = session.clone();
+                let (bridge_socket_path, bridge_token) =
+                    match client.ensure_clamp_mcp_bridge().await {
+                        Ok(bridge) => bridge,
+                        Err(err) => {
+                            let _ = tx_event.send(Err(ApiError::Stream(err))).await;
+                            return;
+                        }
+                    };
                 let config = ClampConfig {
+                    bare_mode: true,
                     system_prompt: Some(system_prompt),
                     permission_mode: Some(clamp_permission_mode(clamp_state.approval_policy)),
+                    mcp_config: Some(build_clamp_mcp_config(&bridge_socket_path, &bridge_token)),
+                    disallowed_tools: build_clamp_disallowed_tools(),
                     allow_claude_code_tools: false,
+                    tool_permission_handler: Some(Arc::new(
+                        move |tool_name, input, tool_use_id| {
+                            let session = permission_session.clone();
+                            Box::pin(async move {
+                                handle_clamp_tool_permission(session, tool_name, input, tool_use_id)
+                                    .await
+                            })
+                        },
+                    )),
+                    hook_callback_handler: Some(Arc::new(
+                        move |callback_id, input, tool_use_id| {
+                            let session = hook_session.clone();
+                            Box::pin(async move {
+                                handle_clamp_hook_callback(session, callback_id, input, tool_use_id)
+                                    .await
+                            })
+                        },
+                    )),
+                    mcp_message_handler: Some(Arc::new(move |server_name, message| {
+                        let session = mcp_session.clone();
+                        Box::pin(async move {
+                            handle_clamp_mcp_message(session, server_name, message).await
+                        })
+                    })),
                     ..Default::default()
                 };
                 match ClampTransport::spawn(config).await {

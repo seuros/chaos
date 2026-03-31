@@ -1719,6 +1719,7 @@ impl Session {
             services,
             next_internal_sub_id: AtomicU64::new(0),
         });
+        sess.services.model_client.bind_session(&sess);
         if let Some(network_policy_decider_session) = network_policy_decider_session {
             let mut guard = network_policy_decider_session.write().await;
             *guard = Arc::downgrade(&sess);
@@ -4178,19 +4179,19 @@ mod handlers {
     use chaos_ipc::protocol::ErrorEvent;
     use chaos_ipc::protocol::Event;
     use chaos_ipc::protocol::EventMsg;
+    use chaos_ipc::protocol::InitialHistory;
     use chaos_ipc::protocol::ListCustomPromptsResponseEvent;
     use chaos_ipc::protocol::ListRemoteSkillsResponseEvent;
     use chaos_ipc::protocol::ListSkillsResponseEvent;
     use chaos_ipc::protocol::McpServerRefreshConfig;
-    use chaos_ipc::protocol::InitialHistory;
     use chaos_ipc::protocol::Op;
     use chaos_ipc::protocol::ProcessNameUpdatedEvent;
     use chaos_ipc::protocol::ProcessRolledBackEvent;
-    use chaos_ipc::protocol::ResumedHistory;
     use chaos_ipc::protocol::RemoteSkillDownloadedEvent;
     use chaos_ipc::protocol::RemoteSkillHazelnutScope;
     use chaos_ipc::protocol::RemoteSkillProductSurface;
     use chaos_ipc::protocol::RemoteSkillSummary;
+    use chaos_ipc::protocol::ResumedHistory;
     use chaos_ipc::protocol::ReviewDecision;
     use chaos_ipc::protocol::ReviewRequest;
     use chaos_ipc::protocol::RolloutItem;
@@ -4480,7 +4481,8 @@ mod handlers {
         let _config = Arc::clone(config);
 
         tokio::spawn(async move {
-            let entry_opt = crate::message_history::lookup(log_id, offset, state_db.as_deref()).await;
+            let entry_opt =
+                crate::message_history::lookup(log_id, offset, state_db.as_deref()).await;
 
             let event = Event {
                 id: sub_id,
@@ -4844,13 +4846,16 @@ mod handlers {
             return;
         }
 
-        let initial_history =
-            match RolloutRecorder::get_rollout_history_for_process(sess.conversation_id).await {
-                Ok(history) => history,
-                Err(err) => {
-                    let live_rollout_items = recorder.snapshot_rollout_items();
-                    if live_rollout_items.is_empty() {
-                        sess.send_event_raw(Event {
+        let initial_history = match RolloutRecorder::get_rollout_history_for_process(
+            sess.conversation_id,
+        )
+        .await
+        {
+            Ok(history) => history,
+            Err(err) => {
+                let live_rollout_items = recorder.snapshot_rollout_items();
+                if live_rollout_items.is_empty() {
+                    sess.send_event_raw(Event {
                             id: turn_context.sub_id.clone(),
                             msg: EventMsg::Error(ErrorEvent {
                                 message: format!(
@@ -4860,14 +4865,14 @@ mod handlers {
                             }),
                         })
                         .await;
-                        return;
-                    }
-                    InitialHistory::Resumed(ResumedHistory {
-                        conversation_id: sess.conversation_id,
-                        history: live_rollout_items,
-                    })
+                    return;
                 }
-            };
+                InitialHistory::Resumed(ResumedHistory {
+                    conversation_id: sess.conversation_id,
+                    history: live_rollout_items,
+                })
+            }
+        };
 
         let rollback_event = ProcessRolledBackEvent { num_turns };
         let rollback_msg = EventMsg::ProcessRolledBack(rollback_event.clone());

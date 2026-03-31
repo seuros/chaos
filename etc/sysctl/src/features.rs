@@ -238,35 +238,151 @@ pub struct FeatureSpec {
 }
 
 pub const FEATURES: &[FeatureSpec] = &[
-    FeatureSpec { id: Feature::GhostCommit, key: "undo", default_enabled: false },
-    FeatureSpec { id: Feature::ShellTool, key: "shell_tool", default_enabled: true },
-    FeatureSpec { id: Feature::UnifiedExec, key: "unified_exec", default_enabled: true },
-    FeatureSpec { id: Feature::ShellZshFork, key: "shell_zsh_fork", default_enabled: false },
-    FeatureSpec { id: Feature::ShellSnapshot, key: "shell_snapshot", default_enabled: true },
-    FeatureSpec { id: Feature::CodexGitCommit, key: "chaos_scm_commit", default_enabled: false },
-    FeatureSpec { id: Feature::RuntimeMetrics, key: "runtime_metrics", default_enabled: false },
-    FeatureSpec { id: Feature::MemoryTool, key: "memories", default_enabled: false },
-    FeatureSpec { id: Feature::ChildAgentsMd, key: "child_agents_md", default_enabled: false },
-    FeatureSpec { id: Feature::ImageDetailOriginal, key: "image_detail_original", default_enabled: false },
-    FeatureSpec { id: Feature::ApplyPatchFreeform, key: "apply_patch_freeform", default_enabled: false },
-    FeatureSpec { id: Feature::ExecPermissionApprovals, key: "exec_permission_approvals", default_enabled: false },
-    FeatureSpec { id: Feature::CodexHooks, key: "chaos_dtrace", default_enabled: false },
-    FeatureSpec { id: Feature::RequestPermissionsTool, key: "request_permissions_tool", default_enabled: false },
-    FeatureSpec { id: Feature::EnableRequestCompression, key: "enable_request_compression", default_enabled: true },
-    FeatureSpec { id: Feature::Collab, key: "multi_agent", default_enabled: true },
-    FeatureSpec { id: Feature::SpawnCsv, key: "enable_fanout", default_enabled: false },
-    FeatureSpec { id: Feature::ToolSuggest, key: "tool_suggest", default_enabled: false },
-    FeatureSpec { id: Feature::ImageGeneration, key: "image_generation", default_enabled: false },
-    FeatureSpec { id: Feature::SkillMcpDependencyInstall, key: "skill_mcp_dependency_install", default_enabled: true },
-    FeatureSpec { id: Feature::SkillEnvVarDependencyPrompt, key: "skill_env_var_dependency_prompt", default_enabled: false },
-    FeatureSpec { id: Feature::DefaultModeRequestUserInput, key: "default_mode_request_user_input", default_enabled: false },
-    FeatureSpec { id: Feature::ToolCallMcpElicitation, key: "tool_call_mcp_elicitation", default_enabled: false },
-    FeatureSpec { id: Feature::Personality, key: "personality", default_enabled: true },
-    FeatureSpec { id: Feature::Artifact, key: "artifact", default_enabled: false },
-    FeatureSpec { id: Feature::FastMode, key: "fast_mode", default_enabled: true },
-    FeatureSpec { id: Feature::PreventIdleSleep, key: "prevent_idle_sleep", default_enabled: false },
-    FeatureSpec { id: Feature::ResponsesWebsockets, key: "responses_websockets", default_enabled: false },
-    FeatureSpec { id: Feature::ResponsesWebsocketsV2, key: "responses_websockets_v2", default_enabled: false },
+    FeatureSpec {
+        id: Feature::GhostCommit,
+        key: "undo",
+        default_enabled: false,
+    },
+    FeatureSpec {
+        id: Feature::ShellTool,
+        key: "shell_tool",
+        default_enabled: true,
+    },
+    FeatureSpec {
+        id: Feature::UnifiedExec,
+        key: "unified_exec",
+        default_enabled: true,
+    },
+    FeatureSpec {
+        id: Feature::ShellZshFork,
+        key: "shell_zsh_fork",
+        default_enabled: false,
+    },
+    FeatureSpec {
+        id: Feature::ShellSnapshot,
+        key: "shell_snapshot",
+        default_enabled: true,
+    },
+    FeatureSpec {
+        id: Feature::CodexGitCommit,
+        key: "chaos_scm_commit",
+        default_enabled: false,
+    },
+    FeatureSpec {
+        id: Feature::RuntimeMetrics,
+        key: "runtime_metrics",
+        default_enabled: false,
+    },
+    FeatureSpec {
+        id: Feature::MemoryTool,
+        key: "memories",
+        default_enabled: false,
+    },
+    FeatureSpec {
+        id: Feature::ChildAgentsMd,
+        key: "child_agents_md",
+        default_enabled: false,
+    },
+    FeatureSpec {
+        id: Feature::ImageDetailOriginal,
+        key: "image_detail_original",
+        default_enabled: false,
+    },
+    FeatureSpec {
+        id: Feature::ApplyPatchFreeform,
+        key: "apply_patch_freeform",
+        default_enabled: false,
+    },
+    FeatureSpec {
+        id: Feature::ExecPermissionApprovals,
+        key: "exec_permission_approvals",
+        default_enabled: false,
+    },
+    FeatureSpec {
+        id: Feature::CodexHooks,
+        key: "chaos_dtrace",
+        default_enabled: false,
+    },
+    FeatureSpec {
+        id: Feature::RequestPermissionsTool,
+        key: "request_permissions_tool",
+        default_enabled: false,
+    },
+    FeatureSpec {
+        id: Feature::EnableRequestCompression,
+        key: "enable_request_compression",
+        default_enabled: true,
+    },
+    FeatureSpec {
+        id: Feature::Collab,
+        key: "multi_agent",
+        default_enabled: true,
+    },
+    FeatureSpec {
+        id: Feature::SpawnCsv,
+        key: "enable_fanout",
+        default_enabled: false,
+    },
+    FeatureSpec {
+        id: Feature::ToolSuggest,
+        key: "tool_suggest",
+        default_enabled: false,
+    },
+    FeatureSpec {
+        id: Feature::ImageGeneration,
+        key: "image_generation",
+        default_enabled: false,
+    },
+    FeatureSpec {
+        id: Feature::SkillMcpDependencyInstall,
+        key: "skill_mcp_dependency_install",
+        default_enabled: true,
+    },
+    FeatureSpec {
+        id: Feature::SkillEnvVarDependencyPrompt,
+        key: "skill_env_var_dependency_prompt",
+        default_enabled: false,
+    },
+    FeatureSpec {
+        id: Feature::DefaultModeRequestUserInput,
+        key: "default_mode_request_user_input",
+        default_enabled: false,
+    },
+    FeatureSpec {
+        id: Feature::ToolCallMcpElicitation,
+        key: "tool_call_mcp_elicitation",
+        default_enabled: false,
+    },
+    FeatureSpec {
+        id: Feature::Personality,
+        key: "personality",
+        default_enabled: true,
+    },
+    FeatureSpec {
+        id: Feature::Artifact,
+        key: "artifact",
+        default_enabled: false,
+    },
+    FeatureSpec {
+        id: Feature::FastMode,
+        key: "fast_mode",
+        default_enabled: true,
+    },
+    FeatureSpec {
+        id: Feature::PreventIdleSleep,
+        key: "prevent_idle_sleep",
+        default_enabled: false,
+    },
+    FeatureSpec {
+        id: Feature::ResponsesWebsockets,
+        key: "responses_websockets",
+        default_enabled: false,
+    },
+    FeatureSpec {
+        id: Feature::ResponsesWebsocketsV2,
+        key: "responses_websockets_v2",
+        default_enabled: false,
+    },
 ];
 
 // ===== Legacy feature aliases =====

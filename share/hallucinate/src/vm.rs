@@ -16,7 +16,9 @@ use tracing;
 
 use crate::api::{self, ScriptRegistrations, SessionInfo};
 use crate::discovery;
-use crate::handle::{HallucinateHandle, HookResult, ScriptRequest, ScriptTool, ReloadResult, ToolResult};
+use crate::handle::{
+    HallucinateHandle, HookResult, ReloadResult, ScriptRequest, ScriptTool, ToolResult,
+};
 use crate::sandbox::{self, Deadline};
 
 /// Default per-invocation execution deadline.

@@ -101,6 +101,7 @@ time = { workspace = true, features = [
 tokio = { workspace = true, features = [
     "io-std",
     "macros",
+    "net",
     "process",
     "rt-multi-thread",
     "signal",

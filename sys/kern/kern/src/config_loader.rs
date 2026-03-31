@@ -807,7 +807,6 @@ async fn load_project_layers(
     Ok(layers)
 }
 
-
 /// The legacy mechanism for specifying admin-enforced configuration is to read
 /// from a file like `/etc/chaos/managed_config.toml` that has the same
 /// structure as `config.toml` where fields like `approval_policy` can specify

@@ -40,7 +40,6 @@ use crate::chaos::TurnContext;
 use crate::config::Config;
 use crate::error::ChaosErr;
 
-
 use crate::models_manager::manager::ModelsManager;
 use chaos_ipc::protocol::InitialHistory;
 

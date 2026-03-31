@@ -542,7 +542,6 @@ fn approval_elicitation_meta_keeps_session_persist_behavior_for_custom_servers()
     );
 }
 
-
 #[test]
 fn approval_elicitation_meta_includes_connector_source_for_codex_apps() {
     assert_eq!(
@@ -871,4 +870,3 @@ async fn approve_mode_blocks_when_arc_returns_interrupt_for_model() {
         ))
     );
 }
-

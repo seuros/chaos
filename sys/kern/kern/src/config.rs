@@ -632,7 +632,6 @@ impl ConfigBuilder {
     }
 }
 
-
 fn feature_scope_segments(scope: &[String], feature_key: &str) -> Vec<String> {
     let mut segments = scope.to_vec();
     segments.push("features".to_string());
@@ -679,21 +678,13 @@ async fn maybe_migrate_smart_approvals_alias(chaos_home: &Path) -> std::io::Resu
 
     let root_scope = Vec::new();
     if let Some(features) = config_toml.features.as_ref() {
-        push_smart_approvals_alias_migration_edits(
-            &mut edits,
-            &root_scope,
-            features,
-        );
+        push_smart_approvals_alias_migration_edits(&mut edits, &root_scope, features);
     }
 
     for (profile_name, profile) in &config_toml.profiles {
         if let Some(features) = profile.features.as_ref() {
             let scope = vec!["profiles".to_string(), profile_name.clone()];
-            push_smart_approvals_alias_migration_edits(
-                &mut edits,
-                &scope,
-                features,
-            );
+            push_smart_approvals_alias_migration_edits(&mut edits, &scope, features);
         }
     }
 
@@ -706,7 +697,9 @@ async fn maybe_migrate_smart_approvals_alias(chaos_home: &Path) -> std::io::Resu
         .apply()
         .await
         .map_err(|err| {
-            std::io::Error::other(format!("failed to clean up deprecated approval aliases: {err}"))
+            std::io::Error::other(format!(
+                "failed to clean up deprecated approval aliases: {err}"
+            ))
         })?;
     Ok(true)
 }
@@ -1270,7 +1263,6 @@ pub struct ConfigToml {
 
     /// User-level skill config entries keyed by SKILL.md path.
     pub skills: Option<SkillsConfig>,
-
 
     /// Centralized feature flags (new). Prefer this over individual toggles.
     #[serde(default)]

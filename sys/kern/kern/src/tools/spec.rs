@@ -1834,12 +1834,18 @@ pub(crate) fn build_specs(
             .into_iter()
             .flat_map(|reg| {
                 let name = reg.name.to_string();
-                (reg.tools)()
-                    .into_iter()
-                    .map(move |t| (name.clone(), t))
+                (reg.tools)().into_iter().map(move |t| (name.clone(), t))
             })
             .collect();
-    build_specs_with_discoverable_tools(config, mcp_tools, app_tools, None, dynamic_tools, catalog_tools, None)
+    build_specs_with_discoverable_tools(
+        config,
+        mcp_tools,
+        app_tools,
+        None,
+        dynamic_tools,
+        catalog_tools,
+        None,
+    )
 }
 
 pub(crate) fn build_specs_with_discoverable_tools(
@@ -1851,7 +1857,6 @@ pub(crate) fn build_specs_with_discoverable_tools(
     catalog_tools: Vec<(String, chaos_traits::catalog::CatalogTool)>,
     hallucinate: Option<chaos_hallucinate::HallucinateHandle>,
 ) -> ToolRegistryBuilder {
-    use crate::tools::handlers::HallucinateHandler;
     use crate::minions::tools::CloseAgentHandler;
     use crate::minions::tools::ResumeAgentHandler;
     use crate::minions::tools::SendInputHandler;
@@ -1861,6 +1866,7 @@ pub(crate) fn build_specs_with_discoverable_tools(
     use crate::tools::handlers::ArsenalHandler;
     use crate::tools::handlers::CronHandler;
     use crate::tools::handlers::DynamicToolHandler;
+    use crate::tools::handlers::HallucinateHandler;
     use crate::tools::handlers::McpHandler;
     use crate::tools::handlers::McpResourceHandler;
     use crate::tools::handlers::PlanHandler;
@@ -2073,7 +2079,9 @@ pub(crate) fn build_specs_with_discoverable_tools(
                 "cron" => builder.register_handler(&tool.name, cron_handler.clone()),
                 "hallucinate" => {
                     if let Some(ref handle) = hallucinate {
-                        let handler = Arc::new(HallucinateHandler { handle: handle.clone() });
+                        let handler = Arc::new(HallucinateHandler {
+                            handle: handle.clone(),
+                        });
                         builder.register_handler(&tool.name, handler);
                     }
                 }

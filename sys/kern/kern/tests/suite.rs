@@ -69,7 +69,7 @@ mod auth_refresh;
 #[path = "suite/client_websockets.rs"]
 mod client_websockets;
 #[path = "suite/codex_delegate.rs"]
-mod codex_delegate;
+mod chaos_delegate;
 #[path = "suite/deprecation_notice.rs"]
 mod deprecation_notice;
 #[path = "suite/exec.rs"]

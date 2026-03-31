@@ -164,10 +164,10 @@ use crate::exec::StreamOutput;
 use crate::process::ProcessConfigSnapshot;
 use chaos_sysctl::CONFIG_TOML_FILE;
 
-#[path = "codex/rollout_reconstruction.rs"]
+#[path = "chaos/rollout_reconstruction.rs"]
 mod rollout_reconstruction;
 #[cfg(test)]
-#[path = "codex/rollout_reconstruction_tests.rs"]
+#[path = "chaos/rollout_reconstruction_tests.rs"]
 mod rollout_reconstruction_tests;
 
 #[derive(Debug, PartialEq)]
@@ -6822,7 +6822,7 @@ pub(super) fn get_last_assistant_message_from_turn(responses: &[ResponseItem]) -
 
 use crate::memories::prompts::build_memory_tool_developer_instructions;
 #[cfg(test)]
-#[path = "codex_tests.rs"]
+#[path = "chaos_tests.rs"]
 mod tests;
 #[cfg(test)]
 pub(crate) use tests::make_session_and_context;

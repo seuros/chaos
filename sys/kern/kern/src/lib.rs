@@ -14,7 +14,6 @@ pub mod builtin_mcp_resources;
 pub(crate) mod catalog;
 mod client;
 mod client_common;
-#[path = "codex.rs"]
 pub mod chaos;
 pub use chaos::SteerInputError;
 mod compact_remote;
@@ -22,7 +21,6 @@ mod process;
 pub use process::Process;
 pub use process::ProcessConfigSnapshot;
 pub mod capsicum;
-#[path = "codex_delegate.rs"]
 mod chaos_delegate;
 mod command_canonicalization;
 pub mod config;

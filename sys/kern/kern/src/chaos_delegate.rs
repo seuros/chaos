@@ -621,5 +621,5 @@ where
 }
 
 #[cfg(test)]
-#[path = "codex_delegate_tests.rs"]
+#[path = "chaos_delegate_tests.rs"]
 mod tests;

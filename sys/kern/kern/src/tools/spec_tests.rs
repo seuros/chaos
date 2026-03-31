@@ -1031,6 +1031,7 @@ fn assert_model_tools(
                     })
                     .collect()
             },
+            hallucinate: None,
         },
     );
     let model_visible_specs = router.model_visible_specs();
@@ -1851,7 +1852,7 @@ fn search_tool_description_lists_each_codex_apps_connector_once() {
                     ),
                     connector_id: Some("calendar".to_string()),
                     connector_name: Some("Calendar".to_string()),
-                                connector_description: Some(
+                    connector_description: Some(
                         "Plan events and manage your calendar.".to_string(),
                     ),
                 },
@@ -1869,7 +1870,7 @@ fn search_tool_description_lists_each_codex_apps_connector_once() {
                     ),
                     connector_id: Some("calendar".to_string()),
                     connector_name: Some("Calendar".to_string()),
-                                connector_description: Some(
+                    connector_description: Some(
                         "Plan events and manage your calendar.".to_string(),
                     ),
                 },
@@ -1887,7 +1888,7 @@ fn search_tool_description_lists_each_codex_apps_connector_once() {
                     ),
                     connector_id: Some("gmail".to_string()),
                     connector_name: Some("Gmail".to_string()),
-                                connector_description: Some("Find and summarize email threads.".to_string()),
+                    connector_description: Some("Find and summarize email threads.".to_string()),
                 },
             ),
             (
@@ -1899,7 +1900,7 @@ fn search_tool_description_lists_each_codex_apps_connector_once() {
                     tool: mcp_tool("echo", "Echo", serde_json::json!({"type": "object"})),
                     connector_id: None,
                     connector_name: None,
-                                connector_description: None,
+                    connector_description: None,
                 },
             ),
         ])),
@@ -1940,7 +1941,7 @@ fn search_tool_requires_model_capability_only() {
             connector_id: Some("calendar".to_string()),
             connector_name: Some("Calendar".to_string()),
             connector_description: None,
-            },
+        },
     )]));
 
     let features = Features::with_defaults();
@@ -1998,6 +1999,7 @@ fn tool_suggest_is_not_registered_without_feature_flag() {
         )]),
         &[],
         vec![],
+        None,
     )
     .build();
 
@@ -2064,7 +2066,7 @@ fn search_tool_description_falls_back_to_connector_name_without_description() {
                 ),
                 connector_id: Some("calendar".to_string()),
                 connector_name: Some("Calendar".to_string()),
-                        connector_description: None,
+                connector_description: None,
             },
         )])),
         &[],
@@ -2112,7 +2114,7 @@ fn search_tool_registers_namespaced_app_tool_aliases() {
                     connector_id: Some("calendar".to_string()),
                     connector_name: Some("Calendar".to_string()),
                     connector_description: None,
-                            },
+                },
             ),
             (
                 "mcp__codex_apps__calendar_list_events".to_string(),
@@ -2128,7 +2130,7 @@ fn search_tool_registers_namespaced_app_tool_aliases() {
                     connector_id: Some("calendar".to_string()),
                     connector_name: Some("Calendar".to_string()),
                     connector_description: None,
-                            },
+                },
             ),
         ])),
         &[],
@@ -2177,6 +2179,7 @@ fn tool_suggest_description_lists_discoverable_tools() {
         Some(discoverable_tools),
         &[],
         vec![],
+        None,
     )
     .build();
 

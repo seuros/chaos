@@ -98,6 +98,10 @@ enum Subcommand {
 
     /// Inspect feature flags.
     Features(FeaturesCli),
+
+    /// Hidden MCP bridge used by clamp subprocesses.
+    #[clap(hide = true, name = "clamp-session-bridge")]
+    ClampSessionBridge,
 }
 
 #[derive(Debug, Parser)]
@@ -546,6 +550,9 @@ async fn cli_main(arg0_paths: Arg0DispatchPaths) -> anyhow::Result<()> {
                 disable_feature_in_config(&interactive, &feature).await?;
             }
         },
+        Some(Subcommand::ClampSessionBridge) => {
+            chaos_mcphost::run_clamp_session_bridge_main().await?;
+        }
     }
 
     Ok(())

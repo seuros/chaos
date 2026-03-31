@@ -91,7 +91,6 @@ impl AnalyticsEventsQueue {
         }
         emitted.insert((tracking.turn_id.clone(), connector_id.clone()))
     }
-
 }
 
 impl AnalyticsEventsClient {
@@ -105,7 +104,6 @@ impl AnalyticsEventsClient {
     pub(crate) fn track_app_used(&self, tracking: TrackEventsContext, app: AppInvocation) {
         track_app_used(&self.queue, Arc::clone(&self.config), Some(tracking), app);
     }
-
 }
 
 enum TrackEventsJob {

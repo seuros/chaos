@@ -526,7 +526,6 @@ impl StatusIndicatorState {
             details_max_lines: STATUS_DETAILS_DEFAULT_MAX_LINES,
         }
     }
-
 }
 
 #[derive(Clone, Debug, PartialEq, Eq)]
@@ -535,7 +534,6 @@ struct PreClampSelection {
     reasoning_effort: Option<ReasoningEffortConfig>,
     plan_mode_reasoning_effort: Option<ReasoningEffortConfig>,
 }
-
 
 /// Maintains the per-session UI state and interaction state machines for the chat screen.
 ///
@@ -2199,7 +2197,6 @@ impl ChatWidget {
             |s| s.handle_apply_patch_approval_now(ev2),
         );
     }
-
 
     fn on_elicitation_request(&mut self, ev: ElicitationRequestEvent) {
         let ev2 = ev.clone();
@@ -4038,6 +4035,8 @@ impl ChatWidget {
                         "Unclamped: using direct API transport.".to_string(),
                         None,
                     );
+                    // Force a full screen repaint so the green theme takes effect
+                    // on all chrome (borders, status bar, input prompt).
                 }
             }
             SlashCommand::TestApproval => {
@@ -5103,7 +5102,6 @@ impl ChatWidget {
             collaboration_mode,
             reasoning_effort_override,
         ));
-
     }
 
     pub(crate) fn add_debug_config_output(&mut self) {
@@ -6296,7 +6294,6 @@ impl ChatWidget {
         let windows_degraded_sandbox_enabled = false;
         let show_elevate_sandbox_hint = false;
 
-
         for preset in presets.into_iter() {
             if !include_read_only && preset.id == "read-only" {
                 continue;
@@ -6344,14 +6341,16 @@ impl ChatWidget {
                 items.push(SelectionItem {
                     name: base_name.clone(),
                     description: base_description.clone(),
-                    is_current: Self::preset_matches_current(current_approval, current_sandbox, &preset),
+                    is_current: Self::preset_matches_current(
+                        current_approval,
+                        current_sandbox,
+                        &preset,
+                    ),
                     actions: default_actions,
                     dismiss_on_select: true,
                     disabled_reason: default_disabled_reason,
                     ..Default::default()
                 });
-
-
             } else {
                 items.push(SelectionItem {
                     name: base_name,
@@ -7434,8 +7433,7 @@ impl ChatWidget {
 
     fn on_all_tools_response(&mut self, ev: chaos_ipc::protocol::AllToolsResponseEvent) {
         // Forward to the app layer where the TileManager can open/populate the tools pane.
-        self.app_event_tx
-            .send(AppEvent::AllToolsReceived(ev));
+        self.app_event_tx.send(AppEvent::AllToolsReceived(ev));
     }
 
     fn on_list_mcp_tools(&mut self, ev: McpListToolsResponseEvent) {

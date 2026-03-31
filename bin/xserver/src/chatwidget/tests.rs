@@ -3175,7 +3175,6 @@ async fn plan_implementation_popup_skips_when_rate_limit_prompt_pending() {
     );
 }
 
-
 #[tokio::test]
 async fn exec_approval_emits_proposed_command_and_decision_history() {
     let (mut chat, mut rx, _op_rx) = make_chatwidget_manual(None).await;
@@ -6907,7 +6906,6 @@ async fn permissions_selection_emits_history_cell_when_current_is_selected() {
         "expected permissions update history message, got: {rendered}"
     );
 }
-
 
 #[tokio::test]
 async fn permissions_full_access_history_cell_emitted_only_after_confirmation() {

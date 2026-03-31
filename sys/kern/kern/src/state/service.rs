@@ -2,9 +2,9 @@ use std::collections::HashMap;
 use std::sync::Arc;
 
 use crate::AuthManager;
-use crate::catalog::Catalog;
 use crate::RolloutRecorder;
 use crate::analytics_client::AnalyticsEventsClient;
+use crate::catalog::Catalog;
 use crate::client::ModelClient;
 use crate::config::StartedNetworkProxy;
 use crate::exec_policy::ExecPolicyManager;

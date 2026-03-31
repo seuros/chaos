@@ -1,5 +1,6 @@
 pub mod account;
 pub mod api;
+pub mod clamp_bridge;
 mod process_id;
 pub use process_id::ProcessId;
 pub mod approvals;

@@ -1,10 +1,15 @@
 use super::AuthRequestTelemetryContext;
+use super::ClampLocalToolKind;
+use super::ClampToolRouting;
 use super::ModelClient;
 use super::PendingUnauthorizedRetry;
 use super::UnauthorizedRecoveryExecution;
 use super::clamp_permission_mode;
+use super::clamp_tool_routing;
 use super::render_clamp_full_prompt;
 use super::render_latest_clamp_user_message;
+use crate::client::CLAMP_NATIVE_PASSTHROUGH_TOOLS;
+use crate::client::build_clamp_disallowed_tools;
 use chaos_ipc::ProcessId;
 use chaos_ipc::models::ContentItem;
 use chaos_ipc::models::FunctionCallOutputPayload;
@@ -204,6 +209,93 @@ fn clamp_permission_mode_matches_codex_session_start_mapping() {
     );
     assert_eq!(clamp_permission_mode(AskForApproval::OnRequest), "default");
     assert_eq!(clamp_permission_mode(AskForApproval::OnFailure), "default");
+}
+
+#[test]
+fn clamp_tool_routing_keeps_websearch_passthrough() {
+    assert_eq!(
+        clamp_tool_routing("WebSearch"),
+        Some(ClampToolRouting::Passthrough)
+    );
+    assert_eq!(
+        clamp_tool_routing("WebFetch"),
+        Some(ClampToolRouting::Passthrough)
+    );
+}
+
+#[test]
+fn clamp_tool_routing_maps_supported_local_tools() {
+    assert_eq!(
+        clamp_tool_routing("Bash"),
+        Some(ClampToolRouting::Local {
+            local_tool_name: "exec_command",
+            kind: ClampLocalToolKind::Shell,
+        })
+    );
+    assert_eq!(
+        clamp_tool_routing("Read"),
+        Some(ClampToolRouting::Local {
+            local_tool_name: "read_file",
+            kind: ClampLocalToolKind::FsRead,
+        })
+    );
+    assert_eq!(
+        clamp_tool_routing("NotebookRead"),
+        Some(ClampToolRouting::Local {
+            local_tool_name: "read_file",
+            kind: ClampLocalToolKind::FsRead,
+        })
+    );
+    assert_eq!(
+        clamp_tool_routing("Write"),
+        Some(ClampToolRouting::Local {
+            local_tool_name: "apply_patch",
+            kind: ClampLocalToolKind::FsWrite,
+        })
+    );
+    assert_eq!(
+        clamp_tool_routing("Grep"),
+        Some(ClampToolRouting::Local {
+            local_tool_name: "read_file",
+            kind: ClampLocalToolKind::FsReadPathOptional,
+        })
+    );
+}
+
+#[test]
+fn clamp_tool_routing_rejects_unregistered_tools() {
+    assert_eq!(clamp_tool_routing("Task"), None);
+}
+
+#[test]
+fn build_clamp_disallowed_tools_blocks_local_and_unsupported_builtins() {
+    let disallowed = build_clamp_disallowed_tools();
+    for expected in [
+        "Bash",
+        "Read",
+        "NotebookRead",
+        "Write",
+        "Edit",
+        "MultiEdit",
+        "NotebookEdit",
+        "Glob",
+        "Grep",
+        "LS",
+        "Task",
+        "TodoRead",
+        "TodoWrite",
+    ] {
+        assert!(
+            disallowed.iter().any(|tool| tool == expected),
+            "missing {expected}"
+        );
+    }
+    for allowed in CLAMP_NATIVE_PASSTHROUGH_TOOLS {
+        assert!(
+            !disallowed.iter().any(|tool| tool == allowed),
+            "{allowed} should stay native"
+        );
+    }
 }
 
 #[test]

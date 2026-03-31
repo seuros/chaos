@@ -349,7 +349,6 @@ async fn run_event_loop(
                     // Events forwarded as notifications — no special handling.
                     EventMsg::PlanDelta(_)
                     | EventMsg::Warning(_)
-
                     | EventMsg::SessionConfigured(_)
                     | EventMsg::AgentMessageDelta(_)
                     | EventMsg::AgentReasoningDelta(_)

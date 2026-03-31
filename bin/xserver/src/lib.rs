@@ -38,8 +38,8 @@ use chaos_kern::models_manager::collaboration_mode_presets::CollaborationModesCo
 use chaos_kern::path_utils;
 use chaos_kern::state_db::get_state_db;
 use chaos_kern::terminal::Multiplexer;
-use chaos_proc::log_db;
 use chaos_proc::StateRuntime;
+use chaos_proc::log_db;
 use chaos_realpath::AbsolutePathBuf;
 use cwd_prompt::CwdPromptAction;
 use cwd_prompt::CwdPromptOutcome;

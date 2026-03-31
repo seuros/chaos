@@ -25,6 +25,7 @@ use crate::multi_agents::format_agent_picker_item_name;
 use crate::multi_agents::next_agent_shortcut_matches;
 use crate::multi_agents::previous_agent_shortcut_matches;
 use crate::pager_overlay::Overlay;
+use crate::panes::tool_list::ToolListPane;
 use crate::render::highlight::highlight_bash_to_lines;
 use crate::render::renderable::Renderable;
 use crate::resume_picker::SessionSelection;
@@ -32,7 +33,6 @@ use crate::side_panel::LOG_PANEL_BACKFILL_LIMIT;
 use crate::side_panel::LOG_PANEL_POLL_INTERVAL;
 use crate::side_panel::LogPanelState;
 use crate::side_panel::split_main_and_panel;
-use crate::panes::tool_list::ToolListPane;
 use crate::tile_manager::{PaneKind, TileManager};
 use crate::tui;
 use crate::tui::TuiEvent;
@@ -122,7 +122,6 @@ enum ProcessInteractiveRequest {
     Approval(ApprovalRequest),
     McpServerElicitation(McpServerElicitationFormRequest),
 }
-
 
 /// Baseline cadence for periodic stream commit animation ticks.
 ///
@@ -785,7 +784,6 @@ impl App {
             ));
         }
     }
-
 
     fn try_set_approval_policy_on_config(
         &mut self,
@@ -2068,57 +2066,54 @@ impl App {
                     } else {
                         desired.max(terminal_size.height)
                     };
-                    tui.draw(
-                        draw_height,
-                        |frame| {
-                            let (main_area, log_area) =
-                                split_main_and_panel(frame.area(), self.log_panel.is_visible());
+                    tui.draw(draw_height, |frame| {
+                        let (main_area, log_area) =
+                            split_main_and_panel(frame.area(), self.log_panel.is_visible());
 
-                            if self.tile_manager.is_single_pane() {
-                                // Fast path: no tiling overhead, identical to pre-hypertile.
-                                self.chat_widget.render(main_area, frame.buffer);
-                                if let Some((x, y)) = self.chat_widget.cursor_pos(main_area) {
-                                    frame.set_cursor_position((x, y));
+                        if self.tile_manager.is_single_pane() {
+                            // Fast path: no tiling overhead, identical to pre-hypertile.
+                            self.chat_widget.render(main_area, frame.buffer);
+                            if let Some((x, y)) = self.chat_widget.cursor_pos(main_area) {
+                                frame.set_cursor_position((x, y));
+                            }
+                        } else {
+                            // Tiled layout: split main_area and dispatch to
+                            // per-pane renderers via hypertile.
+                            let chat_widget = &self.chat_widget;
+                            let tool_list_pane = &self.tool_list_pane;
+                            let pane_map = &self.tile_manager.pane_map;
+                            let hypertile = &mut self.tile_manager.hypertile;
+                            HypertileWidget::new(|pane, buf| match pane_map.get(&pane.id) {
+                                Some(PaneKind::Chat) => {
+                                    chat_widget.render(pane.rect, buf);
                                 }
-                            } else {
-                                // Tiled layout: split main_area and dispatch to
-                                // per-pane renderers via hypertile.
-                                let chat_widget = &self.chat_widget;
-                                let tool_list_pane = &self.tool_list_pane;
-                                let pane_map = &self.tile_manager.pane_map;
-                                let hypertile = &mut self.tile_manager.hypertile;
-                                HypertileWidget::new(|pane, buf| {
-                                    match pane_map.get(&pane.id) {
-                                        Some(PaneKind::Chat) => {
-                                            chat_widget.render(pane.rect, buf);
-                                        }
-                                        Some(PaneKind::ToolList) => {
-                                            tool_list_pane.render(pane.rect, buf);
-                                        }
-                                        _ => {}
-                                    }
-                                })
-                                .render(main_area, frame.buffer, hypertile);
+                                Some(PaneKind::ToolList) => {
+                                    tool_list_pane.render(pane.rect, buf);
+                                }
+                                _ => {}
+                            })
+                            .render(
+                                main_area,
+                                frame.buffer,
+                                hypertile,
+                            );
 
-                                // Place cursor in chat pane.
-                                if self.tile_manager.focused() == Some(PaneId::ROOT) {
-                                    if let Some(chat_rect) =
-                                        self.tile_manager.hypertile_mut().pane_rect(PaneId::ROOT)
-                                    {
-                                        if let Some((x, y)) =
-                                            self.chat_widget.cursor_pos(chat_rect)
-                                        {
-                                            frame.set_cursor_position((x, y));
-                                        }
+                            // Place cursor in chat pane.
+                            if self.tile_manager.focused() == Some(PaneId::ROOT) {
+                                if let Some(chat_rect) =
+                                    self.tile_manager.hypertile_mut().pane_rect(PaneId::ROOT)
+                                {
+                                    if let Some((x, y)) = self.chat_widget.cursor_pos(chat_rect) {
+                                        frame.set_cursor_position((x, y));
                                     }
                                 }
                             }
+                        }
 
-                            if let Some(log_area) = log_area {
-                                self.log_panel.render(log_area, frame.buffer);
-                            }
-                        },
-                    )?;
+                        if let Some(log_area) = log_area {
+                            self.log_panel.render(log_area, frame.buffer);
+                        }
+                    })?;
                     if self.log_panel.is_visible() {
                         tui.frame_requester()
                             .schedule_frame_in(LOG_PANEL_POLL_INTERVAL);
@@ -3530,7 +3525,11 @@ impl App {
         tui.frame_requester().schedule_frame();
     }
 
-    async fn refresh_log_panel_if_needed(&mut self, tui: &mut tui::Tui, area: ratatui::layout::Rect) {
+    async fn refresh_log_panel_if_needed(
+        &mut self,
+        tui: &mut tui::Tui,
+        area: ratatui::layout::Rect,
+    ) {
         if !self.log_panel.is_visible() {
             return;
         }
@@ -3564,7 +3563,10 @@ impl App {
             return;
         };
         match state_db
-            .tail_backfill(&Self::log_query_for_process(process_id), LOG_PANEL_BACKFILL_LIMIT)
+            .tail_backfill(
+                &Self::log_query_for_process(process_id),
+                LOG_PANEL_BACKFILL_LIMIT,
+            )
             .await
         {
             Ok(batch) => {
@@ -3644,7 +3646,6 @@ impl App {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use chaos_kern::config::types::ApprovalsReviewer;
     use crate::app_backtrack::BacktrackSelection;
     use crate::app_backtrack::BacktrackState;
     use crate::app_backtrack::user_count;
@@ -3680,6 +3681,7 @@ mod tests {
     use chaos_kern::ChaosAuth;
     use chaos_kern::config::ConfigBuilder;
     use chaos_kern::config::ConfigOverrides;
+    use chaos_kern::config::types::ApprovalsReviewer;
     use chaos_kern::config::types::ModelAvailabilityNuxConfig;
     use chaos_syslog::SessionTelemetry;
     use crossterm::event::KeyModifiers;

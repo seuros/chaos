@@ -6,8 +6,10 @@
 
 use std::collections::{HashMap, VecDeque};
 use std::path::PathBuf;
+use std::sync::Arc;
 use std::sync::atomic::{AtomicU64, Ordering};
 
+use futures::future::BoxFuture;
 use serde_json::Value;
 use tokio::io::{AsyncBufReadExt, AsyncWriteExt, BufReader, BufWriter};
 use tokio::process::{Child, ChildStdin, ChildStdout, Command};
@@ -18,11 +20,31 @@ use crate::protocol::{
     ControlResponse, Message, UserMessage, control_request_envelope, initialize_request,
 };
 
+/// Async callback for Claude Code `can_use_tool` requests.
+pub type ToolPermissionHandler = Arc<
+    dyn Fn(String, Value, Option<String>) -> BoxFuture<'static, Result<Value, String>>
+        + Send
+        + Sync,
+>;
+
+/// Async callback for Claude Code `hook_callback` requests.
+pub type HookCallbackHandler = Arc<
+    dyn Fn(String, Value, Option<String>) -> BoxFuture<'static, Result<Value, String>>
+        + Send
+        + Sync,
+>;
+
+/// Async callback for Claude Code `mcp_message` requests.
+pub type McpMessageHandler =
+    Arc<dyn Fn(String, Value) -> BoxFuture<'static, Result<Value, String>> + Send + Sync>;
+
 /// Configuration for spawning the Claude Code subprocess.
-#[derive(Debug, Clone)]
+#[derive(Clone)]
 pub struct ClampConfig {
     /// Path to the `claude` binary. If None, we search PATH.
     pub cli_path: Option<PathBuf>,
+    /// Whether to launch Claude Code in bare mode.
+    pub bare_mode: bool,
     /// Working directory for the subprocess.
     pub cwd: Option<PathBuf>,
     /// System prompt to send (empty string = blank).
@@ -37,12 +59,47 @@ pub struct ClampConfig {
     pub allowed_tools: Vec<String>,
     /// Whether Claude Code's built-in tools may execute directly.
     pub allow_claude_code_tools: bool,
+    /// Optional handler for Claude Code permission requests.
+    pub tool_permission_handler: Option<ToolPermissionHandler>,
+    /// Optional handler for Claude Code hook callbacks.
+    pub hook_callback_handler: Option<HookCallbackHandler>,
+    /// Optional handler for Claude Code MCP messages.
+    pub mcp_message_handler: Option<McpMessageHandler>,
+}
+
+impl std::fmt::Debug for ClampConfig {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        f.debug_struct("ClampConfig")
+            .field("cli_path", &self.cli_path)
+            .field("bare_mode", &self.bare_mode)
+            .field("cwd", &self.cwd)
+            .field("system_prompt", &self.system_prompt)
+            .field("mcp_config", &self.mcp_config)
+            .field("permission_mode", &self.permission_mode)
+            .field("disallowed_tools", &self.disallowed_tools)
+            .field("allowed_tools", &self.allowed_tools)
+            .field("allow_claude_code_tools", &self.allow_claude_code_tools)
+            .field(
+                "tool_permission_handler",
+                &self.tool_permission_handler.as_ref().map(|_| "<handler>"),
+            )
+            .field(
+                "hook_callback_handler",
+                &self.hook_callback_handler.as_ref().map(|_| "<handler>"),
+            )
+            .field(
+                "mcp_message_handler",
+                &self.mcp_message_handler.as_ref().map(|_| "<handler>"),
+            )
+            .finish()
+    }
 }
 
 impl Default for ClampConfig {
     fn default() -> Self {
         Self {
             cli_path: None,
+            bare_mode: true,
             cwd: None,
             system_prompt: Some(String::new()),
             mcp_config: None,
@@ -50,6 +107,9 @@ impl Default for ClampConfig {
             disallowed_tools: vec![],
             allowed_tools: vec![],
             allow_claude_code_tools: false,
+            tool_permission_handler: None,
+            hook_callback_handler: None,
+            mcp_message_handler: None,
         }
     }
 }
@@ -91,6 +151,12 @@ pub struct ClampTransport {
     session_id: String,
     /// Whether Claude Code may use its own built-in tools directly.
     allow_claude_code_tools: bool,
+    /// Optional handler for permission requests.
+    tool_permission_handler: Option<ToolPermissionHandler>,
+    /// Optional handler for hook callbacks.
+    hook_callback_handler: Option<HookCallbackHandler>,
+    /// Optional handler for MCP messages.
+    mcp_message_handler: Option<McpMessageHandler>,
 }
 
 /// Runtime info about the clamped Claude Code subprocess.
@@ -138,6 +204,9 @@ fn build_command(cli_path: &PathBuf, config: &ClampConfig) -> Command {
     cmd.args(["--output-format", "stream-json"]);
     cmd.arg("--verbose");
     cmd.args(["--input-format", "stream-json"]);
+    if config.bare_mode {
+        cmd.arg("--bare");
+    }
 
     // Skip all setting discovery — we provide everything explicitly
     cmd.args(["--setting-sources", ""]);
@@ -258,6 +327,9 @@ impl ClampTransport {
             init_response: None,
             session_id: "default".to_string(),
             allow_claude_code_tools: config.allow_claude_code_tools,
+            tool_permission_handler: config.tool_permission_handler,
+            hook_callback_handler: config.hook_callback_handler,
+            mcp_message_handler: config.mcp_message_handler,
         })
     }
 
@@ -280,42 +352,46 @@ impl ClampTransport {
                 .map_err(|_| ClampError::Timeout(id.clone()))?
                 .ok_or(ClampError::Closed)?;
 
-            match msg {
-                Message::ControlResponse { response } => {
-                    let resp_id = response
-                        .get("request_id")
-                        .and_then(|v| v.as_str())
-                        .unwrap_or("");
+            let Some(resp_id) = control_response_request_id(&msg) else {
+                if let Some(queued) = self.handle_message(msg).await? {
+                    self.queued_messages.push_back(queued);
+                }
+                continue;
+            };
 
-                    if resp_id == id {
-                        let subtype = response
-                            .get("subtype")
-                            .and_then(|v| v.as_str())
-                            .unwrap_or("");
-                        if subtype == "error" {
-                            let err = response
-                                .get("error")
-                                .and_then(|v| v.as_str())
-                                .unwrap_or("unknown error")
-                                .to_string();
-                            return Err(ClampError::ControlError(err));
-                        }
-                        let result = response
-                            .get("response")
-                            .cloned()
-                            .unwrap_or(Value::Object(Default::default()));
-                        self.initialized = true;
-                        self.init_response = Some(result.clone());
-                        info!("claude subprocess initialized");
-                        return Ok(result);
-                    }
-                    // Not our response, discard
+            if resp_id != id {
+                if let Some(queued) = self.handle_message(msg).await? {
+                    self.queued_messages.push_back(queued);
                 }
-                _ => {
-                    // Discard non-control messages during init
-                    debug!("discarding message during init");
-                }
+                continue;
             }
+
+            let Message::ControlResponse { response } = msg else {
+                continue;
+            };
+            let subtype = response
+                .get("subtype")
+                .and_then(|v| v.as_str())
+                .unwrap_or("");
+            if subtype == "error" {
+                let err = response
+                    .get("error")
+                    .and_then(|v| v.as_str())
+                    .unwrap_or("unknown error")
+                    .to_string();
+                return Err(ClampError::ControlError(err));
+            }
+            let result = response
+                .get("response")
+                .cloned()
+                .unwrap_or(Value::Object(Default::default()));
+            if let Some(models) = result.get("models").cloned() {
+                crate::set_cached_models(models);
+            }
+            self.initialized = true;
+            self.init_response = Some(result.clone());
+            info!("claude subprocess initialized");
+            return Ok(result);
         }
     }
 
@@ -536,7 +612,24 @@ impl ClampTransport {
 
         match subtype {
             "hook_callback" => {
-                let response = ControlResponse::success(request_id, serde_json::json!({}));
+                let callback_id = request
+                    .get("callback_id")
+                    .and_then(|v| v.as_str())
+                    .unwrap_or_default()
+                    .to_string();
+                let input = request.get("input").cloned().unwrap_or(Value::Null);
+                let tool_use_id = request
+                    .get("tool_use_id")
+                    .and_then(|v| v.as_str())
+                    .map(ToOwned::to_owned);
+                let payload = if let Some(handler) = &self.hook_callback_handler {
+                    handler(callback_id, input, tool_use_id)
+                        .await
+                        .map_err(ClampError::ControlError)?
+                } else {
+                    serde_json::json!({})
+                };
+                let response = ControlResponse::success(request_id, payload);
                 self.write_json(&serde_json::to_value(response)?).await?;
             }
             "can_use_tool" => {
@@ -544,28 +637,28 @@ impl ClampTransport {
                     .get("tool_name")
                     .and_then(|v| v.as_str())
                     .unwrap_or("unknown");
-                if self.allow_claude_code_tools {
+                let input = request.get("input").cloned().unwrap_or(Value::Null);
+                let tool_use_id = request
+                    .get("tool_use_id")
+                    .and_then(|v| v.as_str())
+                    .map(ToOwned::to_owned);
+                let payload = if let Some(handler) = &self.tool_permission_handler {
+                    handler(tool_name.to_string(), input.clone(), tool_use_id)
+                        .await
+                        .map_err(ClampError::ControlError)?
+                } else if self.allow_claude_code_tools {
                     debug!(tool_name, "allowing Claude Code built-in tool use");
-                    let input = request.get("input").cloned().unwrap_or(Value::Null);
-                    let response = ControlResponse::success(
-                        request_id,
-                        serde_json::json!({
-                            "behavior": "allow",
-                            "updatedInput": input
-                        }),
-                    );
-                    self.write_json(&serde_json::to_value(response)?).await?;
+                    default_tool_permission_response(/*allow*/ true, input, None)
                 } else {
                     debug!(tool_name, "denying Claude Code built-in tool use");
-                    let response = ControlResponse::success(
-                        request_id,
-                        serde_json::json!({
-                            "behavior": "deny",
-                            "message": "Claude Code built-in tools are disabled in clamp mode; use Chaos-managed tools instead."
-                        }),
-                    );
-                    self.write_json(&serde_json::to_value(response)?).await?;
-                }
+                    default_tool_permission_response(
+                        /*allow*/ false,
+                        input,
+                        Some("Claude Code built-in tools are disabled in clamp mode; use Chaos-managed tools instead.".to_string()),
+                    )
+                };
+                let response = ControlResponse::success(request_id, payload);
+                self.write_json(&serde_json::to_value(response)?).await?;
             }
             "mcp_message" => {
                 let server_name = request
@@ -576,14 +669,13 @@ impl ClampTransport {
 
                 debug!(server_name, "MCP message from claude");
 
-                let mcp_response = serde_json::json!({
-                    "jsonrpc": "2.0",
-                    "id": mcp_message.get("id"),
-                    "error": {
-                        "code": -32601,
-                        "message": format!("MCP routing not yet implemented for server '{server_name}'")
-                    }
-                });
+                let mcp_response = if let Some(handler) = &self.mcp_message_handler {
+                    handler(server_name.to_string(), mcp_message.clone())
+                        .await
+                        .map_err(ClampError::ControlError)?
+                } else {
+                    default_mcp_error_response(server_name, &mcp_message)
+                };
 
                 let response = ControlResponse::success(
                     request_id,
@@ -603,6 +695,42 @@ impl ClampTransport {
 
         Ok(())
     }
+}
+
+fn control_response_request_id(msg: &Message) -> Option<&str> {
+    let Message::ControlResponse { response } = msg else {
+        return None;
+    };
+    response.get("request_id").and_then(|v| v.as_str())
+}
+
+fn default_tool_permission_response(
+    allow: bool,
+    input: Value,
+    deny_message: Option<String>,
+) -> Value {
+    if allow {
+        serde_json::json!({
+            "behavior": "allow",
+            "updatedInput": input
+        })
+    } else {
+        serde_json::json!({
+            "behavior": "deny",
+            "message": deny_message.unwrap_or_else(|| "tool use denied".to_string())
+        })
+    }
+}
+
+fn default_mcp_error_response(server_name: &str, request_message: &Value) -> Value {
+    serde_json::json!({
+        "jsonrpc": "2.0",
+        "id": request_message.get("id"),
+        "error": {
+            "code": -32601,
+            "message": format!("MCP routing not yet implemented for server '{server_name}'")
+        }
+    })
 }
 
 /// Background task: read stdout line-by-line, parse JSON, send to channel.
@@ -663,5 +791,75 @@ async fn read_stdout(stdout: ChildStdout, tx: mpsc::Sender<Message>) {
                 }
             }
         }
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn default_tool_permission_allow_preserves_input() {
+        let input = serde_json::json!({"command": "ls"});
+        let value = default_tool_permission_response(true, input.clone(), None);
+        assert_eq!(value["behavior"], "allow");
+        assert_eq!(value["updatedInput"], input);
+    }
+
+    #[test]
+    fn default_tool_permission_deny_sets_message() {
+        let value = default_tool_permission_response(false, Value::Null, Some("nope".to_string()));
+        assert_eq!(value["behavior"], "deny");
+        assert_eq!(value["message"], "nope");
+    }
+
+    #[test]
+    fn default_mcp_error_reuses_jsonrpc_id() {
+        let request = serde_json::json!({"id": 42, "method": "tools/call"});
+        let response = default_mcp_error_response("chaos", &request);
+        assert_eq!(response["jsonrpc"], "2.0");
+        assert_eq!(response["id"], 42);
+        assert_eq!(response["error"]["code"], -32601);
+    }
+
+    #[test]
+    fn control_response_request_id_extracts_id() {
+        let msg = Message::ControlResponse {
+            response: serde_json::json!({
+                "request_id": "req_123",
+                "subtype": "success"
+            }),
+        };
+        assert_eq!(control_response_request_id(&msg), Some("req_123"));
+    }
+
+    #[test]
+    fn build_command_enables_bare_mode_by_default() {
+        let config = ClampConfig::default();
+        let command = build_command(&PathBuf::from("claude"), &config);
+        let args: Vec<_> = command
+            .as_std()
+            .get_args()
+            .map(|arg| arg.to_string_lossy().into_owned())
+            .collect();
+        assert!(args.iter().any(|arg| arg == "--bare"));
+    }
+
+    #[test]
+    fn build_command_includes_disallowed_tools() {
+        let config = ClampConfig {
+            disallowed_tools: vec!["Bash".to_string(), "Read".to_string()],
+            ..Default::default()
+        };
+        let command = build_command(&PathBuf::from("claude"), &config);
+        let args: Vec<_> = command
+            .as_std()
+            .get_args()
+            .map(|arg| arg.to_string_lossy().into_owned())
+            .collect();
+        assert!(
+            args.windows(2)
+                .any(|window| { window[0] == "--disallowedTools" && window[1] == "Bash,Read" })
+        );
     }
 }

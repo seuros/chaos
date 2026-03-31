@@ -18,6 +18,9 @@ pub use transport::ClampConfig;
 pub use transport::ClampError;
 pub use transport::ClampInfo;
 pub use transport::ClampTransport;
+pub use transport::HookCallbackHandler;
+pub use transport::McpMessageHandler;
+pub use transport::ToolPermissionHandler;
 
 use std::sync::Mutex;
 

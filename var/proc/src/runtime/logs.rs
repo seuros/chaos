@@ -372,10 +372,7 @@ WHERE id IN (
         limit: Option<usize>,
     ) -> anyhow::Result<LogTailBatch> {
         let rows = self.query_logs_after(query, cursor.last_id, limit).await?;
-        let last_id = rows
-            .last()
-            .map(|row| row.id)
-            .unwrap_or(cursor.last_id);
+        let last_id = rows.last().map(|row| row.id).unwrap_or(cursor.last_id);
         Ok(LogTailBatch {
             rows,
             cursor: LogTailCursor { last_id },
@@ -487,9 +484,7 @@ fn push_log_filters<'a>(builder: &mut QueryBuilder<'a, Sqlite>, query: &'a LogQu
         builder.push("process_id = ").push_bind(process_id.as_str());
         if query.include_related_processless {
             builder.push(" OR (process_id IS NULL AND process_uuid IN (");
-            builder.push(
-                "SELECT process_uuid FROM logs WHERE process_id = ",
-            );
+            builder.push("SELECT process_uuid FROM logs WHERE process_id = ");
             builder.push_bind(process_id.as_str());
             builder.push(
                 " AND process_uuid IS NOT NULL ORDER BY ts DESC, ts_nanos DESC, id DESC LIMIT 1",

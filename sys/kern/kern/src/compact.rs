@@ -2,13 +2,13 @@ use std::sync::Arc;
 
 use crate::ModelProviderInfo;
 use crate::Prompt;
-use crate::client::ModelClientSession;
-use crate::client_common::ResponseEvent;
 #[cfg(test)]
 use crate::chaos::PreviousTurnSettings;
 use crate::chaos::Session;
 use crate::chaos::TurnContext;
 use crate::chaos::get_last_assistant_message_from_turn;
+use crate::client::ModelClientSession;
+use crate::client_common::ResponseEvent;
 use crate::error::ChaosErr;
 use crate::error::Result as CodexResult;
 use crate::protocol::CompactedItem;

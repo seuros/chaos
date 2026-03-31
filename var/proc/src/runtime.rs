@@ -52,8 +52,8 @@ use tracing::warn;
 mod agent_jobs;
 mod backfill;
 mod logs;
-mod message_history;
 mod memories;
+mod message_history;
 mod processes;
 #[cfg(test)]
 mod test_support;
@@ -162,7 +162,9 @@ async fn open_sqlite(path: &Path, migrator: &'static Migrator) -> anyhow::Result
         .connect_with(options)
         .await?;
     if let Err(err) = migrator.run(&pool).await {
-        if is_modified_migration_error(&err) && has_existing_user_schema(&pool).await.unwrap_or(false) {
+        if is_modified_migration_error(&err)
+            && has_existing_user_schema(&pool).await.unwrap_or(false)
+        {
             warn!(
                 db_path = %path.display(),
                 error = %err,

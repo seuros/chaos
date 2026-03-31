@@ -3,11 +3,11 @@ use std::pin::Pin;
 use std::sync::Arc;
 use std::sync::Mutex;
 
+use crate::chaos::TurnContext;
+use crate::chaos::run_turn;
 use crate::client::ModelClient;
 use crate::client::ModelClientSession;
 use crate::client_common::Prompt;
-use crate::chaos::TurnContext;
-use crate::chaos::run_turn;
 use crate::error::Result as CodexResult;
 use crate::state::TaskKind;
 use chaos_ipc::user_input::UserInput;

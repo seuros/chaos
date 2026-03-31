@@ -1,8 +1,8 @@
 use std::time::{Duration, Instant};
 
-use jiff::Timestamp;
 use chaos_ipc::ProcessId;
 use chaos_proc::{LogRow, LogTailBatch, LogTailCursor};
+use jiff::Timestamp;
 use ratatui::buffer::Buffer;
 use ratatui::layout::{Constraint, Direction, Layout, Rect};
 use ratatui::prelude::Widget;
@@ -170,12 +170,16 @@ impl LogPanelState {
         }
 
         if self.process_id.is_none() {
-            lines.push(Line::from(LOG_PANEL_WAITING_MESSAGE).style(Style::default().fg(Color::DarkGray)));
+            lines.push(
+                Line::from(LOG_PANEL_WAITING_MESSAGE).style(Style::default().fg(Color::DarkGray)),
+            );
             return lines;
         }
 
         if self.rows.is_empty() {
-            lines.push(Line::from(LOG_PANEL_EMPTY_MESSAGE).style(Style::default().fg(Color::DarkGray)));
+            lines.push(
+                Line::from(LOG_PANEL_EMPTY_MESSAGE).style(Style::default().fg(Color::DarkGray)),
+            );
             return lines;
         }
 
@@ -238,28 +242,26 @@ fn render_log_row(row: &LogRow) -> Line<'static> {
     let level = format!("{:<5}", row.level);
     let target = row.target.clone();
     let message = row.message.clone().unwrap_or_default();
-    let process_marker = row
-        .process_id
-        .as_ref()
-        .map(|_| "")
-        .unwrap_or(" *");
-    Line::from(format!("{timestamp} {level} {target}{process_marker} {message}"))
+    let process_marker = row.process_id.as_ref().map(|_| "").unwrap_or(" *");
+    Line::from(format!(
+        "{timestamp} {level} {target}{process_marker} {message}"
+    ))
 }
 
 fn format_timestamp(ts: i64, ts_nanos: i64) -> String {
     let _ = ts_nanos;
     Timestamp::from_second(ts)
         .ok()
-        .map(|dt| dt.to_zoned(jiff::tz::TimeZone::UTC).strftime("%H:%M:%S").to_string())
+        .map(|dt| {
+            dt.to_zoned(jiff::tz::TimeZone::UTC)
+                .strftime("%H:%M:%S")
+                .to_string()
+        })
         .unwrap_or_else(|| format!("{ts}"))
 }
 
 fn short_process_id(process_id: ProcessId) -> String {
-    process_id
-        .to_string()
-        .chars()
-        .take(8)
-        .collect::<String>()
+    process_id.to_string().chars().take(8).collect::<String>()
 }
 
 #[cfg(test)]
@@ -269,8 +271,7 @@ mod tests {
     use insta::assert_snapshot;
 
     fn fixed_process_id() -> ProcessId {
-        ProcessId::from_string("019d40be-0000-0000-0000-000000000000")
-            .expect("fixed process id")
+        ProcessId::from_string("019d40be-0000-0000-0000-000000000000").expect("fixed process id")
     }
 
     fn sample_row(id: i64, ts: i64, message: &str) -> LogRow {

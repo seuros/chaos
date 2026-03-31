@@ -78,8 +78,7 @@ impl TileManager {
         }
         // Otherwise split from chat (focus chat first so the split is adjacent).
         let _ = self.hypertile.focus_pane(PaneId::ROOT);
-        self.split_focused(direction, kind)
-            .unwrap_or(PaneId::ROOT)
+        self.split_focused(direction, kind).unwrap_or(PaneId::ROOT)
     }
 
     /// Close the focused pane. Returns the closed pane's kind, or `None` if it

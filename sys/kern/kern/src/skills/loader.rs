@@ -206,15 +206,8 @@ where
     outcome
 }
 
-pub(crate) fn skill_roots(
-    config_layer_stack: &ConfigLayerStack,
-    cwd: &Path,
-) -> Vec<SkillRoot> {
-    skill_roots_with_home_dir(
-        config_layer_stack,
-        cwd,
-        home_dir().as_deref(),
-    )
+pub(crate) fn skill_roots(config_layer_stack: &ConfigLayerStack, cwd: &Path) -> Vec<SkillRoot> {
+    skill_roots_with_home_dir(config_layer_stack, cwd, home_dir().as_deref())
 }
 
 fn skill_roots_with_home_dir(

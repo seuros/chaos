@@ -48,8 +48,8 @@ impl ToolListPane {
         block.render(area, buf);
 
         if self.tools.is_empty() {
-            let loading = Paragraph::new("Loading tools...")
-                .style(Style::default().fg(Color::DarkGray));
+            let loading =
+                Paragraph::new("Loading tools...").style(Style::default().fg(Color::DarkGray));
             loading.render(inner, buf);
             return;
         }
@@ -63,21 +63,16 @@ impl ToolListPane {
                 if current_source.is_some() {
                     lines.push(Line::from(""));
                 }
-                lines.push(Line::from(vec![
-                    Span::styled(
-                        format!("  [{}]", tool.source),
-                        Style::default()
-                            .fg(Color::Cyan)
-                            .add_modifier(Modifier::BOLD),
-                    ),
-                ]));
+                lines.push(Line::from(vec![Span::styled(
+                    format!("  [{}]", tool.source),
+                    Style::default()
+                        .fg(Color::Cyan)
+                        .add_modifier(Modifier::BOLD),
+                )]));
                 current_source = Some(tool.source.clone());
             }
 
-            let name_span = Span::styled(
-                format!("    {}", tool.name),
-                Style::default().bold(),
-            );
+            let name_span = Span::styled(format!("    {}", tool.name), Style::default().bold());
             let desc_span = if tool.description.is_empty() {
                 Span::raw("")
             } else {

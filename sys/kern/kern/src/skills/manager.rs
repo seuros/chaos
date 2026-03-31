@@ -31,10 +31,7 @@ pub struct SkillsManager {
 }
 
 impl SkillsManager {
-    pub fn new(
-        chaos_home: PathBuf,
-        bundled_skills_enabled: bool,
-    ) -> Self {
+    pub fn new(chaos_home: PathBuf, bundled_skills_enabled: bool) -> Self {
         let manager = Self {
             chaos_home,
             cache_by_cwd: RwLock::new(HashMap::new()),
@@ -66,10 +63,7 @@ impl SkillsManager {
     }
 
     pub(crate) fn skill_roots_for_config(&self, config: &Config) -> Vec<SkillRoot> {
-        let mut roots = skill_roots(
-            &config.config_layer_stack,
-            &config.cwd,
-        );
+        let mut roots = skill_roots(&config.config_layer_stack, &config.cwd);
         if !config.bundled_skills_enabled() {
             roots.retain(|root| root.scope != SkillScope::System);
         }
@@ -131,10 +125,7 @@ impl SkillsManager {
             }
         };
 
-        let mut roots = skill_roots(
-            &config_layer_stack,
-            cwd,
-        );
+        let mut roots = skill_roots(&config_layer_stack, cwd);
         if !bundled_skills_enabled_from_stack(&config_layer_stack) {
             roots.retain(|root| root.scope != SkillScope::System);
         }

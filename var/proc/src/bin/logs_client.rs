@@ -90,14 +90,13 @@ async fn main() -> anyhow::Result<()> {
         .unwrap_or_else(|| PathBuf::from("."));
     let runtime = StateRuntime::init(chaos_home, "logs-client".to_string()).await?;
 
-    let mut cursor =
-        print_backfill(runtime.as_ref(), &filter, args.backfill, args.compact).await?;
+    let mut cursor = print_backfill(runtime.as_ref(), &filter, args.backfill, args.compact).await?;
 
     let poll_interval = Duration::from_millis(args.poll_ms);
     loop {
         let polled = fetch_new_rows(runtime.as_ref(), &filter, &cursor).await?;
         for row in &polled.rows {
-            println!("{}", format_row(&row, args.compact));
+            println!("{}", format_row(row, args.compact));
         }
         cursor = polled.cursor;
         tokio::time::sleep(poll_interval).await;
@@ -196,7 +195,7 @@ async fn print_backfill(
 ) -> anyhow::Result<LogTailCursor> {
     let backfill_batch = fetch_backfill(runtime, filter, backfill).await?;
     for row in backfill_batch.rows {
-        println!("{}", format_row(&row, compact));
+        println!("{}", format_row(row, compact));
     }
     Ok(backfill_batch.cursor)
 }

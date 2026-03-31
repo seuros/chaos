@@ -99,11 +99,10 @@ async fn prune_message_history_after_insert(
     }
 
     let max_bytes = i64::try_from(max_bytes).unwrap_or(i64::MAX);
-    let total_bytes: i64 = sqlx::query_scalar(
-        "SELECT COALESCE(SUM(estimated_bytes), 0) FROM message_history",
-    )
-    .fetch_one(&mut *tx)
-    .await?;
+    let total_bytes: i64 =
+        sqlx::query_scalar("SELECT COALESCE(SUM(estimated_bytes), 0) FROM message_history")
+            .fetch_one(&mut *tx)
+            .await?;
 
     if total_bytes <= max_bytes {
         return Ok(());

@@ -5,17 +5,18 @@ use chaos_ipc::ProcessId;
 use pretty_assertions::assert_eq;
 use tempfile::TempDir;
 
-async fn test_config_and_state_db() -> (TempDir, crate::config::Config, crate::state_db::StateDbHandle)
-{
+async fn test_config_and_state_db() -> (
+    TempDir,
+    crate::config::Config,
+    crate::state_db::StateDbHandle,
+) {
     let chaos_home = TempDir::new().expect("create temp dir");
     let config = ConfigBuilder::default()
         .chaos_home(chaos_home.path().to_path_buf())
         .build()
         .await
         .expect("load config");
-    let state_db = state_db::init(&config)
-        .await
-        .expect("initialize state db");
+    let state_db = state_db::init(&config).await.expect("initialize state db");
     (chaos_home, config, state_db)
 }
 
@@ -104,9 +105,14 @@ async fn append_entry_trims_history_when_beyond_max_bytes() {
     let entry_one = "a".repeat(200);
     let entry_two = "b".repeat(200);
 
-    append_entry(&entry_one, &conversation_id, Some(state_db.as_ref()), &config)
-        .await
-        .expect("write first entry");
+    append_entry(
+        &entry_one,
+        &conversation_id,
+        Some(state_db.as_ref()),
+        &config,
+    )
+    .await
+    .expect("write first entry");
 
     let first_entry_len = estimated_entry_bytes(&HistoryEntry {
         conversation_id: conversation_id.to_string(),
@@ -116,9 +122,14 @@ async fn append_entry_trims_history_when_beyond_max_bytes() {
     let limit_bytes = first_entry_len + 10;
     config.history.max_bytes = Some(usize::try_from(limit_bytes).expect("limit fits"));
 
-    append_entry(&entry_two, &conversation_id, Some(state_db.as_ref()), &config)
-        .await
-        .expect("write second entry");
+    append_entry(
+        &entry_two,
+        &conversation_id,
+        Some(state_db.as_ref()),
+        &config,
+    )
+    .await
+    .expect("write second entry");
 
     let (log_id, count) = history_metadata(Some(state_db.as_ref())).await;
     assert_eq!(count, 1);
@@ -150,21 +161,36 @@ async fn append_entry_trims_history_to_soft_cap() {
     let short_entry_len = estimated_entry_bytes(&short_entry_record);
     let long_entry_len = estimated_entry_bytes(&long_entry_record);
 
-    append_entry(&short_entry, &conversation_id, Some(state_db.as_ref()), &config)
-        .await
-        .expect("write first entry");
-    append_entry(&long_entry, &conversation_id, Some(state_db.as_ref()), &config)
-        .await
-        .expect("write second entry");
+    append_entry(
+        &short_entry,
+        &conversation_id,
+        Some(state_db.as_ref()),
+        &config,
+    )
+    .await
+    .expect("write first entry");
+    append_entry(
+        &long_entry,
+        &conversation_id,
+        Some(state_db.as_ref()),
+        &config,
+    )
+    .await
+    .expect("write second entry");
 
     config.history.max_bytes = Some(
         usize::try_from((2 * long_entry_len) + (short_entry_len / 2))
             .expect("max bytes should fit"),
     );
 
-    append_entry(&long_entry, &conversation_id, Some(state_db.as_ref()), &config)
-        .await
-        .expect("write third entry");
+    append_entry(
+        &long_entry,
+        &conversation_id,
+        Some(state_db.as_ref()),
+        &config,
+    )
+    .await
+    .expect("write third entry");
 
     let (log_id, count) = history_metadata(Some(state_db.as_ref())).await;
     assert_eq!(count, 1);

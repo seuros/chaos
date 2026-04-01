@@ -644,7 +644,7 @@ fn push_smart_approvals_alias_migration_edits(
     scope: &[String],
     features: &FeaturesToml,
 ) {
-    if features.entries.get("smart_approvals").is_none() {
+    if !features.entries.contains_key("smart_approvals") {
         return;
     }
     // Remove the deprecated smart_approvals key. The guardian approval

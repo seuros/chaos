@@ -1,6 +1,6 @@
 #![cfg(feature = "vt100-tests")]
 
-use crate::test_backend::VT100Backend;
+use chaos_xserver::test_backend::VT100Backend;
 use ratatui::layout::Rect;
 use ratatui::text::Line;
 

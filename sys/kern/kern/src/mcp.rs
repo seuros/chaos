@@ -27,6 +27,12 @@ const MCP_TOOL_NAME_DELIMITER: &str = "__";
 
 pub struct McpManager;
 
+impl Default for McpManager {
+    fn default() -> Self {
+        Self::new()
+    }
+}
+
 impl McpManager {
     pub fn new() -> Self {
         Self

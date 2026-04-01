@@ -216,23 +216,19 @@ mod tests {
     #[test]
     fn from_inventory_discovers_static_modules() {
         let catalog = Catalog::from_inventory();
-        let arsenal_tools: Vec<_> = catalog
-            .tools()
-            .iter()
-            .filter(|(s, _)| *s == CatalogSource::Module("arsenal".to_string()))
-            .collect();
         assert!(
-            !arsenal_tools.is_empty(),
+            catalog
+                .tools()
+                .iter()
+                .any(|(s, _)| *s == CatalogSource::Module("arsenal".to_string())),
             "arsenal should register at least one tool"
         );
 
-        let cron_tools: Vec<_> = catalog
-            .tools()
-            .iter()
-            .filter(|(s, _)| *s == CatalogSource::Module("cron".to_string()))
-            .collect();
         assert!(
-            !cron_tools.is_empty(),
+            catalog
+                .tools()
+                .iter()
+                .any(|(s, _)| *s == CatalogSource::Module("cron".to_string())),
             "cron should register at least one tool"
         );
     }

@@ -112,7 +112,7 @@ impl Approvable<UnifiedExecRequest> for UnifiedExecRuntime<'_> {
         let command = req.command.clone();
         let cwd = req.cwd.clone();
         let retry_reason = ctx.retry_reason.clone();
-        let reason = retry_reason.clone().or_else(|| req.justification.clone());
+        let reason = retry_reason.or_else(|| req.justification.clone());
         Box::pin(async move {
             with_cached_approval(&session.services, "unified_exec", keys, || async move {
                 let available_decisions = None;

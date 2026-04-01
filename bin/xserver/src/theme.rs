@@ -65,15 +65,15 @@ pub const PHOSPHOR: Palette = Palette {
 /// Anthropic orange palette — used when clamped to Claude Code MAX.
 pub const ANTHROPIC: Palette = Palette {
     bg: Color::Black,
-    fg: Color::Rgb(255, 176, 102),       // warm orange text
-    dim: Color::Rgb(180, 120, 60),       // muted orange
-    highlight: Color::Rgb(255, 140, 50), // bright Anthropic orange
+    fg: Color::LightYellow, // warm ANSI approximation
+    dim: Color::Yellow,     // muted ANSI approximation
+    highlight: Color::Yellow,
     user_msg_bg: Color::DarkGray,
-    border: Color::Rgb(204, 120, 50), // orange border
+    border: Color::Yellow,
     warning: Color::Yellow,
     error: Color::LightRed,
-    success: Color::Rgb(255, 176, 102), // orange success
-    accent: Color::Rgb(255, 140, 50),   // Anthropic orange accent
+    success: Color::LightYellow,
+    accent: Color::Yellow,
 };
 
 /// Active palette. Switches to Anthropic orange when clamped.

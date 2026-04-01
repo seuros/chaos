@@ -1,4 +1,5 @@
 use super::*;
+use crate::model::backfill_machine::BackfillWorkflow;
 
 impl StateRuntime {
     pub async fn get_backfill_state(&self) -> anyhow::Result<crate::BackfillState> {
@@ -46,15 +47,23 @@ WHERE id = 1
     /// Mark persisted session metadata backfill as running.
     pub async fn mark_backfill_running(&self) -> anyhow::Result<()> {
         self.ensure_backfill_state_row().await?;
+        let state = self.get_backfill_state().await?;
+        if state.status == crate::BackfillStatus::Running {
+            return Ok(());
+        }
+        let mut wf = BackfillWorkflow::from_status(state.status);
+        anyhow::ensure!(wf.start(), "cannot transition backfill from {:?} to Running", state.status);
+
         sqlx::query(
             r#"
 UPDATE backfill_state
 SET status = ?, updated_at = ?
-WHERE id = 1
+WHERE id = 1 AND status = ?
             "#,
         )
         .bind(crate::BackfillStatus::Running.as_str())
         .bind(jiff::Timestamp::now().as_second())
+        .bind(state.status.as_str())
         .execute(self.pool.as_ref())
         .await?;
         Ok(())
@@ -81,6 +90,10 @@ WHERE id = 1
     /// Mark session metadata backfill as complete.
     pub async fn mark_backfill_complete(&self, last_watermark: Option<&str>) -> anyhow::Result<()> {
         self.ensure_backfill_state_row().await?;
+        let state = self.get_backfill_state().await?;
+        let mut wf = BackfillWorkflow::from_status(state.status);
+        anyhow::ensure!(wf.complete(), "cannot transition backfill from {:?} to Complete", state.status);
+
         let now = jiff::Timestamp::now().as_second();
         sqlx::query(
             r#"
@@ -90,13 +103,14 @@ SET
     last_watermark = COALESCE(?, last_watermark),
     last_success_at = ?,
     updated_at = ?
-WHERE id = 1
+WHERE id = 1 AND status = ?
             "#,
         )
         .bind(crate::BackfillStatus::Complete.as_str())
         .bind(last_watermark)
         .bind(now)
         .bind(now)
+        .bind(state.status.as_str())
         .execute(self.pool.as_ref())
         .await?;
         Ok(())
@@ -298,6 +312,33 @@ WHERE id = 1
             .await
             .expect("claim after complete");
         assert_eq!(claim_after_complete, false);
+
+        let _ = tokio::fs::remove_dir_all(chaos_home).await;
+    }
+
+    #[tokio::test]
+    async fn mark_backfill_running_is_idempotent_after_claim() {
+        let chaos_home = unique_temp_dir();
+        let runtime = StateRuntime::init(chaos_home.clone(), "test-provider".to_string())
+            .await
+            .expect("initialize runtime");
+
+        let claimed = runtime
+            .try_claim_backfill(3600)
+            .await
+            .expect("claim backfill");
+        assert_eq!(claimed, true);
+
+        runtime
+            .mark_backfill_running()
+            .await
+            .expect("mark running after claim");
+
+        let state = runtime
+            .get_backfill_state()
+            .await
+            .expect("get backfill state after claim");
+        assert_eq!(state.status, crate::BackfillStatus::Running);
 
         let _ = tokio::fs::remove_dir_all(chaos_home).await;
     }

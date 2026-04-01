@@ -69,7 +69,6 @@ LIMIT 1 OFFSET ?
             })
         })
         .transpose()
-        .map_err(Into::into)
     }
 }
 

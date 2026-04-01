@@ -5,19 +5,12 @@ use crate::chaos::make_session_and_context;
 /// are now treated equally. Tests that were written against the old apps server
 /// keep this name so the approval/metadata plumbing is still exercised.
 const CODEX_APPS_MCP_SERVER_NAME: &str = "test-apps-server";
-use crate::config::ApprovalsReviewer;
 use crate::config::ConfigToml;
 use crate::config::types::AppConfig;
 use crate::config::types::AppToolConfig;
 use crate::config::types::AppToolsConfig;
 use crate::config::types::AppsConfigToml;
 use chaos_sysctl::CONFIG_TOML_FILE;
-use core_test_support::responses::ev_assistant_message;
-use core_test_support::responses::ev_completed;
-use core_test_support::responses::ev_response_created;
-use core_test_support::responses::mount_sse_once;
-use core_test_support::responses::sse;
-use core_test_support::responses::start_mock_server;
 use pretty_assertions::assert_eq;
 use serde::Deserialize;
 use std::collections::HashMap;

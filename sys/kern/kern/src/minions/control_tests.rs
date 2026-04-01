@@ -962,7 +962,7 @@ async fn spawn_process_subagent_uses_role_specific_nickname_candidates() {
 
 #[tokio::test]
 async fn resume_process_subagent_restores_stored_nickname_and_role() {
-    let (home, mut config) = test_config().await;
+    let (home, config) = test_config().await;
     let manager = ProcessTable::with_models_provider_and_home_for_tests(
         ChaosAuth::from_api_key("dummy"),
         config.model_provider.clone(),

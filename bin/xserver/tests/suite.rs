@@ -1,8 +1,4 @@
 // Aggregates all former standalone integration tests as modules.
-#[cfg(feature = "vt100-tests")]
-#[path = "test_backend.rs"]
-mod test_backend;
-
 #[path = "suite/model_availability_nux.rs"]
 mod model_availability_nux;
 #[path = "suite/no_panic_on_startup.rs"]

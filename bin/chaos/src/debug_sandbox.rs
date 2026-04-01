@@ -19,9 +19,9 @@ use chaos_kern::config::NetworkProxyAuditMetadata;
 use chaos_kern::exec_env::create_env;
 use chaos_kern::landlock::spawn_command_under_linux_sandbox;
 #[cfg(target_os = "macos")]
-use chaos_kern::spawn::CODEX_SANDBOX_ENV_VAR;
+use chaos_kern::spawn::CHAOS_SANDBOX_ENV_VAR;
 #[cfg(target_os = "macos")]
-use chaos_kern::spawn::CODEX_SANDBOX_NETWORK_DISABLED_ENV_VAR;
+use chaos_kern::spawn::CHAOS_SANDBOX_NETWORK_DISABLED_ENV_VAR;
 use chaos_kern::spawn::StdioPolicy;
 #[cfg(target_os = "macos")]
 use tokio::process::Child;
@@ -322,10 +322,10 @@ async fn spawn_command_under_macos_seatbelt(
     if let Some(network) = network {
         network.apply_to_env(&mut env);
     }
-    env.insert(CODEX_SANDBOX_ENV_VAR.to_string(), "seatbelt".to_string());
+    env.insert(CHAOS_SANDBOX_ENV_VAR.to_string(), "seatbelt".to_string());
     if !NetworkSandboxPolicy::from(sandbox_policy).is_enabled() {
         env.insert(
-            CODEX_SANDBOX_NETWORK_DISABLED_ENV_VAR.to_string(),
+            CHAOS_SANDBOX_NETWORK_DISABLED_ENV_VAR.to_string(),
             "1".to_string(),
         );
     }

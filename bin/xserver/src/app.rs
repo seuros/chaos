@@ -2099,14 +2099,12 @@ impl App {
                             );
 
                             // Place cursor in chat pane.
-                            if self.tile_manager.focused() == Some(PaneId::ROOT) {
-                                if let Some(chat_rect) =
+                            if self.tile_manager.focused() == Some(PaneId::ROOT)
+                                && let Some(chat_rect) =
                                     self.tile_manager.hypertile_mut().pane_rect(PaneId::ROOT)
-                                {
-                                    if let Some((x, y)) = self.chat_widget.cursor_pos(chat_rect) {
-                                        frame.set_cursor_position((x, y));
-                                    }
-                                }
+                                && let Some((x, y)) = self.chat_widget.cursor_pos(chat_rect)
+                            {
+                                frame.set_cursor_position((x, y));
                             }
                         }
 

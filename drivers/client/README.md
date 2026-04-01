@@ -1,4 +1,4 @@
-# codex-client
+# chaos-client
 
 Generic transport layer that wraps HTTP requests, retries, and streaming primitives without any Chaos/OpenAI awareness.
 

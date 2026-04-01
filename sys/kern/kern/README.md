@@ -46,7 +46,7 @@ Seatbelt also supports macOS permission-profile extensions layered on top of
 
 ### Linux
 
-Expects the binary containing `chaos-kern` to run the equivalent of `codex sandbox linux` (legacy alias: `codex debug landlock`) when `arg0` is `alcatraz-linux`. See the `chaos-argv` crate for details.
+Expects the binary containing `chaos-kern` to run the equivalent of `chaos sandbox linux` (legacy alias: `chaos debug landlock`) when `arg0` is `alcatraz-linux`. See the `chaos-argv` crate for details.
 
 Legacy `SandboxPolicy` / `sandbox_mode` configs are still supported on Linux.
 They can continue to use the legacy Landlock path when the split filesystem
@@ -62,4 +62,4 @@ more specific writable child must reopen under a denied parent.
 
 ### All Platforms
 
-Expects the binary containing `chaos-kern` to simulate the virtual `apply_patch` CLI when `arg1` is `--codex-run-as-apply-patch`. See the `chaos-argv` crate for details.
+Expects the binary containing `chaos-kern` to simulate the virtual `apply_patch` CLI when `arg1` is `--chaos-run-as-apply-patch`. See the `chaos-argv` crate for details.

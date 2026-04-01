@@ -5,7 +5,7 @@ This crate is responsible for producing:
 - a `alcatraz-linux` standalone executable for Linux that is bundled with the Node.js version of the Chaos CLI
 - a lib crate that exposes the business logic of the executable as `run_main()` so that
   - the `chaos-fork` CLI can check if its arg0 is `alcatraz-linux` and, if so, execute as if it were `alcatraz-linux`
-  - this should also be true of the `codex` multitool CLI
+  - this should also be true of the `chaos` multitool CLI
 
 **Current Behavior**
 - Legacy `SandboxPolicy` / `sandbox_mode` configs remain supported.
@@ -23,4 +23,4 @@ This crate is responsible for producing:
   proxy ports.
 
 **Notes**
-- The CLI surface still uses legacy names like `codex debug landlock`.
+- The CLI surface still uses legacy names like `chaos debug landlock`.

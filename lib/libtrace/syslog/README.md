@@ -2,11 +2,11 @@
 
 `chaos-syslog` is the OpenTelemetry integration crate for Chaos. It provides:
 
-- Provider wiring for log/trace/metric exporters (`codex_otel::OtelProvider`
-  and `codex_otel::provider`).
-- Session-scoped business event emission via `codex_otel::SessionTelemetry`.
-- Low-level metrics APIs via `codex_otel::metrics`.
-- Trace-context helpers via `codex_otel::trace_context` and crate-root re-exports.
+- Provider wiring for log/trace/metric exporters (`chaos_syslog::OtelProvider`
+  and `chaos_syslog::provider`).
+- Session-scoped business event emission via `chaos_syslog::SessionTelemetry`.
+- Low-level metrics APIs via `chaos_syslog::metrics`.
+- Trace-context helpers via `chaos_syslog::trace_context` and crate-root re-exports.
 
 ## Tracing and logs
 
@@ -15,15 +15,15 @@ metrics (when enabled), then attach its layers to your `tracing_subscriber`
 registry:
 
 ```rust
-use codex_otel::config::OtelExporter;
-use codex_otel::config::OtelHttpProtocol;
-use codex_otel::config::OtelSettings;
-use codex_otel::OtelProvider;
+use chaos_syslog::config::OtelExporter;
+use chaos_syslog::config::OtelHttpProtocol;
+use chaos_syslog::config::OtelSettings;
+use chaos_syslog::OtelProvider;
 use tracing_subscriber::prelude::*;
 
 let settings = OtelSettings {
     environment: "dev".to_string(),
-    service_name: "codex-cli".to_string(),
+    service_name: "chaos-cli".to_string(),
     service_version: env!("CARGO_PKG_VERSION").to_string(),
     chaos_home: std::path::PathBuf::from("/tmp"),
     exporter: OtelExporter::OtlpHttp {
@@ -56,7 +56,7 @@ Chaos-specific session events. Rich session/business events should go through
 `SessionTelemetry`; subsystem-owned audit events can stay with the owning subsystem.
 
 ```rust
-use codex_otel::SessionTelemetry;
+use chaos_syslog::SessionTelemetry;
 
 let manager = SessionTelemetry::new(
     conversation_id,
@@ -87,11 +87,11 @@ to Statsig using Chaos-internal defaults.
 Statsig ingestion (OTLP/HTTP JSON) example:
 
 ```rust
-use codex_otel::config::{OtelExporter, OtelHttpProtocol};
+use chaos_syslog::config::{OtelExporter, OtelHttpProtocol};
 
 let metrics = MetricsClient::new(MetricsConfig::otlp(
     "dev",
-    "codex-cli",
+    "chaos-cli",
     env!("CARGO_PKG_VERSION"),
     OtelExporter::OtlpHttp {
         endpoint: "https://api.statsig.com/otlp".to_string(),
@@ -104,8 +104,8 @@ let metrics = MetricsClient::new(MetricsConfig::otlp(
     },
 ))?;
 
-metrics.counter("codex.session_started", 1, &[("source", "tui")])?;
-metrics.histogram("codex.request_latency", 83, &[("route", "chat")])?;
+metrics.counter("chaos.session_started", 1, &[("source", "tui")])?;
+metrics.histogram("chaos.request_latency", 83, &[("route", "chat")])?;
 ```
 
 In-memory (tests):
@@ -114,11 +114,11 @@ In-memory (tests):
 let exporter = InMemoryMetricExporter::default();
 let metrics = MetricsClient::new(MetricsConfig::in_memory(
     "test",
-    "codex-cli",
+    "chaos-cli",
     env!("CARGO_PKG_VERSION"),
     exporter.clone(),
 ))?;
-metrics.counter("codex.turns", 1, &[("model", "gpt-5.1")])?;
+metrics.counter("chaos.turns", 1, &[("model", "gpt-5.1")])?;
 metrics.shutdown()?; // flushes in-memory exporter
 ```
 
@@ -127,8 +127,8 @@ metrics.shutdown()?; // flushes in-memory exporter
 Trace propagation helpers remain separate from the session event emitter:
 
 ```rust
-use codex_otel::current_span_w3c_trace_context;
-use codex_otel::set_parent_from_w3c_trace_context;
+use chaos_syslog::current_span_w3c_trace_context;
+use chaos_syslog::set_parent_from_w3c_trace_context;
 ```
 
 ## Shutdown

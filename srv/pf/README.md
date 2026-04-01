@@ -101,7 +101,7 @@ through the same host allowlist/denylist checks.
 `chaos-pf` can be embedded as a library with a thin API:
 
 ```rust
-use codex_network_proxy::{NetworkProxy, NetworkDecision, NetworkPolicyRequest};
+use chaos_pf::{NetworkProxy, NetworkDecision, NetworkPolicyRequest};
 
 let proxy = NetworkProxy::builder()
     .http_addr("127.0.0.1:8080".parse()?)
@@ -140,11 +140,11 @@ the decider can auto-allow network requests originating from that command.
 ## OTEL Audit Events (embedded/managed)
 
 When `chaos-pf` is embedded in managed Chaos runtime, policy decisions emit structured
-OTEL-compatible events with `target=codex_otel.network_proxy`.
+OTEL-compatible events with `target=chaos_syslog.network_proxy`.
 
 Event name:
 
-- `codex.network_proxy.policy_decision`
+- `chaos.network_proxy.policy_decision`
   - emitted for each policy decision (`domain` and `non_domain`).
   - `network.policy.scope = "domain"` for host-policy evaluations (`evaluate_host_policy`).
   - `network.policy.scope = "non_domain"` for mode-guard/proxy-state checks (including unix-socket guard paths and unix-socket allow decisions).

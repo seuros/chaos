@@ -84,8 +84,22 @@ This architecture is correct usage of both providers' terms of service.
 
 - [Installing & building from source](./docs/install.md)
 - [Adding LLM providers](./docs/adding-providers.md)
+- [MCP — connecting tools and services](./docs/mcp.md)
 - [Hallucinate — scripting engine](./docs/hallucinate.md)
 - [Contributing](./docs/contributing.md)
+
+---
+
+## Status
+
+Chaos is a working system. You can build it, run it, and use it today.
+
+That said, the codebase still carries rust from the upstream fork. The dremel
+is charging. Each component needs to be tested before it gets evicted or
+replaced — no cowboy deletions, no silent breakage. If it compiles and passes
+tests, it ships. If it doesn't, it gets fixed or removed properly.
+
+I'm using it to fix itself.
 
 ---
 

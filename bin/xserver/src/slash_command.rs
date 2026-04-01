@@ -40,6 +40,7 @@ pub enum SlashCommand {
     Mcp,
     Tools,
     Clamp,
+    Login,
     Logout,
     Quit,
     Exit,
@@ -97,6 +98,7 @@ impl SlashCommand {
             SlashCommand::Mcp => "list configured MCP tools",
             SlashCommand::Tools => "show all tools visible to the model",
             SlashCommand::Clamp => "use Claude Code MAX subscription as transport",
+            SlashCommand::Login => "authenticate with your provider",
             SlashCommand::Logout => "log out of Chaos",
             SlashCommand::TestApproval => "test approval request",
         }
@@ -137,6 +139,7 @@ impl SlashCommand {
             | SlashCommand::Review
             | SlashCommand::Plan
             | SlashCommand::Clear
+            | SlashCommand::Login
             | SlashCommand::Logout
             | SlashCommand::MemoryDrop
             | SlashCommand::MemoryUpdate => false,

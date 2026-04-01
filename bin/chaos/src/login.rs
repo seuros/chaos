@@ -10,19 +10,19 @@
 use chaos_getopt::CliConfigOverrides;
 use chaos_ipc::config_types::ForcedLoginMethod;
 use chaos_kern::ChaosAuth;
-use chaos_kern::auth::AuthCredentialsStoreMode;
 use chaos_kern::auth::AuthMode;
 use chaos_kern::auth::CLIENT_ID;
 use chaos_kern::auth::login_with_api_key;
 use chaos_kern::auth::logout;
 use chaos_kern::config::Config;
+use chaos_pam::DeviceCode;
+use chaos_pam::LoginFlowMode;
+use chaos_pam::LoginFlowUpdate;
 use chaos_pam::ServerOptions;
-use chaos_pam::run_device_code_login;
-use chaos_pam::run_login_server;
+use chaos_pam::spawn_login_flow;
 use std::fs::OpenOptions;
 use std::io::IsTerminal;
 use std::io::Read;
-use std::path::PathBuf;
 use tracing_appender::non_blocking;
 use tracing_appender::non_blocking::WorkerGuard;
 use tracing_subscriber::EnvFilter;
@@ -110,22 +110,52 @@ fn print_login_server_start(actual_port: u16, auth_url: &str) {
     );
 }
 
-pub async fn login_with_chatgpt(
-    chaos_home: PathBuf,
-    forced_chatgpt_workspace_id: Option<String>,
-    cli_auth_credentials_store_mode: AuthCredentialsStoreMode,
-) -> std::io::Result<()> {
-    let opts = ServerOptions::new(
-        chaos_home,
-        CLIENT_ID.to_string(),
-        forced_chatgpt_workspace_id,
-        cli_auth_credentials_store_mode,
+fn print_device_code_prompt(device_code: &DeviceCode) {
+    eprintln!(
+        concat!(
+            "\nFollow these steps to sign in with ChatGPT using device code authorization:\n",
+            "\n1. Open this link in your browser and sign in to your account\n   {}\n",
+            "\n2. Enter this one-time code (expires in 15 minutes)\n   {}\n",
+            "\nDevice codes are a common phishing target. Never share this code.\n"
+        ),
+        device_code.verification_url,
+        device_code.user_code
     );
-    let server = run_login_server(opts)?;
+}
 
-    print_login_server_start(server.actual_port, &server.auth_url);
+async fn run_chatgpt_login_flow(
+    opts: ServerOptions,
+    mode: LoginFlowMode,
+) -> std::io::Result<()> {
+    let mut handle = spawn_login_flow(opts, mode);
+    while let Some(update) = handle.recv().await {
+        match update {
+            LoginFlowUpdate::DeviceCodePending => {}
+            LoginFlowUpdate::DeviceCodeUnsupported => {
+                eprintln!("Device code login is not enabled; falling back to browser login.");
+            }
+            LoginFlowUpdate::BrowserOpened {
+                actual_port,
+                auth_url,
+            } => {
+                print_login_server_start(actual_port, &auth_url);
+            }
+            LoginFlowUpdate::DeviceCodeReady { device_code } => {
+                print_device_code_prompt(&device_code);
+            }
+            LoginFlowUpdate::Succeeded { .. } => {
+                return Ok(());
+            }
+            LoginFlowUpdate::Failed { message } => {
+                return Err(std::io::Error::other(message));
+            }
+            LoginFlowUpdate::Cancelled => {
+                return Err(std::io::Error::other("Login was not completed"));
+            }
+        }
+    }
 
-    server.block_until_done().await
+    Err(std::io::Error::other("Login flow ended unexpectedly"))
 }
 
 pub async fn run_login_with_chatgpt(cli_config_overrides: CliConfigOverrides) -> ! {
@@ -140,13 +170,14 @@ pub async fn run_login_with_chatgpt(cli_config_overrides: CliConfigOverrides) ->
 
     let forced_chatgpt_workspace_id = config.forced_chatgpt_workspace_id.clone();
 
-    match login_with_chatgpt(
+    let opts = ServerOptions::new(
         config.chaos_home,
+        CLIENT_ID.to_string(),
         forced_chatgpt_workspace_id,
         config.cli_auth_credentials_store_mode,
-    )
-    .await
-    {
+    );
+
+    match run_chatgpt_login_flow(opts, LoginFlowMode::Browser).await {
         Ok(_) => {
             eprintln!("{LOGIN_SUCCESS_MESSAGE}");
             std::process::exit(0);
@@ -237,7 +268,14 @@ pub async fn run_login_with_device_code(
     if let Some(iss) = issuer_base_url {
         opts.issuer = iss;
     }
-    match run_device_code_login(opts).await {
+    match run_chatgpt_login_flow(
+        opts,
+        LoginFlowMode::DeviceCode {
+            allow_browser_fallback: false,
+        },
+    )
+    .await
+    {
         Ok(()) => {
             eprintln!("{LOGIN_SUCCESS_MESSAGE}");
             std::process::exit(0);
@@ -278,37 +316,21 @@ pub async fn run_login_with_device_code_fallback_to_browser(
     }
     opts.open_browser = false;
 
-    match run_device_code_login(opts.clone()).await {
+    match run_chatgpt_login_flow(
+        opts,
+        LoginFlowMode::DeviceCode {
+            allow_browser_fallback: true,
+        },
+    )
+    .await
+    {
         Ok(()) => {
             eprintln!("{LOGIN_SUCCESS_MESSAGE}");
             std::process::exit(0);
         }
         Err(e) => {
-            if e.kind() == std::io::ErrorKind::NotFound {
-                eprintln!("Device code login is not enabled; falling back to browser login.");
-                match run_login_server(opts) {
-                    Ok(server) => {
-                        print_login_server_start(server.actual_port, &server.auth_url);
-                        match server.block_until_done().await {
-                            Ok(()) => {
-                                eprintln!("{LOGIN_SUCCESS_MESSAGE}");
-                                std::process::exit(0);
-                            }
-                            Err(e) => {
-                                eprintln!("Error logging in: {e}");
-                                std::process::exit(1);
-                            }
-                        }
-                    }
-                    Err(e) => {
-                        eprintln!("Error logging in: {e}");
-                        std::process::exit(1);
-                    }
-                }
-            } else {
-                eprintln!("Error logging in with device code: {e}");
-                std::process::exit(1);
-            }
+            eprintln!("Error logging in with device code: {e}");
+            std::process::exit(1);
         }
     }
 }

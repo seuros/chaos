@@ -110,6 +110,11 @@ impl App {
         tui: &mut tui::Tui,
         event: TuiEvent,
     ) -> Result<bool> {
+        if !self.overlay.as_ref().is_some_and(Overlay::is_transcript) {
+            self.overlay_forward_event(tui, event)?;
+            return Ok(true);
+        }
+
         if self.backtrack.overlay_preview_active {
             match event {
                 TuiEvent::Key(KeyEvent {
@@ -393,12 +398,39 @@ impl App {
 
         if let Some(overlay) = &mut self.overlay {
             overlay.handle_event(tui, event)?;
+            let auth_completion = overlay.auth_completion();
             if overlay.is_done() {
                 self.close_transcript_overlay(tui);
+                self.handle_overlay_completion(auth_completion);
                 tui.frame_requester().schedule_frame();
             }
         }
         Ok(())
+    }
+
+    fn handle_overlay_completion(&mut self, auth_completion: Option<crate::onboarding::auth::AuthCompletion>) {
+        let Some(auth_completion) = auth_completion else {
+            return;
+        };
+
+        self.chat_widget.refresh_status_line();
+        self.chat_widget.refresh_connectors(/*force_refetch*/ true);
+        self.chat_widget.submit_op(Op::ReloadUserConfig);
+
+        match auth_completion {
+            crate::onboarding::auth::AuthCompletion::ChatGpt => {
+                self.chat_widget.add_info_message(
+                    "Signed in with your ChatGPT account.".to_string(),
+                    Some("Refreshed auth-dependent state for this session.".to_string()),
+                );
+            }
+            crate::onboarding::auth::AuthCompletion::ApiKey => {
+                self.chat_widget.add_info_message(
+                    "API key configured.".to_string(),
+                    Some("Refreshed auth-dependent state for this session.".to_string()),
+                );
+            }
+        }
     }
 
     /// Handle Enter in overlay backtrack preview: confirm selection and reset state.

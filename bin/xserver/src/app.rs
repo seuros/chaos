@@ -24,6 +24,7 @@ use crate::multi_agents::agent_picker_status_dot_spans;
 use crate::multi_agents::format_agent_picker_item_name;
 use crate::multi_agents::next_agent_shortcut_matches;
 use crate::multi_agents::previous_agent_shortcut_matches;
+use crate::onboarding::auth::AuthModeWidget;
 use crate::pager_overlay::Overlay;
 use crate::panes::tool_list::ToolListPane;
 use crate::render::highlight::highlight_bash_to_lines;
@@ -2747,6 +2748,19 @@ impl App {
             }
             AppEvent::OpenApprovalsPopup => {
                 self.chat_widget.open_approvals_popup();
+            }
+            AppEvent::OpenLoginPopup => {
+                let _ = tui.enter_alt_screen();
+                self.overlay = Some(Overlay::new_login(AuthModeWidget::new(
+                    tui.frame_requester(),
+                    self.config.chaos_home.clone(),
+                    self.config.cli_auth_credentials_store_mode,
+                    self.auth_manager.clone(),
+                    self.config.forced_chatgpt_workspace_id.clone(),
+                    self.config.forced_login_method,
+                    self.config.animations,
+                )));
+                tui.frame_requester().schedule_frame();
             }
             AppEvent::OpenAgentPicker => {
                 self.open_agent_picker().await;

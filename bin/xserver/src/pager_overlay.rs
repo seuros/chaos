@@ -23,6 +23,9 @@ use crate::history_cell::HistoryCell;
 use crate::history_cell::UserHistoryCell;
 use crate::key_hint;
 use crate::key_hint::KeyBinding;
+use crate::onboarding::auth::AuthCompletion;
+use crate::onboarding::auth::AuthModeWidget;
+use crate::onboarding::onboarding_screen::KeyboardHandler;
 use crate::render::Insets;
 use crate::render::renderable::InsetRenderable;
 use crate::render::renderable::Renderable;
@@ -31,22 +34,30 @@ use crate::tui;
 use crate::tui::TuiEvent;
 use crossterm::event::KeyCode;
 use crossterm::event::KeyEvent;
+use crossterm::event::KeyEventKind;
 use ratatui::buffer::Buffer;
 use ratatui::buffer::Cell;
+use ratatui::layout::Alignment;
 use ratatui::layout::Rect;
+use ratatui::style::Color;
 use ratatui::style::Style;
 use ratatui::style::Stylize;
 use ratatui::text::Line;
 use ratatui::text::Span;
 use ratatui::text::Text;
+use ratatui::widgets::Block;
+use ratatui::widgets::BorderType;
+use ratatui::widgets::Borders;
 use ratatui::widgets::Clear;
 use ratatui::widgets::Paragraph;
 use ratatui::widgets::Widget;
+use ratatui::widgets::WidgetRef;
 use ratatui::widgets::Wrap;
 
 pub(crate) enum Overlay {
     Transcript(TranscriptOverlay),
     Static(StaticOverlay),
+    Auth(AuthOverlay),
 }
 
 impl Overlay {
@@ -65,10 +76,15 @@ impl Overlay {
         Self::Static(StaticOverlay::with_renderables(renderables, title))
     }
 
+    pub(crate) fn new_login(widget: AuthModeWidget) -> Self {
+        Self::Auth(AuthOverlay::new(widget))
+    }
+
     pub(crate) fn handle_event(&mut self, tui: &mut tui::Tui, event: TuiEvent) -> Result<()> {
         match self {
             Overlay::Transcript(o) => o.handle_event(tui, event),
             Overlay::Static(o) => o.handle_event(tui, event),
+            Overlay::Auth(o) => o.handle_event(tui, event),
         }
     }
 
@@ -76,7 +92,19 @@ impl Overlay {
         match self {
             Overlay::Transcript(o) => o.is_done(),
             Overlay::Static(o) => o.is_done(),
+            Overlay::Auth(o) => o.is_done(),
         }
+    }
+
+    pub(crate) fn auth_completion(&self) -> Option<AuthCompletion> {
+        match self {
+            Overlay::Auth(o) => o.completion(),
+            _ => None,
+        }
+    }
+
+    pub(crate) fn is_transcript(&self) -> bool {
+        matches!(self, Overlay::Transcript(_))
     }
 }
 
@@ -101,6 +129,93 @@ const KEY_ESC: KeyBinding = key_hint::plain(KeyCode::Esc);
 const KEY_ENTER: KeyBinding = key_hint::plain(KeyCode::Enter);
 const KEY_CTRL_T: KeyBinding = key_hint::ctrl(KeyCode::Char('t'));
 const KEY_CTRL_C: KeyBinding = key_hint::ctrl(KeyCode::Char('c'));
+
+fn centered_rect(area: Rect, width: u16, height: u16) -> Rect {
+    let width = width.min(area.width).max(1);
+    let height = height.min(area.height).max(1);
+    let x = area.x.saturating_add(area.width.saturating_sub(width) / 2);
+    let y = area.y.saturating_add(area.height.saturating_sub(height) / 2);
+    Rect::new(x, y, width, height)
+}
+
+pub(crate) struct AuthOverlay {
+    widget: AuthModeWidget,
+    done: bool,
+    completion: Option<AuthCompletion>,
+}
+
+impl AuthOverlay {
+    fn new(widget: AuthModeWidget) -> Self {
+        Self {
+            widget,
+            done: false,
+            completion: None,
+        }
+    }
+
+    fn handle_event(&mut self, tui: &mut tui::Tui, event: TuiEvent) -> Result<()> {
+        match event {
+            TuiEvent::Key(key_event)
+                if matches!(key_event.kind, KeyEventKind::Press | KeyEventKind::Repeat) =>
+            {
+                if key_event.code == KeyCode::Esc && self.widget.can_exit_popup() {
+                    self.done = true;
+                } else {
+                    self.widget.handle_key_event(key_event);
+                    if let Some(completion) = self.widget.completion() {
+                        self.completion = Some(completion);
+                        self.done = true;
+                    }
+                }
+            }
+            TuiEvent::Paste(pasted) => {
+                self.widget.handle_paste(pasted);
+                if let Some(completion) = self.widget.completion() {
+                    self.completion = Some(completion);
+                    self.done = true;
+                }
+            }
+            TuiEvent::Draw => {
+                tui.draw(u16::MAX, |frame| {
+                    let area = frame.area();
+                    Clear.render(area, frame.buffer);
+
+                    let popup = centered_rect(
+                        area,
+                        area.width.saturating_sub(4).clamp(56, 88),
+                        area.height.saturating_sub(4).clamp(14, 24),
+                    );
+                    let inner = popup.inner(ratatui::layout::Margin {
+                        horizontal: 2,
+                        vertical: 1,
+                    });
+
+                    let block = Block::default()
+                        .title(Line::from(vec![
+                            "/".dim(),
+                            " login".fg(crate::theme::cyan()),
+                        ]))
+                        .title_alignment(Alignment::Left)
+                        .borders(Borders::ALL)
+                        .border_type(BorderType::Rounded)
+                        .border_style(Style::default().fg(Color::DarkGray));
+                    block.render(popup, frame.buffer);
+                    self.widget.render_ref(inner, frame.buffer);
+                })?;
+            }
+            TuiEvent::Key(_) => {}
+        }
+        Ok(())
+    }
+
+    fn is_done(&self) -> bool {
+        self.done
+    }
+
+    fn completion(&self) -> Option<AuthCompletion> {
+        self.completion
+    }
+}
 
 // Common pager navigation hints rendered on the first line
 const PAGER_KEY_HINTS: &[(&[KeyBinding], &str)] = &[

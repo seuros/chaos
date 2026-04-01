@@ -3924,6 +3924,9 @@ impl ChatWidget {
             SlashCommand::Quit | SlashCommand::Exit => {
                 self.request_quit_without_confirmation();
             }
+            SlashCommand::Login => {
+                self.app_event_tx.send(AppEvent::OpenLoginPopup);
+            }
             SlashCommand::Logout => {
                 if let Err(e) = chaos_kern::auth::logout(
                     &self.config.chaos_home,

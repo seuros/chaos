@@ -39,7 +39,7 @@ use chaos_kern::terminal::TerminalName;
 #[derive(Debug, Parser)]
 #[clap(
     author,
-    version,
+    version = concat!(env!("CARGO_PKG_VERSION"), ".", env!("CHAOS_BUILD_TS")),
     // If a sub‑command is given, ignore requirements of the default args.
     subcommand_negates_reqs = true,
     // The executable is sometimes invoked via a platform‑specific name like

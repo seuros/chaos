@@ -12,7 +12,7 @@ Everyone else: come in, the door is open.
 
 ### Getting started
 
-- Fork the repo, create a topic branch from `main` — e.g. `feat/something-useful`.
+- Fork the repo, create a topic branch from `master` — e.g. `feat/something-useful`.
 - Keep changes focused. Unrelated fixes go in separate PRs.
 - Run `just fmt` and `just test` before opening a PR.
 - No invitation required. No gatekeeping. Sign your commits (`git commit -s`).
@@ -27,7 +27,7 @@ Everyone else: come in, the door is open.
 ### Pull requests
 
 - Fill in the PR template: **What? Why? How?**
-- Ensure your branch is up-to-date with `main`.
+- Ensure your branch is up-to-date with `master`.
 - Mark as **Ready for review** when it's mergeable.
 
 ### Community values

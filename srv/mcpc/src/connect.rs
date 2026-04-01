@@ -5,6 +5,7 @@ use std::path::PathBuf;
 use std::sync::Arc;
 use std::time::Duration;
 
+use chaos_ipc::product::CHAOS_VERSION;
 use crate::error::GuestError;
 use crate::handler::{ClientHandler, NoopClientHandler};
 use crate::protocol::{
@@ -31,7 +32,7 @@ pub fn stdio(command: &str, args: &[String]) -> StdioBuilder {
             shutdown_timeout: Duration::from_secs(5),
             kill_timeout: Duration::from_secs(5),
         },
-        client_info: Implementation::new("mcp-guest", env!("CARGO_PKG_VERSION")),
+        client_info: Implementation::new("mcp-guest", CHAOS_VERSION),
         capabilities: ClientCapabilities::default(),
         handler: Arc::new(NoopClientHandler),
         default_timeout: Duration::from_secs(30),
@@ -45,7 +46,7 @@ pub fn http(endpoint: &str) -> HttpBuilder {
         open_sse_stream: true,
         reconnect_delay: Duration::from_millis(500),
         default_headers: Vec::new(),
-        client_info: Implementation::new("mcp-guest", env!("CARGO_PKG_VERSION")),
+        client_info: Implementation::new("mcp-guest", CHAOS_VERSION),
         capabilities: ClientCapabilities::default(),
         handler: Arc::new(NoopClientHandler),
         default_timeout: Duration::from_secs(30),

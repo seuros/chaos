@@ -8,6 +8,7 @@ use chaos_ipc::models::ContentItem;
 use chaos_ipc::models::ResponseItem;
 use chaos_ipc::openai_models::ModelInfo;
 use chaos_ipc::openai_models::ReasoningEffort as ReasoningEffortConfig;
+use chaos_ipc::product::CHAOS_VERSION;
 use chaos_ipc::protocol::EventMsg;
 use chaos_ipc::protocol::Op;
 use chaos_ipc::protocol::SessionSource;
@@ -1631,7 +1632,7 @@ async fn websocket_harness_with_options(
         chaos_kern::test_support::auth_manager_from_auth(ChaosAuth::from_api_key("Test API Key"));
     let exporter = InMemoryMetricExporter::default();
     let metrics = MetricsClient::new(
-        MetricsConfig::in_memory("test", "codex-core", env!("CARGO_PKG_VERSION"), exporter)
+        MetricsConfig::in_memory("test", "chaos", CHAOS_VERSION, exporter)
             .with_runtime_reader(),
     )
     .expect("in-memory metrics client");

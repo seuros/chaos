@@ -1,4 +1,6 @@
 use codex_client::CodexHttpClient;
+use chaos_ipc::product::CHAOS_VERSION;
+use chaos_ipc::product::display_name;
 use http::StatusCode;
 use serde::Deserialize;
 use serde::Serialize;
@@ -146,9 +148,9 @@ async fn poll_for_token(
 }
 
 fn print_device_code_prompt(verification_url: &str, code: &str) {
-    let version = env!("CARGO_PKG_VERSION");
+    let product_name = display_name();
     println!(
-        "\nWelcome to Codex [v{ANSI_GRAY}{version}{ANSI_RESET}]\n{ANSI_GRAY}OpenAI's command-line coding agent{ANSI_RESET}\n\
+        "\nWelcome to {product_name} [v{ANSI_GRAY}{CHAOS_VERSION}{ANSI_RESET}]\n{ANSI_GRAY}Provider-agnostic command-line coding agent{ANSI_RESET}\n\
 \nFollow these steps to sign in with ChatGPT using device code authorization:\n\
 \n1. Open this link in your browser and sign in to your account\n   {ANSI_BLUE}{verification_url}{ANSI_RESET}\n\
 \n2. Enter this one-time code {ANSI_GRAY}(expires in 15 minutes){ANSI_RESET}\n   {ANSI_BLUE}{code}{ANSI_RESET}\n\

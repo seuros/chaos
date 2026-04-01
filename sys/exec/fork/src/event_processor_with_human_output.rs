@@ -1,5 +1,6 @@
 use chaos_ipc::items::TurnItem;
 use chaos_ipc::num_format::format_with_separators;
+use chaos_ipc::product::CHAOS_VERSION;
 use chaos_ipc::protocol::AgentMessageEvent;
 use chaos_ipc::protocol::AgentReasoningRawContentEvent;
 use chaos_ipc::protocol::AgentStatus;
@@ -184,8 +185,7 @@ impl EventProcessor for EventProcessorWithHumanOutput {
         prompt: &str,
         session_configured_event: &SessionConfiguredEvent,
     ) {
-        const VERSION: &str = env!("CARGO_PKG_VERSION");
-        ts_msg!(self, "Chaos v{}\n--------", VERSION);
+        ts_msg!(self, "Chaos v{}\n--------", CHAOS_VERSION);
 
         let mut entries =
             create_config_summary_entries(config, session_configured_event.model.as_str());

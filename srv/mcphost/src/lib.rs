@@ -7,6 +7,7 @@ use std::sync::Arc;
 
 use chaos_argv::Arg0DispatchPaths;
 use chaos_getopt::CliConfigOverrides;
+use chaos_ipc::product::CHAOS_VERSION;
 use chaos_ipc::protocol::SessionSource;
 use chaos_kern::AuthManager;
 use chaos_kern::ProcessTable;
@@ -64,7 +65,7 @@ pub async fn run_main(
     // OpenTelemetry setup.
     let otel = chaos_kern::otel_init::build_provider(
         &config,
-        env!("CARGO_PKG_VERSION"),
+        CHAOS_VERSION,
         Some(OTEL_SERVICE_NAME),
         DEFAULT_ANALYTICS_ENABLED,
     )
@@ -114,7 +115,7 @@ pub async fn run_main(
     let outgoing = Arc::new(OutgoingMessageSender::new(outgoing_tx));
 
     // Build the mcp-host Server.
-    let mcp_server = server("chaos-mcp-server", env!("CARGO_PKG_VERSION"))
+    let mcp_server = server("chaos-mcp-server", CHAOS_VERSION)
         .with_tools(true)
         .with_resources(true, false)
         .with_resource_templates()

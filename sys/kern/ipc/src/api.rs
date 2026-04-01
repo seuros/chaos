@@ -2,7 +2,7 @@
 // API types consolidated from app-server-protocol
 //
 // This module re-homes the shared protocol types (common, v1, v2) that were
-// previously defined in `codex-rs/app-server-protocol` into `codex-protocol`
+// previously defined in `chaos/app-server-protocol` into `chaos-protocol`
 // so downstream crates can depend on a single source of truth.
 // ---------------------------------------------------------------------------
 

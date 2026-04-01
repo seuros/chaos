@@ -4,5 +4,5 @@
 //! coordinates the approval pipeline (user prompts, watchdog auto-review,
 //! cached approvals), and handles sandbox escalation/retry logic.
 //!
-//! Extracted from codex-core's tools/ module. The kernel dispatches tool
+//! Extracted from chaos-kern's tools/ module. The kernel dispatches tool
 //! requests to the Warden; the Warden decides how to execute them.

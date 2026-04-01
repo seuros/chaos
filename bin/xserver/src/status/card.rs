@@ -2,7 +2,7 @@ use crate::history_cell::CompositeHistoryCell;
 use crate::history_cell::HistoryCell;
 use crate::history_cell::PlainHistoryCell;
 use crate::history_cell::with_border_with_inner_width;
-use crate::version::{CHAOS_VERSION, PRODUCT_NAME};
+use crate::version::{PRODUCT_NAME, version_badge};
 use chaos_ipc::ProcessId;
 use chaos_ipc::account::PlanType;
 use chaos_ipc::openai_models::ReasoningEffort;
@@ -415,7 +415,7 @@ impl HistoryCell for StatusHistoryCell {
             Span::from(format!("{}>_ ", FieldFormatter::INDENT)).dim(),
             Span::from(PRODUCT_NAME).bold(),
             Span::from(" ").dim(),
-            Span::from(format!("(v{CHAOS_VERSION})")).dim(),
+            Span::from(version_badge()).dim(),
         ]));
         lines.push(Line::from(Vec::<Span<'static>>::new()));
 
@@ -432,7 +432,7 @@ impl HistoryCell for StatusHistoryCell {
                 (None, None) => "ChatGPT".to_string(),
             },
             StatusAccountDisplay::ApiKey => {
-                "API key configured (run codex login to use ChatGPT)".to_string()
+                "API key configured (run chaos login to use ChatGPT)".to_string()
             }
         });
 

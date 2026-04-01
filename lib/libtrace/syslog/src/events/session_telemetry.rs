@@ -32,6 +32,7 @@ use chaos_ipc::ProcessId;
 use chaos_ipc::config_types::ReasoningSummary;
 use chaos_ipc::models::ResponseItem;
 use chaos_ipc::openai_models::ReasoningEffort;
+use chaos_ipc::product::CHAOS_VERSION;
 use chaos_ipc::protocol::AskForApproval;
 use chaos_ipc::protocol::ReviewDecision;
 use chaos_ipc::protocol::SandboxPolicy;
@@ -261,7 +262,7 @@ impl SessionTelemetry {
                 model: model.to_owned(),
                 slug: slug.to_owned(),
                 log_user_prompts,
-                app_version: env!("CARGO_PKG_VERSION"),
+                app_version: CHAOS_VERSION,
                 terminal_type,
             },
             metrics: crate::metrics::global(),

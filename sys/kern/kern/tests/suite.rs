@@ -22,7 +22,7 @@ const CHAOS_HOME_ENV_VAR: &str = "CHAOS_HOME";
 pub static CODEX_ALIASES_TEMP_DIR: TestCodexAliasesGuard = unsafe {
     #[allow(clippy::unwrap_used)]
     let chaos_home = tempfile::Builder::new()
-        .prefix("codex-core-tests")
+        .prefix("chaos-tests")
         .tempdir()
         .unwrap();
     let previous_codex_home = std::env::var_os(CHAOS_HOME_ENV_VAR);

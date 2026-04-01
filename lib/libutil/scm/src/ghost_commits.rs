@@ -1536,7 +1536,7 @@ mod tests {
         assert_eq!(root_after, "root after\n");
         let nested_after = std::fs::read_to_string(workspace.join("nested.txt"))?;
         assert_eq!(nested_after, "nested modified\n");
-        assert!(!workspace.join("codex-rs").exists());
+        assert!(!workspace.join("chaos").exists());
 
         Ok(())
     }
@@ -1548,7 +1548,7 @@ mod tests {
         let repo = temp.path();
         init_test_repo(repo);
 
-        let workspace = repo.join("codex-rs");
+        let workspace = repo.join("chaos");
         std::fs::create_dir_all(&workspace)?;
         std::fs::write(repo.join(".gitignore"), ".vscode/\n")?;
         std::fs::write(workspace.join("tracked.txt"), "snapshot version\n")?;

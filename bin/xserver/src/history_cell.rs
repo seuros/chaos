@@ -31,7 +31,7 @@ use crate::text_formatting::format_and_truncate_tool_result;
 use crate::text_formatting::truncate_text;
 use crate::tooltips;
 use crate::ui_consts::LIVE_PREFIX_COLS;
-use crate::version::{CHAOS_VERSION, PRODUCT_NAME};
+use crate::version::{CHAOS_VERSION, PRODUCT_NAME, version_badge_for};
 use crate::wrapping::RtOptions;
 use crate::wrapping::adaptive_wrap_line;
 use crate::wrapping::adaptive_wrap_lines;
@@ -1208,7 +1208,7 @@ impl HistoryCell for SessionHeaderHistoryCell {
             Span::styled(">_ ", crate::theme::prompt()),
             Span::styled(PRODUCT_NAME, Style::default().fg(p.highlight).bold()),
             Span::styled(" ", crate::theme::dim()),
-            Span::styled(format!("(v{})", self.version), crate::theme::dim()),
+            Span::styled(version_badge_for(self.version), crate::theme::dim()),
         ];
 
         const CHANGE_MODEL_HINT_COMMAND: &str = "/model";
@@ -1583,7 +1583,7 @@ pub(crate) fn new_web_search_call(
 /// exists” affordance separate from the main MCP tool call cell.
 ///
 /// Manual testing tip:
-/// - Register an MCP stdio test server via `codex mcp add`.
+/// - Register an MCP stdio test server via `chaos mcp add`.
 /// - Use its `image_scenario` tool with cases like `text_then_image`,
 ///   `invalid_base64_then_image`, or `invalid_image_bytes_then_image` to ensure this path triggers
 ///   even when the first block is not a valid image.

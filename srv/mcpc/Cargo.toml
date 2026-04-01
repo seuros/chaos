@@ -12,6 +12,7 @@ stdio = []
 http = ["dep:rama", "dep:tokio-stream", "dep:url"]
 
 [dependencies]
+chaos-ipc = { workspace = true }
 mcp-host = { workspace = true }
 serde = { workspace = true, features = ["derive"] }
 serde_json = { workspace = true }

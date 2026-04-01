@@ -1,3 +1,4 @@
+use chaos_ipc::product::CHAOS_VERSION;
 use chaos_syslog::metrics::MetricsClient;
 use chaos_syslog::metrics::MetricsConfig;
 use chaos_syslog::metrics::MetricsError;
@@ -6,7 +7,7 @@ use rama::telemetry::opentelemetry::sdk::metrics::InMemoryMetricExporter;
 
 fn build_in_memory_client() -> Result<MetricsClient> {
     let exporter = InMemoryMetricExporter::default();
-    let config = MetricsConfig::in_memory("test", "codex-cli", env!("CARGO_PKG_VERSION"), exporter);
+    let config = MetricsConfig::in_memory("test", "chaos-cli", CHAOS_VERSION, exporter);
     MetricsClient::new(config)
 }
 
@@ -15,8 +16,8 @@ fn build_in_memory_client() -> Result<MetricsClient> {
 fn invalid_tag_component_is_rejected() -> Result<()> {
     let err = MetricsConfig::in_memory(
         "test",
-        "codex-cli",
-        env!("CARGO_PKG_VERSION"),
+        "chaos-cli",
+        CHAOS_VERSION,
         InMemoryMetricExporter::default(),
     )
     .with_tag("bad key", "value")

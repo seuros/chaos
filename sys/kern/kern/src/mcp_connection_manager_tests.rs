@@ -360,7 +360,7 @@ fn mcp_init_error_display_prompts_for_login_when_auth_required() {
     let display = mcp_init_error_display(server_name, None, &err);
 
     let expected = format!(
-        "The {server_name} MCP server is not logged in. Run `codex mcp login {server_name}`."
+        "The {server_name} MCP server is not logged in. Run `chaos mcp login {server_name}`."
     );
 
     assert_eq!(expected, display);

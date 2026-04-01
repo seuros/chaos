@@ -352,7 +352,7 @@ mod tests {
             ]),
             StatusLinePreviewData::from_iter([
                 (StatusLineItem::ModelName, "gpt-5-codex".to_string()),
-                (StatusLineItem::CurrentDir, "~/codex-rs".to_string()),
+                (StatusLineItem::CurrentDir, "~/chaos".to_string()),
                 (
                     StatusLineItem::GitBranch,
                     "jif/statusline-preview".to_string(),

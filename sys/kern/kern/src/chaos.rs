@@ -48,6 +48,7 @@ use async_channel::Sender;
 use chaos_dtrace::HookEvent;
 use chaos_dtrace::HookEventAfterAgent;
 use chaos_dtrace::HookPayload;
+use chaos_ipc::product::CHAOS_VERSION;
 use chaos_dtrace::HookResult;
 use chaos_dtrace::Hooks;
 use chaos_dtrace::HooksConfig;
@@ -1471,7 +1472,7 @@ impl Session {
         }
         let network_proxy_audit_metadata = NetworkProxyAuditMetadata {
             conversation_id: Some(conversation_id.to_string()),
-            app_version: Some(env!("CARGO_PKG_VERSION").to_string()),
+            app_version: Some(CHAOS_VERSION.to_string()),
             user_account_id: account_id,
             auth_mode: auth_mode.map(|mode| mode.to_string()),
             originator: Some(originator),

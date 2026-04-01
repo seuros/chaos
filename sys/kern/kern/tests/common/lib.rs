@@ -35,7 +35,7 @@ fn configure_insta_workspace_root_for_snapshot_tests() {
 
     let workspace_root = chaos_which::repo_root()
         .ok()
-        .map(|root| root.join("codex-rs"));
+        .map(|root| root.join("chaos"));
 
     if let Some(workspace_root) = workspace_root
         && let Ok(workspace_root) = workspace_root.canonicalize()

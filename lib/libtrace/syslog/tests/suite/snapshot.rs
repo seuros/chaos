@@ -1,6 +1,7 @@
 use crate::harness::attributes_to_map;
 use crate::harness::find_metric;
 use chaos_ipc::ProcessId;
+use chaos_ipc::product::CHAOS_VERSION;
 use chaos_ipc::protocol::SessionSource;
 use chaos_syslog::SessionTelemetry;
 use chaos_syslog::TelemetryAuthMode;
@@ -18,11 +19,11 @@ fn snapshot_collects_metrics_without_shutdown() -> Result<()> {
     let exporter = InMemoryMetricExporter::default();
     let config = MetricsConfig::in_memory(
         "test",
-        "codex-cli",
-        env!("CARGO_PKG_VERSION"),
+        "chaos-cli",
+        CHAOS_VERSION,
         exporter.clone(),
     )
-    .with_tag("service", "codex-cli")?
+    .with_tag("service", "chaos-cli")?
     .with_runtime_reader();
     let metrics = MetricsClient::new(config)?;
 
@@ -48,7 +49,7 @@ fn snapshot_collects_metrics_without_shutdown() -> Result<()> {
     };
 
     let expected = BTreeMap::from([
-        ("service".to_string(), "codex-cli".to_string()),
+        ("service".to_string(), "chaos-cli".to_string()),
         ("success".to_string(), "true".to_string()),
         ("tool".to_string(), "shell".to_string()),
     ]);
@@ -65,8 +66,8 @@ fn snapshot_collects_metrics_without_shutdown() -> Result<()> {
 #[test]
 fn manager_snapshot_metrics_collects_without_shutdown() -> Result<()> {
     let exporter = InMemoryMetricExporter::default();
-    let config = MetricsConfig::in_memory("test", "codex-cli", env!("CARGO_PKG_VERSION"), exporter)
-        .with_tag("service", "codex-cli")?
+    let config = MetricsConfig::in_memory("test", "chaos-cli", CHAOS_VERSION, exporter)
+        .with_tag("service", "chaos-cli")?
         .with_runtime_reader();
     let metrics = MetricsClient::new(config)?;
     let manager = SessionTelemetry::new(
@@ -106,7 +107,7 @@ fn manager_snapshot_metrics_collects_without_shutdown() -> Result<()> {
     let expected = BTreeMap::from([
         (
             "app.version".to_string(),
-            env!("CARGO_PKG_VERSION").to_string(),
+            CHAOS_VERSION.to_string(),
         ),
         (
             "auth_mode".to_string(),
@@ -114,7 +115,7 @@ fn manager_snapshot_metrics_collects_without_shutdown() -> Result<()> {
         ),
         ("model".to_string(), "gpt-5.1".to_string()),
         ("originator".to_string(), "test_originator".to_string()),
-        ("service".to_string(), "codex-cli".to_string()),
+        ("service".to_string(), "chaos-cli".to_string()),
         ("session_source".to_string(), "cli".to_string()),
         ("success".to_string(), "true".to_string()),
         ("tool".to_string(), "shell".to_string()),

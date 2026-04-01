@@ -1,4 +1,4 @@
-{"ts":"2025-08-10T03:12:26.500Z","dir":"meta","kind":"session_start","cwd":"/Users/easong/code/codex/codex-rs","model":"gpt-oss:20b","model_provider_id":"oss","model_provider_name":"gpt-oss"}
+{"ts":"2025-08-10T03:12:26.500Z","dir":"meta","kind":"session_start","cwd":"/Users/easong/code/chaos","model":"gpt-oss:20b","model_provider_id":"oss","model_provider_name":"gpt-oss"}
 {"ts":"2025-08-10T03:12:26.500Z","dir":"to_tui","kind":"app_event","variant":"RequestRedraw"}
 {"ts":"2025-08-10T03:12:26.502Z","dir":"to_tui","kind":"log_line","line":"[INFO codex_core::codex] resume_path: None"}
 {"ts":"2025-08-10T03:12:26.502Z","dir":"to_tui","kind":"app_event","variant":"Redraw"}

@@ -1,5 +1,5 @@
 //! Trait implementations for core types — bridges between `chaos-traits` abstractions and
-//! the concrete `Config`, `Session`, and service types defined in codex-core.
+//! the concrete `Config`, `Session`, and service types defined in chaos-kern.
 
 use std::collections::HashMap;
 use std::path::Path;

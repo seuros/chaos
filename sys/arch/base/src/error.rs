@@ -1,7 +1,7 @@
 //! Error types for the Alcatraz sandbox subsystem.
 //!
 //! These live in the base crate so OS-specific implementations (landlock,
-//! capsicum, seatbelt, pledge) can return them without depending on codex-core.
+//! capsicum, seatbelt, pledge) can return them without depending on chaos-kern.
 
 use thiserror::Error;
 

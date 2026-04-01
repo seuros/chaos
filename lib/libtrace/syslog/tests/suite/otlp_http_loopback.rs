@@ -1,3 +1,4 @@
+use chaos_ipc::product::CHAOS_VERSION;
 use chaos_syslog::OtelProvider;
 use chaos_syslog::config::OtelExporter;
 use chaos_syslog::config::OtelHttpProtocol;
@@ -168,8 +169,8 @@ fn otlp_http_exporter_sends_metrics_to_collector() -> Result<()> {
 
     let metrics = MetricsClient::new(MetricsConfig::otlp(
         "test",
-        "codex-cli",
-        env!("CARGO_PKG_VERSION"),
+        "chaos-cli",
+        CHAOS_VERSION,
         OtelExporter::OtlpHttp {
             endpoint: format!("http://{addr}/v1/metrics"),
             headers: HashMap::new(),
@@ -254,8 +255,8 @@ fn otlp_http_exporter_sends_traces_to_collector()
 
     let otel = OtelProvider::from(&OtelSettings {
         environment: "test".to_string(),
-        service_name: "codex-cli".to_string(),
-        service_version: env!("CARGO_PKG_VERSION").to_string(),
+        service_name: "chaos-cli".to_string(),
+        service_version: CHAOS_VERSION.to_string(),
         chaos_home: PathBuf::from("."),
         exporter: OtelExporter::None,
         trace_exporter: OtelExporter::OtlpHttp {
@@ -317,7 +318,7 @@ fn otlp_http_exporter_sends_traces_to_collector()
         &body.chars().take(2000).collect::<String>()
     );
     assert!(
-        body.contains("codex-cli"),
+        body.contains("chaos-cli"),
         "expected service name not found; body prefix: {}",
         &body.chars().take(2000).collect::<String>()
     );
@@ -362,8 +363,8 @@ async fn otlp_http_exporter_sends_traces_to_collector_in_tokio_runtime()
 
     let otel = OtelProvider::from(&OtelSettings {
         environment: "test".to_string(),
-        service_name: "codex-cli".to_string(),
-        service_version: env!("CARGO_PKG_VERSION").to_string(),
+        service_name: "chaos-cli".to_string(),
+        service_version: CHAOS_VERSION.to_string(),
         chaos_home: PathBuf::from("."),
         exporter: OtelExporter::None,
         trace_exporter: OtelExporter::OtlpHttp {
@@ -425,7 +426,7 @@ async fn otlp_http_exporter_sends_traces_to_collector_in_tokio_runtime()
         &body.chars().take(2000).collect::<String>()
     );
     assert!(
-        body.contains("codex-cli"),
+        body.contains("chaos-cli"),
         "expected service name not found; body prefix: {}",
         &body.chars().take(2000).collect::<String>()
     );
@@ -478,8 +479,8 @@ fn otlp_http_exporter_sends_traces_to_collector_in_current_thread_tokio_runtime(
         let result = runtime.block_on(async move {
             let otel = OtelProvider::from(&OtelSettings {
                 environment: "test".to_string(),
-                service_name: "codex-cli".to_string(),
-                service_version: env!("CARGO_PKG_VERSION").to_string(),
+                service_name: "chaos-cli".to_string(),
+                service_version: CHAOS_VERSION.to_string(),
                 chaos_home: PathBuf::from("."),
                 exporter: OtelExporter::None,
                 trace_exporter: OtelExporter::OtlpHttp {
@@ -552,7 +553,7 @@ fn otlp_http_exporter_sends_traces_to_collector_in_current_thread_tokio_runtime(
         &body.chars().take(2000).collect::<String>()
     );
     assert!(
-        body.contains("codex-cli"),
+        body.contains("chaos-cli"),
         "expected service name not found; body prefix: {}",
         &body.chars().take(2000).collect::<String>()
     );

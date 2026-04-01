@@ -416,14 +416,14 @@ mod tests {
         let tx = AppEventSender::new(tx_raw);
         let mut w = StatusIndicatorWidget::new(tx, crate::tui::FrameRequester::test_dummy(), true);
         w.update_details(
-            Some("cargo test -p codex-core and then cargo test -p codex-tui".to_string()),
+            Some("cargo test -p chaos-kern and then cargo test -p chaos-xserver".to_string()),
             StatusDetailsCapitalization::Preserve,
             1,
         );
 
         assert_eq!(
             w.details(),
-            Some("cargo test -p codex-core and then cargo test -p codex-tui")
+            Some("cargo test -p chaos-kern and then cargo test -p chaos-xserver")
         );
 
         let lines = w.wrapped_details_lines(24);

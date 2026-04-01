@@ -30,6 +30,7 @@ use chaos_ipc::approvals::ElicitationRequest;
 use chaos_ipc::approvals::ElicitationRequestEvent;
 use chaos_ipc::mcp::CallToolResult;
 use chaos_ipc::mcp::RequestId as ProtocolRequestId;
+use chaos_ipc::product::CHAOS_VERSION;
 use chaos_ipc::protocol::AskForApproval;
 use chaos_ipc::protocol::Event;
 use chaos_ipc::protocol::EventMsg;
@@ -144,7 +145,7 @@ fn digest_hex(bytes: &[u8]) -> String {
 }
 
 fn mcp_client_implementation_version() -> &'static str {
-    let version = env!("CARGO_PKG_VERSION");
+    let version = CHAOS_VERSION;
     if version == "0.0.0" {
         MIN_COMPATIBLE_MCP_CLIENT_VERSION
     } else {
@@ -1489,7 +1490,7 @@ fn mcp_init_error_display(
         )
     } else if is_mcp_client_auth_required_error(err) {
         format!(
-            "The {server_name} MCP server is not logged in. Run `codex mcp login {server_name}`."
+            "The {server_name} MCP server is not logged in. Run `chaos mcp login {server_name}`."
         )
     } else if is_mcp_client_startup_timeout_error(err) {
         let startup_timeout_secs = match entry {

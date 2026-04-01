@@ -13,6 +13,7 @@ pub mod exec_events;
 use chaos_argv::Arg0DispatchPaths;
 use chaos_ipc::ProcessId;
 use chaos_ipc::config_types::SandboxMode;
+use chaos_ipc::product::CHAOS_VERSION;
 use chaos_ipc::protocol::AskForApproval;
 use chaos_ipc::protocol::EventMsg;
 use chaos_ipc::protocol::Op;
@@ -111,7 +112,7 @@ fn exec_root_span() -> tracing::Span {
 
 pub async fn run_main(cli: Cli, arg0_paths: Arg0DispatchPaths) -> anyhow::Result<()> {
     if let Err(err) = set_default_originator("chaos_fork".to_string()) {
-        tracing::warn!(?err, "Failed to set codex exec originator override {err:?}");
+        tracing::warn!(?err, "Failed to set chaos exec originator override {err:?}");
     }
 
     let Cli {
@@ -323,7 +324,7 @@ pub async fn run_main(cli: Cli, arg0_paths: Arg0DispatchPaths) -> anyhow::Result
     let otel = match std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| {
         chaos_kern::otel_init::build_provider(
             &config,
-            env!("CARGO_PKG_VERSION"),
+            CHAOS_VERSION,
             /*service_name_override*/ None,
             DEFAULT_ANALYTICS_ENABLED,
         )

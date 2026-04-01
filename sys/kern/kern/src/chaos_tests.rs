@@ -1433,7 +1433,7 @@ fn init_test_tracing() {
     static INIT: Once = Once::new();
     INIT.call_once(|| {
         let provider = SdkTracerProvider::builder().build();
-        let tracer = provider.tracer("codex-core-tests");
+        let tracer = provider.tracer("chaos-tests");
         let subscriber =
             tracing_subscriber::registry().with(tracing_opentelemetry::layer().with_tracer(tracer));
         tracing::subscriber::set_global_default(subscriber)

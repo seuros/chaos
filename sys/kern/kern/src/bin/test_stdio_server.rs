@@ -3,6 +3,7 @@
 use std::io;
 use std::sync::Arc;
 
+use chaos_ipc::product::CHAOS_VERSION;
 use mcp_host::content::types::ImageContent;
 use mcp_host::prelude::*;
 use mcp_host::registry::router::McpToolRouter;
@@ -85,7 +86,7 @@ fn tool_router() -> McpToolRouter<TestStdioServer> {
 
 #[tokio::main(flavor = "current_thread")]
 async fn main() -> io::Result<()> {
-    let mcp_server = server("test-stdio-server", env!("CARGO_PKG_VERSION"))
+    let mcp_server = server("test-stdio-server", CHAOS_VERSION)
         .with_tools(true)
         .build();
     let server = Arc::new(TestStdioServer);

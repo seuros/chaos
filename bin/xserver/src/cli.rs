@@ -32,7 +32,7 @@ pub struct Cli {
     #[clap(skip)]
     pub resume_show_all: bool,
 
-    // Internal controls set by the top-level `codex fork` subcommand.
+    // Internal controls set by the top-level `chaos fork` subcommand.
     // These are not exposed as user flags on the base `codex` command.
     #[clap(skip)]
     pub fork_picker: bool,
@@ -41,7 +41,7 @@ pub struct Cli {
     pub fork_last: bool,
 
     /// Internal: fork a specific recorded session by id (UUID). Set by the
-    /// top-level `codex fork <SESSION_ID>` wrapper; not exposed as a public flag.
+    /// top-level `chaos fork <SESSION_ID>` wrapper; not exposed as a public flag.
     #[clap(skip)]
     pub fork_session_id: Option<String>,
 

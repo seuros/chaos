@@ -4961,7 +4961,7 @@ async fn unified_exec_wait_after_final_agent_message_snapshot() {
         }),
     });
 
-    begin_unified_exec_startup(&mut chat, "call-wait", "proc-1", "cargo test -p codex-core");
+    begin_unified_exec_startup(&mut chat, "call-wait", "proc-1", "cargo test -p chaos-kern");
     terminal_interaction(&mut chat, "call-wait-stdin", "proc-1", "");
 
     complete_assistant_message(&mut chat, "msg-1", "Final response.", None);
@@ -4997,7 +4997,7 @@ async fn unified_exec_wait_before_streamed_agent_message_snapshot() {
         &mut chat,
         "call-wait-stream",
         "proc-1",
-        "cargo test -p codex-core",
+        "cargo test -p chaos-kern",
     );
     terminal_interaction(&mut chat, "call-wait-stream-stdin", "proc-1", "");
 
@@ -5096,7 +5096,7 @@ async fn unified_exec_wait_status_renders_command_in_single_details_row_snapshot
         &mut chat,
         "call-wait-ui",
         "proc-ui",
-        "cargo test -p codex-core -- --exact some::very::long::test::name",
+        "cargo test -p chaos-kern -- --exact some::very::long::test::name",
     );
 
     terminal_interaction(&mut chat, "call-wait-ui-stdin", "proc-ui", "");

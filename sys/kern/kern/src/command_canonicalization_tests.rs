@@ -6,12 +6,12 @@ fn canonicalizes_word_only_shell_scripts_to_inner_command() {
     let command_a = vec![
         "/bin/bash".to_string(),
         "-lc".to_string(),
-        "cargo test -p codex-core".to_string(),
+        "cargo test -p chaos-kern".to_string(),
     ];
     let command_b = vec![
         "bash".to_string(),
         "-lc".to_string(),
-        "cargo   test   -p codex-core".to_string(),
+        "cargo   test   -p chaos-kern".to_string(),
     ];
 
     assert_eq!(
@@ -20,7 +20,7 @@ fn canonicalizes_word_only_shell_scripts_to_inner_command() {
             "cargo".to_string(),
             "test".to_string(),
             "-p".to_string(),
-            "codex-core".to_string(),
+            "chaos-kern".to_string(),
         ]
     );
     assert_eq!(

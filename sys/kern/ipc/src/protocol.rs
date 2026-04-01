@@ -390,7 +390,7 @@ pub enum Op {
     UpdateMemories,
 
     /// Set a user-facing process name in persisted session metadata.
-    /// This is a local-only operation handled by codex-core; it does not
+    /// This is a local-only operation handled by chaos-kern; it does not
     /// involve the model.
     #[serde(rename = "set_process_name")]
     SetProcessName { name: String },

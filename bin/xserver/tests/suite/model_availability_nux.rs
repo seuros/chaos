@@ -89,10 +89,10 @@ trust_level = "trusted"
         .env("CODEX_RS_SSE_FIXTURE", fixture_path)
         .env("OPENAI_BASE_URL", "http://unused.local")
         .output()
-        .context("failed to execute codex exec")?;
+        .context("failed to execute chaos exec")?;
     anyhow::ensure!(
         exec_output.status.success(),
-        "codex exec failed: {}",
+        "chaos exec failed: {}",
         String::from_utf8_lossy(&exec_output.stderr)
     );
 
@@ -168,12 +168,12 @@ trust_level = "trusted"
         Ok(Err(err)) => return Err(err.into()),
         Err(_) => {
             session.terminate();
-            anyhow::bail!("timed out waiting for codex resume to exit");
+            anyhow::bail!("timed out waiting for chaos resume to exit");
         }
     };
     anyhow::ensure!(
         exit_code == 0 || exit_code == 130,
-        "unexpected exit code from codex resume: {exit_code}; output: {}",
+        "unexpected exit code from chaos resume: {exit_code}; output: {}",
         String::from_utf8_lossy(&output)
     );
 

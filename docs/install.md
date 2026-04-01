@@ -30,12 +30,12 @@ just build
 
 Chaos honors the `RUST_LOG` environment variable.
 
-The TUI defaults to `RUST_LOG=codex_core=info,codex_tui=info,codex_rmcp_client=info` and writes logs to `~/.chaos/log/codex-tui.log`. Override with `-c log_dir=...`.
+The TUI defaults to `RUST_LOG=chaos_kern=info,chaos_xserver=info,mcp_guest=info` and writes logs to `~/.chaos/log/chaos-xserver.log`. Override with `-c log_dir=...`.
 
 ```bash
-tail -F ~/.chaos/log/codex-tui.log
+tail -F ~/.chaos/log/chaos-xserver.log
 ```
 
-The non-interactive mode (`codex exec`) defaults to `RUST_LOG=error`, printed inline.
+The non-interactive mode (`chaos exec`) defaults to `RUST_LOG=error`, printed inline.
 
 See the Rust docs on [`RUST_LOG`](https://docs.rs/env_logger/latest/env_logger/#enabling-logging) for configuration options.

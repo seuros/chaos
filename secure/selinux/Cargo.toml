@@ -4,7 +4,7 @@ version.workspace = true
 edition.workspace = true
 license.workspace = true
 publish.workspace = true
-description = "Codex exec policy: prefix-based Lua rules for command decisions."
+description = "Chaos exec policy: prefix-based Lua rules for command decisions."
 
 [lib]
 name = "chaos_selinux"

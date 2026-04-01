@@ -9,6 +9,7 @@ use std::time::{Duration, Instant};
 use chaos_ipc::ProcessId;
 use chaos_ipc::dynamic_tools::DynamicToolSpec;
 use chaos_ipc::models::BaseInstructions;
+use chaos_ipc::product::CHAOS_VERSION;
 use chaos_journald::AppendBatchInput as JournalAppendBatchInput;
 use chaos_journald::CreateProcessInput as JournalCreateProcessInput;
 use chaos_journald::ErrorCode as JournalErrorCode;
@@ -352,7 +353,7 @@ impl RolloutRecorder {
                     timestamp,
                     cwd: config.cwd().to_path_buf(),
                     originator: originator().value,
-                    cli_version: env!("CARGO_PKG_VERSION").to_string(),
+                    cli_version: CHAOS_VERSION.to_string(),
                     agent_nickname: source.get_nickname(),
                     agent_role: source.get_agent_role(),
                     source,
@@ -375,7 +376,7 @@ impl RolloutRecorder {
                         cwd: config.cwd().to_path_buf(),
                         created_at: Timestamp::now(),
                         model_provider: config.model_provider_id().to_string(),
-                        cli_version: env!("CARGO_PKG_VERSION").to_string(),
+                        cli_version: CHAOS_VERSION.to_string(),
                         owner_id: Uuid::now_v7().to_string(),
                     }),
                     false,
@@ -394,7 +395,7 @@ impl RolloutRecorder {
                     cwd: config.cwd().to_path_buf(),
                     created_at: Timestamp::now(),
                     model_provider: config.model_provider_id().to_string(),
-                    cli_version: env!("CARGO_PKG_VERSION").to_string(),
+                    cli_version: CHAOS_VERSION.to_string(),
                     owner_id: Uuid::now_v7().to_string(),
                 }),
                 true,

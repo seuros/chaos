@@ -12,7 +12,7 @@ use tokio::sync::mpsc::unbounded_channel;
 use crate::app_event::AppEvent;
 use crate::app_event_sender::AppEventSender;
 
-const TUI_NOTIFY_CLIENT: &str = "codex-tui";
+const TUI_NOTIFY_CLIENT: &str = "chaos-xserver";
 
 async fn initialize_app_server_client_name(thread: &Process) {
     if let Err(err) = thread

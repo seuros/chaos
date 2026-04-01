@@ -5678,6 +5678,7 @@ dependencies = [
 name = "mcp-guest"
 version = "47.0.0"
 dependencies = [
+ "chaos-ipc",
  "mcp-host",
  "rama",
  "serde",

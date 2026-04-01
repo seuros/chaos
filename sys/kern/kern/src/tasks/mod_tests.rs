@@ -1,4 +1,5 @@
 use super::emit_turn_network_proxy_metric;
+use chaos_ipc::product::CHAOS_VERSION;
 use chaos_syslog::SessionTelemetry;
 use chaos_syslog::metrics::MetricsClient;
 use chaos_syslog::metrics::MetricsConfig;
@@ -17,7 +18,7 @@ use std::collections::BTreeMap;
 fn test_session_telemetry() -> SessionTelemetry {
     let exporter = InMemoryMetricExporter::default();
     let metrics = MetricsClient::new(
-        MetricsConfig::in_memory("test", "codex-core", env!("CARGO_PKG_VERSION"), exporter)
+        MetricsConfig::in_memory("test", "chaos", CHAOS_VERSION, exporter)
             .with_runtime_reader(),
     )
     .expect("in-memory metrics client");

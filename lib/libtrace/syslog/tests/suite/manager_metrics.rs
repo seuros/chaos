@@ -3,6 +3,7 @@ use crate::harness::build_metrics_with_defaults;
 use crate::harness::find_metric;
 use crate::harness::latest_metrics;
 use chaos_ipc::ProcessId;
+use chaos_ipc::product::CHAOS_VERSION;
 use chaos_ipc::protocol::SessionSource;
 use chaos_syslog::SessionTelemetry;
 use chaos_syslog::TelemetryAuthMode;
@@ -15,7 +16,7 @@ use std::collections::BTreeMap;
 // Ensures SessionTelemetry attaches metadata tags when forwarding metrics.
 #[test]
 fn manager_attaches_metadata_tags_to_metrics() -> Result<()> {
-    let (metrics, exporter) = build_metrics_with_defaults(&[("service", "codex-cli")])?;
+    let (metrics, exporter) = build_metrics_with_defaults(&[("service", "chaos-cli")])?;
     let manager = SessionTelemetry::new(
         ProcessId::new(),
         "gpt-5.1",
@@ -51,7 +52,7 @@ fn manager_attaches_metadata_tags_to_metrics() -> Result<()> {
     let expected = BTreeMap::from([
         (
             "app.version".to_string(),
-            env!("CARGO_PKG_VERSION").to_string(),
+            CHAOS_VERSION.to_string(),
         ),
         (
             "auth_mode".to_string(),
@@ -59,7 +60,7 @@ fn manager_attaches_metadata_tags_to_metrics() -> Result<()> {
         ),
         ("model".to_string(), "gpt-5.1".to_string()),
         ("originator".to_string(), "test_originator".to_string()),
-        ("service".to_string(), "codex-cli".to_string()),
+        ("service".to_string(), "chaos-cli".to_string()),
         ("session_source".to_string(), "cli".to_string()),
         ("source".to_string(), "tui".to_string()),
     ]);

@@ -542,7 +542,7 @@ struct PreClampSelection {
 /// intent (`Op` submissions and `AppEvent` requests).
 ///
 /// It is not responsible for running the agent itself; it reflects progress by updating UI state
-/// and by sending requests back to codex-core.
+/// and by sending requests back to chaos-kern.
 ///
 /// Quit/interrupt behavior intentionally spans layers: the bottom pane owns local input routing
 /// (which view gets Ctrl+C), while `ChatWidget` owns process-level decisions such as interrupting
@@ -596,7 +596,7 @@ pub(crate) struct ChatWidget {
     turn_sleep_inhibitor: SleepInhibitor,
     task_complete_pending: bool,
     unified_exec_processes: Vec<UnifiedExecProcessSummary>,
-    /// Tracks whether codex-core currently considers an agent turn to be in progress.
+    /// Tracks whether chaos-kern currently considers an agent turn to be in progress.
     ///
     /// This is kept separate from `mcp_startup_status` so that MCP startup progress (or completion)
     /// can update the status header without accidentally clearing the spinner for an active turn.
@@ -1313,7 +1313,7 @@ impl ChatWidget {
         if let Some(messages) = initial_messages {
             self.replay_initial_messages(messages);
         }
-        // Ask codex-core to enumerate custom prompts for this session.
+        // Ask chaos-kern to enumerate custom prompts for this session.
         self.submit_op(Op::ListCustomPrompts);
         if self.connectors_enabled() {
             self.prefetch_connectors();

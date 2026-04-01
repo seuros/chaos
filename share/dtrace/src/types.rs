@@ -226,7 +226,7 @@ mod tests {
                     tool_input: HookToolInput::LocalShell {
                         params: HookToolInputLocalShell {
                             command: vec!["cargo".to_string(), "fmt".to_string()],
-                            workdir: Some("codex-rs".to_string()),
+                            workdir: Some("chaos".to_string()),
                             timeout_ms: Some(60_000),
                             sandbox_permissions: Some(SandboxPermissions::UseDefault),
                             justification: None,
@@ -259,7 +259,7 @@ mod tests {
                     "input_type": "local_shell",
                     "params": {
                         "command": ["cargo", "fmt"],
-                        "workdir": "codex-rs",
+                        "workdir": "chaos",
                         "timeout_ms": 60000,
                         "sandbox_permissions": "use_default",
                         "justification": null,

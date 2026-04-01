@@ -1,8 +1,8 @@
-//! Narrow trait abstractions for decoupling codex-core orchestration into satellite crates.
+//! Narrow trait abstractions for decoupling chaos-kern orchestration into satellite crates.
 //!
 //! Each trait defines the minimal surface a consumer needs. Core implements these traits on its
 //! concrete types (Session, Config, etc.). Satellite crates depend on `chaos-traits` instead of
-//! `codex-core`, breaking the circular dependency.
+//! `chaos-kern`, breaking the circular dependency.
 
 pub mod agent;
 pub mod catalog;

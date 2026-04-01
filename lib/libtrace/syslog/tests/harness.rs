@@ -1,5 +1,6 @@
 #![allow(dead_code)]
 
+use chaos_ipc::product::CHAOS_VERSION;
 use chaos_syslog::metrics::MetricsClient;
 use chaos_syslog::metrics::MetricsConfig;
 use chaos_syslog::metrics::Result;
@@ -17,8 +18,8 @@ pub(crate) fn build_metrics_with_defaults(
     let exporter = InMemoryMetricExporter::default();
     let mut config = MetricsConfig::in_memory(
         "test",
-        "codex-cli",
-        env!("CARGO_PKG_VERSION"),
+        "chaos-cli",
+        CHAOS_VERSION,
         exporter.clone(),
     );
     for (key, value) in default_tags {

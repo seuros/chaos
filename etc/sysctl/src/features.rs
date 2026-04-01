@@ -2,7 +2,7 @@
 //!
 //! Pure data definitions with no runtime dependencies on `Config`.
 //! Runtime evaluation functions (`from_config`, `emit_metrics`) stay in
-//! `codex-core::features`.
+//! `chaos-kern::features`.
 
 use schemars::JsonSchema;
 use serde::Deserialize;

@@ -1,5 +1,11 @@
-/// The product name shown in the TUI header.
-pub const PRODUCT_NAME: &str = "Chaos";
+//! Xserver-facing accessors for canonical ChaOS product/build identity.
+//!
+//! The source of truth lives in `chaos_ipc::product` so every crate can reuse
+//! the same name/version contract. This module only re-exports those values for
+//! the TUI and keeps UI-specific code from importing shared build info directly
+//! all over the tree.
 
-/// The current version as embedded at compile time.
-pub const CHAOS_VERSION: &str = env!("CARGO_PKG_VERSION");
+pub use chaos_ipc::product::CHAOS_VERSION;
+pub use chaos_ipc::product::PRODUCT_NAME;
+pub use chaos_ipc::product::version_badge;
+pub use chaos_ipc::product::version_badge_for;

@@ -29,7 +29,7 @@ pub const APPLY_PATCH_TOOL_INSTRUCTIONS: &str = include_str!("../apply_patch_too
 /// internal `apply_patch` path.
 ///
 /// Although this constant lives in `codex-apply-patch` (to avoid forcing
-/// `codex-arg0` to depend on `codex-core`), it is part of the "codex core"
+/// `codex-arg0` to depend on `chaos-kern`), it is part of the "Chaos core"
 /// process-invocation contract between the apply-patch runtime and the arg0
 /// dispatcher.
 pub const CODEX_CORE_APPLY_PATCH_ARG1: &str = "--codex-run-as-apply-patch";

@@ -1,5 +1,5 @@
 ; when network access is enabled, these policies are added after those in seatbelt_base_policy.sbpl
-; proxy-specific allow rules are injected by codex-core based on environment.
+; proxy-specific allow rules are injected by chaos-kern based on environment.
 ; Ref https://source.chromium.org/chromium/chromium/src/+/main:sandbox/policy/mac/network.sb;drc=f8f264d5e4e7509c913f4c60c2639d15905a07e4
 
 ; allow only safe AF_SYSTEM sockets used for local platform services.

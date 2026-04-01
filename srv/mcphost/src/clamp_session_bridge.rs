@@ -6,6 +6,7 @@ use std::sync::Arc;
 use chaos_ipc::clamp_bridge::{ClampBridgeRequest, ClampBridgeResponse};
 use chaos_ipc::mcp::Tool as BridgeToolSpec;
 use chaos_ipc::models::ResponseInputItem;
+use chaos_ipc::product::CHAOS_VERSION;
 use mcp_host::prelude::*;
 use mcp_host::registry::tools::{Tool, ToolError, ToolFuture, ToolOutput};
 use mcp_host::server::visibility::ExecutionContext;
@@ -24,7 +25,7 @@ pub async fn run_main() -> IoResult<()> {
         .map_err(|_| Error::new(ErrorKind::InvalidInput, format!("missing {TOKEN_ENV}")))?;
 
     let tool_specs = list_tools(&socket_path, &token).await?;
-    let server = server("chaos-clamp-session-bridge", env!("CARGO_PKG_VERSION"))
+    let server = server("chaos-clamp-session-bridge", CHAOS_VERSION)
         .with_tools(true)
         .with_instructions("Chaos session-backed tools for clamp")
         .build();

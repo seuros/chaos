@@ -1,5 +1,6 @@
 use crate::config_loader::ResidencyRequirement;
 use codex_client::CodexHttpClient;
+use chaos_ipc::product::CHAOS_VERSION;
 pub use codex_client::CodexRequestBuilder;
 use http::HeaderMap;
 use http::HeaderValue;
@@ -119,12 +120,12 @@ pub fn is_first_party_chat_originator(originator_value: &str) -> bool {
 }
 
 pub fn get_codex_user_agent() -> String {
-    let build_version = env!("CARGO_PKG_VERSION");
     let os_info = os_info::get();
     let originator = originator();
     let prefix = format!(
-        "{}/{build_version} ({} {}; {}) {}",
+        "{}/{} ({} {}; {}) {}",
         originator.value.as_str(),
+        CHAOS_VERSION,
         os_info.os_type(),
         os_info.version(),
         os_info.architecture().unwrap_or("unknown"),

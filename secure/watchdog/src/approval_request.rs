@@ -163,7 +163,7 @@ fn command_assessment_action_value(tool: &'static str, command: &[String], cwd: 
 }
 
 // ---------------------------------------------------------------------------
-// Truncation helpers (inlined from codex-core guardian/prompt + truncate)
+// Truncation helpers (inlined from chaos-kern guardian/prompt + truncate)
 // ---------------------------------------------------------------------------
 
 fn approx_bytes_for_tokens(tokens: usize) -> usize {

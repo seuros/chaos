@@ -1,19 +1,19 @@
 # chaos-doas
 
 This crate contains the Unix shell-escalation protocol implementation and the
-`codex-execve-wrapper` executable.
+`chaos-forkve-wrapper` executable.
 
-`codex-execve-wrapper` receives the arguments to an intercepted `execve(2)` call and delegates the
+`chaos-forkve-wrapper` receives the arguments to an intercepted `execve(2)` call and delegates the
 decision to the shell-escalation protocol over a shared file descriptor (specified by the
-`CODEX_ESCALATE_SOCKET` environment variable). The server on the other side replies with one of:
+`CHAOS_ESCALATE_SOCKET` environment variable). The server on the other side replies with one of:
 
-- `Run`: `codex-execve-wrapper` should invoke `execve(2)` on itself to run the original command
+- `Run`: `chaos-forkve-wrapper` should invoke `execve(2)` on itself to run the original command
   within the sandboxed shell.
 - `Escalate`: forward the file descriptors of the current process so the command can be run
   faithfully outside the sandbox. When the process completes, the server forwards the exit code
-  back to `codex-execve-wrapper`.
+  back to `chaos-forkve-wrapper`.
 - `Deny`: the server has declared the proposed command to be forbidden, so
-  `codex-execve-wrapper` prints an error to `stderr` and exits with `1`.
+  `chaos-forkve-wrapper` prints an error to `stderr` and exits with `1`.
 
 ## Patched Bash
 

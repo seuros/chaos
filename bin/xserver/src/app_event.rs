@@ -240,6 +240,9 @@ pub(crate) enum AppEvent {
     /// Re-open the approval presets popup.
     OpenApprovalsPopup,
 
+    /// Open the interactive login popup.
+    OpenLoginPopup,
+
     /// Enable or disable an app by connector ID.
     SetAppEnabled {
         id: String,

@@ -12,12 +12,10 @@ use chaos_ipc::config_types::AltScreenMode;
 use chaos_ipc::config_types::SandboxMode;
 use chaos_ipc::protocol::AskForApproval;
 use chaos_kern::AuthManager;
-use chaos_kern::ChaosAuth;
 use chaos_kern::INTERACTIVE_SESSION_SOURCES;
 use chaos_kern::ProcessSortKey;
 use chaos_kern::ProcessTable;
 use chaos_kern::RolloutRecorder;
-use chaos_kern::auth::AuthMode;
 use chaos_kern::auth::enforce_login_restrictions;
 use chaos_kern::check_execpolicy_for_warnings;
 use chaos_kern::config::Config;
@@ -60,7 +58,7 @@ mod app;
 mod app_backtrack;
 mod app_event;
 mod app_event_sender;
-mod ascii_animation;
+// mod ascii_animation; // removed: boot no longer shows animation
 mod bottom_pane;
 mod chatwidget;
 mod cli;
@@ -76,7 +74,7 @@ mod exec_cell;
 mod exec_command;
 mod external_editor;
 mod file_search;
-mod frames;
+// mod frames; // removed: boot no longer shows animation
 mod get_git_diff;
 mod history_cell;
 pub mod insert_history;
@@ -458,7 +456,7 @@ async fn run_ratatui_app(
     initial_config: Config,
     overrides: ConfigOverrides,
     cli_kv_overrides: Vec<(String, toml::Value)>,
-    mut cloud_requirements: CloudRequirementsLoader,
+    cloud_requirements: CloudRequirementsLoader,
     log_state_db: Option<Arc<StateRuntime>>,
 ) -> color_eyre::Result<AppExitInfo> {
     color_eyre::install()?;
@@ -480,24 +478,12 @@ async fn run_ratatui_app(
     // Initialize high-fidelity session event logging if enabled.
     session_log::maybe_init(&initial_config);
 
-    let auth_manager = AuthManager::shared(
-        initial_config.chaos_home.clone(),
-        /*enable_codex_api_key_env*/ false,
-        initial_config.cli_auth_credentials_store_mode,
-    );
-    let login_status = get_login_status(&initial_config);
     let should_show_trust_screen_flag = should_show_trust_screen(&initial_config);
-    let should_show_onboarding =
-        should_show_onboarding(login_status, &initial_config, should_show_trust_screen_flag);
 
-    let config = if should_show_onboarding {
-        let show_login_screen = should_show_login_screen(login_status, &initial_config);
+    let config = if should_show_trust_screen_flag {
         let onboarding_result = run_onboarding_app(
             OnboardingScreenArgs {
-                show_login_screen,
-                show_trust_screen: should_show_trust_screen_flag,
-                login_status,
-                auth_manager: auth_manager.clone(),
+                show_trust_screen: true,
                 config: initial_config.clone(),
             },
             &mut tui,
@@ -514,17 +500,10 @@ async fn run_ratatui_app(
                 exit_reason: ExitReason::UserRequested,
             });
         }
-        let _ = onboarding_result.directory_trust_decision.is_some();
-        // If this onboarding run included the login step, always refresh cloud requirements and
-        // rebuild config. This avoids missing newly available cloud requirements due to login
-        // status detection edge cases.
-        if show_login_screen {
-            cloud_requirements = CloudRequirementsLoader::default();
-        }
 
-        // If the user made an explicit trust decision, or we showed the login flow, reload config
-        // so current process state reflects persisted trust/auth changes.
-        if onboarding_result.directory_trust_decision.is_some() || show_login_screen {
+        // If the user made an explicit trust decision, reload config so current
+        // process state reflects persisted trust changes.
+        if onboarding_result.directory_trust_decision.is_some() {
             load_config_or_exit(
                 cli_kv_overrides.clone(),
                 overrides.clone(),
@@ -898,30 +877,6 @@ fn determine_alt_screen_mode(no_alt_screen: bool, tui_alternate_screen: AltScree
     }
 }
 
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
-pub enum LoginStatus {
-    AuthMode(AuthMode),
-    NotAuthenticated,
-}
-
-fn get_login_status(config: &Config) -> LoginStatus {
-    if config.model_provider.requires_openai_auth {
-        // Reading the OpenAI API key is an async operation because it may need
-        // to refresh the token. Block on it.
-        let chaos_home = config.chaos_home.clone();
-        match ChaosAuth::from_auth_storage(&chaos_home, config.cli_auth_credentials_store_mode) {
-            Ok(Some(auth)) => LoginStatus::AuthMode(auth.auth_mode()),
-            Ok(None) => LoginStatus::NotAuthenticated,
-            Err(err) => {
-                error!("Failed to read auth.json: {err}");
-                LoginStatus::NotAuthenticated
-            }
-        }
-    } else {
-        LoginStatus::NotAuthenticated
-    }
-}
-
 async fn load_config_or_exit(
     cli_kv_overrides: Vec<(String, toml::Value)>,
     overrides: ConfigOverrides,
@@ -962,28 +917,6 @@ async fn load_config_or_exit_with_fallback_cwd(
 /// Determine if the user has decided whether to trust the current directory.
 fn should_show_trust_screen(config: &Config) -> bool {
     config.active_project.trust_level.is_none()
-}
-
-fn should_show_onboarding(
-    login_status: LoginStatus,
-    config: &Config,
-    show_trust_screen: bool,
-) -> bool {
-    if show_trust_screen {
-        return true;
-    }
-
-    should_show_login_screen(login_status, config)
-}
-
-fn should_show_login_screen(login_status: LoginStatus, config: &Config) -> bool {
-    // Only show the login screen for providers that actually require OpenAI auth
-    // (OpenAI or equivalents). For OSS/other providers, skip login entirely.
-    if !config.model_provider.requires_openai_auth {
-        return false;
-    }
-
-    login_status == LoginStatus::NotAuthenticated
 }
 
 #[cfg(test)]

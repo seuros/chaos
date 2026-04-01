@@ -1,4 +1,5 @@
 mod device_code_auth;
+mod login_flow_machine;
 mod pkce;
 mod server;
 
@@ -7,6 +8,11 @@ pub use device_code_auth::DeviceCode;
 pub use device_code_auth::complete_device_code_login;
 pub use device_code_auth::request_device_code;
 pub use device_code_auth::run_device_code_login;
+pub use login_flow_machine::LoginFlowCancel;
+pub use login_flow_machine::LoginFlowHandle;
+pub use login_flow_machine::LoginFlowMode;
+pub use login_flow_machine::LoginFlowUpdate;
+pub use login_flow_machine::spawn_login_flow;
 pub use server::LoginServer;
 pub use server::ServerOptions;
 pub use server::ShutdownHandle;

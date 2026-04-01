@@ -541,9 +541,7 @@ impl HistoryCell for StatusHistoryCell {
         if !crate::theme::is_clamped()
             && let Some(model_provider) = self.model_provider.as_ref()
         {
-            lines.push(
-                formatter.line("Model provider", vec![Span::from(model_provider.clone())]),
-            );
+            lines.push(formatter.line("Model provider", vec![Span::from(model_provider.clone())]));
         }
         lines.push(formatter.line("Directory", vec![Span::from(directory_value)]));
         lines.push(formatter.line("Permissions", vec![Span::from(self.permissions.clone())]));

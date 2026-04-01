@@ -80,16 +80,12 @@ This architecture is correct usage of both providers' terms of service.
 
 ---
 
-## Install
-
-See [Installing & building from source](./docs/install.md).
-
----
-
 ## Docs
 
-- [Contributing](./docs/contributing.md)
 - [Installing & building from source](./docs/install.md)
+- [Adding LLM providers](./docs/adding-providers.md)
+- [Hallucinate — scripting engine](./docs/hallucinate.md)
+- [Contributing](./docs/contributing.md)
 
 ---
 

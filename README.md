@@ -10,34 +10,29 @@ bugs were called features. It runs on a Celeron.
 ## Architecture
 
 ```mermaid
-block-beta
-  columns 3
-
-  block:kernel["Kernel"]:1
-    k1["LLM comms layer"]
-    k2["OpenAI"]
-    k3["Anthropic"]
-    k4["Local models"]
+graph LR
+  subgraph Kernel
+    K[LLM comms layer]
+    K --> OpenAI
+    K --> Anthropic
+    K --> Local["Local models"]
   end
 
-  block:modules["Modules"]:1
-    m1["Tools that extend the OS"]
-    m2["Voice"]
-    m3["Sandbox"]
-    m4["Hallucinate"]
+  subgraph Modules
+    M1[Voice]
+    M2[Sandbox]
+    M3[Hallucinate]
   end
 
-  block:drivers["Drivers"]:1
-    d1["MCP servers for external services"]
-    d2["File system"]
-    d3["Telegram"]
-    d4["Google Play"]
-    d5["GitHub"]
+  subgraph Drivers
+    D1[File system]
+    D2[Telegram]
+    D3[Google Play]
+    D4[GitHub]
   end
 
-  style kernel fill:#1a1a2e,stroke:#e94560,color:#eee
-  style modules fill:#1a1a2e,stroke:#0f3460,color:#eee
-  style drivers fill:#1a1a2e,stroke:#16213e,color:#eee
+  Kernel --> Modules
+  Kernel --> Drivers
 ```
 
 **Kernel** — Talks to LLM providers. OpenAI, Anthropic, local models. This is the only

@@ -1806,7 +1806,7 @@ impl Session {
                 .catalog
                 .write()
                 .unwrap_or_else(std::sync::PoisonError::into_inner);
-            for (_fq_name, tool_info) in &mcp_tools {
+            for tool_info in mcp_tools.values() {
                 catalog.register_mcp_tools(
                     &tool_info.server_name,
                     vec![crate::catalog::mcp_tool_info_to_catalog_tool(tool_info)],
@@ -3838,7 +3838,7 @@ impl Session {
                 .unwrap_or_else(std::sync::PoisonError::into_inner);
             // Clear all previous MCP entries and re-register.
             catalog.clear_all_mcp();
-            for (_fq_name, tool_info) in &mcp_tools {
+            for tool_info in mcp_tools.values() {
                 catalog.register_mcp_tools(
                     &tool_info.server_name,
                     vec![crate::catalog::mcp_tool_info_to_catalog_tool(tool_info)],

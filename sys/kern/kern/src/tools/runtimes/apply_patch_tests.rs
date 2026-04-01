@@ -1,7 +1,5 @@
 use super::*;
 use chaos_ipc::protocol::GranularApprovalConfig;
-use pretty_assertions::assert_eq;
-use std::collections::HashMap;
 
 #[test]
 fn wants_no_sandbox_approval_granular_respects_sandbox_flag() {

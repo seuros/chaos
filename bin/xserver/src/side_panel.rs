@@ -144,7 +144,7 @@ impl LogPanelState {
             format!(
                 " Logs {} ",
                 self.process_id
-                    .map(|id| short_process_id(id))
+                    .map(short_process_id)
                     .unwrap_or_else(|| "idle".to_string())
             )
             .bold(),
@@ -223,8 +223,7 @@ pub(crate) fn split_main_and_panel(area: Rect, panel_visible: bool) -> (Rect, Op
 
     let ideal = ((area.width as f32) * 0.35).round() as u16;
     let panel_width = ideal
-        .max(LOG_PANEL_MIN_WIDTH)
-        .min(LOG_PANEL_MAX_WIDTH)
+        .clamp(LOG_PANEL_MIN_WIDTH, LOG_PANEL_MAX_WIDTH)
         .min(area.width.saturating_sub(LOG_PANEL_MAIN_MIN_WIDTH));
 
     let [main, panel] = Layout::default()

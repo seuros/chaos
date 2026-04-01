@@ -1,5 +1,7 @@
 use super::*;
 use crate::model::AgentJobItemRow;
+use crate::model::agent_job_machine::item::AgentJobItemWorkflow;
+use crate::model::agent_job_machine::job::AgentJobWorkflow;
 
 impl StateRuntime {
     pub async fn create_agent_job(
@@ -205,6 +207,10 @@ WHERE job_id = ? AND item_id = ?
     }
 
     pub async fn mark_agent_job_running(&self, job_id: &str) -> anyhow::Result<()> {
+        let status = self.get_agent_job_status(job_id).await?;
+        let mut wf = AgentJobWorkflow::from_status(status);
+        anyhow::ensure!(wf.start(), "cannot transition job {job_id} from {status:?} to Running");
+
         let now = jiff::Timestamp::now().as_second();
         sqlx::query(
             r#"
@@ -215,31 +221,37 @@ SET
     started_at = COALESCE(started_at, ?),
     completed_at = NULL,
     last_error = NULL
-WHERE id = ?
+WHERE id = ? AND status = ?
             "#,
         )
         .bind(AgentJobStatus::Running.as_str())
         .bind(now)
         .bind(now)
         .bind(job_id)
+        .bind(status.as_str())
         .execute(self.pool.as_ref())
         .await?;
         Ok(())
     }
 
     pub async fn mark_agent_job_completed(&self, job_id: &str) -> anyhow::Result<()> {
+        let status = self.get_agent_job_status(job_id).await?;
+        let mut wf = AgentJobWorkflow::from_status(status);
+        anyhow::ensure!(wf.complete(), "cannot transition job {job_id} from {status:?} to Completed");
+
         let now = jiff::Timestamp::now().as_second();
         sqlx::query(
             r#"
 UPDATE agent_jobs
 SET status = ?, updated_at = ?, completed_at = ?, last_error = NULL
-WHERE id = ?
+WHERE id = ? AND status = ?
             "#,
         )
         .bind(AgentJobStatus::Completed.as_str())
         .bind(now)
         .bind(now)
         .bind(job_id)
+        .bind(status.as_str())
         .execute(self.pool.as_ref())
         .await?;
         Ok(())
@@ -250,12 +262,16 @@ WHERE id = ?
         job_id: &str,
         error_message: &str,
     ) -> anyhow::Result<()> {
+        let status = self.get_agent_job_status(job_id).await?;
+        let mut wf = AgentJobWorkflow::from_status(status);
+        anyhow::ensure!(wf.fail(), "cannot transition job {job_id} from {status:?} to Failed");
+
         let now = jiff::Timestamp::now().as_second();
         sqlx::query(
             r#"
 UPDATE agent_jobs
 SET status = ?, updated_at = ?, completed_at = ?, last_error = ?
-WHERE id = ?
+WHERE id = ? AND status = ?
             "#,
         )
         .bind(AgentJobStatus::Failed.as_str())
@@ -263,6 +279,7 @@ WHERE id = ?
         .bind(now)
         .bind(error_message)
         .bind(job_id)
+        .bind(status.as_str())
         .execute(self.pool.as_ref())
         .await?;
         Ok(())
@@ -273,12 +290,18 @@ WHERE id = ?
         job_id: &str,
         reason: &str,
     ) -> anyhow::Result<bool> {
+        let status = self.get_agent_job_status(job_id).await?;
+        let mut wf = AgentJobWorkflow::from_status(status);
+        if !wf.cancel() {
+            return Ok(false);
+        }
+
         let now = jiff::Timestamp::now().as_second();
         let result = sqlx::query(
             r#"
 UPDATE agent_jobs
 SET status = ?, updated_at = ?, completed_at = ?, last_error = ?
-WHERE id = ? AND status IN (?, ?)
+WHERE id = ? AND status = ?
             "#,
         )
         .bind(AgentJobStatus::Cancelled.as_str())
@@ -286,11 +309,24 @@ WHERE id = ? AND status IN (?, ?)
         .bind(now)
         .bind(reason)
         .bind(job_id)
-        .bind(AgentJobStatus::Pending.as_str())
-        .bind(AgentJobStatus::Running.as_str())
+        .bind(status.as_str())
         .execute(self.pool.as_ref())
         .await?;
         Ok(result.rows_affected() > 0)
+    }
+
+    async fn get_agent_job_status(&self, job_id: &str) -> anyhow::Result<AgentJobStatus> {
+        let row = sqlx::query(
+            r#"
+SELECT status FROM agent_jobs WHERE id = ?
+            "#,
+        )
+        .bind(job_id)
+        .fetch_optional(self.pool.as_ref())
+        .await?;
+        let row = row.ok_or_else(|| anyhow::anyhow!("agent job {job_id} not found"))?;
+        let status: String = row.try_get("status")?;
+        AgentJobStatus::parse(status.as_str())
     }
 
     pub async fn is_agent_job_cancelled(&self, job_id: &str) -> anyhow::Result<bool> {
@@ -316,6 +352,10 @@ WHERE id = ?
         job_id: &str,
         item_id: &str,
     ) -> anyhow::Result<bool> {
+        // Validate: only Pending → Running is allowed.
+        let mut wf = AgentJobItemWorkflow::new();
+        assert!(wf.start(), "item lifecycle: Pending → Running must be valid");
+
         let now = jiff::Timestamp::now().as_second();
         let result = sqlx::query(
             r#"
@@ -345,6 +385,9 @@ WHERE job_id = ? AND item_id = ? AND status = ?
         item_id: &str,
         process_id: &str,
     ) -> anyhow::Result<bool> {
+        let mut wf = AgentJobItemWorkflow::new();
+        assert!(wf.start(), "item lifecycle: Pending → Running must be valid");
+
         let now = jiff::Timestamp::now().as_second();
         let result = sqlx::query(
             r#"
@@ -375,6 +418,10 @@ WHERE job_id = ? AND item_id = ? AND status = ?
         item_id: &str,
         error_message: Option<&str>,
     ) -> anyhow::Result<bool> {
+        // Validate: only Running → Pending (retry) is allowed.
+        let mut wf = AgentJobItemWorkflow::from_status(AgentJobItemStatus::Running);
+        assert!(wf.retry(), "item lifecycle: Running → Pending (retry) must be valid");
+
         let now = jiff::Timestamp::now().as_second();
         let result = sqlx::query(
             r#"
@@ -463,6 +510,9 @@ WHERE
         job_id: &str,
         item_id: &str,
     ) -> anyhow::Result<bool> {
+        let mut wf = AgentJobItemWorkflow::from_status(AgentJobItemStatus::Running);
+        assert!(wf.complete(), "item lifecycle: Running → Completed must be valid");
+
         let now = jiff::Timestamp::now().as_second();
         let result = sqlx::query(
             r#"
@@ -496,6 +546,9 @@ WHERE
         item_id: &str,
         error_message: &str,
     ) -> anyhow::Result<bool> {
+        let mut wf = AgentJobItemWorkflow::from_status(AgentJobItemStatus::Running);
+        assert!(wf.fail(), "item lifecycle: Running → Failed must be valid");
+
         let now = jiff::Timestamp::now().as_second();
         let result = sqlx::query(
             r#"

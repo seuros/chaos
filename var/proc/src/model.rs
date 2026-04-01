@@ -1,4 +1,6 @@
 mod agent_job;
+pub(crate) mod agent_job_machine;
+pub(crate) mod backfill_machine;
 mod backfill_state;
 mod log;
 mod memories;

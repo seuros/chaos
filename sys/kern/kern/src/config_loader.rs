@@ -95,9 +95,9 @@ pub(crate) async fn first_layer_config_error_from_entries(
 /// - user      `${CHAOS_HOME}/config.toml`
 /// - cwd       `${PWD}/config.toml` (loaded but disabled when the directory is untrusted)
 /// - tree      parent directories up to root looking for `./.chaos/config.toml`
-///             (loaded but disabled when untrusted)
+///   (loaded but disabled when untrusted)
 /// - repo      `$(git rev-parse --show-toplevel)/.chaos/config.toml` (loaded
-///             but disabled when untrusted)
+///   but disabled when untrusted)
 /// - runtime   e.g., --config flags, model selector in UI
 ///
 /// (*) Only available on macOS via managed device profiles.

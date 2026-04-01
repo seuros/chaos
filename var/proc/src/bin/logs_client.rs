@@ -195,7 +195,7 @@ async fn print_backfill(
 ) -> anyhow::Result<LogTailCursor> {
     let backfill_batch = fetch_backfill(runtime, filter, backfill).await?;
     for row in backfill_batch.rows {
-        println!("{}", format_row(row, compact));
+        println!("{}", format_row(&row, compact));
     }
     Ok(backfill_batch.cursor)
 }

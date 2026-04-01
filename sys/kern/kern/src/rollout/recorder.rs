@@ -450,7 +450,7 @@ impl RolloutRecorder {
         }
         self.live_rollout_items
             .lock()
-            .expect("live rollout items lock poisoned")
+            .unwrap_or_else(std::sync::PoisonError::into_inner)
             .extend(filtered.iter().cloned());
         self.tx
             .send(RolloutCmd::AddItems(filtered))
@@ -461,7 +461,7 @@ impl RolloutRecorder {
     pub fn snapshot_rollout_items(&self) -> Vec<RolloutItem> {
         self.live_rollout_items
             .lock()
-            .expect("live rollout items lock poisoned")
+            .unwrap_or_else(std::sync::PoisonError::into_inner)
             .clone()
     }
 

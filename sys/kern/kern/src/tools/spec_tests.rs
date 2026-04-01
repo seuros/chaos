@@ -1810,7 +1810,7 @@ fn test_build_specs_mcp_tools_sorted_by_name() {
 #[test]
 fn search_tool_description_lists_each_codex_apps_connector_once() {
     let model_info = search_capable_model_info();
-    let mut features = Features::with_defaults();
+    let features = Features::with_defaults();
     let available_models = Vec::new();
     let tools_config = ToolsConfig::new(&ToolsConfigParams {
         model_info: &model_info,
@@ -1977,7 +1977,7 @@ fn search_tool_requires_model_capability_only() {
 #[test]
 fn tool_suggest_is_not_registered_without_feature_flag() {
     let model_info = search_capable_model_info();
-    let mut features = Features::with_defaults();
+    let features = Features::with_defaults();
     let available_models = Vec::new();
     let tools_config = ToolsConfig::new(&ToolsConfigParams {
         model_info: &model_info,
@@ -2013,7 +2013,7 @@ fn tool_suggest_is_not_registered_without_feature_flag() {
 #[test]
 fn search_tool_description_handles_no_enabled_apps() {
     let model_info = search_capable_model_info();
-    let mut features = Features::with_defaults();
+    let features = Features::with_defaults();
     let available_models = Vec::new();
     let tools_config = ToolsConfig::new(&ToolsConfigParams {
         model_info: &model_info,
@@ -2038,7 +2038,7 @@ fn search_tool_description_handles_no_enabled_apps() {
 #[test]
 fn search_tool_description_falls_back_to_connector_name_without_description() {
     let model_info = search_capable_model_info();
-    let mut features = Features::with_defaults();
+    let features = Features::with_defaults();
     let available_models = Vec::new();
     let tools_config = ToolsConfig::new(&ToolsConfigParams {
         model_info: &model_info,
@@ -2084,7 +2084,7 @@ fn search_tool_description_falls_back_to_connector_name_without_description() {
 #[test]
 fn search_tool_registers_namespaced_app_tool_aliases() {
     let model_info = search_capable_model_info();
-    let mut features = Features::with_defaults();
+    let features = Features::with_defaults();
     let available_models = Vec::new();
     let tools_config = ToolsConfig::new(&ToolsConfigParams {
         model_info: &model_info,

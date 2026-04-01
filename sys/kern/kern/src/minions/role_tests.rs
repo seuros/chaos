@@ -9,7 +9,6 @@ use chaos_ipc::openai_models::ReasoningEffort;
 use pretty_assertions::assert_eq;
 use std::fs;
 use std::path::PathBuf;
-use std::sync::Arc;
 use tempfile::TempDir;
 
 async fn test_config_with_cli_overrides(

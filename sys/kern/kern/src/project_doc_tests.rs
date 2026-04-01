@@ -324,7 +324,7 @@ async fn skills_are_not_appended_to_project_doc() {
 #[tokio::test]
 async fn apps_feature_does_not_emit_user_instructions_by_itself() {
     let tmp = tempfile::tempdir().expect("tempdir");
-    let mut cfg = make_config(&tmp, 4096, None).await;
+    let cfg = make_config(&tmp, 4096, None).await;
     let res = get_user_instructions(&cfg).await;
     assert_eq!(res, None);
 }
@@ -334,7 +334,7 @@ async fn apps_feature_does_not_append_to_project_doc_user_instructions() {
     let tmp = tempfile::tempdir().expect("tempdir");
     fs::write(tmp.path().join("AGENTS.md"), "base doc").unwrap();
 
-    let mut cfg = make_config(&tmp, 4096, None).await;
+    let cfg = make_config(&tmp, 4096, None).await;
     let res = get_user_instructions(&cfg)
         .await
         .expect("instructions expected");

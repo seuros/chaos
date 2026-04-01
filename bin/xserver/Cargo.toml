@@ -12,7 +12,7 @@ path = "src/lib.rs"
 [features]
 default = ["syntax"]
 # Enable vt100-based tests (emulator) when running with `--features vt100-tests`.
-vt100-tests = []
+vt100-tests = ["dep:vt100"]
 # Gate verbose debug logging inside the TUI implementation.
 debug-logs = []
 # Syntax highlighting via chaos-highlight (syntect + two-face).
@@ -93,6 +93,7 @@ unicode-width = { workspace = true }
 url = { workspace = true }
 webbrowser = { workspace = true }
 uuid = { workspace = true }
+vt100 = { workspace = true, optional = true }
 
 arboard = { workspace = true }
 tokio-util = { workspace = true, features = ["time"] }
@@ -112,5 +113,4 @@ pretty_assertions = { workspace = true }
 rand = { workspace = true }
 rustls = { workspace = true }
 serial_test = { workspace = true }
-vt100 = { workspace = true }
 uuid = { workspace = true }

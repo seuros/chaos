@@ -1,7 +1,7 @@
 #![cfg(feature = "vt100-tests")]
 #![expect(clippy::expect_used)]
 
-use crate::test_backend::VT100Backend;
+use chaos_xserver::test_backend::VT100Backend;
 use ratatui::layout::Rect;
 use ratatui::style::Stylize;
 use ratatui::text::Line;
@@ -64,18 +64,17 @@ fn long_token_wraps() {
     scenario.run_insert(lines);
     let screen = scenario.term.backend().vt100().screen();
 
-    // Count total A's on the screen
-    let mut count_a = 0usize;
-    for row in 0..6 {
-        for col in 0..20 {
-            if let Some(cell) = screen.cell(row, col)
-                && let Some(ch) = cell.contents().chars().next()
-                && ch == 'A'
-            {
-                count_a += 1;
+        // Count total A's on the screen
+        let mut count_a = 0usize;
+        for row in 0..6 {
+            for col in 0..20 {
+                if let Some(cell) = screen.cell(row, col)
+                    && cell.contents().starts_with('A')
+                {
+                    count_a += 1;
+                }
             }
         }
-    }
 
     assert_eq!(
         count_a,

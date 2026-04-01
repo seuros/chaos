@@ -39,7 +39,6 @@ use chaos_ipc::protocol::AgentReasoningDeltaEvent;
 use chaos_ipc::protocol::AgentReasoningEvent;
 use chaos_ipc::protocol::AgentStatus;
 use chaos_ipc::protocol::ApplyPatchApprovalRequestEvent;
-use chaos_ipc::protocol::BackgroundEventEvent;
 use chaos_ipc::protocol::CodexErrorInfo;
 use chaos_ipc::protocol::CollabAgentSpawnBeginEvent;
 use chaos_ipc::protocol::CollabAgentSpawnEndEvent;
@@ -57,19 +56,14 @@ use chaos_ipc::protocol::FileChange;
 
 use chaos_ipc::protocol::ImageGenerationEndEvent;
 use chaos_ipc::protocol::ItemCompletedEvent;
-use chaos_ipc::protocol::McpStartupCompleteEvent;
-use chaos_ipc::protocol::McpStartupStatus;
-use chaos_ipc::protocol::McpStartupUpdateEvent;
 use chaos_ipc::protocol::Op;
 use chaos_ipc::protocol::PatchApplyBeginEvent;
 use chaos_ipc::protocol::PatchApplyEndEvent;
 use chaos_ipc::protocol::PatchApplyStatus as CorePatchApplyStatus;
 use chaos_ipc::protocol::ProcessRolledBackEvent;
 use chaos_ipc::protocol::RateLimitWindow;
-use chaos_ipc::protocol::ReadOnlyAccess;
 use chaos_ipc::protocol::ReviewRequest;
 use chaos_ipc::protocol::ReviewTarget;
-use chaos_ipc::protocol::SessionConfiguredEvent;
 use chaos_ipc::protocol::SessionSource;
 use chaos_ipc::protocol::StreamErrorEvent;
 use chaos_ipc::protocol::TerminalInteractionEvent;
@@ -6864,7 +6858,7 @@ async fn permissions_selection_history_snapshot_full_access_to_default() {
         .expect("set sandbox policy");
 
     chat.open_permissions_popup();
-    let popup = render_bottom_popup(&chat, 120);
+    render_bottom_popup(&chat, 120);
     chat.handle_key_event(KeyEvent::from(KeyCode::Up));
 
     chat.handle_key_event(KeyEvent::from(KeyCode::Enter));

@@ -116,7 +116,7 @@ mod ui_consts;
 mod version;
 mod wrapping;
 
-#[cfg(test)]
+#[cfg(any(test, feature = "vt100-tests"))]
 pub mod test_backend;
 
 use crate::onboarding::onboarding_screen::OnboardingScreenArgs;

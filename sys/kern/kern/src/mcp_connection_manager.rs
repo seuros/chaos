@@ -1118,11 +1118,8 @@ impl McpConnectionManager {
         for async_managed_client in self.clients.values() {
             let new_cwd = new_cwd.to_path_buf();
             let async_managed_client = async_managed_client.clone();
-            join_set.spawn(async move {
-                async_managed_client
-                    .notify_roots_changed(&new_cwd)
-                    .await
-            });
+            join_set
+                .spawn(async move { async_managed_client.notify_roots_changed(&new_cwd).await });
         }
 
         while let Some(join_res) = join_set.join_next().await {

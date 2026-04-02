@@ -134,7 +134,9 @@ fn centered_rect(area: Rect, width: u16, height: u16) -> Rect {
     let width = width.min(area.width).max(1);
     let height = height.min(area.height).max(1);
     let x = area.x.saturating_add(area.width.saturating_sub(width) / 2);
-    let y = area.y.saturating_add(area.height.saturating_sub(height) / 2);
+    let y = area
+        .y
+        .saturating_add(area.height.saturating_sub(height) / 2);
     Rect::new(x, y, width, height)
 }
 

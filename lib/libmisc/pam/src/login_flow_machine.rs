@@ -83,11 +83,15 @@ impl LoginFlowWorkflow {
     }
 
     fn start_device_code(&mut self) {
-        let _ = self.machine.handle(LoginFlowLifecycleEvent::StartDeviceCode);
+        let _ = self
+            .machine
+            .handle(LoginFlowLifecycleEvent::StartDeviceCode);
     }
 
     fn device_code_ready(&mut self) {
-        let _ = self.machine.handle(LoginFlowLifecycleEvent::DeviceCodeReady);
+        let _ = self
+            .machine
+            .handle(LoginFlowLifecycleEvent::DeviceCodeReady);
     }
 
     fn device_code_unsupported(&mut self) {
@@ -117,9 +121,7 @@ impl LoginFlowWorkflow {
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum LoginFlowMode {
     Browser,
-    DeviceCode {
-        allow_browser_fallback: bool,
-    },
+    DeviceCode { allow_browser_fallback: bool },
 }
 
 #[derive(Debug, Clone)]
@@ -141,19 +143,10 @@ impl LoginFlowCancel {
 pub enum LoginFlowUpdate {
     DeviceCodePending,
     DeviceCodeUnsupported,
-    BrowserOpened {
-        actual_port: u16,
-        auth_url: String,
-    },
-    DeviceCodeReady {
-        device_code: DeviceCode,
-    },
-    Succeeded {
-        auth_mode: AuthMode,
-    },
-    Failed {
-        message: String,
-    },
+    BrowserOpened { actual_port: u16, auth_url: String },
+    DeviceCodeReady { device_code: DeviceCode },
+    Succeeded { auth_mode: AuthMode },
+    Failed { message: String },
     Cancelled,
 }
 

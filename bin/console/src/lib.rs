@@ -123,9 +123,7 @@ chaos_ipc=debug,chaos_selinux=debug,chaos_dtrace=debug,chaos_hallucinate=debug,\
 mcp_guest=debug,chaos_clamp=debug";
 
 fn init_optional_debug_file_layer() -> std::io::Result<(
-    Option<
-        impl tracing_subscriber::Layer<tracing_subscriber::Registry> + Send + Sync + 'static,
-    >,
+    Option<impl tracing_subscriber::Layer<tracing_subscriber::Registry> + Send + Sync + 'static>,
     Option<WorkerGuard>,
 )> {
     let Some(path) = std::env::var_os(DEBUG_LOG_PATH_ENV_VAR).map(PathBuf::from) else {
@@ -143,8 +141,8 @@ fn init_optional_debug_file_layer() -> std::io::Result<(
 
     let log_file = log_file_opts.open(&path)?;
     let (non_blocking, guard) = non_blocking(log_file);
-    let filter = EnvFilter::try_from_default_env()
-        .unwrap_or_else(|_| EnvFilter::new(DEBUG_LOG_FILTER));
+    let filter =
+        EnvFilter::try_from_default_env().unwrap_or_else(|_| EnvFilter::new(DEBUG_LOG_FILTER));
     let layer = tracing_subscriber::fmt::layer()
         .with_writer(non_blocking)
         .with_target(true)

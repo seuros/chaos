@@ -17,14 +17,9 @@ use std::collections::BTreeMap;
 #[test]
 fn snapshot_collects_metrics_without_shutdown() -> Result<()> {
     let exporter = InMemoryMetricExporter::default();
-    let config = MetricsConfig::in_memory(
-        "test",
-        "chaos-cli",
-        CHAOS_VERSION,
-        exporter.clone(),
-    )
-    .with_tag("service", "chaos-cli")?
-    .with_runtime_reader();
+    let config = MetricsConfig::in_memory("test", "chaos-cli", CHAOS_VERSION, exporter.clone())
+        .with_tag("service", "chaos-cli")?
+        .with_runtime_reader();
     let metrics = MetricsClient::new(config)?;
 
     metrics.counter(
@@ -105,10 +100,7 @@ fn manager_snapshot_metrics_collects_without_shutdown() -> Result<()> {
     };
 
     let expected = BTreeMap::from([
-        (
-            "app.version".to_string(),
-            CHAOS_VERSION.to_string(),
-        ),
+        ("app.version".to_string(), CHAOS_VERSION.to_string()),
         (
             "auth_mode".to_string(),
             TelemetryAuthMode::ApiKey.to_string(),

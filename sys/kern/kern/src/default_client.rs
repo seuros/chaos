@@ -1,6 +1,6 @@
 use crate::config_loader::ResidencyRequirement;
-use codex_client::CodexHttpClient;
 use chaos_ipc::product::CHAOS_VERSION;
+use codex_client::CodexHttpClient;
 pub use codex_client::CodexRequestBuilder;
 use http::HeaderMap;
 use http::HeaderValue;

@@ -1632,8 +1632,7 @@ async fn websocket_harness_with_options(
         chaos_kern::test_support::auth_manager_from_auth(ChaosAuth::from_api_key("Test API Key"));
     let exporter = InMemoryMetricExporter::default();
     let metrics = MetricsClient::new(
-        MetricsConfig::in_memory("test", "chaos", CHAOS_VERSION, exporter)
-            .with_runtime_reader(),
+        MetricsConfig::in_memory("test", "chaos", CHAOS_VERSION, exporter).with_runtime_reader(),
     )
     .expect("in-memory metrics client");
     let session_telemetry = SessionTelemetry::new(

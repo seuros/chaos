@@ -435,12 +435,8 @@ impl AuthModeWidget {
             );
             lines.push("".into());
         }
-        lines.push(
-            "  Use ↑/↓ (or j/k) to choose".dim().into(),
-        );
-        lines.push(
-            "  Press Enter to continue".dim().into(),
-        );
+        lines.push("  Use ↑/↓ (or j/k) to choose".dim().into());
+        lines.push("  Press Enter to continue".dim().into());
         if let Some(err) = self.error_message() {
             lines.push("".into());
             lines.push(err.red().into());

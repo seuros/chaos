@@ -52,7 +52,11 @@ WHERE id = 1
             return Ok(());
         }
         let mut wf = BackfillWorkflow::from_status(state.status);
-        anyhow::ensure!(wf.start(), "cannot transition backfill from {:?} to Running", state.status);
+        anyhow::ensure!(
+            wf.start(),
+            "cannot transition backfill from {:?} to Running",
+            state.status
+        );
 
         sqlx::query(
             r#"
@@ -92,7 +96,11 @@ WHERE id = 1
         self.ensure_backfill_state_row().await?;
         let state = self.get_backfill_state().await?;
         let mut wf = BackfillWorkflow::from_status(state.status);
-        anyhow::ensure!(wf.complete(), "cannot transition backfill from {:?} to Complete", state.status);
+        anyhow::ensure!(
+            wf.complete(),
+            "cannot transition backfill from {:?} to Complete",
+            state.status
+        );
 
         let now = jiff::Timestamp::now().as_second();
         sqlx::query(

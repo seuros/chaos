@@ -36,7 +36,6 @@ use chaos_ipc::plan_tool::UpdatePlanArgs;
 use chaos_ipc::protocol::AgentMessageContentDeltaEvent;
 use chaos_ipc::protocol::AgentMessageEvent;
 use chaos_ipc::protocol::AgentReasoningEvent;
-use chaos_ipc::protocol::ReasoningContentDeltaEvent;
 use chaos_ipc::protocol::AgentStatus;
 use chaos_ipc::protocol::ApplyPatchApprovalRequestEvent;
 use chaos_ipc::protocol::CodexErrorInfo;
@@ -53,6 +52,7 @@ use chaos_ipc::protocol::ExecCommandStatus as CoreExecCommandStatus;
 use chaos_ipc::protocol::ExecPolicyAmendment;
 use chaos_ipc::protocol::ExitedReviewModeEvent;
 use chaos_ipc::protocol::FileChange;
+use chaos_ipc::protocol::ReasoningContentDeltaEvent;
 
 use chaos_ipc::protocol::ImageGenerationEndEvent;
 use chaos_ipc::protocol::ItemCompletedEvent;

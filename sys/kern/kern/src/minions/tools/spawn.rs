@@ -1,8 +1,8 @@
-use super::*;
 use super::common::check_depth_limit;
 use super::common::get_agent_info;
 use super::common::impl_function_tool_kind;
 use super::common::impl_tool_output;
+use super::*;
 use crate::minions::control::SpawnAgentOptions;
 use crate::minions::role::DEFAULT_ROLE_NAME;
 use crate::minions::role::apply_role_to_config;

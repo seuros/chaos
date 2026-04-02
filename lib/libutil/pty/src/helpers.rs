@@ -62,7 +62,12 @@ impl ExitTracker {
                 let _ = tx.send(code);
             }
         };
-        (self.exit_status, self.exit_code, self.exit_rx, Box::new(recorder))
+        (
+            self.exit_status,
+            self.exit_code,
+            self.exit_rx,
+            Box::new(recorder),
+        )
     }
 }
 

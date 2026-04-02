@@ -95,4 +95,3 @@ env_http_headers = { "X-Example-Env-Header" = "EXAMPLE_ENV_VAR" }
     let provider: ModelProviderInfo = toml::from_str(azure_provider_toml).unwrap();
     assert_eq!(expected_provider, provider);
 }
-

@@ -96,43 +96,43 @@ fn init_login_file_logging(config: &Config) -> Vec<WorkerGuard> {
         .with_filter(env_filter);
     let mut guards = vec![login_guard];
 
-    let debug_file_layer =
-        if let Some(debug_path) = std::env::var_os(DEBUG_LOG_PATH_ENV_VAR).map(std::path::PathBuf::from)
+    let debug_file_layer = if let Some(debug_path) =
+        std::env::var_os(DEBUG_LOG_PATH_ENV_VAR).map(std::path::PathBuf::from)
+    {
+        let mut debug_log_file_opts = OpenOptions::new();
+        debug_log_file_opts.create(true).append(true);
+
+        #[cfg(unix)]
         {
-            let mut debug_log_file_opts = OpenOptions::new();
-            debug_log_file_opts.create(true).append(true);
+            use std::os::unix::fs::OpenOptionsExt;
+            debug_log_file_opts.mode(0o600);
+        }
 
-            #[cfg(unix)]
-            {
-                use std::os::unix::fs::OpenOptionsExt;
-                debug_log_file_opts.mode(0o600);
+        match debug_log_file_opts.open(&debug_path) {
+            Ok(debug_log_file) => {
+                let (debug_non_blocking, debug_guard) = non_blocking(debug_log_file);
+                guards.push(debug_guard);
+                let filter = EnvFilter::try_from_default_env()
+                    .unwrap_or_else(|_| EnvFilter::new(DEBUG_LOG_FILTER));
+                Some(
+                    tracing_subscriber::fmt::layer()
+                        .with_writer(debug_non_blocking)
+                        .with_target(true)
+                        .with_ansi(false)
+                        .with_filter(filter),
+                )
             }
-
-            match debug_log_file_opts.open(&debug_path) {
-                Ok(debug_log_file) => {
-                    let (debug_non_blocking, debug_guard) = non_blocking(debug_log_file);
-                    guards.push(debug_guard);
-                    let filter = EnvFilter::try_from_default_env()
-                        .unwrap_or_else(|_| EnvFilter::new(DEBUG_LOG_FILTER));
-                    Some(
-                        tracing_subscriber::fmt::layer()
-                            .with_writer(debug_non_blocking)
-                            .with_target(true)
-                            .with_ansi(false)
-                            .with_filter(filter),
-                    )
-                }
-                Err(err) => {
-                    eprintln!(
-                        "Warning: failed to open debug log file {}: {err}",
-                        debug_path.display()
-                    );
-                    None
-                }
+            Err(err) => {
+                eprintln!(
+                    "Warning: failed to open debug log file {}: {err}",
+                    debug_path.display()
+                );
+                None
             }
-        } else {
-            None
-        };
+        }
+    } else {
+        None
+    };
 
     // Direct `chaos login` otherwise relies on ephemeral stderr and browser output.
     // Persist the same login targets to a file so support can inspect auth failures
@@ -166,15 +166,11 @@ fn print_device_code_prompt(device_code: &DeviceCode) {
             "\n2. Enter this one-time code (expires in 15 minutes)\n   {}\n",
             "\nDevice codes are a common phishing target. Never share this code.\n"
         ),
-        device_code.verification_url,
-        device_code.user_code
+        device_code.verification_url, device_code.user_code
     );
 }
 
-async fn run_chatgpt_login_flow(
-    opts: ServerOptions,
-    mode: LoginFlowMode,
-) -> std::io::Result<()> {
+async fn run_chatgpt_login_flow(opts: ServerOptions, mode: LoginFlowMode) -> std::io::Result<()> {
     let mut handle = spawn_login_flow(opts, mode);
     while let Some(update) = handle.recv().await {
         match update {

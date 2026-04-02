@@ -1,7 +1,7 @@
-use super::*;
 use super::common::get_agent_info;
 use super::common::impl_function_tool_kind;
 use super::common::impl_tool_output;
+use super::*;
 use crate::minions::status::is_final;
 use futures::FutureExt;
 use futures::StreamExt;
@@ -42,8 +42,7 @@ impl ToolHandler for Handler {
             .collect::<Result<Vec<_>, _>>()?;
         let mut receiver_agents = Vec::with_capacity(receiver_process_ids.len());
         for receiver_process_id in &receiver_process_ids {
-            let (agent_nickname, agent_role) =
-                get_agent_info(&session, *receiver_process_id).await;
+            let (agent_nickname, agent_role) = get_agent_info(&session, *receiver_process_id).await;
             receiver_agents.push(CollabAgentRef {
                 process_id: *receiver_process_id,
                 agent_nickname,

@@ -2470,10 +2470,7 @@ impl ModelClientSession {
     /// not that the endpoint is absent.
     fn is_wire_format_mismatch(err: &ChaosErr) -> bool {
         match err {
-            ChaosErr::UnexpectedStatus(e) => matches!(
-                e.status.as_u16(),
-                404 | 405 | 501
-            ),
+            ChaosErr::UnexpectedStatus(e) => matches!(e.status.as_u16(), 404 | 405 | 501),
             _ => false,
         }
     }
@@ -2616,11 +2613,7 @@ impl ModelClientSession {
             {
                 Ok(stream) => {
                     // Responses API answered — cache the result and return.
-                    let _ = self
-                        .client
-                        .state
-                        .resolved_wire
-                        .set(WireApi::Responses);
+                    let _ = self.client.state.resolved_wire.set(WireApi::Responses);
                     return Ok(stream);
                 }
                 Err(ref probe_err) if Self::is_wire_format_mismatch(probe_err) => {

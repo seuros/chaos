@@ -22,6 +22,7 @@ use chaos_abi::TurnStream;
 use http::HeaderMap;
 use serde::Serialize;
 use serde_json::Value;
+use std::collections::BTreeMap;
 use std::time::Duration;
 use tokio::sync::mpsc;
 use tokio::time::timeout;
@@ -96,9 +97,10 @@ impl ChatCompletionsAdapter {
         }
 
         let bearer = format!("Bearer {}", self.api_key);
-        let value = http::HeaderValue::from_str(&bearer).map_err(|err| AbiError::InvalidRequest {
-            message: format!("invalid Authorization header value: {err}"),
-        })?;
+        let value =
+            http::HeaderValue::from_str(&bearer).map_err(|err| AbiError::InvalidRequest {
+                message: format!("invalid Authorization header value: {err}"),
+            })?;
         headers.insert(http::header::AUTHORIZATION, value);
         headers.insert(
             http::header::CONTENT_TYPE,
@@ -240,12 +242,10 @@ fn convert_content_item_to_value(c: &ContentItem) -> Option<Value> {
         ContentItem::InputText { text } | ContentItem::OutputText { text, .. } => {
             Some(serde_json::json!({"type": "text", "text": text}))
         }
-        ContentItem::InputImage { image_url } => {
-            Some(serde_json::json!({
-                "type": "image_url",
-                "image_url": { "url": image_url }
-            }))
-        }
+        ContentItem::InputImage { image_url } => Some(serde_json::json!({
+            "type": "image_url",
+            "image_url": { "url": image_url }
+        })),
     }
 }
 
@@ -255,8 +255,10 @@ fn convert_input_to_messages(input: &[ResponseItem]) -> Vec<ChatMessage> {
     for item in input {
         match item {
             ResponseItem::Message { role, content, .. } => {
-                let parts: Vec<Value> =
-                    content.iter().filter_map(convert_content_item_to_value).collect();
+                let parts: Vec<Value> = content
+                    .iter()
+                    .filter_map(convert_content_item_to_value)
+                    .collect();
                 if parts.is_empty() {
                     continue;
                 }
@@ -309,8 +311,12 @@ fn convert_input_to_messages(input: &[ResponseItem]) -> Vec<ChatMessage> {
                 });
             }
 
-            ResponseItem::FunctionCallOutput { call_id, output, .. }
-            | ResponseItem::CustomToolCallOutput { call_id, output, .. } => {
+            ResponseItem::FunctionCallOutput {
+                call_id, output, ..
+            }
+            | ResponseItem::CustomToolCallOutput {
+                call_id, output, ..
+            } => {
                 let content_text = match &output.body {
                     chaos_ipc::models::FunctionCallOutputBody::Text(text) => text.clone(),
                     chaos_ipc::models::FunctionCallOutputBody::ContentItems(items) => items
@@ -411,6 +417,12 @@ struct ToolCallAccumulator {
     arguments: String,
 }
 
+/// In-flight text accumulator so we can finalize the assistant message.
+#[derive(Default)]
+struct TextAccumulator {
+    text: String,
+}
+
 /// Parse a single `data: <json>` line from the Chat Completions SSE stream.
 ///
 /// The schema is:
@@ -423,8 +435,8 @@ struct ToolCallAccumulator {
 /// `stream_options.include_usage=true` the very last chunk has `"usage"`.
 fn parse_chunk(
     json: &Value,
-    tool_acc: &mut Option<ToolCallAccumulator>,
-    text_started: &mut bool,
+    tool_acc: &mut BTreeMap<usize, ToolCallAccumulator>,
+    text_acc: &mut Option<TextAccumulator>,
     response_id: &mut String,
     server_model: &mut Option<String>,
 ) -> Result<Vec<TurnEvent>, AbiError> {
@@ -449,8 +461,10 @@ fn parse_chunk(
         None => {
             // Usage-only trailing chunk.
             if let Some(usage) = json.get("usage") {
-                let input_tokens =
-                    usage.get("prompt_tokens").and_then(Value::as_u64).unwrap_or(0);
+                let input_tokens = usage
+                    .get("prompt_tokens")
+                    .and_then(Value::as_u64)
+                    .unwrap_or(0);
                 let output_tokens = usage
                     .get("completion_tokens")
                     .and_then(Value::as_u64)
@@ -479,8 +493,7 @@ fn parse_chunk(
         // Text delta
         if let Some(content) = delta.get("content").and_then(Value::as_str) {
             if !content.is_empty() {
-                if !*text_started {
-                    *text_started = true;
+                if text_acc.is_none() {
                     events.push(TurnEvent::OutputItemAdded(ResponseItem::Message {
                         id: None,
                         role: "assistant".to_string(),
@@ -488,6 +501,10 @@ fn parse_chunk(
                         phase: None,
                         end_turn: None,
                     }));
+                    *text_acc = Some(TextAccumulator::default());
+                }
+                if let Some(acc) = text_acc.as_mut() {
+                    acc.text.push_str(content);
                 }
                 events.push(TurnEvent::OutputTextDelta(content.to_string()));
             }
@@ -496,45 +513,36 @@ fn parse_chunk(
         // Tool call deltas
         if let Some(tool_calls) = delta.get("tool_calls").and_then(Value::as_array) {
             for tc in tool_calls {
-                // index 0 always carries the id and function name on the first chunk.
+                let index = tc.get("index").and_then(Value::as_u64).unwrap_or(0) as usize;
+                let acc = tool_acc.entry(index).or_default();
+
                 if let Some(id) = tc.get("id").and_then(Value::as_str) {
-                    // Starting a new tool call — flush any previous one first.
-                    if let Some(prev) = tool_acc.take() {
-                        events.push(TurnEvent::OutputItemDone(ResponseItem::FunctionCall {
-                            id: None,
-                            name: prev.name,
-                            arguments: if prev.arguments.is_empty() {
-                                "{}".to_string()
-                            } else {
-                                prev.arguments
-                            },
-                            call_id: prev.id,
-                            namespace: None,
-                        }));
-                    }
-                    let name = tc
-                        .pointer("/function/name")
-                        .and_then(Value::as_str)
-                        .unwrap_or("")
-                        .to_string();
-                    *tool_acc = Some(ToolCallAccumulator {
-                        id: id.to_string(),
-                        name,
-                        arguments: String::new(),
-                    });
+                    acc.id = id.to_string();
+                }
+
+                if let Some(name) = tc.pointer("/function/name").and_then(Value::as_str) {
+                    acc.name = name.to_string();
                 }
 
                 if let Some(chunk) = tc.pointer("/function/arguments").and_then(Value::as_str) {
-                    if let Some(acc) = tool_acc.as_mut() {
-                        acc.arguments.push_str(chunk);
-                    }
+                    acc.arguments.push_str(chunk);
                 }
             }
         }
 
         // Finish — close any in-flight tool call and/or text block.
         if finish_reason.is_some() {
-            if let Some(acc) = tool_acc.take() {
+            if let Some(acc) = text_acc.take() {
+                events.push(TurnEvent::OutputItemDone(ResponseItem::Message {
+                    id: None,
+                    role: "assistant".to_string(),
+                    content: vec![ContentItem::OutputText { text: acc.text }],
+                    phase: None,
+                    end_turn: None,
+                }));
+            }
+
+            for (_, acc) in std::mem::take(tool_acc) {
                 events.push(TurnEvent::OutputItemDone(ResponseItem::FunctionCall {
                     id: None,
                     name: acc.name,
@@ -553,8 +561,10 @@ fn parse_chunk(
             // the completion here and let the usage chunk emit it instead.
             // However if `usage` is co-located in this chunk, emit now.
             if let Some(usage) = json.get("usage") {
-                let input_tokens =
-                    usage.get("prompt_tokens").and_then(Value::as_u64).unwrap_or(0);
+                let input_tokens = usage
+                    .get("prompt_tokens")
+                    .and_then(Value::as_u64)
+                    .unwrap_or(0);
                 let output_tokens = usage
                     .get("completion_tokens")
                     .and_then(Value::as_u64)
@@ -610,11 +620,12 @@ async fn run_sse_stream(
         for (name, value) in headers.iter() {
             builder = builder.header(name, value);
         }
-        let request = builder
-            .body(Body::from(body_bytes.clone()))
-            .map_err(|e| AbiError::InvalidRequest {
-                message: e.to_string(),
-            })?;
+        let request =
+            builder
+                .body(Body::from(body_bytes.clone()))
+                .map_err(|e| AbiError::InvalidRequest {
+                    message: e.to_string(),
+                })?;
 
         let response = match client.serve(request).await {
             Ok(r) => r,
@@ -677,11 +688,12 @@ where
 {
     use futures::StreamExt;
 
-    let mut tool_acc: Option<ToolCallAccumulator> = None;
-    let mut text_started = false;
+    let mut tool_acc: BTreeMap<usize, ToolCallAccumulator> = BTreeMap::new();
+    let mut text_acc: Option<TextAccumulator> = None;
     let mut response_id = String::new();
     let mut server_model: Option<String> = None;
     let mut buffer = String::new();
+    let mut completed_emitted = false;
 
     loop {
         let chunk = match timeout(idle_timeout, data_stream.next()).await {
@@ -708,6 +720,14 @@ where
             };
 
             if data == "[DONE]" {
+                if !completed_emitted {
+                    let _ = tx
+                        .send(Ok(TurnEvent::Completed {
+                            response_id: response_id.clone(),
+                            token_usage: None,
+                        }))
+                        .await;
+                }
                 return Ok(());
             }
 
@@ -719,13 +739,16 @@ where
             let events = parse_chunk(
                 &json,
                 &mut tool_acc,
-                &mut text_started,
+                &mut text_acc,
                 &mut response_id,
                 &mut server_model,
             )?;
 
             for event in events {
                 let is_done = matches!(&event, TurnEvent::Completed { .. });
+                if is_done {
+                    completed_emitted = true;
+                }
                 if tx.send(Ok(event)).await.is_err() {
                     return Ok(());
                 }
@@ -737,12 +760,14 @@ where
     }
 
     // Stream ended without [DONE] — treat as completion with no token data.
-    let _ = tx
-        .send(Ok(TurnEvent::Completed {
-            response_id,
-            token_usage: None,
-        }))
-        .await;
+    if !completed_emitted {
+        let _ = tx
+            .send(Ok(TurnEvent::Completed {
+                response_id,
+                token_usage: None,
+            }))
+            .await;
+    }
 
     Ok(())
 }
@@ -788,11 +813,185 @@ mod tests {
         };
 
         let body = build_request_body(&request, "gpt-4o").expect("body should build");
-        let messages = body.get("messages").and_then(Value::as_array).unwrap();
+        let messages = body.get("messages").and_then(Value::as_array);
         assert!(
-            messages.is_empty() || messages[0]["role"] != "system",
-            "expected no system message when instructions are empty"
+            messages.is_none(),
+            "expected messages to be omitted when empty"
         );
+    }
+
+    #[test]
+    fn parse_chunk_finalizes_plain_text_message() {
+        let mut tool_acc = BTreeMap::new();
+        let mut text_acc = None;
+        let mut response_id = String::new();
+        let mut server_model = None;
+
+        let start_events = parse_chunk(
+            &serde_json::json!({
+                "id": "chatcmpl-1",
+                "model": "gpt-4o",
+                "choices": [{
+                    "delta": { "content": "Hello" },
+                    "finish_reason": null
+                }]
+            }),
+            &mut tool_acc,
+            &mut text_acc,
+            &mut response_id,
+            &mut server_model,
+        )
+        .expect("chunk should parse");
+        assert!(start_events.iter().any(|event| matches!(
+            event,
+            TurnEvent::OutputItemAdded(ResponseItem::Message { role, .. }) if role == "assistant"
+        )));
+        assert!(start_events.iter().any(|event| matches!(
+            event,
+            TurnEvent::OutputTextDelta(delta) if delta == "Hello"
+        )));
+
+        let finish_events = parse_chunk(
+            &serde_json::json!({
+                "id": "chatcmpl-1",
+                "model": "gpt-4o",
+                "choices": [{
+                    "delta": {},
+                    "finish_reason": "stop"
+                }]
+            }),
+            &mut tool_acc,
+            &mut text_acc,
+            &mut response_id,
+            &mut server_model,
+        )
+        .expect("chunk should parse");
+        assert!(finish_events.iter().any(|event| matches!(
+            event,
+            TurnEvent::OutputItemDone(ResponseItem::Message { role, content, .. })
+                if role == "assistant"
+                    && content == &vec![ContentItem::OutputText {
+                        text: "Hello".to_string()
+                    }]
+        )));
+    }
+
+    #[test]
+    fn parse_chunk_tracks_parallel_tool_calls_by_index() {
+        let mut tool_acc = BTreeMap::new();
+        let mut text_acc = None;
+        let mut response_id = String::new();
+        let mut server_model = None;
+
+        let initial_events = parse_chunk(
+            &serde_json::json!({
+                "id": "chatcmpl-1",
+                "model": "gpt-4o",
+                "choices": [{
+                    "delta": {
+                        "tool_calls": [
+                            {
+                                "index": 0,
+                                "id": "call_1",
+                                "function": { "name": "first", "arguments": "{\"a\":" }
+                            },
+                            {
+                                "index": 1,
+                                "id": "call_2",
+                                "function": { "name": "second", "arguments": "{\"b\":" }
+                            }
+                        ]
+                    },
+                    "finish_reason": null
+                }]
+            }),
+            &mut tool_acc,
+            &mut text_acc,
+            &mut response_id,
+            &mut server_model,
+        )
+        .expect("chunk should parse");
+        assert!(
+            initial_events.is_empty()
+                || initial_events
+                    .iter()
+                    .all(|event| matches!(event, TurnEvent::Created | TurnEvent::ServerModel(_)))
+        );
+
+        let finish_events = parse_chunk(
+            &serde_json::json!({
+                "id": "chatcmpl-1",
+                "model": "gpt-4o",
+                "choices": [{
+                    "delta": {
+                        "tool_calls": [
+                            {
+                                "index": 1,
+                                "function": { "arguments": "2}" }
+                            },
+                            {
+                                "index": 0,
+                                "function": { "arguments": "1}" }
+                            }
+                        ]
+                    },
+                    "finish_reason": "tool_calls"
+                }]
+            }),
+            &mut tool_acc,
+            &mut text_acc,
+            &mut response_id,
+            &mut server_model,
+        )
+        .expect("chunk should parse");
+
+        assert_eq!(finish_events.len(), 2);
+        assert!(matches!(
+            &finish_events[0],
+            TurnEvent::OutputItemDone(ResponseItem::FunctionCall {
+                name,
+                arguments,
+                call_id,
+                ..
+            }) if name == "first" && arguments == "{\"a\":1}" && call_id == "call_1"
+        ));
+        assert!(matches!(
+            &finish_events[1],
+            TurnEvent::OutputItemDone(ResponseItem::FunctionCall {
+                name,
+                arguments,
+                call_id,
+                ..
+            }) if name == "second" && arguments == "{\"b\":2}" && call_id == "call_2"
+        ));
+    }
+
+    #[tokio::test]
+    async fn process_sse_stream_completes_on_done_without_usage() {
+        let stream = futures::stream::iter(vec![
+            Ok::<_, std::io::Error>(Bytes::from(
+                "data: {\"id\":\"chatcmpl-1\",\"model\":\"gpt-4o\",\"choices\":[{\"delta\":{\"content\":\"Hello\"},\"finish_reason\":null}]}\n",
+            )),
+            Ok::<_, std::io::Error>(Bytes::from(
+                "data: {\"id\":\"chatcmpl-1\",\"model\":\"gpt-4o\",\"choices\":[{\"delta\":{},\"finish_reason\":\"stop\"}]}\n",
+            )),
+            Ok::<_, std::io::Error>(Bytes::from("data: [DONE]\n")),
+        ]);
+        let (tx, mut rx) = mpsc::channel(16);
+
+        process_sse_data_stream(stream, Duration::from_secs(1), tx)
+            .await
+            .expect("stream should succeed");
+
+        let mut events = Vec::new();
+        while let Ok(event) = rx.try_recv() {
+            events.push(event.expect("event should be ok"));
+        }
+
+        assert!(events.iter().any(|event| matches!(
+            event,
+            TurnEvent::Completed { response_id, token_usage: None } if response_id == "chatcmpl-1"
+        )));
     }
 
     #[test]

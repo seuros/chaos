@@ -4,7 +4,7 @@ use std::time::Duration;
 use tokio::select;
 use tokio::time::timeout;
 
-/// Regression test for https://github.com/openai/codex/issues/8803.
+/// Regression test for startup panic (upstream openai/codex#8803).
 #[tokio::test]
 #[ignore = "TODO(mbolin): flaky"]
 async fn malformed_rules_should_not_panic() -> anyhow::Result<()> {

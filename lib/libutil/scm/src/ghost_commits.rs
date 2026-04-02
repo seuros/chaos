@@ -22,7 +22,7 @@ use crate::operations::run_git_for_stdout;
 use crate::operations::run_git_for_stdout_all;
 
 /// Default commit message used for ghost commits when none is provided.
-const DEFAULT_COMMIT_MESSAGE: &str = "codex snapshot";
+const DEFAULT_COMMIT_MESSAGE: &str = "chaos snapshot";
 /// Default threshold for ignoring large untracked directories.
 const DEFAULT_IGNORE_LARGE_UNTRACKED_DIRS: i64 = 200;
 /// Default threshold (10 MiB) for excluding large untracked files from ghost snapshots.
@@ -333,7 +333,7 @@ pub fn create_ghost_commit_with_report(
             file_count: dir.file_count,
         })
         .collect::<Vec<_>>();
-    let index_tempdir = Builder::new().prefix("codex-git-index-").tempdir()?;
+    let index_tempdir = Builder::new().prefix("chaos-git-index-").tempdir()?;
     let index_path = index_tempdir.path().join("index");
     let base_env = vec![(
         OsString::from("GIT_INDEX_FILE"),
@@ -890,19 +890,19 @@ fn default_commit_identity() -> Vec<(OsString, OsString)> {
     vec![
         (
             OsString::from("GIT_AUTHOR_NAME"),
-            OsString::from("Codex Snapshot"),
+            OsString::from("Chaos Snapshot"),
         ),
         (
             OsString::from("GIT_AUTHOR_EMAIL"),
-            OsString::from("snapshot@codex.local"),
+            OsString::from("snapshot@chaos.local"),
         ),
         (
             OsString::from("GIT_COMMITTER_NAME"),
-            OsString::from("Codex Snapshot"),
+            OsString::from("Chaos Snapshot"),
         ),
         (
             OsString::from("GIT_COMMITTER_EMAIL"),
-            OsString::from("snapshot@codex.local"),
+            OsString::from("snapshot@chaos.local"),
         ),
     ]
 }

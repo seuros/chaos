@@ -445,7 +445,7 @@ async fn responses_stream_includes_turn_metadata_header_for_git_workspace_e2e() 
         "remote",
         "add",
         "origin",
-        "https://github.com/openai/codex.git",
+        "https://github.com/seuros/chaos.git",
     ]);
 
     let expected_head = String::from_utf8(run_git(&["rev-parse", "HEAD"]).stdout)

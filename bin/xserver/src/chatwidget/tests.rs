@@ -33,10 +33,10 @@ use chaos_ipc::parse_command::ParsedCommand;
 use chaos_ipc::plan_tool::PlanItemArg;
 use chaos_ipc::plan_tool::StepStatus;
 use chaos_ipc::plan_tool::UpdatePlanArgs;
-use chaos_ipc::protocol::AgentMessageDeltaEvent;
+use chaos_ipc::protocol::AgentMessageContentDeltaEvent;
 use chaos_ipc::protocol::AgentMessageEvent;
-use chaos_ipc::protocol::AgentReasoningDeltaEvent;
 use chaos_ipc::protocol::AgentReasoningEvent;
+use chaos_ipc::protocol::ReasoningContentDeltaEvent;
 use chaos_ipc::protocol::AgentStatus;
 use chaos_ipc::protocol::ApplyPatchApprovalRequestEvent;
 use chaos_ipc::protocol::CodexErrorInfo;
@@ -5003,7 +5003,10 @@ async fn unified_exec_wait_before_streamed_agent_message_snapshot() {
 
     chat.handle_codex_event(Event {
         id: "turn-1".into(),
-        msg: EventMsg::AgentMessageDelta(AgentMessageDeltaEvent {
+        msg: EventMsg::AgentMessageContentDelta(AgentMessageContentDeltaEvent {
+            process_id: String::new(),
+            turn_id: String::new(),
+            item_id: String::new(),
             delta: "Streaming response.".into(),
         }),
     });
@@ -7409,7 +7412,11 @@ async fn ui_snapshots_small_heights_task_running() {
     });
     chat.handle_codex_event(Event {
         id: "task-1".into(),
-        msg: EventMsg::AgentReasoningDelta(AgentReasoningDeltaEvent {
+        msg: EventMsg::ReasoningContentDelta(ReasoningContentDeltaEvent {
+            process_id: String::new(),
+            turn_id: String::new(),
+            item_id: String::new(),
+            summary_index: 0,
             delta: "**Thinking**".into(),
         }),
     });
@@ -7443,7 +7450,11 @@ async fn status_widget_and_approval_modal_snapshot() {
     // Provide a deterministic header for the status line.
     chat.handle_codex_event(Event {
         id: "task-1".into(),
-        msg: EventMsg::AgentReasoningDelta(AgentReasoningDeltaEvent {
+        msg: EventMsg::ReasoningContentDelta(ReasoningContentDeltaEvent {
+            process_id: String::new(),
+            turn_id: String::new(),
+            item_id: String::new(),
+            summary_index: 0,
             delta: "**Analyzing**".into(),
         }),
     });
@@ -8076,7 +8087,10 @@ async fn process_snapshot_replayed_stream_recovery_restores_previous_status_head
 
     chat.handle_codex_event_replay(Event {
         id: "delta".into(),
-        msg: EventMsg::AgentMessageDelta(AgentMessageDeltaEvent {
+        msg: EventMsg::AgentMessageContentDelta(AgentMessageContentDeltaEvent {
+            process_id: String::new(),
+            turn_id: String::new(),
+            item_id: String::new(),
             delta: "hello".to_string(),
         }),
     });
@@ -8106,7 +8120,10 @@ async fn resume_replay_interrupted_reconnect_does_not_leave_stale_working_state(
             codex_error_info: Some(CodexErrorInfo::Other),
             additional_details: None,
         }),
-        EventMsg::AgentMessageDelta(AgentMessageDeltaEvent {
+        EventMsg::AgentMessageContentDelta(AgentMessageContentDeltaEvent {
+            process_id: String::new(),
+            turn_id: String::new(),
+            item_id: String::new(),
             delta: "hello".to_string(),
         }),
     ]);
@@ -8296,7 +8313,10 @@ async fn stream_recovery_restores_previous_status_header() {
     drain_insert_history(&mut rx);
     chat.handle_codex_event(Event {
         id: "delta".into(),
-        msg: EventMsg::AgentMessageDelta(AgentMessageDeltaEvent {
+        msg: EventMsg::AgentMessageContentDelta(AgentMessageContentDeltaEvent {
+            process_id: String::new(),
+            turn_id: String::new(),
+            item_id: String::new(),
             delta: "hello".to_string(),
         }),
     });
@@ -8430,19 +8450,31 @@ async fn deltas_then_same_final_message_are_rendered_snapshot() {
     // Stream some reasoning deltas first.
     chat.handle_codex_event(Event {
         id: "s1".into(),
-        msg: EventMsg::AgentReasoningDelta(AgentReasoningDeltaEvent {
+        msg: EventMsg::ReasoningContentDelta(ReasoningContentDeltaEvent {
+            process_id: String::new(),
+            turn_id: String::new(),
+            item_id: String::new(),
+            summary_index: 0,
             delta: "I will ".into(),
         }),
     });
     chat.handle_codex_event(Event {
         id: "s1".into(),
-        msg: EventMsg::AgentReasoningDelta(AgentReasoningDeltaEvent {
+        msg: EventMsg::ReasoningContentDelta(ReasoningContentDeltaEvent {
+            process_id: String::new(),
+            turn_id: String::new(),
+            item_id: String::new(),
+            summary_index: 0,
             delta: "first analyze the ".into(),
         }),
     });
     chat.handle_codex_event(Event {
         id: "s1".into(),
-        msg: EventMsg::AgentReasoningDelta(AgentReasoningDeltaEvent {
+        msg: EventMsg::ReasoningContentDelta(ReasoningContentDeltaEvent {
+            process_id: String::new(),
+            turn_id: String::new(),
+            item_id: String::new(),
+            summary_index: 0,
             delta: "request.".into(),
         }),
     });
@@ -8456,13 +8488,19 @@ async fn deltas_then_same_final_message_are_rendered_snapshot() {
     // Then stream answer deltas, followed by the exact same final message.
     chat.handle_codex_event(Event {
         id: "s1".into(),
-        msg: EventMsg::AgentMessageDelta(AgentMessageDeltaEvent {
+        msg: EventMsg::AgentMessageContentDelta(AgentMessageContentDeltaEvent {
+            process_id: String::new(),
+            turn_id: String::new(),
+            item_id: String::new(),
             delta: "Here is the ".into(),
         }),
     });
     chat.handle_codex_event(Event {
         id: "s1".into(),
-        msg: EventMsg::AgentMessageDelta(AgentMessageDeltaEvent {
+        msg: EventMsg::AgentMessageContentDelta(AgentMessageContentDeltaEvent {
+            process_id: String::new(),
+            turn_id: String::new(),
+            item_id: String::new(),
             delta: "result.".into(),
         }),
     });
@@ -8620,7 +8658,11 @@ async fn chatwidget_exec_and_status_layout_vt100_snapshot() {
     });
     chat.handle_codex_event(Event {
         id: "t1".into(),
-        msg: EventMsg::AgentReasoningDelta(AgentReasoningDeltaEvent {
+        msg: EventMsg::ReasoningContentDelta(ReasoningContentDeltaEvent {
+            process_id: String::new(),
+            turn_id: String::new(),
+            item_id: String::new(),
+            summary_index: 0,
             delta: "**Investigating rendering code**".into(),
         }),
     });
@@ -8673,7 +8715,7 @@ async fn chatwidget_markdown_code_blocks_vt100_snapshot() {
     let mut term = crate::custom_terminal::Terminal::with_options(backend).expect("terminal");
     // Place viewport at the last line so that history lines insert above it
 
-    // Simulate streaming via AgentMessageDelta in 2-character chunks (no final AgentMessage).
+    // Simulate streaming via AgentMessageContentDelta in 2-character chunks.
     let source: &str = r#"
 
     -- Indented code block (4 spaces)
@@ -8709,7 +8751,12 @@ printf 'fenced within fenced\n'
 
         chat.handle_codex_event(Event {
             id: "t1".into(),
-            msg: EventMsg::AgentMessageDelta(AgentMessageDeltaEvent { delta }),
+            msg: EventMsg::AgentMessageContentDelta(AgentMessageContentDeltaEvent {
+                process_id: String::new(),
+                turn_id: String::new(),
+                item_id: String::new(),
+                delta,
+            }),
         });
         // Drive commit ticks and drain emitted history lines into the vt100 buffer.
         loop {

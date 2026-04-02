@@ -276,11 +276,11 @@ impl ProcessEventStore {
                     if !event.id.is_empty() && self.user_message_ids.contains(&event.id) {
                         return;
                     }
-                    let legacy = Event {
+                    let user_msg_event = Event {
                         id: event.id,
-                        msg: item.as_legacy_event(),
+                        msg: EventMsg::UserMessage(item.to_user_message_event()),
                     };
-                    self.push_legacy_event(legacy);
+                    self.push_legacy_event(user_msg_event);
                     return;
                 }
             }
@@ -3675,7 +3675,7 @@ mod tests {
     use chaos_ipc::config_types::ModeKind;
     use chaos_ipc::config_types::Settings;
     use chaos_ipc::openai_models::ModelAvailabilityNux;
-    use chaos_ipc::protocol::AgentMessageDeltaEvent;
+    use chaos_ipc::protocol::AgentMessageContentDeltaEvent;
     use chaos_ipc::protocol::AskForApproval;
     use chaos_ipc::protocol::Event;
     use chaos_ipc::protocol::EventMsg;
@@ -4107,7 +4107,10 @@ mod tests {
         });
         app.chat_widget.handle_codex_event(Event {
             id: "agent-delta".to_string(),
-            msg: EventMsg::AgentMessageDelta(AgentMessageDeltaEvent {
+            msg: EventMsg::AgentMessageContentDelta(AgentMessageContentDeltaEvent {
+                process_id: String::new(),
+                turn_id: String::new(),
+                item_id: String::new(),
                 delta: "streaming".to_string(),
             }),
         });
@@ -4188,7 +4191,10 @@ mod tests {
         });
         app.chat_widget.handle_codex_event(Event {
             id: "agent-delta".to_string(),
-            msg: EventMsg::AgentMessageDelta(AgentMessageDeltaEvent {
+            msg: EventMsg::AgentMessageContentDelta(AgentMessageContentDeltaEvent {
+                process_id: String::new(),
+                turn_id: String::new(),
+                item_id: String::new(),
                 delta: "streaming".to_string(),
             }),
         });
@@ -4268,7 +4274,10 @@ mod tests {
         });
         app.chat_widget.handle_codex_event(Event {
             id: "agent-delta".to_string(),
-            msg: EventMsg::AgentMessageDelta(AgentMessageDeltaEvent {
+            msg: EventMsg::AgentMessageContentDelta(AgentMessageContentDeltaEvent {
+                process_id: String::new(),
+                turn_id: String::new(),
+                item_id: String::new(),
                 delta: "streaming".to_string(),
             }),
         });
@@ -4342,7 +4351,10 @@ mod tests {
         });
         app.chat_widget.handle_codex_event(Event {
             id: "agent-delta".to_string(),
-            msg: EventMsg::AgentMessageDelta(AgentMessageDeltaEvent {
+            msg: EventMsg::AgentMessageContentDelta(AgentMessageContentDeltaEvent {
+                process_id: String::new(),
+                turn_id: String::new(),
+                item_id: String::new(),
                 delta: "streaming".to_string(),
             }),
         });
@@ -4703,7 +4715,10 @@ mod tests {
         });
         app.chat_widget.handle_codex_event(Event {
             id: "agent-delta".to_string(),
-            msg: EventMsg::AgentMessageDelta(AgentMessageDeltaEvent {
+            msg: EventMsg::AgentMessageContentDelta(AgentMessageContentDeltaEvent {
+                process_id: String::new(),
+                turn_id: String::new(),
+                item_id: String::new(),
                 delta: "streaming".to_string(),
             }),
         });

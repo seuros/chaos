@@ -124,9 +124,6 @@ fn event_msg_persistence_mode(ev: &EventMsg) -> Option<EventPersistenceMode> {
         | EventMsg::DynamicToolCallResponse(_) => Some(EventPersistenceMode::Extended),
         EventMsg::Warning(_)
         | EventMsg::ModelReroute(_)
-        | EventMsg::AgentMessageDelta(_)
-        | EventMsg::AgentReasoningDelta(_)
-        | EventMsg::AgentReasoningRawContentDelta(_)
         | EventMsg::AgentReasoningSectionBreak(_)
         | EventMsg::RawResponseItem(_)
         | EventMsg::SessionConfigured(_)

@@ -63,11 +63,8 @@ use chaos_ipc::items::AgentMessageItem;
 use chaos_ipc::models::MessagePhase;
 use chaos_ipc::models::local_image_label_text;
 use chaos_ipc::parse_command::ParsedCommand;
-use chaos_ipc::protocol::AgentMessageDeltaEvent;
 use chaos_ipc::protocol::AgentMessageEvent;
-use chaos_ipc::protocol::AgentReasoningDeltaEvent;
 use chaos_ipc::protocol::AgentReasoningEvent;
-use chaos_ipc::protocol::AgentReasoningRawContentDeltaEvent;
 use chaos_ipc::protocol::AgentReasoningRawContentEvent;
 use chaos_ipc::protocol::ApplyPatchApprovalRequestEvent;
 use chaos_ipc::protocol::BackgroundEventEvent;
@@ -4557,9 +4554,10 @@ impl ChatWidget {
         }
 
         match msg {
-            EventMsg::AgentMessageDelta(_)
+            EventMsg::AgentMessageContentDelta(_)
             | EventMsg::PlanDelta(_)
-            | EventMsg::AgentReasoningDelta(_)
+            | EventMsg::ReasoningContentDelta(_)
+            | EventMsg::ReasoningRawContentDelta(_)
             | EventMsg::TerminalInteraction(_)
             | EventMsg::ExecCommandOutputDelta(_) => {}
             _ => {
@@ -4582,14 +4580,12 @@ impl ChatWidget {
                 self.on_agent_message(message)
             }
             EventMsg::AgentMessage(AgentMessageEvent { .. }) => {}
-            EventMsg::AgentMessageDelta(AgentMessageDeltaEvent { delta }) => {
-                self.on_agent_message_delta(delta)
+            EventMsg::AgentMessageContentDelta(event) => {
+                self.on_agent_message_delta(event.delta)
             }
             EventMsg::PlanDelta(event) => self.on_plan_delta(event.delta),
-            EventMsg::AgentReasoningDelta(AgentReasoningDeltaEvent { delta })
-            | EventMsg::AgentReasoningRawContentDelta(AgentReasoningRawContentDeltaEvent {
-                delta,
-            }) => self.on_agent_reasoning_delta(delta),
+            EventMsg::ReasoningContentDelta(event) => self.on_agent_reasoning_delta(event.delta),
+            EventMsg::ReasoningRawContentDelta(event) => self.on_agent_reasoning_delta(event.delta),
             EventMsg::AgentReasoning(AgentReasoningEvent { .. }) => self.on_agent_reasoning_final(),
             EventMsg::AgentReasoningRawContent(AgentReasoningRawContentEvent { text }) => {
                 self.on_agent_reasoning_delta(text);
@@ -4754,9 +4750,6 @@ impl ChatWidget {
             }
             EventMsg::RawResponseItem(_)
             | EventMsg::ItemStarted(_)
-            | EventMsg::AgentMessageContentDelta(_)
-            | EventMsg::ReasoningContentDelta(_)
-            | EventMsg::ReasoningRawContentDelta(_)
             | EventMsg::DynamicToolCallRequest(_)
             | EventMsg::DynamicToolCallResponse(_) => {}
             EventMsg::HookStarted(event) => self.on_hook_started(event),
@@ -4764,9 +4757,7 @@ impl ChatWidget {
             EventMsg::ItemCompleted(event) => {
                 let item = event.item;
                 if !from_replay && let chaos_ipc::items::TurnItem::UserMessage(item) = &item {
-                    let EventMsg::UserMessage(event) = item.as_legacy_event() else {
-                        unreachable!("user message item should convert to a legacy user message");
-                    };
+                    let event = item.to_user_message_event();
                     let rendered = Self::rendered_user_message_event_from_event(&event);
                     let compare_key = Self::pending_steer_compare_key_from_item(item);
                     if self

@@ -1,2 +1,8 @@
 [advisories]
-ignore = []
+ignore = [
+    # rsa Marvin Attack timing side-channel; no fix available upstream,
+    # pulled transitively via sqlx-mysql which we don't use for auth.
+    "RUSTSEC-2023-0071",
+    # bincode unmaintained; pulled via syntect dump-load for pre-compiled grammars.
+    "RUSTSEC-2025-0141",
+]

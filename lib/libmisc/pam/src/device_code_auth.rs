@@ -1,6 +1,6 @@
-use codex_client::CodexHttpClient;
 use chaos_ipc::product::CHAOS_VERSION;
 use chaos_ipc::product::display_name;
+use codex_client::CodexHttpClient;
 use http::StatusCode;
 use serde::Deserialize;
 use serde::Serialize;

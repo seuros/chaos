@@ -66,10 +66,10 @@ mod apply_patch_cli;
 mod approvals;
 #[path = "suite/auth_refresh.rs"]
 mod auth_refresh;
-#[path = "suite/client_websockets.rs"]
-mod client_websockets;
 #[path = "suite/chaos_delegate.rs"]
 mod chaos_delegate;
+#[path = "suite/client_websockets.rs"]
+mod client_websockets;
 #[path = "suite/deprecation_notice.rs"]
 mod deprecation_notice;
 #[path = "suite/exec.rs"]

@@ -408,7 +408,10 @@ impl App {
         Ok(())
     }
 
-    fn handle_overlay_completion(&mut self, auth_completion: Option<crate::onboarding::auth::AuthCompletion>) {
+    fn handle_overlay_completion(
+        &mut self,
+        auth_completion: Option<crate::onboarding::auth::AuthCompletion>,
+    ) {
         let Some(auth_completion) = auth_completion else {
             return;
         };

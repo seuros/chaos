@@ -37,11 +37,7 @@ pub fn log(
 
     let mut entries = Vec::with_capacity(limit);
 
-    let walk = repo
-        .rev_walk([start])
-        .first_parent_only()
-        .all()
-        .git_op()?;
+    let walk = repo.rev_walk([start]).first_parent_only().all().git_op()?;
 
     for info in walk.take(limit) {
         let info = info.git_op()?;
@@ -54,12 +50,7 @@ pub fn log(
 
         let timestamp = commit.time().git_op()?.seconds;
         let author = commit.author().git_op()?.name.to_str_lossy().into_owned();
-        let subject = commit
-            .message()
-            .git_op()?
-            .title
-            .to_str_lossy()
-            .into_owned();
+        let subject = commit.message().git_op()?.title.to_str_lossy().into_owned();
 
         entries.push(LogEntry {
             sha,

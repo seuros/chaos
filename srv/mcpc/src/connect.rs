@@ -5,7 +5,6 @@ use std::path::PathBuf;
 use std::sync::Arc;
 use std::time::Duration;
 
-use chaos_ipc::product::CHAOS_VERSION;
 use crate::error::GuestError;
 use crate::handler::{ClientHandler, NoopClientHandler};
 use crate::protocol::{
@@ -18,6 +17,7 @@ use crate::session::McpSession;
 use crate::transport::http::{HttpClientConfig, HttpTransport};
 #[cfg(feature = "stdio")]
 use crate::transport::stdio::{StdioChild, StdioProcessConfig, StdioTransport};
+use chaos_ipc::product::CHAOS_VERSION;
 #[cfg(feature = "http")]
 use url::Url;
 

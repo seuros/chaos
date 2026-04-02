@@ -2135,7 +2135,7 @@
           "type": "string"
         },
         {
-          "const": "chatcompletions",
+          "const": "chat_completions",
           "description": "The Chat Completions API at `/v1/chat/completions`.",
           "type": "string"
         }

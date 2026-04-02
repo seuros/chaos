@@ -31,11 +31,7 @@ macro_rules! impl_tool_output {
                 $success_log
             }
 
-            fn to_response_item(
-                &self,
-                call_id: &str,
-                payload: &ToolPayload,
-            ) -> ResponseInputItem {
+            fn to_response_item(&self, call_id: &str, payload: &ToolPayload) -> ResponseInputItem {
                 tool_output_response_item(call_id, payload, self, $success_resp, $name)
             }
         }

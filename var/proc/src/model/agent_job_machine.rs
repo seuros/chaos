@@ -63,9 +63,7 @@ pub(crate) mod job {
         }
 
         pub(crate) fn start(&mut self) -> bool {
-            self.machine
-                .handle(AgentJobLifecycleEvent::Start)
-                .is_ok()
+            self.machine.handle(AgentJobLifecycleEvent::Start).is_ok()
         }
 
         pub(crate) fn complete(&mut self) -> bool {
@@ -75,15 +73,11 @@ pub(crate) mod job {
         }
 
         pub(crate) fn fail(&mut self) -> bool {
-            self.machine
-                .handle(AgentJobLifecycleEvent::Fail)
-                .is_ok()
+            self.machine.handle(AgentJobLifecycleEvent::Fail).is_ok()
         }
 
         pub(crate) fn cancel(&mut self) -> bool {
-            self.machine
-                .handle(AgentJobLifecycleEvent::Cancel)
-                .is_ok()
+            self.machine.handle(AgentJobLifecycleEvent::Cancel).is_ok()
         }
 
         #[cfg(test)]

@@ -94,10 +94,10 @@ where
         .to_response_item(call_id, payload)
 }
 
-#[path = "tools/common.rs"]
-mod common;
 #[path = "tools/close_agent.rs"]
 pub mod close_agent;
+#[path = "tools/common.rs"]
+mod common;
 #[path = "tools/resume_agent.rs"]
 mod resume_agent;
 #[path = "tools/send_input.rs"]

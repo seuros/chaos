@@ -209,7 +209,10 @@ WHERE job_id = ? AND item_id = ?
     pub async fn mark_agent_job_running(&self, job_id: &str) -> anyhow::Result<()> {
         let status = self.get_agent_job_status(job_id).await?;
         let mut wf = AgentJobWorkflow::from_status(status);
-        anyhow::ensure!(wf.start(), "cannot transition job {job_id} from {status:?} to Running");
+        anyhow::ensure!(
+            wf.start(),
+            "cannot transition job {job_id} from {status:?} to Running"
+        );
 
         let now = jiff::Timestamp::now().as_second();
         sqlx::query(
@@ -237,7 +240,10 @@ WHERE id = ? AND status = ?
     pub async fn mark_agent_job_completed(&self, job_id: &str) -> anyhow::Result<()> {
         let status = self.get_agent_job_status(job_id).await?;
         let mut wf = AgentJobWorkflow::from_status(status);
-        anyhow::ensure!(wf.complete(), "cannot transition job {job_id} from {status:?} to Completed");
+        anyhow::ensure!(
+            wf.complete(),
+            "cannot transition job {job_id} from {status:?} to Completed"
+        );
 
         let now = jiff::Timestamp::now().as_second();
         sqlx::query(
@@ -264,7 +270,10 @@ WHERE id = ? AND status = ?
     ) -> anyhow::Result<()> {
         let status = self.get_agent_job_status(job_id).await?;
         let mut wf = AgentJobWorkflow::from_status(status);
-        anyhow::ensure!(wf.fail(), "cannot transition job {job_id} from {status:?} to Failed");
+        anyhow::ensure!(
+            wf.fail(),
+            "cannot transition job {job_id} from {status:?} to Failed"
+        );
 
         let now = jiff::Timestamp::now().as_second();
         sqlx::query(
@@ -354,7 +363,10 @@ WHERE id = ?
     ) -> anyhow::Result<bool> {
         // Validate: only Pending → Running is allowed.
         let mut wf = AgentJobItemWorkflow::new();
-        assert!(wf.start(), "item lifecycle: Pending → Running must be valid");
+        assert!(
+            wf.start(),
+            "item lifecycle: Pending → Running must be valid"
+        );
 
         let now = jiff::Timestamp::now().as_second();
         let result = sqlx::query(
@@ -386,7 +398,10 @@ WHERE job_id = ? AND item_id = ? AND status = ?
         process_id: &str,
     ) -> anyhow::Result<bool> {
         let mut wf = AgentJobItemWorkflow::new();
-        assert!(wf.start(), "item lifecycle: Pending → Running must be valid");
+        assert!(
+            wf.start(),
+            "item lifecycle: Pending → Running must be valid"
+        );
 
         let now = jiff::Timestamp::now().as_second();
         let result = sqlx::query(
@@ -420,7 +435,10 @@ WHERE job_id = ? AND item_id = ? AND status = ?
     ) -> anyhow::Result<bool> {
         // Validate: only Running → Pending (retry) is allowed.
         let mut wf = AgentJobItemWorkflow::from_status(AgentJobItemStatus::Running);
-        assert!(wf.retry(), "item lifecycle: Running → Pending (retry) must be valid");
+        assert!(
+            wf.retry(),
+            "item lifecycle: Running → Pending (retry) must be valid"
+        );
 
         let now = jiff::Timestamp::now().as_second();
         let result = sqlx::query(
@@ -511,7 +529,10 @@ WHERE
         item_id: &str,
     ) -> anyhow::Result<bool> {
         let mut wf = AgentJobItemWorkflow::from_status(AgentJobItemStatus::Running);
-        assert!(wf.complete(), "item lifecycle: Running → Completed must be valid");
+        assert!(
+            wf.complete(),
+            "item lifecycle: Running → Completed must be valid"
+        );
 
         let now = jiff::Timestamp::now().as_second();
         let result = sqlx::query(

@@ -46,9 +46,7 @@ impl BackfillWorkflow {
     }
 
     pub(crate) fn start(&mut self) -> bool {
-        self.machine
-            .handle(BackfillLifecycleEvent::Start)
-            .is_ok()
+        self.machine.handle(BackfillLifecycleEvent::Start).is_ok()
     }
 
     pub(crate) fn complete(&mut self) -> bool {

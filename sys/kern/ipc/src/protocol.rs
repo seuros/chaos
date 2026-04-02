@@ -1491,7 +1491,6 @@ pub struct ItemStartedEvent {
     pub item: TurnItem,
 }
 
-
 #[derive(Debug, Clone, Deserialize, Serialize, TS, JsonSchema)]
 pub struct ItemCompletedEvent {
     #[serde(rename = "process_id", alias = "process_id")]
@@ -1499,7 +1498,6 @@ pub struct ItemCompletedEvent {
     pub turn_id: String,
     pub item: TurnItem,
 }
-
 
 #[derive(Debug, Clone, Deserialize, Serialize, TS, JsonSchema)]
 pub struct AgentMessageContentDeltaEvent {
@@ -1509,7 +1507,6 @@ pub struct AgentMessageContentDeltaEvent {
     pub item_id: String,
     pub delta: String,
 }
-
 
 #[derive(Debug, Clone, Deserialize, Serialize, TS, JsonSchema)]
 pub struct PlanDeltaEvent {
@@ -1532,7 +1529,6 @@ pub struct ReasoningContentDeltaEvent {
     pub summary_index: i64,
 }
 
-
 #[derive(Debug, Clone, Deserialize, Serialize, TS, JsonSchema)]
 pub struct ReasoningRawContentDeltaEvent {
     #[serde(rename = "process_id", alias = "process_id")]
@@ -1544,7 +1540,6 @@ pub struct ReasoningRawContentDeltaEvent {
     #[serde(default)]
     pub content_index: i64,
 }
-
 
 #[derive(Debug, Clone, Deserialize, Serialize, JsonSchema, TS)]
 pub struct ExitedReviewModeEvent {

@@ -2,9 +2,9 @@ use super::*;
 use crate::mcp_connection_manager::McpToolInfo;
 use chaos_ipc::protocol::GranularApprovalConfig;
 use chaos_ipc::protocol::McpAuthStatus;
+use std::collections::HashSet;
 use std::path::Path;
 use std::path::PathBuf;
-use std::collections::HashSet;
 use std::sync::Arc;
 use std::sync::RwLock as StdRwLock;
 

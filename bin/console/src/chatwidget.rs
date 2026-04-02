@@ -4580,9 +4580,7 @@ impl ChatWidget {
                 self.on_agent_message(message)
             }
             EventMsg::AgentMessage(AgentMessageEvent { .. }) => {}
-            EventMsg::AgentMessageContentDelta(event) => {
-                self.on_agent_message_delta(event.delta)
-            }
+            EventMsg::AgentMessageContentDelta(event) => self.on_agent_message_delta(event.delta),
             EventMsg::PlanDelta(event) => self.on_plan_delta(event.delta),
             EventMsg::ReasoningContentDelta(event) => self.on_agent_reasoning_delta(event.delta),
             EventMsg::ReasoningRawContentDelta(event) => self.on_agent_reasoning_delta(event.delta),

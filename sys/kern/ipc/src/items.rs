@@ -193,7 +193,6 @@ impl AgentMessageItem {
             phase: None,
         }
     }
-
 }
 
 impl TurnItem {
@@ -208,5 +207,4 @@ impl TurnItem {
             TurnItem::ContextCompaction(item) => item.id.clone(),
         }
     }
-
 }

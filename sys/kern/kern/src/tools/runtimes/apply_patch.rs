@@ -33,15 +33,14 @@ use std::path::PathBuf;
 use std::time::Instant;
 
 #[derive(Debug)]
+#[cfg_attr(not(target_os = "linux"), allow(dead_code))]
 pub struct ApplyPatchRequest {
     pub action: ApplyPatchAction,
     pub file_paths: Vec<AbsolutePathBuf>,
     pub changes: HashMap<PathBuf, FileChange>,
     pub exec_approval_requirement: ExecApprovalRequirement,
-    #[allow(dead_code)]
     pub additional_permissions: Option<PermissionProfile>,
     pub permissions_preapproved: bool,
-    #[allow(dead_code)]
     pub timeout_ms: Option<u64>,
 }
 

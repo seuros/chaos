@@ -8,6 +8,7 @@ no-default-features = false
 [advisories]
 ignore = [
     { id = "RUSTSEC-2025-0141", reason = "bincode unmaintained; pulled via syntect dump-load for pre-compiled grammars" },
+    { id = "RUSTSEC-2023-0071", reason = "rsa Marvin Attack timing side-channel; no fix available, pulled transitively via sqlx-mysql" },
 ]
 
 [licenses]
@@ -27,6 +28,7 @@ allow = [
     "Unicode-3.0",
     "Unlicense",
     "Zlib",
+    "bzip2-1.0.6",
 ]
 confidence-threshold = 0.8
 

@@ -9,7 +9,7 @@
 use std::collections::HashMap;
 use std::collections::HashSet;
 use std::env;
-use std::path::PathBuf;
+use std::path::{Path, PathBuf};
 use std::sync::Arc;
 use std::sync::Mutex as StdMutex;
 use std::sync::atomic::AtomicBool;
@@ -52,7 +52,9 @@ use mcp_guest::protocol::CreateElicitationResponse;
 use mcp_guest::protocol::ElicitationAction;
 use mcp_guest::protocol::ElicitationCompleteNotificationParams;
 use mcp_guest::protocol::ElicitationResponse;
+use mcp_guest::protocol::ListRootsResult;
 use mcp_guest::protocol::RequestId;
+use mcp_guest::protocol::Root;
 use mcp_guest::protocol::TaskOrResult;
 // Use mcp-guest types directly throughout core.
 use mcp_guest::ListResourceTemplatesResult;
@@ -262,9 +264,27 @@ struct ChaosClientHandler {
     session: Arc<tokio::sync::RwLock<Option<McpSession>>>,
     /// Shared catalog for updating on list_changed notifications.
     catalog: Arc<StdRwLock<crate::catalog::Catalog>>,
+    /// Working directory exposed to MCP servers via roots/list.
+    cwd: Arc<StdRwLock<PathBuf>>,
 }
 
 impl ClientHandler for ChaosClientHandler {
+    fn list_roots(&self) -> ClientHandlerResultFuture<'_, ListRootsResult> {
+        let cwd = self
+            .cwd
+            .read()
+            .unwrap_or_else(std::sync::PoisonError::into_inner)
+            .clone();
+        Box::pin(async move {
+            Ok(ListRootsResult {
+                roots: vec![Root {
+                    uri: root_uri_from_cwd(&cwd),
+                    name: None,
+                }],
+            })
+        })
+    }
+
     fn create_elicitation(
         &self,
         request: CreateElicitationRequest,
@@ -491,6 +511,8 @@ struct ManagedClient {
     tools: Arc<StdRwLock<Vec<ToolInfo>>>,
     tool_filter: ToolFilter,
     _tool_timeout: Option<Duration>,
+    /// Shared cwd for roots/list — updated when the workspace root changes.
+    cwd: Arc<StdRwLock<PathBuf>>,
 }
 
 impl ManagedClient {
@@ -501,6 +523,22 @@ impl ManagedClient {
             .unwrap_or_else(std::sync::PoisonError::into_inner)
             .clone();
         filter_tools(in_memory_tools, &self.tool_filter)
+    }
+
+    /// Updates the shared cwd and sends `notifications/roots/list_changed` to the server.
+    async fn notify_roots_changed(&self, new_cwd: &Path) -> Result<()> {
+        {
+            let mut cwd = self
+                .cwd
+                .write()
+                .unwrap_or_else(std::sync::PoisonError::into_inner);
+            *cwd = new_cwd.to_path_buf();
+        }
+        self.session
+            .notify_value("notifications/roots/list_changed", None)
+            .await
+            .map_err(|e| anyhow!("{e}"))?;
+        Ok(())
     }
 
     /// Sends sandbox state as a standard MCP log notification.
@@ -525,6 +563,7 @@ struct AsyncManagedClient {
     client: Shared<BoxFuture<'static, Result<ManagedClient, StartupOutcomeError>>>,
     startup_snapshot: Option<Vec<ToolInfo>>,
     startup_complete: Arc<AtomicBool>,
+    cwd: Arc<StdRwLock<PathBuf>>,
 }
 
 impl AsyncManagedClient {
@@ -537,11 +576,14 @@ impl AsyncManagedClient {
         tx_event: Sender<Event>,
         elicitation_requests: ElicitationRequestManager,
         catalog: Arc<StdRwLock<crate::catalog::Catalog>>,
+        cwd: PathBuf,
     ) -> Self {
         let tool_filter = ToolFilter::from_config(&config);
         let startup_tool_filter = tool_filter;
         let startup_complete = Arc::new(AtomicBool::new(false));
         let startup_complete_for_fut = Arc::clone(&startup_complete);
+        let cwd = Arc::new(StdRwLock::new(cwd));
+        let cwd_for_client = Arc::clone(&cwd);
         let fut = async move {
             let outcome = async {
                 if let Err(error) = validate_mcp_server_name(&server_name) {
@@ -556,6 +598,7 @@ impl AsyncManagedClient {
                         tx_event,
                         elicitation_requests,
                         catalog,
+                        cwd: cwd_for_client,
                     },
                 )
                 .or_cancel(&cancel_token)
@@ -573,6 +616,7 @@ impl AsyncManagedClient {
             client,
             startup_snapshot: None,
             startup_complete,
+            cwd,
         }
     }
 
@@ -596,6 +640,21 @@ impl AsyncManagedClient {
                 Err(_) => self.startup_snapshot.clone(),
             }
         }
+    }
+
+    async fn notify_roots_changed(&self, new_cwd: &Path) -> Result<()> {
+        {
+            let mut cwd = self
+                .cwd
+                .write()
+                .unwrap_or_else(std::sync::PoisonError::into_inner);
+            *cwd = new_cwd.to_path_buf();
+        }
+        if !self.startup_complete.load(Ordering::Acquire) {
+            return Ok(());
+        }
+        let managed = self.client().await?;
+        managed.notify_roots_changed(new_cwd).await
     }
 
     async fn notify_sandbox_state_change(&self, sandbox_state: &SandboxState) -> Result<()> {
@@ -692,6 +751,7 @@ impl McpConnectionManager {
                 tx_event.clone(),
                 elicitation_requests.clone(),
                 Arc::clone(&catalog),
+                initial_sandbox_state.sandbox_cwd.clone(),
             );
             clients.insert(server_name.clone(), async_managed_client.clone());
             let tx_event = tx_event.clone();
@@ -1051,6 +1111,35 @@ impl McpConnectionManager {
             .map(|tool| (tool.server_name.clone(), tool.tool.name.to_string()))
     }
 
+    /// Notifies all MCP servers that the workspace root has changed.
+    pub async fn notify_roots_changed(&self, new_cwd: &Path) -> Result<()> {
+        let mut join_set = JoinSet::new();
+
+        for async_managed_client in self.clients.values() {
+            let new_cwd = new_cwd.to_path_buf();
+            let async_managed_client = async_managed_client.clone();
+            join_set.spawn(async move {
+                async_managed_client
+                    .notify_roots_changed(&new_cwd)
+                    .await
+            });
+        }
+
+        while let Some(join_res) = join_set.join_next().await {
+            match join_res {
+                Ok(Ok(())) => {}
+                Ok(Err(err)) => {
+                    warn!("Failed to notify roots change to MCP server: {err:#}");
+                }
+                Err(err) => {
+                    warn!("Task panic when notifying roots change to MCP server: {err:#}");
+                }
+            }
+        }
+
+        Ok(())
+    }
+
     pub async fn notify_sandbox_state_change(&self, sandbox_state: &SandboxState) -> Result<()> {
         let mut join_set = JoinSet::new();
 
@@ -1200,6 +1289,7 @@ struct MakeClientParams {
     tx_event: Sender<Event>,
     elicitation_requests: ElicitationRequestManager,
     catalog: Arc<StdRwLock<crate::catalog::Catalog>>,
+    cwd: Arc<StdRwLock<PathBuf>>,
 }
 
 /// Build an env HashMap for a stdio MCP server child process.
@@ -1254,6 +1344,7 @@ async fn make_managed_client(
         tx_event,
         elicitation_requests,
         catalog,
+        cwd,
     } = params;
 
     let tool_timeout = config.tool_timeout_sec.unwrap_or(DEFAULT_TOOL_TIMEOUT);
@@ -1262,6 +1353,7 @@ async fn make_managed_client(
     let tools_arc: Arc<StdRwLock<Vec<ToolInfo>>> = Arc::new(StdRwLock::new(Vec::new()));
     let session_holder: Arc<tokio::sync::RwLock<Option<McpSession>>> =
         Arc::new(tokio::sync::RwLock::new(None));
+    let cwd_arc = cwd;
 
     let handler = ChaosClientHandler {
         server_name: server_name.clone(),
@@ -1272,6 +1364,7 @@ async fn make_managed_client(
         tool_timeout,
         session: Arc::clone(&session_holder),
         catalog,
+        cwd: Arc::clone(&cwd_arc),
     };
 
     let client_info = mcp_guest::protocol::Implementation::new(
@@ -1283,7 +1376,7 @@ async fn make_managed_client(
     let capabilities = mcp_guest::protocol::ClientCapabilities {
         experimental: None,
         roots: Some(mcp_guest::protocol::RootsCapability {
-            list_changed: Some(false),
+            list_changed: Some(true),
         }),
         sampling: Some(mcp_guest::protocol::SamplingCapability {
             context: None,
@@ -1381,6 +1474,7 @@ async fn make_managed_client(
         tools: tools_arc,
         _tool_timeout: Some(tool_timeout),
         tool_filter,
+        cwd: cwd_arc,
     })
 }
 
@@ -1531,6 +1625,16 @@ fn startup_outcome_error_message(error: StartupOutcomeError) -> String {
         StartupOutcomeError::Cancelled => "MCP startup cancelled".to_string(),
         StartupOutcomeError::Failed { error } => error,
     }
+}
+
+fn root_uri_from_cwd(cwd: &Path) -> String {
+    Url::from_directory_path(cwd)
+        .or_else(|()| Url::from_file_path(cwd))
+        .map(|url| url.to_string())
+        .unwrap_or_else(|()| {
+            warn!("Failed to convert cwd to file URI: {}", cwd.display());
+            "file:///".to_string()
+        })
 }
 
 #[cfg(test)]

@@ -2124,6 +2124,19 @@ impl Session {
                     &session_source,
                 );
 
+                if previous_cwd != next_cwd {
+                    if let Err(e) = self
+                        .services
+                        .mcp_connection_manager
+                        .read()
+                        .await
+                        .notify_roots_changed(&next_cwd)
+                        .await
+                    {
+                        warn!("Failed to notify MCP servers of roots change: {e:#}");
+                    }
+                }
+
                 Ok(())
             }
             Err(err) => {
@@ -2183,6 +2196,19 @@ impl Session {
             &chaos_home,
             &session_source,
         );
+
+        if previous_cwd != session_configuration.cwd {
+            if let Err(e) = self
+                .services
+                .mcp_connection_manager
+                .read()
+                .await
+                .notify_roots_changed(&session_configuration.cwd)
+                .await
+            {
+                warn!("Failed to notify MCP servers of roots change: {e:#}");
+            }
+        }
 
         Ok(self
             .new_turn_from_configuration(

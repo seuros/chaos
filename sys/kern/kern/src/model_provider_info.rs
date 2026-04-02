@@ -1,7 +1,7 @@
-//! Registry of model providers supported by Codex.
+//! Registry of model providers supported by Chaos.
 //!
 //! Providers can be defined in two places:
-//!   1. Built-in defaults compiled into the binary so Codex works out-of-the-box.
+//!   1. Built-in defaults compiled into the binary so Chaos works out-of-the-box.
 //!   2. User-defined entries inside `~/.chaos/config.toml` under the `model_providers`
 //!      key. These override or extend the defaults at runtime.
 
@@ -31,6 +31,8 @@ const MAX_REQUEST_MAX_RETRIES: u64 = 100;
 
 const OPENAI_PROVIDER_NAME: &str = "OpenAI";
 pub const OPENAI_PROVIDER_ID: &str = "openai";
+pub const OPENAI_DEFAULT_BASE_URL: &str = "https://api.openai.com/v1";
+const CHATGPT_DEFAULT_BASE_URL: &str = "https://chatgpt.com/backend-api/codex";
 const CHAT_WIRE_API_REMOVED_ERROR: &str = "`wire_api = \"chat\"` is no longer supported.\nHow to fix: set `wire_api = \"responses\"` in your provider config.\nMore info: https://github.com/openai/codex/discussions/7782";
 pub(crate) const LEGACY_OLLAMA_CHAT_PROVIDER_ID: &str = "ollama-chat";
 pub(crate) const OLLAMA_CHAT_PROVIDER_REMOVED_ERROR: &str = "`ollama-chat` is no longer supported.\nHow to fix: replace `ollama-chat` with `ollama` in `model_provider`, `oss_provider`, or `--local-provider`.\nMore info: https://github.com/openai/codex/discussions/7782";
@@ -140,9 +142,9 @@ pub struct ModelProviderInfo {
 impl ModelProviderInfo {
     pub(crate) fn effective_base_url(&self, auth_mode: Option<AuthMode>) -> String {
         let default_base_url = if matches!(auth_mode, Some(AuthMode::Chatgpt)) {
-            "https://chatgpt.com/backend-api/codex"
+            CHATGPT_DEFAULT_BASE_URL
         } else {
-            "https://api.openai.com/v1"
+            OPENAI_DEFAULT_BASE_URL
         };
         self.base_url
             .clone()

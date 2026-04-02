@@ -1008,7 +1008,7 @@
               "$ref": "#/definitions/WireApi"
             }
           ],
-          "default": "responses",
+          "default": "auto",
           "description": "Which wire protocol this provider expects."
         }
       },
@@ -2125,8 +2125,18 @@
       "description": "Wire protocol that the provider speaks.",
       "oneOf": [
         {
+          "const": "auto",
+          "description": "Lazy auto-detection: try Responses first, fall back to Chat Completions\non 404/405/501. The winning format is cached for the session.",
+          "type": "string"
+        },
+        {
           "const": "responses",
           "description": "The Responses API exposed by OpenAI at `/v1/responses`.",
+          "type": "string"
+        },
+        {
+          "const": "chatcompletions",
+          "description": "The Chat Completions API at `/v1/chat/completions`.",
           "type": "string"
         }
       ]

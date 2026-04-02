@@ -38,15 +38,22 @@ const CHATGPT_DEFAULT_BASE_URL: &str = "https://chatgpt.com/backend-api/codex";
 #[derive(Debug, Clone, Copy, Default, PartialEq, Eq, Serialize, JsonSchema)]
 #[serde(rename_all = "lowercase")]
 pub enum WireApi {
-    /// The Responses API exposed by OpenAI at `/v1/responses`.
+    /// Lazy auto-detection: try Responses first, fall back to Chat Completions
+    /// on 404/405/501. The winning format is cached for the session.
     #[default]
+    Auto,
+    /// The Responses API exposed by OpenAI at `/v1/responses`.
     Responses,
+    /// The Chat Completions API at `/v1/chat/completions`.
+    ChatCompletions,
 }
 
 impl fmt::Display for WireApi {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         let value = match self {
+            Self::Auto => "auto",
             Self::Responses => "responses",
+            Self::ChatCompletions => "chat_completions",
         };
         f.write_str(value)
     }
@@ -59,8 +66,13 @@ impl<'de> Deserialize<'de> for WireApi {
     {
         let value = String::deserialize(deserializer)?;
         match value.as_str() {
+            "auto" => Ok(Self::Auto),
             "responses" => Ok(Self::Responses),
-            _ => Err(serde::de::Error::unknown_variant(&value, &["responses"])),
+            "chat_completions" => Ok(Self::ChatCompletions),
+            _ => Err(serde::de::Error::unknown_variant(
+                &value,
+                &["auto", "responses", "chat_completions"],
+            )),
         }
     }
 }
@@ -278,6 +290,13 @@ impl ModelProviderInfo {
 
     pub fn is_openai(&self) -> bool {
         self.name == OPENAI_PROVIDER_NAME
+    }
+
+    /// Returns `true` when the provider carries its own credentials — either
+    /// an `env_key` or a hard-coded `experimental_bearer_token`.  In that
+    /// case the session-level ChatGPT auth should not be inherited.
+    pub fn is_self_authenticated(&self) -> bool {
+        self.env_key.is_some() || self.experimental_bearer_token.is_some()
     }
 }
 

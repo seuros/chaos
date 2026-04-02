@@ -5871,6 +5871,7 @@ async fn run_sampling_request(
         Arc::clone(&turn_diff_tracker),
     );
     let mut retries = 0;
+    let mut last_server_model: Option<String> = None;
     loop {
         let err = match try_run_sampling_request(
             tool_runtime.clone(),
@@ -5880,6 +5881,7 @@ async fn run_sampling_request(
             turn_metadata_header,
             Arc::clone(&turn_diff_tracker),
             server_model_warning_emitted_for_turn,
+            &mut last_server_model,
             &prompt,
             cancellation_token.child_token(),
         )
@@ -6513,6 +6515,7 @@ async fn try_run_sampling_request(
     turn_metadata_header: Option<&str>,
     turn_diff_tracker: SharedTurnDiffTracker,
     server_model_warning_emitted_for_turn: &mut bool,
+    last_server_model: &mut Option<String>,
     prompt: &Prompt,
     cancellation_token: CancellationToken,
 ) -> ChaosResult<SamplingRequestResult> {
@@ -6689,6 +6692,7 @@ async fn try_run_sampling_request(
                 }
             }
             ResponseEvent::ServerModel(server_model) => {
+                *last_server_model = Some(server_model.clone());
                 if !*server_model_warning_emitted_for_turn
                     && sess
                         .maybe_warn_on_server_model_mismatch(&turn_context, server_model)
@@ -6710,9 +6714,25 @@ async fn try_run_sampling_request(
                 sess.services.models_manager.refresh_if_new_etag(etag).await;
             }
             ResponseEvent::Completed {
-                response_id: _,
+                response_id,
                 token_usage,
             } => {
+                if let Some(usage) = &token_usage {
+                    let model_name = last_server_model
+                        .as_deref()
+                        .unwrap_or(turn_context.model_info.slug.as_str());
+                    tracing::info!(
+                        provider = turn_context.provider.name.as_str(),
+                        model = model_name,
+                        response_id = %response_id,
+                        input_tokens = usage.input_tokens,
+                        cached_input_tokens = usage.cached_input_tokens,
+                        output_tokens = usage.output_tokens,
+                        reasoning_output_tokens = usage.reasoning_output_tokens,
+                        total_tokens = usage.total_tokens,
+                        "ration: turn completed",
+                    );
+                }
                 flush_assistant_text_segments_all(
                     &sess,
                     &turn_context,

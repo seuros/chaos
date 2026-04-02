@@ -42,7 +42,7 @@ members = [
 
     # bin/ — userland programs
     "bin/chaos",
-    "bin/xserver",
+    "bin/console",
     "bin/concierge",
 
     # etc/ — configuration
@@ -146,7 +146,7 @@ chaos-cron = { path = "srv/cron" }
 
 # Internal — bin/
 chaos-cli = { path = "bin/chaos" }
-chaos-xserver = { path = "bin/xserver" }
+chaos-console = { path = "bin/console" }
 chaos-concierge = { path = "bin/concierge" }
 
 # Internal — etc/

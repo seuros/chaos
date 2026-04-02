@@ -162,6 +162,7 @@ fn test_tool_runtime(session: Arc<Session>, turn_context: Arc<TurnContext>) -> T
             dynamic_tools: turn_context.dynamic_tools.as_slice(),
             catalog_tools: vec![],
             hallucinate: None,
+            plan_mode: false,
         },
     ));
     let tracker = Arc::new(tokio::sync::Mutex::new(TurnDiffTracker::new()));
@@ -3550,6 +3551,7 @@ async fn fatal_tool_error_stops_turn_and_reports_error() {
             dynamic_tools: turn_context.dynamic_tools.as_slice(),
             catalog_tools: vec![],
             hallucinate: None,
+            plan_mode: false,
         },
     );
     let item = ResponseItem::CustomToolCall {

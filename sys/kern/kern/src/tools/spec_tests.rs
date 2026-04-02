@@ -1032,6 +1032,7 @@ fn assert_model_tools(
                     .collect()
             },
             hallucinate: None,
+            plan_mode: false,
         },
     );
     let model_visible_specs = router.model_visible_specs();
@@ -2000,6 +2001,7 @@ fn tool_suggest_is_not_registered_without_feature_flag() {
         &[],
         vec![],
         None,
+        false,
     )
     .build();
 
@@ -2180,6 +2182,7 @@ fn tool_suggest_description_lists_discoverable_tools() {
         &[],
         vec![],
         None,
+        false,
     )
     .build();
 

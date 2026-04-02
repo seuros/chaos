@@ -1782,13 +1782,57 @@ fn push_tool_spec(
     }
 }
 
+/// Build a compact bracketed suffix from MCP tool annotations.
+///
+/// Only includes hints for fields that are explicitly set:
+/// - `read_only_hint: Some(true)` -> `"read-only"`
+/// - `read_only_hint: Some(false)` -> `"writes"`
+/// - `destructive_hint: Some(true)` -> `"destructive"`
+/// - `idempotent_hint: Some(true)` -> `"idempotent"`
+/// - `open_world_hint: Some(true)` -> `"open-world"`
+fn annotation_suffix(annotations: &mcp_guest::ToolAnnotations) -> String {
+    let mut hints: Vec<&str> = Vec::new();
+
+    match annotations.read_only_hint {
+        Some(true) => hints.push("read-only"),
+        Some(false) => hints.push("writes"),
+        None => {}
+    }
+    if annotations.destructive_hint == Some(true) {
+        hints.push("destructive");
+    }
+    if annotations.idempotent_hint == Some(true) {
+        hints.push("idempotent");
+    }
+    if annotations.open_world_hint == Some(true) {
+        hints.push("open-world");
+    }
+
+    if hints.is_empty() {
+        String::new()
+    } else {
+        format!(" [{}]", hints.join(", "))
+    }
+}
+
 pub(crate) fn mcp_tool_to_openai_tool(
     fully_qualified_name: String,
     tool: crate::mcp_connection_manager::McpToolInfo,
 ) -> Result<ResponsesApiTool, serde_json::Error> {
+    let description = match (&tool.description, &tool.annotations) {
+        (Some(desc), Some(ann)) => {
+            let suffix = annotation_suffix(ann);
+            if suffix.is_empty() {
+                Some(desc.clone())
+            } else {
+                Some(format!("{desc}{suffix}"))
+            }
+        }
+        (desc, _) => desc.clone(),
+    };
     mcp_tool_to_responses_api_tool(
         fully_qualified_name,
-        tool.description,
+        description,
         tool.input_schema,
         tool.output_schema,
         false,
@@ -1799,7 +1843,18 @@ pub(crate) fn mcp_tool_to_deferred_openai_tool(
     name: String,
     tool: crate::mcp_connection_manager::McpToolInfo,
 ) -> Result<ResponsesApiTool, serde_json::Error> {
-    mcp_tool_to_responses_api_tool(name, tool.description, tool.input_schema, None, true)
+    let description = match (&tool.description, &tool.annotations) {
+        (Some(desc), Some(ann)) => {
+            let suffix = annotation_suffix(ann);
+            if suffix.is_empty() {
+                Some(desc.clone())
+            } else {
+                Some(format!("{desc}{suffix}"))
+            }
+        }
+        (desc, _) => desc.clone(),
+    };
+    mcp_tool_to_responses_api_tool(name, description, tool.input_schema, None, true)
 }
 
 fn dynamic_tool_to_openai_tool(
@@ -1845,9 +1900,11 @@ pub(crate) fn build_specs(
         dynamic_tools,
         catalog_tools,
         None,
+        false,
     )
 }
 
+#[allow(clippy::too_many_arguments)]
 pub(crate) fn build_specs_with_discoverable_tools(
     config: &ToolsConfig,
     mcp_tools: Option<HashMap<String, crate::mcp_connection_manager::McpToolInfo>>,
@@ -1856,6 +1913,7 @@ pub(crate) fn build_specs_with_discoverable_tools(
     dynamic_tools: &[DynamicToolSpec],
     catalog_tools: Vec<(String, chaos_traits::catalog::CatalogTool)>,
     hallucinate: Option<chaos_hallucinate::HallucinateHandle>,
+    plan_mode: bool,
 ) -> ToolRegistryBuilder {
     use crate::minions::tools::CloseAgentHandler;
     use crate::minions::tools::ResumeAgentHandler;
@@ -2220,6 +2278,16 @@ pub(crate) fn build_specs_with_discoverable_tools(
         entries.sort_by(|a, b| a.0.cmp(&b.0));
 
         for (name, tool) in entries.into_iter() {
+            // In plan mode, skip tools that are explicitly destructive or non-read-only.
+            if plan_mode
+                && let Some(ref ann) = tool.annotations
+                && (ann.destructive_hint == Some(true) || ann.read_only_hint == Some(false))
+            {
+                tracing::debug!(
+                    "Skipping MCP tool {name:?} in plan mode (destructive or non-read-only)"
+                );
+                continue;
+            }
             match mcp_tool_to_openai_tool(name.clone(), tool.clone()) {
                 Ok(converted_tool) => {
                     push_tool_spec(

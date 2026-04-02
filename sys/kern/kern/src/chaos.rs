@@ -6011,6 +6011,7 @@ pub(crate) async fn built_tools(
         }
     }
 
+    let plan_mode = turn_context.collaboration_mode.mode == ModeKind::Plan;
     Ok(Arc::new(ToolRouter::from_config(
         &turn_context.tools_config,
         ToolRouterParams {
@@ -6025,6 +6026,7 @@ pub(crate) async fn built_tools(
             dynamic_tools: turn_context.dynamic_tools.as_slice(),
             catalog_tools,
             hallucinate: sess.services.hallucinate.clone(),
+            plan_mode,
         },
     )))
 }

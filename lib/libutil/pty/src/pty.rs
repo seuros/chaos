@@ -8,18 +8,16 @@ use std::os::unix::process::CommandExt;
 use std::path::Path;
 use std::process::Command as StdCommand;
 use std::process::Stdio;
-use std::sync::atomic::AtomicBool;
 use std::sync::Arc;
-use std::sync::Mutex as StdMutex;
-use std::time::Duration;
 
 use anyhow::Result;
 use portable_pty::native_pty_system;
 use portable_pty::CommandBuilder;
 use tokio::sync::mpsc;
-use tokio::sync::oneshot;
-use tokio::task::JoinHandle;
 
+use crate::helpers::spawn_blocking_read_loop;
+use crate::helpers::spawn_blocking_writer;
+use crate::helpers::ExitTracker;
 use crate::process::ChildTerminator;
 use crate::process::ProcessHandle;
 use crate::process::PtyHandles;
@@ -135,57 +133,24 @@ async fn spawn_process_portable(
     let process_group_id = child.process_id();
     let killer = child.clone_killer();
 
-    let (writer_tx, mut writer_rx) = mpsc::channel::<Vec<u8>>(128);
+    let (writer_tx, writer_rx) = mpsc::channel::<Vec<u8>>(128);
     let (stdout_tx, stdout_rx) = mpsc::channel::<Vec<u8>>(128);
     let (_stderr_tx, stderr_rx) = mpsc::channel::<Vec<u8>>(1);
-    let mut reader = pair.master.try_clone_reader()?;
-    let reader_handle: JoinHandle<()> = tokio::task::spawn_blocking(move || {
-        let mut buf = [0u8; 8_192];
-        loop {
-            match reader.read(&mut buf) {
-                Ok(0) => break,
-                Ok(n) => {
-                    let _ = stdout_tx.blocking_send(buf[..n].to_vec());
-                }
-                Err(ref e) if e.kind() == ErrorKind::Interrupted => continue,
-                Err(ref e) if e.kind() == ErrorKind::WouldBlock => {
-                    std::thread::sleep(Duration::from_millis(5));
-                    continue;
-                }
-                Err(_) => break,
-            }
-        }
-    });
 
-    let writer = pair.master.take_writer()?;
-    let writer = Arc::new(tokio::sync::Mutex::new(writer));
-    let writer_handle: JoinHandle<()> = tokio::spawn({
-        let writer = Arc::clone(&writer);
-        async move {
-            while let Some(bytes) = writer_rx.recv().await {
-                let mut guard = writer.lock().await;
-                use std::io::Write;
-                let _ = guard.write_all(&bytes);
-                let _ = guard.flush();
-            }
-        }
-    });
+    let reader = pair.master.try_clone_reader()?;
+    let reader_handle = spawn_blocking_read_loop(reader, stdout_tx);
 
-    let (exit_tx, exit_rx) = oneshot::channel::<i32>();
-    let exit_status = Arc::new(AtomicBool::new(false));
-    let wait_exit_status = Arc::clone(&exit_status);
-    let exit_code = Arc::new(StdMutex::new(None));
-    let wait_exit_code = Arc::clone(&exit_code);
-    let wait_handle: JoinHandle<()> = tokio::task::spawn_blocking(move || {
+    let writer = Arc::new(tokio::sync::Mutex::new(pair.master.take_writer()?));
+    let writer_handle = spawn_blocking_writer(writer, writer_rx);
+
+    let tracker = ExitTracker::new();
+    let (exit_status, exit_code, exit_rx, record_exit) = tracker.decompose();
+    let wait_handle = tokio::task::spawn_blocking(move || {
         let code = match child.wait() {
             Ok(status) => status.exit_code() as i32,
             Err(_) => -1,
         };
-        wait_exit_status.store(true, std::sync::atomic::Ordering::SeqCst);
-        if let Ok(mut guard) = wait_exit_code.lock() {
-            *guard = Some(code);
-        }
-        let _ = exit_tx.send(code);
+        record_exit(code);
     });
 
     let handles = PtyHandles {
@@ -288,56 +253,24 @@ async fn spawn_process_preserving_fds(
     drop(slave);
     let process_group_id = child.id();
 
-    let (writer_tx, mut writer_rx) = mpsc::channel::<Vec<u8>>(128);
+    let (writer_tx, writer_rx) = mpsc::channel::<Vec<u8>>(128);
     let (stdout_tx, stdout_rx) = mpsc::channel::<Vec<u8>>(128);
     let (_stderr_tx, stderr_rx) = mpsc::channel::<Vec<u8>>(1);
-    let mut reader = master.try_clone()?;
-    let reader_handle: JoinHandle<()> = tokio::task::spawn_blocking(move || {
-        let mut buf = [0u8; 8_192];
-        loop {
-            match std::io::Read::read(&mut reader, &mut buf) {
-                Ok(0) => break,
-                Ok(n) => {
-                    let _ = stdout_tx.blocking_send(buf[..n].to_vec());
-                }
-                Err(ref e) if e.kind() == ErrorKind::Interrupted => continue,
-                Err(ref e) if e.kind() == ErrorKind::WouldBlock => {
-                    std::thread::sleep(Duration::from_millis(5));
-                    continue;
-                }
-                Err(_) => break,
-            }
-        }
-    });
+
+    let reader = master.try_clone()?;
+    let reader_handle = spawn_blocking_read_loop(reader, stdout_tx);
 
     let writer = Arc::new(tokio::sync::Mutex::new(master.try_clone()?));
-    let writer_handle: JoinHandle<()> = tokio::spawn({
-        let writer = Arc::clone(&writer);
-        async move {
-            while let Some(bytes) = writer_rx.recv().await {
-                let mut guard = writer.lock().await;
-                use std::io::Write;
-                let _ = guard.write_all(&bytes);
-                let _ = guard.flush();
-            }
-        }
-    });
+    let writer_handle = spawn_blocking_writer(writer, writer_rx);
 
-    let (exit_tx, exit_rx) = oneshot::channel::<i32>();
-    let exit_status = Arc::new(AtomicBool::new(false));
-    let wait_exit_status = Arc::clone(&exit_status);
-    let exit_code = Arc::new(StdMutex::new(None));
-    let wait_exit_code = Arc::clone(&exit_code);
-    let wait_handle: JoinHandle<()> = tokio::task::spawn_blocking(move || {
+    let tracker = ExitTracker::new();
+    let (exit_status, exit_code, exit_rx, record_exit) = tracker.decompose();
+    let wait_handle = tokio::task::spawn_blocking(move || {
         let code = match child.wait() {
             Ok(status) => status.code().unwrap_or(-1),
             Err(_) => -1,
         };
-        wait_exit_status.store(true, std::sync::atomic::Ordering::SeqCst);
-        if let Ok(mut guard) = wait_exit_code.lock() {
-            *guard = Some(code);
-        }
-        let _ = exit_tx.send(code);
+        record_exit(code);
     });
 
     let handles = PtyHandles {

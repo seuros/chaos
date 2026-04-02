@@ -1,18 +1,15 @@
 use super::*;
-use crate::minions::next_process_spawn_depth;
+use super::common::check_depth_limit;
+use super::common::get_agent_info;
+use super::common::impl_function_tool_kind;
+use super::common::impl_tool_output;
 
 pub(crate) struct Handler;
 
 impl ToolHandler for Handler {
     type Output = ResumeAgentResult;
 
-    fn kind(&self) -> ToolKind {
-        ToolKind::Function
-    }
-
-    fn matches_kind(&self, payload: &ToolPayload) -> bool {
-        matches!(payload, ToolPayload::Function { .. })
-    }
+    impl_function_tool_kind!();
 
     async fn handle(&self, invocation: ToolInvocation) -> Result<Self::Output, FunctionCallError> {
         let ToolInvocation {
@@ -25,19 +22,9 @@ impl ToolHandler for Handler {
         let arguments = function_arguments(payload)?;
         let args: ResumeAgentArgs = parse_arguments(&arguments)?;
         let receiver_process_id = agent_id(&args.id)?;
-        let (receiver_agent_nickname, receiver_agent_role) = session
-            .services
-            .agent_control
-            .get_agent_nickname_and_role(receiver_process_id)
-            .await
-            .unwrap_or((None, None));
-        let child_depth = next_process_spawn_depth(&turn.session_source);
-        let max_depth = turn.config.agent_max_depth;
-        if exceeds_process_spawn_depth_limit(child_depth, max_depth) {
-            return Err(FunctionCallError::RespondToModel(
-                "Agent depth limit reached. Solve the task yourself.".to_string(),
-            ));
-        }
+        let (receiver_agent_nickname, receiver_agent_role) =
+            get_agent_info(&session, receiver_process_id).await;
+        let child_depth = check_depth_limit(&turn.session_source, turn.config.agent_max_depth)?;
 
         session
             .send_event(
@@ -118,19 +105,7 @@ pub(crate) struct ResumeAgentResult {
     pub(crate) status: AgentStatus,
 }
 
-impl ToolOutput for ResumeAgentResult {
-    fn log_preview(&self) -> String {
-        tool_output_json_text(self, "resume_agent")
-    }
-
-    fn success_for_logging(&self) -> bool {
-        true
-    }
-
-    fn to_response_item(&self, call_id: &str, payload: &ToolPayload) -> ResponseInputItem {
-        tool_output_response_item(call_id, payload, self, Some(true), "resume_agent")
-    }
-}
+impl_tool_output!(ResumeAgentResult, "resume_agent");
 
 async fn try_resume_closed_agent(
     session: &Arc<Session>,

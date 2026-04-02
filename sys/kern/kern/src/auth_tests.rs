@@ -3,6 +3,7 @@ use crate::auth::storage::FileAuthStorage;
 use crate::auth::storage::get_auth_file;
 use crate::config::Config;
 use crate::config::ConfigBuilder;
+use crate::test_support::EnvVarGuard;
 use crate::token_data::IdTokenInfo;
 use crate::token_data::KnownPlan as InternalKnownPlan;
 use crate::token_data::PlanType as InternalPlanType;
@@ -256,37 +257,6 @@ async fn build_config(
     config.forced_login_method = forced_login_method;
     config.forced_chatgpt_workspace_id = forced_chatgpt_workspace_id;
     config
-}
-
-/// Use sparingly.
-/// TODO (gpeal): replace this with an injectable env var provider.
-#[cfg(test)]
-struct EnvVarGuard {
-    key: &'static str,
-    original: Option<std::ffi::OsString>,
-}
-
-#[cfg(test)]
-impl EnvVarGuard {
-    fn set(key: &'static str, value: &str) -> Self {
-        let original = env::var_os(key);
-        unsafe {
-            env::set_var(key, value);
-        }
-        Self { key, original }
-    }
-}
-
-#[cfg(test)]
-impl Drop for EnvVarGuard {
-    fn drop(&mut self) {
-        unsafe {
-            match &self.original {
-                Some(value) => env::set_var(self.key, value),
-                None => env::remove_var(self.key),
-            }
-        }
-    }
 }
 
 #[tokio::test]

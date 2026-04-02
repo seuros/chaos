@@ -89,3 +89,37 @@ pub fn builtin_collaboration_mode_presets() -> Vec<CollaborationModeMask> {
         collaboration_mode_presets::CollaborationModesConfig::default(),
     )
 }
+
+/// RAII guard that sets an environment variable and restores it on drop.
+///
+/// Use sparingly -- env vars are process-global state. Tests that use this
+/// should run serially (e.g. via `#[serial]`).
+pub struct EnvVarGuard {
+    key: &'static str,
+    original: Option<std::ffi::OsString>,
+}
+
+impl EnvVarGuard {
+    /// Set `key` to `value`, saving the previous value (if any) for restoration.
+    pub fn set(key: &'static str, value: impl AsRef<std::ffi::OsStr>) -> Self {
+        let original = std::env::var_os(key);
+        // SAFETY: callers are expected to run under `#[serial]` so no
+        // concurrent env mutation occurs.
+        unsafe {
+            std::env::set_var(key, value.as_ref());
+        }
+        Self { key, original }
+    }
+}
+
+impl Drop for EnvVarGuard {
+    fn drop(&mut self) {
+        // SAFETY: same serial-test guarantee as `set`.
+        unsafe {
+            match self.original.take() {
+                Some(value) => std::env::set_var(self.key, value),
+                None => std::env::remove_var(self.key),
+            }
+        }
+    }
+}

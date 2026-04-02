@@ -1,4 +1,3 @@
-use std::env;
 use std::ffi::OsStr;
 use std::sync::Arc;
 
@@ -21,33 +20,7 @@ use chaos_ipc::models::LocalShellStatus;
 use chaos_ipc::models::MessagePhase;
 use chaos_ipc::models::ResponseItem;
 
-struct EnvVarGuard {
-    key: &'static str,
-    original: Option<std::ffi::OsString>,
-}
-
-impl EnvVarGuard {
-    fn set(key: &'static str, value: &OsStr) -> Self {
-        let original = env::var_os(key);
-        unsafe {
-            env::set_var(key, value);
-        }
-        Self { key, original }
-    }
-}
-
-impl Drop for EnvVarGuard {
-    fn drop(&mut self) {
-        match self.original.take() {
-            Some(value) => unsafe {
-                env::set_var(self.key, value);
-            },
-            None => unsafe {
-                env::remove_var(self.key);
-            },
-        }
-    }
-}
+use crate::test_support::EnvVarGuard;
 
 #[tokio::test]
 async fn build_arc_monitor_request_includes_relevant_history_and_null_policies() {

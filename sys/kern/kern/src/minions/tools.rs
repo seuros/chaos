@@ -12,7 +12,6 @@ use crate::error::ChaosErr;
 use crate::features::Feature;
 use crate::function_tool::FunctionCallError;
 use crate::minions::AgentStatus;
-use crate::minions::exceeds_process_spawn_depth_limit;
 use crate::models_manager::manager::RefreshStrategy;
 use crate::tools::context::FunctionToolOutput;
 use crate::tools::context::ToolInvocation;
@@ -95,6 +94,8 @@ where
         .to_response_item(call_id, payload)
 }
 
+#[path = "tools/common.rs"]
+mod common;
 #[path = "tools/close_agent.rs"]
 pub mod close_agent;
 #[path = "tools/resume_agent.rs"]

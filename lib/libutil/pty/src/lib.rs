@@ -1,3 +1,4 @@
+mod helpers;
 pub mod pipe;
 mod process;
 pub mod process_group;

@@ -3,9 +3,7 @@ use std::io;
 use std::io::ErrorKind;
 use std::path::Path;
 use std::process::Stdio;
-use std::sync::atomic::AtomicBool;
 use std::sync::Arc;
-use std::sync::Mutex as StdMutex;
 
 use anyhow::Result;
 use tokio::io::AsyncRead;
@@ -14,9 +12,8 @@ use tokio::io::AsyncWriteExt;
 use tokio::io::BufReader;
 use tokio::process::Command;
 use tokio::sync::mpsc;
-use tokio::sync::oneshot;
-use tokio::task::JoinHandle;
 
+use crate::helpers::ExitTracker;
 use crate::process::ChildTerminator;
 use crate::process::ProcessHandle;
 use crate::process::SpawnedProcess;
@@ -159,21 +156,14 @@ async fn spawn_process_with_stdin_mode(
         }
     });
 
-    let (exit_tx, exit_rx) = oneshot::channel::<i32>();
-    let exit_status = Arc::new(AtomicBool::new(false));
-    let wait_exit_status = Arc::clone(&exit_status);
-    let exit_code = Arc::new(StdMutex::new(None));
-    let wait_exit_code = Arc::clone(&exit_code);
-    let wait_handle: JoinHandle<()> = tokio::spawn(async move {
+    let tracker = ExitTracker::new();
+    let (exit_status, exit_code, exit_rx, record_exit) = tracker.decompose();
+    let wait_handle = tokio::spawn(async move {
         let code = match child.wait().await {
             Ok(status) => status.code().unwrap_or(-1),
             Err(_) => -1,
         };
-        wait_exit_status.store(true, std::sync::atomic::Ordering::SeqCst);
-        if let Ok(mut guard) = wait_exit_code.lock() {
-            *guard = Some(code);
-        }
-        let _ = exit_tx.send(code);
+        record_exit(code);
     });
 
     let handle = ProcessHandle::new(

@@ -3,7 +3,7 @@ on:
   pull_request: {}
   push:
     branches:
-      - main
+      - master
   workflow_dispatch:
 
 # CI builds in debug (dev) for faster signal.

@@ -60,7 +60,7 @@ impl OnboardingScreen {
             config,
         } = args;
         let cwd = config.cwd.clone();
-        let chaos_home = config.chaos_home.clone();
+        let chaos_home = config.chaos_home;
         let mut steps: Vec<Step> = Vec::new();
         steps.push(Step::Welcome(WelcomeWidget::new(true)));
         if show_trust_screen {

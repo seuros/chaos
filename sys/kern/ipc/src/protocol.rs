@@ -1101,20 +1101,12 @@ pub enum EventMsg {
     /// User/system input message (what was sent to the model)
     UserMessage(UserMessageEvent),
 
-    /// Agent text output delta message
-    AgentMessageDelta(AgentMessageDeltaEvent),
-
     /// Reasoning event from agent.
     AgentReasoning(AgentReasoningEvent),
-
-    /// Agent reasoning delta event from agent.
-    AgentReasoningDelta(AgentReasoningDeltaEvent),
 
     /// Raw chain-of-thought from agent.
     AgentReasoningRawContent(AgentReasoningRawContentEvent),
 
-    /// Agent reasoning content delta event from agent.
-    AgentReasoningRawContentDelta(AgentReasoningRawContentDeltaEvent),
     /// Signaled when the model begins a new reasoning summary section (e.g., a new titled block).
     AgentReasoningSectionBreak(AgentReasoningSectionBreakEvent),
 
@@ -1508,21 +1500,6 @@ pub struct ItemStartedEvent {
     pub item: TurnItem,
 }
 
-impl HasLegacyEvent for ItemStartedEvent {
-    fn as_legacy_events(&self, _: bool) -> Vec<EventMsg> {
-        match &self.item {
-            TurnItem::WebSearch(item) => vec![EventMsg::WebSearchBegin(WebSearchBeginEvent {
-                call_id: item.id.clone(),
-            })],
-            TurnItem::ImageGeneration(item) => {
-                vec![EventMsg::ImageGenerationBegin(ImageGenerationBeginEvent {
-                    call_id: item.id.clone(),
-                })]
-            }
-            _ => Vec::new(),
-        }
-    }
-}
 
 #[derive(Debug, Clone, Deserialize, Serialize, TS, JsonSchema)]
 pub struct ItemCompletedEvent {
@@ -1532,15 +1509,6 @@ pub struct ItemCompletedEvent {
     pub item: TurnItem,
 }
 
-pub trait HasLegacyEvent {
-    fn as_legacy_events(&self, show_raw_agent_reasoning: bool) -> Vec<EventMsg>;
-}
-
-impl HasLegacyEvent for ItemCompletedEvent {
-    fn as_legacy_events(&self, show_raw_agent_reasoning: bool) -> Vec<EventMsg> {
-        self.item.as_legacy_events(show_raw_agent_reasoning)
-    }
-}
 
 #[derive(Debug, Clone, Deserialize, Serialize, TS, JsonSchema)]
 pub struct AgentMessageContentDeltaEvent {
@@ -1551,13 +1519,6 @@ pub struct AgentMessageContentDeltaEvent {
     pub delta: String,
 }
 
-impl HasLegacyEvent for AgentMessageContentDeltaEvent {
-    fn as_legacy_events(&self, _: bool) -> Vec<EventMsg> {
-        vec![EventMsg::AgentMessageDelta(AgentMessageDeltaEvent {
-            delta: self.delta.clone(),
-        })]
-    }
-}
 
 #[derive(Debug, Clone, Deserialize, Serialize, TS, JsonSchema)]
 pub struct PlanDeltaEvent {
@@ -1580,13 +1541,6 @@ pub struct ReasoningContentDeltaEvent {
     pub summary_index: i64,
 }
 
-impl HasLegacyEvent for ReasoningContentDeltaEvent {
-    fn as_legacy_events(&self, _: bool) -> Vec<EventMsg> {
-        vec![EventMsg::AgentReasoningDelta(AgentReasoningDeltaEvent {
-            delta: self.delta.clone(),
-        })]
-    }
-}
 
 #[derive(Debug, Clone, Deserialize, Serialize, TS, JsonSchema)]
 pub struct ReasoningRawContentDeltaEvent {
@@ -1600,34 +1554,6 @@ pub struct ReasoningRawContentDeltaEvent {
     pub content_index: i64,
 }
 
-impl HasLegacyEvent for ReasoningRawContentDeltaEvent {
-    fn as_legacy_events(&self, _: bool) -> Vec<EventMsg> {
-        vec![EventMsg::AgentReasoningRawContentDelta(
-            AgentReasoningRawContentDeltaEvent {
-                delta: self.delta.clone(),
-            },
-        )]
-    }
-}
-
-impl HasLegacyEvent for EventMsg {
-    fn as_legacy_events(&self, show_raw_agent_reasoning: bool) -> Vec<EventMsg> {
-        match self {
-            EventMsg::ItemStarted(event) => event.as_legacy_events(show_raw_agent_reasoning),
-            EventMsg::ItemCompleted(event) => event.as_legacy_events(show_raw_agent_reasoning),
-            EventMsg::AgentMessageContentDelta(event) => {
-                event.as_legacy_events(show_raw_agent_reasoning)
-            }
-            EventMsg::ReasoningContentDelta(event) => {
-                event.as_legacy_events(show_raw_agent_reasoning)
-            }
-            EventMsg::ReasoningRawContentDelta(event) => {
-                event.as_legacy_events(show_raw_agent_reasoning)
-            }
-            _ => Vec::new(),
-        }
-    }
-}
 
 #[derive(Debug, Clone, Deserialize, Serialize, JsonSchema, TS)]
 pub struct ExitedReviewModeEvent {
@@ -1930,11 +1856,6 @@ pub struct UserMessageEvent {
 }
 
 #[derive(Debug, Clone, Deserialize, Serialize, JsonSchema, TS)]
-pub struct AgentMessageDeltaEvent {
-    pub delta: String,
-}
-
-#[derive(Debug, Clone, Deserialize, Serialize, JsonSchema, TS)]
 pub struct AgentReasoningEvent {
     pub text: String,
 }
@@ -1945,22 +1866,12 @@ pub struct AgentReasoningRawContentEvent {
 }
 
 #[derive(Debug, Clone, Deserialize, Serialize, JsonSchema, TS)]
-pub struct AgentReasoningRawContentDeltaEvent {
-    pub delta: String,
-}
-
-#[derive(Debug, Clone, Deserialize, Serialize, JsonSchema, TS)]
 pub struct AgentReasoningSectionBreakEvent {
     // load with default value so it's backward compatible with the old format.
     #[serde(default)]
     pub item_id: String,
     #[serde(default)]
     pub summary_index: i64,
-}
-
-#[derive(Debug, Clone, Deserialize, Serialize, JsonSchema, TS)]
-pub struct AgentReasoningDeltaEvent {
-    pub delta: String,
 }
 
 #[derive(Debug, Clone, Deserialize, Serialize, JsonSchema, TS, PartialEq)]
@@ -3920,90 +3831,6 @@ mod tests {
                 .expect("legacy bridge should preserve legacy policy semantics");
 
             assert_same_sandbox_policy_semantics(&expected, &actual, cwd.path());
-        }
-    }
-
-    #[test]
-    fn item_started_event_from_web_search_emits_begin_event() {
-        let event = ItemStartedEvent {
-            process_id: ProcessId::new(),
-            turn_id: "turn-1".into(),
-            item: TurnItem::WebSearch(WebSearchItem {
-                id: "search-1".into(),
-                query: "find docs".into(),
-                action: WebSearchAction::Search {
-                    query: Some("find docs".into()),
-                    queries: None,
-                },
-            }),
-        };
-
-        let legacy_events = event.as_legacy_events(false);
-        assert_eq!(legacy_events.len(), 1);
-        match &legacy_events[0] {
-            EventMsg::WebSearchBegin(event) => assert_eq!(event.call_id, "search-1"),
-            _ => panic!("expected WebSearchBegin event"),
-        }
-    }
-
-    #[test]
-    fn item_started_event_from_non_web_search_emits_no_legacy_events() {
-        let event = ItemStartedEvent {
-            process_id: ProcessId::new(),
-            turn_id: "turn-1".into(),
-            item: TurnItem::UserMessage(UserMessageItem::new(&[])),
-        };
-
-        assert!(event.as_legacy_events(false).is_empty());
-    }
-
-    #[test]
-    fn item_started_event_from_image_generation_emits_begin_event() {
-        let event = ItemStartedEvent {
-            process_id: ProcessId::new(),
-            turn_id: "turn-1".into(),
-            item: TurnItem::ImageGeneration(ImageGenerationItem {
-                id: "ig-1".into(),
-                status: "in_progress".into(),
-                revised_prompt: None,
-                result: String::new(),
-                saved_path: None,
-            }),
-        };
-
-        let legacy_events = event.as_legacy_events(false);
-        assert_eq!(legacy_events.len(), 1);
-        match &legacy_events[0] {
-            EventMsg::ImageGenerationBegin(event) => assert_eq!(event.call_id, "ig-1"),
-            _ => panic!("expected ImageGenerationBegin event"),
-        }
-    }
-
-    #[test]
-    fn item_completed_event_from_image_generation_emits_end_event() {
-        let event = ItemCompletedEvent {
-            process_id: ProcessId::new(),
-            turn_id: "turn-1".into(),
-            item: TurnItem::ImageGeneration(ImageGenerationItem {
-                id: "ig-1".into(),
-                status: "completed".into(),
-                revised_prompt: Some("A tiny blue square".into()),
-                result: "Zm9v".into(),
-                saved_path: Some("/tmp/ig-1.png".into()),
-            }),
-        };
-
-        let legacy_events = event.as_legacy_events(false);
-        assert_eq!(legacy_events.len(), 1);
-        match &legacy_events[0] {
-            EventMsg::ImageGenerationEnd(event) => {
-                assert_eq!(event.call_id, "ig-1");
-                assert_eq!(event.status, "completed");
-                assert_eq!(event.revised_prompt.as_deref(), Some("A tiny blue square"));
-                assert_eq!(event.result, "Zm9v");
-                assert_eq!(event.saved_path.as_deref(), Some("/tmp/ig-1.png"));
-            }
-            _ => panic!("expected ImageGenerationEnd event"),
         }
     }
 

@@ -78,7 +78,6 @@ use chaos_ipc::permissions::FileSystemSandboxPolicy;
 use chaos_ipc::permissions::NetworkSandboxPolicy;
 use chaos_ipc::protocol::AgentMessageEvent;
 use chaos_ipc::protocol::FileChange;
-use chaos_ipc::protocol::HasLegacyEvent;
 use chaos_ipc::protocol::ItemCompletedEvent;
 use chaos_ipc::protocol::ItemStartedEvent;
 use chaos_ipc::protocol::RawResponseItemEvent;
@@ -2471,21 +2470,11 @@ impl Session {
 
     /// Persist the event to rollout and send it to clients.
     pub(crate) async fn send_event(&self, turn_context: &TurnContext, msg: EventMsg) {
-        let legacy_source = msg.clone();
         let event = Event {
             id: turn_context.sub_id.clone(),
             msg,
         };
         self.send_event_raw(event).await;
-
-        let show_raw_agent_reasoning = self.show_raw_agent_reasoning();
-        for legacy in legacy_source.as_legacy_events(show_raw_agent_reasoning) {
-            let legacy_event = Event {
-                id: turn_context.sub_id.clone(),
-                msg: legacy,
-            };
-            self.send_event_raw(legacy_event).await;
-        }
     }
 
     pub(crate) async fn send_event_raw(&self, event: Event) {
@@ -3914,10 +3903,6 @@ impl Session {
             .lock()
             .await
             .clone()
-    }
-
-    fn show_raw_agent_reasoning(&self) -> bool {
-        self.services.show_raw_agent_reasoning
     }
 
     async fn cancel_mcp_startup(&self) {

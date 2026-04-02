@@ -1,13 +1,6 @@
 use crate::models::MessagePhase;
 use crate::models::WebSearchAction;
-use crate::protocol::AgentMessageEvent;
-use crate::protocol::AgentReasoningEvent;
-use crate::protocol::AgentReasoningRawContentEvent;
-use crate::protocol::ContextCompactedEvent;
-use crate::protocol::EventMsg;
-use crate::protocol::ImageGenerationEndEvent;
 use crate::protocol::UserMessageEvent;
-use crate::protocol::WebSearchEndEvent;
 use crate::user_input::ByteRange;
 use crate::user_input::TextElement;
 use crate::user_input::UserInput;
@@ -105,10 +98,6 @@ impl ContextCompactionItem {
             id: uuid::Uuid::new_v4().to_string(),
         }
     }
-
-    pub fn as_legacy_event(&self) -> EventMsg {
-        EventMsg::ContextCompacted(ContextCompactedEvent {})
-    }
 }
 
 impl Default for ContextCompactionItem {
@@ -125,15 +114,16 @@ impl UserMessageItem {
         }
     }
 
-    pub fn as_legacy_event(&self) -> EventMsg {
-        // Legacy user-message events flatten only text inputs into `message` and
-        // rebase text element ranges onto that concatenated text.
-        EventMsg::UserMessage(UserMessageEvent {
+    /// Build a `UserMessageEvent` from this item's content, flattening only
+    /// text inputs into `message` and rebasing text-element ranges onto that
+    /// concatenated text.
+    pub fn to_user_message_event(&self) -> UserMessageEvent {
+        UserMessageEvent {
             message: self.message(),
             images: Some(self.image_urls()),
             local_images: self.local_image_paths(),
             text_elements: self.text_elements(),
-        })
+        }
     }
 
     pub fn message(&self) -> String {
@@ -204,62 +194,6 @@ impl AgentMessageItem {
         }
     }
 
-    pub fn as_legacy_events(&self) -> Vec<EventMsg> {
-        self.content
-            .iter()
-            .map(|c| match c {
-                AgentMessageContent::Text { text } => EventMsg::AgentMessage(AgentMessageEvent {
-                    message: text.clone(),
-                    phase: self.phase.clone(),
-                }),
-            })
-            .collect()
-    }
-}
-
-impl ReasoningItem {
-    pub fn as_legacy_events(&self, show_raw_agent_reasoning: bool) -> Vec<EventMsg> {
-        let mut events = Vec::new();
-        for summary in &self.summary_text {
-            events.push(EventMsg::AgentReasoning(AgentReasoningEvent {
-                text: summary.clone(),
-            }));
-        }
-
-        if show_raw_agent_reasoning {
-            for entry in &self.raw_content {
-                events.push(EventMsg::AgentReasoningRawContent(
-                    AgentReasoningRawContentEvent {
-                        text: entry.clone(),
-                    },
-                ));
-            }
-        }
-
-        events
-    }
-}
-
-impl WebSearchItem {
-    pub fn as_legacy_event(&self) -> EventMsg {
-        EventMsg::WebSearchEnd(WebSearchEndEvent {
-            call_id: self.id.clone(),
-            query: self.query.clone(),
-            action: self.action.clone(),
-        })
-    }
-}
-
-impl ImageGenerationItem {
-    pub fn as_legacy_event(&self) -> EventMsg {
-        EventMsg::ImageGenerationEnd(ImageGenerationEndEvent {
-            call_id: self.id.clone(),
-            status: self.status.clone(),
-            revised_prompt: self.revised_prompt.clone(),
-            result: self.result.clone(),
-            saved_path: self.saved_path.clone(),
-        })
-    }
 }
 
 impl TurnItem {
@@ -275,15 +209,4 @@ impl TurnItem {
         }
     }
 
-    pub fn as_legacy_events(&self, show_raw_agent_reasoning: bool) -> Vec<EventMsg> {
-        match self {
-            TurnItem::UserMessage(item) => vec![item.as_legacy_event()],
-            TurnItem::AgentMessage(item) => item.as_legacy_events(),
-            TurnItem::Plan(_) => Vec::new(),
-            TurnItem::WebSearch(item) => vec![item.as_legacy_event()],
-            TurnItem::ImageGeneration(item) => vec![item.as_legacy_event()],
-            TurnItem::Reasoning(item) => item.as_legacy_events(show_raw_agent_reasoning),
-            TurnItem::ContextCompaction(item) => vec![item.as_legacy_event()],
-        }
-    }
 }

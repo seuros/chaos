@@ -7,7 +7,6 @@ use chaos_ipc::items::TurnItem;
 use chaos_ipc::models::ContentItem;
 use chaos_ipc::models::ResponseItem;
 use chaos_ipc::protocol::AgentMessageContentDeltaEvent;
-use chaos_ipc::protocol::AgentMessageDeltaEvent;
 use chaos_ipc::protocol::AskForApproval;
 use chaos_ipc::protocol::Event;
 use chaos_ipc::protocol::EventMsg;
@@ -155,14 +154,12 @@ async fn process_review_events(
                 }
                 prev_agent_message = Some(event);
             }
-            // Suppress ItemCompleted only for assistant messages: forwarding it
-            // would trigger legacy AgentMessage via as_legacy_events(), which this
-            // review flow intentionally hides in favor of structured output.
+            // Suppress ItemCompleted and streaming deltas for assistant messages
+            // during review: this flow uses structured output exclusively.
             EventMsg::ItemCompleted(ItemCompletedEvent {
                 item: TurnItem::AgentMessage(_),
                 ..
             })
-            | EventMsg::AgentMessageDelta(AgentMessageDeltaEvent { .. })
             | EventMsg::AgentMessageContentDelta(AgentMessageContentDeltaEvent { .. }) => {}
             EventMsg::TurnComplete(task_complete) => {
                 // Parse review output from the last agent message (if present).

@@ -23,6 +23,24 @@ impl<T> StreamTextChunk<T> {
     }
 }
 
+/// Feed all `chunks` through `parser`, call `finish`, and return the accumulated result.
+#[cfg(test)]
+pub(crate) fn collect_chunks<P: StreamTextParser>(
+    parser: &mut P,
+    chunks: &[&str],
+) -> StreamTextChunk<P::Extracted> {
+    let mut all = StreamTextChunk::default();
+    for chunk in chunks {
+        let next = parser.push_str(chunk);
+        all.visible_text.push_str(&next.visible_text);
+        all.extracted.extend(next.extracted);
+    }
+    let tail = parser.finish();
+    all.visible_text.push_str(&tail.visible_text);
+    all.extracted.extend(tail.extracted);
+    all
+}
+
 /// Trait for parsers that consume streamed text and emit visible text plus extracted payloads.
 pub trait StreamTextParser {
     /// Payload extracted by this parser (for example a citation body).

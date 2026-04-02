@@ -1676,7 +1676,7 @@ impl Session {
             rollout: Mutex::new(rollout_recorder),
             user_shell: Arc::new(default_shell),
             shell_snapshot_tx,
-            show_raw_agent_reasoning: config.show_raw_agent_reasoning,
+
             exec_policy,
             auth_manager: Arc::clone(&auth_manager),
             session_telemetry,
@@ -2123,17 +2123,16 @@ impl Session {
                     &session_source,
                 );
 
-                if previous_cwd != next_cwd {
-                    if let Err(e) = self
+                if previous_cwd != next_cwd
+                    && let Err(e) = self
                         .services
                         .mcp_connection_manager
                         .read()
                         .await
                         .notify_roots_changed(&next_cwd)
                         .await
-                    {
-                        warn!("Failed to notify MCP servers of roots change: {e:#}");
-                    }
+                {
+                    warn!("Failed to notify MCP servers of roots change: {e:#}");
                 }
 
                 Ok(())
@@ -2196,17 +2195,16 @@ impl Session {
             &session_source,
         );
 
-        if previous_cwd != session_configuration.cwd {
-            if let Err(e) = self
+        if previous_cwd != session_configuration.cwd
+            && let Err(e) = self
                 .services
                 .mcp_connection_manager
                 .read()
                 .await
                 .notify_roots_changed(&session_configuration.cwd)
                 .await
-            {
-                warn!("Failed to notify MCP servers of roots change: {e:#}");
-            }
+        {
+            warn!("Failed to notify MCP servers of roots change: {e:#}");
         }
 
         Ok(self

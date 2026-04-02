@@ -142,26 +142,24 @@ impl KeyboardHandler for OnboardingScreen {
         if !matches!(key_event.kind, KeyEventKind::Press | KeyEventKind::Repeat) {
             return;
         }
-        let should_quit = match key_event {
+        let should_quit = matches!(
+            key_event,
             KeyEvent {
                 code: KeyCode::Char('d'),
                 modifiers: crossterm::event::KeyModifiers::CONTROL,
                 kind: KeyEventKind::Press,
                 ..
-            }
-            | KeyEvent {
+            } | KeyEvent {
                 code: KeyCode::Char('c'),
                 modifiers: crossterm::event::KeyModifiers::CONTROL,
                 kind: KeyEventKind::Press,
                 ..
-            } => true,
-            KeyEvent {
+            } | KeyEvent {
                 code: KeyCode::Char('q'),
                 kind: KeyEventKind::Press,
                 ..
-            } => true,
-            _ => false,
-        };
+            }
+        );
         if should_quit {
             self.is_done = true;
         } else {

@@ -13,6 +13,14 @@ use tokio::sync::mpsc;
 use tokio::sync::oneshot;
 use tokio::task::JoinHandle;
 
+/// Decomposed exit-tracking state returned by [`ExitTracker::decompose`].
+pub(crate) type ExitParts = (
+    Arc<AtomicBool>,
+    Arc<StdMutex<Option<i32>>>,
+    oneshot::Receiver<i32>,
+    Box<dyn FnOnce(i32) + Send + 'static>,
+);
+
 /// Shared state for tracking child process exit.
 ///
 /// Bundles the `AtomicBool` flag, the `StdMutex<Option<i32>>` exit code,
@@ -41,14 +49,7 @@ impl ExitTracker {
     ///
     /// Returns `(exit_status, exit_code, exit_rx, recorder)` where `recorder`
     /// is a `FnOnce(i32)` that stores the code and fires the oneshot.
-    pub fn decompose(
-        self,
-    ) -> (
-        Arc<AtomicBool>,
-        Arc<StdMutex<Option<i32>>>,
-        oneshot::Receiver<i32>,
-        impl FnOnce(i32) + Send + 'static,
-    ) {
+    pub fn decompose(self) -> ExitParts {
         let wait_exit_status = Arc::clone(&self.exit_status);
         let wait_exit_code = Arc::clone(&self.exit_code);
         let exit_tx = self.exit_tx;
@@ -61,7 +62,7 @@ impl ExitTracker {
                 let _ = tx.send(code);
             }
         };
-        (self.exit_status, self.exit_code, self.exit_rx, recorder)
+        (self.exit_status, self.exit_code, self.exit_rx, Box::new(recorder))
     }
 }
 

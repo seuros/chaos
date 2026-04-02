@@ -6,7 +6,8 @@
 //!
 //! Supported extensions: `.lua`, `.wasm`
 
-use std::path::{Path, PathBuf};
+use std::path::Path;
+use std::path::PathBuf;
 
 /// Known script extensions and their engine backends.
 const SCRIPT_EXTENSIONS: &[&str] = &["lua", "wasm"];

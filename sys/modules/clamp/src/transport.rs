@@ -4,21 +4,35 @@
 //! control protocol over stdin/stdout, and handles bidirectional message
 //! routing.
 
-use std::collections::{HashMap, VecDeque};
+use std::collections::HashMap;
+use std::collections::VecDeque;
 use std::path::PathBuf;
 use std::sync::Arc;
-use std::sync::atomic::{AtomicU64, Ordering};
+use std::sync::atomic::AtomicU64;
+use std::sync::atomic::Ordering;
 
 use futures::future::BoxFuture;
 use serde_json::Value;
-use tokio::io::{AsyncBufReadExt, AsyncWriteExt, BufReader, BufWriter};
-use tokio::process::{Child, ChildStdin, ChildStdout, Command};
-use tokio::sync::{mpsc, oneshot};
-use tracing::{debug, error, info, warn};
+use tokio::io::AsyncBufReadExt;
+use tokio::io::AsyncWriteExt;
+use tokio::io::BufReader;
+use tokio::io::BufWriter;
+use tokio::process::Child;
+use tokio::process::ChildStdin;
+use tokio::process::ChildStdout;
+use tokio::process::Command;
+use tokio::sync::mpsc;
+use tokio::sync::oneshot;
+use tracing::debug;
+use tracing::error;
+use tracing::info;
+use tracing::warn;
 
-use crate::protocol::{
-    ControlResponse, Message, UserMessage, control_request_envelope, initialize_request,
-};
+use crate::protocol::ControlResponse;
+use crate::protocol::Message;
+use crate::protocol::UserMessage;
+use crate::protocol::control_request_envelope;
+use crate::protocol::initialize_request;
 
 /// Async callback for Claude Code `can_use_tool` requests.
 pub type ToolPermissionHandler = Arc<

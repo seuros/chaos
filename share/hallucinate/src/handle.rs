@@ -6,7 +6,8 @@
 //! with Lua, WASM, or any backend that implements `ScriptEngine`.
 
 use serde_json::Value as JsonValue;
-use tokio::sync::{mpsc, oneshot};
+use tokio::sync::mpsc;
+use tokio::sync::oneshot;
 
 /// Result of dispatching a hook to Lua scripts.
 #[derive(Debug, Clone)]

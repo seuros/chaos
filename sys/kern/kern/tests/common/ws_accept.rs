@@ -3,15 +3,19 @@
 //! Uses `tokio-tungstenite` for a real server-side handshake so reconnect tests
 //! stop depending on our toy RFC implementation.
 
-use std::sync::{Arc, Mutex};
+use std::sync::Arc;
+use std::sync::Mutex;
 
-use futures::{SinkExt, StreamExt};
+use futures::SinkExt;
+use futures::StreamExt;
 use http::HeaderName;
 use http::HeaderValue;
 use tokio::net::TcpStream;
 use tokio_tungstenite::accept_hdr_async_with_config;
 pub use tokio_tungstenite::tungstenite::Message;
-use tokio_tungstenite::tungstenite::handshake::server::{ErrorResponse, Request, Response};
+use tokio_tungstenite::tungstenite::handshake::server::ErrorResponse;
+use tokio_tungstenite::tungstenite::handshake::server::Request;
+use tokio_tungstenite::tungstenite::handshake::server::Response;
 use tokio_tungstenite::tungstenite::protocol::CloseFrame;
 use tokio_tungstenite::tungstenite::protocol::WebSocketConfig;
 

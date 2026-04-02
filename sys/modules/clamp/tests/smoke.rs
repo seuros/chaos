@@ -3,7 +3,9 @@
 //! Run with:
 //!   CHAOS_CLAMP_SMOKE=1 cargo test -p chaos-clamp --test smoke -- --ignored --nocapture
 
-use chaos_clamp::{ClampConfig, ClampTransport, Message};
+use chaos_clamp::ClampConfig;
+use chaos_clamp::ClampTransport;
+use chaos_clamp::Message;
 
 #[ignore = "requires local Claude Code CLI and authenticated environment"]
 #[tokio::test]

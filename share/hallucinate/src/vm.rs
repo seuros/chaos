@@ -5,21 +5,32 @@
 //! `_ENV` table for namespace isolation.
 
 use std::collections::HashMap;
-use std::path::{Path, PathBuf};
-use std::sync::{Arc, Mutex};
+use std::path::Path;
+use std::path::PathBuf;
+use std::sync::Arc;
+use std::sync::Mutex;
 use std::time::Duration;
 
-use mlua::{Function, Lua, RegistryKey, Value};
+use mlua::Function;
+use mlua::Lua;
+use mlua::RegistryKey;
+use mlua::Value;
 use serde_json::Value as JsonValue;
 use tokio::sync::mpsc;
 use tracing;
 
-use crate::api::{self, ScriptRegistrations, SessionInfo};
+use crate::api::ScriptRegistrations;
+use crate::api::SessionInfo;
+use crate::api::{self};
 use crate::discovery;
-use crate::handle::{
-    HallucinateHandle, HookResult, ReloadResult, ScriptRequest, ScriptTool, ToolResult,
-};
-use crate::sandbox::{self, Deadline};
+use crate::handle::HallucinateHandle;
+use crate::handle::HookResult;
+use crate::handle::ReloadResult;
+use crate::handle::ScriptRequest;
+use crate::handle::ScriptTool;
+use crate::handle::ToolResult;
+use crate::sandbox::Deadline;
+use crate::sandbox::{self};
 
 /// Default per-invocation execution deadline.
 const INVOCATION_DEADLINE: Duration = Duration::from_secs(10);

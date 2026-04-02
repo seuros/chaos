@@ -4,7 +4,8 @@
 //! the entire terminal.
 #![allow(dead_code)]
 
-use std::sync::atomic::{AtomicBool, Ordering};
+use std::sync::atomic::AtomicBool;
+use std::sync::atomic::Ordering;
 
 use ratatui::style::Color;
 use ratatui::style::Modifier;

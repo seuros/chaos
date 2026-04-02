@@ -7,7 +7,8 @@ use mcp_host::registry::router::McpToolRouter;
 use schemars::JsonSchema;
 use serde::Deserialize;
 
-use crate::{ChaosCtx, ChaosServer};
+use crate::ChaosCtx;
+use crate::ChaosServer;
 
 pub const MAX_LINE_LENGTH: usize = 500;
 const TAB_WIDTH: usize = 4;
@@ -278,7 +279,11 @@ pub mod slice {
 // ---------------------------------------------------------------------------
 
 pub mod indentation_mode {
-    use super::{IndentationParams, LineRecord, TAB_WIDTH, format_line, trim_empty_lines};
+    use super::IndentationParams;
+    use super::LineRecord;
+    use super::TAB_WIDTH;
+    use super::format_line;
+    use super::trim_empty_lines;
     use std::collections::VecDeque;
     use std::path::Path;
     use tokio::fs::File;

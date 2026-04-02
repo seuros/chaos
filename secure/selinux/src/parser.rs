@@ -1,5 +1,7 @@
 use chaos_realpath::AbsolutePathBuf;
-use mlua::{Lua, Table, Value};
+use mlua::Lua;
+use mlua::Table;
+use mlua::Value;
 use multimap::MultiMap;
 use shlex;
 use std::cell::RefCell;

@@ -1,5 +1,6 @@
 use chaos_ipc::ProcessId;
-use serde::{Deserialize, Serialize};
+use serde::Deserialize;
+use serde::Serialize;
 
 use crate::model::AppendBatchInput;
 use crate::model::AppendBatchResult;

@@ -3,7 +3,8 @@
 use chaos_proc::Stage1Output;
 use std::collections::HashSet;
 use std::fmt::Write as _;
-use std::path::{Path, PathBuf};
+use std::path::Path;
+use std::path::PathBuf;
 use tracing::warn;
 use uuid::Uuid;
 

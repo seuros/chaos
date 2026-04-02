@@ -1,11 +1,16 @@
-use std::path::{Path, PathBuf};
+use std::path::Path;
+use std::path::PathBuf;
 
-use rama::{
-    Layer as _, Service,
-    http::{Body, Method, Request, body::util::BodyExt, client::HttpConnectorLayer},
-    net::client::{ConnectorService, EstablishedClientConnection},
-    unix::client::UnixConnector,
-};
+use rama::Layer as _;
+use rama::Service;
+use rama::http::Body;
+use rama::http::Method;
+use rama::http::Request;
+use rama::http::body::util::BodyExt;
+use rama::http::client::HttpConnectorLayer;
+use rama::net::client::ConnectorService;
+use rama::net::client::EstablishedClientConnection;
+use rama::unix::client::UnixConnector;
 use serde::de::DeserializeOwned;
 
 use crate::AppendBatchInput;

@@ -6,7 +6,8 @@ use std::pin::Pin;
 use chaos_ipc::ProcessId;
 use chaos_kern::builtin_mcp_resources;
 use mcp_host::prelude::*;
-use mcp_host::registry::router::{McpResourceRouter, McpResourceTemplateRouter};
+use mcp_host::registry::router::McpResourceRouter;
+use mcp_host::registry::router::McpResourceTemplateRouter;
 use serde::Serialize;
 use serde_json::json;
 

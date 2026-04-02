@@ -21,3 +21,6 @@ thiserror = { workspace = true }
 
 [dev-dependencies]
 tempfile = { workspace = true }
+
+[package.metadata.cargo-shear]
+ignored = ["serde_json", "tempfile"]

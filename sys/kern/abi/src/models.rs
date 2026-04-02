@@ -7,7 +7,8 @@
 //! Discovery is an optional adapter capability. Providers that
 //! do not expose a `/models` endpoint return `Unsupported`.
 
-use serde::{Deserialize, Serialize};
+use serde::Deserialize;
+use serde::Serialize;
 
 /// Provider-neutral model metadata.
 ///

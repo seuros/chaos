@@ -12,3 +12,6 @@ thiserror = { workspace = true }
 
 [dev-dependencies]
 tokio = { workspace = true, features = ["rt", "macros"] }
+
+[package.metadata.cargo-shear]
+ignored = ["tokio"]

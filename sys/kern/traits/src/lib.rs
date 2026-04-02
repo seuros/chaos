@@ -13,9 +13,15 @@ pub mod state_access;
 pub mod telemetry;
 
 // Re-export traits at crate root for convenience.
-pub use agent::{AgentSpawnConfig, AgentSpawner};
-pub use config::{ConciergeConfig, MementoConfig, RolloutConfig};
+pub use agent::AgentSpawnConfig;
+pub use agent::AgentSpawner;
+pub use config::ConciergeConfig;
+pub use config::MementoConfig;
+pub use config::RolloutConfig;
 pub use event_bus::EventEmitter;
-pub use model::{ModelSampler, SamplingMessage, SamplingRequest, SamplingResponse};
+pub use model::ModelSampler;
+pub use model::SamplingMessage;
+pub use model::SamplingRequest;
+pub use model::SamplingResponse;
 pub use state_access::StateAccess;
 pub use telemetry::TelemetrySource;

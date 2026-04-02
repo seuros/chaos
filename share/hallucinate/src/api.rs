@@ -5,9 +5,16 @@
 //! Lua world and Rust internals.
 
 use std::collections::HashMap;
-use std::sync::{Arc, Mutex};
+use std::sync::Arc;
+use std::sync::Mutex;
 
-use mlua::{Function, Lua, LuaSerdeExt, RegistryKey, Result as LuaResult, Table, Value};
+use mlua::Function;
+use mlua::Lua;
+use mlua::LuaSerdeExt;
+use mlua::RegistryKey;
+use mlua::Result as LuaResult;
+use mlua::Table;
+use mlua::Value;
 use serde_json::Value as JsonValue;
 use tracing;
 

@@ -1,4 +1,5 @@
-use serde::{Deserialize, Serialize};
+use serde::Deserialize;
+use serde::Serialize;
 
 /// A usage snapshot from a provider.
 #[derive(Debug, Clone, Serialize, Deserialize)]

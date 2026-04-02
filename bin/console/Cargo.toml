@@ -114,3 +114,6 @@ rand = { workspace = true }
 rustls = { workspace = true }
 serial_test = { workspace = true }
 uuid = { workspace = true }
+
+[package.metadata.cargo-shear]
+ignored = ["ratatui-macros"]

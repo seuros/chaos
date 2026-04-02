@@ -1,5 +1,6 @@
+use crate::Daemon;
+use crate::DaemonError;
 use crate::schema::Identity;
-use crate::{Daemon, DaemonError};
 
 impl Daemon {
     /// Set or update the daemon's identity.

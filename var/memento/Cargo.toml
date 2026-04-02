@@ -24,3 +24,6 @@ pretty_assertions = { workspace = true }
 
 [lints]
 workspace = true
+
+[package.metadata.cargo-shear]
+ignored = ["serde_json", "serde", "chaos-sysctl"]

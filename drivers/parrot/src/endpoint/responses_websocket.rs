@@ -61,7 +61,8 @@ enum WsCommand {
 
 impl WsStream {
     fn new(inner: rama::http::ws::handshake::client::ClientWebSocket) -> Self {
-        use rama::futures::{SinkExt, StreamExt};
+        use rama::futures::SinkExt;
+        use rama::futures::StreamExt;
 
         let (tx_command, mut rx_command) = mpsc::channel::<WsCommand>(32);
         let (tx_message, rx_message) = mpsc::unbounded_channel::<Result<Message, WsError>>();

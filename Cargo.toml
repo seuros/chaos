@@ -393,14 +393,36 @@ unnecessary_sort_by = "deny"
 unnecessary_to_owned = "deny"
 unwrap_used = "deny"
 
-# cargo-shear cannot see the platform-specific openssl-sys usage, so we
-# silence the false positive here instead of deleting a real dependency.
+# cargo-shear cannot see workspace-level deps used only by member crates,
+# platform-specific deps, or deps used only via feature flags / proc macros.
 [workspace.metadata.cargo-shear]
 ignored = [
     "icu_provider",
     "openssl-sys",
     "chaos-ready",
-    "chaos-vault"
+    "chaos-vault",
+    # workspace re-exports — shear cannot trace through workspace dep graph
+    "chaos-watchdog",
+    "apple-native-keyring-store",
+    "chaos-snitch",
+    "flate2",
+    "semver",
+    "chaos-contraband",
+    "ratatui-macros",
+    "zeroize",
+    "include_dir",
+    "chaos-warden",
+    "axum",
+    "chaos-daemon",
+    "async-stream",
+    "env_logger",
+    "tar",
+    "zip",
+    "opentelemetry_sdk",
+    "chaos-ration",
+    "fd-lock",
+    "chaos-minions",
+    "chaos-parole",
 ]
 
 [profile.release]

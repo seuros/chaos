@@ -13,7 +13,9 @@ use tokio::net::TcpListener;
 use tokio::sync::Notify;
 use tokio::sync::oneshot;
 
-use crate::ws_accept::{Message, WsHandshakeRequest, accept_ws_with_handler};
+use crate::ws_accept::Message;
+use crate::ws_accept::WsHandshakeRequest;
+use crate::ws_accept::accept_ws_with_handler;
 use wiremock::BodyPrintLimit;
 use wiremock::Match;
 use wiremock::Mock;

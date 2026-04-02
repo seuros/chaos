@@ -1,23 +1,34 @@
 use std::collections::HashMap;
 use std::io;
-use std::path::{Path, PathBuf};
-use std::sync::{Arc, Weak};
+use std::path::Path;
+use std::path::PathBuf;
+use std::sync::Arc;
+use std::sync::Weak;
 
-use chaos_ipc::clamp_bridge::{ClampBridgeRequest, ClampBridgeResponse};
+use chaos_ipc::clamp_bridge::ClampBridgeRequest;
+use chaos_ipc::clamp_bridge::ClampBridgeResponse;
 use chaos_ipc::mcp::Tool as McpTool;
 use chaos_ipc::models::ResponseItem;
-use rand::distr::{Alphanumeric, SampleString};
-use tokio::io::{AsyncBufReadExt, AsyncWriteExt, BufReader};
-use tokio::net::{UnixListener, UnixStream};
+use rand::distr::Alphanumeric;
+use rand::distr::SampleString;
+use tokio::io::AsyncBufReadExt;
+use tokio::io::AsyncWriteExt;
+use tokio::io::BufReader;
+use tokio::net::UnixListener;
+use tokio::net::UnixStream;
 use tokio::task::JoinHandle;
 use tokio_util::sync::CancellationToken;
-use tracing::{debug, warn};
+use tracing::debug;
+use tracing::warn;
 
 use crate::chaos::built_tools;
 use crate::client::active_clamp_turn_context;
-use crate::client_common::tools::{FreeformTool, ResponsesApiTool, ToolSpec};
+use crate::client_common::tools::FreeformTool;
+use crate::client_common::tools::ResponsesApiTool;
+use crate::client_common::tools::ToolSpec;
 use crate::tools::context::SharedTurnDiffTracker;
-use crate::tools::router::{ToolCallSource, ToolRouter};
+use crate::tools::router::ToolCallSource;
+use crate::tools::router::ToolRouter;
 use crate::turn_diff_tracker::TurnDiffTracker;
 
 #[derive(Debug)]

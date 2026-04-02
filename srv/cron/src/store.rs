@@ -1,8 +1,11 @@
 //! Persistence layer for cron jobs against chaos.sqlite.
 
-use crate::job::{CreateJobParams, CronJob, CronScope};
+use crate::job::CreateJobParams;
+use crate::job::CronJob;
+use crate::job::CronScope;
 use crate::schedule::Schedule;
-use sqlx::{Row, SqlitePool};
+use sqlx::Row;
+use sqlx::SqlitePool;
 
 const JOB_ID_HEX_CHARS: usize = 8;
 const JOB_ID_GENERATION_ATTEMPTS: usize = 8;

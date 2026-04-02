@@ -1,4 +1,5 @@
-use std::fs::{self, OpenOptions};
+use std::fs::OpenOptions;
+use std::fs::{self};
 pub(crate) const DEBUG_LOG_PATH_ENV_VAR: &str = "CHAOS_DEBUG_LOG_PATH";
 
 /// Prepares debug logging by truncating `~/.chaos/debug.log`, exporting its path

@@ -1,24 +1,33 @@
 use std::sync::Arc;
-use std::sync::atomic::{AtomicBool, Ordering};
+use std::sync::atomic::AtomicBool;
+use std::sync::atomic::Ordering;
 use std::time::Duration;
 
 use rama::Service;
 use rama::error::extra::OpaqueError;
+use rama::http::Body;
+use rama::http::Request;
+use rama::http::Response;
+use rama::http::StatusCode;
+use rama::http::body::util::BodyExt;
 use rama::http::client::EasyHttpWebClient;
-use rama::http::{
-    Body, Request, Response, StatusCode,
-    body::util::BodyExt,
-    header::{ACCEPT, CONTENT_TYPE},
-};
+use rama::http::header::ACCEPT;
+use rama::http::header::CONTENT_TYPE;
 use rama::service::BoxService;
-use tokio::sync::{Mutex, Notify, mpsc};
+use tokio::sync::Mutex;
+use tokio::sync::Notify;
+use tokio::sync::mpsc;
 use tokio::task::JoinHandle;
 use tokio_stream::StreamExt;
 use url::Url;
 
 use crate::error::GuestError;
-use crate::protocol::{InitializeResult, JsonRpcMessage, JsonRpcRequest, JsonRpcResponse};
-use crate::transport::{MessageTransport, TransportFuture};
+use crate::protocol::InitializeResult;
+use crate::protocol::JsonRpcMessage;
+use crate::protocol::JsonRpcRequest;
+use crate::protocol::JsonRpcResponse;
+use crate::transport::MessageTransport;
+use crate::transport::TransportFuture;
 
 const HEADER_SESSION_ID: &str = "Mcp-Session-Id";
 const HEADER_PROTOCOL_VERSION: &str = "Mcp-Protocol-Version";
@@ -691,7 +700,8 @@ fn format_body_suffix(body: Option<&str>) -> String {
 #[cfg(test)]
 mod tests {
     use std::sync::Arc;
-    use std::sync::atomic::{AtomicUsize, Ordering};
+    use std::sync::atomic::AtomicUsize;
+    use std::sync::atomic::Ordering;
 
     use rama::bytes::Bytes;
     use rama::http::body::util::BodyExt as _;
@@ -700,9 +710,11 @@ mod tests {
     use tokio::sync::Mutex as AsyncMutex;
 
     use super::*;
-    use crate::protocol::{
-        ClientCapabilities, Implementation, InitializeRequest, JsonRpcRequest, ServerCapabilities,
-    };
+    use crate::protocol::ClientCapabilities;
+    use crate::protocol::Implementation;
+    use crate::protocol::InitializeRequest;
+    use crate::protocol::JsonRpcRequest;
+    use crate::protocol::ServerCapabilities;
 
     #[derive(Debug, Clone, PartialEq, Eq)]
     struct SeenRequest {

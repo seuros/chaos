@@ -1,4 +1,5 @@
-use crate::{RationError, Usage};
+use crate::RationError;
+use crate::Usage;
 
 /// The trait vendors implement. Chaos doesn't know about providers —
 /// providers know about Chaos.

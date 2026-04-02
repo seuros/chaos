@@ -4530,7 +4530,8 @@ mod handlers {
     }
 
     pub async fn list_all_tools(sess: &Session, _config: &Arc<Config>, sub_id: String) {
-        use chaos_ipc::protocol::{AllToolsResponseEvent, ToolSummary};
+        use chaos_ipc::protocol::AllToolsResponseEvent;
+        use chaos_ipc::protocol::ToolSummary;
 
         let mut tools: Vec<ToolSummary> = {
             let catalog = sess

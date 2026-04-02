@@ -30,10 +30,10 @@ just build
 
 Chaos honors the `RUST_LOG` environment variable.
 
-The TUI defaults to `RUST_LOG=chaos_kern=info,chaos_xserver=info,mcp_guest=info` and writes logs to `~/.chaos/log/chaos-xserver.log`. Override with `-c log_dir=...`.
+The TUI defaults to `RUST_LOG=chaos_kern=info,chaos_console=info,mcp_guest=info` and writes logs to `~/.chaos/log/chaos-console.log`. Override with `-c log_dir=...`.
 
 ```bash
-tail -F ~/.chaos/log/chaos-xserver.log
+tail -F ~/.chaos/log/chaos-console.log
 ```
 
 The non-interactive mode (`chaos exec`) defaults to `RUST_LOG=error`, printed inline.

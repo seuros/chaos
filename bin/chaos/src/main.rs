@@ -11,9 +11,9 @@ use chaos_fork::Command as ExecCommand;
 use chaos_fork::ReviewArgs;
 use chaos_getopt::CliConfigOverrides;
 use chaos_selinux::ExecPolicyCheckCommand;
-use chaos_xserver::AppExitInfo;
-use chaos_xserver::Cli as TuiCli;
-use chaos_xserver::ExitReason;
+use chaos_console::AppExitInfo;
+use chaos_console::Cli as TuiCli;
+use chaos_console::ExitReason;
 use clap::CommandFactory;
 use clap::Parser;
 use clap_complete::Shell;
@@ -620,7 +620,7 @@ async fn run_interactive_tui(
         }
     }
 
-    chaos_xserver::run_main(
+    chaos_console::run_main(
         interactive,
         arg0_paths,
         chaos_kern::config_loader::LoaderOverrides::default(),

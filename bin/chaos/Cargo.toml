@@ -29,7 +29,7 @@ chaos-selinux = { workspace = true }
 chaos-pam = { workspace = true }
 chaos-mcphost = { workspace = true }
 chaos-ipc = { workspace = true }
-chaos-xserver = { workspace = true }
+chaos-console = { workspace = true }
 rama = { workspace = true }
 libc = { workspace = true }
 owo-colors = { workspace = true }

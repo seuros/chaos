@@ -93,7 +93,7 @@ mod tests {
             "thread-id": "b5f6c1c2-1111-2222-3333-444455556666",
             "turn-id": "12345",
             "cwd": "/Users/example/project",
-            "client": "chaos-xserver",
+            "client": "chaos-console",
             "input-messages": ["Rename `foo` to `bar` and update the callsites."],
             "last-assistant-message": "Rename complete and verified `cargo build` succeeds.",
         })
@@ -105,7 +105,7 @@ mod tests {
             process_id: "b5f6c1c2-1111-2222-3333-444455556666".to_string(),
             turn_id: "12345".to_string(),
             cwd: "/Users/example/project".to_string(),
-            client: Some("chaos-xserver".to_string()),
+            client: Some("chaos-console".to_string()),
             input_messages: vec!["Rename `foo` to `bar` and update the callsites.".to_string()],
             last_assistant_message: Some(
                 "Rename complete and verified `cargo build` succeeds.".to_string(),
@@ -122,7 +122,7 @@ mod tests {
         let payload = HookPayload {
             session_id: ProcessId::new(),
             cwd: std::path::Path::new("/Users/example/project").to_path_buf(),
-            client: Some("chaos-xserver".to_string()),
+            client: Some("chaos-console".to_string()),
             triggered_at: jiff::Timestamp::now(),
             hook_event: HookEvent::AfterAgent {
                 event: crate::HookEventAfterAgent {

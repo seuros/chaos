@@ -1874,7 +1874,7 @@ pub(crate) async fn make_session_and_context() -> (Session, TurnContext) {
         rollout: Mutex::new(None),
         user_shell: Arc::new(default_user_shell()),
         shell_snapshot_tx: watch::channel(None).0,
-        show_raw_agent_reasoning: config.show_raw_agent_reasoning,
+
         exec_policy,
         auth_manager: auth_manager.clone(),
         session_telemetry: session_telemetry.clone(),
@@ -2517,7 +2517,7 @@ pub(crate) async fn make_session_and_context_with_dynamic_tools_and_rx(
         rollout: Mutex::new(None),
         user_shell: Arc::new(default_user_shell()),
         shell_snapshot_tx: watch::channel(None).0,
-        show_raw_agent_reasoning: config.show_raw_agent_reasoning,
+
         exec_policy,
         auth_manager: Arc::clone(&auth_manager),
         session_telemetry: session_telemetry.clone(),

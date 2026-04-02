@@ -1,5 +1,3 @@
-use std::collections::HashMap;
-use std::sync::atomic::AtomicI64;
 use std::sync::atomic::AtomicU8;
 use std::sync::atomic::Ordering;
 
@@ -11,57 +9,94 @@ use mcp_host::protocol::types::JsonRpcMessage;
 use mcp_host::protocol::types::JsonRpcRequest;
 use mcp_host::protocol::types::JsonRpcResponse;
 use mcp_host::protocol::types::RequestId;
+use mcp_host::server::multiplexer::ClientRequester;
 use serde::Serialize;
 use serde_json::Value;
 use tokio::sync::Mutex;
 use tokio::sync::mpsc;
 use tokio::sync::oneshot;
+use tracing::error;
 use tracing::warn;
 
 /// Alias kept for compatibility with existing call-sites.
 pub(crate) type ErrorData = JsonRpcError;
 pub(crate) type OutgoingJsonRpcMessage = JsonRpcMessage;
 
-/// Sends messages to the client and manages request callbacks.
+/// Routes outgoing messages to the MCP client.
+///
+/// Notifications (e.g. `codex/event`) are sent via the mcp-host notification
+/// channel. Server→client requests (e.g. `elicitation/create` per MCP spec
+/// §Elicitation) go through [`ClientRequester::request_raw`] so that mcp-host's
+/// multiplexer can match responses back to their pending calls.
 pub(crate) struct OutgoingMessageSender {
-    next_request_id: AtomicI64,
     sender: mpsc::UnboundedSender<OutgoingMessage>,
-    request_id_to_callback: Mutex<HashMap<RequestId, oneshot::Sender<Result<Value, ErrorData>>>>,
+    /// Tracks which elicitation modes the client declared in `capabilities.elicitation`
+    /// (MCP spec §Capabilities). Bit 0 = form, bit 1 = url.
     client_elicitation_modes: AtomicU8,
+    /// Set once after `initialized` — required to send server→client requests.
+    client_requester: Mutex<Option<ClientRequester>>,
 }
 
 impl OutgoingMessageSender {
     pub(crate) fn new(sender: mpsc::UnboundedSender<OutgoingMessage>) -> Self {
         Self {
-            next_request_id: AtomicI64::new(0),
             sender,
-            request_id_to_callback: Mutex::new(HashMap::new()),
             client_elicitation_modes: AtomicU8::new(0),
+            client_requester: Mutex::new(None),
         }
     }
 
+    /// Called from the `on_initialized` hook once the client has completed the
+    /// MCP handshake and its capabilities are known.
+    pub(crate) async fn set_client_requester(&self, requester: ClientRequester) {
+        *self.client_requester.lock().await = Some(requester);
+    }
+
+    /// Send a server→client request per the MCP spec and return a receiver for
+    /// the client's response.
+    ///
+    /// Uses [`ClientRequester::request_raw`] so that:
+    /// - The request is written to the transport with a unique JSON-RPC id.
+    /// - The multiplexer routes the client's response back to the returned receiver.
+    ///
+    /// Chaos-specific extensions (e.g. `_meta` in `elicitation/create`) are allowed
+    /// by the MCP spec's general `_meta` extension mechanism and are passed through
+    /// unchanged in `params`.
     pub(crate) async fn send_request(
         &self,
         method: &str,
         params: Option<serde_json::Value>,
     ) -> oneshot::Receiver<Result<Value, ErrorData>> {
-        let id = RequestId::Number(self.next_request_id.fetch_add(1, Ordering::Relaxed));
-        let outgoing_message_id = id.clone();
-        let (tx_approve, rx_approve) = oneshot::channel();
-        {
-            let mut request_id_to_callback = self.request_id_to_callback.lock().await;
-            request_id_to_callback.insert(id, tx_approve);
-        }
+        let (tx, rx) = oneshot::channel();
 
-        let outgoing_message = OutgoingMessage::Request(OutgoingRequest {
-            id: outgoing_message_id,
-            method: method.to_string(),
-            params,
+        let guard = self.client_requester.lock().await;
+        let Some(requester) = guard.as_ref() else {
+            error!(
+                method,
+                "send_request called before ClientRequester was set; \
+                 approval will be treated as denied"
+            );
+            return rx;
+        };
+
+        let requester = requester.clone();
+        let method = method.to_string();
+
+        tokio::spawn(async move {
+            let result = requester.request_raw(&method, params, None).await;
+            let mapped = result.map_err(|e| JsonRpcError {
+                code: mcp_host::protocol::types::ErrorCode::INTERNAL_ERROR,
+                message: e.to_string(),
+                data: None,
+            });
+            let _ = tx.send(mapped);
         });
-        let _ = self.sender.send(outgoing_message);
-        rx_approve
+
+        rx
     }
 
+    /// Mirror the client's declared `elicitation` capability so that approval
+    /// handlers can check support without holding the requester lock.
     pub(crate) fn set_client_elicitation_capability(
         &self,
         elicitation: Option<&ElicitationCapability>,
@@ -95,7 +130,7 @@ impl OutgoingMessageSender {
         self.client_elicitation_modes.load(Ordering::Relaxed) & 0b10 != 0
     }
 
-    /// Send a Chaos event as an MCP notification.
+    /// Encode a Chaos event as a `codex/event` MCP notification and enqueue it.
     pub(crate) async fn send_event_as_notification(
         &self,
         event: &Event,
@@ -122,46 +157,33 @@ impl OutgoingMessageSender {
     }
 
     pub(crate) async fn send_notification(&self, notification: OutgoingNotification) {
-        let outgoing_message = OutgoingMessage::Notification(notification);
-        let _ = self.sender.send(outgoing_message);
+        let _ = self.sender.send(OutgoingMessage::Notification(notification));
     }
 
     pub(crate) async fn send_error(&self, id: RequestId, error: ErrorData) {
-        let outgoing_message = OutgoingMessage::Error(OutgoingError { id, error });
-        let _ = self.sender.send(outgoing_message);
+        let _ = self.sender.send(OutgoingMessage::Error(OutgoingError { id, error }));
     }
 }
 
-/// Outgoing message from the server to the client.
+/// Outgoing message from the server to the MCP client sent via the notification
+/// channel. Server→client *requests* (e.g. `elicitation/create`) bypass this
+/// enum and go directly through `ClientRequester::request_raw`.
 pub(crate) enum OutgoingMessage {
-    Request(OutgoingRequest),
     Notification(OutgoingNotification),
     Error(OutgoingError),
 }
 
 impl From<OutgoingMessage> for OutgoingJsonRpcMessage {
     fn from(val: OutgoingMessage) -> Self {
-        use OutgoingMessage::*;
         match val {
-            Request(OutgoingRequest { id, method, params }) => {
-                JsonRpcMessage::Request(JsonRpcRequest::new(id.to_value(), method, params))
-            }
-            Notification(OutgoingNotification { method, params }) => {
+            OutgoingMessage::Notification(OutgoingNotification { method, params }) => {
                 JsonRpcMessage::Notification(JsonRpcRequest::notification(method, params))
             }
-            Error(OutgoingError { id, error }) => {
+            OutgoingMessage::Error(OutgoingError { id, error }) => {
                 JsonRpcMessage::Response(JsonRpcResponse::error(id.to_value(), error))
             }
         }
     }
-}
-
-#[derive(Debug, Clone, PartialEq, Serialize)]
-pub(crate) struct OutgoingRequest {
-    pub id: RequestId,
-    pub method: String,
-    #[serde(default, skip_serializing_if = "Option::is_none")]
-    pub params: Option<serde_json::Value>,
 }
 
 #[derive(Debug, Clone, PartialEq, Serialize)]
@@ -171,6 +193,8 @@ pub(crate) struct OutgoingNotification {
     pub params: Option<serde_json::Value>,
 }
 
+/// Params envelope for `codex/event` notifications. The `_meta` field follows
+/// the MCP spec's general extension mechanism.
 #[derive(Debug, Clone, PartialEq, Serialize)]
 pub(crate) struct OutgoingNotificationParams {
     #[serde(rename = "_meta", default, skip_serializing_if = "Option::is_none")]
@@ -209,24 +233,6 @@ mod tests {
     use chaos_ipc::protocol::SessionConfiguredEvent;
     use pretty_assertions::assert_eq;
     use serde_json::json;
-
-    #[test]
-    fn outgoing_request_serializes_as_jsonrpc_request() {
-        let msg: OutgoingJsonRpcMessage = OutgoingMessage::Request(OutgoingRequest {
-            id: RequestId::Number(1),
-            method: "elicitation/create".to_string(),
-            params: Some(json!({ "k": "v" })),
-        })
-        .into();
-
-        let value = serde_json::to_value(msg).expect("message should serialize");
-        let obj = value.as_object().expect("json object");
-
-        assert_eq!(obj.get("jsonrpc"), Some(&json!("2.0")));
-        assert_eq!(obj.get("id"), Some(&json!(1)));
-        assert_eq!(obj.get("method"), Some(&json!("elicitation/create")));
-        assert_eq!(obj.get("params"), Some(&json!({ "k": "v" })));
-    }
 
     #[test]
     fn outgoing_notification_serializes_as_jsonrpc_notification() {

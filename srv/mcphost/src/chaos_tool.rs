@@ -195,7 +195,13 @@ impl ChaosMcpServer {
             .map_err(|e| ToolError::InvalidArguments(format!("invalid params: {e}")))?;
 
         let session_id = ctx.session.id.clone();
-        let request_id = RequestId::String(session_id.clone());
+        // Use the JSON-RPC request id from the originating tools/call so that
+        // elicitation/create requests include the correct codex_mcp_tool_call_id
+        // (MCP spec §Elicitation). Fall back to session id if unavailable.
+        let request_id = ctx
+            .request_id()
+            .cloned()
+            .unwrap_or_else(|| RequestId::String(session_id.clone()));
 
         // Resolve process_id: explicit > auto-resume from session > new
         // Pass "new" or "" to force a new process instead of auto-resuming.

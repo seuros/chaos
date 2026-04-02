@@ -155,12 +155,6 @@ async fn shell_command_approval_triggers_elicitation() -> anyhow::Result<()> {
     assert_eq!(
         result,
         &json!({
-            "content": [
-                {
-                    "text": "File created!",
-                    "type": "text"
-                }
-            ],
             "structuredContent": {
                 "processId": params.meta.process_id,
                 "content": "File created!"
@@ -313,12 +307,6 @@ async fn patch_approval_triggers_elicitation() -> anyhow::Result<()> {
     assert_eq!(
         result,
         &json!({
-            "content": [
-                {
-                    "text": "Patch has been applied successfully!",
-                    "type": "text"
-                }
-            ],
             "structuredContent": {
                 "processId": params.meta.process_id,
                 "content": "Patch has been applied successfully!"
@@ -383,12 +371,6 @@ async fn codex_tool_passes_base_instructions() -> anyhow::Result<()> {
     assert_eq!(
         *result,
         json!({
-            "content": [
-                {
-                    "text": "Enjoy!",
-                    "type": "text"
-                }
-            ],
             "structuredContent": {
                 "processId": process_id,
                 "content": "Enjoy!"
@@ -400,7 +382,11 @@ async fn codex_tool_passes_base_instructions() -> anyhow::Result<()> {
         .received_requests()
         .await
         .context("mock model server should record requests")?;
-    let request = requests[0].body_json::<serde_json::Value>()?;
+    let request = requests
+        .iter()
+        .find(|r| r.method == wiremock::http::Method::POST)
+        .context("expected a POST request to the mock model server")?
+        .body_json::<serde_json::Value>()?;
     let instructions = request
         .get("instructions")
         .and_then(serde_json::Value::as_str)

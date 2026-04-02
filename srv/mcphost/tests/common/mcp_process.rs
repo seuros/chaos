@@ -35,6 +35,10 @@ pub struct McpProcess {
     process: Child,
     stdin: ChildStdin,
     stdout: BufReader<ChildStdout>,
+    /// Messages read from the stream that were skipped by one reader but may be
+    /// needed by the next (e.g. a Response that arrived while waiting for a
+    /// notification). Checked first by every read helper.
+    pending: Vec<JsonRpcMessage>,
 }
 
 impl McpProcess {
@@ -58,7 +62,7 @@ impl McpProcess {
         cmd.stdin(Stdio::piped());
         cmd.stdout(Stdio::piped());
         cmd.stderr(Stdio::piped());
-        cmd.env("CODEX_HOME", chaos_home);
+        cmd.env("CHAOS_HOME", chaos_home);
         cmd.env("RUST_LOG", "debug");
 
         for (k, v) in env_overrides {
@@ -101,6 +105,7 @@ impl McpProcess {
             process,
             stdin,
             stdout,
+            pending: Vec::new(),
         })
     }
 
@@ -300,6 +305,12 @@ impl McpProcess {
     }
 
     async fn read_jsonrpc_message(&mut self) -> anyhow::Result<JsonRpcMessage> {
+        // Drain pending buffer before hitting the stream.
+        if !self.pending.is_empty() {
+            let message = self.pending.remove(0);
+            eprintln!("read message from pending: {message:?}");
+            return Ok(message);
+        }
         let mut line = String::new();
         self.stdout.read_line(&mut line).await?;
         let message = serde_json::from_str::<JsonRpcMessage>(&line)?;
@@ -394,7 +405,10 @@ impl McpProcess {
         eprintln!("in read_stream_until_legacy_task_complete_notification()");
 
         loop {
-            let message = self.read_jsonrpc_message().await?;
+            // Read only from the wire (not pending), buffering anything that is
+            // not the task_complete notification so other read helpers can still
+            // find it.
+            let message = self.read_wire_message().await?;
             match message {
                 JsonRpcMessage::Notification(notification) => {
                     let is_match = if notification.method == "codex/event" {
@@ -424,10 +438,23 @@ impl McpProcess {
                     anyhow::bail!("unexpected JSONRPCMessage error response: {message:?}");
                 }
                 JsonRpcMessage::Response(_) => {
-                    anyhow::bail!("unexpected JSONRPCMessage::Response: {message:?}");
+                    // A non-error Response (e.g. the tool call result) may race ahead of
+                    // the task_complete notification. Buffer it so the next read helper
+                    // can still find it.
+                    eprintln!("buffering response while waiting for task_complete: {message:?}");
+                    self.pending.push(message);
                 }
             }
         }
+    }
+
+    /// Read exactly one message from the stdio wire (never from the pending buffer).
+    async fn read_wire_message(&mut self) -> anyhow::Result<JsonRpcMessage> {
+        let mut line = String::new();
+        self.stdout.read_line(&mut line).await?;
+        let message = serde_json::from_str::<JsonRpcMessage>(&line)?;
+        eprintln!("read wire message: {message:?}");
+        Ok(message)
     }
 }
 

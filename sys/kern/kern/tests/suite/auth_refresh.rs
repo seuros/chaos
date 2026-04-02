@@ -18,7 +18,6 @@ use jiff::ToSpan;
 use pretty_assertions::assert_eq;
 use serde::Serialize;
 use serde_json::json;
-use std::ffi::OsString;
 use std::sync::Arc;
 use tempfile::TempDir;
 use wiremock::Mock;
@@ -689,7 +688,7 @@ async fn unauthorized_recovery_requires_chatgpt_auth() -> Result<()> {
 struct RefreshTokenTestContext {
     chaos_home: TempDir,
     auth_manager: Arc<AuthManager>,
-    _env_guard: EnvGuard,
+    _env_guard: EnvVarGuard,
 }
 
 impl RefreshTokenTestContext {
@@ -697,7 +696,7 @@ impl RefreshTokenTestContext {
         let chaos_home = TempDir::new()?;
 
         let endpoint = format!("{}/oauth/token", server.uri());
-        let env_guard = EnvGuard::set(REFRESH_TOKEN_URL_OVERRIDE_ENV_VAR, endpoint);
+        let env_guard = EnvVarGuard::set(REFRESH_TOKEN_URL_OVERRIDE_ENV_VAR, endpoint);
 
         let auth_manager = AuthManager::shared(
             chaos_home.path().to_path_buf(),
@@ -729,33 +728,7 @@ impl RefreshTokenTestContext {
     }
 }
 
-struct EnvGuard {
-    key: &'static str,
-    original: Option<OsString>,
-}
-
-impl EnvGuard {
-    fn set(key: &'static str, value: String) -> Self {
-        let original = std::env::var_os(key);
-        // SAFETY: these tests execute serially, so updating the process environment is safe.
-        unsafe {
-            std::env::set_var(key, &value);
-        }
-        Self { key, original }
-    }
-}
-
-impl Drop for EnvGuard {
-    fn drop(&mut self) {
-        // SAFETY: the guard restores the original environment value before other tests run.
-        unsafe {
-            match &self.original {
-                Some(value) => std::env::set_var(self.key, value),
-                None => std::env::remove_var(self.key),
-            }
-        }
-    }
-}
+use chaos_kern::test_support::EnvVarGuard;
 
 fn timestamp_hours_ago(hours: i64) -> Result<Timestamp> {
     Timestamp::now()

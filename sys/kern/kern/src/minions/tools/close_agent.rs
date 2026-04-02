@@ -1,17 +1,14 @@
 use super::*;
+use super::common::get_agent_info;
+use super::common::impl_function_tool_kind;
+use super::common::impl_tool_output;
 
 pub(crate) struct Handler;
 
 impl ToolHandler for Handler {
     type Output = CloseAgentResult;
 
-    fn kind(&self) -> ToolKind {
-        ToolKind::Function
-    }
-
-    fn matches_kind(&self, payload: &ToolPayload) -> bool {
-        matches!(payload, ToolPayload::Function { .. })
-    }
+    impl_function_tool_kind!();
 
     async fn handle(&self, invocation: ToolInvocation) -> Result<Self::Output, FunctionCallError> {
         let ToolInvocation {
@@ -24,12 +21,8 @@ impl ToolHandler for Handler {
         let arguments = function_arguments(payload)?;
         let args: CloseAgentArgs = parse_arguments(&arguments)?;
         let agent_id = agent_id(&args.id)?;
-        let (receiver_agent_nickname, receiver_agent_role) = session
-            .services
-            .agent_control
-            .get_agent_nickname_and_role(agent_id)
-            .await
-            .unwrap_or((None, None));
+        let (receiver_agent_nickname, receiver_agent_role) =
+            get_agent_info(&session, agent_id).await;
         session
             .send_event(
                 &turn,
@@ -103,16 +96,4 @@ pub(crate) struct CloseAgentResult {
     pub(crate) status: AgentStatus,
 }
 
-impl ToolOutput for CloseAgentResult {
-    fn log_preview(&self) -> String {
-        tool_output_json_text(self, "close_agent")
-    }
-
-    fn success_for_logging(&self) -> bool {
-        true
-    }
-
-    fn to_response_item(&self, call_id: &str, payload: &ToolPayload) -> ResponseInputItem {
-        tool_output_response_item(call_id, payload, self, Some(true), "close_agent")
-    }
-}
+impl_tool_output!(CloseAgentResult, "close_agent");

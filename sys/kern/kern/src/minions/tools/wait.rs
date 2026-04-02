@@ -1,4 +1,7 @@
 use super::*;
+use super::common::get_agent_info;
+use super::common::impl_function_tool_kind;
+use super::common::impl_tool_output;
 use crate::minions::status::is_final;
 use futures::FutureExt;
 use futures::StreamExt;
@@ -15,13 +18,7 @@ pub(crate) struct Handler;
 impl ToolHandler for Handler {
     type Output = WaitAgentResult;
 
-    fn kind(&self) -> ToolKind {
-        ToolKind::Function
-    }
-
-    fn matches_kind(&self, payload: &ToolPayload) -> bool {
-        matches!(payload, ToolPayload::Function { .. })
-    }
+    impl_function_tool_kind!();
 
     async fn handle(&self, invocation: ToolInvocation) -> Result<Self::Output, FunctionCallError> {
         let ToolInvocation {
@@ -45,12 +42,8 @@ impl ToolHandler for Handler {
             .collect::<Result<Vec<_>, _>>()?;
         let mut receiver_agents = Vec::with_capacity(receiver_process_ids.len());
         for receiver_process_id in &receiver_process_ids {
-            let (agent_nickname, agent_role) = session
-                .services
-                .agent_control
-                .get_agent_nickname_and_role(*receiver_process_id)
-                .await
-                .unwrap_or((None, None));
+            let (agent_nickname, agent_role) =
+                get_agent_info(&session, *receiver_process_id).await;
             receiver_agents.push(CollabAgentRef {
                 process_id: *receiver_process_id,
                 agent_nickname,
@@ -186,19 +179,7 @@ pub(crate) struct WaitAgentResult {
     pub(crate) timed_out: bool,
 }
 
-impl ToolOutput for WaitAgentResult {
-    fn log_preview(&self) -> String {
-        tool_output_json_text(self, "wait_agent")
-    }
-
-    fn success_for_logging(&self) -> bool {
-        true
-    }
-
-    fn to_response_item(&self, call_id: &str, payload: &ToolPayload) -> ResponseInputItem {
-        tool_output_response_item(call_id, payload, self, /*success*/ None, "wait_agent")
-    }
-}
+impl_tool_output!(WaitAgentResult, "wait_agent", true, None);
 
 async fn wait_for_final_status(
     session: Arc<Session>,

@@ -1,23 +1,18 @@
 use super::*;
+use super::common::check_depth_limit;
+use super::common::get_agent_info;
+use super::common::impl_function_tool_kind;
+use super::common::impl_tool_output;
 use crate::minions::control::SpawnAgentOptions;
 use crate::minions::role::DEFAULT_ROLE_NAME;
 use crate::minions::role::apply_role_to_config;
-
-use crate::minions::exceeds_process_spawn_depth_limit;
-use crate::minions::next_process_spawn_depth;
 
 pub(crate) struct Handler;
 
 impl ToolHandler for Handler {
     type Output = SpawnAgentResult;
 
-    fn kind(&self) -> ToolKind {
-        ToolKind::Function
-    }
-
-    fn matches_kind(&self, payload: &ToolPayload) -> bool {
-        matches!(payload, ToolPayload::Function { .. })
-    }
+    impl_function_tool_kind!();
 
     async fn handle(&self, invocation: ToolInvocation) -> Result<Self::Output, FunctionCallError> {
         let ToolInvocation {
@@ -36,14 +31,7 @@ impl ToolHandler for Handler {
             .filter(|role: &&str| !role.is_empty());
         let input_items = parse_collab_input(args.message, args.items)?;
         let prompt = input_preview(&input_items);
-        let session_source = turn.session_source.clone();
-        let child_depth = next_process_spawn_depth(&session_source);
-        let max_depth = turn.config.agent_max_depth;
-        if exceeds_process_spawn_depth_limit(child_depth, max_depth) {
-            return Err(FunctionCallError::RespondToModel(
-                "Agent depth limit reached. Solve the task yourself.".to_string(),
-            ));
-        }
+        let child_depth = check_depth_limit(&turn.session_source, turn.config.agent_max_depth)?;
         session
             .send_event(
                 &turn,
@@ -98,12 +86,7 @@ impl ToolHandler for Handler {
             Err(_) => (None, AgentStatus::NotFound),
         };
         let (new_agent_nickname, new_agent_role) = match new_process_id {
-            Some(process_id) => session
-                .services
-                .agent_control
-                .get_agent_nickname_and_role(process_id)
-                .await
-                .unwrap_or((None, None)),
+            Some(process_id) => get_agent_info(&session, process_id).await,
             None => (None, None),
         };
         let nickname = new_agent_nickname.clone();
@@ -156,16 +139,4 @@ pub(crate) struct SpawnAgentResult {
     nickname: Option<String>,
 }
 
-impl ToolOutput for SpawnAgentResult {
-    fn log_preview(&self) -> String {
-        tool_output_json_text(self, "spawn_agent")
-    }
-
-    fn success_for_logging(&self) -> bool {
-        true
-    }
-
-    fn to_response_item(&self, call_id: &str, payload: &ToolPayload) -> ResponseInputItem {
-        tool_output_response_item(call_id, payload, self, Some(true), "spawn_agent")
-    }
-}
+impl_tool_output!(SpawnAgentResult, "spawn_agent");

@@ -1724,6 +1724,17 @@ impl Session {
             let mut guard = network_policy_decider_session.write().await;
             *guard = Arc::downgrade(&sess);
         }
+        // Log a debug summary of the session configuration for debug.log.
+        tracing::debug!(
+            provider = %session_configuration.provider.name,
+            model = %session_configuration.collaboration_mode.model(),
+            sandbox_policy = ?session_configuration.sandbox_policy.get(),
+            approval_policy = ?session_configuration.approval_policy.value(),
+            reasoning_effort = ?session_configuration.collaboration_mode.reasoning_effort(),
+            cwd = %session_configuration.cwd.display(),
+            "session configured",
+        );
+
         // Dispatch the SessionConfiguredEvent first and then report any errors.
         // If resuming, include converted initial messages in the payload so UIs can render them immediately.
         let initial_messages = initial_history.get_event_msgs();

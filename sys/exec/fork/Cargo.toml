@@ -36,6 +36,7 @@ tokio = { workspace = true, features = [
     "signal",
 ] }
 tracing = { workspace = true, features = ["log"] }
+tracing-appender = { workspace = true }
 tracing-subscriber = { workspace = true, features = ["env-filter"] }
 ts-rs = { workspace = true, features = [
     "uuid-impl",

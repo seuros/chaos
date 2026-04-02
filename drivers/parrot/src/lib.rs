@@ -11,6 +11,7 @@
 pub mod adapter;
 pub mod anthropic;
 pub mod auth;
+pub mod chat_completions;
 pub mod common;
 pub mod endpoint;
 pub mod error;
@@ -75,6 +76,13 @@ pub fn adapter_for_wire(
             api_key,
             default_model,
         ))),
+        "chat_completions" => Some(Box::new(
+            chat_completions::ChatCompletionsAdapter::from_base_url_and_api_key(
+                base_url,
+                api_key,
+                default_model,
+            ),
+        )),
         _ => None,
     }
 }

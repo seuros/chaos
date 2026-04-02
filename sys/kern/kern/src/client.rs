@@ -122,6 +122,8 @@ use crate::error::ChaosErr;
 use crate::error::Result;
 use crate::flags::CODEX_RS_SSE_FIXTURE;
 use crate::model_provider_info::ModelProviderInfo;
+use crate::model_provider_info::WireApi;
+use chaos_parrot::chat_completions::ChatCompletionsAdapter;
 
 use crate::response_debug_context::extract_response_debug_context;
 use crate::response_debug_context::extract_response_debug_context_from_api_error;
@@ -169,6 +171,9 @@ struct ModelClientState {
     include_timing_metrics: bool,
     beta_features_header: Option<String>,
     disable_websockets: AtomicBool,
+    /// Cached result of auto wire-format detection. Set on the first successful
+    /// `Auto` probe; subsequent turns reuse the winner without re-probing.
+    resolved_wire: OnceLock<WireApi>,
     /// When true, route all turns through the Claude Code subprocess (clamped mode).
     clamped: AtomicBool,
     /// Persistent Claude Code subprocess for clamped mode.
@@ -320,6 +325,7 @@ impl ModelClient {
                 include_timing_metrics,
                 beta_features_header,
                 disable_websockets: AtomicBool::new(false),
+                resolved_wire: OnceLock::new(),
                 clamped: AtomicBool::new(false),
                 clamp_transport: tokio::sync::Mutex::new(None),
                 clamp_mcp_bridge: tokio::sync::Mutex::new(None),
@@ -639,6 +645,21 @@ impl ModelClient {
         if !self.state.provider.supports_websockets
             || self.state.disable_websockets.load(Ordering::Relaxed)
         {
+            return false;
+        }
+
+        // Auto mode: only allow websockets once the wire has been confirmed as
+        // Responses. Before the first successful probe the wire is unknown, so
+        // skip the websocket path entirely to avoid stalling the probe.
+        let effective_wire = match self.state.provider.wire_api {
+            WireApi::Auto => match self.state.resolved_wire.get() {
+                Some(w) => *w,
+                None => return false,
+            },
+            other => other,
+        };
+
+        if effective_wire != WireApi::Responses {
             return false;
         }
 
@@ -2441,6 +2462,22 @@ impl ModelClientSession {
         }
     }
 
+    /// Returns `true` when `err` signals that the endpoint simply does not
+    /// exist on this provider — i.e. we probed the wrong wire format.
+    ///
+    /// Conservative: only 404, 405, and 501 qualify. 400 ("bad request") is
+    /// deliberately excluded because it usually means the payload is wrong,
+    /// not that the endpoint is absent.
+    fn is_wire_format_mismatch(err: &ChaosErr) -> bool {
+        match err {
+            ChaosErr::UnexpectedStatus(e) => matches!(
+                e.status.as_u16(),
+                404 | 405 | 501
+            ),
+            _ => false,
+        }
+    }
+
     #[allow(clippy::too_many_arguments)]
     /// Streams a single model request within the current turn.
     ///
@@ -2491,6 +2528,133 @@ impl ModelClientSession {
                 .await;
         }
 
+        // Chat Completions wire format.
+        if self.client.state.provider.wire_api == WireApi::ChatCompletions {
+            return self
+                .stream_chat_completions_api(
+                    prompt,
+                    model_info,
+                    session_telemetry,
+                    effort,
+                    summary,
+                    service_tier,
+                    turn_metadata_header,
+                )
+                .await;
+        }
+
+        // Auto wire detection: resolve lazily using a Responses probe with
+        // Chat Completions as the 404/405/501 fallback.
+        if self.client.state.provider.wire_api == WireApi::Auto {
+            // If a previous turn already resolved the wire, dispatch directly.
+            if let Some(&resolved) = self.client.state.resolved_wire.get() {
+                return match resolved {
+                    WireApi::ChatCompletions => {
+                        self.stream_chat_completions_api(
+                            prompt,
+                            model_info,
+                            session_telemetry,
+                            effort,
+                            summary,
+                            service_tier,
+                            turn_metadata_header,
+                        )
+                        .await
+                    }
+                    // Responses (and the impossible Auto) fall through to the
+                    // standard websocket/HTTP Responses path below.
+                    _ => {
+                        if self.client.responses_websocket_enabled(model_info) {
+                            match self
+                                .stream_responses_websocket(
+                                    prompt,
+                                    model_info,
+                                    session_telemetry,
+                                    effort,
+                                    summary,
+                                    service_tier,
+                                    turn_metadata_header,
+                                    /*warmup*/ false,
+                                )
+                                .await?
+                            {
+                                WebsocketStreamOutcome::Stream(stream) => return Ok(stream),
+                                WebsocketStreamOutcome::FallbackToHttp => {
+                                    self.try_switch_fallback_transport(
+                                        session_telemetry,
+                                        model_info,
+                                    );
+                                }
+                            }
+                        }
+                        self.stream_responses_api(
+                            prompt,
+                            model_info,
+                            session_telemetry,
+                            effort,
+                            summary,
+                            service_tier,
+                            turn_metadata_header,
+                        )
+                        .await
+                    }
+                };
+            }
+
+            // First attempt: probe with Responses API.
+            match self
+                .stream_responses_api(
+                    prompt,
+                    model_info,
+                    session_telemetry,
+                    effort,
+                    summary,
+                    service_tier,
+                    turn_metadata_header,
+                )
+                .await
+            {
+                Ok(stream) => {
+                    // Responses API answered — cache the result and return.
+                    let _ = self
+                        .client
+                        .state
+                        .resolved_wire
+                        .set(WireApi::Responses);
+                    return Ok(stream);
+                }
+                Err(ref probe_err) if Self::is_wire_format_mismatch(probe_err) => {
+                    tracing::debug!(
+                        provider = %self.client.state.provider.name,
+                        "Responses API probe returned endpoint-not-found; \
+                         falling back to Chat Completions"
+                    );
+                }
+                Err(err) => return Err(err),
+            }
+
+            // Fallback: Chat Completions.
+            let result = self
+                .stream_chat_completions_api(
+                    prompt,
+                    model_info,
+                    session_telemetry,
+                    effort,
+                    summary,
+                    service_tier,
+                    turn_metadata_header,
+                )
+                .await;
+            if result.is_ok() {
+                let _ = self
+                    .client
+                    .state
+                    .resolved_wire
+                    .set(WireApi::ChatCompletions);
+            }
+            return result;
+        }
+
         // Default: Responses wire format (OpenAI-compatible).
         if self.client.responses_websocket_enabled(model_info) {
             match self
@@ -2538,6 +2702,81 @@ impl ModelClientSession {
             "Anthropic Messages provider `{}` requires `env_key` or `experimental_bearer_token`",
             self.client.state.provider.name
         )))
+    }
+
+    fn resolve_chat_completions_api_key(&self) -> Result<String> {
+        if let Some(api_key) = self.client.state.provider.api_key()? {
+            return Ok(api_key);
+        }
+
+        if let Some(token) = self.client.state.provider.experimental_bearer_token.clone() {
+            return Ok(token);
+        }
+
+        Err(ChaosErr::InvalidRequest(format!(
+            "Chat Completions provider `{}` requires `env_key` or `experimental_bearer_token`",
+            self.client.state.provider.name
+        )))
+    }
+
+    /// Streams a turn via the OpenAI Chat Completions API (`/v1/chat/completions`).
+    ///
+    /// HTTP/SSE only — no WebSocket, no sticky routing, no incremental request
+    /// reuse.  Each follow-up sends the full conversation history.
+    #[allow(clippy::too_many_arguments)]
+    #[instrument(
+        name = "model_client.stream_chat_completions_api",
+        level = "info",
+        skip_all,
+        fields(
+            model = %model_info.slug,
+            wire_api = "chat_completions",
+            transport = "chat_completions_http",
+        )
+    )]
+    async fn stream_chat_completions_api(
+        &self,
+        prompt: &Prompt,
+        model_info: &ModelInfo,
+        session_telemetry: &SessionTelemetry,
+        effort: Option<ReasoningEffortConfig>,
+        summary: ReasoningSummaryConfig,
+        service_tier: Option<ServiceTier>,
+        turn_metadata_header: Option<&str>,
+    ) -> Result<ResponseStream> {
+        let client_setup = self.client.current_client_setup().await?;
+        let options = self.build_responses_options(turn_metadata_header, Compression::None);
+        let turn_request = self.build_http_turn_request(
+            &client_setup.api_provider,
+            prompt,
+            model_info,
+            HttpTurnRequestConfig {
+                effort,
+                summary,
+                service_tier,
+                options: &options,
+            },
+        )?;
+
+        let api_key = self.resolve_chat_completions_api_key()?;
+        let adapter = ChatCompletionsAdapter::new(
+            client_setup.api_provider,
+            api_key,
+            Some(model_info.slug.clone()),
+        );
+
+        match adapter.stream(turn_request).await {
+            Ok(stream) => {
+                let response_events = stream.map(|event| {
+                    event
+                        .map(ResponseEvent::from)
+                        .map_err(abi_error_to_api_error)
+                });
+                let (stream, _) = map_response_stream(response_events, session_telemetry.clone());
+                Ok(stream)
+            }
+            Err(err) => Err(map_api_error(abi_error_to_api_error(err))),
+        }
     }
 
     /// Permanently disables WebSockets for this Codex session and resets WebSocket state.

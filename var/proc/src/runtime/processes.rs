@@ -827,7 +827,7 @@ mod tests {
             git: Some(GitInfo {
                 commit_hash: Some("rollout-sha".to_string()),
                 branch: Some("rollout-branch".to_string()),
-                repository_url: Some("git@example.com:openai/codex.git".to_string()),
+                repository_url: Some("git@example.com:seuros/chaos.git".to_string()),
             }),
         })];
 
@@ -845,7 +845,7 @@ mod tests {
         assert_eq!(persisted.git_branch.as_deref(), Some("sqlite-branch"));
         assert_eq!(
             persisted.git_origin_url.as_deref(),
-            Some("git@example.com:openai/codex.git")
+            Some("git@example.com:seuros/chaos.git")
         );
     }
 
@@ -882,7 +882,7 @@ mod tests {
                 process_id,
                 Some(Some("abc123")),
                 Some(Some("feature/branch")),
-                Some(Some("git@example.com:openai/codex.git")),
+                Some(Some("git@example.com:seuros/chaos.git")),
             )
             .await
             .expect("git info update should succeed");
@@ -903,7 +903,7 @@ mod tests {
         assert_eq!(persisted.git_branch.as_deref(), Some("feature/branch"));
         assert_eq!(
             persisted.git_origin_url.as_deref(),
-            Some("git@example.com:openai/codex.git")
+            Some("git@example.com:seuros/chaos.git")
         );
     }
 
@@ -963,7 +963,7 @@ mod tests {
         let mut metadata = test_process_metadata(&chaos_home, process_id, chaos_home.clone());
         metadata.git_sha = Some("abc123".to_string());
         metadata.git_branch = Some("feature/branch".to_string());
-        metadata.git_origin_url = Some("git@example.com:openai/codex.git".to_string());
+        metadata.git_origin_url = Some("git@example.com:seuros/chaos.git".to_string());
 
         runtime
             .upsert_process(&metadata)

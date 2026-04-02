@@ -182,9 +182,6 @@ impl ProcessTable {
     ) -> Self {
         let chaos_home = config.chaos_home.clone();
         // Use the active model provider for discovery, not hardcoded OpenAI.
-        // TODO(GPT): this was always hardcoded to OPENAI_PROVIDER_ID which
-        // meant Anthropic (and every other provider) got OpenAI's stale
-        // model catalog. The active provider is the one the user configured.
         let models_provider = config.model_provider.clone();
         let (process_created_tx, _) = broadcast::channel(PROCESS_CREATED_CHANNEL_CAPACITY);
         let mcp_manager = Arc::new(McpManager::new());

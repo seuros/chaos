@@ -503,7 +503,7 @@ jobs:
             sudo DEBIAN_FRONTEND=noninteractive apt-get install -y --no-install-recommends pkg-config libcap-dev
           fi
       # Some integration tests rely on DotSlash being installed.
-      # See https://github.com/openai/codex/pull/7617.
+      # Some integration tests need DotSlash (upstream openai/codex#7617).
       - name: Install DotSlash
         uses: facebook/install-dotslash@v2
 

@@ -200,7 +200,7 @@ async fn wait_for_python_repl_ready_via_probe(
     newline: &str,
 ) -> anyhow::Result<Vec<u8>> {
     let mut collected = Vec::new();
-    let marker = "__codex_pty_ready__";
+    let marker = "__chaos_pty_ready__";
     let deadline = tokio::time::Instant::now() + tokio::time::Duration::from_millis(timeout_ms);
     let probe_window = tokio::time::Duration::from_millis(250);
 
@@ -328,7 +328,7 @@ async fn pty_python_repl_emits_output_and_exits() -> anyhow::Result<()> {
         return Ok(());
     };
 
-    let ready_marker = "__codex_pty_ready__";
+    let ready_marker = "__chaos_pty_ready__";
     let args = vec![
         "-i".to_string(),
         "-q".to_string(),

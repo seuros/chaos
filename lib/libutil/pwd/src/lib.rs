@@ -76,7 +76,7 @@ mod tests {
     #[test]
     fn find_chaos_home_env_missing_path_is_fatal() {
         let temp_home = TempDir::new().expect("temp home");
-        let missing = temp_home.path().join("missing-codex-home");
+        let missing = temp_home.path().join("missing-chaos-home");
         let missing_str = missing
             .to_str()
             .expect("missing chaos home path should be valid utf-8");

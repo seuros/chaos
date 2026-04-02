@@ -100,6 +100,7 @@ pub enum SandboxPreference {
 }
 
 #[derive(Debug, thiserror::Error)]
+#[allow(clippy::enum_variant_names)]
 pub(crate) enum SandboxTransformError {
     #[error("missing alcatraz-linux executable path")]
     MissingLinuxSandboxExecutable,

@@ -601,7 +601,7 @@ fn create_seatbelt_args_with_read_only_git_and_codex_subpaths() {
         vulnerable_root,
         vulnerable_root_canonical,
         dot_git_canonical,
-        dot_codex_canonical,
+        dot_chaos_canonical,
         empty_root,
         empty_root_canonical,
     } = populate_tmpdir(tmp.path());
@@ -628,7 +628,7 @@ fn create_seatbelt_args_with_read_only_git_and_codex_subpaths() {
         "-c",
         "echo 'sandbox_mode = \"root-access\"' > \"$1\"",
         "bash",
-        dot_codex_canonical
+        dot_chaos_canonical
             .join("config.toml")
             .to_string_lossy()
             .as_ref(),
@@ -680,7 +680,7 @@ fn create_seatbelt_args_with_read_only_git_and_codex_subpaths() {
         ),
         format!(
             "-DWRITABLE_ROOT_1_RO_1={}",
-            dot_codex_canonical.to_string_lossy()
+            dot_chaos_canonical.to_string_lossy()
         ),
         format!(
             "-DWRITABLE_ROOT_2={}",
@@ -709,7 +709,7 @@ fn create_seatbelt_args_with_read_only_git_and_codex_subpaths() {
 
     // Verify that .chaos/config.toml cannot be modified under the generated
     // Seatbelt policy.
-    let config_toml = dot_codex_canonical.join("config.toml");
+    let config_toml = dot_chaos_canonical.join("config.toml");
     let output = Command::new(MACOS_PATH_TO_SEATBELT_EXECUTABLE)
         .args(&args)
         .current_dir(&cwd)
@@ -893,7 +893,7 @@ fn create_seatbelt_args_for_cwd_as_git_repo() {
         vulnerable_root,
         vulnerable_root_canonical,
         dot_git_canonical,
-        dot_codex_canonical,
+        dot_chaos_canonical,
         ..
     } = populate_tmpdir(tmp.path());
 
@@ -913,7 +913,7 @@ fn create_seatbelt_args_for_cwd_as_git_repo() {
         "-c",
         "echo 'sandbox_mode = \"root-access\"' > \"$1\"",
         "bash",
-        dot_codex_canonical
+        dot_chaos_canonical
             .join("config.toml")
             .to_string_lossy()
             .as_ref(),
@@ -977,7 +977,7 @@ fn create_seatbelt_args_for_cwd_as_git_repo() {
         ),
         format!(
             "-DWRITABLE_ROOT_0_RO_1={}",
-            dot_codex_canonical.to_string_lossy()
+            dot_chaos_canonical.to_string_lossy()
         ),
         format!(
             "-DWRITABLE_ROOT_1={}",
@@ -1015,7 +1015,7 @@ struct PopulatedTmp {
     vulnerable_root: PathBuf,
     vulnerable_root_canonical: PathBuf,
     dot_git_canonical: PathBuf,
-    dot_codex_canonical: PathBuf,
+    dot_chaos_canonical: PathBuf,
 
     /// Path without .git or .chaos subfolders.
     empty_root: PathBuf,
@@ -1057,7 +1057,7 @@ fn populate_tmpdir(tmp: &Path) -> PopulatedTmp {
         vulnerable_root,
         vulnerable_root_canonical,
         dot_git_canonical,
-        dot_codex_canonical,
+        dot_chaos_canonical,
         empty_root,
         empty_root_canonical,
     }

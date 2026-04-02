@@ -300,6 +300,7 @@ pub fn create_sandbox_mode(full_auto: bool) -> SandboxMode {
 }
 
 #[cfg(target_os = "macos")]
+#[allow(clippy::too_many_arguments)]
 async fn spawn_command_under_macos_seatbelt(
     alcatraz_macos_exe: PathBuf,
     command: Vec<String>,

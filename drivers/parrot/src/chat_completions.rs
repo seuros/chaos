@@ -443,17 +443,17 @@ fn parse_chunk(
     let mut events = Vec::new();
 
     // Capture the response id and model from the first chunk.
-    if let Some(id) = json.get("id").and_then(Value::as_str) {
-        if response_id.is_empty() {
-            *response_id = id.to_string();
-            events.push(TurnEvent::Created);
-        }
+    if let Some(id) = json.get("id").and_then(Value::as_str)
+        && response_id.is_empty()
+    {
+        *response_id = id.to_string();
+        events.push(TurnEvent::Created);
     }
-    if let Some(model) = json.get("model").and_then(Value::as_str) {
-        if server_model.is_none() {
-            *server_model = Some(model.to_string());
-            events.push(TurnEvent::ServerModel(model.to_string()));
-        }
+    if let Some(model) = json.get("model").and_then(Value::as_str)
+        && server_model.is_none()
+    {
+        *server_model = Some(model.to_string());
+        events.push(TurnEvent::ServerModel(model.to_string()));
     }
 
     let choices = match json.get("choices").and_then(Value::as_array) {
@@ -491,23 +491,23 @@ fn parse_chunk(
         let finish_reason = choice.get("finish_reason").and_then(Value::as_str);
 
         // Text delta
-        if let Some(content) = delta.get("content").and_then(Value::as_str) {
-            if !content.is_empty() {
-                if text_acc.is_none() {
-                    events.push(TurnEvent::OutputItemAdded(ResponseItem::Message {
-                        id: None,
-                        role: "assistant".to_string(),
-                        content: vec![],
-                        phase: None,
-                        end_turn: None,
-                    }));
-                    *text_acc = Some(TextAccumulator::default());
-                }
-                if let Some(acc) = text_acc.as_mut() {
-                    acc.text.push_str(content);
-                }
-                events.push(TurnEvent::OutputTextDelta(content.to_string()));
+        if let Some(content) = delta.get("content").and_then(Value::as_str)
+            && !content.is_empty()
+        {
+            if text_acc.is_none() {
+                events.push(TurnEvent::OutputItemAdded(ResponseItem::Message {
+                    id: None,
+                    role: "assistant".to_string(),
+                    content: vec![],
+                    phase: None,
+                    end_turn: None,
+                }));
+                *text_acc = Some(TextAccumulator::default());
             }
+            if let Some(acc) = text_acc.as_mut() {
+                acc.text.push_str(content);
+            }
+            events.push(TurnEvent::OutputTextDelta(content.to_string()));
         }
 
         // Tool call deltas

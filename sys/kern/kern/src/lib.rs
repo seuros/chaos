@@ -75,6 +75,7 @@ mod truncate;
 mod unified_exec;
 pub use client::X_RESPONSESAPI_INCLUDE_TIMING_METRICS_HEADER;
 pub use model_provider_info::ModelProviderInfo;
+pub use model_provider_info::OPENAI_DEFAULT_BASE_URL;
 pub use model_provider_info::OPENAI_PROVIDER_ID;
 pub use model_provider_info::WireApi;
 pub use model_provider_info::built_in_model_providers;

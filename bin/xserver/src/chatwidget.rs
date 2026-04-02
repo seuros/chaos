@@ -1,4 +1,4 @@
-//! The main Codex TUI chat surface.
+//! The main Chaos TUI chat surface.
 //!
 //! `ChatWidget` consumes protocol events, builds and updates history cells, and drives rendering
 //! for both the main viewport and overlay UIs.
@@ -289,7 +289,7 @@ struct PendingSteerCompareKey {
 
 const USER_SHELL_COMMAND_HELP_TITLE: &str = "Prefix a command with ! to run it locally";
 const USER_SHELL_COMMAND_HELP_HINT: &str = "Example: !ls";
-const DEFAULT_OPENAI_BASE_URL: &str = "https://api.openai.com/v1";
+use chaos_kern::OPENAI_DEFAULT_BASE_URL;
 const DEFAULT_STATUS_LINE_ITEMS: [&str; 3] =
     ["model-with-reasoning", "context-remaining", "current-dir"];
 // Track information about an in-flight exec command.
@@ -5708,7 +5708,7 @@ impl ChatWidget {
         }
 
         let normalized = trimmed.trim_end_matches('/');
-        if normalized == DEFAULT_OPENAI_BASE_URL {
+        if normalized == OPENAI_DEFAULT_BASE_URL {
             return None;
         }
 

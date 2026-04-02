@@ -20,3 +20,6 @@ tracing = { workspace = true }
 [dev-dependencies]
 tempfile = { workspace = true }
 tokio = { workspace = true, features = ["full"] }
+
+[package.metadata.cargo-shear]
+ignored = ["chaos-ipc", "serde"]

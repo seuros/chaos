@@ -12,12 +12,46 @@
 
 #[cfg(feature = "syntax")]
 #[allow(unused_imports)]
-pub use chaos_highlight::{
-    DiffScopeBackgroundRgbs, ThemeEntry, adaptive_default_theme_name, configured_theme_name,
-    current_syntax_theme, diff_scope_background_rgbs, exceeds_highlight_limits,
-    highlight_bash_to_lines, highlight_code_to_lines, highlight_code_to_styled_spans,
-    list_available_themes, resolve_theme_by_name, set_syntax_theme, validate_theme_name,
-};
+pub use chaos_highlight::DiffScopeBackgroundRgbs;
+#[cfg(feature = "syntax")]
+#[allow(unused_imports)]
+pub use chaos_highlight::ThemeEntry;
+#[cfg(feature = "syntax")]
+#[allow(unused_imports)]
+pub use chaos_highlight::adaptive_default_theme_name;
+#[cfg(feature = "syntax")]
+#[allow(unused_imports)]
+pub use chaos_highlight::configured_theme_name;
+#[cfg(feature = "syntax")]
+#[allow(unused_imports)]
+pub use chaos_highlight::current_syntax_theme;
+#[cfg(feature = "syntax")]
+#[allow(unused_imports)]
+pub use chaos_highlight::diff_scope_background_rgbs;
+#[cfg(feature = "syntax")]
+#[allow(unused_imports)]
+pub use chaos_highlight::exceeds_highlight_limits;
+#[cfg(feature = "syntax")]
+#[allow(unused_imports)]
+pub use chaos_highlight::highlight_bash_to_lines;
+#[cfg(feature = "syntax")]
+#[allow(unused_imports)]
+pub use chaos_highlight::highlight_code_to_lines;
+#[cfg(feature = "syntax")]
+#[allow(unused_imports)]
+pub use chaos_highlight::highlight_code_to_styled_spans;
+#[cfg(feature = "syntax")]
+#[allow(unused_imports)]
+pub use chaos_highlight::list_available_themes;
+#[cfg(feature = "syntax")]
+#[allow(unused_imports)]
+pub use chaos_highlight::resolve_theme_by_name;
+#[cfg(feature = "syntax")]
+#[allow(unused_imports)]
+pub use chaos_highlight::set_syntax_theme;
+#[cfg(feature = "syntax")]
+#[allow(unused_imports)]
+pub use chaos_highlight::validate_theme_name;
 
 /// Wrapper around [`chaos_highlight::set_theme_override`] that injects
 /// terminal background lightness from console's palette detection, preserving

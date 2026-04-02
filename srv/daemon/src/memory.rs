@@ -1,5 +1,6 @@
+use crate::Daemon;
+use crate::DaemonError;
 use crate::schema::Memory;
-use crate::{Daemon, DaemonError};
 
 impl Daemon {
     /// Remember something.

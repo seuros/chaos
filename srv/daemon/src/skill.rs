@@ -1,5 +1,6 @@
+use crate::Daemon;
+use crate::DaemonError;
 use crate::schema::Skill;
-use crate::{Daemon, DaemonError};
 
 impl Daemon {
     /// Teach the daemon a new skill.

@@ -5,10 +5,16 @@
 //! safe builtins. Nothing else.
 
 use std::sync::Arc;
-use std::sync::atomic::{AtomicBool, AtomicU64, Ordering};
-use std::time::{Duration, Instant};
+use std::sync::atomic::AtomicBool;
+use std::sync::atomic::AtomicU64;
+use std::sync::atomic::Ordering;
+use std::time::Duration;
+use std::time::Instant;
 
-use mlua::{HookTriggers, Lua, Result as LuaResult, VmState};
+use mlua::HookTriggers;
+use mlua::Lua;
+use mlua::Result as LuaResult;
+use mlua::VmState;
 
 /// Maximum memory a Lua VM may allocate (8 MiB).
 const MEMORY_LIMIT: usize = 8 * 1024 * 1024;

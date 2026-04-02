@@ -3,7 +3,8 @@
 //! This mirrors the wire format used by Claude Code's `--input-format stream-json`
 //! and `--output-format stream-json` modes.
 
-use serde::{Deserialize, Serialize};
+use serde::Deserialize;
+use serde::Serialize;
 use serde_json::Value;
 
 // ---------------------------------------------------------------------------

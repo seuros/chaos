@@ -5,7 +5,9 @@
 //!   CHAOS_CLAMP_SMOKE=1 cargo test -p chaos-clamp --test raw_stdio -- --ignored --nocapture
 
 use std::process::Stdio;
-use tokio::io::{AsyncBufReadExt, AsyncWriteExt, BufReader};
+use tokio::io::AsyncBufReadExt;
+use tokio::io::AsyncWriteExt;
+use tokio::io::BufReader;
 use tokio::process::Command;
 
 #[ignore = "requires local Claude Code CLI and authenticated environment"]

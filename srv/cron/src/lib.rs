@@ -20,7 +20,8 @@ pub use scheduler::spawn_global as spawn_scheduler;
 pub use store::CronStore;
 pub use tools::create::OwnerContext;
 
-use chaos_traits::catalog::{CatalogRegistration, CatalogTool};
+use chaos_traits::catalog::CatalogRegistration;
+use chaos_traits::catalog::CatalogTool;
 use mcp_host::prelude::*;
 
 inventory::submit! {

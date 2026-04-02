@@ -4,12 +4,16 @@ use std::pin::Pin;
 use serde_json::Value;
 
 use crate::error::GuestError;
-use crate::protocol::{
-    CreateElicitationRequest, CreateElicitationResponse, CreateMessageRequest,
-    CreateMessageResponse, ElicitationCompleteNotificationParams, ListRootsResult,
-    LogMessageNotificationParams, ProgressNotificationParams, ResourceUpdatedNotificationParams,
-    Task,
-};
+use crate::protocol::CreateElicitationRequest;
+use crate::protocol::CreateElicitationResponse;
+use crate::protocol::CreateMessageRequest;
+use crate::protocol::CreateMessageResponse;
+use crate::protocol::ElicitationCompleteNotificationParams;
+use crate::protocol::ListRootsResult;
+use crate::protocol::LogMessageNotificationParams;
+use crate::protocol::ProgressNotificationParams;
+use crate::protocol::ResourceUpdatedNotificationParams;
+use crate::protocol::Task;
 
 pub type ClientHandlerFuture<'a> = Pin<Box<dyn Future<Output = ()> + Send + 'a>>;
 pub type ClientHandlerResultFuture<'a, T> =

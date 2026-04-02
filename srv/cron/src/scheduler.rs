@@ -2,14 +2,17 @@
 
 use std::future::Future;
 use std::pin::Pin;
-use std::sync::{Arc, OnceLock};
+use std::sync::Arc;
+use std::sync::OnceLock;
 
 use crate::job::CronJob;
 use crate::schedule::Schedule;
 use crate::store::CronStore;
 use sqlx::SqlitePool;
 use tokio::sync::watch;
-use tracing::{error, info, warn};
+use tracing::error;
+use tracing::info;
+use tracing::warn;
 
 /// Default tick interval for the scheduler (30 seconds).
 const DEFAULT_TICK_INTERVAL: std::time::Duration = std::time::Duration::from_secs(30);

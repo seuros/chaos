@@ -4,7 +4,9 @@
 //! of the codebase stays on jiff.
 
 use anyhow::Context;
-use chrono::{DateTime, TimeZone, Utc};
+use chrono::DateTime;
+use chrono::TimeZone;
+use chrono::Utc;
 use croner::Cron;
 use jiff::Timestamp;
 

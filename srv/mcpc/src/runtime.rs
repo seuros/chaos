@@ -4,19 +4,35 @@ use std::sync::atomic::AtomicU64;
 use std::time::Duration;
 
 use serde_json::Value;
-use tokio::sync::{mpsc, oneshot};
+use tokio::sync::mpsc;
+use tokio::sync::oneshot;
 use tokio::task::JoinHandle;
 
 use crate::error::GuestError;
 use crate::handler::ClientHandler;
-use crate::protocol::{
-    CancelledNotificationParams, ClientCapabilities, CreateElicitationRequest,
-    CreateMessageRequest, ElicitationCompleteNotificationParams, Implementation, InitializeRequest,
-    InitializeResult, JsonRpcError, JsonRpcMessage, JsonRpcRequest, JsonRpcResponse,
-    LogMessageNotificationParams, McpMethod, ProgressNotificationParams, RequestId,
-    ResourceUpdatedNotificationParams, ServerInfo, Task, latest_supported_protocol_version,
-};
-use crate::session::{McpSession, RuntimeCommand, SharedState};
+use crate::protocol::CancelledNotificationParams;
+use crate::protocol::ClientCapabilities;
+use crate::protocol::CreateElicitationRequest;
+use crate::protocol::CreateMessageRequest;
+use crate::protocol::ElicitationCompleteNotificationParams;
+use crate::protocol::Implementation;
+use crate::protocol::InitializeRequest;
+use crate::protocol::InitializeResult;
+use crate::protocol::JsonRpcError;
+use crate::protocol::JsonRpcMessage;
+use crate::protocol::JsonRpcRequest;
+use crate::protocol::JsonRpcResponse;
+use crate::protocol::LogMessageNotificationParams;
+use crate::protocol::McpMethod;
+use crate::protocol::ProgressNotificationParams;
+use crate::protocol::RequestId;
+use crate::protocol::ResourceUpdatedNotificationParams;
+use crate::protocol::ServerInfo;
+use crate::protocol::Task;
+use crate::protocol::latest_supported_protocol_version;
+use crate::session::McpSession;
+use crate::session::RuntimeCommand;
+use crate::session::SharedState;
 use crate::transport::MessageTransport;
 
 pub(crate) struct ConnectionOptions {
@@ -545,7 +561,8 @@ mod tests {
 
     use super::*;
     use crate::handler::NoopClientHandler;
-    use crate::protocol::{Implementation, ServerCapabilities};
+    use crate::protocol::Implementation;
+    use crate::protocol::ServerCapabilities;
     use crate::transport::TransportFuture;
 
     struct MockTransport {

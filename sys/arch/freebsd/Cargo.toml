@@ -39,3 +39,6 @@ tokio = { workspace = true, features = [
     "rt-multi-thread",
     "signal",
 ] }
+
+[package.metadata.cargo-shear]
+ignored = ["tokio", "serde_json", "url", "chaos-kern", "serde", "chaos-realpath"]

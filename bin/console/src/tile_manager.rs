@@ -6,7 +6,11 @@
 use std::collections::HashMap;
 
 use ratatui::layout::Direction;
-use ratatui_hypertile::{EventOutcome, Hypertile, HypertileAction, PaneId, PaneSnapshot};
+use ratatui_hypertile::EventOutcome;
+use ratatui_hypertile::Hypertile;
+use ratatui_hypertile::HypertileAction;
+use ratatui_hypertile::PaneId;
+use ratatui_hypertile::PaneSnapshot;
 
 /// What lives in a given tile.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]

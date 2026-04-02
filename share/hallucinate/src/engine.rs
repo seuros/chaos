@@ -4,7 +4,9 @@
 use serde_json::Value as JsonValue;
 use std::path::Path;
 
-use crate::handle::{HookResult, ScriptTool, ToolResult};
+use crate::handle::HookResult;
+use crate::handle::ScriptTool;
+use crate::handle::ToolResult;
 
 /// Registrations collected from a loaded script.
 #[derive(Debug, Default)]

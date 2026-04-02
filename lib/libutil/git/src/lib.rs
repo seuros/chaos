@@ -27,14 +27,17 @@ mod remotes;
 mod repo;
 mod status;
 
-pub use blame::{BlameLine, blame};
+pub use blame::BlameLine;
+pub use blame::blame;
 pub use branches::BranchInfo;
 pub use diff::diff;
 pub use error::GitError;
-pub use log::{LogEntry, log};
+pub use log::LogEntry;
+pub use log::log;
 pub use remotes::RemoteInfo;
 pub use repo::RepoInfo;
-pub use status::{FileStatus, StatusInfo};
+pub use status::FileStatus;
+pub use status::StatusInfo;
 
 use std::path::Path;
 

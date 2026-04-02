@@ -1,17 +1,26 @@
 use std::env;
-use std::io::{Error, ErrorKind, Result as IoResult};
-use std::path::{Path, PathBuf};
+use std::io::Error;
+use std::io::ErrorKind;
+use std::io::Result as IoResult;
+use std::path::Path;
+use std::path::PathBuf;
 use std::sync::Arc;
 
-use chaos_ipc::clamp_bridge::{ClampBridgeRequest, ClampBridgeResponse};
+use chaos_ipc::clamp_bridge::ClampBridgeRequest;
+use chaos_ipc::clamp_bridge::ClampBridgeResponse;
 use chaos_ipc::mcp::Tool as BridgeToolSpec;
 use chaos_ipc::models::ResponseInputItem;
 use chaos_ipc::product::CHAOS_VERSION;
 use mcp_host::prelude::*;
-use mcp_host::registry::tools::{Tool, ToolError, ToolFuture, ToolOutput};
+use mcp_host::registry::tools::Tool;
+use mcp_host::registry::tools::ToolError;
+use mcp_host::registry::tools::ToolFuture;
+use mcp_host::registry::tools::ToolOutput;
 use mcp_host::server::visibility::ExecutionContext;
 use serde_json::Value;
-use tokio::io::{AsyncBufReadExt, AsyncWriteExt, BufReader};
+use tokio::io::AsyncBufReadExt;
+use tokio::io::AsyncWriteExt;
+use tokio::io::BufReader;
 use tokio::net::UnixStream;
 
 const SOCKET_ENV: &str = "CHAOS_CLAMP_MCP_SOCKET";

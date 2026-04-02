@@ -1,14 +1,24 @@
-use std::time::{Duration, Instant};
+use std::time::Duration;
+use std::time::Instant;
 
 use chaos_ipc::ProcessId;
-use chaos_proc::{LogRow, LogTailBatch, LogTailCursor};
+use chaos_proc::LogRow;
+use chaos_proc::LogTailBatch;
+use chaos_proc::LogTailCursor;
 use jiff::Timestamp;
 use ratatui::buffer::Buffer;
-use ratatui::layout::{Constraint, Direction, Layout, Rect};
+use ratatui::layout::Constraint;
+use ratatui::layout::Direction;
+use ratatui::layout::Layout;
+use ratatui::layout::Rect;
 use ratatui::prelude::Widget;
-use ratatui::style::{Color, Style, Stylize};
+use ratatui::style::Color;
+use ratatui::style::Style;
+use ratatui::style::Stylize;
 use ratatui::text::Line;
-use ratatui::widgets::{Block, Borders, Paragraph};
+use ratatui::widgets::Block;
+use ratatui::widgets::Borders;
+use ratatui::widgets::Paragraph;
 
 pub(crate) const LOG_PANEL_POLL_INTERVAL: Duration = Duration::from_millis(500);
 pub(crate) const LOG_PANEL_BACKFILL_LIMIT: usize = 200;

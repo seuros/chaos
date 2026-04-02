@@ -22,3 +22,6 @@ tokio = { workspace = true, features = ["full"] }
 [dev-dependencies]
 pretty_assertions = { workspace = true }
 tempfile = { workspace = true }
+
+[package.metadata.cargo-shear]
+ignored = ["serde_json"]

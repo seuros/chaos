@@ -1,18 +1,26 @@
 use std::collections::HashMap;
-use std::path::{Path, PathBuf};
+use std::path::Path;
+use std::path::PathBuf;
 use std::process::Stdio;
 use std::sync::Arc;
-use std::sync::atomic::{AtomicBool, Ordering};
+use std::sync::atomic::AtomicBool;
+use std::sync::atomic::Ordering;
 use std::time::Duration;
 
-use tokio::io::{AsyncBufReadExt, AsyncWriteExt, BufReader, BufWriter};
-use tokio::process::{Child, ChildStdin, ChildStdout};
+use tokio::io::AsyncBufReadExt;
+use tokio::io::AsyncWriteExt;
+use tokio::io::BufReader;
+use tokio::io::BufWriter;
+use tokio::process::Child;
+use tokio::process::ChildStdin;
+use tokio::process::ChildStdout;
 use tokio::sync::Mutex;
 use tokio::time::timeout;
 
 use crate::error::GuestError;
 use crate::protocol::JsonRpcMessage;
-use crate::transport::{MessageTransport, TransportFuture};
+use crate::transport::MessageTransport;
+use crate::transport::TransportFuture;
 
 pub struct StdioChild {
     pub child: Child,

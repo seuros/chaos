@@ -6,17 +6,30 @@ use std::sync::Arc;
 use std::time::Duration;
 
 use crate::error::GuestError;
-use crate::handler::{ClientHandler, NoopClientHandler};
-use crate::protocol::{
-    ClientCapabilities, ElicitationCapability, EmptyObject, FormElicitationCapability,
-    Implementation, RootsCapability, SamplingCapability, TasksCapability, UrlElicitationCapability,
-};
-use crate::runtime::{ConnectionOptions, connect_with_transport};
+use crate::handler::ClientHandler;
+use crate::handler::NoopClientHandler;
+use crate::protocol::ClientCapabilities;
+use crate::protocol::ElicitationCapability;
+use crate::protocol::EmptyObject;
+use crate::protocol::FormElicitationCapability;
+use crate::protocol::Implementation;
+use crate::protocol::RootsCapability;
+use crate::protocol::SamplingCapability;
+use crate::protocol::TasksCapability;
+use crate::protocol::UrlElicitationCapability;
+use crate::runtime::ConnectionOptions;
+use crate::runtime::connect_with_transport;
 use crate::session::McpSession;
 #[cfg(feature = "http")]
-use crate::transport::http::{HttpClientConfig, HttpTransport};
+use crate::transport::http::HttpClientConfig;
+#[cfg(feature = "http")]
+use crate::transport::http::HttpTransport;
 #[cfg(feature = "stdio")]
-use crate::transport::stdio::{StdioChild, StdioProcessConfig, StdioTransport};
+use crate::transport::stdio::StdioChild;
+#[cfg(feature = "stdio")]
+use crate::transport::stdio::StdioProcessConfig;
+#[cfg(feature = "stdio")]
+use crate::transport::stdio::StdioTransport;
 use chaos_ipc::product::CHAOS_VERSION;
 #[cfg(feature = "http")]
 use url::Url;

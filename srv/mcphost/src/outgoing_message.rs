@@ -6,9 +6,11 @@ use std::sync::atomic::Ordering;
 use chaos_ipc::ProcessId;
 use chaos_ipc::protocol::Event;
 use mcp_host::protocol::capabilities::ElicitationCapability;
-use mcp_host::protocol::types::{
-    JsonRpcError, JsonRpcMessage, JsonRpcRequest, JsonRpcResponse, RequestId,
-};
+use mcp_host::protocol::types::JsonRpcError;
+use mcp_host::protocol::types::JsonRpcMessage;
+use mcp_host::protocol::types::JsonRpcRequest;
+use mcp_host::protocol::types::JsonRpcResponse;
+use mcp_host::protocol::types::RequestId;
 use serde::Serialize;
 use serde_json::Value;
 use tokio::sync::Mutex;

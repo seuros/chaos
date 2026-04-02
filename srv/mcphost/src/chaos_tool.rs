@@ -16,9 +16,11 @@ use chaos_kern::ProcessTable;
 use chaos_kern::config::Config;
 use chaos_kern::config::ConfigOverrides;
 use mcp_host::prelude::*;
-use mcp_host::registry::router::{McpToolRouter, tool_info_with_output};
+use mcp_host::registry::router::McpToolRouter;
+use mcp_host::registry::router::tool_info_with_output;
 use schemars::JsonSchema;
-use serde::{Deserialize, Serialize};
+use serde::Deserialize;
+use serde::Serialize;
 use serde_json::json;
 use tokio::sync::Mutex;
 

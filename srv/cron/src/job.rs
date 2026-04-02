@@ -1,6 +1,7 @@
 //! Cron job model types.
 
-use serde::{Deserialize, Serialize};
+use serde::Deserialize;
+use serde::Serialize;
 
 /// Scope determines the lifetime and visibility of a cron job.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]

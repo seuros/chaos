@@ -2190,7 +2190,9 @@ impl ModelClientSession {
         model_info: &ModelInfo,
         session_telemetry: &SessionTelemetry,
     ) -> Result<ResponseStream> {
-        use chaos_clamp::{ClampConfig, ClampTransport, Message as ClampMessage};
+        use chaos_clamp::ClampConfig;
+        use chaos_clamp::ClampTransport;
+        use chaos_clamp::Message as ClampMessage;
         let system_prompt = prompt.base_instructions.text.clone();
         let full_prompt_state = render_clamp_full_prompt(prompt);
         let latest_user_content = render_latest_clamp_user_message(prompt);

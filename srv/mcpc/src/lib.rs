@@ -7,12 +7,17 @@ pub mod session;
 pub mod transport;
 
 #[cfg(feature = "http")]
-pub use connect::{HttpBuilder, http};
+pub use connect::HttpBuilder;
 #[cfg(feature = "stdio")]
-pub use connect::{StdioBuilder, stdio};
+pub use connect::StdioBuilder;
+#[cfg(feature = "http")]
+pub use connect::http;
+#[cfg(feature = "stdio")]
+pub use connect::stdio;
 pub use error::GuestError;
-pub use handler::{
-    ClientHandler, ClientHandlerFuture, ClientHandlerResultFuture, NoopClientHandler,
-};
+pub use handler::ClientHandler;
+pub use handler::ClientHandlerFuture;
+pub use handler::ClientHandlerResultFuture;
+pub use handler::NoopClientHandler;
 pub use protocol::*;
 pub use session::McpSession;

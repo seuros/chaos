@@ -34,7 +34,8 @@ use crate::side_panel::LOG_PANEL_BACKFILL_LIMIT;
 use crate::side_panel::LOG_PANEL_POLL_INTERVAL;
 use crate::side_panel::LogPanelState;
 use crate::side_panel::split_main_and_panel;
-use crate::tile_manager::{PaneKind, TileManager};
+use crate::tile_manager::PaneKind;
+use crate::tile_manager::TileManager;
 use crate::tui;
 use crate::tui::TuiEvent;
 use crate::version::CHAOS_VERSION;
@@ -86,7 +87,8 @@ use ratatui::text::Line;
 use ratatui::widgets::Paragraph;
 use ratatui::widgets::StatefulWidget;
 use ratatui::widgets::Wrap;
-use ratatui_hypertile::{HypertileWidget, PaneId};
+use ratatui_hypertile::HypertileWidget;
+use ratatui_hypertile::PaneId;
 use std::collections::BTreeMap;
 use std::collections::HashMap;
 use std::collections::HashSet;
@@ -3297,7 +3299,8 @@ impl App {
         {
             use crossterm::event::KeyModifiers;
             use ratatui::layout::Direction;
-            use ratatui_hypertile::{HypertileAction, Towards};
+            use ratatui_hypertile::HypertileAction;
+            use ratatui_hypertile::Towards;
 
             let alt = key_event.modifiers.contains(KeyModifiers::ALT);
             let alt_shift = key_event

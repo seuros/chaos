@@ -211,30 +211,13 @@ fn longest_suffix_prefix_len(s: &str, needle: &str) -> usize {
 mod tests {
     use super::InlineHiddenTagParser;
     use super::InlineTagSpec;
-    use crate::StreamTextChunk;
-    use crate::StreamTextParser;
+    use crate::stream_text::collect_chunks;
     use pretty_assertions::assert_eq;
 
     #[derive(Debug, Clone, Copy, PartialEq, Eq)]
     enum Tag {
         A,
         B,
-    }
-
-    fn collect_chunks<P>(parser: &mut P, chunks: &[&str]) -> StreamTextChunk<P::Extracted>
-    where
-        P: StreamTextParser,
-    {
-        let mut all = StreamTextChunk::default();
-        for chunk in chunks {
-            let next = parser.push_str(chunk);
-            all.visible_text.push_str(&next.visible_text);
-            all.extracted.extend(next.extracted);
-        }
-        let tail = parser.finish();
-        all.visible_text.push_str(&tail.visible_text);
-        all.extracted.extend(tail.extracted);
-        all
     }
 
     #[test]

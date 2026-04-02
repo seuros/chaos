@@ -79,25 +79,9 @@ pub fn strip_citations(text: &str) -> (String, Vec<String>) {
 mod tests {
     use super::CitationStreamParser;
     use super::strip_citations;
-    use crate::StreamTextChunk;
     use crate::StreamTextParser;
+    use crate::stream_text::collect_chunks;
     use pretty_assertions::assert_eq;
-
-    fn collect_chunks<P>(parser: &mut P, chunks: &[&str]) -> StreamTextChunk<P::Extracted>
-    where
-        P: StreamTextParser,
-    {
-        let mut all = StreamTextChunk::default();
-        for chunk in chunks {
-            let next = parser.push_str(chunk);
-            all.visible_text.push_str(&next.visible_text);
-            all.extracted.extend(next.extracted);
-        }
-        let tail = parser.finish();
-        all.visible_text.push_str(&tail.visible_text);
-        all.extracted.extend(tail.extracted);
-        all
-    }
 
     #[test]
     fn citation_parser_streams_across_chunk_boundaries() {

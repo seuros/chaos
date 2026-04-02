@@ -41,9 +41,7 @@ use crate::features::FeaturesToml;
 use crate::git_info::resolve_root_git_project_for_trust;
 use crate::mcp::oauth_types::OAuthCredentialsStoreMode;
 use crate::memories::memory_root;
-use crate::model_provider_info::LEGACY_OLLAMA_CHAT_PROVIDER_ID;
 use crate::model_provider_info::ModelProviderInfo;
-use crate::model_provider_info::OLLAMA_CHAT_PROVIDER_REMOVED_ERROR;
 use crate::model_provider_info::OPENAI_PROVIDER_ID;
 use crate::model_provider_info::built_in_model_providers;
 use crate::path_utils::normalize_for_native_workdir;
@@ -1000,14 +998,7 @@ pub fn set_project_trust_level(
 
 /// Save the default OSS provider preference to config.toml
 pub fn set_default_oss_provider(chaos_home: &Path, provider: &str) -> std::io::Result<()> {
-    // Reject the legacy ollama-chat provider with a helpful error.
-    if provider == LEGACY_OLLAMA_CHAT_PROVIDER_ID {
-        return Err(std::io::Error::new(
-            std::io::ErrorKind::InvalidInput,
-            OLLAMA_CHAT_PROVIDER_REMOVED_ERROR,
-        ));
-    }
-    // Any other non-empty provider string is accepted and written to config.
+    // Any non-empty provider string is accepted and written to config.
     if provider.trim().is_empty() {
         return Err(std::io::Error::new(
             std::io::ErrorKind::InvalidInput,
@@ -1980,12 +1971,10 @@ impl Config {
         let model_provider = model_providers
             .get(&model_provider_id)
             .ok_or_else(|| {
-                let message = if model_provider_id == LEGACY_OLLAMA_CHAT_PROVIDER_ID {
-                    OLLAMA_CHAT_PROVIDER_REMOVED_ERROR.to_string()
-                } else {
-                    format!("Model provider `{model_provider_id}` not found")
-                };
-                std::io::Error::new(std::io::ErrorKind::NotFound, message)
+                std::io::Error::new(
+                    std::io::ErrorKind::NotFound,
+                    format!("Model provider `{model_provider_id}` not found"),
+                )
             })?
             .clone();
 

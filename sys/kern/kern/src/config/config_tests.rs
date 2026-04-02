@@ -4824,49 +4824,6 @@ fn test_set_default_oss_provider() -> std::io::Result<()> {
     Ok(())
 }
 
-#[test]
-fn test_set_default_oss_provider_rejects_legacy_ollama_chat_provider() -> std::io::Result<()> {
-    let temp_dir = TempDir::new()?;
-    let chaos_home = temp_dir.path();
-
-    let result = set_default_oss_provider(chaos_home, LEGACY_OLLAMA_CHAT_PROVIDER_ID);
-    assert!(result.is_err());
-    let error = result.unwrap_err();
-    assert_eq!(error.kind(), std::io::ErrorKind::InvalidInput);
-    assert!(
-        error
-            .to_string()
-            .contains(OLLAMA_CHAT_PROVIDER_REMOVED_ERROR)
-    );
-
-    Ok(())
-}
-
-#[test]
-fn test_load_config_rejects_legacy_ollama_chat_provider_with_helpful_error() -> std::io::Result<()>
-{
-    let chaos_home = TempDir::new()?;
-    let cfg = ConfigToml {
-        model_provider: Some(LEGACY_OLLAMA_CHAT_PROVIDER_ID.to_string()),
-        ..Default::default()
-    };
-
-    let result = Config::load_from_base_config_with_overrides(
-        cfg,
-        ConfigOverrides::default(),
-        chaos_home.path().to_path_buf(),
-    );
-    assert!(result.is_err());
-    let error = result.unwrap_err();
-    assert_eq!(error.kind(), std::io::ErrorKind::NotFound);
-    assert!(
-        error
-            .to_string()
-            .contains(OLLAMA_CHAT_PROVIDER_REMOVED_ERROR)
-    );
-
-    Ok(())
-}
 
 #[test]
 fn test_untrusted_project_gets_workspace_write_sandbox() -> anyhow::Result<()> {

@@ -742,29 +742,20 @@ impl WritableRoot {
     }
 }
 
-impl FromStr for SandboxPolicy {
-    type Err = serde_json::Error;
-
-    fn from_str(s: &str) -> Result<Self, Self::Err> {
-        serde_json::from_str(s)
-    }
+macro_rules! impl_fromstr_via_serde {
+    ($($ty:ty),+ $(,)?) => {
+        $(
+            impl FromStr for $ty {
+                type Err = serde_json::Error;
+                fn from_str(s: &str) -> Result<Self, Self::Err> {
+                    serde_json::from_str(s)
+                }
+            }
+        )+
+    };
 }
 
-impl FromStr for FileSystemSandboxPolicy {
-    type Err = serde_json::Error;
-
-    fn from_str(s: &str) -> Result<Self, Self::Err> {
-        serde_json::from_str(s)
-    }
-}
-
-impl FromStr for NetworkSandboxPolicy {
-    type Err = serde_json::Error;
-
-    fn from_str(s: &str) -> Result<Self, Self::Err> {
-        serde_json::from_str(s)
-    }
-}
+impl_fromstr_via_serde!(SandboxPolicy, FileSystemSandboxPolicy, NetworkSandboxPolicy);
 
 impl SandboxPolicy {
     /// Returns a policy with read-only disk access and no network.
@@ -3262,9 +3253,6 @@ pub struct CollabResumeEndEvent {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::items::ImageGenerationItem;
-    use crate::items::UserMessageItem;
-    use crate::items::WebSearchItem;
     use crate::permissions::FileSystemAccessMode;
     use crate::permissions::FileSystemPath;
     use crate::permissions::FileSystemSandboxEntry;

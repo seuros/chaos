@@ -2,8 +2,11 @@ use super::*;
 use crate::mcp_connection_manager::McpToolInfo;
 use chaos_ipc::protocol::GranularApprovalConfig;
 use chaos_ipc::protocol::McpAuthStatus;
+use std::path::Path;
+use std::path::PathBuf;
 use std::collections::HashSet;
 use std::sync::Arc;
+use std::sync::RwLock as StdRwLock;
 
 fn create_test_tool(server_name: &str, tool_name: &str) -> ToolInfo {
     ToolInfo {
@@ -234,6 +237,7 @@ async fn list_all_tools_uses_startup_snapshot_while_client_is_pending() {
             client: pending_client,
             startup_snapshot: Some(startup_tools),
             startup_complete: Arc::new(std::sync::atomic::AtomicBool::new(false)),
+            cwd: Arc::new(StdRwLock::new(PathBuf::from("/tmp"))),
         },
     );
 
@@ -258,6 +262,7 @@ async fn list_all_tools_blocks_while_client_is_pending_without_startup_snapshot(
             client: pending_client,
             startup_snapshot: None,
             startup_complete: Arc::new(std::sync::atomic::AtomicBool::new(false)),
+            cwd: Arc::new(StdRwLock::new(PathBuf::from("/tmp"))),
         },
     );
 
@@ -279,6 +284,7 @@ async fn list_all_tools_does_not_block_when_startup_snapshot_cache_hit_is_empty(
             client: pending_client,
             startup_snapshot: Some(Vec::new()),
             startup_complete: Arc::new(std::sync::atomic::AtomicBool::new(false)),
+            cwd: Arc::new(StdRwLock::new(PathBuf::from("/tmp"))),
         },
     );
 
@@ -307,6 +313,7 @@ async fn list_all_tools_uses_startup_snapshot_when_client_startup_fails() {
             client: failed_client,
             startup_snapshot: Some(startup_tools),
             startup_complete,
+            cwd: Arc::new(StdRwLock::new(PathBuf::from("/tmp"))),
         },
     );
 
@@ -437,4 +444,38 @@ fn transport_origin_is_stdio_for_stdio_transport() {
     };
 
     assert_eq!(transport_origin(&transport), Some("stdio".to_string()));
+}
+
+#[test]
+fn root_uri_from_cwd_escapes_spaces_and_unicode() {
+    let uri = root_uri_from_cwd(Path::new("/tmp/bsd café"));
+    assert_eq!(uri, "file:///tmp/bsd%20caf%C3%A9/");
+}
+
+#[tokio::test]
+async fn notify_roots_changed_does_not_block_while_client_is_starting() {
+    let pending_client = futures::future::pending::<Result<ManagedClient, StartupOutcomeError>>()
+        .boxed()
+        .shared();
+    let cwd = Arc::new(StdRwLock::new(PathBuf::from("/before")));
+    let async_client = AsyncManagedClient {
+        client: pending_client,
+        startup_snapshot: None,
+        startup_complete: Arc::new(std::sync::atomic::AtomicBool::new(false)),
+        cwd: Arc::clone(&cwd),
+    };
+
+    tokio::time::timeout(
+        Duration::from_millis(10),
+        async_client.notify_roots_changed(Path::new("/after")),
+    )
+    .await
+    .expect("notify_roots_changed should not block during startup")
+    .expect("updating cwd should succeed");
+
+    let current_cwd = cwd
+        .read()
+        .unwrap_or_else(std::sync::PoisonError::into_inner)
+        .clone();
+    assert_eq!(current_cwd, PathBuf::from("/after"));
 }

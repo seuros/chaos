@@ -36,10 +36,12 @@ use std::time::Instant;
 pub struct ApplyPatchRequest {
     pub action: ApplyPatchAction,
     pub file_paths: Vec<AbsolutePathBuf>,
-    pub changes: std::collections::HashMap<PathBuf, FileChange>,
+    pub changes: HashMap<PathBuf, FileChange>,
     pub exec_approval_requirement: ExecApprovalRequirement,
+    #[allow(dead_code)]
     pub additional_permissions: Option<PermissionProfile>,
     pub permissions_preapproved: bool,
+    #[allow(dead_code)]
     pub timeout_ms: Option<u64>,
 }
 

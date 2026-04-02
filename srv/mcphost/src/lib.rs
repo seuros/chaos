@@ -123,19 +123,21 @@ pub async fn run_main(
         .on_initialized({
             let outgoing = outgoing.clone();
             move |_session_id: String, requester: Option<ClientRequester>| {
-                // Capture elicitation support from the ClientRequester.
-                // The ClientRequester knows what the client declared during initialize.
-                if let Some(ref req) = requester {
-                    // If the client supports form elicitation, mark it.
-                    // ClientRequester tracks this internally; mirror it to our outgoing sender
-                    // so approval handlers can check.
-                    if req.supports_elicitation() {
-                        outgoing.set_client_elicitation_capability(Some(
-                            &mcp_host::protocol::capabilities::ElicitationCapability::default(),
-                        ));
+                let outgoing = outgoing.clone();
+                async move {
+                    if let Some(req) = requester {
+                        // Mirror elicitation support to our outgoing sender so approval
+                        // handlers can check it without holding the requester lock.
+                        if req.supports_elicitation() {
+                            outgoing.set_client_elicitation_capability(Some(
+                                &mcp_host::protocol::capabilities::ElicitationCapability::default(),
+                            ));
+                        }
+                        // Store the requester so send_request can route server→client
+                        // requests (e.g. elicitation/create) through mcp-host's transport.
+                        outgoing.set_client_requester(req).await;
                     }
                 }
-                async {}
             }
         })
         .build();
@@ -157,7 +159,10 @@ pub async fn run_main(
     builtin_resources::resource_template_router()
         .register_all(mcp_server.resource_manager(), chaos_server);
 
-    // Spawn a task to forward outgoing messages as notifications via mcp-host.
+    // Forward outgoing notifications and error responses to mcp-host's transport.
+    // Server→client requests (e.g. `elicitation/create`) bypass this channel
+    // entirely — they go through `OutgoingMessageSender::send_request` which
+    // calls `ClientRequester::request_raw` directly.
     let notification_sender = mcp_server.notification_sender();
     tokio::spawn(async move {
         use crate::outgoing_message::OutgoingJsonRpcMessage;
@@ -165,8 +170,7 @@ pub async fn run_main(
 
         while let Some(msg) = outgoing_rx.recv().await {
             let jsonrpc: OutgoingJsonRpcMessage = msg.into();
-            // Forward notifications and responses through mcp-host's notification channel.
-            match &jsonrpc {
+            match jsonrpc {
                 JsonRpcMessage::Notification(n) => {
                     let notif = mcp_host::prelude::JsonRpcNotification::new(
                         n.method.clone(),
@@ -175,9 +179,8 @@ pub async fn run_main(
                     let _ = notification_sender.send(notif);
                 }
                 JsonRpcMessage::Response(_) | JsonRpcMessage::Request(_) => {
-                    // Error responses and server→client requests (elicitation)
-                    // are not routed through mcp-host's notification channel.
-                    tracing::debug!("non-notification message on outgoing channel (ignored)");
+                    // Unreachable: OutgoingMessage has no Request variant and
+                    // errors are sent as Response. Guard kept for exhaustiveness.
                 }
             }
         }

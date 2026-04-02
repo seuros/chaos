@@ -195,7 +195,7 @@ chaos-wchar = { path = "lib/libutil/wchar" }
 chaos-check = { path = "tests/check" }
 core_test_support = { path = "sys/kern/kern/tests/common" }
 mcp_test_support = { path = "srv/mcphost/tests/common" }
-mcp-host = { version = "0.1.22", default-features = false, features = ["stdio", "macros"] }
+mcp-host = { version = "0.1.23", default-features = false, features = ["stdio", "macros"] }
 
 # External
 age = "0.11.2"
@@ -436,5 +436,3 @@ debug = 1         # Reduce debug symbol size
 inherits = "test"
 opt-level = 0
 
-# Uncomment to debug local changes.
-# ratatui = { path = "../../ratatui" }

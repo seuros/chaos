@@ -21,6 +21,7 @@ mod blame;
 mod branches;
 mod diff;
 mod error;
+mod ext;
 mod log;
 mod remotes;
 mod repo;

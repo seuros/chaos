@@ -5,6 +5,7 @@ use gix::bstr::BString;
 use serde::Serialize;
 
 use crate::error::GitError;
+use crate::ext::GitResultExt;
 use crate::open_repo;
 
 #[derive(Debug, Clone, Serialize)]
@@ -28,12 +29,12 @@ pub fn collect(cwd: &Path) -> Result<StatusInfo, GitError> {
     let patterns: Vec<BString> = Vec::new();
     let status_iter = repo
         .status(gix::progress::Discard)
-        .map_err(|e| GitError::Operation(e.to_string()))?
+        .git_op()?
         .into_index_worktree_iter(patterns)
-        .map_err(|e| GitError::Operation(e.to_string()))?;
+        .git_op()?;
 
     for item in status_iter {
-        let item = item.map_err(|e| GitError::Operation(e.to_string()))?;
+        let item = item.git_op()?;
         use gix::status::index_worktree::Item;
         match item {
             Item::Modification { rela_path, .. } => {
@@ -68,9 +69,7 @@ fn collect_staged(repo: &gix::Repository) -> Result<Vec<FileStatus>, GitError> {
         Err(_) => return Ok(staged), // No HEAD yet (empty repo)
     };
 
-    let index = repo
-        .index_or_empty()
-        .map_err(|e| GitError::Operation(e.to_string()))?;
+    let index = repo.index_or_empty().git_op()?;
 
     repo.tree_index_status(
         head_tree_id.as_ref(),
@@ -89,7 +88,7 @@ fn collect_staged(repo: &gix::Repository) -> Result<Vec<FileStatus>, GitError> {
             Ok::<_, std::convert::Infallible>(ControlFlow::Continue(()))
         },
     )
-    .map_err(|e| GitError::Operation(e.to_string()))?;
+    .git_op()?;
 
     Ok(staged)
 }

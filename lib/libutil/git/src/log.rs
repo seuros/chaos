@@ -4,6 +4,7 @@ use gix::bstr::ByteSlice;
 use serde::Serialize;
 
 use crate::error::GitError;
+use crate::ext::GitResultExt;
 use crate::open_repo;
 
 #[derive(Debug, Clone, Serialize)]
@@ -31,10 +32,7 @@ pub fn log(
             .rev_parse_single(spec)
             .map_err(|e| GitError::RefNotFound(format!("{spec}: {e}")))?
             .detach(),
-        None => repo
-            .head_id()
-            .map_err(|e| GitError::Operation(e.to_string()))?
-            .detach(),
+        None => repo.head_id().git_op()?.detach(),
     };
 
     let mut entries = Vec::with_capacity(limit);
@@ -43,35 +41,22 @@ pub fn log(
         .rev_walk([start])
         .first_parent_only()
         .all()
-        .map_err(|e| GitError::Operation(e.to_string()))?;
+        .git_op()?;
 
     for info in walk.take(limit) {
-        let info = info.map_err(|e| GitError::Operation(e.to_string()))?;
+        let info = info.git_op()?;
         let id = info.id();
         let sha = id.to_string();
 
-        let object = info
-            .id()
-            .object()
-            .map_err(|e| GitError::Operation(e.to_string()))?;
+        let object = info.id().object().git_op()?;
 
-        let commit = object
-            .try_into_commit()
-            .map_err(|e| GitError::Operation(e.to_string()))?;
+        let commit = object.try_into_commit().git_op()?;
 
-        let timestamp = commit
-            .time()
-            .map_err(|e| GitError::Operation(e.to_string()))?
-            .seconds;
-        let author = commit
-            .author()
-            .map_err(|e| GitError::Operation(e.to_string()))?
-            .name
-            .to_str_lossy()
-            .into_owned();
+        let timestamp = commit.time().git_op()?.seconds;
+        let author = commit.author().git_op()?.name.to_str_lossy().into_owned();
         let subject = commit
             .message()
-            .map_err(|e| GitError::Operation(e.to_string()))?
+            .git_op()?
             .title
             .to_str_lossy()
             .into_owned();

@@ -39,7 +39,6 @@ fn is_word_separator(ch: char) -> bool {
 struct TextElement {
     id: u64,
     range: Range<usize>,
-    name: Option<String>,
 }
 
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -131,7 +130,6 @@ impl TextArea {
                 self.elements.push(TextElement {
                     id,
                     range: start..end,
-                    name: None,
                 });
             }
             self.elements.sort_by_key(|e| e.range.start);
@@ -934,16 +932,11 @@ impl TextArea {
         id
     }
 
-    fn add_element_with_id(&mut self, range: Range<usize>, name: Option<String>) -> u64 {
+    fn add_element(&mut self, range: Range<usize>) -> u64 {
         let id = self.next_element_id();
-        let elem = TextElement { id, range, name };
-        self.elements.push(elem);
+        self.elements.push(TextElement { id, range });
         self.elements.sort_by_key(|e| e.range.start);
         id
-    }
-
-    fn add_element(&mut self, range: Range<usize>) -> u64 {
-        self.add_element_with_id(range, /*name*/ None)
     }
 
     /// Mark an existing text range as an atomic element without changing the text.

@@ -2458,6 +2458,16 @@ impl ModelClientSession {
         service_tier: Option<ServiceTier>,
         turn_metadata_header: Option<&str>,
     ) -> Result<ResponseStream> {
+        tracing::debug!(
+            provider = %self.client.state.provider.name,
+            model = %model_info.slug,
+            tool_count = prompt.tools.len(),
+            reasoning_effort = ?effort,
+            websocket = self.client.responses_websocket_enabled(model_info),
+            clamped = self.client.state.clamped.load(Ordering::Relaxed),
+            "sending model request",
+        );
+
         // Clamped mode: route through Claude Code subprocess.
         if self.client.state.clamped.load(Ordering::Relaxed) {
             return self

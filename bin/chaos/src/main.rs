@@ -22,6 +22,7 @@ use owo_colors::OwoColorize;
 use std::io::IsTerminal;
 use supports_color::Stream;
 
+mod debug_logging;
 mod mcp_cmd;
 
 use crate::mcp_cmd::McpCli;
@@ -49,6 +50,10 @@ use chaos_kern::terminal::TerminalName;
     override_usage = "chaos [OPTIONS] [PROMPT]\n       chaos [OPTIONS] <COMMAND> [ARGS]"
 )]
 struct MultitoolCli {
+    /// Enable debug logging to ~/.chaos/debug.log.
+    #[arg(short = 'd', long = "debug", global = true, default_value_t = false)]
+    debug: bool,
+
     #[clap(flatten)]
     pub config_overrides: CliConfigOverrides,
 
@@ -338,11 +343,19 @@ fn main() -> anyhow::Result<()> {
 
 async fn cli_main(arg0_paths: Arg0DispatchPaths) -> anyhow::Result<()> {
     let MultitoolCli {
+        debug,
         config_overrides: mut root_config_overrides,
         feature_toggles,
         mut interactive,
         subcommand,
     } = MultitoolCli::parse();
+
+    // If --debug was passed, prepare the shared debug.log path before anything
+    // else. The concrete runtime attaches the actual tracing layer so it can
+    // compose with its existing subscriber stack.
+    if debug {
+        debug_logging::prepare_debug_logging()?;
+    }
 
     // Fold --enable/--disable into config overrides so they flow to all subcommands.
     let toggle_overrides = feature_toggles.to_overrides()?;
@@ -754,6 +767,7 @@ mod tests {
     fn finalize_resume_from_args(args: &[&str]) -> TuiCli {
         let cli = MultitoolCli::try_parse_from(args).expect("parse");
         let MultitoolCli {
+            debug: _,
             interactive,
             config_overrides: root_overrides,
             subcommand,
@@ -783,6 +797,7 @@ mod tests {
     fn finalize_fork_from_args(args: &[&str]) -> TuiCli {
         let cli = MultitoolCli::try_parse_from(args).expect("parse");
         let MultitoolCli {
+            debug: _,
             interactive,
             config_overrides: root_overrides,
             subcommand,
@@ -1128,5 +1143,38 @@ mod tests {
             .to_overrides()
             .expect_err("feature should be rejected");
         assert_eq!(err.to_string(), "Unknown feature flag: does_not_exist");
+    }
+
+    #[test]
+    fn debug_flag_accepted_at_root() {
+        let cli = MultitoolCli::try_parse_from(["chaos", "--debug"]).expect("parse");
+        assert!(cli.debug);
+    }
+
+    #[test]
+    fn debug_short_flag_accepted() {
+        let cli = MultitoolCli::try_parse_from(["chaos", "-d"]).expect("parse");
+        assert!(cli.debug);
+    }
+
+    #[test]
+    fn debug_flag_accepted_with_exec() {
+        let cli =
+            MultitoolCli::try_parse_from(["chaos", "--debug", "exec", "say hi"]).expect("parse");
+        assert!(cli.debug);
+        assert!(matches!(cli.subcommand, Some(Subcommand::Exec(_))));
+    }
+
+    #[test]
+    fn debug_flag_accepted_after_subcommand() {
+        let cli =
+            MultitoolCli::try_parse_from(["chaos", "exec", "--debug", "say hi"]).expect("parse");
+        assert!(cli.debug);
+    }
+
+    #[test]
+    fn debug_flag_defaults_to_false() {
+        let cli = MultitoolCli::try_parse_from(["chaos"]).expect("parse");
+        assert!(!cli.debug);
     }
 }

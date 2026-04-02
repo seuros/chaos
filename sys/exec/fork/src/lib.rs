@@ -48,6 +48,7 @@ use event_processor_with_human_output::EventProcessorWithHumanOutput;
 use event_processor_with_jsonl_output::EventProcessorWithJsonOutput;
 use serde_json::Value;
 use std::collections::HashSet;
+use std::fs::OpenOptions;
 use std::io::IsTerminal;
 use std::io::Read;
 use std::path::PathBuf;
@@ -60,6 +61,8 @@ use tracing::field;
 use tracing::info;
 use tracing::info_span;
 use tracing::warn;
+use tracing_appender::non_blocking;
+use tracing_appender::non_blocking::WorkerGuard;
 use tracing_subscriber::EnvFilter;
 use tracing_subscriber::prelude::*;
 use uuid::Uuid;
@@ -71,6 +74,42 @@ use chaos_kern::default_client::set_default_client_residency_requirement;
 use chaos_kern::default_client::set_default_originator;
 
 const DEFAULT_ANALYTICS_ENABLED: bool = true;
+const DEBUG_LOG_PATH_ENV_VAR: &str = "CHAOS_DEBUG_LOG_PATH";
+const DEBUG_LOG_FILTER: &str = "warn,chaos_kern=debug,chaos_boot=debug,chaos_fork=debug,\
+chaos_console=debug,chaos_mcphost=debug,chaos_pam=debug,chaos_syslog=debug,\
+chaos_ipc=debug,chaos_selinux=debug,chaos_dtrace=debug,chaos_hallucinate=debug,\
+mcp_guest=debug,chaos_clamp=debug";
+
+fn init_optional_debug_file_layer() -> anyhow::Result<(
+    Option<
+        impl tracing_subscriber::Layer<tracing_subscriber::Registry> + Send + Sync + 'static,
+    >,
+    Option<WorkerGuard>,
+)> {
+    let Some(path) = std::env::var_os(DEBUG_LOG_PATH_ENV_VAR).map(PathBuf::from) else {
+        return Ok((None, None));
+    };
+
+    let mut log_file_opts = OpenOptions::new();
+    log_file_opts.create(true).append(true);
+
+    #[cfg(unix)]
+    {
+        use std::os::unix::fs::OpenOptionsExt;
+        log_file_opts.mode(0o600);
+    }
+
+    let log_file = log_file_opts.open(&path)?;
+    let (non_blocking, guard) = non_blocking(log_file);
+    let filter = EnvFilter::try_from_default_env()
+        .unwrap_or_else(|_| EnvFilter::new(DEBUG_LOG_FILTER));
+    let layer = tracing_subscriber::fmt::layer()
+        .with_ansi(false)
+        .with_writer(non_blocking)
+        .with_target(true)
+        .with_filter(filter);
+    Ok((Some(layer), Some(guard)))
+}
 
 enum InitialOperation {
     UserTurn {
@@ -343,8 +382,10 @@ pub async fn run_main(cli: Cli, arg0_paths: Arg0DispatchPaths) -> anyhow::Result
     let otel_logger_layer = otel.as_ref().and_then(|o| o.logger_layer());
 
     let otel_tracing_layer = otel.as_ref().and_then(|o| o.tracing_layer());
+    let (debug_file_layer, _debug_log_guard) = init_optional_debug_file_layer()?;
 
     let _ = tracing_subscriber::registry()
+        .with(debug_file_layer)
         .with(fmt_layer)
         .with(otel_tracing_layer)
         .with(otel_logger_layer)

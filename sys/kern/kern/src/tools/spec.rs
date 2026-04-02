@@ -1775,6 +1775,7 @@ fn push_tool_spec(
     spec: ToolSpec,
     supports_parallel_tool_calls: bool,
 ) {
+    tracing::debug!(tool = %spec.name(), "registering tool");
     if supports_parallel_tool_calls {
         builder.push_spec_with_parallel_support(spec, /*supports_parallel_tool_calls*/ true);
     } else {
@@ -2284,12 +2285,21 @@ pub(crate) fn build_specs_with_discoverable_tools(
                 && (ann.destructive_hint == Some(true) || ann.read_only_hint == Some(false))
             {
                 tracing::debug!(
-                    "Skipping MCP tool {name:?} in plan mode (destructive or non-read-only)"
+                    tool = %name,
+                    annotations = ?ann,
+                    destructive = ann.destructive_hint,
+                    read_only = ann.read_only_hint,
+                    "skipping MCP tool in plan mode",
                 );
                 continue;
             }
             match mcp_tool_to_openai_tool(name.clone(), tool.clone()) {
                 Ok(converted_tool) => {
+                    tracing::debug!(
+                        tool = %name,
+                        annotations = ?tool.annotations,
+                        "registering MCP tool",
+                    );
                     push_tool_spec(
                         &mut builder,
                         ToolSpec::Function(converted_tool),

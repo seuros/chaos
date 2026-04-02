@@ -44,6 +44,16 @@ use std::path::Path;
 use std::sync::Arc;
 use toml_edit::value;
 
+/// Truncate a string for debug logging, appending an ellipsis marker if cut.
+fn truncate_for_debug(s: &str, max: usize) -> String {
+    if s.len() <= max {
+        s.to_string()
+    } else {
+        let end = s.floor_char_boundary(max);
+        format!("{}...<truncated>", &s[..end])
+    }
+}
+
 /// Handles the specified tool call dispatches the appropriate
 /// `McpToolCallBegin` and `McpToolCallEnd` events to the `Session`.
 pub(crate) async fn handle_mcp_tool_call(
@@ -67,6 +77,14 @@ pub(crate) async fn handle_mcp_tool_call(
             }
         }
     };
+
+    // Log a compact summary of the tool call for debug.log.
+    tracing::debug!(
+        server = %server,
+        tool = %tool_name,
+        args_preview = %truncate_for_debug(&arguments, 200),
+        "MCP tool call begin",
+    );
 
     let invocation = McpInvocation {
         server: server.clone(),
@@ -94,6 +112,13 @@ pub(crate) async fn handle_mcp_tool_call(
     )
     .await
     {
+        tracing::debug!(
+            server = %server,
+            tool = %tool_name,
+            decision = ?decision,
+            "MCP tool approval decision",
+        );
+
         let result = match decision {
             McpToolApprovalDecision::Accept
             | McpToolApprovalDecision::AcceptForSession
@@ -120,10 +145,18 @@ pub(crate) async fn handle_mcp_tool_call(
                 if let Err(e) = &result {
                     tracing::warn!("MCP tool call error: {e:?}");
                 }
+                let elapsed = start.elapsed();
+                tracing::debug!(
+                    server = %server,
+                    tool = %tool_name,
+                    status = if result.is_ok() { "ok" } else { "error" },
+                    elapsed_ms = elapsed.as_millis(),
+                    "MCP tool call end",
+                );
                 let tool_call_end_event = EventMsg::McpToolCallEnd(McpToolCallEndEvent {
                     call_id: call_id.clone(),
                     invocation,
-                    duration: start.elapsed(),
+                    duration: elapsed,
                     result: result.clone(),
                 });
                 notify_mcp_tool_call_event(
@@ -206,10 +239,18 @@ pub(crate) async fn handle_mcp_tool_call(
     if let Err(e) = &result {
         tracing::warn!("MCP tool call error: {e:?}");
     }
+    let elapsed = start.elapsed();
+    tracing::debug!(
+        server = %server,
+        tool = %tool_name,
+        status = if result.is_ok() { "ok" } else { "error" },
+        elapsed_ms = elapsed.as_millis(),
+        "MCP tool call end (no approval required)",
+    );
     let tool_call_end_event = EventMsg::McpToolCallEnd(McpToolCallEndEvent {
         call_id: call_id.clone(),
         invocation,
-        duration: start.elapsed(),
+        duration: elapsed,
         result: result.clone(),
     });
 

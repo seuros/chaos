@@ -35,6 +35,11 @@ const CHATGPT_LOGIN_DISABLED_MESSAGE: &str =
 const API_KEY_LOGIN_DISABLED_MESSAGE: &str =
     "API key login is disabled. Use ChatGPT login instead.";
 const LOGIN_SUCCESS_MESSAGE: &str = "Successfully logged in";
+const DEBUG_LOG_PATH_ENV_VAR: &str = "CHAOS_DEBUG_LOG_PATH";
+const DEBUG_LOG_FILTER: &str = "warn,chaos_kern=debug,chaos_boot=debug,chaos_fork=debug,\
+chaos_console=debug,chaos_mcphost=debug,chaos_pam=debug,chaos_syslog=debug,\
+chaos_ipc=debug,chaos_selinux=debug,chaos_dtrace=debug,chaos_hallucinate=debug,\
+mcp_guest=debug,chaos_clamp=debug";
 
 /// Installs a small file-backed tracing layer for direct `chaos login` flows.
 ///
@@ -43,12 +48,12 @@ const LOGIN_SUCCESS_MESSAGE: &str = "Successfully logged in";
 /// runs but unnecessary for a one-shot login command. Keeping the direct CLI path local lets this
 /// command produce a durable `codex-login.log` artifact without coupling it to the TUI's broader
 /// telemetry and feedback initialization.
-fn init_login_file_logging(config: &Config) -> Option<WorkerGuard> {
+fn init_login_file_logging(config: &Config) -> Vec<WorkerGuard> {
     let log_dir = match chaos_kern::config::log_dir(config) {
         Ok(log_dir) => log_dir,
         Err(err) => {
             eprintln!("Warning: failed to resolve login log directory: {err}");
-            return None;
+            return Vec::new();
         }
     };
 
@@ -57,7 +62,7 @@ fn init_login_file_logging(config: &Config) -> Option<WorkerGuard> {
             "Warning: failed to create login log directory {}: {err}",
             log_dir.display()
         );
-        return None;
+        return Vec::new();
     }
 
     let mut log_file_opts = OpenOptions::new();
@@ -77,31 +82,74 @@ fn init_login_file_logging(config: &Config) -> Option<WorkerGuard> {
                 "Warning: failed to open login log file {}: {err}",
                 log_path.display()
             );
-            return None;
+            return Vec::new();
         }
     };
 
-    let (non_blocking, guard) = non_blocking(log_file);
+    let (login_non_blocking, login_guard) = non_blocking(log_file);
     let env_filter = EnvFilter::try_from_default_env()
         .unwrap_or_else(|_| EnvFilter::new("chaos_boot=info,chaos_kern=info,chaos_pam=info"));
     let file_layer = tracing_subscriber::fmt::layer()
-        .with_writer(non_blocking)
+        .with_writer(login_non_blocking)
         .with_target(true)
         .with_ansi(false)
         .with_filter(env_filter);
+    let mut guards = vec![login_guard];
+
+    let debug_file_layer =
+        if let Some(debug_path) = std::env::var_os(DEBUG_LOG_PATH_ENV_VAR).map(std::path::PathBuf::from)
+        {
+            let mut debug_log_file_opts = OpenOptions::new();
+            debug_log_file_opts.create(true).append(true);
+
+            #[cfg(unix)]
+            {
+                use std::os::unix::fs::OpenOptionsExt;
+                debug_log_file_opts.mode(0o600);
+            }
+
+            match debug_log_file_opts.open(&debug_path) {
+                Ok(debug_log_file) => {
+                    let (debug_non_blocking, debug_guard) = non_blocking(debug_log_file);
+                    guards.push(debug_guard);
+                    let filter = EnvFilter::try_from_default_env()
+                        .unwrap_or_else(|_| EnvFilter::new(DEBUG_LOG_FILTER));
+                    Some(
+                        tracing_subscriber::fmt::layer()
+                            .with_writer(debug_non_blocking)
+                            .with_target(true)
+                            .with_ansi(false)
+                            .with_filter(filter),
+                    )
+                }
+                Err(err) => {
+                    eprintln!(
+                        "Warning: failed to open debug log file {}: {err}",
+                        debug_path.display()
+                    );
+                    None
+                }
+            }
+        } else {
+            None
+        };
 
     // Direct `chaos login` otherwise relies on ephemeral stderr and browser output.
     // Persist the same login targets to a file so support can inspect auth failures
     // without reproducing them through TUI or app-server.
-    if let Err(err) = tracing_subscriber::registry().with(file_layer).try_init() {
+    if let Err(err) = tracing_subscriber::registry()
+        .with(debug_file_layer)
+        .with(file_layer)
+        .try_init()
+    {
         eprintln!(
             "Warning: failed to initialize login log file {}: {err}",
             log_path.display()
         );
-        return None;
+        return Vec::new();
     }
 
-    Some(guard)
+    guards
 }
 
 fn print_login_server_start(actual_port: u16, auth_url: &str) {
@@ -160,7 +208,7 @@ async fn run_chatgpt_login_flow(
 
 pub async fn run_login_with_chatgpt(cli_config_overrides: CliConfigOverrides) -> ! {
     let config = load_config_or_exit(cli_config_overrides).await;
-    let _login_log_guard = init_login_file_logging(&config);
+    let _login_log_guards = init_login_file_logging(&config);
     tracing::info!("starting browser login flow");
 
     if matches!(config.forced_login_method, Some(ForcedLoginMethod::Api)) {
@@ -194,7 +242,7 @@ pub async fn run_login_with_api_key(
     api_key: String,
 ) -> ! {
     let config = load_config_or_exit(cli_config_overrides).await;
-    let _login_log_guard = init_login_file_logging(&config);
+    let _login_log_guards = init_login_file_logging(&config);
     tracing::info!("starting api key login flow");
 
     if matches!(config.forced_login_method, Some(ForcedLoginMethod::Chatgpt)) {
@@ -252,7 +300,7 @@ pub async fn run_login_with_device_code(
     client_id: Option<String>,
 ) -> ! {
     let config = load_config_or_exit(cli_config_overrides).await;
-    let _login_log_guard = init_login_file_logging(&config);
+    let _login_log_guards = init_login_file_logging(&config);
     tracing::info!("starting device code login flow");
     if matches!(config.forced_login_method, Some(ForcedLoginMethod::Api)) {
         eprintln!("{CHATGPT_LOGIN_DISABLED_MESSAGE}");
@@ -297,7 +345,7 @@ pub async fn run_login_with_device_code_fallback_to_browser(
     client_id: Option<String>,
 ) -> ! {
     let config = load_config_or_exit(cli_config_overrides).await;
-    let _login_log_guard = init_login_file_logging(&config);
+    let _login_log_guards = init_login_file_logging(&config);
     tracing::info!("starting login flow with device code fallback");
     if matches!(config.forced_login_method, Some(ForcedLoginMethod::Api)) {
         eprintln!("{CHATGPT_LOGIN_DISABLED_MESSAGE}");

@@ -1,6 +1,7 @@
 use std::path::Path;
 
 use crate::error::GitError;
+use crate::ext::GitResultExt;
 use crate::open_repo;
 
 /// Generate a unified diff.
@@ -14,24 +15,20 @@ pub fn diff(cwd: &Path, base: Option<&str>, paths: Option<&[&str]>) -> Result<St
     let base_obj = repo
         .rev_parse_single(base_spec)
         .map_err(|e| GitError::RefNotFound(format!("{base_spec}: {e}")))?;
-    let base_tree = base_obj
-        .object()
-        .map_err(|e| GitError::Operation(e.to_string()))?
-        .peel_to_tree()
-        .map_err(|e| GitError::Operation(e.to_string()))?;
+    let base_tree = base_obj.object().git_op()?.peel_to_tree().git_op()?;
 
     let head_tree = repo
         .head_id()
-        .map_err(|e| GitError::Operation(e.to_string()))?
+        .git_op()?
         .object()
-        .map_err(|e| GitError::Operation(e.to_string()))?
+        .git_op()?
         .peel_to_tree()
-        .map_err(|e| GitError::Operation(e.to_string()))?;
+        .git_op()?;
 
     // Use diff_tree_to_tree which returns Vec<ChangeDetached>
     let changes = repo
         .diff_tree_to_tree(Some(&base_tree), Some(&head_tree), None)
-        .map_err(|e| GitError::Operation(e.to_string()))?;
+        .git_op()?;
 
     let mut out = String::new();
 

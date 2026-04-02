@@ -3,6 +3,7 @@ use std::path::Path;
 use serde::Serialize;
 
 use crate::error::GitError;
+use crate::ext::GitResultExt;
 use crate::open_repo;
 
 #[derive(Debug, Clone, Serialize)]
@@ -24,24 +25,16 @@ pub fn blame(
 ) -> Result<Vec<BlameLine>, GitError> {
     let repo = open_repo(cwd)?;
 
-    let head = repo
-        .head_id()
-        .map_err(|e| GitError::Operation(e.to_string()))?;
+    let head = repo.head_id().git_op()?;
 
-    let commit = head
-        .object()
-        .map_err(|e| GitError::Operation(e.to_string()))?
-        .peel_to_tree()
-        .map_err(|e| GitError::Operation(e.to_string()))?;
+    let commit = head.object().git_op()?.peel_to_tree().git_op()?;
 
     let entry = commit
         .lookup_entry_by_path(file_path)
-        .map_err(|e| GitError::Operation(e.to_string()))?
+        .git_op()?
         .ok_or_else(|| GitError::PathNotFound(file_path.to_string()))?;
 
-    let blob = entry
-        .object()
-        .map_err(|e| GitError::Operation(e.to_string()))?;
+    let blob = entry.object().git_op()?;
 
     let content = std::str::from_utf8(&blob.data)
         .map_err(|e| GitError::Operation(format!("binary file: {e}")))?;

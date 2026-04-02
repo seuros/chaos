@@ -99,7 +99,7 @@ jobs:
           - runner: macos-26
             target: aarch64-apple-darwin
             profile: dev
-          - runner: macos-15
+          - runner: macos-15-intel
             target: x86_64-apple-darwin
             profile: dev
           - runner: ubuntu-24.04

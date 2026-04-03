@@ -76,7 +76,7 @@ use chaos_kern::default_client::set_default_originator;
 const DEFAULT_ANALYTICS_ENABLED: bool = true;
 const DEBUG_LOG_PATH_ENV_VAR: &str = "CHAOS_DEBUG_LOG_PATH";
 const DEBUG_LOG_FILTER: &str = "warn,chaos_kern=debug,chaos_boot=debug,chaos_fork=debug,\
-chaos_console=debug,chaos_mcphost=debug,chaos_pam=debug,chaos_syslog=debug,\
+chaos_console=debug,chaos_mcpd=debug,chaos_pam=debug,chaos_syslog=debug,\
 chaos_ipc=debug,chaos_selinux=debug,chaos_dtrace=debug,chaos_hallucinate=debug,\
 mcp_guest=debug,chaos_clamp=debug";
 

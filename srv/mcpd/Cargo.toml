@@ -1,12 +1,12 @@
 [package]
-name = "chaos-mcphost"
+name = "chaos-mcpd"
 version.workspace = true
 edition.workspace = true
 license.workspace = true
 publish.workspace = true
 
 [lib]
-name = "chaos_mcphost"
+name = "chaos_mcpd"
 path = "src/lib.rs"
 
 [lints]

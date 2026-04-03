@@ -43,7 +43,7 @@ pub use crate::patch_approval::PatchApprovalElicitRequestParams;
 pub use crate::patch_approval::PatchApprovalResponse;
 
 const DEFAULT_ANALYTICS_ENABLED: bool = true;
-const OTEL_SERVICE_NAME: &str = "chaos_mcphost";
+const OTEL_SERVICE_NAME: &str = "chaos_mcpd";
 
 pub async fn run_main(
     arg0_paths: Arg0DispatchPaths,

@@ -1,3 +1,4 @@
+use chaos_ipc::config_types::SANDBOX_MODE_WORKSPACE_WRITE;
 use serde_json::Value as JsonValue;
 use std::collections::HashSet;
 use std::ffi::OsString;
@@ -574,7 +575,7 @@ fn build_config_from_external(settings: &JsonValue) -> io::Result<TomlValue> {
     {
         root.insert(
             "sandbox_mode".to_string(),
-            TomlValue::String("workspace-write".to_string()),
+            TomlValue::String(SANDBOX_MODE_WORKSPACE_WRITE.to_string()),
         );
     }
 

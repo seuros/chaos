@@ -19,6 +19,9 @@ use chaos_dtrace::HookResult;
 use chaos_dtrace::HookToolInput;
 use chaos_dtrace::HookToolInputLocalShell;
 use chaos_dtrace::HookToolKind;
+use chaos_ipc::config_types::SANDBOX_MODE_READ_ONLY;
+use chaos_ipc::config_types::SANDBOX_MODE_ROOT_ACCESS;
+use chaos_ipc::config_types::SANDBOX_MODE_WORKSPACE_WRITE;
 use chaos_ipc::models::ResponseInputItem;
 use chaos_ready::Readiness;
 use std::future::Future;
@@ -411,9 +414,9 @@ fn unsupported_tool_call_message(
 
 fn sandbox_policy_tag(policy: &SandboxPolicy) -> &'static str {
     match policy {
-        SandboxPolicy::ReadOnly { .. } => "read-only",
-        SandboxPolicy::WorkspaceWrite { .. } => "workspace-write",
-        SandboxPolicy::RootAccess => "root-access",
+        SandboxPolicy::ReadOnly { .. } => SANDBOX_MODE_READ_ONLY,
+        SandboxPolicy::WorkspaceWrite { .. } => SANDBOX_MODE_WORKSPACE_WRITE,
+        SandboxPolicy::RootAccess => SANDBOX_MODE_ROOT_ACCESS,
         SandboxPolicy::ExternalSandbox { .. } => "external-sandbox",
     }
 }

@@ -1,5 +1,5 @@
 ---
-source: bin/xserver/src/bottom_pane.rs
+source: bin/console/src/bottom_pane.rs
 expression: "render_snapshot(&pane, area)"
 ---
 • Working (0s • esc to interrupt)               
@@ -8,6 +8,6 @@ expression: "render_snapshot(&pane, area)"
   ↳ Queued follow-up question                   
     ⌥ + ↑ edit last queued message              
                                                 
-› Ask Chaos to do anything                      
+› Ask Agent of Chaos to do something.           
                                                 
   ? for shortcuts            100% context left

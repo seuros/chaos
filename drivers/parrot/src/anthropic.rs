@@ -129,11 +129,11 @@ impl AnthropicAdapter {
         );
         headers.insert(
             http::header::CONTENT_TYPE,
-            http::HeaderValue::from_static("application/json"),
+            http::HeaderValue::from_static(crate::common::MIME_APPLICATION_JSON),
         );
         headers.insert(
             http::header::ACCEPT,
-            http::HeaderValue::from_static("text/event-stream"),
+            http::HeaderValue::from_static(crate::common::MIME_TEXT_EVENT_STREAM),
         );
         Ok(headers)
     }

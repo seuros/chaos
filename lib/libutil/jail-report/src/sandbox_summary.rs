@@ -1,3 +1,4 @@
+use chaos_ipc::config_types::SANDBOX_MODE_WORKSPACE_WRITE;
 use chaos_ipc::protocol::NetworkAccess;
 use chaos_ipc::protocol::SandboxPolicy;
 
@@ -25,7 +26,7 @@ pub fn summarize_sandbox_policy(sandbox_policy: &SandboxPolicy) -> String {
             exclude_slash_tmp,
             read_only_access: _,
         } => {
-            let mut summary = "workspace-write".to_string();
+            let mut summary = SANDBOX_MODE_WORKSPACE_WRITE.to_string();
 
             let mut writable_entries = Vec::<String>::new();
             writable_entries.push("workdir".to_string());

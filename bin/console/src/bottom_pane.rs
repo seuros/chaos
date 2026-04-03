@@ -1132,6 +1132,8 @@ impl Renderable for BottomPane {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    const PLACEHOLDER_TEXT: &str = "Ask Agent of Chaos to do something.";
     use crate::app_event::AppEvent;
     use crate::status_indicator_widget::STATUS_DETAILS_DEFAULT_MAX_LINES;
     use crate::status_indicator_widget::StatusDetailsCapitalization;
@@ -1189,7 +1191,7 @@ mod tests {
             frame_requester: FrameRequester::test_dummy(),
             has_input_focus: true,
             enhanced_keys_supported: false,
-            placeholder_text: "Ask Chaos to do anything".to_string(),
+            placeholder_text: PLACEHOLDER_TEXT.to_string(),
             disable_paste_burst: false,
             animations_enabled: true,
         });
@@ -1211,7 +1213,7 @@ mod tests {
             frame_requester: FrameRequester::test_dummy(),
             has_input_focus: true,
             enhanced_keys_supported: false,
-            placeholder_text: "Ask Chaos to do anything".to_string(),
+            placeholder_text: PLACEHOLDER_TEXT.to_string(),
             disable_paste_burst: false,
             animations_enabled: true,
         });
@@ -1244,7 +1246,7 @@ mod tests {
             frame_requester: FrameRequester::test_dummy(),
             has_input_focus: true,
             enhanced_keys_supported: false,
-            placeholder_text: "Ask Chaos to do anything".to_string(),
+            placeholder_text: PLACEHOLDER_TEXT.to_string(),
             disable_paste_burst: false,
             animations_enabled: true,
         });
@@ -1290,7 +1292,7 @@ mod tests {
             for x in 0..area.width {
                 row.push(buf[(x, y)].symbol().chars().next().unwrap_or(' '));
             }
-            if row.contains("Ask Chaos") {
+            if row.contains("Ask Agent") {
                 found_composer = true;
                 break;
             }
@@ -1310,7 +1312,7 @@ mod tests {
             frame_requester: FrameRequester::test_dummy(),
             has_input_focus: true,
             enhanced_keys_supported: false,
-            placeholder_text: "Ask Chaos to do anything".to_string(),
+            placeholder_text: PLACEHOLDER_TEXT.to_string(),
             disable_paste_burst: false,
             animations_enabled: true,
         });
@@ -1336,7 +1338,7 @@ mod tests {
             frame_requester: FrameRequester::test_dummy(),
             has_input_focus: true,
             enhanced_keys_supported: false,
-            placeholder_text: "Ask Chaos to do anything".to_string(),
+            placeholder_text: PLACEHOLDER_TEXT.to_string(),
             disable_paste_burst: false,
             animations_enabled: true,
         });
@@ -1366,7 +1368,7 @@ mod tests {
             frame_requester: FrameRequester::test_dummy(),
             has_input_focus: true,
             enhanced_keys_supported: false,
-            placeholder_text: "Ask Chaos to do anything".to_string(),
+            placeholder_text: PLACEHOLDER_TEXT.to_string(),
             disable_paste_burst: false,
             animations_enabled: true,
         });
@@ -1388,7 +1390,7 @@ mod tests {
             frame_requester: FrameRequester::test_dummy(),
             has_input_focus: true,
             enhanced_keys_supported: false,
-            placeholder_text: "Ask Chaos to do anything".to_string(),
+            placeholder_text: PLACEHOLDER_TEXT.to_string(),
             disable_paste_burst: false,
             animations_enabled: true,
         });
@@ -1416,7 +1418,7 @@ mod tests {
             frame_requester: FrameRequester::test_dummy(),
             has_input_focus: true,
             enhanced_keys_supported: false,
-            placeholder_text: "Ask Chaos to do anything".to_string(),
+            placeholder_text: PLACEHOLDER_TEXT.to_string(),
             disable_paste_burst: false,
             animations_enabled: true,
         });
@@ -1448,7 +1450,7 @@ mod tests {
             frame_requester: FrameRequester::test_dummy(),
             has_input_focus: true,
             enhanced_keys_supported: false,
-            placeholder_text: "Ask Chaos to do anything".to_string(),
+            placeholder_text: PLACEHOLDER_TEXT.to_string(),
             disable_paste_burst: false,
             animations_enabled: true,
         });
@@ -1475,7 +1477,7 @@ mod tests {
             frame_requester: FrameRequester::test_dummy(),
             has_input_focus: true,
             enhanced_keys_supported: false,
-            placeholder_text: "Ask Chaos to do anything".to_string(),
+            placeholder_text: PLACEHOLDER_TEXT.to_string(),
             disable_paste_burst: false,
             animations_enabled: true,
         });
@@ -1501,7 +1503,7 @@ mod tests {
             frame_requester: FrameRequester::test_dummy(),
             has_input_focus: true,
             enhanced_keys_supported: false,
-            placeholder_text: "Ask Chaos to do anything".to_string(),
+            placeholder_text: PLACEHOLDER_TEXT.to_string(),
             disable_paste_burst: false,
             animations_enabled: true,
         });
@@ -1529,7 +1531,7 @@ mod tests {
             frame_requester: FrameRequester::test_dummy(),
             has_input_focus: true,
             enhanced_keys_supported: false,
-            placeholder_text: "Ask Chaos to do anything".to_string(),
+            placeholder_text: PLACEHOLDER_TEXT.to_string(),
             disable_paste_burst: false,
             animations_enabled: true,
         });
@@ -1551,7 +1553,7 @@ mod tests {
             frame_requester: FrameRequester::test_dummy(),
             has_input_focus: true,
             enhanced_keys_supported: false,
-            placeholder_text: "Ask Chaos to do anything".to_string(),
+            placeholder_text: PLACEHOLDER_TEXT.to_string(),
             disable_paste_burst: false,
             animations_enabled: true,
         });
@@ -1585,7 +1587,7 @@ mod tests {
             frame_requester: FrameRequester::test_dummy(),
             has_input_focus: true,
             enhanced_keys_supported: false,
-            placeholder_text: "Ask Chaos to do anything".to_string(),
+            placeholder_text: PLACEHOLDER_TEXT.to_string(),
             disable_paste_burst: false,
             animations_enabled: true,
         });
@@ -1620,7 +1622,7 @@ mod tests {
             frame_requester: FrameRequester::test_dummy(),
             has_input_focus: true,
             enhanced_keys_supported: false,
-            placeholder_text: "Ask Chaos to do anything".to_string(),
+            placeholder_text: PLACEHOLDER_TEXT.to_string(),
             disable_paste_burst: false,
             animations_enabled: true,
         });
@@ -1667,7 +1669,7 @@ mod tests {
             frame_requester: FrameRequester::test_dummy(),
             has_input_focus: true,
             enhanced_keys_supported: false,
-            placeholder_text: "Ask Chaos to do anything".to_string(),
+            placeholder_text: PLACEHOLDER_TEXT.to_string(),
             disable_paste_burst: false,
             animations_enabled: true,
         });
@@ -1722,7 +1724,7 @@ mod tests {
             frame_requester: FrameRequester::test_dummy(),
             has_input_focus: true,
             enhanced_keys_supported: false,
-            placeholder_text: "Ask Chaos to do anything".to_string(),
+            placeholder_text: PLACEHOLDER_TEXT.to_string(),
             disable_paste_burst: false,
             animations_enabled: true,
         });
@@ -1769,7 +1771,7 @@ mod tests {
             frame_requester: FrameRequester::test_dummy(),
             has_input_focus: true,
             enhanced_keys_supported: false,
-            placeholder_text: "Ask Chaos to do anything".to_string(),
+            placeholder_text: PLACEHOLDER_TEXT.to_string(),
             disable_paste_burst: false,
             animations_enabled: true,
         });

@@ -1,5 +1,4 @@
 use std::sync::Arc;
-use std::time::Duration;
 
 use chaos_abi::AbiError;
 use chaos_abi::AdapterFuture;
@@ -21,11 +20,7 @@ use crate::ResponsesApiRequest;
 use crate::ResponsesClient;
 use crate::ResponsesOptions;
 use crate::SseTelemetry;
-use crate::provider::RetryConfig;
 use crate::requests::responses::Compression;
-
-const DEFAULT_STREAM_IDLE_TIMEOUT_MS: u64 = 300_000;
-const DEFAULT_REQUEST_MAX_RETRIES: u64 = 4;
 
 #[derive(Clone, Default)]
 pub struct StaticAuthProvider {
@@ -79,20 +74,8 @@ impl OpenAiAdapter<StaticAuthProvider> {
         api_key: String,
         default_model: Option<String>,
     ) -> Self {
-        let provider = Provider {
-            name: "OpenAI".to_string(),
-            base_url,
-            query_params: None,
-            headers: http::HeaderMap::new(),
-            retry: RetryConfig {
-                max_attempts: DEFAULT_REQUEST_MAX_RETRIES,
-                base_delay: Duration::from_millis(200),
-                retry_429: false,
-                retry_5xx: true,
-                retry_transport: true,
-            },
-            stream_idle_timeout: Duration::from_millis(DEFAULT_STREAM_IDLE_TIMEOUT_MS),
-        };
+        let provider =
+            Provider::from_base_url_with_default_streaming_config("OpenAI", base_url, false);
         let auth = StaticAuthProvider::new(Some(api_key), None);
         Self::new(
             RamaTransport::default_client(),

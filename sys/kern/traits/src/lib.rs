@@ -13,6 +13,7 @@ pub mod state_access;
 pub mod telemetry;
 
 // Re-export traits at crate root for convenience.
+pub use catalog::McpCatalogSink;
 pub use agent::AgentSpawnConfig;
 pub use agent::AgentSpawner;
 pub use config::ConciergeConfig;

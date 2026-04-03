@@ -13,13 +13,14 @@ use std::path::Path;
 use std::path::PathBuf;
 use std::sync::Arc;
 use std::sync::Mutex as StdMutex;
+use std::sync::RwLock as StdRwLock;
 use std::sync::atomic::AtomicBool;
 use std::sync::atomic::Ordering;
 use std::time::Duration;
 use std::time::Instant;
 
-use crate::mcp::auth::McpAuthStatusEntry;
-use crate::mcp::oauth_types::OAuthCredentialsStoreMode;
+use chaos_concierge::auth::McpAuthStatusEntry;
+use chaos_sysctl::types::OAuthCredentialsStoreMode;
 use anyhow::Context;
 use anyhow::Result;
 use anyhow::anyhow;
@@ -65,13 +66,13 @@ use mcp_guest::ReadResourceRequestParams;
 use mcp_guest::ReadResourceResult;
 use mcp_guest::ResourceInfo;
 use mcp_guest::ResourceTemplateInfo;
-pub(crate) use mcp_guest::ToolInfo as McpToolInfo;
+pub use mcp_guest::ToolInfo as McpToolInfo;
 
+use chaos_traits::McpCatalogSink;
 use serde::Deserialize;
 use serde::Serialize;
 use sha1::Digest;
 use sha1::Sha1;
-use std::sync::RwLock as StdRwLock;
 use tokio::sync::Mutex;
 use tokio::sync::oneshot;
 use tokio::task::JoinSet;
@@ -80,9 +81,10 @@ use tracing::instrument;
 use tracing::warn;
 use url::Url;
 
-use crate::chaos::INITIAL_SUBMIT_ID;
-use crate::config::types::McpServerConfig;
-use crate::config::types::McpServerTransportConfig;
+use chaos_sysctl::types::McpServerConfig;
+use chaos_sysctl::types::McpServerTransportConfig;
+
+const INITIAL_SUBMIT_ID: &str = "";
 
 /// Delimiter used to separate the server name from the tool name in a fully
 /// qualified tool name.
@@ -199,14 +201,14 @@ where
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
-pub(crate) struct ToolInfo {
-    pub(crate) server_name: String,
-    pub(crate) tool_name: String,
-    pub(crate) tool_namespace: String,
-    pub(crate) tool: McpToolInfo,
-    pub(crate) connector_id: Option<String>,
-    pub(crate) connector_name: Option<String>,
-    pub(crate) connector_description: Option<String>,
+pub struct ToolInfo {
+    pub server_name: String,
+    pub tool_name: String,
+    pub tool_namespace: String,
+    pub tool: McpToolInfo,
+    pub connector_id: Option<String>,
+    pub connector_name: Option<String>,
+    pub connector_description: Option<String>,
 }
 
 type ResponderMap = HashMap<(String, RequestId), oneshot::Sender<ElicitationResponse>>;
@@ -264,7 +266,7 @@ struct ChaosClientHandler {
     /// when the server sends a tools/list_changed notification.
     session: Arc<tokio::sync::RwLock<Option<McpSession>>>,
     /// Shared catalog for updating on list_changed notifications.
-    catalog: Arc<StdRwLock<crate::catalog::Catalog>>,
+    catalog: Arc<dyn McpCatalogSink>,
     /// Working directory exposed to MCP servers via roots/list.
     cwd: Arc<StdRwLock<PathBuf>>,
 }
@@ -378,12 +380,10 @@ impl ClientHandler for ChaosClientHandler {
                     if let Ok(store) = self.tools_arc.read() {
                         let catalog_tools: Vec<_> = store
                             .iter()
-                            .map(crate::catalog::mcp_tool_info_to_catalog_tool)
+                            .map(crate::catalog_conv::mcp_tool_info_to_catalog_tool)
                             .collect();
-                        if let Ok(mut catalog) = self.catalog.write() {
-                            catalog.unregister_mcp(&self.server_name);
-                            catalog.register_mcp_tools(&self.server_name, catalog_tools);
-                        }
+                        self.catalog.unregister_mcp(&self.server_name);
+                        self.catalog.register_mcp_tools(&self.server_name, catalog_tools);
                     }
                 }
                 Err(err) => {
@@ -407,7 +407,7 @@ impl ClientHandler for ChaosClientHandler {
             let resources = match session.list_resources().await {
                 Ok(list) => list
                     .iter()
-                    .map(crate::catalog::mcp_resource_to_catalog)
+                    .map(crate::catalog_conv::mcp_resource_to_catalog)
                     .collect(),
                 Err(err) => {
                     warn!(
@@ -421,7 +421,7 @@ impl ClientHandler for ChaosClientHandler {
             let templates = match session.list_resource_templates().await {
                 Ok(list) => list
                     .iter()
-                    .map(crate::catalog::mcp_resource_template_to_catalog)
+                    .map(crate::catalog_conv::mcp_resource_template_to_catalog)
                     .collect(),
                 Err(err) => {
                     warn!(
@@ -432,13 +432,10 @@ impl ClientHandler for ChaosClientHandler {
                 }
             };
 
-            if let Ok(mut catalog) = self.catalog.write() {
-                // Unregister clears tools+resources+templates+prompts for the server,
-                // so we only clear resources/templates selectively here.
-                catalog.unregister_mcp_resources(&self.server_name);
-                catalog.register_mcp_resources(&self.server_name, resources);
-                catalog.register_mcp_resource_templates(&self.server_name, templates);
-            }
+            // Unregister clears tools+resources+templates+prompts for the server,
+            // so we only clear resources/templates selectively here.
+            self.catalog.unregister_mcp_resources(&self.server_name);
+            self.catalog.register_mcp_resources(&self.server_name, resources, templates);
         })
     }
 
@@ -452,7 +449,7 @@ impl ClientHandler for ChaosClientHandler {
             let prompts = match session.list_prompts().await {
                 Ok(result) => result
                     .iter()
-                    .map(crate::catalog::mcp_prompt_to_catalog)
+                    .map(crate::catalog_conv::mcp_prompt_to_catalog)
                     .collect(),
                 Err(err) => {
                     warn!(
@@ -463,10 +460,8 @@ impl ClientHandler for ChaosClientHandler {
                 }
             };
 
-            if let Ok(mut catalog) = self.catalog.write() {
-                catalog.unregister_mcp_prompts(&self.server_name);
-                catalog.register_mcp_prompts(&self.server_name, prompts);
-            }
+            self.catalog.unregister_mcp_prompts(&self.server_name);
+            self.catalog.register_mcp_prompts(&self.server_name, prompts);
         })
     }
 
@@ -499,7 +494,7 @@ fn request_id_to_protocol(id: &RequestId) -> ProtocolRequestId {
 }
 
 /// Convert protocol RequestId to mcp-guest RequestId.
-pub(crate) fn protocol_request_id_to_guest(id: &ProtocolRequestId) -> RequestId {
+pub fn protocol_request_id_to_guest(id: &ProtocolRequestId) -> RequestId {
     match id {
         ProtocolRequestId::String(s) => RequestId::string(s.clone()),
         ProtocolRequestId::Integer(n) => RequestId::number(*n),
@@ -576,7 +571,7 @@ impl AsyncManagedClient {
         cancel_token: CancellationToken,
         tx_event: Sender<Event>,
         elicitation_requests: ElicitationRequestManager,
-        catalog: Arc<StdRwLock<crate::catalog::Catalog>>,
+        catalog: Arc<dyn McpCatalogSink>,
         cwd: PathBuf,
     ) -> Self {
         let tool_filter = ToolFilter::from_config(&config);
@@ -678,14 +673,14 @@ pub struct SandboxState {
 }
 
 /// A thin wrapper around a set of running [`McpSession`] instances.
-pub(crate) struct McpConnectionManager {
+pub struct McpConnectionManager {
     clients: HashMap<String, AsyncManagedClient>,
     server_origins: HashMap<String, String>,
     elicitation_requests: ElicitationRequestManager,
 }
 
 impl McpConnectionManager {
-    pub(crate) fn new_uninitialized(approval_policy: &Constrained<AskForApproval>) -> Self {
+    pub fn new_uninitialized(approval_policy: &Constrained<AskForApproval>) -> Self {
         Self {
             clients: HashMap::new(),
             server_origins: HashMap::new(),
@@ -694,17 +689,17 @@ impl McpConnectionManager {
     }
 
     #[cfg(test)]
-    pub(crate) fn new_mcp_connection_manager_for_tests(
+    pub fn new_mcp_connection_manager_for_tests(
         approval_policy: &Constrained<AskForApproval>,
     ) -> Self {
         Self::new_uninitialized(approval_policy)
     }
 
-    pub(crate) fn has_servers(&self) -> bool {
+    pub fn has_servers(&self) -> bool {
         !self.clients.is_empty()
     }
 
-    pub(crate) fn server_origin(&self, server_name: &str) -> Option<&str> {
+    pub fn server_origin(&self, server_name: &str) -> Option<&str> {
         self.server_origins.get(server_name).map(String::as_str)
     }
 
@@ -723,7 +718,7 @@ impl McpConnectionManager {
         tx_event: Sender<Event>,
         initial_sandbox_state: SandboxState,
         _codex_home: PathBuf,
-        catalog: Arc<StdRwLock<crate::catalog::Catalog>>,
+        catalog: Arc<dyn McpCatalogSink>,
     ) -> (Self, CancellationToken) {
         let cancel_token = CancellationToken::new();
         let mut clients = HashMap::new();
@@ -849,7 +844,7 @@ impl McpConnectionManager {
     }
 
     #[allow(dead_code)]
-    pub(crate) async fn wait_for_server_ready(&self, server_name: &str, timeout: Duration) -> bool {
+    pub async fn wait_for_server_ready(&self, server_name: &str, timeout: Duration) -> bool {
         let Some(async_managed_client) = self.clients.get(server_name) else {
             return false;
         };
@@ -860,7 +855,7 @@ impl McpConnectionManager {
         }
     }
 
-    pub(crate) async fn required_startup_failures(
+    pub async fn required_startup_failures(
         &self,
         required_servers: &[String],
     ) -> Vec<McpStartupFailure> {
@@ -1183,7 +1178,7 @@ async fn emit_update(
 /// 1. enabled is None (no allowlist is set) or the tool is explicitly enabled.
 /// 2. The tool is not explicitly disabled.
 #[derive(Default, Clone)]
-pub(crate) struct ToolFilter {
+pub struct ToolFilter {
     enabled: Option<HashSet<String>>,
     disabled: HashSet<String>,
 }
@@ -1286,7 +1281,7 @@ struct MakeClientParams {
     tool_filter: ToolFilter,
     tx_event: Sender<Event>,
     elicitation_requests: ElicitationRequestManager,
-    catalog: Arc<StdRwLock<crate::catalog::Catalog>>,
+    catalog: Arc<dyn McpCatalogSink>,
     cwd: Arc<StdRwLock<PathBuf>>,
 }
 
@@ -1639,5 +1634,5 @@ fn root_uri_from_cwd(cwd: &Path) -> String {
 mod mcp_init_error_display_tests {}
 
 #[cfg(test)]
-#[path = "mcp_connection_manager_tests.rs"]
+#[path = "manager_tests.rs"]
 mod tests;

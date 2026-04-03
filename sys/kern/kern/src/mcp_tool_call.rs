@@ -36,9 +36,9 @@ use chaos_ipc::request_user_input::RequestUserInputArgs;
 use chaos_ipc::request_user_input::RequestUserInputQuestion;
 use chaos_ipc::request_user_input::RequestUserInputQuestionOption;
 use chaos_ipc::request_user_input::RequestUserInputResponse;
-use mcp_guest::ToolAnnotations;
-use mcp_guest::protocol::ElicitationAction;
-use mcp_guest::protocol::ElicitationResponse;
+use chaos_mcp_runtime::ToolAnnotations;
+use chaos_mcp_runtime::ElicitationAction;
+use chaos_mcp_runtime::ElicitationResponse;
 use serde::Serialize;
 use std::path::Path;
 use std::sync::Arc;
@@ -525,7 +525,7 @@ async fn maybe_request_mcp_tool_approval(
     question.question =
         mcp_tool_approval_question_text(question.question, monitor_reason.as_deref());
     if tool_call_mcp_elicitation_enabled {
-        let request_id = mcp_guest::protocol::RequestId::string(format!(
+        let request_id = chaos_mcp_runtime::McpRequestId::string(format!(
             "{MCP_TOOL_APPROVAL_QUESTION_ID_PREFIX}_{call_id}"
         ));
         let params = build_mcp_tool_approval_elicitation_request(

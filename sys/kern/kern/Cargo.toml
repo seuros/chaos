@@ -51,7 +51,8 @@ chaos-keyring = { workspace = true }
 chaos-pf = { workspace = true }
 chaos-syslog = { workspace = true }
 chaos-ipc = { workspace = true }
-mcp-guest = { workspace = true, features = ["http"] }
+chaos-mcp-runtime = { workspace = true }
+# Used by test_stdio_server binary only; server-side MCP SDK for test fixture
 mcp-host = { workspace = true }
 chaos-proc = { workspace = true }
 chaos-realpath = { workspace = true }

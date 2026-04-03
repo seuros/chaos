@@ -19,8 +19,8 @@ use serde_json::Value;
 use crate::config::Config;
 use crate::config::types::McpServerConfig;
 use crate::mcp::auth::compute_auth_statuses;
-use crate::mcp_connection_manager::McpConnectionManager;
-use crate::mcp_connection_manager::SandboxState;
+use chaos_mcp_runtime::manager::McpConnectionManager;
+use chaos_mcp_runtime::manager::SandboxState;
 
 const MCP_TOOL_NAME_PREFIX: &str = "mcp";
 const MCP_TOOL_NAME_DELIMITER: &str = "__";
@@ -75,7 +75,7 @@ pub async fn collect_mcp_snapshot(config: &Config) -> McpListToolsResponseEvent 
     };
 
     // Snapshot collection uses a throwaway catalog — notifications are irrelevant here.
-    let snapshot_catalog = Arc::new(std::sync::RwLock::new(
+    let snapshot_catalog = Arc::new(crate::catalog::CatalogSink::new(
         crate::catalog::Catalog::from_inventory(),
     ));
     let (mcp_connection_manager, cancel_token) = McpConnectionManager::new(

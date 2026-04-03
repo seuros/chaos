@@ -12,8 +12,8 @@ use chaos_ipc::dynamic_tools::DynamicToolResponse;
 use chaos_ipc::models::ResponseInputItem;
 use chaos_ipc::request_permissions::RequestPermissionsResponse;
 use chaos_ipc::request_user_input::RequestUserInputResponse;
-use mcp_guest::protocol::ElicitationResponse;
-use mcp_guest::protocol::RequestId;
+use chaos_mcp_runtime::ElicitationResponse;
+use chaos_mcp_runtime::McpRequestId as RequestId;
 use tokio::sync::oneshot;
 
 use crate::chaos::TurnContext;

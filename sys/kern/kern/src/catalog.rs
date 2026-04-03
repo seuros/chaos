@@ -4,9 +4,10 @@
 //! MCP servers register dynamically at runtime. All consumers query
 //! the same `Catalog` instance on `SessionServices`.
 
-use crate::mcp_connection_manager::ToolInfo as McpToolInfo;
+use std::sync::RwLock as StdRwLock;
+
+use chaos_traits::McpCatalogSink;
 use chaos_traits::catalog::CatalogPrompt;
-use chaos_traits::catalog::CatalogPromptArgument;
 use chaos_traits::catalog::CatalogRegistration;
 use chaos_traits::catalog::CatalogResource;
 use chaos_traits::catalog::CatalogResourceTemplate;
@@ -153,58 +154,79 @@ impl Catalog {
     }
 }
 
-/// Convert MCP `ToolInfo` from the connection manager into a `CatalogTool`.
-pub(crate) fn mcp_tool_info_to_catalog_tool(info: &McpToolInfo) -> CatalogTool {
-    CatalogTool {
-        name: info.tool_name.clone(),
-        description: info.tool.description.clone().unwrap_or_default(),
-        input_schema: info.tool.input_schema.clone(),
-        annotations: info
-            .tool
-            .annotations
-            .as_ref()
-            .and_then(|a| serde_json::to_value(a).ok()),
+/// Thread-safe wrapper around [`Catalog`] that implements [`McpCatalogSink`].
+///
+/// Wraps the catalog in a `RwLock` so that `McpConnectionManager` can hold
+/// an `Arc<dyn McpCatalogSink>` without knowing about the kernel's `Catalog` type.
+pub(crate) struct CatalogSink(pub(crate) StdRwLock<Catalog>);
+
+impl CatalogSink {
+    pub(crate) fn new(catalog: Catalog) -> Self {
+        Self(StdRwLock::new(catalog))
+    }
+
+    pub(crate) fn read(
+        &self,
+    ) -> Result<std::sync::RwLockReadGuard<'_, Catalog>, std::sync::PoisonError<std::sync::RwLockReadGuard<'_, Catalog>>>
+    {
+        self.0.read()
+    }
+
+    pub(crate) fn write(
+        &self,
+    ) -> Result<std::sync::RwLockWriteGuard<'_, Catalog>, std::sync::PoisonError<std::sync::RwLockWriteGuard<'_, Catalog>>>
+    {
+        self.0.write()
     }
 }
 
-/// Convert MCP `ResourceInfo` into a `CatalogResource`.
-pub(crate) fn mcp_resource_to_catalog(info: &mcp_guest::protocol::ResourceInfo) -> CatalogResource {
-    CatalogResource {
-        uri: info.uri.clone(),
-        name: info.name.clone(),
-        description: info.description.clone(),
-        mime_type: info.mime_type.clone(),
+impl McpCatalogSink for CatalogSink {
+    fn register_mcp_tools(&self, server: &str, tools: Vec<CatalogTool>) {
+        if let Ok(mut c) = self.0.write() {
+            c.register_mcp_tools(server, tools);
+        }
     }
-}
 
-/// Convert MCP `ResourceTemplateInfo` into a `CatalogResourceTemplate`.
-pub(crate) fn mcp_resource_template_to_catalog(
-    info: &mcp_guest::protocol::ResourceTemplateInfo,
-) -> CatalogResourceTemplate {
-    CatalogResourceTemplate {
-        uri_template: info.uri_template.clone(),
-        name: info.name.clone(),
-        description: info.description.clone(),
-        mime_type: info.mime_type.clone(),
+    fn register_mcp_resources(
+        &self,
+        server: &str,
+        resources: Vec<CatalogResource>,
+        templates: Vec<CatalogResourceTemplate>,
+    ) {
+        if let Ok(mut c) = self.0.write() {
+            c.register_mcp_resources(server, resources);
+            c.register_mcp_resource_templates(server, templates);
+        }
     }
-}
 
-/// Convert MCP `PromptInfo` into a `CatalogPrompt`.
-pub(crate) fn mcp_prompt_to_catalog(info: &mcp_guest::protocol::PromptInfo) -> CatalogPrompt {
-    CatalogPrompt {
-        name: info.name.clone(),
-        description: info.description.clone(),
-        arguments: info
-            .arguments
-            .as_deref()
-            .unwrap_or_default()
-            .iter()
-            .map(|a| CatalogPromptArgument {
-                name: a.name.clone(),
-                description: a.description.clone(),
-                required: a.required.unwrap_or(false),
-            })
-            .collect(),
+    fn register_mcp_prompts(&self, server: &str, prompts: Vec<CatalogPrompt>) {
+        if let Ok(mut c) = self.0.write() {
+            c.register_mcp_prompts(server, prompts);
+        }
+    }
+
+    fn unregister_mcp(&self, server: &str) {
+        if let Ok(mut c) = self.0.write() {
+            c.unregister_mcp(server);
+        }
+    }
+
+    fn unregister_mcp_resources(&self, server: &str) {
+        if let Ok(mut c) = self.0.write() {
+            c.unregister_mcp_resources(server);
+        }
+    }
+
+    fn unregister_mcp_prompts(&self, server: &str) {
+        if let Ok(mut c) = self.0.write() {
+            c.unregister_mcp_prompts(server);
+        }
+    }
+
+    fn clear_all_mcp(&self) {
+        if let Ok(mut c) = self.0.write() {
+            c.clear_all_mcp();
+        }
     }
 }
 

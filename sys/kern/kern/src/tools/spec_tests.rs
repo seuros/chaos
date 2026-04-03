@@ -30,8 +30,8 @@ fn mcp_tool(
     name: &str,
     description: &str,
     input_schema: serde_json::Value,
-) -> crate::mcp_connection_manager::McpToolInfo {
-    crate::mcp_connection_manager::McpToolInfo {
+) -> chaos_mcp_runtime::manager::McpToolInfo {
+    chaos_mcp_runtime::manager::McpToolInfo {
         name: name.to_string(),
         title: None,
         description: Some(description.to_string()),
@@ -72,7 +72,7 @@ fn search_capable_model_info() -> ModelInfo {
 
 #[test]
 fn mcp_tool_to_openai_tool_inserts_empty_properties() {
-    let tool = crate::mcp_connection_manager::McpToolInfo {
+    let tool = chaos_mcp_runtime::manager::McpToolInfo {
         name: "no_props".to_string(),
         title: None,
         description: Some("No properties".to_string()),
@@ -93,7 +93,7 @@ fn mcp_tool_to_openai_tool_inserts_empty_properties() {
 
 #[test]
 fn mcp_tool_to_openai_tool_preserves_top_level_output_schema() {
-    let tool = crate::mcp_connection_manager::McpToolInfo {
+    let tool = chaos_mcp_runtime::manager::McpToolInfo {
         name: "with_output".to_string(),
         title: None,
         description: Some("Has output schema".to_string()),
@@ -149,7 +149,7 @@ fn mcp_tool_to_openai_tool_preserves_top_level_output_schema() {
 
 #[test]
 fn mcp_tool_to_openai_tool_preserves_output_schema_without_inferred_type() {
-    let tool = crate::mcp_connection_manager::McpToolInfo {
+    let tool = chaos_mcp_runtime::manager::McpToolInfo {
         name: "with_enum_output".to_string(),
         title: None,
         description: Some("Has enum output schema".to_string()),
@@ -1777,7 +1777,7 @@ fn test_build_specs_mcp_tools_sorted_by_name() {
     });
 
     // Intentionally construct a map with keys that would sort alphabetically.
-    let tools_map: HashMap<String, crate::mcp_connection_manager::McpToolInfo> = HashMap::from([
+    let tools_map: HashMap<String, chaos_mcp_runtime::manager::McpToolInfo> = HashMap::from([
         (
             "test_server/do".to_string(),
             mcp_tool("a", "a", serde_json::json!({"type": "object"})),

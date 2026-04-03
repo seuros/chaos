@@ -2,20 +2,12 @@
 
 use chaos_which::find_resource;
 use core_test_support::test_chaos_fork::test_chaos_fork;
-use walkdir::WalkDir;
 
-fn session_rollout_count(home_path: &std::path::Path) -> usize {
-    let sessions_dir = home_path.join("sessions");
-    if !sessions_dir.exists() {
-        return 0;
-    }
-
-    WalkDir::new(sessions_dir)
-        .into_iter()
-        .filter_map(Result::ok)
-        .filter(|entry| entry.file_type().is_file())
-        .filter(|entry| entry.file_name().to_string_lossy().ends_with(".jsonl"))
-        .count()
+/// Returns true if the state DB was created in the given chaos home directory.
+/// Sessions are stored in SQLite (state_5.sqlite) rather than JSONL files.
+fn state_db_exists(home_path: &std::path::Path) -> bool {
+    let db_filename = chaos_proc::state_db_filename();
+    home_path.join(db_filename).exists()
 }
 
 #[test]
@@ -31,7 +23,10 @@ fn persists_rollout_file_by_default() -> anyhow::Result<()> {
         .assert()
         .code(0);
 
-    assert_eq!(session_rollout_count(test.home_path()), 1);
+    assert!(
+        state_db_exists(test.home_path()),
+        "expected state DB to be created for non-ephemeral session"
+    );
     Ok(())
 }
 
@@ -49,6 +44,9 @@ fn does_not_persist_rollout_file_in_ephemeral_mode() -> anyhow::Result<()> {
         .assert()
         .code(0);
 
-    assert_eq!(session_rollout_count(test.home_path()), 0);
+    assert!(
+        !state_db_exists(test.home_path()),
+        "expected no state DB for ephemeral session"
+    );
     Ok(())
 }

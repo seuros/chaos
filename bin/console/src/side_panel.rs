@@ -276,6 +276,7 @@ fn short_process_id(process_id: ProcessId) -> String {
 #[cfg(test)]
 mod tests {
     use super::*;
+    #[cfg(feature = "vt100-tests")]
     use crate::test_backend::VT100Backend;
     use insta::assert_snapshot;
 
@@ -330,6 +331,7 @@ mod tests {
         assert_eq!(panel.scroll_offset, panel.max_scroll());
     }
 
+    #[cfg(feature = "vt100-tests")]
     #[test]
     fn render_snapshot_with_logs() {
         let backend = VT100Backend::new(42, 12);

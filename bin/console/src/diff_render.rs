@@ -1261,7 +1261,11 @@ fn style_add(
     diff_backgrounds: ResolvedDiffBackgrounds,
 ) -> Style {
     match (theme, color_level, diff_backgrounds.add) {
-        (_, DiffColorLevel::Ansi16, _) => Style::default().fg(crate::theme::green()),
+        // ANSI-16 is foreground-only and uses the stable base-8 Color::Green
+        // rather than theme::green() (LightGreen on richer themes). Every
+        // 16-color terminal understands Color::Green; the bright variant is
+        // terminal-dependent in 16-color mode.
+        (_, DiffColorLevel::Ansi16, _) => Style::default().fg(Color::Green),
         (DiffTheme::Light, DiffColorLevel::TrueColor, Some(bg))
         | (DiffTheme::Light, DiffColorLevel::Ansi256, Some(bg)) => Style::default().bg(bg),
         (DiffTheme::Dark, DiffColorLevel::TrueColor, Some(bg))
@@ -1287,7 +1291,8 @@ fn style_del(
     diff_backgrounds: ResolvedDiffBackgrounds,
 ) -> Style {
     match (theme, color_level, diff_backgrounds.del) {
-        (_, DiffColorLevel::Ansi16, _) => Style::default().fg(crate::theme::red()),
+        // ANSI-16 del: base-8 Color::Red, same reasoning as add above.
+        (_, DiffColorLevel::Ansi16, _) => Style::default().fg(Color::Red),
         (DiffTheme::Light, DiffColorLevel::TrueColor, Some(bg))
         | (DiffTheme::Light, DiffColorLevel::Ansi256, Some(bg)) => Style::default().bg(bg),
         (DiffTheme::Dark, DiffColorLevel::TrueColor, Some(bg))

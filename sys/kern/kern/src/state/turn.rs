@@ -72,6 +72,33 @@ impl ActiveTurn {
     }
 }
 
+/// Tracks whether pending mailbox input should be delivered to the
+/// current turn or held for the next one.
+///
+/// The state machine has two states:
+///
+/// - `CurrentTurn` (default) — mailbox items are deliverable now.
+/// - `NextTurn` — the model emitted a final answer; hold items for
+///   the next turn.
+///
+/// Transitions:
+/// - `record_answer_emitted()` → `NextTurn` (guarded: only if the
+///   mailbox is empty; if input already arrived, stay `CurrentTurn`)
+/// - `record_tool_call_emitted()` → `CurrentTurn` (tool calls
+///   reopen the turn)
+/// - `record_steered_input()` → `CurrentTurn` (new user input
+///   always reopens delivery; called atomically from
+///   `push_pending_input`)
+#[derive(Clone, Copy, Debug, Default, PartialEq, Eq)]
+pub(crate) enum MailboxDeliveryPhase {
+    /// Mailbox items are deliverable to the current turn.
+    #[default]
+    CurrentTurn,
+    /// The model already emitted a final answer; defer mailbox items
+    /// to the next turn.
+    NextTurn,
+}
+
 /// Mutable state for a single turn.
 #[derive(Default)]
 pub(crate) struct TurnState {
@@ -81,6 +108,7 @@ pub(crate) struct TurnState {
     pending_elicitations: HashMap<(String, RequestId), oneshot::Sender<ElicitationResponse>>,
     pending_dynamic_tools: HashMap<String, oneshot::Sender<DynamicToolResponse>>,
     pending_input: Vec<ResponseInputItem>,
+    mailbox_delivery_phase: MailboxDeliveryPhase,
     granted_permissions: Option<PermissionProfile>,
     pub(crate) tool_calls: u64,
     pub(crate) token_usage_at_turn_start: TokenUsage,
@@ -175,10 +203,51 @@ impl TurnState {
         self.pending_dynamic_tools.remove(key)
     }
 
-    pub(crate) fn push_pending_input(&mut self, input: ResponseInputItem) {
-        self.pending_input.push(input);
+    // ── Mailbox delivery phase ────────────────────────────────────
+
+    /// Returns `true` when mailbox items should be delivered to the
+    /// current turn.
+    pub(crate) fn accepts_mailbox_delivery(&self) -> bool {
+        self.mailbox_delivery_phase == MailboxDeliveryPhase::CurrentTurn
     }
 
+    /// Called when the model completes a final answer item. Defers
+    /// mailbox delivery to the next turn, but only when the mailbox
+    /// is empty — if the user has already steered input the turn
+    /// must stay open.
+    pub(crate) fn record_answer_emitted(&mut self) {
+        if self.pending_input.is_empty() {
+            self.mailbox_delivery_phase = MailboxDeliveryPhase::NextTurn;
+        }
+        // If pending_input is non-empty, the user steered input
+        // before the answer boundary; keep CurrentTurn so it is
+        // consumed on the next follow-up iteration.
+    }
+
+    /// Called when a tool call is emitted. Reopens mailbox delivery
+    /// for the current turn.
+    pub(crate) fn record_tool_call_emitted(&mut self) {
+        self.mailbox_delivery_phase = MailboxDeliveryPhase::CurrentTurn;
+    }
+
+    /// Called atomically from `push_pending_input`. Any steered
+    /// input reopens delivery for the current turn, preventing a
+    /// stale `NextTurn` phase from hiding the new input.
+    fn record_steered_input(&mut self) {
+        self.mailbox_delivery_phase = MailboxDeliveryPhase::CurrentTurn;
+    }
+
+    // ── Pending input ─────────────────────────────────────────────
+
+    /// Push an item into the mailbox and atomically reopen mailbox
+    /// delivery for the current turn.
+    pub(crate) fn push_pending_input(&mut self, input: ResponseInputItem) {
+        self.pending_input.push(input);
+        self.record_steered_input();
+    }
+
+    /// Drain and return all pending items regardless of phase. Used
+    /// at the start of the next turn after `needs_follow_up` is set.
     pub(crate) fn take_pending_input(&mut self) -> Vec<ResponseInputItem> {
         if self.pending_input.is_empty() {
             Vec::with_capacity(0)
@@ -189,8 +258,10 @@ impl TurnState {
         }
     }
 
-    pub(crate) fn has_pending_input(&self) -> bool {
-        !self.pending_input.is_empty()
+    /// `true` if there are pending items AND the phase allows
+    /// delivery to the current turn.
+    pub(crate) fn has_deliverable_input(&self) -> bool {
+        self.accepts_mailbox_delivery() && !self.pending_input.is_empty()
     }
 
     pub(crate) fn record_granted_permissions(&mut self, permissions: PermissionProfile) {
@@ -208,5 +279,70 @@ impl ActiveTurn {
     pub(crate) async fn clear_pending(&self) {
         let mut ts = self.turn_state.lock().await;
         ts.clear_pending();
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use chaos_ipc::models::ResponseInputItem;
+
+    fn make_input() -> ResponseInputItem {
+        ResponseInputItem::Message {
+            role: "user".to_string(),
+            content: vec![chaos_ipc::models::ContentItem::InputText {
+                text: "test".to_string(),
+            }],
+        }
+    }
+
+    #[test]
+    fn defaults_to_current_turn() {
+        let ts = TurnState::default();
+        assert!(ts.accepts_mailbox_delivery());
+        assert!(!ts.has_deliverable_input());
+    }
+
+    #[test]
+    fn answer_emitted_defers_when_mailbox_empty() {
+        let mut ts = TurnState::default();
+        ts.record_answer_emitted();
+        assert!(!ts.accepts_mailbox_delivery());
+        assert!(!ts.has_deliverable_input());
+    }
+
+    #[test]
+    fn steered_input_reopens_delivery() {
+        let mut ts = TurnState::default();
+        ts.record_answer_emitted();
+        assert!(!ts.accepts_mailbox_delivery());
+
+        ts.push_pending_input(make_input());
+        // push_pending_input atomically calls record_steered_input
+        assert!(ts.accepts_mailbox_delivery());
+        assert!(ts.has_deliverable_input());
+    }
+
+    #[test]
+    fn tool_call_reopens_delivery() {
+        let mut ts = TurnState::default();
+        ts.record_answer_emitted();
+        assert!(!ts.accepts_mailbox_delivery());
+
+        ts.record_tool_call_emitted();
+        assert!(ts.accepts_mailbox_delivery());
+    }
+
+    #[test]
+    fn stale_defer_does_not_override_steered_input() {
+        let mut ts = TurnState::default();
+        // User steers input first
+        ts.push_pending_input(make_input());
+        // Then answer boundary fires — guard: pending_input non-empty, stay CurrentTurn
+        ts.record_answer_emitted();
+        assert!(ts.accepts_mailbox_delivery());
+        assert!(ts.has_deliverable_input());
+        let drained = ts.take_pending_input();
+        assert_eq!(drained.len(), 1);
     }
 }

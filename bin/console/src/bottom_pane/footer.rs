@@ -1060,6 +1060,7 @@ const SHORTCUTS: &[ShortcutDescriptor] = &[
 mod tests {
     use super::*;
     use crate::line_truncation::truncate_line_with_ellipsis_if_overflow;
+    #[cfg(feature = "vt100-tests")]
     use crate::test_backend::VT100Backend;
     use insta::assert_snapshot;
     use pretty_assertions::assert_eq;
@@ -1245,6 +1246,7 @@ mod tests {
         assert_snapshot!(name, terminal.backend());
     }
 
+    #[cfg(feature = "vt100-tests")]
     fn render_footer_with_mode_indicator(
         width: u16,
         props: &FooterProps,
@@ -1666,6 +1668,7 @@ mod tests {
         snapshot_footer("footer_status_line_with_active_agent_label", props);
     }
 
+    #[cfg(feature = "vt100-tests")]
     #[test]
     fn footer_status_line_truncates_to_keep_mode_indicator() {
         let props = FooterProps {

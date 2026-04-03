@@ -88,6 +88,7 @@ impl CliConfigOverrides {
     }
 }
 
+/// Return the key unchanged — no legacy aliases exist in this release.
 fn canonicalize_override_key(key: &str) -> String {
     key.to_string()
 }
@@ -174,16 +175,6 @@ mod tests {
         let v = parse_toml_value("[1, 2, 3]").expect("parse");
         let arr = v.as_array().expect("array");
         assert_eq!(arr.len(), 3);
-    }
-
-    #[test]
-    fn canonicalizes_use_legacy_landlock_alias() {
-        let overrides = CliConfigOverrides {
-            raw_overrides: vec!["use_legacy_landlock=true".to_string()],
-        };
-        let parsed = overrides.parse_overrides().expect("parse_overrides");
-        assert_eq!(parsed[0].0.as_str(), "features.use_legacy_landlock");
-        assert_eq!(parsed[0].1.as_bool(), Some(true));
     }
 
     #[test]

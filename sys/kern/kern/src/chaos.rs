@@ -1636,10 +1636,18 @@ impl Session {
         }
 
         // Spawn the hallucinate scripting engine (Lua/WASM user scripts).
+        // When `disable_user_scripts` is set (test environments), pass a
+        // non-existent path as the user-layer override so real user scripts
+        // never load into the session.
+        let user_scripts_dir = session_configuration
+            .original_config_do_not_use
+            .disable_user_scripts
+            .then(|| std::path::PathBuf::from("/dev/null/no_user_scripts"));
         let hallucinate = match chaos_hallucinate::spawn(chaos_hallucinate::SessionInfo {
             session_id: conversation_id.to_string(),
             cwd: session_configuration.cwd.to_string_lossy().to_string(),
             provider: session_configuration.provider.name.clone(),
+            user_scripts_dir,
         }) {
             Ok(handle) => Some(handle),
             Err(e) => {
@@ -3699,15 +3707,54 @@ impl Session {
         }
     }
 
-    pub async fn has_pending_input(&self) -> bool {
+    /// Returns `true` when there is pending input AND the mailbox
+    /// delivery phase allows consumption in the current turn.
+    pub async fn has_deliverable_input(&self) -> bool {
         let active = self.active_turn.lock().await;
         match active.as_ref() {
             Some(at) => {
                 let ts = at.turn_state.lock().await;
-                ts.has_pending_input()
+                ts.has_deliverable_input()
             }
             None => false,
         }
+    }
+
+    /// Get the `TurnState` mutex for a specific sub-task by id without
+    /// holding the `active_turn` lock across await points.
+    async fn turn_state_for_sub_id(
+        &self,
+        sub_id: &str,
+    ) -> Option<Arc<tokio::sync::Mutex<crate::state::TurnState>>> {
+        let active = self.active_turn.lock().await;
+        active.as_ref().and_then(|at| {
+            at.tasks
+                .contains_key(sub_id)
+                .then(|| Arc::clone(&at.turn_state))
+        })
+    }
+
+    /// Defer mailbox delivery to the next turn because the model emitted
+    /// a final answer. Guarded: if pending input already exists the phase
+    /// stays `CurrentTurn` — the turn must stay open to consume it.
+    /// The guard check and transition happen under one lock acquisition.
+    pub async fn defer_mailbox_delivery_to_next_turn(&self, sub_id: &str) {
+        let Some(turn_state) = self.turn_state_for_sub_id(sub_id).await else {
+            return;
+        };
+        let mut ts = turn_state.lock().await;
+        ts.record_answer_emitted();
+    }
+
+    /// Reopen mailbox delivery for the current turn. Called when a tool
+    /// call is emitted so steered input arriving during tool execution is
+    /// consumed in the same turn.
+    pub async fn accept_mailbox_delivery_for_current_turn(&self, sub_id: &str) {
+        let Some(turn_state) = self.turn_state_for_sub_id(sub_id).await else {
+            return;
+        };
+        let mut ts = turn_state.lock().await;
+        ts.record_tool_call_emitted();
     }
 
     pub async fn list_resources(
@@ -6745,7 +6792,10 @@ async fn try_run_sampling_request(
                     .await;
                 should_emit_turn_diff = true;
 
-                needs_follow_up |= sess.has_pending_input().await;
+                // Use the phase-aware check: pending input that was
+                // deferred to the next turn does not extend the current
+                // turn even if it exists in the mailbox.
+                needs_follow_up |= sess.has_deliverable_input().await;
 
                 break Ok(SamplingRequestResult {
                     needs_follow_up,

@@ -244,6 +244,9 @@ impl TestCodexBuilder {
         let mut config = load_default_config_for_test(home).await;
         config.cwd = cwd.path().to_path_buf();
         config.model_provider = model_provider;
+        // Prevent real user scripts (~/.config/chaos/scripts/) from loading
+        // into test sessions and polluting the tool list.
+        config.disable_user_scripts = true;
         for hook in self.pre_build_hooks.drain(..) {
             hook(home.path());
         }

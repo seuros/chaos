@@ -45,6 +45,7 @@ pub enum WireApi {
     /// The Responses API exposed by OpenAI at `/v1/responses`.
     Responses,
     /// The Chat Completions API at `/v1/chat/completions`.
+    #[serde(rename = "chat_completions")]
     ChatCompletions,
 }
 

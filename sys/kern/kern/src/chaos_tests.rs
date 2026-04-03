@@ -3338,27 +3338,10 @@ async fn task_finish_emits_turn_item_lifecycle_for_leftover_pending_user_input()
 
     let fourth = tokio::time::timeout(std::time::Duration::from_secs(2), rx.recv())
         .await
-        .expect("expected legacy user message event")
-        .expect("channel open");
-    assert!(matches!(
-        fourth.msg,
-        EventMsg::UserMessage(UserMessageEvent {
-            message,
-            images,
-            text_elements,
-            local_images,
-        }) if message == "late pending input"
-            && images == Some(Vec::new())
-            && text_elements.is_empty()
-            && local_images.is_empty()
-    ));
-
-    let fifth = tokio::time::timeout(std::time::Duration::from_secs(2), rx.recv())
-        .await
         .expect("expected turn complete event")
         .expect("channel open");
     assert!(matches!(
-        fifth.msg,
+        fourth.msg,
         EventMsg::TurnComplete(TurnCompleteEvent {
             turn_id,
             last_agent_message: None,
@@ -3446,7 +3429,7 @@ async fn steer_input_returns_active_turn_id() {
         .expect("steering with matching expected turn id should succeed");
 
     assert_eq!(turn_id, tc.sub_id);
-    assert!(sess.has_pending_input().await);
+    assert!(sess.has_deliverable_input().await);
 }
 
 #[tokio::test(flavor = "multi_thread", worker_threads = 2)]

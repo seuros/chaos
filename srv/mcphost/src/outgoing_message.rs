@@ -157,11 +157,15 @@ impl OutgoingMessageSender {
     }
 
     pub(crate) async fn send_notification(&self, notification: OutgoingNotification) {
-        let _ = self.sender.send(OutgoingMessage::Notification(notification));
+        let _ = self
+            .sender
+            .send(OutgoingMessage::Notification(notification));
     }
 
     pub(crate) async fn send_error(&self, id: RequestId, error: ErrorData) {
-        let _ = self.sender.send(OutgoingMessage::Error(OutgoingError { id, error }));
+        let _ = self
+            .sender
+            .send(OutgoingMessage::Error(OutgoingError { id, error }));
     }
 }
 

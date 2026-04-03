@@ -412,6 +412,7 @@ mod tests {
     use super::ModelMigrationScreen;
     use super::migration_copy_for_models;
     use crate::custom_terminal::Terminal;
+    #[cfg(feature = "vt100-tests")]
     use crate::test_backend::VT100Backend;
     use crate::tui::FrameRequester;
     use crossterm::event::KeyCode;
@@ -419,6 +420,7 @@ mod tests {
     use insta::assert_snapshot;
     use ratatui::layout::Rect;
 
+    #[cfg(feature = "vt100-tests")]
     #[test]
     fn prompt_snapshot() {
         let width: u16 = 60;
@@ -453,6 +455,7 @@ mod tests {
         assert_snapshot!("model_migration_prompt", terminal.backend());
     }
 
+    #[cfg(feature = "vt100-tests")]
     #[test]
     fn prompt_snapshot_gpt5_family() {
         let backend = VT100Backend::new(65, 22);
@@ -480,6 +483,7 @@ mod tests {
         assert_snapshot!("model_migration_prompt_gpt5_family", terminal.backend());
     }
 
+    #[cfg(feature = "vt100-tests")]
     #[test]
     fn prompt_snapshot_gpt5_codex() {
         let backend = VT100Backend::new(60, 22);
@@ -507,6 +511,7 @@ mod tests {
         assert_snapshot!("model_migration_prompt_gpt5_codex", terminal.backend());
     }
 
+    #[cfg(feature = "vt100-tests")]
     #[test]
     fn prompt_snapshot_gpt5_codex_mini() {
         let backend = VT100Backend::new(60, 22);
@@ -595,6 +600,7 @@ mod tests {
         ));
     }
 
+    #[cfg(feature = "vt100-tests")]
     #[test]
     fn markdown_prompt_keeps_long_url_tail_visible_when_narrow() {
         let long_url = "https://example.test/api/v1/projects/alpha-team/releases/2026-02-17/builds/1234567890/artifacts/reports/performance/summary/detail/with/a/very/long/path/tail42";

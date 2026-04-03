@@ -434,7 +434,7 @@ mod tests {
     #[test]
     fn log_export_target_excludes_trace_safe_events() {
         assert!(is_log_export_target("chaos_syslog.log_only"));
-        assert!(is_log_export_target("chaos_syslog.network_proxy"));
+        assert!(is_log_export_target("chaos_syslog.pf"));
         assert!(!is_log_export_target("chaos_syslog.trace_safe"));
         assert!(!is_log_export_target("chaos_syslog.trace_safe.debug"));
     }
@@ -444,7 +444,7 @@ mod tests {
         assert!(is_trace_safe_target("chaos_syslog.trace_safe"));
         assert!(is_trace_safe_target("chaos_syslog.trace_safe.summary"));
         assert!(!is_trace_safe_target("chaos_syslog.log_only"));
-        assert!(!is_trace_safe_target("chaos_syslog.network_proxy"));
+        assert!(!is_trace_safe_target("chaos_syslog.pf"));
     }
 
     fn test_otel_settings() -> OtelSettings {

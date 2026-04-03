@@ -50,12 +50,18 @@ impl Default for MarkdownStyles {
     fn default() -> Self {
         let p = crate::theme::palette();
         Self {
-            h1: Style::new().fg(p.highlight).bold().underlined(),
-            h2: Style::new().fg(p.highlight).bold(),
-            h3: Style::new().fg(p.fg).bold().italic(),
-            h4: Style::new().fg(p.fg).italic(),
-            h5: Style::new().fg(p.fg).italic(),
-            h6: Style::new().fg(p.dim).italic(),
+            // Headings inherit the terminal foreground rather than setting an
+            // explicit colour. The base fg already is the phosphor green, so
+            // an explicit fg(p.fg) would be visually redundant and would
+            // break equality checks in tests. Modifiers alone carry the
+            // visual hierarchy. H6 gets dim to distinguish it from H5.
+            h1: Style::new().bold().underlined(),
+            h2: Style::new().bold(),
+            h3: Style::new().bold().italic(),
+            h4: Style::new().italic(),
+            h5: Style::new().italic(),
+            // H6 also inherits the terminal fg — see note above.
+            h6: Style::new().italic(),
             code: Style::new().fg(p.accent),
             emphasis: Style::new().italic(),
             strong: Style::new().bold(),

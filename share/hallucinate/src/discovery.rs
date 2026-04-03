@@ -17,12 +17,20 @@ const SCRIPT_EXTENSIONS: &[&str] = &["lua", "wasm"];
 /// Returns paths sorted lexicographically within each layer.
 /// Project-layer scripts come after user-layer scripts so they
 /// can override registrations.
-pub fn discover_scripts(cwd: &Path) -> Vec<PathBuf> {
+///
+/// `user_scripts_dir_override` — when `Some`, replaces the XDG user-layer
+/// directory. Pass an empty directory (or a non-existent path) to suppress
+/// user scripts entirely, e.g. in tests.
+pub fn discover_scripts(cwd: &Path, user_scripts_dir_override: Option<&Path>) -> Vec<PathBuf> {
     let mut scripts = Vec::new();
 
-    // User layer: ~/.config/chaos/scripts/
-    if let Some(config_dir) = dirs() {
-        collect_script_files(&config_dir.join("scripts"), &mut scripts);
+    // User layer: ~/.config/chaos/scripts/ (or override)
+    let user_dir = match user_scripts_dir_override {
+        Some(dir) => Some(dir.to_path_buf()),
+        None => dirs().map(|d| d.join("scripts")),
+    };
+    if let Some(dir) = user_dir {
+        collect_script_files(&dir, &mut scripts);
     }
 
     // Project layer: .chaos/scripts/
@@ -32,8 +40,12 @@ pub fn discover_scripts(cwd: &Path) -> Vec<PathBuf> {
 }
 
 /// Discover scripts filtered to a specific extension.
-pub fn discover_scripts_by_ext(cwd: &Path, ext: &str) -> Vec<PathBuf> {
-    discover_scripts(cwd)
+pub fn discover_scripts_by_ext(
+    cwd: &Path,
+    ext: &str,
+    user_scripts_dir_override: Option<&Path>,
+) -> Vec<PathBuf> {
+    discover_scripts(cwd, user_scripts_dir_override)
         .into_iter()
         .filter(|p| p.extension().is_some_and(|e| e == ext))
         .collect()
@@ -100,7 +112,9 @@ mod tests {
         fs::write(scripts_dir.join("a_first.lua"), "-- first").unwrap();
         fs::write(scripts_dir.join("not_lua.txt"), "-- ignored").unwrap();
 
-        let found = discover_scripts(tmp.path());
+        // Pass a non-existent path as the user-layer override so real user
+        // scripts (e.g. ~/.config/chaos/scripts/hello.lua) are never loaded.
+        let found = discover_scripts(tmp.path(), Some(&tmp.path().join("no_user_scripts")));
         let names: Vec<&str> = found
             .iter()
             .map(|p| p.file_name().unwrap().to_str().unwrap())
@@ -112,7 +126,7 @@ mod tests {
     #[test]
     fn missing_dir_returns_empty() {
         let tmp = tempfile::tempdir().unwrap();
-        let found = discover_scripts(tmp.path());
+        let found = discover_scripts(tmp.path(), Some(&tmp.path().join("no_user_scripts")));
         assert!(found.is_empty());
     }
 }

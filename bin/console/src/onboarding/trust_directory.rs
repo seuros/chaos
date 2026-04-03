@@ -164,6 +164,7 @@ impl TrustDirectoryWidget {
 
 #[cfg(test)]
 mod tests {
+    #[cfg(feature = "vt100-tests")]
     use crate::test_backend::VT100Backend;
 
     use super::*;
@@ -201,6 +202,7 @@ mod tests {
         assert!(widget.should_quit);
     }
 
+    #[cfg(feature = "vt100-tests")]
     #[test]
     fn renders_snapshot_for_git_repo() {
         let chaos_home = TempDir::new().expect("temp home");

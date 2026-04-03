@@ -1,5 +1,8 @@
+use chaos_ipc::items::AgentMessageContent;
+use chaos_ipc::items::TurnItem;
 use chaos_ipc::protocol::AskForApproval;
 use chaos_ipc::protocol::EventMsg;
+use chaos_ipc::protocol::ItemCompletedEvent;
 use chaos_ipc::protocol::Op;
 use chaos_ipc::protocol::SandboxPolicy;
 use chaos_ipc::user_input::UserInput;
@@ -7,7 +10,7 @@ use core_test_support::responses;
 use core_test_support::skip_if_no_network;
 use core_test_support::test_codex::TestCodex;
 use core_test_support::test_codex::test_codex;
-use core_test_support::wait_for_event;
+use core_test_support::wait_for_event_match;
 use pretty_assertions::assert_eq;
 use responses::ev_assistant_message;
 use responses::ev_completed;
@@ -88,20 +91,33 @@ async fn codex_returns_json_result(model: String) -> anyhow::Result<()> {
         })
         .await?;
 
-    let message = wait_for_event(&codex, |ev| matches!(ev, EventMsg::AgentMessage(_))).await;
-    if let EventMsg::AgentMessage(message) = message {
-        let json: serde_json::Value = serde_json::from_str(&message.message)?;
-        assert_eq!(
-            json.get("explanation"),
-            Some(&serde_json::Value::String("explanation".into()))
-        );
-        assert_eq!(
-            json.get("final_answer"),
-            Some(&serde_json::Value::String("final_answer".into()))
-        );
-    } else {
-        anyhow::bail!("expected agent message event");
-    }
+    let message = wait_for_event_match(&codex, |ev| match ev {
+        EventMsg::ItemCompleted(ItemCompletedEvent {
+            item: TurnItem::AgentMessage(item),
+            ..
+        }) => {
+            let text = item
+                .content
+                .iter()
+                .map(|c| match c {
+                    AgentMessageContent::Text { text } => text.as_str(),
+                })
+                .collect::<String>();
+            if text.is_empty() { None } else { Some(text) }
+        }
+        _ => None,
+    })
+    .await;
+
+    let json: serde_json::Value = serde_json::from_str(&message)?;
+    assert_eq!(
+        json.get("explanation"),
+        Some(&serde_json::Value::String("explanation".into()))
+    );
+    assert_eq!(
+        json.get("final_answer"),
+        Some(&serde_json::Value::String("final_answer".into()))
+    );
 
     Ok(())
 }

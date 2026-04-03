@@ -7,6 +7,7 @@ use chaos_ipc::approvals::ElicitationRequestEvent;
 use chaos_ipc::protocol::Op;
 use chaos_ipc::protocol::ReviewDecision;
 use chaos_kern::Process;
+use mcp_host::protocol::types::RequestId;
 use serde::Deserialize;
 use serde::Serialize;
 use serde_json::Value;
@@ -65,6 +66,64 @@ impl ApprovalElicitationResponse {
             meta: None,
         }
     }
+}
+
+pub(crate) type ElicitationResponseReceiver =
+    tokio::sync::oneshot::Receiver<Result<Value, ErrorData>>;
+
+pub(crate) enum CreateFormElicitationError {
+    InvalidParams,
+    Unsupported,
+}
+
+pub(crate) async fn create_form_elicitation_request<P: Serialize>(
+    outgoing: &OutgoingMessageSender,
+    request_id: RequestId,
+    params: &P,
+    params_label: &str,
+) -> Result<ElicitationResponseReceiver, CreateFormElicitationError> {
+    let params_json = match serde_json::to_value(params) {
+        Ok(value) => value,
+        Err(err) => {
+            let message = format!("Failed to serialize {params_label}: {err}");
+            error!("{message}");
+            outgoing
+                .send_error(request_id, ErrorData::invalid_params(message))
+                .await;
+            return Err(CreateFormElicitationError::InvalidParams);
+        }
+    };
+
+    if !outgoing.supports_form_elicitation() {
+        error!("client does not support form elicitation");
+        return Err(CreateFormElicitationError::Unsupported);
+    }
+
+    Ok(outgoing
+        .send_request("elicitation/create", Some(params_json))
+        .await)
+}
+
+pub(crate) async fn decode_approval_elicitation_response(
+    receiver: ElicitationResponseReceiver,
+    response_label: &str,
+) -> ApprovalElicitationResponse {
+    let value = match receiver.await {
+        Ok(Ok(value)) => value,
+        Ok(Err(err)) => {
+            error!("elicitation request failed: {err:?}");
+            return ApprovalElicitationResponse::decline();
+        }
+        Err(err) => {
+            error!("request failed: {err:?}");
+            return ApprovalElicitationResponse::decline();
+        }
+    };
+
+    serde_json::from_value::<ApprovalElicitationResponse>(value).unwrap_or_else(|err| {
+        error!("failed to deserialize {response_label}: {err}");
+        ApprovalElicitationResponse::decline()
+    })
 }
 
 #[derive(Debug, Clone, Deserialize, Serialize, PartialEq)]

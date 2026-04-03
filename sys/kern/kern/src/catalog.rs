@@ -167,15 +167,19 @@ impl CatalogSink {
 
     pub(crate) fn read(
         &self,
-    ) -> Result<std::sync::RwLockReadGuard<'_, Catalog>, std::sync::PoisonError<std::sync::RwLockReadGuard<'_, Catalog>>>
-    {
+    ) -> Result<
+        std::sync::RwLockReadGuard<'_, Catalog>,
+        std::sync::PoisonError<std::sync::RwLockReadGuard<'_, Catalog>>,
+    > {
         self.0.read()
     }
 
     pub(crate) fn write(
         &self,
-    ) -> Result<std::sync::RwLockWriteGuard<'_, Catalog>, std::sync::PoisonError<std::sync::RwLockWriteGuard<'_, Catalog>>>
-    {
+    ) -> Result<
+        std::sync::RwLockWriteGuard<'_, Catalog>,
+        std::sync::PoisonError<std::sync::RwLockWriteGuard<'_, Catalog>>,
+    > {
         self.0.write()
     }
 }
@@ -233,6 +237,7 @@ impl McpCatalogSink for CatalogSink {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use chaos_traits::catalog::CatalogPromptArgument;
     use serde_json::json;
 
     #[test]

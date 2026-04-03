@@ -2,7 +2,6 @@ use crate::client_common::tools::ResponsesApiNamespace;
 use crate::client_common::tools::ResponsesApiNamespaceTool;
 use crate::client_common::tools::ToolSearchOutputTool;
 use crate::function_tool::FunctionCallError;
-use chaos_mcp_runtime::manager::ToolInfo;
 use crate::tools::context::ToolInvocation;
 use crate::tools::context::ToolPayload;
 use crate::tools::context::ToolSearchOutput;
@@ -11,6 +10,7 @@ use crate::tools::registry::ToolKind;
 use crate::tools::spec::mcp_tool_to_deferred_openai_tool;
 use chaos_apropos::Corpus;
 use chaos_apropos::Document;
+use chaos_mcp_runtime::manager::ToolInfo;
 use std::collections::BTreeMap;
 use std::collections::HashMap;
 

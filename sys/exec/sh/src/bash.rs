@@ -1,11 +1,10 @@
-use std::path::PathBuf;
+use std::path::Path;
 
 use tree_sitter::Node;
 use tree_sitter::Parser;
 use tree_sitter::Tree;
 use tree_sitter_bash::LANGUAGE as BASH;
 
-use crate::shell_detect::ShellType;
 use crate::shell_detect::detect_shell_type;
 
 /// Parse the provided bash source using tree-sitter-bash, returning a Tree on
@@ -98,12 +97,7 @@ pub fn extract_bash_command(command: &[String]) -> Option<(&str, &str)> {
     let [shell, flag, script] = command else {
         return None;
     };
-    if !matches!(flag.as_str(), "-lc" | "-c")
-        || !matches!(
-            detect_shell_type(&PathBuf::from(shell)),
-            Some(ShellType::Zsh) | Some(ShellType::Bash) | Some(ShellType::Sh)
-        )
-    {
+    if !matches!(flag.as_str(), "-lc" | "-c") || detect_shell_type(Path::new(shell)).is_none() {
         return None;
     }
     Some((shell, script))

@@ -114,13 +114,13 @@ use futures::prelude::*;
 use futures::stream::FuturesOrdered;
 use jiff::Timestamp;
 use jiff::Zoned;
-use mcp_guest::ListResourceTemplatesResult;
-use mcp_guest::ListResourcesResult;
-use mcp_guest::PaginatedRequestParams;
-use mcp_guest::ReadResourceRequestParams;
-use mcp_guest::ReadResourceResult;
-use mcp_guest::protocol::ElicitationResponse;
-use mcp_guest::protocol::RequestId;
+use chaos_mcp_runtime::ListResourceTemplatesResult;
+use chaos_mcp_runtime::ListResourcesResult;
+use chaos_mcp_runtime::PaginatedRequestParams;
+use chaos_mcp_runtime::ReadResourceRequestParams;
+use chaos_mcp_runtime::ReadResourceResult;
+use chaos_mcp_runtime::ElicitationResponse;
+use chaos_mcp_runtime::McpRequestId as RequestId;
 use serde_json;
 use serde_json::Value;
 use tokio::sync::Mutex;
@@ -198,7 +198,7 @@ use crate::instructions::UserInstructions;
 use crate::mcp::McpManager;
 use crate::mcp::auth::compute_auth_statuses;
 use crate::mcp::maybe_prompt_and_install_mcp_dependencies;
-use crate::mcp_connection_manager::McpConnectionManager;
+use chaos_mcp_runtime::manager::McpConnectionManager;
 use crate::memories;
 use crate::network_policy_decision::execpolicy_network_rule_amendment;
 use crate::project_doc::get_user_instructions;
@@ -1657,7 +1657,7 @@ impl Session {
         };
 
         let services = SessionServices {
-            catalog: Arc::new(std::sync::RwLock::new(
+            catalog: Arc::new(crate::catalog::CatalogSink::new(
                 crate::catalog::Catalog::from_inventory(),
             )),
             // Initialize the MCP connection manager with an uninitialized
@@ -1803,7 +1803,7 @@ impl Session {
             tx_event.clone(),
             sandbox_state,
             config.chaos_home.clone(),
-            Arc::clone(&sess.services.catalog),
+            Arc::clone(&sess.services.catalog) as Arc<dyn chaos_traits::McpCatalogSink>,
         )
         .instrument(info_span!(
             "session_init.mcp_manager_init",
@@ -1828,7 +1828,7 @@ impl Session {
             for tool_info in mcp_tools.values() {
                 catalog.register_mcp_tools(
                     &tool_info.server_name,
-                    vec![crate::catalog::mcp_tool_info_to_catalog_tool(tool_info)],
+                    vec![chaos_mcp_runtime::catalog_conv::mcp_tool_info_to_catalog_tool(tool_info)],
                 );
             }
         }
@@ -3886,7 +3886,7 @@ impl Session {
             self.get_tx_event(),
             sandbox_state,
             config.chaos_home.clone(),
-            Arc::clone(&self.services.catalog),
+            Arc::clone(&self.services.catalog) as Arc<dyn chaos_traits::McpCatalogSink>,
         )
         .await;
         {
@@ -3913,7 +3913,7 @@ impl Session {
             for tool_info in mcp_tools.values() {
                 catalog.register_mcp_tools(
                     &tool_info.server_name,
-                    vec![crate::catalog::mcp_tool_info_to_catalog_tool(tool_info)],
+                    vec![chaos_mcp_runtime::catalog_conv::mcp_tool_info_to_catalog_tool(tool_info)],
                 );
             }
         }
@@ -4276,8 +4276,8 @@ mod handlers {
     use chaos_ipc::dynamic_tools::DynamicToolResponse;
     use chaos_ipc::mcp::RequestId as ProtocolRequestId;
     use chaos_ipc::user_input::UserInput;
-    use mcp_guest::protocol::ElicitationAction;
-    use mcp_guest::protocol::ElicitationResponse;
+    use chaos_mcp_runtime::ElicitationAction;
+    use chaos_mcp_runtime::ElicitationResponse;
     use serde_json::Value;
     use std::path::PathBuf;
     use std::sync::Arc;
@@ -4434,7 +4434,7 @@ mod handlers {
             content,
             meta,
         };
-        let request_id = crate::mcp_connection_manager::protocol_request_id_to_guest(&request_id);
+        let request_id = chaos_mcp_runtime::manager::protocol_request_id_to_guest(&request_id);
         if let Err(err) = sess
             .resolve_elicitation(server_name, request_id, response)
             .await

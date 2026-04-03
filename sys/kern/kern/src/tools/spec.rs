@@ -4,7 +4,7 @@ use crate::client_common::tools::ToolSpec;
 use crate::config::AgentRoleConfig;
 use crate::features::Feature;
 use crate::features::Features;
-use crate::mcp_connection_manager::ToolInfo;
+use chaos_mcp_runtime::manager::ToolInfo;
 use crate::minions::tools::DEFAULT_WAIT_TIMEOUT_MS;
 use crate::minions::tools::MAX_WAIT_TIMEOUT_MS;
 use crate::minions::tools::MIN_WAIT_TIMEOUT_MS;
@@ -1791,7 +1791,7 @@ fn push_tool_spec(
 /// - `destructive_hint: Some(true)` -> `"destructive"`
 /// - `idempotent_hint: Some(true)` -> `"idempotent"`
 /// - `open_world_hint: Some(true)` -> `"open-world"`
-fn annotation_suffix(annotations: &mcp_guest::ToolAnnotations) -> String {
+fn annotation_suffix(annotations: &chaos_mcp_runtime::ToolAnnotations) -> String {
     let mut hints: Vec<&str> = Vec::new();
 
     match annotations.read_only_hint {
@@ -1818,7 +1818,7 @@ fn annotation_suffix(annotations: &mcp_guest::ToolAnnotations) -> String {
 
 pub(crate) fn mcp_tool_to_openai_tool(
     fully_qualified_name: String,
-    tool: crate::mcp_connection_manager::McpToolInfo,
+    tool: chaos_mcp_runtime::manager::McpToolInfo,
 ) -> Result<ResponsesApiTool, serde_json::Error> {
     let description = match (&tool.description, &tool.annotations) {
         (Some(desc), Some(ann)) => {
@@ -1842,7 +1842,7 @@ pub(crate) fn mcp_tool_to_openai_tool(
 
 pub(crate) fn mcp_tool_to_deferred_openai_tool(
     name: String,
-    tool: crate::mcp_connection_manager::McpToolInfo,
+    tool: chaos_mcp_runtime::manager::McpToolInfo,
 ) -> Result<ResponsesApiTool, serde_json::Error> {
     let description = match (&tool.description, &tool.annotations) {
         (Some(desc), Some(ann)) => {
@@ -1880,7 +1880,7 @@ fn dynamic_tool_to_openai_tool(
 #[cfg(test)]
 pub(crate) fn build_specs(
     config: &ToolsConfig,
-    mcp_tools: Option<HashMap<String, crate::mcp_connection_manager::McpToolInfo>>,
+    mcp_tools: Option<HashMap<String, chaos_mcp_runtime::manager::McpToolInfo>>,
     app_tools: Option<HashMap<String, ToolInfo>>,
     dynamic_tools: &[DynamicToolSpec],
 ) -> ToolRegistryBuilder {
@@ -1908,7 +1908,7 @@ pub(crate) fn build_specs(
 #[allow(clippy::too_many_arguments)]
 pub(crate) fn build_specs_with_discoverable_tools(
     config: &ToolsConfig,
-    mcp_tools: Option<HashMap<String, crate::mcp_connection_manager::McpToolInfo>>,
+    mcp_tools: Option<HashMap<String, chaos_mcp_runtime::manager::McpToolInfo>>,
     app_tools: Option<HashMap<String, ToolInfo>>,
     discoverable_tools: Option<Vec<DiscoverableTool>>,
     dynamic_tools: &[DynamicToolSpec],
@@ -2274,7 +2274,7 @@ pub(crate) fn build_specs_with_discoverable_tools(
     }
 
     if let Some(mcp_tools) = mcp_tools {
-        let mut entries: Vec<(String, crate::mcp_connection_manager::McpToolInfo)> =
+        let mut entries: Vec<(String, chaos_mcp_runtime::manager::McpToolInfo)> =
             mcp_tools.into_iter().collect();
         entries.sort_by(|a, b| a.0.cmp(&b.0));
 

@@ -1850,7 +1850,7 @@ pub(crate) async fn make_session_and_context() -> (Session, TurnContext) {
 
     let file_watcher = Arc::new(FileWatcher::noop());
     let services = SessionServices {
-        catalog: Arc::new(std::sync::RwLock::new(
+        catalog: Arc::new(crate::catalog::CatalogSink::new(
             crate::catalog::Catalog::from_inventory(),
         )),
         mcp_connection_manager: Arc::new(RwLock::new(
@@ -2493,7 +2493,7 @@ pub(crate) async fn make_session_and_context_with_dynamic_tools_and_rx(
 
     let file_watcher = Arc::new(FileWatcher::noop());
     let services = SessionServices {
-        catalog: Arc::new(std::sync::RwLock::new(
+        catalog: Arc::new(crate::catalog::CatalogSink::new(
             crate::catalog::Catalog::from_inventory(),
         )),
         mcp_connection_manager: Arc::new(RwLock::new(

@@ -4,13 +4,13 @@ use std::sync::Arc;
 use crate::AuthManager;
 use crate::RolloutRecorder;
 use crate::analytics_client::AnalyticsEventsClient;
-use crate::catalog::Catalog;
+use crate::catalog::CatalogSink;
 use crate::client::ModelClient;
 use crate::config::StartedNetworkProxy;
 use crate::exec_policy::ExecPolicyManager;
 use crate::file_watcher::FileWatcher;
 use crate::mcp::McpManager;
-use crate::mcp_connection_manager::McpConnectionManager;
+use chaos_mcp_runtime::manager::McpConnectionManager;
 use crate::minions::AgentControl;
 use crate::models_manager::manager::ModelsManager;
 use crate::skills::SkillsManager;
@@ -29,7 +29,7 @@ use tokio::sync::watch;
 use tokio_util::sync::CancellationToken;
 
 pub(crate) struct SessionServices {
-    pub(crate) catalog: Arc<std::sync::RwLock<Catalog>>,
+    pub(crate) catalog: Arc<CatalogSink>,
     pub(crate) mcp_connection_manager: Arc<RwLock<McpConnectionManager>>,
     pub(crate) mcp_startup_cancellation_token: Mutex<CancellationToken>,
     pub(crate) unified_exec_manager: UnifiedExecProcessManager,

@@ -1,5 +1,4 @@
 use super::*;
-use crate::mcp_connection_manager::McpToolInfo;
 use chaos_ipc::protocol::GranularApprovalConfig;
 use chaos_ipc::protocol::McpAuthStatus;
 use std::collections::HashSet;

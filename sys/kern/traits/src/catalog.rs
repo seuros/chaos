@@ -78,3 +78,23 @@ pub struct CatalogPromptArgument {
     pub description: Option<String>,
     pub required: bool,
 }
+
+/// Sink for dynamic MCP catalog registration.
+///
+/// `chaos-mcp-runtime` holds an `Arc<dyn McpCatalogSink>` so that the
+/// connection manager can update the kernel's tool/resource registry without
+/// importing `chaos-kern` types.  The kernel's `Catalog` implements this trait.
+pub trait McpCatalogSink: Send + Sync {
+    fn register_mcp_tools(&self, server: &str, tools: Vec<CatalogTool>);
+    fn register_mcp_resources(
+        &self,
+        server: &str,
+        resources: Vec<CatalogResource>,
+        templates: Vec<CatalogResourceTemplate>,
+    );
+    fn register_mcp_prompts(&self, server: &str, prompts: Vec<CatalogPrompt>);
+    fn unregister_mcp(&self, server: &str);
+    fn unregister_mcp_resources(&self, server: &str);
+    fn unregister_mcp_prompts(&self, server: &str);
+    fn clear_all_mcp(&self);
+}

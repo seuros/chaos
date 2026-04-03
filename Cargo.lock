@@ -1303,6 +1303,7 @@ dependencies = [
  "chaos-keyring",
  "chaos-lex",
  "chaos-locate",
+ "chaos-mcp-runtime",
  "chaos-memento",
  "chaos-minions",
  "chaos-parrot",
@@ -1347,7 +1348,6 @@ dependencies = [
  "keyring-core",
  "landlock",
  "libc",
- "mcp-guest",
  "mcp-host",
  "notify",
  "openssl-sys",
@@ -1429,14 +1429,25 @@ name = "chaos-mcp-runtime"
 version = "47.0.0"
 dependencies = [
  "anyhow",
+ "async-channel",
+ "chaos-concierge",
+ "chaos-epoll",
  "chaos-ipc",
+ "chaos-sysctl",
+ "chaos-syslog",
+ "chaos-traits",
+ "futures",
  "indexmap 2.13.0",
  "mcp-guest",
+ "regex-lite",
  "serde",
  "serde_json",
+ "sha1 0.11.0",
  "thiserror 2.0.18",
  "tokio",
+ "tokio-util",
  "tracing",
+ "url",
 ]
 
 [[package]]

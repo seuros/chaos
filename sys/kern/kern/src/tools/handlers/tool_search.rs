@@ -2,7 +2,7 @@ use crate::client_common::tools::ResponsesApiNamespace;
 use crate::client_common::tools::ResponsesApiNamespaceTool;
 use crate::client_common::tools::ToolSearchOutputTool;
 use crate::function_tool::FunctionCallError;
-use crate::mcp_connection_manager::ToolInfo;
+use chaos_mcp_runtime::manager::ToolInfo;
 use crate::tools::context::ToolInvocation;
 use crate::tools::context::ToolPayload;
 use crate::tools::context::ToolSearchOutput;

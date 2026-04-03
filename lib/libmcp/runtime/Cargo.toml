@@ -16,10 +16,21 @@ workspace = true
 [dependencies]
 mcp-guest = { workspace = true, features = ["stdio", "http"] }
 chaos-ipc = { workspace = true }
+chaos-traits = { workspace = true }
+chaos-sysctl = { workspace = true }
+chaos-concierge = { workspace = true }
+chaos-epoll = { workspace = true }
 anyhow = { workspace = true }
+async-channel = { workspace = true }
+futures = { workspace = true }
+indexmap = { workspace = true }
 serde = { workspace = true, features = ["derive"] }
 serde_json = { workspace = true }
+sha1 = { workspace = true }
 tokio = { workspace = true, features = ["rt", "sync", "macros", "time"] }
+tokio-util = { workspace = true }
 tracing = { workspace = true }
 thiserror = { workspace = true }
-indexmap = { workspace = true }
+url = { workspace = true }
+chaos-syslog = { workspace = true }
+regex-lite = { workspace = true }

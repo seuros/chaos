@@ -1318,6 +1318,8 @@ mod tests {
     use super::*;
     use chaos_ipc::ProcessId;
     use jiff::Timestamp;
+    #[cfg(feature = "vt100-tests")]
+    use jiff::ToSpan;
 
     use crossterm::event::KeyCode;
     use crossterm::event::KeyEvent;
@@ -1457,8 +1459,8 @@ mod tests {
                 preview: String::from("Fix resume picker timestamps"),
                 process_id: ProcessId::new(),
                 process_name: None,
-                created_at: Some(now.checked_sub(16.minutes()).unwrap()),
-                updated_at: Some(now.checked_sub(42.seconds()).unwrap()),
+                created_at: Some(now.checked_sub(16_i64.minutes()).unwrap()),
+                updated_at: Some(now.checked_sub(42_i64.seconds()).unwrap()),
                 cwd: None,
                 git_branch: None,
             },
@@ -1466,8 +1468,8 @@ mod tests {
                 preview: String::from("Investigate lazy pagination cap"),
                 process_id: ProcessId::new(),
                 process_name: None,
-                created_at: Some(now.checked_sub(1.hours()).unwrap()),
-                updated_at: Some(now.checked_sub(35.minutes()).unwrap()),
+                created_at: Some(now.checked_sub(1_i64.hours()).unwrap()),
+                updated_at: Some(now.checked_sub(35_i64.minutes()).unwrap()),
                 cwd: None,
                 git_branch: None,
             },
@@ -1475,8 +1477,8 @@ mod tests {
                 preview: String::from("Explain the codebase"),
                 process_id: ProcessId::new(),
                 process_name: None,
-                created_at: Some(now.checked_sub(2.hours()).unwrap()),
-                updated_at: Some(now.checked_sub(2.hours()).unwrap()),
+                created_at: Some(now.checked_sub(2_i64.hours()).unwrap()),
+                updated_at: Some(now.checked_sub(2_i64.hours()).unwrap()),
                 cwd: None,
                 git_branch: None,
             },

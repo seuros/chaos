@@ -9,7 +9,13 @@ pub(crate) fn buffer_to_first_char_string(buf: &Buffer) -> String {
     for y in 0..area.height {
         let mut row = String::new();
         for x in 0..area.width {
-            row.push(buf[(area.x + x, area.y + y)].symbol().chars().next().unwrap_or(' '));
+            row.push(
+                buf[(area.x + x, area.y + y)]
+                    .symbol()
+                    .chars()
+                    .next()
+                    .unwrap_or(' '),
+            );
         }
         lines.push(row);
     }

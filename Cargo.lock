@@ -1848,6 +1848,7 @@ dependencies = [
  "chaos-sysctl",
  "chaos-syslog",
  "inventory",
+ "mcp-host",
  "serde",
  "serde_json",
  "tokio",

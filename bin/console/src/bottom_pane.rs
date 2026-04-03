@@ -1137,6 +1137,8 @@ mod tests {
     use crate::app_event::AppEvent;
     use crate::status_indicator_widget::STATUS_DETAILS_DEFAULT_MAX_LINES;
     use crate::status_indicator_widget::StatusDetailsCapitalization;
+    use crate::test_render::buffer_to_first_char_string;
+    use crate::test_render::render_to_first_char_string;
     use chaos_ipc::protocol::Op;
     use crossterm::event::KeyEventKind;
     use crossterm::event::KeyModifiers;
@@ -1146,8 +1148,6 @@ mod tests {
     use std::cell::Cell;
     use std::rc::Rc;
     use tokio::sync::mpsc::unbounded_channel;
-    use crate::test_render::buffer_to_first_char_string;
-    use crate::test_render::render_to_first_char_string;
 
     fn exec_request() -> ApprovalRequest {
         ApprovalRequest::Exec {
@@ -1362,7 +1362,10 @@ mod tests {
         let width = 48;
         let height = pane.desired_height(width);
         let area = Rect::new(0, 0, width, height);
-        assert_snapshot!("status_only_snapshot", render_to_first_char_string(&pane, area));
+        assert_snapshot!(
+            "status_only_snapshot",
+            render_to_first_char_string(&pane, area)
+        );
     }
 
     #[test]

@@ -55,6 +55,7 @@ use chaos_ipc::protocol::ExitedReviewModeEvent;
 use chaos_ipc::protocol::FileChange;
 use chaos_ipc::protocol::ReasoningContentDeltaEvent;
 
+use crate::test_render::render_to_trimmed_string;
 use chaos_ipc::protocol::ImageGenerationEndEvent;
 use chaos_ipc::protocol::ItemCompletedEvent;
 use chaos_ipc::protocol::Op;
@@ -89,6 +90,8 @@ use chaos_kern::config::ConfigBuilder;
 #[cfg(feature = "vt100-tests")]
 use chaos_kern::config::Constrained;
 #[cfg(feature = "vt100-tests")]
+use chaos_kern::config::ConstraintError;
+#[cfg(feature = "vt100-tests")]
 use chaos_kern::config::types::Notifications;
 #[cfg(feature = "vt100-tests")]
 use chaos_kern::config_loader::RequirementSource;
@@ -113,7 +116,6 @@ use tempfile::tempdir;
 use tokio::sync::mpsc::error::TryRecvError;
 use tokio::sync::mpsc::unbounded_channel;
 use toml::Value as TomlValue;
-use crate::test_render::render_to_trimmed_string;
 
 async fn test_config() -> Config {
     // Use base defaults to avoid depending on host state.

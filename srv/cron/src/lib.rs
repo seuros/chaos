@@ -21,21 +21,13 @@ pub use store::CronStore;
 pub use tools::create::OwnerContext;
 
 use chaos_traits::catalog::CatalogRegistration;
-use chaos_traits::catalog::CatalogTool;
+use chaos_traits::catalog::tool_infos_to_catalog_tools;
 use mcp_host::prelude::*;
 
 inventory::submit! {
     CatalogRegistration {
         name: "cron",
-        tools: || {
-            tool_infos().into_iter().map(|info| CatalogTool {
-                name: info.name,
-                description: info.description.unwrap_or_default(),
-                input_schema: info.input_schema,
-                annotations: info.annotations
-                    .and_then(|a| serde_json::to_value(a).ok()),
-            }).collect()
-        },
+        tools: || tool_infos_to_catalog_tools(tool_infos()),
         resources: || vec![],
         resource_templates: || vec![],
         prompts: || vec![],
@@ -45,27 +37,8 @@ inventory::submit! {
 /// MCP server state for cron tools.
 pub struct CronServer;
 
-/// Lightweight context wrapper — mirrors the arsenal pattern.
-#[derive(Clone)]
-pub struct CronCtx<'a> {
-    inner: Ctx<'a>,
-}
-
-impl<'a> FromExecutionContext<'a> for CronCtx<'a> {
-    fn from_execution_context(ctx: &'a ExecutionContext<'a>) -> Self {
-        Self {
-            inner: Ctx::from_execution_context(ctx),
-        }
-    }
-}
-
-impl<'a> std::ops::Deref for CronCtx<'a> {
-    type Target = Ctx<'a>;
-
-    fn deref(&self) -> &Self::Target {
-        &self.inner
-    }
-}
+/// Shared server execution context for cron tools.
+pub type CronCtx<'a> = Ctx<'a>;
 
 /// Returns tool metadata for all cron tools.
 pub fn tool_infos() -> Vec<ToolInfo> {

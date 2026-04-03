@@ -33,7 +33,8 @@ members = [
 
     # srv/ — services
     "srv/mcpd",
-    "srv/mcpc",
+    "lib/libmcp/guest",
+    "lib/libmcp/runtime",
     "srv/arsenal",
     "srv/daemon",
     "srv/journald",
@@ -137,7 +138,8 @@ codex-client = { path = "drivers/client" }
 
 # Internal — srv/
 chaos-mcpd = { path = "srv/mcpd" }
-mcp-guest = { path = "srv/mcpc" }
+mcp-guest = { path = "lib/libmcp/guest" }
+chaos-mcp-runtime = { path = "lib/libmcp/runtime" }
 chaos-arsenal = { path = "srv/arsenal" }
 chaos-daemon = { path = "srv/daemon" }
 chaos-journald = { path = "srv/journald" }

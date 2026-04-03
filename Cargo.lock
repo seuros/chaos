@@ -1425,6 +1425,21 @@ dependencies = [
 ]
 
 [[package]]
+name = "chaos-mcp-runtime"
+version = "47.0.0"
+dependencies = [
+ "anyhow",
+ "chaos-ipc",
+ "indexmap 2.13.0",
+ "mcp-guest",
+ "serde",
+ "serde_json",
+ "thiserror 2.0.18",
+ "tokio",
+ "tracing",
+]
+
+[[package]]
 name = "chaos-mcpd"
 version = "47.0.0"
 dependencies = [

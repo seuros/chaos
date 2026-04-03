@@ -19,12 +19,11 @@ use std::sync::atomic::Ordering;
 use std::time::Duration;
 use std::time::Instant;
 
-use chaos_concierge::auth::McpAuthStatusEntry;
-use chaos_sysctl::types::OAuthCredentialsStoreMode;
 use anyhow::Context;
 use anyhow::Result;
 use anyhow::anyhow;
 use async_channel::Sender;
+use chaos_concierge::auth::McpAuthStatusEntry;
 use chaos_epoll::CancelErr;
 use chaos_epoll::OrCancelExt;
 use chaos_ipc::approvals::ElicitationCompleteEvent;
@@ -42,6 +41,7 @@ use chaos_ipc::protocol::McpStartupStatus;
 use chaos_ipc::protocol::McpStartupUpdateEvent;
 use chaos_ipc::protocol::SandboxPolicy;
 use chaos_sysctl::Constrained;
+use chaos_sysctl::types::OAuthCredentialsStoreMode;
 use futures::future::BoxFuture;
 use futures::future::FutureExt;
 use futures::future::Shared;
@@ -383,7 +383,8 @@ impl ClientHandler for ChaosClientHandler {
                             .map(crate::catalog_conv::mcp_tool_info_to_catalog_tool)
                             .collect();
                         self.catalog.unregister_mcp(&self.server_name);
-                        self.catalog.register_mcp_tools(&self.server_name, catalog_tools);
+                        self.catalog
+                            .register_mcp_tools(&self.server_name, catalog_tools);
                     }
                 }
                 Err(err) => {
@@ -435,7 +436,8 @@ impl ClientHandler for ChaosClientHandler {
             // Unregister clears tools+resources+templates+prompts for the server,
             // so we only clear resources/templates selectively here.
             self.catalog.unregister_mcp_resources(&self.server_name);
-            self.catalog.register_mcp_resources(&self.server_name, resources, templates);
+            self.catalog
+                .register_mcp_resources(&self.server_name, resources, templates);
         })
     }
 
@@ -461,7 +463,8 @@ impl ClientHandler for ChaosClientHandler {
             };
 
             self.catalog.unregister_mcp_prompts(&self.server_name);
-            self.catalog.register_mcp_prompts(&self.server_name, prompts);
+            self.catalog
+                .register_mcp_prompts(&self.server_name, prompts);
         })
     }
 

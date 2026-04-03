@@ -46,9 +46,19 @@ pub struct ToolCallResult {
 #[derive(Debug, Clone, Serialize, Deserialize)]
 #[serde(tag = "type", rename_all = "snake_case")]
 pub enum ToolContent {
-    Text { text: String },
-    Image { data: String, mime_type: String },
-    Resource { uri: String, text: Option<String>, blob: Option<String>, mime_type: Option<String> },
+    Text {
+        text: String,
+    },
+    Image {
+        data: String,
+        mime_type: String,
+    },
+    Resource {
+        uri: String,
+        text: Option<String>,
+        blob: Option<String>,
+        mime_type: Option<String>,
+    },
 }
 
 /// Describes a resource exposed by an MCP server.

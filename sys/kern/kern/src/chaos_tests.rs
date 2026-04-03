@@ -13,6 +13,7 @@ use crate::models_manager::model_info;
 use crate::shell::default_user_shell;
 use crate::tools::format_exec_output_str;
 
+use chaos_mcp_runtime::McpConnectionManager;
 use chaos_ipc::ProcessId;
 use chaos_ipc::models::FunctionCallOutputBody;
 use chaos_ipc::models::FunctionCallOutputPayload;
@@ -1854,7 +1855,7 @@ pub(crate) async fn make_session_and_context() -> (Session, TurnContext) {
             crate::catalog::Catalog::from_inventory(),
         )),
         mcp_connection_manager: Arc::new(RwLock::new(
-            McpConnectionManager::new_mcp_connection_manager_for_tests(
+            McpConnectionManager::new_uninitialized(
                 &config.permissions.approval_policy,
             ),
         )),
@@ -2497,7 +2498,7 @@ pub(crate) async fn make_session_and_context_with_dynamic_tools_and_rx(
             crate::catalog::Catalog::from_inventory(),
         )),
         mcp_connection_manager: Arc::new(RwLock::new(
-            McpConnectionManager::new_mcp_connection_manager_for_tests(
+            McpConnectionManager::new_uninitialized(
                 &config.permissions.approval_policy,
             ),
         )),

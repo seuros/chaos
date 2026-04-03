@@ -54,22 +54,11 @@ impl ChatCompletionsAdapter {
         api_key: String,
         default_model: Option<String>,
     ) -> Self {
-        use crate::provider::RetryConfig;
-
-        let provider = Provider {
-            name: "ChatCompletions".to_string(),
+        let provider = Provider::from_base_url_with_default_streaming_config(
+            "ChatCompletions",
             base_url,
-            query_params: None,
-            headers: HeaderMap::new(),
-            retry: RetryConfig {
-                max_attempts: 4,
-                base_delay: Duration::from_millis(200),
-                retry_429: false,
-                retry_5xx: true,
-                retry_transport: true,
-            },
-            stream_idle_timeout: Duration::from_secs(300),
-        };
+            false,
+        );
         Self::new(provider, api_key, default_model)
     }
 

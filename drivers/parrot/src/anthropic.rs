@@ -57,23 +57,8 @@ impl AnthropicAdapter {
         api_key: String,
         default_model: Option<String>,
     ) -> Self {
-        use crate::provider::RetryConfig;
-        use std::time::Duration;
-
-        let provider = Provider {
-            name: "Anthropic".to_string(),
-            base_url,
-            query_params: None,
-            headers: HeaderMap::new(),
-            retry: RetryConfig {
-                max_attempts: 4,
-                base_delay: Duration::from_millis(200),
-                retry_429: true,
-                retry_5xx: true,
-                retry_transport: true,
-            },
-            stream_idle_timeout: Duration::from_secs(300),
-        };
+        let provider =
+            Provider::from_base_url_with_default_streaming_config("Anthropic", base_url, true);
         Self::new(provider, AnthropicAuth::ApiKey(api_key), default_model)
     }
 

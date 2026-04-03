@@ -279,6 +279,7 @@ rama = { git = "https://github.com/plabayo/rama.git", features = ["http-full", "
 rand = "0.10"
 ratatui = "0.30.0"
 ratatui-hypertile = "0.3.0"
+ratatui-hypertile-extras = { version = "0.3.0", default-features = false, features = ["crossterm"] }
 ratatui-macros = "0.7.0"
 regex = "1.12.3"
 regex-lite = "0.1.9"

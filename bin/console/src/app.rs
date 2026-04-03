@@ -85,9 +85,7 @@ use crossterm::event::KeyEventKind;
 use ratatui::style::Stylize;
 use ratatui::text::Line;
 use ratatui::widgets::Paragraph;
-use ratatui::widgets::StatefulWidget;
 use ratatui::widgets::Wrap;
-use ratatui_hypertile::HypertileWidget;
 use ratatui_hypertile::PaneId;
 use std::collections::BTreeMap;
 use std::collections::HashMap;
@@ -2080,31 +2078,24 @@ impl App {
                                 frame.set_cursor_position((x, y));
                             }
                         } else {
-                            // Tiled layout: split main_area and dispatch to
-                            // per-pane renderers via hypertile.
+                            // Tiled layout: dispatch to per-kind widgets via
+                            // the runtime's plugin registry.
                             let chat_widget = &self.chat_widget;
                             let tool_list_pane = &self.tool_list_pane;
-                            let pane_map = &self.tile_manager.pane_map;
-                            let hypertile = &mut self.tile_manager.hypertile;
-                            HypertileWidget::new(|pane, buf| match pane_map.get(&pane.id) {
-                                Some(PaneKind::Chat) => {
-                                    chat_widget.render(pane.rect, buf);
-                                }
-                                Some(PaneKind::ToolList) => {
-                                    tool_list_pane.render(pane.rect, buf);
-                                }
-                                _ => {}
-                            })
-                            .render(
+                            self.tile_manager.render_with(
                                 main_area,
                                 frame.buffer,
-                                hypertile,
+                                |pane, kind, buf| match kind {
+                                    PaneKind::Chat => chat_widget.render(pane.rect, buf),
+                                    PaneKind::ToolList => tool_list_pane.render(pane.rect, buf),
+                                    _ => {}
+                                },
                             );
 
                             // Place cursor in chat pane.
                             if self.tile_manager.focused() == Some(PaneId::ROOT)
                                 && let Some(chat_rect) =
-                                    self.tile_manager.hypertile_mut().pane_rect(PaneId::ROOT)
+                                    self.tile_manager.pane_rect(PaneId::ROOT)
                                 && let Some((x, y)) = self.chat_widget.cursor_pos(chat_rect)
                             {
                                 frame.set_cursor_position((x, y));

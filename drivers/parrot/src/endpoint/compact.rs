@@ -7,9 +7,7 @@ use chaos_ipc::models::ResponseItem;
 use codex_client::HttpTransport;
 use codex_client::RequestTelemetry;
 use http::HeaderMap;
-use http::Method;
 use serde::Deserialize;
-use serde_json::to_value;
 use std::sync::Arc;
 
 pub struct CompactClient<T: HttpTransport, A: AuthProvider> {
@@ -38,12 +36,10 @@ impl<T: HttpTransport, A: AuthProvider> CompactClient<T, A> {
         body: serde_json::Value,
         extra_headers: HeaderMap,
     ) -> Result<Vec<ResponseItem>, ApiError> {
-        let resp = self
+        let parsed: CompactHistoryResponse = self
             .session
-            .execute(Method::POST, Self::path(), extra_headers, Some(body))
+            .post_json_response(Self::path(), extra_headers, body, "compaction response")
             .await?;
-        let parsed: CompactHistoryResponse =
-            serde_json::from_slice(&resp.body).map_err(|e| ApiError::Stream(e.to_string()))?;
         Ok(parsed.output)
     }
 
@@ -52,9 +48,17 @@ impl<T: HttpTransport, A: AuthProvider> CompactClient<T, A> {
         input: &CompactionInput<'_>,
         extra_headers: HeaderMap,
     ) -> Result<Vec<ResponseItem>, ApiError> {
-        let body = to_value(input)
-            .map_err(|e| ApiError::Stream(format!("failed to encode compaction input: {e}")))?;
-        self.compact(body, extra_headers).await
+        let parsed: CompactHistoryResponse = self
+            .session
+            .post_json_input(
+                Self::path(),
+                input,
+                extra_headers,
+                "compaction input",
+                "compaction response",
+            )
+            .await?;
+        Ok(parsed.output)
     }
 }
 

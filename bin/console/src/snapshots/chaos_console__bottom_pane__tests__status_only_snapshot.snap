@@ -1,10 +1,10 @@
 ---
-source: bin/xserver/src/bottom_pane.rs
+source: bin/console/src/bottom_pane.rs
 expression: "render_snapshot(&pane, area)"
 ---
 • Working (0s • esc to interrupt)               
                                                 
                                                 
-› Ask Chaos to do anything                      
+› Ask Agent of Chaos to do something.           
                                                 
   ? for shortcuts            100% context left

@@ -1,4 +1,7 @@
 use crate::error::ApiError;
+
+pub(crate) const MIME_APPLICATION_JSON: &str = "application/json";
+pub(crate) const MIME_TEXT_EVENT_STREAM: &str = "text/event-stream";
 use chaos_ipc::config_types::ReasoningSummary as ReasoningSummaryConfig;
 use chaos_ipc::config_types::Verbosity as VerbosityConfig;
 use chaos_ipc::models::ResponseItem;

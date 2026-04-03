@@ -309,10 +309,13 @@ fn format_config_layer_source(source: &ConfigLayerSource) -> String {
 }
 
 fn format_sandbox_mode_requirement(mode: SandboxModeRequirement) -> String {
+    use chaos_ipc::config_types::{
+        SANDBOX_MODE_READ_ONLY, SANDBOX_MODE_ROOT_ACCESS, SANDBOX_MODE_WORKSPACE_WRITE,
+    };
     match mode {
-        SandboxModeRequirement::ReadOnly => "read-only".to_string(),
-        SandboxModeRequirement::WorkspaceWrite => "workspace-write".to_string(),
-        SandboxModeRequirement::RootAccess => "root-access".to_string(),
+        SandboxModeRequirement::ReadOnly => SANDBOX_MODE_READ_ONLY.to_string(),
+        SandboxModeRequirement::WorkspaceWrite => SANDBOX_MODE_WORKSPACE_WRITE.to_string(),
+        SandboxModeRequirement::RootAccess => SANDBOX_MODE_ROOT_ACCESS.to_string(),
         SandboxModeRequirement::ExternalSandbox => "external-sandbox".to_string(),
     }
 }

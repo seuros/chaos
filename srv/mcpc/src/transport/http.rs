@@ -23,6 +23,9 @@ use url::Url;
 
 use crate::error::GuestError;
 use crate::protocol::InitializeResult;
+
+const MIME_APPLICATION_JSON: &str = "application/json";
+const MIME_TEXT_EVENT_STREAM: &str = "text/event-stream";
 use crate::protocol::JsonRpcMessage;
 use crate::protocol::JsonRpcRequest;
 use crate::protocol::JsonRpcResponse;
@@ -177,7 +180,7 @@ impl HttpTransportInner {
         let mut builder = Request::builder()
             .method("POST")
             .uri(self.endpoint.as_str())
-            .header(CONTENT_TYPE, "application/json");
+            .header(CONTENT_TYPE, MIME_APPLICATION_JSON);
 
         if !initialize_request {
             if let Some(session_id) = self.session_id.lock().await.clone() {
@@ -231,7 +234,7 @@ impl HttpTransportInner {
         }
 
         let content_type = header_value(response.headers(), CONTENT_TYPE).unwrap_or_default();
-        if content_type.starts_with("application/json") {
+        if content_type.starts_with(MIME_APPLICATION_JSON) {
             let bytes = collect_body_bytes(response).await?;
             if bytes.is_empty() {
                 return Ok(());
@@ -244,7 +247,7 @@ impl HttpTransportInner {
                 self.enqueue_message(message).await?;
             }
             Ok(())
-        } else if content_type.starts_with("text/event-stream") {
+        } else if content_type.starts_with(MIME_TEXT_EVENT_STREAM) {
             let this = Arc::clone(self);
             tokio::spawn(async move {
                 if let Err(error) = this
@@ -347,7 +350,7 @@ impl HttpTransportInner {
             match response.status() {
                 StatusCode::OK => {
                     if let Some(content_type) = header_value(response.headers(), CONTENT_TYPE)
-                        && !content_type.starts_with("text/event-stream")
+                        && !content_type.starts_with(MIME_TEXT_EVENT_STREAM)
                     {
                         tracing::warn!(content_type, "unexpected sse content type");
                         break;
@@ -405,7 +408,7 @@ impl HttpTransportInner {
 
         builder = self.apply_default_headers(
             builder,
-            Some("text/event-stream"),
+            Some(MIME_TEXT_EVENT_STREAM),
             &[
                 HEADER_SESSION_ID,
                 HEADER_PROTOCOL_VERSION,
@@ -751,7 +754,7 @@ mod tests {
     fn initialize_http_response(session_id: &str) -> Response {
         Response::builder()
             .status(StatusCode::OK)
-            .header(CONTENT_TYPE, "application/json")
+            .header(CONTENT_TYPE, MIME_APPLICATION_JSON)
             .header(HEADER_SESSION_ID, session_id)
             .body(Body::from(
                 serde_json::to_vec(&initialize_response()).unwrap(),
@@ -782,7 +785,7 @@ mod tests {
                 Ok::<_, OpaqueError>(
                     Response::builder()
                         .status(StatusCode::OK)
-                        .header(CONTENT_TYPE, "application/json")
+                        .header(CONTENT_TYPE, MIME_APPLICATION_JSON)
                         .header(HEADER_SESSION_ID, "session-123")
                         .body(Body::from(response))
                         .unwrap(),
@@ -865,7 +868,7 @@ mod tests {
                                 )]));
                                 Response::builder()
                                     .status(StatusCode::OK)
-                                    .header(CONTENT_TYPE, "text/event-stream")
+                                    .header(CONTENT_TYPE, MIME_TEXT_EVENT_STREAM)
                                     .body(body)
                                     .unwrap()
                             } else {
@@ -972,7 +975,7 @@ mod tests {
                             .unwrap(),
                         5 => Response::builder()
                             .status(StatusCode::OK)
-                            .header(CONTENT_TYPE, "application/json")
+                            .header(CONTENT_TYPE, MIME_APPLICATION_JSON)
                             .header(HEADER_SESSION_ID, "session-2")
                             .body(Body::from(
                                 serde_json::to_vec(&JsonRpcMessage::Response(
@@ -1129,11 +1132,11 @@ mod tests {
         assert_eq!(post_request.headers()["x-test"].to_str().unwrap(), "1");
         assert_eq!(
             post_request.headers()[CONTENT_TYPE].to_str().unwrap(),
-            "application/json"
+            MIME_APPLICATION_JSON
         );
         let post_accept = post_request.headers()[ACCEPT].to_str().unwrap();
-        assert!(post_accept.contains("application/json"));
-        assert!(post_accept.contains("text/event-stream"));
+        assert!(post_accept.contains(MIME_APPLICATION_JSON));
+        assert!(post_accept.contains(MIME_TEXT_EVENT_STREAM));
         assert!(post_accept.contains("application/vnd.example+json"));
         assert!(post_request.headers().get(HEADER_SESSION_ID).is_none());
 
@@ -1164,7 +1167,7 @@ mod tests {
             "event-42"
         );
         let get_accept = get_request.headers()[ACCEPT].to_str().unwrap();
-        assert!(get_accept.contains("text/event-stream"));
+        assert!(get_accept.contains(MIME_TEXT_EVENT_STREAM));
         assert!(get_accept.contains("application/vnd.example+json"));
     }
 }

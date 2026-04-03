@@ -6,6 +6,9 @@ use crate::version::PRODUCT_NAME;
 use crate::version::version_badge;
 use chaos_ipc::ProcessId;
 use chaos_ipc::account::PlanType;
+use chaos_ipc::config_types::SANDBOX_MODE_READ_ONLY;
+use chaos_ipc::config_types::SANDBOX_MODE_ROOT_ACCESS;
+use chaos_ipc::config_types::SANDBOX_MODE_WORKSPACE_WRITE;
 use chaos_ipc::openai_models::ReasoningEffort;
 use chaos_ipc::protocol::AskForApproval;
 use chaos_ipc::protocol::NetworkAccess;
@@ -198,13 +201,13 @@ impl StatusHistoryCell {
             .map(|(_, v)| v.clone())
             .unwrap_or_else(|| "<unknown>".to_string());
         let sandbox = match config.permissions.sandbox_policy.get() {
-            SandboxPolicy::RootAccess => "root-access".to_string(),
-            SandboxPolicy::ReadOnly { .. } => "read-only".to_string(),
+            SandboxPolicy::RootAccess => SANDBOX_MODE_ROOT_ACCESS.to_string(),
+            SandboxPolicy::ReadOnly { .. } => SANDBOX_MODE_READ_ONLY.to_string(),
             SandboxPolicy::WorkspaceWrite {
                 network_access: true,
                 ..
-            } => "workspace-write with network access".to_string(),
-            SandboxPolicy::WorkspaceWrite { .. } => "workspace-write".to_string(),
+            } => format!("{SANDBOX_MODE_WORKSPACE_WRITE} with network access"),
+            SandboxPolicy::WorkspaceWrite { .. } => SANDBOX_MODE_WORKSPACE_WRITE.to_string(),
             SandboxPolicy::ExternalSandbox { network_access } => {
                 if matches!(network_access, NetworkAccess::Enabled) {
                     "external-sandbox (network access enabled)".to_string()

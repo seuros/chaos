@@ -67,6 +67,10 @@ pub enum SandboxMode {
     RootAccess,
 }
 
+pub const SANDBOX_MODE_READ_ONLY: &str = "read-only";
+pub const SANDBOX_MODE_WORKSPACE_WRITE: &str = "workspace-write";
+pub const SANDBOX_MODE_ROOT_ACCESS: &str = "root-access";
+
 #[derive(
     Deserialize, Debug, Clone, Copy, PartialEq, Eq, Default, Serialize, Display, JsonSchema, TS,
 )]

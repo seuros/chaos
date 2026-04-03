@@ -134,7 +134,7 @@ impl<T: HttpTransport, A: AuthProvider> ResponsesClient<T, A> {
                 |req| {
                     req.headers.insert(
                         http::header::ACCEPT,
-                        HeaderValue::from_static("text/event-stream"),
+                        HeaderValue::from_static(crate::common::MIME_TEXT_EVENT_STREAM),
                     );
                     req.compression = request_compression;
                 },

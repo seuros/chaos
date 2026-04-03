@@ -450,7 +450,7 @@ async fn maybe_request_mcp_tool_approval(
     approval_mode: AppToolApproval,
 ) -> Option<McpToolApprovalDecision> {
     let annotations = metadata.and_then(|metadata| metadata.annotations.as_ref());
-    let approval_required = annotations.is_some_and(requires_mcp_tool_approval);
+    let approval_required = requires_mcp_tool_approval(annotations);
     let mut monitor_reason = None;
 
     if approval_mode == AppToolApproval::Approve {
@@ -1132,12 +1132,21 @@ async fn persist_codex_app_tool_approval(
         .await
 }
 
-fn requires_mcp_tool_approval(annotations: &ToolAnnotations) -> bool {
-    if annotations.destructive_hint == Some(true) {
+fn requires_mcp_tool_approval(annotations: Option<&ToolAnnotations>) -> bool {
+    let destructive_hint = annotations.and_then(|a| a.destructive_hint);
+    if destructive_hint == Some(true) {
         return true;
     }
 
-    annotations.read_only_hint == Some(false) && annotations.open_world_hint == Some(true)
+    let read_only_hint = annotations.and_then(|a| a.read_only_hint).unwrap_or(false);
+    if read_only_hint {
+        return false;
+    }
+
+    destructive_hint.unwrap_or(true)
+        || annotations
+            .and_then(|a| a.open_world_hint)
+            .unwrap_or(true)
 }
 
 async fn notify_mcp_tool_call_skip(

@@ -182,13 +182,6 @@ struct LoginCommand {
     )]
     with_api_key: bool,
 
-    #[arg(
-        long = "api-key",
-        value_name = "API_KEY",
-        help = "(deprecated) Previously accepted the API key directly; now exits with guidance to use --with-api-key",
-        hide = true
-    )]
-    api_key: Option<String>,
 
     #[arg(long = "device-auth")]
     use_device_code: bool,
@@ -446,11 +439,6 @@ async fn cli_main(arg0_paths: Arg0DispatchPaths) -> anyhow::Result<()> {
                             login_cli.client_id,
                         )
                         .await;
-                    } else if login_cli.api_key.is_some() {
-                        eprintln!(
-                            "The --api-key flag is no longer supported. Pipe the key instead, e.g. `printenv OPENAI_API_KEY | chaos login --with-api-key`."
-                        );
-                        std::process::exit(1);
                     } else if login_cli.with_api_key {
                         let api_key = read_api_key_from_stdin();
                         run_login_with_api_key(login_cli.config_overrides, api_key).await;

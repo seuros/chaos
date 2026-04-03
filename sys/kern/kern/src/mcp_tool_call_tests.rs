@@ -62,19 +62,30 @@ fn prompt_options(
 #[test]
 fn approval_required_when_read_only_false_and_destructive() {
     let annotations = annotations(Some(false), Some(true), None);
-    assert_eq!(requires_mcp_tool_approval(&annotations), true);
+    assert_eq!(requires_mcp_tool_approval(Some(&annotations)), true);
 }
 
 #[test]
 fn approval_required_when_read_only_false_and_open_world() {
     let annotations = annotations(Some(false), None, Some(true));
-    assert_eq!(requires_mcp_tool_approval(&annotations), true);
+    assert_eq!(requires_mcp_tool_approval(Some(&annotations)), true);
 }
 
 #[test]
 fn approval_required_when_destructive_even_if_read_only_true() {
     let annotations = annotations(Some(true), Some(true), Some(true));
-    assert_eq!(requires_mcp_tool_approval(&annotations), true);
+    assert_eq!(requires_mcp_tool_approval(Some(&annotations)), true);
+}
+
+#[test]
+fn approval_required_when_annotations_missing() {
+    assert_eq!(requires_mcp_tool_approval(None), true);
+}
+
+#[test]
+fn approval_not_required_when_explicitly_read_only() {
+    let annotations = annotations(Some(true), None, None);
+    assert_eq!(requires_mcp_tool_approval(Some(&annotations)), false);
 }
 
 #[test]

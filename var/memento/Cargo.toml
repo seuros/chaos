@@ -14,7 +14,7 @@ serde = { workspace = true, features = ["derive"] }
 serde_json = { workspace = true }
 tracing = { workspace = true }
 anyhow = { workspace = true }
-askama = { workspace = true }
+minijinja = { workspace = true }
 jiff = { workspace = true }
 chaos-proc = { workspace = true }
 uuid = { workspace = true }

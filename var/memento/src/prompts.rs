@@ -1,9 +1,9 @@
 use crate::storage::rollout_summary_file_stem_from_parts;
-use askama::Template;
 use chaos_ipc::openai_models::ModelInfo;
 use chaos_proc::Phase2InputSelection;
 use chaos_proc::Stage1Output;
 use chaos_proc::Stage1OutputRef;
+use minijinja::Environment;
 use std::path::Path;
 use tokio::fs;
 use tracing::warn;
@@ -23,38 +23,30 @@ pub const MEMORY_TOOL_DEVELOPER_INSTRUCTIONS_SUMMARY_TOKEN_LIMIT: usize = 5_000;
 /// framing, and model output.
 pub const CONTEXT_WINDOW_PERCENT: i64 = 70;
 
-#[derive(Template)]
-#[template(path = "memories/consolidation.md", escape = "none")]
-struct ConsolidationPromptTemplate<'a> {
-    memory_root: &'a str,
-    phase2_input_selection: &'a str,
-}
+const CONSOLIDATION_TEMPLATE: &str =
+    include_str!("../templates/memories/consolidation.md");
+const STAGE_ONE_INPUT_TEMPLATE: &str =
+    include_str!("../templates/memories/stage_one_input.md");
+const READ_PATH_TEMPLATE: &str =
+    include_str!("../templates/memories/read_path.md");
 
-#[derive(Template)]
-#[template(path = "memories/stage_one_input.md", escape = "none")]
-struct StageOneInputTemplate<'a> {
-    process_ref: &'a str,
-    rollout_cwd: &'a str,
-    rollout_contents: &'a str,
-}
-
-#[derive(Template)]
-#[template(path = "memories/read_path.md", escape = "none")]
-struct MemoryToolDeveloperInstructionsTemplate<'a> {
-    base_path: &'a str,
-    memory_summary: &'a str,
+fn render(source: &str, ctx: minijinja::value::Value) -> Option<String> {
+    let mut env = Environment::new();
+    env.set_undefined_behavior(minijinja::UndefinedBehavior::Strict);
+    env.add_template("t", source).ok()?;
+    env.get_template("t").ok()?.render(ctx).ok()
 }
 
 /// Builds the consolidation subagent prompt for a specific memory root.
 pub fn build_consolidation_prompt(memory_root: &Path, selection: &Phase2InputSelection) -> String {
     let memory_root = memory_root.display().to_string();
     let phase2_input_selection = render_phase2_input_selection(selection);
-    let template = ConsolidationPromptTemplate {
-        memory_root: &memory_root,
-        phase2_input_selection: &phase2_input_selection,
+    let ctx = minijinja::context! {
+        memory_root => memory_root,
+        phase2_input_selection => phase2_input_selection,
     };
-    template.render().unwrap_or_else(|err| {
-        warn!("failed to render memories consolidation prompt template: {err}");
+    render(CONSOLIDATION_TEMPLATE, ctx).unwrap_or_else(|| {
+        warn!("failed to render memories consolidation prompt template");
         format!(
             "## Memory Phase 2 (Consolidation)\nConsolidate Codex memories in: {memory_root}\n\n{phase2_input_selection}"
         )
@@ -129,10 +121,6 @@ fn render_removed_input_line(item: &Stage1OutputRef) -> String {
 }
 
 /// Builds the stage-1 user message containing rollout metadata and content.
-///
-/// Large rollout payloads are truncated to 70% of the active model's effective
-/// input window token budget. The caller provides a `truncate_fn` that accepts
-/// `(text, token_limit)` and returns the (possibly truncated) text.
 pub fn build_stage_one_input_message(
     model_info: &ModelInfo,
     process_ref: &str,
@@ -148,19 +136,18 @@ pub fn build_stage_one_input_message(
         .and_then(|limit| usize::try_from(limit).ok())
         .unwrap_or(DEFAULT_STAGE_ONE_ROLLOUT_TOKEN_LIMIT);
     let truncated_rollout_contents = truncate_fn(rollout_contents, rollout_token_limit);
-
     let rollout_cwd = rollout_cwd.display().to_string();
-    Ok(StageOneInputTemplate {
-        process_ref,
-        rollout_cwd: &rollout_cwd,
-        rollout_contents: &truncated_rollout_contents,
-    }
-    .render()?)
+
+    let ctx = minijinja::context! {
+        process_ref => process_ref,
+        rollout_cwd => rollout_cwd,
+        rollout_contents => truncated_rollout_contents,
+    };
+    render(STAGE_ONE_INPUT_TEMPLATE, ctx)
+        .ok_or_else(|| anyhow::anyhow!("failed to render stage_one_input template"))
 }
 
-/// Build prompt used for read path. This prompt must be added to the developer
-/// instructions. The caller provides a `truncate_fn` that accepts
-/// `(text, token_limit)` and returns the (possibly truncated) text.
+/// Build prompt used for read path.
 pub async fn build_memory_tool_developer_instructions(
     chaos_home: &Path,
     truncate_fn: impl Fn(&str, usize) -> String,
@@ -180,9 +167,9 @@ pub async fn build_memory_tool_developer_instructions(
         return None;
     }
     let base_path = base_path.display().to_string();
-    let template = MemoryToolDeveloperInstructionsTemplate {
-        base_path: &base_path,
-        memory_summary: &memory_summary,
+    let ctx = minijinja::context! {
+        base_path => base_path,
+        memory_summary => memory_summary,
     };
-    template.render().ok()
+    render(READ_PATH_TEMPLATE, ctx)
 }

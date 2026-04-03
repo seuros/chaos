@@ -17,7 +17,6 @@ workspace = true
 anyhow = { workspace = true }
 arc-swap = "1.9.0"
 async-channel = { workspace = true }
-askama = { workspace = true }
 base64 = { workspace = true }
 alcatraz-macos = { workspace = true }
 chaos-apropos = { workspace = true }
@@ -166,4 +165,4 @@ wiremock = { workspace = true }
 zstd = { workspace = true }
 
 [package.metadata.cargo-shear]
-ignored = ["openssl-sys", "askama", "wildmatch", "zip", "chaos-locate", "chaos-watchdog", "insta", "clap", "wiremock"]
+ignored = ["openssl-sys", "wildmatch", "zip", "chaos-locate", "chaos-watchdog", "insta", "clap", "wiremock"]

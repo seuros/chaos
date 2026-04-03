@@ -1,3 +1,4 @@
+use chaos_minions;
 use crate::error::ChaosErr;
 use crate::error::Result as CodexResult;
 use crate::minions::AgentStatus;
@@ -25,7 +26,6 @@ use std::sync::Arc;
 use std::sync::Weak;
 use tokio::sync::watch;
 
-const AGENT_NAMES: &str = include_str!("agent_names.txt");
 const FORKED_SPAWN_AGENT_OUTPUT_MESSAGE: &str = "You are the newly spawned agent. The prior conversation history was forked from your parent agent. Treat the next user message as your new task, and use the forked history only as background context.";
 
 #[derive(Clone, Debug, Default)]
@@ -33,29 +33,14 @@ pub(crate) struct SpawnAgentOptions {
     pub(crate) fork_parent_spawn_call_id: Option<String>,
 }
 
-fn default_agent_nickname_list() -> Vec<&'static str> {
-    AGENT_NAMES
-        .lines()
-        .map(str::trim)
-        .filter(|name| !name.is_empty())
-        .collect()
-}
-
 fn agent_nickname_candidates(
     config: &crate::config::Config,
     role_name: Option<&str>,
 ) -> Vec<String> {
     let role_name = role_name.unwrap_or(DEFAULT_ROLE_NAME);
-    if let Some(candidates) =
-        resolve_role_config(config, role_name).and_then(|role| role.nickname_candidates.clone())
-    {
-        return candidates;
-    }
-
-    default_agent_nickname_list()
-        .into_iter()
-        .map(ToOwned::to_owned)
-        .collect()
+    let role_candidates =
+        resolve_role_config(config, role_name).and_then(|role| role.nickname_candidates.clone());
+    chaos_minions::nickname_candidates(role_candidates)
 }
 
 /// Control-plane handle for multi-agent operations.

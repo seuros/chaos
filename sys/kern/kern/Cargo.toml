@@ -21,6 +21,7 @@ askama = { workspace = true }
 base64 = { workspace = true }
 alcatraz-macos = { workspace = true }
 chaos-apropos = { workspace = true }
+chaos-minions = { workspace = true }
 chardetng = { workspace = true }
 jiff = { workspace = true }
 clap = { workspace = true, features = ["derive"] }

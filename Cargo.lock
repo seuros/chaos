@@ -1357,6 +1357,7 @@ dependencies = [
  "chaos-lex",
  "chaos-locate",
  "chaos-memento",
+ "chaos-minions",
  "chaos-parrot",
  "chaos-pf",
  "chaos-pixbuf",

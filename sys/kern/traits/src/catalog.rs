@@ -31,6 +31,24 @@ pub struct CatalogTool {
     pub annotations: Option<Value>,
 }
 
+/// Convert a generated MCP `ToolInfo` into the kernel's lighter-weight catalog shape.
+pub fn tool_info_to_catalog_tool(info: mcp_host::prelude::ToolInfo) -> CatalogTool {
+    CatalogTool {
+        name: info.name,
+        description: info.description.unwrap_or_default(),
+        input_schema: info.input_schema,
+        annotations: info.annotations.and_then(|a| serde_json::to_value(a).ok()),
+    }
+}
+
+/// Convert a collection of generated `ToolInfo` values into catalog entries.
+pub fn tool_infos_to_catalog_tools<I>(infos: I) -> Vec<CatalogTool>
+where
+    I: IntoIterator<Item = mcp_host::prelude::ToolInfo>,
+{
+    infos.into_iter().map(tool_info_to_catalog_tool).collect()
+}
+
 /// Resource metadata.
 pub struct CatalogResource {
     pub uri: String,

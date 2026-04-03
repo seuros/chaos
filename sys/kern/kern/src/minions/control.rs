@@ -1,4 +1,3 @@
-use chaos_minions;
 use crate::error::ChaosErr;
 use crate::error::Result as CodexResult;
 use crate::minions::AgentStatus;

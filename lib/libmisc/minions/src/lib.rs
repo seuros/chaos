@@ -25,8 +25,5 @@ pub fn nickname_candidates(role_candidates: Option<Vec<String>>) -> Vec<String> 
     if let Some(candidates) = role_candidates {
         return candidates;
     }
-    default_names()
-        .into_iter()
-        .map(ToOwned::to_owned)
-        .collect()
+    default_names().into_iter().map(ToOwned::to_owned).collect()
 }

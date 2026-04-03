@@ -1,5 +1,6 @@
-use crate::shell_detect::detect_shell_type;
 use crate::shell_snapshot::ShellSnapshot;
+use chaos_sh::KnownShell;
+use chaos_sh::detect_shell_type;
 use serde::Deserialize;
 use serde::Serialize;
 use std::path::PathBuf;
@@ -63,6 +64,16 @@ impl PartialEq for Shell {
 }
 
 impl Eq for Shell {}
+
+impl From<KnownShell> for ShellType {
+    fn from(value: KnownShell) -> Self {
+        match value {
+            KnownShell::Zsh => Self::Zsh,
+            KnownShell::Bash => Self::Bash,
+            KnownShell::Sh => Self::Sh,
+        }
+    }
+}
 
 fn get_user_shell_path() -> Option<PathBuf> {
     let uid = unsafe { libc::getuid() };
@@ -139,7 +150,7 @@ fn get_shell_path(
 
     let default_shell_path = get_user_shell_path();
     if let Some(default_shell_path) = default_shell_path
-        && detect_shell_type(&default_shell_path) == Some(shell_type)
+        && detect_shell_type(&default_shell_path).map(ShellType::from) == Some(shell_type)
         && file_exists(&default_shell_path).is_some()
     {
         return Some(default_shell_path);
@@ -195,6 +206,7 @@ fn ultimate_fallback_shell() -> Shell {
 
 pub fn get_shell_by_model_provided_path(shell_path: &PathBuf) -> Shell {
     detect_shell_type(shell_path)
+        .map(ShellType::from)
         .and_then(|shell_type| get_shell(shell_type, Some(shell_path)))
         .unwrap_or(ultimate_fallback_shell())
 }
@@ -214,6 +226,7 @@ pub fn default_user_shell() -> Shell {
 fn default_user_shell_from_path(user_shell_path: Option<PathBuf>) -> Shell {
     let user_default_shell = user_shell_path
         .and_then(|shell| detect_shell_type(&shell))
+        .map(ShellType::from)
         .and_then(|shell_type| get_shell(shell_type, None));
 
     user_default_shell
@@ -225,32 +238,18 @@ fn default_user_shell_from_path(user_shell_path: Option<PathBuf>) -> Shell {
 #[cfg(test)]
 mod detect_shell_type_tests {
     use super::*;
+    use chaos_sh::KnownShell;
 
     #[test]
     fn test_detect_shell_type() {
-        assert_eq!(
-            detect_shell_type(&PathBuf::from("zsh")),
-            Some(ShellType::Zsh)
-        );
-        assert_eq!(
-            detect_shell_type(&PathBuf::from("bash")),
-            Some(ShellType::Bash)
-        );
+        assert_eq!(detect_shell_type(&PathBuf::from("zsh")), Some(KnownShell::Zsh));
+        assert_eq!(detect_shell_type(&PathBuf::from("bash")), Some(KnownShell::Bash));
         assert_eq!(detect_shell_type(&PathBuf::from("fish")), None);
         assert_eq!(detect_shell_type(&PathBuf::from("other")), None);
-        assert_eq!(
-            detect_shell_type(&PathBuf::from("/bin/zsh")),
-            Some(ShellType::Zsh)
-        );
-        assert_eq!(
-            detect_shell_type(&PathBuf::from("/bin/bash")),
-            Some(ShellType::Bash)
-        );
-        assert_eq!(
-            detect_shell_type(&PathBuf::from("/bin/sh")),
-            Some(ShellType::Sh)
-        );
-        assert_eq!(detect_shell_type(&PathBuf::from("sh")), Some(ShellType::Sh));
+        assert_eq!(detect_shell_type(&PathBuf::from("/bin/zsh")), Some(KnownShell::Zsh));
+        assert_eq!(detect_shell_type(&PathBuf::from("/bin/bash")), Some(KnownShell::Bash));
+        assert_eq!(detect_shell_type(&PathBuf::from("/bin/sh")), Some(KnownShell::Sh));
+        assert_eq!(detect_shell_type(&PathBuf::from("sh")), Some(KnownShell::Sh));
     }
 }
 

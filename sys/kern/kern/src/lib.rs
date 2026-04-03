@@ -65,7 +65,6 @@ pub mod personality_migration;
 mod sandbox_tags;
 pub mod sandboxing;
 mod session_prefix;
-mod shell_detect;
 mod stream_events_utils;
 pub mod test_support;
 mod text_encoding;

@@ -173,6 +173,7 @@ mod tests {
     use crossterm::event::KeyEventKind;
     use crossterm::event::KeyModifiers;
     use pretty_assertions::assert_eq;
+    #[cfg(feature = "vt100-tests")]
     use ratatui::Terminal;
     use std::path::PathBuf;
     use tempfile::TempDir;

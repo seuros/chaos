@@ -1,21 +1,17 @@
-use std::path::Path;
-
 use anyhow::Result;
 use predicates::str::contains;
 use pretty_assertions::assert_eq;
 use tempfile::TempDir;
 
-fn codex_command(chaos_home: &Path) -> Result<assert_cmd::Command> {
-    let mut cmd = assert_cmd::Command::new(chaos_which::cargo_bin("chaos")?);
-    cmd.env("CHAOS_HOME", chaos_home);
-    Ok(cmd)
-}
+mod common;
+
+use common::chaos_command;
 
 #[tokio::test]
 async fn features_enable_writes_feature_flag_to_config() -> Result<()> {
     let chaos_home = TempDir::new()?;
 
-    let mut cmd = codex_command(chaos_home.path())?;
+    let mut cmd = chaos_command(chaos_home.path())?;
     cmd.args(["features", "enable", "unified_exec"])
         .assert()
         .success()
@@ -32,7 +28,7 @@ async fn features_enable_writes_feature_flag_to_config() -> Result<()> {
 async fn features_disable_writes_feature_flag_to_config() -> Result<()> {
     let chaos_home = TempDir::new()?;
 
-    let mut cmd = codex_command(chaos_home.path())?;
+    let mut cmd = chaos_command(chaos_home.path())?;
     cmd.args(["features", "disable", "shell_tool"])
         .assert()
         .success()
@@ -49,7 +45,7 @@ async fn features_disable_writes_feature_flag_to_config() -> Result<()> {
 async fn features_enable_under_development_feature_prints_warning() -> Result<()> {
     let chaos_home = TempDir::new()?;
 
-    let mut cmd = codex_command(chaos_home.path())?;
+    let mut cmd = chaos_command(chaos_home.path())?;
     cmd.args(["features", "enable", "runtime_metrics"])
         .assert()
         .success()
@@ -64,7 +60,7 @@ async fn features_enable_under_development_feature_prints_warning() -> Result<()
 async fn features_list_is_sorted_alphabetically_by_feature_name() -> Result<()> {
     let chaos_home = TempDir::new()?;
 
-    let mut cmd = codex_command(chaos_home.path())?;
+    let mut cmd = chaos_command(chaos_home.path())?;
     let output = cmd
         .args(["features", "list"])
         .assert()

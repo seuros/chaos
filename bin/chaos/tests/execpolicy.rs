@@ -1,12 +1,16 @@
 use std::fs;
 
-use assert_cmd::Command;
+use anyhow::Result;
 use pretty_assertions::assert_eq;
 use serde_json::json;
 use tempfile::TempDir;
 
+mod common;
+
+use common::chaos_command;
+
 #[test]
-fn execpolicy_check_matches_expected_json() -> Result<(), Box<dyn std::error::Error>> {
+fn execpolicy_check_matches_expected_json() -> Result<()> {
     let chaos_home = TempDir::new()?;
     let policy_path = chaos_home.path().join("rules").join("policy.decrees");
     fs::create_dir_all(
@@ -24,8 +28,7 @@ prefix_rule {
 "#,
     )?;
 
-    let output = Command::new(chaos_which::cargo_bin("chaos")?)
-        .env("CHAOS_HOME", chaos_home.path())
+    let output = chaos_command(chaos_home.path())?
         .args([
             "execpolicy",
             "check",
@@ -61,8 +64,7 @@ prefix_rule {
 }
 
 #[test]
-fn execpolicy_check_includes_justification_when_present() -> Result<(), Box<dyn std::error::Error>>
-{
+fn execpolicy_check_includes_justification_when_present() -> Result<()> {
     let chaos_home = TempDir::new()?;
     let policy_path = chaos_home.path().join("rules").join("policy.decrees");
     fs::create_dir_all(
@@ -81,8 +83,7 @@ prefix_rule {
 "#,
     )?;
 
-    let output = Command::new(chaos_which::cargo_bin("chaos")?)
-        .env("CHAOS_HOME", chaos_home.path())
+    let output = chaos_command(chaos_home.path())?
         .args([
             "execpolicy",
             "check",

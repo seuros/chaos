@@ -278,6 +278,7 @@ mod tests {
     use super::*;
     #[cfg(feature = "vt100-tests")]
     use crate::test_backend::VT100Backend;
+    #[cfg(feature = "vt100-tests")]
     use insta::assert_snapshot;
 
     fn fixed_process_id() -> ProcessId {

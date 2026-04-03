@@ -1146,24 +1146,8 @@ mod tests {
     use std::cell::Cell;
     use std::rc::Rc;
     use tokio::sync::mpsc::unbounded_channel;
-
-    fn snapshot_buffer(buf: &Buffer) -> String {
-        let mut lines = Vec::new();
-        for y in 0..buf.area().height {
-            let mut row = String::new();
-            for x in 0..buf.area().width {
-                row.push(buf[(x, y)].symbol().chars().next().unwrap_or(' '));
-            }
-            lines.push(row);
-        }
-        lines.join("\n")
-    }
-
-    fn render_snapshot(pane: &BottomPane, area: Rect) -> String {
-        let mut buf = Buffer::empty(area);
-        pane.render(area, &mut buf);
-        snapshot_buffer(&buf)
-    }
+    use crate::test_render::buffer_to_first_char_string;
+    use crate::test_render::render_to_first_char_string;
 
     fn exec_request() -> ApprovalRequest {
         ApprovalRequest::Exec {
@@ -1325,7 +1309,7 @@ mod tests {
         let mut buf = Buffer::empty(area);
         pane.render(area, &mut buf);
 
-        let bufs = snapshot_buffer(&buf);
+        let bufs = buffer_to_first_char_string(&buf);
         assert!(bufs.contains("• Working"), "expected Working header");
     }
 
@@ -1355,7 +1339,7 @@ mod tests {
         let area = Rect::new(0, 0, 30, height);
         assert_snapshot!(
             "status_and_composer_fill_height_without_bottom_padding",
-            render_snapshot(&pane, area)
+            render_to_first_char_string(&pane, area)
         );
     }
 
@@ -1378,7 +1362,7 @@ mod tests {
         let width = 48;
         let height = pane.desired_height(width);
         let area = Rect::new(0, 0, width, height);
-        assert_snapshot!("status_only_snapshot", render_snapshot(&pane, area));
+        assert_snapshot!("status_only_snapshot", render_to_first_char_string(&pane, area));
     }
 
     #[test]
@@ -1405,7 +1389,7 @@ mod tests {
         assert_eq!(after, before);
 
         let area = Rect::new(0, 0, width, after);
-        let rendered = render_snapshot(&pane, area);
+        let rendered = render_to_first_char_string(&pane, area);
         assert!(rendered.contains("background terminal running · /ps to view"));
     }
 
@@ -1437,7 +1421,7 @@ mod tests {
         let area = Rect::new(0, 0, width, height);
         assert_snapshot!(
             "status_with_details_and_queued_messages_snapshot",
-            render_snapshot(&pane, area)
+            render_to_first_char_string(&pane, area)
         );
     }
 
@@ -1464,7 +1448,7 @@ mod tests {
         let area = Rect::new(0, 0, width, height);
         assert_snapshot!(
             "queued_messages_visible_when_status_hidden_snapshot",
-            render_snapshot(&pane, area)
+            render_to_first_char_string(&pane, area)
         );
     }
 
@@ -1490,7 +1474,7 @@ mod tests {
         let area = Rect::new(0, 0, width, height);
         assert_snapshot!(
             "status_and_queued_messages_snapshot",
-            render_snapshot(&pane, area)
+            render_to_first_char_string(&pane, area)
         );
     }
 
@@ -1517,7 +1501,7 @@ mod tests {
         let width = 48;
         let height = pane.desired_height(width);
         let area = Rect::new(0, 0, width, height);
-        let snapshot = render_snapshot(&pane, area);
+        let snapshot = render_to_first_char_string(&pane, area);
         assert!(snapshot.contains("[Image #1]"));
         assert!(snapshot.contains("[Image #2]"));
     }

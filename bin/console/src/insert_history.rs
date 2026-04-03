@@ -314,9 +314,11 @@ where
 #[cfg(test)]
 mod tests {
     use super::*;
+    #[cfg(feature = "vt100-tests")]
     use crate::markdown_render::render_markdown_text;
     #[cfg(feature = "vt100-tests")]
     use crate::test_backend::VT100Backend;
+    #[cfg(feature = "vt100-tests")]
     use ratatui::layout::Rect;
 
     #[test]

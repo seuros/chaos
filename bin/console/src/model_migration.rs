@@ -408,16 +408,20 @@ fn fill_migration_markdown(template: &str, current_model: &str, target_model: &s
 
 #[cfg(test)]
 mod tests {
+    #[cfg(feature = "vt100-tests")]
     use super::ModelMigrationCopy;
     use super::ModelMigrationScreen;
     use super::migration_copy_for_models;
+    #[cfg(feature = "vt100-tests")]
     use crate::custom_terminal::Terminal;
     #[cfg(feature = "vt100-tests")]
     use crate::test_backend::VT100Backend;
     use crate::tui::FrameRequester;
     use crossterm::event::KeyCode;
     use crossterm::event::KeyEvent;
+    #[cfg(feature = "vt100-tests")]
     use insta::assert_snapshot;
+    #[cfg(feature = "vt100-tests")]
     use ratatui::layout::Rect;
 
     #[cfg(feature = "vt100-tests")]

@@ -254,6 +254,7 @@ mod tests {
     use crossterm::event::KeyEvent;
     use crossterm::event::KeyModifiers;
     use pretty_assertions::assert_eq;
+    #[cfg(feature = "vt100-tests")]
     use ratatui::Terminal;
 
     fn new_prompt() -> CwdPromptScreen {

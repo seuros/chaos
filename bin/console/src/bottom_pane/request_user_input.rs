@@ -1279,10 +1279,10 @@ mod tests {
     use crate::app_event::AppEvent;
     use crate::bottom_pane::selection_popup_common::menu_surface_inset;
     use crate::render::renderable::Renderable;
+    use crate::test_render::render_to_first_char_string;
     use chaos_ipc::request_user_input::RequestUserInputQuestion;
     use chaos_ipc::request_user_input::RequestUserInputQuestionOption;
     use pretty_assertions::assert_eq;
-    use ratatui::buffer::Buffer;
     use ratatui::layout::Rect;
     use std::collections::HashMap;
     use tokio::sync::mpsc::unbounded_channel;
@@ -1457,24 +1457,6 @@ mod tests {
             turn_id: turn_id.to_string(),
             questions,
         }
-    }
-
-    fn snapshot_buffer(buf: &Buffer) -> String {
-        let mut lines = Vec::new();
-        for y in 0..buf.area().height {
-            let mut row = String::new();
-            for x in 0..buf.area().width {
-                row.push(buf[(x, y)].symbol().chars().next().unwrap_or(' '));
-            }
-            lines.push(row);
-        }
-        lines.join("\n")
-    }
-
-    fn render_snapshot(overlay: &RequestUserInputOverlay, area: Rect) -> String {
-        let mut buf = Buffer::empty(area);
-        overlay.render(area, &mut buf);
-        snapshot_buffer(&buf)
     }
 
     #[test]
@@ -2459,7 +2441,7 @@ mod tests {
         let area = Rect::new(0, 0, 120, 16);
         insta::assert_snapshot!(
             "request_user_input_options",
-            render_snapshot(&overlay, area)
+            render_to_first_char_string(&overlay, area)
         );
     }
 
@@ -2482,7 +2464,7 @@ mod tests {
         let area = Rect::new(0, 0, 120, 16);
         insta::assert_snapshot!(
             "request_user_input_options_notes_visible",
-            render_snapshot(&overlay, area)
+            render_to_first_char_string(&overlay, area)
         );
     }
 
@@ -2499,7 +2481,7 @@ mod tests {
         let area = Rect::new(0, 0, 120, 10);
         insta::assert_snapshot!(
             "request_user_input_tight_height",
-            render_snapshot(&overlay, area)
+            render_to_first_char_string(&overlay, area)
         );
     }
 
@@ -2626,7 +2608,7 @@ mod tests {
         let area = Rect::new(0, 0, width, height);
         insta::assert_snapshot!(
             "request_user_input_wrapped_options",
-            render_snapshot(&overlay, area)
+            render_to_first_char_string(&overlay, area)
         );
     }
 
@@ -2646,7 +2628,7 @@ mod tests {
         let area = Rect::new(0, 0, 120, 18);
         insta::assert_snapshot!(
             "request_user_input_long_option_text",
-            render_snapshot(&overlay, area)
+            render_to_first_char_string(&overlay, area)
         );
     }
 
@@ -2666,7 +2648,7 @@ mod tests {
         let answer = overlay.current_answer_mut().expect("answer missing");
         answer.options_state.selected_idx = Some(2);
 
-        let rendered = render_snapshot(&overlay, Rect::new(0, 0, 80, 20));
+        let rendered = render_to_first_char_string(&overlay, Rect::new(0, 0, 80, 20));
         assert!(
             rendered.contains("› 3. Use Detailed Hint C"),
             "expected selected option to be visible in viewport\n{rendered}"
@@ -2697,7 +2679,7 @@ mod tests {
         let area = Rect::new(0, 0, width, height);
         insta::assert_snapshot!(
             "request_user_input_footer_wrap",
-            render_snapshot(&overlay, area)
+            render_to_first_char_string(&overlay, area)
         );
     }
 
@@ -2749,7 +2731,7 @@ mod tests {
         let area = Rect::new(0, 0, 120, 12);
         insta::assert_snapshot!(
             "request_user_input_scrolling_options",
-            render_snapshot(&overlay, area)
+            render_to_first_char_string(&overlay, area)
         );
     }
 
@@ -2801,7 +2783,7 @@ mod tests {
         let area = Rect::new(0, 0, 80, 10);
         insta::assert_snapshot!(
             "request_user_input_hidden_options_footer",
-            render_snapshot(&overlay, area)
+            render_to_first_char_string(&overlay, area)
         );
     }
 
@@ -2818,7 +2800,7 @@ mod tests {
         let area = Rect::new(0, 0, 120, 10);
         insta::assert_snapshot!(
             "request_user_input_freeform",
-            render_snapshot(&overlay, area)
+            render_to_first_char_string(&overlay, area)
         );
     }
 
@@ -2841,7 +2823,7 @@ mod tests {
         let area = Rect::new(0, 0, 120, 15);
         insta::assert_snapshot!(
             "request_user_input_multi_question_first",
-            render_snapshot(&overlay, area)
+            render_to_first_char_string(&overlay, area)
         );
     }
 
@@ -2865,7 +2847,7 @@ mod tests {
         let area = Rect::new(0, 0, 120, 12);
         insta::assert_snapshot!(
             "request_user_input_multi_question_last",
-            render_snapshot(&overlay, area)
+            render_to_first_char_string(&overlay, area)
         );
     }
 
@@ -2891,7 +2873,7 @@ mod tests {
         let area = Rect::new(0, 0, 80, 12);
         insta::assert_snapshot!(
             "request_user_input_unanswered_confirmation",
-            render_snapshot(&overlay, area)
+            render_to_first_char_string(&overlay, area)
         );
     }
 

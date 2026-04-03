@@ -11,6 +11,7 @@ use crate::app_event_sender::AppEventSender;
 use crate::bottom_pane::LocalImageAttachment;
 use crate::bottom_pane::MentionBinding;
 use crate::history_cell::UserHistoryCell;
+#[cfg(feature = "vt100-tests")]
 use crate::test_backend::VT100Backend;
 use crate::tui::FrameRequester;
 use assert_matches::assert_matches;
@@ -1802,9 +1803,9 @@ async fn make_chatwidget_manual(
 fn ensure_rustls_crypto_provider() {
     static RUSTLS_PROVIDER: OnceLock<()> = OnceLock::new();
     RUSTLS_PROVIDER.get_or_init(|| {
-        rustls::crypto::ring::default_provider()
-            .install_default()
-            .expect("install rustls crypto provider for tests");
+        // Silently ignore AlreadyInstalled — another component in the same
+        // test binary (e.g. codex-client) may have installed ring first.
+        let _ = rustls::crypto::ring::default_provider().install_default();
     });
 }
 
@@ -6701,6 +6702,7 @@ async fn disabled_slash_command_while_task_running_snapshot() {
     assert_snapshot!(blob);
 }
 
+#[cfg(feature = "vt100-tests")]
 #[tokio::test]
 async fn approvals_popup_shows_disabled_presets() {
     let (mut chat, _rx, _op_rx) = make_chatwidget_manual(None).await;
@@ -6736,6 +6738,7 @@ async fn approvals_popup_shows_disabled_presets() {
     );
 }
 
+#[cfg(feature = "vt100-tests")]
 #[tokio::test]
 async fn approvals_popup_navigation_skips_disabled() {
     let (mut chat, mut rx, mut op_rx) = make_chatwidget_manual(None).await;
@@ -6966,6 +6969,7 @@ async fn permissions_full_access_history_cell_emitted_only_after_confirmation() 
 //
 // Synthesizes a Codex ExecApprovalRequest event to trigger the approval modal
 // and snapshots the visual output using the ratatui TestBackend.
+#[cfg(feature = "vt100-tests")]
 #[tokio::test]
 async fn approval_modal_exec_snapshot() -> anyhow::Result<()> {
     // Build a chat widget with manual channels to avoid spawning the agent.
@@ -7005,10 +7009,10 @@ async fn approval_modal_exec_snapshot() -> anyhow::Result<()> {
     // Call desired_height first and use that exact height for rendering.
     let width = 100;
     let height = chat.desired_height(width);
+    // Use ratatui::Terminal::new (not custom_terminal) so the viewport area
+    // is correctly initialized from the backend size on construction.
     let mut terminal =
-        crate::custom_terminal::Terminal::with_options(VT100Backend::new(width, height))
-            .expect("create terminal");
-    let _viewport = Rect::new(0, 0, width, height);
+        ratatui::Terminal::new(VT100Backend::new(width, height)).expect("create terminal");
 
     terminal
         .draw(|f| chat.render(f.area(), f.buffer_mut()))
@@ -7031,6 +7035,7 @@ async fn approval_modal_exec_snapshot() -> anyhow::Result<()> {
 
 // Snapshot test: command approval modal without a reason
 // Ensures spacing looks correct when no reason text is provided.
+#[cfg(feature = "vt100-tests")]
 #[tokio::test]
 async fn approval_modal_exec_without_reason_snapshot() -> anyhow::Result<()> {
     let (mut chat, _rx, _op_rx) = make_chatwidget_manual(None).await;
@@ -7080,6 +7085,7 @@ async fn approval_modal_exec_without_reason_snapshot() -> anyhow::Result<()> {
 
 // Snapshot test: approval modal with a proposed execpolicy prefix that is multi-line;
 // we should not offer adding it to execpolicy.
+#[cfg(feature = "vt100-tests")]
 #[tokio::test]
 async fn approval_modal_exec_multiline_prefix_hides_execpolicy_option_snapshot()
 -> anyhow::Result<()> {
@@ -7129,6 +7135,7 @@ async fn approval_modal_exec_multiline_prefix_hides_execpolicy_option_snapshot()
 }
 
 // Snapshot test: patch approval modal
+#[cfg(feature = "vt100-tests")]
 #[tokio::test]
 async fn approval_modal_patch_snapshot() -> anyhow::Result<()> {
     let (mut chat, _rx, _op_rx) = make_chatwidget_manual(None).await;
@@ -8591,6 +8598,7 @@ async fn hook_events_render_snapshot() {
 // Combined visual snapshot using vt100 for history + direct buffer overlay for UI.
 // This renders the final visual as seen in a terminal: history above, then a blank line,
 // then the exec block, another blank line, the status line, a blank line, and the composer.
+#[cfg(feature = "vt100-tests")]
 #[tokio::test]
 async fn chatwidget_exec_and_status_layout_vt100_snapshot() {
     let (mut chat, mut rx, _op_rx) = make_chatwidget_manual(None).await;
@@ -8694,6 +8702,7 @@ async fn chatwidget_exec_and_status_layout_vt100_snapshot() {
 }
 
 // E2E vt100 snapshot for complex markdown with indented and nested fenced code blocks
+#[cfg(feature = "vt100-tests")]
 #[tokio::test]
 async fn chatwidget_markdown_code_blocks_vt100_snapshot() {
     let (mut chat, mut rx, _op_rx) = make_chatwidget_manual(None).await;
@@ -8792,6 +8801,7 @@ printf 'fenced within fenced\n'
     assert_snapshot!(term.backend().vt100().screen().contents());
 }
 
+#[cfg(feature = "vt100-tests")]
 #[tokio::test]
 async fn chatwidget_tall() {
     let (mut chat, _rx, _op_rx) = make_chatwidget_manual(None).await;
@@ -8850,6 +8860,7 @@ async fn enter_queues_user_messages_while_review_is_running() {
     assert!(drain_insert_history(&mut rx).is_empty());
 }
 
+#[cfg(feature = "vt100-tests")]
 #[tokio::test]
 async fn review_queues_user_messages_snapshot() {
     let (mut chat, mut rx, _op_rx) = make_chatwidget_manual(None).await;

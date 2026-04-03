@@ -819,7 +819,7 @@ fn compose_success_url(port: u16, issuer: &str, id_token: &str, access_token: &s
         .map(|(k, v)| format!("{}={}", k, urlencoding::encode(&v)))
         .collect::<Vec<_>>()
         .join("&");
-    format!("http://localhost:{port}/success?{qs}")
+    format!("http://127.0.0.1:{port}/success?{qs}")
 }
 
 fn jwt_auth_claims(jwt: &str) -> serde_json::Map<String, serde_json::Value> {

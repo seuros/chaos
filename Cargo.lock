@@ -1184,6 +1184,7 @@ dependencies = [
  "chaos-ipc",
  "chaos-jail-report",
  "chaos-kern",
+ "chaos-proc",
  "chaos-realpath",
  "chaos-syslog",
  "chaos-uptime",
@@ -1208,7 +1209,6 @@ dependencies = [
  "tracing-subscriber",
  "ts-rs",
  "uuid",
- "walkdir",
  "wiremock",
 ]
 

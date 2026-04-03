@@ -1,9 +1,9 @@
 ---
-source: bin/xserver/src/chatwidget/tests.rs
+source: bin/console/src/chatwidget/tests.rs
 expression: popup
 ---
   Select Model and Effort
-  Access legacy models by running codex -m <model_name> or in your config.toml
+  Access legacy models by running chaos -m <model_name> or in your config.toml
 
 › 1. gpt-5.3-codex (default)  Latest frontier agentic coding model.
   2. gpt-5.4                  Latest frontier agentic coding model.

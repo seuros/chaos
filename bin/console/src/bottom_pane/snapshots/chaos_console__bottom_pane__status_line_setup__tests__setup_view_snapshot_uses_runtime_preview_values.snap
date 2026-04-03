@@ -1,6 +1,5 @@
 ---
-source: bin/xserver/src/bottom_pane/status_line_setup.rs
-assertion_line: 365
+source: bin/console/src/bottom_pane/status_line_setup.rs
 expression: "render_lines(&view, 72)"
 ---
                                                                         
@@ -18,5 +17,5 @@ expression: "render_lines(&view, 72)"
   [ ] context-used          Percentage of context window used (omitte…  
   [ ] five-hour-limit       Remaining usage on 5-hour usage limit (om…  
                                                                         
-  gpt-5-codex · ~/chaos · jif/statusline-preview                     
+  gpt-5-codex · ~/chaos · jif/statusline-preview                        
   Use ↑↓ to navigate, ←→ to move, space to select, enter to confirm, esc

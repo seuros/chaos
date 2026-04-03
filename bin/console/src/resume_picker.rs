@@ -1432,6 +1432,7 @@ mod tests {
         assert_eq!(row.display_preview(), "My session");
     }
 
+    #[cfg(feature = "vt100-tests")]
     #[test]
     fn resume_table_snapshot() {
         use crate::custom_terminal::Terminal;
@@ -1509,6 +1510,7 @@ mod tests {
         assert_snapshot!("resume_picker_table", snapshot);
     }
 
+    #[cfg(feature = "vt100-tests")]
     #[test]
     fn resume_search_error_snapshot() {
         use crate::custom_terminal::Terminal;

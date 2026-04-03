@@ -8,8 +8,8 @@ use std::future::Future;
 use std::pin::Pin;
 use std::sync::Arc;
 
-const AUDIT_TARGET: &str = "chaos_syslog.network_proxy";
-const POLICY_DECISION_EVENT_NAME: &str = "codex.network_proxy.policy_decision";
+const AUDIT_TARGET: &str = "chaos_syslog.pf";
+const POLICY_DECISION_EVENT_NAME: &str = "chaos.pf.policy_decision";
 const POLICY_SCOPE_DOMAIN: &str = "domain";
 const POLICY_SCOPE_NON_DOMAIN: &str = "non_domain";
 const POLICY_DECISION_ALLOW: &str = "allow";

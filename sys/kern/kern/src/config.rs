@@ -527,6 +527,13 @@ pub struct Config {
 
     /// OTEL configuration (exporter type, endpoint, headers, etc.).
     pub otel: crate::config::types::OtelConfig,
+
+    /// When `true`, the hallucinate engine skips the user-layer scripts
+    /// directory (`$XDG_CONFIG_HOME/chaos/scripts/`).
+    ///
+    /// Not settable via config file — test-only escape hatch to prevent real
+    /// user scripts from polluting test tool lists.
+    pub disable_user_scripts: bool,
 }
 
 #[derive(Debug, Clone, Default)]
@@ -2386,6 +2393,7 @@ impl Config {
                     metrics_exporter,
                 }
             },
+            disable_user_scripts: false,
         };
         Ok(config)
     }

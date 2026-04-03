@@ -81,14 +81,6 @@ async fn user_message_item_is_emitted() -> anyhow::Result<()> {
     assert_eq!(started_item.id, completed_item.id);
     assert_eq!(started_item.content, vec![expected_input.clone()]);
     assert_eq!(completed_item.content, vec![expected_input]);
-
-    let legacy_message = wait_for_event_match(&codex, |ev| match ev {
-        EventMsg::UserMessage(event) => Some(event.clone()),
-        _ => None,
-    })
-    .await;
-    assert_eq!(legacy_message.message, "please inspect sample.txt");
-    assert_eq!(legacy_message.text_elements, text_elements);
     Ok(())
 }
 
@@ -234,8 +226,11 @@ async fn web_search_item_is_emitted() -> anyhow::Result<()> {
         })
         .await?;
 
-    let begin = wait_for_event_match(&codex, |ev| match ev {
-        EventMsg::WebSearchBegin(event) => Some(event.clone()),
+    let started = wait_for_event_match(&codex, |ev| match ev {
+        EventMsg::ItemStarted(ItemStartedEvent {
+            item: TurnItem::WebSearch(item),
+            ..
+        }) => Some(item.clone()),
         _ => None,
     })
     .await;
@@ -248,8 +243,8 @@ async fn web_search_item_is_emitted() -> anyhow::Result<()> {
     })
     .await;
 
-    assert_eq!(begin.call_id, "web-search-1");
-    assert_eq!(completed.id, begin.call_id);
+    assert_eq!(started.id, "web-search-1");
+    assert_eq!(completed.id, started.id);
     assert_eq!(
         completed.action,
         WebSearchAction::Search {
@@ -289,24 +284,33 @@ async fn image_generation_call_event_is_emitted() -> anyhow::Result<()> {
         })
         .await?;
 
-    let begin = wait_for_event_match(&codex, |ev| match ev {
-        EventMsg::ImageGenerationBegin(event) => Some(event.clone()),
+    let started = wait_for_event_match(&codex, |ev| match ev {
+        EventMsg::ItemStarted(ItemStartedEvent {
+            item: TurnItem::ImageGeneration(item),
+            ..
+        }) => Some(item.clone()),
         _ => None,
     })
     .await;
-    let end = wait_for_event_match(&codex, |ev| match ev {
-        EventMsg::ImageGenerationEnd(event) => Some(event.clone()),
+    let completed = wait_for_event_match(&codex, |ev| match ev {
+        EventMsg::ItemCompleted(ItemCompletedEvent {
+            item: TurnItem::ImageGeneration(item),
+            ..
+        }) => Some(item.clone()),
         _ => None,
     })
     .await;
 
-    assert_eq!(begin.call_id, call_id);
-    assert_eq!(end.call_id, call_id);
-    assert_eq!(end.status, "completed");
-    assert_eq!(end.revised_prompt, Some("A tiny blue square".to_string()));
-    assert_eq!(end.result, "Zm9v");
+    assert_eq!(started.id, call_id);
+    assert_eq!(completed.id, call_id);
+    assert_eq!(completed.status, "completed");
     assert_eq!(
-        end.saved_path,
+        completed.revised_prompt,
+        Some("A tiny blue square".to_string())
+    );
+    assert_eq!(completed.result, "Zm9v");
+    assert_eq!(
+        completed.saved_path,
         Some(expected_saved_path.to_string_lossy().into_owned())
     );
     assert_eq!(std::fs::read(&expected_saved_path)?, b"foo");
@@ -342,23 +346,29 @@ async fn image_generation_call_event_is_emitted_when_image_save_fails() -> anyho
         })
         .await?;
 
-    let begin = wait_for_event_match(&codex, |ev| match ev {
-        EventMsg::ImageGenerationBegin(event) => Some(event.clone()),
+    let started = wait_for_event_match(&codex, |ev| match ev {
+        EventMsg::ItemStarted(ItemStartedEvent {
+            item: TurnItem::ImageGeneration(item),
+            ..
+        }) => Some(item.clone()),
         _ => None,
     })
     .await;
-    let end = wait_for_event_match(&codex, |ev| match ev {
-        EventMsg::ImageGenerationEnd(event) => Some(event.clone()),
+    let completed = wait_for_event_match(&codex, |ev| match ev {
+        EventMsg::ItemCompleted(ItemCompletedEvent {
+            item: TurnItem::ImageGeneration(item),
+            ..
+        }) => Some(item.clone()),
         _ => None,
     })
     .await;
 
-    assert_eq!(begin.call_id, "ig_invalid");
-    assert_eq!(end.call_id, "ig_invalid");
-    assert_eq!(end.status, "completed");
-    assert_eq!(end.revised_prompt, Some("broken payload".to_string()));
-    assert_eq!(end.result, "_-8");
-    assert_eq!(end.saved_path, None);
+    assert_eq!(started.id, "ig_invalid");
+    assert_eq!(completed.id, "ig_invalid");
+    assert_eq!(completed.status, "completed");
+    assert_eq!(completed.revised_prompt, Some("broken payload".to_string()));
+    assert_eq!(completed.result, "_-8");
+    assert_eq!(completed.saved_path, None);
     assert!(!expected_saved_path.exists());
 
     Ok(())

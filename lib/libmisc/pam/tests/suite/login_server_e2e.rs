@@ -10,8 +10,36 @@ use base64::Engine;
 use chaos_kern::auth::AuthCredentialsStoreMode;
 use chaos_pam::ServerOptions;
 use chaos_pam::run_login_server;
+use codex_client::CodexHttpClient;
+use codex_client::CodexResponse;
 use core_test_support::skip_if_no_network;
 use tempfile::tempdir;
+
+/// GET `url`, following a single HTTP redirect if the server returns 3xx.
+/// The Rama `EasyHttpWebClient` does not auto-follow redirects, so the test
+/// helper handles it explicitly.
+async fn get_following_redirect(client: &CodexHttpClient, url: &str) -> Result<CodexResponse> {
+    let resp = client
+        .get(url)
+        .send()
+        .await
+        .map_err(|e| anyhow::anyhow!("{e}"))?;
+    if resp.status().is_redirection() {
+        let location = resp
+            .headers()
+            .get("location")
+            .and_then(|v| v.to_str().ok())
+            .ok_or_else(|| anyhow::anyhow!("redirect missing Location header"))?
+            .to_string();
+        Ok(client
+            .get(&location)
+            .send()
+            .await
+            .map_err(|e| anyhow::anyhow!("{e}"))?)
+    } else {
+        Ok(resp)
+    }
+}
 
 // See spawn.rs for details
 
@@ -128,10 +156,10 @@ async fn end_to_end_login_flow_persists_auth_json() -> Result<()> {
     );
     let login_port = server.actual_port;
 
-    // Simulate browser callback, and follow redirect to /success
-    let client = codex_client::CodexHttpClient::default_client();
+    // Simulate browser callback, follow redirect to /success
+    let client = CodexHttpClient::default_client();
     let url = format!("http://127.0.0.1:{login_port}/auth/callback?code=abc&state=test_state_123");
-    let resp = client.get(&url).send().await?;
+    let resp = get_following_redirect(&client, &url).await?;
     assert!(resp.status().is_success());
 
     // Wait for server shutdown
@@ -181,9 +209,9 @@ async fn creates_missing_codex_home_dir() -> Result<()> {
     let server = run_login_server(opts)?;
     let login_port = server.actual_port;
 
-    let client = codex_client::CodexHttpClient::default_client();
+    let client = CodexHttpClient::default_client();
     let url = format!("http://127.0.0.1:{login_port}/auth/callback?code=abc&state=state2");
-    let resp = client.get(&url).send().await?;
+    let resp = get_following_redirect(&client, &url).await?;
     assert!(resp.status().is_success());
 
     server.block_until_done().await?;

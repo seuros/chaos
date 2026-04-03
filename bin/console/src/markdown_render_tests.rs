@@ -1,4 +1,5 @@
 use pretty_assertions::assert_eq;
+use ratatui::style::Style;
 use ratatui::style::Stylize;
 use ratatui::text::Line;
 use ratatui::text::Span;
@@ -10,6 +11,27 @@ use crate::markdown_render::HASH_LOCATION_SUFFIX_RE;
 use crate::markdown_render::render_markdown_text;
 use crate::markdown_render::render_markdown_text_with_width_and_cwd;
 use insta::assert_snapshot;
+
+/// Span styled with the theme's "cyan" color (accent — used for inline code
+/// and links in the renderer). Prefer this over `.cyan()` in tests so that
+/// expectations track palette changes in one place.
+fn accent(text: &'static str) -> Span<'static> {
+    Span::styled(text, Style::new().fg(crate::theme::cyan()))
+}
+
+/// Span styled with the theme's "light_blue" color (dim — used for ordered
+/// list markers). Prefer this over `.light_blue()` in tests.
+fn dim_marker(text: &'static str) -> Span<'static> {
+    Span::styled(text, Style::new().fg(crate::theme::light_blue()))
+}
+
+/// Span styled with accent color + underline (used for URL links).
+fn accent_link(text: &'static str) -> Span<'static> {
+    Span::styled(
+        text,
+        Style::new().fg(crate::theme::cyan()).underlined(),
+    )
+}
 
 fn render_markdown_text_for_cwd(input: &str, cwd: &Path) -> Text<'static> {
     render_markdown_text_with_width_and_cwd(input, None, Some(cwd))
@@ -149,13 +171,13 @@ fn blockquote_with_ordered_list() {
     let expected = Text::from_iter([
         Line::from_iter(vec![
             Span::from("> "),
-            "1. ".light_blue(),
+            dim_marker("1. "),
             Span::from("first"),
         ])
         .green(),
         Line::from_iter(vec![
             Span::from("> "),
-            "2. ".light_blue(),
+            dim_marker("2. "),
             Span::from("second"),
         ])
         .green(),
@@ -484,8 +506,8 @@ fn list_unordered_multiple() {
 fn list_ordered() {
     let text = render_markdown_text("1. List item 1\n2. List item 2\n");
     let expected = Text::from_iter([
-        Line::from_iter(["1. ".light_blue(), "List item 1".into()]),
-        Line::from_iter(["2. ".light_blue(), "List item 2".into()]),
+        Line::from_iter([dim_marker("1. "), "List item 1".into()]),
+        Line::from_iter([dim_marker("2. "), "List item 2".into()]),
     ]);
     assert_eq!(text, expected);
 }
@@ -504,8 +526,8 @@ fn list_nested() {
 fn list_ordered_custom_start() {
     let text = render_markdown_text("3. First\n4. Second\n");
     let expected = Text::from_iter([
-        Line::from_iter(["3. ".light_blue(), "First".into()]),
-        Line::from_iter(["4. ".light_blue(), "Second".into()]),
+        Line::from_iter([dim_marker("3. "), "First".into()]),
+        Line::from_iter([dim_marker("4. "), "Second".into()]),
     ]);
     assert_eq!(text, expected);
 }
@@ -515,10 +537,10 @@ fn nested_unordered_in_ordered() {
     let md = "1. Outer\n    - Inner A\n    - Inner B\n2. Next\n";
     let text = render_markdown_text(md);
     let expected = Text::from_iter([
-        Line::from_iter(["1. ".light_blue(), "Outer".into()]),
+        Line::from_iter([dim_marker("1. "), "Outer".into()]),
         Line::from_iter(["    - ", "Inner A"]),
         Line::from_iter(["    - ", "Inner B"]),
-        Line::from_iter(["2. ".light_blue(), "Next".into()]),
+        Line::from_iter([dim_marker("2. "), "Next".into()]),
     ]);
     assert_eq!(text, expected);
 }
@@ -529,8 +551,8 @@ fn nested_ordered_in_unordered() {
     let text = render_markdown_text(md);
     let expected = Text::from_iter([
         Line::from_iter(["- ", "Outer"]),
-        Line::from_iter(["    1. ".light_blue(), "One".into()]),
-        Line::from_iter(["    2. ".light_blue(), "Two".into()]),
+        Line::from_iter([dim_marker("    1. "), "One".into()]),
+        Line::from_iter([dim_marker("    2. "), "Two".into()]),
         Line::from_iter(["- ", "Last"]),
     ]);
     assert_eq!(text, expected);
@@ -541,10 +563,10 @@ fn loose_list_item_multiple_paragraphs() {
     let md = "1. First paragraph\n\n   Second paragraph of same item\n\n2. Next item\n";
     let text = render_markdown_text(md);
     let expected = Text::from_iter([
-        Line::from_iter(["1. ".light_blue(), "First paragraph".into()]),
+        Line::from_iter([dim_marker("1. "), "First paragraph".into()]),
         Line::default(),
         Line::from_iter(["   ", "Second paragraph of same item"]),
-        Line::from_iter(["2. ".light_blue(), "Next item".into()]),
+        Line::from_iter([dim_marker("2. "), "Next item".into()]),
     ]);
     assert_eq!(text, expected);
 }
@@ -565,10 +587,10 @@ fn deeply_nested_mixed_three_levels() {
     let md = "1. A\n    - B\n        1. C\n2. D\n";
     let text = render_markdown_text(md);
     let expected = Text::from_iter([
-        Line::from_iter(["1. ".light_blue(), "A".into()]),
+        Line::from_iter([dim_marker("1. "), "A".into()]),
         Line::from_iter(["    - ", "B"]),
-        Line::from_iter(["        1. ".light_blue(), "C".into()]),
-        Line::from_iter(["2. ".light_blue(), "D".into()]),
+        Line::from_iter([dim_marker("        1. "), "C".into()]),
+        Line::from_iter([dim_marker("2. "), "D".into()]),
     ]);
     assert_eq!(text, expected);
 }
@@ -578,8 +600,8 @@ fn loose_items_due_to_blank_line_between_items() {
     let md = "1. First\n\n2. Second\n";
     let text = render_markdown_text(md);
     let expected = Text::from_iter([
-        Line::from_iter(["1. ".light_blue(), "First".into()]),
-        Line::from_iter(["2. ".light_blue(), "Second".into()]),
+        Line::from_iter([dim_marker("1. "), "First".into()]),
+        Line::from_iter([dim_marker("2. "), "Second".into()]),
     ]);
     assert_eq!(text, expected);
 }
@@ -589,8 +611,8 @@ fn mixed_tight_then_loose_in_one_list() {
     let md = "1. Tight\n\n2.\n   Loose\n";
     let text = render_markdown_text(md);
     let expected = Text::from_iter([
-        Line::from_iter(["1. ".light_blue(), "Tight".into()]),
-        Line::from_iter(["2. ".light_blue(), "Loose".into()]),
+        Line::from_iter([dim_marker("1. "), "Tight".into()]),
+        Line::from_iter([dim_marker("2. "), "Loose".into()]),
     ]);
     assert_eq!(text, expected);
 }
@@ -600,7 +622,7 @@ fn ordered_item_with_indented_continuation_is_tight() {
     let md = "1. Foo\n   Bar\n";
     let text = render_markdown_text(md);
     let expected = Text::from_iter([
-        Line::from_iter(["1. ".light_blue(), "Foo".into()]),
+        Line::from_iter([dim_marker("1. "), "Foo".into()]),
         Line::from_iter(["   ", "Bar"]),
     ]);
     assert_eq!(text, expected);
@@ -609,7 +631,7 @@ fn ordered_item_with_indented_continuation_is_tight() {
 #[test]
 fn inline_code() {
     let text = render_markdown_text("Example of `Inline code`");
-    let expected = Line::from_iter(["Example of ".into(), "Inline code".cyan()]).into();
+    let expected = Line::from_iter(["Example of ".into(), accent("Inline code")]).into();
     assert_eq!(text, expected);
 }
 
@@ -653,7 +675,7 @@ fn link() {
     let expected = Text::from(Line::from_iter([
         "Link".into(),
         " (".into(),
-        "https://example.com".cyan().underlined(),
+        accent_link("https://example.com"),
         ")".into(),
     ]));
     assert_eq!(text, expected);
@@ -669,9 +691,9 @@ fn load_location_suffix_regexes() {
 fn file_link_hides_destination() {
     let text = render_markdown_text_for_cwd(
         "[chaos/tui/src/markdown_render.rs](/Users/example/code/chaos/chaos/tui/src/markdown_render.rs)",
-        Path::new("/Users/example/code/codex"),
+        Path::new("/Users/example/code/chaos"),
     );
-    let expected = Text::from(Line::from_iter(["chaos/tui/src/markdown_render.rs".cyan()]));
+    let expected = Text::from(Line::from_iter([accent("chaos/tui/src/markdown_render.rs")]));
     assert_eq!(text, expected);
 }
 
@@ -679,9 +701,9 @@ fn file_link_hides_destination() {
 fn file_link_appends_line_number_when_label_lacks_it() {
     let text = render_markdown_text_for_cwd(
         "[markdown_render.rs](/Users/example/code/chaos/chaos/tui/src/markdown_render.rs:74)",
-        Path::new("/Users/example/code/codex"),
+        Path::new("/Users/example/code/chaos"),
     );
-    let expected = Text::from(Line::from_iter(["chaos/tui/src/markdown_render.rs:74".cyan()]));
+    let expected = Text::from(Line::from_iter([accent("chaos/tui/src/markdown_render.rs:74")]));
     assert_eq!(text, expected);
 }
 
@@ -691,7 +713,7 @@ fn file_link_keeps_absolute_paths_outside_cwd() {
         "[README.md:74](/Users/example/code/codex/README.md:74)",
         Path::new("/Users/example/code/chaos/chaos/tui"),
     );
-    let expected = Text::from(Line::from_iter(["/Users/example/code/codex/README.md:74".cyan()]));
+    let expected = Text::from(Line::from_iter([accent("/Users/example/code/codex/README.md:74")]));
     assert_eq!(text, expected);
 }
 
@@ -699,10 +721,10 @@ fn file_link_keeps_absolute_paths_outside_cwd() {
 fn file_link_appends_hash_anchor_when_label_lacks_it() {
     let text = render_markdown_text_for_cwd(
         "[markdown_render.rs](file:///Users/example/code/chaos/chaos/tui/src/markdown_render.rs#L74C3)",
-        Path::new("/Users/example/code/codex"),
+        Path::new("/Users/example/code/chaos"),
     );
     let expected =
-        Text::from(Line::from_iter(["chaos/tui/src/markdown_render.rs:74:3".cyan()]));
+        Text::from(Line::from_iter([accent("chaos/tui/src/markdown_render.rs:74:3")]));
     assert_eq!(text, expected);
 }
 
@@ -710,10 +732,10 @@ fn file_link_appends_hash_anchor_when_label_lacks_it() {
 fn file_link_uses_target_path_for_hash_anchor() {
     let text = render_markdown_text_for_cwd(
         "[markdown_render.rs#L74C3](file:///Users/example/code/chaos/chaos/tui/src/markdown_render.rs#L74C3)",
-        Path::new("/Users/example/code/codex"),
+        Path::new("/Users/example/code/chaos"),
     );
     let expected =
-        Text::from(Line::from_iter(["chaos/tui/src/markdown_render.rs:74:3".cyan()]));
+        Text::from(Line::from_iter([accent("chaos/tui/src/markdown_render.rs:74:3")]));
     assert_eq!(text, expected);
 }
 
@@ -721,10 +743,10 @@ fn file_link_uses_target_path_for_hash_anchor() {
 fn file_link_appends_range_when_label_lacks_it() {
     let text = render_markdown_text_for_cwd(
         "[markdown_render.rs](/Users/example/code/chaos/chaos/tui/src/markdown_render.rs:74:3-76:9)",
-        Path::new("/Users/example/code/codex"),
+        Path::new("/Users/example/code/chaos"),
     );
     let expected =
-        Text::from(Line::from_iter(["chaos/tui/src/markdown_render.rs:74:3-76:9".cyan()]));
+        Text::from(Line::from_iter([accent("chaos/tui/src/markdown_render.rs:74:3-76:9")]));
     assert_eq!(text, expected);
 }
 
@@ -732,10 +754,10 @@ fn file_link_appends_range_when_label_lacks_it() {
 fn file_link_uses_target_path_for_range() {
     let text = render_markdown_text_for_cwd(
         "[markdown_render.rs:74:3-76:9](/Users/example/code/chaos/chaos/tui/src/markdown_render.rs:74:3-76:9)",
-        Path::new("/Users/example/code/codex"),
+        Path::new("/Users/example/code/chaos"),
     );
     let expected =
-        Text::from(Line::from_iter(["chaos/tui/src/markdown_render.rs:74:3-76:9".cyan()]));
+        Text::from(Line::from_iter([accent("chaos/tui/src/markdown_render.rs:74:3-76:9")]));
     assert_eq!(text, expected);
 }
 
@@ -743,10 +765,10 @@ fn file_link_uses_target_path_for_range() {
 fn file_link_appends_hash_range_when_label_lacks_it() {
     let text = render_markdown_text_for_cwd(
         "[markdown_render.rs](file:///Users/example/code/chaos/chaos/tui/src/markdown_render.rs#L74C3-L76C9)",
-        Path::new("/Users/example/code/codex"),
+        Path::new("/Users/example/code/chaos"),
     );
     let expected =
-        Text::from(Line::from_iter(["chaos/tui/src/markdown_render.rs:74:3-76:9".cyan()]));
+        Text::from(Line::from_iter([accent("chaos/tui/src/markdown_render.rs:74:3-76:9")]));
     assert_eq!(text, expected);
 }
 
@@ -754,12 +776,12 @@ fn file_link_appends_hash_range_when_label_lacks_it() {
 fn multiline_file_link_label_after_styled_prefix_does_not_panic() {
     let text = render_markdown_text_for_cwd(
         "**bold** plain [foo\nbar](file:///Users/example/code/chaos/chaos/tui/src/markdown_render.rs#L74C3)",
-        Path::new("/Users/example/code/codex"),
+        Path::new("/Users/example/code/chaos"),
     );
     let expected = Text::from(Line::from_iter([
         "bold".bold(),
         " plain ".into(),
-        "chaos/tui/src/markdown_render.rs:74:3".cyan(),
+        accent("chaos/tui/src/markdown_render.rs:74:3"),
     ]));
     assert_eq!(text, expected);
 }
@@ -768,10 +790,10 @@ fn multiline_file_link_label_after_styled_prefix_does_not_panic() {
 fn file_link_uses_target_path_for_hash_range() {
     let text = render_markdown_text_for_cwd(
         "[markdown_render.rs#L74C3-L76C9](file:///Users/example/code/chaos/chaos/tui/src/markdown_render.rs#L74C3-L76C9)",
-        Path::new("/Users/example/code/codex"),
+        Path::new("/Users/example/code/chaos"),
     );
     let expected =
-        Text::from(Line::from_iter(["chaos/tui/src/markdown_render.rs:74:3-76:9".cyan()]));
+        Text::from(Line::from_iter([accent("chaos/tui/src/markdown_render.rs:74:3-76:9")]));
     assert_eq!(text, expected);
 }
 
@@ -781,7 +803,7 @@ fn url_link_shows_destination() {
     let expected = Text::from(Line::from_iter([
         "docs".into(),
         " (".into(),
-        "https://example.com/docs".cyan().underlined(),
+        accent_link("https://example.com/docs"),
         ")".into(),
     ]));
     assert_eq!(text, expected);
@@ -791,7 +813,7 @@ fn url_link_shows_destination() {
 fn markdown_render_file_link_snapshot() {
     let text = render_markdown_text_for_cwd(
         "See [markdown_render.rs:74](/Users/example/code/chaos/chaos/tui/src/markdown_render.rs:74).",
-        Path::new("/Users/example/code/codex"),
+        Path::new("/Users/example/code/chaos"),
     );
     let rendered = text
         .lines
@@ -813,7 +835,7 @@ fn unordered_list_local_file_link_stays_inline_with_following_text() {
     let text = render_markdown_text_with_width_and_cwd(
         "- [binary](/Users/example/code/chaos/chaos/README.md:93): core is the agent/business logic, tui is the terminal UI, exec is the headless automation surface, and cli is the top-level multitool binary.",
         Some(72),
-        Some(Path::new("/Users/example/code/codex")),
+        Some(Path::new("/Users/example/code/chaos")),
     );
     let rendered = text
         .lines
@@ -840,7 +862,7 @@ fn unordered_list_local_file_link_soft_break_before_colon_stays_inline() {
     let text = render_markdown_text_with_width_and_cwd(
         "- [binary](/Users/example/code/chaos/chaos/README.md:93)\n  : core is the agent/business logic.",
         Some(72),
-        Some(Path::new("/Users/example/code/codex")),
+        Some(Path::new("/Users/example/code/chaos")),
     );
     let rendered = text
         .lines
@@ -863,7 +885,7 @@ fn consecutive_unordered_list_local_file_links_do_not_detach_paths() {
     let text = render_markdown_text_with_width_and_cwd(
         "- [binary](/Users/example/code/chaos/chaos/README.md:93)\n  : cli is the top-level multitool binary.\n- [expectations](/Users/example/code/chaos/chaos/core/README.md:1)\n  : chaos-kern owns the real runtime behavior.",
         Some(72),
-        Some(Path::new("/Users/example/code/codex")),
+        Some(Path::new("/Users/example/code/chaos")),
     );
     let rendered = text
         .lines
@@ -1203,9 +1225,9 @@ fn nested_five_levels_mixed_lists() {
     let md = "1. First\n   - Second level\n     1. Third level (ordered)\n        - Fourth level (bullet)\n          - Fifth level to test indent consistency\n";
     let text = render_markdown_text(md);
     let expected = Text::from_iter([
-        Line::from_iter(["1. ".light_blue(), "First".into()]),
+        Line::from_iter([dim_marker("1. "), "First".into()]),
         Line::from_iter(["    - ", "Second level"]),
-        Line::from_iter(["        1. ".light_blue(), "Third level (ordered)".into()]),
+        Line::from_iter([dim_marker("        1. "), "Third level (ordered)".into()]),
         Line::from_iter(["            - ", "Fourth level (bullet)"]),
         Line::from_iter([
             "                - ",
@@ -1240,7 +1262,7 @@ fn html_in_tight_ordered_item_soft_breaks_with_space() {
     let md = "1. Foo\n   <i>Bar</i>\n";
     let text = render_markdown_text(md);
     let expected = Text::from_iter([
-        Line::from_iter(["1. ".light_blue(), "Foo".into()]),
+        Line::from_iter([dim_marker("1. "), "Foo".into()]),
         Line::from_iter(["   ", "<i>", "Bar", "</i>"]),
     ]);
     assert_eq!(text, expected);
@@ -1288,7 +1310,7 @@ fn ordered_item_continuation_paragraph_is_indented() {
     let md = "1. Intro\n\n   More details about intro\n";
     let text = render_markdown_text(md);
     let expected = Text::from_iter([
-        Line::from_iter(["1. ".light_blue(), "Intro".into()]),
+        Line::from_iter([dim_marker("1. "), "Intro".into()]),
         Line::default(),
         Line::from_iter(["   ", "More details about intro"]),
     ]);
@@ -1300,11 +1322,11 @@ fn nested_item_continuation_paragraph_is_indented() {
     let md = "1. A\n    - B\n\n      Continuation for B\n2. C\n";
     let text = render_markdown_text(md);
     let expected = Text::from_iter([
-        Line::from_iter(["1. ".light_blue(), "A".into()]),
+        Line::from_iter([dim_marker("1. "), "A".into()]),
         Line::from_iter(["    - ", "B"]),
         Line::default(),
         Line::from_iter(["      ", "Continuation for B"]),
-        Line::from_iter(["2. ".light_blue(), "C".into()]),
+        Line::from_iter([dim_marker("2. "), "C".into()]),
     ]);
     assert_eq!(text, expected);
 }

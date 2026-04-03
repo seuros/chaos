@@ -54,6 +54,8 @@ pub struct HallucinateEngine {
     info: Arc<SessionInfo>,
     /// Working directory (for script discovery).
     cwd: PathBuf,
+    /// Override for the user-layer scripts directory (see `SessionInfo`).
+    user_scripts_dir: Option<PathBuf>,
 }
 
 impl HallucinateEngine {
@@ -63,6 +65,7 @@ impl HallucinateEngine {
         let deadline = sandbox::apply(&lua)?;
 
         let cwd = PathBuf::from(&info.cwd);
+        let user_scripts_dir = info.user_scripts_dir.clone();
         let info = Arc::new(info);
 
         let mut engine = Self {
@@ -72,6 +75,7 @@ impl HallucinateEngine {
             tools: HashMap::new(),
             info,
             cwd,
+            user_scripts_dir,
         };
 
         engine.load_scripts();
@@ -81,7 +85,7 @@ impl HallucinateEngine {
     /// Discover and load all scripts, collecting their registrations.
     fn load_scripts(&mut self) {
         self.deadline.reset(LOAD_DEADLINE);
-        let paths = discovery::discover_scripts(&self.cwd);
+        let paths = discovery::discover_scripts(&self.cwd, self.user_scripts_dir.as_deref());
         for path in &paths {
             if let Err(e) = self.load_script(path) {
                 tracing::warn!(
@@ -233,7 +237,7 @@ impl HallucinateEngine {
             }
         }
 
-        let paths = discovery::discover_scripts(&self.cwd);
+        let paths = discovery::discover_scripts(&self.cwd, self.user_scripts_dir.as_deref());
         let mut errors = Vec::new();
 
         self.deadline.reset(LOAD_DEADLINE);

@@ -32,6 +32,7 @@ use chaos_kern::config::ConfigOverrides;
 use chaos_kern::config::edit::ConfigEditsBuilder;
 use chaos_kern::config::find_chaos_home;
 use chaos_kern::features::is_known_feature_key;
+use chaos_kern::features::is_under_development_feature_key;
 use chaos_kern::terminal::TerminalName;
 
 /// Chaos
@@ -580,6 +581,9 @@ async fn enable_feature_in_config(interactive: &TuiCli, feature: &str) -> anyhow
         .apply()
         .await?;
     println!("Enabled feature `{feature}` in config.toml.");
+    if is_under_development_feature_key(feature) {
+        eprintln!("Under-development features enabled: {feature}.");
+    }
     Ok(())
 }
 

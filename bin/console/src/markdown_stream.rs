@@ -220,14 +220,16 @@ mod tests {
         });
         let idx = find_idx.expect("expected third-level ordered line");
         let line = &out[idx];
-        // Expect at least one span on this line to be styled light blue
-        let has_light_blue = line
-            .spans
-            .iter()
-            .any(|s| s.style.fg == Some(ratatui::style::Color::LightBlue));
+        // Expect at least one span on this line to carry the ordered-list
+        // marker colour. The phosphor palette maps `ordered_list_marker` to
+        // `palette().dim = Color::Green` (the "dim" variant of the primary
+        // phosphor green). Older versions used LightBlue; the current palette
+        // is intentionally all-green.
+        let marker_color = crate::theme::light_blue(); // palette().dim on PHOSPHOR
+        let has_marker_color = line.spans.iter().any(|s| s.style.fg == Some(marker_color));
         assert!(
-            has_light_blue,
-            "expected an ordered-list marker span with light blue fg on: {line:?}"
+            has_marker_color,
+            "expected an ordered-list marker span with fg {marker_color:?} on: {line:?}",
         );
     }
 
@@ -463,16 +465,20 @@ mod tests {
         });
 
         // The marker (including indent and "1.") is expected to be in the first span
-        // and colored LightBlue; following content should be default color.
+        // and colored with the ordered-list-marker colour from the palette.
+        // The phosphor palette uses Color::Green (palette().dim) for this role;
+        // LightBlue was the pre-palette era value.
         assert!(
             !line.spans.is_empty(),
             "expected non-empty spans for the third-level line"
         );
         let marker_span = &line.spans[0];
+        let expected_marker_color = crate::theme::light_blue(); // palette().dim
         assert_eq!(
             marker_span.style.fg,
-            Some(Color::LightBlue),
-            "expected LightBlue 3rd-level ordered marker, got {:?}",
+            Some(expected_marker_color),
+            "expected ordered-list marker color {:?}, got {:?}",
+            expected_marker_color,
             marker_span.style.fg
         );
         // Find the first non-empty non-space content span and verify it is default color.

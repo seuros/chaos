@@ -315,6 +315,7 @@ where
 mod tests {
     use super::*;
     use crate::markdown_render::render_markdown_text;
+    #[cfg(feature = "vt100-tests")]
     use crate::test_backend::VT100Backend;
     use ratatui::layout::Rect;
 
@@ -346,6 +347,7 @@ mod tests {
         );
     }
 
+    #[cfg(feature = "vt100-tests")]
     #[test]
     fn vt100_blockquote_line_emits_green_fg() {
         // Set up a small off-screen terminal
@@ -381,6 +383,7 @@ mod tests {
         );
     }
 
+    #[cfg(feature = "vt100-tests")]
     #[test]
     fn vt100_blockquote_wrap_preserves_color_on_all_wrapped_lines() {
         // Force wrapping by using a narrow viewport width and a long blockquote line.
@@ -447,6 +450,7 @@ mod tests {
         }
     }
 
+    #[cfg(feature = "vt100-tests")]
     #[test]
     fn vt100_colored_prefix_then_plain_text_resets_color() {
         let width: u16 = 40;
@@ -508,6 +512,7 @@ mod tests {
         }
     }
 
+    #[cfg(feature = "vt100-tests")]
     #[test]
     fn vt100_deep_nested_mixed_list_third_level_marker_is_colored() {
         // Markdown with five levels (ordered → unordered → ordered → unordered → unordered).
@@ -559,6 +564,7 @@ mod tests {
         }
     }
 
+    #[cfg(feature = "vt100-tests")]
     #[test]
     fn vt100_prefixed_url_keeps_prefix_and_url_on_same_row() {
         let width: u16 = 48;
@@ -585,6 +591,7 @@ mod tests {
         );
     }
 
+    #[cfg(feature = "vt100-tests")]
     #[test]
     fn vt100_prefixed_url_like_without_scheme_keeps_prefix_and_token_on_same_row() {
         let width: u16 = 48;
@@ -613,6 +620,7 @@ mod tests {
         );
     }
 
+    #[cfg(feature = "vt100-tests")]
     #[test]
     fn vt100_prefixed_mixed_url_line_wraps_suffix_words_together() {
         let width: u16 = 24;
@@ -643,6 +651,7 @@ mod tests {
         );
     }
 
+    #[cfg(feature = "vt100-tests")]
     #[test]
     fn vt100_unwrapped_url_like_clears_continuation_rows() {
         let width: u16 = 20;
@@ -683,6 +692,7 @@ mod tests {
         );
     }
 
+    #[cfg(feature = "vt100-tests")]
     #[test]
     fn vt100_long_unwrapped_url_does_not_insert_extra_blank_gap_before_content() {
         let width: u16 = 56;

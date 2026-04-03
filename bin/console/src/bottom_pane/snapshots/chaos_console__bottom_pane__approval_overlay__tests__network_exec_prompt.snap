@@ -1,5 +1,5 @@
 ---
-source: bin/xserver/src/bottom_pane/approval_overlay.rs
+source: bin/console/src/bottom_pane/approval_overlay.rs
 expression: "format!(\"{buf:?}\")"
 ---
 Buffer {
@@ -24,7 +24,7 @@ Buffer {
         x: 57, y: 1, fg: LightGreen, bg: DarkGray, underline: Reset, modifier: NONE,
         x: 10, y: 3, fg: LightGreen, bg: DarkGray, underline: Reset, modifier: ITALIC,
         x: 33, y: 3, fg: LightGreen, bg: DarkGray, underline: Reset, modifier: NONE,
-        x: 0, y: 6, fg: LightGreen, bg: DarkGray, underline: Reset, modifier: BOLD,
+        x: 0, y: 6, fg: Cyan, bg: DarkGray, underline: Reset, modifier: BOLD,
         x: 28, y: 6, fg: LightGreen, bg: DarkGray, underline: Reset, modifier: NONE,
         x: 53, y: 7, fg: Green, bg: DarkGray, underline: Reset, modifier: DIM,
         x: 54, y: 7, fg: LightGreen, bg: DarkGray, underline: Reset, modifier: NONE,

@@ -22,7 +22,6 @@ use ratatui::layout::Constraint;
 use ratatui::layout::Layout;
 use ratatui::layout::Rect;
 use ratatui::prelude::Widget;
-use ratatui::style::Color;
 use ratatui::style::Modifier;
 use ratatui::style::Style;
 use ratatui::style::Stylize;
@@ -67,7 +66,10 @@ pub(crate) fn mark_url_hyperlink(buf: &mut Buffer, area: Rect, url: &str) {
         for x in area.left()..area.right() {
             let cell = &mut buf[(x, y)];
             // Only mark cells that carry the URL's distinctive style.
-            if cell.fg != Color::Cyan || !cell.modifier.contains(Modifier::UNDERLINED) {
+            // Use theme::cyan() so this keeps working when the palette
+            // maps "cyan" to a non-standard color (e.g. LightGreen on the
+            // green phosphor theme).
+            if cell.fg != crate::theme::cyan() || !cell.modifier.contains(Modifier::UNDERLINED) {
                 continue;
             }
             let sym = cell.symbol().to_string();

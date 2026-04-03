@@ -26,6 +26,11 @@ pub struct SessionInfo {
     pub session_id: String,
     pub cwd: String,
     pub provider: String,
+    /// Override for the user-layer scripts directory.
+    ///
+    /// Production code passes `None` (falls back to `$XDG_CONFIG_HOME/chaos/scripts/`).
+    /// Tests pass `Some(empty_temp_dir)` to prevent real user scripts from loading.
+    pub user_scripts_dir: Option<std::path::PathBuf>,
 }
 
 /// Shared mutable state collected from script registration calls.

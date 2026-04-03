@@ -180,6 +180,12 @@ pub(crate) async fn handle_output_item_done(
                     .handle_tool_call(call, cancellation_token),
             );
 
+            // Tool call reopens mailbox delivery: any steered input
+            // that arrives during tool execution must be consumed in
+            // the same turn.
+            ctx.sess
+                .accept_mailbox_delivery_for_current_turn(&ctx.turn_context.sub_id)
+                .await;
             output.needs_follow_up = true;
             output.tool_future = Some(tool_future);
         }
@@ -213,6 +219,15 @@ pub(crate) async fn handle_output_item_done(
             record_completed_response_item(ctx.sess.as_ref(), ctx.turn_context.as_ref(), &item)
                 .await;
             let last_agent_message = last_assistant_message_from_item(&item, plan_mode);
+
+            // Final answer items (assistant message, image generation)
+            // mark the answer boundary: defer any new mailbox input to
+            // the next turn so it isn't consumed by the current one.
+            if completed_item_is_answer_boundary(&item) {
+                ctx.sess
+                    .defer_mailbox_delivery_to_next_turn(&ctx.turn_context.sub_id)
+                    .await;
+            }
 
             output.last_agent_message = last_agent_message;
         }
@@ -273,6 +288,19 @@ pub(crate) async fn handle_output_item_done(
     }
 
     Ok(output)
+}
+
+/// Returns `true` for completed response items that represent a final
+/// visible answer — the answer boundary after which new mailbox input
+/// should be deferred to the next turn.
+///
+/// Assistant messages and image generation calls are final answers.
+/// Tool calls, reasoning summaries, and commentary are not.
+fn completed_item_is_answer_boundary(item: &ResponseItem) -> bool {
+    matches!(
+        item,
+        ResponseItem::Message { .. } | ResponseItem::ImageGenerationCall { .. }
+    )
 }
 
 pub(crate) async fn handle_non_tool_response_item(

@@ -50,6 +50,14 @@ pub struct Palette {
 }
 
 /// Default Chaos green phosphor palette.
+///
+/// Colour roles:
+/// - `fg` / `highlight` — bright phosphor green for primary content
+/// - `dim` / `border`   — base green for chrome and secondary text
+/// - `success`          — base green (distinct from bright fg, same family)
+/// - `accent`           — cyan for links, inline code, interactive elements (contrasts against green)
+/// - `error`            — light red for failures and deletions
+/// - `warning`          — amber for caution states
 pub const PHOSPHOR: Palette = Palette {
     bg: Color::Black,
     fg: Color::LightGreen,
@@ -59,8 +67,8 @@ pub const PHOSPHOR: Palette = Palette {
     border: Color::Green,
     warning: Color::Yellow,
     error: Color::LightRed,
-    success: Color::LightGreen,
-    accent: Color::LightGreen,
+    success: Color::Green,
+    accent: Color::Cyan,
 };
 
 /// Anthropic orange palette — used when clamped to Claude Code MAX.

@@ -1,5 +1,5 @@
 ---
-source: bin/xserver/src/chatwidget/tests.rs
+source: bin/console/src/chatwidget/tests.rs
 expression: "format!(\"{buf:?}\")"
 ---
 Buffer {
@@ -31,7 +31,7 @@ Buffer {
         x: 4, y: 7, fg: Rgb(137, 180, 250), bg: DarkGray, underline: Reset, modifier: NONE,
         x: 8, y: 7, fg: Rgb(205, 214, 244), bg: DarkGray, underline: Reset, modifier: NONE,
         x: 20, y: 7, fg: LightGreen, bg: DarkGray, underline: Reset, modifier: NONE,
-        x: 0, y: 9, fg: LightGreen, bg: DarkGray, underline: Reset, modifier: BOLD,
+        x: 0, y: 9, fg: Cyan, bg: DarkGray, underline: Reset, modifier: BOLD,
         x: 21, y: 9, fg: LightGreen, bg: DarkGray, underline: Reset, modifier: NONE,
         x: 48, y: 10, fg: Green, bg: DarkGray, underline: Reset, modifier: DIM,
         x: 51, y: 10, fg: LightGreen, bg: DarkGray, underline: Reset, modifier: NONE,

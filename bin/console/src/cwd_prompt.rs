@@ -249,6 +249,7 @@ impl Widget for &CwdPromptScreen {
 #[cfg(test)]
 mod tests {
     use super::*;
+    #[cfg(feature = "vt100-tests")]
     use crate::test_backend::VT100Backend;
     use crossterm::event::KeyEvent;
     use crossterm::event::KeyModifiers;
@@ -264,6 +265,7 @@ mod tests {
         )
     }
 
+    #[cfg(feature = "vt100-tests")]
     #[test]
     fn cwd_prompt_snapshot() {
         let screen = new_prompt();
@@ -274,6 +276,7 @@ mod tests {
         insta::assert_snapshot!("cwd_prompt_modal", terminal.backend());
     }
 
+    #[cfg(feature = "vt100-tests")]
     #[test]
     fn cwd_prompt_fork_snapshot() {
         let screen = CwdPromptScreen::new(

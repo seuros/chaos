@@ -5,66 +5,47 @@ set positional-arguments
 help:
     just -l
 
-# `chaos`
+# Run chaos
 alias c := chaos
 chaos *args:
-    cargo run --bin chaos -- "$@"
+    cargo run --bin chaos -- {{args}}
 
-# Just talk.
-talk *args:
-    cargo run --bin chaos -- "${1:-explain me this chaos}"
-
-# `chaos exec`
-exec *args:
-    cargo run --bin chaos -- exec "$@"
-
-# Run the CLI version of the file-search crate.
-file-search *args:
-    cargo run --bin chaos-locate -- "$@"
-
-# format code
+# Format code
 fmt:
-    cargo fmt -- --config imports_granularity=Item 2>/dev/null
+    cargo fmt
 
-fix *args:
-    cargo clippy --fix --tests --allow-dirty "$@"
-
+# Clippy with all features, deny warnings
 clippy:
-    cargo clippy --tests "$@"
+    cargo clippy --workspace --all-features --tests -- -D warnings
 
-install:
-    rustup show active-toolchain
-    cargo fetch
+# Check compilation without building
+check:
+    cargo check --workspace --all-targets --all-features
 
-# Run `cargo nextest` since it's faster than `cargo test`, though including
-# --no-fail-fast is important to ensure all tests are run.
-#
-# Run `cargo install cargo-nextest` if you don't have it installed.
-# Prefer this for routine local runs; use explicit `cargo test --all-features`
-# only when you specifically need full feature coverage.
-test:
-    cargo nextest run --no-fail-fast
+# Run tests with all features
+test *args:
+    cargo nextest run --workspace --all-features --no-fail-fast {{args}}
 
-build-for-release:
-    cargo build --release -p chaos-cli
+# Lint + check + clippy (no tests)
+qq: fmt check clippy
+
+# Full QA: qq + tests
+qa: qq test
+
+# Fix clippy warnings automatically
+fix:
+    cargo clippy --fix --workspace --all-features --tests --allow-dirty
 
 # Run the MCP server
 mcp-server-run *args:
-    cargo run -p chaos-mcphost -- "$@"
+    cargo run -p chaos-mcphost -- {{args}}
 
-# Regenerate the json schema for config.toml from the current config types.
-# TODO: convert to a #[test] that writes the schema
-# write-config-schema:
-
+# Write hooks JSON schema fixtures
 [no-cd]
 write-hooks-schema:
     cargo run -p chaos-dtrace --bin write_hooks_schema_fixtures
 
-# Run the argument-comment Dylint checks across the workspace.
+# Regenerate config.schema.json fixture
 [no-cd]
-argument-comment-lint *args:
-    ./tools/argument-comment-lint/run.sh "$@"
-
-# Tail logs from the state SQLite database
-log *args:
-    if [ "${1:-}" = "--" ]; then shift; fi; cargo run -p chaos-proc --bin logs_client -- "$@"
+write-config-schema:
+    cargo run -p chaos-kern --bin write_config_schema

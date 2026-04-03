@@ -106,6 +106,8 @@ mod status_indicator_widget;
 mod streaming;
 mod style;
 mod terminal_palette;
+#[cfg(test)]
+mod test_render;
 mod text_formatting;
 pub(crate) mod theme;
 mod theme_picker;

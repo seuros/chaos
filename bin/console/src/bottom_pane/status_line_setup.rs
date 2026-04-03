@@ -281,9 +281,9 @@ impl Renderable for StatusLineSetupView {
 mod tests {
     use super::*;
     use crate::app_event_sender::AppEventSender;
+    use crate::test_render::render_to_string;
     use insta::assert_snapshot;
     use pretty_assertions::assert_eq;
-    use ratatui::buffer::Buffer;
     use ratatui::layout::Rect;
     use tokio::sync::mpsc::unbounded_channel;
 
@@ -368,23 +368,6 @@ mod tests {
     fn render_lines(view: &StatusLineSetupView, width: u16) -> String {
         let height = view.desired_height(width);
         let area = Rect::new(0, 0, width, height);
-        let mut buf = Buffer::empty(area);
-        view.render(area, &mut buf);
-
-        (0..area.height)
-            .map(|row| {
-                let mut line = String::new();
-                for col in 0..area.width {
-                    let symbol = buf[(area.x + col, area.y + row)].symbol();
-                    if symbol.is_empty() {
-                        line.push(' ');
-                    } else {
-                        line.push_str(symbol);
-                    }
-                }
-                line
-            })
-            .collect::<Vec<_>>()
-            .join("\n")
+        render_to_string(view, area)
     }
 }

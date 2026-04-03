@@ -1318,11 +1318,11 @@ mod tests {
     use super::*;
     use chaos_ipc::ProcessId;
     use jiff::Timestamp;
-    use jiff::ToSpan;
 
     use crossterm::event::KeyCode;
     use crossterm::event::KeyEvent;
     use crossterm::event::KeyModifiers;
+    #[cfg(feature = "vt100-tests")]
     use insta::assert_snapshot;
     use pretty_assertions::assert_eq;
     use std::path::PathBuf;

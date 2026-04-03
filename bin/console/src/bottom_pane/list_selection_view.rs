@@ -987,6 +987,7 @@ mod tests {
     use super::*;
     use crate::app_event::AppEvent;
     use crate::bottom_pane::popup_consts::standard_popup_hint_line;
+    use crate::test_render::render_to_string;
     use crossterm::event::KeyCode;
     use insta::assert_snapshot;
     use pretty_assertions::assert_eq;
@@ -1080,24 +1081,7 @@ mod tests {
 
     fn render_lines_in_area(view: &ListSelectionView, width: u16, height: u16) -> String {
         let area = Rect::new(0, 0, width, height);
-        let mut buf = Buffer::empty(area);
-        view.render(area, &mut buf);
-
-        let lines: Vec<String> = (0..area.height)
-            .map(|row| {
-                let mut line = String::new();
-                for col in 0..area.width {
-                    let symbol = buf[(area.x + col, area.y + row)].symbol();
-                    if symbol.is_empty() {
-                        line.push(' ');
-                    } else {
-                        line.push_str(symbol);
-                    }
-                }
-                line
-            })
-            .collect();
-        lines.join("\n")
+        render_to_string(view, area)
     }
 
     fn description_col(rendered: &str, item_marker: &str, description: &str) -> usize {

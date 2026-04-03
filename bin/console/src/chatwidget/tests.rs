@@ -86,9 +86,11 @@ use chaos_kern::ChaosAuth;
 use chaos_kern::config::ApprovalsReviewer;
 use chaos_kern::config::Config;
 use chaos_kern::config::ConfigBuilder;
+#[cfg(feature = "vt100-tests")]
 use chaos_kern::config::Constrained;
-use chaos_kern::config::ConstraintError;
+#[cfg(feature = "vt100-tests")]
 use chaos_kern::config::types::Notifications;
+#[cfg(feature = "vt100-tests")]
 use chaos_kern::config_loader::RequirementSource;
 use chaos_kern::features::Feature;
 use chaos_kern::models_manager::collaboration_mode_presets::CollaborationModesConfig;
@@ -111,6 +113,7 @@ use tempfile::tempdir;
 use tokio::sync::mpsc::error::TryRecvError;
 use tokio::sync::mpsc::unbounded_channel;
 use toml::Value as TomlValue;
+use crate::test_render::render_to_trimmed_string;
 
 async fn test_config() -> Config {
     // Use base defaults to avoid depending on host state.
@@ -122,6 +125,7 @@ async fn test_config() -> Config {
         .expect("config")
 }
 
+#[cfg(feature = "vt100-tests")]
 fn invalid_value(candidate: impl Into<String>, allowed: impl Into<String>) -> ConstraintError {
     ConstraintError::InvalidValue {
         field_name: "<unknown>",
@@ -6320,32 +6324,7 @@ fn render_bottom_first_row(chat: &ChatWidget, width: u16) -> String {
 fn render_bottom_popup(chat: &ChatWidget, width: u16) -> String {
     let height = chat.desired_height(width);
     let area = Rect::new(0, 0, width, height);
-    let mut buf = Buffer::empty(area);
-    chat.render(area, &mut buf);
-
-    let mut lines: Vec<String> = (0..area.height)
-        .map(|row| {
-            let mut line = String::new();
-            for col in 0..area.width {
-                let symbol = buf[(area.x + col, area.y + row)].symbol();
-                if symbol.is_empty() {
-                    line.push(' ');
-                } else {
-                    line.push_str(symbol);
-                }
-            }
-            line.trim_end().to_string()
-        })
-        .collect();
-
-    while lines.first().is_some_and(|line| line.trim().is_empty()) {
-        lines.remove(0);
-    }
-    while lines.last().is_some_and(|line| line.trim().is_empty()) {
-        lines.pop();
-    }
-
-    lines.join("\n")
+    render_to_trimmed_string(chat, area)
 }
 
 #[tokio::test]

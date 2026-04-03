@@ -1641,7 +1641,7 @@ fn wrap_footer_tips(width: u16, tips: Vec<FooterTip>) -> Vec<Vec<FooterTip>> {
 mod tests {
     use super::*;
     use crate::app_event::AppEvent;
-    use crate::render::renderable::Renderable;
+    use crate::test_render::render_to_first_char_string;
     use pretty_assertions::assert_eq;
     use tokio::sync::mpsc::UnboundedReceiver;
     use tokio::sync::mpsc::unbounded_channel;
@@ -1716,24 +1716,6 @@ mod tests {
             );
         }
         Some(Value::Object(meta))
-    }
-
-    fn snapshot_buffer(buf: &Buffer) -> String {
-        let mut lines = Vec::new();
-        for y in 0..buf.area().height {
-            let mut row = String::new();
-            for x in 0..buf.area().width {
-                row.push(buf[(x, y)].symbol().chars().next().unwrap_or(' '));
-            }
-            lines.push(row);
-        }
-        lines.join("\n")
-    }
-
-    fn render_snapshot(overlay: &McpServerElicitationOverlay, area: Rect) -> String {
-        let mut buf = Buffer::empty(area);
-        overlay.render(area, &mut buf);
-        snapshot_buffer(&buf)
     }
 
     #[test]
@@ -2301,7 +2283,7 @@ mod tests {
 
         insta::assert_snapshot!(
             "mcp_server_elicitation_boolean_form",
-            render_snapshot(&overlay, Rect::new(0, 0, 120, 16))
+            render_to_first_char_string(&overlay, Rect::new(0, 0, 120, 16))
         );
     }
 
@@ -2321,7 +2303,7 @@ mod tests {
 
         insta::assert_snapshot!(
             "mcp_server_elicitation_approval_form_without_schema",
-            render_snapshot(&overlay, Rect::new(0, 0, 120, 16))
+            render_to_first_char_string(&overlay, Rect::new(0, 0, 120, 16))
         );
     }
 
@@ -2348,7 +2330,7 @@ mod tests {
 
         insta::assert_snapshot!(
             "mcp_server_elicitation_approval_form_with_session_persist",
-            render_snapshot(&overlay, Rect::new(0, 0, 120, 16))
+            render_to_first_char_string(&overlay, Rect::new(0, 0, 120, 16))
         );
     }
 
@@ -2398,7 +2380,7 @@ mod tests {
 
         insta::assert_snapshot!(
             "mcp_server_elicitation_approval_form_with_param_summary",
-            render_snapshot(&overlay, Rect::new(0, 0, 120, 16))
+            render_to_first_char_string(&overlay, Rect::new(0, 0, 120, 16))
         );
     }
 }

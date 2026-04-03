@@ -1,5 +1,3 @@
-use std::path::Path;
-
 use anyhow::Result;
 use chaos_kern::config::load_global_mcp_servers;
 use chaos_kern::config::types::McpServerTransportConfig;
@@ -7,17 +5,15 @@ use predicates::str::contains;
 use pretty_assertions::assert_eq;
 use tempfile::TempDir;
 
-fn codex_command(chaos_home: &Path) -> Result<assert_cmd::Command> {
-    let mut cmd = assert_cmd::Command::new(chaos_which::cargo_bin("chaos")?);
-    cmd.env("CHAOS_HOME", chaos_home);
-    Ok(cmd)
-}
+mod common;
+
+use common::chaos_command;
 
 #[tokio::test]
 async fn add_and_remove_server_updates_global_config() -> Result<()> {
     let chaos_home = TempDir::new()?;
 
-    let mut add_cmd = codex_command(chaos_home.path())?;
+    let mut add_cmd = chaos_command(chaos_home.path())?;
     add_cmd
         .args(["mcp", "add", "docs", "--", "echo", "hello"])
         .assert()
@@ -45,7 +41,7 @@ async fn add_and_remove_server_updates_global_config() -> Result<()> {
     }
     assert!(docs.enabled);
 
-    let mut remove_cmd = codex_command(chaos_home.path())?;
+    let mut remove_cmd = chaos_command(chaos_home.path())?;
     remove_cmd
         .args(["mcp", "remove", "docs"])
         .assert()
@@ -55,7 +51,7 @@ async fn add_and_remove_server_updates_global_config() -> Result<()> {
     let servers = load_global_mcp_servers(chaos_home.path()).await?;
     assert!(servers.is_empty());
 
-    let mut remove_again_cmd = codex_command(chaos_home.path())?;
+    let mut remove_again_cmd = chaos_command(chaos_home.path())?;
     remove_again_cmd
         .args(["mcp", "remove", "docs"])
         .assert()
@@ -72,7 +68,7 @@ async fn add_and_remove_server_updates_global_config() -> Result<()> {
 async fn add_with_env_preserves_key_order_and_values() -> Result<()> {
     let chaos_home = TempDir::new()?;
 
-    let mut add_cmd = codex_command(chaos_home.path())?;
+    let mut add_cmd = chaos_command(chaos_home.path())?;
     add_cmd
         .args([
             "mcp",
@@ -108,7 +104,7 @@ async fn add_with_env_preserves_key_order_and_values() -> Result<()> {
 async fn add_streamable_http_without_manual_token() -> Result<()> {
     let chaos_home = TempDir::new()?;
 
-    let mut add_cmd = codex_command(chaos_home.path())?;
+    let mut add_cmd = chaos_command(chaos_home.path())?;
     add_cmd
         .args(["mcp", "add", "github", "--url", "https://example.com/mcp"])
         .assert()
@@ -142,7 +138,7 @@ async fn add_streamable_http_without_manual_token() -> Result<()> {
 async fn add_streamable_http_with_custom_env_var() -> Result<()> {
     let chaos_home = TempDir::new()?;
 
-    let mut add_cmd = codex_command(chaos_home.path())?;
+    let mut add_cmd = chaos_command(chaos_home.path())?;
     add_cmd
         .args([
             "mcp",
@@ -180,7 +176,7 @@ async fn add_streamable_http_with_custom_env_var() -> Result<()> {
 async fn add_streamable_http_rejects_removed_flag() -> Result<()> {
     let chaos_home = TempDir::new()?;
 
-    let mut add_cmd = codex_command(chaos_home.path())?;
+    let mut add_cmd = chaos_command(chaos_home.path())?;
     add_cmd
         .args([
             "mcp",
@@ -204,7 +200,7 @@ async fn add_streamable_http_rejects_removed_flag() -> Result<()> {
 async fn add_cant_add_command_and_url() -> Result<()> {
     let chaos_home = TempDir::new()?;
 
-    let mut add_cmd = codex_command(chaos_home.path())?;
+    let mut add_cmd = chaos_command(chaos_home.path())?;
     add_cmd
         .args([
             "mcp",

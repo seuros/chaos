@@ -1,7 +1,6 @@
 use std::path::PathBuf;
 use std::sync::Arc;
 
-use crate::outgoing_message::ErrorData;
 use chaos_ipc::ProcessId;
 use chaos_ipc::parse_command::ParsedCommand;
 use chaos_ipc::protocol::Op;
@@ -14,8 +13,10 @@ use serde_json::Value;
 use serde_json::json;
 use tracing::error;
 
-use crate::elicitation::ApprovalElicitationAction;
 use crate::elicitation::ApprovalElicitationResponse;
+use crate::elicitation::CreateFormElicitationError;
+use crate::elicitation::create_form_elicitation_request;
+use crate::elicitation::decode_approval_elicitation_response;
 
 /// Conforms to the MCP elicitation request params shape, so it can be used as
 /// the `params` field of an `elicitation/create` request.
@@ -78,29 +79,21 @@ pub(crate) async fn handle_exec_approval_request(
             codex_parsed_cmd,
         },
     };
-    let params_json = match serde_json::to_value(&params) {
-        Ok(value) => value,
-        Err(err) => {
-            let message = format!("Failed to serialize ExecApprovalElicitRequestParams: {err}");
-            error!("{message}");
-
-            outgoing
-                .send_error(request_id.clone(), ErrorData::invalid_params(message))
-                .await;
-
+    let on_response = match create_form_elicitation_request(
+        outgoing.as_ref(),
+        request_id.clone(),
+        &params,
+        "ExecApprovalElicitRequestParams",
+    )
+    .await
+    {
+        Ok(receiver) => receiver,
+        Err(CreateFormElicitationError::InvalidParams) => return,
+        Err(CreateFormElicitationError::Unsupported) => {
+            submit_exec_approval(approval_id, event_id, ReviewDecision::Denied, codex).await;
             return;
         }
     };
-
-    if !outgoing.supports_form_elicitation() {
-        error!("client does not support form elicitation; denying exec approval request");
-        submit_exec_approval(approval_id, event_id, ReviewDecision::Denied, codex).await;
-        return;
-    }
-
-    let on_response = outgoing
-        .send_request("elicitation/create", Some(params_json))
-        .await;
 
     // Listen for the response on a separate task so we don't block the main agent loop.
     {
@@ -116,35 +109,10 @@ pub(crate) async fn handle_exec_approval_request(
 async fn on_exec_approval_response(
     approval_id: String,
     event_id: String,
-    receiver: tokio::sync::oneshot::Receiver<Result<serde_json::Value, ErrorData>>,
+    receiver: crate::elicitation::ElicitationResponseReceiver,
     codex: Arc<Process>,
 ) {
-    let response = receiver.await;
-    let value = match response {
-        Ok(Ok(value)) => value,
-        Ok(Err(err)) => {
-            error!("elicitation request failed: {err:?}");
-            submit_exec_approval(approval_id, event_id, ReviewDecision::Denied, codex).await;
-            return;
-        }
-        Err(err) => {
-            error!("request failed: {err:?}");
-            submit_exec_approval(approval_id, event_id, ReviewDecision::Denied, codex).await;
-            return;
-        }
-    };
-
-    // Try to deserialize `value` and then make the appropriate call to `codex`.
-    let response = serde_json::from_value::<ExecApprovalResponse>(value).unwrap_or_else(|err| {
-        error!("failed to deserialize ExecApprovalResponse: {err}");
-        // If we cannot deserialize the response, we deny the request to be
-        // conservative.
-        ExecApprovalResponse {
-            action: ApprovalElicitationAction::Decline,
-            content: None,
-            meta: None,
-        }
-    });
+    let response = decode_approval_elicitation_response(receiver, "ExecApprovalResponse").await;
 
     submit_exec_approval(approval_id, event_id, response.review_decision(), codex).await;
 }

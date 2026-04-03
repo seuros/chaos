@@ -7,9 +7,7 @@ use crate::provider::Provider;
 use codex_client::HttpTransport;
 use codex_client::RequestTelemetry;
 use http::HeaderMap;
-use http::Method;
 use serde::Deserialize;
-use serde_json::to_value;
 use std::sync::Arc;
 
 pub struct MemoriesClient<T: HttpTransport, A: AuthProvider> {
@@ -38,12 +36,15 @@ impl<T: HttpTransport, A: AuthProvider> MemoriesClient<T, A> {
         body: serde_json::Value,
         extra_headers: HeaderMap,
     ) -> Result<Vec<MemorySummarizeOutput>, ApiError> {
-        let resp = self
+        let parsed: SummarizeResponse = self
             .session
-            .execute(Method::POST, Self::path(), extra_headers, Some(body))
+            .post_json_response(
+                Self::path(),
+                extra_headers,
+                body,
+                "memory summarize response",
+            )
             .await?;
-        let parsed: SummarizeResponse =
-            serde_json::from_slice(&resp.body).map_err(|e| ApiError::Stream(e.to_string()))?;
         Ok(parsed.output)
     }
 
@@ -52,10 +53,17 @@ impl<T: HttpTransport, A: AuthProvider> MemoriesClient<T, A> {
         input: &MemorySummarizeInput,
         extra_headers: HeaderMap,
     ) -> Result<Vec<MemorySummarizeOutput>, ApiError> {
-        let body = to_value(input).map_err(|e| {
-            ApiError::Stream(format!("failed to encode memory summarize input: {e}"))
-        })?;
-        self.summarize(body, extra_headers).await
+        let parsed: SummarizeResponse = self
+            .session
+            .post_json_input(
+                Self::path(),
+                input,
+                extra_headers,
+                "memory summarize input",
+                "memory summarize response",
+            )
+            .await?;
+        Ok(parsed.output)
     }
 }
 

@@ -10,7 +10,10 @@ use codex_client::Response;
 use codex_client::StreamResponse;
 use http::HeaderMap;
 use http::Method;
+use serde::Serialize;
+use serde::de::DeserializeOwned;
 use serde_json::Value;
+use serde_json::to_value;
 use std::sync::Arc;
 use tracing::instrument;
 
@@ -101,6 +104,52 @@ impl<T: HttpTransport, A: AuthProvider> EndpointSession<T, A> {
         .await?;
 
         Ok(response)
+    }
+
+    pub(crate) async fn post_json_response<R>(
+        &self,
+        path: &str,
+        extra_headers: HeaderMap,
+        body: Value,
+        decode_context: &str,
+    ) -> Result<R, ApiError>
+    where
+        R: DeserializeOwned,
+    {
+        let response = self
+            .execute(Method::POST, path, extra_headers, Some(body))
+            .await?;
+        self.decode_json_response(&response.body, decode_context)
+    }
+
+    pub(crate) async fn post_json_input<I, R>(
+        &self,
+        path: &str,
+        input: &I,
+        extra_headers: HeaderMap,
+        encode_context: &str,
+        decode_context: &str,
+    ) -> Result<R, ApiError>
+    where
+        I: Serialize + ?Sized,
+        R: DeserializeOwned,
+    {
+        let body = to_value(input)
+            .map_err(|e| ApiError::Stream(format!("failed to encode {encode_context}: {e}")))?;
+        self.post_json_response(path, extra_headers, body, decode_context)
+            .await
+    }
+
+    pub(crate) fn decode_json_response<R>(
+        &self,
+        body: &[u8],
+        decode_context: &str,
+    ) -> Result<R, ApiError>
+    where
+        R: DeserializeOwned,
+    {
+        serde_json::from_slice(body)
+            .map_err(|e| ApiError::Stream(format!("failed to decode {decode_context}: {e}")))
     }
 
     #[instrument(

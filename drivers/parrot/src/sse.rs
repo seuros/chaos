@@ -1,4 +1,5 @@
 pub mod responses;
+pub(crate) mod transport;
 
 pub use responses::process_sse;
 pub use responses::spawn_response_stream;

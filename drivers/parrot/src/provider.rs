@@ -195,8 +195,11 @@ mod tests {
 
     #[test]
     fn default_streaming_config_sets_common_retry_defaults() {
-        let provider =
-            Provider::from_base_url_with_default_streaming_config("OpenAI", "https://example.test".into(), false);
+        let provider = Provider::from_base_url_with_default_streaming_config(
+            "OpenAI",
+            "https://example.test".into(),
+            false,
+        );
 
         assert_eq!(provider.name, "OpenAI");
         assert_eq!(provider.base_url, "https://example.test");

@@ -27,7 +27,7 @@ chaos-kern = { workspace = true }
 chaos-fork = { workspace = true }
 chaos-selinux = { workspace = true }
 chaos-pam = { workspace = true }
-chaos-mcphost = { workspace = true }
+chaos-mcpd = { workspace = true }
 chaos-ipc = { workspace = true }
 chaos-console = { workspace = true }
 rama = { workspace = true }

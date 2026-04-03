@@ -23,12 +23,9 @@ pub const MEMORY_TOOL_DEVELOPER_INSTRUCTIONS_SUMMARY_TOKEN_LIMIT: usize = 5_000;
 /// framing, and model output.
 pub const CONTEXT_WINDOW_PERCENT: i64 = 70;
 
-const CONSOLIDATION_TEMPLATE: &str =
-    include_str!("../templates/memories/consolidation.md");
-const STAGE_ONE_INPUT_TEMPLATE: &str =
-    include_str!("../templates/memories/stage_one_input.md");
-const READ_PATH_TEMPLATE: &str =
-    include_str!("../templates/memories/read_path.md");
+const CONSOLIDATION_TEMPLATE: &str = include_str!("../templates/memories/consolidation.md");
+const STAGE_ONE_INPUT_TEMPLATE: &str = include_str!("../templates/memories/stage_one_input.md");
+const READ_PATH_TEMPLATE: &str = include_str!("../templates/memories/read_path.md");
 
 fn render(source: &str, ctx: minijinja::value::Value) -> Option<String> {
     let mut env = Environment::new();

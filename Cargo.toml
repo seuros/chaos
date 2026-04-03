@@ -32,7 +32,7 @@ members = [
     "drivers/client",
 
     # srv/ — services
-    "srv/mcphost",
+    "srv/mcpd",
     "srv/mcpc",
     "srv/arsenal",
     "srv/daemon",
@@ -136,7 +136,7 @@ chaos-ration = { path = "drivers/ration" }
 codex-client = { path = "drivers/client" }
 
 # Internal — srv/
-chaos-mcphost = { path = "srv/mcphost" }
+chaos-mcpd = { path = "srv/mcpd" }
 mcp-guest = { path = "srv/mcpc" }
 chaos-arsenal = { path = "srv/arsenal" }
 chaos-daemon = { path = "srv/daemon" }
@@ -194,7 +194,7 @@ chaos-wchar = { path = "lib/libutil/wchar" }
 # Internal — tests/
 chaos-check = { path = "tests/check" }
 core_test_support = { path = "sys/kern/kern/tests/common" }
-mcp_test_support = { path = "srv/mcphost/tests/common" }
+mcp_test_support = { path = "srv/mcpd/tests/common" }
 mcp-host = { version = "0.1.23", default-features = false, features = ["stdio", "macros"] }
 
 # External

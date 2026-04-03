@@ -182,7 +182,6 @@ struct LoginCommand {
     )]
     with_api_key: bool,
 
-
     #[arg(long = "device-auth")]
     use_device_code: bool,
 
@@ -382,7 +381,7 @@ async fn cli_main(arg0_paths: Arg0DispatchPaths) -> anyhow::Result<()> {
         }
         Some(Subcommand::Mcp(mut mcp_cli)) => {
             if matches!(mcp_cli.subcommand, crate::mcp_cmd::McpSubcommand::Serve) {
-                chaos_mcphost::run_main(arg0_paths.clone(), root_config_overrides).await?;
+                chaos_mcpd::run_main(arg0_paths.clone(), root_config_overrides).await?;
             } else {
                 prepend_config_flags(&mut mcp_cli.config_overrides, root_config_overrides.clone());
                 mcp_cli.run().await?;
@@ -553,7 +552,7 @@ async fn cli_main(arg0_paths: Arg0DispatchPaths) -> anyhow::Result<()> {
             }
         },
         Some(Subcommand::ClampSessionBridge) => {
-            chaos_mcphost::run_clamp_session_bridge_main().await?;
+            chaos_mcpd::run_clamp_session_bridge_main().await?;
         }
     }
 

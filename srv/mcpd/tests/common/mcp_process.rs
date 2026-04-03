@@ -10,7 +10,7 @@ use tokio::process::ChildStdin;
 use tokio::process::ChildStdout;
 
 use anyhow::Context;
-use chaos_mcphost::ChaosToolParams;
+use chaos_mcpd::ChaosToolParams;
 
 use mcp_host::protocol::capabilities::ClientCapabilities;
 use mcp_host::protocol::capabilities::ElicitationCapability;
@@ -79,7 +79,7 @@ impl McpProcess {
         let mut process = cmd
             .kill_on_drop(true)
             .spawn()
-            .context("chaos-mcphost proc should start")?;
+            .context("chaos-mcpd proc should start")?;
         let stdin = process
             .stdin
             .take()

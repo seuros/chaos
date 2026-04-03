@@ -10,7 +10,7 @@ path = "lib.rs"
 
 [dependencies]
 anyhow = { workspace = true }
-chaos-mcphost = { workspace = true }
+chaos-mcpd = { workspace = true }
 chaos-which = { workspace = true }
 mcp-host = { workspace = true }
 pretty_assertions = { workspace = true }

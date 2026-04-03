@@ -1143,10 +1143,7 @@ fn requires_mcp_tool_approval(annotations: Option<&ToolAnnotations>) -> bool {
         return false;
     }
 
-    destructive_hint.unwrap_or(true)
-        || annotations
-            .and_then(|a| a.open_world_hint)
-            .unwrap_or(true)
+    destructive_hint.unwrap_or(true) || annotations.and_then(|a| a.open_world_hint).unwrap_or(true)
 }
 
 async fn notify_mcp_tool_call_skip(

@@ -890,7 +890,7 @@ dependencies = [
  "chaos-getopt",
  "chaos-ipc",
  "chaos-kern",
- "chaos-mcphost",
+ "chaos-mcpd",
  "chaos-pam",
  "chaos-pf",
  "chaos-selinux",
@@ -1425,7 +1425,7 @@ dependencies = [
 ]
 
 [[package]]
-name = "chaos-mcphost"
+name = "chaos-mcpd"
 version = "47.0.0"
 dependencies = [
  "anyhow",
@@ -5628,7 +5628,6 @@ dependencies = [
 name = "mcp-guest"
 version = "47.0.0"
 dependencies = [
- "chaos-ipc",
  "mcp-host",
  "rama",
  "serde",
@@ -5685,7 +5684,7 @@ name = "mcp_test_support"
 version = "47.0.0"
 dependencies = [
  "anyhow",
- "chaos-mcphost",
+ "chaos-mcpd",
  "chaos-which",
  "core_test_support",
  "mcp-host",

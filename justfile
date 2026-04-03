@@ -38,7 +38,7 @@ fix:
 
 # Run the MCP server
 mcp-server-run *args:
-    cargo run -p chaos-mcphost -- {{args}}
+    cargo run -p chaos-mcpd -- {{args}}
 
 # Write hooks JSON schema fixtures
 [no-cd]

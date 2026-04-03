@@ -8,6 +8,10 @@ use std::collections::HashMap;
 use std::time::Duration;
 use url::Url;
 
+const DEFAULT_PROVIDER_MAX_ATTEMPTS: u64 = 4;
+const DEFAULT_PROVIDER_BASE_DELAY_MS: u64 = 200;
+const DEFAULT_PROVIDER_STREAM_IDLE_TIMEOUT_SECS: u64 = 300;
+
 /// High-level retry configuration for a provider.
 ///
 /// This is converted into a `RetryPolicy` used by `codex-client` to drive
@@ -50,6 +54,27 @@ pub struct Provider {
 }
 
 impl Provider {
+    pub fn from_base_url_with_default_streaming_config(
+        name: impl Into<String>,
+        base_url: String,
+        retry_429: bool,
+    ) -> Self {
+        Self {
+            name: name.into(),
+            base_url,
+            query_params: None,
+            headers: HeaderMap::new(),
+            retry: RetryConfig {
+                max_attempts: DEFAULT_PROVIDER_MAX_ATTEMPTS,
+                base_delay: Duration::from_millis(DEFAULT_PROVIDER_BASE_DELAY_MS),
+                retry_429,
+                retry_5xx: true,
+                retry_transport: true,
+            },
+            stream_idle_timeout: Duration::from_secs(DEFAULT_PROVIDER_STREAM_IDLE_TIMEOUT_SECS),
+        }
+    }
+
     pub fn url_for_path(&self, path: &str) -> String {
         let base = self.base_url.trim_end_matches('/');
         let path = path.trim_start_matches('/');
@@ -166,5 +191,28 @@ mod tests {
                 "expected {base_url} not to be detected as Azure"
             );
         }
+    }
+
+    #[test]
+    fn default_streaming_config_sets_common_retry_defaults() {
+        let provider =
+            Provider::from_base_url_with_default_streaming_config("OpenAI", "https://example.test".into(), false);
+
+        assert_eq!(provider.name, "OpenAI");
+        assert_eq!(provider.base_url, "https://example.test");
+        assert!(provider.query_params.is_none());
+        assert!(provider.headers.is_empty());
+        assert_eq!(provider.retry.max_attempts, DEFAULT_PROVIDER_MAX_ATTEMPTS);
+        assert_eq!(
+            provider.retry.base_delay,
+            Duration::from_millis(DEFAULT_PROVIDER_BASE_DELAY_MS)
+        );
+        assert!(!provider.retry.retry_429);
+        assert!(provider.retry.retry_5xx);
+        assert!(provider.retry.retry_transport);
+        assert_eq!(
+            provider.stream_idle_timeout,
+            Duration::from_secs(DEFAULT_PROVIDER_STREAM_IDLE_TIMEOUT_SECS)
+        );
     }
 }

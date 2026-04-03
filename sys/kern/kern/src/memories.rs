@@ -13,6 +13,7 @@ pub(crate) mod prompts;
 mod storage;
 pub(crate) mod usage;
 
+use chaos_ipc::openai_models::ModelInfo;
 use chaos_ipc::openai_models::ReasoningEffort;
 
 pub(crate) use control::clear_memory_root_contents;
@@ -22,10 +23,24 @@ pub(crate) use control::clear_memory_root_contents;
 /// This is the entry point to read and understand this module.
 pub(crate) use pipeline::start_memories_startup_task;
 
+/// Returns the reasoning effort to use for a memory pipeline stage, gated on
+/// whether the chosen model actually supports reasoning.
+///
+/// When `model_info.supported_reasoning_levels` is empty the model does not
+/// support reasoning and the parameter must be omitted entirely.
+pub(in crate::memories) fn reasoning_effort_for_model(
+    model_info: &ModelInfo,
+    default: ReasoningEffort,
+) -> Option<ReasoningEffort> {
+    if model_info.supported_reasoning_levels.is_empty() {
+        None
+    } else {
+        Some(default)
+    }
+}
+
 /// Phase 1 (startup extraction).
 mod phase_one {
-    /// Default model used for phase 1.
-    pub(super) const MODEL: &str = "gpt-5.1-codex-mini";
     /// Default reasoning effort used for phase 1.
     pub(super) const REASONING_EFFORT: super::ReasoningEffort = super::ReasoningEffort::Low;
     /// Prompt used for phase 1.
@@ -44,8 +59,6 @@ mod phase_one {
 
 /// Phase 2 (aka `Consolidation`).
 mod phase_two {
-    /// Default model used for phase 2.
-    pub(super) const MODEL: &str = "gpt-5.3-codex";
     /// Default reasoning effort used for phase 2.
     pub(super) const REASONING_EFFORT: super::ReasoningEffort = super::ReasoningEffort::Medium;
     /// Lease duration (seconds) for phase-2 consolidation job ownership.

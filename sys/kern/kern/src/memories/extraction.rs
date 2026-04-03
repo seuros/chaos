@@ -167,11 +167,13 @@ impl RequestContext {
         turn_metadata_header: Option<String>,
         model_info: ModelInfo,
     ) -> Self {
+        let reasoning_effort =
+            super::reasoning_effort_for_model(&model_info, phase_one::REASONING_EFFORT);
         Self {
             model_info,
             turn_metadata_header,
             session_telemetry: turn_context.session_telemetry.clone(),
-            reasoning_effort: Some(phase_one::REASONING_EFFORT),
+            reasoning_effort,
             reasoning_summary: turn_context.reasoning_summary,
             service_tier: turn_context.config.service_tier,
         }
@@ -225,7 +227,8 @@ async fn build_request_context(session: &Arc<Session>, config: &Config) -> Reque
         .memories
         .extract_model
         .clone()
-        .unwrap_or(phase_one::MODEL.to_string());
+        .or_else(|| config.model.clone())
+        .unwrap_or_default();
     let model = session
         .services
         .models_manager

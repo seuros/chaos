@@ -68,15 +68,30 @@ pub(super) async fn run(session: &Arc<Session>, config: Arc<Config>) {
         }
     };
 
-    // 2. Get the config for the agent
-    let Some(agent_config) = agent::get_config(config.clone()) else {
+    // 2. Resolve the consolidation model and gate reasoning effort on model capabilities.
+    let consolidation_model = config
+        .memories
+        .consolidation_model
+        .clone()
+        .or_else(|| config.model.clone())
+        .unwrap_or_default();
+    let consolidation_model_info = session
+        .services
+        .models_manager
+        .get_model_info(&consolidation_model, &config)
+        .await;
+    let reasoning_effort =
+        super::reasoning_effort_for_model(&consolidation_model_info, phase_two::REASONING_EFFORT);
+
+    // 3. Get the config for the agent
+    let Some(agent_config) = agent::get_config(config.clone(), reasoning_effort) else {
         // If we can't get the config, we can't consolidate.
         tracing::error!("failed to get agent config");
         job::failed(session, db, &claim, "failed_sandbox_policy").await;
         return;
     };
 
-    // 3. Query the memories
+    // 4. Query the memories
     let selection = match db
         .get_phase2_input_selection(max_raw_memories, max_unused_days)
         .await
@@ -92,8 +107,8 @@ pub(super) async fn run(session: &Arc<Session>, config: Arc<Config>) {
     let artifact_memories = artifact_memories_for_phase2(&selection);
     let new_watermark = get_watermark(claim.watermark, &raw_memories);
 
-    // 4. Update the file system by syncing the raw memories with the one extracted from DB at
-    //    step 3
+    // 5. Update the file system by syncing the raw memories with the one extracted from DB at
+    //    step 4
     // [`rollout_summaries/`]
     if let Err(err) =
         sync_rollout_summaries_from_memories(&root, &artifact_memories, artifact_memories.len())
@@ -126,7 +141,7 @@ pub(super) async fn run(session: &Arc<Session>, config: Arc<Config>) {
         return;
     }
 
-    // 5. Spawn the agent
+    // 6. Spawn the agent
     let prompt = agent::get_prompt(config, &selection);
     let source = SessionSource::SubAgent(SubAgentSource::MemoryConsolidation);
     let process_id = match session
@@ -143,7 +158,7 @@ pub(super) async fn run(session: &Arc<Session>, config: Arc<Config>) {
         }
     };
 
-    // 6. Spawn the agent handler.
+    // 7. Spawn the agent handler.
     agent::handle(
         session,
         claim,
@@ -260,7 +275,10 @@ mod job {
 mod agent {
     use super::*;
 
-    pub(super) fn get_config(config: Arc<Config>) -> Option<Config> {
+    pub(super) fn get_config(
+        config: Arc<Config>,
+        reasoning_effort: Option<chaos_ipc::openai_models::ReasoningEffort>,
+    ) -> Option<Config> {
         let root = memory_root(&config.chaos_home);
         let mut agent_config = config.as_ref().clone();
 
@@ -299,9 +317,10 @@ mod agent {
                 .memories
                 .consolidation_model
                 .clone()
-                .unwrap_or(phase_two::MODEL.to_string()),
+                .or_else(|| config.model.clone())
+                .unwrap_or_default(),
         );
-        agent_config.model_reasoning_effort = Some(phase_two::REASONING_EFFORT);
+        agent_config.model_reasoning_effort = reasoning_effort;
 
         Some(agent_config)
     }

@@ -4,6 +4,8 @@ use super::aggregate_stats;
 use super::job::serialize_filtered_rollout_response_items;
 use chaos_ipc::models::ContentItem;
 use chaos_ipc::models::ResponseItem;
+use chaos_ipc::openai_models::ReasoningEffort;
+use chaos_ipc::openai_models::ReasoningEffortPreset;
 use chaos_ipc::protocol::RolloutItem;
 use chaos_ipc::protocol::TokenUsage;
 use pretty_assertions::assert_eq;
@@ -132,4 +134,52 @@ fn count_outcomes_keeps_usage_empty_when_no_job_reports_it() {
 
     assert_eq!(counts.claimed, 2);
     assert_eq!(counts.total_token_usage, None);
+}
+
+#[test]
+fn reasoning_effort_is_none_when_model_has_no_supported_levels() {
+    use crate::memories::reasoning_effort_for_model;
+    use crate::models_manager::model_info::model_info_from_slug;
+
+    // model_info_from_slug returns fallback metadata with empty supported_reasoning_levels.
+    let model_info = model_info_from_slug("some-unknown-model");
+    assert!(model_info.supported_reasoning_levels.is_empty());
+    let effort = reasoning_effort_for_model(&model_info, ReasoningEffort::Low);
+    assert_eq!(effort, None);
+}
+
+#[test]
+fn reasoning_effort_is_some_when_model_supports_reasoning() {
+    use crate::memories::reasoning_effort_for_model;
+    use crate::models_manager::model_info::model_info_from_slug;
+
+    let mut model_info = model_info_from_slug("reasoning-model");
+    model_info.supported_reasoning_levels = vec![ReasoningEffortPreset {
+        effort: ReasoningEffort::Low,
+        description: "low".to_string(),
+    }];
+    let effort = reasoning_effort_for_model(&model_info, ReasoningEffort::Low);
+    assert_eq!(effort, Some(ReasoningEffort::Low));
+}
+
+#[test]
+fn reasoning_effort_preserves_requested_default_effort() {
+    use crate::memories::reasoning_effort_for_model;
+    use crate::models_manager::model_info::model_info_from_slug;
+
+    let mut model_info = model_info_from_slug("reasoning-model");
+    model_info.supported_reasoning_levels = vec![
+        ReasoningEffortPreset {
+            effort: ReasoningEffort::Low,
+            description: "low".to_string(),
+        },
+        ReasoningEffortPreset {
+            effort: ReasoningEffort::Medium,
+            description: "medium".to_string(),
+        },
+    ];
+    assert_eq!(
+        reasoning_effort_for_model(&model_info, ReasoningEffort::Medium),
+        Some(ReasoningEffort::Medium),
+    );
 }

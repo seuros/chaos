@@ -39,6 +39,7 @@ use sqlx::SqliteConnection;
 use sqlx::SqlitePool;
 use sqlx::migrate::Migrator;
 use sqlx::sqlite::SqliteConnectOptions;
+use sqlx::sqlite::SqliteAutoVacuum;
 use sqlx::sqlite::SqliteJournalMode;
 use sqlx::sqlite::SqlitePoolOptions;
 use sqlx::sqlite::SqliteSynchronous;
@@ -156,6 +157,7 @@ async fn open_sqlite(path: &Path, migrator: &'static Migrator) -> anyhow::Result
         .journal_mode(SqliteJournalMode::Wal)
         .synchronous(SqliteSynchronous::Normal)
         .busy_timeout(Duration::from_secs(5))
+        .auto_vacuum(SqliteAutoVacuum::Incremental)
         .log_statements(LevelFilter::Off);
     let pool = SqlitePoolOptions::new()
         .max_connections(5)
@@ -174,6 +176,24 @@ async fn open_sqlite(path: &Path, migrator: &'static Migrator) -> anyhow::Result
             return Err(err.into());
         }
     }
+    // For existing databases the auto_vacuum mode is stored in the DB header
+    // and cannot be changed by the connect option alone. Check and upgrade
+    // on first open, then run an incremental vacuum pass on every open.
+    let current: i64 = sqlx::query_scalar("PRAGMA auto_vacuum")
+        .fetch_one(&pool)
+        .await?;
+    if current != SqliteAutoVacuum::Incremental as i64 {
+        let _ = sqlx::query("PRAGMA auto_vacuum = INCREMENTAL")
+            .execute(&pool)
+            .await;
+        // Full VACUUM is required to write the new mode into the DB header.
+        // Best-effort: if another process holds a write lock, skip for now.
+        let _ = sqlx::query("VACUUM").execute(&pool).await;
+    }
+    // Reclaim any pages freed since the last open. Best-effort.
+    let _ = sqlx::query("PRAGMA incremental_vacuum")
+        .execute(&pool)
+        .await;
     Ok(pool)
 }
 

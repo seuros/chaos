@@ -1,5 +1,5 @@
 ---
-source: bin/xserver/src/status/tests.rs
+source: bin/console/src/status/tests.rs
 expression: sanitized
 ---
 /status
@@ -12,7 +12,7 @@ expression: sanitized
 │                                                                     │
 │  Model:            gpt-5.1-codex (reasoning none, summaries auto)   │
 │  Directory: [[workspace]]                                           │
-│  Permissions:      Custom (read-only, on-request)                   │
+│  Permissions:      Custom (read-only, interactive)                  │
 │  Agents.md:        <none>                                           │
 │                                                                     │
 │  Token usage:      1.05K total  (700 input + 350 output)            │

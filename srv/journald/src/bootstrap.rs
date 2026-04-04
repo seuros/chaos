@@ -99,6 +99,19 @@ fn resolve_journald_executable(binary_path: Option<&Path>) -> Result<PathBuf> {
         return Ok(path.to_path_buf());
     }
 
+    // Check CARGO_BIN_EXE_* env vars set by cargo test / nextest.
+    for key in [
+        "CARGO_BIN_EXE_chaos-journald",
+        "CARGO_BIN_EXE_chaos_journald",
+    ] {
+        if let Some(value) = std::env::var_os(key) {
+            let path = PathBuf::from(value);
+            if path.exists() {
+                return Ok(path);
+            }
+        }
+    }
+
     let current_exe = std::env::current_exe().context("resolve current executable")?;
     if let Some(parent) = current_exe.parent() {
         let sibling = parent.join("chaos-journald");

@@ -79,6 +79,17 @@ fn built_in_persona_catalog_includes_all_roles() {
         "honeypot",
         "serpent",
         "railsway",
+        // Domain specialist personas
+        "sherlock",
+        "overflow",
+        "normalize",
+        "cascade",
+        "manpage",
+        "bison",
+        "traceroute",
+        "greenbar",
+        "bigoh",
+        "kimjongrails",
         // Founder/exec parody personas
         "mario",
         "saltman",

@@ -55,6 +55,69 @@ async fn apply_role_defaults_to_default_and_leaves_config_unchanged() {
     assert_eq!(before, config);
 }
 
+#[test]
+fn built_in_persona_catalog_includes_all_roles() {
+    let configs = built_in::configs();
+
+    for role_name in [
+        // Dev/engineering personas
+        "carmack",
+        "dhh",
+        "fireship",
+        "gordon",
+        "primeagen",
+        "tarball",
+        "hammock",
+        "gopher",
+        "dtrace",
+        "poodr",
+        "jailbreak",
+        "redbeard",
+        "kubelet",
+        "zines",
+        "handmade",
+        "honeypot",
+        "serpent",
+        "railsway",
+        // Founder/exec parody personas
+        "mario",
+        "saltman",
+        "tann",
+        "melon",
+        "muckerberg",
+        "pitchay",
+        "hwang",
+        "stove",
+        "grates",
+        "navel",
+        "gratham",
+        "echo",
+        "lootkey",
+        "masa",
+        "yimin",
+        "akinladi",
+        "galperon",
+        "perkin",
+        "antony",
+    ] {
+        let role = configs
+            .get(role_name)
+            .unwrap_or_else(|| panic!("expected built-in role `{role_name}`"));
+        assert!(
+            role.description
+                .as_deref()
+                .is_some_and(|description| !description.trim().is_empty()),
+            "expected `{role_name}` to have a description"
+        );
+        assert!(
+            role.catchphrases
+                .as_ref()
+                .is_some_and(|catchphrases| !catchphrases.is_empty()),
+            "expected `{role_name}` to define catchphrases"
+        );
+    }
+}
+
 #[tokio::test]
 async fn apply_role_returns_error_for_unknown_role() {
     let (_home, mut config) = test_config_with_cli_overrides(Vec::new()).await;

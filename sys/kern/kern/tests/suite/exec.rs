@@ -1,6 +1,7 @@
 #![cfg(target_os = "macos")]
 
 use std::collections::HashMap;
+use std::path::PathBuf;
 use std::string::ToString;
 
 use chaos_ipc::permissions::FileSystemSandboxPolicy;
@@ -27,6 +28,10 @@ fn skip_test() -> bool {
     false
 }
 
+fn alcatraz_macos_exe() -> Option<PathBuf> {
+    chaos_which::cargo_bin("alcatraz-macos").ok()
+}
+
 #[expect(clippy::expect_used)]
 async fn run_test_cmd(tmp: TempDir, cmd: Vec<&str>) -> Result<ExecToolCallOutput> {
     let sandbox_type = get_platform_sandbox().expect("should be able to get sandbox type");
@@ -51,7 +56,7 @@ async fn run_test_cmd(tmp: TempDir, cmd: Vec<&str>) -> Result<ExecToolCallOutput
         &FileSystemSandboxPolicy::from(&policy),
         NetworkSandboxPolicy::from(&policy),
         tmp.path(),
-        &None,
+        &alcatraz_macos_exe(),
         &None,
         &None,
         None,

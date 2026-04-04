@@ -539,7 +539,7 @@ personality = true
     assert!(
         config_requirements
             .approval_policy
-            .can_set(&ApprovalPolicy::Interactive)
+            .can_set(&ApprovalPolicy::Supervised)
             .is_err()
     );
     assert_eq!(

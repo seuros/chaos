@@ -547,7 +547,8 @@ mod tests {
 
         let rendered = render_to_text(&render_debug_config_lines(&stack));
         assert!(
-            rendered.contains("allowed_approval_policies: on-request (source: cloud requirements)")
+            rendered
+                .contains("allowed_approval_policies: interactive (source: cloud requirements)")
         );
         assert!(
             rendered.contains(
@@ -625,7 +626,7 @@ approval_policy = "headless"
         assert!(rendered.contains("MDM value:"));
         assert!(rendered.contains("# managed by MDM"));
         assert!(rendered.contains("model = \"managed_model\""));
-        assert!(rendered.contains("approval_policy = \"never\""));
+        assert!(rendered.contains("approval_policy = \"headless\""));
     }
 
     #[test]

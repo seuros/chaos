@@ -232,7 +232,7 @@ async fn status_permissions_non_default_workspace_write_is_custom() {
 
     assert_eq!(
         permissions_text,
-        Some("Custom (workspace-write with network access, on-request)")
+        Some("Custom (workspace-write with network access, interactive)")
     );
 }
 

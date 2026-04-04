@@ -9,7 +9,7 @@ use crate::error::Result;
 pub enum Decision {
     /// Command may run without further approval.
     Allow,
-    /// Request explicit user approval; rejected outright when running with `approval_policy="never"`.
+    /// Request explicit user approval; rejected outright when running with `approval_policy="headless"`.
     Prompt,
     /// Command is blocked without further consideration.
     Forbidden,

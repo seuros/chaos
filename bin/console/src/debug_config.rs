@@ -395,7 +395,7 @@ mod tests {
     use super::session_all_proxy_url;
     use chaos_ipc::api::ConfigLayerSource;
     use chaos_ipc::config_types::WebSearchMode;
-    use chaos_ipc::protocol::AskForApproval;
+    use chaos_ipc::protocol::ApprovalPolicy;
     use chaos_ipc::protocol::SandboxPolicy;
     use chaos_kern::config::Constrained;
     use chaos_kern::config_loader::ConfigLayerEntry;
@@ -476,7 +476,7 @@ mod tests {
 
         let requirements = ConfigRequirements {
             approval_policy: ConstrainedWithSource::new(
-                Constrained::allow_any(AskForApproval::OnRequest),
+                Constrained::allow_any(ApprovalPolicy::Interactive),
                 Some(RequirementSource::CloudRequirements),
             ),
             sandbox_policy: ConstrainedWithSource::new(
@@ -516,7 +516,7 @@ mod tests {
         };
 
         let requirements_toml = ConfigRequirementsToml {
-            allowed_approval_policies: Some(vec![AskForApproval::OnRequest]),
+            allowed_approval_policies: Some(vec![ApprovalPolicy::Interactive]),
             allowed_sandbox_modes: Some(vec![SandboxModeRequirement::ReadOnly]),
             allowed_web_search_modes: Some(vec![WebSearchModeRequirement::Cached]),
             feature_requirements: None,
@@ -605,7 +605,7 @@ writable_roots = ["/tmp"]
         let raw_mdm_toml = r#"
 # managed by MDM
 model = "managed_model"
-approval_policy = "never"
+approval_policy = "headless"
 "#;
         let mdm_value = toml::from_str::<TomlValue>(raw_mdm_toml).expect("MDM value");
 

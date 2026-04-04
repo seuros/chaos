@@ -13,7 +13,7 @@ use chaos_ipc::openai_models::ReasoningEffort;
 use chaos_ipc::openai_models::ReasoningEffortPreset;
 use chaos_ipc::openai_models::TruncationPolicyConfig;
 use chaos_ipc::openai_models::default_input_modalities;
-use chaos_ipc::protocol::AskForApproval;
+use chaos_ipc::protocol::ApprovalPolicy;
 use chaos_ipc::protocol::EventMsg;
 use chaos_ipc::protocol::ExecCommandSource;
 use chaos_ipc::protocol::Op;
@@ -395,7 +395,7 @@ async fn remote_models_remote_model_uses_unified_exec() -> Result<()> {
             }],
             final_output_json_schema: None,
             cwd: cwd.path().to_path_buf(),
-            approval_policy: AskForApproval::Never,
+            approval_policy: ApprovalPolicy::Headless,
             sandbox_policy: SandboxPolicy::RootAccess,
             model: REMOTE_MODEL_SLUG.to_string(),
             effort: None,
@@ -614,7 +614,7 @@ async fn remote_models_apply_remote_base_instructions() -> Result<()> {
             }],
             final_output_json_schema: None,
             cwd: cwd.path().to_path_buf(),
-            approval_policy: AskForApproval::Never,
+            approval_policy: ApprovalPolicy::Headless,
             sandbox_policy: SandboxPolicy::RootAccess,
             model: model.to_string(),
             effort: None,

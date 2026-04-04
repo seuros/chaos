@@ -159,7 +159,7 @@ pub enum Op {
         cwd: PathBuf,
 
         /// Policy to use for command approval.
-        approval_policy: AskForApproval,
+        approval_policy: ApprovalPolicy,
 
         /// Policy to use for tool calls such as `local_shell`.
         sandbox_policy: SandboxPolicy,
@@ -213,7 +213,7 @@ pub enum Op {
 
         /// Updated command approval policy.
         #[serde(skip_serializing_if = "Option::is_none")]
-        approval_policy: Option<AskForApproval>,
+        approval_policy: Option<ApprovalPolicy>,
 
         /// Updated approval reviewer for future approval prompts.
         #[serde(skip_serializing_if = "Option::is_none")]
@@ -465,7 +465,7 @@ impl Op {
 }
 
 /// Determines the conditions under which the user is consulted to approve
-/// running the command proposed by Codex.
+/// running the command proposed by Chaos.
 #[derive(
     Debug,
     Clone,
@@ -482,25 +482,15 @@ impl Op {
 )]
 #[serde(rename_all = "kebab-case")]
 #[strum(serialize_all = "kebab-case")]
-pub enum AskForApproval {
+pub enum ApprovalPolicy {
     /// Under this policy, only "known safe" commands—as determined by
     /// `is_safe_command()`—that **only read files** are auto‑approved.
     /// Everything else will ask the user to approve.
-    #[serde(rename = "untrusted")]
-    #[strum(serialize = "untrusted")]
-    UnlessTrusted,
-
-    /// DEPRECATED: *All* commands are auto‑approved, but they are expected to
-    /// run inside a sandbox where network access is disabled and writes are
-    /// confined to a specific set of paths. If the command fails, it will be
-    /// escalated to the user to approve execution without a sandbox.
-    /// Prefer `OnRequest` for interactive runs or `Never` for non-interactive
-    /// runs.
-    OnFailure,
+    Supervised,
 
     /// The model decides when to ask the user for approval.
     #[default]
-    OnRequest,
+    Interactive,
 
     /// Fine-grained controls for individual approval flows.
     ///
@@ -512,8 +502,9 @@ pub enum AskForApproval {
 
     /// Never ask the user to approve commands. Failures are immediately returned
     /// to the model, and never escalated to the user for approval.
-    Never,
+    Headless,
 }
+
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, Serialize, Deserialize, JsonSchema, TS)]
 pub struct GranularApprovalConfig {
@@ -2275,7 +2266,7 @@ pub struct TurnContextItem {
     pub current_date: Option<String>,
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub timezone: Option<String>,
-    pub approval_policy: AskForApproval,
+    pub approval_policy: ApprovalPolicy,
     pub sandbox_policy: SandboxPolicy,
     #[serde(skip_serializing_if = "Option::is_none")]
     pub network: Option<TurnContextNetworkItem>,
@@ -2289,8 +2280,11 @@ pub struct TurnContextItem {
     pub summary: ReasoningSummaryConfig,
     #[serde(skip_serializing_if = "Option::is_none")]
     pub user_instructions: Option<String>,
-    #[serde(skip_serializing_if = "Option::is_none")]
-    pub developer_instructions: Option<String>,
+    #[serde(
+        skip_serializing_if = "Option::is_none",
+        alias = "developer_instructions"
+    )]
+    pub minion_instructions: Option<String>,
     #[serde(skip_serializing_if = "Option::is_none")]
     pub final_output_json_schema: Option<Value>,
     #[serde(skip_serializing_if = "Option::is_none")]
@@ -2896,7 +2890,7 @@ pub struct SessionConfiguredEvent {
     pub service_tier: Option<ServiceTier>,
 
     /// When to escalate for approval for execution
-    pub approval_policy: AskForApproval,
+    pub approval_policy: ApprovalPolicy,
 
     /// Configures who approval requests are routed to for review once they have
     /// been escalated. This does not disable separate safety checks such as
@@ -3049,6 +3043,14 @@ pub struct CollabAgentSpawnBeginEvent {
     pub prompt: String,
     pub model: String,
     pub reasoning_effort: ReasoningEffortConfig,
+    /// Kernel-selected catchphrase from the dispatched role, if any.
+    /// Emitted as flavor output by the human event processor — not visible to the agent.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub catchphrase: Option<String>,
+    /// Topics requested by the LLM that had no matching role.
+    /// The human event processor surfaces these as a warning to the user.
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub missing_topics: Vec<String>,
 }
 
 #[derive(Debug, Clone, Deserialize, Serialize, PartialEq, Eq, JsonSchema, TS)]
@@ -3955,7 +3957,7 @@ mod tests {
     fn turn_context_item_deserializes_without_network() -> Result<()> {
         let item: TurnContextItem = serde_json::from_value(json!({
             "cwd": "/tmp",
-            "approval_policy": "never",
+            "approval_policy": "headless",
             "sandbox_policy": { "type": "root-access" },
             "model": "gpt-5",
             "summary": "auto",
@@ -3974,7 +3976,7 @@ mod tests {
             cwd: PathBuf::from("/tmp"),
             current_date: None,
             timezone: None,
-            approval_policy: AskForApproval::Never,
+            approval_policy: ApprovalPolicy::Headless,
             sandbox_policy: SandboxPolicy::RootAccess,
             network: Some(TurnContextNetworkItem {
                 allowed_domains: vec!["api.example.com".to_string()],
@@ -3986,7 +3988,7 @@ mod tests {
             effort: None,
             summary: ReasoningSummaryConfig::Auto,
             user_instructions: None,
-            developer_instructions: None,
+            minion_instructions: None,
             final_output_json_schema: None,
             truncation_policy: None,
         };
@@ -4016,7 +4018,7 @@ mod tests {
                 model: "codex-mini-latest".to_string(),
                 model_provider_id: "openai".to_string(),
                 service_tier: None,
-                approval_policy: AskForApproval::Never,
+                approval_policy: ApprovalPolicy::Headless,
                 approvals_reviewer: ApprovalsReviewer::User,
                 sandbox_policy: SandboxPolicy::new_read_only_policy(),
                 cwd: PathBuf::from("/home/user/project"),
@@ -4035,7 +4037,7 @@ mod tests {
                 "session_id": "67e55044-10b1-426f-9247-bb680e5fe0c8",
                 "model": "codex-mini-latest",
                 "model_provider_id": "openai",
-                "approval_policy": "never",
+                "approval_policy": "headless",
                 "approvals_reviewer": "user",
                 "sandbox_policy": {
                     "type": "read-only"

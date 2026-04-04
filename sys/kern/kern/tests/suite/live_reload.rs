@@ -7,7 +7,7 @@ use std::time::Duration;
 
 use anyhow::Result;
 use chaos_ipc::config_types::TrustLevel;
-use chaos_ipc::protocol::AskForApproval;
+use chaos_ipc::protocol::ApprovalPolicy;
 use chaos_ipc::protocol::EventMsg;
 use chaos_ipc::protocol::Op;
 use chaos_ipc::protocol::SandboxPolicy;
@@ -60,7 +60,7 @@ async fn submit_skill_turn(test: &TestCodex, skill_path: PathBuf, prompt: &str) 
             ],
             final_output_json_schema: None,
             cwd: test.cwd_path().to_path_buf(),
-            approval_policy: AskForApproval::Never,
+            approval_policy: ApprovalPolicy::Headless,
             sandbox_policy: SandboxPolicy::RootAccess,
             model: session_model,
             effort: None,

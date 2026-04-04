@@ -1,6 +1,6 @@
 use chaos_ipc::config_types::SandboxMode;
 use chaos_ipc::config_types::WebSearchMode;
-use chaos_ipc::protocol::AskForApproval;
+use chaos_ipc::protocol::ApprovalPolicy;
 use chaos_ipc::protocol::SandboxPolicy;
 use chaos_realpath::AbsolutePathBuf;
 use serde::Deserialize;
@@ -76,7 +76,7 @@ impl<T> std::ops::DerefMut for ConstrainedWithSource<T> {
 /// normalization.
 #[derive(Debug, Clone, PartialEq)]
 pub struct ConfigRequirements {
-    pub approval_policy: ConstrainedWithSource<AskForApproval>,
+    pub approval_policy: ConstrainedWithSource<ApprovalPolicy>,
     pub sandbox_policy: ConstrainedWithSource<SandboxPolicy>,
     pub web_search_mode: ConstrainedWithSource<WebSearchMode>,
     pub feature_requirements: Option<Sourced<FeatureRequirementsToml>>,
@@ -288,7 +288,7 @@ pub(crate) fn merge_enablement_settings_descending(
 /// Base config deserialized from system `requirements.toml` or MDM.
 #[derive(Deserialize, Debug, Clone, Default, PartialEq)]
 pub struct ConfigRequirementsToml {
-    pub allowed_approval_policies: Option<Vec<AskForApproval>>,
+    pub allowed_approval_policies: Option<Vec<ApprovalPolicy>>,
     pub allowed_sandbox_modes: Option<Vec<SandboxModeRequirement>>,
     pub allowed_web_search_modes: Option<Vec<WebSearchModeRequirement>>,
     #[serde(rename = "features", alias = "feature_requirements")]
@@ -325,7 +325,7 @@ impl<T> std::ops::Deref for Sourced<T> {
 
 #[derive(Debug, Clone, Default, PartialEq)]
 pub struct ConfigRequirementsWithSources {
-    pub allowed_approval_policies: Option<Sourced<Vec<AskForApproval>>>,
+    pub allowed_approval_policies: Option<Sourced<Vec<ApprovalPolicy>>>,
     pub allowed_sandbox_modes: Option<Sourced<Vec<SandboxModeRequirement>>>,
     pub allowed_web_search_modes: Option<Sourced<Vec<WebSearchModeRequirement>>>,
     pub feature_requirements: Option<Sourced<FeatureRequirementsToml>>,
@@ -519,7 +519,7 @@ impl TryFrom<ConfigRequirementsWithSources> for ConfigRequirements {
         };
 
         // TODO(gt): `ConfigRequirementsToml` should let the author specify the
-        // default `SandboxPolicy`? Should do this for `AskForApproval` too?
+        // default `SandboxPolicy`? Should do this for `ApprovalPolicy` too?
         //
         // Currently, we force ReadOnly as the default policy because two of
         // the other variants (WorkspaceWrite, ExternalSandbox) require
@@ -730,7 +730,7 @@ mod tests {
         let mut target = ConfigRequirementsWithSources::default();
         let source = RequirementSource::LegacyManagedConfigTomlFromMdm;
 
-        let allowed_approval_policies = vec![AskForApproval::UnlessTrusted, AskForApproval::Never];
+        let allowed_approval_policies = vec![ApprovalPolicy::Supervised, ApprovalPolicy::Headless];
         let allowed_sandbox_modes = vec![
             SandboxModeRequirement::WorkspaceWrite,
             SandboxModeRequirement::RootAccess,
@@ -790,7 +790,7 @@ mod tests {
     fn merge_unset_fields_fills_missing_values() -> Result<()> {
         let source: ConfigRequirementsToml = from_str(
             r#"
-                allowed_approval_policies = ["on-request"]
+                allowed_approval_policies = ["interactive"]
             "#,
         )?;
 
@@ -805,7 +805,7 @@ mod tests {
             empty_target,
             ConfigRequirementsWithSources {
                 allowed_approval_policies: Some(Sourced::new(
-                    vec![AskForApproval::OnRequest],
+                    vec![ApprovalPolicy::Interactive],
                     source_location,
                 )),
                 allowed_sandbox_modes: None,
@@ -827,14 +827,14 @@ mod tests {
         let mut populated_target = ConfigRequirementsWithSources::default();
         let populated_requirements: ConfigRequirementsToml = from_str(
             r#"
-                allowed_approval_policies = ["never"]
+                allowed_approval_policies = ["headless"]
             "#,
         )?;
         populated_target.merge_unset_fields(existing_source.clone(), populated_requirements);
 
         let source: ConfigRequirementsToml = from_str(
             r#"
-                allowed_approval_policies = ["on-request"]
+                allowed_approval_policies = ["interactive"]
             "#,
         )?;
         let source_location = RequirementSource::MdmManagedPreferences {
@@ -847,7 +847,7 @@ mod tests {
             populated_target,
             ConfigRequirementsWithSources {
                 allowed_approval_policies: Some(Sourced::new(
-                    vec![AskForApproval::Never],
+                    vec![ApprovalPolicy::Headless],
                     existing_source,
                 )),
                 allowed_sandbox_modes: None,
@@ -1035,7 +1035,7 @@ mod tests {
     fn constraint_error_includes_requirement_source() -> Result<()> {
         let source: ConfigRequirementsToml = from_str(
             r#"
-                allowed_approval_policies = ["on-request"]
+                allowed_approval_policies = ["interactive"]
                 allowed_sandbox_modes = ["read-only"]
             "#,
         )?;
@@ -1050,11 +1050,11 @@ mod tests {
         let requirements = ConfigRequirements::try_from(target)?;
 
         assert_eq!(
-            requirements.approval_policy.can_set(&AskForApproval::Never),
+            requirements.approval_policy.can_set(&ApprovalPolicy::Headless),
             Err(ConstraintError::InvalidValue {
                 field_name: "approval_policy",
-                candidate: "Never".into(),
-                allowed: "[OnRequest]".into(),
+                candidate: "Headless".into(),
+                allowed: "[Interactive]".into(),
                 requirement_source: source_location.clone(),
             })
         );
@@ -1077,7 +1077,7 @@ mod tests {
     fn constraint_error_includes_cloud_requirements_source() -> Result<()> {
         let source: ConfigRequirementsToml = from_str(
             r#"
-                allowed_approval_policies = ["on-request"]
+                allowed_approval_policies = ["interactive"]
             "#,
         )?;
 
@@ -1088,11 +1088,11 @@ mod tests {
         let requirements = ConfigRequirements::try_from(target)?;
 
         assert_eq!(
-            requirements.approval_policy.can_set(&AskForApproval::Never),
+            requirements.approval_policy.can_set(&ApprovalPolicy::Headless),
             Err(ConstraintError::InvalidValue {
                 field_name: "approval_policy",
-                candidate: "Never".into(),
-                allowed: "[OnRequest]".into(),
+                candidate: "Headless".into(),
+                allowed: "[Interactive]".into(),
                 requirement_source: source_location,
             })
         );
@@ -1104,7 +1104,7 @@ mod tests {
     fn constrained_fields_store_requirement_source() -> Result<()> {
         let source: ConfigRequirementsToml = from_str(
             r#"
-                allowed_approval_policies = ["on-request"]
+                allowed_approval_policies = ["interactive"]
                 allowed_sandbox_modes = ["read-only"]
                 allowed_web_search_modes = ["cached"]
                 enforce_residency = "us"
@@ -1145,45 +1145,34 @@ mod tests {
     #[test]
     fn deserialize_allowed_approval_policies() -> Result<()> {
         let toml_str = r#"
-            allowed_approval_policies = ["untrusted", "on-request"]
+            allowed_approval_policies = ["supervised", "interactive"]
         "#;
         let config: ConfigRequirementsToml = from_str(toml_str)?;
         let requirements: ConfigRequirements = with_unknown_source(config).try_into()?;
 
         assert_eq!(
             requirements.approval_policy.value(),
-            AskForApproval::UnlessTrusted,
+            ApprovalPolicy::Supervised,
             "currently, there is no way to specify the default value for approval policy in the toml, so it picks the first allowed value"
         );
         assert!(
             requirements
                 .approval_policy
-                .can_set(&AskForApproval::UnlessTrusted)
+                .can_set(&ApprovalPolicy::Supervised)
                 .is_ok()
-        );
-        assert_eq!(
-            requirements
-                .approval_policy
-                .can_set(&AskForApproval::OnFailure),
-            Err(ConstraintError::InvalidValue {
-                field_name: "approval_policy",
-                candidate: "OnFailure".into(),
-                allowed: "[UnlessTrusted, OnRequest]".into(),
-                requirement_source: RequirementSource::Unknown,
-            })
         );
         assert!(
             requirements
                 .approval_policy
-                .can_set(&AskForApproval::OnRequest)
+                .can_set(&ApprovalPolicy::Interactive)
                 .is_ok()
         );
         assert_eq!(
-            requirements.approval_policy.can_set(&AskForApproval::Never),
+            requirements.approval_policy.can_set(&ApprovalPolicy::Headless),
             Err(ConstraintError::InvalidValue {
                 field_name: "approval_policy",
-                candidate: "Never".into(),
-                allowed: "[UnlessTrusted, OnRequest]".into(),
+                candidate: "Headless".into(),
+                allowed: "[Supervised, Interactive]".into(),
                 requirement_source: RequirementSource::Unknown,
             })
         );

@@ -68,13 +68,13 @@ async fn apply_role_returns_error_for_unknown_role() {
 
 #[tokio::test]
 #[ignore = "No role requiring it for now"]
-async fn apply_explorer_role_sets_model_and_adds_session_flags_layer() {
+async fn apply_scout_role_sets_model_and_adds_session_flags_layer() {
     let (_home, mut config) = test_config_with_cli_overrides(Vec::new()).await;
     let before_layers = session_flags_layer_count(&config);
 
-    apply_role_to_config(&mut config, Some("explorer"))
+    apply_role_to_config(&mut config, Some("scout"))
         .await
-        .expect("explorer role should apply");
+        .expect("scout role should apply");
 
     assert_eq!(config.model.as_deref(), Some("gpt-5.1-codex-mini"));
     assert_eq!(config.model_reasoning_effort, Some(ReasoningEffort::Medium));
@@ -90,6 +90,8 @@ async fn apply_role_returns_unavailable_for_missing_user_role_file() {
             description: None,
             config_file: Some(PathBuf::from("/path/does/not/exist.toml")),
             nickname_candidates: None,
+            topics: None,
+            catchphrases: None,
         },
     );
 
@@ -110,6 +112,8 @@ async fn apply_role_returns_unavailable_for_invalid_user_role_toml() {
             description: None,
             config_file: Some(role_path),
             nickname_candidates: None,
+            topics: None,
+            catchphrases: None,
         },
     );
 
@@ -118,6 +122,28 @@ async fn apply_role_returns_unavailable_for_invalid_user_role_toml() {
         .expect_err("invalid role file should fail");
 
     assert_eq!(err, AGENT_TYPE_UNAVAILABLE_ERROR);
+}
+
+#[tokio::test]
+async fn apply_role_returns_error_for_legacy_explorer_role() {
+    let (_home, mut config) = test_config_with_cli_overrides(Vec::new()).await;
+
+    let err = apply_role_to_config(&mut config, Some("explorer"))
+        .await
+        .expect_err("legacy explorer role should fail");
+
+    assert_eq!(err, "unknown agent_type 'explorer'");
+}
+
+#[tokio::test]
+async fn apply_role_returns_error_for_legacy_worker_role() {
+    let (_home, mut config) = test_config_with_cli_overrides(Vec::new()).await;
+
+    let err = apply_role_to_config(&mut config, Some("worker"))
+        .await
+        .expect_err("legacy worker role should fail");
+
+    assert_eq!(err, "unknown agent_type 'worker'");
 }
 
 #[tokio::test]
@@ -130,7 +156,7 @@ async fn apply_role_ignores_agent_metadata_fields_in_user_role_file() {
 name = "archivist"
 description = "Role metadata"
 nickname_candidates = ["Hypatia"]
-developer_instructions = "Stay focused"
+minion_instructions = "Stay focused"
 model = "role-model"
 "#,
     )
@@ -141,6 +167,8 @@ model = "role-model"
             description: None,
             config_file: Some(role_path),
             nickname_candidates: None,
+            topics: None,
+            catchphrases: None,
         },
     );
 
@@ -163,7 +191,7 @@ async fn apply_role_preserves_unspecified_keys() {
     let role_path = write_role_config(
         &home,
         "effort-only.toml",
-        "developer_instructions = \"Stay focused\"\nmodel_reasoning_effort = \"high\"",
+        "minion_instructions = \"Stay focused\"\nmodel_reasoning_effort = \"high\"",
     )
     .await;
     config.agent_roles.insert(
@@ -172,6 +200,8 @@ async fn apply_role_preserves_unspecified_keys() {
             description: None,
             config_file: Some(role_path),
             nickname_candidates: None,
+            topics: None,
+            catchphrases: None,
         },
     );
 
@@ -222,7 +252,7 @@ model_provider = "test-provider"
     let role_path = write_role_config(
         &home,
         "empty-role.toml",
-        "developer_instructions = \"Stay focused\"",
+        "minion_instructions = \"Stay focused\"",
     )
     .await;
     config.agent_roles.insert(
@@ -231,6 +261,8 @@ model_provider = "test-provider"
             description: None,
             config_file: Some(role_path),
             nickname_candidates: None,
+            topics: None,
+            catchphrases: None,
         },
     );
 
@@ -271,7 +303,7 @@ model_verbosity = "low"
     let role_path = write_role_config(
         &home,
         "top-level-profile-settings-role.toml",
-        r#"developer_instructions = "Stay focused"
+        r#"minion_instructions = "Stay focused"
 model = "role-model"
 model_reasoning_effort = "high"
 model_reasoning_summary = "detailed"
@@ -285,6 +317,8 @@ model_verbosity = "high"
             description: None,
             config_file: Some(role_path),
             nickname_candidates: None,
+            topics: None,
+            catchphrases: None,
         },
     );
 
@@ -342,7 +376,7 @@ model_provider = "role-provider"
     let role_path = write_role_config(
         &home,
         "profile-role.toml",
-        "developer_instructions = \"Stay focused\"\nprofile = \"role-profile\"",
+        "minion_instructions = \"Stay focused\"\nprofile = \"role-profile\"",
     )
     .await;
     config.agent_roles.insert(
@@ -351,6 +385,8 @@ model_provider = "role-provider"
             description: None,
             config_file: Some(role_path),
             nickname_candidates: None,
+            topics: None,
+            catchphrases: None,
         },
     );
 
@@ -400,7 +436,7 @@ model_provider = "base-provider"
     let role_path = write_role_config(
         &home,
         "provider-role.toml",
-        "developer_instructions = \"Stay focused\"\nmodel_provider = \"role-provider\"",
+        "minion_instructions = \"Stay focused\"\nmodel_provider = \"role-provider\"",
     )
     .await;
     config.agent_roles.insert(
@@ -409,6 +445,8 @@ model_provider = "base-provider"
             description: None,
             config_file: Some(role_path),
             nickname_candidates: None,
+            topics: None,
+            catchphrases: None,
         },
     );
 
@@ -459,7 +497,7 @@ model_reasoning_effort = "low"
     let role_path = write_role_config(
         &home,
         "profile-edit-role.toml",
-        r#"developer_instructions = "Stay focused"
+        r#"minion_instructions = "Stay focused"
 
 [profiles.base-profile]
 model_provider = "role-provider"
@@ -473,6 +511,8 @@ model_reasoning_effort = "high"
             description: None,
             config_file: Some(role_path),
             nickname_candidates: None,
+            topics: None,
+            catchphrases: None,
         },
     );
 
@@ -503,7 +543,7 @@ async fn apply_role_does_not_materialize_default_sandbox_workspace_write_fields(
     let role_path = write_role_config(
         &home,
         "sandbox-role.toml",
-        r#"developer_instructions = "Stay focused"
+        r#"minion_instructions = "Stay focused"
 
 [sandbox_workspace_write]
 writable_roots = ["./sandbox-root"]
@@ -516,6 +556,8 @@ writable_roots = ["./sandbox-root"]
             description: None,
             config_file: Some(role_path),
             nickname_candidates: None,
+            topics: None,
+            catchphrases: None,
         },
     );
 
@@ -566,7 +608,7 @@ async fn apply_role_takes_precedence_over_existing_session_flags_for_same_key() 
     let role_path = write_role_config(
         &home,
         "model-role.toml",
-        "developer_instructions = \"Stay focused\"\nmodel = \"role-model\"",
+        "minion_instructions = \"Stay focused\"\nmodel = \"role-model\"",
     )
     .await;
     config.agent_roles.insert(
@@ -575,6 +617,8 @@ async fn apply_role_takes_precedence_over_existing_session_flags_for_same_key() 
             description: None,
             config_file: Some(role_path),
             nickname_candidates: None,
+            topics: None,
+            catchphrases: None,
         },
     );
 
@@ -601,7 +645,7 @@ async fn apply_role_skills_config_disables_skill_for_spawned_agent() {
         &home,
         "skills-role.toml",
         &format!(
-            r#"developer_instructions = "Stay focused"
+            r#"minion_instructions = "Stay focused"
 
 [[skills.config]]
 path = "{}"
@@ -617,6 +661,8 @@ enabled = false
             description: None,
             config_file: Some(role_path),
             nickname_candidates: None,
+            topics: None,
+            catchphrases: None,
         },
     );
 
@@ -639,11 +685,13 @@ enabled = false
 fn spawn_tool_spec_build_deduplicates_user_defined_built_in_roles() {
     let user_defined_roles = BTreeMap::from([
         (
-            "explorer".to_string(),
+            "scout".to_string(),
             AgentRoleConfig {
                 description: Some("user override".to_string()),
                 config_file: None,
                 nickname_candidates: None,
+                topics: None,
+                catchphrases: None,
             },
         ),
         ("researcher".to_string(), AgentRoleConfig::default()),
@@ -652,9 +700,9 @@ fn spawn_tool_spec_build_deduplicates_user_defined_built_in_roles() {
     let spec = spawn_tool_spec::build(&user_defined_roles);
 
     assert!(spec.contains("researcher: no description"));
-    assert!(spec.contains("explorer: {\nuser override\n}"));
-    assert!(spec.contains("default: {\nDefault agent.\n}"));
-    assert!(!spec.contains("Explorers are fast and authoritative."));
+    assert!(spec.contains("scout: {\nuser override\n}"));
+    assert!(spec.contains("default: {\nGeneral-purpose agent with no role constraints.\n}"));
+    assert!(!spec.contains("reconnaissance"));
 }
 
 #[test]
@@ -665,13 +713,15 @@ fn spawn_tool_spec_lists_user_defined_roles_before_built_ins() {
             description: Some("first".to_string()),
             config_file: None,
             nickname_candidates: None,
+            topics: None,
+            catchphrases: None,
         },
     )]);
 
     let spec = spawn_tool_spec::build(&user_defined_roles);
     let user_index = spec.find("aaa: {\nfirst\n}").expect("find user role");
     let built_in_index = spec
-        .find("default: {\nDefault agent.\n}")
+        .find("default: {\nGeneral-purpose agent with no role constraints.\n}")
         .expect("find built-in role");
 
     assert!(user_index < built_in_index);
@@ -683,7 +733,7 @@ fn spawn_tool_spec_marks_role_locked_model_and_reasoning_effort() {
     let role_path = tempdir.path().join("researcher.toml");
     fs::write(
             &role_path,
-            "developer_instructions = \"Research carefully\"\nmodel = \"gpt-5\"\nmodel_reasoning_effort = \"high\"\n",
+            "minion_instructions = \"Research carefully\"\nmodel = \"gpt-5\"\nmodel_reasoning_effort = \"high\"\n",
         )
         .expect("write role config");
     let user_defined_roles = BTreeMap::from([(
@@ -692,6 +742,8 @@ fn spawn_tool_spec_marks_role_locked_model_and_reasoning_effort() {
             description: Some("Research carefully.".to_string()),
             config_file: Some(role_path),
             nickname_candidates: None,
+            topics: None,
+            catchphrases: None,
         },
     )]);
 
@@ -708,7 +760,7 @@ fn spawn_tool_spec_marks_role_locked_reasoning_effort_only() {
     let role_path = tempdir.path().join("reviewer.toml");
     fs::write(
         &role_path,
-        "developer_instructions = \"Review carefully\"\nmodel_reasoning_effort = \"medium\"\n",
+        "minion_instructions = \"Review carefully\"\nmodel_reasoning_effort = \"medium\"\n",
     )
     .expect("write role config");
     let user_defined_roles = BTreeMap::from([(
@@ -717,6 +769,8 @@ fn spawn_tool_spec_marks_role_locked_reasoning_effort_only() {
             description: Some("Review carefully.".to_string()),
             config_file: Some(role_path),
             nickname_candidates: None,
+            topics: None,
+            catchphrases: None,
         },
     )]);
 
@@ -728,7 +782,7 @@ fn spawn_tool_spec_marks_role_locked_reasoning_effort_only() {
 }
 
 #[test]
-fn built_in_config_file_contents_resolves_explorer_only() {
+fn built_in_config_file_contents_returns_none_for_unknown_path() {
     assert_eq!(
         built_in::config_file_contents(Path::new("missing.toml")),
         None

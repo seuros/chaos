@@ -33,7 +33,7 @@ use chaos_ipc::config_types::ReasoningSummary;
 use chaos_ipc::models::ResponseItem;
 use chaos_ipc::openai_models::ReasoningEffort;
 use chaos_ipc::product::CHAOS_VERSION;
-use chaos_ipc::protocol::AskForApproval;
+use chaos_ipc::protocol::ApprovalPolicy;
 use chaos_ipc::protocol::ReviewDecision;
 use chaos_ipc::protocol::SandboxPolicy;
 use chaos_ipc::protocol::SessionSource;
@@ -298,7 +298,7 @@ impl SessionTelemetry {
         reasoning_summary: ReasoningSummary,
         context_window: Option<i64>,
         auto_compact_token_limit: Option<i64>,
-        approval_policy: AskForApproval,
+        approval_policy: ApprovalPolicy,
         sandbox_policy: SandboxPolicy,
         mcp_servers: Vec<&str>,
         active_profile: Option<String>,

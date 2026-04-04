@@ -1,7 +1,7 @@
 #[cfg(test)]
 use chaos_ipc::ProcessId;
 #[cfg(test)]
-use chaos_ipc::protocol::AskForApproval;
+use chaos_ipc::protocol::ApprovalPolicy;
 #[cfg(test)]
 use chaos_ipc::protocol::SandboxPolicy;
 #[cfg(test)]
@@ -48,7 +48,7 @@ pub(super) fn test_process_metadata(
         cli_version: "0.0.0".to_string(),
         title: String::new(),
         sandbox_policy: crate::extract::enum_to_string(&SandboxPolicy::new_read_only_policy()),
-        approval_mode: crate::extract::enum_to_string(&AskForApproval::OnRequest),
+        approval_mode: crate::extract::enum_to_string(&ApprovalPolicy::Interactive),
         tokens_used: 0,
         first_user_message: Some("hello".to_string()),
         archived_at: None,

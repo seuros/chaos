@@ -1,6 +1,6 @@
 use chaos_ipc::items::AgentMessageContent;
 use chaos_ipc::items::TurnItem;
-use chaos_ipc::protocol::AskForApproval;
+use chaos_ipc::protocol::ApprovalPolicy;
 use chaos_ipc::protocol::EventMsg;
 use chaos_ipc::protocol::ItemCompletedEvent;
 use chaos_ipc::protocol::Op;
@@ -80,7 +80,7 @@ async fn codex_returns_json_result(model: String) -> anyhow::Result<()> {
             }],
             final_output_json_schema: Some(serde_json::from_str(SCHEMA)?),
             cwd: cwd.path().to_path_buf(),
-            approval_policy: AskForApproval::Never,
+            approval_policy: ApprovalPolicy::Headless,
             sandbox_policy: SandboxPolicy::RootAccess,
             model,
             effort: None,

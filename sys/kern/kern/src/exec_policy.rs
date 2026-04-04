@@ -12,7 +12,7 @@ use crate::is_safe_command::is_known_safe_command;
 use chaos_ipc::approvals::ExecPolicyAmendment;
 use chaos_ipc::permissions::FileSystemSandboxKind;
 use chaos_ipc::permissions::FileSystemSandboxPolicy;
-use chaos_ipc::protocol::AskForApproval;
+use chaos_ipc::protocol::ApprovalPolicy;
 use chaos_ipc::protocol::SandboxPolicy;
 use chaos_selinux::AmendError;
 use chaos_selinux::Decision;
@@ -37,11 +37,11 @@ use crate::tools::sandboxing::ExecApprovalRequirement;
 use shlex::try_join as shlex_try_join;
 
 const PROMPT_CONFLICT_REASON: &str =
-    "approval required by policy, but AskForApproval is set to Never";
+    "approval required by policy, but ApprovalPolicy is set to Headless";
 const REJECT_SANDBOX_APPROVAL_REASON: &str =
-    "approval required by policy, but AskForApproval::Granular.sandbox_approval is false";
+    "approval required by policy, but ApprovalPolicy::Granular.sandbox_approval is false";
 const REJECT_RULES_APPROVAL_REASON: &str =
-    "approval required by policy rule, but AskForApproval::Granular.rules is false";
+    "approval required by policy rule, but ApprovalPolicy::Granular.rules is false";
 const RULES_DIR_NAME: &str = "rules";
 const RULE_EXTENSION: &str = "decrees";
 const DEFAULT_POLICY_FILE: &str = "default.decrees";
@@ -99,15 +99,13 @@ fn is_policy_match(rule_match: &RuleMatch) -> bool {
 /// prompts so granular `rules` and `sandbox_approval` settings are honored
 /// independently. When both are present, policy-rule prompts take precedence.
 pub(crate) fn prompt_is_rejected_by_policy(
-    approval_policy: AskForApproval,
+    approval_policy: ApprovalPolicy,
     prompt_is_rule: bool,
 ) -> Option<&'static str> {
     match approval_policy {
-        AskForApproval::Never => Some(PROMPT_CONFLICT_REASON),
-        AskForApproval::OnFailure => None,
-        AskForApproval::OnRequest => None,
-        AskForApproval::UnlessTrusted => None,
-        AskForApproval::Granular(granular_config) => {
+        ApprovalPolicy::Headless => Some(PROMPT_CONFLICT_REASON),
+        ApprovalPolicy::Interactive | ApprovalPolicy::Supervised => None,
+        ApprovalPolicy::Granular(granular_config) => {
             if prompt_is_rule {
                 if !granular_config.allows_rules_approval() {
                     Some(REJECT_RULES_APPROVAL_REASON)
@@ -165,7 +163,7 @@ pub(crate) struct ExecPolicyManager {
 
 pub(crate) struct ExecApprovalRequest<'a> {
     pub(crate) command: &'a [String],
-    pub(crate) approval_policy: AskForApproval,
+    pub(crate) approval_policy: ApprovalPolicy,
     pub(crate) sandbox_policy: &'a SandboxPolicy,
     pub(crate) file_system_sandbox_policy: &'a FileSystemSandboxPolicy,
     pub(crate) sandbox_permissions: SandboxPermissions,
@@ -487,7 +485,7 @@ pub async fn load_exec_policy(config_stack: &ConfigLayerStack) -> Result<Policy,
 
 /// If a command is not matched by any execpolicy rule, derive a [`Decision`].
 pub fn render_decision_for_unmatched_command(
-    approval_policy: AskForApproval,
+    approval_policy: ApprovalPolicy,
     _sandbox_policy: &SandboxPolicy,
     file_system_sandbox_policy: &FileSystemSandboxPolicy,
     command: &[String],
@@ -508,26 +506,25 @@ pub fn render_decision_for_unmatched_command(
     // forbid the command.
     if command_might_be_dangerous(command) || runtime_sandbox_provides_safety {
         return match approval_policy {
-            AskForApproval::Never => Decision::Forbidden,
-            AskForApproval::OnFailure
-            | AskForApproval::OnRequest
-            | AskForApproval::UnlessTrusted
-            | AskForApproval::Granular(_) => Decision::Prompt,
+            ApprovalPolicy::Headless => Decision::Forbidden,
+            ApprovalPolicy::Interactive
+            | ApprovalPolicy::Supervised
+            | ApprovalPolicy::Granular(_) => Decision::Prompt,
         };
     }
 
     match approval_policy {
-        AskForApproval::Never | AskForApproval::OnFailure => {
+        ApprovalPolicy::Headless => {
             // We allow the command to run, relying on the sandbox for
             // protection.
             Decision::Allow
         }
-        AskForApproval::UnlessTrusted => {
+        ApprovalPolicy::Supervised => {
             // We already checked `is_known_safe_command(command)` and it
             // returned false, so we must prompt.
             Decision::Prompt
         }
-        AskForApproval::OnRequest => {
+        ApprovalPolicy::Interactive => {
             match file_system_sandbox_policy.kind {
                 FileSystemSandboxKind::Unrestricted | FileSystemSandboxKind::ExternalSandbox => {
                     // The user has indicated we should "just run" commands
@@ -547,7 +544,7 @@ pub fn render_decision_for_unmatched_command(
                 }
             }
         }
-        AskForApproval::Granular(_) => match file_system_sandbox_policy.kind {
+        ApprovalPolicy::Granular(_) => match file_system_sandbox_policy.kind {
             FileSystemSandboxKind::Unrestricted | FileSystemSandboxKind::ExternalSandbox => {
                 // Mirror on-request behavior for unmatched commands; prompt-vs-reject is handled
                 // by `prompt_is_rejected_by_policy`.

@@ -32,15 +32,12 @@ fn create_test_tool(server_name: &str, tool_name: &str) -> ToolInfo {
 #[test]
 fn elicitation_granular_policy_defaults_to_prompting() {
     assert!(!elicitation_is_rejected_by_policy(
-        AskForApproval::OnFailure
+        ApprovalPolicy::Interactive
     ));
     assert!(!elicitation_is_rejected_by_policy(
-        AskForApproval::OnRequest
+        ApprovalPolicy::Supervised
     ));
-    assert!(!elicitation_is_rejected_by_policy(
-        AskForApproval::UnlessTrusted
-    ));
-    assert!(elicitation_is_rejected_by_policy(AskForApproval::Granular(
+    assert!(elicitation_is_rejected_by_policy(ApprovalPolicy::Granular(
         GranularApprovalConfig {
             sandbox_approval: true,
             rules: true,
@@ -52,9 +49,9 @@ fn elicitation_granular_policy_defaults_to_prompting() {
 }
 
 #[test]
-fn elicitation_granular_policy_respects_never_and_config() {
-    assert!(elicitation_is_rejected_by_policy(AskForApproval::Never));
-    assert!(elicitation_is_rejected_by_policy(AskForApproval::Granular(
+fn elicitation_granular_policy_respects_headless_and_config() {
+    assert!(elicitation_is_rejected_by_policy(ApprovalPolicy::Headless));
+    assert!(elicitation_is_rejected_by_policy(ApprovalPolicy::Granular(
         GranularApprovalConfig {
             sandbox_approval: true,
             rules: true,
@@ -228,7 +225,7 @@ async fn list_all_tools_uses_startup_snapshot_while_client_is_pending() {
     let pending_client = futures::future::pending::<Result<ManagedClient, StartupOutcomeError>>()
         .boxed()
         .shared();
-    let approval_policy = Constrained::allow_any(AskForApproval::OnFailure);
+    let approval_policy = Constrained::allow_any(ApprovalPolicy::Interactive);
     let mut manager = McpConnectionManager::new_uninitialized(&approval_policy);
     manager.clients.insert(
         "test_server".to_string(),
@@ -253,7 +250,7 @@ async fn list_all_tools_blocks_while_client_is_pending_without_startup_snapshot(
     let pending_client = futures::future::pending::<Result<ManagedClient, StartupOutcomeError>>()
         .boxed()
         .shared();
-    let approval_policy = Constrained::allow_any(AskForApproval::OnFailure);
+    let approval_policy = Constrained::allow_any(ApprovalPolicy::Interactive);
     let mut manager = McpConnectionManager::new_uninitialized(&approval_policy);
     manager.clients.insert(
         "test_server".to_string(),
@@ -275,7 +272,7 @@ async fn list_all_tools_does_not_block_when_startup_snapshot_cache_hit_is_empty(
     let pending_client = futures::future::pending::<Result<ManagedClient, StartupOutcomeError>>()
         .boxed()
         .shared();
-    let approval_policy = Constrained::allow_any(AskForApproval::OnFailure);
+    let approval_policy = Constrained::allow_any(ApprovalPolicy::Interactive);
     let mut manager = McpConnectionManager::new_uninitialized(&approval_policy);
     manager.clients.insert(
         "test_server".to_string(),
@@ -303,7 +300,7 @@ async fn list_all_tools_uses_startup_snapshot_when_client_startup_fails() {
     ))
     .boxed()
     .shared();
-    let approval_policy = Constrained::allow_any(AskForApproval::OnFailure);
+    let approval_policy = Constrained::allow_any(ApprovalPolicy::Interactive);
     let mut manager = McpConnectionManager::new_uninitialized(&approval_policy);
     let startup_complete = Arc::new(std::sync::atomic::AtomicBool::new(true));
     manager.clients.insert(

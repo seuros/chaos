@@ -14,7 +14,7 @@ use chaos_argv::Arg0DispatchPaths;
 use chaos_ipc::ProcessId;
 use chaos_ipc::config_types::SandboxMode;
 use chaos_ipc::product::CHAOS_VERSION;
-use chaos_ipc::protocol::AskForApproval;
+use chaos_ipc::protocol::ApprovalPolicy;
 use chaos_ipc::protocol::EventMsg;
 use chaos_ipc::protocol::Op;
 use chaos_ipc::protocol::ReviewRequest;
@@ -311,7 +311,7 @@ pub async fn run_main(cli: Cli, arg0_paths: Arg0DispatchPaths) -> anyhow::Result
         review_model: None,
         config_profile,
         // Default to never ask for approvals in headless mode. Feature flags can override.
-        approval_policy: Some(AskForApproval::Never),
+        approval_policy: Some(ApprovalPolicy::Headless),
         approvals_reviewer: None,
         sandbox_mode,
         cwd: resolved_cwd,
@@ -323,7 +323,7 @@ pub async fn run_main(cli: Cli, arg0_paths: Arg0DispatchPaths) -> anyhow::Result
         main_execve_wrapper_exe: arg0_paths.main_execve_wrapper_exe.clone(),
         zsh_path: None,
         base_instructions: None,
-        developer_instructions: None,
+        minion_instructions: None,
         personality: None,
         compact_prompt: None,
         include_apply_patch_tool: None,

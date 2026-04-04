@@ -2,7 +2,7 @@
 
 use anyhow::Context;
 use anyhow::Result;
-use chaos_ipc::protocol::AskForApproval;
+use chaos_ipc::protocol::ApprovalPolicy;
 use chaos_ipc::protocol::EventMsg;
 use chaos_ipc::protocol::Op;
 use chaos_ipc::protocol::SandboxPolicy;
@@ -468,7 +468,7 @@ async fn mcp_image_output_preserves_image_and_no_text_summary() -> Result<()> {
             }],
             final_output_json_schema: None,
             cwd: fixture.cwd.path().to_path_buf(),
-            approval_policy: AskForApproval::Never,
+            approval_policy: ApprovalPolicy::Headless,
             sandbox_policy: SandboxPolicy::new_read_only_policy(),
             model: session_model,
             effort: None,

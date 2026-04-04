@@ -10,6 +10,7 @@ use crate::config::AgentRoleConfig;
 use crate::config::Config;
 use crate::config::ConfigOverrides;
 use crate::config::agent_roles::parse_agent_role_file_contents;
+use crate::config::agent_roles::resolve_roles_by_topics as sysctl_resolve_roles_by_topics;
 use crate::config::deserialize_config_toml_with_base;
 use crate::config_loader::ConfigLayerEntry;
 use crate::config_loader::ConfigLayerStack;
@@ -85,7 +86,14 @@ async fn load_role_layer_toml(
         let role_config_contents = built_in::config_file_contents(config_file)
             .map(str::to_owned)
             .ok_or(anyhow!("No corresponding config content"))?;
-        let role_config_toml: TomlValue = toml::from_str(&role_config_contents)?;
+        let role_config_toml = parse_agent_role_file_contents(
+            &role_config_contents,
+            config_file,
+            config.chaos_home.as_path(),
+            Some(role_name),
+        )
+        .map_err(|e| anyhow!(e))?
+        .config;
         (role_config_toml, config.chaos_home.as_path())
     } else {
         let role_config_contents = tokio::fs::read_to_string(config_file).await?;
@@ -301,16 +309,21 @@ pub(crate) mod spawn_tool_spec {
                 .config_file
                 .as_ref()
                 .and_then(|config_file| {
-                    built_in::config_file_contents(config_file)
+                    let contents = built_in::config_file_contents(config_file)
                         .map(str::to_owned)
-                        .or_else(|| std::fs::read_to_string(config_file).ok())
+                        .or_else(|| std::fs::read_to_string(config_file).ok())?;
+                    parse_agent_role_file_contents(
+                        &contents,
+                        config_file,
+                        std::path::Path::new("."),
+                        Some(name),
+                    )
+                    .ok()
                 })
-                .and_then(|contents| toml::from_str::<TomlValue>(&contents).ok())
-                .map(|role_toml| {
-                    let model = role_toml
-                        .get("model")
-                        .and_then(TomlValue::as_str);
-                    let reasoning_effort = role_toml
+                .map(|parsed| {
+                    let model = parsed.config.get("model").and_then(TomlValue::as_str);
+                    let reasoning_effort = parsed
+                        .config
                         .get("model_reasoning_effort")
                         .and_then(TomlValue::as_str);
 
@@ -339,82 +352,91 @@ pub(crate) mod spawn_tool_spec {
     }
 }
 
+/// Collects all roles (user-defined and built-in) whose topics overlap with
+/// `requested_topics`. Returns a `Vec` for the caller to sample from. An empty result
+/// means no role covers those topics; the caller should fall back to `default` and warn
+/// the user that the topics are unregistered.
+pub(crate) fn collect_roles_by_topics<'a>(
+    config: &'a Config,
+    requested_topics: &[String],
+) -> Vec<(&'a str, &'a AgentRoleConfig)> {
+    let mut matches: Vec<(&str, &AgentRoleConfig)> = Vec::new();
+
+    // User-defined roles take precedence and are checked first.
+    let user_matches = sysctl_resolve_roles_by_topics(&config.agent_roles, requested_topics);
+    matches.extend(user_matches);
+
+    // Also search built-ins, skipping any already shadowed by user-defined names.
+    let user_names: BTreeSet<&str> = config.agent_roles.keys().map(String::as_str).collect();
+    for (name, role) in sysctl_resolve_roles_by_topics(built_in::configs(), requested_topics) {
+        if !user_names.contains(name) {
+            matches.push((name, role));
+        }
+    }
+
+    matches
+}
+
 mod built_in {
     use super::*;
+    use include_dir::Dir;
+    use include_dir::include_dir;
 
-    /// Returns the cached built-in role declarations defined in this module.
+    /// Core operational roles: default, scout, task, sentinel, …
+    static BUILTINS_DIR: Dir = include_dir!("$CARGO_MANIFEST_DIR/src/minions/builtins");
+
+    /// Personality overlays: dhh, gordon, fireship, primeagen, carmack, …
+    /// Drop a new `.md` file here — no code changes required.
+    static PERSONAS_DIR: Dir = include_dir!("$CARGO_MANIFEST_DIR/src/minions/personas");
+
+    /// Returns the cached role declarations from both builtins and personas.
     pub(super) fn configs() -> &'static BTreeMap<String, AgentRoleConfig> {
         static CONFIG: LazyLock<BTreeMap<String, AgentRoleConfig>> = LazyLock::new(|| {
-            BTreeMap::from([
-                (
-                    DEFAULT_ROLE_NAME.to_string(),
-                    AgentRoleConfig {
-                        description: Some("Default agent.".to_string()),
-                        config_file: None,
-                        nickname_candidates: None,
-                    }
-                ),
-                (
-                    "explorer".to_string(),
-                    AgentRoleConfig {
-                        description: Some(r#"Use `explorer` for specific codebase questions.
-Explorers are fast and authoritative.
-They must be used to ask specific, well-scoped questions on the codebase.
-Rules:
-- In order to avoid redundant work, you should avoid exploring the same problem that explorers have already covered. Typically, you should trust the explorer results without additional verification. You are still allowed to inspect the code yourself to gain the needed context!
-- You are encouraged to spawn up multiple explorers in parallel when you have multiple distinct questions to ask about the codebase that can be answered independently. This allows you to get more information faster without waiting for one question to finish before asking the next. While waiting for the explorer results, you can continue working on other local tasks that do not depend on those results. This parallelism is a key advantage of delegation, so use it whenever you have multiple questions to ask.
-- Reuse existing explorers for related questions."#.to_string()),
-                        config_file: Some("explorer.toml".to_string().parse().unwrap_or_default()),
-                        nickname_candidates: None,
-                    }
-                ),
-                (
-                    "worker".to_string(),
-                    AgentRoleConfig {
-                        description: Some(r#"Use for execution and production work.
-Typical tasks:
-- Implement part of a feature
-- Fix tests or bugs
-- Split large refactors into independent chunks
-Rules:
-- Explicitly assign **ownership** of the task (files / responsibility). When the subtask involves code changes, you should clearly specify which files or modules the worker is responsible for. This helps avoid merge conflicts and ensures accountability. For example, you can say "Worker 1 is responsible for updating the authentication module, while Worker 2 will handle the database layer." By defining clear ownership, you can delegate more effectively and reduce coordination overhead.
-- Always tell workers they are **not alone in the codebase**, and they should not revert the edits made by others, and they should adjust their implementation to accommodate the changes made by others. This is important because there may be multiple workers making changes in parallel, and they need to be aware of each other's work to avoid conflicts and ensure a cohesive final product."#.to_string()),
-                        config_file: None,
-                        nickname_candidates: None,
-                    }
-                ),
-                // Awaiter is temp removed
-//                 (
-//                     "awaiter".to_string(),
-//                     AgentRoleConfig {
-//                         description: Some(r#"Use an `awaiter` agent EVERY TIME you must run a command that will take some very long time.
-// This includes, but not only:
-// * testing
-// * monitoring of a long running process
-// * explicit ask to wait for something
-//
-// Rules:
-// - When an awaiter is running, you can work on something else. If you need to wait for its completion, use the largest possible timeout.
-// - Be patient with the `awaiter`.
-// - Do not use an awaiter for every compilation/test if it won't take time. Only use if for long running commands.
-// - Close the awaiter when you're done with it."#.to_string()),
-//                         config_file: Some("awaiter.toml".to_string().parse().unwrap_or_default()),
-//                     }
-//                 )
-            ])
+            [&BUILTINS_DIR, &PERSONAS_DIR]
+                .iter()
+                .flat_map(|dir| dir.files())
+                .filter(|f| f.path().extension().is_some_and(|e| e == "md"))
+                .filter_map(|file| {
+                    let path = file.path();
+                    let stem = path.file_stem()?.to_str()?;
+                    let content = file.contents_utf8()?;
+                    let parsed = parse_agent_role_file_contents(
+                        content,
+                        path,
+                        std::path::Path::new("."),
+                        Some(stem),
+                    )
+                    .unwrap_or_else(|err| {
+                        panic!("built-in role file {} is invalid: {err}", path.display())
+                    });
+                    let config_file = if parsed.config.as_table().is_some_and(|t| !t.is_empty()) {
+                        Some(path.to_path_buf())
+                    } else {
+                        None
+                    };
+                    Some((
+                        parsed.role_name.clone(),
+                        AgentRoleConfig {
+                            description: parsed.description,
+                            config_file,
+                            nickname_candidates: parsed.nickname_candidates,
+                            topics: parsed.topics,
+                            catchphrases: parsed.catchphrases,
+                        },
+                    ))
+                })
+                .collect()
         });
         &CONFIG
     }
 
-    /// Resolves a built-in role `config_file` path to embedded content.
+    /// Resolves a built-in role `config_file` path to its embedded content.
+    /// Checks builtins first, then personas.
     pub(super) fn config_file_contents(path: &Path) -> Option<&'static str> {
-        const EXPLORER: &str = include_str!("builtins/explorer.toml");
-        const AWAITER: &str = include_str!("builtins/awaiter.toml");
-        match path.to_str()? {
-            "explorer.toml" => Some(EXPLORER),
-            "awaiter.toml" => Some(AWAITER),
-            _ => None,
-        }
+        BUILTINS_DIR
+            .get_file(path)
+            .or_else(|| PERSONAS_DIR.get_file(path))
+            .and_then(|f| f.contents_utf8())
     }
 }
 

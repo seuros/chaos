@@ -1262,6 +1262,34 @@ fn mcp_resource_tools_are_included_when_mcp_servers_are_present() {
 }
 
 #[test]
+fn spawn_agent_tool_description_uses_current_role_names() {
+    let config = test_config();
+    let model_info = ModelsManager::construct_model_info_offline_for_tests("gpt-5-codex", &config);
+    let features = Features::with_defaults();
+    let available_models = Vec::new();
+    let tools_config = ToolsConfig::new(&ToolsConfigParams {
+        model_info: &model_info,
+        available_models: &available_models,
+        features: &features,
+        web_search_mode: Some(WebSearchMode::Cached),
+        session_source: SessionSource::Cli,
+        sandbox_policy: &SandboxPolicy::RootAccess,
+        windows_sandbox_level: WindowsSandboxLevel::Disabled,
+    });
+
+    let ToolSpec::Function(ResponsesApiTool { description, .. }) =
+        create_spawn_agent_tool(&tools_config)
+    else {
+        panic!("expected function tool");
+    };
+
+    assert!(description.contains("task subtasks"));
+    assert!(description.contains("scout analysis"));
+    assert!(!description.contains("worker subtasks"));
+    assert!(!description.contains("explorer analysis"));
+}
+
+#[test]
 fn test_build_specs_gpt5_codex_default() {
     let features = Features::with_defaults();
     assert_default_model_tools(

@@ -13,7 +13,6 @@ use crate::models_manager::model_info;
 use crate::shell::default_user_shell;
 use crate::tools::format_exec_output_str;
 
-use chaos_mcp_runtime::McpConnectionManager;
 use chaos_ipc::ProcessId;
 use chaos_ipc::models::FunctionCallOutputBody;
 use chaos_ipc::models::FunctionCallOutputPayload;
@@ -26,6 +25,7 @@ use chaos_ipc::protocol::ReadOnlyAccess;
 use chaos_ipc::protocol::SandboxPolicy;
 use chaos_ipc::request_permissions::PermissionGrantScope;
 use chaos_ipc::request_permissions::RequestPermissionProfile;
+use chaos_mcp_runtime::McpConnectionManager;
 use tracing::Span;
 
 use crate::protocol::CompactedItem;
@@ -682,7 +682,7 @@ async fn record_initial_history_forked_hydrates_previous_turn_settings() {
         effort: turn_context.reasoning_effort,
         summary: turn_context.reasoning_summary,
         user_instructions: None,
-        developer_instructions: None,
+        minion_instructions: None,
         final_output_json_schema: None,
         truncation_policy: Some(turn_context.truncation_policy.into()),
     };
@@ -1025,14 +1025,14 @@ async fn set_rate_limits_retains_previous_credits() {
         settings: Settings {
             model,
             reasoning_effort,
-            developer_instructions: None,
+            minion_instructions: None,
         },
     };
     let session_configuration = SessionConfiguration {
         provider: config.model_provider.clone(),
         collaboration_mode,
         model_reasoning_summary: config.model_reasoning_summary,
-        developer_instructions: config.developer_instructions.clone(),
+        minion_instructions: config.minion_instructions.clone(),
         user_instructions: config.user_instructions.clone(),
         service_tier: None,
         personality: config.personality,
@@ -1122,14 +1122,14 @@ async fn set_rate_limits_updates_plan_type_when_present() {
         settings: Settings {
             model,
             reasoning_effort,
-            developer_instructions: None,
+            minion_instructions: None,
         },
     };
     let session_configuration = SessionConfiguration {
         provider: config.model_provider.clone(),
         collaboration_mode,
         model_reasoning_summary: config.model_reasoning_summary,
-        developer_instructions: config.developer_instructions.clone(),
+        minion_instructions: config.minion_instructions.clone(),
         user_instructions: config.user_instructions.clone(),
         service_tier: None,
         personality: config.personality,
@@ -1483,7 +1483,7 @@ pub(crate) async fn make_session_configuration_for_tests() -> SessionConfigurati
         settings: Settings {
             model,
             reasoning_effort,
-            developer_instructions: None,
+            minion_instructions: None,
         },
     };
 
@@ -1491,7 +1491,7 @@ pub(crate) async fn make_session_configuration_for_tests() -> SessionConfigurati
         provider: config.model_provider.clone(),
         collaboration_mode,
         model_reasoning_summary: config.model_reasoning_summary,
-        developer_instructions: config.developer_instructions.clone(),
+        minion_instructions: config.minion_instructions.clone(),
         user_instructions: config.user_instructions.clone(),
         service_tier: None,
         personality: config.personality,
@@ -1597,7 +1597,7 @@ async fn new_default_turn_uses_config_aware_skills_for_role_overrides() {
     std::fs::write(
         &role_path,
         format!(
-            r#"developer_instructions = "Stay focused"
+            r#"minion_instructions = "Stay focused"
 
 [[skills.config]]
 path = "{}"
@@ -1615,6 +1615,8 @@ enabled = false
             description: None,
             config_file: Some(role_path),
             nickname_candidates: None,
+            topics: None,
+            catchphrases: None,
         },
     );
     crate::minions::role::apply_role_to_config(&mut child_config, Some("custom"))
@@ -1711,14 +1713,14 @@ async fn session_new_fails_when_zsh_fork_enabled_without_zsh_path() {
         settings: Settings {
             model,
             reasoning_effort: config.model_reasoning_effort,
-            developer_instructions: None,
+            minion_instructions: None,
         },
     };
     let session_configuration = SessionConfiguration {
         provider: config.model_provider.clone(),
         collaboration_mode,
         model_reasoning_summary: config.model_reasoning_summary,
-        developer_instructions: config.developer_instructions.clone(),
+        minion_instructions: config.minion_instructions.clone(),
         user_instructions: config.user_instructions.clone(),
         service_tier: None,
         personality: config.personality,
@@ -1799,14 +1801,14 @@ pub(crate) async fn make_session_and_context() -> (Session, TurnContext) {
         settings: Settings {
             model,
             reasoning_effort,
-            developer_instructions: None,
+            minion_instructions: None,
         },
     };
     let session_configuration = SessionConfiguration {
         provider: config.model_provider.clone(),
         collaboration_mode,
         model_reasoning_summary: config.model_reasoning_summary,
-        developer_instructions: config.developer_instructions.clone(),
+        minion_instructions: config.minion_instructions.clone(),
         user_instructions: config.user_instructions.clone(),
         service_tier: None,
         personality: config.personality,
@@ -1854,11 +1856,9 @@ pub(crate) async fn make_session_and_context() -> (Session, TurnContext) {
         catalog: Arc::new(crate::catalog::CatalogSink::new(
             crate::catalog::Catalog::from_inventory(),
         )),
-        mcp_connection_manager: Arc::new(RwLock::new(
-            McpConnectionManager::new_uninitialized(
-                &config.permissions.approval_policy,
-            ),
-        )),
+        mcp_connection_manager: Arc::new(RwLock::new(McpConnectionManager::new_uninitialized(
+            &config.permissions.approval_policy,
+        ))),
         mcp_startup_cancellation_token: Mutex::new(CancellationToken::new()),
         unified_exec_manager: UnifiedExecProcessManager::new(
             config.background_terminal_max_timeout,
@@ -1970,7 +1970,7 @@ async fn request_permissions_emits_event_when_granular_policy_allows_requests() 
     Arc::get_mut(&mut turn_context)
         .expect("single turn context ref")
         .approval_policy
-        .set(crate::protocol::AskForApproval::Granular(
+        .set(crate::protocol::ApprovalPolicy::Granular(
             crate::protocol::GranularApprovalConfig {
                 sandbox_approval: true,
                 rules: true,
@@ -2045,7 +2045,7 @@ async fn request_permissions_is_auto_denied_when_granular_policy_blocks_tool_req
     Arc::get_mut(&mut turn_context)
         .expect("single turn context ref")
         .approval_policy
-        .set(crate::protocol::AskForApproval::Granular(
+        .set(crate::protocol::ApprovalPolicy::Granular(
             crate::protocol::GranularApprovalConfig {
                 sandbox_approval: true,
                 rules: true,
@@ -2442,14 +2442,14 @@ pub(crate) async fn make_session_and_context_with_dynamic_tools_and_rx(
         settings: Settings {
             model,
             reasoning_effort,
-            developer_instructions: None,
+            minion_instructions: None,
         },
     };
     let session_configuration = SessionConfiguration {
         provider: config.model_provider.clone(),
         collaboration_mode,
         model_reasoning_summary: config.model_reasoning_summary,
-        developer_instructions: config.developer_instructions.clone(),
+        minion_instructions: config.minion_instructions.clone(),
         user_instructions: config.user_instructions.clone(),
         service_tier: None,
         personality: config.personality,
@@ -2497,11 +2497,9 @@ pub(crate) async fn make_session_and_context_with_dynamic_tools_and_rx(
         catalog: Arc::new(crate::catalog::CatalogSink::new(
             crate::catalog::Catalog::from_inventory(),
         )),
-        mcp_connection_manager: Arc::new(RwLock::new(
-            McpConnectionManager::new_uninitialized(
-                &config.permissions.approval_policy,
-            ),
-        )),
+        mcp_connection_manager: Arc::new(RwLock::new(McpConnectionManager::new_uninitialized(
+            &config.permissions.approval_policy,
+        ))),
         mcp_startup_cancellation_token: Mutex::new(CancellationToken::new()),
         unified_exec_manager: UnifiedExecProcessManager::new(
             config.background_terminal_max_timeout,
@@ -3738,17 +3736,17 @@ async fn sample_rollout(
 #[tokio::test]
 async fn rejects_escalated_permissions_when_policy_not_on_request() {
     use crate::exec::ExecParams;
-    use crate::protocol::AskForApproval;
+    use crate::protocol::ApprovalPolicy;
     use crate::protocol::SandboxPolicy;
     use crate::sandboxing::SandboxPermissions;
     use crate::turn_diff_tracker::TurnDiffTracker;
     use std::collections::HashMap;
 
     let (session, mut turn_context_raw) = make_session_and_context().await;
-    // Ensure policy is NOT OnRequest so the early rejection path triggers
+    // Ensure policy is NOT Interactive so the early rejection path triggers
     turn_context_raw
         .approval_policy
-        .set(AskForApproval::OnFailure)
+        .set(ApprovalPolicy::Supervised)
         .expect("test setup should allow updating approval policy");
     let session = Arc::new(session);
     let mut turn_context = Arc::new(turn_context_raw);
@@ -3873,14 +3871,14 @@ async fn rejects_escalated_permissions_when_policy_not_on_request() {
 }
 #[tokio::test]
 async fn unified_exec_rejects_escalated_permissions_when_policy_not_on_request() {
-    use crate::protocol::AskForApproval;
+    use crate::protocol::ApprovalPolicy;
     use crate::sandboxing::SandboxPermissions;
     use crate::turn_diff_tracker::TurnDiffTracker;
 
     let (session, mut turn_context_raw) = make_session_and_context().await;
     turn_context_raw
         .approval_policy
-        .set(AskForApproval::OnFailure)
+        .set(ApprovalPolicy::Interactive)
         .expect("test setup should allow updating approval policy");
     let session = Arc::new(session);
     let turn_context = Arc::new(turn_context_raw);

@@ -4,7 +4,7 @@ use crate::tools::sandboxing::ToolError;
 use chaos_ipc::approvals::NetworkApprovalContext;
 use chaos_ipc::approvals::NetworkApprovalProtocol;
 use chaos_ipc::approvals::NetworkPolicyRuleAction;
-use chaos_ipc::protocol::AskForApproval;
+use chaos_ipc::protocol::ApprovalPolicy;
 use chaos_ipc::protocol::Event;
 use chaos_ipc::protocol::EventMsg;
 use chaos_ipc::protocol::ReviewDecision;
@@ -110,8 +110,8 @@ enum NetworkApprovalOutcome {
 }
 
 /// Whether an allowlist miss may be reviewed instead of hard-denied.
-fn allows_network_approval_flow(policy: AskForApproval) -> bool {
-    !matches!(policy, AskForApproval::Never)
+fn allows_network_approval_flow(policy: ApprovalPolicy) -> bool {
+    !matches!(policy, ApprovalPolicy::Headless)
 }
 
 impl PendingApprovalDecision {

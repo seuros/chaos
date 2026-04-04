@@ -18,7 +18,7 @@ use crate::config_types::Verbosity;
 use crate::config_types::WebSearchMode;
 use crate::config_types::WebSearchToolConfig;
 use crate::openai_models::ReasoningEffort;
-use crate::protocol::AskForApproval;
+use crate::protocol::ApprovalPolicy;
 use chaos_realpath::AbsolutePathBuf;
 use schemars::JsonSchema;
 use serde::Deserialize;
@@ -66,7 +66,7 @@ pub enum AuthMode {
 #[derive(Deserialize, Debug, Clone, PartialEq, Serialize, JsonSchema, TS)]
 #[serde(rename_all = "camelCase")]
 pub struct UserSavedConfig {
-    pub approval_policy: Option<AskForApproval>,
+    pub approval_policy: Option<ApprovalPolicy>,
     pub sandbox_mode: Option<SandboxMode>,
     pub sandbox_settings: Option<SandboxSettings>,
     pub forced_chatgpt_workspace_id: Option<String>,
@@ -85,7 +85,7 @@ pub struct UserSavedConfig {
 pub struct Profile {
     pub model: Option<String>,
     pub model_provider: Option<String>,
-    pub approval_policy: Option<AskForApproval>,
+    pub approval_policy: Option<ApprovalPolicy>,
     pub model_reasoning_effort: Option<ReasoningEffort>,
     pub model_reasoning_summary: Option<ReasoningSummary>,
     pub model_verbosity: Option<Verbosity>,
@@ -110,18 +110,15 @@ pub struct SandboxSettings {
 }
 
 // ===========================================================================
-// V2 AskForApproval (v2-specific variant with Granular)
+// V2 ApprovalPolicy (v2-specific variant with Granular)
 // ===========================================================================
 
 #[derive(Serialize, Deserialize, Debug, Clone, Copy, PartialEq, Eq, JsonSchema, TS)]
 #[serde(rename_all = "kebab-case")]
 #[ts(rename_all = "kebab-case", export_to = "v2/")]
-pub enum AskForApprovalV2 {
-    #[serde(rename = "untrusted")]
-    #[ts(rename = "untrusted")]
-    UnlessTrusted,
-    OnFailure,
-    OnRequest,
+pub enum ApprovalPolicyV2 {
+    Supervised,
+    Interactive,
     Granular {
         sandbox_approval: bool,
         rules: bool,
@@ -131,7 +128,7 @@ pub enum AskForApprovalV2 {
         request_permissions: bool,
         mcp_elicitations: bool,
     },
-    Never,
+    Headless,
 }
 
 // ===========================================================================
@@ -279,7 +276,7 @@ pub struct ToolsV2 {
 pub struct ProfileV2 {
     pub model: Option<String>,
     pub model_provider: Option<String>,
-    pub approval_policy: Option<AskForApprovalV2>,
+    pub approval_policy: Option<ApprovalPolicyV2>,
     /// [UNSTABLE] Optional profile-level override for where approval requests
     /// are routed for review. If omitted, the enclosing config default is
     /// used.
@@ -389,7 +386,7 @@ pub struct Config {
     pub model_context_window: Option<i64>,
     pub model_auto_compact_token_limit: Option<i64>,
     pub model_provider: Option<String>,
-    pub approval_policy: Option<AskForApprovalV2>,
+    pub approval_policy: Option<ApprovalPolicyV2>,
     /// [UNSTABLE] Optional default for where approval requests are routed for
     /// review.
     pub approvals_reviewer: Option<ApprovalsReviewerV2>,
@@ -403,7 +400,8 @@ pub struct Config {
     #[serde(default)]
     pub profiles: HashMap<String, ProfileV2>,
     pub instructions: Option<String>,
-    pub developer_instructions: Option<String>,
+    #[serde(alias = "developer_instructions")]
+    pub minion_instructions: Option<String>,
     pub compact_prompt: Option<String>,
     pub model_reasoning_effort: Option<ReasoningEffort>,
     pub model_reasoning_summary: Option<ReasoningSummary>,

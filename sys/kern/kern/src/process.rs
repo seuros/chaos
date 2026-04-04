@@ -16,7 +16,7 @@ use chaos_ipc::models::ContentItem;
 use chaos_ipc::models::ResponseInputItem;
 use chaos_ipc::models::ResponseItem;
 use chaos_ipc::openai_models::ReasoningEffort;
-use chaos_ipc::protocol::AskForApproval;
+use chaos_ipc::protocol::ApprovalPolicy;
 use chaos_ipc::protocol::SandboxPolicy;
 use chaos_ipc::protocol::SessionSource;
 use chaos_ipc::protocol::TokenUsage;
@@ -33,7 +33,7 @@ pub struct ProcessConfigSnapshot {
     pub model: String,
     pub model_provider_id: String,
     pub service_tier: Option<ServiceTier>,
-    pub approval_policy: AskForApproval,
+    pub approval_policy: ApprovalPolicy,
     pub approvals_reviewer: ApprovalsReviewer,
     pub sandbox_policy: SandboxPolicy,
     pub cwd: PathBuf,

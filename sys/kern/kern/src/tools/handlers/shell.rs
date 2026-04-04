@@ -366,7 +366,7 @@ impl ShellHandler {
         )
         .map_err(FunctionCallError::RespondToModel)?;
 
-        // Approval policy guard for explicit escalation in non-OnRequest modes.
+        // Approval policy guard for explicit escalation in non-Interactive modes.
         // Sticky turn permissions have already been approved, so they should
         // continue through the normal exec approval flow for the command.
         if effective_additional_permissions
@@ -375,7 +375,7 @@ impl ShellHandler {
             && !effective_additional_permissions.permissions_preapproved
             && !matches!(
                 turn.approval_policy.value(),
-                chaos_ipc::protocol::AskForApproval::OnRequest
+                chaos_ipc::protocol::ApprovalPolicy::Interactive
             )
         {
             let approval_policy = turn.approval_policy.value();

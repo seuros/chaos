@@ -3,7 +3,7 @@
 
 use anyhow::Result;
 use chaos_ipc::models::FileSystemPermissions;
-use chaos_ipc::protocol::AskForApproval;
+use chaos_ipc::protocol::ApprovalPolicy;
 use chaos_ipc::protocol::EventMsg;
 use chaos_ipc::protocol::Op;
 use chaos_ipc::protocol::ReviewDecision;
@@ -132,7 +132,7 @@ fn parse_result(item: &Value) -> (Option<i64>, String) {
 async fn submit_turn(
     test: &TestCodex,
     prompt: &str,
-    approval_policy: AskForApproval,
+    approval_policy: ApprovalPolicy,
     sandbox_policy: SandboxPolicy,
 ) -> Result<()> {
     let session_model = test.session_configured.model.clone();
@@ -187,7 +187,7 @@ async fn approved_folder_write_request_permissions_unblocks_later_exec_without_s
     skip_if_sandbox!(Ok(()));
 
     let server = start_mock_server().await;
-    let approval_policy = AskForApproval::OnRequest;
+    let approval_policy = ApprovalPolicy::Interactive;
     let sandbox_policy = workspace_write_excluding_tmp();
     let sandbox_policy_for_config = sandbox_policy.clone();
 
@@ -309,7 +309,7 @@ async fn approved_folder_write_request_permissions_unblocks_later_apply_patch_wi
     skip_if_sandbox!(Ok(()));
 
     let server = start_mock_server().await;
-    let approval_policy = AskForApproval::OnRequest;
+    let approval_policy = ApprovalPolicy::Interactive;
     let sandbox_policy = workspace_write_excluding_tmp();
     let sandbox_policy_for_config = sandbox_policy.clone();
 

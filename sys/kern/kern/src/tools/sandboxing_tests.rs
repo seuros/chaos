@@ -11,7 +11,7 @@ fn external_sandbox_skips_exec_approval_on_request() {
     };
     assert_eq!(
         default_exec_approval_requirement(
-            AskForApproval::OnRequest,
+            ApprovalPolicy::Interactive,
             &FileSystemSandboxPolicy::from(&sandbox_policy),
         ),
         ExecApprovalRequirement::Skip {
@@ -26,7 +26,7 @@ fn restricted_sandbox_requires_exec_approval_on_request() {
     let sandbox_policy = SandboxPolicy::new_read_only_policy();
     assert_eq!(
         default_exec_approval_requirement(
-            AskForApproval::OnRequest,
+            ApprovalPolicy::Interactive,
             &FileSystemSandboxPolicy::from(&sandbox_policy)
         ),
         ExecApprovalRequirement::NeedsApproval {
@@ -38,7 +38,7 @@ fn restricted_sandbox_requires_exec_approval_on_request() {
 
 #[test]
 fn default_exec_approval_requirement_rejects_sandbox_prompt_when_granular_disables_it() {
-    let policy = AskForApproval::Granular(GranularApprovalConfig {
+    let policy = ApprovalPolicy::Granular(GranularApprovalConfig {
         sandbox_approval: false,
         rules: true,
         skill_approval: true,
@@ -60,7 +60,7 @@ fn default_exec_approval_requirement_rejects_sandbox_prompt_when_granular_disabl
 
 #[test]
 fn default_exec_approval_requirement_keeps_prompt_when_granular_allows_sandbox_approval() {
-    let policy = AskForApproval::Granular(GranularApprovalConfig {
+    let policy = ApprovalPolicy::Granular(GranularApprovalConfig {
         sandbox_approval: true,
         rules: false,
         skill_approval: true,

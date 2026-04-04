@@ -8,7 +8,7 @@ use chaos_diff::ApplyPatchFileChange;
 use crate::exec::SandboxType;
 use crate::util::resolve_path;
 
-use crate::protocol::AskForApproval;
+use crate::protocol::ApprovalPolicy;
 use crate::protocol::FileSystemSandboxPolicy;
 use crate::protocol::SandboxPolicy;
 
@@ -26,7 +26,7 @@ pub enum SafetyCheck {
 
 pub fn assess_patch_safety(
     action: &ApplyPatchAction,
-    policy: AskForApproval,
+    policy: ApprovalPolicy,
     sandbox_policy: &SandboxPolicy,
     file_system_sandbox_policy: &FileSystemSandboxPolicy,
     cwd: &Path,
@@ -38,31 +38,26 @@ pub fn assess_patch_safety(
     }
 
     match policy {
-        AskForApproval::OnFailure
-        | AskForApproval::Never
-        | AskForApproval::OnRequest
-        | AskForApproval::Granular(_) => {
+        ApprovalPolicy::Headless
+        | ApprovalPolicy::Interactive
+        | ApprovalPolicy::Granular(_) => {
             // Continue to see if this can be auto-approved.
         }
-        // TODO(ragona): I'm not sure this is actually correct? I believe in this case
-        // we want to continue to the writable paths check before asking the user.
-        AskForApproval::UnlessTrusted => {
+        ApprovalPolicy::Supervised => {
             return SafetyCheck::AskUser;
         }
     }
 
-    let rejects_sandbox_approval = matches!(policy, AskForApproval::Never)
+    let rejects_sandbox_approval = matches!(policy, ApprovalPolicy::Headless)
         || matches!(
             policy,
-            AskForApproval::Granular(granular_config) if !granular_config.sandbox_approval
+            ApprovalPolicy::Granular(granular_config) if !granular_config.sandbox_approval
         );
 
     // Even though the patch appears to be constrained to writable paths, it is
     // possible that paths in the patch are hard links to files outside the
     // writable roots, so we should still run `apply_patch` in a sandbox in that case.
-    if is_write_patch_constrained_to_writable_paths(action, file_system_sandbox_policy, cwd)
-        || matches!(policy, AskForApproval::OnFailure)
-    {
+    if is_write_patch_constrained_to_writable_paths(action, file_system_sandbox_policy, cwd) {
         if matches!(
             sandbox_policy,
             SandboxPolicy::RootAccess | SandboxPolicy::ExternalSandbox { .. }

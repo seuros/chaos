@@ -1,5 +1,5 @@
 use anyhow::Result;
-use chaos_ipc::protocol::AskForApproval;
+use chaos_ipc::protocol::ApprovalPolicy;
 use chaos_ipc::protocol::EventMsg;
 use chaos_ipc::protocol::Op;
 use chaos_ipc::protocol::SandboxPolicy;
@@ -165,7 +165,7 @@ async fn websocket_fallback_hides_first_websocket_retry_stream_error() -> Result
             }],
             final_output_json_schema: None,
             cwd: cwd.path().to_path_buf(),
-            approval_policy: AskForApproval::Never,
+            approval_policy: ApprovalPolicy::Headless,
             sandbox_policy: SandboxPolicy::RootAccess,
             model: session_configured.model.clone(),
             effort: None,

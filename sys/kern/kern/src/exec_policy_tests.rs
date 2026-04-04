@@ -8,7 +8,7 @@ use chaos_ipc::permissions::FileSystemAccessMode;
 use chaos_ipc::permissions::FileSystemPath;
 use chaos_ipc::permissions::FileSystemSandboxEntry;
 use chaos_ipc::permissions::FileSystemSpecialPath;
-use chaos_ipc::protocol::AskForApproval;
+use chaos_ipc::protocol::ApprovalPolicy;
 use chaos_ipc::protocol::GranularApprovalConfig;
 use chaos_ipc::protocol::SandboxPolicy;
 use chaos_realpath::AbsolutePathBuf;
@@ -424,7 +424,7 @@ prefix_rule {pattern={"rm"}, decision="forbidden"}
     let requirement = manager
         .create_exec_approval_requirement_for_command(ExecApprovalRequest {
             command: &forbidden_script,
-            approval_policy: AskForApproval::OnRequest,
+            approval_policy: ApprovalPolicy::Interactive,
             sandbox_policy: &SandboxPolicy::RootAccess,
             file_system_sandbox_policy: &unrestricted_file_system_sandbox_policy(),
             sandbox_permissions: SandboxPermissions::UseDefault,
@@ -475,7 +475,7 @@ async fn evaluates_heredoc_script_against_prefix_rules() {
     let requirement = ExecPolicyManager::new(policy)
         .create_exec_approval_requirement_for_command(ExecApprovalRequest {
             command: &command,
-            approval_policy: AskForApproval::OnRequest,
+            approval_policy: ApprovalPolicy::Interactive,
             sandbox_policy: &SandboxPolicy::new_read_only_policy(),
             file_system_sandbox_policy: &read_only_file_system_sandbox_policy(),
             sandbox_permissions: SandboxPermissions::UseDefault,
@@ -503,7 +503,7 @@ async fn omits_auto_amendment_for_heredoc_fallback_prompts() {
     let requirement = ExecPolicyManager::default()
         .create_exec_approval_requirement_for_command(ExecApprovalRequest {
             command: &command,
-            approval_policy: AskForApproval::UnlessTrusted,
+            approval_policy: ApprovalPolicy::Supervised,
             sandbox_policy: &SandboxPolicy::new_read_only_policy(),
             file_system_sandbox_policy: &read_only_file_system_sandbox_policy(),
             sandbox_permissions: SandboxPermissions::UseDefault,
@@ -532,7 +532,7 @@ async fn drops_requested_amendment_for_heredoc_fallback_prompts_when_it_wont_mat
     let requirement = ExecPolicyManager::default()
         .create_exec_approval_requirement_for_command(ExecApprovalRequest {
             command: &command,
-            approval_policy: AskForApproval::UnlessTrusted,
+            approval_policy: ApprovalPolicy::Supervised,
             sandbox_policy: &SandboxPolicy::new_read_only_policy(),
             file_system_sandbox_policy: &read_only_file_system_sandbox_policy(),
             sandbox_permissions: SandboxPermissions::UseDefault,
@@ -572,7 +572,7 @@ prefix_rule {
                 "-rf".to_string(),
                 "/some/important/folder".to_string(),
             ],
-            approval_policy: AskForApproval::OnRequest,
+            approval_policy: ApprovalPolicy::Interactive,
             sandbox_policy: &SandboxPolicy::RootAccess,
             file_system_sandbox_policy: &unrestricted_file_system_sandbox_policy(),
             sandbox_permissions: SandboxPermissions::UseDefault,
@@ -602,7 +602,7 @@ async fn exec_approval_requirement_prefers_execpolicy_match() {
     let requirement = manager
         .create_exec_approval_requirement_for_command(ExecApprovalRequest {
             command: &command,
-            approval_policy: AskForApproval::OnRequest,
+            approval_policy: ApprovalPolicy::Interactive,
             sandbox_policy: &SandboxPolicy::RootAccess,
             file_system_sandbox_policy: &unrestricted_file_system_sandbox_policy(),
             sandbox_permissions: SandboxPermissions::UseDefault,
@@ -639,7 +639,7 @@ prefix_rule {{pattern={{"git"}}, decision="allow"}}
     let requirement = manager
         .create_exec_approval_requirement_for_command(ExecApprovalRequest {
             command: &command,
-            approval_policy: AskForApproval::UnlessTrusted,
+            approval_policy: ApprovalPolicy::Supervised,
             sandbox_policy: &SandboxPolicy::new_read_only_policy(),
             file_system_sandbox_policy: &read_only_file_system_sandbox_policy(),
             sandbox_permissions: SandboxPermissions::UseDefault,
@@ -677,7 +677,7 @@ prefix_rule {{pattern={{"git"}}, decision="prompt"}}
     let requirement = manager
         .create_exec_approval_requirement_for_command(ExecApprovalRequest {
             command: &command,
-            approval_policy: AskForApproval::UnlessTrusted,
+            approval_policy: ApprovalPolicy::Supervised,
             sandbox_policy: &SandboxPolicy::new_read_only_policy(),
             file_system_sandbox_policy: &read_only_file_system_sandbox_policy(),
             sandbox_permissions: SandboxPermissions::UseDefault,
@@ -706,7 +706,7 @@ async fn requested_prefix_rule_can_approve_absolute_path_commands() {
     let requirement = manager
         .create_exec_approval_requirement_for_command(ExecApprovalRequest {
             command: &command,
-            approval_policy: AskForApproval::UnlessTrusted,
+            approval_policy: ApprovalPolicy::Supervised,
             sandbox_policy: &SandboxPolicy::new_read_only_policy(),
             file_system_sandbox_policy: &read_only_file_system_sandbox_policy(),
             sandbox_permissions: SandboxPermissions::UseDefault,
@@ -740,7 +740,7 @@ async fn exec_approval_requirement_respects_approval_policy() {
     let requirement = manager
         .create_exec_approval_requirement_for_command(ExecApprovalRequest {
             command: &command,
-            approval_policy: AskForApproval::Never,
+            approval_policy: ApprovalPolicy::Headless,
             sandbox_policy: &SandboxPolicy::RootAccess,
             file_system_sandbox_policy: &unrestricted_file_system_sandbox_policy(),
             sandbox_permissions: SandboxPermissions::UseDefault,
@@ -763,7 +763,7 @@ fn unmatched_granular_policy_still_prompts_for_restricted_sandbox_escalation() {
     assert_eq!(
         Decision::Prompt,
         render_decision_for_unmatched_command(
-            AskForApproval::Granular(GranularApprovalConfig {
+            ApprovalPolicy::Granular(GranularApprovalConfig {
                 sandbox_approval: true,
                 rules: true,
                 skill_approval: true,
@@ -787,7 +787,7 @@ fn unmatched_on_request_uses_split_filesystem_policy_for_escalation_prompts() {
     assert_eq!(
         Decision::Prompt,
         render_decision_for_unmatched_command(
-            AskForApproval::OnRequest,
+            ApprovalPolicy::Interactive,
             &SandboxPolicy::RootAccess,
             &restricted_file_system_policy,
             &command,
@@ -805,7 +805,7 @@ async fn exec_approval_requirement_rejects_unmatched_sandbox_escalation_when_gra
     let requirement = ExecPolicyManager::default()
         .create_exec_approval_requirement_for_command(ExecApprovalRequest {
             command: &command,
-            approval_policy: AskForApproval::Granular(GranularApprovalConfig {
+            approval_policy: ApprovalPolicy::Granular(GranularApprovalConfig {
                 sandbox_approval: false,
                 rules: true,
                 skill_approval: true,
@@ -844,7 +844,7 @@ async fn mixed_rule_and_sandbox_prompt_prioritizes_rule_for_rejection_decision()
     let requirement = manager
         .create_exec_approval_requirement_for_command(ExecApprovalRequest {
             command: &command,
-            approval_policy: AskForApproval::Granular(GranularApprovalConfig {
+            approval_policy: ApprovalPolicy::Granular(GranularApprovalConfig {
                 sandbox_approval: true,
                 rules: true,
                 skill_approval: true,
@@ -881,7 +881,7 @@ async fn mixed_rule_and_sandbox_prompt_rejects_when_granular_rules_are_disabled(
     let requirement = manager
         .create_exec_approval_requirement_for_command(ExecApprovalRequest {
             command: &command,
-            approval_policy: AskForApproval::Granular(GranularApprovalConfig {
+            approval_policy: ApprovalPolicy::Granular(GranularApprovalConfig {
                 sandbox_approval: true,
                 rules: false,
                 skill_approval: true,
@@ -911,7 +911,7 @@ async fn exec_approval_requirement_falls_back_to_heuristics() {
     let requirement = manager
         .create_exec_approval_requirement_for_command(ExecApprovalRequest {
             command: &command,
-            approval_policy: AskForApproval::UnlessTrusted,
+            approval_policy: ApprovalPolicy::Supervised,
             sandbox_policy: &SandboxPolicy::new_read_only_policy(),
             file_system_sandbox_policy: &read_only_file_system_sandbox_policy(),
             sandbox_permissions: SandboxPermissions::UseDefault,
@@ -936,7 +936,7 @@ async fn empty_bash_lc_script_falls_back_to_original_command() {
     let requirement = manager
         .create_exec_approval_requirement_for_command(ExecApprovalRequest {
             command: &command,
-            approval_policy: AskForApproval::UnlessTrusted,
+            approval_policy: ApprovalPolicy::Supervised,
             sandbox_policy: &SandboxPolicy::new_read_only_policy(),
             file_system_sandbox_policy: &read_only_file_system_sandbox_policy(),
             sandbox_permissions: SandboxPermissions::UseDefault,
@@ -965,7 +965,7 @@ async fn whitespace_bash_lc_script_falls_back_to_original_command() {
     let requirement = manager
         .create_exec_approval_requirement_for_command(ExecApprovalRequest {
             command: &command,
-            approval_policy: AskForApproval::UnlessTrusted,
+            approval_policy: ApprovalPolicy::Supervised,
             sandbox_policy: &SandboxPolicy::new_read_only_policy(),
             file_system_sandbox_policy: &read_only_file_system_sandbox_policy(),
             sandbox_permissions: SandboxPermissions::UseDefault,
@@ -994,7 +994,7 @@ async fn request_rule_uses_prefix_rule() {
     let requirement = manager
         .create_exec_approval_requirement_for_command(ExecApprovalRequest {
             command: &command,
-            approval_policy: AskForApproval::OnRequest,
+            approval_policy: ApprovalPolicy::Interactive,
             sandbox_policy: &SandboxPolicy::new_read_only_policy(),
             file_system_sandbox_policy: &read_only_file_system_sandbox_policy(),
             sandbox_permissions: SandboxPermissions::RequireEscalated,
@@ -1026,7 +1026,7 @@ async fn request_rule_falls_back_when_prefix_rule_does_not_approve_all_commands(
     let requirement = manager
         .create_exec_approval_requirement_for_command(ExecApprovalRequest {
             command: &command,
-            approval_policy: AskForApproval::OnRequest,
+            approval_policy: ApprovalPolicy::Interactive,
             sandbox_policy: &SandboxPolicy::RootAccess,
             file_system_sandbox_policy: &unrestricted_file_system_sandbox_policy(),
             sandbox_permissions: SandboxPermissions::RequireEscalated,
@@ -1065,7 +1065,7 @@ async fn heuristics_apply_when_other_commands_match_policy() {
         ExecPolicyManager::new(policy)
             .create_exec_approval_requirement_for_command(ExecApprovalRequest {
                 command: &command,
-                approval_policy: AskForApproval::UnlessTrusted,
+                approval_policy: ApprovalPolicy::Supervised,
                 sandbox_policy: &SandboxPolicy::RootAccess,
                 file_system_sandbox_policy: &unrestricted_file_system_sandbox_policy(),
                 sandbox_permissions: SandboxPermissions::UseDefault,
@@ -1140,7 +1140,7 @@ async fn proposed_execpolicy_amendment_is_present_for_single_command_without_pol
     let requirement = manager
         .create_exec_approval_requirement_for_command(ExecApprovalRequest {
             command: &command,
-            approval_policy: AskForApproval::UnlessTrusted,
+            approval_policy: ApprovalPolicy::Supervised,
             sandbox_policy: &SandboxPolicy::new_read_only_policy(),
             file_system_sandbox_policy: &read_only_file_system_sandbox_policy(),
             sandbox_permissions: SandboxPermissions::UseDefault,
@@ -1171,7 +1171,7 @@ async fn proposed_execpolicy_amendment_is_omitted_when_policy_prompts() {
     let requirement = manager
         .create_exec_approval_requirement_for_command(ExecApprovalRequest {
             command: &command,
-            approval_policy: AskForApproval::OnRequest,
+            approval_policy: ApprovalPolicy::Interactive,
             sandbox_policy: &SandboxPolicy::RootAccess,
             file_system_sandbox_policy: &unrestricted_file_system_sandbox_policy(),
             sandbox_permissions: SandboxPermissions::UseDefault,
@@ -1199,7 +1199,7 @@ async fn proposed_execpolicy_amendment_is_present_for_multi_command_scripts() {
     let requirement = manager
         .create_exec_approval_requirement_for_command(ExecApprovalRequest {
             command: &command,
-            approval_policy: AskForApproval::UnlessTrusted,
+            approval_policy: ApprovalPolicy::Supervised,
             sandbox_policy: &SandboxPolicy::new_read_only_policy(),
             file_system_sandbox_policy: &read_only_file_system_sandbox_policy(),
             sandbox_permissions: SandboxPermissions::UseDefault,
@@ -1238,7 +1238,7 @@ async fn proposed_execpolicy_amendment_uses_first_no_match_in_multi_command_scri
         ExecPolicyManager::new(policy)
             .create_exec_approval_requirement_for_command(ExecApprovalRequest {
                 command: &command,
-                approval_policy: AskForApproval::UnlessTrusted,
+                approval_policy: ApprovalPolicy::Supervised,
                 sandbox_policy: &SandboxPolicy::new_read_only_policy(),
                 file_system_sandbox_policy: &read_only_file_system_sandbox_policy(),
                 sandbox_permissions: SandboxPermissions::UseDefault,
@@ -1262,7 +1262,7 @@ async fn proposed_execpolicy_amendment_is_present_when_heuristics_allow() {
     let requirement = manager
         .create_exec_approval_requirement_for_command(ExecApprovalRequest {
             command: &command,
-            approval_policy: AskForApproval::OnRequest,
+            approval_policy: ApprovalPolicy::Interactive,
             sandbox_policy: &SandboxPolicy::new_read_only_policy(),
             file_system_sandbox_policy: &read_only_file_system_sandbox_policy(),
             sandbox_permissions: SandboxPermissions::UseDefault,
@@ -1293,7 +1293,7 @@ async fn proposed_execpolicy_amendment_is_suppressed_when_policy_matches_allow()
     let requirement = manager
         .create_exec_approval_requirement_for_command(ExecApprovalRequest {
             command: &command,
-            approval_policy: AskForApproval::OnRequest,
+            approval_policy: ApprovalPolicy::Interactive,
             sandbox_policy: &SandboxPolicy::new_read_only_policy(),
             file_system_sandbox_policy: &read_only_file_system_sandbox_policy(),
             sandbox_permissions: SandboxPermissions::UseDefault,
@@ -1452,7 +1452,7 @@ async fn dangerous_rm_rf_requires_approval_in_root_access() {
     let requirement = manager
         .create_exec_approval_requirement_for_command(ExecApprovalRequest {
             command: &command,
-            approval_policy: AskForApproval::OnRequest,
+            approval_policy: ApprovalPolicy::Interactive,
             sandbox_policy: &SandboxPolicy::RootAccess,
             file_system_sandbox_policy: &unrestricted_file_system_sandbox_policy(),
             sandbox_permissions: SandboxPermissions::UseDefault,

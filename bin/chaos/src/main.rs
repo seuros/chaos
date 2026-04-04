@@ -978,7 +978,7 @@ mod tests {
                 "--sandbox",
                 "workspace-write",
                 "--ask-for-approval",
-                "on-request",
+                "interactive",
                 "-m",
                 "gpt-5.1-test",
                 "-p",
@@ -1000,7 +1000,7 @@ mod tests {
         );
         assert_matches!(
             interactive.approval_policy,
-            Some(chaos_getopt::ApprovalModeCliArg::OnRequest)
+            Some(chaos_getopt::ApprovalModeCliArg::Interactive)
         );
         assert!(interactive.full_auto);
         assert_eq!(

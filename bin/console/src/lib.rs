@@ -11,7 +11,7 @@ use chaos_ipc::ProcessId;
 use chaos_ipc::config_types::AltScreenMode;
 use chaos_ipc::config_types::SandboxMode;
 use chaos_ipc::product::CHAOS_VERSION;
-use chaos_ipc::protocol::AskForApproval;
+use chaos_ipc::protocol::ApprovalPolicy;
 use chaos_kern::AuthManager;
 use chaos_kern::INTERACTIVE_SESSION_SOURCES;
 use chaos_kern::ProcessSortKey;
@@ -204,10 +204,10 @@ pub async fn run_main(
     let (sandbox_mode, approval_policy) = if cli.full_auto {
         (
             Some(SandboxMode::WorkspaceWrite),
-            Some(AskForApproval::OnRequest),
+            Some(ApprovalPolicy::Interactive),
         )
     } else if cli.dangerously_bypass_approvals_and_sandbox {
-        (Some(SandboxMode::RootAccess), Some(AskForApproval::Never))
+        (Some(SandboxMode::RootAccess), Some(ApprovalPolicy::Headless))
     } else {
         (
             cli.sandbox_mode.map(Into::<SandboxMode>::into),
@@ -966,7 +966,7 @@ fn should_show_trust_screen(config: &Config) -> bool {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use chaos_ipc::protocol::AskForApproval;
+    use chaos_ipc::protocol::ApprovalPolicy;
     use chaos_kern::config::ConfigBuilder;
     use chaos_kern::config::ConfigOverrides;
     use chaos_kern::config::ProjectConfig;
@@ -1046,7 +1046,7 @@ trust_level = "untrusted"
             .await?;
         assert_eq!(
             trusted_config.permissions.approval_policy.value(),
-            AskForApproval::OnRequest
+            ApprovalPolicy::Interactive
         );
 
         let untrusted_overrides = ConfigOverrides {
@@ -1060,7 +1060,7 @@ trust_level = "untrusted"
             .await?;
         assert_eq!(
             untrusted_config.permissions.approval_policy.value(),
-            AskForApproval::UnlessTrusted
+            ApprovalPolicy::Supervised
         );
         Ok(())
     }

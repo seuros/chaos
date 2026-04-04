@@ -15,7 +15,7 @@ use chaos_ipc::models::ContentItem;
 use chaos_ipc::models::FunctionCallOutputPayload;
 use chaos_ipc::models::ResponseItem;
 use chaos_ipc::openai_models::ModelInfo;
-use chaos_ipc::protocol::AskForApproval;
+use chaos_ipc::protocol::ApprovalPolicy;
 use chaos_ipc::protocol::SessionSource;
 use chaos_ipc::protocol::SubAgentSource;
 use chaos_parrot::anthropic::AnthropicAuth;
@@ -33,7 +33,7 @@ fn test_model_client(session_source: SessionSource) -> ModelClient {
         ProcessId::new(),
         provider,
         session_source,
-        AskForApproval::OnRequest,
+        ApprovalPolicy::Interactive,
         None,
         false,
         false,
@@ -159,7 +159,7 @@ fn resolve_anthropic_auth_uses_bearer_token_from_provider_config() {
         ProcessId::new(),
         provider,
         SessionSource::Cli,
-        AskForApproval::OnRequest,
+        ApprovalPolicy::Interactive,
         None,
         false,
         false,
@@ -185,7 +185,7 @@ fn resolve_anthropic_auth_errors_when_provider_has_no_static_auth() {
         ProcessId::new(),
         test_anthropic_provider(),
         SessionSource::Cli,
-        AskForApproval::OnRequest,
+        ApprovalPolicy::Interactive,
         None,
         false,
         false,
@@ -204,11 +204,11 @@ fn resolve_anthropic_auth_errors_when_provider_has_no_static_auth() {
 #[test]
 fn clamp_permission_mode_matches_codex_session_start_mapping() {
     assert_eq!(
-        clamp_permission_mode(AskForApproval::Never),
+        clamp_permission_mode(ApprovalPolicy::Headless),
         "bypassPermissions"
     );
-    assert_eq!(clamp_permission_mode(AskForApproval::OnRequest), "default");
-    assert_eq!(clamp_permission_mode(AskForApproval::OnFailure), "default");
+    assert_eq!(clamp_permission_mode(ApprovalPolicy::Interactive), "default");
+    assert_eq!(clamp_permission_mode(ApprovalPolicy::Interactive), "default");
 }
 
 #[test]

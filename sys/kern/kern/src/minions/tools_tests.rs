@@ -7,7 +7,7 @@ use crate::chaos::make_session_and_context;
 use crate::config::DEFAULT_AGENT_MAX_DEPTH;
 use crate::config::types::ShellEnvironmentPolicy;
 use crate::function_tool::FunctionCallError;
-use crate::protocol::AskForApproval;
+use crate::protocol::ApprovalPolicy;
 use crate::protocol::FileSystemSandboxPolicy;
 use crate::protocol::NetworkSandboxPolicy;
 use crate::protocol::Op;
@@ -153,7 +153,7 @@ async fn spawn_agent_rejects_when_message_and_items_are_both_set() {
 }
 
 #[tokio::test]
-async fn spawn_agent_uses_explorer_role_and_preserves_approval_policy() {
+async fn spawn_agent_uses_scout_role_and_preserves_approval_policy() {
     #[derive(Debug, Deserialize)]
     struct SpawnAgentResult {
         agent_id: String,
@@ -170,10 +170,10 @@ async fn spawn_agent_uses_explorer_role_and_preserves_approval_policy() {
     config
         .permissions
         .approval_policy
-        .set(AskForApproval::OnRequest)
+        .set(ApprovalPolicy::Interactive)
         .expect("approval policy should be set");
     turn.approval_policy
-        .set(AskForApproval::OnRequest)
+        .set(ApprovalPolicy::Interactive)
         .expect("approval policy should be set");
     turn.provider = provider;
     turn.config = Arc::new(config);
@@ -184,7 +184,7 @@ async fn spawn_agent_uses_explorer_role_and_preserves_approval_policy() {
         "spawn_agent",
         function_payload(json!({
             "message": "inspect this repo",
-            "agent_type": "explorer"
+            "agent_type": "scout"
         })),
     );
     let output = SpawnAgentHandler
@@ -207,7 +207,7 @@ async fn spawn_agent_uses_explorer_role_and_preserves_approval_policy() {
         .expect("spawned agent thread should exist")
         .config_snapshot()
         .await;
-    assert_eq!(snapshot.approval_policy, AskForApproval::OnRequest);
+    assert_eq!(snapshot.approval_policy, ApprovalPolicy::Interactive);
     assert_eq!(snapshot.model_provider_id, "openai");
 }
 
@@ -263,7 +263,7 @@ async fn spawn_agent_reapplies_runtime_sandbox_after_role_config() {
         FileSystemSandboxPolicy::from_legacy_sandbox_policy(&expected_sandbox, &turn.cwd);
     let expected_network_sandbox_policy = NetworkSandboxPolicy::from(&expected_sandbox);
     turn.approval_policy
-        .set(AskForApproval::OnRequest)
+        .set(ApprovalPolicy::Interactive)
         .expect("approval policy should be set");
     turn.sandbox_policy
         .set(expected_sandbox.clone())
@@ -282,7 +282,7 @@ async fn spawn_agent_reapplies_runtime_sandbox_after_role_config() {
         "spawn_agent",
         function_payload(json!({
             "message": "await this command",
-            "agent_type": "explorer"
+            "agent_type": "scout"
         })),
     );
     let output = SpawnAgentHandler
@@ -307,7 +307,7 @@ async fn spawn_agent_reapplies_runtime_sandbox_after_role_config() {
         .config_snapshot()
         .await;
     assert_eq!(snapshot.sandbox_policy, expected_sandbox);
-    assert_eq!(snapshot.approval_policy, AskForApproval::OnRequest);
+    assert_eq!(snapshot.approval_policy, ApprovalPolicy::Interactive);
     let child_thread = manager
         .get_process(agent_id)
         .await
@@ -1027,7 +1027,7 @@ async fn build_agent_spawn_config_uses_turn_context_values() {
     let base_instructions = BaseInstructions {
         text: "base".to_string(),
     };
-    turn.developer_instructions = Some("dev".to_string());
+    turn.minion_instructions = Some("dev".to_string());
     turn.compact_prompt = Some("compact".to_string());
     turn.shell_environment_policy = ShellEnvironmentPolicy {
         use_profile: true,
@@ -1049,7 +1049,7 @@ async fn build_agent_spawn_config_uses_turn_context_values() {
     turn.file_system_sandbox_policy = file_system_sandbox_policy.clone();
     turn.network_sandbox_policy = network_sandbox_policy;
     turn.approval_policy
-        .set(AskForApproval::OnRequest)
+        .set(ApprovalPolicy::Interactive)
         .expect("approval policy set");
 
     let config = build_agent_spawn_config(&base_instructions, &turn).expect("spawn config");
@@ -1059,7 +1059,7 @@ async fn build_agent_spawn_config_uses_turn_context_values() {
     expected.model_provider = turn.provider.clone();
     expected.model_reasoning_effort = turn.reasoning_effort;
     expected.model_reasoning_summary = Some(turn.reasoning_summary);
-    expected.developer_instructions = turn.developer_instructions.clone();
+    expected.minion_instructions = turn.minion_instructions.clone();
     expected.compact_prompt = turn.compact_prompt.clone();
     expected.permissions.shell_environment_policy = turn.shell_environment_policy.clone();
     expected.alcatraz_linux_exe = turn.alcatraz_linux_exe.clone();
@@ -1067,7 +1067,7 @@ async fn build_agent_spawn_config_uses_turn_context_values() {
     expected
         .permissions
         .approval_policy
-        .set(AskForApproval::OnRequest)
+        .set(ApprovalPolicy::Interactive)
         .expect("approval policy set");
     expected
         .permissions
@@ -1102,7 +1102,7 @@ async fn build_agent_resume_config_clears_base_instructions() {
     base_config.base_instructions = Some("caller-base".to_string());
     turn.config = Arc::new(base_config);
     turn.approval_policy
-        .set(AskForApproval::OnRequest)
+        .set(ApprovalPolicy::Interactive)
         .expect("approval policy set");
 
     let config = build_agent_resume_config(&turn, 0).expect("resume config");
@@ -1113,7 +1113,7 @@ async fn build_agent_resume_config_clears_base_instructions() {
     expected.model_provider = turn.provider.clone();
     expected.model_reasoning_effort = turn.reasoning_effort;
     expected.model_reasoning_summary = Some(turn.reasoning_summary);
-    expected.developer_instructions = turn.developer_instructions.clone();
+    expected.minion_instructions = turn.minion_instructions.clone();
     expected.compact_prompt = turn.compact_prompt.clone();
     expected.permissions.shell_environment_policy = turn.shell_environment_policy.clone();
     expected.alcatraz_linux_exe = turn.alcatraz_linux_exe.clone();
@@ -1121,7 +1121,7 @@ async fn build_agent_resume_config_clears_base_instructions() {
     expected
         .permissions
         .approval_policy
-        .set(AskForApproval::OnRequest)
+        .set(ApprovalPolicy::Interactive)
         .expect("approval policy set");
     expected
         .permissions

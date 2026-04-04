@@ -31,7 +31,7 @@ use crate::sandboxing::normalize_additional_permissions;
 pub use apply_patch::ApplyPatchHandler;
 pub use arsenal::ArsenalHandler;
 use chaos_ipc::models::PermissionProfile;
-use chaos_ipc::protocol::AskForApproval;
+use chaos_ipc::protocol::ApprovalPolicy;
 pub use cron::CronHandler;
 pub use dynamic::DynamicToolHandler;
 pub use hallucinate::HallucinateHandler;
@@ -93,7 +93,7 @@ fn resolve_workdir_base_path(
 /// normalizes any path-based permissions. Errors if the request is invalid.
 pub(crate) fn normalize_and_validate_additional_permissions(
     additional_permissions_allowed: bool,
-    approval_policy: AskForApproval,
+    approval_policy: ApprovalPolicy,
     sandbox_permissions: SandboxPermissions,
     additional_permissions: Option<PermissionProfile>,
     permissions_preapproved: bool,
@@ -115,9 +115,9 @@ pub(crate) fn normalize_and_validate_additional_permissions(
     }
 
     if uses_additional_permissions {
-        if !permissions_preapproved && !matches!(approval_policy, AskForApproval::OnRequest) {
+        if !permissions_preapproved && !matches!(approval_policy, ApprovalPolicy::Interactive) {
             return Err(format!(
-                "approval policy is {approval_policy:?}; reject command — you cannot request additional permissions unless the approval policy is OnRequest"
+                "approval policy is {approval_policy:?}; reject command — you cannot request additional permissions unless the approval policy is Interactive"
             ));
         }
         let Some(additional_permissions) = additional_permissions else {
@@ -229,7 +229,7 @@ mod tests {
     use chaos_ipc::models::FileSystemPermissions;
     use chaos_ipc::models::NetworkPermissions;
     use chaos_ipc::models::PermissionProfile;
-    use chaos_ipc::protocol::AskForApproval;
+    use chaos_ipc::protocol::ApprovalPolicy;
     use chaos_ipc::protocol::GranularApprovalConfig;
     use chaos_realpath::AbsolutePathBuf;
     use pretty_assertions::assert_eq;
@@ -263,7 +263,7 @@ mod tests {
 
         let normalized = normalize_and_validate_additional_permissions(
             false,
-            AskForApproval::Granular(GranularApprovalConfig {
+            ApprovalPolicy::Granular(GranularApprovalConfig {
                 sandbox_approval: true,
                 rules: true,
                 skill_approval: true,
@@ -286,7 +286,7 @@ mod tests {
 
         let err = normalize_and_validate_additional_permissions(
             false,
-            AskForApproval::OnRequest,
+            ApprovalPolicy::Interactive,
             SandboxPermissions::WithAdditionalPermissions,
             Some(network_permissions()),
             false,

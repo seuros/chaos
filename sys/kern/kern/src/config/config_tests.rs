@@ -3004,7 +3004,7 @@ async fn agent_role_relative_config_file_resolves_against_config_toml() -> std::
     .await?;
     tokio::fs::write(
         &role_config_path,
-        "developer_instructions = \"Research carefully\"\nmodel = \"gpt-5\"",
+        "minion_instructions = \"Research carefully\"\nmodel = \"gpt-5\"",
     )
     .await?;
     tokio::fs::write(
@@ -3056,7 +3056,7 @@ async fn agent_role_file_metadata_overrides_config_toml_metadata() -> std::io::R
         r#"
 description = "Role metadata from file"
 nickname_candidates = ["Hypatia"]
-developer_instructions = "Research carefully"
+minion_instructions = "Research carefully"
 model = "gpt-5"
 "#,
     )
@@ -3093,7 +3093,7 @@ nickname_candidates = ["Noether"]
 }
 
 #[tokio::test]
-async fn agent_role_file_without_developer_instructions_is_dropped_with_warning()
+async fn agent_role_file_without_minion_instructions_is_dropped_with_warning()
 -> std::io::Result<()> {
     let chaos_home = TempDir::new()?;
     let repo_root = TempDir::new()?;
@@ -3128,7 +3128,7 @@ model = "gpt-5"
         r#"
 name = "reviewer"
 description = "Review role"
-developer_instructions = "Review carefully"
+minion_instructions = "Review carefully"
 model = "gpt-5"
 "#,
     )
@@ -3154,14 +3154,14 @@ model = "gpt-5"
         config
             .startup_warnings
             .iter()
-            .any(|warning| warning.contains("must define `developer_instructions`"))
+            .any(|warning| warning.contains("must define `minion_instructions`"))
     );
 
     Ok(())
 }
 
 #[tokio::test]
-async fn legacy_agent_role_config_file_allows_missing_developer_instructions() -> std::io::Result<()>
+async fn legacy_agent_role_config_file_allows_missing_minion_instructions() -> std::io::Result<()>
 {
     let chaos_home = TempDir::new()?;
     let role_config_path = chaos_home.path().join("agents").join("researcher.toml");
@@ -3225,7 +3225,7 @@ async fn agent_role_without_description_after_merge_is_dropped_with_warning() ->
     tokio::fs::write(
         &role_config_path,
         r#"
-developer_instructions = "Research carefully"
+minion_instructions = "Research carefully"
 model = "gpt-5"
 "#,
     )
@@ -3289,7 +3289,7 @@ trust_level = "trusted"
         standalone_agents_dir.join("researcher.toml"),
         r#"
 description = "Role metadata from file"
-developer_instructions = "Research carefully"
+minion_instructions = "Research carefully"
 "#,
     )
     .await?;
@@ -3298,7 +3298,7 @@ developer_instructions = "Research carefully"
         r#"
 name = "reviewer"
 description = "Review role"
-developer_instructions = "Review carefully"
+minion_instructions = "Review carefully"
 "#,
     )
     .await?;
@@ -3344,7 +3344,7 @@ async fn agent_role_file_name_takes_precedence_over_config_key() -> std::io::Res
         r#"
 name = "archivist"
 description = "Role metadata from file"
-developer_instructions = "Research carefully"
+minion_instructions = "Research carefully"
 model = "gpt-5"
 "#,
     )
@@ -3387,12 +3387,12 @@ async fn loads_legacy_split_agent_roles_from_config_toml() -> std::io::Result<()
     .await?;
     tokio::fs::write(
         &researcher_path,
-        "developer_instructions = \"Research carefully\"\nmodel = \"gpt-5\"",
+        "minion_instructions = \"Research carefully\"\nmodel = \"gpt-5\"",
     )
     .await?;
     tokio::fs::write(
         &reviewer_path,
-        "developer_instructions = \"Review carefully\"\nmodel = \"gpt-4.1\"",
+        "minion_instructions = \"Review carefully\"\nmodel = \"gpt-4.1\"",
     )
     .await?;
     tokio::fs::write(
@@ -3497,7 +3497,7 @@ trust_level = "trusted"
         r#"
 name = "researcher"
 description = "from root"
-developer_instructions = "Research carefully"
+minion_instructions = "Research carefully"
 "#,
     )?;
 
@@ -3519,7 +3519,7 @@ developer_instructions = "Research carefully"
 name = "reviewer"
 description = "from nested"
 nickname_candidates = ["Atlas"]
-developer_instructions = "Review carefully"
+minion_instructions = "Review carefully"
 "#,
     )?;
 
@@ -3540,7 +3540,7 @@ developer_instructions = "Review carefully"
 name = "writer"
 description = "from sibling"
 nickname_candidates = ["Sagan"]
-developer_instructions = "Write carefully"
+minion_instructions = "Write carefully"
 "#,
     )?;
 
@@ -3629,7 +3629,7 @@ nickname_candidates = ["Ada"]
     tokio::fs::write(
         home_agents_dir.join("researcher.toml"),
         r#"
-developer_instructions = "Research carefully"
+minion_instructions = "Research carefully"
 model = "gpt-5"
 "#,
     )
@@ -3637,7 +3637,7 @@ model = "gpt-5"
     tokio::fs::write(
         home_agents_dir.join("critic.toml"),
         r#"
-developer_instructions = "Critique carefully"
+minion_instructions = "Critique carefully"
 model = "gpt-4.1"
 "#,
     )
@@ -3651,7 +3651,7 @@ model = "gpt-4.1"
 name = "researcher"
 description = "Research role from file"
 nickname_candidates = ["Hypatia"]
-developer_instructions = "Research from file"
+minion_instructions = "Research from file"
 model = "gpt-5-mini"
 "#,
     )
@@ -3662,7 +3662,7 @@ model = "gpt-5-mini"
 name = "writer"
 description = "Writer role from file"
 nickname_candidates = ["Sagan"]
-developer_instructions = "Write carefully"
+minion_instructions = "Write carefully"
 model = "gpt-5"
 "#,
     )
@@ -3769,7 +3769,7 @@ config_file = "./agents/researcher.toml"
     tokio::fs::write(
         home_agents_dir.join("researcher.toml"),
         r#"
-developer_instructions = "Research carefully"
+minion_instructions = "Research carefully"
 model = "gpt-5"
 "#,
     )
@@ -3782,7 +3782,7 @@ model = "gpt-5"
         r#"
 name = "researcher"
 nickname_candidates = ["Hypatia"]
-developer_instructions = "Research from file"
+minion_instructions = "Research from file"
 model = "gpt-5-mini"
 "#,
     )
@@ -4024,7 +4024,7 @@ fn model_catalog_json_rejects_empty_catalog() -> std::io::Result<()> {
 fn create_test_fixture() -> std::io::Result<PrecedenceTestFixture> {
     let toml = r#"
 model = "o3"
-approval_policy = "untrusted"
+approval_policy = "supervised"
 
 # Can be used to determine which profile to use if not specified by
 # `ConfigOverrides`.
@@ -4045,7 +4045,7 @@ stream_idle_timeout_ms = 300000    # 5m idle timeout
 [profiles.o3]
 model = "o3"
 model_provider = "openai"
-approval_policy = "never"
+approval_policy = "headless"
 model_reasoning_effort = "high"
 model_reasoning_summary = "detailed"
 
@@ -4056,7 +4056,7 @@ model_provider = "openai-custom"
 [profiles.zdr]
 model = "o3"
 model_provider = "openai"
-approval_policy = "on-failure"
+approval_policy = "interactive"
 
 [profiles.zdr.analytics]
 enabled = false
@@ -4064,7 +4064,7 @@ enabled = false
 [profiles.gpt5]
 model = "gpt-5.1"
 model_provider = "openai"
-approval_policy = "on-failure"
+approval_policy = "interactive"
 model_reasoning_effort = "high"
 model_reasoning_summary = "detailed"
 model_verbosity = "high"
@@ -4155,7 +4155,7 @@ fn test_precedence_fixture_with_o3_profile() -> std::io::Result<()> {
             model_provider_id: "openai".to_string(),
             model_provider: fixture.openai_provider.clone(),
             permissions: Permissions {
-                approval_policy: Constrained::allow_any(AskForApproval::Never),
+                approval_policy: Constrained::allow_any(ApprovalPolicy::Headless),
                 sandbox_policy: Constrained::allow_any(SandboxPolicy::new_read_only_policy()),
                 file_system_sandbox_policy: FileSystemSandboxPolicy::from(
                     &SandboxPolicy::new_read_only_policy(),
@@ -4214,7 +4214,7 @@ fn test_precedence_fixture_with_o3_profile() -> std::io::Result<()> {
             experimental_realtime_ws_backend_prompt: None,
             experimental_realtime_ws_startup_context: None,
             base_instructions: None,
-            developer_instructions: None,
+            minion_instructions: None,
             compact_prompt: None,
 
             forced_chatgpt_workspace_id: None,
@@ -4289,7 +4289,7 @@ fn test_precedence_fixture_with_gpt3_profile() -> std::io::Result<()> {
         model_provider_id: "openai-custom".to_string(),
         model_provider: fixture.openai_custom_provider.clone(),
         permissions: Permissions {
-            approval_policy: Constrained::allow_any(AskForApproval::UnlessTrusted),
+            approval_policy: Constrained::allow_any(ApprovalPolicy::Supervised),
             sandbox_policy: Constrained::allow_any(SandboxPolicy::new_read_only_policy()),
             file_system_sandbox_policy: FileSystemSandboxPolicy::from(
                 &SandboxPolicy::new_read_only_policy(),
@@ -4348,7 +4348,7 @@ fn test_precedence_fixture_with_gpt3_profile() -> std::io::Result<()> {
         experimental_realtime_ws_backend_prompt: None,
         experimental_realtime_ws_startup_context: None,
         base_instructions: None,
-        developer_instructions: None,
+        minion_instructions: None,
         compact_prompt: None,
         forced_chatgpt_workspace_id: None,
         forced_login_method: None,
@@ -4420,7 +4420,7 @@ fn test_precedence_fixture_with_zdr_profile() -> std::io::Result<()> {
         model_provider_id: "openai".to_string(),
         model_provider: fixture.openai_provider.clone(),
         permissions: Permissions {
-            approval_policy: Constrained::allow_any(AskForApproval::OnFailure),
+            approval_policy: Constrained::allow_any(ApprovalPolicy::Interactive),
             sandbox_policy: Constrained::allow_any(SandboxPolicy::new_read_only_policy()),
             file_system_sandbox_policy: FileSystemSandboxPolicy::from(
                 &SandboxPolicy::new_read_only_policy(),
@@ -4479,7 +4479,7 @@ fn test_precedence_fixture_with_zdr_profile() -> std::io::Result<()> {
         experimental_realtime_ws_backend_prompt: None,
         experimental_realtime_ws_startup_context: None,
         base_instructions: None,
-        developer_instructions: None,
+        minion_instructions: None,
         compact_prompt: None,
         forced_chatgpt_workspace_id: None,
         forced_login_method: None,
@@ -4537,7 +4537,7 @@ fn test_precedence_fixture_with_gpt5_profile() -> std::io::Result<()> {
         model_provider_id: "openai".to_string(),
         model_provider: fixture.openai_provider.clone(),
         permissions: Permissions {
-            approval_policy: Constrained::allow_any(AskForApproval::OnFailure),
+            approval_policy: Constrained::allow_any(ApprovalPolicy::Interactive),
             sandbox_policy: Constrained::allow_any(SandboxPolicy::new_read_only_policy()),
             file_system_sandbox_policy: FileSystemSandboxPolicy::from(
                 &SandboxPolicy::new_read_only_policy(),
@@ -4596,7 +4596,7 @@ fn test_precedence_fixture_with_gpt5_profile() -> std::io::Result<()> {
         experimental_realtime_ws_backend_prompt: None,
         experimental_realtime_ws_startup_context: None,
         base_instructions: None,
-        developer_instructions: None,
+        minion_instructions: None,
         compact_prompt: None,
         forced_chatgpt_workspace_id: None,
         forced_login_method: None,
@@ -5113,11 +5113,11 @@ fn test_untrusted_project_gets_unless_trusted_approval_policy() -> anyhow::Resul
         chaos_home.path().to_path_buf(),
     )?;
 
-    // Verify that untrusted projects get UnlessTrusted approval policy
+    // Verify that untrusted projects get Supervised approval policy
     assert_eq!(
         config.permissions.approval_policy.value(),
-        AskForApproval::UnlessTrusted,
-        "Expected UnlessTrusted approval policy for untrusted project"
+        ApprovalPolicy::Supervised,
+        "Expected Supervised approval policy for untrusted project"
     );
 
     assert!(
@@ -5247,7 +5247,7 @@ trust_level = "untrusted"
         .fallback_cwd(Some(workspace.path().to_path_buf()))
         .cloud_requirements(CloudRequirementsLoader::new(async {
             Ok(Some(crate::config_loader::ConfigRequirementsToml {
-                allowed_approval_policies: Some(vec![AskForApproval::OnRequest]),
+                allowed_approval_policies: Some(vec![ApprovalPolicy::Interactive]),
                 ..Default::default()
             }))
         }))
@@ -5256,7 +5256,7 @@ trust_level = "untrusted"
 
     assert_eq!(
         config.permissions.approval_policy.value(),
-        AskForApproval::OnRequest
+        ApprovalPolicy::Interactive
     );
     Ok(())
 }
@@ -5267,7 +5267,7 @@ async fn explicit_approval_policy_falls_back_when_disallowed_by_requirements() -
     let chaos_home = TempDir::new()?;
     std::fs::write(
         chaos_home.path().join(CONFIG_TOML_FILE),
-        r#"approval_policy = "untrusted"
+        r#"approval_policy = "supervised"
 "#,
     )?;
 
@@ -5276,7 +5276,7 @@ async fn explicit_approval_policy_falls_back_when_disallowed_by_requirements() -
         .fallback_cwd(Some(chaos_home.path().to_path_buf()))
         .cloud_requirements(CloudRequirementsLoader::new(async {
             Ok(Some(crate::config_loader::ConfigRequirementsToml {
-                allowed_approval_policies: Some(vec![AskForApproval::OnRequest]),
+                allowed_approval_policies: Some(vec![ApprovalPolicy::Interactive]),
                 ..Default::default()
             }))
         }))
@@ -5284,7 +5284,7 @@ async fn explicit_approval_policy_falls_back_when_disallowed_by_requirements() -
         .await?;
     assert_eq!(
         config.permissions.approval_policy.value(),
-        AskForApproval::OnRequest
+        ApprovalPolicy::Interactive
     );
     Ok(())
 }

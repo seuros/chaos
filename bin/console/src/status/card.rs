@@ -10,7 +10,7 @@ use chaos_ipc::config_types::SANDBOX_MODE_READ_ONLY;
 use chaos_ipc::config_types::SANDBOX_MODE_ROOT_ACCESS;
 use chaos_ipc::config_types::SANDBOX_MODE_WORKSPACE_WRITE;
 use chaos_ipc::openai_models::ReasoningEffort;
-use chaos_ipc::protocol::AskForApproval;
+use chaos_ipc::protocol::ApprovalPolicy;
 use chaos_ipc::protocol::NetworkAccess;
 use chaos_ipc::protocol::SandboxPolicy;
 use chaos_ipc::protocol::TokenUsage;
@@ -216,12 +216,12 @@ impl StatusHistoryCell {
                 }
             }
         };
-        let permissions = if config.permissions.approval_policy.value() == AskForApproval::OnRequest
+        let permissions = if config.permissions.approval_policy.value() == ApprovalPolicy::Interactive
             && *config.permissions.sandbox_policy.get()
                 == SandboxPolicy::new_workspace_write_policy()
         {
             "Default".to_string()
-        } else if config.permissions.approval_policy.value() == AskForApproval::Never
+        } else if config.permissions.approval_policy.value() == ApprovalPolicy::Headless
             && *config.permissions.sandbox_policy.get() == SandboxPolicy::RootAccess
         {
             "Full Access".to_string()

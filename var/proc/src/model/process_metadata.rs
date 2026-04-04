@@ -1,6 +1,6 @@
 use anyhow::Result;
 use chaos_ipc::ProcessId;
-use chaos_ipc::protocol::AskForApproval;
+use chaos_ipc::protocol::ApprovalPolicy;
 use chaos_ipc::protocol::SandboxPolicy;
 use chaos_ipc::protocol::SessionSource;
 use sqlx::Row;
@@ -113,7 +113,7 @@ pub struct ProcessMetadataBuilder {
     /// The sandbox policy.
     pub sandbox_policy: SandboxPolicy,
     /// The approval mode.
-    pub approval_mode: AskForApproval,
+    pub approval_mode: ApprovalPolicy,
     /// The archive timestamp, if the thread is archived.
     pub archived_at: Option<jiff::Timestamp>,
     /// The git commit SHA, if known.
@@ -138,7 +138,7 @@ impl ProcessMetadataBuilder {
             cwd: PathBuf::new(),
             cli_version: None,
             sandbox_policy: SandboxPolicy::new_read_only_policy(),
-            approval_mode: AskForApproval::OnRequest,
+            approval_mode: ApprovalPolicy::Interactive,
             archived_at: None,
             git_sha: None,
             git_branch: None,

@@ -194,7 +194,7 @@ impl ToolHandler for UnifiedExecHandler {
                     && !effective_additional_permissions.permissions_preapproved
                     && !matches!(
                         context.turn.approval_policy.value(),
-                        chaos_ipc::protocol::AskForApproval::OnRequest
+                        chaos_ipc::protocol::ApprovalPolicy::Interactive
                     )
                 {
                     let approval_policy = context.turn.approval_policy.value();

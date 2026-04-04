@@ -11,7 +11,7 @@ use crate::memories::storage::sync_rollout_summaries_from_memories;
 use crate::minions::AgentStatus;
 use crate::minions::status::is_final as is_final_agent_status;
 use chaos_ipc::ProcessId;
-use chaos_ipc::protocol::AskForApproval;
+use chaos_ipc::protocol::ApprovalPolicy;
 use chaos_ipc::protocol::SandboxPolicy;
 use chaos_ipc::protocol::SessionSource;
 use chaos_ipc::protocol::SubAgentSource;
@@ -68,13 +68,13 @@ pub(super) async fn run(session: &Arc<Session>, config: Arc<Config>) {
         }
     };
 
-    // 2. Resolve the consolidation model and gate reasoning effort on model capabilities.
-    let consolidation_model = config
-        .memories
-        .consolidation_model
-        .clone()
-        .or_else(|| config.model.clone())
-        .unwrap_or_default();
+    // 2. Resolve the consolidation model from the active session turn and gate reasoning effort
+    //    on model capabilities.
+    let turn_context = session.new_default_turn().await;
+    let consolidation_model = super::resolve_memory_model_name(
+        config.memories.consolidation_model.as_deref(),
+        turn_context.model_info.slug.as_str(),
+    );
     let consolidation_model_info = session
         .services
         .models_manager
@@ -84,7 +84,9 @@ pub(super) async fn run(session: &Arc<Session>, config: Arc<Config>) {
         super::reasoning_effort_for_model(&consolidation_model_info, phase_two::REASONING_EFFORT);
 
     // 3. Get the config for the agent
-    let Some(agent_config) = agent::get_config(config.clone(), reasoning_effort) else {
+    let Some(agent_config) =
+        agent::get_config(config.clone(), consolidation_model, reasoning_effort)
+    else {
         // If we can't get the config, we can't consolidate.
         tracing::error!("failed to get agent config");
         job::failed(session, db, &claim, "failed_sandbox_policy").await;
@@ -277,6 +279,7 @@ mod agent {
 
     pub(super) fn get_config(
         config: Arc<Config>,
+        model: String,
         reasoning_effort: Option<chaos_ipc::openai_models::ReasoningEffort>,
     ) -> Option<Config> {
         let root = memory_root(&config.chaos_home);
@@ -284,7 +287,7 @@ mod agent {
 
         agent_config.cwd = root;
         // Approval policy
-        agent_config.permissions.approval_policy = Constrained::allow_only(AskForApproval::Never);
+        agent_config.permissions.approval_policy = Constrained::allow_only(ApprovalPolicy::Headless);
         // Consolidation runs as an internal sub-agent and must not recursively delegate.
         let _ = agent_config.features.disable(Feature::SpawnCsv);
         let _ = agent_config.features.disable(Feature::Collab);
@@ -312,14 +315,7 @@ mod agent {
             .set(consolidation_sandbox_policy)
             .ok()?;
 
-        agent_config.model = Some(
-            config
-                .memories
-                .consolidation_model
-                .clone()
-                .or_else(|| config.model.clone())
-                .unwrap_or_default(),
-        );
+        agent_config.model = Some(model);
         agent_config.model_reasoning_effort = reasoning_effort;
 
         Some(agent_config)

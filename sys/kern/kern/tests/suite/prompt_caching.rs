@@ -7,7 +7,7 @@ use chaos_ipc::config_types::ReasoningSummary;
 use chaos_ipc::config_types::Settings;
 use chaos_ipc::config_types::WebSearchMode;
 use chaos_ipc::openai_models::ReasoningEffort;
-use chaos_ipc::protocol::AskForApproval;
+use chaos_ipc::protocol::ApprovalPolicy;
 use chaos_ipc::protocol::ENVIRONMENT_CONTEXT_OPEN_TAG;
 use chaos_ipc::protocol::EventMsg;
 use chaos_ipc::protocol::Op;
@@ -412,7 +412,7 @@ async fn overrides_turn_context_but_keeps_cached_prefix_and_key_constant() -> an
     codex
         .submit(Op::OverrideTurnContext {
             cwd: None,
-            approval_policy: Some(AskForApproval::Never),
+            approval_policy: Some(ApprovalPolicy::Headless),
             approvals_reviewer: None,
             sandbox_policy: Some(new_policy.clone()),
             windows_sandbox_level: None,
@@ -488,14 +488,14 @@ async fn override_before_first_turn_emits_environment_context() -> anyhow::Resul
         settings: Settings {
             model: "gpt-5.1".to_string(),
             reasoning_effort: Some(ReasoningEffort::High),
-            developer_instructions: None,
+            minion_instructions: None,
         },
     };
 
     codex
         .submit(Op::OverrideTurnContext {
             cwd: None,
-            approval_policy: Some(AskForApproval::Never),
+            approval_policy: Some(ApprovalPolicy::Headless),
             approvals_reviewer: None,
             sandbox_policy: None,
             windows_sandbox_level: None,
@@ -683,7 +683,7 @@ async fn per_turn_overrides_keep_cached_prefix_and_key_constant() -> anyhow::Res
                 text_elements: Vec::new(),
             }],
             cwd: new_cwd.path().to_path_buf(),
-            approval_policy: AskForApproval::Never,
+            approval_policy: ApprovalPolicy::Headless,
             sandbox_policy: new_policy.clone(),
             model: "o3".to_string(),
             effort: Some(ReasoningEffort::High),
@@ -931,7 +931,7 @@ async fn send_user_turn_with_changes_sends_environment_context() -> anyhow::Resu
                 text_elements: Vec::new(),
             }],
             cwd: default_cwd.clone(),
-            approval_policy: AskForApproval::Never,
+            approval_policy: ApprovalPolicy::Headless,
             sandbox_policy: SandboxPolicy::RootAccess,
             model: "o3".to_string(),
             effort: Some(ReasoningEffort::High),

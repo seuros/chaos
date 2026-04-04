@@ -3,7 +3,7 @@ use anyhow::Result;
 use chaos_ipc::api::AppConfig;
 use chaos_ipc::api::AppToolApproval;
 use chaos_ipc::api::AppsConfig;
-use chaos_ipc::api::AskForApprovalV2 as AskForApproval;
+use chaos_ipc::api::ApprovalPolicyV2 as ApprovalPolicy;
 use chaos_realpath::AbsolutePathBuf;
 use pretty_assertions::assert_eq;
 use std::collections::BTreeMap;
@@ -63,7 +63,7 @@ async fn write_value_preserves_comments_and_order() -> Result<()> {
     let tmp = tempdir().expect("tempdir");
     let original = r#"# Codex user configuration
 model = "gpt-5"
-approval_policy = "on-request"
+approval_policy = "interactive"
 
 [notice]
 # Preserve this comment
@@ -89,7 +89,7 @@ unified_exec = true
     let updated = std::fs::read_to_string(tmp.path().join(CONFIG_TOML_FILE)).expect("read config");
     let expected = r#"# Codex user configuration
 model = "gpt-5"
-approval_policy = "on-request"
+approval_policy = "interactive"
 
 [notice]
 # Preserve this comment
@@ -172,7 +172,7 @@ async fn read_includes_origins_and_layers() {
     let user_file = AbsolutePathBuf::try_from(user_path.clone()).expect("user file");
 
     let managed_path = tmp.path().join("managed_config.toml");
-    std::fs::write(&managed_path, "approval_policy = \"never\"").unwrap();
+    std::fs::write(&managed_path, "approval_policy = \"headless\"").unwrap();
     let managed_file = AbsolutePathBuf::try_from(managed_path.clone()).expect("managed file");
 
     let service = ConfigService::new(
@@ -195,7 +195,7 @@ async fn read_includes_origins_and_layers() {
         .await
         .expect("response");
 
-    assert_eq!(response.config.approval_policy, Some(AskForApproval::Never));
+    assert_eq!(response.config.approval_policy, Some(ApprovalPolicy::Headless));
 
     assert_eq!(
         response
@@ -242,12 +242,12 @@ async fn write_value_reports_override() {
     let tmp = tempdir().expect("tempdir");
     std::fs::write(
         tmp.path().join(CONFIG_TOML_FILE),
-        "approval_policy = \"on-request\"",
+        "approval_policy = \"interactive\"",
     )
     .unwrap();
 
     let managed_path = tmp.path().join("managed_config.toml");
-    std::fs::write(&managed_path, "approval_policy = \"never\"").unwrap();
+    std::fs::write(&managed_path, "approval_policy = \"headless\"").unwrap();
     let managed_file = AbsolutePathBuf::try_from(managed_path.clone()).expect("managed file");
 
     let service = ConfigService::new(
@@ -266,7 +266,7 @@ async fn write_value_reports_override() {
         .write_value(ConfigValueWriteParams {
             file_path: Some(tmp.path().join(CONFIG_TOML_FILE).display().to_string()),
             key_path: "approval_policy".to_string(),
-            value: serde_json::json!("never"),
+            value: serde_json::json!("headless"),
             merge_strategy: MergeStrategy::Replace,
             expected_version: None,
         })
@@ -282,7 +282,7 @@ async fn write_value_reports_override() {
         .expect("read");
     assert_eq!(
         read_after.config.approval_policy,
-        Some(AskForApproval::Never)
+        Some(ApprovalPolicy::Headless)
     );
     assert_eq!(
         read_after
@@ -352,7 +352,7 @@ async fn invalid_user_value_rejected_even_if_overridden_by_managed() {
     std::fs::write(tmp.path().join(CONFIG_TOML_FILE), "model = \"user\"").unwrap();
 
     let managed_path = tmp.path().join("managed_config.toml");
-    std::fs::write(&managed_path, "approval_policy = \"never\"").unwrap();
+    std::fs::write(&managed_path, "approval_policy = \"headless\"").unwrap();
 
     let service = ConfigService::new(
         tmp.path().to_path_buf(),
@@ -587,7 +587,7 @@ async fn write_value_reports_managed_override() {
     std::fs::write(tmp.path().join(CONFIG_TOML_FILE), "").unwrap();
 
     let managed_path = tmp.path().join("managed_config.toml");
-    std::fs::write(&managed_path, "approval_policy = \"never\"").unwrap();
+    std::fs::write(&managed_path, "approval_policy = \"headless\"").unwrap();
     let managed_file = AbsolutePathBuf::try_from(managed_path.clone()).expect("managed file");
 
     let service = ConfigService::new(
@@ -606,7 +606,7 @@ async fn write_value_reports_managed_override() {
         .write_value(ConfigValueWriteParams {
             file_path: Some(tmp.path().join(CONFIG_TOML_FILE).display().to_string()),
             key_path: "approval_policy".to_string(),
-            value: serde_json::json!("on-request"),
+            value: serde_json::json!("interactive"),
             merge_strategy: MergeStrategy::Replace,
             expected_version: None,
         })
@@ -619,7 +619,7 @@ async fn write_value_reports_managed_override() {
         overridden.overriding_layer.name,
         ConfigLayerSource::LegacyManagedConfigTomlFromFile { file: managed_file }
     );
-    assert_eq!(overridden.effective_value, serde_json::json!("never"));
+    assert_eq!(overridden.effective_value, serde_json::json!("headless"));
 }
 
 #[tokio::test]

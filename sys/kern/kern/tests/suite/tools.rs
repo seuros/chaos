@@ -6,7 +6,7 @@ use std::time::Instant;
 
 use anyhow::Context;
 use anyhow::Result;
-use chaos_ipc::protocol::AskForApproval;
+use chaos_ipc::protocol::ApprovalPolicy;
 use chaos_ipc::protocol::SandboxPolicy;
 use chaos_kern::features::Feature;
 use chaos_kern::sandboxing::SandboxPermissions;
@@ -74,7 +74,7 @@ async fn custom_tool_unknown_returns_custom_output_error() -> Result<()> {
 
     test.submit_turn_with_policies(
         "invoke custom tool",
-        AskForApproval::Never,
+        ApprovalPolicy::Headless,
         SandboxPolicy::RootAccess,
     )
     .await?;
@@ -149,12 +149,12 @@ async fn shell_escalated_permissions_rejected_then_ok() -> Result<()> {
 
     test.submit_turn_with_policies(
         "run the shell command",
-        AskForApproval::Never,
+        ApprovalPolicy::Headless,
         SandboxPolicy::RootAccess,
     )
     .await?;
 
-    let policy = AskForApproval::Never;
+    let policy = ApprovalPolicy::Headless;
     let expected_message = format!(
         "approval policy is {policy:?}; reject command — you should not ask for escalated permissions if the approval policy is {policy:?}"
     );
@@ -307,7 +307,7 @@ async fn collect_tools(use_unified_exec: bool) -> Result<Vec<String>> {
 
     test.submit_turn_with_policies(
         "list tools",
-        AskForApproval::Never,
+        ApprovalPolicy::Headless,
         SandboxPolicy::RootAccess,
     )
     .await?;
@@ -378,7 +378,7 @@ async fn shell_timeout_includes_timeout_prefix_and_metadata() -> Result<()> {
 
     test.submit_turn_with_policies(
         "run a long command",
-        AskForApproval::Never,
+        ApprovalPolicy::Headless,
         SandboxPolicy::RootAccess,
     )
     .await?;
@@ -471,7 +471,7 @@ time.sleep(60)
     let output_str = tokio::time::timeout(Duration::from_secs(10), async {
         test.submit_turn_with_policies(
             "run a command with a detached grandchild",
-            AskForApproval::Never,
+            ApprovalPolicy::Headless,
             SandboxPolicy::RootAccess,
         )
         .await?;
@@ -558,7 +558,7 @@ async fn shell_spawn_failure_truncates_exec_error() -> Result<()> {
 
     test.submit_turn_with_policies(
         "spawn a missing binary",
-        AskForApproval::Never,
+        ApprovalPolicy::Headless,
         SandboxPolicy::RootAccess,
     )
     .await?;

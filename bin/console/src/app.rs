@@ -47,7 +47,7 @@ use chaos_ipc::openai_models::ModelAvailabilityNux;
 use chaos_ipc::openai_models::ModelPreset;
 use chaos_ipc::openai_models::ModelUpgrade;
 use chaos_ipc::openai_models::ReasoningEffort as ReasoningEffortConfig;
-use chaos_ipc::protocol::AskForApproval;
+use chaos_ipc::protocol::ApprovalPolicy;
 use chaos_ipc::protocol::Event;
 use chaos_ipc::protocol::EventMsg;
 use chaos_ipc::protocol::FinalOutput;
@@ -615,7 +615,7 @@ pub(crate) struct App {
     pub(crate) active_profile: Option<String>,
     cli_kv_overrides: Vec<(String, TomlValue)>,
     harness_overrides: ConfigOverrides,
-    runtime_approval_policy_override: Option<AskForApproval>,
+    runtime_approval_policy_override: Option<ApprovalPolicy>,
     runtime_sandbox_policy_override: Option<SandboxPolicy>,
 
     pub(crate) tile_manager: TileManager,
@@ -789,7 +789,7 @@ impl App {
     fn try_set_approval_policy_on_config(
         &mut self,
         config: &mut Config,
-        policy: AskForApproval,
+        policy: ApprovalPolicy,
         user_message_prefix: &str,
         log_message: &str,
     ) -> bool {
@@ -2094,8 +2094,7 @@ impl App {
 
                             // Place cursor in chat pane.
                             if self.tile_manager.focused() == Some(PaneId::ROOT)
-                                && let Some(chat_rect) =
-                                    self.tile_manager.pane_rect(PaneId::ROOT)
+                                && let Some(chat_rect) = self.tile_manager.pane_rect(PaneId::ROOT)
                                 && let Some((x, y)) = self.chat_widget.cursor_pos(chat_rect)
                             {
                                 frame.set_cursor_position((x, y));
@@ -2570,7 +2569,7 @@ impl App {
                     }
                 }
             }
-            AppEvent::UpdateAskForApprovalPolicy(policy) => {
+            AppEvent::UpdateApprovalPolicy(policy) => {
                 let mut config = self.config.clone();
                 if !self.try_set_approval_policy_on_config(
                     &mut config,
@@ -3670,7 +3669,7 @@ mod tests {
     use chaos_ipc::config_types::Settings;
     use chaos_ipc::openai_models::ModelAvailabilityNux;
     use chaos_ipc::protocol::AgentMessageContentDeltaEvent;
-    use chaos_ipc::protocol::AskForApproval;
+    use chaos_ipc::protocol::ApprovalPolicy;
     use chaos_ipc::protocol::Event;
     use chaos_ipc::protocol::EventMsg;
     use chaos_ipc::protocol::ProcessRolledBackEvent;
@@ -3829,7 +3828,7 @@ mod tests {
                 model: "gpt-test".to_string(),
                 model_provider_id: "test-provider".to_string(),
                 service_tier: None,
-                approval_policy: AskForApproval::Never,
+                approval_policy: ApprovalPolicy::Headless,
                 approvals_reviewer: ApprovalsReviewer::User,
                 sandbox_policy: SandboxPolicy::new_read_only_policy(),
                 cwd: PathBuf::from("/tmp/project"),
@@ -4001,7 +4000,7 @@ mod tests {
                         model: "gpt-test".to_string(),
                         model_provider_id: "test-provider".to_string(),
                         service_tier: None,
-                        approval_policy: AskForApproval::Never,
+                        approval_policy: ApprovalPolicy::Headless,
                         approvals_reviewer: ApprovalsReviewer::User,
                         sandbox_policy: SandboxPolicy::new_read_only_policy(),
                         cwd: PathBuf::from("/tmp/project"),
@@ -4025,7 +4024,7 @@ mod tests {
                 mode: None,
                 model: None,
                 reasoning_effort: None,
-                developer_instructions: None,
+                minion_instructions: None,
             },
         );
         let expected_input_state = app
@@ -4078,7 +4077,7 @@ mod tests {
                 model: "gpt-test".to_string(),
                 model_provider_id: "test-provider".to_string(),
                 service_tier: None,
-                approval_policy: AskForApproval::Never,
+                approval_policy: ApprovalPolicy::Headless,
                 approvals_reviewer: ApprovalsReviewer::User,
                 sandbox_policy: SandboxPolicy::new_read_only_policy(),
                 cwd: PathBuf::from("/tmp/project"),
@@ -4162,7 +4161,7 @@ mod tests {
                 model: "gpt-test".to_string(),
                 model_provider_id: "test-provider".to_string(),
                 service_tier: None,
-                approval_policy: AskForApproval::Never,
+                approval_policy: ApprovalPolicy::Headless,
                 approvals_reviewer: ApprovalsReviewer::User,
                 sandbox_policy: SandboxPolicy::new_read_only_policy(),
                 cwd: PathBuf::from("/tmp/project"),
@@ -4245,7 +4244,7 @@ mod tests {
                 model: "gpt-test".to_string(),
                 model_provider_id: "test-provider".to_string(),
                 service_tier: None,
-                approval_policy: AskForApproval::Never,
+                approval_policy: ApprovalPolicy::Headless,
                 approvals_reviewer: ApprovalsReviewer::User,
                 sandbox_policy: SandboxPolicy::new_read_only_policy(),
                 cwd: PathBuf::from("/tmp/project"),
@@ -4322,7 +4321,7 @@ mod tests {
                 model: "gpt-test".to_string(),
                 model_provider_id: "test-provider".to_string(),
                 service_tier: None,
-                approval_policy: AskForApproval::Never,
+                approval_policy: ApprovalPolicy::Headless,
                 approvals_reviewer: ApprovalsReviewer::User,
                 sandbox_policy: SandboxPolicy::new_read_only_policy(),
                 cwd: PathBuf::from("/tmp/project"),
@@ -4438,7 +4437,7 @@ mod tests {
                         model: "gpt-test".to_string(),
                         model_provider_id: "test-provider".to_string(),
                         service_tier: None,
-                        approval_policy: AskForApproval::Never,
+                        approval_policy: ApprovalPolicy::Headless,
                         approvals_reviewer: ApprovalsReviewer::User,
                         sandbox_policy: SandboxPolicy::new_read_only_policy(),
                         cwd: PathBuf::from("/tmp/project"),
@@ -4507,7 +4506,7 @@ mod tests {
                 model: "gpt-test".to_string(),
                 model_provider_id: "test-provider".to_string(),
                 service_tier: None,
-                approval_policy: AskForApproval::Never,
+                approval_policy: ApprovalPolicy::Headless,
                 approvals_reviewer: ApprovalsReviewer::User,
                 sandbox_policy: SandboxPolicy::new_read_only_policy(),
                 cwd: PathBuf::from("/tmp/project"),
@@ -4528,7 +4527,7 @@ mod tests {
                 mode: Some(ModeKind::Plan),
                 model: Some("gpt-restored".to_string()),
                 reasoning_effort: Some(Some(ReasoningEffortConfig::High)),
-                developer_instructions: None,
+                minion_instructions: None,
             });
         app.chat_widget
             .apply_external_edit("draft prompt".to_string());
@@ -4549,7 +4548,7 @@ mod tests {
                 mode: Some(ModeKind::Default),
                 model: Some("gpt-replacement".to_string()),
                 reasoning_effort: Some(Some(ReasoningEffortConfig::Low)),
-                developer_instructions: None,
+                minion_instructions: None,
             });
         while new_op_rx.try_recv().is_ok() {}
 
@@ -4588,7 +4587,7 @@ mod tests {
                         settings: Settings {
                             model: "gpt-restored".to_string(),
                             reasoning_effort: Some(ReasoningEffortConfig::High),
-                            developer_instructions: None,
+                            minion_instructions: None,
                         },
                     })
                 );
@@ -4610,7 +4609,7 @@ mod tests {
                 model: "gpt-test".to_string(),
                 model_provider_id: "test-provider".to_string(),
                 service_tier: None,
-                approval_policy: AskForApproval::Never,
+                approval_policy: ApprovalPolicy::Headless,
                 approvals_reviewer: ApprovalsReviewer::User,
                 sandbox_policy: SandboxPolicy::new_read_only_policy(),
                 cwd: PathBuf::from("/tmp/project"),
@@ -4631,7 +4630,7 @@ mod tests {
                 mode: Some(ModeKind::Plan),
                 model: Some("gpt-restored".to_string()),
                 reasoning_effort: Some(Some(ReasoningEffortConfig::High)),
-                developer_instructions: None,
+                minion_instructions: None,
             });
         let input_state = app
             .chat_widget
@@ -4650,7 +4649,7 @@ mod tests {
                 mode: Some(ModeKind::Default),
                 model: Some("gpt-replacement".to_string()),
                 reasoning_effort: Some(Some(ReasoningEffortConfig::Low)),
-                developer_instructions: None,
+                minion_instructions: None,
             });
 
         app.replay_process_snapshot(
@@ -4686,7 +4685,7 @@ mod tests {
                 model: "gpt-test".to_string(),
                 model_provider_id: "test-provider".to_string(),
                 service_tier: None,
-                approval_policy: AskForApproval::Never,
+                approval_policy: ApprovalPolicy::Headless,
                 approvals_reviewer: ApprovalsReviewer::User,
                 sandbox_policy: SandboxPolicy::new_read_only_policy(),
                 cwd: PathBuf::from("/tmp/project"),
@@ -4811,7 +4810,7 @@ mod tests {
         app.agent_navigation.upsert(
             process_id,
             Some("Robie".to_string()),
-            Some("explorer".to_string()),
+            Some("scout".to_string()),
             false,
         );
 
@@ -4822,7 +4821,7 @@ mod tests {
             app.agent_navigation.get(&process_id),
             Some(&AgentPickerProcessEntry {
                 agent_nickname: Some("Robie".to_string()),
-                agent_role: Some("explorer".to_string()),
+                agent_role: Some("scout".to_string()),
                 is_closed: true,
             })
         );
@@ -4915,14 +4914,14 @@ mod tests {
         app.agent_navigation.upsert(
             agent_process_id,
             Some("Robie".to_string()),
-            Some("explorer".to_string()),
+            Some("scout".to_string()),
             false,
         );
 
         app.refresh_pending_process_approvals().await;
         assert_eq!(
             app.chat_widget.pending_process_approvals(),
-            &["Robie [explorer]".to_string()]
+            &["Robie [scout]".to_string()]
         );
 
         app.active_process_id = Some(agent_process_id);
@@ -4955,7 +4954,7 @@ mod tests {
                         model: "gpt-5".to_string(),
                         model_provider_id: "test-provider".to_string(),
                         service_tier: None,
-                        approval_policy: AskForApproval::OnRequest,
+                        approval_policy: ApprovalPolicy::Interactive,
                         approvals_reviewer: ApprovalsReviewer::User,
                         sandbox_policy: SandboxPolicy::new_workspace_write_policy(),
                         cwd: PathBuf::from("/tmp/agent"),
@@ -4971,7 +4970,7 @@ mod tests {
         app.agent_navigation.upsert(
             agent_process_id,
             Some("Robie".to_string()),
-            Some("explorer".to_string()),
+            Some("scout".to_string()),
             false,
         );
 
@@ -5001,7 +5000,7 @@ mod tests {
         assert_eq!(app.chat_widget.has_active_view(), true);
         assert_eq!(
             app.chat_widget.pending_process_approvals(),
-            &["Robie [explorer]".to_string()]
+            &["Robie [scout]".to_string()]
         );
 
         Ok(())
@@ -5014,12 +5013,12 @@ mod tests {
         let snapshot = [
             format!(
                 "{} | {}",
-                format_agent_picker_item_name(Some("Robie"), Some("explorer"), true),
+                format_agent_picker_item_name(Some("Robie"), Some("scout"), true),
                 process_id
             ),
             format!(
                 "{} | {}",
-                format_agent_picker_item_name(Some("Robie"), Some("explorer"), false),
+                format_agent_picker_item_name(Some("Robie"), Some("scout"), false),
                 process_id
             ),
             format!(
@@ -5029,7 +5028,7 @@ mod tests {
             ),
             format!(
                 "{} | {}",
-                format_agent_picker_item_name(None, Some("explorer"), false),
+                format_agent_picker_item_name(None, Some("scout"), false),
                 process_id
             ),
             format!(
@@ -5173,7 +5172,7 @@ mod tests {
                 model: "gpt-test".to_string(),
                 model_provider_id: "test-provider".to_string(),
                 service_tier: None,
-                approval_policy: AskForApproval::Never,
+                approval_policy: ApprovalPolicy::Headless,
                 approvals_reviewer: ApprovalsReviewer::User,
                 sandbox_policy: SandboxPolicy::new_read_only_policy(),
                 cwd: PathBuf::from("/tmp/project"),
@@ -5800,7 +5799,7 @@ mod tests {
                 model: "gpt-test".to_string(),
                 model_provider_id: "test-provider".to_string(),
                 service_tier: None,
-                approval_policy: AskForApproval::Never,
+                approval_policy: ApprovalPolicy::Headless,
                 approvals_reviewer: ApprovalsReviewer::User,
                 sandbox_policy: SandboxPolicy::new_read_only_policy(),
                 cwd: next_cwd.clone(),
@@ -5901,7 +5900,7 @@ mod tests {
                 model: "gpt-test".to_string(),
                 model_provider_id: "test-provider".to_string(),
                 service_tier: None,
-                approval_policy: AskForApproval::Never,
+                approval_policy: ApprovalPolicy::Headless,
                 approvals_reviewer: ApprovalsReviewer::User,
                 sandbox_policy: SandboxPolicy::new_read_only_policy(),
                 cwd: PathBuf::from("/home/user/project"),
@@ -5959,7 +5958,7 @@ mod tests {
                 model: "gpt-test".to_string(),
                 model_provider_id: "test-provider".to_string(),
                 service_tier: None,
-                approval_policy: AskForApproval::Never,
+                approval_policy: ApprovalPolicy::Headless,
                 approvals_reviewer: ApprovalsReviewer::User,
                 sandbox_policy: SandboxPolicy::new_read_only_policy(),
                 cwd: PathBuf::from("/home/user/project"),
@@ -6051,7 +6050,7 @@ mod tests {
                 model: "gpt-test".to_string(),
                 model_provider_id: "test-provider".to_string(),
                 service_tier: None,
-                approval_policy: AskForApproval::Never,
+                approval_policy: ApprovalPolicy::Headless,
                 approvals_reviewer: ApprovalsReviewer::User,
                 sandbox_policy: SandboxPolicy::new_read_only_policy(),
                 cwd: PathBuf::from("/home/user/project"),
@@ -6116,7 +6115,7 @@ mod tests {
                 model: "gpt-test".to_string(),
                 model_provider_id: "test-provider".to_string(),
                 service_tier: None,
-                approval_policy: AskForApproval::Never,
+                approval_policy: ApprovalPolicy::Headless,
                 approvals_reviewer: ApprovalsReviewer::User,
                 sandbox_policy: SandboxPolicy::new_read_only_policy(),
                 cwd: PathBuf::from("/home/user/project"),
@@ -6196,7 +6195,7 @@ mod tests {
                 model: "gpt-test".to_string(),
                 model_provider_id: "test-provider".to_string(),
                 service_tier: None,
-                approval_policy: AskForApproval::Never,
+                approval_policy: ApprovalPolicy::Headless,
                 approvals_reviewer: ApprovalsReviewer::User,
                 sandbox_policy: SandboxPolicy::new_read_only_policy(),
                 cwd: PathBuf::from("/home/user/project"),
@@ -6323,7 +6322,7 @@ mod tests {
             model: "gpt-test".to_string(),
             model_provider_id: "test-provider".to_string(),
             service_tier: None,
-            approval_policy: AskForApproval::Never,
+            approval_policy: ApprovalPolicy::Headless,
             approvals_reviewer: ApprovalsReviewer::User,
             sandbox_policy: SandboxPolicy::new_read_only_policy(),
             cwd: PathBuf::from("/home/user/project"),
@@ -6392,7 +6391,7 @@ mod tests {
                 model: "gpt-test".to_string(),
                 model_provider_id: "test-provider".to_string(),
                 service_tier: None,
-                approval_policy: AskForApproval::Never,
+                approval_policy: ApprovalPolicy::Headless,
                 approvals_reviewer: ApprovalsReviewer::User,
                 sandbox_policy: SandboxPolicy::new_read_only_policy(),
                 cwd: PathBuf::from("/tmp/project"),

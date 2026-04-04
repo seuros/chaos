@@ -1,5 +1,5 @@
 use super::*;
-use chaos_ipc::protocol::AskForApproval;
+use chaos_ipc::protocol::ApprovalPolicy;
 use chaos_pf::BlockedRequestArgs;
 use pretty_assertions::assert_eq;
 
@@ -173,10 +173,10 @@ fn allow_once_and_allow_for_session_both_allow_network() {
 
 #[test]
 fn only_never_policy_disables_network_approval_flow() {
-    assert!(!allows_network_approval_flow(AskForApproval::Never));
-    assert!(allows_network_approval_flow(AskForApproval::OnRequest));
-    assert!(allows_network_approval_flow(AskForApproval::OnFailure));
-    assert!(allows_network_approval_flow(AskForApproval::UnlessTrusted));
+    assert!(!allows_network_approval_flow(ApprovalPolicy::Headless));
+    assert!(allows_network_approval_flow(ApprovalPolicy::Interactive));
+    assert!(allows_network_approval_flow(ApprovalPolicy::Interactive));
+    assert!(allows_network_approval_flow(ApprovalPolicy::Supervised));
 }
 
 fn denied_blocked_request(host: &str) -> BlockedRequest {

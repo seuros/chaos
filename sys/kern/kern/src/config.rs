@@ -47,7 +47,7 @@ use crate::model_provider_info::built_in_model_providers;
 use crate::path_utils::normalize_for_native_workdir;
 use crate::project_doc::DEFAULT_PROJECT_DOC_FILENAME;
 use crate::project_doc::LOCAL_PROJECT_DOC_FILENAME;
-use crate::protocol::AskForApproval;
+use crate::protocol::ApprovalPolicy;
 use crate::protocol::ReadOnlyAccess;
 use crate::protocol::SandboxPolicy;
 use crate::unified_exec::DEFAULT_MAX_BACKGROUND_TERMINAL_TIMEOUT_MS;
@@ -150,7 +150,7 @@ pub(crate) fn test_config() -> Config {
 #[derive(Debug, Clone, PartialEq)]
 pub struct Permissions {
     /// Approval policy for executing commands.
-    pub approval_policy: Constrained<AskForApproval>,
+    pub approval_policy: Constrained<ApprovalPolicy>,
     /// Effective sandbox policy used for shell/unified exec.
     pub sandbox_policy: Constrained<SandboxPolicy>,
     /// Effective filesystem sandbox policy, including entries that cannot yet
@@ -239,8 +239,8 @@ pub struct Config {
     /// Base instructions override.
     pub base_instructions: Option<String>,
 
-    /// Developer instructions override injected as a separate message.
-    pub developer_instructions: Option<String>,
+    /// Minion instructions override injected as a separate message.
+    pub minion_instructions: Option<String>,
 
     /// Compact prompt override.
     pub compact_prompt: Option<String>,
@@ -350,7 +350,7 @@ pub struct Config {
 
     /// Maximum number of agent threads that can be open concurrently.
     pub agent_max_threads: Option<usize>,
-    /// Maximum runtime in seconds for agent job workers before they are failed.
+    /// Maximum runtime in seconds for agent job tasks before they are failed.
     pub agent_job_max_runtime_seconds: Option<u64>,
 
     /// Maximum nesting depth allowed for spawned agent threads.
@@ -745,7 +745,7 @@ impl Config {
     /// This is a secondary way of creating [Config], which is appropriate when
     /// the harness is meant to be used with a specific configuration that
     /// ignores user settings. For example, the `chaos exec` subcommand is
-    /// designed to use [AskForApproval::Never] exclusively.
+    /// designed to use `ApprovalPolicy::Headless` exclusively.
     ///
     /// Further, [ConfigOverrides] contains some options that are not supported
     /// in [ConfigToml], such as `cwd`, `alcatraz_linux_exe`,
@@ -1044,7 +1044,7 @@ pub struct ConfigToml {
     pub model_auto_compact_token_limit: Option<i64>,
 
     /// Default approval policy for executing commands.
-    pub approval_policy: Option<AskForApproval>,
+    pub approval_policy: Option<ApprovalPolicy>,
 
     /// Configures who approval requests are routed to for review once they have
     /// been escalated. This does not disable separate safety checks such as
@@ -1085,9 +1085,9 @@ pub struct ConfigToml {
     /// System instructions.
     pub instructions: Option<String>,
 
-    /// Developer instructions inserted as a `developer` role message.
-    #[serde(default)]
-    pub developer_instructions: Option<String>,
+    /// Minion instructions inserted as a `developer` role message.
+    #[serde(default, alias = "developer_instructions")]
+    pub minion_instructions: Option<String>,
 
     /// Optional path to a file containing model instructions that will override
     /// the built-in instructions for the selected model. Users are STRONGLY
@@ -1541,7 +1541,7 @@ pub struct ConfigOverrides {
     pub model: Option<String>,
     pub review_model: Option<String>,
     pub cwd: Option<PathBuf>,
-    pub approval_policy: Option<AskForApproval>,
+    pub approval_policy: Option<ApprovalPolicy>,
     pub approvals_reviewer: Option<ApprovalsReviewer>,
     pub sandbox_mode: Option<SandboxMode>,
     pub model_provider: Option<String>,
@@ -1553,7 +1553,7 @@ pub struct ConfigOverrides {
     pub main_execve_wrapper_exe: Option<PathBuf>,
     pub zsh_path: Option<PathBuf>,
     pub base_instructions: Option<String>,
-    pub developer_instructions: Option<String>,
+    pub minion_instructions: Option<String>,
     pub personality: Option<Personality>,
     pub compact_prompt: Option<String>,
     pub include_apply_patch_tool: Option<bool>,
@@ -1742,7 +1742,7 @@ impl Config {
             main_execve_wrapper_exe,
             zsh_path: zsh_path_override,
             base_instructions,
-            developer_instructions,
+            minion_instructions,
             personality,
             compact_prompt,
             include_apply_patch_tool: include_apply_patch_tool_override,
@@ -1914,11 +1914,11 @@ impl Config {
             .or(cfg.approval_policy)
             .unwrap_or_else(|| {
                 if active_project.is_trusted() {
-                    AskForApproval::OnRequest
+                    ApprovalPolicy::Interactive
                 } else if active_project.is_untrusted() {
-                    AskForApproval::UnlessTrusted
+                    ApprovalPolicy::Supervised
                 } else {
-                    AskForApproval::default()
+                    ApprovalPolicy::default()
                 }
             });
         if !approval_policy_was_explicit
@@ -2106,7 +2106,7 @@ impl Config {
         let file_base_instructions =
             Self::try_read_non_empty_file(model_instructions_path, "model instructions file")?;
         let base_instructions = base_instructions.or(file_base_instructions);
-        let developer_instructions = developer_instructions.or(cfg.developer_instructions);
+        let minion_instructions = minion_instructions.or(cfg.minion_instructions);
         let personality = personality
             .or(config_profile.personality)
             .or(cfg.personality)
@@ -2245,7 +2245,7 @@ impl Config {
             user_instructions,
             base_instructions,
             personality,
-            developer_instructions,
+            minion_instructions,
             compact_prompt,
             // The config.toml omits "_mode" because it's a config file. However, "_mode"
             // is important in code to differentiate the mode from the store implementation.

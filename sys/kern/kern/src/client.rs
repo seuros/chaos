@@ -83,7 +83,7 @@ use chaos_ipc::models::ResponseItem;
 use chaos_ipc::openai_models::ModelInfo;
 use chaos_ipc::openai_models::ReasoningEffort as ReasoningEffortConfig;
 use chaos_ipc::permissions::FileSystemSandboxPolicy;
-use chaos_ipc::protocol::AskForApproval;
+use chaos_ipc::protocol::ApprovalPolicy;
 use chaos_ipc::protocol::EventMsg;
 use chaos_ipc::protocol::SessionSource;
 use chaos_ipc::protocol::WarningEvent;
@@ -164,7 +164,7 @@ struct ModelClientState {
     conversation_id: ProcessId,
     provider: ModelProviderInfo,
     session_source: SessionSource,
-    approval_policy: AskForApproval,
+    approval_policy: ApprovalPolicy,
     model_verbosity: Option<VerbosityConfig>,
     responses_websockets_enabled_by_feature: bool,
     enable_request_compression: bool,
@@ -305,7 +305,7 @@ impl ModelClient {
         conversation_id: ProcessId,
         provider: ModelProviderInfo,
         session_source: SessionSource,
-        approval_policy: AskForApproval,
+        approval_policy: ApprovalPolicy,
         model_verbosity: Option<VerbosityConfig>,
         responses_websockets_enabled_by_feature: bool,
         enable_request_compression: bool,
@@ -806,13 +806,12 @@ impl Drop for ModelClientSession {
     }
 }
 
-fn clamp_permission_mode(approval_policy: AskForApproval) -> String {
+fn clamp_permission_mode(approval_policy: ApprovalPolicy) -> String {
     match approval_policy {
-        AskForApproval::Never => "bypassPermissions",
-        AskForApproval::UnlessTrusted
-        | AskForApproval::OnFailure
-        | AskForApproval::OnRequest
-        | AskForApproval::Granular(_) => "default",
+        ApprovalPolicy::Headless => "bypassPermissions",
+        ApprovalPolicy::Supervised
+        | ApprovalPolicy::Interactive
+        | ApprovalPolicy::Granular(_) => "default",
     }
     .to_string()
 }

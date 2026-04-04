@@ -41,7 +41,7 @@ use chaos_ipc::plan_tool::UpdatePlanArgs;
 use chaos_ipc::protocol::AgentMessageEvent;
 use chaos_ipc::protocol::AgentReasoningEvent;
 use chaos_ipc::protocol::AgentStatus;
-use chaos_ipc::protocol::AskForApproval;
+use chaos_ipc::protocol::ApprovalPolicy;
 use chaos_ipc::protocol::CodexErrorInfo;
 use chaos_ipc::protocol::CollabAgentSpawnBeginEvent;
 use chaos_ipc::protocol::CollabAgentSpawnEndEvent;
@@ -94,7 +94,7 @@ fn session_configured_produces_process_started_event() {
             model: "codex-mini-latest".to_string(),
             model_provider_id: "test-provider".to_string(),
             service_tier: None,
-            approval_policy: AskForApproval::Never,
+            approval_policy: ApprovalPolicy::Headless,
             approvals_reviewer: chaos_ipc::config_types::ApprovalsReviewer::User,
             sandbox_policy: SandboxPolicy::new_read_only_policy(),
             cwd: PathBuf::from("/home/user/project"),
@@ -549,6 +549,8 @@ fn collab_spawn_begin_and_end_emit_item_events() {
             prompt: prompt.clone(),
             model: "gpt-5".to_string(),
             reasoning_effort: ReasoningEffortConfig::default(),
+            catchphrase: None,
+            missing_topics: Vec::new(),
         }),
     );
     let begin_events = ep.collect_process_events(&begin);

@@ -40,6 +40,7 @@ pub mod features;
 mod file_watcher;
 mod flags;
 pub mod git_info;
+pub mod sysinfo;
 
 pub mod instructions;
 pub mod landlock;

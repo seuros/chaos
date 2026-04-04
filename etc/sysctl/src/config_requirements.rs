@@ -1050,7 +1050,9 @@ mod tests {
         let requirements = ConfigRequirements::try_from(target)?;
 
         assert_eq!(
-            requirements.approval_policy.can_set(&ApprovalPolicy::Headless),
+            requirements
+                .approval_policy
+                .can_set(&ApprovalPolicy::Headless),
             Err(ConstraintError::InvalidValue {
                 field_name: "approval_policy",
                 candidate: "Headless".into(),
@@ -1088,7 +1090,9 @@ mod tests {
         let requirements = ConfigRequirements::try_from(target)?;
 
         assert_eq!(
-            requirements.approval_policy.can_set(&ApprovalPolicy::Headless),
+            requirements
+                .approval_policy
+                .can_set(&ApprovalPolicy::Headless),
             Err(ConstraintError::InvalidValue {
                 field_name: "approval_policy",
                 candidate: "Headless".into(),
@@ -1168,7 +1172,9 @@ mod tests {
                 .is_ok()
         );
         assert_eq!(
-            requirements.approval_policy.can_set(&ApprovalPolicy::Headless),
+            requirements
+                .approval_policy
+                .can_set(&ApprovalPolicy::Headless),
             Err(ConstraintError::InvalidValue {
                 field_name: "approval_policy",
                 candidate: "Headless".into(),

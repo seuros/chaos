@@ -287,7 +287,8 @@ mod agent {
 
         agent_config.cwd = root;
         // Approval policy
-        agent_config.permissions.approval_policy = Constrained::allow_only(ApprovalPolicy::Headless);
+        agent_config.permissions.approval_policy =
+            Constrained::allow_only(ApprovalPolicy::Headless);
         // Consolidation runs as an internal sub-agent and must not recursively delegate.
         let _ = agent_config.features.disable(Feature::SpawnCsv);
         let _ = agent_config.features.disable(Feature::Collab);

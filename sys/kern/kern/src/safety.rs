@@ -38,9 +38,7 @@ pub fn assess_patch_safety(
     }
 
     match policy {
-        ApprovalPolicy::Headless
-        | ApprovalPolicy::Interactive
-        | ApprovalPolicy::Granular(_) => {
+        ApprovalPolicy::Headless | ApprovalPolicy::Interactive | ApprovalPolicy::Granular(_) => {
             // Continue to see if this can be auto-approved.
         }
         ApprovalPolicy::Supervised => {

@@ -92,6 +92,31 @@ mod metrics {
 use std::path::Path;
 use std::path::PathBuf;
 
+pub(in crate::memories) fn resolve_memory_model_name(
+    explicit_model: Option<&str>,
+    session_model: &str,
+) -> String {
+    explicit_model.unwrap_or(session_model).to_string()
+}
+
 pub fn memory_root(chaos_home: &Path) -> PathBuf {
     chaos_home.join("memories")
+}
+
+#[cfg(test)]
+mod tests {
+    use super::resolve_memory_model_name;
+
+    #[test]
+    fn resolve_memory_model_name_prefers_explicit_model() {
+        assert_eq!(
+            resolve_memory_model_name(Some("claude-sonnet"), "gpt-5"),
+            "claude-sonnet"
+        );
+    }
+
+    #[test]
+    fn resolve_memory_model_name_falls_back_to_session_model() {
+        assert_eq!(resolve_memory_model_name(None, "gpt-5"), "gpt-5");
+    }
 }

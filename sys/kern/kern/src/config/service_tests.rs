@@ -2,8 +2,8 @@ use super::*;
 use anyhow::Result;
 use chaos_ipc::api::AppConfig;
 use chaos_ipc::api::AppToolApproval;
-use chaos_ipc::api::AppsConfig;
 use chaos_ipc::api::ApprovalPolicyV2 as ApprovalPolicy;
+use chaos_ipc::api::AppsConfig;
 use chaos_realpath::AbsolutePathBuf;
 use pretty_assertions::assert_eq;
 use std::collections::BTreeMap;
@@ -195,7 +195,10 @@ async fn read_includes_origins_and_layers() {
         .await
         .expect("response");
 
-    assert_eq!(response.config.approval_policy, Some(ApprovalPolicy::Headless));
+    assert_eq!(
+        response.config.approval_policy,
+        Some(ApprovalPolicy::Headless)
+    );
 
     assert_eq!(
         response

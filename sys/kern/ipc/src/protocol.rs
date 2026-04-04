@@ -505,7 +505,6 @@ pub enum ApprovalPolicy {
     Headless,
 }
 
-
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, Serialize, Deserialize, JsonSchema, TS)]
 pub struct GranularApprovalConfig {
     /// Whether to allow shell command approval requests, including inline

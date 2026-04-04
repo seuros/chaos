@@ -382,21 +382,21 @@ impl CollaborationMode {
     ///
     /// - `model`: `Some(s)` to update the model, `None` to keep the current model
     /// - `effort`: `Some(Some(e))` to set effort to `e`, `Some(None)` to clear effort, `None` to keep current effort
-    /// - `developer_instructions`: `Some(Some(s))` to set instructions, `Some(None)` to clear them, `None` to keep current
+    /// - `minion_instructions`: `Some(Some(s))` to set instructions, `Some(None)` to clear them, `None` to keep current
     ///
     /// Returns a new `CollaborationMode` with updated values, preserving the mode.
     pub fn with_updates(
         &self,
         model: Option<String>,
         effort: Option<Option<ReasoningEffort>>,
-        developer_instructions: Option<Option<String>>,
+        minion_instructions: Option<Option<String>>,
     ) -> Self {
         let settings = self.settings_ref();
         let updated_settings = Settings {
             model: model.unwrap_or_else(|| settings.model.clone()),
             reasoning_effort: effort.unwrap_or(settings.reasoning_effort),
-            developer_instructions: developer_instructions
-                .unwrap_or_else(|| settings.developer_instructions.clone()),
+            minion_instructions: minion_instructions
+                .unwrap_or_else(|| settings.minion_instructions.clone()),
         };
 
         CollaborationMode {
@@ -417,10 +417,10 @@ impl CollaborationMode {
             settings: Settings {
                 model: mask.model.clone().unwrap_or_else(|| settings.model.clone()),
                 reasoning_effort: mask.reasoning_effort.unwrap_or(settings.reasoning_effort),
-                developer_instructions: mask
-                    .developer_instructions
+                minion_instructions: mask
+                    .minion_instructions
                     .clone()
-                    .unwrap_or_else(|| settings.developer_instructions.clone()),
+                    .unwrap_or_else(|| settings.minion_instructions.clone()),
             },
         }
     }
@@ -431,7 +431,8 @@ impl CollaborationMode {
 pub struct Settings {
     pub model: String,
     pub reasoning_effort: Option<ReasoningEffort>,
-    pub developer_instructions: Option<String>,
+    #[serde(alias = "developer_instructions")]
+    pub minion_instructions: Option<String>,
 }
 
 /// A mask for collaboration mode settings, allowing partial updates.
@@ -442,7 +443,8 @@ pub struct CollaborationModeMask {
     pub mode: Option<ModeKind>,
     pub model: Option<String>,
     pub reasoning_effort: Option<Option<ReasoningEffort>>,
-    pub developer_instructions: Option<Option<String>>,
+    #[serde(alias = "developer_instructions")]
+    pub minion_instructions: Option<Option<String>>,
 }
 
 #[cfg(test)]
@@ -457,7 +459,7 @@ mod tests {
             settings: Settings {
                 model: "gpt-5.2-codex".to_string(),
                 reasoning_effort: Some(ReasoningEffort::High),
-                developer_instructions: Some("stay focused".to_string()),
+                minion_instructions: Some("stay focused".to_string()),
             },
         };
         let mask = CollaborationModeMask {
@@ -465,7 +467,7 @@ mod tests {
             mode: None,
             model: None,
             reasoning_effort: Some(None),
-            developer_instructions: Some(None),
+            minion_instructions: Some(None),
         };
 
         let expected = CollaborationMode {
@@ -473,7 +475,7 @@ mod tests {
             settings: Settings {
                 model: "gpt-5.2-codex".to_string(),
                 reasoning_effort: None,
-                developer_instructions: None,
+                minion_instructions: None,
             },
         };
         assert_eq!(expected, mode.apply_mask(&mask));

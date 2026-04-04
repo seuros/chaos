@@ -5,7 +5,7 @@ use std::collections::HashMap;
 use chaos_ipc::config_types::CollaborationMode;
 use chaos_ipc::config_types::ModeKind;
 use chaos_ipc::config_types::Settings;
-use chaos_ipc::protocol::AskForApproval;
+use chaos_ipc::protocol::ApprovalPolicy;
 use chaos_ipc::protocol::EventMsg;
 use chaos_ipc::protocol::Op;
 use chaos_ipc::protocol::SandboxPolicy;
@@ -137,7 +137,7 @@ async fn request_user_input_round_trip_for_mode(mode: ModeKind) -> anyhow::Resul
             }],
             final_output_json_schema: None,
             cwd: cwd.path().to_path_buf(),
-            approval_policy: AskForApproval::Never,
+            approval_policy: ApprovalPolicy::Headless,
             sandbox_policy: SandboxPolicy::RootAccess,
             model: session_model,
             effort: None,
@@ -148,7 +148,7 @@ async fn request_user_input_round_trip_for_mode(mode: ModeKind) -> anyhow::Resul
                 settings: Settings {
                     model: session_configured.model.clone(),
                     reasoning_effort: None,
-                    developer_instructions: None,
+                    minion_instructions: None,
                 },
             }),
             personality: None,
@@ -254,7 +254,7 @@ where
             }],
             final_output_json_schema: None,
             cwd: cwd.path().to_path_buf(),
-            approval_policy: AskForApproval::Never,
+            approval_policy: ApprovalPolicy::Headless,
             sandbox_policy: SandboxPolicy::RootAccess,
             model: session_model,
             effort: None,
@@ -285,7 +285,7 @@ async fn request_user_input_rejected_in_execute_mode_alias() -> anyhow::Result<(
         settings: Settings {
             model,
             reasoning_effort: None,
-            developer_instructions: None,
+            minion_instructions: None,
         },
     })
     .await
@@ -298,7 +298,7 @@ async fn request_user_input_rejected_in_default_mode_by_default() -> anyhow::Res
         settings: Settings {
             model,
             reasoning_effort: None,
-            developer_instructions: None,
+            minion_instructions: None,
         },
     })
     .await
@@ -316,7 +316,7 @@ async fn request_user_input_rejected_in_pair_mode_alias() -> anyhow::Result<()> 
         settings: Settings {
             model,
             reasoning_effort: None,
-            developer_instructions: None,
+            minion_instructions: None,
         },
     })
     .await

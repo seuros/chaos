@@ -3,7 +3,7 @@ use super::*;
 use crate::chaos::Session;
 use crate::chaos::TurnContext;
 use crate::chaos::make_session_and_context;
-use crate::protocol::AskForApproval;
+use crate::protocol::ApprovalPolicy;
 use crate::protocol::SandboxPolicy;
 use crate::tools::context::ExecCommandToolOutput;
 use crate::unified_exec::ExecCommandRequest;
@@ -15,7 +15,7 @@ use tokio::time::Duration;
 async fn test_session_and_turn() -> (Arc<Session>, Arc<TurnContext>) {
     let (session, mut turn) = make_session_and_context().await;
     turn.approval_policy
-        .set(AskForApproval::Never)
+        .set(ApprovalPolicy::Headless)
         .expect("test setup should allow updating approval policy");
     turn.sandbox_policy
         .set(SandboxPolicy::RootAccess)

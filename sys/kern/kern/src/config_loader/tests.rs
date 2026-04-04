@@ -17,7 +17,7 @@ use crate::config_loader::load_requirements_toml;
 use crate::config_loader::version_for_toml;
 use chaos_ipc::config_types::TrustLevel;
 use chaos_ipc::config_types::WebSearchMode;
-use chaos_ipc::protocol::AskForApproval;
+use chaos_ipc::protocol::ApprovalPolicy;
 #[cfg(target_os = "macos")]
 use chaos_ipc::protocol::SandboxPolicy;
 use chaos_realpath::AbsolutePathBuf;
@@ -397,7 +397,7 @@ async fn managed_preferences_requirements_are_applied() -> anyhow::Result<()> {
             macos_managed_config_requirements_base64: Some(
                 base64::prelude::BASE64_STANDARD.encode(
                     r#"
-allowed_approval_policies = ["never"]
+allowed_approval_policies = ["headless"]
 allowed_sandbox_modes = ["read-only"]
 "#
                     .as_bytes(),
@@ -410,7 +410,7 @@ allowed_sandbox_modes = ["read-only"]
 
     assert_eq!(
         state.requirements().approval_policy.value(),
-        AskForApproval::Never
+        ApprovalPolicy::Headless
     );
     assert_eq!(
         *state.requirements().sandbox_policy.get(),
@@ -420,7 +420,7 @@ allowed_sandbox_modes = ["read-only"]
         state
             .requirements()
             .approval_policy
-            .can_set(&AskForApproval::OnRequest)
+            .can_set(&ApprovalPolicy::Interactive)
             .is_err()
     );
     assert!(
@@ -460,7 +460,7 @@ async fn managed_preferences_requirements_take_precedence() -> anyhow::Result<()
             macos_managed_config_requirements_base64: Some(
                 base64::prelude::BASE64_STANDARD.encode(
                     r#"
-allowed_approval_policies = ["never"]
+allowed_approval_policies = ["headless"]
 "#
                     .as_bytes(),
                 ),
@@ -472,13 +472,13 @@ allowed_approval_policies = ["never"]
 
     assert_eq!(
         state.requirements().approval_policy.value(),
-        AskForApproval::Never
+        ApprovalPolicy::Headless
     );
     assert!(
         state
             .requirements()
             .approval_policy
-            .can_set(&AskForApproval::OnRequest)
+            .can_set(&ApprovalPolicy::Interactive)
             .is_err()
     );
 
@@ -492,7 +492,7 @@ async fn load_requirements_toml_produces_expected_constraints() -> anyhow::Resul
     tokio::fs::write(
         &requirements_file,
         r#"
-allowed_approval_policies = ["never", "on-request"]
+allowed_approval_policies = ["headless", "interactive"]
 allowed_web_search_modes = ["cached"]
 enforce_residency = "us"
 
@@ -510,7 +510,7 @@ personality = true
             .allowed_approval_policies
             .as_deref()
             .cloned(),
-        Some(vec![AskForApproval::Never, AskForApproval::OnRequest])
+        Some(vec![ApprovalPolicy::Headless, ApprovalPolicy::Interactive])
     );
     assert_eq!(
         config_requirements_toml
@@ -531,15 +531,15 @@ personality = true
     let config_requirements: ConfigRequirements = config_requirements_toml.try_into()?;
     assert_eq!(
         config_requirements.approval_policy.value(),
-        AskForApproval::Never
+        ApprovalPolicy::Headless
     );
     config_requirements
         .approval_policy
-        .can_set(&AskForApproval::Never)?;
+        .can_set(&ApprovalPolicy::Headless)?;
     assert!(
         config_requirements
             .approval_policy
-            .can_set(&AskForApproval::OnFailure)
+            .can_set(&ApprovalPolicy::Interactive)
             .is_err()
     );
     assert_eq!(
@@ -591,7 +591,7 @@ async fn cloud_requirements_take_precedence_over_mdm_requirements() -> anyhow::R
             macos_managed_config_requirements_base64: Some(
                 base64::prelude::BASE64_STANDARD.encode(
                     r#"
-allowed_approval_policies = ["on-request"]
+allowed_approval_policies = ["interactive"]
 "#
                     .as_bytes(),
                 ),
@@ -600,7 +600,7 @@ allowed_approval_policies = ["on-request"]
         },
         CloudRequirementsLoader::new(async {
             Ok(Some(ConfigRequirementsToml {
-                allowed_approval_policies: Some(vec![AskForApproval::Never]),
+                allowed_approval_policies: Some(vec![ApprovalPolicy::Headless]),
                 allowed_sandbox_modes: None,
                 allowed_web_search_modes: None,
                 feature_requirements: None,
@@ -616,17 +616,17 @@ allowed_approval_policies = ["on-request"]
 
     assert_eq!(
         state.requirements().approval_policy.value(),
-        AskForApproval::Never
+        ApprovalPolicy::Headless
     );
     assert_eq!(
         state
             .requirements()
             .approval_policy
-            .can_set(&AskForApproval::OnRequest),
+            .can_set(&ApprovalPolicy::Interactive),
         Err(ConstraintError::InvalidValue {
             field_name: "approval_policy",
-            candidate: "OnRequest".into(),
-            allowed: "[Never]".into(),
+            candidate: "Interactive".into(),
+            allowed: "[Headless]".into(),
             requirement_source: RequirementSource::CloudRequirements,
         })
     );
@@ -641,7 +641,7 @@ async fn cloud_requirements_are_not_overwritten_by_system_requirements() -> anyh
     tokio::fs::write(
         &requirements_file,
         r#"
-allowed_approval_policies = ["on-request"]
+allowed_approval_policies = ["interactive"]
 "#,
     )
     .await?;
@@ -650,7 +650,7 @@ allowed_approval_policies = ["on-request"]
     config_requirements_toml.merge_unset_fields(
         RequirementSource::CloudRequirements,
         ConfigRequirementsToml {
-            allowed_approval_policies: Some(vec![AskForApproval::Never]),
+            allowed_approval_policies: Some(vec![ApprovalPolicy::Headless]),
             allowed_sandbox_modes: None,
             allowed_web_search_modes: None,
             feature_requirements: None,
@@ -668,7 +668,7 @@ allowed_approval_policies = ["on-request"]
             .allowed_approval_policies
             .as_ref()
             .map(|sourced| sourced.value.clone()),
-        Some(vec![AskForApproval::Never])
+        Some(vec![ApprovalPolicy::Headless])
     );
     assert_eq!(
         config_requirements_toml
@@ -689,7 +689,7 @@ async fn load_config_layers_includes_cloud_requirements() -> anyhow::Result<()> 
     let cwd = AbsolutePathBuf::from_absolute_path(tmp.path())?;
 
     let requirements = ConfigRequirementsToml {
-        allowed_approval_policies: Some(vec![AskForApproval::Never]),
+        allowed_approval_policies: Some(vec![ApprovalPolicy::Headless]),
         allowed_sandbox_modes: None,
         allowed_web_search_modes: None,
         feature_requirements: None,
@@ -719,11 +719,11 @@ async fn load_config_layers_includes_cloud_requirements() -> anyhow::Result<()> 
         layers
             .requirements()
             .approval_policy
-            .can_set(&AskForApproval::OnRequest),
+            .can_set(&ApprovalPolicy::Interactive),
         Err(ConstraintError::InvalidValue {
             field_name: "approval_policy",
-            candidate: "OnRequest".into(),
-            allowed: "[Never]".into(),
+            candidate: "Interactive".into(),
+            allowed: "[Headless]".into(),
             requirement_source: RequirementSource::CloudRequirements,
         })
     );

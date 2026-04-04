@@ -24,7 +24,7 @@ use crate::tools::sandboxing::ToolCtx;
 use crate::tools::sandboxing::ToolError;
 use crate::tools::sandboxing::ToolRuntime;
 use crate::tools::sandboxing::default_exec_approval_requirement;
-use chaos_ipc::protocol::AskForApproval;
+use chaos_ipc::protocol::ApprovalPolicy;
 use chaos_ipc::protocol::NetworkPolicyRuleAction;
 use chaos_ipc::protocol::ReviewDecision;
 use chaos_syslog::ToolDecisionSource;
@@ -101,7 +101,7 @@ impl ToolOrchestrator {
         req: &Rq,
         tool_ctx: &ToolCtx,
         turn_ctx: &crate::chaos::TurnContext,
-        approval_policy: AskForApproval,
+        approval_policy: ApprovalPolicy,
     ) -> Result<OrchestratorRunResult<Out>, ToolError>
     where
         T: ToolRuntime<Rq, Out>,
@@ -229,12 +229,12 @@ impl ToolOrchestrator {
                         network_policy_decision,
                     })));
                 }
-                // Under `Never` or `OnRequest`, do not retry without sandbox;
+                // Under `Headless` or `Interactive`, do not retry without sandbox;
                 // surface a concise sandbox denial that preserves the
                 // original output.
                 if !tool.wants_no_sandbox_approval(approval_policy) {
                     let allow_on_request_network_prompt =
-                        matches!(approval_policy, AskForApproval::OnRequest)
+                        matches!(approval_policy, ApprovalPolicy::Interactive)
                             && network_approval_context.is_some()
                             && matches!(
                                 default_exec_approval_requirement(

@@ -32,7 +32,7 @@ use chaos_ipc::approvals::ElicitationRequestEvent;
 use chaos_ipc::mcp::CallToolResult;
 use chaos_ipc::mcp::RequestId as ProtocolRequestId;
 use chaos_ipc::product::CHAOS_VERSION;
-use chaos_ipc::protocol::AskForApproval;
+use chaos_ipc::protocol::ApprovalPolicy;
 use chaos_ipc::protocol::Event;
 use chaos_ipc::protocol::EventMsg;
 use chaos_ipc::protocol::McpStartupCompleteEvent;
@@ -213,24 +213,22 @@ pub struct ToolInfo {
 
 type ResponderMap = HashMap<(String, RequestId), oneshot::Sender<ElicitationResponse>>;
 
-fn elicitation_is_rejected_by_policy(approval_policy: AskForApproval) -> bool {
+fn elicitation_is_rejected_by_policy(approval_policy: ApprovalPolicy) -> bool {
     match approval_policy {
-        AskForApproval::Never => true,
-        AskForApproval::OnFailure => false,
-        AskForApproval::OnRequest => false,
-        AskForApproval::UnlessTrusted => false,
-        AskForApproval::Granular(granular_config) => !granular_config.allows_mcp_elicitations(),
+        ApprovalPolicy::Headless => true,
+        ApprovalPolicy::Interactive | ApprovalPolicy::Supervised => false,
+        ApprovalPolicy::Granular(granular_config) => !granular_config.allows_mcp_elicitations(),
     }
 }
 
 #[derive(Clone)]
 struct ElicitationRequestManager {
     requests: Arc<Mutex<ResponderMap>>,
-    approval_policy: Arc<StdMutex<AskForApproval>>,
+    approval_policy: Arc<StdMutex<ApprovalPolicy>>,
 }
 
 impl ElicitationRequestManager {
-    fn new(approval_policy: AskForApproval) -> Self {
+    fn new(approval_policy: ApprovalPolicy) -> Self {
         Self {
             requests: Arc::new(Mutex::new(HashMap::new())),
             approval_policy: Arc::new(StdMutex::new(approval_policy)),
@@ -683,7 +681,7 @@ pub struct McpConnectionManager {
 }
 
 impl McpConnectionManager {
-    pub fn new_uninitialized(approval_policy: &Constrained<AskForApproval>) -> Self {
+    pub fn new_uninitialized(approval_policy: &Constrained<ApprovalPolicy>) -> Self {
         Self {
             clients: HashMap::new(),
             server_origins: HashMap::new(),
@@ -693,7 +691,7 @@ impl McpConnectionManager {
 
     #[cfg(test)]
     pub fn new_mcp_connection_manager_for_tests(
-        approval_policy: &Constrained<AskForApproval>,
+        approval_policy: &Constrained<ApprovalPolicy>,
     ) -> Self {
         Self::new_uninitialized(approval_policy)
     }
@@ -706,7 +704,7 @@ impl McpConnectionManager {
         self.server_origins.get(server_name).map(String::as_str)
     }
 
-    pub fn set_approval_policy(&self, approval_policy: &Constrained<AskForApproval>) {
+    pub fn set_approval_policy(&self, approval_policy: &Constrained<ApprovalPolicy>) {
         if let Ok(mut policy) = self.elicitation_requests.approval_policy.lock() {
             *policy = approval_policy.value();
         }
@@ -717,7 +715,7 @@ impl McpConnectionManager {
         mcp_servers: &HashMap<String, McpServerConfig>,
         store_mode: OAuthCredentialsStoreMode,
         auth_entries: HashMap<String, McpAuthStatusEntry>,
-        approval_policy: &Constrained<AskForApproval>,
+        approval_policy: &Constrained<ApprovalPolicy>,
         tx_event: Sender<Event>,
         initial_sandbox_state: SandboxState,
         _codex_home: PathBuf,

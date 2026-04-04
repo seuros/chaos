@@ -263,7 +263,7 @@ use chaos_ipc::openai_models::InputModality;
 use chaos_ipc::openai_models::ModelPreset;
 use chaos_ipc::openai_models::ReasoningEffort as ReasoningEffortConfig;
 use chaos_ipc::plan_tool::UpdatePlanArgs;
-use chaos_ipc::protocol::AskForApproval;
+use chaos_ipc::protocol::ApprovalPolicy;
 use chaos_ipc::protocol::SandboxPolicy;
 use chaos_kern::AuthManager;
 use chaos_kern::ProcessTable;
@@ -1286,7 +1286,7 @@ impl ChatWidget {
         self.current_collaboration_mode = self.current_collaboration_mode.with_updates(
             Some(model_for_header.clone()),
             Some(event.reasoning_effort),
-            /*developer_instructions*/ None,
+            /*minion_instructions*/ None,
         );
         if let Some(mask) = self.active_collaboration_mask.as_mut() {
             mask.model = Some(model_for_header.clone());
@@ -3153,7 +3153,7 @@ impl ChatWidget {
         let fallback_default = Settings {
             model: header_model.clone(),
             reasoning_effort: None,
-            developer_instructions: None,
+            minion_instructions: None,
         };
         // Collaboration modes start in Default mode.
         let current_collaboration_mode = CollaborationMode {
@@ -3313,7 +3313,7 @@ impl ChatWidget {
         let fallback_default = Settings {
             model: header_model.clone(),
             reasoning_effort: None,
-            developer_instructions: None,
+            minion_instructions: None,
         };
         // Collaboration modes start in Default mode.
         let current_collaboration_mode = CollaborationMode {
@@ -3476,7 +3476,7 @@ impl ChatWidget {
         let fallback_default = Settings {
             model: header_model.clone(),
             reasoning_effort: None,
-            developer_instructions: None,
+            minion_instructions: None,
         };
         // Collaboration modes start in Default mode.
         let current_collaboration_mode = CollaborationMode {
@@ -6380,7 +6380,7 @@ impl ChatWidget {
     }
 
     fn approval_preset_actions(
-        approval: AskForApproval,
+        approval: ApprovalPolicy,
         sandbox: SandboxPolicy,
         label: String,
         approvals_reviewer: ApprovalsReviewer,
@@ -6400,7 +6400,7 @@ impl ChatWidget {
                 collaboration_mode: None,
                 personality: None,
             }));
-            tx.send(AppEvent::UpdateAskForApprovalPolicy(approval));
+            tx.send(AppEvent::UpdateApprovalPolicy(approval));
             tx.send(AppEvent::UpdateSandboxPolicy(sandbox_clone));
             tx.send(AppEvent::UpdateApprovalsReviewer(approvals_reviewer));
             tx.send(AppEvent::InsertHistoryCell(Box::new(
@@ -6413,7 +6413,7 @@ impl ChatWidget {
     }
 
     fn preset_matches_current(
-        current_approval: AskForApproval,
+        current_approval: ApprovalPolicy,
         current_sandbox: &SandboxPolicy,
         preset: &ApprovalPreset,
     ) -> bool {
@@ -6531,7 +6531,7 @@ impl ChatWidget {
     }
 
     /// Set the approval policy in the widget's config copy.
-    pub(crate) fn set_approval_policy(&mut self, policy: AskForApproval) {
+    pub(crate) fn set_approval_policy(&mut self, policy: ApprovalPolicy) {
         if let Err(err) = self.config.permissions.approval_policy.set(policy) {
             tracing::warn!(%err, "failed to set approval_policy on chat config");
         }
@@ -6599,7 +6599,7 @@ impl ChatWidget {
         self.current_collaboration_mode = self.current_collaboration_mode.with_updates(
             /*model*/ None,
             Some(effort),
-            /*developer_instructions*/ None,
+            /*minion_instructions*/ None,
         );
         if self.collaboration_modes_enabled()
             && let Some(mask) = self.active_collaboration_mask.as_mut()
@@ -6626,7 +6626,7 @@ impl ChatWidget {
         self.current_collaboration_mode = self.current_collaboration_mode.with_updates(
             Some(model.to_string()),
             /*effort*/ None,
-            /*developer_instructions*/ None,
+            /*minion_instructions*/ None,
         );
         if self.collaboration_modes_enabled()
             && let Some(mask) = self.active_collaboration_mask.as_mut()

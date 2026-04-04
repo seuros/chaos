@@ -79,9 +79,7 @@ pub(crate) struct TileManager {
 
 impl TileManager {
     pub fn new() -> Self {
-        let mut runtime = HypertileRuntimeBuilder::default()
-            .with_gap(0)
-            .build();
+        let mut runtime = HypertileRuntimeBuilder::default().with_gap(0).build();
 
         runtime.register_plugin_type(PANE_CHAT, || ChatPlugin);
         runtime.register_plugin_type(PANE_TOOL_LIST, || ToolListPlugin);
@@ -180,11 +178,7 @@ impl TileManager {
 
     /// Close the last auxiliary (non-Chat) pane.
     pub fn close_last_auxiliary(&mut self) {
-        let aux = self
-            .pane_ids
-            .iter()
-            .copied()
-            .find(|&id| id != PaneId::ROOT);
+        let aux = self.pane_ids.iter().copied().find(|&id| id != PaneId::ROOT);
         if let Some(id) = aux {
             self.close_pane(id);
         }

@@ -5,7 +5,7 @@ use std::path::Path;
 use std::sync::Arc;
 
 use chaos_ipc::config_types::ServiceTier;
-use chaos_ipc::protocol::AskForApproval;
+use chaos_ipc::protocol::ApprovalPolicy;
 use chaos_ipc::protocol::SandboxPolicy;
 use chaos_sysctl::Constrained;
 use chaos_sysctl::features::Features;
@@ -47,7 +47,7 @@ pub trait MementoConfig: Send + Sync {
     fn ephemeral(&self) -> bool;
     fn memories(&self) -> &MemoriesConfig;
     fn features(&self) -> &Features;
-    fn approval_policy(&self) -> &Constrained<AskForApproval>;
+    fn approval_policy(&self) -> &Constrained<ApprovalPolicy>;
     fn sandbox_policy(&self) -> &Constrained<SandboxPolicy>;
     fn service_tier(&self) -> Option<ServiceTier>;
 }
@@ -68,7 +68,7 @@ impl<T: MementoConfig> MementoConfig for Arc<T> {
     fn features(&self) -> &Features {
         (**self).features()
     }
-    fn approval_policy(&self) -> &Constrained<AskForApproval> {
+    fn approval_policy(&self) -> &Constrained<ApprovalPolicy> {
         (**self).approval_policy()
     }
     fn sandbox_policy(&self) -> &Constrained<SandboxPolicy> {

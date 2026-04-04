@@ -2,16 +2,16 @@
 source: bin/xserver/src/multi_agents.rs
 expression: snapshot
 ---
-• Spawned Robie [explorer] (gpt-5 high)
+• Spawned Robie [scout] (gpt-5 high)
   └ Compute 11! and reply with just the integer result.
 
-• Sent input to Robie [explorer]
+• Sent input to Robie [scout]
   └ Please continue and return the answer only.
 
-• Waiting for Robie [explorer]
+• Waiting for Robie [scout]
 
 • Finished waiting
-  └ Robie [explorer]: Completed - 39916800
-    Bob [worker]: Error - tool timeout
+  └ Robie [scout]: Completed - 39916800
+    Bob [task]: Error - tool timeout
 
-• Closed Robie [explorer]
+• Closed Robie [scout]

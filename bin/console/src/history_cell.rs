@@ -2447,7 +2447,7 @@ mod tests {
     use chaos_ipc::account::PlanType;
     use chaos_ipc::models::WebSearchAction;
     use chaos_ipc::parse_command::ParsedCommand;
-    use chaos_ipc::protocol::AskForApproval;
+    use chaos_ipc::protocol::ApprovalPolicy;
     use chaos_ipc::protocol::McpAuthStatus;
     use chaos_ipc::protocol::SandboxPolicy;
     use chaos_ipc::protocol::SessionConfiguredEvent;
@@ -2542,7 +2542,7 @@ mod tests {
             model: model.to_string(),
             model_provider_id: "test-provider".to_string(),
             service_tier: None,
-            approval_policy: AskForApproval::Never,
+            approval_policy: ApprovalPolicy::Headless,
             approvals_reviewer: chaos_ipc::config_types::ApprovalsReviewer::User,
             sandbox_policy: SandboxPolicy::new_read_only_policy(),
             cwd: PathBuf::from("/tmp/project"),

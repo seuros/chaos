@@ -73,7 +73,7 @@ fn external_sandbox_auto_approves_in_on_request() {
     assert_eq!(
         assess_patch_safety(
             &add_inside,
-            AskForApproval::OnRequest,
+            ApprovalPolicy::Interactive,
             &policy,
             &FileSystemSandboxPolicy::from(&policy),
             &cwd,
@@ -103,7 +103,7 @@ fn granular_with_all_flags_true_matches_on_request_for_out_of_root_patch() {
     assert_eq!(
         assess_patch_safety(
             &add_outside,
-            AskForApproval::OnRequest,
+            ApprovalPolicy::Interactive,
             &policy_workspace_only,
             &FileSystemSandboxPolicy::from(&policy_workspace_only),
             &cwd,
@@ -113,7 +113,7 @@ fn granular_with_all_flags_true_matches_on_request_for_out_of_root_patch() {
     assert_eq!(
         assess_patch_safety(
             &add_outside,
-            AskForApproval::Granular(GranularApprovalConfig {
+            ApprovalPolicy::Granular(GranularApprovalConfig {
                 sandbox_approval: true,
                 rules: true,
                 skill_approval: true,
@@ -146,7 +146,7 @@ fn granular_sandbox_approval_false_rejects_out_of_root_patch() {
     assert_eq!(
         assess_patch_safety(
             &add_outside,
-            AskForApproval::Granular(GranularApprovalConfig {
+            ApprovalPolicy::Granular(GranularApprovalConfig {
                 sandbox_approval: false,
                 rules: true,
                 skill_approval: true,
@@ -196,7 +196,7 @@ fn explicit_unreadable_paths_prevent_auto_approval_for_external_sandbox() {
     assert_eq!(
         assess_patch_safety(
             &action,
-            AskForApproval::OnRequest,
+            ApprovalPolicy::Interactive,
             &sandbox_policy,
             &file_system_sandbox_policy,
             &cwd,
@@ -238,7 +238,7 @@ fn explicit_read_only_subpaths_prevent_auto_approval_for_external_sandbox() {
     assert_eq!(
         assess_patch_safety(
             &action,
-            AskForApproval::OnRequest,
+            ApprovalPolicy::Interactive,
             &sandbox_policy,
             &file_system_sandbox_policy,
             &cwd,

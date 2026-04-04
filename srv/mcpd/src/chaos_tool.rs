@@ -11,7 +11,7 @@ use chaos_argv::Arg0DispatchPaths;
 use chaos_conv::json_to_toml;
 use chaos_ipc::ProcessId;
 use chaos_ipc::config_types::SandboxMode;
-use chaos_ipc::protocol::AskForApproval;
+use chaos_ipc::protocol::ApprovalPolicy;
 use chaos_kern::ProcessTable;
 use chaos_kern::config::Config;
 use chaos_kern::config::ConfigOverrides;
@@ -88,9 +88,13 @@ pub struct ChaosToolParams {
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub base_instructions: Option<String>,
 
-    /// Developer instructions injected as a developer role message.
-    #[serde(default, skip_serializing_if = "Option::is_none")]
-    pub developer_instructions: Option<String>,
+    /// Minion instructions injected as a developer role message.
+    #[serde(
+        default,
+        skip_serializing_if = "Option::is_none",
+        alias = "developer_instructions"
+    )]
+    pub minion_instructions: Option<String>,
 
     /// Prompt used when compacting the conversation.
     #[serde(default, skip_serializing_if = "Option::is_none")]
@@ -100,19 +104,17 @@ pub struct ChaosToolParams {
 #[derive(Debug, Clone, Serialize, Deserialize, JsonSchema, PartialEq)]
 #[serde(rename_all = "kebab-case")]
 pub enum ChaosApprovalPolicy {
-    Untrusted,
-    OnFailure,
-    OnRequest,
-    Never,
+    Supervised,
+    Interactive,
+    Headless,
 }
 
-impl From<ChaosApprovalPolicy> for AskForApproval {
+impl From<ChaosApprovalPolicy> for ApprovalPolicy {
     fn from(value: ChaosApprovalPolicy) -> Self {
         match value {
-            ChaosApprovalPolicy::Untrusted => AskForApproval::UnlessTrusted,
-            ChaosApprovalPolicy::OnFailure => AskForApproval::OnFailure,
-            ChaosApprovalPolicy::OnRequest => AskForApproval::OnRequest,
-            ChaosApprovalPolicy::Never => AskForApproval::Never,
+            ChaosApprovalPolicy::Supervised => ApprovalPolicy::Supervised,
+            ChaosApprovalPolicy::Interactive => ApprovalPolicy::Interactive,
+            ChaosApprovalPolicy::Headless => ApprovalPolicy::Headless,
         }
     }
 }
@@ -151,7 +153,7 @@ impl ChaosToolParams {
             sandbox,
             config: cli_overrides,
             base_instructions,
-            developer_instructions,
+            minion_instructions,
             compact_prompt,
         } = self;
 
@@ -166,7 +168,7 @@ impl ChaosToolParams {
             alcatraz_macos_exe: arg0_paths.alcatraz_macos_exe.clone(),
             main_execve_wrapper_exe: arg0_paths.main_execve_wrapper_exe.clone(),
             base_instructions,
-            developer_instructions,
+            minion_instructions,
             compact_prompt,
             ..Default::default()
         };

@@ -2,4 +2,4 @@
 source: bin/xserver/src/bottom_pane/footer.rs
 expression: terminal.backend()
 ---
-"  Status line content · Robie [explorer]                                        "
+"  Status line content · Robie [scout]                                           "

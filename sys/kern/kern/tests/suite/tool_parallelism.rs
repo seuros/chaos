@@ -4,7 +4,7 @@ use std::fs;
 use std::time::Duration;
 use std::time::Instant;
 
-use chaos_ipc::protocol::AskForApproval;
+use chaos_ipc::protocol::ApprovalPolicy;
 use chaos_ipc::protocol::EventMsg;
 use chaos_ipc::protocol::Op;
 use chaos_ipc::protocol::SandboxPolicy;
@@ -40,7 +40,7 @@ async fn run_turn(test: &TestCodex, prompt: &str) -> anyhow::Result<()> {
             }],
             final_output_json_schema: None,
             cwd: test.cwd.path().to_path_buf(),
-            approval_policy: AskForApproval::Never,
+            approval_policy: ApprovalPolicy::Headless,
             sandbox_policy: SandboxPolicy::RootAccess,
             model: session_model,
             effort: None,
@@ -356,7 +356,7 @@ async fn shell_tools_start_before_response_completed_when_stream_delayed() -> an
             }],
             final_output_json_schema: None,
             cwd: test.cwd.path().to_path_buf(),
-            approval_policy: AskForApproval::Never,
+            approval_policy: ApprovalPolicy::Headless,
             sandbox_policy: SandboxPolicy::RootAccess,
             model: session_model,
             effort: None,

@@ -20,7 +20,7 @@ use chaos_ipc::approvals::NetworkApprovalContext;
 use chaos_ipc::permissions::FileSystemSandboxKind;
 use chaos_ipc::permissions::FileSystemSandboxPolicy;
 use chaos_ipc::permissions::NetworkSandboxPolicy;
-use chaos_ipc::protocol::AskForApproval;
+use chaos_ipc::protocol::ApprovalPolicy;
 use chaos_ipc::protocol::ReviewDecision;
 use chaos_pf::NetworkProxy;
 use futures::Future;
@@ -159,30 +159,30 @@ impl ExecApprovalRequirement {
     }
 }
 
-/// - Never, OnFailure: do not ask
-/// - OnRequest: ask unless filesystem access is unrestricted
+/// - Headless: do not ask
+/// - Interactive: ask unless filesystem access is unrestricted
 /// - Granular: ask unless filesystem access is unrestricted, but auto-reject
 ///   when granular sandbox approval is disabled.
-/// - UnlessTrusted: always ask
+/// - Supervised: always ask
 pub(crate) fn default_exec_approval_requirement(
-    policy: AskForApproval,
+    policy: ApprovalPolicy,
     file_system_sandbox_policy: &FileSystemSandboxPolicy,
 ) -> ExecApprovalRequirement {
     let needs_approval = match policy {
-        AskForApproval::Never | AskForApproval::OnFailure => false,
-        AskForApproval::OnRequest | AskForApproval::Granular(_) => {
+        ApprovalPolicy::Headless => false,
+        ApprovalPolicy::Interactive | ApprovalPolicy::Granular(_) => {
             matches!(
                 file_system_sandbox_policy.kind,
                 FileSystemSandboxKind::Restricted
             )
         }
-        AskForApproval::UnlessTrusted => true,
+        ApprovalPolicy::Supervised => true,
     };
 
     if needs_approval
         && matches!(
             policy,
-            AskForApproval::Granular(granular_config)
+            ApprovalPolicy::Granular(granular_config)
                 if !granular_config.allows_sandbox_approval()
         )
     {
@@ -248,12 +248,12 @@ pub(crate) trait Approvable<Req> {
         SandboxOverride::NoOverride
     }
 
-    fn should_bypass_approval(&self, policy: AskForApproval, already_approved: bool) -> bool {
+    fn should_bypass_approval(&self, policy: ApprovalPolicy, already_approved: bool) -> bool {
         if already_approved {
             // We do not ask one more time
             return true;
         }
-        matches!(policy, AskForApproval::Never)
+        matches!(policy, ApprovalPolicy::Headless)
     }
 
     /// Return `Some(_)` to specify a custom exec approval requirement, or `None`
@@ -263,13 +263,12 @@ pub(crate) trait Approvable<Req> {
     }
 
     /// Decide we can request an approval for no-sandbox execution.
-    fn wants_no_sandbox_approval(&self, policy: AskForApproval) -> bool {
+    fn wants_no_sandbox_approval(&self, policy: ApprovalPolicy) -> bool {
         match policy {
-            AskForApproval::OnFailure => true,
-            AskForApproval::UnlessTrusted => true,
-            AskForApproval::Never => false,
-            AskForApproval::OnRequest => false,
-            AskForApproval::Granular(granular_config) => granular_config.sandbox_approval,
+            ApprovalPolicy::Supervised => true,
+            ApprovalPolicy::Headless => false,
+            ApprovalPolicy::Interactive => false,
+            ApprovalPolicy::Granular(granular_config) => granular_config.sandbox_approval,
         }
     }
 

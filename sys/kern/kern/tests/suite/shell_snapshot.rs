@@ -1,5 +1,5 @@
 use anyhow::Result;
-use chaos_ipc::protocol::AskForApproval;
+use chaos_ipc::protocol::ApprovalPolicy;
 use chaos_ipc::protocol::EventMsg;
 use chaos_ipc::protocol::ExecCommandBeginEvent;
 use chaos_ipc::protocol::ExecCommandEndEvent;
@@ -163,7 +163,7 @@ async fn run_snapshot_command_with_options(
             }],
             final_output_json_schema: None,
             cwd,
-            approval_policy: AskForApproval::Never,
+            approval_policy: ApprovalPolicy::Headless,
             sandbox_policy: SandboxPolicy::RootAccess,
             model: session_model,
             effort: None,
@@ -253,7 +253,7 @@ async fn run_shell_command_snapshot_with_options(
             }],
             final_output_json_schema: None,
             cwd,
-            approval_policy: AskForApproval::Never,
+            approval_policy: ApprovalPolicy::Headless,
             sandbox_policy: SandboxPolicy::RootAccess,
             model: session_model,
             effort: None,
@@ -323,7 +323,7 @@ async fn run_tool_turn_on_harness(
             }],
             final_output_json_schema: None,
             cwd,
-            approval_policy: AskForApproval::Never,
+            approval_policy: ApprovalPolicy::Headless,
             sandbox_policy: SandboxPolicy::RootAccess,
             model: session_model,
             effort: None,
@@ -551,7 +551,7 @@ async fn shell_command_snapshot_still_intercepts_apply_patch() -> Result<()> {
             }],
             final_output_json_schema: None,
             cwd: cwd.clone(),
-            approval_policy: AskForApproval::Never,
+            approval_policy: ApprovalPolicy::Headless,
             sandbox_policy: SandboxPolicy::RootAccess,
             model,
             effort: None,

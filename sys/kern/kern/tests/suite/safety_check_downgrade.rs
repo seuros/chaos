@@ -1,7 +1,7 @@
 use anyhow::Result;
 use chaos_ipc::models::ContentItem;
 use chaos_ipc::models::ResponseItem;
-use chaos_ipc::protocol::AskForApproval;
+use chaos_ipc::protocol::ApprovalPolicy;
 use chaos_ipc::protocol::EventMsg;
 use chaos_ipc::protocol::ModelRerouteReason;
 use chaos_ipc::protocol::Op;
@@ -44,7 +44,7 @@ async fn openai_model_header_mismatch_emits_warning_event_and_warning_item() -> 
             }],
             final_output_json_schema: None,
             cwd: test.cwd_path().to_path_buf(),
-            approval_policy: AskForApproval::Never,
+            approval_policy: ApprovalPolicy::Headless,
             sandbox_policy: SandboxPolicy::RootAccess,
             model: REQUESTED_MODEL.to_string(),
             effort: test.config.model_reasoning_effort,
@@ -142,7 +142,7 @@ async fn response_model_field_mismatch_emits_warning_when_header_matches_request
             }],
             final_output_json_schema: None,
             cwd: test.cwd_path().to_path_buf(),
-            approval_policy: AskForApproval::Never,
+            approval_policy: ApprovalPolicy::Headless,
             sandbox_policy: SandboxPolicy::RootAccess,
             model: REQUESTED_MODEL.to_string(),
             effort: test.config.model_reasoning_effort,
@@ -227,7 +227,7 @@ async fn openai_model_header_mismatch_only_emits_one_warning_per_turn() -> Resul
             }],
             final_output_json_schema: None,
             cwd: test.cwd_path().to_path_buf(),
-            approval_policy: AskForApproval::Never,
+            approval_policy: ApprovalPolicy::Headless,
             sandbox_policy: SandboxPolicy::RootAccess,
             model: REQUESTED_MODEL.to_string(),
             effort: test.config.model_reasoning_effort,
@@ -276,7 +276,7 @@ async fn openai_model_header_casing_only_mismatch_does_not_warn() -> Result<()> 
             }],
             final_output_json_schema: None,
             cwd: test.cwd_path().to_path_buf(),
-            approval_policy: AskForApproval::Never,
+            approval_policy: ApprovalPolicy::Headless,
             sandbox_policy: SandboxPolicy::RootAccess,
             model: REQUESTED_MODEL.to_string(),
             effort: test.config.model_reasoning_effort,

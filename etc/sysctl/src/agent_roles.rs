@@ -144,6 +144,8 @@ fn read_declared_role(
         role_name = parsed_file.role_name;
         role.description = parsed_file.description.or(role.description);
         role.nickname_candidates = parsed_file.nickname_candidates.or(role.nickname_candidates);
+        role.topics = parsed_file.topics.or(role.topics);
+        role.catchphrases = parsed_file.catchphrases.or(role.catchphrases);
     }
 
     Ok((role_name, role))
@@ -156,6 +158,8 @@ fn merge_missing_role_fields(role: &mut AgentRoleConfig, fallback: &AgentRoleCon
         .nickname_candidates
         .clone()
         .or(fallback.nickname_candidates.clone());
+    role.topics = role.topics.clone().or(fallback.topics.clone());
+    role.catchphrases = role.catchphrases.clone().or(fallback.catchphrases.clone());
 }
 
 fn agents_toml_from_layer(layer_toml: &TomlValue) -> std::io::Result<Option<AgentsToml>> {
@@ -189,17 +193,22 @@ fn agent_role_config_from_toml(
         description,
         config_file,
         nickname_candidates,
+        topics: role.topics.clone(),
+        catchphrases: role.catchphrases.clone(),
     })
 }
 
 /// Lightweight stand-in for ConfigToml used only to validate agent role files.
-/// Accepts `developer_instructions` and ignores other config fields via flatten.
+/// Accepts `minion_instructions` and ignores other config fields via flatten.
 #[derive(Deserialize, Debug, Clone, PartialEq)]
 struct RawAgentRoleFileToml {
     name: Option<String>,
     description: Option<String>,
     nickname_candidates: Option<Vec<String>>,
-    developer_instructions: Option<String>,
+    #[serde(alias = "developer_instructions")]
+    minion_instructions: Option<String>,
+    topics: Option<Vec<String>>,
+    catchphrases: Option<Vec<String>>,
     #[serde(flatten)]
     _rest: TomlValue,
 }
@@ -209,7 +218,26 @@ pub struct ResolvedAgentRoleFile {
     pub role_name: String,
     pub description: Option<String>,
     pub nickname_candidates: Option<Vec<String>>,
+    pub topics: Option<Vec<String>>,
+    pub catchphrases: Option<Vec<String>>,
     pub config: TomlValue,
+}
+
+/// Splits a Markdown file with TOML frontmatter (`---` delimiters) into
+/// `(frontmatter, body)`. Returns `None` if the content does not begin with `---`.
+fn split_md_frontmatter(content: &str) -> Option<(&str, &str)> {
+    let rest = content
+        .strip_prefix("---\n")
+        .or_else(|| content.strip_prefix("---\r\n"))?;
+    if let Some(pos) = rest.find("\n---\n") {
+        Some((&rest[..pos], &rest[pos + 5..]))
+    } else if let Some(pos) = rest.find("\n---\r\n") {
+        Some((&rest[..pos], &rest[pos + 6..]))
+    } else if let Some(stripped) = rest.strip_suffix("\n---") {
+        Some((stripped, ""))
+    } else {
+        None
+    }
 }
 
 pub fn parse_agent_role_file_contents(
@@ -218,7 +246,26 @@ pub fn parse_agent_role_file_contents(
     config_base_dir: &Path,
     role_name_hint: Option<&str>,
 ) -> std::io::Result<ResolvedAgentRoleFile> {
-    let role_file_toml: TomlValue = toml::from_str(contents).map_err(|err| {
+    let is_md = role_file_label.extension().is_some_and(|ext| ext == "md");
+
+    let (toml_str, md_body) = if is_md {
+        match split_md_frontmatter(contents) {
+            Some((fm, body)) => (fm, body.trim()),
+            None => {
+                return Err(std::io::Error::new(
+                    std::io::ErrorKind::InvalidData,
+                    format!(
+                        "agent role file at {} must begin with a TOML frontmatter block (--- ... ---)",
+                        role_file_label.display()
+                    ),
+                ));
+            }
+        }
+    } else {
+        (contents, "")
+    };
+
+    let role_file_toml: TomlValue = toml::from_str(toml_str).map_err(|err| {
         std::io::Error::new(
             std::io::ErrorKind::InvalidData,
             format!(
@@ -237,13 +284,31 @@ pub fn parse_agent_role_file_contents(
             ),
         )
     })?;
+
+    if is_md && !md_body.is_empty() && parsed.minion_instructions.is_some() {
+        return Err(std::io::Error::new(
+            std::io::ErrorKind::InvalidData,
+            format!(
+                "agent role file at {} defines minion_instructions in both frontmatter and body; use one or the other",
+                role_file_label.display()
+            ),
+        ));
+    }
+
     let description = normalize_agent_role_description(
         &format!("agent role file {}.description", role_file_label.display()),
         parsed.description.as_deref(),
     )?;
-    validate_agent_role_file_developer_instructions(
+
+    let effective_minion_instructions = if is_md && !md_body.is_empty() {
+        Some(md_body)
+    } else {
+        parsed.minion_instructions.as_deref()
+    };
+
+    validate_agent_role_file_minion_instructions(
         role_file_label,
-        parsed.developer_instructions.as_deref(),
+        effective_minion_instructions,
         role_name_hint.is_none(),
     )?;
 
@@ -285,11 +350,22 @@ pub fn parse_agent_role_file_contents(
     config_table.remove("name");
     config_table.remove("description");
     config_table.remove("nickname_candidates");
+    config_table.remove("topics");
+    config_table.remove("catchphrases");
+
+    if is_md && !md_body.is_empty() {
+        config_table.insert(
+            "minion_instructions".to_string(),
+            TomlValue::String(md_body.to_owned()),
+        );
+    }
 
     Ok(ResolvedAgentRoleFile {
         role_name,
         description,
         nickname_candidates,
+        topics: parsed.topics,
+        catchphrases: parsed.catchphrases,
         config,
     })
 }
@@ -335,16 +411,16 @@ fn validate_required_agent_role_description(
     }
 }
 
-fn validate_agent_role_file_developer_instructions(
+fn validate_agent_role_file_minion_instructions(
     role_file_label: &Path,
-    developer_instructions: Option<&str>,
+    minion_instructions: Option<&str>,
     require_present: bool,
 ) -> std::io::Result<()> {
-    match developer_instructions.map(str::trim) {
+    match minion_instructions.map(str::trim) {
         Some("") => Err(std::io::Error::new(
             std::io::ErrorKind::InvalidInput,
             format!(
-                "agent role file at {}.developer_instructions cannot be blank",
+                "agent role file at {}.minion_instructions cannot be blank",
                 role_file_label.display()
             ),
         )),
@@ -352,7 +428,7 @@ fn validate_agent_role_file_developer_instructions(
         None if require_present => Err(std::io::Error::new(
             std::io::ErrorKind::InvalidInput,
             format!(
-                "agent role file at {} must define `developer_instructions`",
+                "agent role file at {} must define `minion_instructions`",
                 role_file_label.display()
             ),
         )),
@@ -481,11 +557,38 @@ fn discover_agent_roles_in_dir(
                 description: parsed_file.description,
                 config_file: Some(agent_file),
                 nickname_candidates: parsed_file.nickname_candidates,
+                topics: parsed_file.topics,
+                catchphrases: parsed_file.catchphrases,
             },
         );
     }
 
     Ok(roles)
+}
+
+/// Returns references to all roles whose declared topics overlap with `requested_topics`.
+///
+/// The caller is responsible for sampling one from the returned list. Returns an empty
+/// vec when no role matches, which the caller should treat as a cache miss and fall back
+/// to the default role while surfacing the missing topic to the user.
+pub fn resolve_roles_by_topics<'a>(
+    roles: &'a BTreeMap<String, AgentRoleConfig>,
+    requested_topics: &[String],
+) -> Vec<(&'a str, &'a AgentRoleConfig)> {
+    if requested_topics.is_empty() {
+        return Vec::new();
+    }
+    roles
+        .iter()
+        .filter(|(_, role)| {
+            role.topics.as_deref().is_some_and(|role_topics| {
+                role_topics
+                    .iter()
+                    .any(|t| requested_topics.iter().any(|r| r.eq_ignore_ascii_case(t)))
+            })
+        })
+        .map(|(name, role)| (name.as_str(), role))
+        .collect()
 }
 
 fn collect_agent_role_files(dir: &Path) -> std::io::Result<Vec<PathBuf>> {
@@ -513,7 +616,7 @@ fn collect_agent_role_files_recursive(dir: &Path, files: &mut Vec<PathBuf>) -> s
         if file_type.is_file()
             && path
                 .extension()
-                .is_some_and(|extension| extension == "toml")
+                .is_some_and(|ext| ext == "toml" || ext == "md")
         {
             files.push(path);
         }

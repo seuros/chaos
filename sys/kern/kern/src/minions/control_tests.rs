@@ -818,7 +818,7 @@ async fn spawn_child_completion_notifies_parent_history() {
                 parent_process_id,
                 depth: 1,
                 agent_nickname: None,
-                agent_role: Some("explorer".to_string()),
+                agent_role: Some("scout".to_string()),
             })),
         )
         .await
@@ -849,7 +849,7 @@ async fn completion_watcher_notifies_parent_when_child_is_missing() {
             parent_process_id,
             depth: 1,
             agent_nickname: None,
-            agent_role: Some("explorer".to_string()),
+            agent_role: Some("scout".to_string()),
         })),
     );
 
@@ -889,7 +889,7 @@ async fn spawn_process_subagent_gets_random_nickname_in_session_source() {
                 parent_process_id,
                 depth: 1,
                 agent_nickname: None,
-                agent_role: Some("explorer".to_string()),
+                agent_role: Some("scout".to_string()),
             })),
         )
         .await
@@ -914,7 +914,7 @@ async fn spawn_process_subagent_gets_random_nickname_in_session_source() {
     assert_eq!(seen_parent_process_id, parent_process_id);
     assert_eq!(depth, 1);
     assert!(agent_nickname.is_some());
-    assert_eq!(agent_role, Some("explorer".to_string()));
+    assert_eq!(agent_role, Some("scout".to_string()));
 }
 
 #[tokio::test]
@@ -926,6 +926,8 @@ async fn spawn_process_subagent_uses_role_specific_nickname_candidates() {
             description: Some("Research role".to_string()),
             config_file: None,
             nickname_candidates: Some(vec!["Atlas".to_string()]),
+            topics: None,
+            catchphrases: None,
         },
     );
     let (parent_process_id, _parent_thread) = harness.start_process().await;
@@ -986,7 +988,7 @@ async fn resume_process_subagent_restores_stored_nickname_and_role() {
                 parent_process_id,
                 depth: 1,
                 agent_nickname: None,
-                agent_role: Some("explorer".to_string()),
+                agent_role: Some("scout".to_string()),
             })),
         )
         .await
@@ -1029,7 +1031,7 @@ async fn resume_process_subagent_restores_stored_nickname_and_role() {
         loop {
             if let Ok(Some(metadata)) = state_db.get_process(child_process_id).await
                 && metadata.agent_nickname.is_some()
-                && metadata.agent_role.as_deref() == Some("explorer")
+                && metadata.agent_role.as_deref() == Some("scout")
             {
                 break;
             }
@@ -1080,7 +1082,7 @@ async fn resume_process_subagent_restores_stored_nickname_and_role() {
     assert_eq!(resumed_parent_process_id, parent_process_id);
     assert_eq!(resumed_depth, 1);
     assert_eq!(resumed_nickname, Some(original_nickname));
-    assert_eq!(resumed_role, Some("explorer".to_string()));
+    assert_eq!(resumed_role, Some("scout".to_string()));
 
     let _ = harness
         .control

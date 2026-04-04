@@ -4,7 +4,7 @@ use chaos_ipc::config_types::ServiceTier;
 use chaos_ipc::config_types::Verbosity;
 use chaos_ipc::config_types::WebSearchMode;
 use chaos_ipc::openai_models::ReasoningEffort;
-use chaos_ipc::protocol::AskForApproval;
+use chaos_ipc::protocol::ApprovalPolicy;
 use chaos_realpath::AbsolutePathBuf;
 use schemars::JsonSchema;
 use serde::Deserialize;
@@ -27,7 +27,7 @@ pub struct ConfigProfile {
     /// The key in the `model_providers` map identifying the
     /// [`ModelProviderInfo`] to use.
     pub model_provider: Option<String>,
-    pub approval_policy: Option<AskForApproval>,
+    pub approval_policy: Option<ApprovalPolicy>,
     pub approvals_reviewer: Option<ApprovalsReviewer>,
     pub sandbox_mode: Option<SandboxMode>,
     pub model_reasoning_effort: Option<ReasoningEffort>,

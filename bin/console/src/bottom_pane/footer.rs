@@ -1645,7 +1645,7 @@ mod tests {
             context_window_used_tokens: None,
             status_line_value: None,
             status_line_enabled: false,
-            active_agent_label: Some("Robie [explorer]".to_string()),
+            active_agent_label: Some("Robie [scout]".to_string()),
         };
 
         snapshot_footer("footer_active_agent_label", props);
@@ -1662,7 +1662,7 @@ mod tests {
             context_window_used_tokens: None,
             status_line_value: Some(Line::from("Status line content".to_string())),
             status_line_enabled: true,
-            active_agent_label: Some("Robie [explorer]".to_string()),
+            active_agent_label: Some("Robie [scout]".to_string()),
         };
 
         snapshot_footer("footer_status_line_with_active_agent_label", props);

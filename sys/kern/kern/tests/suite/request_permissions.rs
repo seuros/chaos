@@ -3,7 +3,7 @@
 use anyhow::Result;
 use chaos_ipc::models::FileSystemPermissions;
 use chaos_ipc::models::PermissionProfile;
-use chaos_ipc::protocol::AskForApproval;
+use chaos_ipc::protocol::ApprovalPolicy;
 use chaos_ipc::protocol::EventMsg;
 use chaos_ipc::protocol::ExecApprovalRequestEvent;
 use chaos_ipc::protocol::GranularApprovalConfig;
@@ -181,7 +181,7 @@ fn shell_event_with_raw_request_permissions(
 async fn submit_turn(
     test: &TestCodex,
     prompt: &str,
-    approval_policy: AskForApproval,
+    approval_policy: ApprovalPolicy,
     sandbox_policy: SandboxPolicy,
 ) -> Result<()> {
     let session_model = test.session_configured.model.clone();
@@ -316,7 +316,7 @@ async fn with_additional_permissions_requires_approval_under_on_request() -> Res
     skip_if_sandbox!(Ok(()));
 
     let server = start_mock_server().await;
-    let approval_policy = AskForApproval::OnRequest;
+    let approval_policy = ApprovalPolicy::Interactive;
     let sandbox_policy = SandboxPolicy::new_read_only_policy();
     let sandbox_policy_for_config = sandbox_policy.clone();
 
@@ -424,7 +424,7 @@ async fn request_permissions_tool_is_auto_denied_when_granular_request_permissio
     skip_if_sandbox!(Ok(()));
 
     let server = start_mock_server().await;
-    let approval_policy = AskForApproval::Granular(GranularApprovalConfig {
+    let approval_policy = ApprovalPolicy::Granular(GranularApprovalConfig {
         sandbox_approval: true,
         rules: true,
         skill_approval: true,
@@ -512,7 +512,7 @@ async fn relative_additional_permissions_resolve_against_tool_workdir() -> Resul
     skip_if_sandbox!(Ok(()));
 
     let server = start_mock_server().await;
-    let approval_policy = AskForApproval::OnRequest;
+    let approval_policy = ApprovalPolicy::Interactive;
     let sandbox_policy = SandboxPolicy::new_read_only_policy();
     let sandbox_policy_for_config = sandbox_policy.clone();
 
@@ -632,7 +632,7 @@ async fn read_only_with_additional_permissions_does_not_widen_to_unrequested_cwd
     skip_if_sandbox!(Ok(()));
 
     let server = start_mock_server().await;
-    let approval_policy = AskForApproval::OnRequest;
+    let approval_policy = ApprovalPolicy::Interactive;
     let sandbox_policy = SandboxPolicy::new_read_only_policy();
     let sandbox_policy_for_config = sandbox_policy.clone();
 
@@ -732,7 +732,7 @@ async fn read_only_with_additional_permissions_does_not_widen_to_unrequested_tmp
     skip_if_sandbox!(Ok(()));
 
     let server = start_mock_server().await;
-    let approval_policy = AskForApproval::OnRequest;
+    let approval_policy = ApprovalPolicy::Interactive;
     let sandbox_policy = SandboxPolicy::new_read_only_policy();
     let sandbox_policy_for_config = sandbox_policy.clone();
 
@@ -831,7 +831,7 @@ async fn workspace_write_with_additional_permissions_can_write_outside_cwd() -> 
     skip_if_sandbox!(Ok(()));
 
     let server = start_mock_server().await;
-    let approval_policy = AskForApproval::OnRequest;
+    let approval_policy = ApprovalPolicy::Interactive;
     let sandbox_policy = workspace_write_excluding_tmp();
     let sandbox_policy_for_config = sandbox_policy.clone();
 
@@ -935,7 +935,7 @@ async fn workspace_write_with_additional_permissions_can_write_outside_cwd() -> 
 async fn with_additional_permissions_denied_approval_blocks_execution() -> Result<()> {
     skip_if_no_network!(Ok(()));
     let server = start_mock_server().await;
-    let approval_policy = AskForApproval::OnRequest;
+    let approval_policy = ApprovalPolicy::Interactive;
     let sandbox_policy = workspace_write_excluding_tmp();
     let sandbox_policy_for_config = sandbox_policy.clone();
 
@@ -1040,7 +1040,7 @@ async fn request_permissions_grants_apply_to_later_exec_command_calls() -> Resul
     skip_if_sandbox!(Ok(()));
 
     let server = start_mock_server().await;
-    let approval_policy = AskForApproval::OnRequest;
+    let approval_policy = ApprovalPolicy::Interactive;
     let sandbox_policy = workspace_write_excluding_tmp();
     let sandbox_policy_for_config = sandbox_policy.clone();
 
@@ -1163,7 +1163,7 @@ async fn request_permissions_preapprove_explicit_exec_permissions_outside_on_req
     skip_if_sandbox!(Ok(()));
 
     let server = start_mock_server().await;
-    let approval_policy = AskForApproval::OnRequest;
+    let approval_policy = ApprovalPolicy::Interactive;
     let sandbox_policy = workspace_write_excluding_tmp();
     let sandbox_policy_for_config = sandbox_policy.clone();
 
@@ -1280,7 +1280,7 @@ async fn request_permissions_grants_apply_to_later_shell_command_calls() -> Resu
     skip_if_sandbox!(Ok(()));
 
     let server = start_mock_server().await;
-    let approval_policy = AskForApproval::OnRequest;
+    let approval_policy = ApprovalPolicy::Interactive;
     let sandbox_policy = workspace_write_excluding_tmp();
     let sandbox_policy_for_config = sandbox_policy.clone();
 
@@ -1391,7 +1391,7 @@ async fn request_permissions_grants_apply_to_later_shell_command_calls_without_i
     skip_if_sandbox!(Ok(()));
 
     let server = start_mock_server().await;
-    let approval_policy = AskForApproval::OnRequest;
+    let approval_policy = ApprovalPolicy::Interactive;
     let sandbox_policy = workspace_write_excluding_tmp();
     let sandbox_policy_for_config = sandbox_policy.clone();
 
@@ -1502,7 +1502,7 @@ async fn partial_request_permissions_grants_do_not_preapprove_new_permissions() 
     skip_if_sandbox!(Ok(()));
 
     let server = start_mock_server().await;
-    let approval_policy = AskForApproval::OnRequest;
+    let approval_policy = ApprovalPolicy::Interactive;
     let sandbox_policy = workspace_write_excluding_tmp();
     let sandbox_policy_for_config = sandbox_policy.clone();
 
@@ -1662,7 +1662,7 @@ async fn request_permissions_grants_do_not_carry_across_turns() -> Result<()> {
     skip_if_sandbox!(Ok(()));
 
     let server = start_mock_server().await;
-    let approval_policy = AskForApproval::OnRequest;
+    let approval_policy = ApprovalPolicy::Interactive;
     let sandbox_policy = workspace_write_excluding_tmp();
     let sandbox_policy_for_config = sandbox_policy.clone();
 
@@ -1774,7 +1774,7 @@ async fn request_permissions_session_grants_carry_across_turns() -> Result<()> {
     skip_if_sandbox!(Ok(()));
 
     let server = start_mock_server().await;
-    let approval_policy = AskForApproval::OnRequest;
+    let approval_policy = ApprovalPolicy::Interactive;
     let sandbox_policy = workspace_write_excluding_tmp();
     let sandbox_policy_for_config = sandbox_policy.clone();
 

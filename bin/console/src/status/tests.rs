@@ -4,7 +4,7 @@ use crate::history_cell::HistoryCell;
 use chaos_ipc::ProcessId;
 use chaos_ipc::config_types::ReasoningSummary;
 use chaos_ipc::openai_models::ReasoningEffort;
-use chaos_ipc::protocol::AskForApproval;
+use chaos_ipc::protocol::ApprovalPolicy;
 use chaos_ipc::protocol::CreditsSnapshot;
 use chaos_ipc::protocol::RateLimitSnapshot;
 use chaos_ipc::protocol::RateLimitWindow;
@@ -183,7 +183,7 @@ async fn status_permissions_non_default_workspace_write_is_custom() {
     config
         .permissions
         .approval_policy
-        .set(AskForApproval::OnRequest)
+        .set(ApprovalPolicy::Interactive)
         .expect("set approval policy");
     config
         .permissions

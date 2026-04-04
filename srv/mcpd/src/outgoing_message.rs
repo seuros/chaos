@@ -231,7 +231,7 @@ mod tests {
     use anyhow::Result;
     use chaos_ipc::ProcessId;
     use chaos_ipc::openai_models::ReasoningEffort;
-    use chaos_ipc::protocol::AskForApproval;
+    use chaos_ipc::protocol::ApprovalPolicy;
     use chaos_ipc::protocol::EventMsg;
     use chaos_ipc::protocol::SandboxPolicy;
     use chaos_ipc::protocol::SessionConfiguredEvent;
@@ -272,7 +272,7 @@ mod tests {
                 model: "gpt-4o".to_string(),
                 model_provider_id: "test-provider".to_string(),
                 service_tier: None,
-                approval_policy: AskForApproval::Never,
+                approval_policy: ApprovalPolicy::Headless,
                 approvals_reviewer: chaos_ipc::config_types::ApprovalsReviewer::User,
                 sandbox_policy: SandboxPolicy::new_read_only_policy(),
                 cwd: PathBuf::from("/home/user/project"),
@@ -314,7 +314,7 @@ mod tests {
             model: "gpt-4o".to_string(),
             model_provider_id: "test-provider".to_string(),
             service_tier: None,
-            approval_policy: AskForApproval::Never,
+            approval_policy: ApprovalPolicy::Headless,
             approvals_reviewer: chaos_ipc::config_types::ApprovalsReviewer::User,
             sandbox_policy: SandboxPolicy::new_read_only_policy(),
             cwd: PathBuf::from("/home/user/project"),
@@ -352,7 +352,7 @@ mod tests {
                 "session_id": session_configured_event.session_id,
                 "model": "gpt-4o",
                 "model_provider_id": "test-provider",
-                "approval_policy": "never",
+                "approval_policy": "headless",
                 "approvals_reviewer": "user",
                 "sandbox_policy": {
                     "type": "read-only"
@@ -380,7 +380,7 @@ mod tests {
             model: "gpt-4o".to_string(),
             model_provider_id: "test-provider".to_string(),
             service_tier: None,
-            approval_policy: AskForApproval::Never,
+            approval_policy: ApprovalPolicy::Headless,
             approvals_reviewer: chaos_ipc::config_types::ApprovalsReviewer::User,
             sandbox_policy: SandboxPolicy::new_read_only_policy(),
             cwd: PathBuf::from("/home/user/project"),
@@ -419,7 +419,7 @@ mod tests {
                 "session_id": session_configured_event.session_id,
                 "model": "gpt-4o",
                 "model_provider_id": "test-provider",
-                "approval_policy": "never",
+                "approval_policy": "headless",
                 "approvals_reviewer": "user",
                 "sandbox_policy": {
                     "type": "read-only"

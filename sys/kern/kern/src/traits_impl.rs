@@ -7,7 +7,7 @@ use std::sync::Arc;
 
 use chaos_ipc::ProcessId;
 use chaos_ipc::config_types::ServiceTier;
-use chaos_ipc::protocol::AskForApproval;
+use chaos_ipc::protocol::ApprovalPolicy;
 use chaos_ipc::protocol::Event;
 use chaos_ipc::protocol::SandboxPolicy;
 use chaos_proc::StateRuntime;
@@ -75,7 +75,7 @@ impl MementoConfig for Config {
         self.features.get()
     }
 
-    fn approval_policy(&self) -> &Constrained<AskForApproval> {
+    fn approval_policy(&self) -> &Constrained<ApprovalPolicy> {
         &self.permissions.approval_policy
     }
 

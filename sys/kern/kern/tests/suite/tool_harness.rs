@@ -2,7 +2,7 @@ use std::fs;
 
 use assert_matches::assert_matches;
 use chaos_ipc::plan_tool::StepStatus;
-use chaos_ipc::protocol::AskForApproval;
+use chaos_ipc::protocol::ApprovalPolicy;
 use chaos_ipc::protocol::EventMsg;
 use chaos_ipc::protocol::Op;
 use chaos_ipc::protocol::SandboxPolicy;
@@ -82,7 +82,7 @@ async fn shell_tool_executes_command_and_streams_output() -> anyhow::Result<()> 
             }],
             final_output_json_schema: None,
             cwd: cwd.path().to_path_buf(),
-            approval_policy: AskForApproval::Never,
+            approval_policy: ApprovalPolicy::Headless,
             sandbox_policy: SandboxPolicy::RootAccess,
             model: session_model,
             effort: None,
@@ -152,7 +152,7 @@ async fn update_plan_tool_emits_plan_update_event() -> anyhow::Result<()> {
             }],
             final_output_json_schema: None,
             cwd: cwd.path().to_path_buf(),
-            approval_policy: AskForApproval::Never,
+            approval_policy: ApprovalPolicy::Headless,
             sandbox_policy: SandboxPolicy::RootAccess,
             model: session_model,
             effort: None,
@@ -232,7 +232,7 @@ async fn update_plan_tool_rejects_malformed_payload() -> anyhow::Result<()> {
             }],
             final_output_json_schema: None,
             cwd: cwd.path().to_path_buf(),
-            approval_policy: AskForApproval::Never,
+            approval_policy: ApprovalPolicy::Headless,
             sandbox_policy: SandboxPolicy::RootAccess,
             model: session_model,
             effort: None,
@@ -327,7 +327,7 @@ async fn apply_patch_tool_executes_and_emits_patch_events() -> anyhow::Result<()
             }],
             final_output_json_schema: None,
             cwd: cwd.path().to_path_buf(),
-            approval_policy: AskForApproval::Never,
+            approval_policy: ApprovalPolicy::Headless,
             sandbox_policy: SandboxPolicy::RootAccess,
             model: session_model,
             effort: None,
@@ -430,7 +430,7 @@ async fn apply_patch_reports_parse_diagnostics() -> anyhow::Result<()> {
             }],
             final_output_json_schema: None,
             cwd: cwd.path().to_path_buf(),
-            approval_policy: AskForApproval::Never,
+            approval_policy: ApprovalPolicy::Headless,
             sandbox_policy: SandboxPolicy::RootAccess,
             model: session_model,
             effort: None,

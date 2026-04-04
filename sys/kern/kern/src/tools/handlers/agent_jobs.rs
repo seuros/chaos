@@ -216,7 +216,7 @@ mod spawn_agents_on_csv {
     /// Create a new agent job from a CSV and run it to completion.
     ///
     /// Each CSV row becomes a job item. The instruction string is a template where `{column}`
-    /// placeholders are filled with values from that row. Results are reported by workers via
+    /// placeholders are filled with values from that row. Results are reported by tasks via
     /// `report_agent_job_result`, then exported to CSV on completion.
     pub async fn handle(
         session: Arc<Session>,
@@ -490,7 +490,7 @@ mod report_agent_job_result {
                 ))
             })?;
         if accepted && args.stop.unwrap_or(false) {
-            let message = "cancelled by worker request";
+            let message = "cancelled by task request";
             let _ = db
                 .mark_agent_job_cancelled(args.job_id.as_str(), message)
                 .await;
@@ -600,7 +600,7 @@ async fn run_agent_job_loop(
             let _ = session
                 .notify_background_event(
                     &turn,
-                    format!("agent job {job_id} cancellation requested; stopping new workers"),
+                    format!("agent job {job_id} cancellation requested; stopping new tasks"),
                 )
                 .await;
         }
@@ -643,7 +643,7 @@ async fn run_agent_job_loop(
                         break;
                     }
                     Err(err) => {
-                        let error_message = format!("failed to spawn worker: {err}");
+                        let error_message = format!("failed to spawn task: {err}");
                         db.mark_agent_job_item_failed(
                             job_id.as_str(),
                             item.item_id.as_str(),
@@ -810,7 +810,7 @@ async fn recover_running_items(
         .await?;
     for item in running_items {
         if is_item_stale(&item, runtime_timeout) {
-            let error_message = format!("worker exceeded max runtime of {runtime_timeout:?}");
+            let error_message = format!("task exceeded max runtime of {runtime_timeout:?}");
             db.mark_agent_job_item_failed(job_id, item.item_id.as_str(), error_message.as_str())
                 .await?;
             if let Some(assigned_process_id) = item.assigned_process_id.as_ref()
@@ -898,7 +898,7 @@ async fn reap_stale_active_items(
         return Ok(false);
     }
     for (process_id, item_id) in stale {
-        let error_message = format!("worker exceeded max runtime of {runtime_timeout:?}");
+        let error_message = format!("task exceeded max runtime of {runtime_timeout:?}");
         db.mark_agent_job_item_failed(job_id, item_id.as_str(), error_message.as_str())
             .await?;
         let _ = session
@@ -938,7 +938,7 @@ async fn finalize_finished_item(
             db.mark_agent_job_item_failed(
                 job_id,
                 item_id,
-                "worker reported result but item could not transition to completed",
+                "task reported result but item could not transition to completed",
             )
             .await?;
         }
@@ -946,7 +946,7 @@ async fn finalize_finished_item(
         db.mark_agent_job_item_failed(
             job_id,
             item_id,
-            "worker finished without calling report_agent_job_result",
+            "task finished without calling report_agent_job_result",
         )
         .await?;
     }

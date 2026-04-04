@@ -1094,7 +1094,7 @@ pub struct AgentsToml {
     /// Maximum nesting depth allowed for spawned agent threads.
     #[schemars(range(min = 1))]
     pub max_depth: Option<i32>,
-    /// Default maximum runtime in seconds for agent job workers.
+    /// Default maximum runtime in seconds for agent job tasks.
     #[schemars(range(min = 1))]
     pub job_max_runtime_seconds: Option<u64>,
 
@@ -1111,6 +1111,10 @@ pub struct AgentRoleConfig {
     pub config_file: Option<PathBuf>,
     /// Candidate nicknames for agents spawned with this role.
     pub nickname_candidates: Option<Vec<String>>,
+    /// Topic tags used for dynamic routing (e.g. ["ruby", "rails"]).
+    pub topics: Option<Vec<String>>,
+    /// Catchphrases the kernel may emit when this role is dispatched.
+    pub catchphrases: Option<Vec<String>>,
 }
 
 #[derive(Serialize, Deserialize, Debug, Clone, Default, PartialEq, Eq, JsonSchema)]
@@ -1122,6 +1126,12 @@ pub struct AgentRoleToml {
     pub config_file: Option<AbsolutePathBuf>,
     /// Candidate nicknames for agents spawned with this role.
     pub nickname_candidates: Option<Vec<String>>,
+    /// Topic tags used for dynamic routing (e.g. ["ruby", "rails"]).
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub topics: Option<Vec<String>>,
+    /// Catchphrases the kernel may emit when this role is dispatched.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub catchphrases: Option<Vec<String>>,
 }
 
 #[derive(Serialize, Deserialize, Debug, Clone, Default, PartialEq, Eq, JsonSchema)]

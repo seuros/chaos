@@ -1,6 +1,6 @@
 use anyhow::Context;
 use chaos_ipc::permissions::NetworkSandboxPolicy;
-use chaos_ipc::protocol::AskForApproval;
+use chaos_ipc::protocol::ApprovalPolicy;
 use chaos_ipc::protocol::EventMsg;
 use chaos_ipc::protocol::ExecCommandEndEvent;
 use chaos_ipc::protocol::ExecCommandSource;
@@ -162,7 +162,7 @@ async fn user_shell_command_does_not_replace_active_turn() -> anyhow::Result<()>
             }],
             final_output_json_schema: None,
             cwd: fixture.cwd.path().to_path_buf(),
-            approval_policy: AskForApproval::Never,
+            approval_policy: ApprovalPolicy::Headless,
             sandbox_policy: SandboxPolicy::RootAccess,
             model: fixture.session_configured.model.clone(),
             effort: None,

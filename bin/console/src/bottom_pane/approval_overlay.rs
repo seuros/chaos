@@ -1089,7 +1089,7 @@ mod tests {
         let mut view = ApprovalOverlay::new(
             ApprovalRequest::Exec {
                 process_id,
-                process_label: Some("Robie [explorer]".to_string()),
+                process_label: Some("Robie [scout]".to_string()),
                 id: "test".to_string(),
                 command: vec!["echo".to_string(), "hi".to_string()],
                 reason: None,
@@ -1117,7 +1117,7 @@ mod tests {
         let view = ApprovalOverlay::new(
             ApprovalRequest::Exec {
                 process_id: ProcessId::new(),
-                process_label: Some("Robie [explorer]".to_string()),
+                process_label: Some("Robie [scout]".to_string()),
                 id: "test".to_string(),
                 command: vec!["echo".to_string(), "hi".to_string()],
                 reason: None,

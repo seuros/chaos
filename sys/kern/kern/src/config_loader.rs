@@ -11,7 +11,7 @@ use crate::git_info::resolve_root_git_project_for_trust;
 use chaos_ipc::api::ConfigLayerSource;
 use chaos_ipc::config_types::SandboxMode;
 use chaos_ipc::config_types::TrustLevel;
-use chaos_ipc::protocol::AskForApproval;
+use chaos_ipc::protocol::ApprovalPolicy;
 use chaos_realpath::AbsolutePathBuf;
 use chaos_realpath::AbsolutePathBufGuard;
 use chaos_sysctl::CONFIG_TOML_FILE;
@@ -817,7 +817,7 @@ async fn load_project_layers(
 /// value.
 #[derive(Deserialize, Debug, Clone, Default, PartialEq)]
 struct LegacyManagedConfigToml {
-    approval_policy: Option<AskForApproval>,
+    approval_policy: Option<ApprovalPolicy>,
     sandbox_mode: Option<SandboxMode>,
 }
 

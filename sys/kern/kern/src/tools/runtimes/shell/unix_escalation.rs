@@ -32,7 +32,7 @@ use chaos_ipc::models::MacOsSeatbeltProfileExtensions;
 use chaos_ipc::models::PermissionProfile;
 use chaos_ipc::permissions::FileSystemSandboxPolicy;
 use chaos_ipc::permissions::NetworkSandboxPolicy;
-use chaos_ipc::protocol::AskForApproval;
+use chaos_ipc::protocol::ApprovalPolicy;
 use chaos_ipc::protocol::ExecApprovalRequestSkillMetadata;
 use chaos_ipc::protocol::NetworkPolicyRuleAction;
 use chaos_ipc::protocol::ReviewDecision;
@@ -61,13 +61,13 @@ pub(crate) struct PreparedUnifiedExecZshFork {
 }
 
 const PROMPT_CONFLICT_REASON: &str =
-    "approval required by policy, but AskForApproval is set to Never";
+    "approval required by policy, but ApprovalPolicy is set to Headless";
 const REJECT_SANDBOX_APPROVAL_REASON: &str =
-    "approval required by policy, but AskForApproval::Granular.sandbox_approval is false";
+    "approval required by policy, but ApprovalPolicy::Granular.sandbox_approval is false";
 const REJECT_RULES_APPROVAL_REASON: &str =
-    "approval required by policy rule, but AskForApproval::Granular.rules is false";
+    "approval required by policy rule, but ApprovalPolicy::Granular.rules is false";
 const REJECT_SKILL_APPROVAL_REASON: &str =
-    "approval required by skill, but AskForApproval::Granular.skill_approval is false";
+    "approval required by skill, but ApprovalPolicy::Granular.skill_approval is false";
 
 fn approval_sandbox_permissions(
     sandbox_permissions: SandboxPermissions,
@@ -308,7 +308,7 @@ struct CoreShellActionProvider {
     turn: Arc<crate::chaos::TurnContext>,
     call_id: String,
     tool_name: &'static str,
-    approval_policy: AskForApproval,
+    approval_policy: ApprovalPolicy,
     sandbox_policy: SandboxPolicy,
     file_system_sandbox_policy: FileSystemSandboxPolicy,
     network_sandbox_policy: NetworkSandboxPolicy,
@@ -329,22 +329,22 @@ enum DecisionSource {
 }
 
 fn execve_prompt_is_rejected_by_policy(
-    approval_policy: AskForApproval,
+    approval_policy: ApprovalPolicy,
     decision_source: &DecisionSource,
 ) -> Option<&'static str> {
     match (approval_policy, decision_source) {
-        (AskForApproval::Never, _) => Some(PROMPT_CONFLICT_REASON),
-        (AskForApproval::Granular(granular_config), DecisionSource::SkillScript { .. })
+        (ApprovalPolicy::Headless, _) => Some(PROMPT_CONFLICT_REASON),
+        (ApprovalPolicy::Granular(granular_config), DecisionSource::SkillScript { .. })
             if !granular_config.allows_skill_approval() =>
         {
             Some(REJECT_SKILL_APPROVAL_REASON)
         }
-        (AskForApproval::Granular(granular_config), DecisionSource::PrefixRule)
+        (ApprovalPolicy::Granular(granular_config), DecisionSource::PrefixRule)
             if !granular_config.allows_rules_approval() =>
         {
             Some(REJECT_RULES_APPROVAL_REASON)
         }
-        (AskForApproval::Granular(granular_config), DecisionSource::UnmatchedCommandFallback)
+        (ApprovalPolicy::Granular(granular_config), DecisionSource::UnmatchedCommandFallback)
             if !granular_config.allows_sandbox_approval() =>
         {
             Some(REJECT_SANDBOX_APPROVAL_REASON)
@@ -789,7 +789,7 @@ fn evaluate_intercepted_exec_policy(
 
 #[derive(Clone, Copy)]
 struct InterceptedExecPolicyContext<'a> {
-    approval_policy: AskForApproval,
+    approval_policy: ApprovalPolicy,
     sandbox_policy: &'a SandboxPolicy,
     file_system_sandbox_policy: &'a FileSystemSandboxPolicy,
     sandbox_permissions: SandboxPermissions,

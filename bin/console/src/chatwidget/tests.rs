@@ -164,7 +164,7 @@ async fn resumed_initial_messages_render_history() {
         model: "test-model".to_string(),
         model_provider_id: "test-provider".to_string(),
         service_tier: None,
-        approval_policy: AskForApproval::Never,
+        approval_policy: ApprovalPolicy::Headless,
         approvals_reviewer: ApprovalsReviewer::User,
         sandbox_policy: SandboxPolicy::new_read_only_policy(),
         cwd: PathBuf::from("/home/user/project"),
@@ -272,7 +272,7 @@ async fn replayed_user_message_preserves_text_elements_and_local_images() {
         model: "test-model".to_string(),
         model_provider_id: "test-provider".to_string(),
         service_tier: None,
-        approval_policy: AskForApproval::Never,
+        approval_policy: ApprovalPolicy::Headless,
         approvals_reviewer: ApprovalsReviewer::User,
         sandbox_policy: SandboxPolicy::new_read_only_policy(),
         cwd: PathBuf::from("/home/user/project"),
@@ -331,7 +331,7 @@ async fn replayed_user_message_preserves_remote_image_urls() {
         model: "test-model".to_string(),
         model_provider_id: "test-provider".to_string(),
         service_tier: None,
-        approval_policy: AskForApproval::Never,
+        approval_policy: ApprovalPolicy::Headless,
         approvals_reviewer: ApprovalsReviewer::User,
         sandbox_policy: SandboxPolicy::new_read_only_policy(),
         cwd: PathBuf::from("/home/user/project"),
@@ -380,7 +380,7 @@ async fn session_configured_syncs_widget_config_permissions_and_cwd() {
     chat.config
         .permissions
         .approval_policy
-        .set(AskForApproval::OnRequest)
+        .set(ApprovalPolicy::Interactive)
         .expect("set approval policy");
     chat.config
         .permissions
@@ -398,7 +398,7 @@ async fn session_configured_syncs_widget_config_permissions_and_cwd() {
         model: "test-model".to_string(),
         model_provider_id: "test-provider".to_string(),
         service_tier: None,
-        approval_policy: AskForApproval::Never,
+        approval_policy: ApprovalPolicy::Headless,
         approvals_reviewer: ApprovalsReviewer::User,
         sandbox_policy: expected_sandbox.clone(),
         cwd: expected_cwd.clone(),
@@ -416,7 +416,7 @@ async fn session_configured_syncs_widget_config_permissions_and_cwd() {
 
     assert_eq!(
         chat.config_ref().permissions.approval_policy.value(),
-        AskForApproval::Never
+        ApprovalPolicy::Headless
     );
     assert_eq!(
         chat.config_ref().permissions.sandbox_policy.get(),
@@ -439,7 +439,7 @@ async fn replayed_user_message_with_only_remote_images_renders_history_cell() {
         model: "test-model".to_string(),
         model_provider_id: "test-provider".to_string(),
         service_tier: None,
-        approval_policy: AskForApproval::Never,
+        approval_policy: ApprovalPolicy::Headless,
         approvals_reviewer: ApprovalsReviewer::User,
         sandbox_policy: SandboxPolicy::new_read_only_policy(),
         cwd: PathBuf::from("/home/user/project"),
@@ -490,7 +490,7 @@ async fn replayed_user_message_with_only_local_images_does_not_render_history_ce
         model: "test-model".to_string(),
         model_provider_id: "test-provider".to_string(),
         service_tier: None,
-        approval_policy: AskForApproval::Never,
+        approval_policy: ApprovalPolicy::Headless,
         approvals_reviewer: ApprovalsReviewer::User,
         sandbox_policy: SandboxPolicy::new_read_only_policy(),
         cwd: PathBuf::from("/home/user/project"),
@@ -565,7 +565,7 @@ async fn submission_preserves_text_elements_and_local_images() {
         model: "test-model".to_string(),
         model_provider_id: "test-provider".to_string(),
         service_tier: None,
-        approval_policy: AskForApproval::Never,
+        approval_policy: ApprovalPolicy::Headless,
         approvals_reviewer: ApprovalsReviewer::User,
         sandbox_policy: SandboxPolicy::new_read_only_policy(),
         cwd: PathBuf::from("/home/user/project"),
@@ -647,7 +647,7 @@ async fn submission_with_remote_and_local_images_keeps_local_placeholder_numberi
         model: "test-model".to_string(),
         model_provider_id: "test-provider".to_string(),
         service_tier: None,
-        approval_policy: AskForApproval::Never,
+        approval_policy: ApprovalPolicy::Headless,
         approvals_reviewer: ApprovalsReviewer::User,
         sandbox_policy: SandboxPolicy::new_read_only_policy(),
         cwd: PathBuf::from("/home/user/project"),
@@ -740,7 +740,7 @@ async fn enter_with_only_remote_images_submits_user_turn() {
         model: "test-model".to_string(),
         model_provider_id: "test-provider".to_string(),
         service_tier: None,
-        approval_policy: AskForApproval::Never,
+        approval_policy: ApprovalPolicy::Headless,
         approvals_reviewer: ApprovalsReviewer::User,
         sandbox_policy: SandboxPolicy::new_read_only_policy(),
         cwd: PathBuf::from("/home/user/project"),
@@ -803,7 +803,7 @@ async fn shift_enter_with_only_remote_images_does_not_submit_user_turn() {
         model: "test-model".to_string(),
         model_provider_id: "test-provider".to_string(),
         service_tier: None,
-        approval_policy: AskForApproval::Never,
+        approval_policy: ApprovalPolicy::Headless,
         approvals_reviewer: ApprovalsReviewer::User,
         sandbox_policy: SandboxPolicy::new_read_only_policy(),
         cwd: PathBuf::from("/home/user/project"),
@@ -841,7 +841,7 @@ async fn enter_with_only_remote_images_does_not_submit_when_modal_is_active() {
         model: "test-model".to_string(),
         model_provider_id: "test-provider".to_string(),
         service_tier: None,
-        approval_policy: AskForApproval::Never,
+        approval_policy: ApprovalPolicy::Headless,
         approvals_reviewer: ApprovalsReviewer::User,
         sandbox_policy: SandboxPolicy::new_read_only_policy(),
         cwd: PathBuf::from("/home/user/project"),
@@ -879,7 +879,7 @@ async fn enter_with_only_remote_images_does_not_submit_when_input_disabled() {
         model: "test-model".to_string(),
         model_provider_id: "test-provider".to_string(),
         service_tier: None,
-        approval_policy: AskForApproval::Never,
+        approval_policy: ApprovalPolicy::Headless,
         approvals_reviewer: ApprovalsReviewer::User,
         sandbox_policy: SandboxPolicy::new_read_only_policy(),
         cwd: PathBuf::from("/home/user/project"),
@@ -1716,7 +1716,7 @@ async fn make_chatwidget_manual(
         settings: Settings {
             model: resolved_model.clone(),
             reasoning_effort,
-            developer_instructions: None,
+            minion_instructions: None,
         },
     };
     let current_collaboration_mode = base_mode;
@@ -1922,6 +1922,8 @@ async fn collab_spawn_end_shows_requested_model_and_effort() {
             prompt: "Explore the repo".to_string(),
             model: "gpt-5".to_string(),
             reasoning_effort: ReasoningEffortConfig::High,
+            catchphrase: None,
+            missing_topics: Vec::new(),
         }),
     });
     chat.handle_codex_event(Event {
@@ -1931,7 +1933,7 @@ async fn collab_spawn_end_shows_requested_model_and_effort() {
             sender_process_id,
             new_process_id: Some(spawned_process_id),
             new_agent_nickname: Some("Robie".to_string()),
-            new_agent_role: Some("explorer".to_string()),
+            new_agent_role: Some("scout".to_string()),
             prompt: "Explore the repo".to_string(),
             model: "gpt-5".to_string(),
             reasoning_effort: ReasoningEffortConfig::High,
@@ -1947,7 +1949,7 @@ async fn collab_spawn_end_shows_requested_model_and_effort() {
         .join("\n");
 
     assert!(
-        rendered.contains("Spawned Robie [explorer] (gpt-5 high)"),
+        rendered.contains("Spawned Robie [scout] (gpt-5 high)"),
         "expected spawn line to include agent metadata and requested model, got {rendered:?}"
     );
 }
@@ -5404,7 +5406,7 @@ async fn plan_slash_command_with_args_submits_prompt_in_plan_mode() {
         model: "test-model".to_string(),
         model_provider_id: "test-provider".to_string(),
         service_tier: None,
-        approval_policy: AskForApproval::Never,
+        approval_policy: ApprovalPolicy::Headless,
         approvals_reviewer: ApprovalsReviewer::User,
         sandbox_policy: SandboxPolicy::new_read_only_policy(),
         cwd: PathBuf::from("/home/user/project"),
@@ -6477,11 +6479,11 @@ async fn preset_matching_accepts_workspace_write_with_extra_roots() {
     };
 
     assert!(
-        ChatWidget::preset_matches_current(AskForApproval::OnRequest, &current_sandbox, &preset),
+        ChatWidget::preset_matches_current(ApprovalPolicy::Interactive, &current_sandbox, &preset),
         "WorkspaceWrite with extra roots should still match the Default preset"
     );
     assert!(
-        !ChatWidget::preset_matches_current(AskForApproval::Never, &current_sandbox, &preset),
+        !ChatWidget::preset_matches_current(ApprovalPolicy::Headless, &current_sandbox, &preset),
         "approval mismatch should prevent matching the preset"
     );
 }
@@ -6689,8 +6691,8 @@ async fn approvals_popup_shows_disabled_presets() {
     let (mut chat, _rx, _op_rx) = make_chatwidget_manual(None).await;
 
     chat.config.permissions.approval_policy =
-        Constrained::new(AskForApproval::OnRequest, |candidate| match candidate {
-            AskForApproval::OnRequest => Ok(()),
+        Constrained::new(ApprovalPolicy::Interactive, |candidate| match candidate {
+            ApprovalPolicy::Interactive => Ok(()),
             _ => Err(invalid_value(
                 candidate.to_string(),
                 "this message should be printed in the description",
@@ -6725,8 +6727,8 @@ async fn approvals_popup_navigation_skips_disabled() {
     let (mut chat, mut rx, mut op_rx) = make_chatwidget_manual(None).await;
 
     chat.config.permissions.approval_policy =
-        Constrained::new(AskForApproval::OnRequest, |candidate| match candidate {
-            AskForApproval::OnRequest => Ok(()),
+        Constrained::new(ApprovalPolicy::Interactive, |candidate| match candidate {
+            ApprovalPolicy::Interactive => Ok(()),
             _ => Err(invalid_value(candidate.to_string(), "[on-request]")),
         })
         .expect("construct constrained approval policy");
@@ -6770,7 +6772,7 @@ async fn approvals_popup_navigation_skips_disabled() {
         app_events.iter().any(|ev| matches!(
             ev,
             AppEvent::ChaosOp(Op::OverrideTurnContext {
-                approval_policy: Some(AskForApproval::OnRequest),
+                approval_policy: Some(ApprovalPolicy::Interactive),
                 personality: None,
                 ..
             })
@@ -6781,7 +6783,7 @@ async fn approvals_popup_navigation_skips_disabled() {
         !app_events.iter().any(|ev| matches!(
             ev,
             AppEvent::ChaosOp(Op::OverrideTurnContext {
-                approval_policy: Some(AskForApproval::Never),
+                approval_policy: Some(ApprovalPolicy::Headless),
                 personality: None,
                 ..
             })
@@ -6836,7 +6838,7 @@ async fn permissions_selection_history_snapshot_full_access_to_default() {
     chat.config
         .permissions
         .approval_policy
-        .set(AskForApproval::Never)
+        .set(ApprovalPolicy::Headless)
         .expect("set approval policy");
     chat.config
         .permissions
@@ -6864,7 +6866,7 @@ async fn permissions_selection_emits_history_cell_when_current_is_selected() {
     chat.config
         .permissions
         .approval_policy
-        .set(AskForApproval::OnRequest)
+        .set(ApprovalPolicy::Interactive)
         .expect("set approval policy");
     chat.config
         .permissions
@@ -6959,7 +6961,7 @@ async fn approval_modal_exec_snapshot() -> anyhow::Result<()> {
     chat.config
         .permissions
         .approval_policy
-        .set(AskForApproval::OnRequest)?;
+        .set(ApprovalPolicy::Interactive)?;
     // Inject an exec approval request to display the approval modal.
     let ev = ExecApprovalRequestEvent {
         call_id: "call-approve-cmd".into(),
@@ -7023,7 +7025,7 @@ async fn approval_modal_exec_without_reason_snapshot() -> anyhow::Result<()> {
     chat.config
         .permissions
         .approval_policy
-        .set(AskForApproval::OnRequest)?;
+        .set(ApprovalPolicy::Interactive)?;
 
     let ev = ExecApprovalRequestEvent {
         call_id: "call-approve-cmd-noreason".into(),
@@ -7074,7 +7076,7 @@ async fn approval_modal_exec_multiline_prefix_hides_execpolicy_option_snapshot()
     chat.config
         .permissions
         .approval_policy
-        .set(AskForApproval::OnRequest)?;
+        .set(ApprovalPolicy::Interactive)?;
 
     let script = "python - <<'PY'\nprint('hello')\nPY".to_string();
     let command = vec!["bash".into(), "-lc".into(), script];
@@ -7123,7 +7125,7 @@ async fn approval_modal_patch_snapshot() -> anyhow::Result<()> {
     chat.config
         .permissions
         .approval_policy
-        .set(AskForApproval::OnRequest)?;
+        .set(ApprovalPolicy::Interactive)?;
 
     // Build a small changeset and a reason/grant_root to exercise the prompt text.
     let mut changes = HashMap::new();
@@ -7810,11 +7812,11 @@ async fn apply_patch_full_flow_integration_like() {
 #[tokio::test]
 async fn apply_patch_untrusted_shows_approval_modal() -> anyhow::Result<()> {
     let (mut chat, _rx, _op_rx) = make_chatwidget_manual(None).await;
-    // Ensure approval policy is untrusted (OnRequest)
+    // Ensure approval policy is Interactive
     chat.config
         .permissions
         .approval_policy
-        .set(AskForApproval::OnRequest)?;
+        .set(ApprovalPolicy::Interactive)?;
 
     // Simulate a patch approval request from backend
     let mut changes = HashMap::new();
@@ -7861,11 +7863,11 @@ async fn apply_patch_untrusted_shows_approval_modal() -> anyhow::Result<()> {
 async fn apply_patch_request_shows_diff_summary() -> anyhow::Result<()> {
     let (mut chat, mut rx, _op_rx) = make_chatwidget_manual(None).await;
 
-    // Ensure we are in OnRequest so an approval is surfaced
+    // Ensure we are in Interactive so an approval is surfaced
     chat.config
         .permissions
         .approval_policy
-        .set(AskForApproval::OnRequest)?;
+        .set(ApprovalPolicy::Interactive)?;
 
     // Simulate backend asking to apply a patch adding two lines to README.md
     let mut changes = HashMap::new();

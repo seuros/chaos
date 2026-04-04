@@ -261,13 +261,13 @@ mod tests {
         state.upsert(
             first_agent_id,
             Some("Robie".to_string()),
-            Some("explorer".to_string()),
+            Some("scout".to_string()),
             false,
         );
         state.upsert(
             second_agent_id,
             Some("Bob".to_string()),
-            Some("worker".to_string()),
+            Some("task".to_string()),
             false,
         );
 
@@ -281,7 +281,7 @@ mod tests {
         state.upsert(
             first_agent_id,
             Some("Robie".to_string()),
-            Some("worker".to_string()),
+            Some("task".to_string()),
             true,
         );
 
@@ -325,7 +325,7 @@ mod tests {
 
         assert_eq!(
             state.active_agent_label(Some(first_agent_id), Some(main_process_id)),
-            Some("Robie [explorer]".to_string())
+            Some("Robie [scout]".to_string())
         );
         assert_eq!(
             state.active_agent_label(Some(main_process_id), Some(main_process_id)),

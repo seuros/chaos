@@ -23,7 +23,7 @@ use crate::tools::sandboxing::ToolRuntime;
 use crate::tools::sandboxing::with_cached_approval;
 use chaos_diff::ApplyPatchAction;
 use chaos_ipc::models::PermissionProfile;
-use chaos_ipc::protocol::AskForApproval;
+use chaos_ipc::protocol::ApprovalPolicy;
 use chaos_ipc::protocol::FileChange;
 use chaos_ipc::protocol::ReviewDecision;
 use chaos_realpath::AbsolutePathBuf;
@@ -141,13 +141,12 @@ impl Approvable<ApplyPatchRequest> for ApplyPatchRuntime {
         })
     }
 
-    fn wants_no_sandbox_approval(&self, policy: AskForApproval) -> bool {
+    fn wants_no_sandbox_approval(&self, policy: ApprovalPolicy) -> bool {
         match policy {
-            AskForApproval::Never => false,
-            AskForApproval::Granular(granular_config) => granular_config.allows_sandbox_approval(),
-            AskForApproval::OnFailure => true,
-            AskForApproval::OnRequest => true,
-            AskForApproval::UnlessTrusted => true,
+            ApprovalPolicy::Headless => false,
+            ApprovalPolicy::Granular(granular_config) => granular_config.allows_sandbox_approval(),
+            ApprovalPolicy::Interactive => true,
+            ApprovalPolicy::Supervised => true,
         }
     }
 

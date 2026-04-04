@@ -204,7 +204,7 @@ use crate::project_doc::get_user_instructions;
 use crate::protocol::AgentMessageContentDeltaEvent;
 use crate::protocol::AgentReasoningSectionBreakEvent;
 use crate::protocol::ApplyPatchApprovalRequestEvent;
-use crate::protocol::AskForApproval;
+use crate::protocol::ApprovalPolicy;
 use crate::protocol::BackgroundEventEvent;
 use crate::protocol::CompactedItem;
 use crate::protocol::DeprecationNoticeEvent;
@@ -476,7 +476,7 @@ impl Chaos {
             settings: Settings {
                 model: model.clone(),
                 reasoning_effort: config.model_reasoning_effort,
-                developer_instructions: None,
+                minion_instructions: None,
             },
         };
         let session_configuration = SessionConfiguration {
@@ -484,7 +484,7 @@ impl Chaos {
             collaboration_mode,
             model_reasoning_summary: config.model_reasoning_summary,
             service_tier: config.service_tier,
-            developer_instructions: config.developer_instructions.clone(),
+            minion_instructions: config.minion_instructions.clone(),
             user_instructions,
             personality: config.personality,
             base_instructions,
@@ -710,12 +710,12 @@ pub(crate) struct TurnContext {
     pub(crate) current_date: Option<String>,
     pub(crate) timezone: Option<String>,
     pub(crate) app_server_client_name: Option<String>,
-    pub(crate) developer_instructions: Option<String>,
+    pub(crate) minion_instructions: Option<String>,
     pub(crate) compact_prompt: Option<String>,
     pub(crate) user_instructions: Option<String>,
     pub(crate) collaboration_mode: CollaborationMode,
     pub(crate) personality: Option<Personality>,
-    pub(crate) approval_policy: Constrained<AskForApproval>,
+    pub(crate) approval_policy: Constrained<ApprovalPolicy>,
     pub(crate) sandbox_policy: Constrained<SandboxPolicy>,
     pub(crate) file_system_sandbox_policy: FileSystemSandboxPolicy,
     pub(crate) network_sandbox_policy: NetworkSandboxPolicy,
@@ -778,7 +778,7 @@ impl TurnContext {
         let collaboration_mode = self.collaboration_mode.with_updates(
             Some(model.clone()),
             Some(reasoning_effort),
-            /*developer_instructions*/ None,
+            /*minion_instructions*/ None,
         );
         let features = self.features.clone();
         let tools_config = ToolsConfig::new(&ToolsConfigParams {
@@ -815,7 +815,7 @@ impl TurnContext {
             current_date: self.current_date.clone(),
             timezone: self.timezone.clone(),
             app_server_client_name: self.app_server_client_name.clone(),
-            developer_instructions: self.developer_instructions.clone(),
+            minion_instructions: self.minion_instructions.clone(),
             compact_prompt: self.compact_prompt.clone(),
             user_instructions: self.user_instructions.clone(),
             collaboration_mode,
@@ -871,7 +871,7 @@ impl TurnContext {
             effort: self.reasoning_effort,
             summary: self.reasoning_summary,
             user_instructions: self.user_instructions.clone(),
-            developer_instructions: self.developer_instructions.clone(),
+            minion_instructions: self.minion_instructions.clone(),
             final_output_json_schema: self.final_output_json_schema.clone(),
             truncation_policy: Some(self.truncation_policy.into()),
         }
@@ -913,8 +913,8 @@ pub(crate) struct SessionConfiguration {
     model_reasoning_summary: Option<ReasoningSummaryConfig>,
     service_tier: Option<ServiceTier>,
 
-    /// Developer instructions that supplement the base instructions.
-    developer_instructions: Option<String>,
+    /// Minion instructions that supplement the base instructions.
+    minion_instructions: Option<String>,
 
     /// Model instructions that are appended to the base instructions.
     user_instructions: Option<String>,
@@ -929,7 +929,7 @@ pub(crate) struct SessionConfiguration {
     compact_prompt: Option<String>,
 
     /// When to escalate for approval for execution
-    approval_policy: Constrained<AskForApproval>,
+    approval_policy: Constrained<ApprovalPolicy>,
     approvals_reviewer: ApprovalsReviewer,
     /// How to sandbox commands executed in the system
     sandbox_policy: Constrained<SandboxPolicy>,
@@ -1042,7 +1042,7 @@ impl SessionConfiguration {
 #[derive(Default, Clone)]
 pub(crate) struct SessionSettingsUpdate {
     pub(crate) cwd: Option<PathBuf>,
-    pub(crate) approval_policy: Option<AskForApproval>,
+    pub(crate) approval_policy: Option<ApprovalPolicy>,
     pub(crate) approvals_reviewer: Option<ApprovalsReviewer>,
     pub(crate) sandbox_policy: Option<SandboxPolicy>,
     pub(crate) windows_sandbox_level: Option<WindowsSandboxLevel>,
@@ -1239,7 +1239,7 @@ impl Session {
             current_date: Some(current_date),
             timezone: Some(timezone),
             app_server_client_name: session_configuration.app_server_client_name.clone(),
-            developer_instructions: session_configuration.developer_instructions.clone(),
+            minion_instructions: session_configuration.minion_instructions.clone(),
             compact_prompt: session_configuration.compact_prompt.clone(),
             user_instructions: session_configuration.user_instructions.clone(),
             collaboration_mode: session_configuration.collaboration_mode.clone(),
@@ -1438,14 +1438,6 @@ impl Session {
             });
         }
 
-        if config.permissions.approval_policy.value() == AskForApproval::OnFailure {
-            post_session_configured_events.push(Event {
-                id: "".to_owned(),
-                msg: EventMsg::Warning(WarningEvent {
-                    message: "`on-failure` approval policy is deprecated and will be removed in a future release. Use `on-request` for interactive approvals or `never` for non-interactive runs.".to_string(),
-                }),
-            });
-        }
 
         let auth = auth.as_ref();
         let auth_mode = auth.map(ChaosAuth::auth_mode).map(TelemetryAuthMode::from);
@@ -2835,13 +2827,13 @@ impl Session {
         args: RequestPermissionsArgs,
     ) -> Option<RequestPermissionsResponse> {
         match turn_context.approval_policy.value() {
-            AskForApproval::Never => {
+            ApprovalPolicy::Headless => {
                 return Some(RequestPermissionsResponse {
                     permissions: RequestPermissionProfile::default(),
                     scope: PermissionGrantScope::Turn,
                 });
             }
-            AskForApproval::Granular(granular_config)
+            ApprovalPolicy::Granular(granular_config)
                 if !granular_config.allows_request_permissions() =>
             {
                 return Some(RequestPermissionsResponse {
@@ -2849,10 +2841,9 @@ impl Session {
                     scope: PermissionGrantScope::Turn,
                 });
             }
-            AskForApproval::OnFailure
-            | AskForApproval::OnRequest
-            | AskForApproval::UnlessTrusted
-            | AskForApproval::Granular(_) => {}
+            ApprovalPolicy::Interactive
+            | ApprovalPolicy::Supervised
+            | ApprovalPolicy::Granular(_) => {}
         }
 
         let (tx_response, rx_response) = oneshot::channel();
@@ -3325,8 +3316,8 @@ impl Session {
             )
             .into_text(),
         );
-        if let Some(developer_instructions) = turn_context.developer_instructions.as_deref() {
-            developer_sections.push(developer_instructions.to_string());
+        if let Some(minion_instructions) = turn_context.minion_instructions.as_deref() {
+            developer_sections.push(minion_instructions.to_string());
         }
         // Add developer instructions for memories.
         if turn_context.features.enabled(Feature::MemoryTool)
@@ -4005,7 +3996,7 @@ async fn submission_loop(sess: Arc<Session>, config: Arc<Config>, rx_sub: Receiv
                         state.session_configuration.collaboration_mode.with_updates(
                             model.clone(),
                             effort,
-                            /*developer_instructions*/ None,
+                            /*minion_instructions*/ None,
                         )
                     };
                     // If clamped and model changed, forward to claude subprocess.
@@ -4330,7 +4321,7 @@ mod handlers {
                         settings: Settings {
                             model: model.clone(),
                             reasoning_effort: effort,
-                            developer_instructions: None,
+                            minion_instructions: None,
                         },
                     })
                 });
@@ -5207,7 +5198,7 @@ async fn spawn_review_thread(
         current_date: parent_turn_context.current_date.clone(),
         timezone: parent_turn_context.timezone.clone(),
         app_server_client_name: parent_turn_context.app_server_client_name.clone(),
-        developer_instructions: None,
+        minion_instructions: None,
         user_instructions: None,
         compact_prompt: parent_turn_context.compact_prompt.clone(),
         collaboration_mode: parent_turn_context.collaboration_mode.clone(),
@@ -5456,11 +5447,10 @@ pub(crate) async fn run_turn(
     loop {
         if let Some(session_start_source) = sess.take_pending_session_start_source().await {
             let session_start_permission_mode = match turn_context.approval_policy.value() {
-                AskForApproval::Never => "bypassPermissions",
-                AskForApproval::UnlessTrusted
-                | AskForApproval::OnFailure
-                | AskForApproval::OnRequest
-                | AskForApproval::Granular(_) => "default",
+                ApprovalPolicy::Headless => "bypassPermissions",
+                ApprovalPolicy::Supervised
+                | ApprovalPolicy::Interactive
+                | ApprovalPolicy::Granular(_) => "default",
             }
             .to_string();
             let session_start_request = chaos_dtrace::SessionStartRequest {
@@ -5601,11 +5591,10 @@ pub(crate) async fn run_turn(
                 if !needs_follow_up {
                     last_agent_message = sampling_request_last_agent_message;
                     let stop_hook_permission_mode = match turn_context.approval_policy.value() {
-                        AskForApproval::Never => "bypassPermissions",
-                        AskForApproval::UnlessTrusted
-                        | AskForApproval::OnFailure
-                        | AskForApproval::OnRequest
-                        | AskForApproval::Granular(_) => "default",
+                        ApprovalPolicy::Headless => "bypassPermissions",
+                        ApprovalPolicy::Supervised
+                        | ApprovalPolicy::Interactive
+                        | ApprovalPolicy::Granular(_) => "default",
                     }
                     .to_string();
                     let stop_request = chaos_dtrace::StopRequest {

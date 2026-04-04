@@ -15,7 +15,7 @@ use crate::config::Permissions;
 #[cfg(target_os = "macos")]
 use crate::config::types::ShellEnvironmentPolicy;
 use crate::exec::SandboxType;
-use crate::protocol::AskForApproval;
+use crate::protocol::ApprovalPolicy;
 use crate::protocol::GranularApprovalConfig;
 use crate::protocol::ReadOnlyAccess;
 use crate::protocol::SandboxPolicy;
@@ -98,7 +98,7 @@ fn execve_prompt_rejection_uses_skill_approval_for_skill_scripts() {
 
     assert_eq!(
         super::execve_prompt_is_rejected_by_policy(
-            AskForApproval::Granular(GranularApprovalConfig {
+            ApprovalPolicy::Granular(GranularApprovalConfig {
                 sandbox_approval: true,
                 rules: true,
                 skill_approval: true,
@@ -111,7 +111,7 @@ fn execve_prompt_rejection_uses_skill_approval_for_skill_scripts() {
     );
     assert_eq!(
         super::execve_prompt_is_rejected_by_policy(
-            AskForApproval::Granular(GranularApprovalConfig {
+            ApprovalPolicy::Granular(GranularApprovalConfig {
                 sandbox_approval: true,
                 rules: true,
                 skill_approval: false,
@@ -120,7 +120,7 @@ fn execve_prompt_rejection_uses_skill_approval_for_skill_scripts() {
             }),
             &decision_source,
         ),
-        Some("approval required by skill, but AskForApproval::Granular.skill_approval is false"),
+        Some("approval required by skill, but ApprovalPolicy::Granular.skill_approval is false"),
     );
 }
 
@@ -128,7 +128,7 @@ fn execve_prompt_rejection_uses_skill_approval_for_skill_scripts() {
 fn execve_prompt_rejection_keeps_prefix_rules_on_rules_flag() {
     assert_eq!(
         super::execve_prompt_is_rejected_by_policy(
-            AskForApproval::Granular(GranularApprovalConfig {
+            ApprovalPolicy::Granular(GranularApprovalConfig {
                 sandbox_approval: true,
                 rules: false,
                 skill_approval: true,
@@ -137,7 +137,7 @@ fn execve_prompt_rejection_keeps_prefix_rules_on_rules_flag() {
             }),
             &super::DecisionSource::PrefixRule,
         ),
-        Some("approval required by policy rule, but AskForApproval::Granular.rules is false"),
+        Some("approval required by policy rule, but ApprovalPolicy::Granular.rules is false"),
     );
 }
 
@@ -145,7 +145,7 @@ fn execve_prompt_rejection_keeps_prefix_rules_on_rules_flag() {
 fn execve_prompt_rejection_keeps_unmatched_commands_on_sandbox_flag() {
     assert_eq!(
         super::execve_prompt_is_rejected_by_policy(
-            AskForApproval::Granular(GranularApprovalConfig {
+            ApprovalPolicy::Granular(GranularApprovalConfig {
                 sandbox_approval: false,
                 rules: true,
                 skill_approval: true,
@@ -154,7 +154,7 @@ fn execve_prompt_rejection_keeps_unmatched_commands_on_sandbox_flag() {
             }),
             &super::DecisionSource::UnmatchedCommandFallback,
         ),
-        Some("approval required by policy, but AskForApproval::Granular.sandbox_approval is false"),
+        Some("approval required by policy, but ApprovalPolicy::Granular.sandbox_approval is false"),
     );
 }
 
@@ -438,7 +438,7 @@ fn evaluate_intercepted_exec_policy_uses_wrapper_command_when_shell_wrapper_pars
             "npm publish".to_string(),
         ],
         InterceptedExecPolicyContext {
-            approval_policy: AskForApproval::OnRequest,
+            approval_policy: ApprovalPolicy::Interactive,
             sandbox_policy: &SandboxPolicy::new_read_only_policy(),
             file_system_sandbox_policy: &read_only_file_system_sandbox_policy(),
             sandbox_permissions: SandboxPermissions::UseDefault,
@@ -489,7 +489,7 @@ fn evaluate_intercepted_exec_policy_matches_inner_shell_commands_when_enabled() 
             "npm publish".to_string(),
         ],
         InterceptedExecPolicyContext {
-            approval_policy: AskForApproval::OnRequest,
+            approval_policy: ApprovalPolicy::Interactive,
             sandbox_policy: &SandboxPolicy::new_read_only_policy(),
             file_system_sandbox_policy: &read_only_file_system_sandbox_policy(),
             sandbox_permissions: SandboxPermissions::UseDefault,
@@ -531,7 +531,7 @@ host_executable {{name = "git", paths = {{"{git_path_literal}"}}}}
         &program,
         &["git".to_string(), "status".to_string()],
         InterceptedExecPolicyContext {
-            approval_policy: AskForApproval::OnRequest,
+            approval_policy: ApprovalPolicy::Interactive,
             sandbox_policy: &SandboxPolicy::new_read_only_policy(),
             file_system_sandbox_policy: &read_only_file_system_sandbox_policy(),
             sandbox_permissions: SandboxPermissions::UseDefault,
@@ -562,7 +562,7 @@ fn intercepted_exec_policy_treats_preapproved_additional_permissions_as_default(
     let policy = PolicyParser::new().build();
     let program = AbsolutePathBuf::try_from(host_absolute_path(&["usr", "bin", "printf"])).unwrap();
     let argv = ["printf".to_string(), "hello".to_string()];
-    let approval_policy = AskForApproval::OnRequest;
+    let approval_policy = ApprovalPolicy::Interactive;
     let sandbox_policy = SandboxPolicy::new_workspace_write_policy();
     let file_system_sandbox_policy = read_only_file_system_sandbox_policy();
 
@@ -619,7 +619,7 @@ host_executable {{name = "git", paths = {{"{allowed_git_literal}"}}}}
         &program,
         &["git".to_string(), "status".to_string()],
         InterceptedExecPolicyContext {
-            approval_policy: AskForApproval::OnRequest,
+            approval_policy: ApprovalPolicy::Interactive,
             sandbox_policy: &SandboxPolicy::new_read_only_policy(),
             file_system_sandbox_policy: &read_only_file_system_sandbox_policy(),
             sandbox_permissions: SandboxPermissions::UseDefault,
@@ -717,7 +717,7 @@ async fn prepare_escalated_exec_permissions_preserve_macos_seatbelt_extensions()
     };
 
     let permissions = Permissions {
-        approval_policy: Constrained::allow_any(AskForApproval::Never),
+        approval_policy: Constrained::allow_any(ApprovalPolicy::Headless),
         sandbox_policy: Constrained::allow_any(SandboxPolicy::new_read_only_policy()),
         file_system_sandbox_policy: read_only_file_system_sandbox_policy(),
         network_sandbox_policy: chaos_ipc::permissions::NetworkSandboxPolicy::Restricted,

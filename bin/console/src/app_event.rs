@@ -26,7 +26,7 @@ use crate::history_cell::HistoryCell;
 use chaos_ipc::config_types::CollaborationModeMask;
 use chaos_ipc::config_types::Personality;
 use chaos_ipc::openai_models::ReasoningEffort;
-use chaos_ipc::protocol::AskForApproval;
+use chaos_ipc::protocol::ApprovalPolicy;
 use chaos_ipc::protocol::SandboxPolicy;
 use chaos_kern::config::types::ApprovalsReviewer;
 use chaos_kern::features::Feature;
@@ -200,7 +200,7 @@ pub(crate) enum AppEvent {
     },
 
     /// Update the current approval policy in the running app and widget.
-    UpdateAskForApprovalPolicy(AskForApproval),
+    UpdateApprovalPolicy(ApprovalPolicy),
 
     /// Update the current sandbox policy in the running app and widget.
     UpdateSandboxPolicy(SandboxPolicy),

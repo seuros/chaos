@@ -889,6 +889,19 @@ fn create_spawn_agent_tool(config: &ToolsConfig) -> ToolSpec {
             },
         ),
         (
+            "topics".to_string(),
+            JsonSchema::Array {
+                items: Box::new(JsonSchema::String { description: None }),
+                description: Some(
+                    "Topic tags for dynamic role routing (e.g. [\"ruby\", \"rails\"]). \
+                     The kernel selects a matching persona at random and emits its catchphrase. \
+                     Ignored when `agent_type` is set. \
+                     Unmatched topics are surfaced to the user as a warning."
+                        .to_string(),
+                ),
+            },
+        ),
+        (
             "fork_context".to_string(),
             JsonSchema::Boolean {
                 description: Some(
@@ -939,7 +952,7 @@ fn create_spawn_agent_tool(config: &ToolsConfig) -> ToolSpec {
 - Do not duplicate work between the main rollout and delegated subtasks.
 - Avoid issuing multiple delegate calls on the same unresolved thread unless the new delegated task is genuinely different and necessary.
 - Narrow the delegated ask to the concrete output you need next.
-- For coding tasks, prefer delegating concrete code-change worker subtasks over read-only explorer analysis when the subagent can make a bounded patch in a clear write scope.
+        - For coding tasks, prefer delegating concrete code-change task subtasks over read-only scout analysis when the subagent can make a bounded patch in a clear write scope.
 - When delegating coding work, instruct the submodel to edit files directly in its forked workspace and list the file paths it changed in the final answer.
 - For code-edit subtasks, decompose work so each delegated task has a disjoint write set.
 
@@ -1029,7 +1042,7 @@ fn create_spawn_agents_on_csv_tool() -> ToolSpec {
         "max_concurrency".to_string(),
         JsonSchema::Number {
             description: Some(
-                "Maximum concurrent workers for this job. Defaults to 16 and is capped by config."
+                "Maximum concurrent tasks for this job. Defaults to 16 and is capped by config."
                     .to_string(),
             ),
         },
@@ -1046,7 +1059,7 @@ fn create_spawn_agents_on_csv_tool() -> ToolSpec {
         "max_runtime_seconds".to_string(),
         JsonSchema::Number {
             description: Some(
-                "Maximum runtime per worker before it is failed. Defaults to 1800 seconds."
+                "Maximum runtime per task before it is failed. Defaults to 1800 seconds."
                     .to_string(),
             ),
         },
@@ -1061,7 +1074,7 @@ fn create_spawn_agents_on_csv_tool() -> ToolSpec {
     );
     ToolSpec::Function(ResponsesApiTool {
         name: "spawn_agents_on_csv".to_string(),
-        description: "Process a CSV by spawning one worker sub-agent per row. The instruction string is a template where `{column}` placeholders are replaced with row values. Each worker must call `report_agent_job_result` with a JSON object (matching `output_schema` when provided); missing reports are treated as failures. This call blocks until all rows finish and automatically exports results to `output_csv_path` (or a default path)."
+        description: "Process a CSV by spawning one task sub-agent per row. The instruction string is a template where `{column}` placeholders are replaced with row values. Each task must call `report_agent_job_result` with a JSON object (matching `output_schema` when provided); missing reports are treated as failures. This call blocks until all rows finish and automatically exports results to `output_csv_path` (or a default path)."
             .to_string(),
         strict: false,
         defer_loading: None,

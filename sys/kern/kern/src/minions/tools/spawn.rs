@@ -6,6 +6,8 @@ use super::*;
 use crate::minions::control::SpawnAgentOptions;
 use crate::minions::role::DEFAULT_ROLE_NAME;
 use crate::minions::role::apply_role_to_config;
+use crate::minions::role::collect_roles_by_topics;
+use rand::prelude::IndexedRandom as _;
 
 pub(crate) struct Handler;
 
@@ -24,11 +26,44 @@ impl ToolHandler for Handler {
         } = invocation;
         let arguments = function_arguments(payload)?;
         let args: SpawnAgentArgs = parse_arguments(&arguments)?;
-        let role_name = args
+
+        // Resolve the role: explicit agent_type wins; otherwise route by topics.
+        let explicit_role = args
             .agent_type
             .as_deref()
             .map(str::trim)
-            .filter(|role: &&str| !role.is_empty());
+            .filter(|r: &&str| !r.is_empty());
+
+        let (role_name, catchphrase, missing_topics) = if explicit_role.is_some() {
+            (explicit_role, None, Vec::new())
+        } else if let Some(ref topics) = args.topics {
+            let topics: Vec<String> = topics
+                .iter()
+                .map(|t| t.trim().to_lowercase())
+                .filter(|t| !t.is_empty())
+                .collect();
+
+            if topics.is_empty() {
+                (None, None, Vec::new())
+            } else {
+                let matches = collect_roles_by_topics(&turn.config, &topics);
+                let mut rng = rand::rng();
+                match matches.choose(&mut rng) {
+                    None => (None, None, topics),
+                    Some((name, role)) => {
+                        let phrase = role
+                            .catchphrases
+                            .as_deref()
+                            .and_then(|phrases| phrases.choose(&mut rng))
+                            .cloned();
+                        (Some(*name), phrase, Vec::new())
+                    }
+                }
+            }
+        } else {
+            (None, None, Vec::new())
+        };
+
         let input_items = parse_collab_input(args.message, args.items)?;
         let prompt = input_preview(&input_items);
         let child_depth = check_depth_limit(&turn.session_source, turn.config.agent_max_depth)?;
@@ -41,6 +76,8 @@ impl ToolHandler for Handler {
                     prompt: prompt.clone(),
                     model: args.model.clone().unwrap_or_default(),
                     reasoning_effort: args.reasoning_effort.unwrap_or_default(),
+                    catchphrase,
+                    missing_topics,
                 }
                 .into(),
             )
@@ -127,6 +164,11 @@ struct SpawnAgentArgs {
     message: Option<String>,
     items: Option<Vec<UserInput>>,
     agent_type: Option<String>,
+    /// Topic tags for dynamic role routing (e.g. ["ruby", "rails"]).
+    /// Ignored when `agent_type` is set. The kernel selects a matching role
+    /// at random and emits a catchphrase. Unmatched topics are surfaced to
+    /// the user as a warning.
+    topics: Option<Vec<String>>,
     model: Option<String>,
     reasoning_effort: Option<ReasoningEffort>,
     #[serde(default)]

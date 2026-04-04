@@ -1,4 +1,4 @@
-//! Chaos Minions — worker sub-agents spawned by the kernel.
+//! Chaos Minions — sub-agents spawned by the kernel.
 //!
 //! Minions handle delegated tasks: background research, parallel tool
 //! execution, multi-file editing, and autonomous sub-sessions. Each minion

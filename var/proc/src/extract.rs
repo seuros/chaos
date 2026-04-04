@@ -139,7 +139,7 @@ mod tests {
     use chaos_ipc::config_types::ReasoningSummary;
     use chaos_ipc::models::ContentItem;
     use chaos_ipc::models::ResponseItem;
-    use chaos_ipc::protocol::AskForApproval;
+    use chaos_ipc::protocol::ApprovalPolicy;
     use chaos_ipc::protocol::EventMsg;
     use chaos_ipc::protocol::RolloutItem;
     use chaos_ipc::protocol::SandboxPolicy;
@@ -265,7 +265,7 @@ mod tests {
                 cwd: PathBuf::from("/parent/workspace"),
                 current_date: None,
                 timezone: None,
-                approval_policy: AskForApproval::Never,
+                approval_policy: ApprovalPolicy::Headless,
                 sandbox_policy: SandboxPolicy::RootAccess,
                 network: None,
                 model: "gpt-5".to_string(),
@@ -274,7 +274,7 @@ mod tests {
                 effort: None,
                 summary: ReasoningSummary::Auto,
                 user_instructions: None,
-                developer_instructions: None,
+                minion_instructions: None,
                 final_output_json_schema: None,
                 truncation_policy: None,
             }),
@@ -286,7 +286,7 @@ mod tests {
             metadata.sandbox_policy,
             super::enum_to_string(&SandboxPolicy::RootAccess)
         );
-        assert_eq!(metadata.approval_mode, "never");
+        assert_eq!(metadata.approval_mode, "headless");
     }
 
     #[test]
@@ -302,7 +302,7 @@ mod tests {
                 cwd: PathBuf::from("/fallback/workspace"),
                 current_date: None,
                 timezone: None,
-                approval_policy: AskForApproval::OnRequest,
+                approval_policy: ApprovalPolicy::Interactive,
                 sandbox_policy: SandboxPolicy::new_read_only_policy(),
                 network: None,
                 model: "gpt-5".to_string(),
@@ -311,7 +311,7 @@ mod tests {
                 effort: None,
                 summary: ReasoningSummary::Auto,
                 user_instructions: None,
-                developer_instructions: None,
+                minion_instructions: None,
                 final_output_json_schema: None,
                 truncation_policy: None,
             }),
@@ -336,7 +336,7 @@ mod tests {
             cli_version: "0.0.0".to_string(),
             title: String::new(),
             sandbox_policy: "read-only".to_string(),
-            approval_mode: "on-request".to_string(),
+            approval_mode: "interactive".to_string(),
             tokens_used: 1,
             first_user_message: None,
             archived_at: None,

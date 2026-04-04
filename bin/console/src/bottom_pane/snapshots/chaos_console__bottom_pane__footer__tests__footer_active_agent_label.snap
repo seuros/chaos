@@ -2,4 +2,4 @@
 source: bin/xserver/src/bottom_pane/footer.rs
 expression: terminal.backend()
 ---
-"  Robie [explorer]                                           100% context left  "
+"  Robie [scout]                                              100% context left  "

@@ -39,7 +39,7 @@ const COLLAB_AGENT_RESPONSE_PREVIEW_GRAPHEMES: usize = 240;
 pub(crate) struct AgentPickerProcessEntry {
     /// Human-friendly nickname shown in picker rows and footer labels.
     pub(crate) agent_nickname: Option<String>,
-    /// Agent type shown in brackets when present, for example `worker`.
+    /// Agent type shown in brackets when present, for example `task`.
     pub(crate) agent_role: Option<String>,
     /// Whether the thread has emitted a close event and should render dimmed.
     pub(crate) is_closed: bool,
@@ -615,7 +615,7 @@ mod tests {
                 sender_process_id,
                 new_process_id: Some(robie_id),
                 new_agent_nickname: Some("Robie".to_string()),
-                new_agent_role: Some("explorer".to_string()),
+                new_agent_role: Some("scout".to_string()),
                 prompt: "Compute 11! and reply with just the integer result.".to_string(),
                 model: "gpt-5".to_string(),
                 reasoning_effort: ReasoningEffortConfig::High,
@@ -632,7 +632,7 @@ mod tests {
             sender_process_id,
             receiver_process_id: robie_id,
             receiver_agent_nickname: Some("Robie".to_string()),
-            receiver_agent_role: Some("explorer".to_string()),
+            receiver_agent_role: Some("scout".to_string()),
             prompt: "Please continue and return the answer only.".to_string(),
             status: AgentStatus::Running,
         });
@@ -643,7 +643,7 @@ mod tests {
             receiver_agents: vec![CollabAgentRef {
                 process_id: robie_id,
                 agent_nickname: Some("Robie".to_string()),
-                agent_role: Some("explorer".to_string()),
+                agent_role: Some("scout".to_string()),
             }],
             call_id: "call-wait".to_string(),
         });
@@ -661,13 +661,13 @@ mod tests {
                 CollabAgentStatusEntry {
                     process_id: robie_id,
                     agent_nickname: Some("Robie".to_string()),
-                    agent_role: Some("explorer".to_string()),
+                    agent_role: Some("scout".to_string()),
                     status: AgentStatus::Completed(Some("39916800".to_string())),
                 },
                 CollabAgentStatusEntry {
                     process_id: bob_id,
                     agent_nickname: Some("Bob".to_string()),
-                    agent_role: Some("worker".to_string()),
+                    agent_role: Some("task".to_string()),
                     status: AgentStatus::Errored("tool timeout".to_string()),
                 },
             ],
@@ -679,7 +679,7 @@ mod tests {
             sender_process_id,
             receiver_process_id: robie_id,
             receiver_agent_nickname: Some("Robie".to_string()),
-            receiver_agent_role: Some("explorer".to_string()),
+            receiver_agent_role: Some("scout".to_string()),
             status: AgentStatus::Completed(Some("39916800".to_string())),
         });
 
@@ -753,7 +753,7 @@ mod tests {
                 sender_process_id,
                 new_process_id: Some(robie_id),
                 new_agent_nickname: Some("Robie".to_string()),
-                new_agent_role: Some("explorer".to_string()),
+                new_agent_role: Some("scout".to_string()),
                 prompt: String::new(),
                 model: "gpt-5".to_string(),
                 reasoning_effort: ReasoningEffortConfig::High,
@@ -770,7 +770,7 @@ mod tests {
         assert_eq!(title.spans[2].content.as_ref(), "Robie");
         assert_eq!(title.spans[2].style.fg, Some(Color::Cyan));
         assert!(title.spans[2].style.add_modifier.contains(Modifier::BOLD));
-        assert_eq!(title.spans[4].content.as_ref(), "[explorer]");
+        assert_eq!(title.spans[4].content.as_ref(), "[scout]");
         assert_eq!(title.spans[4].style.fg, None);
         assert!(!title.spans[4].style.add_modifier.contains(Modifier::DIM));
         assert_eq!(title.spans[6].content.as_ref(), "(gpt-5 high)");
@@ -789,7 +789,7 @@ mod tests {
             sender_process_id,
             receiver_process_id: robie_id,
             receiver_agent_nickname: Some("Robie".to_string()),
-            receiver_agent_role: Some("explorer".to_string()),
+            receiver_agent_role: Some("scout".to_string()),
             status: AgentStatus::Interrupted,
         });
 

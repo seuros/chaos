@@ -4,7 +4,7 @@ use anyhow::Result;
 use chaos_ipc::config_types::CollaborationMode;
 use chaos_ipc::config_types::ModeKind;
 use chaos_ipc::config_types::Settings;
-use chaos_ipc::protocol::AskForApproval;
+use chaos_ipc::protocol::ApprovalPolicy;
 use chaos_ipc::protocol::EventMsg;
 use chaos_ipc::protocol::Op;
 use chaos_ipc::protocol::SandboxPolicy;
@@ -29,7 +29,7 @@ fn collaboration_mode_for_model(model: String) -> CollaborationMode {
         settings: Settings {
             model,
             reasoning_effort: None,
-            developer_instructions: Some("exercise approvals in collaboration mode".to_string()),
+            minion_instructions: Some("exercise approvals in collaboration mode".to_string()),
         },
     }
 }
@@ -37,7 +37,7 @@ fn collaboration_mode_for_model(model: String) -> CollaborationMode {
 async fn submit_user_turn(
     test: &core_test_support::test_codex::TestCodex,
     prompt: &str,
-    approval_policy: AskForApproval,
+    approval_policy: ApprovalPolicy,
     sandbox_policy: SandboxPolicy,
     collaboration_mode: Option<CollaborationMode>,
 ) -> Result<()> {
@@ -125,7 +125,7 @@ async fn execpolicy_blocks_shell_invocation() -> Result<()> {
             }],
             final_output_json_schema: None,
             cwd: test.cwd_path().to_path_buf(),
-            approval_policy: AskForApproval::Never,
+            approval_policy: ApprovalPolicy::Headless,
             sandbox_policy: SandboxPolicy::RootAccess,
             model: session_model,
             effort: None,
@@ -191,7 +191,7 @@ async fn shell_command_empty_script_with_collaboration_mode_does_not_panic() -> 
     submit_user_turn(
         &test,
         "run an empty shell command",
-        AskForApproval::OnRequest,
+        ApprovalPolicy::Interactive,
         SandboxPolicy::RootAccess,
         Some(collaboration_mode),
     )
@@ -246,7 +246,7 @@ async fn unified_exec_empty_script_with_collaboration_mode_does_not_panic() -> R
     submit_user_turn(
         &test,
         "run empty unified exec command",
-        AskForApproval::OnRequest,
+        ApprovalPolicy::Interactive,
         SandboxPolicy::RootAccess,
         Some(collaboration_mode),
     )
@@ -296,7 +296,7 @@ async fn shell_command_whitespace_script_with_collaboration_mode_does_not_panic(
     submit_user_turn(
         &test,
         "run whitespace shell command",
-        AskForApproval::OnRequest,
+        ApprovalPolicy::Interactive,
         SandboxPolicy::RootAccess,
         Some(collaboration_mode),
     )
@@ -351,7 +351,7 @@ async fn unified_exec_whitespace_script_with_collaboration_mode_does_not_panic()
     submit_user_turn(
         &test,
         "run whitespace unified exec command",
-        AskForApproval::OnRequest,
+        ApprovalPolicy::Interactive,
         SandboxPolicy::RootAccess,
         Some(collaboration_mode),
     )

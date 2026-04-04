@@ -114,12 +114,12 @@ mod tests {
     #[test]
     fn render_single_process_snapshot() {
         let mut widget = PendingProcessApprovals::new();
-        widget.set_processes(vec!["Robie [explorer]".to_string()]);
+        widget.set_processes(vec!["Robie [scout]".to_string()]);
 
         assert_snapshot!(
             snapshot_rows(&widget, 40).replace(' ', "."),
             @r"
-..!.Approval.needed.in.Robie.[explorer].
+..!.Approval.needed.in.Robie.[scout]....
 ..../agent.to.switch.processes.........."
         );
     }
@@ -129,7 +129,7 @@ mod tests {
         let mut widget = PendingProcessApprovals::new();
         widget.set_processes(vec![
             "Main [default]".to_string(),
-            "Robie [explorer]".to_string(),
+            "Robie [scout]".to_string(),
             "Inspector".to_string(),
             "Extra agent".to_string(),
         ]);
@@ -138,7 +138,7 @@ mod tests {
             snapshot_rows(&widget, 44).replace(' ', "."),
             @r"
 ..!.Approval.needed.in.Main.[default].......
-..!.Approval.needed.in.Robie.[explorer].....
+..!.Approval.needed.in.Robie.[scout]........
 ..!.Approval.needed.in.Inspector............
 ............................................
 ..../agent.to.switch.processes.............."

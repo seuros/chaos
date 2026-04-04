@@ -28,7 +28,7 @@ use crate::protocol::McpToolCallEndEvent;
 use crate::state_db;
 use chaos_ipc::mcp::CallToolResult;
 use chaos_ipc::openai_models::InputModality;
-use chaos_ipc::protocol::AskForApproval;
+use chaos_ipc::protocol::ApprovalPolicy;
 use chaos_ipc::protocol::ReviewDecision;
 use chaos_ipc::protocol::SandboxPolicy;
 use chaos_ipc::request_user_input::RequestUserInputAnswer;
@@ -474,6 +474,12 @@ async fn maybe_request_mcp_tool_approval(
     }
 
     if approval_mode == AppToolApproval::Auto {
+        // ApprovalPolicy::Headless means the user has explicitly disabled all approval
+        // prompts — bypass MCP tool approval unconditionally, regardless of sandbox
+        // policy or tool annotations.
+        if matches!(turn_context.approval_policy.value(), ApprovalPolicy::Headless) {
+            return None;
+        }
         if is_full_access_mode(turn_context) {
             return None;
         }
@@ -638,7 +644,7 @@ fn persistent_mcp_tool_approval_key(
 }
 
 fn is_full_access_mode(turn_context: &TurnContext) -> bool {
-    matches!(turn_context.approval_policy.value(), AskForApproval::Never)
+    matches!(turn_context.approval_policy.value(), ApprovalPolicy::Headless)
         && matches!(
             turn_context.sandbox_policy.get(),
             SandboxPolicy::RootAccess | SandboxPolicy::ExternalSandbox { .. }

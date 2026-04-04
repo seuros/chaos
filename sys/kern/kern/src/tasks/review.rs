@@ -7,7 +7,7 @@ use chaos_ipc::items::TurnItem;
 use chaos_ipc::models::ContentItem;
 use chaos_ipc::models::ResponseItem;
 use chaos_ipc::protocol::AgentMessageContentDeltaEvent;
-use chaos_ipc::protocol::AskForApproval;
+use chaos_ipc::protocol::ApprovalPolicy;
 use chaos_ipc::protocol::Event;
 use chaos_ipc::protocol::EventMsg;
 use chaos_ipc::protocol::ExitedReviewModeEvent;
@@ -113,7 +113,7 @@ async fn start_review_conversation(
 
     // Set explicit review rubric for the sub-agent
     sub_agent_config.base_instructions = Some(crate::REVIEW_PROMPT.to_string());
-    sub_agent_config.permissions.approval_policy = Constrained::allow_only(AskForApproval::Never);
+    sub_agent_config.permissions.approval_policy = Constrained::allow_only(ApprovalPolicy::Headless);
 
     let model = config
         .review_model

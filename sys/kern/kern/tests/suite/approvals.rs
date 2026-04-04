@@ -5,7 +5,7 @@ use chaos_ipc::approvals::NetworkApprovalProtocol;
 use chaos_ipc::approvals::NetworkPolicyAmendment;
 use chaos_ipc::approvals::NetworkPolicyRuleAction;
 use chaos_ipc::protocol::ApplyPatchApprovalRequestEvent;
-use chaos_ipc::protocol::AskForApproval;
+use chaos_ipc::protocol::ApprovalPolicy;
 use chaos_ipc::protocol::EventMsg;
 use chaos_ipc::protocol::ExecApprovalRequestEvent;
 use chaos_ipc::protocol::ExecPolicyAmendment;
@@ -515,7 +515,7 @@ enum Outcome {
 #[derive(Clone)]
 struct ScenarioSpec {
     name: &'static str,
-    approval_policy: AskForApproval,
+    approval_policy: ApprovalPolicy,
     sandbox_policy: SandboxPolicy,
     action: ActionKind,
     sandbox_permissions: SandboxPermissions,
@@ -533,7 +533,7 @@ struct CommandResult {
 async fn submit_turn(
     test: &TestCodex,
     prompt: &str,
-    approval_policy: AskForApproval,
+    approval_policy: ApprovalPolicy,
     sandbox_policy: SandboxPolicy,
 ) -> Result<()> {
     let session_model = test.session_configured.model.clone();
@@ -675,7 +675,7 @@ async fn wait_for_completion(test: &TestCodex) {
 }
 
 fn scenarios() -> Vec<ScenarioSpec> {
-    use AskForApproval::*;
+    use chaos_ipc::protocol::ApprovalPolicy::*;
 
     let workspace_write = |network_access| SandboxPolicy::WorkspaceWrite {
         writable_roots: vec![],
@@ -688,7 +688,7 @@ fn scenarios() -> Vec<ScenarioSpec> {
     vec![
         ScenarioSpec {
             name: "root_access_on_request_allows_outside_write",
-            approval_policy: OnRequest,
+            approval_policy: Interactive,
             sandbox_policy: SandboxPolicy::RootAccess,
             action: ActionKind::WriteFile {
                 target: TargetPath::OutsideWorkspace("dfa_on_request.txt"),
@@ -705,7 +705,7 @@ fn scenarios() -> Vec<ScenarioSpec> {
         },
         ScenarioSpec {
             name: "root_access_on_request_allows_outside_write_gpt_5_1_no_exit",
-            approval_policy: OnRequest,
+            approval_policy: Interactive,
             sandbox_policy: SandboxPolicy::RootAccess,
             action: ActionKind::WriteFile {
                 target: TargetPath::OutsideWorkspace("dfa_on_request_5_1.txt"),
@@ -722,7 +722,7 @@ fn scenarios() -> Vec<ScenarioSpec> {
         },
         ScenarioSpec {
             name: "root_access_on_request_allows_network",
-            approval_policy: OnRequest,
+            approval_policy: Interactive,
             sandbox_policy: SandboxPolicy::RootAccess,
             action: ActionKind::FetchUrlNoProxy {
                 endpoint: "/dfa/network",
@@ -738,7 +738,7 @@ fn scenarios() -> Vec<ScenarioSpec> {
         },
         ScenarioSpec {
             name: "root_access_on_request_allows_network_gpt_5_1_no_exit",
-            approval_policy: OnRequest,
+            approval_policy: Interactive,
             sandbox_policy: SandboxPolicy::RootAccess,
             action: ActionKind::FetchUrlNoProxy {
                 endpoint: "/dfa/network",
@@ -754,7 +754,7 @@ fn scenarios() -> Vec<ScenarioSpec> {
         },
         ScenarioSpec {
             name: "trusted_command_unless_trusted_runs_without_prompt",
-            approval_policy: UnlessTrusted,
+            approval_policy: Supervised,
             sandbox_policy: SandboxPolicy::RootAccess,
             action: ActionKind::RunCommand {
                 command: "echo trusted-unless",
@@ -769,7 +769,7 @@ fn scenarios() -> Vec<ScenarioSpec> {
         },
         ScenarioSpec {
             name: "trusted_command_unless_trusted_runs_without_prompt_gpt_5_1_no_exit",
-            approval_policy: UnlessTrusted,
+            approval_policy: Supervised,
             sandbox_policy: SandboxPolicy::RootAccess,
             action: ActionKind::RunCommand {
                 command: "echo trusted-unless",
@@ -784,7 +784,7 @@ fn scenarios() -> Vec<ScenarioSpec> {
         },
         ScenarioSpec {
             name: "cat_redirect_unless_trusted_requires_approval",
-            approval_policy: UnlessTrusted,
+            approval_policy: Supervised,
             sandbox_policy: workspace_write(false),
             action: ActionKind::RunCommand {
                 command: r#"cat < "hello" > /var/test.txt"#,
@@ -802,7 +802,7 @@ fn scenarios() -> Vec<ScenarioSpec> {
         },
         ScenarioSpec {
             name: "cat_redirect_on_request_requires_approval",
-            approval_policy: OnRequest,
+            approval_policy: Interactive,
             sandbox_policy: workspace_write(false),
             action: ActionKind::RunCommand {
                 command: r#"cat < "hello" > /var/test.txt"#,
@@ -820,7 +820,7 @@ fn scenarios() -> Vec<ScenarioSpec> {
         },
         ScenarioSpec {
             name: "root_access_on_failure_allows_outside_write",
-            approval_policy: OnFailure,
+            approval_policy: Interactive,
             sandbox_policy: SandboxPolicy::RootAccess,
             action: ActionKind::WriteFile {
                 target: TargetPath::OutsideWorkspace("dfa_on_failure.txt"),
@@ -837,7 +837,7 @@ fn scenarios() -> Vec<ScenarioSpec> {
         },
         ScenarioSpec {
             name: "root_access_on_failure_allows_outside_write_gpt_5_1_no_exit",
-            approval_policy: OnFailure,
+            approval_policy: Interactive,
             sandbox_policy: SandboxPolicy::RootAccess,
             action: ActionKind::WriteFile {
                 target: TargetPath::OutsideWorkspace("dfa_on_failure_5_1.txt"),
@@ -854,7 +854,7 @@ fn scenarios() -> Vec<ScenarioSpec> {
         },
         ScenarioSpec {
             name: "root_access_unless_trusted_requests_approval",
-            approval_policy: UnlessTrusted,
+            approval_policy: Supervised,
             sandbox_policy: SandboxPolicy::RootAccess,
             action: ActionKind::WriteFile {
                 target: TargetPath::OutsideWorkspace("dfa_unless_trusted.txt"),
@@ -874,7 +874,7 @@ fn scenarios() -> Vec<ScenarioSpec> {
         },
         ScenarioSpec {
             name: "root_access_unless_trusted_requests_approval_gpt_5_1_no_exit",
-            approval_policy: UnlessTrusted,
+            approval_policy: Supervised,
             sandbox_policy: SandboxPolicy::RootAccess,
             action: ActionKind::WriteFile {
                 target: TargetPath::OutsideWorkspace("dfa_unless_trusted_5_1.txt"),
@@ -894,7 +894,7 @@ fn scenarios() -> Vec<ScenarioSpec> {
         },
         ScenarioSpec {
             name: "root_access_never_allows_outside_write",
-            approval_policy: Never,
+            approval_policy: Headless,
             sandbox_policy: SandboxPolicy::RootAccess,
             action: ActionKind::WriteFile {
                 target: TargetPath::OutsideWorkspace("dfa_never.txt"),
@@ -911,7 +911,7 @@ fn scenarios() -> Vec<ScenarioSpec> {
         },
         ScenarioSpec {
             name: "root_access_never_allows_outside_write_gpt_5_1_no_exit",
-            approval_policy: Never,
+            approval_policy: Headless,
             sandbox_policy: SandboxPolicy::RootAccess,
             action: ActionKind::WriteFile {
                 target: TargetPath::OutsideWorkspace("dfa_never_5_1.txt"),
@@ -928,7 +928,7 @@ fn scenarios() -> Vec<ScenarioSpec> {
         },
         ScenarioSpec {
             name: "read_only_on_request_requires_approval",
-            approval_policy: OnRequest,
+            approval_policy: Interactive,
             sandbox_policy: SandboxPolicy::new_read_only_policy(),
             action: ActionKind::WriteFile {
                 target: TargetPath::Workspace("ro_on_request.txt"),
@@ -948,7 +948,7 @@ fn scenarios() -> Vec<ScenarioSpec> {
         },
         ScenarioSpec {
             name: "read_only_on_request_requires_approval_gpt_5_1_no_exit",
-            approval_policy: OnRequest,
+            approval_policy: Interactive,
             sandbox_policy: SandboxPolicy::new_read_only_policy(),
             action: ActionKind::WriteFile {
                 target: TargetPath::Workspace("ro_on_request_5_1.txt"),
@@ -968,7 +968,7 @@ fn scenarios() -> Vec<ScenarioSpec> {
         },
         ScenarioSpec {
             name: "trusted_command_on_request_read_only_runs_without_prompt",
-            approval_policy: OnRequest,
+            approval_policy: Interactive,
             sandbox_policy: SandboxPolicy::new_read_only_policy(),
             action: ActionKind::RunCommand {
                 command: "echo trusted-read-only",
@@ -983,7 +983,7 @@ fn scenarios() -> Vec<ScenarioSpec> {
         },
         ScenarioSpec {
             name: "trusted_command_on_request_read_only_runs_without_prompt_gpt_5_1_no_exit",
-            approval_policy: OnRequest,
+            approval_policy: Interactive,
             sandbox_policy: SandboxPolicy::new_read_only_policy(),
             action: ActionKind::RunCommand {
                 command: "echo trusted-read-only",
@@ -998,7 +998,7 @@ fn scenarios() -> Vec<ScenarioSpec> {
         },
         ScenarioSpec {
             name: "read_only_on_request_blocks_network",
-            approval_policy: OnRequest,
+            approval_policy: Interactive,
             sandbox_policy: SandboxPolicy::new_read_only_policy(),
             action: ActionKind::FetchUrl {
                 endpoint: "/ro/network-blocked",
@@ -1012,7 +1012,7 @@ fn scenarios() -> Vec<ScenarioSpec> {
         },
         ScenarioSpec {
             name: "read_only_on_request_denied_blocks_execution",
-            approval_policy: OnRequest,
+            approval_policy: Interactive,
             sandbox_policy: SandboxPolicy::new_read_only_policy(),
             action: ActionKind::WriteFile {
                 target: TargetPath::Workspace("ro_on_request_denied.txt"),
@@ -1033,7 +1033,7 @@ fn scenarios() -> Vec<ScenarioSpec> {
         #[cfg(not(target_os = "linux"))] // TODO (pakrym): figure out why linux behaves differently
         ScenarioSpec {
             name: "read_only_on_failure_escalates_after_sandbox_error",
-            approval_policy: OnFailure,
+            approval_policy: Interactive,
             sandbox_policy: SandboxPolicy::new_read_only_policy(),
             action: ActionKind::WriteFile {
                 target: TargetPath::Workspace("ro_on_failure.txt"),
@@ -1054,7 +1054,7 @@ fn scenarios() -> Vec<ScenarioSpec> {
         #[cfg(not(target_os = "linux"))]
         ScenarioSpec {
             name: "read_only_on_failure_escalates_after_sandbox_error_gpt_5_1_no_exit",
-            approval_policy: OnFailure,
+            approval_policy: Interactive,
             sandbox_policy: SandboxPolicy::new_read_only_policy(),
             action: ActionKind::WriteFile {
                 target: TargetPath::Workspace("ro_on_failure_5_1.txt"),
@@ -1074,7 +1074,7 @@ fn scenarios() -> Vec<ScenarioSpec> {
         },
         ScenarioSpec {
             name: "read_only_on_request_network_escalates_when_approved",
-            approval_policy: OnRequest,
+            approval_policy: Interactive,
             sandbox_policy: SandboxPolicy::new_read_only_policy(),
             action: ActionKind::FetchUrl {
                 endpoint: "/ro/network-approved",
@@ -1093,7 +1093,7 @@ fn scenarios() -> Vec<ScenarioSpec> {
         },
         ScenarioSpec {
             name: "read_only_on_request_network_escalates_when_approved_gpt_5_1_no_exit",
-            approval_policy: OnRequest,
+            approval_policy: Interactive,
             sandbox_policy: SandboxPolicy::new_read_only_policy(),
             action: ActionKind::FetchUrl {
                 endpoint: "/ro/network-approved",
@@ -1112,7 +1112,7 @@ fn scenarios() -> Vec<ScenarioSpec> {
         },
         ScenarioSpec {
             name: "apply_patch_shell_command_requires_patch_approval",
-            approval_policy: UnlessTrusted,
+            approval_policy: Supervised,
             sandbox_policy: workspace_write(false),
             action: ActionKind::ApplyPatchShell {
                 target: TargetPath::Workspace("apply_patch_shell.txt"),
@@ -1132,7 +1132,7 @@ fn scenarios() -> Vec<ScenarioSpec> {
         },
         ScenarioSpec {
             name: "apply_patch_function_auto_inside_workspace",
-            approval_policy: OnRequest,
+            approval_policy: Interactive,
             sandbox_policy: SandboxPolicy::RootAccess,
             action: ActionKind::ApplyPatchFunction {
                 target: TargetPath::Workspace("apply_patch_function.txt"),
@@ -1149,7 +1149,7 @@ fn scenarios() -> Vec<ScenarioSpec> {
         },
         ScenarioSpec {
             name: "apply_patch_function_danger_allows_outside_workspace",
-            approval_policy: OnRequest,
+            approval_policy: Interactive,
             sandbox_policy: SandboxPolicy::RootAccess,
             action: ActionKind::ApplyPatchFunction {
                 target: TargetPath::OutsideWorkspace("apply_patch_function_danger.txt"),
@@ -1166,7 +1166,7 @@ fn scenarios() -> Vec<ScenarioSpec> {
         },
         ScenarioSpec {
             name: "apply_patch_function_outside_requires_patch_approval",
-            approval_policy: OnRequest,
+            approval_policy: Interactive,
             sandbox_policy: workspace_write(false),
             action: ActionKind::ApplyPatchFunction {
                 target: TargetPath::OutsideWorkspace("apply_patch_function_outside.txt"),
@@ -1186,7 +1186,7 @@ fn scenarios() -> Vec<ScenarioSpec> {
         },
         ScenarioSpec {
             name: "apply_patch_function_outside_denied_blocks_patch",
-            approval_policy: OnRequest,
+            approval_policy: Interactive,
             sandbox_policy: workspace_write(false),
             action: ActionKind::ApplyPatchFunction {
                 target: TargetPath::OutsideWorkspace("apply_patch_function_outside_denied.txt"),
@@ -1206,7 +1206,7 @@ fn scenarios() -> Vec<ScenarioSpec> {
         },
         ScenarioSpec {
             name: "apply_patch_shell_command_outside_requires_patch_approval",
-            approval_policy: OnRequest,
+            approval_policy: Interactive,
             sandbox_policy: workspace_write(false),
             action: ActionKind::ApplyPatchShell {
                 target: TargetPath::OutsideWorkspace("apply_patch_shell_outside.txt"),
@@ -1226,7 +1226,7 @@ fn scenarios() -> Vec<ScenarioSpec> {
         },
         ScenarioSpec {
             name: "apply_patch_function_unless_trusted_requires_patch_approval",
-            approval_policy: UnlessTrusted,
+            approval_policy: Supervised,
             sandbox_policy: workspace_write(false),
             action: ActionKind::ApplyPatchFunction {
                 target: TargetPath::Workspace("apply_patch_function_unless_trusted.txt"),
@@ -1246,7 +1246,7 @@ fn scenarios() -> Vec<ScenarioSpec> {
         },
         ScenarioSpec {
             name: "apply_patch_function_never_rejects_outside_workspace",
-            approval_policy: Never,
+            approval_policy: Headless,
             sandbox_policy: workspace_write(false),
             action: ActionKind::ApplyPatchFunction {
                 target: TargetPath::OutsideWorkspace("apply_patch_function_never.txt"),
@@ -1265,7 +1265,7 @@ fn scenarios() -> Vec<ScenarioSpec> {
         },
         ScenarioSpec {
             name: "read_only_unless_trusted_requires_approval",
-            approval_policy: UnlessTrusted,
+            approval_policy: Supervised,
             sandbox_policy: SandboxPolicy::new_read_only_policy(),
             action: ActionKind::WriteFile {
                 target: TargetPath::Workspace("ro_unless_trusted.txt"),
@@ -1285,7 +1285,7 @@ fn scenarios() -> Vec<ScenarioSpec> {
         },
         ScenarioSpec {
             name: "read_only_unless_trusted_requires_approval_gpt_5_1_no_exit",
-            approval_policy: UnlessTrusted,
+            approval_policy: Supervised,
             sandbox_policy: SandboxPolicy::new_read_only_policy(),
             action: ActionKind::WriteFile {
                 target: TargetPath::Workspace("ro_unless_trusted_5_1.txt"),
@@ -1305,7 +1305,7 @@ fn scenarios() -> Vec<ScenarioSpec> {
         },
         ScenarioSpec {
             name: "read_only_never_reports_sandbox_failure",
-            approval_policy: Never,
+            approval_policy: Headless,
             sandbox_policy: SandboxPolicy::new_read_only_policy(),
             action: ActionKind::WriteFile {
                 target: TargetPath::Workspace("ro_never.txt"),
@@ -1331,7 +1331,7 @@ fn scenarios() -> Vec<ScenarioSpec> {
         },
         ScenarioSpec {
             name: "trusted_command_never_runs_without_prompt",
-            approval_policy: Never,
+            approval_policy: Headless,
             sandbox_policy: SandboxPolicy::new_read_only_policy(),
             action: ActionKind::RunCommand {
                 command: "echo trusted-never",
@@ -1346,7 +1346,7 @@ fn scenarios() -> Vec<ScenarioSpec> {
         },
         ScenarioSpec {
             name: "workspace_write_on_request_allows_workspace_write",
-            approval_policy: OnRequest,
+            approval_policy: Interactive,
             sandbox_policy: workspace_write(false),
             action: ActionKind::WriteFile {
                 target: TargetPath::Workspace("ww_on_request.txt"),
@@ -1363,7 +1363,7 @@ fn scenarios() -> Vec<ScenarioSpec> {
         },
         ScenarioSpec {
             name: "workspace_write_network_disabled_blocks_network",
-            approval_policy: OnRequest,
+            approval_policy: Interactive,
             sandbox_policy: workspace_write(false),
             action: ActionKind::FetchUrl {
                 endpoint: "/ww/network-blocked",
@@ -1377,7 +1377,7 @@ fn scenarios() -> Vec<ScenarioSpec> {
         },
         ScenarioSpec {
             name: "workspace_write_on_request_requires_approval_outside_workspace",
-            approval_policy: OnRequest,
+            approval_policy: Interactive,
             sandbox_policy: workspace_write(false),
             action: ActionKind::WriteFile {
                 target: TargetPath::OutsideWorkspace("ww_on_request_outside.txt"),
@@ -1397,7 +1397,7 @@ fn scenarios() -> Vec<ScenarioSpec> {
         },
         ScenarioSpec {
             name: "workspace_write_network_enabled_allows_network",
-            approval_policy: OnRequest,
+            approval_policy: Interactive,
             sandbox_policy: workspace_write(true),
             action: ActionKind::FetchUrl {
                 endpoint: "/ww/network-ok",
@@ -1414,7 +1414,7 @@ fn scenarios() -> Vec<ScenarioSpec> {
         #[cfg(not(target_os = "linux"))] // TODO (pakrym): figure out why linux behaves differently
         ScenarioSpec {
             name: "workspace_write_on_failure_escalates_outside_workspace",
-            approval_policy: OnFailure,
+            approval_policy: Interactive,
             sandbox_policy: workspace_write(false),
             action: ActionKind::WriteFile {
                 target: TargetPath::OutsideWorkspace("ww_on_failure.txt"),
@@ -1434,7 +1434,7 @@ fn scenarios() -> Vec<ScenarioSpec> {
         },
         ScenarioSpec {
             name: "workspace_write_unless_trusted_requires_approval_outside_workspace",
-            approval_policy: UnlessTrusted,
+            approval_policy: Supervised,
             sandbox_policy: workspace_write(false),
             action: ActionKind::WriteFile {
                 target: TargetPath::OutsideWorkspace("ww_unless_trusted.txt"),
@@ -1454,7 +1454,7 @@ fn scenarios() -> Vec<ScenarioSpec> {
         },
         ScenarioSpec {
             name: "workspace_write_never_blocks_outside_workspace",
-            approval_policy: Never,
+            approval_policy: Headless,
             sandbox_policy: workspace_write(false),
             action: ActionKind::WriteFile {
                 target: TargetPath::OutsideWorkspace("ww_never.txt"),
@@ -1480,7 +1480,7 @@ fn scenarios() -> Vec<ScenarioSpec> {
         },
         ScenarioSpec {
             name: "unified exec on request no approval for safe command",
-            approval_policy: OnRequest,
+            approval_policy: Interactive,
             sandbox_policy: SandboxPolicy::RootAccess,
             action: ActionKind::RunUnifiedExecCommand {
                 command: "echo \"hello unified exec\"",
@@ -1498,7 +1498,7 @@ fn scenarios() -> Vec<ScenarioSpec> {
         // Linux sandbox arg0 test workaround doesn't work on ARM
         ScenarioSpec {
             name: "unified exec on request escalated requires approval",
-            approval_policy: OnRequest,
+            approval_policy: Interactive,
             sandbox_policy: SandboxPolicy::new_read_only_policy(),
             action: ActionKind::RunUnifiedExecCommand {
                 command: "python3 -c 'print('\"'\"'escalated unified exec'\"'\"')'",
@@ -1517,7 +1517,7 @@ fn scenarios() -> Vec<ScenarioSpec> {
         },
         ScenarioSpec {
             name: "unified exec on request requires approval unless trusted",
-            approval_policy: AskForApproval::UnlessTrusted,
+            approval_policy: ApprovalPolicy::Supervised,
             sandbox_policy: SandboxPolicy::RootAccess,
             action: ActionKind::RunUnifiedExecCommand {
                 command: "git reset --hard",
@@ -1536,7 +1536,7 @@ fn scenarios() -> Vec<ScenarioSpec> {
         },
         ScenarioSpec {
             name: "safe command with heredoc and redirect still requires approval",
-            approval_policy: AskForApproval::OnRequest,
+            approval_policy: ApprovalPolicy::Interactive,
             sandbox_policy: workspace_write(false),
             action: ActionKind::RunUnifiedExecCommand {
                 command: "cat <<'EOF' > /tmp/out.txt \nhello\nEOF",
@@ -1555,7 +1555,7 @@ fn scenarios() -> Vec<ScenarioSpec> {
         },
         ScenarioSpec {
             name: "compound command with one safe command still requires approval",
-            approval_policy: AskForApproval::OnRequest,
+            approval_policy: ApprovalPolicy::Interactive,
             sandbox_policy: workspace_write(false),
             action: ActionKind::RunUnifiedExecCommand {
                 command: "cat ./one.txt && touch ./two.txt",
@@ -1704,7 +1704,7 @@ async fn approving_apply_patch_for_session_skips_future_prompts_for_same_file() 
     skip_if_no_network!(Ok(()));
 
     let server = start_mock_server().await;
-    let approval_policy = AskForApproval::OnRequest;
+    let approval_policy = ApprovalPolicy::Interactive;
     let sandbox_policy = SandboxPolicy::WorkspaceWrite {
         writable_roots: vec![],
         read_only_access: Default::default(),
@@ -1820,7 +1820,7 @@ async fn approving_apply_patch_for_session_skips_future_prompts_for_same_file() 
 #[cfg(unix)]
 async fn approving_execpolicy_amendment_persists_policy_and_skips_future_prompts() -> Result<()> {
     let server = start_mock_server().await;
-    let approval_policy = AskForApproval::UnlessTrusted;
+    let approval_policy = ApprovalPolicy::Supervised;
     let sandbox_policy = SandboxPolicy::new_read_only_policy();
     let sandbox_policy_for_config = sandbox_policy.clone();
     let mut builder = test_codex().with_config(move |config| {
@@ -1990,7 +1990,7 @@ async fn approving_execpolicy_amendment_persists_policy_and_skips_future_prompts
 #[cfg(unix)]
 async fn invalid_requested_prefix_rule_falls_back_for_compound_command() -> Result<()> {
     let server = start_mock_server().await;
-    let approval_policy = AskForApproval::OnRequest;
+    let approval_policy = ApprovalPolicy::Interactive;
     let sandbox_policy = SandboxPolicy::new_read_only_policy();
     let sandbox_policy_for_config = sandbox_policy.clone();
     let mut builder = test_codex().with_config(move |config| {
@@ -2041,7 +2041,7 @@ async fn invalid_requested_prefix_rule_falls_back_for_compound_command() -> Resu
 #[cfg(unix)]
 async fn approving_fallback_rule_for_compound_command_works() -> Result<()> {
     let server = start_mock_server().await;
-    let approval_policy = AskForApproval::OnRequest;
+    let approval_policy = ApprovalPolicy::Interactive;
     let sandbox_policy = SandboxPolicy::new_read_only_policy();
     let sandbox_policy_for_config = sandbox_policy.clone();
     let mut builder = test_codex().with_config(move |config| {
@@ -2171,7 +2171,7 @@ mode = "limited"
 allow_local_binding = true
 "#,
     )?;
-    let approval_policy = AskForApproval::OnFailure;
+    let approval_policy = ApprovalPolicy::Interactive;
     let sandbox_policy = SandboxPolicy::WorkspaceWrite {
         writable_roots: vec![],
         read_only_access: Default::default(),
@@ -2458,7 +2458,7 @@ async fn compound_command_with_one_safe_command_still_requires_approval() -> Res
     skip_if_no_network!(Ok(()));
 
     let server = start_mock_server().await;
-    let approval_policy = AskForApproval::UnlessTrusted;
+    let approval_policy = ApprovalPolicy::Supervised;
     let sandbox_policy = SandboxPolicy::new_workspace_write_policy();
     let sandbox_policy_for_config = sandbox_policy.clone();
     let mut builder = test_codex().with_config(move |config| {

@@ -2,7 +2,7 @@
 
 use anyhow::Result;
 use chaos_ipc::openai_models::ModelsResponse;
-use chaos_ipc::protocol::AskForApproval;
+use chaos_ipc::protocol::ApprovalPolicy;
 use chaos_ipc::protocol::SandboxPolicy;
 use chaos_kern::ChaosAuth;
 use chaos_kern::config::Config;
@@ -74,7 +74,7 @@ async fn search_tool_is_hidden_for_api_key_auth() -> Result<()> {
 
     test.submit_turn_with_policies(
         "list tools",
-        AskForApproval::Never,
+        ApprovalPolicy::Headless,
         SandboxPolicy::RootAccess,
     )
     .await?;

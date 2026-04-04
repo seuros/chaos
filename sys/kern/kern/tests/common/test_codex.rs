@@ -8,7 +8,7 @@ use anyhow::Result;
 use chaos_ipc::ProcessId;
 use chaos_ipc::config_types::ServiceTier;
 use chaos_ipc::openai_models::ModelsResponse;
-use chaos_ipc::protocol::AskForApproval;
+use chaos_ipc::protocol::ApprovalPolicy;
 use chaos_ipc::protocol::EventMsg;
 use chaos_ipc::protocol::Op;
 use chaos_ipc::protocol::SandboxPolicy;
@@ -340,7 +340,7 @@ impl TestCodex {
     }
 
     pub async fn submit_turn(&self, prompt: &str) -> Result<()> {
-        self.submit_turn_with_policies(prompt, AskForApproval::Never, SandboxPolicy::RootAccess)
+        self.submit_turn_with_policies(prompt, ApprovalPolicy::Headless, SandboxPolicy::RootAccess)
             .await
     }
 
@@ -349,7 +349,7 @@ impl TestCodex {
         prompt: &str,
         sandbox_policy: SandboxPolicy,
     ) -> Result<()> {
-        self.submit_turn_with_policies(prompt, AskForApproval::Never, sandbox_policy)
+        self.submit_turn_with_policies(prompt, ApprovalPolicy::Headless, sandbox_policy)
             .await
     }
 
@@ -360,7 +360,7 @@ impl TestCodex {
     ) -> Result<()> {
         self.submit_turn_with_context(
             prompt,
-            AskForApproval::Never,
+            ApprovalPolicy::Headless,
             SandboxPolicy::RootAccess,
             Some(service_tier),
         )
@@ -370,7 +370,7 @@ impl TestCodex {
     pub async fn submit_turn_with_policies(
         &self,
         prompt: &str,
-        approval_policy: AskForApproval,
+        approval_policy: ApprovalPolicy,
         sandbox_policy: SandboxPolicy,
     ) -> Result<()> {
         self.submit_turn_with_context(
@@ -385,7 +385,7 @@ impl TestCodex {
     async fn submit_turn_with_context(
         &self,
         prompt: &str,
-        approval_policy: AskForApproval,
+        approval_policy: ApprovalPolicy,
         sandbox_policy: SandboxPolicy,
         service_tier: Option<Option<ServiceTier>>,
     ) -> Result<()> {

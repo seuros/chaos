@@ -11,7 +11,7 @@ use ts_rs::TS;
 
 use crate::config_types::CollaborationMode;
 use crate::config_types::SandboxMode;
-use crate::protocol::AskForApproval;
+use crate::protocol::ApprovalPolicy;
 use crate::protocol::COLLABORATION_MODE_CLOSE_TAG;
 use crate::protocol::COLLABORATION_MODE_OPEN_TAG;
 use crate::protocol::GranularApprovalConfig;
@@ -458,8 +458,6 @@ pub struct DeveloperInstructions {
 const APPROVAL_POLICY_NEVER: &str = include_str!("prompts/permissions/approval_policy/never.md");
 const APPROVAL_POLICY_UNLESS_TRUSTED: &str =
     include_str!("prompts/permissions/approval_policy/unless_trusted.md");
-const APPROVAL_POLICY_ON_FAILURE: &str =
-    include_str!("prompts/permissions/approval_policy/on_failure.md");
 const APPROVAL_POLICY_ON_REQUEST_RULE: &str =
     include_str!("prompts/permissions/approval_policy/on_request_rule.md");
 const APPROVAL_POLICY_ON_REQUEST_RULE_REQUEST_PERMISSION: &str =
@@ -477,7 +475,7 @@ impl DeveloperInstructions {
     }
 
     pub fn from(
-        approval_policy: AskForApproval,
+        approval_policy: ApprovalPolicy,
         exec_policy: &Policy,
         exec_permission_approvals_enabled: bool,
         request_permissions_tool_enabled: bool,
@@ -507,13 +505,12 @@ impl DeveloperInstructions {
             sections.join("\n\n")
         };
         let text = match approval_policy {
-            AskForApproval::Never => APPROVAL_POLICY_NEVER.to_string(),
-            AskForApproval::UnlessTrusted => {
+            ApprovalPolicy::Headless => APPROVAL_POLICY_NEVER.to_string(),
+            ApprovalPolicy::Supervised => {
                 with_request_permissions_tool(APPROVAL_POLICY_UNLESS_TRUSTED)
             }
-            AskForApproval::OnFailure => with_request_permissions_tool(APPROVAL_POLICY_ON_FAILURE),
-            AskForApproval::OnRequest => on_request_instructions(),
-            AskForApproval::Granular(granular_config) => granular_instructions(
+            ApprovalPolicy::Interactive => on_request_instructions(),
+            ApprovalPolicy::Granular(granular_config) => granular_instructions(
                 granular_config,
                 exec_policy,
                 exec_permission_approvals_enabled,
@@ -552,7 +549,7 @@ impl DeveloperInstructions {
 
     pub fn from_policy(
         sandbox_policy: &SandboxPolicy,
-        approval_policy: AskForApproval,
+        approval_policy: ApprovalPolicy,
         exec_policy: &Policy,
         cwd: &Path,
         exec_permission_approvals_enabled: bool,
@@ -589,7 +586,7 @@ impl DeveloperInstructions {
     pub fn from_collaboration_mode(collaboration_mode: &CollaborationMode) -> Option<Self> {
         collaboration_mode
             .settings
-            .developer_instructions
+            .minion_instructions
             .as_ref()
             .filter(|instructions| !instructions.is_empty())
             .map(|instructions| {
@@ -602,7 +599,7 @@ impl DeveloperInstructions {
     fn from_permissions_with_network(
         sandbox_mode: SandboxMode,
         network_access: NetworkAccess,
-        approval_policy: AskForApproval,
+        approval_policy: ApprovalPolicy,
         exec_policy: &Policy,
         writable_roots: Option<Vec<WritableRoot>>,
         exec_permission_approvals_enabled: bool,
@@ -1472,7 +1469,7 @@ impl std::fmt::Display for FunctionCallOutputPayload {
 mod tests {
     use super::*;
     use crate::config_types::SandboxMode;
-    use crate::protocol::AskForApproval;
+    use crate::protocol::ApprovalPolicy;
     use crate::protocol::GranularApprovalConfig;
     use anyhow::Result;
     use chaos_selinux::Policy;
@@ -1883,7 +1880,7 @@ mod tests {
         let instructions = DeveloperInstructions::from_permissions_with_network(
             SandboxMode::WorkspaceWrite,
             NetworkAccess::Enabled,
-            AskForApproval::OnRequest,
+            ApprovalPolicy::Interactive,
             &Policy::empty(),
             None,
             false,
@@ -1913,7 +1910,7 @@ mod tests {
 
         let instructions = DeveloperInstructions::from_policy(
             &policy,
-            AskForApproval::UnlessTrusted,
+            ApprovalPolicy::Supervised,
             &Policy::empty(),
             &PathBuf::from("/tmp"),
             false,
@@ -1936,7 +1933,7 @@ mod tests {
         let instructions = DeveloperInstructions::from_permissions_with_network(
             SandboxMode::WorkspaceWrite,
             NetworkAccess::Enabled,
-            AskForApproval::OnRequest,
+            ApprovalPolicy::Interactive,
             &exec_policy,
             None,
             false,
@@ -1954,7 +1951,7 @@ mod tests {
         let instructions = DeveloperInstructions::from_permissions_with_network(
             SandboxMode::WorkspaceWrite,
             NetworkAccess::Enabled,
-            AskForApproval::UnlessTrusted,
+            ApprovalPolicy::Supervised,
             &Policy::empty(),
             None,
             false,
@@ -1967,11 +1964,11 @@ mod tests {
     }
 
     #[test]
-    fn includes_request_permissions_tool_instructions_for_on_failure_when_enabled() {
+    fn includes_request_permissions_tool_instructions_for_interactive_when_enabled() {
         let instructions = DeveloperInstructions::from_permissions_with_network(
             SandboxMode::WorkspaceWrite,
             NetworkAccess::Enabled,
-            AskForApproval::OnFailure,
+            ApprovalPolicy::Interactive,
             &Policy::empty(),
             None,
             false,
@@ -1979,7 +1976,6 @@ mod tests {
         );
 
         let text = instructions.into_text();
-        assert!(text.contains("`approval_policy` is `on-failure`"));
         assert!(text.contains("# request_permissions Tool"));
     }
 
@@ -1988,7 +1984,7 @@ mod tests {
         let instructions = DeveloperInstructions::from_permissions_with_network(
             SandboxMode::WorkspaceWrite,
             NetworkAccess::Enabled,
-            AskForApproval::OnRequest,
+            ApprovalPolicy::Interactive,
             &Policy::empty(),
             None,
             true,
@@ -2005,7 +2001,7 @@ mod tests {
         let instructions = DeveloperInstructions::from_permissions_with_network(
             SandboxMode::WorkspaceWrite,
             NetworkAccess::Enabled,
-            AskForApproval::OnRequest,
+            ApprovalPolicy::Interactive,
             &Policy::empty(),
             None,
             false,
@@ -2024,7 +2020,7 @@ mod tests {
         let instructions = DeveloperInstructions::from_permissions_with_network(
             SandboxMode::WorkspaceWrite,
             NetworkAccess::Enabled,
-            AskForApproval::OnRequest,
+            ApprovalPolicy::Interactive,
             &Policy::empty(),
             None,
             true,
@@ -2071,7 +2067,7 @@ mod tests {
     #[test]
     fn granular_policy_lists_prompted_and_rejected_categories_separately() {
         let text = DeveloperInstructions::from(
-            AskForApproval::Granular(GranularApprovalConfig {
+            ApprovalPolicy::Granular(GranularApprovalConfig {
                 sandbox_approval: false,
                 rules: true,
                 skill_approval: false,
@@ -2104,7 +2100,7 @@ mod tests {
     #[test]
     fn granular_policy_includes_command_permission_instructions_when_sandbox_approval_can_prompt() {
         let text = DeveloperInstructions::from(
-            AskForApproval::Granular(GranularApprovalConfig {
+            ApprovalPolicy::Granular(GranularApprovalConfig {
                 sandbox_approval: true,
                 rules: true,
                 skill_approval: true,
@@ -2136,7 +2132,7 @@ mod tests {
     #[test]
     fn granular_policy_omits_shell_permission_instructions_when_inline_requests_are_disabled() {
         let text = DeveloperInstructions::from(
-            AskForApproval::Granular(GranularApprovalConfig {
+            ApprovalPolicy::Granular(GranularApprovalConfig {
                 sandbox_approval: true,
                 rules: true,
                 skill_approval: true,
@@ -2168,7 +2164,7 @@ mod tests {
     #[test]
     fn granular_policy_includes_request_permissions_tool_only_when_that_prompt_can_still_fire() {
         let allowed = DeveloperInstructions::from(
-            AskForApproval::Granular(GranularApprovalConfig {
+            ApprovalPolicy::Granular(GranularApprovalConfig {
                 sandbox_approval: true,
                 rules: true,
                 skill_approval: true,
@@ -2183,7 +2179,7 @@ mod tests {
         assert!(allowed.contains("# request_permissions Tool"));
 
         let rejected = DeveloperInstructions::from(
-            AskForApproval::Granular(GranularApprovalConfig {
+            ApprovalPolicy::Granular(GranularApprovalConfig {
                 sandbox_approval: true,
                 rules: true,
                 skill_approval: true,
@@ -2202,7 +2198,7 @@ mod tests {
     fn granular_policy_lists_request_permissions_category_without_tool_section_when_tool_is_unavailable()
      {
         let text = DeveloperInstructions::from(
-            AskForApproval::Granular(GranularApprovalConfig {
+            ApprovalPolicy::Granular(GranularApprovalConfig {
                 sandbox_approval: false,
                 rules: false,
                 skill_approval: false,

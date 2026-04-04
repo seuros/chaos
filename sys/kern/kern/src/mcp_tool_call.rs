@@ -477,7 +477,10 @@ async fn maybe_request_mcp_tool_approval(
         // ApprovalPolicy::Headless means the user has explicitly disabled all approval
         // prompts — bypass MCP tool approval unconditionally, regardless of sandbox
         // policy or tool annotations.
-        if matches!(turn_context.approval_policy.value(), ApprovalPolicy::Headless) {
+        if matches!(
+            turn_context.approval_policy.value(),
+            ApprovalPolicy::Headless
+        ) {
             return None;
         }
         if is_full_access_mode(turn_context) {
@@ -644,11 +647,13 @@ fn persistent_mcp_tool_approval_key(
 }
 
 fn is_full_access_mode(turn_context: &TurnContext) -> bool {
-    matches!(turn_context.approval_policy.value(), ApprovalPolicy::Headless)
-        && matches!(
-            turn_context.sandbox_policy.get(),
-            SandboxPolicy::RootAccess | SandboxPolicy::ExternalSandbox { .. }
-        )
+    matches!(
+        turn_context.approval_policy.value(),
+        ApprovalPolicy::Headless
+    ) && matches!(
+        turn_context.sandbox_policy.get(),
+        SandboxPolicy::RootAccess | SandboxPolicy::ExternalSandbox { .. }
+    )
 }
 
 pub(crate) async fn lookup_mcp_tool_metadata(

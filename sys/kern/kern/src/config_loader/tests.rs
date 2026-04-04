@@ -448,7 +448,7 @@ async fn managed_preferences_requirements_take_precedence() -> anyhow::Result<()
     let tmp = tempdir()?;
     let managed_path = tmp.path().join("managed_config.toml");
 
-    tokio::fs::write(&managed_path, "approval_policy = \"on-request\"\n").await?;
+    tokio::fs::write(&managed_path, "approval_policy = \"interactive\"\n").await?;
 
     let state = load_config_layers_state(
         tmp.path(),

@@ -226,7 +226,7 @@ fn blocking_set_model_replaces_symlink_on_cycle() {
 fn batch_write_table_upsert_preserves_inline_comments() {
     let tmp = tempdir().expect("tmpdir");
     let chaos_home = tmp.path();
-    let original = r#"approval_policy = "never"
+    let original = r#"approval_policy = "headless"
 
 [mcp_servers.linear]
 name = "linear"
@@ -266,7 +266,7 @@ network_access = false
     .expect("apply");
 
     let updated = std::fs::read_to_string(chaos_home.join(CONFIG_TOML_FILE)).expect("read config");
-    let expected = r#"approval_policy = "never"
+    let expected = r#"approval_policy = "headless"
 
 [mcp_servers.linear]
 name = "linear"

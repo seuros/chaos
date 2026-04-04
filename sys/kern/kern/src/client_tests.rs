@@ -207,8 +207,14 @@ fn clamp_permission_mode_matches_codex_session_start_mapping() {
         clamp_permission_mode(ApprovalPolicy::Headless),
         "bypassPermissions"
     );
-    assert_eq!(clamp_permission_mode(ApprovalPolicy::Interactive), "default");
-    assert_eq!(clamp_permission_mode(ApprovalPolicy::Interactive), "default");
+    assert_eq!(
+        clamp_permission_mode(ApprovalPolicy::Interactive),
+        "default"
+    );
+    assert_eq!(
+        clamp_permission_mode(ApprovalPolicy::Interactive),
+        "default"
+    );
 }
 
 #[test]

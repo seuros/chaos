@@ -78,6 +78,7 @@ pub(crate) struct EventProcessorWithHumanOutput {
     green: Style,
     cyan: Style,
     yellow: Style,
+    bold_yellow: Style,
 
     /// Whether to include `AgentReasoning` events in the output.
     show_agent_reasoning: bool,
@@ -113,6 +114,7 @@ impl EventProcessorWithHumanOutput {
                 green: Style::new().green(),
                 cyan: Style::new().cyan(),
                 yellow: Style::new().yellow(),
+                bold_yellow: Style::new().bold().yellow(),
                 show_agent_reasoning: !config.hide_agent_reasoning,
                 show_raw_agent_reasoning: config.show_raw_agent_reasoning,
                 last_message_path,
@@ -136,6 +138,7 @@ impl EventProcessorWithHumanOutput {
                 green: Style::new(),
                 cyan: Style::new(),
                 yellow: Style::new(),
+                bold_yellow: Style::new(),
                 show_agent_reasoning: !config.hide_agent_reasoning,
                 show_raw_agent_reasoning: config.show_raw_agent_reasoning,
                 last_message_path,
@@ -694,6 +697,8 @@ impl EventProcessor for EventProcessorWithHumanOutput {
                 call_id,
                 sender_process_id: _,
                 prompt,
+                catchphrase,
+                missing_topics,
                 ..
             }) => {
                 ts_msg!(
@@ -703,6 +708,18 @@ impl EventProcessor for EventProcessorWithHumanOutput {
                     format_collab_invocation("spawn_agent", &call_id, Some(&prompt))
                         .style(self.bold)
                 );
+                if let Some(phrase) = catchphrase {
+                    eprintln!("{}", format!("  ⚡ {phrase}").style(self.bold_yellow));
+                }
+                for topic in &missing_topics {
+                    eprintln!(
+                        "{}",
+                        format!(
+                            "  ⚠ no role registered for topic '{topic}' — spawning default (consider reporting this topic as missing)"
+                        )
+                        .style(self.yellow)
+                    );
+                }
             }
             EventMsg::CollabAgentSpawnEnd(CollabAgentSpawnEndEvent {
                 call_id,

@@ -1,0 +1,7 @@
+{"run_id":"1775292108-827023642","line":119,"new":{"module_name":"chaos_console__bottom_pane__pending_process_approvals__tests","snapshot_name":"render_single_process_snapshot","metadata":{"source":"bin/console/src/bottom_pane/pending_process_approvals.rs","assertion_line":119,"expression":"snapshot_rows(&widget, 40).replace(' ', \".\")"},"snapshot":"..!.Approval.needed.in.Robie.[scout]....\n..../agent.to.switch.processes.........."},"old":{"module_name":"chaos_console__bottom_pane__pending_process_approvals__tests","metadata":{},"snapshot":"..!.Approval.needed.in.Robie.[scout].\n..../agent.to.switch.processes.........."}}
+{"run_id":"1775292170-482669101","line":119,"new":null,"old":null}
+{"run_id":"1775292404-895893866","line":137,"new":null,"old":null}
+{"run_id":"81bdd0d6-21fb-407a-a774-c65327a83549","line":119,"new":null,"old":null}
+{"run_id":"81bdd0d6-21fb-407a-a774-c65327a83549","line":137,"new":null,"old":null}
+{"run_id":"a63f2465-3366-4bc0-842d-971f058a1ca5","line":137,"new":null,"old":null}
+{"run_id":"a63f2465-3366-4bc0-842d-971f058a1ca5","line":119,"new":null,"old":null}

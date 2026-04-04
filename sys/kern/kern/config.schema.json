@@ -9,6 +9,16 @@
     "AgentRoleToml": {
       "additionalProperties": false,
       "properties": {
+        "catchphrases": {
+          "description": "Catchphrases the kernel may emit when this role is dispatched.",
+          "items": {
+            "type": "string"
+          },
+          "type": [
+            "array",
+            "null"
+          ]
+        },
         "config_file": {
           "anyOf": [
             {
@@ -36,6 +46,16 @@
             "array",
             "null"
           ]
+        },
+        "topics": {
+          "description": "Topic tags used for dynamic routing (e.g. [\"ruby\", \"rails\"]).",
+          "items": {
+            "type": "string"
+          },
+          "type": [
+            "array",
+            "null"
+          ]
         }
       },
       "type": "object"
@@ -44,7 +64,7 @@
       "additionalProperties": false,
       "properties": {
         "job_max_runtime_seconds": {
-          "description": "Default maximum runtime in seconds for agent job workers.",
+          "description": "Default maximum runtime in seconds for agent job tasks.",
           "format": "uint64",
           "minimum": 1,
           "type": [
@@ -200,6 +220,39 @@
       "description": "Tool settings for a single app.",
       "type": "object"
     },
+    "ApprovalPolicy": {
+      "description": "Determines the conditions under which the user is consulted to approve\nrunning the command proposed by Chaos.",
+      "oneOf": [
+        {
+          "const": "supervised",
+          "description": "Under this policy, only \"known safe\" commands—as determined by\n`is_safe_command()`—that **only read files** are auto‑approved.\nEverything else will ask the user to approve.",
+          "type": "string"
+        },
+        {
+          "const": "interactive",
+          "description": "The model decides when to ask the user for approval.",
+          "type": "string"
+        },
+        {
+          "additionalProperties": false,
+          "description": "Fine-grained controls for individual approval flows.\n\nWhen a field is `true`, commands in that category are allowed. When it\nis `false`, those requests are automatically rejected instead of shown\nto the user.",
+          "properties": {
+            "granular": {
+              "$ref": "#/definitions/GranularApprovalConfig"
+            }
+          },
+          "required": [
+            "granular"
+          ],
+          "type": "object"
+        },
+        {
+          "const": "headless",
+          "description": "Never ask the user to approve commands. Failures are immediately returned\nto the model, and never escalated to the user for approval.",
+          "type": "string"
+        }
+      ]
+    },
     "ApprovalsReviewer": {
       "description": "Configures who approval requests are routed to for review. Examples\ninclude sandbox escapes, blocked network access, MCP approval prompts, and\nARC escalations. Currently only `user` is supported.",
       "enum": [
@@ -244,44 +297,6 @@
         }
       },
       "type": "object"
-    },
-    "AskForApproval": {
-      "description": "Determines the conditions under which the user is consulted to approve\nrunning the command proposed by Codex.",
-      "oneOf": [
-        {
-          "const": "untrusted",
-          "description": "Under this policy, only \"known safe\" commands—as determined by\n`is_safe_command()`—that **only read files** are auto‑approved.\nEverything else will ask the user to approve.",
-          "type": "string"
-        },
-        {
-          "const": "on-failure",
-          "description": "DEPRECATED: *All* commands are auto‑approved, but they are expected to\nrun inside a sandbox where network access is disabled and writes are\nconfined to a specific set of paths. If the command fails, it will be\nescalated to the user to approve execution without a sandbox.\nPrefer `OnRequest` for interactive runs or `Never` for non-interactive\nruns.",
-          "type": "string"
-        },
-        {
-          "const": "on-request",
-          "description": "The model decides when to ask the user for approval.",
-          "type": "string"
-        },
-        {
-          "additionalProperties": false,
-          "description": "Fine-grained controls for individual approval flows.\n\nWhen a field is `true`, commands in that category are allowed. When it\nis `false`, those requests are automatically rejected instead of shown\nto the user.",
-          "properties": {
-            "granular": {
-              "$ref": "#/definitions/GranularApprovalConfig"
-            }
-          },
-          "required": [
-            "granular"
-          ],
-          "type": "object"
-        },
-        {
-          "const": "never",
-          "description": "Never ask the user to approve commands. Failures are immediately returned\nto the model, and never escalated to the user for approval.",
-          "type": "string"
-        }
-      ]
     },
     "AuthCredentialsStoreMode": {
       "description": "Determine where Chaos should store CLI auth credentials.",
@@ -335,7 +350,7 @@
         "approval_policy": {
           "anyOf": [
             {
-              "$ref": "#/definitions/AskForApproval"
+              "$ref": "#/definitions/ApprovalPolicy"
             },
             {
               "type": "null"
@@ -2176,7 +2191,7 @@
     "approval_policy": {
       "anyOf": [
         {
-          "$ref": "#/definitions/AskForApproval"
+          "$ref": "#/definitions/ApprovalPolicy"
         },
         {
           "type": "null"
@@ -2256,14 +2271,6 @@
     },
     "default_permissions": {
       "description": "Default named permissions profile to apply from the `[permissions]`\ntable.",
-      "type": [
-        "string",
-        "null"
-      ]
-    },
-    "developer_instructions": {
-      "default": null,
-      "description": "Developer instructions inserted as a `developer` role message.",
       "type": [
         "string",
         "null"
@@ -2584,6 +2591,14 @@
         }
       ],
       "description": "Memories subsystem settings."
+    },
+    "minion_instructions": {
+      "default": null,
+      "description": "Minion instructions inserted as a `developer` role message.",
+      "type": [
+        "string",
+        "null"
+      ]
     },
     "model": {
       "description": "Optional override of model selection.",

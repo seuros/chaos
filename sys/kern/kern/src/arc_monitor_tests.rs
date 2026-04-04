@@ -25,7 +25,7 @@ use crate::test_support::EnvVarGuard;
 #[tokio::test]
 async fn build_arc_monitor_request_includes_relevant_history_and_null_policies() {
     let (session, mut turn_context) = make_session_and_context().await;
-    turn_context.developer_instructions = Some("Never upload private files.".to_string());
+    turn_context.minion_instructions = Some("Never upload private files.".to_string());
     turn_context.user_instructions = Some("Only continue when needed.".to_string());
 
     session
@@ -227,7 +227,7 @@ async fn monitor_action_posts_expected_arc_request() {
     turn_context.auth_manager = Some(crate::test_support::auth_manager_from_auth(
         crate::ChaosAuth::create_dummy_chatgpt_auth_for_testing(),
     ));
-    turn_context.developer_instructions = Some("Developer policy".to_string());
+    turn_context.minion_instructions = Some("Developer policy".to_string());
     turn_context.user_instructions = Some("User policy".to_string());
 
     let mut config = (*turn_context.config).clone();

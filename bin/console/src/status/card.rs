@@ -216,7 +216,8 @@ impl StatusHistoryCell {
                 }
             }
         };
-        let permissions = if config.permissions.approval_policy.value() == ApprovalPolicy::Interactive
+        let permissions = if config.permissions.approval_policy.value()
+            == ApprovalPolicy::Interactive
             && *config.permissions.sandbox_policy.get()
                 == SandboxPolicy::new_workspace_write_policy()
         {

@@ -78,6 +78,7 @@ indexmap = { workspace = true }
 libc = { workspace = true }
 notify = { workspace = true }
 os_info = { workspace = true }
+include_dir = { workspace = true }
 rand = { workspace = true }
 regex-lite = { workspace = true }
 schemars = { workspace = true }

@@ -1438,7 +1438,6 @@ impl Session {
             });
         }
 
-
         let auth = auth.as_ref();
         let auth_mode = auth.map(ChaosAuth::auth_mode).map(TelemetryAuthMode::from);
         let account_id = auth.and_then(ChaosAuth::get_account_id);

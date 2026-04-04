@@ -52,7 +52,7 @@ async fn record_initial_history_resumed_bare_turn_context_does_not_hydrate_previ
         effort: turn_context.reasoning_effort,
         summary: turn_context.reasoning_summary,
         user_instructions: None,
-        developer_instructions: None,
+        minion_instructions: None,
         final_output_json_schema: None,
         truncation_policy: Some(turn_context.truncation_policy.into()),
     };
@@ -90,7 +90,7 @@ async fn record_initial_history_resumed_hydrates_previous_turn_settings_from_lif
         effort: turn_context.reasoning_effort,
         summary: turn_context.reasoning_summary,
         user_instructions: None,
-        developer_instructions: None,
+        minion_instructions: None,
         final_output_json_schema: None,
         truncation_policy: Some(turn_context.truncation_policy.into()),
     };
@@ -742,7 +742,7 @@ async fn record_initial_history_resumed_turn_context_after_compaction_reestablis
         effort: turn_context.reasoning_effort,
         summary: turn_context.reasoning_summary,
         user_instructions: None,
-        developer_instructions: None,
+        minion_instructions: None,
         final_output_json_schema: None,
         truncation_policy: Some(turn_context.truncation_policy.into()),
     };
@@ -812,7 +812,7 @@ async fn record_initial_history_resumed_turn_context_after_compaction_reestablis
             effort: turn_context.reasoning_effort,
             summary: turn_context.reasoning_summary,
             user_instructions: None,
-            developer_instructions: None,
+            minion_instructions: None,
             final_output_json_schema: None,
             truncation_policy: Some(turn_context.truncation_policy.into()),
         }))
@@ -841,7 +841,7 @@ async fn record_initial_history_resumed_aborted_turn_without_id_clears_active_tu
         effort: turn_context.reasoning_effort,
         summary: turn_context.reasoning_summary,
         user_instructions: None,
-        developer_instructions: None,
+        minion_instructions: None,
         final_output_json_schema: None,
         truncation_policy: Some(turn_context.truncation_policy.into()),
     };
@@ -945,7 +945,7 @@ async fn record_initial_history_resumed_unmatched_abort_preserves_active_turn_fo
         effort: turn_context.reasoning_effort,
         summary: turn_context.reasoning_summary,
         user_instructions: None,
-        developer_instructions: None,
+        minion_instructions: None,
         final_output_json_schema: None,
         truncation_policy: Some(turn_context.truncation_policy.into()),
     };
@@ -1045,7 +1045,7 @@ async fn record_initial_history_resumed_trailing_incomplete_turn_compaction_clea
         effort: turn_context.reasoning_effort,
         summary: turn_context.reasoning_summary,
         user_instructions: None,
-        developer_instructions: None,
+        minion_instructions: None,
         final_output_json_schema: None,
         truncation_policy: Some(turn_context.truncation_policy.into()),
     };
@@ -1185,7 +1185,7 @@ async fn record_initial_history_resumed_replaced_incomplete_compacted_turn_clear
         effort: turn_context.reasoning_effort,
         summary: turn_context.reasoning_summary,
         user_instructions: None,
-        developer_instructions: None,
+        minion_instructions: None,
         final_output_json_schema: None,
         truncation_policy: Some(turn_context.truncation_policy.into()),
     };

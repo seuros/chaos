@@ -19,7 +19,7 @@ fn default_mode_instructions_replace_mode_names_placeholder() {
     let default_instructions = default_preset(CollaborationModesConfig {
         default_mode_request_user_input: true,
     })
-    .developer_instructions
+    .minion_instructions
     .expect("default preset should include instructions")
     .expect("default instructions should be set");
 
@@ -40,7 +40,7 @@ fn default_mode_instructions_replace_mode_names_placeholder() {
 #[test]
 fn default_mode_instructions_use_plain_text_questions_when_feature_disabled() {
     let default_instructions = default_preset(CollaborationModesConfig::default())
-        .developer_instructions
+        .minion_instructions
         .expect("default preset should include instructions")
         .expect("default instructions should be set");
 

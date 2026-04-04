@@ -809,9 +809,9 @@ impl Drop for ModelClientSession {
 fn clamp_permission_mode(approval_policy: ApprovalPolicy) -> String {
     match approval_policy {
         ApprovalPolicy::Headless => "bypassPermissions",
-        ApprovalPolicy::Supervised
-        | ApprovalPolicy::Interactive
-        | ApprovalPolicy::Granular(_) => "default",
+        ApprovalPolicy::Supervised | ApprovalPolicy::Interactive | ApprovalPolicy::Granular(_) => {
+            "default"
+        }
     }
     .to_string()
 }

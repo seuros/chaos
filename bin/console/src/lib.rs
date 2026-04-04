@@ -207,7 +207,10 @@ pub async fn run_main(
             Some(ApprovalPolicy::Interactive),
         )
     } else if cli.dangerously_bypass_approvals_and_sandbox {
-        (Some(SandboxMode::RootAccess), Some(ApprovalPolicy::Headless))
+        (
+            Some(SandboxMode::RootAccess),
+            Some(ApprovalPolicy::Headless),
+        )
     } else {
         (
             cli.sandbox_mode.map(Into::<SandboxMode>::into),

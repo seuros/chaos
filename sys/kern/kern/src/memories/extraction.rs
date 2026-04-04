@@ -223,18 +223,16 @@ async fn claim_startup_jobs(
 }
 
 async fn build_request_context(session: &Arc<Session>, config: &Config) -> RequestContext {
-    let model_name = config
-        .memories
-        .extract_model
-        .clone()
-        .or_else(|| config.model.clone())
-        .unwrap_or_default();
+    let turn_context = session.new_default_turn().await;
+    let model_name = super::resolve_memory_model_name(
+        config.memories.extract_model.as_deref(),
+        turn_context.model_info.slug.as_str(),
+    );
     let model = session
         .services
         .models_manager
         .get_model_info(&model_name, config)
         .await;
-    let turn_context = session.new_default_turn().await;
     RequestContext::from_turn_context(
         turn_context.as_ref(),
         turn_context.turn_metadata_state.current_header_value(),

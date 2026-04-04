@@ -347,7 +347,7 @@ async fn codex_tool_passes_base_instructions() -> anyhow::Result<()> {
         .send_chaos_tool_call(ChaosToolParams {
             prompt: "How are you?".to_string(),
             base_instructions: Some("You are a helpful assistant.".to_string()),
-            developer_instructions: Some("Foreshadow upcoming tool calls.".to_string()),
+            minion_instructions: Some("Foreshadow upcoming tool calls.".to_string()),
             ..Default::default()
         })
         .await?;
@@ -591,7 +591,7 @@ async fn create_mcp_process(responses: Vec<String>) -> anyhow::Result<McpHandle>
 }
 
 /// Create a Codex config that uses the mock server as the model provider.
-/// It also uses `approval_policy = "untrusted"` so that we exercise the
+/// It also uses `approval_policy = "supervised"` so that we exercise the
 /// elicitation code path for shell commands.
 fn create_config_toml(chaos_home: &Path, server_uri: &str) -> std::io::Result<()> {
     let config_toml = chaos_home.join("config.toml");
@@ -600,7 +600,7 @@ fn create_config_toml(chaos_home: &Path, server_uri: &str) -> std::io::Result<()
         format!(
             r#"
 model = "mock-model"
-approval_policy = "untrusted"
+approval_policy = "supervised"
 sandbox_policy = "workspace-write"
 
 model_provider = "mock_provider"

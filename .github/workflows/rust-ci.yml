@@ -387,15 +387,26 @@ jobs:
             sudo sysctl -w kernel.apparmor_restrict_unprivileged_userns=0
           fi
 
-      - name: Export binary paths for tests
+      - name: Build and export runtime binaries for tests
         run: |
+          # Nextest only builds test targets and their compile-time deps.
+          # These binaries are discovered at test runtime via cargo_bin() /
+          # CARGO_BIN_EXE_*, so we must build them explicitly first.
+          PKGS="-p chaos-journald -p chaos-cli"
+          case "${{ runner.os }}" in
+            macOS)  PKGS="$PKGS -p alcatraz-macos" ;;
+            Linux)  PKGS="$PKGS -p alcatraz-linux" ;;
+          esac
+          cargo build --target ${{ matrix.target }} --profile ci-test $PKGS
           TARGET_DIR="${GITHUB_WORKSPACE}/target/${{ matrix.target }}/ci-test"
           {
             echo "CARGO_BIN_EXE_chaos-journald=${TARGET_DIR}/chaos-journald"
-            echo "CARGO_BIN_EXE_alcatraz-macos=${TARGET_DIR}/alcatraz-macos"
-            echo "CARGO_BIN_EXE_alcatraz-linux=${TARGET_DIR}/alcatraz-linux"
-            echo "CARGO_BIN_EXE_alcatraz-freebsd=${TARGET_DIR}/alcatraz-freebsd"
+            echo "CARGO_BIN_EXE_chaos=${TARGET_DIR}/chaos"
           } >> "$GITHUB_ENV"
+          case "${{ runner.os }}" in
+            macOS)  echo "CARGO_BIN_EXE_alcatraz-macos=${TARGET_DIR}/alcatraz-macos" >> "$GITHUB_ENV" ;;
+            Linux)  echo "CARGO_BIN_EXE_alcatraz-linux=${TARGET_DIR}/alcatraz-linux" >> "$GITHUB_ENV" ;;
+          esac
 
       - name: tests
         id: test

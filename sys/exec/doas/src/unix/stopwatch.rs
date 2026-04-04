@@ -132,7 +132,6 @@ impl Stopwatch {
 mod tests {
     use super::Stopwatch;
     use tokio::time::Duration;
-    use tokio::time::Instant;
     use tokio::time::sleep;
     use tokio::time::timeout;
 
@@ -140,9 +139,17 @@ mod tests {
     async fn cancellation_receiver_fires_after_limit() {
         let stopwatch = Stopwatch::new(Duration::from_millis(50));
         let token = stopwatch.cancellation_token();
-        let start = Instant::now();
-        token.cancelled().await;
-        assert!(start.elapsed() >= Duration::from_millis(50));
+
+        assert!(
+            timeout(Duration::from_millis(30), token.cancelled())
+                .await
+                .is_err()
+        );
+        assert!(
+            timeout(Duration::from_millis(250), token.cancelled())
+                .await
+                .is_ok()
+        );
     }
 
     #[tokio::test]

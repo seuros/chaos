@@ -1,0 +1,6 @@
+[submodule "drivers/dictator"]
+	path = drivers/dictator
+	url = https://github.com/seuros/dictator.git
+[submodule "drivers/helmsman"]
+	path = drivers/helmsman
+	url = https://github.com/seuros/helmsman.git

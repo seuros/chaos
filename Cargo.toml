@@ -93,6 +93,10 @@ members = [
     # tests/
     "tests/check",
 ]
+exclude = [
+    "drivers/dictator",
+    "drivers/helmsman",
+]
 resolver = "2"
 
 [workspace.package]

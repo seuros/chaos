@@ -387,6 +387,16 @@ jobs:
             sudo sysctl -w kernel.apparmor_restrict_unprivileged_userns=0
           fi
 
+      - name: Export binary paths for tests
+        run: |
+          TARGET_DIR="${GITHUB_WORKSPACE}/target/${{ matrix.target }}/ci-test"
+          {
+            echo "CARGO_BIN_EXE_chaos-journald=${TARGET_DIR}/chaos-journald"
+            echo "CARGO_BIN_EXE_alcatraz-macos=${TARGET_DIR}/alcatraz-macos"
+            echo "CARGO_BIN_EXE_alcatraz-linux=${TARGET_DIR}/alcatraz-linux"
+            echo "CARGO_BIN_EXE_alcatraz-freebsd=${TARGET_DIR}/alcatraz-freebsd"
+          } >> "$GITHUB_ENV"
+
       - name: tests
         id: test
         run: cargo nextest run --all-features --no-fail-fast --target ${{ matrix.target }} --cargo-profile ci-test --timings

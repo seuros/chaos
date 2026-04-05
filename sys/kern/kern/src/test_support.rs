@@ -8,9 +8,18 @@ use std::path::PathBuf;
 use std::sync::Arc;
 
 use chaos_ipc::config_types::CollaborationModeMask;
+use chaos_ipc::config_types::ReasoningSummary;
+use chaos_ipc::config_types::Verbosity;
+use chaos_ipc::openai_models::ApplyPatchToolType;
+use chaos_ipc::openai_models::ConfigShellToolType;
+use chaos_ipc::openai_models::InputModality;
 use chaos_ipc::openai_models::ModelInfo;
 use chaos_ipc::openai_models::ModelPreset;
+use chaos_ipc::openai_models::ModelVisibility;
 use chaos_ipc::openai_models::ModelsResponse;
+use chaos_ipc::openai_models::ReasoningEffort;
+use chaos_ipc::openai_models::ReasoningEffortPreset;
+use chaos_ipc::openai_models::TruncationPolicyConfig;
 use std::sync::LazyLock;
 
 use crate::AuthManager;
@@ -23,11 +32,73 @@ use crate::models_manager::manager::ModelsManager;
 use crate::process_table;
 use crate::unified_exec;
 
+/// Build a provider-agnostic [`ModelInfo`] with sensible defaults for testing.
+pub fn test_model_info(slug: &str) -> ModelInfo {
+    ModelInfo {
+        slug: slug.to_string(),
+        display_name: slug.to_string(),
+        description: Some(format!("{slug} test model")),
+        default_reasoning_level: Some(ReasoningEffort::Medium),
+        supported_reasoning_levels: vec![
+            ReasoningEffortPreset {
+                effort: ReasoningEffort::Low,
+                description: "Low".to_string(),
+            },
+            ReasoningEffortPreset {
+                effort: ReasoningEffort::Medium,
+                description: "Medium".to_string(),
+            },
+            ReasoningEffortPreset {
+                effort: ReasoningEffort::High,
+                description: "High".to_string(),
+            },
+        ],
+        shell_type: ConfigShellToolType::ShellCommand,
+        visibility: ModelVisibility::List,
+        supported_in_api: true,
+        priority: 0,
+        availability_nux: None,
+        upgrade: None,
+        base_instructions: format!("You are a test coding assistant ({slug})."),
+        model_messages: None,
+        supports_reasoning_summaries: false,
+        default_reasoning_summary: ReasoningSummary::Auto,
+        support_verbosity: true,
+        default_verbosity: Some(Verbosity::Low),
+        apply_patch_tool_type: Some(ApplyPatchToolType::Freeform),
+        web_search_tool_type: Default::default(),
+        truncation_policy: TruncationPolicyConfig::tokens(10_000),
+        supports_parallel_tool_calls: true,
+        supports_image_detail_original: false,
+        context_window: Some(272_000),
+        auto_compact_token_limit: None,
+        effective_context_window_percent: 95,
+        experimental_supported_tools: Vec::new(),
+        input_modalities: vec![InputModality::Text, InputModality::Image],
+        prefer_websockets: false,
+        used_fallback_model_metadata: false,
+        supports_search_tool: false,
+    }
+}
+
+/// Build a [`ModelsResponse`] with models for the given slugs, each with
+/// incrementing priority.
+pub fn test_models_response(slugs: &[&str]) -> ModelsResponse {
+    ModelsResponse {
+        models: slugs
+            .iter()
+            .enumerate()
+            .map(|(i, slug)| {
+                let mut m = test_model_info(slug);
+                m.priority = i as i32;
+                m
+            })
+            .collect(),
+    }
+}
+
 static TEST_MODEL_PRESETS: LazyLock<Vec<ModelPreset>> = LazyLock::new(|| {
-    let file_contents = include_str!("../models.json");
-    let mut response: ModelsResponse = serde_json::from_str(file_contents)
-        .unwrap_or_else(|err| panic!("bundled models.json should parse: {err}"));
-    response.models.sort_by(|a, b| a.priority.cmp(&b.priority));
+    let response = test_models_response(&["shodan", "cortana"]);
     let mut presets: Vec<ModelPreset> = response.models.into_iter().map(Into::into).collect();
     ModelPreset::mark_default_by_picker_visibility(&mut presets);
     presets

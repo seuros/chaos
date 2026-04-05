@@ -60,7 +60,6 @@ use chaos_ipc::models::ContentItem;
 use chaos_ipc::models::DeveloperInstructions;
 use chaos_ipc::models::ResponseInputItem;
 use chaos_ipc::models::ResponseItem;
-use chaos_ipc::openai_models::ModelsResponse;
 use chaos_ipc::protocol::Submission;
 use chaos_ipc::protocol::W3cTraceContext;
 use chaos_pf::NetworkProxyConfig;

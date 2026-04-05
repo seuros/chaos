@@ -3,11 +3,9 @@ use std::path::Path;
 use std::path::PathBuf;
 use std::sync::Arc;
 
-use anyhow::Context;
 use anyhow::Result;
 use chaos_ipc::ProcessId;
 use chaos_ipc::config_types::ServiceTier;
-use chaos_ipc::openai_models::ModelsResponse;
 use chaos_ipc::protocol::ApprovalPolicy;
 use chaos_ipc::protocol::EventMsg;
 use chaos_ipc::protocol::Op;
@@ -140,10 +138,9 @@ impl TestCodexBuilder {
             config.model_provider.base_url = Some(base_url_clone);
             config.experimental_realtime_ws_model = Some("realtime-test-model".to_string());
             if config.model_catalog.is_none() {
-                let bundled_models: ModelsResponse =
-                    serde_json::from_str(include_str!("../../models.json"))
-                        .expect("bundled models.json should parse");
-                config.model_catalog = Some(bundled_models);
+                config.model_catalog = Some(chaos_kern::test_support::test_models_response(&[
+                    "wheatley",
+                ]));
             }
             config
                 .features
@@ -286,32 +283,14 @@ fn ensure_test_model_catalog(config: &mut Config) -> Result<()> {
         return Ok(());
     }
 
-    let bundled_models_path =
-        chaos_which::find_resource!("../../models.json").context("bundled models.json")?;
-    let bundled_models_contents =
-        std::fs::read_to_string(&bundled_models_path).with_context(|| {
-            format!(
-                "read bundled models.json from {}",
-                bundled_models_path.display()
-            )
-        })?;
-    let bundled_models: ModelsResponse =
-        serde_json::from_str(&bundled_models_contents).context("parse bundled models.json")?;
-    let mut model = bundled_models
-        .models
-        .iter()
-        .find(|candidate| candidate.slug == "gpt-5.1-codex")
-        .cloned()
-        .unwrap_or_else(|| panic!("missing bundled model gpt-5.1-codex"));
-    model.slug = TEST_MODEL_WITH_EXPERIMENTAL_TOOLS.to_string();
-    model.display_name = TEST_MODEL_WITH_EXPERIMENTAL_TOOLS.to_string();
+    let mut model = chaos_kern::test_support::test_model_info(TEST_MODEL_WITH_EXPERIMENTAL_TOOLS);
     model.experimental_supported_tools = vec![
         "test_sync_tool".to_string(),
         "read_file".to_string(),
         "grep_files".to_string(),
         "list_dir".to_string(),
     ];
-    config.model_catalog = Some(ModelsResponse {
+    config.model_catalog = Some(chaos_ipc::openai_models::ModelsResponse {
         models: vec![model],
     });
     Ok(())

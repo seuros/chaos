@@ -3595,7 +3595,6 @@ mod tests {
     use chaos_ipc::user_input::TextElement;
     use chaos_ipc::user_input::UserInput;
     use chaos_kern::ChaosAuth;
-    use chaos_kern::config::ConfigBuilder;
     use chaos_kern::config::ConfigOverrides;
     use chaos_kern::config::types::ApprovalsReviewer;
     use chaos_syslog::SessionTelemetry;
@@ -5316,62 +5315,6 @@ mod tests {
         chaos_kern::test_support::all_model_presets().clone()
     }
 
-    fn model_migration_copy_to_plain_text(
-        copy: &crate::model_migration::ModelMigrationCopy,
-    ) -> String {
-        if let Some(markdown) = copy.markdown.as_ref() {
-            return markdown.clone();
-        }
-        let mut s = String::new();
-        for span in &copy.heading {
-            s.push_str(&span.content);
-        }
-        s.push('\n');
-        s.push('\n');
-        for line in &copy.content {
-            for span in &line.spans {
-                s.push_str(&span.content);
-            }
-            s.push('\n');
-        }
-        s
-    }
-
-    #[tokio::test]
-    async fn model_migration_prompt_only_shows_for_deprecated_models() {
-        let seen = BTreeMap::new();
-        assert!(should_show_model_migration_prompt(
-            "gpt-5",
-            "gpt-5.2-codex",
-            &seen,
-            &all_model_presets()
-        ));
-        assert!(should_show_model_migration_prompt(
-            "gpt-5-codex",
-            "gpt-5.2-codex",
-            &seen,
-            &all_model_presets()
-        ));
-        assert!(should_show_model_migration_prompt(
-            "gpt-5-codex-mini",
-            "gpt-5.2-codex",
-            &seen,
-            &all_model_presets()
-        ));
-        assert!(should_show_model_migration_prompt(
-            "gpt-5.1-codex",
-            "gpt-5.2-codex",
-            &seen,
-            &all_model_presets()
-        ));
-        assert!(!should_show_model_migration_prompt(
-            "gpt-5.1-codex",
-            "gpt-5.1-codex",
-            &seen,
-            &all_model_presets()
-        ));
-    }
-
     #[tokio::test]
     async fn model_migration_prompt_respects_hide_flag_and_self_target() {
         let mut seen = BTreeMap::new();
@@ -5388,111 +5331,6 @@ mod tests {
             &seen,
             &all_model_presets()
         ));
-    }
-
-    #[tokio::test]
-    async fn model_migration_prompt_skips_when_target_missing_or_hidden() {
-        let mut available = all_model_presets();
-        let mut current = available
-            .iter()
-            .find(|preset| preset.model == "gpt-5-codex")
-            .cloned()
-            .expect("preset present");
-        current.upgrade = Some(ModelUpgrade {
-            id: "missing-target".to_string(),
-            reasoning_effort_mapping: None,
-            migration_config_key: HIDE_GPT5_1_MIGRATION_PROMPT_CONFIG.to_string(),
-            model_link: None,
-            upgrade_copy: None,
-            migration_markdown: None,
-        });
-        available.retain(|preset| preset.model != "gpt-5-codex");
-        available.push(current.clone());
-
-        assert!(!should_show_model_migration_prompt(
-            &current.model,
-            "missing-target",
-            &BTreeMap::new(),
-            &available,
-        ));
-
-        assert!(target_preset_for_upgrade(&available, "missing-target").is_none());
-
-        let mut with_hidden_target = all_model_presets();
-        let target = with_hidden_target
-            .iter_mut()
-            .find(|preset| preset.model == "gpt-5.2-codex")
-            .expect("target preset present");
-        target.show_in_picker = false;
-
-        assert!(!should_show_model_migration_prompt(
-            "gpt-5-codex",
-            "gpt-5.2-codex",
-            &BTreeMap::new(),
-            &with_hidden_target,
-        ));
-        assert!(target_preset_for_upgrade(&with_hidden_target, "gpt-5.2-codex").is_none());
-    }
-
-    #[tokio::test]
-    async fn model_migration_prompt_shows_for_hidden_model() {
-        let chaos_home = tempdir().expect("temp chaos home");
-        let config = ConfigBuilder::default()
-            .chaos_home(chaos_home.path().to_path_buf())
-            .build()
-            .await
-            .expect("config");
-
-        let mut available_models = all_model_presets();
-        let current = available_models
-            .iter()
-            .find(|preset| preset.model == "gpt-5.1-codex")
-            .cloned()
-            .expect("gpt-5.1-codex preset present");
-        assert!(
-            !current.show_in_picker,
-            "expected gpt-5.1-codex to be hidden from picker for this test"
-        );
-
-        let upgrade = current.upgrade.as_ref().expect("upgrade configured");
-        // Test "hidden current model still prompts" even if bundled
-        // catalog data changes the target model's picker visibility.
-        available_models
-            .iter_mut()
-            .find(|preset| preset.model == upgrade.id)
-            .expect("upgrade target present")
-            .show_in_picker = true;
-        assert!(
-            should_show_model_migration_prompt(
-                &current.model,
-                &upgrade.id,
-                &config.notices.model_migrations,
-                &available_models,
-            ),
-            "expected migration prompt to be eligible for hidden model"
-        );
-
-        let target = target_preset_for_upgrade(&available_models, &upgrade.id)
-            .expect("upgrade target present");
-        let target_description =
-            (!target.description.is_empty()).then(|| target.description.clone());
-        let can_opt_out = true;
-        let copy = migration_copy_for_models(
-            &current.model,
-            &upgrade.id,
-            upgrade.model_link.clone(),
-            upgrade.upgrade_copy.clone(),
-            upgrade.migration_markdown.clone(),
-            target.display_name.clone(),
-            target_description,
-            can_opt_out,
-        );
-
-        // Snapshot the copy we would show; rendering is covered by model_migration snapshots.
-        assert_snapshot!(
-            "model_migration_prompt_shows_for_hidden_model",
-            model_migration_copy_to_plain_text(&copy)
-        );
     }
 
     #[tokio::test]

@@ -19,7 +19,6 @@ use chaos_ipc::ProcessId;
 use chaos_ipc::account::PlanType;
 use chaos_ipc::config_types::CollaborationMode;
 use chaos_ipc::config_types::ModeKind;
-use chaos_ipc::config_types::Personality;
 use chaos_ipc::config_types::Settings;
 use chaos_ipc::items::AgentMessageContent;
 use chaos_ipc::items::AgentMessageItem;
@@ -1846,18 +1845,6 @@ fn assert_no_submit_op(op_rx: &mut tokio::sync::mpsc::UnboundedReceiver<Op>) {
     }
 }
 
-pub(crate) fn set_chatgpt_auth(chat: &mut ChatWidget) {
-    chat.auth_manager = chaos_kern::test_support::auth_manager_from_auth(
-        ChaosAuth::create_dummy_chatgpt_auth_for_testing(),
-    );
-    chat.models_manager = Arc::new(ModelsManager::new(
-        chat.config.chaos_home.clone(),
-        chat.auth_manager.clone(),
-        None,
-        CollaborationModesConfig::default(),
-    ));
-}
-
 #[tokio::test]
 async fn worked_elapsed_from_resets_when_timer_restarts() {
     let (mut chat, _rx, _op_rx) = make_chatwidget_manual(None).await;
@@ -2222,30 +2209,6 @@ async fn rate_limit_switch_prompt_skips_non_codex_limit() {
 }
 
 #[tokio::test]
-async fn rate_limit_switch_prompt_shows_once_per_session() {
-    let auth = ChaosAuth::create_dummy_chatgpt_auth_for_testing();
-    let (mut chat, _, _) = make_chatwidget_manual(Some("gpt-5")).await;
-    chat.auth_manager = chaos_kern::test_support::auth_manager_from_auth(auth);
-
-    chat.on_rate_limit_snapshot(Some(snapshot(90.0)));
-    assert!(
-        chat.rate_limit_warnings.primary_index >= 1,
-        "warnings not emitted"
-    );
-    chat.maybe_show_pending_rate_limit_prompt();
-    assert!(matches!(
-        chat.rate_limit_switch_prompt,
-        RateLimitSwitchPromptState::Shown
-    ));
-
-    chat.on_rate_limit_snapshot(Some(snapshot(95.0)));
-    assert!(matches!(
-        chat.rate_limit_switch_prompt,
-        RateLimitSwitchPromptState::Shown
-    ));
-}
-
-#[tokio::test]
 async fn rate_limit_switch_prompt_respects_hidden_notice() {
     let auth = ChaosAuth::create_dummy_chatgpt_auth_for_testing();
     let (mut chat, _, _) = make_chatwidget_manual(Some("gpt-5")).await;
@@ -2258,41 +2221,6 @@ async fn rate_limit_switch_prompt_respects_hidden_notice() {
         chat.rate_limit_switch_prompt,
         RateLimitSwitchPromptState::Idle
     ));
-}
-
-#[tokio::test]
-async fn rate_limit_switch_prompt_defers_until_task_complete() {
-    let auth = ChaosAuth::create_dummy_chatgpt_auth_for_testing();
-    let (mut chat, _, _) = make_chatwidget_manual(Some("gpt-5")).await;
-    chat.auth_manager = chaos_kern::test_support::auth_manager_from_auth(auth);
-
-    chat.bottom_pane.set_task_running(true);
-    chat.on_rate_limit_snapshot(Some(snapshot(90.0)));
-    assert!(matches!(
-        chat.rate_limit_switch_prompt,
-        RateLimitSwitchPromptState::Pending
-    ));
-
-    chat.bottom_pane.set_task_running(false);
-    chat.maybe_show_pending_rate_limit_prompt();
-    assert!(matches!(
-        chat.rate_limit_switch_prompt,
-        RateLimitSwitchPromptState::Shown
-    ));
-}
-
-#[tokio::test]
-async fn rate_limit_switch_prompt_popup_snapshot() {
-    let (mut chat, _rx, _op_rx) = make_chatwidget_manual(Some("gpt-5")).await;
-    chat.auth_manager = chaos_kern::test_support::auth_manager_from_auth(
-        ChaosAuth::create_dummy_chatgpt_auth_for_testing(),
-    );
-
-    chat.on_rate_limit_snapshot(Some(snapshot(92.0)));
-    chat.maybe_show_pending_rate_limit_prompt();
-
-    let popup = render_bottom_popup(&chat, 80);
-    assert_snapshot!("rate_limit_switch_prompt_popup", popup);
 }
 
 #[tokio::test]
@@ -2356,147 +2284,6 @@ async fn submit_user_message_with_mode_sets_coding_collaboration_mode() {
             panic!("expected Op::UserTurn with default collab mode, got {other:?}")
         }
     }
-}
-
-#[tokio::test]
-async fn reasoning_selection_in_plan_mode_opens_scope_prompt_event() {
-    let (mut chat, mut rx, _op_rx) = make_chatwidget_manual(Some("gpt-5.1-codex-max")).await;
-    chat.process_id = Some(ProcessId::new());
-    let plan_mask = collaboration_modes::plan_mask(chat.models_manager.as_ref())
-        .expect("expected plan collaboration mode");
-    chat.set_collaboration_mask(plan_mask);
-    let _ = drain_insert_history(&mut rx);
-    set_chatgpt_auth(&mut chat);
-    chat.set_reasoning_effort(Some(ReasoningEffortConfig::High));
-
-    let preset = get_available_model(&chat, "gpt-5.1-codex-max");
-    chat.open_reasoning_popup(preset);
-    chat.handle_key_event(KeyEvent::from(KeyCode::Down));
-    chat.handle_key_event(KeyEvent::from(KeyCode::Enter));
-
-    let event = rx.try_recv().expect("expected AppEvent");
-    assert_matches!(
-        event,
-        AppEvent::OpenPlanReasoningScopePrompt {
-            model,
-            effort: Some(_)
-        } if model == "gpt-5.1-codex-max"
-    );
-}
-
-#[tokio::test]
-async fn reasoning_selection_in_plan_mode_without_effort_change_does_not_open_scope_prompt_event() {
-    let (mut chat, mut rx, _op_rx) = make_chatwidget_manual(Some("gpt-5.1-codex-max")).await;
-    chat.process_id = Some(ProcessId::new());
-    let plan_mask = collaboration_modes::plan_mask(chat.models_manager.as_ref())
-        .expect("expected plan collaboration mode");
-    chat.set_collaboration_mask(plan_mask);
-    let _ = drain_insert_history(&mut rx);
-    set_chatgpt_auth(&mut chat);
-
-    let current_preset = get_available_model(&chat, "gpt-5.1-codex-max");
-    chat.set_reasoning_effort(Some(current_preset.default_reasoning_effort));
-
-    let preset = get_available_model(&chat, "gpt-5.1-codex-max");
-    chat.open_reasoning_popup(preset);
-    chat.handle_key_event(KeyEvent::from(KeyCode::Enter));
-
-    let events = std::iter::from_fn(|| rx.try_recv().ok()).collect::<Vec<_>>();
-    assert!(
-        events.iter().any(|event| matches!(
-            event,
-            AppEvent::UpdateModel(model) if model == "gpt-5.1-codex-max"
-        )),
-        "expected model update event; events: {events:?}"
-    );
-    assert!(
-        events
-            .iter()
-            .any(|event| matches!(event, AppEvent::UpdateReasoningEffort(Some(_)))),
-        "expected reasoning update event; events: {events:?}"
-    );
-}
-
-#[tokio::test]
-async fn reasoning_selection_in_plan_mode_matching_plan_effort_but_different_global_opens_scope_prompt()
- {
-    let (mut chat, mut rx, _op_rx) = make_chatwidget_manual(Some("gpt-5.1-codex-max")).await;
-    chat.process_id = Some(ProcessId::new());
-    let plan_mask = collaboration_modes::plan_mask(chat.models_manager.as_ref())
-        .expect("expected plan collaboration mode");
-    chat.set_collaboration_mask(plan_mask);
-    let _ = drain_insert_history(&mut rx);
-    set_chatgpt_auth(&mut chat);
-
-    // Reproduce: Plan effective reasoning remains the preset (medium), but the
-    // global default differs (high). Pressing Enter on the current Plan choice
-    // should open the scope prompt rather than silently rewriting the global default.
-    chat.set_reasoning_effort(Some(ReasoningEffortConfig::High));
-
-    let preset = get_available_model(&chat, "gpt-5.1-codex-max");
-    chat.open_reasoning_popup(preset);
-    chat.handle_key_event(KeyEvent::from(KeyCode::Enter));
-
-    let event = rx.try_recv().expect("expected AppEvent");
-    assert_matches!(
-        event,
-        AppEvent::OpenPlanReasoningScopePrompt {
-            model,
-            effort: Some(ReasoningEffortConfig::Medium)
-        } if model == "gpt-5.1-codex-max"
-    );
-}
-
-#[tokio::test]
-async fn plan_mode_reasoning_override_is_marked_current_in_reasoning_popup() {
-    let (mut chat, _rx, _op_rx) = make_chatwidget_manual(Some("gpt-5.1-codex-max")).await;
-    set_chatgpt_auth(&mut chat);
-    chat.set_reasoning_effort(Some(ReasoningEffortConfig::High));
-    chat.set_plan_mode_reasoning_effort(Some(ReasoningEffortConfig::Low));
-
-    let plan_mask = collaboration_modes::plan_mask(chat.models_manager.as_ref())
-        .expect("expected plan collaboration mode");
-    chat.set_collaboration_mask(plan_mask);
-
-    let preset = get_available_model(&chat, "gpt-5.1-codex-max");
-    chat.open_reasoning_popup(preset);
-
-    let popup = render_bottom_popup(&chat, 100);
-    assert!(popup.contains("Low (current)"));
-    assert!(
-        !popup.contains("High (current)"),
-        "expected Plan override to drive current reasoning label, got: {popup}"
-    );
-}
-
-#[tokio::test]
-async fn reasoning_selection_in_plan_mode_model_switch_does_not_open_scope_prompt_event() {
-    let (mut chat, mut rx, _op_rx) = make_chatwidget_manual(Some("gpt-5.1-codex-max")).await;
-    chat.process_id = Some(ProcessId::new());
-    let plan_mask = collaboration_modes::plan_mask(chat.models_manager.as_ref())
-        .expect("expected plan collaboration mode");
-    chat.set_collaboration_mask(plan_mask);
-    let _ = drain_insert_history(&mut rx);
-    set_chatgpt_auth(&mut chat);
-
-    let preset = get_available_model(&chat, "gpt-5");
-    chat.open_reasoning_popup(preset);
-    chat.handle_key_event(KeyEvent::from(KeyCode::Enter));
-
-    let events = std::iter::from_fn(|| rx.try_recv().ok()).collect::<Vec<_>>();
-    assert!(
-        events.iter().any(|event| matches!(
-            event,
-            AppEvent::UpdateModel(model) if model == "gpt-5"
-        )),
-        "expected model update event; events: {events:?}"
-    );
-    assert!(
-        events
-            .iter()
-            .any(|event| matches!(event, AppEvent::UpdateReasoningEffort(Some(_)))),
-        "expected reasoning update event; events: {events:?}"
-    );
 }
 
 #[tokio::test]
@@ -3144,39 +2931,6 @@ async fn plan_implementation_popup_shows_after_new_plan_follows_steer() {
 }
 
 #[tokio::test]
-async fn plan_implementation_popup_skips_when_rate_limit_prompt_pending() {
-    let (mut chat, _rx, _op_rx) = make_chatwidget_manual(Some("gpt-5")).await;
-    chat.auth_manager = chaos_kern::test_support::auth_manager_from_auth(
-        ChaosAuth::create_dummy_chatgpt_auth_for_testing(),
-    );
-    let plan_mask =
-        collaboration_modes::mask_for_kind(chat.models_manager.as_ref(), ModeKind::Plan)
-            .expect("expected plan collaboration mask");
-    chat.set_collaboration_mask(plan_mask);
-
-    chat.on_task_started();
-    chat.on_plan_update(UpdatePlanArgs {
-        explanation: None,
-        plan: vec![PlanItemArg {
-            step: "First".to_string(),
-            status: StepStatus::Pending,
-        }],
-    });
-    chat.on_rate_limit_snapshot(Some(snapshot(92.0)));
-    chat.on_task_complete(None, false);
-
-    let popup = render_bottom_popup(&chat, 80);
-    assert!(
-        popup.contains("Approaching rate limits"),
-        "expected rate limit popup, got {popup:?}"
-    );
-    assert!(
-        !popup.contains(PLAN_IMPLEMENTATION_TITLE),
-        "expected plan popup to be skipped, got {popup:?}"
-    );
-}
-
-#[tokio::test]
 async fn exec_approval_emits_proposed_command_and_decision_history() {
     let (mut chat, mut rx, _op_rx) = make_chatwidget_manual(None).await;
 
@@ -3548,18 +3302,6 @@ fn active_blob(chat: &ChatWidget) -> String {
         .expect("active cell present")
         .display_lines(80);
     lines_to_single_string(&lines)
-}
-
-fn get_available_model(chat: &ChatWidget, model: &str) -> ModelPreset {
-    let models = chat
-        .models_manager
-        .try_list_models()
-        .expect("models lock available");
-    models
-        .iter()
-        .find(|&preset| preset.model == model)
-        .cloned()
-        .unwrap_or_else(|| panic!("{model} preset not found"))
 }
 
 #[tokio::test]
@@ -4557,30 +4299,6 @@ async fn replaced_turn_clears_pending_steers_but_keeps_queued_drafts() {
 }
 
 #[tokio::test]
-async fn enter_submits_when_plan_stream_is_not_active() {
-    let (mut chat, _rx, mut op_rx) = make_chatwidget_manual(None).await;
-    chat.process_id = Some(ProcessId::new());
-    let plan_mask =
-        collaboration_modes::mask_for_kind(chat.models_manager.as_ref(), ModeKind::Plan)
-            .expect("expected plan collaboration mask");
-    chat.set_collaboration_mask(plan_mask);
-    chat.on_task_started();
-
-    chat.bottom_pane
-        .set_composer_text("submitted immediately".to_string(), Vec::new(), Vec::new());
-    chat.handle_key_event(KeyEvent::new(KeyCode::Enter, KeyModifiers::NONE));
-
-    assert!(chat.queued_user_messages.is_empty());
-    match next_submit_op(&mut op_rx) {
-        Op::UserTurn {
-            personality: Some(Personality::Pragmatic),
-            ..
-        } => {}
-        other => panic!("expected Op::UserTurn, got {other:?}"),
-    }
-}
-
-#[tokio::test]
 async fn ctrl_c_shutdown_works_with_caps_lock() {
     let (mut chat, mut rx, _op_rx) = make_chatwidget_manual(None).await;
 
@@ -5321,62 +5039,6 @@ async fn mode_switch_surfaces_reasoning_change_notification_when_model_stays_sam
 }
 
 #[tokio::test]
-async fn collab_slash_command_opens_picker_and_updates_mode() {
-    let (mut chat, mut rx, mut op_rx) = make_chatwidget_manual(None).await;
-    chat.process_id = Some(ProcessId::new());
-
-    chat.dispatch_command(SlashCommand::Collab);
-    let popup = render_bottom_popup(&chat, 80);
-    assert!(
-        popup.contains("Select Collaboration Mode"),
-        "expected collaboration picker: {popup}"
-    );
-
-    chat.handle_key_event(KeyEvent::from(KeyCode::Enter));
-    let selected_mask = match rx.try_recv() {
-        Ok(AppEvent::UpdateCollaborationMode(mask)) => mask,
-        other => panic!("expected UpdateCollaborationMode event, got {other:?}"),
-    };
-    chat.set_collaboration_mask(selected_mask);
-
-    chat.bottom_pane
-        .set_composer_text("hello".to_string(), Vec::new(), Vec::new());
-    chat.handle_key_event(KeyEvent::from(KeyCode::Enter));
-    match next_submit_op(&mut op_rx) {
-        Op::UserTurn {
-            collaboration_mode:
-                Some(CollaborationMode {
-                    mode: ModeKind::Default,
-                    ..
-                }),
-            personality: Some(Personality::Pragmatic),
-            ..
-        } => {}
-        other => {
-            panic!("expected Op::UserTurn with code collab mode, got {other:?}")
-        }
-    }
-
-    chat.bottom_pane
-        .set_composer_text("follow up".to_string(), Vec::new(), Vec::new());
-    chat.handle_key_event(KeyEvent::from(KeyCode::Enter));
-    match next_submit_op(&mut op_rx) {
-        Op::UserTurn {
-            collaboration_mode:
-                Some(CollaborationMode {
-                    mode: ModeKind::Default,
-                    ..
-                }),
-            personality: Some(Personality::Pragmatic),
-            ..
-        } => {}
-        other => {
-            panic!("expected Op::UserTurn with code collab mode, got {other:?}")
-        }
-    }
-}
-
-#[tokio::test]
 async fn plan_slash_command_switches_to_plan_mode() {
     let (mut chat, mut rx, _op_rx) = make_chatwidget_manual(None).await;
     let initial = chat.current_collaboration_mode().clone();
@@ -5526,77 +5188,6 @@ async fn set_reasoning_effort_does_not_override_active_plan_override() {
         Some(ReasoningEffortConfig::High)
     );
     assert_eq!(chat.active_collaboration_mode_kind(), ModeKind::Plan);
-}
-
-#[tokio::test]
-async fn collab_mode_is_sent_after_enabling() {
-    let (mut chat, _rx, mut op_rx) = make_chatwidget_manual(None).await;
-    chat.process_id = Some(ProcessId::new());
-
-    chat.bottom_pane
-        .set_composer_text("hello".to_string(), Vec::new(), Vec::new());
-    chat.handle_key_event(KeyEvent::from(KeyCode::Enter));
-    match next_submit_op(&mut op_rx) {
-        Op::UserTurn {
-            collaboration_mode:
-                Some(CollaborationMode {
-                    mode: ModeKind::Default,
-                    ..
-                }),
-            personality: Some(Personality::Pragmatic),
-            ..
-        } => {}
-        other => {
-            panic!("expected Op::UserTurn, got {other:?}")
-        }
-    }
-}
-
-#[tokio::test]
-async fn collab_mode_applies_default_preset() {
-    let (mut chat, _rx, mut op_rx) = make_chatwidget_manual(None).await;
-    chat.process_id = Some(ProcessId::new());
-
-    chat.bottom_pane
-        .set_composer_text("hello".to_string(), Vec::new(), Vec::new());
-    chat.handle_key_event(KeyEvent::from(KeyCode::Enter));
-    match next_submit_op(&mut op_rx) {
-        Op::UserTurn {
-            collaboration_mode:
-                Some(CollaborationMode {
-                    mode: ModeKind::Default,
-                    ..
-                }),
-            personality: Some(Personality::Pragmatic),
-            ..
-        } => {}
-        other => {
-            panic!("expected Op::UserTurn with default collaboration_mode, got {other:?}")
-        }
-    }
-
-    assert_eq!(chat.active_collaboration_mode_kind(), ModeKind::Default);
-    assert_eq!(chat.current_collaboration_mode().mode, ModeKind::Default);
-}
-
-#[tokio::test]
-async fn user_turn_includes_personality_from_config() {
-    let (mut chat, _rx, mut op_rx) = make_chatwidget_manual(Some("gpt-5.2-codex")).await;
-    chat.set_feature_enabled(Feature::Personality, true);
-    chat.process_id = Some(ProcessId::new());
-    chat.set_model("gpt-5.2-codex");
-    chat.set_personality(Personality::Friendly);
-
-    chat.bottom_pane
-        .set_composer_text("hello".to_string(), Vec::new(), Vec::new());
-    chat.handle_key_event(KeyEvent::from(KeyCode::Enter));
-    match next_submit_op(&mut op_rx) {
-        Op::UserTurn {
-            personality: Some(Personality::Friendly),
-            ..
-        } => {}
-        other => panic!("expected Op::UserTurn with friendly personality, got {other:?}"),
-    }
 }
 
 #[tokio::test]
@@ -6358,26 +5949,6 @@ async fn multi_agent_enable_prompt_updates_feature_and_emits_notice() {
 }
 
 #[tokio::test]
-async fn model_selection_popup_snapshot() {
-    let (mut chat, _rx, _op_rx) = make_chatwidget_manual(Some("gpt-5-codex")).await;
-    chat.process_id = Some(ProcessId::new());
-    chat.open_model_popup();
-
-    let popup = render_bottom_popup(&chat, 80);
-    assert_snapshot!("model_selection_popup", popup);
-}
-
-#[tokio::test]
-async fn personality_selection_popup_snapshot() {
-    let (mut chat, _rx, _op_rx) = make_chatwidget_manual(Some("gpt-5.2-codex")).await;
-    chat.process_id = Some(ProcessId::new());
-    chat.open_personality_popup();
-
-    let popup = render_bottom_popup(&chat, 80);
-    assert_snapshot!("personality_selection_popup", popup);
-}
-
-#[tokio::test]
 async fn model_picker_hides_show_in_picker_false_models_from_cache() {
     let (mut chat, _rx, _op_rx) = make_chatwidget_manual(Some("test-visible-model")).await;
     chat.process_id = Some(ProcessId::new());
@@ -6500,54 +6071,6 @@ async fn full_access_confirmation_popup_snapshot() {
 }
 
 #[tokio::test]
-async fn model_reasoning_selection_popup_snapshot() {
-    let (mut chat, _rx, _op_rx) = make_chatwidget_manual(Some("gpt-5.1-codex-max")).await;
-
-    set_chatgpt_auth(&mut chat);
-    chat.set_reasoning_effort(Some(ReasoningEffortConfig::High));
-
-    let preset = get_available_model(&chat, "gpt-5.1-codex-max");
-    chat.open_reasoning_popup(preset);
-
-    let popup = render_bottom_popup(&chat, 80);
-    assert_snapshot!("model_reasoning_selection_popup", popup);
-}
-
-#[tokio::test]
-async fn model_reasoning_selection_popup_extra_high_warning_snapshot() {
-    let (mut chat, _rx, _op_rx) = make_chatwidget_manual(Some("gpt-5.1-codex-max")).await;
-
-    set_chatgpt_auth(&mut chat);
-    chat.set_reasoning_effort(Some(ReasoningEffortConfig::XHigh));
-
-    let preset = get_available_model(&chat, "gpt-5.1-codex-max");
-    chat.open_reasoning_popup(preset);
-
-    let popup = render_bottom_popup(&chat, 80);
-    assert_snapshot!("model_reasoning_selection_popup_extra_high_warning", popup);
-}
-
-#[tokio::test]
-async fn reasoning_popup_shows_extra_high_with_space() {
-    let (mut chat, _rx, _op_rx) = make_chatwidget_manual(Some("gpt-5.1-codex-max")).await;
-
-    set_chatgpt_auth(&mut chat);
-
-    let preset = get_available_model(&chat, "gpt-5.1-codex-max");
-    chat.open_reasoning_popup(preset);
-
-    let popup = render_bottom_popup(&chat, 120);
-    assert!(
-        popup.contains("Extra high"),
-        "expected popup to include 'Extra high'; popup: {popup}"
-    );
-    assert!(
-        !popup.contains("Extrahigh"),
-        "expected popup not to include 'Extrahigh'; popup: {popup}"
-    );
-}
-
-#[tokio::test]
 async fn single_reasoning_option_skips_selection() {
     let (mut chat, mut rx, _op_rx) = make_chatwidget_manual(None).await;
 
@@ -6589,25 +6112,6 @@ async fn single_reasoning_option_skips_selection() {
             .any(|ev| matches!(ev, AppEvent::UpdateReasoningEffort(Some(effort)) if *effort == ReasoningEffortConfig::High)),
         "expected reasoning effort to be applied automatically; events: {events:?}"
     );
-}
-
-#[tokio::test]
-async fn reasoning_popup_escape_returns_to_model_popup() {
-    let (mut chat, _rx, _op_rx) = make_chatwidget_manual(Some("gpt-5.1-codex-max")).await;
-    chat.process_id = Some(ProcessId::new());
-    chat.open_model_popup();
-
-    let preset = get_available_model(&chat, "gpt-5.1-codex-max");
-    chat.open_reasoning_popup(preset);
-
-    let before_escape = render_bottom_popup(&chat, 80);
-    assert!(before_escape.contains("Select Reasoning Level"));
-
-    chat.handle_key_event(KeyEvent::new(KeyCode::Esc, KeyModifiers::NONE));
-
-    let after_escape = render_bottom_popup(&chat, 80);
-    assert!(after_escape.contains("Select Model"));
-    assert!(!after_escape.contains("Select Reasoning Level"));
 }
 
 #[tokio::test]

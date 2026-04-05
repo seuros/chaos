@@ -184,10 +184,8 @@ async fn websocket_v2_test_codex_shell_chain() -> Result<()> {
     .await;
 
     let mut builder = test_codex().with_config(|config| {
-        config
-            .features
-            .enable(Feature::ResponsesWebsocketsV2)
-            .expect("test config should allow feature update");
+        // ResponsesWebsocketsV2 feature evicted — websockets hard-wired to disabled.
+        let _ = config;
     });
 
     let test = builder.build_with_websocket_server(&server).await?;
@@ -266,10 +264,8 @@ async fn websocket_v2_first_turn_uses_updated_fast_tier_after_startup_prewarm() 
     .await;
 
     let mut builder = test_codex().with_config(|config| {
-        config
-            .features
-            .enable(Feature::ResponsesWebsocketsV2)
-            .expect("test config should allow feature update");
+        // ResponsesWebsocketsV2 feature evicted — websockets hard-wired to disabled.
+        let _ = config;
     });
     let test = builder.build_with_websocket_server(&server).await?;
 
@@ -318,10 +314,8 @@ async fn websocket_v2_first_turn_drops_fast_tier_after_startup_prewarm() -> Resu
     .await;
 
     let mut builder = test_codex().with_config(|config| {
-        config
-            .features
-            .enable(Feature::ResponsesWebsocketsV2)
-            .expect("test config should allow feature update");
+        // ResponsesWebsocketsV2 feature evicted — websockets hard-wired to disabled.
+        let _ = config;
         config.service_tier = Some(ServiceTier::Fast);
     });
     let test = builder.build_with_websocket_server(&server).await?;
@@ -375,10 +369,8 @@ async fn websocket_v2_next_turn_uses_updated_service_tier() -> Result<()> {
     .await;
 
     let mut builder = test_codex().with_config(|config| {
-        config
-            .features
-            .enable(Feature::ResponsesWebsocketsV2)
-            .expect("test config should allow feature update");
+        // ResponsesWebsocketsV2 feature evicted — websockets hard-wired to disabled.
+        let _ = config;
     });
     let test = builder.build_with_websocket_server(&server).await?;
 

@@ -17,30 +17,22 @@ pub enum Feature {
     GhostCommit,
     ShellTool,
     UnifiedExec,
-    ShellZshFork,
     ApplyPatchFreeform,
     ExecPermissionApprovals,
     CodexHooks,
     RequestPermissionsTool,
     ShellSnapshot,
-    CodexGitCommit,
-    MemoryTool,
     ChildAgentsMd,
     ImageDetailOriginal,
     EnableRequestCompression,
     Collab,
     SpawnCsv,
-    ImageGeneration,
     SkillMcpDependencyInstall,
     SkillEnvVarDependencyPrompt,
     DefaultModeRequestUserInput,
     ToolCallMcpElicitation,
     Personality,
-    Artifact,
     FastMode,
-    PreventIdleSleep,
-    ResponsesWebsockets,
-    ResponsesWebsocketsV2,
 }
 
 impl Feature {
@@ -266,27 +258,9 @@ pub const FEATURES: &[FeatureSpec] = &[
         under_development: false,
     },
     FeatureSpec {
-        id: Feature::ShellZshFork,
-        key: "shell_zsh_fork",
-        default_enabled: false,
-        under_development: false,
-    },
-    FeatureSpec {
         id: Feature::ShellSnapshot,
         key: "shell_snapshot",
         default_enabled: true,
-        under_development: false,
-    },
-    FeatureSpec {
-        id: Feature::CodexGitCommit,
-        key: "chaos_scm_commit",
-        default_enabled: false,
-        under_development: false,
-    },
-    FeatureSpec {
-        id: Feature::MemoryTool,
-        key: "memories",
-        default_enabled: false,
         under_development: false,
     },
     FeatureSpec {
@@ -344,12 +318,6 @@ pub const FEATURES: &[FeatureSpec] = &[
         under_development: false,
     },
     FeatureSpec {
-        id: Feature::ImageGeneration,
-        key: "image_generation",
-        default_enabled: false,
-        under_development: false,
-    },
-    FeatureSpec {
         id: Feature::SkillMcpDependencyInstall,
         key: "skill_mcp_dependency_install",
         default_enabled: true,
@@ -380,33 +348,9 @@ pub const FEATURES: &[FeatureSpec] = &[
         under_development: false,
     },
     FeatureSpec {
-        id: Feature::Artifact,
-        key: "artifact",
-        default_enabled: false,
-        under_development: false,
-    },
-    FeatureSpec {
         id: Feature::FastMode,
         key: "fast_mode",
         default_enabled: true,
-        under_development: false,
-    },
-    FeatureSpec {
-        id: Feature::PreventIdleSleep,
-        key: "prevent_idle_sleep",
-        default_enabled: false,
-        under_development: false,
-    },
-    FeatureSpec {
-        id: Feature::ResponsesWebsockets,
-        key: "responses_websockets",
-        default_enabled: false,
-        under_development: false,
-    },
-    FeatureSpec {
-        id: Feature::ResponsesWebsocketsV2,
-        key: "responses_websockets_v2",
-        default_enabled: false,
         under_development: false,
     },
 ];
@@ -439,10 +383,6 @@ const ALIASES: &[Alias] = &[
     Alias {
         legacy_key: "collab",
         feature: Feature::Collab,
-    },
-    Alias {
-        legacy_key: "memory_tool",
-        feature: Feature::MemoryTool,
     },
 ];
 

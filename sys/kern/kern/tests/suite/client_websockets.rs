@@ -1601,23 +1601,10 @@ async fn websocket_harness_with_options(
     let chaos_home = TempDir::new().unwrap();
     let mut config = load_default_config_for_test(&chaos_home).await;
     config.model = Some(MODEL.to_string());
-    if websocket_enabled {
-        config
-            .features
-            .enable(Feature::ResponsesWebsockets)
-            .expect("test config should allow feature update");
-    } else {
-        config
-            .features
-            .disable(Feature::ResponsesWebsockets)
-            .expect("test config should allow feature update");
-    }
-    if websocket_v2_enabled {
-        config
-            .features
-            .enable(Feature::ResponsesWebsocketsV2)
-            .expect("test config should allow feature update");
-    }
+    // ResponsesWebsockets and ResponsesWebsocketsV2 features evicted —
+    // websockets hard-wired to disabled. websocket_enabled and websocket_v2_enabled
+    // parameters are retained for call-site compatibility.
+    let _ = (websocket_enabled, websocket_v2_enabled);
     let config = Arc::new(config);
     let mut model_info = chaos_kern::test_support::construct_model_info_offline(MODEL, &config);
     model_info.prefer_websockets = prefer_websockets;

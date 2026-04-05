@@ -3124,7 +3124,7 @@ impl ChatWidget {
         let model = model.filter(|m| !m.trim().is_empty());
         let mut config = config;
         config.model = model.clone();
-        let prevent_idle_sleep = config.features.enabled(Feature::PreventIdleSleep);
+        let prevent_idle_sleep = true;
         let mut rng = rand::rng();
         let placeholder = PLACEHOLDERS[rng.random_range(0..PLACEHOLDERS.len())].to_string();
         let codex_op_tx = spawn_agent(config.clone(), app_event_tx.clone(), process_table);
@@ -3283,7 +3283,7 @@ impl ChatWidget {
         let model = model.filter(|m| !m.trim().is_empty());
         let mut config = config;
         config.model = model.clone();
-        let prevent_idle_sleep = config.features.enabled(Feature::PreventIdleSleep);
+        let prevent_idle_sleep = true;
         let mut rng = rand::rng();
         let placeholder = PLACEHOLDERS[rng.random_range(0..PLACEHOLDERS.len())].to_string();
 
@@ -3439,7 +3439,7 @@ impl ChatWidget {
             session_telemetry,
         } = common;
         let model = model.filter(|m| !m.trim().is_empty());
-        let prevent_idle_sleep = config.features.enabled(Feature::PreventIdleSleep);
+        let prevent_idle_sleep = true;
         let mut rng = rand::rng();
         let placeholder = PLACEHOLDERS[rng.random_range(0..PLACEHOLDERS.len())].to_string();
 
@@ -6529,11 +6529,6 @@ impl ChatWidget {
         let enabled = self.config.features.enabled(feature);
         if feature == Feature::Personality {
             self.sync_personality_command_enabled();
-        }
-        if feature == Feature::PreventIdleSleep {
-            self.turn_sleep_inhibitor = SleepInhibitor::new(enabled);
-            self.turn_sleep_inhibitor
-                .set_turn_running(self.agent_turn_running);
         }
         enabled
     }

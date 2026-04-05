@@ -14,7 +14,6 @@ use crate::chaos::TurnContext;
 use crate::error::ChaosErr;
 use crate::error::Result;
 use crate::function_tool::FunctionCallError;
-use crate::memories::citations::get_process_id_from_citations;
 use crate::parse_turn_item;
 use crate::state_db;
 use crate::tools::parallel::ToolCallRuntime;
@@ -91,24 +90,11 @@ pub(crate) async fn record_completed_response_item(
 }
 
 async fn maybe_mark_process_memory_mode_polluted_from_web_search(
-    sess: &Session,
-    turn_context: &TurnContext,
-    item: &ResponseItem,
+    _sess: &Session,
+    _turn_context: &TurnContext,
+    _item: &ResponseItem,
 ) {
-    if !turn_context
-        .config
-        .memories
-        .no_memories_if_mcp_or_web_search
-        || !matches!(item, ResponseItem::WebSearchCall { .. })
-    {
-        return;
-    }
-    state_db::mark_process_memory_mode_polluted(
-        sess.services.state_db.as_deref(),
-        sess.conversation_id,
-        "record_completed_response_item",
-    )
-    .await;
+    // Memory subsystem evicted — no-op.
 }
 
 async fn record_stage1_output_usage_for_completed_item(
@@ -119,15 +105,8 @@ async fn record_stage1_output_usage_for_completed_item(
         return;
     };
 
-    let (_, citations) = strip_citations(&raw_text);
-    let process_ids = get_process_id_from_citations(citations);
-    if process_ids.is_empty() {
-        return;
-    }
-
-    if let Some(db) = state_db::get_state_db(turn_context.config.as_ref()).await {
-        let _ = db.record_stage1_output_usage(&process_ids).await;
-    }
+    // Memory subsystem evicted — stage-1 usage recording removed.
+    let _ = raw_text;
 }
 
 /// Handle a completed output item from the model stream, recording it and

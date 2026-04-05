@@ -198,7 +198,6 @@ use crate::instructions::UserInstructions;
 use crate::mcp::McpManager;
 use crate::mcp::auth::compute_auth_statuses;
 use crate::mcp::maybe_prompt_and_install_mcp_dependencies;
-use crate::memories;
 use crate::network_policy_decision::execpolicy_network_rule_amendment;
 use crate::project_doc::get_user_instructions;
 use crate::protocol::AgentMessageContentDeltaEvent;
@@ -1499,23 +1498,7 @@ impl Session {
             config.active_profile.clone(),
         );
 
-        let use_zsh_fork_shell = config.features.enabled(Feature::ShellZshFork);
-        let mut default_shell = if use_zsh_fork_shell {
-            let zsh_path = config.zsh_path.as_ref().ok_or_else(|| {
-                anyhow::anyhow!(
-                    "zsh fork feature enabled, but `zsh_path` is not configured; set `zsh_path` in config.toml"
-                )
-            })?;
-            let zsh_path = zsh_path.to_path_buf();
-            shell::get_shell(shell::ShellType::Zsh, Some(&zsh_path)).ok_or_else(|| {
-                anyhow::anyhow!(
-                    "zsh fork feature enabled, but zsh_path `{}` is not usable; set `zsh_path` to a valid zsh executable",
-                    zsh_path.display()
-                )
-            })?
-        } else {
-            shell::default_user_shell()
-        };
+        let mut default_shell = shell::default_user_shell();
         // Create the mutable state for the Session.
         let shell_snapshot_tx = if config.features.enabled(Feature::ShellSnapshot) {
             if let Some(snapshot) = session_configuration.inherited_shell_snapshot.clone() {
@@ -1869,12 +1852,6 @@ impl Session {
             let mut state = sess.state.lock().await;
             state.set_pending_session_start_source(Some(session_start_source));
         }
-
-        memories::start_memories_startup_task(
-            &sess,
-            Arc::clone(&config),
-            &session_configuration.session_source,
-        );
 
         Ok(sess)
     }
@@ -3373,14 +3350,6 @@ impl Session {
         if let Some(minion_instructions) = turn_context.minion_instructions.as_deref() {
             developer_sections.push(minion_instructions.to_string());
         }
-        // Add developer instructions for memories.
-        if turn_context.features.enabled(Feature::MemoryTool)
-            && turn_context.config.memories.use_memories
-            && let Some(memory_prompt) =
-                build_memory_tool_developer_instructions(&turn_context.config.chaos_home).await
-        {
-            developer_sections.push(memory_prompt);
-        }
         // Add developer instructions from collaboration_mode if they exist and are non-empty
         if let Some(collab_instructions) =
             DeveloperInstructions::from_collaboration_mode(&collaboration_mode)
@@ -4193,12 +4162,8 @@ async fn submission_loop(sess: Arc<Session>, config: Arc<Config>, rx_sub: Receiv
                     handlers::compact(&sess, sub.id.clone()).await;
                     false
                 }
-                Op::DropMemories => {
-                    handlers::drop_memories(&sess, &config, sub.id.clone()).await;
-                    false
-                }
-                Op::UpdateMemories => {
-                    handlers::update_memories(&sess, &config, sub.id.clone()).await;
+                Op::DropMemories | Op::UpdateMemories => {
+                    // Memory subsystem evicted — these ops are now no-ops.
                     false
                 }
                 Op::ProcessRollback { num_turns } => {
@@ -4873,66 +4838,6 @@ mod handlers {
             }],
             CompactTask,
         )
-        .await;
-    }
-
-    pub async fn drop_memories(sess: &Arc<Session>, config: &Arc<Config>, sub_id: String) {
-        let mut errors = Vec::new();
-
-        if let Some(state_db) = sess.services.state_db.as_deref() {
-            if let Err(err) = state_db.clear_memory_data().await {
-                errors.push(format!("failed clearing memory rows from state db: {err}"));
-            }
-        } else {
-            errors.push("state db unavailable; memory rows were not cleared".to_string());
-        }
-
-        let memory_root = crate::memories::memory_root(&config.chaos_home);
-        if let Err(err) = crate::memories::clear_memory_root_contents(&memory_root).await {
-            errors.push(format!(
-                "failed clearing memory directory {}: {err}",
-                memory_root.display()
-            ));
-        }
-
-        if errors.is_empty() {
-            sess.send_event_raw(Event {
-                id: sub_id,
-                msg: EventMsg::Warning(WarningEvent {
-                    message: format!(
-                        "Dropped memories at {} and cleared memory rows from state db.",
-                        memory_root.display()
-                    ),
-                }),
-            })
-            .await;
-            return;
-        }
-
-        sess.send_event_raw(Event {
-            id: sub_id,
-            msg: EventMsg::Error(ErrorEvent {
-                message: format!("Memory drop completed with errors: {}", errors.join("; ")),
-                codex_error_info: Some(CodexErrorInfo::Other),
-            }),
-        })
-        .await;
-    }
-
-    pub async fn update_memories(sess: &Arc<Session>, config: &Arc<Config>, sub_id: String) {
-        let session_source = {
-            let state = sess.state.lock().await;
-            state.session_configuration.session_source.clone()
-        };
-
-        crate::memories::start_memories_startup_task(sess, Arc::clone(config), &session_source);
-
-        sess.send_event_raw(Event {
-            id: sub_id.clone(),
-            msg: EventMsg::Warning(WarningEvent {
-                message: "Memory update triggered.".to_string(),
-            }),
-        })
         .await;
     }
 
@@ -6997,7 +6902,6 @@ pub(super) fn get_last_assistant_message_from_turn(responses: &[ResponseItem]) -
     None
 }
 
-use crate::memories::prompts::build_memory_tool_developer_instructions;
 #[cfg(test)]
 #[path = "chaos_tests.rs"]
 mod tests;

@@ -142,10 +142,7 @@ impl TestCodexBuilder {
                     "wheatley",
                 ]));
             }
-            config
-                .features
-                .enable(Feature::ResponsesWebsockets)
-                .expect("test config should allow feature update");
+            // ResponsesWebsockets feature evicted — websockets hard-wired to disabled.
         }));
         Box::pin(self.build_with_home_and_base_url(base_url, home, /*resume_from*/ None)).await
     }

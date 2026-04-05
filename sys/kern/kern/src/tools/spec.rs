@@ -247,7 +247,6 @@ pub(crate) struct ToolsConfig {
     pub request_permissions_tool_enabled: bool,
     pub can_request_original_image_detail: bool,
     pub collab_tools: bool,
-    pub artifact_tools: bool,
     pub request_user_input: bool,
     pub default_mode_request_user_input: bool,
     pub experimental_supported_tools: Vec<String>,
@@ -296,23 +295,14 @@ impl ToolsConfig {
         let include_default_mode_request_user_input =
             include_request_user_input && features.enabled(Feature::DefaultModeRequestUserInput);
         let include_original_image_detail = can_request_original_image_detail(features, model_info);
-        let include_artifact_tools = false;
-        let include_image_gen_tool =
-            features.enabled(Feature::ImageGeneration) && supports_image_generation(model_info);
+        let include_image_gen_tool = false;
         let exec_permission_approvals_enabled = features.enabled(Feature::ExecPermissionApprovals);
         let request_permissions_tool_enabled = features.enabled(Feature::RequestPermissionsTool);
-        let shell_command_backend =
-            if features.enabled(Feature::ShellTool) && features.enabled(Feature::ShellZshFork) {
-                ShellCommandBackendConfig::ZshFork
-            } else {
-                ShellCommandBackendConfig::Classic
-            };
+        let shell_command_backend = ShellCommandBackendConfig::Classic;
         let unified_exec_allowed =
             unified_exec_allowed_in_environment(false, sandbox_policy, *windows_sandbox_level);
         let shell_type = if !features.enabled(Feature::ShellTool) {
             ConfigShellToolType::Disabled
-        } else if features.enabled(Feature::ShellZshFork) {
-            ConfigShellToolType::ShellCommand
         } else if features.enabled(Feature::UnifiedExec) && unified_exec_allowed {
             ConfigShellToolType::UnifiedExec
         } else if model_info.shell_type == ConfigShellToolType::UnifiedExec && !unified_exec_allowed
@@ -357,7 +347,6 @@ impl ToolsConfig {
             request_permissions_tool_enabled,
             can_request_original_image_detail: include_original_image_detail,
             collab_tools: include_collab_tools,
-            artifact_tools: include_artifact_tools,
             request_user_input: include_request_user_input,
             default_mode_request_user_input: include_default_mode_request_user_input,
             experimental_supported_tools: model_info.experimental_supported_tools.clone(),
@@ -403,10 +392,6 @@ impl ToolsConfig {
         self.web_search_config = web_search_config;
         self
     }
-}
-
-fn supports_image_generation(model_info: &ModelInfo) -> bool {
-    model_info.input_modalities.contains(&InputModality::Image)
 }
 
 use chaos_parrot::sanitize::JsonSchema;
@@ -2052,10 +2037,6 @@ pub(crate) fn build_specs_with_discoverable_tools(
         /*supports_parallel_tool_calls*/ true,
     );
     builder.register_handler("view_image", view_image_handler);
-
-    if config.artifact_tools {
-        // artifact tools removed: codex-artifacts crate evicted
-    }
 
     if config.collab_tools {
         push_tool_spec(

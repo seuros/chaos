@@ -95,7 +95,7 @@ pub(super) async fn try_run_zsh_fork(
         tracing::warn!("ZshFork backend specified, but shell_zsh_path is not configured.");
         return Ok(None);
     };
-    if !ctx.session.features().enabled(Feature::ShellZshFork) {
+    {
         tracing::warn!("ZshFork backend specified, but ShellZshFork feature is not enabled.");
         return Ok(None);
     }

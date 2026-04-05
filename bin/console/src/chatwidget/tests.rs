@@ -1687,7 +1687,7 @@ async fn make_chatwidget_manual(
     if let Some(model) = model_override {
         cfg.model = Some(model.to_string());
     }
-    let prevent_idle_sleep = cfg.features.enabled(Feature::PreventIdleSleep);
+    let prevent_idle_sleep = true;
     let session_telemetry = test_session_telemetry(&cfg, resolved_model.as_str());
     let mut bottom = BottomPane::new(BottomPaneParams {
         app_event_tx: app_event_tx.clone(),
@@ -3321,8 +3321,6 @@ async fn empty_enter_during_task_does_not_queue() {
 #[tokio::test]
 async fn restore_process_input_state_syncs_sleep_inhibitor_state() {
     let (mut chat, _rx, _op_rx) = make_chatwidget_manual(None).await;
-    chat.set_feature_enabled(Feature::PreventIdleSleep, true);
-
     chat.restore_process_input_state(Some(ProcessInputState {
         composer: None,
         pending_steers: VecDeque::new(),

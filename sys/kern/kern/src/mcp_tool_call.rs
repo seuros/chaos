@@ -270,20 +270,8 @@ pub(crate) async fn handle_mcp_tool_call(
     CallToolResult::from_result(result)
 }
 
-async fn maybe_mark_process_memory_mode_polluted(sess: &Session, turn_context: &TurnContext) {
-    if !turn_context
-        .config
-        .memories
-        .no_memories_if_mcp_or_web_search
-    {
-        return;
-    }
-    state_db::mark_process_memory_mode_polluted(
-        sess.services.state_db.as_deref(),
-        sess.conversation_id,
-        "mcp_tool_call",
-    )
-    .await;
+async fn maybe_mark_process_memory_mode_polluted(_sess: &Session, _turn_context: &TurnContext) {
+    // Memory subsystem evicted — no-op.
 }
 
 fn sanitize_mcp_tool_result_for_model(

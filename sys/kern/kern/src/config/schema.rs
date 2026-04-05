@@ -1,10 +1,8 @@
 use crate::config::ConfigToml;
-use serde_json::Map;
-use serde_json::Value;
-use std::path::Path;
-
 use schemars::Schema;
 use schemars::generate::SchemaSettings;
+use serde_json::Map;
+use serde_json::Value;
 
 // Re-export schema helpers from codex-config so existing `schema_with` paths
 // continue to resolve through `crate::config::schema::*`.
@@ -43,14 +41,3 @@ pub fn config_schema_json() -> anyhow::Result<Vec<u8>> {
     let json = serde_json::to_vec_pretty(&value)?;
     Ok(json)
 }
-
-/// Write the config schema fixture to disk.
-pub fn write_config_schema(out_path: &Path) -> anyhow::Result<()> {
-    let json = config_schema_json()?;
-    std::fs::write(out_path, json)?;
-    Ok(())
-}
-
-#[cfg(test)]
-#[path = "schema_tests.rs"]
-mod tests;

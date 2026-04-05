@@ -1,12 +1,14 @@
 use std::path::Path;
 
+use gix::bstr::ByteSlice;
+use serde::Deserialize;
 use serde::Serialize;
 
 use crate::error::GitError;
 use crate::ext::GitResultExt;
 use crate::open_repo;
 
-#[derive(Debug, Clone, Serialize)]
+#[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct BlameLine {
     pub sha: String,
     pub author: String,
@@ -27,7 +29,10 @@ pub fn blame(
 
     let head = repo.head_id().git_op()?;
 
-    let commit = head.object().git_op()?.peel_to_tree().git_op()?;
+    let head_obj = head.object().git_op()?;
+    let head_commit = head_obj.try_into_commit().git_op()?;
+    let author = head_commit.author().git_op()?.name.to_str_lossy().into_owned();
+    let commit = head_commit.tree().git_op()?;
 
     let entry = commit
         .lookup_entry_by_path(file_path)
@@ -55,7 +60,7 @@ pub fn blame(
         }
         result.push(BlameLine {
             sha: head_sha_short.to_string(),
-            author: String::new(), // TODO: full blame traversal
+            author: author.clone(), // Placeholder until full blame traversal exists.
             line_no,
             content: line.to_string(),
         });

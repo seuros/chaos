@@ -94,6 +94,7 @@ impl CatalogToolDriver for GitToolDriver {
             Ok(CatalogToolResult {
                 output,
                 success: Some(true),
+                effects: Vec::new(),
             })
         })
     }

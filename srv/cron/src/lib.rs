@@ -61,6 +61,7 @@ impl CatalogToolDriver for CronToolDriver {
             Ok(CatalogToolResult {
                 output: result,
                 success: Some(false),
+                effects: Vec::new(),
             })
         })
     }

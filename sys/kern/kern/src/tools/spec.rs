@@ -18,7 +18,6 @@ use crate::tools::handlers::apply_patch::create_apply_patch_json_tool;
 use crate::tools::handlers::request_permissions_tool_description;
 use crate::tools::handlers::request_user_input_tool_description;
 use crate::tools::registry::ToolRegistryBuilder;
-use crate::tools::registry::tool_handler_key;
 use chaos_ipc::config_types::WebSearchConfig;
 use chaos_ipc::config_types::WebSearchMode;
 use chaos_ipc::config_types::WindowsSandboxLevel;
@@ -1678,6 +1677,7 @@ pub(crate) fn mcp_tool_to_openai_tool(
     )
 }
 
+#[cfg(test)]
 pub(crate) fn mcp_tool_to_deferred_openai_tool(
     name: String,
     tool: chaos_mcp_runtime::manager::McpToolInfo,
@@ -1746,7 +1746,7 @@ pub(crate) fn build_specs(
 pub(crate) fn build_specs_with_discoverable_tools(
     config: &ToolsConfig,
     mcp_tools: Option<HashMap<String, chaos_mcp_runtime::manager::McpToolInfo>>,
-    app_tools: Option<HashMap<String, ToolInfo>>,
+    _app_tools: Option<HashMap<String, ToolInfo>>,
     dynamic_tools: &[DynamicToolSpec],
     catalog_tools: Vec<(String, chaos_traits::catalog::CatalogTool)>,
     hallucinate: Option<chaos_hallucinate::HallucinateHandle>,

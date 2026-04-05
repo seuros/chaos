@@ -260,7 +260,8 @@ fn skill_roots_from_layer_stack_inner(
                 path: config_folder.as_path().join(SKILLS_DIR_NAME),
                 scope: SkillScope::Admin,
             }),
-            ConfigLayerSource::Mdm { .. }
+            ConfigLayerSource::ProjectMcp { .. }
+            | ConfigLayerSource::Mdm { .. }
             | ConfigLayerSource::SessionFlags
             | ConfigLayerSource::LegacyManagedConfigTomlFromFile { .. }
             | ConfigLayerSource::LegacyManagedConfigTomlFromMdm => {}

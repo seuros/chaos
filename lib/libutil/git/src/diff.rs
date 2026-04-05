@@ -20,7 +20,9 @@ pub fn diff(cwd: &Path, base: Option<&str>, paths: Option<&[&str]>) -> Result<St
 
     let repo = open_repo(cwd)?;
 
-    let base_spec = base.expect("checked above");
+    let Some(base_spec) = base else {
+        return diff_against_worktree(cwd, paths);
+    };
     let base_obj = repo
         .rev_parse_single(base_spec)
         .map_err(|e| GitError::RefNotFound(format!("{base_spec}: {e}")))?;

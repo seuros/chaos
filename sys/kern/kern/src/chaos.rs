@@ -2437,6 +2437,61 @@ impl Session {
         self.services.skills_manager.clear_cache();
     }
 
+    pub(crate) async fn reload_project_mcp_layer_and_refresh(&self, turn_context: &TurnContext) {
+        let project_mcp_json_path = {
+            let state = self.state.lock().await;
+            let session_config = &state.session_configuration;
+            crate::config_loader::project_mcp_json_path_for_stack(
+                &session_config.original_config_do_not_use.config_layer_stack,
+                &session_config.cwd,
+            )
+        };
+
+        let layer = match std::fs::read_to_string(&project_mcp_json_path) {
+            Ok(contents) => match crate::config_loader::parse_project_mcp_json(&contents) {
+                Ok(config) => {
+                    let Ok(file) = AbsolutePathBuf::try_from(project_mcp_json_path.clone()) else {
+                        warn!(
+                            "failed to resolve project MCP path while reloading layer: {}",
+                            project_mcp_json_path.display()
+                        );
+                        return;
+                    };
+                    Some(crate::config_loader::ConfigLayerEntry::new(
+                        chaos_ipc::api::ConfigLayerSource::ProjectMcp { file },
+                        config,
+                    ))
+                }
+                Err(err) => {
+                    warn!("failed to parse project MCP config while reloading layer: {err}");
+                    return;
+                }
+            },
+            Err(err) if err.kind() == std::io::ErrorKind::NotFound => None,
+            Err(err) => {
+                warn!("failed to read project MCP config while reloading layer: {err}");
+                return;
+            }
+        };
+
+        let (mcp_servers, store_mode) = {
+            let mut state = self.state.lock().await;
+            let mut config = (*state.session_configuration.original_config_do_not_use).clone();
+            config.config_layer_stack = config.config_layer_stack.with_project_mcp_layer(layer);
+            if let Err(err) = config.reload_mcp_servers_from_layer_stack() {
+                warn!("failed to reload MCP servers from updated config stack: {err}");
+                return;
+            }
+            let mcp_servers = config.mcp_servers.get().clone();
+            let store_mode = config.mcp_oauth_credentials_store_mode;
+            state.session_configuration.original_config_do_not_use = Arc::new(config);
+            (mcp_servers, store_mode)
+        };
+
+        self.refresh_mcp_servers_inner(turn_context, mcp_servers, store_mode)
+            .await;
+    }
+
     pub(crate) async fn new_default_turn_with_sub_id(&self, sub_id: String) -> Arc<TurnContext> {
         let session_configuration = {
             let state = self.state.lock().await;
@@ -4592,7 +4647,19 @@ mod handlers {
                             serde_json::from_value::<chaos_mcp_runtime::ToolAnnotations>(v.clone())
                                 .ok()
                         })
-                        .map(|ann| crate::tools::spec::annotation_labels(&ann))
+                        .map(|ann| {
+                            let mut labels = crate::tools::spec::annotation_labels(&ann);
+                            let has_read_semantics =
+                                labels.iter().any(|label| label == "read-only" || label == "writes");
+                            if !has_read_semantics
+                                && let Some(read_only) = tool.read_only_hint
+                            {
+                                labels.push(
+                                    if read_only { "read-only" } else { "writes" }.to_string()
+                                );
+                            }
+                            labels
+                        })
                         .or_else(|| {
                             tool.read_only_hint.map(|read_only| {
                                 vec![if read_only { "read-only" } else { "writes" }.to_string()]
@@ -4630,10 +4697,11 @@ mod handlers {
         sess.send_event_raw(event).await;
     }
 
-    pub async fn list_mcp_tools(sess: &Session, config: &Arc<Config>, sub_id: String) {
+    pub async fn list_mcp_tools(sess: &Session, _config: &Arc<Config>, sub_id: String) {
         let mcp_connection_manager = sess.services.mcp_connection_manager.read().await;
         let _auth = sess.services.auth_manager.auth().await;
-        let mcp_servers = sess.services.mcp_manager.effective_servers(config);
+        let config = sess.get_config().await;
+        let mcp_servers = sess.services.mcp_manager.effective_servers(&config);
         let snapshot = collect_mcp_snapshot_from_manager(
             &mcp_connection_manager,
             compute_auth_statuses(mcp_servers.iter(), config.mcp_oauth_credentials_store_mode)

@@ -159,6 +159,7 @@ impl ToolRegistry {
     }
 
     #[cfg(test)]
+    #[allow(dead_code)]
     pub(crate) fn has_handler(&self, name: &str, namespace: Option<&str>) -> bool {
         self.handler(name, namespace).is_some()
     }

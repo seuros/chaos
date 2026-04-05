@@ -1687,6 +1687,20 @@ pub(crate) fn resolve_web_search_mode_for_turn(
 }
 
 impl Config {
+    pub(crate) fn reload_mcp_servers_from_layer_stack(&mut self) -> std::io::Result<()> {
+        let effective = self.config_layer_stack.effective_config();
+        let cfg: ConfigToml = effective.try_into().map_err(|err| {
+            std::io::Error::new(
+                std::io::ErrorKind::InvalidData,
+                format!("failed to parse effective config while reloading MCP servers: {err}"),
+            )
+        })?;
+        self.mcp_servers =
+            constrain_mcp_servers(cfg.mcp_servers, self.config_layer_stack.requirements().mcp_servers.as_ref())
+                .map_err(|err| std::io::Error::new(std::io::ErrorKind::InvalidData, err))?;
+        Ok(())
+    }
+
     #[cfg(test)]
     fn load_from_base_config_with_overrides(
         cfg: ConfigToml,

@@ -277,9 +277,6 @@ pub struct Config {
     /// Enable ASCII animations and shimmer effects in the TUI.
     pub animations: bool,
 
-    /// Show startup tooltips in the TUI welcome screen.
-    pub show_tooltips: bool,
-
     /// Persisted startup availability NUX state for model tooltips.
     pub model_availability_nux: ModelAvailabilityNuxConfig,
 
@@ -2363,7 +2360,6 @@ impl Config {
                 .map(|t| t.notification_method)
                 .unwrap_or_default(),
             animations: cfg.tui.as_ref().map(|t| t.animations).unwrap_or(true),
-            show_tooltips: cfg.tui.as_ref().map(|t| t.show_tooltips).unwrap_or(true),
             model_availability_nux: cfg
                 .tui
                 .as_ref()

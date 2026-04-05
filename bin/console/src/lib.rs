@@ -112,7 +112,7 @@ mod text_formatting;
 pub(crate) mod theme;
 mod theme_picker;
 mod tile_manager;
-mod tooltips;
+mod top_bar;
 mod tui;
 mod ui_consts;
 mod version;

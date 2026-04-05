@@ -139,8 +139,6 @@ use crossterm::event::KeyModifiers;
 use rand::RngExt;
 use ratatui::buffer::Buffer;
 use ratatui::layout::Rect;
-use ratatui::style::Modifier;
-use ratatui::style::Style;
 use ratatui::style::Stylize;
 use ratatui::text::Line;
 use ratatui::widgets::Paragraph;
@@ -458,7 +456,6 @@ pub(crate) struct ChatWidgetInit {
     pub(crate) models_manager: Arc<ModelsManager>,
     pub(crate) is_first_run: bool,
     pub(crate) model: Option<String>,
-    pub(crate) startup_tooltip_override: Option<String>,
     // Shared latch so we only warn once about invalid status-line item IDs.
     pub(crate) status_line_invalid_items_warned: Arc<AtomicBool>,
     pub(crate) session_telemetry: SessionTelemetry,
@@ -630,8 +627,6 @@ pub(crate) struct ChatWidget {
     frame_requester: FrameRequester,
     // Whether to include the initial welcome banner on session configured
     show_welcome_banner: bool,
-    // One-shot tooltip override for the primary startup session.
-    startup_tooltip_override: Option<String>,
     // When resuming an existing session (selected via resume picker), avoid an
     // immediate redraw on SessionConfigured to prevent a gratuitous UI flicker.
     suppress_session_configured_redraw: bool,
@@ -1294,16 +1289,11 @@ impl ChatWidget {
         }
         self.refresh_model_display();
         self.sync_personality_command_enabled();
-        let startup_tooltip_override = self.startup_tooltip_override.take();
         let session_info_cell = history_cell::new_session_info(
             &self.config,
             &model_for_header,
             event,
             self.show_welcome_banner,
-            startup_tooltip_override,
-            self.auth_manager
-                .auth_cached()
-                .and_then(|auth| auth.account_plan_type()),
         );
         self.apply_session_info_cell(session_info_cell);
 
@@ -3128,7 +3118,6 @@ impl ChatWidget {
             models_manager,
             is_first_run,
             model,
-            startup_tooltip_override,
             status_line_invalid_items_warned,
             session_telemetry,
         } = common;
@@ -3229,7 +3218,6 @@ impl ChatWidget {
             submit_pending_steers_after_interrupt: false,
             queued_message_edit_binding,
             show_welcome_banner: is_first_run,
-            startup_tooltip_override,
             suppress_session_configured_redraw: false,
             pending_notification: None,
             quit_shortcut_expires_at: None,
@@ -3289,7 +3277,6 @@ impl ChatWidget {
             models_manager,
             is_first_run,
             model,
-            startup_tooltip_override,
             status_line_invalid_items_warned,
             session_telemetry,
         } = common;
@@ -3393,7 +3380,6 @@ impl ChatWidget {
             submit_pending_steers_after_interrupt: false,
             queued_message_edit_binding,
             show_welcome_banner: is_first_run,
-            startup_tooltip_override,
             suppress_session_configured_redraw: false,
             pending_notification: None,
             quit_shortcut_expires_at: None,
@@ -3449,7 +3435,6 @@ impl ChatWidget {
             models_manager,
             is_first_run: _,
             model,
-            startup_tooltip_override: _,
             status_line_invalid_items_warned,
             session_telemetry,
         } = common;
@@ -3549,7 +3534,6 @@ impl ChatWidget {
             submit_pending_steers_after_interrupt: false,
             queued_message_edit_binding,
             show_welcome_banner: false,
-            startup_tooltip_override: None,
             suppress_session_configured_redraw: true,
             pending_notification: None,
             quit_shortcut_expires_at: None,
@@ -4240,15 +4224,7 @@ impl ChatWidget {
     }
 
     fn add_boxed_history(&mut self, cell: Box<dyn HistoryCell>) {
-        // Keep the placeholder session header as the active cell until real session info arrives,
-        // so we can merge headers instead of committing a duplicate box to history.
-        let keep_placeholder_header_active = !self.is_session_configured()
-            && self
-                .active_cell
-                .as_ref()
-                .is_some_and(|c| c.as_any().is::<history_cell::SessionHeaderHistoryCell>());
-
-        if !keep_placeholder_header_active && !cell.display_lines(u16::MAX).is_empty() {
+        if !cell.display_lines(u16::MAX).is_empty() {
             // Only break exec grouping if the cell renders visible lines.
             self.flush_active_cell();
             self.needs_final_message_separator = true;
@@ -6700,10 +6676,6 @@ impl ChatWidget {
         &self.current_collaboration_mode
     }
 
-    pub(crate) fn current_reasoning_effort(&self) -> Option<ReasoningEffortConfig> {
-        self.effective_reasoning_effort()
-    }
-
     #[cfg(test)]
     pub(crate) fn active_collaboration_mode_kind(&self) -> ModeKind {
         self.active_mode_kind()
@@ -6734,6 +6706,11 @@ impl ChatWidget {
             .as_ref()
             .and_then(|mask| mask.mode)
             .unwrap_or(ModeKind::Default)
+    }
+
+    #[cfg(test)]
+    pub(crate) fn current_reasoning_effort(&self) -> Option<ReasoningEffortConfig> {
+        self.effective_reasoning_effort()
     }
 
     fn effective_reasoning_effort(&self) -> Option<ReasoningEffortConfig> {
@@ -6894,42 +6871,17 @@ impl ChatWidget {
         }
     }
 
-    /// Build a placeholder header cell while the session is configuring.
-    fn placeholder_session_header_cell(config: &Config) -> Box<dyn HistoryCell> {
-        let placeholder_style = Style::default().add_modifier(Modifier::DIM | Modifier::ITALIC);
-        Box::new(history_cell::SessionHeaderHistoryCell::new_with_style(
-            DEFAULT_MODEL_DISPLAY_NAME.to_string(),
-            placeholder_style,
-            /*reasoning_effort*/ None,
-            config.cwd.clone(),
-            CHAOS_VERSION,
-        ))
+    /// Build a placeholder cell while the session is configuring.
+    fn placeholder_session_header_cell(_config: &Config) -> Box<dyn HistoryCell> {
+        Box::new(history_cell::PlainHistoryCell::new(Vec::new()))
     }
 
-    /// Merge the real session info cell with any placeholder header to avoid double boxes.
+    /// Apply the real session info cell.
     fn apply_session_info_cell(&mut self, cell: history_cell::SessionInfoCell) {
-        let mut session_info_cell = Some(Box::new(cell) as Box<dyn HistoryCell>);
-        let merged_header = if let Some(active) = self.active_cell.take() {
-            if active
-                .as_any()
-                .is::<history_cell::SessionHeaderHistoryCell>()
-            {
-                // Reuse the existing placeholder header to avoid rendering two boxes.
-                if let Some(cell) = session_info_cell.take() {
-                    self.active_cell = Some(cell);
-                }
-                true
-            } else {
-                self.active_cell = Some(active);
-                false
-            }
-        } else {
-            false
-        };
-
-        self.flush_active_cell();
-
-        if !merged_header && let Some(cell) = session_info_cell {
+        // Replace any placeholder active cell with the real session info.
+        self.active_cell.take();
+        let cell = Box::new(cell) as Box<dyn HistoryCell>;
+        if !cell.display_lines(u16::MAX).is_empty() {
             self.add_boxed_history(cell);
         }
     }

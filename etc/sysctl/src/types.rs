@@ -706,11 +706,6 @@ pub struct Tui {
     #[serde(default = "default_true")]
     pub animations: bool,
 
-    /// Show startup tooltips in the TUI welcome screen.
-    /// Defaults to `true`.
-    #[serde(default = "default_true")]
-    pub show_tooltips: bool,
-
     /// Controls whether the TUI uses the terminal's alternate screen buffer.
     ///
     /// - `auto` (default): Disable alternate screen in Zellij, enable elsewhere.

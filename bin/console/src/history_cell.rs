@@ -17,7 +17,6 @@ use crate::exec_cell::OutputLinesParams;
 use crate::exec_cell::TOOL_CALL_MAX_LINES;
 use crate::exec_cell::output_lines;
 use crate::exec_cell::spinner;
-use crate::exec_command::relativize_to_home;
 use crate::exec_command::strip_bash_lc_and_escape;
 use crate::live_wrap::take_prefix_by_width;
 use crate::markdown::append_markdown;
@@ -29,22 +28,16 @@ use crate::style::proposed_plan_style;
 use crate::style::user_message_style;
 use crate::text_formatting::format_and_truncate_tool_result;
 use crate::text_formatting::truncate_text;
-use crate::tooltips;
 use crate::ui_consts::LIVE_PREFIX_COLS;
-use crate::version::CHAOS_VERSION;
-use crate::version::PRODUCT_NAME;
-use crate::version::version_badge_for;
 use crate::wrapping::RtOptions;
 use crate::wrapping::adaptive_wrap_line;
 use crate::wrapping::adaptive_wrap_lines;
 use base64::Engine;
 use chaos_getopt::format_env_display::format_env_display;
-use chaos_ipc::account::PlanType;
 use chaos_ipc::mcp::Resource;
 use chaos_ipc::mcp::ResourceTemplate;
 use chaos_ipc::models::WebSearchAction;
 use chaos_ipc::models::local_image_label_text;
-use chaos_ipc::openai_models::ReasoningEffort as ReasoningEffortConfig;
 use chaos_ipc::plan_tool::PlanItemArg;
 use chaos_ipc::plan_tool::StepStatus;
 use chaos_ipc::plan_tool::UpdatePlanArgs;
@@ -881,21 +874,6 @@ impl HistoryCell for CompletedMcpToolCallWithImageOutput {
     }
 }
 
-pub(crate) const SESSION_HEADER_MAX_INNER_WIDTH: usize = 56; // Just an eyeballed value
-
-pub(crate) fn card_inner_width(width: u16, max_inner_width: usize) -> Option<usize> {
-    if width < 4 {
-        return None;
-    }
-    let inner_width = std::cmp::min(width.saturating_sub(4) as usize, max_inner_width);
-    Some(inner_width)
-}
-
-/// Render `lines` inside a border sized to the widest span in the content.
-pub(crate) fn with_border(lines: Vec<Line<'static>>) -> Vec<Line<'static>> {
-    with_border_internal(lines, /*forced_inner_width*/ None)
-}
-
 /// Render `lines` inside a border whose inner width is at least `inner_width`.
 ///
 /// This is useful when callers have already clamped their content to a
@@ -964,40 +942,6 @@ fn with_border_internal(
 }
 
 #[derive(Debug)]
-struct TooltipHistoryCell {
-    tip: String,
-    cwd: PathBuf,
-}
-
-impl TooltipHistoryCell {
-    fn new(tip: String, cwd: &Path) -> Self {
-        Self {
-            tip,
-            cwd: cwd.to_path_buf(),
-        }
-    }
-}
-
-impl HistoryCell for TooltipHistoryCell {
-    fn display_lines(&self, width: u16) -> Vec<Line<'static>> {
-        let indent = "  ";
-        let indent_width = UnicodeWidthStr::width(indent);
-        let wrap_width = usize::from(width.max(1))
-            .saturating_sub(indent_width)
-            .max(1);
-        let mut lines: Vec<Line<'static>> = Vec::new();
-        append_markdown(
-            &format!("**Tip:** {}", self.tip),
-            Some(wrap_width),
-            Some(self.cwd.as_path()),
-            &mut lines,
-        );
-
-        prefix_lines(lines, indent.into(), indent.into())
-    }
-}
-
-#[derive(Debug)]
 pub struct SessionInfoCell(CompositeHistoryCell);
 
 impl HistoryCell for SessionInfoCell {
@@ -1015,88 +959,21 @@ impl HistoryCell for SessionInfoCell {
 }
 
 pub(crate) fn new_session_info(
-    config: &Config,
+    _config: &Config,
     requested_model: &str,
     event: SessionConfiguredEvent,
-    is_first_event: bool,
-    tooltip_override: Option<String>,
-    auth_plan: Option<PlanType>,
+    _is_first_event: bool,
 ) -> SessionInfoCell {
-    let SessionConfiguredEvent {
-        model,
-        reasoning_effort,
-        ..
-    } = event;
-    // Header box rendered as history (so it appears at the very top)
-    let header = SessionHeaderHistoryCell::new(
-        model.clone(),
-        reasoning_effort,
-        config.cwd.clone(),
-        CHAOS_VERSION,
-    );
-    let mut parts: Vec<Box<dyn HistoryCell>> = vec![Box::new(header)];
+    let SessionConfiguredEvent { model, .. } = event;
+    let mut parts: Vec<Box<dyn HistoryCell>> = Vec::new();
 
-    if is_first_event {
-        // Help lines below the header (new copy and list)
-        let p = crate::theme::palette();
-        let cmd_style = Style::default().fg(p.accent);
-        let desc_style = crate::theme::dim();
-        let help_lines: Vec<Line<'static>> = vec![
-            Line::from(Span::styled(
-                "  To get started, describe a task or try one of these commands:",
-                desc_style,
-            )),
-            Line::from(""),
-            Line::from(vec![
-                Span::from("  "),
-                Span::styled("/init", cmd_style),
-                Span::styled(
-                    " - create an AGENTS.md file with instructions for Chaos",
-                    desc_style,
-                ),
-            ]),
-            Line::from(vec![
-                Span::from("  "),
-                Span::styled("/status", cmd_style),
-                Span::styled(" - show current session configuration", desc_style),
-            ]),
-            Line::from(vec![
-                Span::from("  "),
-                Span::styled("/permissions", cmd_style),
-                Span::styled(" - choose what Chaos is allowed to do", desc_style),
-            ]),
-            Line::from(vec![
-                Span::from("  "),
-                Span::styled("/model", cmd_style),
-                Span::styled(
-                    " - choose what model and reasoning effort to use",
-                    desc_style,
-                ),
-            ]),
-            Line::from(vec![
-                Span::from("  "),
-                Span::styled("/review", cmd_style),
-                Span::styled(" - review any changes and find issues", desc_style),
-            ]),
+    if requested_model != model {
+        let lines = vec![
+            "model changed:".magenta().bold().into(),
+            format!("requested: {requested_model}").into(),
+            format!("used: {model}").into(),
         ];
-
-        parts.push(Box::new(PlainHistoryCell { lines: help_lines }));
-    } else {
-        if config.show_tooltips
-            && let Some(tooltips) = tooltip_override
-                .or_else(|| tooltips::get_tooltip(auth_plan, false))
-                .map(|tip| TooltipHistoryCell::new(tip, &config.cwd))
-        {
-            parts.push(Box::new(tooltips));
-        }
-        if requested_model != model {
-            let lines = vec![
-                "model changed:".magenta().bold().into(),
-                format!("requested: {requested_model}").into(),
-                format!("used: {model}").into(),
-            ];
-            parts.push(Box::new(PlainHistoryCell { lines }));
-        }
+        parts.push(Box::new(PlainHistoryCell { lines }));
     }
 
     SessionInfoCell(CompositeHistoryCell { parts })
@@ -1113,156 +990,6 @@ pub(crate) fn new_user_prompt(
         text_elements,
         local_image_paths,
         remote_image_urls,
-    }
-}
-
-#[derive(Debug)]
-pub(crate) struct SessionHeaderHistoryCell {
-    version: &'static str,
-    model: String,
-    model_style: Style,
-    reasoning_effort: Option<ReasoningEffortConfig>,
-    directory: PathBuf,
-}
-
-impl SessionHeaderHistoryCell {
-    pub(crate) fn new(
-        model: String,
-        reasoning_effort: Option<ReasoningEffortConfig>,
-        directory: PathBuf,
-        version: &'static str,
-    ) -> Self {
-        Self::new_with_style(
-            model,
-            Style::default(),
-            reasoning_effort,
-            directory,
-            version,
-        )
-    }
-
-    pub(crate) fn new_with_style(
-        model: String,
-        model_style: Style,
-        reasoning_effort: Option<ReasoningEffortConfig>,
-        directory: PathBuf,
-        version: &'static str,
-    ) -> Self {
-        Self {
-            version,
-            model,
-            model_style,
-            reasoning_effort,
-            directory,
-        }
-    }
-
-    fn format_directory(&self, max_width: Option<usize>) -> String {
-        Self::format_directory_inner(&self.directory, max_width)
-    }
-
-    fn format_directory_inner(directory: &Path, max_width: Option<usize>) -> String {
-        let formatted = if let Some(rel) = relativize_to_home(directory) {
-            if rel.as_os_str().is_empty() {
-                "~".to_string()
-            } else {
-                format!("~{}{}", std::path::MAIN_SEPARATOR, rel.display())
-            }
-        } else {
-            directory.display().to_string()
-        };
-
-        if let Some(max_width) = max_width {
-            if max_width == 0 {
-                return String::new();
-            }
-            if UnicodeWidthStr::width(formatted.as_str()) > max_width {
-                return crate::text_formatting::center_truncate_path(&formatted, max_width);
-            }
-        }
-
-        formatted
-    }
-
-    fn reasoning_label(&self) -> Option<&'static str> {
-        self.reasoning_effort.map(|effort| match effort {
-            ReasoningEffortConfig::Minimal => "minimal",
-            ReasoningEffortConfig::Low => "low",
-            ReasoningEffortConfig::Medium => "medium",
-            ReasoningEffortConfig::High => "high",
-            ReasoningEffortConfig::XHigh => "xhigh",
-            ReasoningEffortConfig::None => "none",
-        })
-    }
-}
-
-impl HistoryCell for SessionHeaderHistoryCell {
-    fn display_lines(&self, width: u16) -> Vec<Line<'static>> {
-        let Some(inner_width) = card_inner_width(width, SESSION_HEADER_MAX_INNER_WIDTH) else {
-            return Vec::new();
-        };
-
-        let make_row = |spans: Vec<Span<'static>>| Line::from(spans);
-
-        // Title line rendered inside the box: ">_ Chaos (vX)"
-        let p = crate::theme::palette();
-        let title_spans: Vec<Span<'static>> = vec![
-            Span::styled(">_ ", crate::theme::prompt()),
-            Span::styled(PRODUCT_NAME, Style::default().fg(p.highlight).bold()),
-            Span::styled(" ", crate::theme::dim()),
-            Span::styled(version_badge_for(self.version), crate::theme::dim()),
-        ];
-
-        const CHANGE_MODEL_HINT_COMMAND: &str = "/model";
-        const CHANGE_MODEL_HINT_EXPLANATION: &str = " to change";
-        const DIR_LABEL: &str = "directory:";
-        let label_width = DIR_LABEL.len();
-
-        let model_label = format!(
-            "{model_label:<label_width$}",
-            model_label = "model:",
-            label_width = label_width
-        );
-        let reasoning_label = self.reasoning_label();
-        let model_spans: Vec<Span<'static>> = {
-            let mut spans = vec![
-                Span::styled(format!("{model_label} "), crate::theme::dim()),
-                Span::styled(self.model.clone(), self.model_style),
-            ];
-            if let Some(reasoning) = reasoning_label {
-                spans.push(Span::from(" "));
-                spans.push(Span::from(reasoning));
-            }
-            spans.push(Span::styled("   ", crate::theme::dim()));
-            spans.push(Span::styled(
-                CHANGE_MODEL_HINT_COMMAND,
-                Style::default().fg(p.accent),
-            ));
-            spans.push(Span::styled(
-                CHANGE_MODEL_HINT_EXPLANATION,
-                crate::theme::dim(),
-            ));
-            spans
-        };
-
-        let dir_label = format!("{DIR_LABEL:<label_width$}");
-        let dir_prefix = format!("{dir_label} ");
-        let dir_prefix_width = UnicodeWidthStr::width(dir_prefix.as_str());
-        let dir_max_width = inner_width.saturating_sub(dir_prefix_width);
-        let dir = self.format_directory(Some(dir_max_width));
-        let dir_spans = vec![
-            Span::styled(dir_prefix, crate::theme::dim()),
-            Span::styled(dir, Style::default().fg(p.fg)),
-        ];
-
-        let lines = vec![
-            make_row(title_spans),
-            make_row(Vec::new()),
-            make_row(model_spans),
-            make_row(dir_spans),
-        ];
-
-        with_border(lines)
     }
 }
 
@@ -2444,7 +2171,6 @@ mod tests {
     use crate::exec_cell::ExecCall;
     use crate::exec_cell::ExecCell;
     use chaos_ipc::ProcessId;
-    use chaos_ipc::account::PlanType;
     use chaos_ipc::models::WebSearchAction;
     use chaos_ipc::parse_command::ParsedCommand;
     use chaos_ipc::protocol::ApprovalPolicy;
@@ -2457,7 +2183,7 @@ mod tests {
     use chaos_kern::config::types::McpServerTransportConfig;
     use chaos_syslog::RuntimeMetricTotals;
     use chaos_syslog::RuntimeMetricsSummary;
-    use dirs::home_dir;
+
     use pretty_assertions::assert_eq;
     use serde_json::json;
     use std::collections::HashMap;
@@ -2534,6 +2260,7 @@ mod tests {
         .expect("resource link content should serialize")
     }
 
+    #[expect(dead_code, reason = "test helper available for future tests")]
     fn session_configured_event(model: &str) -> SessionConfiguredEvent {
         SessionConfiguredEvent {
             session_id: ProcessId::new(),
@@ -2638,73 +2365,6 @@ mod tests {
         let cell = new_unified_exec_processes_output(Vec::new());
         let rendered = render_lines(&cell.display_lines(60)).join("\n");
         insta::assert_snapshot!(rendered);
-    }
-
-    #[tokio::test]
-    async fn session_info_uses_availability_nux_tooltip_override() {
-        let config = test_config().await;
-        let cell = new_session_info(
-            &config,
-            "gpt-5",
-            session_configured_event("gpt-5"),
-            false,
-            Some("Model just became available".to_string()),
-            Some(PlanType::Free),
-        );
-
-        let rendered = render_transcript(&cell).join("\n");
-        assert!(rendered.contains("Model just became available"));
-    }
-
-    #[tokio::test]
-    async fn session_info_availability_nux_tooltip_snapshot() {
-        let mut config = test_config().await;
-        config.cwd = PathBuf::from("/tmp/project");
-        let cell = new_session_info(
-            &config,
-            "gpt-5",
-            session_configured_event("gpt-5"),
-            false,
-            Some("Model just became available".to_string()),
-            Some(PlanType::Free),
-        );
-
-        let rendered = render_transcript(&cell).join("\n");
-        insta::assert_snapshot!(rendered);
-    }
-
-    #[tokio::test]
-    async fn session_info_first_event_suppresses_tooltips_and_nux() {
-        let config = test_config().await;
-        let cell = new_session_info(
-            &config,
-            "gpt-5",
-            session_configured_event("gpt-5"),
-            true,
-            Some("Model just became available".to_string()),
-            Some(PlanType::Free),
-        );
-
-        let rendered = render_transcript(&cell).join("\n");
-        assert!(!rendered.contains("Model just became available"));
-        assert!(rendered.contains("To get started"));
-    }
-
-    #[tokio::test]
-    async fn session_info_hides_tooltips_when_disabled() {
-        let mut config = test_config().await;
-        config.show_tooltips = false;
-        let cell = new_session_info(
-            &config,
-            "gpt-5",
-            session_configured_event("gpt-5"),
-            false,
-            Some("Model just became available".to_string()),
-            Some(PlanType::Free),
-        );
-
-        let rendered = render_transcript(&cell).join("\n");
-        assert!(!rendered.contains("Model just became available"));
     }
 
     #[test]
@@ -3326,49 +2986,6 @@ mod tests {
         let rendered = render_lines(&cell.display_lines(120)).join("\n");
 
         insta::assert_snapshot!(rendered);
-    }
-
-    #[test]
-    fn session_header_includes_reasoning_level_when_present() {
-        let cell = SessionHeaderHistoryCell::new(
-            "gpt-4o".to_string(),
-            Some(ReasoningEffortConfig::High),
-            std::env::temp_dir(),
-            "test",
-        );
-
-        let lines = render_lines(&cell.display_lines(80));
-        let model_line = lines
-            .iter()
-            .find(|line| line.contains("model:"))
-            .expect("model line");
-
-        assert!(model_line.contains("gpt-4o high"));
-        assert!(model_line.contains("/model to change"));
-    }
-
-    #[test]
-    fn session_header_directory_center_truncates() {
-        let mut dir = home_dir().expect("home directory");
-        for part in ["hello", "the", "fox", "is", "very", "fast"] {
-            dir.push(part);
-        }
-
-        let formatted = SessionHeaderHistoryCell::format_directory_inner(&dir, Some(24));
-        let sep = std::path::MAIN_SEPARATOR;
-        let expected = format!("~{sep}hello{sep}the{sep}…{sep}very{sep}fast");
-        assert_eq!(formatted, expected);
-    }
-
-    #[test]
-    fn session_header_directory_front_truncates_long_segment() {
-        let mut dir = home_dir().expect("home directory");
-        dir.push("supercalifragilisticexpialidocious");
-
-        let formatted = SessionHeaderHistoryCell::format_directory_inner(&dir, Some(18));
-        let sep = std::path::MAIN_SEPARATOR;
-        let expected = format!("~{sep}…cexpialidocious");
-        assert_eq!(formatted, expected);
     }
 
     #[test]

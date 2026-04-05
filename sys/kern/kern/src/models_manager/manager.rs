@@ -28,7 +28,6 @@ use chaos_parrot::RequestTelemetry;
 use chaos_parrot::TransportError;
 use chaos_syslog::TelemetryAuthMode;
 use http::HeaderMap;
-use std::collections::HashMap;
 use std::fmt;
 use std::path::PathBuf;
 use std::sync::Arc;
@@ -211,12 +210,13 @@ impl ModelsManager {
         } else {
             CatalogMode::Default
         };
-        // Start with the provided catalog, or fall back to the bundled
-        // models.json for cold-boot compatibility. The adapter fetch
-        // supersedes this on first successful refresh.
+        // Start with the provided catalog, or an empty list. The adapter
+        // fetch populates this on first successful refresh. No bundled
+        // fallback — the OS is provider-agnostic and does not ship a
+        // hardcoded model catalog.
         let remote_models = model_catalog
             .map(|catalog| catalog.models)
-            .unwrap_or_else(Self::load_bundled_models_fallback);
+            .unwrap_or_default();
         Self {
             remote_models: RwLock::new(remote_models),
             catalog_mode,
@@ -567,18 +567,11 @@ impl ModelsManager {
             .await;
     }
 
-    /// Rebuild the active catalog by overlaying fetched models onto the bundled base catalog.
+    /// Replace the active catalog with the models fetched from the provider.
     ///
-    /// This preserves bundled models when the remote `/models` payload omits them, while still
-    /// allowing remote entries to override overlapping bundled metadata by slug.
+    /// No bundled fallback is merged — the provider's response is authoritative.
     async fn apply_remote_models(&self, models: Vec<ModelInfo>) {
-        let next_models =
-            if crate::model_provider_info::is_anthropic_wire(self.provider.base_url.as_deref()) {
-                models
-            } else {
-                Self::merge_with_bundled_models(models)
-            };
-        *self.remote_models.write().await = next_models;
+        *self.remote_models.write().await = models;
     }
 
     async fn apply_cache_entry(&self, cache: ModelsCache) {
@@ -612,39 +605,6 @@ impl ModelsManager {
         Some(cache)
     }
 
-    /// Cold-boot fallback: load from the bundled models.json.
-    ///
-    /// This exists only so the kernel has something to show before
-    /// the first async adapter fetch completes. Once the DB is
-    /// populated, this is never consulted again.
-    fn load_bundled_models_fallback() -> Vec<ModelInfo> {
-        let file_contents = include_str!("../../models.json");
-        let response: ModelsResponse = match serde_json::from_str(file_contents) {
-            Ok(r) => r,
-            Err(_) => return Vec::new(),
-        };
-        response.models
-    }
-
-    fn merge_with_bundled_models(models: Vec<ModelInfo>) -> Vec<ModelInfo> {
-        let mut merged = Self::load_bundled_models_fallback();
-        let mut index_by_slug: HashMap<String, usize> = merged
-            .iter()
-            .enumerate()
-            .map(|(idx, model)| (model.slug.clone(), idx))
-            .collect();
-
-        for model in models {
-            if let Some(existing_idx) = index_by_slug.get(&model.slug).copied() {
-                merged[existing_idx] = model;
-            } else {
-                index_by_slug.insert(model.slug.clone(), merged.len());
-                merged.push(model);
-            }
-        }
-
-        merged
-    }
 
     fn cache_scope(&self) -> ModelsCacheScope {
         ModelsCacheScope {

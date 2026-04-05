@@ -342,7 +342,6 @@ async fn fatal_tool_error_stops_turn_and_reports_error() {
                     .collect(),
             ),
             app_tools,
-            discoverable_tools: None,
             dynamic_tools: turn_context.dynamic_tools.as_slice(),
             catalog_tools: vec![],
             hallucinate: None,

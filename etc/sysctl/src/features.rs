@@ -31,7 +31,6 @@ pub enum Feature {
     EnableRequestCompression,
     Collab,
     SpawnCsv,
-    ToolSuggest,
     ImageGeneration,
     SkillMcpDependencyInstall,
     SkillEnvVarDependencyPrompt,
@@ -348,12 +347,6 @@ pub const FEATURES: &[FeatureSpec] = &[
     FeatureSpec {
         id: Feature::SpawnCsv,
         key: "enable_fanout",
-        default_enabled: false,
-        under_development: false,
-    },
-    FeatureSpec {
-        id: Feature::ToolSuggest,
-        key: "tool_suggest",
         default_enabled: false,
         under_development: false,
     },

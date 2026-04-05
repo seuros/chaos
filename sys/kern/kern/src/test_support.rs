@@ -76,7 +76,6 @@ pub fn test_model_info(slug: &str) -> ModelInfo {
         input_modalities: vec![InputModality::Text, InputModality::Image],
         prefer_websockets: false,
         used_fallback_model_metadata: false,
-        supports_search_tool: false,
     }
 }
 

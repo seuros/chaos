@@ -52,30 +52,23 @@ async fn includes_timed_out_message() {
 async fn turn_context_with_model_updates_model_fields() {
     let (session, mut turn_context) = make_session_and_context().await;
     turn_context.reasoning_effort = Some(ReasoningEffortConfig::Minimal);
+    // Use a slug that falls back to model_info_from_slug (unknown model).
     let updated = turn_context
-        .with_model("gpt-5.1".to_string(), &session.services.models_manager)
+        .with_model("cortana".to_string(), &session.services.models_manager)
         .await;
     let expected_model_info = session
         .services
         .models_manager
-        .get_model_info("gpt-5.1", updated.config.as_ref())
+        .get_model_info("cortana", updated.config.as_ref())
         .await;
 
-    assert_eq!(updated.config.model.as_deref(), Some("gpt-5.1"));
-    assert_eq!(updated.collaboration_mode.model(), "gpt-5.1");
+    assert_eq!(updated.config.model.as_deref(), Some("cortana"));
+    assert_eq!(updated.collaboration_mode.model(), "cortana");
     assert_eq!(updated.model_info, expected_model_info);
-    assert_eq!(
-        updated.reasoning_effort,
-        Some(ReasoningEffortConfig::Medium)
-    );
-    assert_eq!(
-        updated.collaboration_mode.reasoning_effort(),
-        Some(ReasoningEffortConfig::Medium)
-    );
-    assert_eq!(
-        updated.config.model_reasoning_effort,
-        Some(ReasoningEffortConfig::Medium)
-    );
+    // Fallback model has no supported reasoning levels, so effort resets to None.
+    assert_eq!(updated.reasoning_effort, None);
+    assert_eq!(updated.collaboration_mode.reasoning_effort(), None);
+    assert_eq!(updated.config.model_reasoning_effort, None);
     assert_eq!(
         updated.truncation_policy,
         expected_model_info.truncation_policy.into()

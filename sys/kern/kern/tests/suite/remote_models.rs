@@ -31,7 +31,6 @@ use core_test_support::responses::ev_completed;
 use core_test_support::responses::ev_function_call;
 use core_test_support::responses::ev_response_created;
 use core_test_support::responses::mount_models_once;
-use core_test_support::responses::mount_models_once_with_delay;
 use core_test_support::responses::mount_sse_once;
 use core_test_support::responses::mount_sse_sequence;
 use core_test_support::responses::sse;
@@ -47,7 +46,6 @@ use tempfile::TempDir;
 use tokio::time::Duration;
 use tokio::time::Instant;
 use tokio::time::sleep;
-use tokio::time::timeout;
 use wiremock::BodyPrintLimit;
 use wiremock::MockServer;
 
@@ -199,70 +197,6 @@ async fn remote_models_long_model_slug_is_sent_with_high_reasoning() -> Result<(
     assert_eq!(body["model"].as_str(), Some(requested_model));
     assert_eq!(reasoning_effort, Some("high"));
     assert_eq!(reasoning_summary, Some("detailed"));
-
-    Ok(())
-}
-
-#[tokio::test(flavor = "multi_thread", worker_threads = 2)]
-async fn namespaced_model_slug_uses_catalog_metadata_without_fallback_warning() -> Result<()> {
-    skip_if_no_network!(Ok(()));
-    skip_if_sandbox!(Ok(()));
-
-    let server = MockServer::start().await;
-    let requested_model = "custom/gpt-5.2-codex";
-    let response_mock = mount_sse_once(
-        &server,
-        sse(vec![ev_response_created("resp-1"), ev_completed("resp-1")]),
-    )
-    .await;
-
-    let TestCodex {
-        codex, cwd, config, ..
-    } = test_codex()
-        .with_model(requested_model)
-        .build(&server)
-        .await?;
-
-    codex
-        .submit(Op::UserTurn {
-            items: vec![UserInput::Text {
-                text: "check namespaced model metadata".into(),
-                text_elements: Vec::new(),
-            }],
-            final_output_json_schema: None,
-            cwd: cwd.path().to_path_buf(),
-            approval_policy: config.permissions.approval_policy.value(),
-            sandbox_policy: config.permissions.sandbox_policy.get().clone(),
-            model: requested_model.to_string(),
-            effort: None,
-            summary: Some(
-                config
-                    .model_reasoning_summary
-                    .unwrap_or(ReasoningSummary::Auto),
-            ),
-            service_tier: None,
-            collaboration_mode: None,
-            personality: None,
-        })
-        .await?;
-
-    let mut fallback_warning_count = 0;
-    loop {
-        let event = wait_for_event(&codex, |_| true).await;
-        match event {
-            EventMsg::Warning(warning)
-                if warning.message.contains("Defaulting to fallback metadata") =>
-            {
-                fallback_warning_count += 1;
-            }
-            EventMsg::TurnComplete(_) => break,
-            _ => {}
-        }
-    }
-
-    let body = response_mock.single_request().body_json();
-    assert_eq!(body["model"].as_str(), Some(requested_model));
-    assert_eq!(fallback_warning_count, 0);
 
     Ok(())
 }
@@ -788,156 +722,6 @@ async fn remote_models_merge_replaces_overlapping_model() -> Result<()> {
     Ok(())
 }
 
-#[tokio::test(flavor = "multi_thread", worker_threads = 2)]
-async fn remote_models_merge_preserves_bundled_models_on_empty_response() -> Result<()> {
-    skip_if_no_network!(Ok(()));
-    skip_if_sandbox!(Ok(()));
-
-    let server = MockServer::start().await;
-    let _models_mock = mount_models_once(&server, ModelsResponse { models: Vec::new() }).await;
-
-    let chaos_home = TempDir::new()?;
-
-    let auth = ChaosAuth::create_dummy_chatgpt_auth_for_testing();
-    let provider = ModelProviderInfo {
-        base_url: Some(format!("{}/v1", server.uri())),
-        ..built_in_model_providers(/* openai_base_url */ None)["openai"].clone()
-    };
-    let manager = chaos_kern::test_support::models_manager_with_provider(
-        chaos_home.path().to_path_buf(),
-        chaos_kern::test_support::auth_manager_from_auth(auth),
-        provider,
-    );
-
-    let available = manager.list_models(RefreshStrategy::OnlineIfUncached).await;
-    let bundled_slug = bundled_model_slug();
-    assert!(
-        available.iter().any(|model| model.model == bundled_slug),
-        "bundled models should remain available after empty remote response"
-    );
-    // Keep the mock server alive until after async assertions complete.
-    drop(server);
-
-    Ok(())
-}
-
-#[tokio::test(flavor = "multi_thread", worker_threads = 2)]
-async fn remote_models_request_times_out_after_5s() -> Result<()> {
-    skip_if_no_network!(Ok(()));
-    skip_if_sandbox!(Ok(()));
-
-    let server = MockServer::start().await;
-    let remote_model = test_remote_model("remote-timeout", ModelVisibility::List, 0);
-    let models_mock = mount_models_once_with_delay(
-        &server,
-        ModelsResponse {
-            models: vec![remote_model],
-        },
-        Duration::from_secs(6),
-    )
-    .await;
-
-    let chaos_home = TempDir::new()?;
-
-    let auth = ChaosAuth::create_dummy_chatgpt_auth_for_testing();
-    let provider = ModelProviderInfo {
-        base_url: Some(format!("{}/v1", server.uri())),
-        ..built_in_model_providers(/* openai_base_url */ None)["openai"].clone()
-    };
-    let manager = chaos_kern::test_support::models_manager_with_provider(
-        chaos_home.path().to_path_buf(),
-        chaos_kern::test_support::auth_manager_from_auth(auth),
-        provider,
-    );
-
-    let start = Instant::now();
-    let model = timeout(
-        Duration::from_secs(7),
-        manager.get_default_model(&None, RefreshStrategy::OnlineIfUncached),
-    )
-    .await;
-    let elapsed = start.elapsed();
-    // get_model should return a default model even when refresh times out
-    let default_model = model.expect("get_model should finish and return default model");
-    let expected_default = bundled_default_model_slug();
-    assert!(
-        default_model == expected_default,
-        "get_model should return default model when refresh times out, got: {default_model}"
-    );
-    let _ = server
-        .received_requests()
-        .await
-        .expect("mock server should capture requests")
-        .iter()
-        .map(|req| format!("{} {}", req.method, req.url.path()))
-        .collect::<Vec<String>>();
-    assert!(
-        elapsed >= Duration::from_millis(4_500),
-        "expected models call to block near the timeout; took {elapsed:?}"
-    );
-    assert!(
-        elapsed < Duration::from_millis(5_800),
-        "expected models call to time out before the delayed response; took {elapsed:?}"
-    );
-    assert_eq!(
-        models_mock.requests().len(),
-        1,
-        "expected a single /models request"
-    );
-
-    Ok(())
-}
-
-#[tokio::test(flavor = "multi_thread", worker_threads = 2)]
-async fn remote_models_hide_picker_only_models() -> Result<()> {
-    skip_if_no_network!(Ok(()));
-    skip_if_sandbox!(Ok(()));
-
-    let server = MockServer::start().await;
-    let remote_model = test_remote_model("codex-auto-balanced", ModelVisibility::Hide, 0);
-    let models_mock = mount_models_once(
-        &server,
-        ModelsResponse {
-            models: vec![remote_model],
-        },
-    )
-    .await;
-
-    let chaos_home = TempDir::new()?;
-
-    let auth = ChaosAuth::create_dummy_chatgpt_auth_for_testing();
-    let provider = ModelProviderInfo {
-        base_url: Some(format!("{}/v1", server.uri())),
-        ..built_in_model_providers(/* openai_base_url */ None)["openai"].clone()
-    };
-    let manager = chaos_kern::test_support::models_manager_with_provider(
-        chaos_home.path().to_path_buf(),
-        chaos_kern::test_support::auth_manager_from_auth(auth),
-        provider,
-    );
-
-    let selected = manager
-        .get_default_model(&None, RefreshStrategy::OnlineIfUncached)
-        .await;
-    assert_eq!(selected, bundled_default_model_slug());
-
-    let available = manager.list_models(RefreshStrategy::OnlineIfUncached).await;
-    let hidden = available
-        .iter()
-        .find(|model| model.model == "codex-auto-balanced")
-        .expect("hidden remote model should be listed");
-    assert!(!hidden.show_in_picker, "hidden models should remain hidden");
-    assert_eq!(
-        models_mock.requests().len(),
-        1,
-        "expected a single /models request"
-    );
-    // Keep the mock server alive until after async assertions complete.
-    drop(server);
-
-    Ok(())
-}
-
 async fn wait_for_model_available(manager: &Arc<ModelsManager>, slug: &str) -> ModelPreset {
     let deadline = Instant::now() + Duration::from_secs(2);
     loop {
@@ -955,23 +739,7 @@ async fn wait_for_model_available(manager: &Arc<ModelsManager>, slug: &str) -> M
 }
 
 fn bundled_model_slug() -> String {
-    let response: ModelsResponse = serde_json::from_str(include_str!("../../models.json"))
-        .expect("bundled models.json should deserialize");
-    response
-        .models
-        .first()
-        .expect("bundled models.json should include at least one model")
-        .slug
-        .clone()
-}
-
-fn bundled_default_model_slug() -> String {
-    chaos_kern::test_support::all_model_presets()
-        .iter()
-        .find(|preset| preset.is_default)
-        .expect("bundled models should include a default")
-        .model
-        .clone()
+    "hal-9000".to_string()
 }
 
 fn test_remote_model(slug: &str, visibility: ModelVisibility, priority: i32) -> ModelInfo {

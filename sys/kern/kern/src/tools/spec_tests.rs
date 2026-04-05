@@ -11,7 +11,6 @@ use chaos_ipc::api::AppInfo;
 use chaos_ipc::dynamic_tools::DynamicToolSpec;
 use chaos_ipc::openai_models::InputModality;
 use chaos_ipc::openai_models::ModelInfo;
-use chaos_ipc::openai_models::ModelsResponse;
 use chaos_parrot::sanitize::AdditionalProperties;
 use chaos_parrot::sanitize::JsonSchema;
 use chaos_parrot::sanitize::ResponsesApiTool;
@@ -382,15 +381,24 @@ fn strip_descriptions_tool(spec: &mut ToolSpec) {
     }
 }
 
+/// Build a [`ModelInfo`] for the given slug with model-specific tool
+/// configuration that used to live in the bundled `models.json` catalog.
 fn model_info_from_models_json(slug: &str) -> ModelInfo {
+    use chaos_ipc::openai_models::ApplyPatchToolType;
+
     let config = test_config();
-    let response: ModelsResponse =
-        serde_json::from_str(include_str!("../../models.json")).expect("valid models.json");
-    let model = response
-        .models
-        .into_iter()
-        .find(|candidate| candidate.slug == slug)
-        .unwrap_or_else(|| panic!("model slug {slug} is missing from models.json"));
+    let mut model = crate::test_support::test_model_info(slug);
+
+    // Per-model tool configuration (mirrors the old catalog entries).
+    if slug.contains("codex") || slug.starts_with("gpt-5.1") {
+        model.shell_type = ConfigShellToolType::ShellCommand;
+        model.apply_patch_tool_type = Some(ApplyPatchToolType::Freeform);
+    } else {
+        // gpt-5, o3, and other models: default shell, no apply_patch.
+        model.shell_type = ConfigShellToolType::Default;
+        model.apply_patch_tool_type = None;
+    }
+
     with_config_overrides(model, &config)
 }
 

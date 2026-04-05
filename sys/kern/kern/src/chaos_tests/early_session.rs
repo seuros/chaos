@@ -77,32 +77,32 @@ async fn start_managed_network_proxy_ignores_invalid_execpolicy_network_rules() 
 async fn get_base_instructions_no_user_content() {
     let prompt_with_apply_patch_instructions =
         include_str!("../../prompt_with_apply_patch_instructions.md");
-    let models_response: ModelsResponse =
-        serde_json::from_str(include_str!("../../models.json")).expect("valid models.json");
+    let test_slugs = ["eliza", "ada", "legion", "ordis"];
+    let models_response = crate::test_support::test_models_response(&test_slugs);
     let model_info_for_slug = |slug: &str, config: &Config| {
         let model = models_response
             .models
             .iter()
             .find(|candidate| candidate.slug == slug)
             .cloned()
-            .unwrap_or_else(|| panic!("model slug {slug} is missing from models.json"));
+            .unwrap_or_else(|| panic!("model slug {slug} is missing from test models"));
         model_info::with_config_overrides(model, config)
     };
     let test_cases = vec![
         InstructionsTestCase {
-            slug: "gpt-5",
+            slug: "eliza",
             expects_apply_patch_instructions: false,
         },
         InstructionsTestCase {
-            slug: "gpt-5.1",
+            slug: "ada",
             expects_apply_patch_instructions: false,
         },
         InstructionsTestCase {
-            slug: "gpt-5.1-codex",
+            slug: "legion",
             expects_apply_patch_instructions: false,
         },
         InstructionsTestCase {
-            slug: "gpt-5.1-codex-max",
+            slug: "ordis",
             expects_apply_patch_instructions: false,
         },
     ];

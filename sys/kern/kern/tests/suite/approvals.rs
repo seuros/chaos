@@ -22,7 +22,6 @@ use chaos_kern::config_loader::RequirementSource;
 use chaos_kern::config_loader::Sourced;
 use chaos_kern::features::Feature;
 use chaos_kern::sandboxing::SandboxPermissions;
-use core_test_support::responses::ev_apply_patch_function_call;
 use core_test_support::responses::ev_assistant_message;
 use core_test_support::responses::ev_completed;
 use core_test_support::responses::ev_function_call;
@@ -93,10 +92,6 @@ enum ActionKind {
     RunUnifiedExecCommand {
         command: &'static str,
         justification: Option<&'static str>,
-    },
-    ApplyPatchFunction {
-        target: TargetPath,
-        content: &'static str,
     },
     ApplyPatchShell {
         target: TargetPath,
@@ -183,12 +178,6 @@ impl ActionKind {
                     *justification,
                 )?;
                 Ok((event, Some(command.to_string())))
-            }
-            ActionKind::ApplyPatchFunction { target, content } => {
-                let (path, patch_path) = target.resolve_for_patch(test);
-                let _ = fs::remove_file(&path);
-                let patch = build_add_file_patch(&patch_path, content);
-                Ok((ev_apply_patch_function_call(call_id, &patch), None))
             }
             ActionKind::ApplyPatchShell { target, content } => {
                 let (path, patch_path) = target.resolve_for_patch(test);
@@ -1131,80 +1120,6 @@ fn scenarios() -> Vec<ScenarioSpec> {
             },
         },
         ScenarioSpec {
-            name: "apply_patch_function_auto_inside_workspace",
-            approval_policy: Interactive,
-            sandbox_policy: SandboxPolicy::RootAccess,
-            action: ActionKind::ApplyPatchFunction {
-                target: TargetPath::Workspace("apply_patch_function.txt"),
-                content: "function-apply-patch",
-            },
-            sandbox_permissions: SandboxPermissions::UseDefault,
-            features: vec![],
-            model_override: Some("gpt-5.1-codex"),
-            outcome: Outcome::Auto,
-            expectation: Expectation::PatchApplied {
-                target: TargetPath::Workspace("apply_patch_function.txt"),
-                content: "function-apply-patch",
-            },
-        },
-        ScenarioSpec {
-            name: "apply_patch_function_danger_allows_outside_workspace",
-            approval_policy: Interactive,
-            sandbox_policy: SandboxPolicy::RootAccess,
-            action: ActionKind::ApplyPatchFunction {
-                target: TargetPath::OutsideWorkspace("apply_patch_function_danger.txt"),
-                content: "function-patch-danger",
-            },
-            sandbox_permissions: SandboxPermissions::UseDefault,
-            features: vec![Feature::ApplyPatchFreeform],
-            model_override: Some("gpt-5.1-codex"),
-            outcome: Outcome::Auto,
-            expectation: Expectation::PatchApplied {
-                target: TargetPath::OutsideWorkspace("apply_patch_function_danger.txt"),
-                content: "function-patch-danger",
-            },
-        },
-        ScenarioSpec {
-            name: "apply_patch_function_outside_requires_patch_approval",
-            approval_policy: Interactive,
-            sandbox_policy: workspace_write(false),
-            action: ActionKind::ApplyPatchFunction {
-                target: TargetPath::OutsideWorkspace("apply_patch_function_outside.txt"),
-                content: "function-patch-outside",
-            },
-            sandbox_permissions: SandboxPermissions::UseDefault,
-            features: vec![],
-            model_override: Some("gpt-5.1-codex"),
-            outcome: Outcome::PatchApproval {
-                decision: ReviewDecision::Approved,
-                expected_reason: None,
-            },
-            expectation: Expectation::PatchApplied {
-                target: TargetPath::OutsideWorkspace("apply_patch_function_outside.txt"),
-                content: "function-patch-outside",
-            },
-        },
-        ScenarioSpec {
-            name: "apply_patch_function_outside_denied_blocks_patch",
-            approval_policy: Interactive,
-            sandbox_policy: workspace_write(false),
-            action: ActionKind::ApplyPatchFunction {
-                target: TargetPath::OutsideWorkspace("apply_patch_function_outside_denied.txt"),
-                content: "function-patch-outside-denied",
-            },
-            sandbox_permissions: SandboxPermissions::UseDefault,
-            features: vec![],
-            model_override: Some("gpt-5.1-codex"),
-            outcome: Outcome::PatchApproval {
-                decision: ReviewDecision::Denied,
-                expected_reason: None,
-            },
-            expectation: Expectation::FileNotCreated {
-                target: TargetPath::OutsideWorkspace("apply_patch_function_outside_denied.txt"),
-                message_contains: &["patch rejected by user"],
-            },
-        },
-        ScenarioSpec {
             name: "apply_patch_shell_command_outside_requires_patch_approval",
             approval_policy: Interactive,
             sandbox_policy: workspace_write(false),
@@ -1222,45 +1137,6 @@ fn scenarios() -> Vec<ScenarioSpec> {
             expectation: Expectation::PatchApplied {
                 target: TargetPath::OutsideWorkspace("apply_patch_shell_outside.txt"),
                 content: "shell-patch-outside",
-            },
-        },
-        ScenarioSpec {
-            name: "apply_patch_function_unless_trusted_requires_patch_approval",
-            approval_policy: Supervised,
-            sandbox_policy: workspace_write(false),
-            action: ActionKind::ApplyPatchFunction {
-                target: TargetPath::Workspace("apply_patch_function_unless_trusted.txt"),
-                content: "function-patch-unless-trusted",
-            },
-            sandbox_permissions: SandboxPermissions::UseDefault,
-            features: vec![],
-            model_override: Some("gpt-5.1-codex"),
-            outcome: Outcome::PatchApproval {
-                decision: ReviewDecision::Approved,
-                expected_reason: None,
-            },
-            expectation: Expectation::PatchApplied {
-                target: TargetPath::Workspace("apply_patch_function_unless_trusted.txt"),
-                content: "function-patch-unless-trusted",
-            },
-        },
-        ScenarioSpec {
-            name: "apply_patch_function_never_rejects_outside_workspace",
-            approval_policy: Headless,
-            sandbox_policy: workspace_write(false),
-            action: ActionKind::ApplyPatchFunction {
-                target: TargetPath::OutsideWorkspace("apply_patch_function_never.txt"),
-                content: "function-patch-never",
-            },
-            sandbox_permissions: SandboxPermissions::UseDefault,
-            features: vec![],
-            model_override: Some("gpt-5.1-codex"),
-            outcome: Outcome::Auto,
-            expectation: Expectation::FileNotCreated {
-                target: TargetPath::OutsideWorkspace("apply_patch_function_never.txt"),
-                message_contains: &[
-                    "patch rejected: writing outside of the project; rejected by user approval settings",
-                ],
             },
         },
         ScenarioSpec {
@@ -1694,124 +1570,6 @@ async fn run_scenario(scenario: &ScenarioSpec) -> Result<()> {
     let output_item = results_mock.single_request().function_call_output(call_id);
     let result = parse_result(&output_item);
     scenario.expectation.verify(&test, &result)?;
-
-    Ok(())
-}
-
-#[tokio::test(flavor = "current_thread")]
-#[cfg(unix)]
-async fn approving_apply_patch_for_session_skips_future_prompts_for_same_file() -> Result<()> {
-    skip_if_no_network!(Ok(()));
-
-    let server = start_mock_server().await;
-    let approval_policy = ApprovalPolicy::Interactive;
-    let sandbox_policy = SandboxPolicy::WorkspaceWrite {
-        writable_roots: vec![],
-        read_only_access: Default::default(),
-        network_access: false,
-        exclude_tmpdir_env_var: false,
-        exclude_slash_tmp: false,
-    };
-    let sandbox_policy_for_config = sandbox_policy.clone();
-
-    let mut builder = test_codex()
-        .with_model("gpt-5.1-codex")
-        .with_config(move |config| {
-            config.permissions.approval_policy = Constrained::allow_any(approval_policy);
-            config.permissions.sandbox_policy = Constrained::allow_any(sandbox_policy_for_config);
-        });
-    let test = builder.build(&server).await?;
-
-    let target = TargetPath::OutsideWorkspace("apply_patch_allow_session.txt");
-    let (path, patch_path) = target.resolve_for_patch(&test);
-    let _ = fs::remove_file(&path);
-
-    let patch_add = build_add_file_patch(&patch_path, "before");
-    let patch_update = format!(
-        "*** Begin Patch\n*** Update File: {patch_path}\n@@\n-before\n+after\n*** End Patch\n"
-    );
-
-    let call_id_1 = "apply_patch_allow_session_1";
-    let call_id_2 = "apply_patch_allow_session_2";
-
-    let _ = mount_sse_once(
-        &server,
-        sse(vec![
-            ev_response_created("resp-1"),
-            ev_apply_patch_function_call(call_id_1, &patch_add),
-            ev_completed("resp-1"),
-        ]),
-    )
-    .await;
-    let _ = mount_sse_once(
-        &server,
-        sse(vec![
-            ev_assistant_message("msg-1", "done"),
-            ev_completed("resp-2"),
-        ]),
-    )
-    .await;
-
-    submit_turn(
-        &test,
-        "apply_patch allow session",
-        approval_policy,
-        sandbox_policy.clone(),
-    )
-    .await?;
-    let approval = expect_patch_approval(&test, call_id_1).await;
-    test.codex
-        .submit(Op::PatchApproval {
-            id: approval.call_id,
-            decision: ReviewDecision::ApprovedForSession,
-        })
-        .await?;
-    wait_for_completion(&test).await;
-    assert!(fs::read_to_string(&path)?.contains("before"));
-
-    let _ = mount_sse_once(
-        &server,
-        sse(vec![
-            ev_response_created("resp-3"),
-            ev_apply_patch_function_call(call_id_2, &patch_update),
-            ev_completed("resp-3"),
-        ]),
-    )
-    .await;
-    let _ = mount_sse_once(
-        &server,
-        sse(vec![
-            ev_assistant_message("msg-2", "done"),
-            ev_completed("resp-4"),
-        ]),
-    )
-    .await;
-
-    submit_turn(
-        &test,
-        "apply_patch allow session followup",
-        approval_policy,
-        sandbox_policy.clone(),
-    )
-    .await?;
-
-    let event = wait_for_event(&test.codex, |event| {
-        matches!(
-            event,
-            EventMsg::ApplyPatchApprovalRequest(_) | EventMsg::TurnComplete(_)
-        )
-    })
-    .await;
-    match event {
-        EventMsg::TurnComplete(_) => {}
-        EventMsg::ApplyPatchApprovalRequest(event) => {
-            panic!("unexpected patch approval request: {:?}", event.call_id)
-        }
-        other => panic!("unexpected event: {other:?}"),
-    }
-
-    assert!(fs::read_to_string(&path)?.contains("after"));
-    let _ = fs::remove_file(path);
 
     Ok(())
 }

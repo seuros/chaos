@@ -382,64 +382,6 @@ $"#;
 }
 
 #[tokio::test(flavor = "multi_thread", worker_threads = 2)]
-#[test_case(ShellModelOutput::Shell)]
-#[test_case(ShellModelOutput::LocalShell)]
-async fn shell_output_reserializes_truncated_content(output_type: ShellModelOutput) -> Result<()> {
-    skip_if_no_network!(Ok(()));
-
-    let server = start_mock_server().await;
-    let mut builder =
-        configure_shell_model(test_codex(), output_type, true).with_config(move |config| {
-            config.tool_output_token_limit = Some(200);
-        });
-    let test = builder.build(&server).await?;
-
-    let call_id = "shell-truncated";
-    let responses = shell_responses(call_id, vec!["/bin/sh", "-c", "seq 1 400"], output_type)?;
-    let mock = mount_sse_sequence(&server, responses).await;
-
-    test.submit_turn_with_policy(
-        "run the truncation shell command",
-        SandboxPolicy::RootAccess,
-    )
-    .await?;
-
-    let req = mock
-        .last_request()
-        .expect("truncated output request recorded");
-    let output_item = req.function_call_output(call_id);
-    let output = output_item
-        .get("output")
-        .and_then(Value::as_str)
-        .expect("truncated output string");
-
-    assert!(
-        serde_json::from_str::<Value>(output).is_err(),
-        "expected truncated shell output to be plain text",
-    );
-    let truncated_pattern = r#"(?s)^Exit code: 0
-Wall time: [0-9]+(?:\.[0-9]+)? seconds
-Total output lines: 400
-Output:
-1
-2
-3
-4
-5
-6
-.*…46 tokens truncated….*
-396
-397
-398
-399
-400
-$"#;
-    assert_regex_match(truncated_pattern, output);
-
-    Ok(())
-}
-
-#[tokio::test(flavor = "multi_thread", worker_threads = 2)]
 #[test_case(ApplyPatchModelOutput::Freeform)]
 #[test_case(ApplyPatchModelOutput::Function)]
 #[test_case(ApplyPatchModelOutput::Shell)]

@@ -157,7 +157,7 @@ impl fmt::Display for RefreshStrategy {
 /// How the manager's base catalog is sourced for the lifetime of the process.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 enum CatalogMode {
-    /// Start from bundled `models.json` and allow cache/network refresh updates.
+    /// Start from an empty catalog and populate via cache/network refresh.
     Default,
     /// Use a caller-provided catalog as authoritative and do not mutate it via refresh.
     Custom,
@@ -604,7 +604,6 @@ impl ModelsManager {
         };
         Some(cache)
     }
-
 
     fn cache_scope(&self) -> ModelsCacheScope {
         ModelsCacheScope {

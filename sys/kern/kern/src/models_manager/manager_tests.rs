@@ -701,22 +701,19 @@ fn build_available_models_picks_default_after_hiding_hidden_models() {
 }
 
 #[test]
-fn bundled_models_json_roundtrips() {
-    let file_contents = include_str!("../../models.json");
-    let response: ModelsResponse =
-        serde_json::from_str(file_contents).expect("bundled models.json should deserialize");
+fn test_models_response_roundtrips() {
+    let response = crate::test_support::test_models_response(&["glados", "shodan", "cortana"]);
 
-    let serialized =
-        serde_json::to_string(&response).expect("bundled models.json should serialize");
+    let serialized = serde_json::to_string(&response).expect("test models should serialize");
     let roundtripped: ModelsResponse =
-        serde_json::from_str(&serialized).expect("serialized models.json should deserialize");
+        serde_json::from_str(&serialized).expect("serialized models should deserialize");
 
     assert_eq!(
         response, roundtripped,
-        "bundled models.json should round trip through serde"
+        "test models should round trip through serde"
     );
     assert!(
         !response.models.is_empty(),
-        "bundled models.json should contain at least one model"
+        "test models should contain at least one model"
     );
 }

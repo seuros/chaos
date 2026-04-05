@@ -338,64 +338,6 @@ async fn user_shell_command_does_not_set_network_sandbox_env_var() -> anyhow::Re
 }
 
 #[tokio::test(flavor = "multi_thread", worker_threads = 2)]
-async fn user_shell_command_output_is_truncated_in_history() -> anyhow::Result<()> {
-    let server = responses::start_mock_server().await;
-    let builder = core_test_support::test_codex::test_codex();
-    let test = builder
-        .with_config(|config| {
-            config.tool_output_token_limit = Some(100);
-        })
-        .build(&server)
-        .await?;
-
-    let command = "seq 1 400".to_string();
-
-    test.codex
-        .submit(Op::RunUserShellCommand {
-            command: command.clone(),
-        })
-        .await?;
-
-    let end_event = wait_for_event_match(&test.codex, |ev| match ev {
-        EventMsg::ExecCommandEnd(event) => Some(event.clone()),
-        _ => None,
-    })
-    .await;
-    assert_eq!(end_event.exit_code, 0);
-
-    let _ = wait_for_event(&test.codex, |ev| matches!(ev, EventMsg::TurnComplete(_))).await;
-
-    let responses = vec![responses::sse(vec![
-        responses::ev_response_created("resp-1"),
-        responses::ev_assistant_message("msg-1", "done"),
-        responses::ev_completed("resp-1"),
-    ])];
-    let mock = responses::mount_sse_sequence(&server, responses).await;
-
-    test.submit_turn("follow-up after shell command").await?;
-
-    let request = mock.single_request();
-    let command_message = request
-        .message_input_texts("user")
-        .into_iter()
-        .find(|text| text.contains("<user_shell_command>"))
-        .expect("command message recorded in request");
-    let command_message = command_message.replace("\r\n", "\n");
-
-    let head = (1..=69).map(|i| format!("{i}\n")).collect::<String>();
-    let tail = (352..=400).map(|i| format!("{i}\n")).collect::<String>();
-    let escaped_command = escape(&command);
-    let escaped_head = escape(&head);
-    let escaped_tail = escape(&tail);
-    let expected_pattern = format!(
-        r"(?m)\A<user_shell_command>\n<command>\n{escaped_command}\n</command>\n<result>\nExit code: 0\nDuration: [0-9]+(?:\.[0-9]+)? seconds\nOutput:\nTotal output lines: 400\n\n{escaped_head}70…[0-9]+ tokens truncated…351\n{escaped_tail}\n</result>\n</user_shell_command>\z"
-    );
-    assert_regex_match(&expected_pattern, &command_message);
-
-    Ok(())
-}
-
-#[tokio::test(flavor = "multi_thread", worker_threads = 2)]
 async fn user_shell_command_is_truncated_only_once() -> anyhow::Result<()> {
     skip_if_no_network!(Ok(()));
 

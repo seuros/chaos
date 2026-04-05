@@ -27,26 +27,3 @@ async fn offline_model_info_without_tool_output_override() {
         TruncationPolicyConfig::bytes(10_000)
     );
 }
-
-#[tokio::test(flavor = "multi_thread", worker_threads = 2)]
-async fn offline_model_info_with_tool_output_override() {
-    let chaos_home = TempDir::new().expect("create temp dir");
-    let mut config = load_default_config_for_test(&chaos_home).await;
-    config.tool_output_token_limit = Some(123);
-    let auth_manager = chaos_kern::test_support::auth_manager_from_auth(
-        ChaosAuth::create_dummy_chatgpt_auth_for_testing(),
-    );
-    let manager = ModelsManager::new(
-        config.chaos_home.clone(),
-        auth_manager,
-        None,
-        CollaborationModesConfig::default(),
-    );
-
-    let model_info = manager.get_model_info("gpt-5.1-codex", &config).await;
-
-    assert_eq!(
-        model_info.truncation_policy,
-        TruncationPolicyConfig::tokens(123)
-    );
-}

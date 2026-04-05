@@ -45,6 +45,7 @@ pub mod sysinfo;
 pub mod instructions;
 pub mod landlock;
 pub mod mcp;
+mod mcp_manage_tools;
 mod mcp_tool_approval_templates;
 mod minions;
 pub mod models_manager;

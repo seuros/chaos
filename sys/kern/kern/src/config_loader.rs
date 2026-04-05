@@ -16,10 +16,13 @@ use chaos_realpath::AbsolutePathBuf;
 use chaos_realpath::AbsolutePathBufGuard;
 use chaos_sysctl::CONFIG_TOML_FILE;
 use chaos_sysctl::ConfigRequirementsWithSources;
+use chaos_sysctl::types::McpServerConfig;
 use serde::Deserialize;
+use serde::Serialize;
 use std::fs::canonicalize as normalize_path;
 use std::io;
 use std::path::Path;
+use std::path::PathBuf;
 use toml::Value as TomlValue;
 
 pub use chaos_sysctl::AppRequirementToml;
@@ -63,6 +66,7 @@ pub(crate) use chaos_sysctl::version_for_toml;
 pub const SYSTEM_CONFIG_TOML_FILE_UNIX: &str = "/etc/chaos/config.toml";
 
 const DEFAULT_PROJECT_ROOT_MARKERS: &[&str] = &[".git"];
+const PROJECT_MCP_JSON_FILE: &str = ".mcp.json";
 
 pub(crate) async fn first_layer_config_error(layers: &ConfigLayerStack) -> Option<ConfigError> {
     chaos_sysctl::first_layer_config_error::<ConfigToml>(layers, CONFIG_TOML_FILE).await
@@ -483,6 +487,86 @@ pub(crate) fn default_project_root_markers() -> Vec<String> {
         .collect()
 }
 
+pub(crate) fn project_root_markers_from_stack(config_layer_stack: &ConfigLayerStack) -> Vec<String> {
+    let mut merged = TomlValue::Table(toml::map::Map::new());
+    for layer in config_layer_stack.get_layers(
+        ConfigLayerStackOrdering::LowestPrecedenceFirst,
+        /*include_disabled*/ false,
+    ) {
+        if matches!(
+            layer.name,
+            ConfigLayerSource::Project { .. } | ConfigLayerSource::ProjectMcp { .. }
+        ) {
+            continue;
+        }
+        merge_toml_values(&mut merged, &layer.config);
+    }
+
+    match project_root_markers_from_config(&merged) {
+        Ok(Some(markers)) => markers,
+        Ok(None) => default_project_root_markers(),
+        Err(err) => {
+            tracing::warn!("invalid project_root_markers: {err}");
+            default_project_root_markers()
+        }
+    }
+}
+
+pub(crate) fn find_project_root_sync(cwd: &Path, project_root_markers: &[String]) -> PathBuf {
+    if project_root_markers.is_empty() {
+        return cwd.to_path_buf();
+    }
+
+    for ancestor in cwd.ancestors() {
+        for marker in project_root_markers {
+            if ancestor.join(marker).exists() {
+                return ancestor.to_path_buf();
+            }
+        }
+    }
+
+    cwd.to_path_buf()
+}
+
+pub(crate) fn project_mcp_json_path_for_stack(
+    config_layer_stack: &ConfigLayerStack,
+    cwd: &Path,
+) -> PathBuf {
+    let project_root_markers = project_root_markers_from_stack(config_layer_stack);
+    find_project_root_sync(cwd, &project_root_markers).join(PROJECT_MCP_JSON_FILE)
+}
+
+#[derive(Debug, Deserialize, Serialize, Default)]
+#[serde(default, rename_all = "camelCase")]
+struct ProjectMcpJson {
+    #[serde(rename = "mcpServers")]
+    mcp_servers: std::collections::HashMap<String, McpServerConfig>,
+}
+
+#[derive(Debug, Serialize)]
+struct ProjectMcpToml {
+    mcp_servers: std::collections::HashMap<String, McpServerConfig>,
+}
+
+pub(crate) fn parse_project_mcp_json(contents: &str) -> io::Result<TomlValue> {
+    let parsed: ProjectMcpJson = serde_json::from_str(contents).map_err(|err| {
+        io::Error::new(
+            io::ErrorKind::InvalidData,
+            format!("failed to parse {PROJECT_MCP_JSON_FILE}: {err}"),
+        )
+    })?;
+
+    TomlValue::try_from(ProjectMcpToml {
+        mcp_servers: parsed.mcp_servers,
+    })
+    .map_err(|err| {
+        io::Error::new(
+            io::ErrorKind::InvalidData,
+            format!("failed to convert {PROJECT_MCP_JSON_FILE} into config layer: {err}"),
+        )
+    })
+}
+
 struct ProjectTrustContext {
     project_root: AbsolutePathBuf,
     project_root_key: String,
@@ -573,6 +657,23 @@ fn project_layer_entry(
     };
 
     if config_toml_exists && let Some(reason) = trust_context.disabled_reason_for_dir(layer_dir) {
+        ConfigLayerEntry::new_disabled(source, config, reason)
+    } else {
+        ConfigLayerEntry::new(source, config)
+    }
+}
+
+fn project_mcp_layer_entry(
+    trust_context: &ProjectTrustContext,
+    file: &AbsolutePathBuf,
+    config: TomlValue,
+) -> ConfigLayerEntry {
+    let source = ConfigLayerSource::ProjectMcp { file: file.clone() };
+    let Some(project_root) = file.parent() else {
+        return ConfigLayerEntry::new(source, config);
+    };
+
+    if let Some(reason) = trust_context.disabled_reason_for_dir(&project_root) {
         ConfigLayerEntry::new_disabled(source, config, reason)
     } else {
         ConfigLayerEntry::new(source, config)
@@ -727,6 +828,32 @@ async fn load_project_layers(
     dirs.reverse();
 
     let mut layers = Vec::new();
+    let project_mcp_json = project_root.join(PROJECT_MCP_JSON_FILE)?;
+    match tokio::fs::read_to_string(project_mcp_json.as_path()).await {
+        Ok(contents) => match parse_project_mcp_json(&contents) {
+            Ok(config) => layers.push(project_mcp_layer_entry(
+                trust_context,
+                &project_mcp_json,
+                config,
+            )),
+            Err(err) => {
+                if trust_context.decision_for_dir(project_root).is_trusted() {
+                    return Err(err);
+                }
+            }
+        },
+        Err(err) if err.kind() == io::ErrorKind::NotFound => {}
+        Err(err) => {
+            return Err(io::Error::new(
+                err.kind(),
+                format!(
+                    "Failed to read project MCP file {}: {err}",
+                    project_mcp_json.as_path().display()
+                ),
+            ));
+        }
+    }
+
     for dir in dirs {
         let dot_chaos = dir.join(".chaos");
         if !tokio::fs::metadata(&dot_chaos)

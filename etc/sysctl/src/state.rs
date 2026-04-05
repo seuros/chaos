@@ -101,6 +101,7 @@ impl ConfigLayerEntry {
             ConfigLayerSource::System { file } => file.parent(),
             ConfigLayerSource::User { file } => file.parent(),
             ConfigLayerSource::Project { dot_codex_folder } => Some(dot_codex_folder.clone()),
+            ConfigLayerSource::ProjectMcp { file } => file.parent(),
             ConfigLayerSource::SessionFlags => None,
             ConfigLayerSource::LegacyManagedConfigTomlFromFile { .. } => None,
             ConfigLayerSource::LegacyManagedConfigTomlFromMdm => None,
@@ -206,6 +207,39 @@ impl ConfigLayerStack {
                     requirements_toml: self.requirements_toml.clone(),
                 }
             }
+        }
+    }
+
+    /// Replace the project-scoped `.mcp.json` layer, or remove it entirely when
+    /// `layer` is `None`.
+    pub fn with_project_mcp_layer(&self, layer: Option<ConfigLayerEntry>) -> Self {
+        let mut layers = self
+            .layers
+            .iter()
+            .filter(|entry| !matches!(entry.name, ConfigLayerSource::ProjectMcp { .. }))
+            .cloned()
+            .collect::<Vec<_>>();
+
+        if let Some(layer) = layer {
+            let insert_at = layers
+                .iter()
+                .position(|existing| existing.name.precedence() > layer.name.precedence())
+                .unwrap_or(layers.len());
+            layers.insert(insert_at, layer);
+        }
+
+        debug_assert!(
+            verify_layer_ordering(&layers).is_ok(),
+            "project MCP layer replacement must preserve layer ordering"
+        );
+        let user_layer_index = layers
+            .iter()
+            .position(|entry| matches!(entry.name, ConfigLayerSource::User { .. }));
+        Self {
+            layers,
+            user_layer_index,
+            requirements: self.requirements.clone(),
+            requirements_toml: self.requirements_toml.clone(),
         }
     }
 

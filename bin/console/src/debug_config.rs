@@ -182,6 +182,7 @@ fn render_non_file_layer_details(layer: &ConfigLayerEntry) -> Vec<Line<'static>>
         }
         ConfigLayerSource::System { .. }
         | ConfigLayerSource::User { .. }
+        | ConfigLayerSource::ProjectMcp { .. }
         | ConfigLayerSource::Project { .. }
         | ConfigLayerSource::LegacyManagedConfigTomlFromFile { .. } => Vec::new(),
     }
@@ -297,6 +298,9 @@ fn format_config_layer_source(source: &ConfigLayerSource) -> String {
                 "project ({}/config.toml)",
                 dot_codex_folder.as_path().display()
             )
+        }
+        ConfigLayerSource::ProjectMcp { file } => {
+            format!("project ({})", file.as_path().display())
         }
         ConfigLayerSource::SessionFlags => "session-flags".to_string(),
         ConfigLayerSource::LegacyManagedConfigTomlFromFile { file } => {

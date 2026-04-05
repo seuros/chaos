@@ -24,14 +24,21 @@ pub struct CatalogToolRequest {
     pub tool_name: String,
     pub arguments: Value,
     pub cwd: PathBuf,
+    pub project_root: PathBuf,
     pub sqlite_home: PathBuf,
     pub session_id: String,
+}
+
+#[derive(Debug, Clone)]
+pub enum CatalogToolEffect {
+    ReloadProjectMcp,
 }
 
 #[derive(Debug, Clone)]
 pub struct CatalogToolResult {
     pub output: String,
     pub success: Option<bool>,
+    pub effects: Vec<CatalogToolEffect>,
 }
 
 /// A static module registration. Modules submit these via `inventory::submit!`.

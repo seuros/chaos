@@ -1190,6 +1190,89 @@ enabled = false
 }
 
 #[tokio::test]
+async fn project_root_dot_mcp_json_loads_when_project_is_trusted() -> std::io::Result<()> {
+    let tmp = tempdir()?;
+    let project_root = tmp.path().join("project");
+    let nested = project_root.join("child");
+    let chaos_home = tmp.path().join("home");
+    tokio::fs::create_dir_all(&nested).await?;
+    tokio::fs::create_dir_all(&chaos_home).await?;
+    tokio::fs::write(project_root.join(".git"), "gitdir: here").await?;
+    tokio::fs::write(
+        project_root.join(".mcp.json"),
+        r#"
+{
+  "mcpServers": {
+    "docs": {
+      "command": "node",
+      "args": ["server.js"]
+    }
+  }
+}
+"#,
+    )
+    .await?;
+    make_config_for_test(&chaos_home, &project_root, TrustLevel::Trusted, None).await?;
+
+    let config = ConfigBuilder::default()
+        .chaos_home(chaos_home)
+        .fallback_cwd(Some(nested))
+        .build()
+        .await?;
+
+    let server = config
+        .mcp_servers
+        .get()
+        .get("docs")
+        .expect("trusted project .mcp.json should load");
+    assert!(matches!(
+        server.transport,
+        crate::config::types::McpServerTransportConfig::Stdio { .. }
+    ));
+
+    Ok(())
+}
+
+#[tokio::test]
+async fn project_root_dot_mcp_json_is_ignored_when_project_is_untrusted() -> std::io::Result<()> {
+    let tmp = tempdir()?;
+    let project_root = tmp.path().join("project");
+    let nested = project_root.join("child");
+    let chaos_home = tmp.path().join("home");
+    tokio::fs::create_dir_all(&nested).await?;
+    tokio::fs::create_dir_all(&chaos_home).await?;
+    tokio::fs::write(project_root.join(".git"), "gitdir: here").await?;
+    tokio::fs::write(
+        project_root.join(".mcp.json"),
+        r#"
+{
+  "mcpServers": {
+    "docs": {
+      "command": "node",
+      "args": ["server.js"]
+    }
+  }
+}
+"#,
+    )
+    .await?;
+    make_config_for_test(&chaos_home, &project_root, TrustLevel::Untrusted, None).await?;
+
+    let config = ConfigBuilder::default()
+        .chaos_home(chaos_home)
+        .fallback_cwd(Some(nested))
+        .build()
+        .await?;
+
+    assert!(
+        !config.mcp_servers.get().contains_key("docs"),
+        "untrusted project .mcp.json should not affect effective MCP servers"
+    );
+
+    Ok(())
+}
+
+#[tokio::test]
 async fn cli_override_for_disabled_project_local_mcp_server_returns_invalid_transport()
 -> std::io::Result<()> {
     let tmp = tempdir()?;

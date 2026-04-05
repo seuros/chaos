@@ -21,9 +21,6 @@ use std::path::PathBuf;
 
 use super::*;
 
-/// Test-local stand-in after the global constant was removed.
-const CODEX_APPS_MCP_SERVER_NAME: &str = "test-apps-server";
-
 fn mcp_tool(
     name: &str,
     description: &str,

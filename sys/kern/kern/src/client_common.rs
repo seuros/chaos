@@ -168,6 +168,7 @@ pub(crate) mod tools {
     pub(crate) enum ToolSpec {
         #[serde(rename = "function")]
         Function(ResponsesApiTool),
+        #[allow(dead_code)]
         #[serde(rename = "tool_search")]
         ToolSearch {
             execution: String,
@@ -286,6 +287,7 @@ pub(crate) mod tools {
         #[allow(dead_code)]
         #[serde(rename = "function")]
         Function(ResponsesApiTool),
+        #[allow(dead_code)]
         #[serde(rename = "namespace")]
         Namespace(ResponsesApiNamespace),
     }
@@ -300,6 +302,7 @@ pub(crate) mod tools {
     #[derive(Debug, Clone, Serialize, PartialEq)]
     #[serde(tag = "type")]
     pub(crate) enum ResponsesApiNamespaceTool {
+        #[allow(dead_code)]
         #[serde(rename = "function")]
         Function(ResponsesApiTool),
     }

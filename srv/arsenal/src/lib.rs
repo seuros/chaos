@@ -23,6 +23,7 @@ impl CatalogToolDriver for ArsenalToolDriver {
             Ok(CatalogToolResult {
                 output: result,
                 success: Some(true),
+                effects: Vec::new(),
             })
         })
     }

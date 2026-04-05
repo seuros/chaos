@@ -8,7 +8,6 @@ use crate::tools::context::SharedTurnDiffTracker;
 use crate::tools::context::ToolInvocation;
 use crate::tools::context::ToolPayload;
 use crate::tools::context::ToolSearchOutput;
-use crate::tools::discoverable::DiscoverableTool;
 use crate::tools::registry::AnyToolResult;
 use crate::tools::registry::ConfiguredToolSpec;
 use crate::tools::registry::ToolRegistry;
@@ -44,7 +43,6 @@ pub struct ToolRouter {
 pub(crate) struct ToolRouterParams<'a> {
     pub(crate) mcp_tools: Option<HashMap<String, McpToolInfo>>,
     pub(crate) app_tools: Option<HashMap<String, ToolInfo>>,
-    pub(crate) discoverable_tools: Option<Vec<DiscoverableTool>>,
     pub(crate) dynamic_tools: &'a [DynamicToolSpec],
     /// Tools from the catalog (arsenal, cron, hallucinate, etc.) with their source module name.
     pub(crate) catalog_tools: Vec<(String, chaos_traits::catalog::CatalogTool)>,
@@ -59,7 +57,6 @@ impl ToolRouter {
         let ToolRouterParams {
             mcp_tools,
             app_tools,
-            discoverable_tools,
             dynamic_tools,
             catalog_tools,
             hallucinate,
@@ -69,7 +66,6 @@ impl ToolRouter {
             config,
             mcp_tools,
             app_tools,
-            discoverable_tools,
             dynamic_tools,
             catalog_tools,
             hallucinate,

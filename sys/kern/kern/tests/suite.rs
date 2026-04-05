@@ -126,8 +126,6 @@ mod request_permissions_tool;
 mod request_user_input;
 #[path = "suite/safety_check_downgrade.rs"]
 mod safety_check_downgrade;
-#[path = "suite/search_tool.rs"]
-mod search_tool;
 #[path = "suite/seatbelt.rs"]
 mod seatbelt;
 #[path = "suite/shell_command.rs"]

@@ -11,12 +11,7 @@ use crate::models_manager::collaboration_mode_presets::CollaborationModesConfig;
 use crate::original_image_detail::can_request_original_image_detail;
 use crate::shell::Shell;
 use crate::shell::ShellType;
-use crate::tools::discoverable::DiscoverableTool;
-use crate::tools::discoverable::DiscoverableToolAction;
 use crate::tools::handlers::PLAN_TOOL;
-use crate::tools::handlers::TOOL_SEARCH_DEFAULT_LIMIT;
-use crate::tools::handlers::TOOL_SEARCH_TOOL_NAME;
-use crate::tools::handlers::TOOL_SUGGEST_TOOL_NAME;
 use crate::tools::handlers::agent_jobs::BatchJobHandler;
 use crate::tools::handlers::apply_patch::create_apply_patch_freeform_tool;
 use crate::tools::handlers::apply_patch::create_apply_patch_json_tool;
@@ -48,10 +43,6 @@ use std::collections::BTreeMap;
 use std::collections::HashMap;
 use std::path::PathBuf;
 
-const TOOL_SEARCH_DESCRIPTION_TEMPLATE: &str =
-    include_str!("../../templates/search_tool/tool_description.md");
-const TOOL_SUGGEST_DESCRIPTION_TEMPLATE: &str =
-    include_str!("../../templates/search_tool/tool_suggest_description.md");
 const WEB_SEARCH_CONTENT_TYPES: [&str; 2] = ["text", "image"];
 
 fn unified_exec_output_schema() -> JsonValue {
@@ -253,8 +244,6 @@ pub(crate) struct ToolsConfig {
     pub web_search_tool_type: WebSearchToolType,
     pub image_gen_tool: bool,
     pub agent_roles: BTreeMap<String, AgentRoleConfig>,
-    pub search_tool: bool,
-    pub tool_suggest: bool,
     pub exec_permission_approvals_enabled: bool,
     pub request_permissions_tool_enabled: bool,
     pub can_request_original_image_detail: bool,
@@ -307,8 +296,6 @@ impl ToolsConfig {
         let include_request_user_input = !matches!(session_source, SessionSource::SubAgent(_));
         let include_default_mode_request_user_input =
             include_request_user_input && features.enabled(Feature::DefaultModeRequestUserInput);
-        let include_search_tool = model_info.supports_search_tool;
-        let include_tool_suggest = include_search_tool && features.enabled(Feature::ToolSuggest);
         let include_original_image_detail = can_request_original_image_detail(features, model_info);
         let include_artifact_tools = false;
         let include_image_gen_tool =
@@ -367,8 +354,6 @@ impl ToolsConfig {
             web_search_tool_type: model_info.web_search_tool_type,
             image_gen_tool: include_image_gen_tool,
             agent_roles: BTreeMap::new(),
-            search_tool: include_search_tool,
-            tool_suggest: include_tool_suggest,
             exec_permission_approvals_enabled,
             request_permissions_tool_enabled,
             can_request_original_image_detail: include_original_image_detail,
@@ -1451,177 +1436,6 @@ fn create_test_sync_tool() -> ToolSpec {
     })
 }
 
-fn create_tool_search_tool(app_tools: &HashMap<String, ToolInfo>) -> ToolSpec {
-    let properties = BTreeMap::from([
-        (
-            "query".to_string(),
-            JsonSchema::String {
-                description: Some("Search query for apps tools.".to_string()),
-            },
-        ),
-        (
-            "limit".to_string(),
-            JsonSchema::Number {
-                description: Some(format!(
-                    "Maximum number of tools to return (defaults to {TOOL_SEARCH_DEFAULT_LIMIT})."
-                )),
-            },
-        ),
-    ]);
-    let mut app_descriptions = BTreeMap::new();
-    for tool in app_tools.values() {
-        let Some(connector_name) = tool
-            .connector_name
-            .as_deref()
-            .map(str::trim)
-            .filter(|connector_name| !connector_name.is_empty())
-        else {
-            continue;
-        };
-
-        let connector_description = tool
-            .connector_description
-            .as_deref()
-            .map(str::trim)
-            .filter(|connector_description| !connector_description.is_empty())
-            .map(str::to_string);
-
-        app_descriptions
-            .entry(connector_name.to_string())
-            .and_modify(|existing: &mut Option<String>| {
-                if existing.is_none() {
-                    *existing = connector_description.clone();
-                }
-            })
-            .or_insert(connector_description);
-    }
-
-    let app_descriptions = if app_descriptions.is_empty() {
-        "None currently enabled.".to_string()
-    } else {
-        app_descriptions
-            .into_iter()
-            .map(
-                |(connector_name, connector_description)| match connector_description {
-                    Some(connector_description) => {
-                        format!("- {connector_name}: {connector_description}")
-                    }
-                    None => format!("- {connector_name}"),
-                },
-            )
-            .collect::<Vec<_>>()
-            .join("\n")
-    };
-
-    let description =
-        TOOL_SEARCH_DESCRIPTION_TEMPLATE.replace("{{app_descriptions}}", app_descriptions.as_str());
-
-    ToolSpec::ToolSearch {
-        execution: "client".to_string(),
-        description,
-        parameters: JsonSchema::Object {
-            properties,
-            required: Some(vec!["query".to_string()]),
-            additional_properties: Some(false.into()),
-        },
-    }
-}
-
-fn create_tool_suggest_tool(discoverable_tools: &[DiscoverableTool]) -> ToolSpec {
-    let discoverable_tool_ids = discoverable_tools
-        .iter()
-        .map(DiscoverableTool::id)
-        .collect::<Vec<_>>()
-        .join(", ");
-    let properties = BTreeMap::from([
-        (
-            "tool_type".to_string(),
-            JsonSchema::String {
-                description: Some(
-                    "Type of discoverable tool to suggest. Use \"connector\"."
-                        .to_string(),
-                ),
-            },
-        ),
-        (
-            "action_type".to_string(),
-            JsonSchema::String {
-                description: Some(
-                    "Suggested action for the tool. Use \"install\" or \"enable\".".to_string(),
-                ),
-            },
-        ),
-        (
-            "tool_id".to_string(),
-            JsonSchema::String {
-                description: Some(format!(
-                    "Connector id to suggest. Must be one of: {discoverable_tool_ids}."
-                )),
-            },
-        ),
-        (
-            "suggest_reason".to_string(),
-            JsonSchema::String {
-                description: Some(
-                    "Concise one-line user-facing reason why this tool can help with the current request."
-                        .to_string(),
-                ),
-            },
-        ),
-    ]);
-    let description = TOOL_SUGGEST_DESCRIPTION_TEMPLATE.replace(
-        "{{discoverable_tools}}",
-        format_discoverable_tools(discoverable_tools).as_str(),
-    );
-
-    ToolSpec::Function(ResponsesApiTool {
-        name: TOOL_SUGGEST_TOOL_NAME.to_string(),
-        description,
-        strict: false,
-        defer_loading: None,
-        parameters: JsonSchema::Object {
-            properties,
-            required: Some(vec![
-                "tool_type".to_string(),
-                "action_type".to_string(),
-                "tool_id".to_string(),
-                "suggest_reason".to_string(),
-            ]),
-            additional_properties: Some(false.into()),
-        },
-        output_schema: None,
-    })
-}
-
-fn format_discoverable_tools(discoverable_tools: &[DiscoverableTool]) -> String {
-    let mut discoverable_tools = discoverable_tools.to_vec();
-    discoverable_tools.sort_by(|left, right| {
-        left.name()
-            .cmp(right.name())
-            .then_with(|| left.id().cmp(right.id()))
-    });
-
-    discoverable_tools
-        .into_iter()
-        .map(|tool| {
-            let description = tool
-                .description()
-                .filter(|description| !description.trim().is_empty())
-                .map(ToString::to_string)
-                .unwrap_or_else(|| "No description provided.".to_string());
-            let default_action = DiscoverableToolAction::Install;
-            format!(
-                "- {} (id: `{}`, type: {}, action: {}): {}",
-                tool.name(),
-                tool.id(),
-                tool.tool_type().as_str(),
-                default_action.as_str(),
-                description
-            )
-        })
-        .collect::<Vec<_>>()
-        .join("\n")
-}
 
 #[allow(dead_code)]
 fn create_artifacts_tool() -> ToolSpec {
@@ -1921,7 +1735,6 @@ pub(crate) fn build_specs(
         config,
         mcp_tools,
         app_tools,
-        None,
         dynamic_tools,
         catalog_tools,
         None,
@@ -1934,7 +1747,6 @@ pub(crate) fn build_specs_with_discoverable_tools(
     config: &ToolsConfig,
     mcp_tools: Option<HashMap<String, chaos_mcp_runtime::manager::McpToolInfo>>,
     app_tools: Option<HashMap<String, ToolInfo>>,
-    discoverable_tools: Option<Vec<DiscoverableTool>>,
     dynamic_tools: &[DynamicToolSpec],
     catalog_tools: Vec<(String, chaos_traits::catalog::CatalogTool)>,
     hallucinate: Option<chaos_hallucinate::HallucinateHandle>,
@@ -1957,8 +1769,6 @@ pub(crate) fn build_specs_with_discoverable_tools(
     use crate::tools::handlers::ShellCommandHandler;
     use crate::tools::handlers::ShellHandler;
     use crate::tools::handlers::TestSyncHandler;
-    use crate::tools::handlers::ToolSearchHandler;
-    use crate::tools::handlers::ToolSuggestHandler;
     use crate::tools::handlers::UnifiedExecHandler;
     use crate::tools::handlers::ViewImageHandler;
     use chaos_traits::catalog::CatalogRegistration;
@@ -1979,7 +1789,6 @@ pub(crate) fn build_specs_with_discoverable_tools(
     let request_user_input_handler = Arc::new(RequestUserInputHandler {
         default_mode_request_user_input: config.default_mode_request_user_input,
     });
-    let tool_suggest_handler = Arc::new(ToolSuggestHandler);
     let exec_permission_approvals_enabled = config.exec_permission_approvals_enabled;
 
     match &config.shell_type {
@@ -2085,36 +1894,6 @@ pub(crate) fn build_specs_with_discoverable_tools(
         builder.register_handler("request_permissions", request_permissions_handler);
     }
 
-    if config.search_tool
-        && let Some(app_tools) = app_tools
-    {
-        let search_tool_handler = Arc::new(ToolSearchHandler::new(app_tools.clone()));
-        push_tool_spec(
-            &mut builder,
-            create_tool_search_tool(&app_tools),
-            /*supports_parallel_tool_calls*/ true,
-        );
-        builder.register_handler(TOOL_SEARCH_TOOL_NAME, search_tool_handler);
-
-        for tool in app_tools.values() {
-            let alias_name =
-                tool_handler_key(tool.tool_name.as_str(), Some(tool.tool_namespace.as_str()));
-
-            builder.register_handler(alias_name, mcp_handler.clone());
-        }
-    }
-
-    if config.tool_suggest
-        && let Some(discoverable_tools) = discoverable_tools
-            .as_ref()
-            .filter(|tools| !tools.is_empty())
-    {
-        builder.push_spec_with_parallel_support(
-            create_tool_suggest_tool(discoverable_tools),
-            /*supports_parallel_tool_calls*/ true,
-        );
-        builder.register_handler(TOOL_SUGGEST_TOOL_NAME, tool_suggest_handler);
-    }
 
     if let Some(apply_patch_tool_type) = &config.apply_patch_tool_type {
         match apply_patch_tool_type {

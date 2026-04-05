@@ -1,5 +1,4 @@
 pub mod context;
-pub(crate) mod discoverable;
 pub mod events;
 pub(crate) mod handlers;
 pub(crate) mod network_approval;

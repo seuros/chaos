@@ -1,5 +1,6 @@
 ---
-source: bin/xserver/src/history_cell.rs
+source: bin/console/src/history_cell.rs
+assertion_line: 2541
 expression: rendered
 ---
 /mcp
@@ -11,7 +12,8 @@ expression: rendered
     • Auth: Unsupported
     • Command: docs-server
     • Env: TOKEN=*****, APP_TOKEN=*****
-    • Tools: list
+    • Tools:
+      - list
     • Resources: (none)
     • Resource templates: (none)
 
@@ -21,6 +23,7 @@ expression: rendered
     • URL: https://example.com/mcp
     • HTTP headers: Authorization=*****
     • Env HTTP headers: X-API-Key=API_KEY_ENV
-    • Tools: ping
+    • Tools:
+      - ping
     • Resources: (none)
     • Resource templates: (none)

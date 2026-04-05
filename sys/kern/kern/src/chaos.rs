@@ -4585,22 +4585,25 @@ mod handlers {
                         crate::catalog::CatalogSource::Module(name) => name.clone(),
                         crate::catalog::CatalogSource::Mcp(name) => format!("mcp:{name}"),
                     };
-                    let description = match tool.annotations.as_ref().and_then(|v| {
-                        serde_json::from_value::<chaos_mcp_runtime::ToolAnnotations>(v.clone()).ok()
-                    }) {
-                        Some(ann) => {
-                            let suffix = crate::tools::spec::annotation_suffix(&ann);
-                            if suffix.is_empty() {
-                                tool.description.clone()
-                            } else {
-                                format!("{}{suffix}", tool.description)
-                            }
-                        }
-                        None => tool.description.clone(),
-                    };
+                    let annotation_labels = tool
+                        .annotations
+                        .as_ref()
+                        .and_then(|v| {
+                            serde_json::from_value::<chaos_mcp_runtime::ToolAnnotations>(v.clone())
+                                .ok()
+                        })
+                        .map(|ann| crate::tools::spec::annotation_labels(&ann))
+                        .or_else(|| {
+                            tool.read_only_hint.map(|read_only| {
+                                vec![if read_only { "read-only" } else { "writes" }.to_string()]
+                            })
+                        })
+                        .unwrap_or_default();
                     ToolSummary {
                         name: tool.name.clone(),
-                        description,
+                        description: tool.description.clone(),
+                        annotation_labels,
+                        annotations: tool.annotations.clone(),
                         source: source_str,
                     }
                 })
@@ -4613,6 +4616,8 @@ mod handlers {
                 tools.push(ToolSummary {
                     name: tool.name,
                     description: tool.description,
+                    annotation_labels: Vec::new(),
+                    annotations: None,
                     source: "hallucinate".to_string(),
                 });
             }

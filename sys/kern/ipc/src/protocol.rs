@@ -1520,6 +1520,13 @@ pub struct ToolSummary {
     pub name: String,
     /// Human-readable description.
     pub description: String,
+    /// Precomputed annotation labels for UI badges.
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub annotation_labels: Vec<String>,
+    /// Optional structured tool annotations for UI rendering.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    #[ts(optional)]
+    pub annotations: Option<serde_json::Value>,
     /// Origin: "builtin", "arsenal", "cron", or "mcp:<server>".
     pub source: String,
 }

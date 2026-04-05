@@ -28,6 +28,8 @@ use crate::style::proposed_plan_style;
 use crate::style::user_message_style;
 use crate::text_formatting::format_and_truncate_tool_result;
 use crate::text_formatting::truncate_text;
+use crate::tool_badges::tool_name_style;
+use crate::tool_badges::tool_name_style_from_annotations;
 use crate::ui_consts::LIVE_PREFIX_COLS;
 use crate::wrapping::RtOptions;
 use crate::wrapping::adaptive_wrap_line;
@@ -1452,12 +1454,16 @@ pub(crate) fn new_mcp_tools_output(
 
     for (server, cfg) in servers {
         let prefix = format!("mcp__{server}__");
-        let mut names: Vec<String> = tools
+        let mut tool_entries: Vec<(String, chaos_ipc::mcp::Tool)> = tools
             .keys()
             .filter(|k| k.starts_with(&prefix))
-            .map(|k| k[prefix.len()..].to_string())
+            .filter_map(|k| {
+                tools.get(k)
+                    .cloned()
+                    .map(|tool| (k[prefix.len()..].to_string(), tool))
+            })
             .collect();
-        names.sort();
+        tool_entries.sort_by(|(a, _), (b, _)| a.cmp(b));
 
         let auth_status = auth_statuses
             .get(server.as_str())
@@ -1537,10 +1543,24 @@ pub(crate) fn new_mcp_tools_output(
             }
         }
 
-        if names.is_empty() {
+        if tool_entries.is_empty() {
             lines.push("    • Tools: (none)".into());
         } else {
-            lines.push(vec!["    • Tools: ".into(), names.join(", ").into()].into());
+            lines.push("    • Tools:".into());
+            for (tool_name, tool) in tool_entries {
+                let name_style = if tool.annotations.is_some() {
+                    tool_name_style_from_annotations(tool.annotations.as_ref())
+                } else {
+                    tool_name_style()
+                };
+                let mut spans: Vec<Span<'static>> =
+                    vec!["      - ".into(), Span::styled(tool_name, name_style)];
+                if let Some(description) = tool.description.filter(|d| !d.is_empty()) {
+                    spans.push(" ".into());
+                    spans.push(format!("— {description}").dim());
+                }
+                lines.push(spans.into());
+            }
         }
 
         let server_resources: Vec<Resource> =

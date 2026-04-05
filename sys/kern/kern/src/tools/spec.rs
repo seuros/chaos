@@ -1804,29 +1804,40 @@ fn push_tool_spec(
 /// - `destructive_hint: Some(true)` -> `"destructive"`
 /// - `idempotent_hint: Some(true)` -> `"idempotent"`
 /// - `open_world_hint: Some(true)` -> `"open-world"`
+/// - `open_world_hint: Some(false)` -> `"closed-world"`
 pub(crate) fn annotation_suffix(annotations: &chaos_mcp_runtime::ToolAnnotations) -> String {
-    let mut hints: Vec<&str> = Vec::new();
-
-    match annotations.read_only_hint {
-        Some(true) => hints.push("read-only"),
-        Some(false) => hints.push("writes"),
-        None => {}
-    }
-    if annotations.destructive_hint == Some(true) {
-        hints.push("destructive");
-    }
-    if annotations.idempotent_hint == Some(true) {
-        hints.push("idempotent");
-    }
-    if annotations.open_world_hint == Some(true) {
-        hints.push("open-world");
-    }
+    let hints = annotation_labels(annotations);
 
     if hints.is_empty() {
         String::new()
     } else {
         format!(" [{}]", hints.join(", "))
     }
+}
+
+pub(crate) fn annotation_labels(
+    annotations: &chaos_mcp_runtime::ToolAnnotations,
+) -> Vec<String> {
+    let mut hints: Vec<String> = Vec::new();
+
+    match annotations.read_only_hint {
+        Some(true) => hints.push("read-only".to_string()),
+        Some(false) => hints.push("writes".to_string()),
+        None => {}
+    }
+    if annotations.destructive_hint == Some(true) {
+        hints.push("destructive".to_string());
+    }
+    if annotations.idempotent_hint == Some(true) {
+        hints.push("idempotent".to_string());
+    }
+    match annotations.open_world_hint {
+        Some(true) => hints.push("open-world".to_string()),
+        Some(false) => hints.push("closed-world".to_string()),
+        None => {}
+    }
+
+    hints
 }
 
 pub(crate) fn mcp_tool_to_openai_tool(

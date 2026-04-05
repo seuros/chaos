@@ -1,5 +1,7 @@
 //! Tool list pane — shows all tools visible to the model.
 
+use crate::tool_badges::tool_name_style;
+use crate::tool_badges::tool_name_style_from_labels;
 use crate::theme;
 use chaos_ipc::protocol::ToolSummary;
 use crossterm::event::KeyEvent;
@@ -149,13 +151,16 @@ impl ToolListPane {
                 current_source = Some(tool.source.clone());
             }
 
-            let name_span = Span::styled(format!("    {}", tool.name), Style::default().bold());
-            let desc_span = if tool.description.is_empty() {
-                Span::raw("")
+            let name_style = if tool.annotation_labels.is_empty() {
+                tool_name_style()
             } else {
-                Span::styled(format!(" — {}", tool.description), theme::dim())
+                tool_name_style_from_labels(&tool.annotation_labels)
             };
-            lines.push(Line::from(vec![name_span, desc_span]));
+            let mut spans = vec![Span::styled(format!("    {}", tool.name), name_style)];
+            if !tool.description.is_empty() {
+                spans.push(Span::styled(format!(" — {}", tool.description), theme::dim()));
+            }
+            lines.push(Line::from(spans));
         }
 
         let paragraph = Paragraph::new(lines)

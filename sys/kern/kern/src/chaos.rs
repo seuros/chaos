@@ -4585,9 +4585,22 @@ mod handlers {
                         crate::catalog::CatalogSource::Module(name) => name.clone(),
                         crate::catalog::CatalogSource::Mcp(name) => format!("mcp:{name}"),
                     };
+                    let description = match tool.annotations.as_ref().and_then(|v| {
+                        serde_json::from_value::<chaos_mcp_runtime::ToolAnnotations>(v.clone()).ok()
+                    }) {
+                        Some(ann) => {
+                            let suffix = crate::tools::spec::annotation_suffix(&ann);
+                            if suffix.is_empty() {
+                                tool.description.clone()
+                            } else {
+                                format!("{}{suffix}", tool.description)
+                            }
+                        }
+                        None => tool.description.clone(),
+                    };
                     ToolSummary {
                         name: tool.name.clone(),
-                        description: tool.description.clone(),
+                        description,
                         source: source_str,
                     }
                 })

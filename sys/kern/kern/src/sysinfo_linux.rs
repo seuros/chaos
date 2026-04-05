@@ -5,7 +5,8 @@
 
 use super::{
     SandboxKind, SystemInfo, detect_disk, detect_display_server, detect_has_network,
-    detect_hostname, detect_locale, detect_os_version, detect_shell, detect_timezone,
+    detect_hostname, detect_locale, detect_multiplexer, detect_os_version, detect_shell,
+    detect_timezone,
 };
 use std::fs;
 use std::path::Path;
@@ -44,6 +45,7 @@ pub(super) fn detect() -> SystemInfo {
         locale: detect_locale(),
         timezone: detect_timezone(),
         has_network: detect_has_network(),
+        multiplexer: detect_multiplexer(),
     }
 }
 

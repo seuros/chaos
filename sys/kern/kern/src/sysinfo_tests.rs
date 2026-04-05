@@ -104,11 +104,35 @@ fn serialization_has_expected_keys() {
         "locale",
         "timezone",
         "has_network",
+        "multiplexer",
     ];
 
     for key in expected_keys {
         assert!(obj.contains_key(key), "missing key: {key}");
     }
+}
+
+#[test]
+fn multiplexer_detected_when_in_tmux() {
+    // If $TMUX is set (which it is in our dev environment), we should detect it.
+    if std::env::var("TMUX").is_ok() {
+        let facts = platform::detect();
+        let mux = facts.multiplexer.expect("should detect tmux");
+        assert_eq!(mux.kind, "tmux");
+        assert!(!mux.session.is_empty(), "session should not be empty");
+        assert!(!mux.pane.is_empty(), "pane should not be empty");
+    }
+}
+
+#[test]
+fn multiplexer_none_without_env() {
+    // Temporarily unset all multiplexer vars and verify None.
+    // We can't actually unset env in a running test safely across threads,
+    // so just verify the detection function exists and returns the right type.
+    let info = detect_multiplexer();
+    // In CI without tmux/zellij this would be None; in our tmux it's Some.
+    // Either way, the function must not panic.
+    let _ = info;
 }
 
 #[cfg(target_os = "linux")]

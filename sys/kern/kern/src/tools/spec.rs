@@ -1804,7 +1804,7 @@ fn push_tool_spec(
 /// - `destructive_hint: Some(true)` -> `"destructive"`
 /// - `idempotent_hint: Some(true)` -> `"idempotent"`
 /// - `open_world_hint: Some(true)` -> `"open-world"`
-fn annotation_suffix(annotations: &chaos_mcp_runtime::ToolAnnotations) -> String {
+pub(crate) fn annotation_suffix(annotations: &chaos_mcp_runtime::ToolAnnotations) -> String {
     let mut hints: Vec<&str> = Vec::new();
 
     match annotations.read_only_hint {
@@ -2139,9 +2139,22 @@ pub(crate) fn build_specs_with_discoverable_tools(
         for (source, tool) in catalog_tools {
             let input_schema = parse_tool_input_schema(&tool.input_schema)
                 .unwrap_or_else(|e| panic!("catalog tool {} has invalid schema: {e}", tool.name));
+            let description = match tool.annotations.as_ref().and_then(|v| {
+                serde_json::from_value::<chaos_mcp_runtime::ToolAnnotations>(v.clone()).ok()
+            }) {
+                Some(ann) => {
+                    let suffix = annotation_suffix(&ann);
+                    if suffix.is_empty() {
+                        tool.description
+                    } else {
+                        format!("{}{suffix}", tool.description)
+                    }
+                }
+                None => tool.description,
+            };
             let spec = ToolSpec::Function(ResponsesApiTool {
                 name: tool.name.clone(),
-                description: tool.description,
+                description,
                 strict: false,
                 defer_loading: None,
                 parameters: input_schema,

@@ -39,6 +39,30 @@ pub fn insert_history_lines<B>(
 where
     B: Backend<Error = io::Error> + Write,
 {
+    insert_history_lines_inner(terminal, lines, 0)
+}
+
+/// Like [`insert_history_lines`] but reserves `top_reserved_rows` at the top
+/// of the screen (e.g. for a sticky top bar) that will not be scrolled.
+pub fn insert_history_lines_with_reserved<B>(
+    terminal: &mut crate::custom_terminal::Terminal<B>,
+    lines: Vec<Line>,
+    top_reserved_rows: u16,
+) -> io::Result<()>
+where
+    B: Backend<Error = io::Error> + Write,
+{
+    insert_history_lines_inner(terminal, lines, top_reserved_rows)
+}
+
+fn insert_history_lines_inner<B>(
+    terminal: &mut crate::custom_terminal::Terminal<B>,
+    lines: Vec<Line>,
+    top_reserved_rows: u16,
+) -> io::Result<()>
+where
+    B: Backend<Error = io::Error> + Write,
+{
     let screen_size = terminal.backend().size().unwrap_or(Size::new(0, 0));
 
     let mut area = terminal.viewport_area;
@@ -109,6 +133,7 @@ where
     // at the end of the scroll region, and add lines starting there.
     //
     // ┌─Screen───────────────────────┐
+    // │ [Top bar – reserved]        │  ← top_reserved_rows (pinned)
     // │┌╌Scroll region╌╌╌╌╌╌╌╌╌╌╌╌╌╌┐│
     // │┆                            ┆│
     // │┆                            ┆│
@@ -118,7 +143,9 @@ where
     // ││                            ││
     // │╰────────────────────────────╯│
     // └──────────────────────────────┘
-    queue!(writer, SetScrollRegion(1..area.top()))?;
+    // Start scroll region below any reserved top rows (1-based).
+    let scroll_region_start = top_reserved_rows + 1; // 1-based
+    queue!(writer, SetScrollRegion(scroll_region_start..area.top()))?;
 
     // NB: we are using MoveTo instead of set_cursor_position here to avoid messing with the
     // terminal's last_known_cursor_position, which hopefully will still be accurate after we
@@ -267,7 +294,7 @@ impl ModifierDiff {
     }
 }
 
-fn write_spans<'a, I>(mut writer: &mut impl Write, content: I) -> io::Result<()>
+pub(crate) fn write_spans<'a, I>(mut writer: &mut impl Write, content: I) -> io::Result<()>
 where
     I: IntoIterator<Item = &'a Span<'a>>,
 {

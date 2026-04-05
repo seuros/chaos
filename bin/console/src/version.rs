@@ -8,4 +8,3 @@
 pub use chaos_ipc::product::CHAOS_VERSION;
 pub use chaos_ipc::product::PRODUCT_NAME;
 pub use chaos_ipc::product::version_badge;
-pub use chaos_ipc::product::version_badge_for;

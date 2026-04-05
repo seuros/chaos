@@ -1,10 +1,6 @@
 ---
-source: bin/xserver/src/app.rs
+source: bin/console/src/app.rs
+assertion_line: 5155
 expression: rendered
 ---
-╭─────────────────────────────────────────────╮
-│ >_ Chaos (v<VERSION>)                       │
-│                                             │
-│ model:     gpt-test high   /model to change │
-│ directory: /tmp/project                     │
-╰─────────────────────────────────────────────╯
+

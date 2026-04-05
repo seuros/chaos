@@ -203,6 +203,9 @@ pub struct Tui {
     notification_backend: Option<DesktopNotificationBackend>,
     // When false, enter_alt_screen() becomes a no-op (for Zellij scrollback support)
     alt_screen_enabled: bool,
+    /// Number of rows reserved at the top of the screen for a sticky top bar.
+    /// These rows are never scrolled and the viewport starts below them.
+    top_reserved_rows: u16,
 }
 
 impl Tui {
@@ -231,6 +234,7 @@ impl Tui {
             enhanced_keys_supported,
             notification_backend: Some(detect_backend(NotificationMethod::default())),
             alt_screen_enabled: true,
+            top_reserved_rows: 1,
         }
     }
 
@@ -427,14 +431,26 @@ impl Tui {
 
             let size = terminal.size()?;
 
+            // How many rows are pinned at the top of the screen (sticky top bar).
+            let reserved = if self.alt_screen_active.load(Ordering::Relaxed) {
+                0
+            } else {
+                self.top_reserved_rows
+            };
+
+            let max_viewport_height = size.height.saturating_sub(reserved);
             let mut area = terminal.viewport_area;
-            area.height = height.min(size.height);
+            area.height = height.min(max_viewport_height);
             area.width = size.width;
+            // Ensure the viewport never overlaps the reserved top rows.
+            area.y = area.y.max(reserved);
             // If the viewport has expanded, scroll everything else up to make room.
             if area.bottom() > size.height {
+                let scroll_by = area.bottom() - size.height;
+                // Only scroll the region below the reserved rows.
                 terminal
                     .backend_mut()
-                    .scroll_region_up(0..area.top(), area.bottom() - size.height)?;
+                    .scroll_region_up(reserved..area.top(), scroll_by)?;
                 area.y = size.height - area.height;
             }
             if area != terminal.viewport_area {
@@ -443,10 +459,16 @@ impl Tui {
                 terminal.set_viewport_area(area);
             }
 
+            // Render the sticky top bar at row 0 (outside the viewport).
+            if reserved > 0 {
+                crate::tui::render_top_bar_to_terminal(terminal, size.width)?;
+            }
+
             if !self.pending_history_lines.is_empty() {
-                crate::insert_history::insert_history_lines(
+                crate::insert_history::insert_history_lines_with_reserved(
                     terminal,
                     self.pending_history_lines.clone(),
+                    reserved,
                 )?;
                 self.pending_history_lines.clear();
             }
@@ -467,7 +489,21 @@ impl Tui {
             terminal.draw(|frame| {
                 draw_fn(frame);
             })
-        })?
+        })??;
+
+        // Schedule a redraw at the next minute boundary to keep the top bar clock fresh.
+        if self.top_reserved_rows > 0 && !self.alt_screen_active.load(Ordering::Relaxed) {
+            let secs_until_next_min = {
+                let mut tv: libc::timeval = unsafe { std::mem::zeroed() };
+                unsafe { libc::gettimeofday(&mut tv, std::ptr::null_mut()) };
+                let current_sec = tv.tv_sec % 60;
+                (60 - current_sec).max(1) as u64
+            };
+            self.frame_requester
+                .schedule_frame_in(Duration::from_secs(secs_until_next_min));
+        }
+
+        Ok(())
     }
 
     fn pending_viewport_area(&mut self) -> Result<Option<Rect>> {
@@ -486,9 +522,35 @@ impl Tui {
                     x: 0,
                     y: cursor_pos.y as i32 - last_known_cursor_pos.y as i32,
                 };
-                return Ok(Some(terminal.viewport_area.offset(offset)));
+                let mut new_area = terminal.viewport_area.offset(offset);
+                // Keep the viewport below the reserved top bar rows.
+                let reserved = self.top_reserved_rows;
+                if new_area.y < reserved {
+                    new_area.y = reserved;
+                }
+                return Ok(Some(new_area));
             }
         }
         Ok(None)
     }
+}
+
+/// Render the sticky top bar directly to the terminal at row 0, outside the viewport.
+fn render_top_bar_to_terminal<B>(
+    terminal: &mut crate::custom_terminal::Terminal<B>,
+    width: u16,
+) -> std::io::Result<()>
+where
+    B: ratatui::backend::Backend<Error = std::io::Error> + std::io::Write,
+{
+    use crossterm::cursor::MoveTo;
+    use crossterm::queue;
+    use crossterm::terminal::{Clear, ClearType};
+
+    let line = crate::top_bar::top_bar_line(width);
+    let writer = terminal.backend_mut();
+    queue!(writer, MoveTo(0, 0))?;
+    queue!(writer, Clear(ClearType::UntilNewLine))?;
+    crate::insert_history::write_spans(writer, line.spans.iter())?;
+    Ok(())
 }

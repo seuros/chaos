@@ -1971,11 +1971,6 @@
           "default": true,
           "description": "Enable desktop notifications from the TUI when the terminal is unfocused.\nDefaults to `true`."
         },
-        "show_tooltips": {
-          "default": true,
-          "description": "Show startup tooltips in the TUI welcome screen.\nDefaults to `true`.",
-          "type": "boolean"
-        },
         "status_line": {
           "default": null,
           "description": "Ordered list of status line item identifiers.\n\nWhen set, the TUI renders the selected items as the status line.\nWhen unset, the TUI defaults to: `model-with-reasoning`, `context-remaining`, and\n`current-dir`.",

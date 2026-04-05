@@ -62,7 +62,7 @@ pub enum SandboxMode {
     #[serde(rename = "workspace-write")]
     WorkspaceWrite,
 
-    #[serde(rename = "root-access", alias = "danger-full-access")]
+    #[serde(rename = "root-access")]
     /// Support legacy hardware like i386 and OpenAI Codex.
     RootAccess,
 }
@@ -316,12 +316,6 @@ pub enum AltScreenMode {
 pub enum ModeKind {
     Plan,
     #[default]
-    #[serde(
-        alias = "code",
-        alias = "pair_programming",
-        alias = "execute",
-        alias = "custom"
-    )]
     Default,
     #[doc(hidden)]
     #[serde(skip_serializing, skip_deserializing)]
@@ -431,7 +425,6 @@ impl CollaborationMode {
 pub struct Settings {
     pub model: String,
     pub reasoning_effort: Option<ReasoningEffort>,
-    #[serde(alias = "developer_instructions")]
     pub minion_instructions: Option<String>,
 }
 
@@ -443,7 +436,6 @@ pub struct CollaborationModeMask {
     pub mode: Option<ModeKind>,
     pub model: Option<String>,
     pub reasoning_effort: Option<Option<ReasoningEffort>>,
-    #[serde(alias = "developer_instructions")]
     pub minion_instructions: Option<Option<String>>,
 }
 
@@ -482,11 +474,15 @@ mod tests {
     }
 
     #[test]
-    fn mode_kind_deserializes_alias_values_to_default() {
+    fn mode_kind_rejects_legacy_alias_values() {
         for alias in ["code", "pair_programming", "execute", "custom"] {
             let json = format!("\"{alias}\"");
-            let mode: ModeKind = serde_json::from_str(&json).expect("deserialize mode");
-            assert_eq!(ModeKind::Default, mode);
+            let err =
+                serde_json::from_str::<ModeKind>(&json).expect_err("legacy alias should fail");
+            assert!(
+                err.to_string().contains("unknown variant"),
+                "unexpected error for {alias}: {err}"
+            );
         }
     }
 

@@ -58,7 +58,6 @@ pub fn test_model_info(slug: &str) -> ModelInfo {
         supported_in_api: true,
         priority: 0,
         availability_nux: None,
-        upgrade: None,
         base_instructions: format!("You are a test coding assistant ({slug})."),
         model_messages: None,
         supports_reasoning_summaries: false,

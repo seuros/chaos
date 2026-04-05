@@ -231,12 +231,6 @@ pub(crate) enum AppEvent {
     /// Persist the Plan-mode-specific reasoning effort.
     PersistPlanModeReasoningEffort(Option<ReasoningEffort>),
 
-    /// Persist the acknowledgement flag for the model migration prompt.
-    PersistModelMigrationPromptAcknowledged {
-        from_model: String,
-        to_model: String,
-    },
-
     /// Re-open the approval presets popup.
     OpenApprovalsPopup,
 

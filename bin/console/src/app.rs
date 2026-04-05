@@ -17,9 +17,6 @@ use crate::external_editor;
 use crate::file_search::FileSearchManager;
 use crate::history_cell;
 use crate::history_cell::HistoryCell;
-use crate::model_migration::ModelMigrationOutcome;
-use crate::model_migration::migration_copy_for_models;
-use crate::model_migration::run_model_migration_prompt;
 use crate::multi_agents::agent_picker_status_dot_spans;
 use crate::multi_agents::format_agent_picker_item_name;
 use crate::multi_agents::next_agent_shortcut_matches;
@@ -42,8 +39,6 @@ use chaos_ipc::ProcessId;
 use chaos_ipc::api::ConfigLayerSource;
 use chaos_ipc::config_types::Personality;
 use chaos_ipc::items::TurnItem;
-use chaos_ipc::openai_models::ModelPreset;
-use chaos_ipc::openai_models::ModelUpgrade;
 use chaos_ipc::openai_models::ReasoningEffort as ReasoningEffortConfig;
 use chaos_ipc::protocol::ApprovalPolicy;
 use chaos_ipc::protocol::Event;
@@ -66,8 +61,6 @@ use chaos_kern::config::edit::ConfigEditsBuilder;
 use chaos_kern::config_loader::ConfigLayerStackOrdering;
 use chaos_kern::features::Feature;
 use chaos_kern::models_manager::manager::RefreshStrategy;
-use chaos_kern::models_manager::model_presets::HIDE_GPT_5_1_CODEX_MAX_MIGRATION_PROMPT_CONFIG;
-use chaos_kern::models_manager::model_presets::HIDE_GPT5_1_MIGRATION_PROMPT_CONFIG;
 use chaos_proc::LogQuery;
 use chaos_proc::StateRuntime;
 use chaos_realpath::AbsolutePathBuf;
@@ -84,7 +77,6 @@ use ratatui::text::Line;
 use ratatui::widgets::Paragraph;
 use ratatui::widgets::Wrap;
 use ratatui_hypertile::PaneId;
-use std::collections::BTreeMap;
 use std::collections::HashMap;
 use std::collections::HashSet;
 use std::collections::VecDeque;
@@ -368,172 +360,6 @@ impl ProcessEventChannel {
             ))),
         }
     }
-}
-
-fn should_show_model_migration_prompt(
-    current_model: &str,
-    target_model: &str,
-    seen_migrations: &BTreeMap<String, String>,
-    available_models: &[ModelPreset],
-) -> bool {
-    if target_model == current_model {
-        return false;
-    }
-
-    if let Some(seen_target) = seen_migrations.get(current_model)
-        && seen_target == target_model
-    {
-        return false;
-    }
-
-    if !available_models
-        .iter()
-        .any(|preset| preset.model == target_model && preset.show_in_picker)
-    {
-        return false;
-    }
-
-    if available_models
-        .iter()
-        .any(|preset| preset.model == current_model && preset.upgrade.is_some())
-    {
-        return true;
-    }
-
-    if available_models
-        .iter()
-        .any(|preset| preset.upgrade.as_ref().map(|u| u.id.as_str()) == Some(target_model))
-    {
-        return true;
-    }
-
-    false
-}
-
-fn migration_prompt_hidden(config: &Config, migration_config_key: &str) -> bool {
-    match migration_config_key {
-        HIDE_GPT_5_1_CODEX_MAX_MIGRATION_PROMPT_CONFIG => config
-            .notices
-            .hide_gpt_5_1_codex_max_migration_prompt
-            .unwrap_or(false),
-        HIDE_GPT5_1_MIGRATION_PROMPT_CONFIG => {
-            config.notices.hide_gpt5_1_migration_prompt.unwrap_or(false)
-        }
-        _ => false,
-    }
-}
-
-fn target_preset_for_upgrade<'a>(
-    available_models: &'a [ModelPreset],
-    target_model: &str,
-) -> Option<&'a ModelPreset> {
-    available_models
-        .iter()
-        .find(|preset| preset.model == target_model && preset.show_in_picker)
-}
-
-async fn handle_model_migration_prompt_if_needed(
-    tui: &mut tui::Tui,
-    config: &mut Config,
-    model: &str,
-    app_event_tx: &AppEventSender,
-    available_models: &[ModelPreset],
-) -> Option<AppExitInfo> {
-    let upgrade = available_models
-        .iter()
-        .find(|preset| preset.model == model)
-        .and_then(|preset| preset.upgrade.as_ref());
-
-    if let Some(ModelUpgrade {
-        id: target_model,
-        reasoning_effort_mapping,
-        migration_config_key,
-        model_link,
-        upgrade_copy,
-        migration_markdown,
-    }) = upgrade
-    {
-        if migration_prompt_hidden(config, migration_config_key.as_str()) {
-            return None;
-        }
-
-        let target_model = target_model.to_string();
-        if !should_show_model_migration_prompt(
-            model,
-            &target_model,
-            &config.notices.model_migrations,
-            available_models,
-        ) {
-            return None;
-        }
-
-        let current_preset = available_models.iter().find(|preset| preset.model == model);
-        let target_preset = target_preset_for_upgrade(available_models, &target_model);
-        let target_preset = target_preset?;
-        let target_display_name = target_preset.display_name.clone();
-        let heading_label = if target_display_name == model {
-            target_model.clone()
-        } else {
-            target_display_name.clone()
-        };
-        let target_description =
-            (!target_preset.description.is_empty()).then(|| target_preset.description.clone());
-        let can_opt_out = current_preset.is_some();
-        let prompt_copy = migration_copy_for_models(
-            model,
-            &target_model,
-            model_link.clone(),
-            upgrade_copy.clone(),
-            migration_markdown.clone(),
-            heading_label,
-            target_description,
-            can_opt_out,
-        );
-        match run_model_migration_prompt(tui, prompt_copy).await {
-            ModelMigrationOutcome::Accepted => {
-                app_event_tx.send(AppEvent::PersistModelMigrationPromptAcknowledged {
-                    from_model: model.to_string(),
-                    to_model: target_model.clone(),
-                });
-
-                let mapped_effort = if let Some(reasoning_effort_mapping) = reasoning_effort_mapping
-                    && let Some(reasoning_effort) = config.model_reasoning_effort
-                {
-                    reasoning_effort_mapping
-                        .get(&reasoning_effort)
-                        .cloned()
-                        .or(config.model_reasoning_effort)
-                } else {
-                    config.model_reasoning_effort
-                };
-
-                config.model = Some(target_model.clone());
-                config.model_reasoning_effort = mapped_effort;
-                app_event_tx.send(AppEvent::UpdateModel(target_model.clone()));
-                app_event_tx.send(AppEvent::UpdateReasoningEffort(mapped_effort));
-                app_event_tx.send(AppEvent::PersistModelSelection {
-                    model: target_model.clone(),
-                    effort: mapped_effort,
-                });
-            }
-            ModelMigrationOutcome::Rejected => {
-                app_event_tx.send(AppEvent::PersistModelMigrationPromptAcknowledged {
-                    from_model: model.to_string(),
-                    to_model: target_model.clone(),
-                });
-            }
-            ModelMigrationOutcome::Exit => {
-                return Some(AppExitInfo {
-                    token_usage: TokenUsage::default(),
-                    process_id: None,
-                    process_name: None,
-                    exit_reason: ExitReason::UserRequested,
-                });
-            }
-        }
-    }
-
-    None
 }
 
 pub(crate) struct App {
@@ -1617,7 +1443,7 @@ impl App {
         auth_manager: Arc<AuthManager>,
         process_table: Arc<ProcessTable>,
         log_state_db: Option<Arc<StateRuntime>>,
-        mut config: Config,
+        config: Config,
         cli_kv_overrides: Vec<(String, TomlValue)>,
         harness_overrides: ConfigOverrides,
         active_profile: Option<String>,
@@ -1636,28 +1462,10 @@ impl App {
             normalize_harness_overrides_for_cwd(harness_overrides, &config.cwd)?;
         let auth_manager = auth_manager.clone();
         let process_table = process_table.clone();
-        let mut model = process_table
+        let model = process_table
             .get_models_manager()
             .get_default_model(&config.model, RefreshStrategy::Offline)
             .await;
-        let available_models = process_table
-            .get_models_manager()
-            .list_models(RefreshStrategy::Offline)
-            .await;
-        let exit_info = handle_model_migration_prompt_if_needed(
-            tui,
-            &mut config,
-            model.as_str(),
-            &app_event_tx,
-            &available_models,
-        )
-        .await;
-        if let Some(exit_info) = exit_info {
-            return Ok(exit_info);
-        }
-        if let Some(updated_model) = config.model.clone() {
-            model = updated_model;
-        }
         let auth = auth_manager.auth().await;
         let auth_ref = auth.as_ref();
         let auth_mode = auth_ref
@@ -2630,24 +2438,6 @@ impl App {
                             "Failed to save Plan mode reasoning effort: {err}"
                         ));
                     }
-                }
-            }
-            AppEvent::PersistModelMigrationPromptAcknowledged {
-                from_model,
-                to_model,
-            } => {
-                if let Err(err) = ConfigEditsBuilder::new(&self.config.chaos_home)
-                    .record_model_migration_seen(from_model.as_str(), to_model.as_str())
-                    .apply()
-                    .await
-                {
-                    tracing::error!(
-                        error = %err,
-                        "failed to persist model migration prompt acknowledgement"
-                    );
-                    self.chat_widget.add_error_message(format!(
-                        "Failed to save model migration prompt preference: {err}"
-                    ));
                 }
             }
             AppEvent::OpenApprovalsPopup => {
@@ -5309,28 +5099,6 @@ mod tests {
             .and_then(TomlValue::as_table)
             .and_then(|app| app.get("enabled"))
             .and_then(TomlValue::as_bool)
-    }
-
-    fn all_model_presets() -> Vec<ModelPreset> {
-        chaos_kern::test_support::all_model_presets().clone()
-    }
-
-    #[tokio::test]
-    async fn model_migration_prompt_respects_hide_flag_and_self_target() {
-        let mut seen = BTreeMap::new();
-        seen.insert("gpt-5".to_string(), "gpt-5.1".to_string());
-        assert!(!should_show_model_migration_prompt(
-            "gpt-5",
-            "gpt-5.1",
-            &seen,
-            &all_model_presets()
-        ));
-        assert!(!should_show_model_migration_prompt(
-            "gpt-5.1",
-            "gpt-5.1",
-            &seen,
-            &all_model_presets()
-        ));
     }
 
     #[tokio::test]

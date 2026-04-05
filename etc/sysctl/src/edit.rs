@@ -40,10 +40,6 @@ pub enum ConfigEdit {
     SetNoticeHideRateLimitModelNudge(bool),
     /// Toggle the Windows onboarding acknowledgement flag.
     SetWindowsWslSetupAcknowledged(bool),
-    /// Toggle the model migration prompt acknowledgement flag.
-    SetNoticeHideModelMigrationPrompt(String, bool),
-    /// Record that a migration prompt was shown for an old->new model mapping.
-    RecordModelMigrationSeen { from: String, to: String },
     /// Replace the entire `[mcp_servers]` table.
     ReplaceMcpServers(BTreeMap<String, McpServerConfig>),
     /// Set or clear a skill config entry under `[[skills.config]]`.
@@ -353,18 +349,6 @@ impl ConfigDocument {
                 Scope::Global,
                 &[Notice::TABLE_KEY, "hide_rate_limit_model_nudge"],
                 value(*acknowledged),
-            )),
-            ConfigEdit::SetNoticeHideModelMigrationPrompt(migration_config, acknowledged) => {
-                Ok(self.write_value(
-                    Scope::Global,
-                    &[Notice::TABLE_KEY, migration_config.as_str()],
-                    value(*acknowledged),
-                ))
-            }
-            ConfigEdit::RecordModelMigrationSeen { from, to } => Ok(self.write_value(
-                Scope::Global,
-                &[Notice::TABLE_KEY, "model_migrations", from.as_str()],
-                value(to.clone()),
             )),
             ConfigEdit::SetWindowsWslSetupAcknowledged(acknowledged) => Ok(self.write_value(
                 Scope::Global,
@@ -856,23 +840,6 @@ impl ConfigEditsBuilder {
     pub fn set_hide_rate_limit_model_nudge(mut self, acknowledged: bool) -> Self {
         self.edits
             .push(ConfigEdit::SetNoticeHideRateLimitModelNudge(acknowledged));
-        self
-    }
-
-    pub fn set_hide_model_migration_prompt(mut self, model: &str, acknowledged: bool) -> Self {
-        self.edits
-            .push(ConfigEdit::SetNoticeHideModelMigrationPrompt(
-                model.to_string(),
-                acknowledged,
-            ));
-        self
-    }
-
-    pub fn record_model_migration_seen(mut self, from: &str, to: &str) -> Self {
-        self.edits.push(ConfigEdit::RecordModelMigrationSeen {
-            from: from.to_string(),
-            to: to.to_string(),
-        });
         self
     }
 

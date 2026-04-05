@@ -3,12 +3,9 @@
 //! These types are serialized across core, TUI, app-server, and SDK boundaries, so field defaults
 //! are used to preserve compatibility when older payloads omit newly introduced attributes.
 
-use std::collections::HashMap;
-
 use schemars::JsonSchema;
 use serde::Deserialize;
 use serde::Serialize;
-use strum::IntoEnumIterator;
 use strum_macros::Display;
 use strum_macros::EnumIter;
 use tracing::warn;
@@ -89,16 +86,6 @@ pub struct ReasoningEffortPreset {
     pub description: String,
 }
 
-#[derive(Debug, Clone, Deserialize, Serialize, TS, JsonSchema, PartialEq)]
-pub struct ModelUpgrade {
-    pub id: String,
-    pub reasoning_effort_mapping: Option<HashMap<ReasoningEffort, ReasoningEffort>>,
-    pub migration_config_key: String,
-    pub model_link: Option<String>,
-    pub upgrade_copy: Option<String>,
-    pub migration_markdown: Option<String>,
-}
-
 #[derive(Debug, Clone, Deserialize, Serialize, TS, JsonSchema, PartialEq, Eq)]
 pub struct ModelAvailabilityNux {
     pub message: String,
@@ -124,8 +111,6 @@ pub struct ModelPreset {
     pub supports_personality: bool,
     /// Whether this is the default model for new users.
     pub is_default: bool,
-    /// recommended upgrade model
-    pub upgrade: Option<ModelUpgrade>,
     /// Whether this preset should appear in the picker UI.
     pub show_in_picker: bool,
     /// Availability NUX shown when this preset becomes accessible to the user.
@@ -243,7 +228,6 @@ pub struct ModelInfo {
     pub supported_in_api: bool,
     pub priority: i32,
     pub availability_nux: Option<ModelAvailabilityNux>,
-    pub upgrade: Option<ModelInfoUpgrade>,
     pub base_instructions: String,
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub model_messages: Option<ModelMessages>,
@@ -386,21 +370,6 @@ impl ModelInstructionsVariables {
     }
 }
 
-#[derive(Debug, Serialize, Deserialize, Clone, PartialEq, Eq, TS, JsonSchema)]
-pub struct ModelInfoUpgrade {
-    pub model: String,
-    pub migration_markdown: String,
-}
-
-impl From<&ModelUpgrade> for ModelInfoUpgrade {
-    fn from(upgrade: &ModelUpgrade) -> Self {
-        ModelInfoUpgrade {
-            model: upgrade.id.clone(),
-            migration_markdown: upgrade.migration_markdown.clone().unwrap_or_default(),
-        }
-    }
-}
-
 /// Response wrapper for `/models`.
 #[derive(Debug, Serialize, Deserialize, Clone, PartialEq, Eq, TS, JsonSchema, Default)]
 pub struct ModelsResponse {
@@ -422,17 +391,6 @@ impl From<ModelInfo> for ModelPreset {
             supported_reasoning_efforts: info.supported_reasoning_levels.clone(),
             supports_personality,
             is_default: false, // default is the highest priority available model
-            upgrade: info.upgrade.as_ref().map(|upgrade| ModelUpgrade {
-                id: upgrade.model.clone(),
-                reasoning_effort_mapping: reasoning_effort_mapping_from_presets(
-                    &info.supported_reasoning_levels,
-                ),
-                migration_config_key: info.slug.clone(),
-                // todo(aibrahim): add the model link here.
-                model_link: None,
-                upgrade_copy: None,
-                migration_markdown: Some(upgrade.migration_markdown.clone()),
-            }),
             show_in_picker: info.visibility == ModelVisibility::List,
             availability_nux: info.availability_nux,
             supported_in_api: info.supported_in_api,
@@ -467,43 +425,6 @@ impl ModelPreset {
     }
 }
 
-fn reasoning_effort_mapping_from_presets(
-    presets: &[ReasoningEffortPreset],
-) -> Option<HashMap<ReasoningEffort, ReasoningEffort>> {
-    if presets.is_empty() {
-        return None;
-    }
-
-    // Map every canonical effort to the closest supported effort for the new model.
-    let supported: Vec<ReasoningEffort> = presets.iter().map(|p| p.effort).collect();
-    let mut map = HashMap::new();
-    for effort in ReasoningEffort::iter() {
-        let nearest = nearest_effort(effort, &supported);
-        map.insert(effort, nearest);
-    }
-    Some(map)
-}
-
-fn effort_rank(effort: ReasoningEffort) -> i32 {
-    match effort {
-        ReasoningEffort::None => 0,
-        ReasoningEffort::Minimal => 1,
-        ReasoningEffort::Low => 2,
-        ReasoningEffort::Medium => 3,
-        ReasoningEffort::High => 4,
-        ReasoningEffort::XHigh => 5,
-    }
-}
-
-fn nearest_effort(target: ReasoningEffort, supported: &[ReasoningEffort]) -> ReasoningEffort {
-    let target_rank = effort_rank(target);
-    supported
-        .iter()
-        .copied()
-        .min_by_key(|candidate| (effort_rank(*candidate) - target_rank).abs())
-        .unwrap_or(target)
-}
-
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -521,7 +442,6 @@ mod tests {
             supported_in_api: true,
             priority: 1,
             availability_nux: None,
-            upgrade: None,
             base_instructions: "base".to_string(),
             model_messages: spec,
             supports_reasoning_summaries: false,
@@ -709,7 +629,6 @@ mod tests {
             "visibility": "list",
             "supported_in_api": true,
             "priority": 1,
-            "upgrade": null,
             "base_instructions": "base",
             "model_messages": null,
             "supports_reasoning_summaries": false,

@@ -631,7 +631,6 @@ async fn remote_model_friendly_personality_instructions_with_feature() -> anyhow
         visibility: ModelVisibility::List,
         supported_in_api: true,
         priority: 1,
-        upgrade: None,
         base_instructions: "base instructions".to_string(),
         model_messages: Some(ModelMessages {
             instructions_template: Some("Base instructions\n{{ personality }}\n".to_string()),
@@ -751,7 +750,6 @@ async fn user_turn_personality_remote_model_template_includes_update_message() -
         visibility: ModelVisibility::List,
         supported_in_api: true,
         priority: 1,
-        upgrade: None,
         base_instructions: "base instructions".to_string(),
         model_messages: Some(ModelMessages {
             instructions_template: Some("Base instructions\n{{ personality }}\n".to_string()),

@@ -5547,7 +5547,6 @@ impl ChatWidget {
                             supported_reasoning_efforts: efforts,
                             supports_personality: false,
                             is_default,
-                            upgrade: None,
                             show_in_picker: true,
                             availability_nux: None,
                             supported_in_api: true,

@@ -428,7 +428,6 @@ async fn stdio_image_responses_are_sanitized_for_text_only_model() -> anyhow::Re
                 visibility: ModelVisibility::List,
                 supported_in_api: true,
                 priority: 1,
-                upgrade: None,
                 base_instructions: "base instructions".to_string(),
                 model_messages: None,
                 supports_reasoning_summaries: false,

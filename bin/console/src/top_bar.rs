@@ -70,6 +70,20 @@ fn build_status_line(info: &SystemInfo, width: u16) -> Line<'static> {
         ));
     }
 
+    // Multiplexer
+    if let Some(ref mux) = info.multiplexer {
+        spans.push(sep.clone());
+        let label = if mux.window.is_empty() {
+            format!("{} {}:{}", mux.kind, mux.session, mux.pane)
+        } else {
+            format!("{} {}:{}.{}", mux.kind, mux.session, mux.window, mux.pane)
+        };
+        spans.push(Span::styled(
+            label,
+            Style::default().fg(Color::Cyan).bg(Color::DarkGray),
+        ));
+    }
+
     // Right side: battery + time
     let mut right_spans: Vec<Span<'static>> = Vec::new();
 

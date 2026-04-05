@@ -13,7 +13,6 @@ use crate::config::types::NotificationMethod;
 use crate::config::types::Notifications;
 use crate::config_loader::RequirementSource;
 use crate::features::Feature;
-use assert_matches::assert_matches;
 use chaos_sysctl::CONFIG_TOML_FILE;
 use chaos_ipc::permissions::FileSystemAccessMode;
 use chaos_ipc::permissions::FileSystemPath;
@@ -21,17 +20,27 @@ use chaos_ipc::permissions::FileSystemSandboxEntry;
 use chaos_ipc::permissions::FileSystemSandboxPolicy;
 use chaos_ipc::permissions::FileSystemSpecialPath;
 use chaos_ipc::permissions::NetworkSandboxPolicy;
-use serde::Deserialize;
 use tempfile::tempdir;
 
 use super::*;
 use core_test_support::test_absolute_path;
-use pretty_assertions::assert_eq;
 
 use std::collections::BTreeMap;
 use std::collections::HashMap;
 use std::time::Duration;
 use tempfile::TempDir;
+use toml_edit::DocumentMut;
+
+#[path = "config_tests/mcp_and_shell.rs"]
+mod mcp_and_shell;
+#[path = "config_tests/permissions_profiles.rs"]
+mod permissions_profiles;
+#[path = "config_tests/realtime.rs"]
+mod realtime;
+#[path = "config_tests/requirements.rs"]
+mod requirements;
+#[path = "config_tests/tui.rs"]
+mod tui;
 
 fn stdio_mcp(command: &str) -> McpServerConfig {
     McpServerConfig {
@@ -260,622 +269,6 @@ fn runtime_config_defaults_model_availability_nux() {
     );
 }
 
-#[test]
-fn config_toml_deserializes_permission_profiles() {
-    let toml = r#"
-default_permissions = "workspace"
-
-[permissions.workspace.filesystem]
-":minimal" = "read"
-
-[permissions.workspace.filesystem.":project_roots"]
-"." = "write"
-"docs" = "read"
-
-[permissions.workspace.network]
-enabled = true
-proxy_url = "http://127.0.0.1:43128"
-enable_socks5 = false
-allow_upstream_proxy = false
-allowed_domains = ["openai.com"]
-"#;
-    let cfg: ConfigToml =
-        toml::from_str(toml).expect("TOML deserialization should succeed for permissions profiles");
-
-    assert_eq!(cfg.default_permissions.as_deref(), Some("workspace"));
-    assert_eq!(
-        cfg.permissions.expect("[permissions] should deserialize"),
-        PermissionsToml {
-            entries: BTreeMap::from([(
-                "workspace".to_string(),
-                PermissionProfileToml {
-                    filesystem: Some(FilesystemPermissionsToml {
-                        entries: BTreeMap::from([
-                            (
-                                ":minimal".to_string(),
-                                FilesystemPermissionToml::Access(FileSystemAccessMode::Read),
-                            ),
-                            (
-                                ":project_roots".to_string(),
-                                FilesystemPermissionToml::Scoped(BTreeMap::from([
-                                    (".".to_string(), FileSystemAccessMode::Write),
-                                    ("docs".to_string(), FileSystemAccessMode::Read),
-                                ])),
-                            ),
-                        ]),
-                    }),
-                    network: Some(NetworkToml {
-                        enabled: Some(true),
-                        proxy_url: Some("http://127.0.0.1:43128".to_string()),
-                        enable_socks5: Some(false),
-                        socks_url: None,
-                        enable_socks5_udp: None,
-                        allow_upstream_proxy: Some(false),
-                        dangerously_allow_non_loopback_proxy: None,
-                        dangerously_allow_all_unix_sockets: None,
-                        mode: None,
-                        allowed_domains: Some(vec!["openai.com".to_string()]),
-                        denied_domains: None,
-                        allow_unix_sockets: None,
-                        allow_local_binding: None,
-                    }),
-                },
-            )]),
-        }
-    );
-}
-
-#[test]
-fn permissions_profiles_network_populates_runtime_network_proxy_spec() -> std::io::Result<()> {
-    let chaos_home = TempDir::new()?;
-    let cwd = TempDir::new()?;
-    std::fs::write(cwd.path().join(".git"), "gitdir: nowhere")?;
-
-    let config = Config::load_from_base_config_with_overrides(
-        ConfigToml {
-            default_permissions: Some("workspace".to_string()),
-            permissions: Some(PermissionsToml {
-                entries: BTreeMap::from([(
-                    "workspace".to_string(),
-                    PermissionProfileToml {
-                        filesystem: Some(FilesystemPermissionsToml {
-                            entries: BTreeMap::from([(
-                                ":minimal".to_string(),
-                                FilesystemPermissionToml::Access(FileSystemAccessMode::Read),
-                            )]),
-                        }),
-                        network: Some(NetworkToml {
-                            enabled: Some(true),
-                            proxy_url: Some("http://127.0.0.1:43128".to_string()),
-                            enable_socks5: Some(false),
-                            ..Default::default()
-                        }),
-                    },
-                )]),
-            }),
-            ..Default::default()
-        },
-        ConfigOverrides {
-            cwd: Some(cwd.path().to_path_buf()),
-            ..Default::default()
-        },
-        chaos_home.path().to_path_buf(),
-    )?;
-    let network = config
-        .permissions
-        .network
-        .as_ref()
-        .expect("enabled profile network should produce a NetworkProxySpec");
-
-    assert_eq!(network.proxy_host_and_port(), "127.0.0.1:43128");
-    assert!(!network.socks_enabled());
-    Ok(())
-}
-
-#[test]
-fn permissions_profiles_network_disabled_by_default_does_not_start_proxy() -> std::io::Result<()> {
-    let chaos_home = TempDir::new()?;
-    let cwd = TempDir::new()?;
-    std::fs::write(cwd.path().join(".git"), "gitdir: nowhere")?;
-
-    let config = Config::load_from_base_config_with_overrides(
-        ConfigToml {
-            default_permissions: Some("workspace".to_string()),
-            permissions: Some(PermissionsToml {
-                entries: BTreeMap::from([(
-                    "workspace".to_string(),
-                    PermissionProfileToml {
-                        filesystem: Some(FilesystemPermissionsToml {
-                            entries: BTreeMap::from([(
-                                ":minimal".to_string(),
-                                FilesystemPermissionToml::Access(FileSystemAccessMode::Read),
-                            )]),
-                        }),
-                        network: Some(NetworkToml {
-                            allowed_domains: Some(vec!["openai.com".to_string()]),
-                            ..Default::default()
-                        }),
-                    },
-                )]),
-            }),
-            ..Default::default()
-        },
-        ConfigOverrides {
-            cwd: Some(cwd.path().to_path_buf()),
-            ..Default::default()
-        },
-        chaos_home.path().to_path_buf(),
-    )?;
-
-    assert!(config.permissions.network.is_none());
-    Ok(())
-}
-
-#[test]
-fn default_permissions_profile_populates_runtime_sandbox_policy() -> std::io::Result<()> {
-    let chaos_home = TempDir::new()?;
-    let cwd = TempDir::new()?;
-    std::fs::create_dir_all(cwd.path().join("docs"))?;
-    std::fs::write(cwd.path().join(".git"), "gitdir: nowhere")?;
-
-    let cfg = ConfigToml {
-        default_permissions: Some("workspace".to_string()),
-        permissions: Some(PermissionsToml {
-            entries: BTreeMap::from([(
-                "workspace".to_string(),
-                PermissionProfileToml {
-                    filesystem: Some(FilesystemPermissionsToml {
-                        entries: BTreeMap::from([
-                            (
-                                ":minimal".to_string(),
-                                FilesystemPermissionToml::Access(FileSystemAccessMode::Read),
-                            ),
-                            (
-                                ":project_roots".to_string(),
-                                FilesystemPermissionToml::Scoped(BTreeMap::from([
-                                    (".".to_string(), FileSystemAccessMode::Write),
-                                    ("docs".to_string(), FileSystemAccessMode::Read),
-                                ])),
-                            ),
-                        ]),
-                    }),
-                    network: None,
-                },
-            )]),
-        }),
-        ..Default::default()
-    };
-
-    let config = Config::load_from_base_config_with_overrides(
-        cfg,
-        ConfigOverrides {
-            cwd: Some(cwd.path().to_path_buf()),
-            ..Default::default()
-        },
-        chaos_home.path().to_path_buf(),
-    )?;
-
-    let memories_root = AbsolutePathBuf::try_from(chaos_home.path().join("memories")).unwrap();
-    assert_eq!(
-        config.permissions.file_system_sandbox_policy,
-        FileSystemSandboxPolicy::restricted(vec![
-            FileSystemSandboxEntry {
-                path: FileSystemPath::Special {
-                    value: FileSystemSpecialPath::Minimal,
-                },
-                access: FileSystemAccessMode::Read,
-            },
-            FileSystemSandboxEntry {
-                path: FileSystemPath::Special {
-                    value: FileSystemSpecialPath::project_roots(None),
-                },
-                access: FileSystemAccessMode::Write,
-            },
-            FileSystemSandboxEntry {
-                path: FileSystemPath::Special {
-                    value: FileSystemSpecialPath::project_roots(Some("docs".into())),
-                },
-                access: FileSystemAccessMode::Read,
-            },
-            FileSystemSandboxEntry {
-                path: FileSystemPath::Path {
-                    path: memories_root.clone(),
-                },
-                access: FileSystemAccessMode::Write,
-            },
-        ]),
-    );
-    assert_eq!(
-        config.permissions.sandbox_policy.get(),
-        &SandboxPolicy::WorkspaceWrite {
-            writable_roots: vec![memories_root],
-            read_only_access: ReadOnlyAccess::Restricted {
-                include_platform_defaults: true,
-                readable_roots: vec![
-                    AbsolutePathBuf::try_from(cwd.path().join("docs")).expect("absolute docs path"),
-                ],
-            },
-            network_access: false,
-            exclude_tmpdir_env_var: true,
-            exclude_slash_tmp: true,
-        }
-    );
-    assert_eq!(
-        config.permissions.network_sandbox_policy,
-        NetworkSandboxPolicy::Restricted
-    );
-    Ok(())
-}
-
-#[test]
-fn permissions_profiles_require_default_permissions() -> std::io::Result<()> {
-    let chaos_home = TempDir::new()?;
-    let cwd = TempDir::new()?;
-    std::fs::write(cwd.path().join(".git"), "gitdir: nowhere")?;
-
-    let err = Config::load_from_base_config_with_overrides(
-        ConfigToml {
-            permissions: Some(PermissionsToml {
-                entries: BTreeMap::from([(
-                    "workspace".to_string(),
-                    PermissionProfileToml {
-                        filesystem: Some(FilesystemPermissionsToml {
-                            entries: BTreeMap::from([(
-                                ":minimal".to_string(),
-                                FilesystemPermissionToml::Access(FileSystemAccessMode::Read),
-                            )]),
-                        }),
-                        network: None,
-                    },
-                )]),
-            }),
-            ..Default::default()
-        },
-        ConfigOverrides {
-            cwd: Some(cwd.path().to_path_buf()),
-            ..Default::default()
-        },
-        chaos_home.path().to_path_buf(),
-    )
-    .expect_err("missing default_permissions should be rejected");
-
-    assert_eq!(err.kind(), std::io::ErrorKind::InvalidInput);
-    assert_eq!(
-        err.to_string(),
-        "config defines `[permissions]` profiles but does not set `default_permissions`"
-    );
-    Ok(())
-}
-
-#[test]
-fn permissions_profiles_reject_writes_outside_workspace_root() -> std::io::Result<()> {
-    let chaos_home = TempDir::new()?;
-    let cwd = TempDir::new()?;
-    std::fs::write(cwd.path().join(".git"), "gitdir: nowhere")?;
-    let external_write_path = "/tmp";
-
-    let err = Config::load_from_base_config_with_overrides(
-        ConfigToml {
-            default_permissions: Some("workspace".to_string()),
-            permissions: Some(PermissionsToml {
-                entries: BTreeMap::from([(
-                    "workspace".to_string(),
-                    PermissionProfileToml {
-                        filesystem: Some(FilesystemPermissionsToml {
-                            entries: BTreeMap::from([(
-                                external_write_path.to_string(),
-                                FilesystemPermissionToml::Access(FileSystemAccessMode::Write),
-                            )]),
-                        }),
-                        network: None,
-                    },
-                )]),
-            }),
-            ..Default::default()
-        },
-        ConfigOverrides {
-            cwd: Some(cwd.path().to_path_buf()),
-            ..Default::default()
-        },
-        chaos_home.path().to_path_buf(),
-    )
-    .expect_err("writes outside the workspace root should be rejected");
-
-    assert_eq!(err.kind(), std::io::ErrorKind::InvalidInput);
-    assert!(
-        err.to_string()
-            .contains("filesystem writes outside the workspace root"),
-        "{err}"
-    );
-    Ok(())
-}
-
-#[test]
-fn permissions_profiles_reject_nested_entries_for_non_project_roots() -> std::io::Result<()> {
-    let chaos_home = TempDir::new()?;
-    let cwd = TempDir::new()?;
-    std::fs::write(cwd.path().join(".git"), "gitdir: nowhere")?;
-
-    let err = Config::load_from_base_config_with_overrides(
-        ConfigToml {
-            default_permissions: Some("workspace".to_string()),
-            permissions: Some(PermissionsToml {
-                entries: BTreeMap::from([(
-                    "workspace".to_string(),
-                    PermissionProfileToml {
-                        filesystem: Some(FilesystemPermissionsToml {
-                            entries: BTreeMap::from([(
-                                ":minimal".to_string(),
-                                FilesystemPermissionToml::Scoped(BTreeMap::from([(
-                                    "docs".to_string(),
-                                    FileSystemAccessMode::Read,
-                                )])),
-                            )]),
-                        }),
-                        network: None,
-                    },
-                )]),
-            }),
-            ..Default::default()
-        },
-        ConfigOverrides {
-            cwd: Some(cwd.path().to_path_buf()),
-            ..Default::default()
-        },
-        chaos_home.path().to_path_buf(),
-    )
-    .expect_err("nested entries outside :project_roots should be rejected");
-
-    assert_eq!(err.kind(), std::io::ErrorKind::InvalidInput);
-    assert_eq!(
-        err.to_string(),
-        "filesystem path `:minimal` does not support nested entries"
-    );
-    Ok(())
-}
-
-fn load_workspace_permission_profile(profile: PermissionProfileToml) -> std::io::Result<Config> {
-    let chaos_home = TempDir::new()?;
-    let cwd = TempDir::new()?;
-    std::fs::write(cwd.path().join(".git"), "gitdir: nowhere")?;
-
-    Config::load_from_base_config_with_overrides(
-        ConfigToml {
-            default_permissions: Some("workspace".to_string()),
-            permissions: Some(PermissionsToml {
-                entries: BTreeMap::from([("workspace".to_string(), profile)]),
-            }),
-            ..Default::default()
-        },
-        ConfigOverrides {
-            cwd: Some(cwd.path().to_path_buf()),
-            ..Default::default()
-        },
-        chaos_home.path().to_path_buf(),
-    )
-}
-
-#[test]
-fn permissions_profiles_allow_unknown_special_paths() -> std::io::Result<()> {
-    let config = load_workspace_permission_profile(PermissionProfileToml {
-        filesystem: Some(FilesystemPermissionsToml {
-            entries: BTreeMap::from([(
-                ":future_special_path".to_string(),
-                FilesystemPermissionToml::Access(FileSystemAccessMode::Read),
-            )]),
-        }),
-        network: None,
-    })?;
-
-    assert_eq!(
-        config.permissions.file_system_sandbox_policy,
-        FileSystemSandboxPolicy::restricted(vec![FileSystemSandboxEntry {
-            path: FileSystemPath::Special {
-                value: FileSystemSpecialPath::unknown(":future_special_path", None),
-            },
-            access: FileSystemAccessMode::Read,
-        }]),
-    );
-    assert_eq!(
-        config.permissions.sandbox_policy.get(),
-        &SandboxPolicy::ReadOnly {
-            access: ReadOnlyAccess::Restricted {
-                include_platform_defaults: false,
-                readable_roots: Vec::new(),
-            },
-            network_access: false,
-        }
-    );
-    assert!(
-        config.startup_warnings.iter().any(|warning| warning.contains(
-            "Configured filesystem path `:future_special_path` is not recognized by this version of Codex and will be ignored."
-        )),
-        "{:?}",
-        config.startup_warnings
-    );
-    Ok(())
-}
-
-#[test]
-fn permissions_profiles_allow_unknown_special_paths_with_nested_entries() -> std::io::Result<()> {
-    let config = load_workspace_permission_profile(PermissionProfileToml {
-        filesystem: Some(FilesystemPermissionsToml {
-            entries: BTreeMap::from([(
-                ":future_special_path".to_string(),
-                FilesystemPermissionToml::Scoped(BTreeMap::from([(
-                    "docs".to_string(),
-                    FileSystemAccessMode::Read,
-                )])),
-            )]),
-        }),
-        network: None,
-    })?;
-
-    assert_eq!(
-        config.permissions.file_system_sandbox_policy,
-        FileSystemSandboxPolicy::restricted(vec![FileSystemSandboxEntry {
-            path: FileSystemPath::Special {
-                value: FileSystemSpecialPath::unknown(":future_special_path", Some("docs".into())),
-            },
-            access: FileSystemAccessMode::Read,
-        }]),
-    );
-    assert!(
-        config.startup_warnings.iter().any(|warning| warning.contains(
-            "Configured filesystem path `:future_special_path` with nested entry `docs` is not recognized by this version of Codex and will be ignored."
-        )),
-        "{:?}",
-        config.startup_warnings
-    );
-    Ok(())
-}
-
-#[test]
-fn permissions_profiles_allow_missing_filesystem_with_warning() -> std::io::Result<()> {
-    let config = load_workspace_permission_profile(PermissionProfileToml {
-        filesystem: None,
-        network: None,
-    })?;
-
-    assert_eq!(
-        config.permissions.file_system_sandbox_policy,
-        FileSystemSandboxPolicy::restricted(Vec::new())
-    );
-    assert_eq!(
-        config.permissions.sandbox_policy.get(),
-        &SandboxPolicy::ReadOnly {
-            access: ReadOnlyAccess::Restricted {
-                include_platform_defaults: false,
-                readable_roots: Vec::new(),
-            },
-            network_access: false,
-        }
-    );
-    assert!(
-        config.startup_warnings.iter().any(|warning| warning.contains(
-            "Permissions profile `workspace` does not define any recognized filesystem entries for this version of Codex."
-        )),
-        "{:?}",
-        config.startup_warnings
-    );
-    Ok(())
-}
-
-#[test]
-fn permissions_profiles_allow_empty_filesystem_with_warning() -> std::io::Result<()> {
-    let config = load_workspace_permission_profile(PermissionProfileToml {
-        filesystem: Some(FilesystemPermissionsToml {
-            entries: BTreeMap::new(),
-        }),
-        network: None,
-    })?;
-
-    assert_eq!(
-        config.permissions.file_system_sandbox_policy,
-        FileSystemSandboxPolicy::restricted(Vec::new())
-    );
-    assert!(
-        config.startup_warnings.iter().any(|warning| warning.contains(
-            "Permissions profile `workspace` does not define any recognized filesystem entries for this version of Codex."
-        )),
-        "{:?}",
-        config.startup_warnings
-    );
-    Ok(())
-}
-
-#[test]
-fn permissions_profiles_reject_project_root_parent_traversal() -> std::io::Result<()> {
-    let chaos_home = TempDir::new()?;
-    let cwd = TempDir::new()?;
-    std::fs::write(cwd.path().join(".git"), "gitdir: nowhere")?;
-
-    let err = Config::load_from_base_config_with_overrides(
-        ConfigToml {
-            default_permissions: Some("workspace".to_string()),
-            permissions: Some(PermissionsToml {
-                entries: BTreeMap::from([(
-                    "workspace".to_string(),
-                    PermissionProfileToml {
-                        filesystem: Some(FilesystemPermissionsToml {
-                            entries: BTreeMap::from([(
-                                ":project_roots".to_string(),
-                                FilesystemPermissionToml::Scoped(BTreeMap::from([(
-                                    "../sibling".to_string(),
-                                    FileSystemAccessMode::Read,
-                                )])),
-                            )]),
-                        }),
-                        network: None,
-                    },
-                )]),
-            }),
-            ..Default::default()
-        },
-        ConfigOverrides {
-            cwd: Some(cwd.path().to_path_buf()),
-            ..Default::default()
-        },
-        chaos_home.path().to_path_buf(),
-    )
-    .expect_err("parent traversal should be rejected for project root subpaths");
-
-    assert_eq!(err.kind(), std::io::ErrorKind::InvalidInput);
-    assert_eq!(
-        err.to_string(),
-        "filesystem subpath `../sibling` must be a descendant path without `.` or `..` components"
-    );
-    Ok(())
-}
-
-#[test]
-fn permissions_profiles_allow_network_enablement() -> std::io::Result<()> {
-    let chaos_home = TempDir::new()?;
-    let cwd = TempDir::new()?;
-    std::fs::write(cwd.path().join(".git"), "gitdir: nowhere")?;
-
-    let config = Config::load_from_base_config_with_overrides(
-        ConfigToml {
-            default_permissions: Some("workspace".to_string()),
-            permissions: Some(PermissionsToml {
-                entries: BTreeMap::from([(
-                    "workspace".to_string(),
-                    PermissionProfileToml {
-                        filesystem: Some(FilesystemPermissionsToml {
-                            entries: BTreeMap::from([(
-                                ":minimal".to_string(),
-                                FilesystemPermissionToml::Access(FileSystemAccessMode::Read),
-                            )]),
-                        }),
-                        network: Some(NetworkToml {
-                            enabled: Some(true),
-                            ..Default::default()
-                        }),
-                    },
-                )]),
-            }),
-            ..Default::default()
-        },
-        ConfigOverrides {
-            cwd: Some(cwd.path().to_path_buf()),
-            ..Default::default()
-        },
-        chaos_home.path().to_path_buf(),
-    )?;
-
-    assert!(
-        config.permissions.network_sandbox_policy.is_enabled(),
-        "expected network sandbox policy to be enabled",
-    );
-    assert!(
-        config
-            .permissions
-            .sandbox_policy
-            .get()
-            .has_full_network_access()
-    );
-    Ok(())
-}
 
 #[test]
 fn tui_theme_deserializes_from_toml() {
@@ -2970,6 +2363,8 @@ fn load_config_rejects_missing_agent_role_config_file() -> std::io::Result<()> {
                     description: Some("Research role".to_string()),
                     config_file: Some(AbsolutePathBuf::from_absolute_path(missing_path)?),
                     nickname_candidates: None,
+                    topics: None,
+                    catchphrases: None,
                 },
             )]),
         }),
@@ -3838,6 +3233,8 @@ fn load_config_normalizes_agent_role_nickname_candidates() -> std::io::Result<()
                         "  Hypatia  ".to_string(),
                         "Noether".to_string(),
                     ]),
+                    topics: None,
+                    catchphrases: None,
                 },
             )]),
         }),
@@ -3876,6 +3273,8 @@ fn load_config_rejects_empty_agent_role_nickname_candidates() -> std::io::Result
                     description: Some("Research role".to_string()),
                     config_file: None,
                     nickname_candidates: Some(Vec::new()),
+                    topics: None,
+                    catchphrases: None,
                 },
             )]),
         }),
@@ -3911,6 +3310,8 @@ fn load_config_rejects_duplicate_agent_role_nickname_candidates() -> std::io::Re
                     description: Some("Research role".to_string()),
                     config_file: None,
                     nickname_candidates: Some(vec!["Hypatia".to_string(), " Hypatia ".to_string()]),
+                    topics: None,
+                    catchphrases: None,
                 },
             )]),
         }),
@@ -3946,6 +3347,8 @@ fn load_config_rejects_unsafe_agent_role_nickname_candidates() -> std::io::Resul
                     description: Some("Research role".to_string()),
                     config_file: None,
                     nickname_candidates: Some(vec!["Agent <One>".to_string()]),
+                    topics: None,
+                    catchphrases: None,
                 },
             )]),
         }),
@@ -4192,6 +3595,8 @@ fn test_precedence_fixture_with_o3_profile() -> std::io::Result<()> {
             ephemeral: false,
             file_opener: UriBasedFileOpener::VsCode,
             alcatraz_linux_exe: None,
+            alcatraz_freebsd_exe: None,
+            alcatraz_macos_exe: None,
             main_execve_wrapper_exe: None,
             zsh_path: None,
             hide_agent_reasoning: false,
@@ -4224,7 +3629,6 @@ fn test_precedence_fixture_with_o3_profile() -> std::io::Result<()> {
             background_terminal_max_timeout: DEFAULT_MAX_BACKGROUND_TERMINAL_TIMEOUT_MS,
             ghost_snapshot: GhostSnapshotConfig::default(),
             features: Features::with_defaults().into(),
-
             active_profile: Some("o3".to_string()),
             active_project: ProjectConfig { trust_level: None },
             windows_wsl_setup_acknowledged: false,
@@ -4240,6 +3644,7 @@ fn test_precedence_fixture_with_o3_profile() -> std::io::Result<()> {
             tui_status_line: None,
             tui_theme: None,
             otel: OtelConfig::default(),
+            disable_user_scripts: false,
         },
         o3_profile_config
     );
@@ -4325,6 +3730,8 @@ fn test_precedence_fixture_with_gpt3_profile() -> std::io::Result<()> {
         ephemeral: false,
         file_opener: UriBasedFileOpener::VsCode,
         alcatraz_linux_exe: None,
+        alcatraz_freebsd_exe: None,
+        alcatraz_macos_exe: None,
         main_execve_wrapper_exe: None,
         zsh_path: None,
         hide_agent_reasoning: false,
@@ -4356,7 +3763,6 @@ fn test_precedence_fixture_with_gpt3_profile() -> std::io::Result<()> {
         background_terminal_max_timeout: DEFAULT_MAX_BACKGROUND_TERMINAL_TIMEOUT_MS,
         ghost_snapshot: GhostSnapshotConfig::default(),
         features: Features::with_defaults().into(),
-        suppress_unstable_features_warning: false,
         active_profile: Some("gpt3".to_string()),
         active_project: ProjectConfig { trust_level: None },
         windows_wsl_setup_acknowledged: false,
@@ -4372,6 +3778,7 @@ fn test_precedence_fixture_with_gpt3_profile() -> std::io::Result<()> {
         tui_status_line: None,
         tui_theme: None,
         otel: OtelConfig::default(),
+        disable_user_scripts: false,
     };
 
     assert_eq!(expected_gpt3_profile_config, gpt3_profile_config);
@@ -4455,6 +3862,8 @@ fn test_precedence_fixture_with_zdr_profile() -> std::io::Result<()> {
         ephemeral: false,
         file_opener: UriBasedFileOpener::VsCode,
         alcatraz_linux_exe: None,
+        alcatraz_freebsd_exe: None,
+        alcatraz_macos_exe: None,
         main_execve_wrapper_exe: None,
         zsh_path: None,
         hide_agent_reasoning: false,
@@ -4486,7 +3895,6 @@ fn test_precedence_fixture_with_zdr_profile() -> std::io::Result<()> {
         background_terminal_max_timeout: DEFAULT_MAX_BACKGROUND_TERMINAL_TIMEOUT_MS,
         ghost_snapshot: GhostSnapshotConfig::default(),
         features: Features::with_defaults().into(),
-        suppress_unstable_features_warning: false,
         active_profile: Some("zdr".to_string()),
         active_project: ProjectConfig { trust_level: None },
         windows_wsl_setup_acknowledged: false,
@@ -4502,6 +3910,7 @@ fn test_precedence_fixture_with_zdr_profile() -> std::io::Result<()> {
         tui_status_line: None,
         tui_theme: None,
         otel: OtelConfig::default(),
+        disable_user_scripts: false,
     };
 
     assert_eq!(expected_zdr_profile_config, zdr_profile_config);
@@ -4571,6 +3980,8 @@ fn test_precedence_fixture_with_gpt5_profile() -> std::io::Result<()> {
         ephemeral: false,
         file_opener: UriBasedFileOpener::VsCode,
         alcatraz_linux_exe: None,
+        alcatraz_freebsd_exe: None,
+        alcatraz_macos_exe: None,
         main_execve_wrapper_exe: None,
         zsh_path: None,
         hide_agent_reasoning: false,
@@ -4602,7 +4013,6 @@ fn test_precedence_fixture_with_gpt5_profile() -> std::io::Result<()> {
         background_terminal_max_timeout: DEFAULT_MAX_BACKGROUND_TERMINAL_TIMEOUT_MS,
         ghost_snapshot: GhostSnapshotConfig::default(),
         features: Features::with_defaults().into(),
-        suppress_unstable_features_warning: false,
         active_profile: Some("gpt5".to_string()),
         active_project: ProjectConfig { trust_level: None },
         windows_wsl_setup_acknowledged: false,
@@ -4618,6 +4028,7 @@ fn test_precedence_fixture_with_gpt5_profile() -> std::io::Result<()> {
         tui_status_line: None,
         tui_theme: None,
         otel: OtelConfig::default(),
+        disable_user_scripts: false,
     };
 
     assert_eq!(expected_gpt5_profile_config, gpt5_profile_config);
@@ -4999,697 +4410,4 @@ fn test_resolve_oss_provider_explicit_overrides_all() {
         Some("test-profile".to_string()),
     );
     assert_eq!(result, Some("explicit-provider".to_string()));
-}
-
-#[test]
-fn config_toml_deserializes_mcp_oauth_callback_port() {
-    let toml = r#"mcp_oauth_callback_port = 4321"#;
-    let cfg: ConfigToml =
-        toml::from_str(toml).expect("TOML deserialization should succeed for callback port");
-    assert_eq!(cfg.mcp_oauth_callback_port, Some(4321));
-}
-
-#[test]
-fn config_toml_deserializes_mcp_oauth_callback_url() {
-    let toml = r#"mcp_oauth_callback_url = "https://example.com/callback""#;
-    let cfg: ConfigToml =
-        toml::from_str(toml).expect("TOML deserialization should succeed for callback URL");
-    assert_eq!(
-        cfg.mcp_oauth_callback_url.as_deref(),
-        Some("https://example.com/callback")
-    );
-}
-
-#[test]
-fn config_loads_mcp_oauth_callback_port_from_toml() -> std::io::Result<()> {
-    let chaos_home = TempDir::new()?;
-    let toml = r#"
-model = "gpt-5.1"
-mcp_oauth_callback_port = 5678
-"#;
-    let cfg: ConfigToml =
-        toml::from_str(toml).expect("TOML deserialization should succeed for callback port");
-
-    let config = Config::load_from_base_config_with_overrides(
-        cfg,
-        ConfigOverrides::default(),
-        chaos_home.path().to_path_buf(),
-    )?;
-
-    assert_eq!(config.mcp_oauth_callback_port, Some(5678));
-    Ok(())
-}
-
-#[test]
-fn config_loads_allow_login_shell_from_toml() -> std::io::Result<()> {
-    let chaos_home = TempDir::new()?;
-    let cfg: ConfigToml = toml::from_str(
-        r#"
-model = "gpt-5.1"
-allow_login_shell = false
-"#,
-    )
-    .expect("TOML deserialization should succeed for allow_login_shell");
-
-    let config = Config::load_from_base_config_with_overrides(
-        cfg,
-        ConfigOverrides::default(),
-        chaos_home.path().to_path_buf(),
-    )?;
-
-    assert!(!config.permissions.allow_login_shell);
-    Ok(())
-}
-
-#[test]
-fn config_loads_mcp_oauth_callback_url_from_toml() -> std::io::Result<()> {
-    let chaos_home = TempDir::new()?;
-    let toml = r#"
-model = "gpt-5.1"
-mcp_oauth_callback_url = "https://example.com/callback"
-"#;
-    let cfg: ConfigToml =
-        toml::from_str(toml).expect("TOML deserialization should succeed for callback URL");
-
-    let config = Config::load_from_base_config_with_overrides(
-        cfg,
-        ConfigOverrides::default(),
-        chaos_home.path().to_path_buf(),
-    )?;
-
-    assert_eq!(
-        config.mcp_oauth_callback_url.as_deref(),
-        Some("https://example.com/callback")
-    );
-    Ok(())
-}
-
-#[test]
-fn test_untrusted_project_gets_unless_trusted_approval_policy() -> anyhow::Result<()> {
-    let chaos_home = TempDir::new()?;
-    let test_project_dir = TempDir::new()?;
-    let test_path = test_project_dir.path();
-
-    let config = Config::load_from_base_config_with_overrides(
-        ConfigToml {
-            projects: Some(HashMap::from([(
-                test_path.to_string_lossy().to_string(),
-                ProjectConfig {
-                    trust_level: Some(TrustLevel::Untrusted),
-                },
-            )])),
-            ..Default::default()
-        },
-        ConfigOverrides {
-            cwd: Some(test_path.to_path_buf()),
-            ..Default::default()
-        },
-        chaos_home.path().to_path_buf(),
-    )?;
-
-    // Verify that untrusted projects get Supervised approval policy
-    assert_eq!(
-        config.permissions.approval_policy.value(),
-        ApprovalPolicy::Supervised,
-        "Expected Supervised approval policy for untrusted project"
-    );
-
-    assert!(
-        matches!(
-            config.permissions.sandbox_policy.get(),
-            SandboxPolicy::WorkspaceWrite { .. }
-        ),
-        "Expected WorkspaceWrite sandbox for untrusted project"
-    );
-
-    Ok(())
-}
-
-#[tokio::test]
-async fn requirements_disallowing_default_sandbox_falls_back_to_required_default()
--> std::io::Result<()> {
-    let chaos_home = TempDir::new()?;
-
-    let config = ConfigBuilder::default()
-        .chaos_home(chaos_home.path().to_path_buf())
-        .cloud_requirements(CloudRequirementsLoader::new(async {
-            Ok(Some(crate::config_loader::ConfigRequirementsToml {
-                allowed_sandbox_modes: Some(vec![
-                    crate::config_loader::SandboxModeRequirement::ReadOnly,
-                ]),
-                ..Default::default()
-            }))
-        }))
-        .build()
-        .await?;
-    assert_eq!(
-        *config.permissions.sandbox_policy.get(),
-        SandboxPolicy::new_read_only_policy()
-    );
-    Ok(())
-}
-
-#[tokio::test]
-async fn explicit_sandbox_mode_falls_back_when_disallowed_by_requirements() -> std::io::Result<()> {
-    let chaos_home = TempDir::new()?;
-    std::fs::write(
-        chaos_home.path().join(CONFIG_TOML_FILE),
-        r#"sandbox_mode = "root-access"
-"#,
-    )?;
-
-    let requirements = crate::config_loader::ConfigRequirementsToml {
-        allowed_approval_policies: None,
-        allowed_sandbox_modes: Some(vec![crate::config_loader::SandboxModeRequirement::ReadOnly]),
-        allowed_web_search_modes: None,
-        feature_requirements: None,
-        mcp_servers: None,
-        apps: None,
-        rules: None,
-        enforce_residency: None,
-        network: None,
-    };
-
-    let config = ConfigBuilder::default()
-        .chaos_home(chaos_home.path().to_path_buf())
-        .fallback_cwd(Some(chaos_home.path().to_path_buf()))
-        .cloud_requirements(CloudRequirementsLoader::new(async move {
-            Ok(Some(requirements))
-        }))
-        .build()
-        .await?;
-    assert_eq!(
-        *config.permissions.sandbox_policy.get(),
-        SandboxPolicy::new_read_only_policy()
-    );
-    Ok(())
-}
-
-#[tokio::test]
-async fn requirements_web_search_mode_overrides_root_access_default() -> std::io::Result<()>
-{
-    let chaos_home = TempDir::new()?;
-    std::fs::write(
-        chaos_home.path().join(CONFIG_TOML_FILE),
-        r#"sandbox_mode = "root-access"
-"#,
-    )?;
-
-    let config = ConfigBuilder::default()
-        .chaos_home(chaos_home.path().to_path_buf())
-        .fallback_cwd(Some(chaos_home.path().to_path_buf()))
-        .cloud_requirements(CloudRequirementsLoader::new(async {
-            Ok(Some(crate::config_loader::ConfigRequirementsToml {
-                allowed_web_search_modes: Some(vec![
-                    crate::config_loader::WebSearchModeRequirement::Cached,
-                ]),
-                ..Default::default()
-            }))
-        }))
-        .build()
-        .await?;
-
-    assert_eq!(config.web_search_mode.value(), WebSearchMode::Cached);
-    assert_eq!(
-        resolve_web_search_mode_for_turn(
-            &config.web_search_mode,
-            config.permissions.sandbox_policy.get(),
-        ),
-        WebSearchMode::Cached,
-    );
-    Ok(())
-}
-
-#[tokio::test]
-async fn requirements_disallowing_default_approval_falls_back_to_required_default()
--> std::io::Result<()> {
-    let chaos_home = TempDir::new()?;
-    let workspace = TempDir::new()?;
-    let workspace_key = workspace.path().to_string_lossy().replace('\\', "\\\\");
-    std::fs::write(
-        chaos_home.path().join(CONFIG_TOML_FILE),
-        format!(
-            r#"
-[projects."{workspace_key}"]
-trust_level = "untrusted"
-"#
-        ),
-    )?;
-
-    let config = ConfigBuilder::default()
-        .chaos_home(chaos_home.path().to_path_buf())
-        .fallback_cwd(Some(workspace.path().to_path_buf()))
-        .cloud_requirements(CloudRequirementsLoader::new(async {
-            Ok(Some(crate::config_loader::ConfigRequirementsToml {
-                allowed_approval_policies: Some(vec![ApprovalPolicy::Interactive]),
-                ..Default::default()
-            }))
-        }))
-        .build()
-        .await?;
-
-    assert_eq!(
-        config.permissions.approval_policy.value(),
-        ApprovalPolicy::Interactive
-    );
-    Ok(())
-}
-
-#[tokio::test]
-async fn explicit_approval_policy_falls_back_when_disallowed_by_requirements() -> std::io::Result<()>
-{
-    let chaos_home = TempDir::new()?;
-    std::fs::write(
-        chaos_home.path().join(CONFIG_TOML_FILE),
-        r#"approval_policy = "supervised"
-"#,
-    )?;
-
-    let config = ConfigBuilder::default()
-        .chaos_home(chaos_home.path().to_path_buf())
-        .fallback_cwd(Some(chaos_home.path().to_path_buf()))
-        .cloud_requirements(CloudRequirementsLoader::new(async {
-            Ok(Some(crate::config_loader::ConfigRequirementsToml {
-                allowed_approval_policies: Some(vec![ApprovalPolicy::Interactive]),
-                ..Default::default()
-            }))
-        }))
-        .build()
-        .await?;
-    assert_eq!(
-        config.permissions.approval_policy.value(),
-        ApprovalPolicy::Interactive
-    );
-    Ok(())
-}
-
-#[tokio::test]
-async fn feature_requirements_normalize_effective_feature_values() -> std::io::Result<()> {
-    let chaos_home = TempDir::new()?;
-
-    let config = ConfigBuilder::default()
-        .chaos_home(chaos_home.path().to_path_buf())
-        .cloud_requirements(CloudRequirementsLoader::new(async {
-            Ok(Some(crate::config_loader::ConfigRequirementsToml {
-                feature_requirements: Some(crate::config_loader::FeatureRequirementsToml {
-                    entries: BTreeMap::from([
-                        ("personality".to_string(), true),
-                        ("shell_tool".to_string(), false),
-                    ]),
-                }),
-                ..Default::default()
-            }))
-        }))
-        .build()
-        .await?;
-
-    assert!(config.features.enabled(Feature::Personality));
-    assert!(!config.features.enabled(Feature::ShellTool));
-    assert!(
-        !config
-            .startup_warnings
-            .iter()
-            .any(|warning| warning.contains("Configured value for `features`")),
-        "{:?}",
-        config.startup_warnings
-    );
-
-    Ok(())
-}
-
-#[tokio::test]
-async fn explicit_feature_config_is_normalized_by_requirements() -> std::io::Result<()> {
-    let chaos_home = TempDir::new()?;
-    std::fs::write(
-        chaos_home.path().join(CONFIG_TOML_FILE),
-        r#"
-[features]
-personality = false
-shell_tool = true
-"#,
-    )?;
-
-    let config = ConfigBuilder::default()
-        .chaos_home(chaos_home.path().to_path_buf())
-        .fallback_cwd(Some(chaos_home.path().to_path_buf()))
-        .cloud_requirements(CloudRequirementsLoader::new(async {
-            Ok(Some(crate::config_loader::ConfigRequirementsToml {
-                feature_requirements: Some(crate::config_loader::FeatureRequirementsToml {
-                    entries: BTreeMap::from([
-                        ("personality".to_string(), true),
-                        ("shell_tool".to_string(), false),
-                    ]),
-                }),
-                ..Default::default()
-            }))
-        }))
-        .build()
-        .await?;
-
-    assert!(config.features.enabled(Feature::Personality));
-    assert!(!config.features.enabled(Feature::ShellTool));
-    assert!(
-        !config
-            .startup_warnings
-            .iter()
-            .any(|warning| warning.contains("Configured value for `features`")),
-        "{:?}",
-        config.startup_warnings
-    );
-
-    Ok(())
-}
-
-#[tokio::test]
-async fn approvals_reviewer_defaults_to_manual_only_without_guardian_feature() -> std::io::Result<()>
-{
-    let chaos_home = TempDir::new()?;
-
-    let config = ConfigBuilder::default()
-        .chaos_home(chaos_home.path().to_path_buf())
-        .fallback_cwd(Some(chaos_home.path().to_path_buf()))
-        .build()
-        .await?;
-
-    assert_eq!(config.approvals_reviewer, ApprovalsReviewer::User);
-    Ok(())
-}
-
-
-#[tokio::test]
-async fn feature_requirements_normalize_runtime_feature_mutations() -> std::io::Result<()> {
-    let chaos_home = TempDir::new()?;
-
-    let mut config = ConfigBuilder::default()
-        .chaos_home(chaos_home.path().to_path_buf())
-        .cloud_requirements(CloudRequirementsLoader::new(async {
-            Ok(Some(crate::config_loader::ConfigRequirementsToml {
-                feature_requirements: Some(crate::config_loader::FeatureRequirementsToml {
-                    entries: BTreeMap::from([
-                        ("personality".to_string(), true),
-                        ("shell_tool".to_string(), false),
-                    ]),
-                }),
-                ..Default::default()
-            }))
-        }))
-        .build()
-        .await?;
-
-    let mut requested = config.features.get().clone();
-    requested
-        .disable(Feature::Personality)
-        .enable(Feature::ShellTool);
-    assert!(config.features.can_set(&requested).is_ok());
-    config
-        .features
-        .set(requested)
-        .expect("managed feature mutations should normalize successfully");
-
-    assert!(config.features.enabled(Feature::Personality));
-    assert!(!config.features.enabled(Feature::ShellTool));
-
-    Ok(())
-}
-
-#[tokio::test]
-async fn feature_requirements_reject_collab_legacy_alias() {
-    let chaos_home = TempDir::new().expect("tempdir");
-
-    let err = ConfigBuilder::default()
-        .chaos_home(chaos_home.path().to_path_buf())
-        .cloud_requirements(CloudRequirementsLoader::new(async {
-            Ok(Some(crate::config_loader::ConfigRequirementsToml {
-                feature_requirements: Some(crate::config_loader::FeatureRequirementsToml {
-                    entries: BTreeMap::from([("collab".to_string(), true)]),
-                }),
-                ..Default::default()
-            }))
-        }))
-        .build()
-        .await
-        .expect_err("legacy aliases should be rejected");
-
-    assert_eq!(err.kind(), std::io::ErrorKind::InvalidData);
-    assert!(
-        err.to_string()
-            .contains("use canonical feature key `multi_agent`"),
-        "{err}"
-    );
-}
-
-#[test]
-fn experimental_realtime_start_instructions_load_from_config_toml() -> std::io::Result<()> {
-    let cfg: ConfigToml = toml::from_str(
-        r#"
-experimental_realtime_start_instructions = "start instructions from config"
-"#,
-    )
-    .expect("TOML deserialization should succeed");
-
-    assert_eq!(
-        cfg.experimental_realtime_start_instructions.as_deref(),
-        Some("start instructions from config")
-    );
-
-    let chaos_home = TempDir::new()?;
-    let config = Config::load_from_base_config_with_overrides(
-        cfg,
-        ConfigOverrides::default(),
-        chaos_home.path().to_path_buf(),
-    )?;
-
-    assert_eq!(
-        config.experimental_realtime_start_instructions.as_deref(),
-        Some("start instructions from config")
-    );
-    Ok(())
-}
-
-#[test]
-fn experimental_realtime_ws_base_url_loads_from_config_toml() -> std::io::Result<()> {
-    let cfg: ConfigToml = toml::from_str(
-        r#"
-experimental_realtime_ws_base_url = "http://127.0.0.1:8011"
-"#,
-    )
-    .expect("TOML deserialization should succeed");
-
-    assert_eq!(
-        cfg.experimental_realtime_ws_base_url.as_deref(),
-        Some("http://127.0.0.1:8011")
-    );
-
-    let chaos_home = TempDir::new()?;
-    let config = Config::load_from_base_config_with_overrides(
-        cfg,
-        ConfigOverrides::default(),
-        chaos_home.path().to_path_buf(),
-    )?;
-
-    assert_eq!(
-        config.experimental_realtime_ws_base_url.as_deref(),
-        Some("http://127.0.0.1:8011")
-    );
-    Ok(())
-}
-
-#[test]
-fn experimental_realtime_ws_backend_prompt_loads_from_config_toml() -> std::io::Result<()> {
-    let cfg: ConfigToml = toml::from_str(
-        r#"
-experimental_realtime_ws_backend_prompt = "prompt from config"
-"#,
-    )
-    .expect("TOML deserialization should succeed");
-
-    assert_eq!(
-        cfg.experimental_realtime_ws_backend_prompt.as_deref(),
-        Some("prompt from config")
-    );
-
-    let chaos_home = TempDir::new()?;
-    let config = Config::load_from_base_config_with_overrides(
-        cfg,
-        ConfigOverrides::default(),
-        chaos_home.path().to_path_buf(),
-    )?;
-
-    assert_eq!(
-        config.experimental_realtime_ws_backend_prompt.as_deref(),
-        Some("prompt from config")
-    );
-    Ok(())
-}
-
-#[test]
-fn experimental_realtime_ws_startup_context_loads_from_config_toml() -> std::io::Result<()> {
-    let cfg: ConfigToml = toml::from_str(
-        r#"
-experimental_realtime_ws_startup_context = "startup context from config"
-"#,
-    )
-    .expect("TOML deserialization should succeed");
-
-    assert_eq!(
-        cfg.experimental_realtime_ws_startup_context.as_deref(),
-        Some("startup context from config")
-    );
-
-    let chaos_home = TempDir::new()?;
-    let config = Config::load_from_base_config_with_overrides(
-        cfg,
-        ConfigOverrides::default(),
-        chaos_home.path().to_path_buf(),
-    )?;
-
-    assert_eq!(
-        config.experimental_realtime_ws_startup_context.as_deref(),
-        Some("startup context from config")
-    );
-    Ok(())
-}
-
-#[test]
-fn experimental_realtime_ws_model_loads_from_config_toml() -> std::io::Result<()> {
-    let cfg: ConfigToml = toml::from_str(
-        r#"
-experimental_realtime_ws_model = "realtime-test-model"
-"#,
-    )
-    .expect("TOML deserialization should succeed");
-
-    assert_eq!(
-        cfg.experimental_realtime_ws_model.as_deref(),
-        Some("realtime-test-model")
-    );
-
-    let chaos_home = TempDir::new()?;
-    let config = Config::load_from_base_config_with_overrides(
-        cfg,
-        ConfigOverrides::default(),
-        chaos_home.path().to_path_buf(),
-    )?;
-
-    assert_eq!(
-        config.experimental_realtime_ws_model.as_deref(),
-        Some("realtime-test-model")
-    );
-    Ok(())
-}
-
-#[test]
-fn realtime_loads_from_config_toml() -> std::io::Result<()> {
-    let cfg: ConfigToml = toml::from_str(
-        r#"
-[realtime]
-version = "v2"
-type = "transcription"
-"#,
-    )
-    .expect("TOML deserialization should succeed");
-
-    assert_eq!(
-        cfg.realtime,
-        Some(RealtimeToml {
-            version: Some(RealtimeWsVersion::V2),
-            session_type: Some(RealtimeWsMode::Transcription),
-        })
-    );
-
-    let chaos_home = TempDir::new()?;
-    let config = Config::load_from_base_config_with_overrides(
-        cfg,
-        ConfigOverrides::default(),
-        chaos_home.path().to_path_buf(),
-    )?;
-
-    assert_eq!(
-        config.realtime,
-        RealtimeConfig {
-            version: RealtimeWsVersion::V2,
-            session_type: RealtimeWsMode::Transcription,
-        }
-    );
-    Ok(())
-}
-
-#[test]
-fn realtime_audio_loads_from_config_toml() -> std::io::Result<()> {
-    let cfg: ConfigToml = toml::from_str(
-        r#"
-[audio]
-microphone = "USB Mic"
-speaker = "Desk Speakers"
-"#,
-    )
-    .expect("TOML deserialization should succeed");
-
-    let realtime_audio = cfg
-        .audio
-        .as_ref()
-        .expect("realtime audio config should be present");
-    assert_eq!(realtime_audio.microphone.as_deref(), Some("USB Mic"));
-    assert_eq!(realtime_audio.speaker.as_deref(), Some("Desk Speakers"));
-
-    let chaos_home = TempDir::new()?;
-    let config = Config::load_from_base_config_with_overrides(
-        cfg,
-        ConfigOverrides::default(),
-        chaos_home.path().to_path_buf(),
-    )?;
-
-    assert_eq!(config.realtime_audio.microphone.as_deref(), Some("USB Mic"));
-    assert_eq!(
-        config.realtime_audio.speaker.as_deref(),
-        Some("Desk Speakers")
-    );
-    Ok(())
-}
-
-#[derive(Deserialize, Debug, PartialEq)]
-struct TuiTomlTest {
-    #[serde(default)]
-    notifications: Notifications,
-    #[serde(default)]
-    notification_method: NotificationMethod,
-}
-
-#[derive(Deserialize, Debug, PartialEq)]
-struct RootTomlTest {
-    tui: TuiTomlTest,
-}
-
-#[test]
-fn test_tui_notifications_true() {
-    let toml = r#"
-            [tui]
-            notifications = true
-        "#;
-    let parsed: RootTomlTest = toml::from_str(toml).expect("deserialize notifications=true");
-    assert_matches!(parsed.tui.notifications, Notifications::Enabled(true));
-}
-
-#[test]
-fn test_tui_notifications_custom_array() {
-    let toml = r#"
-            [tui]
-            notifications = ["foo"]
-        "#;
-    let parsed: RootTomlTest = toml::from_str(toml).expect("deserialize notifications=[\"foo\"]");
-    assert_matches!(
-        parsed.tui.notifications,
-        Notifications::Custom(ref v) if v == &vec!["foo".to_string()]
-    );
-}
-
-#[test]
-fn test_tui_notification_method() {
-    let toml = r#"
-            [tui]
-            notification_method = "bel"
-        "#;
-    let parsed: RootTomlTest =
-        toml::from_str(toml).expect("deserialize notification_method=\"bel\"");
-    assert_eq!(parsed.tui.notification_method, NotificationMethod::Bel);
 }

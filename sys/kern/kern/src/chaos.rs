@@ -3943,6 +3943,7 @@ impl Session {
     }
 
     #[cfg(test)]
+    #[expect(dead_code, reason = "test helper available for future tests")]
     async fn mcp_startup_cancellation_token(&self) -> CancellationToken {
         self.services
             .mcp_startup_cancellation_token

@@ -89,11 +89,7 @@ pub struct ChaosToolParams {
     pub base_instructions: Option<String>,
 
     /// Minion instructions injected as a developer role message.
-    #[serde(
-        default,
-        skip_serializing_if = "Option::is_none",
-        alias = "developer_instructions"
-    )]
+    #[serde(default, skip_serializing_if = "Option::is_none")]
     pub minion_instructions: Option<String>,
 
     /// Prompt used when compacting the conversation.

@@ -1083,7 +1083,7 @@ pub struct ConfigToml {
     pub instructions: Option<String>,
 
     /// Minion instructions inserted as a `developer` role message.
-    #[serde(default, alias = "developer_instructions")]
+    #[serde(default)]
     pub minion_instructions: Option<String>,
 
     /// Optional path to a file containing model instructions that will override
@@ -2492,5 +2492,5 @@ pub fn log_dir(cfg: &Config) -> std::io::Result<PathBuf> {
 }
 
 #[cfg(test)]
-#[path = "config_tests.rs"]
+#[path = "config/config_tests.rs"]
 mod tests;

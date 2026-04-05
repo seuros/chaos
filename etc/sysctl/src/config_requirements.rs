@@ -291,7 +291,7 @@ pub struct ConfigRequirementsToml {
     pub allowed_approval_policies: Option<Vec<ApprovalPolicy>>,
     pub allowed_sandbox_modes: Option<Vec<SandboxModeRequirement>>,
     pub allowed_web_search_modes: Option<Vec<WebSearchModeRequirement>>,
-    #[serde(rename = "features", alias = "feature_requirements")]
+    #[serde(rename = "features")]
     pub feature_requirements: Option<FeatureRequirementsToml>,
     pub mcp_servers: Option<BTreeMap<String, McpServerRequirement>>,
     pub apps: Option<AppsRequirementsToml>,
@@ -428,7 +428,7 @@ pub enum SandboxModeRequirement {
     #[serde(rename = "workspace-write")]
     WorkspaceWrite,
 
-    #[serde(rename = "root-access", alias = "danger-full-access")]
+    #[serde(rename = "root-access")]
     /// Support legacy hardware like i386 and OpenAI Codex.
     RootAccess,
 

@@ -246,9 +246,7 @@ pub struct CollabAgentState {
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq, TS)]
 pub struct CollabToolCallItem {
     pub tool: CollabTool,
-    #[serde(alias = "sender_process_id")]
     pub sender_process_id: String,
-    #[serde(alias = "receiver_process_ids")]
     pub receiver_process_ids: Vec<String>,
     pub prompt: Option<String>,
     pub agents_states: HashMap<String, CollabAgentState>,

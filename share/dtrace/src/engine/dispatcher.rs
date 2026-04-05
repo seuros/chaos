@@ -108,7 +108,7 @@ pub(crate) fn completed_summary(
 
 fn scope_for_event(event_name: HookEventName) -> HookScope {
     match event_name {
-        HookEventName::SessionStart => HookScope::Thread,
+        HookEventName::SessionStart => HookScope::Process,
         HookEventName::Stop => HookScope::Turn,
     }
 }

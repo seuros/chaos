@@ -205,7 +205,6 @@ struct RawAgentRoleFileToml {
     name: Option<String>,
     description: Option<String>,
     nickname_candidates: Option<Vec<String>>,
-    #[serde(alias = "developer_instructions")]
     minion_instructions: Option<String>,
     topics: Option<Vec<String>>,
     catchphrases: Option<Vec<String>>,

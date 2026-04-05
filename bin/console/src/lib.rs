@@ -109,6 +109,7 @@ mod terminal_palette;
 mod test_render;
 mod text_formatting;
 pub(crate) mod theme;
+mod tool_badges;
 mod theme_picker;
 mod tile_manager;
 mod top_bar;

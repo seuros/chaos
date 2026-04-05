@@ -24,7 +24,6 @@ pub enum Feature {
     RequestPermissionsTool,
     ShellSnapshot,
     CodexGitCommit,
-    RuntimeMetrics,
     MemoryTool,
     ChildAgentsMd,
     ImageDetailOriginal,
@@ -283,12 +282,6 @@ pub const FEATURES: &[FeatureSpec] = &[
         key: "chaos_scm_commit",
         default_enabled: false,
         under_development: false,
-    },
-    FeatureSpec {
-        id: Feature::RuntimeMetrics,
-        key: "runtime_metrics",
-        default_enabled: false,
-        under_development: true,
     },
     FeatureSpec {
         id: Feature::MemoryTool,

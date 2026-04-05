@@ -1278,7 +1278,7 @@ fn test_precedence_fixture_with_o3_profile() -> std::io::Result<()> {
 }
 
 #[test]
-fn metrics_exporter_defaults_to_statsig_when_missing() -> std::io::Result<()> {
+fn metrics_exporter_defaults_to_none_when_missing() -> std::io::Result<()> {
     let fixture = create_test_fixture()?;
 
     let config = Config::load_from_base_config_with_overrides(
@@ -1290,7 +1290,7 @@ fn metrics_exporter_defaults_to_statsig_when_missing() -> std::io::Result<()> {
         fixture.chaos_home(),
     )?;
 
-    assert_eq!(config.otel.metrics_exporter, OtelExporterKind::Statsig);
+    assert_eq!(config.otel.metrics_exporter, OtelExporterKind::None);
     Ok(())
 }
 

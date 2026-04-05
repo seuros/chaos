@@ -2,7 +2,6 @@ use crate::config::Config;
 use crate::config::types::OtelExporterKind as Kind;
 use crate::config::types::OtelHttpProtocol as Protocol;
 use crate::default_client::originator;
-use crate::features::Feature;
 use chaos_syslog::OtelProvider;
 use chaos_syslog::config::OtelExporter;
 use chaos_syslog::config::OtelHttpProtocol;
@@ -21,7 +20,6 @@ pub fn build_provider(
 ) -> Result<Option<OtelProvider>, Box<dyn Error>> {
     let to_otel_exporter = |kind: &Kind| match kind {
         Kind::None => OtelExporter::None,
-        Kind::Statsig => OtelExporter::Statsig,
         Kind::OtlpHttp {
             endpoint,
             headers,
@@ -78,8 +76,6 @@ pub fn build_provider(
 
     let originator = originator();
     let service_name = service_name_override.unwrap_or(originator.value.as_str());
-    let runtime_metrics = config.features.enabled(Feature::RuntimeMetrics);
-
     OtelProvider::from(&OtelSettings {
         service_name: service_name.to_string(),
         service_version: service_version.to_string(),
@@ -88,7 +84,7 @@ pub fn build_provider(
         exporter,
         trace_exporter,
         metrics_exporter,
-        runtime_metrics,
+        runtime_metrics: true,
     })
 }
 

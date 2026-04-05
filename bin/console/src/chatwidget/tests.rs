@@ -7822,7 +7822,6 @@ async fn stream_recovery_restores_previous_status_header() {
 #[tokio::test]
 async fn runtime_metrics_websocket_timing_logs_and_final_separator_sums_totals() {
     let (mut chat, mut rx, _op_rx) = make_chatwidget_manual(None).await;
-    chat.set_feature_enabled(Feature::RuntimeMetrics, true);
 
     chat.on_task_started();
     chat.apply_runtime_metrics_delta(RuntimeMetricsSummary {

@@ -1612,12 +1612,6 @@ async fn websocket_harness_with_options(
             .disable(Feature::ResponsesWebsockets)
             .expect("test config should allow feature update");
     }
-    if runtime_metrics_enabled {
-        config
-            .features
-            .enable(Feature::RuntimeMetrics)
-            .expect("test config should allow feature update");
-    }
     if websocket_v2_enabled {
         config
             .features

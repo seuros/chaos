@@ -5,11 +5,17 @@
 //! structural mutation so helpers that enumerate panes never touch the layout
 //! cache (`core().panes()` is only valid after `compute_layout`).
 
+use crate::panes::chat_plugin::ChatPlugin;
+use crate::panes::tool_list::ToolListPane;
+use crate::panes::tool_list_plugin::ToolListPlugin;
+use std::cell::Cell;
+use std::cell::RefCell;
 use std::collections::HashSet;
+use std::rc::Rc;
 
 use ratatui::buffer::Buffer;
 use ratatui::layout::{Direction, Rect};
-use ratatui_hypertile::{EventOutcome, HypertileAction, HypertileEvent, PaneId, PaneSnapshot};
+use ratatui_hypertile::{EventOutcome, HypertileAction, HypertileEvent, PaneId};
 use ratatui_hypertile_extras::{HypertilePlugin, HypertileRuntime, HypertileRuntimeBuilder};
 
 // Plugin-type name constants — string keys in the runtime registry.
@@ -52,20 +58,11 @@ impl PaneKind {
     }
 }
 
-// Minimal plugin stubs — rendering is dispatched externally.
-macro_rules! stub_plugin {
-    ($t:ident) => {
-        struct $t;
-        impl HypertilePlugin for $t {
-            fn render(&self, _area: Rect, _buf: &mut Buffer, _focused: bool) {}
-        }
-    };
-}
+struct EmptyPlugin;
 
-stub_plugin!(ChatPlugin);
-stub_plugin!(ToolListPlugin);
-stub_plugin!(McpActivityPlugin);
-stub_plugin!(McpManagementPlugin);
+impl HypertilePlugin for EmptyPlugin {
+    fn render(&self, _area: Rect, _buf: &mut Buffer, _focused: bool) {}
+}
 
 /// Wraps [`HypertileRuntime`] and exposes a [`PaneKind`]-aware API.
 ///
@@ -78,13 +75,18 @@ pub(crate) struct TileManager {
 }
 
 impl TileManager {
-    pub fn new() -> Self {
+    pub fn new(
+        tool_list_state: Rc<RefCell<ToolListPane>>,
+        tool_list_close: Rc<Cell<bool>>,
+    ) -> Self {
         let mut runtime = HypertileRuntimeBuilder::default().with_gap(0).build();
 
         runtime.register_plugin_type(PANE_CHAT, || ChatPlugin);
-        runtime.register_plugin_type(PANE_TOOL_LIST, || ToolListPlugin);
-        runtime.register_plugin_type(PANE_MCP_ACTIVITY, || McpActivityPlugin);
-        runtime.register_plugin_type(PANE_MCP_MANAGEMENT, || McpManagementPlugin);
+        runtime.register_plugin_type(PANE_TOOL_LIST, move || {
+            ToolListPlugin::new(tool_list_state.clone(), tool_list_close.clone())
+        });
+        runtime.register_plugin_type(PANE_MCP_ACTIVITY, || EmptyPlugin);
+        runtime.register_plugin_type(PANE_MCP_MANAGEMENT, || EmptyPlugin);
 
         // ROOT is created with the default "block" placeholder — replace with Chat.
         let _ = runtime.replace_pane_plugin(PaneId::ROOT, PANE_CHAT);
@@ -203,23 +205,9 @@ impl TileManager {
         self.runtime.handle_event(HypertileEvent::Action(action))
     }
 
-    /// Render all panes using an external per-kind closure.
-    ///
-    /// `runtime.render()` computes layout (stub plugins render nothing).
-    /// Pane snapshots carry accurate rects after that call.
-    pub fn render_with<F>(&mut self, area: Rect, buf: &mut Buffer, mut render_pane: F)
-    where
-        F: FnMut(PaneSnapshot, PaneKind, &mut Buffer),
-    {
-        // Computes layout internally; stub plugin render() calls are no-ops.
+    /// Render all panes through the runtime's plugin registry.
+    pub fn render(&mut self, area: Rect, buf: &mut Buffer) {
         self.runtime.render(area, buf);
-        // core().panes() is now valid — layout was just computed above.
-        let panes = self.runtime.core().panes();
-        for pane in panes {
-            if let Some(kind) = self.kind(pane.id) {
-                render_pane(pane, kind, buf);
-            }
-        }
     }
 
     /// Pane rect after layout (valid after a render_with call).
@@ -233,5 +221,9 @@ impl TileManager {
             .iter()
             .copied()
             .find(|&id| self.kind(id) == Some(kind))
+    }
+
+    pub fn plugin_mut(&mut self, id: PaneId) -> Option<&mut (dyn HypertilePlugin + 'static)> {
+        self.runtime.registry_mut().plugin_mut(id)
     }
 }

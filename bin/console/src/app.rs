@@ -76,12 +76,17 @@ use ratatui::style::Stylize;
 use ratatui::text::Line;
 use ratatui::widgets::Paragraph;
 use ratatui::widgets::Wrap;
+use ratatui_hypertile::HypertileEvent;
 use ratatui_hypertile::PaneId;
+use ratatui_hypertile_extras::keychord_from_crossterm;
+use std::cell::Cell;
+use std::cell::RefCell;
 use std::collections::HashMap;
 use std::collections::HashSet;
 use std::collections::VecDeque;
 use std::path::Path;
 use std::path::PathBuf;
+use std::rc::Rc;
 use std::sync::Arc;
 use std::sync::atomic::AtomicBool;
 use std::sync::atomic::Ordering;
@@ -377,7 +382,8 @@ pub(crate) struct App {
     runtime_sandbox_policy_override: Option<SandboxPolicy>,
 
     pub(crate) tile_manager: TileManager,
-    pub(crate) tool_list_pane: ToolListPane,
+    pub(crate) tool_list_pane: Rc<RefCell<ToolListPane>>,
+    tool_list_close: Rc<Cell<bool>>,
     pub(crate) file_search: FileSearchManager,
     log_state_db: Option<Arc<StateRuntime>>,
     log_state_db_init_error: Option<String>,
@@ -1593,6 +1599,8 @@ impl App {
         };
 
         let file_search = FileSearchManager::new(config.cwd.clone(), app_event_tx.clone());
+        let tool_list_pane = Rc::new(RefCell::new(ToolListPane::new()));
+        let tool_list_close = Rc::new(Cell::new(false));
         let mut app = Self {
             server: process_table.clone(),
             session_telemetry: session_telemetry.clone(),
@@ -1605,8 +1613,9 @@ impl App {
             harness_overrides,
             runtime_approval_policy_override: None,
             runtime_sandbox_policy_override: None,
-            tile_manager: TileManager::new(),
-            tool_list_pane: ToolListPane::new(),
+            tile_manager: TileManager::new(tool_list_pane.clone(), tool_list_close.clone()),
+            tool_list_pane,
+            tool_list_close,
             file_search,
             log_state_db,
             log_state_db_init_error: None,
@@ -1747,12 +1756,18 @@ impl App {
                     self.handle_key_event(tui, key_event).await;
                 }
                 TuiEvent::Paste(pasted) => {
-                    // Many terminals convert newlines to \r when pasting (e.g., iTerm2),
-                    // but tui-textarea expects \n. Normalize CR to LF.
-                    // [tui-textarea]: https://github.com/rhysd/tui-textarea/blob/4d18622eeac13b309e0ff6a55a46ac6706da68cf/src/textarea.rs#L782-L783
-                    // [iTerm2]: https://github.com/gnachman/iTerm2/blob/5d0c0d9f68523cbd0494dad5422998964a2ecd8d/sources/iTermPasteHelper.m#L206-L216
-                    let pasted = pasted.replace("\r", "\n");
-                    self.chat_widget.handle_paste(pasted);
+                    // Only paste into chat when chat is focused — do not leak
+                    // clipboard content into the composer from auxiliary panes.
+                    let chat_focused = self
+                        .tile_manager
+                        .focused()
+                        .is_none_or(|id| id == PaneId::ROOT);
+                    if chat_focused {
+                        // Many terminals convert newlines to \r when pasting (e.g., iTerm2),
+                        // but tui-textarea expects \n. Normalize CR to LF.
+                        let pasted = pasted.replace("\r", "\n");
+                        self.chat_widget.handle_paste(pasted);
+                    }
                 }
                 TuiEvent::Draw => {
                     if self.backtrack_render_pending {
@@ -1798,19 +1813,11 @@ impl App {
                                 frame.set_cursor_position((x, y));
                             }
                         } else {
-                            // Tiled layout: dispatch to per-kind widgets via
-                            // the runtime's plugin registry.
-                            let chat_widget = &self.chat_widget;
-                            let tool_list_pane = &self.tool_list_pane;
-                            self.tile_manager.render_with(
-                                main_area,
-                                frame.buffer,
-                                |pane, kind, buf| match kind {
-                                    PaneKind::Chat => chat_widget.render(pane.rect, buf),
-                                    PaneKind::ToolList => tool_list_pane.render(pane.rect, buf),
-                                    _ => {}
-                                },
-                            );
+                            self.tile_manager.render(main_area, frame.buffer);
+
+                            if let Some(chat_rect) = self.tile_manager.pane_rect(PaneId::ROOT) {
+                                self.chat_widget.render(chat_rect, frame.buffer);
+                            }
 
                             // Place cursor in chat pane.
                             if self.tile_manager.focused() == Some(PaneId::ROOT)
@@ -3057,6 +3064,8 @@ impl App {
             }
         }
 
+        // ── Global shortcuts ─────────────────────────────────────────
+        // These work regardless of which pane is focused.
         match key_event {
             KeyEvent {
                 code: KeyCode::Char('o'),
@@ -3065,6 +3074,7 @@ impl App {
                 ..
             } if self.overlay.is_none() && self.chat_widget.no_modal_or_popup_active() => {
                 self.toggle_log_panel(tui).await;
+                return;
             }
             KeyEvent {
                 code: KeyCode::PageUp,
@@ -3076,6 +3086,7 @@ impl App {
             {
                 self.log_panel.scroll_up(8);
                 tui.frame_requester().schedule_frame();
+                return;
             }
             KeyEvent {
                 code: KeyCode::PageDown,
@@ -3087,6 +3098,7 @@ impl App {
             {
                 self.log_panel.scroll_down(8);
                 tui.frame_requester().schedule_frame();
+                return;
             }
             KeyEvent {
                 code: KeyCode::Home,
@@ -3098,6 +3110,7 @@ impl App {
             {
                 self.log_panel.scroll_to_start();
                 tui.frame_requester().schedule_frame();
+                return;
             }
             KeyEvent {
                 code: KeyCode::End,
@@ -3109,6 +3122,7 @@ impl App {
             {
                 self.log_panel.scroll_to_end();
                 tui.frame_requester().schedule_frame();
+                return;
             }
             KeyEvent {
                 code: KeyCode::Char('t'),
@@ -3116,10 +3130,10 @@ impl App {
                 kind: KeyEventKind::Press,
                 ..
             } => {
-                // Enter alternate screen and set viewport to full size.
                 let _ = tui.enter_alt_screen();
                 self.overlay = Some(Overlay::new_transcript(self.transcript_cells.clone()));
                 tui.frame_requester().schedule_frame();
+                return;
             }
             KeyEvent {
                 code: KeyCode::Char('l'),
@@ -3139,6 +3153,7 @@ impl App {
                     self.queue_clear_ui_header(tui);
                     tui.frame_requester().schedule_frame();
                 }
+                return;
             }
             KeyEvent {
                 code: KeyCode::Char('g'),
@@ -3146,15 +3161,45 @@ impl App {
                 kind: KeyEventKind::Press,
                 ..
             } => {
-                // Only launch the external editor if there is no overlay and the bottom pane is not in use.
-                // Note that it can be launched while a task is running to enable editing while the previous turn is ongoing.
                 if self.overlay.is_none()
                     && self.chat_widget.can_launch_external_editor()
                     && self.chat_widget.external_editor_state() == ExternalEditorState::Closed
                 {
                     self.request_external_editor_launch(tui);
                 }
+                return;
             }
+            _ => {}
+        }
+
+        // ── Focused-pane local input ────────────────────────────────
+        // When an auxiliary pane is focused, give it the key first.
+        // If the pane ignores the key we swallow it — unmodified keys
+        // must never leak into the chat composer.
+        if let Some(focused) = self.tile_manager.focused()
+            && focused != PaneId::ROOT
+        {
+            if matches!(key_event.kind, KeyEventKind::Press | KeyEventKind::Repeat)
+                && let Some(chord) = keychord_from_crossterm(key_event)
+                && let Some(plugin) = self.tile_manager.plugin_mut(focused)
+            {
+                let _ = plugin.on_event(&HypertileEvent::Key(chord));
+            }
+
+            let should_close = self.tool_list_close.replace(false)
+                || (key_event.kind == KeyEventKind::Press && key_event.code == KeyCode::Esc);
+
+            if should_close {
+                self.tile_manager.close_pane(focused);
+            }
+
+            tui.frame_requester().schedule_frame();
+            return;
+        }
+
+        // ── Chat pane input ─────────────────────────────────────────
+        // Only reached when Chat (ROOT) is focused.
+        match key_event {
             // Esc primes/advances backtracking only in normal (not working) mode
             // with the composer focused and empty. In any other state, forward
             // Esc so the active UI (e.g. status indicator, modals, popups)
@@ -3190,8 +3235,6 @@ impl App {
                 ..
             } => {
                 // Any non-Esc key press should cancel a primed backtrack.
-                // This avoids stale "Esc-primed" state after the user starts typing
-                // (even if they later backspace to empty).
                 if key_event.code != KeyCode::Esc && self.backtrack.primed {
                     self.reset_backtrack_state();
                 }
@@ -3214,12 +3257,13 @@ impl App {
     ) {
         use ratatui::layout::Direction;
         // Toggle: if already open, close it; otherwise open.
+        self.tool_list_close.set(false);
         if self.tile_manager.find_pane(PaneKind::ToolList).is_some() {
             self.tile_manager.close_kind(PaneKind::ToolList);
         } else {
+            self.tool_list_pane.borrow_mut().set_tools(ev.tools);
             self.tile_manager
                 .open_or_focus(PaneKind::ToolList, Direction::Horizontal);
-            self.tool_list_pane.set_tools(ev.tools);
         }
         tui.frame_requester().schedule_frame();
     }
@@ -4954,6 +4998,8 @@ mod tests {
         let file_search = FileSearchManager::new(config.cwd.clone(), app_event_tx.clone());
         let model = chaos_kern::test_support::get_model_offline(config.model.as_deref());
         let session_telemetry = test_session_telemetry(&config, model.as_str());
+        let tool_list_pane = Rc::new(RefCell::new(ToolListPane::new()));
+        let tool_list_close = Rc::new(Cell::new(false));
 
         App {
             server,
@@ -4967,8 +5013,9 @@ mod tests {
             harness_overrides: ConfigOverrides::default(),
             runtime_approval_policy_override: None,
             runtime_sandbox_policy_override: None,
-            tile_manager: TileManager::new(),
-            tool_list_pane: ToolListPane::new(),
+            tile_manager: TileManager::new(tool_list_pane.clone(), tool_list_close.clone()),
+            tool_list_pane,
+            tool_list_close,
             file_search,
             log_state_db: None,
             log_state_db_init_error: None,
@@ -5015,6 +5062,8 @@ mod tests {
         let file_search = FileSearchManager::new(config.cwd.clone(), app_event_tx.clone());
         let model = chaos_kern::test_support::get_model_offline(config.model.as_deref());
         let session_telemetry = test_session_telemetry(&config, model.as_str());
+        let tool_list_pane = Rc::new(RefCell::new(ToolListPane::new()));
+        let tool_list_close = Rc::new(Cell::new(false));
 
         (
             App {
@@ -5029,8 +5078,9 @@ mod tests {
                 harness_overrides: ConfigOverrides::default(),
                 runtime_approval_policy_override: None,
                 runtime_sandbox_policy_override: None,
-                tile_manager: TileManager::new(),
-                tool_list_pane: ToolListPane::new(),
+                tile_manager: TileManager::new(tool_list_pane.clone(), tool_list_close.clone()),
+                tool_list_pane,
+                tool_list_close,
                 file_search,
                 log_state_db: None,
                 log_state_db_init_error: None,

@@ -118,19 +118,6 @@ fn build_subagent_headers_sets_other_subagent_label() {
     assert_eq!(value, Some("memory_consolidation"));
 }
 
-#[tokio::test]
-async fn summarize_memories_returns_empty_for_empty_input() {
-    let client = test_model_client(SessionSource::Cli);
-    let model_info = test_model_info();
-    let session_telemetry = test_session_telemetry();
-
-    let output = client
-        .summarize_memories(Vec::new(), &model_info, None, &session_telemetry)
-        .await
-        .expect("empty summarize request should succeed");
-    assert_eq!(output.len(), 0);
-}
-
 #[test]
 fn auth_request_telemetry_context_tracks_attached_auth_and_retry_phase() {
     let auth_context = AuthRequestTelemetryContext::new(

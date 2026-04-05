@@ -40,11 +40,7 @@ use crate::api_bridge::map_api_error;
 use crate::auth::UnauthorizedRecovery;
 use chaos_parrot::CompactClient as ApiCompactClient;
 use chaos_parrot::CompactionInput as ApiCompactionInput;
-use chaos_parrot::MemoriesClient as ApiMemoriesClient;
-use chaos_parrot::MemorySummarizeInput as ApiMemorySummarizeInput;
-use chaos_parrot::MemorySummarizeOutput as ApiMemorySummarizeOutput;
 use chaos_parrot::RamaTransport;
-use chaos_parrot::RawMemory as ApiRawMemory;
 use chaos_parrot::RequestTelemetry;
 use chaos_parrot::ResponseCreateWsRequest;
 use chaos_parrot::ResponsesApiRequest;
@@ -141,17 +137,10 @@ pub const X_CODEX_TURN_STATE_HEADER: &str = "x-codex-turn-state";
 pub const X_CODEX_TURN_METADATA_HEADER: &str = "x-codex-turn-metadata";
 pub const X_RESPONSESAPI_INCLUDE_TIMING_METRICS_HEADER: &str =
     "x-responsesapi-include-timing-metrics";
-const RESPONSES_WEBSOCKETS_V2_BETA_HEADER_VALUE: &str = "responses_websockets=2026-02-06";
 const RESPONSES_ENDPOINT: &str = "/responses";
 const RESPONSES_COMPACT_ENDPOINT: &str = "/responses/compact";
-const MEMORIES_SUMMARIZE_ENDPOINT: &str = "/memories/trace_summarize";
-pub fn ws_version_from_features(config: &Config) -> bool {
-    config
-        .features
-        .enabled(crate::features::Feature::ResponsesWebsockets)
-        || config
-            .features
-            .enabled(crate::features::Feature::ResponsesWebsocketsV2)
+pub fn ws_version_from_features(_config: &Config) -> bool {
+    false
 }
 
 /// Session-scoped state shared by all [`ModelClient`] clones.
@@ -534,53 +523,6 @@ impl ModelClient {
             .map_err(map_api_error)
     }
 
-    /// Builds memory summaries for each provided normalized raw memory.
-    ///
-    /// This is a unary call (no streaming) to `/v1/memories/trace_summarize`.
-    ///
-    /// The model selection, reasoning effort, and telemetry context are passed explicitly to keep
-    /// `ModelClient` session-scoped.
-    pub async fn summarize_memories(
-        &self,
-        raw_memories: Vec<ApiRawMemory>,
-        model_info: &ModelInfo,
-        effort: Option<ReasoningEffortConfig>,
-        session_telemetry: &SessionTelemetry,
-    ) -> Result<Vec<ApiMemorySummarizeOutput>> {
-        if raw_memories.is_empty() {
-            return Ok(Vec::new());
-        }
-
-        let client_setup = self.current_client_setup().await?;
-        let transport = RamaTransport::default_client();
-        let request_telemetry = Self::build_request_telemetry(
-            session_telemetry,
-            AuthRequestTelemetryContext::new(
-                client_setup.auth.as_ref().map(ChaosAuth::auth_mode),
-                &client_setup.api_auth,
-                PendingUnauthorizedRetry::default(),
-            ),
-            RequestRouteTelemetry::for_endpoint(MEMORIES_SUMMARIZE_ENDPOINT),
-        );
-        let client =
-            ApiMemoriesClient::new(transport, client_setup.api_provider, client_setup.api_auth)
-                .with_telemetry(Some(request_telemetry));
-
-        let payload = ApiMemorySummarizeInput {
-            model: model_info.slug.clone(),
-            raw_memories,
-            reasoning: effort.map(|effort| Reasoning {
-                effort: Some(effort),
-                summary: None,
-            }),
-        };
-
-        client
-            .summarize_input(&payload, self.build_subagent_headers())
-            .await
-            .map_err(map_api_error)
-    }
-
     fn build_subagent_headers(&self) -> ApiHeaderMap {
         let mut extra_headers = crate::default_client::default_headers();
         if let SessionSource::SubAgent(sub) = &self.state.session_source {
@@ -784,10 +726,6 @@ impl ModelClient {
             headers.insert("x-client-request-id", header_value);
         }
         headers.extend(build_conversation_headers(Some(conversation_id)));
-        headers.insert(
-            OPENAI_BETA_HEADER,
-            HeaderValue::from_static(RESPONSES_WEBSOCKETS_V2_BETA_HEADER_VALUE),
-        );
         if self.state.include_timing_metrics {
             headers.insert(
                 X_RESPONSESAPI_INCLUDE_TIMING_METRICS_HEADER,

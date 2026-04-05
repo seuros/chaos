@@ -51,7 +51,6 @@ members = [
 
     # var/ — runtime state
     "var/proc",
-    "var/memento",
 
     # share/ — extensions + data
     "share/hallucinate",
@@ -160,7 +159,6 @@ chaos-sysctl = { path = "etc/sysctl" }
 
 # Internal — var/
 chaos-proc = { path = "var/proc" }
-chaos-memento = { path = "var/memento" }
 
 # Internal — share/
 chaos-hallucinate = { path = "share/hallucinate" }

@@ -726,28 +726,6 @@ fn view_image_tool_includes_detail_with_original_detail_feature() {
 }
 
 #[test]
-fn test_build_specs_artifact_tool_is_not_exposed() {
-    let mut config = test_config();
-    let runtime_root = tempfile::TempDir::new().expect("create temp chaos home");
-    config.chaos_home = runtime_root.path().to_path_buf();
-    let model_info = ModelsManager::construct_model_info_offline_for_tests("gpt-5-codex", &config);
-    let mut features = Features::with_defaults();
-    features.enable(Feature::Artifact);
-    let available_models = Vec::new();
-    let tools_config = ToolsConfig::new(&ToolsConfigParams {
-        model_info: &model_info,
-        available_models: &available_models,
-        features: &features,
-        web_search_mode: Some(WebSearchMode::Cached),
-        session_source: SessionSource::Cli,
-        sandbox_policy: &SandboxPolicy::RootAccess,
-        windows_sandbox_level: WindowsSandboxLevel::Disabled,
-    });
-    let (tools, _) = build_specs(&tools_config, None, None, &[]).build();
-    assert_lacks_tool_name(&tools, "artifacts");
-}
-
-#[test]
 fn test_build_specs_agent_job_worker_tools_enabled() {
     let config = test_config();
     let model_info = ModelsManager::construct_model_info_offline_for_tests("gpt-5-codex", &config);
@@ -882,97 +860,6 @@ fn request_permissions_tool_is_independent_from_additional_permissions() {
     let (tools, _) = build_specs(&tools_config, None, None, &[]).build();
 
     assert_lacks_tool_name(&tools, "request_permissions");
-}
-
-#[test]
-fn get_memory_requires_feature_flag() {
-    let config = test_config();
-    let model_info = ModelsManager::construct_model_info_offline_for_tests("gpt-5-codex", &config);
-    let mut features = Features::with_defaults();
-    features.disable(Feature::MemoryTool);
-    let available_models = Vec::new();
-    let tools_config = ToolsConfig::new(&ToolsConfigParams {
-        model_info: &model_info,
-        available_models: &available_models,
-        features: &features,
-        web_search_mode: Some(WebSearchMode::Cached),
-        session_source: SessionSource::Cli,
-        sandbox_policy: &SandboxPolicy::RootAccess,
-        windows_sandbox_level: WindowsSandboxLevel::Disabled,
-    });
-    let (tools, _) = build_specs(&tools_config, None, None, &[]).build();
-    assert!(
-        !tools.iter().any(|t| t.spec.name() == "get_memory"),
-        "get_memory should be disabled when memory_tool feature is off"
-    );
-}
-
-#[test]
-fn image_generation_tools_require_feature_and_supported_model() {
-    let config = test_config();
-    let mut supported_model_info =
-        ModelsManager::construct_model_info_offline_for_tests("gpt-5.2", &config);
-    supported_model_info.slug = "custom/gpt-5.2-variant".to_string();
-    let mut unsupported_model_info = supported_model_info.clone();
-    unsupported_model_info.input_modalities = vec![InputModality::Text];
-    let default_features = Features::with_defaults();
-    let mut image_generation_features = default_features.clone();
-    image_generation_features.enable(Feature::ImageGeneration);
-
-    let available_models = Vec::new();
-    let default_tools_config = ToolsConfig::new(&ToolsConfigParams {
-        model_info: &supported_model_info,
-        available_models: &available_models,
-        features: &default_features,
-        web_search_mode: Some(WebSearchMode::Cached),
-        session_source: SessionSource::Cli,
-        sandbox_policy: &SandboxPolicy::RootAccess,
-        windows_sandbox_level: WindowsSandboxLevel::Disabled,
-    });
-    let (default_tools, _) = build_specs(&default_tools_config, None, None, &[]).build();
-    assert!(
-        !default_tools
-            .iter()
-            .any(|tool| tool.spec.name() == "image_generation"),
-        "image_generation should be disabled by default"
-    );
-
-    let supported_tools_config = ToolsConfig::new(&ToolsConfigParams {
-        model_info: &supported_model_info,
-        available_models: &available_models,
-        features: &image_generation_features,
-        web_search_mode: Some(WebSearchMode::Cached),
-        session_source: SessionSource::Cli,
-        sandbox_policy: &SandboxPolicy::RootAccess,
-        windows_sandbox_level: WindowsSandboxLevel::Disabled,
-    });
-    let (supported_tools, _) = build_specs(&supported_tools_config, None, None, &[]).build();
-    assert_contains_tool_names(&supported_tools, &["image_generation"]);
-    let image_generation_tool = find_tool(&supported_tools, "image_generation");
-    assert_eq!(
-        serde_json::to_value(&image_generation_tool.spec).expect("serialize image tool"),
-        serde_json::json!({
-            "type": "image_generation",
-            "output_format": "png"
-        })
-    );
-
-    let tools_config = ToolsConfig::new(&ToolsConfigParams {
-        model_info: &unsupported_model_info,
-        available_models: &available_models,
-        features: &image_generation_features,
-        web_search_mode: Some(WebSearchMode::Cached),
-        session_source: SessionSource::Cli,
-        sandbox_policy: &SandboxPolicy::RootAccess,
-        windows_sandbox_level: WindowsSandboxLevel::Disabled,
-    });
-    let (tools, _) = build_specs(&tools_config, None, None, &[]).build();
-    assert!(
-        !tools
-            .iter()
-            .any(|tool| tool.spec.name() == "image_generation"),
-        "image_generation should be disabled for unsupported models"
-    );
 }
 
 fn assert_model_tools(
@@ -1548,61 +1435,6 @@ fn test_build_specs_default_shell_present() {
         subset.push(shell_tool);
     }
     assert_contains_tool_names(&tools, &subset);
-}
-
-#[test]
-fn shell_zsh_fork_prefers_shell_command_over_unified_exec() {
-    let config = test_config();
-    let model_info = ModelsManager::construct_model_info_offline_for_tests("o3", &config);
-    let mut features = Features::with_defaults();
-    features.enable(Feature::UnifiedExec);
-    features.enable(Feature::ShellZshFork);
-
-    let available_models = Vec::new();
-    let tools_config = ToolsConfig::new(&ToolsConfigParams {
-        model_info: &model_info,
-        available_models: &available_models,
-        features: &features,
-        web_search_mode: Some(WebSearchMode::Live),
-        session_source: SessionSource::Cli,
-        sandbox_policy: &SandboxPolicy::RootAccess,
-        windows_sandbox_level: WindowsSandboxLevel::Disabled,
-    });
-    let user_shell = Shell {
-        shell_type: ShellType::Zsh,
-        shell_path: PathBuf::from("/bin/zsh"),
-        shell_snapshot: crate::shell::empty_shell_snapshot_receiver(),
-    };
-
-    assert_eq!(tools_config.shell_type, ConfigShellToolType::ShellCommand);
-    assert_eq!(
-        tools_config.shell_command_backend,
-        ShellCommandBackendConfig::ZshFork
-    );
-    assert_eq!(
-        tools_config.unified_exec_shell_mode,
-        UnifiedExecShellMode::Direct
-    );
-    assert_eq!(
-        tools_config
-            .with_unified_exec_shell_mode_for_session(
-                &user_shell,
-                Some(&PathBuf::from("/opt/codex/zsh")),
-                Some(&PathBuf::from("/opt/codex/codex-execve-wrapper")),
-            )
-            .unified_exec_shell_mode,
-        if cfg!(unix) {
-            UnifiedExecShellMode::ZshFork(ZshForkConfig {
-                shell_zsh_path: AbsolutePathBuf::from_absolute_path("/opt/codex/zsh").unwrap(),
-                main_execve_wrapper_exe: AbsolutePathBuf::from_absolute_path(
-                    "/opt/codex/codex-execve-wrapper",
-                )
-                .unwrap(),
-            })
-        } else {
-            UnifiedExecShellMode::Direct
-        }
-    );
 }
 
 #[test]

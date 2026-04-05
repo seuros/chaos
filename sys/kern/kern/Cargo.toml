@@ -37,7 +37,6 @@ chaos-storage = { workspace = true }
 chaos-concierge = { workspace = true }
 chaos-journald = { workspace = true }
 chaos-traits = { workspace = true }
-chaos-memento = { workspace = true }
 chaos-watchdog = { workspace = true }
 chaos-epoll = { workspace = true }
 codex-client = { workspace = true }

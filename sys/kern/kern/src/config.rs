@@ -7,8 +7,6 @@ use crate::config::types::History;
 use crate::config::types::McpServerConfig;
 use crate::config::types::McpServerDisabledReason;
 use crate::config::types::McpServerTransportConfig;
-use crate::config::types::MemoriesConfig;
-use crate::config::types::MemoriesToml;
 use crate::config::types::ModelAvailabilityNuxConfig;
 use crate::config::types::Notice;
 use crate::config::types::NotificationMethod;
@@ -40,7 +38,6 @@ use crate::features::Features;
 use crate::features::FeaturesToml;
 use crate::git_info::resolve_root_git_project_for_trust;
 use crate::mcp::oauth_types::OAuthCredentialsStoreMode;
-use crate::memories::memory_root;
 use crate::model_provider_info::ModelProviderInfo;
 use crate::model_provider_info::OPENAI_PROVIDER_ID;
 use crate::model_provider_info::built_in_model_providers;
@@ -355,9 +352,6 @@ pub struct Config {
 
     /// User-defined role declarations keyed by role name.
     pub agent_roles: BTreeMap<String, AgentRoleConfig>,
-
-    /// Memories subsystem settings.
-    pub memories: MemoriesConfig,
 
     /// Directory containing all ChaOS state (defaults to `~/.chaos` and can be
     /// overridden by `CHAOS_HOME`).
@@ -1253,9 +1247,6 @@ pub struct ConfigToml {
     /// Agent-related settings (thread limits, etc.).
     pub agents: Option<AgentsToml>,
 
-    /// Memories subsystem settings.
-    pub memories: Option<MemoriesToml>,
-
     /// User-level skill config entries keyed by SKILL.md path.
     pub skills: Option<SkillsConfig>,
 
@@ -1834,16 +1825,6 @@ impl Config {
             ));
         }
 
-        let memories_root = memory_root(&chaos_home);
-        std::fs::create_dir_all(&memories_root)?;
-        let memories_root = AbsolutePathBuf::from_absolute_path(&memories_root)?;
-        if !additional_writable_roots
-            .iter()
-            .any(|existing| existing == &memories_root)
-        {
-            additional_writable_roots.push(memories_root);
-        }
-
         let profiles_are_active = matches!(
             permission_config_syntax,
             Some(PermissionConfigSyntax::Profiles)
@@ -2286,7 +2267,6 @@ impl Config {
             agent_max_threads,
             agent_max_depth,
             agent_roles,
-            memories: cfg.memories.unwrap_or_default().into(),
             agent_job_max_runtime_seconds,
             chaos_home,
             sqlite_home,

@@ -45,7 +45,3 @@ mcp-server-run *args:
 write-hooks-schema:
     cargo run -p chaos-dtrace --bin write_hooks_schema_fixtures
 
-# Regenerate config.schema.json fixture
-[no-cd]
-write-config-schema:
-    cargo run -p chaos-kern --bin write_config_schema

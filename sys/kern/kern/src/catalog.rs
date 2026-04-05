@@ -272,6 +272,8 @@ mod tests {
                 description: "A test tool".to_string(),
                 input_schema: json!({"type": "object"}),
                 annotations: None,
+                read_only_hint: None,
+                supports_parallel_tool_calls: true,
             }],
         );
         assert_eq!(catalog.tools().len(), initial_count + 1);
@@ -360,6 +362,8 @@ mod tests {
                 description: "A".to_string(),
                 input_schema: json!({"type": "object"}),
                 annotations: None,
+                read_only_hint: None,
+                supports_parallel_tool_calls: true,
             }],
         );
         catalog.register_mcp_resources(

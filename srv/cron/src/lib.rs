@@ -20,17 +20,64 @@ pub use scheduler::spawn_global as spawn_scheduler;
 pub use store::CronStore;
 pub use tools::create::OwnerContext;
 
+use chaos_traits::catalog::CatalogToolDriver;
+use chaos_traits::catalog::CatalogToolDriverFuture;
+use chaos_traits::catalog::CatalogToolRequest;
+use chaos_traits::catalog::CatalogToolResult;
 use chaos_traits::catalog::CatalogRegistration;
-use chaos_traits::catalog::tool_infos_to_catalog_tools;
+use chaos_traits::catalog::tool_infos_to_catalog_tools_with_parallel;
 use mcp_host::prelude::*;
+use std::sync::Arc;
+
+struct CronToolDriver;
+
+impl CatalogToolDriver for CronToolDriver {
+    fn call_tool(&self, request: CatalogToolRequest) -> CatalogToolDriverFuture<'_> {
+        Box::pin(async move {
+            let provider = chaos_storage::ChaosStorageProvider::from_optional_sqlite(
+                None,
+                Some(request.sqlite_home.as_path()),
+            )
+            .await?;
+            let owner = OwnerContext {
+                project_path: Some(request.cwd.to_string_lossy().to_string()),
+                session_id: Some(request.session_id),
+            };
+            let result = match request.tool_name.as_str() {
+                "cron_create" => {
+                    let params: tools::create::CronCreateParams =
+                        serde_json::from_value(request.arguments)
+                            .map_err(|e| format!("invalid arguments: {e}"))?;
+                    tools::create::execute(&params, Some(&provider), &owner).await
+                }
+                "cron_toggle" => {
+                    let params: tools::toggle::CronToggleParams =
+                        serde_json::from_value(request.arguments)
+                            .map_err(|e| format!("invalid arguments: {e}"))?;
+                    tools::toggle::execute(&params, Some(&provider)).await
+                }
+                other => Err(format!("unknown cron tool: {other}")),
+            }?;
+            Ok(CatalogToolResult {
+                output: result,
+                success: Some(false),
+            })
+        })
+    }
+}
+
+fn cron_tool_driver() -> Arc<dyn CatalogToolDriver> {
+    Arc::new(CronToolDriver)
+}
 
 inventory::submit! {
     CatalogRegistration {
         name: "cron",
-        tools: || tool_infos_to_catalog_tools(tool_infos()),
+        tools: || tool_infos_to_catalog_tools_with_parallel(tool_infos(), false),
         resources: || vec![],
         resource_templates: || vec![],
         prompts: || vec![],
+        tool_driver: Some(cron_tool_driver),
     }
 }
 

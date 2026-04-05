@@ -6039,6 +6039,8 @@ pub(crate) async fn built_tools(
                         description: t.description.clone(),
                         input_schema: t.input_schema.clone(),
                         annotations: t.annotations.clone(),
+                        read_only_hint: t.read_only_hint,
+                        supports_parallel_tool_calls: t.supports_parallel_tool_calls,
                     },
                 )
             })
@@ -6056,6 +6058,8 @@ pub(crate) async fn built_tools(
                     description: tool.description,
                     input_schema: tool.input_schema,
                     annotations: None,
+                    read_only_hint: None,
+                    supports_parallel_tool_calls: true,
                 },
             ));
         }

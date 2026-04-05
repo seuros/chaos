@@ -5,6 +5,34 @@
 //! MCP servers register dynamically at runtime through the kernel's `Catalog`.
 
 use serde_json::Value;
+use std::future::Future;
+use std::path::PathBuf;
+use std::pin::Pin;
+use std::sync::Arc;
+
+pub type CatalogToolDriverFuture<'a> =
+    Pin<Box<dyn Future<Output = Result<CatalogToolResult, String>> + Send + 'a>>;
+
+pub trait CatalogToolDriver: Send + Sync {
+    fn call_tool(&self, request: CatalogToolRequest) -> CatalogToolDriverFuture<'_>;
+}
+
+pub type CatalogToolDriverFactory = fn() -> Arc<dyn CatalogToolDriver>;
+
+#[derive(Debug, Clone)]
+pub struct CatalogToolRequest {
+    pub tool_name: String,
+    pub arguments: Value,
+    pub cwd: PathBuf,
+    pub sqlite_home: PathBuf,
+    pub session_id: String,
+}
+
+#[derive(Debug, Clone)]
+pub struct CatalogToolResult {
+    pub output: String,
+    pub success: Option<bool>,
+}
 
 /// A static module registration. Modules submit these via `inventory::submit!`.
 /// The kernel discovers them at startup via `inventory::iter`.
@@ -19,6 +47,8 @@ pub struct CatalogRegistration {
     pub resource_templates: fn() -> Vec<CatalogResourceTemplate>,
     /// Returns all prompts this module provides.
     pub prompts: fn() -> Vec<CatalogPrompt>,
+    /// Optional driver factory for executing the module's catalog tools.
+    pub tool_driver: Option<CatalogToolDriverFactory>,
 }
 
 inventory::collect!(CatalogRegistration);
@@ -29,11 +59,15 @@ pub struct CatalogTool {
     pub description: String,
     pub input_schema: Value,
     pub annotations: Option<Value>,
+    pub read_only_hint: Option<bool>,
+    pub supports_parallel_tool_calls: bool,
 }
 
 /// Convert a generated MCP `ToolInfo` into the kernel's lighter-weight catalog shape.
 pub fn tool_info_to_catalog_tool(info: mcp_host::prelude::ToolInfo) -> CatalogTool {
     CatalogTool {
+        read_only_hint: info.annotations.as_ref().and_then(|a| a.read_only_hint),
+        supports_parallel_tool_calls: true,
         name: info.name,
         description: info.description.unwrap_or_default(),
         input_schema: info.input_schema,
@@ -47,6 +81,24 @@ where
     I: IntoIterator<Item = mcp_host::prelude::ToolInfo>,
 {
     infos.into_iter().map(tool_info_to_catalog_tool).collect()
+}
+
+/// Convert a collection of generated `ToolInfo` values into catalog entries
+/// with an explicit parallel-tool-calls flag.
+pub fn tool_infos_to_catalog_tools_with_parallel<I>(
+    infos: I,
+    supports_parallel_tool_calls: bool,
+) -> Vec<CatalogTool>
+where
+    I: IntoIterator<Item = mcp_host::prelude::ToolInfo>,
+{
+    tool_infos_to_catalog_tools(infos)
+        .into_iter()
+        .map(|mut tool| {
+            tool.supports_parallel_tool_calls = supports_parallel_tool_calls;
+            tool
+        })
+        .collect()
 }
 
 /// Resource metadata.

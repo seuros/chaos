@@ -1935,8 +1935,7 @@ pub(crate) fn build_specs_with_discoverable_tools(
     use crate::minions::tools::SpawnAgentHandler;
     use crate::minions::tools::WaitAgentHandler;
     use crate::tools::handlers::ApplyPatchHandler;
-    use crate::tools::handlers::ArsenalHandler;
-    use crate::tools::handlers::CronHandler;
+    use crate::tools::handlers::CatalogModuleHandler;
     use crate::tools::handlers::DynamicToolHandler;
     use crate::tools::handlers::HallucinateHandler;
     use crate::tools::handlers::McpHandler;
@@ -1951,6 +1950,7 @@ pub(crate) fn build_specs_with_discoverable_tools(
     use crate::tools::handlers::ToolSuggestHandler;
     use crate::tools::handlers::UnifiedExecHandler;
     use crate::tools::handlers::ViewImageHandler;
+    use chaos_traits::catalog::CatalogRegistration;
     use std::sync::Arc;
 
     let mut builder = ToolRegistryBuilder::new();
@@ -2129,8 +2129,11 @@ pub(crate) fn build_specs_with_discoverable_tools(
     // The kernel does not import these crates for schema; it reads from the catalog.
     // Sort by source then name for deterministic ordering (inventory iter order is linker-dependent).
     {
-        let arsenal_handler = Arc::new(ArsenalHandler);
-        let cron_handler = Arc::new(CronHandler);
+        let catalog_registrations: HashMap<&'static str, &'static CatalogRegistration> =
+            inventory::iter::<CatalogRegistration>
+                .into_iter()
+                .map(|reg| (reg.name, reg))
+                .collect();
         let mut catalog_tools = catalog_tools;
         catalog_tools.sort_by(|(sa, _), (sb, _)| sa.cmp(sb));
         for (source, tool) in catalog_tools {
@@ -2144,11 +2147,9 @@ pub(crate) fn build_specs_with_discoverable_tools(
                 parameters: input_schema,
                 output_schema: None,
             });
-            let parallel = source != "cron";
+            let parallel = tool.supports_parallel_tool_calls;
             push_tool_spec(&mut builder, spec, parallel);
             match source.as_str() {
-                "arsenal" => builder.register_handler(&tool.name, arsenal_handler.clone()),
-                "cron" => builder.register_handler(&tool.name, cron_handler.clone()),
                 "hallucinate" => {
                     if let Some(ref handle) = hallucinate {
                         let handler = Arc::new(HallucinateHandler {
@@ -2157,7 +2158,25 @@ pub(crate) fn build_specs_with_discoverable_tools(
                         builder.register_handler(&tool.name, handler);
                     }
                 }
-                _ => builder.register_handler(&tool.name, arsenal_handler.clone()),
+                _ => {
+                    let reg = catalog_registrations.get(source.as_str()).unwrap_or_else(|| {
+                        panic!(
+                            "catalog module {source} registered tool {} but has no CatalogRegistration",
+                            tool.name
+                        )
+                    });
+                    let tool_driver = reg.tool_driver.unwrap_or_else(|| {
+                        panic!(
+                            "catalog module {source} registered tool {} but provides no tool_driver",
+                            tool.name
+                        )
+                    });
+                    let handler = Arc::new(CatalogModuleHandler {
+                        driver: tool_driver(),
+                        read_only_hint: tool.read_only_hint,
+                    });
+                    builder.register_handler(&tool.name, handler);
+                }
             }
         }
     }

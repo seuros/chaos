@@ -4,17 +4,14 @@ use chaos_ipc::models::PermissionProfile;
 use chaos_ipc::models::ResponseItem;
 use std::collections::HashMap;
 use std::collections::HashSet;
-use tokio::task::JoinHandle;
 
 use crate::chaos::PreviousTurnSettings;
 use crate::chaos::SessionConfiguration;
 use crate::context_manager::ContextManager;
-use crate::error::Result as CodexResult;
 use crate::protocol::RateLimitSnapshot;
 use crate::protocol::TokenUsage;
 use crate::protocol::TokenUsageInfo;
 use crate::sandboxing::merge_permission_profiles;
-use crate::tasks::RegularTask;
 use crate::truncate::TruncationPolicy;
 use chaos_ipc::protocol::TurnContextItem;
 
@@ -29,8 +26,6 @@ pub(crate) struct SessionState {
     /// model/realtime handling on subsequent regular turns (including full-context
     /// reinjection after resume or `/compact`).
     previous_turn_settings: Option<PreviousTurnSettings>,
-    /// Startup regular task pre-created during session initialization.
-    pub(crate) startup_regular_task: Option<JoinHandle<CodexResult<RegularTask>>>,
     #[allow(dead_code)]
     pub(crate) active_connector_selection: HashSet<String>,
     pub(crate) pending_session_start_source: Option<chaos_dtrace::SessionStartSource>,
@@ -48,7 +43,6 @@ impl SessionState {
             server_reasoning_included: false,
             dependency_env: HashMap::new(),
             previous_turn_settings: None,
-            startup_regular_task: None,
             active_connector_selection: HashSet::new(),
             pending_session_start_source: None,
             granted_permissions: None,
@@ -145,16 +139,6 @@ impl SessionState {
 
     pub(crate) fn dependency_env(&self) -> HashMap<String, String> {
         self.dependency_env.clone()
-    }
-
-    pub(crate) fn set_startup_regular_task(&mut self, task: JoinHandle<CodexResult<RegularTask>>) {
-        self.startup_regular_task = Some(task);
-    }
-
-    pub(crate) fn take_startup_regular_task(
-        &mut self,
-    ) -> Option<JoinHandle<CodexResult<RegularTask>>> {
-        self.startup_regular_task.take()
     }
 
     // Adds connector IDs to the active set and returns the merged selection.

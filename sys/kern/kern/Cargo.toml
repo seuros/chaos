@@ -67,7 +67,6 @@ csv = { workspace = true }
 dirs = { workspace = true }
 encoding_rs = { workspace = true }
 env-flags = { workspace = true }
-eventsource-stream = { workspace = true }
 futures = { workspace = true }
 http = { workspace = true }
 iana-time-zone = { workspace = true }

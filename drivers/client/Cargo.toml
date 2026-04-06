@@ -7,7 +7,6 @@ version.workspace = true
 
 [dependencies]
 bytes = { workspace = true }
-eventsource-stream = { workspace = true }
 futures = { workspace = true }
 rand = { workspace = true }
 rama = { workspace = true }

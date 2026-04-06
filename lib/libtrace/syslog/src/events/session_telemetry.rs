@@ -29,8 +29,8 @@ use chaos_ipc::protocol::SandboxPolicy;
 use chaos_ipc::protocol::SessionSource;
 use chaos_ipc::user_input::UserInput;
 use chaos_parrot::ResponseEvent;
-use eventsource_stream::Event as StreamEvent;
-use eventsource_stream::EventStreamError as StreamError;
+use rama::error::BoxError;
+use rama::http::sse::Event as StreamEvent;
 use rama::telemetry::opentelemetry::sdk::metrics::data::ResourceMetrics;
 use std::borrow::Cow;
 use std::future::Future;
@@ -395,28 +395,30 @@ impl SessionTelemetry {
         );
     }
 
-    pub fn log_sse_event<E>(
+    pub fn log_sse_event(
         &self,
-        response: &Result<Option<Result<StreamEvent, StreamError<E>>>, Elapsed>,
+        response: &Result<Option<Result<StreamEvent, BoxError>>, Elapsed>,
         duration: Duration,
-    ) where
-        E: std::fmt::Display,
-    {
+    ) {
         match response {
             Ok(Some(Ok(sse))) => {
-                if sse.data.trim() == "[DONE]" {
-                    self.sse_event(&sse.event, duration);
+                let data = sse.data().map(String::as_str).unwrap_or_default();
+                let event_name = sse.event().unwrap_or("message");
+                if data.trim() == "[DONE]" {
+                    self.sse_event(event_name, duration);
                 } else {
-                    match serde_json::from_str::<serde_json::Value>(&sse.data) {
-                        Ok(error) if sse.event == "response.failed" => {
-                            self.sse_event_failed(Some(&sse.event), duration, &error);
+                    match serde_json::from_str::<serde_json::Value>(data) {
+                        Ok(error) if event_name == "response.failed" => {
+                            let event_name = event_name.to_string();
+                            self.sse_event_failed(Some(&event_name), duration, &error);
                         }
-                        Ok(content) if sse.event == "response.output_item.done" => {
+                        Ok(content) if event_name == "response.output_item.done" => {
                             match serde_json::from_value::<ResponseItem>(content) {
-                                Ok(_) => self.sse_event(&sse.event, duration),
+                                Ok(_) => self.sse_event(event_name, duration),
                                 Err(_) => {
+                                    let event_name = event_name.to_string();
                                     self.sse_event_failed(
-                                        Some(&sse.event),
+                                        Some(&event_name),
                                         duration,
                                         &"failed to parse response.output_item.done",
                                     );
@@ -424,10 +426,11 @@ impl SessionTelemetry {
                             };
                         }
                         Ok(_) => {
-                            self.sse_event(&sse.event, duration);
+                            self.sse_event(event_name, duration);
                         }
                         Err(error) => {
-                            self.sse_event_failed(Some(&sse.event), duration, &error);
+                            let event_name = event_name.to_string();
+                            self.sse_event_failed(Some(&event_name), duration, &error);
                         }
                     }
                 }
@@ -756,4 +759,3 @@ impl SessionTelemetry {
         }
     }
 }
-

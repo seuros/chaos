@@ -233,7 +233,6 @@ encoding_rs = "0.8.35"
 fd-lock = "4.0.4"
 env-flags = "0.1.1"
 env_logger = "0.11.10"
-eventsource-stream = "0.2.3"
 flate2 = "1.1.9"
 futures = { version = "0.3", default-features = false }
 gethostname = "1.1.0"

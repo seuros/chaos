@@ -20,6 +20,9 @@ use chaos_abi::TurnEvent;
 use chaos_abi::TurnRequest;
 use chaos_abi::TurnStream;
 use http::HeaderMap;
+use rama::error::BoxError;
+use rama::futures::StreamExt;
+use rama::http::sse::EventStream;
 use serde::Serialize;
 use serde_json::Value;
 use std::collections::BTreeMap;
@@ -596,83 +599,68 @@ async fn run_sse_stream(
 }
 
 async fn process_sse_data_stream<S, E>(
-    mut data_stream: S,
+    data_stream: S,
     idle_timeout: Duration,
     tx: mpsc::Sender<Result<TurnEvent, AbiError>>,
 ) -> Result<(), AbiError>
 where
     S: futures::Stream<Item = Result<Bytes, E>> + Unpin,
-    E: std::fmt::Display,
+    E: Into<BoxError> + std::fmt::Display,
 {
-    use futures::StreamExt;
-
     let mut tool_acc: BTreeMap<usize, ToolCallAccumulator> = BTreeMap::new();
     let mut text_acc: Option<TextAccumulator> = None;
     let mut response_id = String::new();
     let mut server_model: Option<String> = None;
-    let mut buffer = String::new();
+    let mut stream = EventStream::<_, String>::new(data_stream);
     let mut completed_emitted = false;
 
     loop {
-        let chunk = match timeout(idle_timeout, data_stream.next()).await {
-            Ok(Some(Ok(chunk))) => chunk,
+        let sse = match timeout(idle_timeout, stream.next()).await {
+            Ok(Some(Ok(sse))) => sse,
             Ok(Some(Err(err))) => return Err(AbiError::Stream(err.to_string())),
             Ok(None) => break,
             Err(_) => return Err(AbiError::Stream("idle timeout waiting for SSE".to_string())),
         };
+        let data = match sse.data() {
+            Some(data) => data.trim(),
+            None => continue,
+        };
 
-        let text = String::from_utf8_lossy(&chunk);
-        buffer.push_str(&text);
-
-        while let Some(pos) = buffer.find('\n') {
-            let line = buffer[..pos].trim_end_matches('\r').to_string();
-            buffer = buffer[pos + 1..].to_string();
-
-            if line.is_empty() {
-                continue;
+        if data == "[DONE]" {
+            if !completed_emitted {
+                let _ = tx
+                    .send(Ok(TurnEvent::Completed {
+                        response_id: response_id.clone(),
+                        token_usage: None,
+                    }))
+                    .await;
             }
+            return Ok(());
+        }
 
-            let data = match line.strip_prefix("data: ") {
-                Some(d) => d.trim(),
-                None => continue,
-            };
+        let json = match serde_json::from_str::<Value>(data) {
+            Ok(v) => v,
+            Err(_) => continue,
+        };
 
-            if data == "[DONE]" {
-                if !completed_emitted {
-                    let _ = tx
-                        .send(Ok(TurnEvent::Completed {
-                            response_id: response_id.clone(),
-                            token_usage: None,
-                        }))
-                        .await;
-                }
+        let events = parse_chunk(
+            &json,
+            &mut tool_acc,
+            &mut text_acc,
+            &mut response_id,
+            &mut server_model,
+        )?;
+
+        for event in events {
+            let is_done = matches!(&event, TurnEvent::Completed { .. });
+            if is_done {
+                completed_emitted = true;
+            }
+            if tx.send(Ok(event)).await.is_err() {
                 return Ok(());
             }
-
-            let json = match serde_json::from_str::<Value>(data) {
-                Ok(v) => v,
-                Err(_) => continue,
-            };
-
-            let events = parse_chunk(
-                &json,
-                &mut tool_acc,
-                &mut text_acc,
-                &mut response_id,
-                &mut server_model,
-            )?;
-
-            for event in events {
-                let is_done = matches!(&event, TurnEvent::Completed { .. });
-                if is_done {
-                    completed_emitted = true;
-                }
-                if tx.send(Ok(event)).await.is_err() {
-                    return Ok(());
-                }
-                if is_done {
-                    return Ok(());
-                }
+            if is_done {
+                return Ok(());
             }
         }
     }

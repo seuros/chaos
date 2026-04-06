@@ -8,7 +8,7 @@ use chaos_syslog::TelemetryAuthMode;
 use chaos_syslog::metrics::MetricsClient;
 use chaos_syslog::metrics::MetricsConfig;
 use chaos_syslog::metrics::Result;
-use eventsource_stream::Event as StreamEvent;
+use rama::http::sse::Event as StreamEvent;
 use rama::telemetry::opentelemetry::sdk::metrics::InMemoryMetricExporter;
 use std::time::Duration;
 
@@ -63,14 +63,12 @@ fn runtime_metrics_summary_collects_tool_api_and_streaming_metrics() -> Result<(
         None,
     );
     let sse_response: std::result::Result<
-        Option<std::result::Result<StreamEvent, eventsource_stream::EventStreamError<&str>>>,
+        Option<std::result::Result<StreamEvent, rama::error::BoxError>>,
         tokio::time::error::Elapsed,
-    > = Ok(Some(Ok(StreamEvent {
-        event: "response.created".to_string(),
-        data: "{}".to_string(),
-        id: String::new(),
-        retry: None,
-    })));
+    > = Ok(Some(Ok(StreamEvent::default()
+        .try_with_event("response.created")
+        .expect("valid event")
+        .with_data("{}".to_string()))));
     manager.log_sse_event(&sse_response, Duration::from_millis(120));
     manager.record_duration(
         "codex.turn.ttft.duration_ms",

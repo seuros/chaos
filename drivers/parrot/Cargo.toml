@@ -14,7 +14,6 @@ chaos-abi = { workspace = true }
 bytes = { workspace = true }
 chaos-ipc = { workspace = true }
 codex-client = { workspace = true }
-eventsource-stream = { workspace = true }
 futures = { workspace = true }
 http = { workspace = true }
 rama = { workspace = true }

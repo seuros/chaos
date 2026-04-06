@@ -26,7 +26,6 @@ chaos-realpath = { workspace = true }
 chaos-wchar = { workspace = true }
 chaos-parrot = { workspace = true }
 chaos-ipc = { workspace = true }
-eventsource-stream = { workspace = true }
 gethostname = { workspace = true }
 opentelemetry-appender-tracing = { workspace = true }
 opentelemetry-http = { workspace = true }

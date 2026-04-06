@@ -1,7 +1,7 @@
 use crate::error::StreamError;
 use crate::transport::ByteStream;
-use eventsource_stream::Eventsource;
-use futures::StreamExt;
+use rama::futures::StreamExt;
+use rama::http::sse::EventStream;
 use tokio::sync::mpsc;
 use tokio::time::Duration;
 use tokio::time::timeout;
@@ -15,14 +15,17 @@ pub fn sse_stream(
     tx: mpsc::Sender<Result<String, StreamError>>,
 ) {
     tokio::spawn(async move {
-        let mut stream = stream
-            .map(|res| res.map_err(|e| StreamError::Stream(e.to_string())))
-            .eventsource();
+        let stream = stream.map(|res| res.map_err(|e| StreamError::Stream(e.to_string())));
+        let mut stream = EventStream::<_, String>::new(stream);
 
         loop {
             match timeout(idle_timeout, stream.next()).await {
                 Ok(Some(Ok(ev))) => {
-                    if tx.send(Ok(ev.data.clone())).await.is_err() {
+                    if tx
+                        .send(Ok(ev.data().cloned().unwrap_or_default()))
+                        .await
+                        .is_err()
+                    {
                         return;
                     }
                 }

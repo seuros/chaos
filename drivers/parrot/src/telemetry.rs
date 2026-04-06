@@ -6,6 +6,8 @@ use codex_client::StreamResponse;
 use codex_client::TransportError;
 use codex_client::run_with_retry;
 use http::StatusCode;
+use rama::error::BoxError;
+use rama::http::sse::Event as SseEvent;
 use std::future::Future;
 use std::sync::Arc;
 use std::time::Duration;
@@ -15,15 +17,7 @@ use tokio::time::Instant;
 pub trait SseTelemetry: Send + Sync {
     fn on_sse_poll(
         &self,
-        result: &Result<
-            Option<
-                Result<
-                    eventsource_stream::Event,
-                    eventsource_stream::EventStreamError<TransportError>,
-                >,
-            >,
-            tokio::time::error::Elapsed,
-        >,
+        result: &Result<Option<Result<SseEvent, BoxError>>, tokio::time::error::Elapsed>,
         duration: Duration,
     );
 }

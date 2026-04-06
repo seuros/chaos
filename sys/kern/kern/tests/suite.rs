@@ -58,8 +58,6 @@ pub static CODEX_ALIASES_TEMP_DIR: TestCodexAliasesGuard = unsafe {
 mod abort_tasks;
 #[path = "suite/agent_jobs.rs"]
 mod agent_jobs;
-#[path = "suite/agent_websocket.rs"]
-mod agent_websocket;
 #[path = "suite/apply_patch_cli.rs"]
 mod apply_patch_cli;
 #[path = "suite/approvals.rs"]
@@ -68,8 +66,6 @@ mod approvals;
 mod auth_refresh;
 #[path = "suite/chaos_delegate.rs"]
 mod chaos_delegate;
-#[path = "suite/client_websockets.rs"]
-mod client_websockets;
 #[path = "suite/deprecation_notice.rs"]
 mod deprecation_notice;
 #[path = "suite/exec.rs"]
@@ -167,5 +163,3 @@ mod user_shell_cmd;
 mod view_image;
 #[path = "suite/web_search.rs"]
 mod web_search;
-#[path = "suite/websocket_fallback.rs"]
-mod websocket_fallback;

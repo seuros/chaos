@@ -63,7 +63,6 @@ fn test_model_info(
         visibility,
         supported_in_api: true,
         input_modalities: default_input_modalities(),
-        prefer_websockets: false,
         used_fallback_model_metadata: false,
         priority: 1,
         base_instructions: "base instructions".to_string(),

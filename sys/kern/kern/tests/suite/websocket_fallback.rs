@@ -66,9 +66,9 @@ async fn websocket_fallback_switches_to_http_on_upgrade_required_connect() -> Re
         .filter(|req| req.method == Method::POST && req.url.path().ends_with("/responses"))
         .count();
 
-    // The startup prewarm request sees 426 and immediately switches the session to HTTP fallback,
-    // so the first turn goes straight to HTTP with no additional websocket connect attempt.
-    assert_eq!(websocket_attempts, 1);
+    // Websockets are hard-wired to disabled, so the 426 GET mock is never triggered.
+    // The turn goes straight to HTTP POST with no websocket connect attempt at all.
+    assert_eq!(websocket_attempts, 0);
     assert_eq!(http_attempts, 1);
     assert_eq!(response_mock.requests().len(), 1);
 
@@ -111,10 +111,9 @@ async fn websocket_fallback_switches_to_http_after_retries_exhausted() -> Result
         .filter(|req| req.method == Method::POST && req.url.path().ends_with("/responses"))
         .count();
 
-    // Deferred request prewarm is attempted at startup.
-    // The first turn then makes 3 websocket stream attempts (initial try + 2 retries),
-    // after which fallback activates and the request is replayed over HTTP.
-    assert_eq!(websocket_attempts, 4);
+    // Websockets are hard-wired to disabled; no GET attempts are made.
+    // The turn goes straight to HTTP POST without any websocket retry loop.
+    assert_eq!(websocket_attempts, 0);
     assert_eq!(http_attempts, 1);
     assert_eq!(response_mock.requests().len(), 1);
 
@@ -183,11 +182,8 @@ async fn websocket_fallback_hides_first_websocket_retry_stream_error() -> Result
         }
     }
 
-    let expected_stream_errors = if cfg!(debug_assertions) {
-        vec!["Reconnecting... 1/2", "Reconnecting... 2/2"]
-    } else {
-        vec!["Reconnecting... 2/2"]
-    };
+    // Websockets are hard-wired to disabled; no retry loop runs, so no stream errors are emitted.
+    let expected_stream_errors: Vec<String> = vec![];
     assert_eq!(stream_error_messages, expected_stream_errors);
     assert_eq!(response_mock.requests().len(), 1);
 
@@ -234,11 +230,9 @@ async fn websocket_fallback_is_sticky_across_turns() -> Result<()> {
         .filter(|req| req.method == Method::POST && req.url.path().ends_with("/responses"))
         .count();
 
-    // WebSocket attempts all happen on the first turn:
-    // 1 deferred request prewarm attempt (startup) + 3 stream attempts
-    // (initial try + 2 retries) before fallback.
-    // Fallback is sticky, so the second turn stays on HTTP and adds no websocket attempts.
-    assert_eq!(websocket_attempts, 4);
+    // Websockets are hard-wired to disabled; no GET attempts on either turn.
+    // Both turns go straight to HTTP POST.
+    assert_eq!(websocket_attempts, 0);
     assert_eq!(http_attempts, 2);
     assert_eq!(response_mock.requests().len(), 2);
 

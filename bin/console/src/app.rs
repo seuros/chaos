@@ -28,9 +28,7 @@ use crate::render::highlight::highlight_bash_to_lines;
 use crate::render::renderable::Renderable;
 use crate::resume_picker::SessionSelection;
 use crate::side_panel::LOG_PANEL_BACKFILL_LIMIT;
-use crate::side_panel::LOG_PANEL_POLL_INTERVAL;
 use crate::side_panel::LogPanelState;
-use crate::side_panel::split_main_and_panel;
 use crate::tile_manager::PaneKind;
 use crate::tile_manager::TileManager;
 use crate::tui;
@@ -1755,23 +1753,8 @@ impl App {
                 TuiEvent::Key(key_event) => {
                     self.handle_key_event(tui, key_event).await;
                 }
-                TuiEvent::Mouse(mouse_event) => match mouse_event.kind {
-                    crossterm::event::MouseEventKind::ScrollUp
-                        if self.log_panel.is_visible()
-                            && self.chat_widget.no_modal_or_popup_active() =>
-                    {
-                        self.log_panel.scroll_up(3);
-                        tui.frame_requester().schedule_frame();
-                    }
-                    crossterm::event::MouseEventKind::ScrollDown
-                        if self.log_panel.is_visible()
-                            && self.chat_widget.no_modal_or_popup_active() =>
-                    {
-                        self.log_panel.scroll_down(3);
-                        tui.frame_requester().schedule_frame();
-                    }
-                    _ => {}
-                },
+                TuiEvent::Mouse(_) => {}
+
                 TuiEvent::Paste(pasted) => {
                     // Only paste into chat when chat is focused — do not leak
                     // clipboard content into the composer from auxiliary panes.
@@ -1801,16 +1784,9 @@ impl App {
                     // Allow widgets to process any pending timers before rendering.
                     self.chat_widget.pre_draw_tick();
                     let terminal_size = tui.terminal.size()?;
-                    self.refresh_log_panel_if_needed(tui, terminal_size.into())
-                        .await;
-                    let (chat_area, log_area) =
-                        split_main_and_panel(terminal_size.into(), self.log_panel.is_visible());
-                    if let Some(log_area) = log_area {
-                        self.log_panel
-                            .set_viewport_height(log_area.height.saturating_sub(2));
-                    }
                     // When tiled, the viewport must be tall enough for the
                     // auxiliary panes, not just the chat content.
+                    let chat_area: ratatui::layout::Rect = terminal_size.into();
                     let desired = self.chat_widget.desired_height(chat_area.width);
                     let draw_height = if self.tile_manager.is_single_pane() {
                         desired
@@ -1818,10 +1794,7 @@ impl App {
                         desired.max(terminal_size.height)
                     };
                     tui.draw(draw_height, |frame| {
-                        // The top bar is rendered outside the viewport by Tui::draw()
-                        // as a sticky row at screen position 0.
-                        let (main_area, log_area) =
-                            split_main_and_panel(frame.area(), self.log_panel.is_visible());
+                        let main_area = frame.area();
 
                         if self.tile_manager.is_single_pane() {
                             // Fast path: no tiling overhead, identical to pre-hypertile.
@@ -1844,15 +1817,7 @@ impl App {
                                 frame.set_cursor_position((x, y));
                             }
                         }
-
-                        if let Some(log_area) = log_area {
-                            self.log_panel.render(log_area, frame.buffer);
-                        }
                     })?;
-                    if self.log_panel.is_visible() {
-                        tui.frame_requester()
-                            .schedule_frame_in(LOG_PANEL_POLL_INTERVAL);
-                    }
                     if self.chat_widget.external_editor_state() == ExternalEditorState::Requested {
                         self.chat_widget
                             .set_external_editor_state(ExternalEditorState::Active);
@@ -3097,32 +3062,8 @@ impl App {
                 code: KeyCode::PageUp,
                 kind: KeyEventKind::Press | KeyEventKind::Repeat,
                 ..
-            } if self.log_panel.is_visible()
-                && self.overlay.is_none()
-                && self.chat_widget.no_modal_or_popup_active() =>
-            {
-                self.log_panel.scroll_up(8);
-                tui.frame_requester().schedule_frame();
-                return;
-            }
-            KeyEvent {
-                code: KeyCode::PageUp,
-                kind: KeyEventKind::Press | KeyEventKind::Repeat,
-                ..
             } if self.overlay.is_none() && self.chat_widget.no_modal_or_popup_active() => {
                 self.open_transcript_overlay(tui, Some(TuiEvent::Key(key_event)));
-                return;
-            }
-            KeyEvent {
-                code: KeyCode::PageDown,
-                kind: KeyEventKind::Press | KeyEventKind::Repeat,
-                ..
-            } if self.log_panel.is_visible()
-                && self.overlay.is_none()
-                && self.chat_widget.no_modal_or_popup_active() =>
-            {
-                self.log_panel.scroll_down(8);
-                tui.frame_requester().schedule_frame();
                 return;
             }
             KeyEvent {
@@ -3137,32 +3078,8 @@ impl App {
                 code: KeyCode::Home,
                 kind: KeyEventKind::Press | KeyEventKind::Repeat,
                 ..
-            } if self.log_panel.is_visible()
-                && self.overlay.is_none()
-                && self.chat_widget.no_modal_or_popup_active() =>
-            {
-                self.log_panel.scroll_to_start();
-                tui.frame_requester().schedule_frame();
-                return;
-            }
-            KeyEvent {
-                code: KeyCode::Home,
-                kind: KeyEventKind::Press | KeyEventKind::Repeat,
-                ..
             } if self.overlay.is_none() && self.chat_widget.no_modal_or_popup_active() => {
                 self.open_transcript_overlay(tui, Some(TuiEvent::Key(key_event)));
-                return;
-            }
-            KeyEvent {
-                code: KeyCode::End,
-                kind: KeyEventKind::Press | KeyEventKind::Repeat,
-                ..
-            } if self.log_panel.is_visible()
-                && self.overlay.is_none()
-                && self.chat_widget.no_modal_or_popup_active() =>
-            {
-                self.log_panel.scroll_to_end();
-                tui.frame_requester().schedule_frame();
                 return;
             }
             KeyEvent {
@@ -3316,38 +3233,18 @@ impl App {
     }
 
     async fn toggle_log_panel(&mut self, tui: &mut tui::Tui) {
-        let visible = self.log_panel.toggle();
-        if visible {
-            self.reload_log_panel_backfill().await;
-        }
-        tui.frame_requester().schedule_frame();
-    }
-
-    async fn refresh_log_panel_if_needed(
-        &mut self,
-        tui: &mut tui::Tui,
-        area: ratatui::layout::Rect,
-    ) {
-        if !self.log_panel.is_visible() {
-            return;
-        }
-        let (_, log_area) = split_main_and_panel(area, true);
-        let Some(log_area) = log_area else {
-            return;
-        };
-        self.log_panel
-            .set_viewport_height(log_area.height.saturating_sub(2));
-
+        // Sync the process id and backfill before snapshotting lines.
         let current_process_id = self.current_displayed_process_id();
-        if self.log_panel.set_process_id(current_process_id) {
-            self.reload_log_panel_backfill().await;
-            tui.frame_requester().schedule_frame();
-            return;
-        }
+        self.log_panel.set_process_id(current_process_id);
+        self.reload_log_panel_backfill().await;
 
-        if self.log_panel.should_poll(Instant::now()) {
-            self.poll_log_panel().await;
-        }
+        let lines = self.log_panel.render_lines();
+        let _ = tui.enter_alt_screen();
+        self.overlay = Some(Overlay::new_static_with_lines(
+            lines,
+            "L O G S".to_string(),
+        ));
+        tui.frame_requester().schedule_frame();
     }
 
     async fn reload_log_panel_backfill(&mut self) {
@@ -3374,30 +3271,6 @@ impl App {
             Err(err) => {
                 self.log_panel
                     .set_error(format!("Failed to load logs: {err}"));
-            }
-        }
-    }
-
-    async fn poll_log_panel(&mut self) {
-        let Some(state_db) = self.ensure_log_state_db().await else {
-            return;
-        };
-        let Some(process_id) = self.log_panel.process_id() else {
-            self.log_panel.schedule_next_poll(Instant::now());
-            return;
-        };
-        let cursor = self.log_panel.cursor();
-        match state_db
-            .tail_poll(&Self::log_query_for_process(process_id), &cursor, None)
-            .await
-        {
-            Ok(batch) => {
-                self.log_panel.append_batch(batch);
-                self.log_panel.schedule_next_poll(Instant::now());
-            }
-            Err(err) => {
-                self.log_panel
-                    .set_error(format!("Failed to refresh logs: {err}"));
             }
         }
     }

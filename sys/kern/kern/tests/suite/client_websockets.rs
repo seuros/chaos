@@ -21,7 +21,6 @@ use chaos_kern::Prompt;
 use chaos_kern::ResponseEvent;
 use chaos_kern::WireApi;
 use chaos_kern::X_RESPONSESAPI_INCLUDE_TIMING_METRICS_HEADER;
-use chaos_kern::features::Feature;
 use chaos_kern::ws_version_from_features;
 use chaos_syslog::SessionTelemetry;
 use chaos_syslog::TelemetryAuthMode;

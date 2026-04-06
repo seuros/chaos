@@ -27,7 +27,11 @@ use chaos_parrot::RamaTransport;
 use chaos_parrot::RequestTelemetry;
 use chaos_parrot::TransportError;
 use chaos_syslog::TelemetryAuthMode;
+use chrono_machines::ExponentialBackoff;
+use chrono_machines::backoff::BackoffStrategy;
 use http::HeaderMap;
+use rand::make_rng;
+use rand::rngs::StdRng;
 use std::fmt;
 use std::path::PathBuf;
 use std::sync::Arc;
@@ -38,6 +42,7 @@ use tokio::time::timeout;
 use tracing::error;
 use tracing::info;
 use tracing::instrument;
+use tracing::warn;
 
 const DEFAULT_MODEL_CACHE_TTL: Duration = Duration::from_secs(300);
 const MODELS_REFRESH_TIMEOUT: Duration = Duration::from_secs(5);
@@ -441,7 +446,30 @@ impl ModelsManager {
         let _timer =
             chaos_syslog::start_global_timer("codex.remote_models.fetch_update.duration_ms", &[]);
 
-        match self.fetch_catalog().await {
+        let backoff = ExponentialBackoff::new()
+            .max_attempts(3)
+            .base_delay_ms(100)
+            .multiplier(2.0)
+            .max_delay_ms(5000);
+        let mut rng: StdRng = make_rng();
+        let mut attempt: u8 = 0;
+        let result = loop {
+            attempt += 1;
+            match self.fetch_catalog().await {
+                ok @ Ok(_) => break ok,
+                Err(err) if backoff.should_retry(attempt) => {
+                    let delay_ms = backoff.delay(attempt, &mut rng).unwrap_or(100);
+                    warn!(
+                        attempt,
+                        delay_ms, "model catalog fetch failed, retrying: {err}"
+                    );
+                    tokio::time::sleep(Duration::from_millis(delay_ms)).await;
+                }
+                err => break err,
+            }
+        };
+
+        match result {
             Ok(FetchedCatalog::Live { models, etag }) => {
                 workflow.record_live_catalog();
                 self.apply_live_catalog(models, etag).await;

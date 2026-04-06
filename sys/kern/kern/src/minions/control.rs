@@ -336,7 +336,6 @@ impl AgentControl {
         Ok(thread.subscribe_status())
     }
 
-
     pub(crate) async fn format_environment_context_subagents(
         &self,
         parent_process_id: ProcessId,

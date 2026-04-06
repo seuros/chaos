@@ -158,7 +158,12 @@ fn diff_against_worktree(cwd: &Path, paths: Option<&[&str]>) -> Result<String, G
         if old_content == new_content {
             continue;
         }
-        render_unified_diff(&mut out, &path, old_content.as_deref(), new_content.as_deref());
+        render_unified_diff(
+            &mut out,
+            &path,
+            old_content.as_deref(),
+            new_content.as_deref(),
+        );
     }
 
     Ok(out)

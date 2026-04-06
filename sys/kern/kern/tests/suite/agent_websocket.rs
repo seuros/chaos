@@ -1,6 +1,5 @@
 use anyhow::Result;
 use chaos_ipc::config_types::ServiceTier;
-use chaos_kern::features::Feature;
 use core_test_support::responses::WebSocketConnectionConfig;
 use core_test_support::responses::ev_assistant_message;
 use core_test_support::responses::ev_completed;

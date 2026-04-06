@@ -1,10 +1,10 @@
 pub mod tools;
 
+use chaos_traits::catalog::CatalogRegistration;
 use chaos_traits::catalog::CatalogToolDriver;
 use chaos_traits::catalog::CatalogToolDriverFuture;
 use chaos_traits::catalog::CatalogToolRequest;
 use chaos_traits::catalog::CatalogToolResult;
-use chaos_traits::catalog::CatalogRegistration;
 use chaos_traits::catalog::tool_infos_to_catalog_tools;
 use mcp_host::prelude::*;
 use std::sync::Arc;

@@ -45,7 +45,12 @@ pub struct OwnerContext {
 }
 
 impl CronServer {
-    #[mcp_tool(name = "cron_create", description = "Schedule a recurring cron job with a cron expression or interval shorthand.", destructive = false, open_world = false)]
+    #[mcp_tool(
+        name = "cron_create",
+        description = "Schedule a recurring cron job with a cron expression or interval shorthand.",
+        destructive = false,
+        open_world = false
+    )]
     async fn cron_create(
         &self,
         ctx: CronCtx<'_>,

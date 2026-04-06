@@ -79,7 +79,12 @@ pub struct GitBranchesParams {}
 pub struct GitRemotesParams {}
 
 impl GitServer {
-    #[mcp_tool(name = "git_diff", description = "Show unified diff of worktree changes against a base ref (default HEAD).", read_only = true, idempotent = true)]
+    #[mcp_tool(
+        name = "git_diff",
+        description = "Show unified diff of worktree changes against a base ref (default HEAD).",
+        read_only = true,
+        idempotent = true
+    )]
     async fn git_diff(&self, _ctx: GitCtx<'_>, params: Parameters<GitDiffParams>) -> ToolResult {
         match execute_git_diff(Path::new("."), params.0) {
             Ok(text) => Ok(ToolOutput::text(text)),
@@ -87,7 +92,12 @@ impl GitServer {
         }
     }
 
-    #[mcp_tool(name = "git_log", description = "List recent commits with sha, author, date, and subject.", read_only = true, idempotent = true)]
+    #[mcp_tool(
+        name = "git_log",
+        description = "List recent commits with sha, author, date, and subject.",
+        read_only = true,
+        idempotent = true
+    )]
     async fn git_log(&self, _ctx: GitCtx<'_>, params: Parameters<GitLogParams>) -> ToolResult {
         match execute_git_log(Path::new("."), params.0) {
             Ok(text) => Ok(ToolOutput::text(text)),
@@ -95,7 +105,12 @@ impl GitServer {
         }
     }
 
-    #[mcp_tool(name = "git_show", description = "Show full commit details including subject, body, author, and trailers.", read_only = true, idempotent = true)]
+    #[mcp_tool(
+        name = "git_show",
+        description = "Show full commit details including subject, body, author, and trailers.",
+        read_only = true,
+        idempotent = true
+    )]
     async fn git_show(&self, _ctx: GitCtx<'_>, params: Parameters<GitShowParams>) -> ToolResult {
         match execute_git_show(Path::new("."), params.0) {
             Ok(text) => Ok(ToolOutput::text(text)),
@@ -103,7 +118,12 @@ impl GitServer {
         }
     }
 
-    #[mcp_tool(name = "git_blame", description = "Show per-line author attribution for a file, with optional line range.", read_only = true, idempotent = true)]
+    #[mcp_tool(
+        name = "git_blame",
+        description = "Show per-line author attribution for a file, with optional line range.",
+        read_only = true,
+        idempotent = true
+    )]
     async fn git_blame(&self, _ctx: GitCtx<'_>, params: Parameters<GitBlameParams>) -> ToolResult {
         match execute_git_blame(Path::new("."), params.0) {
             Ok(text) => Ok(ToolOutput::text(text)),
@@ -111,7 +131,12 @@ impl GitServer {
         }
     }
 
-    #[mcp_tool(name = "git_repo", description = "Show repository identity: root path, HEAD sha, current branch, remotes, and dirty state.", read_only = true, idempotent = true)]
+    #[mcp_tool(
+        name = "git_repo",
+        description = "Show repository identity: root path, HEAD sha, current branch, remotes, and dirty state.",
+        read_only = true,
+        idempotent = true
+    )]
     async fn git_repo(&self, _ctx: GitCtx<'_>, params: Parameters<GitRepoParams>) -> ToolResult {
         match execute_git_repo(Path::new("."), params.0) {
             Ok(text) => Ok(ToolOutput::text(text)),
@@ -119,7 +144,12 @@ impl GitServer {
         }
     }
 
-    #[mcp_tool(name = "git_status", description = "List staged, unstaged, and untracked files in the worktree.", read_only = true, idempotent = true)]
+    #[mcp_tool(
+        name = "git_status",
+        description = "List staged, unstaged, and untracked files in the worktree.",
+        read_only = true,
+        idempotent = true
+    )]
     async fn git_status(
         &self,
         _ctx: GitCtx<'_>,
@@ -131,7 +161,12 @@ impl GitServer {
         }
     }
 
-    #[mcp_tool(name = "git_branches", description = "List local and remote branches with current and default markers.", read_only = true, idempotent = true)]
+    #[mcp_tool(
+        name = "git_branches",
+        description = "List local and remote branches with current and default markers.",
+        read_only = true,
+        idempotent = true
+    )]
     async fn git_branches(
         &self,
         _ctx: GitCtx<'_>,
@@ -143,7 +178,12 @@ impl GitServer {
         }
     }
 
-    #[mcp_tool(name = "git_remotes", description = "List configured remotes with their fetch and push URLs.", read_only = true, idempotent = true)]
+    #[mcp_tool(
+        name = "git_remotes",
+        description = "List configured remotes with their fetch and push URLs.",
+        read_only = true,
+        idempotent = true
+    )]
     async fn git_remotes(
         &self,
         _ctx: GitCtx<'_>,
@@ -178,8 +218,8 @@ pub fn execute_git_diff(cwd: &Path, params: GitDiffParams) -> Result<String, Str
 }
 
 pub fn execute_git_log(cwd: &Path, params: GitLogParams) -> Result<String, String> {
-    let entries = crate::log(cwd, Some(params.limit), params.branch.as_deref())
-        .map_err(|e| e.to_string())?;
+    let entries =
+        crate::log(cwd, Some(params.limit), params.branch.as_deref()).map_err(|e| e.to_string())?;
     serde_json::to_string_pretty(&entries).map_err(|e| e.to_string())
 }
 
@@ -196,7 +236,7 @@ pub fn execute_git_blame(cwd: &Path, params: GitBlameParams) -> Result<String, S
             return Err(
                 "start_line and end_line must either both be provided or both be omitted"
                     .to_string(),
-            )
+            );
         }
     };
     let blamed = crate::blame(cwd, &params.file_path, lines).map_err(|e| e.to_string())?;
@@ -246,7 +286,11 @@ mod tests {
             .current_dir(dir)
             .status()
             .expect("failed to run git");
-        assert!(status.success(), "git command failed: git {}", args.join(" "));
+        assert!(
+            status.success(),
+            "git command failed: git {}",
+            args.join(" ")
+        );
     }
 
     #[test]

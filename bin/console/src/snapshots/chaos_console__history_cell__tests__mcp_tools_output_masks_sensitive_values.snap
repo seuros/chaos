@@ -1,6 +1,6 @@
 ---
 source: bin/console/src/history_cell.rs
-assertion_line: 2541
+assertion_line: 2554
 expression: rendered
 ---
 /mcp
@@ -9,7 +9,6 @@ expression: rendered
 
   • docs
     • Status: enabled
-    • Auth: Unsupported
     • Command: docs-server
     • Env: TOKEN=*****, APP_TOKEN=*****
     • Tools:
@@ -19,7 +18,6 @@ expression: rendered
 
   • http
     • Status: enabled
-    • Auth: Unsupported
     • URL: https://example.com/mcp
     • HTTP headers: Authorization=*****
     • Env HTTP headers: X-API-Key=API_KEY_ENV

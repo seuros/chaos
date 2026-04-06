@@ -1407,7 +1407,6 @@ fn create_test_sync_tool() -> ToolSpec {
     })
 }
 
-
 #[allow(dead_code)]
 fn create_artifacts_tool() -> ToolSpec {
     const ARTIFACTS_FREEFORM_GRAMMAR: &str = r#"
@@ -1600,9 +1599,7 @@ pub(crate) fn annotation_suffix(annotations: &chaos_mcp_runtime::ToolAnnotations
     }
 }
 
-pub(crate) fn annotation_labels(
-    annotations: &chaos_mcp_runtime::ToolAnnotations,
-) -> Vec<String> {
+pub(crate) fn annotation_labels(annotations: &chaos_mcp_runtime::ToolAnnotations) -> Vec<String> {
     let mut hints: Vec<String> = Vec::new();
 
     match annotations.read_only_hint {
@@ -1865,7 +1862,6 @@ pub(crate) fn build_specs_with_discoverable_tools(
         );
         builder.register_handler("request_permissions", request_permissions_handler);
     }
-
 
     if let Some(apply_patch_tool_type) = &config.apply_patch_tool_type {
         match apply_patch_tool_type {

@@ -211,6 +211,24 @@ where
         })
     }
 
+    /// Creates a [`Terminal`] with a fixed size for use in tests. Does not query the real
+    /// terminal — the backend is supplied by the caller and all dimensions are explicit.
+    #[cfg(feature = "vt100-tests")]
+    pub fn new_for_test(backend: B, width: u16, height: u16) -> Self {
+        use ratatui::layout::Position;
+        use ratatui::layout::Size;
+        Self {
+            backend,
+            buffers: [Buffer::empty(Rect::ZERO), Buffer::empty(Rect::ZERO)],
+            current: 0,
+            hidden_cursor: false,
+            viewport_area: Rect::ZERO,
+            last_known_screen_size: Size::new(width, height),
+            last_known_cursor_pos: Position::ORIGIN,
+            visible_history_rows: 0,
+        }
+    }
+
     /// Get a Frame object which provides a consistent view into the terminal state for rendering.
     pub fn get_frame(&mut self) -> Frame<'_> {
         Frame {

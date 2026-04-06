@@ -1,10 +1,10 @@
 use std::collections::HashMap;
 use std::collections::HashSet;
 use std::fmt::Debug;
-use std::path::Path;
 use std::path::PathBuf;
 use std::sync::Arc;
 use std::sync::atomic::AtomicU64;
+use throttle_machines::gcra;
 
 use crate::AuthManager;
 use crate::ChaosAuth;
@@ -20,7 +20,6 @@ use crate::compact_remote::run_inline_remote_auto_compact_task;
 use crate::config::ManagedFeatures;
 use crate::exec_policy::ExecPolicyManager;
 use crate::features::Feature;
-use crate::mcp::oauth_types::OAuthCredentialsStoreMode;
 use crate::minions::AgentControl;
 use crate::minions::AgentStatus;
 use crate::minions::agent_status_from_event;
@@ -28,7 +27,6 @@ use crate::minions::agent_status_from_event;
 use crate::models_manager::collaboration_mode_presets::CollaborationModesConfig;
 use crate::models_manager::manager::ModelsManager;
 use crate::models_manager::manager::RefreshStrategy;
-use crate::parse_command::parse_command;
 use crate::parse_turn_item;
 use crate::rollout::process_names;
 use crate::skills::render_skills_section;
@@ -37,7 +35,6 @@ use crate::stream_events_utils::handle_non_tool_response_item;
 use crate::stream_events_utils::handle_output_item_done;
 use crate::stream_events_utils::last_assistant_message_from_item;
 use crate::stream_events_utils::raw_assistant_output_text_from_item;
-use crate::stream_events_utils::record_completed_response_item;
 use crate::terminal;
 use crate::truncate::TruncationPolicy;
 use crate::turn_metadata::TurnMetadataState;
@@ -52,32 +49,20 @@ use chaos_dtrace::HookResult;
 use chaos_dtrace::Hooks;
 use chaos_dtrace::HooksConfig;
 use chaos_ipc::ProcessId;
-use chaos_ipc::api::McpServerElicitationRequest;
-use chaos_ipc::api::McpServerElicitationRequestParams;
-use chaos_ipc::approvals::ElicitationRequestEvent;
-use chaos_ipc::approvals::ExecApprovalRequestSkillMetadata;
-use chaos_ipc::approvals::ExecPolicyAmendment;
-use chaos_ipc::approvals::NetworkPolicyAmendment;
-use chaos_ipc::approvals::NetworkPolicyRuleAction;
 use chaos_ipc::config_types::ApprovalsReviewer;
 use chaos_ipc::config_types::ModeKind;
 use chaos_ipc::config_types::Settings;
 use chaos_ipc::config_types::WebSearchMode;
 use chaos_ipc::dynamic_tools::DynamicToolResponse;
 use chaos_ipc::dynamic_tools::DynamicToolSpec;
-use chaos_ipc::items::PlanItem;
 use chaos_ipc::items::TurnItem;
 use chaos_ipc::items::UserMessageItem;
-use chaos_ipc::mcp::CallToolResult;
 use chaos_ipc::models::BaseInstructions;
-use chaos_ipc::models::PermissionProfile;
-use chaos_ipc::models::format_allow_prefixes;
 use chaos_ipc::openai_models::ModelInfo;
 use chaos_ipc::permissions::FileSystemSandboxPolicy;
 use chaos_ipc::permissions::NetworkSandboxPolicy;
 use chaos_ipc::product::CHAOS_VERSION;
 use chaos_ipc::protocol::AgentMessageEvent;
-use chaos_ipc::protocol::FileChange;
 use chaos_ipc::protocol::ItemCompletedEvent;
 use chaos_ipc::protocol::ItemStartedEvent;
 use chaos_ipc::protocol::RawResponseItemEvent;
@@ -90,28 +75,8 @@ use chaos_ipc::protocol::TurnContextItem;
 use chaos_ipc::protocol::TurnContextNetworkItem;
 use chaos_ipc::protocol::TurnStartedEvent;
 use chaos_ipc::protocol::W3cTraceContext;
-use chaos_ipc::request_permissions::PermissionGrantScope;
-use chaos_ipc::request_permissions::RequestPermissionProfile;
-use chaos_ipc::request_permissions::RequestPermissionsArgs;
-use chaos_ipc::request_permissions::RequestPermissionsEvent;
-use chaos_ipc::request_permissions::RequestPermissionsResponse;
-use chaos_ipc::request_user_input::RequestUserInputArgs;
-use chaos_ipc::request_user_input::RequestUserInputResponse;
-use chaos_lex::AssistantTextChunk;
-use chaos_lex::AssistantTextStreamParser;
-use chaos_lex::ProposedPlanSegment;
-use chaos_lex::extract_proposed_plan_text;
-use chaos_lex::strip_citations;
-use chaos_mcp_runtime::ElicitationResponse;
-use chaos_mcp_runtime::ListResourceTemplatesResult;
-use chaos_mcp_runtime::ListResourcesResult;
-use chaos_mcp_runtime::McpRequestId as RequestId;
-use chaos_mcp_runtime::PaginatedRequestParams;
-use chaos_mcp_runtime::ReadResourceRequestParams;
-use chaos_mcp_runtime::ReadResourceResult;
 use chaos_pf::NetworkProxy;
 use chaos_pf::NetworkProxyAuditMetadata;
-use chaos_pf::normalize_host;
 use chaos_syslog::current_span_trace_id;
 use chaos_syslog::current_span_w3c_trace_context;
 use chaos_syslog::set_parent_from_w3c_trace_context;
@@ -125,7 +90,6 @@ use serde_json;
 use serde_json::Value;
 use tokio::sync::Mutex;
 use tokio::sync::RwLock;
-use tokio::sync::oneshot;
 use tokio::sync::watch;
 use tokio::task::JoinHandle;
 use tokio_util::sync::CancellationToken;
@@ -152,7 +116,6 @@ use crate::config::ConstraintResult;
 use crate::config::GhostSnapshotConfig;
 use crate::config::StartedNetworkProxy;
 use crate::config::resolve_web_search_mode_for_turn;
-use crate::config::types::McpServerConfig;
 use crate::config::types::ShellEnvironmentPolicy;
 use crate::context_manager::ContextManager;
 use crate::context_manager::TotalTokenUsageBreakdown;
@@ -162,13 +125,14 @@ use crate::error::Result as ChaosResult;
 #[cfg(test)]
 use crate::exec::StreamOutput;
 use crate::process::ProcessConfigSnapshot;
-use chaos_sysctl::CONFIG_TOML_FILE;
 
-#[path = "chaos/rollout_reconstruction.rs"]
+pub(super) mod approvals;
+pub(super) mod mcp_integration;
 mod rollout_reconstruction;
 #[cfg(test)]
 #[path = "chaos/rollout_reconstruction_tests.rs"]
 mod rollout_reconstruction_tests;
+pub(super) mod settings;
 
 #[derive(Debug, PartialEq)]
 pub enum SteerInputError {
@@ -188,7 +152,6 @@ pub(crate) struct PreviousTurnSettings {
     pub(crate) model: String,
 }
 
-use crate::exec_policy::ExecPolicyUpdateError;
 use crate::feedback_tags;
 use crate::file_watcher::FileWatcher;
 use crate::file_watcher::FileWatcherEvent;
@@ -198,11 +161,9 @@ use crate::instructions::UserInstructions;
 use crate::mcp::McpManager;
 use crate::mcp::auth::compute_auth_statuses;
 use crate::mcp::maybe_prompt_and_install_mcp_dependencies;
-use crate::network_policy_decision::execpolicy_network_rule_amendment;
 use crate::project_doc::get_user_instructions;
 use crate::protocol::AgentMessageContentDeltaEvent;
 use crate::protocol::AgentReasoningSectionBreakEvent;
-use crate::protocol::ApplyPatchApprovalRequestEvent;
 use crate::protocol::ApprovalPolicy;
 use crate::protocol::BackgroundEventEvent;
 use crate::protocol::CompactedItem;
@@ -210,18 +171,13 @@ use crate::protocol::DeprecationNoticeEvent;
 use crate::protocol::ErrorEvent;
 use crate::protocol::Event;
 use crate::protocol::EventMsg;
-use crate::protocol::ExecApprovalRequestEvent;
 use crate::protocol::McpServerRefreshConfig;
 use crate::protocol::ModelRerouteEvent;
 use crate::protocol::ModelRerouteReason;
-use crate::protocol::NetworkApprovalContext;
 use crate::protocol::Op;
-use crate::protocol::PlanDeltaEvent;
 use crate::protocol::RateLimitSnapshot;
 use crate::protocol::ReasoningContentDeltaEvent;
 use crate::protocol::ReasoningRawContentDeltaEvent;
-use crate::protocol::RequestUserInputEvent;
-use crate::protocol::ReviewDecision;
 use crate::protocol::SandboxPolicy;
 use crate::protocol::SessionConfiguredEvent;
 use crate::protocol::SessionNetworkProxyRuntime;
@@ -293,7 +249,6 @@ use chaos_ipc::user_input::UserInput;
 use chaos_mcp_runtime::manager::McpConnectionManager;
 use chaos_ready::Readiness;
 use chaos_ready::ReadinessFlag;
-use chaos_realpath::AbsolutePathBuf;
 use chaos_syslog::SessionTelemetry;
 use chaos_syslog::TelemetryAuthMode;
 use chaos_syslog::metrics::names::THREAD_STARTED_METRIC;
@@ -1120,11 +1075,6 @@ impl Session {
         }
         per_turn_config.features = config.features.clone();
         per_turn_config
-    }
-
-    pub(crate) async fn chaos_home(&self) -> PathBuf {
-        let state = self.state.lock().await;
-        state.session_configuration.chaos_home().clone()
     }
 
     pub(crate) fn subscribe_out_of_band_elicitation_pause_state(&self) -> watch::Receiver<bool> {
@@ -2044,81 +1994,6 @@ impl Session {
         state.set_previous_turn_settings(previous_turn_settings);
     }
 
-    fn maybe_refresh_shell_snapshot_for_cwd(
-        &self,
-        previous_cwd: &Path,
-        next_cwd: &Path,
-        chaos_home: &Path,
-        session_source: &SessionSource,
-    ) {
-        if previous_cwd == next_cwd {
-            return;
-        }
-
-        if !self.features.enabled(Feature::ShellSnapshot) {
-            return;
-        }
-
-        if matches!(
-            session_source,
-            SessionSource::SubAgent(SubAgentSource::ProcessSpawn { .. })
-        ) {
-            return;
-        }
-
-        ShellSnapshot::refresh_snapshot(
-            chaos_home.to_path_buf(),
-            self.conversation_id,
-            next_cwd.to_path_buf(),
-            self.services.user_shell.as_ref().clone(),
-            self.services.shell_snapshot_tx.clone(),
-            self.services.session_telemetry.clone(),
-        );
-    }
-
-    pub(crate) async fn update_settings(
-        &self,
-        updates: SessionSettingsUpdate,
-    ) -> ConstraintResult<()> {
-        let mut state = self.state.lock().await;
-
-        match state.session_configuration.apply(&updates) {
-            Ok(updated) => {
-                let previous_cwd = state.session_configuration.cwd.clone();
-                let next_cwd = updated.cwd.clone();
-                let chaos_home = updated.chaos_home.clone();
-                let session_source = updated.session_source.clone();
-                state.session_configuration = updated;
-                drop(state);
-
-                self.maybe_refresh_shell_snapshot_for_cwd(
-                    &previous_cwd,
-                    &next_cwd,
-                    &chaos_home,
-                    &session_source,
-                );
-
-                if previous_cwd != next_cwd
-                    && let Err(e) = self
-                        .services
-                        .mcp_connection_manager
-                        .read()
-                        .await
-                        .notify_roots_changed(&next_cwd)
-                        .await
-                {
-                    warn!("Failed to notify MCP servers of roots change: {e:#}");
-                }
-
-                Ok(())
-            }
-            Err(err) => {
-                warn!("rejected session settings update: {err}");
-                Err(err)
-            }
-        }
-    }
-
     pub(crate) async fn new_turn_with_sub_id(
         &self,
         sub_id: String,
@@ -2269,18 +2144,16 @@ impl Session {
     pub(crate) async fn maybe_emit_unknown_model_warning_for_turn(&self, tc: &TurnContext) {
         if tc.model_info.used_fallback_model_metadata && !self.services.model_client.is_clamped() {
             let message = if tc.model_info.slug.is_empty() {
-                "No model configured. Are you logged in? Run `chaos login` or set an API key.".to_string()
+                "No model configured. Are you logged in? Run `chaos login` or set an API key."
+                    .to_string()
             } else {
                 format!(
                     "Model metadata for `{}` not found. Defaulting to fallback metadata; this can degrade performance and cause issues.",
                     tc.model_info.slug
                 )
             };
-            self.send_event(
-                tc,
-                EventMsg::Warning(WarningEvent { message }),
-            )
-            .await;
+            self.send_event(tc, EventMsg::Warning(WarningEvent { message }))
+                .await;
         }
     }
 
@@ -2352,112 +2225,6 @@ impl Session {
             startup_turn_metadata_header,
         )
         .await
-    }
-
-    pub(crate) async fn get_config(&self) -> std::sync::Arc<Config> {
-        let state = self.state.lock().await;
-        state
-            .session_configuration
-            .original_config_do_not_use
-            .clone()
-    }
-
-    pub(crate) async fn reload_user_config_layer(&self) {
-        let config_toml_path = {
-            let state = self.state.lock().await;
-            state
-                .session_configuration
-                .chaos_home
-                .join(CONFIG_TOML_FILE)
-        };
-
-        let user_config = match std::fs::read_to_string(&config_toml_path) {
-            Ok(contents) => match toml::from_str::<toml::Value>(&contents) {
-                Ok(config) => config,
-                Err(err) => {
-                    warn!("failed to parse user config while reloading layer: {err}");
-                    return;
-                }
-            },
-            Err(err) if err.kind() == std::io::ErrorKind::NotFound => {
-                toml::Value::Table(Default::default())
-            }
-            Err(err) => {
-                warn!("failed to read user config while reloading layer: {err}");
-                return;
-            }
-        };
-
-        let config_toml_path = match AbsolutePathBuf::try_from(config_toml_path) {
-            Ok(path) => path,
-            Err(err) => {
-                warn!("failed to resolve user config path while reloading layer: {err}");
-                return;
-            }
-        };
-
-        let mut state = self.state.lock().await;
-        let mut config = (*state.session_configuration.original_config_do_not_use).clone();
-        config.config_layer_stack = config
-            .config_layer_stack
-            .with_user_config(&config_toml_path, user_config);
-        state.session_configuration.original_config_do_not_use = Arc::new(config);
-        self.services.skills_manager.clear_cache();
-    }
-
-    pub(crate) async fn reload_project_mcp_layer_and_refresh(&self, turn_context: &TurnContext) {
-        let project_mcp_json_path = {
-            let state = self.state.lock().await;
-            let session_config = &state.session_configuration;
-            crate::config_loader::project_mcp_json_path_for_stack(
-                &session_config.original_config_do_not_use.config_layer_stack,
-                &session_config.cwd,
-            )
-        };
-
-        let layer = match std::fs::read_to_string(&project_mcp_json_path) {
-            Ok(contents) => match crate::config_loader::parse_project_mcp_json(&contents) {
-                Ok(config) => {
-                    let Ok(file) = AbsolutePathBuf::try_from(project_mcp_json_path.clone()) else {
-                        warn!(
-                            "failed to resolve project MCP path while reloading layer: {}",
-                            project_mcp_json_path.display()
-                        );
-                        return;
-                    };
-                    Some(crate::config_loader::ConfigLayerEntry::new(
-                        chaos_ipc::api::ConfigLayerSource::ProjectMcp { file },
-                        config,
-                    ))
-                }
-                Err(err) => {
-                    warn!("failed to parse project MCP config while reloading layer: {err}");
-                    return;
-                }
-            },
-            Err(err) if err.kind() == std::io::ErrorKind::NotFound => None,
-            Err(err) => {
-                warn!("failed to read project MCP config while reloading layer: {err}");
-                return;
-            }
-        };
-
-        let (mcp_servers, store_mode) = {
-            let mut state = self.state.lock().await;
-            let mut config = (*state.session_configuration.original_config_do_not_use).clone();
-            config.config_layer_stack = config.config_layer_stack.with_project_mcp_layer(layer);
-            if let Err(err) = config.reload_mcp_servers_from_layer_stack() {
-                warn!("failed to reload MCP servers from updated config stack: {err}");
-                return;
-            }
-            let mcp_servers = config.mcp_servers.get().clone();
-            let store_mode = config.mcp_oauth_credentials_store_mode;
-            state.session_configuration.original_config_do_not_use = Arc::new(config);
-            (mcp_servers, store_mode)
-        };
-
-        self.refresh_mcp_servers_inner(turn_context, mcp_servers, store_mode)
-            .await;
     }
 
     pub(crate) async fn new_default_turn_with_sub_id(&self, sub_id: String) -> Arc<TurnContext> {
@@ -2554,28 +2321,6 @@ impl Session {
         .await;
     }
 
-    /// Adds an execpolicy amendment to both the in-memory and on-disk policies so future
-    /// commands can use the newly approved prefix.
-    pub(crate) async fn persist_execpolicy_amendment(
-        &self,
-        amendment: &ExecPolicyAmendment,
-    ) -> Result<(), ExecPolicyUpdateError> {
-        let chaos_home = self
-            .state
-            .lock()
-            .await
-            .session_configuration
-            .chaos_home()
-            .clone();
-
-        self.services
-            .exec_policy
-            .append_amendment_and_update(&chaos_home, amendment)
-            .await?;
-
-        Ok(())
-    }
-
     pub(crate) async fn turn_context_for_sub_id(&self, sub_id: &str) -> Option<Arc<TurnContext>> {
         let active = self.active_turn.lock().await;
         active
@@ -2593,492 +2338,6 @@ impl Session {
             Arc::clone(&task.turn_context),
             task.cancellation_token.child_token(),
         ))
-    }
-
-    pub(crate) async fn record_execpolicy_amendment_message(
-        &self,
-        sub_id: &str,
-        amendment: &ExecPolicyAmendment,
-    ) {
-        let Some(prefixes) = format_allow_prefixes(vec![amendment.command.clone()]) else {
-            warn!("execpolicy amendment for {sub_id} had no command prefix");
-            return;
-        };
-        let text = format!("Approved command prefix saved:\n{prefixes}");
-        let message: ResponseItem = DeveloperInstructions::new(text.clone()).into();
-
-        if let Some(turn_context) = self.turn_context_for_sub_id(sub_id).await {
-            self.record_conversation_items(&turn_context, std::slice::from_ref(&message))
-                .await;
-            return;
-        }
-
-        if self
-            .inject_response_items(vec![ResponseInputItem::Message {
-                role: "developer".to_string(),
-                content: vec![ContentItem::InputText { text }],
-            }])
-            .await
-            .is_err()
-        {
-            warn!("no active turn found to record execpolicy amendment message for {sub_id}");
-        }
-    }
-
-    pub(crate) async fn persist_network_policy_amendment(
-        &self,
-        amendment: &NetworkPolicyAmendment,
-        network_approval_context: &NetworkApprovalContext,
-    ) -> anyhow::Result<()> {
-        let host =
-            Self::validated_network_policy_amendment_host(amendment, network_approval_context)?;
-        let chaos_home = self
-            .state
-            .lock()
-            .await
-            .session_configuration
-            .chaos_home()
-            .clone();
-        let execpolicy_amendment =
-            execpolicy_network_rule_amendment(amendment, network_approval_context, &host);
-
-        if let Some(started_network_proxy) = self.services.network_proxy.as_ref() {
-            let proxy = started_network_proxy.proxy();
-            match amendment.action {
-                NetworkPolicyRuleAction::Allow => proxy
-                    .add_allowed_domain(&host)
-                    .await
-                    .map_err(|err| anyhow::anyhow!("failed to update runtime allowlist: {err}"))?,
-                NetworkPolicyRuleAction::Deny => proxy
-                    .add_denied_domain(&host)
-                    .await
-                    .map_err(|err| anyhow::anyhow!("failed to update runtime denylist: {err}"))?,
-            }
-        }
-
-        self.services
-            .exec_policy
-            .append_network_rule_and_update(
-                &chaos_home,
-                &host,
-                execpolicy_amendment.protocol,
-                execpolicy_amendment.decision,
-                Some(execpolicy_amendment.justification),
-            )
-            .await
-            .map_err(|err| {
-                anyhow::anyhow!("failed to persist network policy amendment to execpolicy: {err}")
-            })?;
-
-        Ok(())
-    }
-
-    fn validated_network_policy_amendment_host(
-        amendment: &NetworkPolicyAmendment,
-        network_approval_context: &NetworkApprovalContext,
-    ) -> anyhow::Result<String> {
-        let approved_host = normalize_host(&network_approval_context.host);
-        let amendment_host = normalize_host(&amendment.host);
-        if amendment_host != approved_host {
-            return Err(anyhow::anyhow!(
-                "network policy amendment host '{}' does not match approved host '{}'",
-                amendment.host,
-                network_approval_context.host
-            ));
-        }
-        Ok(approved_host)
-    }
-
-    pub(crate) async fn record_network_policy_amendment_message(
-        &self,
-        sub_id: &str,
-        amendment: &NetworkPolicyAmendment,
-    ) {
-        let (action, list_name) = match amendment.action {
-            NetworkPolicyRuleAction::Allow => ("Allowed", "allowlist"),
-            NetworkPolicyRuleAction::Deny => ("Denied", "denylist"),
-        };
-        let text = format!(
-            "{action} network rule saved in execpolicy ({list_name}): {}",
-            amendment.host
-        );
-        let message: ResponseItem = DeveloperInstructions::new(text.clone()).into();
-
-        if let Some(turn_context) = self.turn_context_for_sub_id(sub_id).await {
-            self.record_conversation_items(&turn_context, std::slice::from_ref(&message))
-                .await;
-            return;
-        }
-
-        if self
-            .inject_response_items(vec![ResponseInputItem::Message {
-                role: "developer".to_string(),
-                content: vec![ContentItem::InputText { text }],
-            }])
-            .await
-            .is_err()
-        {
-            warn!("no active turn found to record network policy amendment message for {sub_id}");
-        }
-    }
-
-    /// Emit an exec approval request event and await the user's decision.
-    ///
-    /// The request is keyed by `call_id` + `approval_id` so matching responses
-    /// are delivered to the correct in-flight turn. If the pending approval is
-    /// cleared before a response arrives, treat it as an abort so interrupted
-    /// turns do not continue on a synthetic denial.
-    ///
-    /// Note that if `available_decisions` is `None`, then the other fields will
-    /// be used to derive the available decisions via
-    /// [ExecApprovalRequestEvent::default_available_decisions].
-    #[allow(clippy::too_many_arguments)]
-    pub async fn request_command_approval(
-        &self,
-        turn_context: &TurnContext,
-        call_id: String,
-        approval_id: Option<String>,
-        command: Vec<String>,
-        cwd: PathBuf,
-        reason: Option<String>,
-        network_approval_context: Option<NetworkApprovalContext>,
-        proposed_execpolicy_amendment: Option<ExecPolicyAmendment>,
-        additional_permissions: Option<PermissionProfile>,
-        skill_metadata: Option<ExecApprovalRequestSkillMetadata>,
-        available_decisions: Option<Vec<ReviewDecision>>,
-    ) -> ReviewDecision {
-        //  command-level approvals use `call_id`.
-        // `approval_id` is only present for subcommand callbacks (execve intercept)
-        let effective_approval_id = approval_id.clone().unwrap_or_else(|| call_id.clone());
-        // Add the tx_approve callback to the map before sending the request.
-        let (tx_approve, rx_approve) = oneshot::channel();
-        let prev_entry = {
-            let mut active = self.active_turn.lock().await;
-            match active.as_mut() {
-                Some(at) => {
-                    let mut ts = at.turn_state.lock().await;
-                    ts.insert_pending_approval(effective_approval_id.clone(), tx_approve)
-                }
-                None => None,
-            }
-        };
-        if prev_entry.is_some() {
-            warn!("Overwriting existing pending approval for call_id: {effective_approval_id}");
-        }
-
-        let parsed_cmd = parse_command(&command);
-        let proposed_network_policy_amendments = network_approval_context.as_ref().map(|context| {
-            vec![
-                NetworkPolicyAmendment {
-                    host: context.host.clone(),
-                    action: NetworkPolicyRuleAction::Allow,
-                },
-                NetworkPolicyAmendment {
-                    host: context.host.clone(),
-                    action: NetworkPolicyRuleAction::Deny,
-                },
-            ]
-        });
-        let available_decisions = available_decisions.unwrap_or_else(|| {
-            ExecApprovalRequestEvent::default_available_decisions(
-                network_approval_context.as_ref(),
-                proposed_execpolicy_amendment.as_ref(),
-                proposed_network_policy_amendments.as_deref(),
-                additional_permissions.as_ref(),
-            )
-        });
-        let event = EventMsg::ExecApprovalRequest(ExecApprovalRequestEvent {
-            call_id,
-            approval_id,
-            turn_id: turn_context.sub_id.clone(),
-            command,
-            cwd,
-            reason,
-            network_approval_context,
-            proposed_execpolicy_amendment,
-            proposed_network_policy_amendments,
-            additional_permissions,
-            skill_metadata,
-            available_decisions: Some(available_decisions),
-            parsed_cmd,
-        });
-        self.send_event(turn_context, event).await;
-        rx_approve.await.unwrap_or(ReviewDecision::Abort)
-    }
-
-    pub async fn request_patch_approval(
-        &self,
-        turn_context: &TurnContext,
-        call_id: String,
-        changes: HashMap<PathBuf, FileChange>,
-        reason: Option<String>,
-        grant_root: Option<PathBuf>,
-    ) -> oneshot::Receiver<ReviewDecision> {
-        // Add the tx_approve callback to the map before sending the request.
-        let (tx_approve, rx_approve) = oneshot::channel();
-        let approval_id = call_id.clone();
-        let prev_entry = {
-            let mut active = self.active_turn.lock().await;
-            match active.as_mut() {
-                Some(at) => {
-                    let mut ts = at.turn_state.lock().await;
-                    ts.insert_pending_approval(approval_id.clone(), tx_approve)
-                }
-                None => None,
-            }
-        };
-        if prev_entry.is_some() {
-            warn!("Overwriting existing pending approval for call_id: {approval_id}");
-        }
-
-        let event = EventMsg::ApplyPatchApprovalRequest(ApplyPatchApprovalRequestEvent {
-            call_id,
-            turn_id: turn_context.sub_id.clone(),
-            changes,
-            reason,
-            grant_root,
-        });
-        self.send_event(turn_context, event).await;
-        rx_approve
-    }
-
-    pub async fn request_permissions(
-        &self,
-        turn_context: &TurnContext,
-        call_id: String,
-        args: RequestPermissionsArgs,
-    ) -> Option<RequestPermissionsResponse> {
-        match turn_context.approval_policy.value() {
-            ApprovalPolicy::Headless => {
-                return Some(RequestPermissionsResponse {
-                    permissions: RequestPermissionProfile::default(),
-                    scope: PermissionGrantScope::Turn,
-                });
-            }
-            ApprovalPolicy::Granular(granular_config)
-                if !granular_config.allows_request_permissions() =>
-            {
-                return Some(RequestPermissionsResponse {
-                    permissions: RequestPermissionProfile::default(),
-                    scope: PermissionGrantScope::Turn,
-                });
-            }
-            ApprovalPolicy::Interactive
-            | ApprovalPolicy::Supervised
-            | ApprovalPolicy::Granular(_) => {}
-        }
-
-        let (tx_response, rx_response) = oneshot::channel();
-        let prev_entry = {
-            let mut active = self.active_turn.lock().await;
-            match active.as_mut() {
-                Some(at) => {
-                    let mut ts = at.turn_state.lock().await;
-                    ts.insert_pending_request_permissions(call_id.clone(), tx_response)
-                }
-                None => None,
-            }
-        };
-        if prev_entry.is_some() {
-            warn!("Overwriting existing pending request_permissions for call_id: {call_id}");
-        }
-
-        // TODO(ccunningham): Support auto-review for request_permissions /
-        // with_additional_permissions. V0 still routes this surface through
-        // the existing manual RequestPermissions event flow.
-        let event = EventMsg::RequestPermissions(RequestPermissionsEvent {
-            call_id,
-            turn_id: turn_context.sub_id.clone(),
-            reason: args.reason,
-            permissions: args.permissions,
-        });
-        self.send_event(turn_context, event).await;
-        rx_response.await.ok()
-    }
-
-    pub async fn request_user_input(
-        &self,
-        turn_context: &TurnContext,
-        call_id: String,
-        args: RequestUserInputArgs,
-    ) -> Option<RequestUserInputResponse> {
-        let sub_id = turn_context.sub_id.clone();
-        let (tx_response, rx_response) = oneshot::channel();
-        let event_id = sub_id.clone();
-        let prev_entry = {
-            let mut active = self.active_turn.lock().await;
-            match active.as_mut() {
-                Some(at) => {
-                    let mut ts = at.turn_state.lock().await;
-                    ts.insert_pending_user_input(sub_id, tx_response)
-                }
-                None => None,
-            }
-        };
-        if prev_entry.is_some() {
-            warn!("Overwriting existing pending user input for sub_id: {event_id}");
-        }
-
-        let event = EventMsg::RequestUserInput(RequestUserInputEvent {
-            call_id,
-            turn_id: turn_context.sub_id.clone(),
-            questions: args.questions,
-        });
-        self.send_event(turn_context, event).await;
-        rx_response.await.ok()
-    }
-
-    pub async fn request_mcp_server_elicitation(
-        &self,
-        turn_context: &TurnContext,
-        request_id: RequestId,
-        params: McpServerElicitationRequestParams,
-    ) -> Option<ElicitationResponse> {
-        let server_name = params.server_name.clone();
-        let request = match params.request {
-            McpServerElicitationRequest::Form {
-                meta,
-                message,
-                requested_schema,
-            } => {
-                let requested_schema = match serde_json::to_value(requested_schema) {
-                    Ok(requested_schema) => requested_schema,
-                    Err(err) => {
-                        warn!(
-                            "failed to serialize MCP elicitation schema for server_name: {server_name}, request_id: {request_id}: {err:#}"
-                        );
-                        return None;
-                    }
-                };
-                chaos_ipc::approvals::ElicitationRequest::Form {
-                    meta,
-                    message,
-                    requested_schema,
-                }
-            }
-            McpServerElicitationRequest::Url {
-                meta,
-                message,
-                url,
-                elicitation_id,
-            } => chaos_ipc::approvals::ElicitationRequest::Url {
-                meta,
-                message,
-                url,
-                elicitation_id,
-            },
-        };
-
-        let (tx_response, rx_response) = oneshot::channel();
-        let prev_entry = {
-            let mut active = self.active_turn.lock().await;
-            match active.as_mut() {
-                Some(at) => {
-                    let mut ts = at.turn_state.lock().await;
-                    ts.insert_pending_elicitation(
-                        server_name.clone(),
-                        request_id.clone(),
-                        tx_response,
-                    )
-                }
-                None => None,
-            }
-        };
-        if prev_entry.is_some() {
-            warn!(
-                "Overwriting existing pending elicitation for server_name: {server_name}, request_id: {request_id}"
-            );
-        }
-        let id = match &request_id {
-            RequestId::String(value) => chaos_ipc::mcp::RequestId::String(value.clone()),
-            RequestId::Number(value) => chaos_ipc::mcp::RequestId::Integer(*value),
-        };
-        let event = EventMsg::ElicitationRequest(ElicitationRequestEvent {
-            turn_id: params.turn_id,
-            server_name,
-            id,
-            request,
-        });
-        self.send_event(turn_context, event).await;
-        rx_response.await.ok()
-    }
-
-    pub async fn notify_user_input_response(
-        &self,
-        sub_id: &str,
-        response: RequestUserInputResponse,
-    ) {
-        let entry = {
-            let mut active = self.active_turn.lock().await;
-            match active.as_mut() {
-                Some(at) => {
-                    let mut ts = at.turn_state.lock().await;
-                    ts.remove_pending_user_input(sub_id)
-                }
-                None => None,
-            }
-        };
-        match entry {
-            Some(tx_response) => {
-                tx_response.send(response).ok();
-            }
-            None => {
-                warn!("No pending user input found for sub_id: {sub_id}");
-            }
-        }
-    }
-
-    pub async fn notify_request_permissions_response(
-        &self,
-        call_id: &str,
-        response: RequestPermissionsResponse,
-    ) {
-        let mut granted_for_session = None;
-        let entry = {
-            let mut active = self.active_turn.lock().await;
-            match active.as_mut() {
-                Some(at) => {
-                    let mut ts = at.turn_state.lock().await;
-                    let entry = ts.remove_pending_request_permissions(call_id);
-                    if entry.is_some() && !response.permissions.is_empty() {
-                        match response.scope {
-                            PermissionGrantScope::Turn => {
-                                ts.record_granted_permissions(response.permissions.clone().into());
-                            }
-                            PermissionGrantScope::Session => {
-                                granted_for_session = Some(response.permissions.clone());
-                            }
-                        }
-                    }
-                    entry
-                }
-                None => None,
-            }
-        };
-        if let Some(permissions) = granted_for_session {
-            let mut state = self.state.lock().await;
-            state.record_granted_permissions(permissions.into());
-        }
-        match entry {
-            Some(tx_response) => {
-                tx_response.send(response).ok();
-            }
-            None => {
-                warn!("No pending request_permissions found for call_id: {call_id}");
-            }
-        }
-    }
-
-    pub(crate) async fn granted_turn_permissions(&self) -> Option<PermissionProfile> {
-        let active = self.active_turn.lock().await;
-        let active = active.as_ref()?;
-        let ts = active.turn_state.lock().await;
-        ts.granted_permissions()
-    }
-
-    pub(crate) async fn granted_session_permissions(&self) -> Option<PermissionProfile> {
-        let state = self.state.lock().await;
-        state.granted_permissions()
     }
 
     pub async fn notify_dynamic_tool_response(&self, call_id: &str, response: DynamicToolResponse) {
@@ -3100,58 +2359,6 @@ impl Session {
                 warn!("No pending dynamic tool call found for call_id: {call_id}");
             }
         }
-    }
-
-    pub async fn notify_approval(&self, approval_id: &str, decision: ReviewDecision) {
-        let entry = {
-            let mut active = self.active_turn.lock().await;
-            match active.as_mut() {
-                Some(at) => {
-                    let mut ts = at.turn_state.lock().await;
-                    ts.remove_pending_approval(approval_id)
-                }
-                None => None,
-            }
-        };
-        match entry {
-            Some(tx_approve) => {
-                tx_approve.send(decision).ok();
-            }
-            None => {
-                warn!("No pending approval found for call_id: {approval_id}");
-            }
-        }
-    }
-
-    pub async fn resolve_elicitation(
-        &self,
-        server_name: String,
-        id: RequestId,
-        response: ElicitationResponse,
-    ) -> anyhow::Result<()> {
-        let entry = {
-            let mut active = self.active_turn.lock().await;
-            match active.as_mut() {
-                Some(at) => {
-                    let mut ts = at.turn_state.lock().await;
-                    ts.remove_pending_elicitation(&server_name, &id)
-                }
-                None => None,
-            }
-        };
-        if let Some(tx_response) = entry {
-            tx_response
-                .send(response)
-                .map_err(|e| anyhow::anyhow!("failed to send elicitation response: {e:?}"))?;
-            return Ok(());
-        }
-
-        self.services
-            .mcp_connection_manager
-            .read()
-            .await
-            .resolve_elicitation(server_name, id, response)
-            .await
     }
 
     /// Records input items: always append to conversation history and
@@ -3524,6 +2731,38 @@ impl Session {
         turn_context: &TurnContext,
         new_rate_limits: RateLimitSnapshot,
     ) {
+        // GCRA rate-gate: warn when callers are repeatedly hitting the same
+        // rate-limit window faster than 1 Hz.  TAT per limit_id is stored in a
+        // process-wide table rather than on SessionState to keep it lightweight
+        // and lock-contention free.
+        if let Some(ref id) = new_rate_limits.limit_id {
+            use std::sync::LazyLock;
+            use std::sync::Mutex;
+            static RATE_TATS: LazyLock<Mutex<HashMap<String, f64>>> =
+                LazyLock::new(|| Mutex::new(HashMap::new()));
+
+            let now = jiff::Timestamp::now().as_second() as f64;
+            let emission_interval = 1.0_f64;
+            let tat = RATE_TATS
+                .lock()
+                .unwrap_or_else(std::sync::PoisonError::into_inner)
+                .get(id)
+                .copied()
+                .unwrap_or(0.0);
+            let result = gcra::check(tat, now, emission_interval, 0.0);
+            RATE_TATS
+                .lock()
+                .unwrap_or_else(std::sync::PoisonError::into_inner)
+                .insert(id.clone(), result.new_tat);
+            if !result.allowed {
+                warn!(
+                    limit_id = %id,
+                    retry_after = result.retry_after,
+                    "rate limit snapshot arriving faster than 1 Hz"
+                );
+            }
+        }
+
         {
             let mut state = self.state.lock().await;
             state.set_rate_limits(new_rate_limits);
@@ -3762,82 +3001,6 @@ impl Session {
         ts.record_tool_call_emitted();
     }
 
-    pub async fn list_resources(
-        &self,
-        server: &str,
-        params: Option<PaginatedRequestParams>,
-    ) -> anyhow::Result<ListResourcesResult> {
-        self.services
-            .mcp_connection_manager
-            .read()
-            .await
-            .list_resources(server, params)
-            .await
-    }
-
-    pub async fn list_resource_templates(
-        &self,
-        server: &str,
-        params: Option<PaginatedRequestParams>,
-    ) -> anyhow::Result<ListResourceTemplatesResult> {
-        self.services
-            .mcp_connection_manager
-            .read()
-            .await
-            .list_resource_templates(server, params)
-            .await
-    }
-
-    pub async fn read_resource(
-        &self,
-        server: &str,
-        params: ReadResourceRequestParams,
-    ) -> anyhow::Result<ReadResourceResult> {
-        self.services
-            .mcp_connection_manager
-            .read()
-            .await
-            .read_resource(server, params)
-            .await
-    }
-
-    pub async fn call_tool(
-        &self,
-        server: &str,
-        tool: &str,
-        arguments: Option<serde_json::Value>,
-        meta: Option<serde_json::Value>,
-    ) -> anyhow::Result<CallToolResult> {
-        self.services
-            .mcp_connection_manager
-            .read()
-            .await
-            .call_tool(server, tool, arguments, meta)
-            .await
-    }
-
-    pub(crate) async fn parse_mcp_tool_name(
-        &self,
-        name: &str,
-        namespace: &Option<String>,
-    ) -> Option<(String, String)> {
-        let tool_name = if let Some(namespace) = namespace {
-            if name.starts_with(namespace.as_str()) {
-                name
-            } else {
-                &format!("{namespace}{name}")
-            }
-        } else {
-            name
-        };
-        self.services
-            .mcp_connection_manager
-            .read()
-            .await
-            .parse_tool_name(tool_name)
-            .await
-    }
-
     pub async fn interrupt_task(self: &Arc<Self>) {
         info!("interrupt received: abort current task, if any");
         let has_active_turn = { self.active_turn.lock().await.is_some() };
@@ -3862,118 +3025,6 @@ impl Session {
         let mut state = self.state.lock().await;
         state.take_pending_session_start_source()
     }
-
-    async fn refresh_mcp_servers_inner(
-        &self,
-        turn_context: &TurnContext,
-        mcp_servers: HashMap<String, McpServerConfig>,
-        store_mode: OAuthCredentialsStoreMode,
-    ) {
-        let config = self.get_config().await;
-        let auth_statuses = compute_auth_statuses(mcp_servers.iter(), store_mode).await;
-        let sandbox_state = SandboxState {
-            sandbox_policy: turn_context.sandbox_policy.get().clone(),
-            alcatraz_macos_exe: turn_context.alcatraz_macos_exe.clone(),
-            alcatraz_linux_exe: turn_context.alcatraz_linux_exe.clone(),
-            alcatraz_freebsd_exe: turn_context.alcatraz_freebsd_exe.clone(),
-            sandbox_cwd: turn_context.cwd.clone(),
-        };
-        {
-            let mut guard = self.services.mcp_startup_cancellation_token.lock().await;
-            guard.cancel();
-            *guard = CancellationToken::new();
-        }
-        let (refreshed_manager, cancel_token) = McpConnectionManager::new(
-            &mcp_servers,
-            store_mode,
-            auth_statuses,
-            &turn_context.config.permissions.approval_policy,
-            self.get_tx_event(),
-            sandbox_state,
-            config.chaos_home.clone(),
-            Arc::clone(&self.services.catalog) as Arc<dyn chaos_traits::McpCatalogSink>,
-        )
-        .await;
-        {
-            let mut guard = self.services.mcp_startup_cancellation_token.lock().await;
-            if guard.is_cancelled() {
-                cancel_token.cancel();
-            }
-            *guard = cancel_token;
-        }
-
-        let mut manager = self.services.mcp_connection_manager.write().await;
-        *manager = refreshed_manager;
-
-        // Re-sync MCP tools into catalog after refresh.
-        let mcp_tools = manager.list_all_tools().await;
-        {
-            let mut catalog = self
-                .services
-                .catalog
-                .write()
-                .unwrap_or_else(std::sync::PoisonError::into_inner);
-            // Clear all previous MCP entries and re-register.
-            catalog.clear_all_mcp();
-            for tool_info in mcp_tools.values() {
-                catalog.register_mcp_tools(
-                    &tool_info.server_name,
-                    vec![chaos_mcp_runtime::catalog_conv::mcp_tool_info_to_catalog_tool(tool_info)],
-                );
-            }
-        }
-    }
-
-    async fn refresh_mcp_servers_if_requested(&self, turn_context: &TurnContext) {
-        let refresh_config = { self.pending_mcp_server_refresh_config.lock().await.take() };
-        let Some(refresh_config) = refresh_config else {
-            return;
-        };
-
-        let McpServerRefreshConfig {
-            mcp_servers,
-            mcp_oauth_credentials_store_mode,
-        } = refresh_config;
-
-        let mcp_servers =
-            match serde_json::from_value::<HashMap<String, McpServerConfig>>(mcp_servers) {
-                Ok(servers) => servers,
-                Err(err) => {
-                    warn!("failed to parse MCP server refresh config: {err}");
-                    return;
-                }
-            };
-        let store_mode = match serde_json::from_value::<OAuthCredentialsStoreMode>(
-            mcp_oauth_credentials_store_mode,
-        ) {
-            Ok(mode) => mode,
-            Err(err) => {
-                warn!("failed to parse MCP OAuth refresh config: {err}");
-                return;
-            }
-        };
-
-        self.refresh_mcp_servers_inner(turn_context, mcp_servers, store_mode)
-            .await;
-    }
-
-    #[cfg(test)]
-    #[expect(dead_code, reason = "test helper available for future tests")]
-    async fn mcp_startup_cancellation_token(&self) -> CancellationToken {
-        self.services
-            .mcp_startup_cancellation_token
-            .lock()
-            .await
-            .clone()
-    }
-
-    async fn cancel_mcp_startup(&self) {
-        self.services
-            .mcp_startup_cancellation_token
-            .lock()
-            .await
-            .cancel();
-    }
 }
 
 fn initial_replay_event_msgs(
@@ -3993,7 +3044,9 @@ fn initial_replay_event_msgs(
                     }));
                 }
             }
-            RolloutItem::SessionMeta(_) | RolloutItem::TurnContext(_) | RolloutItem::Compacted(_) => {}
+            RolloutItem::SessionMeta(_)
+            | RolloutItem::TurnContext(_)
+            | RolloutItem::Compacted(_) => {}
         }
     }
 
@@ -4630,13 +3683,12 @@ mod handlers {
                         })
                         .map(|ann| {
                             let mut labels = crate::tools::spec::annotation_labels(&ann);
-                            let has_read_semantics =
-                                labels.iter().any(|label| label == "read-only" || label == "writes");
-                            if !has_read_semantics
-                                && let Some(read_only) = tool.read_only_hint
-                            {
+                            let has_read_semantics = labels
+                                .iter()
+                                .any(|label| label == "read-only" || label == "writes");
+                            if !has_read_semantics && let Some(read_only) = tool.read_only_hint {
                                 labels.push(
-                                    if read_only { "read-only" } else { "writes" }.to_string()
+                                    if read_only { "read-only" } else { "writes" }.to_string(),
                                 );
                             }
                             labels
@@ -6095,454 +5147,12 @@ struct SamplingRequestResult {
     last_agent_message: Option<String>,
 }
 
-/// Ephemeral per-response state for streaming a single proposed plan.
-/// This is intentionally not persisted or stored in session/state since it
-/// only exists while a response is actively streaming. The final plan text
-/// is extracted from the completed assistant message.
-/// Tracks a single proposed plan item across a streaming response.
-struct ProposedPlanItemState {
-    item_id: String,
-    started: bool,
-    completed: bool,
-}
-
-/// Aggregated state used only while streaming a plan-mode response.
-/// Includes per-item parsers, deferred agent message bookkeeping, and the plan item lifecycle.
-struct PlanModeStreamState {
-    /// Agent message items started by the model but deferred until we see non-plan text.
-    pending_agent_message_items: HashMap<String, TurnItem>,
-    /// Agent message items whose start notification has been emitted.
-    started_agent_message_items: HashSet<String>,
-    /// Leading whitespace buffered until we see non-whitespace text for an item.
-    leading_whitespace_by_item: HashMap<String, String>,
-    /// Tracks plan item lifecycle while streaming plan output.
-    plan_item_state: ProposedPlanItemState,
-}
-
-impl PlanModeStreamState {
-    fn new(turn_id: &str) -> Self {
-        Self {
-            pending_agent_message_items: HashMap::new(),
-            started_agent_message_items: HashSet::new(),
-            leading_whitespace_by_item: HashMap::new(),
-            plan_item_state: ProposedPlanItemState::new(turn_id),
-        }
-    }
-}
-
-#[derive(Debug, Default)]
-struct AssistantMessageStreamParsers {
-    plan_mode: bool,
-    parsers_by_item: HashMap<String, AssistantTextStreamParser>,
-}
-
-type ParsedAssistantTextDelta = AssistantTextChunk;
-
-impl AssistantMessageStreamParsers {
-    fn new(plan_mode: bool) -> Self {
-        Self {
-            plan_mode,
-            parsers_by_item: HashMap::new(),
-        }
-    }
-
-    fn parser_mut(&mut self, item_id: &str) -> &mut AssistantTextStreamParser {
-        let plan_mode = self.plan_mode;
-        self.parsers_by_item
-            .entry(item_id.to_string())
-            .or_insert_with(|| AssistantTextStreamParser::new(plan_mode))
-    }
-
-    fn seed_item_text(&mut self, item_id: &str, text: &str) -> ParsedAssistantTextDelta {
-        if text.is_empty() {
-            return ParsedAssistantTextDelta::default();
-        }
-        self.parser_mut(item_id).push_str(text)
-    }
-
-    fn parse_delta(&mut self, item_id: &str, delta: &str) -> ParsedAssistantTextDelta {
-        self.parser_mut(item_id).push_str(delta)
-    }
-
-    fn finish_item(&mut self, item_id: &str) -> ParsedAssistantTextDelta {
-        let Some(mut parser) = self.parsers_by_item.remove(item_id) else {
-            return ParsedAssistantTextDelta::default();
-        };
-        parser.finish()
-    }
-
-    fn drain_finished(&mut self) -> Vec<(String, ParsedAssistantTextDelta)> {
-        let parsers_by_item = std::mem::take(&mut self.parsers_by_item);
-        parsers_by_item
-            .into_iter()
-            .map(|(item_id, mut parser)| (item_id, parser.finish()))
-            .collect()
-    }
-}
-
-impl ProposedPlanItemState {
-    fn new(turn_id: &str) -> Self {
-        Self {
-            item_id: format!("{turn_id}-plan"),
-            started: false,
-            completed: false,
-        }
-    }
-
-    async fn start(&mut self, sess: &Session, turn_context: &TurnContext) {
-        if self.started || self.completed {
-            return;
-        }
-        self.started = true;
-        let item = TurnItem::Plan(PlanItem {
-            id: self.item_id.clone(),
-            text: String::new(),
-        });
-        sess.emit_turn_item_started(turn_context, &item).await;
-    }
-
-    async fn push_delta(&mut self, sess: &Session, turn_context: &TurnContext, delta: &str) {
-        if self.completed {
-            return;
-        }
-        if delta.is_empty() {
-            return;
-        }
-        let event = PlanDeltaEvent {
-            process_id: sess.conversation_id.to_string(),
-            turn_id: turn_context.sub_id.clone(),
-            item_id: self.item_id.clone(),
-            delta: delta.to_string(),
-        };
-        sess.send_event(turn_context, EventMsg::PlanDelta(event))
-            .await;
-    }
-
-    async fn complete_with_text(
-        &mut self,
-        sess: &Session,
-        turn_context: &TurnContext,
-        text: String,
-    ) {
-        if self.completed || !self.started {
-            return;
-        }
-        self.completed = true;
-        let item = TurnItem::Plan(PlanItem {
-            id: self.item_id.clone(),
-            text,
-        });
-        sess.emit_turn_item_completed(turn_context, item).await;
-    }
-}
-
-/// In plan mode we defer agent message starts until the parser emits non-plan
-/// text. The parser buffers each line until it can rule out a tag prefix, so
-/// plan-only outputs never show up as empty assistant messages.
-async fn maybe_emit_pending_agent_message_start(
-    sess: &Session,
-    turn_context: &TurnContext,
-    state: &mut PlanModeStreamState,
-    item_id: &str,
-) {
-    if state.started_agent_message_items.contains(item_id) {
-        return;
-    }
-    if let Some(item) = state.pending_agent_message_items.remove(item_id) {
-        sess.emit_turn_item_started(turn_context, &item).await;
-        state
-            .started_agent_message_items
-            .insert(item_id.to_string());
-    }
-}
-
-/// Agent messages are text-only today; concatenate all text entries.
-fn agent_message_text(item: &chaos_ipc::items::AgentMessageItem) -> String {
-    item.content
-        .iter()
-        .map(|entry| match entry {
-            chaos_ipc::items::AgentMessageContent::Text { text } => text.as_str(),
-        })
-        .collect()
-}
-
-/// Split the stream into normal assistant text vs. proposed plan content.
-/// Normal text becomes AgentMessage deltas; plan content becomes PlanDelta +
-/// TurnItem::Plan.
-async fn handle_plan_segments(
-    sess: &Session,
-    turn_context: &TurnContext,
-    state: &mut PlanModeStreamState,
-    item_id: &str,
-    segments: Vec<ProposedPlanSegment>,
-) {
-    for segment in segments {
-        match segment {
-            ProposedPlanSegment::Normal(delta) => {
-                if delta.is_empty() {
-                    continue;
-                }
-                let has_non_whitespace = delta.chars().any(|ch| !ch.is_whitespace());
-                if !has_non_whitespace && !state.started_agent_message_items.contains(item_id) {
-                    let entry = state
-                        .leading_whitespace_by_item
-                        .entry(item_id.to_string())
-                        .or_default();
-                    entry.push_str(&delta);
-                    continue;
-                }
-                let delta = if !state.started_agent_message_items.contains(item_id) {
-                    if let Some(prefix) = state.leading_whitespace_by_item.remove(item_id) {
-                        format!("{prefix}{delta}")
-                    } else {
-                        delta
-                    }
-                } else {
-                    delta
-                };
-                maybe_emit_pending_agent_message_start(sess, turn_context, state, item_id).await;
-
-                let event = AgentMessageContentDeltaEvent {
-                    process_id: sess.conversation_id.to_string(),
-                    turn_id: turn_context.sub_id.clone(),
-                    item_id: item_id.to_string(),
-                    delta,
-                };
-                sess.send_event(turn_context, EventMsg::AgentMessageContentDelta(event))
-                    .await;
-            }
-            ProposedPlanSegment::ProposedPlanStart => {
-                if !state.plan_item_state.completed {
-                    state.plan_item_state.start(sess, turn_context).await;
-                }
-            }
-            ProposedPlanSegment::ProposedPlanDelta(delta) => {
-                if !state.plan_item_state.completed {
-                    if !state.plan_item_state.started {
-                        state.plan_item_state.start(sess, turn_context).await;
-                    }
-                    state
-                        .plan_item_state
-                        .push_delta(sess, turn_context, &delta)
-                        .await;
-                }
-            }
-            ProposedPlanSegment::ProposedPlanEnd => {}
-        }
-    }
-}
-
-async fn emit_streamed_assistant_text_delta(
-    sess: &Session,
-    turn_context: &TurnContext,
-    plan_mode_state: Option<&mut PlanModeStreamState>,
-    item_id: &str,
-    parsed: ParsedAssistantTextDelta,
-) {
-    if parsed.is_empty() {
-        return;
-    }
-    if !parsed.citations.is_empty() {
-        // Citation extraction is intentionally local for now; we strip citations from display text
-        // but do not yet surface them in protocol events.
-        let _citations = parsed.citations;
-    }
-    if let Some(state) = plan_mode_state {
-        if !parsed.plan_segments.is_empty() {
-            handle_plan_segments(sess, turn_context, state, item_id, parsed.plan_segments).await;
-        }
-        return;
-    }
-    if parsed.visible_text.is_empty() {
-        return;
-    }
-    let event = AgentMessageContentDeltaEvent {
-        process_id: sess.conversation_id.to_string(),
-        turn_id: turn_context.sub_id.clone(),
-        item_id: item_id.to_string(),
-        delta: parsed.visible_text,
-    };
-    sess.send_event(turn_context, EventMsg::AgentMessageContentDelta(event))
-        .await;
-}
-
-/// Flush buffered assistant text parser state when an assistant message item ends.
-async fn flush_assistant_text_segments_for_item(
-    sess: &Session,
-    turn_context: &TurnContext,
-    plan_mode_state: Option<&mut PlanModeStreamState>,
-    parsers: &mut AssistantMessageStreamParsers,
-    item_id: &str,
-) {
-    let parsed = parsers.finish_item(item_id);
-    emit_streamed_assistant_text_delta(sess, turn_context, plan_mode_state, item_id, parsed).await;
-}
-
-/// Flush any remaining buffered assistant text parser state at response completion.
-async fn flush_assistant_text_segments_all(
-    sess: &Session,
-    turn_context: &TurnContext,
-    mut plan_mode_state: Option<&mut PlanModeStreamState>,
-    parsers: &mut AssistantMessageStreamParsers,
-) {
-    for (item_id, parsed) in parsers.drain_finished() {
-        emit_streamed_assistant_text_delta(
-            sess,
-            turn_context,
-            plan_mode_state.as_deref_mut(),
-            &item_id,
-            parsed,
-        )
-        .await;
-    }
-}
-
-/// Emit completion for plan items by parsing the finalized assistant message.
-async fn maybe_complete_plan_item_from_message(
-    sess: &Session,
-    turn_context: &TurnContext,
-    state: &mut PlanModeStreamState,
-    item: &ResponseItem,
-) {
-    if let ResponseItem::Message { role, content, .. } = item
-        && role == "assistant"
-    {
-        let mut text = String::new();
-        for entry in content {
-            if let ContentItem::OutputText { text: chunk } = entry {
-                text.push_str(chunk);
-            }
-        }
-        if let Some(plan_text) = extract_proposed_plan_text(&text) {
-            let (plan_text, _citations) = strip_citations(&plan_text);
-            if !state.plan_item_state.started {
-                state.plan_item_state.start(sess, turn_context).await;
-            }
-            state
-                .plan_item_state
-                .complete_with_text(sess, turn_context, plan_text)
-                .await;
-        }
-    }
-}
-
-/// Emit a completed agent message in plan mode, respecting deferred starts.
-async fn emit_agent_message_in_plan_mode(
-    sess: &Session,
-    turn_context: &TurnContext,
-    agent_message: chaos_ipc::items::AgentMessageItem,
-    state: &mut PlanModeStreamState,
-) {
-    let agent_message_id = agent_message.id.clone();
-    let text = agent_message_text(&agent_message);
-    if text.trim().is_empty() {
-        state.pending_agent_message_items.remove(&agent_message_id);
-        state.started_agent_message_items.remove(&agent_message_id);
-        return;
-    }
-
-    maybe_emit_pending_agent_message_start(sess, turn_context, state, &agent_message_id).await;
-
-    if !state
-        .started_agent_message_items
-        .contains(&agent_message_id)
-    {
-        let start_item = state
-            .pending_agent_message_items
-            .remove(&agent_message_id)
-            .unwrap_or_else(|| {
-                TurnItem::AgentMessage(chaos_ipc::items::AgentMessageItem {
-                    id: agent_message_id.clone(),
-                    content: Vec::new(),
-                    phase: None,
-                })
-            });
-        sess.emit_turn_item_started(turn_context, &start_item).await;
-        state
-            .started_agent_message_items
-            .insert(agent_message_id.clone());
-    }
-
-    sess.emit_turn_item_completed(turn_context, TurnItem::AgentMessage(agent_message))
-        .await;
-    state.started_agent_message_items.remove(&agent_message_id);
-}
-
-/// Emit completion for a plan-mode turn item, handling agent messages specially.
-async fn emit_turn_item_in_plan_mode(
-    sess: &Session,
-    turn_context: &TurnContext,
-    turn_item: TurnItem,
-    previously_active_item: Option<&TurnItem>,
-    state: &mut PlanModeStreamState,
-) {
-    match turn_item {
-        TurnItem::AgentMessage(agent_message) => {
-            emit_agent_message_in_plan_mode(sess, turn_context, agent_message, state).await;
-        }
-        _ => {
-            if previously_active_item.is_none() {
-                sess.emit_turn_item_started(turn_context, &turn_item).await;
-            }
-            sess.emit_turn_item_completed(turn_context, turn_item).await;
-        }
-    }
-}
-
-/// Handle a completed assistant response item in plan mode, returning true if handled.
-async fn handle_assistant_item_done_in_plan_mode(
-    sess: &Session,
-    turn_context: &TurnContext,
-    item: &ResponseItem,
-    state: &mut PlanModeStreamState,
-    previously_active_item: Option<&TurnItem>,
-    last_agent_message: &mut Option<String>,
-) -> bool {
-    if let ResponseItem::Message { role, .. } = item
-        && role == "assistant"
-    {
-        maybe_complete_plan_item_from_message(sess, turn_context, state, item).await;
-
-        if let Some(turn_item) =
-            handle_non_tool_response_item(sess, turn_context, item, /*plan_mode*/ true).await
-        {
-            emit_turn_item_in_plan_mode(
-                sess,
-                turn_context,
-                turn_item,
-                previously_active_item,
-                state,
-            )
-            .await;
-        }
-
-        record_completed_response_item(sess, turn_context, item).await;
-        if let Some(agent_message) = last_assistant_message_from_item(item, /*plan_mode*/ true) {
-            *last_agent_message = Some(agent_message);
-        }
-        return true;
-    }
-    false
-}
-
-async fn drain_in_flight(
-    in_flight: &mut FuturesOrdered<BoxFuture<'static, ChaosResult<ResponseInputItem>>>,
-    sess: Arc<Session>,
-    turn_context: Arc<TurnContext>,
-) -> ChaosResult<()> {
-    while let Some(res) = in_flight.next().await {
-        match res {
-            Ok(response_input) => {
-                sess.record_conversation_items(&turn_context, &[response_input.into()])
-                    .await;
-            }
-            Err(err) => {
-                error_or_panic(format!("in-flight tool future failed during drain: {err}"));
-            }
-        }
-    }
-    Ok(())
-}
+pub(super) mod response_parsing;
+use response_parsing::{
+    AssistantMessageStreamParsers, ParsedAssistantTextDelta, PlanModeStreamState, drain_in_flight,
+    emit_streamed_assistant_text_delta, flush_assistant_text_segments_all,
+    flush_assistant_text_segments_for_item, handle_assistant_item_done_in_plan_mode,
+};
 
 #[allow(clippy::too_many_arguments)]
 #[instrument(level = "trace",

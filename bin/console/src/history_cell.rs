@@ -1458,7 +1458,8 @@ pub(crate) fn new_mcp_tools_output(
             .keys()
             .filter(|k| k.starts_with(&prefix))
             .filter_map(|k| {
-                tools.get(k)
+                tools
+                    .get(k)
                     .cloned()
                     .map(|tool| (k[prefix.len()..].to_string(), tool))
             })
@@ -1483,8 +1484,10 @@ pub(crate) fn new_mcp_tools_output(
         lines.push(header.into());
         lines.push(vec!["    • Status: ".into(), "enabled".green()].into());
         // Only show auth for HTTP transports where OAuth is relevant.
-        if matches!(cfg.transport, McpServerTransportConfig::StreamableHttp { .. })
-            && auth_status != McpAuthStatus::Unsupported
+        if matches!(
+            cfg.transport,
+            McpServerTransportConfig::StreamableHttp { .. }
+        ) && auth_status != McpAuthStatus::Unsupported
         {
             lines.push(vec!["    • Auth: ".into(), auth_status.to_string().into()].into());
         }

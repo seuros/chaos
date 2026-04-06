@@ -280,7 +280,12 @@ fn detect_tmux() -> MultiplexerInfo {
             (session, String::new(), pane)
         });
 
-    MultiplexerInfo { kind: "tmux".into(), session, window, pane }
+    MultiplexerInfo {
+        kind: "tmux".into(),
+        session,
+        window,
+        pane,
+    }
 }
 
 fn detect_zellij() -> MultiplexerInfo {

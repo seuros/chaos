@@ -4,13 +4,13 @@ use std::sync::Arc;
 
 use chaos_sysctl::types::McpServerConfig;
 use chaos_sysctl::types::McpServerTransportConfig;
+use chaos_traits::catalog::CatalogRegistration;
+use chaos_traits::catalog::CatalogTool;
 use chaos_traits::catalog::CatalogToolDriver;
 use chaos_traits::catalog::CatalogToolDriverFuture;
 use chaos_traits::catalog::CatalogToolEffect;
-use chaos_traits::catalog::CatalogTool;
 use chaos_traits::catalog::CatalogToolRequest;
 use chaos_traits::catalog::CatalogToolResult;
-use chaos_traits::catalog::CatalogRegistration;
 use chaos_traits::catalog::tool_infos_to_catalog_tools_with_parallel;
 use mcp_host::prelude::*;
 use schemars::JsonSchema;
@@ -68,7 +68,12 @@ pub struct McpServerActionParams {
 struct McpManageServer;
 
 impl McpManageServer {
-    #[mcp_tool(name = "mcp_add_server", description = "Add an MCP server to the project `.mcp.json` and reload the active session.", read_only = false, open_world = false)]
+    #[mcp_tool(
+        name = "mcp_add_server",
+        description = "Add an MCP server to the project `.mcp.json` and reload the active session.",
+        read_only = false,
+        open_world = false
+    )]
     async fn mcp_add_server(
         &self,
         _ctx: Ctx<'_>,
@@ -77,7 +82,12 @@ impl McpManageServer {
         unreachable!("catalog driver path only");
     }
 
-    #[mcp_tool(name = "mcp_server", description = "Enable, disable, reset, or remove an MCP server in the project `.mcp.json`, then reload the active session.", read_only = false, open_world = false)]
+    #[mcp_tool(
+        name = "mcp_server",
+        description = "Enable, disable, reset, or remove an MCP server in the project `.mcp.json`, then reload the active session.",
+        read_only = false,
+        open_world = false
+    )]
     async fn mcp_server(
         &self,
         _ctx: Ctx<'_>,
@@ -184,10 +194,10 @@ fn build_server_config(params: &McpAddServerParams) -> Result<McpServerConfig, S
         (Some(command), None) => McpServerTransportConfig::Stdio {
             command: command.clone(),
             args: params.args.clone().unwrap_or_default(),
-            env: params
-                .env
-                .clone()
-                .map(|vars| vars.into_iter().collect::<std::collections::HashMap<_, _>>()),
+            env: params.env.clone().map(|vars| {
+                vars.into_iter()
+                    .collect::<std::collections::HashMap<_, _>>()
+            }),
             env_vars: Vec::new(),
             cwd: None,
         },

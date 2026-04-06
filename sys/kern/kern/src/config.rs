@@ -7,6 +7,7 @@ use crate::config::types::History;
 use crate::config::types::McpServerConfig;
 use crate::config::types::McpServerDisabledReason;
 use crate::config::types::McpServerTransportConfig;
+use crate::config::types::MemoriesConfig;
 use crate::config::types::ModelAvailabilityNuxConfig;
 use crate::config::types::Notice;
 use crate::config::types::NotificationMethod;
@@ -352,6 +353,9 @@ pub struct Config {
 
     /// User-defined role declarations keyed by role name.
     pub agent_roles: BTreeMap<String, AgentRoleConfig>,
+
+    /// Memory subsystem configuration.
+    pub memories: MemoriesConfig,
 
     /// Directory containing all ChaOS state (defaults to `~/.chaos` and can be
     /// overridden by `CHAOS_HOME`).
@@ -1308,6 +1312,9 @@ pub struct ConfigToml {
     pub experimental_use_freeform_apply_patch: Option<bool>,
     /// Preferred OSS provider for local models, e.g. "lmstudio" or "ollama".
     pub oss_provider: Option<String>,
+
+    /// Memory subsystem configuration.
+    pub memories: Option<crate::config::types::MemoriesToml>,
 }
 
 impl From<ConfigToml> for UserSavedConfig {
@@ -1686,9 +1693,11 @@ impl Config {
                 format!("failed to parse effective config while reloading MCP servers: {err}"),
             )
         })?;
-        self.mcp_servers =
-            constrain_mcp_servers(cfg.mcp_servers, self.config_layer_stack.requirements().mcp_servers.as_ref())
-                .map_err(|err| std::io::Error::new(std::io::ErrorKind::InvalidData, err))?;
+        self.mcp_servers = constrain_mcp_servers(
+            cfg.mcp_servers,
+            self.config_layer_stack.requirements().mcp_servers.as_ref(),
+        )
+        .map_err(|err| std::io::Error::new(std::io::ErrorKind::InvalidData, err))?;
         Ok(())
     }
 
@@ -2381,6 +2390,7 @@ impl Config {
                 }
             },
             disable_user_scripts: false,
+            memories: cfg.memories.map(MemoriesConfig::from).unwrap_or_default(),
         };
         Ok(config)
     }

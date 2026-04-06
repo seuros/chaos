@@ -31,7 +31,12 @@ pub fn blame(
 
     let head_obj = head.object().git_op()?;
     let head_commit = head_obj.try_into_commit().git_op()?;
-    let author = head_commit.author().git_op()?.name.to_str_lossy().into_owned();
+    let author = head_commit
+        .author()
+        .git_op()?
+        .name
+        .to_str_lossy()
+        .into_owned();
     let commit = head_commit.tree().git_op()?;
 
     let entry = commit

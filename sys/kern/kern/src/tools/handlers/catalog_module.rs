@@ -1,7 +1,7 @@
 use std::sync::Arc;
 
-use chaos_traits::catalog::CatalogToolEffect;
 use chaos_traits::catalog::CatalogToolDriver;
+use chaos_traits::catalog::CatalogToolEffect;
 use chaos_traits::catalog::CatalogToolRequest;
 
 use crate::function_tool::FunctionCallError;
@@ -75,7 +75,9 @@ impl ToolHandler for CatalogModuleHandler {
         for effect in &result.effects {
             match effect {
                 CatalogToolEffect::ReloadProjectMcp => {
-                    session.reload_project_mcp_layer_and_refresh(turn.as_ref()).await;
+                    session
+                        .reload_project_mcp_layer_and_refresh(turn.as_ref())
+                        .await;
                 }
             }
         }

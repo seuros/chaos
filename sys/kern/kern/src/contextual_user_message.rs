@@ -103,6 +103,21 @@ pub(crate) fn is_contextual_user_fragment(content_item: &ContentItem) -> bool {
         .any(|definition| definition.matches_text(text))
 }
 
+/// Returns `true` for contextual fragments that should be excluded from
+/// memory / compaction summaries (AGENTS.md instructions and skill blocks),
+/// and `false` for fragments that carry runtime state (environment context,
+/// subagent notifications, etc.) which are not worth excluding.
+///
+/// NOTE: currently only wired into tests; production callsites land once the
+/// memories subsystem ships.
+#[cfg_attr(not(test), allow(dead_code))]
+pub(crate) fn is_memory_excluded_contextual_user_fragment(content_item: &ContentItem) -> bool {
+    let ContentItem::InputText { text } = content_item else {
+        return false;
+    };
+    AGENTS_MD_FRAGMENT.matches_text(text) || SKILL_FRAGMENT.matches_text(text)
+}
+
 #[cfg(test)]
 #[path = "contextual_user_message_tests.rs"]
 mod tests;

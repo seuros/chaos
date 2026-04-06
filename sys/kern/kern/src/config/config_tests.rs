@@ -84,7 +84,6 @@ persistence = "none"
         }),
         history_no_persistence_cfg.history
     );
-
 }
 
 #[test]

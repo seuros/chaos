@@ -1,4 +1,9 @@
 use super::*;
+use chaos_ipc::protocol::{
+    NetworkApprovalContext, NetworkApprovalProtocol, NetworkPolicyAmendment,
+    NetworkPolicyRuleAction,
+};
+use chaos_lex::ProposedPlanSegment;
 
 #[test]
 fn assistant_message_stream_parsers_can_be_seeded_from_output_item_added_text() {

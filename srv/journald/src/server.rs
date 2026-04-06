@@ -48,10 +48,8 @@ pub fn default_socket_runtime_dir() -> std::io::Result<PathBuf> {
         return Ok(PathBuf::from(runtime_dir).join("codex"));
     }
 
-    {
-        let uid = unsafe { libc::geteuid() };
-        return Ok(std::env::temp_dir().join(format!("codex-{uid}")));
-    }
+    let uid = unsafe { libc::geteuid() };
+    Ok(std::env::temp_dir().join(format!("codex-{uid}")))
 }
 
 pub fn sqlite_db_path() -> std::io::Result<PathBuf> {

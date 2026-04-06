@@ -21,7 +21,9 @@ fn parsed_annotations(annotations: Option<&serde_json::Value>) -> Option<ToolAnn
 }
 
 pub(crate) fn tool_name_style() -> Style {
-    Style::default().fg(Color::Cyan).add_modifier(Modifier::BOLD)
+    Style::default()
+        .fg(Color::Cyan)
+        .add_modifier(Modifier::BOLD)
 }
 
 fn style_for_labels<'a>(labels: impl IntoIterator<Item = &'a str>) -> Style {

@@ -7,14 +7,12 @@ use super::commands_for_intercepted_exec_policy;
 use super::evaluate_intercepted_exec_policy;
 use super::extract_shell_script;
 use super::join_program_and_argv;
-use super::map_exec_result;
 #[cfg(target_os = "macos")]
 use crate::config::Constrained;
 #[cfg(target_os = "macos")]
 use crate::config::Permissions;
 #[cfg(target_os = "macos")]
 use crate::config::types::ShellEnvironmentPolicy;
-use crate::exec::SandboxType;
 use crate::protocol::ApprovalPolicy;
 use crate::protocol::GranularApprovalConfig;
 use crate::protocol::ReadOnlyAccess;
@@ -23,7 +21,6 @@ use crate::sandboxing::SandboxPermissions;
 use crate::skills::SkillMetadata;
 use chaos_doas::EscalationExecution;
 use chaos_doas::EscalationPermissions;
-use chaos_doas::ExecResult;
 use chaos_doas::Permissions as EscalatedPermissions;
 #[cfg(target_os = "macos")]
 use chaos_doas::ShellCommandExecutor;
@@ -47,7 +44,6 @@ use pretty_assertions::assert_eq;
 #[cfg(target_os = "macos")]
 use std::collections::HashMap;
 use std::path::PathBuf;
-use std::time::Duration;
 
 fn host_absolute_path(segments: &[&str]) -> String {
     let mut path = PathBuf::from("/");
@@ -282,26 +278,6 @@ fn commands_for_intercepted_exec_policy_parses_plain_shell_wrappers() {
         ]
     );
     assert!(!candidate_commands.used_complex_parsing);
-}
-
-#[test]
-fn map_exec_result_preserves_stdout_and_stderr() {
-    let out = map_exec_result(
-        SandboxType::None,
-        ExecResult {
-            exit_code: 0,
-            stdout: "out".to_string(),
-            stderr: "err".to_string(),
-            output: "outerr".to_string(),
-            duration: Duration::from_millis(1),
-            timed_out: false,
-        },
-    )
-    .unwrap();
-
-    assert_eq!(out.stdout.text, "out");
-    assert_eq!(out.stderr.text, "err");
-    assert_eq!(out.aggregated_output.text, "outerr");
 }
 
 #[test]

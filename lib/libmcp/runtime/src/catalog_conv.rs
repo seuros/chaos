@@ -19,7 +19,11 @@ pub fn mcp_tool_info_to_catalog_tool(info: &ToolInfo) -> CatalogTool {
             .annotations
             .as_ref()
             .and_then(|a| serde_json::to_value(a).ok()),
-        read_only_hint: info.tool.annotations.as_ref().and_then(|a| a.read_only_hint),
+        read_only_hint: info
+            .tool
+            .annotations
+            .as_ref()
+            .and_then(|a| a.read_only_hint),
         supports_parallel_tool_calls: true,
     }
 }

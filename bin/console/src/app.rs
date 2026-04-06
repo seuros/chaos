@@ -1755,25 +1755,23 @@ impl App {
                 TuiEvent::Key(key_event) => {
                     self.handle_key_event(tui, key_event).await;
                 }
-                TuiEvent::Mouse(mouse_event) => {
-                    match mouse_event.kind {
-                        crossterm::event::MouseEventKind::ScrollUp
-                            if self.log_panel.is_visible()
-                                && self.chat_widget.no_modal_or_popup_active() =>
-                        {
-                            self.log_panel.scroll_up(3);
-                            tui.frame_requester().schedule_frame();
-                        }
-                        crossterm::event::MouseEventKind::ScrollDown
-                            if self.log_panel.is_visible()
-                                && self.chat_widget.no_modal_or_popup_active() =>
-                        {
-                            self.log_panel.scroll_down(3);
-                            tui.frame_requester().schedule_frame();
-                        }
-                        _ => {}
+                TuiEvent::Mouse(mouse_event) => match mouse_event.kind {
+                    crossterm::event::MouseEventKind::ScrollUp
+                        if self.log_panel.is_visible()
+                            && self.chat_widget.no_modal_or_popup_active() =>
+                    {
+                        self.log_panel.scroll_up(3);
+                        tui.frame_requester().schedule_frame();
                     }
-                }
+                    crossterm::event::MouseEventKind::ScrollDown
+                        if self.log_panel.is_visible()
+                            && self.chat_widget.no_modal_or_popup_active() =>
+                    {
+                        self.log_panel.scroll_down(3);
+                        tui.frame_requester().schedule_frame();
+                    }
+                    _ => {}
+                },
                 TuiEvent::Paste(pasted) => {
                     // Only paste into chat when chat is focused — do not leak
                     // clipboard content into the composer from auxiliary panes.
@@ -5094,12 +5092,11 @@ mod tests {
 
     #[cfg(feature = "vt100-tests")]
     fn make_test_tui() -> crate::tui::Tui {
-        let terminal = crate::custom_terminal::Terminal::with_options(
-            crate::test_backend::VT100Backend::new(100, 30),
-        )
-        .expect("test terminal");
+        use ratatui::backend::CrosstermBackend;
+        let backend = CrosstermBackend::new(std::io::stdout());
+        let terminal = crate::custom_terminal::Terminal::new_for_test(backend, 100, 30);
         let mut tui = crate::tui::Tui::new(terminal);
-        tui.draw(10, |_frame| {}).expect("prime test tui");
+        tui.set_alt_screen_enabled(false);
         tui
     }
 
@@ -5821,14 +5818,12 @@ mod tests {
                 local_image_paths: Vec::new(),
                 remote_image_urls: Vec::new(),
             }) as Arc<dyn HistoryCell>,
-            Arc::new(AgentMessageCell::new(vec![Line::from("reply")], false)) as Arc<dyn HistoryCell>,
+            Arc::new(AgentMessageCell::new(vec![Line::from("reply")], false))
+                as Arc<dyn HistoryCell>,
         ];
 
-        app.handle_key_event(
-            &mut tui,
-            KeyEvent::new(KeyCode::PageUp, KeyModifiers::NONE),
-        )
-        .await;
+        app.handle_key_event(&mut tui, KeyEvent::new(KeyCode::PageUp, KeyModifiers::NONE))
+            .await;
 
         assert!(matches!(app.overlay, Some(Overlay::Transcript(_))));
     }
@@ -5841,13 +5836,13 @@ mod tests {
         app.log_panel = LogPanelState::default();
         app.log_panel.toggle();
 
-        app.handle_key_event(
-            &mut tui,
-            KeyEvent::new(KeyCode::PageUp, KeyModifiers::NONE),
-        )
-        .await;
+        app.handle_key_event(&mut tui, KeyEvent::new(KeyCode::PageUp, KeyModifiers::NONE))
+            .await;
 
-        assert!(app.overlay.is_none(), "log panel PageUp should not open transcript overlay");
+        assert!(
+            app.overlay.is_none(),
+            "log panel PageUp should not open transcript overlay"
+        );
     }
 
     #[tokio::test]

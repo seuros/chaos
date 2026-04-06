@@ -1460,7 +1460,10 @@ mod tests {
 
         let resolved = pv.resolved_scroll_offset_for_area(pv.content_area(area));
 
-        assert!(resolved > 0, "expected a concrete bottom offset, got {resolved}");
+        assert!(
+            resolved > 0,
+            "expected a concrete bottom offset, got {resolved}"
+        );
         assert_ne!(resolved, usize::MAX);
     }
 

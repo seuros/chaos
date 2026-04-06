@@ -487,7 +487,9 @@ pub(crate) fn default_project_root_markers() -> Vec<String> {
         .collect()
 }
 
-pub(crate) fn project_root_markers_from_stack(config_layer_stack: &ConfigLayerStack) -> Vec<String> {
+pub(crate) fn project_root_markers_from_stack(
+    config_layer_stack: &ConfigLayerStack,
+) -> Vec<String> {
     let mut merged = TomlValue::Table(toml::map::Map::new());
     for layer in config_layer_stack.get_layers(
         ConfigLayerStackOrdering::LowestPrecedenceFirst,

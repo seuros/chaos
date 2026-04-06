@@ -23,7 +23,12 @@ pub struct CronToggleParams {
 }
 
 impl CronServer {
-    #[mcp_tool(name = "cron_toggle", description = "Enable, disable, or delete an existing cron job by ID.", destructive = true, open_world = false)]
+    #[mcp_tool(
+        name = "cron_toggle",
+        description = "Enable, disable, or delete an existing cron job by ID.",
+        destructive = true,
+        open_world = false
+    )]
     async fn cron_toggle(
         &self,
         _ctx: CronCtx<'_>,

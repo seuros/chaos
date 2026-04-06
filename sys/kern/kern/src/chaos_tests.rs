@@ -31,7 +31,6 @@ use tracing::Span;
 use crate::protocol::CompactedItem;
 use crate::protocol::CreditsSnapshot;
 use crate::protocol::InitialHistory;
-use crate::protocol::NetworkApprovalProtocol;
 use crate::protocol::RateLimitSnapshot;
 use crate::protocol::RateLimitWindow;
 use crate::protocol::ResumedHistory;
@@ -190,12 +189,16 @@ fn initial_replay_event_msgs_preserves_non_message_response_items() {
         history: vec![
             RolloutItem::ResponseItem(ResponseItem::Reasoning {
                 id: "reasoning_1".to_string(),
-                summary: vec![chaos_ipc::models::ReasoningItemReasoningSummary::SummaryText {
-                    text: "think".to_string(),
-                }],
-                content: Some(vec![chaos_ipc::models::ReasoningItemContent::ReasoningText {
-                    text: "details".to_string(),
-                }]),
+                summary: vec![
+                    chaos_ipc::models::ReasoningItemReasoningSummary::SummaryText {
+                        text: "think".to_string(),
+                    },
+                ],
+                content: Some(vec![
+                    chaos_ipc::models::ReasoningItemContent::ReasoningText {
+                        text: "details".to_string(),
+                    },
+                ]),
                 encrypted_content: None,
             }),
             RolloutItem::ResponseItem(ResponseItem::WebSearchCall {

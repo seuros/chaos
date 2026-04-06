@@ -19,7 +19,6 @@ use chaos_ipc::openai_models::ReasoningEffort;
 use chaos_ipc::protocol::ApprovalPolicy;
 use chaos_ipc::protocol::SandboxPolicy;
 use chaos_ipc::protocol::SessionSource;
-use chaos_ipc::protocol::TokenUsage;
 use chaos_ipc::protocol::W3cTraceContext;
 use chaos_ipc::user_input::UserInput;
 use std::path::PathBuf;
@@ -108,10 +107,6 @@ impl Process {
 
     pub(crate) fn subscribe_status(&self) -> watch::Receiver<AgentStatus> {
         self.codex.agent_status.clone()
-    }
-
-    pub(crate) async fn total_token_usage(&self) -> Option<TokenUsage> {
-        self.codex.session.total_token_usage().await
     }
 
     /// Records a user-role session-prefix message without creating a new user turn boundary.

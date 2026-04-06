@@ -46,7 +46,6 @@ use chaos_syslog::metrics::names::TURN_NETWORK_PROXY_METRIC;
 use chaos_syslog::metrics::names::TURN_TOKEN_USAGE_METRIC;
 use chaos_syslog::metrics::names::TURN_TOOL_CALL_METRIC;
 
-use crate::features::Feature;
 pub(crate) use compact::CompactTask;
 pub(crate) use ghost_snapshot::GhostSnapshotTask;
 pub(crate) use regular::RegularTask;

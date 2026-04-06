@@ -1,17 +1,11 @@
 use super::ShellRequest;
-use crate::error::ChaosErr;
-use crate::error::SandboxErr;
 use crate::exec::ExecExpiration;
 use crate::exec::ExecToolCallOutput;
 use crate::exec::SandboxType;
-use crate::exec::is_likely_sandbox_denied;
-use crate::features::Feature;
 use crate::sandboxing::ExecRequest;
 use crate::sandboxing::SandboxPermissions;
-use crate::shell::ShellType;
 use crate::skills::SkillMetadata;
 use crate::tools::runtimes::ExecveSessionApproval;
-use crate::tools::runtimes::build_command_spec;
 use crate::tools::sandboxing::SandboxAttempt;
 use crate::tools::sandboxing::SandboxablePreference;
 use crate::tools::sandboxing::ToolCtx;
@@ -22,7 +16,6 @@ use chaos_doas::EscalationExecution;
 use chaos_doas::EscalationPermissions;
 use chaos_doas::EscalationPolicy;
 use chaos_doas::EscalationSession;
-use chaos_doas::ExecParams;
 use chaos_doas::ExecResult;
 use chaos_doas::Permissions as EscalatedPermissions;
 use chaos_doas::PreparedExec;
@@ -50,7 +43,6 @@ use std::future::Future;
 use std::path::PathBuf;
 use std::pin::Pin;
 use std::sync::Arc;
-use std::time::Duration;
 use tokio::sync::RwLock;
 use tokio_util::sync::CancellationToken;
 use uuid::Uuid;
@@ -86,135 +78,17 @@ fn approval_sandbox_permissions(
 }
 
 pub(super) async fn try_run_zsh_fork(
-    req: &ShellRequest,
-    attempt: &SandboxAttempt<'_>,
+    _req: &ShellRequest,
+    _attempt: &SandboxAttempt<'_>,
     ctx: &ToolCtx,
-    command: &[String],
+    _command: &[String],
 ) -> Result<Option<ExecToolCallOutput>, ToolError> {
-    let Some(shell_zsh_path) = ctx.session.services.shell_zsh_path.as_ref() else {
+    let Some(_shell_zsh_path) = ctx.session.services.shell_zsh_path.as_ref() else {
         tracing::warn!("ZshFork backend specified, but shell_zsh_path is not configured.");
         return Ok(None);
     };
-    {
-        tracing::warn!("ZshFork backend specified, but ShellZshFork feature is not enabled.");
-        return Ok(None);
-    }
-    if !matches!(ctx.session.user_shell().shell_type, ShellType::Zsh) {
-        tracing::warn!("ZshFork backend specified, but user shell is not Zsh.");
-        return Ok(None);
-    }
-
-    let spec = build_command_spec(
-        command,
-        &req.cwd,
-        &req.env,
-        req.timeout_ms.into(),
-        req.sandbox_permissions,
-        req.additional_permissions.clone(),
-        req.justification.clone(),
-    )?;
-    let sandbox_exec_request = attempt
-        .env_for(spec, req.network.as_ref())
-        .map_err(|err| ToolError::Chaos(err.into()))?;
-    let crate::sandboxing::ExecRequest {
-        command,
-        cwd: sandbox_cwd,
-        env: sandbox_env,
-        network: sandbox_network,
-        expiration: _sandbox_expiration,
-        sandbox,
-        sandbox_permissions,
-        sandbox_policy,
-        file_system_sandbox_policy,
-        network_sandbox_policy,
-        justification,
-        arg0,
-    } = sandbox_exec_request;
-    let ParsedShellCommand { script, login, .. } = extract_shell_script(&command)?;
-    let effective_timeout = Duration::from_millis(
-        req.timeout_ms
-            .unwrap_or(crate::exec::DEFAULT_EXEC_COMMAND_TIMEOUT_MS),
-    );
-    let exec_policy = Arc::new(RwLock::new(
-        ctx.session.services.exec_policy.current().as_ref().clone(),
-    ));
-    let command_executor = CoreShellCommandExecutor {
-        command,
-        cwd: sandbox_cwd,
-        sandbox_policy,
-        file_system_sandbox_policy,
-        network_sandbox_policy,
-        sandbox,
-        env: sandbox_env,
-        network: sandbox_network,
-        sandbox_permissions,
-        justification,
-        arg0,
-        sandbox_policy_cwd: ctx.turn.cwd.clone(),
-        macos_seatbelt_profile_extensions: ctx
-            .turn
-            .config
-            .permissions
-            .macos_seatbelt_profile_extensions
-            .clone(),
-        alcatraz_macos_exe: ctx.turn.alcatraz_macos_exe.clone(),
-        alcatraz_linux_exe: ctx.turn.alcatraz_linux_exe.clone(),
-        alcatraz_freebsd_exe: ctx.turn.alcatraz_freebsd_exe.clone(),
-    };
-    let main_execve_wrapper_exe = ctx
-        .session
-        .services
-        .main_execve_wrapper_exe
-        .clone()
-        .ok_or_else(|| {
-            ToolError::Rejected(
-                "zsh fork feature enabled, but execve wrapper is not configured".to_string(),
-            )
-        })?;
-    let exec_params = ExecParams {
-        command: script,
-        workdir: req.cwd.to_string_lossy().to_string(),
-        timeout_ms: Some(effective_timeout.as_millis() as u64),
-        login: Some(login),
-    };
-
-    // Note that Stopwatch starts immediately upon creation, so currently we try
-    // to minimize the time between creating the Stopwatch and starting the
-    // escalation server.
-    let stopwatch = Stopwatch::new(effective_timeout);
-    let cancel_token = stopwatch.cancellation_token();
-    let approval_sandbox_permissions = approval_sandbox_permissions(
-        req.sandbox_permissions,
-        req.additional_permissions_preapproved,
-    );
-    let escalation_policy = CoreShellActionProvider {
-        policy: Arc::clone(&exec_policy),
-        session: Arc::clone(&ctx.session),
-        turn: Arc::clone(&ctx.turn),
-        call_id: ctx.call_id.clone(),
-        tool_name: "shell",
-        approval_policy: ctx.turn.approval_policy.value(),
-        sandbox_policy: command_executor.sandbox_policy.clone(),
-        file_system_sandbox_policy: command_executor.file_system_sandbox_policy.clone(),
-        network_sandbox_policy: command_executor.network_sandbox_policy,
-        sandbox_permissions: req.sandbox_permissions,
-        approval_sandbox_permissions,
-        prompt_permissions: req.additional_permissions.clone(),
-        stopwatch: stopwatch.clone(),
-    };
-
-    let escalate_server = EscalateServer::new(
-        shell_zsh_path.clone(),
-        main_execve_wrapper_exe,
-        escalation_policy,
-    );
-
-    let exec_result = escalate_server
-        .exec(exec_params, cancel_token, Arc::new(command_executor))
-        .await
-        .map_err(|err| ToolError::Rejected(err.to_string()))?;
-
-    map_exec_result(attempt.sandbox, exec_result).map(Some)
+    tracing::warn!("ZshFork backend specified, but ShellZshFork feature is not enabled.");
+    Ok(None)
 }
 
 pub(crate) async fn prepare_unified_exec_zsh_fork(
@@ -1097,35 +971,6 @@ fn extract_shell_script(command: &[String]) -> Result<ParsedShellCommand, ToolEr
     Err(ToolError::Rejected(
         "unexpected shell command format for zsh-fork execution".to_string(),
     ))
-}
-
-fn map_exec_result(
-    sandbox: SandboxType,
-    result: ExecResult,
-) -> Result<ExecToolCallOutput, ToolError> {
-    let output = ExecToolCallOutput {
-        exit_code: result.exit_code,
-        stdout: crate::exec::StreamOutput::new(result.stdout.clone()),
-        stderr: crate::exec::StreamOutput::new(result.stderr.clone()),
-        aggregated_output: crate::exec::StreamOutput::new(result.output.clone()),
-        duration: result.duration,
-        timed_out: result.timed_out,
-    };
-
-    if result.timed_out {
-        return Err(ToolError::Chaos(ChaosErr::Sandbox(SandboxErr::Timeout {
-            output: Box::new(output),
-        })));
-    }
-
-    if is_likely_sandbox_denied(sandbox, &output) {
-        return Err(ToolError::Chaos(ChaosErr::Sandbox(SandboxErr::Denied {
-            output: Box::new(output),
-            network_policy_decision: None,
-        })));
-    }
-
-    Ok(output)
 }
 
 /// Convert an intercepted exec `(program, argv)` into a command vector suitable

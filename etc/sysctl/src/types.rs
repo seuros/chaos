@@ -31,17 +31,9 @@ pub const DEFAULT_MEMORIES_MIN_ROLLOUT_IDLE_HOURS: i64 = 6;
 pub const DEFAULT_MEMORIES_MAX_RAW_MEMORIES_FOR_CONSOLIDATION: usize = 256;
 pub const DEFAULT_MEMORIES_MAX_UNUSED_DAYS: i64 = 30;
 
-#[derive(Serialize, Deserialize, Debug, Clone, Copy, PartialEq, Eq, JsonSchema)]
-#[serde(rename_all = "kebab-case")]
-pub enum WindowsSandboxModeToml {
-    Elevated,
-    Unelevated,
-}
-
 #[derive(Serialize, Deserialize, Debug, Clone, Default, PartialEq, Eq, JsonSchema)]
 #[schemars(deny_unknown_fields)]
 pub struct WindowsToml {
-    pub sandbox: Option<WindowsSandboxModeToml>,
     /// Defaults to `true`. Set to `false` to launch the final sandboxed child
     /// process on `Winsta0\\Default` instead of a private desktop.
     pub sandbox_private_desktop: Option<bool>,

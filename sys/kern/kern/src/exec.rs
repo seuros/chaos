@@ -477,7 +477,6 @@ pub(crate) fn is_likely_sandbox_denied(
         return false;
     }
 
-    #[cfg(unix)]
     {
         const SIGSYS_CODE: i32 = libc::SIGSYS;
         if sandbox_type == SandboxType::LinuxSeccomp

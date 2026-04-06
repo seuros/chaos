@@ -238,7 +238,6 @@ fn write_atomic_create_new(path: &Path, contents: &[u8], mode: u32) -> Result<()
     Ok(())
 }
 
-#[cfg(unix)]
 fn validate_existing_ca_key_file(path: &Path) -> Result<()> {
     use std::os::unix::fs::PermissionsExt;
 
@@ -268,12 +267,6 @@ fn validate_existing_ca_key_file(path: &Path) -> Result<()> {
     Ok(())
 }
 
-#[cfg(not(unix))]
-fn validate_existing_ca_key_file(_path: &Path) -> Result<()> {
-    Ok(())
-}
-
-#[cfg(unix)]
 fn open_create_new_with_mode(path: &Path, mode: u32) -> Result<File> {
     use std::os::unix::fs::OpenOptionsExt;
 
@@ -285,16 +278,7 @@ fn open_create_new_with_mode(path: &Path, mode: u32) -> Result<File> {
         .with_context(|| format!("failed to create {}", path.display()))
 }
 
-#[cfg(not(unix))]
-fn open_create_new_with_mode(path: &Path, _mode: u32) -> Result<File> {
-    OpenOptions::new()
-        .write(true)
-        .create_new(true)
-        .open(path)
-        .with_context(|| format!("failed to create {}", path.display()))
-}
-
-#[cfg(all(test, unix))]
+#[cfg(test)]
 mod tests {
     use super::*;
 

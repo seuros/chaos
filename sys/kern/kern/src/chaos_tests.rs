@@ -320,7 +320,7 @@ pub(crate) async fn make_session_configuration_for_tests() -> SessionConfigurati
         sandbox_policy: config.permissions.sandbox_policy.clone(),
         file_system_sandbox_policy: config.permissions.file_system_sandbox_policy.clone(),
         network_sandbox_policy: config.permissions.network_sandbox_policy,
-        windows_sandbox_level: WindowsSandboxLevel::Disabled,
+
         cwd: config.cwd.clone(),
         chaos_home: config.chaos_home.clone(),
         process_name: None,
@@ -379,7 +379,7 @@ pub(crate) async fn make_session_and_context() -> (Session, TurnContext) {
         sandbox_policy: config.permissions.sandbox_policy.clone(),
         file_system_sandbox_policy: config.permissions.file_system_sandbox_policy.clone(),
         network_sandbox_policy: config.permissions.network_sandbox_policy,
-        windows_sandbox_level: WindowsSandboxLevel::Disabled,
+
         cwd: config.cwd.clone(),
         chaos_home: config.chaos_home.clone(),
         process_name: None,
@@ -548,7 +548,7 @@ pub(crate) async fn make_session_and_context_with_dynamic_tools_and_rx(
         sandbox_policy: config.permissions.sandbox_policy.clone(),
         file_system_sandbox_policy: config.permissions.file_system_sandbox_policy.clone(),
         network_sandbox_policy: config.permissions.network_sandbox_policy,
-        windows_sandbox_level: WindowsSandboxLevel::Disabled,
+
         cwd: config.cwd.clone(),
         chaos_home: config.chaos_home.clone(),
         process_name: None,

@@ -16,7 +16,6 @@ use crate::config_types::ModeKind;
 use crate::config_types::Personality;
 use crate::config_types::ReasoningSummary as ReasoningSummaryConfig;
 use crate::config_types::ServiceTier;
-use crate::config_types::WindowsSandboxLevel;
 use crate::dynamic_tools::DynamicToolCallOutputContentItem;
 use crate::dynamic_tools::DynamicToolCallRequest;
 use crate::dynamic_tools::DynamicToolResponse;
@@ -225,10 +224,6 @@ pub enum Op {
         /// Updated sandbox policy for tool calls.
         #[serde(skip_serializing_if = "Option::is_none")]
         sandbox_policy: Option<SandboxPolicy>,
-
-        /// Updated Windows sandbox mode for tool execution.
-        #[serde(skip_serializing_if = "Option::is_none")]
-        windows_sandbox_level: Option<WindowsSandboxLevel>,
 
         /// Updated model slug. When set, the model info is derived
         /// automatically.

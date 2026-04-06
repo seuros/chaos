@@ -43,14 +43,12 @@ use crate::notifications::DesktopNotificationBackend;
 use crate::notifications::detect_backend;
 use crate::tui::event_stream::EventBroker;
 use crate::tui::event_stream::TuiEventStream;
-#[cfg(unix)]
 use crate::tui::job_control::SuspendContext;
 use chaos_kern::config::types::NotificationMethod;
 
 mod event_stream;
 mod frame_rate_limiter;
 mod frame_requester;
-#[cfg(unix)]
 mod job_control;
 
 /// Target frame interval for UI redraw scheduling.
@@ -193,7 +191,6 @@ pub struct Tui {
     pub(crate) terminal: Terminal,
     pending_history_lines: Vec<Line<'static>>,
     alt_saved_viewport: Option<ratatui::layout::Rect>,
-    #[cfg(unix)]
     suspend_context: SuspendContext,
     // True when overlay alt-screen UI is active
     alt_screen_active: Arc<AtomicBool>,
@@ -227,7 +224,6 @@ impl Tui {
             terminal,
             pending_history_lines: vec![],
             alt_saved_viewport: None,
-            #[cfg(unix)]
             suspend_context: SuspendContext::new(),
             alt_screen_active: Arc::new(AtomicBool::new(false)),
             terminal_focused: Arc::new(AtomicBool::new(true)),
@@ -337,19 +333,12 @@ impl Tui {
     }
 
     pub fn event_stream(&self) -> Pin<Box<dyn Stream<Item = TuiEvent> + Send + 'static>> {
-        #[cfg(unix)]
         let stream = TuiEventStream::new(
             self.event_broker.clone(),
             self.draw_tx.subscribe(),
             self.terminal_focused.clone(),
             self.suspend_context.clone(),
             self.alt_screen_active.clone(),
-        );
-        #[cfg(not(unix))]
-        let stream = TuiEventStream::new(
-            self.event_broker.clone(),
-            self.draw_tx.subscribe(),
-            self.terminal_focused.clone(),
         );
         Box::pin(stream)
     }
@@ -408,7 +397,6 @@ impl Tui {
     ) -> Result<()> {
         // If we are resuming from ^Z, we need to prepare the resume action now so we can apply it
         // in the synchronized update.
-        #[cfg(unix)]
         let mut prepared_resume = self
             .suspend_context
             .prepare_resume_action(&mut self.terminal, &mut self.alt_saved_viewport);
@@ -418,7 +406,6 @@ impl Tui {
         let mut pending_viewport_area = self.pending_viewport_area()?;
 
         stdout().sync_update(|_| {
-            #[cfg(unix)]
             if let Some(prepared) = prepared_resume.take() {
                 prepared.apply(&mut self.terminal)?;
             }
@@ -474,7 +461,6 @@ impl Tui {
             }
 
             // Update the y position for suspending so Ctrl-Z can place the cursor correctly.
-            #[cfg(unix)]
             {
                 let inline_area_bottom = if self.alt_screen_active.load(Ordering::Relaxed) {
                     self.alt_saved_viewport

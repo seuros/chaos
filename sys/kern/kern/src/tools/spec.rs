@@ -20,7 +20,6 @@ use crate::tools::handlers::request_user_input_tool_description;
 use crate::tools::registry::ToolRegistryBuilder;
 use chaos_ipc::config_types::WebSearchConfig;
 use chaos_ipc::config_types::WebSearchMode;
-use chaos_ipc::config_types::WindowsSandboxLevel;
 use chaos_ipc::dynamic_tools::DynamicToolSpec;
 use chaos_ipc::models::VIEW_IMAGE_TOOL_NAME;
 use chaos_ipc::openai_models::ApplyPatchToolType;
@@ -260,20 +259,11 @@ pub(crate) struct ToolsConfigParams<'a> {
     pub(crate) web_search_mode: Option<WebSearchMode>,
     pub(crate) session_source: SessionSource,
     pub(crate) sandbox_policy: &'a SandboxPolicy,
-    pub(crate) windows_sandbox_level: WindowsSandboxLevel,
 }
 
-fn unified_exec_allowed_in_environment(
-    is_windows: bool,
-    sandbox_policy: &SandboxPolicy,
-    windows_sandbox_level: WindowsSandboxLevel,
-) -> bool {
-    !(is_windows
-        && windows_sandbox_level != WindowsSandboxLevel::Disabled
-        && !matches!(
-            sandbox_policy,
-            SandboxPolicy::RootAccess | SandboxPolicy::ExternalSandbox { .. }
-        ))
+fn unified_exec_allowed_in_environment(sandbox_policy: &SandboxPolicy) -> bool {
+    let _ = sandbox_policy;
+    true
 }
 
 impl ToolsConfig {
@@ -285,7 +275,6 @@ impl ToolsConfig {
             web_search_mode,
             session_source,
             sandbox_policy,
-            windows_sandbox_level,
         } = params;
         let include_apply_patch_tool = features.enabled(Feature::ApplyPatchFreeform);
         let include_collab_tools = features.enabled(Feature::Collab);
@@ -298,8 +287,7 @@ impl ToolsConfig {
         let exec_permission_approvals_enabled = features.enabled(Feature::ExecPermissionApprovals);
         let request_permissions_tool_enabled = features.enabled(Feature::RequestPermissionsTool);
         let shell_command_backend = ShellCommandBackendConfig::Classic;
-        let unified_exec_allowed =
-            unified_exec_allowed_in_environment(false, sandbox_policy, *windows_sandbox_level);
+        let unified_exec_allowed = unified_exec_allowed_in_environment(sandbox_policy);
         let shell_type = if !features.enabled(Feature::ShellTool) {
             ConfigShellToolType::Disabled
         } else if features.enabled(Feature::UnifiedExec) && unified_exec_allowed {

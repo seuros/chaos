@@ -68,7 +68,6 @@ fn init_login_file_logging(config: &Config) -> Vec<WorkerGuard> {
     let mut log_file_opts = OpenOptions::new();
     log_file_opts.create(true).append(true);
 
-    #[cfg(unix)]
     {
         use std::os::unix::fs::OpenOptionsExt;
         log_file_opts.mode(0o600);
@@ -102,7 +101,6 @@ fn init_login_file_logging(config: &Config) -> Vec<WorkerGuard> {
         let mut debug_log_file_opts = OpenOptions::new();
         debug_log_file_opts.create(true).append(true);
 
-        #[cfg(unix)]
         {
             use std::os::unix::fs::OpenOptionsExt;
             debug_log_file_opts.mode(0o600);

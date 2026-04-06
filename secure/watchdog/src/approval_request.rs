@@ -36,7 +36,6 @@ pub enum GuardianApprovalRequest {
         justification: Option<String>,
         tty: bool,
     },
-    #[cfg(unix)]
     Execve {
         id: String,
         tool_name: String,
@@ -98,7 +97,6 @@ struct CommandApprovalAction<'a> {
     tty: Option<bool>,
 }
 
-#[cfg(unix)]
 #[derive(Serialize)]
 struct ExecveApprovalAction<'a> {
     tool: &'a str,
@@ -301,7 +299,6 @@ pub fn guardian_approval_request_to_json(
             justification.as_ref(),
             Some(*tty),
         ),
-        #[cfg(unix)]
         GuardianApprovalRequest::Execve {
             id: _,
             tool_name,
@@ -377,7 +374,6 @@ pub fn guardian_assessment_action_value(action: &GuardianApprovalRequest) -> Val
         GuardianApprovalRequest::ExecCommand { command, cwd, .. } => {
             command_assessment_action_value("exec_command", command, cwd)
         }
-        #[cfg(unix)]
         GuardianApprovalRequest::Execve {
             tool_name,
             program,
@@ -432,7 +428,6 @@ pub fn guardian_request_id(request: &GuardianApprovalRequest) -> &str {
         | GuardianApprovalRequest::ApplyPatch { id, .. }
         | GuardianApprovalRequest::NetworkAccess { id, .. }
         | GuardianApprovalRequest::McpToolCall { id, .. } => id,
-        #[cfg(unix)]
         GuardianApprovalRequest::Execve { id, .. } => id,
     }
 }
@@ -447,7 +442,6 @@ pub fn guardian_request_turn_id<'a>(
         | GuardianApprovalRequest::ExecCommand { .. }
         | GuardianApprovalRequest::ApplyPatch { .. }
         | GuardianApprovalRequest::McpToolCall { .. } => default_turn_id,
-        #[cfg(unix)]
         GuardianApprovalRequest::Execve { .. } => default_turn_id,
     }
 }

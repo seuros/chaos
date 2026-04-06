@@ -81,7 +81,6 @@ pub fn copy_text_to_clipboard(text: &str) -> Result<(), String> {
 /// is redirected.
 fn copy_via_osc52(text: &str) -> Result<(), String> {
     let sequence = osc52_sequence(text, std::env::var_os("TMUX").is_some());
-    #[cfg(unix)]
     let mut tty = OpenOptions::new()
         .write(true)
         .open("/dev/tty")

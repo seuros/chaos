@@ -1,6 +1,5 @@
 use std::fs::File;
 use std::fs::OpenOptions;
-#[cfg(unix)]
 use std::os::unix::fs::FileTypeExt;
 use std::path::Path;
 use std::path::PathBuf;
@@ -134,7 +133,6 @@ fn spawn_detached_journald(binary_path: &Path, paths: &BootstrapPaths) -> Result
         .stdout(Stdio::null())
         .stderr(Stdio::null());
 
-    #[cfg(unix)]
     {
         use std::os::unix::process::CommandExt;
         unsafe {

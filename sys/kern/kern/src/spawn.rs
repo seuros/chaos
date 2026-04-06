@@ -64,7 +64,6 @@ pub(crate) async fn spawn_child_async(request: SpawnChildRequest<'_>) -> std::io
     );
 
     let mut cmd = Command::new(&program);
-    #[cfg(unix)]
     cmd.arg0(arg0.map_or_else(|| program.to_string_lossy().to_string(), String::from));
     cmd.args(args);
     cmd.current_dir(cwd);
@@ -82,7 +81,6 @@ pub(crate) async fn spawn_child_async(request: SpawnChildRequest<'_>) -> std::io
     // any child processes that were spawned as part of a `"shell"` tool call
     // to also be terminated.
 
-    #[cfg(unix)]
     unsafe {
         let detach_from_tty = matches!(stdio_policy, StdioPolicy::RedirectForShellTool);
         #[cfg(target_os = "linux")]

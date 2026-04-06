@@ -142,9 +142,7 @@ pub struct TuiEventStream<S: EventSource + Default + Unpin = CrosstermEventSourc
     resume_stream: WatchStream<()>,
     terminal_focused: Arc<AtomicBool>,
     poll_draw_first: bool,
-    #[cfg(unix)]
     suspend_context: crate::tui::job_control::SuspendContext,
-    #[cfg(unix)]
     alt_screen_active: Arc<AtomicBool>,
 }
 
@@ -153,8 +151,8 @@ impl<S: EventSource + Default + Unpin> TuiEventStream<S> {
         broker: Arc<EventBroker<S>>,
         draw_rx: broadcast::Receiver<()>,
         terminal_focused: Arc<AtomicBool>,
-        #[cfg(unix)] suspend_context: crate::tui::job_control::SuspendContext,
-        #[cfg(unix)] alt_screen_active: Arc<AtomicBool>,
+        suspend_context: crate::tui::job_control::SuspendContext,
+        alt_screen_active: Arc<AtomicBool>,
     ) -> Self {
         let resume_stream = WatchStream::from_changes(broker.resume_events_rx());
         Self {
@@ -163,9 +161,7 @@ impl<S: EventSource + Default + Unpin> TuiEventStream<S> {
             resume_stream,
             terminal_focused,
             poll_draw_first: false,
-            #[cfg(unix)]
             suspend_context,
-            #[cfg(unix)]
             alt_screen_active,
         }
     }
@@ -237,7 +233,6 @@ impl<S: EventSource + Default + Unpin> TuiEventStream<S> {
     fn map_crossterm_event(&mut self, event: Event) -> Option<TuiEvent> {
         match event {
             Event::Key(key_event) => {
-                #[cfg(unix)]
                 if crate::tui::job_control::SUSPEND_KEY.is_press(key_event) {
                     let _ = self.suspend_context.suspend(&self.alt_screen_active);
                     return Some(TuiEvent::Draw);
@@ -362,9 +357,7 @@ mod tests {
             broker,
             draw_rx,
             terminal_focused,
-            #[cfg(unix)]
             crate::tui::job_control::SuspendContext::new(),
-            #[cfg(unix)]
             Arc::new(AtomicBool::new(false)),
         )
     }

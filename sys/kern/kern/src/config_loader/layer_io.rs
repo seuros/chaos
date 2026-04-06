@@ -12,7 +12,6 @@ use std::path::PathBuf;
 use tokio::fs;
 use toml::Value as TomlValue;
 
-#[cfg(unix)]
 const CODEX_MANAGED_CONFIG_SYSTEM_PATH: &str = "/etc/chaos/managed_config.toml";
 
 #[derive(Debug, Clone)]
@@ -122,14 +121,6 @@ pub(super) async fn read_config_from_path(
 
 /// Return the default managed config path.
 pub(super) fn managed_config_default_path(chaos_home: &Path) -> PathBuf {
-    #[cfg(unix)]
-    {
-        let _ = chaos_home;
-        PathBuf::from(CODEX_MANAGED_CONFIG_SYSTEM_PATH)
-    }
-
-    #[cfg(not(unix))]
-    {
-        chaos_home.join("managed_config.toml")
-    }
+    let _ = chaos_home;
+    PathBuf::from(CODEX_MANAGED_CONFIG_SYSTEM_PATH)
 }

@@ -9,7 +9,6 @@ use std::fs::File;
 use std::fs::OpenOptions;
 use std::io::Read;
 use std::io::Write;
-#[cfg(unix)]
 use std::os::unix::fs::OpenOptionsExt;
 use std::path::Path;
 use std::path::PathBuf;
@@ -102,7 +101,6 @@ impl AuthStorageBackend for FileAuthStorage {
         let json_data = serde_json::to_string_pretty(auth_dot_json)?;
         let mut options = OpenOptions::new();
         options.truncate(true).write(true).create(true);
-        #[cfg(unix)]
         {
             options.mode(0o600);
         }

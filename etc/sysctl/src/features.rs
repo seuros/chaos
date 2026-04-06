@@ -337,7 +337,7 @@ pub const FEATURES: &[FeatureSpec] = &[
     FeatureSpec {
         id: Feature::ToolCallMcpElicitation,
         key: "tool_call_mcp_elicitation",
-        default_enabled: false,
+        default_enabled: true,
         under_development: false,
     },
     FeatureSpec {

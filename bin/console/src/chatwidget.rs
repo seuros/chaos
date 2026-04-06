@@ -5425,7 +5425,7 @@ impl ChatWidget {
                 approval_policy: None,
                 approvals_reviewer: None,
                 sandbox_policy: None,
-                windows_sandbox_level: None,
+
                 model: Some(switch_model_for_events.clone()),
                 effort: Some(Some(default_effort)),
                 summary: None,
@@ -5619,7 +5619,7 @@ impl ChatWidget {
                         summary: None,
                         service_tier: None,
                         collaboration_mode: None,
-                        windows_sandbox_level: None,
+        
                         personality: Some(personality),
                     }));
                     tx.send(AppEvent::UpdatePersonality(personality));
@@ -6367,7 +6367,7 @@ impl ChatWidget {
                 approval_policy: Some(approval),
                 approvals_reviewer: Some(approvals_reviewer),
                 sandbox_policy: Some(sandbox_clone.clone()),
-                windows_sandbox_level: None,
+
                 model: None,
                 effort: None,
                 summary: None,

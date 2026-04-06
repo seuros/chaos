@@ -779,7 +779,7 @@ async fn set_rate_limits_retains_previous_credits() {
         sandbox_policy: config.permissions.sandbox_policy.clone(),
         file_system_sandbox_policy: config.permissions.file_system_sandbox_policy.clone(),
         network_sandbox_policy: config.permissions.network_sandbox_policy,
-        windows_sandbox_level: WindowsSandboxLevel::Disabled,
+
         cwd: config.cwd.clone(),
         chaos_home: config.chaos_home.clone(),
         process_name: None,

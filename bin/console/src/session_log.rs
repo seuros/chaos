@@ -31,7 +31,6 @@ impl SessionLogger {
         let mut opts = OpenOptions::new();
         opts.create(true).truncate(true).write(true);
 
-        #[cfg(unix)]
         {
             use std::os::unix::fs::OpenOptionsExt;
             opts.mode(0o600);

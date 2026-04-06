@@ -116,7 +116,7 @@ async fn model_change_appends_model_instructions_developer_message() -> Result<(
             approval_policy: None,
             approvals_reviewer: None,
             sandbox_policy: None,
-            windows_sandbox_level: None,
+
             model: Some(next_model.to_string()),
             effort: None,
             summary: None,
@@ -211,7 +211,7 @@ async fn model_and_personality_change_only_appends_model_instructions() -> Resul
             approval_policy: None,
             approvals_reviewer: None,
             sandbox_policy: None,
-            windows_sandbox_level: None,
+
             model: Some(next_model.to_string()),
             effort: None,
             summary: None,
@@ -971,7 +971,7 @@ async fn model_switch_to_smaller_model_updates_token_context_window() -> Result<
             approval_policy: None,
             approvals_reviewer: None,
             sandbox_policy: None,
-            windows_sandbox_level: None,
+
             model: Some(smaller_model_slug.to_string()),
             effort: None,
             summary: None,

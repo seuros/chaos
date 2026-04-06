@@ -374,49 +374,6 @@ fn model_info_from_models_json(slug: &str) -> ModelInfo {
 }
 
 #[test]
-fn unified_exec_is_blocked_for_windows_sandboxed_policies_only() {
-    assert!(!unified_exec_allowed_in_environment(
-        true,
-        &SandboxPolicy::new_read_only_policy(),
-        WindowsSandboxLevel::RestrictedToken,
-    ));
-    assert!(!unified_exec_allowed_in_environment(
-        true,
-        &SandboxPolicy::new_workspace_write_policy(),
-        WindowsSandboxLevel::RestrictedToken,
-    ));
-    assert!(unified_exec_allowed_in_environment(
-        true,
-        &SandboxPolicy::RootAccess,
-        WindowsSandboxLevel::RestrictedToken,
-    ));
-    assert!(unified_exec_allowed_in_environment(
-        true,
-        &SandboxPolicy::RootAccess,
-        WindowsSandboxLevel::Disabled,
-    ));
-}
-
-#[test]
-fn model_provided_unified_exec_is_blocked_for_windows_sandboxed_policies() {
-    let mut model_info = model_info_from_models_json("gpt-5-codex");
-    model_info.shell_type = ConfigShellToolType::UnifiedExec;
-    let features = Features::with_defaults();
-    let available_models = Vec::new();
-    let config = ToolsConfig::new(&ToolsConfigParams {
-        model_info: &model_info,
-        available_models: &available_models,
-        features: &features,
-        web_search_mode: Some(WebSearchMode::Cached),
-        session_source: SessionSource::Cli,
-        sandbox_policy: &SandboxPolicy::new_workspace_write_policy(),
-        windows_sandbox_level: WindowsSandboxLevel::RestrictedToken,
-    });
-
-    assert_eq!(config.shell_type, ConfigShellToolType::UnifiedExec);
-}
-
-#[test]
 fn test_full_toolset_specs_for_gpt5_codex_unified_exec_web_search() {
     let model_info = model_info_from_models_json("gpt-5-codex");
     let mut features = Features::with_defaults();
@@ -429,7 +386,7 @@ fn test_full_toolset_specs_for_gpt5_codex_unified_exec_web_search() {
         web_search_mode: Some(WebSearchMode::Live),
         session_source: SessionSource::Cli,
         sandbox_policy: &SandboxPolicy::RootAccess,
-        windows_sandbox_level: WindowsSandboxLevel::Disabled,
+
     });
     let (tools, _) = build_specs(&config, None, None, &[]).build();
 
@@ -537,7 +494,7 @@ fn arsenal_tools_keep_closed_object_schemas() {
         web_search_mode: Some(WebSearchMode::Cached),
         session_source: SessionSource::Cli,
         sandbox_policy: &SandboxPolicy::RootAccess,
-        windows_sandbox_level: WindowsSandboxLevel::Disabled,
+
     });
     let (tools, _) = build_specs(&tools_config, None, None, &[]).build();
 
@@ -574,7 +531,7 @@ fn arsenal_read_file_preserves_indentation_object_schema() {
         web_search_mode: Some(WebSearchMode::Cached),
         session_source: SessionSource::Cli,
         sandbox_policy: &SandboxPolicy::RootAccess,
-        windows_sandbox_level: WindowsSandboxLevel::Disabled,
+
     });
     let (tools, _) = build_specs(&tools_config, None, None, &[]).build();
 
@@ -620,7 +577,7 @@ fn test_build_specs_collab_tools_enabled() {
         web_search_mode: Some(WebSearchMode::Cached),
         session_source: SessionSource::Cli,
         sandbox_policy: &SandboxPolicy::RootAccess,
-        windows_sandbox_level: WindowsSandboxLevel::Disabled,
+
     });
     let (tools, _) = build_specs(&tools_config, None, None, &[]).build();
     assert_contains_tool_names(
@@ -645,7 +602,7 @@ fn test_build_specs_enable_fanout_enables_agent_jobs_and_collab_tools() {
         web_search_mode: Some(WebSearchMode::Cached),
         session_source: SessionSource::Cli,
         sandbox_policy: &SandboxPolicy::RootAccess,
-        windows_sandbox_level: WindowsSandboxLevel::Disabled,
+
     });
     let (tools, _) = build_specs(&tools_config, None, None, &[]).build();
     assert_contains_tool_names(
@@ -675,7 +632,7 @@ fn view_image_tool_omits_detail_without_original_detail_feature() {
         web_search_mode: Some(WebSearchMode::Cached),
         session_source: SessionSource::Cli,
         sandbox_policy: &SandboxPolicy::RootAccess,
-        windows_sandbox_level: WindowsSandboxLevel::Disabled,
+
     });
     let (tools, _) = build_specs(&tools_config, None, None, &[]).build();
     let view_image = find_tool(&tools, VIEW_IMAGE_TOOL_NAME);
@@ -704,7 +661,7 @@ fn view_image_tool_includes_detail_with_original_detail_feature() {
         web_search_mode: Some(WebSearchMode::Cached),
         session_source: SessionSource::Cli,
         sandbox_policy: &SandboxPolicy::RootAccess,
-        windows_sandbox_level: WindowsSandboxLevel::Disabled,
+
     });
     let (tools, _) = build_specs(&tools_config, None, None, &[]).build();
     let view_image = find_tool(&tools, VIEW_IMAGE_TOOL_NAME);
@@ -742,7 +699,7 @@ fn test_build_specs_agent_job_worker_tools_enabled() {
             "agent_job:test".to_string(),
         )),
         sandbox_policy: &SandboxPolicy::RootAccess,
-        windows_sandbox_level: WindowsSandboxLevel::Disabled,
+
     });
     let (tools, _) = build_specs(&tools_config, None, None, &[]).build();
     assert_contains_tool_names(
@@ -773,7 +730,7 @@ fn request_user_input_description_reflects_default_mode_feature_flag() {
         web_search_mode: Some(WebSearchMode::Cached),
         session_source: SessionSource::Cli,
         sandbox_policy: &SandboxPolicy::RootAccess,
-        windows_sandbox_level: WindowsSandboxLevel::Disabled,
+
     });
     let (tools, _) = build_specs(&tools_config, None, None, &[]).build();
     let request_user_input_tool = find_tool(&tools, "request_user_input");
@@ -791,7 +748,7 @@ fn request_user_input_description_reflects_default_mode_feature_flag() {
         web_search_mode: Some(WebSearchMode::Cached),
         session_source: SessionSource::Cli,
         sandbox_policy: &SandboxPolicy::RootAccess,
-        windows_sandbox_level: WindowsSandboxLevel::Disabled,
+
     });
     let (tools, _) = build_specs(&tools_config, None, None, &[]).build();
     let request_user_input_tool = find_tool(&tools, "request_user_input");
@@ -816,7 +773,7 @@ fn request_permissions_requires_feature_flag() {
         web_search_mode: Some(WebSearchMode::Cached),
         session_source: SessionSource::Cli,
         sandbox_policy: &SandboxPolicy::RootAccess,
-        windows_sandbox_level: WindowsSandboxLevel::Disabled,
+
     });
     let (tools, _) = build_specs(&tools_config, None, None, &[]).build();
     assert_lacks_tool_name(&tools, "request_permissions");
@@ -831,7 +788,7 @@ fn request_permissions_requires_feature_flag() {
         web_search_mode: Some(WebSearchMode::Cached),
         session_source: SessionSource::Cli,
         sandbox_policy: &SandboxPolicy::RootAccess,
-        windows_sandbox_level: WindowsSandboxLevel::Disabled,
+
     });
     let (tools, _) = build_specs(&tools_config, None, None, &[]).build();
     let request_permissions_tool = find_tool(&tools, "request_permissions");
@@ -855,7 +812,7 @@ fn request_permissions_tool_is_independent_from_additional_permissions() {
         web_search_mode: Some(WebSearchMode::Cached),
         session_source: SessionSource::Cli,
         sandbox_policy: &SandboxPolicy::RootAccess,
-        windows_sandbox_level: WindowsSandboxLevel::Disabled,
+
     });
     let (tools, _) = build_specs(&tools_config, None, None, &[]).build();
 
@@ -878,7 +835,7 @@ fn assert_model_tools(
         web_search_mode,
         session_source: SessionSource::Cli,
         sandbox_policy: &SandboxPolicy::RootAccess,
-        windows_sandbox_level: WindowsSandboxLevel::Disabled,
+
     });
     let router = ToolRouter::from_config(
         &tools_config,
@@ -938,7 +895,7 @@ fn web_search_mode_cached_sets_external_web_access_false() {
         web_search_mode: Some(WebSearchMode::Cached),
         session_source: SessionSource::Cli,
         sandbox_policy: &SandboxPolicy::RootAccess,
-        windows_sandbox_level: WindowsSandboxLevel::Disabled,
+
     });
     let (tools, _) = build_specs(&tools_config, None, None, &[]).build();
 
@@ -969,7 +926,7 @@ fn web_search_mode_live_sets_external_web_access_true() {
         web_search_mode: Some(WebSearchMode::Live),
         session_source: SessionSource::Cli,
         sandbox_policy: &SandboxPolicy::RootAccess,
-        windows_sandbox_level: WindowsSandboxLevel::Disabled,
+
     });
     let (tools, _) = build_specs(&tools_config, None, None, &[]).build();
 
@@ -1013,7 +970,7 @@ fn web_search_config_is_forwarded_to_tool_spec() {
         web_search_mode: Some(WebSearchMode::Live),
         session_source: SessionSource::Cli,
         sandbox_policy: &SandboxPolicy::RootAccess,
-        windows_sandbox_level: WindowsSandboxLevel::Disabled,
+
     })
     .with_web_search_config(Some(web_search_config.clone()));
     let (tools, _) = build_specs(&tools_config, None, None, &[]).build();
@@ -1051,7 +1008,7 @@ fn web_search_tool_type_text_and_image_sets_search_content_types() {
         web_search_mode: Some(WebSearchMode::Live),
         session_source: SessionSource::Cli,
         sandbox_policy: &SandboxPolicy::RootAccess,
-        windows_sandbox_level: WindowsSandboxLevel::Disabled,
+
     });
     let (tools, _) = build_specs(&tools_config, None, None, &[]).build();
 
@@ -1086,7 +1043,7 @@ fn mcp_resource_tools_are_hidden_without_mcp_servers() {
         web_search_mode: Some(WebSearchMode::Cached),
         session_source: SessionSource::Cli,
         sandbox_policy: &SandboxPolicy::RootAccess,
-        windows_sandbox_level: WindowsSandboxLevel::Disabled,
+
     });
     let (tools, _) = build_specs(&tools_config, None, None, &[]).build();
 
@@ -1112,7 +1069,7 @@ fn mcp_resource_tools_are_included_when_mcp_servers_are_present() {
         web_search_mode: Some(WebSearchMode::Cached),
         session_source: SessionSource::Cli,
         sandbox_policy: &SandboxPolicy::RootAccess,
-        windows_sandbox_level: WindowsSandboxLevel::Disabled,
+
     });
     let (tools, _) = build_specs(&tools_config, Some(HashMap::new()), None, &[]).build();
 
@@ -1139,7 +1096,7 @@ fn spawn_agent_tool_description_uses_current_role_names() {
         web_search_mode: Some(WebSearchMode::Cached),
         session_source: SessionSource::Cli,
         sandbox_policy: &SandboxPolicy::RootAccess,
-        windows_sandbox_level: WindowsSandboxLevel::Disabled,
+
     });
 
     let ToolSpec::Function(ResponsesApiTool { description, .. }) =
@@ -1425,7 +1382,7 @@ fn test_build_specs_default_shell_present() {
         web_search_mode: Some(WebSearchMode::Live),
         session_source: SessionSource::Cli,
         sandbox_policy: &SandboxPolicy::RootAccess,
-        windows_sandbox_level: WindowsSandboxLevel::Disabled,
+
     });
     let (tools, _) = build_specs(&tools_config, Some(HashMap::new()), None, &[]).build();
 
@@ -1452,7 +1409,7 @@ fn test_parallel_support_flags() {
         web_search_mode: Some(WebSearchMode::Cached),
         session_source: SessionSource::Cli,
         sandbox_policy: &SandboxPolicy::RootAccess,
-        windows_sandbox_level: WindowsSandboxLevel::Disabled,
+
     });
     let (tools, _) = build_specs(&tools_config, None, None, &[]).build();
 
@@ -1482,7 +1439,7 @@ fn test_test_model_info_includes_sync_tool() {
         web_search_mode: Some(WebSearchMode::Cached),
         session_source: SessionSource::Cli,
         sandbox_policy: &SandboxPolicy::RootAccess,
-        windows_sandbox_level: WindowsSandboxLevel::Disabled,
+
     });
     let (tools, _) = build_specs(&tools_config, None, None, &[]).build();
 
@@ -1518,7 +1475,7 @@ fn test_build_specs_mcp_tools_converted() {
         web_search_mode: Some(WebSearchMode::Live),
         session_source: SessionSource::Cli,
         sandbox_policy: &SandboxPolicy::RootAccess,
-        windows_sandbox_level: WindowsSandboxLevel::Disabled,
+
     });
     let (tools, _) = build_specs(
         &tools_config,
@@ -1611,7 +1568,7 @@ fn test_build_specs_mcp_tools_sorted_by_name() {
         web_search_mode: Some(WebSearchMode::Cached),
         session_source: SessionSource::Cli,
         sandbox_policy: &SandboxPolicy::RootAccess,
-        windows_sandbox_level: WindowsSandboxLevel::Disabled,
+
     });
 
     // Intentionally construct a map with keys that would sort alphabetically.
@@ -1661,7 +1618,7 @@ fn test_mcp_tool_property_missing_type_defaults_to_string() {
         web_search_mode: Some(WebSearchMode::Cached),
         session_source: SessionSource::Cli,
         sandbox_policy: &SandboxPolicy::RootAccess,
-        windows_sandbox_level: WindowsSandboxLevel::Disabled,
+
     });
 
     let (tools, _) = build_specs(
@@ -1721,7 +1678,7 @@ fn test_mcp_tool_integer_normalized_to_number() {
         web_search_mode: Some(WebSearchMode::Cached),
         session_source: SessionSource::Cli,
         sandbox_policy: &SandboxPolicy::RootAccess,
-        windows_sandbox_level: WindowsSandboxLevel::Disabled,
+
     });
 
     let (tools, _) = build_specs(
@@ -1778,7 +1735,7 @@ fn test_mcp_tool_array_without_items_gets_default_string_items() {
         web_search_mode: Some(WebSearchMode::Cached),
         session_source: SessionSource::Cli,
         sandbox_policy: &SandboxPolicy::RootAccess,
-        windows_sandbox_level: WindowsSandboxLevel::Disabled,
+
     });
 
     let (tools, _) = build_specs(
@@ -1837,7 +1794,7 @@ fn test_mcp_tool_anyof_defaults_to_string() {
         web_search_mode: Some(WebSearchMode::Cached),
         session_source: SessionSource::Cli,
         sandbox_policy: &SandboxPolicy::RootAccess,
-        windows_sandbox_level: WindowsSandboxLevel::Disabled,
+
     });
 
     let (tools, _) = build_specs(
@@ -2008,7 +1965,7 @@ fn test_get_openai_tools_mcp_tools_with_additional_properties_schema() {
         web_search_mode: Some(WebSearchMode::Cached),
         session_source: SessionSource::Cli,
         sandbox_policy: &SandboxPolicy::RootAccess,
-        windows_sandbox_level: WindowsSandboxLevel::Disabled,
+
     });
     let (tools, _) = build_specs(
         &tools_config,

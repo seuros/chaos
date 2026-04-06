@@ -1,5 +1,4 @@
 use std::io::ErrorKind;
-#[cfg(unix)]
 use std::os::unix::fs::PermissionsExt;
 use std::path::Path;
 use std::path::PathBuf;
@@ -49,14 +48,10 @@ pub fn default_socket_runtime_dir() -> std::io::Result<PathBuf> {
         return Ok(PathBuf::from(runtime_dir).join("codex"));
     }
 
-    #[cfg(unix)]
     {
         let uid = unsafe { libc::geteuid() };
         return Ok(std::env::temp_dir().join(format!("codex-{uid}")));
     }
-
-    #[allow(unreachable_code)]
-    Ok(std::env::temp_dir().join("codex"))
 }
 
 pub fn sqlite_db_path() -> std::io::Result<PathBuf> {
@@ -156,16 +151,9 @@ async fn remove_stale_socket(path: &Path) -> Result<()> {
 }
 
 pub(crate) async fn ensure_runtime_dir_permissions(path: &Path) -> Result<()> {
-    #[cfg(unix)]
-    {
-        tokio::fs::set_permissions(path, std::fs::Permissions::from_mode(0o700))
-            .await
-            .with_context(|| format!("set runtime dir permissions {}", path.display()))?;
-    }
-    #[cfg(not(unix))]
-    {
-        let _ = path;
-    }
+    tokio::fs::set_permissions(path, std::fs::Permissions::from_mode(0o700))
+        .await
+        .with_context(|| format!("set runtime dir permissions {}", path.display()))?;
     Ok(())
 }
 

@@ -1,6 +1,5 @@
 use core::fmt;
 use std::io;
-#[cfg(unix)]
 use std::os::fd::RawFd;
 use std::sync::atomic::AtomicBool;
 use std::sync::Arc;
@@ -43,15 +42,12 @@ impl From<TerminalSize> for PtySize {
     }
 }
 
-#[cfg(unix)]
 pub(crate) trait PtyHandleKeepAlive: Send {}
 
-#[cfg(unix)]
 impl<T: Send + ?Sized> PtyHandleKeepAlive for T {}
 
 pub(crate) enum PtyMasterHandle {
     Resizable(Box<dyn MasterPty + Send>),
-    #[cfg(unix)]
     Opaque {
         raw_fd: RawFd,
         _handle: Box<dyn PtyHandleKeepAlive>,
@@ -150,7 +146,6 @@ impl ProcessHandle {
             .ok_or_else(|| anyhow!("process is not attached to a PTY"))?;
         match &handles._master {
             PtyMasterHandle::Resizable(master) => master.resize(size.into()),
-            #[cfg(unix)]
             PtyMasterHandle::Opaque { raw_fd, .. } => resize_raw_pty(*raw_fd, size),
         }
     }
@@ -205,7 +200,6 @@ impl Drop for ProcessHandle {
     }
 }
 
-#[cfg(unix)]
 fn resize_raw_pty(raw_fd: RawFd, size: TerminalSize) -> anyhow::Result<()> {
     let mut winsize = libc::winsize {
         ws_row: size.rows,

@@ -442,7 +442,7 @@ fn op_kind_distinguishes_turn_ops() {
             approval_policy: None,
             approvals_reviewer: None,
             sandbox_policy: None,
-            windows_sandbox_level: None,
+
             model: None,
             effort: None,
             summary: None,

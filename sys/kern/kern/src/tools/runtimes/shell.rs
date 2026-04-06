@@ -4,7 +4,6 @@ Runtime: shell
 Executes shell requests under the orchestrator: asks for approval when needed,
 builds a CommandSpec, and runs it under the current SandboxAttempt.
 */
-#[cfg(unix)]
 pub(crate) mod unix_escalation;
 pub(crate) mod zsh_fork_backend;
 

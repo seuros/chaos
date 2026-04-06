@@ -91,7 +91,6 @@ fn init_optional_debug_file_layer() -> anyhow::Result<(
     let mut log_file_opts = OpenOptions::new();
     log_file_opts.create(true).append(true);
 
-    #[cfg(unix)]
     {
         use std::os::unix::fs::OpenOptionsExt;
         log_file_opts.mode(0o600);

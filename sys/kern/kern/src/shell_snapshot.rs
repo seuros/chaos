@@ -274,7 +274,6 @@ async fn run_script_with_timeout(
     handler.args(&args[1..]);
     handler.stdin(Stdio::null());
     handler.current_dir(cwd);
-    #[cfg(unix)]
     unsafe {
         handler.pre_exec(|| {
             chaos_pty::process_group::detach_from_tty()?;

@@ -44,7 +44,6 @@ pub fn set_parent_death_signal(_parent_pid: i32) -> io::Result<()> {
     Ok(())
 }
 
-#[cfg(unix)]
 /// Detach from the controlling TTY by starting a new session.
 pub fn detach_from_tty() -> io::Result<()> {
     let result = unsafe { libc::setsid() };
@@ -58,13 +57,6 @@ pub fn detach_from_tty() -> io::Result<()> {
     Ok(())
 }
 
-#[cfg(not(unix))]
-/// No-op on non-Unix platforms.
-pub fn detach_from_tty() -> io::Result<()> {
-    Ok(())
-}
-
-#[cfg(unix)]
 /// Put the calling process into its own process group.
 ///
 /// Intended for use in `pre_exec` so the child becomes the group leader.
@@ -77,13 +69,6 @@ pub fn set_process_group() -> io::Result<()> {
     }
 }
 
-#[cfg(not(unix))]
-/// No-op on non-Unix platforms.
-pub fn set_process_group() -> io::Result<()> {
-    Ok(())
-}
-
-#[cfg(unix)]
 /// Kill the process group for the given PID (best-effort).
 ///
 /// This resolves the PGID for `pid` and sends SIGKILL to the whole group.
@@ -111,13 +96,6 @@ pub fn kill_process_group_by_pid(pid: u32) -> io::Result<()> {
     Ok(())
 }
 
-#[cfg(not(unix))]
-/// No-op on non-Unix platforms.
-pub fn kill_process_group_by_pid(_pid: u32) -> io::Result<()> {
-    Ok(())
-}
-
-#[cfg(unix)]
 /// Send SIGTERM to a specific process group ID (best-effort).
 ///
 /// Returns `Ok(true)` when SIGTERM was delivered to an existing group and
@@ -138,13 +116,6 @@ pub fn terminate_process_group(process_group_id: u32) -> io::Result<bool> {
     Ok(true)
 }
 
-#[cfg(not(unix))]
-/// No-op on non-Unix platforms.
-pub fn terminate_process_group(_process_group_id: u32) -> io::Result<bool> {
-    Ok(false)
-}
-
-#[cfg(unix)]
 /// Kill a specific process group ID (best-effort).
 pub fn kill_process_group(process_group_id: u32) -> io::Result<()> {
     use std::io::ErrorKind;
@@ -161,24 +132,11 @@ pub fn kill_process_group(process_group_id: u32) -> io::Result<()> {
     Ok(())
 }
 
-#[cfg(not(unix))]
-/// No-op on non-Unix platforms.
-pub fn kill_process_group(_process_group_id: u32) -> io::Result<()> {
-    Ok(())
-}
-
-#[cfg(unix)]
 /// Kill the process group for a tokio child (best-effort).
 pub fn kill_child_process_group(child: &mut Child) -> io::Result<()> {
     if let Some(pid) = child.id() {
         return kill_process_group_by_pid(pid);
     }
 
-    Ok(())
-}
-
-#[cfg(not(unix))]
-/// No-op on non-Unix platforms.
-pub fn kill_child_process_group(_child: &mut Child) -> io::Result<()> {
     Ok(())
 }

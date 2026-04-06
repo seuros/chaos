@@ -282,7 +282,6 @@ use chaos_ipc::config_types::CollaborationMode;
 use chaos_ipc::config_types::Personality;
 use chaos_ipc::config_types::ReasoningSummary as ReasoningSummaryConfig;
 use chaos_ipc::config_types::ServiceTier;
-use chaos_ipc::config_types::WindowsSandboxLevel;
 use chaos_ipc::models::ContentItem;
 use chaos_ipc::models::DeveloperInstructions;
 use chaos_ipc::models::ResponseInputItem;
@@ -493,7 +492,6 @@ impl Chaos {
             sandbox_policy: config.permissions.sandbox_policy.clone(),
             file_system_sandbox_policy: config.permissions.file_system_sandbox_policy.clone(),
             network_sandbox_policy: config.permissions.network_sandbox_policy,
-            windows_sandbox_level: WindowsSandboxLevel::Disabled,
             cwd: config.cwd.clone(),
             chaos_home: config.chaos_home.clone(),
             process_name: None,
@@ -719,7 +717,6 @@ pub(crate) struct TurnContext {
     pub(crate) file_system_sandbox_policy: FileSystemSandboxPolicy,
     pub(crate) network_sandbox_policy: NetworkSandboxPolicy,
     pub(crate) network: Option<NetworkProxy>,
-    pub(crate) windows_sandbox_level: WindowsSandboxLevel,
     pub(crate) shell_environment_policy: ShellEnvironmentPolicy,
     pub(crate) tools_config: ToolsConfig,
     pub(crate) features: ManagedFeatures,
@@ -789,7 +786,6 @@ impl TurnContext {
             web_search_mode: self.tools_config.web_search_mode,
             session_source: self.session_source.clone(),
             sandbox_policy: self.sandbox_policy.get(),
-            windows_sandbox_level: self.windows_sandbox_level,
         })
         .with_unified_exec_shell_mode(self.tools_config.unified_exec_shell_mode.clone())
         .with_web_search_config(self.tools_config.web_search_config.clone())
@@ -824,7 +820,6 @@ impl TurnContext {
             file_system_sandbox_policy: self.file_system_sandbox_policy.clone(),
             network_sandbox_policy: self.network_sandbox_policy,
             network: self.network.clone(),
-            windows_sandbox_level: self.windows_sandbox_level,
             shell_environment_policy: self.shell_environment_policy.clone(),
             tools_config,
             features,
@@ -934,7 +929,6 @@ pub(crate) struct SessionConfiguration {
     sandbox_policy: Constrained<SandboxPolicy>,
     file_system_sandbox_policy: FileSystemSandboxPolicy,
     network_sandbox_policy: NetworkSandboxPolicy,
-    windows_sandbox_level: WindowsSandboxLevel,
 
     /// Working directory that should be treated as the *root* of the
     /// session. All relative paths supplied by the model as well as the
@@ -1014,9 +1008,6 @@ impl SessionConfiguration {
                 NetworkSandboxPolicy::from(next_configuration.sandbox_policy.get());
             sandbox_policy_changed = true;
         }
-        if let Some(windows_sandbox_level) = updates.windows_sandbox_level {
-            next_configuration.windows_sandbox_level = windows_sandbox_level;
-        }
         let mut cwd_changed = false;
         if let Some(cwd) = updates.cwd.clone() {
             next_configuration.cwd = cwd;
@@ -1044,7 +1035,6 @@ pub(crate) struct SessionSettingsUpdate {
     pub(crate) approval_policy: Option<ApprovalPolicy>,
     pub(crate) approvals_reviewer: Option<ApprovalsReviewer>,
     pub(crate) sandbox_policy: Option<SandboxPolicy>,
-    pub(crate) windows_sandbox_level: Option<WindowsSandboxLevel>,
     pub(crate) collaboration_mode: Option<CollaborationMode>,
     pub(crate) reasoning_summary: Option<ReasoningSummaryConfig>,
     pub(crate) service_tier: Option<Option<ServiceTier>>,
@@ -1205,7 +1195,6 @@ impl Session {
             web_search_mode: Some(per_turn_config.web_search_mode.value()),
             session_source: session_source.clone(),
             sandbox_policy: session_configuration.sandbox_policy.get(),
-            windows_sandbox_level: session_configuration.windows_sandbox_level,
         })
         .with_unified_exec_shell_mode_for_session(
             user_shell,
@@ -1248,7 +1237,6 @@ impl Session {
             file_system_sandbox_policy: session_configuration.file_system_sandbox_policy.clone(),
             network_sandbox_policy: session_configuration.network_sandbox_policy,
             network,
-            windows_sandbox_level: session_configuration.windows_sandbox_level,
             shell_environment_policy: per_turn_config.permissions.shell_environment_policy.clone(),
             tools_config,
             features: per_turn_config.features.clone(),
@@ -4005,7 +3993,6 @@ async fn submission_loop(sess: Arc<Session>, config: Arc<Config>, rx_sub: Receiv
                     approval_policy,
                     approvals_reviewer,
                     sandbox_policy,
-                    windows_sandbox_level,
                     model,
                     effort,
                     summary,
@@ -4038,7 +4025,6 @@ async fn submission_loop(sess: Arc<Session>, config: Arc<Config>, rx_sub: Receiv
                             approval_policy,
                             approvals_reviewer,
                             sandbox_policy,
-                            windows_sandbox_level,
                             collaboration_mode: Some(collaboration_mode),
                             reasoning_summary: summary,
                             service_tier,
@@ -4352,7 +4338,6 @@ mod handlers {
                         approval_policy: Some(approval_policy),
                         approvals_reviewer: None,
                         sandbox_policy: Some(sandbox_policy),
-                        windows_sandbox_level: None,
                         collaboration_mode,
                         reasoning_summary: summary,
                         service_tier,
@@ -5121,7 +5106,6 @@ async fn spawn_review_thread(
         web_search_mode: Some(review_web_search_mode),
         session_source: parent_turn_context.session_source.clone(),
         sandbox_policy: parent_turn_context.sandbox_policy.get(),
-        windows_sandbox_level: parent_turn_context.windows_sandbox_level,
     })
     .with_unified_exec_shell_mode_for_session(
         sess.services.user_shell.as_ref(),
@@ -5199,7 +5183,6 @@ async fn spawn_review_thread(
         file_system_sandbox_policy: parent_turn_context.file_system_sandbox_policy.clone(),
         network_sandbox_policy: parent_turn_context.network_sandbox_policy,
         network: parent_turn_context.network.clone(),
-        windows_sandbox_level: parent_turn_context.windows_sandbox_level,
         shell_environment_policy: parent_turn_context.shell_environment_policy.clone(),
         cwd: parent_turn_context.cwd.clone(),
         final_output_json_schema: None,

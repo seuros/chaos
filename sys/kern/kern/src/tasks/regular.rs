@@ -33,22 +33,11 @@ impl Default for RegularTask {
 impl RegularTask {
     pub(crate) async fn with_startup_prewarm(
         model_client: ModelClient,
-        prompt: Prompt,
-        turn_context: Arc<TurnContext>,
-        turn_metadata_header: Option<String>,
+        _prompt: Prompt,
+        _turn_context: Arc<TurnContext>,
+        _turn_metadata_header: Option<String>,
     ) -> CodexResult<Self> {
-        let mut client_session = model_client.new_session();
-        client_session
-            .prewarm_websocket(
-                &prompt,
-                &turn_context.model_info,
-                &turn_context.session_telemetry,
-                turn_context.reasoning_effort,
-                turn_context.reasoning_summary,
-                turn_context.config.service_tier,
-                turn_metadata_header.as_deref(),
-            )
-            .await?;
+        let client_session = model_client.new_session();
 
         Ok(Self {
             prewarmed_session: Mutex::new(Some(client_session)),

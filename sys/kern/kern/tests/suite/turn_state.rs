@@ -1,7 +1,6 @@
 #![allow(clippy::expect_used, clippy::unwrap_used)]
 
 use anyhow::Result;
-use core_test_support::responses::WebSocketConnectionConfig;
 use core_test_support::responses::ev_assistant_message;
 use core_test_support::responses::ev_completed;
 use core_test_support::responses::ev_reasoning_item;
@@ -11,7 +10,6 @@ use core_test_support::responses::mount_response_sequence;
 use core_test_support::responses::sse;
 use core_test_support::responses::sse_response;
 use core_test_support::responses::start_mock_server;
-use core_test_support::responses::start_websocket_server_with_headers;
 use core_test_support::skip_if_no_network;
 use core_test_support::test_codex::test_codex;
 use pretty_assertions::assert_eq;
@@ -84,74 +82,5 @@ async fn responses_turn_state_persists_within_turn_and_resets_after() -> Result<
     assert_eq!(first_turn_id, second_turn_id);
     assert_ne!(second_turn_id, third_turn_id);
 
-    Ok(())
-}
-
-#[tokio::test(flavor = "multi_thread", worker_threads = 2)]
-async fn websocket_turn_state_persists_within_turn_and_resets_after() -> Result<()> {
-    skip_if_no_network!(Ok(()));
-
-    let call_id = "ws-shell-turn-state";
-    // Startup prewarm uses the first websocket with no sticky state.
-    // The first real turn request receives turn_state on the second websocket,
-    // the same-turn follow-up must replay it on the third, and the next turn
-    // must clear it on the fourth.
-    let server = start_websocket_server_with_headers(vec![
-        WebSocketConnectionConfig {
-            requests: vec![vec![ev_response_created("resp-1"), ev_completed("resp-1")]],
-            response_headers: Vec::new(),
-            accept_delay: None,
-            close_after_requests: true,
-        },
-        WebSocketConnectionConfig {
-            requests: vec![vec![
-                ev_response_created("resp-2"),
-                ev_reasoning_item("rsn-1", &["thinking"], &[]),
-                ev_shell_command_call(call_id, "echo websocket"),
-                ev_completed("resp-2"),
-            ]],
-            response_headers: vec![("X-Codex-Turn-State".to_string(), "ts-1".to_string())],
-            accept_delay: None,
-            close_after_requests: true,
-        },
-        WebSocketConnectionConfig {
-            requests: vec![vec![
-                ev_response_created("resp-3"),
-                ev_assistant_message("msg-1", "done"),
-                ev_completed("resp-3"),
-            ]],
-            response_headers: Vec::new(),
-            accept_delay: None,
-            close_after_requests: true,
-        },
-        WebSocketConnectionConfig {
-            requests: vec![vec![
-                ev_response_created("resp-4"),
-                ev_assistant_message("msg-2", "done"),
-                ev_completed("resp-4"),
-            ]],
-            response_headers: Vec::new(),
-            accept_delay: None,
-            close_after_requests: true,
-        },
-    ])
-    .await;
-
-    let mut builder = test_codex();
-    let test = builder.build_with_websocket_server(&server).await?;
-    test.submit_turn("run the echo command").await?;
-    test.submit_turn("second turn").await?;
-
-    let handshakes = server.handshakes();
-    assert_eq!(handshakes.len(), 4);
-    assert_eq!(handshakes[0].header(TURN_STATE_HEADER), None);
-    assert_eq!(handshakes[1].header(TURN_STATE_HEADER), None);
-    assert_eq!(
-        handshakes[2].header(TURN_STATE_HEADER),
-        Some("ts-1".to_string())
-    );
-    assert_eq!(handshakes[3].header(TURN_STATE_HEADER), None);
-
-    server.shutdown().await;
     Ok(())
 }

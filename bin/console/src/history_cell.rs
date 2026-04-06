@@ -2092,13 +2092,6 @@ pub(crate) fn runtime_metrics_label(summary: RuntimeMetricsSummary) -> Option<St
             summary.api_calls.count
         ));
     }
-    if summary.websocket_calls.count > 0 {
-        let duration = format_duration_ms(summary.websocket_calls.duration_ms);
-        parts.push(format!(
-            "WebSocket: {} events send ({duration})",
-            summary.websocket_calls.count
-        ));
-    }
     if summary.streaming_events.count > 0 {
         let duration = format_duration_ms(summary.streaming_events.duration_ms);
         let stream_label = pluralize(summary.streaming_events.count, "Stream", "Streams");
@@ -2106,13 +2099,6 @@ pub(crate) fn runtime_metrics_label(summary: RuntimeMetricsSummary) -> Option<St
         parts.push(format!(
             "{stream_label}: {} {events} ({duration})",
             summary.streaming_events.count
-        ));
-    }
-    if summary.websocket_events.count > 0 {
-        let duration = format_duration_ms(summary.websocket_events.duration_ms);
-        parts.push(format!(
-            "{} events received ({duration})",
-            summary.websocket_events.count
         ));
     }
     if summary.responses_api_overhead_ms > 0 {
@@ -2345,14 +2331,6 @@ mod tests {
             streaming_events: RuntimeMetricTotals {
                 count: 6,
                 duration_ms: 900,
-            },
-            websocket_calls: RuntimeMetricTotals {
-                count: 1,
-                duration_ms: 700,
-            },
-            websocket_events: RuntimeMetricTotals {
-                count: 4,
-                duration_ms: 1_200,
             },
             responses_api_overhead_ms: 650,
             responses_api_inference_time_ms: 1_940,

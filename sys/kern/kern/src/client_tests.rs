@@ -33,8 +33,6 @@ fn test_model_client(session_source: SessionSource) -> ModelClient {
         ApprovalPolicy::Interactive,
         None,
         false,
-        false,
-        false,
         None,
     )
 }
@@ -101,8 +99,6 @@ fn resolve_anthropic_auth_uses_bearer_token_from_provider_config() {
         ApprovalPolicy::Interactive,
         None,
         false,
-        false,
-        false,
         None,
     );
     let session = client.new_session();
@@ -126,8 +122,6 @@ fn resolve_anthropic_auth_errors_when_provider_has_no_static_auth() {
         SessionSource::Cli,
         ApprovalPolicy::Interactive,
         None,
-        false,
-        false,
         false,
         None,
     );

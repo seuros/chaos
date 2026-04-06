@@ -93,8 +93,6 @@ async fn responses_stream_includes_subagent_header_on_review() {
         chaos_ipc::protocol::ApprovalPolicy::Interactive,
         config.model_verbosity,
         false,
-        false,
-        false,
         None,
     );
     let mut client_session = client.new_session();
@@ -207,8 +205,6 @@ async fn responses_stream_includes_subagent_header_on_other() {
         chaos_ipc::protocol::ApprovalPolicy::Interactive,
         config.model_verbosity,
         false,
-        false,
-        false,
         None,
     );
     let mut client_session = client.new_session();
@@ -319,8 +315,6 @@ async fn responses_respects_model_info_overrides_from_config() {
         session_source,
         chaos_ipc::protocol::ApprovalPolicy::Interactive,
         config.model_verbosity,
-        false,
-        false,
         false,
         None,
     );

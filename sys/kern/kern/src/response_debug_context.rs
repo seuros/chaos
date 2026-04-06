@@ -53,15 +53,7 @@ pub(crate) fn extract_response_debug_context(transport: &TransportError) -> Resp
     context
 }
 
-pub(crate) fn extract_response_debug_context_from_api_error(
-    error: &ApiError,
-) -> ResponseDebugContext {
-    match error {
-        ApiError::Transport(transport) => extract_response_debug_context(transport),
-        _ => ResponseDebugContext::default(),
-    }
-}
-
+#[cfg_attr(not(test), allow(dead_code))]
 pub(crate) fn telemetry_transport_error_message(error: &TransportError) -> String {
     match error {
         TransportError::Http { status, .. } => format!("http {}", status.as_u16()),
@@ -72,6 +64,7 @@ pub(crate) fn telemetry_transport_error_message(error: &TransportError) -> Strin
     }
 }
 
+#[cfg_attr(not(test), allow(dead_code))]
 pub(crate) fn telemetry_api_error_message(error: &ApiError) -> String {
     match error {
         ApiError::Transport(transport) => telemetry_transport_error_message(transport),

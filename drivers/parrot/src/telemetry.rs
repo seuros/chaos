@@ -1,4 +1,3 @@
-use crate::error::ApiError;
 use codex_client::Request;
 use codex_client::RequestTelemetry;
 use codex_client::Response;
@@ -7,8 +6,6 @@ use codex_client::StreamResponse;
 use codex_client::TransportError;
 use codex_client::run_with_retry;
 use http::StatusCode;
-use rama::error::BoxError;
-use rama::http::ws::Message;
 use std::future::Future;
 use std::sync::Arc;
 use std::time::Duration;
@@ -27,17 +24,6 @@ pub trait SseTelemetry: Send + Sync {
             >,
             tokio::time::error::Elapsed,
         >,
-        duration: Duration,
-    );
-}
-
-/// Telemetry for Responses WebSocket transport.
-pub trait WebsocketTelemetry: Send + Sync {
-    fn on_ws_request(&self, duration: Duration, error: Option<&ApiError>, connection_reused: bool);
-
-    fn on_ws_event(
-        &self,
-        result: &Result<Option<Result<Message, BoxError>>, ApiError>,
         duration: Duration,
     );
 }

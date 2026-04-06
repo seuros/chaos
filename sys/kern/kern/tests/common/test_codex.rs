@@ -26,7 +26,6 @@ use tempfile::TempDir;
 use wiremock::MockServer;
 
 use crate::load_default_config_for_test;
-use crate::responses::WebSocketTestServer;
 use crate::responses::output_value_to_text;
 use crate::responses::start_mock_server;
 use crate::streaming_sse::StreamingSseServer;
@@ -122,37 +121,6 @@ impl TestCodexBuilder {
             /*resume_from*/ None,
         ))
         .await
-    }
-
-    pub async fn build_with_websocket_server(
-        &mut self,
-        server: &WebSocketTestServer,
-    ) -> anyhow::Result<TestCodex> {
-        let base_url = format!("{}/v1", server.uri());
-        let home = match self.home.clone() {
-            Some(home) => home,
-            None => Arc::new(TempDir::new()?),
-        };
-        let base_url_clone = base_url.clone();
-        self.config_mutators.push(Box::new(move |config| {
-            config.model_provider.base_url = Some(base_url_clone);
-            config.experimental_realtime_ws_model = Some("realtime-test-model".to_string());
-            let ws_models = chaos_kern::test_support::test_models_response(&["wheatley"]);
-            let ws_models = chaos_ipc::openai_models::ModelsResponse {
-                models: ws_models
-                    .models
-                    .into_iter()
-                    .map(|mut m| {
-                        m.prefer_websockets = true;
-                        m
-                    })
-                    .collect(),
-            };
-            if config.model_catalog.is_none() {
-                config.model_catalog = Some(ws_models);
-            }
-        }));
-        Box::pin(self.build_with_home_and_base_url(base_url, home, /*resume_from*/ None)).await
     }
 
     pub async fn resume(

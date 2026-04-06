@@ -549,11 +549,16 @@ async fn run_list(config_overrides: &CliConfigOverrides, list_args: ListArgs) ->
                     .filter(|value| !value.is_empty())
                     .unwrap_or_else(|| "-".to_string());
                 let status = format_mcp_status(cfg);
+                // Stdio servers don't support OAuth — show "-" instead of "Unsupported".
                 let auth_status = auth_statuses
                     .get(name.as_str())
                     .map(|entry| entry.auth_status)
-                    .unwrap_or(McpAuthStatus::Unsupported)
-                    .to_string();
+                    .unwrap_or(McpAuthStatus::Unsupported);
+                let auth_display = if auth_status == McpAuthStatus::Unsupported {
+                    "-".to_string()
+                } else {
+                    auth_status.to_string()
+                };
                 stdio_rows.push([
                     name.clone(),
                     command.clone(),
@@ -561,7 +566,7 @@ async fn run_list(config_overrides: &CliConfigOverrides, list_args: ListArgs) ->
                     env_display,
                     cwd_display,
                     status,
-                    auth_status,
+                    auth_display,
                 ]);
             }
             McpServerTransportConfig::StreamableHttp {

@@ -1755,6 +1755,25 @@ impl App {
                 TuiEvent::Key(key_event) => {
                     self.handle_key_event(tui, key_event).await;
                 }
+                TuiEvent::Mouse(mouse_event) => {
+                    match mouse_event.kind {
+                        crossterm::event::MouseEventKind::ScrollUp
+                            if self.log_panel.is_visible()
+                                && self.chat_widget.no_modal_or_popup_active() =>
+                        {
+                            self.log_panel.scroll_up(3);
+                            tui.frame_requester().schedule_frame();
+                        }
+                        crossterm::event::MouseEventKind::ScrollDown
+                            if self.log_panel.is_visible()
+                                && self.chat_widget.no_modal_or_popup_active() =>
+                        {
+                            self.log_panel.scroll_down(3);
+                            tui.frame_requester().schedule_frame();
+                        }
+                        _ => {}
+                    }
+                }
                 TuiEvent::Paste(pasted) => {
                     // Only paste into chat when chat is focused — do not leak
                     // clipboard content into the composer from auxiliary panes.
@@ -3093,7 +3112,7 @@ impl App {
                 kind: KeyEventKind::Press | KeyEventKind::Repeat,
                 ..
             } if self.overlay.is_none() && self.chat_widget.no_modal_or_popup_active() => {
-                self.open_transcript_overlay(tui, Some(key_event));
+                self.open_transcript_overlay(tui, Some(TuiEvent::Key(key_event)));
                 return;
             }
             KeyEvent {
@@ -3109,6 +3128,14 @@ impl App {
                 return;
             }
             KeyEvent {
+                code: KeyCode::PageDown,
+                kind: KeyEventKind::Press | KeyEventKind::Repeat,
+                ..
+            } if self.overlay.is_none() && self.chat_widget.no_modal_or_popup_active() => {
+                self.open_transcript_overlay(tui, Some(TuiEvent::Key(key_event)));
+                return;
+            }
+            KeyEvent {
                 code: KeyCode::Home,
                 kind: KeyEventKind::Press | KeyEventKind::Repeat,
                 ..
@@ -3121,6 +3148,14 @@ impl App {
                 return;
             }
             KeyEvent {
+                code: KeyCode::Home,
+                kind: KeyEventKind::Press | KeyEventKind::Repeat,
+                ..
+            } if self.overlay.is_none() && self.chat_widget.no_modal_or_popup_active() => {
+                self.open_transcript_overlay(tui, Some(TuiEvent::Key(key_event)));
+                return;
+            }
+            KeyEvent {
                 code: KeyCode::End,
                 kind: KeyEventKind::Press | KeyEventKind::Repeat,
                 ..
@@ -3130,6 +3165,14 @@ impl App {
             {
                 self.log_panel.scroll_to_end();
                 tui.frame_requester().schedule_frame();
+                return;
+            }
+            KeyEvent {
+                code: KeyCode::End,
+                kind: KeyEventKind::Press | KeyEventKind::Repeat,
+                ..
+            } if self.overlay.is_none() && self.chat_widget.no_modal_or_popup_active() => {
+                self.open_transcript_overlay(tui, Some(TuiEvent::Key(key_event)));
                 return;
             }
             KeyEvent {

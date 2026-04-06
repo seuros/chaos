@@ -35,6 +35,8 @@ use crate::tui::TuiEvent;
 use crossterm::event::KeyCode;
 use crossterm::event::KeyEvent;
 use crossterm::event::KeyEventKind;
+use crossterm::event::MouseEvent;
+use crossterm::event::MouseEventKind;
 use ratatui::buffer::Buffer;
 use ratatui::buffer::Cell;
 use ratatui::layout::Alignment;
@@ -205,6 +207,7 @@ impl AuthOverlay {
                     self.widget.render_ref(inner, frame.buffer);
                 })?;
             }
+            TuiEvent::Mouse(_) => {}
             TuiEvent::Key(_) => {}
         }
         Ok(())
@@ -427,6 +430,31 @@ impl PagerView {
         tui.frame_requester()
             .schedule_frame_in(crate::tui::TARGET_FRAME_INTERVAL);
         Ok(())
+    }
+
+    fn handle_mouse_event(&mut self, tui: &mut tui::Tui, mouse_event: MouseEvent) -> Result<()> {
+        if !self.apply_mouse_scroll(mouse_event.kind, tui.terminal.viewport_area) {
+            return Ok(());
+        }
+        tui.frame_requester()
+            .schedule_frame_in(crate::tui::TARGET_FRAME_INTERVAL);
+        Ok(())
+    }
+
+    fn apply_mouse_scroll(&mut self, kind: MouseEventKind, viewport_area: Rect) -> bool {
+        let content_area = self.content_area(viewport_area);
+        let current_offset = self.resolved_scroll_offset_for_area(content_area);
+        match kind {
+            MouseEventKind::ScrollUp => {
+                self.scroll_offset = current_offset.saturating_sub(3);
+                true
+            }
+            MouseEventKind::ScrollDown => {
+                self.scroll_offset = current_offset.saturating_add(3);
+                true
+            }
+            _ => false,
+        }
     }
 
     /// Returns the height of one page in content rows.
@@ -827,6 +855,7 @@ impl TranscriptOverlay {
                 }
                 other => self.view.handle_key_event(tui, other),
             },
+            TuiEvent::Mouse(mouse_event) => self.view.handle_mouse_event(tui, mouse_event),
             TuiEvent::Draw => {
                 tui.draw(u16::MAX, |frame| {
                     self.render(frame.area(), frame.buffer);
@@ -891,6 +920,7 @@ impl StaticOverlay {
                 }
                 other => self.view.handle_key_event(tui, other),
             },
+            TuiEvent::Mouse(mouse_event) => self.view.handle_mouse_event(tui, mouse_event),
             TuiEvent::Draw => {
                 tui.draw(u16::MAX, |frame| {
                     self.render(frame.area(), frame.buffer);
@@ -1432,5 +1462,26 @@ mod tests {
 
         assert!(resolved > 0, "expected a concrete bottom offset, got {resolved}");
         assert_ne!(resolved, usize::MAX);
+    }
+
+    #[test]
+    fn pager_view_mouse_scroll_moves_relative_to_current_position() {
+        let mut pv = PagerView::new(vec![paragraph_block("a", 30)], "T".to_string(), 9);
+        let area = Rect::new(0, 0, 20, 8);
+
+        assert!(pv.apply_mouse_scroll(MouseEventKind::ScrollUp, area));
+        assert_eq!(pv.scroll_offset, 6);
+
+        assert!(pv.apply_mouse_scroll(MouseEventKind::ScrollDown, area));
+        assert_eq!(pv.scroll_offset, 9);
+    }
+
+    #[test]
+    fn pager_view_mouse_scroll_resolves_bottom_sentinel_before_scrolling_up() {
+        let mut pv = PagerView::new(vec![paragraph_block("a", 20)], "T".to_string(), usize::MAX);
+        let area = Rect::new(0, 0, 20, 7);
+
+        assert!(pv.apply_mouse_scroll(MouseEventKind::ScrollUp, area));
+        assert_eq!(pv.scroll_offset, 12);
     }
 }

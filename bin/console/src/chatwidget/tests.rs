@@ -252,6 +252,74 @@ async fn process_snapshot_replay_does_not_duplicate_agent_message_history() {
 }
 
 #[tokio::test]
+async fn replayed_item_completed_user_message_renders_history_cell() {
+    let (mut chat, mut rx, _ops) = make_chatwidget_manual(None).await;
+
+    let message = "hello from replayed item".to_string();
+    let local_images = vec![PathBuf::from("/tmp/replayed-item.png")];
+    let text_elements = vec![TextElement::new((0..5).into(), Some("hello".to_string()))];
+
+    let conversation_id = ProcessId::new();
+    let configured = chaos_ipc::protocol::SessionConfiguredEvent {
+        session_id: conversation_id,
+        forked_from_id: None,
+        process_name: None,
+        model: "test-model".to_string(),
+        model_provider_id: "test-provider".to_string(),
+        service_tier: None,
+        approval_policy: ApprovalPolicy::Headless,
+        approvals_reviewer: ApprovalsReviewer::User,
+        sandbox_policy: SandboxPolicy::new_read_only_policy(),
+        cwd: PathBuf::from("/home/user/project"),
+        reasoning_effort: Some(ReasoningEffortConfig::default()),
+        history_log_id: 0,
+        history_entry_count: 0,
+        initial_messages: Some(vec![EventMsg::ItemCompleted(ItemCompletedEvent {
+            process_id: conversation_id,
+            turn_id: "turn-1".to_string(),
+            item: TurnItem::UserMessage(UserMessageItem {
+                id: "user-1".to_string(),
+                content: vec![
+                    UserInput::Text {
+                        text: message.clone(),
+                        text_elements: text_elements.clone(),
+                    },
+                    UserInput::LocalImage {
+                        path: local_images[0].clone(),
+                    },
+                ],
+            }),
+        })]),
+        network_proxy: None,
+    };
+
+    chat.handle_codex_event(Event {
+        id: "initial".into(),
+        msg: EventMsg::SessionConfigured(configured),
+    });
+
+    let mut user_cell = None;
+    while let Ok(ev) = rx.try_recv() {
+        if let AppEvent::InsertHistoryCell(cell) = ev
+            && let Some(cell) = cell.as_any().downcast_ref::<UserHistoryCell>()
+        {
+            user_cell = Some((
+                cell.message.clone(),
+                cell.text_elements.clone(),
+                cell.local_image_paths.clone(),
+            ));
+            break;
+        }
+    }
+
+    let (stored_message, stored_elements, stored_images) =
+        user_cell.expect("expected a replayed user history cell from ItemCompleted");
+    assert_eq!(stored_message, message);
+    assert_eq!(stored_elements, text_elements);
+    assert_eq!(stored_images, local_images);
+}
+
+#[tokio::test]
 async fn replayed_user_message_preserves_text_elements_and_local_images() {
     let (mut chat, mut rx, _ops) = make_chatwidget_manual(None).await;
 

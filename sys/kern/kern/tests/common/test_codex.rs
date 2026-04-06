@@ -137,12 +137,20 @@ impl TestCodexBuilder {
         self.config_mutators.push(Box::new(move |config| {
             config.model_provider.base_url = Some(base_url_clone);
             config.experimental_realtime_ws_model = Some("realtime-test-model".to_string());
+            let ws_models = chaos_kern::test_support::test_models_response(&["wheatley"]);
+            let ws_models = chaos_ipc::openai_models::ModelsResponse {
+                models: ws_models
+                    .models
+                    .into_iter()
+                    .map(|mut m| {
+                        m.prefer_websockets = true;
+                        m
+                    })
+                    .collect(),
+            };
             if config.model_catalog.is_none() {
-                config.model_catalog = Some(chaos_kern::test_support::test_models_response(&[
-                    "wheatley",
-                ]));
+                config.model_catalog = Some(ws_models);
             }
-            // ResponsesWebsockets feature evicted — websockets hard-wired to disabled.
         }));
         Box::pin(self.build_with_home_and_base_url(base_url, home, /*resume_from*/ None)).await
     }

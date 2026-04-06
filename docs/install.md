@@ -4,13 +4,13 @@
 
 | Requirement                 | Details                                                         |
 | --------------------------- | --------------------------------------------------------------- |
-| Operating systems           | macOS 12+, Ubuntu 20.04+/Debian 10+, FreeBSD                   |
-| Git (optional, recommended) | 2.23+ for built-in PR helpers                                   |
-| RAM                         | 4-GB minimum (8-GB recommended)                                 |
+| Operating systems           | Linux 6.10+, macOS 15+, FreeBSD 15+                            |
+| Git (optional, recommended) | 2.53+                                                           |
+| RAM                         | ~80 MB (MCP mode), ~128 MB (TUI mode) — MCP servers not included |
 
 ### Build from source
 
-Ask `codex` or `claude` to set up your environment. Then:
+Ask `chaos` to set up your environment. Then:
 
 ```bash
 just build
@@ -19,22 +19,38 @@ just build
 That's it. If something is missing, ask again.
 
 ```bash
-# Just talk.
-just talk
+# Run chaos.
+just chaos
 
-# Just build.
+# Build only.
 just build
 ```
 
 ## Tracing / verbose logging
 
-Chaos honors the `RUST_LOG` environment variable.
+### `--debug` flag
+
+Pass `-d` / `--debug` to enable debug logging. Works globally across all subcommands:
+
+```bash
+chaos --debug
+chaos --debug exec "say hi"
+chaos exec --debug "say hi"
+```
+
+Logs are written to `~/.chaos/debug.log`.
+
+### `RUST_LOG`
+
+Chaos also honors the `RUST_LOG` environment variable for fine-grained control.
 
 The TUI defaults to `RUST_LOG=chaos_kern=info,chaos_console=info,mcp_guest=info` and writes logs to `~/.chaos/log/chaos-console.log`. Override with `-c log_dir=...`.
 
 ```bash
 tail -F ~/.chaos/log/chaos-console.log
 ```
+
+Press `ctrl+o` inside the TUI to open the log viewer as a full-screen overlay. Navigate with arrow keys / PageUp / PageDown, dismiss with `q` or `Esc`.
 
 The non-interactive mode (`chaos exec`) defaults to `RUST_LOG=error`, printed inline.
 

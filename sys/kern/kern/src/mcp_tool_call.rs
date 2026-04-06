@@ -25,7 +25,6 @@ use crate::protocol::EventMsg;
 use crate::protocol::McpInvocation;
 use crate::protocol::McpToolCallBeginEvent;
 use crate::protocol::McpToolCallEndEvent;
-use crate::state_db;
 use chaos_ipc::mcp::CallToolResult;
 use chaos_ipc::openai_models::InputModality;
 use chaos_ipc::protocol::ApprovalPolicy;

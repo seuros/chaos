@@ -25,7 +25,6 @@ use chaos_ipc::dynamic_tools::DynamicToolSpec;
 use chaos_ipc::models::VIEW_IMAGE_TOOL_NAME;
 use chaos_ipc::openai_models::ApplyPatchToolType;
 use chaos_ipc::openai_models::ConfigShellToolType;
-use chaos_ipc::openai_models::InputModality;
 use chaos_ipc::openai_models::ModelInfo;
 use chaos_ipc::openai_models::ModelPreset;
 use chaos_ipc::openai_models::WebSearchToolType;

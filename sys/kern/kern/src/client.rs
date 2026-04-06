@@ -132,7 +132,6 @@ use crate::util::emit_feedback_request_tags;
 use serde_json::Value;
 use serde_json::json;
 
-pub const OPENAI_BETA_HEADER: &str = "OpenAI-Beta";
 pub const X_CODEX_TURN_STATE_HEADER: &str = "x-codex-turn-state";
 pub const X_CODEX_TURN_METADATA_HEADER: &str = "x-codex-turn-metadata";
 pub const X_RESPONSESAPI_INCLUDE_TIMING_METRICS_HEADER: &str =

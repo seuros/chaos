@@ -43,27 +43,6 @@ pub fn should_persist_response_item(item: &ResponseItem) -> bool {
     }
 }
 
-/// Whether a `ResponseItem` should be persisted for the memories pipeline.
-#[inline]
-pub fn should_persist_response_item_for_memories(item: &ResponseItem) -> bool {
-    match item {
-        ResponseItem::Message { role, .. } => role != "developer",
-        ResponseItem::LocalShellCall { .. }
-        | ResponseItem::FunctionCall { .. }
-        | ResponseItem::ToolSearchCall { .. }
-        | ResponseItem::FunctionCallOutput { .. }
-        | ResponseItem::ToolSearchOutput { .. }
-        | ResponseItem::CustomToolCall { .. }
-        | ResponseItem::CustomToolCallOutput { .. }
-        | ResponseItem::WebSearchCall { .. } => true,
-        ResponseItem::Reasoning { .. }
-        | ResponseItem::ImageGenerationCall { .. }
-        | ResponseItem::GhostSnapshot { .. }
-        | ResponseItem::Compaction { .. }
-        | ResponseItem::Other => false,
-    }
-}
-
 #[inline]
 pub fn should_persist_event_msg(ev: &EventMsg, mode: EventPersistenceMode) -> bool {
     match mode {

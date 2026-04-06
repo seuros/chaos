@@ -32,7 +32,6 @@ pub enum Feature {
     DefaultModeRequestUserInput,
     ToolCallMcpElicitation,
     Personality,
-    FastMode,
 }
 
 impl Feature {
@@ -344,12 +343,6 @@ pub const FEATURES: &[FeatureSpec] = &[
     FeatureSpec {
         id: Feature::Personality,
         key: "personality",
-        default_enabled: true,
-        under_development: false,
-    },
-    FeatureSpec {
-        id: Feature::FastMode,
-        key: "fast_mode",
         default_enabled: true,
         under_development: false,
     },

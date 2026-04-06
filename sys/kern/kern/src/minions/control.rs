@@ -19,7 +19,6 @@ use chaos_ipc::protocol::Op;
 use chaos_ipc::protocol::RolloutItem;
 use chaos_ipc::protocol::SessionSource;
 use chaos_ipc::protocol::SubAgentSource;
-use chaos_ipc::protocol::TokenUsage;
 use chaos_ipc::user_input::UserInput;
 use std::sync::Arc;
 use std::sync::Weak;
@@ -337,15 +336,6 @@ impl AgentControl {
         Ok(thread.subscribe_status())
     }
 
-    pub(crate) async fn get_total_token_usage(&self, agent_id: ProcessId) -> Option<TokenUsage> {
-        let Ok(state) = self.upgrade() else {
-            return None;
-        };
-        let Ok(thread) = state.get_process(agent_id).await else {
-            return None;
-        };
-        thread.total_token_usage().await
-    }
 
     pub(crate) async fn format_environment_context_subagents(
         &self,

@@ -1795,7 +1795,7 @@ impl Config {
                 }
             }
         });
-        let mut additional_writable_roots: Vec<AbsolutePathBuf> = additional_writable_roots
+        let additional_writable_roots: Vec<AbsolutePathBuf> = additional_writable_roots
             .into_iter()
             .map(|path| AbsolutePathBuf::resolve_path_against_base(path, &resolved_cwd))
             .collect::<Result<Vec<_>, _>>()?;
@@ -2072,9 +2072,6 @@ impl Config {
         let service_tier = service_tier_override
             .unwrap_or_else(|| config_profile.service_tier.or(cfg.service_tier));
         let service_tier = match service_tier {
-            Some(ServiceTier::Fast) if features.enabled(Feature::FastMode) => {
-                Some(ServiceTier::Fast)
-            }
             Some(ServiceTier::Flex) => Some(ServiceTier::Flex),
             _ => None,
         };

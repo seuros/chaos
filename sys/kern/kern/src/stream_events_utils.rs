@@ -15,7 +15,6 @@ use crate::error::ChaosErr;
 use crate::error::Result;
 use crate::function_tool::FunctionCallError;
 use crate::parse_turn_item;
-use crate::state_db;
 use crate::tools::parallel::ToolCallRuntime;
 use crate::tools::router::ToolRouter;
 use chaos_ipc::models::DeveloperInstructions;
@@ -98,7 +97,7 @@ async fn maybe_mark_process_memory_mode_polluted_from_web_search(
 }
 
 async fn record_stage1_output_usage_for_completed_item(
-    turn_context: &TurnContext,
+    _turn_context: &TurnContext,
     item: &ResponseItem,
 ) {
     let Some(raw_text) = raw_assistant_output_text_from_item(item) else {

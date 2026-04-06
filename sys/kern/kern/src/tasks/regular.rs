@@ -1,14 +1,8 @@
 use std::future::Future;
 use std::pin::Pin;
 use std::sync::Arc;
-use std::sync::Mutex;
-
 use crate::chaos::TurnContext;
 use crate::chaos::run_turn;
-use crate::client::ModelClient;
-use crate::client::ModelClientSession;
-use crate::client_common::Prompt;
-use crate::error::Result as CodexResult;
 use crate::state::TaskKind;
 use chaos_ipc::user_input::UserInput;
 use tokio_util::sync::CancellationToken;
@@ -18,39 +12,8 @@ use tracing::trace_span;
 use super::SessionTask;
 use super::SessionTaskContext;
 
-pub(crate) struct RegularTask {
-    prewarmed_session: Mutex<Option<ModelClientSession>>,
-}
-
-impl Default for RegularTask {
-    fn default() -> Self {
-        Self {
-            prewarmed_session: Mutex::new(None),
-        }
-    }
-}
-
-impl RegularTask {
-    pub(crate) async fn with_startup_prewarm(
-        model_client: ModelClient,
-        _prompt: Prompt,
-        _turn_context: Arc<TurnContext>,
-        _turn_metadata_header: Option<String>,
-    ) -> CodexResult<Self> {
-        let client_session = model_client.new_session();
-
-        Ok(Self {
-            prewarmed_session: Mutex::new(Some(client_session)),
-        })
-    }
-
-    async fn take_prewarmed_session(&self) -> Option<ModelClientSession> {
-        self.prewarmed_session
-            .lock()
-            .unwrap_or_else(std::sync::PoisonError::into_inner)
-            .take()
-    }
-}
+#[derive(Default)]
+pub(crate) struct RegularTask;
 
 impl SessionTask for RegularTask {
     fn kind(&self) -> TaskKind {
@@ -72,16 +35,9 @@ impl SessionTask for RegularTask {
             let sess = session.clone_session();
             let run_turn_span = trace_span!("run_turn");
             sess.set_server_reasoning_included(/*included*/ false).await;
-            let prewarmed_client_session = self.take_prewarmed_session().await;
-            run_turn(
-                sess,
-                ctx,
-                input,
-                prewarmed_client_session,
-                cancellation_token,
-            )
-            .instrument(run_turn_span)
-            .await
+            run_turn(sess, ctx, input, None, cancellation_token)
+                .instrument(run_turn_span)
+                .await
         })
     }
 }

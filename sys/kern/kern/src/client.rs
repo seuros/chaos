@@ -78,13 +78,13 @@ use chaos_ipc::protocol::SessionSource;
 use chaos_ipc::protocol::WarningEvent;
 use chaos_ipc::request_permissions::RequestPermissionProfile;
 use chaos_ipc::request_permissions::RequestPermissionsArgs;
-use eventsource_stream::Event;
-use eventsource_stream::EventStreamError;
 use futures::StreamExt;
 use http::HeaderMap as ApiHeaderMap;
 use http::HeaderValue;
 use http::StatusCode as HttpStatusCode;
 use http::StatusCode;
+use rama::error::BoxError;
+use rama::http::sse::Event;
 use std::time::Duration;
 use tokio::sync::mpsc;
 use tracing::instrument;
@@ -2373,10 +2373,7 @@ impl RequestTelemetry for ApiTelemetry {
 impl SseTelemetry for ApiTelemetry {
     fn on_sse_poll(
         &self,
-        result: &std::result::Result<
-            Option<std::result::Result<Event, EventStreamError<TransportError>>>,
-            tokio::time::error::Elapsed,
-        >,
+        result: &std::result::Result<Option<std::result::Result<Event, BoxError>>, tokio::time::error::Elapsed>,
         duration: Duration,
     ) {
         self.session_telemetry.log_sse_event(result, duration);

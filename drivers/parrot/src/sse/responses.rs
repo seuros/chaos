@@ -8,9 +8,9 @@ use chaos_ipc::protocol::TokenUsage;
 use codex_client::ByteStream;
 use codex_client::StreamResponse;
 use codex_client::TransportError;
-use eventsource_stream::Eventsource;
-use futures::StreamExt;
 use futures::TryStreamExt;
+use rama::futures::StreamExt;
+use rama::http::sse::EventStream;
 use serde::Deserialize;
 use serde_json::Value;
 use std::io::BufRead;
@@ -360,7 +360,7 @@ pub async fn process_sse(
     idle_timeout: Duration,
     telemetry: Option<Arc<dyn SseTelemetry>>,
 ) {
-    let mut stream = stream.eventsource();
+    let mut stream = EventStream::<_, String>::new(stream);
     let mut response_error: Option<ApiError> = None;
     let mut last_server_model: Option<String> = None;
 
@@ -392,12 +392,13 @@ pub async fn process_sse(
             }
         };
 
-        trace!("SSE event: {}", &sse.data);
+        let data = sse.data().map(String::as_str).unwrap_or_default();
+        trace!("SSE event: {}", data);
 
-        let event: ResponsesStreamEvent = match serde_json::from_str(&sse.data) {
+        let event: ResponsesStreamEvent = match serde_json::from_str(data) {
             Ok(event) => event,
             Err(e) => {
-                debug!("Failed to parse SSE event: {e}, data: {}", &sse.data);
+                debug!("Failed to parse SSE event: {e}, data: {data}");
                 continue;
             }
         };

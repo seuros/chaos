@@ -15,6 +15,9 @@ use chaos_abi::TurnEvent;
 use chaos_abi::TurnRequest;
 use chaos_abi::TurnStream;
 use http::HeaderMap;
+use rama::error::BoxError;
+use rama::futures::StreamExt;
+use rama::http::sse::EventStream;
 use serde::Serialize;
 use serde_json::Value;
 use std::time::Duration;
@@ -665,22 +668,20 @@ async fn run_sse_stream(
 }
 
 async fn process_sse_data_stream<S, E>(
-    mut data_stream: S,
+    data_stream: S,
     idle_timeout: Duration,
     tx: mpsc::Sender<Result<TurnEvent, AbiError>>,
 ) -> Result<(), AbiError>
 where
     S: futures::Stream<Item = Result<Bytes, E>> + Unpin,
-    E: std::fmt::Display,
+    E: Into<BoxError> + std::fmt::Display,
 {
     let mut tool_acc: Option<ToolUseAccumulator> = None;
     let mut text_acc: Option<TextAccumulator> = None;
-    let mut buffer = String::new();
-
-    use futures::StreamExt;
+    let mut stream = EventStream::<_, String>::new(data_stream);
     loop {
-        let chunk = match timeout(idle_timeout, data_stream.next()).await {
-            Ok(Some(Ok(chunk))) => chunk,
+        let sse = match timeout(idle_timeout, stream.next()).await {
+            Ok(Some(Ok(sse))) => sse,
             Ok(Some(Err(err))) => return Err(AbiError::Stream(err.to_string())),
             Ok(None) => {
                 return Err(AbiError::Stream(
@@ -689,40 +690,22 @@ where
             }
             Err(_) => return Err(AbiError::Stream("idle timeout waiting for SSE".to_string())),
         };
-        let text = String::from_utf8_lossy(&chunk);
-        buffer.push_str(&text);
+        let Some(event_type) = sse.event() else {
+            continue;
+        };
+        let Some(data) = sse.data() else { continue };
+        let Ok(json) = serde_json::from_str::<Value>(data) else {
+            continue;
+        };
 
-        while let Some(pos) = buffer.find("\n\n") {
-            let event_block = buffer[..pos].to_string();
-            buffer = buffer[pos + 2..].to_string();
-
-            let mut event_type = None;
-            let mut data = None;
-            for line in event_block.lines() {
-                if let Some(rest) = line.strip_prefix("event: ") {
-                    event_type = Some(rest.trim().to_string());
-                } else if let Some(rest) = line.strip_prefix("data: ") {
-                    data = Some(rest.trim().to_string());
-                }
+        let events = parse_sse_event(event_type, &json, &mut tool_acc, &mut text_acc)?;
+        for event in events {
+            let is_done = matches!(&event, TurnEvent::Completed { .. });
+            if tx.send(Ok(event)).await.is_err() {
+                return Ok(());
             }
-
-            let Some(event_type) = event_type else {
-                continue;
-            };
-            let Some(data) = data else { continue };
-            let Ok(json) = serde_json::from_str::<Value>(&data) else {
-                continue;
-            };
-
-            let events = parse_sse_event(&event_type, &json, &mut tool_acc, &mut text_acc)?;
-            for event in events {
-                let is_done = matches!(&event, TurnEvent::Completed { .. });
-                if tx.send(Ok(event)).await.is_err() {
-                    return Ok(());
-                }
-                if is_done {
-                    return Ok(());
-                }
+            if is_done {
+                return Ok(());
             }
         }
     }

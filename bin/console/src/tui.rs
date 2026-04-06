@@ -16,9 +16,12 @@ use crossterm::Command;
 use crossterm::SynchronizedUpdate;
 use crossterm::event::DisableBracketedPaste;
 use crossterm::event::DisableFocusChange;
+use crossterm::event::DisableMouseCapture;
 use crossterm::event::EnableBracketedPaste;
 use crossterm::event::EnableFocusChange;
 use crossterm::event::KeyEvent;
+use crossterm::event::MouseEvent;
+use crossterm::event::EnableMouseCapture;
 use crossterm::event::KeyboardEnhancementFlags;
 use crossterm::event::PopKeyboardEnhancementFlags;
 use crossterm::event::PushKeyboardEnhancementFlags;
@@ -59,6 +62,7 @@ pub type Terminal = CustomTerminal<CrosstermBackend<Stdout>>;
 
 pub fn set_modes() -> Result<()> {
     execute!(stdout(), EnableBracketedPaste)?;
+    execute!(stdout(), EnableMouseCapture)?;
 
     enable_raw_mode()?;
     // Enable keyboard enhancement flags so modifiers for keys like Enter are disambiguated.
@@ -102,6 +106,7 @@ fn restore_common(should_disable_raw_mode: bool) -> Result<()> {
     // Pop may fail on platforms that didn't support the push; ignore errors.
     let _ = execute!(stdout(), PopKeyboardEnhancementFlags);
     execute!(stdout(), DisableBracketedPaste)?;
+    let _ = execute!(stdout(), DisableMouseCapture);
     let _ = execute!(stdout(), DisableFocusChange);
     if should_disable_raw_mode {
         disable_raw_mode()?;
@@ -180,6 +185,7 @@ fn set_panic_hook() {
 #[derive(Clone, Debug)]
 pub enum TuiEvent {
     Key(KeyEvent),
+    Mouse(MouseEvent),
     Paste(String),
     Draw,
 }

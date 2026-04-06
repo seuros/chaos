@@ -182,6 +182,66 @@ fn initial_replay_event_msgs_converts_response_items_for_resume() {
     ));
 }
 
+#[test]
+fn initial_replay_event_msgs_preserves_non_message_response_items() {
+    let process_id = ProcessId::new();
+    let initial_history = InitialHistory::Resumed(ResumedHistory {
+        conversation_id: process_id,
+        history: vec![
+            RolloutItem::ResponseItem(ResponseItem::Reasoning {
+                id: "reasoning_1".to_string(),
+                summary: vec![chaos_ipc::models::ReasoningItemReasoningSummary::SummaryText {
+                    text: "think".to_string(),
+                }],
+                content: Some(vec![chaos_ipc::models::ReasoningItemContent::ReasoningText {
+                    text: "details".to_string(),
+                }]),
+                encrypted_content: None,
+            }),
+            RolloutItem::ResponseItem(ResponseItem::WebSearchCall {
+                id: Some("ws_1".to_string()),
+                status: Some("completed".to_string()),
+                action: Some(chaos_ipc::models::WebSearchAction::Search {
+                    query: Some("weather".to_string()),
+                    queries: None,
+                }),
+            }),
+            RolloutItem::ResponseItem(ResponseItem::ImageGenerationCall {
+                id: "img_1".to_string(),
+                status: "completed".to_string(),
+                revised_prompt: Some("cat".to_string()),
+                result: "image-bytes".to_string(),
+            }),
+        ],
+    });
+
+    let replay = super::initial_replay_event_msgs(&initial_history, process_id)
+        .expect("expected replay events");
+
+    assert_eq!(replay.len(), 3);
+    assert!(matches!(
+        &replay[0],
+        EventMsg::ItemCompleted(ItemCompletedEvent {
+            item: TurnItem::Reasoning(_),
+            ..
+        })
+    ));
+    assert!(matches!(
+        &replay[1],
+        EventMsg::ItemCompleted(ItemCompletedEvent {
+            item: TurnItem::WebSearch(_),
+            ..
+        })
+    ));
+    assert!(matches!(
+        &replay[2],
+        EventMsg::ItemCompleted(ItemCompletedEvent {
+            item: TurnItem::ImageGeneration(_),
+            ..
+        })
+    ));
+}
+
 fn test_tool_runtime(session: Arc<Session>, turn_context: Arc<TurnContext>) -> ToolCallRuntime {
     let router = Arc::new(ToolRouter::from_config(
         &turn_context.tools_config,

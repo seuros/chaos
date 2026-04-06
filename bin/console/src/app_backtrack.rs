@@ -234,9 +234,18 @@ impl App {
     }
 
     /// Open transcript overlay (enters alternate screen and shows full transcript).
-    pub(crate) fn open_transcript_overlay(&mut self, tui: &mut tui::Tui) {
+    pub(crate) fn open_transcript_overlay(
+        &mut self,
+        tui: &mut tui::Tui,
+        initial_key: Option<crossterm::event::KeyEvent>,
+    ) {
         let _ = tui.enter_alt_screen();
         self.overlay = Some(Overlay::new_transcript(self.transcript_cells.clone()));
+        if let Some(key_event) = initial_key
+            && let Some(overlay) = &mut self.overlay
+        {
+            let _ = overlay.handle_event(tui, crate::tui::TuiEvent::Key(key_event));
+        }
         tui.frame_requester().schedule_frame();
     }
 
@@ -277,7 +286,7 @@ impl App {
 
     /// Open overlay and begin backtrack preview flow (first step + highlight).
     fn open_backtrack_preview(&mut self, tui: &mut tui::Tui) {
-        self.open_transcript_overlay(tui);
+        self.open_transcript_overlay(tui, None);
         self.backtrack.overlay_preview_active = true;
         // Composer is hidden by overlay; clear its hint.
         self.chat_widget.clear_esc_backtrack_hint();

@@ -151,6 +151,37 @@ fn developer_input_texts(items: &[ResponseItem]) -> Vec<&str> {
         .collect()
 }
 
+#[test]
+fn initial_replay_event_msgs_converts_response_items_for_resume() {
+    let process_id = ProcessId::new();
+    let initial_history = InitialHistory::Resumed(ResumedHistory {
+        conversation_id: process_id,
+        history: vec![
+            RolloutItem::ResponseItem(user_message("hello from user")),
+            RolloutItem::ResponseItem(assistant_message("assistant reply")),
+        ],
+    });
+
+    let replay = super::initial_replay_event_msgs(&initial_history, process_id)
+        .expect("expected replay events");
+
+    assert_eq!(replay.len(), 2);
+    assert!(matches!(
+        &replay[0],
+        EventMsg::ItemCompleted(ItemCompletedEvent {
+            item: TurnItem::UserMessage(_),
+            ..
+        })
+    ));
+    assert!(matches!(
+        &replay[1],
+        EventMsg::ItemCompleted(ItemCompletedEvent {
+            item: TurnItem::AgentMessage(_),
+            ..
+        })
+    ));
+}
+
 fn test_tool_runtime(session: Arc<Session>, turn_context: Arc<TurnContext>) -> ToolCallRuntime {
     let router = Arc::new(ToolRouter::from_config(
         &turn_context.tools_config,

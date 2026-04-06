@@ -3089,6 +3089,14 @@ impl App {
                 return;
             }
             KeyEvent {
+                code: KeyCode::PageUp,
+                kind: KeyEventKind::Press | KeyEventKind::Repeat,
+                ..
+            } if self.overlay.is_none() && self.chat_widget.no_modal_or_popup_active() => {
+                self.open_transcript_overlay(tui, Some(key_event));
+                return;
+            }
+            KeyEvent {
                 code: KeyCode::PageDown,
                 kind: KeyEventKind::Press | KeyEventKind::Repeat,
                 ..
@@ -3130,9 +3138,7 @@ impl App {
                 kind: KeyEventKind::Press,
                 ..
             } => {
-                let _ = tui.enter_alt_screen();
-                self.overlay = Some(Overlay::new_transcript(self.transcript_cells.clone()));
-                tui.frame_requester().schedule_frame();
+                self.open_transcript_overlay(tui, None);
                 return;
             }
             KeyEvent {
@@ -5043,6 +5049,17 @@ mod tests {
         }
     }
 
+    #[cfg(feature = "vt100-tests")]
+    fn make_test_tui() -> crate::tui::Tui {
+        let terminal = crate::custom_terminal::Terminal::with_options(
+            crate::test_backend::VT100Backend::new(100, 30),
+        )
+        .expect("test terminal");
+        let mut tui = crate::tui::Tui::new(terminal);
+        tui.draw(10, |_frame| {}).expect("prime test tui");
+        tui
+    }
+
     async fn make_test_app_with_channels() -> (
         App,
         tokio::sync::mpsc::UnboundedReceiver<AppEvent>,
@@ -5747,6 +5764,47 @@ mod tests {
             _ => panic!("expected transcript overlay"),
         };
         assert_eq!(overlay_cell_count, app.transcript_cells.len());
+    }
+
+    #[cfg(feature = "vt100-tests")]
+    #[tokio::test]
+    async fn page_up_opens_transcript_overlay_from_main_view() {
+        let mut app = make_test_app().await;
+        let mut tui = make_test_tui();
+        app.transcript_cells = vec![
+            Arc::new(UserHistoryCell {
+                message: "first".to_string(),
+                text_elements: Vec::new(),
+                local_image_paths: Vec::new(),
+                remote_image_urls: Vec::new(),
+            }) as Arc<dyn HistoryCell>,
+            Arc::new(AgentMessageCell::new(vec![Line::from("reply")], false)) as Arc<dyn HistoryCell>,
+        ];
+
+        app.handle_key_event(
+            &mut tui,
+            KeyEvent::new(KeyCode::PageUp, KeyModifiers::NONE),
+        )
+        .await;
+
+        assert!(matches!(app.overlay, Some(Overlay::Transcript(_))));
+    }
+
+    #[cfg(feature = "vt100-tests")]
+    #[tokio::test]
+    async fn page_up_keeps_log_panel_priority_when_visible() {
+        let mut app = make_test_app().await;
+        let mut tui = make_test_tui();
+        app.log_panel = LogPanelState::default();
+        app.log_panel.toggle();
+
+        app.handle_key_event(
+            &mut tui,
+            KeyEvent::new(KeyCode::PageUp, KeyModifiers::NONE),
+        )
+        .await;
+
+        assert!(app.overlay.is_none(), "log panel PageUp should not open transcript overlay");
     }
 
     #[tokio::test]

@@ -277,6 +277,17 @@ impl PagerView {
             .sum()
     }
 
+    fn resolved_scroll_offset_for_area(&self, content_area: Rect) -> usize {
+        let max_scroll = self
+            .content_height(content_area.width)
+            .saturating_sub(content_area.height as usize);
+        if self.scroll_offset == usize::MAX {
+            max_scroll
+        } else {
+            self.scroll_offset.min(max_scroll)
+        }
+    }
+
     fn render(&mut self, area: Rect, buf: &mut Buffer) {
         Clear.render(area, buf);
         self.render_header(area, buf);
@@ -375,33 +386,33 @@ impl PagerView {
     }
 
     fn handle_key_event(&mut self, tui: &mut tui::Tui, key_event: KeyEvent) -> Result<()> {
+        let content_area = self.content_area(tui.terminal.viewport_area);
+        let current_offset = self.resolved_scroll_offset_for_area(content_area);
         match key_event {
             e if KEY_UP.is_press(e) || KEY_K.is_press(e) => {
-                self.scroll_offset = self.scroll_offset.saturating_sub(1);
+                self.scroll_offset = current_offset.saturating_sub(1);
             }
             e if KEY_DOWN.is_press(e) || KEY_J.is_press(e) => {
-                self.scroll_offset = self.scroll_offset.saturating_add(1);
+                self.scroll_offset = current_offset.saturating_add(1);
             }
             e if KEY_PAGE_UP.is_press(e)
                 || KEY_SHIFT_SPACE.is_press(e)
                 || KEY_CTRL_B.is_press(e) =>
             {
                 let page_height = self.page_height(tui.terminal.viewport_area);
-                self.scroll_offset = self.scroll_offset.saturating_sub(page_height);
+                self.scroll_offset = current_offset.saturating_sub(page_height);
             }
             e if KEY_PAGE_DOWN.is_press(e) || KEY_SPACE.is_press(e) || KEY_CTRL_F.is_press(e) => {
                 let page_height = self.page_height(tui.terminal.viewport_area);
-                self.scroll_offset = self.scroll_offset.saturating_add(page_height);
+                self.scroll_offset = current_offset.saturating_add(page_height);
             }
             e if KEY_CTRL_D.is_press(e) => {
-                let area = self.content_area(tui.terminal.viewport_area);
-                let half_page = (area.height as usize).saturating_add(1) / 2;
-                self.scroll_offset = self.scroll_offset.saturating_add(half_page);
+                let half_page = (content_area.height as usize).saturating_add(1) / 2;
+                self.scroll_offset = current_offset.saturating_add(half_page);
             }
             e if KEY_CTRL_U.is_press(e) => {
-                let area = self.content_area(tui.terminal.viewport_area);
-                let half_page = (area.height as usize).saturating_add(1) / 2;
-                self.scroll_offset = self.scroll_offset.saturating_sub(half_page);
+                let half_page = (content_area.height as usize).saturating_add(1) / 2;
+                self.scroll_offset = current_offset.saturating_sub(half_page);
             }
             e if KEY_HOME.is_press(e) => {
                 self.scroll_offset = 0;
@@ -1410,5 +1421,16 @@ mod tests {
             pv.is_scrolled_to_bottom(),
             "expected view to report at bottom after scrolling to end"
         );
+    }
+
+    #[test]
+    fn pager_view_resolves_bottom_sentinel_to_max_scroll() {
+        let pv = PagerView::new(vec![paragraph_block("a", 10)], "T".to_string(), usize::MAX);
+        let area = Rect::new(0, 0, 20, 8);
+
+        let resolved = pv.resolved_scroll_offset_for_area(pv.content_area(area));
+
+        assert!(resolved > 0, "expected a concrete bottom offset, got {resolved}");
+        assert_ne!(resolved, usize::MAX);
     }
 }

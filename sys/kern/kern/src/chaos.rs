@@ -1707,7 +1707,7 @@ impl Session {
 
         // Dispatch the SessionConfiguredEvent first and then report any errors.
         // If resuming, include converted initial messages in the payload so UIs can render them immediately.
-        let initial_messages = initial_history.get_event_msgs();
+        let initial_messages = initial_replay_event_msgs(&initial_history, conversation_id);
         let events = std::iter::once(Event {
             id: INITIAL_SUBMIT_ID.to_owned(),
             msg: EventMsg::SessionConfigured(SessionConfiguredEvent {
@@ -2268,14 +2268,17 @@ impl Session {
 
     pub(crate) async fn maybe_emit_unknown_model_warning_for_turn(&self, tc: &TurnContext) {
         if tc.model_info.used_fallback_model_metadata && !self.services.model_client.is_clamped() {
+            let message = if tc.model_info.slug.is_empty() {
+                "No model configured. Are you logged in? Run `chaos login` or set an API key.".to_string()
+            } else {
+                format!(
+                    "Model metadata for `{}` not found. Defaulting to fallback metadata; this can degrade performance and cause issues.",
+                    tc.model_info.slug
+                )
+            };
             self.send_event(
                 tc,
-                EventMsg::Warning(WarningEvent {
-                    message: format!(
-                        "Model metadata for `{}` not found. Defaulting to fallback metadata; this can degrade performance and cause issues.",
-                        tc.model_info.slug
-                    ),
-                }),
+                EventMsg::Warning(WarningEvent { message }),
             )
             .await;
         }
@@ -3970,6 +3973,34 @@ impl Session {
             .lock()
             .await
             .cancel();
+    }
+}
+
+fn initial_replay_event_msgs(
+    initial_history: &InitialHistory,
+    process_id: ProcessId,
+) -> Option<Vec<EventMsg>> {
+    let mut events = Vec::new();
+    for item in initial_history.get_rollout_items() {
+        match item {
+            RolloutItem::EventMsg(event) => events.push(event),
+            RolloutItem::ResponseItem(response_item) => {
+                if let Some(item) = parse_turn_item(&response_item) {
+                    events.push(EventMsg::ItemCompleted(ItemCompletedEvent {
+                        process_id,
+                        turn_id: String::new(),
+                        item,
+                    }));
+                }
+            }
+            RolloutItem::SessionMeta(_) | RolloutItem::TurnContext(_) | RolloutItem::Compacted(_) => {}
+        }
+    }
+
+    if events.is_empty() {
+        None
+    } else {
+        Some(events)
     }
 }
 

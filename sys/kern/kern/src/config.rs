@@ -22,7 +22,6 @@ use crate::config::types::SkillsConfig;
 use crate::config::types::Tui;
 use crate::config::types::UriBasedFileOpener;
 use crate::config::types::WindowsToml;
-use crate::config_loader::CloudRequirementsLoader;
 use crate::config_loader::ConfigLayerStack;
 use crate::config_loader::ConfigLayerStackOrdering;
 use crate::config_loader::ConfigRequirements;
@@ -529,7 +528,6 @@ pub struct ConfigBuilder {
     cli_overrides: Option<Vec<(String, TomlValue)>>,
     harness_overrides: Option<ConfigOverrides>,
     loader_overrides: Option<LoaderOverrides>,
-    cloud_requirements: CloudRequirementsLoader,
     fallback_cwd: Option<PathBuf>,
 }
 
@@ -554,11 +552,6 @@ impl ConfigBuilder {
         self
     }
 
-    pub fn cloud_requirements(mut self, cloud_requirements: CloudRequirementsLoader) -> Self {
-        self.cloud_requirements = cloud_requirements;
-        self
-    }
-
     pub fn fallback_cwd(mut self, fallback_cwd: Option<PathBuf>) -> Self {
         self.fallback_cwd = fallback_cwd;
         self
@@ -570,7 +563,6 @@ impl ConfigBuilder {
             cli_overrides,
             harness_overrides,
             loader_overrides,
-            cloud_requirements,
             fallback_cwd,
         } = self;
         let chaos_home = chaos_home.map_or_else(find_chaos_home, std::io::Result::Ok)?;
@@ -586,14 +578,9 @@ impl ConfigBuilder {
             None => AbsolutePathBuf::current_dir()?,
         };
         harness_overrides.cwd = Some(cwd.to_path_buf());
-        let config_layer_stack = load_config_layers_state(
-            &chaos_home,
-            Some(cwd),
-            &cli_overrides,
-            loader_overrides,
-            cloud_requirements,
-        )
-        .await?;
+        let config_layer_stack =
+            load_config_layers_state(&chaos_home, Some(cwd), &cli_overrides, loader_overrides)
+                .await?;
         let merged_toml = config_layer_stack.effective_config();
 
         // Note that each layer in ConfigLayerStack should have resolved
@@ -765,7 +752,6 @@ pub async fn load_config_as_toml_with_cli_overrides(
         Some(cwd.clone()),
         &cli_overrides,
         LoaderOverrides::default(),
-        CloudRequirementsLoader::default(),
     )
     .await?;
 
@@ -930,14 +916,9 @@ pub async fn load_global_mcp_servers(
     // There is no cwd/project context for this query, so this will not include
     // MCP servers defined in in-repo .codex/ folders.
     let cwd: Option<AbsolutePathBuf> = None;
-    let config_layer_stack = load_config_layers_state(
-        chaos_home,
-        cwd,
-        &cli_overrides,
-        LoaderOverrides::default(),
-        CloudRequirementsLoader::default(),
-    )
-    .await?;
+    let config_layer_stack =
+        load_config_layers_state(chaos_home, cwd, &cli_overrides, LoaderOverrides::default())
+            .await?;
     let merged_toml = config_layer_stack.effective_config();
     let Some(servers_value) = merged_toml.get("mcp_servers") else {
         return Ok(BTreeMap::new());

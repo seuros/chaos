@@ -273,8 +273,6 @@ pub async fn run_main(cli: Cli, arg0_paths: Arg0DispatchPaths) -> anyhow::Result
         }
     };
 
-    let cloud_requirements = chaos_kern::config_loader::CloudRequirementsLoader::default();
-
     let model_provider = if oss {
         let resolved = resolve_oss_provider(
             oss_provider.as_deref(),
@@ -331,7 +329,6 @@ pub async fn run_main(cli: Cli, arg0_paths: Arg0DispatchPaths) -> anyhow::Result
     let config = ConfigBuilder::default()
         .cli_overrides(cli_kv_overrides)
         .harness_overrides(overrides)
-        .cloud_requirements(cloud_requirements)
         .build()
         .await?;
 

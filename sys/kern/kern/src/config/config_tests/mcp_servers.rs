@@ -65,7 +65,7 @@ fn filter_mcp_servers_by_allowlist_enforces_identity_rules() {
         (MATCHED_URL_SERVER.to_string(), http_mcp(GOOD_URL)),
         (DIFFERENT_NAME_SERVER.to_string(), stdio_mcp("same-cmd")),
     ]);
-    let source = RequirementSource::CloudRequirements;
+    let source = RequirementSource::Unknown;
     let requirements = Sourced::new(
         BTreeMap::from([
             (
@@ -158,7 +158,7 @@ fn filter_mcp_servers_by_allowlist_blocks_all_when_empty() {
         ("server-b".to_string(), http_mcp("https://example.com/b")),
     ]);
 
-    let source = RequirementSource::CloudRequirements;
+    let source = RequirementSource::Unknown;
     let requirements = Sourced::new(BTreeMap::new(), source.clone());
     filter_mcp_servers_by_requirements(&mut servers, Some(&requirements));
 
@@ -254,42 +254,6 @@ async fn replace_mcp_servers_round_trips_entries() -> anyhow::Result<()> {
     let loaded = load_global_mcp_servers(chaos_home.path()).await?;
     assert!(loaded.is_empty());
 
-    Ok(())
-}
-
-#[tokio::test]
-async fn managed_config_wins_over_cli_overrides() -> anyhow::Result<()> {
-    let chaos_home = TempDir::new()?;
-    let managed_path = chaos_home.path().join("managed_config.toml");
-
-    std::fs::write(
-        chaos_home.path().join(CONFIG_TOML_FILE),
-        "model = \"base\"\n",
-    )?;
-    std::fs::write(&managed_path, "model = \"managed_config\"\n")?;
-
-    let overrides = LoaderOverrides {
-        managed_config_path: Some(managed_path),
-    };
-
-    let cwd = AbsolutePathBuf::try_from(chaos_home.path())?;
-    let config_layer_stack = load_config_layers_state(
-        chaos_home.path(),
-        Some(cwd),
-        &[("model".to_string(), TomlValue::String("cli".to_string()))],
-        overrides,
-        CloudRequirementsLoader::default(),
-    )
-    .await?;
-
-    let cfg =
-        deserialize_config_toml_with_base(config_layer_stack.effective_config(), chaos_home.path())
-            .map_err(|e| {
-                tracing::error!("Failed to deserialize overridden config: {e}");
-                e
-            })?;
-
-    assert_eq!(cfg.model.as_deref(), Some("managed_config"));
     Ok(())
 }
 

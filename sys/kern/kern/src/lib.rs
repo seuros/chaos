@@ -5,6 +5,14 @@
 // the TUI or the tracing stack).
 #![deny(clippy::print_stdout, clippy::print_stderr)]
 
+// Force-link catalog module crates so the linker preserves their
+// `inventory::submit!` registrations. Without these references the linker
+// may drop the object files and `inventory::iter` will not discover the
+// static CatalogRegistration entries.
+extern crate chaos_arsenal;
+extern crate chaos_cron;
+extern crate chaos_git;
+
 pub mod api_bridge;
 mod apply_patch;
 mod arc_monitor;

@@ -2,11 +2,9 @@ use super::*;
 use anyhow::Result;
 use chaos_ipc::api::AppConfig;
 use chaos_ipc::api::AppToolApproval;
-use chaos_ipc::api::ApprovalPolicyV2 as ApprovalPolicy;
 use chaos_ipc::api::AppsConfig;
 use chaos_realpath::AbsolutePathBuf;
 use pretty_assertions::assert_eq;
-use std::collections::BTreeMap;
 use tempfile::tempdir;
 
 #[test]
@@ -171,18 +169,7 @@ async fn read_includes_origins_and_layers() {
     std::fs::write(&user_path, "model = \"user\"").unwrap();
     let user_file = AbsolutePathBuf::try_from(user_path.clone()).expect("user file");
 
-    let managed_path = tmp.path().join("managed_config.toml");
-    std::fs::write(&managed_path, "approval_policy = \"headless\"").unwrap();
-    let managed_file = AbsolutePathBuf::try_from(managed_path.clone()).expect("managed file");
-
-    let service = ConfigService::new(
-        tmp.path().to_path_buf(),
-        vec![],
-        LoaderOverrides {
-            managed_config_path: Some(managed_path.clone()),
-        },
-        CloudRequirementsLoader::default(),
-    );
+    let service = ConfigService::new_with_defaults(tmp.path().to_path_buf());
 
     let response = service
         .read(ConfigReadParams {
@@ -192,97 +179,26 @@ async fn read_includes_origins_and_layers() {
         .await
         .expect("response");
 
-    assert_eq!(
-        response.config.approval_policy,
-        Some(ApprovalPolicy::Headless)
-    );
+    assert_eq!(response.config.model.as_deref(), Some("user"));
 
     assert_eq!(
-        response
-            .origins
-            .get("approval_policy")
-            .expect("origin")
-            .name,
-        ConfigLayerSource::LegacyManagedConfigTomlFromFile {
-            file: managed_file.clone()
+        response.origins.get("model").expect("origin").name,
+        ConfigLayerSource::User {
+            file: user_file.clone()
         },
     );
     let layers = response.layers.expect("layers present");
-    assert_eq!(layers.len(), 3, "expected three layers");
+    assert_eq!(layers.len(), 2, "expected two layers");
     assert_eq!(
         layers.first().unwrap().name,
-        ConfigLayerSource::LegacyManagedConfigTomlFromFile {
-            file: managed_file.clone()
-        }
-    );
-    assert_eq!(
-        layers.get(1).unwrap().name,
         ConfigLayerSource::User {
             file: user_file.clone()
         }
     );
     assert!(matches!(
-        layers.get(2).unwrap().name,
+        layers.get(1).unwrap().name,
         ConfigLayerSource::System { .. }
     ));
-}
-
-#[tokio::test]
-async fn write_value_reports_override() {
-    let tmp = tempdir().expect("tempdir");
-    std::fs::write(
-        tmp.path().join(CONFIG_TOML_FILE),
-        "approval_policy = \"interactive\"",
-    )
-    .unwrap();
-
-    let managed_path = tmp.path().join("managed_config.toml");
-    std::fs::write(&managed_path, "approval_policy = \"headless\"").unwrap();
-    let managed_file = AbsolutePathBuf::try_from(managed_path.clone()).expect("managed file");
-
-    let service = ConfigService::new(
-        tmp.path().to_path_buf(),
-        vec![],
-        LoaderOverrides {
-            managed_config_path: Some(managed_path.clone()),
-        },
-        CloudRequirementsLoader::default(),
-    );
-
-    let result = service
-        .write_value(ConfigValueWriteParams {
-            file_path: Some(tmp.path().join(CONFIG_TOML_FILE).display().to_string()),
-            key_path: "approval_policy".to_string(),
-            value: serde_json::json!("headless"),
-            merge_strategy: MergeStrategy::Replace,
-            expected_version: None,
-        })
-        .await
-        .expect("result");
-
-    let read_after = service
-        .read(ConfigReadParams {
-            include_layers: true,
-            cwd: None,
-        })
-        .await
-        .expect("read");
-    assert_eq!(
-        read_after.config.approval_policy,
-        Some(ApprovalPolicy::Headless)
-    );
-    assert_eq!(
-        read_after
-            .origins
-            .get("approval_policy")
-            .expect("origin")
-            .name,
-        ConfigLayerSource::LegacyManagedConfigTomlFromFile {
-            file: managed_file.clone()
-        }
-    );
-    assert_eq!(result.status, WriteStatus::Ok);
-    assert!(result.overridden_metadata.is_none());
 }
 
 #[tokio::test]
@@ -334,21 +250,11 @@ async fn write_value_defaults_to_user_config_path() {
 }
 
 #[tokio::test]
-async fn invalid_user_value_rejected_even_if_overridden_by_managed() {
+async fn invalid_user_value_rejected() {
     let tmp = tempdir().expect("tempdir");
     std::fs::write(tmp.path().join(CONFIG_TOML_FILE), "model = \"user\"").unwrap();
 
-    let managed_path = tmp.path().join("managed_config.toml");
-    std::fs::write(&managed_path, "approval_policy = \"headless\"").unwrap();
-
-    let service = ConfigService::new(
-        tmp.path().to_path_buf(),
-        vec![],
-        LoaderOverrides {
-            managed_config_path: Some(managed_path.clone()),
-        },
-        CloudRequirementsLoader::default(),
-    );
+    let service = ConfigService::new_with_defaults(tmp.path().to_path_buf());
 
     let error = service
         .write_value(ConfigValueWriteParams {
@@ -399,111 +305,11 @@ async fn reserved_builtin_provider_override_rejected() {
 }
 
 #[tokio::test]
-async fn write_value_rejects_feature_requirement_conflict() {
-    let tmp = tempdir().expect("tempdir");
-    std::fs::write(tmp.path().join(CONFIG_TOML_FILE), "").unwrap();
-
-    let service = ConfigService::new(
-        tmp.path().to_path_buf(),
-        vec![],
-        LoaderOverrides {
-            managed_config_path: None,
-        },
-        CloudRequirementsLoader::new(async {
-            Ok(Some(ConfigRequirementsToml {
-                feature_requirements: Some(crate::config_loader::FeatureRequirementsToml {
-                    entries: BTreeMap::from([("personality".to_string(), true)]),
-                }),
-                ..Default::default()
-            }))
-        }),
-    );
-
-    let error = service
-        .write_value(ConfigValueWriteParams {
-            file_path: Some(tmp.path().join(CONFIG_TOML_FILE).display().to_string()),
-            key_path: "features.personality".to_string(),
-            value: serde_json::json!(false),
-            merge_strategy: MergeStrategy::Replace,
-            expected_version: None,
-        })
-        .await
-        .expect_err("conflicting feature write should fail");
-
-    assert_eq!(
-        error.write_error_code(),
-        Some(ConfigWriteErrorCode::ConfigValidationError)
-    );
-    assert!(
-        error
-            .to_string()
-            .contains("invalid value for `features`: `features.personality=false`"),
-        "{error}"
-    );
-    assert_eq!(
-        std::fs::read_to_string(tmp.path().join(CONFIG_TOML_FILE)).unwrap(),
-        ""
-    );
-}
-
-#[tokio::test]
-async fn write_value_rejects_profile_feature_requirement_conflict() {
-    let tmp = tempdir().expect("tempdir");
-    std::fs::write(tmp.path().join(CONFIG_TOML_FILE), "").unwrap();
-
-    let service = ConfigService::new(
-        tmp.path().to_path_buf(),
-        vec![],
-        LoaderOverrides {
-            managed_config_path: None,
-        },
-        CloudRequirementsLoader::new(async {
-            Ok(Some(ConfigRequirementsToml {
-                feature_requirements: Some(crate::config_loader::FeatureRequirementsToml {
-                    entries: BTreeMap::from([("personality".to_string(), true)]),
-                }),
-                ..Default::default()
-            }))
-        }),
-    );
-
-    let error = service
-        .write_value(ConfigValueWriteParams {
-            file_path: Some(tmp.path().join(CONFIG_TOML_FILE).display().to_string()),
-            key_path: "profiles.enterprise.features.personality".to_string(),
-            value: serde_json::json!(false),
-            merge_strategy: MergeStrategy::Replace,
-            expected_version: None,
-        })
-        .await
-        .expect_err("conflicting profile feature write should fail");
-
-    assert_eq!(
-        error.write_error_code(),
-        Some(ConfigWriteErrorCode::ConfigValidationError)
-    );
-    assert!(
-        error.to_string().contains(
-            "invalid value for `features`: `profiles.enterprise.features.personality=false`"
-        ),
-        "{error}"
-    );
-    assert_eq!(
-        std::fs::read_to_string(tmp.path().join(CONFIG_TOML_FILE)).unwrap(),
-        ""
-    );
-}
-
-#[tokio::test]
-async fn read_reports_managed_overrides_user_and_session_flags() {
+async fn read_reports_session_flags_override_user() {
     let tmp = tempdir().expect("tempdir");
     let user_path = tmp.path().join(CONFIG_TOML_FILE);
     std::fs::write(&user_path, "model = \"user\"").unwrap();
     let user_file = AbsolutePathBuf::try_from(user_path.clone()).expect("user file");
-
-    let managed_path = tmp.path().join("managed_config.toml");
-    std::fs::write(&managed_path, "model = \"system\"").unwrap();
-    let managed_file = AbsolutePathBuf::try_from(managed_path.clone()).expect("managed file");
 
     let cli_overrides = vec![(
         "model".to_string(),
@@ -513,10 +319,7 @@ async fn read_reports_managed_overrides_user_and_session_flags() {
     let service = ConfigService::new(
         tmp.path().to_path_buf(),
         cli_overrides,
-        LoaderOverrides {
-            managed_config_path: Some(managed_path.clone()),
-        },
-        CloudRequirementsLoader::default(),
+        LoaderOverrides::default(),
     );
 
     let response = service
@@ -527,61 +330,20 @@ async fn read_reports_managed_overrides_user_and_session_flags() {
         .await
         .expect("response");
 
-    assert_eq!(response.config.model.as_deref(), Some("system"));
+    assert_eq!(response.config.model.as_deref(), Some("session"));
     assert_eq!(
         response.origins.get("model").expect("origin").name,
-        ConfigLayerSource::LegacyManagedConfigTomlFromFile {
-            file: managed_file.clone()
-        },
+        ConfigLayerSource::SessionFlags,
     );
     let layers = response.layers.expect("layers");
     assert_eq!(
         layers.first().unwrap().name,
-        ConfigLayerSource::LegacyManagedConfigTomlFromFile { file: managed_file }
+        ConfigLayerSource::SessionFlags
     );
-    assert_eq!(layers.get(1).unwrap().name, ConfigLayerSource::SessionFlags);
     assert_eq!(
-        layers.get(2).unwrap().name,
+        layers.get(1).unwrap().name,
         ConfigLayerSource::User { file: user_file }
     );
-}
-
-#[tokio::test]
-async fn write_value_reports_managed_override() {
-    let tmp = tempdir().expect("tempdir");
-    std::fs::write(tmp.path().join(CONFIG_TOML_FILE), "").unwrap();
-
-    let managed_path = tmp.path().join("managed_config.toml");
-    std::fs::write(&managed_path, "approval_policy = \"headless\"").unwrap();
-    let managed_file = AbsolutePathBuf::try_from(managed_path.clone()).expect("managed file");
-
-    let service = ConfigService::new(
-        tmp.path().to_path_buf(),
-        vec![],
-        LoaderOverrides {
-            managed_config_path: Some(managed_path.clone()),
-        },
-        CloudRequirementsLoader::default(),
-    );
-
-    let result = service
-        .write_value(ConfigValueWriteParams {
-            file_path: Some(tmp.path().join(CONFIG_TOML_FILE).display().to_string()),
-            key_path: "approval_policy".to_string(),
-            value: serde_json::json!("interactive"),
-            merge_strategy: MergeStrategy::Replace,
-            expected_version: None,
-        })
-        .await
-        .expect("result");
-
-    assert_eq!(result.status, WriteStatus::OkOverridden);
-    let overridden = result.overridden_metadata.expect("overridden metadata");
-    assert_eq!(
-        overridden.overriding_layer.name,
-        ConfigLayerSource::LegacyManagedConfigTomlFromFile { file: managed_file }
-    );
-    assert_eq!(overridden.effective_value, serde_json::json!("headless"));
 }
 
 #[tokio::test]

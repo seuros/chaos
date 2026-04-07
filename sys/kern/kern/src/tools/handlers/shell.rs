@@ -120,7 +120,6 @@ impl ShellCommandHandler {
     }
 }
 
-
 impl ToolHandler for ShellHandler {
     type Output = FunctionToolOutput;
 

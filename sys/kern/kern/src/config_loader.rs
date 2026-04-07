@@ -1,15 +1,10 @@
-mod layer_io;
-
 #[cfg(test)]
 mod tests;
 
 use crate::config::ConfigToml;
-use crate::config_loader::layer_io::LoadedConfigLayers;
 use crate::git_info::resolve_root_git_project_for_trust;
 use chaos_ipc::api::ConfigLayerSource;
-use chaos_ipc::config_types::SandboxMode;
 use chaos_ipc::config_types::TrustLevel;
-use chaos_ipc::protocol::ApprovalPolicy;
 use chaos_realpath::AbsolutePathBuf;
 use chaos_realpath::AbsolutePathBufGuard;
 use chaos_sysctl::CONFIG_TOML_FILE;
@@ -25,9 +20,6 @@ use toml::Value as TomlValue;
 
 pub use chaos_sysctl::AppRequirementToml;
 pub use chaos_sysctl::AppsRequirementsToml;
-pub use chaos_sysctl::CloudRequirementsLoadError;
-pub use chaos_sysctl::CloudRequirementsLoadErrorCode;
-pub use chaos_sysctl::CloudRequirementsLoader;
 pub use chaos_sysctl::ConfigError;
 pub use chaos_sysctl::ConfigLayerEntry;
 pub use chaos_sysctl::ConfigLayerStack;
@@ -77,23 +69,12 @@ pub(crate) async fn first_layer_config_error_from_entries(
         .await
 }
 
-/// To build up the set of admin-enforced constraints, we build up from multiple
-/// configuration layers in the following order, but a constraint defined in an
-/// earlier layer cannot be overridden by a later layer:
-///
-/// - cloud:    managed cloud requirements
-/// - admin:    managed preferences (*)
-/// - system    `/etc/chaos/requirements.toml` (Unix) or
-///   `%ProgramData%\OpenAI\Codex\requirements.toml` (Windows)
-///
-/// For backwards compatibility, we also load from
-/// `managed_config.toml` and map it to `requirements.toml`.
+/// To build up the set of admin-enforced constraints, we load from the system
+/// requirements file `/etc/chaos/requirements.toml`.
 ///
 /// Configuration is built up from multiple layers in the following order:
 ///
-/// - admin:    managed preferences (*)
-/// - system    `/etc/chaos/config.toml` (Unix) or
-///   `%ProgramData%\OpenAI\Codex\config.toml` (Windows)
+/// - system    `/etc/chaos/config.toml`
 /// - user      `${CHAOS_HOME}/config.toml`
 /// - cwd       `${PWD}/config.toml` (loaded but disabled when the directory is untrusted)
 /// - tree      parent directories up to root looking for `./.chaos/config.toml`
@@ -101,10 +82,6 @@ pub(crate) async fn first_layer_config_error_from_entries(
 /// - repo      `$(git rev-parse --show-toplevel)/.chaos/config.toml` (loaded
 ///   but disabled when untrusted)
 /// - runtime   e.g., --config flags, model selector in UI
-///
-/// (*) Only available on macOS via managed device profiles.
-///
-/// See https://developers.openai.com/codex/security for details.
 ///
 /// When loading the config stack for a thread, there should be a `cwd`
 /// associated with it such that `cwd` should be `Some(...)`. Only for
@@ -115,27 +92,14 @@ pub async fn load_config_layers_state(
     cwd: Option<AbsolutePathBuf>,
     cli_overrides: &[(String, TomlValue)],
     overrides: LoaderOverrides,
-    cloud_requirements: CloudRequirementsLoader,
 ) -> io::Result<ConfigLayerStack> {
     let mut config_requirements_toml = ConfigRequirementsWithSources::default();
 
-    if let Some(requirements) = cloud_requirements.get().await.map_err(io::Error::other)? {
-        config_requirements_toml
-            .merge_unset_fields(RequirementSource::CloudRequirements, requirements);
-    }
+    let _overrides = overrides;
 
     // Honor the system requirements.toml location.
     let requirements_toml_file = system_requirements_toml_file()?;
     load_requirements_toml(&mut config_requirements_toml, requirements_toml_file).await?;
-
-    // Make a best-effort to support the legacy `managed_config.toml` as a
-    // requirements specification.
-    let loaded_config_layers = layer_io::load_config_layers_internal(chaos_home, overrides).await?;
-    load_requirements_from_legacy_scheme(
-        &mut config_requirements_toml,
-        loaded_config_layers.clone(),
-    )
-    .await?;
 
     let mut layers = Vec::<ConfigLayerEntry>::new();
 
@@ -248,29 +212,6 @@ pub async fn load_config_layers_state(
         ));
     }
 
-    // Make a best-effort to support the legacy `managed_config.toml` as a
-    // config layer on top of everything else. For fields in
-    // `managed_config.toml` that do not have an equivalent in
-    // `ConfigRequirements`, note users can still override these values on a
-    // per-turn basis in the TUI and VS Code.
-    let LoadedConfigLayers { managed_config } = loaded_config_layers;
-    if let Some(config) = managed_config {
-        let managed_parent = config.file.as_path().parent().ok_or_else(|| {
-            io::Error::new(
-                io::ErrorKind::InvalidData,
-                format!(
-                    "Managed config file {} has no parent directory",
-                    config.file.as_path().display()
-                ),
-            )
-        })?;
-        let managed_config =
-            resolve_relative_paths_in_config_toml(config.managed_config, managed_parent)?;
-        layers.push(ConfigLayerEntry::new(
-            ConfigLayerSource::LegacyManagedConfigTomlFromFile { file: config.file },
-            managed_config,
-        ));
-    }
     ConfigLayerStack::new(
         layers,
         config_requirements_toml.clone().try_into()?,
@@ -372,29 +313,6 @@ fn system_requirements_toml_file() -> io::Result<AbsolutePathBuf> {
 
 fn system_config_toml_file() -> io::Result<AbsolutePathBuf> {
     AbsolutePathBuf::from_absolute_path(Path::new(SYSTEM_CONFIG_TOML_FILE_UNIX))
-}
-
-async fn load_requirements_from_legacy_scheme(
-    config_requirements_toml: &mut ConfigRequirementsWithSources,
-    loaded_config_layers: LoadedConfigLayers,
-) -> io::Result<()> {
-    let LoadedConfigLayers { managed_config } = loaded_config_layers;
-
-    if let Some(c) = managed_config {
-        let source = RequirementSource::LegacyManagedConfigTomlFromFile { file: c.file };
-        let legacy_config: LegacyManagedConfigToml =
-            c.managed_config.try_into().map_err(|err: toml::de::Error| {
-                io::Error::new(
-                    io::ErrorKind::InvalidData,
-                    format!("Failed to parse config requirements as TOML: {err}"),
-                )
-            })?;
-
-        let new_requirements_toml = ConfigRequirementsToml::from(legacy_config);
-        config_requirements_toml.merge_unset_fields(source, new_requirements_toml);
-    }
-
-    Ok(())
 }
 
 /// Reads `project_root_markers` from the [toml::Value] produced by merging
@@ -895,45 +813,6 @@ async fn load_project_layers(
     Ok(layers)
 }
 
-/// The legacy mechanism for specifying admin-enforced configuration is to read
-/// from a file like `/etc/chaos/managed_config.toml` that has the same
-/// structure as `config.toml` where fields like `approval_policy` can specify
-/// exactly one value rather than a list of allowed values.
-///
-/// If present, re-interpret `managed_config.toml` as a `requirements.toml`
-/// where each specified field is treated as a constraint allowing only that
-/// value.
-#[derive(Deserialize, Debug, Clone, Default, PartialEq)]
-struct LegacyManagedConfigToml {
-    approval_policy: Option<ApprovalPolicy>,
-    sandbox_mode: Option<SandboxMode>,
-}
-
-impl From<LegacyManagedConfigToml> for ConfigRequirementsToml {
-    fn from(legacy: LegacyManagedConfigToml) -> Self {
-        let mut config_requirements_toml = ConfigRequirementsToml::default();
-
-        let LegacyManagedConfigToml {
-            approval_policy,
-            sandbox_mode,
-        } = legacy;
-        if let Some(approval_policy) = approval_policy {
-            config_requirements_toml.allowed_approval_policies = Some(vec![approval_policy]);
-        }
-        if let Some(sandbox_mode) = sandbox_mode {
-            let required_mode: SandboxModeRequirement = sandbox_mode.into();
-            // Allowing read-only is a requirement for Codex to function correctly.
-            // So in this backfill path, we append read-only if it's not already specified.
-            let mut allowed_modes = vec![SandboxModeRequirement::ReadOnly];
-            if required_mode != SandboxModeRequirement::ReadOnly {
-                allowed_modes.push(required_mode);
-            }
-            config_requirements_toml.allowed_sandbox_modes = Some(allowed_modes);
-        }
-        config_requirements_toml
-    }
-}
-
 // Cannot name this `mod tests` because of tests.rs in this folder.
 #[cfg(test)]
 mod unit_tests {
@@ -975,23 +854,5 @@ foo = "xyzzy"
         expected_toml_value.insert("foo".to_string(), TomlValue::String("xyzzy".to_string()));
         assert_eq!(normalized_toml_value, TomlValue::Table(expected_toml_value));
         Ok(())
-    }
-
-    #[test]
-    fn legacy_managed_config_backfill_includes_read_only_sandbox_mode() {
-        let legacy = LegacyManagedConfigToml {
-            approval_policy: None,
-            sandbox_mode: Some(SandboxMode::WorkspaceWrite),
-        };
-
-        let requirements = ConfigRequirementsToml::from(legacy);
-
-        assert_eq!(
-            requirements.allowed_sandbox_modes,
-            Some(vec![
-                SandboxModeRequirement::ReadOnly,
-                SandboxModeRequirement::WorkspaceWrite
-            ])
-        );
     }
 }

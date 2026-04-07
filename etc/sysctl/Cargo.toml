@@ -14,7 +14,6 @@ chaos-selinux = { workspace = true }
 chaos-pf = { workspace = true }
 chaos-ipc = { workspace = true }
 chaos-realpath = { workspace = true }
-futures = { workspace = true, features = ["alloc", "std"] }
 multimap = { workspace = true }
 schemars = { workspace = true }
 serde = { workspace = true, features = ["derive"] }

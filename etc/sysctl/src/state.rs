@@ -10,14 +10,11 @@ use chaos_ipc::api::ConfigLayerSource;
 use chaos_realpath::AbsolutePathBuf;
 use serde_json::Value as JsonValue;
 use std::collections::HashMap;
-use std::path::PathBuf;
 use toml::Value as TomlValue;
 
-/// LoaderOverrides overrides managed configuration inputs (primarily for tests).
+/// Overrides for config loading (primarily for tests).
 #[derive(Debug, Default, Clone)]
-pub struct LoaderOverrides {
-    pub managed_config_path: Option<PathBuf>,
-}
+pub struct LoaderOverrides {}
 
 #[derive(Debug, Clone, PartialEq)]
 pub struct ConfigLayerEntry {
@@ -93,13 +90,11 @@ impl ConfigLayerEntry {
     // Get the `.codex/` folder associated with this config layer, if any.
     pub fn config_folder(&self) -> Option<AbsolutePathBuf> {
         match &self.name {
-            ConfigLayerSource::Mdm { .. } => None,
             ConfigLayerSource::System { file } => file.parent(),
             ConfigLayerSource::User { file } => file.parent(),
             ConfigLayerSource::Project { dot_codex_folder } => Some(dot_codex_folder.clone()),
             ConfigLayerSource::ProjectMcp { file } => file.parent(),
             ConfigLayerSource::SessionFlags => None,
-            ConfigLayerSource::LegacyManagedConfigTomlFromFile { .. } => None,
         }
     }
 }

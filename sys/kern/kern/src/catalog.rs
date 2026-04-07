@@ -34,6 +34,7 @@ impl Catalog {
     /// Discover all statically registered modules via `inventory` and build
     /// the initial catalog. Call once at session boot.
     pub(crate) fn from_inventory() -> Self {
+        use std::collections::HashSet;
         let mut catalog = Self {
             tools: Vec::new(),
             resources: Vec::new(),
@@ -41,7 +42,14 @@ impl Catalog {
             prompts: Vec::new(),
         };
 
+        // Deduplicate by module name — inventory can yield the same static
+        // registration twice when a crate is linked through multiple paths
+        // (common in test binaries).
+        let mut seen = HashSet::new();
         for reg in inventory::iter::<CatalogRegistration> {
+            if !seen.insert(reg.name) {
+                continue;
+            }
             let source = CatalogSource::Module(reg.name.to_string());
             for tool in (reg.tools)() {
                 catalog.tools.push((source.clone(), tool));

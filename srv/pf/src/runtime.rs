@@ -550,7 +550,7 @@ impl NetworkProxyState {
 
             validate_policy_against_constraints(&candidate, &constraints)
                 .map_err(NetworkProxyConstraintError::into_anyhow)
-                .context("network.mode constrained by managed config")?;
+                .context("network.mode constrained by system requirements")?;
 
             let mut guard = self.state.write().await;
             if guard.constraints != constraints {
@@ -613,7 +613,9 @@ impl NetworkProxyState {
 
             validate_policy_against_constraints(&candidate, &constraints)
                 .map_err(NetworkProxyConstraintError::into_anyhow)
-                .with_context(|| format!("{constraint_field} constrained by managed config"))?;
+                .with_context(|| {
+                    format!("{constraint_field} constrained by system requirements")
+                })?;
 
             let mut new_state = build_config_state(candidate.clone(), constraints.clone())
                 .with_context(|| format!("failed to compile updated network {list_name}"))?;
@@ -963,7 +965,8 @@ mod tests {
             .expect_err("managed baseline should reject allowlist expansion");
 
         assert!(
-            format!("{err:#}").contains("network.allowed_domains constrained by managed config"),
+            format!("{err:#}")
+                .contains("network.allowed_domains constrained by system requirements"),
             "unexpected error: {err:#}"
         );
     }
@@ -993,7 +996,8 @@ mod tests {
             .expect_err("managed baseline should reject denylist expansion");
 
         assert!(
-            format!("{err:#}").contains("network.denied_domains constrained by managed config"),
+            format!("{err:#}")
+                .contains("network.denied_domains constrained by system requirements"),
             "unexpected error: {err:#}"
         );
     }

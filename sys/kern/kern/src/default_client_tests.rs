@@ -77,7 +77,6 @@ async fn test_create_client_sets_default_headers() {
         .get("user-agent")
         .expect("user-agent header missing");
     assert_eq!(ua_header.to_str().unwrap(), expected_ua);
-
 }
 
 #[test]

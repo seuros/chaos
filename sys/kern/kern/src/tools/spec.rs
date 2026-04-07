@@ -1627,9 +1627,15 @@ pub(crate) fn build_specs(
     dynamic_tools: &[DynamicToolSpec],
 ) -> ToolRegistryBuilder {
     use chaos_traits::catalog::CatalogRegistration;
+    use std::collections::HashSet;
+    // Deduplicate inventory registrations by module name — the inventory crate
+    // can yield the same static registration twice when test binaries link a
+    // crate through multiple paths.
+    let mut seen_modules = HashSet::new();
     let catalog_tools: Vec<(String, chaos_traits::catalog::CatalogTool)> =
         inventory::iter::<CatalogRegistration>
             .into_iter()
+            .filter(|reg| seen_modules.insert(reg.name))
             .flat_map(|reg| {
                 let name = reg.name.to_string();
                 (reg.tools)().into_iter().map(move |t| (name.clone(), t))

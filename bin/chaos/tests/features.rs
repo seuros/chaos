@@ -42,16 +42,14 @@ async fn features_disable_writes_feature_flag_to_config() -> Result<()> {
 }
 
 #[tokio::test]
-async fn features_enable_under_development_feature_prints_warning() -> Result<()> {
+async fn features_enable_unknown_feature_fails() -> Result<()> {
     let chaos_home = TempDir::new()?;
 
     let mut cmd = chaos_command(chaos_home.path())?;
-    cmd.args(["features", "enable", "runtime_metrics"])
+    cmd.args(["features", "enable", "nonexistent_feature"])
         .assert()
-        .success()
-        .stderr(contains(
-            "Under-development features enabled: runtime_metrics.",
-        ));
+        .failure()
+        .stderr(contains("Unknown feature flag: nonexistent_feature"));
 
     Ok(())
 }

@@ -17,6 +17,9 @@ members = [
     "sys/exec/doas",
     # sys/modules — loadable modules
     "sys/modules/clamp",
+    # sys/kern/providers — kernel-side provider adapters
+    "sys/kern/providers/parrot",
+    "sys/kern/providers/ration",
 
     # secure/ — security (peer to kernel)
     "secure/warden",
@@ -25,11 +28,6 @@ members = [
     "secure/contraband",
     "secure/selinux",
     "secure/vault",
-
-    # drivers/ — external service adapters
-    "drivers/parrot",
-    "drivers/ration",
-    "drivers/client",
 
     # srv/ — services
     "srv/mcpd",
@@ -61,6 +59,7 @@ members = [
     "lib/libasync/epoll",
     "lib/libfs/locate",
     "lib/libfs/diff",
+    "lib/libnet/client",
     "lib/libmisc/argv",
     "lib/libmisc/pam",
     "lib/libmisc/keyring",
@@ -134,10 +133,9 @@ chaos-vault = { path = "secure/vault" }
 # Internal — sys/modules/
 chaos-clamp = { path = "sys/modules/clamp" }
 
-# Internal — drivers/
-chaos-parrot = { path = "drivers/parrot" }
-chaos-ration = { path = "drivers/ration" }
-codex-client = { path = "drivers/client" }
+# Internal — sys/kern/providers/
+chaos-parrot = { path = "sys/kern/providers/parrot" }
+chaos-ration = { path = "sys/kern/providers/ration" }
 
 # Internal — srv/
 chaos-mcpd = { path = "srv/mcpd" }
@@ -165,6 +163,7 @@ chaos-hallucinate = { path = "share/hallucinate" }
 chaos-dtrace = { path = "share/dtrace" }
 
 # Internal — lib/
+codex-client = { path = "lib/libnet/client" }
 chaos-epoll = { path = "lib/libasync/epoll" }
 chaos-locate = { path = "lib/libfs/locate" }
 chaos-diff = { path = "lib/libfs/diff" }

@@ -118,7 +118,7 @@ version = "47.0.0"
 dependencies = [
  "alcatraz-base",
  "chaos-ipc",
- "chaos-kern",
+ "chaos-pf",
  "chaos-realpath",
  "clap",
  "dbus-secret-service-keyring-store",
@@ -1124,6 +1124,7 @@ dependencies = [
 name = "chaos-fork"
 version = "47.0.0"
 dependencies = [
+ "alcatraz-freebsd",
  "alcatraz-macos",
  "anyhow",
  "assert_cmd",
@@ -1282,6 +1283,7 @@ dependencies = [
 name = "chaos-kern"
 version = "47.0.0"
 dependencies = [
+ "alcatraz-freebsd",
  "alcatraz-linux",
  "alcatraz-macos",
  "anyhow",

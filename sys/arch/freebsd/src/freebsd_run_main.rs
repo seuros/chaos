@@ -90,10 +90,8 @@ pub fn run_main() -> ! {
 
     let prepared_exec = prepare_exec(command);
 
-    // apply_sandbox_policy_to_current_thread now always succeeds for valid
-    // policies — it applies procctl hardening and logs warnings for
-    // unenforced dimensions.  A failure here would indicate a programming
-    // error (not a policy rejection), so we still exit.
+    // apply_sandbox_policy_to_current_thread applies procctl hardening and
+    // then rejects unsupported restrictions to avoid fail-open behavior.
     if let Err(e) = apply_sandbox_policy_to_current_thread(
         &file_system_sandbox_policy,
         network_sandbox_policy,
@@ -298,7 +296,7 @@ impl PreparedExec {
 fn prepare_exec(command: Vec<String>) -> PreparedExec {
     let executable_label = command[0].clone();
     let executable_fd = resolve_executable_fd(executable_label.as_str())
-        .unwrap_or_else(|err| panic!("Failed to resolve executable {}: {err}", executable_label));
+        .unwrap_or_else(|err| panic!("Failed to resolve executable {executable_label}: {err}"));
 
     PreparedExec {
         executable_fd,

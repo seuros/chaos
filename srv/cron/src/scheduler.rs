@@ -6,6 +6,7 @@ use std::sync::Arc;
 use std::sync::OnceLock;
 
 use crate::job::CronJob;
+use crate::job::CronScope;
 use crate::schedule::Schedule;
 use crate::store::CronStore;
 use sqlx::SqlitePool;
@@ -29,10 +30,19 @@ pub fn shell_executor() -> JobExecutor {
     Arc::new(|job: &CronJob| {
         let command = job.command.clone();
         let job_id = job.id.clone();
+        let job_scope = job.scope;
+        let job_project_path = job.project_path.clone();
         Box::pin(async move {
-            let output = tokio::process::Command::new("sh")
-                .arg("-c")
-                .arg(&command)
+            let mut spawned_command = tokio::process::Command::new("sh");
+            spawned_command.arg("-c").arg(&command);
+            if matches!(job_scope, CronScope::Project) {
+                let project_path = job_project_path.as_deref().ok_or_else(|| {
+                    format!("project-scoped job {job_id} is missing project_path metadata")
+                })?;
+                spawned_command.current_dir(project_path);
+            }
+
+            let output = spawned_command
                 .output()
                 .await
                 .map_err(|e| format!("failed to spawn command for job {job_id}: {e}"))?;
@@ -66,18 +76,20 @@ pub fn spawn_global(
     pool: SqlitePool,
     executor: JobExecutor,
 ) -> Option<&'static watch::Sender<bool>> {
-    // Try to initialize the guard. If it's already set, another session
-    // already started the scheduler — return None.
-    SCHEDULER_GUARD.get_or_init(|| {
-        let (shutdown_tx, shutdown_rx) = Scheduler::shutdown_channel();
-        let store = CronStore::new(pool);
-        let scheduler = Scheduler::new(store, executor, DEFAULT_TICK_INTERVAL, shutdown_rx);
-        tokio::spawn(scheduler.run());
-        shutdown_tx
-    });
-    // Return None if we weren't the first caller. The caller doesn't
-    // need the sender — the scheduler self-manages.
-    None
+    if SCHEDULER_GUARD.get().is_some() {
+        return None;
+    }
+
+    let (shutdown_tx, shutdown_rx) = Scheduler::shutdown_channel();
+    if SCHEDULER_GUARD.set(shutdown_tx).is_err() {
+        return None;
+    }
+
+    let store = CronStore::new(pool);
+    let scheduler = Scheduler::new(store, executor, DEFAULT_TICK_INTERVAL, shutdown_rx);
+    tokio::spawn(scheduler.run());
+
+    SCHEDULER_GUARD.get()
 }
 
 /// The scheduler runs a background tick loop, checking for due jobs

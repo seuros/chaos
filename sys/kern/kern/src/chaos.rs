@@ -3390,9 +3390,9 @@ mod handlers {
             sess.spawn_task(
                 Arc::clone(&current_context),
                 items,
-                crate::tasks::RegularTask::default(),
+                crate::tasks::RegularTask,
             )
-                .await;
+            .await;
         }
     }
 

@@ -3,6 +3,8 @@ mod pid_tracker;
 #[cfg(target_os = "macos")]
 mod seatbelt;
 
+#[cfg(target_os = "freebsd")]
+use alcatraz_freebsd::spawn_command as spawn_freebsd_command;
 #[cfg(target_os = "macos")]
 use alcatraz_macos::seatbelt::create_seatbelt_command_args;
 use std::path::PathBuf;
@@ -254,13 +256,12 @@ async fn run_command_under_sandbox(
             let alcatraz_freebsd_exe = config
                 .alcatraz_freebsd_exe
                 .expect("alcatraz-freebsd executable not found");
-            chaos_kern::capsicum::spawn_command_under_freebsd_sandbox(
+            spawn_freebsd_command(
                 alcatraz_freebsd_exe,
                 command,
                 cwd,
                 config.permissions.sandbox_policy.get(),
                 sandbox_policy_cwd.as_path(),
-                stdio_policy,
                 network.as_ref(),
                 env,
             )

@@ -54,13 +54,13 @@ impl CatalogToolDriver for CronToolDriver {
                     let params: tools::toggle::CronToggleParams =
                         serde_json::from_value(request.arguments)
                             .map_err(|e| format!("invalid arguments: {e}"))?;
-                    tools::toggle::execute(&params, Some(&provider)).await
+                    tools::toggle::execute(&params, Some(&provider), Some(&owner)).await
                 }
                 other => Err(format!("unknown cron tool: {other}")),
             }?;
             Ok(CatalogToolResult {
                 output: result,
-                success: Some(false),
+                success: Some(true),
                 effects: Vec::new(),
             })
         })

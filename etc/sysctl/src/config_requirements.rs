@@ -16,20 +16,15 @@ use crate::ConstraintError;
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub enum RequirementSource {
     Unknown,
-    MdmManagedPreferences { domain: String, key: String },
     CloudRequirements,
     SystemRequirementsToml { file: AbsolutePathBuf },
     LegacyManagedConfigTomlFromFile { file: AbsolutePathBuf },
-    LegacyManagedConfigTomlFromMdm,
 }
 
 impl fmt::Display for RequirementSource {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         match self {
             RequirementSource::Unknown => write!(f, "<unspecified>"),
-            RequirementSource::MdmManagedPreferences { domain, key } => {
-                write!(f, "MDM {domain}:{key}")
-            }
             RequirementSource::CloudRequirements => {
                 write!(f, "cloud requirements")
             }
@@ -38,9 +33,6 @@ impl fmt::Display for RequirementSource {
             }
             RequirementSource::LegacyManagedConfigTomlFromFile { file } => {
                 write!(f, "{}", file.as_path().display())
-            }
-            RequirementSource::LegacyManagedConfigTomlFromMdm => {
-                write!(f, "MDM managed_config.toml (legacy)")
             }
         }
     }
@@ -728,7 +720,7 @@ mod tests {
     #[test]
     fn merge_unset_fields_copies_every_field_and_sets_sources() {
         let mut target = ConfigRequirementsWithSources::default();
-        let source = RequirementSource::LegacyManagedConfigTomlFromMdm;
+        let source = RequirementSource::CloudRequirements;
 
         let allowed_approval_policies = vec![ApprovalPolicy::Supervised, ApprovalPolicy::Headless];
         let allowed_sandbox_modes = vec![
@@ -794,9 +786,8 @@ mod tests {
             "#,
         )?;
 
-        let source_location = RequirementSource::MdmManagedPreferences {
-            domain: "com.codex".to_string(),
-            key: "allowed_approval_policies".to_string(),
+        let source_location = RequirementSource::SystemRequirementsToml {
+            file: system_requirements_toml_file_for_test()?,
         };
 
         let mut empty_target = ConfigRequirementsWithSources::default();
@@ -823,7 +814,7 @@ mod tests {
 
     #[test]
     fn merge_unset_fields_does_not_overwrite_existing_values() -> Result<()> {
-        let existing_source = RequirementSource::LegacyManagedConfigTomlFromMdm;
+        let existing_source = RequirementSource::CloudRequirements;
         let mut populated_target = ConfigRequirementsWithSources::default();
         let populated_requirements: ConfigRequirementsToml = from_str(
             r#"
@@ -837,9 +828,8 @@ mod tests {
                 allowed_approval_policies = ["interactive"]
             "#,
         )?;
-        let source_location = RequirementSource::MdmManagedPreferences {
-            domain: "com.codex".to_string(),
-            key: "allowed_approval_policies".to_string(),
+        let source_location = RequirementSource::SystemRequirementsToml {
+            file: system_requirements_toml_file_for_test()?,
         };
         populated_target.merge_unset_fields(source_location, source);
 
@@ -970,7 +960,7 @@ mod tests {
     #[test]
     fn merge_unset_fields_merges_apps_across_sources_with_enabled_evaluation() {
         let higher_source = RequirementSource::CloudRequirements;
-        let lower_source = RequirementSource::LegacyManagedConfigTomlFromMdm;
+        let lower_source = RequirementSource::Unknown;
         let mut target = ConfigRequirementsWithSources::default();
 
         target.merge_unset_fields(
@@ -1018,7 +1008,7 @@ mod tests {
             },
         );
         target.merge_unset_fields(
-            RequirementSource::LegacyManagedConfigTomlFromMdm,
+            RequirementSource::Unknown,
             ConfigRequirementsToml {
                 apps: Some(apps_requirements(&[("connector_123123", Some(false))])),
                 ..Default::default()

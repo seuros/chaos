@@ -34,8 +34,6 @@ fn is_first_party_chat_originator_matches_known_values() {
 async fn test_create_client_sets_default_headers() {
     skip_if_no_network!();
 
-    set_default_client_residency_requirement(Some(ResidencyRequirement::Us));
-
     use wiremock::Mock;
     use wiremock::MockServer;
     use wiremock::ResponseTemplate;
@@ -80,12 +78,6 @@ async fn test_create_client_sets_default_headers() {
         .expect("user-agent header missing");
     assert_eq!(ua_header.to_str().unwrap(), expected_ua);
 
-    let residency_header = headers
-        .get(RESIDENCY_HEADER_NAME)
-        .expect("residency header missing");
-    assert_eq!(residency_header.to_str().unwrap(), "us");
-
-    set_default_client_residency_requirement(None);
 }
 
 #[test]

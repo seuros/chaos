@@ -180,9 +180,6 @@ async fn read_includes_origins_and_layers() {
         vec![],
         LoaderOverrides {
             managed_config_path: Some(managed_path.clone()),
-            #[cfg(target_os = "macos")]
-            managed_preferences_base64: None,
-            macos_managed_config_requirements_base64: None,
         },
         CloudRequirementsLoader::default(),
     );
@@ -211,16 +208,6 @@ async fn read_includes_origins_and_layers() {
         },
     );
     let layers = response.layers.expect("layers present");
-    // Local macOS machines can surface an MDM-managed config layer at the
-    // top of the stack; ignore it so this test stays focused on file/user/system ordering.
-    let layers = if matches!(
-        layers.first().map(|layer| &layer.name),
-        Some(ConfigLayerSource::LegacyManagedConfigTomlFromMdm)
-    ) {
-        &layers[1..]
-    } else {
-        layers.as_slice()
-    };
     assert_eq!(layers.len(), 3, "expected three layers");
     assert_eq!(
         layers.first().unwrap().name,
@@ -258,9 +245,6 @@ async fn write_value_reports_override() {
         vec![],
         LoaderOverrides {
             managed_config_path: Some(managed_path.clone()),
-            #[cfg(target_os = "macos")]
-            managed_preferences_base64: None,
-            macos_managed_config_requirements_base64: None,
         },
         CloudRequirementsLoader::default(),
     );
@@ -362,9 +346,6 @@ async fn invalid_user_value_rejected_even_if_overridden_by_managed() {
         vec![],
         LoaderOverrides {
             managed_config_path: Some(managed_path.clone()),
-            #[cfg(target_os = "macos")]
-            managed_preferences_base64: None,
-            macos_managed_config_requirements_base64: None,
         },
         CloudRequirementsLoader::default(),
     );
@@ -427,9 +408,6 @@ async fn write_value_rejects_feature_requirement_conflict() {
         vec![],
         LoaderOverrides {
             managed_config_path: None,
-            #[cfg(target_os = "macos")]
-            managed_preferences_base64: None,
-            macos_managed_config_requirements_base64: None,
         },
         CloudRequirementsLoader::new(async {
             Ok(Some(ConfigRequirementsToml {
@@ -478,9 +456,6 @@ async fn write_value_rejects_profile_feature_requirement_conflict() {
         vec![],
         LoaderOverrides {
             managed_config_path: None,
-            #[cfg(target_os = "macos")]
-            managed_preferences_base64: None,
-            macos_managed_config_requirements_base64: None,
         },
         CloudRequirementsLoader::new(async {
             Ok(Some(ConfigRequirementsToml {
@@ -540,9 +515,6 @@ async fn read_reports_managed_overrides_user_and_session_flags() {
         cli_overrides,
         LoaderOverrides {
             managed_config_path: Some(managed_path.clone()),
-            #[cfg(target_os = "macos")]
-            managed_preferences_base64: None,
-            macos_managed_config_requirements_base64: None,
         },
         CloudRequirementsLoader::default(),
     );
@@ -563,16 +535,6 @@ async fn read_reports_managed_overrides_user_and_session_flags() {
         },
     );
     let layers = response.layers.expect("layers");
-    // Local macOS machines can surface an MDM-managed config layer at the
-    // top of the stack; ignore it so this test stays focused on file/session/user ordering.
-    let layers = if matches!(
-        layers.first().map(|layer| &layer.name),
-        Some(ConfigLayerSource::LegacyManagedConfigTomlFromMdm)
-    ) {
-        &layers[1..]
-    } else {
-        layers.as_slice()
-    };
     assert_eq!(
         layers.first().unwrap().name,
         ConfigLayerSource::LegacyManagedConfigTomlFromFile { file: managed_file }
@@ -598,9 +560,6 @@ async fn write_value_reports_managed_override() {
         vec![],
         LoaderOverrides {
             managed_config_path: Some(managed_path.clone()),
-            #[cfg(target_os = "macos")]
-            managed_preferences_base64: None,
-            macos_managed_config_requirements_base64: None,
         },
         CloudRequirementsLoader::default(),
     );

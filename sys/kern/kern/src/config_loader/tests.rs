@@ -18,8 +18,6 @@ use crate::config_loader::version_for_toml;
 use chaos_ipc::config_types::TrustLevel;
 use chaos_ipc::config_types::WebSearchMode;
 use chaos_ipc::protocol::ApprovalPolicy;
-#[cfg(target_os = "macos")]
-use chaos_ipc::protocol::SandboxPolicy;
 use chaos_realpath::AbsolutePathBuf;
 use chaos_sysctl::CONFIG_TOML_FILE;
 use pretty_assertions::assert_eq;
@@ -204,9 +202,6 @@ extra = true
 
     let overrides = LoaderOverrides {
         managed_config_path: Some(managed_path),
-        #[cfg(target_os = "macos")]
-        managed_preferences_base64: None,
-        macos_managed_config_requirements_base64: None,
     };
 
     let cwd = AbsolutePathBuf::try_from(tmp.path()).expect("cwd");
@@ -241,11 +236,6 @@ async fn returns_empty_when_all_layers_missing() {
 
     let overrides = LoaderOverrides {
         managed_config_path: Some(managed_path),
-        #[cfg(target_os = "macos")]
-        // Force managed preferences to resolve as empty so this test does not
-        // inherit non-empty machine-specific managed state.
-        managed_preferences_base64: Some(String::new()),
-        macos_managed_config_requirements_base64: None,
     };
 
     let cwd = AbsolutePathBuf::try_from(tmp.path()).expect("cwd");
@@ -307,183 +297,6 @@ async fn returns_empty_when_all_layers_missing() {
     }
 }
 
-#[cfg(target_os = "macos")]
-#[tokio::test]
-async fn managed_preferences_take_highest_precedence() {
-    use base64::Engine;
-
-    let tmp = tempdir().expect("tempdir");
-    let managed_path = tmp.path().join("managed_config.toml");
-
-    std::fs::write(
-        tmp.path().join(CONFIG_TOML_FILE),
-        r#"[nested]
-value = "base"
-"#,
-    )
-    .expect("write base");
-    std::fs::write(
-        &managed_path,
-        r#"[nested]
-value = "managed_config"
-flag = true
-"#,
-    )
-    .expect("write managed config");
-    let raw_managed_preferences = r#"
-# managed profile
-[nested]
-value = "managed"
-flag = false
-"#;
-
-    let overrides = LoaderOverrides {
-        managed_config_path: Some(managed_path),
-        managed_preferences_base64: Some(
-            base64::prelude::BASE64_STANDARD.encode(raw_managed_preferences.as_bytes()),
-        ),
-        macos_managed_config_requirements_base64: None,
-    };
-
-    let cwd = AbsolutePathBuf::try_from(tmp.path()).expect("cwd");
-    let state = load_config_layers_state(
-        tmp.path(),
-        Some(cwd),
-        &[] as &[(String, TomlValue)],
-        overrides,
-        CloudRequirementsLoader::default(),
-    )
-    .await
-    .expect("load config");
-    let loaded = state.effective_config();
-    let nested = loaded
-        .get("nested")
-        .and_then(|v| v.as_table())
-        .expect("nested table");
-    assert_eq!(
-        nested.get("value"),
-        Some(&TomlValue::String("managed".to_string()))
-    );
-    assert_eq!(nested.get("flag"), Some(&TomlValue::Boolean(false)));
-    let mdm_layer = state
-        .layers_high_to_low()
-        .into_iter()
-        .find(|layer| {
-            matches!(
-                layer.name,
-                super::ConfigLayerSource::LegacyManagedConfigTomlFromMdm
-            )
-        })
-        .expect("mdm layer");
-    let raw = mdm_layer.raw_toml().expect("preserved mdm toml");
-    assert!(raw.contains("# managed profile"));
-    assert!(raw.contains("value = \"managed\""));
-}
-
-#[cfg(target_os = "macos")]
-#[tokio::test]
-async fn managed_preferences_requirements_are_applied() -> anyhow::Result<()> {
-    use base64::Engine;
-
-    let tmp = tempdir()?;
-
-    let state = load_config_layers_state(
-        tmp.path(),
-        Some(AbsolutePathBuf::try_from(tmp.path())?),
-        &[] as &[(String, TomlValue)],
-        LoaderOverrides {
-            managed_config_path: Some(tmp.path().join("managed_config.toml")),
-            managed_preferences_base64: Some(String::new()),
-            macos_managed_config_requirements_base64: Some(
-                base64::prelude::BASE64_STANDARD.encode(
-                    r#"
-allowed_approval_policies = ["headless"]
-allowed_sandbox_modes = ["read-only"]
-"#
-                    .as_bytes(),
-                ),
-            ),
-        },
-        CloudRequirementsLoader::default(),
-    )
-    .await?;
-
-    assert_eq!(
-        state.requirements().approval_policy.value(),
-        ApprovalPolicy::Headless
-    );
-    assert_eq!(
-        *state.requirements().sandbox_policy.get(),
-        SandboxPolicy::new_read_only_policy()
-    );
-    assert!(
-        state
-            .requirements()
-            .approval_policy
-            .can_set(&ApprovalPolicy::Interactive)
-            .is_err()
-    );
-    assert!(
-        state
-            .requirements()
-            .sandbox_policy
-            .can_set(&SandboxPolicy::WorkspaceWrite {
-                writable_roots: Vec::new(),
-                read_only_access: Default::default(),
-                network_access: false,
-                exclude_tmpdir_env_var: false,
-                exclude_slash_tmp: false,
-            })
-            .is_err()
-    );
-
-    Ok(())
-}
-
-#[cfg(target_os = "macos")]
-#[tokio::test]
-async fn managed_preferences_requirements_take_precedence() -> anyhow::Result<()> {
-    use base64::Engine;
-
-    let tmp = tempdir()?;
-    let managed_path = tmp.path().join("managed_config.toml");
-
-    tokio::fs::write(&managed_path, "approval_policy = \"interactive\"\n").await?;
-
-    let state = load_config_layers_state(
-        tmp.path(),
-        Some(AbsolutePathBuf::try_from(tmp.path())?),
-        &[] as &[(String, TomlValue)],
-        LoaderOverrides {
-            managed_config_path: Some(managed_path),
-            managed_preferences_base64: Some(String::new()),
-            macos_managed_config_requirements_base64: Some(
-                base64::prelude::BASE64_STANDARD.encode(
-                    r#"
-allowed_approval_policies = ["headless"]
-"#
-                    .as_bytes(),
-                ),
-            ),
-        },
-        CloudRequirementsLoader::default(),
-    )
-    .await?;
-
-    assert_eq!(
-        state.requirements().approval_policy.value(),
-        ApprovalPolicy::Headless
-    );
-    assert!(
-        state
-            .requirements()
-            .approval_policy
-            .can_set(&ApprovalPolicy::Interactive)
-            .is_err()
-    );
-
-    Ok(())
-}
 
 #[tokio::test(flavor = "current_thread")]
 async fn load_requirements_toml_produces_expected_constraints() -> anyhow::Result<()> {
@@ -577,62 +390,6 @@ personality = true
     Ok(())
 }
 
-#[cfg(target_os = "macos")]
-#[tokio::test]
-async fn cloud_requirements_take_precedence_over_mdm_requirements() -> anyhow::Result<()> {
-    use base64::Engine;
-
-    let tmp = tempdir()?;
-    let state = load_config_layers_state(
-        tmp.path(),
-        Some(AbsolutePathBuf::try_from(tmp.path())?),
-        &[] as &[(String, TomlValue)],
-        LoaderOverrides {
-            macos_managed_config_requirements_base64: Some(
-                base64::prelude::BASE64_STANDARD.encode(
-                    r#"
-allowed_approval_policies = ["interactive"]
-"#
-                    .as_bytes(),
-                ),
-            ),
-            ..LoaderOverrides::default()
-        },
-        CloudRequirementsLoader::new(async {
-            Ok(Some(ConfigRequirementsToml {
-                allowed_approval_policies: Some(vec![ApprovalPolicy::Headless]),
-                allowed_sandbox_modes: None,
-                allowed_web_search_modes: None,
-                feature_requirements: None,
-                mcp_servers: None,
-                apps: None,
-                rules: None,
-                enforce_residency: None,
-                network: None,
-            }))
-        }),
-    )
-    .await?;
-
-    assert_eq!(
-        state.requirements().approval_policy.value(),
-        ApprovalPolicy::Headless
-    );
-    assert_eq!(
-        state
-            .requirements()
-            .approval_policy
-            .can_set(&ApprovalPolicy::Interactive),
-        Err(ConstraintError::InvalidValue {
-            field_name: "approval_policy",
-            candidate: "Interactive".into(),
-            allowed: "[Headless]".into(),
-            requirement_source: RequirementSource::CloudRequirements,
-        })
-    );
-
-    Ok(())
-}
 
 #[tokio::test(flavor = "current_thread")]
 async fn cloud_requirements_are_not_overwritten_by_system_requirements() -> anyhow::Result<()> {

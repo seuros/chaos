@@ -1,6 +1,4 @@
 mod layer_io;
-#[cfg(target_os = "macos")]
-mod macos;
 
 #[cfg(test)]
 mod tests;
@@ -125,15 +123,6 @@ pub async fn load_config_layers_state(
         config_requirements_toml
             .merge_unset_fields(RequirementSource::CloudRequirements, requirements);
     }
-
-    #[cfg(target_os = "macos")]
-    macos::load_managed_admin_requirements_toml(
-        &mut config_requirements_toml,
-        overrides
-            .macos_managed_config_requirements_base64
-            .as_deref(),
-    )
-    .await?;
 
     // Honor the system requirements.toml location.
     let requirements_toml_file = system_requirements_toml_file()?;
@@ -264,10 +253,7 @@ pub async fn load_config_layers_state(
     // `managed_config.toml` that do not have an equivalent in
     // `ConfigRequirements`, note users can still override these values on a
     // per-turn basis in the TUI and VS Code.
-    let LoadedConfigLayers {
-        managed_config,
-        managed_config_from_mdm,
-    } = loaded_config_layers;
+    let LoadedConfigLayers { managed_config } = loaded_config_layers;
     if let Some(config) = managed_config {
         let managed_parent = config.file.as_path().parent().ok_or_else(|| {
             io::Error::new(
@@ -285,14 +271,6 @@ pub async fn load_config_layers_state(
             managed_config,
         ));
     }
-    if let Some(config) = managed_config_from_mdm {
-        layers.push(ConfigLayerEntry::new_with_raw_toml(
-            ConfigLayerSource::LegacyManagedConfigTomlFromMdm,
-            config.managed_config,
-            config.raw_toml,
-        ));
-    }
-
     ConfigLayerStack::new(
         layers,
         config_requirements_toml.clone().try_into()?,
@@ -400,31 +378,12 @@ async fn load_requirements_from_legacy_scheme(
     config_requirements_toml: &mut ConfigRequirementsWithSources,
     loaded_config_layers: LoadedConfigLayers,
 ) -> io::Result<()> {
-    // In this implementation, earlier layers cannot be overwritten by later
-    // layers, so list managed_config_from_mdm first because it has the highest
-    // precedence.
-    let LoadedConfigLayers {
-        managed_config,
-        managed_config_from_mdm,
-    } = loaded_config_layers;
+    let LoadedConfigLayers { managed_config } = loaded_config_layers;
 
-    for (source, config) in managed_config_from_mdm
-        .map(|config| {
-            (
-                RequirementSource::LegacyManagedConfigTomlFromMdm,
-                config.managed_config,
-            )
-        })
-        .into_iter()
-        .chain(managed_config.map(|c| {
-            (
-                RequirementSource::LegacyManagedConfigTomlFromFile { file: c.file },
-                c.managed_config,
-            )
-        }))
-    {
+    if let Some(c) = managed_config {
+        let source = RequirementSource::LegacyManagedConfigTomlFromFile { file: c.file };
         let legacy_config: LegacyManagedConfigToml =
-            config.try_into().map_err(|err: toml::de::Error| {
+            c.managed_config.try_into().map_err(|err: toml::de::Error| {
                 io::Error::new(
                     io::ErrorKind::InvalidData,
                     format!("Failed to parse config requirements as TOML: {err}"),

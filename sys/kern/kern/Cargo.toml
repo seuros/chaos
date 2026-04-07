@@ -126,9 +126,6 @@ seccompiler = { workspace = true }
 [target.'cfg(target_os = "freebsd")'.dependencies]
 alcatraz-freebsd = { workspace = true }
 
-[target.'cfg(target_os = "macos")'.dependencies]
-core-foundation = "0.10"
-
 # Build OpenSSL from source for musl builds.
 [target.x86_64-unknown-linux-musl.dependencies]
 openssl-sys = { workspace = true, features = ["vendored"] }

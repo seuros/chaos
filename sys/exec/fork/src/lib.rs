@@ -70,7 +70,6 @@ use uuid::Uuid;
 use crate::cli::Command as ExecCommand;
 use crate::event_processor::CodexStatus;
 use crate::event_processor::EventProcessor;
-use chaos_kern::default_client::set_default_client_residency_requirement;
 use chaos_kern::default_client::set_default_originator;
 
 const DEFAULT_ANALYTICS_ENABLED: bool = true;
@@ -347,8 +346,6 @@ pub async fn run_main(cli: Cli, arg0_paths: Arg0DispatchPaths) -> anyhow::Result
             std::process::exit(1);
         }
     }
-
-    set_default_client_residency_requirement(config.enforce_residency.value());
 
     if let Err(err) = enforce_login_restrictions(&config) {
         eprintln!("{err}");

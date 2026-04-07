@@ -177,7 +177,7 @@ fn render_debug_config_lines(stack: &ConfigLayerStack) -> Vec<Line<'static>> {
 fn render_non_file_layer_details(layer: &ConfigLayerEntry) -> Vec<Line<'static>> {
     match &layer.name {
         ConfigLayerSource::SessionFlags => render_session_flag_details(&layer.config),
-        ConfigLayerSource::Mdm { .. } | ConfigLayerSource::LegacyManagedConfigTomlFromMdm => {
+        ConfigLayerSource::Mdm { .. } => {
             render_mdm_layer_details(layer)
         }
         ConfigLayerSource::System { .. }
@@ -305,9 +305,6 @@ fn format_config_layer_source(source: &ConfigLayerSource) -> String {
         ConfigLayerSource::SessionFlags => "session-flags".to_string(),
         ConfigLayerSource::LegacyManagedConfigTomlFromFile { file } => {
             format!("legacy managed_config.toml ({})", file.as_path().display())
-        }
-        ConfigLayerSource::LegacyManagedConfigTomlFromMdm => {
-            "legacy managed_config.toml (MDM)".to_string()
         }
     }
 }
@@ -498,7 +495,7 @@ mod tests {
                         },
                     },
                 )]),
-                RequirementSource::LegacyManagedConfigTomlFromMdm,
+                RequirementSource::CloudRequirements,
             )),
             enforce_residency: ConstrainedWithSource::new(
                 Constrained::allow_any(Some(ResidencyRequirement::Us)),
@@ -605,33 +602,6 @@ writable_roots = ["/tmp"]
         assert!(rendered.contains("/tmp"));
     }
 
-    #[test]
-    fn debug_config_output_shows_legacy_mdm_layer_value() {
-        let raw_mdm_toml = r#"
-# managed by MDM
-model = "managed_model"
-approval_policy = "headless"
-"#;
-        let mdm_value = toml::from_str::<TomlValue>(raw_mdm_toml).expect("MDM value");
-
-        let stack = ConfigLayerStack::new(
-            vec![ConfigLayerEntry::new_with_raw_toml(
-                ConfigLayerSource::LegacyManagedConfigTomlFromMdm,
-                mdm_value,
-                raw_mdm_toml.to_string(),
-            )],
-            ConfigRequirements::default(),
-            ConfigRequirementsToml::default(),
-        )
-        .expect("config layer stack");
-
-        let rendered = render_to_text(&render_debug_config_lines(&stack));
-        assert!(rendered.contains("legacy managed_config.toml (MDM) (enabled)"));
-        assert!(rendered.contains("MDM value:"));
-        assert!(rendered.contains("# managed by MDM"));
-        assert!(rendered.contains("model = \"managed_model\""));
-        assert!(rendered.contains("approval_policy = \"headless\""));
-    }
 
     #[test]
     fn debug_config_output_normalizes_empty_web_search_mode_list() {

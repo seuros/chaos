@@ -104,11 +104,18 @@ async fn execute_with_storage<S: CronStorage>(
 
     // Derive owner metadata based on scope.
     let project_path = match scope {
-        crate::CronScope::Project => owner.project_path.clone(),
+        crate::CronScope::Project => Some(owner.project_path.clone().ok_or_else(|| {
+            "current context is missing a project path for project-scoped cron jobs".to_string()
+        })?),
         _ => None,
     };
     let session_id = match scope {
-        crate::CronScope::Session | crate::CronScope::Agent => owner.session_id.clone(),
+        crate::CronScope::Session | crate::CronScope::Agent => {
+            Some(owner.session_id.clone().ok_or_else(|| {
+                "current context is missing a session id for session/agent-scoped cron jobs"
+                    .to_string()
+            })?)
+        }
         _ => None,
     };
 

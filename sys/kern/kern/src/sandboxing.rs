@@ -589,7 +589,10 @@ impl SandboxManager {
             #[cfg(not(target_os = "macos"))]
                 alcatraz_macos_exe: _,
             alcatraz_linux_exe,
+            #[cfg(target_os = "freebsd")]
             alcatraz_freebsd_exe,
+            #[cfg(not(target_os = "freebsd"))]
+                alcatraz_freebsd_exe: _,
         } = request;
         #[cfg(not(target_os = "macos"))]
         let macos_seatbelt_profile_extensions = None;
@@ -687,28 +690,27 @@ impl SandboxManager {
                     Some("alcatraz-linux".to_string()),
                 )
             }
+            #[cfg(target_os = "freebsd")]
             SandboxType::FreeBSDCapsicum => {
                 let exe = alcatraz_freebsd_exe
                     .ok_or(SandboxTransformError::MissingFreeBSDSandboxExecutable)?;
-                // FreeBSD uses the same CLI interface as Linux — policy JSON
-                // args followed by `--` and the command.
-                let allow_proxy_network = allow_network_for_proxy(enforce_managed_network);
-                let mut args = create_linux_sandbox_command_args_for_policies(
+                let prepared = alcatraz_freebsd::prepare_command(
+                    exe,
                     command.clone(),
                     &effective_policy,
                     &effective_file_system_policy,
                     effective_network_policy,
                     sandbox_policy_cwd,
-                    allow_proxy_network,
+                    enforce_managed_network,
                 );
-                let mut full_command = Vec::with_capacity(1 + args.len());
-                full_command.push(exe.to_string_lossy().to_string());
-                full_command.append(&mut args);
-                (
-                    full_command,
-                    HashMap::new(),
-                    Some("alcatraz-freebsd".to_string()),
-                )
+                let mut full_command = Vec::with_capacity(1 + prepared.args.len());
+                full_command.push(prepared.program.to_string_lossy().to_string());
+                full_command.extend(prepared.args);
+                (full_command, HashMap::new(), prepared.arg0)
+            }
+            #[cfg(not(target_os = "freebsd"))]
+            SandboxType::FreeBSDCapsicum => {
+                unreachable!("FreeBSD sandbox is only available on FreeBSD")
             }
         };
 

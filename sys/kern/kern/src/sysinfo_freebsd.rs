@@ -142,7 +142,9 @@ fn detect_cpu_model() -> String {
 // ── Uptime ───────────────────────────────────────────────────────────
 
 fn detect_uptime() -> u64 {
-    let c_name = std::ffi::CString::new("kern.boottime").unwrap();
+    let Some(c_name) = std::ffi::CString::new("kern.boottime").ok() else {
+        return 0;
+    };
     let mut tv: libc::timeval = unsafe { mem::zeroed() };
     let mut size = mem::size_of::<libc::timeval>();
     let ret = unsafe {

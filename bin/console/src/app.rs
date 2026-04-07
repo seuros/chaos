@@ -3240,10 +3240,7 @@ impl App {
 
         let lines = self.log_panel.render_lines();
         let _ = tui.enter_alt_screen();
-        self.overlay = Some(Overlay::new_static_with_lines(
-            lines,
-            "L O G S".to_string(),
-        ));
+        self.overlay = Some(Overlay::new_static_with_lines(lines, "L O G S".to_string()));
         tui.frame_requester().schedule_frame();
     }
 
@@ -5707,7 +5704,10 @@ mod tests {
         let mut app = make_test_app().await;
         let mut tui = make_test_tui();
         app.log_panel = LogPanelState::default();
-        app.log_panel.toggle();
+        app.overlay = Some(Overlay::new_static_with_lines(
+            vec![],
+            "L O G S".to_string(),
+        ));
 
         app.handle_key_event(&mut tui, KeyEvent::new(KeyCode::PageUp, KeyModifiers::NONE))
             .await;

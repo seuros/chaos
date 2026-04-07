@@ -21,7 +21,6 @@ mod compact_remote;
 mod process;
 pub use process::Process;
 pub use process::ProcessConfigSnapshot;
-pub mod capsicum;
 mod chaos_delegate;
 mod command_canonicalization;
 pub mod config;

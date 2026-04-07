@@ -124,6 +124,9 @@ alcatraz-linux = { workspace = true }
 landlock = { workspace = true }
 seccompiler = { workspace = true }
 
+[target.'cfg(target_os = "freebsd")'.dependencies]
+alcatraz-freebsd = { workspace = true }
+
 [target.'cfg(target_os = "macos")'.dependencies]
 core-foundation = "0.10"
 

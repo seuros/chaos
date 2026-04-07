@@ -89,6 +89,29 @@ async fn spawn_command_under_sandbox(
     .await
 }
 
+#[cfg(target_os = "freebsd")]
+async fn spawn_command_under_sandbox(
+    command: Vec<String>,
+    command_cwd: PathBuf,
+    sandbox_policy: &SandboxPolicy,
+    sandbox_cwd: &Path,
+    _stdio_policy: StdioPolicy,
+    env: HashMap<String, String>,
+) -> std::io::Result<Child> {
+    let alcatraz_freebsd_exe = chaos_which::cargo_bin("alcatraz-freebsd")
+        .map_err(|err| io::Error::new(io::ErrorKind::NotFound, err))?;
+    alcatraz_freebsd::spawn_command(
+        alcatraz_freebsd_exe,
+        command,
+        command_cwd,
+        sandbox_policy,
+        sandbox_cwd,
+        None,
+        env,
+    )
+    .await
+}
+
 #[cfg(target_os = "linux")]
 /// Determines whether Linux sandbox tests can run on this host.
 ///
@@ -152,7 +175,7 @@ async fn python_multiprocessing_lock_works_under_sandbox() {
     };
     #[cfg(not(target_os = "linux"))]
     let sandbox_env = HashMap::new();
-    #[cfg(target_os = "macos")]
+    #[cfg(not(target_os = "linux"))]
     let writable_roots = Vec::<AbsolutePathBuf>::new();
 
     // From https://man7.org/linux/man-pages/man7/sem_overview.7.html

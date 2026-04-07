@@ -509,7 +509,6 @@ impl ModelClient {
             api_auth,
         })
     }
-
 }
 
 fn clamp_permission_mode(approval_policy: ApprovalPolicy) -> String {
@@ -1988,7 +1987,6 @@ impl ModelClientSession {
             Err(err) => Err(map_api_error(abi_error_to_api_error(err))),
         }
     }
-
 }
 
 /// Parses per-turn metadata into an HTTP header value.
@@ -2049,10 +2047,7 @@ fn build_responses_headers(
     headers
 }
 
-fn map_response_stream<S>(
-    api_stream: S,
-    session_telemetry: SessionTelemetry,
-) -> ResponseStream
+fn map_response_stream<S>(api_stream: S, session_telemetry: SessionTelemetry) -> ResponseStream
 where
     S: futures::Stream<Item = std::result::Result<ResponseEvent, ApiError>>
         + Unpin
@@ -2294,7 +2289,6 @@ async fn handle_unauthorized(
     Err(map_api_error(ApiError::Transport(transport)))
 }
 
-
 struct ApiTelemetry {
     session_telemetry: SessionTelemetry,
     auth_context: AuthRequestTelemetryContext,
@@ -2373,7 +2367,10 @@ impl RequestTelemetry for ApiTelemetry {
 impl SseTelemetry for ApiTelemetry {
     fn on_sse_poll(
         &self,
-        result: &std::result::Result<Option<std::result::Result<Event, BoxError>>, tokio::time::error::Elapsed>,
+        result: &std::result::Result<
+            Option<std::result::Result<Event, BoxError>>,
+            tokio::time::error::Elapsed,
+        >,
         duration: Duration,
     ) {
         self.session_telemetry.log_sse_event(result, duration);

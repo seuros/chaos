@@ -366,7 +366,6 @@ mod tests {
     }
 }
 
-
 #[derive(Debug, Clone)]
 pub struct ModelsMock {
     requests: Arc<Mutex<Vec<wiremock::Request>>>,
@@ -1029,7 +1028,6 @@ pub async fn start_mock_server() -> MockServer {
 
     server
 }
-
 
 #[derive(Clone)]
 pub struct FunctionCallResponseMocks {

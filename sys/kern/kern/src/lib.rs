@@ -5,7 +5,6 @@
 // the TUI or the tracing stack).
 #![deny(clippy::print_stdout, clippy::print_stderr)]
 
-mod analytics_client;
 pub mod api_bridge;
 mod apply_patch;
 mod arc_monitor;
@@ -87,7 +86,6 @@ pub mod web_search;
 pub use process_table::NewProcess;
 pub use process_table::ProcessTable;
 // Re-export common auth types for workspace consumers
-pub use analytics_client::AnalyticsEventsClient;
 pub use auth::AuthManager;
 pub use auth::ChaosAuth;
 pub mod default_client;

@@ -9,8 +9,6 @@ use throttle_machines::gcra;
 use crate::AuthManager;
 use crate::ChaosAuth;
 use crate::SandboxState;
-use crate::analytics_client::AnalyticsEventsClient;
-use crate::analytics_client::build_track_events_context;
 use crate::compact;
 use crate::compact::InitialContextInjection;
 use crate::compact::collect_user_messages;
@@ -1575,10 +1573,6 @@ impl Session {
             mcp_startup_cancellation_token: Mutex::new(CancellationToken::new()),
             unified_exec_manager: UnifiedExecProcessManager::new(
                 config.background_terminal_max_timeout,
-            ),
-            analytics_events_client: AnalyticsEventsClient::new(
-                Arc::clone(&config),
-                Arc::clone(&auth_manager),
             ),
             hooks,
             rollout: Mutex::new(rollout_recorder),
@@ -4362,20 +4356,12 @@ pub(crate) async fn run_turn(
     .await;
 
     let session_telemetry = turn_context.session_telemetry.clone();
-    let process_id = sess.conversation_id.to_string();
-    let tracking = build_track_events_context(
-        turn_context.model_info.slug.clone(),
-        process_id,
-        turn_context.sub_id.clone(),
-    );
     let SkillInjections {
         items: skill_items,
         warnings: skill_warnings,
     } = build_skill_injections(
         &mentioned_skills,
         Some(&session_telemetry),
-        &sess.services.analytics_events_client,
-        tracking.clone(),
     )
     .await;
 

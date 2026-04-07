@@ -514,10 +514,6 @@ pub(crate) async fn make_session_and_context() -> (Session, TurnContext) {
         unified_exec_manager: UnifiedExecProcessManager::new(
             config.background_terminal_max_timeout,
         ),
-        analytics_events_client: AnalyticsEventsClient::new(
-            Arc::clone(&config),
-            Arc::clone(&auth_manager),
-        ),
         hooks: Hooks::new(HooksConfig {
             legacy_notify_argv: config.notify.clone(),
             ..HooksConfig::default()
@@ -674,10 +670,6 @@ pub(crate) async fn make_session_and_context_with_dynamic_tools_and_rx(
         mcp_startup_cancellation_token: Mutex::new(CancellationToken::new()),
         unified_exec_manager: UnifiedExecProcessManager::new(
             config.background_terminal_max_timeout,
-        ),
-        analytics_events_client: AnalyticsEventsClient::new(
-            Arc::clone(&config),
-            Arc::clone(&auth_manager),
         ),
         hooks: Hooks::new(HooksConfig {
             legacy_notify_argv: config.notify.clone(),

@@ -22,7 +22,6 @@ pub struct Arg0DispatchPaths {
     pub alcatraz_linux_exe: Option<PathBuf>,
     pub alcatraz_freebsd_exe: Option<PathBuf>,
     pub alcatraz_macos_exe: Option<PathBuf>,
-    pub main_execve_wrapper_exe: Option<PathBuf>,
 }
 
 /// Keeps the per-session PATH entry alive and locked for the process lifetime.
@@ -192,9 +191,6 @@ where
             } else {
                 None
             },
-            main_execve_wrapper_exe: path_entry
-                .as_ref()
-                .and_then(|path_entry| path_entry.paths().main_execve_wrapper_exe.clone()),
         };
 
         main_fn(paths).await
@@ -363,7 +359,6 @@ pub fn prepend_path_entry_for_codex_aliases() -> std::io::Result<Arg0PathEntryGu
                 None
             }
         },
-        main_execve_wrapper_exe: Some(path.join(EXECVE_WRAPPER_ARG0)),
     };
 
     Ok(Arg0PathEntryGuard::new(temp_dir, lock_file, paths))

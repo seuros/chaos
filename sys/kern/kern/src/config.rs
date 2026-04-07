@@ -402,14 +402,6 @@ pub struct Config {
     /// When this program is invoked, arg0 will be set to `alcatraz-macos`.
     pub alcatraz_macos_exe: Option<PathBuf>,
 
-    /// Path to the `codex-execve-wrapper` executable used for shell
-    /// escalation. This cannot be set in the config file: it must be set in
-    /// code via [`ConfigOverrides`].
-    pub main_execve_wrapper_exe: Option<PathBuf>,
-
-    /// Optional absolute path to patched zsh used by zsh-exec-bridge-backed shell execution.
-    pub zsh_path: Option<PathBuf>,
-
     /// Value to use for `reasoning.effort` when making a request using the
     /// Responses API.
     pub model_reasoning_effort: Option<ReasoningEffort>,
@@ -743,8 +735,8 @@ impl Config {
     /// designed to use `ApprovalPolicy::Headless` exclusively.
     ///
     /// Further, [ConfigOverrides] contains some options that are not supported
-    /// in [ConfigToml], such as `cwd`, `alcatraz_linux_exe`,
-    /// `alcatraz_freebsd_exe`, and `main_execve_wrapper_exe`.
+    /// in [ConfigToml], such as `cwd`, `alcatraz_linux_exe`, and
+    /// `alcatraz_freebsd_exe`.
     pub async fn load_with_cli_overrides_and_harness_overrides(
         cli_overrides: Vec<(String, TomlValue)>,
         harness_overrides: ConfigOverrides,
@@ -1149,9 +1141,6 @@ pub struct ConfigToml {
     /// Default: `300000` (5 minutes).
     pub background_terminal_max_timeout: Option<u64>,
 
-    /// Optional absolute path to patched zsh used by zsh-exec-bridge-backed shell execution.
-    pub zsh_path: Option<AbsolutePathBuf>,
-
     /// Profile to use from the `profiles` map.
     pub profile: Option<String>,
 
@@ -1545,8 +1534,6 @@ pub struct ConfigOverrides {
     pub alcatraz_linux_exe: Option<PathBuf>,
     pub alcatraz_freebsd_exe: Option<PathBuf>,
     pub alcatraz_macos_exe: Option<PathBuf>,
-    pub main_execve_wrapper_exe: Option<PathBuf>,
-    pub zsh_path: Option<PathBuf>,
     pub base_instructions: Option<String>,
     pub minion_instructions: Option<String>,
     pub personality: Option<Personality>,
@@ -1750,8 +1737,6 @@ impl Config {
             alcatraz_linux_exe,
             alcatraz_freebsd_exe,
             alcatraz_macos_exe,
-            main_execve_wrapper_exe,
-            zsh_path: zsh_path_override,
             base_instructions,
             minion_instructions,
             personality,
@@ -2123,9 +2108,6 @@ impl Config {
             "experimental compact prompt file",
         )?;
         let compact_prompt = compact_prompt.or(file_compact_prompt);
-        let zsh_path = zsh_path_override
-            .or(config_profile.zsh_path.map(Into::into))
-            .or(cfg.zsh_path.map(Into::into));
 
         let review_model = override_review_model.or(cfg.review_model);
 
@@ -2284,8 +2266,6 @@ impl Config {
             alcatraz_linux_exe,
             alcatraz_freebsd_exe,
             alcatraz_macos_exe,
-            main_execve_wrapper_exe,
-            zsh_path,
 
             hide_agent_reasoning: cfg.hide_agent_reasoning.unwrap_or(false),
             show_raw_agent_reasoning: cfg

@@ -4,8 +4,6 @@ Runtime: shell
 Executes shell requests under the orchestrator: asks for approval when needed,
 builds a CommandSpec, and runs it under the current SandboxAttempt.
 */
-pub(crate) mod unix_escalation;
-pub(crate) mod zsh_fork_backend;
 
 use crate::command_canonicalization::canonicalize_command_for_approval;
 use crate::exec::ExecToolCallOutput;
@@ -64,21 +62,12 @@ pub(crate) enum ShellRuntimeBackend {
     Generic,
     /// Legacy backend for the `shell_command` tool.
     ///
-    /// Keeps `shell_command` on the standard shell runtime flow without the
-    /// zsh-fork shell-escalation adapter.
+    /// Keeps `shell_command` on the standard shell runtime flow.
     ShellCommandClassic,
-    /// zsh-fork backend for the `shell_command` tool.
-    ///
-    /// On Unix, attempts to run via the zsh-fork + `codex-shell-escalation`
-    /// adapter, with fallback to the standard shell runtime flow if
-    /// prerequisites are not met.
-    ShellCommandZshFork,
 }
 
 #[derive(Default)]
-pub struct ShellRuntime {
-    backend: ShellRuntimeBackend,
-}
+pub struct ShellRuntime {}
 
 #[derive(serde::Serialize, Clone, Debug, Eq, PartialEq, Hash)]
 pub(crate) struct ApprovalKey {
@@ -90,13 +79,11 @@ pub(crate) struct ApprovalKey {
 
 impl ShellRuntime {
     pub fn new() -> Self {
-        Self {
-            backend: ShellRuntimeBackend::Generic,
-        }
+        Self {}
     }
 
-    pub(crate) fn for_shell_command(backend: ShellRuntimeBackend) -> Self {
-        Self { backend }
+    pub(crate) fn for_shell_command(_backend: ShellRuntimeBackend) -> Self {
+        Self {}
     }
 
     fn stdout_stream(ctx: &ToolCtx) -> Option<crate::exec::StdoutStream> {
@@ -202,17 +189,6 @@ impl ToolRuntime<ShellRequest, ExecToolCallOutput> for ShellRuntime {
             &req.cwd,
             &req.explicit_env_overrides,
         );
-
-        if self.backend == ShellRuntimeBackend::ShellCommandZshFork {
-            match zsh_fork_backend::maybe_run_shell_command(req, attempt, ctx, &command).await? {
-                Some(out) => return Ok(out),
-                None => {
-                    tracing::warn!(
-                        "ZshFork backend specified, but conditions for using it were not met, falling back to normal execution",
-                    );
-                }
-            }
-        }
 
         let spec = build_command_spec(
             &command,

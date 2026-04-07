@@ -4,7 +4,6 @@ use crate::config::edit::ConfigEdit;
 use crate::config::edit::ConfigEditsBuilder;
 use crate::config::managed_features::validate_explicit_feature_settings_in_config_toml;
 use crate::config::managed_features::validate_feature_requirements_in_config_toml;
-use crate::config_loader::CloudRequirementsLoader;
 use crate::config_loader::ConfigLayerEntry;
 use crate::config_loader::ConfigLayerStack;
 use crate::config_loader::ConfigLayerStackOrdering;
@@ -113,7 +112,6 @@ pub struct ConfigService {
     chaos_home: PathBuf,
     cli_overrides: Vec<(String, TomlValue)>,
     loader_overrides: LoaderOverrides,
-    cloud_requirements: CloudRequirementsLoader,
 }
 
 impl ConfigService {
@@ -121,13 +119,11 @@ impl ConfigService {
         chaos_home: PathBuf,
         cli_overrides: Vec<(String, TomlValue)>,
         loader_overrides: LoaderOverrides,
-        cloud_requirements: CloudRequirementsLoader,
     ) -> Self {
         Self {
             chaos_home,
             cli_overrides,
             loader_overrides,
-            cloud_requirements,
         }
     }
 
@@ -136,7 +132,6 @@ impl ConfigService {
             chaos_home,
             cli_overrides: Vec::new(),
             loader_overrides: LoaderOverrides::default(),
-            cloud_requirements: CloudRequirementsLoader::default(),
         }
     }
 
@@ -154,7 +149,6 @@ impl ConfigService {
                     .cli_overrides(self.cli_overrides.clone())
                     .loader_overrides(self.loader_overrides.clone())
                     .fallback_cwd(Some(cwd.to_path_buf()))
-                    .cloud_requirements(self.cloud_requirements.clone())
                     .build()
                     .await
                     .map_err(|err| {
@@ -419,7 +413,6 @@ impl ConfigService {
             cwd,
             &self.cli_overrides,
             self.loader_overrides.clone(),
-            self.cloud_requirements.clone(),
         )
         .await
     }
@@ -650,11 +643,8 @@ fn value_at_path<'a>(root: &'a TomlValue, segments: &[String]) -> Option<&'a Tom
 
 fn override_message(layer: &ConfigLayerSource) -> String {
     match layer {
-        ConfigLayerSource::Mdm { domain, key: _ } => {
-            format!("Overridden by managed policy (MDM): {domain}")
-        }
         ConfigLayerSource::System { file } => {
-            format!("Overridden by managed config (system): {}", file.display())
+            format!("Overridden by system config: {}", file.display())
         }
         ConfigLayerSource::Project { dot_codex_folder } => format!(
             "Overridden by project config: {}/{CONFIG_TOML_FILE}",
@@ -666,12 +656,6 @@ fn override_message(layer: &ConfigLayerSource) -> String {
         ConfigLayerSource::SessionFlags => "Overridden by session flags".to_string(),
         ConfigLayerSource::User { file } => {
             format!("Overridden by user config: {}", file.display())
-        }
-        ConfigLayerSource::LegacyManagedConfigTomlFromFile { file } => {
-            format!(
-                "Overridden by legacy managed_config.toml: {}",
-                file.display()
-            )
         }
     }
 }

@@ -2,7 +2,6 @@ use crate::config::NetworkToml;
 use crate::config::PermissionsToml;
 use crate::config::find_chaos_home;
 use crate::config::resolve_permission_profile;
-use crate::config_loader::CloudRequirementsLoader;
 use crate::config_loader::ConfigLayerStack;
 use crate::config_loader::ConfigLayerStackOrdering;
 use crate::config_loader::LoaderOverrides;
@@ -45,15 +44,10 @@ async fn build_config_state_with_mtimes() -> Result<(ConfigState, Vec<LayerMtime
     let chaos_home = find_chaos_home().context("failed to resolve CHAOS_HOME")?;
     let cli_overrides = Vec::new();
     let overrides = LoaderOverrides::default();
-    let config_layer_stack = load_config_layers_state(
-        &chaos_home,
-        /*cwd*/ None,
-        &cli_overrides,
-        overrides,
-        CloudRequirementsLoader::default(),
-    )
-    .await
-    .context("failed to load Codex config")?;
+    let config_layer_stack =
+        load_config_layers_state(&chaos_home, /*cwd*/ None, &cli_overrides, overrides)
+            .await
+            .context("failed to load Codex config")?;
 
     let (exec_policy, warning) = match load_exec_policy(&config_layer_stack).await {
         Ok(policy) => (policy, None),
@@ -93,9 +87,6 @@ fn collect_layer_mtimes(stack: &ConfigLayerStack) -> Vec<LayerMtime> {
                     .join(CONFIG_TOML_FILE)
                     .ok()
                     .map(|p| p.as_path().to_path_buf()),
-                ConfigLayerSource::LegacyManagedConfigTomlFromFile { file } => {
-                    Some(file.as_path().to_path_buf())
-                }
                 _ => None,
             };
             path.map(LayerMtime::new)

@@ -424,34 +424,44 @@ fn test_full_toolset_specs_for_gpt5_codex_unified_exec_web_search() {
         expected.insert(tool_name(&spec).to_string(), spec);
     }
 
-    // Arsenal tools — registered from the arsenal crate at boot.
-    for info in chaos_arsenal::tools::tool_infos() {
-        let input_schema = parse_tool_input_schema(&info.input_schema)
-            .unwrap_or_else(|e| panic!("arsenal tool {} has invalid schema: {e}", info.name));
-        let spec = ToolSpec::Function(ResponsesApiTool {
-            name: info.name.clone(),
-            description: info.description.unwrap_or_default(),
-            strict: false,
-            defer_loading: None,
-            parameters: input_schema,
-            output_schema: None,
-        });
-        expected.insert(tool_name(&spec).to_string(), spec);
-    }
-
-    // Cron tools — registered from the cron crate at boot.
-    for info in chaos_cron::tool_infos() {
-        let input_schema = parse_tool_input_schema(&info.input_schema)
-            .unwrap_or_else(|e| panic!("cron tool {} has invalid schema: {e}", info.name));
-        let spec = ToolSpec::Function(ResponsesApiTool {
-            name: info.name.clone(),
-            description: info.description.unwrap_or_default(),
-            strict: false,
-            defer_loading: None,
-            parameters: input_schema,
-            output_schema: None,
-        });
-        expected.insert(tool_name(&spec).to_string(), spec);
+    // Catalog tools (arsenal, cron, git, mcp, etc.) — collected from inventory,
+    // matching the same path the builder uses so annotations are consistent.
+    {
+        use chaos_traits::catalog::CatalogRegistration;
+        let mut seen = std::collections::HashSet::new();
+        for reg in inventory::iter::<CatalogRegistration> {
+            if !seen.insert(reg.name) {
+                continue;
+            }
+            for tool in (reg.tools)() {
+                let input_schema =
+                    parse_tool_input_schema(&tool.input_schema).unwrap_or_else(|e| {
+                        panic!("catalog tool {} has invalid schema: {e}", tool.name)
+                    });
+                let description = match tool.annotations.as_ref().and_then(|v| {
+                    serde_json::from_value::<chaos_mcp_runtime::ToolAnnotations>(v.clone()).ok()
+                }) {
+                    Some(ann) => {
+                        let suffix = annotation_suffix(&ann);
+                        if suffix.is_empty() {
+                            tool.description
+                        } else {
+                            format!("{}{suffix}", tool.description)
+                        }
+                    }
+                    None => tool.description,
+                };
+                let spec = ToolSpec::Function(ResponsesApiTool {
+                    name: tool.name.clone(),
+                    description,
+                    strict: false,
+                    defer_loading: None,
+                    parameters: input_schema,
+                    output_schema: None,
+                });
+                expected.insert(tool_name(&spec).to_string(), spec);
+            }
+        }
     }
 
     if config.exec_permission_approvals_enabled {
@@ -825,8 +835,11 @@ fn assert_model_tools(
             dynamic_tools: &[],
             catalog_tools: {
                 use chaos_traits::catalog::CatalogRegistration;
+                use std::collections::HashSet;
+                let mut seen = HashSet::new();
                 inventory::iter::<CatalogRegistration>
                     .into_iter()
+                    .filter(|reg| seen.insert(reg.name))
                     .flat_map(|reg| {
                         let name = reg.name.to_string();
                         (reg.tools)().into_iter().map(move |t| (name.clone(), t))
@@ -1101,6 +1114,16 @@ fn test_build_specs_gpt5_codex_default() {
             "list_dir",
             "cron_create",
             "cron_toggle",
+            "git_diff",
+            "git_log",
+            "git_show",
+            "git_blame",
+            "git_repo",
+            "git_status",
+            "git_branches",
+            "git_remotes",
+            "mcp_add_server",
+            "mcp_server",
             "web_search",
             "view_image",
             "spawn_agent",
@@ -1129,6 +1152,16 @@ fn test_build_specs_gpt51_codex_default() {
             "list_dir",
             "cron_create",
             "cron_toggle",
+            "git_diff",
+            "git_log",
+            "git_show",
+            "git_blame",
+            "git_repo",
+            "git_status",
+            "git_branches",
+            "git_remotes",
+            "mcp_add_server",
+            "mcp_server",
             "web_search",
             "view_image",
             "spawn_agent",
@@ -1159,6 +1192,16 @@ fn test_build_specs_gpt5_codex_unified_exec_web_search() {
             "list_dir",
             "cron_create",
             "cron_toggle",
+            "git_diff",
+            "git_log",
+            "git_show",
+            "git_blame",
+            "git_repo",
+            "git_status",
+            "git_branches",
+            "git_remotes",
+            "mcp_add_server",
+            "mcp_server",
             "web_search",
             "view_image",
             "spawn_agent",
@@ -1189,6 +1232,16 @@ fn test_build_specs_gpt51_codex_unified_exec_web_search() {
             "list_dir",
             "cron_create",
             "cron_toggle",
+            "git_diff",
+            "git_log",
+            "git_show",
+            "git_blame",
+            "git_repo",
+            "git_status",
+            "git_branches",
+            "git_remotes",
+            "mcp_add_server",
+            "mcp_server",
             "web_search",
             "view_image",
             "spawn_agent",
@@ -1217,6 +1270,16 @@ fn test_gpt_5_1_codex_max_defaults() {
             "list_dir",
             "cron_create",
             "cron_toggle",
+            "git_diff",
+            "git_log",
+            "git_show",
+            "git_blame",
+            "git_repo",
+            "git_status",
+            "git_branches",
+            "git_remotes",
+            "mcp_add_server",
+            "mcp_server",
             "web_search",
             "view_image",
             "spawn_agent",
@@ -1245,6 +1308,16 @@ fn test_codex_5_1_mini_defaults() {
             "list_dir",
             "cron_create",
             "cron_toggle",
+            "git_diff",
+            "git_log",
+            "git_show",
+            "git_blame",
+            "git_repo",
+            "git_status",
+            "git_branches",
+            "git_remotes",
+            "mcp_add_server",
+            "mcp_server",
             "web_search",
             "view_image",
             "spawn_agent",
@@ -1272,6 +1345,16 @@ fn test_gpt_5_defaults() {
             "list_dir",
             "cron_create",
             "cron_toggle",
+            "git_diff",
+            "git_log",
+            "git_show",
+            "git_blame",
+            "git_repo",
+            "git_status",
+            "git_branches",
+            "git_remotes",
+            "mcp_add_server",
+            "mcp_server",
             "web_search",
             "view_image",
             "spawn_agent",
@@ -1300,6 +1383,16 @@ fn test_gpt_5_1_defaults() {
             "list_dir",
             "cron_create",
             "cron_toggle",
+            "git_diff",
+            "git_log",
+            "git_show",
+            "git_blame",
+            "git_repo",
+            "git_status",
+            "git_branches",
+            "git_remotes",
+            "mcp_add_server",
+            "mcp_server",
             "web_search",
             "view_image",
             "spawn_agent",
@@ -1330,6 +1423,16 @@ fn test_gpt_5_1_codex_max_unified_exec_web_search() {
             "list_dir",
             "cron_create",
             "cron_toggle",
+            "git_diff",
+            "git_log",
+            "git_show",
+            "git_blame",
+            "git_repo",
+            "git_status",
+            "git_branches",
+            "git_remotes",
+            "mcp_add_server",
+            "mcp_server",
             "web_search",
             "view_image",
             "spawn_agent",

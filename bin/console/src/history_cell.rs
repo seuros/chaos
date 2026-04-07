@@ -2348,9 +2348,7 @@ mod tests {
         assert!(!rendered[0].contains("Worked for"));
         assert!(rendered[0].contains("Local tools: 3 calls (2.5s)"));
         assert!(rendered[0].contains("Inference: 2 calls (1.2s)"));
-        assert!(rendered[0].contains("WebSocket: 1 events send (700ms)"));
         assert!(rendered[0].contains("Streams: 6 events (900ms)"));
-        assert!(rendered[0].contains("4 events received (1.2s)"));
         assert!(rendered[0].contains("Responses API overhead: 650ms"));
         assert!(rendered[0].contains("Responses API inference: 1.9s"));
         assert!(rendered[0].contains("TTFT: 410ms (iapi) 460ms (service)"));

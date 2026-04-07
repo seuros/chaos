@@ -876,12 +876,12 @@ mod tests {
     async fn process_sse_stream_completes_on_done_without_usage() {
         let stream = futures::stream::iter(vec![
             Ok::<_, std::io::Error>(Bytes::from(
-                "data: {\"id\":\"chatcmpl-1\",\"model\":\"gpt-4o\",\"choices\":[{\"delta\":{\"content\":\"Hello\"},\"finish_reason\":null}]}\n",
+                "data: {\"id\":\"chatcmpl-1\",\"model\":\"gpt-4o\",\"choices\":[{\"delta\":{\"content\":\"Hello\"},\"finish_reason\":null}]}\n\n",
             )),
             Ok::<_, std::io::Error>(Bytes::from(
-                "data: {\"id\":\"chatcmpl-1\",\"model\":\"gpt-4o\",\"choices\":[{\"delta\":{},\"finish_reason\":\"stop\"}]}\n",
+                "data: {\"id\":\"chatcmpl-1\",\"model\":\"gpt-4o\",\"choices\":[{\"delta\":{},\"finish_reason\":\"stop\"}]}\n\n",
             )),
-            Ok::<_, std::io::Error>(Bytes::from("data: [DONE]\n")),
+            Ok::<_, std::io::Error>(Bytes::from("data: [DONE]\n\n")),
         ]);
         let (tx, mut rx) = mpsc::channel(16);
 

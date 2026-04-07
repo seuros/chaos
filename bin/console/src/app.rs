@@ -5722,7 +5722,7 @@ mod tests {
             .await;
 
         assert!(
-            app.overlay.is_none(),
+            !matches!(app.overlay, Some(Overlay::Transcript(_))),
             "log panel PageUp should not open transcript overlay"
         );
     }

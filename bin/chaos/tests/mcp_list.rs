@@ -72,7 +72,11 @@ async fn list_and_get_render_expected_output() -> Result<()> {
     assert!(stdout.contains("Status"));
     assert!(stdout.contains("Auth"));
     assert!(stdout.contains("enabled"));
-    assert!(stdout.contains("Unsupported"));
+    // Auth column shows "-" for stdio servers that don't support OAuth.
+    assert!(
+        stdout.lines().skip(1).all(|line| line.contains("-")),
+        "expected '-' in auth column for stdio server"
+    );
 
     let mut list_json_cmd = chaos_command(chaos_home.path())?;
     let json_output = list_json_cmd.args(["mcp", "list", "--json"]).output()?;

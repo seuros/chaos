@@ -16,22 +16,14 @@ use crate::ConstraintError;
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub enum RequirementSource {
     Unknown,
-    CloudRequirements,
     SystemRequirementsToml { file: AbsolutePathBuf },
-    LegacyManagedConfigTomlFromFile { file: AbsolutePathBuf },
 }
 
 impl fmt::Display for RequirementSource {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         match self {
             RequirementSource::Unknown => write!(f, "<unspecified>"),
-            RequirementSource::CloudRequirements => {
-                write!(f, "cloud requirements")
-            }
             RequirementSource::SystemRequirementsToml { file } => {
-                write!(f, "{}", file.as_path().display())
-            }
-            RequirementSource::LegacyManagedConfigTomlFromFile { file } => {
                 write!(f, "{}", file.as_path().display())
             }
         }
@@ -720,7 +712,7 @@ mod tests {
     #[test]
     fn merge_unset_fields_copies_every_field_and_sets_sources() {
         let mut target = ConfigRequirementsWithSources::default();
-        let source = RequirementSource::CloudRequirements;
+        let source = RequirementSource::Unknown;
 
         let allowed_approval_policies = vec![ApprovalPolicy::Supervised, ApprovalPolicy::Headless];
         let allowed_sandbox_modes = vec![
@@ -814,7 +806,7 @@ mod tests {
 
     #[test]
     fn merge_unset_fields_does_not_overwrite_existing_values() -> Result<()> {
-        let existing_source = RequirementSource::CloudRequirements;
+        let existing_source = RequirementSource::Unknown;
         let mut populated_target = ConfigRequirementsWithSources::default();
         let populated_requirements: ConfigRequirementsToml = from_str(
             r#"
@@ -959,7 +951,7 @@ mod tests {
 
     #[test]
     fn merge_unset_fields_merges_apps_across_sources_with_enabled_evaluation() {
-        let higher_source = RequirementSource::CloudRequirements;
+        let higher_source = RequirementSource::Unknown;
         let lower_source = RequirementSource::Unknown;
         let mut target = ConfigRequirementsWithSources::default();
 
@@ -1001,7 +993,7 @@ mod tests {
         let mut target = ConfigRequirementsWithSources::default();
 
         target.merge_unset_fields(
-            RequirementSource::CloudRequirements,
+            RequirementSource::Unknown,
             ConfigRequirementsToml {
                 apps: Some(apps_requirements(&[])),
                 ..Default::default()
@@ -1066,35 +1058,6 @@ mod tests {
     }
 
     #[test]
-    fn constraint_error_includes_cloud_requirements_source() -> Result<()> {
-        let source: ConfigRequirementsToml = from_str(
-            r#"
-                allowed_approval_policies = ["interactive"]
-            "#,
-        )?;
-
-        let source_location = RequirementSource::CloudRequirements;
-
-        let mut target = ConfigRequirementsWithSources::default();
-        target.merge_unset_fields(source_location.clone(), source);
-        let requirements = ConfigRequirements::try_from(target)?;
-
-        assert_eq!(
-            requirements
-                .approval_policy
-                .can_set(&ApprovalPolicy::Headless),
-            Err(ConstraintError::InvalidValue {
-                field_name: "approval_policy",
-                candidate: "Headless".into(),
-                allowed: "[Interactive]".into(),
-                requirement_source: source_location,
-            })
-        );
-
-        Ok(())
-    }
-
-    #[test]
     fn constrained_fields_store_requirement_source() -> Result<()> {
         let source: ConfigRequirementsToml = from_str(
             r#"
@@ -1107,7 +1070,7 @@ mod tests {
             "#,
         )?;
 
-        let source_location = RequirementSource::CloudRequirements;
+        let source_location = RequirementSource::Unknown;
         let mut target = ConfigRequirementsWithSources::default();
         target.merge_unset_fields(source_location.clone(), source);
         let requirements = ConfigRequirements::try_from(target)?;
@@ -1371,7 +1334,7 @@ mod tests {
             allow_local_binding = false
         "#;
 
-        let source = RequirementSource::CloudRequirements;
+        let source = RequirementSource::Unknown;
         let mut requirements_with_sources = ConfigRequirementsWithSources::default();
         requirements_with_sources.merge_unset_fields(source.clone(), from_str(toml_str)?);
 

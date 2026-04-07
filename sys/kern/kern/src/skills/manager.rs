@@ -13,7 +13,6 @@ use tracing::warn;
 
 use crate::config::Config;
 use crate::config::types::SkillsConfig;
-use crate::config_loader::CloudRequirementsLoader;
 use crate::config_loader::ConfigLayerStackOrdering;
 use crate::config_loader::LoaderOverrides;
 use crate::config_loader::load_config_layers_state;
@@ -109,7 +108,6 @@ impl SkillsManager {
             Some(cwd_abs),
             &cli_overrides,
             LoaderOverrides::default(),
-            CloudRequirementsLoader::default(),
         )
         .await
         {

@@ -195,7 +195,6 @@ fn default_permissions_profile_populates_runtime_sandbox_policy() -> std::io::Re
         chaos_home.path().to_path_buf(),
     )?;
 
-    let memories_root = AbsolutePathBuf::try_from(chaos_home.path().join("memories")).unwrap();
     assert_eq!(
         config.permissions.file_system_sandbox_policy,
         FileSystemSandboxPolicy::restricted(vec![
@@ -217,18 +216,12 @@ fn default_permissions_profile_populates_runtime_sandbox_policy() -> std::io::Re
                 },
                 access: FileSystemAccessMode::Read,
             },
-            FileSystemSandboxEntry {
-                path: FileSystemPath::Path {
-                    path: memories_root.clone(),
-                },
-                access: FileSystemAccessMode::Write,
-            },
         ]),
     );
     assert_eq!(
         config.permissions.sandbox_policy.get(),
         &SandboxPolicy::WorkspaceWrite {
-            writable_roots: vec![memories_root],
+            writable_roots: vec![],
             read_only_access: ReadOnlyAccess::Restricted {
                 include_platform_defaults: true,
                 readable_roots: vec![

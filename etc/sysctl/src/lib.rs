@@ -1,5 +1,4 @@
 pub mod agent_roles;
-mod cloud_requirements;
 mod config_requirements;
 mod constraint;
 mod diagnostics;
@@ -18,9 +17,6 @@ pub mod types;
 
 pub const CONFIG_TOML_FILE: &str = "config.toml";
 
-pub use cloud_requirements::CloudRequirementsLoadError;
-pub use cloud_requirements::CloudRequirementsLoadErrorCode;
-pub use cloud_requirements::CloudRequirementsLoader;
 pub use config_requirements::AppRequirementToml;
 pub use config_requirements::AppsRequirementsToml;
 pub use config_requirements::ConfigRequirements;

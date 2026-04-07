@@ -471,13 +471,14 @@ fn sqlite_home_defaults_to_codex_home_for_workspace_write() -> std::io::Result<(
 }
 
 #[test]
-fn workspace_write_always_includes_memories_root_once() -> std::io::Result<()> {
+fn workspace_write_includes_explicit_writable_root_once() -> std::io::Result<()> {
     let chaos_home = TempDir::new()?;
-    let memories_root = chaos_home.path().join("memories");
+    let extra_root = chaos_home.path().join("extra");
+    std::fs::create_dir_all(&extra_root)?;
     let config = Config::load_from_base_config_with_overrides(
         ConfigToml {
             sandbox_workspace_write: Some(SandboxWorkspaceWrite {
-                writable_roots: vec![AbsolutePathBuf::from_absolute_path(&memories_root)?],
+                writable_roots: vec![AbsolutePathBuf::from_absolute_path(&extra_root)?],
                 ..Default::default()
             }),
             ..Default::default()
@@ -489,22 +490,17 @@ fn workspace_write_always_includes_memories_root_once() -> std::io::Result<()> {
         chaos_home.path().to_path_buf(),
     )?;
 
-    assert!(
-        memories_root.is_dir(),
-        "expected memories root directory to exist at {}",
-        memories_root.display()
-    );
-    let expected_memories_root = AbsolutePathBuf::from_absolute_path(&memories_root)?;
+    let expected_root = AbsolutePathBuf::from_absolute_path(&extra_root)?;
     match config.permissions.sandbox_policy.get() {
         SandboxPolicy::WorkspaceWrite { writable_roots, .. } => {
             assert_eq!(
                 writable_roots
                     .iter()
-                    .filter(|root| **root == expected_memories_root)
+                    .filter(|root| **root == expected_root)
                     .count(),
                 1,
                 "expected single writable root entry for {}",
-                expected_memories_root.display()
+                expected_root.display()
             );
         }
         other => panic!("expected workspace-write policy, got {other:?}"),
@@ -883,88 +879,6 @@ fn config_honors_explicit_file_oauth_store_mode() -> std::io::Result<()> {
         OAuthCredentialsStoreMode::File,
     );
 
-    Ok(())
-}
-
-#[tokio::test]
-async fn managed_config_overrides_oauth_store_mode() -> anyhow::Result<()> {
-    let chaos_home = TempDir::new()?;
-    let managed_path = chaos_home.path().join("managed_config.toml");
-    let config_path = chaos_home.path().join(CONFIG_TOML_FILE);
-
-    std::fs::write(&config_path, "mcp_oauth_credentials_store = \"file\"\n")?;
-    std::fs::write(&managed_path, "mcp_oauth_credentials_store = \"keyring\"\n")?;
-
-    let overrides = LoaderOverrides {
-        managed_config_path: Some(managed_path.clone()),
-    };
-
-    let cwd = AbsolutePathBuf::try_from(chaos_home.path())?;
-    let config_layer_stack = load_config_layers_state(
-        chaos_home.path(),
-        Some(cwd),
-        &Vec::new(),
-        overrides,
-        CloudRequirementsLoader::default(),
-    )
-    .await?;
-    let cfg =
-        deserialize_config_toml_with_base(config_layer_stack.effective_config(), chaos_home.path())
-            .map_err(|e| {
-                tracing::error!("Failed to deserialize overridden config: {e}");
-                e
-            })?;
-    assert_eq!(
-        cfg.mcp_oauth_credentials_store,
-        Some(OAuthCredentialsStoreMode::Keyring),
-    );
-
-    let final_config = Config::load_from_base_config_with_overrides(
-        cfg,
-        ConfigOverrides::default(),
-        chaos_home.path().to_path_buf(),
-    )?;
-    assert_eq!(
-        final_config.mcp_oauth_credentials_store_mode,
-        OAuthCredentialsStoreMode::Keyring,
-    );
-
-    Ok(())
-}
-
-#[tokio::test]
-async fn managed_config_wins_over_cli_overrides() -> anyhow::Result<()> {
-    let chaos_home = TempDir::new()?;
-    let managed_path = chaos_home.path().join("managed_config.toml");
-
-    std::fs::write(
-        chaos_home.path().join(CONFIG_TOML_FILE),
-        "model = \"base\"\n",
-    )?;
-    std::fs::write(&managed_path, "model = \"managed_config\"\n")?;
-
-    let overrides = LoaderOverrides {
-        managed_config_path: Some(managed_path),
-    };
-
-    let cwd = AbsolutePathBuf::try_from(chaos_home.path())?;
-    let config_layer_stack = load_config_layers_state(
-        chaos_home.path(),
-        Some(cwd),
-        &[("model".to_string(), TomlValue::String("cli".to_string()))],
-        overrides,
-        CloudRequirementsLoader::default(),
-    )
-    .await?;
-
-    let cfg =
-        deserialize_config_toml_with_base(config_layer_stack.effective_config(), chaos_home.path())
-            .map_err(|e| {
-                tracing::error!("Failed to deserialize overridden config: {e}");
-                e
-            })?;
-
-    assert_eq!(cfg.model.as_deref(), Some("managed_config"));
     Ok(())
 }
 

@@ -25,7 +25,6 @@ use chaos_kern::config::ConfigOverrides;
 use chaos_kern::config::find_chaos_home;
 use chaos_kern::config::load_config_as_toml_with_cli_overrides;
 use chaos_kern::config::resolve_oss_provider;
-use chaos_kern::config_loader::CloudRequirementsLoader;
 use chaos_kern::config_loader::ConfigLoadError;
 use chaos_kern::config_loader::LoaderOverrides;
 use chaos_kern::config_loader::format_config_error_with_source;
@@ -287,8 +286,6 @@ pub async fn run_main(
         tracing::warn!(error = %err, "failed to run personality migration");
     }
 
-    let cloud_requirements = CloudRequirementsLoader::default();
-
     let model_provider_override = if cli.oss {
         let resolved = resolve_oss_provider(
             cli.oss_provider.as_deref(),
@@ -326,12 +323,7 @@ pub async fn run_main(
         ..Default::default()
     };
 
-    let config = load_config_or_exit(
-        cli_kv_overrides.clone(),
-        overrides.clone(),
-        cloud_requirements.clone(),
-    )
-    .await;
+    let config = load_config_or_exit(cli_kv_overrides.clone(), overrides.clone()).await;
 
     #[allow(clippy::print_stderr)]
     match check_execpolicy_for_warnings(&config.config_layer_stack).await {
@@ -479,7 +471,6 @@ pub async fn run_main(
         config,
         overrides,
         cli_kv_overrides,
-        cloud_requirements,
         log_state_db,
     )
     .await
@@ -494,7 +485,6 @@ async fn run_ratatui_app(
     initial_config: Config,
     overrides: ConfigOverrides,
     cli_kv_overrides: Vec<(String, toml::Value)>,
-    cloud_requirements: CloudRequirementsLoader,
     log_state_db: Option<Arc<StateRuntime>>,
 ) -> color_eyre::Result<AppExitInfo> {
     color_eyre::install()?;
@@ -542,12 +532,7 @@ async fn run_ratatui_app(
         // If the user made an explicit trust decision, reload config so current
         // process state reflects persisted trust changes.
         if onboarding_result.directory_trust_decision.is_some() {
-            load_config_or_exit(
-                cli_kv_overrides.clone(),
-                overrides.clone(),
-                cloud_requirements.clone(),
-            )
-            .await
+            load_config_or_exit(cli_kv_overrides.clone(), overrides.clone()).await
         } else {
             initial_config
         }
@@ -733,7 +718,6 @@ async fn run_ratatui_app(
             load_config_or_exit_with_fallback_cwd(
                 cli_kv_overrides.clone(),
                 overrides.clone(),
-                cloud_requirements.clone(),
                 fallback_cwd,
             )
             .await
@@ -917,28 +901,19 @@ fn determine_alt_screen_mode(no_alt_screen: bool, tui_alternate_screen: AltScree
 async fn load_config_or_exit(
     cli_kv_overrides: Vec<(String, toml::Value)>,
     overrides: ConfigOverrides,
-    cloud_requirements: CloudRequirementsLoader,
 ) -> Config {
-    load_config_or_exit_with_fallback_cwd(
-        cli_kv_overrides,
-        overrides,
-        cloud_requirements,
-        /*fallback_cwd*/ None,
-    )
-    .await
+    load_config_or_exit_with_fallback_cwd(cli_kv_overrides, overrides, /*fallback_cwd*/ None).await
 }
 
 async fn load_config_or_exit_with_fallback_cwd(
     cli_kv_overrides: Vec<(String, toml::Value)>,
     overrides: ConfigOverrides,
-    cloud_requirements: CloudRequirementsLoader,
     fallback_cwd: Option<PathBuf>,
 ) -> Config {
     #[allow(clippy::print_stderr)]
     match ConfigBuilder::default()
         .cli_overrides(cli_kv_overrides)
         .harness_overrides(overrides)
-        .cloud_requirements(cloud_requirements)
         .fallback_cwd(fallback_cwd)
         .build()
         .await

@@ -117,6 +117,15 @@ fn resolve_journald_executable(binary_path: Option<&Path>) -> Result<PathBuf> {
         if sibling.exists() {
             return Ok(sibling);
         }
+        // cargo test / nextest place test binaries in target/<profile>/deps/
+        // while standalone binaries live in target/<profile>/. Walk one more
+        // level up so we find chaos-journald next to the deps directory.
+        if let Some(grandparent) = parent.parent() {
+            let ancestor_sibling = grandparent.join("chaos-journald");
+            if ancestor_sibling.exists() {
+                return Ok(ancestor_sibling);
+            }
+        }
     }
 
     Ok(PathBuf::from("chaos-journald"))

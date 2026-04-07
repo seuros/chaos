@@ -202,9 +202,7 @@ use crate::skills::SkillLoadOutcome;
 use crate::skills::SkillMetadata;
 use crate::skills::SkillsManager;
 use crate::skills::build_skill_injections;
-use crate::skills::collect_env_var_dependencies;
 use crate::skills::collect_explicit_skill_mentions;
-use crate::skills::resolve_skill_dependencies_for_turn;
 use crate::state::ActiveTurn;
 use crate::state::SessionServices;
 use crate::state::SessionState;
@@ -4338,15 +4336,6 @@ pub(crate) async fn run_turn(
             &HashMap::new(),
         )
     });
-    let config = turn_context.config.clone();
-    if config
-        .features
-        .enabled(Feature::SkillEnvVarDependencyPrompt)
-    {
-        let env_var_dependencies = collect_env_var_dependencies(&mentioned_skills);
-        resolve_skill_dependencies_for_turn(&sess, &turn_context, &env_var_dependencies).await;
-    }
-
     maybe_prompt_and_install_mcp_dependencies(
         sess.as_ref(),
         turn_context.as_ref(),
@@ -4359,11 +4348,7 @@ pub(crate) async fn run_turn(
     let SkillInjections {
         items: skill_items,
         warnings: skill_warnings,
-    } = build_skill_injections(
-        &mentioned_skills,
-        Some(&session_telemetry),
-    )
-    .await;
+    } = build_skill_injections(&mentioned_skills, Some(&session_telemetry)).await;
 
     for message in skill_warnings {
         sess.send_event(&turn_context, EventMsg::Warning(WarningEvent { message }))

@@ -1954,7 +1954,7 @@ allow_local_binding = true
                 allow_local_binding: Some(true),
                 ..Default::default()
             },
-            RequirementSource::CloudRequirements,
+            RequirementSource::Unknown,
         ));
         let mut requirements_toml = config.config_layer_stack.requirements_toml().clone();
         requirements_toml.network = Some(NetworkRequirementsToml {

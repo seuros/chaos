@@ -115,7 +115,7 @@ pub fn validate_policy_against_constraints(
                 Err(invalid_value(
                     "network.enabled",
                     "true",
-                    "false (disabled by managed config)",
+                    "false (disabled by system requirements)",
                 ))
             } else {
                 Ok(())
@@ -147,7 +147,7 @@ pub fn validate_policy_against_constraints(
                     Err(invalid_value(
                         "network.allow_upstream_proxy",
                         "true",
-                        "false (disabled by managed config)",
+                        "false (disabled by system requirements)",
                     ))
                 } else {
                     Ok(())
@@ -166,7 +166,7 @@ pub fn validate_policy_against_constraints(
                     Err(invalid_value(
                         "network.dangerously_allow_non_loopback_proxy",
                         "true",
-                        "false (disabled by managed config)",
+                        "false (disabled by system requirements)",
                     ))
                 } else {
                     Ok(())
@@ -185,7 +185,7 @@ pub fn validate_policy_against_constraints(
                 Err(invalid_value(
                     "network.dangerously_allow_all_unix_sockets",
                     "true",
-                    "false (disabled by managed config)",
+                    "false (disabled by system requirements)",
                 ))
             } else {
                 Ok(())
@@ -199,7 +199,7 @@ pub fn validate_policy_against_constraints(
                 Err(invalid_value(
                     "network.allow_local_binding",
                     "true",
-                    "false (disabled by managed config)",
+                    "false (disabled by system requirements)",
                 ))
             } else {
                 Ok(())

@@ -247,7 +247,7 @@ async fn build_settings_update_items_emits_environment_item_for_network_changes(
             denied_domains: Some(vec!["blocked.example.com".to_string()]),
             ..Default::default()
         },
-        RequirementSource::CloudRequirements,
+        RequirementSource::Unknown,
     ));
     let layers = config
         .config_layer_stack

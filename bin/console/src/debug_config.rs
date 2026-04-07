@@ -177,14 +177,10 @@ fn render_debug_config_lines(stack: &ConfigLayerStack) -> Vec<Line<'static>> {
 fn render_non_file_layer_details(layer: &ConfigLayerEntry) -> Vec<Line<'static>> {
     match &layer.name {
         ConfigLayerSource::SessionFlags => render_session_flag_details(&layer.config),
-        ConfigLayerSource::Mdm { .. } => {
-            render_mdm_layer_details(layer)
-        }
         ConfigLayerSource::System { .. }
         | ConfigLayerSource::User { .. }
         | ConfigLayerSource::ProjectMcp { .. }
-        | ConfigLayerSource::Project { .. }
-        | ConfigLayerSource::LegacyManagedConfigTomlFromFile { .. } => Vec::new(),
+        | ConfigLayerSource::Project { .. } => Vec::new(),
     }
 }
 
@@ -200,24 +196,6 @@ fn render_session_flag_details(config: &TomlValue) -> Vec<Line<'static>> {
         .into_iter()
         .map(|(key, value)| format!("     - {key} = {value}").into())
         .collect()
-}
-
-fn render_mdm_layer_details(layer: &ConfigLayerEntry) -> Vec<Line<'static>> {
-    let value = layer
-        .raw_toml()
-        .map(ToString::to_string)
-        .unwrap_or_else(|| format_toml_value(&layer.config));
-    if value.is_empty() {
-        return vec!["     MDM value: <empty>".dim().into()];
-    }
-
-    if value.contains('\n') {
-        let mut lines = vec!["     MDM value:".into()];
-        lines.extend(value.lines().map(|line| format!("       {line}").into()));
-        lines
-    } else {
-        vec![format!("     MDM value: {value}").into()]
-    }
 }
 
 fn flatten_toml_key_values(
@@ -284,9 +262,6 @@ fn normalize_allowed_web_search_modes(
 
 fn format_config_layer_source(source: &ConfigLayerSource) -> String {
     match source {
-        ConfigLayerSource::Mdm { domain, key } => {
-            format!("MDM ({domain}:{key})")
-        }
         ConfigLayerSource::System { file } => {
             format!("system ({})", file.as_path().display())
         }
@@ -303,9 +278,6 @@ fn format_config_layer_source(source: &ConfigLayerSource) -> String {
             format!("project ({})", file.as_path().display())
         }
         ConfigLayerSource::SessionFlags => "session-flags".to_string(),
-        ConfigLayerSource::LegacyManagedConfigTomlFromFile { file } => {
-            format!("legacy managed_config.toml ({})", file.as_path().display())
-        }
     }
 }
 
@@ -478,7 +450,7 @@ mod tests {
         let requirements = ConfigRequirements {
             approval_policy: ConstrainedWithSource::new(
                 Constrained::allow_any(ApprovalPolicy::Interactive),
-                Some(RequirementSource::CloudRequirements),
+                Some(RequirementSource::Unknown),
             ),
             sandbox_policy: ConstrainedWithSource::new(
                 Constrained::allow_any(SandboxPolicy::new_read_only_policy()),
@@ -495,15 +467,15 @@ mod tests {
                         },
                     },
                 )]),
-                RequirementSource::CloudRequirements,
+                RequirementSource::Unknown,
             )),
             enforce_residency: ConstrainedWithSource::new(
                 Constrained::allow_any(Some(ResidencyRequirement::Us)),
-                Some(RequirementSource::CloudRequirements),
+                Some(RequirementSource::Unknown),
             ),
             web_search_mode: ConstrainedWithSource::new(
                 Constrained::allow_any(WebSearchMode::Cached),
-                Some(RequirementSource::CloudRequirements),
+                Some(RequirementSource::Unknown),
             ),
             network: Some(Sourced::new(
                 NetworkConstraints {
@@ -511,7 +483,7 @@ mod tests {
                     allowed_domains: Some(vec!["example.com".to_string()]),
                     ..Default::default()
                 },
-                RequirementSource::CloudRequirements,
+                RequirementSource::Unknown,
             )),
             ..ConfigRequirements::default()
         };
@@ -548,8 +520,7 @@ mod tests {
 
         let rendered = render_to_text(&render_debug_config_lines(&stack));
         assert!(
-            rendered
-                .contains("allowed_approval_policies: interactive (source: cloud requirements)")
+            rendered.contains("allowed_approval_policies: interactive (source: <unspecified>)")
         );
         assert!(
             rendered.contains(
@@ -561,14 +532,12 @@ mod tests {
             )
         );
         assert!(
-            rendered.contains(
-                "allowed_web_search_modes: cached, disabled (source: cloud requirements)"
-            )
+            rendered.contains("allowed_web_search_modes: cached, disabled (source: <unspecified>)")
         );
-        assert!(rendered.contains("mcp_servers: docs (source: MDM managed_config.toml (legacy))"));
-        assert!(rendered.contains("enforce_residency: us (source: cloud requirements)"));
+        assert!(rendered.contains("mcp_servers: docs (source: <unspecified>)"));
+        assert!(rendered.contains("enforce_residency: us (source: <unspecified>)"));
         assert!(rendered.contains(
-            "experimental_network: enabled=true, allowed_domains=[example.com] (source: cloud requirements)"
+            "experimental_network: enabled=true, allowed_domains=[example.com] (source: <unspecified>)"
         ));
         assert!(!rendered.contains("  - rules:"));
     }
@@ -602,13 +571,12 @@ writable_roots = ["/tmp"]
         assert!(rendered.contains("/tmp"));
     }
 
-
     #[test]
     fn debug_config_output_normalizes_empty_web_search_mode_list() {
         let requirements = ConfigRequirements {
             web_search_mode: ConstrainedWithSource::new(
                 Constrained::allow_any(WebSearchMode::Disabled),
-                Some(RequirementSource::CloudRequirements),
+                Some(RequirementSource::Unknown),
             ),
             ..ConfigRequirements::default()
         };
@@ -629,9 +597,7 @@ writable_roots = ["/tmp"]
             .expect("config layer stack");
 
         let rendered = render_to_text(&render_debug_config_lines(&stack));
-        assert!(
-            rendered.contains("allowed_web_search_modes: disabled (source: cloud requirements)")
-        );
+        assert!(rendered.contains("allowed_web_search_modes: disabled (source: <unspecified>)"));
     }
 
     #[test]

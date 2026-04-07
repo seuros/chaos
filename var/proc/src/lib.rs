@@ -50,6 +50,7 @@ pub use runtime::chaos_db_path;
 pub use runtime::logs_db_filename;
 pub use runtime::logs_db_path;
 pub use runtime::open_chaos_db;
+pub use runtime::open_chaos_db_url;
 pub use runtime::state_db_filename;
 pub use runtime::state_db_path;
 

@@ -62,7 +62,6 @@ pub type Terminal = CustomTerminal<CrosstermBackend<Stdout>>;
 
 pub fn set_modes() -> Result<()> {
     execute!(stdout(), EnableBracketedPaste)?;
-    execute!(stdout(), EnableMouseCapture)?;
 
     enable_raw_mode()?;
     // Enable keyboard enhancement flags so modifiers for keys like Enter are disambiguated.
@@ -356,6 +355,10 @@ impl Tui {
             return Ok(());
         }
         let _ = execute!(self.terminal.backend_mut(), EnterAlternateScreen);
+        // Only capture mouse while an alternate-screen overlay is active. In the
+        // inline transcript view we preserve terminal scrollback, so leaving mouse
+        // capture off allows the terminal's native wheel scrolling to keep working.
+        let _ = execute!(self.terminal.backend_mut(), EnableMouseCapture);
         // Enable "alternate scroll" so terminals may translate wheel to arrows
         let _ = execute!(self.terminal.backend_mut(), EnableAlternateScroll);
         if let Ok(size) = self.terminal.size() {
@@ -379,6 +382,7 @@ impl Tui {
         }
         // Disable alternate scroll when leaving alt-screen
         let _ = execute!(self.terminal.backend_mut(), DisableAlternateScroll);
+        let _ = execute!(self.terminal.backend_mut(), DisableMouseCapture);
         let _ = execute!(self.terminal.backend_mut(), LeaveAlternateScreen);
         if let Some(saved) = self.alt_saved_viewport.take() {
             self.terminal.set_viewport_area(saved);

@@ -9,6 +9,7 @@ use std::sync::atomic::Ordering;
 
 use crossterm::cursor::MoveTo;
 use crossterm::cursor::Show;
+use crossterm::event::EnableMouseCapture;
 use crossterm::event::KeyCode;
 use crossterm::terminal::EnterAlternateScreen;
 use crossterm::terminal::LeaveAlternateScreen;
@@ -160,6 +161,7 @@ impl PreparedResumeAction {
             }
             PreparedResumeAction::RestoreAltScreen => {
                 execute!(terminal.backend_mut(), EnterAlternateScreen)?;
+                execute!(terminal.backend_mut(), EnableMouseCapture)?;
                 // Enable "alternate scroll" so terminals may translate wheel to arrows
                 execute!(terminal.backend_mut(), EnableAlternateScroll)?;
                 if let Ok(size) = terminal.size() {

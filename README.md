@@ -36,7 +36,8 @@ graph LR
 ```
 
 **Kernel** — Talks to LLM providers. OpenAI, Anthropic, local models. This is the only
-part that cares about wire protocols and API formats.
+part that cares about wire protocols and API formats. Provider adapters and
+provider-facing protocol shims live with the kernel, not in `drivers/`.
 
 **Modules** — Extend what Chaos can do. Want voice? Module.
 Want a custom tool for your workflow? Module. Everything is modular — Chaos is not

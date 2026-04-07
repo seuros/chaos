@@ -722,6 +722,7 @@ struct CoreShellCommandExecutor {
     macos_seatbelt_profile_extensions: Option<MacOsSeatbeltProfileExtensions>,
     alcatraz_macos_exe: Option<PathBuf>,
     alcatraz_linux_exe: Option<PathBuf>,
+    #[cfg_attr(not(target_os = "freebsd"), allow(dead_code))]
     alcatraz_freebsd_exe: Option<PathBuf>,
 }
 
@@ -926,6 +927,7 @@ impl CoreShellCommandExecutor {
                 macos_seatbelt_profile_extensions,
                 alcatraz_macos_exe: self.alcatraz_macos_exe.as_ref(),
                 alcatraz_linux_exe: self.alcatraz_linux_exe.as_ref(),
+                #[cfg(target_os = "freebsd")]
                 alcatraz_freebsd_exe: self.alcatraz_freebsd_exe.as_ref(),
             })?;
         if let Some(network) = exec_request.network.as_ref() {

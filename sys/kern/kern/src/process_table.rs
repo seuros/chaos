@@ -328,6 +328,19 @@ impl ProcessTable {
         }
     }
 
+    /// Reload the project `.mcp.json` config layer for a specific process and
+    /// refresh its MCP server registry using the canonical session path.
+    pub async fn reload_project_mcp_for_process(&self, process_id: ProcessId) -> ChaosResult<()> {
+        let process = self.state.get_process(process_id).await?;
+        let turn_context = process.codex.session.new_default_turn().await;
+        process
+            .codex
+            .session
+            .reload_project_mcp_layer_and_refresh(turn_context.as_ref())
+            .await;
+        Ok(())
+    }
+
     pub fn subscribe_process_created(&self) -> broadcast::Receiver<ProcessId> {
         self.state.process_created_tx.subscribe()
     }

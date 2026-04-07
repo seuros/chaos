@@ -472,6 +472,8 @@ fn blocking_replace_mcp_servers_round_trips() {
             disabled_tools: None,
             scopes: None,
             oauth_resource: None,
+            r#type: None,
+            oauth: None,
         },
     );
 
@@ -497,6 +499,8 @@ fn blocking_replace_mcp_servers_round_trips() {
             disabled_tools: Some(vec!["forbidden".to_string()]),
             scopes: None,
             oauth_resource: Some("https://resource.example.com".to_string()),
+            r#type: None,
+            oauth: None,
         },
     );
 
@@ -566,6 +570,8 @@ foo = { command = "cmd" }
             disabled_tools: None,
             scopes: None,
             oauth_resource: None,
+            r#type: None,
+            oauth: None,
         },
     );
 
@@ -611,6 +617,8 @@ foo = { command = "cmd" } # keep me
             disabled_tools: None,
             scopes: None,
             oauth_resource: None,
+            r#type: None,
+            oauth: None,
         },
     );
 
@@ -655,6 +663,8 @@ foo = { command = "cmd", args = ["--flag"] } # keep me
             disabled_tools: None,
             scopes: None,
             oauth_resource: None,
+            r#type: None,
+            oauth: None,
         },
     );
 
@@ -700,6 +710,8 @@ foo = { command = "cmd" }
             disabled_tools: None,
             scopes: None,
             oauth_resource: None,
+            r#type: None,
+            oauth: None,
         },
     );
 

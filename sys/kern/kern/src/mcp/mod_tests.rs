@@ -130,6 +130,8 @@ async fn effective_mcp_servers_returns_configured_servers() {
             disabled_tools: None,
             scopes: None,
             oauth_resource: None,
+            r#type: None,
+            oauth: None,
         },
     );
     config

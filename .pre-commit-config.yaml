@@ -1,0 +1,15 @@
+repos:
+  - repo: local
+    hooks:
+      - id: just-qq
+        name: fmt + check + clippy
+        language: system
+        entry: just qq
+        pass_filenames: false
+        types: [rust]
+      - id: cargo-shear
+        name: cargo shear (unused deps)
+        language: system
+        entry: cargo shear
+        pass_filenames: false
+        files: Cargo\.(toml|lock)$

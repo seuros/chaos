@@ -224,7 +224,10 @@ pub fn build_exec_request(
         sandbox_cwd,
         alcatraz_macos_exe,
         alcatraz_linux_exe,
+        #[cfg(target_os = "freebsd")]
         alcatraz_freebsd_exe,
+        #[cfg(not(target_os = "freebsd"))]
+            alcatraz_freebsd_exe: _,
     } = sandbox;
 
     let enforce_managed_network = params.network.is_some();
@@ -281,6 +284,7 @@ pub fn build_exec_request(
             macos_seatbelt_profile_extensions: None,
             alcatraz_macos_exe: alcatraz_macos_exe.as_ref(),
             alcatraz_linux_exe: alcatraz_linux_exe.as_ref(),
+            #[cfg(target_os = "freebsd")]
             alcatraz_freebsd_exe: alcatraz_freebsd_exe.as_ref(),
         })
         .map_err(ChaosErr::from)?;
@@ -411,6 +415,7 @@ pub(crate) mod errors {
                 SandboxTransformError::MissingLinuxSandboxExecutable => {
                     ChaosErr::LandlockSandboxExecutableNotProvided
                 }
+                #[cfg(target_os = "freebsd")]
                 SandboxTransformError::MissingFreeBSDSandboxExecutable => {
                     ChaosErr::UnsupportedOperation(
                         "alcatraz-freebsd executable not found".to_string(),

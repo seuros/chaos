@@ -90,6 +90,7 @@ pub(crate) struct SandboxTransformRequest<'a> {
     #[cfg_attr(not(target_os = "macos"), allow(dead_code))]
     pub alcatraz_macos_exe: Option<&'a PathBuf>,
     pub alcatraz_linux_exe: Option<&'a PathBuf>,
+    #[cfg(target_os = "freebsd")]
     pub alcatraz_freebsd_exe: Option<&'a PathBuf>,
 }
 
@@ -104,6 +105,7 @@ pub enum SandboxPreference {
 pub(crate) enum SandboxTransformError {
     #[error("missing alcatraz-linux executable path")]
     MissingLinuxSandboxExecutable,
+    #[cfg(target_os = "freebsd")]
     #[error("missing alcatraz-freebsd executable path")]
     MissingFreeBSDSandboxExecutable,
     #[cfg(target_os = "macos")]
@@ -591,8 +593,6 @@ impl SandboxManager {
             alcatraz_linux_exe,
             #[cfg(target_os = "freebsd")]
             alcatraz_freebsd_exe,
-            #[cfg(not(target_os = "freebsd"))]
-                alcatraz_freebsd_exe: _,
         } = request;
         #[cfg(not(target_os = "macos"))]
         let macos_seatbelt_profile_extensions = None;

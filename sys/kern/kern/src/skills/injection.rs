@@ -4,8 +4,6 @@ use std::fs;
 use std::path::Path;
 use std::path::PathBuf;
 
-use crate::analytics_client::AnalyticsEventsClient;
-use crate::analytics_client::TrackEventsContext;
 use crate::instructions::SkillInstructions;
 use crate::mention_syntax::TOOL_MENTION_SIGIL;
 use crate::skills::SkillMetadata;
@@ -22,12 +20,8 @@ pub(crate) struct SkillInjections {
 pub(crate) async fn build_skill_injections(
     mentioned_skills: &[SkillMetadata],
     otel: Option<&SessionTelemetry>,
-    analytics_client: &AnalyticsEventsClient,
-    tracking: TrackEventsContext,
 ) -> SkillInjections {
     let _ = otel;
-    let _ = analytics_client;
-    let _ = tracking;
 
     let mut items = Vec::with_capacity(mentioned_skills.len());
     let mut warnings = Vec::new();

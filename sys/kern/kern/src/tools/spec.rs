@@ -9,8 +9,6 @@ use crate::minions::tools::MAX_WAIT_TIMEOUT_MS;
 use crate::minions::tools::MIN_WAIT_TIMEOUT_MS;
 use crate::models_manager::collaboration_mode_presets::CollaborationModesConfig;
 use crate::original_image_detail::can_request_original_image_detail;
-use crate::shell::Shell;
-use crate::shell::ShellType;
 use crate::tools::handlers::PLAN_TOOL;
 use crate::tools::handlers::agent_jobs::BatchJobHandler;
 use crate::tools::handlers::apply_patch::create_apply_patch_freeform_tool;
@@ -31,14 +29,12 @@ use chaos_ipc::protocol::SandboxPolicy;
 use chaos_ipc::protocol::SessionSource;
 use chaos_ipc::protocol::SubAgentSource;
 use chaos_mcp_runtime::manager::ToolInfo;
-use chaos_realpath::AbsolutePathBuf;
 use serde::Deserialize;
 use serde::Serialize;
 use serde_json::Value as JsonValue;
 use serde_json::json;
 use std::collections::BTreeMap;
 use std::collections::HashMap;
-use std::path::PathBuf;
 
 const WEB_SEARCH_CONTENT_TYPES: [&str; 2] = ["text", "image"];
 
@@ -180,59 +176,15 @@ fn close_agent_output_schema() -> JsonValue {
     })
 }
 
-#[derive(Debug, Clone, Copy, Eq, PartialEq)]
-pub enum ShellCommandBackendConfig {
-    Classic,
-    ZshFork,
-}
-
 #[derive(Debug, Clone, Eq, PartialEq)]
 pub enum UnifiedExecShellMode {
     Direct,
-    ZshFork(ZshForkConfig),
-}
-
-#[derive(Debug, Clone, Eq, PartialEq)]
-pub struct ZshForkConfig {
-    pub(crate) shell_zsh_path: AbsolutePathBuf,
-    pub(crate) main_execve_wrapper_exe: AbsolutePathBuf,
-}
-
-impl UnifiedExecShellMode {
-    pub fn for_session(
-        shell_command_backend: ShellCommandBackendConfig,
-        user_shell: &Shell,
-        shell_zsh_path: Option<&PathBuf>,
-        main_execve_wrapper_exe: Option<&PathBuf>,
-    ) -> Self {
-        if cfg!(unix)
-            && shell_command_backend == ShellCommandBackendConfig::ZshFork
-            && matches!(user_shell.shell_type, ShellType::Zsh)
-            && let (Some(shell_zsh_path), Some(main_execve_wrapper_exe)) =
-                (shell_zsh_path, main_execve_wrapper_exe)
-            && let (Ok(shell_zsh_path), Ok(main_execve_wrapper_exe)) = (
-                AbsolutePathBuf::try_from(shell_zsh_path.as_path())
-                    .inspect_err(|e| tracing::warn!("Failed to convert shell_zsh_path `{shell_zsh_path:?}`: {e:?}")),
-                AbsolutePathBuf::try_from(main_execve_wrapper_exe.as_path()).inspect_err(|e| {
-                    tracing::warn!("Failed to convert main_execve_wrapper_exe `{main_execve_wrapper_exe:?}`: {e:?}")
-                }),
-            )
-        {
-            Self::ZshFork(ZshForkConfig {
-                shell_zsh_path,
-                main_execve_wrapper_exe,
-            })
-        } else {
-            Self::Direct
-        }
-    }
 }
 
 #[derive(Debug, Clone)]
 pub(crate) struct ToolsConfig {
     pub available_models: Vec<ModelPreset>,
     pub shell_type: ConfigShellToolType,
-    shell_command_backend: ShellCommandBackendConfig,
     pub unified_exec_shell_mode: UnifiedExecShellMode,
     pub allow_login_shell: bool,
     pub apply_patch_tool_type: Option<ApplyPatchToolType>,
@@ -286,7 +238,6 @@ impl ToolsConfig {
         let include_image_gen_tool = false;
         let exec_permission_approvals_enabled = features.enabled(Feature::ExecPermissionApprovals);
         let request_permissions_tool_enabled = features.enabled(Feature::RequestPermissionsTool);
-        let shell_command_backend = ShellCommandBackendConfig::Classic;
         let unified_exec_allowed = unified_exec_allowed_in_environment(sandbox_policy);
         let shell_type = if !features.enabled(Feature::ShellTool) {
             ConfigShellToolType::Disabled
@@ -321,7 +272,6 @@ impl ToolsConfig {
         Self {
             available_models: available_models_ref.to_vec(),
             shell_type,
-            shell_command_backend,
             unified_exec_shell_mode: UnifiedExecShellMode::Direct,
             allow_login_shell: true,
             apply_patch_tool_type,
@@ -357,21 +307,6 @@ impl ToolsConfig {
         unified_exec_shell_mode: UnifiedExecShellMode,
     ) -> Self {
         self.unified_exec_shell_mode = unified_exec_shell_mode;
-        self
-    }
-
-    pub fn with_unified_exec_shell_mode_for_session(
-        mut self,
-        user_shell: &Shell,
-        shell_zsh_path: Option<&PathBuf>,
-        main_execve_wrapper_exe: Option<&PathBuf>,
-    ) -> Self {
-        self.unified_exec_shell_mode = UnifiedExecShellMode::for_session(
-            self.shell_command_backend,
-            user_shell,
-            shell_zsh_path,
-            main_execve_wrapper_exe,
-        );
         self
     }
 
@@ -1753,7 +1688,7 @@ pub(crate) fn build_specs_with_discoverable_tools(
     let view_image_handler = Arc::new(ViewImageHandler);
     let mcp_handler = Arc::new(McpHandler);
     let mcp_resource_handler = Arc::new(McpResourceHandler);
-    let shell_command_handler = Arc::new(ShellCommandHandler::from(config.shell_command_backend));
+    let shell_command_handler = Arc::new(ShellCommandHandler::new());
     let request_permissions_handler = Arc::new(RequestPermissionsHandler);
     let request_user_input_handler = Arc::new(RequestUserInputHandler {
         default_mode_request_user_input: config.default_mode_request_user_input,

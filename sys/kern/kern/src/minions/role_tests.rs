@@ -261,7 +261,6 @@ async fn apply_role_preserves_unspecified_keys() {
     )])
     .await;
     config.alcatraz_linux_exe = Some(PathBuf::from("/tmp/alcatraz-linux"));
-    config.main_execve_wrapper_exe = Some(PathBuf::from("/tmp/codex-execve-wrapper"));
     let role_path = write_role_config(
         &home,
         "effort-only.toml",
@@ -288,10 +287,6 @@ async fn apply_role_preserves_unspecified_keys() {
     assert_eq!(
         config.alcatraz_linux_exe,
         Some(PathBuf::from("/tmp/alcatraz-linux"))
-    );
-    assert_eq!(
-        config.main_execve_wrapper_exe,
-        Some(PathBuf::from("/tmp/codex-execve-wrapper"))
     );
 }
 

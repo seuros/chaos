@@ -32,20 +32,11 @@ use crate::tools::runtimes::shell::ShellRequest;
 use crate::tools::runtimes::shell::ShellRuntime;
 use crate::tools::runtimes::shell::ShellRuntimeBackend;
 use crate::tools::sandboxing::ToolCtx;
-use crate::tools::spec::ShellCommandBackendConfig;
 use chaos_ipc::models::PermissionProfile;
 
 pub struct ShellHandler;
 
-#[derive(Clone, Copy, Debug, Eq, PartialEq)]
-enum ShellCommandBackend {
-    Classic,
-    ZshFork,
-}
-
-pub struct ShellCommandHandler {
-    backend: ShellCommandBackend,
-}
+pub struct ShellCommandHandler;
 
 struct RunExecLikeArgs {
     tool_name: String,
@@ -80,11 +71,12 @@ impl ShellHandler {
 }
 
 impl ShellCommandHandler {
+    pub fn new() -> Self {
+        Self
+    }
+
     fn shell_runtime_backend(&self) -> ShellRuntimeBackend {
-        match self.backend {
-            ShellCommandBackend::Classic => ShellRuntimeBackend::ShellCommandClassic,
-            ShellCommandBackend::ZshFork => ShellRuntimeBackend::ShellCommandZshFork,
-        }
+        ShellRuntimeBackend::ShellCommandClassic
     }
 
     fn resolve_use_login_shell(
@@ -128,15 +120,6 @@ impl ShellCommandHandler {
     }
 }
 
-impl From<ShellCommandBackendConfig> for ShellCommandHandler {
-    fn from(config: ShellCommandBackendConfig) -> Self {
-        let backend = match config {
-            ShellCommandBackendConfig::Classic => ShellCommandBackend::Classic,
-            ShellCommandBackendConfig::ZshFork => ShellCommandBackend::ZshFork,
-        };
-        Self { backend }
-    }
-}
 
 impl ToolHandler for ShellHandler {
     type Output = FunctionToolOutput;
@@ -449,9 +432,7 @@ impl ShellHandler {
             use ShellRuntimeBackend::*;
             match shell_runtime_backend {
                 Generic => ShellRuntime::new(),
-                backend @ (ShellCommandClassic | ShellCommandZshFork) => {
-                    ShellRuntime::for_shell_command(backend)
-                }
+                backend @ ShellCommandClassic => ShellRuntime::for_shell_command(backend),
             }
         };
         let tool_ctx = ToolCtx {

@@ -322,7 +322,6 @@ pub async fn run_main(
         alcatraz_linux_exe: arg0_paths.alcatraz_linux_exe.clone(),
         alcatraz_freebsd_exe: arg0_paths.alcatraz_freebsd_exe.clone(),
         alcatraz_macos_exe: arg0_paths.alcatraz_macos_exe.clone(),
-        main_execve_wrapper_exe: arg0_paths.main_execve_wrapper_exe.clone(),
         show_raw_agent_reasoning: cli.oss.then_some(true),
         additional_writable_roots: additional_dirs,
         ..Default::default()

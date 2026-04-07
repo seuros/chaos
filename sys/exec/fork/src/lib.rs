@@ -319,8 +319,6 @@ pub async fn run_main(cli: Cli, arg0_paths: Arg0DispatchPaths) -> anyhow::Result
         alcatraz_linux_exe: arg0_paths.alcatraz_linux_exe.clone(),
         alcatraz_freebsd_exe: arg0_paths.alcatraz_freebsd_exe.clone(),
         alcatraz_macos_exe: arg0_paths.alcatraz_macos_exe.clone(),
-        main_execve_wrapper_exe: arg0_paths.main_execve_wrapper_exe.clone(),
-        zsh_path: None,
         base_instructions: None,
         minion_instructions: None,
         personality: None,

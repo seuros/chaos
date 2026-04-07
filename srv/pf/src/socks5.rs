@@ -137,7 +137,7 @@ async fn handle_socks5_tcp(
 ) -> Result<EstablishedClientConnection<TcpStream, TcpRequest>, BoxError> {
     let app_state = req
         .extensions()
-        .get::<Arc<NetworkProxyState>>()
+        .get_ref::<Arc<NetworkProxyState>>()
         .cloned()
         .ok_or_else(|| io::Error::other("missing state"))?;
 
@@ -149,7 +149,7 @@ async fn handle_socks5_tcp(
 
     let client = req
         .extensions()
-        .get::<SocketInfo>()
+        .get_ref::<SocketInfo>()
         .map(|info| info.peer_addr().to_string());
 
     match app_state.enabled().await {
@@ -313,7 +313,7 @@ async fn inspect_socks5_udp(
     }
 
     let client = extensions
-        .get::<SocketInfo>()
+        .get_ref::<SocketInfo>()
         .map(|info| info.peer_addr().to_string());
 
     match state.enabled().await {
@@ -497,7 +497,7 @@ mod tests {
     use crate::state::build_config_state;
     use pretty_assertions::assert_eq;
     use rama::extensions::Extensions;
-    use rama::extensions::ExtensionsMut;
+
     use rama::net::address::HostWithPort;
     use rama::net::address::SocketAddress;
     use rama::proxy::socks5::server::udp::RelayDirection;
@@ -548,9 +548,9 @@ mod tests {
             mode: NetworkMode::Full,
             ..NetworkProxySettings::default()
         });
-        let mut request =
+        let request =
             TcpRequest::new(HostWithPort::try_from("example.com:443").expect("valid authority"));
-        request.extensions_mut().insert(state.clone());
+        request.extensions().insert(state.clone());
 
         let (result, events) = capture_events(|| async {
             handle_socks5_tcp(request, TcpConnector::default(), None).await

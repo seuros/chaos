@@ -116,17 +116,17 @@ impl MitmState {
 pub(crate) async fn mitm_tunnel(upgraded: Upgraded) -> Result<()> {
     let mitm = upgraded
         .extensions()
-        .get::<Arc<MitmState>>()
+        .get_ref::<Arc<MitmState>>()
         .cloned()
         .context("missing MITM state")?;
     let app_state = upgraded
         .extensions()
-        .get::<Arc<NetworkProxyState>>()
+        .get_ref::<Arc<NetworkProxyState>>()
         .cloned()
         .context("missing app state")?;
     let target = upgraded
         .extensions()
-        .get::<ProxyTarget>()
+        .get_ref::<ProxyTarget>()
         .context("missing proxy target")?
         .0
         .clone();
@@ -135,7 +135,7 @@ pub(crate) async fn mitm_tunnel(upgraded: Upgraded) -> Result<()> {
     let acceptor_data = mitm.tls_acceptor_data_for_host(&target_host)?;
     let mode = upgraded
         .extensions()
-        .get::<NetworkMode>()
+        .get_ref::<NetworkMode>()
         .copied()
         .unwrap_or(NetworkMode::Full);
     let request_ctx = Arc::new(MitmRequestContext {
@@ -150,7 +150,7 @@ pub(crate) async fn mitm_tunnel(upgraded: Upgraded) -> Result<()> {
 
     let executor = upgraded
         .extensions()
-        .get::<Executor>()
+        .get_ref::<Executor>()
         .cloned()
         .unwrap_or_default();
 
@@ -254,7 +254,7 @@ async fn mitm_blocking_response(
     let log_path = path_for_log(req.uri());
     let client = req
         .extensions()
-        .get::<SocketInfo>()
+        .get_ref::<SocketInfo>()
         .map(|info| info.peer_addr().to_string());
 
     if let Some(request_host) = extract_request_host(req) {

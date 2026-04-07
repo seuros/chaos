@@ -34,7 +34,6 @@ use rama::Layer;
 use rama::Service;
 use rama::error::BoxError;
 use rama::error::ErrorExt as _;
-use rama::extensions::ExtensionsMut;
 use rama::extensions::ExtensionsRef;
 use rama::http::Body;
 use rama::http::HeaderMap;
@@ -147,11 +146,11 @@ async fn run_http_proxy_with_listener(
 
 async fn http_connect_accept(
     policy_decider: Option<Arc<dyn NetworkPolicyDecider>>,
-    mut req: Request,
+    req: Request,
 ) -> Result<(Response, Request), Response> {
     let app_state = req
         .extensions()
-        .get::<Arc<NetworkProxyState>>()
+        .get_ref::<Arc<NetworkProxyState>>()
         .cloned()
         .ok_or_else(|| text_response(StatusCode::INTERNAL_SERVER_ERROR, "missing state"))?;
 
@@ -295,10 +294,10 @@ async fn http_connect_accept(
         return Err(blocked_text_with_details(REASON_MITM_REQUIRED, &details));
     }
 
-    req.extensions_mut().insert(ProxyTarget(authority));
-    req.extensions_mut().insert(mode);
+    req.extensions().insert(ProxyTarget(authority));
+    req.extensions().insert(mode);
     if let Some(mitm_state) = mitm_state {
-        req.extensions_mut().insert(mitm_state);
+        req.extensions().insert(mitm_state);
     }
 
     DefaultHttpProxyConnectReplyService::new().serve(req).await
@@ -324,13 +323,13 @@ where
 async fn http_connect_proxy(upgraded: Upgraded) -> Result<(), Infallible> {
     let mode = upgraded
         .extensions()
-        .get::<NetworkMode>()
+        .get_ref::<NetworkMode>()
         .copied()
         .unwrap_or(NetworkMode::Full);
 
     let Some(target) = upgraded
         .extensions()
-        .get::<ProxyTarget>()
+        .get_ref::<ProxyTarget>()
         .map(|t| t.0.clone())
     else {
         warn!("CONNECT missing proxy target");
@@ -340,7 +339,7 @@ async fn http_connect_proxy(upgraded: Upgraded) -> Result<(), Infallible> {
     if mode == NetworkMode::Limited
         && upgraded
             .extensions()
-            .get::<Arc<mitm::MitmState>>()
+            .get_ref::<Arc<mitm::MitmState>>()
             .is_some()
     {
         let host = normalize_host(&target.host.to_string());
@@ -354,7 +353,7 @@ async fn http_connect_proxy(upgraded: Upgraded) -> Result<(), Infallible> {
 
     let allow_upstream_proxy = match upgraded
         .extensions()
-        .get::<Arc<NetworkProxyState>>()
+        .get_ref::<Arc<NetworkProxyState>>()
         .cloned()
     {
         Some(state) => match state.allow_upstream_proxy().await {
@@ -383,12 +382,12 @@ async fn http_connect_proxy(upgraded: Upgraded) -> Result<(), Infallible> {
 }
 
 async fn forward_connect_tunnel(
-    mut upgraded: Upgraded,
+    upgraded: Upgraded,
     proxy: Option<ProxyAddress>,
 ) -> Result<(), BoxError> {
     let authority = upgraded
         .extensions()
-        .get::<ProxyTarget>()
+        .get_ref::<ProxyTarget>()
         .map(|target| target.0.clone())
         .ok_or_else(|| BoxError::from("missing forward authority"))?;
 
@@ -401,7 +400,7 @@ async fn forward_connect_tunnel(
         .into_layer(proxy_connector);
     let connector = HttpsTunnelConnector { inner: connector };
     if let Some(proxy) = proxy {
-        upgraded.extensions_mut().insert(proxy);
+        upgraded.extensions().insert(proxy);
     }
     IoToProxyBridgeIoLayer::extension_proxy_target_with_connector(connector)
         .into_layer(IoForwardService::new())
@@ -414,7 +413,11 @@ async fn http_plain_proxy(
     policy_decider: Option<Arc<dyn NetworkPolicyDecider>>,
     mut req: Request,
 ) -> Result<Response, Infallible> {
-    let app_state = match req.extensions().get::<Arc<NetworkProxyState>>().cloned() {
+    let app_state = match req
+        .extensions()
+        .get_ref::<Arc<NetworkProxyState>>()
+        .cloned()
+    {
         Some(state) => state,
         None => {
             error!("missing app state");
@@ -767,7 +770,7 @@ async fn proxy_via_unix_socket(req: Request, socket_path: &str) -> Result<Respon
 fn client_addr<T: ExtensionsRef>(input: &T) -> Option<String> {
     input
         .extensions()
-        .get::<SocketInfo>()
+        .get_ref::<SocketInfo>()
         .map(|info| info.peer_addr().to_string())
 }
 
@@ -999,13 +1002,13 @@ mod tests {
         let state = Arc::new(network_proxy_state_for_policy(policy));
         state.set_network_mode(NetworkMode::Limited).await.unwrap();
 
-        let mut req = Request::builder()
+        let req = Request::builder()
             .method(Method::CONNECT)
             .uri("https://example.com:443")
             .header("host", "example.com:443")
             .body(Body::empty())
             .unwrap();
-        req.extensions_mut().insert(state);
+        req.extensions().insert(state);
 
         let response = http_connect_accept(None, req).await.unwrap_err();
         assert_eq!(response.status(), StatusCode::FORBIDDEN);
@@ -1023,13 +1026,13 @@ mod tests {
         };
         let state = Arc::new(network_proxy_state_for_policy(policy));
 
-        let mut req = Request::builder()
+        let req = Request::builder()
             .method(Method::CONNECT)
             .uri("https://example.com:443")
             .header("host", "example.com:443")
             .body(Body::empty())
             .unwrap();
-        req.extensions_mut().insert(state);
+        req.extensions().insert(state);
 
         let (response, _request) = http_connect_accept(None, req).await.unwrap();
         assert_eq!(response.status(), StatusCode::OK);
@@ -1104,13 +1107,13 @@ mod tests {
             .await
             .expect("network mode should update");
 
-        let mut req = Request::builder()
+        let req = Request::builder()
             .method(Method::POST)
             .uri("http://example.com")
             .header("x-unix-socket", "/tmp/test.sock")
             .body(Body::empty())
             .expect("request should build");
-        req.extensions_mut().insert(state);
+        req.extensions().insert(state);
 
         let response = http_plain_proxy(None, req).await.unwrap();
 
@@ -1127,13 +1130,13 @@ mod tests {
             NetworkProxySettings::default(),
         ));
 
-        let mut req = Request::builder()
+        let req = Request::builder()
             .method(Method::GET)
             .uri("http://example.com")
             .header("x-unix-socket", "/tmp/test.sock")
             .body(Body::empty())
             .expect("request should build");
-        req.extensions_mut().insert(state);
+        req.extensions().insert(state);
 
         let response = http_plain_proxy(None, req).await.unwrap();
 
@@ -1156,13 +1159,13 @@ mod tests {
             ..NetworkProxySettings::default()
         }));
 
-        let mut req = Request::builder()
+        let req = Request::builder()
             .method(Method::GET)
             .uri("http://example.com")
             .header("x-unix-socket", "/tmp/test.sock")
             .body(Body::empty())
             .expect("request should build");
-        req.extensions_mut().insert(state);
+        req.extensions().insert(state);
 
         let response = http_plain_proxy(None, req).await.unwrap();
         assert_eq!(response.status(), StatusCode::BAD_GATEWAY);
@@ -1177,13 +1180,13 @@ mod tests {
         };
         let state = Arc::new(network_proxy_state_for_policy(policy));
 
-        let mut req = Request::builder()
+        let req = Request::builder()
             .method(Method::CONNECT)
             .uri("https://api.openai.com:443")
             .header("host", "api.openai.com:443")
             .body(Body::empty())
             .unwrap();
-        req.extensions_mut().insert(state);
+        req.extensions().insert(state);
 
         let response = http_connect_accept(None, req).await.unwrap_err();
         assert_eq!(response.status(), StatusCode::FORBIDDEN);
@@ -1198,13 +1201,13 @@ mod tests {
         let state = Arc::new(network_proxy_state_for_policy(
             NetworkProxySettings::default(),
         ));
-        let mut req = Request::builder()
+        let req = Request::builder()
             .method(Method::GET)
             .uri("http://raw.githubusercontent.com/openai/codex/main/README.md")
             .header(header::HOST, "api.github.com")
             .body(Body::empty())
             .unwrap();
-        req.extensions_mut().insert(state);
+        req.extensions().insert(state);
 
         let response = http_plain_proxy(None, req).await;
         assert_eq!(response.unwrap().status(), StatusCode::BAD_REQUEST);

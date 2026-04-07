@@ -1,7 +1,7 @@
 use rama::Service;
 use rama::error::ErrorContext as _;
 use rama::error::extra::OpaqueError;
-use rama::extensions::ExtensionsMut;
+use rama::extensions::ExtensionsRef as _;
 use rama::http::Body;
 use rama::http::Request;
 use rama::http::Response;
@@ -121,9 +121,9 @@ impl Service<Request<Body>> for UpstreamClient {
     type Output = Response;
     type Error = OpaqueError;
 
-    async fn serve(&self, mut req: Request<Body>) -> Result<Self::Output, Self::Error> {
+    async fn serve(&self, req: Request<Body>) -> Result<Self::Output, Self::Error> {
         if let Some(proxy) = self.proxy_config.proxy_for_request(&req) {
-            req.extensions_mut().insert(proxy);
+            req.extensions().insert(proxy);
         }
 
         let uri = req.uri().clone();

@@ -46,6 +46,7 @@ use sqlx::sqlite::SqliteSynchronous;
 use std::collections::BTreeSet;
 use std::path::Path;
 use std::path::PathBuf;
+use std::str::FromStr;
 use std::sync::Arc;
 use std::time::Duration;
 use tracing::warn;
@@ -151,14 +152,15 @@ impl StateRuntime {
 }
 
 async fn open_sqlite(path: &Path, migrator: &'static Migrator) -> anyhow::Result<SqlitePool> {
-    let options = SqliteConnectOptions::new()
-        .filename(path)
-        .create_if_missing(true)
-        .journal_mode(SqliteJournalMode::Wal)
-        .synchronous(SqliteSynchronous::Normal)
-        .busy_timeout(Duration::from_secs(5))
-        .auto_vacuum(SqliteAutoVacuum::Incremental)
-        .log_statements(LevelFilter::Off);
+    let options = sqlite_connect_options_for_path(path);
+    open_sqlite_with_options(options, migrator, Some(path.display().to_string())).await
+}
+
+async fn open_sqlite_with_options(
+    options: SqliteConnectOptions,
+    migrator: &'static Migrator,
+    db_label: Option<String>,
+) -> anyhow::Result<SqlitePool> {
     let pool = SqlitePoolOptions::new()
         .max_connections(5)
         .connect_with(options)
@@ -168,7 +170,7 @@ async fn open_sqlite(path: &Path, migrator: &'static Migrator) -> anyhow::Result
             && has_existing_user_schema(&pool).await.unwrap_or(false)
         {
             warn!(
-                db_path = %path.display(),
+                db_path = %db_label.as_deref().unwrap_or("<sqlite-url>"),
                 error = %err,
                 "ignoring sqlx migration checksum mismatch for existing local database"
             );
@@ -195,6 +197,29 @@ async fn open_sqlite(path: &Path, migrator: &'static Migrator) -> anyhow::Result
         .execute(&pool)
         .await;
     Ok(pool)
+}
+
+fn sqlite_connect_options_for_path(path: &Path) -> SqliteConnectOptions {
+    SqliteConnectOptions::new()
+        .filename(path)
+        .create_if_missing(true)
+        .journal_mode(SqliteJournalMode::Wal)
+        .synchronous(SqliteSynchronous::Normal)
+        .busy_timeout(Duration::from_secs(5))
+        .auto_vacuum(SqliteAutoVacuum::Incremental)
+        .log_statements(LevelFilter::Off)
+}
+
+fn sqlite_connect_options_for_url(database_url: &str) -> anyhow::Result<SqliteConnectOptions> {
+    let options = SqliteConnectOptions::from_str(database_url)
+        .map_err(|err| anyhow::anyhow!("invalid sqlite database URL: {err}"))?
+        .create_if_missing(true)
+        .journal_mode(SqliteJournalMode::Wal)
+        .synchronous(SqliteSynchronous::Normal)
+        .busy_timeout(Duration::from_secs(5))
+        .auto_vacuum(SqliteAutoVacuum::Incremental)
+        .log_statements(LevelFilter::Off);
+    Ok(options)
 }
 
 fn is_modified_migration_error(err: &sqlx::migrate::MigrateError) -> bool {
@@ -247,6 +272,11 @@ pub fn chaos_db_path(chaos_home: &Path) -> PathBuf {
 
 pub async fn open_chaos_db(chaos_home: &Path) -> anyhow::Result<SqlitePool> {
     open_sqlite(&chaos_db_path(chaos_home), &CHAOS_MIGRATOR).await
+}
+
+pub async fn open_chaos_db_url(database_url: &str) -> anyhow::Result<SqlitePool> {
+    let options = sqlite_connect_options_for_url(database_url)?;
+    open_sqlite_with_options(options, &CHAOS_MIGRATOR, Some(database_url.to_string())).await
 }
 
 async fn remove_legacy_db_files(
@@ -376,6 +406,40 @@ mod tests {
                 .await
                 .expect("stat chaos db"),
             "chaos db file should be created on demand"
+        );
+
+        tokio::fs::remove_dir_all(&chaos_home)
+            .await
+            .expect("cleanup temp chaos home");
+    }
+
+    #[tokio::test]
+    async fn open_chaos_db_url_creates_schema() {
+        let chaos_home = test_support::unique_temp_dir();
+        tokio::fs::create_dir_all(&chaos_home)
+            .await
+            .expect("create temp chaos home");
+
+        let db_path = chaos_db_path(chaos_home.as_path());
+        let db_url = format!("sqlite://{}", db_path.display());
+        let pool = open_chaos_db_url(&db_url)
+            .await
+            .expect("open chaos db from sqlite url");
+
+        let row = sqlx::query(
+            "SELECT name FROM sqlite_master WHERE type = 'table' AND name = 'cron_jobs'",
+        )
+        .fetch_one(&pool)
+        .await
+        .expect("cron_jobs table should exist");
+
+        let table_name: String = row.get("name");
+        assert_eq!(table_name, "cron_jobs");
+        assert!(
+            tokio::fs::try_exists(&db_path)
+                .await
+                .expect("stat chaos db"),
+            "chaos db file should be created from sqlite url"
         );
 
         tokio::fs::remove_dir_all(&chaos_home)

@@ -200,9 +200,7 @@ fn config_path_for_layer(layer: &ConfigLayerEntry, config_toml_file: &str) -> Op
         }
         ConfigLayerSource::ProjectMcp { file } => Some(file.to_path_buf()),
         ConfigLayerSource::LegacyManagedConfigTomlFromFile { file } => Some(file.to_path_buf()),
-        ConfigLayerSource::Mdm { .. }
-        | ConfigLayerSource::SessionFlags
-        | ConfigLayerSource::LegacyManagedConfigTomlFromMdm => None,
+        ConfigLayerSource::Mdm { .. } | ConfigLayerSource::SessionFlags => None,
     }
 }
 

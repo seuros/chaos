@@ -34,12 +34,7 @@ async fn test_config_with_cli_overrides(
     let config = ConfigBuilder::default()
         .chaos_home(home.path().to_path_buf())
         .cli_overrides(cli_overrides)
-        .loader_overrides(LoaderOverrides {
-            #[cfg(target_os = "macos")]
-            managed_preferences_base64: Some(String::new()),
-            macos_managed_config_requirements_base64: Some(String::new()),
-            ..LoaderOverrides::default()
-        })
+        .loader_overrides(LoaderOverrides::default())
         .build()
         .await
         .expect("load default test config");

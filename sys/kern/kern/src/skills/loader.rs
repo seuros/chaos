@@ -263,8 +263,7 @@ fn skill_roots_from_layer_stack_inner(
             ConfigLayerSource::ProjectMcp { .. }
             | ConfigLayerSource::Mdm { .. }
             | ConfigLayerSource::SessionFlags
-            | ConfigLayerSource::LegacyManagedConfigTomlFromFile { .. }
-            | ConfigLayerSource::LegacyManagedConfigTomlFromMdm => {}
+            | ConfigLayerSource::LegacyManagedConfigTomlFromFile { .. } => {}
         }
     }
 

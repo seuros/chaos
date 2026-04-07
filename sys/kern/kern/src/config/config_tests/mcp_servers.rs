@@ -65,7 +65,7 @@ fn filter_mcp_servers_by_allowlist_enforces_identity_rules() {
         (MATCHED_URL_SERVER.to_string(), http_mcp(GOOD_URL)),
         (DIFFERENT_NAME_SERVER.to_string(), stdio_mcp("same-cmd")),
     ]);
-    let source = RequirementSource::LegacyManagedConfigTomlFromMdm;
+    let source = RequirementSource::CloudRequirements;
     let requirements = Sourced::new(
         BTreeMap::from([
             (
@@ -158,7 +158,7 @@ fn filter_mcp_servers_by_allowlist_blocks_all_when_empty() {
         ("server-b".to_string(), http_mcp("https://example.com/b")),
     ]);
 
-    let source = RequirementSource::LegacyManagedConfigTomlFromMdm;
+    let source = RequirementSource::CloudRequirements;
     let requirements = Sourced::new(BTreeMap::new(), source.clone());
     filter_mcp_servers_by_requirements(&mut servers, Some(&requirements));
 
@@ -270,9 +270,6 @@ async fn managed_config_wins_over_cli_overrides() -> anyhow::Result<()> {
 
     let overrides = LoaderOverrides {
         managed_config_path: Some(managed_path),
-        #[cfg(target_os = "macos")]
-        managed_preferences_base64: None,
-        macos_managed_config_requirements_base64: None,
     };
 
     let cwd = AbsolutePathBuf::try_from(chaos_home.path())?;

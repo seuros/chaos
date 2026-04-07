@@ -1,4 +1,3 @@
-use crate::config_loader::ResidencyRequirement;
 use chaos_ipc::product::CHAOS_VERSION;
 use codex_client::CodexHttpClient;
 pub use codex_client::CodexRequestBuilder;
@@ -27,7 +26,6 @@ use std::sync::RwLock;
 pub static USER_AGENT_SUFFIX: LazyLock<Mutex<Option<String>>> = LazyLock::new(|| Mutex::new(None));
 pub const DEFAULT_ORIGINATOR: &str = "codex_cli_rs";
 pub const CODEX_INTERNAL_ORIGINATOR_OVERRIDE_ENV_VAR: &str = "CODEX_INTERNAL_ORIGINATOR_OVERRIDE";
-pub const RESIDENCY_HEADER_NAME: &str = "x-openai-internal-codex-residency";
 
 #[derive(Debug, Clone)]
 pub struct Originator {
@@ -35,8 +33,6 @@ pub struct Originator {
     pub header_value: HeaderValue,
 }
 static ORIGINATOR: LazyLock<RwLock<Option<Originator>>> = LazyLock::new(|| RwLock::new(None));
-static REQUIREMENTS_RESIDENCY: LazyLock<RwLock<Option<ResidencyRequirement>>> =
-    LazyLock::new(|| RwLock::new(None));
 
 #[derive(Debug)]
 pub enum SetOriginatorError {
@@ -78,14 +74,6 @@ pub fn set_default_originator(value: String) -> Result<(), SetOriginatorError> {
     }
     *guard = Some(originator);
     Ok(())
-}
-
-pub fn set_default_client_residency_requirement(enforce_residency: Option<ResidencyRequirement>) {
-    let Ok(mut guard) = REQUIREMENTS_RESIDENCY.write() else {
-        tracing::warn!("Failed to acquire requirements residency lock");
-        return;
-    };
-    *guard = enforce_residency;
 }
 
 pub fn originator() -> Originator {
@@ -197,15 +185,6 @@ pub fn default_headers() -> HeaderMap {
     headers.insert("originator", originator().header_value);
     if let Ok(user_agent) = HeaderValue::from_str(&get_codex_user_agent()) {
         headers.insert(USER_AGENT, user_agent);
-    }
-    if let Ok(guard) = REQUIREMENTS_RESIDENCY.read()
-        && let Some(requirement) = guard.as_ref()
-        && !headers.contains_key(RESIDENCY_HEADER_NAME)
-    {
-        let value = match requirement {
-            ResidencyRequirement::Us => HeaderValue::from_static("us"),
-        };
-        headers.insert(RESIDENCY_HEADER_NAME, value);
     }
     headers
 }

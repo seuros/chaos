@@ -224,7 +224,6 @@ pub enum ConfigLayerSource {
         file: AbsolutePathBuf,
     },
 
-    LegacyManagedConfigTomlFromMdm,
 }
 
 impl ConfigLayerSource {
@@ -239,7 +238,6 @@ impl ConfigLayerSource {
             ConfigLayerSource::Project { .. } => 25,
             ConfigLayerSource::SessionFlags => 30,
             ConfigLayerSource::LegacyManagedConfigTomlFromFile { .. } => 40,
-            ConfigLayerSource::LegacyManagedConfigTomlFromMdm => 50,
         }
     }
 }

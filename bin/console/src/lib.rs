@@ -29,7 +29,6 @@ use chaos_kern::config_loader::CloudRequirementsLoader;
 use chaos_kern::config_loader::ConfigLoadError;
 use chaos_kern::config_loader::LoaderOverrides;
 use chaos_kern::config_loader::format_config_error_with_source;
-use chaos_kern::default_client::set_default_client_residency_requirement;
 use chaos_kern::features::Feature;
 use chaos_kern::find_process_id_by_name;
 use chaos_kern::format_exec_policy_error_with_source;
@@ -345,8 +344,6 @@ pub async fn run_main(
             std::process::exit(1);
         }
     }
-
-    set_default_client_residency_requirement(config.enforce_residency.value());
 
     if let Some(warning) =
         add_dir_warning_message(&cli.add_dir, config.permissions.sandbox_policy.get())
@@ -754,7 +751,6 @@ async fn run_ratatui_app(
         config.startup_warnings.push(w);
     }
 
-    set_default_client_residency_requirement(config.enforce_residency.value());
     let active_profile = config.active_profile.clone();
     let should_show_trust_screen = should_show_trust_screen(&config);
     let Cli {

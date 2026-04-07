@@ -673,9 +673,6 @@ fn override_message(layer: &ConfigLayerSource) -> String {
                 file.display()
             )
         }
-        ConfigLayerSource::LegacyManagedConfigTomlFromMdm => {
-            "Overridden by legacy managed configuration from MDM".to_string()
-        }
     }
 }
 

@@ -100,6 +100,17 @@ pub struct McpServerConfig {
     /// Optional OAuth resource parameter to include during MCP login (RFC 8707).
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub oauth_resource: Option<String>,
+
+    /// Transport type hint used by other MCP clients (e.g. Claude Code, VS
+    /// Code). Chaos still infers transport from `command` / `url`, but keeps
+    /// this field when reading and rewriting shared `.mcp.json` files.
+    #[serde(default, rename = "type", skip_serializing_if = "Option::is_none")]
+    pub r#type: Option<String>,
+
+    /// OAuth config block used by Claude Code / VS Code. Chaos uses its own
+    /// OAuth flow, but preserves this block when rewriting shared configs.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub oauth: Option<serde_json::Value>,
 }
 
 // Raw MCP config shape used for deserialization and JSON Schema generation.
@@ -107,6 +118,12 @@ pub struct McpServerConfig {
 #[derive(Deserialize, Clone, JsonSchema)]
 #[schemars(deny_unknown_fields)]
 pub struct RawMcpServerConfig {
+    /// Transport type hint used by other MCP clients (e.g. Claude Code, VS
+    /// Code). Chaos infers the transport from the presence of `command` or
+    /// `url`, so this field is accepted but ignored.
+    #[serde(default)]
+    pub r#type: Option<String>,
+
     // stdio
     pub command: Option<String>,
     #[serde(default)]
@@ -146,6 +163,11 @@ pub struct RawMcpServerConfig {
     pub scopes: Option<Vec<String>>,
     #[serde(default)]
     pub oauth_resource: Option<String>,
+
+    /// OAuth config block used by Claude Code / VS Code. Accepted and ignored
+    /// — Chaos uses its own OAuth flow.
+    #[serde(default)]
+    pub oauth: Option<serde_json::Value>,
 }
 
 impl<'de> Deserialize<'de> for McpServerConfig {
@@ -170,6 +192,8 @@ impl<'de> Deserialize<'de> for McpServerConfig {
         let disabled_tools = raw.disabled_tools.clone();
         let scopes = raw.scopes.clone();
         let oauth_resource = raw.oauth_resource.clone();
+        let r#type = raw.r#type.clone();
+        let oauth = raw.oauth.clone();
 
         fn throw_if_set<E, T>(transport: &str, field: &str, value: Option<&T>) -> Result<(), E>
         where
@@ -228,6 +252,8 @@ impl<'de> Deserialize<'de> for McpServerConfig {
             disabled_tools,
             scopes,
             oauth_resource,
+            r#type,
+            oauth,
         })
     }
 }

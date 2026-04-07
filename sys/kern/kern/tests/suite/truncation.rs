@@ -229,6 +229,8 @@ async fn mcp_image_output_preserves_image_and_no_text_summary() -> Result<()> {
                 disabled_tools: None,
                 scopes: None,
                 oauth_resource: None,
+                r#type: None,
+                oauth: None,
             },
         );
         config
@@ -443,6 +445,8 @@ async fn mcp_tool_call_output_not_truncated_with_custom_limit() -> Result<()> {
                 disabled_tools: None,
                 scopes: None,
                 oauth_resource: None,
+                r#type: None,
+                oauth: None,
             },
         );
         config

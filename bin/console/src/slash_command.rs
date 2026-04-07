@@ -38,6 +38,8 @@ pub enum SlashCommand {
     Statusline,
     Theme,
     Mcp,
+    #[strum(serialize = "mcp-add")]
+    McpAdd,
     Tools,
     Clamp,
     Login,
@@ -96,6 +98,7 @@ impl SlashCommand {
                 "let sandbox read a directory: /sandbox-add-read-dir <absolute_path>"
             }
             SlashCommand::Mcp => "list configured MCP tools",
+            SlashCommand::McpAdd => "add a new MCP server",
             SlashCommand::Tools => "show all tools visible to the model",
             SlashCommand::Clamp => "use Claude Code MAX subscription as transport",
             SlashCommand::Login => "authenticate with your provider",
@@ -152,6 +155,7 @@ impl SlashCommand {
             | SlashCommand::Ps
             | SlashCommand::Stop
             | SlashCommand::Mcp
+            | SlashCommand::McpAdd
             | SlashCommand::Tools
             | SlashCommand::Quit
             | SlashCommand::Exit => true,

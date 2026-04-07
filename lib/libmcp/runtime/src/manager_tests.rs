@@ -341,6 +341,8 @@ fn mcp_init_error_display_prompts_for_github_pat() {
             disabled_tools: None,
             scopes: None,
             oauth_resource: None,
+            r#type: None,
+            oauth: None,
         },
         auth_status: McpAuthStatus::Unsupported,
     };
@@ -389,6 +391,8 @@ fn mcp_init_error_display_reports_generic_errors() {
             disabled_tools: None,
             scopes: None,
             oauth_resource: None,
+            r#type: None,
+            oauth: None,
         },
         auth_status: McpAuthStatus::Unsupported,
     };

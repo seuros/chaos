@@ -3995,6 +3995,9 @@ impl ChatWidget {
             SlashCommand::Mcp => {
                 self.add_mcp_output();
             }
+            SlashCommand::McpAdd => {
+                self.open_mcp_add_form();
+            }
             SlashCommand::Tools => {
                 self.submit_op(Op::ListAllTools);
             }
@@ -6924,6 +6927,17 @@ impl ChatWidget {
         } else {
             self.submit_op(Op::ListMcpTools);
         }
+    }
+
+    pub(crate) fn open_mcp_add_form(&mut self) {
+        let cwd = self.config.cwd.clone();
+        let view = crate::bottom_pane::McpAddForm::new(
+            cwd,
+            self.config.config_layer_stack.clone(),
+            self.process_id,
+            self.app_event_tx.clone(),
+        );
+        self.bottom_pane.show_view(Box::new(view));
     }
 
     #[allow(dead_code)]

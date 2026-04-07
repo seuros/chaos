@@ -289,6 +289,8 @@ async fn run_add(config_overrides: &CliConfigOverrides, add_args: AddArgs) -> Re
         disabled_tools: None,
         scopes: None,
         oauth_resource: None,
+        r#type: None,
+        oauth: None,
     };
 
     servers.insert(name.clone(), new_entry);

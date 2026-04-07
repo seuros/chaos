@@ -2641,6 +2641,15 @@ impl App {
             AppEvent::AllToolsReceived(ev) => {
                 self.on_all_tools_received(tui, ev);
             }
+            AppEvent::ReloadProjectMcpForProcess(process_id) => {
+                if let Err(err) = self.server.reload_project_mcp_for_process(process_id).await {
+                    tracing::warn!(
+                        error = %err,
+                        %process_id,
+                        "failed to reload project MCP layer for process"
+                    );
+                }
+            }
         }
         Ok(AppRunControl::Continue)
     }

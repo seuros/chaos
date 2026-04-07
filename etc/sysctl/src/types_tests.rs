@@ -315,3 +315,39 @@ fn deserialize_rejects_inline_bearer_token_field() {
         "unexpected error: {err}"
     );
 }
+
+#[test]
+fn json_round_trip_preserves_shared_client_fields() {
+    let cfg: McpServerConfig = serde_json::from_str(
+        r#"
+        {
+            "url": "https://example.com/mcp",
+            "type": "streamable_http",
+            "oauth": {
+                "client_id": "shared-client"
+            }
+        }
+        "#,
+    )
+    .expect("should deserialize shared-client fields from json");
+
+    assert_eq!(cfg.r#type.as_deref(), Some("streamable_http"));
+    assert_eq!(
+        cfg.oauth,
+        Some(serde_json::json!({
+            "client_id": "shared-client"
+        }))
+    );
+
+    let rendered = serde_json::to_value(&cfg).expect("should serialize shared-client fields");
+    assert_eq!(
+        rendered.get("type"),
+        Some(&serde_json::json!("streamable_http"))
+    );
+    assert_eq!(
+        rendered.get("oauth"),
+        Some(&serde_json::json!({
+            "client_id": "shared-client"
+        }))
+    );
+}

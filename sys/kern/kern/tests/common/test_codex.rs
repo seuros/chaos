@@ -19,7 +19,6 @@ use chaos_kern::Process;
 use chaos_kern::ProcessTable;
 use chaos_kern::built_in_model_providers;
 use chaos_kern::config::Config;
-use chaos_kern::features::Feature;
 use chaos_kern::models_manager::collaboration_mode_presets::CollaborationModesConfig;
 use serde_json::Value;
 use tempfile::TempDir;
@@ -238,12 +237,6 @@ impl TestCodexBuilder {
             mutator(&mut config);
         }
         ensure_test_model_catalog(&mut config)?;
-
-        if config.include_apply_patch_tool {
-            config.features.enable(Feature::ApplyPatchFreeform)?;
-        } else {
-            config.features.disable(Feature::ApplyPatchFreeform)?;
-        }
 
         Ok((config, cwd))
     }

@@ -460,11 +460,6 @@ pub struct Config {
     /// When set, restricts the login mechanism users may use.
     pub forced_login_method: Option<ForcedLoginMethod>,
 
-    /// Include the `apply_patch` tool for models that benefit from invoking
-    /// file edits as a structured tool call. When unset, this falls back to the
-    /// model info's default preference.
-    pub include_apply_patch_tool: bool,
-
     /// Explicit or feature-derived web search mode.
     pub web_search_mode: Constrained<WebSearchMode>,
 
@@ -1268,7 +1263,6 @@ pub struct ConfigToml {
     pub experimental_instructions_file: Option<AbsolutePathBuf>,
     pub experimental_compact_prompt_file: Option<AbsolutePathBuf>,
     pub experimental_use_unified_exec_tool: Option<bool>,
-    pub experimental_use_freeform_apply_patch: Option<bool>,
     /// Preferred OSS provider for local models, e.g. "lmstudio" or "ollama".
     pub oss_provider: Option<String>,
 
@@ -1508,7 +1502,6 @@ pub struct ConfigOverrides {
     pub minion_instructions: Option<String>,
     pub personality: Option<Personality>,
     pub compact_prompt: Option<String>,
-    pub include_apply_patch_tool: Option<bool>,
     pub show_raw_agent_reasoning: Option<bool>,
     pub ephemeral: Option<bool>,
     /// Additional directories that should be treated as writable roots for this session.
@@ -1711,7 +1704,6 @@ impl Config {
             minion_instructions,
             personality,
             compact_prompt,
-            include_apply_patch_tool: include_apply_patch_tool_override,
             show_raw_agent_reasoning,
             ephemeral,
             additional_writable_roots,
@@ -1734,9 +1726,7 @@ impl Config {
                 .clone(),
             None => ConfigProfile::default(),
         };
-        let feature_overrides = FeatureOverrides {
-            include_apply_patch_tool: include_apply_patch_tool_override,
-        };
+        let feature_overrides = FeatureOverrides {};
 
         let configured_features =
             crate::features::features_from_config(&cfg, &config_profile, feature_overrides);
@@ -2017,7 +2007,6 @@ impl Config {
             config
         };
 
-        let include_apply_patch_tool_flag = features.enabled(Feature::ApplyPatchFreeform);
         let use_experimental_unified_exec_tool = features.enabled(Feature::UnifiedExec);
 
         let forced_chatgpt_workspace_id =
@@ -2277,7 +2266,6 @@ impl Config {
             experimental_realtime_start_instructions: cfg.experimental_realtime_start_instructions,
             forced_chatgpt_workspace_id,
             forced_login_method,
-            include_apply_patch_tool: include_apply_patch_tool_flag,
             web_search_mode: constrained_web_search_mode.value,
             web_search_config,
             use_experimental_unified_exec_tool,

@@ -8,7 +8,6 @@ use chaos_ipc::protocol::EventMsg;
 use chaos_ipc::protocol::Op;
 use chaos_ipc::protocol::SandboxPolicy;
 use chaos_ipc::user_input::UserInput;
-use chaos_kern::features::Feature;
 use chaos_kern::shell::Shell;
 use chaos_kern::shell::default_user_shell;
 use chaos_realpath::AbsolutePathBuf;
@@ -90,10 +89,6 @@ async fn gpt_5_tools_without_apply_patch_append_apply_patch_instructions() -> an
     let TestCodex { codex, .. } = test_codex()
         .with_config(|config| {
             config.user_instructions = Some("be consistent and helpful".to_string());
-            config
-                .features
-                .disable(Feature::ApplyPatchFreeform)
-                .expect("test config should allow feature update");
             config.model = Some("gpt-5".to_string());
         })
         .build(&server)

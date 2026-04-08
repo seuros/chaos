@@ -142,7 +142,6 @@ async fn unified_exec_intercepts_apply_patch_exec_command() -> Result<()> {
     skip_if_sandbox!(Ok(()));
 
     let builder = test_codex().with_config(|config| {
-        config.include_apply_patch_tool = true;
         config.use_experimental_unified_exec_tool = true;
         config
             .features

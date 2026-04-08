@@ -16,7 +16,6 @@ use chaos_ipc::protocol::EventMsg;
 use chaos_ipc::protocol::Op;
 use chaos_ipc::protocol::SandboxPolicy;
 use chaos_ipc::user_input::UserInput;
-use chaos_kern::features::Feature;
 use core_test_support::assert_regex_match;
 use core_test_support::responses::ev_apply_patch_function_call;
 use core_test_support::responses::ev_assistant_message;
@@ -46,9 +45,7 @@ pub async fn apply_patch_harness() -> Result<TestCodexHarness> {
 async fn apply_patch_harness_with(
     configure: impl FnOnce(TestCodexBuilder) -> TestCodexBuilder,
 ) -> Result<TestCodexHarness> {
-    let builder = configure(test_codex()).with_config(|config| {
-        config.include_apply_patch_tool = true;
-    });
+    let builder = configure(test_codex());
     TestCodexHarness::with_builder(builder).await
 }
 
@@ -672,15 +669,7 @@ async fn apply_patch_cli_verification_failure_has_no_side_effects(
 ) -> Result<()> {
     skip_if_no_network!(Ok(()));
 
-    let harness = apply_patch_harness_with(|builder| {
-        builder.with_config(|config| {
-            config
-                .features
-                .enable(Feature::ApplyPatchFreeform)
-                .expect("test config should allow feature update");
-        })
-    })
-    .await?;
+    let harness = apply_patch_harness_with(|builder| builder).await?;
 
     // Compose a patch that would create a file, then fail verification on an update.
     let call_id = "apply-partial-no-side-effects";

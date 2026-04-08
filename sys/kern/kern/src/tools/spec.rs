@@ -228,13 +228,11 @@ impl ToolsConfig {
             session_source,
             sandbox_policy,
         } = params;
-        let include_apply_patch_tool = features.enabled(Feature::ApplyPatchFreeform);
         let include_collab_tools = features.enabled(Feature::Collab);
         let include_agent_jobs = features.enabled(Feature::SpawnCsv);
         let include_request_user_input = !matches!(session_source, SessionSource::SubAgent(_));
-        let include_default_mode_request_user_input =
-            include_request_user_input && features.enabled(Feature::DefaultModeRequestUserInput);
-        let include_original_image_detail = can_request_original_image_detail(features, model_info);
+        let include_default_mode_request_user_input = include_request_user_input;
+        let include_original_image_detail = can_request_original_image_detail(model_info);
         let include_image_gen_tool = false;
         let exec_permission_approvals_enabled = features.enabled(Feature::ExecPermissionApprovals);
         let request_permissions_tool_enabled = features.enabled(Feature::RequestPermissionsTool);
@@ -250,17 +248,7 @@ impl ToolsConfig {
             model_info.shell_type
         };
 
-        let apply_patch_tool_type = match model_info.apply_patch_tool_type {
-            Some(ApplyPatchToolType::Freeform) => Some(ApplyPatchToolType::Freeform),
-            Some(ApplyPatchToolType::Function) => Some(ApplyPatchToolType::Function),
-            None => {
-                if include_apply_patch_tool {
-                    Some(ApplyPatchToolType::Freeform)
-                } else {
-                    None
-                }
-            }
-        };
+        let apply_patch_tool_type = model_info.apply_patch_tool_type.clone();
 
         let agent_jobs_worker_tools = include_agent_jobs
             && matches!(

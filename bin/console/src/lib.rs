@@ -28,7 +28,6 @@ use chaos_kern::config::resolve_oss_provider;
 use chaos_kern::config_loader::ConfigLoadError;
 use chaos_kern::config_loader::LoaderOverrides;
 use chaos_kern::config_loader::format_config_error_with_source;
-use chaos_kern::features::Feature;
 use chaos_kern::find_process_id_by_name;
 use chaos_kern::format_exec_policy_error_with_source;
 use chaos_kern::models_manager::collaboration_mode_presets::CollaborationModesConfig;
@@ -182,9 +181,7 @@ fn create_core_managers(config: &Config) -> CoreManagers {
         auth_manager.clone(),
         chaos_ipc::protocol::SessionSource::Cli,
         CollaborationModesConfig {
-            default_mode_request_user_input: config
-                .features
-                .enabled(Feature::DefaultModeRequestUserInput),
+            default_mode_request_user_input: true,
         },
     ));
     CoreManagers {

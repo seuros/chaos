@@ -58,19 +58,7 @@ pub(crate) struct ClaudeHooksEngine {
 }
 
 impl ClaudeHooksEngine {
-    pub(crate) fn new(
-        enabled: bool,
-        config_layer_stack: Option<&ConfigLayerStack>,
-        shell: CommandShell,
-    ) -> Self {
-        if !enabled {
-            return Self {
-                handlers: Vec::new(),
-                warnings: Vec::new(),
-                shell,
-            };
-        }
-
+    pub(crate) fn new(config_layer_stack: Option<&ConfigLayerStack>, shell: CommandShell) -> Self {
         let _ = schema_loader::generated_hook_schemas();
         let discovered = discovery::discover_handlers(config_layer_stack);
         Self {

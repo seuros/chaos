@@ -34,7 +34,6 @@ use chaos_kern::config::load_config_as_toml_with_cli_overrides;
 use chaos_kern::config::resolve_oss_provider;
 use chaos_kern::config_loader::ConfigLoadError;
 use chaos_kern::config_loader::format_config_error_with_source;
-use chaos_kern::features::Feature;
 use chaos_kern::format_exec_policy_error_with_source;
 use chaos_kern::git_info::get_git_repo_root;
 use chaos_kern::models_manager::collaboration_mode_presets::CollaborationModesConfig;
@@ -320,7 +319,6 @@ pub async fn run_main(cli: Cli, arg0_paths: Arg0DispatchPaths) -> anyhow::Result
         minion_instructions: None,
         personality: None,
         compact_prompt: None,
-        include_apply_patch_tool: None,
         show_raw_agent_reasoning: oss.then_some(true),
         ephemeral: ephemeral.then_some(true),
         additional_writable_roots: add_dir,
@@ -396,9 +394,7 @@ pub async fn run_main(cli: Cli, arg0_paths: Arg0DispatchPaths) -> anyhow::Result
         auth_manager.clone(),
         SessionSource::Exec,
         CollaborationModesConfig {
-            default_mode_request_user_input: config
-                .features
-                .enabled(Feature::DefaultModeRequestUserInput),
+            default_mode_request_user_input: true,
         },
     ));
 

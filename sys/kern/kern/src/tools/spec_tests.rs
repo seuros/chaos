@@ -649,8 +649,7 @@ fn view_image_tool_includes_detail_with_original_detail_feature() {
     let mut model_info =
         ModelsManager::construct_model_info_offline_for_tests("gpt-5-codex", &config);
     model_info.supports_image_detail_original = true;
-    let mut features = Features::with_defaults();
-    features.enable(Feature::ImageDetailOriginal);
+    let features = Features::with_defaults();
     let available_models = Vec::new();
     let tools_config = ToolsConfig::new(&ToolsConfigParams {
         model_info: &model_info,
@@ -717,24 +716,7 @@ fn test_build_specs_agent_job_worker_tools_enabled() {
 fn request_user_input_description_reflects_default_mode_feature_flag() {
     let config = test_config();
     let model_info = ModelsManager::construct_model_info_offline_for_tests("gpt-5-codex", &config);
-    let mut features = Features::with_defaults();
-    let available_models = Vec::new();
-    let tools_config = ToolsConfig::new(&ToolsConfigParams {
-        model_info: &model_info,
-        available_models: &available_models,
-        features: &features,
-        web_search_mode: Some(WebSearchMode::Cached),
-        session_source: SessionSource::Cli,
-        sandbox_policy: &SandboxPolicy::RootAccess,
-    });
-    let (tools, _) = build_specs(&tools_config, None, None, &[]).build();
-    let request_user_input_tool = find_tool(&tools, "request_user_input");
-    assert_eq!(
-        request_user_input_tool.spec,
-        create_request_user_input_tool(CollaborationModesConfig::default())
-    );
-
-    features.enable(Feature::DefaultModeRequestUserInput);
+    let features = Features::with_defaults();
     let available_models = Vec::new();
     let tools_config = ToolsConfig::new(&ToolsConfigParams {
         model_info: &model_info,
@@ -1794,7 +1776,6 @@ fn test_mcp_tool_array_without_items_gets_default_string_items() {
     let model_info = ModelsManager::construct_model_info_offline_for_tests("gpt-5-codex", &config);
     let mut features = Features::with_defaults();
     features.enable(Feature::UnifiedExec);
-    features.enable(Feature::ApplyPatchFreeform);
     let available_models = Vec::new();
     let tools_config = ToolsConfig::new(&ToolsConfigParams {
         model_info: &model_info,

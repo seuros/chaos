@@ -102,17 +102,13 @@ fn configure_shell_model(
     output_type: ShellModelOutput,
     include_apply_patch_tool: bool,
 ) -> TestCodexBuilder {
-    let builder = match (output_type, include_apply_patch_tool) {
+    match (output_type, include_apply_patch_tool) {
         (ShellModelOutput::ShellCommand, _) => builder.with_model("test-gpt-5-codex"),
         (ShellModelOutput::LocalShell, true) => builder.with_model("gpt-5.1-codex"),
         (ShellModelOutput::Shell, true) => builder.with_model("gpt-5.1-codex"),
         (ShellModelOutput::LocalShell, false) => builder.with_model("codex-mini-latest"),
         (ShellModelOutput::Shell, false) => builder.with_model("gpt-5"),
-    };
-
-    builder.with_config(move |config| {
-        config.include_apply_patch_tool = include_apply_patch_tool;
-    })
+    }
 }
 
 #[tokio::test(flavor = "multi_thread", worker_threads = 2)]
@@ -626,11 +622,7 @@ async fn shell_output_is_structured_for_nonzero_exit(output_type: ShellModelOutp
     skip_if_no_network!(Ok(()));
 
     let server = start_mock_server().await;
-    let mut builder = test_codex()
-        .with_model("gpt-5.1-codex")
-        .with_config(move |config| {
-            config.include_apply_patch_tool = true;
-        });
+    let mut builder = test_codex().with_model("gpt-5.1-codex");
     let test = builder.build(&server).await?;
 
     let call_id = "shell-nonzero-exit";
@@ -661,9 +653,7 @@ async fn shell_command_output_is_freeform() -> Result<()> {
     skip_if_no_network!(Ok(()));
 
     let server = start_mock_server().await;
-    let mut builder = test_codex().with_config(move |config| {
-        config.include_apply_patch_tool = true;
-    });
+    let mut builder = test_codex();
     let test = builder.build(&server).await?;
 
     let call_id = "shell-command";
@@ -817,11 +807,7 @@ async fn local_shell_call_output_is_structured() -> Result<()> {
     skip_if_no_network!(Ok(()));
 
     let server = start_mock_server().await;
-    let mut builder = test_codex()
-        .with_model("gpt-5.1-codex")
-        .with_config(|config| {
-            config.include_apply_patch_tool = true;
-        });
+    let mut builder = test_codex().with_model("gpt-5.1-codex");
     let test = builder.build(&server).await?;
 
     let call_id = "local-shell-call";

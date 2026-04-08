@@ -149,7 +149,6 @@ async fn codex_delegate_forwards_patch_approval_and_proceeds_on_decision() {
         // Use a restricted sandbox so patch approval is required
         config.permissions.sandbox_policy =
             Constrained::allow_any(SandboxPolicy::new_read_only_policy());
-        config.include_apply_patch_tool = true;
     });
     let test = builder.build(&server).await.expect("build test codex");
 

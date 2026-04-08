@@ -5,7 +5,6 @@ use chaos_ipc::protocol::ReviewDecision;
 use chaos_ipc::protocol::SandboxPolicy;
 use chaos_ipc::user_input::UserInput;
 use chaos_kern::config::Constrained;
-use chaos_kern::features::Feature;
 use core_test_support::responses::ev_assistant_message;
 use core_test_support::responses::ev_completed;
 use core_test_support::responses::ev_custom_tool_call;
@@ -175,16 +174,7 @@ async fn process_sse_emits_failed_event_on_parse_error() {
 
     mount_sse_once(&server, "data: not-json\n\n".to_string()).await;
 
-    let TestCodex { codex, .. } = test_codex()
-        .with_config(move |config| {
-            config
-                .features
-                .disable(Feature::GhostCommit)
-                .expect("test config should allow feature update");
-        })
-        .build(&server)
-        .await
-        .unwrap();
+    let TestCodex { codex, .. } = test_codex().build(&server).await.unwrap();
 
     codex
         .submit(Op::UserInput {
@@ -219,16 +209,7 @@ async fn process_sse_records_failed_event_when_stream_closes_without_completed()
 
     mount_sse_once(&server, sse(vec![ev_assistant_message("id", "hi")])).await;
 
-    let TestCodex { codex, .. } = test_codex()
-        .with_config(move |config| {
-            config
-                .features
-                .disable(Feature::GhostCommit)
-                .expect("test config should allow feature update");
-        })
-        .build(&server)
-        .await
-        .unwrap();
+    let TestCodex { codex, .. } = test_codex().build(&server).await.unwrap();
 
     codex
         .submit(Op::UserInput {
@@ -283,16 +264,7 @@ async fn process_sse_failed_event_records_response_error_message() {
     )
     .await;
 
-    let TestCodex { codex, .. } = test_codex()
-        .with_config(move |config| {
-            config
-                .features
-                .disable(Feature::GhostCommit)
-                .expect("test config should allow feature update");
-        })
-        .build(&server)
-        .await
-        .unwrap();
+    let TestCodex { codex, .. } = test_codex().build(&server).await.unwrap();
 
     codex
         .submit(Op::UserInput {
@@ -345,16 +317,7 @@ async fn process_sse_failed_event_logs_parse_error() {
     )
     .await;
 
-    let TestCodex { codex, .. } = test_codex()
-        .with_config(move |config| {
-            config
-                .features
-                .disable(Feature::GhostCommit)
-                .expect("test config should allow feature update");
-        })
-        .build(&server)
-        .await
-        .unwrap();
+    let TestCodex { codex, .. } = test_codex().build(&server).await.unwrap();
 
     codex
         .submit(Op::UserInput {
@@ -394,16 +357,7 @@ async fn process_sse_failed_event_logs_missing_error() {
     )
     .await;
 
-    let TestCodex { codex, .. } = test_codex()
-        .with_config(move |config| {
-            config
-                .features
-                .disable(Feature::GhostCommit)
-                .expect("test config should allow feature update");
-        })
-        .build(&server)
-        .await
-        .unwrap();
+    let TestCodex { codex, .. } = test_codex().build(&server).await.unwrap();
 
     codex
         .submit(Op::UserInput {
@@ -452,16 +406,7 @@ async fn process_sse_failed_event_logs_response_completed_parse_error() {
     )
     .await;
 
-    let TestCodex { codex, .. } = test_codex()
-        .with_config(move |config| {
-            config
-                .features
-                .disable(Feature::GhostCommit)
-                .expect("test config should allow feature update");
-        })
-        .build(&server)
-        .await
-        .unwrap();
+    let TestCodex { codex, .. } = test_codex().build(&server).await.unwrap();
 
     codex
         .submit(Op::UserInput {
@@ -576,16 +521,7 @@ async fn handle_responses_span_records_response_kind_and_tool_name() {
     )
     .await;
 
-    let TestCodex { codex, .. } = test_codex()
-        .with_config(|config| {
-            config
-                .features
-                .disable(Feature::GhostCommit)
-                .expect("test config should allow feature update");
-        })
-        .build(&server)
-        .await
-        .unwrap();
+    let TestCodex { codex, .. } = test_codex().build(&server).await.unwrap();
 
     codex
         .submit(Op::UserInput {
@@ -660,16 +596,7 @@ async fn record_responses_sets_span_fields_for_response_events() {
     )
     .await;
 
-    let TestCodex { codex, .. } = test_codex()
-        .with_config(|config| {
-            config
-                .features
-                .disable(Feature::GhostCommit)
-                .expect("test config should allow feature update");
-        })
-        .build(&server)
-        .await
-        .unwrap();
+    let TestCodex { codex, .. } = test_codex().build(&server).await.unwrap();
 
     codex
         .submit(Op::UserInput {
@@ -744,16 +671,7 @@ async fn handle_response_item_records_tool_result_for_custom_tool_call() {
     )
     .await;
 
-    let TestCodex { codex, .. } = test_codex()
-        .with_config(move |config| {
-            config
-                .features
-                .disable(Feature::GhostCommit)
-                .expect("test config should allow feature update");
-        })
-        .build(&server)
-        .await
-        .unwrap();
+    let TestCodex { codex, .. } = test_codex().build(&server).await.unwrap();
 
     codex
         .submit(Op::UserInput {
@@ -817,16 +735,7 @@ async fn handle_response_item_records_tool_result_for_function_call() {
     )
     .await;
 
-    let TestCodex { codex, .. } = test_codex()
-        .with_config(move |config| {
-            config
-                .features
-                .disable(Feature::GhostCommit)
-                .expect("test config should allow feature update");
-        })
-        .build(&server)
-        .await
-        .unwrap();
+    let TestCodex { codex, .. } = test_codex().build(&server).await.unwrap();
 
     codex
         .submit(Op::UserInput {
@@ -900,16 +809,7 @@ async fn handle_response_item_records_tool_result_for_local_shell_missing_ids() 
     )
     .await;
 
-    let TestCodex { codex, .. } = test_codex()
-        .with_config(move |config| {
-            config
-                .features
-                .disable(Feature::GhostCommit)
-                .expect("test config should allow feature update");
-        })
-        .build(&server)
-        .await
-        .unwrap();
+    let TestCodex { codex, .. } = test_codex().build(&server).await.unwrap();
 
     codex
         .submit(Op::UserInput {
@@ -967,16 +867,7 @@ async fn handle_response_item_records_tool_result_for_local_shell_call() {
     )
     .await;
 
-    let TestCodex { codex, .. } = test_codex()
-        .with_config(move |config| {
-            config
-                .features
-                .disable(Feature::GhostCommit)
-                .expect("test config should allow feature update");
-        })
-        .build(&server)
-        .await
-        .unwrap();
+    let TestCodex { codex, .. } = test_codex().build(&server).await.unwrap();
 
     codex
         .submit(Op::UserInput {

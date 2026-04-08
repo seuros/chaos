@@ -103,9 +103,7 @@ pub async fn run_main(
         auth_manager,
         SessionSource::Mcp,
         CollaborationModesConfig {
-            default_mode_request_user_input: config
-                .features
-                .enabled(chaos_kern::features::Feature::DefaultModeRequestUserInput),
+            default_mode_request_user_input: true,
         },
     ));
 

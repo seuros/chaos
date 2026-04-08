@@ -12,7 +12,6 @@ use chaos_ipc::protocol::SandboxPolicy;
 use chaos_ipc::request_user_input::RequestUserInputAnswer;
 use chaos_ipc::request_user_input::RequestUserInputResponse;
 use chaos_ipc::user_input::UserInput;
-use chaos_kern::features::Feature;
 use core_test_support::responses;
 use core_test_support::responses::ResponsesRequest;
 use core_test_support::responses::ev_assistant_message;
@@ -78,24 +77,14 @@ async fn request_user_input_round_trip_for_mode(mode: ModeKind) -> anyhow::Resul
 
     let server = start_mock_server().await;
 
-    let builder = test_codex();
+    let mut builder = test_codex();
     #[allow(clippy::expect_used)]
     let TestCodex {
         codex,
         cwd,
         session_configured,
         ..
-    } = builder
-        .with_config(move |config| {
-            if mode == ModeKind::Default {
-                config
-                    .features
-                    .enable(Feature::DefaultModeRequestUserInput)
-                    .expect("test config should allow feature update");
-            }
-        })
-        .build(&server)
-        .await?;
+    } = builder.build(&server).await?;
 
     let call_id = "user-input-call";
     let request_args = json!({

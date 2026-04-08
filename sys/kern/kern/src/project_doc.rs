@@ -20,7 +20,6 @@ use crate::config_loader::ConfigLayerStackOrdering;
 use crate::config_loader::default_project_root_markers;
 use crate::config_loader::merge_toml_values;
 use crate::config_loader::project_root_markers_from_config;
-use crate::features::Feature;
 use chaos_ipc::api::ConfigLayerSource;
 use std::fs::canonicalize as normalize_path;
 use std::path::PathBuf;
@@ -64,12 +63,10 @@ pub(crate) async fn get_user_instructions(config: &Config) -> Option<String> {
         }
     };
 
-    if config.features.enabled(Feature::ChildAgentsMd) {
-        if !output.is_empty() {
-            output.push_str("\n\n");
-        }
-        output.push_str(HIERARCHICAL_AGENTS_MESSAGE);
+    if !output.is_empty() {
+        output.push_str("\n\n");
     }
+    output.push_str(HIERARCHICAL_AGENTS_MESSAGE);
 
     if !output.is_empty() {
         Some(output)

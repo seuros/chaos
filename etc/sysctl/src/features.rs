@@ -14,21 +14,15 @@ use tracing::info;
 /// Unique features toggled via configuration.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash)]
 pub enum Feature {
-    GhostCommit,
     ShellTool,
     UnifiedExec,
-    ApplyPatchFreeform,
     ExecPermissionApprovals,
-    CodexHooks,
     RequestPermissionsTool,
     ShellSnapshot,
-    ChildAgentsMd,
-    ImageDetailOriginal,
     EnableRequestCompression,
     Collab,
     SpawnCsv,
     SkillMcpDependencyInstall,
-    DefaultModeRequestUserInput,
     Personality,
 }
 
@@ -65,14 +59,11 @@ pub struct Features {
 }
 
 #[derive(Debug, Clone, Default)]
-pub struct FeatureOverrides {
-    pub include_apply_patch_tool: Option<bool>,
-}
+pub struct FeatureOverrides {}
 
 impl FeatureOverrides {
     pub fn apply(self, features: &mut Features) {
         LegacyFeatureToggles {
-            include_apply_patch_tool: self.include_apply_patch_tool,
             ..Default::default()
         }
         .apply(features);
@@ -237,12 +228,6 @@ pub struct FeatureSpec {
 
 pub const FEATURES: &[FeatureSpec] = &[
     FeatureSpec {
-        id: Feature::GhostCommit,
-        key: "undo",
-        default_enabled: false,
-        under_development: false,
-    },
-    FeatureSpec {
         id: Feature::ShellTool,
         key: "shell_tool",
         default_enabled: true,
@@ -261,32 +246,8 @@ pub const FEATURES: &[FeatureSpec] = &[
         under_development: false,
     },
     FeatureSpec {
-        id: Feature::ChildAgentsMd,
-        key: "child_agents_md",
-        default_enabled: false,
-        under_development: false,
-    },
-    FeatureSpec {
-        id: Feature::ImageDetailOriginal,
-        key: "image_detail_original",
-        default_enabled: false,
-        under_development: false,
-    },
-    FeatureSpec {
-        id: Feature::ApplyPatchFreeform,
-        key: "apply_patch_freeform",
-        default_enabled: false,
-        under_development: false,
-    },
-    FeatureSpec {
         id: Feature::ExecPermissionApprovals,
         key: "exec_permission_approvals",
-        default_enabled: false,
-        under_development: false,
-    },
-    FeatureSpec {
-        id: Feature::CodexHooks,
-        key: "chaos_dtrace",
         default_enabled: false,
         under_development: false,
     },
@@ -321,12 +282,6 @@ pub const FEATURES: &[FeatureSpec] = &[
         under_development: false,
     },
     FeatureSpec {
-        id: Feature::DefaultModeRequestUserInput,
-        key: "default_mode_request_user_input",
-        default_enabled: false,
-        under_development: false,
-    },
-    FeatureSpec {
         id: Feature::Personality,
         key: "personality",
         default_enabled: true,
@@ -346,14 +301,6 @@ const ALIASES: &[Alias] = &[
     Alias {
         legacy_key: "experimental_use_unified_exec_tool",
         feature: Feature::UnifiedExec,
-    },
-    Alias {
-        legacy_key: "experimental_use_freeform_apply_patch",
-        feature: Feature::ApplyPatchFreeform,
-    },
-    Alias {
-        legacy_key: "include_apply_patch_tool",
-        feature: Feature::ApplyPatchFreeform,
     },
     Alias {
         legacy_key: "request_permissions",
@@ -381,25 +328,11 @@ fn legacy_feature_for_key(key: &str) -> Option<Feature> {
 
 #[derive(Debug, Default)]
 pub struct LegacyFeatureToggles {
-    pub include_apply_patch_tool: Option<bool>,
-    pub experimental_use_freeform_apply_patch: Option<bool>,
     pub experimental_use_unified_exec_tool: Option<bool>,
 }
 
 impl LegacyFeatureToggles {
     pub fn apply(self, features: &mut Features) {
-        set_if_some(
-            features,
-            Feature::ApplyPatchFreeform,
-            self.include_apply_patch_tool,
-            "include_apply_patch_tool",
-        );
-        set_if_some(
-            features,
-            Feature::ApplyPatchFreeform,
-            self.experimental_use_freeform_apply_patch,
-            "experimental_use_freeform_apply_patch",
-        );
         set_if_some(
             features,
             Feature::UnifiedExec,

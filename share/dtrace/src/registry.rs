@@ -15,7 +15,6 @@ use crate::types::HookResponse;
 #[derive(Default, Clone)]
 pub struct HooksConfig {
     pub legacy_notify_argv: Option<Vec<String>>,
-    pub feature_enabled: bool,
     pub config_layer_stack: Option<ConfigLayerStack>,
     pub shell_program: Option<String>,
     pub shell_args: Vec<String>,
@@ -43,7 +42,6 @@ impl Hooks {
             .into_iter()
             .collect();
         let engine = ClaudeHooksEngine::new(
-            config.feature_enabled,
             config.config_layer_stack.as_ref(),
             CommandShell {
                 program: config.shell_program.unwrap_or_default(),

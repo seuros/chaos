@@ -20,9 +20,7 @@ pub fn features_from_config(
     let mut features = Features::with_defaults();
 
     let base_legacy = LegacyFeatureToggles {
-        experimental_use_freeform_apply_patch: cfg.experimental_use_freeform_apply_patch,
         experimental_use_unified_exec_tool: cfg.experimental_use_unified_exec_tool,
-        ..Default::default()
     };
     base_legacy.apply(&mut features);
 
@@ -31,8 +29,6 @@ pub fn features_from_config(
     }
 
     let profile_legacy = LegacyFeatureToggles {
-        include_apply_patch_tool: config_profile.include_apply_patch_tool,
-        experimental_use_freeform_apply_patch: config_profile.experimental_use_freeform_apply_patch,
         experimental_use_unified_exec_tool: config_profile.experimental_use_unified_exec_tool,
     };
     profile_legacy.apply(&mut features);

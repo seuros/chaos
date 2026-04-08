@@ -48,7 +48,11 @@ impl ToolListPane {
     }
 
     /// Replace the tool list contents.
-    pub fn set_tools(&mut self, tools: Vec<ToolSummary>) {
+    ///
+    /// Sorts by source so the renderer can group tools under a single
+    /// `[server]` header per MCP server.
+    pub fn set_tools(&mut self, mut tools: Vec<ToolSummary>) {
+        tools.sort_by(|a, b| a.source.cmp(&b.source));
         self.tools = tools;
         self.scroll = 0;
     }

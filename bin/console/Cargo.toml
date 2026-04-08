@@ -40,6 +40,7 @@ chaos-sudoers = { workspace = true }
 chaos-realpath = { workspace = true }
 chaos-getopt = { workspace = true }
 chaos-uptime = { workspace = true }
+chaos-git = { workspace = true }
 chaos-glob = { workspace = true }
 chaos-jail-report = { workspace = true }
 chaos-amphetamine = { workspace = true }

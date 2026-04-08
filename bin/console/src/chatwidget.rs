@@ -152,10 +152,6 @@ const PLAN_IMPLEMENTATION_TITLE: &str = "Implement this plan?";
 const PLAN_IMPLEMENTATION_YES: &str = "Yes, implement this plan";
 const PLAN_IMPLEMENTATION_NO: &str = "No, stay in Plan mode";
 const PLAN_IMPLEMENTATION_CODING_MESSAGE: &str = "Implement the plan.";
-const MULTI_AGENT_ENABLE_TITLE: &str = "Enable subagents?";
-const MULTI_AGENT_ENABLE_YES: &str = "Yes, enable";
-const MULTI_AGENT_ENABLE_NO: &str = "Not now";
-const MULTI_AGENT_ENABLE_NOTICE: &str = "Subagents will be enabled in the next session.";
 const PLAN_MODE_REASONING_SCOPE_TITLE: &str = "Apply reasoning change";
 const PLAN_MODE_REASONING_SCOPE_PLAN_ONLY: &str = "Apply to Plan mode override";
 const PLAN_MODE_REASONING_SCOPE_ALL_MODES: &str = "Apply to global default and Plan mode override";
@@ -1673,41 +1669,6 @@ impl ChatWidget {
         });
         self.notify(Notification::PlanModePrompt {
             title: PLAN_IMPLEMENTATION_TITLE.to_string(),
-        });
-    }
-
-    pub(crate) fn open_multi_agent_enable_prompt(&mut self) {
-        let items = vec![
-            SelectionItem {
-                name: MULTI_AGENT_ENABLE_YES.to_string(),
-                description: Some(
-                    "Save the setting now. You will need a new session to use it.".to_string(),
-                ),
-                actions: vec![Box::new(|tx| {
-                    tx.send(AppEvent::UpdateFeatureFlags {
-                        updates: vec![(Feature::Collab, true)],
-                    });
-                    tx.send(AppEvent::InsertHistoryCell(Box::new(
-                        history_cell::new_warning_event(MULTI_AGENT_ENABLE_NOTICE.to_string()),
-                    )));
-                })],
-                dismiss_on_select: true,
-                ..Default::default()
-            },
-            SelectionItem {
-                name: MULTI_AGENT_ENABLE_NO.to_string(),
-                description: Some("Keep subagents disabled.".to_string()),
-                dismiss_on_select: true,
-                ..Default::default()
-            },
-        ];
-
-        self.bottom_pane.show_selection_view(SelectionViewParams {
-            title: Some(MULTI_AGENT_ENABLE_TITLE.to_string()),
-            subtitle: Some("Subagents are currently disabled in your config.".to_string()),
-            footer_hint: Some(standard_popup_hint_line()),
-            items,
-            ..Default::default()
         });
     }
 
@@ -4365,7 +4326,6 @@ impl ChatWidget {
         let personality = self
             .config
             .personality
-            .filter(|_| self.config.features.enabled(Feature::Personality))
             .filter(|_| self.current_model_supports_personality());
         let service_tier = self.config.service_tier.map(Some);
         let op = Op::UserTurn {
@@ -6520,11 +6480,7 @@ impl ChatWidget {
                 "failed to update constrained chat widget feature state"
             );
         }
-        let enabled = self.config.features.enabled(feature);
-        if feature == Feature::Personality {
-            self.sync_personality_command_enabled();
-        }
-        enabled
+        self.config.features.enabled(feature)
     }
 
     pub(crate) fn set_approvals_reviewer(&mut self, policy: ApprovalsReviewer) {
@@ -6611,8 +6567,7 @@ impl ChatWidget {
     }
 
     fn sync_personality_command_enabled(&mut self) {
-        self.bottom_pane
-            .set_personality_command_enabled(self.config.features.enabled(Feature::Personality));
+        self.bottom_pane.set_personality_command_enabled(true);
     }
 
     fn current_model_supports_personality(&self) -> bool {

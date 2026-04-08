@@ -370,8 +370,8 @@ fn model_info_from_models_json(slug: &str) -> ModelInfo {
 #[test]
 fn test_full_toolset_specs_for_gpt5_codex_unified_exec_web_search() {
     let model_info = model_info_from_models_json("gpt-5-codex");
-    let mut features = Features::with_defaults();
-    features.enable(Feature::UnifiedExec);
+    let features = Features::with_defaults();
+
     let available_models = Vec::new();
     let config = ToolsConfig::new(&ToolsConfigParams {
         model_info: &model_info,
@@ -380,6 +380,7 @@ fn test_full_toolset_specs_for_gpt5_codex_unified_exec_web_search() {
         web_search_mode: Some(WebSearchMode::Live),
         session_source: SessionSource::Cli,
         sandbox_policy: &SandboxPolicy::RootAccess,
+        collab_enabled: true,
     });
     let (tools, _) = build_specs(&config, None, None, &[]).build();
 
@@ -497,6 +498,7 @@ fn arsenal_tools_keep_closed_object_schemas() {
         web_search_mode: Some(WebSearchMode::Cached),
         session_source: SessionSource::Cli,
         sandbox_policy: &SandboxPolicy::RootAccess,
+        collab_enabled: true,
     });
     let (tools, _) = build_specs(&tools_config, None, None, &[]).build();
 
@@ -533,6 +535,7 @@ fn arsenal_read_file_preserves_indentation_object_schema() {
         web_search_mode: Some(WebSearchMode::Cached),
         session_source: SessionSource::Cli,
         sandbox_policy: &SandboxPolicy::RootAccess,
+        collab_enabled: true,
     });
     let (tools, _) = build_specs(&tools_config, None, None, &[]).build();
 
@@ -568,8 +571,7 @@ fn arsenal_read_file_preserves_indentation_object_schema() {
 fn test_build_specs_collab_tools_enabled() {
     let config = test_config();
     let model_info = ModelsManager::construct_model_info_offline_for_tests("gpt-5-codex", &config);
-    let mut features = Features::with_defaults();
-    features.enable(Feature::Collab);
+    let features = Features::with_defaults();
     let available_models = Vec::new();
     let tools_config = ToolsConfig::new(&ToolsConfigParams {
         model_info: &model_info,
@@ -578,6 +580,7 @@ fn test_build_specs_collab_tools_enabled() {
         web_search_mode: Some(WebSearchMode::Cached),
         session_source: SessionSource::Cli,
         sandbox_policy: &SandboxPolicy::RootAccess,
+        collab_enabled: true,
     });
     let (tools, _) = build_specs(&tools_config, None, None, &[]).build();
     assert_contains_tool_names(
@@ -593,7 +596,7 @@ fn test_build_specs_enable_fanout_enables_agent_jobs_and_collab_tools() {
     let model_info = ModelsManager::construct_model_info_offline_for_tests("gpt-5-codex", &config);
     let mut features = Features::with_defaults();
     features.enable(Feature::SpawnCsv);
-    features.normalize_dependencies();
+
     let available_models = Vec::new();
     let tools_config = ToolsConfig::new(&ToolsConfigParams {
         model_info: &model_info,
@@ -602,6 +605,7 @@ fn test_build_specs_enable_fanout_enables_agent_jobs_and_collab_tools() {
         web_search_mode: Some(WebSearchMode::Cached),
         session_source: SessionSource::Cli,
         sandbox_policy: &SandboxPolicy::RootAccess,
+        collab_enabled: true,
     });
     let (tools, _) = build_specs(&tools_config, None, None, &[]).build();
     assert_contains_tool_names(
@@ -614,33 +618,6 @@ fn test_build_specs_enable_fanout_enables_agent_jobs_and_collab_tools() {
             "spawn_agents_on_csv",
         ],
     );
-}
-
-#[test]
-fn view_image_tool_omits_detail_without_original_detail_feature() {
-    let config = test_config();
-    let mut model_info =
-        ModelsManager::construct_model_info_offline_for_tests("gpt-5-codex", &config);
-    model_info.supports_image_detail_original = true;
-    let features = Features::with_defaults();
-    let available_models = Vec::new();
-    let tools_config = ToolsConfig::new(&ToolsConfigParams {
-        model_info: &model_info,
-        available_models: &available_models,
-        features: &features,
-        web_search_mode: Some(WebSearchMode::Cached),
-        session_source: SessionSource::Cli,
-        sandbox_policy: &SandboxPolicy::RootAccess,
-    });
-    let (tools, _) = build_specs(&tools_config, None, None, &[]).build();
-    let view_image = find_tool(&tools, VIEW_IMAGE_TOOL_NAME);
-    let ToolSpec::Function(ResponsesApiTool { parameters, .. }) = &view_image.spec else {
-        panic!("view_image should be a function tool");
-    };
-    let JsonSchema::Object { properties, .. } = parameters else {
-        panic!("view_image should use an object schema");
-    };
-    assert!(!properties.contains_key("detail"));
 }
 
 #[test]
@@ -658,6 +635,7 @@ fn view_image_tool_includes_detail_with_original_detail_feature() {
         web_search_mode: Some(WebSearchMode::Cached),
         session_source: SessionSource::Cli,
         sandbox_policy: &SandboxPolicy::RootAccess,
+        collab_enabled: true,
     });
     let (tools, _) = build_specs(&tools_config, None, None, &[]).build();
     let view_image = find_tool(&tools, VIEW_IMAGE_TOOL_NAME);
@@ -684,7 +662,7 @@ fn test_build_specs_agent_job_worker_tools_enabled() {
     let model_info = ModelsManager::construct_model_info_offline_for_tests("gpt-5-codex", &config);
     let mut features = Features::with_defaults();
     features.enable(Feature::SpawnCsv);
-    features.normalize_dependencies();
+
     let available_models = Vec::new();
     let tools_config = ToolsConfig::new(&ToolsConfigParams {
         model_info: &model_info,
@@ -695,6 +673,7 @@ fn test_build_specs_agent_job_worker_tools_enabled() {
             "agent_job:test".to_string(),
         )),
         sandbox_policy: &SandboxPolicy::RootAccess,
+        collab_enabled: true,
     });
     let (tools, _) = build_specs(&tools_config, None, None, &[]).build();
     assert_contains_tool_names(
@@ -725,6 +704,7 @@ fn request_user_input_description_reflects_default_mode_feature_flag() {
         web_search_mode: Some(WebSearchMode::Cached),
         session_source: SessionSource::Cli,
         sandbox_policy: &SandboxPolicy::RootAccess,
+        collab_enabled: true,
     });
     let (tools, _) = build_specs(&tools_config, None, None, &[]).build();
     let request_user_input_tool = find_tool(&tools, "request_user_input");
@@ -749,6 +729,7 @@ fn request_permissions_requires_feature_flag() {
         web_search_mode: Some(WebSearchMode::Cached),
         session_source: SessionSource::Cli,
         sandbox_policy: &SandboxPolicy::RootAccess,
+        collab_enabled: true,
     });
     let (tools, _) = build_specs(&tools_config, None, None, &[]).build();
     assert_lacks_tool_name(&tools, "request_permissions");
@@ -763,6 +744,7 @@ fn request_permissions_requires_feature_flag() {
         web_search_mode: Some(WebSearchMode::Cached),
         session_source: SessionSource::Cli,
         sandbox_policy: &SandboxPolicy::RootAccess,
+        collab_enabled: true,
     });
     let (tools, _) = build_specs(&tools_config, None, None, &[]).build();
     let request_permissions_tool = find_tool(&tools, "request_permissions");
@@ -786,6 +768,7 @@ fn request_permissions_tool_is_independent_from_additional_permissions() {
         web_search_mode: Some(WebSearchMode::Cached),
         session_source: SessionSource::Cli,
         sandbox_policy: &SandboxPolicy::RootAccess,
+        collab_enabled: true,
     });
     let (tools, _) = build_specs(&tools_config, None, None, &[]).build();
 
@@ -808,6 +791,7 @@ fn assert_model_tools(
         web_search_mode,
         session_source: SessionSource::Cli,
         sandbox_policy: &SandboxPolicy::RootAccess,
+        collab_enabled: true,
     });
     let router = ToolRouter::from_config(
         &tools_config,
@@ -847,11 +831,8 @@ fn assert_default_model_tools(
     shell_tool: &'static str,
     expected_tail: &[&str],
 ) {
-    let mut expected = if features.enabled(Feature::UnifiedExec) {
-        vec!["exec_command", "write_stdin"]
-    } else {
-        vec![shell_tool]
-    };
+    let _ = shell_tool;
+    let mut expected = vec!["exec_command", "write_stdin"];
     expected.extend(expected_tail);
     assert_model_tools(model_slug, features, web_search_mode, &expected);
 }
@@ -870,6 +851,7 @@ fn web_search_mode_cached_sets_external_web_access_false() {
         web_search_mode: Some(WebSearchMode::Cached),
         session_source: SessionSource::Cli,
         sandbox_policy: &SandboxPolicy::RootAccess,
+        collab_enabled: true,
     });
     let (tools, _) = build_specs(&tools_config, None, None, &[]).build();
 
@@ -900,6 +882,7 @@ fn web_search_mode_live_sets_external_web_access_true() {
         web_search_mode: Some(WebSearchMode::Live),
         session_source: SessionSource::Cli,
         sandbox_policy: &SandboxPolicy::RootAccess,
+        collab_enabled: true,
     });
     let (tools, _) = build_specs(&tools_config, None, None, &[]).build();
 
@@ -943,6 +926,7 @@ fn web_search_config_is_forwarded_to_tool_spec() {
         web_search_mode: Some(WebSearchMode::Live),
         session_source: SessionSource::Cli,
         sandbox_policy: &SandboxPolicy::RootAccess,
+        collab_enabled: true,
     })
     .with_web_search_config(Some(web_search_config.clone()));
     let (tools, _) = build_specs(&tools_config, None, None, &[]).build();
@@ -980,6 +964,7 @@ fn web_search_tool_type_text_and_image_sets_search_content_types() {
         web_search_mode: Some(WebSearchMode::Live),
         session_source: SessionSource::Cli,
         sandbox_policy: &SandboxPolicy::RootAccess,
+        collab_enabled: true,
     });
     let (tools, _) = build_specs(&tools_config, None, None, &[]).build();
 
@@ -1014,6 +999,7 @@ fn mcp_resource_tools_are_hidden_without_mcp_servers() {
         web_search_mode: Some(WebSearchMode::Cached),
         session_source: SessionSource::Cli,
         sandbox_policy: &SandboxPolicy::RootAccess,
+        collab_enabled: true,
     });
     let (tools, _) = build_specs(&tools_config, None, None, &[]).build();
 
@@ -1039,6 +1025,7 @@ fn mcp_resource_tools_are_included_when_mcp_servers_are_present() {
         web_search_mode: Some(WebSearchMode::Cached),
         session_source: SessionSource::Cli,
         sandbox_policy: &SandboxPolicy::RootAccess,
+        collab_enabled: true,
     });
     let (tools, _) = build_specs(&tools_config, Some(HashMap::new()), None, &[]).build();
 
@@ -1065,6 +1052,7 @@ fn spawn_agent_tool_description_uses_current_role_names() {
         web_search_mode: Some(WebSearchMode::Cached),
         session_source: SessionSource::Cli,
         sandbox_policy: &SandboxPolicy::RootAccess,
+        collab_enabled: true,
     });
 
     let ToolSpec::Function(ResponsesApiTool { description, .. }) =
@@ -1157,8 +1145,8 @@ fn test_build_specs_gpt51_codex_default() {
 
 #[test]
 fn test_build_specs_gpt5_codex_unified_exec_web_search() {
-    let mut features = Features::with_defaults();
-    features.enable(Feature::UnifiedExec);
+    let features = Features::with_defaults();
+
     assert_model_tools(
         "gpt-5-codex",
         &features,
@@ -1197,8 +1185,8 @@ fn test_build_specs_gpt5_codex_unified_exec_web_search() {
 
 #[test]
 fn test_build_specs_gpt51_codex_unified_exec_web_search() {
-    let mut features = Features::with_defaults();
-    features.enable(Feature::UnifiedExec);
+    let features = Features::with_defaults();
+
     assert_model_tools(
         "gpt-5.1-codex",
         &features,
@@ -1388,8 +1376,8 @@ fn test_gpt_5_1_defaults() {
 
 #[test]
 fn test_gpt_5_1_codex_max_unified_exec_web_search() {
-    let mut features = Features::with_defaults();
-    features.enable(Feature::UnifiedExec);
+    let features = Features::with_defaults();
+
     assert_model_tools(
         "gpt-5.1-codex-max",
         &features,
@@ -1430,8 +1418,8 @@ fn test_gpt_5_1_codex_max_unified_exec_web_search() {
 fn test_build_specs_default_shell_present() {
     let config = test_config();
     let model_info = ModelsManager::construct_model_info_offline_for_tests("o3", &config);
-    let mut features = Features::with_defaults();
-    features.enable(Feature::UnifiedExec);
+    let features = Features::with_defaults();
+
     let available_models = Vec::new();
     let tools_config = ToolsConfig::new(&ToolsConfigParams {
         model_info: &model_info,
@@ -1440,6 +1428,7 @@ fn test_build_specs_default_shell_present() {
         web_search_mode: Some(WebSearchMode::Live),
         session_source: SessionSource::Cli,
         sandbox_policy: &SandboxPolicy::RootAccess,
+        collab_enabled: true,
     });
     let (tools, _) = build_specs(&tools_config, Some(HashMap::new()), None, &[]).build();
 
@@ -1456,8 +1445,8 @@ fn test_build_specs_default_shell_present() {
 fn test_parallel_support_flags() {
     let config = test_config();
     let model_info = ModelsManager::construct_model_info_offline_for_tests("gpt-5-codex", &config);
-    let mut features = Features::with_defaults();
-    features.enable(Feature::UnifiedExec);
+    let features = Features::with_defaults();
+
     let available_models = Vec::new();
     let tools_config = ToolsConfig::new(&ToolsConfigParams {
         model_info: &model_info,
@@ -1466,6 +1455,7 @@ fn test_parallel_support_flags() {
         web_search_mode: Some(WebSearchMode::Cached),
         session_source: SessionSource::Cli,
         sandbox_policy: &SandboxPolicy::RootAccess,
+        collab_enabled: true,
     });
     let (tools, _) = build_specs(&tools_config, None, None, &[]).build();
 
@@ -1495,6 +1485,7 @@ fn test_test_model_info_includes_sync_tool() {
         web_search_mode: Some(WebSearchMode::Cached),
         session_source: SessionSource::Cli,
         sandbox_policy: &SandboxPolicy::RootAccess,
+        collab_enabled: true,
     });
     let (tools, _) = build_specs(&tools_config, None, None, &[]).build();
 
@@ -1520,8 +1511,8 @@ fn test_test_model_info_includes_sync_tool() {
 fn test_build_specs_mcp_tools_converted() {
     let config = test_config();
     let model_info = ModelsManager::construct_model_info_offline_for_tests("o3", &config);
-    let mut features = Features::with_defaults();
-    features.enable(Feature::UnifiedExec);
+    let features = Features::with_defaults();
+
     let available_models = Vec::new();
     let tools_config = ToolsConfig::new(&ToolsConfigParams {
         model_info: &model_info,
@@ -1530,6 +1521,7 @@ fn test_build_specs_mcp_tools_converted() {
         web_search_mode: Some(WebSearchMode::Live),
         session_source: SessionSource::Cli,
         sandbox_policy: &SandboxPolicy::RootAccess,
+        collab_enabled: true,
     });
     let (tools, _) = build_specs(
         &tools_config,
@@ -1612,8 +1604,8 @@ fn test_build_specs_mcp_tools_converted() {
 fn test_build_specs_mcp_tools_sorted_by_name() {
     let config = test_config();
     let model_info = ModelsManager::construct_model_info_offline_for_tests("o3", &config);
-    let mut features = Features::with_defaults();
-    features.enable(Feature::UnifiedExec);
+    let features = Features::with_defaults();
+
     let available_models = Vec::new();
     let tools_config = ToolsConfig::new(&ToolsConfigParams {
         model_info: &model_info,
@@ -1622,6 +1614,7 @@ fn test_build_specs_mcp_tools_sorted_by_name() {
         web_search_mode: Some(WebSearchMode::Cached),
         session_source: SessionSource::Cli,
         sandbox_policy: &SandboxPolicy::RootAccess,
+        collab_enabled: true,
     });
 
     // Intentionally construct a map with keys that would sort alphabetically.
@@ -1660,8 +1653,8 @@ fn test_build_specs_mcp_tools_sorted_by_name() {
 fn test_mcp_tool_property_missing_type_defaults_to_string() {
     let config = test_config();
     let model_info = ModelsManager::construct_model_info_offline_for_tests("gpt-5-codex", &config);
-    let mut features = Features::with_defaults();
-    features.enable(Feature::UnifiedExec);
+    let features = Features::with_defaults();
+
     let available_models = Vec::new();
     let tools_config = ToolsConfig::new(&ToolsConfigParams {
         model_info: &model_info,
@@ -1670,6 +1663,7 @@ fn test_mcp_tool_property_missing_type_defaults_to_string() {
         web_search_mode: Some(WebSearchMode::Cached),
         session_source: SessionSource::Cli,
         sandbox_policy: &SandboxPolicy::RootAccess,
+        collab_enabled: true,
     });
 
     let (tools, _) = build_specs(
@@ -1719,8 +1713,8 @@ fn test_mcp_tool_property_missing_type_defaults_to_string() {
 fn test_mcp_tool_integer_normalized_to_number() {
     let config = test_config();
     let model_info = ModelsManager::construct_model_info_offline_for_tests("gpt-5-codex", &config);
-    let mut features = Features::with_defaults();
-    features.enable(Feature::UnifiedExec);
+    let features = Features::with_defaults();
+
     let available_models = Vec::new();
     let tools_config = ToolsConfig::new(&ToolsConfigParams {
         model_info: &model_info,
@@ -1729,6 +1723,7 @@ fn test_mcp_tool_integer_normalized_to_number() {
         web_search_mode: Some(WebSearchMode::Cached),
         session_source: SessionSource::Cli,
         sandbox_policy: &SandboxPolicy::RootAccess,
+        collab_enabled: true,
     });
 
     let (tools, _) = build_specs(
@@ -1774,8 +1769,8 @@ fn test_mcp_tool_integer_normalized_to_number() {
 fn test_mcp_tool_array_without_items_gets_default_string_items() {
     let config = test_config();
     let model_info = ModelsManager::construct_model_info_offline_for_tests("gpt-5-codex", &config);
-    let mut features = Features::with_defaults();
-    features.enable(Feature::UnifiedExec);
+    let features = Features::with_defaults();
+
     let available_models = Vec::new();
     let tools_config = ToolsConfig::new(&ToolsConfigParams {
         model_info: &model_info,
@@ -1784,6 +1779,7 @@ fn test_mcp_tool_array_without_items_gets_default_string_items() {
         web_search_mode: Some(WebSearchMode::Cached),
         session_source: SessionSource::Cli,
         sandbox_policy: &SandboxPolicy::RootAccess,
+        collab_enabled: true,
     });
 
     let (tools, _) = build_specs(
@@ -1832,8 +1828,8 @@ fn test_mcp_tool_array_without_items_gets_default_string_items() {
 fn test_mcp_tool_anyof_defaults_to_string() {
     let config = test_config();
     let model_info = ModelsManager::construct_model_info_offline_for_tests("gpt-5-codex", &config);
-    let mut features = Features::with_defaults();
-    features.enable(Feature::UnifiedExec);
+    let features = Features::with_defaults();
+
     let available_models = Vec::new();
     let tools_config = ToolsConfig::new(&ToolsConfigParams {
         model_info: &model_info,
@@ -1842,6 +1838,7 @@ fn test_mcp_tool_anyof_defaults_to_string() {
         web_search_mode: Some(WebSearchMode::Cached),
         session_source: SessionSource::Cli,
         sandbox_policy: &SandboxPolicy::RootAccess,
+        collab_enabled: true,
     });
 
     let (tools, _) = build_specs(
@@ -2002,8 +1999,8 @@ fn test_shell_command_tool() {
 fn test_get_openai_tools_mcp_tools_with_additional_properties_schema() {
     let config = test_config();
     let model_info = ModelsManager::construct_model_info_offline_for_tests("gpt-5-codex", &config);
-    let mut features = Features::with_defaults();
-    features.enable(Feature::UnifiedExec);
+    let features = Features::with_defaults();
+
     let available_models = Vec::new();
     let tools_config = ToolsConfig::new(&ToolsConfigParams {
         model_info: &model_info,
@@ -2012,6 +2009,7 @@ fn test_get_openai_tools_mcp_tools_with_additional_properties_schema() {
         web_search_mode: Some(WebSearchMode::Cached),
         session_source: SessionSource::Cli,
         sandbox_policy: &SandboxPolicy::RootAccess,
+        collab_enabled: true,
     });
     let (tools, _) = build_specs(
         &tools_config,

@@ -9,21 +9,13 @@ use serde::Deserialize;
 use serde::Serialize;
 use std::collections::BTreeMap;
 use std::collections::BTreeSet;
-use tracing::info;
 
 /// Unique features toggled via configuration.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash)]
 pub enum Feature {
-    ShellTool,
-    UnifiedExec,
     ExecPermissionApprovals,
     RequestPermissionsTool,
-    ShellSnapshot,
-    EnableRequestCompression,
-    Collab,
     SpawnCsv,
-    SkillMcpDependencyInstall,
-    Personality,
 }
 
 impl Feature {
@@ -62,12 +54,7 @@ pub struct Features {
 pub struct FeatureOverrides {}
 
 impl FeatureOverrides {
-    pub fn apply(self, features: &mut Features) {
-        LegacyFeatureToggles {
-            ..Default::default()
-        }
-        .apply(features);
-    }
+    pub fn apply(self, _features: &mut Features) {}
 }
 
 impl Features {
@@ -152,12 +139,6 @@ impl Features {
     pub fn enabled_features(&self) -> Vec<Feature> {
         self.enabled.iter().copied().collect()
     }
-
-    pub fn normalize_dependencies(&mut self) {
-        if self.enabled(Feature::SpawnCsv) && !self.enabled(Feature::Collab) {
-            self.enable(Feature::Collab);
-        }
-    }
 }
 
 fn legacy_usage_notice(alias: &str, feature: Feature) -> (String, Option<String>) {
@@ -180,19 +161,7 @@ fn legacy_usage_notice(alias: &str, feature: Feature) -> (String, Option<String>
 
 /// Keys accepted in `[features]` tables.
 pub fn feature_for_key(key: &str) -> Option<Feature> {
-    for spec in FEATURES {
-        if spec.key == key {
-            return Some(spec.id);
-        }
-    }
-    legacy_feature_for_key(key)
-}
-
-pub fn canonical_feature_for_key(key: &str) -> Option<Feature> {
-    FEATURES
-        .iter()
-        .find(|spec| spec.key == key)
-        .map(|spec| spec.id)
+    FEATURES.iter().find(|spec| spec.key == key).map(|s| s.id)
 }
 
 /// Returns `true` if the provided string matches a known feature toggle key.
@@ -228,24 +197,6 @@ pub struct FeatureSpec {
 
 pub const FEATURES: &[FeatureSpec] = &[
     FeatureSpec {
-        id: Feature::ShellTool,
-        key: "shell_tool",
-        default_enabled: true,
-        under_development: false,
-    },
-    FeatureSpec {
-        id: Feature::UnifiedExec,
-        key: "unified_exec",
-        default_enabled: true,
-        under_development: false,
-    },
-    FeatureSpec {
-        id: Feature::ShellSnapshot,
-        key: "shell_snapshot",
-        default_enabled: true,
-        under_development: false,
-    },
-    FeatureSpec {
         id: Feature::ExecPermissionApprovals,
         key: "exec_permission_approvals",
         default_enabled: false,
@@ -258,115 +209,9 @@ pub const FEATURES: &[FeatureSpec] = &[
         under_development: false,
     },
     FeatureSpec {
-        id: Feature::EnableRequestCompression,
-        key: "enable_request_compression",
-        default_enabled: true,
-        under_development: false,
-    },
-    FeatureSpec {
-        id: Feature::Collab,
-        key: "multi_agent",
-        default_enabled: true,
-        under_development: false,
-    },
-    FeatureSpec {
         id: Feature::SpawnCsv,
         key: "enable_fanout",
         default_enabled: false,
         under_development: false,
     },
-    FeatureSpec {
-        id: Feature::SkillMcpDependencyInstall,
-        key: "skill_mcp_dependency_install",
-        default_enabled: true,
-        under_development: false,
-    },
-    FeatureSpec {
-        id: Feature::Personality,
-        key: "personality",
-        default_enabled: true,
-        under_development: false,
-    },
 ];
-
-// ===== Legacy feature aliases =====
-
-#[derive(Clone, Copy)]
-struct Alias {
-    legacy_key: &'static str,
-    feature: Feature,
-}
-
-const ALIASES: &[Alias] = &[
-    Alias {
-        legacy_key: "experimental_use_unified_exec_tool",
-        feature: Feature::UnifiedExec,
-    },
-    Alias {
-        legacy_key: "request_permissions",
-        feature: Feature::ExecPermissionApprovals,
-    },
-    Alias {
-        legacy_key: "collab",
-        feature: Feature::Collab,
-    },
-];
-
-pub fn legacy_feature_keys() -> impl Iterator<Item = &'static str> {
-    ALIASES.iter().map(|alias| alias.legacy_key)
-}
-
-fn legacy_feature_for_key(key: &str) -> Option<Feature> {
-    ALIASES
-        .iter()
-        .find(|alias| alias.legacy_key == key)
-        .map(|alias| {
-            log_alias(alias.legacy_key, alias.feature);
-            alias.feature
-        })
-}
-
-#[derive(Debug, Default)]
-pub struct LegacyFeatureToggles {
-    pub experimental_use_unified_exec_tool: Option<bool>,
-}
-
-impl LegacyFeatureToggles {
-    pub fn apply(self, features: &mut Features) {
-        set_if_some(
-            features,
-            Feature::UnifiedExec,
-            self.experimental_use_unified_exec_tool,
-            "experimental_use_unified_exec_tool",
-        );
-    }
-}
-
-fn set_if_some(
-    features: &mut Features,
-    feature: Feature,
-    maybe_value: Option<bool>,
-    alias_key: &'static str,
-) {
-    if let Some(enabled) = maybe_value {
-        if enabled {
-            features.enable(feature);
-        } else {
-            features.disable(feature);
-        }
-        log_alias(alias_key, feature);
-        features.record_legacy_usage(alias_key, feature);
-    }
-}
-
-fn log_alias(alias: &str, feature: Feature) {
-    let canonical = feature.key();
-    if alias == canonical {
-        return;
-    }
-    info!(
-        %alias,
-        canonical,
-        "legacy feature toggle detected; prefer `[features].{canonical}`"
-    );
-}

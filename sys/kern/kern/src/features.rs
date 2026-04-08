@@ -19,25 +19,15 @@ pub fn features_from_config(
 ) -> Features {
     let mut features = Features::with_defaults();
 
-    let base_legacy = LegacyFeatureToggles {
-        experimental_use_unified_exec_tool: cfg.experimental_use_unified_exec_tool,
-    };
-    base_legacy.apply(&mut features);
-
     if let Some(base_features) = cfg.features.as_ref() {
         features.apply_map(&base_features.entries);
     }
 
-    let profile_legacy = LegacyFeatureToggles {
-        experimental_use_unified_exec_tool: config_profile.experimental_use_unified_exec_tool,
-    };
-    profile_legacy.apply(&mut features);
     if let Some(profile_features) = config_profile.features.as_ref() {
         features.apply_map(&profile_features.entries);
     }
 
     overrides.apply(&mut features);
-    features.normalize_dependencies();
 
     features
 }

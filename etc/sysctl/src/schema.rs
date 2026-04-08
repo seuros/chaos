@@ -1,23 +1,16 @@
 use crate::features::FEATURES;
-use crate::features::legacy_feature_keys;
 use crate::types::RawMcpServerConfig;
 use schemars::Schema;
 use schemars::SchemaGenerator;
 use serde_json::Map;
 use serde_json::Value;
 
-/// Schema for the `[features]` map with known + legacy keys only.
+/// Schema for the `[features]` map with known keys only.
 pub fn features_schema(schema_gen: &mut SchemaGenerator) -> Schema {
     let mut properties = Map::new();
     for feature in FEATURES {
         properties.insert(
             feature.key.to_string(),
-            schema_gen.subschema_for::<bool>().to_value(),
-        );
-    }
-    for legacy_key in legacy_feature_keys() {
-        properties.insert(
-            legacy_key.to_string(),
             schema_gen.subschema_for::<bool>().to_value(),
         );
     }

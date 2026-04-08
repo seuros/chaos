@@ -69,11 +69,7 @@ fn build_collaboration_mode_update_item(
 fn build_personality_update_item(
     previous: Option<&TurnContextItem>,
     next: &TurnContext,
-    personality_feature_enabled: bool,
 ) -> Option<DeveloperInstructions> {
-    if !personality_feature_enabled {
-        return None;
-    }
     let previous = previous?;
     if next.model_info.slug != previous.model {
         return None;
@@ -153,7 +149,6 @@ pub(crate) fn build_settings_update_items(
     next: &TurnContext,
     shell: &Shell,
     exec_policy: &Policy,
-    personality_feature_enabled: bool,
 ) -> Vec<ResponseItem> {
     let contextual_user_message = build_environment_update_item(previous, next, shell);
     let developer_update_sections = [
@@ -162,7 +157,7 @@ pub(crate) fn build_settings_update_items(
         build_model_instructions_update_item(previous_turn_settings, next),
         build_permissions_update_item(previous, next, exec_policy),
         build_collaboration_mode_update_item(previous, next),
-        build_personality_update_item(previous, next, personality_feature_enabled),
+        build_personality_update_item(previous, next),
     ]
     .into_iter()
     .flatten()

@@ -8,7 +8,7 @@ use anyhow::Context;
 use anyhow::Result;
 use chaos_ipc::protocol::ApprovalPolicy;
 use chaos_ipc::protocol::SandboxPolicy;
-use chaos_kern::features::Feature;
+
 use chaos_kern::sandboxing::SandboxPermissions;
 use core_test_support::assert_regex_match;
 use core_test_support::responses::ev_assistant_message;
@@ -174,20 +174,19 @@ async fn shell_escalated_permissions_rejected_then_ok() -> Result<()> {
         .function_call_output_content_and_success(call_id_success)
         .and_then(|(content, _)| content)
         .expect("success output string");
-    let output_json: Value = serde_json::from_str(&success_output)?;
-    assert_eq!(
-        output_json["metadata"]["exit_code"].as_i64(),
-        Some(0),
-        "expected exit code 0 after rerunning without escalation",
-    );
-    let stdout = output_json["output"].as_str().unwrap_or_default();
-    let stdout_pattern = r"(?s)^shell ok\n?$";
-    assert_regex_match(stdout_pattern, stdout);
+    // With freeform apply_patch as the default for all models, shell output
+    // is reserialized to plain text before being sent to the model.
+    let expected_pattern = r"(?s)^Exit code: 0
+Wall time: [0-9]+(?:\.[0-9]+)? seconds
+Output:
+shell ok
+?$";
+    assert_regex_match(expected_pattern, &success_output);
 
     Ok(())
 }
 
-async fn collect_tools(use_unified_exec: bool) -> Result<Vec<String>> {
+async fn collect_tools() -> Result<Vec<String>> {
     let server = start_mock_server().await;
 
     let responses = vec![sse(vec![
@@ -197,19 +196,7 @@ async fn collect_tools(use_unified_exec: bool) -> Result<Vec<String>> {
     ])];
     let mock = mount_sse_sequence(&server, responses).await;
 
-    let mut builder = test_codex().with_config(move |config| {
-        if use_unified_exec {
-            config
-                .features
-                .enable(Feature::UnifiedExec)
-                .expect("test config should allow feature update");
-        } else {
-            config
-                .features
-                .disable(Feature::UnifiedExec)
-                .expect("test config should allow feature update");
-        }
-    });
+    let mut builder = test_codex();
     let test = builder.build(&server).await?;
 
     test.submit_turn_with_policies(
@@ -224,27 +211,17 @@ async fn collect_tools(use_unified_exec: bool) -> Result<Vec<String>> {
 }
 
 #[tokio::test(flavor = "multi_thread", worker_threads = 2)]
-async fn unified_exec_spec_toggle_end_to_end() -> Result<()> {
+async fn unified_exec_tools_always_present() -> Result<()> {
     skip_if_no_network!(Ok(()));
 
-    let tools_disabled = collect_tools(false).await?;
+    let tools = collect_tools().await?;
     assert!(
-        !tools_disabled.iter().any(|name| name == "exec_command"),
-        "tools list should not include exec_command when disabled: {tools_disabled:?}"
+        tools.iter().any(|name| name == "exec_command"),
+        "tools list should include exec_command: {tools:?}"
     );
     assert!(
-        !tools_disabled.iter().any(|name| name == "write_stdin"),
-        "tools list should not include write_stdin when disabled: {tools_disabled:?}"
-    );
-
-    let tools_enabled = collect_tools(true).await?;
-    assert!(
-        tools_enabled.iter().any(|name| name == "exec_command"),
-        "tools list should include exec_command when enabled: {tools_enabled:?}"
-    );
-    assert!(
-        tools_enabled.iter().any(|name| name == "write_stdin"),
-        "tools list should include write_stdin when enabled: {tools_enabled:?}"
+        tools.iter().any(|name| name == "write_stdin"),
+        "tools list should include write_stdin: {tools:?}"
     );
 
     Ok(())
@@ -297,9 +274,11 @@ async fn shell_timeout_includes_timeout_prefix_and_metadata() -> Result<()> {
         .and_then(Value::as_str)
         .expect("timeout output string");
 
-    // The exec path can report a timeout in two ways depending on timing:
-    // 1) Structured JSON with exit_code 124 and a timeout prefix (preferred), or
-    // 2) A plain error string if the child is observed as killed by a signal first.
+    // The exec path can report a timeout in three ways depending on timing
+    // and whether the output gets reserialized:
+    // 1) Structured JSON with exit_code 124 and a timeout prefix,
+    // 2) Reserialized plain text with "Exit code: 124" and "command timed out",
+    // 3) A plain error string if the child is observed as killed by a signal first.
     if let Ok(output_json) = serde_json::from_str::<Value>(output_str) {
         assert_eq!(
             output_json["metadata"]["exit_code"].as_i64(),
@@ -311,6 +290,13 @@ async fn shell_timeout_includes_timeout_prefix_and_metadata() -> Result<()> {
         assert!(
             stdout.contains("command timed out"),
             "timeout output missing `command timed out`: {stdout}"
+        );
+    } else if output_str.contains("Exit code:") {
+        // Reserialized plain-text format produced when freeform apply_patch
+        // is present (the default for all models now).
+        assert!(
+            output_str.contains("Exit code: 124") || output_str.contains("command timed out"),
+            "expected timeout indication in reserialized output: {output_str}"
         );
     } else {
         // Fallback: accept the signal classification path to deflake the test.

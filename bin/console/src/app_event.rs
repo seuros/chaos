@@ -213,6 +213,7 @@ pub(crate) enum AppEvent {
     UpdateApprovalsReviewer(ApprovalsReviewer),
 
     /// Update feature flags and persist them to the top-level config.
+    #[allow(dead_code)]
     UpdateFeatureFlags {
         updates: Vec<(Feature, bool)>,
     },

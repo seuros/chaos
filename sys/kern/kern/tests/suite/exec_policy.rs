@@ -9,7 +9,7 @@ use chaos_ipc::protocol::EventMsg;
 use chaos_ipc::protocol::Op;
 use chaos_ipc::protocol::SandboxPolicy;
 use chaos_ipc::user_input::UserInput;
-use chaos_kern::features::Feature;
+
 use core_test_support::responses::ev_assistant_message;
 use core_test_support::responses::ev_completed;
 use core_test_support::responses::ev_function_call;
@@ -211,12 +211,7 @@ async fn shell_command_empty_script_with_collaboration_mode_does_not_panic() -> 
 #[tokio::test(flavor = "multi_thread", worker_threads = 2)]
 async fn unified_exec_empty_script_with_collaboration_mode_does_not_panic() -> Result<()> {
     let server = start_mock_server().await;
-    let mut builder = test_codex().with_model("gpt-5").with_config(|config| {
-        config
-            .features
-            .enable(Feature::UnifiedExec)
-            .expect("test config should allow feature update");
-    });
+    let mut builder = test_codex().with_model("gpt-5");
     let test = builder.build(&server).await?;
     let call_id = "unified-exec-empty-script-collab";
     let args = json!({
@@ -316,12 +311,7 @@ async fn shell_command_whitespace_script_with_collaboration_mode_does_not_panic(
 #[tokio::test(flavor = "multi_thread", worker_threads = 2)]
 async fn unified_exec_whitespace_script_with_collaboration_mode_does_not_panic() -> Result<()> {
     let server = start_mock_server().await;
-    let mut builder = test_codex().with_model("gpt-5").with_config(|config| {
-        config
-            .features
-            .enable(Feature::UnifiedExec)
-            .expect("test config should allow feature update");
-    });
+    let mut builder = test_codex().with_model("gpt-5");
     let test = builder.build(&server).await?;
     let call_id = "unified-exec-whitespace-script-collab";
     let args = json!({

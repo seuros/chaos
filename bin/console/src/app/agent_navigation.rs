@@ -127,6 +127,7 @@ impl AgentNavigationState {
     /// `App` uses this to decide whether the picker should be available even when the collaboration
     /// feature flag is currently disabled, because already-existing sub-agent processes should remain
     /// inspectable.
+    #[allow(dead_code)]
     pub(crate) fn has_non_primary_process(&self, primary_process_id: Option<ProcessId>) -> bool {
         self.processes
             .keys()

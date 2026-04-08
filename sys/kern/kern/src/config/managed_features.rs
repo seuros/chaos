@@ -13,7 +13,6 @@ use crate::config::profile::ConfigProfile;
 use crate::features::Feature;
 use crate::features::FeatureOverrides;
 use crate::features::Features;
-use crate::features::canonical_feature_for_key;
 use crate::features::feature_for_key;
 
 /// Wrapper around [`Features`] which enforces constraints defined in
@@ -116,7 +115,6 @@ fn normalize_candidate(
     for (feature, enabled) in pinned_features {
         candidate.set_enabled(*feature, *enabled);
     }
-    candidate.normalize_dependencies();
     candidate
 }
 
@@ -170,7 +168,7 @@ fn parse_feature_requirements(
 ) -> std::io::Result<BTreeMap<Feature, bool>> {
     let mut pinned_features = BTreeMap::new();
     for (key, enabled) in feature_requirements.entries {
-        if let Some(feature) = canonical_feature_for_key(&key) {
+        if let Some(feature) = feature_for_key(&key) {
             pinned_features.insert(feature, enabled);
             continue;
         }
@@ -204,13 +202,6 @@ fn explicit_feature_settings_in_config(cfg: &ConfigToml) -> Vec<(String, Feature
             }
         }
     }
-    if let Some(enabled) = cfg.experimental_use_unified_exec_tool {
-        explicit_settings.push((
-            "experimental_use_unified_exec_tool".to_string(),
-            Feature::UnifiedExec,
-            enabled,
-        ));
-    }
     for (profile_name, profile) in &cfg.profiles {
         if let Some(features) = profile.features.as_ref() {
             for (key, enabled) in &features.entries {
@@ -222,13 +213,6 @@ fn explicit_feature_settings_in_config(cfg: &ConfigToml) -> Vec<(String, Feature
                     ));
                 }
             }
-        }
-        if let Some(enabled) = profile.experimental_use_unified_exec_tool {
-            explicit_settings.push((
-                format!("profiles.{profile_name}.experimental_use_unified_exec_tool"),
-                Feature::UnifiedExec,
-                enabled,
-            ));
         }
     }
 

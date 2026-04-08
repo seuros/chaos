@@ -114,9 +114,7 @@ fn configure_shell_model(
 #[tokio::test(flavor = "multi_thread", worker_threads = 2)]
 #[test_case(ShellModelOutput::Shell)]
 #[test_case(ShellModelOutput::LocalShell)]
-async fn shell_output_stays_json_without_freeform_apply_patch(
-    output_type: ShellModelOutput,
-) -> Result<()> {
+async fn shell_output_is_reserialized_for_all_models(output_type: ShellModelOutput) -> Result<()> {
     skip_if_no_network!(Ok(()));
 
     let server = start_mock_server().await;
@@ -137,24 +135,19 @@ async fn shell_output_stays_json_without_freeform_apply_patch(
         .and_then(Value::as_str)
         .expect("shell output string");
 
-    let mut parsed: Value = serde_json::from_str(output)?;
-    if let Some(metadata) = parsed.get_mut("metadata").and_then(Value::as_object_mut) {
-        let _ = metadata.remove("duration_seconds");
-    }
-
-    assert_eq!(
-        parsed
-            .get("metadata")
-            .and_then(|metadata| metadata.get("exit_code"))
-            .and_then(Value::as_i64),
-        Some(0),
-        "expected zero exit code in unformatted JSON output",
+    // With UnifiedExec always on and freeform apply_patch as the default for
+    // all models, shell output is always reserialized to plain text before
+    // being sent to the model.
+    assert!(
+        serde_json::from_str::<Value>(output).is_err(),
+        "expected reserialized plain text, not JSON",
     );
-    let stdout = parsed
-        .get("output")
-        .and_then(Value::as_str)
-        .unwrap_or_default();
-    assert_regex_match(r"(?s)^shell json\n?$", stdout);
+    let expected_pattern = r"(?s)^Exit code: 0
+Wall time: [0-9]+(?:\.[0-9]+)? seconds
+Output:
+shell json
+?$";
+    assert_regex_match(expected_pattern, output);
 
     Ok(())
 }
@@ -208,7 +201,7 @@ freeform shell
 #[tokio::test(flavor = "multi_thread", worker_threads = 2)]
 #[test_case(ShellModelOutput::Shell)]
 #[test_case(ShellModelOutput::LocalShell)]
-async fn shell_output_preserves_fixture_json_without_serialization(
+async fn shell_output_reserializes_fixture_json_as_plain_text(
     output_type: ShellModelOutput,
 ) -> Result<()> {
     skip_if_no_network!(Ok(()));
@@ -239,27 +232,23 @@ async fn shell_output_preserves_fixture_json_without_serialization(
         .and_then(Value::as_str)
         .expect("shell output string");
 
-    let mut parsed: Value = serde_json::from_str(output)?;
-    if let Some(metadata) = parsed.get_mut("metadata").and_then(Value::as_object_mut) {
-        let _ = metadata.remove("duration_seconds");
-    }
-
-    assert_eq!(
-        parsed
-            .get("metadata")
-            .and_then(|metadata| metadata.get("exit_code"))
-            .and_then(Value::as_i64),
-        Some(0),
-        "expected zero exit code when serialization is disabled",
+    // With freeform apply_patch as the default for all models, shell output
+    // is always reserialized to plain text. The fixture JSON appears in the
+    // Output section of the structured text.
+    assert!(
+        serde_json::from_str::<Value>(output).is_err(),
+        "expected reserialized plain text, not raw JSON",
     );
-    let stdout = parsed
-        .get("output")
-        .and_then(Value::as_str)
-        .unwrap_or_default()
-        .to_string();
+    let (header, body) = output
+        .split_once("Output:\n")
+        .expect("structured output contains an Output section");
+    assert_regex_match(
+        r"(?s)^Exit code: 0\nWall time: [0-9]+(?:\.[0-9]+)? seconds$",
+        header.trim_end(),
+    );
     assert_eq!(
-        stdout, FIXTURE_JSON,
-        "expected shell output to match the fixture contents"
+        body, FIXTURE_JSON,
+        "expected Output section to include the fixture contents"
     );
 
     Ok(())

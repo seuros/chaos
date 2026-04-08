@@ -10,7 +10,7 @@ use crate::config::types::ModelAvailabilityNuxConfig;
 use crate::config::types::NotificationMethod;
 use crate::config::types::Notifications;
 use crate::config_loader::RequirementSource;
-use crate::features::Feature;
+
 use chaos_ipc::permissions::FileSystemAccessMode;
 use chaos_ipc::permissions::FileSystemPath;
 use chaos_ipc::permissions::FileSystemSandboxEntry;
@@ -787,27 +787,6 @@ fn cli_override_takes_precedence_over_profile_sandbox_mode() -> std::io::Result<
 }
 
 #[test]
-fn legacy_toggles_map_to_features() -> std::io::Result<()> {
-    let chaos_home = TempDir::new()?;
-    let cfg = ConfigToml {
-        experimental_use_unified_exec_tool: Some(true),
-        ..Default::default()
-    };
-
-    let config = Config::load_from_base_config_with_overrides(
-        cfg,
-        ConfigOverrides::default(),
-        chaos_home.path().to_path_buf(),
-    )?;
-
-    assert!(config.features.enabled(Feature::UnifiedExec));
-
-    assert!(config.use_experimental_unified_exec_tool);
-
-    Ok(())
-}
-
-#[test]
 fn responses_websocket_features_do_not_change_wire_api() -> std::io::Result<()> {
     for feature_key in ["responses_websockets", "responses_websockets_v2"] {
         let chaos_home = TempDir::new()?;
@@ -1074,7 +1053,7 @@ fn test_precedence_fixture_with_o3_profile() -> std::io::Result<()> {
             forced_login_method: None,
             web_search_mode: Constrained::allow_any(WebSearchMode::Cached),
             web_search_config: None,
-            use_experimental_unified_exec_tool: true,
+            collab_enabled: true,
             background_terminal_max_timeout: DEFAULT_MAX_BACKGROUND_TERMINAL_TIMEOUT_MS,
             ghost_snapshot: GhostSnapshotConfig::default(),
             features: Features::with_defaults().into(),
@@ -1204,7 +1183,7 @@ fn test_precedence_fixture_with_serpent_profile() -> std::io::Result<()> {
         forced_login_method: None,
         web_search_mode: Constrained::allow_any(WebSearchMode::Cached),
         web_search_config: None,
-        use_experimental_unified_exec_tool: true,
+        collab_enabled: true,
         background_terminal_max_timeout: DEFAULT_MAX_BACKGROUND_TERMINAL_TIMEOUT_MS,
         ghost_snapshot: GhostSnapshotConfig::default(),
         features: Features::with_defaults().into(),
@@ -1332,7 +1311,7 @@ fn test_precedence_fixture_with_zdr_profile() -> std::io::Result<()> {
         forced_login_method: None,
         web_search_mode: Constrained::allow_any(WebSearchMode::Cached),
         web_search_config: None,
-        use_experimental_unified_exec_tool: true,
+        collab_enabled: true,
         background_terminal_max_timeout: DEFAULT_MAX_BACKGROUND_TERMINAL_TIMEOUT_MS,
         ghost_snapshot: GhostSnapshotConfig::default(),
         features: Features::with_defaults().into(),
@@ -1446,7 +1425,7 @@ fn test_precedence_fixture_with_gordon_profile() -> std::io::Result<()> {
         forced_login_method: None,
         web_search_mode: Constrained::allow_any(WebSearchMode::Cached),
         web_search_config: None,
-        use_experimental_unified_exec_tool: true,
+        collab_enabled: true,
         background_terminal_max_timeout: DEFAULT_MAX_BACKGROUND_TERMINAL_TIMEOUT_MS,
         ghost_snapshot: GhostSnapshotConfig::default(),
         features: Features::with_defaults().into(),

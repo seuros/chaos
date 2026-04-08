@@ -6,7 +6,6 @@ use chaos_kern::config_loader::ConfigLayerEntry;
 use chaos_kern::config_loader::ConfigLayerStack;
 use chaos_kern::config_loader::ConfigRequirements;
 use chaos_kern::config_loader::ConfigRequirementsToml;
-use chaos_kern::features::Feature;
 use core_test_support::responses::start_mock_server;
 use core_test_support::skip_if_no_network;
 use core_test_support::test_absolute_path;
@@ -15,45 +14,6 @@ use core_test_support::test_codex::test_codex;
 use core_test_support::wait_for_event_match;
 use pretty_assertions::assert_eq;
 use toml::Value as TomlValue;
-
-#[tokio::test(flavor = "multi_thread", worker_threads = 2)]
-async fn emits_deprecation_notice_for_legacy_feature_flag() -> anyhow::Result<()> {
-    skip_if_no_network!(Ok(()));
-
-    let server = start_mock_server().await;
-
-    let mut builder = test_codex().with_config(|config| {
-        let mut features = config.features.get().clone();
-        features.enable(Feature::UnifiedExec);
-        features
-            .record_legacy_usage_force("use_experimental_unified_exec_tool", Feature::UnifiedExec);
-        config
-            .features
-            .set(features)
-            .expect("test config should allow managed feature metadata updates");
-        config.use_experimental_unified_exec_tool = true;
-    });
-
-    let TestCodex { codex, .. } = builder.build(&server).await?;
-
-    let notice = wait_for_event_match(&codex, |event| match event {
-        EventMsg::DeprecationNotice(ev) => Some(ev.clone()),
-        _ => None,
-    })
-    .await;
-
-    let DeprecationNoticeEvent { summary, details } = notice;
-    assert_eq!(
-        summary,
-        "`[features].use_experimental_unified_exec_tool` is deprecated. Use `[features].unified_exec` instead.".to_string(),
-    );
-    assert_eq!(
-        details.as_deref(),
-        Some("Enable it with `--enable unified_exec` or `[features].unified_exec` in config.toml."),
-    );
-
-    Ok(())
-}
 
 #[tokio::test(flavor = "multi_thread", worker_threads = 2)]
 async fn emits_deprecation_notice_for_experimental_instructions_file() -> anyhow::Result<()> {

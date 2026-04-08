@@ -17,7 +17,7 @@ use chaos_ipc::protocol::SandboxPolicy;
 use chaos_ipc::user_input::UserInput;
 use chaos_kern::ChaosAuth;
 use chaos_kern::config::types::Personality;
-use chaos_kern::features::Feature;
+
 use chaos_kern::models_manager::manager::RefreshStrategy;
 use core_test_support::responses::ev_completed_with_tokens;
 use core_test_support::responses::ev_image_generation_call;
@@ -173,14 +173,7 @@ async fn model_and_personality_change_only_appends_model_instructions() -> Resul
     )
     .await;
 
-    let mut builder = test_codex()
-        .with_model("gpt-5.2-codex")
-        .with_config(|config| {
-            config
-                .features
-                .enable(Feature::Personality)
-                .expect("test config should allow feature update");
-        });
+    let mut builder = test_codex().with_model("gpt-5.2-codex");
     let test = builder.build(&server).await?;
     let next_model = "exp-codex-personality";
 

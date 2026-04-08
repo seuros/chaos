@@ -94,7 +94,7 @@ use chaos_kern::config::ConstraintError;
 use chaos_kern::config::types::Notifications;
 #[cfg(feature = "vt100-tests")]
 use chaos_kern::config_loader::RequirementSource;
-use chaos_kern::features::Feature;
+
 use chaos_kern::models_manager::collaboration_mode_presets::CollaborationModesConfig;
 use chaos_kern::models_manager::manager::ModelsManager;
 use chaos_kern::terminal::TerminalName;
@@ -5983,35 +5983,6 @@ fn render_bottom_popup(chat: &ChatWidget, width: u16) -> String {
     let height = chat.desired_height(width);
     let area = Rect::new(0, 0, width, height);
     render_to_trimmed_string(chat, area)
-}
-
-#[tokio::test]
-async fn multi_agent_enable_prompt_snapshot() {
-    let (mut chat, _rx, _op_rx) = make_chatwidget_manual(None).await;
-
-    chat.open_multi_agent_enable_prompt();
-
-    let popup = render_bottom_popup(&chat, 80);
-    assert_snapshot!("multi_agent_enable_prompt", popup);
-}
-
-#[tokio::test]
-async fn multi_agent_enable_prompt_updates_feature_and_emits_notice() {
-    let (mut chat, mut rx, _op_rx) = make_chatwidget_manual(None).await;
-
-    chat.open_multi_agent_enable_prompt();
-    chat.handle_key_event(KeyEvent::from(KeyCode::Enter));
-
-    assert_matches!(
-        rx.try_recv(),
-        Ok(AppEvent::UpdateFeatureFlags { updates }) if updates == vec![(Feature::Collab, true)]
-    );
-    let cell = match rx.try_recv() {
-        Ok(AppEvent::InsertHistoryCell(cell)) => cell,
-        other => panic!("expected InsertHistoryCell event, got {other:?}"),
-    };
-    let rendered = lines_to_single_string(&cell.display_lines(120));
-    assert!(rendered.contains("Subagents will be enabled in the next session."));
 }
 
 #[tokio::test]

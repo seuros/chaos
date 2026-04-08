@@ -541,7 +541,7 @@ pub(crate) async fn make_session_and_context() -> (Session, TurnContext) {
             session_configuration.session_source.clone(),
             session_configuration.approval_policy.value(),
             config.model_verbosity,
-            config.features.enabled(Feature::EnableRequestCompression),
+            true, // request compression always enabled
             Session::build_model_client_beta_features_header(config.as_ref()),
         ),
         hallucinate: None,
@@ -698,7 +698,7 @@ pub(crate) async fn make_session_and_context_with_dynamic_tools_and_rx(
             session_configuration.session_source.clone(),
             session_configuration.approval_policy.value(),
             config.model_verbosity,
-            config.features.enabled(Feature::EnableRequestCompression),
+            true, // request compression always enabled
             Session::build_model_client_beta_features_header(config.as_ref()),
         ),
         hallucinate: None,
@@ -802,7 +802,6 @@ async fn sample_rollout(
                 matches!(c, ContentItem::InputText { text } if text.contains("<personality_spec>"))
             }))
     }) && let Some(p) = reconstruction_turn.personality
-        && session.features.enabled(Feature::Personality)
         && let Some(personality_message) = reconstruction_turn
             .model_info
             .model_messages

@@ -1074,20 +1074,25 @@ mod tests {
 
     #[test]
     fn features_enable_parses_feature_name() {
-        let cli = MultitoolCli::try_parse_from(["chaos", "features", "enable", "unified_exec"])
-            .expect("parse should succeed");
+        let cli = MultitoolCli::try_parse_from([
+            "chaos",
+            "features",
+            "enable",
+            "exec_permission_approvals",
+        ])
+        .expect("parse should succeed");
         let Some(Subcommand::Features(FeaturesCli { sub })) = cli.subcommand else {
             panic!("expected features subcommand");
         };
         let FeaturesSubcommand::Enable(FeatureSetArgs { feature }) = sub else {
             panic!("expected features enable");
         };
-        assert_eq!(feature, "unified_exec");
+        assert_eq!(feature, "exec_permission_approvals");
     }
 
     #[test]
     fn features_disable_parses_feature_name() {
-        let cli = MultitoolCli::try_parse_from(["chaos", "features", "disable", "shell_tool"])
+        let cli = MultitoolCli::try_parse_from(["chaos", "features", "disable", "enable_fanout"])
             .expect("parse should succeed");
         let Some(Subcommand::Features(FeaturesCli { sub })) = cli.subcommand else {
             panic!("expected features subcommand");
@@ -1095,33 +1100,23 @@ mod tests {
         let FeaturesSubcommand::Disable(FeatureSetArgs { feature }) = sub else {
             panic!("expected features disable");
         };
-        assert_eq!(feature, "shell_tool");
+        assert_eq!(feature, "enable_fanout");
     }
 
     #[test]
     fn feature_toggles_known_features_generate_overrides() {
         let toggles = FeatureToggles {
-            enable: vec!["shell_tool".to_string()],
-            disable: vec!["unified_exec".to_string()],
+            enable: vec!["exec_permission_approvals".to_string()],
+            disable: vec!["enable_fanout".to_string()],
         };
         let overrides = toggles.to_overrides().expect("valid features");
         assert_eq!(
             overrides,
             vec![
-                "features.shell_tool=true".to_string(),
-                "features.unified_exec=false".to_string(),
+                "features.exec_permission_approvals=true".to_string(),
+                "features.enable_fanout=false".to_string(),
             ]
         );
-    }
-
-    #[test]
-    fn feature_toggles_accept_legacy_alias() {
-        let toggles = FeatureToggles {
-            enable: vec!["collab".to_string()],
-            disable: Vec::new(),
-        };
-        let overrides = toggles.to_overrides().expect("valid features");
-        assert_eq!(overrides, vec!["features.collab=true".to_string(),]);
     }
 
     #[test]

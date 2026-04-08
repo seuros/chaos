@@ -136,7 +136,7 @@ async fn set_feature_enabled_updates_profile() -> anyhow::Result<()> {
 
     ConfigEditsBuilder::new(chaos_home.path())
         .with_profile(Some("dev"))
-        .set_feature_enabled("shell_tool", true)
+        .set_feature_enabled("exec_permission_approvals", true)
         .apply()
         .await?;
 
@@ -151,14 +151,14 @@ async fn set_feature_enabled_updates_profile() -> anyhow::Result<()> {
         profile
             .features
             .as_ref()
-            .and_then(|features| features.entries.get("shell_tool")),
+            .and_then(|features| features.entries.get("exec_permission_approvals")),
         Some(&true),
     );
     assert_eq!(
         parsed
             .features
             .as_ref()
-            .and_then(|features| features.entries.get("shell_tool")),
+            .and_then(|features| features.entries.get("exec_permission_approvals")),
         None,
     );
 
@@ -172,13 +172,13 @@ async fn set_feature_enabled_persists_default_false_feature_disable_in_profile()
 
     ConfigEditsBuilder::new(chaos_home.path())
         .with_profile(Some("dev"))
-        .set_feature_enabled("shell_tool", true)
+        .set_feature_enabled("exec_permission_approvals", true)
         .apply()
         .await?;
 
     ConfigEditsBuilder::new(chaos_home.path())
         .with_profile(Some("dev"))
-        .set_feature_enabled("shell_tool", false)
+        .set_feature_enabled("exec_permission_approvals", false)
         .apply()
         .await?;
 
@@ -193,14 +193,14 @@ async fn set_feature_enabled_persists_default_false_feature_disable_in_profile()
         profile
             .features
             .as_ref()
-            .and_then(|features| features.entries.get("shell_tool")),
+            .and_then(|features| features.entries.get("exec_permission_approvals")),
         Some(&false),
     );
     assert_eq!(
         parsed
             .features
             .as_ref()
-            .and_then(|features| features.entries.get("shell_tool")),
+            .and_then(|features| features.entries.get("exec_permission_approvals")),
         None,
     );
 
@@ -212,13 +212,13 @@ async fn set_feature_enabled_profile_disable_overrides_root_enable() -> anyhow::
     let chaos_home = TempDir::new()?;
 
     ConfigEditsBuilder::new(chaos_home.path())
-        .set_feature_enabled("shell_tool", true)
+        .set_feature_enabled("exec_permission_approvals", true)
         .apply()
         .await?;
 
     ConfigEditsBuilder::new(chaos_home.path())
         .with_profile(Some("dev"))
-        .set_feature_enabled("shell_tool", false)
+        .set_feature_enabled("exec_permission_approvals", false)
         .apply()
         .await?;
 
@@ -233,14 +233,14 @@ async fn set_feature_enabled_profile_disable_overrides_root_enable() -> anyhow::
         parsed
             .features
             .as_ref()
-            .and_then(|features| features.entries.get("shell_tool")),
+            .and_then(|features| features.entries.get("exec_permission_approvals")),
         Some(&true),
     );
     assert_eq!(
         profile
             .features
             .as_ref()
-            .and_then(|features| features.entries.get("shell_tool")),
+            .and_then(|features| features.entries.get("exec_permission_approvals")),
         Some(&false),
     );
 

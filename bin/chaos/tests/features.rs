@@ -12,14 +12,16 @@ async fn features_enable_writes_feature_flag_to_config() -> Result<()> {
     let chaos_home = TempDir::new()?;
 
     let mut cmd = chaos_command(chaos_home.path())?;
-    cmd.args(["features", "enable", "unified_exec"])
+    cmd.args(["features", "enable", "exec_permission_approvals"])
         .assert()
         .success()
-        .stdout(contains("Enabled feature `unified_exec` in config.toml."));
+        .stdout(contains(
+            "Enabled feature `exec_permission_approvals` in config.toml.",
+        ));
 
     let config = std::fs::read_to_string(chaos_home.path().join("config.toml"))?;
     assert!(config.contains("[features]"));
-    assert!(config.contains("unified_exec = true"));
+    assert!(config.contains("exec_permission_approvals = true"));
 
     Ok(())
 }
@@ -28,15 +30,23 @@ async fn features_enable_writes_feature_flag_to_config() -> Result<()> {
 async fn features_disable_writes_feature_flag_to_config() -> Result<()> {
     let chaos_home = TempDir::new()?;
 
+    // First enable so there is a config to mutate, then disable.
+    let mut enable_cmd = chaos_command(chaos_home.path())?;
+    enable_cmd
+        .args(["features", "enable", "enable_fanout"])
+        .assert()
+        .success();
+
     let mut cmd = chaos_command(chaos_home.path())?;
-    cmd.args(["features", "disable", "shell_tool"])
+    cmd.args(["features", "disable", "enable_fanout"])
         .assert()
         .success()
-        .stdout(contains("Disabled feature `shell_tool` in config.toml."));
+        .stdout(contains("Disabled feature `enable_fanout` in config.toml."));
 
     let config = std::fs::read_to_string(chaos_home.path().join("config.toml"))?;
     assert!(config.contains("[features]"));
-    assert!(config.contains("shell_tool = false"));
+    // Disabling a default-false feature removes the key rather than writing false.
+    assert!(!config.contains("enable_fanout = true"));
 
     Ok(())
 }

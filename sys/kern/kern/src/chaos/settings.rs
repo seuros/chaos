@@ -12,7 +12,7 @@ use super::Session;
 use super::TurnContext;
 use crate::config::Config;
 use crate::config::ConstraintResult;
-use crate::features::Feature;
+
 use crate::shell_snapshot::ShellSnapshot;
 
 /// Convenience wrapper used by `new_turn_with_sub_id`.
@@ -34,10 +34,6 @@ impl Session {
         session_source: &SessionSource,
     ) {
         if previous_cwd == next_cwd {
-            return;
-        }
-
-        if !self.features.enabled(Feature::ShellSnapshot) {
             return;
         }
 

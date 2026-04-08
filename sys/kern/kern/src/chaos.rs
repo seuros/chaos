@@ -352,7 +352,7 @@ impl Chaos {
             && depth >= config.agent_max_depth
         {
             let _ = config.features.disable(Feature::SpawnCsv);
-            let _ = config.features.disable(Feature::Collab);
+            config.collab_enabled = false;
         }
 
         let user_instructions = get_user_instructions(&config).await;
@@ -739,6 +739,7 @@ impl TurnContext {
             web_search_mode: self.tools_config.web_search_mode,
             session_source: self.session_source.clone(),
             sandbox_policy: self.sandbox_policy.get(),
+            collab_enabled: config.collab_enabled,
         })
         .with_unified_exec_shell_mode(self.tools_config.unified_exec_shell_mode.clone())
         .with_web_search_config(self.tools_config.web_search_config.clone())
@@ -1140,6 +1141,7 @@ impl Session {
             web_search_mode: Some(per_turn_config.web_search_mode.value()),
             session_source: session_source.clone(),
             sandbox_policy: session_configuration.sandbox_policy.get(),
+            collab_enabled: per_turn_config.collab_enabled,
         })
         .with_web_search_config(per_turn_config.web_search_config.clone())
         .with_allow_login_shell(per_turn_config.permissions.allow_login_shell)
@@ -1428,7 +1430,7 @@ impl Session {
 
         let mut default_shell = shell::default_user_shell();
         // Create the mutable state for the Session.
-        let shell_snapshot_tx = if config.features.enabled(Feature::ShellSnapshot) {
+        let shell_snapshot_tx =
             if let Some(snapshot) = session_configuration.inherited_shell_snapshot.clone() {
                 let (tx, rx) = watch::channel(Some(snapshot));
                 default_shell.shell_snapshot = rx;
@@ -1441,12 +1443,7 @@ impl Session {
                     &mut default_shell,
                     session_telemetry.clone(),
                 )
-            }
-        } else {
-            let (tx, rx) = watch::channel(None);
-            default_shell.shell_snapshot = rx;
-            tx
-        };
+            };
         let process_name =
             match process_names::find_process_name_by_id(&config.chaos_home, &conversation_id)
                 .instrument(info_span!(
@@ -1600,7 +1597,7 @@ impl Session {
                 session_configuration.session_source.clone(),
                 session_configuration.approval_policy.value(),
                 config.model_verbosity,
-                config.features.enabled(Feature::EnableRequestCompression),
+                true, // request compression always enabled
                 Self::build_model_client_beta_features_header(config.as_ref()),
             ),
         };
@@ -2178,7 +2175,6 @@ impl Session {
             current_context,
             shell.as_ref(),
             exec_policy.as_ref(),
-            self.features.enabled(Feature::Personality),
         )
     }
 
@@ -2470,9 +2466,7 @@ impl Session {
         {
             developer_sections.push(collab_instructions.into_text());
         }
-        if self.features.enabled(Feature::Personality)
-            && let Some(personality) = turn_context.personality
-        {
+        if let Some(personality) = turn_context.personality {
             let model_info = turn_context.model_info.clone();
             let has_baked_personality = model_info.supports_personality()
                 && base_instructions == model_info.get_model_instructions(Some(personality));
@@ -4106,6 +4100,7 @@ async fn spawn_review_thread(
         web_search_mode: Some(review_web_search_mode),
         session_source: parent_turn_context.session_source.clone(),
         sandbox_policy: parent_turn_context.sandbox_policy.get(),
+        collab_enabled: config.collab_enabled,
     })
     .with_web_search_config(/*web_search_config*/ None)
     .with_allow_login_shell(config.permissions.allow_login_shell)

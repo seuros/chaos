@@ -211,6 +211,7 @@ pub(crate) struct ToolsConfigParams<'a> {
     pub(crate) web_search_mode: Option<WebSearchMode>,
     pub(crate) session_source: SessionSource,
     pub(crate) sandbox_policy: &'a SandboxPolicy,
+    pub(crate) collab_enabled: bool,
 }
 
 fn unified_exec_allowed_in_environment(sandbox_policy: &SandboxPolicy) -> bool {
@@ -227,8 +228,9 @@ impl ToolsConfig {
             web_search_mode,
             session_source,
             sandbox_policy,
+            collab_enabled,
         } = params;
-        let include_collab_tools = features.enabled(Feature::Collab);
+        let include_collab_tools = *collab_enabled;
         let include_agent_jobs = features.enabled(Feature::SpawnCsv);
         let include_request_user_input = !matches!(session_source, SessionSource::SubAgent(_));
         let include_default_mode_request_user_input = include_request_user_input;
@@ -237,12 +239,9 @@ impl ToolsConfig {
         let exec_permission_approvals_enabled = features.enabled(Feature::ExecPermissionApprovals);
         let request_permissions_tool_enabled = features.enabled(Feature::RequestPermissionsTool);
         let unified_exec_allowed = unified_exec_allowed_in_environment(sandbox_policy);
-        let shell_type = if !features.enabled(Feature::ShellTool) {
-            ConfigShellToolType::Disabled
-        } else if features.enabled(Feature::UnifiedExec) && unified_exec_allowed {
+        let shell_type = if unified_exec_allowed {
             ConfigShellToolType::UnifiedExec
-        } else if model_info.shell_type == ConfigShellToolType::UnifiedExec && !unified_exec_allowed
-        {
+        } else if model_info.shell_type == ConfigShellToolType::UnifiedExec {
             ConfigShellToolType::ShellCommand
         } else {
             model_info.shell_type

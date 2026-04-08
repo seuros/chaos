@@ -67,17 +67,17 @@ async fn make_config_with_project_root_markers(
     config
 }
 
-/// AGENTS.md missing – should yield `None`.
+/// AGENTS.md missing – hierarchical agents message is still emitted.
 #[tokio::test]
-async fn no_doc_file_returns_none() {
+async fn no_doc_file_returns_hierarchical_agents() {
     let tmp = tempfile::tempdir().expect("tempdir");
 
     let res = get_user_instructions(&make_config(&tmp, 4096, None).await).await;
-    assert!(
-        res.is_none(),
-        "Expected None when AGENTS.md is absent and no system instructions provided"
+    assert_eq!(
+        res.as_deref(),
+        Some(HIERARCHICAL_AGENTS_MESSAGE),
+        "Expected hierarchical agents message when AGENTS.md is absent"
     );
-    assert!(res.is_none(), "Expected None when AGENTS.md is absent");
 }
 
 /// Small file within the byte-limit is returned unmodified.
@@ -90,9 +90,10 @@ async fn doc_smaller_than_limit_is_returned() {
         .await
         .expect("doc expected");
 
+    let expected = format!("hello world\n\n{HIERARCHICAL_AGENTS_MESSAGE}");
     assert_eq!(
-        res, "hello world",
-        "The document should be returned verbatim when it is smaller than the limit and there are no existing instructions"
+        res, expected,
+        "The document should be returned with hierarchical agents message appended"
     );
 }
 
@@ -109,8 +110,11 @@ async fn doc_larger_than_limit_is_truncated() {
         .await
         .expect("doc expected");
 
-    assert_eq!(res.len(), LIMIT, "doc should be truncated to LIMIT bytes");
-    assert_eq!(res, huge[..LIMIT]);
+    let expected = format!("{}\n\n{HIERARCHICAL_AGENTS_MESSAGE}", &huge[..LIMIT]);
+    assert_eq!(
+        res, expected,
+        "doc should be truncated then agents message appended"
+    );
 }
 
 /// When `cwd` is nested inside a repo, the search should locate AGENTS.md
@@ -138,7 +142,8 @@ async fn finds_doc_in_repo_root() {
     cfg.cwd = nested;
 
     let res = get_user_instructions(&cfg).await.expect("doc expected");
-    assert_eq!(res, "root level doc");
+    let expected = format!("root level doc\n\n{HIERARCHICAL_AGENTS_MESSAGE}");
+    assert_eq!(res, expected);
 }
 
 /// Explicitly setting the byte-limit to zero disables project docs.
@@ -148,9 +153,10 @@ async fn zero_byte_limit_disables_docs() {
     fs::write(tmp.path().join("AGENTS.md"), "something").unwrap();
 
     let res = get_user_instructions(&make_config(&tmp, 0, None).await).await;
-    assert!(
-        res.is_none(),
-        "With limit 0 the function should return None"
+    assert_eq!(
+        res.as_deref(),
+        Some(HIERARCHICAL_AGENTS_MESSAGE),
+        "With limit 0 only hierarchical agents message should remain"
     );
 }
 
@@ -167,7 +173,8 @@ async fn merges_existing_instructions_with_project_doc() {
         .await
         .expect("should produce a combined instruction string");
 
-    let expected = format!("{INSTRUCTIONS}{PROJECT_DOC_SEPARATOR}{}", "proj doc");
+    let expected =
+        format!("{INSTRUCTIONS}{PROJECT_DOC_SEPARATOR}proj doc\n\n{HIERARCHICAL_AGENTS_MESSAGE}");
 
     assert_eq!(res, expected);
 }
@@ -182,7 +189,8 @@ async fn keeps_existing_instructions_when_doc_missing() {
 
     let res = get_user_instructions(&make_config(&tmp, 4096, Some(INSTRUCTIONS)).await).await;
 
-    assert_eq!(res, Some(INSTRUCTIONS.to_string()));
+    let expected = format!("{INSTRUCTIONS}\n\n{HIERARCHICAL_AGENTS_MESSAGE}");
+    assert_eq!(res, Some(expected));
 }
 
 /// When both the repository root and the working directory contain
@@ -210,7 +218,8 @@ async fn concatenates_root_and_cwd_docs() {
     cfg.cwd = nested;
 
     let res = get_user_instructions(&cfg).await.expect("doc expected");
-    assert_eq!(res, "root doc\n\ncrate doc");
+    let expected = format!("root doc\n\ncrate doc\n\n{HIERARCHICAL_AGENTS_MESSAGE}");
+    assert_eq!(res, expected);
 }
 
 #[tokio::test]
@@ -236,7 +245,8 @@ async fn project_root_markers_are_honored_for_agents_discovery() {
     assert_eq!(discovery[1], expected_child);
 
     let res = get_user_instructions(&cfg).await.expect("doc expected");
-    assert_eq!(res, "parent doc\n\nchild doc");
+    let expected = format!("parent doc\n\nchild doc\n\n{HIERARCHICAL_AGENTS_MESSAGE}");
+    assert_eq!(res, expected);
 }
 
 /// AGENTS.override.md is preferred over AGENTS.md when both are present.
@@ -252,7 +262,8 @@ async fn agents_local_md_preferred() {
         .await
         .expect("local doc expected");
 
-    assert_eq!(res, "local");
+    let expected = format!("local\n\n{HIERARCHICAL_AGENTS_MESSAGE}");
+    assert_eq!(res, expected);
 
     let discovery = discover_project_doc_paths(&cfg).expect("discover paths");
     assert_eq!(discovery.len(), 1);
@@ -274,7 +285,8 @@ async fn uses_configured_fallback_when_agents_missing() {
         .await
         .expect("fallback doc expected");
 
-    assert_eq!(res, "example instructions");
+    let expected = format!("example instructions\n\n{HIERARCHICAL_AGENTS_MESSAGE}");
+    assert_eq!(res, expected);
 }
 
 /// AGENTS.md remains preferred when both AGENTS.md and fallbacks are present.
@@ -290,7 +302,8 @@ async fn agents_md_preferred_over_fallbacks() {
         .await
         .expect("AGENTS.md should win");
 
-    assert_eq!(res, "primary");
+    let expected = format!("primary\n\n{HIERARCHICAL_AGENTS_MESSAGE}");
+    assert_eq!(res, expected);
 
     let discovery = discover_project_doc_paths(&cfg).expect("discover paths");
     assert_eq!(discovery.len(), 1);
@@ -318,7 +331,8 @@ async fn skills_are_not_appended_to_project_doc() {
     let res = get_user_instructions(&cfg)
         .await
         .expect("instructions expected");
-    assert_eq!(res, "base doc");
+    let expected = format!("base doc\n\n{HIERARCHICAL_AGENTS_MESSAGE}");
+    assert_eq!(res, expected);
 }
 
 #[tokio::test]
@@ -326,7 +340,7 @@ async fn apps_feature_does_not_emit_user_instructions_by_itself() {
     let tmp = tempfile::tempdir().expect("tempdir");
     let cfg = make_config(&tmp, 4096, None).await;
     let res = get_user_instructions(&cfg).await;
-    assert_eq!(res, None);
+    assert_eq!(res.as_deref(), Some(HIERARCHICAL_AGENTS_MESSAGE));
 }
 
 #[tokio::test]
@@ -338,7 +352,8 @@ async fn apps_feature_does_not_append_to_project_doc_user_instructions() {
     let res = get_user_instructions(&cfg)
         .await
         .expect("instructions expected");
-    assert_eq!(res, "base doc");
+    let expected = format!("base doc\n\n{HIERARCHICAL_AGENTS_MESSAGE}");
+    assert_eq!(res, expected);
 }
 
 fn create_skill(chaos_home: PathBuf, name: &str, description: &str) {

@@ -1120,14 +1120,6 @@ impl App {
             }
         }
 
-        let has_non_primary_agent_process = self
-            .agent_navigation
-            .has_non_primary_process(self.primary_process_id);
-        if !self.config.features.enabled(Feature::Collab) && !has_non_primary_agent_process {
-            self.chat_widget.open_multi_agent_enable_prompt();
-            return;
-        }
-
         if self.agent_navigation.is_empty() {
             self.chat_widget
                 .add_info_message("No agents available yet.".to_string(), /*hint*/ None);
@@ -4498,35 +4490,7 @@ mod tests {
     }
 
     #[tokio::test]
-    async fn open_agent_picker_prompts_to_enable_multi_agent_when_disabled() -> Result<()> {
-        let (mut app, mut app_event_rx, _op_rx) = make_test_app_with_channels().await;
-        let _ = app.config.features.disable(Feature::Collab);
-
-        app.open_agent_picker().await;
-        app.chat_widget
-            .handle_key_event(KeyEvent::new(KeyCode::Enter, KeyModifiers::NONE));
-
-        assert_matches!(
-            app_event_rx.try_recv(),
-            Ok(AppEvent::UpdateFeatureFlags { updates }) if updates == vec![(Feature::Collab, true)]
-        );
-        let cell = match app_event_rx.try_recv() {
-            Ok(AppEvent::InsertHistoryCell(cell)) => cell,
-            other => panic!("expected InsertHistoryCell event, got {other:?}"),
-        };
-        let rendered = cell
-            .display_lines(120)
-            .into_iter()
-            .map(|line| line.to_string())
-            .collect::<Vec<_>>()
-            .join("\n");
-        assert!(rendered.contains("Subagents will be enabled in the next session."));
-        Ok(())
-    }
-
-    #[tokio::test]
-    async fn open_agent_picker_allows_existing_agent_threads_when_feature_is_disabled() -> Result<()>
-    {
+    async fn open_agent_picker_selects_existing_agent_process() -> Result<()> {
         let (mut app, mut app_event_rx, _op_rx) = make_test_app_with_channels().await;
         let process_id = ProcessId::new();
         app.process_event_channels

@@ -11,7 +11,7 @@ use chaos_ipc::openai_models::ReasoningEffortPreset;
 use chaos_ipc::openai_models::TruncationPolicyConfig;
 use chaos_ipc::openai_models::default_input_modalities;
 use chaos_kern::ChaosAuth;
-use chaos_kern::features::Feature;
+
 use chaos_kern::models_manager::manager::ModelsManager;
 use chaos_kern::models_manager::manager::RefreshStrategy;
 use core_test_support::responses::ev_completed;
@@ -145,13 +145,7 @@ async fn spawn_agent_description_lists_visible_models_and_reasoning_efforts() ->
 
     let mut builder = test_codex()
         .with_auth(ChaosAuth::create_dummy_chatgpt_auth_for_testing())
-        .with_model("visible-model")
-        .with_config(|config| {
-            config
-                .features
-                .enable(Feature::Collab)
-                .expect("test config should allow feature update");
-        });
+        .with_model("visible-model");
     let test = builder.build(&server).await?;
     wait_for_model_available(&test.process_table.get_models_manager(), "visible-model").await;
 

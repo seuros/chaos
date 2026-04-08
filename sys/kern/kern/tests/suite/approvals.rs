@@ -1363,7 +1363,7 @@ fn scenarios() -> Vec<ScenarioSpec> {
                 justification: None,
             },
             sandbox_permissions: SandboxPermissions::UseDefault,
-            features: vec![Feature::UnifiedExec],
+            features: vec![],
             model_override: Some("gpt-5"),
             outcome: Outcome::Auto,
             expectation: Expectation::CommandSuccess {
@@ -1381,7 +1381,7 @@ fn scenarios() -> Vec<ScenarioSpec> {
                 justification: Some(DEFAULT_UNIFIED_EXEC_JUSTIFICATION),
             },
             sandbox_permissions: SandboxPermissions::RequireEscalated,
-            features: vec![Feature::UnifiedExec],
+            features: vec![],
             model_override: Some("gpt-5"),
             outcome: Outcome::ExecApproval {
                 decision: ReviewDecision::Approved,
@@ -1400,7 +1400,7 @@ fn scenarios() -> Vec<ScenarioSpec> {
                 justification: None,
             },
             sandbox_permissions: SandboxPermissions::UseDefault,
-            features: vec![Feature::UnifiedExec],
+            features: vec![],
             model_override: None,
             outcome: Outcome::ExecApproval {
                 decision: ReviewDecision::Denied,
@@ -1419,7 +1419,7 @@ fn scenarios() -> Vec<ScenarioSpec> {
                 justification: None,
             },
             sandbox_permissions: SandboxPermissions::RequireEscalated,
-            features: vec![Feature::UnifiedExec],
+            features: vec![],
             model_override: None,
             outcome: Outcome::ExecApproval {
                 decision: ReviewDecision::Denied,
@@ -1438,7 +1438,7 @@ fn scenarios() -> Vec<ScenarioSpec> {
                 justification: None,
             },
             sandbox_permissions: SandboxPermissions::RequireEscalated,
-            features: vec![Feature::UnifiedExec],
+            features: vec![],
             model_override: None,
             outcome: Outcome::ExecApproval {
                 decision: ReviewDecision::Denied,

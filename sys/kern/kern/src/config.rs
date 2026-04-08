@@ -31,7 +31,7 @@ use crate::config_loader::McpServerRequirement;
 use crate::config_loader::ResidencyRequirement;
 use crate::config_loader::Sourced;
 use crate::config_loader::load_config_layers_state;
-use crate::features::Feature;
+
 use crate::features::FeatureOverrides;
 use crate::features::Features;
 use crate::features::FeaturesToml;
@@ -466,8 +466,9 @@ pub struct Config {
     /// Additional parameters for the web search tool when it is enabled.
     pub web_search_config: Option<WebSearchConfig>,
 
-    /// If set to `true`, used only the experimental unified exec tool.
-    pub use_experimental_unified_exec_tool: bool,
+    /// Whether collab tools (spawn/delegate) are available. Set to `false`
+    /// for sub-agents at max depth or review/minion sub-agents.
+    pub collab_enabled: bool,
 
     /// Maximum poll window for background terminal output (`write_stdin`), in milliseconds.
     /// Default: `300000` (5 minutes).
@@ -1262,7 +1263,6 @@ pub struct ConfigToml {
     #[schemars(skip)]
     pub experimental_instructions_file: Option<AbsolutePathBuf>,
     pub experimental_compact_prompt_file: Option<AbsolutePathBuf>,
-    pub experimental_use_unified_exec_tool: Option<bool>,
     /// Preferred OSS provider for local models, e.g. "lmstudio" or "ollama".
     pub oss_provider: Option<String>,
 
@@ -2007,8 +2007,6 @@ impl Config {
             config
         };
 
-        let use_experimental_unified_exec_tool = features.enabled(Feature::UnifiedExec);
-
         let forced_chatgpt_workspace_id =
             cfg.forced_chatgpt_workspace_id.as_ref().and_then(|value| {
                 let trimmed = value.trim();
@@ -2052,11 +2050,7 @@ impl Config {
         let personality = personality
             .or(config_profile.personality)
             .or(cfg.personality)
-            .or_else(|| {
-                features
-                    .enabled(Feature::Personality)
-                    .then_some(Personality::Pragmatic)
-            });
+            .or(Some(Personality::Pragmatic));
 
         let experimental_compact_prompt_path = config_profile
             .experimental_compact_prompt_file
@@ -2268,7 +2262,7 @@ impl Config {
             forced_login_method,
             web_search_mode: constrained_web_search_mode.value,
             web_search_config,
-            use_experimental_unified_exec_tool,
+            collab_enabled: true,
             background_terminal_max_timeout,
             ghost_snapshot,
             features,

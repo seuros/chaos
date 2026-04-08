@@ -15,10 +15,18 @@ const ASKING_QUESTIONS_GUIDANCE_PLACEHOLDER: &str = "{{ASKING_QUESTIONS_GUIDANCE
 /// Keep mode-related flags here so new collaboration-mode capabilities can be
 /// added without large cross-cutting diffs to constructor and call-site
 /// signatures.
-#[derive(Debug, Clone, Copy, Default, PartialEq, Eq)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub struct CollaborationModesConfig {
     /// Enables `request_user_input` availability in Default mode.
     pub default_mode_request_user_input: bool,
+}
+
+impl Default for CollaborationModesConfig {
+    fn default() -> Self {
+        Self {
+            default_mode_request_user_input: true,
+        }
+    }
 }
 
 pub(crate) fn builtin_collaboration_mode_presets(

@@ -36,16 +36,3 @@ fn default_mode_instructions_replace_mode_names_placeholder() {
     assert!(default_instructions.contains(&expected_availability_message));
     assert!(default_instructions.contains("prefer using the `request_user_input` tool"));
 }
-
-#[test]
-fn default_mode_instructions_use_plain_text_questions_when_feature_disabled() {
-    let default_instructions = default_preset(CollaborationModesConfig::default())
-        .minion_instructions
-        .expect("default preset should include instructions")
-        .expect("default instructions should be set");
-
-    assert!(!default_instructions.contains("prefer using the `request_user_input` tool"));
-    assert!(
-        default_instructions.contains("ask the user directly with a concise plain-text question")
-    );
-}

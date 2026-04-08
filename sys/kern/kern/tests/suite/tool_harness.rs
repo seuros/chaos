@@ -93,10 +93,14 @@ async fn shell_tool_executes_command_and_streams_output() -> anyhow::Result<()> 
 
     let req = second_mock.single_request();
     let (output_text, _) = call_output(&req, call_id);
-    let exec_output: Value = serde_json::from_str(&output_text)?;
-    assert_eq!(exec_output["metadata"]["exit_code"], 0);
-    let stdout = exec_output["output"].as_str().expect("stdout field");
-    assert_regex_match(r"(?s)^tool harness\n?$", stdout);
+    // With freeform apply_patch as the default for all models, shell output
+    // is reserialized to plain text before being sent to the model.
+    let expected_pattern = r"(?s)^Exit code: 0
+Wall time: [0-9]+(?:\.[0-9]+)? seconds
+Output:
+tool harness
+?$";
+    assert_regex_match(expected_pattern, &output_text);
 
     Ok(())
 }

@@ -109,7 +109,7 @@ async fn start_review_conversation(
         panic!("by construction Constrained<WebSearchMode> must always support Disabled: {err}");
     }
     let _ = sub_agent_config.features.disable(Feature::SpawnCsv);
-    let _ = sub_agent_config.features.disable(Feature::Collab);
+    sub_agent_config.collab_enabled = false;
 
     // Set explicit review rubric for the sub-agent
     sub_agent_config.base_instructions = Some(crate::REVIEW_PROMPT.to_string());

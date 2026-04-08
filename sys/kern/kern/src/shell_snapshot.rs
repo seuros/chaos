@@ -15,7 +15,6 @@ use anyhow::anyhow;
 use anyhow::bail;
 use chaos_ipc::ProcessId;
 use chaos_journald::JournalStore;
-use chaos_journald::SQLITE_DB_FILENAME;
 use chaos_journald::SqliteJournalStore;
 use chaos_syslog::SessionTelemetry;
 use tokio::fs;
@@ -470,7 +469,7 @@ pub async fn cleanup_stale_snapshots(
 
     let now = jiff::Timestamp::now().as_second();
     let active_session_id = active_session_id.to_string();
-    let journal_store = SqliteJournalStore::open(&chaos_home.join(SQLITE_DB_FILENAME))
+    let journal_store = SqliteJournalStore::open(&chaos_proc::runtime_db_path(chaos_home))
         .await
         .context("open journal database for shell snapshot cleanup")?;
 

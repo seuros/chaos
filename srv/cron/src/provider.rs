@@ -82,10 +82,10 @@ mod tests {
             .expect("list cron jobs");
         assert!(jobs.is_empty(), "fresh provider should see no cron jobs");
         assert!(
-            tokio::fs::try_exists(&chaos_proc::chaos_db_path(temp_dir.path()))
+            tokio::fs::try_exists(&chaos_proc::runtime_db_path(temp_dir.path()))
                 .await
-                .expect("stat chaos db"),
-            "expected shared chaos db file to be created"
+                .expect("stat runtime db"),
+            "expected shared runtime db file to be created"
         );
     }
 }

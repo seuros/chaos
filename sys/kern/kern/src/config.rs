@@ -360,7 +360,7 @@ pub struct Config {
     /// overridden by `CHAOS_HOME`).
     pub chaos_home: PathBuf,
 
-    /// Directory where Chaos stores the SQLite state DB.
+    /// Directory where Chaos stores the SQLite runtime DB.
     pub sqlite_home: PathBuf,
 
     /// Directory where Chaos writes log files (defaults to `${CHAOS_HOME}/log`).
@@ -1134,7 +1134,7 @@ pub struct ConfigToml {
     #[serde(default)]
     pub history: Option<History>,
 
-    /// Directory where Chaos stores the SQLite state DB.
+    /// Directory where Chaos stores the SQLite runtime DB.
     /// Defaults to `$CHAOS_SQLITE_HOME` when set. Otherwise uses `$CHAOS_HOME`.
     pub sqlite_home: Option<AbsolutePathBuf>,
 

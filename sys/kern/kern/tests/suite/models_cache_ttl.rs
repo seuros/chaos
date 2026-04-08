@@ -17,7 +17,7 @@ use chaos_ipc::user_input::UserInput;
 use chaos_kern::ChaosAuth;
 use chaos_kern::ModelProviderInfo;
 use chaos_kern::models_manager::manager::RefreshStrategy;
-use chaos_proc::open_chaos_db;
+use chaos_proc::open_runtime_db;
 use core_test_support::responses;
 use core_test_support::responses::ev_assistant_message;
 use core_test_support::responses::ev_completed;
@@ -295,7 +295,7 @@ async fn read_cache(
     sqlite_home: &std::path::Path,
     scope: &ModelsCacheScope,
 ) -> Result<ModelsCache> {
-    let pool = open_chaos_db(sqlite_home).await?;
+    let pool = open_runtime_db(sqlite_home).await?;
     let row = sqlx::query(
         "SELECT fetched_at, etag, client_version, models_json \
          FROM model_catalog_cache \
@@ -322,7 +322,7 @@ async fn write_cache(sqlite_home: &std::path::Path, cache: &ModelsCache) -> Resu
         .scope
         .as_ref()
         .ok_or_else(|| anyhow::anyhow!("cache scope expected"))?;
-    let pool = open_chaos_db(sqlite_home).await?;
+    let pool = open_runtime_db(sqlite_home).await?;
     let models_json = serde_json::to_string(&cache.models)?;
     sqlx::query(
         "INSERT INTO model_catalog_cache \

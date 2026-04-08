@@ -27,8 +27,8 @@ struct McpHostBuiltinResourceBackend<'a> {
 
 impl builtin_mcp_resources::ChaosBuiltinResourceBackend for McpHostBuiltinResourceBackend<'_> {
     async fn sessions_json(&self) -> Result<String, String> {
-        if let Some(state_runtime) = self.server.state_runtime.as_ref() {
-            return builtin_mcp_resources::sessions_json_from_state_db(Some(state_runtime)).await;
+        if let Some(runtime_db) = self.server.runtime_db.as_ref() {
+            return builtin_mcp_resources::sessions_json_from_runtime_db(Some(runtime_db)).await;
         }
 
         let process_ids = self.server.process_table.list_process_ids().await;
@@ -46,9 +46,9 @@ impl builtin_mcp_resources::ChaosBuiltinResourceBackend for McpHostBuiltinResour
     }
 
     async fn session_detail_json(&self, process_id: ProcessId) -> Result<String, String> {
-        if let Some(state_runtime) = self.server.state_runtime.as_ref() {
-            return builtin_mcp_resources::session_detail_json_from_state_db(
-                Some(state_runtime),
+        if let Some(runtime_db) = self.server.runtime_db.as_ref() {
+            return builtin_mcp_resources::session_detail_json_from_runtime_db(
+                Some(runtime_db),
                 process_id,
             )
             .await;
@@ -77,13 +77,13 @@ impl builtin_mcp_resources::ChaosBuiltinResourceBackend for McpHostBuiltinResour
     }
 
     async fn crons_json(&self) -> Result<String, String> {
-        let existing_chaos_pool = self
+        let existing_runtime_pool = self
             .server
-            .state_runtime
+            .runtime_db
             .as_ref()
-            .and_then(|rt| rt.chaos_pool().map(std::borrow::ToOwned::to_owned));
+            .map(|rt| rt.pool().to_owned());
         let provider = chaos_storage::ChaosStorageProvider::from_optional_sqlite(
-            existing_chaos_pool.as_ref(),
+            existing_runtime_pool.as_ref(),
             Some(&self.server.sqlite_home),
         )
         .await?;

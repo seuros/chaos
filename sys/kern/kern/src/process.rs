@@ -25,7 +25,7 @@ use std::path::PathBuf;
 use tokio::sync::Mutex;
 use tokio::sync::watch;
 
-use crate::state_db::StateDbHandle;
+use crate::runtime_db::RuntimeDbHandle;
 
 #[derive(Clone, Debug)]
 pub struct ProcessConfigSnapshot {
@@ -136,8 +136,8 @@ impl Process {
             .await;
     }
 
-    pub fn state_db(&self) -> Option<StateDbHandle> {
-        self.codex.state_db()
+    pub fn runtime_db(&self) -> Option<RuntimeDbHandle> {
+        self.codex.runtime_db()
     }
 
     pub async fn config_snapshot(&self) -> ProcessConfigSnapshot {

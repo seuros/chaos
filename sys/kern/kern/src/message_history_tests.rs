@@ -1,14 +1,14 @@
 use super::*;
 use crate::config::ConfigBuilder;
-use crate::state_db;
+use crate::runtime_db;
 use chaos_ipc::ProcessId;
 use pretty_assertions::assert_eq;
 use tempfile::TempDir;
 
-async fn test_config_and_state_db() -> (
+async fn test_config_and_runtime_db() -> (
     TempDir,
     crate::config::Config,
-    crate::state_db::StateDbHandle,
+    crate::runtime_db::RuntimeDbHandle,
 ) {
     let chaos_home = TempDir::new().expect("create temp dir");
     let config = ConfigBuilder::default()
@@ -16,8 +16,10 @@ async fn test_config_and_state_db() -> (
         .build()
         .await
         .expect("load config");
-    let state_db = state_db::init(&config).await.expect("initialize state db");
-    (chaos_home, config, state_db)
+    let runtime_db = runtime_db::init(&config)
+        .await
+        .expect("initialize runtime db");
+    (chaos_home, config, runtime_db)
 }
 
 fn estimated_entry_bytes(entry: &HistoryEntry) -> u64 {
@@ -28,7 +30,7 @@ fn estimated_entry_bytes(entry: &HistoryEntry) -> u64 {
 
 #[tokio::test]
 async fn lookup_reads_history_entries() {
-    let (_home, _config, state_db) = test_config_and_state_db().await;
+    let (_home, _config, runtime_db) = test_config_and_runtime_db().await;
 
     let entries = vec![
         HistoryEntry {
@@ -44,16 +46,16 @@ async fn lookup_reads_history_entries() {
     ];
 
     for entry in &entries {
-        state_db
+        runtime_db
             .append_message_history_entry(entry, None)
             .await
             .expect("append history entry");
     }
 
-    let (log_id, count) = history_metadata(Some(state_db.as_ref())).await;
+    let (log_id, count) = history_metadata(Some(runtime_db.as_ref())).await;
     assert_eq!(count, entries.len());
 
-    let second_entry = lookup(log_id, 1, Some(state_db.as_ref()))
+    let second_entry = lookup(log_id, 1, Some(runtime_db.as_ref()))
         .await
         .expect("fetch second history entry");
     assert_eq!(second_entry, entries[1]);
@@ -61,7 +63,7 @@ async fn lookup_reads_history_entries() {
 
 #[tokio::test]
 async fn lookup_uses_stable_log_id_after_appends() {
-    let (_home, _config, state_db) = test_config_and_state_db().await;
+    let (_home, _config, runtime_db) = test_config_and_runtime_db().await;
 
     let initial = HistoryEntry {
         conversation_id: "first-session".to_string(),
@@ -74,24 +76,25 @@ async fn lookup_uses_stable_log_id_after_appends() {
         text: "second".to_string(),
     };
 
-    state_db
+    runtime_db
         .append_message_history_entry(&initial, None)
         .await
         .expect("append initial entry");
 
-    let (log_id, count) = history_metadata(Some(state_db.as_ref())).await;
+    let (log_id, count) = history_metadata(Some(runtime_db.as_ref())).await;
     assert_eq!(count, 1);
 
-    state_db
+    runtime_db
         .append_message_history_entry(&appended, None)
         .await
         .expect("append history entry");
 
-    let (log_id_after_append, count_after_append) = history_metadata(Some(state_db.as_ref())).await;
+    let (log_id_after_append, count_after_append) =
+        history_metadata(Some(runtime_db.as_ref())).await;
     assert_eq!(log_id_after_append, log_id);
     assert_eq!(count_after_append, 2);
 
-    let fetched = lookup(log_id, 1, Some(state_db.as_ref()))
+    let fetched = lookup(log_id, 1, Some(runtime_db.as_ref()))
         .await
         .expect("lookup appended history entry");
     assert_eq!(fetched, appended);
@@ -99,7 +102,7 @@ async fn lookup_uses_stable_log_id_after_appends() {
 
 #[tokio::test]
 async fn append_entry_trims_history_when_beyond_max_bytes() {
-    let (_home, mut config, state_db) = test_config_and_state_db().await;
+    let (_home, mut config, runtime_db) = test_config_and_runtime_db().await;
     let conversation_id = ProcessId::new();
 
     let entry_one = "a".repeat(200);
@@ -108,7 +111,7 @@ async fn append_entry_trims_history_when_beyond_max_bytes() {
     append_entry(
         &entry_one,
         &conversation_id,
-        Some(state_db.as_ref()),
+        Some(runtime_db.as_ref()),
         &config,
     )
     .await
@@ -125,15 +128,15 @@ async fn append_entry_trims_history_when_beyond_max_bytes() {
     append_entry(
         &entry_two,
         &conversation_id,
-        Some(state_db.as_ref()),
+        Some(runtime_db.as_ref()),
         &config,
     )
     .await
     .expect("write second entry");
 
-    let (log_id, count) = history_metadata(Some(state_db.as_ref())).await;
+    let (log_id, count) = history_metadata(Some(runtime_db.as_ref())).await;
     assert_eq!(count, 1);
-    let remaining = lookup(log_id, 0, Some(state_db.as_ref()))
+    let remaining = lookup(log_id, 0, Some(runtime_db.as_ref()))
         .await
         .expect("fetch surviving history entry");
     assert_eq!(remaining.text, entry_two);
@@ -141,7 +144,7 @@ async fn append_entry_trims_history_when_beyond_max_bytes() {
 
 #[tokio::test]
 async fn append_entry_trims_history_to_soft_cap() {
-    let (_home, mut config, state_db) = test_config_and_state_db().await;
+    let (_home, mut config, runtime_db) = test_config_and_runtime_db().await;
     let conversation_id = ProcessId::new();
 
     let short_entry = "a".repeat(200);
@@ -164,7 +167,7 @@ async fn append_entry_trims_history_to_soft_cap() {
     append_entry(
         &short_entry,
         &conversation_id,
-        Some(state_db.as_ref()),
+        Some(runtime_db.as_ref()),
         &config,
     )
     .await
@@ -172,7 +175,7 @@ async fn append_entry_trims_history_to_soft_cap() {
     append_entry(
         &long_entry,
         &conversation_id,
-        Some(state_db.as_ref()),
+        Some(runtime_db.as_ref()),
         &config,
     )
     .await
@@ -186,15 +189,15 @@ async fn append_entry_trims_history_to_soft_cap() {
     append_entry(
         &long_entry,
         &conversation_id,
-        Some(state_db.as_ref()),
+        Some(runtime_db.as_ref()),
         &config,
     )
     .await
     .expect("write third entry");
 
-    let (log_id, count) = history_metadata(Some(state_db.as_ref())).await;
+    let (log_id, count) = history_metadata(Some(runtime_db.as_ref())).await;
     assert_eq!(count, 1);
-    let remaining = lookup(log_id, 0, Some(state_db.as_ref()))
+    let remaining = lookup(log_id, 0, Some(runtime_db.as_ref()))
         .await
         .expect("fetch surviving history entry");
     assert_eq!(remaining.text, long_entry);

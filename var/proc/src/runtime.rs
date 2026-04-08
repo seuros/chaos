@@ -5,22 +5,14 @@ use crate::AgentJobItemCreateParams;
 use crate::AgentJobItemStatus;
 use crate::AgentJobProgress;
 use crate::AgentJobStatus;
-use crate::CHAOS_DB_FILENAME;
-use crate::CHAOS_DB_VERSION;
-use crate::LOGS_DB_FILENAME;
-use crate::LOGS_DB_VERSION;
 use crate::LogEntry;
 use crate::LogQuery;
 use crate::LogRow;
 use crate::ProcessMetadata;
 use crate::ProcessMetadataBuilder;
 use crate::ProcessesPage;
-use crate::STATE_DB_FILENAME;
-use crate::STATE_DB_VERSION;
 use crate::SortKey;
 use crate::apply_rollout_item;
-use crate::migrations::CHAOS_MIGRATOR;
-use crate::migrations::LOGS_MIGRATOR;
 use crate::migrations::STATE_MIGRATOR;
 use crate::model::AgentJobRow;
 use crate::model::ProcessRow;
@@ -49,8 +41,6 @@ use std::path::PathBuf;
 use std::str::FromStr;
 use std::sync::Arc;
 use std::time::Duration;
-use tracing::warn;
-
 mod agent_jobs;
 mod backfill;
 mod logs;
@@ -72,65 +62,19 @@ pub struct StateRuntime {
     chaos_home: PathBuf,
     default_provider: String,
     pool: Arc<sqlx::SqlitePool>,
-    logs_pool: Arc<sqlx::SqlitePool>,
-    chaos_pool: Option<Arc<sqlx::SqlitePool>>,
 }
 
 impl StateRuntime {
-    /// Initialize the state runtime using the provided ChaOS home and default provider.
+    /// Initialize the runtime DB using the provided ChaOS home and default provider.
     ///
-    /// This opens (and migrates) the SQLite databases under `chaos_home`,
-    /// keeping logs in a dedicated file to reduce lock contention with the
-    /// rest of the state store.
+    /// This opens (and migrates) the SQLite database under `chaos_home`.
+    ///
     pub async fn init(chaos_home: PathBuf, default_provider: String) -> anyhow::Result<Arc<Self>> {
         tokio::fs::create_dir_all(&chaos_home).await?;
-        let current_state_name = state_db_filename();
-        let current_logs_name = logs_db_filename();
-        remove_legacy_db_files(
-            &chaos_home,
-            current_state_name.as_str(),
-            STATE_DB_FILENAME,
-            "state",
-        )
-        .await;
-        remove_legacy_db_files(
-            &chaos_home,
-            current_logs_name.as_str(),
-            LOGS_DB_FILENAME,
-            "logs",
-        )
-        .await;
-        let state_path = state_db_path(chaos_home.as_path());
-        let logs_path = logs_db_path(chaos_home.as_path());
-        let pool = match open_sqlite(&state_path, &STATE_MIGRATOR).await {
-            Ok(db) => Arc::new(db),
-            Err(err) => {
-                warn!("failed to open state db at {}: {err}", state_path.display());
-                return Err(err);
-            }
-        };
-        let logs_pool = match open_sqlite(&logs_path, &LOGS_MIGRATOR).await {
-            Ok(db) => Arc::new(db),
-            Err(err) => {
-                warn!("failed to open logs db at {}: {err}", logs_path.display());
-                return Err(err);
-            }
-        };
-        let chaos_path = chaos_db_path(chaos_home.as_path());
-        let chaos_pool = match open_chaos_db(chaos_home.as_path()).await {
-            Ok(db) => Some(Arc::new(db)),
-            Err(err) => {
-                warn!(
-                    "failed to open chaos db at {}: {err} — cron and other chaos-native features will be unavailable",
-                    chaos_path.display()
-                );
-                None
-            }
-        };
+        let runtime_path = runtime_db_path(chaos_home.as_path());
+        let pool = Arc::new(open_sqlite(&runtime_path, &STATE_MIGRATOR).await?);
         let runtime = Arc::new(Self {
             pool,
-            logs_pool,
-            chaos_pool,
             chaos_home,
             default_provider,
         });
@@ -142,42 +86,26 @@ impl StateRuntime {
         self.chaos_home.as_path()
     }
 
-    /// Return a reference to the Chaos-native SQLite pool, if available.
-    ///
-    /// Returns `None` when the chaos DB failed to open at init time.
-    /// Callers should degrade gracefully rather than treating this as fatal.
-    pub fn chaos_pool(&self) -> Option<&SqlitePool> {
-        self.chaos_pool.as_deref()
+    /// Return a reference to the runtime SQLite pool.
+    pub fn pool(&self) -> &SqlitePool {
+        self.pool.as_ref()
     }
 }
 
 async fn open_sqlite(path: &Path, migrator: &'static Migrator) -> anyhow::Result<SqlitePool> {
     let options = sqlite_connect_options_for_path(path);
-    open_sqlite_with_options(options, migrator, Some(path.display().to_string())).await
+    open_sqlite_with_options(options, migrator).await
 }
 
 async fn open_sqlite_with_options(
     options: SqliteConnectOptions,
     migrator: &'static Migrator,
-    db_label: Option<String>,
 ) -> anyhow::Result<SqlitePool> {
     let pool = SqlitePoolOptions::new()
         .max_connections(5)
         .connect_with(options)
         .await?;
-    if let Err(err) = migrator.run(&pool).await {
-        if is_modified_migration_error(&err)
-            && has_existing_user_schema(&pool).await.unwrap_or(false)
-        {
-            warn!(
-                db_path = %db_label.as_deref().unwrap_or("<sqlite-url>"),
-                error = %err,
-                "ignoring sqlx migration checksum mismatch for existing local database"
-            );
-        } else {
-            return Err(err.into());
-        }
-    }
+    migrator.run(&pool).await?;
     // For existing databases the auto_vacuum mode is stored in the DB header
     // and cannot be changed by the connect option alone. Check and upgrade
     // on first open, then run an incremental vacuum pass on every open.
@@ -222,128 +150,26 @@ fn sqlite_connect_options_for_url(database_url: &str) -> anyhow::Result<SqliteCo
     Ok(options)
 }
 
-fn is_modified_migration_error(err: &sqlx::migrate::MigrateError) -> bool {
-    err.to_string()
-        .contains("was previously applied but has been modified")
+pub fn runtime_db_filename() -> String {
+    "chaos.sqlite".to_string()
 }
 
-async fn has_existing_user_schema(pool: &SqlitePool) -> anyhow::Result<bool> {
-    let count: i64 = sqlx::query_scalar(
-        r#"
-SELECT COUNT(*)
-FROM sqlite_master
-WHERE type IN ('table', 'view')
-  AND name NOT LIKE 'sqlite_%'
-  AND name != '_sqlx_migrations'
-        "#,
-    )
-    .fetch_one(pool)
-    .await?;
-    Ok(count > 0)
+pub fn runtime_db_path(chaos_home: &Path) -> PathBuf {
+    chaos_home.join(runtime_db_filename())
 }
 
-fn db_filename(base_name: &str, version: u32) -> String {
-    format!("{base_name}_{version}.sqlite")
+pub async fn open_runtime_db(chaos_home: &Path) -> anyhow::Result<SqlitePool> {
+    let runtime_path = runtime_db_path(chaos_home);
+    open_runtime_db_at_path(runtime_path.as_path()).await
 }
 
-pub fn state_db_filename() -> String {
-    db_filename(STATE_DB_FILENAME, STATE_DB_VERSION)
+pub async fn open_runtime_db_at_path(path: &Path) -> anyhow::Result<SqlitePool> {
+    open_sqlite(path, &STATE_MIGRATOR).await
 }
 
-pub fn state_db_path(chaos_home: &Path) -> PathBuf {
-    chaos_home.join(state_db_filename())
-}
-
-pub fn logs_db_filename() -> String {
-    db_filename(LOGS_DB_FILENAME, LOGS_DB_VERSION)
-}
-
-pub fn logs_db_path(chaos_home: &Path) -> PathBuf {
-    chaos_home.join(logs_db_filename())
-}
-
-pub fn chaos_db_filename() -> String {
-    db_filename(CHAOS_DB_FILENAME, CHAOS_DB_VERSION)
-}
-
-pub fn chaos_db_path(chaos_home: &Path) -> PathBuf {
-    chaos_home.join(chaos_db_filename())
-}
-
-pub async fn open_chaos_db(chaos_home: &Path) -> anyhow::Result<SqlitePool> {
-    open_sqlite(&chaos_db_path(chaos_home), &CHAOS_MIGRATOR).await
-}
-
-pub async fn open_chaos_db_url(database_url: &str) -> anyhow::Result<SqlitePool> {
+pub async fn open_runtime_db_url(database_url: &str) -> anyhow::Result<SqlitePool> {
     let options = sqlite_connect_options_for_url(database_url)?;
-    open_sqlite_with_options(options, &CHAOS_MIGRATOR, Some(database_url.to_string())).await
-}
-
-async fn remove_legacy_db_files(
-    chaos_home: &Path,
-    current_name: &str,
-    base_name: &str,
-    db_label: &str,
-) {
-    let mut entries = match tokio::fs::read_dir(chaos_home).await {
-        Ok(entries) => entries,
-        Err(err) => {
-            warn!(
-                "failed to read chaos_home for {db_label} db cleanup {}: {err}",
-                chaos_home.display(),
-            );
-            return;
-        }
-    };
-    while let Ok(Some(entry)) = entries.next_entry().await {
-        if !entry
-            .file_type()
-            .await
-            .map(|file_type| file_type.is_file())
-            .unwrap_or(false)
-        {
-            continue;
-        }
-        let file_name = entry.file_name();
-        let file_name = file_name.to_string_lossy();
-        if !should_remove_db_file(file_name.as_ref(), current_name, base_name) {
-            continue;
-        }
-
-        let legacy_path = entry.path();
-        if let Err(err) = tokio::fs::remove_file(&legacy_path).await {
-            warn!(
-                "failed to remove legacy {db_label} db file {}: {err}",
-                legacy_path.display(),
-            );
-        }
-    }
-}
-
-fn should_remove_db_file(file_name: &str, current_name: &str, base_name: &str) -> bool {
-    let mut normalized_name = file_name;
-    for suffix in ["-wal", "-shm", "-journal"] {
-        if let Some(stripped) = file_name.strip_suffix(suffix) {
-            normalized_name = stripped;
-            break;
-        }
-    }
-    if normalized_name == current_name {
-        return false;
-    }
-    let unversioned_name = format!("{base_name}.sqlite");
-    if normalized_name == unversioned_name {
-        return true;
-    }
-
-    let Some(version_with_extension) = normalized_name.strip_prefix(&format!("{base_name}_"))
-    else {
-        return false;
-    };
-    let Some(version_suffix) = version_with_extension.strip_suffix(".sqlite") else {
-        return false;
-    };
-    !version_suffix.is_empty() && version_suffix.chars().all(|ch| ch.is_ascii_digit())
+    open_sqlite_with_options(options, &STATE_MIGRATOR).await
 }
 
 #[cfg(test)]
@@ -352,79 +178,107 @@ mod tests {
     use sqlx::Row;
 
     #[tokio::test]
-    async fn init_survives_chaos_db_open_failure() {
-        let chaos_home = test_support::unique_temp_dir();
-        tokio::fs::create_dir_all(&chaos_home)
-            .await
-            .expect("create temp chaos home");
-
-        let blocking_chaos_path = chaos_home.join(chaos_db_filename());
-        tokio::fs::create_dir_all(&blocking_chaos_path)
-            .await
-            .expect("create blocking chaos path");
-
-        let runtime = StateRuntime::init(chaos_home.clone(), "test-provider".to_string())
-            .await
-            .expect("state runtime should still initialize");
-
-        assert!(
-            runtime.chaos_pool().is_none(),
-            "chaos db should be unavailable when its path is not openable as sqlite"
-        );
-        assert!(
-            runtime.get_backfill_state().await.is_ok(),
-            "state db should remain usable when only chaos db init fails"
-        );
-
-        tokio::fs::remove_dir_all(&chaos_home)
-            .await
-            .expect("cleanup temp chaos home");
+    async fn runtime_db_uses_new_filename() {
+        assert_eq!(runtime_db_filename(), "chaos.sqlite");
     }
 
     #[tokio::test]
-    async fn open_chaos_db_creates_schema() {
+    async fn open_runtime_db_creates_unified_runtime_schema() {
         let chaos_home = test_support::unique_temp_dir();
         tokio::fs::create_dir_all(&chaos_home)
             .await
             .expect("create temp chaos home");
 
-        let pool = open_chaos_db(chaos_home.as_path())
+        let pool = open_runtime_db(chaos_home.as_path())
             .await
-            .expect("open chaos db");
+            .expect("open runtime db");
 
-        let row = sqlx::query(
-            "SELECT name FROM sqlite_master WHERE type = 'table' AND name = 'cron_jobs'",
-        )
-        .fetch_one(&pool)
-        .await
-        .expect("cron_jobs table should exist");
+        for table_name in [
+            "processes",
+            "process_leases",
+            "journal_entries",
+            "logs",
+            "message_history",
+            "backfill_state",
+            "jobs",
+            "stage1_outputs",
+            "process_dynamic_tools",
+            "agent_jobs",
+            "agent_job_items",
+            "process_spawn_edges",
+            "cron_jobs",
+            "model_catalog_cache",
+        ] {
+            let row =
+                sqlx::query("SELECT name FROM sqlite_master WHERE type = 'table' AND name = ?")
+                    .bind(table_name)
+                    .fetch_one(&pool)
+                    .await
+                    .unwrap_or_else(|_| panic!("table {table_name} should exist"));
 
-        let table_name: String = row.get("name");
-        assert_eq!(table_name, "cron_jobs");
+            let discovered_name: String = row.get("name");
+            assert_eq!(discovered_name, table_name);
+        }
+
+        for view_name in [
+            "due_cron_jobs",
+            "valid_model_cache",
+            "active_processes",
+            "archived_processes",
+            "active_process_leases",
+            "process_message_counts",
+        ] {
+            let row =
+                sqlx::query("SELECT name FROM sqlite_master WHERE type = 'view' AND name = ?")
+                    .bind(view_name)
+                    .fetch_one(&pool)
+                    .await
+                    .unwrap_or_else(|_| panic!("view {view_name} should exist"));
+
+            let discovered_name: String = row.get("name");
+            assert_eq!(discovered_name, view_name);
+        }
+
+        for trigger_name in [
+            "cron_jobs_touch",
+            "processes_touch",
+            "process_leases_touch",
+            "agent_jobs_touch",
+            "agent_job_items_touch",
+            "journal_entries_no_update",
+            "journal_entries_no_delete",
+        ] {
+            let row =
+                sqlx::query("SELECT name FROM sqlite_master WHERE type = 'trigger' AND name = ?")
+                    .bind(trigger_name)
+                    .fetch_one(&pool)
+                    .await
+                    .unwrap_or_else(|_| panic!("trigger {trigger_name} should exist"));
+
+            let discovered_name: String = row.get("name");
+            assert_eq!(discovered_name, trigger_name);
+        }
+
         assert!(
-            tokio::fs::try_exists(&chaos_db_path(chaos_home.as_path()))
+            tokio::fs::try_exists(&runtime_db_path(chaos_home.as_path()))
                 .await
-                .expect("stat chaos db"),
-            "chaos db file should be created on demand"
+                .expect("stat runtime db"),
+            "runtime db file should be created on demand"
         );
-
-        tokio::fs::remove_dir_all(&chaos_home)
-            .await
-            .expect("cleanup temp chaos home");
     }
 
     #[tokio::test]
-    async fn open_chaos_db_url_creates_schema() {
+    async fn open_runtime_db_url_creates_schema() {
         let chaos_home = test_support::unique_temp_dir();
         tokio::fs::create_dir_all(&chaos_home)
             .await
             .expect("create temp chaos home");
 
-        let db_path = chaos_db_path(chaos_home.as_path());
+        let db_path = runtime_db_path(chaos_home.as_path());
         let db_url = format!("sqlite://{}", db_path.display());
-        let pool = open_chaos_db_url(&db_url)
+        let pool = open_runtime_db_url(&db_url)
             .await
-            .expect("open chaos db from sqlite url");
+            .expect("open runtime db from sqlite url");
 
         let row = sqlx::query(
             "SELECT name FROM sqlite_master WHERE type = 'table' AND name = 'cron_jobs'",
@@ -438,12 +292,139 @@ mod tests {
         assert!(
             tokio::fs::try_exists(&db_path)
                 .await
-                .expect("stat chaos db"),
-            "chaos db file should be created from sqlite url"
+                .expect("stat runtime db"),
+            "runtime db file should be created from sqlite url"
+        );
+    }
+
+    #[tokio::test]
+    async fn journal_entries_are_append_only() {
+        let chaos_home = test_support::unique_temp_dir();
+        tokio::fs::create_dir_all(&chaos_home)
+            .await
+            .expect("create temp chaos home");
+
+        let pool = open_runtime_db(chaos_home.as_path())
+            .await
+            .expect("open runtime db");
+
+        sqlx::query(
+            "INSERT INTO processes (
+                id, parent_process_id, fork_at_seq, source, source_json, model_provider, cwd,
+                created_at, updated_at, archived_at, title, sandbox_policy, approval_mode,
+                tokens_used, first_user_message, cli_version, agent_nickname, agent_role,
+                git_sha, git_branch, git_origin_url, memory_mode, model, reasoning_effort,
+                agent_path, process_name
+            ) VALUES (?, NULL, NULL, ?, ?, ?, ?, ?, ?, NULL, ?, ?, ?, ?, ?, ?, NULL, NULL, NULL, NULL, NULL, ?, NULL, NULL, NULL, NULL)",
+        )
+        .bind("process-1")
+        .bind("cli")
+        .bind("\"cli\"")
+        .bind("openai")
+        .bind("/tmp")
+        .bind(1_i64)
+        .bind(1_i64)
+        .bind("")
+        .bind("")
+        .bind("")
+        .bind(0_i64)
+        .bind("")
+        .bind("")
+        .bind("enabled")
+        .execute(&pool)
+        .await
+        .expect("insert process");
+
+        sqlx::query(
+            "INSERT INTO journal_entries (process_id, seq, recorded_at, item_type, payload_json)
+             VALUES (?, ?, ?, ?, ?)",
+        )
+        .bind("process-1")
+        .bind(0_i64)
+        .bind("2026-04-08T00:00:00Z")
+        .bind("response_item")
+        .bind("{\"ok\":true}")
+        .execute(&pool)
+        .await
+        .expect("insert journal entry");
+
+        let update_err = sqlx::query(
+            "UPDATE journal_entries SET payload_json = ? WHERE process_id = ? AND seq = ?",
+        )
+        .bind("{\"ok\":false}")
+        .bind("process-1")
+        .bind(0_i64)
+        .execute(&pool)
+        .await
+        .expect_err("journal entry update should fail");
+        assert!(
+            update_err.to_string().contains("append-only"),
+            "unexpected update error: {update_err}"
         );
 
-        tokio::fs::remove_dir_all(&chaos_home)
+        let delete_err =
+            sqlx::query("DELETE FROM journal_entries WHERE process_id = ? AND seq = ?")
+                .bind("process-1")
+                .bind(0_i64)
+                .execute(&pool)
+                .await
+                .expect_err("journal entry delete should fail");
+        assert!(
+            delete_err.to_string().contains("append-only"),
+            "unexpected delete error: {delete_err}"
+        );
+    }
+
+    #[tokio::test]
+    async fn processes_touch_trigger_updates_updated_at() {
+        let chaos_home = test_support::unique_temp_dir();
+        tokio::fs::create_dir_all(&chaos_home)
             .await
-            .expect("cleanup temp chaos home");
+            .expect("create temp chaos home");
+
+        let pool = open_runtime_db(chaos_home.as_path())
+            .await
+            .expect("open runtime db");
+
+        sqlx::query(
+            "INSERT INTO processes (
+                id, parent_process_id, fork_at_seq, source, source_json, model_provider, cwd,
+                created_at, updated_at, archived_at, title, sandbox_policy, approval_mode,
+                tokens_used, first_user_message, cli_version, agent_nickname, agent_role,
+                git_sha, git_branch, git_origin_url, memory_mode, model, reasoning_effort,
+                agent_path, process_name
+            ) VALUES (?, NULL, NULL, ?, ?, ?, ?, ?, ?, NULL, ?, ?, ?, ?, ?, ?, NULL, NULL, NULL, NULL, NULL, ?, NULL, NULL, NULL, NULL)",
+        )
+        .bind("process-1")
+        .bind("cli")
+        .bind("\"cli\"")
+        .bind("openai")
+        .bind("/tmp")
+        .bind(1_i64)
+        .bind(1_i64)
+        .bind("")
+        .bind("")
+        .bind("")
+        .bind(0_i64)
+        .bind("")
+        .bind("")
+        .bind("enabled")
+        .execute(&pool)
+        .await
+        .expect("insert process");
+
+        sqlx::query("UPDATE processes SET title = ? WHERE id = ?")
+            .bind("hello")
+            .bind("process-1")
+            .execute(&pool)
+            .await
+            .expect("update process title");
+
+        let updated_at: i64 = sqlx::query_scalar("SELECT updated_at FROM processes WHERE id = ?")
+            .bind("process-1")
+            .fetch_one(&pool)
+            .await
+            .expect("fetch updated_at");
+        assert!(updated_at > 1, "touch trigger should advance updated_at");
     }
 }

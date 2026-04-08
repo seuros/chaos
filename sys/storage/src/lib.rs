@@ -83,15 +83,15 @@ impl ChaosStorageProvider {
     pub async fn from_config(config: StorageConfig) -> Result<Self, String> {
         match config {
             StorageConfig::SqliteHome(sqlite_home) => {
-                let pool = chaos_proc::open_chaos_db(sqlite_home.as_path())
+                let pool = chaos_proc::open_runtime_db(sqlite_home.as_path())
                     .await
-                    .map_err(|err| format!("failed to open chaos db: {err}"))?;
+                    .map_err(|err| format!("failed to open runtime db: {err}"))?;
                 Ok(Self::from_sqlite_pool(pool))
             }
             StorageConfig::SqliteUrl(database_url) => {
-                let pool = chaos_proc::open_chaos_db_url(&database_url)
+                let pool = chaos_proc::open_runtime_db_url(&database_url)
                     .await
-                    .map_err(|err| format!("failed to open chaos db: {err}"))?;
+                    .map_err(|err| format!("failed to open runtime db: {err}"))?;
                 Ok(Self::from_sqlite_pool(pool))
             }
             StorageConfig::PostgresUrl(_) => {
@@ -215,10 +215,10 @@ mod tests {
             "provider should expose sqlite pool"
         );
         assert!(
-            tokio::fs::try_exists(&chaos_proc::chaos_db_path(temp_dir.path()))
+            tokio::fs::try_exists(&chaos_proc::runtime_db_path(temp_dir.path()))
                 .await
-                .expect("stat chaos db"),
-            "expected shared chaos db file to be created"
+                .expect("stat runtime db"),
+            "expected shared runtime db file to be created"
         );
         assert_eq!(provider.kind(), StorageKind::Sqlite);
     }
@@ -251,7 +251,7 @@ mod tests {
     #[tokio::test]
     async fn from_env_accepts_sqlite_storage_url() {
         let temp_dir = tempfile::tempdir().expect("create temp dir");
-        let db_path = chaos_proc::chaos_db_path(temp_dir.path());
+        let db_path = chaos_proc::runtime_db_path(temp_dir.path());
         let sqlite_url = format!("sqlite://{}", db_path.display());
         let _guard = EnvGuard::set(CHAOS_STORAGE_URL_ENV, Some(&sqlite_url));
 
@@ -267,8 +267,8 @@ mod tests {
         assert!(
             tokio::fs::try_exists(&db_path)
                 .await
-                .expect("stat chaos db"),
-            "expected chaos db file to be created from sqlite url"
+                .expect("stat runtime db"),
+            "expected runtime db file to be created from sqlite url"
         );
     }
 

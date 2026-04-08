@@ -33,7 +33,7 @@ use chaos_kern::find_process_id_by_name;
 use chaos_kern::format_exec_policy_error_with_source;
 use chaos_kern::models_manager::collaboration_mode_presets::CollaborationModesConfig;
 use chaos_kern::path_utils;
-use chaos_kern::state_db::get_state_db;
+use chaos_kern::runtime_db::get_runtime_db;
 use chaos_kern::terminal::Multiplexer;
 use chaos_proc::StateRuntime;
 use chaos_proc::log_db;
@@ -794,8 +794,8 @@ pub(crate) async fn read_session_cwd_by_process_id(
     config: &Config,
     process_id: ProcessId,
 ) -> Option<PathBuf> {
-    if let Some(state_db_ctx) = get_state_db(config).await
-        && let Ok(Some(metadata)) = state_db_ctx.get_process(process_id).await
+    if let Some(runtime_db_ctx) = get_runtime_db(config).await
+        && let Ok(Some(metadata)) = runtime_db_ctx.get_process(process_id).await
     {
         return Some(metadata.cwd);
     }

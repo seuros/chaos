@@ -264,9 +264,9 @@ mod tests {
     #[tokio::test]
     async fn create_uses_short_hex_ids() {
         let temp_dir = tempfile::tempdir().expect("create temp dir");
-        let pool = chaos_proc::open_chaos_db(temp_dir.path())
+        let pool = chaos_proc::open_runtime_db(temp_dir.path())
             .await
-            .expect("open chaos db");
+            .expect("open runtime db");
         let store = CronStore::new(pool);
 
         let job = store
@@ -284,9 +284,9 @@ mod tests {
     #[tokio::test]
     async fn create_retries_on_id_collision() {
         let temp_dir = tempfile::tempdir().expect("create temp dir");
-        let pool = chaos_proc::open_chaos_db(temp_dir.path())
+        let pool = chaos_proc::open_runtime_db(temp_dir.path())
             .await
-            .expect("open chaos db");
+            .expect("open runtime db");
         let store = CronStore::new(pool);
 
         let first = store
@@ -309,9 +309,9 @@ mod tests {
     #[tokio::test]
     async fn session_scoped_jobs_round_trip_session_id() {
         let temp_dir = tempfile::tempdir().expect("create temp dir");
-        let pool = chaos_proc::open_chaos_db(temp_dir.path())
+        let pool = chaos_proc::open_runtime_db(temp_dir.path())
             .await
-            .expect("open chaos db");
+            .expect("open runtime db");
         let store = CronStore::new(pool.clone());
 
         let job = store
@@ -352,9 +352,9 @@ mod tests {
     #[tokio::test]
     async fn enabled_jobs_can_clear_next_run_at_after_running() {
         let temp_dir = tempfile::tempdir().expect("create temp dir");
-        let pool = chaos_proc::open_chaos_db(temp_dir.path())
+        let pool = chaos_proc::open_runtime_db(temp_dir.path())
             .await
-            .expect("open chaos db");
+            .expect("open runtime db");
         let store = CronStore::new(pool);
 
         let job = store
@@ -383,9 +383,9 @@ mod tests {
     #[tokio::test]
     async fn enabling_an_already_enabled_job_preserves_next_run_at() {
         let temp_dir = tempfile::tempdir().expect("create temp dir");
-        let pool = chaos_proc::open_chaos_db(temp_dir.path())
+        let pool = chaos_proc::open_runtime_db(temp_dir.path())
             .await
-            .expect("open chaos db");
+            .expect("open runtime db");
         let store = CronStore::new(pool.clone());
 
         let job = store

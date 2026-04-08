@@ -10,8 +10,8 @@ use crate::file_watcher::FileWatcher;
 use crate::mcp::McpManager;
 use crate::minions::AgentControl;
 use crate::models_manager::manager::ModelsManager;
+use crate::runtime_db::RuntimeDbHandle;
 use crate::skills::SkillsManager;
-use crate::state_db::StateDbHandle;
 use crate::tools::network_approval::NetworkApprovalService;
 use crate::tools::sandboxing::ApprovalStore;
 use crate::unified_exec::UnifiedExecProcessManager;
@@ -44,7 +44,7 @@ pub(crate) struct SessionServices {
     pub(crate) agent_control: AgentControl,
     pub(crate) network_proxy: Option<StartedNetworkProxy>,
     pub(crate) network_approval: Arc<NetworkApprovalService>,
-    pub(crate) state_db: Option<StateDbHandle>,
+    pub(crate) runtime_db: Option<RuntimeDbHandle>,
     /// Session-scoped model client shared across turns.
     pub(crate) model_client: ModelClient,
     /// Hallucinate scripting engine handle (Lua/WASM user scripts).

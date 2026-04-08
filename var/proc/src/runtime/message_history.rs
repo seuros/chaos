@@ -131,7 +131,7 @@ WHERE id IN (
 }
 
 fn message_history_log_id(chaos_home: &Path) -> Option<u64> {
-    std::fs::metadata(state_db_path(chaos_home))
+    std::fs::metadata(runtime_db_path(chaos_home))
         .ok()
         .map(|metadata| metadata.ino())
 }

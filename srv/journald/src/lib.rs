@@ -39,7 +39,6 @@ pub use model::LoadedJournal;
 pub use model::OwnerId;
 pub use model::ParentRef;
 pub use model::ProcessRecord;
-pub use model::SQLITE_DB_FILENAME;
 pub use protocol::AcquireLeaseRequest;
 pub use protocol::CreateProcessResponse;
 pub use protocol::ErrorCode;

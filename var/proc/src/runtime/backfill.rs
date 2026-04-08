@@ -16,7 +16,7 @@ WHERE id = 1
         crate::BackfillState::try_from_row(&row)
     }
 
-    /// Attempt to claim ownership of persisted session metadata backfill.
+    /// Attempt to claim ownership of persisted runtime metadata backfill.
     ///
     /// Returns `true` when this runtime claimed the backfill worker slot.
     /// Returns `false` if backfill is already complete or currently owned by a
@@ -44,7 +44,7 @@ WHERE id = 1
         Ok(result.rows_affected() == 1)
     }
 
-    /// Mark persisted session metadata backfill as running.
+    /// Mark persisted runtime metadata backfill as running.
     pub async fn mark_backfill_running(&self) -> anyhow::Result<()> {
         self.ensure_backfill_state_row().await?;
         let state = self.get_backfill_state().await?;
@@ -73,7 +73,7 @@ WHERE id = 1 AND status = ?
         Ok(())
     }
 
-    /// Persist session metadata backfill progress.
+    /// Persist runtime metadata backfill progress.
     pub async fn checkpoint_backfill(&self, watermark: &str) -> anyhow::Result<()> {
         self.ensure_backfill_state_row().await?;
         sqlx::query(
@@ -91,7 +91,7 @@ WHERE id = 1
         Ok(())
     }
 
-    /// Mark session metadata backfill as complete.
+    /// Mark runtime metadata backfill as complete.
     pub async fn mark_backfill_complete(&self, last_watermark: Option<&str>) -> anyhow::Result<()> {
         self.ensure_backfill_state_row().await?;
         let state = self.get_backfill_state().await?;
@@ -144,81 +144,24 @@ ON CONFLICT(id) DO NOTHING
 #[cfg(test)]
 mod tests {
     use super::StateRuntime;
-    use super::state_db_filename;
     use super::test_support::unique_temp_dir;
-    use crate::STATE_DB_FILENAME;
-    use crate::STATE_DB_VERSION;
     use pretty_assertions::assert_eq;
 
     #[tokio::test]
-    async fn init_removes_legacy_state_db_files() {
+    async fn init_creates_runtime_db() {
         let chaos_home = unique_temp_dir();
         tokio::fs::create_dir_all(&chaos_home)
             .await
             .expect("create chaos_home");
 
-        let current_name = state_db_filename();
-        let previous_version = STATE_DB_VERSION.saturating_sub(1);
-        let unversioned_name = format!("{STATE_DB_FILENAME}.sqlite");
-        for suffix in ["", "-wal", "-shm", "-journal"] {
-            let path = chaos_home.join(format!("{unversioned_name}{suffix}"));
-            tokio::fs::write(path, b"legacy")
-                .await
-                .expect("write legacy");
-            let old_version_path = chaos_home.join(format!(
-                "{STATE_DB_FILENAME}_{previous_version}.sqlite{suffix}"
-            ));
-            tokio::fs::write(old_version_path, b"old_version")
-                .await
-                .expect("write old version");
-        }
-        let unrelated_path = chaos_home.join("state.sqlite_backup");
-        tokio::fs::write(&unrelated_path, b"keep")
-            .await
-            .expect("write unrelated");
-        let numeric_path = chaos_home.join("123");
-        tokio::fs::write(&numeric_path, b"keep")
-            .await
-            .expect("write numeric");
-
         let _runtime = StateRuntime::init(chaos_home.clone(), "test-provider".to_string())
             .await
             .expect("initialize runtime");
 
-        for suffix in ["", "-wal", "-shm", "-journal"] {
-            let legacy_path = chaos_home.join(format!("{unversioned_name}{suffix}"));
-            assert_eq!(
-                tokio::fs::try_exists(&legacy_path)
-                    .await
-                    .expect("check legacy path"),
-                false
-            );
-            let old_version_path = chaos_home.join(format!(
-                "{STATE_DB_FILENAME}_{previous_version}.sqlite{suffix}"
-            ));
-            assert_eq!(
-                tokio::fs::try_exists(&old_version_path)
-                    .await
-                    .expect("check old version path"),
-                false
-            );
-        }
         assert_eq!(
-            tokio::fs::try_exists(chaos_home.join(current_name))
+            tokio::fs::try_exists(chaos_home.join(crate::runtime::runtime_db_filename()))
                 .await
                 .expect("check new db path"),
-            true
-        );
-        assert_eq!(
-            tokio::fs::try_exists(&unrelated_path)
-                .await
-                .expect("check unrelated path"),
-            true
-        );
-        assert_eq!(
-            tokio::fs::try_exists(&numeric_path)
-                .await
-                .expect("check numeric path"),
             true
         );
 

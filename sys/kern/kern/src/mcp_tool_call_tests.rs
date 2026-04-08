@@ -289,38 +289,6 @@ fn trusted_codex_apps_tool_question_offers_always_allow() {
 }
 
 #[test]
-fn codex_apps_tool_question_without_elicitation_omits_always_allow() {
-    let session_key = McpToolApprovalKey {
-        server: CODEX_APPS_MCP_SERVER_NAME.to_string(),
-        connector_id: Some("calendar".to_string()),
-        tool_name: "run_action".to_string(),
-    };
-    let persistent_key = session_key.clone();
-    let question = build_mcp_tool_approval_question(
-        "q".to_string(),
-        CODEX_APPS_MCP_SERVER_NAME,
-        "run_action",
-        Some("Calendar"),
-        mcp_tool_approval_prompt_options(Some(&session_key), Some(&persistent_key), false),
-        None,
-    );
-
-    assert_eq!(
-        question
-            .options
-            .expect("options")
-            .into_iter()
-            .map(|option| option.label)
-            .collect::<Vec<_>>(),
-        vec![
-            MCP_TOOL_APPROVAL_ACCEPT.to_string(),
-            MCP_TOOL_APPROVAL_ACCEPT_FOR_SESSION.to_string(),
-            MCP_TOOL_APPROVAL_CANCEL.to_string(),
-        ]
-    );
-}
-
-#[test]
 fn custom_mcp_tool_question_offers_session_remember_without_always_allow() {
     let question = build_mcp_tool_approval_question(
         "q".to_string(),

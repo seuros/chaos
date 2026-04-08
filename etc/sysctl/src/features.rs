@@ -30,7 +30,6 @@ pub enum Feature {
     SkillMcpDependencyInstall,
     SkillEnvVarDependencyPrompt,
     DefaultModeRequestUserInput,
-    ToolCallMcpElicitation,
     Personality,
 }
 
@@ -332,12 +331,6 @@ pub const FEATURES: &[FeatureSpec] = &[
         id: Feature::DefaultModeRequestUserInput,
         key: "default_mode_request_user_input",
         default_enabled: false,
-        under_development: false,
-    },
-    FeatureSpec {
-        id: Feature::ToolCallMcpElicitation,
-        key: "tool_call_mcp_elicitation",
-        default_enabled: true,
         under_development: false,
     },
     FeatureSpec {

@@ -16,12 +16,15 @@ workspace = true
 [dependencies]
 chaos-traits = { workspace = true }
 chaos-wchar = { workspace = true }
+grep-regex = { workspace = true }
+grep-searcher = { workspace = true }
+ignore = { workspace = true }
 inventory = { workspace = true }
 mcp-host = { workspace = true, features = ["macros"] }
 schemars = "1.2.1"
 serde = { workspace = true, features = ["derive"] }
 serde_json = { workspace = true }
-tokio = { workspace = true, features = ["fs", "io-util", "process"] }
+tokio = { workspace = true, features = ["fs", "io-util"] }
 
 [dev-dependencies]
 anyhow = { workspace = true }

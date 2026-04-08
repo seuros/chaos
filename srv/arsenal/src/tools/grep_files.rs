@@ -1,20 +1,21 @@
-//! MCP tool: grep_files — search file contents via ripgrep.
+//! MCP tool: grep_files — search file contents using ripgrep libraries.
 
 use std::path::Path;
-use std::time::Duration;
+use std::sync::Mutex;
 
+use grep_regex::RegexMatcher;
+use grep_searcher::Searcher;
+use grep_searcher::sinks::Bytes;
+use ignore::WalkBuilder;
 use mcp_host::prelude::*;
 use schemars::JsonSchema;
 use serde::Deserialize;
-use tokio::process::Command;
-use tokio::time::timeout;
 
 use crate::ChaosCtx;
 use crate::ChaosServer;
 
 const DEFAULT_LIMIT: usize = 100;
 const MAX_LIMIT: usize = 2000;
-const COMMAND_TIMEOUT: Duration = Duration::from_secs(30);
 
 fn default_limit() -> usize {
     DEFAULT_LIMIT
@@ -41,7 +42,7 @@ pub struct GrepFilesParams {
 }
 
 impl ChaosServer {
-    /// Search file contents using ripgrep and return matching file paths.
+    /// Search file contents using ripgrep libraries and return matching file paths.
     #[mcp_tool(name = "grep_files", read_only = true, idempotent = true)]
     async fn grep_files(
         &self,
@@ -85,7 +86,16 @@ async fn execute_params(params: GrepFilesParams) -> Result<String, String> {
         .map(str::trim)
         .and_then(|val| if val.is_empty() { None } else { Some(val) });
 
-    let results = run_rg_search(pattern, include, search_path, limit).await?;
+    // grep-searcher is sync — run on a blocking thread.
+    let pattern = pattern.to_string();
+    let search_path = search_path.to_path_buf();
+    let include = include.map(String::from);
+
+    let results = tokio::task::spawn_blocking(move || {
+        run_grep_search(&pattern, include.as_deref(), &search_path, limit)
+    })
+    .await
+    .map_err(|e| format!("search task failed: {e}"))??;
 
     if results.is_empty() {
         Ok("No matches found.".to_string())
@@ -101,60 +111,127 @@ async fn verify_path_exists(path: &Path) -> Result<(), String> {
     Ok(())
 }
 
-pub async fn run_rg_search(
+/// Search files using grep-searcher + ignore crate (same engine as ripgrep).
+///
+/// Walks the directory respecting .gitignore, applies an optional glob filter,
+/// searches each file for the pattern, collects matching file paths sorted by
+/// modification time (newest first), and returns up to `limit` results.
+pub fn run_grep_search(
     pattern: &str,
     include: Option<&str>,
     search_path: &Path,
     limit: usize,
 ) -> Result<Vec<String>, String> {
-    let mut command = Command::new("rg");
-    command
-        .arg("--files-with-matches")
-        .arg("--sortr=modified")
-        .arg("--regexp")
-        .arg(pattern)
-        .arg("--no-messages");
+    let matcher = RegexMatcher::new(pattern).map_err(|e| format!("invalid regex pattern: {e}"))?;
+
+    let mut walk_builder = WalkBuilder::new(search_path);
+    walk_builder.hidden(true).git_ignore(true).git_global(true);
 
     if let Some(glob) = include {
-        command.arg("--glob").arg(glob);
+        // Override the default type set with a custom glob.
+        let mut types_builder = ignore::types::TypesBuilder::new();
+        types_builder
+            .add("custom", glob)
+            .map_err(|e| format!("invalid glob pattern: {e}"))?;
+        types_builder.select("custom");
+        walk_builder.types(
+            types_builder
+                .build()
+                .map_err(|e| format!("failed to build glob filter: {e}"))?,
+        );
     }
 
-    command.arg("--").arg(search_path);
+    // Collect matching files with their modification times for sorting.
+    let matches: Mutex<Vec<(String, std::time::SystemTime)>> = Mutex::new(Vec::new());
+    let first_error: Mutex<Option<String>> = Mutex::new(None);
 
-    let output = timeout(COMMAND_TIMEOUT, command.output())
-        .await
-        .map_err(|_| "rg timed out after 30 seconds".to_string())?
-        .map_err(|err| {
-            format!("failed to launch rg: {err}. Ensure ripgrep is installed and on PATH.")
-        })?;
+    walk_builder.build_parallel().run(|| {
+        let matcher = matcher.clone();
+        let matches = &matches;
+        let first_error = &first_error;
+        Box::new(move |entry| {
+            let entry = match entry {
+                Ok(e) => e,
+                Err(err) => {
+                    record_first_error(first_error, format!("search walk failed: {err}"));
+                    return ignore::WalkState::Quit;
+                }
+            };
 
-    match output.status.code() {
-        Some(0) => Ok(parse_results(&output.stdout, limit)),
-        Some(1) => Ok(Vec::new()),
-        _ => {
-            let stderr = String::from_utf8_lossy(&output.stderr);
-            Err(format!("rg failed: {stderr}"))
-        }
+            // Skip anything that isn't a regular file — directories, FIFOs,
+            // sockets, and device nodes would block or make no sense to search.
+            let is_regular = entry.file_type().is_some_and(|ft| ft.is_file());
+            if !is_regular {
+                return ignore::WalkState::Continue;
+            }
+
+            // Search the file for at least one match. Use a byte-oriented
+            // sink so non-UTF-8 files (Latin-1, generated assets) still match.
+            let mut found = false;
+            let mut searcher = Searcher::new();
+            if let Err(err) = searcher.search_path(
+                &matcher,
+                entry.path(),
+                Bytes(|_line_num, _line| {
+                    found = true;
+                    // Stop after first match — we only need to know the file matches.
+                    Ok(false)
+                }),
+            ) {
+                record_first_error(
+                    first_error,
+                    format!("failed to search `{}`: {err}", entry.path().display()),
+                );
+                return ignore::WalkState::Quit;
+            }
+
+            if found {
+                let mtime = entry
+                    .metadata()
+                    .ok()
+                    .and_then(|m| m.modified().ok())
+                    .unwrap_or(std::time::SystemTime::UNIX_EPOCH);
+
+                match matches.lock() {
+                    Ok(mut guard) => {
+                        guard.push((entry.path().to_string_lossy().to_string(), mtime));
+                    }
+                    Err(err) => {
+                        record_first_error(first_error, format!("lock error: {err}"));
+                        return ignore::WalkState::Quit;
+                    }
+                }
+            }
+
+            ignore::WalkState::Continue
+        })
+    });
+
+    if let Some(err) = first_error
+        .into_inner()
+        .map_err(|e| format!("lock error: {e}"))?
+    {
+        return Err(err);
     }
+
+    let mut results = matches
+        .into_inner()
+        .map_err(|e| format!("lock error: {e}"))?;
+
+    // Sort by modification time, newest first (matching rg --sortr=modified).
+    results.sort_by(|a, b| b.1.cmp(&a.1));
+
+    Ok(results
+        .into_iter()
+        .take(limit)
+        .map(|(path, _)| path)
+        .collect())
 }
 
-pub fn parse_results(stdout: &[u8], limit: usize) -> Vec<String> {
-    let mut results = Vec::new();
-    for line in stdout.split(|byte| *byte == b'\n') {
-        if line.is_empty() {
-            continue;
-        }
-        if let Ok(text) = std::str::from_utf8(line) {
-            if text.is_empty() {
-                continue;
-            }
-            results.push(text.to_string());
-            if results.len() == limit {
-                break;
-            }
-        }
+fn record_first_error(slot: &Mutex<Option<String>>, message: String) {
+    if let Ok(mut guard) = slot.lock() {
+        guard.get_or_insert(message);
     }
-    results
 }
 
 /// Returns the auto-generated `ToolInfo` for schema extraction by core.
@@ -175,102 +252,116 @@ pub fn mount(
 #[cfg(test)]
 mod tests {
     use super::*;
-    use std::process::Command as StdCommand;
+
+    #[cfg(unix)]
+    use std::os::unix::fs::PermissionsExt;
+    #[cfg(unix)]
+    use std::os::unix::fs::symlink;
 
     #[test]
-    fn parses_basic_results() {
-        let stdout = b"/tmp/file_a.rs\n/tmp/file_b.rs\n";
-        let parsed = parse_results(stdout, 10);
-        assert_eq!(
-            parsed,
-            vec!["/tmp/file_a.rs".to_string(), "/tmp/file_b.rs".to_string()]
-        );
-    }
-
-    #[test]
-    fn parse_truncates_after_limit() {
-        let stdout = b"/tmp/file_a.rs\n/tmp/file_b.rs\n/tmp/file_c.rs\n";
-        let parsed = parse_results(stdout, 2);
-        assert_eq!(
-            parsed,
-            vec!["/tmp/file_a.rs".to_string(), "/tmp/file_b.rs".to_string()]
-        );
-    }
-
-    #[tokio::test]
-    async fn run_search_returns_results() {
-        if !rg_available() {
-            return;
-        }
+    fn search_returns_matching_files() {
         let temp = tempfile::tempdir().expect("create temp dir");
         let dir = temp.path();
         std::fs::write(dir.join("match_one.txt"), "alpha beta gamma").unwrap();
         std::fs::write(dir.join("match_two.txt"), "alpha delta").unwrap();
         std::fs::write(dir.join("other.txt"), "omega").unwrap();
 
-        let results = run_rg_search("alpha", None, dir, 10)
-            .await
-            .expect("search failed");
+        let results = run_grep_search("alpha", None, dir, 10).expect("search failed");
         assert_eq!(results.len(), 2);
-        assert!(results.iter().any(|path| path.ends_with("match_one.txt")));
-        assert!(results.iter().any(|path| path.ends_with("match_two.txt")));
+        assert!(results.iter().any(|p| p.ends_with("match_one.txt")));
+        assert!(results.iter().any(|p| p.ends_with("match_two.txt")));
     }
 
-    #[tokio::test]
-    async fn run_search_with_glob_filter() {
-        if !rg_available() {
-            return;
-        }
+    #[test]
+    fn search_with_glob_filter() {
         let temp = tempfile::tempdir().expect("create temp dir");
         let dir = temp.path();
         std::fs::write(dir.join("match_one.rs"), "alpha beta gamma").unwrap();
         std::fs::write(dir.join("match_two.txt"), "alpha delta").unwrap();
 
-        let results = run_rg_search("alpha", Some("*.rs"), dir, 10)
-            .await
-            .expect("search failed");
+        let results = run_grep_search("alpha", Some("*.rs"), dir, 10).expect("search failed");
         assert_eq!(results.len(), 1);
-        assert!(results.iter().all(|path| path.ends_with("match_one.rs")));
+        assert!(results[0].ends_with("match_one.rs"));
     }
 
-    #[tokio::test]
-    async fn run_search_respects_limit() {
-        if !rg_available() {
-            return;
-        }
+    #[test]
+    fn search_respects_limit() {
         let temp = tempfile::tempdir().expect("create temp dir");
         let dir = temp.path();
         std::fs::write(dir.join("one.txt"), "alpha one").unwrap();
         std::fs::write(dir.join("two.txt"), "alpha two").unwrap();
         std::fs::write(dir.join("three.txt"), "alpha three").unwrap();
 
-        let results = run_rg_search("alpha", None, dir, 2)
-            .await
-            .expect("search failed");
+        let results = run_grep_search("alpha", None, dir, 2).expect("search failed");
         assert_eq!(results.len(), 2);
     }
 
-    #[tokio::test]
-    async fn run_search_handles_no_matches() {
-        if !rg_available() {
-            return;
-        }
+    #[test]
+    fn search_handles_no_matches() {
         let temp = tempfile::tempdir().expect("create temp dir");
         let dir = temp.path();
         std::fs::write(dir.join("one.txt"), "omega").unwrap();
 
-        let results = run_rg_search("alpha", None, dir, 5)
-            .await
-            .expect("search failed");
+        let results = run_grep_search("alpha", None, dir, 5).expect("search failed");
         assert!(results.is_empty());
     }
 
-    fn rg_available() -> bool {
-        StdCommand::new("rg")
-            .arg("--version")
-            .output()
-            .map(|output| output.status.success())
-            .unwrap_or(false)
+    #[test]
+    fn search_rejects_invalid_regex() {
+        let temp = tempfile::tempdir().expect("create temp dir");
+        let err = run_grep_search("[invalid", None, temp.path(), 10).unwrap_err();
+        assert!(err.contains("invalid regex"));
+    }
+
+    #[test]
+    fn search_matches_non_utf8_files() {
+        let temp = tempfile::tempdir().expect("create temp dir");
+        let dir = temp.path();
+        std::fs::write(
+            dir.join("latin1.bin"),
+            [0xff, b'a', b'l', b'p', b'h', b'a', 0xfe],
+        )
+        .unwrap();
+
+        let results = run_grep_search("alpha", None, dir, 10).expect("search failed");
+        assert_eq!(results.len(), 1);
+        assert!(results[0].ends_with("latin1.bin"));
+    }
+
+    #[cfg(unix)]
+    #[test]
+    fn search_only_reads_regular_files() {
+        let temp = tempfile::tempdir().expect("create temp dir");
+        let dir = temp.path();
+        let real = dir.join("match.txt");
+        let alias = dir.join("match-link.txt");
+        std::fs::write(&real, "alpha beta gamma").unwrap();
+        symlink(&real, &alias).expect("create symlink");
+
+        let results = run_grep_search("alpha", None, dir, 10).expect("search failed");
+        assert_eq!(results.len(), 1);
+        assert!(results[0].ends_with("match.txt"));
+    }
+
+    #[cfg(unix)]
+    #[test]
+    fn search_reports_unreadable_file_errors() {
+        let temp = tempfile::tempdir().expect("create temp dir");
+        let dir = temp.path();
+        let unreadable = dir.join("secret.txt");
+        std::fs::write(&unreadable, "alpha hidden").unwrap();
+
+        let mut perms = std::fs::metadata(&unreadable).unwrap().permissions();
+        perms.set_mode(0o000);
+        std::fs::set_permissions(&unreadable, perms).unwrap();
+
+        let err = run_grep_search("alpha", None, dir, 10).unwrap_err();
+
+        let mut restore = std::fs::metadata(&unreadable).unwrap().permissions();
+        restore.set_mode(0o644);
+        std::fs::set_permissions(&unreadable, restore).unwrap();
+
+        assert!(err.contains("secret.txt"));
     }
 
     #[tokio::test]

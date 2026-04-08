@@ -238,6 +238,8 @@ http = "1.4.0"
 icu_decimal = "2.1"
 icu_locale_core = "2.1"
 icu_provider = { version = "2.1", features = ["sync"] }
+grep-regex = "0.1.14"
+grep-searcher = "0.1.16"
 ignore = "0.4.25"
 image = { version = "^0.25.10", default-features = false }
 iana-time-zone = "0.1.65"

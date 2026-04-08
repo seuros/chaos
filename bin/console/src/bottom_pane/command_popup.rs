@@ -39,7 +39,6 @@ pub(crate) struct CommandPopupFlags {
     pub(crate) collaboration_modes_enabled: bool,
     pub(crate) connectors_enabled: bool,
     pub(crate) personality_command_enabled: bool,
-    pub(crate) windows_degraded_sandbox_active: bool,
 }
 
 impl From<CommandPopupFlags> for slash_commands::BuiltinCommandFlags {
@@ -48,7 +47,7 @@ impl From<CommandPopupFlags> for slash_commands::BuiltinCommandFlags {
             collaboration_modes_enabled: value.collaboration_modes_enabled,
             connectors_enabled: value.connectors_enabled,
             personality_command_enabled: value.personality_command_enabled,
-            allow_elevate_sandbox: value.windows_degraded_sandbox_active,
+            allow_elevate_sandbox: false,
         }
     }
 }
@@ -504,7 +503,6 @@ mod tests {
                 collaboration_modes_enabled: true,
                 connectors_enabled: false,
                 personality_command_enabled: true,
-                windows_degraded_sandbox_active: false,
             },
         );
         popup.on_composer_text_change("/collab".to_string());
@@ -523,7 +521,6 @@ mod tests {
                 collaboration_modes_enabled: true,
                 connectors_enabled: false,
                 personality_command_enabled: true,
-                windows_degraded_sandbox_active: false,
             },
         );
         popup.on_composer_text_change("/plan".to_string());
@@ -542,7 +539,6 @@ mod tests {
                 collaboration_modes_enabled: true,
                 connectors_enabled: false,
                 personality_command_enabled: false,
-                windows_degraded_sandbox_active: false,
             },
         );
         popup.on_composer_text_change("/pers".to_string());
@@ -569,7 +565,6 @@ mod tests {
                 collaboration_modes_enabled: true,
                 connectors_enabled: false,
                 personality_command_enabled: true,
-                windows_degraded_sandbox_active: false,
             },
         );
         popup.on_composer_text_change("/personality".to_string());

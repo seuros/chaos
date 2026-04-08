@@ -345,7 +345,6 @@ pub(crate) struct ChatComposer {
     collaboration_mode_indicator: Option<CollaborationModeIndicator>,
     connectors_enabled: bool,
     personality_command_enabled: bool,
-    windows_degraded_sandbox_active: bool,
     status_line_value: Option<Line<'static>>,
     status_line_enabled: bool,
     // Agent label injected into the footer's contextual row when multi-agent mode is active.
@@ -379,7 +378,7 @@ impl ChatComposer {
             collaboration_modes_enabled: self.collaboration_modes_enabled,
             connectors_enabled: self.connectors_enabled,
             personality_command_enabled: self.personality_command_enabled,
-            allow_elevate_sandbox: self.windows_degraded_sandbox_active,
+            allow_elevate_sandbox: false,
         }
     }
 
@@ -454,7 +453,6 @@ impl ChatComposer {
             collaboration_mode_indicator: None,
             connectors_enabled: false,
             personality_command_enabled: false,
-            windows_degraded_sandbox_active: false,
             status_line_value: None,
             status_line_enabled: false,
             active_agent_label: None,
@@ -2734,16 +2732,6 @@ impl ChatComposer {
 
     fn footer_props(&self) -> FooterProps {
         let mode = self.footer_mode();
-        let is_wsl = {
-            #[cfg(target_os = "linux")]
-            {
-                mode == FooterMode::ShortcutOverlay && crate::clipboard_paste::is_probably_wsl()
-            }
-            #[cfg(not(target_os = "linux"))]
-            {
-                false
-            }
-        };
 
         FooterProps {
             mode,
@@ -2752,7 +2740,6 @@ impl ChatComposer {
             is_task_running: self.is_task_running,
             quit_shortcut_key: self.quit_shortcut_key,
             collaboration_modes_enabled: self.collaboration_modes_enabled,
-            is_wsl,
             context_window_percent: self.context_window_percent,
             context_window_used_tokens: self.context_window_used_tokens,
             status_line_value: self.status_line_value.clone(),
@@ -3026,7 +3013,6 @@ impl ChatComposer {
                             collaboration_modes_enabled,
                             connectors_enabled,
                             personality_command_enabled,
-                            windows_degraded_sandbox_active: self.windows_degraded_sandbox_active,
                         },
                     );
                     command_popup.on_composer_text_change(first_line.to_string());

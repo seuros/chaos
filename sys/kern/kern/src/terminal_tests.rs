@@ -625,43 +625,6 @@ fn detects_vte() {
 }
 
 #[test]
-fn detects_windows_terminal() {
-    let env = FakeEnvironment::new().with_var("WT_SESSION", "1");
-    let terminal = detect_terminal_info_from_env(&env);
-    assert_eq!(
-        terminal,
-        terminal_info(TerminalName::WindowsTerminal, None, None, None, None),
-        "wt_session_info"
-    );
-    assert_eq!(
-        terminal.user_agent_token(),
-        "WindowsTerminal",
-        "wt_session_user_agent"
-    );
-
-    let env = FakeEnvironment::new()
-        .with_var("TERM_PROGRAM", "WindowsTerminal")
-        .with_var("TERM_PROGRAM_VERSION", "1.21");
-    let terminal = detect_terminal_info_from_env(&env);
-    assert_eq!(
-        terminal,
-        terminal_info(
-            TerminalName::WindowsTerminal,
-            Some("WindowsTerminal"),
-            Some("1.21"),
-            None,
-            None,
-        ),
-        "windows_terminal_term_program_info"
-    );
-    assert_eq!(
-        terminal.user_agent_token(),
-        "WindowsTerminal/1.21",
-        "windows_terminal_term_program_user_agent"
-    );
-}
-
-#[test]
 fn detects_term_fallbacks() {
     let env = FakeEnvironment::new().with_var("TERM", "xterm-256color");
     let terminal = detect_terminal_info_from_env(&env);

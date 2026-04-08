@@ -94,8 +94,6 @@ use crate::terminal_palette::rgb_color;
 use crate::terminal_palette::stdout_color_level;
 use chaos_ipc::protocol::FileChange;
 use chaos_kern::git_info::get_git_repo_root;
-use chaos_kern::terminal::TerminalName;
-use chaos_kern::terminal::terminal_info;
 
 /// Classifies a diff line for gutter sign rendering and style selection.
 ///
@@ -124,12 +122,9 @@ enum DiffTheme {
 
 /// Palette depth the diff renderer will target.
 ///
-/// This is the *renderer's own* notion of color depth, derived from — but not
-/// identical to — the raw [`StdoutColorLevel`] reported by `supports-color`.
-/// The indirection exists because some terminals (notably Windows Terminal)
-/// advertise only ANSI-16 support while actually rendering truecolor sequences
-/// correctly; [`diff_color_level_for_terminal`] promotes those cases so the
-/// diff output uses the richer palette.
+/// This is the *renderer's own* notion of color depth, derived from the raw
+/// [`StdoutColorLevel`] reported by `supports-color` via
+/// [`diff_color_level_for_terminal`].
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
 enum DiffColorLevel {
     TrueColor,
@@ -1044,73 +1039,24 @@ fn diff_theme() -> DiffTheme {
 
 /// Return the [`DiffColorLevel`] for the current terminal session.
 ///
-/// This is the environment-reading adapter: it samples runtime signals
-/// (`supports-color` level, terminal name, `WT_SESSION`, and `FORCE_COLOR`)
-/// and forwards them to [`diff_color_level_for_terminal`].
+/// This is the environment-reading adapter: it samples the runtime
+/// `supports-color` level and forwards it to [`diff_color_level_for_terminal`].
 ///
 /// Keeping env reads in this thin wrapper lets
 /// [`diff_color_level_for_terminal`] stay pure and easy to unit test.
 fn diff_color_level() -> DiffColorLevel {
-    diff_color_level_for_terminal(
-        stdout_color_level(),
-        terminal_info().name,
-        std::env::var_os("WT_SESSION").is_some(),
-        has_force_color_override(),
-    )
+    diff_color_level_for_terminal(stdout_color_level())
 }
 
-/// Returns whether `FORCE_COLOR` is explicitly set.
-fn has_force_color_override() -> bool {
-    std::env::var_os("FORCE_COLOR").is_some()
-}
-
-/// Map a raw [`StdoutColorLevel`] to a [`DiffColorLevel`] using
-/// Windows Terminal-specific truecolor promotion rules.
+/// Map a raw [`StdoutColorLevel`] to a [`DiffColorLevel`].
 ///
 /// This helper is intentionally pure (no env access) so tests can validate
-/// the policy table by passing explicit inputs.
-///
-/// Windows Terminal fully supports 24-bit color but the `supports-color`
-/// crate often reports only ANSI-16 there because no `COLORTERM` variable
-/// is set.  We detect Windows Terminal two ways — via `terminal_name`
-/// (parsed from `WT_SESSION` / `TERM_PROGRAM` by `terminal_info()`) and
-/// via the raw `has_wt_session` flag.
-///
-/// These signals are intentionally not equivalent: `terminal_name` is a
-/// derived classification with `TERM_PROGRAM` precedence, so `WT_SESSION`
-/// can be present while `terminal_name` is not `WindowsTerminal`.
-///
-/// When `WT_SESSION` is present, we promote to truecolor unconditionally
-/// unless `FORCE_COLOR` is set. This keeps Windows Terminal rendering rich
-/// by default while preserving explicit `FORCE_COLOR` user intent.
-///
-/// Outside `WT_SESSION`, only ANSI-16 is promoted for identified
-/// `WindowsTerminal` sessions; `Unknown` stays conservative.
-fn diff_color_level_for_terminal(
-    stdout_level: StdoutColorLevel,
-    terminal_name: TerminalName,
-    has_wt_session: bool,
-    has_force_color_override: bool,
-) -> DiffColorLevel {
-    if has_wt_session && !has_force_color_override {
-        return DiffColorLevel::TrueColor;
-    }
-
-    let base = match stdout_level {
+/// the mapping by passing explicit inputs.
+fn diff_color_level_for_terminal(stdout_level: StdoutColorLevel) -> DiffColorLevel {
+    match stdout_level {
         StdoutColorLevel::TrueColor => DiffColorLevel::TrueColor,
         StdoutColorLevel::Ansi256 => DiffColorLevel::Ansi256,
         StdoutColorLevel::Ansi16 | StdoutColorLevel::Unknown => DiffColorLevel::Ansi16,
-    };
-
-    // Outside `WT_SESSION`, keep the existing Windows Terminal promotion for
-    // ANSI-16 sessions that likely support truecolor.
-    if stdout_level == StdoutColorLevel::Ansi16
-        && terminal_name == TerminalName::WindowsTerminal
-        && !has_force_color_override
-    {
-        DiffColorLevel::TrueColor
-    } else {
-        base
     }
 }
 
@@ -2038,93 +1984,10 @@ mod tests {
     }
 
     #[test]
-    fn windows_terminal_promotes_ansi16_to_truecolor_for_diffs() {
+    fn ansi16_maps_to_ansi16_diff_palette() {
         assert_eq!(
-            diff_color_level_for_terminal(
-                StdoutColorLevel::Ansi16,
-                TerminalName::WindowsTerminal,
-                false,
-                false,
-            ),
-            DiffColorLevel::TrueColor
-        );
-    }
-
-    #[test]
-    fn wt_session_promotes_ansi16_to_truecolor_for_diffs() {
-        assert_eq!(
-            diff_color_level_for_terminal(
-                StdoutColorLevel::Ansi16,
-                TerminalName::Unknown,
-                true,
-                false,
-            ),
-            DiffColorLevel::TrueColor
-        );
-    }
-
-    #[test]
-    fn non_windows_terminal_keeps_ansi16_diff_palette() {
-        assert_eq!(
-            diff_color_level_for_terminal(
-                StdoutColorLevel::Ansi16,
-                TerminalName::WezTerm,
-                false,
-                false,
-            ),
+            diff_color_level_for_terminal(StdoutColorLevel::Ansi16),
             DiffColorLevel::Ansi16
-        );
-    }
-
-    #[test]
-    fn wt_session_promotes_unknown_color_level_to_truecolor() {
-        assert_eq!(
-            diff_color_level_for_terminal(
-                StdoutColorLevel::Unknown,
-                TerminalName::WindowsTerminal,
-                true,
-                false,
-            ),
-            DiffColorLevel::TrueColor
-        );
-    }
-
-    #[test]
-    fn non_wt_windows_terminal_keeps_unknown_color_level_conservative() {
-        assert_eq!(
-            diff_color_level_for_terminal(
-                StdoutColorLevel::Unknown,
-                TerminalName::WindowsTerminal,
-                false,
-                false,
-            ),
-            DiffColorLevel::Ansi16
-        );
-    }
-
-    #[test]
-    fn explicit_force_override_keeps_ansi16_on_windows_terminal() {
-        assert_eq!(
-            diff_color_level_for_terminal(
-                StdoutColorLevel::Ansi16,
-                TerminalName::WindowsTerminal,
-                false,
-                true,
-            ),
-            DiffColorLevel::Ansi16
-        );
-    }
-
-    #[test]
-    fn explicit_force_override_keeps_ansi256_on_windows_terminal() {
-        assert_eq!(
-            diff_color_level_for_terminal(
-                StdoutColorLevel::Ansi256,
-                TerminalName::WindowsTerminal,
-                true,
-                true,
-            ),
-            DiffColorLevel::Ansi256
         );
     }
 

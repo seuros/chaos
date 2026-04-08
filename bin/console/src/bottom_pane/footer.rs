@@ -69,7 +69,6 @@ pub(crate) struct FooterProps {
     pub(crate) use_shift_enter_hint: bool,
     pub(crate) is_task_running: bool,
     pub(crate) collaboration_modes_enabled: bool,
-    pub(crate) is_wsl: bool,
     /// Which key the user must press again to quit.
     ///
     /// This is rendered when `mode` is `FooterMode::QuitShortcutReminder`.
@@ -608,7 +607,6 @@ fn footer_from_props_lines(
             let state = ShortcutsState {
                 use_shift_enter_hint: props.use_shift_enter_hint,
                 esc_backtrack_hint: props.esc_backtrack_hint,
-                is_wsl: props.is_wsl,
                 collaboration_modes_enabled: props.collaboration_modes_enabled,
             };
             shortcut_overlay_lines(state)
@@ -724,7 +722,6 @@ fn footer_hint_items_line(items: &[(String, String)]) -> Line<'static> {
 struct ShortcutsState {
     use_shift_enter_hint: bool,
     esc_backtrack_hint: bool,
-    is_wsl: bool,
     collaboration_modes_enabled: bool,
 }
 
@@ -891,7 +888,6 @@ enum DisplayCondition {
     Always,
     WhenShiftEnterHint,
     WhenNotShiftEnterHint,
-    WhenUnderWSL,
     WhenCollaborationModesEnabled,
 }
 
@@ -901,7 +897,6 @@ impl DisplayCondition {
             DisplayCondition::Always => true,
             DisplayCondition::WhenShiftEnterHint => state.use_shift_enter_hint,
             DisplayCondition::WhenNotShiftEnterHint => !state.use_shift_enter_hint,
-            DisplayCondition::WhenUnderWSL => state.is_wsl,
             DisplayCondition::WhenCollaborationModesEnabled => state.collaboration_modes_enabled,
         }
     }
@@ -994,18 +989,10 @@ const SHORTCUTS: &[ShortcutDescriptor] = &[
     },
     ShortcutDescriptor {
         id: ShortcutId::PasteImage,
-        // Show Ctrl+Alt+V when running under WSL (terminals often intercept plain
-        // Ctrl+V); otherwise fall back to Ctrl+V.
-        bindings: &[
-            ShortcutBinding {
-                key: key_hint::ctrl_alt(KeyCode::Char('v')),
-                condition: DisplayCondition::WhenUnderWSL,
-            },
-            ShortcutBinding {
-                key: key_hint::ctrl(KeyCode::Char('v')),
-                condition: DisplayCondition::Always,
-            },
-        ],
+        bindings: &[ShortcutBinding {
+            key: key_hint::ctrl(KeyCode::Char('v')),
+            condition: DisplayCondition::Always,
+        }],
         prefix: "",
         label: " to paste images",
     },
@@ -1268,7 +1255,6 @@ mod tests {
                 use_shift_enter_hint: false,
                 is_task_running: false,
                 collaboration_modes_enabled: false,
-                is_wsl: false,
                 quit_shortcut_key: key_hint::ctrl(KeyCode::Char('c')),
                 context_window_percent: None,
                 context_window_used_tokens: None,
@@ -1286,7 +1272,6 @@ mod tests {
                 use_shift_enter_hint: true,
                 is_task_running: false,
                 collaboration_modes_enabled: false,
-                is_wsl: false,
                 quit_shortcut_key: key_hint::ctrl(KeyCode::Char('c')),
                 context_window_percent: None,
                 context_window_used_tokens: None,
@@ -1304,7 +1289,6 @@ mod tests {
                 use_shift_enter_hint: false,
                 is_task_running: false,
                 collaboration_modes_enabled: true,
-                is_wsl: false,
                 quit_shortcut_key: key_hint::ctrl(KeyCode::Char('c')),
                 context_window_percent: None,
                 context_window_used_tokens: None,
@@ -1322,7 +1306,6 @@ mod tests {
                 use_shift_enter_hint: false,
                 is_task_running: false,
                 collaboration_modes_enabled: false,
-                is_wsl: false,
                 quit_shortcut_key: key_hint::ctrl(KeyCode::Char('c')),
                 context_window_percent: None,
                 context_window_used_tokens: None,
@@ -1340,7 +1323,6 @@ mod tests {
                 use_shift_enter_hint: false,
                 is_task_running: true,
                 collaboration_modes_enabled: false,
-                is_wsl: false,
                 quit_shortcut_key: key_hint::ctrl(KeyCode::Char('c')),
                 context_window_percent: None,
                 context_window_used_tokens: None,
@@ -1358,7 +1340,6 @@ mod tests {
                 use_shift_enter_hint: false,
                 is_task_running: false,
                 collaboration_modes_enabled: false,
-                is_wsl: false,
                 quit_shortcut_key: key_hint::ctrl(KeyCode::Char('c')),
                 context_window_percent: None,
                 context_window_used_tokens: None,
@@ -1376,7 +1357,6 @@ mod tests {
                 use_shift_enter_hint: false,
                 is_task_running: false,
                 collaboration_modes_enabled: false,
-                is_wsl: false,
                 quit_shortcut_key: key_hint::ctrl(KeyCode::Char('c')),
                 context_window_percent: None,
                 context_window_used_tokens: None,
@@ -1394,7 +1374,6 @@ mod tests {
                 use_shift_enter_hint: false,
                 is_task_running: true,
                 collaboration_modes_enabled: false,
-                is_wsl: false,
                 quit_shortcut_key: key_hint::ctrl(KeyCode::Char('c')),
                 context_window_percent: Some(72),
                 context_window_used_tokens: None,
@@ -1412,7 +1391,6 @@ mod tests {
                 use_shift_enter_hint: false,
                 is_task_running: false,
                 collaboration_modes_enabled: false,
-                is_wsl: false,
                 quit_shortcut_key: key_hint::ctrl(KeyCode::Char('c')),
                 context_window_percent: None,
                 context_window_used_tokens: Some(123_456),
@@ -1430,7 +1408,6 @@ mod tests {
                 use_shift_enter_hint: false,
                 is_task_running: true,
                 collaboration_modes_enabled: false,
-                is_wsl: false,
                 quit_shortcut_key: key_hint::ctrl(KeyCode::Char('c')),
                 context_window_percent: None,
                 context_window_used_tokens: None,
@@ -1446,7 +1423,6 @@ mod tests {
             use_shift_enter_hint: false,
             is_task_running: false,
             collaboration_modes_enabled: true,
-            is_wsl: false,
             quit_shortcut_key: key_hint::ctrl(KeyCode::Char('c')),
             context_window_percent: None,
             context_window_used_tokens: None,
@@ -1475,7 +1451,6 @@ mod tests {
             use_shift_enter_hint: false,
             is_task_running: true,
             collaboration_modes_enabled: true,
-            is_wsl: false,
             quit_shortcut_key: key_hint::ctrl(KeyCode::Char('c')),
             context_window_percent: None,
             context_window_used_tokens: None,
@@ -1497,7 +1472,6 @@ mod tests {
             use_shift_enter_hint: false,
             is_task_running: false,
             collaboration_modes_enabled: false,
-            is_wsl: false,
             quit_shortcut_key: key_hint::ctrl(KeyCode::Char('c')),
             context_window_percent: None,
             context_window_used_tokens: None,
@@ -1514,7 +1488,6 @@ mod tests {
             use_shift_enter_hint: false,
             is_task_running: true,
             collaboration_modes_enabled: false,
-            is_wsl: false,
             quit_shortcut_key: key_hint::ctrl(KeyCode::Char('c')),
             context_window_percent: None,
             context_window_used_tokens: None,
@@ -1531,7 +1504,6 @@ mod tests {
             use_shift_enter_hint: false,
             is_task_running: false,
             collaboration_modes_enabled: false,
-            is_wsl: false,
             quit_shortcut_key: key_hint::ctrl(KeyCode::Char('c')),
             context_window_percent: None,
             context_window_used_tokens: None,
@@ -1548,7 +1520,6 @@ mod tests {
             use_shift_enter_hint: false,
             is_task_running: false,
             collaboration_modes_enabled: true,
-            is_wsl: false,
             quit_shortcut_key: key_hint::ctrl(KeyCode::Char('c')),
             context_window_percent: Some(50),
             context_window_used_tokens: None,
@@ -1570,7 +1541,6 @@ mod tests {
             use_shift_enter_hint: false,
             is_task_running: false,
             collaboration_modes_enabled: true,
-            is_wsl: false,
             quit_shortcut_key: key_hint::ctrl(KeyCode::Char('c')),
             context_window_percent: Some(50),
             context_window_used_tokens: None,
@@ -1592,7 +1562,6 @@ mod tests {
             use_shift_enter_hint: false,
             is_task_running: false,
             collaboration_modes_enabled: false,
-            is_wsl: false,
             quit_shortcut_key: key_hint::ctrl(KeyCode::Char('c')),
             context_window_percent: Some(50),
             context_window_used_tokens: None,
@@ -1615,7 +1584,6 @@ mod tests {
             use_shift_enter_hint: false,
             is_task_running: false,
             collaboration_modes_enabled: true,
-            is_wsl: false,
             quit_shortcut_key: key_hint::ctrl(KeyCode::Char('c')),
             context_window_percent: Some(50),
             context_window_used_tokens: None,
@@ -1639,7 +1607,6 @@ mod tests {
             use_shift_enter_hint: false,
             is_task_running: false,
             collaboration_modes_enabled: false,
-            is_wsl: false,
             quit_shortcut_key: key_hint::ctrl(KeyCode::Char('c')),
             context_window_percent: None,
             context_window_used_tokens: None,
@@ -1656,7 +1623,6 @@ mod tests {
             use_shift_enter_hint: false,
             is_task_running: false,
             collaboration_modes_enabled: false,
-            is_wsl: false,
             quit_shortcut_key: key_hint::ctrl(KeyCode::Char('c')),
             context_window_percent: None,
             context_window_used_tokens: None,
@@ -1677,7 +1643,6 @@ mod tests {
             use_shift_enter_hint: false,
             is_task_running: false,
             collaboration_modes_enabled: true,
-            is_wsl: false,
             quit_shortcut_key: key_hint::ctrl(KeyCode::Char('c')),
             context_window_percent: Some(50),
             context_window_used_tokens: None,
@@ -1707,39 +1672,21 @@ mod tests {
     }
 
     #[test]
-    fn paste_image_shortcut_prefers_ctrl_alt_v_under_wsl() {
+    fn paste_image_shortcut_is_ctrl_v() {
         let descriptor = SHORTCUTS
             .iter()
             .find(|descriptor| descriptor.id == ShortcutId::PasteImage)
             .expect("paste image shortcut");
 
-        let is_wsl = {
-            #[cfg(target_os = "linux")]
-            {
-                crate::clipboard_paste::is_probably_wsl()
-            }
-            #[cfg(not(target_os = "linux"))]
-            {
-                false
-            }
-        };
-
-        let expected_key = if is_wsl {
-            key_hint::ctrl_alt(KeyCode::Char('v'))
-        } else {
-            key_hint::ctrl(KeyCode::Char('v'))
-        };
-
         let actual_key = descriptor
             .binding_for(ShortcutsState {
                 use_shift_enter_hint: false,
                 esc_backtrack_hint: false,
-                is_wsl,
                 collaboration_modes_enabled: false,
             })
             .expect("shortcut binding")
             .key;
 
-        assert_eq!(actual_key, expected_key);
+        assert_eq!(actual_key, key_hint::ctrl(KeyCode::Char('v')));
     }
 }

@@ -54,28 +54,17 @@ pub fn assert_regex_match<'s>(pattern: &str, actual: &'s str) -> regex_lite::Cap
         .unwrap_or_else(|| panic!("regex {pattern:?} did not match {actual:?}"))
 }
 
-pub fn test_path_buf_with_windows(unix_path: &str, _windows_path: Option<&str>) -> PathBuf {
+pub fn test_path_buf(unix_path: &str) -> PathBuf {
     PathBuf::from(unix_path)
 }
 
-pub fn test_path_buf(unix_path: &str) -> PathBuf {
-    test_path_buf_with_windows(unix_path, /*windows_path*/ None)
-}
-
-pub fn test_absolute_path_with_windows(
-    unix_path: &str,
-    windows_path: Option<&str>,
-) -> AbsolutePathBuf {
-    AbsolutePathBuf::from_absolute_path(test_path_buf_with_windows(unix_path, windows_path))
+pub fn test_absolute_path(unix_path: &str) -> AbsolutePathBuf {
+    AbsolutePathBuf::from_absolute_path(test_path_buf(unix_path))
         .expect("test path should be absolute")
 }
 
-pub fn test_absolute_path(unix_path: &str) -> AbsolutePathBuf {
-    test_absolute_path_with_windows(unix_path, /*windows_path*/ None)
-}
-
 pub fn test_tmp_path() -> AbsolutePathBuf {
-    test_absolute_path_with_windows("/tmp", Some(r"C:\Users\codex\AppData\Local\Temp"))
+    test_absolute_path("/tmp")
 }
 
 pub fn test_tmp_path_buf() -> PathBuf {
@@ -462,10 +451,4 @@ macro_rules! alcatraz_linux_exe_or_skip {
             None
         }
     }};
-}
-
-/// No-op: Windows is not a supported target.
-#[macro_export]
-macro_rules! skip_if_windows {
-    ($return_value:expr $(,)?) => {{}};
 }

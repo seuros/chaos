@@ -38,8 +38,6 @@ pub enum ConfigEdit {
     SetNoticeHideWorldWritableWarning(bool),
     /// Toggle the rate limit model nudge acknowledgement flag.
     SetNoticeHideRateLimitModelNudge(bool),
-    /// Toggle the Windows onboarding acknowledgement flag.
-    SetWindowsWslSetupAcknowledged(bool),
     /// Replace the entire `[mcp_servers]` table.
     ReplaceMcpServers(BTreeMap<String, McpServerConfig>),
     /// Set or clear a skill config entry under `[[skills.config]]`.
@@ -348,11 +346,6 @@ impl ConfigDocument {
             ConfigEdit::SetNoticeHideRateLimitModelNudge(acknowledged) => Ok(self.write_value(
                 Scope::Global,
                 &[Notice::TABLE_KEY, "hide_rate_limit_model_nudge"],
-                value(*acknowledged),
-            )),
-            ConfigEdit::SetWindowsWslSetupAcknowledged(acknowledged) => Ok(self.write_value(
-                Scope::Global,
-                &["windows_wsl_setup_acknowledged"],
                 value(*acknowledged),
             )),
             ConfigEdit::ReplaceMcpServers(servers) => Ok(self.replace_mcp_servers(servers)),
@@ -840,12 +833,6 @@ impl ConfigEditsBuilder {
     pub fn set_hide_rate_limit_model_nudge(mut self, acknowledged: bool) -> Self {
         self.edits
             .push(ConfigEdit::SetNoticeHideRateLimitModelNudge(acknowledged));
-        self
-    }
-
-    pub fn set_windows_wsl_setup_acknowledged(mut self, acknowledged: bool) -> Self {
-        self.edits
-            .push(ConfigEdit::SetWindowsWslSetupAcknowledged(acknowledged));
         self
     }
 

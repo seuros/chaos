@@ -126,96 +126,8 @@ pub fn paste_image_to_temp_png() -> Result<(PathBuf, PastedImageInfo), PasteImag
                 .map_err(|e| PasteImageError::IoError(e.error.to_string()))?;
             Ok((path, info))
         }
-        Err(e) => {
-            #[cfg(target_os = "linux")]
-            {
-                try_wsl_clipboard_fallback(&e).or(Err(e))
-            }
-            #[cfg(not(target_os = "linux"))]
-            {
-                Err(e)
-            }
-        }
+        Err(e) => Err(e),
     }
-}
-
-/// Attempt WSL fallback for clipboard image paste.
-///
-/// If clipboard is unavailable (common under WSL because arboard cannot access
-/// the Windows clipboard), attempt a WSL fallback that calls PowerShell on the
-/// Windows side to write the clipboard image to a temporary file, then return
-/// the corresponding WSL path.
-#[cfg(target_os = "linux")]
-fn try_wsl_clipboard_fallback(
-    error: &PasteImageError,
-) -> Result<(PathBuf, PastedImageInfo), PasteImageError> {
-    use PasteImageError::ClipboardUnavailable;
-    use PasteImageError::NoImage;
-
-    if !is_probably_wsl() || !matches!(error, ClipboardUnavailable(_) | NoImage(_)) {
-        return Err(error.clone());
-    }
-
-    tracing::debug!("attempting Windows PowerShell clipboard fallback");
-    let Some(win_path) = try_dump_windows_clipboard_image() else {
-        return Err(error.clone());
-    };
-
-    tracing::debug!("powershell produced path: {}", win_path);
-    let Some(mapped_path) = convert_windows_path_to_wsl(&win_path) else {
-        return Err(error.clone());
-    };
-
-    let Ok((w, h)) = image::image_dimensions(&mapped_path) else {
-        return Err(error.clone());
-    };
-
-    // Return the mapped path directly without copying.
-    // The file will be read and base64-encoded during serialization.
-    Ok((
-        mapped_path,
-        PastedImageInfo {
-            width: w,
-            height: h,
-            encoded_format: EncodedImageFormat::Png,
-        },
-    ))
-}
-
-/// Try to call a Windows PowerShell command (several common names) to save the
-/// clipboard image to a temporary PNG and return the Windows path to that file.
-/// Returns None if no command succeeded or no image was present.
-#[cfg(target_os = "linux")]
-fn try_dump_windows_clipboard_image() -> Option<String> {
-    // Powershell script: save image from clipboard to a temp png and print the path.
-    // Force UTF-8 output to avoid encoding issues between powershell.exe (UTF-16LE default)
-    // and pwsh (UTF-8 default).
-    let script = r#"[Console]::OutputEncoding = [System.Text.Encoding]::UTF8; $img = Get-Clipboard -Format Image; if ($img -ne $null) { $p=[System.IO.Path]::GetTempFileName(); $p = [System.IO.Path]::ChangeExtension($p,'png'); $img.Save($p,[System.Drawing.Imaging.ImageFormat]::Png); Write-Output $p } else { exit 1 }"#;
-
-    for cmd in ["powershell.exe", "pwsh", "powershell"] {
-        match std::process::Command::new(cmd)
-            .args(["-NoProfile", "-Command", script])
-            .output()
-        {
-            // Executing PowerShell command
-            Ok(output) => {
-                if output.status.success() {
-                    // Decode as UTF-8 (forced by the script above).
-                    let win_path = String::from_utf8_lossy(&output.stdout).trim().to_string();
-                    if !win_path.is_empty() {
-                        tracing::debug!("{} saved clipboard image to {}", cmd, win_path);
-                        return Some(win_path);
-                    }
-                } else {
-                    tracing::debug!("{} returned non-zero status", cmd);
-                }
-            }
-            Err(err) => {
-                tracing::debug!("{} not executable: {}", cmd, err);
-            }
-        }
-    }
-    None
 }
 
 /// Normalize pasted text that may represent a filesystem path.
@@ -262,50 +174,6 @@ pub fn normalize_pasted_path(pasted: &str) -> Option<PathBuf> {
     None
 }
 
-#[cfg(target_os = "linux")]
-pub(crate) fn is_probably_wsl() -> bool {
-    // Primary: Check /proc/version for "microsoft" or "WSL" (most reliable for standard WSL).
-    if let Ok(version) = std::fs::read_to_string("/proc/version") {
-        let version_lower = version.to_lowercase();
-        if version_lower.contains("microsoft") || version_lower.contains("wsl") {
-            return true;
-        }
-    }
-
-    // Fallback: Check WSL environment variables. This handles edge cases like
-    // custom Linux kernels installed in WSL where /proc/version may not contain
-    // "microsoft" or "WSL".
-    std::env::var_os("WSL_DISTRO_NAME").is_some() || std::env::var_os("WSL_INTEROP").is_some()
-}
-
-#[cfg(target_os = "linux")]
-fn convert_windows_path_to_wsl(input: &str) -> Option<PathBuf> {
-    if input.starts_with("\\\\") {
-        return None;
-    }
-
-    let drive_letter = input.chars().next()?.to_ascii_lowercase();
-    if !drive_letter.is_ascii_lowercase() {
-        return None;
-    }
-
-    if input.get(1..2) != Some(":") {
-        return None;
-    }
-
-    let mut result = PathBuf::from(format!("/mnt/{drive_letter}"));
-    for component in input
-        .get(2..)?
-        .trim_start_matches(['\\', '/'])
-        .split(['\\', '/'])
-        .filter(|component| !component.is_empty())
-    {
-        result.push(component);
-    }
-
-    Some(result)
-}
-
 fn normalize_windows_path(input: &str) -> Option<PathBuf> {
     // Drive letter path: C:\ or C:/
     let drive = input
@@ -322,15 +190,6 @@ fn normalize_windows_path(input: &str) -> Option<PathBuf> {
     let unc = input.starts_with("\\\\");
     if !drive && !unc {
         return None;
-    }
-
-    #[cfg(target_os = "linux")]
-    {
-        if is_probably_wsl()
-            && let Some(converted) = convert_windows_path_to_wsl(input)
-        {
-            return Some(converted);
-        }
     }
 
     Some(PathBuf::from(input))
@@ -359,23 +218,6 @@ mod pasted_paths_tests {
         let input = "file:///tmp/example.png";
         let result = normalize_pasted_path(input).expect("should parse file URL");
         assert_eq!(result, PathBuf::from("/tmp/example.png"));
-    }
-
-    #[test]
-    fn normalize_file_url_windows() {
-        let input = r"C:\Temp\example.png";
-        let result = normalize_pasted_path(input).expect("should parse file URL");
-        #[cfg(target_os = "linux")]
-        let expected = if is_probably_wsl()
-            && let Some(converted) = convert_windows_path_to_wsl(input)
-        {
-            converted
-        } else {
-            PathBuf::from(r"C:\Temp\example.png")
-        };
-        #[cfg(not(target_os = "linux"))]
-        let expected = PathBuf::from(r"C:\Temp\example.png");
-        assert_eq!(result, expected);
     }
 
     #[test]
@@ -428,103 +270,6 @@ mod pasted_paths_tests {
         assert_eq!(
             pasted_image_format(Path::new("/a/b/c.webp")),
             EncodedImageFormat::Other
-        );
-    }
-
-    #[test]
-    fn normalize_single_quoted_windows_path() {
-        let input = r"'C:\\Users\\Alice\\My File.jpeg'";
-        let unquoted = r"C:\\Users\\Alice\\My File.jpeg";
-        let result =
-            normalize_pasted_path(input).expect("should trim single quotes on windows path");
-        #[cfg(target_os = "linux")]
-        let expected = if is_probably_wsl()
-            && let Some(converted) = convert_windows_path_to_wsl(unquoted)
-        {
-            converted
-        } else {
-            PathBuf::from(unquoted)
-        };
-        #[cfg(not(target_os = "linux"))]
-        let expected = PathBuf::from(unquoted);
-        assert_eq!(result, expected);
-    }
-
-    #[test]
-    fn normalize_double_quoted_windows_path() {
-        let input = r#""C:\\Users\\Alice\\My File.jpeg""#;
-        let unquoted = r"C:\\Users\\Alice\\My File.jpeg";
-        let result =
-            normalize_pasted_path(input).expect("should trim double quotes on windows path");
-        #[cfg(target_os = "linux")]
-        let expected = if is_probably_wsl()
-            && let Some(converted) = convert_windows_path_to_wsl(unquoted)
-        {
-            converted
-        } else {
-            PathBuf::from(unquoted)
-        };
-        #[cfg(not(target_os = "linux"))]
-        let expected = PathBuf::from(unquoted);
-        assert_eq!(result, expected);
-    }
-
-    #[test]
-    fn normalize_unquoted_windows_path_with_spaces() {
-        let input = r"C:\\Users\\Alice\\My Pictures\\example image.png";
-        let result = normalize_pasted_path(input).expect("should accept unquoted windows path");
-        #[cfg(target_os = "linux")]
-        let expected = if is_probably_wsl()
-            && let Some(converted) = convert_windows_path_to_wsl(input)
-        {
-            converted
-        } else {
-            PathBuf::from(r"C:\\Users\\Alice\\My Pictures\\example image.png")
-        };
-        #[cfg(not(target_os = "linux"))]
-        let expected = PathBuf::from(r"C:\\Users\\Alice\\My Pictures\\example image.png");
-        assert_eq!(result, expected);
-    }
-
-    #[test]
-    fn normalize_unc_windows_path() {
-        let input = r"\\\\server\\share\\folder\\file.jpg";
-        let result = normalize_pasted_path(input).expect("should accept UNC windows path");
-        assert_eq!(
-            result,
-            PathBuf::from(r"\\\\server\\share\\folder\\file.jpg")
-        );
-    }
-
-    #[test]
-    fn pasted_image_format_with_windows_style_paths() {
-        assert_eq!(
-            pasted_image_format(Path::new(r"C:\\a\\b\\c.PNG")),
-            EncodedImageFormat::Png
-        );
-        assert_eq!(
-            pasted_image_format(Path::new(r"C:\\a\\b\\c.jpeg")),
-            EncodedImageFormat::Jpeg
-        );
-        assert_eq!(
-            pasted_image_format(Path::new(r"C:\\a\\b\\noext")),
-            EncodedImageFormat::Other
-        );
-    }
-
-    #[cfg(target_os = "linux")]
-    #[test]
-    fn normalize_windows_path_in_wsl() {
-        // This test only runs on actual WSL systems
-        if !is_probably_wsl() {
-            // Skip test if not on WSL
-            return;
-        }
-        let input = r"C:\\Users\\Alice\\Pictures\\example image.png";
-        let result = normalize_pasted_path(input).expect("should convert windows path on wsl");
-        assert_eq!(
-            result,
-            PathBuf::from("/mnt/c/Users/Alice/Pictures/example image.png")
         );
     }
 }

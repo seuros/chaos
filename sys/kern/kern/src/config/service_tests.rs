@@ -60,7 +60,7 @@ X-Doc = "42"
 async fn write_value_preserves_comments_and_order() -> Result<()> {
     let tmp = tempdir().expect("tempdir");
     let original = r#"# Codex user configuration
-model = "gpt-5"
+model = "serpent"
 approval_policy = "interactive"
 
 [notice]
@@ -86,7 +86,7 @@ unified_exec = true
 
     let updated = std::fs::read_to_string(tmp.path().join(CONFIG_TOML_FILE)).expect("read config");
     let expected = r#"# Codex user configuration
-model = "gpt-5"
+model = "serpent"
 approval_policy = "interactive"
 
 [notice]
@@ -212,7 +212,7 @@ async fn version_conflict_rejected() {
         .write_value(ConfigValueWriteParams {
             file_path: Some(tmp.path().join(CONFIG_TOML_FILE).display().to_string()),
             key_path: "model".to_string(),
-            value: serde_json::json!("gpt-5"),
+            value: serde_json::json!("serpent"),
             merge_strategy: MergeStrategy::Replace,
             expected_version: Some("sha256:bogus".to_string()),
         })
@@ -235,7 +235,7 @@ async fn write_value_defaults_to_user_config_path() {
         .write_value(ConfigValueWriteParams {
             file_path: None,
             key_path: "model".to_string(),
-            value: serde_json::json!("gpt-new"),
+            value: serde_json::json!("gordon"),
             merge_strategy: MergeStrategy::Replace,
             expected_version: None,
         })
@@ -244,7 +244,7 @@ async fn write_value_defaults_to_user_config_path() {
 
     let contents = std::fs::read_to_string(tmp.path().join(CONFIG_TOML_FILE)).expect("read config");
     assert!(
-        contents.contains("model = \"gpt-new\""),
+        contents.contains("model = \"gordon\""),
         "config.toml should be updated even when file_path is omitted"
     );
 }

@@ -127,7 +127,7 @@ async fn get_model_info_uses_custom_catalog() {
         .build()
         .await
         .expect("load default test config");
-    let mut overlay = remote_model("gpt-overlay", "Overlay", 0);
+    let mut overlay = remote_model("serpent-overlay", "Overlay", 0);
     overlay.supports_image_detail_original = true;
 
     let auth_manager = AuthManager::from_auth_for_testing(ChaosAuth::from_api_key("Test API Key"));
@@ -141,10 +141,10 @@ async fn get_model_info_uses_custom_catalog() {
     );
 
     let model_info = manager
-        .get_model_info("gpt-overlay-experiment", &config)
+        .get_model_info("serpent-overlay-experiment", &config)
         .await;
 
-    assert_eq!(model_info.slug, "gpt-overlay-experiment");
+    assert_eq!(model_info.slug, "serpent-overlay-experiment");
     assert_eq!(model_info.display_name, "Overlay");
     assert_eq!(model_info.context_window, Some(272_000));
     assert!(model_info.supports_image_detail_original);
@@ -160,7 +160,7 @@ async fn get_model_info_matches_namespaced_suffix() {
         .build()
         .await
         .expect("load default test config");
-    let mut remote = remote_model("gpt-image", "Image", 0);
+    let mut remote = remote_model("sherlock-image", "Image", 0);
     remote.supports_image_detail_original = true;
     let auth_manager = AuthManager::from_auth_for_testing(ChaosAuth::from_api_key("Test API Key"));
     let manager = ModelsManager::new(
@@ -171,7 +171,7 @@ async fn get_model_info_matches_namespaced_suffix() {
         }),
         CollaborationModesConfig::default(),
     );
-    let namespaced_model = "custom/gpt-image".to_string();
+    let namespaced_model = "custom/sherlock-image".to_string();
 
     let model_info = manager.get_model_info(&namespaced_model, &config).await;
 

@@ -79,7 +79,7 @@ async fn cli_overrides_resolve_relative_paths_against_cwd() -> std::io::Result<(
 #[tokio::test]
 async fn returns_config_error_for_invalid_user_config_toml() {
     let tmp = tempdir().expect("tempdir");
-    let contents = "model = \"gpt-4\"\ninvalid = [";
+    let contents = "model = \"serpent\"\ninvalid = [";
     let config_path = tmp.path().join(CONFIG_TOML_FILE);
     std::fs::write(&config_path, contents).expect("write config");
 

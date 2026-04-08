@@ -5,14 +5,14 @@ async fn set_model_updates_defaults() -> anyhow::Result<()> {
     let chaos_home = TempDir::new()?;
 
     ConfigEditsBuilder::new(chaos_home.path())
-        .set_model(Some("gpt-5.1-codex"), Some(ReasoningEffort::High))
+        .set_model(Some("serpent"), Some(ReasoningEffort::High))
         .apply()
         .await?;
 
     let serialized = tokio::fs::read_to_string(chaos_home.path().join(CONFIG_TOML_FILE)).await?;
     let parsed: ConfigToml = toml::from_str(&serialized)?;
 
-    assert_eq!(parsed.model.as_deref(), Some("gpt-5.1-codex"));
+    assert_eq!(parsed.model.as_deref(), Some("serpent"));
     assert_eq!(parsed.model_reasoning_effort, Some(ReasoningEffort::High));
 
     Ok(())
@@ -26,11 +26,11 @@ async fn set_model_overwrites_existing_model() -> anyhow::Result<()> {
     tokio::fs::write(
         &config_path,
         r#"
-model = "gpt-5.1-codex"
+model = "serpent"
 model_reasoning_effort = "medium"
 
 [profiles.dev]
-model = "gpt-4.1"
+model = "gordon"
 "#,
     )
     .await?;
@@ -50,7 +50,7 @@ model = "gpt-4.1"
             .profiles
             .get("dev")
             .and_then(|profile| profile.model.as_deref()),
-        Some("gpt-4.1"),
+        Some("gordon"),
     );
 
     Ok(())
@@ -62,7 +62,7 @@ async fn set_model_updates_profile() -> anyhow::Result<()> {
 
     ConfigEditsBuilder::new(chaos_home.path())
         .with_profile(Some("dev"))
-        .set_model(Some("gpt-5.1-codex"), Some(ReasoningEffort::Medium))
+        .set_model(Some("serpent"), Some(ReasoningEffort::Medium))
         .apply()
         .await?;
 
@@ -73,7 +73,7 @@ async fn set_model_updates_profile() -> anyhow::Result<()> {
         .get("dev")
         .expect("profile should be created");
 
-    assert_eq!(profile.model.as_deref(), Some("gpt-5.1-codex"));
+    assert_eq!(profile.model.as_deref(), Some("serpent"));
     assert_eq!(
         profile.model_reasoning_effort,
         Some(ReasoningEffort::Medium)
@@ -91,11 +91,11 @@ async fn set_model_updates_existing_profile() -> anyhow::Result<()> {
         &config_path,
         r#"
 [profiles.dev]
-model = "gpt-4"
+model = "gordon"
 model_reasoning_effort = "medium"
 
 [profiles.prod]
-model = "gpt-5.1-codex"
+model = "sherlock"
 "#,
     )
     .await?;
@@ -124,7 +124,7 @@ model = "gpt-5.1-codex"
             .profiles
             .get("prod")
             .and_then(|profile| profile.model.as_deref()),
-        Some("gpt-5.1-codex"),
+        Some("sherlock"),
     );
 
     Ok(())

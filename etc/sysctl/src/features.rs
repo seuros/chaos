@@ -28,7 +28,6 @@ pub enum Feature {
     Collab,
     SpawnCsv,
     SkillMcpDependencyInstall,
-    SkillEnvVarDependencyPrompt,
     DefaultModeRequestUserInput,
     Personality,
 }
@@ -319,12 +318,6 @@ pub const FEATURES: &[FeatureSpec] = &[
         id: Feature::SkillMcpDependencyInstall,
         key: "skill_mcp_dependency_install",
         default_enabled: true,
-        under_development: false,
-    },
-    FeatureSpec {
-        id: Feature::SkillEnvVarDependencyPrompt,
-        key: "skill_env_var_dependency_prompt",
-        default_enabled: false,
         under_development: false,
     },
     FeatureSpec {

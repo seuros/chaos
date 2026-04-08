@@ -22,6 +22,7 @@ pub mod requests;
 pub mod sanitize;
 pub mod sse;
 pub mod telemetry;
+pub mod tensorzero;
 
 use chaos_abi::ModelAdapter;
 
@@ -75,6 +76,13 @@ pub fn adapter_for_wire(
         ))),
         "chat_completions" => Some(Box::new(
             chat_completions::ChatCompletionsAdapter::from_base_url_and_api_key(
+                base_url,
+                api_key,
+                default_model,
+            ),
+        )),
+        "tensorzero" => Some(Box::new(
+            tensorzero::TensorZeroAdapter::from_base_url_and_api_key(
                 base_url,
                 api_key,
                 default_model,

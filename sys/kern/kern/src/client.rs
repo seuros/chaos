@@ -1077,8 +1077,12 @@ fn render_clamp_response_item(item: &ResponseItem) -> Option<String> {
             status.as_deref().unwrap_or(""),
             render_json_pretty(arguments)
         )),
-        ResponseItem::FunctionCallOutput { call_id, output }
-        | ResponseItem::CustomToolCallOutput { call_id, output } => Some(format!(
+        ResponseItem::FunctionCallOutput {
+            call_id, output, ..
+        }
+        | ResponseItem::CustomToolCallOutput {
+            call_id, output, ..
+        } => Some(format!(
             "<tool_output call_id=\"{call_id}\">\n{}\n</tool_output>",
             clamp_elide_large_text(
                 &output
@@ -1787,6 +1791,13 @@ impl ModelClientSession {
                 .await;
         }
 
+        // TensorZero native inference API.
+        if self.client.state.provider.wire_api == WireApi::TensorZero {
+            return self
+                .stream_tensorzero_api(prompt, model_info, session_telemetry)
+                .await;
+        }
+
         // Chat Completions wire format.
         if self.client.state.provider.wire_api == WireApi::ChatCompletions {
             return self
@@ -1943,6 +1954,62 @@ impl ModelClientSession {
             transport = "chat_completions_http",
         )
     )]
+    async fn stream_tensorzero_api(
+        &self,
+        prompt: &Prompt,
+        model_info: &ModelInfo,
+        session_telemetry: &SessionTelemetry,
+    ) -> Result<ResponseStream> {
+        let client_setup = self.client.current_client_setup().await?;
+        let options = self.build_responses_options(None, Compression::None);
+        let turn_request = self.build_http_turn_request(
+            &client_setup.api_provider,
+            prompt,
+            model_info,
+            HttpTurnRequestConfig {
+                effort: None,
+                summary: ReasoningSummaryConfig::None,
+                service_tier: None,
+                options: &options,
+            },
+        )?;
+
+        // TensorZero auth is optional — use empty string if no key is configured.
+        let api_key = self.resolve_chat_completions_api_key().unwrap_or_default();
+        let adapter = chaos_parrot::tensorzero::TensorZeroAdapter::new(
+            client_setup.api_provider,
+            api_key,
+            Some(model_info.slug.clone()),
+        );
+
+        tracing::debug!(
+            provider = %self.client.state.provider.name,
+            wire_api = "tensorzero",
+            "streaming via TensorZero native inference API"
+        );
+
+        match adapter.stream(turn_request).await {
+            Ok(stream) => {
+                let response_events = stream.map(|event| {
+                    event
+                        .map(ResponseEvent::from)
+                        .map_err(abi_error_to_api_error)
+                });
+                let stream = map_response_stream(response_events, session_telemetry.clone());
+                Ok(stream)
+            }
+            Err(err) => {
+                tracing::error!(
+                    error = %err,
+                    model = %model_info.slug,
+                    "TensorZero adapter stream failed"
+                );
+                Err(map_api_error(abi_error_to_api_error(err)))
+            }
+        }
+    }
+
+    #[allow(clippy::too_many_arguments)]
     async fn stream_chat_completions_api(
         &self,
         prompt: &Prompt,

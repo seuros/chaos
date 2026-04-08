@@ -353,24 +353,24 @@ impl ContextManager {
     fn process_item(&self, item: &ResponseItem, policy: TruncationPolicy) -> ResponseItem {
         let policy_with_serialization_budget = policy * 1.2;
         match item {
-            ResponseItem::FunctionCallOutput { call_id, output } => {
-                ResponseItem::FunctionCallOutput {
-                    call_id: call_id.clone(),
-                    output: truncate_function_output_payload(
-                        output,
-                        policy_with_serialization_budget,
-                    ),
-                }
-            }
-            ResponseItem::CustomToolCallOutput { call_id, output } => {
-                ResponseItem::CustomToolCallOutput {
-                    call_id: call_id.clone(),
-                    output: truncate_function_output_payload(
-                        output,
-                        policy_with_serialization_budget,
-                    ),
-                }
-            }
+            ResponseItem::FunctionCallOutput {
+                call_id,
+                output,
+                tool_name,
+            } => ResponseItem::FunctionCallOutput {
+                call_id: call_id.clone(),
+                output: truncate_function_output_payload(output, policy_with_serialization_budget),
+                tool_name: tool_name.clone(),
+            },
+            ResponseItem::CustomToolCallOutput {
+                call_id,
+                output,
+                tool_name,
+            } => ResponseItem::CustomToolCallOutput {
+                call_id: call_id.clone(),
+                output: truncate_function_output_payload(output, policy_with_serialization_budget),
+                tool_name: tool_name.clone(),
+            },
             ResponseItem::Message { .. }
             | ResponseItem::Reasoning { .. }
             | ResponseItem::LocalShellCall { .. }

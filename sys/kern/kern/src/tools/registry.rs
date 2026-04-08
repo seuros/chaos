@@ -64,6 +64,7 @@ pub trait ToolHandler: Send + Sync {
 
 pub(crate) struct AnyToolResult {
     pub(crate) call_id: String,
+    pub(crate) tool_name: String,
     pub(crate) payload: ToolPayload,
     pub(crate) result: Box<dyn ToolOutput>,
 }
@@ -72,6 +73,7 @@ impl std::fmt::Debug for AnyToolResult {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         f.debug_struct("AnyToolResult")
             .field("call_id", &self.call_id)
+            .field("tool_name", &self.tool_name)
             .field("payload", &self.payload)
             .finish_non_exhaustive()
     }
@@ -81,10 +83,17 @@ impl AnyToolResult {
     pub(crate) fn into_response(self) -> ResponseInputItem {
         let Self {
             call_id,
+            tool_name,
             payload,
             result,
         } = self;
-        result.to_response_item(&call_id, &payload)
+        let mut response = result.to_response_item(&call_id, &payload);
+        match &mut response {
+            ResponseInputItem::FunctionCallOutput { tool_name: tn, .. } => *tn = Some(tool_name),
+            ResponseInputItem::CustomToolCallOutput { tool_name: tn, .. } => *tn = Some(tool_name),
+            _ => {}
+        }
+        response
     }
 }
 
@@ -123,10 +132,12 @@ where
     ) -> Pin<Box<dyn Future<Output = Result<AnyToolResult, FunctionCallError>> + Send + '_>> {
         Box::pin(async move {
             let call_id = invocation.call_id.clone();
+            let tool_name = invocation.tool_name.clone();
             let payload = invocation.payload.clone();
             let output = self.handle(invocation).await?;
             Ok(AnyToolResult {
                 call_id,
+                tool_name,
                 payload,
                 result: Box::new(output),
             })

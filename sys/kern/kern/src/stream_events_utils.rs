@@ -223,6 +223,7 @@ pub(crate) async fn handle_output_item_done(
                     body: FunctionCallOutputBody::Text(msg.to_string()),
                     ..Default::default()
                 },
+                tool_name: None,
             };
             record_completed_response_item(ctx.sess.as_ref(), ctx.turn_context.as_ref(), &item)
                 .await;
@@ -245,6 +246,7 @@ pub(crate) async fn handle_output_item_done(
                     body: FunctionCallOutputBody::Text(message),
                     ..Default::default()
                 },
+                tool_name: None,
             };
             record_completed_response_item(ctx.sess.as_ref(), ctx.turn_context.as_ref(), &item)
                 .await;
@@ -365,23 +367,30 @@ pub(crate) fn last_assistant_message_from_item(
 
 pub(crate) fn response_input_to_response_item(input: &ResponseInputItem) -> Option<ResponseItem> {
     match input {
-        ResponseInputItem::FunctionCallOutput { call_id, output } => {
-            Some(ResponseItem::FunctionCallOutput {
-                call_id: call_id.clone(),
-                output: output.clone(),
-            })
-        }
-        ResponseInputItem::CustomToolCallOutput { call_id, output } => {
-            Some(ResponseItem::CustomToolCallOutput {
-                call_id: call_id.clone(),
-                output: output.clone(),
-            })
-        }
+        ResponseInputItem::FunctionCallOutput {
+            call_id,
+            output,
+            tool_name,
+        } => Some(ResponseItem::FunctionCallOutput {
+            call_id: call_id.clone(),
+            output: output.clone(),
+            tool_name: tool_name.clone(),
+        }),
+        ResponseInputItem::CustomToolCallOutput {
+            call_id,
+            output,
+            tool_name,
+        } => Some(ResponseItem::CustomToolCallOutput {
+            call_id: call_id.clone(),
+            output: output.clone(),
+            tool_name: tool_name.clone(),
+        }),
         ResponseInputItem::McpToolCallOutput { call_id, output } => {
             let output = output.as_function_call_output_payload();
             Some(ResponseItem::FunctionCallOutput {
                 call_id: call_id.clone(),
                 output,
+                tool_name: None,
             })
         }
         ResponseInputItem::ToolSearchOutput {

@@ -1019,12 +1019,12 @@ async fn resume_process_subagent_restores_stored_nickname_and_role() {
         .session_source
         .get_nickname()
         .expect("spawned sub-agent should have a nickname");
-    let state_db = child_thread
-        .state_db()
-        .expect("sqlite state db should be available for nickname resume test");
+    let runtime_db = child_thread
+        .runtime_db()
+        .expect("sqlite runtime db should be available for nickname resume test");
     timeout(Duration::from_secs(5), async {
         loop {
-            if let Ok(Some(metadata)) = state_db.get_process(child_process_id).await
+            if let Ok(Some(metadata)) = runtime_db.get_process(child_process_id).await
                 && metadata.agent_nickname.is_some()
                 && metadata.agent_role.as_deref() == Some("scout")
             {

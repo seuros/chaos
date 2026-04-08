@@ -1,7 +1,7 @@
 use crate::config::ConfigToml;
 use crate::config::edit::ConfigEditsBuilder;
 use crate::rollout::list::ProcessSortKey;
-use crate::state_db;
+use crate::runtime_db;
 use chaos_ipc::config_types::Personality;
 use chaos_ipc::protocol::SessionSource;
 use chaos_journald::JournalRpcClient;
@@ -62,9 +62,9 @@ pub async fn maybe_migrate_personality(
 async fn has_recorded_sessions(chaos_home: &Path, default_provider: &str) -> io::Result<bool> {
     let allowed_sources: &[SessionSource] = &[];
 
-    if let Some(state_db_ctx) = state_db::open_if_present(chaos_home, default_provider).await
-        && let Some(ids) = state_db::list_process_ids_db(
-            Some(state_db_ctx.as_ref()),
+    if let Some(runtime_db_ctx) = runtime_db::open_if_present(chaos_home, default_provider).await
+        && let Some(ids) = runtime_db::list_process_ids_db(
+            Some(runtime_db_ctx.as_ref()),
             chaos_home,
             /*page_size*/ 1,
             /*cursor*/ None,

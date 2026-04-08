@@ -39,8 +39,8 @@ use super::policy::is_persisted_response_item;
 use crate::default_client::originator;
 use crate::git_info::collect_git_info;
 use crate::path_utils;
-use crate::state_db;
-use crate::state_db::StateDbHandle;
+use crate::runtime_db;
+use crate::runtime_db::RuntimeDbHandle;
 use crate::truncate::TruncationPolicy;
 use crate::truncate::truncate_text;
 use chaos_ipc::protocol::EventMsg;
@@ -59,7 +59,7 @@ use chaos_traits::RolloutConfig;
 #[derive(Clone)]
 pub struct RolloutRecorder {
     tx: Sender<RolloutCmd>,
-    state_db: Option<StateDbHandle>,
+    runtime_db: Option<RuntimeDbHandle>,
     event_persistence_mode: EventPersistenceMode,
     live_rollout_items: Arc<Mutex<Vec<RolloutItem>>>,
 }
@@ -325,7 +325,7 @@ impl RolloutRecorder {
     pub async fn new(
         config: &impl RolloutConfig,
         params: RolloutRecorderParams,
-        state_db_ctx: Option<StateDbHandle>,
+        runtime_db_ctx: Option<RuntimeDbHandle>,
         state_builder: Option<ProcessMetadataBuilder>,
     ) -> std::io::Result<Self> {
         let (meta, event_persistence_mode, journal_sink, persisted) = match params {
@@ -416,7 +416,7 @@ impl RolloutRecorder {
             rx,
             meta,
             cwd,
-            state_db_ctx.clone(),
+            runtime_db_ctx.clone(),
             state_builder,
             config.model_provider_id().to_string(),
             config.generate_memories(),
@@ -425,14 +425,14 @@ impl RolloutRecorder {
 
         Ok(Self {
             tx,
-            state_db: state_db_ctx,
+            runtime_db: runtime_db_ctx,
             event_persistence_mode,
             live_rollout_items: Arc::new(Mutex::new(Vec::new())),
         })
     }
 
-    pub fn state_db(&self) -> Option<StateDbHandle> {
-        self.state_db.clone()
+    pub fn runtime_db(&self) -> Option<RuntimeDbHandle> {
+        self.runtime_db.clone()
     }
 
     pub(crate) async fn record_items(&self, items: &[RolloutItem]) -> std::io::Result<()> {
@@ -955,7 +955,7 @@ async fn rollout_writer(
     mut rx: mpsc::Receiver<RolloutCmd>,
     mut meta: Option<SessionMeta>,
     cwd: std::path::PathBuf,
-    state_db_ctx: Option<StateDbHandle>,
+    runtime_db_ctx: Option<RuntimeDbHandle>,
     mut state_builder: Option<ProcessMetadataBuilder>,
     default_provider: String,
     generate_memories: bool,
@@ -977,7 +977,7 @@ async fn rollout_writer(
 
                 write_and_reconcile_items(
                     items.as_slice(),
-                    state_db_ctx.as_deref(),
+                    runtime_db_ctx.as_deref(),
                     state_builder.as_ref(),
                     default_provider.as_str(),
                     &mut journal_sink,
@@ -990,7 +990,7 @@ async fn rollout_writer(
                         write_session_meta(
                             session_meta,
                             &cwd,
-                            state_db_ctx.as_deref(),
+                            runtime_db_ctx.as_deref(),
                             &mut state_builder,
                             default_provider.as_str(),
                             generate_memories,
@@ -1001,7 +1001,7 @@ async fn rollout_writer(
                     if !buffered_items.is_empty() {
                         write_and_reconcile_items(
                             buffered_items.as_slice(),
-                            state_db_ctx.as_deref(),
+                            runtime_db_ctx.as_deref(),
                             state_builder.as_ref(),
                             default_provider.as_str(),
                             &mut journal_sink,
@@ -1031,7 +1031,7 @@ async fn rollout_writer(
 async fn write_session_meta(
     session_meta: SessionMeta,
     cwd: &Path,
-    state_db_ctx: Option<&StateRuntime>,
+    runtime_db_ctx: Option<&StateRuntime>,
     state_builder: &mut Option<ProcessMetadataBuilder>,
     default_provider: &str,
     generate_memories: bool,
@@ -1042,7 +1042,7 @@ async fn write_session_meta(
         meta: session_meta,
         git: git_info,
     };
-    if state_db_ctx.is_some() {
+    if runtime_db_ctx.is_some() {
         *state_builder = metadata::builder_from_session_meta(&session_meta_line);
     }
 
@@ -1051,7 +1051,7 @@ async fn write_session_meta(
         .append_items(std::slice::from_ref(&rollout_item))
         .await;
     sync_process_state_after_write(
-        state_db_ctx,
+        runtime_db_ctx,
         state_builder.as_ref(),
         std::slice::from_ref(&rollout_item),
         default_provider,
@@ -1063,14 +1063,14 @@ async fn write_session_meta(
 
 async fn write_and_reconcile_items(
     items: &[RolloutItem],
-    state_db_ctx: Option<&StateRuntime>,
+    runtime_db_ctx: Option<&StateRuntime>,
     state_builder: Option<&ProcessMetadataBuilder>,
     default_provider: &str,
     journal_sink: &mut JournalSink,
 ) -> std::io::Result<()> {
     journal_sink.append_items(items).await;
     sync_process_state_after_write(
-        state_db_ctx,
+        runtime_db_ctx,
         state_builder,
         items,
         default_provider,
@@ -1081,7 +1081,7 @@ async fn write_and_reconcile_items(
 }
 
 async fn sync_process_state_after_write(
-    state_db_ctx: Option<&StateRuntime>,
+    runtime_db_ctx: Option<&StateRuntime>,
     state_builder: Option<&ProcessMetadataBuilder>,
     items: &[RolloutItem],
     default_provider: &str,
@@ -1093,8 +1093,8 @@ async fn sync_process_state_after_write(
             .iter()
             .any(chaos_proc::rollout_item_affects_process_metadata)
     {
-        state_db::apply_rollout_items(
-            state_db_ctx,
+        runtime_db::apply_rollout_items(
+            runtime_db_ctx,
             default_provider,
             state_builder,
             items,
@@ -1109,13 +1109,18 @@ async fn sync_process_state_after_write(
     let process_id = state_builder
         .map(|builder| builder.id)
         .or_else(|| metadata::builder_from_items(items).map(|builder| builder.id));
-    if state_db::touch_process_updated_at(state_db_ctx, process_id, updated_at, "rollout_writer")
-        .await
+    if runtime_db::touch_process_updated_at(
+        runtime_db_ctx,
+        process_id,
+        updated_at,
+        "rollout_writer",
+    )
+    .await
     {
         return;
     }
-    state_db::apply_rollout_items(
-        state_db_ctx,
+    runtime_db::apply_rollout_items(
+        runtime_db_ctx,
         default_provider,
         state_builder,
         items,

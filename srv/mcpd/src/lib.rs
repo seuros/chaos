@@ -88,9 +88,9 @@ pub async fn run_main(
         .with(otel_tracing_layer)
         .try_init();
 
-    // Init state database singleton — same DB as TUI/CLI.
+    // Init runtime database singleton — same DB as TUI/CLI.
     let config = Arc::new(config);
-    let state_runtime = chaos_kern::state_db::get_state_db(&config).await;
+    let runtime_db = chaos_kern::runtime_db::get_runtime_db(&config).await;
 
     // Build ProcessTable.
     let auth_manager = AuthManager::shared(
@@ -151,7 +151,7 @@ pub async fn run_main(
         running_requests: Arc::new(Mutex::new(std::collections::HashMap::new())),
         session_processes: Arc::new(Mutex::new(std::collections::HashMap::new())),
         process_names: Arc::new(Mutex::new(std::collections::HashMap::new())),
-        state_runtime,
+        runtime_db,
     });
     chaos_tool::tool_router().register_all(mcp_server.tool_registry(), chaos_server.clone());
     builtin_resources::resource_router()

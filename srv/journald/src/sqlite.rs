@@ -4,14 +4,11 @@ use std::time::Duration;
 use chaos_ipc::ProcessId;
 use chaos_ipc::protocol::RolloutItem;
 use chaos_ipc::protocol::SessionSource;
-use sqlx::ConnectOptions;
+use chaos_proc::open_runtime_db_at_path;
+use chaos_proc::runtime_db_path;
+use serde_json::Value;
 use sqlx::Row;
 use sqlx::SqlitePool;
-use sqlx::sqlite::SqliteConnectOptions;
-use sqlx::sqlite::SqliteJournalMode;
-use sqlx::sqlite::SqlitePoolOptions;
-use sqlx::sqlite::SqliteSynchronous;
-use tracing::log::LevelFilter;
 use uuid::Uuid;
 
 use crate::error::JournalError;
@@ -33,28 +30,16 @@ pub struct SqliteJournalStore {
 
 impl SqliteJournalStore {
     pub async fn open(path: &Path) -> Result<Self, JournalError> {
-        let options = SqliteConnectOptions::new()
-            .filename(path)
-            .create_if_missing(true)
-            .journal_mode(SqliteJournalMode::Wal)
-            .synchronous(SqliteSynchronous::Normal)
-            .busy_timeout(Duration::from_secs(5))
-            .foreign_keys(true)
-            .log_statements(LevelFilter::Off);
-        let pool = SqlitePoolOptions::new()
-            .max_connections(1)
-            .connect_with(options)
-            .await?;
-
-        sqlx::migrate!("./migrations").run(&pool).await?;
-
+        let pool = open_runtime_db_at_path(path)
+            .await
+            .map_err(|err| JournalError::Io(std::io::Error::other(err)))?;
         Ok(Self { pool })
     }
 
     pub async fn default() -> Result<Self, JournalError> {
         let dir = chaos_pwd::find_chaos_home()?;
         tokio::fs::create_dir_all(&dir).await?;
-        let path = dir.join(crate::model::SQLITE_DB_FILENAME);
+        let path = runtime_db_path(dir.as_path());
         Self::open(&path).await
     }
 
@@ -68,12 +53,14 @@ impl JournalStore for SqliteJournalStore {
         &self,
         input: CreateProcessInput,
     ) -> Result<ProcessRecord, JournalError> {
+        let source = source_label(&input.source);
         let source_json = serialize_source(&input.source)?;
         let title = input.title.clone().unwrap_or_default();
         let model_provider = input
             .model_provider
             .clone()
             .unwrap_or_else(|| "unknown".to_string());
+        let cli_version = input.cli_version.clone().unwrap_or_default();
         let agent_nickname = input.source.get_nickname();
         let agent_role = input.source.get_agent_role();
         let created_at = input.created_at.as_second();
@@ -88,6 +75,7 @@ impl JournalStore for SqliteJournalStore {
                 id,
                 parent_process_id,
                 fork_at_seq,
+                source,
                 source_json,
                 cwd,
                 created_at,
@@ -98,18 +86,19 @@ impl JournalStore for SqliteJournalStore {
                 cli_version,
                 agent_nickname,
                 agent_role
-             ) VALUES (?, ?, ?, ?, ?, ?, ?, NULL, ?, ?, ?, ?, ?)",
+             ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, NULL, ?, ?, ?, ?, ?)",
         )
         .bind(input.process_id.to_string())
         .bind(parent_process_id)
         .bind(fork_at_seq)
+        .bind(source)
         .bind(source_json)
         .bind(input.cwd.to_string_lossy().to_string())
         .bind(created_at)
         .bind(created_at)
         .bind(&title)
         .bind(&model_provider)
-        .bind(input.cli_version.clone())
+        .bind(&cli_version)
         .bind(&agent_nickname)
         .bind(&agent_role)
         .execute(&self.pool)
@@ -464,6 +453,14 @@ fn serialize_source(source: &SessionSource) -> Result<String, JournalError> {
     })
 }
 
+fn source_label(source: &SessionSource) -> String {
+    match serde_json::to_value(source) {
+        Ok(Value::String(label)) => label,
+        Ok(other) => other.to_string(),
+        Err(_) => String::new(),
+    }
+}
+
 fn serialize_item(item: &RolloutItem) -> Result<String, JournalError> {
     serde_json::to_string(item).map_err(|source| JournalError::Serialize {
         field: "payload_json",
@@ -516,6 +513,7 @@ fn process_row_to_record(row: &sqlx::sqlite::SqliteRow) -> Result<ProcessRecord,
         .get::<Option<i64>, _>("archived_at")
         .map(timestamp_from_epoch_seconds)
         .transpose()?;
+    let cli_version: String = row.get("cli_version");
     Ok(ProcessRecord {
         process_id,
         parent,
@@ -526,7 +524,7 @@ fn process_row_to_record(row: &sqlx::sqlite::SqliteRow) -> Result<ProcessRecord,
         archived_at,
         title: row.get("title"),
         model_provider: row.get("model_provider"),
-        cli_version: row.get("cli_version"),
+        cli_version: (!cli_version.is_empty()).then_some(cli_version),
         agent_nickname: row.get("agent_nickname"),
         agent_role: row.get("agent_role"),
     })

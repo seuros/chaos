@@ -3,7 +3,7 @@ use chaos_storage::ChaosStorageProvider;
 use serde::Serialize;
 use serde_json::json;
 
-use crate::state_db::StateDbHandle;
+use crate::runtime_db::RuntimeDbHandle;
 
 pub const JSON_MIME_TYPE: &str = "application/json";
 pub const CHAOS_SESSIONS_URI: &str = "chaos://sessions";
@@ -105,10 +105,10 @@ fn to_pretty_json<T: Serialize>(value: &T, context: &str) -> Result<String, Stri
         .map_err(|err| format!("failed to serialize {context} resource: {err}"))
 }
 
-pub async fn sessions_json_from_state_db(
-    state_db: Option<&StateDbHandle>,
+pub async fn sessions_json_from_runtime_db(
+    runtime_db: Option<&RuntimeDbHandle>,
 ) -> Result<String, String> {
-    let sessions = match state_db {
+    let sessions = match runtime_db {
         Some(runtime) => {
             let page = runtime
                 .list_processes(
@@ -142,12 +142,13 @@ pub async fn sessions_json_from_state_db(
     to_pretty_json(&sessions, "ChaOS processes")
 }
 
-pub async fn session_detail_json_from_state_db(
-    state_db: Option<&StateDbHandle>,
+pub async fn session_detail_json_from_runtime_db(
+    runtime_db: Option<&RuntimeDbHandle>,
     process_id: ProcessId,
 ) -> Result<String, String> {
-    let runtime = state_db
-        .ok_or_else(|| "ChaOS session resources require a persisted state database".to_string())?;
+    let runtime = runtime_db.ok_or_else(|| {
+        "ChaOS session resources require a persisted runtime database".to_string()
+    })?;
     let process = runtime
         .get_process(process_id)
         .await

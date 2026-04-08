@@ -1,6 +1,6 @@
 //! Persistence layer for the global, append-only message-history store.
 //!
-//! Entries are kept in the SQLite state DB so the TUI composer can recall prior
+//! Entries are kept in the SQLite runtime DB so the TUI composer can recall prior
 //! user prompts across sessions without relying on a separate JSONL sidecar.
 
 use std::io::Result;
@@ -16,7 +16,7 @@ use tracing::warn;
 pub(crate) async fn append_entry(
     text: &str,
     conversation_id: &ProcessId,
-    state_db: Option<&StateRuntime>,
+    runtime_db: Option<&StateRuntime>,
     config: &Config,
 ) -> Result<()> {
     match config.history.persistence {
@@ -24,7 +24,7 @@ pub(crate) async fn append_entry(
         HistoryPersistence::None => return Ok(()),
     }
 
-    let Some(state_db) = state_db else {
+    let Some(runtime_db) = runtime_db else {
         return Ok(());
     };
 
@@ -39,18 +39,18 @@ pub(crate) async fn append_entry(
         text: text.to_string(),
     };
 
-    state_db
+    runtime_db
         .append_message_history_entry(&entry, config.history.max_bytes)
         .await
         .map_err(std::io::Error::other)
 }
 
 /// Fetch the current store identifier and number of persisted entries.
-pub(crate) async fn history_metadata(state_db: Option<&StateRuntime>) -> (u64, usize) {
-    let Some(state_db) = state_db else {
+pub(crate) async fn history_metadata(runtime_db: Option<&StateRuntime>) -> (u64, usize) {
+    let Some(runtime_db) = runtime_db else {
         return (0, 0);
     };
-    match state_db.message_history_metadata().await {
+    match runtime_db.message_history_metadata().await {
         Ok(metadata) => metadata,
         Err(err) => {
             warn!("failed to read message history metadata: {err}");
@@ -63,10 +63,10 @@ pub(crate) async fn history_metadata(state_db: Option<&StateRuntime>) -> (u64, u
 pub(crate) async fn lookup(
     log_id: u64,
     offset: usize,
-    state_db: Option<&StateRuntime>,
+    runtime_db: Option<&StateRuntime>,
 ) -> Option<HistoryEntry> {
-    let state_db = state_db?;
-    match state_db.get_message_history_entry(log_id, offset).await {
+    let runtime_db = runtime_db?;
+    match runtime_db.get_message_history_entry(log_id, offset).await {
         Ok(entry) => entry,
         Err(err) => {
             warn!("failed to read message history entry: {err}");

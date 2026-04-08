@@ -16,7 +16,7 @@ use chaos_traits::AgentSpawnConfig;
 use chaos_traits::ConciergeConfig;
 use chaos_traits::EventEmitter;
 use chaos_traits::RolloutConfig;
-use chaos_traits::StateAccess;
+use chaos_traits::RuntimeAccess;
 use chaos_traits::TelemetrySource;
 
 use crate::chaos::Session;
@@ -81,9 +81,9 @@ impl EventEmitter for Session {
     }
 }
 
-impl StateAccess for Session {
-    fn state_db(&self) -> Option<Arc<StateRuntime>> {
-        self.services.state_db.clone()
+impl RuntimeAccess for Session {
+    fn runtime_db(&self) -> Option<Arc<StateRuntime>> {
+        self.services.runtime_db.clone()
     }
 }
 

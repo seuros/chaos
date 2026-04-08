@@ -9,7 +9,7 @@ pub mod catalog;
 pub mod config;
 pub mod event_bus;
 pub mod model;
-pub mod state_access;
+pub mod runtime_access;
 pub mod telemetry;
 
 // Re-export traits at crate root for convenience.
@@ -24,5 +24,5 @@ pub use model::ModelSampler;
 pub use model::SamplingMessage;
 pub use model::SamplingRequest;
 pub use model::SamplingResponse;
-pub use state_access::StateAccess;
+pub use runtime_access::RuntimeAccess;
 pub use telemetry::TelemetrySource;

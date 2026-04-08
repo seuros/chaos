@@ -18,12 +18,12 @@ use std::sync::Arc;
 use tracing::warn;
 use uuid::Uuid;
 
-/// Core-facing handle to the SQLite-backed state runtime.
-pub type StateDbHandle = Arc<chaos_proc::StateRuntime>;
+/// Core-facing handle to the SQLite-backed runtime DB.
+pub type RuntimeDbHandle = Arc<chaos_proc::StateRuntime>;
 
-/// Initialize the state runtime for thread state persistence. To only be used
+/// Initialize the runtime DB for thread persistence. To only be used
 /// inside `core`. The initialization should not be done anywhere else.
-pub(crate) async fn init(config: &Config) -> Option<StateDbHandle> {
+pub(crate) async fn init(config: &Config) -> Option<RuntimeDbHandle> {
     let runtime = match chaos_proc::StateRuntime::init(
         config.sqlite_home.clone(),
         config.model_provider_id.clone(),
@@ -33,27 +33,24 @@ pub(crate) async fn init(config: &Config) -> Option<StateDbHandle> {
         Ok(runtime) => runtime,
         Err(err) => {
             warn!(
-                "failed to initialize state runtime at {}: {err}",
+                "failed to initialize runtime db at {}: {err}",
                 config.sqlite_home.display()
             );
             return None;
         }
     };
 
-    // Spawn the process-wide cron scheduler if the chaos pool is available.
-    if let Some(chaos_pool) = runtime.chaos_pool() {
-        chaos_cron::spawn_scheduler(chaos_pool.to_owned(), chaos_cron::shell_executor());
-    }
+    chaos_cron::spawn_scheduler(runtime.pool().to_owned(), chaos_cron::shell_executor());
 
     Some(runtime)
 }
 
-/// Resolve the shared chaos.sqlite pool, opening it lazily when the state runtime
-/// is unavailable.
+/// Resolve the shared runtime SQLite pool, opening it lazily when the runtime
+/// DB handle is unavailable.
 ///
-/// Cron jobs live in the main chaos DB rather than the per-session runtime, so
+/// Cron jobs and other shared runtime features live in the main runtime DB, so
 /// callers should use this even for sessions that are otherwise ephemeral.
-pub async fn resolve_chaos_pool(
+pub async fn resolve_runtime_pool(
     existing_pool: Option<SqlitePool>,
     sqlite_home: &Path,
 ) -> Option<SqlitePool> {
@@ -61,12 +58,12 @@ pub async fn resolve_chaos_pool(
         return Some(pool);
     }
 
-    match chaos_proc::open_chaos_db(sqlite_home).await {
+    match chaos_proc::open_runtime_db(sqlite_home).await {
         Ok(pool) => Some(pool),
         Err(err) => {
             warn!(
-                "failed to open chaos db on demand at {}: {err}",
-                chaos_proc::chaos_db_path(sqlite_home).display()
+                "failed to open runtime db on demand at {}: {err}",
+                chaos_proc::runtime_db_path(sqlite_home).display()
             );
             None
         }
@@ -74,16 +71,16 @@ pub async fn resolve_chaos_pool(
 }
 
 /// Get the DB if the feature is enabled and the DB exists.
-pub async fn get_state_db(config: &Config) -> Option<StateDbHandle> {
-    get_state_db_for(config.sqlite_home.as_path(), &config.model_provider_id).await
+pub async fn get_runtime_db(config: &Config) -> Option<RuntimeDbHandle> {
+    get_runtime_db_for(config.sqlite_home.as_path(), &config.model_provider_id).await
 }
 
-/// Trait-friendly variant: accepts only the fields needed to open the state DB.
-pub async fn get_state_db_for(
+/// Trait-friendly variant: accepts only the fields needed to open the runtime DB.
+pub async fn get_runtime_db_for(
     sqlite_home: &Path,
     model_provider_id: &str,
-) -> Option<StateDbHandle> {
-    let state_path = chaos_proc::state_db_path(sqlite_home);
+) -> Option<RuntimeDbHandle> {
+    let state_path = chaos_proc::runtime_db_path(sqlite_home);
     if !tokio::fs::try_exists(&state_path).await.unwrap_or(false) {
         return None;
     }
@@ -94,11 +91,11 @@ pub async fn get_state_db_for(
     Some(runtime)
 }
 
-/// Open the state runtime when the SQLite file exists, without feature gating.
+/// Open the runtime DB when the SQLite file exists, without feature gating.
 ///
 /// This is used for parity checks during the SQLite migration phase.
-pub async fn open_if_present(chaos_home: &Path, default_provider: &str) -> Option<StateDbHandle> {
-    let db_path = chaos_proc::state_db_path(chaos_home);
+pub async fn open_if_present(chaos_home: &Path, default_provider: &str) -> Option<RuntimeDbHandle> {
+    let db_path = chaos_proc::runtime_db_path(chaos_home);
     if !tokio::fs::try_exists(&db_path).await.unwrap_or(false) {
         return None;
     }
@@ -147,7 +144,7 @@ fn parse_filename_timestamp(ts_str: &str) -> Option<Timestamp> {
     Some(Timestamp::from_second(ts.as_second()).unwrap_or(ts))
 }
 
-pub(crate) fn normalize_cwd_for_state_db(cwd: &Path) -> PathBuf {
+pub(crate) fn normalize_cwd_for_runtime_db(cwd: &Path) -> PathBuf {
     normalize_for_path_comparison(cwd).unwrap_or_else(|_| cwd.to_path_buf())
 }
 
@@ -167,7 +164,7 @@ pub async fn list_process_ids_db(
     let ctx = context?;
     if ctx.chaos_home() != chaos_home {
         warn!(
-            "state db chaos_home mismatch: expected {}, got {}",
+            "runtime db chaos_home mismatch: expected {}, got {}",
             ctx.chaos_home().display(),
             chaos_home.display()
         );
@@ -199,7 +196,7 @@ pub async fn list_process_ids_db(
     {
         Ok(ids) => Some(ids),
         Err(err) => {
-            warn!("state db list_process_ids failed during {stage}: {err}");
+            warn!("runtime db list_process_ids failed during {stage}: {err}");
             None
         }
     }
@@ -221,7 +218,7 @@ pub async fn list_processes_db(
     let ctx = context?;
     if ctx.chaos_home() != chaos_home {
         warn!(
-            "state db chaos_home mismatch: expected {}, got {}",
+            "runtime db chaos_home mismatch: expected {}, got {}",
             ctx.chaos_home().display(),
             chaos_home.display()
         );
@@ -254,7 +251,7 @@ pub async fn list_processes_db(
     {
         Ok(page) => Some(page),
         Err(err) => {
-            warn!("state db list_processes failed: {err}");
+            warn!("runtime db list_processes failed: {err}");
             None
         }
     }
@@ -270,7 +267,7 @@ pub async fn get_dynamic_tools(
     match ctx.get_dynamic_tools(process_id).await {
         Ok(tools) => tools,
         Err(err) => {
-            warn!("state db get_dynamic_tools failed during {stage}: {err}");
+            warn!("runtime db get_dynamic_tools failed during {stage}: {err}");
             None
         }
     }
@@ -287,7 +284,7 @@ pub async fn persist_dynamic_tools(
         return;
     };
     if let Err(err) = ctx.persist_dynamic_tools(process_id, tools).await {
-        warn!("state db persist_dynamic_tools failed during {stage}: {err}");
+        warn!("runtime db persist_dynamic_tools failed during {stage}: {err}");
     }
 }
 
@@ -300,11 +297,11 @@ pub async fn mark_process_memory_mode_polluted(
         return;
     };
     if let Err(err) = ctx.mark_process_memory_mode_polluted(process_id).await {
-        warn!("state db mark_process_memory_mode_polluted failed during {stage}: {err}");
+        warn!("runtime db mark_process_memory_mode_polluted failed during {stage}: {err}");
     }
 }
 
-/// Apply persisted session items incrementally to SQLite.
+/// Apply persisted session items incrementally to the runtime DB.
 #[allow(clippy::too_many_arguments)]
 pub async fn apply_rollout_items(
     context: Option<&chaos_proc::StateRuntime>,
@@ -323,13 +320,15 @@ pub async fn apply_rollout_items(
         None => match metadata::builder_from_items(items) {
             Some(builder) => builder,
             None => {
-                warn!("state db apply_rollout_items missing builder during {stage}");
-                warn!("state db discrepancy during apply_rollout_items: {stage}, missing_builder");
+                warn!("runtime db apply_rollout_items missing builder during {stage}");
+                warn!(
+                    "runtime db discrepancy during apply_rollout_items: {stage}, missing_builder"
+                );
                 return;
             }
         },
     };
-    builder.cwd = normalize_cwd_for_state_db(&builder.cwd);
+    builder.cwd = normalize_cwd_for_runtime_db(&builder.cwd);
     if let Err(err) = ctx
         .apply_rollout_items(
             &builder,
@@ -339,7 +338,7 @@ pub async fn apply_rollout_items(
         )
         .await
     {
-        warn!("state db apply_rollout_items failed during {stage}: {err}");
+        warn!("runtime db apply_rollout_items failed during {stage}: {err}");
     }
 }
 
@@ -359,12 +358,12 @@ pub async fn touch_process_updated_at(
         .await
         .unwrap_or_else(|err| {
             warn!(
-                "state db touch_process_updated_at failed during {stage} for {process_id}: {err}"
+                "runtime db touch_process_updated_at failed during {stage} for {process_id}: {err}"
             );
             false
         })
 }
 
 #[cfg(test)]
-#[path = "state_db_tests.rs"]
+#[path = "runtime_db_tests.rs"]
 mod tests;

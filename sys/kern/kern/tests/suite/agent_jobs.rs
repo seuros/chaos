@@ -249,7 +249,7 @@ async fn report_agent_job_result_rejects_wrong_thread() -> Result<()> {
 
     test.submit_turn("run job").await?;
 
-    let db = test.codex.state_db().expect("state db");
+    let db = test.codex.runtime_db().expect("runtime db");
     let output = fs::read_to_string(&output_path)?;
     let rows: Vec<&str> = output.lines().skip(1).collect();
     assert_eq!(rows.len(), 1);
@@ -418,7 +418,7 @@ async fn spawn_agents_on_csv_stop_halts_future_items() -> Result<()> {
                 .cloned()
         })
         .expect("job_id from csv");
-    let db = test.codex.state_db().expect("state db");
+    let db = test.codex.runtime_db().expect("runtime db");
     let job = db.get_agent_job(job_id.as_str()).await?.expect("job");
     assert_eq!(job.status, chaos_proc::AgentJobStatus::Cancelled);
     let progress = db.get_agent_job_progress(job_id.as_str()).await?;

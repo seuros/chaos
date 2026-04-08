@@ -1,8 +1,8 @@
-//! Tracing log export into the state SQLite database.
+//! Tracing log export into the ChaOS runtime SQLite database.
 //!
 //! This module provides a `tracing_subscriber::Layer` that captures events and
-//! inserts them into the dedicated `logs` SQLite database. The writer runs in a
-//! background task and batches inserts to keep logging overhead low.
+//! inserts them into the runtime `logs` table. The writer runs in a background
+//! task and batches inserts to keep logging overhead low.
 //!
 //! ## Usage
 //!
@@ -10,8 +10,8 @@
 //! use chaos_proc::log_db;
 //! use tracing_subscriber::prelude::*;
 //!
-//! # async fn example(state_db: std::sync::Arc<chaos_proc::StateRuntime>) {
-//! let layer = log_db::start(state_db);
+//! # async fn example(runtime_db: std::sync::Arc<chaos_proc::StateRuntime>) {
+//! let layer = log_db::start(runtime_db);
 //! let _ = tracing_subscriber::registry()
 //!     .with(layer)
 //!     .try_init();

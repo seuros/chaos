@@ -1,4 +1,12 @@
 use super::*;
+use tracing::warn;
+
+fn serialize_process_source_json(source: &str) -> String {
+    serde_json::to_string(source).unwrap_or_else(|err| {
+        warn!("failed to serialize process source as json string: {err}");
+        "\"\"".to_string()
+    })
+}
 
 impl StateRuntime {
     pub async fn get_process(
@@ -270,6 +278,7 @@ FROM processes
             r#"
 INSERT INTO processes (
     id,
+    source_json,
     created_at,
     updated_at,
     source,
@@ -283,7 +292,6 @@ INSERT INTO processes (
     approval_mode,
     tokens_used,
     first_user_message,
-    archived,
     archived_at,
     git_sha,
     git_branch,
@@ -294,6 +302,7 @@ ON CONFLICT(id) DO NOTHING
             "#,
         )
         .bind(metadata.id.to_string())
+        .bind(serialize_process_source_json(metadata.source.as_str()))
         .bind(datetime_to_epoch_seconds(metadata.created_at))
         .bind(datetime_to_epoch_seconds(metadata.updated_at))
         .bind(metadata.source.as_str())
@@ -307,7 +316,6 @@ ON CONFLICT(id) DO NOTHING
         .bind(metadata.approval_mode.as_str())
         .bind(metadata.tokens_used)
         .bind(metadata.first_user_message.as_deref().unwrap_or_default())
-        .bind(metadata.archived_at.is_some())
         .bind(metadata.archived_at.map(datetime_to_epoch_seconds))
         .bind(metadata.git_sha.as_deref())
         .bind(metadata.git_branch.as_deref())
@@ -382,6 +390,7 @@ WHERE id = ?
             r#"
 INSERT INTO processes (
     id,
+    source_json,
     created_at,
     updated_at,
     source,
@@ -395,7 +404,6 @@ INSERT INTO processes (
     approval_mode,
     tokens_used,
     first_user_message,
-    archived,
     archived_at,
     git_sha,
     git_branch,
@@ -403,6 +411,7 @@ INSERT INTO processes (
     memory_mode
 ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
 ON CONFLICT(id) DO UPDATE SET
+    source_json = excluded.source_json,
     created_at = excluded.created_at,
     updated_at = excluded.updated_at,
     source = excluded.source,
@@ -416,7 +425,6 @@ ON CONFLICT(id) DO UPDATE SET
     approval_mode = excluded.approval_mode,
     tokens_used = excluded.tokens_used,
     first_user_message = excluded.first_user_message,
-    archived = excluded.archived,
     archived_at = excluded.archived_at,
     git_sha = excluded.git_sha,
     git_branch = excluded.git_branch,
@@ -424,6 +432,7 @@ ON CONFLICT(id) DO UPDATE SET
             "#,
         )
         .bind(metadata.id.to_string())
+        .bind(serialize_process_source_json(metadata.source.as_str()))
         .bind(datetime_to_epoch_seconds(metadata.created_at))
         .bind(datetime_to_epoch_seconds(metadata.updated_at))
         .bind(metadata.source.as_str())
@@ -437,7 +446,6 @@ ON CONFLICT(id) DO UPDATE SET
         .bind(metadata.approval_mode.as_str())
         .bind(metadata.tokens_used)
         .bind(metadata.first_user_message.as_deref().unwrap_or_default())
-        .bind(metadata.archived_at.is_some())
         .bind(metadata.archived_at.map(datetime_to_epoch_seconds))
         .bind(metadata.git_sha.as_deref())
         .bind(metadata.git_branch.as_deref())
@@ -626,9 +634,9 @@ pub(super) fn push_process_filters<'a>(
 ) {
     builder.push(" WHERE 1 = 1");
     if archived_only {
-        builder.push(" AND archived = 1");
+        builder.push(" AND archived_at IS NOT NULL");
     } else {
-        builder.push(" AND archived = 0");
+        builder.push(" AND archived_at IS NULL");
     }
     builder.push(" AND first_user_message <> ''");
     if !allowed_sources.is_empty() {
@@ -708,7 +716,7 @@ mod tests {
         let chaos_home = unique_temp_dir();
         let runtime = StateRuntime::init(chaos_home.clone(), "test-provider".to_string())
             .await
-            .expect("state db should initialize");
+            .expect("runtime db should initialize");
         let process_id = ProcessId::from_string("00000000-0000-0000-0000-000000000123")
             .expect("valid thread id");
         let mut metadata = test_process_metadata(&chaos_home, process_id, chaos_home.clone());
@@ -746,7 +754,7 @@ mod tests {
         let chaos_home = unique_temp_dir();
         let runtime = StateRuntime::init(chaos_home.clone(), "test-provider".to_string())
             .await
-            .expect("state db should initialize");
+            .expect("runtime db should initialize");
         let process_id = ProcessId::from_string("00000000-0000-0000-0000-000000000456")
             .expect("valid thread id");
         let metadata = test_process_metadata(&chaos_home, process_id, chaos_home.clone());
@@ -794,7 +802,7 @@ mod tests {
         let chaos_home = unique_temp_dir();
         let runtime = StateRuntime::init(chaos_home.clone(), "test-provider".to_string())
             .await
-            .expect("state db should initialize");
+            .expect("runtime db should initialize");
         let process_id = ProcessId::from_string("00000000-0000-0000-0000-000000000457")
             .expect("valid thread id");
         let mut metadata = test_process_metadata(&chaos_home, process_id, chaos_home.clone());
@@ -854,7 +862,7 @@ mod tests {
         let chaos_home = unique_temp_dir();
         let runtime = StateRuntime::init(chaos_home.clone(), "test-provider".to_string())
             .await
-            .expect("state db should initialize");
+            .expect("runtime db should initialize");
         let process_id = ProcessId::from_string("00000000-0000-0000-0000-000000000789")
             .expect("valid thread id");
         let metadata = test_process_metadata(&chaos_home, process_id, chaos_home.clone());
@@ -912,7 +920,7 @@ mod tests {
         let chaos_home = unique_temp_dir();
         let runtime = StateRuntime::init(chaos_home.clone(), "test-provider".to_string())
             .await
-            .expect("state db should initialize");
+            .expect("runtime db should initialize");
         let process_id = ProcessId::from_string("00000000-0000-0000-0000-000000000791")
             .expect("valid thread id");
 
@@ -957,7 +965,7 @@ mod tests {
         let chaos_home = unique_temp_dir();
         let runtime = StateRuntime::init(chaos_home.clone(), "test-provider".to_string())
             .await
-            .expect("state db should initialize");
+            .expect("runtime db should initialize");
         let process_id = ProcessId::from_string("00000000-0000-0000-0000-000000000790")
             .expect("valid thread id");
         let mut metadata = test_process_metadata(&chaos_home, process_id, chaos_home.clone());
@@ -991,7 +999,7 @@ mod tests {
         let chaos_home = unique_temp_dir();
         let runtime = StateRuntime::init(chaos_home.clone(), "test-provider".to_string())
             .await
-            .expect("state db should initialize");
+            .expect("runtime db should initialize");
         let process_id = ProcessId::from_string("00000000-0000-0000-0000-000000000791")
             .expect("valid thread id");
         let mut metadata = test_process_metadata(&chaos_home, process_id, chaos_home.clone());
@@ -1028,7 +1036,7 @@ mod tests {
         let chaos_home = unique_temp_dir();
         let runtime = StateRuntime::init(chaos_home.clone(), "test-provider".to_string())
             .await
-            .expect("state db should initialize");
+            .expect("runtime db should initialize");
         let process_id = ProcessId::from_string("00000000-0000-0000-0000-000000000792")
             .expect("valid thread id");
         let metadata = test_process_metadata(&chaos_home, process_id, chaos_home.clone());

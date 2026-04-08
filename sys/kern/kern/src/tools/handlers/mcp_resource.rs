@@ -247,16 +247,16 @@ struct KernelBuiltinResourceBackend<'a> {
 
 impl builtin_mcp_resources::ChaosBuiltinResourceBackend for KernelBuiltinResourceBackend<'_> {
     async fn sessions_json(&self) -> Result<String, String> {
-        let state_db = self.session.state_db();
-        builtin_mcp_resources::sessions_json_from_state_db(state_db.as_ref()).await
+        let runtime_db = self.session.runtime_db();
+        builtin_mcp_resources::sessions_json_from_runtime_db(runtime_db.as_ref()).await
     }
 
     async fn session_detail_json(
         &self,
         process_id: chaos_ipc::ProcessId,
     ) -> Result<String, String> {
-        let state_db = self.session.state_db();
-        builtin_mcp_resources::session_detail_json_from_state_db(state_db.as_ref(), process_id)
+        let runtime_db = self.session.runtime_db();
+        builtin_mcp_resources::session_detail_json_from_runtime_db(runtime_db.as_ref(), process_id)
             .await
     }
 
@@ -270,9 +270,7 @@ async fn resolve_chaos_storage_provider(
     session: &Session,
     turn: &TurnContext,
 ) -> Result<chaos_storage::ChaosStorageProvider, String> {
-    let existing_pool = session
-        .state_db()
-        .and_then(|db| db.chaos_pool().map(std::borrow::ToOwned::to_owned));
+    let existing_pool = session.runtime_db().map(|db| db.pool().to_owned());
     chaos_storage::ChaosStorageProvider::from_optional_sqlite(
         existing_pool.as_ref(),
         Some(turn.config.sqlite_home.as_path()),

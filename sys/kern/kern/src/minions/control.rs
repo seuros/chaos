@@ -7,10 +7,10 @@ use crate::minions::role::resolve_role_config;
 use crate::minions::status::is_final;
 use crate::process_table::ProcessTableState;
 use crate::rollout::RolloutRecorder;
+use crate::runtime_db;
 use crate::session_prefix::format_subagent_context_line;
 use crate::session_prefix::format_subagent_notification_message;
 use crate::shell_snapshot::ShellSnapshot;
-use crate::state_db;
 use chaos_ipc::ProcessId;
 use chaos_ipc::models::FunctionCallOutputPayload;
 use chaos_ipc::models::ResponseItem;
@@ -206,8 +206,8 @@ impl AgentControl {
                 // Collab resume callers rebuild a placeholder ProcessSpawn source. Rehydrate the
                 // stored nickname/role from sqlite when available; otherwise leave both unset.
                 let (resumed_agent_nickname, resumed_agent_role) =
-                    if let Some(state_db_ctx) = state_db::get_state_db(&config).await {
-                        match state_db_ctx.get_process(process_id).await {
+                    if let Some(runtime_db_ctx) = runtime_db::get_runtime_db(&config).await {
+                        match runtime_db_ctx.get_process(process_id).await {
                             Ok(Some(metadata)) => (metadata.agent_nickname, metadata.agent_role),
                             Ok(None) | Err(_) => (None, None),
                         }

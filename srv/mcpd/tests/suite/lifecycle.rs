@@ -4,7 +4,7 @@ use anyhow::Result;
 use chaos_cron::CreateJobParams;
 use chaos_cron::CronScope;
 use chaos_cron::CronStore;
-use chaos_proc::open_chaos_db;
+use chaos_proc::open_runtime_db;
 use mcp_host::protocol::types::ErrorCode;
 use mcp_host::protocol::types::JsonRpcMessage;
 use pretty_assertions::assert_eq;
@@ -236,11 +236,11 @@ async fn cron_resource_can_be_read_after_initialize() -> Result<()> {
 }
 
 #[tokio::test(flavor = "multi_thread", worker_threads = 2)]
-async fn cron_resource_reads_jobs_from_chaos_db_even_without_preopened_state_runtime() -> Result<()>
-{
+async fn cron_resource_reads_jobs_from_runtime_db_even_without_preopened_state_runtime()
+-> Result<()> {
     let (chaos_home, mut mcp) = spawn_mcp_process().await?;
 
-    let pool = open_chaos_db(chaos_home.path()).await?;
+    let pool = open_runtime_db(chaos_home.path()).await?;
     let store = CronStore::new(pool);
     store
         .create(&CreateJobParams {

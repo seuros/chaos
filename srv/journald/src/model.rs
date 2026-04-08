@@ -10,8 +10,6 @@ pub type OwnerId = String;
 pub type LeaseToken = String;
 pub type EntrySeq = i64;
 
-pub const SQLITE_DB_FILENAME: &str = "journal_1.sqlite";
-
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 pub struct ParentRef {
     pub parent_process_id: ProcessId,

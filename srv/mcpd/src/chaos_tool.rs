@@ -40,8 +40,8 @@ pub(crate) struct ChaosMcpServer {
     pub(crate) session_processes: Arc<Mutex<HashMap<String, ProcessId>>>,
     /// Caches process names from ProcessNameUpdated events.
     pub(crate) process_names: Arc<Mutex<HashMap<ProcessId, String>>>,
-    /// State database for persisted process metadata.
-    pub(crate) state_runtime: Option<chaos_kern::state_db::StateDbHandle>,
+    /// Runtime database for persisted process metadata.
+    pub(crate) runtime_db: Option<chaos_kern::runtime_db::RuntimeDbHandle>,
 }
 
 // ---------------------------------------------------------------------------

@@ -11,14 +11,14 @@ use owo_colors::OwoColorize;
 
 #[derive(Debug, Parser)]
 #[command(name = "codex-state-logs")]
-#[command(about = "Tail Chaos logs from the dedicated logs SQLite DB with simple filters")]
+#[command(about = "Tail Chaos logs from the runtime SQLite DB with simple filters")]
 struct Args {
     /// Path to the ChaOS home directory. Defaults to `CHAOS_HOME`, then
     /// `~/.chaos`.
     #[arg(long)]
     chaos_home: Option<PathBuf>,
 
-    /// Direct path to the logs SQLite database. Overrides --chaos-home.
+    /// Direct path to the runtime SQLite database. Overrides --chaos-home.
     #[arg(long)]
     db: Option<PathBuf>,
 
@@ -113,7 +113,7 @@ fn resolve_db_path(args: &Args) -> anyhow::Result<PathBuf> {
         .clone()
         .or_else(resolve_home_from_env)
         .unwrap_or_else(default_codex_home);
-    Ok(chaos_proc::logs_db_path(chaos_home.as_path()))
+    Ok(chaos_proc::runtime_db_path(chaos_home.as_path()))
 }
 
 fn resolve_home_from_env() -> Option<PathBuf> {

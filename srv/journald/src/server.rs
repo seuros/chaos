@@ -6,6 +6,7 @@ use std::sync::Arc;
 
 use anyhow::Context as _;
 use anyhow::Result;
+use chaos_proc::runtime_db_path;
 use rama::graceful;
 use rama::http::server::HttpServer;
 use rama::rt::Executor;
@@ -13,7 +14,6 @@ use tracing::error;
 use tracing::info;
 
 use crate::JournalRpcServer;
-use crate::SQLITE_DB_FILENAME;
 use crate::SqliteJournalStore;
 
 const DEFAULT_SOCKET_FILENAME: &str = "journald.sock";
@@ -137,7 +137,7 @@ fn default_socket_path_in() -> PathBuf {
 }
 
 fn sqlite_db_path_in(chaos_home: &Path) -> PathBuf {
-    chaos_home.join(SQLITE_DB_FILENAME)
+    runtime_db_path(chaos_home)
 }
 
 async fn remove_stale_socket(path: &Path) -> Result<()> {

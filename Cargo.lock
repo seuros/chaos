@@ -1263,6 +1263,7 @@ version = "47.0.0"
 dependencies = [
  "anyhow",
  "chaos-ipc",
+ "chaos-proc",
  "chaos-pwd",
  "clap",
  "jiff",

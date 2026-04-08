@@ -8,6 +8,7 @@ publish.workspace = true
 
 [dependencies]
 anyhow = { workspace = true }
+chaos-proc = { workspace = true }
 chaos-ipc = { workspace = true }
 chaos-pwd = { workspace = true }
 clap = { workspace = true, features = ["derive"] }

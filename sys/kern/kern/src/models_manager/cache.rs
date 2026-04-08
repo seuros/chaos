@@ -1,6 +1,6 @@
 use chaos_ipc::openai_models::ModelInfo;
-use chaos_proc::chaos_db_path;
-use chaos_proc::open_chaos_db;
+use chaos_proc::open_runtime_db;
+use chaos_proc::runtime_db_path;
 use jiff::Timestamp;
 use serde::Deserialize;
 use serde::Serialize;
@@ -14,7 +14,7 @@ use tokio::sync::OnceCell;
 use tracing::error;
 use tracing::info;
 
-/// Manages loading and saving of model catalogs in the Chaos-native SQLite DB.
+/// Manages loading and saving of model catalogs in the shared runtime SQLite DB.
 #[derive(Debug)]
 pub(crate) struct ModelsCacheManager {
     sqlite_home: PathBuf,
@@ -23,7 +23,7 @@ pub(crate) struct ModelsCacheManager {
 }
 
 impl ModelsCacheManager {
-    /// Create a new cache manager backed by the Chaos-native SQLite database.
+    /// Create a new cache manager backed by the shared runtime SQLite database.
     pub(crate) fn new(sqlite_home: PathBuf, cache_ttl: Duration) -> Self {
         Self {
             sqlite_home,
@@ -39,7 +39,7 @@ impl ModelsCacheManager {
         expected_version: &str,
         expected_scope: &ModelsCacheScope,
     ) -> Option<ModelsCache> {
-        let cache_db_path = chaos_db_path(&self.sqlite_home);
+        let cache_db_path = runtime_db_path(&self.sqlite_home);
         info!(
                 cache_db_path = %cache_db_path.display(),
                 expected_version,
@@ -118,7 +118,7 @@ impl ModelsCacheManager {
     }
 
     async fn load(&self, scope: &ModelsCacheScope) -> io::Result<Option<ModelsCache>> {
-        let Some(pool) = self.chaos_pool().await else {
+        let Some(pool) = self.runtime_pool().await else {
             return Ok(None);
         };
 
@@ -160,8 +160,8 @@ impl ModelsCacheManager {
                 "cache scope is required",
             ));
         };
-        let Some(pool) = self.chaos_pool().await else {
-            return Err(io::Error::other("chaos db unavailable"));
+        let Some(pool) = self.runtime_pool().await else {
+            return Err(io::Error::other("runtime db unavailable"));
         };
         let models_json = serde_json::to_string(&cache.models)
             .map_err(|err| io::Error::new(ErrorKind::InvalidData, err.to_string()))?;
@@ -188,15 +188,15 @@ impl ModelsCacheManager {
         .map_err(io::Error::other)
     }
 
-    async fn chaos_pool(&self) -> Option<SqlitePool> {
+    async fn runtime_pool(&self) -> Option<SqlitePool> {
         self.chaos_pool
             .get_or_init(|| async {
-                match open_chaos_db(&self.sqlite_home).await {
+                match open_runtime_db(&self.sqlite_home).await {
                     Ok(pool) => Some(pool),
                     Err(err) => {
                         error!(
-                            "failed to open chaos db for model cache at {}: {err}",
-                            chaos_db_path(&self.sqlite_home).display()
+                            "failed to open runtime db for model cache at {}: {err}",
+                            runtime_db_path(&self.sqlite_home).display()
                         );
                         None
                     }
@@ -242,7 +242,7 @@ impl ModelsCacheManager {
 
     #[cfg(test)]
     async fn load_first_for_test(&self) -> io::Result<Option<ModelsCache>> {
-        let Some(pool) = self.chaos_pool().await else {
+        let Some(pool) = self.runtime_pool().await else {
             return Ok(None);
         };
         let row = sqlx::query(

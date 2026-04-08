@@ -194,6 +194,7 @@ use crate::rollout::RolloutRecorder;
 use crate::rollout::RolloutRecorderParams;
 use crate::rollout::map_session_init_error;
 use crate::rollout::policy::EventPersistenceMode;
+use crate::runtime_db;
 use crate::shell;
 use crate::shell_snapshot::ShellSnapshot;
 use crate::skills::SkillError;
@@ -206,7 +207,6 @@ use crate::skills::collect_explicit_skill_mentions;
 use crate::state::ActiveTurn;
 use crate::state::SessionServices;
 use crate::state::SessionState;
-use crate::state_db;
 use crate::tasks::GhostSnapshotTask;
 use crate::tasks::ReviewTask;
 use crate::tasks::SessionTask;
@@ -399,9 +399,13 @@ impl Chaos {
             };
             match process_id {
                 Some(process_id) => {
-                    let state_db_ctx = state_db::get_state_db(&config).await;
-                    state_db::get_dynamic_tools(state_db_ctx.as_deref(), process_id, "codex_spawn")
-                        .await
+                    let runtime_db_ctx = runtime_db::get_runtime_db(&config).await;
+                    runtime_db::get_dynamic_tools(
+                        runtime_db_ctx.as_deref(),
+                        process_id,
+                        "codex_spawn",
+                    )
+                    .await
                 }
                 None => None,
             }
@@ -583,8 +587,8 @@ impl Chaos {
         state.session_configuration.process_config_snapshot()
     }
 
-    pub(crate) fn state_db(&self) -> Option<state_db::StateDbHandle> {
-        self.session.state_db()
+    pub(crate) fn runtime_db(&self) -> Option<runtime_db::RuntimeDbHandle> {
+        self.session.runtime_db()
     }
 
     pub(crate) fn enabled(&self, feature: Feature) -> bool {
@@ -1268,15 +1272,15 @@ impl Session {
             if config.ephemeral {
                 Ok::<_, anyhow::Error>((None, None))
             } else {
-                let state_db_ctx = state_db::init(&config).await;
+                let runtime_db_ctx = runtime_db::init(&config).await;
                 let rollout_recorder = RolloutRecorder::new(
                     &config,
                     rollout_params,
-                    state_db_ctx.clone(),
+                    runtime_db_ctx.clone(),
                     state_builder.clone(),
                 )
                 .await?;
-                Ok((Some(rollout_recorder), state_db_ctx))
+                Ok((Some(rollout_recorder), runtime_db_ctx))
             }
         }
         .instrument(info_span!(
@@ -1588,7 +1592,7 @@ impl Session {
             agent_control,
             network_proxy,
             network_approval: Arc::clone(&network_approval),
-            state_db: state_db_ctx.clone(),
+            runtime_db: state_db_ctx.clone(),
             hallucinate,
             model_client: ModelClient::new(
                 Some(Arc::clone(&auth_manager)),
@@ -1773,8 +1777,8 @@ impl Session {
         self.tx_event.clone()
     }
 
-    pub(crate) fn state_db(&self) -> Option<state_db::StateDbHandle> {
-        self.services.state_db.clone()
+    pub(crate) fn runtime_db(&self) -> Option<runtime_db::RuntimeDbHandle> {
+        self.services.runtime_db.clone()
     }
 
     /// Ensure persisted session history writes are durably flushed.
@@ -3517,10 +3521,11 @@ mod handlers {
     pub async fn add_to_history(sess: &Arc<Session>, config: &Arc<Config>, text: String) {
         let id = sess.conversation_id;
         let config = Arc::clone(config);
-        let state_db = sess.services.state_db.clone();
+        let runtime_db = sess.services.runtime_db.clone();
         tokio::spawn(async move {
             if let Err(e) =
-                crate::message_history::append_entry(&text, &id, state_db.as_deref(), &config).await
+                crate::message_history::append_entry(&text, &id, runtime_db.as_deref(), &config)
+                    .await
             {
                 warn!("failed to append to message history: {e}");
             }
@@ -3535,12 +3540,12 @@ mod handlers {
         log_id: u64,
     ) {
         let sess_clone = Arc::clone(sess);
-        let state_db = sess.services.state_db.clone();
+        let runtime_db = sess.services.runtime_db.clone();
         let _config = Arc::clone(config);
 
         tokio::spawn(async move {
             let entry_opt =
-                crate::message_history::lookup(log_id, offset, state_db.as_deref()).await;
+                crate::message_history::lookup(log_id, offset, runtime_db.as_deref()).await;
 
             let event = Event {
                 id: sub_id,

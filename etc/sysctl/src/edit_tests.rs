@@ -16,14 +16,14 @@ fn blocking_set_model_top_level() {
         chaos_home,
         None,
         &[ConfigEdit::SetModel {
-            model: Some("gpt-5.1-codex".to_string()),
+            model: Some("serpent".to_string()),
             effort: Some(ReasoningEffort::High),
         }],
     )
     .expect("persist");
 
     let contents = std::fs::read_to_string(chaos_home.join(CONFIG_TOML_FILE)).expect("read config");
-    let expected = r#"model = "gpt-5.1-codex"
+    let expected = r#"model = "serpent"
 model_reasoning_effort = "high"
 "#;
     assert_eq!(contents, expected);
@@ -50,7 +50,7 @@ fn builder_with_edits_applies_custom_paths() {
 fn set_model_availability_nux_count_writes_shown_count() {
     let tmp = tempdir().expect("tmpdir");
     let chaos_home = tmp.path();
-    let shown_count = HashMap::from([("gpt-foo".to_string(), 4)]);
+    let shown_count = HashMap::from([("serpent".to_string(), 4)]);
 
     ConfigEditsBuilder::new(chaos_home)
         .set_model_availability_nux_count(&shown_count)
@@ -59,7 +59,7 @@ fn set_model_availability_nux_count_writes_shown_count() {
 
     let contents = std::fs::read_to_string(chaos_home.join(CONFIG_TOML_FILE)).expect("read config");
     let expected = r#"[tui.model_availability_nux]
-gpt-foo = 4
+serpent = 4
 "#;
     assert_eq!(contents, expected);
 }
@@ -120,7 +120,7 @@ fn blocking_set_model_preserves_inline_table_contents() {
         chaos_home.join(CONFIG_TOML_FILE),
         r#"profile = "fast"
 
-profiles = { fast = { model = "gpt-4o", sandbox_mode = "strict" } }
+profiles = { fast = { model = "gordon", sandbox_mode = "strict" } }
 "#,
     )
     .expect("seed");
@@ -174,7 +174,7 @@ fn blocking_set_model_writes_through_symlink_chain() {
         chaos_home,
         None,
         &[ConfigEdit::SetModel {
-            model: Some("gpt-5.1-codex".to_string()),
+            model: Some("serpent".to_string()),
             effort: Some(ReasoningEffort::High),
         }],
     )
@@ -184,7 +184,7 @@ fn blocking_set_model_writes_through_symlink_chain() {
     assert!(meta.file_type().is_symlink());
 
     let contents = std::fs::read_to_string(&target_path).expect("read target");
-    let expected = r#"model = "gpt-5.1-codex"
+    let expected = r#"model = "serpent"
 model_reasoning_effort = "high"
 "#;
     assert_eq!(contents, expected);
@@ -207,7 +207,7 @@ fn blocking_set_model_replaces_symlink_on_cycle() {
         chaos_home,
         None,
         &[ConfigEdit::SetModel {
-            model: Some("gpt-5.1-codex".to_string()),
+            model: Some("serpent".to_string()),
             effort: None,
         }],
     )
@@ -217,7 +217,7 @@ fn blocking_set_model_replaces_symlink_on_cycle() {
     assert!(!meta.file_type().is_symlink());
 
     let contents = std::fs::read_to_string(&config_path).expect("read config");
-    let expected = r#"model = "gpt-5.1-codex"
+    let expected = r#"model = "serpent"
 "#;
     assert_eq!(contents, expected);
 }
@@ -292,7 +292,7 @@ fn blocking_clear_model_removes_inline_table_entry() {
         chaos_home.join(CONFIG_TOML_FILE),
         r#"profile = "fast"
 
-profiles = { fast = { model = "gpt-4o", sandbox_mode = "strict" } }
+profiles = { fast = { model = "gordon", sandbox_mode = "strict" } }
 "#,
     )
     .expect("seed");
@@ -358,7 +358,7 @@ fn blocking_set_model_with_explicit_profile() {
     std::fs::write(
         chaos_home.join(CONFIG_TOML_FILE),
         r#"[profiles."team a"]
-model = "gpt-5.1-codex"
+model = "serpent"
 "#,
     )
     .expect("seed");
@@ -777,13 +777,13 @@ async fn async_builder_set_model_persists() {
     let chaos_home = tmp.path().to_path_buf();
 
     ConfigEditsBuilder::new(&chaos_home)
-        .set_model(Some("gpt-5.1-codex"), Some(ReasoningEffort::High))
+        .set_model(Some("serpent"), Some(ReasoningEffort::High))
         .apply()
         .await
         .expect("persist");
 
     let contents = std::fs::read_to_string(chaos_home.join(CONFIG_TOML_FILE)).expect("read config");
-    let expected = r#"model = "gpt-5.1-codex"
+    let expected = r#"model = "serpent"
 model_reasoning_effort = "high"
 "#;
     assert_eq!(contents, expected);
@@ -805,11 +805,11 @@ model_reasoning_effort = "low"
         std::fs::read_to_string(chaos_home.join(CONFIG_TOML_FILE)).expect("read config");
     assert_eq!(contents, initial_expected);
 
-    let updated_expected = r#"model = "gpt-5.1-codex"
+    let updated_expected = r#"model = "serpent"
 model_reasoning_effort = "high"
 "#;
     ConfigEditsBuilder::new(chaos_home)
-        .set_model(Some("gpt-5.1-codex"), Some(ReasoningEffort::High))
+        .set_model(Some("serpent"), Some(ReasoningEffort::High))
         .apply_blocking()
         .expect("persist update");
     contents = std::fs::read_to_string(chaos_home.join(CONFIG_TOML_FILE)).expect("read config");

@@ -906,7 +906,13 @@ mod tests {
             persisted.first_user_message.as_deref(),
             Some("newer preview")
         );
-        assert_eq!(datetime_to_epoch_seconds(persisted.updated_at), updated_at);
+        // The processes_touch trigger advances updated_at on any UPDATE
+        // where it was not explicitly changed, so it will be >= the value
+        // we manually set.
+        assert!(
+            datetime_to_epoch_seconds(persisted.updated_at) >= updated_at,
+            "updated_at should advance (trigger) or stay the same"
+        );
         assert_eq!(persisted.git_sha.as_deref(), Some("abc123"));
         assert_eq!(persisted.git_branch.as_deref(), Some("feature/branch"));
         assert_eq!(

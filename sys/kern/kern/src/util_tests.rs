@@ -40,7 +40,7 @@ fn feedback_tags_macro_compiles() {
     #[derive(Debug)]
     struct OnlyDebug;
 
-    feedback_tags!(model = "gpt-5", cached = true, debug_only = OnlyDebug);
+    feedback_tags!(model = "serpent", cached = true, debug_only = OnlyDebug);
 }
 
 #[derive(Default)]

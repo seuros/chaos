@@ -147,8 +147,8 @@ web_search = false
 fn config_toml_deserializes_model_availability_nux() {
     let toml = r#"
 [tui.model_availability_nux]
-"gpt-foo" = 2
-"gpt-bar" = 4
+"serpent" = 2
+"gordon" = 4
 "#;
     let cfg: ConfigToml =
         toml::from_str(toml).expect("TOML deserialization should succeed for TUI NUX");
@@ -163,10 +163,9 @@ fn config_toml_deserializes_model_availability_nux() {
             status_line: None,
             theme: None,
             model_availability_nux: ModelAvailabilityNuxConfig {
-                shown_count: HashMap::from([
-                    ("gpt-bar".to_string(), 4),
-                    ("gpt-foo".to_string(), 2),
-                ]),
+                shown_count: HashMap::from(
+                    [("gordon".to_string(), 4), ("serpent".to_string(), 2),]
+                ),
             },
         }
     );
@@ -685,10 +684,10 @@ async fn project_profile_overrides_user_profile() -> std::io::Result<()> {
 profile = "global"
 
 [profiles.global]
-model = "gpt-global"
+model = "serpent"
 
 [profiles.project]
-model = "gpt-project"
+model = "gordon"
 
 [projects."{workspace_key}"]
 trust_level = "trusted"
@@ -714,7 +713,7 @@ profile = "project"
         .await?;
 
     assert_eq!(config.active_profile.as_deref(), Some("project"));
-    assert_eq!(config.model.as_deref(), Some("gpt-project"));
+    assert_eq!(config.model.as_deref(), Some("gordon"));
 
     Ok(())
 }
@@ -908,7 +907,7 @@ approval_policy = "supervised"
 
 # Can be used to determine which profile to use if not specified by
 # `ConfigOverrides`.
-profile = "gpt3"
+profile = "serpent"
 
 [analytics]
 enabled = true
@@ -929,8 +928,8 @@ approval_policy = "headless"
 model_reasoning_effort = "high"
 model_reasoning_summary = "detailed"
 
-[profiles.gpt3]
-model = "gpt-3.5-turbo"
+[profiles.serpent]
+model = "serpent"
 model_provider = "openai-custom"
 
 [profiles.zdr]
@@ -941,8 +940,8 @@ approval_policy = "interactive"
 [profiles.zdr.analytics]
 enabled = false
 
-[profiles.gpt5]
-model = "gpt-5.1"
+[profiles.gordon]
+model = "gordon"
 model_provider = "openai"
 approval_policy = "interactive"
 model_reasoning_effort = "high"
@@ -1145,21 +1144,21 @@ fn metrics_exporter_defaults_to_none_when_missing() -> std::io::Result<()> {
 }
 
 #[test]
-fn test_precedence_fixture_with_gpt3_profile() -> std::io::Result<()> {
+fn test_precedence_fixture_with_serpent_profile() -> std::io::Result<()> {
     let fixture = create_test_fixture()?;
 
-    let gpt3_profile_overrides = ConfigOverrides {
-        config_profile: Some("gpt3".to_string()),
+    let serpent_profile_overrides = ConfigOverrides {
+        config_profile: Some("serpent".to_string()),
         cwd: Some(fixture.cwd()),
         ..Default::default()
     };
-    let gpt3_profile_config = Config::load_from_base_config_with_overrides(
+    let serpent_profile_config = Config::load_from_base_config_with_overrides(
         fixture.cfg.clone(),
-        gpt3_profile_overrides,
+        serpent_profile_overrides,
         fixture.chaos_home(),
     )?;
-    let expected_gpt3_profile_config = Config {
-        model: Some("gpt-3.5-turbo".to_string()),
+    let expected_serpent_profile_config = Config {
+        model: Some("serpent".to_string()),
         review_model: None,
         model_context_window: None,
         model_auto_compact_token_limit: None,
@@ -1237,7 +1236,7 @@ fn test_precedence_fixture_with_gpt3_profile() -> std::io::Result<()> {
         background_terminal_max_timeout: DEFAULT_MAX_BACKGROUND_TERMINAL_TIMEOUT_MS,
         ghost_snapshot: GhostSnapshotConfig::default(),
         features: Features::with_defaults().into(),
-        active_profile: Some("gpt3".to_string()),
+        active_profile: Some("serpent".to_string()),
         active_project: ProjectConfig { trust_level: None },
         notices: Default::default(),
         disable_paste_burst: false,
@@ -1254,10 +1253,10 @@ fn test_precedence_fixture_with_gpt3_profile() -> std::io::Result<()> {
         disable_user_scripts: false,
     };
 
-    assert_eq!(expected_gpt3_profile_config, gpt3_profile_config);
+    assert_eq!(expected_serpent_profile_config, serpent_profile_config);
 
     // Verify that loading without specifying a profile in ConfigOverrides
-    // uses the default profile from the config file (which is "gpt3").
+    // uses the default profile from the config file (which is "serpent").
     let default_profile_overrides = ConfigOverrides {
         cwd: Some(fixture.cwd()),
         ..Default::default()
@@ -1269,7 +1268,7 @@ fn test_precedence_fixture_with_gpt3_profile() -> std::io::Result<()> {
         fixture.chaos_home(),
     )?;
 
-    assert_eq!(expected_gpt3_profile_config, default_profile_config);
+    assert_eq!(expected_serpent_profile_config, default_profile_config);
     Ok(())
 }
 
@@ -1389,21 +1388,21 @@ fn test_precedence_fixture_with_zdr_profile() -> std::io::Result<()> {
 }
 
 #[test]
-fn test_precedence_fixture_with_gpt5_profile() -> std::io::Result<()> {
+fn test_precedence_fixture_with_gordon_profile() -> std::io::Result<()> {
     let fixture = create_test_fixture()?;
 
-    let gpt5_profile_overrides = ConfigOverrides {
-        config_profile: Some("gpt5".to_string()),
+    let gordon_profile_overrides = ConfigOverrides {
+        config_profile: Some("gordon".to_string()),
         cwd: Some(fixture.cwd()),
         ..Default::default()
     };
-    let gpt5_profile_config = Config::load_from_base_config_with_overrides(
+    let gordon_profile_config = Config::load_from_base_config_with_overrides(
         fixture.cfg.clone(),
-        gpt5_profile_overrides,
+        gordon_profile_overrides,
         fixture.chaos_home(),
     )?;
-    let expected_gpt5_profile_config = Config {
-        model: Some("gpt-5.1".to_string()),
+    let expected_gordon_profile_config = Config {
+        model: Some("gordon".to_string()),
         review_model: None,
         model_context_window: None,
         model_auto_compact_token_limit: None,
@@ -1481,7 +1480,7 @@ fn test_precedence_fixture_with_gpt5_profile() -> std::io::Result<()> {
         background_terminal_max_timeout: DEFAULT_MAX_BACKGROUND_TERMINAL_TIMEOUT_MS,
         ghost_snapshot: GhostSnapshotConfig::default(),
         features: Features::with_defaults().into(),
-        active_profile: Some("gpt5".to_string()),
+        active_profile: Some("gordon".to_string()),
         active_project: ProjectConfig { trust_level: None },
         notices: Default::default(),
         disable_paste_burst: false,
@@ -1498,7 +1497,7 @@ fn test_precedence_fixture_with_gpt5_profile() -> std::io::Result<()> {
         disable_user_scripts: false,
     };
 
-    assert_eq!(expected_gpt5_profile_config, gpt5_profile_config);
+    assert_eq!(expected_gordon_profile_config, gordon_profile_config);
 
     Ok(())
 }

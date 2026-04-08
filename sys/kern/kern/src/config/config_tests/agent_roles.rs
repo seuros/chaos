@@ -49,7 +49,7 @@ async fn agent_role_relative_config_file_resolves_against_config_toml() -> std::
     .await?;
     tokio::fs::write(
         &role_config_path,
-        "minion_instructions = \"Research carefully\"\nmodel = \"gpt-5\"",
+        "minion_instructions = \"Research carefully\"\nmodel = \"serpent\"",
     )
     .await?;
     tokio::fs::write(
@@ -102,7 +102,7 @@ async fn agent_role_file_metadata_overrides_config_toml_metadata() -> std::io::R
 description = "Role metadata from file"
 nickname_candidates = ["Hypatia"]
 minion_instructions = "Research carefully"
-model = "gpt-5"
+model = "serpent"
 "#,
     )
     .await?;
@@ -164,7 +164,7 @@ trust_level = "trusted"
         r#"
 name = "researcher"
 description = "Role metadata from file"
-model = "gpt-5"
+model = "serpent"
 "#,
     )
     .await?;
@@ -174,7 +174,7 @@ model = "gpt-5"
 name = "reviewer"
 description = "Review role"
 minion_instructions = "Review carefully"
-model = "gpt-5"
+model = "serpent"
 "#,
     )
     .await?;
@@ -218,7 +218,7 @@ async fn legacy_agent_role_config_file_allows_missing_minion_instructions() -> s
     tokio::fs::write(
         &role_config_path,
         r#"
-model = "gpt-5"
+model = "serpent"
 model_reasoning_effort = "high"
 "#,
     )
@@ -270,7 +270,7 @@ async fn agent_role_without_description_after_merge_is_dropped_with_warning() ->
         &role_config_path,
         r#"
 minion_instructions = "Research carefully"
-model = "gpt-5"
+model = "serpent"
 "#,
     )
     .await?;
@@ -389,7 +389,7 @@ async fn agent_role_file_name_takes_precedence_over_config_key() -> std::io::Res
 name = "archivist"
 description = "Role metadata from file"
 minion_instructions = "Research carefully"
-model = "gpt-5"
+model = "serpent"
 "#,
     )
     .await?;
@@ -431,12 +431,12 @@ async fn loads_legacy_split_agent_roles_from_config_toml() -> std::io::Result<()
     .await?;
     tokio::fs::write(
         &researcher_path,
-        "minion_instructions = \"Research carefully\"\nmodel = \"gpt-5\"",
+        "minion_instructions = \"Research carefully\"\nmodel = \"serpent\"",
     )
     .await?;
     tokio::fs::write(
         &reviewer_path,
-        "minion_instructions = \"Review carefully\"\nmodel = \"gpt-4.1\"",
+        "minion_instructions = \"Review carefully\"\nmodel = \"gordon\"",
     )
     .await?;
     tokio::fs::write(
@@ -674,7 +674,7 @@ nickname_candidates = ["Ada"]
         home_agents_dir.join("researcher.toml"),
         r#"
 minion_instructions = "Research carefully"
-model = "gpt-5"
+model = "serpent"
 "#,
     )
     .await?;
@@ -682,7 +682,7 @@ model = "gpt-5"
         home_agents_dir.join("critic.toml"),
         r#"
 minion_instructions = "Critique carefully"
-model = "gpt-4.1"
+model = "gordon"
 "#,
     )
     .await?;
@@ -696,7 +696,7 @@ name = "researcher"
 description = "Research role from file"
 nickname_candidates = ["Hypatia"]
 minion_instructions = "Research from file"
-model = "gpt-5-mini"
+model = "fireship"
 "#,
     )
     .await?;
@@ -707,7 +707,7 @@ name = "writer"
 description = "Writer role from file"
 nickname_candidates = ["Sagan"]
 minion_instructions = "Write carefully"
-model = "gpt-5"
+model = "serpent"
 "#,
     )
     .await?;
@@ -814,7 +814,7 @@ config_file = "./agents/researcher.toml"
         home_agents_dir.join("researcher.toml"),
         r#"
 minion_instructions = "Research carefully"
-model = "gpt-5"
+model = "serpent"
 "#,
     )
     .await?;
@@ -827,7 +827,7 @@ model = "gpt-5"
 name = "researcher"
 nickname_candidates = ["Hypatia"]
 minion_instructions = "Research from file"
-model = "gpt-5-mini"
+model = "fireship"
 "#,
     )
     .await?;

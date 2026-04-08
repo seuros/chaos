@@ -24,7 +24,6 @@ use core_test_support::responses::sse;
 use core_test_support::responses::start_mock_server;
 use core_test_support::skip_if_no_network;
 use core_test_support::skip_if_sandbox;
-use core_test_support::skip_if_windows;
 use core_test_support::test_codex::TestCodex;
 use core_test_support::test_codex::TestCodexHarness;
 use core_test_support::test_codex::test_codex;
@@ -141,7 +140,6 @@ fn collect_tool_outputs(bodies: &[Value]) -> Result<HashMap<String, ParsedUnifie
 async fn unified_exec_intercepts_apply_patch_exec_command() -> Result<()> {
     skip_if_no_network!(Ok(()));
     skip_if_sandbox!(Ok(()));
-    skip_if_windows!(Ok(()));
 
     let builder = test_codex().with_config(|config| {
         config.include_apply_patch_tool = true;
@@ -273,7 +271,6 @@ async fn unified_exec_intercepts_apply_patch_exec_command() -> Result<()> {
 async fn unified_exec_emits_exec_command_begin_event() -> Result<()> {
     skip_if_no_network!(Ok(()));
     skip_if_sandbox!(Ok(()));
-    skip_if_windows!(Ok(()));
 
     let server = start_mock_server().await;
 
@@ -352,7 +349,6 @@ async fn unified_exec_emits_exec_command_begin_event() -> Result<()> {
 async fn unified_exec_resolves_relative_workdir() -> Result<()> {
     skip_if_no_network!(Ok(()));
     skip_if_sandbox!(Ok(()));
-    skip_if_windows!(Ok(()));
 
     let server = start_mock_server().await;
 
@@ -437,7 +433,6 @@ async fn unified_exec_resolves_relative_workdir() -> Result<()> {
 async fn unified_exec_respects_workdir_override() -> Result<()> {
     skip_if_no_network!(Ok(()));
     skip_if_sandbox!(Ok(()));
-    skip_if_windows!(Ok(()));
 
     let server = start_mock_server().await;
 
@@ -523,7 +518,6 @@ async fn unified_exec_respects_workdir_override() -> Result<()> {
 async fn unified_exec_emits_exec_command_end_event() -> Result<()> {
     skip_if_no_network!(Ok(()));
     skip_if_sandbox!(Ok(()));
-    skip_if_windows!(Ok(()));
 
     let server = start_mock_server().await;
 
@@ -617,7 +611,6 @@ async fn unified_exec_emits_exec_command_end_event() -> Result<()> {
 async fn unified_exec_emits_output_delta_for_exec_command() -> Result<()> {
     skip_if_no_network!(Ok(()));
     skip_if_sandbox!(Ok(()));
-    skip_if_windows!(Ok(()));
 
     let server = start_mock_server().await;
 
@@ -696,7 +689,6 @@ async fn unified_exec_emits_output_delta_for_exec_command() -> Result<()> {
 async fn unified_exec_full_lifecycle_with_background_end_event() -> Result<()> {
     skip_if_no_network!(Ok(()));
     skip_if_sandbox!(Ok(()));
-    skip_if_windows!(Ok(()));
 
     let server = start_mock_server().await;
 
@@ -810,7 +802,6 @@ async fn unified_exec_full_lifecycle_with_background_end_event() -> Result<()> {
 async fn unified_exec_emits_terminal_interaction_for_write_stdin() -> Result<()> {
     skip_if_no_network!(Ok(()));
     skip_if_sandbox!(Ok(()));
-    skip_if_windows!(Ok(()));
 
     let server = start_mock_server().await;
 
@@ -917,7 +908,6 @@ async fn unified_exec_emits_terminal_interaction_for_write_stdin() -> Result<()>
 async fn unified_exec_terminal_interaction_captures_delayed_output() -> Result<()> {
     skip_if_no_network!(Ok(()));
     skip_if_sandbox!(Ok(()));
-    skip_if_windows!(Ok(()));
 
     let server = start_mock_server().await;
 
@@ -1115,7 +1105,6 @@ async fn unified_exec_terminal_interaction_captures_delayed_output() -> Result<(
 async fn unified_exec_emits_one_begin_and_one_end_event() -> Result<()> {
     skip_if_no_network!(Ok(()));
     skip_if_sandbox!(Ok(()));
-    skip_if_windows!(Ok(()));
 
     let server = start_mock_server().await;
 
@@ -1239,7 +1228,6 @@ async fn unified_exec_emits_one_begin_and_one_end_event() -> Result<()> {
 async fn exec_command_reports_chunk_and_exit_metadata() -> Result<()> {
     skip_if_no_network!(Ok(()));
     skip_if_sandbox!(Ok(()));
-    skip_if_windows!(Ok(()));
 
     let server = start_mock_server().await;
 
@@ -1353,7 +1341,6 @@ async fn exec_command_reports_chunk_and_exit_metadata() -> Result<()> {
 async fn unified_exec_defaults_to_pipe() -> Result<()> {
     skip_if_no_network!(Ok(()));
     skip_if_sandbox!(Ok(()));
-    skip_if_windows!(Ok(()));
 
     let python = match which("python").or_else(|_| which("python3")) {
         Ok(path) => path,
@@ -1446,7 +1433,6 @@ async fn unified_exec_defaults_to_pipe() -> Result<()> {
 async fn unified_exec_can_enable_tty() -> Result<()> {
     skip_if_no_network!(Ok(()));
     skip_if_sandbox!(Ok(()));
-    skip_if_windows!(Ok(()));
 
     let python = match which("python").or_else(|_| which("python3")) {
         Ok(path) => path,
@@ -1541,7 +1527,6 @@ async fn unified_exec_can_enable_tty() -> Result<()> {
 async fn unified_exec_respects_early_exit_notifications() -> Result<()> {
     skip_if_no_network!(Ok(()));
     skip_if_sandbox!(Ok(()));
-    skip_if_windows!(Ok(()));
 
     let server = start_mock_server().await;
 
@@ -1640,7 +1625,6 @@ async fn unified_exec_respects_early_exit_notifications() -> Result<()> {
 async fn write_stdin_returns_exit_metadata_and_clears_session() -> Result<()> {
     skip_if_no_network!(Ok(()));
     skip_if_sandbox!(Ok(()));
-    skip_if_windows!(Ok(()));
 
     let server = start_mock_server().await;
 
@@ -1809,7 +1793,6 @@ async fn write_stdin_returns_exit_metadata_and_clears_session() -> Result<()> {
 async fn unified_exec_emits_end_event_when_session_dies_via_stdin() -> Result<()> {
     skip_if_no_network!(Ok(()));
     skip_if_sandbox!(Ok(()));
-    skip_if_windows!(Ok(()));
 
     let server = start_mock_server().await;
 
@@ -1922,7 +1905,6 @@ async fn unified_exec_emits_end_event_when_session_dies_via_stdin() -> Result<()
 async fn unified_exec_keeps_long_running_session_after_turn_end() -> Result<()> {
     skip_if_no_network!(Ok(()));
     skip_if_sandbox!(Ok(()));
-    skip_if_windows!(Ok(()));
 
     let server = start_mock_server().await;
 
@@ -2021,7 +2003,6 @@ async fn unified_exec_keeps_long_running_session_after_turn_end() -> Result<()> 
 async fn unified_exec_interrupt_preserves_long_running_session() -> Result<()> {
     skip_if_no_network!(Ok(()));
     skip_if_sandbox!(Ok(()));
-    skip_if_windows!(Ok(()));
 
     let server = start_mock_server().await;
 
@@ -2108,7 +2089,6 @@ async fn unified_exec_interrupt_preserves_long_running_session() -> Result<()> {
 async fn unified_exec_reuses_session_via_stdin() -> Result<()> {
     skip_if_no_network!(Ok(()));
     skip_if_sandbox!(Ok(()));
-    skip_if_windows!(Ok(()));
 
     let server = start_mock_server().await;
 
@@ -2227,7 +2207,6 @@ async fn unified_exec_reuses_session_via_stdin() -> Result<()> {
 async fn unified_exec_streams_after_lagged_output() -> Result<()> {
     skip_if_no_network!(Ok(()));
     skip_if_sandbox!(Ok(()));
-    skip_if_windows!(Ok(()));
 
     let server = start_mock_server().await;
 
@@ -2366,7 +2345,6 @@ PY
 async fn unified_exec_timeout_and_followup_poll() -> Result<()> {
     skip_if_no_network!(Ok(()));
     skip_if_sandbox!(Ok(()));
-    skip_if_windows!(Ok(()));
 
     let server = start_mock_server().await;
 
@@ -2479,7 +2457,6 @@ async fn unified_exec_timeout_and_followup_poll() -> Result<()> {
 async fn unified_exec_formats_large_output_summary() -> Result<()> {
     skip_if_no_network!(Ok(()));
     skip_if_sandbox!(Ok(()));
-    skip_if_windows!(Ok(()));
 
     let server = start_mock_server().await;
 
@@ -2585,7 +2562,6 @@ PY
 async fn unified_exec_runs_under_sandbox() -> Result<()> {
     skip_if_no_network!(Ok(()));
     skip_if_sandbox!(Ok(()));
-    skip_if_windows!(Ok(()));
 
     let server = start_mock_server().await;
 
@@ -2873,7 +2849,6 @@ async fn unified_exec_runs_on_all_platforms() -> Result<()> {
 async fn unified_exec_prunes_exited_sessions_first() -> Result<()> {
     skip_if_no_network!(Ok(()));
     skip_if_sandbox!(Ok(()));
-    skip_if_windows!(Ok(()));
 
     let server = start_mock_server().await;
 

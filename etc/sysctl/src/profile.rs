@@ -15,7 +15,6 @@ use crate::types::AnalyticsConfigToml;
 use crate::types::ApprovalsReviewer;
 use crate::types::Personality;
 use crate::types::ToolsToml;
-use crate::types::WindowsToml;
 
 /// Collection of common configuration options that a user can define as a unit
 /// in `config.toml`.
@@ -51,8 +50,6 @@ pub struct ConfigProfile {
     pub tools: Option<ToolsToml>,
     pub web_search: Option<WebSearchMode>,
     pub analytics: Option<AnalyticsConfigToml>,
-    #[serde(default)]
-    pub windows: Option<WindowsToml>,
     /// Optional feature toggles scoped to this profile.
     #[serde(default)]
     #[schemars(schema_with = "crate::schema::features_schema")]

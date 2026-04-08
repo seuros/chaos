@@ -1,4 +1,3 @@
-use std::borrow::Cow;
 use std::collections::BTreeMap;
 use std::io;
 use std::path::Component;
@@ -291,73 +290,14 @@ fn parse_special_path(path: &str) -> Option<FileSystemSpecialPath> {
 }
 
 fn parse_absolute_path(path: &str) -> io::Result<AbsolutePathBuf> {
-    parse_absolute_path_for_platform(path, false)
-}
-
-fn parse_absolute_path_for_platform(path: &str, is_windows: bool) -> io::Result<AbsolutePathBuf> {
-    let path_ref = normalize_absolute_path_for_platform(path, is_windows);
-    if !is_absolute_path_for_platform(path, path_ref.as_ref(), is_windows)
-        && path != "~"
-        && !path.starts_with("~/")
-    {
+    let path_ref = Path::new(path);
+    if !path_ref.is_absolute() && path != "~" && !path.starts_with("~/") {
         return Err(io::Error::new(
             io::ErrorKind::InvalidInput,
             format!("filesystem path `{path}` must be absolute, use `~/...`, or start with `:`"),
         ));
     }
-    AbsolutePathBuf::from_absolute_path(path_ref.as_ref())
-}
-
-fn is_absolute_path_for_platform(path: &str, normalized_path: &Path, is_windows: bool) -> bool {
-    if is_windows {
-        is_windows_absolute_path(path)
-            || is_windows_absolute_path(&normalized_path.to_string_lossy())
-    } else {
-        normalized_path.is_absolute()
-    }
-}
-
-fn normalize_absolute_path_for_platform(path: &str, is_windows: bool) -> Cow<'_, Path> {
-    if !is_windows {
-        return Cow::Borrowed(Path::new(path));
-    }
-
-    match normalize_windows_device_path(path) {
-        Some(normalized) => Cow::Owned(PathBuf::from(normalized)),
-        None => Cow::Borrowed(Path::new(path)),
-    }
-}
-
-fn normalize_windows_device_path(path: &str) -> Option<String> {
-    if let Some(unc) = path.strip_prefix(r"\\?\UNC\") {
-        return Some(format!(r"\\{unc}"));
-    }
-    if let Some(unc) = path.strip_prefix(r"\\.\UNC\") {
-        return Some(format!(r"\\{unc}"));
-    }
-    if let Some(path) = path.strip_prefix(r"\\?\")
-        && is_windows_drive_absolute_path(path)
-    {
-        return Some(path.to_string());
-    }
-    if let Some(path) = path.strip_prefix(r"\\.\")
-        && is_windows_drive_absolute_path(path)
-    {
-        return Some(path.to_string());
-    }
-    None
-}
-
-fn is_windows_absolute_path(path: &str) -> bool {
-    is_windows_drive_absolute_path(path) || path.starts_with(r"\\")
-}
-
-fn is_windows_drive_absolute_path(path: &str) -> bool {
-    let bytes = path.as_bytes();
-    bytes.len() >= 3
-        && bytes[0].is_ascii_alphabetic()
-        && bytes[1] == b':'
-        && matches!(bytes[2], b'\\' | b'/')
+    AbsolutePathBuf::from_absolute_path(path_ref)
 }
 
 fn parse_relative_subpath(subpath: &str) -> io::Result<PathBuf> {

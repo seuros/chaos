@@ -5,28 +5,20 @@
 //! clipboard path when the current machine is also the user's desktop, but it
 //! intentionally changes strategy in environments where a "local" clipboard
 //! would be the wrong one: SSH sessions use OSC 52 so the user's terminal can
-//! proxy the copy back to the client, and WSL environments fall back to
-//! `powershell.exe` because Linux-side clipboard providers often cannot reach
-//! the host clipboard reliably.
+//! proxy the copy back to the client.
 //!
 //! The module is deliberately narrow. It only handles text copy, returns
 //! user-facing error strings for the chat UI, and does not try to expose a
-//! reusable clipboard abstraction for the rest of the application. Image paste
-//! and WSL environment detection live in neighboring modules.
+//! reusable clipboard abstraction for the rest of the application.
 //!
 //! The main operational contract is that callers get one best-effort copy
-//! attempt and a readable failure message. The selection between native copy,
-//! OSC 52, and WSL fallback is centralized here so `/copy` does not have to
-//! understand platform-specific clipboard behavior.
+//! attempt and a readable failure message. The selection between native copy
+//! and OSC 52 is centralized here so `/copy` does not have to understand
+//! platform-specific clipboard behavior.
 
 use base64::Engine as _;
 use std::fs::OpenOptions;
 use std::io::Write;
-#[cfg(target_os = "linux")]
-use std::process::Stdio;
-
-#[cfg(target_os = "linux")]
-use crate::clipboard_paste::is_probably_wsl;
 
 /// Copies user-visible text into the most appropriate clipboard for the
 /// current environment.
@@ -34,9 +26,7 @@ use crate::clipboard_paste::is_probably_wsl;
 /// In a normal desktop session this targets the host clipboard through
 /// `arboard`. In SSH sessions it emits an OSC 52 sequence instead, because the
 /// process-local clipboard would belong to the remote machine rather than the
-/// user's terminal. On Linux under WSL, a failed native copy falls back to
-/// `powershell.exe` so the Windows clipboard still works when Linux clipboard
-/// integrations are unavailable.
+/// user's terminal.
 ///
 /// The returned error is intended for display in the TUI rather than for
 /// programmatic branching. Callers should treat it as user-facing text. A
@@ -58,16 +48,6 @@ pub fn copy_text_to_clipboard(text: &str) -> Result<(), String> {
             Err(err) => format!("clipboard unavailable: {err}"),
         },
         Err(err) => format!("clipboard unavailable: {err}"),
-    };
-
-    #[cfg(target_os = "linux")]
-    let error = if is_probably_wsl() {
-        match copy_via_wsl_clipboard(text) {
-            Ok(()) => return Ok(()),
-            Err(wsl_err) => format!("{error}; WSL fallback failed: {wsl_err}"),
-        }
-    } else {
-        error
     };
 
     Err(error)
@@ -94,63 +74,6 @@ fn copy_via_osc52(text: &str) -> Result<(), String> {
         format!("clipboard unavailable: failed to flush OSC 52 escape sequence: {e}")
     })?;
     Ok(())
-}
-
-/// Copies text into the Windows clipboard from a WSL process.
-///
-/// This is a Linux-only fallback for the case where `arboard` cannot talk to
-/// the Windows clipboard from inside WSL. It shells out to `powershell.exe`,
-/// streams the text over stdin as UTF-8, and waits for the process to report
-/// success before returning to the caller.
-#[cfg(target_os = "linux")]
-fn copy_via_wsl_clipboard(text: &str) -> Result<(), String> {
-    let mut child = std::process::Command::new("powershell.exe")
-        .stdin(Stdio::piped())
-        .stdout(Stdio::null())
-        .stderr(Stdio::piped())
-        .args([
-            "-NoProfile",
-            "-Command",
-            "[Console]::InputEncoding = [System.Text.Encoding]::UTF8; $ErrorActionPreference = 'Stop'; $text = [Console]::In.ReadToEnd(); Set-Clipboard -Value $text",
-        ])
-        .spawn()
-        .map_err(|e| format!("clipboard unavailable: failed to spawn powershell.exe: {e}"))?;
-
-    let Some(mut stdin) = child.stdin.take() else {
-        let _ = child.kill();
-        let _ = child.wait();
-        return Err("clipboard unavailable: failed to open powershell.exe stdin".to_string());
-    };
-
-    if let Err(err) = stdin.write_all(text.as_bytes()) {
-        let _ = child.kill();
-        let _ = child.wait();
-        return Err(format!(
-            "clipboard unavailable: failed to write to powershell.exe: {err}"
-        ));
-    }
-
-    drop(stdin);
-
-    let output = child
-        .wait_with_output()
-        .map_err(|e| format!("clipboard unavailable: failed to wait for powershell.exe: {e}"))?;
-
-    if output.status.success() {
-        Ok(())
-    } else {
-        let stderr = String::from_utf8_lossy(&output.stderr).trim().to_string();
-        if stderr.is_empty() {
-            let status = output.status;
-            Err(format!(
-                "clipboard unavailable: powershell.exe exited with status {status}"
-            ))
-        } else {
-            Err(format!(
-                "clipboard unavailable: powershell.exe failed: {stderr}"
-            ))
-        }
-    }
 }
 
 /// Encodes text as an OSC 52 clipboard sequence.

@@ -183,7 +183,6 @@ fn queued_message_edit_binding_for_terminal(terminal_name: TerminalName) -> KeyB
         | TerminalName::Konsole
         | TerminalName::GnomeTerminal
         | TerminalName::Vte
-        | TerminalName::WindowsTerminal
         | TerminalName::Dumb
         | TerminalName::Unknown => key_hint::alt(KeyCode::Up),
     }
@@ -6269,18 +6268,11 @@ impl ChatWidget {
         let mut items: Vec<SelectionItem> = Vec::new();
         let presets: Vec<ApprovalPreset> = builtin_approval_presets();
 
-        let windows_degraded_sandbox_enabled = false;
-        let show_elevate_sandbox_hint = false;
-
         for preset in presets.into_iter() {
             if !include_read_only && preset.id == "read-only" {
                 continue;
             }
-            let base_name = if preset.id == "auto" && windows_degraded_sandbox_enabled {
-                "Default (non-admin sandbox)".to_string()
-            } else {
-                preset.label.to_string()
-            };
+            let base_name = preset.label.to_string();
             let base_description =
                 Some(preset.description.replace(" (Identical to Agent mode)", ""));
             let approval_disabled_reason = match self
@@ -6346,18 +6338,9 @@ impl ChatWidget {
             }
         }
 
-        let footer_note = show_elevate_sandbox_hint.then(|| {
-            vec![
-                "The non-admin sandbox protects your files and prevents network access under most circumstances. However, it carries greater risk if prompt injected. To upgrade to the default sandbox, run ".dim(),
-                "/setup-default-sandbox".cyan(),
-                ".".dim(),
-            ]
-            .into()
-        });
-
         self.bottom_pane.show_selection_view(SelectionViewParams {
             title: Some("Update Model Permissions".to_string()),
-            footer_note,
+            footer_note: None,
             footer_hint: Some(standard_popup_hint_line()),
             items,
             header: Box::new(()),

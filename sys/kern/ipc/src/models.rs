@@ -230,6 +230,9 @@ pub enum ResponseInputItem {
     FunctionCallOutput {
         call_id: String,
         output: FunctionCallOutputPayload,
+        #[serde(default, skip_serializing_if = "Option::is_none")]
+        #[ts(optional)]
+        tool_name: Option<String>,
     },
     McpToolCallOutput {
         call_id: String,
@@ -238,6 +241,9 @@ pub enum ResponseInputItem {
     CustomToolCallOutput {
         call_id: String,
         output: FunctionCallOutputPayload,
+        #[serde(default, skip_serializing_if = "Option::is_none")]
+        #[ts(optional)]
+        tool_name: Option<String>,
     },
     ToolSearchOutput {
         call_id: String,
@@ -355,6 +361,9 @@ pub enum ResponseItem {
     FunctionCallOutput {
         call_id: String,
         output: FunctionCallOutputPayload,
+        #[serde(default, skip_serializing_if = "Option::is_none")]
+        #[ts(optional)]
+        tool_name: Option<String>,
     },
     CustomToolCall {
         #[serde(default, skip_serializing)]
@@ -374,6 +383,9 @@ pub enum ResponseItem {
     CustomToolCallOutput {
         call_id: String,
         output: FunctionCallOutputPayload,
+        #[serde(default, skip_serializing_if = "Option::is_none")]
+        #[ts(optional)]
+        tool_name: Option<String>,
     },
     ToolSearchOutput {
         call_id: Option<String>,
@@ -966,16 +978,32 @@ impl From<ResponseInputItem> for ResponseItem {
                 end_turn: None,
                 phase: None,
             },
-            ResponseInputItem::FunctionCallOutput { call_id, output } => {
-                Self::FunctionCallOutput { call_id, output }
-            }
+            ResponseInputItem::FunctionCallOutput {
+                call_id,
+                output,
+                tool_name,
+            } => Self::FunctionCallOutput {
+                call_id,
+                output,
+                tool_name,
+            },
             ResponseInputItem::McpToolCallOutput { call_id, output } => {
                 let output = output.into_function_call_output_payload();
-                Self::FunctionCallOutput { call_id, output }
+                Self::FunctionCallOutput {
+                    call_id,
+                    output,
+                    tool_name: None,
+                }
             }
-            ResponseInputItem::CustomToolCallOutput { call_id, output } => {
-                Self::CustomToolCallOutput { call_id, output }
-            }
+            ResponseInputItem::CustomToolCallOutput {
+                call_id,
+                output,
+                tool_name,
+            } => Self::CustomToolCallOutput {
+                call_id,
+                output,
+                tool_name,
+            },
             ResponseInputItem::ToolSearchOutput {
                 call_id,
                 status,
@@ -2276,6 +2304,7 @@ mod tests {
         let item = ResponseInputItem::FunctionCallOutput {
             call_id: "call1".into(),
             output: FunctionCallOutputPayload::from_text("ok".into()),
+            tool_name: None,
         };
 
         let json = serde_json::to_string(&item)?;
@@ -2294,6 +2323,7 @@ mod tests {
                 body: FunctionCallOutputBody::Text("bad".into()),
                 success: Some(false),
             },
+            tool_name: None,
         };
 
         let json = serde_json::to_string(&item)?;
@@ -2337,6 +2367,7 @@ mod tests {
         let item = ResponseInputItem::FunctionCallOutput {
             call_id: "call1".into(),
             output: payload,
+            tool_name: None,
         };
 
         let json = serde_json::to_string(&item)?;
@@ -2358,6 +2389,7 @@ mod tests {
                     detail: None,
                 },
             ]),
+            tool_name: None,
         };
 
         let json = serde_json::to_string(&item)?;

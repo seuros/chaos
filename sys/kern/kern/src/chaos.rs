@@ -2118,6 +2118,13 @@ impl Session {
     }
 
     pub(crate) async fn maybe_emit_unknown_model_warning_for_turn(&self, tc: &TurnContext) {
+        // TensorZero function names are not in any model catalog — suppress the
+        // fallback-metadata warning since the defaults are adequate and TensorZero
+        // provides its own model metadata via the API response.
+        if tc.provider.wire_api == crate::model_provider_info::WireApi::TensorZero {
+            tracing::debug!("Skipping fallback metadata warning for TensorZero provider");
+            return;
+        }
         if tc.model_info.used_fallback_model_metadata && !self.services.model_client.is_clamped() {
             let message = if tc.model_info.slug.is_empty() {
                 "No model configured. Are you logged in? Run `chaos login` or set an API key."
@@ -2132,7 +2139,6 @@ impl Session {
                 .await;
         }
     }
-
     pub(crate) async fn new_default_turn(&self) -> Arc<TurnContext> {
         self.new_default_turn_with_sub_id(self.next_internal_sub_id())
             .await

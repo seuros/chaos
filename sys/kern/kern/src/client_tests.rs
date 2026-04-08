@@ -265,6 +265,7 @@ fn render_clamp_full_prompt_preserves_prior_messages_and_tool_outputs() {
             ResponseItem::FunctionCallOutput {
                 call_id: "call_123".into(),
                 output: FunctionCallOutputPayload::from_text("/workspace\n".into()),
+                tool_name: None,
             },
             ResponseItem::Message {
                 id: None,

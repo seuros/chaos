@@ -47,6 +47,9 @@ pub enum WireApi {
     /// The Chat Completions API at `/v1/chat/completions`.
     #[serde(rename = "chat_completions")]
     ChatCompletions,
+    /// TensorZero native inference API at `/inference`.
+    #[serde(rename = "tensorzero")]
+    TensorZero,
 }
 
 impl fmt::Display for WireApi {
@@ -55,6 +58,7 @@ impl fmt::Display for WireApi {
             Self::Auto => "auto",
             Self::Responses => "responses",
             Self::ChatCompletions => "chat_completions",
+            Self::TensorZero => "tensorzero",
         };
         f.write_str(value)
     }
@@ -70,9 +74,10 @@ impl<'de> Deserialize<'de> for WireApi {
             "auto" => Ok(Self::Auto),
             "responses" => Ok(Self::Responses),
             "chat_completions" => Ok(Self::ChatCompletions),
+            "tensorzero" => Ok(Self::TensorZero),
             _ => Err(serde::de::Error::unknown_variant(
                 &value,
-                &["auto", "responses", "chat_completions"],
+                &["auto", "responses", "chat_completions", "tensorzero"],
             )),
         }
     }

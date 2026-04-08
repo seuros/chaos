@@ -318,12 +318,14 @@ fn function_tool_response(
         return ResponseInputItem::CustomToolCallOutput {
             call_id: call_id.to_string(),
             output: FunctionCallOutputPayload { body, success },
+            tool_name: None,
         };
     }
 
     ResponseInputItem::FunctionCallOutput {
         call_id: call_id.to_string(),
         output: FunctionCallOutputPayload { body, success },
+        tool_name: None,
     }
 }
 

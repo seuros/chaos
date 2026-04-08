@@ -211,6 +211,7 @@ impl ToolRouter {
         let payload_outputs_custom = matches!(payload, ToolPayload::Custom { .. });
         let payload_outputs_tool_search = matches!(payload, ToolPayload::ToolSearch { .. });
         let failure_call_id = call_id.clone();
+        let failure_tool_name = tool_name.clone();
 
         let invocation = ToolInvocation {
             session,
@@ -227,6 +228,7 @@ impl ToolRouter {
             Err(FunctionCallError::Fatal(message)) => Err(FunctionCallError::Fatal(message)),
             Err(err) => Ok(Self::failure_result(
                 failure_call_id,
+                failure_tool_name,
                 payload_outputs_custom,
                 payload_outputs_tool_search,
                 err,
@@ -236,6 +238,7 @@ impl ToolRouter {
 
     fn failure_result(
         call_id: String,
+        tool_name: String,
         payload_outputs_custom: bool,
         payload_outputs_tool_search: bool,
         err: FunctionCallError,
@@ -244,6 +247,7 @@ impl ToolRouter {
         if payload_outputs_tool_search {
             AnyToolResult {
                 call_id,
+                tool_name,
                 payload: ToolPayload::ToolSearch {
                     arguments: SearchToolCallParams {
                         query: String::new(),
@@ -255,6 +259,7 @@ impl ToolRouter {
         } else if payload_outputs_custom {
             AnyToolResult {
                 call_id,
+                tool_name,
                 payload: ToolPayload::Custom {
                     input: String::new(),
                 },
@@ -263,6 +268,7 @@ impl ToolRouter {
         } else {
             AnyToolResult {
                 call_id,
+                tool_name,
                 payload: ToolPayload::Function {
                     arguments: "{}".to_string(),
                 },

@@ -74,6 +74,7 @@ fn custom_tool_call_output(call_id: &str, output: &str) -> ResponseItem {
     ResponseItem::CustomToolCallOutput {
         call_id: call_id.to_string(),
         output: FunctionCallOutputPayload::from_text(output.to_string()),
+        tool_name: None,
     }
 }
 
@@ -286,6 +287,7 @@ fn for_prompt_strips_images_when_model_does_not_support_images() {
                     detail: None,
                 },
             ]),
+            tool_name: None,
         },
         ResponseItem::CustomToolCall {
             id: None,
@@ -305,6 +307,7 @@ fn for_prompt_strips_images_when_model_does_not_support_images() {
                     detail: None,
                 },
             ]),
+            tool_name: None,
         },
     ];
     let history = create_history_with_items(items);
@@ -348,6 +351,7 @@ fn for_prompt_strips_images_when_model_does_not_support_images() {
                         .to_string(),
                 },
             ]),
+            tool_name: None,
         },
         ResponseItem::CustomToolCall {
             id: None,
@@ -367,6 +371,7 @@ fn for_prompt_strips_images_when_model_does_not_support_images() {
                         .to_string(),
                 },
             ]),
+            tool_name: None,
         },
     ];
     assert_eq!(stripped, expected);
@@ -527,6 +532,7 @@ fn remove_first_item_removes_matching_output_for_function_call() {
         ResponseItem::FunctionCallOutput {
             call_id: "call-1".to_string(),
             output: FunctionCallOutputPayload::from_text("ok".to_string()),
+            tool_name: None,
         },
     ];
     let mut h = create_history_with_items(items);
@@ -540,6 +546,7 @@ fn remove_first_item_removes_matching_call_for_output() {
         ResponseItem::FunctionCallOutput {
             call_id: "call-2".to_string(),
             output: FunctionCallOutputPayload::from_text("ok".to_string()),
+            tool_name: None,
         },
         ResponseItem::FunctionCall {
             id: None,
@@ -568,6 +575,7 @@ fn remove_last_item_removes_matching_call_for_output() {
         ResponseItem::FunctionCallOutput {
             call_id: "call-delete-last".to_string(),
             output: FunctionCallOutputPayload::from_text("ok".to_string()),
+            tool_name: None,
         },
     ];
     let mut h = create_history_with_items(items);
@@ -591,6 +599,7 @@ fn replace_last_turn_images_replaces_tool_output_images() {
                 ]),
                 success: Some(true),
             },
+            tool_name: None,
         },
     ];
     let mut history = create_history_with_items(items);
@@ -611,6 +620,7 @@ fn replace_last_turn_images_replaces_tool_output_images() {
                     ]),
                     success: Some(true),
                 },
+                tool_name: None,
             },
         ]
     );
@@ -651,6 +661,7 @@ fn remove_first_item_handles_local_shell_pair() {
         ResponseItem::FunctionCallOutput {
             call_id: "call-3".to_string(),
             output: FunctionCallOutputPayload::from_text("ok".to_string()),
+            tool_name: None,
         },
     ];
     let mut h = create_history_with_items(items);
@@ -807,6 +818,7 @@ fn remove_first_item_handles_custom_tool_pair() {
         ResponseItem::CustomToolCallOutput {
             call_id: "tool-1".to_string(),
             output: FunctionCallOutputPayload::from_text("ok".to_string()),
+            tool_name: None,
         },
     ];
     let mut h = create_history_with_items(items);
@@ -832,6 +844,7 @@ fn normalization_retains_local_shell_outputs() {
         ResponseItem::FunctionCallOutput {
             call_id: "shell-1".to_string(),
             output: FunctionCallOutputPayload::from_text("Total output lines: 1\n\nok".to_string()),
+            tool_name: None,
         },
     ];
 
@@ -855,6 +868,7 @@ fn record_items_truncates_function_call_output_content() {
             body: FunctionCallOutputBody::Text(long_output.clone()),
             success: Some(true),
         },
+        tool_name: None,
     };
 
     history.record_items([&item], policy);
@@ -886,6 +900,7 @@ fn record_items_truncates_custom_tool_call_output_content() {
     let item = ResponseItem::CustomToolCallOutput {
         call_id: "tool-200".to_string(),
         output: FunctionCallOutputPayload::from_text(long_output.clone()),
+        tool_name: None,
     };
 
     history.record_items([&item], policy);
@@ -919,6 +934,7 @@ fn record_items_respects_custom_token_limit() {
             body: FunctionCallOutputBody::Text(long_output),
             success: Some(true),
         },
+        tool_name: None,
     };
 
     history.record_items([&item], policy);
@@ -1056,6 +1072,7 @@ fn normalize_adds_missing_output_for_function_call() {
             ResponseItem::FunctionCallOutput {
                 call_id: "call-x".to_string(),
                 output: FunctionCallOutputPayload::from_text("aborted".to_string()),
+                tool_name: None,
             },
         ]
     );
@@ -1088,6 +1105,7 @@ fn normalize_adds_missing_output_for_custom_tool_call() {
             ResponseItem::CustomToolCallOutput {
                 call_id: "tool-x".to_string(),
                 output: FunctionCallOutputPayload::from_text("aborted".to_string()),
+                tool_name: None,
             },
         ]
     );
@@ -1130,6 +1148,7 @@ fn normalize_adds_missing_output_for_local_shell_call_with_id() {
             ResponseItem::FunctionCallOutput {
                 call_id: "shell-1".to_string(),
                 output: FunctionCallOutputPayload::from_text("aborted".to_string()),
+                tool_name: None,
             },
         ]
     );
@@ -1141,6 +1160,7 @@ fn normalize_removes_orphan_function_call_output() {
     let items = vec![ResponseItem::FunctionCallOutput {
         call_id: "orphan-1".to_string(),
         output: FunctionCallOutputPayload::from_text("ok".to_string()),
+        tool_name: None,
     }];
     let mut h = create_history_with_items(items);
 
@@ -1155,6 +1175,7 @@ fn normalize_removes_orphan_custom_tool_call_output() {
     let items = vec![ResponseItem::CustomToolCallOutput {
         call_id: "orphan-2".to_string(),
         output: FunctionCallOutputPayload::from_text("ok".to_string()),
+        tool_name: None,
     }];
     let mut h = create_history_with_items(items);
 
@@ -1179,6 +1200,7 @@ fn normalize_mixed_inserts_and_removals() {
         ResponseItem::FunctionCallOutput {
             call_id: "c2".to_string(),
             output: FunctionCallOutputPayload::from_text("ok".to_string()),
+            tool_name: None,
         },
         // Will get an inserted custom tool output
         ResponseItem::CustomToolCall {
@@ -1219,6 +1241,7 @@ fn normalize_mixed_inserts_and_removals() {
             ResponseItem::FunctionCallOutput {
                 call_id: "c1".to_string(),
                 output: FunctionCallOutputPayload::from_text("aborted".to_string()),
+                tool_name: None,
             },
             ResponseItem::CustomToolCall {
                 id: None,
@@ -1230,6 +1253,7 @@ fn normalize_mixed_inserts_and_removals() {
             ResponseItem::CustomToolCallOutput {
                 call_id: "t1".to_string(),
                 output: FunctionCallOutputPayload::from_text("aborted".to_string()),
+                tool_name: None,
             },
             ResponseItem::LocalShellCall {
                 id: None,
@@ -1246,6 +1270,7 @@ fn normalize_mixed_inserts_and_removals() {
             ResponseItem::FunctionCallOutput {
                 call_id: "s1".to_string(),
                 output: FunctionCallOutputPayload::from_text("aborted".to_string()),
+                tool_name: None,
             },
         ]
     );
@@ -1275,6 +1300,7 @@ fn normalize_adds_missing_output_for_function_call_inserts_output() {
             ResponseItem::FunctionCallOutput {
                 call_id: "call-x".to_string(),
                 output: FunctionCallOutputPayload::from_text("aborted".to_string()),
+                tool_name: None,
             },
         ]
     );
@@ -1355,6 +1381,7 @@ fn normalize_removes_orphan_function_call_output_panics_in_debug() {
     let items = vec![ResponseItem::FunctionCallOutput {
         call_id: "orphan-1".to_string(),
         output: FunctionCallOutputPayload::from_text("ok".to_string()),
+        tool_name: None,
     }];
     let mut h = create_history_with_items(items);
     h.normalize_history(&default_input_modalities());
@@ -1367,6 +1394,7 @@ fn normalize_removes_orphan_custom_tool_call_output_panics_in_debug() {
     let items = vec![ResponseItem::CustomToolCallOutput {
         call_id: "orphan-2".to_string(),
         output: FunctionCallOutputPayload::from_text("ok".to_string()),
+        tool_name: None,
     }];
     let mut h = create_history_with_items(items);
     h.normalize_history(&default_input_modalities());
@@ -1440,6 +1468,7 @@ fn normalize_mixed_inserts_and_removals_panics_in_debug() {
         ResponseItem::FunctionCallOutput {
             call_id: "c2".to_string(),
             output: FunctionCallOutputPayload::from_text("ok".to_string()),
+            tool_name: None,
         },
         ResponseItem::CustomToolCall {
             id: None,
@@ -1516,6 +1545,7 @@ fn image_data_url_payload_does_not_dominate_function_call_output_estimate() {
                 detail: None,
             },
         ]),
+        tool_name: None,
     };
 
     let raw_len = serde_json::to_string(&item).unwrap().len() as i64;
@@ -1541,6 +1571,7 @@ fn image_data_url_payload_does_not_dominate_custom_tool_call_output_estimate() {
                 detail: None,
             },
         ]),
+        tool_name: None,
     };
 
     let raw_len = serde_json::to_string(&item).unwrap().len() as i64;
@@ -1570,6 +1601,7 @@ fn non_base64_image_urls_are_unchanged() {
                 detail: None,
             },
         ]),
+        tool_name: None,
     };
 
     assert_eq!(
@@ -1612,6 +1644,7 @@ fn non_image_base64_data_url_is_unchanged() {
                 detail: None,
             },
         ]),
+        tool_name: None,
     };
 
     let raw_len = serde_json::to_string(&item).unwrap().len() as i64;
@@ -1694,6 +1727,7 @@ fn original_detail_images_scale_with_dimensions() {
                 detail: Some(ImageDetail::Original),
             },
         ]),
+        tool_name: None,
     };
 
     let raw_len = serde_json::to_string(&item).unwrap().len() as i64;
@@ -1725,6 +1759,7 @@ fn original_detail_webp_images_scale_with_dimensions() {
                 detail: Some(ImageDetail::Original),
             },
         ]),
+        tool_name: None,
     };
 
     let raw_len = serde_json::to_string(&item).unwrap().len() as i64;

@@ -945,6 +945,7 @@ dependencies = [
  "chaos-clamp",
  "chaos-cli",
  "chaos-getopt",
+ "chaos-git",
  "chaos-glob",
  "chaos-highlight",
  "chaos-ipc",

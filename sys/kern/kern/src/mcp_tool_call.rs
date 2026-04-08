@@ -15,7 +15,6 @@ use crate::chaos::TurnContext;
 use crate::config::edit::ConfigEdit;
 use crate::config::edit::ConfigEditsBuilder;
 use crate::config::types::AppToolApproval;
-use crate::features::Feature;
 use crate::mcp_tool_approval_templates::RenderedMcpToolApprovalParam;
 use crate::mcp_tool_approval_templates::render_mcp_tool_approval_template;
 use crate::protocol::EventMsg;
@@ -28,7 +27,6 @@ use chaos_ipc::protocol::ApprovalPolicy;
 use chaos_ipc::protocol::ReviewDecision;
 use chaos_ipc::protocol::SandboxPolicy;
 use chaos_ipc::request_user_input::RequestUserInputAnswer;
-use chaos_ipc::request_user_input::RequestUserInputArgs;
 use chaos_ipc::request_user_input::RequestUserInputQuestion;
 use chaos_ipc::request_user_input::RequestUserInputQuestionOption;
 use chaos_ipc::request_user_input::RequestUserInputResponse;
@@ -375,12 +373,10 @@ struct McpToolApprovalKey {
 fn mcp_tool_approval_prompt_options(
     session_approval_key: Option<&McpToolApprovalKey>,
     persistent_approval_key: Option<&McpToolApprovalKey>,
-    tool_call_mcp_elicitation_enabled: bool,
 ) -> McpToolApprovalPromptOptions {
     McpToolApprovalPromptOptions {
         allow_session_remember: session_approval_key.is_some(),
-        allow_persistent_approval: tool_call_mcp_elicitation_enabled
-            && persistent_approval_key.is_some(),
+        allow_persistent_approval: persistent_approval_key.is_some(),
     }
 }
 
@@ -442,15 +438,9 @@ async fn maybe_request_mcp_tool_approval(
     {
         return Some(McpToolApprovalDecision::Accept);
     }
-    let tool_call_mcp_elicitation_enabled = turn_context
-        .config
-        .features
-        .enabled(Feature::ToolCallMcpElicitation);
-
     let prompt_options = mcp_tool_approval_prompt_options(
         session_approval_key.as_ref(),
         persistent_approval_key.as_ref(),
-        tool_call_mcp_elicitation_enabled,
     );
     let question_id = format!("{MCP_TOOL_APPROVAL_QUESTION_ID_PREFIX}_{call_id}");
     let rendered_template = render_mcp_tool_approval_template(
@@ -476,57 +466,35 @@ async fn maybe_request_mcp_tool_approval(
     );
     question.question =
         mcp_tool_approval_question_text(question.question, monitor_reason.as_deref());
-    if tool_call_mcp_elicitation_enabled {
-        let request_id = chaos_mcp_runtime::McpRequestId::string(format!(
-            "{MCP_TOOL_APPROVAL_QUESTION_ID_PREFIX}_{call_id}"
-        ));
-        let params = build_mcp_tool_approval_elicitation_request(
-            sess.as_ref(),
-            turn_context.as_ref(),
-            McpToolApprovalElicitationRequest {
-                server: &invocation.server,
-                metadata,
-                tool_params: rendered_template
-                    .as_ref()
-                    .and_then(|rendered_template| rendered_template.tool_params.as_ref())
-                    .or(invocation.arguments.as_ref()),
-                tool_params_display: tool_params_display.as_deref(),
-                question,
-                message_override: rendered_template.as_ref().and_then(|rendered_template| {
-                    monitor_reason
-                        .is_none()
-                        .then_some(rendered_template.elicitation_message.as_str())
-                }),
-                prompt_options,
-            },
-        );
-        let decision = parse_mcp_tool_approval_elicitation_response(
-            sess.request_mcp_server_elicitation(turn_context.as_ref(), request_id, params)
-                .await,
-            &question_id,
-        );
-        let decision = normalize_approval_decision_for_mode(decision, approval_mode);
-        apply_mcp_tool_approval_decision(
-            sess,
-            turn_context,
-            &decision,
-            session_approval_key,
-            persistent_approval_key,
-        )
-        .await;
-        return Some(decision);
-    }
-
-    let args = RequestUserInputArgs {
-        questions: vec![question],
-    };
-    let response = sess
-        .request_user_input(turn_context.as_ref(), call_id.to_string(), args)
-        .await;
-    let decision = normalize_approval_decision_for_mode(
-        parse_mcp_tool_approval_response(response, &question_id),
-        approval_mode,
+    let request_id = chaos_mcp_runtime::McpRequestId::string(format!(
+        "{MCP_TOOL_APPROVAL_QUESTION_ID_PREFIX}_{call_id}"
+    ));
+    let params = build_mcp_tool_approval_elicitation_request(
+        sess.as_ref(),
+        turn_context.as_ref(),
+        McpToolApprovalElicitationRequest {
+            server: &invocation.server,
+            metadata,
+            tool_params: rendered_template
+                .as_ref()
+                .and_then(|rendered_template| rendered_template.tool_params.as_ref())
+                .or(invocation.arguments.as_ref()),
+            tool_params_display: tool_params_display.as_deref(),
+            question,
+            message_override: rendered_template.as_ref().and_then(|rendered_template| {
+                monitor_reason
+                    .is_none()
+                    .then_some(rendered_template.elicitation_message.as_str())
+            }),
+            prompt_options,
+        },
     );
+    let decision = parse_mcp_tool_approval_elicitation_response(
+        sess.request_mcp_server_elicitation(turn_context.as_ref(), request_id, params)
+            .await,
+        &question_id,
+    );
+    let decision = normalize_approval_decision_for_mode(decision, approval_mode);
     apply_mcp_tool_approval_decision(
         sess,
         turn_context,

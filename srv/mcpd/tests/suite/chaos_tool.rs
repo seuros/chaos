@@ -365,7 +365,7 @@ async fn codex_tool_passes_base_instructions() -> anyhow::Result<()> {
         .get("structuredContent")
         .and_then(|value| value.get("processId"))
         .and_then(serde_json::Value::as_str)
-        .context("codex tool response should include structuredContent.processId")?;
+        .context("chaos tool response should include structuredContent.processId")?;
     assert_eq!(codex_response.jsonrpc, "2.0");
     assert_eq!(codex_response.id, json!(codex_request_id));
     assert_eq!(

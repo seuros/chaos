@@ -137,7 +137,7 @@ struct ExecRunArgs {
 
 fn exec_root_span() -> tracing::Span {
     info_span!(
-        "codex.exec",
+        "chaos.exec",
         otel.kind = "internal",
         thread.id = field::Empty,
         turn.id = field::Empty,

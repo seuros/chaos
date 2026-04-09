@@ -31,12 +31,12 @@ fn manager_attaches_metadata_tags_to_metrics() -> Result<()> {
     )
     .with_metrics(metrics);
 
-    manager.counter("codex.session_started", 1, &[("source", "tui")]);
+    manager.counter("chaos.session_started", 1, &[("source", "tui")]);
     manager.shutdown_metrics()?;
 
     let resource_metrics = latest_metrics(&exporter);
     let metric =
-        find_metric(&resource_metrics, "codex.session_started").expect("counter metric missing");
+        find_metric(&resource_metrics, "chaos.session_started").expect("counter metric missing");
     let attrs = match metric.data() {
         AggregatedMetrics::U64(data) => match data {
             MetricData::Sum(sum) => {
@@ -84,12 +84,12 @@ fn manager_allows_disabling_metadata_tags() -> Result<()> {
     )
     .with_metrics_without_metadata_tags(metrics);
 
-    manager.counter("codex.session_started", 1, &[("source", "tui")]);
+    manager.counter("chaos.session_started", 1, &[("source", "tui")]);
     manager.shutdown_metrics()?;
 
     let resource_metrics = latest_metrics(&exporter);
     let metric =
-        find_metric(&resource_metrics, "codex.session_started").expect("counter metric missing");
+        find_metric(&resource_metrics, "chaos.session_started").expect("counter metric missing");
     let attrs = match metric.data() {
         AggregatedMetrics::U64(data) => match data {
             MetricData::Sum(sum) => {
@@ -126,12 +126,12 @@ fn manager_attaches_optional_service_name_tag() -> Result<()> {
     .with_metrics_service_name("my_app_server_client")
     .with_metrics(metrics);
 
-    manager.counter("codex.session_started", 1, &[]);
+    manager.counter("chaos.session_started", 1, &[]);
     manager.shutdown_metrics()?;
 
     let resource_metrics = latest_metrics(&exporter);
     let metric =
-        find_metric(&resource_metrics, "codex.session_started").expect("counter metric missing");
+        find_metric(&resource_metrics, "chaos.session_started").expect("counter metric missing");
     let attrs = match metric.data() {
         AggregatedMetrics::U64(data) => match data {
             MetricData::Sum(sum) => {

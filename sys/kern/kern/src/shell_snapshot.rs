@@ -87,7 +87,7 @@ impl ShellSnapshot {
         let snapshot_span = info_span!("shell_snapshot", process_id = %session_id);
         tokio::spawn(
             async move {
-                let timer = session_telemetry.start_timer("codex.shell_snapshot.duration_ms", &[]);
+                let timer = session_telemetry.start_timer("chaos.shell_snapshot.duration_ms", &[]);
                 let snapshot = ShellSnapshot::try_new(
                     &chaos_home,
                     session_id,
@@ -103,7 +103,7 @@ impl ShellSnapshot {
                 if let Some(failure_reason) = snapshot.as_ref().err() {
                     counter_tags.push(("failure_reason", *failure_reason));
                 }
-                session_telemetry.counter("codex.shell_snapshot", /*inc*/ 1, &counter_tags);
+                session_telemetry.counter("chaos.shell_snapshot", /*inc*/ 1, &counter_tags);
                 let _ = shell_snapshot_tx.send(snapshot.ok());
             }
             .instrument(snapshot_span),

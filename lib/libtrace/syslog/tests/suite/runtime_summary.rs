@@ -71,12 +71,12 @@ fn runtime_metrics_summary_collects_tool_api_and_streaming_metrics() -> Result<(
         .with_data("{}".to_string()))));
     manager.log_sse_event(&sse_response, Duration::from_millis(120));
     manager.record_duration(
-        "codex.turn.ttft.duration_ms",
+        "chaos.turn.ttft.duration_ms",
         Duration::from_millis(95),
         &[],
     );
     manager.record_duration(
-        "codex.turn.ttfm.duration_ms",
+        "chaos.turn.ttfm.duration_ms",
         Duration::from_millis(180),
         &[],
     );

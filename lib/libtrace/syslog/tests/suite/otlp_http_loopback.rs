@@ -179,7 +179,7 @@ fn otlp_http_exporter_sends_metrics_to_collector() -> Result<()> {
         },
     ))?;
 
-    metrics.counter("codex.turns", 1, &[("source", "test")])?;
+    metrics.counter("chaos.turns", 1, &[("source", "test")])?;
     metrics.shutdown()?;
 
     server.join().expect("server join");
@@ -210,7 +210,7 @@ fn otlp_http_exporter_sends_metrics_to_collector() -> Result<()> {
 
     let body = String::from_utf8_lossy(&request.body);
     assert!(
-        body.contains("codex.turns"),
+        body.contains("chaos.turns"),
         "expected metric name not found; body prefix: {}",
         &body.chars().take(2000).collect::<String>()
     );

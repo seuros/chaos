@@ -981,7 +981,7 @@ mod tests {
     #[test]
     fn responses_stream_event_response_model_reads_top_level_headers() {
         let ev: ResponsesStreamEvent = serde_json::from_value(json!({
-            "type": "codex.response.metadata",
+            "type": "chaos.response.metadata",
             "headers": {
                 "openai-model": CYBER_RESTRICTED_MODEL_FOR_TESTS,
             }

@@ -559,8 +559,8 @@ mod tests {
     use std::sync::atomic::Ordering;
 
     const LEGACY_DOMAIN_POLICY_DECISION_EVENT_NAME: &str =
-        "codex.network_proxy.domain_policy_decision";
-    const LEGACY_BLOCK_DECISION_EVENT_NAME: &str = "codex.network_proxy.block_decision";
+        "chaos.network_proxy.domain_policy_decision";
+    const LEGACY_BLOCK_DECISION_EVENT_NAME: &str = "chaos.network_proxy.block_decision";
 
     #[derive(Clone)]
     struct StaticReloader {

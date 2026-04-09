@@ -225,7 +225,7 @@ impl TestCodexBuilder {
             && let Some(path) = exe
                 .parent()
                 .and_then(|parent| parent.parent())
-                .map(|parent| parent.join("codex"))
+                .map(|parent| parent.join("chaos"))
             && path.is_file()
         {
             config.alcatraz_linux_exe = Some(path);

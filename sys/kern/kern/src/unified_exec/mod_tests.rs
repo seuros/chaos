@@ -140,7 +140,7 @@ async fn unified_exec_persists_across_requests() -> anyhow::Result<()> {
     )
     .await?;
     assert!(
-        out_2.truncated_output().contains("codex"),
+        out_2.truncated_output().contains("chaos"),
         "expected environment variable output"
     );
 
@@ -171,7 +171,7 @@ async fn multi_unified_exec_sessions() -> anyhow::Result<()> {
         "short command should not report a process id if it exits quickly"
     );
     assert!(
-        !out_2.truncated_output().contains("codex"),
+        !out_2.truncated_output().contains("chaos"),
         "short command should run in a fresh shell"
     );
 
@@ -183,7 +183,7 @@ async fn multi_unified_exec_sessions() -> anyhow::Result<()> {
     )
     .await?;
     assert!(
-        out_3.truncated_output().contains("codex"),
+        out_3.truncated_output().contains("chaos"),
         "session should preserve state"
     );
 
@@ -273,7 +273,7 @@ async fn requests_with_large_timeout_are_capped() -> anyhow::Result<()> {
     let result = exec_command(&session, &turn, "echo codex", 120_000).await?;
 
     assert!(result.process_id.is_some());
-    assert!(result.truncated_output().contains("codex"));
+    assert!(result.truncated_output().contains("chaos"));
 
     Ok(())
 }
@@ -288,7 +288,7 @@ async fn completed_commands_do_not_persist_sessions() -> anyhow::Result<()> {
         result.process_id.is_some(),
         "completed command should report a process id"
     );
-    assert!(result.truncated_output().contains("codex"));
+    assert!(result.truncated_output().contains("chaos"));
 
     assert!(
         session

@@ -150,7 +150,7 @@ impl OutgoingMessageSender {
         };
 
         self.send_notification(OutgoingNotification {
-            method: "codex/event".to_string(),
+            method: "chaos/event".to_string(),
             params: Some(params.clone()),
         })
         .await;
@@ -292,7 +292,7 @@ mod tests {
         let OutgoingMessage::Notification(OutgoingNotification { method, params }) = result else {
             panic!("expected Notification for first message");
         };
-        assert_eq!(method, "codex/event");
+        assert_eq!(method, "chaos/event");
 
         let Ok(expected_params) = serde_json::to_value(&event) else {
             panic!("Event must serialize");
@@ -341,7 +341,7 @@ mod tests {
         let OutgoingMessage::Notification(OutgoingNotification { method, params }) = result else {
             panic!("expected Notification for first message");
         };
-        assert_eq!(method, "codex/event");
+        assert_eq!(method, "chaos/event");
         let expected_params = json!({
             "_meta": {
                 "requestId": "123",
@@ -407,7 +407,7 @@ mod tests {
         let OutgoingMessage::Notification(OutgoingNotification { method, params }) = result else {
             panic!("expected Notification for first message");
         };
-        assert_eq!(method, "codex/event");
+        assert_eq!(method, "chaos/event");
         let expected_params = json!({
             "_meta": {
                 "requestId": "123",

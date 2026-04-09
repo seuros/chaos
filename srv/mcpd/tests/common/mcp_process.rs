@@ -398,7 +398,7 @@ impl McpProcess {
     }
 
     /// Reads notifications until a legacy TurnComplete event is observed:
-    /// Method "codex/event" with params.msg.type == "task_complete".
+    /// Method "chaos/event" with params.msg.type == "task_complete".
     pub async fn read_stream_until_legacy_task_complete_notification(
         &mut self,
     ) -> anyhow::Result<JsonRpcRequest> {
@@ -411,7 +411,7 @@ impl McpProcess {
             let message = self.read_wire_message().await?;
             match message {
                 JsonRpcMessage::Notification(notification) => {
-                    let is_match = if notification.method == "codex/event" {
+                    let is_match = if notification.method == "chaos/event" {
                         if let Some(params) = &notification.params {
                             params
                                 .get("msg")

@@ -355,7 +355,7 @@ fn model_info_from_models_json(slug: &str) -> ModelInfo {
     let mut model = crate::test_support::test_model_info(slug);
 
     // Per-model tool configuration (mirrors the old catalog entries).
-    if slug.contains("codex") || slug.starts_with("gpt-5.1") {
+    if slug.contains("chaos") || slug.starts_with("gpt-5.1") {
         model.shell_type = ConfigShellToolType::ShellCommand;
         model.apply_patch_tool_type = Some(ApplyPatchToolType::Freeform);
     } else {

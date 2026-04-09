@@ -436,7 +436,7 @@ impl std::fmt::Display for UsageLimitReachedError {
             .and_then(|snapshot| snapshot.limit_name.as_deref())
             .map(str::trim)
             .filter(|name| !name.is_empty())
-            && !limit_name.eq_ignore_ascii_case("codex")
+            && !limit_name.eq_ignore_ascii_case("chaos")
         {
             return write!(
                 f,

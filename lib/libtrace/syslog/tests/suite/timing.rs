@@ -12,7 +12,7 @@ fn record_duration_records_histogram() -> Result<()> {
     let (metrics, exporter) = build_metrics_with_defaults(&[])?;
 
     metrics.record_duration(
-        "codex.request_latency",
+        "chaos.request_latency",
         Duration::from_millis(15),
         &[("route", "chat")],
     )?;
@@ -20,12 +20,12 @@ fn record_duration_records_histogram() -> Result<()> {
 
     let resource_metrics = latest_metrics(&exporter);
     let (bounds, bucket_counts, sum, count) =
-        histogram_data(&resource_metrics, "codex.request_latency");
+        histogram_data(&resource_metrics, "chaos.request_latency");
     assert!(!bounds.is_empty());
     assert_eq!(bucket_counts.iter().sum::<u64>(), 1);
     assert_eq!(sum, 15.0);
     assert_eq!(count, 1);
-    let metric = crate::harness::find_metric(&resource_metrics, "codex.request_latency")
+    let metric = crate::harness::find_metric(&resource_metrics, "chaos.request_latency")
         .unwrap_or_else(|| panic!("metric codex.request_latency missing"));
     assert_eq!(metric.unit(), "ms");
     assert_eq!(metric.description(), "Duration in milliseconds.");
@@ -39,7 +39,7 @@ fn timer_result_records_success() -> Result<()> {
     let (metrics, exporter) = build_metrics_with_defaults(&[])?;
 
     {
-        let timer = metrics.start_timer("codex.request_latency", &[("route", "chat")]);
+        let timer = metrics.start_timer("chaos.request_latency", &[("route", "chat")]);
         assert!(timer.is_ok());
     }
 
@@ -47,16 +47,16 @@ fn timer_result_records_success() -> Result<()> {
 
     let resource_metrics = latest_metrics(&exporter);
     let (bounds, bucket_counts, _sum, count) =
-        histogram_data(&resource_metrics, "codex.request_latency");
+        histogram_data(&resource_metrics, "chaos.request_latency");
     assert!(!bounds.is_empty());
     assert_eq!(count, 1);
     assert_eq!(bucket_counts.iter().sum::<u64>(), 1);
-    let metric = crate::harness::find_metric(&resource_metrics, "codex.request_latency")
+    let metric = crate::harness::find_metric(&resource_metrics, "chaos.request_latency")
         .unwrap_or_else(|| panic!("metric codex.request_latency missing"));
     assert_eq!(metric.unit(), "ms");
     assert_eq!(metric.description(), "Duration in milliseconds.");
     let attrs = attributes_to_map(
-        match crate::harness::find_metric(&resource_metrics, "codex.request_latency").and_then(
+        match crate::harness::find_metric(&resource_metrics, "chaos.request_latency").and_then(
             |metric| match metric.data() {
                 rama::telemetry::opentelemetry::sdk::metrics::data::AggregatedMetrics::F64(
                     rama::telemetry::opentelemetry::sdk::metrics::data::MetricData::Histogram(histogram),

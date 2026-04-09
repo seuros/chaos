@@ -376,7 +376,7 @@ async fn handle_list_resources(
     let cursor = normalize_optional_string(cursor);
 
     let invocation = McpInvocation {
-        server: server.clone().unwrap_or_else(|| "codex".to_string()),
+        server: server.clone().unwrap_or_else(|| "chaos".to_string()),
         tool: "list_mcp_resources".to_string(),
         arguments: arguments.clone(),
     };
@@ -489,7 +489,7 @@ async fn handle_list_resource_templates(
     let cursor = normalize_optional_string(cursor);
 
     let invocation = McpInvocation {
-        server: server.clone().unwrap_or_else(|| "codex".to_string()),
+        server: server.clone().unwrap_or_else(|| "chaos".to_string()),
         tool: "list_mcp_resource_templates".to_string(),
         arguments: arguments.clone(),
     };

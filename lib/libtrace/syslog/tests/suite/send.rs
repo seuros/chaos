@@ -13,13 +13,13 @@ fn send_builds_payload_with_tags_and_histograms() -> Result<()> {
     let (metrics, exporter) =
         build_metrics_with_defaults(&[("service", "chaos-cli"), ("env", "prod")])?;
 
-    metrics.counter("codex.turns", 1, &[("model", "gpt-5.1"), ("env", "dev")])?;
-    metrics.histogram("codex.tool_latency", 25, &[("tool", "shell")])?;
+    metrics.counter("chaos.turns", 1, &[("model", "gpt-5.1"), ("env", "dev")])?;
+    metrics.histogram("chaos.tool_latency", 25, &[("tool", "shell")])?;
     metrics.shutdown()?;
 
     let resource_metrics = latest_metrics(&exporter);
 
-    let counter = find_metric(&resource_metrics, "codex.turns").expect("counter metric missing");
+    let counter = find_metric(&resource_metrics, "chaos.turns").expect("counter metric missing");
     let counter_attributes = match counter.data() {
         rama::telemetry::opentelemetry::sdk::metrics::data::AggregatedMetrics::U64(data) => {
             match data {
@@ -43,14 +43,14 @@ fn send_builds_payload_with_tags_and_histograms() -> Result<()> {
     assert_eq!(counter_attributes, expected_counter_attributes);
 
     let (bounds, bucket_counts, sum, count) =
-        histogram_data(&resource_metrics, "codex.tool_latency");
+        histogram_data(&resource_metrics, "chaos.tool_latency");
     assert!(!bounds.is_empty());
     assert_eq!(bucket_counts.iter().sum::<u64>(), 1);
     assert_eq!(sum, 25.0);
     assert_eq!(count, 1);
 
     let histogram_attrs = attributes_to_map(
-        match find_metric(&resource_metrics, "codex.tool_latency").and_then(|metric| {
+        match find_metric(&resource_metrics, "chaos.tool_latency").and_then(|metric| {
             match metric.data() {
                 rama::telemetry::opentelemetry::sdk::metrics::data::AggregatedMetrics::F64(
                     rama::telemetry::opentelemetry::sdk::metrics::data::MetricData::Histogram(histogram),
@@ -84,9 +84,9 @@ fn send_merges_default_tags_per_line() -> Result<()> {
         ("region", "us"),
     ])?;
 
-    metrics.counter("codex.alpha", 1, &[("env", "dev"), ("component", "alpha")])?;
+    metrics.counter("chaos.alpha", 1, &[("env", "dev"), ("component", "alpha")])?;
     metrics.counter(
-        "codex.beta",
+        "chaos.beta",
         2,
         &[("service", "worker"), ("component", "beta")],
     )?;
@@ -94,7 +94,7 @@ fn send_merges_default_tags_per_line() -> Result<()> {
 
     let resource_metrics = latest_metrics(&exporter);
     let alpha_metric =
-        find_metric(&resource_metrics, "codex.alpha").expect("codex.alpha metric missing");
+        find_metric(&resource_metrics, "chaos.alpha").expect("chaos.alpha metric missing");
     let alpha_point = match alpha_metric.data() {
         rama::telemetry::opentelemetry::sdk::metrics::data::AggregatedMetrics::U64(data) => {
             match data {
@@ -119,7 +119,7 @@ fn send_merges_default_tags_per_line() -> Result<()> {
     assert_eq!(alpha_attrs, expected_alpha_attrs);
 
     let beta_metric =
-        find_metric(&resource_metrics, "codex.beta").expect("codex.beta metric missing");
+        find_metric(&resource_metrics, "chaos.beta").expect("chaos.beta metric missing");
     let beta_point = match beta_metric.data() {
         rama::telemetry::opentelemetry::sdk::metrics::data::AggregatedMetrics::U64(data) => {
             match data {
@@ -151,11 +151,11 @@ fn send_merges_default_tags_per_line() -> Result<()> {
 fn client_sends_enqueued_metric() -> Result<()> {
     let (metrics, exporter) = build_metrics_with_defaults(&[])?;
 
-    metrics.counter("codex.turns", 1, &[("model", "gpt-5.1")])?;
+    metrics.counter("chaos.turns", 1, &[("model", "gpt-5.1")])?;
     metrics.shutdown()?;
 
     let resource_metrics = latest_metrics(&exporter);
-    let counter = find_metric(&resource_metrics, "codex.turns").expect("counter metric missing");
+    let counter = find_metric(&resource_metrics, "chaos.turns").expect("counter metric missing");
     let points = match counter.data() {
         rama::telemetry::opentelemetry::sdk::metrics::data::AggregatedMetrics::U64(data) => {
             match data {
@@ -181,11 +181,11 @@ fn client_sends_enqueued_metric() -> Result<()> {
 fn shutdown_flushes_in_memory_exporter() -> Result<()> {
     let (metrics, exporter) = build_metrics_with_defaults(&[])?;
 
-    metrics.counter("codex.turns", 1, &[])?;
+    metrics.counter("chaos.turns", 1, &[])?;
     metrics.shutdown()?;
 
     let resource_metrics = latest_metrics(&exporter);
-    let counter = find_metric(&resource_metrics, "codex.turns").expect("counter metric missing");
+    let counter = find_metric(&resource_metrics, "chaos.turns").expect("counter metric missing");
     let points = match counter.data() {
         rama::telemetry::opentelemetry::sdk::metrics::data::AggregatedMetrics::U64(data) => {
             match data {

@@ -286,7 +286,7 @@ impl SessionTelemetry {
         log_and_trace_event!(
             self,
             common: {
-                event.name = "codex.conversation_starts",
+                event.name = "chaos.conversation_starts",
                 provider_name = %provider_name,
                 reasoning_effort = reasoning_effort.map(|e| e.to_string()),
                 reasoning_summary = %reasoning_summary,
@@ -342,7 +342,7 @@ impl SessionTelemetry {
         log_and_trace_event!(
             self,
             common: {
-                event.name = "codex.api_request",
+                event.name = "chaos.api_request",
                 duration_ms = %duration.as_millis(),
                 http.response.status_code = status,
                 error.message = error,
@@ -379,7 +379,7 @@ impl SessionTelemetry {
         log_and_trace_event!(
             self,
             common: {
-                event.name = "codex.auth_recovery",
+                event.name = "chaos.auth_recovery",
                 auth.mode = mode,
                 auth.step = step,
                 auth.outcome = outcome,
@@ -462,7 +462,7 @@ impl SessionTelemetry {
         );
         log_event!(
             self,
-            event.name = "codex.sse_event",
+            event.name = "chaos.sse_event",
             event.kind = %kind,
             duration_ms = %duration.as_millis(),
         );
@@ -486,21 +486,21 @@ impl SessionTelemetry {
         match kind {
             Some(kind) => log_event!(
                 self,
-                event.name = "codex.sse_event",
+                event.name = "chaos.sse_event",
                 event.kind = %kind,
                 duration_ms = %duration.as_millis(),
                 error.message = %error,
             ),
             None => log_event!(
                 self,
-                event.name = "codex.sse_event",
+                event.name = "chaos.sse_event",
                 duration_ms = %duration.as_millis(),
                 error.message = %error,
             ),
         }
         trace_event!(
             self,
-            event.name = "codex.sse_event",
+            event.name = "chaos.sse_event",
             event.kind = %kind_str,
             duration_ms = %duration.as_millis(),
             error.message = %error,
@@ -514,7 +514,7 @@ impl SessionTelemetry {
         log_and_trace_event!(
             self,
             common: {
-                event.name = "codex.sse_event",
+                event.name = "chaos.sse_event",
                 event.kind = %"response.completed",
                 error.message = %error,
             },
@@ -534,7 +534,7 @@ impl SessionTelemetry {
         log_and_trace_event!(
             self,
             common: {
-                event.name = "codex.sse_event",
+                event.name = "chaos.sse_event",
                 event.kind = %"response.completed",
                 input_token_count = %input_token_count,
                 output_token_count = %output_token_count,
@@ -576,13 +576,13 @@ impl SessionTelemetry {
 
         log_event!(
             self,
-            event.name = "codex.user_prompt",
+            event.name = "chaos.user_prompt",
             prompt_length = %prompt.chars().count(),
             prompt = %prompt_to_log,
         );
         trace_event!(
             self,
-            event.name = "codex.user_prompt",
+            event.name = "chaos.user_prompt",
             prompt_length = %prompt.chars().count(),
             text_input_count = text_input_count as i64,
             image_input_count = image_input_count as i64,
@@ -599,7 +599,7 @@ impl SessionTelemetry {
     ) {
         log_event!(
             self,
-            event.name = "codex.tool_decision",
+            event.name = "chaos.tool_decision",
             tool_name = %tool_name,
             call_id = %call_id,
             decision = %decision.clone().to_string().to_lowercase(),
@@ -650,7 +650,7 @@ impl SessionTelemetry {
     pub fn log_tool_failed(&self, tool_name: &str, error: &str) {
         log_event!(
             self,
-            event.name = "codex.tool_result",
+            event.name = "chaos.tool_result",
             tool_name = %tool_name,
             duration_ms = %Duration::ZERO.as_millis(),
             success = %false,
@@ -660,7 +660,7 @@ impl SessionTelemetry {
         );
         trace_event!(
             self,
-            event.name = "codex.tool_result",
+            event.name = "chaos.tool_result",
             tool_name = %tool_name,
             duration_ms = %Duration::ZERO.as_millis(),
             success = %false,
@@ -695,7 +695,7 @@ impl SessionTelemetry {
         let mcp_server_origin = mcp_server_origin.unwrap_or("");
         log_event!(
             self,
-            event.name = "codex.tool_result",
+            event.name = "chaos.tool_result",
             tool_name = %tool_name,
             call_id = %call_id,
             arguments = %arguments,
@@ -707,7 +707,7 @@ impl SessionTelemetry {
         );
         trace_event!(
             self,
-            event.name = "codex.tool_result",
+            event.name = "chaos.tool_result",
             tool_name = %tool_name,
             call_id = %call_id,
             duration_ms = %duration.as_millis(),

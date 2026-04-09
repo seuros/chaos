@@ -2298,7 +2298,7 @@ impl Session {
     pub(crate) async fn record_model_warning(&self, message: impl Into<String>, ctx: &TurnContext) {
         self.services
             .session_telemetry
-            .counter("codex.model_warning", /*inc*/ 1, &[]);
+            .counter("chaos.model_warning", /*inc*/ 1, &[]);
         let item = ResponseItem::Message {
             id: None,
             role: "user".to_string(),
@@ -4002,7 +4002,7 @@ mod handlers {
             .filter(|item| is_user_turn_boundary(item))
             .count();
         sess.services.session_telemetry.counter(
-            "codex.conversation.turn.count",
+            "chaos.conversation.turn.count",
             i64::try_from(turn_count).unwrap_or(0),
             &[],
         );

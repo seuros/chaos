@@ -23,14 +23,14 @@ fn snapshot_collects_metrics_without_shutdown() -> Result<()> {
     let metrics = MetricsClient::new(config)?;
 
     metrics.counter(
-        "codex.tool.call",
+        "chaos.tool.call",
         1,
         &[("tool", "shell"), ("success", "true")],
     )?;
 
     let snapshot = metrics.snapshot()?;
 
-    let metric = find_metric(&snapshot, "codex.tool.call").expect("counter metric missing");
+    let metric = find_metric(&snapshot, "chaos.tool.call").expect("counter metric missing");
     let attrs = match metric.data() {
         AggregatedMetrics::U64(data) => match data {
             MetricData::Sum(sum) => {
@@ -80,13 +80,13 @@ fn manager_snapshot_metrics_collects_without_shutdown() -> Result<()> {
     .with_metrics(metrics);
 
     manager.counter(
-        "codex.tool.call",
+        "chaos.tool.call",
         1,
         &[("tool", "shell"), ("success", "true")],
     );
 
     let snapshot = manager.snapshot_metrics()?;
-    let metric = find_metric(&snapshot, "codex.tool.call").expect("counter metric missing");
+    let metric = find_metric(&snapshot, "chaos.tool.call").expect("counter metric missing");
     let attrs = match metric.data() {
         AggregatedMetrics::U64(data) => match data {
             MetricData::Sum(sum) => {

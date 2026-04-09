@@ -200,7 +200,7 @@ pub(crate) async fn handle_mcp_tool_call(
 
         let status = if result.is_ok() { "ok" } else { "error" };
         turn_context.session_telemetry.counter(
-            "codex.mcp.call",
+            "chaos.mcp.call",
             /*inc*/ 1,
             &[("status", status)],
         );
@@ -250,7 +250,7 @@ pub(crate) async fn handle_mcp_tool_call(
     let status = if result.is_ok() { "ok" } else { "error" };
     turn_context
         .session_telemetry
-        .counter("codex.mcp.call", /*inc*/ 1, &[("status", status)]);
+        .counter("chaos.mcp.call", /*inc*/ 1, &[("status", status)]);
 
     CallToolResult::from_result(result)
 }

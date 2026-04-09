@@ -45,7 +45,7 @@ pub fn default_socket_path() -> std::io::Result<PathBuf> {
 pub fn default_socket_runtime_dir() -> std::io::Result<PathBuf> {
     if let Some(runtime_dir) = std::env::var_os("XDG_RUNTIME_DIR").filter(|value| !value.is_empty())
     {
-        return Ok(PathBuf::from(runtime_dir).join("codex"));
+        return Ok(PathBuf::from(runtime_dir).join("chaos"));
     }
 
     let uid = unsafe { libc::geteuid() };
@@ -132,7 +132,7 @@ pub async fn run_sqlite_journal_server(config: JournalServerConfig) -> Result<()
 
 fn default_socket_path_in() -> PathBuf {
     default_socket_runtime_dir()
-        .unwrap_or_else(|_| std::env::temp_dir().join("codex"))
+        .unwrap_or_else(|_| std::env::temp_dir().join("chaos"))
         .join(DEFAULT_SOCKET_FILENAME)
 }
 

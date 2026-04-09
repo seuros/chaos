@@ -99,7 +99,7 @@ fn codex_apps_server_config_uses_legacy_codex_apps_path() {
     servers = with_codex_apps_mcp(servers, true, None, &config);
     let server = servers
         .get(CODEX_APPS_MCP_SERVER_NAME)
-        .expect("codex apps should be present when apps is enabled");
+        .expect("chaos apps should be present when apps is enabled");
     let url = match &server.transport {
         McpServerTransportConfig::StreamableHttp { url, .. } => url,
         _ => panic!("expected streamable http transport for codex apps"),

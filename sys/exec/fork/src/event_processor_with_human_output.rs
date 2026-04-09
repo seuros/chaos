@@ -352,7 +352,7 @@ impl EventProcessor for EventProcessorWithHumanOutput {
                 ts_msg!(
                     self,
                     "{}\n{}",
-                    "codex".style(self.italic).style(self.magenta),
+                    "chaos".style(self.italic).style(self.magenta),
                     message,
                 );
             }
@@ -628,7 +628,7 @@ impl EventProcessor for EventProcessorWithHumanOutput {
                 ts_msg!(
                     self,
                     "{} {}",
-                    "codex session".style(self.magenta).style(self.bold),
+                    "chaos session".style(self.magenta).style(self.bold),
                     conversation_id.to_string().style(self.dimmed)
                 );
 

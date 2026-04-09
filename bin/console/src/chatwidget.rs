@@ -1744,7 +1744,7 @@ impl ChatWidget {
             let limit_id = snapshot
                 .limit_id
                 .clone()
-                .unwrap_or_else(|| "codex".to_string());
+                .unwrap_or_else(|| "chaos".to_string());
             let limit_label = snapshot
                 .limit_name
                 .clone()
@@ -1763,7 +1763,7 @@ impl ChatWidget {
 
             self.plan_type = snapshot.plan_type.or(self.plan_type);
 
-            let is_codex_limit = limit_id.eq_ignore_ascii_case("codex");
+            let is_codex_limit = limit_id.eq_ignore_ascii_case("chaos");
             let warnings = if is_codex_limit {
                 self.rate_limit_warnings.take_warnings(
                     snapshot
@@ -3809,7 +3809,7 @@ impl ChatWidget {
             }
             SlashCommand::Rename => {
                 self.session_telemetry
-                    .counter("codex.process.rename", /*inc*/ 1, &[]);
+                    .counter("chaos.process.rename", /*inc*/ 1, &[]);
                 self.show_rename_prompt();
             }
             SlashCommand::Model => {
@@ -4051,7 +4051,7 @@ impl ChatWidget {
         match cmd {
             SlashCommand::Rename if !trimmed.is_empty() => {
                 self.session_telemetry
-                    .counter("codex.process.rename", /*inc*/ 1, &[]);
+                    .counter("chaos.process.rename", /*inc*/ 1, &[]);
                 let Some((prepared_args, _prepared_elements)) = self
                     .bottom_pane
                     .prepare_inline_args_submission(/*record_history*/ false)
@@ -5211,7 +5211,7 @@ impl ChatWidget {
             StatusLineItem::FiveHourLimit => {
                 let window = self
                     .rate_limit_snapshots_by_limit_id
-                    .get("codex")
+                    .get("chaos")
                     .and_then(|s| s.primary.as_ref());
                 let label = window
                     .and_then(|window| window.window_minutes)
@@ -5222,7 +5222,7 @@ impl ChatWidget {
             StatusLineItem::WeeklyLimit => {
                 let window = self
                     .rate_limit_snapshots_by_limit_id
-                    .get("codex")
+                    .get("chaos")
                     .and_then(|s| s.secondary.as_ref());
                 let label = window
                     .and_then(|window| window.window_minutes)

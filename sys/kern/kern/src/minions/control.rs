@@ -23,6 +23,7 @@ use chaos_ipc::user_input::UserInput;
 use std::sync::Arc;
 use std::sync::Weak;
 use tokio::sync::watch;
+use tracing::warn;
 
 const FORKED_SPAWN_AGENT_OUTPUT_MESSAGE: &str = "You are the newly spawned agent. The prior conversation history was forked from your parent agent. Treat the next user message as your new task, and use the forked history only as background context.";
 
@@ -135,9 +136,31 @@ impl AgentControl {
                         parent_thread.codex.session.flush_rollout().await;
                     }
                     let mut forked_rollout_items =
-                        RolloutRecorder::get_rollout_history_for_process(parent_process_id)
-                            .await?
-                            .get_rollout_items();
+                        match RolloutRecorder::get_rollout_history_for_process(parent_process_id)
+                            .await
+                        {
+                            Ok(history) => history.get_rollout_items(),
+                            Err(err) => {
+                                let Some(parent_thread) = parent_thread.as_ref() else {
+                                    return Err(err.into());
+                                };
+                                warn!(
+                                    process_id = %parent_process_id,
+                                    error = %err,
+                                    "falling back to live parent history for forked spawn"
+                                );
+                                parent_thread
+                                    .codex
+                                    .session
+                                    .clone_history()
+                                    .await
+                                    .raw_items()
+                                    .iter()
+                                    .cloned()
+                                    .map(RolloutItem::ResponseItem)
+                                    .collect()
+                            }
+                        };
                     let mut output = FunctionCallOutputPayload::from_text(
                         FORKED_SPAWN_AGENT_OUTPUT_MESSAGE.to_string(),
                     );

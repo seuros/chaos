@@ -29,6 +29,7 @@ use chaos_ipc::openai_models::ModelPreset;
 use chaos_ipc::protocol::InitialHistory;
 use chaos_ipc::protocol::McpServerRefreshConfig;
 use chaos_ipc::protocol::Op;
+use chaos_ipc::protocol::ResumedHistory;
 use chaos_ipc::protocol::RolloutItem;
 use chaos_ipc::protocol::SessionSource;
 use chaos_ipc::protocol::W3cTraceContext;
@@ -162,6 +163,7 @@ pub struct ProcessTable {
 /// function to require an `Arc<&Self>`.
 pub(crate) struct ProcessTableState {
     processes: Arc<RwLock<HashMap<ProcessId, Arc<Process>>>>,
+    closed_process_histories: Arc<RwLock<HashMap<ProcessId, Vec<RolloutItem>>>>,
     process_created_tx: broadcast::Sender<ProcessId>,
     auth_manager: Arc<AuthManager>,
     models_manager: Arc<ModelsManager>,
@@ -193,6 +195,7 @@ impl ProcessTable {
         Self {
             state: Arc::new(ProcessTableState {
                 processes: Arc::new(RwLock::new(HashMap::new())),
+                closed_process_histories: Arc::new(RwLock::new(HashMap::new())),
                 process_created_tx,
                 models_manager: Arc::new(ModelsManager::new_with_provider(
                     chaos_home,
@@ -251,6 +254,7 @@ impl ProcessTable {
         Self {
             state: Arc::new(ProcessTableState {
                 processes: Arc::new(RwLock::new(HashMap::new())),
+                closed_process_histories: Arc::new(RwLock::new(HashMap::new())),
                 process_created_tx,
                 models_manager: Arc::new(ModelsManager::with_provider_for_tests(
                     chaos_home,
@@ -558,7 +562,26 @@ impl ProcessTableState {
 
     /// Remove a process from the manager by ID, returning it when present.
     pub(crate) async fn remove_process(&self, process_id: &ProcessId) -> Option<Arc<Process>> {
-        self.processes.write().await.remove(process_id)
+        let removed = self.processes.write().await.remove(process_id);
+        if let Some(process) = removed.as_ref() {
+            let snapshot = process
+                .codex
+                .session
+                .clone_history()
+                .await
+                .raw_items()
+                .iter()
+                .cloned()
+                .map(RolloutItem::ResponseItem)
+                .collect::<Vec<_>>();
+            if !snapshot.is_empty() {
+                self.closed_process_histories
+                    .write()
+                    .await
+                    .insert(*process_id, snapshot);
+            }
+        }
+        removed
     }
 
     /// Spawn a new thread with no history using a provided config.
@@ -610,10 +633,37 @@ impl ProcessTableState {
         session_source: SessionSource,
         inherited_shell_snapshot: Option<Arc<ShellSnapshot>>,
     ) -> ChaosResult<NewProcess> {
-        if !RolloutRecorder::journal_contains_process(process_id).await? {
-            return Err(ChaosErr::ProcessNotFound(process_id));
-        }
-        let initial_history = RolloutRecorder::get_rollout_history_for_process(process_id).await?;
+        let stashed_history = self
+            .closed_process_histories
+            .read()
+            .await
+            .get(&process_id)
+            .cloned();
+        let initial_history = match RolloutRecorder::journal_contains_process(process_id).await {
+            Ok(true) => RolloutRecorder::get_rollout_history_for_process(process_id).await?,
+            Ok(false) => stashed_history
+                .map(|history| {
+                    InitialHistory::Resumed(ResumedHistory {
+                        conversation_id: process_id,
+                        history,
+                    })
+                })
+                .ok_or(ChaosErr::ProcessNotFound(process_id))?,
+            Err(err) => match stashed_history {
+                Some(history) => InitialHistory::Resumed(ResumedHistory {
+                    conversation_id: process_id,
+                    history,
+                }),
+                None => {
+                    tracing::warn!(
+                        process_id = %process_id,
+                        error = %err,
+                        "journal lookup failed while resuming agent without local fallback history"
+                    );
+                    return Err(ChaosErr::ProcessNotFound(process_id));
+                }
+            },
+        };
         Box::pin(self.spawn_process_with_source(
             config,
             initial_history,
@@ -741,8 +791,14 @@ impl ProcessTableState {
         };
 
         let process = Arc::new(Process::new(codex, watch_registration));
-        let mut processes = self.processes.write().await;
-        processes.insert(process_id, process.clone());
+        {
+            let mut processes = self.processes.write().await;
+            processes.insert(process_id, process.clone());
+        }
+        self.closed_process_histories
+            .write()
+            .await
+            .remove(&process_id);
 
         Ok(NewProcess {
             process_id,

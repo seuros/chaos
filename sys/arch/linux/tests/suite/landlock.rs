@@ -22,7 +22,7 @@ use std::collections::HashMap;
 use std::path::PathBuf;
 use tempfile::NamedTempFile;
 
-// At least on GitHub CI, the arm64 tests appear to need longer timeouts.
+// Arm64 test environments appear to need longer timeouts.
 
 #[cfg(not(target_arch = "aarch64"))]
 const SHORT_TIMEOUT_MS: u64 = 200;
@@ -172,8 +172,8 @@ async fn test_dev_null_write() {
     let output = run_cmd_result_with_writable_roots(
         &["bash", "-lc", "echo blah > /dev/null"],
         &[],
-        // We have seen timeouts when running this test in CI on GitHub,
-        // so we are using a generous timeout until we can diagnose further.
+        // We have seen timeouts for this test in CI, so use a generous
+        // timeout until we can diagnose further.
         LONG_TIMEOUT_MS,
         true,
     )
@@ -249,8 +249,8 @@ async fn test_writable_root() {
             &format!("echo blah > {}", file_path.to_string_lossy()),
         ],
         &[tmpdir.path().to_path_buf()],
-        // We have seen timeouts when running this test in CI on GitHub,
-        // so we are using a generous timeout until we can diagnose further.
+        // We have seen timeouts for this test in CI, so use a generous
+        // timeout until we can diagnose further.
         LONG_TIMEOUT_MS,
     )
     .await;

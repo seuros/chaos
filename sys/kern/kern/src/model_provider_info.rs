@@ -155,11 +155,15 @@ pub struct ModelProviderInfo {
 
 impl ModelProviderInfo {
     pub(crate) fn effective_base_url(&self, auth_mode: Option<AuthMode>) -> String {
-        let default_base_url = if matches!(auth_mode, Some(AuthMode::Chatgpt)) {
-            CHATGPT_DEFAULT_BASE_URL
-        } else {
-            OPENAI_DEFAULT_BASE_URL
-        };
+        // Only route to the ChatGPT backend when the provider actually uses
+        // OpenAI auth.  Self-authenticated providers (env_key, bearer token)
+        // must never be redirected to chatgpt.com.
+        let default_base_url =
+            if self.requires_openai_auth && matches!(auth_mode, Some(AuthMode::Chatgpt)) {
+                CHATGPT_DEFAULT_BASE_URL
+            } else {
+                OPENAI_DEFAULT_BASE_URL
+            };
         self.base_url
             .clone()
             .unwrap_or_else(|| default_base_url.to_string())

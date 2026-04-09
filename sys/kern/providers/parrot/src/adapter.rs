@@ -10,6 +10,8 @@ use crate::common::ResponsesApiRequest;
 use crate::common::TextControls;
 use crate::common::TextFormat;
 use crate::common::TextFormatType;
+use crate::representer::Representer;
+use crate::representer::ResponsesRepresenter;
 use chaos_abi::AbiError;
 use chaos_abi::ToolDef;
 use chaos_abi::TurnEvent;
@@ -60,10 +62,12 @@ impl From<TurnRequest> for ResponsesApiRequest {
             .and_then(Value::as_str)
             .map(String::from);
 
+        let representer = ResponsesRepresenter;
+
         ResponsesApiRequest {
             model: req.model,
             instructions: req.instructions,
-            input: req.input,
+            input: representer.represent(req.input),
             tools,
             tool_choice: "auto".to_string(),
             parallel_tool_calls: req.parallel_tool_calls,

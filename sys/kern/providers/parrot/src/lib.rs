@@ -18,6 +18,7 @@ pub mod error;
 pub mod openai;
 pub mod provider;
 pub mod rate_limits;
+pub mod representer;
 pub mod requests;
 pub mod sanitize;
 pub mod sse;

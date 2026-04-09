@@ -278,9 +278,9 @@ impl FileWatcher {
             if guard.watched_paths.remove(root).is_none() {
                 continue;
             }
-            if let Err(err) = guard.watcher.unwatch(root) {
-                warn!("failed to unwatch {}: {err}", root.display());
-            }
+            // Ignore errors — the watch may already be gone if the
+            // directory was removed or the OS evicted the inotify entry.
+            let _ = guard.watcher.unwatch(root);
         }
     }
 
@@ -299,9 +299,7 @@ impl FileWatcher {
             if *existing == RecursiveMode::Recursive || *existing == mode {
                 return;
             }
-            if let Err(err) = guard.watcher.unwatch(&watch_path) {
-                warn!("failed to unwatch {}: {err}", watch_path.display());
-            }
+            let _ = guard.watcher.unwatch(&watch_path);
         }
         if let Err(err) = guard.watcher.watch(&watch_path, mode) {
             warn!("failed to watch {}: {err}", watch_path.display());

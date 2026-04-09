@@ -469,7 +469,10 @@ impl HttpTransportInner {
     }
 
     async fn wait_for_retry(&self) -> bool {
-        let attempt = self.reconnect_attempt.fetch_add(1, Ordering::Relaxed).saturating_add(1);
+        let attempt = self
+            .reconnect_attempt
+            .fetch_add(1, Ordering::Relaxed)
+            .saturating_add(1);
         let base_delay = *self.reconnect_delay.lock().await;
         let backoff = ExponentialBackoff::new()
             .max_attempts(u8::MAX)

@@ -1,5 +1,8 @@
 use std::collections::HashMap;
+use std::future::Future;
 use std::sync::Arc;
+use std::time::Duration;
+use std::time::Instant;
 
 use crate::SandboxState;
 use crate::config::types::McpServerConfig;
@@ -27,37 +30,114 @@ use tracing::warn;
 use super::Session;
 use super::TurnContext;
 
-/// Process-wide registry of per-server circuit breakers.
-// Not yet called from call_tool — wired in a follow-up once the breaker
-// state is plumbed through the connection manager.
-#[allow(dead_code)]
+const HALF_OPEN_TIMEOUT: Duration = Duration::from_secs(30);
+
+/// Breaker state bundled with open-timestamp for manual half-open transitions.
 ///
-/// Each breaker is wrapped in `Arc<Mutex<>>` so callers can hold a reference
-/// while the registry lock is released during the actual call.  Initialised
+/// `breaker-machines` `call()` is sync-only so we can't use it for async
+/// operations. The manual `record_*` API doesn't drive Open→HalfOpen
+/// transitions, so we track `opened_at` ourselves and `reset()` after the
+/// configured timeout. This is coarser than true HalfOpen (it goes straight
+/// to Closed, allowing all traffic through) but prevents permanent latching.
+///
+/// TODO: add `try_half_open(&mut self)` to `breaker-machines` for proper
+/// Open→HalfOpen transitions without requiring `call()`.
+struct BreakerState {
+    breaker: CircuitBreaker,
+    opened_at: Option<Instant>,
+}
+
+/// Process-wide registry of per-server circuit breakers.
+///
+/// Each entry is wrapped in `Arc<Mutex<>>` so callers can hold a reference
+/// while the registry lock is released during the actual call. Initialised
 /// lazily on first access; this is intentionally a singleton so all session
 /// instances share the same fault-detection state for a given MCP server.
 static MCP_CIRCUIT_BREAKERS: std::sync::LazyLock<
-    std::sync::Mutex<HashMap<String, Arc<std::sync::Mutex<CircuitBreaker>>>>,
+    std::sync::Mutex<HashMap<String, Arc<std::sync::Mutex<BreakerState>>>>,
 > = std::sync::LazyLock::new(|| std::sync::Mutex::new(HashMap::new()));
 
-/// Retrieve (or create) the circuit breaker for `server_name`.
-#[allow(dead_code)]
-pub(super) fn mcp_circuit_breaker(server_name: &str) -> Arc<std::sync::Mutex<CircuitBreaker>> {
+/// Retrieve (or create) the circuit breaker state for `server_name`.
+fn mcp_circuit_breaker(server_name: &str) -> Arc<std::sync::Mutex<BreakerState>> {
     let mut map = MCP_CIRCUIT_BREAKERS
         .lock()
         .unwrap_or_else(std::sync::PoisonError::into_inner);
     map.entry(server_name.to_string())
         .or_insert_with(|| {
-            Arc::new(std::sync::Mutex::new(
-                CircuitBreaker::builder(server_name)
+            Arc::new(std::sync::Mutex::new(BreakerState {
+                breaker: CircuitBreaker::builder(server_name)
                     .failure_threshold(5)
                     .failure_window_secs(60.0)
                     .half_open_timeout_secs(30.0)
                     .success_threshold(2)
                     .build(),
-            ))
+                opened_at: None,
+            }))
         })
         .clone()
+}
+
+/// Wraps an async MCP operation with the per-server circuit breaker.
+///
+/// Fails fast when the breaker is open and the half-open timeout hasn't
+/// elapsed. Records success/failure to drive state transitions.
+async fn with_circuit_breaker<T, F, Fut>(server: &str, op: F) -> anyhow::Result<T>
+where
+    F: FnOnce() -> Fut,
+    Fut: Future<Output = anyhow::Result<T>>,
+{
+    let breaker = mcp_circuit_breaker(server);
+
+    {
+        let mut guard = breaker
+            .lock()
+            .unwrap_or_else(std::sync::PoisonError::into_inner);
+        if guard.breaker.is_open() {
+            if let Some(opened_at) = guard.opened_at {
+                if opened_at.elapsed() >= HALF_OPEN_TIMEOUT {
+                    // Timeout elapsed — reset to allow a probe call through.
+                    guard.breaker.reset();
+                    guard.opened_at = None;
+                    warn!("MCP server '{server}' circuit reset after timeout — probing");
+                } else {
+                    anyhow::bail!(
+                        "MCP server '{server}' circuit open — too many recent failures, backing off"
+                    );
+                }
+            } else {
+                anyhow::bail!(
+                    "MCP server '{server}' circuit open — too many recent failures, backing off"
+                );
+            }
+        }
+    }
+
+    let start = Instant::now();
+    let result = op().await;
+    let duration = start.elapsed().as_secs_f64();
+
+    {
+        let mut guard = breaker
+            .lock()
+            .unwrap_or_else(std::sync::PoisonError::into_inner);
+        match &result {
+            Ok(_) => {
+                guard.breaker.record_success_and_maybe_close(duration);
+                if !guard.breaker.is_open() {
+                    guard.opened_at = None;
+                }
+            }
+            Err(_) => {
+                let was_open = guard.breaker.is_open();
+                guard.breaker.record_failure_and_maybe_trip(duration);
+                if !was_open && guard.breaker.is_open() {
+                    guard.opened_at = Some(Instant::now());
+                }
+            }
+        }
+    }
+
+    result
 }
 
 impl Session {
@@ -66,12 +146,11 @@ impl Session {
         server: &str,
         params: Option<PaginatedRequestParams>,
     ) -> anyhow::Result<ListResourcesResult> {
-        self.services
-            .mcp_connection_manager
-            .read()
-            .await
-            .list_resources(server, params)
-            .await
+        with_circuit_breaker(server, || {
+            let mgr = self.services.mcp_connection_manager.clone();
+            async move { mgr.read().await.list_resources(server, params).await }
+        })
+        .await
     }
 
     pub async fn list_resource_templates(
@@ -79,12 +158,16 @@ impl Session {
         server: &str,
         params: Option<PaginatedRequestParams>,
     ) -> anyhow::Result<ListResourceTemplatesResult> {
-        self.services
-            .mcp_connection_manager
-            .read()
-            .await
-            .list_resource_templates(server, params)
-            .await
+        with_circuit_breaker(server, || {
+            let mgr = self.services.mcp_connection_manager.clone();
+            async move {
+                mgr.read()
+                    .await
+                    .list_resource_templates(server, params)
+                    .await
+            }
+        })
+        .await
     }
 
     pub async fn read_resource(
@@ -92,12 +175,11 @@ impl Session {
         server: &str,
         params: ReadResourceRequestParams,
     ) -> anyhow::Result<ReadResourceResult> {
-        self.services
-            .mcp_connection_manager
-            .read()
-            .await
-            .read_resource(server, params)
-            .await
+        with_circuit_breaker(server, || {
+            let mgr = self.services.mcp_connection_manager.clone();
+            async move { mgr.read().await.read_resource(server, params).await }
+        })
+        .await
     }
 
     pub async fn call_tool(
@@ -107,12 +189,16 @@ impl Session {
         arguments: Option<serde_json::Value>,
         meta: Option<serde_json::Value>,
     ) -> anyhow::Result<CallToolResult> {
-        self.services
-            .mcp_connection_manager
-            .read()
-            .await
-            .call_tool(server, tool, arguments, meta)
-            .await
+        with_circuit_breaker(server, || {
+            let mgr = self.services.mcp_connection_manager.clone();
+            async move {
+                mgr.read()
+                    .await
+                    .call_tool(server, tool, arguments, meta)
+                    .await
+            }
+        })
+        .await
     }
 
     pub(crate) async fn parse_mcp_tool_name(

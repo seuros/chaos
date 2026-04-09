@@ -2018,10 +2018,10 @@ version = "47.0.0"
 dependencies = [
  "bytes",
  "chaos-which",
+ "chrono-machines",
  "futures",
  "pretty_assertions",
  "rama",
- "rand 0.10.0",
  "rustls",
  "rustls-native-certs",
  "rustls-pki-types",
@@ -5695,8 +5695,10 @@ dependencies = [
 name = "mcp-guest"
 version = "47.0.0"
 dependencies = [
+ "chrono-machines",
  "mcp-host",
  "rama",
+ "rand 0.10.0",
  "serde",
  "serde_json",
  "thiserror 2.0.18",

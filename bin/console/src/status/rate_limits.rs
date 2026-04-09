@@ -114,7 +114,7 @@ pub(crate) fn rate_limit_snapshot_display(
     snapshot: &RateLimitSnapshot,
     captured_at: Timestamp,
 ) -> RateLimitSnapshotDisplay {
-    rate_limit_snapshot_display_for_limit(snapshot, "codex".to_string(), captured_at)
+    rate_limit_snapshot_display_for_limit(snapshot, "chaos".to_string(), captured_at)
 }
 
 pub(crate) fn rate_limit_snapshot_display_for_limit(
@@ -177,7 +177,7 @@ pub(crate) fn compose_rate_limit_data_many(
             > RATE_LIMIT_STALE_THRESHOLD_MINUTES * 60;
 
         let limit_bucket_label = snapshot.limit_name.clone();
-        let show_limit_prefix = !limit_bucket_label.eq_ignore_ascii_case("codex");
+        let show_limit_prefix = !limit_bucket_label.eq_ignore_ascii_case("chaos");
         let primary_label = snapshot
             .primary
             .as_ref()
@@ -360,7 +360,7 @@ mod tests {
     fn non_codex_single_limit_renders_combined_row() {
         let now = Timestamp::now();
         let codex = RateLimitSnapshotDisplay {
-            limit_name: "codex".to_string(),
+            limit_name: "chaos".to_string(),
             captured_at: now,
             primary: Some(window(10.0)),
             secondary: None,

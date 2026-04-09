@@ -35,7 +35,7 @@ fn invalid_tag_component_is_rejected() -> Result<()> {
 fn counter_rejects_invalid_tag_key() -> Result<()> {
     let metrics = build_in_memory_client()?;
     let err = metrics
-        .counter("codex.turns", 1, &[("bad key", "value")])
+        .counter("chaos.turns", 1, &[("bad key", "value")])
         .unwrap_err();
     assert!(matches!(
         err,
@@ -51,7 +51,7 @@ fn counter_rejects_invalid_tag_key() -> Result<()> {
 fn histogram_rejects_invalid_tag_value() -> Result<()> {
     let metrics = build_in_memory_client()?;
     let err = metrics
-        .histogram("codex.request_latency", 3, &[("route", "bad value")])
+        .histogram("chaos.request_latency", 3, &[("route", "bad value")])
         .unwrap_err();
     assert!(matches!(
         err,
@@ -78,10 +78,10 @@ fn counter_rejects_invalid_metric_name() -> Result<()> {
 #[test]
 fn counter_rejects_negative_increment() -> Result<()> {
     let metrics = build_in_memory_client()?;
-    let err = metrics.counter("codex.turns", -1, &[]).unwrap_err();
+    let err = metrics.counter("chaos.turns", -1, &[]).unwrap_err();
     assert!(matches!(
         err,
-        MetricsError::NegativeCounterIncrement { name, inc } if name == "codex.turns" && inc == -1
+        MetricsError::NegativeCounterIncrement { name, inc } if name == "chaos.turns" && inc == -1
     ));
     metrics.shutdown()?;
     Ok(())

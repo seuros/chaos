@@ -37,7 +37,7 @@ pub fn emit_feature_metrics(features: &Features, otel: &SessionTelemetry) {
     for feature in FEATURES {
         if features.enabled(feature.id) != feature.default_enabled {
             otel.counter(
-                "codex.feature.state",
+                "chaos.feature.state",
                 /*inc*/ 1,
                 &[
                     ("feature", feature.key),

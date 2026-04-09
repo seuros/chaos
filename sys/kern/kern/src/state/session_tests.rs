@@ -55,7 +55,7 @@ async fn set_rate_limits_defaults_limit_id_to_codex_when_missing() {
             .latest_rate_limits
             .as_ref()
             .and_then(|v| v.limit_id.clone()),
-        Some("codex".to_string())
+        Some("chaos".to_string())
     );
 }
 
@@ -94,7 +94,7 @@ async fn set_rate_limits_defaults_to_codex_when_limit_id_missing_after_other_buc
             .latest_rate_limits
             .as_ref()
             .and_then(|v| v.limit_id.clone()),
-        Some("codex".to_string())
+        Some("chaos".to_string())
     );
 }
 
@@ -104,8 +104,8 @@ async fn set_rate_limits_carries_credits_and_plan_type_from_codex_to_codex_other
     let mut state = SessionState::new(session_configuration);
 
     state.set_rate_limits(RateLimitSnapshot {
-        limit_id: Some("codex".to_string()),
-        limit_name: Some("codex".to_string()),
+        limit_id: Some("chaos".to_string()),
+        limit_name: Some("chaos".to_string()),
         primary: Some(RateLimitWindow {
             used_percent: 10.0,
             window_minutes: Some(60),

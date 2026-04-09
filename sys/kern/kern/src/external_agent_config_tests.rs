@@ -118,7 +118,7 @@ fn import_home_migrates_supported_config_fields_skills_and_agents_md() {
     fs::create_dir_all(claude_home.join("skills").join("skill-a")).expect("create skills");
     fs::write(
             claude_home.join("settings.json"),
-            r#"{"model":"claude","permissions":{"ask":["git push"]},"env":{"FOO":"bar","CI":false,"MAX_RETRIES":3,"MY_TEAM":"codex","IGNORED":null,"LIST":["a","b"],"MAP":{"x":1}},"sandbox":{"enabled":true,"network":{"allowLocalBinding":true}}}"#,
+            r#"{"model":"claude","permissions":{"ask":["git push"]},"env":{"FOO":"bar","CI":false,"MAX_RETRIES":3,"MY_TEAM":"chaos","IGNORED":null,"LIST":["a","b"],"MAP":{"x":1}},"sandbox":{"enabled":true,"network":{"allowLocalBinding":true}}}"#,
         )
         .expect("write settings");
     fs::write(
@@ -155,7 +155,7 @@ fn import_home_migrates_supported_config_fields_skills_and_agents_md() {
 
     assert_eq!(
         fs::read_to_string(chaos_home.join("config.toml")).expect("read config"),
-        "sandbox_mode = \"workspace-write\"\n\n[shell_environment_policy]\ninherit = \"core\"\n\n[shell_environment_policy.set]\nCI = \"false\"\nFOO = \"bar\"\nMAX_RETRIES = \"3\"\nMY_TEAM = \"codex\"\n"
+        "sandbox_mode = \"workspace-write\"\n\n[shell_environment_policy]\ninherit = \"core\"\n\n[shell_environment_policy.set]\nCI = \"false\"\nFOO = \"bar\"\nMAX_RETRIES = \"3\"\nMY_TEAM = \"chaos\"\n"
     );
     assert_eq!(
         fs::read_to_string(agents_skills.join("skill-a").join("SKILL.md"))

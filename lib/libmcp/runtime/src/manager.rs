@@ -100,7 +100,7 @@ pub const DEFAULT_STARTUP_TIMEOUT: Duration = Duration::from_secs(10);
 /// Default timeout for individual tool calls.
 const DEFAULT_TOOL_TIMEOUT: Duration = Duration::from_secs(120);
 
-const MCP_TOOLS_FETCH_UNCACHED_DURATION_METRIC: &str = "codex.mcp.tools.fetch_uncached.duration_ms";
+const MCP_TOOLS_FETCH_UNCACHED_DURATION_METRIC: &str = "chaos.mcp.tools.fetch_uncached.duration_ms";
 const MIN_COMPATIBLE_MCP_CLIENT_VERSION: &str = "0.63.0";
 
 /// Default env vars inherited by stdio MCP server processes.

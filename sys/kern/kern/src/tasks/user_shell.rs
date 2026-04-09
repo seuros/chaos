@@ -103,7 +103,7 @@ pub(crate) async fn execute_user_shell_command(
     session
         .services
         .session_telemetry
-        .counter("codex.task.user_shell", /*inc*/ 1, &[]);
+        .counter("chaos.task.user_shell", /*inc*/ 1, &[]);
 
     if mode == UserShellCommandMode::StandaloneTurn {
         // Auxiliary mode runs within an existing active turn. That turn already

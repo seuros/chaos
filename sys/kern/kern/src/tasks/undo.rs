@@ -44,7 +44,7 @@ impl SessionTask for UndoTask {
     ) -> Pin<Box<dyn Future<Output = Option<String>> + Send>> {
         Box::pin(async move {
             session.session.services.session_telemetry.counter(
-                "codex.task.undo",
+                "chaos.task.undo",
                 /*inc*/ 1,
                 &[],
             );

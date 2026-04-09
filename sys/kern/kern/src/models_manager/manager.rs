@@ -80,7 +80,7 @@ impl RequestTelemetry for ModelsRequestTelemetry {
         tracing::event!(
             target: "chaos_syslog.log_only",
             tracing::Level::INFO,
-            event.name = "codex.api_request",
+            event.name = "chaos.api_request",
             duration_ms = %duration.as_millis(),
             http.response.status_code = status,
             success = success,
@@ -98,7 +98,7 @@ impl RequestTelemetry for ModelsRequestTelemetry {
         tracing::event!(
             target: "chaos_syslog.trace_safe",
             tracing::Level::INFO,
-            event.name = "codex.api_request",
+            event.name = "chaos.api_request",
             duration_ms = %duration.as_millis(),
             http.response.status_code = status,
             success = success,
@@ -444,7 +444,7 @@ impl ModelsManager {
         workflow: &mut ModelDiscoveryWorkflow,
     ) -> CoreResult<()> {
         let _timer =
-            chaos_syslog::start_global_timer("codex.remote_models.fetch_update.duration_ms", &[]);
+            chaos_syslog::start_global_timer("chaos.remote_models.fetch_update.duration_ms", &[]);
 
         let backoff = ExponentialBackoff::new()
             .max_attempts(3)
@@ -616,7 +616,7 @@ impl ModelsManager {
     /// Attempt to satisfy the refresh from the cache when it matches the provider and TTL.
     async fn load_fresh_cache(&self) -> Option<ModelsCache> {
         let _timer =
-            chaos_syslog::start_global_timer("codex.remote_models.load_cache.duration_ms", &[]);
+            chaos_syslog::start_global_timer("chaos.remote_models.load_cache.duration_ms", &[]);
         let client_version = crate::models_manager::client_version_to_whole();
         info!(client_version, "models cache: evaluating cache eligibility");
         let cache = match self

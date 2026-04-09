@@ -9,10 +9,12 @@ description = "MCP client for connecting to Model Context Protocol servers"
 [features]
 default = ["stdio"]
 stdio = []
-http = ["dep:rama", "dep:tokio-stream", "dep:url"]
+http = ["dep:chrono-machines", "dep:rama", "dep:rand", "dep:tokio-stream", "dep:url"]
 
 [dependencies]
+chrono-machines = { workspace = true, optional = true }
 mcp-host = { workspace = true }
+rand = { workspace = true, optional = true }
 serde = { workspace = true, features = ["derive"] }
 serde_json = { workspace = true }
 tokio = { workspace = true, features = ["rt", "sync", "macros", "time", "io-util", "process", "net"] }

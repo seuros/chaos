@@ -1,5 +1,5 @@
 ---
-source: bin/xserver/src/multi_agents.rs
+source: bin/console/src/multi_agents.rs
 expression: cell_to_text(&cell)
 ---
 • Resumed Robie [scout]

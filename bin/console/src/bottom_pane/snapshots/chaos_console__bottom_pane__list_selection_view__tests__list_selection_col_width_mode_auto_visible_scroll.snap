@@ -1,5 +1,5 @@
 ---
-source: bin/xserver/src/bottom_pane/list_selection_view.rs
+source: bin/console/src/bottom_pane/list_selection_view.rs
 expression: "render_before_after_scroll_snapshot(ColumnWidthMode::AutoVisible, 96)"
 ---
 before scroll:

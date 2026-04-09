@@ -1,5 +1,5 @@
 ---
-source: bin/xserver/src/bottom_pane/chat_composer.rs
+source: bin/console/src/bottom_pane/chat_composer.rs
 expression: terminal.backend()
 ---
 "                                                                                                    "

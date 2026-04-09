@@ -1,5 +1,5 @@
 ---
-source: bin/xserver/src/diff_render.rs
+source: bin/console/src/diff_render.rs
 expression: terminal.backend()
 ---
 "• Edited old_name.rs → new_name.rs (+1 -1)                                      "

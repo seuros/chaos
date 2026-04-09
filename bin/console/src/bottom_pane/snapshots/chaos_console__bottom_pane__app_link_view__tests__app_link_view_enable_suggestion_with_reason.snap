@@ -1,5 +1,5 @@
 ---
-source: bin/xserver/src/bottom_pane/app_link_view.rs
+source: bin/console/src/bottom_pane/app_link_view.rs
 expression: "render_snapshot(&view, Rect::new(0, 0, 72, view.desired_height(72)))"
 ---
 

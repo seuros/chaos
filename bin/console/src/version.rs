@@ -1,4 +1,4 @@
-//! Xserver-facing accessors for canonical ChaOS product/build identity.
+//! Console-facing accessors for canonical ChaOS product/build identity.
 //!
 //! The source of truth lives in `chaos_ipc::product` so every crate can reuse
 //! the same name/version contract. This module only re-exports those values for

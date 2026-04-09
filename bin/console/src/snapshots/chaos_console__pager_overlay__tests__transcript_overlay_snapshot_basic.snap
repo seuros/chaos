@@ -1,5 +1,5 @@
 ---
-source: bin/xserver/src/pager_overlay.rs
+source: bin/console/src/pager_overlay.rs
 expression: term.backend()
 ---
 "/ T R A N S C R I P T / / / / / / / / / "

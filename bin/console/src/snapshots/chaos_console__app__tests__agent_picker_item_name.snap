@@ -1,5 +1,5 @@
 ---
-source: bin/xserver/src/app.rs
+source: bin/console/src/app.rs
 expression: snapshot
 ---
 Main [default] | 00000000-0000-0000-0000-000000000123

@@ -1,5 +1,5 @@
 ---
-source: bin/xserver/src/status_indicator_widget.rs
+source: bin/console/src/status_indicator_widget.rs
 expression: terminal.backend()
 ---
 "• Working (0s)                "

@@ -1,5 +1,5 @@
 ---
-source: bin/xserver/src/diff_render.rs
+source: bin/console/src/diff_render.rs
 expression: text
 ---
 1 +fn very_long_function_name(arg_one: String, arg_two: String, arg_three: Strin

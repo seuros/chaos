@@ -1,5 +1,5 @@
 ---
-source: bin/xserver/src/resume_picker.rs
+source: bin/console/src/resume_picker.rs
 assertion_line: 1553
 expression: snapshot
 ---

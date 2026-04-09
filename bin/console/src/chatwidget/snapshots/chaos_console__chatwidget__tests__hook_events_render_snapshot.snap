@@ -1,5 +1,5 @@
 ---
-source: bin/xserver/src/chatwidget/tests.rs
+source: bin/console/src/chatwidget/tests.rs
 expression: combined
 ---
 • Running SessionStart hook: warming the shell

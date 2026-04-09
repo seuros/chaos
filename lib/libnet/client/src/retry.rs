@@ -1,6 +1,6 @@
 use crate::error::TransportError;
 use crate::request::Request;
-use rand::RngExt;
+use chrono_machines::Policy;
 use std::future::Future;
 use std::time::Duration;
 use tokio::time::sleep;
@@ -10,6 +10,17 @@ pub struct RetryPolicy {
     pub max_attempts: u64,
     pub base_delay: Duration,
     pub retry_on: RetryOn,
+}
+
+impl RetryPolicy {
+    fn to_chrono_policy(&self) -> Policy {
+        Policy {
+            max_attempts: self.max_attempts.min(u8::MAX as u64) as u8,
+            base_delay_ms: self.base_delay.as_millis() as u64,
+            multiplier: 2.0,
+            max_delay_ms: 30_000,
+        }
+    }
 }
 
 #[derive(Debug, Clone)]
@@ -35,17 +46,6 @@ impl RetryOn {
     }
 }
 
-pub fn backoff(base: Duration, attempt: u64) -> Duration {
-    if attempt == 0 {
-        return base;
-    }
-    let exp = 2u64.saturating_pow(attempt as u32 - 1);
-    let millis = base.as_millis() as u64;
-    let raw = millis.saturating_mul(exp);
-    let jitter: f64 = rand::rng().random_range(0.9..1.1);
-    Duration::from_millis((raw as f64 * jitter) as u64)
-}
-
 pub async fn run_with_retry<T, F, Fut>(
     policy: RetryPolicy,
     mut make_req: impl FnMut() -> Request,
@@ -55,6 +55,8 @@ where
     F: Fn(Request, u64) -> Fut,
     Fut: Future<Output = Result<T, TransportError>>,
 {
+    let chrono_policy = policy.to_chrono_policy();
+
     for attempt in 0..=policy.max_attempts {
         let req = make_req();
         match op(req, attempt).await {
@@ -64,7 +66,8 @@ where
                     .retry_on
                     .should_retry(&err, attempt, policy.max_attempts) =>
             {
-                sleep(backoff(policy.base_delay, attempt + 1)).await;
+                let delay_ms = chrono_policy.calculate_delay((attempt + 1) as u8, 1.0);
+                sleep(Duration::from_millis(delay_ms)).await;
             }
             Err(err) => return Err(err),
         }

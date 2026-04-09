@@ -494,9 +494,18 @@ impl ModelClient {
     /// This centralizes setup used by both prewarm and normal request paths so they stay in
     /// lockstep when auth/provider resolution changes.
     async fn current_client_setup(&self) -> Result<CurrentClientSetup> {
-        let auth = match self.state.auth_manager.as_ref() {
-            Some(manager) => manager.auth().await,
-            None => None,
+        // When the provider carries its own credentials (env_key or
+        // experimental_bearer_token), skip session-level OpenAI auth
+        // entirely.  This avoids triggering token refresh against
+        // auth.openai.com for providers that have nothing to do with
+        // OpenAI.
+        let auth = if self.state.provider.is_self_authenticated() {
+            None
+        } else {
+            match self.state.auth_manager.as_ref() {
+                Some(manager) => manager.auth().await,
+                None => None,
+            }
         };
         let api_provider = self
             .state

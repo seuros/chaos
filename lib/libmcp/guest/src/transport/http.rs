@@ -1,8 +1,11 @@
 use std::sync::Arc;
 use std::sync::atomic::AtomicBool;
+use std::sync::atomic::AtomicU8;
 use std::sync::atomic::Ordering;
 use std::time::Duration;
 
+use chrono_machines::ExponentialBackoff;
+use chrono_machines::backoff::BackoffStrategy;
 use rama::Service;
 use rama::error::extra::OpaqueError;
 use rama::http::Body;
@@ -79,6 +82,7 @@ struct HttpTransportInner {
     initialized_sent: AtomicBool,
     sse_disabled: AtomicBool,
     closed: AtomicBool,
+    reconnect_attempt: AtomicU8,
     initialize_ready: Notify,
     shutdown_notify: Notify,
 }
@@ -109,6 +113,7 @@ impl HttpTransport {
                 initialized_sent: AtomicBool::new(false),
                 sse_disabled: AtomicBool::new(false),
                 closed: AtomicBool::new(false),
+                reconnect_attempt: AtomicU8::new(0),
                 initialize_ready: Notify::new(),
                 shutdown_notify: Notify::new(),
             }),
@@ -356,6 +361,7 @@ impl HttpTransportInner {
                         break;
                     }
 
+                    self.reconnect_attempt.store(0, Ordering::Relaxed);
                     if let Err(error) = self.consume_sse_response(response, true, false, true).await
                     {
                         tracing::warn!(error = %error, "sse stream ended with error");
@@ -463,9 +469,20 @@ impl HttpTransportInner {
     }
 
     async fn wait_for_retry(&self) -> bool {
-        let retry_delay = *self.reconnect_delay.lock().await;
+        let attempt = self.reconnect_attempt.fetch_add(1, Ordering::Relaxed).saturating_add(1);
+        let base_delay = *self.reconnect_delay.lock().await;
+        let backoff = ExponentialBackoff::new()
+            .max_attempts(u8::MAX)
+            .base_delay_ms(base_delay.as_millis() as u64)
+            .multiplier(2.0)
+            .max_delay_ms(30_000);
+        let mut rng: rand::rngs::StdRng = rand::make_rng();
+        let delay_ms = backoff
+            .delay(attempt, &mut rng)
+            .unwrap_or(base_delay.as_millis() as u64);
+        let delay = Duration::from_millis(delay_ms);
         tokio::select! {
-            _ = tokio::time::sleep(retry_delay) => true,
+            _ = tokio::time::sleep(delay) => true,
             _ = self.shutdown_notify.notified() => false,
         }
     }

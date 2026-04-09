@@ -1,4 +1,6 @@
 use crate::error::ApiError;
+use crate::representer::Representer;
+use crate::representer::ResponsesRepresenter;
 
 pub(crate) const MIME_APPLICATION_JSON: &str = "application/json";
 pub(crate) const MIME_TEXT_EVENT_STREAM: &str = "text/event-stream";
@@ -11,6 +13,7 @@ use chaos_ipc::protocol::TokenUsage;
 use futures::Stream;
 use serde::Deserialize;
 use serde::Serialize;
+use serde::Serializer;
 use serde_json::Value;
 use std::collections::HashMap;
 use std::pin::Pin;
@@ -22,6 +25,7 @@ use tokio::sync::mpsc;
 #[derive(Debug, Clone, Serialize)]
 pub struct CompactionInput<'a> {
     pub model: &'a str,
+    #[serde(serialize_with = "serialize_compaction_input_items")]
     pub input: &'a [ResponseItem],
     pub instructions: &'a str,
     pub tools: Vec<Value>,
@@ -30,6 +34,17 @@ pub struct CompactionInput<'a> {
     pub reasoning: Option<Reasoning>,
     #[serde(skip_serializing_if = "Option::is_none")]
     pub text: Option<TextControls>,
+}
+
+fn serialize_compaction_input_items<S>(
+    input: &[ResponseItem],
+    serializer: S,
+) -> Result<S::Ok, S::Error>
+where
+    S: Serializer,
+{
+    let representer = ResponsesRepresenter;
+    representer.represent(input.to_vec()).serialize(serializer)
 }
 
 /// Canonical input payload for the memory summarize endpoint.
@@ -254,5 +269,51 @@ impl Stream for ResponseStream {
 
     fn poll_next(mut self: Pin<&mut Self>, cx: &mut Context<'_>) -> Poll<Option<Self::Item>> {
         self.rx_event.poll_recv(cx)
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use chaos_ipc::models::FunctionCallOutputPayload;
+
+    #[test]
+    fn compaction_input_serialization_strips_tool_name_extensions() {
+        let items = vec![
+            ResponseItem::FunctionCallOutput {
+                call_id: "call_1".into(),
+                output: FunctionCallOutputPayload::from_text("ok".into()),
+                tool_name: Some("read_file".into()),
+            },
+            ResponseItem::CustomToolCallOutput {
+                call_id: "call_2".into(),
+                output: FunctionCallOutputPayload::from_text("patched".into()),
+                tool_name: Some("apply_patch".into()),
+            },
+        ];
+        let input = CompactionInput {
+            model: "gpt-test",
+            input: &items,
+            instructions: "compact this",
+            tools: Vec::new(),
+            parallel_tool_calls: false,
+            reasoning: None,
+            text: None,
+        };
+
+        let serialized = serde_json::to_value(&input).expect("compaction input should serialize");
+        let items = serialized["input"]
+            .as_array()
+            .expect("serialized input should be an array");
+
+        for item in items {
+            let object = item
+                .as_object()
+                .expect("serialized response item should be an object");
+            assert!(
+                !object.contains_key("tool_name"),
+                "tool_name should be stripped from compact payloads"
+            );
+        }
     }
 }

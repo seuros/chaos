@@ -3,14 +3,11 @@ use std::path::PathBuf;
 use std::time::Duration;
 
 use chaos_ipc::ProcessId;
-use rand::RngExt;
+use chrono_machines::Policy;
 use tracing::debug;
 use tracing::error;
 
 use crate::parse_command::shlex_join;
-
-const INITIAL_DELAY_MS: u64 = 200;
-const BACKOFF_FACTOR: f64 = 2.0;
 
 /// Emit structured feedback metadata as key/value pairs.
 ///
@@ -141,10 +138,13 @@ pub(crate) fn emit_feedback_auth_recovery_tags(
 }
 
 pub fn backoff(attempt: u64) -> Duration {
-    let exp = BACKOFF_FACTOR.powi(attempt.saturating_sub(1) as i32);
-    let base = (INITIAL_DELAY_MS as f64 * exp) as u64;
-    let jitter = rand::rng().random_range(0.9..1.1);
-    Duration::from_millis((base as f64 * jitter) as u64)
+    let policy = Policy {
+        max_attempts: 10,
+        base_delay_ms: 200,
+        multiplier: 2.0,
+        max_delay_ms: 30_000,
+    };
+    Duration::from_millis(policy.calculate_delay(attempt as u8, 1.0))
 }
 
 pub(crate) fn error_or_panic(message: impl std::string::ToString) {

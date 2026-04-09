@@ -35,7 +35,7 @@ pub fn parse_all_rate_limits(headers: &HeaderMap) -> Vec<RateLimitSnapshot> {
     for name in headers.keys() {
         let header_name = name.as_str().to_ascii_lowercase();
         if let Some(limit_id) = header_name_to_limit_id(&header_name)
-            && limit_id != "chaos"
+            && !matches!(limit_id.as_str(), "chaos" | "codex")
         {
             limit_ids.insert(limit_id);
         }
@@ -57,13 +57,18 @@ pub fn parse_rate_limit_for_limit(
     headers: &HeaderMap,
     limit_id: Option<&str>,
 ) -> Option<RateLimitSnapshot> {
-    let normalized_limit = limit_id
-        .map(str::trim)
-        .filter(|name| !name.is_empty())
+    let requested_limit = limit_id.map(str::trim).filter(|name| !name.is_empty());
+    let normalized_limit = requested_limit
         .unwrap_or("chaos")
         .to_ascii_lowercase()
         .replace('_', "-");
-    let prefix = format!("x-{normalized_limit}");
+    // Omitted limit ids still read the legacy `x-codex-*` header family while
+    // reporting the default logical limit id as `chaos`.
+    let header_limit = requested_limit
+        .unwrap_or("codex")
+        .to_ascii_lowercase()
+        .replace('_', "-");
+    let prefix = format!("x-{header_limit}");
     let primary = parse_rate_limit_window(
         headers,
         &format!("{prefix}-primary-used-percent"),

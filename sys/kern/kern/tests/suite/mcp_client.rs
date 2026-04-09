@@ -980,8 +980,8 @@ async fn streamable_http_with_oauth_round_trip_impl() -> anyhow::Result<()> {
     let fixture = test_codex()
         .with_home(temp_home.clone())
         .with_config(move |config| {
-            // Keep OAuth credentials isolated to this test home because Bazel
-            // runs the full core suite in one process.
+            // Keep OAuth credentials isolated to this test home because the
+            // full core suite runs in one process.
             config.mcp_oauth_credentials_store_mode = serde_json::from_value(json!("file"))
                 .expect("`file` should deserialize as OAuthCredentialsStoreMode");
             let mut servers = config.mcp_servers.get().clone();

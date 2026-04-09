@@ -1,16 +1,14 @@
-# chaos-which runfiles strategy
+# chaos-which path resolution
 
-We disable the directory-based runfiles strategy and rely on the manifest
-strategy across all platforms. This avoids Windows path length issues and keeps
-behavior consistent in local and remote builds on all platforms. When
-`RUNFILES_MANIFEST_FILE` is present, the `chaos-which` helpers use the
-`runfiles` crate to resolve runfiles via that manifest.
+`chaos-which` resolves test binaries and fixture paths for Cargo-driven runs.
 
 Function behavior:
-- `cargo_bin`: reads `CARGO_BIN_EXE_*` environment variables and resolves them
-  via the runfiles manifest when `RUNFILES_MANIFEST_FILE`
-  is present. When not under runfiles, it only accepts absolute paths from
-  `CARGO_BIN_EXE_*` and returns an error otherwise.
-- `find_resource!`: used by tests to locate fixtures. It chooses the
-  runfiles resolution path when `RUNFILES_MANIFEST_FILE` is set, otherwise it
-  falls back to a `CARGO_MANIFEST_DIR`-relative path for Cargo runs.
+- `cargo_bin`: checks `CARGO_BIN_EXE_*` environment variables first. These are
+  expected to be absolute paths in `cargo test`. If they are missing, it falls
+  back to `assert_cmd::Command::cargo_bin`.
+- `find_resource!`: resolves fixture paths relative to `CARGO_MANIFEST_DIR`.
+- `repo_root`: walks upward from `repo_root.marker` to locate the workspace
+  root from within the crate.
+
+This crate assumes standard Cargo test/build conventions and does not rely on
+external build-system path resolution.

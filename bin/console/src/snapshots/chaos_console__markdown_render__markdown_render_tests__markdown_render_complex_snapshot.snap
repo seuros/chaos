@@ -1,5 +1,5 @@
 ---
-source: bin/xserver/src/markdown_render_tests.rs
+source: bin/console/src/markdown_render_tests.rs
 expression: rendered
 ---
 # H1: Markdown Streaming Test

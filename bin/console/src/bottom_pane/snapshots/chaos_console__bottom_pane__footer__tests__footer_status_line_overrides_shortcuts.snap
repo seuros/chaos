@@ -1,5 +1,5 @@
 ---
-source: bin/xserver/src/bottom_pane/footer.rs
+source: bin/console/src/bottom_pane/footer.rs
 expression: terminal.backend()
 ---
 "  Status line content                                                           "

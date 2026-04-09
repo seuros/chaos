@@ -1,5 +1,5 @@
 ---
-source: bin/xserver/src/bottom_pane/pending_input_preview.rs
+source: bin/console/src/bottom_pane/pending_input_preview.rs
 expression: "format!(\"{buf:?}\")"
 ---
 Buffer {

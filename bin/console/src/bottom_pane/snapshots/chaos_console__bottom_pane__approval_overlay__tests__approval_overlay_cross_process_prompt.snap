@@ -1,5 +1,5 @@
 ---
-source: bin/xserver/src/bottom_pane/approval_overlay.rs
+source: bin/console/src/bottom_pane/approval_overlay.rs
 expression: "render_overlay_lines(&view, 80)"
 ---
 

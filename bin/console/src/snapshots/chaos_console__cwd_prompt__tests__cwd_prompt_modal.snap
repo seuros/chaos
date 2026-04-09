@@ -1,5 +1,5 @@
 ---
-source: bin/xserver/src/cwd_prompt.rs
+source: bin/console/src/cwd_prompt.rs
 expression: terminal.backend()
 ---
 

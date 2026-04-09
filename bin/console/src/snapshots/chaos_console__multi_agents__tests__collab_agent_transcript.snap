@@ -1,5 +1,5 @@
 ---
-source: bin/xserver/src/multi_agents.rs
+source: bin/console/src/multi_agents.rs
 expression: snapshot
 ---
 • Spawned Robie [scout] (gpt-5 high)

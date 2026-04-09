@@ -1,5 +1,5 @@
 ---
-source: bin/xserver/src/onboarding/trust_directory.rs
+source: bin/console/src/onboarding/trust_directory.rs
 expression: terminal.backend()
 ---
 > You are in /workspace/project

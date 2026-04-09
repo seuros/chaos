@@ -1,5 +1,5 @@
 ---
-source: bin/xserver/src/side_panel.rs
+source: bin/console/src/side_panel.rs
 assertion_line: 351
 expression: terminal.backend().to_string()
 ---

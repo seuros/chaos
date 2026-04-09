@@ -1,5 +1,5 @@
 ---
-source: bin/xserver/src/diff_render.rs
+source: bin/console/src/diff_render.rs
 expression: terminal.backend()
 ---
 "• Deleted tmp_delete_example.txt (+0 -3)                                        "

@@ -10,7 +10,7 @@ use clap::Parser;
 use owo_colors::OwoColorize;
 
 #[derive(Debug, Parser)]
-#[command(name = "codex-state-logs")]
+#[command(name = "chaos-state-logs")]
 #[command(about = "Tail Chaos logs from the runtime SQLite DB with simple filters")]
 struct Args {
     /// Path to the ChaOS home directory. Defaults to `CHAOS_HOME`, then

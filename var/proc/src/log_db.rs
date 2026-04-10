@@ -391,7 +391,7 @@ mod tests {
     #[tokio::test]
     async fn sqlite_feedback_logs_match_feedback_formatter_shape() {
         let chaos_home =
-            std::env::temp_dir().join(format!("codex-state-log-db-{}", Uuid::new_v4()));
+            std::env::temp_dir().join(format!("chaos-state-log-db-{}", Uuid::new_v4()));
         let runtime = StateRuntime::init(chaos_home.clone(), "test-provider".to_string())
             .await
             .expect("initialize runtime");
@@ -462,7 +462,7 @@ mod tests {
     #[tokio::test]
     async fn flush_persists_logs_for_query() {
         let chaos_home =
-            std::env::temp_dir().join(format!("codex-state-log-db-{}", Uuid::new_v4()));
+            std::env::temp_dir().join(format!("chaos-state-log-db-{}", Uuid::new_v4()));
         let runtime = StateRuntime::init(chaos_home.clone(), "test-provider".to_string())
             .await
             .expect("initialize runtime");

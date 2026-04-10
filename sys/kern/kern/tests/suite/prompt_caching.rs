@@ -17,8 +17,8 @@ use core_test_support::responses::mount_sse_once;
 use core_test_support::responses::sse;
 use core_test_support::responses::start_mock_server;
 use core_test_support::skip_if_no_network;
-use core_test_support::test_codex::TestCodex;
-use core_test_support::test_codex::test_codex;
+use core_test_support::test_chaos::TestCodex;
+use core_test_support::test_chaos::test_chaos;
 use core_test_support::wait_for_event;
 use tempfile::TempDir;
 
@@ -86,7 +86,7 @@ async fn gpt_5_tools_without_apply_patch_append_apply_patch_instructions() -> an
     )
     .await;
 
-    let TestCodex { codex, .. } = test_codex()
+    let TestCodex { process: chaos, .. } = test_chaos()
         .with_config(|config| {
             config.user_instructions = Some("be consistent and helpful".to_string());
             config.model = Some("gpt-5".to_string());
@@ -94,7 +94,7 @@ async fn gpt_5_tools_without_apply_patch_append_apply_patch_instructions() -> an
         .build(&server)
         .await?;
 
-    codex
+    chaos
         .submit(Op::UserInput {
             items: vec![UserInput::Text {
                 text: "hello 1".into(),
@@ -104,8 +104,8 @@ async fn gpt_5_tools_without_apply_patch_append_apply_patch_instructions() -> an
         })
         .await?;
 
-    wait_for_event(&codex, |ev| matches!(ev, EventMsg::TurnComplete(_))).await;
-    codex
+    wait_for_event(&chaos, |ev| matches!(ev, EventMsg::TurnComplete(_))).await;
+    chaos
         .submit(Op::UserInput {
             items: vec![UserInput::Text {
                 text: "hello 2".into(),
@@ -115,7 +115,7 @@ async fn gpt_5_tools_without_apply_patch_append_apply_patch_instructions() -> an
         })
         .await?;
 
-    wait_for_event(&codex, |ev| matches!(ev, EventMsg::TurnComplete(_))).await;
+    wait_for_event(&chaos, |ev| matches!(ev, EventMsg::TurnComplete(_))).await;
 
     let body0 = req1.single_request().body_json();
     let instructions0 = body0["instructions"]
@@ -156,14 +156,18 @@ async fn prefixes_context_and_instructions_once_and_consistently_across_requests
     )
     .await;
 
-    let TestCodex { codex, config, .. } = test_codex()
+    let TestCodex {
+        process: chaos,
+        config,
+        ..
+    } = test_chaos()
         .with_config(|config| {
             config.user_instructions = Some("be consistent and helpful".to_string());
         })
         .build(&server)
         .await?;
 
-    codex
+    chaos
         .submit(Op::UserInput {
             items: vec![UserInput::Text {
                 text: "hello 1".into(),
@@ -172,9 +176,9 @@ async fn prefixes_context_and_instructions_once_and_consistently_across_requests
             final_output_json_schema: None,
         })
         .await?;
-    wait_for_event(&codex, |ev| matches!(ev, EventMsg::TurnComplete(_))).await;
+    wait_for_event(&chaos, |ev| matches!(ev, EventMsg::TurnComplete(_))).await;
 
-    codex
+    chaos
         .submit(Op::UserInput {
             items: vec![UserInput::Text {
                 text: "hello 2".into(),
@@ -183,7 +187,7 @@ async fn prefixes_context_and_instructions_once_and_consistently_across_requests
             final_output_json_schema: None,
         })
         .await?;
-    wait_for_event(&codex, |ev| matches!(ev, EventMsg::TurnComplete(_))).await;
+    wait_for_event(&chaos, |ev| matches!(ev, EventMsg::TurnComplete(_))).await;
 
     let body1 = req1.single_request().body_json();
     let input1 = body1["input"].as_array().expect("input array");
@@ -243,7 +247,7 @@ async fn overrides_turn_context_but_keeps_cached_prefix_and_key_constant() -> an
     )
     .await;
 
-    let TestCodex { codex, .. } = test_codex()
+    let TestCodex { process: chaos, .. } = test_chaos()
         .with_config(|config| {
             config.user_instructions = Some("be consistent and helpful".to_string());
         })
@@ -251,7 +255,7 @@ async fn overrides_turn_context_but_keeps_cached_prefix_and_key_constant() -> an
         .await?;
 
     // First turn
-    codex
+    chaos
         .submit(Op::UserInput {
             items: vec![UserInput::Text {
                 text: "hello 1".into(),
@@ -260,7 +264,7 @@ async fn overrides_turn_context_but_keeps_cached_prefix_and_key_constant() -> an
             final_output_json_schema: None,
         })
         .await?;
-    wait_for_event(&codex, |ev| matches!(ev, EventMsg::TurnComplete(_))).await;
+    wait_for_event(&chaos, |ev| matches!(ev, EventMsg::TurnComplete(_))).await;
 
     let writable = TempDir::new().unwrap();
     let new_policy = SandboxPolicy::WorkspaceWrite {
@@ -270,7 +274,7 @@ async fn overrides_turn_context_but_keeps_cached_prefix_and_key_constant() -> an
         exclude_tmpdir_env_var: true,
         exclude_slash_tmp: true,
     };
-    codex
+    chaos
         .submit(Op::OverrideTurnContext {
             cwd: None,
             approval_policy: Some(ApprovalPolicy::Headless),
@@ -287,7 +291,7 @@ async fn overrides_turn_context_but_keeps_cached_prefix_and_key_constant() -> an
         .await?;
 
     // Second turn after overrides
-    codex
+    chaos
         .submit(Op::UserInput {
             items: vec![UserInput::Text {
                 text: "hello 2".into(),
@@ -296,7 +300,7 @@ async fn overrides_turn_context_but_keeps_cached_prefix_and_key_constant() -> an
             final_output_json_schema: None,
         })
         .await?;
-    wait_for_event(&codex, |ev| matches!(ev, EventMsg::TurnComplete(_))).await;
+    wait_for_event(&chaos, |ev| matches!(ev, EventMsg::TurnComplete(_))).await;
 
     let request1 = req1.single_request();
     let request2 = req2.single_request();
@@ -348,7 +352,7 @@ async fn per_turn_overrides_keep_cached_prefix_and_key_constant() -> anyhow::Res
     )
     .await;
 
-    let TestCodex { codex, .. } = test_codex()
+    let TestCodex { process: chaos, .. } = test_chaos()
         .with_config(|config| {
             config.user_instructions = Some("be consistent and helpful".to_string());
         })
@@ -356,7 +360,7 @@ async fn per_turn_overrides_keep_cached_prefix_and_key_constant() -> anyhow::Res
         .await?;
 
     // First turn
-    codex
+    chaos
         .submit(Op::UserInput {
             items: vec![UserInput::Text {
                 text: "hello 1".into(),
@@ -365,7 +369,7 @@ async fn per_turn_overrides_keep_cached_prefix_and_key_constant() -> anyhow::Res
             final_output_json_schema: None,
         })
         .await?;
-    wait_for_event(&codex, |ev| matches!(ev, EventMsg::TurnComplete(_))).await;
+    wait_for_event(&chaos, |ev| matches!(ev, EventMsg::TurnComplete(_))).await;
 
     // Second turn using per-turn overrides via UserTurn
     let new_cwd = TempDir::new().unwrap();
@@ -377,7 +381,7 @@ async fn per_turn_overrides_keep_cached_prefix_and_key_constant() -> anyhow::Res
         exclude_tmpdir_env_var: true,
         exclude_slash_tmp: true,
     };
-    codex
+    chaos
         .submit(Op::UserTurn {
             items: vec![UserInput::Text {
                 text: "hello 2".into(),
@@ -395,7 +399,7 @@ async fn per_turn_overrides_keep_cached_prefix_and_key_constant() -> anyhow::Res
             personality: None,
         })
         .await?;
-    wait_for_event(&codex, |ev| matches!(ev, EventMsg::TurnComplete(_))).await;
+    wait_for_event(&chaos, |ev| matches!(ev, EventMsg::TurnComplete(_))).await;
 
     let request1 = req1.single_request();
     let request2 = req2.single_request();
@@ -467,11 +471,11 @@ async fn send_user_turn_with_no_changes_does_not_send_environment_context() -> a
     .await;
 
     let TestCodex {
-        codex,
+        process: chaos,
         config,
         session_configured,
         ..
-    } = test_codex()
+    } = test_chaos()
         .with_config(|config| {
             config.user_instructions = Some("be consistent and helpful".to_string());
         })
@@ -485,7 +489,7 @@ async fn send_user_turn_with_no_changes_does_not_send_environment_context() -> a
     let default_effort = config.model_reasoning_effort;
     let default_summary = config.model_reasoning_summary;
 
-    codex
+    chaos
         .submit(Op::UserTurn {
             items: vec![UserInput::Text {
                 text: "hello 1".into(),
@@ -503,9 +507,9 @@ async fn send_user_turn_with_no_changes_does_not_send_environment_context() -> a
             personality: None,
         })
         .await?;
-    wait_for_event(&codex, |ev| matches!(ev, EventMsg::TurnComplete(_))).await;
+    wait_for_event(&chaos, |ev| matches!(ev, EventMsg::TurnComplete(_))).await;
 
-    codex
+    chaos
         .submit(Op::UserTurn {
             items: vec![UserInput::Text {
                 text: "hello 2".into(),
@@ -523,7 +527,7 @@ async fn send_user_turn_with_no_changes_does_not_send_environment_context() -> a
             personality: None,
         })
         .await?;
-    wait_for_event(&codex, |ev| matches!(ev, EventMsg::TurnComplete(_))).await;
+    wait_for_event(&chaos, |ev| matches!(ev, EventMsg::TurnComplete(_))).await;
 
     let request1 = req1.single_request();
     let request2 = req2.single_request();
@@ -587,11 +591,11 @@ async fn send_user_turn_with_changes_sends_environment_context() -> anyhow::Resu
     )
     .await;
     let TestCodex {
-        codex,
+        process: chaos,
         config,
         session_configured,
         ..
-    } = test_codex()
+    } = test_chaos()
         .with_config(|config| {
             config.user_instructions = Some("be consistent and helpful".to_string());
         })
@@ -605,7 +609,7 @@ async fn send_user_turn_with_changes_sends_environment_context() -> anyhow::Resu
     let default_effort = config.model_reasoning_effort;
     let default_summary = config.model_reasoning_summary;
 
-    codex
+    chaos
         .submit(Op::UserTurn {
             items: vec![UserInput::Text {
                 text: "hello 1".into(),
@@ -623,9 +627,9 @@ async fn send_user_turn_with_changes_sends_environment_context() -> anyhow::Resu
             personality: None,
         })
         .await?;
-    wait_for_event(&codex, |ev| matches!(ev, EventMsg::TurnComplete(_))).await;
+    wait_for_event(&chaos, |ev| matches!(ev, EventMsg::TurnComplete(_))).await;
 
-    codex
+    chaos
         .submit(Op::UserTurn {
             items: vec![UserInput::Text {
                 text: "hello 2".into(),
@@ -643,7 +647,7 @@ async fn send_user_turn_with_changes_sends_environment_context() -> anyhow::Resu
             personality: None,
         })
         .await?;
-    wait_for_event(&codex, |ev| matches!(ev, EventMsg::TurnComplete(_))).await;
+    wait_for_event(&chaos, |ev| matches!(ev, EventMsg::TurnComplete(_))).await;
 
     let request1 = req1.single_request();
     let request2 = req2.single_request();

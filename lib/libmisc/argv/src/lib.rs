@@ -4,7 +4,7 @@ use std::os::unix::fs::symlink;
 use std::path::Path;
 use std::path::PathBuf;
 
-use chaos_diff::CODEX_CORE_APPLY_PATCH_ARG1;
+use chaos_diff::CHAOS_CORE_APPLY_PATCH_ARG1;
 use chaos_pwd::find_chaos_home;
 use tempfile::TempDir;
 
@@ -13,7 +13,7 @@ const FREEBSD_SANDBOX_ARG0: &str = "alcatraz-freebsd";
 const MACOS_SANDBOX_ARG0: &str = "alcatraz-macos";
 const APPLY_PATCH_ARG0: &str = "apply_patch";
 const MISSPELLED_APPLY_PATCH_ARG0: &str = "applypatch";
-const EXECVE_WRAPPER_ARG0: &str = "codex-execve-wrapper";
+const EXECVE_WRAPPER_ARG0: &str = "chaos-execve-wrapper";
 const LOCK_FILENAME: &str = ".lock";
 const TOKIO_WORKER_STACK_SIZE_BYTES: usize = 16 * 1024 * 1024;
 
@@ -92,7 +92,7 @@ pub fn arg0_dispatch() -> Option<Arg0PathEntryGuard> {
     }
 
     let argv1 = args.next().unwrap_or_default();
-    if argv1 == CODEX_CORE_APPLY_PATCH_ARG1 {
+    if argv1 == CHAOS_CORE_APPLY_PATCH_ARG1 {
         let patch_arg = args.next().and_then(|s| s.to_str().map(str::to_owned));
         let exit_code = match patch_arg {
             Some(patch_arg) => {
@@ -104,7 +104,7 @@ pub fn arg0_dispatch() -> Option<Arg0PathEntryGuard> {
                 }
             }
             None => {
-                eprintln!("Error: {CODEX_CORE_APPLY_PATCH_ARG1} requires a UTF-8 PATCH argument.");
+                eprintln!("Error: {CHAOS_CORE_APPLY_PATCH_ARG1} requires a UTF-8 PATCH argument.");
                 1
             }
         };
@@ -115,10 +115,10 @@ pub fn arg0_dispatch() -> Option<Arg0PathEntryGuard> {
     // before creating any threads/the Tokio runtime.
     load_dotenv();
 
-    match prepend_path_entry_for_codex_aliases() {
+    match prepend_path_entry_for_chaos_aliases() {
         Ok(path_entry) => Some(path_entry),
         Err(err) => {
-            // It is possible that Codex will proceed successfully even if
+            // It is possible that Chaos will proceed successfully even if
             // updating the PATH fails, so warn the user and move on.
             eprintln!("WARNING: proceeding, even though we could not update PATH: {err}");
             None
@@ -126,7 +126,7 @@ pub fn arg0_dispatch() -> Option<Arg0PathEntryGuard> {
     }
 }
 
-/// While we want to deploy the Codex CLI as a single executable for simplicity,
+/// While we want to deploy the Chaos CLI as a single executable for simplicity,
 /// we also want to expose some of its functionality as distinct CLIs, so we use
 /// the "arg0 trick" to determine which CLI to dispatch. This effectively allows
 /// us to simulate deploying multiple executables as a single binary on macOS,
@@ -240,17 +240,17 @@ where
 ///
 /// - UNIX: `apply_patch` symlink to the current executable
 /// - WINDOWS: `apply_patch.bat` batch script to invoke the current executable
-///   with the "secret" --codex-run-as-apply-patch flag.
+///   with the "secret" --chaos-run-as-apply-patch flag.
 ///
 /// This temporary directory is prepended to the PATH environment variable so
 /// that `apply_patch` can be on the PATH without requiring the user to
 /// install a separate `apply_patch` executable, simplifying the deployment of
-/// Codex CLI.
+/// Chaos CLI.
 /// Note: In debug builds the temp-dir guard is disabled to ease local testing.
 ///
 /// IMPORTANT: This function modifies the PATH environment variable, so it MUST
 /// be called before multiple threads are spawned.
-pub fn prepend_path_entry_for_codex_aliases() -> std::io::Result<Arg0PathEntryGuard> {
+pub fn prepend_path_entry_for_chaos_aliases() -> std::io::Result<Arg0PathEntryGuard> {
     let chaos_home = find_chaos_home()?;
     #[cfg(not(debug_assertions))]
     {

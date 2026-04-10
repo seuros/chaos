@@ -17,7 +17,7 @@ use chaos_syslog::SessionTelemetry;
 use chaos_syslog::TelemetryAuthMode;
 use core_test_support::load_default_config_for_test;
 use core_test_support::responses;
-use core_test_support::test_codex::test_codex;
+use core_test_support::test_chaos::test_chaos;
 use futures::StreamExt;
 use pretty_assertions::assert_eq;
 use tempfile::TempDir;
@@ -131,7 +131,7 @@ async fn responses_stream_includes_subagent_header_on_review() {
         request.header("x-openai-subagent").as_deref(),
         Some("review")
     );
-    assert_eq!(request.header("x-codex-sandbox"), None);
+    assert_eq!(request.header("x-chaos-sandbox"), None);
 }
 
 #[tokio::test]
@@ -380,7 +380,7 @@ async fn responses_stream_includes_turn_metadata_header_for_git_workspace_e2e() 
         responses::ev_completed("resp-1"),
     ]);
 
-    let test = test_codex().build(&server).await.expect("build test codex");
+    let test = test_chaos().build(&server).await.expect("build test chaos");
     let cwd = test.cwd_path();
 
     let first_request = responses::mount_sse_once(&server, response_body.clone()).await;
@@ -389,10 +389,10 @@ async fn responses_stream_includes_turn_metadata_header_for_git_workspace_e2e() 
         .expect("submit first turn prompt");
     let initial_header = first_request
         .single_request()
-        .header("x-codex-turn-metadata")
-        .expect("x-codex-turn-metadata header should be present");
+        .header("x-chaos-turn-metadata")
+        .expect("x-chaos-turn-metadata header should be present");
     let initial_parsed: serde_json::Value =
-        serde_json::from_str(&initial_header).expect("x-codex-turn-metadata should be valid JSON");
+        serde_json::from_str(&initial_header).expect("x-chaos-turn-metadata should be valid JSON");
     let initial_turn_id = initial_parsed
         .get("turn_id")
         .and_then(serde_json::Value::as_str)
@@ -400,7 +400,7 @@ async fn responses_stream_includes_turn_metadata_header_for_git_workspace_e2e() 
         .to_string();
     assert!(
         !initial_turn_id.is_empty(),
-        "turn_id should not be empty in x-codex-turn-metadata"
+        "turn_id should not be empty in x-chaos-turn-metadata"
     );
     assert_eq!(
         initial_parsed
@@ -480,13 +480,13 @@ async fn responses_stream_includes_turn_metadata_header_for_git_workspace_e2e() 
 
     let first_parsed: serde_json::Value = serde_json::from_str(
         &requests[0]
-            .header("x-codex-turn-metadata")
+            .header("x-chaos-turn-metadata")
             .expect("first request should include turn metadata"),
     )
     .expect("first metadata should be valid json");
     let second_parsed: serde_json::Value = serde_json::from_str(
         &requests[1]
-            .header("x-codex-turn-metadata")
+            .header("x-chaos-turn-metadata")
             .expect("second request should include turn metadata"),
     )
     .expect("second metadata should be valid json");

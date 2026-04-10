@@ -114,7 +114,7 @@ pub fn paste_image_to_temp_png() -> Result<(PathBuf, PastedImageInfo), PasteImag
         Ok((png, info)) => {
             // Create a unique temporary file with a .png suffix to avoid collisions.
             let tmp = Builder::new()
-                .prefix("codex-clipboard-")
+                .prefix("chaos-clipboard-")
                 .suffix(".png")
                 .tempfile()
                 .map_err(|e| PasteImageError::IoError(e.to_string()))?;
@@ -152,7 +152,7 @@ pub fn normalize_pasted_path(pasted: &str) -> Option<PathBuf> {
     }
 
     // TODO: We'll improve the implementation/unit tests over time, as appropriate.
-    // Possibly use typed-path (upstream openai/codex#2567).
+    // Possibly use typed-path.
     //
     // Detect unquoted Windows paths and bypass POSIX shlex which
     // treats backslashes as escapes (e.g., C:\Users\Alice\file.png).

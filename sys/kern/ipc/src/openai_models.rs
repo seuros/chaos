@@ -1,4 +1,4 @@
-//! Shared model metadata types exchanged between Codex services and clients.
+//! Shared model metadata types exchanged between Chaos services and clients.
 //!
 //! These types are serialized across core, TUI, app-server, and SDK boundaries, so field defaults
 //! are used to preserve compatibility when older payloads omit newly introduced attributes.
@@ -91,7 +91,7 @@ pub struct ModelAvailabilityNux {
     pub message: String,
 }
 
-/// Metadata describing a Codex-supported model.
+/// Metadata describing a Chaos-supported model.
 #[derive(Debug, Clone, Deserialize, Serialize, TS, JsonSchema, PartialEq)]
 pub struct ModelPreset {
     /// Stable identifier for the preset.
@@ -214,7 +214,7 @@ const fn default_effective_context_window_percent() -> i64 {
     95
 }
 
-/// Model metadata returned by the Codex backend `/models` endpoint.
+/// Model metadata returned by the Chaos backend `/models` endpoint.
 #[derive(Debug, Serialize, Deserialize, Clone, PartialEq, Eq, TS, JsonSchema)]
 pub struct ModelInfo {
     pub slug: String,

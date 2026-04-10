@@ -16,7 +16,7 @@ use core_test_support::responses::ev_response_created;
 use core_test_support::responses::sse;
 use core_test_support::responses::sse_response;
 use core_test_support::skip_if_no_network;
-use core_test_support::test_codex::test_codex;
+use core_test_support::test_chaos::test_chaos;
 use core_test_support::wait_for_event;
 use pretty_assertions::assert_eq;
 use wiremock::MockServer;
@@ -31,7 +31,7 @@ async fn refresh_models_on_models_etag_mismatch_and_avoid_duplicate_models_fetch
 
     let server = MockServer::start().await;
 
-    // 1) On spawn, Codex fetches /models and stores the ETag.
+    // 1) On spawn, Chaos fetches /models and stores the ETag.
     let spawn_models_mock = responses::mount_models_once_with_etag(
         &server,
         ModelsResponse { models: Vec::new() },
@@ -40,7 +40,7 @@ async fn refresh_models_on_models_etag_mismatch_and_avoid_duplicate_models_fetch
     .await;
 
     let auth = ChaosAuth::create_dummy_chatgpt_auth_for_testing();
-    let mut builder = test_codex()
+    let mut builder = test_chaos()
         .with_auth(auth)
         .with_model("gpt-5")
         .with_config(|config| {
@@ -50,14 +50,14 @@ async fn refresh_models_on_models_etag_mismatch_and_avoid_duplicate_models_fetch
         });
 
     let test = builder.build(&server).await?;
-    let codex = Arc::clone(&test.codex);
+    let chaos = Arc::clone(&test.process);
     let cwd = Arc::clone(&test.cwd);
     let session_model = test.session_configured.model.clone();
 
     assert_eq!(spawn_models_mock.requests().len(), 1);
     assert_eq!(spawn_models_mock.single_request_path(), "/v1/models");
 
-    // 2) If the server sends a different X-Models-Etag on /responses, Codex refreshes /models.
+    // 2) If the server sends a different X-Models-Etag on /responses, Chaos refreshes /models.
     let refresh_models_mock = responses::mount_models_once_with_etag(
         &server,
         ModelsResponse { models: Vec::new() },
@@ -78,7 +78,7 @@ async fn refresh_models_on_models_etag_mismatch_and_avoid_duplicate_models_fetch
     )
     .await;
 
-    // Second /responses request (tool output) includes the same X-Models-Etag; Codex should not
+    // Second /responses request (tool output) includes the same X-Models-Etag; Chaos should not
     // refetch /models again after it has already refreshed the catalog.
     let completion_response_body = sse(vec![
         ev_response_created("resp-2"),
@@ -91,7 +91,7 @@ async fn refresh_models_on_models_etag_mismatch_and_avoid_duplicate_models_fetch
     )
     .await;
 
-    codex
+    chaos
         .submit(Op::UserTurn {
             items: vec![UserInput::Text {
                 text: "please run a tool".into(),
@@ -110,7 +110,7 @@ async fn refresh_models_on_models_etag_mismatch_and_avoid_duplicate_models_fetch
         })
         .await?;
 
-    let _ = wait_for_event(&codex, |ev| matches!(ev, EventMsg::TurnComplete(_))).await;
+    let _ = wait_for_event(&chaos, |ev| matches!(ev, EventMsg::TurnComplete(_))).await;
 
     // Assert /models was refreshed exactly once after the X-Models-Etag mismatch.
     assert_eq!(refresh_models_mock.requests().len(), 1);
@@ -120,7 +120,7 @@ async fn refresh_models_on_models_etag_mismatch_and_avoid_duplicate_models_fetch
         .into_iter()
         .next()
         .expect("one request");
-    // Ensure Codex includes client_version on refresh. (This is a stable signal that we're using the /models client.)
+    // Ensure Chaos includes client_version on refresh. (This is a stable signal that we're using the /models client.)
     assert!(
         refresh_req
             .url

@@ -67,7 +67,7 @@ use tracing_subscriber::prelude::*;
 use uuid::Uuid;
 
 use crate::cli::Command as ExecCommand;
-use crate::event_processor::CodexStatus;
+use crate::event_processor::ChaosStatus;
 use crate::event_processor::EventProcessor;
 use chaos_kern::default_client::set_default_originator;
 
@@ -580,11 +580,11 @@ async fn run_exec_session(args: ExecRunArgs) -> anyhow::Result<()> {
         }
     };
 
-    // Print the effective configuration and initial request so users can see what Codex
+    // Print the effective configuration and initial request so users can see what Chaos
     // is using.
     event_processor.print_config_summary(&config, &prompt_summary, &session_configured);
 
-    info!("Codex initialized with event: {session_configured:?}");
+    info!("Chaos initialized with event: {session_configured:?}");
 
     let (interrupt_tx, mut interrupt_rx) = mpsc::unbounded_channel::<()>();
     tokio::spawn(async move {
@@ -732,8 +732,8 @@ async fn run_event_loop(
         }
 
         match event_processor.process_event(event) {
-            CodexStatus::Running => {}
-            CodexStatus::InitiateShutdown | CodexStatus::Shutdown => {
+            ChaosStatus::Running => {}
+            ChaosStatus::InitiateShutdown | ChaosStatus::Shutdown => {
                 break;
             }
         }
@@ -975,7 +975,7 @@ mod tests {
 
     fn test_tracing_subscriber() -> impl tracing::Subscriber + Send + Sync {
         let provider = SdkTracerProvider::builder().build();
-        let tracer = provider.tracer("codex-exec-tests");
+        let tracer = provider.tracer("chaos-exec-tests");
         tracing_subscriber::registry().with(tracing_opentelemetry::layer().with_tracer(tracer))
     }
 

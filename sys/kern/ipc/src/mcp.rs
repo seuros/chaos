@@ -1,8 +1,8 @@
 //! Types used when representing Model Context Protocol (MCP) values inside the
-//! Codex protocol.
+//! Chaos protocol.
 //!
 //! We intentionally keep these types TS/JSON-schema friendly (via `ts-rs` and
-//! `schemars`) so they can be embedded in Codex's own protocol structures.
+//! `schemars`) so they can be embedded in Chaos's own protocol structures.
 use schemars::JsonSchema;
 use serde::Deserialize;
 use serde::Serialize;
@@ -120,7 +120,7 @@ pub struct CallToolResult {
 
 // === Adapter helpers ===
 //
-// These types and conversions intentionally live in `codex-protocol` so other crates can convert
+// These types and conversions intentionally live in `chaos-protocol` so other crates can convert
 // “wire-shaped” MCP JSON (typically coming from MCP model structs serialized with serde) into our
 // TS/JsonSchema-friendly protocol types without depending on `mcp-types`.
 

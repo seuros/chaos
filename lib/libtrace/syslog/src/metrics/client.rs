@@ -185,7 +185,7 @@ impl MetricsClientInner {
     }
 }
 
-/// OpenTelemetry metrics client used by Codex.
+/// OpenTelemetry metrics client used by Chaos.
 #[derive(Clone, Debug)]
 pub struct MetricsClient(std::sync::Arc<MetricsClientInner>);
 

@@ -1203,7 +1203,7 @@ mod tests {
         ));
         let req = Request::builder()
             .method(Method::GET)
-            .uri("http://raw.githubusercontent.com/openai/codex/main/README.md")
+            .uri("http://raw.githubusercontent.com/seuros/codex/main/README.md")
             .header(header::HOST, "api.github.com")
             .body(Body::empty())
             .unwrap();

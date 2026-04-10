@@ -234,7 +234,7 @@ pub(crate) async fn run_chaos_session(args: RunChaosSessionArgs) -> SessionOutco
     outcome
 }
 
-/// Stream Codex events until TurnComplete or error.
+/// Stream Chaos events until TurnComplete or error.
 async fn run_event_loop(
     process_id: ProcessId,
     process: Arc<Process>,

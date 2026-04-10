@@ -1,6 +1,6 @@
 //! Clipboard text copy support for `/copy` in the TUI.
 //!
-//! This module owns the policy for getting plain text from the running Codex
+//! This module owns the policy for getting plain text from the running Chaos
 //! process into the user's system clipboard. It prefers the direct native
 //! clipboard path when the current machine is also the user's desktop, but it
 //! intentionally changes strategy in environments where a "local" clipboard

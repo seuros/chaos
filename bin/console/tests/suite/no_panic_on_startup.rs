@@ -4,7 +4,7 @@ use std::time::Duration;
 use tokio::select;
 use tokio::time::timeout;
 
-/// Regression test for startup panic (upstream openai/codex#8803).
+/// Regression test for startup panic.
 #[tokio::test]
 #[ignore = "TODO(mbolin): flaky"]
 async fn malformed_rules_should_not_panic() -> anyhow::Result<()> {
@@ -33,7 +33,7 @@ model_provider = "ollama"
     let ChaosCliOutput { exit_code, output } = run_chaos_cli(chaos_home, cwd).await?;
     assert_ne!(0, exit_code, "Chaos CLI should exit nonzero.");
     assert!(
-        output.contains("ERROR: Failed to initialize codex:"),
+        output.contains("ERROR: Failed to initialize chaos:"),
         "expected startup error in output, got: {output}"
     );
     assert!(
@@ -106,7 +106,7 @@ async fn run_chaos_cli(
         Ok(Err(err)) => return Err(err.into()),
         Err(_) => {
             session.terminate();
-            anyhow::bail!("timed out waiting for codex CLI to exit");
+            anyhow::bail!("timed out waiting for chaos CLI to exit");
         }
     };
     // Drain any output that raced with the exit notification.

@@ -21,7 +21,7 @@ use core_test_support::responses::mount_sse_sequence;
 use core_test_support::responses::sse;
 use core_test_support::responses::start_mock_server;
 use core_test_support::skip_if_no_network;
-use core_test_support::test_codex::test_codex;
+use core_test_support::test_chaos::test_chaos;
 use regex_lite::Regex;
 use serde_json::Value;
 use serde_json::json;
@@ -48,7 +48,7 @@ async fn custom_tool_unknown_returns_custom_output_error() -> Result<()> {
     skip_if_no_network!(Ok(()));
 
     let server = start_mock_server().await;
-    let mut builder = test_codex();
+    let mut builder = test_chaos();
     let test = builder.build(&server).await?;
 
     let call_id = "custom-unsupported";
@@ -95,7 +95,7 @@ async fn shell_escalated_permissions_rejected_then_ok() -> Result<()> {
     skip_if_no_network!(Ok(()));
 
     let server = start_mock_server().await;
-    let mut builder = test_codex().with_model("gpt-5");
+    let mut builder = test_chaos().with_model("gpt-5");
     let test = builder.build(&server).await?;
 
     let command = ["/bin/echo", "shell ok"];
@@ -196,7 +196,7 @@ async fn collect_tools() -> Result<Vec<String>> {
     ])];
     let mock = mount_sse_sequence(&server, responses).await;
 
-    let mut builder = test_codex();
+    let mut builder = test_chaos();
     let test = builder.build(&server).await?;
 
     test.submit_turn_with_policies(
@@ -232,7 +232,7 @@ async fn shell_timeout_includes_timeout_prefix_and_metadata() -> Result<()> {
     skip_if_no_network!(Ok(()));
 
     let server = start_mock_server().await;
-    let mut builder = test_codex().with_model("gpt-5");
+    let mut builder = test_chaos().with_model("gpt-5");
     let test = builder.build(&server).await?;
 
     let call_id = "shell-timeout";
@@ -312,7 +312,7 @@ async fn shell_timeout_handles_background_grandchild_stdout() -> Result<()> {
     skip_if_no_network!(Ok(()));
 
     let server = start_mock_server().await;
-    let mut builder = test_codex().with_model("gpt-5.1").with_config(|config| {
+    let mut builder = test_chaos().with_model("gpt-5.1").with_config(|config| {
         config
             .permissions
             .sandbox_policy
@@ -409,7 +409,7 @@ async fn shell_spawn_failure_truncates_exec_error() -> Result<()> {
     skip_if_no_network!(Ok(()));
 
     let server = start_mock_server().await;
-    let mut builder = test_codex().with_config(|cfg| {
+    let mut builder = test_chaos().with_config(|cfg| {
         cfg.permissions
             .sandbox_policy
             .set(SandboxPolicy::RootAccess)

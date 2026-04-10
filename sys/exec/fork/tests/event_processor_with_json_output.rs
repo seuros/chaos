@@ -42,7 +42,7 @@ use chaos_ipc::protocol::AgentMessageEvent;
 use chaos_ipc::protocol::AgentReasoningEvent;
 use chaos_ipc::protocol::AgentStatus;
 use chaos_ipc::protocol::ApprovalPolicy;
-use chaos_ipc::protocol::CodexErrorInfo;
+use chaos_ipc::protocol::ChaosErrorInfo;
 use chaos_ipc::protocol::CollabAgentSpawnBeginEvent;
 use chaos_ipc::protocol::CollabAgentSpawnEndEvent;
 use chaos_ipc::protocol::CollabWaitingEndEvent;
@@ -91,7 +91,7 @@ fn session_configured_produces_process_started_event() {
             session_id,
             forked_from_id: None,
             process_name: None,
-            model: "codex-mini-latest".to_string(),
+            model: "chaos-mini-latest".to_string(),
             model_provider_id: "test-provider".to_string(),
             service_tier: None,
             approval_policy: ApprovalPolicy::Headless,
@@ -776,7 +776,7 @@ fn error_event_produces_error() {
         "e1",
         EventMsg::Error(chaos_ipc::protocol::ErrorEvent {
             message: "boom".to_string(),
-            codex_error_info: Some(CodexErrorInfo::Other),
+            chaos_error_info: Some(ChaosErrorInfo::Other),
         }),
     ));
     assert_eq!(
@@ -816,7 +816,7 @@ fn stream_error_event_produces_error() {
         "e1",
         EventMsg::StreamError(chaos_ipc::protocol::StreamErrorEvent {
             message: "retrying".to_string(),
-            codex_error_info: Some(CodexErrorInfo::Other),
+            chaos_error_info: Some(ChaosErrorInfo::Other),
             additional_details: None,
         }),
     ));
@@ -836,7 +836,7 @@ fn error_followed_by_task_complete_produces_turn_failed() {
         "e1",
         EventMsg::Error(ErrorEvent {
             message: "boom".to_string(),
-            codex_error_info: Some(CodexErrorInfo::Other),
+            chaos_error_info: Some(ChaosErrorInfo::Other),
         }),
     );
     assert_eq!(

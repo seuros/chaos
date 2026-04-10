@@ -112,7 +112,7 @@ fn resolve_db_path(args: &Args) -> anyhow::Result<PathBuf> {
         .chaos_home
         .clone()
         .or_else(resolve_home_from_env)
-        .unwrap_or_else(default_codex_home);
+        .unwrap_or_else(default_chaos_home);
     Ok(chaos_proc::runtime_db_path(chaos_home.as_path()))
 }
 
@@ -126,7 +126,7 @@ fn resolve_home_from_env() -> Option<PathBuf> {
     None
 }
 
-fn default_codex_home() -> PathBuf {
+fn default_chaos_home() -> PathBuf {
     PathBuf::from(".chaos")
 }
 

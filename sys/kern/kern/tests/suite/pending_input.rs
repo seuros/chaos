@@ -8,7 +8,7 @@ use core_test_support::responses::ev_output_text_delta;
 use core_test_support::responses::ev_response_created;
 use core_test_support::streaming_sse::StreamingSseChunk;
 use core_test_support::streaming_sse::start_streaming_sse_server;
-use core_test_support::test_codex::test_codex;
+use core_test_support::test_chaos::test_chaos;
 use core_test_support::wait_for_event;
 use pretty_assertions::assert_eq;
 use serde_json::Value;
@@ -90,14 +90,14 @@ async fn injected_user_input_triggers_follow_up_request_with_deltas() {
     let (server, _completions) =
         start_streaming_sse_server(vec![first_chunks, second_chunks]).await;
 
-    let codex = test_codex()
+    let chaos = test_chaos()
         .with_model("gpt-5.1")
         .build_with_streaming_server(&server)
         .await
         .unwrap()
-        .codex;
+        .process;
 
-    codex
+    chaos
         .submit(Op::UserInput {
             items: vec![UserInput::Text {
                 text: "first prompt".into(),
@@ -108,12 +108,12 @@ async fn injected_user_input_triggers_follow_up_request_with_deltas() {
         .await
         .unwrap();
 
-    wait_for_event(&codex, |event| {
+    wait_for_event(&chaos, |event| {
         matches!(event, EventMsg::AgentMessageContentDelta(_))
     })
     .await;
 
-    codex
+    chaos
         .submit(Op::UserInput {
             items: vec![UserInput::Text {
                 text: "second prompt".into(),
@@ -126,7 +126,7 @@ async fn injected_user_input_triggers_follow_up_request_with_deltas() {
 
     let _ = gate_completed_tx.send(());
 
-    wait_for_event(&codex, |event| matches!(event, EventMsg::TurnComplete(_))).await;
+    wait_for_event(&chaos, |event| matches!(event, EventMsg::TurnComplete(_))).await;
 
     let requests = server.requests().await;
     assert_eq!(requests.len(), 2);

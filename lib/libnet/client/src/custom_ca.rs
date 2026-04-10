@@ -1,6 +1,6 @@
-//! Custom CA handling for Codex outbound HTTP and websocket clients.
+//! Custom CA handling for Chaos outbound HTTP and websocket clients.
 //!
-//! Codex constructs outbound rama clients and secure websocket connections in a few crates, but
+//! Chaos constructs outbound rama clients and secure websocket connections in a few crates, but
 //! they all need the same trust-store policy when enterprise proxies or gateways intercept TLS.
 //! This module centralizes that policy so callers can start from an ordinary
 //! `ClientBuilder` or rustls client config, layer in custom CA support, and either get
@@ -9,7 +9,7 @@
 //!
 //! The module intentionally has a narrow responsibility:
 //!
-//! - read CA material from `CODEX_CA_CERTIFICATE`, falling back to `SSL_CERT_FILE`
+//! - read CA material from `SSL_CERT_FILE`
 //! - normalize PEM variants that show up in real deployments, including OpenSSL-style
 //!   `TRUSTED CERTIFICATE` labels and bundles that also contain CRLs
 //! - return user-facing errors that explain how to fix misconfigured CA files
@@ -26,7 +26,7 @@
 //! - on macOS seatbelt runs, `the HTTP client builder` can panic inside
 //!   `system-configuration` while probing platform proxy settings, which means the process can die
 //!   before the custom-CA code reports success or a structured error. That matters in practice
-//!   because Codex itself commonly runs spawned test processes under seatbelt, so this is not just
+//!   because Chaos itself commonly runs spawned test processes under seatbelt, so this is not just
 //!   a hypothetical CI edge case.
 //! - child processes inherit CA-related environment variables by default, which lets developer
 //!   shell state or CI configuration affect a test unless the test scrubs those variables first
@@ -57,9 +57,8 @@ use thiserror::Error;
 use tracing::info;
 use tracing::warn;
 
-pub const CODEX_CA_CERT_ENV: &str = "CODEX_CA_CERTIFICATE";
 pub const SSL_CERT_FILE_ENV: &str = "SSL_CERT_FILE";
-const CA_CERT_HINT: &str = "If you set CODEX_CA_CERTIFICATE or SSL_CERT_FILE, ensure it points to a PEM file containing one or more CERTIFICATE blocks, or unset it to use system roots.";
+const CA_CERT_HINT: &str = "If you set SSL_CERT_FILE, ensure it points to a PEM file containing one or more CERTIFICATE blocks, or unset it to use system roots.";
 type PemSection = (SectionKind, Vec<u8>);
 
 /// Describes why a transport using shared custom CA support could not be constructed.
@@ -126,10 +125,10 @@ impl From<BuildCustomCaTransportError> for io::Error {
     }
 }
 
-/// Builds a rustls client config when a Codex custom CA bundle is configured.
+/// Builds a rustls client config when a Chaos custom CA bundle is configured.
 ///
 /// This is the websocket-facing sibling of [`maybe_build_rustls_client_config_with_custom_ca`]. When
-/// `CODEX_CA_CERTIFICATE` or `SSL_CERT_FILE` selects a CA bundle, the returned config starts from
+/// `SSL_CERT_FILE` selects a CA bundle, the returned config starts from
 /// the platform native roots and then adds the configured custom CA certificates. When no custom
 /// CA env var is set, this returns `Ok(None)` so websocket callers can keep using their ordinary
 /// default connector path.
@@ -150,7 +149,7 @@ fn maybe_build_rustls_client_config_with_env(
     };
 
     // Start from the platform roots so websocket callers keep the same baseline trust behavior
-    // they would get from tungstenite's default rustls connector, then layer in the Codex custom
+    // they would get from tungstenite's default rustls connector, then layer in the Chaos custom
     // CA bundle on top when configured.
     let mut root_store = RootCertStore::empty();
     let rustls_native_certs::CertificateResult { certs, errors, .. } =
@@ -212,23 +211,12 @@ trait EnvSource {
             .map(PathBuf::from)
     }
 
-    /// Returns the configured CA bundle and which environment variable selected it.
-    ///
-    /// `CODEX_CA_CERTIFICATE` wins over `SSL_CERT_FILE` because it is the Codex-specific override.
-    /// Keeping the winning variable name with the path lets later logging explain not only which
-    /// file was used but also why that file was chosen.
+    /// Returns the configured CA bundle if `SSL_CERT_FILE` is set.
     fn configured_ca_bundle(&self) -> Option<ConfiguredCaBundle> {
-        self.non_empty_path(CODEX_CA_CERT_ENV)
+        self.non_empty_path(SSL_CERT_FILE_ENV)
             .map(|path| ConfiguredCaBundle {
-                source_env: CODEX_CA_CERT_ENV,
+                source_env: SSL_CERT_FILE_ENV,
                 path,
-            })
-            .or_else(|| {
-                self.non_empty_path(SSL_CERT_FILE_ENV)
-                    .map(|path| ConfiguredCaBundle {
-                        source_env: SSL_CERT_FILE_ENV,
-                        path,
-                    })
             })
     }
 }
@@ -289,9 +277,9 @@ impl ConfiguredCaBundle {
         }
     }
 
-    /// Loads every certificate block from a PEM file intended for Codex CA overrides.
+    /// Loads every certificate block from a PEM file intended for Chaos CA overrides.
     ///
-    /// This accepts a few common real-world variants so Codex behaves like other CA-aware tooling:
+    /// This accepts a few common real-world variants so Chaos behaves like other CA-aware tooling:
     /// leading comments are preserved, `TRUSTED CERTIFICATE` labels are normalized to standard
     /// certificate labels, and embedded CRLs are ignored when they are well-formed enough for the
     /// section iterator to classify them.
@@ -401,7 +389,7 @@ enum NormalizedPem {
 impl NormalizedPem {
     /// Normalizes PEM text from a CA bundle into the label shape this module expects.
     ///
-    /// Codex only needs certificate DER bytes to seed the rustls root store, but operators may
+    /// Chaos only needs certificate DER bytes to seed the rustls root store, but operators may
     /// point it at CA files that came from OpenSSL tooling rather than from a minimal certificate
     /// bundle. OpenSSL's `TRUSTED CERTIFICATE` form is one such variant: it is still certificate
     /// material, but it uses a different PEM label and may carry auxiliary trust metadata that
@@ -545,7 +533,6 @@ mod tests {
     use tempfile::TempDir;
 
     use super::BuildCustomCaTransportError;
-    use super::CODEX_CA_CERT_ENV;
     use super::EnvSource;
     use super::SSL_CERT_FILE_ENV;
     use super::maybe_build_rustls_client_config_with_env;
@@ -580,20 +567,7 @@ mod tests {
     }
 
     #[test]
-    fn ca_path_prefers_codex_env() {
-        let env = map_env(&[
-            (CODEX_CA_CERT_ENV, "/tmp/codex.pem"),
-            (SSL_CERT_FILE_ENV, "/tmp/fallback.pem"),
-        ]);
-
-        assert_eq!(
-            env.configured_ca_bundle().map(|bundle| bundle.path),
-            Some(PathBuf::from("/tmp/codex.pem"))
-        );
-    }
-
-    #[test]
-    fn ca_path_falls_back_to_ssl_cert_file() {
+    fn ca_path_uses_ssl_cert_file() {
         let env = map_env(&[(SSL_CERT_FILE_ENV, "/tmp/fallback.pem")]);
 
         assert_eq!(
@@ -604,22 +578,16 @@ mod tests {
 
     #[test]
     fn ca_path_ignores_empty_values() {
-        let env = map_env(&[
-            (CODEX_CA_CERT_ENV, ""),
-            (SSL_CERT_FILE_ENV, "/tmp/fallback.pem"),
-        ]);
+        let env = map_env(&[(SSL_CERT_FILE_ENV, "")]);
 
-        assert_eq!(
-            env.configured_ca_bundle().map(|bundle| bundle.path),
-            Some(PathBuf::from("/tmp/fallback.pem"))
-        );
+        assert_eq!(env.configured_ca_bundle().map(|bundle| bundle.path), None);
     }
 
     #[test]
     fn rustls_config_uses_custom_ca_bundle_when_configured() {
         let temp_dir = TempDir::new().expect("tempdir");
         let cert_path = write_cert_file(&temp_dir, "ca.pem", TEST_CERT);
-        let env = map_env(&[(CODEX_CA_CERT_ENV, cert_path.to_string_lossy().as_ref())]);
+        let env = map_env(&[(SSL_CERT_FILE_ENV, cert_path.to_string_lossy().as_ref())]);
 
         let config = maybe_build_rustls_client_config_with_env(&env)
             .expect("rustls config")
@@ -632,7 +600,7 @@ mod tests {
     fn rustls_config_reports_invalid_ca_file() {
         let temp_dir = TempDir::new().expect("tempdir");
         let cert_path = write_cert_file(&temp_dir, "empty.pem", "");
-        let env = map_env(&[(CODEX_CA_CERT_ENV, cert_path.to_string_lossy().as_ref())]);
+        let env = map_env(&[(SSL_CERT_FILE_ENV, cert_path.to_string_lossy().as_ref())]);
 
         let error = maybe_build_rustls_client_config_with_env(&env).expect_err("invalid CA");
 

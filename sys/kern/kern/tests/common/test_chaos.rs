@@ -194,7 +194,7 @@ impl TestCodexBuilder {
             home,
             cwd,
             config,
-            codex: new_conversation.process,
+            process: new_conversation.process,
             session_configured: new_conversation.session_configured,
             process_table,
         })
@@ -265,7 +265,7 @@ fn ensure_test_model_catalog(config: &mut Config) -> Result<()> {
 pub struct TestCodex {
     pub home: Arc<TempDir>,
     pub cwd: Arc<TempDir>,
-    pub codex: Arc<Process>,
+    pub process: Arc<Process>,
     pub session_configured: SessionConfiguredEvent,
     pub config: Config,
     pub process_table: Arc<ProcessTable>,
@@ -276,7 +276,7 @@ impl TestCodex {
         self.cwd.path()
     }
 
-    pub fn codex_home_path(&self) -> &Path {
+    pub fn chaos_home_path(&self) -> &Path {
         self.config.chaos_home.as_path()
     }
 
@@ -335,7 +335,7 @@ impl TestCodex {
         service_tier: Option<Option<ServiceTier>>,
     ) -> Result<()> {
         let session_model = self.session_configured.model.clone();
-        self.codex
+        self.process
             .submit(Op::UserTurn {
                 items: vec![UserInput::Text {
                     text: prompt.into(),
@@ -354,12 +354,12 @@ impl TestCodex {
             })
             .await?;
 
-        let turn_id = wait_for_event_match(&self.codex, |event| match event {
+        let turn_id = wait_for_event_match(&self.process, |event| match event {
             EventMsg::TurnStarted(event) => Some(event.turn_id.clone()),
             _ => None,
         })
         .await;
-        wait_for_event(&self.codex, |event| match event {
+        wait_for_event(&self.process, |event| match event {
             EventMsg::TurnComplete(event) => event.turn_id == turn_id,
             _ => false,
         })
@@ -375,11 +375,11 @@ pub struct TestCodexHarness {
 
 impl TestCodexHarness {
     pub async fn new() -> Result<Self> {
-        Self::with_builder(test_codex()).await
+        Self::with_builder(test_chaos()).await
     }
 
     pub async fn with_config(mutator: impl FnOnce(&mut Config) + Send + 'static) -> Result<Self> {
-        Self::with_builder(test_codex().with_config(mutator)).await
+        Self::with_builder(test_chaos().with_config(mutator)).await
     }
 
     pub async fn with_builder(mut builder: TestCodexBuilder) -> Result<Self> {
@@ -507,7 +507,7 @@ fn function_call_output<'a>(bodies: &'a [Value], call_id: &str) -> &'a Value {
     panic!("function_call_output {call_id} not found");
 }
 
-pub fn test_codex() -> TestCodexBuilder {
+pub fn test_chaos() -> TestCodexBuilder {
     TestCodexBuilder {
         config_mutators: vec![],
         auth: ChaosAuth::from_api_key("dummy"),

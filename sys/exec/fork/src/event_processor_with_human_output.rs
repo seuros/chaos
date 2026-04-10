@@ -53,7 +53,7 @@ use std::path::PathBuf;
 use std::time::Duration;
 use std::time::Instant;
 
-use crate::event_processor::CodexStatus;
+use crate::event_processor::ChaosStatus;
 use crate::event_processor::EventProcessor;
 use crate::event_processor::handle_last_message;
 use chaos_ipc::plan_tool::StepStatus;
@@ -209,16 +209,16 @@ impl EventProcessor for EventProcessorWithHumanOutput {
         ts_msg!(self, "{}\n{}", "user".style(self.cyan), prompt);
     }
 
-    fn process_event(&mut self, event: Event) -> CodexStatus {
+    fn process_event(&mut self, event: Event) -> ChaosStatus {
         let Event { id: _, msg } = event;
         if let EventMsg::BackgroundEvent(BackgroundEventEvent { message }) = &msg
             && let Some(update) = Self::parse_agent_job_progress(message)
         {
             self.render_agent_job_progress(update);
-            return CodexStatus::Running;
+            return ChaosStatus::Running;
         }
         if self.progress_active && !Self::should_interrupt_progress(&msg) {
-            return CodexStatus::Running;
+            return ChaosStatus::Running;
         }
         if !Self::is_silent_event(&msg) {
             self.finish_progress_line();
@@ -326,7 +326,7 @@ impl EventProcessor for EventProcessorWithHumanOutput {
 
                 self.final_message = last_agent_message.or_else(|| self.last_proposed_plan.clone());
 
-                return CodexStatus::InitiateShutdown;
+                return ChaosStatus::InitiateShutdown;
             }
             EventMsg::TokenCount(ev) => {
                 self.last_total_token_usage = ev.info;
@@ -334,7 +334,7 @@ impl EventProcessor for EventProcessorWithHumanOutput {
 
             EventMsg::AgentReasoningSectionBreak(_) => {
                 if !self.show_agent_reasoning {
-                    return CodexStatus::Running;
+                    return ChaosStatus::Running;
                 }
                 eprintln!();
             }
@@ -688,7 +688,7 @@ impl EventProcessor for EventProcessorWithHumanOutput {
                         ts_msg!(self, "task aborted: review ended");
                     }
                 }
-                return CodexStatus::InitiateShutdown;
+                return ChaosStatus::InitiateShutdown;
             }
             EventMsg::ContextCompacted(_) => {
                 ts_msg!(self, "context compacted");
@@ -810,7 +810,7 @@ impl EventProcessor for EventProcessorWithHumanOutput {
                         format_collab_invocation("wait", &call_id, /*prompt*/ None),
                         "timed out".style(self.yellow)
                     );
-                    return CodexStatus::Running;
+                    return ChaosStatus::Running;
                 }
                 let success = !statuses.values().any(is_collab_status_failure);
                 let title_style = if success { self.green } else { self.red };
@@ -872,7 +872,7 @@ impl EventProcessor for EventProcessorWithHumanOutput {
             }
             EventMsg::HookStarted(event) => self.render_hook_started(event),
             EventMsg::HookCompleted(event) => self.render_hook_completed(event),
-            EventMsg::ShutdownComplete => return CodexStatus::Shutdown,
+            EventMsg::ShutdownComplete => return ChaosStatus::Shutdown,
             EventMsg::ProcessNameUpdated(_)
             | EventMsg::ExecApprovalRequest(_)
             | EventMsg::ApplyPatchApprovalRequest(_)
@@ -906,7 +906,7 @@ impl EventProcessor for EventProcessorWithHumanOutput {
             | EventMsg::DynamicToolCallRequest(_)
             | EventMsg::DynamicToolCallResponse(_) => {}
         }
-        CodexStatus::Running
+        ChaosStatus::Running
     }
 
     fn print_final_output(&mut self) {

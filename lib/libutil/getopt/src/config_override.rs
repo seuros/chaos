@@ -1,4 +1,4 @@
-//! Support for `-c key=value` overrides shared across Codex CLI tools.
+//! Support for `-c key=value` overrides shared across Chaos CLI tools.
 //!
 //! This module provides a [`CliConfigOverrides`] struct that can be embedded
 //! into a `clap`-derived CLI struct using `#[clap(flatten)]`. Each occurrence

@@ -7,15 +7,15 @@ use ctor::ctor;
 use tempfile::TempDir;
 
 struct TestCodexAliasesGuard {
-    _codex_home: TempDir,
+    _chaos_home: TempDir,
     _arg0: Arg0PathEntryGuard,
-    _previous_codex_home: Option<OsString>,
+    _previous_chaos_home: Option<OsString>,
 }
 
 const CHAOS_HOME_ENV_VAR: &str = "CHAOS_HOME";
 
 // This code runs before any other tests are run.
-// It allows the test binary to behave like codex and dispatch to apply_patch and alcatraz-linux
+// It allows the test binary to behave like chaos and dispatch to apply_patch and alcatraz-linux
 // based on the arg0.
 // NOTE: this doesn't work on ARM
 #[ctor]
@@ -25,7 +25,7 @@ pub static CODEX_ALIASES_TEMP_DIR: TestCodexAliasesGuard = unsafe {
         .prefix("chaos-tests")
         .tempdir()
         .unwrap();
-    let previous_codex_home = std::env::var_os(CHAOS_HOME_ENV_VAR);
+    let previous_chaos_home = std::env::var_os(CHAOS_HOME_ENV_VAR);
     // arg0_dispatch() creates helper links under CHAOS_HOME/tmp. Point it at a
     // test-owned temp dir so startup never mutates the developer's real ~/.chaos.
     //
@@ -38,7 +38,7 @@ pub static CODEX_ALIASES_TEMP_DIR: TestCodexAliasesGuard = unsafe {
     let arg0 = arg0_dispatch().unwrap();
     // Restore the process environment immediately so later tests observe the
     // same CHAOS_HOME state they started with.
-    match previous_codex_home.as_ref() {
+    match previous_chaos_home.as_ref() {
         Some(value) => unsafe {
             std::env::set_var(CHAOS_HOME_ENV_VAR, value);
         },
@@ -48,9 +48,9 @@ pub static CODEX_ALIASES_TEMP_DIR: TestCodexAliasesGuard = unsafe {
     }
 
     TestCodexAliasesGuard {
-        _codex_home: chaos_home,
+        _chaos_home: chaos_home,
         _arg0: arg0,
-        _previous_codex_home: previous_codex_home,
+        _previous_chaos_home: previous_chaos_home,
     }
 };
 

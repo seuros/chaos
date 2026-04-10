@@ -41,7 +41,7 @@ pub enum RemoteSkillHazelnutScope {
 #[ts(rename_all = "lowercase")]
 pub enum RemoteSkillProductSurface {
     Chatgpt,
-    Codex,
+    Chaos,
     Api,
     Atlas,
 }

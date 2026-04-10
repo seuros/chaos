@@ -1,4 +1,4 @@
-//! Unified `chaos` MCP tool — replaces the old `codex` + `codex-reply` pair.
+//! Unified `chaos` MCP tool — replaces the old `chaos` + `chaos-reply` pair.
 //!
 //! Omit `process_id` → new process via ProcessTable.
 //! Provide `process_id` → resume an existing process.

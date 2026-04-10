@@ -20,7 +20,7 @@ use core_test_support::responses::sse;
 use core_test_support::responses::start_mock_server;
 use core_test_support::skip_if_no_network;
 use core_test_support::stdio_server_bin;
-use core_test_support::test_codex::test_codex;
+use core_test_support::test_chaos::test_chaos;
 use core_test_support::wait_for_event;
 use serde_json::Value;
 use serde_json::json;
@@ -36,7 +36,7 @@ async fn tool_call_output_configured_limit_chars_type() -> Result<()> {
     let server = start_mock_server().await;
 
     // Use a model that exposes the shell_command tool.
-    let mut builder = test_codex().with_model("gpt-5.1").with_config(|config| {
+    let mut builder = test_chaos().with_model("gpt-5.1").with_config(|config| {
         config.tool_output_token_limit = Some(100_000);
     });
 
@@ -108,7 +108,7 @@ async fn tool_call_output_exceeds_limit_truncated_chars_limit() -> Result<()> {
     let server = start_mock_server().await;
 
     // Use a model that exposes the shell_command tool.
-    let mut builder = test_codex().with_model("gpt-5.1");
+    let mut builder = test_chaos().with_model("gpt-5.1");
 
     let fixture = builder.build(&server).await?;
 
@@ -205,7 +205,7 @@ async fn mcp_image_output_preserves_image_and_no_text_summary() -> Result<()> {
     // 1x1 PNG data URL
     let openai_png = "data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mP8/x8AAwMB/ee9bQAAAABJRU5ErkJggg==";
 
-    let mut builder = test_codex().with_config(move |config| {
+    let mut builder = test_chaos().with_config(move |config| {
         let mut servers = config.mcp_servers.get().clone();
         servers.insert(
             server_name.to_string(),
@@ -242,7 +242,7 @@ async fn mcp_image_output_preserves_image_and_no_text_summary() -> Result<()> {
     let session_model = fixture.session_configured.model.clone();
 
     fixture
-        .codex
+        .process
         .submit(Op::UserTurn {
             items: vec![UserInput::Text {
                 text: "call the mcp_test image tool".into(),
@@ -262,7 +262,10 @@ async fn mcp_image_output_preserves_image_and_no_text_summary() -> Result<()> {
         .await?;
 
     // Wait for completion to ensure the outbound request is captured.
-    wait_for_event(&fixture.codex, |ev| matches!(ev, EventMsg::TurnComplete(_))).await;
+    wait_for_event(&fixture.process, |ev| {
+        matches!(ev, EventMsg::TurnComplete(_))
+    })
+    .await;
     let output_item = final_mock.single_request().function_call_output(call_id);
     // Expect exactly one array element: the image item; and no trailing summary text.
     let output = output_item.get("output").expect("output");
@@ -283,7 +286,7 @@ async fn byte_policy_marker_reports_bytes() -> Result<()> {
     skip_if_no_network!(Ok(()));
 
     let server = start_mock_server().await;
-    let mut builder = test_codex().with_model("gpt-5.1").with_config(|config| {
+    let mut builder = test_chaos().with_model("gpt-5.1").with_config(|config| {
         config.tool_output_token_limit = Some(50); // ~200 byte cap
     });
     let fixture = builder.build(&server).await?;
@@ -334,7 +337,7 @@ async fn shell_command_output_not_truncated_with_custom_limit() -> Result<()> {
     skip_if_no_network!(Ok(()));
 
     let server = start_mock_server().await;
-    let mut builder = test_codex()
+    let mut builder = test_chaos()
         .with_model("gpt-5.1-codex")
         .with_config(|config| {
             config.tool_output_token_limit = Some(50_000); // ample budget
@@ -423,7 +426,7 @@ async fn mcp_tool_call_output_not_truncated_with_custom_limit() -> Result<()> {
 
     let mcp_test_test_server_bin = stdio_server_bin()?;
 
-    let mut builder = test_codex().with_config(move |config| {
+    let mut builder = test_chaos().with_config(move |config| {
         config.tool_output_token_limit = Some(50_000);
         let mut servers = config.mcp_servers.get().clone();
         servers.insert(

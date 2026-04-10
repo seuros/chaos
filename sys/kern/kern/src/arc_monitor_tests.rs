@@ -250,7 +250,7 @@ async fn monitor_action_posts_expected_arc_request() {
         .await;
 
     Mock::given(method("POST"))
-        .and(path("/codex/safety/arc"))
+        .and(path("/chaos/safety/arc"))
         .and(header("authorization", "Bearer Access Token"))
         .and(header("chatgpt-account-id", "account_id"))
         .and(body_json(serde_json::json!({
@@ -364,7 +364,7 @@ async fn monitor_action_uses_env_url_and_token_overrides() {
 async fn monitor_action_rejects_legacy_response_fields() {
     let server = MockServer::start().await;
     Mock::given(method("POST"))
-        .and(path("/codex/safety/arc"))
+        .and(path("/chaos/safety/arc"))
         .respond_with(ResponseTemplate::new(200).set_body_json(serde_json::json!({
             "outcome": "steer-model",
             "reason": "legacy high-risk action",

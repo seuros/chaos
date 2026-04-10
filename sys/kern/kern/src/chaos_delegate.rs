@@ -82,7 +82,7 @@ pub(crate) async fn run_chaos_process_interactive(
         parent_trace: None,
     })
     .await?;
-    let codex = Arc::new(chaos);
+    let chaos = Arc::new(chaos);
 
     // Use a child token so parent cancel cascades but we can scope it to this task
     let cancel_token_events = cancel_token.child_token();
@@ -92,7 +92,7 @@ pub(crate) async fn run_chaos_process_interactive(
     // routing them to the parent session for decisions.
     let parent_session_clone = Arc::clone(&parent_session);
     let parent_ctx_clone = Arc::clone(&parent_ctx);
-    let codex_for_events = Arc::clone(&codex);
+    let codex_for_events = Arc::clone(&chaos);
     let pending_mcp_invocations = Arc::new(Mutex::new(HashMap::<String, McpInvocation>::new()));
     tokio::spawn(async move {
         forward_events(
@@ -107,7 +107,7 @@ pub(crate) async fn run_chaos_process_interactive(
     });
 
     // Forward ops from the caller to the sub-agent.
-    let codex_for_ops = Arc::clone(&codex);
+    let codex_for_ops = Arc::clone(&chaos);
     tokio::spawn(async move {
         forward_ops(codex_for_ops, rx_ops, cancel_token_ops).await;
     });
@@ -115,9 +115,9 @@ pub(crate) async fn run_chaos_process_interactive(
     Ok(Chaos {
         tx_sub: tx_ops,
         rx_event: rx_sub,
-        agent_status: codex.agent_status.clone(),
-        session: Arc::clone(&codex.session),
-        session_loop_termination: codex.session_loop_termination.clone(),
+        agent_status: chaos.agent_status.clone(),
+        session: Arc::clone(&chaos.session),
+        session_loop_termination: chaos.session_loop_termination.clone(),
     })
 }
 
@@ -203,7 +203,7 @@ pub(crate) async fn run_chaos_process_one_shot(
 }
 
 async fn forward_events(
-    codex: Arc<Chaos>,
+    chaos: Arc<Chaos>,
     tx_sub: Sender<Event>,
     parent_session: Arc<Session>,
     parent_ctx: Arc<TurnContext>,
@@ -216,10 +216,10 @@ async fn forward_events(
     loop {
         tokio::select! {
             _ = &mut cancelled => {
-                shutdown_delegate(&codex).await;
+                shutdown_delegate(&chaos).await;
                 break;
             }
-            event = codex.next_event() => {
+            event = chaos.next_event() => {
                 let event = match event {
                     Ok(event) => event,
                     Err(_) => break,
@@ -243,7 +243,7 @@ async fn forward_events(
                     } => {
                         // Initiate approval via parent session; do not surface to consumer.
                         handle_exec_approval(
-                            &codex,
+                            &chaos,
                             id,
                             &parent_session,
                             &parent_ctx,
@@ -257,7 +257,7 @@ async fn forward_events(
                         msg: EventMsg::ApplyPatchApprovalRequest(event),
                     } => {
                         handle_patch_approval(
-                            &codex,
+                            &chaos,
                             id,
                             &parent_session,
                             &parent_ctx,
@@ -271,7 +271,7 @@ async fn forward_events(
                         ..
                     } => {
                         handle_request_permissions(
-                            &codex,
+                            &chaos,
                             &parent_session,
                             &parent_ctx,
                             event,
@@ -284,7 +284,7 @@ async fn forward_events(
                         msg: EventMsg::RequestUserInput(event),
                     } => {
                         handle_request_user_input(
-                            &codex,
+                            &chaos,
                             id,
                             &parent_session,
                             &parent_ctx,
@@ -303,7 +303,7 @@ async fn forward_events(
                             .await
                             .insert(event.call_id.clone(), event.invocation.clone());
                         if !forward_event_or_shutdown(
-                            &codex,
+                            &chaos,
                             &tx_sub,
                             &cancel_token,
                             Event {
@@ -322,7 +322,7 @@ async fn forward_events(
                     } => {
                         pending_mcp_invocations.lock().await.remove(&event.call_id);
                         if !forward_event_or_shutdown(
-                            &codex,
+                            &chaos,
                             &tx_sub,
                             &cancel_token,
                             Event {
@@ -336,7 +336,7 @@ async fn forward_events(
                         }
                     }
                     other => {
-                        if !forward_event_or_shutdown(&codex, &tx_sub, &cancel_token, other).await
+                        if !forward_event_or_shutdown(&chaos, &tx_sub, &cancel_token, other).await
                         {
                             break;
                         }
@@ -348,12 +348,12 @@ async fn forward_events(
 }
 
 /// Ask the delegate to stop and drain its events so background sends do not hit a closed channel.
-async fn shutdown_delegate(codex: &Chaos) {
-    let _ = codex.submit(Op::Interrupt).await;
-    let _ = codex.submit(Op::Shutdown {}).await;
+async fn shutdown_delegate(chaos: &Chaos) {
+    let _ = chaos.submit(Op::Interrupt).await;
+    let _ = chaos.submit(Op::Shutdown {}).await;
 
     let _ = timeout(Duration::from_millis(500), async {
-        while let Ok(event) = codex.next_event().await {
+        while let Ok(event) = chaos.next_event().await {
             if matches!(
                 event.msg,
                 EventMsg::TurnAborted(_) | EventMsg::TurnComplete(_)
@@ -366,7 +366,7 @@ async fn shutdown_delegate(codex: &Chaos) {
 }
 
 async fn forward_event_or_shutdown(
-    codex: &Chaos,
+    chaos: &Chaos,
     tx_sub: &Sender<Event>,
     cancel_token: &CancellationToken,
     event: Event,
@@ -374,7 +374,7 @@ async fn forward_event_or_shutdown(
     match tx_sub.send(event).or_cancel(cancel_token).await {
         Ok(Ok(())) => true,
         _ => {
-            shutdown_delegate(codex).await;
+            shutdown_delegate(chaos).await;
             false
         }
     }
@@ -382,7 +382,7 @@ async fn forward_event_or_shutdown(
 
 /// Forward ops from a caller to a sub-agent, respecting cancellation.
 async fn forward_ops(
-    codex: Arc<Chaos>,
+    chaos: Arc<Chaos>,
     rx_ops: Receiver<Submission>,
     cancel_token_ops: CancellationToken,
 ) {
@@ -391,13 +391,13 @@ async fn forward_ops(
             Ok(Ok(submission)) => submission,
             Ok(Err(_)) | Err(_) => break,
         };
-        let _ = codex.submit_with_id(submission).await;
+        let _ = chaos.submit_with_id(submission).await;
     }
 }
 
 /// Handle an ExecApprovalRequest by consulting the parent session and replying.
 async fn handle_exec_approval(
-    codex: &Chaos,
+    chaos: &Chaos,
     turn_id: String,
     parent_session: &Arc<Session>,
     parent_ctx: &Arc<TurnContext>,
@@ -439,7 +439,7 @@ async fn handle_exec_approval(
     )
     .await;
 
-    let _ = codex
+    let _ = chaos
         .submit(Op::ExecApproval {
             id: approval_id_for_op,
             turn_id: Some(turn_id),
@@ -450,7 +450,7 @@ async fn handle_exec_approval(
 
 /// Handle an ApplyPatchApprovalRequest by consulting the parent session and replying.
 async fn handle_patch_approval(
-    codex: &Chaos,
+    chaos: &Chaos,
     _id: String,
     parent_session: &Arc<Session>,
     parent_ctx: &Arc<TurnContext>,
@@ -476,7 +476,7 @@ async fn handle_patch_approval(
         /*review_cancel_token*/ None,
     )
     .await;
-    let _ = codex
+    let _ = chaos
         .submit(Op::PatchApproval {
             id: approval_id,
             decision,
@@ -485,7 +485,7 @@ async fn handle_patch_approval(
 }
 
 async fn handle_request_user_input(
-    codex: &Chaos,
+    chaos: &Chaos,
     id: String,
     parent_session: &Arc<Session>,
     parent_ctx: &Arc<TurnContext>,
@@ -505,11 +505,11 @@ async fn handle_request_user_input(
         cancel_token,
     )
     .await;
-    let _ = codex.submit(Op::UserInputAnswer { id, response }).await;
+    let _ = chaos.submit(Op::UserInputAnswer { id, response }).await;
 }
 
 async fn handle_request_permissions(
-    codex: &Chaos,
+    chaos: &Chaos,
     parent_session: &Arc<Session>,
     parent_ctx: &Arc<TurnContext>,
     event: RequestPermissionsEvent,
@@ -524,7 +524,7 @@ async fn handle_request_permissions(
     let response =
         await_request_permissions_with_cancel(response_fut, parent_session, &call_id, cancel_token)
             .await;
-    let _ = codex
+    let _ = chaos
         .submit(Op::RequestPermissionsResponse {
             id: call_id,
             response,

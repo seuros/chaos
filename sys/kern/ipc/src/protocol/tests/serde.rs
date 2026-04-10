@@ -8,7 +8,7 @@ use std::path::PathBuf;
 fn rollback_failed_error_does_not_affect_turn_status() {
     let event = ErrorEvent {
         message: "rollback failed".into(),
-        codex_error_info: Some(CodexErrorInfo::ProcessRollbackFailed),
+        chaos_error_info: Some(ChaosErrorInfo::ProcessRollbackFailed),
     };
     assert!(!event.affects_turn_status());
 }
@@ -17,7 +17,7 @@ fn rollback_failed_error_does_not_affect_turn_status() {
 fn generic_error_affects_turn_status() {
     let event = ErrorEvent {
         message: "generic".into(),
-        codex_error_info: Some(CodexErrorInfo::Other),
+        chaos_error_info: Some(ChaosErrorInfo::Other),
     };
     assert!(event.affects_turn_status());
 }
@@ -200,7 +200,7 @@ fn serialize_event() -> Result<()> {
             session_id: conversation_id,
             forked_from_id: None,
             process_name: None,
-            model: "codex-mini-latest".to_string(),
+            model: "chaos-mini-latest".to_string(),
             model_provider_id: "openai".to_string(),
             service_tier: None,
             approval_policy: ApprovalPolicy::Headless,
@@ -220,7 +220,7 @@ fn serialize_event() -> Result<()> {
         "msg": {
             "type": "session_configured",
             "session_id": "67e55044-10b1-426f-9247-bb680e5fe0c8",
-            "model": "codex-mini-latest",
+            "model": "chaos-mini-latest",
             "model_provider_id": "openai",
             "approval_policy": "headless",
             "approvals_reviewer": "user",

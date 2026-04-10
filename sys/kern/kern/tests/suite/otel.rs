@@ -22,8 +22,8 @@ use core_test_support::responses::mount_sse_once;
 use core_test_support::responses::sse;
 use core_test_support::responses::sse_response;
 use core_test_support::responses::start_mock_server;
-use core_test_support::test_codex::TestCodex;
-use core_test_support::test_codex::test_codex;
+use core_test_support::test_chaos::TestCodex;
+use core_test_support::test_chaos::test_chaos;
 use core_test_support::wait_for_event;
 use std::sync::Mutex;
 use tracing::Level;
@@ -97,9 +97,9 @@ async fn responses_api_emits_api_request_event() {
 
     mount_sse_once(&server, sse(vec![ev_completed("done")])).await;
 
-    let TestCodex { codex, .. } = test_codex().build(&server).await.unwrap();
+    let TestCodex { process: chaos, .. } = test_chaos().build(&server).await.unwrap();
 
-    codex
+    chaos
         .submit(Op::UserInput {
             items: vec![UserInput::Text {
                 text: "hello".into(),
@@ -110,14 +110,14 @@ async fn responses_api_emits_api_request_event() {
         .await
         .unwrap();
 
-    wait_for_event(&codex, |ev| matches!(ev, EventMsg::TurnComplete(_))).await;
+    wait_for_event(&chaos, |ev| matches!(ev, EventMsg::TurnComplete(_))).await;
 
     logs_assert(|lines: &[&str]| {
         lines
             .iter()
             .find(|line| line.contains("chaos.api_request"))
             .map(|_| Ok(()))
-            .unwrap_or_else(|| Err("expected codex.api_request event".to_string()))
+            .unwrap_or_else(|| Err("expected chaos.api_request event".to_string()))
     });
 
     logs_assert(|lines: &[&str]| {
@@ -125,7 +125,7 @@ async fn responses_api_emits_api_request_event() {
             .iter()
             .find(|line| line.contains("chaos.conversation_starts"))
             .map(|_| Ok(()))
-            .unwrap_or_else(|| Err("expected codex.conversation_starts event".to_string()))
+            .unwrap_or_else(|| Err("expected chaos.conversation_starts event".to_string()))
     });
 }
 
@@ -140,9 +140,9 @@ async fn process_sse_emits_tracing_for_output_item() {
     )
     .await;
 
-    let TestCodex { codex, .. } = test_codex().build(&server).await.unwrap();
+    let TestCodex { process: chaos, .. } = test_chaos().build(&server).await.unwrap();
 
-    codex
+    chaos
         .submit(Op::UserInput {
             items: vec![UserInput::Text {
                 text: "hello".into(),
@@ -153,7 +153,7 @@ async fn process_sse_emits_tracing_for_output_item() {
         .await
         .unwrap();
 
-    wait_for_event(&codex, |ev| matches!(ev, EventMsg::TurnComplete(_))).await;
+    wait_for_event(&chaos, |ev| matches!(ev, EventMsg::TurnComplete(_))).await;
 
     logs_assert(|lines: &[&str]| {
         lines
@@ -174,9 +174,9 @@ async fn process_sse_emits_failed_event_on_parse_error() {
 
     mount_sse_once(&server, "data: not-json\n\n".to_string()).await;
 
-    let TestCodex { codex, .. } = test_codex().build(&server).await.unwrap();
+    let TestCodex { process: chaos, .. } = test_chaos().build(&server).await.unwrap();
 
-    codex
+    chaos
         .submit(Op::UserInput {
             items: vec![UserInput::Text {
                 text: "hello".into(),
@@ -187,7 +187,7 @@ async fn process_sse_emits_failed_event_on_parse_error() {
         .await
         .unwrap();
 
-    wait_for_event(&codex, |ev| matches!(ev, EventMsg::TurnComplete(_))).await;
+    wait_for_event(&chaos, |ev| matches!(ev, EventMsg::TurnComplete(_))).await;
 
     logs_assert(|lines: &[&str]| {
         lines
@@ -198,7 +198,7 @@ async fn process_sse_emits_failed_event_on_parse_error() {
                     && line.contains("expected ident at line 1 column 2")
             })
             .map(|_| Ok(()))
-            .unwrap_or(Err("missing codex.sse_event".to_string()))
+            .unwrap_or(Err("missing chaos.sse_event".to_string()))
     });
 }
 
@@ -209,9 +209,9 @@ async fn process_sse_records_failed_event_when_stream_closes_without_completed()
 
     mount_sse_once(&server, sse(vec![ev_assistant_message("id", "hi")])).await;
 
-    let TestCodex { codex, .. } = test_codex().build(&server).await.unwrap();
+    let TestCodex { process: chaos, .. } = test_chaos().build(&server).await.unwrap();
 
-    codex
+    chaos
         .submit(Op::UserInput {
             items: vec![UserInput::Text {
                 text: "hello".into(),
@@ -222,7 +222,7 @@ async fn process_sse_records_failed_event_when_stream_closes_without_completed()
         .await
         .unwrap();
 
-    wait_for_event(&codex, |ev| matches!(ev, EventMsg::TurnComplete(_))).await;
+    wait_for_event(&chaos, |ev| matches!(ev, EventMsg::TurnComplete(_))).await;
 
     logs_assert(|lines: &[&str]| {
         lines
@@ -233,7 +233,7 @@ async fn process_sse_records_failed_event_when_stream_closes_without_completed()
                     && line.contains("stream closed before response.completed")
             })
             .map(|_| Ok(()))
-            .unwrap_or(Err("missing codex.sse_event".to_string()))
+            .unwrap_or(Err("missing chaos.sse_event".to_string()))
     });
 }
 
@@ -264,9 +264,9 @@ async fn process_sse_failed_event_records_response_error_message() {
     )
     .await;
 
-    let TestCodex { codex, .. } = test_codex().build(&server).await.unwrap();
+    let TestCodex { process: chaos, .. } = test_chaos().build(&server).await.unwrap();
 
-    codex
+    chaos
         .submit(Op::UserInput {
             items: vec![UserInput::Text {
                 text: "hello".into(),
@@ -277,7 +277,7 @@ async fn process_sse_failed_event_records_response_error_message() {
         .await
         .unwrap();
 
-    wait_for_event(&codex, |ev| matches!(ev, EventMsg::TurnComplete(_))).await;
+    wait_for_event(&chaos, |ev| matches!(ev, EventMsg::TurnComplete(_))).await;
 
     logs_assert(|lines: &[&str]| {
         lines
@@ -289,7 +289,7 @@ async fn process_sse_failed_event_records_response_error_message() {
                     && line.contains("boom")
             })
             .map(|_| Ok(()))
-            .unwrap_or(Err("missing codex.sse_event".to_string()))
+            .unwrap_or(Err("missing chaos.sse_event".to_string()))
     });
 }
 
@@ -317,9 +317,9 @@ async fn process_sse_failed_event_logs_parse_error() {
     )
     .await;
 
-    let TestCodex { codex, .. } = test_codex().build(&server).await.unwrap();
+    let TestCodex { process: chaos, .. } = test_chaos().build(&server).await.unwrap();
 
-    codex
+    chaos
         .submit(Op::UserInput {
             items: vec![UserInput::Text {
                 text: "hello".into(),
@@ -330,7 +330,7 @@ async fn process_sse_failed_event_logs_parse_error() {
         .await
         .unwrap();
 
-    wait_for_event(&codex, |ev| matches!(ev, EventMsg::TurnComplete(_))).await;
+    wait_for_event(&chaos, |ev| matches!(ev, EventMsg::TurnComplete(_))).await;
 
     logs_assert(|lines: &[&str]| {
         lines
@@ -339,7 +339,7 @@ async fn process_sse_failed_event_logs_parse_error() {
                 line.contains("chaos.sse_event") && line.contains("event.kind=response.failed")
             })
             .map(|_| Ok(()))
-            .unwrap_or(Err("missing codex.sse_event".to_string()))
+            .unwrap_or(Err("missing chaos.sse_event".to_string()))
     });
 }
 
@@ -357,9 +357,9 @@ async fn process_sse_failed_event_logs_missing_error() {
     )
     .await;
 
-    let TestCodex { codex, .. } = test_codex().build(&server).await.unwrap();
+    let TestCodex { process: chaos, .. } = test_chaos().build(&server).await.unwrap();
 
-    codex
+    chaos
         .submit(Op::UserInput {
             items: vec![UserInput::Text {
                 text: "hello".into(),
@@ -370,7 +370,7 @@ async fn process_sse_failed_event_logs_missing_error() {
         .await
         .unwrap();
 
-    wait_for_event(&codex, |ev| matches!(ev, EventMsg::TurnComplete(_))).await;
+    wait_for_event(&chaos, |ev| matches!(ev, EventMsg::TurnComplete(_))).await;
 
     logs_assert(|lines: &[&str]| {
         lines
@@ -379,7 +379,7 @@ async fn process_sse_failed_event_logs_missing_error() {
                 line.contains("chaos.sse_event") && line.contains("event.kind=response.failed")
             })
             .map(|_| Ok(()))
-            .unwrap_or(Err("missing codex.sse_event".to_string()))
+            .unwrap_or(Err("missing chaos.sse_event".to_string()))
     });
 }
 
@@ -406,9 +406,9 @@ async fn process_sse_failed_event_logs_response_completed_parse_error() {
     )
     .await;
 
-    let TestCodex { codex, .. } = test_codex().build(&server).await.unwrap();
+    let TestCodex { process: chaos, .. } = test_chaos().build(&server).await.unwrap();
 
-    codex
+    chaos
         .submit(Op::UserInput {
             items: vec![UserInput::Text {
                 text: "hello".into(),
@@ -419,7 +419,7 @@ async fn process_sse_failed_event_logs_response_completed_parse_error() {
         .await
         .unwrap();
 
-    wait_for_event(&codex, |ev| matches!(ev, EventMsg::TurnComplete(_))).await;
+    wait_for_event(&chaos, |ev| matches!(ev, EventMsg::TurnComplete(_))).await;
 
     logs_assert(|lines: &[&str]| {
         lines
@@ -431,7 +431,7 @@ async fn process_sse_failed_event_logs_response_completed_parse_error() {
                     && line.contains("failed to parse ResponseCompleted")
             })
             .map(|_| Ok(()))
-            .unwrap_or(Err("missing codex.sse_event".to_string()))
+            .unwrap_or(Err("missing chaos.sse_event".to_string()))
     });
 }
 
@@ -458,9 +458,9 @@ async fn process_sse_emits_completed_telemetry() {
     )
     .await;
 
-    let TestCodex { codex, .. } = test_codex().build(&server).await.unwrap();
+    let TestCodex { process: chaos, .. } = test_chaos().build(&server).await.unwrap();
 
-    codex
+    chaos
         .submit(Op::UserInput {
             items: vec![UserInput::Text {
                 text: "hello".into(),
@@ -471,7 +471,7 @@ async fn process_sse_emits_completed_telemetry() {
         .await
         .unwrap();
 
-    wait_for_event(&codex, |ev| matches!(ev, EventMsg::TurnComplete(_))).await;
+    wait_for_event(&chaos, |ev| matches!(ev, EventMsg::TurnComplete(_))).await;
 
     logs_assert(|lines: &[&str]| {
         lines
@@ -521,9 +521,9 @@ async fn handle_responses_span_records_response_kind_and_tool_name() {
     )
     .await;
 
-    let TestCodex { codex, .. } = test_codex().build(&server).await.unwrap();
+    let TestCodex { process: chaos, .. } = test_chaos().build(&server).await.unwrap();
 
-    codex
+    chaos
         .submit(Op::UserInput {
             items: vec![UserInput::Text {
                 text: "hello".into(),
@@ -534,7 +534,7 @@ async fn handle_responses_span_records_response_kind_and_tool_name() {
         .await
         .unwrap();
 
-    wait_for_event(&codex, |ev| matches!(ev, EventMsg::TurnComplete(_))).await;
+    wait_for_event(&chaos, |ev| matches!(ev, EventMsg::TurnComplete(_))).await;
 
     let logs = String::from_utf8(buffer.lock().unwrap().clone()).unwrap();
 
@@ -596,9 +596,9 @@ async fn record_responses_sets_span_fields_for_response_events() {
     )
     .await;
 
-    let TestCodex { codex, .. } = test_codex().build(&server).await.unwrap();
+    let TestCodex { process: chaos, .. } = test_chaos().build(&server).await.unwrap();
 
-    codex
+    chaos
         .submit(Op::UserInput {
             items: vec![UserInput::Text {
                 text: "hello".into(),
@@ -609,7 +609,7 @@ async fn record_responses_sets_span_fields_for_response_events() {
         .await
         .unwrap();
 
-    wait_for_event(&codex, |ev| matches!(ev, EventMsg::TurnComplete(_))).await;
+    wait_for_event(&chaos, |ev| matches!(ev, EventMsg::TurnComplete(_))).await;
 
     let logs = String::from_utf8(buffer.lock().unwrap().clone()).unwrap();
 
@@ -671,9 +671,9 @@ async fn handle_response_item_records_tool_result_for_custom_tool_call() {
     )
     .await;
 
-    let TestCodex { codex, .. } = test_codex().build(&server).await.unwrap();
+    let TestCodex { process: chaos, .. } = test_chaos().build(&server).await.unwrap();
 
-    codex
+    chaos
         .submit(Op::UserInput {
             items: vec![UserInput::Text {
                 text: "hello".into(),
@@ -684,7 +684,7 @@ async fn handle_response_item_records_tool_result_for_custom_tool_call() {
         .await
         .unwrap();
 
-    wait_for_event(&codex, |ev| matches!(ev, EventMsg::TokenCount(_))).await;
+    wait_for_event(&chaos, |ev| matches!(ev, EventMsg::TokenCount(_))).await;
 
     logs_assert(|lines: &[&str]| {
         let line = lines
@@ -692,7 +692,7 @@ async fn handle_response_item_records_tool_result_for_custom_tool_call() {
             .find(|line| {
                 line.contains("chaos.tool_result") && line.contains("call_id=custom-tool-call")
             })
-            .ok_or_else(|| "missing codex.tool_result event".to_string())?;
+            .ok_or_else(|| "missing chaos.tool_result event".to_string())?;
 
         if !line.contains("tool_name=unsupported_tool") {
             return Err("missing tool_name field".to_string());
@@ -735,9 +735,9 @@ async fn handle_response_item_records_tool_result_for_function_call() {
     )
     .await;
 
-    let TestCodex { codex, .. } = test_codex().build(&server).await.unwrap();
+    let TestCodex { process: chaos, .. } = test_chaos().build(&server).await.unwrap();
 
-    codex
+    chaos
         .submit(Op::UserInput {
             items: vec![UserInput::Text {
                 text: "hello".into(),
@@ -748,7 +748,7 @@ async fn handle_response_item_records_tool_result_for_function_call() {
         .await
         .unwrap();
 
-    wait_for_event(&codex, |ev| matches!(ev, EventMsg::TokenCount(_))).await;
+    wait_for_event(&chaos, |ev| matches!(ev, EventMsg::TokenCount(_))).await;
 
     logs_assert(|lines: &[&str]| {
         let line = lines
@@ -756,7 +756,7 @@ async fn handle_response_item_records_tool_result_for_function_call() {
             .find(|line| {
                 line.contains("chaos.tool_result") && line.contains("call_id=function-call")
             })
-            .ok_or_else(|| "missing codex.tool_result event".to_string())?;
+            .ok_or_else(|| "missing chaos.tool_result event".to_string())?;
 
         if !line.contains("tool_name=nonexistent") {
             return Err("missing tool_name field".to_string());
@@ -809,9 +809,9 @@ async fn handle_response_item_records_tool_result_for_local_shell_missing_ids() 
     )
     .await;
 
-    let TestCodex { codex, .. } = test_codex().build(&server).await.unwrap();
+    let TestCodex { process: chaos, .. } = test_chaos().build(&server).await.unwrap();
 
-    codex
+    chaos
         .submit(Op::UserInput {
             items: vec![UserInput::Text {
                 text: "hello".into(),
@@ -822,7 +822,7 @@ async fn handle_response_item_records_tool_result_for_local_shell_missing_ids() 
         .await
         .unwrap();
 
-    wait_for_event(&codex, |ev| matches!(ev, EventMsg::TokenCount(_))).await;
+    wait_for_event(&chaos, |ev| matches!(ev, EventMsg::TokenCount(_))).await;
 
     logs_assert(|lines: &[&str]| {
         let line = lines
@@ -832,7 +832,7 @@ async fn handle_response_item_records_tool_result_for_local_shell_missing_ids() 
                     && line.contains(&"tool_name=local_shell".to_string())
                     && line.contains("output=LocalShellCall without call_id or id")
             })
-            .ok_or_else(|| "missing codex.tool_result event".to_string())?;
+            .ok_or_else(|| "missing chaos.tool_result event".to_string())?;
 
         if !line.contains("success=false") {
             return Err("missing success field".to_string());
@@ -867,9 +867,9 @@ async fn handle_response_item_records_tool_result_for_local_shell_call() {
     )
     .await;
 
-    let TestCodex { codex, .. } = test_codex().build(&server).await.unwrap();
+    let TestCodex { process: chaos, .. } = test_chaos().build(&server).await.unwrap();
 
-    codex
+    chaos
         .submit(Op::UserInput {
             items: vec![UserInput::Text {
                 text: "hello".into(),
@@ -880,13 +880,13 @@ async fn handle_response_item_records_tool_result_for_local_shell_call() {
         .await
         .unwrap();
 
-    wait_for_event(&codex, |ev| matches!(ev, EventMsg::TokenCount(_))).await;
+    wait_for_event(&chaos, |ev| matches!(ev, EventMsg::TokenCount(_))).await;
 
     logs_assert(|lines: &[&str]| {
         let line = lines
             .iter()
             .find(|line| line.contains("chaos.tool_result") && line.contains("call_id=shell-call"))
-            .ok_or_else(|| "missing codex.tool_result event".to_string())?;
+            .ok_or_else(|| "missing chaos.tool_result event".to_string())?;
 
         if !line.contains("tool_name=local_shell") {
             return Err("missing tool_name field".to_string());
@@ -924,7 +924,7 @@ fn tool_decision_assertion<'a>(
             .find(|line| {
                 line.contains("chaos.tool_decision") && line.contains(&format!("call_id={call_id}"))
             })
-            .ok_or_else(|| format!("missing codex.tool_decision event for {call_id}"))?;
+            .ok_or_else(|| format!("missing chaos.tool_decision event for {call_id}"))?;
 
         let lower = line.to_lowercase();
         if !lower.contains("tool_name=local_shell") {
@@ -967,7 +967,7 @@ async fn handle_container_exec_autoapprove_from_config_records_tool_decision() {
     )
     .await;
 
-    let TestCodex { codex, .. } = test_codex()
+    let TestCodex { process: chaos, .. } = test_chaos()
         .with_config(|config| {
             config.permissions.approval_policy =
                 Constrained::allow_any(ApprovalPolicy::Interactive);
@@ -977,7 +977,7 @@ async fn handle_container_exec_autoapprove_from_config_records_tool_decision() {
         .await
         .unwrap();
 
-    codex
+    chaos
         .submit(Op::UserInput {
             items: vec![UserInput::Text {
                 text: "hello".into(),
@@ -988,7 +988,7 @@ async fn handle_container_exec_autoapprove_from_config_records_tool_decision() {
         .await
         .unwrap();
 
-    wait_for_event(&codex, |ev| matches!(ev, EventMsg::TurnComplete(_))).await;
+    wait_for_event(&chaos, |ev| matches!(ev, EventMsg::TurnComplete(_))).await;
 
     logs_assert(tool_decision_assertion(
         "auto_config_call",
@@ -1019,7 +1019,7 @@ async fn handle_container_exec_user_approved_records_tool_decision() {
     )
     .await;
 
-    let TestCodex { codex, .. } = test_codex()
+    let TestCodex { process: chaos, .. } = test_chaos()
         .with_config(|config| {
             config.permissions.approval_policy = Constrained::allow_any(ApprovalPolicy::Supervised);
         })
@@ -1027,7 +1027,7 @@ async fn handle_container_exec_user_approved_records_tool_decision() {
         .await
         .unwrap();
 
-    codex
+    chaos
         .submit(Op::UserInput {
             items: vec![UserInput::Text {
                 text: "approved".into(),
@@ -1039,12 +1039,12 @@ async fn handle_container_exec_user_approved_records_tool_decision() {
         .unwrap();
 
     let approval_event =
-        wait_for_event(&codex, |ev| matches!(ev, EventMsg::ExecApprovalRequest(_))).await;
+        wait_for_event(&chaos, |ev| matches!(ev, EventMsg::ExecApprovalRequest(_))).await;
     let EventMsg::ExecApprovalRequest(approval) = approval_event else {
         panic!("expected ExecApprovalRequest event");
     };
 
-    codex
+    chaos
         .submit(Op::ExecApproval {
             id: approval.effective_approval_id(),
             turn_id: None,
@@ -1053,7 +1053,7 @@ async fn handle_container_exec_user_approved_records_tool_decision() {
         .await
         .unwrap();
 
-    wait_for_event(&codex, |ev| matches!(ev, EventMsg::TokenCount(_))).await;
+    wait_for_event(&chaos, |ev| matches!(ev, EventMsg::TokenCount(_))).await;
 
     logs_assert(tool_decision_assertion(
         "user_approved_call",
@@ -1084,7 +1084,7 @@ async fn handle_container_exec_user_approved_for_session_records_tool_decision()
     )
     .await;
 
-    let TestCodex { codex, .. } = test_codex()
+    let TestCodex { process: chaos, .. } = test_chaos()
         .with_config(|config| {
             config.permissions.approval_policy = Constrained::allow_any(ApprovalPolicy::Supervised);
         })
@@ -1092,7 +1092,7 @@ async fn handle_container_exec_user_approved_for_session_records_tool_decision()
         .await
         .unwrap();
 
-    codex
+    chaos
         .submit(Op::UserInput {
             items: vec![UserInput::Text {
                 text: "persist".into(),
@@ -1104,12 +1104,12 @@ async fn handle_container_exec_user_approved_for_session_records_tool_decision()
         .unwrap();
 
     let approval_event =
-        wait_for_event(&codex, |ev| matches!(ev, EventMsg::ExecApprovalRequest(_))).await;
+        wait_for_event(&chaos, |ev| matches!(ev, EventMsg::ExecApprovalRequest(_))).await;
     let EventMsg::ExecApprovalRequest(approval) = approval_event else {
         panic!("expected ExecApprovalRequest event");
     };
 
-    codex
+    chaos
         .submit(Op::ExecApproval {
             id: approval.effective_approval_id(),
             turn_id: None,
@@ -1118,7 +1118,7 @@ async fn handle_container_exec_user_approved_for_session_records_tool_decision()
         .await
         .unwrap();
 
-    wait_for_event(&codex, |ev| matches!(ev, EventMsg::TokenCount(_))).await;
+    wait_for_event(&chaos, |ev| matches!(ev, EventMsg::TokenCount(_))).await;
 
     logs_assert(tool_decision_assertion(
         "user_approved_session_call",
@@ -1149,7 +1149,7 @@ async fn handle_sandbox_error_user_approves_retry_records_tool_decision() {
     )
     .await;
 
-    let TestCodex { codex, .. } = test_codex()
+    let TestCodex { process: chaos, .. } = test_chaos()
         .with_config(|config| {
             config.permissions.approval_policy = Constrained::allow_any(ApprovalPolicy::Supervised);
         })
@@ -1157,7 +1157,7 @@ async fn handle_sandbox_error_user_approves_retry_records_tool_decision() {
         .await
         .unwrap();
 
-    codex
+    chaos
         .submit(Op::UserInput {
             items: vec![UserInput::Text {
                 text: "retry".into(),
@@ -1169,12 +1169,12 @@ async fn handle_sandbox_error_user_approves_retry_records_tool_decision() {
         .unwrap();
 
     let approval_event =
-        wait_for_event(&codex, |ev| matches!(ev, EventMsg::ExecApprovalRequest(_))).await;
+        wait_for_event(&chaos, |ev| matches!(ev, EventMsg::ExecApprovalRequest(_))).await;
     let EventMsg::ExecApprovalRequest(approval) = approval_event else {
         panic!("expected ExecApprovalRequest event");
     };
 
-    codex
+    chaos
         .submit(Op::ExecApproval {
             id: approval.effective_approval_id(),
             turn_id: None,
@@ -1183,7 +1183,7 @@ async fn handle_sandbox_error_user_approves_retry_records_tool_decision() {
         .await
         .unwrap();
 
-    wait_for_event(&codex, |ev| matches!(ev, EventMsg::TokenCount(_))).await;
+    wait_for_event(&chaos, |ev| matches!(ev, EventMsg::TokenCount(_))).await;
 
     logs_assert(tool_decision_assertion(
         "sandbox_retry_call",
@@ -1214,7 +1214,7 @@ async fn handle_container_exec_user_denies_records_tool_decision() {
         ]),
     )
     .await;
-    let TestCodex { codex, .. } = test_codex()
+    let TestCodex { process: chaos, .. } = test_chaos()
         .with_config(|config| {
             config.permissions.approval_policy = Constrained::allow_any(ApprovalPolicy::Supervised);
         })
@@ -1222,7 +1222,7 @@ async fn handle_container_exec_user_denies_records_tool_decision() {
         .await
         .unwrap();
 
-    codex
+    chaos
         .submit(Op::UserInput {
             items: vec![UserInput::Text {
                 text: "deny".into(),
@@ -1234,12 +1234,12 @@ async fn handle_container_exec_user_denies_records_tool_decision() {
         .unwrap();
 
     let approval_event =
-        wait_for_event(&codex, |ev| matches!(ev, EventMsg::ExecApprovalRequest(_))).await;
+        wait_for_event(&chaos, |ev| matches!(ev, EventMsg::ExecApprovalRequest(_))).await;
     let EventMsg::ExecApprovalRequest(approval) = approval_event else {
         panic!("expected ExecApprovalRequest event");
     };
 
-    codex
+    chaos
         .submit(Op::ExecApproval {
             id: approval.effective_approval_id(),
             turn_id: None,
@@ -1248,7 +1248,7 @@ async fn handle_container_exec_user_denies_records_tool_decision() {
         .await
         .unwrap();
 
-    wait_for_event(&codex, |ev| matches!(ev, EventMsg::TokenCount(_))).await;
+    wait_for_event(&chaos, |ev| matches!(ev, EventMsg::TokenCount(_))).await;
 
     logs_assert(tool_decision_assertion(
         "user_denied_call",
@@ -1279,7 +1279,7 @@ async fn handle_sandbox_error_user_approves_for_session_records_tool_decision() 
     )
     .await;
 
-    let TestCodex { codex, .. } = test_codex()
+    let TestCodex { process: chaos, .. } = test_chaos()
         .with_config(|config| {
             config.permissions.approval_policy = Constrained::allow_any(ApprovalPolicy::Supervised);
         })
@@ -1287,7 +1287,7 @@ async fn handle_sandbox_error_user_approves_for_session_records_tool_decision() 
         .await
         .unwrap();
 
-    codex
+    chaos
         .submit(Op::UserInput {
             items: vec![UserInput::Text {
                 text: "persist".into(),
@@ -1299,12 +1299,12 @@ async fn handle_sandbox_error_user_approves_for_session_records_tool_decision() 
         .unwrap();
 
     let approval_event =
-        wait_for_event(&codex, |ev| matches!(ev, EventMsg::ExecApprovalRequest(_))).await;
+        wait_for_event(&chaos, |ev| matches!(ev, EventMsg::ExecApprovalRequest(_))).await;
     let EventMsg::ExecApprovalRequest(approval) = approval_event else {
         panic!("expected ExecApprovalRequest event");
     };
 
-    codex
+    chaos
         .submit(Op::ExecApproval {
             id: approval.effective_approval_id(),
             turn_id: None,
@@ -1313,7 +1313,7 @@ async fn handle_sandbox_error_user_approves_for_session_records_tool_decision() 
         .await
         .unwrap();
 
-    wait_for_event(&codex, |ev| matches!(ev, EventMsg::TokenCount(_))).await;
+    wait_for_event(&chaos, |ev| matches!(ev, EventMsg::TokenCount(_))).await;
 
     logs_assert(tool_decision_assertion(
         "sandbox_session_call",
@@ -1345,7 +1345,7 @@ async fn handle_sandbox_error_user_denies_records_tool_decision() {
     )
     .await;
 
-    let TestCodex { codex, .. } = test_codex()
+    let TestCodex { process: chaos, .. } = test_chaos()
         .with_config(|config| {
             config.permissions.approval_policy = Constrained::allow_any(ApprovalPolicy::Supervised);
         })
@@ -1353,7 +1353,7 @@ async fn handle_sandbox_error_user_denies_records_tool_decision() {
         .await
         .unwrap();
 
-    codex
+    chaos
         .submit(Op::UserInput {
             items: vec![UserInput::Text {
                 text: "deny".into(),
@@ -1365,12 +1365,12 @@ async fn handle_sandbox_error_user_denies_records_tool_decision() {
         .unwrap();
 
     let approval_event =
-        wait_for_event(&codex, |ev| matches!(ev, EventMsg::ExecApprovalRequest(_))).await;
+        wait_for_event(&chaos, |ev| matches!(ev, EventMsg::ExecApprovalRequest(_))).await;
     let EventMsg::ExecApprovalRequest(approval) = approval_event else {
         panic!("expected ExecApprovalRequest event");
     };
 
-    codex
+    chaos
         .submit(Op::ExecApproval {
             id: approval.effective_approval_id(),
             turn_id: None,
@@ -1379,7 +1379,7 @@ async fn handle_sandbox_error_user_denies_records_tool_decision() {
         .await
         .unwrap();
 
-    wait_for_event(&codex, |ev| matches!(ev, EventMsg::TokenCount(_))).await;
+    wait_for_event(&chaos, |ev| matches!(ev, EventMsg::TokenCount(_))).await;
 
     logs_assert(tool_decision_assertion(
         "sandbox_deny_call",

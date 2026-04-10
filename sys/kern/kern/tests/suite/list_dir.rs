@@ -1,7 +1,7 @@
 use core_test_support::responses::mount_function_call_agent_response;
 use core_test_support::responses::start_mock_server;
 use core_test_support::skip_if_no_network;
-use core_test_support::test_codex::test_codex;
+use core_test_support::test_chaos::test_chaos;
 use pretty_assertions::assert_eq;
 use serde_json::json;
 
@@ -11,7 +11,7 @@ async fn list_dir_tool_returns_entries() -> anyhow::Result<()> {
     skip_if_no_network!(Ok(()));
 
     let server = start_mock_server().await;
-    let test = test_codex().build(&server).await?;
+    let test = test_chaos().build(&server).await?;
 
     let dir_path = test.cwd.path().join("sample_dir");
     std::fs::create_dir(&dir_path)?;
@@ -45,7 +45,7 @@ async fn list_dir_tool_depth_one_omits_children() -> anyhow::Result<()> {
     skip_if_no_network!(Ok(()));
 
     let server = start_mock_server().await;
-    let test = test_codex().build(&server).await?;
+    let test = test_chaos().build(&server).await?;
 
     let dir_path = test.cwd.path().join("depth_one");
     std::fs::create_dir(&dir_path)?;
@@ -82,7 +82,7 @@ async fn list_dir_tool_depth_two_includes_children_only() -> anyhow::Result<()> 
     skip_if_no_network!(Ok(()));
 
     let server = start_mock_server().await;
-    let test = test_codex().build(&server).await?;
+    let test = test_chaos().build(&server).await?;
 
     let dir_path = test.cwd.path().join("depth_two");
     std::fs::create_dir(&dir_path)?;
@@ -126,7 +126,7 @@ async fn list_dir_tool_depth_three_includes_grandchildren() -> anyhow::Result<()
     skip_if_no_network!(Ok(()));
 
     let server = start_mock_server().await;
-    let test = test_codex().build(&server).await?;
+    let test = test_chaos().build(&server).await?;
 
     let dir_path = test.cwd.path().join("depth_three");
     std::fs::create_dir(&dir_path)?;

@@ -610,7 +610,7 @@ fn try_derive_execpolicy_amendment_for_prompt_rules(
         })
 }
 
-/// - Note: we only use this amendment when the command fails to run in sandbox and codex prompts the user to run outside the sandbox
+/// - Note: we only use this amendment when the command fails to run in sandbox and chaos prompts the user to run outside the sandbox
 /// - The purpose of this amendment is to bypass sandbox for similar commands in the future
 /// - If any execpolicy rule matches, return None, because we would already be running command outside the sandbox
 fn try_derive_execpolicy_amendment_for_allow_rules(

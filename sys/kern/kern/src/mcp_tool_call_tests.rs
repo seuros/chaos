@@ -784,7 +784,7 @@ async fn approve_mode_blocks_when_arc_returns_interrupt_for_model() {
 
     let server = MockServer::start().await;
     Mock::given(method("POST"))
-        .and(path("/codex/safety/arc"))
+        .and(path("/chaos/safety/arc"))
         .respond_with(ResponseTemplate::new(200).set_body_json(serde_json::json!({
             "outcome": "steer-model",
             "short_reason": "needs approval",

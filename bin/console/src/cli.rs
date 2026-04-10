@@ -16,7 +16,7 @@ pub struct Cli {
     pub images: Vec<PathBuf>,
 
     // Internal controls set by the top-level `chaos resume` subcommand.
-    // These are not exposed as user flags on the base `codex` command.
+    // These are not exposed as user flags on the base `chaos` command.
     #[clap(skip)]
     pub resume_picker: bool,
 
@@ -33,7 +33,7 @@ pub struct Cli {
     pub resume_show_all: bool,
 
     // Internal controls set by the top-level `chaos fork` subcommand.
-    // These are not exposed as user flags on the base `codex` command.
+    // These are not exposed as user flags on the base `chaos` command.
     #[clap(skip)]
     pub fork_picker: bool,
 

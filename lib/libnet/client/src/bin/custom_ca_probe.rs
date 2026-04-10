@@ -1,6 +1,6 @@
 //! Helper binary for exercising shared custom CA environment handling in tests.
 //!
-//! The shared HTTP client honors `CODEX_CA_CERTIFICATE` and `SSL_CERT_FILE`, but those
+//! The shared HTTP client honors `SSL_CERT_FILE`, but that
 //! environment variables are process-global and unsafe to mutate in parallel test execution. This
 //! probe keeps the behavior under test while letting integration tests (`tests/ca_env.rs`) set
 //! env vars per-process, proving:

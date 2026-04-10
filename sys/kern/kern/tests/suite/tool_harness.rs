@@ -16,8 +16,8 @@ use core_test_support::responses::ev_response_created;
 use core_test_support::responses::sse;
 use core_test_support::responses::start_mock_server;
 use core_test_support::skip_if_no_network;
-use core_test_support::test_codex::TestCodex;
-use core_test_support::test_codex::test_codex;
+use core_test_support::test_chaos::TestCodex;
+use core_test_support::test_chaos::test_chaos;
 use core_test_support::wait_for_event;
 use serde_json::Value;
 use serde_json::json;
@@ -45,9 +45,9 @@ async fn shell_tool_executes_command_and_streams_output() -> anyhow::Result<()> 
 
     let server = start_mock_server().await;
 
-    let mut builder = test_codex().with_model("gpt-5");
+    let mut builder = test_chaos().with_model("gpt-5");
     let TestCodex {
-        codex,
+        process: chaos,
         cwd,
         session_configured,
         ..
@@ -70,7 +70,7 @@ async fn shell_tool_executes_command_and_streams_output() -> anyhow::Result<()> 
 
     let session_model = session_configured.model.clone();
 
-    codex
+    chaos
         .submit(Op::UserTurn {
             items: vec![UserInput::Text {
                 text: "please run the shell command".into(),
@@ -89,7 +89,7 @@ async fn shell_tool_executes_command_and_streams_output() -> anyhow::Result<()> 
         })
         .await?;
 
-    wait_for_event(&codex, |event| matches!(event, EventMsg::TurnComplete(_))).await;
+    wait_for_event(&chaos, |event| matches!(event, EventMsg::TurnComplete(_))).await;
 
     let req = second_mock.single_request();
     let (output_text, _) = call_output(&req, call_id);
@@ -111,9 +111,9 @@ async fn update_plan_tool_emits_plan_update_event() -> anyhow::Result<()> {
 
     let server = start_mock_server().await;
 
-    let mut builder = test_codex();
+    let mut builder = test_chaos();
     let TestCodex {
-        codex,
+        process: chaos,
         cwd,
         session_configured,
         ..
@@ -144,7 +144,7 @@ async fn update_plan_tool_emits_plan_update_event() -> anyhow::Result<()> {
 
     let session_model = session_configured.model.clone();
 
-    codex
+    chaos
         .submit(Op::UserTurn {
             items: vec![UserInput::Text {
                 text: "please update the plan".into(),
@@ -164,7 +164,7 @@ async fn update_plan_tool_emits_plan_update_event() -> anyhow::Result<()> {
         .await?;
 
     let mut saw_plan_update = false;
-    wait_for_event(&codex, |event| match event {
+    wait_for_event(&chaos, |event| match event {
         EventMsg::PlanUpdate(update) => {
             saw_plan_update = true;
             assert_eq!(update.explanation.as_deref(), Some("Tool harness check"));
@@ -195,9 +195,9 @@ async fn update_plan_tool_rejects_malformed_payload() -> anyhow::Result<()> {
 
     let server = start_mock_server().await;
 
-    let mut builder = test_codex();
+    let mut builder = test_chaos();
     let TestCodex {
-        codex,
+        process: chaos,
         cwd,
         session_configured,
         ..
@@ -224,7 +224,7 @@ async fn update_plan_tool_rejects_malformed_payload() -> anyhow::Result<()> {
 
     let session_model = session_configured.model.clone();
 
-    codex
+    chaos
         .submit(Op::UserTurn {
             items: vec![UserInput::Text {
                 text: "please update the plan".into(),
@@ -244,7 +244,7 @@ async fn update_plan_tool_rejects_malformed_payload() -> anyhow::Result<()> {
         .await?;
 
     let mut saw_plan_update = false;
-    wait_for_event(&codex, |event| match event {
+    wait_for_event(&chaos, |event| match event {
         EventMsg::PlanUpdate(_) => {
             saw_plan_update = true;
             false

@@ -13,7 +13,7 @@ use core_test_support::responses::sse_completed;
 use core_test_support::responses::sse_response;
 use core_test_support::responses::start_mock_server;
 use core_test_support::skip_if_no_network;
-use core_test_support::test_codex::test_codex;
+use core_test_support::test_chaos::test_chaos;
 use core_test_support::wait_for_event;
 use pretty_assertions::assert_eq;
 
@@ -29,10 +29,10 @@ async fn openai_model_header_mismatch_emits_warning_event_and_warning_item() -> 
         sse_response(sse_completed("resp-1")).insert_header("OpenAI-Model", SERVER_MODEL);
     let _mock = mount_response_once(&server, response).await;
 
-    let mut builder = test_codex().with_model(REQUESTED_MODEL);
+    let mut builder = test_chaos().with_model(REQUESTED_MODEL);
     let test = builder.build(&server).await?;
 
-    test.codex
+    test.process
         .submit(Op::UserTurn {
             items: vec![UserInput::Text {
                 text: "trigger safety check".to_string(),
@@ -51,7 +51,7 @@ async fn openai_model_header_mismatch_emits_warning_event_and_warning_item() -> 
         })
         .await?;
 
-    let reroute = wait_for_event(&test.codex, |event| {
+    let reroute = wait_for_event(&test.process, |event| {
         matches!(event, EventMsg::ModelReroute(_))
     })
     .await;
@@ -62,14 +62,15 @@ async fn openai_model_header_mismatch_emits_warning_event_and_warning_item() -> 
     assert_eq!(reroute.to_model, SERVER_MODEL);
     assert_eq!(reroute.reason, ModelRerouteReason::HighRiskCyberActivity);
 
-    let warning = wait_for_event(&test.codex, |event| matches!(event, EventMsg::Warning(_))).await;
+    let warning =
+        wait_for_event(&test.process, |event| matches!(event, EventMsg::Warning(_))).await;
     let EventMsg::Warning(warning) = warning else {
         panic!("expected warning event");
     };
     assert!(warning.message.contains(REQUESTED_MODEL));
     assert!(warning.message.contains(SERVER_MODEL));
 
-    let warning_item = wait_for_event(&test.codex, |event| {
+    let warning_item = wait_for_event(&test.process, |event| {
         matches!(
             event,
             EventMsg::RawResponseItem(raw)
@@ -99,7 +100,7 @@ async fn openai_model_header_mismatch_emits_warning_event_and_warning_item() -> 
     assert!(warning_text.contains(REQUESTED_MODEL));
     assert!(warning_text.contains(SERVER_MODEL));
 
-    let _ = wait_for_event(&test.codex, |event| {
+    let _ = wait_for_event(&test.process, |event| {
         matches!(event, EventMsg::TurnComplete(_))
     })
     .await;
@@ -127,10 +128,10 @@ async fn response_model_field_mismatch_emits_warning_when_header_matches_request
     .insert_header("OpenAI-Model", REQUESTED_MODEL);
     let _mock = mount_response_once(&server, response).await;
 
-    let mut builder = test_codex().with_model(REQUESTED_MODEL);
+    let mut builder = test_chaos().with_model(REQUESTED_MODEL);
     let test = builder.build(&server).await?;
 
-    test.codex
+    test.process
         .submit(Op::UserTurn {
             items: vec![UserInput::Text {
                 text: "trigger response model check".to_string(),
@@ -149,7 +150,7 @@ async fn response_model_field_mismatch_emits_warning_when_header_matches_request
         })
         .await?;
 
-    let reroute = wait_for_event(&test.codex, |event| {
+    let reroute = wait_for_event(&test.process, |event| {
         matches!(event, EventMsg::ModelReroute(_))
     })
     .await;
@@ -160,7 +161,7 @@ async fn response_model_field_mismatch_emits_warning_when_header_matches_request
     assert_eq!(reroute.to_model, SERVER_MODEL);
     assert_eq!(reroute.reason, ModelRerouteReason::HighRiskCyberActivity);
 
-    let warning = wait_for_event(&test.codex, |event| {
+    let warning = wait_for_event(&test.process, |event| {
         matches!(
             event,
             EventMsg::Warning(warning)
@@ -176,7 +177,7 @@ async fn response_model_field_mismatch_emits_warning_when_header_matches_request
     assert!(warning.message.contains(REQUESTED_MODEL));
     assert!(warning.message.contains(SERVER_MODEL));
 
-    let _ = wait_for_event(&test.codex, |event| {
+    let _ = wait_for_event(&test.process, |event| {
         matches!(event, EventMsg::TurnComplete(_))
     })
     .await;
@@ -194,10 +195,10 @@ async fn openai_model_header_casing_only_mismatch_does_not_warn() -> Result<()> 
         .insert_header("OpenAI-Model", requested_header.as_str());
     let _mock = mount_response_once(&server, response).await;
 
-    let mut builder = test_codex().with_model(REQUESTED_MODEL);
+    let mut builder = test_chaos().with_model(REQUESTED_MODEL);
     let test = builder.build(&server).await?;
 
-    test.codex
+    test.process
         .submit(Op::UserTurn {
             items: vec![UserInput::Text {
                 text: "trigger casing check".to_string(),
@@ -219,7 +220,7 @@ async fn openai_model_header_casing_only_mismatch_does_not_warn() -> Result<()> 
     let mut reroute_count = 0;
     let mut warning_count = 0;
     loop {
-        let event = wait_for_event(&test.codex, |_| true).await;
+        let event = wait_for_event(&test.process, |_| true).await;
         match event {
             EventMsg::ModelReroute(_) => reroute_count += 1,
             EventMsg::Warning(warning)

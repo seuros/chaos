@@ -344,7 +344,7 @@ pub fn create_ghost_commit_with_report(
     //   GIT_INDEX_FILE=/tmp/index git read-tree HEAD
     //   GIT_INDEX_FILE=/tmp/index git add --all -- <paths>
     //   GIT_INDEX_FILE=/tmp/index git write-tree
-    //   GIT_INDEX_FILE=/tmp/index git commit-tree <tree> -p <parent> -m "codex snapshot"
+    //   GIT_INDEX_FILE=/tmp/index git commit-tree <tree> -p <parent> -m "chaos snapshot"
 
     // Pre-populate the temporary index with HEAD so unchanged tracked files
     // are included in the snapshot tree.
@@ -471,7 +471,7 @@ fn restore_to_commit_inner(
 ) -> Result<(), GitToolingError> {
     // `git restore` resets the working tree to the snapshot commit.
     // We intentionally avoid --staged to preserve user's staged changes.
-    // While this might leave some Codex-staged changes in the index (if Codex ran `git add`),
+    // While this might leave some Chaos-staged changes in the index (if Chaos ran `git add`),
     // it prevents data loss for users who use the index as a save point.
     // Data safety > cleanliness.
     // Example:

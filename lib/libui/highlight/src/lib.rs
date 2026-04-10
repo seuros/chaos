@@ -94,7 +94,7 @@ pub fn set_theme_override(
 ) -> Option<String> {
     let warning = validate_theme_name(name.as_deref(), chaos_home.as_deref());
     let override_set_ok = THEME_OVERRIDE.set(name.clone()).is_ok();
-    let codex_home_set_ok = CHAOS_HOME.set(chaos_home.clone()).is_ok();
+    let chaos_home_set_ok = CHAOS_HOME.set(chaos_home.clone()).is_ok();
     let _ = LIGHT_BG.set(is_light_background);
     if THEME.get().is_some() {
         set_syntax_theme(resolve_theme_with_override(
@@ -102,7 +102,7 @@ pub fn set_theme_override(
             chaos_home.as_deref(),
         ));
     }
-    if !override_set_ok || !codex_home_set_ok {
+    if !override_set_ok || !chaos_home_set_ok {
         // This should never happen in practice -- set_theme_override is only
         // called once at startup.  Keep as a debug breadcrumb in case a second
         // call site is added in the future.

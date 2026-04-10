@@ -101,7 +101,7 @@ fn create_seatbelt_args_routes_network_through_proxy_ports() {
 
 #[test]
 fn explicit_unreadable_paths_are_excluded_from_full_disk_read_and_write_access() {
-    let unreadable = absolute_path("/tmp/codex-unreadable");
+    let unreadable = absolute_path("/tmp/chaos-unreadable");
     let file_system_policy = FileSystemSandboxPolicy::restricted(vec![
         FileSystemSandboxEntry {
             path: FileSystemPath::Special {
@@ -150,8 +150,8 @@ fn explicit_unreadable_paths_are_excluded_from_full_disk_read_and_write_access()
 
 #[test]
 fn explicit_unreadable_paths_are_excluded_from_readable_roots() {
-    let root = absolute_path("/tmp/codex-readable");
-    let unreadable = absolute_path("/tmp/codex-readable/private");
+    let root = absolute_path("/tmp/chaos-readable");
+    let unreadable = absolute_path("/tmp/chaos-readable/private");
     let file_system_policy = FileSystemSandboxPolicy::restricted(vec![
         FileSystemSandboxEntry {
             path: FileSystemPath::Path { path: root },

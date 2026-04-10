@@ -31,7 +31,7 @@ impl Daemon {
     }
 
     /// Open the default daemon for the current user.
-    /// Stored at `~/.codex/daemon.db` (or `$CODEX_HOME/daemon.db`).
+    /// Stored at `~/.chaos/daemon.db` (or `$CHAOS_HOME/daemon.db`).
     pub async fn default() -> Result<Self, DaemonError> {
         let dir = chaos_pwd::find_chaos_home()?;
         tokio::fs::create_dir_all(&dir).await?;

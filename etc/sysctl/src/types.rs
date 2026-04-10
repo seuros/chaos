@@ -53,7 +53,7 @@ pub struct McpServerConfig {
     #[serde(flatten)]
     pub transport: McpServerTransportConfig,
 
-    /// When `false`, Codex skips initializing this MCP server.
+    /// When `false`, Chaos skips initializing this MCP server.
     #[serde(default = "default_enabled")]
     pub enabled: bool,
 
@@ -378,7 +378,7 @@ pub struct AnalyticsConfigToml {
 #[derive(Serialize, Deserialize, Debug, Clone, PartialEq, Default, JsonSchema)]
 #[schemars(deny_unknown_fields)]
 pub struct FeedbackConfigToml {
-    /// When `false`, disables the feedback flow across Codex product surfaces.
+    /// When `false`, disables the feedback flow across Chaos product surfaces.
     pub enabled: Option<bool>,
 }
 
@@ -533,7 +533,7 @@ pub struct AppToolsConfig {
 #[derive(Serialize, Deserialize, Debug, Clone, PartialEq, Default, JsonSchema)]
 #[schemars(deny_unknown_fields)]
 pub struct AppConfig {
-    /// When `false`, Codex does not surface this app.
+    /// When `false`, Chaos does not surface this app.
     #[serde(default = "default_enabled")]
     pub enabled: bool,
 
@@ -750,8 +750,8 @@ const fn default_true() -> bool {
     true
 }
 
-/// Settings for notices we display to users via the tui and app-server clients
-/// (primarily the Codex IDE extension). NOTE: these are different from
+/// Settings for notices we display to users via the tui clients.
+/// NOTE: these are different from
 /// notifications - notices are warnings, NUX screens, acknowledgements, etc.
 #[derive(Serialize, Deserialize, Debug, Clone, PartialEq, Default, JsonSchema)]
 pub struct Notice {

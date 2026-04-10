@@ -245,20 +245,20 @@ pub struct Config {
     /// Optional external notifier command. When set, ChaOS will spawn this
     /// program after each completed *turn* (i.e. when the agent finishes
     /// processing a user submission). The value must be the full command
-    /// broken into argv tokens **without** the trailing JSON argument - Codex
+    /// broken into argv tokens **without** the trailing JSON argument - Chaos
     /// appends one extra argument containing a JSON payload describing the
     /// event.
     ///
     /// Example `~/.chaos/config.toml` snippet:
     ///
     /// ```toml
-    /// notify = ["notify-send", "Codex"]
+    /// notify = ["notify-send", "Chaos"]
     /// ```
     ///
     /// which will be invoked as:
     ///
     /// ```shell
-    /// notify-send Codex '{"type":"agent-turn-complete","turn-id":"12345"}'
+    /// notify-send Chaos '{"type":"agent-turn-complete","turn-id":"12345"}'
     /// ```
     ///
     /// If unset the feature is disabled.
@@ -312,7 +312,7 @@ pub struct Config {
 
     /// Preferred store for MCP OAuth credentials.
     /// keyring: Use an OS-specific keyring service.
-    ///          Credentials stored in the keyring will only be readable by Codex unless the user explicitly grants access via OS-level keyring access.
+    ///          Credentials stored in the keyring will only be readable by Chaos unless the user explicitly grants access via OS-level keyring access.
     /// file: `${CHAOS_HOME}/.credentials.json`
     ///       This file will be readable to ChaOS and other applications running as the same user.
     /// auto (default): keyring if available, otherwise file.
@@ -500,7 +500,7 @@ pub struct Config {
     /// Voluntarily left as Optional because the default value might depend on the client.
     pub analytics_enabled: Option<bool>,
 
-    /// When `false`, disables feedback collection across Codex product surfaces.
+    /// When `false`, disables feedback collection across Chaos product surfaces.
     /// Defaults to `true`.
     pub feedback_enabled: bool,
 
@@ -907,7 +907,7 @@ pub async fn load_global_mcp_servers(
     // result.
     let cli_overrides = Vec::<(String, TomlValue)>::new();
     // There is no cwd/project context for this query, so this will not include
-    // MCP servers defined in in-repo .codex/ folders.
+    // MCP servers defined in in-repo .chaos/ folders.
     let cwd: Option<AbsolutePathBuf> = None;
     let config_layer_stack =
         load_config_layers_state(chaos_home, cwd, &cli_overrides, LoaderOverrides::default())
@@ -1053,7 +1053,7 @@ pub struct ConfigToml {
     /// Optional path to a file containing model instructions that will override
     /// the built-in instructions for the selected model. Users are STRONGLY
     /// DISCOURAGED from using this field, as deviating from the instructions
-    /// sanctioned by Codex will likely degrade model performance.
+    /// sanctioned by Chaos will likely degrade model performance.
     pub model_instructions_file: Option<AbsolutePathBuf>,
 
     /// Compact prompt used for history compaction.
@@ -1244,7 +1244,7 @@ pub struct ConfigToml {
     /// Defaults to `true`.
     pub analytics: Option<crate::config::types::AnalyticsConfigToml>,
 
-    /// When `false`, disables feedback collection across Codex product surfaces.
+    /// When `false`, disables feedback collection across Chaos product surfaces.
     /// Defaults to `true`.
     pub feedback: Option<crate::config::types::FeedbackConfigToml>,
 
@@ -2407,7 +2407,7 @@ fn toml_uses_deprecated_instructions_file(value: &TomlValue) -> bool {
     })
 }
 
-/// Returns the path to the folder where Codex logs are stored. Does not verify
+/// Returns the path to the folder where Chaos logs are stored. Does not verify
 /// that the directory exists.
 pub fn log_dir(cfg: &Config) -> std::io::Result<PathBuf> {
     Ok(cfg.log_dir.clone())

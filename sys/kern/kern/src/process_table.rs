@@ -66,11 +66,11 @@ fn should_use_process_table_test_behavior() -> bool {
     FORCE_TEST_PROCESS_TABLE_BEHAVIOR.load(Ordering::Relaxed)
 }
 
-struct TempCodexHomeGuard {
+struct TempChaosHomeGuard {
     path: PathBuf,
 }
 
-impl Drop for TempCodexHomeGuard {
+impl Drop for TempChaosHomeGuard {
     fn drop(&mut self) {
         let _ = std::fs::remove_dir_all(&self.path);
     }
@@ -155,7 +155,7 @@ enum ShutdownOutcome {
 /// them in memory.
 pub struct ProcessTable {
     state: Arc<ProcessTableState>,
-    _test_codex_home_guard: Option<TempCodexHomeGuard>,
+    _test_chaos_home_guard: Option<TempChaosHomeGuard>,
 }
 
 /// Shared, `Arc`-owned state for [`ProcessTable`]. This `Arc` is required to have a single
@@ -212,7 +212,7 @@ impl ProcessTable {
                 ops_log: should_use_process_table_test_behavior()
                     .then(|| Arc::new(std::sync::Mutex::new(Vec::new()))),
             }),
-            _test_codex_home_guard: None,
+            _test_chaos_home_guard: None,
         }
     }
 
@@ -231,7 +231,7 @@ impl ProcessTable {
             .unwrap_or_else(|err| panic!("temp chaos home dir create failed: {err}"));
         let mut manager =
             Self::with_models_provider_and_home_for_tests(auth, provider, chaos_home.clone());
-        manager._test_codex_home_guard = Some(TempCodexHomeGuard { path: chaos_home });
+        manager._test_chaos_home_guard = Some(TempChaosHomeGuard { path: chaos_home });
         manager
     }
 
@@ -269,7 +269,7 @@ impl ProcessTable {
                 ops_log: should_use_process_table_test_behavior()
                     .then(|| Arc::new(std::sync::Mutex::new(Vec::new()))),
             }),
-            _test_codex_home_guard: None,
+            _test_chaos_home_guard: None,
         }
     }
 
@@ -336,9 +336,9 @@ impl ProcessTable {
     /// refresh its MCP server registry using the canonical session path.
     pub async fn reload_project_mcp_for_process(&self, process_id: ProcessId) -> ChaosResult<()> {
         let process = self.state.get_process(process_id).await?;
-        let turn_context = process.codex.session.new_default_turn().await;
+        let turn_context = process.chaos.session.new_default_turn().await;
         process
-            .codex
+            .chaos
             .session
             .reload_project_mcp_layer_and_refresh(turn_context.as_ref())
             .await;
@@ -565,7 +565,7 @@ impl ProcessTableState {
         let removed = self.processes.write().await.remove(process_id);
         if let Some(process) = removed.as_ref() {
             let snapshot = process
-                .codex
+                .chaos
                 .session
                 .clone_history()
                 .await
@@ -749,9 +749,7 @@ impl ProcessTableState {
             .file_watcher
             .register_config(&config, self.skills_manager.as_ref());
         let ChaosSpawnOk {
-            chaos: codex,
-            process_id,
-            ..
+            chaos, process_id, ..
         } = Chaos::spawn(ChaosSpawnArgs {
             config,
             auth_manager,
@@ -769,17 +767,17 @@ impl ProcessTableState {
             parent_trace,
         })
         .await?;
-        self.finalize_process_spawn(codex, process_id, watch_registration)
+        self.finalize_process_spawn(chaos, process_id, watch_registration)
             .await
     }
 
     async fn finalize_process_spawn(
         &self,
-        codex: Chaos,
+        chaos: Chaos,
         process_id: ProcessId,
         watch_registration: crate::file_watcher::WatchRegistration,
     ) -> ChaosResult<NewProcess> {
-        let event = codex.next_event().await?;
+        let event = chaos.next_event().await?;
         let session_configured = match event {
             Event {
                 id,
@@ -790,7 +788,7 @@ impl ProcessTableState {
             }
         };
 
-        let process = Arc::new(Process::new(codex, watch_registration));
+        let process = Arc::new(Process::new(chaos, watch_registration));
         {
             let mut processes = self.processes.write().await;
             processes.insert(process_id, process.clone());

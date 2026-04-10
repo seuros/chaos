@@ -274,7 +274,7 @@ async fn wait_for_process_rolled_back(
             .unwrap_or_else(|_| panic!("timeout waiting for event; last_event={last_event:?}"))
             .expect("event");
         if let EventMsg::Error(payload) = &evt.msg
-            && payload.codex_error_info == Some(CodexErrorInfo::ProcessRollbackFailed)
+            && payload.chaos_error_info == Some(ChaosErrorInfo::ProcessRollbackFailed)
         {
             panic!("rollback emitted error instead of success: {payload:?}");
         }
@@ -297,7 +297,7 @@ async fn wait_for_process_rollback_failed(rx: &async_channel::Receiver<Event>) -
             .expect("event");
         match evt.msg {
             EventMsg::Error(payload)
-                if payload.codex_error_info == Some(CodexErrorInfo::ProcessRollbackFailed) =>
+                if payload.chaos_error_info == Some(ChaosErrorInfo::ProcessRollbackFailed) =>
             {
                 return payload;
             }

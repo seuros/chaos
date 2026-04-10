@@ -183,7 +183,7 @@ impl ForwardedElicitationRequestParams {
 pub(crate) async fn handle_mcp_server_elicitation_request(
     request: ElicitationRequestEvent,
     outgoing: Arc<OutgoingMessageSender>,
-    codex: Arc<Process>,
+    process: Arc<Process>,
 ) {
     let params = ForwardedElicitationRequestParams::from_protocol_request(&request.request);
     if !params.is_supported_by(outgoing.as_ref()) {
@@ -196,7 +196,7 @@ pub(crate) async fn handle_mcp_server_elicitation_request(
             request.server_name,
             request.id,
             ApprovalElicitationResponse::cancel(),
-            codex,
+            process,
         )
         .await;
         return;
@@ -215,7 +215,7 @@ pub(crate) async fn handle_mcp_server_elicitation_request(
                 request.server_name,
                 request.id,
                 ApprovalElicitationResponse::cancel(),
-                codex,
+                process,
             )
             .await;
             return;
@@ -229,7 +229,7 @@ pub(crate) async fn handle_mcp_server_elicitation_request(
         .await;
 
     tokio::spawn(async move {
-        on_mcp_server_elicitation_response(server_name, request_id, on_response, codex).await;
+        on_mcp_server_elicitation_response(server_name, request_id, on_response, process).await;
     });
 }
 
@@ -251,7 +251,7 @@ async fn on_mcp_server_elicitation_response(
     server_name: String,
     request_id: chaos_ipc::mcp::RequestId,
     receiver: tokio::sync::oneshot::Receiver<Result<Value, ErrorData>>,
-    codex: Arc<Process>,
+    process: Arc<Process>,
 ) {
     let response = match receiver.await {
         Ok(Ok(value)) => serde_json::from_value::<ApprovalElicitationResponse>(value)
@@ -284,16 +284,16 @@ async fn on_mcp_server_elicitation_response(
         }
     };
 
-    submit_resolve_elicitation(server_name, request_id, response, codex).await;
+    submit_resolve_elicitation(server_name, request_id, response, process).await;
 }
 
 async fn submit_resolve_elicitation(
     server_name: String,
     request_id: chaos_ipc::mcp::RequestId,
     response: ApprovalElicitationResponse,
-    codex: Arc<Process>,
+    process: Arc<Process>,
 ) {
-    if let Err(err) = codex
+    if let Err(err) = process
         .submit(Op::ResolveElicitation {
             server_name,
             request_id,

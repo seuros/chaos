@@ -438,7 +438,7 @@ async fn replace_mcp_servers_serializes_env_vars() -> anyhow::Result<()> {
 async fn replace_mcp_servers_serializes_cwd() -> anyhow::Result<()> {
     let chaos_home = TempDir::new()?;
 
-    let cwd_path = PathBuf::from("/tmp/codex-mcp");
+    let cwd_path = PathBuf::from("/tmp/chaos-mcp");
     let servers = BTreeMap::from([(
         "docs".to_string(),
         McpServerConfig {
@@ -472,7 +472,7 @@ async fn replace_mcp_servers_serializes_cwd() -> anyhow::Result<()> {
     let config_path = chaos_home.path().join(CONFIG_TOML_FILE);
     let serialized = std::fs::read_to_string(&config_path)?;
     assert!(
-        serialized.contains(r#"cwd = "/tmp/codex-mcp""#),
+        serialized.contains(r#"cwd = "/tmp/chaos-mcp""#),
         "serialized config missing cwd field:\n{serialized}"
     );
 
@@ -480,7 +480,7 @@ async fn replace_mcp_servers_serializes_cwd() -> anyhow::Result<()> {
     let docs = loaded.get("docs").expect("docs entry");
     match &docs.transport {
         McpServerTransportConfig::Stdio { cwd, .. } => {
-            assert_eq!(cwd.as_deref(), Some(Path::new("/tmp/codex-mcp")));
+            assert_eq!(cwd.as_deref(), Some(Path::new("/tmp/chaos-mcp")));
         }
         other => panic!("unexpected transport {other:?}"),
     }

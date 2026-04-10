@@ -82,7 +82,7 @@ impl RateLimitWindowDisplay {
 
 #[derive(Debug, Clone)]
 pub(crate) struct RateLimitSnapshotDisplay {
-    /// Canonical limit identifier (for example: `codex` or `codex_other`).
+    /// Canonical limit identifier (for example: `chaos` or `codex_other`).
     pub limit_name: String,
     /// Local timestamp representing when this display snapshot was captured.
     pub captured_at: Timestamp,
@@ -359,7 +359,7 @@ mod tests {
     #[test]
     fn non_codex_single_limit_renders_combined_row() {
         let now = Timestamp::now();
-        let codex = RateLimitSnapshotDisplay {
+        let chaos = RateLimitSnapshotDisplay {
             limit_name: "chaos".to_string(),
             captured_at: now,
             primary: Some(window(10.0)),
@@ -371,7 +371,7 @@ mod tests {
             }),
         };
         let other = RateLimitSnapshotDisplay {
-            limit_name: "codex-other".to_string(),
+            limit_name: "chaos-other".to_string(),
             captured_at: now,
             primary: Some(window(20.0)),
             secondary: None,
@@ -382,7 +382,7 @@ mod tests {
             }),
         };
 
-        let rows = match compose_rate_limit_data_many(&[codex, other], now) {
+        let rows = match compose_rate_limit_data_many(&[chaos, other], now) {
             StatusRateLimitData::Available(rows) => rows,
             other => panic!("unexpected status: {other:?}"),
         };
@@ -393,7 +393,7 @@ mod tests {
             vec![
                 "5h limit".to_string(),
                 "Credits".to_string(),
-                "codex-other 5h limit".to_string(),
+                "chaos-other 5h limit".to_string(),
                 "Credits".to_string(),
             ]
         );
@@ -404,7 +404,7 @@ mod tests {
     fn non_codex_multi_limit_keeps_group_row() {
         let now = Timestamp::now();
         let other = RateLimitSnapshotDisplay {
-            limit_name: "codex-other".to_string(),
+            limit_name: "chaos-other".to_string(),
             captured_at: now,
             primary: Some(RateLimitWindowDisplay {
                 used_percent: 20.0,
@@ -427,7 +427,7 @@ mod tests {
         assert_eq!(
             labels,
             vec![
-                "codex-other limit".to_string(),
+                "chaos-other limit".to_string(),
                 "1h limit".to_string(),
                 "Weekly limit".to_string(),
             ]

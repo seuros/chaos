@@ -32,7 +32,7 @@ const MAX_REQUEST_MAX_RETRIES: u64 = 100;
 const OPENAI_PROVIDER_NAME: &str = "OpenAI";
 pub const OPENAI_PROVIDER_ID: &str = "openai";
 pub const OPENAI_DEFAULT_BASE_URL: &str = "https://api.openai.com/v1";
-const CHATGPT_DEFAULT_BASE_URL: &str = "https://chatgpt.com/backend-api/codex";
+const CHATGPT_DEFAULT_BASE_URL: &str = "https://chatgpt.com/backend-api/chaos";
 
 /// Wire protocol that the provider speaks.
 #[derive(Debug, Clone, Copy, Default, PartialEq, Eq, Serialize, JsonSchema)]
@@ -318,7 +318,7 @@ pub fn built_in_model_providers(
     let openai_provider = P::create_openai_provider(openai_base_url);
 
     // We do not want to be in the business of adjucating which third-party
-    // providers are bundled with Codex CLI, so we only include the OpenAI
+    // providers are bundled with Chaos CLI, so we only include the OpenAI
     // provider by default. Users are encouraged to add to
     // `model_providers` in config.toml to add their own providers.
     [(OPENAI_PROVIDER_ID, openai_provider)]

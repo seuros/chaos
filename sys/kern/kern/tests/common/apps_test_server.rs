@@ -16,7 +16,7 @@ const DISCOVERABLE_CALENDAR_ID: &str = "connector_2128aebfecb84f64a069897515042a
 const DISCOVERABLE_GMAIL_ID: &str = "connector_68df038e0ba48191908c8434991bbac2";
 const CONNECTOR_DESCRIPTION: &str = "Plan events and manage your calendar.";
 const PROTOCOL_VERSION: &str = "2025-11-25";
-const SERVER_NAME: &str = "codex-apps-test";
+const SERVER_NAME: &str = "chaos-apps-test";
 const SERVER_VERSION: &str = "1.0.0";
 const SEARCHABLE_TOOL_COUNT: usize = 100;
 pub const CALENDAR_CREATE_EVENT_RESOURCE_URI: &str =
@@ -117,8 +117,8 @@ async fn mount_streamable_http_json_rpc(
     searchable: bool,
 ) {
     Mock::given(method("POST"))
-        .and(path_regex("^/api/codex/apps/?$"))
-        .respond_with(CodexAppsJsonRpcResponder {
+        .and(path_regex("^/api/chaos/apps/?$"))
+        .respond_with(ChaosAppsJsonRpcResponder {
             connector_name,
             connector_description,
             searchable,
@@ -127,13 +127,13 @@ async fn mount_streamable_http_json_rpc(
         .await;
 }
 
-struct CodexAppsJsonRpcResponder {
+struct ChaosAppsJsonRpcResponder {
     connector_name: String,
     connector_description: String,
     searchable: bool,
 }
 
-impl Respond for CodexAppsJsonRpcResponder {
+impl Respond for ChaosAppsJsonRpcResponder {
     fn respond(&self, request: &Request) -> ResponseTemplate {
         let body: Value = match serde_json::from_slice(&request.body) {
             Ok(body) => body,

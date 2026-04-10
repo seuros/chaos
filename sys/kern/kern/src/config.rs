@@ -64,6 +64,7 @@ use chaos_ipc::openai_models::ModelsResponse;
 use chaos_ipc::openai_models::ReasoningEffort;
 use chaos_ipc::permissions::FileSystemSandboxPolicy;
 use chaos_ipc::permissions::NetworkSandboxPolicy;
+use chaos_pwd::find_chaos_home;
 use chaos_realpath::AbsolutePathBuf;
 use chaos_realpath::AbsolutePathBufGuard;
 use schemars::JsonSchema;
@@ -2404,17 +2405,6 @@ fn toml_uses_deprecated_instructions_file(value: &TomlValue) -> bool {
             profile_table.contains_key("experimental_instructions_file")
         })
     })
-}
-
-/// Returns the path to the ChaOS configuration directory, honoring
-/// `CHAOS_HOME`. If not set, defaults to `~/.chaos`.
-///
-/// - If `CHAOS_HOME` is set, the value must exist and be a directory. The value
-///   will be canonicalized and this function will Err otherwise.
-/// - If `CHAOS_HOME` is not set, this function does not verify that the
-///   directory exists.
-pub fn find_chaos_home() -> std::io::Result<PathBuf> {
-    chaos_pwd::find_chaos_home()
 }
 
 /// Returns the path to the folder where Codex logs are stored. Does not verify

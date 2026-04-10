@@ -30,10 +30,10 @@ use crate::mcp_cmd::McpCli;
 use chaos_kern::config::Config;
 use chaos_kern::config::ConfigOverrides;
 use chaos_kern::config::edit::ConfigEditsBuilder;
-use chaos_kern::config::find_chaos_home;
 use chaos_kern::features::is_known_feature_key;
 use chaos_kern::features::is_under_development_feature_key;
 use chaos_kern::terminal::TerminalName;
+use chaos_pwd::find_chaos_home;
 
 /// Chaos
 ///

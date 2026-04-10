@@ -63,10 +63,3 @@ pub fn sqlite_home_env_value() -> Option<String> {
     }
     None
 }
-
-/// Errors encountered during DB operations. Tags: [stage]
-pub const DB_ERROR_METRIC: &str = "codex.db.error";
-/// Metrics on backfill process. Tags: [status]
-pub const DB_METRIC_BACKFILL: &str = "codex.db.backfill";
-/// Metrics on backfill duration. Tags: [status]
-pub const DB_METRIC_BACKFILL_DURATION_MS: &str = "codex.db.backfill.duration_ms";

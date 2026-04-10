@@ -343,7 +343,7 @@ async fn enforce_login_restrictions_allows_api_key_if_login_method_not_set_but_f
 #[tokio::test]
 #[serial(codex_api_key)]
 async fn enforce_login_restrictions_blocks_env_api_key_when_chatgpt_required() {
-    let _guard = EnvVarGuard::set(CODEX_API_KEY_ENV_VAR, "sk-env");
+    let _guard = EnvVarGuard::set(CHAOS_API_KEY_ENV_VAR, "sk-env");
     let chaos_home = tempdir().unwrap();
 
     let config = build_config(chaos_home.path(), Some(ForcedLoginMethod::Chatgpt), None).await;

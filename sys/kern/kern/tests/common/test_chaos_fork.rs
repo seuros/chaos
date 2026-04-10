@@ -1,15 +1,15 @@
 #![allow(clippy::expect_used)]
-use chaos_kern::auth::CODEX_API_KEY_ENV_VAR;
+use chaos_kern::auth::CHAOS_API_KEY_ENV_VAR;
 use std::path::Path;
 use tempfile::TempDir;
 use wiremock::MockServer;
 
-pub struct TestCodexExecBuilder {
+pub struct TestChaosExecBuilder {
     home: TempDir,
     cwd: TempDir,
 }
 
-impl TestCodexExecBuilder {
+impl TestChaosExecBuilder {
     pub fn cmd(&self) -> assert_cmd::Command {
         let mut cmd = assert_cmd::Command::new(
             chaos_which::cargo_bin("chaos").expect("should find binary for chaos"),
@@ -17,7 +17,7 @@ impl TestCodexExecBuilder {
         cmd.current_dir(self.cwd.path())
             .arg("exec")
             .env("CHAOS_HOME", self.home.path())
-            .env(CODEX_API_KEY_ENV_VAR, "dummy");
+            .env(CHAOS_API_KEY_ENV_VAR, "dummy");
         cmd
     }
     pub fn cmd_with_server(&self, server: &MockServer) -> assert_cmd::Command {
@@ -40,8 +40,8 @@ fn toml_string_literal(value: &str) -> String {
     serde_json::to_string(value).expect("serialize TOML string literal")
 }
 
-pub fn test_chaos_fork() -> TestCodexExecBuilder {
-    TestCodexExecBuilder {
+pub fn test_chaos_fork() -> TestChaosExecBuilder {
+    TestChaosExecBuilder {
         home: TempDir::new().expect("create temp home"),
         cwd: TempDir::new().expect("create temp cwd"),
     }

@@ -14,7 +14,7 @@ use core_test_support::responses::start_mock_server;
 use core_test_support::skip_if_no_network;
 use core_test_support::test_chaos::ApplyPatchModelOutput;
 use core_test_support::test_chaos::ShellModelOutput;
-use core_test_support::test_chaos::TestCodexBuilder;
+use core_test_support::test_chaos::TestChaosBuilder;
 use core_test_support::test_chaos::test_chaos;
 use pretty_assertions::assert_eq;
 use regex_lite::Regex;
@@ -98,10 +98,10 @@ fn shell_responses(
 }
 
 fn configure_shell_model(
-    builder: TestCodexBuilder,
+    builder: TestChaosBuilder,
     output_type: ShellModelOutput,
     include_apply_patch_tool: bool,
-) -> TestCodexBuilder {
+) -> TestChaosBuilder {
     match (output_type, include_apply_patch_tool) {
         (ShellModelOutput::ShellCommand, _) => builder.with_model("test-gpt-5-codex"),
         (ShellModelOutput::LocalShell, true) => builder.with_model("gpt-5.1-codex"),

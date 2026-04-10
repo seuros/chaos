@@ -86,7 +86,7 @@ fn codex_apps_mcp_url_uses_legacy_codex_apps_path() {
 }
 
 /// Test-local stand-in after the global constant was removed.
-const CODEX_APPS_MCP_SERVER_NAME: &str = "test-apps-server";
+const CHAOS_APPS_MCP_SERVER_NAME: &str = "test-apps-server";
 
 #[test]
 fn codex_apps_server_config_uses_legacy_codex_apps_path() {
@@ -94,11 +94,11 @@ fn codex_apps_server_config_uses_legacy_codex_apps_path() {
     config.chatgpt_base_url = "https://chatgpt.com".to_string();
 
     let mut servers = with_codex_apps_mcp(HashMap::new(), false, None, &config);
-    assert!(!servers.contains_key(CODEX_APPS_MCP_SERVER_NAME));
+    assert!(!servers.contains_key(CHAOS_APPS_MCP_SERVER_NAME));
 
     servers = with_codex_apps_mcp(servers, true, None, &config);
     let server = servers
-        .get(CODEX_APPS_MCP_SERVER_NAME)
+        .get(CHAOS_APPS_MCP_SERVER_NAME)
         .expect("chaos apps should be present when apps is enabled");
     let url = match &server.transport {
         McpServerTransportConfig::StreamableHttp { url, .. } => url,

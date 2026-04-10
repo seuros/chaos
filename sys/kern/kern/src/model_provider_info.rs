@@ -172,7 +172,7 @@ impl ModelProviderInfo {
     fn build_header_map(&self) -> crate::error::Result<HeaderMap> {
         let mut headers = crate::default_client::default_headers();
         if let Ok(user_agent) =
-            HeaderValue::from_str(&crate::default_client::get_codex_user_agent())
+            HeaderValue::from_str(&crate::default_client::get_chaos_user_agent())
         {
             headers.insert(USER_AGENT, user_agent);
         }

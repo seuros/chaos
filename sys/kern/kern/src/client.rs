@@ -102,7 +102,7 @@ use crate::exec_policy::ExecApprovalRequest;
 
 use crate::error::ChaosErr;
 use crate::error::Result;
-use crate::flags::CODEX_RS_SSE_FIXTURE;
+use crate::flags::CHAOS_RS_SSE_FIXTURE;
 use crate::model_provider_info::ModelProviderInfo;
 use crate::model_provider_info::WireApi;
 use chaos_parrot::chat_completions::ChatCompletionsAdapter;
@@ -116,8 +116,8 @@ use crate::util::emit_feedback_request_tags;
 use serde_json::Value;
 use serde_json::json;
 
-pub const X_CODEX_TURN_STATE_HEADER: &str = "x-chaos-turn-state";
-pub const X_CODEX_TURN_METADATA_HEADER: &str = "x-chaos-turn-metadata";
+pub const X_CHAOS_TURN_STATE_HEADER: &str = "x-chaos-turn-state";
+pub const X_CHAOS_TURN_METADATA_HEADER: &str = "x-chaos-turn-metadata";
 pub const X_RESPONSESAPI_INCLUDE_TIMING_METRICS_HEADER: &str =
     "x-responsesapi-include-timing-metrics";
 const RESPONSES_ENDPOINT: &str = "/responses";
@@ -1340,7 +1340,7 @@ impl ModelClientSession {
         service_tier: Option<ServiceTier>,
         turn_metadata_header: Option<&str>,
     ) -> Result<ResponseStream> {
-        if let Some(path) = &*CODEX_RS_SSE_FIXTURE {
+        if let Some(path) = &*CHAOS_RS_SSE_FIXTURE {
             warn!(path, "Streaming from fixture");
             let stream = chaos_parrot::stream_from_fixture(
                 path,
@@ -2115,10 +2115,10 @@ fn build_responses_headers(
         && let Some(state) = turn_state.get()
         && let Ok(header_value) = HeaderValue::from_str(state)
     {
-        headers.insert(X_CODEX_TURN_STATE_HEADER, header_value);
+        headers.insert(X_CHAOS_TURN_STATE_HEADER, header_value);
     }
     if let Some(header_value) = turn_metadata_header {
-        headers.insert(X_CODEX_TURN_METADATA_HEADER, header_value.clone());
+        headers.insert(X_CHAOS_TURN_METADATA_HEADER, header_value.clone());
     }
     headers
 }

@@ -28,7 +28,7 @@ use core_test_support::responses::sse;
 use core_test_support::responses::start_mock_server;
 use core_test_support::skip_if_no_network;
 use core_test_support::skip_if_sandbox;
-use core_test_support::test_chaos::TestCodex;
+use core_test_support::test_chaos::TestChaos;
 use core_test_support::test_chaos::test_chaos;
 use core_test_support::wait_for_event;
 use pretty_assertions::assert_eq;
@@ -179,7 +179,7 @@ fn shell_event_with_raw_request_permissions(
 }
 
 async fn submit_turn(
-    test: &TestCodex,
+    test: &TestChaos,
     prompt: &str,
     approval_policy: ApprovalPolicy,
     sandbox_policy: SandboxPolicy,
@@ -206,7 +206,7 @@ async fn submit_turn(
     Ok(())
 }
 
-async fn wait_for_completion(test: &TestCodex) {
+async fn wait_for_completion(test: &TestChaos) {
     wait_for_event(&test.process, |event| {
         matches!(event, EventMsg::TurnComplete(_))
     })
@@ -214,7 +214,7 @@ async fn wait_for_completion(test: &TestCodex) {
 }
 
 async fn expect_exec_approval(
-    test: &TestCodex,
+    test: &TestChaos,
     expected_command: &str,
 ) -> ExecApprovalRequestEvent {
     let event = wait_for_event(&test.process, |event| {
@@ -241,7 +241,7 @@ async fn expect_exec_approval(
 }
 
 async fn wait_for_exec_approval_or_completion(
-    test: &TestCodex,
+    test: &TestChaos,
 ) -> Option<ExecApprovalRequestEvent> {
     let event = wait_for_event(&test.process, |event| {
         matches!(
@@ -259,7 +259,7 @@ async fn wait_for_exec_approval_or_completion(
 }
 
 async fn expect_request_permissions_event(
-    test: &TestCodex,
+    test: &TestChaos,
     expected_call_id: &str,
 ) -> RequestPermissionProfile {
     let event = wait_for_event(&test.process, |event| {

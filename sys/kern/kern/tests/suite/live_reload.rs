@@ -17,7 +17,7 @@ use core_test_support::responses;
 use core_test_support::responses::ResponsesRequest;
 use core_test_support::responses::mount_sse_sequence;
 use core_test_support::responses::start_mock_server;
-use core_test_support::test_chaos::TestCodex;
+use core_test_support::test_chaos::TestChaos;
 use core_test_support::test_chaos::test_chaos;
 use core_test_support::wait_for_event;
 use tokio::time::timeout;
@@ -44,7 +44,7 @@ fn contains_skill_body(request: &ResponsesRequest, skill_body: &str) -> bool {
         .any(|text| text.contains(skill_body) && text.contains("<skill>"))
 }
 
-async fn submit_skill_turn(test: &TestCodex, skill_path: PathBuf, prompt: &str) -> Result<()> {
+async fn submit_skill_turn(test: &TestChaos, skill_path: PathBuf, prompt: &str) -> Result<()> {
     let session_model = test.session_configured.model.clone();
     test.process
         .submit(Op::UserTurn {

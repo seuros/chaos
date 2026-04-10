@@ -10,15 +10,15 @@ use base64::Engine;
 use chaos_kern::auth::AuthCredentialsStoreMode;
 use chaos_pam::ServerOptions;
 use chaos_pam::run_login_server;
-use codex_client::CodexHttpClient;
-use codex_client::CodexResponse;
+use codex_client::ChaosHttpClient;
+use codex_client::ChaosResponse;
 use core_test_support::skip_if_no_network;
 use tempfile::tempdir;
 
 /// GET `url`, following a single HTTP redirect if the server returns 3xx.
 /// The Rama `EasyHttpWebClient` does not auto-follow redirects, so the test
 /// helper handles it explicitly.
-async fn get_following_redirect(client: &CodexHttpClient, url: &str) -> Result<CodexResponse> {
+async fn get_following_redirect(client: &ChaosHttpClient, url: &str) -> Result<ChaosResponse> {
     let resp = client
         .get(url)
         .send()
@@ -157,7 +157,7 @@ async fn end_to_end_login_flow_persists_auth_json() -> Result<()> {
     let login_port = server.actual_port;
 
     // Simulate browser callback, follow redirect to /success
-    let client = CodexHttpClient::default_client();
+    let client = ChaosHttpClient::default_client();
     let url = format!("http://127.0.0.1:{login_port}/auth/callback?code=abc&state=test_state_123");
     let resp = get_following_redirect(&client, &url).await?;
     assert!(resp.status().is_success());
@@ -209,7 +209,7 @@ async fn creates_missing_chaos_home_dir() -> Result<()> {
     let server = run_login_server(opts)?;
     let login_port = server.actual_port;
 
-    let client = CodexHttpClient::default_client();
+    let client = ChaosHttpClient::default_client();
     let url = format!("http://127.0.0.1:{login_port}/auth/callback?code=abc&state=state2");
     let resp = get_following_redirect(&client, &url).await?;
     assert!(resp.status().is_success());
@@ -254,7 +254,7 @@ async fn forced_chatgpt_workspace_id_mismatch_blocks_login() -> Result<()> {
     );
     let login_port = server.actual_port;
 
-    let client = codex_client::CodexHttpClient::default_client();
+    let client = codex_client::ChaosHttpClient::default_client();
     let url = format!("http://127.0.0.1:{login_port}/auth/callback?code=abc&state={state}");
     let resp = client.get(&url).send().await?;
     assert!(resp.status().is_success());
@@ -305,7 +305,7 @@ async fn oauth_access_denied_missing_entitlement_blocks_login_with_clear_error()
     let server = run_login_server(opts)?;
     let login_port = server.actual_port;
 
-    let client = codex_client::CodexHttpClient::default_client();
+    let client = codex_client::ChaosHttpClient::default_client();
     let url = format!(
         "http://127.0.0.1:{login_port}/auth/callback?state={state}&error=access_denied&error_description=missing_chaos_entitlement"
     );
@@ -372,7 +372,7 @@ async fn oauth_access_denied_unknown_reason_uses_generic_error_page() -> Result<
     let server = run_login_server(opts)?;
     let login_port = server.actual_port;
 
-    let client = codex_client::CodexHttpClient::default_client();
+    let client = codex_client::ChaosHttpClient::default_client();
     let url = format!(
         "http://127.0.0.1:{login_port}/auth/callback?state={state}&error=access_denied&error_description=some_other_reason"
     );
@@ -477,7 +477,7 @@ async fn cancels_previous_login_server_when_port_is_in_use() -> Result<()> {
         .expect_err("login server should report cancellation");
     assert_eq!(cancel_result.kind(), io::ErrorKind::Interrupted);
 
-    let client = codex_client::CodexHttpClient::default_client();
+    let client = codex_client::ChaosHttpClient::default_client();
     let cancel_url = format!("http://127.0.0.1:{login_port}/cancel");
     let resp = client.get(&cancel_url).send().await?;
     assert!(resp.status().is_success());

@@ -36,7 +36,7 @@ use core_test_support::responses::mount_sse_sequence;
 use core_test_support::responses::sse;
 use core_test_support::skip_if_no_network;
 use core_test_support::skip_if_sandbox;
-use core_test_support::test_chaos::TestCodex;
+use core_test_support::test_chaos::TestChaos;
 use core_test_support::test_chaos::test_chaos;
 use core_test_support::wait_for_event;
 use core_test_support::wait_for_event_match;
@@ -153,7 +153,7 @@ async fn remote_models_long_model_slug_is_sent_with_high_reasoning() -> Result<(
     )
     .await;
 
-    let TestCodex {
+    let TestChaos {
         process: chaos,
         cwd,
         config,
@@ -260,7 +260,7 @@ async fn remote_models_remote_model_uses_unified_exec() -> Result<()> {
         .with_config(|config| {
             config.model = Some("gpt-5.1".to_string());
         });
-    let TestCodex {
+    let TestChaos {
         process: chaos,
         cwd,
         config,
@@ -510,7 +510,7 @@ async fn remote_models_apply_remote_base_instructions() -> Result<()> {
         .with_config(|config| {
             config.model = Some("gpt-5.1".to_string());
         });
-    let TestCodex {
+    let TestChaos {
         process: chaos,
         cwd,
         config,

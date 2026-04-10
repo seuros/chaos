@@ -16,7 +16,7 @@ use core_test_support::responses::ev_response_created;
 use core_test_support::responses::sse;
 use core_test_support::responses::start_mock_server;
 use core_test_support::skip_if_no_network;
-use core_test_support::test_chaos::TestCodex;
+use core_test_support::test_chaos::TestChaos;
 use core_test_support::test_chaos::test_chaos;
 use core_test_support::wait_for_event;
 use serde_json::Value;
@@ -46,7 +46,7 @@ async fn shell_tool_executes_command_and_streams_output() -> anyhow::Result<()> 
     let server = start_mock_server().await;
 
     let mut builder = test_chaos().with_model("gpt-5");
-    let TestCodex {
+    let TestChaos {
         process: chaos,
         cwd,
         session_configured,
@@ -112,7 +112,7 @@ async fn update_plan_tool_emits_plan_update_event() -> anyhow::Result<()> {
     let server = start_mock_server().await;
 
     let mut builder = test_chaos();
-    let TestCodex {
+    let TestChaos {
         process: chaos,
         cwd,
         session_configured,
@@ -196,7 +196,7 @@ async fn update_plan_tool_rejects_malformed_payload() -> anyhow::Result<()> {
     let server = start_mock_server().await;
 
     let mut builder = test_chaos();
-    let TestCodex {
+    let TestChaos {
         process: chaos,
         cwd,
         session_configured,

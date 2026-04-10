@@ -307,10 +307,10 @@ async fn monitor_action_posts_expected_arc_request() {
 async fn monitor_action_uses_env_url_and_token_overrides() {
     let server = MockServer::start().await;
     let _url_guard = EnvVarGuard::set(
-        CODEX_ARC_MONITOR_ENDPOINT_OVERRIDE,
+        CHAOS_ARC_MONITOR_ENDPOINT_OVERRIDE,
         OsStr::new(&format!("{}/override/arc", server.uri())),
     );
-    let _token_guard = EnvVarGuard::set(CODEX_ARC_MONITOR_TOKEN, OsStr::new("override-token"));
+    let _token_guard = EnvVarGuard::set(CHAOS_ARC_MONITOR_TOKEN, OsStr::new("override-token"));
 
     let (session, turn_context) = make_session_and_context().await;
     session

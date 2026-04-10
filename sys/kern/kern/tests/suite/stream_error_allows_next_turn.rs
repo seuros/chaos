@@ -7,7 +7,7 @@ use core_test_support::responses::ev_completed;
 use core_test_support::responses::ev_response_created;
 use core_test_support::responses::sse;
 use core_test_support::skip_if_no_network;
-use core_test_support::test_chaos::TestCodex;
+use core_test_support::test_chaos::TestChaos;
 use core_test_support::test_chaos::test_chaos;
 use core_test_support::wait_for_event;
 use wiremock::Mock;
@@ -80,7 +80,7 @@ async fn continue_after_stream_error() {
         supports_websockets: false,
     };
 
-    let TestCodex { process: chaos, .. } = test_chaos()
+    let TestChaos { process: chaos, .. } = test_chaos()
         .with_config(move |config| {
             config.base_instructions = Some("You are a helpful assistant".to_string());
             config.model_provider = provider;

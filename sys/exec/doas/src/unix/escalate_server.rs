@@ -716,7 +716,7 @@ mod tests {
         let mut env = HashMap::new();
         for i in 0..10 {
             let value = "A".repeat(1024);
-            env.insert(format!("CODEX_TEST_VAR{i}"), value);
+            env.insert(format!("CHAOS_TEST_VAR{i}"), value);
         }
 
         client

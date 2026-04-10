@@ -26,8 +26,8 @@ use core_test_support::responses::ev_shell_command_call_with_args;
 use core_test_support::responses::mount_sse_sequence;
 use core_test_support::responses::sse;
 use core_test_support::skip_if_no_network;
-use core_test_support::test_chaos::TestCodexBuilder;
-use core_test_support::test_chaos::TestCodexHarness;
+use core_test_support::test_chaos::TestChaosBuilder;
+use core_test_support::test_chaos::TestChaosHarness;
 use core_test_support::test_chaos::test_chaos;
 use core_test_support::wait_for_event;
 use serde_json::json;
@@ -38,19 +38,19 @@ use wiremock::ResponseTemplate;
 use wiremock::matchers::method;
 use wiremock::matchers::path_regex;
 
-pub async fn apply_patch_harness() -> Result<TestCodexHarness> {
+pub async fn apply_patch_harness() -> Result<TestChaosHarness> {
     apply_patch_harness_with(|builder| builder).await
 }
 
 async fn apply_patch_harness_with(
-    configure: impl FnOnce(TestCodexBuilder) -> TestCodexBuilder,
-) -> Result<TestCodexHarness> {
+    configure: impl FnOnce(TestChaosBuilder) -> TestChaosBuilder,
+) -> Result<TestChaosHarness> {
     let builder = configure(test_chaos());
-    TestCodexHarness::with_builder(builder).await
+    TestChaosHarness::with_builder(builder).await
 }
 
 pub async fn mount_apply_patch(
-    harness: &TestCodexHarness,
+    harness: &TestChaosHarness,
     call_id: &str,
     patch: &str,
     assistant_msg: &str,

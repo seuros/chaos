@@ -21,7 +21,7 @@ use core_test_support::responses::ev_response_created;
 use core_test_support::responses::sse;
 use core_test_support::responses::start_mock_server;
 use core_test_support::skip_if_no_network;
-use core_test_support::test_chaos::TestCodex;
+use core_test_support::test_chaos::TestChaos;
 use core_test_support::test_chaos::test_chaos;
 use core_test_support::wait_for_event;
 use core_test_support::wait_for_event_match;
@@ -79,7 +79,7 @@ async fn request_user_input_round_trip_for_mode(mode: ModeKind) -> anyhow::Resul
 
     let mut builder = test_chaos();
     #[allow(clippy::expect_used)]
-    let TestCodex {
+    let TestChaos {
         process: chaos,
         cwd,
         session_configured,
@@ -194,7 +194,7 @@ where
     let server = start_mock_server().await;
 
     let mut builder = test_chaos();
-    let TestCodex {
+    let TestChaos {
         process: chaos,
         cwd,
         session_configured,

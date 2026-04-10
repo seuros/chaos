@@ -1,6 +1,6 @@
 use chaos_ipc::product::CHAOS_VERSION;
-use codex_client::CodexHttpClient;
-pub use codex_client::CodexRequestBuilder;
+use codex_client::ChaosHttpClient;
+pub use codex_client::ChaosRequestBuilder;
 use http::HeaderMap;
 use http::HeaderValue;
 use http::header::USER_AGENT;
@@ -25,7 +25,7 @@ use std::sync::RwLock;
 /// Parenthesis will be added by Chaos. This should only specify what goes inside of the parenthesis.
 pub static USER_AGENT_SUFFIX: LazyLock<Mutex<Option<String>>> = LazyLock::new(|| Mutex::new(None));
 pub const DEFAULT_ORIGINATOR: &str = "codex_cli_rs";
-pub const CHAOS_INTERNAL_ORIGINATOR_OVERRIDE_ENV_VAR: &str = "CODEX_INTERNAL_ORIGINATOR_OVERRIDE";
+pub const CHAOS_INTERNAL_ORIGINATOR_OVERRIDE_ENV_VAR: &str = "CHAOS_INTERNAL_ORIGINATOR_OVERRIDE";
 
 #[derive(Debug, Clone)]
 pub struct Originator {
@@ -107,7 +107,7 @@ pub fn is_first_party_chat_originator(originator_value: &str) -> bool {
     originator_value == "codex_atlas"
 }
 
-pub fn get_codex_user_agent() -> String {
+pub fn get_chaos_user_agent() -> String {
     let os_info = os_info::get();
     let originator = originator();
     let prefix = format!(
@@ -166,23 +166,23 @@ fn sanitize_user_agent(candidate: String, fallback: &str) -> String {
 }
 
 /// Create an HTTP client with default `originator` and `User-Agent` headers set.
-pub fn create_client() -> CodexHttpClient {
+pub fn create_client() -> ChaosHttpClient {
     // Custom CA support uses SSL_CERT_FILE, handled by the rustls/system root store.
-    CodexHttpClient::default_client().with_default_headers(default_headers())
+    ChaosHttpClient::default_client().with_default_headers(default_headers())
 }
 
 /// Builds the default rama HTTP client used for ordinary ChaOS HTTP traffic.
 ///
 /// This is the infallible entry point for call sites that previously used
-/// `build_http_client()`. Returns a CodexHttpClient backed by rama.
-pub fn build_http_client() -> CodexHttpClient {
+/// `build_http_client()`. Returns a ChaosHttpClient backed by rama.
+pub fn build_http_client() -> ChaosHttpClient {
     create_client()
 }
 
 pub fn default_headers() -> HeaderMap {
     let mut headers = HeaderMap::new();
     headers.insert("originator", originator().header_value);
-    if let Ok(user_agent) = HeaderValue::from_str(&get_codex_user_agent()) {
+    if let Ok(user_agent) = HeaderValue::from_str(&get_chaos_user_agent()) {
         headers.insert(USER_AGENT, user_agent);
     }
     headers

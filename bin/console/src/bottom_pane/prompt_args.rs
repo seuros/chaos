@@ -407,7 +407,7 @@ fn replace_text_elements_with_sentinels(
         let start = elem.byte_range.start;
         let end = elem.byte_range.end;
         out.push_str(&rest[cursor..start]);
-        let mut sentinel = format!("__CODEX_ELEM_{idx}__");
+        let mut sentinel = format!("__CHAOS_ELEM_{idx}__");
         // Ensure we never collide with user content so a sentinel can't be mistaken for text.
         while rest.contains(&sentinel) {
             sentinel.push('_');

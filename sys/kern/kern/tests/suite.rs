@@ -6,7 +6,7 @@ use chaos_argv::arg0_dispatch;
 use ctor::ctor;
 use tempfile::TempDir;
 
-struct TestCodexAliasesGuard {
+struct TestChaosAliasesGuard {
     _chaos_home: TempDir,
     _arg0: Arg0PathEntryGuard,
     _previous_chaos_home: Option<OsString>,
@@ -19,7 +19,7 @@ const CHAOS_HOME_ENV_VAR: &str = "CHAOS_HOME";
 // based on the arg0.
 // NOTE: this doesn't work on ARM
 #[ctor]
-pub static CODEX_ALIASES_TEMP_DIR: TestCodexAliasesGuard = unsafe {
+pub static CHAOS_ALIASES_TEMP_DIR: TestChaosAliasesGuard = unsafe {
     #[allow(clippy::unwrap_used)]
     let chaos_home = tempfile::Builder::new()
         .prefix("chaos-tests")
@@ -47,7 +47,7 @@ pub static CODEX_ALIASES_TEMP_DIR: TestCodexAliasesGuard = unsafe {
         },
     }
 
-    TestCodexAliasesGuard {
+    TestChaosAliasesGuard {
         _chaos_home: chaos_home,
         _arg0: arg0,
         _previous_chaos_home: previous_chaos_home,

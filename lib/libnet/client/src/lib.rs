@@ -11,10 +11,10 @@ use std::sync::Once;
 
 pub use crate::custom_ca::BuildCustomCaTransportError;
 pub use crate::custom_ca::maybe_build_rustls_client_config_with_custom_ca;
-pub use crate::default_client::CodexClientError;
-pub use crate::default_client::CodexHttpClient;
-pub use crate::default_client::CodexRequestBuilder;
-pub use crate::default_client::CodexResponse;
+pub use crate::default_client::ChaosClientError;
+pub use crate::default_client::ChaosHttpClient;
+pub use crate::default_client::ChaosRequestBuilder;
+pub use crate::default_client::ChaosResponse;
 pub use crate::error::StreamError;
 pub use crate::error::TransportError;
 pub use crate::request::Request;

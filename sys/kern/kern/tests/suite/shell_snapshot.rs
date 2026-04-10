@@ -12,7 +12,7 @@ use core_test_support::responses::ev_function_call;
 use core_test_support::responses::ev_response_created;
 use core_test_support::responses::mount_sse_sequence;
 use core_test_support::responses::sse;
-use core_test_support::test_chaos::TestCodexHarness;
+use core_test_support::test_chaos::TestChaosHarness;
 use core_test_support::test_chaos::test_chaos;
 use core_test_support::wait_for_event;
 use core_test_support::wait_for_event_match;
@@ -37,7 +37,7 @@ struct SnapshotRun {
 
 const POLICY_PATH_FOR_TEST: &str = "/chaos/policy/path";
 const SNAPSHOT_PATH_FOR_TEST: &str = "/chaos/snapshot/path";
-const SNAPSHOT_MARKER_VAR: &str = "CODEX_SNAPSHOT_POLICY_MARKER";
+const SNAPSHOT_MARKER_VAR: &str = "CHAOS_SNAPSHOT_POLICY_MARKER";
 const SNAPSHOT_MARKER_VALUE: &str = "from_snapshot";
 const POLICY_SUCCESS_OUTPUT: &str = "policy-after-snapshot";
 
@@ -120,7 +120,7 @@ async fn run_snapshot_command_with_options(
         // unified exec and shell snapshot are always enabled
         config.permissions.shell_environment_policy.r#set = shell_environment_set;
     });
-    let harness = TestCodexHarness::with_builder(builder).await?;
+    let harness = TestChaosHarness::with_builder(builder).await?;
     let args = json!({
         "cmd": command,
         "yield_time_ms": 1000,
@@ -206,7 +206,7 @@ async fn run_shell_command_snapshot_with_options(
     let builder = test_chaos().with_config(move |config| {
         config.permissions.shell_environment_policy.r#set = shell_environment_set;
     });
-    let harness = TestCodexHarness::with_builder(builder).await?;
+    let harness = TestChaosHarness::with_builder(builder).await?;
     let args = json!({
         "command": command,
         "timeout_ms": 1000,
@@ -278,7 +278,7 @@ async fn run_shell_command_snapshot_with_options(
 
 #[allow(clippy::expect_used)]
 async fn run_tool_turn_on_harness(
-    harness: &TestCodexHarness,
+    harness: &TestChaosHarness,
     prompt: &str,
     call_id: &str,
     tool_name: &str,
@@ -395,7 +395,7 @@ async fn shell_command_snapshot_preserves_shell_environment_policy_set() -> Resu
     let builder = test_chaos().with_config(|config| {
         config.permissions.shell_environment_policy.r#set = policy_set_path_for_test();
     });
-    let harness = TestCodexHarness::with_builder(builder).await?;
+    let harness = TestChaosHarness::with_builder(builder).await?;
     let chaos_home = harness.test().home.path().to_path_buf();
     run_tool_turn_on_harness(
         &harness,
@@ -441,7 +441,7 @@ async fn linux_unified_exec_snapshot_preserves_shell_environment_policy_set() ->
         // unified exec and shell snapshot are always enabled
         config.permissions.shell_environment_policy.r#set = policy_set_path_for_test();
     });
-    let harness = TestCodexHarness::with_builder(builder).await?;
+    let harness = TestChaosHarness::with_builder(builder).await?;
     let chaos_home = harness.test().home.path().to_path_buf();
     run_tool_turn_on_harness(
         &harness,
@@ -483,7 +483,7 @@ async fn linux_unified_exec_snapshot_preserves_shell_environment_policy_set() ->
 #[tokio::test(flavor = "multi_thread", worker_threads = 2)]
 async fn shell_command_snapshot_still_intercepts_apply_patch() -> Result<()> {
     let builder = test_chaos();
-    let harness = TestCodexHarness::with_builder(builder).await?;
+    let harness = TestChaosHarness::with_builder(builder).await?;
 
     let test = harness.test();
     let chaos = test.process.clone();
@@ -548,7 +548,7 @@ async fn shell_command_snapshot_still_intercepts_apply_patch() -> Result<()> {
 #[tokio::test(flavor = "multi_thread", worker_threads = 2)]
 async fn shell_snapshot_deleted_after_shutdown_with_skills() -> Result<()> {
     let builder = test_chaos();
-    let harness = TestCodexHarness::with_builder(builder).await?;
+    let harness = TestChaosHarness::with_builder(builder).await?;
     let home = harness.test().home.clone();
     let chaos_home = home.path().to_path_buf();
     let chaos = harness.test().process.clone();

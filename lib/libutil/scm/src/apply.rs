@@ -59,7 +59,7 @@ pub fn apply_git_patch(req: &ApplyGitRequest) -> io::Result<ApplyGitResult> {
 
     // Optional: additional git config via env knob (defaults OFF)
     let mut cfg_parts: Vec<String> = Vec::new();
-    if let Ok(cfg) = std::env::var("CODEX_APPLY_GIT_CFG") {
+    if let Ok(cfg) = std::env::var("CHAOS_APPLY_GIT_CFG") {
         for pair in cfg.split(',') {
             let p = pair.trim();
             if p.is_empty() || !p.contains('=') {

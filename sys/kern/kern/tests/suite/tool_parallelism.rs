@@ -21,7 +21,7 @@ use core_test_support::responses::start_mock_server;
 use core_test_support::skip_if_no_network;
 use core_test_support::streaming_sse::StreamingSseChunk;
 use core_test_support::streaming_sse::start_streaming_sse_server;
-use core_test_support::test_chaos::TestCodex;
+use core_test_support::test_chaos::TestChaos;
 use core_test_support::test_chaos::test_chaos;
 use core_test_support::wait_for_event;
 use pretty_assertions::assert_eq;
@@ -29,7 +29,7 @@ use serde_json::Value;
 use serde_json::json;
 use tokio::sync::oneshot;
 
-async fn run_turn(test: &TestCodex, prompt: &str) -> anyhow::Result<()> {
+async fn run_turn(test: &TestChaos, prompt: &str) -> anyhow::Result<()> {
     let session_model = test.session_configured.model.clone();
 
     test.process
@@ -56,14 +56,14 @@ async fn run_turn(test: &TestCodex, prompt: &str) -> anyhow::Result<()> {
     Ok(())
 }
 
-async fn run_turn_and_measure(test: &TestCodex, prompt: &str) -> anyhow::Result<Duration> {
+async fn run_turn_and_measure(test: &TestChaos, prompt: &str) -> anyhow::Result<Duration> {
     let start = Instant::now();
     run_turn(test, prompt).await?;
     Ok(start.elapsed())
 }
 
 #[allow(clippy::expect_used)]
-async fn build_codex_with_test_tool(server: &wiremock::MockServer) -> anyhow::Result<TestCodex> {
+async fn build_codex_with_test_tool(server: &wiremock::MockServer) -> anyhow::Result<TestChaos> {
     let mut builder = test_chaos().with_model("test-gpt-5.1-codex");
     builder.build(server).await
 }

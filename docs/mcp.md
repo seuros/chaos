@@ -30,7 +30,7 @@ chaos mcp remove my-server  # Remove a server
 
 ### Config file
 
-Servers are stored in `~/.codex/config.toml`:
+Servers are stored in `~/.chaos/config.toml`:
 
 ```toml
 [mcp_servers.filesystem]

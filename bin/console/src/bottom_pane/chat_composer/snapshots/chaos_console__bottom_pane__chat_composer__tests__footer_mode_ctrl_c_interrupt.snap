@@ -1,0 +1,13 @@
+---
+source: bin/console/src/bottom_pane/chat_composer/chat_composer_tests.rs
+expression: terminal.backend()
+---
+"                                                                                                    "
+"› Ask Chaos to do anything                                                                          "
+"                                                                                                    "
+"                                                                                                    "
+"                                                                                                    "
+"                                                                                                    "
+"                                                                                                    "
+"                                                                                                    "
+"  ctrl + c again to quit                                                                            "

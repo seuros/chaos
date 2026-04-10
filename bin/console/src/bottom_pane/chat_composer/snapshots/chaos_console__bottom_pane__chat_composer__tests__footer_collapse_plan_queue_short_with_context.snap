@@ -1,0 +1,13 @@
+---
+source: bin/console/src/bottom_pane/chat_composer/chat_composer_tests.rs
+expression: terminal.backend()
+---
+"                                                  "
+"› Test                                            "
+"                                                  "
+"                                                  "
+"                                                  "
+"                                                  "
+"                                                  "
+"                                                  "
+"  tab to queue · Plan mode      98% context left  "

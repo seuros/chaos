@@ -239,17 +239,17 @@ pub enum InputResult {
 }
 
 #[derive(Clone, Debug, PartialEq)]
-struct AttachedImage {
-    placeholder: String,
-    path: PathBuf,
+pub(super) struct AttachedImage {
+    pub(super) placeholder: String,
+    pub(super) path: PathBuf,
 }
 
-enum PromptSelectionMode {
+pub(super) enum PromptSelectionMode {
     Completion,
     Submit,
 }
 
-enum PromptSelectionAction {
+pub(super) enum PromptSelectionAction {
     Insert {
         text: String,
         cursor: Option<usize>,
@@ -299,78 +299,78 @@ impl ChatComposerConfig {
 }
 
 pub(crate) struct ChatComposer {
-    textarea: TextArea,
-    textarea_state: RefCell<TextAreaState>,
-    active_popup: ActivePopup,
-    app_event_tx: AppEventSender,
-    history: ChatComposerHistory,
-    quit_shortcut_expires_at: Option<Instant>,
-    quit_shortcut_key: KeyBinding,
-    esc_backtrack_hint: bool,
-    use_shift_enter_hint: bool,
-    dismissed_file_popup_token: Option<String>,
-    current_file_query: Option<String>,
-    pending_pastes: Vec<(String, String)>,
-    large_paste_counters: HashMap<usize, usize>,
-    has_focus: bool,
-    frame_requester: Option<FrameRequester>,
+    pub(super) textarea: TextArea,
+    pub(super) textarea_state: RefCell<TextAreaState>,
+    pub(super) active_popup: ActivePopup,
+    pub(super) app_event_tx: AppEventSender,
+    pub(super) history: ChatComposerHistory,
+    pub(super) quit_shortcut_expires_at: Option<Instant>,
+    pub(super) quit_shortcut_key: KeyBinding,
+    pub(super) esc_backtrack_hint: bool,
+    pub(super) use_shift_enter_hint: bool,
+    pub(super) dismissed_file_popup_token: Option<String>,
+    pub(super) current_file_query: Option<String>,
+    pub(super) pending_pastes: Vec<(String, String)>,
+    pub(super) large_paste_counters: HashMap<usize, usize>,
+    pub(super) has_focus: bool,
+    pub(super) frame_requester: Option<FrameRequester>,
     /// Invariant: attached images are labeled in vec order as
     /// `[Image #M+1]..[Image #N]`, where `M` is the number of remote images.
-    attached_images: Vec<AttachedImage>,
-    placeholder_text: String,
-    is_task_running: bool,
+    pub(super) attached_images: Vec<AttachedImage>,
+    pub(super) placeholder_text: String,
+    pub(super) is_task_running: bool,
     /// When false, the composer is temporarily read-only (e.g. during sandbox setup).
-    input_enabled: bool,
-    input_disabled_placeholder: Option<String>,
+    pub(super) input_enabled: bool,
+    pub(super) input_disabled_placeholder: Option<String>,
     /// Non-bracketed paste burst tracker (see `bottom_pane/paste_burst.rs`).
-    paste_burst: PasteBurst,
+    pub(super) paste_burst: PasteBurst,
     // When true, disables paste-burst logic and inserts characters immediately.
-    disable_paste_burst: bool,
-    custom_prompts: Vec<CustomPrompt>,
-    footer_mode: FooterMode,
-    footer_hint_override: Option<Vec<(String, String)>>,
-    remote_image_urls: Vec<String>,
+    pub(super) disable_paste_burst: bool,
+    pub(super) custom_prompts: Vec<CustomPrompt>,
+    pub(super) footer_mode: FooterMode,
+    pub(super) footer_hint_override: Option<Vec<(String, String)>>,
+    pub(super) remote_image_urls: Vec<String>,
     /// Tracks keyboard selection for the remote-image rows so Up/Down + Delete/Backspace
     /// can highlight and remove remote attachments from the composer UI.
-    selected_remote_image_index: Option<usize>,
-    footer_flash: Option<FooterFlash>,
-    context_window_percent: Option<i64>,
-    context_window_used_tokens: Option<i64>,
-    connectors_snapshot: Option<ConnectorsSnapshot>,
-    dismissed_mention_popup_token: Option<String>,
-    mention_bindings: HashMap<u64, ComposerMentionBinding>,
-    recent_submission_mention_bindings: Vec<MentionBinding>,
-    collaboration_modes_enabled: bool,
-    config: ChatComposerConfig,
-    collaboration_mode_indicator: Option<CollaborationModeIndicator>,
-    connectors_enabled: bool,
-    personality_command_enabled: bool,
-    status_line_value: Option<Line<'static>>,
-    status_line_enabled: bool,
+    pub(super) selected_remote_image_index: Option<usize>,
+    pub(super) footer_flash: Option<FooterFlash>,
+    pub(super) context_window_percent: Option<i64>,
+    pub(super) context_window_used_tokens: Option<i64>,
+    pub(super) connectors_snapshot: Option<ConnectorsSnapshot>,
+    pub(super) dismissed_mention_popup_token: Option<String>,
+    pub(super) mention_bindings: HashMap<u64, ComposerMentionBinding>,
+    pub(super) recent_submission_mention_bindings: Vec<MentionBinding>,
+    pub(super) collaboration_modes_enabled: bool,
+    pub(super) config: ChatComposerConfig,
+    pub(super) collaboration_mode_indicator: Option<CollaborationModeIndicator>,
+    pub(super) connectors_enabled: bool,
+    pub(super) personality_command_enabled: bool,
+    pub(super) status_line_value: Option<Line<'static>>,
+    pub(super) status_line_enabled: bool,
     // Agent label injected into the footer's contextual row when multi-agent mode is active.
-    active_agent_label: Option<String>,
+    pub(super) active_agent_label: Option<String>,
 }
 
 #[derive(Clone, Debug)]
-struct FooterFlash {
-    line: Line<'static>,
-    expires_at: Instant,
+pub(super) struct FooterFlash {
+    pub(super) line: Line<'static>,
+    pub(super) expires_at: Instant,
 }
 
 #[derive(Clone, Debug)]
-struct ComposerMentionBinding {
-    mention: String,
-    path: String,
+pub(super) struct ComposerMentionBinding {
+    pub(super) mention: String,
+    pub(super) path: String,
 }
 
 /// Popup state – at most one can be visible at any time.
-enum ActivePopup {
+pub(super) enum ActivePopup {
     None,
     Command(CommandPopup),
     File(FileSearchPopup),
 }
 
-const FOOTER_SPACING_HEIGHT: u16 = 0;
+pub(super) const FOOTER_SPACING_HEIGHT: u16 = 0;
 
 impl ChatComposer {
     fn builtin_command_flags(&self) -> BuiltinCommandFlags {
@@ -3542,5 +3542,5 @@ fn prompt_selection_action(
 }
 
 #[cfg(test)]
-#[path = "chat_composer_tests.rs"]
+#[path = "chat_composer/chat_composer_tests.rs"]
 mod tests;

@@ -1,0 +1,14 @@
+---
+source: bin/console/src/bottom_pane/chat_composer/chat_composer_tests.rs
+expression: terminal.backend()
+---
+"                                                                                                    "
+"› short                                                                                             "
+"                                                                                                    "
+"                                                                                                    "
+"                                                                                                    "
+"                                                                                                    "
+"                                                                                                    "
+"                                                                                                    "
+"                                                                                                    "
+"                                                                                 100% context left  "

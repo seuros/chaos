@@ -1,0 +1,9 @@
+---
+source: bin/console/src/bottom_pane/chat_composer/chat_composer_tests.rs
+expression: terminal.backend()
+---
+"                                                            "
+"› /mo                                                       "
+"                                                            "
+"                                                            "
+"  /model  choose what model and reasoning effort to use     "

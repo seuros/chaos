@@ -283,7 +283,7 @@ pub fn prepend_path_entry_for_codex_aliases() -> std::io::Result<Arg0PathEntryGu
     }
 
     let temp_dir = tempfile::Builder::new()
-        .prefix("codex-arg0")
+        .prefix("chaos-arg0")
         .tempdir_in(&temp_root)?;
     let path = temp_dir.path();
 

@@ -224,7 +224,7 @@ impl ProcessTable {
     ) -> Self {
         set_process_table_test_mode_for_tests(/*enabled*/ true);
         let chaos_home = std::env::temp_dir().join(format!(
-            "codex-thread-manager-test-{}",
+            "chaos-thread-manager-test-{}",
             uuid::Uuid::new_v4()
         ));
         std::fs::create_dir_all(&chaos_home)

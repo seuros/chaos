@@ -32,6 +32,7 @@ chaos-clamp = { workspace = true }
 chaos-kern = { workspace = true }
 chaos-locate = { workspace = true }
 chaos-pam = { workspace = true }
+chaos-pwd = { workspace = true }
 chaos-syslog = { workspace = true }
 chaos-ipc = { workspace = true }
 chaos-sh = { workspace = true }

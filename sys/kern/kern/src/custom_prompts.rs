@@ -1,4 +1,5 @@
 use chaos_ipc::custom_prompts::CustomPrompt;
+use chaos_pwd::find_chaos_home;
 use std::collections::HashSet;
 use std::path::Path;
 use std::path::PathBuf;
@@ -7,9 +8,7 @@ use tokio::fs;
 /// Return the default prompts directory: `$CHAOS_HOME/prompts`.
 /// If `CHAOS_HOME` cannot be resolved, returns `None`.
 pub fn default_prompts_dir() -> Option<PathBuf> {
-    crate::config::find_chaos_home()
-        .ok()
-        .map(|home| home.join("prompts"))
+    find_chaos_home().ok().map(|home| home.join("prompts"))
 }
 
 /// Discover prompt files in the given directory, returning entries sorted by name.

@@ -130,6 +130,7 @@ use chaos_kern::models_manager::manager::ModelsManager;
 use chaos_kern::project_doc::DEFAULT_PROJECT_DOC_FILENAME;
 use chaos_kern::terminal::TerminalName;
 use chaos_kern::terminal::terminal_info;
+use chaos_pwd::find_chaos_home;
 use chaos_syslog::RuntimeMetricsSummary;
 use chaos_syslog::SessionTelemetry;
 use crossterm::event::KeyCode;
@@ -5063,7 +5064,7 @@ impl ChatWidget {
     }
 
     fn open_theme_picker(&mut self) {
-        let chaos_home = chaos_kern::config::find_chaos_home().ok();
+        let chaos_home = find_chaos_home().ok();
         let terminal_width = self
             .last_rendered_width
             .get()

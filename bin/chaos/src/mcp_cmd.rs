@@ -9,7 +9,6 @@ use chaos_getopt::format_env_display::format_env_display;
 use chaos_ipc::protocol::McpAuthStatus;
 use chaos_kern::config::Config;
 use chaos_kern::config::edit::ConfigEditsBuilder;
-use chaos_kern::config::find_chaos_home;
 use chaos_kern::config::load_global_mcp_servers;
 use chaos_kern::config::types::McpServerConfig;
 use chaos_kern::config::types::McpServerTransportConfig;
@@ -21,6 +20,7 @@ use chaos_kern::mcp::auth::discover_supported_scopes;
 use chaos_kern::mcp::auth::oauth_login_support;
 use chaos_kern::mcp::auth::resolve_oauth_scopes;
 use chaos_kern::mcp::oauth_types::OAuthCredentialsStoreMode;
+use chaos_pwd::find_chaos_home;
 use clap::ArgGroup;
 
 /// Subcommands:

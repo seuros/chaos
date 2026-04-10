@@ -1,6 +1,5 @@
 use crate::config::NetworkToml;
 use crate::config::PermissionsToml;
-use crate::config::find_chaos_home;
 use crate::config::resolve_permission_profile;
 use crate::config_loader::ConfigLayerStack;
 use crate::config_loader::ConfigLayerStackOrdering;
@@ -21,6 +20,7 @@ use chaos_pf::NetworkProxyState;
 use chaos_pf::build_config_state;
 use chaos_pf::normalize_host;
 use chaos_pf::validate_policy_against_constraints;
+use chaos_pwd::find_chaos_home;
 use chaos_sysctl::CONFIG_TOML_FILE;
 use serde::Deserialize;
 use std::future::Future;

@@ -4,7 +4,7 @@
 //! interactive-session layers. Direct `chaos login` intentionally does less: it preserves the
 //! existing stderr/browser UX and adds only a small file-backed tracing layer for login-specific
 //! targets. Keeping that setup local avoids pulling the TUI's session-oriented logging machinery
-//! into a one-shot CLI command while still producing a durable `codex-login.log` artifact that
+//! into a one-shot CLI command while still producing a durable `chaos-login.log` artifact that
 //! support can request from users.
 
 use chaos_getopt::CliConfigOverrides;
@@ -46,7 +46,7 @@ mcp_guest=debug,chaos_clamp=debug";
 /// This deliberately duplicates a narrow slice of the TUI logging setup instead of reusing it
 /// wholesale. The TUI stack includes session-oriented layers that are valuable for interactive
 /// runs but unnecessary for a one-shot login command. Keeping the direct CLI path local lets this
-/// command produce a durable `codex-login.log` artifact without coupling it to the TUI's broader
+/// command produce a durable `chaos-login.log` artifact without coupling it to the TUI's broader
 /// telemetry and feedback initialization.
 fn init_login_file_logging(config: &Config) -> Vec<WorkerGuard> {
     let log_dir = match chaos_kern::config::log_dir(config) {
@@ -73,7 +73,7 @@ fn init_login_file_logging(config: &Config) -> Vec<WorkerGuard> {
         log_file_opts.mode(0o600);
     }
 
-    let log_path = log_dir.join("codex-login.log");
+    let log_path = log_dir.join("chaos-login.log");
     let log_file = match log_file_opts.open(&log_path) {
         Ok(log_file) => log_file,
         Err(err) => {

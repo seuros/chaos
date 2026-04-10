@@ -1,4 +1,4 @@
-use super::*;
+use super::{App, BacktrackState, Line, PaneKind, Personality, ReasoningEffortConfig, Result, tui};
 
 impl App {
     pub(super) fn open_url_in_browser(&mut self, url: String) -> bool {

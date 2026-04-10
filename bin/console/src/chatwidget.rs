@@ -538,7 +538,7 @@ struct PreClampSelection {
 /// active work, arming the double-press quit shortcut, and requesting shutdown-first exit.
 pub(crate) struct ChatWidget {
     app_event_tx: AppEventSender,
-    codex_op_tx: UnboundedSender<Op>,
+    chaos_op_tx: UnboundedSender<Op>,
     bottom_pane: BottomPane,
     active_cell: Option<Box<dyn HistoryCell>>,
     /// Monotonic-ish counter used to invalidate transcript overlay caching.
@@ -3087,7 +3087,7 @@ impl ChatWidget {
         let prevent_idle_sleep = true;
         let mut rng = rand::rng();
         let placeholder = PLACEHOLDERS[rng.random_range(0..PLACEHOLDERS.len())].to_string();
-        let codex_op_tx = spawn_agent(config.clone(), app_event_tx.clone(), process_table);
+        let chaos_op_tx = spawn_agent(config.clone(), app_event_tx.clone(), process_table);
 
         let model_override = model.as_deref();
         let model_for_header = model
@@ -3118,7 +3118,7 @@ impl ChatWidget {
         let mut widget = Self {
             app_event_tx: app_event_tx.clone(),
             frame_requester: frame_requester.clone(),
-            codex_op_tx,
+            chaos_op_tx,
             bottom_pane: BottomPane::new(BottomPaneParams {
                 frame_requester,
                 app_event_tx,
@@ -3225,7 +3225,7 @@ impl ChatWidget {
 
     pub(crate) fn new_with_op_sender(
         common: ChatWidgetInit,
-        codex_op_tx: UnboundedSender<Op>,
+        chaos_op_tx: UnboundedSender<Op>,
     ) -> Self {
         let ChatWidgetInit {
             config,
@@ -3276,7 +3276,7 @@ impl ChatWidget {
         let mut widget = Self {
             app_event_tx: app_event_tx.clone(),
             frame_requester: frame_requester.clone(),
-            codex_op_tx,
+            chaos_op_tx,
             bottom_pane: BottomPane::new(BottomPaneParams {
                 frame_requester,
                 app_event_tx,
@@ -3415,7 +3415,7 @@ impl ChatWidget {
             .unwrap_or(header_model);
 
         let current_cwd = Some(session_configured.cwd.clone());
-        let codex_op_tx =
+        let chaos_op_tx =
             spawn_agent_from_existing(conversation, session_configured, app_event_tx.clone());
 
         let fallback_default = Settings {
@@ -3434,7 +3434,7 @@ impl ChatWidget {
         let mut widget = Self {
             app_event_tx: app_event_tx.clone(),
             frame_requester: frame_requester.clone(),
-            codex_op_tx,
+            chaos_op_tx,
             bottom_pane: BottomPane::new(BottomPaneParams {
                 frame_requester,
                 app_event_tx,
@@ -4356,7 +4356,7 @@ impl ChatWidget {
                 })
                 .collect::<Vec<_>>();
             let history_text = encode_history_mentions(&text, &encoded_mentions);
-            self.codex_op_tx
+            self.chaos_op_tx
                 .send(Op::AddToHistory { text: history_text })
                 .unwrap_or_else(|e| {
                     tracing::error!("failed to send AddHistory op: {e}");
@@ -7322,7 +7322,7 @@ impl ChatWidget {
         if matches!(&op, Op::Review { .. }) && !self.bottom_pane.is_task_running() {
             self.bottom_pane.set_task_running(/*running*/ true);
         }
-        if let Err(e) = self.codex_op_tx.send(op) {
+        if let Err(e) = self.chaos_op_tx.send(op) {
             tracing::error!("failed to submit op: {e}");
             return false;
         }

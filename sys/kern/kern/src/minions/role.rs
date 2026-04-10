@@ -149,7 +149,10 @@ fn preservation_policy(config: &Config, role_layer_toml: &TomlValue) -> (bool, b
 }
 
 mod reload {
-    use super::*;
+    use super::{
+        Config, ConfigLayerEntry, ConfigLayerSource, ConfigLayerStack, ConfigLayerStackOrdering,
+        ConfigOverrides, TomlValue, deserialize_config_toml_with_base,
+    };
 
     pub(super) fn build_next_config(
         config: &Config,
@@ -270,7 +273,10 @@ mod reload {
 }
 
 pub(crate) mod spawn_tool_spec {
-    use super::*;
+    use super::{
+        AgentRoleConfig, BTreeMap, BTreeSet, DEFAULT_ROLE_NAME, TomlValue, built_in,
+        parse_agent_role_file_contents,
+    };
 
     /// Builds the spawn-agent tool description text from built-in and configured roles.
     pub(crate) fn build(user_defined_agent_roles: &BTreeMap<String, AgentRoleConfig>) -> String {
@@ -377,7 +383,7 @@ pub(crate) fn collect_roles_by_topics<'a>(
 }
 
 mod built_in {
-    use super::*;
+    use super::{AgentRoleConfig, BTreeMap, LazyLock, Path, parse_agent_role_file_contents};
     use include_dir::Dir;
     use include_dir::include_dir;
 

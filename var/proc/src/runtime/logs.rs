@@ -1,4 +1,7 @@
-use super::*;
+use super::{
+    BTreeSet, LOG_PARTITION_ROW_LIMIT, LOG_PARTITION_SIZE_LIMIT_BYTES, LogEntry, LogQuery, LogRow,
+    QueryBuilder, Row, Sqlite, SqliteConnection, StateRuntime,
+};
 use crate::LogTailBatch;
 use crate::LogTailCursor;
 
@@ -548,9 +551,9 @@ fn push_like_filters<'a>(
 #[cfg(test)]
 mod tests {
     use super::StateRuntime;
-    use super::test_support::unique_temp_dir;
     use crate::LogEntry;
     use crate::LogQuery;
+    use crate::runtime::test_support::unique_temp_dir;
     use crate::runtime_db_path;
     use pretty_assertions::assert_eq;
     use sqlx::SqlitePool;

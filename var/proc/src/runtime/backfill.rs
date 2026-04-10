@@ -1,4 +1,4 @@
-use super::*;
+use super::StateRuntime;
 use crate::model::backfill_machine::BackfillWorkflow;
 
 impl StateRuntime {
@@ -144,7 +144,7 @@ ON CONFLICT(id) DO NOTHING
 #[cfg(test)]
 mod tests {
     use super::StateRuntime;
-    use super::test_support::unique_temp_dir;
+    use crate::runtime::test_support::unique_temp_dir;
     use pretty_assertions::assert_eq;
 
     #[tokio::test]

@@ -1,4 +1,3 @@
-#![allow(unused_imports)]
 //! The chat composer is the bottom-pane text input state machine.
 //!
 //! It is responsible for:
@@ -138,14 +137,7 @@ use crate::key_hint;
 use crate::key_hint::KeyBinding;
 use crate::key_hint::has_ctrl_or_alt;
 use crossterm::event::KeyCode;
-use crossterm::event::KeyEvent;
-use crossterm::event::KeyEventKind;
-use crossterm::event::KeyModifiers;
-use ratatui::style::Stylize;
 use ratatui::text::Line;
-use ratatui::widgets::StatefulWidgetRef;
-use ratatui::widgets::Widget;
-use ratatui::widgets::WidgetRef;
 
 use super::chat_composer_history::ChatComposerHistory;
 use super::chat_composer_history::HistoryEntry;
@@ -168,8 +160,6 @@ use crate::bottom_pane::prompt_args::parse_slash_name;
 use crate::bottom_pane::prompt_args::prompt_argument_names;
 use crate::bottom_pane::prompt_args::prompt_command_with_arg_placeholders;
 use crate::bottom_pane::prompt_args::prompt_has_numeric_placeholders;
-use crate::render::RectExt;
-use crate::render::renderable::Renderable;
 use crate::slash_command::SlashCommand;
 use chaos_ipc::custom_prompts::CustomPrompt;
 use chaos_ipc::custom_prompts::PROMPTS_CMD_PREFIX;
@@ -178,7 +168,6 @@ use chaos_ipc::user_input::ByteRange;
 use chaos_ipc::user_input::MAX_USER_INPUT_TEXT_CHARS;
 use chaos_ipc::user_input::TextElement;
 
-use crate::app_event::AppEvent;
 use crate::app_event::ConnectorsSnapshot;
 use crate::app_event_sender::AppEventSender;
 use crate::bottom_pane::LocalImageAttachment;
@@ -190,7 +179,6 @@ use crate::tui::FrameRequester;
 use chaos_locate::FileMatch;
 use std::cell::RefCell;
 use std::collections::HashMap;
-use std::ops::Range;
 use std::path::PathBuf;
 use std::time::Duration;
 use std::time::Instant;

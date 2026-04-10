@@ -1,4 +1,7 @@
-use super::*;
+use super::{
+    App, Instant, LOG_PANEL_BACKFILL_LIMIT, LogQuery, Overlay, ProcessId, StateRuntime, tui,
+};
+use std::sync::Arc;
 
 impl App {
     pub(super) async fn toggle_log_panel(&mut self, tui: &mut tui::Tui) {

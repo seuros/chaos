@@ -1,4 +1,4 @@
-use super::*;
+use super::{ActivePopup, ChatComposer, FOOTER_SPACING_HEIGHT};
 
 use crate::line_truncation::truncate_line_with_ellipsis_if_overflow;
 use crate::render::Insets;
@@ -39,6 +39,7 @@ use crate::bottom_pane::footer::render_footer_hint_items;
 use crate::bottom_pane::footer::render_footer_line;
 use crate::bottom_pane::footer::single_line_footer_layout;
 use crate::bottom_pane::footer::uses_passive_footer_status_layout;
+use chaos_ipc::models::local_image_label_text;
 
 impl ChatComposer {
     pub(super) fn layout_areas(&self, area: Rect) -> [Rect; 4] {

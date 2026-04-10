@@ -1,4 +1,13 @@
-use super::*;
+use super::{
+    App, AppEvent, AppRunControl, ApprovalRequest, COMMIT_ANIMATION_TICK, ChatWidget, ConfigEdit,
+    ConfigEditsBuilder, CwdPromptAction, DiffSummary, Event, EventMsg, ExitMode, ExitReason,
+    ExternalEditorState, HistoryCell, Line, Op, Ordering, Overlay, PaneId, Paragraph,
+    ProcessEventStore, Renderable, Result, SessionSelection, Stylize, TuiEvent, Wrap,
+    ansi_escape_line, highlight_bash_to_lines, session_summary, strip_bash_lc_and_escape, thread,
+    tui,
+};
+use crate::onboarding::auth::AuthModeWidget;
+use std::sync::Arc;
 
 impl App {
     pub(crate) async fn handle_tui_event(

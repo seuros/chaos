@@ -55,7 +55,7 @@ Primary RPCs:
 - `model/list`
 
 Notifications:
-- `codex/event` stream notifications for live agent events
+- `chaos/event` stream notifications for live agent events
 - `notifications/progress` for long-running tool calls
 
 ## Processes and turns
@@ -75,11 +75,11 @@ Each model includes:
 
 ## Event stream
 
-While a conversation runs, the server sends `codex/event` notifications with the serialized event payload matching `core/src/protocol.rs`'s `Event` and `EventMsg` types.
+While a conversation runs, the server sends `chaos/event` notifications with the serialized event payload matching `core/src/protocol.rs`'s `Event` and `EventMsg` types.
 
 ## Tool responses
 
-The `codex` and `codex-reply` tools return standard MCP `CallToolResult` payloads with `structuredContent`:
+The `chaos` and `chaos-reply` tools return standard MCP `CallToolResult` payloads with `structuredContent`:
 
 ```json
 {

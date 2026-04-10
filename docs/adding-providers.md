@@ -1,7 +1,7 @@
 # Adding LLM Providers
 
 Chaos ships with OpenAI built-in. Every other provider is added through
-`~/.codex/config.toml`. No code changes, no rebuilds.
+`~/.chaos/config.toml`. No code changes, no rebuilds.
 
 ---
 

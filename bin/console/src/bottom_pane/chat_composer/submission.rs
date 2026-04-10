@@ -1,4 +1,12 @@
-use super::*;
+use super::{
+    ActivePopup, ByteRange, ChatComposer, HistoryEntry, InputResult, Instant,
+    MAX_USER_INPUT_TEXT_CHARS, PROMPTS_CMD_PREFIX, PromptSelectionAction, PromptSelectionMode,
+    SlashCommand, TextElement, expand_custom_prompt, expand_if_numeric_with_positional_args,
+    history_cell, parse_slash_name, prompt_argument_names, prompt_command_with_arg_placeholders,
+    prompt_has_numeric_placeholders, slash_commands, user_input_too_large_message,
+};
+use crate::app_event::AppEvent;
+use chaos_ipc::custom_prompts::CustomPrompt;
 
 impl ChatComposer {
     /// Prepare text for submission/queuing. Returns None if submission should be suppressed.

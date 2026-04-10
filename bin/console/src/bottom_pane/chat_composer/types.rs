@@ -1,4 +1,5 @@
-use super::*;
+use crate::slash_command::SlashCommand;
+use chaos_ipc::user_input::{MAX_USER_INPUT_TEXT_CHARS, TextElement};
 
 /// If the pasted content exceeds this number of characters, replace it with a
 /// placeholder in the UI.

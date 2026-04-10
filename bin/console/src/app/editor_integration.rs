@@ -1,4 +1,4 @@
-use super::*;
+use super::{App, EXTERNAL_EDITOR_HINT, ExternalEditorState, external_editor, history_cell, tui};
 
 impl App {
     pub(super) async fn launch_external_editor(&mut self, tui: &mut tui::Tui) {

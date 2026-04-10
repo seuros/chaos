@@ -1789,7 +1789,7 @@ async fn make_chatwidget_manual(
     let active_collaboration_mask = collaboration_modes::default_mask(models_manager.as_ref());
     let mut widget = ChatWidget {
         app_event_tx,
-        codex_op_tx: op_tx,
+        chaos_op_tx: op_tx,
         bottom_pane: bottom,
         active_cell: None,
         active_cell_revision: 0,
@@ -7298,7 +7298,7 @@ async fn apply_patch_full_flow_integration_like() {
     }
     let op = maybe_op.expect("expected process-scoped op after key press");
 
-    // 3) App forwards to widget.submit_op, which pushes onto codex_op_tx
+    // 3) App forwards to widget.submit_op, which pushes onto chaos_op_tx
     chat.submit_op(op);
     let forwarded = op_rx
         .try_recv()

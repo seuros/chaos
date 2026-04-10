@@ -1,4 +1,12 @@
-use super::*;
+use super::{
+    ActivePopup, CharDecision, ChatComposer, CommandItem, FlushResult, InputResult,
+    PROMPTS_CMD_PREFIX, PromptSelectionAction, PromptSelectionMode, esc_hint_mode,
+    expand_if_numeric_with_positional_args, has_ctrl_or_alt, parse_slash_name,
+    prompt_selection_action, reset_mode_after_activity, toggle_shortcut_mode,
+};
+use crossterm::event::{KeyCode, KeyEvent, KeyEventKind, KeyModifiers};
+use std::path::PathBuf;
+use std::time::Instant;
 
 impl ChatComposer {
     /// Handle a key event coming from the main UI.

@@ -1,6 +1,6 @@
 use super::processes::push_process_filters;
 use super::processes::push_process_order_and_limit;
-use super::*;
+use super::{ProcessId, ProcessMetadata, Row, SortKey, StateRuntime};
 use crate::model::Phase2InputSelection;
 use crate::model::Phase2JobClaimOutcome;
 use crate::model::ProcessRow;
@@ -1295,12 +1295,12 @@ mod tests {
     use super::JOB_KIND_MEMORY_CONSOLIDATE_GLOBAL;
     use super::JOB_KIND_MEMORY_STAGE1;
     use super::StateRuntime;
-    use super::test_support::test_process_metadata;
-    use super::test_support::unique_temp_dir;
     use super::whole_days_as_hours;
     use crate::model::Phase2JobClaimOutcome;
     use crate::model::Stage1JobClaimOutcome;
     use crate::model::Stage1StartupClaimParams;
+    use crate::runtime::test_support::test_process_metadata;
+    use crate::runtime::test_support::unique_temp_dir;
     use chaos_ipc::ProcessId;
     use jiff::ToSpan;
     use pretty_assertions::assert_eq;

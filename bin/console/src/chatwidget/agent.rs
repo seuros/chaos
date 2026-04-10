@@ -30,7 +30,7 @@ pub(crate) fn spawn_agent(
     app_event_tx: AppEventSender,
     server: Arc<ProcessTable>,
 ) -> UnboundedSender<Op> {
-    let (codex_op_tx, mut codex_op_rx) = unbounded_channel::<Op>();
+    let (chaos_op_tx, mut chaos_op_rx) = unbounded_channel::<Op>();
 
     let app_event_tx_clone = app_event_tx;
     tokio::spawn(async move {
@@ -61,7 +61,7 @@ pub(crate) fn spawn_agent(
 
         let process_clone = thread.clone();
         tokio::spawn(async move {
-            while let Some(op) = codex_op_rx.recv().await {
+            while let Some(op) = chaos_op_rx.recv().await {
                 let id = process_clone.submit(op).await;
                 if let Err(e) = id {
                     tracing::error!("failed to submit op: {e}");
@@ -80,7 +80,7 @@ pub(crate) fn spawn_agent(
         }
     });
 
-    codex_op_tx
+    chaos_op_tx
 }
 
 /// Spawn agent loops for an existing process (e.g., a forked process).
@@ -91,7 +91,7 @@ pub(crate) fn spawn_agent_from_existing(
     session_configured: chaos_ipc::protocol::SessionConfiguredEvent,
     app_event_tx: AppEventSender,
 ) -> UnboundedSender<Op> {
-    let (codex_op_tx, mut codex_op_rx) = unbounded_channel::<Op>();
+    let (chaos_op_tx, mut chaos_op_rx) = unbounded_channel::<Op>();
 
     let app_event_tx_clone = app_event_tx;
     tokio::spawn(async move {
@@ -106,7 +106,7 @@ pub(crate) fn spawn_agent_from_existing(
 
         let process_clone = thread.clone();
         tokio::spawn(async move {
-            while let Some(op) = codex_op_rx.recv().await {
+            while let Some(op) = chaos_op_rx.recv().await {
                 let id = process_clone.submit(op).await;
                 if let Err(e) = id {
                     tracing::error!("failed to submit op: {e}");
@@ -125,21 +125,21 @@ pub(crate) fn spawn_agent_from_existing(
         }
     });
 
-    codex_op_tx
+    chaos_op_tx
 }
 
 /// Spawn an op-forwarding loop for an existing process without subscribing to events.
 pub(crate) fn spawn_op_forwarder(thread: std::sync::Arc<Process>) -> UnboundedSender<Op> {
-    let (codex_op_tx, mut codex_op_rx) = unbounded_channel::<Op>();
+    let (chaos_op_tx, mut chaos_op_rx) = unbounded_channel::<Op>();
 
     tokio::spawn(async move {
         initialize_app_server_client_name(thread.as_ref()).await;
-        while let Some(op) = codex_op_rx.recv().await {
+        while let Some(op) = chaos_op_rx.recv().await {
             if let Err(e) = thread.submit(op).await {
                 tracing::error!("failed to submit op: {e}");
             }
         }
     });
 
-    codex_op_tx
+    chaos_op_tx
 }

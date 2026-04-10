@@ -1,5 +1,3 @@
-#![allow(unused_imports)]
-
 use crate::app_backtrack::BacktrackState;
 use crate::app_event::AppEvent;
 use crate::app_event::ExitMode;
@@ -23,7 +21,6 @@ use crate::multi_agents::agent_picker_status_dot_spans;
 use crate::multi_agents::format_agent_picker_item_name;
 use crate::multi_agents::next_agent_shortcut_matches;
 use crate::multi_agents::previous_agent_shortcut_matches;
-use crate::onboarding::auth::AuthModeWidget;
 use crate::pager_overlay::Overlay;
 use crate::panes::tool_list::ToolListPane;
 use crate::render::highlight::highlight_bash_to_lines;
@@ -50,7 +47,6 @@ use chaos_ipc::protocol::SessionConfiguredEvent;
 use chaos_ipc::protocol::SessionSource;
 use chaos_ipc::protocol::TokenUsage;
 use chaos_kern::AuthManager;
-use chaos_kern::ChaosAuth;
 use chaos_kern::ProcessTable;
 use chaos_kern::config::Config;
 use chaos_kern::config::ConfigBuilder;
@@ -95,7 +91,6 @@ use std::time::Duration;
 use std::time::Instant;
 use tokio::select;
 use tokio::sync::Mutex;
-use tokio::sync::broadcast;
 use tokio::sync::mpsc;
 use tokio::sync::mpsc::error::TryRecvError;
 use tokio::sync::mpsc::error::TrySendError;

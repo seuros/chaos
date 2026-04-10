@@ -1,4 +1,4 @@
-use super::*;
+use super::{ActivePopup, ChatComposer};
 
 use crate::bottom_pane::prompt_args::parse_slash_name;
 use chaos_glob::fuzzy_match;
@@ -6,6 +6,7 @@ use chaos_ipc::custom_prompts::CustomPrompt;
 use chaos_ipc::custom_prompts::PROMPTS_CMD_PREFIX;
 use std::ops::Range;
 
+use crate::app_event::AppEvent;
 use crate::bottom_pane::command_popup::CommandPopup;
 use crate::bottom_pane::command_popup::CommandPopupFlags;
 use crate::bottom_pane::file_search_popup::FileSearchPopup;

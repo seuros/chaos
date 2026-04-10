@@ -1,6 +1,8 @@
 use super::*;
 use crate::bottom_pane::footer::footer_height;
 use chaos_ipc::api::AppInfo;
+use crossterm::event::KeyEvent;
+use crossterm::event::KeyModifiers;
 use image::ImageBuffer;
 use image::Rgba;
 use pretty_assertions::assert_eq;
@@ -19,6 +21,7 @@ use crate::bottom_pane::chat_composer::LARGE_PASTE_CHAR_THRESHOLD;
 use crate::bottom_pane::prompt_args::PromptArg;
 use crate::bottom_pane::prompt_args::extract_positional_args_for_prompt_line;
 use crate::bottom_pane::textarea::TextArea;
+use crate::render::renderable::Renderable;
 use tokio::sync::mpsc::unbounded_channel;
 
 #[test]

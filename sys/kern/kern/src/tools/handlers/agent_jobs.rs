@@ -211,7 +211,14 @@ impl ToolHandler for BatchJobHandler {
 }
 
 mod spawn_agents_on_csv {
-    use super::*;
+    use super::{
+        AgentJobFailureSummary, Arc, FunctionCallError, FunctionToolOutput, HashSet, PathBuf,
+        Session, SpawnAgentsOnCsvArgs, SpawnAgentsOnCsvResult, TurnContext, Uuid,
+        build_runner_options, default_output_csv_path, ensure_unique_headers,
+        export_job_csv_snapshot, normalize_max_runtime_seconds, parse_arguments, parse_csv,
+        required_runtime_db, run_agent_job_loop,
+    };
+    use serde_json::Value;
 
     /// Create a new agent job from a CSV and run it to completion.
     ///
@@ -460,7 +467,10 @@ mod spawn_agents_on_csv {
 }
 
 mod report_agent_job_result {
-    use super::*;
+    use super::{
+        Arc, FunctionCallError, FunctionToolOutput, ReportAgentJobResultArgs,
+        ReportAgentJobResultToolResult, Session, parse_arguments, required_runtime_db,
+    };
 
     pub async fn handle(
         session: Arc<Session>,

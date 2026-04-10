@@ -1,4 +1,4 @@
-use super::*;
+use super::ChatComposer;
 
 use crate::bottom_pane::chat_composer_history::HistoryEntry;
 

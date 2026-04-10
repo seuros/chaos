@@ -1,4 +1,4 @@
-use super::*;
+use super::{AttachedImage, ChatComposer, LARGE_PASTE_CHAR_THRESHOLD};
 
 use crate::bottom_pane::LocalImageAttachment;
 use crate::clipboard_paste::normalize_pasted_path;

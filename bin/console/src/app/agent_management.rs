@@ -1,4 +1,11 @@
-use super::*;
+use super::{
+    AgentNavigationState, App, AppEvent, BacktrackState, ChatWidget, EventMsg, PathBuf,
+    ProcessEventSnapshot, ProcessId, Result, SelectionItem, SelectionViewParams,
+    agent_picker_status_dot_spans, format_agent_picker_item_name, standard_popup_hint_line, tui,
+    unbounded_channel,
+};
+use chaos_kern::Process;
+use std::sync::Arc;
 
 impl App {
     pub(super) fn process_label(&self, process_id: ProcessId) -> String {
@@ -159,16 +166,11 @@ impl App {
         self.sync_active_agent_label();
     }
 
-    pub(super) async fn select_agent_process(
+    async fn resolve_process_switch_target(
         &mut self,
-        tui: &mut tui::Tui,
         process_id: ProcessId,
-    ) -> Result<()> {
-        if self.active_process_id == Some(process_id) {
-            return Ok(());
-        }
-
-        let live_thread = match self.server.get_process(process_id).await {
+    ) -> Option<Arc<Process>> {
+        match self.server.get_process(process_id).await {
             Ok(thread) => Some(thread),
             Err(err) => {
                 if self.process_event_channels.contains_key(&process_id) {
@@ -178,12 +180,16 @@ impl App {
                     self.chat_widget.add_error_message(format!(
                         "Failed to attach to agent process {process_id}: {err}"
                     ));
-                    return Ok(());
+                    None
                 }
             }
-        };
-        let is_replay_only = live_thread.is_none();
+        }
+    }
 
+    async fn begin_process_switch(
+        &mut self,
+        process_id: ProcessId,
+    ) -> Option<ProcessEventSnapshot> {
         let previous_process_id = self.active_process_id;
         self.store_active_process_receiver().await;
         self.active_process_id = None;
@@ -193,25 +199,40 @@ impl App {
             if let Some(previous_process_id) = previous_process_id {
                 self.activate_process_channel(previous_process_id).await;
             }
-            return Ok(());
+            return None;
         };
 
         self.active_process_id = Some(process_id);
         self.active_process_rx = Some(receiver);
+        Some(snapshot)
+    }
 
+    fn rebuild_chat_widget_for_process_switch(
+        &mut self,
+        tui: &mut tui::Tui,
+        live_process: Option<Arc<Process>>,
+    ) {
         let init = self.chatwidget_init_for_forked_or_resumed_process(tui, self.config.clone());
-        let codex_op_tx = if let Some(thread) = live_thread {
-            crate::chatwidget::spawn_op_forwarder(thread)
-        } else {
-            let (tx, _rx) = unbounded_channel();
-            tx
-        };
-        self.chat_widget = ChatWidget::new_with_op_sender(init, codex_op_tx);
+        let chaos_op_tx = live_process
+            .map(crate::chatwidget::spawn_op_forwarder)
+            .unwrap_or_else(|| {
+                let (tx, _rx) = unbounded_channel();
+                tx
+            });
+        self.chat_widget = ChatWidget::new_with_op_sender(init, chaos_op_tx);
         self.sync_active_agent_label();
+    }
 
+    async fn finalize_process_switch(
+        &mut self,
+        tui: &mut tui::Tui,
+        process_id: ProcessId,
+        snapshot: ProcessEventSnapshot,
+        replay_only: bool,
+    ) -> Result<()> {
         self.reset_for_process_switch(tui)?;
-        self.replay_process_snapshot(snapshot, !is_replay_only);
-        if is_replay_only {
+        self.replay_process_snapshot(snapshot, !replay_only);
+        if replay_only {
             self.chat_widget.add_info_message(
                 format!("Agent process {process_id} is closed. Replaying saved transcript."),
                 /*hint*/ None,
@@ -219,8 +240,30 @@ impl App {
         }
         self.drain_active_process_events(tui).await?;
         self.refresh_pending_process_approvals().await;
-
         Ok(())
+    }
+
+    pub(super) async fn select_agent_process(
+        &mut self,
+        tui: &mut tui::Tui,
+        process_id: ProcessId,
+    ) -> Result<()> {
+        if self.active_process_id == Some(process_id) {
+            return Ok(());
+        }
+
+        let live_process = self.resolve_process_switch_target(process_id).await;
+        if live_process.is_none() && !self.process_event_channels.contains_key(&process_id) {
+            return Ok(());
+        }
+        let replay_only = live_process.is_none();
+
+        let Some(snapshot) = self.begin_process_switch(process_id).await else {
+            return Ok(());
+        };
+        self.rebuild_chat_widget_for_process_switch(tui, live_process);
+        self.finalize_process_switch(tui, process_id, snapshot, replay_only)
+            .await
     }
 
     pub(super) fn reset_for_process_switch(&mut self, tui: &mut tui::Tui) -> Result<()> {

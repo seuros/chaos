@@ -1,4 +1,7 @@
-use super::*;
+use super::{ChatComposer, ComposerMentionBinding};
+use crate::bottom_pane::MentionBinding;
+use crate::bottom_pane::textarea::TextArea;
+use std::ops::Range;
 
 impl ChatComposer {
     pub(crate) fn mentions_enabled(&self) -> bool {

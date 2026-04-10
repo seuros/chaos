@@ -1,8 +1,11 @@
 use super::*;
+use crate::bottom_pane::footer::footer_height;
 use chaos_ipc::api::AppInfo;
 use image::ImageBuffer;
 use image::Rgba;
 use pretty_assertions::assert_eq;
+use ratatui::buffer::Buffer;
+use ratatui::layout::Rect;
 use std::path::PathBuf;
 use tempfile::tempdir;
 

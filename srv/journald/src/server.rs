@@ -25,7 +25,7 @@ pub struct JournalServerConfig {
 }
 
 impl JournalServerConfig {
-    pub fn from_codex_home(chaos_home: &Path) -> Self {
+    pub fn from_chaos_home(chaos_home: &Path) -> Self {
         Self {
             socket_path: default_socket_path_in(),
             sqlite_db_path: sqlite_db_path_in(chaos_home),
@@ -34,7 +34,7 @@ impl JournalServerConfig {
 
     pub fn discover() -> std::io::Result<Self> {
         let chaos_home = chaos_pwd::find_chaos_home()?;
-        Ok(Self::from_codex_home(chaos_home.as_path()))
+        Ok(Self::from_chaos_home(chaos_home.as_path()))
     }
 }
 

@@ -28,8 +28,8 @@ use core_test_support::responses::mount_sse_once;
 use core_test_support::responses::sse;
 use core_test_support::responses::start_mock_server;
 use core_test_support::skip_if_no_network;
-use core_test_support::test_codex::TestCodex;
-use core_test_support::test_codex::test_codex;
+use core_test_support::test_chaos::TestCodex;
+use core_test_support::test_chaos::test_chaos;
 use core_test_support::wait_for_event;
 use core_test_support::wait_for_event_match;
 use pretty_assertions::assert_eq;
@@ -40,7 +40,7 @@ async fn user_message_item_is_emitted() -> anyhow::Result<()> {
 
     let server = start_mock_server().await;
 
-    let TestCodex { codex, .. } = test_codex().build(&server).await?;
+    let TestCodex { process: chaos, .. } = test_chaos().build(&server).await?;
 
     let first_response = sse(vec![ev_response_created("resp-1"), ev_completed("resp-1")]);
     mount_sse_once(&server, first_response).await;
@@ -54,14 +54,14 @@ async fn user_message_item_is_emitted() -> anyhow::Result<()> {
         text_elements: text_elements.clone(),
     };
 
-    codex
+    chaos
         .submit(Op::UserInput {
             items: vec![expected_input.clone()],
             final_output_json_schema: None,
         })
         .await?;
 
-    let started_item = wait_for_event_match(&codex, |ev| match ev {
+    let started_item = wait_for_event_match(&chaos, |ev| match ev {
         EventMsg::ItemStarted(ItemStartedEvent {
             item: TurnItem::UserMessage(item),
             ..
@@ -69,7 +69,7 @@ async fn user_message_item_is_emitted() -> anyhow::Result<()> {
         _ => None,
     })
     .await;
-    let completed_item = wait_for_event_match(&codex, |ev| match ev {
+    let completed_item = wait_for_event_match(&chaos, |ev| match ev {
         EventMsg::ItemCompleted(ItemCompletedEvent {
             item: TurnItem::UserMessage(item),
             ..
@@ -90,7 +90,7 @@ async fn assistant_message_item_is_emitted() -> anyhow::Result<()> {
 
     let server = start_mock_server().await;
 
-    let TestCodex { codex, .. } = test_codex().build(&server).await?;
+    let TestCodex { process: chaos, .. } = test_chaos().build(&server).await?;
 
     let first_response = sse(vec![
         ev_response_created("resp-1"),
@@ -99,7 +99,7 @@ async fn assistant_message_item_is_emitted() -> anyhow::Result<()> {
     ]);
     mount_sse_once(&server, first_response).await;
 
-    codex
+    chaos
         .submit(Op::UserInput {
             items: vec![UserInput::Text {
                 text: "please summarize results".into(),
@@ -109,7 +109,7 @@ async fn assistant_message_item_is_emitted() -> anyhow::Result<()> {
         })
         .await?;
 
-    let started = wait_for_event_match(&codex, |ev| match ev {
+    let started = wait_for_event_match(&chaos, |ev| match ev {
         EventMsg::ItemStarted(ItemStartedEvent {
             item: TurnItem::AgentMessage(item),
             ..
@@ -117,7 +117,7 @@ async fn assistant_message_item_is_emitted() -> anyhow::Result<()> {
         _ => None,
     })
     .await;
-    let completed = wait_for_event_match(&codex, |ev| match ev {
+    let completed = wait_for_event_match(&chaos, |ev| match ev {
         EventMsg::ItemCompleted(ItemCompletedEvent {
             item: TurnItem::AgentMessage(item),
             ..
@@ -142,7 +142,7 @@ async fn reasoning_item_is_emitted() -> anyhow::Result<()> {
 
     let server = start_mock_server().await;
 
-    let TestCodex { codex, .. } = test_codex().build(&server).await?;
+    let TestCodex { process: chaos, .. } = test_chaos().build(&server).await?;
 
     let reasoning_item = ev_reasoning_item(
         "reasoning-1",
@@ -157,7 +157,7 @@ async fn reasoning_item_is_emitted() -> anyhow::Result<()> {
     ]);
     mount_sse_once(&server, first_response).await;
 
-    codex
+    chaos
         .submit(Op::UserInput {
             items: vec![UserInput::Text {
                 text: "explain your reasoning".into(),
@@ -167,7 +167,7 @@ async fn reasoning_item_is_emitted() -> anyhow::Result<()> {
         })
         .await?;
 
-    let started = wait_for_event_match(&codex, |ev| match ev {
+    let started = wait_for_event_match(&chaos, |ev| match ev {
         EventMsg::ItemStarted(ItemStartedEvent {
             item: TurnItem::Reasoning(item),
             ..
@@ -175,7 +175,7 @@ async fn reasoning_item_is_emitted() -> anyhow::Result<()> {
         _ => None,
     })
     .await;
-    let completed = wait_for_event_match(&codex, |ev| match ev {
+    let completed = wait_for_event_match(&chaos, |ev| match ev {
         EventMsg::ItemCompleted(ItemCompletedEvent {
             item: TurnItem::Reasoning(item),
             ..
@@ -203,7 +203,7 @@ async fn web_search_item_is_emitted() -> anyhow::Result<()> {
 
     let server = start_mock_server().await;
 
-    let TestCodex { codex, .. } = test_codex().build(&server).await?;
+    let TestCodex { process: chaos, .. } = test_chaos().build(&server).await?;
 
     let web_search_added = ev_web_search_call_added_partial("web-search-1", "in_progress");
     let web_search_done = ev_web_search_call_done("web-search-1", "completed", "weather seattle");
@@ -216,7 +216,7 @@ async fn web_search_item_is_emitted() -> anyhow::Result<()> {
     ]);
     mount_sse_once(&server, first_response).await;
 
-    codex
+    chaos
         .submit(Op::UserInput {
             items: vec![UserInput::Text {
                 text: "find the weather".into(),
@@ -226,7 +226,7 @@ async fn web_search_item_is_emitted() -> anyhow::Result<()> {
         })
         .await?;
 
-    let started = wait_for_event_match(&codex, |ev| match ev {
+    let started = wait_for_event_match(&chaos, |ev| match ev {
         EventMsg::ItemStarted(ItemStartedEvent {
             item: TurnItem::WebSearch(item),
             ..
@@ -234,7 +234,7 @@ async fn web_search_item_is_emitted() -> anyhow::Result<()> {
         _ => None,
     })
     .await;
-    let completed = wait_for_event_match(&codex, |ev| match ev {
+    let completed = wait_for_event_match(&chaos, |ev| match ev {
         EventMsg::ItemCompleted(ItemCompletedEvent {
             item: TurnItem::WebSearch(item),
             ..
@@ -262,7 +262,7 @@ async fn image_generation_call_event_is_emitted() -> anyhow::Result<()> {
 
     let server = start_mock_server().await;
 
-    let TestCodex { codex, .. } = test_codex().build(&server).await?;
+    let TestCodex { process: chaos, .. } = test_chaos().build(&server).await?;
     let call_id = "ig_image_saved_to_temp_dir_default";
     let expected_saved_path = std::env::temp_dir().join(format!("{call_id}.png"));
     let _ = std::fs::remove_file(&expected_saved_path);
@@ -274,7 +274,7 @@ async fn image_generation_call_event_is_emitted() -> anyhow::Result<()> {
     ]);
     mount_sse_once(&server, first_response).await;
 
-    codex
+    chaos
         .submit(Op::UserInput {
             items: vec![UserInput::Text {
                 text: "generate a tiny blue square".into(),
@@ -284,7 +284,7 @@ async fn image_generation_call_event_is_emitted() -> anyhow::Result<()> {
         })
         .await?;
 
-    let started = wait_for_event_match(&codex, |ev| match ev {
+    let started = wait_for_event_match(&chaos, |ev| match ev {
         EventMsg::ItemStarted(ItemStartedEvent {
             item: TurnItem::ImageGeneration(item),
             ..
@@ -292,7 +292,7 @@ async fn image_generation_call_event_is_emitted() -> anyhow::Result<()> {
         _ => None,
     })
     .await;
-    let completed = wait_for_event_match(&codex, |ev| match ev {
+    let completed = wait_for_event_match(&chaos, |ev| match ev {
         EventMsg::ItemCompleted(ItemCompletedEvent {
             item: TurnItem::ImageGeneration(item),
             ..
@@ -325,7 +325,7 @@ async fn image_generation_call_event_is_emitted_when_image_save_fails() -> anyho
 
     let server = start_mock_server().await;
 
-    let TestCodex { codex, .. } = test_codex().build(&server).await?;
+    let TestCodex { process: chaos, .. } = test_chaos().build(&server).await?;
     let expected_saved_path = std::env::temp_dir().join("ig_invalid.png");
     let _ = std::fs::remove_file(&expected_saved_path);
 
@@ -336,7 +336,7 @@ async fn image_generation_call_event_is_emitted_when_image_save_fails() -> anyho
     ]);
     mount_sse_once(&server, first_response).await;
 
-    codex
+    chaos
         .submit(Op::UserInput {
             items: vec![UserInput::Text {
                 text: "generate an image".into(),
@@ -346,7 +346,7 @@ async fn image_generation_call_event_is_emitted_when_image_save_fails() -> anyho
         })
         .await?;
 
-    let started = wait_for_event_match(&codex, |ev| match ev {
+    let started = wait_for_event_match(&chaos, |ev| match ev {
         EventMsg::ItemStarted(ItemStartedEvent {
             item: TurnItem::ImageGeneration(item),
             ..
@@ -354,7 +354,7 @@ async fn image_generation_call_event_is_emitted_when_image_save_fails() -> anyho
         _ => None,
     })
     .await;
-    let completed = wait_for_event_match(&codex, |ev| match ev {
+    let completed = wait_for_event_match(&chaos, |ev| match ev {
         EventMsg::ItemCompleted(ItemCompletedEvent {
             item: TurnItem::ImageGeneration(item),
             ..
@@ -381,10 +381,10 @@ async fn agent_message_content_delta_has_item_metadata() -> anyhow::Result<()> {
     let server = start_mock_server().await;
 
     let TestCodex {
-        codex,
+        process: chaos,
         session_configured,
         ..
-    } = test_codex().build(&server).await?;
+    } = test_chaos().build(&server).await?;
 
     let stream = sse(vec![
         ev_response_created("resp-1"),
@@ -395,7 +395,7 @@ async fn agent_message_content_delta_has_item_metadata() -> anyhow::Result<()> {
     ]);
     mount_sse_once(&server, stream).await;
 
-    codex
+    chaos
         .submit(Op::UserInput {
             items: vec![UserInput::Text {
                 text: "please stream text".into(),
@@ -405,7 +405,7 @@ async fn agent_message_content_delta_has_item_metadata() -> anyhow::Result<()> {
         })
         .await?;
 
-    let (started_turn_id, started_item) = wait_for_event_match(&codex, |ev| match ev {
+    let (started_turn_id, started_item) = wait_for_event_match(&chaos, |ev| match ev {
         EventMsg::ItemStarted(ItemStartedEvent {
             turn_id,
             item: TurnItem::AgentMessage(item),
@@ -415,12 +415,12 @@ async fn agent_message_content_delta_has_item_metadata() -> anyhow::Result<()> {
     })
     .await;
 
-    let delta_event = wait_for_event_match(&codex, |ev| match ev {
+    let delta_event = wait_for_event_match(&chaos, |ev| match ev {
         EventMsg::AgentMessageContentDelta(event) => Some(event.clone()),
         _ => None,
     })
     .await;
-    let completed_item = wait_for_event_match(&codex, |ev| match ev {
+    let completed_item = wait_for_event_match(&chaos, |ev| match ev {
         EventMsg::ItemCompleted(ItemCompletedEvent {
             item: TurnItem::AgentMessage(item),
             ..
@@ -446,10 +446,10 @@ async fn plan_mode_emits_plan_item_from_proposed_plan_block() -> anyhow::Result<
     let server = start_mock_server().await;
 
     let TestCodex {
-        codex,
+        process: chaos,
         session_configured,
         ..
-    } = test_codex().build(&server).await?;
+    } = test_chaos().build(&server).await?;
 
     let plan_block = "<proposed_plan>\n- Step 1\n- Step 2\n</proposed_plan>\n";
     let full_message = format!("Intro\n{plan_block}Outro");
@@ -471,7 +471,7 @@ async fn plan_mode_emits_plan_item_from_proposed_plan_block() -> anyhow::Result<
         },
     };
 
-    codex
+    chaos
         .submit(Op::UserTurn {
             items: vec![UserInput::Text {
                 text: "please plan".into(),
@@ -490,13 +490,13 @@ async fn plan_mode_emits_plan_item_from_proposed_plan_block() -> anyhow::Result<
         })
         .await?;
 
-    let plan_delta = wait_for_event_match(&codex, |ev| match ev {
+    let plan_delta = wait_for_event_match(&chaos, |ev| match ev {
         EventMsg::PlanDelta(event) => Some(event.clone()),
         _ => None,
     })
     .await;
 
-    let plan_completed = wait_for_event_match(&codex, |ev| match ev {
+    let plan_completed = wait_for_event_match(&chaos, |ev| match ev {
         EventMsg::ItemCompleted(ItemCompletedEvent {
             item: TurnItem::Plan(item),
             ..
@@ -522,10 +522,10 @@ async fn plan_mode_strips_plan_from_agent_messages() -> anyhow::Result<()> {
     let server = start_mock_server().await;
 
     let TestCodex {
-        codex,
+        process: chaos,
         session_configured,
         ..
-    } = test_codex().build(&server).await?;
+    } = test_chaos().build(&server).await?;
 
     let plan_block = "<proposed_plan>\n- Step 1\n- Step 2\n</proposed_plan>\n";
     let full_message = format!("Intro\n{plan_block}Outro");
@@ -547,7 +547,7 @@ async fn plan_mode_strips_plan_from_agent_messages() -> anyhow::Result<()> {
         },
     };
 
-    codex
+    chaos
         .submit(Op::UserTurn {
             items: vec![UserInput::Text {
                 text: "please plan".into(),
@@ -572,7 +572,7 @@ async fn plan_mode_strips_plan_from_agent_messages() -> anyhow::Result<()> {
     let mut plan_item = None;
 
     while plan_delta.is_none() || agent_item.is_none() || plan_item.is_none() {
-        let ev = wait_for_event(&codex, |_| true).await;
+        let ev = wait_for_event(&chaos, |_| true).await;
         match ev {
             EventMsg::AgentMessageContentDelta(event) => {
                 agent_deltas.push(event.delta);
@@ -621,10 +621,10 @@ async fn plan_mode_streaming_citations_are_stripped_across_added_deltas_and_done
     let server = start_mock_server().await;
 
     let TestCodex {
-        codex,
+        process: chaos,
         session_configured,
         ..
-    } = test_codex().build(&server).await?;
+    } = test_chaos().build(&server).await?;
 
     let added_text = "Intro <oai-mem-";
     let deltas = [
@@ -655,7 +655,7 @@ async fn plan_mode_streaming_citations_are_stripped_across_added_deltas_and_done
         },
     };
 
-    codex
+    chaos
         .submit(Op::UserTurn {
             items: vec![UserInput::Text {
                 text: "please plan with citations".into(),
@@ -691,7 +691,7 @@ async fn plan_mode_streaming_citations_are_stripped_across_added_deltas_and_done
     let mut idx = 0usize;
 
     let turn_complete_idx = loop {
-        let ev = wait_for_event(&codex, |_| true).await;
+        let ev = wait_for_event(&chaos, |_| true).await;
         match ev {
             EventMsg::ItemStarted(ItemStartedEvent {
                 item: TurnItem::AgentMessage(item),
@@ -812,10 +812,10 @@ async fn plan_mode_streaming_proposed_plan_tag_split_across_added_and_delta_is_p
     let server = start_mock_server().await;
 
     let TestCodex {
-        codex,
+        process: chaos,
         session_configured,
         ..
-    } = test_codex().build(&server).await?;
+    } = test_chaos().build(&server).await?;
 
     let added_text = "Intro\n<proposed";
     let deltas = ["_plan>\n- Step 1\n</proposed_plan>\nOutro"];
@@ -841,7 +841,7 @@ async fn plan_mode_streaming_proposed_plan_tag_split_across_added_and_delta_is_p
         },
     };
 
-    codex
+    chaos
         .submit(Op::UserTurn {
             items: vec![UserInput::Text {
                 text: "please plan".into(),
@@ -868,7 +868,7 @@ async fn plan_mode_streaming_proposed_plan_tag_split_across_added_and_delta_is_p
     let mut plan_deltas = Vec::new();
 
     loop {
-        let ev = wait_for_event(&codex, |_| true).await;
+        let ev = wait_for_event(&chaos, |_| true).await;
         match ev {
             EventMsg::ItemStarted(ItemStartedEvent {
                 item: TurnItem::AgentMessage(item),
@@ -930,10 +930,10 @@ async fn plan_mode_handles_missing_plan_close_tag() -> anyhow::Result<()> {
     let server = start_mock_server().await;
 
     let TestCodex {
-        codex,
+        process: chaos,
         session_configured,
         ..
-    } = test_codex().build(&server).await?;
+    } = test_chaos().build(&server).await?;
 
     let full_message = "Intro\n<proposed_plan>\n- Step 1\n";
     let stream = sse(vec![
@@ -954,7 +954,7 @@ async fn plan_mode_handles_missing_plan_close_tag() -> anyhow::Result<()> {
         },
     };
 
-    codex
+    chaos
         .submit(Op::UserTurn {
             items: vec![UserInput::Text {
                 text: "please plan".into(),
@@ -978,7 +978,7 @@ async fn plan_mode_handles_missing_plan_close_tag() -> anyhow::Result<()> {
     let mut agent_item = None;
 
     while plan_delta.is_none() || plan_item.is_none() || agent_item.is_none() {
-        let ev = wait_for_event(&codex, |_| true).await;
+        let ev = wait_for_event(&chaos, |_| true).await;
         match ev {
             EventMsg::PlanDelta(event) => {
                 plan_delta = Some(event.delta);
@@ -1020,7 +1020,7 @@ async fn reasoning_content_delta_has_item_metadata() -> anyhow::Result<()> {
 
     let server = start_mock_server().await;
 
-    let TestCodex { codex, .. } = test_codex().build(&server).await?;
+    let TestCodex { process: chaos, .. } = test_chaos().build(&server).await?;
 
     let stream = sse(vec![
         ev_response_created("resp-1"),
@@ -1031,7 +1031,7 @@ async fn reasoning_content_delta_has_item_metadata() -> anyhow::Result<()> {
     ]);
     mount_sse_once(&server, stream).await;
 
-    codex
+    chaos
         .submit(Op::UserInput {
             items: vec![UserInput::Text {
                 text: "reason through it".into(),
@@ -1041,7 +1041,7 @@ async fn reasoning_content_delta_has_item_metadata() -> anyhow::Result<()> {
         })
         .await?;
 
-    let reasoning_item = wait_for_event_match(&codex, |ev| match ev {
+    let reasoning_item = wait_for_event_match(&chaos, |ev| match ev {
         EventMsg::ItemStarted(ItemStartedEvent {
             item: TurnItem::Reasoning(item),
             ..
@@ -1050,7 +1050,7 @@ async fn reasoning_content_delta_has_item_metadata() -> anyhow::Result<()> {
     })
     .await;
 
-    let delta_event = wait_for_event_match(&codex, |ev| match ev {
+    let delta_event = wait_for_event_match(&chaos, |ev| match ev {
         EventMsg::ReasoningContentDelta(event) => Some(event.clone()),
         _ => None,
     })
@@ -1067,7 +1067,7 @@ async fn reasoning_raw_content_delta_respects_flag() -> anyhow::Result<()> {
 
     let server = start_mock_server().await;
 
-    let TestCodex { codex, .. } = test_codex()
+    let TestCodex { process: chaos, .. } = test_chaos()
         .with_config(|config| {
             config.show_raw_agent_reasoning = true;
         })
@@ -1083,7 +1083,7 @@ async fn reasoning_raw_content_delta_respects_flag() -> anyhow::Result<()> {
     ]);
     mount_sse_once(&server, stream).await;
 
-    codex
+    chaos
         .submit(Op::UserInput {
             items: vec![UserInput::Text {
                 text: "show raw reasoning".into(),
@@ -1093,7 +1093,7 @@ async fn reasoning_raw_content_delta_respects_flag() -> anyhow::Result<()> {
         })
         .await?;
 
-    let reasoning_item = wait_for_event_match(&codex, |ev| match ev {
+    let reasoning_item = wait_for_event_match(&chaos, |ev| match ev {
         EventMsg::ItemStarted(ItemStartedEvent {
             item: TurnItem::Reasoning(item),
             ..
@@ -1102,7 +1102,7 @@ async fn reasoning_raw_content_delta_respects_flag() -> anyhow::Result<()> {
     })
     .await;
 
-    let delta_event = wait_for_event_match(&codex, |ev| match ev {
+    let delta_event = wait_for_event_match(&chaos, |ev| match ev {
         EventMsg::ReasoningRawContentDelta(event) => Some(event.clone()),
         _ => None,
     })

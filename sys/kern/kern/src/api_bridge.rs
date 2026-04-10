@@ -142,7 +142,7 @@ pub(crate) fn abi_error_to_api_error(err: AbiError) -> ApiError {
     }
 }
 
-const ACTIVE_LIMIT_HEADER: &str = "x-codex-active-limit";
+const ACTIVE_LIMIT_HEADER: &str = "x-chaos-active-limit";
 const REQUEST_ID_HEADER: &str = "x-request-id";
 const OAI_REQUEST_ID_HEADER: &str = "x-oai-request-id";
 const CF_RAY_HEADER: &str = "cf-ray";

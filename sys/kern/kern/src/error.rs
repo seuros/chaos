@@ -6,7 +6,7 @@ use crate::truncate::TruncationPolicy;
 use crate::truncate::truncate_text;
 use chaos_epoll::CancelErr;
 use chaos_ipc::ProcessId;
-use chaos_ipc::protocol::CodexErrorInfo;
+use chaos_ipc::protocol::ChaosErrorInfo;
 use chaos_ipc::protocol::ErrorEvent;
 use chaos_ipc::protocol::RateLimitSnapshot;
 use http::StatusCode;
@@ -72,7 +72,7 @@ pub enum ChaosErr {
     Stream(String, Option<Duration>),
 
     #[error(
-        "Codex ran out of room in the model's context window. Start a new thread or clear earlier history before retrying."
+        "Chaos ran out of room in the model's context window. Start a new thread or clear earlier history before retrying."
     )]
     ContextWindowExceeded,
 
@@ -90,7 +90,7 @@ pub enum ChaosErr {
     Timeout,
 
     /// Returned by run_command_stream when the child could not be spawned (its stdout/stderr pipes
-    /// could not be captured). Analogous to the previous `CodexError::Spawn` variant.
+    /// could not be captured). Analogous to the previous `ChaosError::Spawn` variant.
     #[error("spawn failed: child stdout/stderr not captured")]
     Spawn,
 
@@ -127,7 +127,7 @@ pub enum ChaosErr {
     QuotaExceeded,
 
     #[error(
-        "To use Codex with your ChatGPT plan, upgrade to Plus: https://chatgpt.com/explore/plus."
+        "To use Chaos with your ChatGPT plan, upgrade to Plus: https://chatgpt.com/explore/plus."
     )]
     UsageNotIncluded,
 
@@ -466,7 +466,7 @@ impl std::fmt::Display for UsageLimitReachedError {
             }
             Some(PlanType::Known(KnownPlan::Free)) | Some(PlanType::Known(KnownPlan::Go)) => {
                 format!(
-                    "You've hit your usage limit. Upgrade to Plus to continue using Codex (https://chatgpt.com/explore/plus),{}",
+                    "You've hit your usage limit. Upgrade to Plus to continue using Chaos (https://chatgpt.com/explore/plus),{}",
                     retry_suffix_after_or(self.resets_at.as_ref())
                 )
             }
@@ -577,31 +577,31 @@ impl ChaosErr {
     }
 
     /// Translate core error to client-facing protocol error.
-    pub fn to_chaos_ipc_error(&self) -> CodexErrorInfo {
+    pub fn to_chaos_ipc_error(&self) -> ChaosErrorInfo {
         match self {
-            ChaosErr::ContextWindowExceeded => CodexErrorInfo::ContextWindowExceeded,
+            ChaosErr::ContextWindowExceeded => ChaosErrorInfo::ContextWindowExceeded,
             ChaosErr::UsageLimitReached(_)
             | ChaosErr::QuotaExceeded
-            | ChaosErr::UsageNotIncluded => CodexErrorInfo::UsageLimitExceeded,
-            ChaosErr::ServerOverloaded => CodexErrorInfo::ServerOverloaded,
-            ChaosErr::RetryLimit(_) => CodexErrorInfo::ResponseTooManyFailedAttempts {
+            | ChaosErr::UsageNotIncluded => ChaosErrorInfo::UsageLimitExceeded,
+            ChaosErr::ServerOverloaded => ChaosErrorInfo::ServerOverloaded,
+            ChaosErr::RetryLimit(_) => ChaosErrorInfo::ResponseTooManyFailedAttempts {
                 http_status_code: self.http_status_code_value(),
             },
-            ChaosErr::ConnectionFailed(_) => CodexErrorInfo::HttpConnectionFailed {
+            ChaosErr::ConnectionFailed(_) => ChaosErrorInfo::HttpConnectionFailed {
                 http_status_code: self.http_status_code_value(),
             },
-            ChaosErr::ResponseStreamFailed(_) => CodexErrorInfo::ResponseStreamConnectionFailed {
+            ChaosErr::ResponseStreamFailed(_) => ChaosErrorInfo::ResponseStreamConnectionFailed {
                 http_status_code: self.http_status_code_value(),
             },
-            ChaosErr::RefreshTokenFailed(_) => CodexErrorInfo::Unauthorized,
+            ChaosErr::RefreshTokenFailed(_) => ChaosErrorInfo::Unauthorized,
             ChaosErr::SessionConfiguredNotFirstEvent
             | ChaosErr::InternalServerError
-            | ChaosErr::InternalAgentDied => CodexErrorInfo::InternalServerError,
+            | ChaosErr::InternalAgentDied => ChaosErrorInfo::InternalServerError,
             ChaosErr::UnsupportedOperation(_)
             | ChaosErr::ProcessNotFound(_)
-            | ChaosErr::AgentLimitReached { .. } => CodexErrorInfo::BadRequest,
-            ChaosErr::Sandbox(_) => CodexErrorInfo::SandboxError,
-            _ => CodexErrorInfo::Other,
+            | ChaosErr::AgentLimitReached { .. } => ChaosErrorInfo::BadRequest,
+            ChaosErr::Sandbox(_) => ChaosErrorInfo::SandboxError,
+            _ => ChaosErrorInfo::Other,
         }
     }
 
@@ -613,7 +613,7 @@ impl ChaosErr {
         };
         ErrorEvent {
             message,
-            codex_error_info: Some(self.to_chaos_ipc_error()),
+            chaos_error_info: Some(self.to_chaos_ipc_error()),
         }
     }
 

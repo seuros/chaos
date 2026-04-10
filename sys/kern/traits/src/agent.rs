@@ -1,5 +1,5 @@
 //! Agent spawning trait — allows satellite crates to spawn sub-agents without depending on the
-//! concrete AgentControl or Codex types.
+//! concrete AgentControl or Chaos types.
 
 use chaos_ipc::ProcessId;
 use std::future::Future;

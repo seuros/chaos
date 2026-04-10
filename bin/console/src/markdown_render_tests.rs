@@ -710,10 +710,10 @@ fn file_link_appends_line_number_when_label_lacks_it() {
 #[test]
 fn file_link_keeps_absolute_paths_outside_cwd() {
     let text = render_markdown_text_for_cwd(
-        "[README.md:74](/Users/example/code/codex/README.md:74)",
+        "[README.md:74](/Users/example/code/chaos/README.md:74)",
         Path::new("/Users/example/code/chaos/chaos/tui"),
     );
-    let expected = Text::from(Line::from_iter([accent("/Users/example/code/codex/README.md:74")]));
+    let expected = Text::from(Line::from_iter([accent("/Users/example/code/chaos/README.md:74")]));
     assert_eq!(text, expected);
 }
 

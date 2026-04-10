@@ -150,7 +150,7 @@ fn import_home_migrates_supported_config_fields_skills_and_agents_md() {
 
     assert_eq!(
         fs::read_to_string(chaos_home.join("AGENTS.md")).expect("read agents"),
-        "Codex guidance"
+        "Chaos guidance"
     );
 
     assert_eq!(
@@ -160,7 +160,7 @@ fn import_home_migrates_supported_config_fields_skills_and_agents_md() {
     assert_eq!(
         fs::read_to_string(agents_skills.join("skill-a").join("SKILL.md"))
             .expect("read copied skill"),
-        "Use Codex and Codex utilities."
+        "Use Chaos and Chaos utilities."
     );
 }
 
@@ -275,7 +275,7 @@ fn import_repo_agents_md_rewrites_terms_and_skips_non_empty_targets() {
 
     assert_eq!(
         fs::read_to_string(repo_root.join("AGENTS.md")).expect("read target"),
-        "Codex\nCodex\nCodex\nSee AGENTS.md\n"
+        "Chaos\nCodex\nCodex\nSee AGENTS.md\n"
     );
     assert_eq!(
         fs::read_to_string(repo_with_existing_target.join("AGENTS.md"))
@@ -302,7 +302,7 @@ fn import_repo_agents_md_overwrites_empty_targets() {
 
     assert_eq!(
         fs::read_to_string(repo_root.join("AGENTS.md")).expect("read target"),
-        "Codex guidance"
+        "Chaos guidance"
     );
 }
 
@@ -363,7 +363,7 @@ fn import_repo_uses_non_empty_dot_claude_agents_source() {
 
     assert_eq!(
         fs::read_to_string(repo_root.join("AGENTS.md")).expect("read target"),
-        "Codex guidance"
+        "Chaos guidance"
     );
 }
 

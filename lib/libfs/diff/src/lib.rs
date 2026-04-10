@@ -25,14 +25,14 @@ use crate::invocation::ExtractHeredocError;
 /// Detailed instructions for gpt-4.1 on how to use the `apply_patch` tool.
 pub const APPLY_PATCH_TOOL_INSTRUCTIONS: &str = include_str!("../apply_patch_tool_instructions.md");
 
-/// Special argv[1] flag used when the Codex executable self-invokes to run the
+/// Special argv[1] flag used when the Chaos executable self-invokes to run the
 /// internal `apply_patch` path.
 ///
-/// Although this constant lives in `codex-apply-patch` (to avoid forcing
-/// `codex-arg0` to depend on `chaos-kern`), it is part of the "Chaos core"
+/// Although this constant lives in `chaos-apply-patch` (to avoid forcing
+/// `chaos-arg0` to depend on `chaos-kern`), it is part of the "Chaos core"
 /// process-invocation contract between the apply-patch runtime and the arg0
 /// dispatcher.
-pub const CODEX_CORE_APPLY_PATCH_ARG1: &str = "--codex-run-as-apply-patch";
+pub const CHAOS_CORE_APPLY_PATCH_ARG1: &str = "--chaos-run-as-apply-patch";
 
 #[derive(Debug, Error, PartialEq)]
 pub enum ApplyPatchError {

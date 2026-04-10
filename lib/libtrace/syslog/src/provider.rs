@@ -448,7 +448,7 @@ mod tests {
     fn test_otel_settings() -> OtelSettings {
         OtelSettings {
             environment: "test".to_string(),
-            service_name: "codex-test".to_string(),
+            service_name: "chaos-test".to_string(),
             service_version: "0.0.0".to_string(),
             chaos_home: PathBuf::from("."),
             exporter: OtelExporter::None,

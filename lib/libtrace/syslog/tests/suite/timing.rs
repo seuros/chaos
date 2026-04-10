@@ -26,7 +26,7 @@ fn record_duration_records_histogram() -> Result<()> {
     assert_eq!(sum, 15.0);
     assert_eq!(count, 1);
     let metric = crate::harness::find_metric(&resource_metrics, "chaos.request_latency")
-        .unwrap_or_else(|| panic!("metric codex.request_latency missing"));
+        .unwrap_or_else(|| panic!("metric chaos.request_latency missing"));
     assert_eq!(metric.unit(), "ms");
     assert_eq!(metric.description(), "Duration in milliseconds.");
 
@@ -52,7 +52,7 @@ fn timer_result_records_success() -> Result<()> {
     assert_eq!(count, 1);
     assert_eq!(bucket_counts.iter().sum::<u64>(), 1);
     let metric = crate::harness::find_metric(&resource_metrics, "chaos.request_latency")
-        .unwrap_or_else(|| panic!("metric codex.request_latency missing"));
+        .unwrap_or_else(|| panic!("metric chaos.request_latency missing"));
     assert_eq!(metric.unit(), "ms");
     assert_eq!(metric.description(), "Duration in milliseconds.");
     let attrs = attributes_to_map(

@@ -8,8 +8,8 @@ use chaos_ipc::protocol::SandboxPolicy;
 use chaos_ipc::user_input::UserInput;
 use core_test_support::responses;
 use core_test_support::skip_if_no_network;
-use core_test_support::test_codex::TestCodex;
-use core_test_support::test_codex::test_codex;
+use core_test_support::test_chaos::TestCodex;
+use core_test_support::test_chaos::test_chaos;
 use core_test_support::wait_for_event_match;
 use pretty_assertions::assert_eq;
 use responses::ev_assistant_message;
@@ -69,10 +69,14 @@ async fn codex_returns_json_result(model: String) -> anyhow::Result<()> {
     };
     responses::mount_sse_once_match(&server, match_json_text_param, sse1).await;
 
-    let TestCodex { codex, cwd, .. } = test_codex().build(&server).await?;
+    let TestCodex {
+        process: chaos,
+        cwd,
+        ..
+    } = test_chaos().build(&server).await?;
 
     // 1) Normal user input – should hit server once.
-    codex
+    chaos
         .submit(Op::UserTurn {
             items: vec![UserInput::Text {
                 text: "hello world".into(),
@@ -91,7 +95,7 @@ async fn codex_returns_json_result(model: String) -> anyhow::Result<()> {
         })
         .await?;
 
-    let message = wait_for_event_match(&codex, |ev| match ev {
+    let message = wait_for_event_match(&chaos, |ev| match ev {
         EventMsg::ItemCompleted(ItemCompletedEvent {
             item: TurnItem::AgentMessage(item),
             ..

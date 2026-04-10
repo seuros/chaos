@@ -63,7 +63,7 @@ pub struct Cli {
     #[clap(long = "cd", short = 'C', value_name = "DIR")]
     pub cwd: Option<PathBuf>,
 
-    /// Allow running Codex outside a Git repository.
+    /// Allow running Chaos outside a Git repository.
     #[arg(long = "skip-git-repo-check", global = true, default_value_t = false)]
     pub skip_git_repo_check: bool,
 
@@ -267,7 +267,7 @@ mod tests {
     fn resume_parses_prompt_after_global_flags() {
         const PROMPT: &str = "echo resume-with-global-flags-after-subcommand";
         let cli = Cli::parse_from([
-            "codex-exec",
+            "chaos-exec",
             "resume",
             "--last",
             "--json",
@@ -297,7 +297,7 @@ mod tests {
     fn resume_accepts_output_last_message_flag_after_subcommand() {
         const PROMPT: &str = "echo resume-with-output-file";
         let cli = Cli::parse_from([
-            "codex-exec",
+            "chaos-exec",
             "resume",
             "session-123",
             "-o",

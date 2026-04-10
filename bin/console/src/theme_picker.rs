@@ -320,7 +320,7 @@ pub(crate) fn build_theme_picker_params(
     let original_theme = highlight::current_syntax_theme();
 
     let entries = highlight::list_available_themes(chaos_home);
-    let codex_home_owned = chaos_home.map(Path::to_path_buf);
+    let chaos_home_owned = chaos_home.map(Path::to_path_buf);
 
     // Resolve the effective theme name: honor explicit config only when it is
     // currently available; otherwise fall back to configured/default selection
@@ -369,7 +369,7 @@ pub(crate) fn build_theme_picker_params(
     // so preview ordering stays aligned if item construction/sorting changes.
     let preview_theme_names: Vec<Option<String>> =
         items.iter().map(|item| item.search_value.clone()).collect();
-    let preview_home = codex_home_owned.clone();
+    let preview_home = chaos_home_owned.clone();
     let on_selection_changed = Some(Box::new(move |idx: usize, _tx: &_| {
         if let Some(Some(name)) = preview_theme_names.get(idx)
             && let Some(theme) = highlight::resolve_theme_by_name(name, preview_home.as_deref())
@@ -387,7 +387,7 @@ pub(crate) fn build_theme_picker_params(
     SelectionViewParams {
         title: Some("Select Syntax Theme".to_string()),
         subtitle: Some(theme_picker_subtitle(
-            codex_home_owned.as_deref(),
+            chaos_home_owned.as_deref(),
             terminal_width,
         )),
         footer_hint: Some(standard_popup_hint_line()),

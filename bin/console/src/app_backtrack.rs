@@ -35,7 +35,7 @@ use crate::pager_overlay::Overlay;
 use crate::tui;
 use crate::tui::TuiEvent;
 use chaos_ipc::ProcessId;
-use chaos_ipc::protocol::CodexErrorInfo;
+use chaos_ipc::protocol::ChaosErrorInfo;
 use chaos_ipc::protocol::ErrorEvent;
 use chaos_ipc::protocol::EventMsg;
 use chaos_ipc::protocol::Op;
@@ -527,7 +527,7 @@ impl App {
                 }
             }
             EventMsg::Error(ErrorEvent {
-                codex_error_info: Some(CodexErrorInfo::ProcessRollbackFailed),
+                chaos_error_info: Some(ChaosErrorInfo::ProcessRollbackFailed),
                 ..
             }) => {
                 // Core rejected the rollback; clear the guard so the user can retry.

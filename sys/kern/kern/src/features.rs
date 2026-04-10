@@ -1,10 +1,10 @@
 //! Centralized feature flags and metadata.
 //!
-//! Type definitions and the feature registry live in `codex-config::features`.
+//! Type definitions and the feature registry live in `chaos-config::features`.
 //! This module re-exports them and adds runtime functions that depend on
 //! `Config`, `ConfigToml`, or telemetry.
 
-// Re-export all pure type definitions from codex-config.
+// Re-export all pure type definitions from chaos-config.
 pub use chaos_sysctl::features::*;
 
 use crate::config::ConfigToml;

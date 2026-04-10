@@ -2,7 +2,7 @@ use chaos_ipc::openai_models::ReasoningEffort;
 use chaos_ipc::protocol::EventMsg;
 use chaos_ipc::protocol::Op;
 use core_test_support::responses::start_mock_server;
-use core_test_support::test_codex::test_codex;
+use core_test_support::test_chaos::test_chaos;
 use core_test_support::wait_for_event;
 use pretty_assertions::assert_eq;
 
@@ -12,7 +12,7 @@ const CONFIG_TOML: &str = "config.toml";
 async fn override_turn_context_does_not_persist_when_config_exists() {
     let server = start_mock_server().await;
     let initial_contents = "model = \"gpt-4o\"\n";
-    let mut builder = test_codex()
+    let mut builder = test_chaos()
         .with_pre_build_hook(move |home| {
             let config_path = home.join(CONFIG_TOML);
             std::fs::write(config_path, initial_contents).expect("seed config.toml");
@@ -21,10 +21,10 @@ async fn override_turn_context_does_not_persist_when_config_exists() {
             config.model = Some("gpt-4o".to_string());
         });
     let test = builder.build(&server).await.expect("create conversation");
-    let codex = test.codex.clone();
+    let chaos = test.process.clone();
     let config_path = test.home.path().join(CONFIG_TOML);
 
-    codex
+    chaos
         .submit(Op::OverrideTurnContext {
             cwd: None,
             approval_policy: None,
@@ -41,8 +41,8 @@ async fn override_turn_context_does_not_persist_when_config_exists() {
         .await
         .expect("submit override");
 
-    codex.submit(Op::Shutdown).await.expect("request shutdown");
-    wait_for_event(&codex, |ev| matches!(ev, EventMsg::ShutdownComplete)).await;
+    chaos.submit(Op::Shutdown).await.expect("request shutdown");
+    wait_for_event(&chaos, |ev| matches!(ev, EventMsg::ShutdownComplete)).await;
 
     let contents = tokio::fs::read_to_string(&config_path)
         .await
@@ -53,16 +53,16 @@ async fn override_turn_context_does_not_persist_when_config_exists() {
 #[tokio::test(flavor = "multi_thread", worker_threads = 2)]
 async fn override_turn_context_does_not_create_config_file() {
     let server = start_mock_server().await;
-    let mut builder = test_codex();
+    let mut builder = test_chaos();
     let test = builder.build(&server).await.expect("create conversation");
-    let codex = test.codex.clone();
+    let chaos = test.process.clone();
     let config_path = test.home.path().join(CONFIG_TOML);
     assert!(
         !config_path.exists(),
         "test setup should start without config"
     );
 
-    codex
+    chaos
         .submit(Op::OverrideTurnContext {
             cwd: None,
             approval_policy: None,
@@ -79,8 +79,8 @@ async fn override_turn_context_does_not_create_config_file() {
         .await
         .expect("submit override");
 
-    codex.submit(Op::Shutdown).await.expect("request shutdown");
-    wait_for_event(&codex, |ev| matches!(ev, EventMsg::ShutdownComplete)).await;
+    chaos.submit(Op::Shutdown).await.expect("request shutdown");
+    wait_for_event(&chaos, |ev| matches!(ev, EventMsg::ShutdownComplete)).await;
 
     assert!(
         !config_path.exists(),

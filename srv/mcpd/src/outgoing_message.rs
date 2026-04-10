@@ -24,7 +24,7 @@ pub(crate) type OutgoingJsonRpcMessage = JsonRpcMessage;
 
 /// Routes outgoing messages to the MCP client.
 ///
-/// Notifications (e.g. `codex/event`) are sent via the mcp-host notification
+/// Notifications (e.g. `chaos/event`) are sent via the mcp-host notification
 /// channel. Server→client requests (e.g. `elicitation/create` per MCP spec
 /// §Elicitation) go through [`ClientRequester::request_raw`] so that mcp-host's
 /// multiplexer can match responses back to their pending calls.
@@ -130,7 +130,7 @@ impl OutgoingMessageSender {
         self.client_elicitation_modes.load(Ordering::Relaxed) & 0b10 != 0
     }
 
-    /// Encode a Chaos event as a `codex/event` MCP notification and enqueue it.
+    /// Encode a Chaos event as a `chaos/event` MCP notification and enqueue it.
     pub(crate) async fn send_event_as_notification(
         &self,
         event: &Event,
@@ -197,7 +197,7 @@ pub(crate) struct OutgoingNotification {
     pub params: Option<serde_json::Value>,
 }
 
-/// Params envelope for `codex/event` notifications. The `_meta` field follows
+/// Params envelope for `chaos/event` notifications. The `_meta` field follows
 /// the MCP spec's general extension mechanism.
 #[derive(Debug, Clone, PartialEq, Serialize)]
 pub(crate) struct OutgoingNotificationParams {

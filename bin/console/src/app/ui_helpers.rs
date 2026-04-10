@@ -83,7 +83,7 @@ impl App {
         model: &str,
         reasoning_effort: Option<ReasoningEffortConfig>,
     ) -> Option<&'static str> {
-        (!model.starts_with("codex-auto-")).then(|| Self::reasoning_label(reasoning_effort))
+        (!model.starts_with("chaos-auto-")).then(|| Self::reasoning_label(reasoning_effort))
     }
 
     pub(crate) fn token_usage(&self) -> chaos_ipc::protocol::TokenUsage {

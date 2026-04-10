@@ -20,7 +20,7 @@ use core_test_support::responses::mount_models_once;
 use core_test_support::responses::mount_sse_once;
 use core_test_support::responses::sse;
 use core_test_support::responses::start_mock_server;
-use core_test_support::test_codex::test_codex;
+use core_test_support::test_chaos::test_chaos;
 use serde_json::Value;
 use std::sync::Arc;
 use std::time::Duration;
@@ -143,7 +143,7 @@ async fn spawn_agent_description_lists_visible_models_and_reasoning_efforts() ->
     )
     .await;
 
-    let mut builder = test_codex()
+    let mut builder = test_chaos()
         .with_auth(ChaosAuth::create_dummy_chatgpt_auth_for_testing())
         .with_model("visible-model");
     let test = builder.build(&server).await?;

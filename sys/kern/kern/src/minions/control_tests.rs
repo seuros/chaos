@@ -122,7 +122,7 @@ async fn wait_for_subagent_notification(parent_thread: &Arc<Process>) -> bool {
     let wait = async {
         loop {
             let history_items = parent_thread
-                .codex
+                .chaos
                 .session
                 .clone_history()
                 .await
@@ -187,7 +187,7 @@ async fn on_event_updates_status_from_task_complete() {
 async fn on_event_updates_status_from_error() {
     let status = agent_status_from_event(&EventMsg::Error(ErrorEvent {
         message: "boom".to_string(),
-        codex_error_info: None,
+        chaos_error_info: None,
     }));
 
     let expected = AgentStatus::Errored("boom".to_string());
@@ -377,7 +377,7 @@ async fn spawn_agent_can_fork_parent_thread_history() {
     parent_thread
         .inject_user_message_without_turn("parent seed context".to_string())
         .await;
-    let turn_context = parent_thread.codex.session.new_default_turn().await;
+    let turn_context = parent_thread.chaos.session.new_default_turn().await;
     let parent_spawn_call_id = "spawn-call-history".to_string();
     let parent_spawn_call = ResponseItem::FunctionCall {
         id: None,
@@ -387,16 +387,16 @@ async fn spawn_agent_can_fork_parent_thread_history() {
         call_id: parent_spawn_call_id.clone(),
     };
     parent_thread
-        .codex
+        .chaos
         .session
         .record_conversation_items(turn_context.as_ref(), &[parent_spawn_call])
         .await;
     parent_thread
-        .codex
+        .chaos
         .session
         .ensure_rollout_materialized()
         .await;
-    parent_thread.codex.session.flush_rollout().await;
+    parent_thread.chaos.session.flush_rollout().await;
 
     let child_process_id = harness
         .control
@@ -422,7 +422,7 @@ async fn spawn_agent_can_fork_parent_thread_history() {
         .await
         .expect("child thread should be registered");
     assert_ne!(child_process_id, parent_process_id);
-    let history = child_thread.codex.session.clone_history().await;
+    let history = child_thread.chaos.session.clone_history().await;
     assert!(history_contains_text(
         history.raw_items(),
         "parent seed context"
@@ -460,7 +460,7 @@ async fn spawn_agent_can_fork_parent_thread_history() {
 async fn spawn_agent_fork_injects_output_for_parent_spawn_call() {
     let harness = AgentControlHarness::new().await;
     let (parent_process_id, parent_thread) = harness.start_process().await;
-    let turn_context = parent_thread.codex.session.new_default_turn().await;
+    let turn_context = parent_thread.chaos.session.new_default_turn().await;
     let parent_spawn_call_id = "spawn-call-1".to_string();
     let parent_spawn_call = ResponseItem::FunctionCall {
         id: None,
@@ -470,16 +470,16 @@ async fn spawn_agent_fork_injects_output_for_parent_spawn_call() {
         call_id: parent_spawn_call_id.clone(),
     };
     parent_thread
-        .codex
+        .chaos
         .session
         .record_conversation_items(turn_context.as_ref(), &[parent_spawn_call])
         .await;
     parent_thread
-        .codex
+        .chaos
         .session
         .ensure_rollout_materialized()
         .await;
-    parent_thread.codex.session.flush_rollout().await;
+    parent_thread.chaos.session.flush_rollout().await;
 
     let child_process_id = harness
         .control
@@ -504,7 +504,7 @@ async fn spawn_agent_fork_injects_output_for_parent_spawn_call() {
         .get_process(child_process_id)
         .await
         .expect("child thread should be registered");
-    let history = child_thread.codex.session.clone_history().await;
+    let history = child_thread.chaos.session.clone_history().await;
     let injected_output = history.raw_items().iter().find_map(|item| match item {
         ResponseItem::FunctionCallOutput {
             call_id, output, ..
@@ -534,7 +534,7 @@ async fn spawn_agent_fork_injects_output_for_parent_spawn_call() {
 async fn spawn_agent_fork_flushes_parent_rollout_before_loading_history() {
     let harness = AgentControlHarness::new().await;
     let (parent_process_id, parent_thread) = harness.start_process().await;
-    let turn_context = parent_thread.codex.session.new_default_turn().await;
+    let turn_context = parent_thread.chaos.session.new_default_turn().await;
     let parent_spawn_call_id = "spawn-call-unflushed".to_string();
     let parent_spawn_call = ResponseItem::FunctionCall {
         id: None,
@@ -544,7 +544,7 @@ async fn spawn_agent_fork_flushes_parent_rollout_before_loading_history() {
         call_id: parent_spawn_call_id.clone(),
     };
     parent_thread
-        .codex
+        .chaos
         .session
         .record_conversation_items(turn_context.as_ref(), &[parent_spawn_call])
         .await;
@@ -572,7 +572,7 @@ async fn spawn_agent_fork_flushes_parent_rollout_before_loading_history() {
         .get_process(child_process_id)
         .await
         .expect("child thread should be registered");
-    let history = child_thread.codex.session.clone_history().await;
+    let history = child_thread.chaos.session.clone_history().await;
 
     let mut parent_call_index = None;
     let mut injected_output_index = None;
@@ -849,7 +849,7 @@ async fn completion_watcher_notifies_parent_when_child_is_missing() {
     assert_eq!(wait_for_subagent_notification(&parent_thread).await, true);
 
     let history_items = parent_thread
-        .codex
+        .chaos
         .session
         .clone_history()
         .await

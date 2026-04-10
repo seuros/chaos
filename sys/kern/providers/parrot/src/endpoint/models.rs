@@ -164,7 +164,7 @@ mod tests {
 
         let client = ModelsClient::new(
             transport.clone(),
-            provider("https://example.com/api/codex"),
+            provider("https://example.com/api/chaos"),
             DummyAuth,
         );
 
@@ -185,7 +185,7 @@ mod tests {
             .clone();
         assert_eq!(
             url,
-            "https://example.com/api/codex/models?client_version=0.99.0"
+            "https://example.com/api/chaos/models?client_version=0.99.0"
         );
     }
 
@@ -228,7 +228,7 @@ mod tests {
 
         let client = ModelsClient::new(
             transport,
-            provider("https://example.com/api/codex"),
+            provider("https://example.com/api/chaos"),
             DummyAuth,
         );
 
@@ -255,7 +255,7 @@ mod tests {
 
         let client = ModelsClient::new(
             transport,
-            provider("https://example.com/api/codex"),
+            provider("https://example.com/api/chaos"),
             DummyAuth,
         );
 

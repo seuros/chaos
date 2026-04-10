@@ -296,7 +296,7 @@ impl NetworkProxyState {
 
     pub async fn current_cfg(&self) -> Result<NetworkProxyConfig> {
         // Callers treat `NetworkProxyState` as a live view of policy. We reload-on-demand so edits to
-        // `config.toml` (including Codex-managed writes) take effect without a restart.
+        // `config.toml` (including Chaos-managed writes) take effect without a restart.
         self.reload_if_needed().await?;
         let guard = self.state.read().await;
         Ok(guard.config.clone())

@@ -18,7 +18,7 @@ mod sanitizer;
 pub use local::LocalSecretsBackend;
 pub use sanitizer::redact_secrets;
 
-const KEYRING_SERVICE: &str = "codex";
+const KEYRING_SERVICE: &str = "chaos";
 
 #[derive(Debug, Clone, PartialEq, Eq, PartialOrd, Ord, Hash)]
 pub struct SecretName(String);

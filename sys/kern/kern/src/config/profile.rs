@@ -1,3 +1,3 @@
-//! Re-export config profile from `codex-config`.
+//! Re-export config profile from `chaos-config`.
 
 pub use chaos_sysctl::profile::*;

@@ -1,7 +1,7 @@
 #![allow(clippy::expect_used, clippy::unwrap_used)]
 
 use assert_cmd::prelude::*;
-use chaos_diff::CODEX_CORE_APPLY_PATCH_ARG1;
+use chaos_diff::CHAOS_CORE_APPLY_PATCH_ARG1;
 use std::fs;
 use std::process::Command;
 use tempfile::tempdir;
@@ -17,7 +17,7 @@ fn test_standalone_exec_cli_can_use_apply_patch() -> anyhow::Result<()> {
     fs::write(&absolute_path, "original content\n")?;
 
     Command::new(chaos_which::cargo_bin("chaos")?)
-        .arg(CODEX_CORE_APPLY_PATCH_ARG1)
+        .arg(CHAOS_CORE_APPLY_PATCH_ARG1)
         .arg(
             r#"*** Begin Patch
 *** Update File: source.txt

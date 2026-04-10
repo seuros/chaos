@@ -45,9 +45,9 @@ impl GitSha {
 #[derive(Serialize, Deserialize, Debug, Clone, Copy, PartialEq, Eq, Display, JsonSchema, TS)]
 #[serde(rename_all = "lowercase")]
 pub enum AuthMode {
-    /// OpenAI API key provided by the caller and stored by Codex.
+    /// OpenAI API key provided by the caller and stored by Chaos.
     ApiKey,
-    /// ChatGPT OAuth managed by Codex (tokens persisted and refreshed by Codex).
+    /// ChatGPT OAuth managed by Chaos (tokens persisted and refreshed by Chaos).
     Chatgpt,
     /// [UNSTABLE] FOR OPENAI INTERNAL USE ONLY - DO NOT USE.
     ///
@@ -625,7 +625,7 @@ pub enum McpServerElicitationAction {
 #[ts(export_to = "v2/")]
 pub struct McpServerElicitationRequestParams {
     pub process_id: String,
-    /// Active Codex turn when this elicitation was observed, if app-server could correlate one.
+    /// Active Chaos turn when this elicitation was observed, if app-server could correlate one.
     ///
     /// This is nullable because MCP models elicitation as a standalone server-to-client request
     /// identified by the MCP server request id. It may be triggered during a turn, but turn

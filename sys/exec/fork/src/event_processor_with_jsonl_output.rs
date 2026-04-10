@@ -2,7 +2,7 @@ use std::collections::HashMap;
 use std::path::PathBuf;
 use std::sync::atomic::AtomicU64;
 
-use crate::event_processor::CodexStatus;
+use crate::event_processor::ChaosStatus;
 use crate::event_processor::EventProcessor;
 use crate::event_processor::handle_last_message;
 use crate::exec_events::AgentMessageItem;
@@ -851,7 +851,7 @@ impl EventProcessor for EventProcessorWithJsonOutput {
     }
 
     #[allow(clippy::print_stdout)]
-    fn process_event(&mut self, event: protocol::Event) -> CodexStatus {
+    fn process_event(&mut self, event: protocol::Event) -> ChaosStatus {
         let aggregated = self.collect_process_events(&event);
         for conv_event in aggregated {
             match serde_json::to_string(&conv_event) {
@@ -877,11 +877,11 @@ impl EventProcessor for EventProcessorWithJsonOutput {
                         .or(self.last_proposed_plan.as_deref());
                     handle_last_message(last_message, output_file);
                 }
-                CodexStatus::InitiateShutdown
+                ChaosStatus::InitiateShutdown
             }
-            protocol::EventMsg::TurnAborted(_) => CodexStatus::InitiateShutdown,
-            protocol::EventMsg::ShutdownComplete => CodexStatus::Shutdown,
-            _ => CodexStatus::Running,
+            protocol::EventMsg::TurnAborted(_) => ChaosStatus::InitiateShutdown,
+            protocol::EventMsg::ShutdownComplete => ChaosStatus::Shutdown,
+            _ => ChaosStatus::Running,
         }
     }
 }

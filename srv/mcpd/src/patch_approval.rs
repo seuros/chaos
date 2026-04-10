@@ -35,7 +35,7 @@ pub struct PatchApprovalElicitRequestMeta {
     pub process_id: ProcessId,
     pub codex_elicitation: String,
     pub codex_mcp_tool_call_id: String,
-    pub codex_event_id: String,
+    pub chaos_event_id: String,
     pub codex_call_id: String,
     #[serde(skip_serializing_if = "Option::is_none")]
     pub codex_reason: Option<String>,
@@ -53,7 +53,7 @@ pub(crate) async fn handle_patch_approval_request(
     grant_root: Option<PathBuf>,
     changes: HashMap<PathBuf, FileChange>,
     outgoing: Arc<OutgoingMessageSender>,
-    codex: Arc<Process>,
+    process: Arc<Process>,
     request_id: RequestId,
     tool_call_id: String,
     event_id: String,
@@ -73,7 +73,7 @@ pub(crate) async fn handle_patch_approval_request(
             process_id,
             codex_elicitation: "patch-approval".to_string(),
             codex_mcp_tool_call_id: tool_call_id.clone(),
-            codex_event_id: event_id.clone(),
+            chaos_event_id: event_id.clone(),
             codex_call_id: call_id,
             codex_reason: reason,
             codex_grant_root: grant_root,
@@ -91,17 +91,17 @@ pub(crate) async fn handle_patch_approval_request(
         Ok(receiver) => receiver,
         Err(CreateFormElicitationError::InvalidParams) => return,
         Err(CreateFormElicitationError::Unsupported) => {
-            submit_patch_approval(approval_id, ReviewDecision::Denied, codex).await;
+            submit_patch_approval(approval_id, ReviewDecision::Denied, process).await;
             return;
         }
     };
 
     // Listen for the response on a separate task so we don't block the main agent loop.
     {
-        let codex = codex.clone();
+        let process = process.clone();
         let approval_id = approval_id.clone();
         tokio::spawn(async move {
-            on_patch_approval_response(approval_id, on_response, codex).await;
+            on_patch_approval_response(approval_id, on_response, process).await;
         });
     }
 }
@@ -109,15 +109,19 @@ pub(crate) async fn handle_patch_approval_request(
 pub(crate) async fn on_patch_approval_response(
     approval_id: String,
     receiver: crate::elicitation::ElicitationResponseReceiver,
-    codex: Arc<Process>,
+    process: Arc<Process>,
 ) {
     let response = decode_approval_elicitation_response(receiver, "PatchApprovalResponse").await;
 
-    submit_patch_approval(approval_id, response.review_decision(), codex).await;
+    submit_patch_approval(approval_id, response.review_decision(), process).await;
 }
 
-async fn submit_patch_approval(approval_id: String, decision: ReviewDecision, codex: Arc<Process>) {
-    if let Err(err) = codex
+async fn submit_patch_approval(
+    approval_id: String,
+    decision: ReviewDecision,
+    process: Arc<Process>,
+) {
+    if let Err(err) = process
         .submit(Op::PatchApproval {
             id: approval_id,
             decision,

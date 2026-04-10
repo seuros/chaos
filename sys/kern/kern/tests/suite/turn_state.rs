@@ -11,11 +11,11 @@ use core_test_support::responses::sse;
 use core_test_support::responses::sse_response;
 use core_test_support::responses::start_mock_server;
 use core_test_support::skip_if_no_network;
-use core_test_support::test_codex::test_codex;
+use core_test_support::test_chaos::test_chaos;
 use pretty_assertions::assert_eq;
 use serde_json::Value;
 
-const TURN_STATE_HEADER: &str = "x-codex-turn-state";
+const TURN_STATE_HEADER: &str = "x-chaos-turn-state";
 
 #[tokio::test(flavor = "multi_thread", worker_threads = 2)]
 async fn responses_turn_state_persists_within_turn_and_resets_after() -> Result<()> {
@@ -49,7 +49,7 @@ async fn responses_turn_state_persists_within_turn_and_resets_after() -> Result<
     ];
     let request_log = mount_response_sequence(&server, responses).await;
 
-    let test = test_codex().build(&server).await?;
+    let test = test_chaos().build(&server).await?;
     test.submit_turn("run a shell command").await?;
     test.submit_turn("second turn").await?;
 
@@ -72,11 +72,11 @@ async fn responses_turn_state_persists_within_turn_and_resets_after() -> Result<
             .map(str::to_string)
     };
 
-    let first_turn_id = parse_turn_id(requests[0].header("x-codex-turn-metadata"))
+    let first_turn_id = parse_turn_id(requests[0].header("x-chaos-turn-metadata"))
         .expect("first request should include turn metadata turn_id");
-    let second_turn_id = parse_turn_id(requests[1].header("x-codex-turn-metadata"))
+    let second_turn_id = parse_turn_id(requests[1].header("x-chaos-turn-metadata"))
         .expect("follow-up request should include turn metadata turn_id");
-    let third_turn_id = parse_turn_id(requests[2].header("x-codex-turn-metadata"))
+    let third_turn_id = parse_turn_id(requests[2].header("x-chaos-turn-metadata"))
         .expect("new turn request should include turn metadata turn_id");
 
     assert_eq!(first_turn_id, second_turn_id);

@@ -237,7 +237,7 @@ use chaos_ipc::models::DeveloperInstructions;
 use chaos_ipc::models::ResponseInputItem;
 use chaos_ipc::models::ResponseItem;
 use chaos_ipc::openai_models::ReasoningEffort as ReasoningEffortConfig;
-use chaos_ipc::protocol::CodexErrorInfo;
+use chaos_ipc::protocol::ChaosErrorInfo;
 use chaos_ipc::protocol::InitialHistory;
 use chaos_ipc::user_input::UserInput;
 use chaos_mcp_runtime::manager::McpConnectionManager;
@@ -291,7 +291,7 @@ pub(crate) struct ChaosSpawnArgs {
 pub(crate) const INITIAL_SUBMIT_ID: &str = "";
 pub(crate) const SUBMISSION_CHANNEL_CAPACITY: usize = 512;
 const CYBER_VERIFY_URL: &str = "https://chatgpt.com/cyber";
-const CYBER_SAFETY_URL: &str = "https://developers.openai.com/codex/concepts/cyber-safety";
+const CYBER_SAFETY_URL: &str = "https://developers.openai.com/chaos/concepts/cyber-safety";
 impl Chaos {
     /// Spawn a new [`Chaos`] and initialize the session.
     pub(crate) async fn spawn(args: ChaosSpawnArgs) -> ChaosResult<ChaosSpawnOk> {
@@ -490,7 +490,7 @@ impl Chaos {
                 .instrument(info_span!("session_loop", process_id = %process_id))
                 .await;
         });
-        let codex = Chaos {
+        let chaos = Chaos {
             tx_sub,
             rx_event,
             agent_status: agent_status_rx,
@@ -499,7 +499,7 @@ impl Chaos {
         };
 
         Ok(ChaosSpawnOk {
-            chaos: codex,
+            chaos,
             process_id,
             conversation_id: process_id,
         })
@@ -998,7 +998,7 @@ pub(crate) struct SessionSettingsUpdate {
 }
 
 impl Session {
-    /// Builds the `x-codex-beta-features` header value for this session.
+    /// Builds the `x-chaos-beta-features` header value for this session.
     ///
     /// With stages removed, there are no experimental-menu features to advertise.
     /// Kept as a named function so callers do not need to change.
@@ -2004,7 +2004,7 @@ impl Session {
                         id: sub_id.clone(),
                         msg: EventMsg::Error(ErrorEvent {
                             message: err.to_string(),
-                            codex_error_info: Some(CodexErrorInfo::BadRequest),
+                            chaos_error_info: Some(ChaosErrorInfo::BadRequest),
                         }),
                     })
                     .await;
@@ -2758,12 +2758,12 @@ impl Session {
         codex_error: ChaosErr,
     ) {
         let additional_details = codex_error.to_string();
-        let codex_error_info = CodexErrorInfo::ResponseStreamDisconnected {
+        let chaos_error_info = ChaosErrorInfo::ResponseStreamDisconnected {
             http_status_code: codex_error.http_status_code_value(),
         };
         let event = EventMsg::StreamError(StreamErrorEvent {
             message: message.into(),
-            codex_error_info: Some(codex_error_info),
+            chaos_error_info: Some(chaos_error_info),
             additional_details: Some(additional_details),
         });
         self.send_event(turn_context, event).await;
@@ -3198,7 +3198,7 @@ fn submission_dispatch_span(sub: &Submission) -> tracing::Span {
         "submission_dispatch",
         otel.name = span_name.as_str(),
         submission.id = sub.id.as_str(),
-        codex.op = op_name
+        chaos.op = op_name
     );
     if let Some(trace) = sub.trace.as_ref()
         && !set_parent_from_w3c_trace_context(&dispatch_span, trace)
@@ -3231,7 +3231,7 @@ mod handlers {
     use crate::tasks::UserShellCommandTask;
     use crate::tasks::execute_user_shell_command;
     use chaos_ipc::custom_prompts::CustomPrompt;
-    use chaos_ipc::protocol::CodexErrorInfo;
+    use chaos_ipc::protocol::ChaosErrorInfo;
     use chaos_ipc::protocol::ErrorEvent;
     use chaos_ipc::protocol::Event;
     use chaos_ipc::protocol::EventMsg;
@@ -3290,7 +3290,7 @@ mod handlers {
                 id: sub_id,
                 msg: EventMsg::Error(ErrorEvent {
                     message: err.to_string(),
-                    codex_error_info: Some(CodexErrorInfo::BadRequest),
+                    chaos_error_info: Some(ChaosErrorInfo::BadRequest),
                 }),
             })
             .await;
@@ -3752,7 +3752,7 @@ mod handlers {
                     id: sub_id,
                     msg: EventMsg::Error(ErrorEvent {
                         message: format!("failed to list remote skills: {err}"),
-                        codex_error_info: Some(CodexErrorInfo::Other),
+                        chaos_error_info: Some(ChaosErrorInfo::Other),
                     }),
                 };
                 sess.send_event_raw(event).await;
@@ -3791,7 +3791,7 @@ mod handlers {
                     id: sub_id,
                     msg: EventMsg::Error(ErrorEvent {
                         message: format!("failed to export remote skill {hazelnut_id}: {err}"),
-                        codex_error_info: Some(CodexErrorInfo::Other),
+                        chaos_error_info: Some(ChaosErrorInfo::Other),
                     }),
                 };
                 sess.send_event_raw(event).await;
@@ -3826,7 +3826,7 @@ mod handlers {
                 id: sub_id,
                 msg: EventMsg::Error(ErrorEvent {
                     message: "num_turns must be >= 1".to_string(),
-                    codex_error_info: Some(CodexErrorInfo::ProcessRollbackFailed),
+                    chaos_error_info: Some(ChaosErrorInfo::ProcessRollbackFailed),
                 }),
             })
             .await;
@@ -3839,7 +3839,7 @@ mod handlers {
                 id: sub_id,
                 msg: EventMsg::Error(ErrorEvent {
                     message: "Cannot rollback while a turn is in progress.".to_string(),
-                    codex_error_info: Some(CodexErrorInfo::ProcessRollbackFailed),
+                    chaos_error_info: Some(ChaosErrorInfo::ProcessRollbackFailed),
                 }),
             })
             .await;
@@ -3856,7 +3856,7 @@ mod handlers {
                 id: turn_context.sub_id.clone(),
                 msg: EventMsg::Error(ErrorEvent {
                     message: "thread rollback requires persisted session history".to_string(),
-                    codex_error_info: Some(CodexErrorInfo::ProcessRollbackFailed),
+                    chaos_error_info: Some(ChaosErrorInfo::ProcessRollbackFailed),
                 }),
             })
             .await;
@@ -3869,7 +3869,7 @@ mod handlers {
                     message: format!(
                         "failed to flush persisted session history for rollback replay: {err}"
                     ),
-                    codex_error_info: Some(CodexErrorInfo::ProcessRollbackFailed),
+                    chaos_error_info: Some(ChaosErrorInfo::ProcessRollbackFailed),
                 }),
             })
             .await;
@@ -3891,7 +3891,7 @@ mod handlers {
                                 message: format!(
                                     "failed to load persisted session history for rollback replay: {err}"
                                 ),
-                                codex_error_info: Some(CodexErrorInfo::ProcessRollbackFailed),
+                                chaos_error_info: Some(ChaosErrorInfo::ProcessRollbackFailed),
                             }),
                         })
                         .await;
@@ -3935,7 +3935,7 @@ mod handlers {
                 id: sub_id,
                 msg: EventMsg::Error(ErrorEvent {
                     message: "Process name cannot be empty.".to_string(),
-                    codex_error_info: Some(CodexErrorInfo::BadRequest),
+                    chaos_error_info: Some(ChaosErrorInfo::BadRequest),
                 }),
             };
             sess.send_event_raw(event).await;
@@ -3951,7 +3951,7 @@ mod handlers {
                 id: sub_id,
                 msg: EventMsg::Error(ErrorEvent {
                     message: "Session persistence is disabled; cannot rename process.".to_string(),
-                    codex_error_info: Some(CodexErrorInfo::Other),
+                    chaos_error_info: Some(ChaosErrorInfo::Other),
                 }),
             };
             sess.send_event_raw(event).await;
@@ -3966,7 +3966,7 @@ mod handlers {
                 id: sub_id,
                 msg: EventMsg::Error(ErrorEvent {
                     message: format!("Failed to set process name: {e}"),
-                    codex_error_info: Some(CodexErrorInfo::Other),
+                    chaos_error_info: Some(ChaosErrorInfo::Other),
                 }),
             };
             sess.send_event_raw(event).await;
@@ -4020,7 +4020,7 @@ mod handlers {
                 id: sub_id.clone(),
                 msg: EventMsg::Error(ErrorEvent {
                     message: "Failed to shutdown rollout recorder".to_string(),
-                    codex_error_info: Some(CodexErrorInfo::Other),
+                    chaos_error_info: Some(ChaosErrorInfo::Other),
                 }),
             };
             sess.send_event_raw(event).await;
@@ -4060,7 +4060,7 @@ mod handlers {
                     id: sub_id,
                     msg: EventMsg::Error(ErrorEvent {
                         message: err.to_string(),
-                        codex_error_info: Some(CodexErrorInfo::Other),
+                        chaos_error_info: Some(ChaosErrorInfo::Other),
                     }),
                 };
                 sess.send_event(&turn_context, event.msg).await;
@@ -4377,7 +4377,7 @@ pub(crate) async fn run_turn(
         .await;
     let mut last_agent_message: Option<String> = None;
     let mut stop_hook_active = false;
-    // Although from the perspective of codex.rs, TurnDiffTracker has the lifecycle of a Task which contains
+    // Although from the perspective of chaos.rs, TurnDiffTracker has the lifecycle of a Task which contains
     // many turns, from the perspective of the user, it is a single turn.
     let turn_diff_tracker = Arc::new(tokio::sync::Mutex::new(TurnDiffTracker::new()));
     let mut server_model_warning_emitted_for_turn = false;
@@ -4642,7 +4642,7 @@ pub(crate) async fn run_turn(
                             &turn_context,
                             EventMsg::Error(ErrorEvent {
                                 message,
-                                codex_error_info: None,
+                                chaos_error_info: None,
                             }),
                         )
                         .await;
@@ -4667,7 +4667,7 @@ pub(crate) async fn run_turn(
                 let event = EventMsg::Error(ErrorEvent {
                     message: "Invalid image in your last message. Please remove it and try again."
                         .to_string(),
-                    codex_error_info: Some(CodexErrorInfo::BadRequest),
+                    chaos_error_info: Some(ChaosErrorInfo::BadRequest),
                 });
                 sess.send_event(&turn_context, event).await;
                 break;

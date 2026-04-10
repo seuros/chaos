@@ -43,7 +43,7 @@ pub struct ProcessConfigSnapshot {
 }
 
 pub struct Process {
-    pub(crate) codex: Chaos,
+    pub(crate) chaos: Chaos,
     out_of_band_elicitation_count: Mutex<u64>,
     _watch_registration: WatchRegistration,
 }
@@ -51,20 +51,20 @@ pub struct Process {
 /// Conduit for the bidirectional stream of messages that compose a process
 /// (formerly called a thread, and earlier a conversation) in ChaOS.
 impl Process {
-    pub(crate) fn new(codex: Chaos, watch_registration: WatchRegistration) -> Self {
+    pub(crate) fn new(chaos: Chaos, watch_registration: WatchRegistration) -> Self {
         Self {
-            codex,
+            chaos,
             out_of_band_elicitation_count: Mutex::new(0),
             _watch_registration: watch_registration,
         }
     }
 
     pub async fn submit(&self, op: Op) -> ChaosResult<String> {
-        self.codex.submit(op).await
+        self.chaos.submit(op).await
     }
 
     pub async fn shutdown_and_wait(&self) -> ChaosResult<()> {
-        self.codex.shutdown_and_wait().await
+        self.chaos.shutdown_and_wait().await
     }
 
     pub async fn submit_with_trace(
@@ -72,7 +72,7 @@ impl Process {
         op: Op,
         trace: Option<W3cTraceContext>,
     ) -> ChaosResult<String> {
-        self.codex.submit_with_trace(op, trace).await
+        self.chaos.submit_with_trace(op, trace).await
     }
 
     pub async fn steer_input(
@@ -80,33 +80,33 @@ impl Process {
         input: Vec<UserInput>,
         expected_turn_id: Option<&str>,
     ) -> Result<String, SteerInputError> {
-        self.codex.steer_input(input, expected_turn_id).await
+        self.chaos.steer_input(input, expected_turn_id).await
     }
 
     pub async fn set_app_server_client_name(
         &self,
         app_server_client_name: Option<String>,
     ) -> ConstraintResult<()> {
-        self.codex
+        self.chaos
             .set_app_server_client_name(app_server_client_name)
             .await
     }
 
     /// Use sparingly: this is intended to be removed soon.
     pub async fn submit_with_id(&self, sub: Submission) -> ChaosResult<()> {
-        self.codex.submit_with_id(sub).await
+        self.chaos.submit_with_id(sub).await
     }
 
     pub async fn next_event(&self) -> ChaosResult<Event> {
-        self.codex.next_event().await
+        self.chaos.next_event().await
     }
 
     pub async fn agent_status(&self) -> AgentStatus {
-        self.codex.agent_status().await
+        self.chaos.agent_status().await
     }
 
     pub(crate) fn subscribe_status(&self) -> watch::Receiver<AgentStatus> {
-        self.codex.agent_status.clone()
+        self.chaos.agent_status.clone()
     }
 
     /// Records a user-role session-prefix message without creating a new user turn boundary.
@@ -117,7 +117,7 @@ impl Process {
         };
         let pending_items = vec![pending_item];
         let Err(items_without_active_turn) = self
-            .codex
+            .chaos
             .session
             .inject_response_items(pending_items)
             .await
@@ -125,27 +125,27 @@ impl Process {
             return;
         };
 
-        let turn_context = self.codex.session.new_default_turn().await;
+        let turn_context = self.chaos.session.new_default_turn().await;
         let items: Vec<ResponseItem> = items_without_active_turn
             .into_iter()
             .map(ResponseItem::from)
             .collect();
-        self.codex
+        self.chaos
             .session
             .record_conversation_items(turn_context.as_ref(), &items)
             .await;
     }
 
     pub fn runtime_db(&self) -> Option<RuntimeDbHandle> {
-        self.codex.runtime_db()
+        self.chaos.runtime_db()
     }
 
     pub async fn config_snapshot(&self) -> ProcessConfigSnapshot {
-        self.codex.process_config_snapshot().await
+        self.chaos.process_config_snapshot().await
     }
 
     pub fn enabled(&self, feature: Feature) -> bool {
-        self.codex.enabled(feature)
+        self.chaos.enabled(feature)
     }
 
     pub async fn increment_out_of_band_elicitation_count(&self) -> ChaosResult<u64> {
@@ -156,7 +156,7 @@ impl Process {
         })?;
 
         if was_zero {
-            self.codex
+            self.chaos
                 .session
                 .set_out_of_band_elicitation_pause_state(/*paused*/ true);
         }
@@ -175,7 +175,7 @@ impl Process {
         *guard -= 1;
         let now_zero = *guard == 0;
         if now_zero {
-            self.codex
+            self.chaos
                 .session
                 .set_out_of_band_elicitation_pause_state(/*paused*/ false);
         }

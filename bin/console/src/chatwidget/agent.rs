@@ -37,14 +37,14 @@ pub(crate) fn spawn_agent(
         let new_process = match server.start_process(config).await {
             Ok(v) => v,
             Err(err) => {
-                let message = format!("Failed to initialize codex: {err}");
+                let message = format!("Failed to initialize chaos: {err}");
                 tracing::error!("{message}");
                 app_event_tx_clone.send(AppEvent::ChaosEvent(Event {
                     id: "".to_string(),
                     msg: EventMsg::Error(err.to_error_event(/*message_prefix*/ None)),
                 }));
                 app_event_tx_clone.send(AppEvent::FatalExitRequest(message));
-                tracing::error!("failed to initialize codex: {err}");
+                tracing::error!("failed to initialize chaos: {err}");
                 return;
             }
         };

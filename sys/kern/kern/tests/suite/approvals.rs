@@ -30,8 +30,8 @@ use core_test_support::responses::mount_sse_once;
 use core_test_support::responses::sse;
 use core_test_support::responses::start_mock_server;
 use core_test_support::skip_if_no_network;
-use core_test_support::test_codex::TestCodex;
-use core_test_support::test_codex::test_codex;
+use core_test_support::test_chaos::TestCodex;
+use core_test_support::test_chaos::test_chaos;
 use core_test_support::wait_for_event;
 use core_test_support::wait_for_event_with_timeout;
 use pretty_assertions::assert_eq;
@@ -527,7 +527,7 @@ async fn submit_turn(
 ) -> Result<()> {
     let session_model = test.session_configured.model.clone();
 
-    test.codex
+    test.process
         .submit(Op::UserTurn {
             items: vec![UserInput::Text {
                 text: prompt.into(),
@@ -593,7 +593,7 @@ async fn expect_exec_approval(
     test: &TestCodex,
     expected_command: &str,
 ) -> ExecApprovalRequestEvent {
-    let event = wait_for_event(&test.codex, |event| {
+    let event = wait_for_event(&test.process, |event| {
         matches!(
             event,
             EventMsg::ExecApprovalRequest(_) | EventMsg::TurnComplete(_)
@@ -620,7 +620,7 @@ async fn expect_patch_approval(
     test: &TestCodex,
     expected_call_id: &str,
 ) -> ApplyPatchApprovalRequestEvent {
-    let event = wait_for_event(&test.codex, |event| {
+    let event = wait_for_event(&test.process, |event| {
         matches!(
             event,
             EventMsg::ApplyPatchApprovalRequest(_) | EventMsg::TurnComplete(_)
@@ -639,7 +639,7 @@ async fn expect_patch_approval(
 }
 
 async fn wait_for_completion_without_approval(test: &TestCodex) {
-    let event = wait_for_event(&test.codex, |event| {
+    let event = wait_for_event(&test.process, |event| {
         matches!(
             event,
             EventMsg::ExecApprovalRequest(_) | EventMsg::TurnComplete(_)
@@ -657,7 +657,7 @@ async fn wait_for_completion_without_approval(test: &TestCodex) {
 }
 
 async fn wait_for_completion(test: &TestCodex) {
-    wait_for_event(&test.codex, |event| {
+    wait_for_event(&test.process, |event| {
         matches!(event, EventMsg::TurnComplete(_))
     })
     .await;
@@ -1471,7 +1471,7 @@ async fn run_scenario(scenario: &ScenarioSpec) -> Result<()> {
     let model_override = scenario.model_override;
     let model = model_override.unwrap_or("gpt-5.1");
 
-    let mut builder = test_codex().with_model(model).with_config(move |config| {
+    let mut builder = test_chaos().with_model(model).with_config(move |config| {
         config.permissions.approval_policy = Constrained::allow_any(approval_policy);
         config.permissions.sandbox_policy = Constrained::allow_any(sandbox_policy.clone());
         for feature in features {
@@ -1535,7 +1535,7 @@ async fn run_scenario(scenario: &ScenarioSpec) -> Result<()> {
                     scenario.name
                 );
             }
-            test.codex
+            test.process
                 .submit(Op::ExecApproval {
                     id: approval.effective_approval_id(),
                     turn_id: None,
@@ -1557,7 +1557,7 @@ async fn run_scenario(scenario: &ScenarioSpec) -> Result<()> {
                     scenario.name
                 );
             }
-            test.codex
+            test.process
                 .submit(Op::PatchApproval {
                     id: approval.call_id,
                     decision: decision.clone(),
@@ -1581,7 +1581,7 @@ async fn approving_execpolicy_amendment_persists_policy_and_skips_future_prompts
     let approval_policy = ApprovalPolicy::Supervised;
     let sandbox_policy = SandboxPolicy::new_read_only_policy();
     let sandbox_policy_for_config = sandbox_policy.clone();
-    let mut builder = test_codex().with_config(move |config| {
+    let mut builder = test_chaos().with_config(move |config| {
         config.permissions.approval_policy = Constrained::allow_any(approval_policy);
         config.permissions.sandbox_policy = Constrained::allow_any(sandbox_policy_for_config);
     });
@@ -1637,7 +1637,7 @@ async fn approving_execpolicy_amendment_persists_policy_and_skips_future_prompts
         Some(expected_execpolicy_amendment.clone())
     );
 
-    test.codex
+    test.process
         .submit(Op::ExecApproval {
             id: approval.effective_approval_id(),
             turn_id: None,
@@ -1751,7 +1751,7 @@ async fn invalid_requested_prefix_rule_falls_back_for_compound_command() -> Resu
     let approval_policy = ApprovalPolicy::Interactive;
     let sandbox_policy = SandboxPolicy::new_read_only_policy();
     let sandbox_policy_for_config = sandbox_policy.clone();
-    let mut builder = test_codex().with_config(move |config| {
+    let mut builder = test_chaos().with_config(move |config| {
         config.permissions.approval_policy = Constrained::allow_any(approval_policy);
         config.permissions.sandbox_policy = Constrained::allow_any(sandbox_policy_for_config);
     });
@@ -1759,7 +1759,7 @@ async fn invalid_requested_prefix_rule_falls_back_for_compound_command() -> Resu
 
     let call_id = "invalid-prefix-rule";
     let command =
-        "touch /tmp/codex-fallback-rule-test.txt && echo hello > /tmp/codex-fallback-rule-test.txt";
+        "touch /tmp/chaos-fallback-rule-test.txt && echo hello > /tmp/chaos-fallback-rule-test.txt";
     let event = shell_event_with_prefix_rule(
         call_id,
         command,
@@ -1802,7 +1802,7 @@ async fn approving_fallback_rule_for_compound_command_works() -> Result<()> {
     let approval_policy = ApprovalPolicy::Interactive;
     let sandbox_policy = SandboxPolicy::new_read_only_policy();
     let sandbox_policy_for_config = sandbox_policy.clone();
-    let mut builder = test_codex().with_config(move |config| {
+    let mut builder = test_chaos().with_config(move |config| {
         config.permissions.approval_policy = Constrained::allow_any(approval_policy);
         config.permissions.sandbox_policy = Constrained::allow_any(sandbox_policy_for_config);
     });
@@ -1810,7 +1810,7 @@ async fn approving_fallback_rule_for_compound_command_works() -> Result<()> {
 
     let call_id = "invalid-prefix-rule";
     let command =
-        "touch /tmp/codex-fallback-rule-test.txt && echo hello > /tmp/codex-fallback-rule-test.txt";
+        "touch /tmp/chaos-fallback-rule-test.txt && echo hello > /tmp/chaos-fallback-rule-test.txt";
     let event = shell_event_with_prefix_rule(
         call_id,
         command,
@@ -1844,7 +1844,7 @@ async fn approving_fallback_rule_for_compound_command_works() -> Result<()> {
         .expect("should have a proposed execpolicy amendment");
     assert!(amendment.command.contains(&command.to_string()));
 
-    test.codex
+    test.process
         .submit(Op::ExecApproval {
             id: approval_id,
             turn_id: None,
@@ -1857,7 +1857,7 @@ async fn approving_fallback_rule_for_compound_command_works() -> Result<()> {
 
     let call_id = "invalid-prefix-rule-again";
     let command =
-        "touch /tmp/codex-fallback-rule-test.txt && echo hello > /tmp/codex-fallback-rule-test.txt";
+        "touch /tmp/chaos-fallback-rule-test.txt && echo hello > /tmp/chaos-fallback-rule-test.txt";
     let event = shell_event_with_prefix_rule(
         call_id,
         command,
@@ -1938,7 +1938,7 @@ allow_local_binding = true
         exclude_slash_tmp: false,
     };
     let sandbox_policy_for_config = sandbox_policy.clone();
-    let mut builder = test_codex().with_home(home).with_config(move |config| {
+    let mut builder = test_chaos().with_home(home).with_config(move |config| {
         config.permissions.approval_policy = Constrained::allow_any(approval_policy);
         config.permissions.sandbox_policy = Constrained::allow_any(sandbox_policy_for_config);
         let layers = config
@@ -1982,7 +1982,7 @@ allow_local_binding = true
     let call_id_first = "allow-network-first";
     // Use urllib without overriding proxy settings so managed-network sessions
     // continue to exercise the env-based proxy routing path under bubblewrap.
-    let fetch_command = r#"python3 -c "import urllib.request; opener = urllib.request.build_opener(urllib.request.ProxyHandler()); print('OK:' + opener.open('http://codex-network-test.invalid', timeout=30).read().decode(errors='replace'))""#
+    let fetch_command = r#"python3 -c "import urllib.request; opener = urllib.request.build_opener(urllib.request.ProxyHandler()); print('OK:' + opener.open('http://chaos-network-test.invalid', timeout=30).read().decode(errors='replace'))""#
         .to_string();
     let first_event = shell_event(
         call_id_first,
@@ -2023,7 +2023,7 @@ allow_local_binding = true
             .checked_duration_since(std::time::Instant::now())
             .expect("timed out waiting for network approval request");
         let event = wait_for_event_with_timeout(
-            &test.codex,
+            &test.process,
             |event| {
                 matches!(
                     event,
@@ -2040,7 +2040,7 @@ allow_local_binding = true
                 {
                     break approval;
                 }
-                test.codex
+                test.process
                     .submit(Op::ExecApproval {
                         id: approval.effective_approval_id(),
                         turn_id: None,
@@ -2078,7 +2078,7 @@ allow_local_binding = true
         .find(|amendment| amendment.action == NetworkPolicyRuleAction::Deny)
         .expect("expected deny network policy amendment");
 
-    test.codex
+    test.process
         .submit(Op::ExecApproval {
             id: approval.effective_approval_id(),
             turn_id: None,
@@ -2163,7 +2163,7 @@ allow_local_binding = true
             .checked_duration_since(std::time::Instant::now())
             .expect("timed out waiting for second turn completion");
         let event = wait_for_event_with_timeout(
-            &test.codex,
+            &test.process,
             |event| {
                 matches!(
                     event,
@@ -2183,7 +2183,7 @@ allow_local_binding = true
                         approval.command
                     );
                 }
-                test.codex
+                test.process
                     .submit(Op::ExecApproval {
                         id: approval.effective_approval_id(),
                         turn_id: None,
@@ -2219,7 +2219,7 @@ async fn compound_command_with_one_safe_command_still_requires_approval() -> Res
     let approval_policy = ApprovalPolicy::Supervised;
     let sandbox_policy = SandboxPolicy::new_workspace_write_policy();
     let sandbox_policy_for_config = sandbox_policy.clone();
-    let mut builder = test_codex().with_config(move |config| {
+    let mut builder = test_chaos().with_config(move |config| {
         config.permissions.approval_policy = Constrained::allow_any(approval_policy);
         config.permissions.sandbox_policy = Constrained::allow_any(sandbox_policy_for_config);
     });
@@ -2267,7 +2267,7 @@ async fn compound_command_with_one_safe_command_still_requires_approval() -> Res
     .await?;
 
     let approval = expect_exec_approval(&test, expected_command.as_str()).await;
-    test.codex
+    test.process
         .submit(Op::ExecApproval {
             id: approval.effective_approval_id(),
             turn_id: None,

@@ -127,7 +127,7 @@ pub(crate) async fn monitor_action(
 
     let url = read_non_empty_env_var(CODEX_ARC_MONITOR_ENDPOINT_OVERRIDE).unwrap_or_else(|| {
         format!(
-            "{}/codex/safety/arc",
+            "{}/chaos/safety/arc",
             turn_context.config.chatgpt_base_url.trim_end_matches('/')
         )
     });

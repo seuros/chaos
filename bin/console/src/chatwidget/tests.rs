@@ -38,7 +38,7 @@ use chaos_ipc::protocol::AgentMessageEvent;
 use chaos_ipc::protocol::AgentReasoningEvent;
 use chaos_ipc::protocol::AgentStatus;
 use chaos_ipc::protocol::ApplyPatchApprovalRequestEvent;
-use chaos_ipc::protocol::CodexErrorInfo;
+use chaos_ipc::protocol::ChaosErrorInfo;
 use chaos_ipc::protocol::CollabAgentSpawnBeginEvent;
 use chaos_ipc::protocol::CollabAgentSpawnEndEvent;
 use chaos_ipc::protocol::CreditsSnapshot;
@@ -1875,7 +1875,7 @@ fn ensure_rustls_crypto_provider() {
     static RUSTLS_PROVIDER: OnceLock<()> = OnceLock::new();
     RUSTLS_PROVIDER.get_or_init(|| {
         // Silently ignore AlreadyInstalled — another component in the same
-        // test binary (e.g. codex-client) may have installed ring first.
+        // test binary (e.g. chaos-client) may have installed ring first.
         let _ = rustls::crypto::ring::default_provider().install_default();
     });
 }
@@ -2215,7 +2215,7 @@ async fn rate_limit_snapshots_keep_separate_entries_per_limit_id() {
         plan_type: Some(PlanType::Pro),
     }));
 
-    let codex = chat
+    let chaos = chat
         .rate_limit_snapshots_by_limit_id
         .get("chaos")
         .expect("chaos snapshot should exist");
@@ -2224,9 +2224,9 @@ async fn rate_limit_snapshots_keep_separate_entries_per_limit_id() {
         .get("codex_other")
         .expect("chaos_other snapshot should exist");
 
-    assert_eq!(codex.primary.as_ref().map(|w| w.used_percent), Some(20.0));
+    assert_eq!(chaos.primary.as_ref().map(|w| w.used_percent), Some(20.0));
     assert_eq!(
-        codex
+        chaos
             .credits
             .as_ref()
             .and_then(|credits| credits.balance.as_deref()),
@@ -6034,7 +6034,7 @@ async fn server_overloaded_error_does_not_switch_models() {
         id: "err-1".to_string(),
         msg: EventMsg::Error(ErrorEvent {
             message: "server overloaded".to_string(),
-            codex_error_info: Some(CodexErrorInfo::ServerOverloaded),
+            chaos_error_info: Some(ChaosErrorInfo::ServerOverloaded),
         }),
     });
 
@@ -6486,7 +6486,7 @@ async fn permissions_full_access_history_cell_emitted_only_after_confirmation() 
 //
 // Snapshot test: command approval modal
 //
-// Synthesizes a Codex ExecApprovalRequest event to trigger the approval modal
+// Synthesizes a Chaos ExecApprovalRequest event to trigger the approval modal
 // and snapshots the visual output using the ratatui TestBackend.
 #[cfg(feature = "vt100-tests")]
 #[tokio::test]
@@ -7302,7 +7302,7 @@ async fn apply_patch_full_flow_integration_like() {
     chat.submit_op(op);
     let forwarded = op_rx
         .try_recv()
-        .expect("expected op forwarded to codex channel");
+        .expect("expected op forwarded to chaos channel");
     match forwarded {
         Op::PatchApproval { id, decision } => {
             assert_eq!(id, "call-1");
@@ -7512,7 +7512,7 @@ async fn stream_error_updates_status_indicator() {
         id: "sub-1".into(),
         msg: EventMsg::StreamError(StreamErrorEvent {
             message: msg.to_string(),
-            codex_error_info: Some(CodexErrorInfo::Other),
+            chaos_error_info: Some(ChaosErrorInfo::Other),
             additional_details: Some(details.to_string()),
         }),
     });
@@ -7573,7 +7573,7 @@ async fn replayed_stream_error_does_not_set_retry_status_or_status_indicator() {
 
     chat.replay_initial_messages(vec![EventMsg::StreamError(StreamErrorEvent {
         message: "Reconnecting... 2/5".to_string(),
-        codex_error_info: Some(CodexErrorInfo::Other),
+        chaos_error_info: Some(ChaosErrorInfo::Other),
         additional_details: Some("Idle timeout waiting for SSE".to_string()),
     })]);
 
@@ -7605,7 +7605,7 @@ async fn process_snapshot_replayed_stream_recovery_restores_previous_status_head
         id: "retry".into(),
         msg: EventMsg::StreamError(StreamErrorEvent {
             message: "Reconnecting... 1/5".to_string(),
-            codex_error_info: Some(CodexErrorInfo::Other),
+            chaos_error_info: Some(ChaosErrorInfo::Other),
             additional_details: None,
         }),
     });
@@ -7643,7 +7643,7 @@ async fn resume_replay_interrupted_reconnect_does_not_leave_stale_working_state(
         }),
         EventMsg::StreamError(StreamErrorEvent {
             message: "Reconnecting... 1/5".to_string(),
-            codex_error_info: Some(CodexErrorInfo::Other),
+            chaos_error_info: Some(ChaosErrorInfo::Other),
             additional_details: None,
         }),
         EventMsg::AgentMessageContentDelta(AgentMessageContentDeltaEvent {
@@ -7677,7 +7677,7 @@ async fn replayed_interrupted_reconnect_footer_row_snapshot() {
         }),
         EventMsg::StreamError(StreamErrorEvent {
             message: "Reconnecting... 2/5".to_string(),
-            codex_error_info: Some(CodexErrorInfo::Other),
+            chaos_error_info: Some(ChaosErrorInfo::Other),
             additional_details: Some("Idle timeout waiting for SSE".to_string()),
         }),
     ]);
@@ -7705,7 +7705,7 @@ async fn stream_error_restores_hidden_status_indicator() {
         id: "sub-1".into(),
         msg: EventMsg::StreamError(StreamErrorEvent {
             message: msg.to_string(),
-            codex_error_info: Some(CodexErrorInfo::Other),
+            chaos_error_info: Some(ChaosErrorInfo::Other),
             additional_details: Some(details.to_string()),
         }),
     });
@@ -7832,7 +7832,7 @@ async fn stream_recovery_restores_previous_status_header() {
         id: "retry".into(),
         msg: EventMsg::StreamError(StreamErrorEvent {
             message: "Reconnecting... 1/5".to_string(),
-            codex_error_info: Some(CodexErrorInfo::Other),
+            chaos_error_info: Some(ChaosErrorInfo::Other),
             additional_details: None,
         }),
     });

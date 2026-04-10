@@ -47,7 +47,7 @@ async fn build_config_state_with_mtimes() -> Result<(ConfigState, Vec<LayerMtime
     let config_layer_stack =
         load_config_layers_state(&chaos_home, /*cwd*/ None, &cli_overrides, overrides)
             .await
-            .context("failed to load Codex config")?;
+            .context("failed to load Chaos config")?;
 
     let (exec_policy, warning) = match load_exec_policy(&config_layer_stack).await {
         Ok(policy) => (policy, None),

@@ -355,11 +355,11 @@ fn model_info_from_models_json(slug: &str) -> ModelInfo {
     let mut model = crate::test_support::test_model_info(slug);
 
     // Per-model tool configuration (mirrors the old catalog entries).
-    if slug == "gpt-5.1" || slug.contains("codex") || slug.contains("chaos") {
+    if slug == "gpt-5.1" || slug.contains("codex") || slug.contains("codex") {
         model.shell_type = ConfigShellToolType::ShellCommand;
         model.apply_patch_tool_type = Some(ApplyPatchToolType::Freeform);
     } else {
-        // Non-Codex models use the default shell config and do not expose apply_patch.
+        // Non-Chaos models use the default shell config and do not expose apply_patch.
         model.shell_type = ConfigShellToolType::Default;
         model.apply_patch_tool_type = None;
     }
@@ -1262,7 +1262,7 @@ fn test_gpt_5_1_codex_max_defaults() {
 }
 
 #[test]
-fn test_codex_5_1_mini_defaults() {
+fn test_chaos_5_1_mini_defaults() {
     let features = Features::with_defaults();
     assert_default_model_tools(
         "gpt-5.1-codex-mini",

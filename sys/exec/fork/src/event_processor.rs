@@ -4,7 +4,7 @@ use chaos_ipc::protocol::Event;
 use chaos_ipc::protocol::SessionConfiguredEvent;
 use chaos_kern::config::Config;
 
-pub(crate) enum CodexStatus {
+pub(crate) enum ChaosStatus {
     Running,
     InitiateShutdown,
     Shutdown,
@@ -20,7 +20,7 @@ pub(crate) trait EventProcessor {
     );
 
     /// Handle a single event emitted by the agent.
-    fn process_event(&mut self, event: Event) -> CodexStatus;
+    fn process_event(&mut self, event: Event) -> ChaosStatus;
 
     fn print_final_output(&mut self) {}
 }

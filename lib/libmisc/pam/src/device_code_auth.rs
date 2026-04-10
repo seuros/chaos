@@ -84,7 +84,7 @@ async fn request_user_code(
         if status == StatusCode::NOT_FOUND {
             return Err(io::Error::new(
                 io::ErrorKind::NotFound,
-                "device code login is not enabled for this Codex server. Use the browser login or verify the server URL.",
+                "device code login is not enabled for this Chaos server. Use the browser login or verify the server URL.",
             ));
         }
 
@@ -165,7 +165,7 @@ pub async fn request_device_code(opts: &ServerOptions) -> std::io::Result<Device
     let uc = request_user_code(&client, &api_base_url, &opts.client_id).await?;
 
     Ok(DeviceCode {
-        verification_url: format!("{base_url}/codex/device"),
+        verification_url: format!("{base_url}/chaos/device"),
         user_code: uc.user_code,
         device_auth_id: uc.device_auth_id,
         interval: uc.interval,

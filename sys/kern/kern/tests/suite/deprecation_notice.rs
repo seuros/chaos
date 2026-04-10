@@ -9,8 +9,8 @@ use chaos_kern::config_loader::ConfigRequirementsToml;
 use core_test_support::responses::start_mock_server;
 use core_test_support::skip_if_no_network;
 use core_test_support::test_absolute_path;
-use core_test_support::test_codex::TestCodex;
-use core_test_support::test_codex::test_codex;
+use core_test_support::test_chaos::TestCodex;
+use core_test_support::test_chaos::test_chaos;
 use core_test_support::wait_for_event_match;
 use pretty_assertions::assert_eq;
 use toml::Value as TomlValue;
@@ -21,7 +21,7 @@ async fn emits_deprecation_notice_for_experimental_instructions_file() -> anyhow
 
     let server = start_mock_server().await;
 
-    let mut builder = test_codex().with_config(|config| {
+    let mut builder = test_chaos().with_config(|config| {
         let mut table = toml::map::Map::new();
         table.insert(
             "experimental_instructions_file".to_string(),
@@ -42,9 +42,9 @@ async fn emits_deprecation_notice_for_experimental_instructions_file() -> anyhow
         config.config_layer_stack = config_layer_stack;
     });
 
-    let TestCodex { codex, .. } = builder.build(&server).await?;
+    let TestCodex { process: chaos, .. } = builder.build(&server).await?;
 
-    let notice = wait_for_event_match(&codex, |event| match event {
+    let notice = wait_for_event_match(&chaos, |event| match event {
         EventMsg::DeprecationNotice(ev)
             if ev.summary.contains("experimental_instructions_file") =>
         {

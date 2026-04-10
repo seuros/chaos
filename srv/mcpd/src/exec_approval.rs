@@ -35,7 +35,7 @@ pub struct ExecApprovalElicitRequestMeta {
     pub process_id: ProcessId,
     pub codex_elicitation: String,
     pub codex_mcp_tool_call_id: String,
-    pub codex_event_id: String,
+    pub chaos_event_id: String,
     pub codex_call_id: String,
     pub codex_command: Vec<String>,
     pub codex_cwd: PathBuf,
@@ -49,7 +49,7 @@ pub(crate) async fn handle_exec_approval_request(
     command: Vec<String>,
     cwd: PathBuf,
     outgoing: Arc<crate::outgoing_message::OutgoingMessageSender>,
-    codex: Arc<Process>,
+    process: Arc<Process>,
     request_id: RequestId,
     tool_call_id: String,
     event_id: String,
@@ -72,7 +72,7 @@ pub(crate) async fn handle_exec_approval_request(
             process_id,
             codex_elicitation: "exec-approval".to_string(),
             codex_mcp_tool_call_id: tool_call_id.clone(),
-            codex_event_id: event_id.clone(),
+            chaos_event_id: event_id.clone(),
             codex_call_id: call_id,
             codex_command: command,
             codex_cwd: cwd,
@@ -90,18 +90,18 @@ pub(crate) async fn handle_exec_approval_request(
         Ok(receiver) => receiver,
         Err(CreateFormElicitationError::InvalidParams) => return,
         Err(CreateFormElicitationError::Unsupported) => {
-            submit_exec_approval(approval_id, event_id, ReviewDecision::Denied, codex).await;
+            submit_exec_approval(approval_id, event_id, ReviewDecision::Denied, process).await;
             return;
         }
     };
 
     // Listen for the response on a separate task so we don't block the main agent loop.
     {
-        let codex = codex.clone();
+        let process = process.clone();
         let approval_id = approval_id.clone();
         let event_id = event_id.clone();
         tokio::spawn(async move {
-            on_exec_approval_response(approval_id, event_id, on_response, codex).await;
+            on_exec_approval_response(approval_id, event_id, on_response, process).await;
         });
     }
 }
@@ -110,20 +110,20 @@ async fn on_exec_approval_response(
     approval_id: String,
     event_id: String,
     receiver: crate::elicitation::ElicitationResponseReceiver,
-    codex: Arc<Process>,
+    process: Arc<Process>,
 ) {
     let response = decode_approval_elicitation_response(receiver, "ExecApprovalResponse").await;
 
-    submit_exec_approval(approval_id, event_id, response.review_decision(), codex).await;
+    submit_exec_approval(approval_id, event_id, response.review_decision(), process).await;
 }
 
 async fn submit_exec_approval(
     approval_id: String,
     event_id: String,
     decision: ReviewDecision,
-    codex: Arc<Process>,
+    process: Arc<Process>,
 ) {
-    if let Err(err) = codex
+    if let Err(err) = process
         .submit(Op::ExecApproval {
             id: approval_id,
             turn_id: Some(event_id),

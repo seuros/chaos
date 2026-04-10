@@ -503,8 +503,8 @@ async fn process_rollback_fails_without_persisted_session_history() {
         "thread rollback requires persisted session history"
     );
     assert_eq!(
-        error_event.codex_error_info,
-        Some(CodexErrorInfo::ProcessRollbackFailed)
+        error_event.chaos_error_info,
+        Some(ChaosErrorInfo::ProcessRollbackFailed)
     );
     assert_eq!(sess.clone_history().await.raw_items(), initial_context);
 }
@@ -716,8 +716,8 @@ async fn process_rollback_fails_when_turn_in_progress() {
 
     let error_event = wait_for_process_rollback_failed(&rx).await;
     assert_eq!(
-        error_event.codex_error_info,
-        Some(CodexErrorInfo::ProcessRollbackFailed)
+        error_event.chaos_error_info,
+        Some(ChaosErrorInfo::ProcessRollbackFailed)
     );
 
     let history = sess.clone_history().await;
@@ -737,8 +737,8 @@ async fn process_rollback_fails_when_num_turns_is_zero() {
     let error_event = wait_for_process_rollback_failed(&rx).await;
     assert_eq!(error_event.message, "num_turns must be >= 1");
     assert_eq!(
-        error_event.codex_error_info,
-        Some(CodexErrorInfo::ProcessRollbackFailed)
+        error_event.chaos_error_info,
+        Some(ChaosErrorInfo::ProcessRollbackFailed)
     );
 
     let history = sess.clone_history().await;

@@ -183,7 +183,7 @@ async fn end_to_end_login_flow_persists_auth_json() -> Result<()> {
 }
 
 #[tokio::test]
-async fn creates_missing_codex_home_dir() -> Result<()> {
+async fn creates_missing_chaos_home_dir() -> Result<()> {
     skip_if_no_network!(Ok(()));
 
     let (issuer_addr, _issuer_handle) = start_mock_issuer("org-123");
@@ -307,14 +307,14 @@ async fn oauth_access_denied_missing_entitlement_blocks_login_with_clear_error()
 
     let client = codex_client::CodexHttpClient::default_client();
     let url = format!(
-        "http://127.0.0.1:{login_port}/auth/callback?state={state}&error=access_denied&error_description=missing_codex_entitlement"
+        "http://127.0.0.1:{login_port}/auth/callback?state={state}&error=access_denied&error_description=missing_chaos_entitlement"
     );
     let resp = client.get(&url).send().await?;
     assert!(resp.status().is_success());
     let body = resp.text().await?;
     assert!(
-        body.contains("You do not have access to Codex"),
-        "error body should clearly explain the Codex access denial"
+        body.contains("You do not have access to Chaos"),
+        "error body should clearly explain the Chaos access denial"
     );
     assert!(
         body.contains("Contact your workspace administrator"),
@@ -325,7 +325,7 @@ async fn oauth_access_denied_missing_entitlement_blocks_login_with_clear_error()
         "error body should still include the oauth error code"
     );
     assert!(
-        !body.contains("missing_codex_entitlement"),
+        !body.contains("missing_chaos_entitlement"),
         "known entitlement errors should be mapped to user-facing copy"
     );
 
@@ -388,7 +388,7 @@ async fn oauth_access_denied_unknown_reason_uses_generic_error_page() -> Result<
         "generic oauth denial should preserve the oauth error details"
     );
     assert!(
-        body.contains("Return to Codex to retry"),
+        body.contains("Return to Chaos to retry"),
         "generic oauth denial should keep the generic help text"
     );
     assert!(
@@ -400,11 +400,11 @@ async fn oauth_access_denied_unknown_reason_uses_generic_error_page() -> Result<
         "generic oauth denial should include the oauth error description"
     );
     assert!(
-        !body.contains("You do not have access to Codex"),
+        !body.contains("You do not have access to Chaos"),
         "generic oauth denial should not show the entitlement-specific title"
     );
     assert!(
-        !body.contains("get access to Codex"),
+        !body.contains("get access to Chaos"),
         "generic oauth denial should not show the entitlement-specific admin guidance"
     );
 
@@ -435,10 +435,10 @@ async fn cancels_previous_login_server_when_port_is_in_use() -> Result<()> {
     let issuer = format!("http://{}:{}", issuer_addr.ip(), issuer_addr.port());
 
     let first_tmp = tempdir()?;
-    let first_codex_home = first_tmp.path().to_path_buf();
+    let first_chaos_home = first_tmp.path().to_path_buf();
 
     let first_opts = ServerOptions {
-        chaos_home: first_codex_home,
+        chaos_home: first_chaos_home,
         cli_auth_credentials_store_mode: AuthCredentialsStoreMode::File,
         client_id: chaos_pam::CLIENT_ID.to_string(),
         issuer: issuer.clone(),
@@ -455,10 +455,10 @@ async fn cancels_previous_login_server_when_port_is_in_use() -> Result<()> {
     tokio::time::sleep(Duration::from_millis(100)).await;
 
     let second_tmp = tempdir()?;
-    let second_codex_home = second_tmp.path().to_path_buf();
+    let second_chaos_home = second_tmp.path().to_path_buf();
 
     let second_opts = ServerOptions {
-        chaos_home: second_codex_home,
+        chaos_home: second_chaos_home,
         cli_auth_credentials_store_mode: AuthCredentialsStoreMode::File,
         client_id: chaos_pam::CLIENT_ID.to_string(),
         issuer,

@@ -1,7 +1,7 @@
 use std::path::Path;
 use std::path::PathBuf;
 
-// Re-export filesystem utilities from codex-config.
+// Re-export filesystem utilities from chaos-config.
 pub use chaos_sysctl::path_utils::SymlinkWritePaths;
 pub use chaos_sysctl::path_utils::resolve_symlink_write_paths;
 pub use chaos_sysctl::path_utils::write_atomically;

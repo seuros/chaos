@@ -78,7 +78,7 @@ pub fn spawn_response_stream(
     if let Some(turn_state) = turn_state.as_ref()
         && let Some(header_value) = stream_response
             .headers
-            .get("x-codex-turn-state")
+            .get("x-chaos-turn-state")
             .and_then(|v| v.to_str().ok())
     {
         let _ = turn_state.set(header_value.to_string());
@@ -182,7 +182,7 @@ impl ResponsesStreamEvent {
     /// Precedence:
     /// 1. `response.headers` for standard Responses stream events.
     /// 2. top-level `headers` for websocket metadata events (for example
-    ///    `codex.response.metadata`).
+    ///    `chaos.response.metadata`).
     pub fn response_model(&self) -> Option<String> {
         let response_headers_model = self
             .response

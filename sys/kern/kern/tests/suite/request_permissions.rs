@@ -28,8 +28,8 @@ use core_test_support::responses::sse;
 use core_test_support::responses::start_mock_server;
 use core_test_support::skip_if_no_network;
 use core_test_support::skip_if_sandbox;
-use core_test_support::test_codex::TestCodex;
-use core_test_support::test_codex::test_codex;
+use core_test_support::test_chaos::TestCodex;
+use core_test_support::test_chaos::test_chaos;
 use core_test_support::wait_for_event;
 use pretty_assertions::assert_eq;
 use regex_lite::Regex;
@@ -185,7 +185,7 @@ async fn submit_turn(
     sandbox_policy: SandboxPolicy,
 ) -> Result<()> {
     let session_model = test.session_configured.model.clone();
-    test.codex
+    test.process
         .submit(Op::UserTurn {
             items: vec![UserInput::Text {
                 text: prompt.into(),
@@ -207,7 +207,7 @@ async fn submit_turn(
 }
 
 async fn wait_for_completion(test: &TestCodex) {
-    wait_for_event(&test.codex, |event| {
+    wait_for_event(&test.process, |event| {
         matches!(event, EventMsg::TurnComplete(_))
     })
     .await;
@@ -217,7 +217,7 @@ async fn expect_exec_approval(
     test: &TestCodex,
     expected_command: &str,
 ) -> ExecApprovalRequestEvent {
-    let event = wait_for_event(&test.codex, |event| {
+    let event = wait_for_event(&test.process, |event| {
         matches!(
             event,
             EventMsg::ExecApprovalRequest(_) | EventMsg::TurnComplete(_)
@@ -243,7 +243,7 @@ async fn expect_exec_approval(
 async fn wait_for_exec_approval_or_completion(
     test: &TestCodex,
 ) -> Option<ExecApprovalRequestEvent> {
-    let event = wait_for_event(&test.codex, |event| {
+    let event = wait_for_event(&test.process, |event| {
         matches!(
             event,
             EventMsg::ExecApprovalRequest(_) | EventMsg::TurnComplete(_)
@@ -262,7 +262,7 @@ async fn expect_request_permissions_event(
     test: &TestCodex,
     expected_call_id: &str,
 ) -> RequestPermissionProfile {
-    let event = wait_for_event(&test.codex, |event| {
+    let event = wait_for_event(&test.process, |event| {
         matches!(
             event,
             EventMsg::RequestPermissions(_) | EventMsg::TurnComplete(_)
@@ -320,7 +320,7 @@ async fn with_additional_permissions_requires_approval_under_on_request() -> Res
     let sandbox_policy = SandboxPolicy::new_read_only_policy();
     let sandbox_policy_for_config = sandbox_policy.clone();
 
-    let mut builder = test_codex().with_config(move |config| {
+    let mut builder = test_chaos().with_config(move |config| {
         config.permissions.approval_policy = Constrained::allow_any(approval_policy);
         config.permissions.sandbox_policy = Constrained::allow_any(sandbox_policy_for_config);
         config
@@ -374,7 +374,7 @@ async fn with_additional_permissions_requires_approval_under_on_request() -> Res
         approval.additional_permissions,
         Some(requested_permissions.clone())
     );
-    test.codex
+    test.process
         .submit(Op::ExecApproval {
             id: approval.effective_approval_id(),
             turn_id: None,
@@ -434,7 +434,7 @@ async fn request_permissions_tool_is_auto_denied_when_granular_request_permissio
     let sandbox_policy = SandboxPolicy::new_read_only_policy();
     let sandbox_policy_for_config = sandbox_policy.clone();
 
-    let mut builder = test_codex().with_config(move |config| {
+    let mut builder = test_chaos().with_config(move |config| {
         config.permissions.approval_policy = Constrained::allow_any(approval_policy);
         config.permissions.sandbox_policy = Constrained::allow_any(sandbox_policy_for_config);
         config
@@ -480,7 +480,7 @@ async fn request_permissions_tool_is_auto_denied_when_granular_request_permissio
     )
     .await?;
 
-    let event = wait_for_event(&test.codex, |event| {
+    let event = wait_for_event(&test.process, |event| {
         matches!(
             event,
             EventMsg::RequestPermissions(_) | EventMsg::TurnComplete(_)
@@ -516,7 +516,7 @@ async fn relative_additional_permissions_resolve_against_tool_workdir() -> Resul
     let sandbox_policy = SandboxPolicy::new_read_only_policy();
     let sandbox_policy_for_config = sandbox_policy.clone();
 
-    let mut builder = test_codex().with_config(move |config| {
+    let mut builder = test_chaos().with_config(move |config| {
         config.permissions.approval_policy = Constrained::allow_any(approval_policy);
         config.permissions.sandbox_policy = Constrained::allow_any(sandbox_policy_for_config);
         config
@@ -581,7 +581,7 @@ async fn relative_additional_permissions_resolve_against_tool_workdir() -> Resul
         approval.additional_permissions,
         Some(expected_permissions.clone())
     );
-    test.codex
+    test.process
         .submit(Op::ExecApproval {
             id: approval.effective_approval_id(),
             turn_id: None,
@@ -636,7 +636,7 @@ async fn read_only_with_additional_permissions_does_not_widen_to_unrequested_cwd
     let sandbox_policy = SandboxPolicy::new_read_only_policy();
     let sandbox_policy_for_config = sandbox_policy.clone();
 
-    let mut builder = test_codex().with_config(move |config| {
+    let mut builder = test_chaos().with_config(move |config| {
         config.permissions.approval_policy = Constrained::allow_any(approval_policy);
         config.permissions.sandbox_policy = Constrained::allow_any(sandbox_policy_for_config);
         config
@@ -694,7 +694,7 @@ async fn read_only_with_additional_permissions_does_not_widen_to_unrequested_cwd
         approval.additional_permissions,
         Some(requested_permissions.clone())
     );
-    test.codex
+    test.process
         .submit(Op::ExecApproval {
             id: approval.effective_approval_id(),
             turn_id: None,
@@ -736,7 +736,7 @@ async fn read_only_with_additional_permissions_does_not_widen_to_unrequested_tmp
     let sandbox_policy = SandboxPolicy::new_read_only_policy();
     let sandbox_policy_for_config = sandbox_policy.clone();
 
-    let mut builder = test_codex().with_config(move |config| {
+    let mut builder = test_chaos().with_config(move |config| {
         config.permissions.approval_policy = Constrained::allow_any(approval_policy);
         config.permissions.sandbox_policy = Constrained::allow_any(sandbox_policy_for_config);
         config
@@ -795,7 +795,7 @@ async fn read_only_with_additional_permissions_does_not_widen_to_unrequested_tmp
         approval.additional_permissions,
         Some(requested_permissions.clone())
     );
-    test.codex
+    test.process
         .submit(Op::ExecApproval {
             id: approval.effective_approval_id(),
             turn_id: None,
@@ -835,7 +835,7 @@ async fn workspace_write_with_additional_permissions_can_write_outside_cwd() -> 
     let sandbox_policy = workspace_write_excluding_tmp();
     let sandbox_policy_for_config = sandbox_policy.clone();
 
-    let mut builder = test_codex().with_config(move |config| {
+    let mut builder = test_chaos().with_config(move |config| {
         config.permissions.approval_policy = Constrained::allow_any(approval_policy);
         config.permissions.sandbox_policy = Constrained::allow_any(sandbox_policy_for_config);
         config
@@ -903,7 +903,7 @@ async fn workspace_write_with_additional_permissions_can_write_outside_cwd() -> 
         approval.additional_permissions,
         Some(normalized_requested_permissions.into())
     );
-    test.codex
+    test.process
         .submit(Op::ExecApproval {
             id: approval.effective_approval_id(),
             turn_id: None,
@@ -939,7 +939,7 @@ async fn with_additional_permissions_denied_approval_blocks_execution() -> Resul
     let sandbox_policy = workspace_write_excluding_tmp();
     let sandbox_policy_for_config = sandbox_policy.clone();
 
-    let mut builder = test_codex().with_config(move |config| {
+    let mut builder = test_chaos().with_config(move |config| {
         config.permissions.approval_policy = Constrained::allow_any(approval_policy);
         config.permissions.sandbox_policy = Constrained::allow_any(sandbox_policy_for_config);
         config
@@ -1005,7 +1005,7 @@ async fn with_additional_permissions_denied_approval_blocks_execution() -> Resul
         approval.additional_permissions,
         Some(normalized_requested_permissions)
     );
-    test.codex
+    test.process
         .submit(Op::ExecApproval {
             id: approval.effective_approval_id(),
             turn_id: None,
@@ -1044,7 +1044,7 @@ async fn request_permissions_grants_apply_to_later_exec_command_calls() -> Resul
     let sandbox_policy = workspace_write_excluding_tmp();
     let sandbox_policy_for_config = sandbox_policy.clone();
 
-    let mut builder = test_codex().with_config(move |config| {
+    let mut builder = test_chaos().with_config(move |config| {
         config.permissions.approval_policy = Constrained::allow_any(approval_policy);
         config.permissions.sandbox_policy = Constrained::allow_any(sandbox_policy_for_config);
         config
@@ -1119,7 +1119,7 @@ async fn request_permissions_grants_apply_to_later_exec_command_calls() -> Resul
         granted_permissions,
         normalized_requested_permissions.clone()
     );
-    test.codex
+    test.process
         .submit(Op::RequestPermissionsResponse {
             id: "permissions-call".to_string(),
             response: RequestPermissionsResponse {
@@ -1134,7 +1134,7 @@ async fn request_permissions_grants_apply_to_later_exec_command_calls() -> Resul
             approval.additional_permissions,
             Some(normalized_requested_permissions.clone().into())
         );
-        test.codex
+        test.process
             .submit(Op::ExecApproval {
                 id: approval.effective_approval_id(),
                 turn_id: None,
@@ -1167,7 +1167,7 @@ async fn request_permissions_preapprove_explicit_exec_permissions_outside_on_req
     let sandbox_policy = workspace_write_excluding_tmp();
     let sandbox_policy_for_config = sandbox_policy.clone();
 
-    let mut builder = test_codex().with_config(move |config| {
+    let mut builder = test_chaos().with_config(move |config| {
         config.permissions.approval_policy = Constrained::allow_any(approval_policy);
         config.permissions.sandbox_policy = Constrained::allow_any(sandbox_policy_for_config);
         config
@@ -1233,7 +1233,7 @@ async fn request_permissions_preapprove_explicit_exec_permissions_outside_on_req
         granted_permissions,
         normalized_requested_permissions.clone()
     );
-    test.codex
+    test.process
         .submit(Op::RequestPermissionsResponse {
             id: "permissions-call".to_string(),
             response: RequestPermissionsResponse {
@@ -1244,7 +1244,7 @@ async fn request_permissions_preapprove_explicit_exec_permissions_outside_on_req
         .await?;
 
     if let Some(approval) = wait_for_exec_approval_or_completion(&test).await {
-        test.codex
+        test.process
             .submit(Op::ExecApproval {
                 id: approval.effective_approval_id(),
                 turn_id: None,
@@ -1284,7 +1284,7 @@ async fn request_permissions_grants_apply_to_later_shell_command_calls() -> Resu
     let sandbox_policy = workspace_write_excluding_tmp();
     let sandbox_policy_for_config = sandbox_policy.clone();
 
-    let mut builder = test_codex().with_config(move |config| {
+    let mut builder = test_chaos().with_config(move |config| {
         config.permissions.approval_policy = Constrained::allow_any(approval_policy);
         config.permissions.sandbox_policy = Constrained::allow_any(sandbox_policy_for_config);
         config
@@ -1346,7 +1346,7 @@ async fn request_permissions_grants_apply_to_later_shell_command_calls() -> Resu
         granted_permissions,
         normalized_requested_permissions.clone()
     );
-    test.codex
+    test.process
         .submit(Op::RequestPermissionsResponse {
             id: "permissions-call".to_string(),
             response: RequestPermissionsResponse {
@@ -1357,7 +1357,7 @@ async fn request_permissions_grants_apply_to_later_shell_command_calls() -> Resu
         .await?;
 
     if let Some(approval) = wait_for_exec_approval_or_completion(&test).await {
-        test.codex
+        test.process
             .submit(Op::ExecApproval {
                 id: approval.effective_approval_id(),
                 turn_id: None,
@@ -1395,7 +1395,7 @@ async fn request_permissions_grants_apply_to_later_shell_command_calls_without_i
     let sandbox_policy = workspace_write_excluding_tmp();
     let sandbox_policy_for_config = sandbox_policy.clone();
 
-    let mut builder = test_codex().with_config(move |config| {
+    let mut builder = test_chaos().with_config(move |config| {
         config.permissions.approval_policy = Constrained::allow_any(approval_policy);
         config.permissions.sandbox_policy = Constrained::allow_any(sandbox_policy_for_config);
         config
@@ -1455,7 +1455,7 @@ async fn request_permissions_grants_apply_to_later_shell_command_calls_without_i
         granted_permissions,
         normalized_requested_permissions.clone()
     );
-    test.codex
+    test.process
         .submit(Op::RequestPermissionsResponse {
             id: "permissions-call".to_string(),
             response: RequestPermissionsResponse {
@@ -1466,7 +1466,7 @@ async fn request_permissions_grants_apply_to_later_shell_command_calls_without_i
         .await?;
 
     if let Some(approval) = wait_for_exec_approval_or_completion(&test).await {
-        test.codex
+        test.process
             .submit(Op::ExecApproval {
                 id: approval.effective_approval_id(),
                 turn_id: None,
@@ -1506,7 +1506,7 @@ async fn partial_request_permissions_grants_do_not_preapprove_new_permissions() 
     let sandbox_policy = workspace_write_excluding_tmp();
     let sandbox_policy_for_config = sandbox_policy.clone();
 
-    let mut builder = test_codex().with_config(move |config| {
+    let mut builder = test_chaos().with_config(move |config| {
         config.permissions.approval_policy = Constrained::allow_any(approval_policy);
         config.permissions.sandbox_policy = Constrained::allow_any(sandbox_policy_for_config);
         config
@@ -1601,7 +1601,7 @@ async fn partial_request_permissions_grants_do_not_preapprove_new_permissions() 
 
     let initial_request = expect_request_permissions_event(&test, "permissions-call").await;
     assert_eq!(initial_request, normalized_requested_permissions);
-    test.codex
+    test.process
         .submit(Op::RequestPermissionsResponse {
             id: "permissions-call".to_string(),
             response: RequestPermissionsResponse {
@@ -1635,7 +1635,7 @@ async fn partial_request_permissions_grants_do_not_preapprove_new_permissions() 
     expected_writes.sort_by_key(|path| path.display().to_string());
 
     assert_eq!(approval_writes, expected_writes);
-    test.codex
+    test.process
         .submit(Op::ExecApproval {
             id: approval.effective_approval_id(),
             turn_id: None,
@@ -1666,7 +1666,7 @@ async fn request_permissions_grants_do_not_carry_across_turns() -> Result<()> {
     let sandbox_policy = workspace_write_excluding_tmp();
     let sandbox_policy_for_config = sandbox_policy.clone();
 
-    let mut builder = test_codex().with_config(move |config| {
+    let mut builder = test_chaos().with_config(move |config| {
         config.permissions.approval_policy = Constrained::allow_any(approval_policy);
         config.permissions.sandbox_policy = Constrained::allow_any(sandbox_policy_for_config);
         config
@@ -1719,7 +1719,7 @@ async fn request_permissions_grants_do_not_carry_across_turns() -> Result<()> {
         granted_permissions,
         normalized_requested_permissions.clone()
     );
-    test.codex
+    test.process
         .submit(Op::RequestPermissionsResponse {
             id: "permissions-call".to_string(),
             response: RequestPermissionsResponse {
@@ -1778,7 +1778,7 @@ async fn request_permissions_session_grants_carry_across_turns() -> Result<()> {
     let sandbox_policy = workspace_write_excluding_tmp();
     let sandbox_policy_for_config = sandbox_policy.clone();
 
-    let mut builder = test_codex().with_config(move |config| {
+    let mut builder = test_chaos().with_config(move |config| {
         config.permissions.approval_policy = Constrained::allow_any(approval_policy);
         config.permissions.sandbox_policy = Constrained::allow_any(sandbox_policy_for_config);
         config
@@ -1836,7 +1836,7 @@ async fn request_permissions_session_grants_carry_across_turns() -> Result<()> {
         granted_permissions,
         normalized_requested_permissions.clone()
     );
-    test.codex
+    test.process
         .submit(Op::RequestPermissionsResponse {
             id: "permissions-call".to_string(),
             response: RequestPermissionsResponse {
@@ -1872,7 +1872,7 @@ async fn request_permissions_session_grants_carry_across_turns() -> Result<()> {
     )
     .await?;
 
-    let completion_event = wait_for_event(&test.codex, |event| {
+    let completion_event = wait_for_event(&test.process, |event| {
         matches!(
             event,
             EventMsg::ExecApprovalRequest(_) | EventMsg::TurnComplete(_)
@@ -1880,7 +1880,7 @@ async fn request_permissions_session_grants_carry_across_turns() -> Result<()> {
     })
     .await;
     if let EventMsg::ExecApprovalRequest(approval) = completion_event {
-        test.codex
+        test.process
             .submit(Op::ExecApproval {
                 id: approval.effective_approval_id(),
                 turn_id: None,

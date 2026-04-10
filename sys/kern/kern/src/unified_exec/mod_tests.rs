@@ -127,7 +127,7 @@ async fn unified_exec_persists_across_requests() -> anyhow::Result<()> {
     write_stdin(
         &session,
         process_id,
-        "export CODEX_INTERACTIVE_SHELL_VAR=codex\n",
+        "export CODEX_INTERACTIVE_SHELL_VAR=chaos\n",
         2_500,
     )
     .await?;
@@ -159,7 +159,7 @@ async fn multi_unified_exec_sessions() -> anyhow::Result<()> {
     write_stdin(
         &session,
         session_a,
-        "export CODEX_INTERACTIVE_SHELL_VAR=codex\n",
+        "export CODEX_INTERACTIVE_SHELL_VAR=chaos\n",
         2_500,
     )
     .await?;
@@ -270,7 +270,7 @@ async fn unified_exec_pause_blocks_yield_timeout() -> anyhow::Result<()> {
 async fn requests_with_large_timeout_are_capped() -> anyhow::Result<()> {
     let (session, turn) = test_session_and_turn().await;
 
-    let result = exec_command(&session, &turn, "echo codex", 120_000).await?;
+    let result = exec_command(&session, &turn, "echo chaos", 120_000).await?;
 
     assert!(result.process_id.is_some());
     assert!(result.truncated_output().contains("chaos"));
@@ -282,7 +282,7 @@ async fn requests_with_large_timeout_are_capped() -> anyhow::Result<()> {
 #[ignore] // Ignored while we have a better way to test this.
 async fn completed_commands_do_not_persist_sessions() -> anyhow::Result<()> {
     let (session, turn) = test_session_and_turn().await;
-    let result = exec_command(&session, &turn, "echo codex", 2_500).await?;
+    let result = exec_command(&session, &turn, "echo chaos", 2_500).await?;
 
     assert!(
         result.process_id.is_some(),

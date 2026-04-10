@@ -76,7 +76,7 @@ fn classify_event_filters_to_skills_roots() {
 #[test]
 fn classify_event_supports_multiple_roots_without_prefix_false_positives() {
     let root_a = path("/tmp/skills");
-    let root_b = path("/tmp/workspace/.codex/skills");
+    let root_b = path("/tmp/workspace/.chaos/skills");
     let state = RwLock::new(WatchState {
         skills_root_ref_counts: HashMap::from([(root_a.clone(), 1), (root_b.clone(), 1)]),
     });

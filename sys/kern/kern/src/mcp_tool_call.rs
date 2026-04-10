@@ -999,7 +999,7 @@ async fn maybe_persist_mcp_tool_approval(
             error = %err,
             connector_id,
             tool_name,
-            "failed to persist codex app tool approval"
+            "failed to persist chaos app tool approval"
         );
         remember_mcp_tool_approval(sess, key).await;
         return;

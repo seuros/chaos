@@ -24,8 +24,8 @@ use core_test_support::responses::mount_models_once;
 use core_test_support::responses::sse;
 use core_test_support::responses::start_mock_server;
 use core_test_support::skip_if_no_network;
-use core_test_support::test_codex::TestCodex;
-use core_test_support::test_codex::test_codex;
+use core_test_support::test_chaos::TestCodex;
+use core_test_support::test_chaos::test_chaos;
 use core_test_support::wait_for_event;
 use core_test_support::wait_for_event_with_timeout;
 use image::GenericImageView;
@@ -76,11 +76,11 @@ async fn user_turn_with_local_image_attaches_image() -> anyhow::Result<()> {
     let server = start_mock_server().await;
 
     let TestCodex {
-        codex,
+        process: chaos,
         cwd,
         session_configured,
         ..
-    } = test_codex().build(&server).await?;
+    } = test_chaos().build(&server).await?;
 
     let rel_path = "user-turn/example.png";
     let abs_path = cwd.path().join(rel_path);
@@ -101,7 +101,7 @@ async fn user_turn_with_local_image_attaches_image() -> anyhow::Result<()> {
 
     let session_model = session_configured.model.clone();
 
-    codex
+    chaos
         .submit(Op::UserTurn {
             items: vec![UserInput::LocalImage {
                 path: abs_path.clone(),
@@ -120,7 +120,7 @@ async fn user_turn_with_local_image_attaches_image() -> anyhow::Result<()> {
         .await?;
 
     wait_for_event_with_timeout(
-        &codex,
+        &chaos,
         |event| matches!(event, EventMsg::TurnComplete(_)),
         // Empirically, image attachment can be slow in CI.
         Duration::from_secs(10),
@@ -169,11 +169,11 @@ async fn view_image_tool_attaches_local_image() -> anyhow::Result<()> {
     let server = start_mock_server().await;
 
     let TestCodex {
-        codex,
+        process: chaos,
         cwd,
         session_configured,
         ..
-    } = test_codex().build(&server).await?;
+    } = test_chaos().build(&server).await?;
 
     let rel_path = "assets/example.png";
     let abs_path = cwd.path().join(rel_path);
@@ -203,7 +203,7 @@ async fn view_image_tool_attaches_local_image() -> anyhow::Result<()> {
 
     let session_model = session_configured.model.clone();
 
-    codex
+    chaos
         .submit(Op::UserTurn {
             items: vec![UserInput::Text {
                 text: "please add the screenshot".into(),
@@ -224,7 +224,7 @@ async fn view_image_tool_attaches_local_image() -> anyhow::Result<()> {
 
     let mut tool_event = None;
     wait_for_event_with_timeout(
-        &codex,
+        &chaos,
         |event| match event {
             EventMsg::ViewImageToolCall(_) => {
                 tool_event = Some(event.clone());
@@ -295,9 +295,9 @@ async fn view_image_tool_errors_clearly_for_unsupported_detail_values() -> anyho
     skip_if_no_network!(Ok(()));
 
     let server = start_mock_server().await;
-    let mut builder = test_codex().with_model("gpt-5.3-codex");
+    let mut builder = test_chaos().with_model("gpt-5.3-codex");
     let TestCodex {
-        codex,
+        process: chaos,
         cwd,
         session_configured,
         ..
@@ -329,7 +329,7 @@ async fn view_image_tool_errors_clearly_for_unsupported_detail_values() -> anyho
 
     let session_model = session_configured.model.clone();
 
-    codex
+    chaos
         .submit(Op::UserTurn {
             items: vec![UserInput::Text {
                 text: "please attach the image at low detail".into(),
@@ -348,7 +348,7 @@ async fn view_image_tool_errors_clearly_for_unsupported_detail_values() -> anyho
         })
         .await?;
 
-    wait_for_event(&codex, |event| matches!(event, EventMsg::TurnComplete(_))).await;
+    wait_for_event(&chaos, |event| matches!(event, EventMsg::TurnComplete(_))).await;
 
     let req = mock.single_request();
     let body_with_tool_output = req.body_json();
@@ -374,9 +374,9 @@ async fn view_image_tool_treats_null_detail_as_omitted() -> anyhow::Result<()> {
     skip_if_no_network!(Ok(()));
 
     let server = start_mock_server().await;
-    let mut builder = test_codex().with_model("gpt-5.3-codex");
+    let mut builder = test_chaos().with_model("gpt-5.3-codex");
     let TestCodex {
-        codex,
+        process: chaos,
         cwd,
         session_configured,
         ..
@@ -410,7 +410,7 @@ async fn view_image_tool_treats_null_detail_as_omitted() -> anyhow::Result<()> {
 
     let session_model = session_configured.model.clone();
 
-    codex
+    chaos
         .submit(Op::UserTurn {
             items: vec![UserInput::Text {
                 text: "please attach the image with a null detail".into(),
@@ -429,7 +429,7 @@ async fn view_image_tool_treats_null_detail_as_omitted() -> anyhow::Result<()> {
         })
         .await?;
 
-    wait_for_event(&codex, |event| matches!(event, EventMsg::TurnComplete(_))).await;
+    wait_for_event(&chaos, |event| matches!(event, EventMsg::TurnComplete(_))).await;
 
     let req = mock.single_request();
     let function_output = req.function_call_output(call_id);
@@ -465,9 +465,9 @@ async fn view_image_tool_resizes_when_model_lacks_original_detail_support() -> a
     skip_if_no_network!(Ok(()));
 
     let server = start_mock_server().await;
-    let mut builder = test_codex().with_model("gpt-5.2");
+    let mut builder = test_chaos().with_model("gpt-5.2");
     let TestCodex {
-        codex,
+        process: chaos,
         cwd,
         session_configured,
         ..
@@ -501,7 +501,7 @@ async fn view_image_tool_resizes_when_model_lacks_original_detail_support() -> a
 
     let session_model = session_configured.model.clone();
 
-    codex
+    chaos
         .submit(Op::UserTurn {
             items: vec![UserInput::Text {
                 text: "please add the screenshot".into(),
@@ -521,7 +521,7 @@ async fn view_image_tool_resizes_when_model_lacks_original_detail_support() -> a
         .await?;
 
     wait_for_event_with_timeout(
-        &codex,
+        &chaos,
         |event| matches!(event, EventMsg::TurnComplete(_)),
         Duration::from_secs(10),
     )
@@ -565,9 +565,9 @@ async fn view_image_tool_does_not_force_original_resolution_with_capability_feat
     skip_if_no_network!(Ok(()));
 
     let server = start_mock_server().await;
-    let mut builder = test_codex().with_model("gpt-5.3-codex");
+    let mut builder = test_chaos().with_model("gpt-5.3-codex");
     let TestCodex {
-        codex,
+        process: chaos,
         cwd,
         session_configured,
         ..
@@ -601,7 +601,7 @@ async fn view_image_tool_does_not_force_original_resolution_with_capability_feat
 
     let session_model = session_configured.model.clone();
 
-    codex
+    chaos
         .submit(Op::UserTurn {
             items: vec![UserInput::Text {
                 text: "please add the screenshot".into(),
@@ -621,7 +621,7 @@ async fn view_image_tool_does_not_force_original_resolution_with_capability_feat
         .await?;
 
     wait_for_event_with_timeout(
-        &codex,
+        &chaos,
         |event| matches!(event, EventMsg::TurnComplete(_)),
         Duration::from_secs(10),
     )
@@ -663,11 +663,11 @@ async fn view_image_tool_errors_when_path_is_directory() -> anyhow::Result<()> {
     let server = start_mock_server().await;
 
     let TestCodex {
-        codex,
+        process: chaos,
         cwd,
         session_configured,
         ..
-    } = test_codex().build(&server).await?;
+    } = test_chaos().build(&server).await?;
 
     let rel_path = "assets";
     let abs_path = cwd.path().join(rel_path);
@@ -691,7 +691,7 @@ async fn view_image_tool_errors_when_path_is_directory() -> anyhow::Result<()> {
 
     let session_model = session_configured.model.clone();
 
-    codex
+    chaos
         .submit(Op::UserTurn {
             items: vec![UserInput::Text {
                 text: "please attach the folder".into(),
@@ -710,7 +710,7 @@ async fn view_image_tool_errors_when_path_is_directory() -> anyhow::Result<()> {
         })
         .await?;
 
-    wait_for_event(&codex, |event| matches!(event, EventMsg::TurnComplete(_))).await;
+    wait_for_event(&chaos, |event| matches!(event, EventMsg::TurnComplete(_))).await;
 
     let req = mock.single_request();
     let body_with_tool_output = req.body_json();
@@ -736,11 +736,11 @@ async fn view_image_tool_placeholder_for_non_image_files() -> anyhow::Result<()>
     let server = start_mock_server().await;
 
     let TestCodex {
-        codex,
+        process: chaos,
         cwd,
         session_configured,
         ..
-    } = test_codex().build(&server).await?;
+    } = test_chaos().build(&server).await?;
 
     let rel_path = "assets/example.json";
     let abs_path = cwd.path().join(rel_path);
@@ -767,7 +767,7 @@ async fn view_image_tool_placeholder_for_non_image_files() -> anyhow::Result<()>
 
     let session_model = session_configured.model.clone();
 
-    codex
+    chaos
         .submit(Op::UserTurn {
             items: vec![UserInput::Text {
                 text: "please use the view_image tool to read the json file".into(),
@@ -786,7 +786,7 @@ async fn view_image_tool_placeholder_for_non_image_files() -> anyhow::Result<()>
         })
         .await?;
 
-    wait_for_event(&codex, |event| matches!(event, EventMsg::TurnComplete(_))).await;
+    wait_for_event(&chaos, |event| matches!(event, EventMsg::TurnComplete(_))).await;
 
     let request = mock.single_request();
     assert!(
@@ -800,7 +800,7 @@ async fn view_image_tool_placeholder_for_non_image_files() -> anyhow::Result<()>
     let placeholder = placeholder.expect("placeholder text present");
 
     assert!(
-        placeholder.contains("Codex could not read the local image at")
+        placeholder.contains("Chaos could not read the local image at")
             && placeholder.contains("unsupported MIME type `application/json`"),
         "placeholder should describe the unsupported file type: {placeholder}"
     );
@@ -819,11 +819,11 @@ async fn view_image_tool_errors_when_file_missing() -> anyhow::Result<()> {
     let server = start_mock_server().await;
 
     let TestCodex {
-        codex,
+        process: chaos,
         cwd,
         session_configured,
         ..
-    } = test_codex().build(&server).await?;
+    } = test_chaos().build(&server).await?;
 
     let rel_path = "missing/example.png";
     let abs_path = cwd.path().join(rel_path);
@@ -846,7 +846,7 @@ async fn view_image_tool_errors_when_file_missing() -> anyhow::Result<()> {
 
     let session_model = session_configured.model.clone();
 
-    codex
+    chaos
         .submit(Op::UserTurn {
             items: vec![UserInput::Text {
                 text: "please attach the missing image".into(),
@@ -865,7 +865,7 @@ async fn view_image_tool_errors_when_file_missing() -> anyhow::Result<()> {
         })
         .await?;
 
-    wait_for_event(&codex, |event| matches!(event, EventMsg::TurnComplete(_))).await;
+    wait_for_event(&chaos, |event| matches!(event, EventMsg::TurnComplete(_))).await;
 
     let req = mock.single_request();
     let body_with_tool_output = req.body_json();
@@ -940,7 +940,11 @@ async fn view_image_tool_returns_unsupported_message_for_text_only_model() -> an
     )
     .await;
 
-    let TestCodex { codex, cwd, .. } = test_codex()
+    let TestCodex {
+        process: chaos,
+        cwd,
+        ..
+    } = test_chaos()
         .with_auth(ChaosAuth::create_dummy_chatgpt_auth_for_testing())
         .with_config(|config| {
             config.model = Some(model_slug.to_string());
@@ -971,7 +975,7 @@ async fn view_image_tool_returns_unsupported_message_for_text_only_model() -> an
     ]);
     let mock = responses::mount_sse_once(&server, second_response).await;
 
-    codex
+    chaos
         .submit(Op::UserTurn {
             items: vec![UserInput::Text {
                 text: "please attach the image".into(),
@@ -990,7 +994,7 @@ async fn view_image_tool_returns_unsupported_message_for_text_only_model() -> an
         })
         .await?;
 
-    wait_for_event(&codex, |event| matches!(event, EventMsg::TurnComplete(_))).await;
+    wait_for_event(&chaos, |event| matches!(event, EventMsg::TurnComplete(_))).await;
 
     let output_text = mock
         .single_request()
@@ -1033,11 +1037,11 @@ async fn replaces_invalid_local_image_after_bad_request() -> anyhow::Result<()> 
     let completion_mock = responses::mount_sse_once(&server, success_response).await;
 
     let TestCodex {
-        codex,
+        process: chaos,
         cwd,
         session_configured,
         ..
-    } = test_codex().build(&server).await?;
+    } = test_chaos().build(&server).await?;
 
     let rel_path = "assets/poisoned.png";
     let abs_path = cwd.path().join(rel_path);
@@ -1049,7 +1053,7 @@ async fn replaces_invalid_local_image_after_bad_request() -> anyhow::Result<()> 
 
     let session_model = session_configured.model.clone();
 
-    codex
+    chaos
         .submit(Op::UserTurn {
             items: vec![UserInput::LocalImage {
                 path: abs_path.clone(),
@@ -1067,7 +1071,7 @@ async fn replaces_invalid_local_image_after_bad_request() -> anyhow::Result<()> 
         })
         .await?;
 
-    wait_for_event(&codex, |event| matches!(event, EventMsg::TurnComplete(_))).await;
+    wait_for_event(&chaos, |event| matches!(event, EventMsg::TurnComplete(_))).await;
 
     let first_body = invalid_image_mock.single_request().body_json();
     assert!(

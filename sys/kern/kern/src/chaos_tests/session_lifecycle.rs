@@ -324,7 +324,7 @@ async fn submit_with_id_captures_current_span_trace_context() {
     let (tx_sub, rx_sub) = async_channel::bounded(1);
     let (_tx_event, rx_event) = async_channel::unbounded();
     let (_agent_status_tx, agent_status) = watch::channel(AgentStatus::PendingInit);
-    let codex = Chaos {
+    let chaos = Chaos {
         tx_sub,
         rx_event,
         agent_status,
@@ -347,7 +347,7 @@ async fn submit_with_id_captures_current_span_trace_context() {
     let expected_trace = async {
         let expected_trace =
             current_span_w3c_trace_context().expect("current span should have trace context");
-        codex
+        chaos
             .submit_with_id(Submission {
                 id: "sub-1".into(),
                 op: Op::Interrupt,

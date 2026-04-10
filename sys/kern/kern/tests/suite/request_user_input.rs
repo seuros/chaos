@@ -21,8 +21,8 @@ use core_test_support::responses::ev_response_created;
 use core_test_support::responses::sse;
 use core_test_support::responses::start_mock_server;
 use core_test_support::skip_if_no_network;
-use core_test_support::test_codex::TestCodex;
-use core_test_support::test_codex::test_codex;
+use core_test_support::test_chaos::TestCodex;
+use core_test_support::test_chaos::test_chaos;
 use core_test_support::wait_for_event;
 use core_test_support::wait_for_event_match;
 use pretty_assertions::assert_eq;
@@ -77,10 +77,10 @@ async fn request_user_input_round_trip_for_mode(mode: ModeKind) -> anyhow::Resul
 
     let server = start_mock_server().await;
 
-    let mut builder = test_codex();
+    let mut builder = test_chaos();
     #[allow(clippy::expect_used)]
     let TestCodex {
-        codex,
+        process: chaos,
         cwd,
         session_configured,
         ..
@@ -118,7 +118,7 @@ async fn request_user_input_round_trip_for_mode(mode: ModeKind) -> anyhow::Resul
 
     let session_model = session_configured.model.clone();
 
-    codex
+    chaos
         .submit(Op::UserTurn {
             items: vec![UserInput::Text {
                 text: "please confirm".into(),
@@ -144,7 +144,7 @@ async fn request_user_input_round_trip_for_mode(mode: ModeKind) -> anyhow::Resul
         })
         .await?;
 
-    let request = wait_for_event_match(&codex, |event| match event {
+    let request = wait_for_event_match(&chaos, |event| match event {
         EventMsg::RequestUserInput(request) => Some(request.clone()),
         _ => None,
     })
@@ -161,14 +161,14 @@ async fn request_user_input_round_trip_for_mode(mode: ModeKind) -> anyhow::Resul
         },
     );
     let response = RequestUserInputResponse { answers };
-    codex
+    chaos
         .submit(Op::UserInputAnswer {
             id: request.turn_id.clone(),
             response,
         })
         .await?;
 
-    wait_for_event(&codex, |event| matches!(event, EventMsg::TurnComplete(_))).await;
+    wait_for_event(&chaos, |event| matches!(event, EventMsg::TurnComplete(_))).await;
 
     let req = second_mock.single_request();
     let output_text = call_output(&req, call_id);
@@ -193,9 +193,9 @@ where
 
     let server = start_mock_server().await;
 
-    let mut builder = test_codex();
+    let mut builder = test_chaos();
     let TestCodex {
-        codex,
+        process: chaos,
         cwd,
         session_configured,
         ..
@@ -235,7 +235,7 @@ where
     let session_model = session_configured.model.clone();
     let collaboration_mode = build_mode(session_model.clone());
 
-    codex
+    chaos
         .submit(Op::UserTurn {
             items: vec![UserInput::Text {
                 text: "please confirm".into(),
@@ -254,7 +254,7 @@ where
         })
         .await?;
 
-    wait_for_event(&codex, |event| matches!(event, EventMsg::TurnComplete(_))).await;
+    wait_for_event(&chaos, |event| matches!(event, EventMsg::TurnComplete(_))).await;
 
     let req = second_mock.single_request();
     let (output, success) = call_output_content_and_success(&req, &call_id);

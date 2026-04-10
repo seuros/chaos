@@ -18,7 +18,7 @@ impl Display for RateLimitError {
     }
 }
 
-/// Parses the default Codex rate-limit header family into a `RateLimitSnapshot`.
+/// Parses the default Chaos rate-limit header family into a `RateLimitSnapshot`.
 pub fn parse_default_rate_limit(headers: &HeaderMap) -> Option<RateLimitSnapshot> {
     parse_rate_limit_for_limit(headers, /*limit_id*/ None)
 }
@@ -51,8 +51,8 @@ pub fn parse_all_rate_limits(headers: &HeaderMap) -> Vec<RateLimitSnapshot> {
 
 /// Parses rate-limit headers for the provided limit id.
 ///
-/// `limit_id` should match the server-provided metered limit id (e.g. `codex`,
-/// `codex_other`). When omitted, this defaults to the legacy `codex` header family.
+/// `limit_id` should match the server-provided metered limit id (e.g. `chaos`,
+/// `chaos_other`). When omitted, this defaults to the legacy `chaos` header family.
 pub fn parse_rate_limit_for_limit(
     headers: &HeaderMap,
     limit_id: Option<&str>,
@@ -62,10 +62,10 @@ pub fn parse_rate_limit_for_limit(
         .unwrap_or("chaos")
         .to_ascii_lowercase()
         .replace('_', "-");
-    // Omitted limit ids still read the legacy `x-codex-*` header family while
+    // Omitted limit ids still read the legacy `x-chaos-*` header family while
     // reporting the default logical limit id as `chaos`.
     let header_limit = requested_limit
-        .unwrap_or("codex")
+        .unwrap_or("chaos")
         .to_ascii_lowercase()
         .replace('_', "-");
     let prefix = format!("x-{header_limit}");
@@ -173,9 +173,9 @@ fn map_event_window(window: Option<&RateLimitEventWindow>) -> Option<RateLimitWi
     })
 }
 
-/// Parses the bespoke Codex rate-limit headers into a `RateLimitSnapshot`.
+/// Parses the bespoke Chaos rate-limit headers into a `RateLimitSnapshot`.
 pub fn parse_promo_message(headers: &HeaderMap) -> Option<String> {
-    parse_header_str(headers, "x-codex-promo-message")
+    parse_header_str(headers, "x-chaos-promo-message")
         .map(str::trim)
         .filter(|value| !value.is_empty())
         .map(std::string::ToString::to_string)
@@ -206,9 +206,9 @@ fn parse_rate_limit_window(
 }
 
 fn parse_credits_snapshot(headers: &HeaderMap) -> Option<CreditsSnapshot> {
-    let has_credits = parse_header_bool(headers, "x-codex-credits-has-credits")?;
-    let unlimited = parse_header_bool(headers, "x-codex-credits-unlimited")?;
-    let balance = parse_header_str(headers, "x-codex-credits-balance")
+    let has_credits = parse_header_bool(headers, "x-chaos-credits-has-credits")?;
+    let unlimited = parse_header_bool(headers, "x-chaos-credits-unlimited")?;
+    let balance = parse_header_str(headers, "x-chaos-credits-balance")
         .map(str::trim)
         .filter(|value| !value.is_empty())
         .map(std::string::ToString::to_string);
@@ -270,15 +270,15 @@ mod tests {
     fn parse_rate_limit_for_limit_defaults_to_codex_headers() {
         let mut headers = HeaderMap::new();
         headers.insert(
-            "x-codex-primary-used-percent",
+            "x-chaos-primary-used-percent",
             HeaderValue::from_static("12.5"),
         );
         headers.insert(
-            "x-codex-primary-window-minutes",
+            "x-chaos-primary-window-minutes",
             HeaderValue::from_static("60"),
         );
         headers.insert(
-            "x-codex-primary-reset-at",
+            "x-chaos-primary-reset-at",
             HeaderValue::from_static("1704069000"),
         );
 
@@ -295,15 +295,15 @@ mod tests {
     fn parse_rate_limit_for_limit_reads_secondary_headers() {
         let mut headers = HeaderMap::new();
         headers.insert(
-            "x-codex-secondary-primary-used-percent",
+            "x-chaos-secondary-primary-used-percent",
             HeaderValue::from_static("80"),
         );
         headers.insert(
-            "x-codex-secondary-primary-window-minutes",
+            "x-chaos-secondary-primary-window-minutes",
             HeaderValue::from_static("1440"),
         );
         headers.insert(
-            "x-codex-secondary-primary-reset-at",
+            "x-chaos-secondary-primary-reset-at",
             HeaderValue::from_static("1704074400"),
         );
 
@@ -322,11 +322,11 @@ mod tests {
     fn parse_rate_limit_for_limit_prefers_limit_name_header() {
         let mut headers = HeaderMap::new();
         headers.insert(
-            "x-codex-bengalfox-primary-used-percent",
+            "x-chaos-bengalfox-primary-used-percent",
             HeaderValue::from_static("80"),
         );
         headers.insert(
-            "x-codex-bengalfox-limit-name",
+            "x-chaos-bengalfox-limit-name",
             HeaderValue::from_static("gpt-5.2-codex-sonic"),
         );
 
@@ -340,11 +340,11 @@ mod tests {
     fn parse_all_rate_limits_reads_all_limit_families() {
         let mut headers = HeaderMap::new();
         headers.insert(
-            "x-codex-primary-used-percent",
+            "x-chaos-primary-used-percent",
             HeaderValue::from_static("12.5"),
         );
         headers.insert(
-            "x-codex-secondary-primary-used-percent",
+            "x-chaos-secondary-primary-used-percent",
             HeaderValue::from_static("80"),
         );
 

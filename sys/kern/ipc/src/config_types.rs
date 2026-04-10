@@ -63,7 +63,6 @@ pub enum SandboxMode {
     WorkspaceWrite,
 
     #[serde(rename = "root-access")]
-    /// Support legacy hardware like i386 and OpenAI Codex.
     RootAccess,
 }
 
@@ -338,7 +337,7 @@ impl ModeKind {
     }
 }
 
-/// Collaboration mode for a Codex session.
+/// Collaboration mode for a Chaos session.
 #[derive(Clone, PartialEq, Eq, Hash, Debug, Serialize, Deserialize, JsonSchema, TS)]
 #[serde(rename_all = "lowercase")]
 pub struct CollaborationMode {

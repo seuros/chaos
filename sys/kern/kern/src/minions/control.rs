@@ -1,5 +1,5 @@
 use crate::error::ChaosErr;
-use crate::error::Result as CodexResult;
+use crate::error::Result as ChaosResult;
 use crate::minions::AgentStatus;
 use crate::minions::guards::Guards;
 use crate::minions::role::DEFAULT_ROLE_NAME;
@@ -46,7 +46,7 @@ fn agent_nickname_candidates(
 /// `AgentControl` is held by each session (via `SessionServices`). It provides capability to
 /// spawn new agents and the inter-agent communication layer.
 /// An `AgentControl` instance is shared per "user session" which means the same `AgentControl`
-/// is used for every sub-agent spawned by Codex. By doing so, we make sure the guards are
+/// is used for every sub-agent spawned by Chaos. By doing so, we make sure the guards are
 /// scoped to a user session.
 #[derive(Clone, Default)]
 pub(crate) struct AgentControl {
@@ -72,7 +72,7 @@ impl AgentControl {
         config: crate::config::Config,
         items: Vec<UserInput>,
         session_source: Option<SessionSource>,
-    ) -> CodexResult<ProcessId> {
+    ) -> ChaosResult<ProcessId> {
         self.spawn_agent_with_options(config, items, session_source, SpawnAgentOptions::default())
             .await
     }
@@ -83,7 +83,7 @@ impl AgentControl {
         items: Vec<UserInput>,
         session_source: Option<SessionSource>,
         options: SpawnAgentOptions,
-    ) -> CodexResult<ProcessId> {
+    ) -> ChaosResult<ProcessId> {
         let state = self.upgrade()?;
         let mut reservation = self.state.reserve_spawn_slot(config.agent_max_threads)?;
         let inherited_shell_snapshot = self
@@ -129,11 +129,11 @@ impl AgentControl {
                         // `record_conversation_items` only queues rollout writes asynchronously.
                         // Flush the live parent before snapshotting history for a fork.
                         parent_thread
-                            .codex
+                            .chaos
                             .session
                             .ensure_rollout_materialized()
                             .await;
-                        parent_thread.codex.session.flush_rollout().await;
+                        parent_thread.chaos.session.flush_rollout().await;
                     }
                     let mut forked_rollout_items =
                         match RolloutRecorder::get_rollout_history_for_process(parent_process_id)
@@ -150,7 +150,7 @@ impl AgentControl {
                                     "falling back to live parent history for forked spawn"
                                 );
                                 parent_thread
-                                    .codex
+                                    .chaos
                                     .session
                                     .clone_history()
                                     .await
@@ -218,7 +218,7 @@ impl AgentControl {
         config: crate::config::Config,
         process_id: ProcessId,
         session_source: SessionSource,
-    ) -> CodexResult<ProcessId> {
+    ) -> ChaosResult<ProcessId> {
         let state = self.upgrade()?;
         let mut reservation = self.state.reserve_spawn_slot(config.agent_max_threads)?;
         let session_source = match session_source {
@@ -288,7 +288,7 @@ impl AgentControl {
         &self,
         agent_id: ProcessId,
         items: Vec<UserInput>,
-    ) -> CodexResult<String> {
+    ) -> ChaosResult<String> {
         let state = self.upgrade()?;
         let result = state
             .send_op(
@@ -307,13 +307,13 @@ impl AgentControl {
     }
 
     /// Interrupt the current task for an existing agent thread.
-    pub(crate) async fn interrupt_agent(&self, agent_id: ProcessId) -> CodexResult<String> {
+    pub(crate) async fn interrupt_agent(&self, agent_id: ProcessId) -> ChaosResult<String> {
         let state = self.upgrade()?;
         state.send_op(agent_id, Op::Interrupt).await
     }
 
     /// Submit a shutdown request to an existing agent thread.
-    pub(crate) async fn shutdown_agent(&self, agent_id: ProcessId) -> CodexResult<String> {
+    pub(crate) async fn shutdown_agent(&self, agent_id: ProcessId) -> ChaosResult<String> {
         let state = self.upgrade()?;
         let result = state.send_op(agent_id, Op::Shutdown {}).await;
         let _ = state.remove_process(&agent_id).await;
@@ -354,7 +354,7 @@ impl AgentControl {
     pub(crate) async fn subscribe_status(
         &self,
         agent_id: ProcessId,
-    ) -> CodexResult<watch::Receiver<AgentStatus>> {
+    ) -> ChaosResult<watch::Receiver<AgentStatus>> {
         let state = self.upgrade()?;
         let thread = state.get_process(agent_id).await?;
         Ok(thread.subscribe_status())
@@ -444,7 +444,7 @@ impl AgentControl {
         });
     }
 
-    fn upgrade(&self) -> CodexResult<Arc<ProcessTableState>> {
+    fn upgrade(&self) -> ChaosResult<Arc<ProcessTableState>> {
         self.manager
             .upgrade()
             .ok_or_else(|| ChaosErr::UnsupportedOperation("thread manager dropped".to_string()))
@@ -463,7 +463,7 @@ impl AgentControl {
         };
 
         let parent_thread = state.get_process(*parent_process_id).await.ok()?;
-        parent_thread.codex.session.user_shell().shell_snapshot()
+        parent_thread.chaos.session.user_shell().shell_snapshot()
     }
 }
 #[cfg(test)]

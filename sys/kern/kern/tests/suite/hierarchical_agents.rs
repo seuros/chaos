@@ -3,7 +3,7 @@ use core_test_support::responses::ev_response_created;
 use core_test_support::responses::mount_sse_once;
 use core_test_support::responses::sse;
 use core_test_support::responses::start_mock_server;
-use core_test_support::test_codex::test_codex;
+use core_test_support::test_chaos::test_chaos;
 
 const HIERARCHICAL_AGENTS_SNIPPET: &str =
     "Files called AGENTS.md commonly appear in many places inside a container";
@@ -17,10 +17,10 @@ async fn hierarchical_agents_appends_to_project_doc_in_user_instructions() {
     )
     .await;
 
-    let mut builder = test_codex().with_config(|config| {
+    let mut builder = test_chaos().with_config(|config| {
         std::fs::write(config.cwd.join("AGENTS.md"), "be nice").expect("write AGENTS.md");
     });
-    let test = builder.build(&server).await.expect("build test codex");
+    let test = builder.build(&server).await.expect("build test chaos");
 
     test.submit_turn("hello").await.expect("submit turn");
 
@@ -55,8 +55,8 @@ async fn hierarchical_agents_emits_when_no_project_doc() {
     )
     .await;
 
-    let mut builder = test_codex();
-    let test = builder.build(&server).await.expect("build test codex");
+    let mut builder = test_chaos();
+    let test = builder.build(&server).await.expect("build test chaos");
 
     test.submit_turn("hello").await.expect("submit turn");
 

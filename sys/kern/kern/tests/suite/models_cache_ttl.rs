@@ -24,7 +24,7 @@ use core_test_support::responses::ev_completed;
 use core_test_support::responses::ev_response_created;
 use core_test_support::responses::sse;
 use core_test_support::responses::sse_response;
-use core_test_support::test_codex::test_codex;
+use core_test_support::test_chaos::test_chaos;
 use core_test_support::wait_for_event;
 use jiff::Timestamp;
 use pretty_assertions::assert_eq;
@@ -34,10 +34,10 @@ use sqlx::Row;
 use wiremock::MockServer;
 
 const ETAG: &str = "\"models-etag-ttl\"";
-const REMOTE_MODEL: &str = "codex-test-ttl";
-const VERSIONED_MODEL: &str = "codex-test-versioned";
-const MISSING_VERSION_MODEL: &str = "codex-test-missing-version";
-const DIFFERENT_VERSION_MODEL: &str = "codex-test-different-version";
+const REMOTE_MODEL: &str = "chaos-test-ttl";
+const VERSIONED_MODEL: &str = "chaos-test-versioned";
+const MISSING_VERSION_MODEL: &str = "chaos-test-missing-version";
+const DIFFERENT_VERSION_MODEL: &str = "chaos-test-different-version";
 
 #[tokio::test(flavor = "multi_thread", worker_threads = 2)]
 async fn renews_cache_ttl_on_matching_models_etag() -> Result<()> {
@@ -53,7 +53,7 @@ async fn renews_cache_ttl_on_matching_models_etag() -> Result<()> {
     )
     .await;
 
-    let mut builder = test_codex().with_auth(ChaosAuth::create_dummy_chatgpt_auth_for_testing());
+    let mut builder = test_chaos().with_auth(ChaosAuth::create_dummy_chatgpt_auth_for_testing());
     builder = builder.with_config(|config| {
         config.model = Some("gpt-5".to_string());
         config.model_provider.request_max_retries = Some(0);
@@ -61,7 +61,7 @@ async fn renews_cache_ttl_on_matching_models_etag() -> Result<()> {
     });
 
     let test = builder.build(&server).await?;
-    let codex = Arc::clone(&test.codex);
+    let chaos = Arc::clone(&test.process);
     let config = test.config.clone();
 
     // Populate cache via initial refresh.
@@ -86,7 +86,7 @@ async fn renews_cache_ttl_on_matching_models_etag() -> Result<()> {
     )
     .await;
 
-    codex
+    chaos
         .submit(Op::UserTurn {
             items: vec![UserInput::Text {
                 text: "hi".into(),
@@ -105,7 +105,7 @@ async fn renews_cache_ttl_on_matching_models_etag() -> Result<()> {
         })
         .await?;
 
-    let _ = wait_for_event(&codex, |event| matches!(event, EventMsg::TurnComplete(_))).await;
+    let _ = wait_for_event(&chaos, |event| matches!(event, EventMsg::TurnComplete(_))).await;
 
     let refreshed_cache = read_cache(config.chaos_home.as_path(), &cache_scope).await?;
     assert!(
@@ -145,7 +145,7 @@ async fn uses_cache_when_version_matches() -> Result<()> {
     )
     .await;
 
-    let mut builder = test_codex().with_auth(ChaosAuth::create_dummy_chatgpt_auth_for_testing());
+    let mut builder = test_chaos().with_auth(ChaosAuth::create_dummy_chatgpt_auth_for_testing());
     let server_uri = format!("{}/v1", server.uri());
     builder = builder
         .with_pre_build_hook(move |home| {
@@ -193,7 +193,7 @@ async fn refreshes_when_cache_version_missing() -> Result<()> {
     )
     .await;
 
-    let mut builder = test_codex().with_auth(ChaosAuth::create_dummy_chatgpt_auth_for_testing());
+    let mut builder = test_chaos().with_auth(ChaosAuth::create_dummy_chatgpt_auth_for_testing());
     let server_uri = format!("{}/v1", server.uri());
     builder = builder
         .with_pre_build_hook(move |home| {
@@ -241,7 +241,7 @@ async fn refreshes_when_cache_version_differs() -> Result<()> {
         models_mocks.push(responses::mount_models_once(&server, models_response.clone()).await);
     }
 
-    let mut builder = test_codex().with_auth(ChaosAuth::create_dummy_chatgpt_auth_for_testing());
+    let mut builder = test_chaos().with_auth(ChaosAuth::create_dummy_chatgpt_auth_for_testing());
     let server_uri = format!("{}/v1", server.uri());
     builder = builder
         .with_pre_build_hook(move |home| {

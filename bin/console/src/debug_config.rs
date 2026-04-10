@@ -463,7 +463,7 @@ mod tests {
                     "docs".to_string(),
                     McpServerRequirement {
                         identity: McpServerIdentity::Command {
-                            command: "codex-mcp".to_string(),
+                            command: "chaos-mcp".to_string(),
                         },
                     },
                 )]),
@@ -497,7 +497,7 @@ mod tests {
                 "docs".to_string(),
                 McpServerRequirement {
                     identity: McpServerIdentity::Command {
-                        command: "codex-mcp".to_string(),
+                        command: "chaos-mcp".to_string(),
                     },
                 },
             )])),

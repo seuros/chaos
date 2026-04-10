@@ -18,7 +18,7 @@ use wiremock::ResponseTemplate;
 use wiremock::matchers::method;
 use wiremock::matchers::path_regex;
 
-use crate::test_codex::ApplyPatchModelOutput;
+use crate::test_chaos::ApplyPatchModelOutput;
 
 #[derive(Debug, Clone)]
 pub struct ResponseMock {

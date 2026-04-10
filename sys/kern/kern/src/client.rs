@@ -1,6 +1,6 @@
 //! Session- and turn-scoped helpers for talking to model provider APIs.
 //!
-//! `ModelClient` is intended to live for the lifetime of a Codex session and holds the stable
+//! `ModelClient` is intended to live for the lifetime of a Chaos session and holds the stable
 //! configuration and state needed to talk to a provider (auth, provider selection, conversation id,
 //! and feature-gated request behavior).
 //!
@@ -10,7 +10,7 @@
 //!
 //! A [`ModelClientSession`] is created per turn and is used to stream one or more Responses API
 //! requests during that turn. It caches a Responses WebSocket connection (opened lazily) and stores
-//! per-turn state such as the `x-codex-turn-state` token used for sticky routing.
+//! per-turn state such as the `x-chaos-turn-state` token used for sticky routing.
 //!
 //! WebSocket prewarm is a v2-only `response.create` with `generate=false`; it waits for completion
 //! so the next request can reuse the same connection and `previous_response_id`.
@@ -116,8 +116,8 @@ use crate::util::emit_feedback_request_tags;
 use serde_json::Value;
 use serde_json::json;
 
-pub const X_CODEX_TURN_STATE_HEADER: &str = "x-codex-turn-state";
-pub const X_CODEX_TURN_METADATA_HEADER: &str = "x-codex-turn-metadata";
+pub const X_CODEX_TURN_STATE_HEADER: &str = "x-chaos-turn-state";
+pub const X_CODEX_TURN_METADATA_HEADER: &str = "x-chaos-turn-metadata";
 pub const X_RESPONSESAPI_INCLUDE_TIMING_METRICS_HEADER: &str =
     "x-responsesapi-include-timing-metrics";
 const RESPONSES_ENDPOINT: &str = "/responses";
@@ -173,7 +173,7 @@ impl RequestRouteTelemetry {
 
 /// A session-scoped client for model-provider API calls.
 ///
-/// This holds configuration and state that should be shared across turns within a Codex session
+/// This holds configuration and state that should be shared across turns within a Chaos session
 /// (auth, provider selection, conversation id, feature-gated request behavior, and transport
 /// fallback state).
 ///
@@ -195,10 +195,10 @@ pub struct ModelClient {
 ///
 /// - The last full request, so subsequent calls can reuse incremental websocket request payloads
 ///   only when the current request is an incremental extension of the previous one.
-/// - The `x-codex-turn-state` sticky-routing token, which must be replayed for all requests within
+/// - The `x-chaos-turn-state` sticky-routing token, which must be replayed for all requests within
 ///   the same turn.
 ///
-/// Create a fresh `ModelClientSession` for each Codex turn. Reusing it across turns would replay
+/// Create a fresh `ModelClientSession` for each Chaos turn. Reusing it across turns would replay
 /// the previous turn's sticky-routing token into the next turn, which violates the client/server
 /// contract and can cause routing bugs.
 pub struct ModelClientSession {
@@ -206,8 +206,8 @@ pub struct ModelClientSession {
     /// Turn state for sticky routing.
     ///
     /// This is an `OnceLock` that stores the turn state value received from the server
-    /// on turn start via the `x-codex-turn-state` response header. Once set, this value
-    /// should be sent back to the server in the `x-codex-turn-state` request header for
+    /// on turn start via the `x-chaos-turn-state` response header. Once set, this value
+    /// should be sent back to the server in the `x-chaos-turn-state` request header for
     /// all subsequent requests within the same turn to maintain sticky routing.
     ///
     /// This is a contract between the client and server: we receive it at turn start,
@@ -226,7 +226,7 @@ struct HttpTurnRequestConfig<'a> {
 impl ModelClient {
     /// Creates a new session-scoped `ModelClient`.
     ///
-    /// All arguments are expected to be stable for the lifetime of a Codex session. Per-turn values
+    /// All arguments are expected to be stable for the lifetime of a Chaos session. Per-turn values
     /// are passed to [`ModelClientSession::stream`] (and other turn-scoped methods) explicitly.
     #[allow(clippy::too_many_arguments)]
     pub fn new(
@@ -1156,7 +1156,7 @@ fn render_clamp_full_prompt(prompt: &Prompt) -> String {
     }
 
     format!(
-        "Chaos restored the current Codex conversation state after connecting Claude Code.\n\
+        "Chaos restored the current Chaos conversation state after connecting Claude Code.\n\
 Treat the transcript below as authoritative prior context, including tool calls and tool outputs that already happened.\n\
 Continue from the latest user request instead of restarting the conversation.\n\n\
 <conversation_state>\n{}\n</conversation_state>",
@@ -2094,11 +2094,11 @@ fn tool_spec_to_abi_tool(tool: &ToolSpec) -> Option<AbiToolDef> {
 
 /// Builds the extra headers attached to Responses API requests.
 ///
-/// These headers implement Codex-specific conventions:
+/// These headers implement Chaos-specific conventions:
 ///
-/// - `x-codex-beta-features`: comma-separated beta feature keys enabled for the session.
-/// - `x-codex-turn-state`: sticky routing token captured earlier in the turn.
-/// - `x-codex-turn-metadata`: optional per-turn metadata for observability.
+/// - `x-chaos-beta-features`: comma-separated beta feature keys enabled for the session.
+/// - `x-chaos-turn-state`: sticky routing token captured earlier in the turn.
+/// - `x-chaos-turn-metadata`: optional per-turn metadata for observability.
 fn build_responses_headers(
     beta_features_header: Option<&str>,
     turn_state: Option<&Arc<OnceLock<String>>>,
@@ -2109,7 +2109,7 @@ fn build_responses_headers(
         && !value.is_empty()
         && let Ok(header_value) = HeaderValue::from_str(value)
     {
-        headers.insert("x-codex-beta-features", header_value);
+        headers.insert("x-chaos-beta-features", header_value);
     }
     if let Some(turn_state) = turn_state
         && let Some(state) = turn_state.get()

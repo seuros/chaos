@@ -6,7 +6,7 @@ use core_test_support::responses::ev_response_created;
 use core_test_support::responses::sse;
 use core_test_support::responses::sse_response;
 use core_test_support::responses::start_mock_server;
-use core_test_support::test_codex::test_codex;
+use core_test_support::test_chaos::test_chaos;
 use regex_lite::Regex;
 use serde_json::Value;
 use serde_json::json;
@@ -221,7 +221,7 @@ fn parse_simple_csv_line(line: &str) -> Vec<String> {
 #[tokio::test(flavor = "multi_thread", worker_threads = 2)]
 async fn report_agent_job_result_rejects_wrong_thread() -> Result<()> {
     let server = start_mock_server().await;
-    let mut builder = test_codex().with_config(|config| {
+    let mut builder = test_chaos().with_config(|config| {
         config
             .features
             .enable(Feature::SpawnCsv)
@@ -249,7 +249,7 @@ async fn report_agent_job_result_rejects_wrong_thread() -> Result<()> {
 
     test.submit_turn("run job").await?;
 
-    let db = test.codex.runtime_db().expect("runtime db");
+    let db = test.process.runtime_db().expect("runtime db");
     let output = fs::read_to_string(&output_path)?;
     let rows: Vec<&str> = output.lines().skip(1).collect();
     assert_eq!(rows.len(), 1);
@@ -283,7 +283,7 @@ async fn report_agent_job_result_rejects_wrong_thread() -> Result<()> {
 #[tokio::test(flavor = "multi_thread", worker_threads = 2)]
 async fn spawn_agents_on_csv_runs_and_exports() -> Result<()> {
     let server = start_mock_server().await;
-    let mut builder = test_codex().with_config(|config| {
+    let mut builder = test_chaos().with_config(|config| {
         config
             .features
             .enable(Feature::SpawnCsv)
@@ -322,7 +322,7 @@ async fn spawn_agents_on_csv_runs_and_exports() -> Result<()> {
 async fn spawn_agents_on_csv_dedupes_item_ids() -> Result<()> {
     let server = start_mock_server().await;
 
-    let mut builder = test_codex().with_config(|config| {
+    let mut builder = test_chaos().with_config(|config| {
         config
             .features
             .enable(Feature::SpawnCsv)
@@ -376,7 +376,7 @@ async fn spawn_agents_on_csv_dedupes_item_ids() -> Result<()> {
 #[tokio::test(flavor = "multi_thread", worker_threads = 2)]
 async fn spawn_agents_on_csv_stop_halts_future_items() -> Result<()> {
     let server = start_mock_server().await;
-    let mut builder = test_codex().with_config(|config| {
+    let mut builder = test_chaos().with_config(|config| {
         config
             .features
             .enable(Feature::SpawnCsv)
@@ -418,7 +418,7 @@ async fn spawn_agents_on_csv_stop_halts_future_items() -> Result<()> {
                 .cloned()
         })
         .expect("job_id from csv");
-    let db = test.codex.runtime_db().expect("runtime db");
+    let db = test.process.runtime_db().expect("runtime db");
     let job = db.get_agent_job(job_id.as_str()).await?.expect("job");
     assert_eq!(job.status, chaos_proc::AgentJobStatus::Cancelled);
     let progress = db.get_agent_job_progress(job_id.as_str()).await?;

@@ -65,12 +65,12 @@ fn codex_apps_mcp_url_for_base_url_keeps_existing_paths() {
         "https://chat.openai.com/backend-api/wham/apps"
     );
     assert_eq!(
-        codex_apps_mcp_url_for_base_url("http://localhost:8080/api/codex"),
-        "http://localhost:8080/api/codex/apps"
+        codex_apps_mcp_url_for_base_url("http://localhost:8080/api/chaos"),
+        "http://localhost:8080/api/chaos/apps"
     );
     assert_eq!(
         codex_apps_mcp_url_for_base_url("http://localhost:8080"),
-        "http://localhost:8080/api/codex/apps"
+        "http://localhost:8080/api/chaos/apps"
     );
 }
 
@@ -102,7 +102,7 @@ fn codex_apps_server_config_uses_legacy_codex_apps_path() {
         .expect("chaos apps should be present when apps is enabled");
     let url = match &server.transport {
         McpServerTransportConfig::StreamableHttp { url, .. } => url,
-        _ => panic!("expected streamable http transport for codex apps"),
+        _ => panic!("expected streamable http transport for chaos apps"),
     };
 
     assert_eq!(url, "https://chatgpt.com/backend-api/wham/apps");

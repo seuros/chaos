@@ -17,8 +17,8 @@ pub mod context_snapshot;
 pub mod process;
 pub mod responses;
 pub mod streaming_sse;
+pub mod test_chaos;
 pub mod test_chaos_fork;
-pub mod test_codex;
 
 #[ctor]
 fn enable_deterministic_unified_exec_process_ids_for_tests() {
@@ -73,7 +73,7 @@ pub fn test_tmp_path_buf() -> PathBuf {
 
 /// Returns a default `Config` whose on-disk state is confined to the provided
 /// temporary directory. Using a per-test directory keeps tests hermetic and
-/// avoids clobbering a developer’s real `~/.codex`.
+/// avoids clobbering a developer’s real `~/.chaos`.
 pub async fn load_default_config_for_test(chaos_home: &TempDir) -> Config {
     ConfigBuilder::default()
         .chaos_home(chaos_home.path().to_path_buf())
@@ -158,24 +158,24 @@ pub fn load_sse_fixture_with_id_from_str(raw: &str, id: &str) -> String {
         .collect()
 }
 
-pub async fn wait_for_event<F>(codex: &Process, predicate: F) -> chaos_ipc::protocol::EventMsg
+pub async fn wait_for_event<F>(chaos: &Process, predicate: F) -> chaos_ipc::protocol::EventMsg
 where
     F: FnMut(&chaos_ipc::protocol::EventMsg) -> bool,
 {
     use tokio::time::Duration;
-    wait_for_event_with_timeout(codex, predicate, Duration::from_secs(1)).await
+    wait_for_event_with_timeout(chaos, predicate, Duration::from_secs(1)).await
 }
 
-pub async fn wait_for_event_match<T, F>(codex: &Process, matcher: F) -> T
+pub async fn wait_for_event_match<T, F>(chaos: &Process, matcher: F) -> T
 where
     F: Fn(&chaos_ipc::protocol::EventMsg) -> Option<T>,
 {
-    let ev = wait_for_event(codex, |ev| matcher(ev).is_some()).await;
+    let ev = wait_for_event(chaos, |ev| matcher(ev).is_some()).await;
     matcher(&ev).unwrap()
 }
 
 pub async fn wait_for_event_with_timeout<F>(
-    codex: &Process,
+    chaos: &Process,
     mut predicate: F,
     wait_time: tokio::time::Duration,
 ) -> chaos_ipc::protocol::EventMsg
@@ -186,7 +186,7 @@ where
     use tokio::time::timeout;
     loop {
         // Allow a bit more time to accommodate async startup work (e.g. config IO, tool discovery)
-        let ev = timeout(wait_time.max(Duration::from_secs(10)), codex.next_event())
+        let ev = timeout(wait_time.max(Duration::from_secs(10)), chaos.next_event())
             .await
             .expect("timeout waiting for event")
             .expect("stream ended unexpectedly");
@@ -402,7 +402,7 @@ macro_rules! skip_if_no_network {
     () => {{
         if ::std::env::var($crate::sandbox_network_env_var()).is_ok() {
             println!(
-                "Skipping test because it cannot execute when network is disabled in a Codex sandbox."
+                "Skipping test because it cannot execute when network is disabled in a Chaos sandbox."
             );
             return;
         }
@@ -410,7 +410,7 @@ macro_rules! skip_if_no_network {
     ($return_value:expr $(,)?) => {{
         if ::std::env::var($crate::sandbox_network_env_var()).is_ok() {
             println!(
-                "Skipping test because it cannot execute when network is disabled in a Codex sandbox."
+                "Skipping test because it cannot execute when network is disabled in a Chaos sandbox."
             );
             return $return_value;
         }

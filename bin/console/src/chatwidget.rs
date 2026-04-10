@@ -68,7 +68,7 @@ use chaos_ipc::protocol::AgentReasoningEvent;
 use chaos_ipc::protocol::AgentReasoningRawContentEvent;
 use chaos_ipc::protocol::ApplyPatchApprovalRequestEvent;
 use chaos_ipc::protocol::BackgroundEventEvent;
-use chaos_ipc::protocol::CodexErrorInfo;
+use chaos_ipc::protocol::ChaosErrorInfo;
 use chaos_ipc::protocol::CollabAgentSpawnBeginEvent;
 use chaos_ipc::protocol::CreditsSnapshot;
 use chaos_ipc::protocol::DeprecationNoticeEvent;
@@ -482,11 +482,11 @@ enum RateLimitErrorKind {
     Generic,
 }
 
-fn rate_limit_error_kind(info: &CodexErrorInfo) -> Option<RateLimitErrorKind> {
+fn rate_limit_error_kind(info: &ChaosErrorInfo) -> Option<RateLimitErrorKind> {
     match info {
-        CodexErrorInfo::ServerOverloaded => Some(RateLimitErrorKind::ServerOverloaded),
-        CodexErrorInfo::UsageLimitExceeded => Some(RateLimitErrorKind::UsageLimit),
-        CodexErrorInfo::ResponseTooManyFailedAttempts {
+        ChaosErrorInfo::ServerOverloaded => Some(RateLimitErrorKind::ServerOverloaded),
+        ChaosErrorInfo::UsageLimitExceeded => Some(RateLimitErrorKind::UsageLimit),
+        ChaosErrorInfo::ResponseTooManyFailedAttempts {
             http_status_code: Some(429),
         } => Some(RateLimitErrorKind::Generic),
         _ => None,
@@ -576,7 +576,7 @@ pub(crate) struct ChatWidget {
     stream_controller: Option<StreamController>,
     // Stream lifecycle controller for proposed plan output.
     plan_stream_controller: Option<PlanStreamController>,
-    // Latest completed user-visible Codex output that `/copy` should place on the clipboard.
+    // Latest completed user-visible Chaos output that `/copy` should place on the clipboard.
     last_copyable_output: Option<String>,
     running_commands: HashMap<String, RunningCommand>,
     pending_collab_spawn_requests: HashMap<String, multi_agents::SpawnRequestSummary>,
@@ -4546,9 +4546,9 @@ impl ChatWidget {
             EventMsg::ModelReroute(_) => {}
             EventMsg::Error(ErrorEvent {
                 message,
-                codex_error_info,
+                chaos_error_info,
             }) => {
-                if let Some(info) = codex_error_info
+                if let Some(info) = chaos_error_info
                     && let Some(kind) = rate_limit_error_kind(&info)
                 {
                     match kind {
@@ -5745,14 +5745,14 @@ impl ChatWidget {
     }
 
     fn is_auto_model(model: &str) -> bool {
-        model.starts_with("codex-auto-")
+        model.starts_with("chaos-auto-")
     }
 
     fn auto_model_order(model: &str) -> usize {
         match model {
-            "codex-auto-fast" => 0,
-            "codex-auto-balanced" => 1,
-            "codex-auto-thorough" => 2,
+            "chaos-auto-fast" => 0,
+            "chaos-auto-balanced" => 1,
+            "chaos-auto-thorough" => 2,
             _ => 3,
         }
     }
@@ -6776,7 +6776,7 @@ impl ChatWidget {
             && (previous_model != next_model || previous_effort != next_effort)
         {
             let mut message = format!("Model changed to {next_model}");
-            if !next_model.starts_with("codex-auto-") {
+            if !next_model.starts_with("chaos-auto-") {
                 let reasoning_label = match next_effort {
                     Some(ReasoningEffortConfig::Minimal) => "minimal",
                     Some(ReasoningEffortConfig::Low) => "low",
@@ -7316,7 +7316,7 @@ impl ChatWidget {
     pub(crate) fn clear_esc_backtrack_hint(&mut self) {
         self.bottom_pane.clear_esc_backtrack_hint();
     }
-    /// Forward an `Op` directly to codex.
+    /// Forward an `Op` directly to chaos.
     pub(crate) fn submit_op(&mut self, op: Op) -> bool {
         // Record outbound operation for session replay fidelity.
         crate::session_log::log_outbound_op(&op);

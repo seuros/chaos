@@ -413,7 +413,6 @@ pub enum SandboxModeRequirement {
     WorkspaceWrite,
 
     #[serde(rename = "root-access")]
-    /// Support legacy hardware like i386 and OpenAI Codex.
     RootAccess,
 
     #[serde(rename = "external-sandbox")]
@@ -1378,7 +1377,7 @@ mod tests {
     fn deserialize_mcp_server_requirements() -> Result<()> {
         let toml_str = r#"
             [mcp_servers.docs.identity]
-            command = "codex-mcp"
+            command = "chaos-mcp"
 
             [mcp_servers.remote.identity]
             url = "https://example.com/mcp"
@@ -1394,7 +1393,7 @@ mod tests {
                         "docs".to_string(),
                         McpServerRequirement {
                             identity: McpServerIdentity::Command {
-                                command: "codex-mcp".to_string(),
+                                command: "chaos-mcp".to_string(),
                             },
                         },
                     ),

@@ -225,14 +225,14 @@ async fn concatenates_root_and_cwd_docs() {
 #[tokio::test]
 async fn project_root_markers_are_honored_for_agents_discovery() {
     let root = tempfile::tempdir().expect("tempdir");
-    fs::write(root.path().join(".codex-root"), "").unwrap();
+    fs::write(root.path().join(".chaos-root"), "").unwrap();
     fs::write(root.path().join("AGENTS.md"), "parent doc").unwrap();
 
     let nested = root.path().join("dir1");
     fs::create_dir_all(nested.join(".git")).unwrap();
     fs::write(nested.join("AGENTS.md"), "child doc").unwrap();
 
-    let mut cfg = make_config_with_project_root_markers(&root, 4096, None, &[".codex-root"]).await;
+    let mut cfg = make_config_with_project_root_markers(&root, 4096, None, &[".chaos-root"]).await;
     cfg.cwd = nested;
 
     let discovery = discover_project_doc_paths(&cfg).expect("discover paths");

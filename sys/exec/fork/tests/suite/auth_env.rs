@@ -23,7 +23,7 @@ async fn exec_uses_codex_api_key_env_var() -> anyhow::Result<()> {
         .arg("--skip-git-repo-check")
         .arg("-C")
         .arg(&repo_root)
-        .arg("echo testing codex api key")
+        .arg("echo testing chaos api key")
         .assert()
         .success();
 

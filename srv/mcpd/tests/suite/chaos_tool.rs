@@ -42,7 +42,7 @@ const DEFAULT_READ_TIMEOUT: std::time::Duration = std::time::Duration::from_secs
 async fn test_shell_command_approval_triggers_elicitation() {
     if env::var(CHAOS_SANDBOX_NETWORK_DISABLED_ENV_VAR).is_ok() {
         println!(
-            "Skipping test because it cannot execute when network is disabled in a Codex sandbox."
+            "Skipping test because it cannot execute when network is disabled in a Chaos sandbox."
         );
         return;
     }
@@ -82,7 +82,7 @@ async fn shell_command_approval_triggers_elicitation() -> anyhow::Result<()> {
     ])
     .await?;
 
-    // Send a "codex" tool request, which should hit the responses endpoint.
+    // Send a "chaos" tool request, which should hit the responses endpoint.
     // In turn, it should reply with a tool call, which the MCP should forward
     // as an elicitation.
     let codex_request_id = mcp_process
@@ -109,7 +109,7 @@ async fn shell_command_approval_triggers_elicitation() -> anyhow::Result<()> {
             expected_shell_command,
             workdir_for_shell_function_call.path(),
             codex_request_id.to_string(),
-            params.meta.codex_event_id.clone(),
+            params.meta.chaos_event_id.clone(),
             params.meta.process_id,
         )?
     );
@@ -139,7 +139,7 @@ async fn shell_command_approval_triggers_elicitation() -> anyhow::Result<()> {
     .expect("task_complete_notification timeout")
     .expect("task_complete_notification resp");
 
-    // Verify the original `codex` tool call completes and that the file was created.
+    // Verify the original `chaos` tool call completes and that the file was created.
     let codex_response = timeout(
         DEFAULT_READ_TIMEOUT,
         mcp_process.read_stream_until_response_message(RequestId::Number(codex_request_id)),
@@ -171,7 +171,7 @@ fn create_expected_elicitation_request_params(
     command: Vec<String>,
     workdir: &Path,
     codex_mcp_tool_call_id: String,
-    codex_event_id: String,
+    chaos_event_id: String,
     process_id: chaos_ipc::ProcessId,
 ) -> anyhow::Result<serde_json::Value> {
     let expected_message = format!(
@@ -187,7 +187,7 @@ fn create_expected_elicitation_request_params(
             process_id,
             codex_elicitation: "exec-approval".to_string(),
             codex_mcp_tool_call_id,
-            codex_event_id,
+            chaos_event_id,
             codex_command: command,
             codex_cwd: workdir.to_path_buf(),
             codex_call_id: "call1234".to_string(),
@@ -203,7 +203,7 @@ fn create_expected_elicitation_request_params(
 async fn test_patch_approval_triggers_elicitation() {
     if env::var(CHAOS_SANDBOX_NETWORK_DISABLED_ENV_VAR).is_ok() {
         println!(
-            "Skipping test because it cannot execute when network is disabled in a Codex sandbox."
+            "Skipping test because it cannot execute when network is disabled in a Chaos sandbox."
         );
         return;
     }
@@ -233,7 +233,7 @@ async fn patch_approval_triggers_elicitation() -> anyhow::Result<()> {
     ])
     .await?;
 
-    // Send a "codex" tool request that will trigger the apply_patch command
+    // Send a "chaos" tool request that will trigger the apply_patch command
     let codex_request_id = mcp_process
         .send_chaos_tool_call(ChaosToolParams {
             cwd: Some(cwd.path().to_string_lossy().to_string()),
@@ -271,7 +271,7 @@ async fn patch_approval_triggers_elicitation() -> anyhow::Result<()> {
             None, // No grant_root expected
             None, // No reason expected
             codex_request_id.to_string(),
-            params.meta.codex_event_id.clone(),
+            params.meta.chaos_event_id.clone(),
             params.meta.process_id,
         )?
     );
@@ -291,7 +291,7 @@ async fn patch_approval_triggers_elicitation() -> anyhow::Result<()> {
         )
         .await?;
 
-    // Verify the original `codex` tool call completes
+    // Verify the original `chaos` tool call completes
     let codex_response = timeout(
         DEFAULT_READ_TIMEOUT,
         mcp_process.read_stream_until_response_message(RequestId::Number(codex_request_id)),
@@ -321,7 +321,7 @@ async fn patch_approval_triggers_elicitation() -> anyhow::Result<()> {
 }
 
 #[tokio::test(flavor = "multi_thread", worker_threads = 2)]
-async fn test_codex_tool_passes_base_instructions() {
+async fn test_chaos_tool_passes_base_instructions() {
     skip_if_no_network!();
 
     // Apparently `#[tokio::test]` must return `()`, so we create a helper
@@ -342,7 +342,7 @@ async fn codex_tool_passes_base_instructions() -> anyhow::Result<()> {
     let mut mcp_process = McpProcess::new(chaos_home.path()).await?;
     timeout(DEFAULT_READ_TIMEOUT, mcp_process.initialize()).await??;
 
-    // Send a "codex" tool request, which should hit the responses endpoint.
+    // Send a "chaos" tool request, which should hit the responses endpoint.
     let codex_request_id = mcp_process
         .send_chaos_tool_call(ChaosToolParams {
             prompt: "How are you?".to_string(),
@@ -435,7 +435,7 @@ fn create_expected_patch_approval_elicitation_request_params(
     grant_root: Option<PathBuf>,
     reason: Option<String>,
     codex_mcp_tool_call_id: String,
-    codex_event_id: String,
+    chaos_event_id: String,
     process_id: chaos_ipc::ProcessId,
 ) -> anyhow::Result<serde_json::Value> {
     let mut message_lines = Vec::new();
@@ -450,7 +450,7 @@ fn create_expected_patch_approval_elicitation_request_params(
             process_id,
             codex_elicitation: "patch-approval".to_string(),
             codex_mcp_tool_call_id,
-            codex_event_id,
+            chaos_event_id,
             codex_reason: reason,
             codex_grant_root: grant_root,
             codex_changes: changes,
@@ -465,7 +465,7 @@ fn create_expected_patch_approval_elicitation_request_params(
 async fn test_shell_command_without_elicitation_capability_is_denied() {
     if env::var(CHAOS_SANDBOX_NETWORK_DISABLED_ENV_VAR).is_ok() {
         println!(
-            "Skipping test because it cannot execute when network is disabled in a Codex sandbox."
+            "Skipping test because it cannot execute when network is disabled in a Chaos sandbox."
         );
         return;
     }
@@ -590,7 +590,7 @@ async fn create_mcp_process(responses: Vec<String>) -> anyhow::Result<McpHandle>
     })
 }
 
-/// Create a Codex config that uses the mock server as the model provider.
+/// Create a Chaos config that uses the mock server as the model provider.
 /// It also uses `approval_policy = "supervised"` so that we exercise the
 /// elicitation code path for shell commands.
 fn create_config_toml(chaos_home: &Path, server_uri: &str) -> std::io::Result<()> {

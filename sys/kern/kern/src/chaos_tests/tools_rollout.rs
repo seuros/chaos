@@ -113,7 +113,7 @@ async fn shutdown_and_wait_allows_multiple_waiters() {
         assert_eq!(shutdown.op, Op::Shutdown);
         tokio::time::sleep(StdDuration::from_millis(50)).await;
     });
-    let codex = Arc::new(Chaos {
+    let chaos = Arc::new(Chaos {
         tx_sub,
         rx_event,
         agent_status,
@@ -122,12 +122,12 @@ async fn shutdown_and_wait_allows_multiple_waiters() {
     });
 
     let waiter_1 = {
-        let codex = Arc::clone(&codex);
-        tokio::spawn(async move { codex.shutdown_and_wait().await })
+        let chaos = Arc::clone(&chaos);
+        tokio::spawn(async move { chaos.shutdown_and_wait().await })
     };
     let waiter_2 = {
-        let codex = Arc::clone(&codex);
-        tokio::spawn(async move { codex.shutdown_and_wait().await })
+        let chaos = Arc::clone(&chaos);
+        tokio::spawn(async move { chaos.shutdown_and_wait().await })
     };
 
     waiter_1
@@ -151,7 +151,7 @@ async fn shutdown_and_wait_waits_when_shutdown_is_already_in_progress() {
     let session_loop_handle = tokio::spawn(async move {
         let _ = shutdown_complete_rx.await;
     });
-    let codex = Arc::new(Chaos {
+    let chaos = Arc::new(Chaos {
         tx_sub,
         rx_event,
         agent_status,
@@ -160,8 +160,8 @@ async fn shutdown_and_wait_waits_when_shutdown_is_already_in_progress() {
     });
 
     let waiter = {
-        let codex = Arc::clone(&codex);
-        tokio::spawn(async move { codex.shutdown_and_wait().await })
+        let chaos = Arc::clone(&chaos);
+        tokio::spawn(async move { chaos.shutdown_and_wait().await })
     };
 
     tokio::time::sleep(StdDuration::from_millis(10)).await;

@@ -36,8 +36,8 @@ use core_test_support::responses::mount_sse_sequence;
 use core_test_support::responses::sse;
 use core_test_support::skip_if_no_network;
 use core_test_support::skip_if_sandbox;
-use core_test_support::test_codex::TestCodex;
-use core_test_support::test_codex::test_codex;
+use core_test_support::test_chaos::TestCodex;
+use core_test_support::test_chaos::test_chaos;
 use core_test_support::wait_for_event;
 use core_test_support::wait_for_event_match;
 use pretty_assertions::assert_eq;
@@ -49,7 +49,7 @@ use tokio::time::sleep;
 use wiremock::BodyPrintLimit;
 use wiremock::MockServer;
 
-const REMOTE_MODEL_SLUG: &str = "codex-test";
+const REMOTE_MODEL_SLUG: &str = "chaos-test";
 
 #[tokio::test(flavor = "multi_thread", worker_threads = 2)]
 async fn remote_models_get_model_info_uses_longest_matching_prefix() -> Result<()> {
@@ -70,7 +70,7 @@ async fn remote_models_get_model_info_uses_longest_matching_prefix() -> Result<(
         TruncationPolicyConfig::bytes(10_000),
     );
     let specific = ModelInfo {
-        display_name: "GPT 5.3 Codex".to_string(),
+        display_name: "GPT 5.3 Chaos".to_string(),
         base_instructions: "use specific prefix".to_string(),
         ..specific
     };
@@ -154,8 +154,11 @@ async fn remote_models_long_model_slug_is_sent_with_high_reasoning() -> Result<(
     .await;
 
     let TestCodex {
-        codex, cwd, config, ..
-    } = test_codex()
+        process: chaos,
+        cwd,
+        config,
+        ..
+    } = test_chaos()
         .with_auth(ChaosAuth::create_dummy_chatgpt_auth_for_testing())
         .with_config(|config| {
             config.model = Some(requested_model.to_string());
@@ -163,7 +166,7 @@ async fn remote_models_long_model_slug_is_sent_with_high_reasoning() -> Result<(
         .build(&server)
         .await?;
 
-    codex
+    chaos
         .submit(Op::UserTurn {
             items: vec![UserInput::Text {
                 text: "check model slug".into(),
@@ -182,7 +185,7 @@ async fn remote_models_long_model_slug_is_sent_with_high_reasoning() -> Result<(
         })
         .await?;
 
-    wait_for_event(&codex, |event| matches!(event, EventMsg::TurnComplete(_))).await;
+    wait_for_event(&chaos, |event| matches!(event, EventMsg::TurnComplete(_))).await;
 
     let request = response_mock.single_request();
     let body = request.body_json();
@@ -252,13 +255,13 @@ async fn remote_models_remote_model_uses_unified_exec() -> Result<()> {
     )
     .await;
 
-    let mut builder = test_codex()
+    let mut builder = test_chaos()
         .with_auth(ChaosAuth::create_dummy_chatgpt_auth_for_testing())
         .with_config(|config| {
             config.model = Some("gpt-5.1".to_string());
         });
     let TestCodex {
-        codex,
+        process: chaos,
         cwd,
         config,
         process_table,
@@ -283,7 +286,7 @@ async fn remote_models_remote_model_uses_unified_exec() -> Result<()> {
         .await;
     assert_eq!(model_info.shell_type, ConfigShellToolType::UnifiedExec);
 
-    codex
+    chaos
         .submit(Op::OverrideTurnContext {
             cwd: None,
             approval_policy: None,
@@ -318,7 +321,7 @@ async fn remote_models_remote_model_uses_unified_exec() -> Result<()> {
     ];
     mount_sse_sequence(&server, responses).await;
 
-    codex
+    chaos
         .submit(Op::UserTurn {
             items: vec![UserInput::Text {
                 text: "run call".into(),
@@ -337,7 +340,7 @@ async fn remote_models_remote_model_uses_unified_exec() -> Result<()> {
         })
         .await?;
 
-    let begin_event = wait_for_event_match(&codex, |msg| match msg {
+    let begin_event = wait_for_event_match(&chaos, |msg| match msg {
         EventMsg::ExecCommandBegin(event) if event.call_id == call_id => Some(event.clone()),
         _ => None,
     })
@@ -345,7 +348,7 @@ async fn remote_models_remote_model_uses_unified_exec() -> Result<()> {
 
     assert_eq!(begin_event.source, ExecCommandSource::UnifiedExecStartup);
 
-    wait_for_event(&codex, |event| matches!(event, EventMsg::TurnComplete(_))).await;
+    wait_for_event(&chaos, |event| matches!(event, EventMsg::TurnComplete(_))).await;
 
     Ok(())
 }
@@ -360,7 +363,7 @@ async fn remote_models_truncation_policy_without_override_preserves_remote() -> 
         .start()
         .await;
 
-    let slug = "codex-test-truncation-policy";
+    let slug = "chaos-test-truncation-policy";
     let remote_model = test_remote_model_with_policy(
         slug,
         ModelVisibility::List,
@@ -375,7 +378,7 @@ async fn remote_models_truncation_policy_without_override_preserves_remote() -> 
     )
     .await;
 
-    let mut builder = test_codex()
+    let mut builder = test_chaos()
         .with_auth(ChaosAuth::create_dummy_chatgpt_auth_for_testing())
         .with_config(|config| {
             config.model = Some("gpt-5.1".to_string());
@@ -404,7 +407,7 @@ async fn remote_models_truncation_policy_with_tool_output_override() -> Result<(
         .start()
         .await;
 
-    let slug = "codex-test-truncation-override";
+    let slug = "chaos-test-truncation-override";
     let remote_model = test_remote_model_with_policy(
         slug,
         ModelVisibility::List,
@@ -419,7 +422,7 @@ async fn remote_models_truncation_policy_with_tool_output_override() -> Result<(
     )
     .await;
 
-    let mut builder = test_codex()
+    let mut builder = test_chaos()
         .with_auth(ChaosAuth::create_dummy_chatgpt_auth_for_testing())
         .with_config(|config| {
             config.model = Some("gpt-5.1".to_string());
@@ -502,13 +505,13 @@ async fn remote_models_apply_remote_base_instructions() -> Result<()> {
     )
     .await;
 
-    let mut builder = test_codex()
+    let mut builder = test_chaos()
         .with_auth(ChaosAuth::create_dummy_chatgpt_auth_for_testing())
         .with_config(|config| {
             config.model = Some("gpt-5.1".to_string());
         });
     let TestCodex {
-        codex,
+        process: chaos,
         cwd,
         config,
         process_table,
@@ -518,7 +521,7 @@ async fn remote_models_apply_remote_base_instructions() -> Result<()> {
     let models_manager = process_table.get_models_manager();
     wait_for_model_available(&models_manager, model).await;
 
-    codex
+    chaos
         .submit(Op::OverrideTurnContext {
             cwd: None,
             approval_policy: None,
@@ -534,7 +537,7 @@ async fn remote_models_apply_remote_base_instructions() -> Result<()> {
         })
         .await?;
 
-    codex
+    chaos
         .submit(Op::UserTurn {
             items: vec![UserInput::Text {
                 text: "hello remote".into(),
@@ -553,7 +556,7 @@ async fn remote_models_apply_remote_base_instructions() -> Result<()> {
         })
         .await?;
 
-    wait_for_event(&codex, |event| matches!(event, EventMsg::TurnComplete(_))).await;
+    wait_for_event(&chaos, |event| matches!(event, EventMsg::TurnComplete(_))).await;
 
     let base_model_info = models_manager.get_model_info("gpt-5.1", &config).await;
     let body = response_mock.single_request().body_json();

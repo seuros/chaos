@@ -19,7 +19,7 @@ pub(crate) enum InternalApplyPatchInvocation {
     /// The `apply_patch` call was approved, either automatically because it
     /// appears that it should be allowed based on the user's sandbox policy
     /// *or* because the user explicitly approved it. In either case, we use
-    /// exec with [`chaos_diff::CODEX_CORE_APPLY_PATCH_ARG1`] to realize
+    /// exec with [`chaos_diff::CHAOS_CORE_APPLY_PATCH_ARG1`] to realize
     /// the `apply_patch` call,
     /// but [`ApplyPatchExec::auto_approved`] is used to determine the sandbox
     /// used with the `exec()`.

@@ -2,8 +2,8 @@ use anyhow::Result;
 use core_test_support::responses::mount_function_call_agent_response;
 use core_test_support::responses::start_mock_server;
 use core_test_support::skip_if_no_network;
-use core_test_support::test_codex::TestCodex;
-use core_test_support::test_codex::test_codex;
+use core_test_support::test_chaos::TestCodex;
+use core_test_support::test_chaos::test_chaos;
 use std::collections::HashSet;
 use std::path::Path;
 use std::process::Command as StdCommand;
@@ -33,7 +33,7 @@ async fn grep_files_tool_collects_matches() -> Result<()> {
     skip_if_ripgrep_missing!(Ok(()));
 
     let server = start_mock_server().await;
-    let test = build_test_codex(&server).await?;
+    let test = build_test_chaos(&server).await?;
 
     let search_dir = test.cwd.path().join("src");
     std::fs::create_dir_all(&search_dir)?;
@@ -91,7 +91,7 @@ async fn grep_files_tool_reports_empty_results() -> Result<()> {
     skip_if_ripgrep_missing!(Ok(()));
 
     let server = start_mock_server().await;
-    let test = build_test_codex(&server).await?;
+    let test = build_test_chaos(&server).await?;
 
     let search_dir = test.cwd.path().join("logs");
     std::fs::create_dir_all(&search_dir)?;
@@ -123,8 +123,8 @@ async fn grep_files_tool_reports_empty_results() -> Result<()> {
 }
 
 #[allow(clippy::expect_used)]
-async fn build_test_codex(server: &wiremock::MockServer) -> Result<TestCodex> {
-    let mut builder = test_codex().with_model(MODEL_WITH_TOOL);
+async fn build_test_chaos(server: &wiremock::MockServer) -> Result<TestCodex> {
+    let mut builder = test_chaos().with_model(MODEL_WITH_TOOL);
     builder.build(server).await
 }
 

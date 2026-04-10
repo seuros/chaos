@@ -59,7 +59,7 @@ fn usage_limit_reached_error_formats_plus_plan() {
 #[test]
 fn server_overloaded_maps_to_protocol() {
     let err = ChaosErr::ServerOverloaded;
-    assert_eq!(err.to_chaos_ipc_error(), CodexErrorInfo::ServerOverloaded);
+    assert_eq!(err.to_chaos_ipc_error(), ChaosErrorInfo::ServerOverloaded);
 }
 
 #[test]
@@ -127,8 +127,8 @@ fn to_error_event_handles_response_stream_failed() {
     assert!(event.message.contains("prefix:"));
     assert!(event.message.contains("req-123"));
     assert_eq!(
-        event.codex_error_info,
-        Some(CodexErrorInfo::ResponseStreamConnectionFailed {
+        event.chaos_error_info,
+        Some(ChaosErrorInfo::ResponseStreamConnectionFailed {
             http_status_code: None
         })
     );
@@ -164,7 +164,7 @@ fn usage_limit_reached_error_formats_free_plan() {
     };
     assert_eq!(
         err.to_string(),
-        "You've hit your usage limit. Upgrade to Plus to continue using Codex (https://chatgpt.com/explore/plus), or try again later."
+        "You've hit your usage limit. Upgrade to Plus to continue using Chaos (https://chatgpt.com/explore/plus), or try again later."
     );
 }
 
@@ -178,7 +178,7 @@ fn usage_limit_reached_error_formats_go_plan() {
     };
     assert_eq!(
         err.to_string(),
-        "You've hit your usage limit. Upgrade to Plus to continue using Codex (https://chatgpt.com/explore/plus), or try again later."
+        "You've hit your usage limit. Upgrade to Plus to continue using Chaos (https://chatgpt.com/explore/plus), or try again later."
     );
 }
 
@@ -350,7 +350,7 @@ fn unexpected_status_prefers_error_message_when_present() {
         status: StatusCode::UNAUTHORIZED,
         body: r#"{"error":{"message":"Workspace is not authorized in this region."},"status":401}"#
             .to_string(),
-        url: Some("https://chatgpt.com/backend-api/codex/responses".to_string()),
+        url: Some("https://chatgpt.com/backend-api/chaos/responses".to_string()),
         cf_ray: None,
         request_id: Some("req-123".to_string()),
         identity_authorization_error: None,
@@ -360,7 +360,7 @@ fn unexpected_status_prefers_error_message_when_present() {
     assert_eq!(
         err.to_string(),
         format!(
-            "unexpected status {status}: Workspace is not authorized in this region., url: https://chatgpt.com/backend-api/codex/responses, request id: req-123"
+            "unexpected status {status}: Workspace is not authorized in this region., url: https://chatgpt.com/backend-api/chaos/responses, request id: req-123"
         )
     );
 }
@@ -392,7 +392,7 @@ fn unexpected_status_includes_cf_ray_and_request_id() {
     let err = UnexpectedResponseError {
         status: StatusCode::UNAUTHORIZED,
         body: "plain text error".to_string(),
-        url: Some("https://chatgpt.com/backend-api/codex/responses".to_string()),
+        url: Some("https://chatgpt.com/backend-api/chaos/responses".to_string()),
         cf_ray: Some("9c81f9f18f2fa49d-LHR".to_string()),
         request_id: Some("req-xyz".to_string()),
         identity_authorization_error: None,
@@ -402,7 +402,7 @@ fn unexpected_status_includes_cf_ray_and_request_id() {
     assert_eq!(
         err.to_string(),
         format!(
-            "unexpected status {status}: plain text error, url: https://chatgpt.com/backend-api/codex/responses, cf-ray: 9c81f9f18f2fa49d-LHR, request id: req-xyz"
+            "unexpected status {status}: plain text error, url: https://chatgpt.com/backend-api/chaos/responses, cf-ray: 9c81f9f18f2fa49d-LHR, request id: req-xyz"
         )
     );
 }
@@ -412,7 +412,7 @@ fn unexpected_status_includes_identity_auth_details() {
     let err = UnexpectedResponseError {
         status: StatusCode::UNAUTHORIZED,
         body: "plain text error".to_string(),
-        url: Some("https://chatgpt.com/backend-api/codex/models".to_string()),
+        url: Some("https://chatgpt.com/backend-api/chaos/models".to_string()),
         cf_ray: Some("cf-ray-auth-401-test".to_string()),
         request_id: Some("req-auth".to_string()),
         identity_authorization_error: Some("missing_authorization_header".to_string()),
@@ -422,7 +422,7 @@ fn unexpected_status_includes_identity_auth_details() {
     assert_eq!(
         err.to_string(),
         format!(
-            "unexpected status {status}: plain text error, url: https://chatgpt.com/backend-api/codex/models, cf-ray: cf-ray-auth-401-test, request id: req-auth, auth error: missing_authorization_header, auth error code: token_expired"
+            "unexpected status {status}: plain text error, url: https://chatgpt.com/backend-api/chaos/models, cf-ray: cf-ray-auth-401-test, request id: req-auth, auth error: missing_authorization_header, auth error code: token_expired"
         )
     );
 }
@@ -499,11 +499,11 @@ fn usage_limit_reached_with_promo_message() {
             resets_at: Some(resets_at),
             rate_limits: Some(Box::new(rate_limit_snapshot())),
             promo_message: Some(
-                "To continue using Codex, start a free trial of <PLAN> today".to_string(),
+                "To continue using Chaos, start a free trial of <PLAN> today".to_string(),
             ),
         };
         let expected = format!(
-            "You've hit your usage limit. To continue using Codex, start a free trial of <PLAN> today, or try again at {expected_time}."
+            "You've hit your usage limit. To continue using Chaos, start a free trial of <PLAN> today, or try again at {expected_time}."
         );
         assert_eq!(err.to_string(), expected);
     });

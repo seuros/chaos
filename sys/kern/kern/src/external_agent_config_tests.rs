@@ -275,7 +275,7 @@ fn import_repo_agents_md_rewrites_terms_and_skips_non_empty_targets() {
 
     assert_eq!(
         fs::read_to_string(repo_root.join("AGENTS.md")).expect("read target"),
-        "Chaos\nCodex\nCodex\nSee AGENTS.md\n"
+        "Chaos\nChaos\nChaos\nSee AGENTS.md\n"
     );
     assert_eq!(
         fs::read_to_string(repo_with_existing_target.join("AGENTS.md"))

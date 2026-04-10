@@ -34,7 +34,7 @@ use chaos_kern::auth::save_auth;
 use chaos_kern::default_client::originator;
 use chaos_kern::token_data::TokenData;
 use chaos_kern::token_data::parse_chatgpt_jwt_claims;
-use codex_client::CodexHttpClient;
+use codex_client::ChaosHttpClient;
 use rand::Rng;
 use serde_json::Value as JsonValue;
 use tiny_http::Header;
@@ -684,7 +684,7 @@ pub(crate) async fn exchange_code_for_tokens(
         refresh_token: String,
     }
 
-    let client = CodexHttpClient::default_client();
+    let client = ChaosHttpClient::default_client();
     info!(
         issuer = %sanitize_url_for_logging(issuer),
         redirect_uri = %redirect_uri,
@@ -1050,7 +1050,7 @@ pub(crate) async fn obtain_api_key(
     struct ExchangeResp {
         access_token: String,
     }
-    let client = CodexHttpClient::default_client();
+    let client = ChaosHttpClient::default_client();
     let token_url = format!("{issuer}/oauth/token");
     let resp = client
         .post(&token_url)

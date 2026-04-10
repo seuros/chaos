@@ -314,7 +314,7 @@ pub(crate) struct McpToolApprovalMetadata {
     codex_apps_meta: Option<serde_json::Map<String, serde_json::Value>>,
 }
 
-const MCP_TOOL_CODEX_APPS_META_KEY: &str = "_codex_apps";
+const MCP_TOOL_CHAOS_APPS_META_KEY: &str = "_codex_apps";
 
 fn build_mcp_tool_call_request_meta(
     _server: &str,
@@ -323,7 +323,7 @@ fn build_mcp_tool_call_request_meta(
     let codex_apps_meta = metadata.and_then(|metadata| metadata.codex_apps_meta.as_ref())?;
 
     Some(serde_json::json!({
-        MCP_TOOL_CODEX_APPS_META_KEY: codex_apps_meta,
+        MCP_TOOL_CHAOS_APPS_META_KEY: codex_apps_meta,
     }))
 }
 
@@ -597,7 +597,7 @@ pub(crate) async fn lookup_mcp_tool_metadata(
             .tool
             .meta
             .as_ref()
-            .and_then(|meta| meta.get(MCP_TOOL_CODEX_APPS_META_KEY))
+            .and_then(|meta| meta.get(MCP_TOOL_CHAOS_APPS_META_KEY))
             .and_then(serde_json::Value::as_object)
             .cloned(),
     })

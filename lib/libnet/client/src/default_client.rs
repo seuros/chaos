@@ -25,18 +25,18 @@ type RamaClient = BoxService<rama::http::Request, rama::http::Response, OpaqueEr
 /// HTTP client wrapper backed by rama. Provides convenience methods
 /// (.get, .post, .send) with OpenTelemetry trace header injection.
 #[derive(Clone)]
-pub struct CodexHttpClient {
+pub struct ChaosHttpClient {
     inner: Arc<Mutex<RamaClient>>,
     default_headers: HeaderMap,
 }
 
-impl std::fmt::Debug for CodexHttpClient {
+impl std::fmt::Debug for ChaosHttpClient {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        f.debug_struct("CodexHttpClient").finish()
+        f.debug_struct("ChaosHttpClient").finish()
     }
 }
 
-impl CodexHttpClient {
+impl ChaosHttpClient {
     pub fn new(client: RamaClient) -> Self {
         Self {
             inner: Arc::new(Mutex::new(client)),
@@ -50,16 +50,16 @@ impl CodexHttpClient {
         Self::new(rama::http::client::EasyHttpWebClient::default().boxed())
     }
 
-    pub fn get(&self, url: &str) -> CodexRequestBuilder {
+    pub fn get(&self, url: &str) -> ChaosRequestBuilder {
         self.request(Method::GET, url)
     }
 
-    pub fn post(&self, url: &str) -> CodexRequestBuilder {
+    pub fn post(&self, url: &str) -> ChaosRequestBuilder {
         self.request(Method::POST, url)
     }
 
-    pub fn request(&self, method: Method, url: &str) -> CodexRequestBuilder {
-        CodexRequestBuilder {
+    pub fn request(&self, method: Method, url: &str) -> ChaosRequestBuilder {
+        ChaosRequestBuilder {
             client: self.inner.clone(),
             method,
             url: url.to_string(),
@@ -76,7 +76,7 @@ impl CodexHttpClient {
 }
 
 #[must_use = "requests are not sent unless `send` is awaited"]
-pub struct CodexRequestBuilder {
+pub struct ChaosRequestBuilder {
     client: Arc<Mutex<RamaClient>>,
     method: Method,
     url: String,
@@ -85,16 +85,16 @@ pub struct CodexRequestBuilder {
     body: Option<Vec<u8>>,
 }
 
-impl std::fmt::Debug for CodexRequestBuilder {
+impl std::fmt::Debug for ChaosRequestBuilder {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        f.debug_struct("CodexRequestBuilder")
+        f.debug_struct("ChaosRequestBuilder")
             .field("method", &self.method)
             .field("url", &self.url)
             .finish()
     }
 }
 
-impl CodexRequestBuilder {
+impl ChaosRequestBuilder {
     pub fn headers(mut self, headers: HeaderMap) -> Self {
         self.headers = headers;
         self
@@ -144,7 +144,7 @@ impl CodexRequestBuilder {
         self
     }
 
-    pub async fn send(self) -> Result<CodexResponse, CodexClientError> {
+    pub async fn send(self) -> Result<ChaosResponse, ChaosClientError> {
         let mut headers = self.default_headers;
         for (key, value) in &self.headers {
             headers.insert(key, value.clone());
@@ -168,7 +168,7 @@ impl CodexRequestBuilder {
 
         let request = builder
             .body(rama_body)
-            .map_err(|e| CodexClientError::Build(e.to_string()))?;
+            .map_err(|e| ChaosClientError::Build(e.to_string()))?;
 
         let response = self
             .client
@@ -176,7 +176,7 @@ impl CodexRequestBuilder {
             .await
             .serve(request)
             .await
-            .map_err(|e| CodexClientError::Network(e.to_string()))?;
+            .map_err(|e| ChaosClientError::Network(e.to_string()))?;
 
         tracing::debug!(
             method = %self.method,
@@ -185,16 +185,16 @@ impl CodexRequestBuilder {
             "Request completed"
         );
 
-        Ok(CodexResponse { inner: response })
+        Ok(ChaosResponse { inner: response })
     }
 }
 
 /// Response wrapper providing convenience methods over rama's Response.
-pub struct CodexResponse {
+pub struct ChaosResponse {
     inner: rama::http::Response,
 }
 
-impl CodexResponse {
+impl ChaosResponse {
     pub fn status(&self) -> rama::http::StatusCode {
         self.inner.status()
     }
@@ -203,28 +203,28 @@ impl CodexResponse {
         self.inner.headers()
     }
 
-    pub async fn bytes(self) -> Result<Bytes, CodexClientError> {
+    pub async fn bytes(self) -> Result<Bytes, ChaosClientError> {
         self.inner
             .into_body()
             .collect()
             .await
             .map(rama::http::body::util::Collected::to_bytes)
-            .map_err(|e| CodexClientError::Body(e.to_string()))
+            .map_err(|e| ChaosClientError::Body(e.to_string()))
     }
 
-    pub async fn text(self) -> Result<String, CodexClientError> {
+    pub async fn text(self) -> Result<String, ChaosClientError> {
         let bytes = self.bytes().await?;
         Ok(String::from_utf8_lossy(&bytes).into_owned())
     }
 
-    pub async fn json<T: serde::de::DeserializeOwned>(self) -> Result<T, CodexClientError> {
+    pub async fn json<T: serde::de::DeserializeOwned>(self) -> Result<T, ChaosClientError> {
         let bytes = self.bytes().await?;
-        serde_json::from_slice(&bytes).map_err(|e| CodexClientError::Json(e.to_string()))
+        serde_json::from_slice(&bytes).map_err(|e| ChaosClientError::Json(e.to_string()))
     }
 }
 
 #[derive(Debug, thiserror::Error)]
-pub enum CodexClientError {
+pub enum ChaosClientError {
     #[error("request build error: {0}")]
     Build(String),
     #[error("network error: {0}")]

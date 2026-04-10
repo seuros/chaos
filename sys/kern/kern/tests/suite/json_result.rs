@@ -8,7 +8,7 @@ use chaos_ipc::protocol::SandboxPolicy;
 use chaos_ipc::user_input::UserInput;
 use core_test_support::responses;
 use core_test_support::skip_if_no_network;
-use core_test_support::test_chaos::TestCodex;
+use core_test_support::test_chaos::TestChaos;
 use core_test_support::test_chaos::test_chaos;
 use core_test_support::wait_for_event_match;
 use pretty_assertions::assert_eq;
@@ -69,7 +69,7 @@ async fn codex_returns_json_result(model: String) -> anyhow::Result<()> {
     };
     responses::mount_sse_once_match(&server, match_json_text_param, sse1).await;
 
-    let TestCodex {
+    let TestChaos {
         process: chaos,
         cwd,
         ..

@@ -30,7 +30,7 @@ use chaos_ipc::protocol::Op;
 use chaos_ipc::protocol::SandboxPolicy;
 use chaos_ipc::user_input::UserInput;
 use chaos_which::cargo_bin;
-use codex_client::CodexHttpClient;
+use codex_client::ChaosHttpClient;
 use core_test_support::responses;
 use core_test_support::responses::mount_models_once;
 use core_test_support::responses::mount_sse_once;
@@ -1154,7 +1154,7 @@ async fn wait_for_streamable_http_server(
 ) -> anyhow::Result<()> {
     let deadline = Instant::now() + timeout;
     let metadata_url = format!("http://{address}/.well-known/oauth-authorization-server/mcp");
-    let client = CodexHttpClient::default_client();
+    let client = ChaosHttpClient::default_client();
     loop {
         if let Some(status) = server_child.try_wait()? {
             return Err(anyhow::anyhow!(

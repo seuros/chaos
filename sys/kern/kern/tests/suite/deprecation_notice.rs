@@ -9,7 +9,7 @@ use chaos_kern::config_loader::ConfigRequirementsToml;
 use core_test_support::responses::start_mock_server;
 use core_test_support::skip_if_no_network;
 use core_test_support::test_absolute_path;
-use core_test_support::test_chaos::TestCodex;
+use core_test_support::test_chaos::TestChaos;
 use core_test_support::test_chaos::test_chaos;
 use core_test_support::wait_for_event_match;
 use pretty_assertions::assert_eq;
@@ -42,7 +42,7 @@ async fn emits_deprecation_notice_for_experimental_instructions_file() -> anyhow
         config.config_layer_stack = config_layer_stack;
     });
 
-    let TestCodex { process: chaos, .. } = builder.build(&server).await?;
+    let TestChaos { process: chaos, .. } = builder.build(&server).await?;
 
     let notice = wait_for_event_match(&chaos, |event| match event {
         EventMsg::DeprecationNotice(ev)

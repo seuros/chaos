@@ -14,8 +14,8 @@ use chaos_ipc::models::MessagePhase;
 use chaos_ipc::models::ResponseItem;
 
 const ARC_MONITOR_TIMEOUT: Duration = Duration::from_secs(30);
-const CODEX_ARC_MONITOR_ENDPOINT_OVERRIDE: &str = "CODEX_ARC_MONITOR_ENDPOINT_OVERRIDE";
-const CODEX_ARC_MONITOR_TOKEN: &str = "CODEX_ARC_MONITOR_TOKEN";
+const CHAOS_ARC_MONITOR_ENDPOINT_OVERRIDE: &str = "CHAOS_ARC_MONITOR_ENDPOINT_OVERRIDE";
+const CHAOS_ARC_MONITOR_TOKEN: &str = "CHAOS_ARC_MONITOR_TOKEN";
 
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub(crate) enum ArcMonitorOutcome {
@@ -107,7 +107,7 @@ pub(crate) async fn monitor_action(
         },
         None => None,
     };
-    let token = if let Some(token) = read_non_empty_env_var(CODEX_ARC_MONITOR_TOKEN) {
+    let token = if let Some(token) = read_non_empty_env_var(CHAOS_ARC_MONITOR_TOKEN) {
         token
     } else {
         let Some(auth) = auth.as_ref() else {
@@ -125,7 +125,7 @@ pub(crate) async fn monitor_action(
         }
     };
 
-    let url = read_non_empty_env_var(CODEX_ARC_MONITOR_ENDPOINT_OVERRIDE).unwrap_or_else(|| {
+    let url = read_non_empty_env_var(CHAOS_ARC_MONITOR_ENDPOINT_OVERRIDE).unwrap_or_else(|| {
         format!(
             "{}/chaos/safety/arc",
             turn_context.config.chatgpt_base_url.trim_end_matches('/')

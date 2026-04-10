@@ -56,14 +56,14 @@ pub enum ShellModelOutput {
     // UnifiedExec has its own set of tests
 }
 
-pub struct TestCodexBuilder {
+pub struct TestChaosBuilder {
     config_mutators: Vec<Box<ConfigMutator>>,
     auth: ChaosAuth,
     pre_build_hooks: Vec<Box<PreBuildHook>>,
     home: Option<Arc<TempDir>>,
 }
 
-impl TestCodexBuilder {
+impl TestChaosBuilder {
     pub fn with_config<T>(mut self, mutator: T) -> Self
     where
         T: FnOnce(&mut Config) + Send + 'static,
@@ -97,7 +97,7 @@ impl TestCodexBuilder {
         self
     }
 
-    pub async fn build(&mut self, server: &wiremock::MockServer) -> anyhow::Result<TestCodex> {
+    pub async fn build(&mut self, server: &wiremock::MockServer) -> anyhow::Result<TestChaos> {
         let home = match self.home.clone() {
             Some(home) => home,
             None => Arc::new(TempDir::new()?),
@@ -108,7 +108,7 @@ impl TestCodexBuilder {
     pub async fn build_with_streaming_server(
         &mut self,
         server: &StreamingSseServer,
-    ) -> anyhow::Result<TestCodex> {
+    ) -> anyhow::Result<TestChaos> {
         let base_url = server.uri();
         let home = match self.home.clone() {
             Some(home) => home,
@@ -127,7 +127,7 @@ impl TestCodexBuilder {
         server: &wiremock::MockServer,
         home: Arc<TempDir>,
         process_id: ProcessId,
-    ) -> anyhow::Result<TestCodex> {
+    ) -> anyhow::Result<TestChaos> {
         Box::pin(self.build_with_home(server, home, Some(process_id))).await
     }
 
@@ -136,7 +136,7 @@ impl TestCodexBuilder {
         server: &wiremock::MockServer,
         home: Arc<TempDir>,
         resume_from: Option<ProcessId>,
-    ) -> anyhow::Result<TestCodex> {
+    ) -> anyhow::Result<TestChaos> {
         let base_url = format!("{}/v1", server.uri());
         let (config, cwd) = self.prepare_config(base_url, &home).await?;
         Box::pin(self.build_from_config(config, cwd, home, resume_from)).await
@@ -147,7 +147,7 @@ impl TestCodexBuilder {
         base_url: String,
         home: Arc<TempDir>,
         resume_from: Option<ProcessId>,
-    ) -> anyhow::Result<TestCodex> {
+    ) -> anyhow::Result<TestChaos> {
         let (config, cwd) = self.prepare_config(base_url, &home).await?;
         Box::pin(self.build_from_config(config, cwd, home, resume_from)).await
     }
@@ -158,7 +158,7 @@ impl TestCodexBuilder {
         cwd: Arc<TempDir>,
         home: Arc<TempDir>,
         resume_from: Option<ProcessId>,
-    ) -> anyhow::Result<TestCodex> {
+    ) -> anyhow::Result<TestChaos> {
         let auth = self.auth.clone();
         let process_table = if config.model_catalog.is_some() {
             ProcessTable::new(
@@ -190,7 +190,7 @@ impl TestCodexBuilder {
             None => Box::pin(process_table.start_process(config.clone())).await?,
         };
 
-        Ok(TestCodex {
+        Ok(TestChaos {
             home,
             cwd,
             config,
@@ -262,7 +262,7 @@ fn ensure_test_model_catalog(config: &mut Config) -> Result<()> {
     Ok(())
 }
 
-pub struct TestCodex {
+pub struct TestChaos {
     pub home: Arc<TempDir>,
     pub cwd: Arc<TempDir>,
     pub process: Arc<Process>,
@@ -271,7 +271,7 @@ pub struct TestCodex {
     pub process_table: Arc<ProcessTable>,
 }
 
-impl TestCodex {
+impl TestChaos {
     pub fn cwd_path(&self) -> &Path {
         self.cwd.path()
     }
@@ -368,12 +368,12 @@ impl TestCodex {
     }
 }
 
-pub struct TestCodexHarness {
+pub struct TestChaosHarness {
     server: MockServer,
-    test: TestCodex,
+    test: TestChaos,
 }
 
-impl TestCodexHarness {
+impl TestChaosHarness {
     pub async fn new() -> Result<Self> {
         Self::with_builder(test_chaos()).await
     }
@@ -382,7 +382,7 @@ impl TestCodexHarness {
         Self::with_builder(test_chaos().with_config(mutator)).await
     }
 
-    pub async fn with_builder(mut builder: TestCodexBuilder) -> Result<Self> {
+    pub async fn with_builder(mut builder: TestChaosBuilder) -> Result<Self> {
         let server = start_mock_server().await;
         let test = builder.build(&server).await?;
         Ok(Self { server, test })
@@ -392,7 +392,7 @@ impl TestCodexHarness {
         &self.server
     }
 
-    pub fn test(&self) -> &TestCodex {
+    pub fn test(&self) -> &TestChaos {
         &self.test
     }
 
@@ -507,8 +507,8 @@ fn function_call_output<'a>(bodies: &'a [Value], call_id: &str) -> &'a Value {
     panic!("function_call_output {call_id} not found");
 }
 
-pub fn test_chaos() -> TestCodexBuilder {
-    TestCodexBuilder {
+pub fn test_chaos() -> TestChaosBuilder {
+    TestChaosBuilder {
         config_mutators: vec![],
         auth: ChaosAuth::from_api_key("dummy"),
         pre_build_hooks: vec![],

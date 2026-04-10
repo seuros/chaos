@@ -17,7 +17,7 @@ use core_test_support::responses::mount_sse_once;
 use core_test_support::responses::sse;
 use core_test_support::responses::start_mock_server;
 use core_test_support::skip_if_no_network;
-use core_test_support::test_chaos::TestCodex;
+use core_test_support::test_chaos::TestChaos;
 use core_test_support::test_chaos::test_chaos;
 use core_test_support::wait_for_event;
 use tempfile::TempDir;
@@ -86,7 +86,7 @@ async fn gpt_5_tools_without_apply_patch_append_apply_patch_instructions() -> an
     )
     .await;
 
-    let TestCodex { process: chaos, .. } = test_chaos()
+    let TestChaos { process: chaos, .. } = test_chaos()
         .with_config(|config| {
             config.user_instructions = Some("be consistent and helpful".to_string());
             config.model = Some("gpt-5".to_string());
@@ -156,7 +156,7 @@ async fn prefixes_context_and_instructions_once_and_consistently_across_requests
     )
     .await;
 
-    let TestCodex {
+    let TestChaos {
         process: chaos,
         config,
         ..
@@ -247,7 +247,7 @@ async fn overrides_turn_context_but_keeps_cached_prefix_and_key_constant() -> an
     )
     .await;
 
-    let TestCodex { process: chaos, .. } = test_chaos()
+    let TestChaos { process: chaos, .. } = test_chaos()
         .with_config(|config| {
             config.user_instructions = Some("be consistent and helpful".to_string());
         })
@@ -352,7 +352,7 @@ async fn per_turn_overrides_keep_cached_prefix_and_key_constant() -> anyhow::Res
     )
     .await;
 
-    let TestCodex { process: chaos, .. } = test_chaos()
+    let TestChaos { process: chaos, .. } = test_chaos()
         .with_config(|config| {
             config.user_instructions = Some("be consistent and helpful".to_string());
         })
@@ -470,7 +470,7 @@ async fn send_user_turn_with_no_changes_does_not_send_environment_context() -> a
     )
     .await;
 
-    let TestCodex {
+    let TestChaos {
         process: chaos,
         config,
         session_configured,
@@ -590,7 +590,7 @@ async fn send_user_turn_with_changes_sends_environment_context() -> anyhow::Resu
         sse(vec![ev_response_created("resp-2"), ev_completed("resp-2")]),
     )
     .await;
-    let TestCodex {
+    let TestChaos {
         process: chaos,
         config,
         session_configured,

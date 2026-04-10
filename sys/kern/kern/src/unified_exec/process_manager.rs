@@ -61,7 +61,7 @@ const UNIFIED_EXEC_ENV: [(&str, &str); 10] = [
     ("PAGER", "cat"),
     ("GIT_PAGER", "cat"),
     ("GH_PAGER", "cat"),
-    ("CODEX_CI", "1"),
+    ("CHAOS_CI", "1"),
 ];
 
 /// Test-only override for deterministic unified exec process IDs.

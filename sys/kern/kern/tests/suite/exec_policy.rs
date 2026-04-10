@@ -35,7 +35,7 @@ fn collaboration_mode_for_model(model: String) -> CollaborationMode {
 }
 
 async fn submit_user_turn(
-    test: &core_test_support::test_chaos::TestCodex,
+    test: &core_test_support::test_chaos::TestChaos,
     prompt: &str,
     approval_policy: ApprovalPolicy,
     sandbox_policy: SandboxPolicy,

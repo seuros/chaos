@@ -2,7 +2,7 @@ use anyhow::Result;
 use core_test_support::responses::mount_function_call_agent_response;
 use core_test_support::responses::start_mock_server;
 use core_test_support::skip_if_no_network;
-use core_test_support::test_chaos::TestCodex;
+use core_test_support::test_chaos::TestChaos;
 use core_test_support::test_chaos::test_chaos;
 use std::collections::HashSet;
 use std::path::Path;
@@ -123,7 +123,7 @@ async fn grep_files_tool_reports_empty_results() -> Result<()> {
 }
 
 #[allow(clippy::expect_used)]
-async fn build_test_chaos(server: &wiremock::MockServer) -> Result<TestCodex> {
+async fn build_test_chaos(server: &wiremock::MockServer) -> Result<TestChaos> {
     let mut builder = test_chaos().with_model(MODEL_WITH_TOOL);
     builder.build(server).await
 }

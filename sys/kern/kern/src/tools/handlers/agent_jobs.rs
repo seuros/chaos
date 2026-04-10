@@ -1002,8 +1002,8 @@ After the tool call succeeds, stop.",
 }
 
 fn render_instruction_template(instruction: &str, row_json: &Value) -> String {
-    const OPEN_BRACE_SENTINEL: &str = "__CODEX_OPEN_BRACE__";
-    const CLOSE_BRACE_SENTINEL: &str = "__CODEX_CLOSE_BRACE__";
+    const OPEN_BRACE_SENTINEL: &str = "__CHAOS_OPEN_BRACE__";
+    const CLOSE_BRACE_SENTINEL: &str = "__CHAOS_CLOSE_BRACE__";
 
     let mut rendered = instruction
         .replace("{{", OPEN_BRACE_SENTINEL)

@@ -127,7 +127,7 @@ async fn unified_exec_persists_across_requests() -> anyhow::Result<()> {
     write_stdin(
         &session,
         process_id,
-        "export CODEX_INTERACTIVE_SHELL_VAR=chaos\n",
+        "export CHAOS_INTERACTIVE_SHELL_VAR=chaos\n",
         2_500,
     )
     .await?;
@@ -135,7 +135,7 @@ async fn unified_exec_persists_across_requests() -> anyhow::Result<()> {
     let out_2 = write_stdin(
         &session,
         process_id,
-        "echo $CODEX_INTERACTIVE_SHELL_VAR\n",
+        "echo $CHAOS_INTERACTIVE_SHELL_VAR\n",
         2_500,
     )
     .await?;
@@ -159,12 +159,12 @@ async fn multi_unified_exec_sessions() -> anyhow::Result<()> {
     write_stdin(
         &session,
         session_a,
-        "export CODEX_INTERACTIVE_SHELL_VAR=chaos\n",
+        "export CHAOS_INTERACTIVE_SHELL_VAR=chaos\n",
         2_500,
     )
     .await?;
 
-    let out_2 = exec_command(&session, &turn, "echo $CODEX_INTERACTIVE_SHELL_VAR", 2_500).await?;
+    let out_2 = exec_command(&session, &turn, "echo $CHAOS_INTERACTIVE_SHELL_VAR", 2_500).await?;
     tokio::time::sleep(Duration::from_secs(2)).await;
     assert!(
         out_2.process_id.is_none(),
@@ -178,7 +178,7 @@ async fn multi_unified_exec_sessions() -> anyhow::Result<()> {
     let out_3 = write_stdin(
         &session,
         shell_a.process_id.expect("expected process id"),
-        "echo $CODEX_INTERACTIVE_SHELL_VAR\n",
+        "echo $CHAOS_INTERACTIVE_SHELL_VAR\n",
         2_500,
     )
     .await?;
@@ -204,7 +204,7 @@ async fn unified_exec_timeouts() -> anyhow::Result<()> {
     write_stdin(
         &session,
         process_id,
-        format!("export CODEX_INTERACTIVE_SHELL_VAR={TEST_VAR_VALUE}\n").as_str(),
+        format!("export CHAOS_INTERACTIVE_SHELL_VAR={TEST_VAR_VALUE}\n").as_str(),
         2_500,
     )
     .await?;
@@ -212,7 +212,7 @@ async fn unified_exec_timeouts() -> anyhow::Result<()> {
     let out_2 = write_stdin(
         &session,
         process_id,
-        "sleep 5 && echo $CODEX_INTERACTIVE_SHELL_VAR\n",
+        "sleep 5 && echo $CHAOS_INTERACTIVE_SHELL_VAR\n",
         10,
     )
     .await?;

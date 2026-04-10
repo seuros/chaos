@@ -72,7 +72,7 @@ impl CronServer {
 /// Standalone execution — callable from both MCP and kernel adapter.
 ///
 /// When `pool` is `Some`, the job is persisted to `chaos.sqlite`.
-/// When `None`, standalone mode falls back to `$CODEX_SQLITE_HOME`.
+/// When `None`, standalone mode falls back to `$CHAOS_SQLITE_HOME`.
 /// Missing DB access is treated as an execution error rather than a
 /// validation-only success, because cron jobs are always expected to persist.
 pub async fn execute(

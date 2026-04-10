@@ -11,7 +11,7 @@ use crate::context_manager::TotalTokenUsageBreakdown;
 use crate::context_manager::estimate_response_item_model_visible_bytes;
 use crate::context_manager::is_codex_generated_item;
 use crate::error::ChaosErr;
-use crate::error::Result as CodexResult;
+use crate::error::Result as ChaosResult;
 use crate::protocol::CompactedItem;
 use crate::protocol::EventMsg;
 use crate::protocol::TurnStartedEvent;
@@ -28,7 +28,7 @@ pub(crate) async fn run_inline_remote_auto_compact_task(
     sess: Arc<Session>,
     turn_context: Arc<TurnContext>,
     initial_context_injection: InitialContextInjection,
-) -> CodexResult<()> {
+) -> ChaosResult<()> {
     run_remote_compact_task_inner(&sess, &turn_context, initial_context_injection).await?;
     Ok(())
 }
@@ -36,7 +36,7 @@ pub(crate) async fn run_inline_remote_auto_compact_task(
 pub(crate) async fn run_remote_compact_task(
     sess: Arc<Session>,
     turn_context: Arc<TurnContext>,
-) -> CodexResult<()> {
+) -> ChaosResult<()> {
     let start_event = EventMsg::TurnStarted(TurnStartedEvent {
         turn_id: turn_context.sub_id.clone(),
         model_context_window: turn_context.model_context_window(),
@@ -51,7 +51,7 @@ async fn run_remote_compact_task_inner(
     sess: &Arc<Session>,
     turn_context: &Arc<TurnContext>,
     initial_context_injection: InitialContextInjection,
-) -> CodexResult<()> {
+) -> ChaosResult<()> {
     if let Err(err) =
         run_remote_compact_task_inner_impl(sess, turn_context, initial_context_injection).await
     {
@@ -68,7 +68,7 @@ async fn run_remote_compact_task_inner_impl(
     sess: &Arc<Session>,
     turn_context: &Arc<TurnContext>,
     initial_context_injection: InitialContextInjection,
-) -> CodexResult<()> {
+) -> ChaosResult<()> {
     let compaction_item = TurnItem::ContextCompaction(ContextCompactionItem::new());
     sess.emit_turn_item_started(turn_context, &compaction_item)
         .await;

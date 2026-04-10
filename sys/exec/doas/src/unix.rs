@@ -1,13 +1,13 @@
 //! Unix shell-escalation protocol implementation.
 //!
 //! A patched shell invokes an exec wrapper on every `exec()` attempt. The wrapper sends an
-//! `EscalateRequest` over the inherited `CODEX_ESCALATE_SOCKET`, and the server decides whether to
+//! `EscalateRequest` over the inherited `CHAOS_ESCALATE_SOCKET`, and the server decides whether to
 //! run the command directly (`Run`) or execute it on the server side (`Escalate`).
 //!
 //! Of key importance is the `EscalateRequest` includes a file descriptor for a socket
 //! that the server can use to send the response to the execve wrapper. In this
 //! way, all descendents of the Server process can use the file descriptor
-//! specified by the `CODEX_ESCALATE_SOCKET` environment variable to _send_ escalation requests,
+//! specified by the `CHAOS_ESCALATE_SOCKET` environment variable to _send_ escalation requests,
 //! but responses are read from a separate socket that is created for each request, which
 //! allows the server to handle multiple concurrent escalation requests.
 //!

@@ -34,7 +34,7 @@ use crate::token_data::TokenData;
 use crate::token_data::parse_chatgpt_jwt_claims;
 use crate::util::try_parse_error_message;
 use chaos_ipc::account::PlanType as AccountPlanType;
-use codex_client::CodexHttpClient;
+use codex_client::ChaosHttpClient;
 use serde_json::Value;
 use thiserror::Error;
 
@@ -85,7 +85,7 @@ pub struct ChatgptAuthTokens {
 #[derive(Debug, Clone)]
 struct ChatgptAuthState {
     auth_dot_json: Arc<Mutex<Option<AuthDotJson>>>,
-    client: CodexHttpClient,
+    client: ChaosHttpClient,
 }
 
 impl PartialEq for ChaosAuth {
@@ -104,7 +104,7 @@ const REFRESH_TOKEN_UNKNOWN_MESSAGE: &str =
     "Your access token could not be refreshed. Please log out and sign in again.";
 const REFRESH_TOKEN_ACCOUNT_MISMATCH_MESSAGE: &str = "Your access token could not be refreshed because you have since logged out or signed in to another account. Please sign in again.";
 const REFRESH_TOKEN_URL: &str = "https://auth.openai.com/oauth/token";
-pub const REFRESH_TOKEN_URL_OVERRIDE_ENV_VAR: &str = "CODEX_REFRESH_TOKEN_URL_OVERRIDE";
+pub const REFRESH_TOKEN_URL_OVERRIDE_ENV_VAR: &str = "CHAOS_REFRESH_TOKEN_URL_OVERRIDE";
 
 #[derive(Debug, Error)]
 pub enum RefreshTokenError {
@@ -162,7 +162,7 @@ impl ChaosAuth {
         chaos_home: &Path,
         auth_dot_json: AuthDotJson,
         auth_credentials_store_mode: AuthCredentialsStoreMode,
-        client: CodexHttpClient,
+        client: ChaosHttpClient,
     ) -> std::io::Result<Self> {
         let auth_mode = auth_dot_json.resolved_mode();
         if auth_mode == ApiAuthMode::ApiKey {
@@ -345,7 +345,7 @@ impl ChaosAuth {
         Self::Chatgpt(ChatgptAuth { state, storage })
     }
 
-    fn from_api_key_with_client(api_key: &str, _client: CodexHttpClient) -> Self {
+    fn from_api_key_with_client(api_key: &str, _client: ChaosHttpClient) -> Self {
         Self::ApiKey(ApiKeyAuth {
             api_key: api_key.to_owned(),
         })
@@ -370,13 +370,13 @@ impl ChatgptAuth {
         &self.storage
     }
 
-    fn client(&self) -> &CodexHttpClient {
+    fn client(&self) -> &ChaosHttpClient {
         &self.state.client
     }
 }
 
 pub const OPENAI_API_KEY_ENV_VAR: &str = "OPENAI_API_KEY";
-pub const CODEX_API_KEY_ENV_VAR: &str = "CODEX_API_KEY";
+pub const CHAOS_API_KEY_ENV_VAR: &str = "CHAOS_API_KEY";
 
 pub fn read_openai_api_key_from_env() -> Option<String> {
     env::var(OPENAI_API_KEY_ENV_VAR)
@@ -385,8 +385,8 @@ pub fn read_openai_api_key_from_env() -> Option<String> {
         .filter(|value| !value.is_empty())
 }
 
-pub fn read_codex_api_key_from_env() -> Option<String> {
-    env::var(CODEX_API_KEY_ENV_VAR)
+pub fn read_chaos_api_key_from_env() -> Option<String> {
+    env::var(CHAOS_API_KEY_ENV_VAR)
         .ok()
         .map(|value| value.trim().to_string())
         .filter(|value| !value.is_empty())
@@ -570,7 +570,7 @@ fn load_auth(
     };
 
     // API key via env var takes precedence over any other auth method.
-    if enable_codex_api_key_env && let Some(api_key) = read_codex_api_key_from_env() {
+    if enable_codex_api_key_env && let Some(api_key) = read_chaos_api_key_from_env() {
         let client = crate::default_client::create_client();
         return Ok(Some(ChaosAuth::from_api_key_with_client(
             api_key.as_str(),
@@ -635,7 +635,7 @@ fn persist_tokens(
 // The caller is responsible for persisting any returned tokens.
 async fn request_chatgpt_token_refresh(
     refresh_token: String,
-    client: &CodexHttpClient,
+    client: &ChaosHttpClient,
 ) -> Result<RefreshResponse, RefreshTokenError> {
     let refresh_request = RefreshRequest {
         client_id: CLIENT_ID,

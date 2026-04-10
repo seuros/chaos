@@ -30,7 +30,7 @@ use core_test_support::responses::mount_sse_once;
 use core_test_support::responses::sse;
 use core_test_support::responses::start_mock_server;
 use core_test_support::skip_if_no_network;
-use core_test_support::test_chaos::TestCodex;
+use core_test_support::test_chaos::TestChaos;
 use core_test_support::test_chaos::test_chaos;
 use core_test_support::wait_for_event;
 use core_test_support::wait_for_event_with_timeout;
@@ -56,7 +56,7 @@ enum TargetPath {
 }
 
 impl TargetPath {
-    fn resolve_for_patch(self, test: &TestCodex) -> (PathBuf, String) {
+    fn resolve_for_patch(self, test: &TestChaos) -> (PathBuf, String) {
         match self {
             TargetPath::Workspace(name) => {
                 let path = test.cwd.path().join(name);
@@ -105,7 +105,7 @@ const DEFAULT_UNIFIED_EXEC_JUSTIFICATION: &str =
 impl ActionKind {
     async fn prepare(
         &self,
-        test: &TestCodex,
+        test: &TestChaos,
         server: &MockServer,
         call_id: &str,
         sandbox_permissions: SandboxPermissions,
@@ -296,7 +296,7 @@ enum Expectation {
 }
 
 impl Expectation {
-    fn verify(&self, test: &TestCodex, result: &CommandResult) -> Result<()> {
+    fn verify(&self, test: &TestChaos, result: &CommandResult) -> Result<()> {
         match self {
             Expectation::FileCreated { target, content } => {
                 let (path, _) = target.resolve_for_patch(test);
@@ -520,7 +520,7 @@ struct CommandResult {
 }
 
 async fn submit_turn(
-    test: &TestCodex,
+    test: &TestChaos,
     prompt: &str,
     approval_policy: ApprovalPolicy,
     sandbox_policy: SandboxPolicy,
@@ -590,7 +590,7 @@ fn parse_result(item: &Value) -> CommandResult {
 }
 
 async fn expect_exec_approval(
-    test: &TestCodex,
+    test: &TestChaos,
     expected_command: &str,
 ) -> ExecApprovalRequestEvent {
     let event = wait_for_event(&test.process, |event| {
@@ -617,7 +617,7 @@ async fn expect_exec_approval(
 }
 
 async fn expect_patch_approval(
-    test: &TestCodex,
+    test: &TestChaos,
     expected_call_id: &str,
 ) -> ApplyPatchApprovalRequestEvent {
     let event = wait_for_event(&test.process, |event| {
@@ -638,7 +638,7 @@ async fn expect_patch_approval(
     }
 }
 
-async fn wait_for_completion_without_approval(test: &TestCodex) {
+async fn wait_for_completion_without_approval(test: &TestChaos) {
     let event = wait_for_event(&test.process, |event| {
         matches!(
             event,
@@ -656,7 +656,7 @@ async fn wait_for_completion_without_approval(test: &TestCodex) {
     }
 }
 
-async fn wait_for_completion(test: &TestCodex) {
+async fn wait_for_completion(test: &TestChaos) {
     wait_for_event(&test.process, |event| {
         matches!(event, EventMsg::TurnComplete(_))
     })

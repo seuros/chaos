@@ -16,7 +16,7 @@ fn unified_exec_env_injects_defaults() {
         ("PAGER".to_string(), "cat".to_string()),
         ("GIT_PAGER".to_string(), "cat".to_string()),
         ("GH_PAGER".to_string(), "cat".to_string()),
-        ("CODEX_CI".to_string(), "1".to_string()),
+        ("CHAOS_CI".to_string(), "1".to_string()),
     ]);
 
     assert_eq!(env, expected);

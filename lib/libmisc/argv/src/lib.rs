@@ -209,7 +209,7 @@ const ILLEGAL_ENV_VAR_PREFIXES: [&str; 2] = ["CHAOS_", "CODEX_"];
 /// Load env vars from ~/.chaos/.env.
 ///
 /// Security: Do not allow `.env` files to create or modify any variables
-/// with names starting with `CHAOS_` or `CODEX_`.
+/// with names starting with `CHAOS_` or legacy `CODEX_`.
 fn load_dotenv() {
     if let Ok(chaos_home) = find_chaos_home()
         && let Ok(iter) = dotenvy::from_path_iter(chaos_home.join(".env"))

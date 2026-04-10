@@ -17,14 +17,14 @@ use core_test_support::responses::ev_response_created;
 use core_test_support::responses::mount_sse_sequence;
 use core_test_support::responses::sse;
 use core_test_support::skip_if_no_network;
-use core_test_support::test_chaos::TestCodexHarness;
+use core_test_support::test_chaos::TestChaosHarness;
 use core_test_support::test_chaos::test_chaos;
 use core_test_support::wait_for_event_match;
 use pretty_assertions::assert_eq;
 
-async fn undo_harness() -> Result<TestCodexHarness> {
+async fn undo_harness() -> Result<TestChaosHarness> {
     let builder = test_chaos().with_model("gpt-5.1");
-    TestCodexHarness::with_builder(builder).await
+    TestChaosHarness::with_builder(builder).await
 }
 
 fn git(path: &Path, args: &[&str]) -> Result<()> {
@@ -87,7 +87,7 @@ fn apply_patch_responses(call_id: &str, patch: &str, assistant_msg: &str) -> Vec
 }
 
 async fn run_apply_patch_turn(
-    harness: &TestCodexHarness,
+    harness: &TestChaosHarness,
     prompt: &str,
     call_id: &str,
     patch: &str,

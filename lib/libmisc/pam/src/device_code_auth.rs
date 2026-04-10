@@ -1,6 +1,6 @@
 use chaos_ipc::product::CHAOS_VERSION;
 use chaos_ipc::product::display_name;
-use codex_client::CodexHttpClient;
+use codex_client::ChaosHttpClient;
 use http::StatusCode;
 use serde::Deserialize;
 use serde::Serialize;
@@ -62,7 +62,7 @@ struct CodeSuccessResp {
 
 /// Request the user code and polling interval.
 async fn request_user_code(
-    client: &CodexHttpClient,
+    client: &ChaosHttpClient,
     auth_base_url: &str,
     client_id: &str,
 ) -> std::io::Result<UserCodeResp> {
@@ -99,7 +99,7 @@ async fn request_user_code(
 
 /// Poll token endpoint until a code is issued or timeout occurs.
 async fn poll_for_token(
-    client: &CodexHttpClient,
+    client: &ChaosHttpClient,
     auth_base_url: &str,
     device_auth_id: &str,
     user_code: &str,
@@ -159,7 +159,7 @@ fn print_device_code_prompt(verification_url: &str, code: &str) {
 }
 
 pub async fn request_device_code(opts: &ServerOptions) -> std::io::Result<DeviceCode> {
-    let client = CodexHttpClient::default_client();
+    let client = ChaosHttpClient::default_client();
     let base_url = opts.issuer.trim_end_matches('/');
     let api_base_url = format!("{base_url}/api/accounts");
     let uc = request_user_code(&client, &api_base_url, &opts.client_id).await?;
@@ -176,7 +176,7 @@ pub async fn complete_device_code_login(
     opts: ServerOptions,
     device_code: DeviceCode,
 ) -> std::io::Result<()> {
-    let client = CodexHttpClient::default_client();
+    let client = ChaosHttpClient::default_client();
     let base_url = opts.issuer.trim_end_matches('/');
     let api_base_url = format!("{base_url}/api/accounts");
 

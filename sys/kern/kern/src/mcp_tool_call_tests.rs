@@ -4,7 +4,7 @@ use crate::chaos::make_session_and_context;
 /// Test-local stand-in: the real constant was removed because all MCP servers
 /// are now treated equally. Tests that were written against the old apps server
 /// keep this name so the approval/metadata plumbing is still exercised.
-const CODEX_APPS_MCP_SERVER_NAME: &str = "test-apps-server";
+const CHAOS_APPS_MCP_SERVER_NAME: &str = "test-apps-server";
 use crate::config::ConfigToml;
 use crate::config::types::AppConfig;
 use crate::config::types::AppToolConfig;
@@ -122,7 +122,7 @@ async fn approval_elicitation_request_uses_message_override_and_preserves_tool_p
     let (session, turn_context) = make_session_and_context().await;
     let question = build_mcp_tool_approval_question(
         "q".to_string(),
-        CODEX_APPS_MCP_SERVER_NAME,
+        CHAOS_APPS_MCP_SERVER_NAME,
         "create_event",
         Some("Calendar"),
         prompt_options(true, true),
@@ -133,7 +133,7 @@ async fn approval_elicitation_request_uses_message_override_and_preserves_tool_p
         &session,
         &turn_context,
         McpToolApprovalElicitationRequest {
-            server: CODEX_APPS_MCP_SERVER_NAME,
+            server: CHAOS_APPS_MCP_SERVER_NAME,
             metadata: Some(&approval_metadata(
                 Some("calendar"),
                 Some("Calendar"),
@@ -168,7 +168,7 @@ async fn approval_elicitation_request_uses_message_override_and_preserves_tool_p
         McpServerElicitationRequestParams {
             process_id: session.conversation_id.to_string(),
             turn_id: Some(turn_context.sub_id),
-            server_name: CODEX_APPS_MCP_SERVER_NAME.to_string(),
+            server_name: CHAOS_APPS_MCP_SERVER_NAME.to_string(),
             request: McpServerElicitationRequest::Form {
                 meta: Some(serde_json::json!({
                     MCP_TOOL_APPROVAL_KIND_KEY: MCP_TOOL_APPROVAL_KIND_MCP_TOOL_CALL,
@@ -241,7 +241,7 @@ fn custom_mcp_tool_question_mentions_server_name() {
 fn codex_apps_tool_question_uses_fallback_app_label() {
     let question = build_mcp_tool_approval_question(
         "q".to_string(),
-        CODEX_APPS_MCP_SERVER_NAME,
+        CHAOS_APPS_MCP_SERVER_NAME,
         "run_action",
         None,
         prompt_options(true, true),
@@ -258,7 +258,7 @@ fn codex_apps_tool_question_uses_fallback_app_label() {
 fn trusted_codex_apps_tool_question_offers_always_allow() {
     let question = build_mcp_tool_approval_question(
         "q".to_string(),
-        CODEX_APPS_MCP_SERVER_NAME,
+        CHAOS_APPS_MCP_SERVER_NAME,
         "run_action",
         Some("Calendar"),
         prompt_options(true, true),
@@ -340,13 +340,13 @@ fn custom_servers_keep_session_remember_without_persistent_approval() {
 #[test]
 fn codex_apps_connectors_support_persistent_approval() {
     let invocation = McpInvocation {
-        server: CODEX_APPS_MCP_SERVER_NAME.to_string(),
+        server: CHAOS_APPS_MCP_SERVER_NAME.to_string(),
         tool: "calendar/list_events".to_string(),
         arguments: None,
     };
     let metadata = approval_metadata(Some("calendar"), Some("Calendar"), None, None, None);
     let expected = McpToolApprovalKey {
-        server: CODEX_APPS_MCP_SERVER_NAME.to_string(),
+        server: CHAOS_APPS_MCP_SERVER_NAME.to_string(),
         connector_id: Some("calendar".to_string()),
         tool_name: "calendar/list_events".to_string(),
     };
@@ -438,9 +438,9 @@ fn codex_apps_tool_call_request_meta_includes_codex_apps_meta() {
     };
 
     assert_eq!(
-        build_mcp_tool_call_request_meta(CODEX_APPS_MCP_SERVER_NAME, Some(&metadata)),
+        build_mcp_tool_call_request_meta(CHAOS_APPS_MCP_SERVER_NAME, Some(&metadata)),
         Some(serde_json::json!({
-            MCP_TOOL_CODEX_APPS_META_KEY: {
+            MCP_TOOL_CHAOS_APPS_META_KEY: {
                 "resource_uri": "connector://calendar/tools/calendar_create_event",
                 "contains_mcp_source": true,
                 "connector_id": "calendar",
@@ -518,7 +518,7 @@ fn approval_elicitation_meta_keeps_session_persist_behavior_for_custom_servers()
 fn approval_elicitation_meta_includes_connector_source_for_codex_apps() {
     assert_eq!(
         build_mcp_tool_approval_elicitation_meta(
-            CODEX_APPS_MCP_SERVER_NAME,
+            CHAOS_APPS_MCP_SERVER_NAME,
             Some(&approval_metadata(
                 Some("calendar"),
                 Some("Calendar"),
@@ -551,7 +551,7 @@ fn approval_elicitation_meta_includes_connector_source_for_codex_apps() {
 fn approval_elicitation_meta_merges_session_and_always_persist_with_connector_source() {
     assert_eq!(
         build_mcp_tool_approval_elicitation_meta(
-            CODEX_APPS_MCP_SERVER_NAME,
+            CHAOS_APPS_MCP_SERVER_NAME,
             Some(&approval_metadata(
                 Some("calendar"),
                 Some("Calendar"),
@@ -708,7 +708,7 @@ async fn maybe_persist_mcp_tool_approval_reloads_session_config() {
     let chaos_home = session.chaos_home().await;
     std::fs::create_dir_all(&chaos_home).expect("create chaos home");
     let key = McpToolApprovalKey {
-        server: CODEX_APPS_MCP_SERVER_NAME.to_string(),
+        server: CHAOS_APPS_MCP_SERVER_NAME.to_string(),
         connector_id: Some("calendar".to_string()),
         tool_name: "calendar/list_events".to_string(),
     };
@@ -811,7 +811,7 @@ async fn approve_mode_blocks_when_arc_returns_interrupt_for_model() {
     let session = Arc::new(session);
     let turn_context = Arc::new(turn_context);
     let invocation = McpInvocation {
-        server: CODEX_APPS_MCP_SERVER_NAME.to_string(),
+        server: CHAOS_APPS_MCP_SERVER_NAME.to_string(),
         tool: "dangerous_tool".to_string(),
         arguments: Some(serde_json::json!({ "id": 1 })),
     };

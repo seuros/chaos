@@ -98,7 +98,7 @@ const MANAGED_MITM_CA_KEY: &str = "ca.key";
 
 fn managed_ca_paths() -> Result<(PathBuf, PathBuf)> {
     let chaos_home =
-        find_chaos_home().context("failed to resolve CODEX_HOME for managed MITM CA")?;
+        find_chaos_home().context("failed to resolve CHAOS_HOME for managed MITM CA")?;
     let proxy_dir = chaos_home.join(MANAGED_MITM_CA_DIR);
     Ok((
         proxy_dir.join(MANAGED_MITM_CA_CERT),

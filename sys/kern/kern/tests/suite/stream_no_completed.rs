@@ -12,7 +12,7 @@ use core_test_support::responses;
 use core_test_support::skip_if_no_network;
 use core_test_support::streaming_sse::StreamingSseChunk;
 use core_test_support::streaming_sse::start_streaming_sse_server;
-use core_test_support::test_chaos::TestCodex;
+use core_test_support::test_chaos::TestChaos;
 use core_test_support::test_chaos::test_chaos;
 use core_test_support::wait_for_event;
 
@@ -65,7 +65,7 @@ async fn retries_on_early_close() {
         supports_websockets: false,
     };
 
-    let TestCodex { process: chaos, .. } = test_chaos()
+    let TestChaos { process: chaos, .. } = test_chaos()
         .with_config(move |config| {
             config.model_provider = model_provider;
         })

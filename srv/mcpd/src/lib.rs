@@ -1,8 +1,10 @@
 //! Chaos MCP server — built on mcp-host.
 #![deny(clippy::print_stdout, clippy::print_stderr)]
 
+use std::collections::HashMap;
 use std::io::ErrorKind;
 use std::io::Result as IoResult;
+use std::path::PathBuf;
 use std::sync::Arc;
 
 use chaos_argv::Arg0DispatchPaths;
@@ -12,11 +14,23 @@ use chaos_ipc::protocol::SessionSource;
 use chaos_kern::AuthManager;
 use chaos_kern::ProcessTable;
 use chaos_kern::config::Config;
+use chaos_kern::config::types::McpServerConfig;
+use chaos_kern::config::types::McpServerTransportConfig;
 use chaos_kern::models_manager::collaboration_mode_presets::CollaborationModesConfig;
 use mcp_host::prelude::*;
 use tokio::sync::Mutex;
 use tracing_subscriber::EnvFilter;
 use tracing_subscriber::prelude::*;
+
+/// Environment variable used to detect when `chaos mcp serve` is running
+/// inside another `chaos mcp serve` — see [`guard_against_recursive_mcpd`].
+const CHAOS_MCPD_DEPTH_ENV: &str = "CHAOS_MCPD_DEPTH";
+
+/// Hard cap on nested chaos-mcpd instances. One level of nesting is enough
+/// to support running `chaos mcp serve` from inside a chaos session that
+/// spawned it (e.g. a debugging scenario); anything beyond that is
+/// guaranteed to be a configuration-induced skynet attack (or AI overtake).
+const CHAOS_MCPD_MAX_DEPTH: u32 = 1;
 
 mod builtin_resources;
 mod chaos_runner;
@@ -49,6 +63,12 @@ pub async fn run_main(
     arg0_paths: Arg0DispatchPaths,
     cli_config_overrides: CliConfigOverrides,
 ) -> IoResult<()> {
+    // Refuse to boot if we're already running inside another chaos-mcpd
+    // beyond the permitted nesting depth. Catches the fork-bomb / skynet
+    // scenario where a project `.mcp.json` lists `chaos mcp serve` as one
+    // of its servers and each nested session spawns another sidecar.
+    guard_against_recursive_mcpd()?;
+
     // Parse CLI overrides and load base Config.
     let cli_kv_overrides = cli_config_overrides.parse_overrides().map_err(|e| {
         std::io::Error::new(
@@ -56,11 +76,18 @@ pub async fn run_main(
             format!("error parsing -c overrides: {e}"),
         )
     })?;
-    let config = Config::load_with_cli_overrides(cli_kv_overrides)
+    let mut config = Config::load_with_cli_overrides(cli_kv_overrides)
         .await
         .map_err(|e| {
             std::io::Error::new(ErrorKind::InvalidData, format!("error loading config: {e}"))
         })?;
+
+    // Second layer of defense: strip any `chaos mcp serve` self-reference
+    // from the merged mcp_servers table. Project `.mcp.json` files in the
+    // wild list `chaos` as a server (useful when editing from Claude Code
+    // or another host), and we don't want to spawn a child chaos-mcpd from
+    // our own session.
+    strip_chaos_self_reference_from_mcp_servers(&mut config);
 
     // OpenTelemetry setup.
     let otel = chaos_kern::otel_init::build_provider(
@@ -193,6 +220,136 @@ pub async fn run_main(
     Ok(())
 }
 
+/// Returns `Err(ErrorKind::WouldBlock)` if the current process is already
+/// nested deeper than `CHAOS_MCPD_MAX_DEPTH` layers of `chaos mcp serve`.
+/// On success, bumps the depth counter so children inherit the new value.
+fn guard_against_recursive_mcpd() -> IoResult<()> {
+    let depth: u32 = std::env::var(CHAOS_MCPD_DEPTH_ENV)
+        .ok()
+        .and_then(|v| v.parse().ok())
+        .unwrap_or(0);
+
+    if depth > CHAOS_MCPD_MAX_DEPTH {
+        return Err(std::io::Error::new(
+            ErrorKind::WouldBlock,
+            format!(
+                "chaos mcp serve refusing to start: already nested {depth} level(s) deep \
+                 (max {CHAOS_MCPD_MAX_DEPTH}). This means a parent chaos session spawned \
+                 us as an MCP server — check your project `.mcp.json` or user config for \
+                 a `chaos` server entry that points at this binary."
+            ),
+        ));
+    }
+
+    // SAFETY: single-threaded at startup; nothing else is reading env yet.
+    // `set_var` is `unsafe` on newer rustc because concurrent getenv is UB
+    // on some platforms, but we're pre-tokio-runtime here.
+    unsafe {
+        std::env::set_var(CHAOS_MCPD_DEPTH_ENV, (depth + 1).to_string());
+    }
+    Ok(())
+}
+
+/// Canonicalizes a path without panicking if it doesn't exist. Falls back
+/// to the original path when canonicalization fails so caller-side equality
+/// checks still work against non-existent paths (e.g. removed binaries).
+fn canonicalize_lossy(path: &std::path::Path) -> PathBuf {
+    std::fs::canonicalize(path).unwrap_or_else(|_| path.to_path_buf())
+}
+
+fn resolve_command_path(command_path: &std::path::Path) -> Option<PathBuf> {
+    if command_path.components().count() > 1 {
+        return Some(canonicalize_lossy(command_path));
+    }
+
+    let path = std::env::var_os("PATH")?;
+    std::env::split_paths(&path)
+        .map(|dir| dir.join(command_path))
+        .find(|candidate| candidate.exists())
+        .map(|candidate| canonicalize_lossy(&candidate))
+}
+
+/// Filter `config.mcp_servers` in place, removing any stdio entry that
+/// resolves to the current chaos binary invoking `mcp serve`. Anything
+/// else (dictator, necromancer, third-party servers, streamable-http) is
+/// left untouched.
+fn strip_chaos_self_reference_from_mcp_servers(config: &mut Config) {
+    let self_exe = std::env::current_exe().ok().map(|p| canonicalize_lossy(&p));
+    let self_stem = self_exe
+        .as_ref()
+        .and_then(|p| p.file_stem())
+        .and_then(|s| s.to_str())
+        .map(str::to_string);
+
+    let original: HashMap<String, McpServerConfig> = config.mcp_servers.get().clone();
+    let mut filtered = HashMap::with_capacity(original.len());
+    let mut dropped: Vec<String> = Vec::new();
+
+    for (name, entry) in original {
+        if is_chaos_self_reference(&entry, self_exe.as_deref(), self_stem.as_deref()) {
+            dropped.push(name);
+        } else {
+            filtered.insert(name, entry);
+        }
+    }
+
+    for name in &dropped {
+        tracing::warn!(
+            server = %name,
+            "dropping chaos self-reference from mcp_servers to avoid recursive chaos-mcpd spawn"
+        );
+    }
+
+    if !dropped.is_empty()
+        && let Err(e) = config.mcp_servers.set(filtered)
+    {
+        tracing::error!(
+            error = %e,
+            "failed to apply filtered mcp_servers after stripping self-references"
+        );
+    }
+}
+
+fn is_chaos_self_reference(
+    entry: &McpServerConfig,
+    self_exe: Option<&std::path::Path>,
+    self_stem: Option<&str>,
+) -> bool {
+    let McpServerTransportConfig::Stdio { command, args, .. } = &entry.transport else {
+        return false;
+    };
+
+    // Only `mcp serve` (or `mcp` alone, which the cli also routes to serve
+    // in future subcommands) counts as recursive. Plain `chaos exec ...`
+    // etc. is fine — it's a different role.
+    let invokes_mcp = args.iter().any(|a| a == "mcp");
+    if !invokes_mcp {
+        return false;
+    }
+
+    let command_path = std::path::Path::new(command);
+    let resolved_command = resolve_command_path(command_path);
+
+    if let Some(exe) = self_exe
+        && resolved_command.as_deref() == Some(exe)
+    {
+        return true;
+    }
+
+    // Fallback: match unresolved bare `chaos` by basename. Explicit paths
+    // that resolve elsewhere on PATH are not self-references.
+    if let Some(stem) = self_stem
+        && resolved_command.is_none()
+        && command_path.components().count() == 1
+        && let Some(cmd_stem) = command_path.file_stem().and_then(|s| s.to_str())
+        && cmd_stem == stem
+    {
+        return true;
+    }
+
+    false
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -200,11 +357,205 @@ mod tests {
     use chaos_kern::config::types::OtelExporterKind;
     use pretty_assertions::assert_eq;
     use std::collections::HashMap;
+    use std::ffi::OsString;
+    use std::sync::{LazyLock, Mutex};
     use tempfile::TempDir;
+
+    static ENV_LOCK: LazyLock<Mutex<()>> = LazyLock::new(|| Mutex::new(()));
 
     #[test]
     fn mcp_server_defaults_analytics_to_enabled() {
         assert_eq!(DEFAULT_ANALYTICS_ENABLED, true);
+    }
+
+    fn stdio_server(command: &str, args: &[&str]) -> McpServerConfig {
+        McpServerConfig {
+            transport: McpServerTransportConfig::Stdio {
+                command: command.to_string(),
+                args: args.iter().map(|s| (*s).to_string()).collect(),
+                env: None,
+                env_vars: Vec::new(),
+                cwd: None,
+            },
+            enabled: true,
+            required: false,
+            disabled_reason: None,
+            startup_timeout_sec: None,
+            tool_timeout_sec: None,
+            enabled_tools: None,
+            disabled_tools: None,
+            scopes: None,
+            oauth_resource: None,
+            r#type: None,
+            oauth: None,
+        }
+    }
+
+    #[test]
+    fn is_chaos_self_reference_matches_exact_path_with_mcp_arg() {
+        let exe = PathBuf::from("/usr/local/bin/chaos");
+        let entry = stdio_server("/usr/local/bin/chaos", &["mcp", "serve"]);
+        assert!(is_chaos_self_reference(
+            &entry,
+            Some(exe.as_path()),
+            Some("chaos"),
+        ));
+    }
+
+    #[test]
+    fn is_chaos_self_reference_matches_basename_when_path_unresolved() {
+        let _env_lock = ENV_LOCK.lock().unwrap();
+        let saved_path = std::env::var_os("PATH");
+        unsafe {
+            std::env::set_var("PATH", OsString::new());
+        }
+        let exe = PathBuf::from("/does/not/exist/chaos");
+        // Bare `chaos` with no PATH resolution available — basename fallback hits.
+        let entry = stdio_server("chaos", &["mcp", "serve"]);
+        let is_self = is_chaos_self_reference(&entry, Some(exe.as_path()), Some("chaos"));
+        unsafe {
+            match saved_path {
+                Some(path) => std::env::set_var("PATH", path),
+                None => std::env::remove_var("PATH"),
+            }
+        }
+        assert!(is_self);
+    }
+
+    #[test]
+    fn is_chaos_self_reference_matches_resolved_path_on_path() {
+        let _env_lock = ENV_LOCK.lock().unwrap();
+        let saved_path = std::env::var_os("PATH");
+        let temp = TempDir::new().unwrap();
+        let self_dir = temp.path().join("self");
+        std::fs::create_dir_all(&self_dir).unwrap();
+        let self_exe = self_dir.join("chaos");
+        std::fs::write(&self_exe, b"#!/bin/sh\n").unwrap();
+        unsafe {
+            std::env::set_var("PATH", &self_dir);
+        }
+
+        let entry = stdio_server("chaos", &["mcp", "serve"]);
+        let is_self = is_chaos_self_reference(&entry, Some(self_exe.as_path()), Some("chaos"));
+
+        unsafe {
+            match saved_path {
+                Some(path) => std::env::set_var("PATH", path),
+                None => std::env::remove_var("PATH"),
+            }
+        }
+        assert!(is_self);
+    }
+
+    #[test]
+    fn is_chaos_self_reference_ignores_different_chaos_on_path() {
+        let _env_lock = ENV_LOCK.lock().unwrap();
+        let saved_path = std::env::var_os("PATH");
+        let temp = TempDir::new().unwrap();
+        let self_dir = temp.path().join("self");
+        let other_dir = temp.path().join("other");
+        std::fs::create_dir_all(&self_dir).unwrap();
+        std::fs::create_dir_all(&other_dir).unwrap();
+
+        let self_exe = self_dir.join("chaos");
+        let other_exe = other_dir.join("chaos");
+        std::fs::write(&self_exe, b"#!/bin/sh\n").unwrap();
+        std::fs::write(&other_exe, b"#!/bin/sh\n").unwrap();
+        unsafe {
+            std::env::set_var("PATH", &other_dir);
+        }
+
+        let entry = stdio_server("chaos", &["mcp", "serve"]);
+        let is_self = is_chaos_self_reference(&entry, Some(self_exe.as_path()), Some("chaos"));
+
+        unsafe {
+            match saved_path {
+                Some(path) => std::env::set_var("PATH", path),
+                None => std::env::remove_var("PATH"),
+            }
+        }
+        assert!(!is_self);
+    }
+
+    #[test]
+    fn is_chaos_self_reference_ignores_chaos_without_mcp_arg() {
+        let exe = PathBuf::from("/usr/local/bin/chaos");
+        // `chaos exec foo` is a different role — do not strip.
+        let entry = stdio_server("/usr/local/bin/chaos", &["exec", "foo"]);
+        assert!(!is_chaos_self_reference(
+            &entry,
+            Some(exe.as_path()),
+            Some("chaos"),
+        ));
+    }
+
+    #[test]
+    fn is_chaos_self_reference_ignores_unrelated_binaries() {
+        let exe = PathBuf::from("/usr/local/bin/chaos");
+        let entry = stdio_server("dictator", &["mcp"]);
+        assert!(!is_chaos_self_reference(
+            &entry,
+            Some(exe.as_path()),
+            Some("chaos"),
+        ));
+    }
+
+    #[test]
+    fn is_chaos_self_reference_ignores_streamable_http() {
+        let exe = PathBuf::from("/usr/local/bin/chaos");
+        let entry = McpServerConfig {
+            transport: McpServerTransportConfig::StreamableHttp {
+                url: "http://localhost:3011/mcp".to_string(),
+                bearer_token_env_var: None,
+                http_headers: None,
+                env_http_headers: None,
+            },
+            ..stdio_server("unused", &[])
+        };
+        assert!(!is_chaos_self_reference(
+            &entry,
+            Some(exe.as_path()),
+            Some("chaos"),
+        ));
+    }
+
+    #[test]
+    fn guard_against_recursive_mcpd_allows_first_nested_level() {
+        let _env_lock = ENV_LOCK.lock().unwrap();
+        let saved = std::env::var(CHAOS_MCPD_DEPTH_ENV).ok();
+        unsafe {
+            std::env::set_var(CHAOS_MCPD_DEPTH_ENV, CHAOS_MCPD_MAX_DEPTH.to_string());
+        }
+        let result = guard_against_recursive_mcpd();
+        assert!(result.is_ok(), "expected first nested server to be allowed");
+        assert_eq!(
+            std::env::var(CHAOS_MCPD_DEPTH_ENV),
+            Ok((CHAOS_MCPD_MAX_DEPTH + 1).to_string())
+        );
+        unsafe {
+            match saved {
+                Some(v) => std::env::set_var(CHAOS_MCPD_DEPTH_ENV, v),
+                None => std::env::remove_var(CHAOS_MCPD_DEPTH_ENV),
+            }
+        }
+    }
+
+    #[test]
+    fn guard_against_recursive_mcpd_refuses_beyond_max_depth() {
+        let _env_lock = ENV_LOCK.lock().unwrap();
+        let saved = std::env::var(CHAOS_MCPD_DEPTH_ENV).ok();
+        unsafe {
+            std::env::set_var(CHAOS_MCPD_DEPTH_ENV, (CHAOS_MCPD_MAX_DEPTH + 1).to_string());
+        }
+        let result = guard_against_recursive_mcpd();
+        assert!(result.is_err(), "expected recursion guard to trip");
+        assert_eq!(result.err().unwrap().kind(), ErrorKind::WouldBlock);
+        unsafe {
+            match saved {
+                Some(v) => std::env::set_var(CHAOS_MCPD_DEPTH_ENV, v),
+                None => std::env::remove_var(CHAOS_MCPD_DEPTH_ENV),
+            }
+        }
     }
 
     #[tokio::test]

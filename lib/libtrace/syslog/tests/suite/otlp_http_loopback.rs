@@ -5,10 +5,11 @@ use chaos_syslog::config::OtelHttpProtocol;
 use chaos_syslog::config::OtelSettings;
 use chaos_syslog::metrics::MetricsClient;
 use chaos_syslog::metrics::MetricsConfig;
-use chaos_syslog::metrics::Result;
+use std::any::Any;
 use std::collections::HashMap;
 use std::io::Read as _;
 use std::io::Write as _;
+use std::net::SocketAddr;
 use std::net::TcpListener;
 use std::net::TcpStream;
 use std::path::PathBuf;
@@ -22,6 +23,68 @@ struct CapturedRequest {
     path: String,
     content_type: Option<String>,
     body: Vec<u8>,
+}
+
+struct LoopbackCollector {
+    addr: SocketAddr,
+    rx: mpsc::Receiver<Vec<CapturedRequest>>,
+    server: thread::JoinHandle<()>,
+}
+
+fn panic_payload_message(payload: &(dyn Any + Send)) -> String {
+    payload
+        .downcast_ref::<&str>()
+        .map(|message| (*message).to_string())
+        .or_else(|| payload.downcast_ref::<String>().cloned())
+        .unwrap_or_else(|| "unknown panic payload".to_string())
+}
+
+impl LoopbackCollector {
+    fn bind() -> std::io::Result<Self> {
+        let listener = TcpListener::bind("127.0.0.1:0")?;
+        let addr = listener.local_addr()?;
+        listener.set_nonblocking(true)?;
+
+        let (tx, rx) = mpsc::channel::<Vec<CapturedRequest>>();
+        let server = thread::spawn(move || {
+            let mut captured = Vec::new();
+            let deadline = Instant::now() + Duration::from_secs(3);
+
+            while Instant::now() < deadline {
+                match listener.accept() {
+                    Ok((mut stream, _)) => {
+                        if let Some(request) = capture_request(&mut stream) {
+                            captured.push(request);
+                        }
+                    }
+                    Err(err) if err.kind() == std::io::ErrorKind::WouldBlock => {
+                        thread::sleep(Duration::from_millis(10));
+                    }
+                    Err(_) => break,
+                }
+            }
+
+            let _ = tx.send(captured);
+        });
+
+        Ok(Self { addr, rx, server })
+    }
+
+    fn endpoint(&self, path: &str) -> String {
+        format!("http://{}{path}", self.addr)
+    }
+
+    fn finish(self) -> std::io::Result<Vec<CapturedRequest>> {
+        self.server.join().map_err(|payload| {
+            std::io::Error::other(format!(
+                "server thread panicked: {}",
+                panic_payload_message(&*payload)
+            ))
+        })?;
+        self.rx.recv_timeout(Duration::from_secs(1)).map_err(|err| {
+            std::io::Error::other(format!("failed to receive captured requests: {err}"))
+        })
+    }
 }
 
 fn read_http_request(
@@ -133,72 +196,38 @@ fn write_http_response(stream: &mut TcpStream, status: &str) -> std::io::Result<
     stream.flush()
 }
 
-#[test]
-fn otlp_http_exporter_sends_metrics_to_collector() -> Result<()> {
-    let listener = TcpListener::bind("127.0.0.1:0").expect("bind");
-    let addr = listener.local_addr().expect("local_addr");
-    listener.set_nonblocking(true).expect("set_nonblocking");
+fn capture_request(stream: &mut TcpStream) -> Option<CapturedRequest> {
+    let result = read_http_request(stream);
+    let _ = write_http_response(stream, "202 Accepted");
+    let (path, headers, body) = result.ok()?;
 
-    let (tx, rx) = mpsc::channel::<Vec<CapturedRequest>>();
-    let server = thread::spawn(move || {
-        let mut captured = Vec::new();
-        let deadline = Instant::now() + Duration::from_secs(3);
+    Some(CapturedRequest {
+        path,
+        content_type: headers.get("content-type").cloned(),
+        body,
+    })
+}
 
-        while Instant::now() < deadline {
-            match listener.accept() {
-                Ok((mut stream, _)) => {
-                    let result = read_http_request(&mut stream);
-                    let _ = write_http_response(&mut stream, "202 Accepted");
-                    if let Ok((path, headers, body)) = result {
-                        captured.push(CapturedRequest {
-                            path,
-                            content_type: headers.get("content-type").cloned(),
-                            body,
-                        });
-                    }
-                }
-                Err(err) if err.kind() == std::io::ErrorKind::WouldBlock => {
-                    thread::sleep(Duration::from_millis(10));
-                }
-                Err(_) => break,
-            }
-        }
-
-        let _ = tx.send(captured);
-    });
-
-    let metrics = MetricsClient::new(MetricsConfig::otlp(
-        "test",
-        "chaos-cli",
-        CHAOS_VERSION,
-        OtelExporter::OtlpHttp {
-            endpoint: format!("http://{addr}/v1/metrics"),
-            headers: HashMap::new(),
-            protocol: OtelHttpProtocol::Json,
-            tls: None,
-        },
-    ))?;
-
-    metrics.counter("chaos.turns", 1, &[("source", "test")])?;
-    metrics.shutdown()?;
-
-    server.join().expect("server join");
-    let captured = rx.recv_timeout(Duration::from_secs(1)).expect("captured");
-
-    let request = captured
+fn captured_request<'a>(captured: &'a [CapturedRequest], path: &str) -> &'a CapturedRequest {
+    captured
         .iter()
-        .find(|req| req.path == "/v1/metrics")
+        .find(|req| req.path == path)
         .unwrap_or_else(|| {
             let paths = captured
                 .iter()
                 .map(|req| req.path.as_str())
                 .collect::<Vec<_>>()
                 .join(", ");
-            panic!(
-                "missing /v1/metrics request; got {}: {paths}",
-                captured.len()
-            );
-        });
+            panic!("missing {path} request; got {}: {paths}", captured.len());
+        })
+}
+
+fn assert_json_request_contains(
+    captured: &[CapturedRequest],
+    path: &str,
+    expected_fragments: &[(&str, &str)],
+) {
+    let request = captured_request(captured, path);
     let content_type = request
         .content_type
         .as_deref()
@@ -209,11 +238,55 @@ fn otlp_http_exporter_sends_metrics_to_collector() -> Result<()> {
     );
 
     let body = String::from_utf8_lossy(&request.body);
-    assert!(
-        body.contains("chaos.turns"),
-        "expected metric name not found; body prefix: {}",
-        &body.chars().take(2000).collect::<String>()
-    );
+    let body_prefix = body.chars().take(2000).collect::<String>();
+    for &(needle, description) in expected_fragments {
+        assert!(
+            body.contains(needle),
+            "expected {description} not found; body prefix: {body_prefix}"
+        );
+    }
+}
+
+fn trace_settings(endpoint: String) -> OtelSettings {
+    OtelSettings {
+        environment: "test".to_string(),
+        service_name: "chaos-cli".to_string(),
+        service_version: CHAOS_VERSION.to_string(),
+        chaos_home: PathBuf::from("."),
+        exporter: OtelExporter::None,
+        trace_exporter: OtelExporter::OtlpHttp {
+            endpoint,
+            headers: HashMap::new(),
+            protocol: OtelHttpProtocol::Json,
+            tls: None,
+        },
+        metrics_exporter: OtelExporter::None,
+        runtime_metrics: false,
+    }
+}
+
+#[test]
+fn otlp_http_exporter_sends_metrics_to_collector()
+-> std::result::Result<(), Box<dyn std::error::Error>> {
+    let collector = LoopbackCollector::bind()?;
+
+    let metrics = MetricsClient::new(MetricsConfig::otlp(
+        "test",
+        "chaos-cli",
+        CHAOS_VERSION,
+        OtelExporter::OtlpHttp {
+            endpoint: collector.endpoint("/v1/metrics"),
+            headers: HashMap::new(),
+            protocol: OtelHttpProtocol::Json,
+            tls: None,
+        },
+    ))?;
+
+    metrics.counter("chaos.turns", 1, &[("source", "test")])?;
+    metrics.shutdown()?;
+
+    let captured = collector.finish()?;
+    assert_json_request_contains(&captured, "/v1/metrics", &[("chaos.turns", "metric name")]);
 
     Ok(())
 }
@@ -221,55 +294,13 @@ fn otlp_http_exporter_sends_metrics_to_collector() -> Result<()> {
 #[test]
 fn otlp_http_exporter_sends_traces_to_collector()
 -> std::result::Result<(), Box<dyn std::error::Error>> {
-    let listener = TcpListener::bind("127.0.0.1:0").expect("bind");
-    let addr = listener.local_addr().expect("local_addr");
-    listener.set_nonblocking(true).expect("set_nonblocking");
+    let collector = LoopbackCollector::bind()?;
 
-    let (tx, rx) = mpsc::channel::<Vec<CapturedRequest>>();
-    let server = thread::spawn(move || {
-        let mut captured = Vec::new();
-        let deadline = Instant::now() + Duration::from_secs(3);
-
-        while Instant::now() < deadline {
-            match listener.accept() {
-                Ok((mut stream, _)) => {
-                    let result = read_http_request(&mut stream);
-                    let _ = write_http_response(&mut stream, "202 Accepted");
-                    if let Ok((path, headers, body)) = result {
-                        captured.push(CapturedRequest {
-                            path,
-                            content_type: headers.get("content-type").cloned(),
-                            body,
-                        });
-                    }
-                }
-                Err(err) if err.kind() == std::io::ErrorKind::WouldBlock => {
-                    thread::sleep(Duration::from_millis(10));
-                }
-                Err(_) => break,
-            }
-        }
-
-        let _ = tx.send(captured);
-    });
-
-    let otel = OtelProvider::from(&OtelSettings {
-        environment: "test".to_string(),
-        service_name: "chaos-cli".to_string(),
-        service_version: CHAOS_VERSION.to_string(),
-        chaos_home: PathBuf::from("."),
-        exporter: OtelExporter::None,
-        trace_exporter: OtelExporter::OtlpHttp {
-            endpoint: format!("http://{addr}/v1/traces"),
-            headers: HashMap::new(),
-            protocol: OtelHttpProtocol::Json,
-            tls: None,
-        },
-        metrics_exporter: OtelExporter::None,
-        runtime_metrics: false,
-    })?
-    .expect("otel provider");
-    let tracing_layer = otel.tracing_layer().expect("tracing layer");
+    let otel = OtelProvider::from(&trace_settings(collector.endpoint("/v1/traces")))?
+        .ok_or_else(|| std::io::Error::other("expected otel provider"))?;
+    let tracing_layer = otel
+        .tracing_layer()
+        .ok_or_else(|| std::io::Error::other("expected tracing layer"))?;
     let subscriber = tracing_subscriber::registry().with(tracing_layer);
 
     tracing::subscriber::with_default(subscriber, || {
@@ -285,42 +316,14 @@ fn otlp_http_exporter_sends_traces_to_collector()
     });
     otel.shutdown();
 
-    server.join().expect("server join");
-    let captured = rx.recv_timeout(Duration::from_secs(1)).expect("captured");
-
-    let request = captured
-        .iter()
-        .find(|req| req.path == "/v1/traces")
-        .unwrap_or_else(|| {
-            let paths = captured
-                .iter()
-                .map(|req| req.path.as_str())
-                .collect::<Vec<_>>()
-                .join(", ");
-            panic!(
-                "missing /v1/traces request; got {}: {paths}",
-                captured.len()
-            );
-        });
-    let content_type = request
-        .content_type
-        .as_deref()
-        .unwrap_or("<missing content-type>");
-    assert!(
-        content_type.starts_with("application/json"),
-        "unexpected content-type: {content_type}"
-    );
-
-    let body = String::from_utf8_lossy(&request.body);
-    assert!(
-        body.contains("trace-loopback"),
-        "expected span name not found; body prefix: {}",
-        &body.chars().take(2000).collect::<String>()
-    );
-    assert!(
-        body.contains("chaos-cli"),
-        "expected service name not found; body prefix: {}",
-        &body.chars().take(2000).collect::<String>()
+    let captured = collector.finish()?;
+    assert_json_request_contains(
+        &captured,
+        "/v1/traces",
+        &[
+            ("trace-loopback", "span name"),
+            ("chaos-cli", "service name"),
+        ],
     );
 
     Ok(())
@@ -329,55 +332,13 @@ fn otlp_http_exporter_sends_traces_to_collector()
 #[tokio::test(flavor = "multi_thread", worker_threads = 2)]
 async fn otlp_http_exporter_sends_traces_to_collector_in_tokio_runtime()
 -> std::result::Result<(), Box<dyn std::error::Error>> {
-    let listener = TcpListener::bind("127.0.0.1:0").expect("bind");
-    let addr = listener.local_addr().expect("local_addr");
-    listener.set_nonblocking(true).expect("set_nonblocking");
+    let collector = LoopbackCollector::bind()?;
 
-    let (tx, rx) = mpsc::channel::<Vec<CapturedRequest>>();
-    let server = thread::spawn(move || {
-        let mut captured = Vec::new();
-        let deadline = Instant::now() + Duration::from_secs(3);
-
-        while Instant::now() < deadline {
-            match listener.accept() {
-                Ok((mut stream, _)) => {
-                    let result = read_http_request(&mut stream);
-                    let _ = write_http_response(&mut stream, "202 Accepted");
-                    if let Ok((path, headers, body)) = result {
-                        captured.push(CapturedRequest {
-                            path,
-                            content_type: headers.get("content-type").cloned(),
-                            body,
-                        });
-                    }
-                }
-                Err(err) if err.kind() == std::io::ErrorKind::WouldBlock => {
-                    thread::sleep(Duration::from_millis(10));
-                }
-                Err(_) => break,
-            }
-        }
-
-        let _ = tx.send(captured);
-    });
-
-    let otel = OtelProvider::from(&OtelSettings {
-        environment: "test".to_string(),
-        service_name: "chaos-cli".to_string(),
-        service_version: CHAOS_VERSION.to_string(),
-        chaos_home: PathBuf::from("."),
-        exporter: OtelExporter::None,
-        trace_exporter: OtelExporter::OtlpHttp {
-            endpoint: format!("http://{addr}/v1/traces"),
-            headers: HashMap::new(),
-            protocol: OtelHttpProtocol::Json,
-            tls: None,
-        },
-        metrics_exporter: OtelExporter::None,
-        runtime_metrics: false,
-    })?
-    .expect("otel provider");
-    let tracing_layer = otel.tracing_layer().expect("tracing layer");
+    let otel = OtelProvider::from(&trace_settings(collector.endpoint("/v1/traces")))?
+        .ok_or_else(|| std::io::Error::other("expected otel provider"))?;
+    let tracing_layer = otel
+        .tracing_layer()
+        .ok_or_else(|| std::io::Error::other("expected tracing layer"))?;
     let subscriber = tracing_subscriber::registry().with(tracing_layer);
 
     tracing::subscriber::with_default(subscriber, || {
@@ -393,42 +354,14 @@ async fn otlp_http_exporter_sends_traces_to_collector_in_tokio_runtime()
     });
     otel.shutdown();
 
-    server.join().expect("server join");
-    let captured = rx.recv_timeout(Duration::from_secs(1)).expect("captured");
-
-    let request = captured
-        .iter()
-        .find(|req| req.path == "/v1/traces")
-        .unwrap_or_else(|| {
-            let paths = captured
-                .iter()
-                .map(|req| req.path.as_str())
-                .collect::<Vec<_>>()
-                .join(", ");
-            panic!(
-                "missing /v1/traces request; got {}: {paths}",
-                captured.len()
-            );
-        });
-    let content_type = request
-        .content_type
-        .as_deref()
-        .unwrap_or("<missing content-type>");
-    assert!(
-        content_type.starts_with("application/json"),
-        "unexpected content-type: {content_type}"
-    );
-
-    let body = String::from_utf8_lossy(&request.body);
-    assert!(
-        body.contains("trace-loopback-tokio"),
-        "expected span name not found; body prefix: {}",
-        &body.chars().take(2000).collect::<String>()
-    );
-    assert!(
-        body.contains("chaos-cli"),
-        "expected service name not found; body prefix: {}",
-        &body.chars().take(2000).collect::<String>()
+    let captured = collector.finish()?;
+    assert_json_request_contains(
+        &captured,
+        "/v1/traces",
+        &[
+            ("trace-loopback-tokio", "span name"),
+            ("chaos-cli", "service name"),
+        ],
     );
 
     Ok(())
@@ -437,125 +370,65 @@ async fn otlp_http_exporter_sends_traces_to_collector_in_tokio_runtime()
 #[test]
 fn otlp_http_exporter_sends_traces_to_collector_in_current_thread_tokio_runtime()
 -> std::result::Result<(), Box<dyn std::error::Error>> {
-    let listener = TcpListener::bind("127.0.0.1:0").expect("bind");
-    let addr = listener.local_addr().expect("local_addr");
-    listener.set_nonblocking(true).expect("set_nonblocking");
-
-    let (tx, rx) = mpsc::channel::<Vec<CapturedRequest>>();
-    let server = thread::spawn(move || {
-        let mut captured = Vec::new();
-        let deadline = Instant::now() + Duration::from_secs(3);
-
-        while Instant::now() < deadline {
-            match listener.accept() {
-                Ok((mut stream, _)) => {
-                    let result = read_http_request(&mut stream);
-                    let _ = write_http_response(&mut stream, "202 Accepted");
-                    if let Ok((path, headers, body)) = result {
-                        captured.push(CapturedRequest {
-                            path,
-                            content_type: headers.get("content-type").cloned(),
-                            body,
-                        });
-                    }
-                }
-                Err(err) if err.kind() == std::io::ErrorKind::WouldBlock => {
-                    thread::sleep(Duration::from_millis(10));
-                }
-                Err(_) => break,
-            }
-        }
-
-        let _ = tx.send(captured);
-    });
+    let collector = LoopbackCollector::bind()?;
+    let addr = collector.addr;
 
     let (runtime_result_tx, runtime_result_rx) = mpsc::channel::<std::result::Result<(), String>>();
     let runtime_thread = thread::spawn(move || {
-        let runtime = tokio::runtime::Builder::new_current_thread()
-            .enable_all()
-            .build()
-            .expect("current-thread runtime");
+        let result = (|| -> std::result::Result<(), String> {
+            let runtime = tokio::runtime::Builder::new_current_thread()
+                .enable_all()
+                .build()
+                .map_err(|err| err.to_string())?;
 
-        let result = runtime.block_on(async move {
-            let otel = OtelProvider::from(&OtelSettings {
-                environment: "test".to_string(),
-                service_name: "chaos-cli".to_string(),
-                service_version: CHAOS_VERSION.to_string(),
-                chaos_home: PathBuf::from("."),
-                exporter: OtelExporter::None,
-                trace_exporter: OtelExporter::OtlpHttp {
-                    endpoint: format!("http://{addr}/v1/traces"),
-                    headers: HashMap::new(),
-                    protocol: OtelHttpProtocol::Json,
-                    tls: None,
-                },
-                metrics_exporter: OtelExporter::None,
-                runtime_metrics: false,
+            runtime.block_on(async move {
+                let otel = OtelProvider::from(&trace_settings(format!("http://{addr}/v1/traces")))
+                    .map_err(|err| err.to_string())?
+                    .ok_or_else(|| "expected otel provider".to_string())?;
+                let tracing_layer = otel
+                    .tracing_layer()
+                    .ok_or_else(|| "expected tracing layer".to_string())?;
+                let subscriber = tracing_subscriber::registry().with(tracing_layer);
+
+                tracing::subscriber::with_default(subscriber, || {
+                    let span = tracing::info_span!(
+                        "trace-loopback-current-thread",
+                        otel.name = "trace-loopback-current-thread",
+                        otel.kind = "server",
+                        rpc.system = "jsonrpc",
+                        rpc.method = "trace-loopback-current-thread",
+                    );
+                    let _guard = span.enter();
+                    tracing::info!("trace loopback event from current-thread tokio runtime");
+                });
+                otel.shutdown();
+                Ok::<(), String>(())
             })
-            .map_err(|err| err.to_string())?
-            .expect("otel provider");
-            let tracing_layer = otel.tracing_layer().expect("tracing layer");
-            let subscriber = tracing_subscriber::registry().with(tracing_layer);
-
-            tracing::subscriber::with_default(subscriber, || {
-                let span = tracing::info_span!(
-                    "trace-loopback-current-thread",
-                    otel.name = "trace-loopback-current-thread",
-                    otel.kind = "server",
-                    rpc.system = "jsonrpc",
-                    rpc.method = "trace-loopback-current-thread",
-                );
-                let _guard = span.enter();
-                tracing::info!("trace loopback event from current-thread tokio runtime");
-            });
-            otel.shutdown();
-            Ok::<(), String>(())
-        });
+        })();
         let _ = runtime_result_tx.send(result);
     });
 
     runtime_result_rx
         .recv_timeout(Duration::from_secs(5))
-        .expect("current-thread runtime should complete")
+        .map_err(|err| {
+            std::io::Error::other(format!("current-thread runtime should complete: {err}"))
+        })?
         .map_err(std::io::Error::other)?;
-    runtime_thread.join().expect("runtime thread");
+    runtime_thread.join().map_err(|payload| {
+        std::io::Error::other(format!(
+            "runtime thread panicked: {}",
+            panic_payload_message(&*payload)
+        ))
+    })?;
 
-    server.join().expect("server join");
-    let captured = rx.recv_timeout(Duration::from_secs(1)).expect("captured");
-
-    let request = captured
-        .iter()
-        .find(|req| req.path == "/v1/traces")
-        .unwrap_or_else(|| {
-            let paths = captured
-                .iter()
-                .map(|req| req.path.as_str())
-                .collect::<Vec<_>>()
-                .join(", ");
-            panic!(
-                "missing /v1/traces request; got {}: {paths}",
-                captured.len()
-            );
-        });
-    let content_type = request
-        .content_type
-        .as_deref()
-        .unwrap_or("<missing content-type>");
-    assert!(
-        content_type.starts_with("application/json"),
-        "unexpected content-type: {content_type}"
-    );
-
-    let body = String::from_utf8_lossy(&request.body);
-    assert!(
-        body.contains("trace-loopback-current-thread"),
-        "expected span name not found; body prefix: {}",
-        &body.chars().take(2000).collect::<String>()
-    );
-    assert!(
-        body.contains("chaos-cli"),
-        "expected service name not found; body prefix: {}",
-        &body.chars().take(2000).collect::<String>()
+    let captured = collector.finish()?;
+    assert_json_request_contains(
+        &captured,
+        "/v1/traces",
+        &[
+            ("trace-loopback-current-thread", "span name"),
+            ("chaos-cli", "service name"),
+        ],
     );
 
     Ok(())

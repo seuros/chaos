@@ -1949,6 +1949,45 @@ mod tests {
         assert!(text.contains("`approval_policy` is `unless-trusted`"));
     }
 
+    fn permissions_prompt_text(
+        approval_policy: ApprovalPolicy,
+        exec_policy: &Policy,
+        include_shell_permission_request_instructions: bool,
+        include_request_permissions_tool_section: bool,
+    ) -> String {
+        DeveloperInstructions::from_permissions_with_network(
+            SandboxMode::WorkspaceWrite,
+            NetworkAccess::Enabled,
+            approval_policy,
+            exec_policy,
+            None,
+            include_shell_permission_request_instructions,
+            include_request_permissions_tool_section,
+        )
+        .into_text()
+    }
+
+    fn granular_policy_text(
+        config: GranularApprovalConfig,
+        include_shell_permission_request_instructions: bool,
+        include_request_permissions_tool_section: bool,
+    ) -> String {
+        DeveloperInstructions::from(
+            ApprovalPolicy::Granular(config),
+            &Policy::empty(),
+            include_shell_permission_request_instructions,
+            include_request_permissions_tool_section,
+        )
+        .into_text()
+    }
+
+    #[track_caller]
+    fn assert_contains_all(text: &str, expected: &[&str]) {
+        for needle in expected {
+            assert!(text.contains(needle), "expected {needle:?} in:\n{text}");
+        }
+    }
+
     #[test]
     fn includes_request_rule_instructions_for_on_request() {
         let mut exec_policy = Policy::empty();
@@ -1958,106 +1997,93 @@ mod tests {
                 chaos_selinux::Decision::Allow,
             )
             .expect("add rule");
-        let instructions = DeveloperInstructions::from_permissions_with_network(
-            SandboxMode::WorkspaceWrite,
-            NetworkAccess::Enabled,
-            ApprovalPolicy::Interactive,
-            &exec_policy,
-            None,
-            false,
-            false,
-        );
 
-        let text = instructions.into_text();
-        assert!(text.contains("prefix_rule"));
-        assert!(text.contains("Approved command prefixes"));
-        assert!(text.contains(r#"["git", "pull"]"#));
-    }
-
-    #[test]
-    fn includes_request_permissions_tool_instructions_for_unless_trusted_when_enabled() {
-        let instructions = DeveloperInstructions::from_permissions_with_network(
-            SandboxMode::WorkspaceWrite,
-            NetworkAccess::Enabled,
-            ApprovalPolicy::Supervised,
-            &Policy::empty(),
-            None,
-            false,
-            true,
-        );
-
-        let text = instructions.into_text();
-        assert!(text.contains("`approval_policy` is `unless-trusted`"));
-        assert!(text.contains("# request_permissions Tool"));
-    }
-
-    #[test]
-    fn includes_request_permissions_tool_instructions_for_interactive_when_enabled() {
-        let instructions = DeveloperInstructions::from_permissions_with_network(
-            SandboxMode::WorkspaceWrite,
-            NetworkAccess::Enabled,
-            ApprovalPolicy::Interactive,
-            &Policy::empty(),
-            None,
-            false,
-            true,
-        );
-
-        let text = instructions.into_text();
-        assert!(text.contains("# request_permissions Tool"));
-    }
-
-    #[test]
-    fn includes_request_permission_rule_instructions_for_on_request_when_enabled() {
-        let instructions = DeveloperInstructions::from_permissions_with_network(
-            SandboxMode::WorkspaceWrite,
-            NetworkAccess::Enabled,
-            ApprovalPolicy::Interactive,
-            &Policy::empty(),
-            None,
-            true,
-            false,
-        );
-
-        let text = instructions.into_text();
-        assert!(text.contains("with_additional_permissions"));
-        assert!(text.contains("additional_permissions"));
-    }
-
-    #[test]
-    fn includes_request_permissions_tool_instructions_for_on_request_when_tool_is_enabled() {
-        let instructions = DeveloperInstructions::from_permissions_with_network(
-            SandboxMode::WorkspaceWrite,
-            NetworkAccess::Enabled,
-            ApprovalPolicy::Interactive,
-            &Policy::empty(),
-            None,
-            false,
-            true,
-        );
-
-        let text = instructions.into_text();
-        assert!(text.contains("# request_permissions Tool"));
-        assert!(
-            text.contains("The built-in `request_permissions` tool is available in this session.")
+        let text = permissions_prompt_text(ApprovalPolicy::Interactive, &exec_policy, false, false);
+        assert_contains_all(
+            &text,
+            &[
+                "prefix_rule",
+                "Approved command prefixes",
+                r#"["git", "pull"]"#,
+            ],
         );
     }
 
     #[test]
-    fn on_request_includes_tool_guidance_alongside_inline_permission_guidance_when_both_exist() {
-        let instructions = DeveloperInstructions::from_permissions_with_network(
-            SandboxMode::WorkspaceWrite,
-            NetworkAccess::Enabled,
-            ApprovalPolicy::Interactive,
-            &Policy::empty(),
-            None,
-            true,
-            true,
-        );
+    fn request_permissions_sections_follow_policy_and_enabled_flags() {
+        struct Case {
+            name: &'static str,
+            approval_policy: ApprovalPolicy,
+            include_shell_permission_request_instructions: bool,
+            include_request_permissions_tool_section: bool,
+            expected: &'static [&'static str],
+            unexpected: &'static [&'static str],
+        }
 
-        let text = instructions.into_text();
-        assert!(text.contains("with_additional_permissions"));
-        assert!(text.contains("# request_permissions Tool"));
+        let cases = [
+            Case {
+                name: "unless-trusted with tool guidance",
+                approval_policy: ApprovalPolicy::Supervised,
+                include_shell_permission_request_instructions: false,
+                include_request_permissions_tool_section: true,
+                expected: &[
+                    "`approval_policy` is `unless-trusted`",
+                    "# request_permissions Tool",
+                ],
+                unexpected: &["with_additional_permissions"],
+            },
+            Case {
+                name: "interactive with tool guidance",
+                approval_policy: ApprovalPolicy::Interactive,
+                include_shell_permission_request_instructions: false,
+                include_request_permissions_tool_section: true,
+                expected: &[
+                    "# request_permissions Tool",
+                    "The built-in `request_permissions` tool is available in this session.",
+                ],
+                unexpected: &["with_additional_permissions"],
+            },
+            Case {
+                name: "interactive with inline shell guidance",
+                approval_policy: ApprovalPolicy::Interactive,
+                include_shell_permission_request_instructions: true,
+                include_request_permissions_tool_section: false,
+                expected: &["with_additional_permissions", "additional_permissions"],
+                unexpected: &["# request_permissions Tool"],
+            },
+            Case {
+                name: "interactive with both inline and tool guidance",
+                approval_policy: ApprovalPolicy::Interactive,
+                include_shell_permission_request_instructions: true,
+                include_request_permissions_tool_section: true,
+                expected: &["with_additional_permissions", "# request_permissions Tool"],
+                unexpected: &[],
+            },
+        ];
+
+        for case in cases {
+            let text = permissions_prompt_text(
+                case.approval_policy,
+                &Policy::empty(),
+                case.include_shell_permission_request_instructions,
+                case.include_request_permissions_tool_section,
+            );
+
+            for needle in case.expected {
+                assert!(
+                    text.contains(needle),
+                    "case {} expected {needle:?} in:\n{text}",
+                    case.name
+                );
+            }
+            for needle in case.unexpected {
+                assert!(
+                    !text.contains(needle),
+                    "case {} did not expect {needle:?} in:\n{text}",
+                    case.name
+                );
+            }
+        }
     }
 
     fn granular_categories_section(title: &str, categories: &[&str]) -> String {
@@ -2093,154 +2119,173 @@ mod tests {
     }
 
     #[test]
-    fn granular_policy_lists_prompted_and_rejected_categories_separately() {
-        let text = DeveloperInstructions::from(
-            ApprovalPolicy::Granular(GranularApprovalConfig {
-                sandbox_approval: false,
-                rules: true,
-                skill_approval: false,
-                request_permissions: true,
-                mcp_elicitations: false,
-            }),
-            &Policy::empty(),
-            true,
-            false,
-        )
-        .into_text();
+    fn granular_policy_exact_prompt_variants() {
+        struct Case {
+            name: &'static str,
+            config: GranularApprovalConfig,
+            include_shell_permission_request_instructions: bool,
+            include_request_permissions_tool_section: bool,
+            expected: String,
+        }
 
-        assert_eq!(
-            text,
-            [
-                granular_prompt_intro_text().to_string(),
-                granular_categories_section(
-                    "These approval categories may still prompt the user when needed:",
-                    &["- `rules`"],
+        let cases = [
+            Case {
+                name: "separates prompted and rejected categories",
+                config: GranularApprovalConfig {
+                    sandbox_approval: false,
+                    rules: true,
+                    skill_approval: false,
+                    request_permissions: true,
+                    mcp_elicitations: false,
+                },
+                include_shell_permission_request_instructions: true,
+                include_request_permissions_tool_section: false,
+                expected: [
+                    granular_prompt_intro_text().to_string(),
+                    granular_categories_section(
+                        "These approval categories may still prompt the user when needed:",
+                        &["- `rules`"],
+                    ),
+                    granular_categories_section(
+                        "These approval categories are automatically rejected instead of prompting the user:",
+                        &["- `sandbox_approval`", "- `skill_approval`", "- `mcp_elicitations`"],
+                    ),
+                ]
+                .join("\n\n"),
+            },
+            Case {
+                name: "includes inline shell permission guidance when sandbox approval can prompt",
+                config: GranularApprovalConfig {
+                    sandbox_approval: true,
+                    rules: true,
+                    skill_approval: true,
+                    request_permissions: true,
+                    mcp_elicitations: true,
+                },
+                include_shell_permission_request_instructions: true,
+                include_request_permissions_tool_section: false,
+                expected: granular_prompt_expected(
+                    &[
+                        "- `sandbox_approval`",
+                        "- `rules`",
+                        "- `skill_approval`",
+                        "- `mcp_elicitations`",
+                    ],
+                    &[],
+                    true,
+                    false,
                 ),
-                granular_categories_section(
-                    "These approval categories are automatically rejected instead of prompting the user:",
-                    &["- `sandbox_approval`", "- `skill_approval`", "- `mcp_elicitations`",],
+            },
+            Case {
+                name: "omits inline shell permission guidance when disabled",
+                config: GranularApprovalConfig {
+                    sandbox_approval: true,
+                    rules: true,
+                    skill_approval: true,
+                    request_permissions: true,
+                    mcp_elicitations: true,
+                },
+                include_shell_permission_request_instructions: false,
+                include_request_permissions_tool_section: false,
+                expected: granular_prompt_expected(
+                    &[
+                        "- `sandbox_approval`",
+                        "- `rules`",
+                        "- `skill_approval`",
+                        "- `mcp_elicitations`",
+                    ],
+                    &[],
+                    false,
+                    false,
                 ),
-            ]
-            .join("\n\n")
-        );
+            },
+        ];
+
+        for case in cases {
+            let text = granular_policy_text(
+                case.config,
+                case.include_shell_permission_request_instructions,
+                case.include_request_permissions_tool_section,
+            );
+
+            assert_eq!(text, case.expected, "case: {}", case.name);
+        }
     }
 
     #[test]
-    fn granular_policy_includes_command_permission_instructions_when_sandbox_approval_can_prompt() {
-        let text = DeveloperInstructions::from(
-            ApprovalPolicy::Granular(GranularApprovalConfig {
-                sandbox_approval: true,
-                rules: true,
-                skill_approval: true,
-                request_permissions: true,
-                mcp_elicitations: true,
-            }),
-            &Policy::empty(),
-            true,
-            false,
-        )
-        .into_text();
+    fn granular_policy_request_permissions_tool_visibility_matches_promptability() {
+        struct Case {
+            name: &'static str,
+            config: GranularApprovalConfig,
+            include_request_permissions_tool_section: bool,
+            expected: &'static [&'static str],
+            unexpected: &'static [&'static str],
+        }
 
-        assert_eq!(
-            text,
-            granular_prompt_expected(
-                &[
-                    "- `sandbox_approval`",
-                    "- `rules`",
-                    "- `skill_approval`",
-                    "- `mcp_elicitations`",
-                ],
-                &[],
+        let cases = [
+            Case {
+                name: "tool section appears when request_permissions can still prompt",
+                config: GranularApprovalConfig {
+                    sandbox_approval: true,
+                    rules: true,
+                    skill_approval: true,
+                    request_permissions: true,
+                    mcp_elicitations: true,
+                },
+                include_request_permissions_tool_section: true,
+                expected: &["# request_permissions Tool"],
+                unexpected: &[],
+            },
+            Case {
+                name: "tool section is omitted when request_permissions prompting is rejected",
+                config: GranularApprovalConfig {
+                    sandbox_approval: true,
+                    rules: true,
+                    skill_approval: true,
+                    request_permissions: false,
+                    mcp_elicitations: true,
+                },
+                include_request_permissions_tool_section: true,
+                expected: &[],
+                unexpected: &["# request_permissions Tool"],
+            },
+            Case {
+                name: "request_permissions category stays hidden when tool is unavailable",
+                config: GranularApprovalConfig {
+                    sandbox_approval: false,
+                    rules: false,
+                    skill_approval: false,
+                    request_permissions: true,
+                    mcp_elicitations: false,
+                },
+                include_request_permissions_tool_section: false,
+                expected: &[],
+                unexpected: &["- `request_permissions`", "# request_permissions Tool"],
+            },
+        ];
+
+        for case in cases {
+            let text = granular_policy_text(
+                case.config,
                 true,
-                false,
-            )
-        );
-    }
+                case.include_request_permissions_tool_section,
+            );
 
-    #[test]
-    fn granular_policy_omits_shell_permission_instructions_when_inline_requests_are_disabled() {
-        let text = DeveloperInstructions::from(
-            ApprovalPolicy::Granular(GranularApprovalConfig {
-                sandbox_approval: true,
-                rules: true,
-                skill_approval: true,
-                request_permissions: true,
-                mcp_elicitations: true,
-            }),
-            &Policy::empty(),
-            false,
-            false,
-        )
-        .into_text();
-
-        assert_eq!(
-            text,
-            granular_prompt_expected(
-                &[
-                    "- `sandbox_approval`",
-                    "- `rules`",
-                    "- `skill_approval`",
-                    "- `mcp_elicitations`",
-                ],
-                &[],
-                false,
-                false,
-            )
-        );
-    }
-
-    #[test]
-    fn granular_policy_includes_request_permissions_tool_only_when_that_prompt_can_still_fire() {
-        let allowed = DeveloperInstructions::from(
-            ApprovalPolicy::Granular(GranularApprovalConfig {
-                sandbox_approval: true,
-                rules: true,
-                skill_approval: true,
-                request_permissions: true,
-                mcp_elicitations: true,
-            }),
-            &Policy::empty(),
-            true,
-            true,
-        )
-        .into_text();
-        assert!(allowed.contains("# request_permissions Tool"));
-
-        let rejected = DeveloperInstructions::from(
-            ApprovalPolicy::Granular(GranularApprovalConfig {
-                sandbox_approval: true,
-                rules: true,
-                skill_approval: true,
-                request_permissions: false,
-                mcp_elicitations: true,
-            }),
-            &Policy::empty(),
-            true,
-            true,
-        )
-        .into_text();
-        assert!(!rejected.contains("# request_permissions Tool"));
-    }
-
-    #[test]
-    fn granular_policy_lists_request_permissions_category_without_tool_section_when_tool_is_unavailable()
-     {
-        let text = DeveloperInstructions::from(
-            ApprovalPolicy::Granular(GranularApprovalConfig {
-                sandbox_approval: false,
-                rules: false,
-                skill_approval: false,
-                request_permissions: true,
-                mcp_elicitations: false,
-            }),
-            &Policy::empty(),
-            true,
-            false,
-        )
-        .into_text();
-
-        assert!(!text.contains("- `request_permissions`"));
-        assert!(!text.contains("# request_permissions Tool"));
+            for needle in case.expected {
+                assert!(
+                    text.contains(needle),
+                    "case {} expected {needle:?} in:\n{text}",
+                    case.name
+                );
+            }
+            for needle in case.unexpected {
+                assert!(
+                    !text.contains(needle),
+                    "case {} did not expect {needle:?} in:\n{text}",
+                    case.name
+                );
+            }
+        }
     }
 
     #[test]

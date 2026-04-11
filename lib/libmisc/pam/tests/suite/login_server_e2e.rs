@@ -2,6 +2,7 @@
 use std::io;
 use std::net::SocketAddr;
 use std::net::TcpListener;
+use std::path::PathBuf;
 use std::thread;
 use std::time::Duration;
 
@@ -13,7 +14,7 @@ use chaos_pam::run_login_server;
 use codex_client::ChaosHttpClient;
 use codex_client::ChaosResponse;
 use core_test_support::skip_if_no_network;
-use tempfile::tempdir;
+use tempfile::TempDir;
 
 /// GET `url`, following a single HTTP redirect if the server returns 3xx.
 /// The Rama `EasyHttpWebClient` does not auto-follow redirects, so the test
@@ -43,6 +44,24 @@ async fn get_following_redirect(client: &ChaosHttpClient, url: &str) -> Result<C
 
 // See spawn.rs for details
 
+fn make_jwt(payload: serde_json::Value) -> String {
+    let header = serde_json::json!({
+        "alg": "none",
+        "typ": "JWT",
+    });
+    let b64 = |bytes: &[u8]| base64::engine::general_purpose::URL_SAFE_NO_PAD.encode(bytes);
+    format!(
+        "{}.{}.{}",
+        b64(&serde_json::to_vec(&header).unwrap()),
+        b64(&serde_json::to_vec(&payload).unwrap()),
+        b64(b"sig")
+    )
+}
+
+fn issuer_url(addr: SocketAddr) -> String {
+    format!("http://{}:{}", addr.ip(), addr.port())
+}
+
 fn start_mock_issuer(chatgpt_account_id: &str) -> (SocketAddr, thread::JoinHandle<()>) {
     // Bind to a random available port
     let listener = TcpListener::bind(("127.0.0.1", 0)).unwrap();
@@ -58,31 +77,13 @@ fn start_mock_issuer(chatgpt_account_id: &str) -> (SocketAddr, thread::JoinHandl
                 let mut body = String::new();
                 let _ = req.as_reader().read_to_string(&mut body);
                 // Build minimal JWT with plan=pro
-                #[derive(serde::Serialize)]
-                struct Header {
-                    alg: &'static str,
-                    typ: &'static str,
-                }
-                let header = Header {
-                    alg: "none",
-                    typ: "JWT",
-                };
-                let payload = serde_json::json!({
+                let id_token = make_jwt(serde_json::json!({
                     "email": "user@example.com",
                     "https://api.openai.com/auth": {
                         "chatgpt_plan_type": "pro",
                         "chatgpt_account_id": chatgpt_account_id,
                     }
-                });
-                let b64 = |b: &[u8]| base64::engine::general_purpose::URL_SAFE_NO_PAD.encode(b);
-                let header_bytes = serde_json::to_vec(&header).unwrap();
-                let payload_bytes = serde_json::to_vec(&payload).unwrap();
-                let id_token = format!(
-                    "{}.{}.{}",
-                    b64(&header_bytes),
-                    b64(&payload_bytes),
-                    b64(b"sig")
-                );
+                }));
 
                 let tokens = serde_json::json!({
                     "id_token": id_token,
@@ -106,16 +107,104 @@ fn start_mock_issuer(chatgpt_account_id: &str) -> (SocketAddr, thread::JoinHandl
     (addr, handle)
 }
 
+struct MockIssuer {
+    url: String,
+    _handle: thread::JoinHandle<()>,
+}
+
+impl MockIssuer {
+    fn start(chatgpt_account_id: &str) -> Self {
+        let (addr, handle) = start_mock_issuer(chatgpt_account_id);
+        Self {
+            url: issuer_url(addr),
+            _handle: handle,
+        }
+    }
+}
+
+struct LoginServerOptionsBuilder {
+    chaos_home: PathBuf,
+    issuer: String,
+    port: u16,
+    state: String,
+    forced_workspace_id: Option<String>,
+}
+
+impl LoginServerOptionsBuilder {
+    fn new(chaos_home: PathBuf, issuer: impl Into<String>, state: impl Into<String>) -> Self {
+        Self {
+            chaos_home,
+            issuer: issuer.into(),
+            port: 0,
+            state: state.into(),
+            forced_workspace_id: None,
+        }
+    }
+
+    fn port(mut self, port: u16) -> Self {
+        self.port = port;
+        self
+    }
+
+    fn forced_workspace_id(mut self, forced_workspace_id: impl Into<String>) -> Self {
+        self.forced_workspace_id = Some(forced_workspace_id.into());
+        self
+    }
+
+    fn build(self) -> ServerOptions {
+        let mut opts = ServerOptions::new(
+            self.chaos_home,
+            chaos_pam::CLIENT_ID.to_string(),
+            self.forced_workspace_id,
+            AuthCredentialsStoreMode::File,
+        );
+        opts.issuer = self.issuer;
+        opts.port = self.port;
+        opts.open_browser = false;
+        opts.force_state = Some(self.state);
+        opts
+    }
+}
+
+struct LoginHomeFixture {
+    _tmp: TempDir,
+    chaos_home: PathBuf,
+}
+
+impl LoginHomeFixture {
+    fn new() -> Result<Self> {
+        let tmp = tempfile::tempdir()?;
+        Ok(Self {
+            chaos_home: tmp.path().to_path_buf(),
+            _tmp: tmp,
+        })
+    }
+
+    fn with_missing_subdir(subdir: &str) -> Result<Self> {
+        let tmp = tempfile::tempdir()?;
+        Ok(Self {
+            chaos_home: tmp.path().join(subdir),
+            _tmp: tmp,
+        })
+    }
+
+    fn auth_path(&self) -> PathBuf {
+        self.chaos_home.join("auth.json")
+    }
+
+    fn seed_auth_json(&self, auth: &serde_json::Value) -> Result<()> {
+        std::fs::write(self.auth_path(), serde_json::to_string_pretty(auth)?)?;
+        Ok(())
+    }
+}
+
 #[tokio::test]
 async fn end_to_end_login_flow_persists_auth_json() -> Result<()> {
     skip_if_no_network!(Ok(()));
 
     let chatgpt_account_id = "12345678-0000-0000-0000-000000000000";
-    let (issuer_addr, issuer_handle) = start_mock_issuer(chatgpt_account_id);
-    let issuer = format!("http://{}:{}", issuer_addr.ip(), issuer_addr.port());
-
-    let tmp = tempdir()?;
-    let chaos_home = tmp.path().to_path_buf();
+    let issuer = MockIssuer::start(chatgpt_account_id);
+    let home = LoginHomeFixture::new()?;
 
     // Seed auth.json with stale API key + tokens that should be overwritten.
     let stale_auth = serde_json::json!({
@@ -127,26 +216,14 @@ async fn end_to_end_login_flow_persists_auth_json() -> Result<()> {
             "account_id": "stale-acc"
         }
     });
-    std::fs::write(
-        chaos_home.join("auth.json"),
-        serde_json::to_string_pretty(&stale_auth)?,
-    )?;
+    home.seed_auth_json(&stale_auth)?;
 
     let state = "test_state_123".to_string();
 
     // Run server in background
-    let server_home = chaos_home.clone();
-
-    let opts = ServerOptions {
-        chaos_home: server_home,
-        cli_auth_credentials_store_mode: AuthCredentialsStoreMode::File,
-        client_id: chaos_pam::CLIENT_ID.to_string(),
-        issuer,
-        port: 0,
-        open_browser: false,
-        force_state: Some(state),
-        forced_chatgpt_workspace_id: Some(chatgpt_account_id.to_string()),
-    };
+    let opts = LoginServerOptionsBuilder::new(home.chaos_home.clone(), issuer.url.clone(), state)
+        .forced_workspace_id(chatgpt_account_id)
+        .build();
     let server = run_login_server(opts)?;
     assert!(
         server
@@ -166,7 +243,7 @@ async fn end_to_end_login_flow_persists_auth_json() -> Result<()> {
     server.block_until_done().await?;
 
     // Validate auth.json
-    let auth_path = chaos_home.join("auth.json");
+    let auth_path = home.auth_path();
     let data = std::fs::read_to_string(&auth_path)?;
     let json: serde_json::Value = serde_json::from_str(&data)?;
     // The following assert is here because of the old oauth flow that exchanges tokens for an
@@ -177,8 +254,6 @@ async fn end_to_end_login_flow_persists_auth_json() -> Result<()> {
     assert_eq!(json["tokens"]["refresh_token"], "refresh-123");
     assert_eq!(json["tokens"]["account_id"], chatgpt_account_id);
 
-    // Stop mock issuer
-    drop(issuer_handle);
     Ok(())
 }
 
@@ -186,26 +261,14 @@ async fn end_to_end_login_flow_persists_auth_json() -> Result<()> {
 async fn creates_missing_chaos_home_dir() -> Result<()> {
     skip_if_no_network!(Ok(()));
 
-    let (issuer_addr, _issuer_handle) = start_mock_issuer("org-123");
-    let issuer = format!("http://{}:{}", issuer_addr.ip(), issuer_addr.port());
-
-    let tmp = tempdir()?;
-    let chaos_home = tmp.path().join("missing-subdir"); // does not exist
+    let issuer = MockIssuer::start("org-123");
+    let home = LoginHomeFixture::with_missing_subdir("missing-subdir")?;
 
     let state = "state2".to_string();
 
     // Run server in background
-    let server_home = chaos_home.clone();
-    let opts = ServerOptions {
-        chaos_home: server_home,
-        cli_auth_credentials_store_mode: AuthCredentialsStoreMode::File,
-        client_id: chaos_pam::CLIENT_ID.to_string(),
-        issuer,
-        port: 0,
-        open_browser: false,
-        force_state: Some(state),
-        forced_chatgpt_workspace_id: None,
-    };
+    let opts =
+        LoginServerOptionsBuilder::new(home.chaos_home.clone(), issuer.url.clone(), state).build();
     let server = run_login_server(opts)?;
     let login_port = server.actual_port;
 
@@ -216,7 +279,7 @@ async fn creates_missing_chaos_home_dir() -> Result<()> {
 
     server.block_until_done().await?;
 
-    let auth_path = chaos_home.join("auth.json");
+    let auth_path = home.auth_path();
     assert!(
         auth_path.exists(),
         "auth.json should be created even if parent dir was missing"
@@ -228,23 +291,14 @@ async fn creates_missing_chaos_home_dir() -> Result<()> {
 async fn forced_chatgpt_workspace_id_mismatch_blocks_login() -> Result<()> {
     skip_if_no_network!(Ok(()));
 
-    let (issuer_addr, _issuer_handle) = start_mock_issuer("org-actual");
-    let issuer = format!("http://{}:{}", issuer_addr.ip(), issuer_addr.port());
-
-    let tmp = tempdir()?;
-    let chaos_home = tmp.path().to_path_buf();
+    let issuer = MockIssuer::start("org-actual");
+    let home = LoginHomeFixture::new()?;
     let state = "state-mismatch".to_string();
 
-    let opts = ServerOptions {
-        chaos_home: chaos_home.clone(),
-        cli_auth_credentials_store_mode: AuthCredentialsStoreMode::File,
-        client_id: chaos_pam::CLIENT_ID.to_string(),
-        issuer,
-        port: 0,
-        open_browser: false,
-        force_state: Some(state.clone()),
-        forced_chatgpt_workspace_id: Some("org-required".to_string()),
-    };
+    let opts =
+        LoginServerOptionsBuilder::new(home.chaos_home.clone(), issuer.url.clone(), state.clone())
+            .forced_workspace_id("org-required")
+            .build();
     let server = run_login_server(opts)?;
     assert!(
         server
@@ -272,7 +326,7 @@ async fn forced_chatgpt_workspace_id_mismatch_blocks_login() -> Result<()> {
     let err = result.unwrap_err();
     assert_eq!(err.kind(), io::ErrorKind::PermissionDenied);
 
-    let auth_path = chaos_home.join("auth.json");
+    let auth_path = home.auth_path();
     assert!(
         !auth_path.exists(),
         "auth.json should not be written when the workspace mismatches"
@@ -285,23 +339,13 @@ async fn forced_chatgpt_workspace_id_mismatch_blocks_login() -> Result<()> {
 async fn oauth_access_denied_missing_entitlement_blocks_login_with_clear_error() -> Result<()> {
     skip_if_no_network!(Ok(()));
 
-    let (issuer_addr, _issuer_handle) = start_mock_issuer("org-123");
-    let issuer = format!("http://{}:{}", issuer_addr.ip(), issuer_addr.port());
-
-    let tmp = tempdir()?;
-    let chaos_home = tmp.path().to_path_buf();
+    let issuer = MockIssuer::start("org-123");
+    let home = LoginHomeFixture::new()?;
     let state = "state-entitlement".to_string();
 
-    let opts = ServerOptions {
-        chaos_home: chaos_home.clone(),
-        cli_auth_credentials_store_mode: AuthCredentialsStoreMode::File,
-        client_id: chaos_pam::CLIENT_ID.to_string(),
-        issuer,
-        port: 0,
-        open_browser: false,
-        force_state: Some(state.clone()),
-        forced_chatgpt_workspace_id: None,
-    };
+    let opts =
+        LoginServerOptionsBuilder::new(home.chaos_home.clone(), issuer.url.clone(), state.clone())
+            .build();
     let server = run_login_server(opts)?;
     let login_port = server.actual_port;
 
@@ -339,7 +383,7 @@ async fn oauth_access_denied_missing_entitlement_blocks_login_with_clear_error()
         "terminal error should also tell the user what to do next"
     );
 
-    let auth_path = chaos_home.join("auth.json");
+    let auth_path = home.auth_path();
     assert!(
         !auth_path.exists(),
         "auth.json should not be written when oauth callback is denied"
@@ -352,23 +396,13 @@ async fn oauth_access_denied_missing_entitlement_blocks_login_with_clear_error()
 async fn oauth_access_denied_unknown_reason_uses_generic_error_page() -> Result<()> {
     skip_if_no_network!(Ok(()));
 
-    let (issuer_addr, _issuer_handle) = start_mock_issuer("org-123");
-    let issuer = format!("http://{}:{}", issuer_addr.ip(), issuer_addr.port());
-
-    let tmp = tempdir()?;
-    let chaos_home = tmp.path().to_path_buf();
+    let issuer = MockIssuer::start("org-123");
+    let home = LoginHomeFixture::new()?;
     let state = "state-generic-denial".to_string();
 
-    let opts = ServerOptions {
-        chaos_home: chaos_home.clone(),
-        cli_auth_credentials_store_mode: AuthCredentialsStoreMode::File,
-        client_id: chaos_pam::CLIENT_ID.to_string(),
-        issuer,
-        port: 0,
-        open_browser: false,
-        force_state: Some(state.clone()),
-        forced_chatgpt_workspace_id: None,
-    };
+    let opts =
+        LoginServerOptionsBuilder::new(home.chaos_home.clone(), issuer.url.clone(), state.clone())
+            .build();
     let server = run_login_server(opts)?;
     let login_port = server.actual_port;
 
@@ -418,7 +452,7 @@ async fn oauth_access_denied_unknown_reason_uses_generic_error_page() -> Result<
         "terminal error should preserve generic oauth details"
     );
 
-    let auth_path = chaos_home.join("auth.json");
+    let auth_path = home.auth_path();
     assert!(
         !auth_path.exists(),
         "auth.json should not be written when oauth callback is denied"
@@ -431,22 +465,14 @@ async fn oauth_access_denied_unknown_reason_uses_generic_error_page() -> Result<
 async fn cancels_previous_login_server_when_port_is_in_use() -> Result<()> {
     skip_if_no_network!(Ok(()));
 
-    let (issuer_addr, _issuer_handle) = start_mock_issuer("org-123");
-    let issuer = format!("http://{}:{}", issuer_addr.ip(), issuer_addr.port());
-
-    let first_tmp = tempdir()?;
-    let first_chaos_home = first_tmp.path().to_path_buf();
-
-    let first_opts = ServerOptions {
-        chaos_home: first_chaos_home,
-        cli_auth_credentials_store_mode: AuthCredentialsStoreMode::File,
-        client_id: chaos_pam::CLIENT_ID.to_string(),
-        issuer: issuer.clone(),
-        port: 0,
-        open_browser: false,
-        force_state: Some("cancel_state".to_string()),
-        forced_chatgpt_workspace_id: None,
-    };
+    let issuer = MockIssuer::start("org-123");
+    let first_home = LoginHomeFixture::new()?;
+    let first_opts = LoginServerOptionsBuilder::new(
+        first_home.chaos_home.clone(),
+        issuer.url.clone(),
+        "cancel_state",
+    )
+    .build();
 
     let first_server = run_login_server(first_opts)?;
     let login_port = first_server.actual_port;
@@ -454,19 +480,14 @@ async fn cancels_previous_login_server_when_port_is_in_use() -> Result<()> {
 
     tokio::time::sleep(Duration::from_millis(100)).await;
 
-    let second_tmp = tempdir()?;
-    let second_chaos_home = second_tmp.path().to_path_buf();
-
-    let second_opts = ServerOptions {
-        chaos_home: second_chaos_home,
-        cli_auth_credentials_store_mode: AuthCredentialsStoreMode::File,
-        client_id: chaos_pam::CLIENT_ID.to_string(),
-        issuer,
-        port: login_port,
-        open_browser: false,
-        force_state: Some("cancel_state_2".to_string()),
-        forced_chatgpt_workspace_id: None,
-    };
+    let second_home = LoginHomeFixture::new()?;
+    let second_opts = LoginServerOptionsBuilder::new(
+        second_home.chaos_home.clone(),
+        issuer.url.clone(),
+        "cancel_state_2",
+    )
+    .port(login_port)
+    .build();
 
     let second_server = run_login_server(second_opts)?;
     assert_eq!(second_server.actual_port, login_port);

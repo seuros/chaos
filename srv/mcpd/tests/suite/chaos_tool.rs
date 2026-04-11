@@ -85,23 +85,15 @@ async fn shell_command_approval_triggers_elicitation() -> anyhow::Result<()> {
     // Send a "chaos" tool request, which should hit the responses endpoint.
     // In turn, it should reply with a tool call, which the MCP should forward
     // as an elicitation.
-    let codex_request_id = mcp_process
-        .send_chaos_tool_call(ChaosToolParams {
-            prompt: "run `git init`".to_string(),
-            ..Default::default()
-        })
+    let (codex_request_id, elicitation_request, request_params) =
+        send_tool_call_and_read_elicitation(
+            &mut mcp_process,
+            ChaosToolParams {
+                prompt: "run `git init`".to_string(),
+                ..Default::default()
+            },
+        )
         .await?;
-    let elicitation_request = timeout(
-        DEFAULT_READ_TIMEOUT,
-        mcp_process.read_stream_until_request_message(),
-    )
-    .await??;
-
-    assert_eq!(elicitation_request.jsonrpc, "2.0");
-    assert_eq!(elicitation_request.method, "elicitation/create");
-
-    let elicitation_request_id = elicitation_request.id.clone();
-    let request_params = request_params_with_meta(&elicitation_request)?;
     let params = serde_json::from_value::<ExecApprovalElicitRequestParams>(request_params.clone())?;
     assert_eq!(
         request_params,
@@ -115,19 +107,16 @@ async fn shell_command_approval_triggers_elicitation() -> anyhow::Result<()> {
     );
 
     // Accept the `git init` request by responding to the elicitation.
-    let elicitation_id = elicitation_request_id
-        .ok_or_else(|| anyhow::anyhow!("elicitation request should have an id"))?;
-    mcp_process
-        .send_response(
-            RequestId::from_value(&elicitation_id)
-                .ok_or_else(|| anyhow::anyhow!("invalid request id"))?,
-            serde_json::to_value(ExecApprovalResponse {
-                action: ApprovalElicitationAction::Accept,
-                content: Some(json!({})),
-                meta: None,
-            })?,
-        )
-        .await?;
+    accept_elicitation_response(
+        &mut mcp_process,
+        &elicitation_request,
+        &ExecApprovalResponse {
+            action: ApprovalElicitationAction::Accept,
+            content: Some(json!({})),
+            meta: None,
+        },
+    )
+    .await?;
 
     // Verify task_complete notification arrives before the tool call completes.
     #[expect(clippy::expect_used)]
@@ -140,27 +129,13 @@ async fn shell_command_approval_triggers_elicitation() -> anyhow::Result<()> {
     .expect("task_complete_notification resp");
 
     // Verify the original `chaos` tool call completes and that the file was created.
-    let codex_response = timeout(
-        DEFAULT_READ_TIMEOUT,
-        mcp_process.read_stream_until_response_message(RequestId::Number(codex_request_id)),
+    assert_tool_response_content(
+        &mut mcp_process,
+        codex_request_id,
+        params.meta.process_id,
+        "File created!",
     )
-    .await??;
-    assert_eq!(codex_response.jsonrpc, "2.0");
-    assert_eq!(codex_response.id, json!(codex_request_id));
-    assert!(codex_response.error.is_none());
-    let result = codex_response
-        .result
-        .as_ref()
-        .ok_or_else(|| anyhow::anyhow!("result should be present"))?;
-    assert_eq!(
-        result,
-        &json!({
-            "structuredContent": {
-                "processId": params.meta.process_id,
-                "content": "File created!"
-            }
-        })
-    );
+    .await?;
 
     assert!(created_file.is_file(), "created file should exist");
 
@@ -234,24 +209,16 @@ async fn patch_approval_triggers_elicitation() -> anyhow::Result<()> {
     .await?;
 
     // Send a "chaos" tool request that will trigger the apply_patch command
-    let codex_request_id = mcp_process
-        .send_chaos_tool_call(ChaosToolParams {
-            cwd: Some(cwd.path().to_string_lossy().to_string()),
-            prompt: "please modify the test file".to_string(),
-            ..Default::default()
-        })
+    let (codex_request_id, elicitation_request, request_params) =
+        send_tool_call_and_read_elicitation(
+            &mut mcp_process,
+            ChaosToolParams {
+                cwd: Some(cwd.path().to_string_lossy().to_string()),
+                prompt: "please modify the test file".to_string(),
+                ..Default::default()
+            },
+        )
         .await?;
-    let elicitation_request = timeout(
-        DEFAULT_READ_TIMEOUT,
-        mcp_process.read_stream_until_request_message(),
-    )
-    .await??;
-
-    assert_eq!(elicitation_request.jsonrpc, "2.0");
-    assert_eq!(elicitation_request.method, "elicitation/create");
-
-    let elicitation_request_id = elicitation_request.id.clone();
-    let request_params = request_params_with_meta(&elicitation_request)?;
     let params =
         serde_json::from_value::<PatchApprovalElicitRequestParams>(request_params.clone())?;
 
@@ -277,42 +244,25 @@ async fn patch_approval_triggers_elicitation() -> anyhow::Result<()> {
     );
 
     // Accept the patch approval request by responding to the elicitation
-    let elicitation_id = elicitation_request_id
-        .ok_or_else(|| anyhow::anyhow!("elicitation request should have an id"))?;
-    mcp_process
-        .send_response(
-            RequestId::from_value(&elicitation_id)
-                .ok_or_else(|| anyhow::anyhow!("invalid request id"))?,
-            serde_json::to_value(PatchApprovalResponse {
-                action: ApprovalElicitationAction::Accept,
-                content: Some(json!({})),
-                meta: None,
-            })?,
-        )
-        .await?;
+    accept_elicitation_response(
+        &mut mcp_process,
+        &elicitation_request,
+        &PatchApprovalResponse {
+            action: ApprovalElicitationAction::Accept,
+            content: Some(json!({})),
+            meta: None,
+        },
+    )
+    .await?;
 
     // Verify the original `chaos` tool call completes
-    let codex_response = timeout(
-        DEFAULT_READ_TIMEOUT,
-        mcp_process.read_stream_until_response_message(RequestId::Number(codex_request_id)),
+    assert_tool_response_content(
+        &mut mcp_process,
+        codex_request_id,
+        params.meta.process_id,
+        "Patch has been applied successfully!",
     )
-    .await??;
-    assert_eq!(codex_response.jsonrpc, "2.0");
-    assert_eq!(codex_response.id, json!(codex_request_id));
-    assert!(codex_response.error.is_none());
-    let result = codex_response
-        .result
-        .as_ref()
-        .ok_or_else(|| anyhow::anyhow!("result should be present"))?;
-    assert_eq!(
-        result,
-        &json!({
-            "structuredContent": {
-                "processId": params.meta.process_id,
-                "content": "Patch has been applied successfully!"
-            }
-        })
-    );
+    .await?;
 
     let file_contents = std::fs::read_to_string(test_file.as_path())?;
     assert_eq!(file_contents, "modified content\n");
@@ -430,6 +380,73 @@ fn request_params_with_meta(request: &JsonRpcRequest) -> anyhow::Result<serde_js
     Ok(params)
 }
 
+async fn send_tool_call_and_read_elicitation(
+    mcp_process: &mut McpProcess,
+    params: ChaosToolParams,
+) -> anyhow::Result<(i64, JsonRpcRequest, serde_json::Value)> {
+    let codex_request_id = mcp_process.send_chaos_tool_call(params).await?;
+    let elicitation_request = timeout(
+        DEFAULT_READ_TIMEOUT,
+        mcp_process.read_stream_until_request_message(),
+    )
+    .await??;
+
+    assert_eq!(elicitation_request.jsonrpc, "2.0");
+    assert_eq!(elicitation_request.method, "elicitation/create");
+
+    let request_params = request_params_with_meta(&elicitation_request)?;
+    Ok((codex_request_id, elicitation_request, request_params))
+}
+
+async fn accept_elicitation_response<T: serde::Serialize>(
+    mcp_process: &mut McpProcess,
+    elicitation_request: &JsonRpcRequest,
+    response: &T,
+) -> anyhow::Result<()> {
+    let elicitation_id = elicitation_request
+        .id
+        .clone()
+        .ok_or_else(|| anyhow::anyhow!("elicitation request should have an id"))?;
+    mcp_process
+        .send_response(
+            RequestId::from_value(&elicitation_id)
+                .ok_or_else(|| anyhow::anyhow!("invalid request id"))?,
+            serde_json::to_value(response)?,
+        )
+        .await?;
+    Ok(())
+}
+
+async fn assert_tool_response_content(
+    mcp_process: &mut McpProcess,
+    codex_request_id: i64,
+    process_id: chaos_ipc::ProcessId,
+    content: &str,
+) -> anyhow::Result<()> {
+    let codex_response = timeout(
+        DEFAULT_READ_TIMEOUT,
+        mcp_process.read_stream_until_response_message(RequestId::Number(codex_request_id)),
+    )
+    .await??;
+    assert_eq!(codex_response.jsonrpc, "2.0");
+    assert_eq!(codex_response.id, json!(codex_request_id));
+    assert!(codex_response.error.is_none());
+    let result = codex_response
+        .result
+        .as_ref()
+        .ok_or_else(|| anyhow::anyhow!("result should be present"))?;
+    assert_eq!(
+        result,
+        &json!({
+            "structuredContent": {
+                "processId": process_id,
+                "content": content
+            }
+        })
+    );
+    Ok(())
+}
+
 fn create_expected_patch_approval_elicitation_request_params(
     changes: HashMap<PathBuf, FileChange>,
     grant_root: Option<PathBuf>,
@@ -484,7 +501,11 @@ async fn shell_command_without_elicitation_capability_is_denied() -> anyhow::Res
 
     let shell_command = vec!["touch".to_string(), created_filename.to_string()];
 
-    let server = create_mock_responses_server(vec![
+    let McpHandle {
+        process: mut mcp_process,
+        server,
+        dir: _dir,
+    } = create_mcp_process_without_elicitation(vec![
         create_shell_command_sse_response(
             shell_command.clone(),
             Some(workdir_for_shell_function_call.path()),
@@ -493,15 +514,7 @@ async fn shell_command_without_elicitation_capability_is_denied() -> anyhow::Res
         )?,
         create_final_assistant_message_sse_response("Command rejected.")?,
     ])
-    .await;
-    let chaos_home = TempDir::new()?;
-    create_config_toml(chaos_home.path(), &server.uri())?;
-    let mut mcp_process = McpProcess::new(chaos_home.path()).await?;
-    timeout(
-        DEFAULT_READ_TIMEOUT,
-        mcp_process.initialize_without_elicitation(),
-    )
-    .await??;
+    .await?;
 
     let codex_request_id = mcp_process
         .send_chaos_tool_call(ChaosToolParams {
@@ -583,6 +596,25 @@ async fn create_mcp_process(responses: Vec<String>) -> anyhow::Result<McpHandle>
     create_config_toml(chaos_home.path(), &server.uri())?;
     let mut mcp_process = McpProcess::new(chaos_home.path()).await?;
     timeout(DEFAULT_READ_TIMEOUT, mcp_process.initialize()).await??;
+    Ok(McpHandle {
+        process: mcp_process,
+        server,
+        dir: chaos_home,
+    })
+}
+
+async fn create_mcp_process_without_elicitation(
+    responses: Vec<String>,
+) -> anyhow::Result<McpHandle> {
+    let server = create_mock_responses_server(responses).await;
+    let chaos_home = TempDir::new()?;
+    create_config_toml(chaos_home.path(), &server.uri())?;
+    let mut mcp_process = McpProcess::new(chaos_home.path()).await?;
+    timeout(
+        DEFAULT_READ_TIMEOUT,
+        mcp_process.initialize_without_elicitation(),
+    )
+    .await??;
     Ok(McpHandle {
         process: mcp_process,
         server,

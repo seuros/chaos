@@ -7,6 +7,75 @@ use std::os::unix::fs::symlink;
 use tempfile::tempdir;
 use toml::Value as TomlValue;
 
+fn stdio_server(command: &str) -> McpServerConfig {
+    McpServerConfig {
+        transport: McpServerTransportConfig::Stdio {
+            command: command.to_string(),
+            args: Vec::new(),
+            env: None,
+            env_vars: Vec::new(),
+            cwd: None,
+        },
+        enabled: true,
+        required: false,
+        disabled_reason: None,
+        startup_timeout_sec: None,
+        tool_timeout_sec: None,
+        enabled_tools: None,
+        disabled_tools: None,
+        scopes: None,
+        oauth_resource: None,
+        r#type: None,
+        oauth: None,
+    }
+}
+
+fn streamable_http_server(url: &str) -> McpServerConfig {
+    McpServerConfig {
+        transport: McpServerTransportConfig::StreamableHttp {
+            url: url.to_string(),
+            bearer_token_env_var: None,
+            http_headers: None,
+            env_http_headers: None,
+        },
+        ..stdio_server("unused")
+    }
+}
+
+fn mcp_servers<const N: usize>(
+    entries: [(&str, McpServerConfig); N],
+) -> BTreeMap<String, McpServerConfig> {
+    entries
+        .into_iter()
+        .map(|(name, config)| (name.to_string(), config))
+        .collect()
+}
+
+fn replace_mcp_servers_blocking(
+    initial: Option<&str>,
+    servers: BTreeMap<String, McpServerConfig>,
+) -> String {
+    let tmp = tempdir().expect("tmpdir");
+    let chaos_home = tmp.path();
+
+    if let Some(initial) = initial {
+        std::fs::write(chaos_home.join(CONFIG_TOML_FILE), initial).expect("seed");
+    }
+
+    apply_blocking(chaos_home, None, &[ConfigEdit::ReplaceMcpServers(servers)]).expect("persist");
+
+    std::fs::read_to_string(chaos_home.join(CONFIG_TOML_FILE)).expect("read config")
+}
+
+fn assert_replace_mcp_servers_blocking(
+    initial: Option<&str>,
+    servers: BTreeMap<String, McpServerConfig>,
+    expected: &str,
+) {
+    let contents = replace_mcp_servers_blocking(initial, servers);
+    assert_eq!(contents, expected);
+}
+
 #[test]
 fn blocking_set_model_top_level() {
     let tmp = tempdir().expect("tmpdir");
@@ -442,76 +511,50 @@ hide_rate_limit_model_nudge = true
 
 #[test]
 fn blocking_replace_mcp_servers_round_trips() {
-    let tmp = tempdir().expect("tmpdir");
-    let chaos_home = tmp.path();
-
-    let mut servers = BTreeMap::new();
-    servers.insert(
-        "stdio".to_string(),
-        McpServerConfig {
-            transport: McpServerTransportConfig::Stdio {
-                command: "cmd".to_string(),
-                args: vec!["--flag".to_string()],
-                env: Some(
-                    [
-                        ("B".to_string(), "2".to_string()),
-                        ("A".to_string(), "1".to_string()),
-                    ]
-                    .into_iter()
-                    .collect(),
-                ),
-                env_vars: vec!["FOO".to_string()],
-                cwd: None,
-            },
-            enabled: true,
-            required: false,
-            disabled_reason: None,
-            startup_timeout_sec: None,
-            tool_timeout_sec: None,
-            enabled_tools: Some(vec!["one".to_string(), "two".to_string()]),
-            disabled_tools: None,
-            scopes: None,
-            oauth_resource: None,
-            r#type: None,
-            oauth: None,
-        },
-    );
-
-    servers.insert(
-        "http".to_string(),
-        McpServerConfig {
-            transport: McpServerTransportConfig::StreamableHttp {
-                url: "https://example.com".to_string(),
-                bearer_token_env_var: Some("TOKEN".to_string()),
-                http_headers: Some(
-                    [("Z-Header".to_string(), "z".to_string())]
+    let servers = mcp_servers([
+        (
+            "stdio",
+            McpServerConfig {
+                transport: McpServerTransportConfig::Stdio {
+                    command: "cmd".to_string(),
+                    args: vec!["--flag".to_string()],
+                    env: Some(
+                        [
+                            ("B".to_string(), "2".to_string()),
+                            ("A".to_string(), "1".to_string()),
+                        ]
                         .into_iter()
                         .collect(),
-                ),
-                env_http_headers: None,
+                    ),
+                    env_vars: vec!["FOO".to_string()],
+                    cwd: None,
+                },
+                enabled_tools: Some(vec!["one".to_string(), "two".to_string()]),
+                ..stdio_server("cmd")
             },
-            enabled: false,
-            required: false,
-            disabled_reason: None,
-            startup_timeout_sec: Some(std::time::Duration::from_secs(5)),
-            tool_timeout_sec: None,
-            enabled_tools: None,
-            disabled_tools: Some(vec!["forbidden".to_string()]),
-            scopes: None,
-            oauth_resource: Some("https://resource.example.com".to_string()),
-            r#type: None,
-            oauth: None,
-        },
-    );
+        ),
+        (
+            "http",
+            McpServerConfig {
+                transport: McpServerTransportConfig::StreamableHttp {
+                    url: "https://example.com".to_string(),
+                    bearer_token_env_var: Some("TOKEN".to_string()),
+                    http_headers: Some(
+                        [("Z-Header".to_string(), "z".to_string())]
+                            .into_iter()
+                            .collect(),
+                    ),
+                    env_http_headers: None,
+                },
+                enabled: false,
+                startup_timeout_sec: Some(std::time::Duration::from_secs(5)),
+                disabled_tools: Some(vec!["forbidden".to_string()]),
+                oauth_resource: Some("https://resource.example.com".to_string()),
+                ..streamable_http_server("https://example.com")
+            },
+        ),
+    ]);
 
-    apply_blocking(
-        chaos_home,
-        None,
-        &[ConfigEdit::ReplaceMcpServers(servers.clone())],
-    )
-    .expect("persist");
-
-    let raw = std::fs::read_to_string(chaos_home.join(CONFIG_TOML_FILE)).expect("read config");
     let expected = "\
 [mcp_servers.http]
 url = \"https://example.com\"
@@ -534,195 +577,76 @@ enabled_tools = [\"one\", \"two\"]
 A = \"1\"
 B = \"2\"
 ";
-    assert_eq!(raw, expected);
+    assert_replace_mcp_servers_blocking(None, servers, expected);
 }
 
 #[test]
-fn blocking_replace_mcp_servers_preserves_inline_comments() {
-    let tmp = tempdir().expect("tmpdir");
-    let chaos_home = tmp.path();
-    std::fs::write(
-        chaos_home.join(CONFIG_TOML_FILE),
-        r#"[mcp_servers]
+fn blocking_replace_mcp_servers_preserves_comment_shapes() {
+    struct Case<'a> {
+        name: &'a str,
+        initial: &'a str,
+        server: McpServerConfig,
+        expected: &'a str,
+    }
+
+    let cases = [
+        Case {
+            name: "inline comment prefix without content changes",
+            initial: r#"[mcp_servers]
 # keep me
 foo = { command = "cmd" }
 "#,
-    )
-    .expect("seed");
-
-    let mut servers = BTreeMap::new();
-    servers.insert(
-        "foo".to_string(),
-        McpServerConfig {
-            transport: McpServerTransportConfig::Stdio {
-                command: "cmd".to_string(),
-                args: Vec::new(),
-                env: None,
-                env_vars: Vec::new(),
-                cwd: None,
-            },
-            enabled: true,
-            required: false,
-            disabled_reason: None,
-            startup_timeout_sec: None,
-            tool_timeout_sec: None,
-            enabled_tools: None,
-            disabled_tools: None,
-            scopes: None,
-            oauth_resource: None,
-            r#type: None,
-            oauth: None,
-        },
-    );
-
-    apply_blocking(chaos_home, None, &[ConfigEdit::ReplaceMcpServers(servers)]).expect("persist");
-
-    let contents = std::fs::read_to_string(chaos_home.join(CONFIG_TOML_FILE)).expect("read config");
-    let expected = r#"[mcp_servers]
+            server: stdio_server("cmd"),
+            expected: r#"[mcp_servers]
 # keep me
 foo = { command = "cmd" }
-"#;
-    assert_eq!(contents, expected);
-}
-
-#[test]
-fn blocking_replace_mcp_servers_preserves_inline_comment_suffix() {
-    let tmp = tempdir().expect("tmpdir");
-    let chaos_home = tmp.path();
-    std::fs::write(
-        chaos_home.join(CONFIG_TOML_FILE),
-        r#"[mcp_servers]
+"#,
+        },
+        Case {
+            name: "inline comment suffix after update",
+            initial: r#"[mcp_servers]
 foo = { command = "cmd" } # keep me
 "#,
-    )
-    .expect("seed");
-
-    let mut servers = BTreeMap::new();
-    servers.insert(
-        "foo".to_string(),
-        McpServerConfig {
-            transport: McpServerTransportConfig::Stdio {
-                command: "cmd".to_string(),
-                args: Vec::new(),
-                env: None,
-                env_vars: Vec::new(),
-                cwd: None,
+            server: McpServerConfig {
+                enabled: false,
+                ..stdio_server("cmd")
             },
-            enabled: false,
-            required: false,
-            disabled_reason: None,
-            startup_timeout_sec: None,
-            tool_timeout_sec: None,
-            enabled_tools: None,
-            disabled_tools: None,
-            scopes: None,
-            oauth_resource: None,
-            r#type: None,
-            oauth: None,
-        },
-    );
-
-    apply_blocking(chaos_home, None, &[ConfigEdit::ReplaceMcpServers(servers)]).expect("persist");
-
-    let contents = std::fs::read_to_string(chaos_home.join(CONFIG_TOML_FILE)).expect("read config");
-    let expected = r#"[mcp_servers]
+            expected: r#"[mcp_servers]
 foo = { command = "cmd" , enabled = false } # keep me
-"#;
-    assert_eq!(contents, expected);
-}
-
-#[test]
-fn blocking_replace_mcp_servers_preserves_inline_comment_after_removing_keys() {
-    let tmp = tempdir().expect("tmpdir");
-    let chaos_home = tmp.path();
-    std::fs::write(
-        chaos_home.join(CONFIG_TOML_FILE),
-        r#"[mcp_servers]
+"#,
+        },
+        Case {
+            name: "inline comment suffix after removing keys",
+            initial: r#"[mcp_servers]
 foo = { command = "cmd", args = ["--flag"] } # keep me
 "#,
-    )
-    .expect("seed");
-
-    let mut servers = BTreeMap::new();
-    servers.insert(
-        "foo".to_string(),
-        McpServerConfig {
-            transport: McpServerTransportConfig::Stdio {
-                command: "cmd".to_string(),
-                args: Vec::new(),
-                env: None,
-                env_vars: Vec::new(),
-                cwd: None,
-            },
-            enabled: true,
-            required: false,
-            disabled_reason: None,
-            startup_timeout_sec: None,
-            tool_timeout_sec: None,
-            enabled_tools: None,
-            disabled_tools: None,
-            scopes: None,
-            oauth_resource: None,
-            r#type: None,
-            oauth: None,
-        },
-    );
-
-    apply_blocking(chaos_home, None, &[ConfigEdit::ReplaceMcpServers(servers)]).expect("persist");
-
-    let contents = std::fs::read_to_string(chaos_home.join(CONFIG_TOML_FILE)).expect("read config");
-    let expected = r#"[mcp_servers]
+            server: stdio_server("cmd"),
+            expected: r#"[mcp_servers]
 foo = { command = "cmd"} # keep me
-"#;
-    assert_eq!(contents, expected);
-}
-
-#[test]
-fn blocking_replace_mcp_servers_preserves_inline_comment_prefix_on_update() {
-    let tmp = tempdir().expect("tmpdir");
-    let chaos_home = tmp.path();
-    std::fs::write(
-        chaos_home.join(CONFIG_TOML_FILE),
-        r#"[mcp_servers]
+"#,
+        },
+        Case {
+            name: "inline comment prefix on update",
+            initial: r#"[mcp_servers]
 # keep me
 foo = { command = "cmd" }
 "#,
-    )
-    .expect("seed");
-
-    let mut servers = BTreeMap::new();
-    servers.insert(
-        "foo".to_string(),
-        McpServerConfig {
-            transport: McpServerTransportConfig::Stdio {
-                command: "cmd".to_string(),
-                args: Vec::new(),
-                env: None,
-                env_vars: Vec::new(),
-                cwd: None,
+            server: McpServerConfig {
+                enabled: false,
+                ..stdio_server("cmd")
             },
-            enabled: false,
-            required: false,
-            disabled_reason: None,
-            startup_timeout_sec: None,
-            tool_timeout_sec: None,
-            enabled_tools: None,
-            disabled_tools: None,
-            scopes: None,
-            oauth_resource: None,
-            r#type: None,
-            oauth: None,
-        },
-    );
-
-    apply_blocking(chaos_home, None, &[ConfigEdit::ReplaceMcpServers(servers)]).expect("persist");
-
-    let contents = std::fs::read_to_string(chaos_home.join(CONFIG_TOML_FILE)).expect("read config");
-    let expected = r#"[mcp_servers]
+            expected: r#"[mcp_servers]
 # keep me
 foo = { command = "cmd" , enabled = false }
-"#;
-    assert_eq!(contents, expected);
+"#,
+        },
+    ];
+
+    for case in cases {
+        let contents =
+            replace_mcp_servers_blocking(Some(case.initial), mcp_servers([("foo", case.server)]));
+        assert_eq!(contents, case.expected, "case: {}", case.name);
+    }
 }
 
 #[test]
@@ -890,21 +814,9 @@ fn blocking_builder_set_realtime_audio_persists_and_clears() {
 
 #[test]
 fn replace_mcp_servers_blocking_clears_table_when_empty() {
-    let tmp = tempdir().expect("tmpdir");
-    let chaos_home = tmp.path();
-    std::fs::write(
-        chaos_home.join(CONFIG_TOML_FILE),
-        "[mcp_servers]\nfoo = { command = \"cmd\" }\n",
-    )
-    .expect("seed");
-
-    apply_blocking(
-        chaos_home,
-        None,
-        &[ConfigEdit::ReplaceMcpServers(BTreeMap::new())],
-    )
-    .expect("persist");
-
-    let contents = std::fs::read_to_string(chaos_home.join(CONFIG_TOML_FILE)).expect("read config");
+    let contents = replace_mcp_servers_blocking(
+        Some("[mcp_servers]\nfoo = { command = \"cmd\" }\n"),
+        BTreeMap::new(),
+    );
     assert!(!contents.contains("mcp_servers"));
 }

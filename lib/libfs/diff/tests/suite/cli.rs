@@ -1,89 +1,61 @@
-use assert_cmd::Command;
+use super::tool::ApplyPatchWorkspace;
+use assert_cmd::assert::Assert;
 use std::fs;
-use tempfile::tempdir;
 
-fn apply_patch_command() -> anyhow::Result<Command> {
-    Ok(Command::new(chaos_which::cargo_bin("apply_patch")?))
+fn add_file_patch(file: &str, contents: &str) -> String {
+    format!(
+        r#"*** Begin Patch
+*** Add File: {file}
++{contents}
+*** End Patch"#
+    )
+}
+
+fn update_file_patch(file: &str, from: &str, to: &str) -> String {
+    format!(
+        r#"*** Begin Patch
+*** Update File: {file}
+@@
+-{from}
++{to}
+*** End Patch"#
+    )
+}
+
+fn success_output(status: char, file: &str) -> String {
+    format!("Success. Updated the following files:\n{status} {file}\n")
+}
+
+fn exercise_add_and_update(
+    file: &str,
+    mut apply_patch: impl FnMut(&ApplyPatchWorkspace, String) -> anyhow::Result<Assert>,
+) -> anyhow::Result<()> {
+    let workspace = ApplyPatchWorkspace::new()?;
+    let absolute_path = workspace.path(file);
+
+    apply_patch(&workspace, add_file_patch(file, "hello"))?
+        .success()
+        .stdout(success_output('A', file));
+    assert_eq!(fs::read_to_string(&absolute_path)?, "hello\n");
+
+    apply_patch(&workspace, update_file_patch(file, "hello", "world"))?
+        .success()
+        .stdout(success_output('M', file));
+    assert_eq!(fs::read_to_string(&absolute_path)?, "world\n");
+
+    Ok(())
 }
 
 #[test]
 fn test_apply_patch_cli_add_and_update() -> anyhow::Result<()> {
-    let tmp = tempdir()?;
-    let file = "cli_test.txt";
-    let absolute_path = tmp.path().join(file);
-
-    // 1) Add a file
-    let add_patch = format!(
-        r#"*** Begin Patch
-*** Add File: {file}
-+hello
-*** End Patch"#
-    );
-    apply_patch_command()?
-        .arg(add_patch)
-        .current_dir(tmp.path())
-        .assert()
-        .success()
-        .stdout(format!("Success. Updated the following files:\nA {file}\n"));
-    assert_eq!(fs::read_to_string(&absolute_path)?, "hello\n");
-
-    // 2) Update the file
-    let update_patch = format!(
-        r#"*** Begin Patch
-*** Update File: {file}
-@@
--hello
-+world
-*** End Patch"#
-    );
-    apply_patch_command()?
-        .arg(update_patch)
-        .current_dir(tmp.path())
-        .assert()
-        .success()
-        .stdout(format!("Success. Updated the following files:\nM {file}\n"));
-    assert_eq!(fs::read_to_string(&absolute_path)?, "world\n");
-
-    Ok(())
+    exercise_add_and_update("cli_test.txt", |workspace, patch| {
+        workspace.assert_arg_patch(patch)
+    })
 }
 
 #[test]
 fn test_apply_patch_cli_stdin_add_and_update() -> anyhow::Result<()> {
-    let tmp = tempdir()?;
-    let file = "cli_test_stdin.txt";
-    let absolute_path = tmp.path().join(file);
-
-    // 1) Add a file via stdin
-    let add_patch = format!(
-        r#"*** Begin Patch
-*** Add File: {file}
-+hello
-*** End Patch"#
-    );
-    apply_patch_command()?
-        .current_dir(tmp.path())
-        .write_stdin(add_patch)
-        .assert()
-        .success()
-        .stdout(format!("Success. Updated the following files:\nA {file}\n"));
-    assert_eq!(fs::read_to_string(&absolute_path)?, "hello\n");
-
-    // 2) Update the file via stdin
-    let update_patch = format!(
-        r#"*** Begin Patch
-*** Update File: {file}
-@@
--hello
-+world
-*** End Patch"#
-    );
-    apply_patch_command()?
-        .current_dir(tmp.path())
-        .write_stdin(update_patch)
-        .assert()
-        .success()
-        .stdout(format!("Success. Updated the following files:\nM {file}\n"));
-    assert_eq!(fs::read_to_string(&absolute_path)?, "world\n");
-
-    Ok(())
+    exercise_add_and_update("cli_test_stdin.txt", |workspace, patch| {
+        workspace.assert_stdin_patch(patch)
+    })
 }

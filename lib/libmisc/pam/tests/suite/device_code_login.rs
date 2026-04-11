@@ -11,7 +11,7 @@ use serde_json::json;
 use std::sync::Arc;
 use std::sync::atomic::AtomicUsize;
 use std::sync::atomic::Ordering;
-use tempfile::tempdir;
+use tempfile::TempDir;
 use wiremock::Mock;
 use wiremock::MockServer;
 use wiremock::Request;
@@ -31,115 +31,126 @@ fn make_jwt(payload: serde_json::Value) -> String {
     format!("{header_b64}.{payload_b64}.{signature_b64}")
 }
 
-async fn mock_usercode_success(server: &MockServer) {
-    Mock::given(method("POST"))
-        .and(path("/api/accounts/deviceauth/usercode"))
-        .respond_with(ResponseTemplate::new(200).set_body_json(json!({
-            "device_auth_id": "device-auth-123",
-            "user_code": "CODE-12345",
-            // NOTE: Interval is kept 0 in order to avoid waiting for the interval to pass
-            "interval": "0"
-        })))
-        .mount(server)
-        .await;
+struct DeviceCodeHarness {
+    chaos_home: TempDir,
+    mock_server: MockServer,
 }
 
-async fn mock_usercode_failure(server: &MockServer, status: u16) {
-    Mock::given(method("POST"))
-        .and(path("/api/accounts/deviceauth/usercode"))
-        .respond_with(ResponseTemplate::new(status))
-        .mount(server)
-        .await;
-}
+impl DeviceCodeHarness {
+    async fn start() -> Self {
+        Self {
+            chaos_home: tempfile::tempdir().unwrap(),
+            mock_server: MockServer::start().await,
+        }
+    }
 
-async fn mock_poll_token_two_step(
-    server: &MockServer,
-    counter: Arc<AtomicUsize>,
-    first_response_status: u16,
-) {
-    let c = counter.clone();
-    Mock::given(method("POST"))
-        .and(path("/api/accounts/deviceauth/token"))
-        .respond_with(move |_: &Request| {
-            let attempt = c.fetch_add(1, Ordering::SeqCst);
-            if attempt == 0 {
-                ResponseTemplate::new(first_response_status)
-            } else {
-                ResponseTemplate::new(200).set_body_json(json!({
-                    "authorization_code": "poll-code-321",
-                    "code_challenge": "code-challenge-321",
-                    "code_verifier": "code-verifier-321"
-                }))
-            }
-        })
-        .expect(2)
-        .mount(server)
-        .await;
-}
+    async fn mock_usercode_success(&self) {
+        Mock::given(method("POST"))
+            .and(path("/api/accounts/deviceauth/usercode"))
+            .respond_with(ResponseTemplate::new(200).set_body_json(json!({
+                "device_auth_id": "device-auth-123",
+                "user_code": "CODE-12345",
+                // NOTE: Interval is kept 0 in order to avoid waiting for the interval to pass
+                "interval": "0"
+            })))
+            .mount(&self.mock_server)
+            .await;
+    }
 
-async fn mock_poll_token_single(server: &MockServer, endpoint: &str, response: ResponseTemplate) {
-    Mock::given(method("POST"))
-        .and(path(endpoint))
-        .respond_with(response)
-        .mount(server)
-        .await;
-}
+    async fn mock_usercode_failure(&self, status: u16) {
+        Mock::given(method("POST"))
+            .and(path("/api/accounts/deviceauth/usercode"))
+            .respond_with(ResponseTemplate::new(status))
+            .mount(&self.mock_server)
+            .await;
+    }
 
-async fn mock_oauth_token_single(server: &MockServer, jwt: String) {
-    Mock::given(method("POST"))
-        .and(path("/oauth/token"))
-        .respond_with(ResponseTemplate::new(200).set_body_json(json!({
-            "id_token": jwt.clone(),
-            "access_token": "access-token-123",
-            "refresh_token": "refresh-token-123"
-        })))
-        .mount(server)
-        .await;
-}
+    async fn mock_poll_token_pending_then_success(&self, first_response_status: u16) {
+        let counter = Arc::new(AtomicUsize::new(0));
+        Mock::given(method("POST"))
+            .and(path("/api/accounts/deviceauth/token"))
+            .respond_with(move |_: &Request| {
+                let attempt = counter.fetch_add(1, Ordering::SeqCst);
+                if attempt == 0 {
+                    ResponseTemplate::new(first_response_status)
+                } else {
+                    ResponseTemplate::new(200).set_body_json(json!({
+                        "authorization_code": "poll-code-321",
+                        "code_challenge": "code-challenge-321",
+                        "code_verifier": "code-verifier-321"
+                    }))
+                }
+            })
+            .expect(2)
+            .mount(&self.mock_server)
+            .await;
+    }
 
-fn server_opts(
-    chaos_home: &tempfile::TempDir,
-    issuer: String,
-    cli_auth_credentials_store_mode: AuthCredentialsStoreMode,
-) -> ServerOptions {
-    let mut opts = ServerOptions::new(
-        chaos_home.path().to_path_buf(),
-        "client-id".to_string(),
-        None,
-        cli_auth_credentials_store_mode,
-    );
-    opts.issuer = issuer;
-    opts.open_browser = false;
-    opts
+    async fn mock_poll_token_response(&self, endpoint: &str, response: ResponseTemplate) {
+        Mock::given(method("POST"))
+            .and(path(endpoint))
+            .respond_with(response)
+            .mount(&self.mock_server)
+            .await;
+    }
+
+    async fn mock_oauth_token(&self, jwt: &str) {
+        Mock::given(method("POST"))
+            .and(path("/oauth/token"))
+            .respond_with(ResponseTemplate::new(200).set_body_json(json!({
+                "id_token": jwt,
+                "access_token": "access-token-123",
+                "refresh_token": "refresh-token-123"
+            })))
+            .mount(&self.mock_server)
+            .await;
+    }
+
+    async fn mock_successful_auth_flow(&self, jwt_payload: serde_json::Value) -> String {
+        self.mock_usercode_success().await;
+        self.mock_poll_token_pending_then_success(404).await;
+
+        let jwt = make_jwt(jwt_payload);
+        self.mock_oauth_token(&jwt).await;
+        jwt
+    }
+
+    fn server_opts(
+        &self,
+        cli_auth_credentials_store_mode: AuthCredentialsStoreMode,
+    ) -> ServerOptions {
+        let mut opts = ServerOptions::new(
+            self.chaos_home.path().to_path_buf(),
+            "client-id".to_string(),
+            None,
+            cli_auth_credentials_store_mode,
+        );
+        opts.issuer = self.mock_server.uri();
+        opts.open_browser = false;
+        opts
+    }
 }
 
 #[tokio::test]
 async fn device_code_login_integration_succeeds() -> anyhow::Result<()> {
     skip_if_no_network!(Ok(()));
 
-    let chaos_home = tempdir().unwrap();
-    let mock_server = MockServer::start().await;
+    let fixture = DeviceCodeHarness::start().await;
+    let jwt = fixture
+        .mock_successful_auth_flow(json!({
+            "https://api.openai.com/auth": {
+                "chatgpt_account_id": "acct_321"
+            }
+        }))
+        .await;
 
-    mock_usercode_success(&mock_server).await;
-
-    mock_poll_token_two_step(&mock_server, Arc::new(AtomicUsize::new(0)), 404).await;
-
-    let jwt = make_jwt(json!({
-        "https://api.openai.com/auth": {
-            "chatgpt_account_id": "acct_321"
-        }
-    }));
-
-    mock_oauth_token_single(&mock_server, jwt.clone()).await;
-
-    let issuer = mock_server.uri();
-    let opts = server_opts(&chaos_home, issuer, AuthCredentialsStoreMode::File);
+    let opts = fixture.server_opts(AuthCredentialsStoreMode::File);
 
     run_device_code_login(opts)
         .await
         .expect("device code login integration should succeed");
 
-    let auth = load_auth_dot_json(chaos_home.path(), AuthCredentialsStoreMode::File)
+    let auth = load_auth_dot_json(fixture.chaos_home.path(), AuthCredentialsStoreMode::File)
         .context("auth.json should load after login succeeds")?
         .context("auth.json written")?;
     // assert_eq!(auth.openai_api_key.as_deref(), Some("api-key-321"));
@@ -155,24 +166,17 @@ async fn device_code_login_integration_succeeds() -> anyhow::Result<()> {
 async fn device_code_login_rejects_workspace_mismatch() -> anyhow::Result<()> {
     skip_if_no_network!(Ok(()));
 
-    let chaos_home = tempdir().unwrap();
-    let mock_server = MockServer::start().await;
+    let fixture = DeviceCodeHarness::start().await;
+    fixture
+        .mock_successful_auth_flow(json!({
+            "https://api.openai.com/auth": {
+                "chatgpt_account_id": "acct_321",
+                "organization_id": "org-actual"
+            }
+        }))
+        .await;
 
-    mock_usercode_success(&mock_server).await;
-
-    mock_poll_token_two_step(&mock_server, Arc::new(AtomicUsize::new(0)), 404).await;
-
-    let jwt = make_jwt(json!({
-        "https://api.openai.com/auth": {
-            "chatgpt_account_id": "acct_321",
-            "organization_id": "org-actual"
-        }
-    }));
-
-    mock_oauth_token_single(&mock_server, jwt).await;
-
-    let issuer = mock_server.uri();
-    let mut opts = server_opts(&chaos_home, issuer, AuthCredentialsStoreMode::File);
+    let mut opts = fixture.server_opts(AuthCredentialsStoreMode::File);
     opts.forced_chatgpt_workspace_id = Some("org-required".to_string());
 
     let err = run_device_code_login(opts)
@@ -180,7 +184,7 @@ async fn device_code_login_rejects_workspace_mismatch() -> anyhow::Result<()> {
         .expect_err("device code login should fail when workspace mismatches");
     assert_eq!(err.kind(), std::io::ErrorKind::PermissionDenied);
 
-    let auth = load_auth_dot_json(chaos_home.path(), AuthCredentialsStoreMode::File)
+    let auth = load_auth_dot_json(fixture.chaos_home.path(), AuthCredentialsStoreMode::File)
         .context("auth.json should load after login fails")?;
     assert!(
         auth.is_none(),
@@ -193,14 +197,10 @@ async fn device_code_login_rejects_workspace_mismatch() -> anyhow::Result<()> {
 async fn device_code_login_integration_handles_usercode_http_failure() -> anyhow::Result<()> {
     skip_if_no_network!(Ok(()));
 
-    let chaos_home = tempdir().unwrap();
-    let mock_server = MockServer::start().await;
+    let fixture = DeviceCodeHarness::start().await;
+    fixture.mock_usercode_failure(503).await;
 
-    mock_usercode_failure(&mock_server, 503).await;
-
-    let issuer = mock_server.uri();
-
-    let opts = server_opts(&chaos_home, issuer, AuthCredentialsStoreMode::File);
+    let opts = fixture.server_opts(AuthCredentialsStoreMode::File);
 
     let err = run_device_code_login(opts)
         .await
@@ -211,7 +211,7 @@ async fn device_code_login_integration_handles_usercode_http_failure() -> anyhow
         "unexpected error: {err:?}"
     );
 
-    let auth = load_auth_dot_json(chaos_home.path(), AuthCredentialsStoreMode::File)
+    let auth = load_auth_dot_json(fixture.chaos_home.path(), AuthCredentialsStoreMode::File)
         .context("auth.json should load after login fails")?;
     assert!(
         auth.is_none(),
@@ -225,34 +225,16 @@ async fn device_code_login_integration_persists_without_api_key_on_exchange_fail
 -> anyhow::Result<()> {
     skip_if_no_network!(Ok(()));
 
-    let chaos_home = tempdir().unwrap();
+    let fixture = DeviceCodeHarness::start().await;
+    let jwt = fixture.mock_successful_auth_flow(json!({})).await;
 
-    let mock_server = MockServer::start().await;
-
-    mock_usercode_success(&mock_server).await;
-
-    mock_poll_token_two_step(&mock_server, Arc::new(AtomicUsize::new(0)), 404).await;
-
-    let jwt = make_jwt(json!({}));
-
-    mock_oauth_token_single(&mock_server, jwt.clone()).await;
-
-    let issuer = mock_server.uri();
-
-    let mut opts = ServerOptions::new(
-        chaos_home.path().to_path_buf(),
-        "client-id".to_string(),
-        None,
-        AuthCredentialsStoreMode::File,
-    );
-    opts.issuer = issuer;
-    opts.open_browser = false;
+    let opts = fixture.server_opts(AuthCredentialsStoreMode::File);
 
     run_device_code_login(opts)
         .await
         .expect("device login should succeed without API key exchange");
 
-    let auth = load_auth_dot_json(chaos_home.path(), AuthCredentialsStoreMode::File)
+    let auth = load_auth_dot_json(fixture.chaos_home.path(), AuthCredentialsStoreMode::File)
         .context("auth.json should load after login succeeds")?
         .context("auth.json written")?;
     assert!(auth.openai_api_key.is_none());
@@ -267,36 +249,22 @@ async fn device_code_login_integration_persists_without_api_key_on_exchange_fail
 async fn device_code_login_integration_handles_error_payload() -> anyhow::Result<()> {
     skip_if_no_network!(Ok(()));
 
-    let chaos_home = tempdir().unwrap();
-
-    // Start WireMock
-    let mock_server = MockServer::start().await;
-
-    mock_usercode_success(&mock_server).await;
+    let fixture = DeviceCodeHarness::start().await;
+    fixture.mock_usercode_success().await;
 
     // // /deviceauth/token → returns error payload with status 401
-    mock_poll_token_single(
-        &mock_server,
-        "/api/accounts/deviceauth/token",
-        ResponseTemplate::new(401).set_body_json(json!({
-            "error": "authorization_declined",
-            "error_description": "Denied"
-        })),
-    )
-    .await;
+    fixture
+        .mock_poll_token_response(
+            "/api/accounts/deviceauth/token",
+            ResponseTemplate::new(401).set_body_json(json!({
+                "error": "authorization_declined",
+                "error_description": "Denied"
+            })),
+        )
+        .await;
 
     // (WireMock will automatically 404 for other paths)
-
-    let issuer = mock_server.uri();
-
-    let mut opts = ServerOptions::new(
-        chaos_home.path().to_path_buf(),
-        "client-id".to_string(),
-        None,
-        AuthCredentialsStoreMode::File,
-    );
-    opts.issuer = issuer;
-    opts.open_browser = false;
+    let opts = fixture.server_opts(AuthCredentialsStoreMode::File);
 
     let err = run_device_code_login(opts)
         .await
@@ -308,7 +276,7 @@ async fn device_code_login_integration_handles_error_payload() -> anyhow::Result
         "Expected an authorization_declined / 400 / 404 error, got {err:?}"
     );
 
-    let auth = load_auth_dot_json(chaos_home.path(), AuthCredentialsStoreMode::File)
+    let auth = load_auth_dot_json(fixture.chaos_home.path(), AuthCredentialsStoreMode::File)
         .context("auth.json should load after login fails")?;
     assert!(
         auth.is_none(),

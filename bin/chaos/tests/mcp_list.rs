@@ -1,6 +1,10 @@
+use std::collections::BTreeMap;
+
+use anyhow::Context;
 use anyhow::Result;
 use chaos_kern::config::edit::ConfigEditsBuilder;
 use chaos_kern::config::load_global_mcp_servers;
+use chaos_kern::config::types::McpServerConfig;
 use chaos_kern::config::types::McpServerTransportConfig;
 use predicates::prelude::PredicateBooleanExt;
 use predicates::str::contains;
@@ -13,14 +17,87 @@ mod common;
 
 use common::chaos_command;
 
+struct McpCliHarness {
+    chaos_home: TempDir,
+}
+
+impl McpCliHarness {
+    fn new() -> Result<Self> {
+        Ok(Self {
+            chaos_home: TempDir::new()?,
+        })
+    }
+
+    fn assert_success(&self, args: &[&str]) -> Result<()> {
+        self.command()?.args(args).assert().success();
+        Ok(())
+    }
+
+    fn stdout(&self, args: &[&str]) -> Result<String> {
+        let output = self.command()?.args(args).output()?;
+        assert!(output.status.success());
+        Ok(String::from_utf8(output.stdout)?)
+    }
+
+    async fn set_enabled(&self, name: &str, enabled: bool) -> Result<()> {
+        self.update_servers(|servers| {
+            let server = servers
+                .get_mut(name)
+                .with_context(|| format!("server should exist after add: {name}"))?;
+            server.enabled = enabled;
+            Ok(())
+        })
+        .await
+    }
+
+    async fn set_stdio_env_vars(&self, name: &str, env_vars: &[&str]) -> Result<()> {
+        self.update_servers(|servers| {
+            let server = servers
+                .get_mut(name)
+                .with_context(|| format!("server should exist after add: {name}"))?;
+            match &mut server.transport {
+                McpServerTransportConfig::Stdio {
+                    env_vars: stored_env_vars,
+                    ..
+                } => {
+                    *stored_env_vars = env_vars
+                        .iter()
+                        .map(|env_var| (*env_var).to_string())
+                        .collect();
+                }
+                other => panic!("unexpected transport: {other:?}"),
+            }
+            Ok(())
+        })
+        .await
+    }
+
+    fn command(&self) -> Result<assert_cmd::Command> {
+        chaos_command(self.chaos_home.path())
+    }
+
+    async fn servers(&self) -> Result<BTreeMap<String, McpServerConfig>> {
+        Ok(load_global_mcp_servers(self.chaos_home.path()).await?)
+    }
+
+    async fn update_servers(
+        &self,
+        update: impl FnOnce(&mut BTreeMap<String, McpServerConfig>) -> Result<()>,
+    ) -> Result<()> {
+        let mut servers = self.servers().await?;
+        update(&mut servers)?;
+        ConfigEditsBuilder::new(self.chaos_home.path())
+            .replace_mcp_servers(&servers)
+            .apply_blocking()?;
+        Ok(())
+    }
+}
+
 #[test]
 fn list_shows_empty_state() -> Result<()> {
-    let chaos_home = TempDir::new()?;
+    let harness = McpCliHarness::new()?;
 
-    let mut cmd = chaos_command(chaos_home.path())?;
-    let output = cmd.args(["mcp", "list"]).output()?;
-    assert!(output.status.success());
-    let stdout = String::from_utf8(output.stdout)?;
+    let stdout = harness.stdout(&["mcp", "list"])?;
     assert!(stdout.contains("No MCP servers configured yet."));
 
     Ok(())
@@ -28,10 +105,9 @@ fn list_shows_empty_state() -> Result<()> {
 
 #[tokio::test]
 async fn list_and_get_render_expected_output() -> Result<()> {
-    let chaos_home = TempDir::new()?;
+    let harness = McpCliHarness::new()?;
 
-    let mut add = chaos_command(chaos_home.path())?;
-    add.args([
+    harness.assert_success(&[
         "mcp",
         "add",
         "docs",
@@ -41,28 +117,12 @@ async fn list_and_get_render_expected_output() -> Result<()> {
         "docs-server",
         "--port",
         "4000",
-    ])
-    .assert()
-    .success();
+    ])?;
+    harness
+        .set_stdio_env_vars("docs", &["APP_TOKEN", "WORKSPACE_ID"])
+        .await?;
 
-    let mut servers = load_global_mcp_servers(chaos_home.path()).await?;
-    let docs_entry = servers
-        .get_mut("docs")
-        .expect("docs server should exist after add");
-    match &mut docs_entry.transport {
-        McpServerTransportConfig::Stdio { env_vars, .. } => {
-            *env_vars = vec!["APP_TOKEN".to_string(), "WORKSPACE_ID".to_string()];
-        }
-        other => panic!("unexpected transport: {other:?}"),
-    }
-    ConfigEditsBuilder::new(chaos_home.path())
-        .replace_mcp_servers(&servers)
-        .apply_blocking()?;
-
-    let mut list_cmd = chaos_command(chaos_home.path())?;
-    let list_output = list_cmd.args(["mcp", "list"]).output()?;
-    assert!(list_output.status.success());
-    let stdout = String::from_utf8(list_output.stdout)?;
+    let stdout = harness.stdout(&["mcp", "list"])?;
     assert!(stdout.contains("Name"));
     assert!(stdout.contains("docs"));
     assert!(stdout.contains("docs-server"));
@@ -78,10 +138,7 @@ async fn list_and_get_render_expected_output() -> Result<()> {
         "expected '-' in auth column for stdio server"
     );
 
-    let mut list_json_cmd = chaos_command(chaos_home.path())?;
-    let json_output = list_json_cmd.args(["mcp", "list", "--json"]).output()?;
-    assert!(json_output.status.success());
-    let stdout = String::from_utf8(json_output.stdout)?;
+    let stdout = harness.stdout(&["mcp", "list", "--json"])?;
     let parsed: JsonValue = serde_json::from_str(&stdout)?;
     assert_eq!(
         parsed,
@@ -114,10 +171,7 @@ async fn list_and_get_render_expected_output() -> Result<()> {
         )
     );
 
-    let mut get_cmd = chaos_command(chaos_home.path())?;
-    let get_output = get_cmd.args(["mcp", "get", "docs"]).output()?;
-    assert!(get_output.status.success());
-    let stdout = String::from_utf8(get_output.stdout)?;
+    let stdout = harness.stdout(&["mcp", "get", "docs"])?;
     assert!(stdout.contains("docs"));
     assert!(stdout.contains("transport: stdio"));
     assert!(stdout.contains("command: docs-server"));
@@ -128,8 +182,8 @@ async fn list_and_get_render_expected_output() -> Result<()> {
     assert!(stdout.contains("enabled: true"));
     assert!(stdout.contains("remove: chaos mcp remove docs"));
 
-    let mut get_json_cmd = chaos_command(chaos_home.path())?;
-    get_json_cmd
+    harness
+        .command()?
         .args(["mcp", "get", "docs", "--json"])
         .assert()
         .success()
@@ -140,26 +194,12 @@ async fn list_and_get_render_expected_output() -> Result<()> {
 
 #[tokio::test]
 async fn get_disabled_server_shows_single_line() -> Result<()> {
-    let chaos_home = TempDir::new()?;
+    let harness = McpCliHarness::new()?;
 
-    let mut add = chaos_command(chaos_home.path())?;
-    add.args(["mcp", "add", "docs", "--", "docs-server"])
-        .assert()
-        .success();
+    harness.assert_success(&["mcp", "add", "docs", "--", "docs-server"])?;
+    harness.set_enabled("docs", false).await?;
 
-    let mut servers = load_global_mcp_servers(chaos_home.path()).await?;
-    let docs = servers
-        .get_mut("docs")
-        .expect("docs server should exist after add");
-    docs.enabled = false;
-    ConfigEditsBuilder::new(chaos_home.path())
-        .replace_mcp_servers(&servers)
-        .apply_blocking()?;
-
-    let mut get_cmd = chaos_command(chaos_home.path())?;
-    let get_output = get_cmd.args(["mcp", "get", "docs"]).output()?;
-    assert!(get_output.status.success());
-    let stdout = String::from_utf8(get_output.stdout)?;
+    let stdout = harness.stdout(&["mcp", "get", "docs"])?;
     assert_eq!(stdout.trim_end(), "docs (disabled)");
 
     Ok(())

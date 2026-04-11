@@ -16,6 +16,7 @@ use crate::seatbelt_permissions::MacOsAutomationPermission;
 use crate::seatbelt_permissions::MacOsContactsPermission;
 use crate::seatbelt_permissions::MacOsPreferencesPermission;
 use crate::seatbelt_permissions::MacOsSeatbeltProfileExtensions;
+use crate::seatbelt_permissions::build_seatbelt_extensions;
 use chaos_ipc::permissions::FileSystemAccessMode;
 use chaos_ipc::permissions::FileSystemPath;
 use chaos_ipc::permissions::FileSystemSandboxEntry;
@@ -50,6 +51,10 @@ fn seatbelt_policy_arg(args: &[String]) -> &str {
         .expect("seatbelt args should include -p");
     args.get(policy_index + 1)
         .expect("seatbelt args should include policy text")
+}
+
+fn default_extension_policy() -> String {
+    build_seatbelt_extensions(&MacOsSeatbeltProfileExtensions::default()).policy
 }
 
 #[test]
@@ -195,32 +200,46 @@ fn explicit_unreadable_paths_are_excluded_from_readable_roots() {
 }
 
 #[test]
-fn seatbelt_args_include_permission_extensions() {
+fn seatbelt_args_include_built_permission_extensions_and_dir_params() {
     let cwd = std::env::temp_dir();
+    let command = vec!["echo".to_string(), "ok".to_string()];
+    let extensions = MacOsSeatbeltProfileExtensions {
+        macos_preferences: MacOsPreferencesPermission::ReadWrite,
+        macos_automation: MacOsAutomationPermission::BundleIds(vec!["com.apple.Notes".to_string()]),
+        macos_launch_services: true,
+        macos_accessibility: true,
+        macos_calendar: true,
+        macos_reminders: false,
+        macos_contacts: MacOsContactsPermission::ReadOnly,
+    };
+    let expected_extensions = build_seatbelt_extensions(&extensions);
     let args = create_seatbelt_command_args_with_extensions(
-        vec!["echo".to_string(), "ok".to_string()],
+        command.clone(),
         &SandboxPolicy::new_read_only_policy(),
         cwd.as_path(),
         false,
         None,
-        Some(&MacOsSeatbeltProfileExtensions {
-            macos_preferences: MacOsPreferencesPermission::ReadWrite,
-            macos_automation: MacOsAutomationPermission::BundleIds(vec![
-                "com.apple.Notes".to_string(),
-            ]),
-            macos_launch_services: true,
-            macos_accessibility: true,
-            macos_calendar: true,
-            macos_reminders: false,
-            macos_contacts: MacOsContactsPermission::None,
-        }),
+        Some(&extensions),
     );
-    let policy = &args[1];
+    let policy = seatbelt_policy_arg(&args);
 
-    assert!(policy.contains("(allow user-preference-write)"));
-    assert!(policy.contains("(appleevent-destination \"com.apple.Notes\")"));
-    assert!(policy.contains("com.apple.axserver"));
-    assert!(policy.contains("com.apple.CalendarAgent"));
+    assert!(
+        policy.contains(&expected_extensions.policy),
+        "expected generated policy to embed the built extension policy block:\n{policy}"
+    );
+    for (key, value) in expected_extensions.dir_params {
+        let expected_definition = format!("-D{key}={}", value.display());
+        assert!(
+            args.iter().any(|arg| arg == &expected_definition),
+            "expected extension directory parameter `{expected_definition}` in args: {args:#?}"
+        );
+    }
+
+    let command_index = args
+        .iter()
+        .position(|arg| arg == "--")
+        .expect("seatbelt args should include command separator");
+    assert_eq!(args[command_index + 1..], command);
 }
 
 #[test]
@@ -275,18 +294,37 @@ sys.exit(0 if allowed else 13)
 }
 
 #[test]
-fn seatbelt_args_without_extension_profile_keep_legacy_preferences_read_access() {
+fn legacy_extension_defaults_match_explicit_default_extension_profile() {
     let cwd = std::env::temp_dir();
-    let args = create_seatbelt_command_args(
-        vec!["echo".to_string(), "ok".to_string()],
+    let command = vec!["echo".to_string(), "ok".to_string()];
+    let legacy_args = create_seatbelt_command_args(
+        command.clone(),
         &SandboxPolicy::new_read_only_policy(),
         cwd.as_path(),
         false,
         None,
     );
-    let policy = &args[1];
-    assert!(policy.contains("(allow user-preference-read)"));
-    assert!(!policy.contains("(allow user-preference-write)"));
+    let explicit_default_args = create_seatbelt_command_args_with_extensions(
+        command.clone(),
+        &SandboxPolicy::new_read_only_policy(),
+        cwd.as_path(),
+        false,
+        None,
+        Some(&MacOsSeatbeltProfileExtensions::default()),
+    );
+
+    assert_eq!(legacy_args, explicit_default_args);
+    assert!(
+        seatbelt_policy_arg(&legacy_args).contains(&default_extension_policy()),
+        "expected legacy path to include the default extension policy block:\n{}",
+        seatbelt_policy_arg(&legacy_args)
+    );
+
+    let command_index = legacy_args
+        .iter()
+        .position(|arg| arg == "--")
+        .expect("seatbelt args should include command separator");
+    assert_eq!(legacy_args[command_index + 1..], command);
 }
 
 #[test]
@@ -321,25 +359,6 @@ fn seatbelt_legacy_workspace_write_nested_readable_root_stays_writable() {
         !args.iter().any(|arg| arg == &docs_param),
         "unexpected seatbelt carveout parameter for redundant legacy readable root: {args:#?}"
     );
-}
-
-#[test]
-fn seatbelt_args_default_extension_profile_keeps_preferences_read_access() {
-    let cwd = std::env::temp_dir();
-    let args = create_seatbelt_command_args_with_extensions(
-        vec!["echo".to_string(), "ok".to_string()],
-        &SandboxPolicy::new_read_only_policy(),
-        cwd.as_path(),
-        false,
-        None,
-        Some(&MacOsSeatbeltProfileExtensions::default()),
-    );
-    let policy = &args[1];
-    assert!(!policy.contains("appleevent-send"));
-    assert!(!policy.contains("com.apple.axserver"));
-    assert!(!policy.contains("com.apple.CalendarAgent"));
-    assert!(policy.contains("(allow user-preference-read)"));
-    assert!(!policy.contains("user-preference-write"));
 }
 
 #[test]
@@ -651,14 +670,8 @@ fn create_seatbelt_args_with_read_only_git_and_codex_subpaths() {
 (subpath (param "WRITABLE_ROOT_0")) (require-all (subpath (param "WRITABLE_ROOT_1")) (require-not (subpath (param "WRITABLE_ROOT_1_RO_0"))) (require-not (subpath (param "WRITABLE_ROOT_1_RO_1"))) ) (subpath (param "WRITABLE_ROOT_2"))
 )
 
-; macOS permission profile extensions
-(allow ipc-posix-shm-read* (ipc-posix-name-prefix "apple.cfprefs."))
-(allow mach-lookup
-    (global-name "com.apple.cfprefsd.daemon")
-    (global-name "com.apple.cfprefsd.agent")
-    (local-name "com.apple.cfprefsd.agent"))
-(allow user-preference-read)
-"#,
+{default_extension_policy}"#,
+        default_extension_policy = default_extension_policy(),
     );
 
     assert_eq!(seatbelt_policy_arg(&args), expected_policy);
@@ -954,14 +967,8 @@ fn create_seatbelt_args_for_cwd_as_git_repo() {
 (require-all (subpath (param "WRITABLE_ROOT_0")) (require-not (subpath (param "WRITABLE_ROOT_0_RO_0"))) (require-not (subpath (param "WRITABLE_ROOT_0_RO_1"))) ) (subpath (param "WRITABLE_ROOT_1")){tempdir_policy_entry}
 )
 
-; macOS permission profile extensions
-(allow ipc-posix-shm-read* (ipc-posix-name-prefix "apple.cfprefs."))
-(allow mach-lookup
-    (global-name "com.apple.cfprefsd.daemon")
-    (global-name "com.apple.cfprefsd.agent")
-    (local-name "com.apple.cfprefsd.agent"))
-(allow user-preference-read)
-"#,
+{default_extension_policy}"#,
+        default_extension_policy = default_extension_policy(),
     );
 
     let mut expected_args = vec![

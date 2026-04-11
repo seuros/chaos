@@ -1,11 +1,10 @@
+use super::tool::ApplyPatchWorkspace;
 use chaos_which::repo_root;
 use pretty_assertions::assert_eq;
 use std::collections::BTreeMap;
 use std::fs;
 use std::path::Path;
 use std::path::PathBuf;
-use std::process::Command;
-use tempfile::tempdir;
 
 #[test]
 fn test_apply_patch_scenarios() -> anyhow::Result<()> {
@@ -29,12 +28,12 @@ fn test_apply_patch_scenarios() -> anyhow::Result<()> {
 /// Reads a scenario directory, copies the input files to a temporary directory, runs apply-patch,
 /// and asserts that the final state matches the expected state exactly.
 fn run_apply_patch_scenario(dir: &Path) -> anyhow::Result<()> {
-    let tmp = tempdir()?;
+    let workspace = ApplyPatchWorkspace::new()?;
 
     // Copy the input files to the temporary directory
     let input_dir = dir.join("input");
     if input_dir.is_dir() {
-        copy_dir_recursive(&input_dir, tmp.path())?;
+        copy_dir_recursive(&input_dir, workspace.root())?;
     }
 
     // Read the patch.txt file
@@ -43,15 +42,12 @@ fn run_apply_patch_scenario(dir: &Path) -> anyhow::Result<()> {
     // Run apply_patch in the temporary directory. We intentionally do not assert
     // on the exit status here; the scenarios are specified purely in terms of
     // final filesystem state, which we compare below.
-    Command::new(chaos_which::cargo_bin("apply_patch")?)
-        .arg(patch)
-        .current_dir(tmp.path())
-        .output()?;
+    workspace.run_arg_patch(patch)?;
 
     // Assert that the final state matches the expected state exactly
     let expected_dir = dir.join("expected");
     let expected_snapshot = snapshot_dir(&expected_dir)?;
-    let actual_snapshot = snapshot_dir(tmp.path())?;
+    let actual_snapshot = snapshot_dir(workspace.root())?;
 
     assert_eq!(
         actual_snapshot,

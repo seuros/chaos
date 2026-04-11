@@ -1,6 +1,5 @@
-use crate::harness::attributes_to_map;
 use crate::harness::build_metrics_with_defaults;
-use crate::harness::find_metric;
+use crate::harness::counter_attributes;
 use crate::harness::latest_metrics;
 use chaos_ipc::ProcessId;
 use chaos_ipc::product::CHAOS_VERSION;
@@ -9,8 +8,6 @@ use chaos_syslog::SessionTelemetry;
 use chaos_syslog::TelemetryAuthMode;
 use chaos_syslog::metrics::Result;
 use pretty_assertions::assert_eq;
-use rama::telemetry::opentelemetry::sdk::metrics::data::AggregatedMetrics;
-use rama::telemetry::opentelemetry::sdk::metrics::data::MetricData;
 use std::collections::BTreeMap;
 
 // Ensures SessionTelemetry attaches metadata tags when forwarding metrics.
@@ -35,19 +32,7 @@ fn manager_attaches_metadata_tags_to_metrics() -> Result<()> {
     manager.shutdown_metrics()?;
 
     let resource_metrics = latest_metrics(&exporter);
-    let metric =
-        find_metric(&resource_metrics, "chaos.session_started").expect("counter metric missing");
-    let attrs = match metric.data() {
-        AggregatedMetrics::U64(data) => match data {
-            MetricData::Sum(sum) => {
-                let points: Vec<_> = sum.data_points().collect();
-                assert_eq!(points.len(), 1);
-                attributes_to_map(points[0].attributes())
-            }
-            _ => panic!("unexpected counter aggregation"),
-        },
-        _ => panic!("unexpected counter data type"),
-    };
+    let attrs = counter_attributes(&resource_metrics, "chaos.session_started");
 
     let expected = BTreeMap::from([
         ("app.version".to_string(), CHAOS_VERSION.to_string()),
@@ -88,19 +73,7 @@ fn manager_allows_disabling_metadata_tags() -> Result<()> {
     manager.shutdown_metrics()?;
 
     let resource_metrics = latest_metrics(&exporter);
-    let metric =
-        find_metric(&resource_metrics, "chaos.session_started").expect("counter metric missing");
-    let attrs = match metric.data() {
-        AggregatedMetrics::U64(data) => match data {
-            MetricData::Sum(sum) => {
-                let points: Vec<_> = sum.data_points().collect();
-                assert_eq!(points.len(), 1);
-                attributes_to_map(points[0].attributes())
-            }
-            _ => panic!("unexpected counter aggregation"),
-        },
-        _ => panic!("unexpected counter data type"),
-    };
+    let attrs = counter_attributes(&resource_metrics, "chaos.session_started");
 
     let expected = BTreeMap::from([("source".to_string(), "tui".to_string())]);
     assert_eq!(attrs, expected);
@@ -130,19 +103,7 @@ fn manager_attaches_optional_service_name_tag() -> Result<()> {
     manager.shutdown_metrics()?;
 
     let resource_metrics = latest_metrics(&exporter);
-    let metric =
-        find_metric(&resource_metrics, "chaos.session_started").expect("counter metric missing");
-    let attrs = match metric.data() {
-        AggregatedMetrics::U64(data) => match data {
-            MetricData::Sum(sum) => {
-                let points: Vec<_> = sum.data_points().collect();
-                assert_eq!(points.len(), 1);
-                attributes_to_map(points[0].attributes())
-            }
-            _ => panic!("unexpected counter aggregation"),
-        },
-        _ => panic!("unexpected counter data type"),
-    };
+    let attrs = counter_attributes(&resource_metrics, "chaos.session_started");
 
     assert_eq!(
         attrs.get("service_name"),

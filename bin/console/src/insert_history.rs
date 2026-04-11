@@ -301,6 +301,8 @@ where
     let mut fg = Color::Reset;
     let mut bg = Color::Reset;
     let mut last_modifier = Modifier::empty();
+    let mut current_link: Option<String> = None;
+    let osc8_enabled = crate::osc8::enabled();
     for span in content {
         let mut modifier = Modifier::empty();
         modifier.insert(span.style.add_modifier);
@@ -327,7 +329,26 @@ where
             bg = next_bg;
         }
 
+        let next_link = if osc8_enabled {
+            span.style.underline_color.and_then(crate::osc8::lookup)
+        } else {
+            None
+        };
+        if next_link != current_link {
+            if current_link.is_some() {
+                queue!(writer, Print(crate::osc8::close()))?;
+            }
+            if let Some(ref url) = next_link {
+                queue!(writer, Print(crate::osc8::open(url)))?;
+            }
+            current_link = next_link;
+        }
+
         queue!(writer, Print(span.content.clone()))?;
+    }
+
+    if current_link.is_some() {
+        queue!(writer, Print(crate::osc8::close()))?;
     }
 
     queue!(
@@ -374,6 +395,78 @@ mod tests {
             String::from_utf8(actual).unwrap(),
             String::from_utf8(expected).unwrap()
         );
+    }
+
+    #[test]
+    fn write_spans_emits_osc8_envelope_for_linked_spans() {
+        use ratatui::style::Style;
+
+        let alpha = crate::osc8::register("https://example.com/alpha");
+        let beta = crate::osc8::register("https://example.com/beta");
+
+        let linked_alpha =
+            |text: &'static str| Span::styled(text, Style::new().underline_color(alpha));
+        let linked_beta =
+            |text: &'static str| Span::styled(text, Style::new().underline_color(beta));
+
+        let spans: Vec<Span<'static>> = vec![
+            "pre ".into(),
+            linked_alpha("foo"),
+            linked_alpha("bar"),
+            " zzz ".into(),
+            linked_beta("baz"),
+            " end".into(),
+        ];
+
+        let actual = crate::osc8::with_enabled(true, || {
+            let mut buf: Vec<u8> = Vec::new();
+            write_spans(&mut buf, spans.iter()).unwrap();
+            String::from_utf8(buf).unwrap()
+        });
+
+        let open_alpha = "\x1b]8;;https://example.com/alpha\x1b\\";
+        let open_beta = "\x1b]8;;https://example.com/beta\x1b\\";
+        let close = "\x1b]8;;\x1b\\";
+
+        let text_only = actual
+            .replace(open_alpha, "")
+            .replace(open_beta, "")
+            .replace(close, "");
+        assert!(text_only.contains("pre foobar zzz baz end"));
+
+        let alpha_open = actual.find(open_alpha).unwrap();
+        let after_alpha = &actual[alpha_open + open_alpha.len()..];
+        let alpha_close_rel = after_alpha.find(close).unwrap();
+        assert_eq!(&after_alpha[..alpha_close_rel], "foobar");
+
+        let beta_open = actual.find(open_beta).unwrap();
+        let after_beta = &actual[beta_open + open_beta.len()..];
+        let beta_close_rel = after_beta.find(close).unwrap();
+        assert_eq!(&after_beta[..beta_close_rel], "baz");
+
+        assert_eq!(actual.matches(open_alpha).count(), 1);
+        assert_eq!(actual.matches(open_beta).count(), 1);
+        assert_eq!(actual.matches(close).count(), 2);
+    }
+
+    #[test]
+    fn write_spans_skips_osc8_when_disabled() {
+        use ratatui::style::Style;
+
+        let sentinel = crate::osc8::register("https://example.com/disabled");
+        let spans: Vec<Span<'static>> = vec![
+            "hello ".into(),
+            Span::styled("world", Style::new().underline_color(sentinel)),
+        ];
+
+        let actual = crate::osc8::with_enabled(false, || {
+            let mut buf: Vec<u8> = Vec::new();
+            write_spans(&mut buf, spans.iter()).unwrap();
+            String::from_utf8(buf).unwrap()
+        });
+
+        assert!(!actual.contains("\x1b]8;"));
+        assert!(actual.contains("hello world"));
     }
 
     #[cfg(feature = "vt100-tests")]

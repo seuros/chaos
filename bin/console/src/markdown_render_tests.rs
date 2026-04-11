@@ -8,6 +8,7 @@ use std::path::Path;
 
 use crate::markdown_render::COLON_LOCATION_SUFFIX_RE;
 use crate::markdown_render::HASH_LOCATION_SUFFIX_RE;
+use crate::markdown_render::file_url_for_local_link;
 use crate::markdown_render::render_markdown_text;
 use crate::markdown_render::render_markdown_text_with_width_and_cwd;
 use insta::assert_snapshot;
@@ -42,6 +43,12 @@ fn task_checked(text: &'static str) -> Span<'static> {
 /// no explicit foreground so it inherits the terminal base color.
 fn task_unchecked(text: &'static str) -> Span<'static> {
     Span::styled(text, Style::new().dim())
+}
+
+/// Stamp the OSC 8 sentinel for `url` onto `span`.
+fn linked(mut span: Span<'static>, url: &str) -> Span<'static> {
+    span.style.underline_color = Some(crate::osc8::register(url));
+    span
 }
 
 fn render_markdown_text_for_cwd(input: &str, cwd: &Path) -> Text<'static> {
@@ -759,11 +766,15 @@ fn strong_emphasis() {
 #[test]
 fn link() {
     let text = render_markdown_text("[Link](https://example.com)");
+    let url = "https://example.com";
+    // Every span emitted between `push_link` and `pop_link` — the label, the
+    // parentheses, and the destination — picks up the OSC 8 sentinel so the
+    // terminal treats the whole run as one clickable hyperlink.
     let expected = Text::from(Line::from_iter([
-        "Link".into(),
-        " (".into(),
-        accent_link("https://example.com"),
-        ")".into(),
+        linked("Link".into(), url),
+        linked(" (".into(), url),
+        linked(accent_link(url), url),
+        linked(")".into(), url),
     ]));
     assert_eq!(text, expected);
 }
@@ -776,122 +787,170 @@ fn load_location_suffix_regexes() {
 
 #[test]
 fn file_link_hides_destination() {
-    let text = render_markdown_text_for_cwd(
-        "[chaos/tui/src/markdown_render.rs](/Users/example/code/chaos/chaos/tui/src/markdown_render.rs)",
-        Path::new("/Users/example/code/chaos"),
-    );
-    let expected = Text::from(Line::from_iter([accent("chaos/tui/src/markdown_render.rs")]));
+    let cwd = Path::new("/Users/example/code/chaos");
+    let dest = "/Users/example/code/chaos/chaos/tui/src/markdown_render.rs";
+    let text = render_markdown_text_for_cwd(&format!("[chaos/tui/src/markdown_render.rs]({dest})"), cwd);
+    let url = file_url_for_local_link(dest, Some(cwd)).unwrap();
+    let expected = Text::from(Line::from_iter([linked(
+        accent("chaos/tui/src/markdown_render.rs"),
+        &url,
+    )]));
     assert_eq!(text, expected);
 }
 
 #[test]
 fn file_link_appends_line_number_when_label_lacks_it() {
-    let text = render_markdown_text_for_cwd(
-        "[markdown_render.rs](/Users/example/code/chaos/chaos/tui/src/markdown_render.rs:74)",
-        Path::new("/Users/example/code/chaos"),
-    );
-    let expected = Text::from(Line::from_iter([accent("chaos/tui/src/markdown_render.rs:74")]));
+    let cwd = Path::new("/Users/example/code/chaos");
+    // The display suffix `:74` is stripped when building the clickable URL —
+    // terminals open `file://.../markdown_render.rs`, not `...:74`.
+    let dest = "/Users/example/code/chaos/chaos/tui/src/markdown_render.rs:74";
+    let text = render_markdown_text_for_cwd(&format!("[markdown_render.rs]({dest})"), cwd);
+    let url = file_url_for_local_link(dest, Some(cwd)).unwrap();
+    let expected = Text::from(Line::from_iter([linked(
+        accent("chaos/tui/src/markdown_render.rs:74"),
+        &url,
+    )]));
     assert_eq!(text, expected);
 }
 
 #[test]
 fn file_link_keeps_absolute_paths_outside_cwd() {
-    let text = render_markdown_text_for_cwd(
-        "[README.md:74](/Users/example/code/chaos/README.md:74)",
-        Path::new("/Users/example/code/chaos/chaos/tui"),
-    );
-    let expected = Text::from(Line::from_iter([accent("/Users/example/code/chaos/README.md:74")]));
+    let cwd = Path::new("/Users/example/code/chaos/chaos/tui");
+    let dest = "/Users/example/code/chaos/README.md:74";
+    let text = render_markdown_text_for_cwd(&format!("[README.md:74]({dest})"), cwd);
+    let url = file_url_for_local_link(dest, Some(cwd)).unwrap();
+    let expected = Text::from(Line::from_iter([linked(
+        accent("/Users/example/code/chaos/README.md:74"),
+        &url,
+    )]));
     assert_eq!(text, expected);
 }
 
 #[test]
 fn file_link_appends_hash_anchor_when_label_lacks_it() {
-    let text = render_markdown_text_for_cwd(
-        "[markdown_render.rs](file:///Users/example/code/chaos/chaos/tui/src/markdown_render.rs#L74C3)",
-        Path::new("/Users/example/code/chaos"),
-    );
-    let expected =
-        Text::from(Line::from_iter([accent("chaos/tui/src/markdown_render.rs:74:3")]));
+    let cwd = Path::new("/Users/example/code/chaos");
+    let dest = "file:///Users/example/code/chaos/chaos/tui/src/markdown_render.rs#L74C3";
+    let text = render_markdown_text_for_cwd(&format!("[markdown_render.rs]({dest})"), cwd);
+    let url = file_url_for_local_link(dest, Some(cwd)).unwrap();
+    let expected = Text::from(Line::from_iter([linked(
+        accent("chaos/tui/src/markdown_render.rs:74:3"),
+        &url,
+    )]));
     assert_eq!(text, expected);
 }
 
 #[test]
 fn file_link_uses_target_path_for_hash_anchor() {
-    let text = render_markdown_text_for_cwd(
-        "[markdown_render.rs#L74C3](file:///Users/example/code/chaos/chaos/tui/src/markdown_render.rs#L74C3)",
-        Path::new("/Users/example/code/chaos"),
-    );
-    let expected =
-        Text::from(Line::from_iter([accent("chaos/tui/src/markdown_render.rs:74:3")]));
+    let cwd = Path::new("/Users/example/code/chaos");
+    let dest = "file:///Users/example/code/chaos/chaos/tui/src/markdown_render.rs#L74C3";
+    let text = render_markdown_text_for_cwd(&format!("[markdown_render.rs#L74C3]({dest})"), cwd);
+    let url = file_url_for_local_link(dest, Some(cwd)).unwrap();
+    let expected = Text::from(Line::from_iter([linked(
+        accent("chaos/tui/src/markdown_render.rs:74:3"),
+        &url,
+    )]));
     assert_eq!(text, expected);
 }
 
 #[test]
 fn file_link_appends_range_when_label_lacks_it() {
-    let text = render_markdown_text_for_cwd(
-        "[markdown_render.rs](/Users/example/code/chaos/chaos/tui/src/markdown_render.rs:74:3-76:9)",
-        Path::new("/Users/example/code/chaos"),
-    );
-    let expected =
-        Text::from(Line::from_iter([accent("chaos/tui/src/markdown_render.rs:74:3-76:9")]));
+    let cwd = Path::new("/Users/example/code/chaos");
+    let dest = "/Users/example/code/chaos/chaos/tui/src/markdown_render.rs:74:3-76:9";
+    let text = render_markdown_text_for_cwd(&format!("[markdown_render.rs]({dest})"), cwd);
+    let url = file_url_for_local_link(dest, Some(cwd)).unwrap();
+    let expected = Text::from(Line::from_iter([linked(
+        accent("chaos/tui/src/markdown_render.rs:74:3-76:9"),
+        &url,
+    )]));
     assert_eq!(text, expected);
 }
 
 #[test]
 fn file_link_uses_target_path_for_range() {
-    let text = render_markdown_text_for_cwd(
-        "[markdown_render.rs:74:3-76:9](/Users/example/code/chaos/chaos/tui/src/markdown_render.rs:74:3-76:9)",
-        Path::new("/Users/example/code/chaos"),
-    );
-    let expected =
-        Text::from(Line::from_iter([accent("chaos/tui/src/markdown_render.rs:74:3-76:9")]));
+    let cwd = Path::new("/Users/example/code/chaos");
+    let dest = "/Users/example/code/chaos/chaos/tui/src/markdown_render.rs:74:3-76:9";
+    let text = render_markdown_text_for_cwd(&format!("[markdown_render.rs:74:3-76:9]({dest})"), cwd);
+    let url = file_url_for_local_link(dest, Some(cwd)).unwrap();
+    let expected = Text::from(Line::from_iter([linked(
+        accent("chaos/tui/src/markdown_render.rs:74:3-76:9"),
+        &url,
+    )]));
     assert_eq!(text, expected);
 }
 
 #[test]
 fn file_link_appends_hash_range_when_label_lacks_it() {
-    let text = render_markdown_text_for_cwd(
-        "[markdown_render.rs](file:///Users/example/code/chaos/chaos/tui/src/markdown_render.rs#L74C3-L76C9)",
-        Path::new("/Users/example/code/chaos"),
-    );
-    let expected =
-        Text::from(Line::from_iter([accent("chaos/tui/src/markdown_render.rs:74:3-76:9")]));
+    let cwd = Path::new("/Users/example/code/chaos");
+    let dest = "file:///Users/example/code/chaos/chaos/tui/src/markdown_render.rs#L74C3-L76C9";
+    let text = render_markdown_text_for_cwd(&format!("[markdown_render.rs]({dest})"), cwd);
+    let url = file_url_for_local_link(dest, Some(cwd)).unwrap();
+    let expected = Text::from(Line::from_iter([linked(
+        accent("chaos/tui/src/markdown_render.rs:74:3-76:9"),
+        &url,
+    )]));
     assert_eq!(text, expected);
 }
 
 #[test]
 fn multiline_file_link_label_after_styled_prefix_does_not_panic() {
+    let cwd = Path::new("/Users/example/code/chaos");
+    let dest = "file:///Users/example/code/chaos/chaos/tui/src/markdown_render.rs#L74C3";
     let text = render_markdown_text_for_cwd(
-        "**bold** plain [foo\nbar](file:///Users/example/code/chaos/chaos/tui/src/markdown_render.rs#L74C3)",
-        Path::new("/Users/example/code/chaos"),
+        &format!("**bold** plain [foo\nbar]({dest})"),
+        cwd,
     );
+    let url = file_url_for_local_link(dest, Some(cwd)).unwrap();
     let expected = Text::from(Line::from_iter([
         "bold".bold(),
         " plain ".into(),
-        accent("chaos/tui/src/markdown_render.rs:74:3"),
+        linked(accent("chaos/tui/src/markdown_render.rs:74:3"), &url),
     ]));
     assert_eq!(text, expected);
 }
 
 #[test]
 fn file_link_uses_target_path_for_hash_range() {
+    let cwd = Path::new("/Users/example/code/chaos");
+    let dest = "file:///Users/example/code/chaos/chaos/tui/src/markdown_render.rs#L74C3-L76C9";
     let text = render_markdown_text_for_cwd(
-        "[markdown_render.rs#L74C3-L76C9](file:///Users/example/code/chaos/chaos/tui/src/markdown_render.rs#L74C3-L76C9)",
-        Path::new("/Users/example/code/chaos"),
+        &format!("[markdown_render.rs#L74C3-L76C9]({dest})"),
+        cwd,
     );
-    let expected =
-        Text::from(Line::from_iter([accent("chaos/tui/src/markdown_render.rs:74:3-76:9")]));
+    let url = file_url_for_local_link(dest, Some(cwd)).unwrap();
+    let expected = Text::from(Line::from_iter([linked(
+        accent("chaos/tui/src/markdown_render.rs:74:3-76:9"),
+        &url,
+    )]));
     assert_eq!(text, expected);
+}
+
+#[test]
+fn file_url_for_local_link_preserves_percent_encoding() {
+    let url = file_url_for_local_link("file:///tmp/My%20File.rs", None).unwrap();
+    assert_eq!(url, "file:///tmp/My%20File.rs");
+}
+
+#[test]
+fn file_url_for_local_link_rejects_windows_drive_paths() {
+    let url = file_url_for_local_link(r"C:\tmp\My File.rs", None);
+    assert_eq!(url, None);
+}
+
+#[test]
+fn file_url_for_local_link_rejects_unc_paths() {
+    let url = file_url_for_local_link(r"\\server\share\My File.rs", None);
+    assert_eq!(url, None);
 }
 
 #[test]
 fn url_link_shows_destination() {
     let text = render_markdown_text("[docs](https://example.com/docs)");
+    let url = "https://example.com/docs";
     let expected = Text::from(Line::from_iter([
-        "docs".into(),
-        " (".into(),
-        accent_link("https://example.com/docs"),
-        ")".into(),
+        linked("docs".into(), url),
+        linked(" (".into(), url),
+        linked(accent_link(url), url),
+        linked(")".into(), url),
     ]));
     assert_eq!(text, expected);
 }

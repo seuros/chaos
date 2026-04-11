@@ -5,6 +5,7 @@
 //! transcripts show the real file target (including normalized location suffixes) and can shorten
 //! absolute paths relative to a known working directory.
 
+use crate::osc8;
 use crate::render::highlight::highlight_code_to_lines;
 use crate::render::line_utils::line_to_static;
 use crate::wrapping::RtOptions;
@@ -19,6 +20,7 @@ use pulldown_cmark::Options;
 use pulldown_cmark::Parser;
 use pulldown_cmark::Tag;
 use pulldown_cmark::TagEnd;
+use ratatui::style::Color;
 use ratatui::style::Style;
 use ratatui::text::Line;
 use ratatui::text::Span;
@@ -173,6 +175,8 @@ where
     indent_stack: Vec<IndentContext>,
     list_indices: Vec<Option<u64>>,
     link: Option<LinkState>,
+    /// OSC 8 sentinel stamped onto spans while a `Tag::Link` is open.
+    active_link_sentinel: Option<Color>,
     needs_newline: bool,
     pending_marker_line: bool,
     in_paragraph: bool,
@@ -203,6 +207,7 @@ where
             indent_stack: Vec::new(),
             list_indices: Vec::new(),
             link: None,
+            active_link_sentinel: None,
             needs_newline: false,
             pending_marker_line: false,
             in_paragraph: false,
@@ -667,13 +672,20 @@ where
 
     fn push_link(&mut self, dest_url: String) {
         let show_destination = should_render_link_destination(&dest_url);
+        let local_target_display = if is_local_path_like_link(&dest_url) {
+            render_local_link_target(&dest_url, self.cwd.as_deref())
+        } else {
+            None
+        };
+        let osc8_url = if is_local_path_like_link(&dest_url) {
+            file_url_for_local_link(&dest_url, self.cwd.as_deref())
+        } else {
+            Some(dest_url.clone())
+        };
+        self.active_link_sentinel = osc8_url.as_deref().map(osc8::register);
         self.link = Some(LinkState {
             show_destination,
-            local_target_display: if is_local_path_like_link(&dest_url) {
-                render_local_link_target(&dest_url, self.cwd.as_deref())
-            } else {
-                None
-            },
+            local_target_display,
             destination: dest_url,
         });
     }
@@ -688,8 +700,6 @@ where
                 if self.pending_marker_line {
                     self.push_line(Line::default());
                 }
-                // Local file links are rendered as code-like path text so the transcript shows the
-                // resolved target instead of arbitrary caller-provided label text.
                 let style = self
                     .inline_styles
                     .last()
@@ -700,6 +710,7 @@ where
                 self.line_ends_with_local_link_target = true;
             }
         }
+        self.active_link_sentinel = None;
     }
 
     fn suppressing_local_link_label(&self) -> bool {
@@ -759,7 +770,12 @@ where
         self.pending_marker_line = false;
     }
 
-    fn push_span(&mut self, span: Span<'static>) {
+    fn push_span(&mut self, mut span: Span<'static>) {
+        if let Some(sentinel) = self.active_link_sentinel
+            && span.style.underline_color.is_none()
+        {
+            span.style.underline_color = Some(sentinel);
+        }
         if let Some(line) = self.current_line_content.as_mut() {
             line.push_span(span);
         } else {
@@ -823,6 +839,37 @@ fn is_local_path_like_link(dest_url: &str) -> bool {
             [drive, b':', separator, ..]
                 if drive.is_ascii_alphabetic() && matches!(separator, b'/' | b'\\')
         )
+}
+
+/// Build an absolute `file://` URL for a local link destination. Location
+/// suffixes (`:42`, `#L42`) are stripped.
+pub(crate) fn file_url_for_local_link(dest_url: &str, cwd: Option<&Path>) -> Option<String> {
+    let (path_text, _location_suffix) = parse_local_link_target(dest_url)?;
+    let absolute_path_text = if path_text.starts_with('/') {
+        path_text
+    } else if path_text.starts_with("~/") {
+        return None;
+    } else if let Some(cwd) = cwd {
+        normalize_local_link_path_text(&cwd.join(&path_text).to_string_lossy())
+    } else {
+        return None;
+    };
+    file_url_from_absolute_local_path_text(&absolute_path_text)
+}
+
+/// Build a valid `file://` URL from an already-absolute POSIX path string.
+///
+/// This uses `url::Url` path setters instead of raw string concatenation so spaces and other
+/// reserved characters are percent-encoded correctly.
+fn file_url_from_absolute_local_path_text(path_text: &str) -> Option<String> {
+    let path_text = normalize_local_link_path_text(path_text);
+    if !path_text.starts_with('/') || path_text.starts_with("//") {
+        return None;
+    }
+
+    let mut url = Url::parse("file:///").ok()?;
+    url.set_path(&path_text);
+    Some(url.into())
 }
 
 /// Parse a local link target into normalized path text plus an optional location suffix.

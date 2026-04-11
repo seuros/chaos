@@ -1,0 +1,17 @@
+[package]
+name = "chaos-init"
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+publish.workspace = true
+
+[lib]
+name = "chaos_init"
+path = "src/lib.rs"
+
+[lints]
+workspace = true
+
+[dependencies]
+chaos-ipc = { workspace = true }
+chaos-kern = { workspace = true }

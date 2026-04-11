@@ -1,0 +1,23 @@
+[package]
+name = "chaos-sysinfo"
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+publish.workspace = true
+
+[lib]
+name = "chaos_sysinfo"
+path = "src/lib.rs"
+
+[lints]
+workspace = true
+
+[dependencies]
+serde = { workspace = true, features = ["derive"] }
+
+[target.'cfg(unix)'.dependencies]
+iana-time-zone = { workspace = true }
+libc = { workspace = true }
+
+[dev-dependencies]
+serde_json = { workspace = true }

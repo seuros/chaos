@@ -3,22 +3,22 @@
 //! Provides a single [`SystemInfo`] struct with OS, hardware, power, and
 //! runtime information gathered once at startup and cached for the lifetime
 //! of the process.  Platform-specific detection lives in separate files
-//! (`sysinfo_linux.rs`, `sysinfo_macos.rs`, `sysinfo_freebsd.rs`) that each
-//! implement the same `detect() -> SystemInfo` entry point.
+//! (`platform_linux.rs`, `platform_macos.rs`, `platform_freebsd.rs`) that
+//! each implement the same `detect() -> SystemInfo` entry point.
 
 use serde::Serialize;
 use std::sync::OnceLock;
 
 #[cfg(target_os = "linux")]
-#[path = "sysinfo_linux.rs"]
+#[path = "platform_linux.rs"]
 mod platform;
 
 #[cfg(target_os = "macos")]
-#[path = "sysinfo_macos.rs"]
+#[path = "platform_macos.rs"]
 mod platform;
 
 #[cfg(target_os = "freebsd")]
-#[path = "sysinfo_freebsd.rs"]
+#[path = "platform_freebsd.rs"]
 mod platform;
 
 // ── Public API ───────────────────────────────────────────────────────
@@ -321,5 +321,5 @@ fn interface_is_network_up(flags: libc::c_uint, family: Option<i32>) -> bool {
 // ── Tests ────────────────────────────────────────────────────────────
 
 #[cfg(test)]
-#[path = "sysinfo_tests.rs"]
+#[path = "tests.rs"]
 mod tests;

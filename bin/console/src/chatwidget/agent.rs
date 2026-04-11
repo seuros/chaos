@@ -1,145 +1,127 @@
+//! Console-side adapter around [`chaos_session::ClientSession`].
+//!
+//! Every function here is a thin bridge: it spawns (or attaches to) a kernel
+//! session via the shared `chaos-session` crate, then forwards the resulting
+//! event stream into the console's [`AppEventSender`] as
+//! [`AppEvent::ChaosEvent`]. No business logic lives in this file — the
+//! canonical SQ/EQ lifecycle is owned by `chaos-session` and shared with
+//! every other chaos frontend (GUI, headless, ...).
+
 use std::sync::Arc;
 
-use chaos_ipc::protocol::Event;
 use chaos_ipc::protocol::EventMsg;
-use chaos_ipc::protocol::Op;
 use chaos_kern::Process;
 use chaos_kern::ProcessTable;
 use chaos_kern::config::Config;
-use tokio::sync::mpsc::UnboundedSender;
-use tokio::sync::mpsc::unbounded_channel;
+use chaos_session::ClientSession;
+use chaos_session::OpForwarder;
+use tokio::sync::mpsc::UnboundedReceiver;
 
 use crate::app_event::AppEvent;
 use crate::app_event_sender::AppEventSender;
 
 const TUI_NOTIFY_CLIENT: &str = "chaos-console";
 
-async fn initialize_app_server_client_name(thread: &Process) {
-    if let Err(err) = thread
-        .set_app_server_client_name(Some(TUI_NOTIFY_CLIENT.to_string()))
-        .await
-    {
-        tracing::error!("failed to set app server client name: {err}");
-    }
-}
-
-/// Spawn the agent bootstrapper and op forwarding loop, returning the
-/// `UnboundedSender<Op>` used by the UI to submit operations.
+/// Spawn a fresh kernel session and forward its event stream into the
+/// console's [`AppEventSender`].
+///
+/// Returns the [`Op`] sender used by the UI to submit user actions. The
+/// first event delivered to `app_event_tx` will be either
+/// [`EventMsg::SessionConfigured`] on a successful boot, or
+/// [`EventMsg::Error`] followed by [`AppEvent::FatalExitRequest`] if the
+/// kernel failed to start.
 pub(crate) fn spawn_agent(
     config: Config,
     app_event_tx: AppEventSender,
     server: Arc<ProcessTable>,
-) -> UnboundedSender<Op> {
-    let (chaos_op_tx, mut chaos_op_rx) = unbounded_channel::<Op>();
-
-    let app_event_tx_clone = app_event_tx;
-    tokio::spawn(async move {
-        let new_process = match server.start_process(config).await {
-            Ok(v) => v,
-            Err(err) => {
-                let message = format!("Failed to initialize chaos: {err}");
-                tracing::error!("{message}");
-                app_event_tx_clone.send(AppEvent::ChaosEvent(Event {
-                    id: "".to_string(),
-                    msg: EventMsg::Error(err.to_error_event(/*message_prefix*/ None)),
-                }));
-                app_event_tx_clone.send(AppEvent::FatalExitRequest(message));
-                tracing::error!("failed to initialize chaos: {err}");
-                return;
-            }
-        };
-        let (_, thread, session_configured) = new_process.into_parts();
-        initialize_app_server_client_name(thread.as_ref()).await;
-
-        // Forward the captured `SessionConfigured` event so it can be rendered in the UI.
-        let ev = chaos_ipc::protocol::Event {
-            // The `id` does not matter for rendering, so we can use a fake value.
-            id: "".to_string(),
-            msg: chaos_ipc::protocol::EventMsg::SessionConfigured(session_configured),
-        };
-        app_event_tx_clone.send(AppEvent::ChaosEvent(ev));
-
-        let process_clone = thread.clone();
-        tokio::spawn(async move {
-            while let Some(op) = chaos_op_rx.recv().await {
-                let id = process_clone.submit(op).await;
-                if let Err(e) = id {
-                    tracing::error!("failed to submit op: {e}");
-                }
-            }
-        });
-
-        while let Ok(event) = thread.next_event().await {
-            let is_shutdown_complete = matches!(event.msg, EventMsg::ShutdownComplete);
-            app_event_tx_clone.send(AppEvent::ChaosEvent(event));
-            if is_shutdown_complete {
-                // ShutdownComplete is terminal for a thread; drop this receiver task so
-                // the Arc<Process> can be released and thread resources can clean up.
-                break;
-            }
-        }
-    });
-
-    chaos_op_tx
+) -> OpForwarder {
+    let session = ClientSession::spawn(config, server, Some(TUI_NOTIFY_CLIENT.to_string()));
+    let ClientSession { op_tx, event_rx } = session;
+    spawn_event_bridge(event_rx, app_event_tx, BridgeMode::EmitFatalOnBootError);
+    // Session-backed path: the ClientSession's own DropGuard already
+    // manages the drain task, so wrap in a no-op OpForwarder for type
+    // uniformity with the #18 forwarder path.
+    OpForwarder::from_sender(op_tx)
 }
 
-/// Spawn agent loops for an existing process (e.g., a forked process).
-/// Sends the provided `SessionConfiguredEvent` immediately, then forwards subsequent
-/// events and accepts Ops for submission.
+/// Attach to an existing kernel [`Process`] (e.g. after a fork or session
+/// resume) and forward its event stream into the console's [`AppEventSender`].
+///
+/// The caller supplies the captured [`SessionConfiguredEvent`] that the
+/// kernel emitted at boot time; `chaos-session` replays it as the first
+/// event before pumping subsequent events.
 pub(crate) fn spawn_agent_from_existing(
-    thread: std::sync::Arc<Process>,
+    thread: Arc<Process>,
     session_configured: chaos_ipc::protocol::SessionConfiguredEvent,
     app_event_tx: AppEventSender,
-) -> UnboundedSender<Op> {
-    let (chaos_op_tx, mut chaos_op_rx) = unbounded_channel::<Op>();
+) -> OpForwarder {
+    let session = ClientSession::attach(
+        thread,
+        session_configured,
+        Some(TUI_NOTIFY_CLIENT.to_string()),
+    );
+    let ClientSession { op_tx, event_rx } = session;
+    spawn_event_bridge(event_rx, app_event_tx, BridgeMode::Quiet);
+    OpForwarder::from_sender(op_tx)
+}
 
-    let app_event_tx_clone = app_event_tx;
+/// Spawn an op-forwarding loop for an existing [`Process`] without
+/// subscribing to its event stream.
+///
+/// Used by callers that already own the event stream (for example, a
+/// forked process whose events are drained by another task). The returned
+/// [`OpForwarder`] owns a drop guard on the drain task's cancellation
+/// token — dropping it (or replacing the [`crate::chatwidget::ChatWidget`]
+/// that holds it during process switches) tears down the drain task and
+/// releases the kernel `Arc<Process>`.
+pub(crate) fn spawn_op_forwarder(thread: Arc<Process>) -> OpForwarder {
+    chaos_session::spawn_op_forwarder(thread, Some(TUI_NOTIFY_CLIENT.to_string()))
+}
+
+/// How the event bridge should handle a boot-time [`EventMsg::Error`] from
+/// the kernel.
+#[derive(Clone, Copy)]
+enum BridgeMode {
+    /// If the first event is an Error (i.e. `ProcessTable::start_process`
+    /// failed), forward it to the UI and additionally emit a
+    /// [`AppEvent::FatalExitRequest`]. Used for cold starts.
+    EmitFatalOnBootError,
+    /// Forward events as-is and never synthesise a fatal exit request. Used
+    /// for warm attaches where the kernel process is already alive.
+    Quiet,
+}
+
+/// Spawn the background task that drains a `ClientSession` event receiver
+/// into the console's [`AppEventSender`], applying the given [`BridgeMode`]
+/// for boot-time errors.
+fn spawn_event_bridge(
+    mut event_rx: UnboundedReceiver<chaos_ipc::protocol::Event>,
+    app_event_tx: AppEventSender,
+    mode: BridgeMode,
+) {
     tokio::spawn(async move {
-        initialize_app_server_client_name(thread.as_ref()).await;
+        let mut seen_first = false;
+        while let Some(event) = event_rx.recv().await {
+            let is_boot_error = !seen_first && matches!(event.msg, EventMsg::Error(_));
+            seen_first = true;
 
-        // Forward the captured `SessionConfigured` event so it can be rendered in the UI.
-        let ev = chaos_ipc::protocol::Event {
-            id: "".to_string(),
-            msg: chaos_ipc::protocol::EventMsg::SessionConfigured(session_configured),
-        };
-        app_event_tx_clone.send(AppEvent::ChaosEvent(ev));
-
-        let process_clone = thread.clone();
-        tokio::spawn(async move {
-            while let Some(op) = chaos_op_rx.recv().await {
-                let id = process_clone.submit(op).await;
-                if let Err(e) = id {
-                    tracing::error!("failed to submit op: {e}");
-                }
+            if is_boot_error && matches!(mode, BridgeMode::EmitFatalOnBootError) {
+                // Capture a human-readable summary before moving the event.
+                let message = match &event.msg {
+                    EventMsg::Error(err) => format!("Failed to initialize chaos: {}", err.message),
+                    _ => "Failed to initialize chaos".to_string(),
+                };
+                tracing::error!("{message}");
+                app_event_tx.send(AppEvent::ChaosEvent(event));
+                app_event_tx.send(AppEvent::FatalExitRequest(message));
+                return;
             }
-        });
 
-        while let Ok(event) = thread.next_event().await {
-            let is_shutdown_complete = matches!(event.msg, EventMsg::ShutdownComplete);
-            app_event_tx_clone.send(AppEvent::ChaosEvent(event));
-            if is_shutdown_complete {
-                // ShutdownComplete is terminal for a thread; drop this receiver task so
-                // the Arc<Process> can be released and thread resources can clean up.
+            let is_shutdown = matches!(event.msg, EventMsg::ShutdownComplete);
+            app_event_tx.send(AppEvent::ChaosEvent(event));
+            if is_shutdown {
                 break;
             }
         }
     });
-
-    chaos_op_tx
-}
-
-/// Spawn an op-forwarding loop for an existing process without subscribing to events.
-pub(crate) fn spawn_op_forwarder(thread: std::sync::Arc<Process>) -> UnboundedSender<Op> {
-    let (chaos_op_tx, mut chaos_op_rx) = unbounded_channel::<Op>();
-
-    tokio::spawn(async move {
-        initialize_app_server_client_name(thread.as_ref()).await;
-        while let Some(op) = chaos_op_rx.recv().await {
-            if let Err(e) = thread.submit(op).await {
-                tracing::error!("failed to submit op: {e}");
-            }
-        }
-    });
-
-    chaos_op_tx
 }

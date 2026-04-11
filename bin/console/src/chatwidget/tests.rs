@@ -1789,7 +1789,7 @@ async fn make_chatwidget_manual(
     let active_collaboration_mask = collaboration_modes::default_mask(models_manager.as_ref());
     let mut widget = ChatWidget {
         app_event_tx,
-        chaos_op_tx: op_tx,
+        chaos_op_tx: chaos_session::OpForwarder::from_sender(op_tx),
         bottom_pane: bottom,
         active_cell: None,
         active_cell_revision: 0,

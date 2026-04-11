@@ -1,3 +1,9 @@
+// mimalloc reclaims per-thread arenas faster than glibc's default malloc, which
+// keeps RSS flatter during long model streams where Chaos allocates and frees
+// millions of small buffers per conversation turn.
+#[global_allocator]
+static GLOBAL: mimalloc::MiMalloc = mimalloc::MiMalloc;
+
 use chaos_argv::Arg0DispatchPaths;
 use chaos_argv::arg0_dispatch_or_else;
 use chaos_boot::login::read_api_key_from_stdin;

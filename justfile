@@ -5,10 +5,18 @@ set positional-arguments
 help:
     just -l
 
-# Run chaos
+# Run chaos (debug build)
 alias c := chaos
 chaos *args:
     cargo run --bin chaos -- {{args}}
+
+# Run chaos with max optimization: release profile (fat LTO, single
+# codegen unit, stripped symbols) plus `-C target-cpu=native` so the
+# build uses every SIMD extension the local CPU advertises. Unix-only
+# project, so portable codegen is wasted on a daily-driver binary.
+alias b := bigbang
+bigbang *args:
+    RUSTFLAGS="-C target-cpu=native" cargo run --release --bin chaos -- {{args}}
 
 # Format code
 fmt:

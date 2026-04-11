@@ -33,6 +33,7 @@ chaos-ipc = { workspace = true }
 chaos-console = { workspace = true }
 rama = { workspace = true }
 libc = { workspace = true }
+mimalloc = { workspace = true }
 owo-colors = { workspace = true }
 regex-lite = { workspace = true }
 serde_json = { workspace = true }

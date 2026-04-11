@@ -39,6 +39,7 @@ chaos-traits = { workspace = true }
 chaos-watchdog = { workspace = true }
 chaos-epoll = { workspace = true }
 codex-client = { workspace = true }
+chaos-services = { workspace = true }
 chaos-sysctl = { workspace = true }
 chaos-sh = { workspace = true }
 chaos-selinux = { workspace = true }

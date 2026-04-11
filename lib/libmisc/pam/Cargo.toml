@@ -12,6 +12,7 @@ workspace = true
 base64 = { workspace = true }
 codex-client = { workspace = true }
 chaos-kern = { workspace = true }
+chaos-services = { workspace = true }
 chaos-ipc = { workspace = true }
 http = { workspace = true }
 jiff = { workspace = true }

@@ -2203,8 +2203,8 @@ async fn rate_limit_snapshots_keep_separate_entries_per_limit_id() {
     }));
 
     chat.on_rate_limit_snapshot(Some(RateLimitSnapshot {
-        limit_id: Some("codex_other".to_string()),
-        limit_name: Some("codex_other".to_string()),
+        limit_id: Some("chaos_other".to_string()),
+        limit_name: Some("chaos_other".to_string()),
         primary: Some(RateLimitWindow {
             used_percent: 90.0,
             window_minutes: Some(60),
@@ -2221,7 +2221,7 @@ async fn rate_limit_snapshots_keep_separate_entries_per_limit_id() {
         .expect("chaos snapshot should exist");
     let other = chat
         .rate_limit_snapshots_by_limit_id
-        .get("codex_other")
+        .get("chaos_other")
         .expect("chaos_other snapshot should exist");
 
     assert_eq!(chaos.primary.as_ref().map(|w| w.used_percent), Some(20.0));
@@ -2258,8 +2258,8 @@ async fn rate_limit_switch_prompt_skips_non_codex_limit() {
     chat.auth_manager = chaos_kern::test_support::auth_manager_from_auth(auth);
 
     chat.on_rate_limit_snapshot(Some(RateLimitSnapshot {
-        limit_id: Some("codex_other".to_string()),
-        limit_name: Some("codex_other".to_string()),
+        limit_id: Some("chaos_other".to_string()),
+        limit_name: Some("chaos_other".to_string()),
         primary: Some(RateLimitWindow {
             used_percent: 95.0,
             window_minutes: Some(60),

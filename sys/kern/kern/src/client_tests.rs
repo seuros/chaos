@@ -40,7 +40,7 @@ fn test_model_client(session_source: SessionSource) -> ModelClient {
 fn test_anthropic_provider() -> crate::model_provider_info::ModelProviderInfo {
     crate::model_provider_info::ModelProviderInfo {
         name: "anthropic".into(),
-        base_url: Some("https://api.anthropic.com/v1".into()),
+        base_url: Some(chaos_services::anthropic::API_BASE.into()),
         env_key: None,
         env_key_instructions: None,
         experimental_bearer_token: None,

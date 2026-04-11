@@ -889,7 +889,10 @@ pub struct WarningEvent {
 #[serde(rename_all = "snake_case")]
 #[ts(rename_all = "snake_case")]
 pub enum ModelRerouteReason {
-    HighRiskCyberActivity,
+    /// Upstream provider silently substituted a different model than the
+    /// one requested. Vendor-agnostic: covers OpenAI abuse heuristics,
+    /// TensorZero routing rules, Anthropic fallbacks, etc.
+    VendorDeclinedSelection,
 }
 
 #[derive(Debug, Clone, Deserialize, Serialize, PartialEq, Eq, JsonSchema, TS)]

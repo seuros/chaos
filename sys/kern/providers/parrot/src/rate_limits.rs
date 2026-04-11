@@ -308,8 +308,8 @@ mod tests {
         );
 
         let snapshot =
-            parse_rate_limit_for_limit(&headers, Some("codex_secondary")).expect("snapshot");
-        assert_eq!(snapshot.limit_id.as_deref(), Some("codex_secondary"));
+            parse_rate_limit_for_limit(&headers, Some("chaos_secondary")).expect("snapshot");
+        assert_eq!(snapshot.limit_id.as_deref(), Some("chaos_secondary"));
         assert_eq!(snapshot.limit_name, None);
         let primary = snapshot.primary.expect("primary");
         assert_eq!(primary.used_percent, 80.0);
@@ -331,8 +331,8 @@ mod tests {
         );
 
         let snapshot =
-            parse_rate_limit_for_limit(&headers, Some("codex_bengalfox")).expect("snapshot");
-        assert_eq!(snapshot.limit_id.as_deref(), Some("codex_bengalfox"));
+            parse_rate_limit_for_limit(&headers, Some("chaos_bengalfox")).expect("snapshot");
+        assert_eq!(snapshot.limit_id.as_deref(), Some("chaos_bengalfox"));
         assert_eq!(snapshot.limit_name.as_deref(), Some("gpt-5.2-codex-sonic"));
     }
 
@@ -351,7 +351,7 @@ mod tests {
         let updates = parse_all_rate_limits(&headers);
         assert_eq!(updates.len(), 2);
         assert_eq!(updates[0].limit_id.as_deref(), Some("chaos"));
-        assert_eq!(updates[1].limit_id.as_deref(), Some("codex_secondary"));
+        assert_eq!(updates[1].limit_id.as_deref(), Some("chaos_secondary"));
         assert_eq!(updates[0].limit_name, None);
         assert_eq!(updates[1].limit_name, None);
     }

@@ -24,7 +24,11 @@ async fn request_body_is_zstd_compressed_for_codex_backend_when_enabled() -> any
     )
     .await;
 
-    let base_url = format!("{}/backend-api/chaos/v1", server.uri());
+    let base_url = format!(
+        "{}{}",
+        server.uri(),
+        chaos_services::openai::CHATGPT_BACKEND_PATH
+    );
     let mut builder = test_chaos()
         .with_auth(ChaosAuth::create_dummy_chatgpt_auth_for_testing())
         .with_config(move |config| {
@@ -69,7 +73,11 @@ async fn request_body_is_not_compressed_for_api_key_auth_even_when_enabled() -> 
     )
     .await;
 
-    let base_url = format!("{}/backend-api/chaos/v1", server.uri());
+    let base_url = format!(
+        "{}{}",
+        server.uri(),
+        chaos_services::openai::CHATGPT_BACKEND_PATH
+    );
     let mut builder = test_chaos().with_config(move |config| {
         config.model_provider.base_url = Some(base_url);
     });

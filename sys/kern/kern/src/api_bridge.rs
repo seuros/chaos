@@ -3,7 +3,6 @@ use chaos_abi::AbiError;
 use chaos_parrot::AuthProvider as ApiAuthProvider;
 use chaos_parrot::TransportError;
 use chaos_parrot::error::ApiError;
-use chaos_parrot::rate_limits::parse_promo_message;
 use chaos_parrot::rate_limits::parse_rate_limit_for_limit;
 use http::HeaderMap;
 use jiff::Timestamp;
@@ -16,13 +15,12 @@ use crate::error::RetryLimitReachedError;
 use crate::error::UnexpectedResponseError;
 use crate::error::UsageLimitReachedError;
 use crate::model_provider_info::ModelProviderInfo;
-use crate::token_data::PlanType;
 
 pub(crate) fn map_api_error(err: ApiError) -> ChaosErr {
     match err {
         ApiError::ContextWindowExceeded => ChaosErr::ContextWindowExceeded,
         ApiError::QuotaExceeded => ChaosErr::QuotaExceeded,
-        ApiError::UsageNotIncluded => ChaosErr::UsageNotIncluded,
+        ApiError::UsageNotIncluded => ChaosErr::QuotaExceeded,
         ApiError::Retryable { message, delay } => ChaosErr::Stream(message, delay),
         ApiError::Stream(msg) => ChaosErr::Stream(msg, None),
         ApiError::ServerOverloaded => ChaosErr::ServerOverloaded,
@@ -75,19 +73,16 @@ pub(crate) fn map_api_error(err: ApiError) -> ChaosErr {
                             let rate_limits = headers.as_ref().and_then(|map| {
                                 parse_rate_limit_for_limit(map, limit_id.as_deref())
                             });
-                            let promo_message = headers.as_ref().and_then(parse_promo_message);
                             let resets_at = err
                                 .error
                                 .resets_at
                                 .and_then(|seconds| Timestamp::from_second(seconds).ok());
                             return ChaosErr::UsageLimitReached(UsageLimitReachedError {
-                                plan_type: err.error.plan_type,
                                 resets_at,
                                 rate_limits: rate_limits.map(Box::new),
-                                promo_message,
                             });
                         } else if err.error.error_type.as_deref() == Some("usage_not_included") {
-                            return ChaosErr::UsageNotIncluded;
+                            return ChaosErr::QuotaExceeded;
                         }
                     }
 
@@ -224,7 +219,6 @@ struct UsageErrorResponse {
 struct UsageErrorBody {
     #[serde(rename = "type")]
     error_type: Option<String>,
-    plan_type: Option<PlanType>,
     resets_at: Option<i64>,
 }
 

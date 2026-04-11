@@ -60,7 +60,7 @@ async fn openai_model_header_mismatch_emits_warning_event_and_warning_item() -> 
     };
     assert_eq!(reroute.from_model, REQUESTED_MODEL);
     assert_eq!(reroute.to_model, SERVER_MODEL);
-    assert_eq!(reroute.reason, ModelRerouteReason::HighRiskCyberActivity);
+    assert_eq!(reroute.reason, ModelRerouteReason::VendorDeclinedSelection);
 
     let warning =
         wait_for_event(&test.process, |event| matches!(event, EventMsg::Warning(_))).await;
@@ -159,7 +159,7 @@ async fn response_model_field_mismatch_emits_warning_when_header_matches_request
     };
     assert_eq!(reroute.from_model, REQUESTED_MODEL);
     assert_eq!(reroute.to_model, SERVER_MODEL);
-    assert_eq!(reroute.reason, ModelRerouteReason::HighRiskCyberActivity);
+    assert_eq!(reroute.reason, ModelRerouteReason::VendorDeclinedSelection);
 
     let warning = wait_for_event(&test.process, |event| {
         matches!(
@@ -167,7 +167,7 @@ async fn response_model_field_mismatch_emits_warning_when_header_matches_request
             EventMsg::Warning(warning)
                 if warning
                     .message
-                    .contains("flagged for potentially high-risk cyber activity")
+                    .contains("did not honor your model selection")
         )
     })
     .await;

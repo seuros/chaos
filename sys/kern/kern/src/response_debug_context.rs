@@ -109,7 +109,7 @@ mod tests {
 
         let context = extract_response_debug_context(&TransportError::Http {
             status: StatusCode::UNAUTHORIZED,
-            url: Some("https://chatgpt.com/backend-api/chaos/models".to_string()),
+            url: Some(chaos_services::openai::CHATGPT_MODELS_URL.to_string()),
             headers: Some(headers),
             body: Some(r#"{"error":{"message":"plain text error"},"status":401}"#.to_string()),
         });
@@ -129,7 +129,7 @@ mod tests {
     fn telemetry_error_messages_omit_http_bodies() {
         let transport = TransportError::Http {
             status: StatusCode::UNAUTHORIZED,
-            url: Some("https://chatgpt.com/backend-api/chaos/responses".to_string()),
+            url: Some(chaos_services::openai::CHATGPT_RESPONSES_URL.to_string()),
             headers: None,
             body: Some(r#"{"error":{"message":"secret token leaked"}}"#.to_string()),
         };

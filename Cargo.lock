@@ -958,6 +958,7 @@ dependencies = [
  "chaos-pty",
  "chaos-pwd",
  "chaos-realpath",
+ "chaos-services",
  "chaos-sh",
  "chaos-sudoers",
  "chaos-syslog",
@@ -1331,6 +1332,7 @@ dependencies = [
  "chaos-realpath",
  "chaos-scm",
  "chaos-selinux",
+ "chaos-services",
  "chaos-sh",
  "chaos-storage",
  "chaos-sysctl",
@@ -1507,6 +1509,7 @@ dependencies = [
  "base64 0.22.1",
  "chaos-ipc",
  "chaos-kern",
+ "chaos-services",
  "codex-client",
  "core_test_support",
  "http",
@@ -1541,6 +1544,7 @@ dependencies = [
  "bytes",
  "chaos-abi",
  "chaos-ipc",
+ "chaos-services",
  "codex-client",
  "futures",
  "http",
@@ -1698,6 +1702,10 @@ dependencies = [
  "tempfile",
  "thiserror 2.0.18",
 ]
+
+[[package]]
+name = "chaos-services"
+version = "47.0.0"
 
 [[package]]
 name = "chaos-sh"

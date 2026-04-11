@@ -43,8 +43,6 @@ use super::rate_limits::compose_rate_limit_data;
 use super::rate_limits::compose_rate_limit_data_many;
 use super::rate_limits::format_status_limit_summary;
 use super::rate_limits::render_status_limit_progress_bar;
-use crate::wrapping::RtOptions;
-use crate::wrapping::adaptive_wrap_lines;
 use chaos_kern::AuthManager;
 
 #[derive(Debug, Clone)]
@@ -506,22 +504,6 @@ impl HistoryCell for StatusHistoryCell {
                     }
                 }
             }
-        } else {
-            let note_first_line = Line::from(vec![
-                Span::from("Visit ").cyan(),
-                "https://chatgpt.com/codex/settings/usage"
-                    .cyan()
-                    .underlined(),
-                Span::from(" for up-to-date").cyan(),
-            ]);
-            let note_second_line = Line::from(vec![
-                Span::from("information on rate limits and credits").cyan(),
-            ]);
-            let note_lines = adaptive_wrap_lines(
-                [note_first_line, note_second_line],
-                RtOptions::new(available_inner_width),
-            );
-            lines.extend(note_lines);
         }
         lines.push(Line::from(Vec::<Span<'static>>::new()));
 

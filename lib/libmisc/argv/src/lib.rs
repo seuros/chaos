@@ -16,6 +16,15 @@ const MISSPELLED_APPLY_PATCH_ARG0: &str = "applypatch";
 const EXECVE_WRAPPER_ARG0: &str = "chaos-execve-wrapper";
 const LOCK_FILENAME: &str = ".lock";
 const TOKIO_WORKER_STACK_SIZE_BYTES: usize = 16 * 1024 * 1024;
+/// Upper bound on tokio worker threads.
+///
+/// Chaos is I/O-bound (network + IPC). Past ~4 workers we just spin up more
+/// threads that sit parked on the same `epoll_wait`, so the default of one
+/// worker per core is throughput theater. Four covers the hot tasks a normal
+/// conversation juggles — model stream, IPC, a tool invocation or two — and
+/// bumping it later is a one-line change if concurrent agent subtasks ever
+/// start starving. On `falcon` with its ≤ 4 vCPUs this is a no-op.
+const TOKIO_WORKER_THREADS_CAP: usize = 4;
 
 #[derive(Clone, Debug, Default, Eq, PartialEq)]
 pub struct Arg0DispatchPaths {
@@ -201,6 +210,11 @@ fn build_runtime() -> anyhow::Result<tokio::runtime::Runtime> {
     let mut builder = tokio::runtime::Builder::new_multi_thread();
     builder.enable_all();
     builder.thread_stack_size(TOKIO_WORKER_STACK_SIZE_BYTES);
+    let workers = std::thread::available_parallelism()
+        .map(std::num::NonZeroUsize::get)
+        .unwrap_or(1)
+        .clamp(1, TOKIO_WORKER_THREADS_CAP);
+    builder.worker_threads(workers);
     Ok(builder.build()?)
 }
 

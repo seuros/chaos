@@ -260,6 +260,7 @@ libc = "0.2.183"
 log = "0.4"
 lru = "0.16.3"
 mime_guess = "2.0.5"
+mimalloc = { version = "0.1", default-features = false }
 mlua = { version = "0.11", features = ["lua54", "vendored", "async", "serialize", "send"] }
 multimap = "0.10.1"
 notify = "8.2.0"
@@ -433,10 +434,17 @@ ignored = [
 ]
 
 [profile.release]
-lto = "fat"
+# ThinLTO keeps ~95% of the runtime win of FatLTO on chaos's workload
+# (I/O-bound: tokio + rustls + model streaming + IPC, with hot CPU work
+# already inside opt-level=3 crates like serde_json / tree-sitter / rustls).
+# FatLTO + codegen-units=1 cost ~5 min of serial linking on a 20-core box
+# for <1% end-to-end gain — pure build-time theater for this codebase.
+# 8 codegen units unlock parallel linking while leaving headroom for
+# cross-unit optimization.
+lto = "thin"
 split-debuginfo = "off"
 strip = "symbols"
-codegen-units = 1
+codegen-units = 8
 
 [profile.ci-test]
 debug = 1         # Reduce debug symbol size

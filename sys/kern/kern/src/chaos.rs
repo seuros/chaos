@@ -1366,9 +1366,29 @@ impl Session {
         }
 
         let auth = auth.as_ref();
-        let auth_mode = auth.map(ChaosAuth::auth_mode).map(TelemetryAuthMode::from);
-        let account_id = auth.and_then(ChaosAuth::get_account_id);
-        let account_email = auth.and_then(ChaosAuth::get_account_email);
+        // Self-authenticated providers (xAI, DeepSeek, Mistral, etc.) use
+        // `env_key` and never touch the cached ChatGPT login. Reporting
+        // the global auth mode on those sessions leaks ChatGPT account
+        // identity into telemetry for requests that were actually signed
+        // with a third-party API key. Gate on `requires_openai_auth`:
+        // only surface the cached auth when the active provider is the
+        // one that owns it.
+        let provider_owns_auth = session_configuration.provider.requires_openai_auth;
+        let auth_mode = if provider_owns_auth {
+            auth.map(ChaosAuth::auth_mode).map(TelemetryAuthMode::from)
+        } else {
+            Some(TelemetryAuthMode::ApiKey)
+        };
+        let account_id = if provider_owns_auth {
+            auth.and_then(ChaosAuth::get_account_id)
+        } else {
+            None
+        };
+        let account_email = if provider_owns_auth {
+            auth.and_then(ChaosAuth::get_account_email)
+        } else {
+            None
+        };
         let originator = crate::default_client::originator().value;
         let terminal_type = terminal::user_agent();
         let session_model = session_configuration.collaboration_mode.model().to_string();

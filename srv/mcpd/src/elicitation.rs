@@ -331,51 +331,50 @@ mod tests {
     }
 
     #[test]
-    fn forwarded_form_elicitation_preserves_meta_and_schema() {
-        let request = ElicitationRequest::Form {
-            meta: Some(serde_json::json!({ "source": "inner-server" })),
-            message: "Need confirmation".to_string(),
-            requested_schema: serde_json::json!({
-                "type": "object",
-                "properties": {
-                    "confirmed": { "type": "boolean" }
-                }
-            }),
-        };
-
-        assert_eq!(
-            ForwardedElicitationRequestParams::from_protocol_request(&request),
-            ForwardedElicitationRequestParams::Form {
-                meta: Some(serde_json::json!({ "source": "inner-server" })),
-                message: "Need confirmation".to_string(),
-                requested_schema: serde_json::json!({
-                    "type": "object",
-                    "properties": {
-                        "confirmed": { "type": "boolean" }
-                    }
-                }),
-            }
-        );
-    }
-
-    #[test]
-    fn forwarded_url_elicitation_preserves_url_fields() {
-        let request = ElicitationRequest::Url {
-            meta: Some(serde_json::json!({ "flow": "oauth" })),
-            message: "Complete sign-in".to_string(),
-            url: "https://example.test/connect".to_string(),
-            elicitation_id: "elicit-123".to_string(),
-        };
-
-        assert_eq!(
-            ForwardedElicitationRequestParams::from_protocol_request(&request),
-            ForwardedElicitationRequestParams::Url {
-                meta: Some(serde_json::json!({ "flow": "oauth" })),
-                message: "Complete sign-in".to_string(),
-                url: "https://example.test/connect".to_string(),
-                elicitation_id: "elicit-123".to_string(),
-            }
-        );
+    fn forwarded_elicitation_preserves_request_fields() {
+        for (request, expected) in [
+            (
+                ElicitationRequest::Form {
+                    meta: Some(serde_json::json!({ "source": "inner-server" })),
+                    message: "Need confirmation".to_string(),
+                    requested_schema: serde_json::json!({
+                        "type": "object",
+                        "properties": {
+                            "confirmed": { "type": "boolean" }
+                        }
+                    }),
+                },
+                ForwardedElicitationRequestParams::Form {
+                    meta: Some(serde_json::json!({ "source": "inner-server" })),
+                    message: "Need confirmation".to_string(),
+                    requested_schema: serde_json::json!({
+                        "type": "object",
+                        "properties": {
+                            "confirmed": { "type": "boolean" }
+                        }
+                    }),
+                },
+            ),
+            (
+                ElicitationRequest::Url {
+                    meta: Some(serde_json::json!({ "flow": "oauth" })),
+                    message: "Complete sign-in".to_string(),
+                    url: "https://example.test/connect".to_string(),
+                    elicitation_id: "elicit-123".to_string(),
+                },
+                ForwardedElicitationRequestParams::Url {
+                    meta: Some(serde_json::json!({ "flow": "oauth" })),
+                    message: "Complete sign-in".to_string(),
+                    url: "https://example.test/connect".to_string(),
+                    elicitation_id: "elicit-123".to_string(),
+                },
+            ),
+        ] {
+            assert_eq!(
+                ForwardedElicitationRequestParams::from_protocol_request(&request),
+                expected
+            );
+        }
     }
 
     #[test]

@@ -821,7 +821,10 @@ fn assert_model_tools(
         .iter()
         .map(ToolSpec::name)
         .collect::<Vec<_>>();
-    assert_eq!(&tool_names, &expected_tools,);
+    assert_eq!(
+        &tool_names, &expected_tools,
+        "model_slug={model_slug}, web_search_mode={web_search_mode:?}"
+    );
 }
 
 fn assert_default_model_tools(
@@ -835,6 +838,103 @@ fn assert_default_model_tools(
     let mut expected = vec!["exec_command", "write_stdin"];
     expected.extend(expected_tail);
     assert_model_tools(model_slug, features, web_search_mode, &expected);
+}
+
+const GPT_5_DEFAULT_TOOL_TAIL: &[&str] = &[
+    "update_plan",
+    "request_user_input",
+    "read_file",
+    "grep_files",
+    "list_dir",
+    "cron_create",
+    "cron_toggle",
+    "git_diff",
+    "git_log",
+    "git_show",
+    "git_blame",
+    "git_repo",
+    "git_status",
+    "git_branches",
+    "git_remotes",
+    "mcp_add_server",
+    "mcp_server",
+    "web_search",
+    "view_image",
+    "spawn_agent",
+    "send_input",
+    "resume_agent",
+    "wait_agent",
+    "close_agent",
+];
+
+const GPT_5_1_TOOL_TAIL: &[&str] = &[
+    "update_plan",
+    "request_user_input",
+    "apply_patch",
+    "read_file",
+    "grep_files",
+    "list_dir",
+    "cron_create",
+    "cron_toggle",
+    "git_diff",
+    "git_log",
+    "git_show",
+    "git_blame",
+    "git_repo",
+    "git_status",
+    "git_branches",
+    "git_remotes",
+    "mcp_add_server",
+    "mcp_server",
+    "web_search",
+    "view_image",
+    "spawn_agent",
+    "send_input",
+    "resume_agent",
+    "wait_agent",
+    "close_agent",
+];
+
+#[derive(Clone, Copy)]
+struct DefaultModelToolCase {
+    model_slug: &'static str,
+    shell_tool: &'static str,
+    expected_tail: &'static [&'static str],
+}
+
+fn assert_default_model_tool_cases(cases: &[DefaultModelToolCase]) {
+    let features = Features::with_defaults();
+
+    for case in cases {
+        assert_default_model_tools(
+            case.model_slug,
+            &features,
+            Some(WebSearchMode::Cached),
+            case.shell_tool,
+            case.expected_tail,
+        );
+    }
+}
+
+#[derive(Clone, Copy)]
+struct UnifiedExecWebSearchModelToolCase {
+    model_slug: &'static str,
+    expected_tail: &'static [&'static str],
+}
+
+fn assert_unified_exec_web_search_model_tool_cases(cases: &[UnifiedExecWebSearchModelToolCase]) {
+    let features = Features::with_defaults();
+
+    for case in cases {
+        let mut expected = vec!["exec_command", "write_stdin"];
+        expected.extend_from_slice(case.expected_tail);
+        assert_model_tools(
+            case.model_slug,
+            &features,
+            Some(WebSearchMode::Live),
+            &expected,
+        );
+    }
 }
 
 #[test]
@@ -1068,350 +1168,57 @@ fn spawn_agent_tool_description_uses_current_role_names() {
 }
 
 #[test]
-fn test_build_specs_gpt5_codex_default() {
-    let features = Features::with_defaults();
-    assert_default_model_tools(
-        "gpt-5-codex",
-        &features,
-        Some(WebSearchMode::Cached),
-        "shell_command",
-        &[
-            "update_plan",
-            "request_user_input",
-            "apply_patch",
-            "read_file",
-            "grep_files",
-            "list_dir",
-            "cron_create",
-            "cron_toggle",
-            "git_diff",
-            "git_log",
-            "git_show",
-            "git_blame",
-            "git_repo",
-            "git_status",
-            "git_branches",
-            "git_remotes",
-            "mcp_add_server",
-            "mcp_server",
-            "web_search",
-            "view_image",
-            "spawn_agent",
-            "send_input",
-            "resume_agent",
-            "wait_agent",
-            "close_agent",
-        ],
-    );
+fn test_build_specs_gpt_default_toolsets() {
+    assert_default_model_tool_cases(&[
+        DefaultModelToolCase {
+            model_slug: "gpt-5-codex",
+            shell_tool: "shell_command",
+            expected_tail: GPT_5_1_TOOL_TAIL,
+        },
+        DefaultModelToolCase {
+            model_slug: "gpt-5.1-codex",
+            shell_tool: "shell_command",
+            expected_tail: GPT_5_1_TOOL_TAIL,
+        },
+        DefaultModelToolCase {
+            model_slug: "gpt-5.1-codex-max",
+            shell_tool: "shell_command",
+            expected_tail: GPT_5_1_TOOL_TAIL,
+        },
+        DefaultModelToolCase {
+            model_slug: "gpt-5.1-codex-mini",
+            shell_tool: "shell_command",
+            expected_tail: GPT_5_1_TOOL_TAIL,
+        },
+        DefaultModelToolCase {
+            model_slug: "gpt-5",
+            shell_tool: "shell",
+            expected_tail: GPT_5_DEFAULT_TOOL_TAIL,
+        },
+        DefaultModelToolCase {
+            model_slug: "gpt-5.1",
+            shell_tool: "shell_command",
+            expected_tail: GPT_5_1_TOOL_TAIL,
+        },
+    ]);
 }
 
 #[test]
-fn test_build_specs_gpt51_codex_default() {
-    let features = Features::with_defaults();
-    assert_default_model_tools(
-        "gpt-5.1-codex",
-        &features,
-        Some(WebSearchMode::Cached),
-        "shell_command",
-        &[
-            "update_plan",
-            "request_user_input",
-            "apply_patch",
-            "read_file",
-            "grep_files",
-            "list_dir",
-            "cron_create",
-            "cron_toggle",
-            "git_diff",
-            "git_log",
-            "git_show",
-            "git_blame",
-            "git_repo",
-            "git_status",
-            "git_branches",
-            "git_remotes",
-            "mcp_add_server",
-            "mcp_server",
-            "web_search",
-            "view_image",
-            "spawn_agent",
-            "send_input",
-            "resume_agent",
-            "wait_agent",
-            "close_agent",
-        ],
-    );
-}
-
-#[test]
-fn test_build_specs_gpt5_codex_unified_exec_web_search() {
-    let features = Features::with_defaults();
-
-    assert_model_tools(
-        "gpt-5-codex",
-        &features,
-        Some(WebSearchMode::Live),
-        &[
-            "exec_command",
-            "write_stdin",
-            "update_plan",
-            "request_user_input",
-            "apply_patch",
-            "read_file",
-            "grep_files",
-            "list_dir",
-            "cron_create",
-            "cron_toggle",
-            "git_diff",
-            "git_log",
-            "git_show",
-            "git_blame",
-            "git_repo",
-            "git_status",
-            "git_branches",
-            "git_remotes",
-            "mcp_add_server",
-            "mcp_server",
-            "web_search",
-            "view_image",
-            "spawn_agent",
-            "send_input",
-            "resume_agent",
-            "wait_agent",
-            "close_agent",
-        ],
-    );
-}
-
-#[test]
-fn test_build_specs_gpt51_codex_unified_exec_web_search() {
-    let features = Features::with_defaults();
-
-    assert_model_tools(
-        "gpt-5.1-codex",
-        &features,
-        Some(WebSearchMode::Live),
-        &[
-            "exec_command",
-            "write_stdin",
-            "update_plan",
-            "request_user_input",
-            "apply_patch",
-            "read_file",
-            "grep_files",
-            "list_dir",
-            "cron_create",
-            "cron_toggle",
-            "git_diff",
-            "git_log",
-            "git_show",
-            "git_blame",
-            "git_repo",
-            "git_status",
-            "git_branches",
-            "git_remotes",
-            "mcp_add_server",
-            "mcp_server",
-            "web_search",
-            "view_image",
-            "spawn_agent",
-            "send_input",
-            "resume_agent",
-            "wait_agent",
-            "close_agent",
-        ],
-    );
-}
-
-#[test]
-fn test_gpt_5_1_codex_max_defaults() {
-    let features = Features::with_defaults();
-    assert_default_model_tools(
-        "gpt-5.1-codex-max",
-        &features,
-        Some(WebSearchMode::Cached),
-        "shell_command",
-        &[
-            "update_plan",
-            "request_user_input",
-            "apply_patch",
-            "read_file",
-            "grep_files",
-            "list_dir",
-            "cron_create",
-            "cron_toggle",
-            "git_diff",
-            "git_log",
-            "git_show",
-            "git_blame",
-            "git_repo",
-            "git_status",
-            "git_branches",
-            "git_remotes",
-            "mcp_add_server",
-            "mcp_server",
-            "web_search",
-            "view_image",
-            "spawn_agent",
-            "send_input",
-            "resume_agent",
-            "wait_agent",
-            "close_agent",
-        ],
-    );
-}
-
-#[test]
-fn test_chaos_5_1_mini_defaults() {
-    let features = Features::with_defaults();
-    assert_default_model_tools(
-        "gpt-5.1-codex-mini",
-        &features,
-        Some(WebSearchMode::Cached),
-        "shell_command",
-        &[
-            "update_plan",
-            "request_user_input",
-            "apply_patch",
-            "read_file",
-            "grep_files",
-            "list_dir",
-            "cron_create",
-            "cron_toggle",
-            "git_diff",
-            "git_log",
-            "git_show",
-            "git_blame",
-            "git_repo",
-            "git_status",
-            "git_branches",
-            "git_remotes",
-            "mcp_add_server",
-            "mcp_server",
-            "web_search",
-            "view_image",
-            "spawn_agent",
-            "send_input",
-            "resume_agent",
-            "wait_agent",
-            "close_agent",
-        ],
-    );
-}
-
-#[test]
-fn test_gpt_5_defaults() {
-    let features = Features::with_defaults();
-    assert_default_model_tools(
-        "gpt-5",
-        &features,
-        Some(WebSearchMode::Cached),
-        "shell",
-        &[
-            "update_plan",
-            "request_user_input",
-            "read_file",
-            "grep_files",
-            "list_dir",
-            "cron_create",
-            "cron_toggle",
-            "git_diff",
-            "git_log",
-            "git_show",
-            "git_blame",
-            "git_repo",
-            "git_status",
-            "git_branches",
-            "git_remotes",
-            "mcp_add_server",
-            "mcp_server",
-            "web_search",
-            "view_image",
-            "spawn_agent",
-            "send_input",
-            "resume_agent",
-            "wait_agent",
-            "close_agent",
-        ],
-    );
-}
-
-#[test]
-fn test_gpt_5_1_defaults() {
-    let features = Features::with_defaults();
-    assert_default_model_tools(
-        "gpt-5.1",
-        &features,
-        Some(WebSearchMode::Cached),
-        "shell_command",
-        &[
-            "update_plan",
-            "request_user_input",
-            "apply_patch",
-            "read_file",
-            "grep_files",
-            "list_dir",
-            "cron_create",
-            "cron_toggle",
-            "git_diff",
-            "git_log",
-            "git_show",
-            "git_blame",
-            "git_repo",
-            "git_status",
-            "git_branches",
-            "git_remotes",
-            "mcp_add_server",
-            "mcp_server",
-            "web_search",
-            "view_image",
-            "spawn_agent",
-            "send_input",
-            "resume_agent",
-            "wait_agent",
-            "close_agent",
-        ],
-    );
-}
-
-#[test]
-fn test_gpt_5_1_codex_max_unified_exec_web_search() {
-    let features = Features::with_defaults();
-
-    assert_model_tools(
-        "gpt-5.1-codex-max",
-        &features,
-        Some(WebSearchMode::Live),
-        &[
-            "exec_command",
-            "write_stdin",
-            "update_plan",
-            "request_user_input",
-            "apply_patch",
-            "read_file",
-            "grep_files",
-            "list_dir",
-            "cron_create",
-            "cron_toggle",
-            "git_diff",
-            "git_log",
-            "git_show",
-            "git_blame",
-            "git_repo",
-            "git_status",
-            "git_branches",
-            "git_remotes",
-            "mcp_add_server",
-            "mcp_server",
-            "web_search",
-            "view_image",
-            "spawn_agent",
-            "send_input",
-            "resume_agent",
-            "wait_agent",
-            "close_agent",
-        ],
-    );
+fn test_build_specs_gpt_unified_exec_web_search_toolsets() {
+    assert_unified_exec_web_search_model_tool_cases(&[
+        UnifiedExecWebSearchModelToolCase {
+            model_slug: "gpt-5-codex",
+            expected_tail: GPT_5_1_TOOL_TAIL,
+        },
+        UnifiedExecWebSearchModelToolCase {
+            model_slug: "gpt-5.1-codex",
+            expected_tail: GPT_5_1_TOOL_TAIL,
+        },
+        UnifiedExecWebSearchModelToolCase {
+            model_slug: "gpt-5.1-codex-max",
+            expected_tail: GPT_5_1_TOOL_TAIL,
+        },
+    ]);
 }
 
 #[test]

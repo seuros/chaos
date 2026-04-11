@@ -1,26 +1,17 @@
-use crate::harness::attributes_to_map;
-use crate::harness::find_metric;
+use crate::harness::build_runtime_metrics_with_defaults;
+use crate::harness::counter_attributes;
 use chaos_ipc::ProcessId;
 use chaos_ipc::product::CHAOS_VERSION;
 use chaos_ipc::protocol::SessionSource;
 use chaos_syslog::SessionTelemetry;
 use chaos_syslog::TelemetryAuthMode;
-use chaos_syslog::metrics::MetricsClient;
-use chaos_syslog::metrics::MetricsConfig;
 use chaos_syslog::metrics::Result;
 use pretty_assertions::assert_eq;
-use rama::telemetry::opentelemetry::sdk::metrics::InMemoryMetricExporter;
-use rama::telemetry::opentelemetry::sdk::metrics::data::AggregatedMetrics;
-use rama::telemetry::opentelemetry::sdk::metrics::data::MetricData;
 use std::collections::BTreeMap;
 
 #[test]
 fn snapshot_collects_metrics_without_shutdown() -> Result<()> {
-    let exporter = InMemoryMetricExporter::default();
-    let config = MetricsConfig::in_memory("test", "chaos-cli", CHAOS_VERSION, exporter.clone())
-        .with_tag("service", "chaos-cli")?
-        .with_runtime_reader();
-    let metrics = MetricsClient::new(config)?;
+    let (metrics, exporter) = build_runtime_metrics_with_defaults(&[("service", "chaos-cli")])?;
 
     metrics.counter(
         "chaos.tool.call",
@@ -30,18 +21,7 @@ fn snapshot_collects_metrics_without_shutdown() -> Result<()> {
 
     let snapshot = metrics.snapshot()?;
 
-    let metric = find_metric(&snapshot, "chaos.tool.call").expect("counter metric missing");
-    let attrs = match metric.data() {
-        AggregatedMetrics::U64(data) => match data {
-            MetricData::Sum(sum) => {
-                let points: Vec<_> = sum.data_points().collect();
-                assert_eq!(points.len(), 1);
-                attributes_to_map(points[0].attributes())
-            }
-            _ => panic!("unexpected counter aggregation"),
-        },
-        _ => panic!("unexpected counter data type"),
-    };
+    let attrs = counter_attributes(&snapshot, "chaos.tool.call");
 
     let expected = BTreeMap::from([
         ("service".to_string(), "chaos-cli".to_string()),
@@ -60,11 +40,7 @@ fn snapshot_collects_metrics_without_shutdown() -> Result<()> {
 
 #[test]
 fn manager_snapshot_metrics_collects_without_shutdown() -> Result<()> {
-    let exporter = InMemoryMetricExporter::default();
-    let config = MetricsConfig::in_memory("test", "chaos-cli", CHAOS_VERSION, exporter)
-        .with_tag("service", "chaos-cli")?
-        .with_runtime_reader();
-    let metrics = MetricsClient::new(config)?;
+    let (metrics, _exporter) = build_runtime_metrics_with_defaults(&[("service", "chaos-cli")])?;
     let manager = SessionTelemetry::new(
         ProcessId::new(),
         "gpt-5.1",
@@ -86,18 +62,7 @@ fn manager_snapshot_metrics_collects_without_shutdown() -> Result<()> {
     );
 
     let snapshot = manager.snapshot_metrics()?;
-    let metric = find_metric(&snapshot, "chaos.tool.call").expect("counter metric missing");
-    let attrs = match metric.data() {
-        AggregatedMetrics::U64(data) => match data {
-            MetricData::Sum(sum) => {
-                let points: Vec<_> = sum.data_points().collect();
-                assert_eq!(points.len(), 1);
-                attributes_to_map(points[0].attributes())
-            }
-            _ => panic!("unexpected counter aggregation"),
-        },
-        _ => panic!("unexpected counter data type"),
-    };
+    let attrs = counter_attributes(&snapshot, "chaos.tool.call");
 
     let expected = BTreeMap::from([
         ("app.version".to_string(), CHAOS_VERSION.to_string()),

@@ -80,6 +80,156 @@ fn event(id: &str, msg: EventMsg) -> Event {
     }
 }
 
+fn assert_single_item_started(
+    events: Vec<ProcessEvent>,
+    expected_id: Option<&str>,
+    expected_details: ProcessItemDetails,
+) -> String {
+    assert_eq!(events.len(), 1, "expected exactly one event: {events:?}");
+    let ProcessEvent::ItemStarted(ItemStartedEvent { item }) = &events[0] else {
+        panic!("expected ItemStarted");
+    };
+    if let Some(expected_id) = expected_id {
+        assert_eq!(item.id, expected_id);
+    } else {
+        assert!(item.id.starts_with("item_"));
+    }
+    assert_eq!(item.details, expected_details);
+    item.id.clone()
+}
+
+fn assert_single_item_completed(
+    events: Vec<ProcessEvent>,
+    expected_id: &str,
+    expected_details: ProcessItemDetails,
+) {
+    assert_eq!(events.len(), 1, "expected exactly one event: {events:?}");
+    let ProcessEvent::ItemCompleted(ItemCompletedEvent { item }) = &events[0] else {
+        panic!("expected ItemCompleted");
+    };
+    assert_eq!(item.id, expected_id);
+    assert_eq!(item.details, expected_details);
+}
+
+fn assert_begin_end_lifecycle(
+    ep: &mut EventProcessorWithJsonOutput,
+    begin: &Event,
+    expected_started_id: Option<&str>,
+    expected_started_details: ProcessItemDetails,
+    end: &Event,
+    expected_completed_details: ProcessItemDetails,
+) {
+    let started_id = assert_single_item_started(
+        ep.collect_process_events(begin),
+        expected_started_id,
+        expected_started_details,
+    );
+    assert_single_item_completed(
+        ep.collect_process_events(end),
+        &started_id,
+        expected_completed_details,
+    );
+}
+
+fn web_search_item(
+    id: &str,
+    query: impl Into<String>,
+    action: WebSearchAction,
+) -> ProcessItemDetails {
+    ProcessItemDetails::WebSearch(WebSearchItem {
+        id: id.to_string(),
+        query: query.into(),
+        action,
+    })
+}
+
+fn mcp_tool_call_item(
+    server: &str,
+    tool: &str,
+    arguments: serde_json::Value,
+    result: Option<McpToolCallItemResult>,
+    error: Option<McpToolCallItemError>,
+    status: McpToolCallStatus,
+) -> ProcessItemDetails {
+    ProcessItemDetails::McpToolCall(McpToolCallItem {
+        server: server.to_string(),
+        tool: tool.to_string(),
+        arguments,
+        result,
+        error,
+        status,
+    })
+}
+
+fn collab_tool_call_item(
+    tool: CollabTool,
+    sender_process_id: &ProcessId,
+    receiver_process_ids: Vec<String>,
+    prompt: Option<String>,
+    agents_states: std::collections::HashMap<String, CollabAgentState>,
+    status: CollabToolCallStatus,
+) -> ProcessItemDetails {
+    ProcessItemDetails::CollabToolCall(CollabToolCallItem {
+        tool,
+        sender_process_id: sender_process_id.to_string(),
+        receiver_process_ids,
+        prompt,
+        agents_states,
+        status,
+    })
+}
+
+fn command_execution_item(
+    command: &str,
+    aggregated_output: impl Into<String>,
+    exit_code: Option<i32>,
+    status: CommandExecutionStatus,
+) -> ProcessItemDetails {
+    ProcessItemDetails::CommandExecution(CommandExecutionItem {
+        command: command.to_string(),
+        aggregated_output: aggregated_output.into(),
+        exit_code,
+        status,
+    })
+}
+
+fn file_changes<const N: usize>(
+    entries: [(&str, FileChange); N],
+) -> std::collections::HashMap<PathBuf, FileChange> {
+    entries
+        .into_iter()
+        .map(|(path, change)| (PathBuf::from(path), change))
+        .collect()
+}
+
+fn assert_patch_apply_completed(
+    events: Vec<ProcessEvent>,
+    expected_id: &str,
+    expected_status: PatchApplyStatus,
+    mut expected_changes: Vec<(String, PatchChangeKind)>,
+) {
+    assert_eq!(events.len(), 1, "expected exactly one event: {events:?}");
+    let ProcessEvent::ItemCompleted(ItemCompletedEvent { item }) = &events[0] else {
+        panic!("expected ItemCompleted");
+    };
+    assert_eq!(item.id, expected_id);
+
+    let ProcessItemDetails::FileChange(file_update) = &item.details else {
+        panic!("unexpected details: {:?}", item.details);
+    };
+    assert_eq!(file_update.status, expected_status);
+
+    let mut actual: Vec<(String, PatchChangeKind)> = file_update
+        .changes
+        .iter()
+        .map(|change| (change.path.clone(), change.kind.clone()))
+        .collect();
+    actual.sort_by(|a, b| a.0.cmp(&b.0));
+    expected_changes.sort_by(|a, b| a.0.cmp(&b.0));
+
+    assert_eq!(actual, expected_changes);
+}
+
 #[test]
 fn session_configured_produces_process_started_event() {
     let mut ep = EventProcessorWithJsonOutput::new(None);
@@ -146,19 +296,7 @@ fn web_search_end_emits_item_completed() {
         }),
     ));
 
-    assert_eq!(
-        out,
-        vec![ProcessEvent::ItemCompleted(ItemCompletedEvent {
-            item: ProcessItem {
-                id: "item_0".to_string(),
-                details: ProcessItemDetails::WebSearch(WebSearchItem {
-                    id: "call-123".to_string(),
-                    query,
-                    action,
-                }),
-            },
-        })]
-    );
+    assert_single_item_completed(out, "item_0", web_search_item("call-123", query, action));
 }
 
 #[test]
@@ -171,60 +309,39 @@ fn web_search_begin_emits_item_started() {
         }),
     ));
 
-    assert_eq!(out.len(), 1);
-    let ProcessEvent::ItemStarted(ItemStartedEvent { item }) = &out[0] else {
-        panic!("expected ItemStarted");
-    };
-    assert!(item.id.starts_with("item_"));
-    assert_eq!(
-        item.details,
-        ProcessItemDetails::WebSearch(WebSearchItem {
-            id: "call-0".to_string(),
-            query: String::new(),
-            action: WebSearchAction::Other,
-        })
+    assert_single_item_started(
+        out,
+        None,
+        web_search_item("call-0", String::new(), WebSearchAction::Other),
     );
 }
 
 #[test]
 fn web_search_begin_then_end_reuses_item_id() {
     let mut ep = EventProcessorWithJsonOutput::new(None);
-    let begin = ep.collect_process_events(&event(
-        "w0",
-        EventMsg::WebSearchBegin(WebSearchBeginEvent {
-            call_id: "call-1".to_string(),
-        }),
-    ));
-    let ProcessEvent::ItemStarted(ItemStartedEvent { item: started_item }) = &begin[0] else {
-        panic!("expected ItemStarted");
-    };
     let action = WebSearchAction::Search {
         query: Some("rust async await".to_string()),
         queries: None,
     };
-    let end = ep.collect_process_events(&event(
-        "w1",
-        EventMsg::WebSearchEnd(WebSearchEndEvent {
-            call_id: "call-1".to_string(),
-            query: "rust async await".to_string(),
-            action: action.clone(),
-        }),
-    ));
-    let ProcessEvent::ItemCompleted(ItemCompletedEvent {
-        item: completed_item,
-    }) = &end[0]
-    else {
-        panic!("expected ItemCompleted");
-    };
-
-    assert_eq!(completed_item.id, started_item.id);
-    assert_eq!(
-        completed_item.details,
-        ProcessItemDetails::WebSearch(WebSearchItem {
-            id: "call-1".to_string(),
-            query: "rust async await".to_string(),
-            action,
-        })
+    assert_begin_end_lifecycle(
+        &mut ep,
+        &event(
+            "w0",
+            EventMsg::WebSearchBegin(WebSearchBeginEvent {
+                call_id: "call-1".to_string(),
+            }),
+        ),
+        Some("item_0"),
+        web_search_item("call-1", String::new(), WebSearchAction::Other),
+        &event(
+            "w1",
+            EventMsg::WebSearchEnd(WebSearchEndEvent {
+                call_id: "call-1".to_string(),
+                query: "rust async await".to_string(),
+                action: action.clone(),
+            }),
+        ),
+        web_search_item("call-1", "rust async await", action),
     );
 }
 
@@ -349,118 +466,106 @@ fn plan_update_emits_todo_list_started_updated_and_completed() {
 #[test]
 fn mcp_tool_call_begin_and_end_emit_item_events() {
     let mut ep = EventProcessorWithJsonOutput::new(None);
+    let arguments = json!({ "key": "value" });
     let invocation = McpInvocation {
         server: "server_a".to_string(),
         tool: "tool_x".to_string(),
-        arguments: Some(json!({ "key": "value" })),
+        arguments: Some(arguments.clone()),
     };
 
-    let begin = event(
-        "m1",
-        EventMsg::McpToolCallBegin(McpToolCallBeginEvent {
-            call_id: "call-1".to_string(),
-            invocation: invocation.clone(),
-        }),
-    );
-    let begin_events = ep.collect_process_events(&begin);
-    assert_eq!(
-        begin_events,
-        vec![ProcessEvent::ItemStarted(ItemStartedEvent {
-            item: ProcessItem {
-                id: "item_0".to_string(),
-                details: ProcessItemDetails::McpToolCall(McpToolCallItem {
-                    server: "server_a".to_string(),
-                    tool: "tool_x".to_string(),
-                    arguments: json!({ "key": "value" }),
-                    result: None,
-                    error: None,
-                    status: McpToolCallStatus::InProgress,
-                }),
-            },
-        })]
-    );
-
-    let end = event(
-        "m2",
-        EventMsg::McpToolCallEnd(McpToolCallEndEvent {
-            call_id: "call-1".to_string(),
-            invocation,
-            duration: Duration::from_secs(1),
-            result: Ok(CallToolResult {
-                content: Vec::new(),
-                is_error: None,
-                structured_content: None,
-                meta: None,
+    assert_begin_end_lifecycle(
+        &mut ep,
+        &event(
+            "m1",
+            EventMsg::McpToolCallBegin(McpToolCallBeginEvent {
+                call_id: "call-1".to_string(),
+                invocation: invocation.clone(),
             }),
-        }),
-    );
-    let end_events = ep.collect_process_events(&end);
-    assert_eq!(
-        end_events,
-        vec![ProcessEvent::ItemCompleted(ItemCompletedEvent {
-            item: ProcessItem {
-                id: "item_0".to_string(),
-                details: ProcessItemDetails::McpToolCall(McpToolCallItem {
-                    server: "server_a".to_string(),
-                    tool: "tool_x".to_string(),
-                    arguments: json!({ "key": "value" }),
-                    result: Some(McpToolCallItemResult {
-                        content: Vec::new(),
-                        structured_content: None,
-                    }),
-                    error: None,
-                    status: McpToolCallStatus::Completed,
+        ),
+        Some("item_0"),
+        mcp_tool_call_item(
+            "server_a",
+            "tool_x",
+            arguments.clone(),
+            None,
+            None,
+            McpToolCallStatus::InProgress,
+        ),
+        &event(
+            "m2",
+            EventMsg::McpToolCallEnd(McpToolCallEndEvent {
+                call_id: "call-1".to_string(),
+                invocation,
+                duration: Duration::from_secs(1),
+                result: Ok(CallToolResult {
+                    content: Vec::new(),
+                    is_error: None,
+                    structured_content: None,
+                    meta: None,
                 }),
-            },
-        })]
+            }),
+        ),
+        mcp_tool_call_item(
+            "server_a",
+            "tool_x",
+            arguments,
+            Some(McpToolCallItemResult {
+                content: Vec::new(),
+                structured_content: None,
+            }),
+            None,
+            McpToolCallStatus::Completed,
+        ),
     );
 }
 
 #[test]
 fn mcp_tool_call_failure_sets_failed_status() {
     let mut ep = EventProcessorWithJsonOutput::new(None);
+    let arguments = json!({ "param": 42 });
     let invocation = McpInvocation {
         server: "server_b".to_string(),
         tool: "tool_y".to_string(),
-        arguments: Some(json!({ "param": 42 })),
+        arguments: Some(arguments.clone()),
     };
 
-    let begin = event(
-        "m3",
-        EventMsg::McpToolCallBegin(McpToolCallBeginEvent {
-            call_id: "call-2".to_string(),
-            invocation: invocation.clone(),
-        }),
-    );
-    ep.collect_process_events(&begin);
-
-    let end = event(
-        "m4",
-        EventMsg::McpToolCallEnd(McpToolCallEndEvent {
-            call_id: "call-2".to_string(),
-            invocation,
-            duration: Duration::from_millis(5),
-            result: Err("tool exploded".to_string()),
-        }),
-    );
-    let events = ep.collect_process_events(&end);
-    assert_eq!(
-        events,
-        vec![ProcessEvent::ItemCompleted(ItemCompletedEvent {
-            item: ProcessItem {
-                id: "item_0".to_string(),
-                details: ProcessItemDetails::McpToolCall(McpToolCallItem {
-                    server: "server_b".to_string(),
-                    tool: "tool_y".to_string(),
-                    arguments: json!({ "param": 42 }),
-                    result: None,
-                    error: Some(McpToolCallItemError {
-                        message: "tool exploded".to_string(),
-                    }),
-                    status: McpToolCallStatus::Failed,
-                }),
-            },
-        })]
+    assert_begin_end_lifecycle(
+        &mut ep,
+        &event(
+            "m3",
+            EventMsg::McpToolCallBegin(McpToolCallBeginEvent {
+                call_id: "call-2".to_string(),
+                invocation: invocation.clone(),
+            }),
+        ),
+        Some("item_0"),
+        mcp_tool_call_item(
+            "server_b",
+            "tool_y",
+            arguments.clone(),
+            None,
+            None,
+            McpToolCallStatus::InProgress,
+        ),
+        &event(
+            "m4",
+            EventMsg::McpToolCallEnd(McpToolCallEndEvent {
+                call_id: "call-2".to_string(),
+                invocation,
+                duration: Duration::from_millis(5),
+                result: Err("tool exploded".to_string()),
+            }),
+        ),
+        mcp_tool_call_item(
+            "server_b",
+            "tool_y",
+            arguments,
+            None,
+            Some(McpToolCallItemError {
+                message: "tool exploded".to_string(),
+            }),
+            McpToolCallStatus::Failed,
+        ),
     );
 }
 
@@ -473,64 +578,52 @@ fn mcp_tool_call_defaults_arguments_and_preserves_structured_content() {
         arguments: None,
     };
 
-    let begin = event(
-        "m5",
-        EventMsg::McpToolCallBegin(McpToolCallBeginEvent {
-            call_id: "call-3".to_string(),
-            invocation: invocation.clone(),
-        }),
-    );
-    let begin_events = ep.collect_process_events(&begin);
-    assert_eq!(
-        begin_events,
-        vec![ProcessEvent::ItemStarted(ItemStartedEvent {
-            item: ProcessItem {
-                id: "item_0".to_string(),
-                details: ProcessItemDetails::McpToolCall(McpToolCallItem {
-                    server: "server_c".to_string(),
-                    tool: "tool_z".to_string(),
-                    arguments: serde_json::Value::Null,
-                    result: None,
-                    error: None,
-                    status: McpToolCallStatus::InProgress,
-                }),
-            },
-        })]
-    );
+    let content = vec![serde_json::to_value(ContentBlock::text("done")).unwrap()];
+    let structured_content = Some(json!({ "status": "ok" }));
 
-    let end = event(
-        "m6",
-        EventMsg::McpToolCallEnd(McpToolCallEndEvent {
-            call_id: "call-3".to_string(),
-            invocation,
-            duration: Duration::from_millis(10),
-            result: Ok(CallToolResult {
-                content: vec![serde_json::to_value(ContentBlock::text("done")).unwrap()],
-                is_error: None,
-                structured_content: Some(json!({ "status": "ok" })),
-                meta: None,
+    assert_begin_end_lifecycle(
+        &mut ep,
+        &event(
+            "m5",
+            EventMsg::McpToolCallBegin(McpToolCallBeginEvent {
+                call_id: "call-3".to_string(),
+                invocation: invocation.clone(),
             }),
-        }),
-    );
-    let events = ep.collect_process_events(&end);
-    assert_eq!(
-        events,
-        vec![ProcessEvent::ItemCompleted(ItemCompletedEvent {
-            item: ProcessItem {
-                id: "item_0".to_string(),
-                details: ProcessItemDetails::McpToolCall(McpToolCallItem {
-                    server: "server_c".to_string(),
-                    tool: "tool_z".to_string(),
-                    arguments: serde_json::Value::Null,
-                    result: Some(McpToolCallItemResult {
-                        content: vec![serde_json::to_value(ContentBlock::text("done")).unwrap()],
-                        structured_content: Some(json!({ "status": "ok" })),
-                    }),
-                    error: None,
-                    status: McpToolCallStatus::Completed,
+        ),
+        Some("item_0"),
+        mcp_tool_call_item(
+            "server_c",
+            "tool_z",
+            serde_json::Value::Null,
+            None,
+            None,
+            McpToolCallStatus::InProgress,
+        ),
+        &event(
+            "m6",
+            EventMsg::McpToolCallEnd(McpToolCallEndEvent {
+                call_id: "call-3".to_string(),
+                invocation,
+                duration: Duration::from_millis(10),
+                result: Ok(CallToolResult {
+                    content: content.clone(),
+                    is_error: None,
+                    structured_content: structured_content.clone(),
+                    meta: None,
                 }),
-            },
-        })]
+            }),
+        ),
+        mcp_tool_call_item(
+            "server_c",
+            "tool_z",
+            serde_json::Value::Null,
+            Some(McpToolCallItemResult {
+                content,
+                structured_content,
+            }),
+            None,
+            McpToolCallStatus::Completed,
+        ),
     );
 }
 
@@ -541,74 +634,59 @@ fn collab_spawn_begin_and_end_emit_item_events() {
     let new_process_id = ProcessId::from_string("9e107d9d-372b-4b8c-a2a4-1d9bb3fce0c1").unwrap();
     let prompt = "draft a plan".to_string();
 
-    let begin = event(
-        "c1",
-        EventMsg::CollabAgentSpawnBegin(CollabAgentSpawnBeginEvent {
-            call_id: "call-10".to_string(),
-            sender_process_id,
-            prompt: prompt.clone(),
-            model: "gpt-5".to_string(),
-            reasoning_effort: ReasoningEffortConfig::default(),
-            catchphrase: None,
-            missing_topics: Vec::new(),
-        }),
-    );
-    let begin_events = ep.collect_process_events(&begin);
-    assert_eq!(
-        begin_events,
-        vec![ProcessEvent::ItemStarted(ItemStartedEvent {
-            item: ProcessItem {
-                id: "item_0".to_string(),
-                details: ProcessItemDetails::CollabToolCall(CollabToolCallItem {
-                    tool: CollabTool::SpawnAgent,
-                    sender_process_id: sender_process_id.to_string(),
-                    receiver_process_ids: Vec::new(),
-                    prompt: Some(prompt.clone()),
-                    agents_states: std::collections::HashMap::new(),
-                    status: CollabToolCallStatus::InProgress,
-                }),
-            },
-        })]
-    );
-
-    let end = event(
-        "c2",
-        EventMsg::CollabAgentSpawnEnd(CollabAgentSpawnEndEvent {
-            call_id: "call-10".to_string(),
-            sender_process_id,
-            new_process_id: Some(new_process_id),
-            new_agent_nickname: None,
-            new_agent_role: None,
-            prompt: prompt.clone(),
-            model: "gpt-5".to_string(),
-            reasoning_effort: ReasoningEffortConfig::default(),
-            status: AgentStatus::Running,
-        }),
-    );
-    let end_events = ep.collect_process_events(&end);
-    assert_eq!(
-        end_events,
-        vec![ProcessEvent::ItemCompleted(ItemCompletedEvent {
-            item: ProcessItem {
-                id: "item_0".to_string(),
-                details: ProcessItemDetails::CollabToolCall(CollabToolCallItem {
-                    tool: CollabTool::SpawnAgent,
-                    sender_process_id: sender_process_id.to_string(),
-                    receiver_process_ids: vec![new_process_id.to_string()],
-                    prompt: Some(prompt),
-                    agents_states: [(
-                        new_process_id.to_string(),
-                        CollabAgentState {
-                            status: CollabAgentStatus::Running,
-                            message: None,
-                        },
-                    )]
-                    .into_iter()
-                    .collect(),
-                    status: CollabToolCallStatus::Completed,
-                }),
-            },
-        })]
+    assert_begin_end_lifecycle(
+        &mut ep,
+        &event(
+            "c1",
+            EventMsg::CollabAgentSpawnBegin(CollabAgentSpawnBeginEvent {
+                call_id: "call-10".to_string(),
+                sender_process_id,
+                prompt: prompt.clone(),
+                model: "gpt-5".to_string(),
+                reasoning_effort: ReasoningEffortConfig::default(),
+                catchphrase: None,
+                missing_topics: Vec::new(),
+            }),
+        ),
+        Some("item_0"),
+        collab_tool_call_item(
+            CollabTool::SpawnAgent,
+            &sender_process_id,
+            Vec::new(),
+            Some(prompt.clone()),
+            std::collections::HashMap::new(),
+            CollabToolCallStatus::InProgress,
+        ),
+        &event(
+            "c2",
+            EventMsg::CollabAgentSpawnEnd(CollabAgentSpawnEndEvent {
+                call_id: "call-10".to_string(),
+                sender_process_id,
+                new_process_id: Some(new_process_id),
+                new_agent_nickname: None,
+                new_agent_role: None,
+                prompt: prompt.clone(),
+                model: "gpt-5".to_string(),
+                reasoning_effort: ReasoningEffortConfig::default(),
+                status: AgentStatus::Running,
+            }),
+        ),
+        collab_tool_call_item(
+            CollabTool::SpawnAgent,
+            &sender_process_id,
+            vec![new_process_id.to_string()],
+            Some(prompt),
+            [(
+                new_process_id.to_string(),
+                CollabAgentState {
+                    status: CollabAgentStatus::Running,
+                    message: None,
+                },
+            )]
+            .into_iter()
+            .collect(),
+            CollabToolCallStatus::Completed,
+        ),
     );
 }
 
@@ -641,38 +719,34 @@ fn collab_wait_end_without_begin_synthesizes_failed_item() {
         }),
     );
     let events = ep.collect_process_events(&end);
-    assert_eq!(
+    assert_single_item_completed(
         events,
-        vec![ProcessEvent::ItemCompleted(ItemCompletedEvent {
-            item: ProcessItem {
-                id: "item_0".to_string(),
-                details: ProcessItemDetails::CollabToolCall(CollabToolCallItem {
-                    tool: CollabTool::Wait,
-                    sender_process_id: sender_process_id.to_string(),
-                    receiver_process_ids,
-                    prompt: None,
-                    agents_states: [
-                        (
-                            running_process_id.to_string(),
-                            CollabAgentState {
-                                status: CollabAgentStatus::Completed,
-                                message: Some("done".to_string()),
-                            },
-                        ),
-                        (
-                            failed_process_id.to_string(),
-                            CollabAgentState {
-                                status: CollabAgentStatus::Errored,
-                                message: Some("boom".to_string()),
-                            },
-                        ),
-                    ]
-                    .into_iter()
-                    .collect(),
-                    status: CollabToolCallStatus::Failed,
-                }),
-            },
-        })]
+        "item_0",
+        collab_tool_call_item(
+            CollabTool::Wait,
+            &sender_process_id,
+            receiver_process_ids,
+            None,
+            [
+                (
+                    running_process_id.to_string(),
+                    CollabAgentState {
+                        status: CollabAgentStatus::Completed,
+                        message: Some("done".to_string()),
+                    },
+                ),
+                (
+                    failed_process_id.to_string(),
+                    CollabAgentState {
+                        status: CollabAgentStatus::Errored,
+                        message: Some("boom".to_string()),
+                    },
+                ),
+            ]
+            .into_iter()
+            .collect(),
+            CollabToolCallStatus::Failed,
+        ),
     );
 }
 
@@ -870,71 +944,54 @@ fn exec_command_end_success_produces_completed_command_item() {
     let cwd = std::env::current_dir().unwrap();
     let parsed_cmd = Vec::new();
 
-    // Begin -> no output
-    let begin = event(
-        "c1",
-        EventMsg::ExecCommandBegin(ExecCommandBeginEvent {
-            call_id: "1".to_string(),
-            process_id: None,
-            turn_id: "turn-1".to_string(),
-            command: command.clone(),
-            cwd: cwd.clone(),
-            parsed_cmd: parsed_cmd.clone(),
-            source: ExecCommandSource::Agent,
-            interaction_input: None,
-        }),
-    );
-    let out_begin = ep.collect_process_events(&begin);
-    assert_eq!(
-        out_begin,
-        vec![ProcessEvent::ItemStarted(ItemStartedEvent {
-            item: ProcessItem {
-                id: "item_0".to_string(),
-                details: ProcessItemDetails::CommandExecution(CommandExecutionItem {
-                    command: "bash -lc 'echo hi'".to_string(),
-                    aggregated_output: String::new(),
-                    exit_code: None,
-                    status: CommandExecutionStatus::InProgress,
-                }),
-            },
-        })]
-    );
-
-    // End (success) -> item.completed (item_0)
-    let end_ok = event(
-        "c2",
-        EventMsg::ExecCommandEnd(ExecCommandEndEvent {
-            call_id: "1".to_string(),
-            process_id: None,
-            turn_id: "turn-1".to_string(),
-            command,
-            cwd,
-            parsed_cmd,
-            source: ExecCommandSource::Agent,
-            interaction_input: None,
-            stdout: String::new(),
-            stderr: String::new(),
-            aggregated_output: "hi\n".to_string(),
-            exit_code: 0,
-            duration: Duration::from_millis(5),
-            formatted_output: String::new(),
-            status: CoreExecCommandStatus::Completed,
-        }),
-    );
-    let out_ok = ep.collect_process_events(&end_ok);
-    assert_eq!(
-        out_ok,
-        vec![ProcessEvent::ItemCompleted(ItemCompletedEvent {
-            item: ProcessItem {
-                id: "item_0".to_string(),
-                details: ProcessItemDetails::CommandExecution(CommandExecutionItem {
-                    command: "bash -lc 'echo hi'".to_string(),
-                    aggregated_output: "hi\n".to_string(),
-                    exit_code: Some(0),
-                    status: CommandExecutionStatus::Completed,
-                }),
-            },
-        })]
+    assert_begin_end_lifecycle(
+        &mut ep,
+        &event(
+            "c1",
+            EventMsg::ExecCommandBegin(ExecCommandBeginEvent {
+                call_id: "1".to_string(),
+                process_id: None,
+                turn_id: "turn-1".to_string(),
+                command: command.clone(),
+                cwd: cwd.clone(),
+                parsed_cmd: parsed_cmd.clone(),
+                source: ExecCommandSource::Agent,
+                interaction_input: None,
+            }),
+        ),
+        Some("item_0"),
+        command_execution_item(
+            "bash -lc 'echo hi'",
+            String::new(),
+            None,
+            CommandExecutionStatus::InProgress,
+        ),
+        &event(
+            "c2",
+            EventMsg::ExecCommandEnd(ExecCommandEndEvent {
+                call_id: "1".to_string(),
+                process_id: None,
+                turn_id: "turn-1".to_string(),
+                command,
+                cwd,
+                parsed_cmd,
+                source: ExecCommandSource::Agent,
+                interaction_input: None,
+                stdout: String::new(),
+                stderr: String::new(),
+                aggregated_output: "hi\n".to_string(),
+                exit_code: 0,
+                duration: Duration::from_millis(5),
+                formatted_output: String::new(),
+                status: CoreExecCommandStatus::Completed,
+            }),
+        ),
+        command_execution_item(
+            "bash -lc 'echo hi'",
+            "hi\n",
+            Some(0),
+            CommandExecutionStatus::Completed,
+        ),
     );
 }
 
@@ -962,20 +1019,15 @@ fn command_execution_output_delta_updates_item_progress() {
             interaction_input: None,
         }),
     );
-    let out_begin = ep.collect_process_events(&begin);
-    assert_eq!(
-        out_begin,
-        vec![ProcessEvent::ItemStarted(ItemStartedEvent {
-            item: ProcessItem {
-                id: "item_0".to_string(),
-                details: ProcessItemDetails::CommandExecution(CommandExecutionItem {
-                    command: "bash -lc 'echo delta'".to_string(),
-                    aggregated_output: String::new(),
-                    exit_code: None,
-                    status: CommandExecutionStatus::InProgress,
-                }),
-            },
-        })]
+    assert_single_item_started(
+        ep.collect_process_events(&begin),
+        Some("item_0"),
+        command_execution_item(
+            "bash -lc 'echo delta'",
+            String::new(),
+            None,
+            CommandExecutionStatus::InProgress,
+        ),
     );
 
     let delta = event(
@@ -1009,20 +1061,15 @@ fn command_execution_output_delta_updates_item_progress() {
             status: CoreExecCommandStatus::Completed,
         }),
     );
-    let out_end = ep.collect_process_events(&end);
-    assert_eq!(
-        out_end,
-        vec![ProcessEvent::ItemCompleted(ItemCompletedEvent {
-            item: ProcessItem {
-                id: "item_0".to_string(),
-                details: ProcessItemDetails::CommandExecution(CommandExecutionItem {
-                    command: "bash -lc 'echo delta'".to_string(),
-                    aggregated_output: String::new(),
-                    exit_code: Some(0),
-                    status: CommandExecutionStatus::Completed,
-                }),
-            },
-        })]
+    assert_single_item_completed(
+        ep.collect_process_events(&end),
+        "item_0",
+        command_execution_item(
+            "bash -lc 'echo delta'",
+            String::new(),
+            Some(0),
+            CommandExecutionStatus::Completed,
+        ),
     );
 }
 
@@ -1033,70 +1080,54 @@ fn exec_command_end_failure_produces_failed_command_item() {
     let cwd = std::env::current_dir().unwrap();
     let parsed_cmd = Vec::new();
 
-    // Begin -> no output
-    let begin = event(
-        "c1",
-        EventMsg::ExecCommandBegin(ExecCommandBeginEvent {
-            call_id: "2".to_string(),
-            process_id: None,
-            turn_id: "turn-1".to_string(),
-            command: command.clone(),
-            cwd: cwd.clone(),
-            parsed_cmd: parsed_cmd.clone(),
-            source: ExecCommandSource::Agent,
-            interaction_input: None,
-        }),
-    );
-    assert_eq!(
-        ep.collect_process_events(&begin),
-        vec![ProcessEvent::ItemStarted(ItemStartedEvent {
-            item: ProcessItem {
-                id: "item_0".to_string(),
-                details: ProcessItemDetails::CommandExecution(CommandExecutionItem {
-                    command: "sh -c 'exit 1'".to_string(),
-                    aggregated_output: String::new(),
-                    exit_code: None,
-                    status: CommandExecutionStatus::InProgress,
-                }),
-            },
-        })]
-    );
-
-    // End (failure) -> item.completed (item_0)
-    let end_fail = event(
-        "c2",
-        EventMsg::ExecCommandEnd(ExecCommandEndEvent {
-            call_id: "2".to_string(),
-            process_id: None,
-            turn_id: "turn-1".to_string(),
-            command,
-            cwd,
-            parsed_cmd,
-            source: ExecCommandSource::Agent,
-            interaction_input: None,
-            stdout: String::new(),
-            stderr: String::new(),
-            aggregated_output: String::new(),
-            exit_code: 1,
-            duration: Duration::from_millis(2),
-            formatted_output: String::new(),
-            status: CoreExecCommandStatus::Failed,
-        }),
-    );
-    let out_fail = ep.collect_process_events(&end_fail);
-    assert_eq!(
-        out_fail,
-        vec![ProcessEvent::ItemCompleted(ItemCompletedEvent {
-            item: ProcessItem {
-                id: "item_0".to_string(),
-                details: ProcessItemDetails::CommandExecution(CommandExecutionItem {
-                    command: "sh -c 'exit 1'".to_string(),
-                    aggregated_output: String::new(),
-                    exit_code: Some(1),
-                    status: CommandExecutionStatus::Failed,
-                }),
-            },
-        })]
+    assert_begin_end_lifecycle(
+        &mut ep,
+        &event(
+            "c1",
+            EventMsg::ExecCommandBegin(ExecCommandBeginEvent {
+                call_id: "2".to_string(),
+                process_id: None,
+                turn_id: "turn-1".to_string(),
+                command: command.clone(),
+                cwd: cwd.clone(),
+                parsed_cmd: parsed_cmd.clone(),
+                source: ExecCommandSource::Agent,
+                interaction_input: None,
+            }),
+        ),
+        Some("item_0"),
+        command_execution_item(
+            "sh -c 'exit 1'",
+            String::new(),
+            None,
+            CommandExecutionStatus::InProgress,
+        ),
+        &event(
+            "c2",
+            EventMsg::ExecCommandEnd(ExecCommandEndEvent {
+                call_id: "2".to_string(),
+                process_id: None,
+                turn_id: "turn-1".to_string(),
+                command,
+                cwd,
+                parsed_cmd,
+                source: ExecCommandSource::Agent,
+                interaction_input: None,
+                stdout: String::new(),
+                stderr: String::new(),
+                aggregated_output: String::new(),
+                exit_code: 1,
+                duration: Duration::from_millis(2),
+                formatted_output: String::new(),
+                status: CoreExecCommandStatus::Failed,
+            }),
+        ),
+        command_execution_item(
+            "sh -c 'exit 1'",
+            String::new(),
+            Some(1),
+            CommandExecutionStatus::Failed,
+        ),
     );
 }
 
@@ -1133,144 +1164,107 @@ fn exec_command_end_without_begin_is_ignored() {
 fn patch_apply_success_produces_item_completed_patchapply() {
     let mut ep = EventProcessorWithJsonOutput::new(None);
 
-    // Prepare a patch with multiple kinds of changes
-    let mut changes = std::collections::HashMap::new();
-    changes.insert(
-        PathBuf::from("a/added.txt"),
-        FileChange::Add {
-            content: "+hello".to_string(),
-        },
+    let changes = file_changes([
+        (
+            "a/added.txt",
+            FileChange::Add {
+                content: "+hello".to_string(),
+            },
+        ),
+        (
+            "b/deleted.txt",
+            FileChange::Delete {
+                content: "-goodbye".to_string(),
+            },
+        ),
+        (
+            "c/modified.txt",
+            FileChange::Update {
+                unified_diff: "--- c/modified.txt\n+++ c/modified.txt\n@@\n-old\n+new\n"
+                    .to_string(),
+                move_path: Some(PathBuf::from("c/renamed.txt")),
+            },
+        ),
+    ]);
+
+    assert!(
+        ep.collect_process_events(&event(
+            "p1",
+            EventMsg::PatchApplyBegin(PatchApplyBeginEvent {
+                call_id: "call-1".to_string(),
+                turn_id: "turn-1".to_string(),
+                auto_approved: true,
+                changes: changes.clone(),
+            }),
+        ))
+        .is_empty()
     );
-    changes.insert(
-        PathBuf::from("b/deleted.txt"),
-        FileChange::Delete {
-            content: "-goodbye".to_string(),
-        },
+
+    assert_patch_apply_completed(
+        ep.collect_process_events(&event(
+            "p2",
+            EventMsg::PatchApplyEnd(PatchApplyEndEvent {
+                call_id: "call-1".to_string(),
+                turn_id: "turn-1".to_string(),
+                stdout: "applied 3 changes".to_string(),
+                stderr: String::new(),
+                success: true,
+                changes,
+                status: CorePatchApplyStatus::Completed,
+            }),
+        )),
+        "item_0",
+        PatchApplyStatus::Completed,
+        vec![
+            ("a/added.txt".to_string(), PatchChangeKind::Add),
+            ("b/deleted.txt".to_string(), PatchChangeKind::Delete),
+            ("c/modified.txt".to_string(), PatchChangeKind::Update),
+        ],
     );
-    changes.insert(
-        PathBuf::from("c/modified.txt"),
-        FileChange::Update {
-            unified_diff: "--- c/modified.txt\n+++ c/modified.txt\n@@\n-old\n+new\n".to_string(),
-            move_path: Some(PathBuf::from("c/renamed.txt")),
-        },
-    );
-
-    // Begin -> no output
-    let begin = event(
-        "p1",
-        EventMsg::PatchApplyBegin(PatchApplyBeginEvent {
-            call_id: "call-1".to_string(),
-            turn_id: "turn-1".to_string(),
-            auto_approved: true,
-            changes: changes.clone(),
-        }),
-    );
-    let out_begin = ep.collect_process_events(&begin);
-    assert!(out_begin.is_empty());
-
-    // End (success) -> item.completed (item_0)
-    let end = event(
-        "p2",
-        EventMsg::PatchApplyEnd(PatchApplyEndEvent {
-            call_id: "call-1".to_string(),
-            turn_id: "turn-1".to_string(),
-            stdout: "applied 3 changes".to_string(),
-            stderr: String::new(),
-            success: true,
-            changes: changes.clone(),
-            status: CorePatchApplyStatus::Completed,
-        }),
-    );
-    let out_end = ep.collect_process_events(&end);
-    assert_eq!(out_end.len(), 1);
-
-    // Validate structure without relying on HashMap iteration order
-    match &out_end[0] {
-        ProcessEvent::ItemCompleted(ItemCompletedEvent { item }) => {
-            assert_eq!(&item.id, "item_0");
-            match &item.details {
-                ProcessItemDetails::FileChange(file_update) => {
-                    assert_eq!(file_update.status, PatchApplyStatus::Completed);
-
-                    let mut actual: Vec<(String, PatchChangeKind)> = file_update
-                        .changes
-                        .iter()
-                        .map(|c| (c.path.clone(), c.kind.clone()))
-                        .collect();
-                    actual.sort_by(|a, b| a.0.cmp(&b.0));
-
-                    let mut expected = vec![
-                        ("a/added.txt".to_string(), PatchChangeKind::Add),
-                        ("b/deleted.txt".to_string(), PatchChangeKind::Delete),
-                        ("c/modified.txt".to_string(), PatchChangeKind::Update),
-                    ];
-                    expected.sort_by(|a, b| a.0.cmp(&b.0));
-
-                    assert_eq!(actual, expected);
-                }
-                other => panic!("unexpected details: {other:?}"),
-            }
-        }
-        other => panic!("unexpected event: {other:?}"),
-    }
 }
 
 #[test]
 fn patch_apply_failure_produces_item_completed_patchapply_failed() {
     let mut ep = EventProcessorWithJsonOutput::new(None);
 
-    let mut changes = std::collections::HashMap::new();
-    changes.insert(
-        PathBuf::from("file.txt"),
+    let changes = file_changes([(
+        "file.txt",
         FileChange::Update {
             unified_diff: "--- file.txt\n+++ file.txt\n@@\n-old\n+new\n".to_string(),
             move_path: None,
         },
+    )]);
+
+    assert!(
+        ep.collect_process_events(&event(
+            "p1",
+            EventMsg::PatchApplyBegin(PatchApplyBeginEvent {
+                call_id: "call-2".to_string(),
+                turn_id: "turn-2".to_string(),
+                auto_approved: false,
+                changes: changes.clone(),
+            }),
+        ))
+        .is_empty()
     );
 
-    // Begin -> no output
-    let begin = event(
-        "p1",
-        EventMsg::PatchApplyBegin(PatchApplyBeginEvent {
-            call_id: "call-2".to_string(),
-            turn_id: "turn-2".to_string(),
-            auto_approved: false,
-            changes: changes.clone(),
-        }),
+    assert_patch_apply_completed(
+        ep.collect_process_events(&event(
+            "p2",
+            EventMsg::PatchApplyEnd(PatchApplyEndEvent {
+                call_id: "call-2".to_string(),
+                turn_id: "turn-2".to_string(),
+                stdout: String::new(),
+                stderr: "failed to apply".to_string(),
+                success: false,
+                changes,
+                status: CorePatchApplyStatus::Failed,
+            }),
+        )),
+        "item_0",
+        PatchApplyStatus::Failed,
+        vec![("file.txt".to_string(), PatchChangeKind::Update)],
     );
-    assert!(ep.collect_process_events(&begin).is_empty());
-
-    // End (failure) -> item.completed (item_0) with Failed status
-    let end = event(
-        "p2",
-        EventMsg::PatchApplyEnd(PatchApplyEndEvent {
-            call_id: "call-2".to_string(),
-            turn_id: "turn-2".to_string(),
-            stdout: String::new(),
-            stderr: "failed to apply".to_string(),
-            success: false,
-            changes: changes.clone(),
-            status: CorePatchApplyStatus::Failed,
-        }),
-    );
-    let out_end = ep.collect_process_events(&end);
-    assert_eq!(out_end.len(), 1);
-
-    match &out_end[0] {
-        ProcessEvent::ItemCompleted(ItemCompletedEvent { item }) => {
-            assert_eq!(&item.id, "item_0");
-            match &item.details {
-                ProcessItemDetails::FileChange(file_update) => {
-                    assert_eq!(file_update.status, PatchApplyStatus::Failed);
-                    assert_eq!(file_update.changes.len(), 1);
-                    assert_eq!(file_update.changes[0].path, "file.txt".to_string());
-                    assert_eq!(file_update.changes[0].kind, PatchChangeKind::Update);
-                }
-                other => panic!("unexpected details: {other:?}"),
-            }
-        }
-        other => panic!("unexpected event: {other:?}"),
-    }
 }
 
 #[test]

@@ -1,24 +1,17 @@
+use crate::harness::build_runtime_metrics_with_defaults;
 use chaos_ipc::ProcessId;
-use chaos_ipc::product::CHAOS_VERSION;
 use chaos_ipc::protocol::SessionSource;
 use chaos_syslog::RuntimeMetricTotals;
 use chaos_syslog::RuntimeMetricsSummary;
 use chaos_syslog::SessionTelemetry;
 use chaos_syslog::TelemetryAuthMode;
-use chaos_syslog::metrics::MetricsClient;
-use chaos_syslog::metrics::MetricsConfig;
 use chaos_syslog::metrics::Result;
 use rama::http::sse::Event as StreamEvent;
-use rama::telemetry::opentelemetry::sdk::metrics::InMemoryMetricExporter;
 use std::time::Duration;
 
 #[test]
 fn runtime_metrics_summary_collects_tool_api_and_streaming_metrics() -> Result<()> {
-    let exporter = InMemoryMetricExporter::default();
-    let metrics = MetricsClient::new(
-        MetricsConfig::in_memory("test", "chaos-cli", CHAOS_VERSION, exporter)
-            .with_runtime_reader(),
-    )?;
+    let (metrics, _exporter) = build_runtime_metrics_with_defaults(&[])?;
     let manager = SessionTelemetry::new(
         ProcessId::new(),
         "gpt-5.1",

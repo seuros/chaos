@@ -1,15 +1,9 @@
+use crate::harness::build_metrics_with_defaults;
 use chaos_ipc::product::CHAOS_VERSION;
-use chaos_syslog::metrics::MetricsClient;
 use chaos_syslog::metrics::MetricsConfig;
 use chaos_syslog::metrics::MetricsError;
 use chaos_syslog::metrics::Result;
 use rama::telemetry::opentelemetry::sdk::metrics::InMemoryMetricExporter;
-
-fn build_in_memory_client() -> Result<MetricsClient> {
-    let exporter = InMemoryMetricExporter::default();
-    let config = MetricsConfig::in_memory("test", "chaos-cli", CHAOS_VERSION, exporter);
-    MetricsClient::new(config)
-}
 
 // Ensures invalid tag components are rejected during config build.
 #[test]
@@ -33,7 +27,7 @@ fn invalid_tag_component_is_rejected() -> Result<()> {
 // Ensures per-metric tag keys are validated.
 #[test]
 fn counter_rejects_invalid_tag_key() -> Result<()> {
-    let metrics = build_in_memory_client()?;
+    let (metrics, _exporter) = build_metrics_with_defaults(&[])?;
     let err = metrics
         .counter("chaos.turns", 1, &[("bad key", "value")])
         .unwrap_err();
@@ -49,7 +43,7 @@ fn counter_rejects_invalid_tag_key() -> Result<()> {
 // Ensures per-metric tag values are validated.
 #[test]
 fn histogram_rejects_invalid_tag_value() -> Result<()> {
-    let metrics = build_in_memory_client()?;
+    let (metrics, _exporter) = build_metrics_with_defaults(&[])?;
     let err = metrics
         .histogram("chaos.request_latency", 3, &[("route", "bad value")])
         .unwrap_err();
@@ -65,7 +59,7 @@ fn histogram_rejects_invalid_tag_value() -> Result<()> {
 // Ensures invalid metric names are rejected.
 #[test]
 fn counter_rejects_invalid_metric_name() -> Result<()> {
-    let metrics = build_in_memory_client()?;
+    let (metrics, _exporter) = build_metrics_with_defaults(&[])?;
     let err = metrics.counter("bad name", 1, &[]).unwrap_err();
     assert!(matches!(
         err,
@@ -77,7 +71,7 @@ fn counter_rejects_invalid_metric_name() -> Result<()> {
 
 #[test]
 fn counter_rejects_negative_increment() -> Result<()> {
-    let metrics = build_in_memory_client()?;
+    let (metrics, _exporter) = build_metrics_with_defaults(&[])?;
     let err = metrics.counter("chaos.turns", -1, &[]).unwrap_err();
     assert!(matches!(
         err,

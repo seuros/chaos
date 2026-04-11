@@ -3,125 +3,189 @@ use pretty_assertions::assert_eq;
 use std::collections::HashMap;
 use std::path::PathBuf;
 
-#[test]
-fn deserialize_stdio_command_server_config() {
-    let cfg: McpServerConfig = toml::from_str(
-        r#"
-            command = "echo"
-        "#,
-    )
-    .expect("should deserialize command config");
-
-    assert_eq!(
-        cfg.transport,
-        McpServerTransportConfig::Stdio {
-            command: "echo".to_string(),
-            args: vec![],
-            env: None,
-            env_vars: Vec::new(),
-            cwd: None,
-        }
-    );
-    assert!(cfg.enabled);
-    assert!(!cfg.required);
-    assert!(cfg.enabled_tools.is_none());
-    assert!(cfg.disabled_tools.is_none());
+fn deserialize_server_config(input: &str) -> Result<McpServerConfig, toml::de::Error> {
+    toml::from_str(input)
 }
 
-#[test]
-fn deserialize_stdio_command_server_config_with_args() {
-    let cfg: McpServerConfig = toml::from_str(
-        r#"
-            command = "echo"
-            args = ["hello", "world"]
-        "#,
-    )
-    .expect("should deserialize command config");
-
-    assert_eq!(
-        cfg.transport,
-        McpServerTransportConfig::Stdio {
-            command: "echo".to_string(),
-            args: vec!["hello".to_string(), "world".to_string()],
-            env: None,
-            env_vars: Vec::new(),
-            cwd: None,
-        }
-    );
-    assert!(cfg.enabled);
+fn strings(values: &[&str]) -> Vec<String> {
+    values.iter().map(|value| (*value).to_string()).collect()
 }
 
-#[test]
-fn deserialize_stdio_command_server_config_with_arg_with_args_and_env() {
-    let cfg: McpServerConfig = toml::from_str(
-        r#"
-            command = "echo"
-            args = ["hello", "world"]
-            env = { "FOO" = "BAR" }
-        "#,
-    )
-    .expect("should deserialize command config");
-
-    assert_eq!(
-        cfg.transport,
-        McpServerTransportConfig::Stdio {
-            command: "echo".to_string(),
-            args: vec!["hello".to_string(), "world".to_string()],
-            env: Some(HashMap::from([("FOO".to_string(), "BAR".to_string())])),
-            env_vars: Vec::new(),
-            cwd: None,
-        }
-    );
-    assert!(cfg.enabled);
+fn string_map(entries: &[(&str, &str)]) -> HashMap<String, String> {
+    entries
+        .iter()
+        .map(|(key, value)| ((*key).to_string(), (*value).to_string()))
+        .collect()
 }
 
-#[test]
-fn deserialize_stdio_command_server_config_with_env_vars() {
-    let cfg: McpServerConfig = toml::from_str(
-        r#"
-            command = "echo"
-            env_vars = ["FOO", "BAR"]
-        "#,
-    )
-    .expect("should deserialize command config with env_vars");
+fn stdio_transport(
+    args: &[&str],
+    env: Option<&[(&str, &str)]>,
+    env_vars: &[&str],
+    cwd: Option<&str>,
+) -> McpServerTransportConfig {
+    McpServerTransportConfig::Stdio {
+        command: "echo".to_string(),
+        args: strings(args),
+        env: env.map(string_map),
+        env_vars: strings(env_vars),
+        cwd: cwd.map(PathBuf::from),
+    }
+}
+
+fn streamable_http_transport(
+    bearer_token_env_var: Option<&str>,
+    http_headers: Option<&[(&str, &str)]>,
+    env_http_headers: Option<&[(&str, &str)]>,
+) -> McpServerTransportConfig {
+    McpServerTransportConfig::StreamableHttp {
+        url: "https://example.com/mcp".to_string(),
+        bearer_token_env_var: bearer_token_env_var.map(str::to_string),
+        http_headers: http_headers.map(string_map),
+        env_http_headers: env_http_headers.map(string_map),
+    }
+}
+
+struct SuccessfulServerCase {
+    name: &'static str,
+    input: &'static str,
+    expected_transport: McpServerTransportConfig,
+    expected_enabled: bool,
+    expected_required: bool,
+    expected_enabled_tools: Option<Vec<String>>,
+    expected_disabled_tools: Option<Vec<String>>,
+    expected_oauth_resource: Option<&'static str>,
+}
+
+fn assert_successful_server_case(case: SuccessfulServerCase) {
+    let cfg = deserialize_server_config(case.input)
+        .unwrap_or_else(|err| panic!("{} should deserialize: {err}", case.name));
 
     assert_eq!(
-        cfg.transport,
-        McpServerTransportConfig::Stdio {
-            command: "echo".to_string(),
-            args: vec![],
-            env: None,
-            env_vars: vec!["FOO".to_string(), "BAR".to_string()],
-            cwd: None,
-        }
+        cfg.transport, case.expected_transport,
+        "case: {}",
+        case.name
+    );
+    assert_eq!(cfg.enabled, case.expected_enabled, "case: {}", case.name);
+    assert_eq!(cfg.required, case.expected_required, "case: {}", case.name);
+    assert_eq!(
+        cfg.enabled_tools, case.expected_enabled_tools,
+        "case: {}",
+        case.name
+    );
+    assert_eq!(
+        cfg.disabled_tools, case.expected_disabled_tools,
+        "case: {}",
+        case.name
+    );
+    assert_eq!(
+        cfg.oauth_resource.as_deref(),
+        case.expected_oauth_resource,
+        "case: {}",
+        case.name
     );
 }
 
-#[test]
-fn deserialize_stdio_command_server_config_with_cwd() {
-    let cfg: McpServerConfig = toml::from_str(
-        r#"
-            command = "echo"
-            cwd = "/tmp"
-        "#,
-    )
-    .expect("should deserialize command config with cwd");
+struct RejectedServerCase {
+    name: &'static str,
+    input: &'static str,
+    expected_message: Option<&'static str>,
+}
 
-    assert_eq!(
-        cfg.transport,
-        McpServerTransportConfig::Stdio {
-            command: "echo".to_string(),
-            args: vec![],
-            env: None,
-            env_vars: Vec::new(),
-            cwd: Some(PathBuf::from("/tmp")),
-        }
-    );
+fn assert_rejected_server_case(case: RejectedServerCase) {
+    let err = deserialize_server_config(case.input)
+        .expect_err("server config should reject invalid transport fields");
+
+    if let Some(expected_message) = case.expected_message {
+        assert!(
+            err.to_string().contains(expected_message),
+            "unexpected error for {}: {err}",
+            case.name
+        );
+    }
+}
+
+#[test]
+fn deserialize_stdio_command_server_config_variants() {
+    for case in [
+        SuccessfulServerCase {
+            name: "default stdio",
+            input: r#"
+                command = "echo"
+            "#,
+            expected_transport: stdio_transport(&[], None, &[], None),
+            expected_enabled: true,
+            expected_required: false,
+            expected_enabled_tools: None,
+            expected_disabled_tools: None,
+            expected_oauth_resource: None,
+        },
+        SuccessfulServerCase {
+            name: "stdio with args",
+            input: r#"
+                command = "echo"
+                args = ["hello", "world"]
+            "#,
+            expected_transport: stdio_transport(&["hello", "world"], None, &[], None),
+            expected_enabled: true,
+            expected_required: false,
+            expected_enabled_tools: None,
+            expected_disabled_tools: None,
+            expected_oauth_resource: None,
+        },
+        SuccessfulServerCase {
+            name: "stdio with args and env",
+            input: r#"
+                command = "echo"
+                args = ["hello", "world"]
+                env = { "FOO" = "BAR" }
+            "#,
+            expected_transport: stdio_transport(
+                &["hello", "world"],
+                Some(&[("FOO", "BAR")]),
+                &[],
+                None,
+            ),
+            expected_enabled: true,
+            expected_required: false,
+            expected_enabled_tools: None,
+            expected_disabled_tools: None,
+            expected_oauth_resource: None,
+        },
+        SuccessfulServerCase {
+            name: "stdio with env vars",
+            input: r#"
+                command = "echo"
+                env_vars = ["FOO", "BAR"]
+            "#,
+            expected_transport: stdio_transport(&[], None, &["FOO", "BAR"], None),
+            expected_enabled: true,
+            expected_required: false,
+            expected_enabled_tools: None,
+            expected_disabled_tools: None,
+            expected_oauth_resource: None,
+        },
+        SuccessfulServerCase {
+            name: "stdio with cwd",
+            input: r#"
+                command = "echo"
+                cwd = "/tmp"
+            "#,
+            expected_transport: stdio_transport(&[], None, &[], Some("/tmp")),
+            expected_enabled: true,
+            expected_required: false,
+            expected_enabled_tools: None,
+            expected_disabled_tools: None,
+            expected_oauth_resource: None,
+        },
+    ] {
+        assert_successful_server_case(case);
+    }
 }
 
 #[test]
 fn deserialize_disabled_server_config() {
-    let cfg: McpServerConfig = toml::from_str(
+    let cfg: McpServerConfig = deserialize_server_config(
         r#"
             command = "echo"
             enabled = false
@@ -135,7 +199,7 @@ fn deserialize_disabled_server_config() {
 
 #[test]
 fn deserialize_required_server_config() {
-    let cfg: McpServerConfig = toml::from_str(
+    let cfg: McpServerConfig = deserialize_server_config(
         r#"
             command = "echo"
             required = true
@@ -147,92 +211,72 @@ fn deserialize_required_server_config() {
 }
 
 #[test]
-fn deserialize_streamable_http_server_config() {
-    let cfg: McpServerConfig = toml::from_str(
-        r#"
-            url = "https://example.com/mcp"
-        "#,
-    )
-    .expect("should deserialize http config");
-
-    assert_eq!(
-        cfg.transport,
-        McpServerTransportConfig::StreamableHttp {
-            url: "https://example.com/mcp".to_string(),
-            bearer_token_env_var: None,
-            http_headers: None,
-            env_http_headers: None,
-        }
-    );
-    assert!(cfg.enabled);
-}
-
-#[test]
-fn deserialize_streamable_http_server_config_with_env_var() {
-    let cfg: McpServerConfig = toml::from_str(
-        r#"
-            url = "https://example.com/mcp"
-            bearer_token_env_var = "GITHUB_TOKEN"
-        "#,
-    )
-    .expect("should deserialize http config");
-
-    assert_eq!(
-        cfg.transport,
-        McpServerTransportConfig::StreamableHttp {
-            url: "https://example.com/mcp".to_string(),
-            bearer_token_env_var: Some("GITHUB_TOKEN".to_string()),
-            http_headers: None,
-            env_http_headers: None,
-        }
-    );
-    assert!(cfg.enabled);
-}
-
-#[test]
-fn deserialize_streamable_http_server_config_with_headers() {
-    let cfg: McpServerConfig = toml::from_str(
-        r#"
-            url = "https://example.com/mcp"
-            http_headers = { "X-Foo" = "bar" }
-            env_http_headers = { "X-Token" = "TOKEN_ENV" }
-        "#,
-    )
-    .expect("should deserialize http config with headers");
-
-    assert_eq!(
-        cfg.transport,
-        McpServerTransportConfig::StreamableHttp {
-            url: "https://example.com/mcp".to_string(),
-            bearer_token_env_var: None,
-            http_headers: Some(HashMap::from([("X-Foo".to_string(), "bar".to_string())])),
-            env_http_headers: Some(HashMap::from([(
-                "X-Token".to_string(),
-                "TOKEN_ENV".to_string()
-            )])),
-        }
-    );
-}
-
-#[test]
-fn deserialize_streamable_http_server_config_with_oauth_resource() {
-    let cfg: McpServerConfig = toml::from_str(
-        r#"
-            url = "https://example.com/mcp"
-            oauth_resource = "https://api.example.com"
-        "#,
-    )
-    .expect("should deserialize http config with oauth_resource");
-
-    assert_eq!(
-        cfg.oauth_resource,
-        Some("https://api.example.com".to_string())
-    );
+fn deserialize_streamable_http_server_config_variants() {
+    for case in [
+        SuccessfulServerCase {
+            name: "default streamable http",
+            input: r#"
+                url = "https://example.com/mcp"
+            "#,
+            expected_transport: streamable_http_transport(None, None, None),
+            expected_enabled: true,
+            expected_required: false,
+            expected_enabled_tools: None,
+            expected_disabled_tools: None,
+            expected_oauth_resource: None,
+        },
+        SuccessfulServerCase {
+            name: "streamable http with bearer token env var",
+            input: r#"
+                url = "https://example.com/mcp"
+                bearer_token_env_var = "GITHUB_TOKEN"
+            "#,
+            expected_transport: streamable_http_transport(Some("GITHUB_TOKEN"), None, None),
+            expected_enabled: true,
+            expected_required: false,
+            expected_enabled_tools: None,
+            expected_disabled_tools: None,
+            expected_oauth_resource: None,
+        },
+        SuccessfulServerCase {
+            name: "streamable http with headers",
+            input: r#"
+                url = "https://example.com/mcp"
+                http_headers = { "X-Foo" = "bar" }
+                env_http_headers = { "X-Token" = "TOKEN_ENV" }
+            "#,
+            expected_transport: streamable_http_transport(
+                None,
+                Some(&[("X-Foo", "bar")]),
+                Some(&[("X-Token", "TOKEN_ENV")]),
+            ),
+            expected_enabled: true,
+            expected_required: false,
+            expected_enabled_tools: None,
+            expected_disabled_tools: None,
+            expected_oauth_resource: None,
+        },
+        SuccessfulServerCase {
+            name: "streamable http with oauth resource",
+            input: r#"
+                url = "https://example.com/mcp"
+                oauth_resource = "https://api.example.com"
+            "#,
+            expected_transport: streamable_http_transport(None, None, None),
+            expected_enabled: true,
+            expected_required: false,
+            expected_enabled_tools: None,
+            expected_disabled_tools: None,
+            expected_oauth_resource: Some("https://api.example.com"),
+        },
+    ] {
+        assert_successful_server_case(case);
+    }
 }
 
 #[test]
 fn deserialize_server_config_with_tool_filters() {
-    let cfg: McpServerConfig = toml::from_str(
+    let cfg: McpServerConfig = deserialize_server_config(
         r#"
             command = "echo"
             enabled_tools = ["allowed"]
@@ -246,74 +290,59 @@ fn deserialize_server_config_with_tool_filters() {
 }
 
 #[test]
-fn deserialize_rejects_command_and_url() {
-    toml::from_str::<McpServerConfig>(
-        r#"
-            command = "echo"
-            url = "https://example.com"
-        "#,
-    )
-    .expect_err("should reject command+url");
-}
-
-#[test]
-fn deserialize_rejects_env_for_http_transport() {
-    toml::from_str::<McpServerConfig>(
-        r#"
-            url = "https://example.com"
-            env = { "FOO" = "BAR" }
-        "#,
-    )
-    .expect_err("should reject env for http transport");
-}
-
-#[test]
-fn deserialize_rejects_headers_for_stdio() {
-    toml::from_str::<McpServerConfig>(
-        r#"
-            command = "echo"
-            http_headers = { "X-Foo" = "bar" }
-        "#,
-    )
-    .expect_err("should reject http_headers for stdio transport");
-
-    toml::from_str::<McpServerConfig>(
-        r#"
-            command = "echo"
-            env_http_headers = { "X-Foo" = "BAR_ENV" }
-        "#,
-    )
-    .expect_err("should reject env_http_headers for stdio transport");
-
-    let err = toml::from_str::<McpServerConfig>(
-        r#"
-            command = "echo"
-            oauth_resource = "https://api.example.com"
-        "#,
-    )
-    .expect_err("should reject oauth_resource for stdio transport");
-
-    assert!(
-        err.to_string()
-            .contains("oauth_resource is not supported for stdio"),
-        "unexpected error: {err}"
-    );
-}
-
-#[test]
-fn deserialize_rejects_inline_bearer_token_field() {
-    let err = toml::from_str::<McpServerConfig>(
-        r#"
-            url = "https://example.com"
-            bearer_token = "secret"
-        "#,
-    )
-    .expect_err("should reject bearer_token field");
-
-    assert!(
-        err.to_string().contains("bearer_token is not supported"),
-        "unexpected error: {err}"
-    );
+fn deserialize_rejects_invalid_transport_fields() {
+    for case in [
+        RejectedServerCase {
+            name: "command and url",
+            input: r#"
+                command = "echo"
+                url = "https://example.com"
+            "#,
+            expected_message: None,
+        },
+        RejectedServerCase {
+            name: "http transport with env",
+            input: r#"
+                url = "https://example.com"
+                env = { "FOO" = "BAR" }
+            "#,
+            expected_message: None,
+        },
+        RejectedServerCase {
+            name: "stdio with http headers",
+            input: r#"
+                command = "echo"
+                http_headers = { "X-Foo" = "bar" }
+            "#,
+            expected_message: None,
+        },
+        RejectedServerCase {
+            name: "stdio with env http headers",
+            input: r#"
+                command = "echo"
+                env_http_headers = { "X-Foo" = "BAR_ENV" }
+            "#,
+            expected_message: None,
+        },
+        RejectedServerCase {
+            name: "stdio with oauth resource",
+            input: r#"
+                command = "echo"
+                oauth_resource = "https://api.example.com"
+            "#,
+            expected_message: Some("oauth_resource is not supported for stdio"),
+        },
+        RejectedServerCase {
+            name: "http transport with inline bearer token",
+            input: r#"
+                url = "https://example.com"
+                bearer_token = "secret"
+            "#,
+            expected_message: Some("bearer_token is not supported"),
+        },
+    ] {
+        assert_rejected_server_case(case);
+    }
 }
 
 #[test]

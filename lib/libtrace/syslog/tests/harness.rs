@@ -24,6 +24,19 @@ pub(crate) fn build_metrics_with_defaults(
     Ok((metrics, exporter))
 }
 
+pub(crate) fn build_runtime_metrics_with_defaults(
+    default_tags: &[(&str, &str)],
+) -> Result<(MetricsClient, InMemoryMetricExporter)> {
+    let exporter = InMemoryMetricExporter::default();
+    let mut config = MetricsConfig::in_memory("test", "chaos-cli", CHAOS_VERSION, exporter.clone())
+        .with_runtime_reader();
+    for (key, value) in default_tags {
+        config = config.with_tag(*key, *value)?;
+    }
+    let metrics = MetricsClient::new(config)?;
+    Ok((metrics, exporter))
+}
+
 pub(crate) fn latest_metrics(exporter: &InMemoryMetricExporter) -> ResourceMetrics {
     let Ok(metrics) = exporter.get_finished_metrics() else {
         panic!("finished metrics error");
@@ -71,6 +84,56 @@ pub(crate) fn histogram_data(
                 let bounds = point.bounds().collect();
                 let bucket_counts = point.bucket_counts().collect();
                 (bounds, bucket_counts, point.sum(), point.count())
+            }
+            _ => panic!("unexpected histogram aggregation"),
+        },
+        _ => panic!("unexpected metric data type"),
+    }
+}
+
+pub(crate) fn counter_value_and_attributes(
+    resource_metrics: &ResourceMetrics,
+    name: &str,
+) -> (u64, BTreeMap<String, String>) {
+    let metric =
+        find_metric(resource_metrics, name).unwrap_or_else(|| panic!("metric {name} missing"));
+    match metric.data() {
+        AggregatedMetrics::U64(data) => match data {
+            MetricData::Sum(sum) => {
+                let points: Vec<_> = sum.data_points().collect();
+                assert_eq!(points.len(), 1);
+                let point = points[0];
+                (point.value(), attributes_to_map(point.attributes()))
+            }
+            _ => panic!("unexpected counter aggregation"),
+        },
+        _ => panic!("unexpected counter data type"),
+    }
+}
+
+pub(crate) fn counter_attributes(
+    resource_metrics: &ResourceMetrics,
+    name: &str,
+) -> BTreeMap<String, String> {
+    counter_value_and_attributes(resource_metrics, name).1
+}
+
+pub(crate) fn counter_value(resource_metrics: &ResourceMetrics, name: &str) -> u64 {
+    counter_value_and_attributes(resource_metrics, name).0
+}
+
+pub(crate) fn histogram_attributes(
+    resource_metrics: &ResourceMetrics,
+    name: &str,
+) -> BTreeMap<String, String> {
+    let metric =
+        find_metric(resource_metrics, name).unwrap_or_else(|| panic!("metric {name} missing"));
+    match metric.data() {
+        AggregatedMetrics::F64(data) => match data {
+            MetricData::Histogram(histogram) => {
+                let points: Vec<_> = histogram.data_points().collect();
+                assert_eq!(points.len(), 1);
+                attributes_to_map(points[0].attributes())
             }
             _ => panic!("unexpected histogram aggregation"),
         },

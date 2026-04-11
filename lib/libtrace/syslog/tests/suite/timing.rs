@@ -1,5 +1,6 @@
-use crate::harness::attributes_to_map;
 use crate::harness::build_metrics_with_defaults;
+use crate::harness::find_metric;
+use crate::harness::histogram_attributes;
 use crate::harness::histogram_data;
 use crate::harness::latest_metrics;
 use chaos_syslog::metrics::Result;
@@ -25,7 +26,7 @@ fn record_duration_records_histogram() -> Result<()> {
     assert_eq!(bucket_counts.iter().sum::<u64>(), 1);
     assert_eq!(sum, 15.0);
     assert_eq!(count, 1);
-    let metric = crate::harness::find_metric(&resource_metrics, "chaos.request_latency")
+    let metric = find_metric(&resource_metrics, "chaos.request_latency")
         .unwrap_or_else(|| panic!("metric chaos.request_latency missing"));
     assert_eq!(metric.unit(), "ms");
     assert_eq!(metric.description(), "Duration in milliseconds.");
@@ -51,26 +52,11 @@ fn timer_result_records_success() -> Result<()> {
     assert!(!bounds.is_empty());
     assert_eq!(count, 1);
     assert_eq!(bucket_counts.iter().sum::<u64>(), 1);
-    let metric = crate::harness::find_metric(&resource_metrics, "chaos.request_latency")
+    let metric = find_metric(&resource_metrics, "chaos.request_latency")
         .unwrap_or_else(|| panic!("metric chaos.request_latency missing"));
     assert_eq!(metric.unit(), "ms");
     assert_eq!(metric.description(), "Duration in milliseconds.");
-    let attrs = attributes_to_map(
-        match crate::harness::find_metric(&resource_metrics, "chaos.request_latency").and_then(
-            |metric| match metric.data() {
-                rama::telemetry::opentelemetry::sdk::metrics::data::AggregatedMetrics::F64(
-                    rama::telemetry::opentelemetry::sdk::metrics::data::MetricData::Histogram(histogram),
-                ) => histogram
-                    .data_points()
-                    .next()
-                    .map(rama::telemetry::opentelemetry::sdk::metrics::data::HistogramDataPoint::attributes),
-                _ => None,
-            },
-        ) {
-            Some(attrs) => attrs,
-            None => panic!("attributes missing"),
-        },
-    );
+    let attrs = histogram_attributes(&resource_metrics, "chaos.request_latency");
     assert_eq!(attrs.get("route").map(String::as_str), Some("chat"));
 
     Ok(())

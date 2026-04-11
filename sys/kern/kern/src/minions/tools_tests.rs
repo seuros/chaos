@@ -25,6 +25,7 @@ use chaos_ipc::protocol::InitialHistory;
 use chaos_ipc::protocol::RolloutItem;
 use pretty_assertions::assert_eq;
 use serde::Deserialize;
+use serde_json::Value;
 use serde_json::json;
 use std::collections::HashMap;
 use std::path::PathBuf;
@@ -32,6 +33,16 @@ use std::sync::Arc;
 use std::time::Duration;
 use tokio::sync::Mutex;
 use tokio::time::timeout;
+
+const EMPTY_MESSAGE_ERROR: &str = "Empty message can't be sent to an agent";
+const MESSAGE_AND_ITEMS_CONFLICT_ERROR: &str = "Provide either message or items, but not both";
+const DEPTH_LIMIT_ERROR: &str = "Agent depth limit reached. Solve the task yourself.";
+
+struct ValidationCase {
+    name: &'static str,
+    tool_name: &'static str,
+    args: Value,
+}
 
 fn invocation(
     session: Arc<crate::chaos::Session>,
@@ -89,6 +100,87 @@ where
     }
 }
 
+fn attach_process_manager(session: &mut crate::chaos::Session) -> ProcessTable {
+    let manager = process_table();
+    session.services.agent_control = manager.agent_control();
+    manager
+}
+
+fn set_depth_limited_sub_agent_source(session: &crate::chaos::Session, turn: &mut TurnContext) {
+    let max_depth = turn.config.agent_max_depth;
+    turn.session_source = SessionSource::SubAgent(SubAgentSource::ProcessSpawn {
+        parent_process_id: session.conversation_id,
+        depth: max_depth,
+        agent_nickname: None,
+        agent_role: None,
+    });
+}
+
+async fn invoke_validation_handler<F, S>(
+    tool_name: &'static str,
+    args: Value,
+    setup: F,
+) -> Result<(), FunctionCallError>
+where
+    F: FnOnce(&mut crate::chaos::Session, &mut TurnContext) -> S,
+{
+    let (mut session, mut turn) = make_session_and_context().await;
+    let _setup_state = setup(&mut session, &mut turn);
+    let invocation = invocation(
+        Arc::new(session),
+        Arc::new(turn),
+        tool_name,
+        function_payload(args),
+    );
+    match tool_name {
+        "spawn_agent" => SpawnAgentHandler.handle(invocation).await.map(|_| ()),
+        "send_input" => SendInputHandler.handle(invocation).await.map(|_| ()),
+        "resume_agent" => ResumeAgentHandler.handle(invocation).await.map(|_| ()),
+        "wait_agent" => WaitAgentHandler.handle(invocation).await.map(|_| ()),
+        other => panic!("unsupported validation test tool: {other}"),
+    }
+}
+
+async fn assert_respond_to_model_error<F, S>(
+    case_name: &str,
+    tool_name: &'static str,
+    args: Value,
+    expected: &str,
+    setup: F,
+) where
+    F: FnOnce(&mut crate::chaos::Session, &mut TurnContext) -> S,
+{
+    let Err(err) = invoke_validation_handler(tool_name, args, setup).await else {
+        panic!("{case_name} should be rejected");
+    };
+    assert_eq!(
+        err,
+        FunctionCallError::RespondToModel(expected.to_string()),
+        "{case_name} should return the expected validation error",
+    );
+}
+
+async fn assert_respond_to_model_error_starts_with<F, S>(
+    case_name: &str,
+    tool_name: &'static str,
+    args: Value,
+    prefix: &str,
+    setup: F,
+) where
+    F: FnOnce(&mut crate::chaos::Session, &mut TurnContext) -> S,
+{
+    let Err(err) = invoke_validation_handler(tool_name, args, setup).await else {
+        panic!("{case_name} should be rejected");
+    };
+    let FunctionCallError::RespondToModel(message) = err else {
+        panic!("{case_name} should return a respond-to-model error");
+    };
+    assert!(
+        message.starts_with(prefix),
+        "{case_name} should start with {prefix:?}, got {message:?}",
+    );
+}
+
 #[tokio::test]
 async fn handler_rejects_non_function_payloads() {
     let (session, turn) = make_session_and_context().await;
@@ -112,44 +204,60 @@ async fn handler_rejects_non_function_payloads() {
 }
 
 #[tokio::test]
-async fn spawn_agent_rejects_empty_message() {
-    let (session, turn) = make_session_and_context().await;
-    let invocation = invocation(
-        Arc::new(session),
-        Arc::new(turn),
-        "spawn_agent",
-        function_payload(json!({"message": "   "})),
-    );
-    let Err(err) = SpawnAgentHandler.handle(invocation).await else {
-        panic!("empty message should be rejected");
-    };
-    assert_eq!(
-        err,
-        FunctionCallError::RespondToModel("Empty message can't be sent to an agent".to_string())
-    );
+async fn collab_input_handlers_reject_empty_messages() {
+    for case in [
+        ValidationCase {
+            name: "spawn_agent rejects blank message",
+            tool_name: "spawn_agent",
+            args: json!({"message": "   "}),
+        },
+        ValidationCase {
+            name: "send_input rejects empty message",
+            tool_name: "send_input",
+            args: json!({"id": ProcessId::new().to_string(), "message": ""}),
+        },
+    ] {
+        assert_respond_to_model_error(
+            case.name,
+            case.tool_name,
+            case.args,
+            EMPTY_MESSAGE_ERROR,
+            |_, _| (),
+        )
+        .await;
+    }
 }
 
 #[tokio::test]
-async fn spawn_agent_rejects_when_message_and_items_are_both_set() {
-    let (session, turn) = make_session_and_context().await;
-    let invocation = invocation(
-        Arc::new(session),
-        Arc::new(turn),
-        "spawn_agent",
-        function_payload(json!({
-            "message": "hello",
-            "items": [{"type": "mention", "name": "drive", "path": "app://drive"}]
-        })),
-    );
-    let Err(err) = SpawnAgentHandler.handle(invocation).await else {
-        panic!("message+items should be rejected");
-    };
-    assert_eq!(
-        err,
-        FunctionCallError::RespondToModel(
-            "Provide either message or items, but not both".to_string()
+async fn collab_input_handlers_reject_message_and_items_together() {
+    for case in [
+        ValidationCase {
+            name: "spawn_agent rejects message+items",
+            tool_name: "spawn_agent",
+            args: json!({
+                "message": "hello",
+                "items": [{"type": "mention", "name": "drive", "path": "app://drive"}]
+            }),
+        },
+        ValidationCase {
+            name: "send_input rejects message+items",
+            tool_name: "send_input",
+            args: json!({
+                "id": ProcessId::new().to_string(),
+                "message": "hello",
+                "items": [{"type": "mention", "name": "drive", "path": "app://drive"}]
+            }),
+        },
+    ] {
+        assert_respond_to_model_error(
+            case.name,
+            case.tool_name,
+            case.args,
+            MESSAGE_AND_ITEMS_CONFLICT_ERROR,
+            |_, _| (),
         )
-    );
+        .await;
+    }
 }
 
 #[tokio::test]
@@ -324,34 +432,29 @@ async fn spawn_agent_reapplies_runtime_sandbox_after_role_config() {
 }
 
 #[tokio::test]
-async fn spawn_agent_rejects_when_depth_limit_exceeded() {
-    let (mut session, mut turn) = make_session_and_context().await;
-    let manager = process_table();
-    session.services.agent_control = manager.agent_control();
-
-    let max_depth = turn.config.agent_max_depth;
-    turn.session_source = SessionSource::SubAgent(SubAgentSource::ProcessSpawn {
-        parent_process_id: session.conversation_id,
-        depth: max_depth,
-        agent_nickname: None,
-        agent_role: None,
-    });
-
-    let invocation = invocation(
-        Arc::new(session),
-        Arc::new(turn),
-        "spawn_agent",
-        function_payload(json!({"message": "hello"})),
-    );
-    let Err(err) = SpawnAgentHandler.handle(invocation).await else {
-        panic!("spawn should fail when depth limit exceeded");
-    };
-    assert_eq!(
-        err,
-        FunctionCallError::RespondToModel(
-            "Agent depth limit reached. Solve the task yourself.".to_string()
+async fn collab_spawn_and_resume_reject_when_depth_limit_is_exceeded() {
+    for (case_name, tool_name) in [
+        ("spawn_agent depth limit", "spawn_agent"),
+        ("resume_agent depth limit", "resume_agent"),
+    ] {
+        let args = match tool_name {
+            "spawn_agent" => json!({"message": "hello"}),
+            "resume_agent" => json!({"id": ProcessId::new().to_string()}),
+            other => panic!("unexpected tool in depth-limit test: {other}"),
+        };
+        assert_respond_to_model_error(
+            case_name,
+            tool_name,
+            args,
+            DEPTH_LIMIT_ERROR,
+            |session, turn| {
+                let manager = attach_process_manager(session);
+                set_depth_limited_sub_agent_source(session, turn);
+                manager
+            },
         )
-    );
+        .await;
+    }
 }
 
 #[tokio::test]
@@ -400,84 +503,57 @@ async fn spawn_agent_allows_depth_up_to_configured_max_depth() {
 }
 
 #[tokio::test]
-async fn send_input_rejects_empty_message() {
-    let (session, turn) = make_session_and_context().await;
-    let invocation = invocation(
-        Arc::new(session),
-        Arc::new(turn),
-        "send_input",
-        function_payload(json!({"id": ProcessId::new().to_string(), "message": ""})),
-    );
-    let Err(err) = SendInputHandler.handle(invocation).await else {
-        panic!("empty message should be rejected");
-    };
-    assert_eq!(
-        err,
-        FunctionCallError::RespondToModel("Empty message can't be sent to an agent".to_string())
-    );
-}
-
-#[tokio::test]
-async fn send_input_rejects_when_message_and_items_are_both_set() {
-    let (session, turn) = make_session_and_context().await;
-    let invocation = invocation(
-        Arc::new(session),
-        Arc::new(turn),
-        "send_input",
-        function_payload(json!({
-            "id": ProcessId::new().to_string(),
-            "message": "hello",
-            "items": [{"type": "mention", "name": "drive", "path": "app://drive"}]
-        })),
-    );
-    let Err(err) = SendInputHandler.handle(invocation).await else {
-        panic!("message+items should be rejected");
-    };
-    assert_eq!(
-        err,
-        FunctionCallError::RespondToModel(
-            "Provide either message or items, but not both".to_string()
+async fn collab_handlers_reject_invalid_ids() {
+    for case in [
+        ValidationCase {
+            name: "send_input invalid id",
+            tool_name: "send_input",
+            args: json!({"id": "not-a-uuid", "message": "hi"}),
+        },
+        ValidationCase {
+            name: "resume_agent invalid id",
+            tool_name: "resume_agent",
+            args: json!({"id": "not-a-uuid"}),
+        },
+        ValidationCase {
+            name: "wait_agent invalid id",
+            tool_name: "wait_agent",
+            args: json!({"ids": ["invalid"]}),
+        },
+    ] {
+        let invalid_id = match case.tool_name {
+            "wait_agent" => "invalid",
+            _ => "not-a-uuid",
+        };
+        assert_respond_to_model_error_starts_with(
+            case.name,
+            case.tool_name,
+            case.args,
+            &format!("invalid agent id {invalid_id}:"),
+            |_, _| (),
         )
-    );
+        .await;
+    }
 }
 
 #[tokio::test]
-async fn send_input_rejects_invalid_id() {
-    let (session, turn) = make_session_and_context().await;
-    let invocation = invocation(
-        Arc::new(session),
-        Arc::new(turn),
-        "send_input",
-        function_payload(json!({"id": "not-a-uuid", "message": "hi"})),
-    );
-    let Err(err) = SendInputHandler.handle(invocation).await else {
-        panic!("invalid id should be rejected");
-    };
-    let FunctionCallError::RespondToModel(msg) = err else {
-        panic!("expected respond-to-model error");
-    };
-    assert!(msg.starts_with("invalid agent id not-a-uuid:"));
-}
-
-#[tokio::test]
-async fn send_input_reports_missing_agent() {
-    let (mut session, turn) = make_session_and_context().await;
-    let manager = process_table();
-    session.services.agent_control = manager.agent_control();
-    let agent_id = ProcessId::new();
-    let invocation = invocation(
-        Arc::new(session),
-        Arc::new(turn),
-        "send_input",
-        function_payload(json!({"id": agent_id.to_string(), "message": "hi"})),
-    );
-    let Err(err) = SendInputHandler.handle(invocation).await else {
-        panic!("missing agent should be reported");
-    };
-    assert_eq!(
-        err,
-        FunctionCallError::RespondToModel(format!("agent with id {agent_id} not found"))
-    );
+async fn collab_agent_lookup_handlers_report_missing_agents() {
+    for tool_name in ["send_input", "resume_agent"] {
+        let agent_id = ProcessId::new();
+        let args = match tool_name {
+            "send_input" => json!({"id": agent_id.to_string(), "message": "hi"}),
+            "resume_agent" => json!({"id": agent_id.to_string()}),
+            other => panic!("unexpected tool in missing-agent test: {other}"),
+        };
+        assert_respond_to_model_error(
+            tool_name,
+            tool_name,
+            args,
+            &format!("agent with id {agent_id} not found"),
+            |session, _| attach_process_manager(session),
+        )
+        .await;
+    }
 }
 
 #[tokio::test]
@@ -568,45 +644,6 @@ async fn send_input_accepts_structured_items() {
         .submit(Op::Shutdown {})
         .await
         .expect("shutdown should submit");
-}
-
-#[tokio::test]
-async fn resume_agent_rejects_invalid_id() {
-    let (session, turn) = make_session_and_context().await;
-    let invocation = invocation(
-        Arc::new(session),
-        Arc::new(turn),
-        "resume_agent",
-        function_payload(json!({"id": "not-a-uuid"})),
-    );
-    let Err(err) = ResumeAgentHandler.handle(invocation).await else {
-        panic!("invalid id should be rejected");
-    };
-    let FunctionCallError::RespondToModel(msg) = err else {
-        panic!("expected respond-to-model error");
-    };
-    assert!(msg.starts_with("invalid agent id not-a-uuid:"));
-}
-
-#[tokio::test]
-async fn resume_agent_reports_missing_agent() {
-    let (mut session, turn) = make_session_and_context().await;
-    let manager = process_table();
-    session.services.agent_control = manager.agent_control();
-    let agent_id = ProcessId::new();
-    let invocation = invocation(
-        Arc::new(session),
-        Arc::new(turn),
-        "resume_agent",
-        function_payload(json!({"id": agent_id.to_string()})),
-    );
-    let Err(err) = ResumeAgentHandler.handle(invocation).await else {
-        panic!("missing agent should be reported");
-    };
-    assert_eq!(
-        err,
-        FunctionCallError::RespondToModel(format!("agent with id {agent_id} not found"))
-    );
 }
 
 #[tokio::test]
@@ -726,37 +763,6 @@ async fn resume_agent_restores_closed_agent_and_accepts_send_input() {
 }
 
 #[tokio::test]
-async fn resume_agent_rejects_when_depth_limit_exceeded() {
-    let (mut session, mut turn) = make_session_and_context().await;
-    let manager = process_table();
-    session.services.agent_control = manager.agent_control();
-
-    let max_depth = turn.config.agent_max_depth;
-    turn.session_source = SessionSource::SubAgent(SubAgentSource::ProcessSpawn {
-        parent_process_id: session.conversation_id,
-        depth: max_depth,
-        agent_nickname: None,
-        agent_role: None,
-    });
-
-    let invocation = invocation(
-        Arc::new(session),
-        Arc::new(turn),
-        "resume_agent",
-        function_payload(json!({"id": ProcessId::new().to_string()})),
-    );
-    let Err(err) = ResumeAgentHandler.handle(invocation).await else {
-        panic!("resume should fail when depth limit exceeded");
-    };
-    assert_eq!(
-        err,
-        FunctionCallError::RespondToModel(
-            "Agent depth limit reached. Solve the task yourself.".to_string()
-        )
-    );
-}
-
-#[tokio::test]
 async fn wait_agent_rejects_non_positive_timeout() {
     let (session, turn) = make_session_and_context().await;
     let invocation = invocation(
@@ -775,24 +781,6 @@ async fn wait_agent_rejects_non_positive_timeout() {
         err,
         FunctionCallError::RespondToModel("timeout_ms must be greater than zero".to_string())
     );
-}
-
-#[tokio::test]
-async fn wait_agent_rejects_invalid_id() {
-    let (session, turn) = make_session_and_context().await;
-    let invocation = invocation(
-        Arc::new(session),
-        Arc::new(turn),
-        "wait_agent",
-        function_payload(json!({"ids": ["invalid"]})),
-    );
-    let Err(err) = WaitAgentHandler.handle(invocation).await else {
-        panic!("invalid id should be rejected");
-    };
-    let FunctionCallError::RespondToModel(msg) = err else {
-        panic!("expected respond-to-model error");
-    };
-    assert!(msg.starts_with("invalid agent id invalid:"));
 }
 
 #[tokio::test]

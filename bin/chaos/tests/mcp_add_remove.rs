@@ -1,5 +1,10 @@
+use std::collections::BTreeMap;
+use std::collections::HashMap;
+
+use anyhow::Context;
 use anyhow::Result;
 use chaos_kern::config::load_global_mcp_servers;
+use chaos_kern::config::types::McpServerConfig;
 use chaos_kern::config::types::McpServerTransportConfig;
 use predicates::str::contains;
 use pretty_assertions::assert_eq;
@@ -9,21 +14,68 @@ mod common;
 
 use common::chaos_command;
 
-#[tokio::test]
-async fn add_and_remove_server_updates_global_config() -> Result<()> {
-    let chaos_home = TempDir::new()?;
+struct McpCliHarness {
+    chaos_home: TempDir,
+}
 
-    let mut add_cmd = chaos_command(chaos_home.path())?;
-    add_cmd
-        .args(["mcp", "add", "docs", "--", "echo", "hello"])
-        .assert()
-        .success()
-        .stdout(contains("Added global MCP server 'docs'."));
+impl McpCliHarness {
+    fn new() -> Result<Self> {
+        Ok(Self {
+            chaos_home: TempDir::new()?,
+        })
+    }
 
-    let servers = load_global_mcp_servers(chaos_home.path()).await?;
-    assert_eq!(servers.len(), 1);
-    let docs = servers.get("docs").expect("server should exist");
-    match &docs.transport {
+    fn assert_success(&self, args: &[&str]) -> Result<()> {
+        self.command()?.args(args).assert().success();
+        Ok(())
+    }
+
+    fn assert_success_stdout(&self, args: &[&str], expected_stdout: &str) -> Result<()> {
+        self.command()?
+            .args(args)
+            .assert()
+            .success()
+            .stdout(contains(expected_stdout));
+        Ok(())
+    }
+
+    fn assert_failure_stderr(&self, args: &[&str], expected_stderr: &str) -> Result<()> {
+        self.command()?
+            .args(args)
+            .assert()
+            .failure()
+            .stderr(contains(expected_stderr));
+        Ok(())
+    }
+
+    async fn server(&self, name: &str) -> Result<McpServerConfig> {
+        let mut servers = self.servers().await?;
+        servers
+            .remove(name)
+            .with_context(|| format!("server should exist: {name}"))
+    }
+
+    async fn assert_no_servers(&self) -> Result<()> {
+        assert!(self.servers().await?.is_empty());
+        Ok(())
+    }
+
+    fn command(&self) -> Result<assert_cmd::Command> {
+        chaos_command(self.chaos_home.path())
+    }
+
+    async fn servers(&self) -> Result<BTreeMap<String, McpServerConfig>> {
+        Ok(load_global_mcp_servers(self.chaos_home.path()).await?)
+    }
+}
+
+fn assert_stdio_transport<'a>(
+    server: &'a McpServerConfig,
+    expected_command: &str,
+    expected_args: &[&str],
+    expected_env_vars: &[&str],
+) -> Option<&'a HashMap<String, String>> {
+    match &server.transport {
         McpServerTransportConfig::Stdio {
             command,
             args,
@@ -31,178 +83,174 @@ async fn add_and_remove_server_updates_global_config() -> Result<()> {
             env_vars,
             cwd,
         } => {
-            assert_eq!(command, "echo");
-            assert_eq!(args, &vec!["hello".to_string()]);
-            assert!(env.is_none());
-            assert!(env_vars.is_empty());
+            assert_eq!(command, expected_command);
+            assert_eq!(
+                args,
+                &expected_args
+                    .iter()
+                    .map(|arg| (*arg).to_string())
+                    .collect::<Vec<_>>()
+            );
+            assert_eq!(
+                env_vars,
+                &expected_env_vars
+                    .iter()
+                    .map(|env_var| (*env_var).to_string())
+                    .collect::<Vec<_>>()
+            );
             assert!(cwd.is_none());
+            assert!(server.enabled);
+            env.as_ref()
         }
         other => panic!("unexpected transport: {other:?}"),
     }
-    assert!(docs.enabled);
+}
 
-    let mut remove_cmd = chaos_command(chaos_home.path())?;
-    remove_cmd
-        .args(["mcp", "remove", "docs"])
-        .assert()
-        .success()
-        .stdout(contains("Removed global MCP server 'docs'."));
+fn assert_streamable_http_transport(
+    server: &McpServerConfig,
+    expected_url: &str,
+    expected_bearer_token_env_var: Option<&str>,
+) {
+    match &server.transport {
+        McpServerTransportConfig::StreamableHttp {
+            url,
+            bearer_token_env_var,
+            http_headers,
+            env_http_headers,
+        } => {
+            assert_eq!(url, expected_url);
+            assert_eq!(
+                bearer_token_env_var.as_deref(),
+                expected_bearer_token_env_var
+            );
+            assert!(http_headers.is_none());
+            assert!(env_http_headers.is_none());
+        }
+        other => panic!("unexpected transport: {other:?}"),
+    }
+    assert!(server.enabled);
+}
 
-    let servers = load_global_mcp_servers(chaos_home.path()).await?;
-    assert!(servers.is_empty());
+#[tokio::test]
+async fn add_and_remove_server_updates_global_config() -> Result<()> {
+    let harness = McpCliHarness::new()?;
 
-    let mut remove_again_cmd = chaos_command(chaos_home.path())?;
-    remove_again_cmd
-        .args(["mcp", "remove", "docs"])
-        .assert()
-        .success()
-        .stdout(contains("No MCP server named 'docs' found."));
+    harness.assert_success_stdout(
+        &["mcp", "add", "docs", "--", "echo", "hello"],
+        "Added global MCP server 'docs'.",
+    )?;
 
-    let servers = load_global_mcp_servers(chaos_home.path()).await?;
-    assert!(servers.is_empty());
+    let docs = harness.server("docs").await?;
+    assert_eq!(harness.servers().await?.len(), 1);
+    assert!(
+        assert_stdio_transport(&docs, "echo", &["hello"], &[]).is_none(),
+        "stdio env should be empty"
+    );
+
+    harness.assert_success_stdout(
+        &["mcp", "remove", "docs"],
+        "Removed global MCP server 'docs'.",
+    )?;
+    harness.assert_no_servers().await?;
+
+    harness.assert_success_stdout(
+        &["mcp", "remove", "docs"],
+        "No MCP server named 'docs' found.",
+    )?;
+    harness.assert_no_servers().await?;
 
     Ok(())
 }
 
 #[tokio::test]
 async fn add_with_env_preserves_key_order_and_values() -> Result<()> {
-    let chaos_home = TempDir::new()?;
+    let harness = McpCliHarness::new()?;
 
-    let mut add_cmd = chaos_command(chaos_home.path())?;
-    add_cmd
-        .args([
-            "mcp",
-            "add",
-            "envy",
-            "--env",
-            "FOO=bar",
-            "--env",
-            "ALPHA=beta",
-            "--",
-            "python",
-            "server.py",
-        ])
-        .assert()
-        .success();
+    harness.assert_success(&[
+        "mcp",
+        "add",
+        "envy",
+        "--env",
+        "FOO=bar",
+        "--env",
+        "ALPHA=beta",
+        "--",
+        "python",
+        "server.py",
+    ])?;
 
-    let servers = load_global_mcp_servers(chaos_home.path()).await?;
-    let envy = servers.get("envy").expect("server should exist");
-    let env = match &envy.transport {
-        McpServerTransportConfig::Stdio { env: Some(env), .. } => env,
-        other => panic!("unexpected transport: {other:?}"),
-    };
+    let envy = harness.server("envy").await?;
+    let env =
+        assert_stdio_transport(&envy, "python", &["server.py"], &[]).context("env should exist")?;
 
     assert_eq!(env.len(), 2);
     assert_eq!(env.get("FOO"), Some(&"bar".to_string()));
     assert_eq!(env.get("ALPHA"), Some(&"beta".to_string()));
-    assert!(envy.enabled);
 
     Ok(())
 }
 
 #[tokio::test]
 async fn add_streamable_http_without_manual_token() -> Result<()> {
-    let chaos_home = TempDir::new()?;
+    let harness = McpCliHarness::new()?;
 
-    let mut add_cmd = chaos_command(chaos_home.path())?;
-    add_cmd
-        .args(["mcp", "add", "github", "--url", "https://example.com/mcp"])
-        .assert()
-        .success();
+    harness.assert_success(&["mcp", "add", "github", "--url", "https://example.com/mcp"])?;
 
-    let servers = load_global_mcp_servers(chaos_home.path()).await?;
-    let github = servers.get("github").expect("github server should exist");
-    match &github.transport {
-        McpServerTransportConfig::StreamableHttp {
-            url,
-            bearer_token_env_var,
-            http_headers,
-            env_http_headers,
-        } => {
-            assert_eq!(url, "https://example.com/mcp");
-            assert!(bearer_token_env_var.is_none());
-            assert!(http_headers.is_none());
-            assert!(env_http_headers.is_none());
-        }
-        other => panic!("unexpected transport: {other:?}"),
-    }
-    assert!(github.enabled);
+    let github = harness.server("github").await?;
+    assert_streamable_http_transport(&github, "https://example.com/mcp", None);
 
-    assert!(!chaos_home.path().join(".credentials.json").exists());
-    assert!(!chaos_home.path().join(".env").exists());
+    assert!(!harness.chaos_home.path().join(".credentials.json").exists());
+    assert!(!harness.chaos_home.path().join(".env").exists());
 
     Ok(())
 }
 
 #[tokio::test]
 async fn add_streamable_http_with_custom_env_var() -> Result<()> {
-    let chaos_home = TempDir::new()?;
+    let harness = McpCliHarness::new()?;
 
-    let mut add_cmd = chaos_command(chaos_home.path())?;
-    add_cmd
-        .args([
-            "mcp",
-            "add",
-            "issues",
-            "--url",
-            "https://example.com/issues",
-            "--bearer-token-env-var",
-            "GITHUB_TOKEN",
-        ])
-        .assert()
-        .success();
+    harness.assert_success(&[
+        "mcp",
+        "add",
+        "issues",
+        "--url",
+        "https://example.com/issues",
+        "--bearer-token-env-var",
+        "GITHUB_TOKEN",
+    ])?;
 
-    let servers = load_global_mcp_servers(chaos_home.path()).await?;
-    let issues = servers.get("issues").expect("issues server should exist");
-    match &issues.transport {
-        McpServerTransportConfig::StreamableHttp {
-            url,
-            bearer_token_env_var,
-            http_headers,
-            env_http_headers,
-        } => {
-            assert_eq!(url, "https://example.com/issues");
-            assert_eq!(bearer_token_env_var.as_deref(), Some("GITHUB_TOKEN"));
-            assert!(http_headers.is_none());
-            assert!(env_http_headers.is_none());
-        }
-        other => panic!("unexpected transport: {other:?}"),
-    }
-    assert!(issues.enabled);
+    let issues = harness.server("issues").await?;
+    assert_streamable_http_transport(&issues, "https://example.com/issues", Some("GITHUB_TOKEN"));
+
     Ok(())
 }
 
 #[tokio::test]
 async fn add_streamable_http_rejects_removed_flag() -> Result<()> {
-    let chaos_home = TempDir::new()?;
+    let harness = McpCliHarness::new()?;
 
-    let mut add_cmd = chaos_command(chaos_home.path())?;
-    add_cmd
-        .args([
+    harness.assert_failure_stderr(
+        &[
             "mcp",
             "add",
             "github",
             "--url",
             "https://example.com/mcp",
             "--with-bearer-token",
-        ])
-        .assert()
-        .failure()
-        .stderr(contains("--with-bearer-token"));
-
-    let servers = load_global_mcp_servers(chaos_home.path()).await?;
-    assert!(servers.is_empty());
+        ],
+        "--with-bearer-token",
+    )?;
+    harness.assert_no_servers().await?;
 
     Ok(())
 }
 
 #[tokio::test]
 async fn add_cant_add_command_and_url() -> Result<()> {
-    let chaos_home = TempDir::new()?;
+    let harness = McpCliHarness::new()?;
 
-    let mut add_cmd = chaos_command(chaos_home.path())?;
-    add_cmd
-        .args([
+    harness.assert_failure_stderr(
+        &[
             "mcp",
             "add",
             "github",
@@ -212,13 +260,10 @@ async fn add_cant_add_command_and_url() -> Result<()> {
             "--",
             "echo",
             "hello",
-        ])
-        .assert()
-        .failure()
-        .stderr(contains("unexpected argument '--command' found"));
-
-    let servers = load_global_mcp_servers(chaos_home.path()).await?;
-    assert!(servers.is_empty());
+        ],
+        "unexpected argument '--command' found",
+    )?;
+    harness.assert_no_servers().await?;
 
     Ok(())
 }

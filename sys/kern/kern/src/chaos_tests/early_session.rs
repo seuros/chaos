@@ -812,8 +812,8 @@ async fn set_rate_limits_retains_previous_credits() {
     state.set_rate_limits(initial.clone());
 
     let update = RateLimitSnapshot {
-        limit_id: Some("codex_other".to_string()),
-        limit_name: Some("codex_other".to_string()),
+        limit_id: Some("chaos_other".to_string()),
+        limit_name: Some("chaos_other".to_string()),
         primary: Some(RateLimitWindow {
             used_percent: 40.0,
             window_minutes: Some(30),
@@ -832,8 +832,8 @@ async fn set_rate_limits_retains_previous_credits() {
     assert_eq!(
         state.latest_rate_limits,
         Some(RateLimitSnapshot {
-            limit_id: Some("codex_other".to_string()),
-            limit_name: Some("codex_other".to_string()),
+            limit_id: Some("chaos_other".to_string()),
+            limit_name: Some("chaos_other".to_string()),
             primary: update.primary.clone(),
             secondary: update.secondary,
             credits: initial.credits,

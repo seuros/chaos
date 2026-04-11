@@ -1,7 +1,5 @@
 use crate::exec::ExecToolCallOutput;
 use crate::network_policy_decision::NetworkPolicyDecisionPayload;
-use crate::token_data::KnownPlan;
-use crate::token_data::PlanType;
 use crate::truncate::TruncationPolicy;
 use crate::truncate::truncate_text;
 use chaos_epoll::CancelErr;
@@ -123,13 +121,8 @@ pub enum ChaosErr {
     #[error("{0}")]
     ConnectionFailed(ConnectionFailedError),
 
-    #[error("Quota exceeded. Check your plan and billing details.")]
+    #[error("Quota exceeded. The vendor refuses to serve more requests on this account.")]
     QuotaExceeded,
-
-    #[error(
-        "To use Chaos with your ChatGPT plan, upgrade to Plus: https://chatgpt.com/explore/plus."
-    )]
-    UsageNotIncluded,
 
     #[error("We're currently experiencing high demand, which may cause temporary errors.")]
     InternalServerError,
@@ -195,7 +188,6 @@ impl ChaosErr {
             | ChaosErr::Interrupted
             | ChaosErr::EnvVar(_)
             | ChaosErr::Fatal(_)
-            | ChaosErr::UsageNotIncluded
             | ChaosErr::QuotaExceeded
             | ChaosErr::InvalidImageRequest()
             | ChaosErr::InvalidRequest(_)
@@ -422,88 +414,28 @@ impl std::fmt::Display for RetryLimitReachedError {
 
 #[derive(Debug)]
 pub struct UsageLimitReachedError {
-    pub(crate) plan_type: Option<PlanType>,
     pub(crate) resets_at: Option<Timestamp>,
     pub(crate) rate_limits: Option<Box<RateLimitSnapshot>>,
-    pub(crate) promo_message: Option<String>,
 }
 
 impl std::fmt::Display for UsageLimitReachedError {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        if let Some(limit_name) = self
+        let limit_name = self
             .rate_limits
             .as_ref()
             .and_then(|snapshot| snapshot.limit_name.as_deref())
             .map(str::trim)
-            .filter(|name| !name.is_empty())
-            && !limit_name.eq_ignore_ascii_case("chaos")
-        {
-            return write!(
-                f,
-                "You've hit your usage limit for {limit_name}. Switch to another model now,{}",
-                retry_suffix_after_or(self.resets_at.as_ref())
-            );
-        }
+            .filter(|name| !name.is_empty() && !name.eq_ignore_ascii_case("chaos"));
 
-        if let Some(promo_message) = &self.promo_message {
-            return write!(
-                f,
-                "You've hit your usage limit. {promo_message},{}",
-                retry_suffix_after_or(self.resets_at.as_ref())
-            );
-        }
-
-        let message = match self.plan_type.as_ref() {
-            Some(PlanType::Known(KnownPlan::Plus)) => format!(
-                "You've hit your usage limit. Upgrade to Pro (https://chatgpt.com/explore/pro), visit https://chatgpt.com/codex/settings/usage to purchase more credits{}",
-                retry_suffix_after_or(self.resets_at.as_ref())
-            ),
-            Some(PlanType::Known(KnownPlan::Team)) | Some(PlanType::Known(KnownPlan::Business)) => {
-                format!(
-                    "You've hit your usage limit. To get more access now, send a request to your admin{}",
-                    retry_suffix_after_or(self.resets_at.as_ref())
-                )
-            }
-            Some(PlanType::Known(KnownPlan::Free)) | Some(PlanType::Known(KnownPlan::Go)) => {
-                format!(
-                    "You've hit your usage limit. Upgrade to Plus to continue using Chaos (https://chatgpt.com/explore/plus),{}",
-                    retry_suffix_after_or(self.resets_at.as_ref())
-                )
-            }
-            Some(PlanType::Known(KnownPlan::Pro)) => format!(
-                "You've hit your usage limit. Visit https://chatgpt.com/codex/settings/usage to purchase more credits{}",
-                retry_suffix_after_or(self.resets_at.as_ref())
-            ),
-            Some(PlanType::Known(KnownPlan::Enterprise))
-            | Some(PlanType::Known(KnownPlan::Edu)) => format!(
-                "You've hit your usage limit.{}",
-                retry_suffix(self.resets_at.as_ref())
-            ),
-            Some(PlanType::Unknown(_)) | None => format!(
-                "You've hit your usage limit.{}",
-                retry_suffix(self.resets_at.as_ref())
-            ),
+        let refill = match self.resets_at.as_ref() {
+            Some(ts) => format!("Next refill: {}.", format_retry_timestamp(ts)),
+            None => "Refill ETA unknown.".to_string(),
         };
 
-        write!(f, "{message}")
-    }
-}
-
-fn retry_suffix(resets_at: Option<&Timestamp>) -> String {
-    if let Some(resets_at) = resets_at {
-        let formatted = format_retry_timestamp(resets_at);
-        format!(" Try again at {formatted}.")
-    } else {
-        " Try again later.".to_string()
-    }
-}
-
-fn retry_suffix_after_or(resets_at: Option<&Timestamp>) -> String {
-    if let Some(resets_at) = resets_at {
-        let formatted = format_retry_timestamp(resets_at);
-        format!(" or try again at {formatted}.")
-    } else {
-        " or try again later.".to_string()
+        match limit_name {
+            Some(name) => write!(f, "Hallucination overdose on {name}. {refill}"),
+            None => write!(f, "Hallucination overdose. {refill}"),
+        }
     }
 }
 
@@ -580,9 +512,9 @@ impl ChaosErr {
     pub fn to_chaos_ipc_error(&self) -> ChaosErrorInfo {
         match self {
             ChaosErr::ContextWindowExceeded => ChaosErrorInfo::ContextWindowExceeded,
-            ChaosErr::UsageLimitReached(_)
-            | ChaosErr::QuotaExceeded
-            | ChaosErr::UsageNotIncluded => ChaosErrorInfo::UsageLimitExceeded,
+            ChaosErr::UsageLimitReached(_) | ChaosErr::QuotaExceeded => {
+                ChaosErrorInfo::UsageLimitExceeded
+            }
             ChaosErr::ServerOverloaded => ChaosErrorInfo::ServerOverloaded,
             ChaosErr::RetryLimit(_) => ChaosErrorInfo::ResponseTooManyFailedAttempts {
                 http_status_code: self.http_status_code_value(),

@@ -7,8 +7,6 @@ expression: sanitized
 ╭───────────────────────────────────────────────────────────────────────────╮
 │  >_ Chaos (v47.0.0)                                                       │
 │                                                                           │
-│ Visit https://chatgpt.com/codex/settings/usage for up-to-date             │
-│ information on rate limits and credits                                    │
 │                                                                           │
 │  Model:            gpt-5.1-codex-max (reasoning high, summaries detailed) │
 │  Directory: [[workspace]]                                                 │

@@ -60,6 +60,7 @@ members = [
     "lib/libfs/locate",
     "lib/libfs/diff",
     "lib/libnet/client",
+    "lib/libnet/services",
     "lib/libmisc/argv",
     "lib/libmisc/pam",
     "lib/libmisc/keyring",
@@ -164,6 +165,7 @@ chaos-dtrace = { path = "share/dtrace" }
 
 # Internal — lib/
 codex-client = { path = "lib/libnet/client" }
+chaos-services = { path = "lib/libnet/services" }
 chaos-epoll = { path = "lib/libasync/epoll" }
 chaos-locate = { path = "lib/libfs/locate" }
 chaos-diff = { path = "lib/libfs/diff" }

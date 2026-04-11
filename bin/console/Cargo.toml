@@ -30,6 +30,7 @@ chaos-termcap = { workspace = true }
 chaos-argv = { workspace = true }
 chaos-clamp = { workspace = true }
 chaos-kern = { workspace = true }
+chaos-services = { workspace = true }
 chaos-locate = { workspace = true }
 chaos-pam = { workspace = true }
 chaos-pwd = { workspace = true }

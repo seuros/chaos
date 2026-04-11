@@ -31,8 +31,8 @@ const MAX_REQUEST_MAX_RETRIES: u64 = 100;
 
 const OPENAI_PROVIDER_NAME: &str = "OpenAI";
 pub const OPENAI_PROVIDER_ID: &str = "openai";
-pub const OPENAI_DEFAULT_BASE_URL: &str = "https://api.openai.com/v1";
-const CHATGPT_DEFAULT_BASE_URL: &str = "https://chatgpt.com/backend-api/chaos";
+pub const OPENAI_DEFAULT_BASE_URL: &str = chaos_services::openai::OPENAI_API_BASE;
+const CHATGPT_DEFAULT_BASE_URL: &str = chaos_services::openai::CHATGPT_BACKEND_BASE;
 
 /// Wire protocol that the provider speaks.
 #[derive(Debug, Clone, Copy, Default, PartialEq, Eq, Serialize, JsonSchema)]

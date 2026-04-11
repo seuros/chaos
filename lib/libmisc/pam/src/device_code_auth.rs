@@ -165,7 +165,10 @@ pub async fn request_device_code(opts: &ServerOptions) -> std::io::Result<Device
     let uc = request_user_code(&client, &api_base_url, &opts.client_id).await?;
 
     Ok(DeviceCode {
-        verification_url: format!("{base_url}/chaos/device"),
+        verification_url: format!(
+            "{base_url}{}",
+            chaos_services::openai::CHATGPT_DEVICE_AUTH_PATH
+        ),
         user_code: uc.user_code,
         device_auth_id: uc.device_auth_id,
         interval: uc.interval,

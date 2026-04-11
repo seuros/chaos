@@ -43,16 +43,65 @@ fn with_now_override<T>(now: Timestamp, f: impl FnOnce() -> T) -> T {
 }
 
 #[test]
-fn usage_limit_reached_error_formats_plus_plan() {
+fn usage_limit_reached_without_reset_reports_unknown_refill() {
     let err = UsageLimitReachedError {
-        plan_type: Some(PlanType::Known(KnownPlan::Plus)),
         resets_at: None,
         rate_limits: Some(Box::new(rate_limit_snapshot())),
-        promo_message: None,
     };
     assert_eq!(
         err.to_string(),
-        "You've hit your usage limit. Upgrade to Pro (https://chatgpt.com/explore/pro), visit https://chatgpt.com/codex/settings/usage to purchase more credits or try again later."
+        "Hallucination overdose. Refill ETA unknown."
+    );
+}
+
+#[test]
+fn usage_limit_reached_with_reset_announces_next_refill() {
+    let base: Timestamp = "2024-01-01T00:00:00Z".parse().unwrap();
+    let resets_at = base.checked_add(1.hours()).unwrap();
+    with_now_override(base, move || {
+        let expected_time = format_retry_timestamp(&resets_at);
+        let err = UsageLimitReachedError {
+            resets_at: Some(resets_at),
+            rate_limits: Some(Box::new(rate_limit_snapshot())),
+        };
+        let expected = format!("Hallucination overdose. Next refill: {expected_time}.");
+        assert_eq!(err.to_string(), expected);
+    });
+}
+
+#[test]
+fn usage_limit_reached_reports_named_limit_when_present() {
+    let base: Timestamp = "2024-01-01T00:00:00Z".parse().unwrap();
+    let resets_at = base.checked_add(3.hours()).unwrap();
+    with_now_override(base, move || {
+        let expected_time = format_retry_timestamp(&resets_at);
+        let err = UsageLimitReachedError {
+            resets_at: Some(resets_at),
+            rate_limits: Some(Box::new(RateLimitSnapshot {
+                limit_id: Some("gpt-5-weekly".to_string()),
+                limit_name: Some("gpt-5-weekly".to_string()),
+                ..rate_limit_snapshot()
+            })),
+        };
+        let expected =
+            format!("Hallucination overdose on gpt-5-weekly. Next refill: {expected_time}.");
+        assert_eq!(err.to_string(), expected);
+    });
+}
+
+#[test]
+fn usage_limit_reached_suppresses_chaos_branded_limit_name() {
+    let err = UsageLimitReachedError {
+        resets_at: None,
+        rate_limits: Some(Box::new(RateLimitSnapshot {
+            limit_id: Some("chaos".to_string()),
+            limit_name: Some("chaos".to_string()),
+            ..rate_limit_snapshot()
+        })),
+    };
+    assert_eq!(
+        err.to_string(),
+        "Hallucination overdose. Refill ETA unknown."
     );
 }
 
@@ -155,157 +204,6 @@ fn sandbox_denied_reports_exit_code_when_no_output_available() {
 }
 
 #[test]
-fn usage_limit_reached_error_formats_free_plan() {
-    let err = UsageLimitReachedError {
-        plan_type: Some(PlanType::Known(KnownPlan::Free)),
-        resets_at: None,
-        rate_limits: Some(Box::new(rate_limit_snapshot())),
-        promo_message: None,
-    };
-    assert_eq!(
-        err.to_string(),
-        "You've hit your usage limit. Upgrade to Plus to continue using Chaos (https://chatgpt.com/explore/plus), or try again later."
-    );
-}
-
-#[test]
-fn usage_limit_reached_error_formats_go_plan() {
-    let err = UsageLimitReachedError {
-        plan_type: Some(PlanType::Known(KnownPlan::Go)),
-        resets_at: None,
-        rate_limits: Some(Box::new(rate_limit_snapshot())),
-        promo_message: None,
-    };
-    assert_eq!(
-        err.to_string(),
-        "You've hit your usage limit. Upgrade to Plus to continue using Chaos (https://chatgpt.com/explore/plus), or try again later."
-    );
-}
-
-#[test]
-fn usage_limit_reached_error_formats_default_when_none() {
-    let err = UsageLimitReachedError {
-        plan_type: None,
-        resets_at: None,
-        rate_limits: Some(Box::new(rate_limit_snapshot())),
-        promo_message: None,
-    };
-    assert_eq!(
-        err.to_string(),
-        "You've hit your usage limit. Try again later."
-    );
-}
-
-#[test]
-fn usage_limit_reached_error_formats_team_plan() {
-    let base: Timestamp = "2024-01-01T00:00:00Z".parse().unwrap();
-    let resets_at = base.checked_add(1.hours()).unwrap();
-    with_now_override(base, move || {
-        let expected_time = format_retry_timestamp(&resets_at);
-        let err = UsageLimitReachedError {
-            plan_type: Some(PlanType::Known(KnownPlan::Team)),
-            resets_at: Some(resets_at),
-            rate_limits: Some(Box::new(rate_limit_snapshot())),
-            promo_message: None,
-        };
-        let expected = format!(
-            "You've hit your usage limit. To get more access now, send a request to your admin or try again at {expected_time}."
-        );
-        assert_eq!(err.to_string(), expected);
-    });
-}
-
-#[test]
-fn usage_limit_reached_error_formats_business_plan_without_reset() {
-    let err = UsageLimitReachedError {
-        plan_type: Some(PlanType::Known(KnownPlan::Business)),
-        resets_at: None,
-        rate_limits: Some(Box::new(rate_limit_snapshot())),
-        promo_message: None,
-    };
-    assert_eq!(
-        err.to_string(),
-        "You've hit your usage limit. To get more access now, send a request to your admin or try again later."
-    );
-}
-
-#[test]
-fn usage_limit_reached_error_formats_default_for_other_plans() {
-    let err = UsageLimitReachedError {
-        plan_type: Some(PlanType::Known(KnownPlan::Enterprise)),
-        resets_at: None,
-        rate_limits: Some(Box::new(rate_limit_snapshot())),
-        promo_message: None,
-    };
-    assert_eq!(
-        err.to_string(),
-        "You've hit your usage limit. Try again later."
-    );
-}
-
-#[test]
-fn usage_limit_reached_error_formats_pro_plan_with_reset() {
-    let base: Timestamp = "2024-01-01T00:00:00Z".parse().unwrap();
-    let resets_at = base.checked_add(1.hours()).unwrap();
-    with_now_override(base, move || {
-        let expected_time = format_retry_timestamp(&resets_at);
-        let err = UsageLimitReachedError {
-            plan_type: Some(PlanType::Known(KnownPlan::Pro)),
-            resets_at: Some(resets_at),
-            rate_limits: Some(Box::new(rate_limit_snapshot())),
-            promo_message: None,
-        };
-        let expected = format!(
-            "You've hit your usage limit. Visit https://chatgpt.com/codex/settings/usage to purchase more credits or try again at {expected_time}."
-        );
-        assert_eq!(err.to_string(), expected);
-    });
-}
-
-#[test]
-fn usage_limit_reached_error_hides_upsell_for_non_codex_limit_name() {
-    let base: Timestamp = "2024-01-01T00:00:00Z".parse().unwrap();
-    let resets_at = base.checked_add(1.hours()).unwrap();
-    with_now_override(base, move || {
-        let expected_time = format_retry_timestamp(&resets_at);
-        let err = UsageLimitReachedError {
-            plan_type: Some(PlanType::Known(KnownPlan::Plus)),
-            resets_at: Some(resets_at),
-            rate_limits: Some(Box::new(RateLimitSnapshot {
-                limit_id: Some("codex_other".to_string()),
-                limit_name: Some("codex_other".to_string()),
-                ..rate_limit_snapshot()
-            })),
-            promo_message: Some(
-                "Visit https://chatgpt.com/codex/settings/usage to purchase more credits"
-                    .to_string(),
-            ),
-        };
-        let expected = format!(
-            "You've hit your usage limit for codex_other. Switch to another model now, or try again at {expected_time}."
-        );
-        assert_eq!(err.to_string(), expected);
-    });
-}
-
-#[test]
-fn usage_limit_reached_includes_minutes_when_available() {
-    let base: Timestamp = "2024-01-01T00:00:00Z".parse().unwrap();
-    let resets_at = base.checked_add(5.minutes()).unwrap();
-    with_now_override(base, move || {
-        let expected_time = format_retry_timestamp(&resets_at);
-        let err = UsageLimitReachedError {
-            plan_type: None,
-            resets_at: Some(resets_at),
-            rate_limits: Some(Box::new(rate_limit_snapshot())),
-            promo_message: None,
-        };
-        let expected = format!("You've hit your usage limit. Try again at {expected_time}.");
-        assert_eq!(err.to_string(), expected);
-    });
-}
-
-#[test]
 fn unexpected_status_cloudflare_html_is_simplified() {
     let err = UnexpectedResponseError {
         status: StatusCode::FORBIDDEN,
@@ -350,17 +248,18 @@ fn unexpected_status_prefers_error_message_when_present() {
         status: StatusCode::UNAUTHORIZED,
         body: r#"{"error":{"message":"Workspace is not authorized in this region."},"status":401}"#
             .to_string(),
-        url: Some("https://chatgpt.com/backend-api/chaos/responses".to_string()),
+        url: Some(chaos_services::openai::CHATGPT_RESPONSES_URL.to_string()),
         cf_ray: None,
         request_id: Some("req-123".to_string()),
         identity_authorization_error: None,
         identity_error_code: None,
     };
     let status = StatusCode::UNAUTHORIZED.to_string();
+    let responses_url = chaos_services::openai::CHATGPT_RESPONSES_URL;
     assert_eq!(
         err.to_string(),
         format!(
-            "unexpected status {status}: Workspace is not authorized in this region., url: https://chatgpt.com/backend-api/chaos/responses, request id: req-123"
+            "unexpected status {status}: Workspace is not authorized in this region., url: {responses_url}, request id: req-123"
         )
     );
 }
@@ -392,17 +291,18 @@ fn unexpected_status_includes_cf_ray_and_request_id() {
     let err = UnexpectedResponseError {
         status: StatusCode::UNAUTHORIZED,
         body: "plain text error".to_string(),
-        url: Some("https://chatgpt.com/backend-api/chaos/responses".to_string()),
+        url: Some(chaos_services::openai::CHATGPT_RESPONSES_URL.to_string()),
         cf_ray: Some("9c81f9f18f2fa49d-LHR".to_string()),
         request_id: Some("req-xyz".to_string()),
         identity_authorization_error: None,
         identity_error_code: None,
     };
     let status = StatusCode::UNAUTHORIZED.to_string();
+    let responses_url = chaos_services::openai::CHATGPT_RESPONSES_URL;
     assert_eq!(
         err.to_string(),
         format!(
-            "unexpected status {status}: plain text error, url: https://chatgpt.com/backend-api/chaos/responses, cf-ray: 9c81f9f18f2fa49d-LHR, request id: req-xyz"
+            "unexpected status {status}: plain text error, url: {responses_url}, cf-ray: 9c81f9f18f2fa49d-LHR, request id: req-xyz"
         )
     );
 }
@@ -412,99 +312,18 @@ fn unexpected_status_includes_identity_auth_details() {
     let err = UnexpectedResponseError {
         status: StatusCode::UNAUTHORIZED,
         body: "plain text error".to_string(),
-        url: Some("https://chatgpt.com/backend-api/chaos/models".to_string()),
+        url: Some(chaos_services::openai::CHATGPT_MODELS_URL.to_string()),
         cf_ray: Some("cf-ray-auth-401-test".to_string()),
         request_id: Some("req-auth".to_string()),
         identity_authorization_error: Some("missing_authorization_header".to_string()),
         identity_error_code: Some("token_expired".to_string()),
     };
     let status = StatusCode::UNAUTHORIZED.to_string();
+    let models_url = chaos_services::openai::CHATGPT_MODELS_URL;
     assert_eq!(
         err.to_string(),
         format!(
-            "unexpected status {status}: plain text error, url: https://chatgpt.com/backend-api/chaos/models, cf-ray: cf-ray-auth-401-test, request id: req-auth, auth error: missing_authorization_header, auth error code: token_expired"
+            "unexpected status {status}: plain text error, url: {models_url}, cf-ray: cf-ray-auth-401-test, request id: req-auth, auth error: missing_authorization_header, auth error code: token_expired"
         )
     );
-}
-
-#[test]
-fn usage_limit_reached_includes_hours_and_minutes() {
-    let base: Timestamp = "2024-01-01T00:00:00Z".parse().unwrap();
-    let resets_at = base
-        .checked_add(3.hours())
-        .unwrap()
-        .checked_add(32.minutes())
-        .unwrap();
-    with_now_override(base, move || {
-        let expected_time = format_retry_timestamp(&resets_at);
-        let err = UsageLimitReachedError {
-            plan_type: Some(PlanType::Known(KnownPlan::Plus)),
-            resets_at: Some(resets_at),
-            rate_limits: Some(Box::new(rate_limit_snapshot())),
-            promo_message: None,
-        };
-        let expected = format!(
-            "You've hit your usage limit. Upgrade to Pro (https://chatgpt.com/explore/pro), visit https://chatgpt.com/codex/settings/usage to purchase more credits or try again at {expected_time}."
-        );
-        assert_eq!(err.to_string(), expected);
-    });
-}
-
-#[test]
-fn usage_limit_reached_includes_days_hours_minutes() {
-    let base: Timestamp = "2024-01-01T00:00:00Z".parse().unwrap();
-    let resets_at = base
-        .checked_add(51.hours())
-        .unwrap()
-        .checked_add(5.minutes())
-        .unwrap();
-    with_now_override(base, move || {
-        let expected_time = format_retry_timestamp(&resets_at);
-        let err = UsageLimitReachedError {
-            plan_type: None,
-            resets_at: Some(resets_at),
-            rate_limits: Some(Box::new(rate_limit_snapshot())),
-            promo_message: None,
-        };
-        let expected = format!("You've hit your usage limit. Try again at {expected_time}.");
-        assert_eq!(err.to_string(), expected);
-    });
-}
-
-#[test]
-fn usage_limit_reached_less_than_minute() {
-    let base: Timestamp = "2024-01-01T00:00:00Z".parse().unwrap();
-    let resets_at = base.checked_add(30.seconds()).unwrap();
-    with_now_override(base, move || {
-        let expected_time = format_retry_timestamp(&resets_at);
-        let err = UsageLimitReachedError {
-            plan_type: None,
-            resets_at: Some(resets_at),
-            rate_limits: Some(Box::new(rate_limit_snapshot())),
-            promo_message: None,
-        };
-        let expected = format!("You've hit your usage limit. Try again at {expected_time}.");
-        assert_eq!(err.to_string(), expected);
-    });
-}
-
-#[test]
-fn usage_limit_reached_with_promo_message() {
-    let base: Timestamp = "2024-01-01T00:00:00Z".parse().unwrap();
-    let resets_at = base.checked_add(30.seconds()).unwrap();
-    with_now_override(base, move || {
-        let expected_time = format_retry_timestamp(&resets_at);
-        let err = UsageLimitReachedError {
-            plan_type: None,
-            resets_at: Some(resets_at),
-            rate_limits: Some(Box::new(rate_limit_snapshot())),
-            promo_message: Some(
-                "To continue using Chaos, start a free trial of <PLAN> today".to_string(),
-            ),
-        };
-        let expected = format!(
-            "You've hit your usage limit. To continue using Chaos, start a free trial of <PLAN> today, or try again at {expected_time}."
-        );
-        assert_eq!(err.to_string(), expected);
-    });
 }

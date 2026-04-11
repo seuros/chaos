@@ -1417,8 +1417,11 @@ pub(crate) fn empty_mcp_output() -> PlainHistoryCell {
         "  • No MCP servers configured.".italic().into(),
         Line::from(vec![
             "    See the ".into(),
-            "\u{1b}]8;;https://developers.openai.com/chaos/mcp\u{7}MCP docs\u{1b}]8;;\u{7}"
-                .underlined(),
+            format!(
+                "\u{1b}]8;;{}\u{7}MCP docs\u{1b}]8;;\u{7}",
+                chaos_services::openai::DEVELOPERS_MCP_DOCS,
+            )
+            .underlined(),
             " to configure them.".into(),
         ])
         .style(Style::default().add_modifier(Modifier::DIM)),

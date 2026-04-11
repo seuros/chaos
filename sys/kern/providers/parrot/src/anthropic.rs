@@ -862,7 +862,7 @@ mod tests {
 
         Provider {
             name: "Anthropic".to_string(),
-            base_url: "https://api.anthropic.com/v1".to_string(),
+            base_url: chaos_services::anthropic::API_BASE.to_string(),
             query_params: None,
             headers: HeaderMap::new(),
             retry: RetryConfig {

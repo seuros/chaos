@@ -65,8 +65,8 @@ async fn set_rate_limits_defaults_to_codex_when_limit_id_missing_after_other_buc
     let mut state = SessionState::new(session_configuration);
 
     state.set_rate_limits(RateLimitSnapshot {
-        limit_id: Some("codex_other".to_string()),
-        limit_name: Some("codex_other".to_string()),
+        limit_id: Some("chaos_other".to_string()),
+        limit_name: Some("chaos_other".to_string()),
         primary: Some(RateLimitWindow {
             used_percent: 20.0,
             window_minutes: Some(60),
@@ -99,7 +99,7 @@ async fn set_rate_limits_defaults_to_codex_when_limit_id_missing_after_other_buc
 }
 
 #[tokio::test]
-async fn set_rate_limits_carries_credits_and_plan_type_from_codex_to_codex_other() {
+async fn set_rate_limits_carries_credits_and_plan_type_from_chaos_to_chaos_other() {
     let session_configuration = make_session_configuration_for_tests().await;
     let mut state = SessionState::new(session_configuration);
 
@@ -121,7 +121,7 @@ async fn set_rate_limits_carries_credits_and_plan_type_from_codex_to_codex_other
     });
 
     state.set_rate_limits(RateLimitSnapshot {
-        limit_id: Some("codex_other".to_string()),
+        limit_id: Some("chaos_other".to_string()),
         limit_name: None,
         primary: Some(RateLimitWindow {
             used_percent: 30.0,
@@ -136,7 +136,7 @@ async fn set_rate_limits_carries_credits_and_plan_type_from_codex_to_codex_other
     assert_eq!(
         state.latest_rate_limits,
         Some(RateLimitSnapshot {
-            limit_id: Some("codex_other".to_string()),
+            limit_id: Some("chaos_other".to_string()),
             limit_name: None,
             primary: Some(RateLimitWindow {
                 used_percent: 30.0,

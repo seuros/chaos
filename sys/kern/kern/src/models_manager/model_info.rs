@@ -80,7 +80,11 @@ pub(crate) fn model_info_from_slug(slug: &str) -> ModelInfo {
         default_reasoning_summary: ReasoningSummary::Auto,
         support_verbosity: false,
         default_verbosity: None,
-        apply_patch_tool_type: Some(chaos_ipc::openai_models::ApplyPatchToolType::Freeform),
+        // Unknown models get the portable JSON tool variant. `Freeform` emits
+        // `type: "custom"` on the wire, which is an OpenAI-Responses-only
+        // extension — Responses clones (xAI, DeepSeek, etc.) reject it with
+        // 422. Catalog entries can still opt into `Freeform` explicitly.
+        apply_patch_tool_type: Some(chaos_ipc::openai_models::ApplyPatchToolType::Function),
         web_search_tool_type: WebSearchToolType::Text,
         truncation_policy: TruncationPolicyConfig::bytes(/*limit*/ 10_000),
         supports_parallel_tool_calls: false,

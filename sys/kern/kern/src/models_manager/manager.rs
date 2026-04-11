@@ -488,11 +488,18 @@ impl ModelsManager {
     }
 
     async fn fetch_catalog(&self) -> CoreResult<FetchedCatalog> {
-        // Anthropic-compatible providers get models through the adapter path.
+        // Anthropic-compatible providers get models through the AnthropicAdapter.
         if crate::model_provider_info::is_anthropic_wire(self.provider.base_url.as_deref()) {
             return self.fetch_catalog_via_adapter().await;
         }
-        self.fetch_catalog_via_models_client().await
+        // The chaos backend (default OpenAI provider with no custom base_url) returns
+        // the chaos-flavored ModelsResponse with rich metadata. Use ModelsClient for it.
+        if self.provider.is_openai() && self.provider.base_url.is_none() {
+            return self.fetch_catalog_via_models_client().await;
+        }
+        // All other OpenAI-compatible providers (xAI, DeepSeek, custom deployments, etc.)
+        // speak the standard GET /models wire format. Use the adapter, cache in the DB.
+        self.fetch_catalog_via_openai_adapter().await
     }
 
     async fn fetch_catalog_via_models_client(&self) -> CoreResult<FetchedCatalog> {
@@ -566,6 +573,65 @@ impl ModelsManager {
             Err(ListModelsError::Unsupported) => Ok(FetchedCatalog::Unsupported),
             Err(ListModelsError::Failed { message }) => {
                 error!("Anthropic model listing failed: {message}");
+                Err(ChaosErr::Stream(message, None))
+            }
+        }
+    }
+
+    /// Fetch models via the OpenAI-compat adapter for third-party providers.
+    ///
+    /// Hits `GET {base_url}/models`, parses the standard OpenAI list format
+    /// (`{ data: [{ id, ... }] }`), converts each entry to `AbiModelInfo`,
+    /// then to `ModelInfo` via `model_info_from_abi`. The result is written
+    /// to the in-memory catalog and persisted to the SQLite cache.
+    async fn fetch_catalog_via_openai_adapter(&self) -> CoreResult<FetchedCatalog> {
+        use chaos_abi::ListModelsError;
+        use chaos_abi::ModelAdapter;
+        use chaos_parrot::openai::OpenAiAdapter;
+        use chaos_parrot::openai::StaticAuthProvider;
+
+        let auth = self.auth_manager.auth().await;
+        let auth_mode = auth.as_ref().map(ChaosAuth::auth_mode);
+        let api_provider = self.provider.to_api_provider(auth_mode)?;
+
+        let token = if let Some(api_key) = self.provider.api_key()? {
+            Some(api_key)
+        } else {
+            self.provider.experimental_bearer_token.clone()
+        };
+
+        let auth_provider = StaticAuthProvider::new(token, None);
+        let adapter = OpenAiAdapter::new(
+            chaos_parrot::RamaTransport::default_client(),
+            api_provider,
+            auth_provider,
+            None,
+        );
+
+        let abi_models = timeout(MODELS_REFRESH_TIMEOUT, adapter.list_models())
+            .await
+            .map_err(|_| ChaosErr::Timeout)?;
+
+        match abi_models {
+            Ok(models) => {
+                let kern_models: Vec<ModelInfo> =
+                    models.iter().map(model_info::model_info_from_abi).collect();
+                info!(
+                    count = kern_models.len(),
+                    provider = self.provider.name,
+                    "fetched models via OpenAI-compat adapter"
+                );
+                Ok(FetchedCatalog::Live {
+                    models: kern_models,
+                    etag: None,
+                })
+            }
+            Err(ListModelsError::Unsupported) => Ok(FetchedCatalog::Unsupported),
+            Err(ListModelsError::Failed { message }) => {
+                error!(
+                    provider = self.provider.name,
+                    "OpenAI-compat model listing failed: {message}"
+                );
                 Err(ChaosErr::Stream(message, None))
             }
         }

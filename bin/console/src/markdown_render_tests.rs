@@ -55,6 +55,18 @@ fn render_markdown_text_for_cwd(input: &str, cwd: &Path) -> Text<'static> {
     render_markdown_text_with_width_and_cwd(input, None, Some(cwd))
 }
 
+fn plain_lines(text: &Text<'_>) -> Vec<String> {
+    text.lines
+        .iter()
+        .map(|line| {
+            line.spans
+                .iter()
+                .map(|span| span.content.clone())
+                .collect::<String>()
+        })
+        .collect()
+}
+
 #[test]
 fn empty() {
     assert_eq!(render_markdown_text(""), Text::default());
@@ -956,6 +968,48 @@ fn url_link_shows_destination() {
 }
 
 #[test]
+fn bare_url_autolink_does_not_duplicate_destination() {
+    let text = render_markdown_text("Visit https://example.com/docs for details.");
+    assert_eq!(
+        plain_lines(&text),
+        vec!["Visit https://example.com/docs for details.".to_string()]
+    );
+}
+
+#[test]
+fn bare_email_autolink_does_not_duplicate_destination() {
+    let text = render_markdown_text("Email test@example.com for details.");
+    assert_eq!(
+        plain_lines(&text),
+        vec!["Email test@example.com for details.".to_string()]
+    );
+}
+
+#[test]
+fn pipe_table_text_stays_verbatim() {
+    let text = render_markdown_text(
+        "| Left | Center | Right |\n|:-----|:------:|------:|\n| a | b | c |\n",
+    );
+    assert_eq!(
+        plain_lines(&text),
+        vec![
+            "| Left | Center | Right |".to_string(),
+            "|:-----|:------:|------:|".to_string(),
+            "| a | b | c |".to_string(),
+        ]
+    );
+}
+
+#[test]
+fn alert_blockquote_has_no_blank_line_after_header() {
+    let text = render_markdown_text("> [!NOTE]\n> body\n");
+    assert_eq!(
+        plain_lines(&text),
+        vec!["> ⓘ NOTE".to_string(), "> body".to_string()]
+    );
+}
+
+#[test]
 fn markdown_render_file_link_snapshot() {
     let text = render_markdown_text_for_cwd(
         "See [markdown_render.rs:74](/Users/example/code/chaos/chaos/tui/src/markdown_render.rs:74).",
@@ -1475,6 +1529,73 @@ fn nested_item_continuation_paragraph_is_indented() {
         Line::from_iter([dim_marker("2. "), "C".into()]),
     ]);
     assert_eq!(text, expected);
+}
+
+#[test]
+fn gfm_alerts_emit_styled_header_line_per_kind() {
+    // One realistic document covering all five alert kinds so the test also
+    // exercises the transitions between alerts.
+    let md = "\
+> [!NOTE]
+> First
+
+> [!TIP]
+> Second
+
+> [!IMPORTANT]
+> Third
+
+> [!WARNING]
+> Fourth
+
+> [!CAUTION]
+> Fifth
+";
+    let text = render_markdown_text(md);
+    let rendered: Vec<String> = text
+        .lines
+        .iter()
+        .map(|l| l.spans.iter().map(|s| s.content.clone()).collect::<String>())
+        .collect();
+
+    for needle in [
+        "ⓘ NOTE",
+        "★ TIP",
+        "‼ IMPORTANT",
+        "⚠ WARNING",
+        "⛔ CAUTION",
+    ] {
+        assert!(
+            rendered.iter().any(|l| l.contains(needle)),
+            "alert header {needle:?} missing from: {rendered:?}"
+        );
+    }
+    for body in ["First", "Second", "Third", "Fourth", "Fifth"] {
+        assert!(
+            rendered.iter().any(|l| l.contains(body)),
+            "alert body {body:?} missing from: {rendered:?}"
+        );
+    }
+
+    let p = crate::theme::palette();
+    let expected = [
+        ("NOTE", p.accent),
+        ("TIP", p.success),
+        ("IMPORTANT", p.accent),
+        ("WARNING", p.warning),
+        ("CAUTION", p.error),
+    ];
+    for (label, color) in expected {
+        let styled = text.lines.iter().flat_map(|l| l.spans.iter()).any(|s| {
+            s.content.contains(label)
+                && s.style.fg == Some(color)
+                && s.style.add_modifier.contains(ratatui::style::Modifier::BOLD)
+        });
+        assert!(
+            styled,
+            "expected {label} header to be bold + fg {color:?}"
+        );
+    }
 }
 
 #[test]

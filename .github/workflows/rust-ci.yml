@@ -7,7 +7,9 @@ on:
   workflow_dispatch:
 
 # CI builds in debug (dev) for faster signal.
-# Linting (fmt, clippy, cargo shear) runs locally via the pre-commit hook.
+# Stage 1: lint runs once on ubuntu-24.04 (fmt + clippy + cargo shear).
+# Stage 2: tests run across all supported archs, gated on lint passing.
+# Pre-commit hooks mirror the lint stage for local fast-fail.
 
 jobs:
   # --- Detect what changed to skip tests when only docs/workflows touched ------
@@ -48,12 +50,105 @@ jobs:
           echo "codex=$codex" >> "$GITHUB_OUTPUT"
           echo "workflows=$workflows" >> "$GITHUB_OUTPUT"
 
+  # --- Lint --------------------------------------------------------------------
+  # Runs on one platform only: fmt, clippy, and unused-dep detection are
+  # deterministic across archs, so paying for three runners buys nothing.
+  # Tests downstream are gated on this job via `needs: [changed, lint]`.
+  lint:
+    name: Lint (fmt + clippy + shear)
+    runs-on: ubuntu-24.04
+    timeout-minutes: 20
+    needs: changed
+    if: ${{ needs.changed.outputs.codex == 'true' || needs.changed.outputs.workflows == 'true' || github.event_name == 'push' }}
+    env:
+      USE_SCCACHE: "true"
+      CARGO_INCREMENTAL: "0"
+      SCCACHE_CACHE_SIZE: 10G
+    steps:
+      - uses: actions/checkout@v6
+
+      - name: Install Linux build dependencies
+        shell: bash
+        run: |
+          set -euo pipefail
+          sudo apt-get update -y
+          sudo DEBIAN_FRONTEND=noninteractive apt-get install -y --no-install-recommends pkg-config libcap-dev libdbus-1-dev
+
+      - uses: dtolnay/rust-toolchain@1.94.0
+        with:
+          components: rustfmt, clippy
+
+      - name: Compute lockfile hash
+        id: lockhash
+        shell: bash
+        run: |
+          set -euo pipefail
+          echo "hash=$(sha256sum Cargo.lock | cut -d' ' -f1)" >> "$GITHUB_OUTPUT"
+          echo "toolchain_hash=$(sha256sum rust-toolchain.toml | cut -d' ' -f1)" >> "$GITHUB_OUTPUT"
+
+      - name: Restore cargo home cache
+        id: cache_cargo_home_restore
+        uses: actions/cache/restore@v5
+        with:
+          path: |
+            ~/.cargo/bin/
+            ~/.cargo/registry/index/
+            ~/.cargo/registry/cache/
+            ~/.cargo/git/db/
+          key: cargo-home-lint-${{ steps.lockhash.outputs.hash }}-${{ steps.lockhash.outputs.toolchain_hash }}
+          restore-keys: |
+            cargo-home-lint-
+
+      - name: Install sccache
+        uses: taiki-e/install-action@44c6d64aa62cd779e873306675c7a58e86d6d532 # v2
+        with:
+          tool: sccache
+          version: 0.7.5
+
+      - name: Install cargo-shear
+        uses: taiki-e/install-action@44c6d64aa62cd779e873306675c7a58e86d6d532 # v2
+        with:
+          tool: cargo-shear
+
+      - name: Configure sccache backend
+        shell: bash
+        run: |
+          set -euo pipefail
+          if [[ -n "${ACTIONS_CACHE_URL:-}" && -n "${ACTIONS_RUNTIME_TOKEN:-}" ]]; then
+            echo "SCCACHE_GHA_ENABLED=true" >> "$GITHUB_ENV"
+          else
+            echo "SCCACHE_GHA_ENABLED=false" >> "$GITHUB_ENV"
+            echo "SCCACHE_DIR=${{ github.workspace }}/.sccache" >> "$GITHUB_ENV"
+          fi
+          echo "RUSTC_WRAPPER=sccache" >> "$GITHUB_ENV"
+
+      - name: cargo fmt --check
+        run: cargo fmt --all -- --check
+
+      - name: cargo clippy
+        run: cargo clippy --workspace --all-features --tests -- -D warnings
+
+      - name: cargo shear
+        run: cargo shear
+
+      - name: Save cargo home cache
+        if: always() && !cancelled() && steps.cache_cargo_home_restore.outputs.cache-hit != 'true'
+        continue-on-error: true
+        uses: actions/cache/save@v5
+        with:
+          path: |
+            ~/.cargo/bin/
+            ~/.cargo/registry/index/
+            ~/.cargo/registry/cache/
+            ~/.cargo/git/db/
+          key: cargo-home-lint-${{ steps.lockhash.outputs.hash }}-${{ steps.lockhash.outputs.toolchain_hash }}
+
   # --- Tests -------------------------------------------------------------------
   tests:
     name: Tests — ${{ matrix.runner }} - ${{ matrix.target }}
     runs-on: ${{ matrix.runs_on || matrix.runner }}
     timeout-minutes: 30
-    needs: changed
+    needs: [changed, lint]
     if: ${{ needs.changed.outputs.codex == 'true' || needs.changed.outputs.workflows == 'true' || github.event_name == 'push' }}
     env:
       USE_SCCACHE: "true"
@@ -75,10 +170,6 @@ jobs:
             profile: dev
     steps:
       - uses: actions/checkout@v6
-      - name: Set up Node.js for js_repl tests
-        uses: actions/setup-node@v6
-        with:
-          node-version-file: node-version.txt
       - name: Install Linux build dependencies
         if: ${{ runner.os == 'Linux' }}
         shell: bash
@@ -245,13 +336,14 @@ jobs:
   # --- Required status check ---------------------------------------------------
   results:
     name: CI results (required)
-    needs: [changed, tests]
+    needs: [changed, lint, tests]
     if: always()
     runs-on: ubuntu-24.04
     steps:
       - name: Summarize
         shell: bash
         run: |
+          echo "lint:  ${{ needs.lint.result }}"
           echo "tests: ${{ needs.tests.result }}"
 
           if [[ '${{ needs.changed.outputs.codex }}' != 'true' && '${{ needs.changed.outputs.workflows }}' != 'true' && '${{ github.event_name }}' != 'push' ]]; then
@@ -259,4 +351,5 @@ jobs:
             exit 0
           fi
 
+          [[ '${{ needs.lint.result }}' == 'success' ]] || { echo 'lint failed'; exit 1; }
           [[ '${{ needs.tests.result }}' == 'success' ]] || { echo 'tests failed'; exit 1; }

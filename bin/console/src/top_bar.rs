@@ -2,13 +2,13 @@
 //!
 //! Renders a single-line bar at the top of the terminal with hostname,
 //! OS/distro, battery status, current time, and timezone.  All data
-//! comes from the kernel's [`chaos_kern::sysinfo`] module.
+//! comes from the [`chaos_sysinfo`] crate.
 //!
 //! The bar is rendered directly to the terminal (outside the ratatui
 //! viewport) by [`crate::tui`] so that it stays pinned at screen row 0
 //! while history scrolls beneath it.
 
-use chaos_kern::sysinfo::{SandboxKind, SystemInfo, sysinfo};
+use chaos_sysinfo::{SandboxKind, SystemInfo, sysinfo};
 use ratatui::style::{Color, Modifier, Style};
 use ratatui::text::{Line, Span};
 

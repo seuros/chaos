@@ -216,8 +216,12 @@ impl App {
         let chaos_op_tx = live_process
             .map(crate::chatwidget::spawn_op_forwarder)
             .unwrap_or_else(|| {
+                // No live kernel process to forward to: hand the widget a
+                // dangling channel wrapped in a no-op forwarder so .send()
+                // calls quietly error against a dead receiver instead of
+                // panicking.
                 let (tx, _rx) = unbounded_channel();
-                tx
+                chaos_session::OpForwarder::from_sender(tx)
             });
         self.chat_widget = ChatWidget::new_with_op_sender(init, chaos_op_tx);
         self.sync_active_agent_label();

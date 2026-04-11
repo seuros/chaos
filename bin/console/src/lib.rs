@@ -7,15 +7,14 @@ use additional_dirs::add_dir_warning_message;
 use app::App;
 pub use app::AppExitInfo;
 pub use app::ExitReason;
+use chaos_init::ChaosInit;
 use chaos_ipc::ProcessId;
 use chaos_ipc::config_types::AltScreenMode;
 use chaos_ipc::config_types::SandboxMode;
 use chaos_ipc::product::CHAOS_VERSION;
 use chaos_ipc::protocol::ApprovalPolicy;
-use chaos_kern::AuthManager;
 use chaos_kern::INTERACTIVE_SESSION_SOURCES;
 use chaos_kern::ProcessSortKey;
-use chaos_kern::ProcessTable;
 use chaos_kern::RolloutRecorder;
 use chaos_kern::auth::enforce_login_restrictions;
 use chaos_kern::check_execpolicy_for_warnings;
@@ -166,29 +165,14 @@ pub use public_widgets::composer_input::ComposerAction;
 pub use public_widgets::composer_input::ComposerInput;
 // (tests access modules directly within the crate)
 
-struct CoreManagers {
-    auth_manager: Arc<AuthManager>,
-    process_table: Arc<ProcessTable>,
-}
-
-fn create_core_managers(config: &Config) -> CoreManagers {
-    let auth_manager = AuthManager::shared(
-        config.chaos_home.clone(),
-        false, // enable_codex_api_key_env
-        config.cli_auth_credentials_store_mode,
-    );
-    let process_table = Arc::new(ProcessTable::new(
+fn boot_core(config: &Config) -> ChaosInit {
+    ChaosInit::boot(
         config,
-        auth_manager.clone(),
         chaos_ipc::protocol::SessionSource::Cli,
         CollaborationModesConfig {
             default_mode_request_user_input: true,
         },
-    ));
-    CoreManagers {
-        auth_manager,
-        process_table,
-    }
+    )
 }
 
 pub async fn run_main(
@@ -744,7 +728,7 @@ async fn run_ratatui_app(
 
     let use_alt_screen = determine_alt_screen_mode(no_alt_screen, config.tui_alternate_screen);
     tui.set_alt_screen_enabled(use_alt_screen);
-    let managers = create_core_managers(&config);
+    let managers = boot_core(&config);
 
     let app_result = App::run(
         &mut tui,
@@ -933,6 +917,7 @@ fn should_show_trust_screen(config: &Config) -> bool {
 mod tests {
     use super::*;
     use chaos_ipc::protocol::ApprovalPolicy;
+    use chaos_kern::AuthManager;
     use chaos_kern::config::ConfigBuilder;
     use chaos_kern::config::ConfigOverrides;
     use chaos_kern::config::ProjectConfig;
@@ -947,10 +932,10 @@ mod tests {
     }
 
     #[tokio::test]
-    async fn create_core_managers_returns_valid_managers() -> std::io::Result<()> {
+    async fn boot_core_returns_valid_managers() -> std::io::Result<()> {
         let temp_dir = TempDir::new()?;
         let config = build_config(&temp_dir).await?;
-        let managers = create_core_managers(&config);
+        let managers = boot_core(&config);
 
         // AuthManager was created — just verify it is non-null and usable.
         // Note: AuthManager::shared always allocates a fresh Arc (no global

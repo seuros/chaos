@@ -1,0 +1,27 @@
+[package]
+name = "chaos-xclient"
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+publish.workspace = true
+
+[[bin]]
+name = "chaos-xclient"
+path = "src/main.rs"
+
+[lib]
+name = "chaos_xclient"
+path = "src/lib.rs"
+
+[lints]
+workspace = true
+
+[dependencies]
+anyhow = { workspace = true }
+chaos-init = { workspace = true }
+chaos-ipc = { workspace = true }
+chaos-kern = { workspace = true }
+chaos-session = { workspace = true }
+futures = { workspace = true }
+iced = { workspace = true, features = ["markdown"] }
+tokio = { workspace = true, features = ["rt-multi-thread", "macros", "sync"] }

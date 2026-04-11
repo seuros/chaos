@@ -144,7 +144,6 @@ use ratatui::style::Stylize;
 use ratatui::text::Line;
 use ratatui::widgets::Paragraph;
 use ratatui::widgets::Wrap;
-use tokio::sync::mpsc::UnboundedSender;
 use tracing::debug;
 use tracing::warn;
 
@@ -539,7 +538,12 @@ struct PreClampSelection {
 /// active work, arming the double-press quit shortcut, and requesting shutdown-first exit.
 pub(crate) struct ChatWidget {
     app_event_tx: AppEventSender,
-    chaos_op_tx: UnboundedSender<Op>,
+    /// Submit-side handle to the kernel SQ. For session-backed paths the
+    /// embedded drop guard is a no-op (the [`chaos_session::ClientSession`]
+    /// owns its own DropGuard cascade); for the process-switch
+    /// `spawn_op_forwarder` path the guard tears down the drain task and
+    /// releases the kernel `Arc<Process>` when this `ChatWidget` is dropped.
+    chaos_op_tx: chaos_session::OpForwarder,
     bottom_pane: BottomPane,
     active_cell: Option<Box<dyn HistoryCell>>,
     /// Monotonic-ish counter used to invalidate transcript overlay caching.
@@ -3226,7 +3230,7 @@ impl ChatWidget {
 
     pub(crate) fn new_with_op_sender(
         common: ChatWidgetInit,
-        chaos_op_tx: UnboundedSender<Op>,
+        chaos_op_tx: chaos_session::OpForwarder,
     ) -> Self {
         let ChatWidgetInit {
             config,

@@ -1,7 +1,7 @@
 use super::{
     AgentNavigationState, App, AppEvent, AppEventSender, AppExitInfo, AppRunControl, Arc,
     AtomicBool, AuthManager, BacktrackState, Cell, ChatWidget, Config, ConfigOverrides, Duration,
-    Event, EventMsg, FileSearchManager, HashMap, Line, LogPanelState,
+    Event, EventMsg, ExitMode, FileSearchManager, HashMap, Line, LogPanelState,
     PROCESS_EVENT_CHANNEL_CAPACITY, ProcessEventChannel, ProcessEventSnapshot, ProcessId,
     ProcessTable, Rc, RefCell, RefreshStrategy, Result, SessionConfiguredEvent, SessionSelection,
     SessionSource, SessionTelemetry, StateRuntime, Stylize, TelemetryAuthMode, TileManager,
@@ -415,10 +415,18 @@ impl App {
                         }
                         AppRunControl::Continue
                     }
-                    Some(event) = tui_events.next() => {
-                        match app.handle_tui_event(tui, event).await {
-                            Ok(control) => control,
-                            Err(err) => break Err(err),
+                    event = tui_events.next() => {
+                        match event {
+                            Some(event) => match app.handle_tui_event(tui, event).await {
+                                Ok(control) => control,
+                                Err(err) => break Err(err),
+                            },
+                            None => {
+                                tracing::warn!(
+                                    "terminal input stream closed; shutting down active thread"
+                                );
+                                app.handle_exit_mode(ExitMode::ShutdownFirst)
+                            }
                         }
                     }
                     // Listen on new thread creation due to collab tools.

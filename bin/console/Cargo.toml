@@ -29,7 +29,10 @@ chaos-highlight = { workspace = true, optional = true }
 chaos-termcap = { workspace = true }
 chaos-argv = { workspace = true }
 chaos-clamp = { workspace = true }
+chaos-init = { workspace = true }
 chaos-kern = { workspace = true }
+chaos-session = { workspace = true }
+chaos-sysinfo = { workspace = true }
 chaos-services = { workspace = true }
 chaos-locate = { workspace = true }
 chaos-pam = { workspace = true }

@@ -43,6 +43,7 @@ members = [
     "bin/chaos",
     "bin/console",
     "bin/concierge",
+    "bin/xclient",
 
     # etc/ — configuration
     "etc/sysctl",
@@ -65,6 +66,9 @@ members = [
     "lib/libmisc/pam",
     "lib/libmisc/keyring",
     "lib/libmisc/minions",
+    "lib/libmisc/init",
+    "lib/libmisc/session",
+    "lib/libmisc/sysinfo",
     "lib/libtrace/syslog",
     "lib/libtrace/snitch",
     "lib/libui/termcap",
@@ -152,6 +156,7 @@ chaos-cron = { path = "srv/cron" }
 chaos-cli = { path = "bin/chaos" }
 chaos-console = { path = "bin/console" }
 chaos-concierge = { path = "bin/concierge" }
+chaos-xclient = { path = "bin/xclient" }
 
 # Internal — etc/
 chaos-sysctl = { path = "etc/sysctl" }
@@ -173,6 +178,9 @@ chaos-argv = { path = "lib/libmisc/argv" }
 chaos-pam = { path = "lib/libmisc/pam" }
 chaos-keyring = { path = "lib/libmisc/keyring" }
 chaos-minions = { path = "lib/libmisc/minions" }
+chaos-init = { path = "lib/libmisc/init" }
+chaos-session = { path = "lib/libmisc/session" }
+chaos-sysinfo = { path = "lib/libmisc/sysinfo" }
 chaos-syslog = { path = "lib/libtrace/syslog" }
 chaos-snitch = { path = "lib/libtrace/snitch" }
 chaos-termcap = { path = "lib/libui/termcap" }
@@ -245,6 +253,7 @@ grep-searcher = "0.1.16"
 ignore = "0.4.25"
 image = { version = "^0.25.10", default-features = false }
 iana-time-zone = "0.1.65"
+iced = "0.14.0"
 include_dir = "0.7.4"
 jiff = { version = "0.2", features = ["serde"] }
 indexmap = "2.13.0"
@@ -422,6 +431,7 @@ ignored = [
     "zeroize",
     "include_dir",
     "chaos-warden",
+    "chaos-xclient",
     "axum",
     "chaos-daemon",
     "async-stream",

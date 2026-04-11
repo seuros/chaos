@@ -33,6 +33,17 @@ fn accent_link(text: &'static str) -> Span<'static> {
     )
 }
 
+/// Span for a checked task-list marker (`[x] `): bold success-green.
+fn task_checked(text: &'static str) -> Span<'static> {
+    Span::styled(text, Style::new().fg(crate::theme::green()).bold())
+}
+
+/// Span for an unchecked task-list marker (`[ ] `): ANSI dim modifier,
+/// no explicit foreground so it inherits the terminal base color.
+fn task_unchecked(text: &'static str) -> Span<'static> {
+    Span::styled(text, Style::new().dim())
+}
+
 fn render_markdown_text_for_cwd(input: &str, cwd: &Path) -> Text<'static> {
     render_markdown_text_with_width_and_cwd(input, None, Some(cwd))
 }
@@ -604,6 +615,82 @@ fn loose_items_due_to_blank_line_between_items() {
         Line::from_iter([dim_marker("2. "), "Second".into()]),
     ]);
     assert_eq!(text, expected);
+}
+
+#[test]
+fn task_list_variants() {
+    // One realistic checklist covering in a single pass:
+    //   - checked state `[x]`
+    //   - unchecked state `[ ]`
+    //   - a loose list transition (blank line between items)
+    //   - plain bullets coexisting with task items at the same level
+    //   - checkbox-only items
+    //   - nested task list under a plain parent (verifies the marker
+    //     mutation applies to the innermost item on the indent stack)
+    let md = "\
+- [x] done
+
+- [ ] todo
+- plain sibling
+- [x]
+- [ ]
+- parent
+  - [x] nested done
+  - [ ] nested todo
+";
+    let text = render_markdown_text(md);
+    let expected = Text::from_iter([
+        Line::from_iter(["- ".into(), task_checked("[x] "), "done".into()]),
+        Line::from_iter(["- ".into(), task_unchecked("[ ] "), "todo".into()]),
+        Line::from_iter(["- ", "plain sibling"]),
+        Line::from_iter(["- ".into(), task_checked("[x] ")]),
+        Line::from_iter(["- ".into(), task_unchecked("[ ] ")]),
+        Line::from_iter(["- ", "parent"]),
+        Line::from_iter([
+            "    - ".into(),
+            task_checked("[x] "),
+            "nested done".into(),
+        ]),
+        Line::from_iter([
+            "    - ".into(),
+            task_unchecked("[ ] "),
+            "nested todo".into(),
+        ]),
+    ]);
+    assert_eq!(text, expected);
+}
+
+#[test]
+fn task_list_wrapped_continuation_aligns_under_content() {
+    // Width-constrained loose-list path: wrapped continuation must indent 6
+    // cols so text sits flush under the item content (past `- [ ] `), not
+    // under the bullet.
+    let text = render_markdown_text_with_width_and_cwd(
+        "- [ ] this item has text long enough to force a wrap\n\n- [x] next\n",
+        Some(20),
+        None,
+    );
+    assert!(text.lines.len() >= 3, "expected wrap: {text:?}");
+    let first_line: String = text.lines[0]
+        .spans
+        .iter()
+        .map(|span| span.content.as_ref())
+        .collect();
+    assert!(
+        first_line.starts_with("- [ ] "),
+        "expected checkbox marker on loose task item, got {first_line:?}"
+    );
+    let leading: String = text.lines[1]
+        .spans
+        .iter()
+        .take_while(|s| s.content.chars().all(|c| c == ' '))
+        .map(|s| s.content.as_ref())
+        .collect();
+    assert_eq!(
+        leading.len(),
+        6,
+        "wrapped continuation should be indented 6 cols (past `- [ ] `), got {leading:?}"
+    );
 }
 
 #[test]

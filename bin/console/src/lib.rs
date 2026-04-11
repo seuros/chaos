@@ -87,6 +87,7 @@ mod mention_codec;
 mod multi_agents;
 mod notifications;
 pub mod onboarding;
+mod osc8;
 mod pager_overlay;
 mod panes;
 pub mod public_widgets;

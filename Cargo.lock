@@ -996,6 +996,7 @@ dependencies = [
  "strum 0.28.0",
  "strum_macros 0.28.0",
  "supports-color",
+ "supports-hyperlinks",
  "tempfile",
  "textwrap",
  "thiserror 2.0.18",
@@ -9302,6 +9303,12 @@ checksum = "c64fc7232dd8d2e4ac5ce4ef302b1d81e0b80d055b9d77c7c4f51f6aa4c867d6"
 dependencies = [
  "is_ci",
 ]
+
+[[package]]
+name = "supports-hyperlinks"
+version = "3.2.0"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "e396b6523b11ccb83120b115a0b7366de372751aa6edf19844dfb13a6af97e91"
 
 [[package]]
 name = "syn"

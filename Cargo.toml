@@ -323,6 +323,7 @@ sqlx = { version = "0.8.6", default-features = false, features = [
 strum = "0.28.0"
 strum_macros = "0.28.0"
 supports-color = "3.0.2"
+supports-hyperlinks = "3.2"
 syntect = "5"
 sys-locale = "0.3.2"
 tempfile = "3.27.0"

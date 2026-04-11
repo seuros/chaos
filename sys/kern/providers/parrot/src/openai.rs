@@ -57,6 +57,11 @@ pub struct OpenAiAdapter<A: AuthProvider> {
     client: ResponsesClient<RamaTransport, A>,
     options: ResponsesOptions,
     default_model: Option<String>,
+    /// Base URL captured before the provider is consumed by `ResponsesClient`.
+    /// Used exclusively for model discovery (`GET {base_url}/models`).
+    discovery_base_url: String,
+    /// Bearer token captured from the auth provider at construction time.
+    discovery_token: Option<String>,
 }
 
 impl<A: AuthProvider> std::fmt::Debug for OpenAiAdapter<A> {
@@ -93,10 +98,14 @@ impl<A: AuthProvider> OpenAiAdapter<A> {
         auth: A,
         default_model: Option<String>,
     ) -> Self {
+        let discovery_base_url = provider.base_url.clone();
+        let discovery_token = auth.bearer_token();
         Self {
             client: ResponsesClient::new(transport, provider, auth),
             options: ResponsesOptions::default(),
             default_model,
+            discovery_base_url,
+            discovery_token,
         }
     }
 
@@ -114,6 +123,8 @@ impl<A: AuthProvider> OpenAiAdapter<A> {
             client: self.client.with_telemetry(request, sse),
             options: self.options,
             default_model: self.default_model,
+            discovery_base_url: self.discovery_base_url,
+            discovery_token: self.discovery_token,
         }
     }
 }
@@ -157,6 +168,18 @@ where
     fn provider_name(&self) -> &str {
         "OpenAI"
     }
+
+    fn capabilities(&self) -> chaos_abi::AdapterCapabilities {
+        chaos_abi::AdapterCapabilities {
+            can_list_models: true,
+        }
+    }
+
+    fn list_models(&self) -> chaos_abi::ListModelsFuture<'_> {
+        let base_url = self.discovery_base_url.clone();
+        let token = self.discovery_token.clone();
+        Box::pin(async move { fetch_openai_models(&base_url, token.as_deref()).await })
+    }
 }
 
 fn responses_options_from_turn_request(
@@ -198,6 +221,110 @@ fn parse_compression(value: Option<&Value>) -> Compression {
         Some("zstd") => Compression::Zstd,
         _ => Compression::None,
     }
+}
+
+// ── Model discovery ────────────────────────────────────────────────────────
+
+/// Fetch models from an OpenAI-compatible `GET /models` endpoint.
+///
+/// The wire format is `{ "object": "list", "data": [{ "id", "object",
+/// "created", "owned_by" }] }`. OpenAI does not expose capability metadata
+/// here, so all `supports_*` fields default to `false` and token limits are
+/// left as `None`. Kern converts the result via `model_info_from_abi`, which
+/// fills in safe defaults — crucially without setting `used_fallback_model_metadata`,
+/// so the "Model metadata not found" warning is suppressed for known slugs.
+///
+/// This covers OpenAI, xAI/Grok, DeepSeek, and any other provider that
+/// implements the OpenAI-compat `/models` endpoint.
+async fn fetch_openai_models(
+    base_url: &str,
+    token: Option<&str>,
+) -> Result<Vec<chaos_abi::AbiModelInfo>, chaos_abi::ListModelsError> {
+    use rama::Service;
+    use rama::http::Body;
+    use rama::http::Request;
+    use rama::http::StatusCode;
+    use rama::http::body::util::BodyExt;
+    use rama::http::client::EasyHttpWebClient;
+    use serde::Deserialize;
+
+    #[derive(Deserialize)]
+    struct ModelsListResponse {
+        data: Vec<ModelEntry>,
+    }
+
+    #[derive(Deserialize)]
+    struct ModelEntry {
+        id: String,
+    }
+
+    let url = format!("{}/models", base_url.trim_end_matches('/'));
+
+    let mut builder = Request::builder().method("GET").uri(&url);
+    if let Some(token) = token {
+        let bearer = format!("Bearer {token}");
+        builder = builder.header(http::header::AUTHORIZATION, bearer);
+    }
+    let request = builder
+        .body(Body::empty())
+        .map_err(|e| chaos_abi::ListModelsError::Failed {
+            message: e.to_string(),
+        })?;
+
+    let client = EasyHttpWebClient::default();
+    let response = client
+        .serve(request)
+        .await
+        .map_err(|e| chaos_abi::ListModelsError::Failed {
+            message: format!("transport: {e}"),
+        })?;
+
+    let status = response.status();
+    if status == StatusCode::NOT_FOUND {
+        return Err(chaos_abi::ListModelsError::Unsupported);
+    }
+    if !status.is_success() {
+        let body = response
+            .into_body()
+            .collect()
+            .await
+            .map(|b| String::from_utf8_lossy(&b.to_bytes()).to_string())
+            .unwrap_or_default();
+        return Err(chaos_abi::ListModelsError::Failed {
+            message: format!("HTTP {status}: {body}"),
+        });
+    }
+
+    let body = response
+        .into_body()
+        .collect()
+        .await
+        .map_err(|e| chaos_abi::ListModelsError::Failed {
+            message: e.to_string(),
+        })?
+        .to_bytes();
+
+    let resp: ModelsListResponse =
+        serde_json::from_slice(&body).map_err(|e| chaos_abi::ListModelsError::Failed {
+            message: format!("parse: {e}"),
+        })?;
+
+    let models = resp
+        .data
+        .into_iter()
+        .map(|m| chaos_abi::AbiModelInfo {
+            display_name: m.id.clone(),
+            id: m.id,
+            max_input_tokens: None,
+            max_output_tokens: None,
+            supports_thinking: false,
+            supports_images: false,
+            supports_structured_output: false,
+            supports_reasoning_effort: false,
+        })
+        .collect();
+
+    Ok(models)
 }
 
 #[cfg(test)]

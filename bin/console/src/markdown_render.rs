@@ -128,6 +128,7 @@ pub(crate) fn render_markdown_text_with_width_and_cwd(
     let mut options = Options::empty();
     options.insert(Options::ENABLE_STRIKETHROUGH);
     options.insert(Options::ENABLE_TASKLISTS);
+    options.insert(Options::ENABLE_MATH);
     let parser = Parser::new_ext(input, options);
     let mut w = Writer::new(parser, width, cwd);
     w.run();
@@ -147,6 +148,14 @@ struct LinkState {
 
 fn should_render_link_destination(dest_url: &str) -> bool {
     !is_local_path_like_link(dest_url)
+}
+
+/// Rewrite LaTeX math source into Unicode glyphs via the `unicodeit` port.
+/// Unknown commands pass through unchanged so math stays legible even when
+/// a glyph mapping is missing.
+fn rewrite_math(source: &str) -> CowStr<'static> {
+    let rewritten = unicodeit::replace(source);
+    CowStr::Boxed(rewritten.into_boxed_str())
 }
 
 static COLON_LOCATION_SUFFIX_RE: LazyLock<Regex> =
@@ -240,14 +249,13 @@ where
             Event::End(tag) => self.end_tag(tag),
             Event::Text(text) => self.text(text),
             Event::Code(code) => self.code(code),
-            Event::InlineMath(math) => self.code(math),
+            Event::InlineMath(math) => {
+                let math = rewrite_math(&math);
+                self.code_lines(&math);
+            }
             Event::DisplayMath(math) => {
-                if self.needs_newline {
-                    self.push_line(Line::default());
-                    self.needs_newline = false;
-                }
-                self.code(math);
-                self.push_line(Line::default());
+                let math = rewrite_math(&math);
+                self.code_lines(&math);
                 self.needs_newline = true;
             }
             Event::SoftBreak => self.soft_break(),
@@ -518,6 +526,28 @@ where
         }
         let span = Span::from(code.into_string()).style(self.styles.code);
         self.push_span(span);
+    }
+
+    fn code_lines(&mut self, code: &str) {
+        if self.suppressing_local_link_label() {
+            return;
+        }
+        self.line_ends_with_local_link_target = false;
+        if self.pending_marker_line {
+            self.push_line(Line::default());
+            self.pending_marker_line = false;
+        }
+        for (i, line) in code.lines().enumerate() {
+            if self.needs_newline {
+                self.push_line(Line::default());
+                self.needs_newline = false;
+            }
+            if i > 0 {
+                self.push_line(Line::default());
+            }
+            let span = Span::from(line.to_string()).style(self.styles.code);
+            self.push_span(span);
+        }
     }
 
     fn html(&mut self, html: CowStr<'a>, inline: bool) {

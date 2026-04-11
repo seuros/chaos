@@ -1478,6 +1478,124 @@ fn nested_item_continuation_paragraph_is_indented() {
 }
 
 #[test]
+fn inline_math_rewrites_latex_to_unicode() {
+    // Inline math covers the real-world LLM payload: greek letters, operators,
+    // set theory, blackboard bold, and the `^`/`_` superscript/subscript
+    // notation that plain markdown's ENABLE_SUPERSCRIPT refused to parse.
+    let text = render_markdown_text(
+        "Energy: $E = mc^2$, inequality $x \\leq y$, greek $\\alpha + \\beta$, set $\\forall x \\in \\mathbb{R}$.\n",
+    );
+    let rendered: String = text
+        .lines
+        .iter()
+        .flat_map(|l| l.spans.iter().map(|s| s.content.clone()))
+        .collect::<Vec<_>>()
+        .join("");
+    assert!(
+        rendered.contains("E = mc²"),
+        "expected superscript via math mode, got: {rendered:?}"
+    );
+    assert!(
+        rendered.contains("x ≤ y"),
+        "expected ≤ glyph, got: {rendered:?}"
+    );
+    assert!(
+        rendered.contains("α + β"),
+        "expected greek letters, got: {rendered:?}"
+    );
+    assert!(
+        rendered.contains("∀ x ∈ ℝ"),
+        "expected ∀/∈/ℝ, got: {rendered:?}"
+    );
+}
+
+#[test]
+fn display_math_rewrites_and_frames_on_own_lines() {
+    // Display math ($$...$$) should rewrite glyphs and keep the normal single
+    // paragraph gap before and after it.
+    let text = render_markdown_text("Before.\n\n$$\\sum_{i=0}^{n} i^2$$\n\nAfter.\n");
+    let rendered: Vec<String> = text
+        .lines
+        .iter()
+        .map(|l| {
+            l.spans
+                .iter()
+                .map(|s| s.content.clone())
+                .collect::<String>()
+        })
+        .collect();
+    let math_idx = rendered
+        .iter()
+        .position(|l| l.contains("∑"))
+        .unwrap_or_else(|| panic!("expected ∑ line in: {rendered:?}"));
+    assert!(
+        rendered[math_idx].contains("ᵢ₌₀") && rendered[math_idx].contains('²'),
+        "expected sub/superscripts in display math, got: {:?}",
+        rendered[math_idx]
+    );
+    assert!(
+        rendered.iter().any(|l| l == "Before."),
+        "paragraph before display math missing: {rendered:?}"
+    );
+    assert!(
+        rendered.iter().any(|l| l == "After."),
+        "paragraph after display math missing: {rendered:?}"
+    );
+    assert_eq!(
+        rendered,
+        vec![
+            "Before.".to_string(),
+            "".to_string(),
+            rendered[math_idx].clone(),
+            "".to_string(),
+            "After.".to_string(),
+        ],
+        "display math should not add an extra blank line: {rendered:?}"
+    );
+}
+
+#[test]
+fn inline_math_with_embedded_newline_splits_across_rendered_lines() {
+    let text = render_markdown_text("Before $a\nb$ after.\n");
+    let expected = Text::from_iter([
+        Line::from_iter(vec![Span::from("Before "), accent("a")]),
+        Line::from_iter(vec![accent("b"), Span::from(" after.")]),
+    ]);
+    assert_eq!(text, expected);
+}
+
+#[test]
+fn display_math_with_embedded_newline_renders_each_line_once() {
+    let text = render_markdown_text("Before.\n\n$$a\nb$$\n\nAfter.\n");
+    let expected = Text::from_iter([
+        Line::from("Before."),
+        Line::default(),
+        Line::from_iter([accent("a")]),
+        Line::from_iter([accent("b")]),
+        Line::default(),
+        Line::from("After."),
+    ]);
+    assert_eq!(text, expected);
+}
+
+#[test]
+fn unknown_math_command_passes_through_unchanged() {
+    // unicodeit leaves unknown commands intact rather than dropping them, so
+    // math stays legible when a glyph mapping is missing.
+    let text = render_markdown_text("Fraction: $\\frac{a}{b}$.\n");
+    let rendered: String = text
+        .lines
+        .iter()
+        .flat_map(|l| l.spans.iter().map(|s| s.content.clone()))
+        .collect::<Vec<_>>()
+        .join("");
+    assert!(
+        rendered.contains("\\frac{a}{b}"),
+        "expected \\frac passthrough, got: {rendered:?}"
+    );
+}
+
+#[test]
 fn code_block_preserves_trailing_blank_lines() {
     // A fenced code block with an intentional trailing blank line must keep it.
     let md = "```rust\nfn main() {}\n\n```\n";

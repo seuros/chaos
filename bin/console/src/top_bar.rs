@@ -70,13 +70,15 @@ fn build_status_line(info: &SystemInfo, width: u16) -> Line<'static> {
         ));
     }
 
-    // Multiplexer
+    // Multiplexer — stable id only, so the label never goes stale when
+    // neighbouring panes/windows are closed and the multiplexer renumbers
+    // the visible coordinates.
     if let Some(ref mux) = info.multiplexer {
         spans.push(sep.clone());
-        let label = if mux.window.is_empty() {
-            format!("{} {}:{}", mux.kind, mux.session, mux.pane)
+        let label = if mux.id.is_empty() {
+            mux.kind.clone()
         } else {
-            format!("{} {}:{}.{}", mux.kind, mux.session, mux.window, mux.pane)
+            format!("{} {}", mux.kind, mux.id)
         };
         spans.push(Span::styled(
             label,

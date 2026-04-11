@@ -101,18 +101,26 @@ pub struct SystemInfo {
 
 /// Terminal multiplexer session info (tmux, zellij, screen).
 ///
-/// Provides enough context to address panes by coordinate, e.g. `0:1.2`
-/// means session `0`, window `1`, pane `2`.
+/// Only stable identifiers that never change for the lifetime of the
+/// pane/session are captured here. Display coordinates like tmux's
+/// `0:1.2` are deliberately **not** stored because they shift whenever
+/// a neighbouring pane or window is closed, which would make any
+/// cached value go stale immediately. If a caller needs the current
+/// display coordinate (e.g. to render a `Ctrl-b 0:1.2`-style hint),
+/// resolve it on demand with `tmux display-message -p -t <id>` instead.
 #[derive(Debug, Clone, Serialize, PartialEq, Eq)]
 pub struct MultiplexerInfo {
     /// `"tmux"`, `"zellij"`, or `"screen"`.
     pub kind: String,
-    /// Session name / id.
-    pub session: String,
-    /// Window index (tmux) or tab name — empty when not applicable.
-    pub window: String,
-    /// Pane index within the window.
-    pub pane: String,
+    /// Stable pane/session identifier that is immutable for the lifetime
+    /// of the pane:
+    /// - **tmux**: `$TMUX_PANE` (e.g. `%3`) — internal pane id, allocated
+    ///   once per pane and never reused or renumbered.
+    /// - **zellij**: `$ZELLIJ_PANE_ID` (e.g. `terminal_3`).
+    /// - **screen**: `$STY` (e.g. `12345.pts-0.hostname`) — the screen
+    ///   session identifier, which is the closest stable handle screen
+    ///   exposes to child processes.
+    pub id: String,
 }
 
 /// Platform sandbox mechanism available at compile time.
@@ -240,10 +248,18 @@ pub(crate) fn detect_has_network() -> bool {
 
 /// Detect terminal multiplexer from environment variables.
 ///
-/// For tmux, `$TMUX` and `$TMUX_PANE` are always set.  Session name and
-/// window/pane indices come from `tmux display-message` (fast, local IPC).
-/// For zellij, `$ZELLIJ_SESSION_NAME` and `$ZELLIJ_PANE_ID` are set.
-/// For screen, `$STY` carries the session pid.name.
+/// All three supported multiplexers expose a stable identifier through
+/// environment variables that the multiplexer sets once when the pane
+/// is spawned and never touches again for the life of that pane:
+/// - **tmux**: `$TMUX_PANE` holds the internal pane id (e.g. `%3`).
+/// - **zellij**: `$ZELLIJ_PANE_ID` holds the pane id (e.g. `terminal_3`).
+/// - **screen**: `$STY` holds the session identifier.
+///
+/// We intentionally do *not* shell out to `tmux display-message` to
+/// derive display coordinates (`session:window.pane`). Those numbers
+/// shift whenever a neighbouring pane is killed, so any cached value
+/// ages badly. The stable id is all the top bar needs, and reading
+/// it from the environment avoids a subprocess on every sysinfo probe.
 pub(crate) fn detect_multiplexer() -> Option<MultiplexerInfo> {
     if env_var_is_set("TMUX") {
         return Some(detect_tmux());
@@ -258,60 +274,23 @@ pub(crate) fn detect_multiplexer() -> Option<MultiplexerInfo> {
 }
 
 fn detect_tmux() -> MultiplexerInfo {
-    // Fast path: ask tmux for session:window.pane in one shot.
-    let (session, window, pane) = std::process::Command::new("tmux")
-        .args(["display-message", "-p", "#S:#I.#P"])
-        .output()
-        .ok()
-        .and_then(|o| {
-            let s = String::from_utf8_lossy(&o.stdout).trim().to_string();
-            // Parse "session_name:window_idx.pane_idx"
-            let (sess, rest) = s.split_once(':')?;
-            let (win, pan) = rest.split_once('.')?;
-            Some((sess.to_string(), win.to_string(), pan.to_string()))
-        })
-        .unwrap_or_else(|| {
-            // Fallback: env vars only (no window index available).
-            let session = "unknown".into();
-            let pane = std::env::var("TMUX_PANE")
-                .unwrap_or_default()
-                .trim_start_matches('%')
-                .to_string();
-            (session, String::new(), pane)
-        });
-
     MultiplexerInfo {
         kind: "tmux".into(),
-        session,
-        window,
-        pane,
+        id: std::env::var("TMUX_PANE").unwrap_or_default(),
     }
 }
 
 fn detect_zellij() -> MultiplexerInfo {
     MultiplexerInfo {
         kind: "zellij".into(),
-        session: std::env::var("ZELLIJ_SESSION_NAME").unwrap_or_default(),
-        window: String::new(), // zellij doesn't expose tab index in env
-        pane: std::env::var("ZELLIJ_PANE_ID").unwrap_or_default(),
+        id: std::env::var("ZELLIJ_PANE_ID").unwrap_or_default(),
     }
 }
 
 fn detect_screen() -> MultiplexerInfo {
-    // $STY is "pid.name" (e.g. "12345.pts-0.hostname")
-    let sty = std::env::var("STY").unwrap_or_default();
-    let session = sty
-        .split_once('.')
-        .map(|(_, name)| name.to_string())
-        .unwrap_or(sty);
-    // $WINDOW is the screen window number
-    let window = std::env::var("WINDOW").unwrap_or_default();
-
     MultiplexerInfo {
         kind: "screen".into(),
-        session,
-        window,
-        pane: String::new(), // screen doesn't have sub-panes
+        id: std::env::var("STY").unwrap_or_default(),
     }
 }
 

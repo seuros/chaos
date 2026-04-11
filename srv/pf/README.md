@@ -156,7 +156,6 @@ Common fields:
 - optional metadata:
   - `conversation.id`
   - `app.version`
-  - `user.account_id`
 - policy/network:
   - `network.policy.scope` (`domain` or `non_domain`)
   - `network.policy.decision` (`allow`, `deny`, or `ask`)

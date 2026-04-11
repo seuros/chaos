@@ -201,6 +201,49 @@ fn reserializes_shell_outputs_for_function_and_custom_tool_calls() {
 }
 
 #[test]
+fn prompt_get_formatted_input_reserializes_shell_outputs_without_apply_patch_tool() {
+    let raw_output = r#"{"output":"hello","metadata":{"exit_code":0,"duration_seconds":0.5}}"#;
+    let expected_output = "Exit code: 0\nWall time: 0.5 seconds\nOutput:\nhello";
+    let prompt = Prompt {
+        input: vec![
+            ResponseItem::FunctionCall {
+                id: None,
+                name: "shell".to_string(),
+                namespace: None,
+                arguments: "{}".to_string(),
+                call_id: "call-1".to_string(),
+            },
+            ResponseItem::FunctionCallOutput {
+                call_id: "call-1".to_string(),
+                output: FunctionCallOutputPayload::from_text(raw_output.to_string()),
+                tool_name: None,
+            },
+        ],
+        tools: vec![],
+        ..Default::default()
+    };
+
+    let input = prompt.get_formatted_input();
+    assert_eq!(
+        input,
+        vec![
+            ResponseItem::FunctionCall {
+                id: None,
+                name: "shell".to_string(),
+                namespace: None,
+                arguments: "{}".to_string(),
+                call_id: "call-1".to_string(),
+            },
+            ResponseItem::FunctionCallOutput {
+                call_id: "call-1".to_string(),
+                output: FunctionCallOutputPayload::from_text(expected_output.to_string()),
+                tool_name: None,
+            },
+        ]
+    );
+}
+
+#[test]
 fn tool_search_output_namespace_serializes_with_deferred_child_tools() {
     let namespace = tools::ToolSearchOutputTool::Namespace(tools::ResponsesApiNamespace {
         name: "mcp__codex_apps__calendar".to_string(),

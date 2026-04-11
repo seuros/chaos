@@ -1727,8 +1727,6 @@ fn test_session_telemetry(config: &Config, model: &str) -> SessionTelemetry {
         model,
         model_info.slug.as_str(),
         None,
-        None,
-        None,
         "test_originator".to_string(),
         false,
         "test".to_string(),

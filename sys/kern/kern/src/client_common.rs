@@ -47,18 +47,11 @@ pub struct Prompt {
 impl Prompt {
     pub(crate) fn get_formatted_input(&self) -> Vec<ResponseItem> {
         let mut input = self.input.clone();
-
-        // when using the *Freeform* apply_patch tool specifically, tool outputs
-        // should be structured text, not json. Do NOT reserialize when using
-        // the Function tool - note that this differs from the check above for
-        // instructions. We declare the result as a named variable for clarity.
-        let is_freeform_apply_patch_tool_present = self.tools.iter().any(|tool| match tool {
-            ToolSpec::Freeform(f) => f.name == "apply_patch",
-            _ => false,
-        });
-        if is_freeform_apply_patch_tool_present {
-            reserialize_shell_outputs(&mut input);
-        }
+        // Vendor-agnostic model input: shell/apply_patch outputs should be
+        // plain structured text for the model regardless of whether the
+        // apply_patch tool was exposed as a freeform custom tool or as a
+        // regular function tool.
+        reserialize_shell_outputs(&mut input);
 
         input
     }

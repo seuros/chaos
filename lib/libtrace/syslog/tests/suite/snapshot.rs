@@ -45,8 +45,6 @@ fn manager_snapshot_metrics_collects_without_shutdown() -> Result<()> {
         ProcessId::new(),
         "gpt-5.1",
         "gpt-5.1",
-        Some("account-id".to_string()),
-        None,
         Some(TelemetryAuthMode::ApiKey),
         "test_originator".to_string(),
         true,

@@ -1627,6 +1627,7 @@ dependencies = [
  "chaos-keyring",
  "chaos-lex",
  "chaos-locate",
+ "chaos-lsd",
  "chaos-mcp-runtime",
  "chaos-minions",
  "chaos-parrot",
@@ -1747,6 +1748,10 @@ dependencies = [
  "tempfile",
  "tokio",
 ]
+
+[[package]]
+name = "chaos-lsd"
+version = "47.0.0"
 
 [[package]]
 name = "chaos-mcp-runtime"

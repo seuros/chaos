@@ -93,8 +93,8 @@ async fn shell_tool_executes_command_and_streams_output() -> anyhow::Result<()> 
 
     let req = second_mock.single_request();
     let (output_text, _) = call_output(&req, call_id);
-    // With freeform apply_patch as the default for all models, shell output
-    // is reserialized to plain text before being sent to the model.
+    // Shell output is reserialized to plain text before being sent to the
+    // model.
     let expected_pattern = r"(?s)^Exit code: 0
 Wall time: [0-9]+(?:\.[0-9]+)? seconds
 Output:

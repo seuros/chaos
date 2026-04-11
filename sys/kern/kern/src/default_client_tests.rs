@@ -5,29 +5,9 @@ use pretty_assertions::assert_eq;
 #[test]
 fn test_get_chaos_user_agent() {
     let user_agent = get_chaos_user_agent();
-    let originator = originator().value;
+    let originator = originator().value.as_str();
     let prefix = format!("{originator}/");
     assert!(user_agent.starts_with(&prefix));
-}
-
-#[test]
-fn is_first_party_originator_matches_known_values() {
-    assert_eq!(is_first_party_originator(DEFAULT_ORIGINATOR), true);
-    assert_eq!(is_first_party_originator("codex_vscode"), true);
-    assert_eq!(is_first_party_originator("Chaos Something Else"), true);
-    assert_eq!(is_first_party_originator("codex_cli"), false);
-    assert_eq!(is_first_party_originator("Other"), false);
-}
-
-#[test]
-fn is_first_party_chat_originator_matches_known_values() {
-    assert_eq!(is_first_party_chat_originator("codex_atlas"), true);
-    assert_eq!(
-        is_first_party_chat_originator("codex_chatgpt_desktop"),
-        false
-    );
-    assert_eq!(is_first_party_chat_originator(DEFAULT_ORIGINATOR), false);
-    assert_eq!(is_first_party_chat_originator("codex_vscode"), false);
 }
 
 #[tokio::test]
@@ -81,23 +61,23 @@ async fn test_create_client_sets_default_headers() {
 
 #[test]
 fn test_invalid_suffix_is_sanitized() {
-    let prefix = "codex_cli_rs/0.0.0";
+    let prefix = "chaos_cli_rs/0.0.0";
     let suffix = "bad\rsuffix";
 
     assert_eq!(
         sanitize_user_agent(format!("{prefix} ({suffix})"), prefix),
-        "codex_cli_rs/0.0.0 (bad_suffix)"
+        "chaos_cli_rs/0.0.0 (bad_suffix)"
     );
 }
 
 #[test]
 fn test_invalid_suffix_is_sanitized2() {
-    let prefix = "codex_cli_rs/0.0.0";
+    let prefix = "chaos_cli_rs/0.0.0";
     let suffix = "bad\0suffix";
 
     assert_eq!(
         sanitize_user_agent(format!("{prefix} ({suffix})"), prefix),
-        "codex_cli_rs/0.0.0 (bad_suffix)"
+        "chaos_cli_rs/0.0.0 (bad_suffix)"
     );
 }
 

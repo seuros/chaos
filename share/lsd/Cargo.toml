@@ -1,0 +1,17 @@
+[package]
+name = "chaos-lsd"
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+publish.workspace = true
+
+# LSD — Lark Schema Definitions
+#
+# Vendor-specific tool extensions and schema definitions.
+# Houses provider quirks that only work against a particular backend —
+# keeping them isolated from the portable core.
+
+[lints]
+workspace = true
+
+[dependencies]

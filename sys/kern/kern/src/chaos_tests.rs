@@ -93,7 +93,6 @@ fn expect_text_tool_output(output: &FunctionToolOutput) -> String {
 
 struct InstructionsTestCase {
     slug: &'static str,
-    expects_apply_patch_instructions: bool,
 }
 
 fn user_message(text: &str) -> ResponseItem {

@@ -21,7 +21,7 @@ ChaOS does not define your profession, persona, or task domain. The active sessi
 
 # Editing and validation
 
-- Use `apply_patch` for direct file edits.
+- Use `apply_patch` for direct file edits. The `apply_patch` tool accepts a freeform patch body — do not wrap the patch in JSON.
 - Keep changes focused on the request. Do not fix unrelated issues unless explicitly asked.
 - Update documentation when interfaces, behavior, or operator-facing semantics change.
 - Validate with the most focused practical command or test first, then broaden if needed.

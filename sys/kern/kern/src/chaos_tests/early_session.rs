@@ -75,8 +75,6 @@ async fn start_managed_network_proxy_ignores_invalid_execpolicy_network_rules() 
 
 #[tokio::test]
 async fn get_base_instructions_no_user_content() {
-    let prompt_with_apply_patch_instructions =
-        include_str!("../../prompt_with_apply_patch_instructions.md");
     let test_slugs = ["eliza", "ada", "legion", "ordis"];
     let models_response = crate::test_support::test_models_response(&test_slugs);
     let model_info_for_slug = |slug: &str, config: &Config| {
@@ -88,36 +86,16 @@ async fn get_base_instructions_no_user_content() {
             .unwrap_or_else(|| panic!("model slug {slug} is missing from test models"));
         model_info::with_config_overrides(model, config)
     };
-    let test_cases = vec![
-        InstructionsTestCase {
-            slug: "eliza",
-            expects_apply_patch_instructions: false,
-        },
-        InstructionsTestCase {
-            slug: "ada",
-            expects_apply_patch_instructions: false,
-        },
-        InstructionsTestCase {
-            slug: "legion",
-            expects_apply_patch_instructions: false,
-        },
-        InstructionsTestCase {
-            slug: "ordis",
-            expects_apply_patch_instructions: false,
-        },
-    ];
+    let test_cases = test_slugs
+        .iter()
+        .map(|slug| InstructionsTestCase { slug })
+        .collect::<Vec<_>>();
 
     let (session, _turn_context) = make_session_and_context().await;
     let config = test_config();
 
     for test_case in test_cases {
         let model_info = model_info_for_slug(test_case.slug, &config);
-        if test_case.expects_apply_patch_instructions {
-            assert_eq!(
-                model_info.base_instructions.as_str(),
-                prompt_with_apply_patch_instructions
-            );
-        }
 
         {
             let mut state = session.state.lock().await;

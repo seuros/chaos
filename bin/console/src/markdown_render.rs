@@ -44,6 +44,8 @@ struct MarkdownStyles {
     unordered_list_marker: Style,
     link: Style,
     blockquote: Style,
+    task_checked: Style,
+    task_unchecked: Style,
 }
 
 impl Default for MarkdownStyles {
@@ -70,6 +72,16 @@ impl Default for MarkdownStyles {
             unordered_list_marker: Style::new(),
             link: Style::new().fg(p.accent).underlined(),
             blockquote: Style::new().fg(p.success),
+            // Task-list checkboxes. We intentionally use ANSI modifiers
+            // (bold / dim) rather than fg colors because the phosphor theme
+            // collapses both `dim` and `success` to `Color::Green`, making
+            // any color-only contrast invisible. Bold vs dim survives
+            // monochrome themes and still distinguishes the two states on a
+            // full-color terminal. Item text itself stays unstyled — a
+            // completed-item strikethrough would collide with the regular
+            // `Strikethrough` event.
+            task_checked: Style::new().fg(p.success).bold(),
+            task_unchecked: Style::new().dim(),
         }
     }
 }
@@ -113,6 +125,7 @@ pub(crate) fn render_markdown_text_with_width_and_cwd(
 ) -> Text<'static> {
     let mut options = Options::empty();
     options.insert(Options::ENABLE_STRIKETHROUGH);
+    options.insert(Options::ENABLE_TASKLISTS);
     let parser = Parser::new_ext(input, options);
     let mut w = Writer::new(parser, width, cwd);
     w.run();
@@ -245,7 +258,54 @@ where
             Event::Html(html) => self.html(html, /*inline*/ false),
             Event::InlineHtml(html) => self.html(html, /*inline*/ true),
             Event::FootnoteReference(_) => {}
-            Event::TaskListMarker(_) => {}
+            Event::TaskListMarker(checked) => self.task_list_marker(checked),
+        }
+    }
+
+    /// Inject a `[x]` / `[ ]` checkbox into the current list item's marker.
+    ///
+    /// `Event::TaskListMarker` is emitted by pulldown-cmark after `Tag::Item`
+    /// and before the item's text content. At this point the item's
+    /// `IndentContext` is already on the top of `indent_stack` carrying its
+    /// bullet marker (e.g. `- `). We append the checkbox glyph to that marker
+    /// so the initial line renders as `- [ ] task text` in one prefix pass,
+    /// and pad the continuation prefix by the same display width so wrapped
+    /// lines align under the text, not under the checkbox.
+    fn task_list_marker(&mut self, checked: bool) {
+        let glyph = if checked { "[x] " } else { "[ ] " };
+        let style = if checked {
+            self.styles.task_checked
+        } else {
+            self.styles.task_unchecked
+        };
+        let marker_span = Span::styled(glyph.to_string(), style);
+        // Continuation indent for wrapped lines — plain spaces matching the
+        // checkbox column width so text aligns flush under the item content.
+        let continuation_span = Span::from(" ".repeat(glyph.len()));
+        if let Some(ctx) = self.indent_stack.last_mut() {
+            match &mut ctx.marker {
+                Some(marker) => marker.push(marker_span),
+                None => ctx.marker = Some(vec![marker_span]),
+            }
+            ctx.prefix.push(continuation_span);
+        }
+
+        if self.pending_marker_line {
+            // Tight task items have not materialized their marker line yet, so
+            // start it now with the updated checkbox prefix. This also preserves
+            // checkbox-only items, which would otherwise disappear when the item
+            // ends before any inline text arrives.
+            self.push_line(Line::default());
+        } else if self
+            .current_line_content
+            .as_ref()
+            .is_some_and(|line| line.spans.is_empty())
+        {
+            // Loose task items start a paragraph before pulldown-cmark emits
+            // `TaskListMarker`, so refresh the already-open line prefixes after
+            // mutating the indent context to include the checkbox.
+            self.current_initial_indent = self.prefix_spans(/*pending_marker_line*/ true);
+            self.current_subsequent_indent = self.prefix_spans(/*pending_marker_line*/ false);
         }
     }
 

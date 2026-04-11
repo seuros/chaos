@@ -243,7 +243,7 @@ mod tests {
                     ),
                     timestamp: "2026-02-26T00:00:00.000Z".to_string(),
                     cwd: PathBuf::from("/child/worktree"),
-                    originator: "codex_cli_rs".to_string(),
+                    originator: "chaos_cli_rs".to_string(),
                     cli_version: "0.0.0".to_string(),
                     source: SessionSource::Cli,
                     agent_nickname: None,

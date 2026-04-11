@@ -13,6 +13,7 @@ use crate::config::types::AppsConfigToml;
 use chaos_sysctl::CONFIG_TOML_FILE;
 use pretty_assertions::assert_eq;
 use serde::Deserialize;
+use serial_test::serial;
 use std::collections::HashMap;
 use std::sync::Arc;
 use tempfile::tempdir;
@@ -775,6 +776,7 @@ async fn approve_mode_skips_when_annotations_do_not_require_approval() {
 }
 
 #[tokio::test]
+#[serial(arc_monitor_server)]
 async fn approve_mode_blocks_when_arc_returns_interrupt_for_model() {
     use wiremock::Mock;
     use wiremock::MockServer;

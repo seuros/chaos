@@ -62,8 +62,6 @@ let manager = SessionTelemetry::new(
     conversation_id,
     model,
     slug,
-    account_id,
-    account_email,
     auth_mode,
     originator,
     log_user_prompts,

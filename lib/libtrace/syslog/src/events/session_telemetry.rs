@@ -45,8 +45,6 @@ const SSE_UNKNOWN_KIND: &str = "unknown";
 pub struct SessionTelemetryMetadata {
     pub(crate) conversation_id: ProcessId,
     pub(crate) auth_mode: Option<String>,
-    pub(crate) account_id: Option<String>,
-    pub(crate) account_email: Option<String>,
     pub(crate) originator: String,
     pub(crate) service_name: Option<String>,
     pub(crate) session_source: String,
@@ -222,21 +220,19 @@ impl SessionTelemetry {
         conversation_id: ProcessId,
         model: &str,
         slug: &str,
-        account_id: Option<String>,
-        account_email: Option<String>,
         auth_mode: Option<TelemetryAuthMode>,
-        originator: String,
+        originator: impl Into<String>,
         log_user_prompts: bool,
-        terminal_type: String,
+        terminal_type: impl Into<String>,
         session_source: SessionSource,
     ) -> SessionTelemetry {
+        let originator = originator.into();
+        let terminal_type = terminal_type.into();
         Self {
             metadata: SessionTelemetryMetadata {
                 conversation_id,
                 auth_mode: auth_mode.map(|m| m.to_string()),
-                account_id,
-                account_email,
-                originator: sanitize_metric_tag_value(originator.as_str()),
+                originator: sanitize_metric_tag_value(&originator),
                 service_name: None,
                 session_source: session_source.to_string(),
                 model: model.to_owned(),

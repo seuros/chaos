@@ -354,7 +354,7 @@ impl RolloutRecorder {
                     forked_from_id,
                     timestamp,
                     cwd: config.cwd().to_path_buf(),
-                    originator: originator().value,
+                    originator: originator().value.clone(),
                     cli_version: CHAOS_VERSION.to_string(),
                     agent_nickname: source.get_nickname(),
                     agent_role: source.get_agent_role(),

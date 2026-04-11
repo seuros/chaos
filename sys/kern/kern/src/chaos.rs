@@ -1379,29 +1379,17 @@ impl Session {
         } else {
             Some(TelemetryAuthMode::ApiKey)
         };
-        let account_id = if provider_owns_auth {
-            auth.and_then(ChaosAuth::get_account_id)
-        } else {
-            None
-        };
-        let account_email = if provider_owns_auth {
-            auth.and_then(ChaosAuth::get_account_email)
-        } else {
-            None
-        };
-        let originator = crate::default_client::originator().value;
+        let originator = crate::default_client::originator().value.as_str();
         let terminal_type = terminal::user_agent();
         let session_model = session_configuration.collaboration_mode.model().to_string();
         let mut session_telemetry = SessionTelemetry::new(
             conversation_id,
             session_model.as_str(),
             session_model.as_str(),
-            account_id.clone(),
-            account_email.clone(),
             auth_mode,
-            originator.clone(),
+            originator,
             config.otel.log_user_prompt,
-            terminal_type.clone(),
+            terminal_type.as_str(),
             session_configuration.session_source.clone(),
         );
         if let Some(service_name) = session_configuration.metrics_service_name.as_deref() {
@@ -1410,10 +1398,8 @@ impl Session {
         let network_proxy_audit_metadata = NetworkProxyAuditMetadata {
             conversation_id: Some(conversation_id.to_string()),
             app_version: Some(CHAOS_VERSION.to_string()),
-            user_account_id: account_id,
             auth_mode: auth_mode.map(|mode| mode.to_string()),
-            originator: Some(originator),
-            user_email: account_email,
+            originator: Some(originator.to_string()),
             terminal_type: Some(terminal_type),
             model: Some(session_model.clone()),
             slug: Some(session_model),

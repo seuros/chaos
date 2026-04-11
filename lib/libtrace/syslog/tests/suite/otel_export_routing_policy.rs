@@ -109,8 +109,6 @@ fn otel_export_routing_policy_routes_user_prompt_log_and_trace_events() {
             ProcessId::new(),
             "gpt-5.1",
             "gpt-5.1",
-            Some("account-id".to_string()),
-            Some("engineer@example.com".to_string()),
             Some(TelemetryAuthMode::ApiKey),
             "chaos_fork".to_string(),
             true,
@@ -148,10 +146,6 @@ fn otel_export_routing_policy_routes_user_prompt_log_and_trace_events() {
         prompt_log_attrs.get("prompt").map(String::as_str),
         Some("super secret prompt")
     );
-    assert_eq!(
-        prompt_log_attrs.get("user.email").map(String::as_str),
-        Some("engineer@example.com")
-    );
 
     let spans = span_exporter.get_finished_spans().expect("span export");
     assert_eq!(spans.len(), 1);
@@ -183,8 +177,6 @@ fn otel_export_routing_policy_routes_user_prompt_log_and_trace_events() {
         Some("1")
     );
     assert!(!prompt_trace_attrs.contains_key("prompt"));
-    assert!(!prompt_trace_attrs.contains_key("user.email"));
-    assert!(!prompt_trace_attrs.contains_key("user.account_id"));
 }
 
 #[test]
@@ -218,8 +210,6 @@ fn otel_export_routing_policy_routes_tool_result_log_and_trace_events() {
             ProcessId::new(),
             "gpt-5.1",
             "gpt-5.1",
-            Some("account-id".to_string()),
-            Some("engineer@example.com".to_string()),
             Some(TelemetryAuthMode::ApiKey),
             "chaos_fork".to_string(),
             true,
@@ -331,8 +321,6 @@ fn otel_export_routing_policy_routes_auth_recovery_log_and_trace_events() {
             ProcessId::new(),
             "gpt-5.1",
             "gpt-5.1",
-            Some("account-id".to_string()),
-            Some("engineer@example.com".to_string()),
             Some(TelemetryAuthMode::Chatgpt),
             "chaos_fork".to_string(),
             true,
@@ -477,8 +465,6 @@ fn otel_export_routing_policy_routes_api_request_auth_observability() {
             ProcessId::new(),
             "gpt-5.1",
             "gpt-5.1",
-            Some("account-id".to_string()),
-            Some("engineer@example.com".to_string()),
             Some(TelemetryAuthMode::Chatgpt),
             "chaos_fork".to_string(),
             true,

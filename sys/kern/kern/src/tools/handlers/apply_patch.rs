@@ -39,8 +39,6 @@ use std::sync::Arc;
 
 pub struct ApplyPatchHandler;
 
-const APPLY_PATCH_LARK_GRAMMAR: &str = include_str!("tool_apply_patch.lark");
-
 fn file_paths_for_action(action: &ApplyPatchAction) -> Vec<AbsolutePathBuf> {
     let mut keys = Vec::new();
     let cwd = action.cwd.as_path();
@@ -353,13 +351,14 @@ pub(crate) async fn intercept_apply_patch(
 /// Returns a custom tool that can be used to edit files. Well-suited for GPT-5 models
 /// https://platform.openai.com/docs/guides/function-calling#custom-tools
 pub(crate) fn create_apply_patch_freeform_tool() -> ToolSpec {
+    use chaos_lsd::openai::apply_patch as lsd;
     ToolSpec::Freeform(FreeformTool {
-        name: "apply_patch".to_string(),
-        description: "Use the `apply_patch` tool to edit files. This is a FREEFORM tool, so do not wrap the patch in JSON.".to_string(),
+        name: lsd::TOOL_NAME.to_string(),
+        description: lsd::TOOL_DESCRIPTION.to_string(),
         format: FreeformToolFormat {
-            r#type: "grammar".to_string(),
-            syntax: "lark".to_string(),
-            definition: APPLY_PATCH_LARK_GRAMMAR.to_string(),
+            r#type: lsd::FORMAT_TYPE.to_string(),
+            syntax: lsd::FORMAT_SYNTAX.to_string(),
+            definition: lsd::LARK_GRAMMAR.to_string(),
         },
     })
 }

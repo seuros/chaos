@@ -174,8 +174,8 @@ async fn shell_escalated_permissions_rejected_then_ok() -> Result<()> {
         .function_call_output_content_and_success(call_id_success)
         .and_then(|(content, _)| content)
         .expect("success output string");
-    // With freeform apply_patch as the default for all models, shell output
-    // is reserialized to plain text before being sent to the model.
+    // Shell output is reserialized to plain text before being sent to the
+    // model.
     let expected_pattern = r"(?s)^Exit code: 0
 Wall time: [0-9]+(?:\.[0-9]+)? seconds
 Output:
@@ -292,8 +292,8 @@ async fn shell_timeout_includes_timeout_prefix_and_metadata() -> Result<()> {
             "timeout output missing `command timed out`: {stdout}"
         );
     } else if output_str.contains("Exit code:") {
-        // Reserialized plain-text format produced when freeform apply_patch
-        // is present (the default for all models now).
+        // Reserialized plain-text format produced for model-facing shell
+        // output.
         assert!(
             output_str.contains("Exit code: 124") || output_str.contains("command timed out"),
             "expected timeout indication in reserialized output: {output_str}"

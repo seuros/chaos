@@ -6,7 +6,7 @@ use http::HeaderValue;
 use http::header::USER_AGENT;
 use std::sync::LazyLock;
 use std::sync::Mutex;
-use std::sync::RwLock;
+use std::sync::OnceLock;
 
 /// Set this to add a suffix to the User-Agent string.
 ///
@@ -24,15 +24,14 @@ use std::sync::RwLock;
 /// The full user agent string is returned from the mcp initialize response.
 /// Parenthesis will be added by Chaos. This should only specify what goes inside of the parenthesis.
 pub static USER_AGENT_SUFFIX: LazyLock<Mutex<Option<String>>> = LazyLock::new(|| Mutex::new(None));
-pub const DEFAULT_ORIGINATOR: &str = "codex_cli_rs";
-pub const CHAOS_INTERNAL_ORIGINATOR_OVERRIDE_ENV_VAR: &str = "CHAOS_INTERNAL_ORIGINATOR_OVERRIDE";
+pub const DEFAULT_ORIGINATOR: &str = "chaos_cli_rs";
 
 #[derive(Debug, Clone)]
 pub struct Originator {
     pub value: String,
     pub header_value: HeaderValue,
 }
-static ORIGINATOR: LazyLock<RwLock<Option<Originator>>> = LazyLock::new(|| RwLock::new(None));
+static ORIGINATOR: OnceLock<Originator> = OnceLock::new();
 
 #[derive(Debug)]
 pub enum SetOriginatorError {
@@ -40,19 +39,14 @@ pub enum SetOriginatorError {
     AlreadyInitialized,
 }
 
-fn get_originator_value(provided: Option<String>) -> Originator {
-    let value = std::env::var(CHAOS_INTERNAL_ORIGINATOR_OVERRIDE_ENV_VAR)
-        .ok()
-        .or(provided)
-        .unwrap_or(DEFAULT_ORIGINATOR.to_string());
-
+fn build_originator(value: String) -> Originator {
     match HeaderValue::from_str(&value) {
         Ok(header_value) => Originator {
             value,
             header_value,
         },
         Err(e) => {
-            tracing::error!("Unable to turn originator override {value} into header value: {e}");
+            tracing::error!("Invalid originator value, falling back to default: {e}");
             Originator {
                 value: DEFAULT_ORIGINATOR.to_string(),
                 header_value: HeaderValue::from_static(DEFAULT_ORIGINATOR),
@@ -62,49 +56,19 @@ fn get_originator_value(provided: Option<String>) -> Originator {
 }
 
 pub fn set_default_originator(value: String) -> Result<(), SetOriginatorError> {
-    if HeaderValue::from_str(&value).is_err() {
+    let Ok(header_value) = HeaderValue::from_str(&value) else {
         return Err(SetOriginatorError::InvalidHeaderValue);
-    }
-    let originator = get_originator_value(Some(value));
-    let Ok(mut guard) = ORIGINATOR.write() else {
-        return Err(SetOriginatorError::AlreadyInitialized);
     };
-    if guard.is_some() {
-        return Err(SetOriginatorError::AlreadyInitialized);
-    }
-    *guard = Some(originator);
-    Ok(())
+    ORIGINATOR
+        .set(Originator {
+            value,
+            header_value,
+        })
+        .map_err(|_| SetOriginatorError::AlreadyInitialized)
 }
 
-pub fn originator() -> Originator {
-    if let Ok(guard) = ORIGINATOR.read()
-        && let Some(originator) = guard.as_ref()
-    {
-        return originator.clone();
-    }
-
-    if std::env::var(CHAOS_INTERNAL_ORIGINATOR_OVERRIDE_ENV_VAR).is_ok() {
-        let originator = get_originator_value(/*provided*/ None);
-        if let Ok(mut guard) = ORIGINATOR.write() {
-            match guard.as_ref() {
-                Some(originator) => return originator.clone(),
-                None => *guard = Some(originator.clone()),
-            }
-        }
-        return originator;
-    }
-
-    get_originator_value(/*provided*/ None)
-}
-
-pub fn is_first_party_originator(originator_value: &str) -> bool {
-    originator_value == DEFAULT_ORIGINATOR
-        || originator_value == "codex_vscode"
-        || originator_value.starts_with("Chaos ")
-}
-
-pub fn is_first_party_chat_originator(originator_value: &str) -> bool {
-    originator_value == "codex_atlas"
+pub fn originator() -> &'static Originator {
+    ORIGINATOR.get_or_init(|| build_originator(DEFAULT_ORIGINATOR.to_string()))
 }
 
 pub fn get_chaos_user_agent() -> String {
@@ -161,7 +125,7 @@ fn sanitize_user_agent(candidate: String, fallback: &str) -> String {
         tracing::warn!(
             "Falling back to default Chaos originator because base user agent string is invalid"
         );
-        originator().value
+        originator().value.clone()
     }
 }
 
@@ -181,7 +145,7 @@ pub fn build_http_client() -> ChaosHttpClient {
 
 pub fn default_headers() -> HeaderMap {
     let mut headers = HeaderMap::new();
-    headers.insert("originator", originator().header_value);
+    headers.insert("originator", originator().header_value.clone());
     if let Ok(user_agent) = HeaderValue::from_str(&get_chaos_user_agent()) {
         headers.insert(USER_AGENT, user_agent);
     }

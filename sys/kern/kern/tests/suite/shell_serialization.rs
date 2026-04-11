@@ -135,9 +135,8 @@ async fn shell_output_is_reserialized_for_all_models(output_type: ShellModelOutp
         .and_then(Value::as_str)
         .expect("shell output string");
 
-    // With UnifiedExec always on and freeform apply_patch as the default for
-    // all models, shell output is always reserialized to plain text before
-    // being sent to the model.
+    // Shell output is reserialized to plain text before being sent to the
+    // model, independent of the apply_patch tool variant.
     assert!(
         serde_json::from_str::<Value>(output).is_err(),
         "expected reserialized plain text, not JSON",
@@ -156,7 +155,7 @@ shell json
 #[test_case(ShellModelOutput::Shell)]
 #[test_case(ShellModelOutput::ShellCommand)]
 #[test_case(ShellModelOutput::LocalShell)]
-async fn shell_output_is_structured_with_freeform_apply_patch(
+async fn shell_output_is_structured_with_apply_patch_enabled(
     output_type: ShellModelOutput,
 ) -> Result<()> {
     skip_if_no_network!(Ok(()));
@@ -166,7 +165,7 @@ async fn shell_output_is_structured_with_freeform_apply_patch(
     let test = builder.build(&server).await?;
 
     let call_id = "shell-structured";
-    let responses = shell_responses(call_id, vec!["/bin/echo", "freeform shell"], output_type)?;
+    let responses = shell_responses(call_id, vec!["/bin/echo", "structured shell"], output_type)?;
     let mock = mount_sse_sequence(&server, responses).await;
 
     test.submit_turn_with_policy(
@@ -191,7 +190,7 @@ async fn shell_output_is_structured_with_freeform_apply_patch(
     let expected_pattern = r"(?s)^Exit code: 0
 Wall time: [0-9]+(?:\.[0-9]+)? seconds
 Output:
-freeform shell
+structured shell
 ?$";
     assert_regex_match(expected_pattern, output);
 
@@ -232,9 +231,8 @@ async fn shell_output_reserializes_fixture_json_as_plain_text(
         .and_then(Value::as_str)
         .expect("shell output string");
 
-    // With freeform apply_patch as the default for all models, shell output
-    // is always reserialized to plain text. The fixture JSON appears in the
-    // Output section of the structured text.
+    // Shell output is reserialized to plain text. The fixture JSON appears in
+    // the Output section of the structured text.
     assert!(
         serde_json::from_str::<Value>(output).is_err(),
         "expected reserialized plain text, not raw JSON",
@@ -317,7 +315,7 @@ async fn shell_output_structures_fixture_with_serialization(
 #[test_case(ShellModelOutput::Shell)]
 #[test_case(ShellModelOutput::ShellCommand)]
 #[test_case(ShellModelOutput::LocalShell)]
-async fn shell_output_for_freeform_tool_records_duration(
+async fn shell_output_for_apply_patch_enabled_records_duration(
     output_type: ShellModelOutput,
 ) -> Result<()> {
     skip_if_no_network!(Ok(()));

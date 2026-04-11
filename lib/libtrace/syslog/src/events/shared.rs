@@ -11,8 +11,6 @@ macro_rules! log_event {
             app.version = %$self.metadata.app_version,
             auth_mode = $self.metadata.auth_mode,
             originator = %$self.metadata.originator,
-            user.account_id = $self.metadata.account_id,
-            user.email = $self.metadata.account_email,
             terminal.type = %$self.metadata.terminal_type,
             model = %$self.metadata.model,
             slug = %$self.metadata.slug,

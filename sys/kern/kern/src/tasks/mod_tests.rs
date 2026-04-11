@@ -27,8 +27,6 @@ fn test_session_telemetry() -> SessionTelemetry {
         "gpt-5.1",
         "gpt-5.1",
         None,
-        None,
-        None,
         "test_originator".to_string(),
         false,
         "tty".to_string(),

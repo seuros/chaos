@@ -53,6 +53,7 @@ members = [
 
     # share/ — extensions + data
     "share/hallucinate",
+    "share/lsd",
     "share/dtrace",
     "share/age-verification",
 
@@ -166,6 +167,7 @@ chaos-proc = { path = "var/proc" }
 
 # Internal — share/
 chaos-hallucinate = { path = "share/hallucinate" }
+chaos-lsd = { path = "share/lsd" }
 chaos-dtrace = { path = "share/dtrace" }
 
 # Internal — lib/

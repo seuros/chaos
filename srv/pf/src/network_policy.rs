@@ -235,8 +235,6 @@ fn emit_policy_audit_event(state: &NetworkProxyState, args: PolicyAuditEventArgs
         app.version = metadata.app_version.as_deref(),
         auth_mode = metadata.auth_mode.as_deref(),
         originator = metadata.originator.as_deref(),
-        user.account_id = metadata.user_account_id.as_deref(),
-        user.email = metadata.user_email.as_deref(),
         terminal.type = metadata.terminal_type.as_deref(),
         model = metadata.model.as_deref(),
         slug = metadata.slug.as_deref(),
@@ -775,10 +773,8 @@ mod tests {
         let metadata = NetworkProxyAuditMetadata {
             conversation_id: Some("conversation-1".to_string()),
             app_version: Some("1.2.3".to_string()),
-            user_account_id: Some("acct-1".to_string()),
             auth_mode: Some("Chatgpt".to_string()),
-            originator: Some("codex_cli_rs".to_string()),
-            user_email: Some("test@example.com".to_string()),
+            originator: Some("chaos_cli_rs".to_string()),
             terminal_type: Some("iTerm.app/3.6.5".to_string()),
             model: Some("gpt-5.3-codex".to_string()),
             slug: Some("gpt-5.3-codex".to_string()),
@@ -804,9 +800,7 @@ mod tests {
         assert_eq!(event.field("conversation.id"), Some("conversation-1"));
         assert_eq!(event.field("app.version"), Some("1.2.3"));
         assert_eq!(event.field("auth_mode"), Some("Chatgpt"));
-        assert_eq!(event.field("originator"), Some("codex_cli_rs"));
-        assert_eq!(event.field("user.account_id"), Some("acct-1"));
-        assert_eq!(event.field("user.email"), Some("test@example.com"));
+        assert_eq!(event.field("originator"), Some("chaos_cli_rs"));
         assert_eq!(event.field("terminal.type"), Some("iTerm.app/3.6.5"));
         assert_eq!(event.field("model"), Some("gpt-5.3-codex"));
         assert_eq!(event.field("slug"), Some("gpt-5.3-codex"));

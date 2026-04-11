@@ -119,8 +119,14 @@ fn multiplexer_detected_when_in_tmux() {
         let facts = platform::detect();
         let mux = facts.multiplexer.expect("should detect tmux");
         assert_eq!(mux.kind, "tmux");
-        assert!(!mux.session.is_empty(), "session should not be empty");
-        assert!(!mux.pane.is_empty(), "pane should not be empty");
+        // $TMUX_PANE is always set by tmux for every spawned pane, so the
+        // stable id should never be empty inside a real tmux session.
+        assert!(!mux.id.is_empty(), "stable pane id should not be empty");
+        assert!(
+            mux.id.starts_with('%'),
+            "tmux pane ids always start with '%', got: {id}",
+            id = mux.id
+        );
     }
 }
 

@@ -12,10 +12,12 @@ use crate::wrapping::RtOptions;
 use crate::wrapping::adaptive_wrap_line;
 use chaos_wchar::normalize_markdown_hash_location_suffix;
 use dirs::home_dir;
+use pulldown_cmark::BlockQuoteKind;
 use pulldown_cmark::CodeBlockKind;
 use pulldown_cmark::CowStr;
 use pulldown_cmark::Event;
 use pulldown_cmark::HeadingLevel;
+use pulldown_cmark::LinkType;
 use pulldown_cmark::Options;
 use pulldown_cmark::Parser;
 use pulldown_cmark::Tag;
@@ -129,6 +131,7 @@ pub(crate) fn render_markdown_text_with_width_and_cwd(
     options.insert(Options::ENABLE_STRIKETHROUGH);
     options.insert(Options::ENABLE_TASKLISTS);
     options.insert(Options::ENABLE_MATH);
+    options.insert(Options::ENABLE_GFM);
     let parser = Parser::new_ext(input, options);
     let mut w = Writer::new(parser, width, cwd);
     w.run();
@@ -156,6 +159,18 @@ fn should_render_link_destination(dest_url: &str) -> bool {
 fn rewrite_math(source: &str) -> CowStr<'static> {
     let rewritten = unicodeit::replace(source);
     CowStr::Boxed(rewritten.into_boxed_str())
+}
+
+/// Glyph, label, and style for a GFM alert kind.
+fn alert_header_style(kind: BlockQuoteKind) -> (&'static str, &'static str, Style) {
+    let p = crate::theme::palette();
+    match kind {
+        BlockQuoteKind::Note => ("ⓘ", "NOTE", Style::new().fg(p.accent).bold()),
+        BlockQuoteKind::Tip => ("★", "TIP", Style::new().fg(p.success).bold()),
+        BlockQuoteKind::Important => ("‼", "IMPORTANT", Style::new().fg(p.accent).bold()),
+        BlockQuoteKind::Warning => ("⚠", "WARNING", Style::new().fg(p.warning).bold()),
+        BlockQuoteKind::Caution => ("⛔", "CAUTION", Style::new().fg(p.error).bold()),
+    }
 }
 
 static COLON_LOCATION_SUFFIX_RE: LazyLock<Regex> =
@@ -343,7 +358,7 @@ where
         match tag {
             Tag::Paragraph => self.start_paragraph(),
             Tag::Heading { level, .. } => self.start_heading(level),
-            Tag::BlockQuote(_) => self.start_blockquote(),
+            Tag::BlockQuote(kind) => self.start_blockquote(kind),
             Tag::CodeBlock(kind) => {
                 let indent = match kind {
                     CodeBlockKind::Fenced(_) => None,
@@ -360,7 +375,11 @@ where
             Tag::Emphasis => self.push_inline_style(self.styles.emphasis),
             Tag::Strong => self.push_inline_style(self.styles.strong),
             Tag::Strikethrough => self.push_inline_style(self.styles.strikethrough),
-            Tag::Link { dest_url, .. } => self.push_link(dest_url.to_string()),
+            Tag::Link {
+                link_type,
+                dest_url,
+                ..
+            } => self.push_link(link_type, dest_url.to_string()),
             Tag::HtmlBlock
             | Tag::FootnoteDefinition(_)
             | Tag::DefinitionList
@@ -445,7 +464,7 @@ where
         self.pop_inline_style();
     }
 
-    fn start_blockquote(&mut self) {
+    fn start_blockquote(&mut self, kind: Option<BlockQuoteKind>) {
         if self.needs_newline {
             self.push_blank_line();
             self.needs_newline = false;
@@ -455,6 +474,12 @@ where
             /*marker*/ None,
             /*is_list*/ false,
         ));
+        if let Some(kind) = kind {
+            let (glyph, label, style) = alert_header_style(kind);
+            self.push_line(Line::default());
+            self.push_span(Span::styled(format!("{glyph} {label}"), style));
+            self.needs_newline = false;
+        }
     }
 
     fn end_blockquote(&mut self) {
@@ -700,8 +725,9 @@ where
         self.inline_styles.pop();
     }
 
-    fn push_link(&mut self, dest_url: String) {
-        let show_destination = should_render_link_destination(&dest_url);
+    fn push_link(&mut self, link_type: LinkType, dest_url: String) {
+        let show_destination = should_render_link_destination(&dest_url)
+            && !matches!(link_type, LinkType::Autolink | LinkType::Email);
         let local_target_display = if is_local_path_like_link(&dest_url) {
             render_local_link_target(&dest_url, self.cwd.as_deref())
         } else {

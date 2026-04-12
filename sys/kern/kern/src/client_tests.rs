@@ -53,6 +53,7 @@ fn test_anthropic_provider() -> crate::model_provider_info::ModelProviderInfo {
         stream_idle_timeout_ms: None,
         requires_openai_auth: false,
         supports_websockets: false,
+        native_server_side_tools: vec![],
     }
 }
 

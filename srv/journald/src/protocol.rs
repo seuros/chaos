@@ -31,6 +31,8 @@ pub enum JournalRequest {
     ReleaseLease(ReleaseLeaseRequest),
     AppendBatch(AppendBatchInput),
     LoadJournal(LoadJournalRequest),
+    GetDefaultProcess(GetDefaultProcessRequest),
+    SetDefaultProcess(SetDefaultProcessRequest),
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -55,6 +57,8 @@ pub enum JournalResponse {
     ReleaseLease(ReleaseLeaseResponse),
     AppendBatch(AppendBatchResult),
     LoadJournal(LoadedJournal),
+    GetDefaultProcess(GetDefaultProcessResponse),
+    SetDefaultProcess(SetDefaultProcessResponse),
 }
 
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
@@ -132,3 +136,19 @@ pub enum ErrorCode {
     SequenceConflict,
     Internal,
 }
+
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+pub struct GetDefaultProcessRequest {}
+
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+pub struct GetDefaultProcessResponse {
+    pub process_id: Option<ProcessId>,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+pub struct SetDefaultProcessRequest {
+    pub process_id: ProcessId,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+pub struct SetDefaultProcessResponse {}

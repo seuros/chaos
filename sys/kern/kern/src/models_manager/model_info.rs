@@ -45,6 +45,13 @@ pub(crate) fn with_config_overrides(mut model: ModelInfo, config: &Config) -> Mo
         };
     }
 
+    // Merge provider-config native tools on top of ABI-derived ones (union, no duplicates).
+    for tool in &config.model_provider.native_server_side_tools {
+        if !model.native_server_side_tools.contains(tool) {
+            model.native_server_side_tools.push(tool.clone());
+        }
+    }
+
     if let Some(base_instructions) = &config.base_instructions {
         model.base_instructions = base_instructions.clone();
         model.model_messages = None;
@@ -109,6 +116,7 @@ pub(crate) fn model_info_from_abi(abi: &AbiModelInfo) -> ModelInfo {
         effective_context_window_percent: 95,
         experimental_supported_tools: Vec::new(),
         input_modalities,
+        native_server_side_tools: abi.native_server_side_tools.clone(),
         used_fallback_model_metadata: false,
     }
 }

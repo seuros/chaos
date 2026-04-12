@@ -156,14 +156,16 @@ async fn run_session_picker(
         let tx = loader_tx.clone();
         let config = config.clone();
         tokio::spawn(async move {
-            let provider_filter = vec![request.default_provider.clone()];
+            // No provider filter: show sessions from all providers so that
+            // switching between profiles (e.g. openai ↔ xai) doesn't hide
+            // sessions started with a different provider.
             let page = RolloutRecorder::list_processes(
                 &config,
                 PAGE_SIZE,
                 request.cursor.as_ref(),
                 request.sort_key,
                 INTERACTIVE_SESSION_SOURCES,
-                Some(provider_filter.as_slice()),
+                None,
                 request.default_provider.as_str(),
                 /*search_term*/ None,
             )

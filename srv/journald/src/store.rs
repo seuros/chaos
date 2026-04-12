@@ -59,4 +59,13 @@ pub trait JournalStore {
         &self,
         process_id: &ProcessId,
     ) -> impl Future<Output = Result<LoadedJournal, JournalError>> + Send;
+
+    fn get_default_process(
+        &self,
+    ) -> impl Future<Output = Result<Option<ProcessId>, JournalError>> + Send;
+
+    fn set_default_process(
+        &self,
+        process_id: &ProcessId,
+    ) -> impl Future<Output = Result<(), JournalError>> + Send;
 }

@@ -402,7 +402,10 @@ impl ModelClient {
 
         let instructions = prompt.base_instructions.text.clone();
         let input = prompt.get_formatted_input();
-        let tools = create_tools_json_for_responses_api(&prompt.tools)?;
+        let mut tools = create_tools_json_for_responses_api(&prompt.tools)?;
+        for tool_name in &model_info.native_server_side_tools {
+            tools.push(serde_json::json!({"type": tool_name}));
+        }
         let reasoning = Self::build_reasoning(model_info, effort, summary);
         let verbosity = if model_info.support_verbosity {
             self.state.model_verbosity.or(model_info.default_verbosity)
@@ -1188,7 +1191,12 @@ impl ModelClientSession {
         config: HttpTurnRequestConfig<'_>,
     ) -> Result<AbiTurnRequest> {
         let input = prompt.get_formatted_input();
-        let openai_tools = create_tools_json_for_responses_api(&prompt.tools)?;
+        let mut openai_tools = create_tools_json_for_responses_api(&prompt.tools)?;
+        // Inject provider-native server-side tools as bare {"type": "..."} objects.
+        // These are executed on the provider's infrastructure — no function schema needed.
+        for tool_name in &model_info.native_server_side_tools {
+            openai_tools.push(serde_json::json!({"type": tool_name}));
+        }
         let tools = prompt
             .tools
             .iter()

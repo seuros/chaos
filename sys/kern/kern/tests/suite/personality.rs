@@ -501,6 +501,7 @@ async fn remote_model_friendly_personality_instructions_with_feature() -> anyhow
         auto_compact_token_limit: None,
         effective_context_window_percent: 95,
         experimental_supported_tools: Vec::new(),
+        native_server_side_tools: vec![],
         input_modalities: default_input_modalities(),
         used_fallback_model_metadata: false,
     };
@@ -614,6 +615,7 @@ async fn user_turn_personality_remote_model_template_includes_update_message() -
         auto_compact_token_limit: None,
         effective_context_window_percent: 95,
         experimental_supported_tools: Vec::new(),
+        native_server_side_tools: vec![],
         input_modalities: default_input_modalities(),
         used_fallback_model_metadata: false,
     };

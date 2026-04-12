@@ -31,6 +31,10 @@ use crate::RequestEnvelope;
 use crate::ResponseEnvelope;
 use crate::model::HelloResponse;
 use crate::protocol::AcquireLeaseRequest;
+use crate::protocol::GetDefaultProcessRequest;
+use crate::protocol::GetDefaultProcessResponse;
+use crate::protocol::SetDefaultProcessRequest;
+use crate::protocol::SetDefaultProcessResponse;
 
 pub const JOURNAL_RPC_PATH: &str = "/rpc";
 pub const PROTOCOL_VERSION: u32 = 2;
@@ -179,6 +183,16 @@ where
                 .load_journal(&process_id)
                 .await
                 .map(JournalResponse::LoadJournal),
+            JournalRequest::GetDefaultProcess(GetDefaultProcessRequest {}) => {
+                self.store.get_default_process().await.map(|process_id| {
+                    JournalResponse::GetDefaultProcess(GetDefaultProcessResponse { process_id })
+                })
+            }
+            JournalRequest::SetDefaultProcess(SetDefaultProcessRequest { process_id }) => self
+                .store
+                .set_default_process(&process_id)
+                .await
+                .map(|()| JournalResponse::SetDefaultProcess(SetDefaultProcessResponse {})),
         };
 
         match outcome {

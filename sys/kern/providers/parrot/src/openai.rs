@@ -225,6 +225,18 @@ fn parse_compression(value: Option<&Value>) -> Compression {
 
 // ── Model discovery ────────────────────────────────────────────────────────
 
+/// Detect native server-side tools a provider supports based on its base URL.
+///
+/// xAI exposes `web_search` and `x_search` as Responses-API server-side tools.
+/// Other OpenAI-compat providers typically do not, so we default to nothing.
+fn native_tools_for_base_url(base_url: &str) -> Vec<String> {
+    if base_url.contains("x.ai") {
+        vec!["web_search".to_string(), "x_search".to_string()]
+    } else {
+        vec![]
+    }
+}
+
 /// Fetch models from an OpenAI-compatible `GET /models` endpoint.
 ///
 /// The wire format is `{ "object": "list", "data": [{ "id", "object",
@@ -309,6 +321,7 @@ async fn fetch_openai_models(
             message: format!("parse: {e}"),
         })?;
 
+    let native_tools = native_tools_for_base_url(base_url);
     let models = resp
         .data
         .into_iter()
@@ -321,6 +334,7 @@ async fn fetch_openai_models(
             supports_images: false,
             supports_structured_output: false,
             supports_reasoning_effort: false,
+            native_server_side_tools: native_tools.clone(),
         })
         .collect();
 

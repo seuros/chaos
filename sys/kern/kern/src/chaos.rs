@@ -5250,6 +5250,25 @@ async fn try_run_sampling_request(
             ResponseEvent::OutputTextDelta(delta) => {
                 // In review child threads, suppress assistant text deltas; the
                 // UI will show a selection popup from the final ReviewOutput.
+                //
+                // Some providers (xAI) stream output_text.delta events for a
+                // new text segment without a preceding output_item.added when
+                // multiple output items are interleaved. Synthesize a fallback
+                // AgentMessage so these deltas are not silently dropped.
+                if active_item.is_none() {
+                    warn!(
+                        "OutputTextDelta arrived with no active item — \
+                         synthesizing fallback AgentMessage (provider sent \
+                         interleaved output items without output_item.added)"
+                    );
+                    let fallback = TurnItem::AgentMessage(chaos_ipc::items::AgentMessageItem {
+                        id: uuid::Uuid::new_v4().to_string(),
+                        content: vec![],
+                        phase: None,
+                    });
+                    sess.emit_turn_item_started(&turn_context, &fallback).await;
+                    active_item = Some(fallback);
+                }
                 if let Some(active) = active_item.as_ref() {
                     let item_id = active.id();
                     if matches!(active, TurnItem::AgentMessage(_)) {
@@ -5272,8 +5291,6 @@ async fn try_run_sampling_request(
                         sess.send_event(&turn_context, EventMsg::AgentMessageContentDelta(event))
                             .await;
                     }
-                } else {
-                    error_or_panic("OutputTextDelta without active item".to_string());
                 }
             }
             ResponseEvent::ReasoningSummaryDelta {

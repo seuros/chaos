@@ -63,6 +63,7 @@ async fn retries_on_early_close() {
         stream_idle_timeout_ms: Some(2000),
         requires_openai_auth: false,
         supports_websockets: false,
+        native_server_side_tools: vec![],
     };
 
     let TestChaos { process: chaos, .. } = test_chaos()

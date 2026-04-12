@@ -151,6 +151,14 @@ pub struct ModelProviderInfo {
     /// Whether this provider supports the Responses API WebSocket transport.
     #[serde(default)]
     pub supports_websockets: bool,
+
+    /// Server-side tools this provider handles natively. Each entry is injected
+    /// into the request's `tools` array as `{ "type": "<name>" }` — no schema,
+    /// executed entirely on the provider's infrastructure.
+    ///
+    /// Example for xAI: `["web_search", "x_search"]`
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub native_server_side_tools: Vec<String>,
 }
 
 impl ModelProviderInfo {
@@ -295,6 +303,7 @@ impl ModelProviderInfo {
             stream_idle_timeout_ms: None,
             requires_openai_auth: true,
             supports_websockets: true,
+            native_server_side_tools: vec![],
         }
     }
 
@@ -343,6 +352,7 @@ pub fn create_oss_provider_with_base_url(base_url: &str, wire_api: WireApi) -> M
         stream_idle_timeout_ms: None,
         requires_openai_auth: false,
         supports_websockets: false,
+        native_server_side_tools: vec![],
     }
 }
 

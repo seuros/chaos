@@ -40,6 +40,18 @@ pub struct AbiModelInfo {
 
     /// Whether the model supports reasoning effort levels.
     pub supports_reasoning_effort: bool,
+
+    /// Server-side tools the provider executes natively for this model.
+    ///
+    /// Each entry is injected into the request `tools` array as a bare
+    /// `{ "type": "<name>" }` object — no function schema, the provider
+    /// handles execution entirely on its infrastructure.
+    ///
+    /// Examples:
+    /// - Anthropic: `["web_search_20250305"]`
+    /// - xAI:       `["web_search", "x_search"]`
+    #[serde(default)]
+    pub native_server_side_tools: Vec<String>,
 }
 
 /// Errors from optional model discovery.

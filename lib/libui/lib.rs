@@ -1,0 +1,51 @@
+#![warn(clippy::all)]
+
+pub mod app_event;
+pub mod app_event_sender;
+pub mod bottom_pane;
+pub mod chatwidget;
+pub mod clipboard_paste;
+pub mod clipboard_text;
+pub mod collaboration_modes;
+pub mod color;
+pub mod custom_terminal;
+pub mod debug_config;
+pub mod diff_render;
+pub mod exec_cell;
+pub mod exec_command;
+pub mod get_git_diff;
+pub mod history_cell;
+pub mod insert_history;
+pub mod key_hint;
+pub mod line_truncation;
+pub mod live_wrap;
+pub mod markdown;
+pub mod markdown_render;
+pub mod markdown_stream;
+pub mod mention_codec;
+pub mod multi_agents;
+pub mod notifications;
+pub mod osc8;
+pub mod render;
+pub mod session_log;
+pub mod shimmer;
+pub mod slash_command;
+pub mod status;
+pub mod status_indicator_widget;
+pub mod streaming;
+pub mod style;
+pub mod terminal_palette;
+pub mod text_formatting;
+pub mod theme;
+pub mod theme_picker;
+pub mod tool_badges;
+pub mod top_bar;
+pub mod tui;
+pub mod ui_consts;
+pub mod version;
+pub mod wrapping;
+
+pub mod test_render;
+
+#[cfg(feature = "vt100-tests")]
+pub mod test_backend;

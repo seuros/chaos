@@ -72,6 +72,7 @@ members = [
     "lib/libmisc/sysinfo",
     "lib/libtrace/syslog",
     "lib/libtrace/snitch",
+    "lib/libui",
     "lib/libui/termcap",
     "lib/libui/highlight",
     "lib/libutil/realpath",
@@ -185,6 +186,7 @@ chaos-session = { path = "lib/libmisc/session" }
 chaos-sysinfo = { path = "lib/libmisc/sysinfo" }
 chaos-syslog = { path = "lib/libtrace/syslog" }
 chaos-snitch = { path = "lib/libtrace/snitch" }
+libui = { path = "lib/libui" }
 chaos-termcap = { path = "lib/libui/termcap" }
 chaos-highlight = { path = "lib/libui/highlight" }
 chaos-scm = { path = "lib/libutil/scm" }
@@ -464,3 +466,4 @@ codegen-units = 8
 debug = 1         # Reduce debug symbol size
 inherits = "test"
 opt-level = 0
+

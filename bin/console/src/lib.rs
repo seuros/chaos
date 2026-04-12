@@ -54,66 +54,50 @@ use uuid::Uuid;
 mod additional_dirs;
 mod app;
 mod app_backtrack;
-mod app_event;
-mod app_event_sender;
 // mod ascii_animation; // removed: boot no longer shows animation
-mod bottom_pane;
-mod chatwidget;
 mod cli;
-mod clipboard_paste;
-mod clipboard_text;
-mod collaboration_modes;
-mod color;
-pub mod custom_terminal;
 mod cwd_prompt;
-mod debug_config;
-mod diff_render;
-mod exec_cell;
-mod exec_command;
 mod external_editor;
 mod file_search;
 // mod frames; // removed: boot no longer shows animation
-mod get_git_diff;
-mod history_cell;
-pub mod insert_history;
-mod key_hint;
-mod line_truncation;
-pub mod live_wrap;
-mod markdown;
-mod markdown_render;
-mod markdown_stream;
-mod mention_codec;
-mod multi_agents;
-mod notifications;
 pub mod onboarding;
-mod osc8;
 mod pager_overlay;
 mod panes;
 pub mod public_widgets;
-mod render;
 mod resume_picker;
 mod selection_list;
-mod session_log;
-mod shimmer;
 mod side_panel;
-mod slash_command;
-mod status;
-mod status_indicator_widget;
-mod streaming;
-mod style;
-mod terminal_palette;
-#[cfg(test)]
-mod test_render;
-mod text_formatting;
-pub(crate) mod theme;
-mod theme_picker;
 mod tile_manager;
-mod tool_badges;
-mod top_bar;
-mod tui;
-mod ui_consts;
-mod version;
-mod wrapping;
+
+// Modules now living in libui — re-exported under the same name so
+// all existing `crate::foo` paths inside console continue to resolve.
+use libui::app_event;
+use libui::app_event_sender;
+use libui::bottom_pane;
+use libui::chatwidget;
+pub use libui::custom_terminal;
+pub use libui::debug_config;
+use libui::diff_render;
+#[cfg(test)]
+use libui::exec_cell;
+use libui::exec_command;
+use libui::history_cell;
+pub use libui::insert_history;
+use libui::key_hint;
+pub use libui::live_wrap;
+use libui::markdown_render;
+use libui::multi_agents;
+use libui::render;
+use libui::session_log;
+use libui::shimmer;
+use libui::style;
+#[cfg(feature = "vt100-tests")]
+pub use libui::test_backend;
+use libui::text_formatting;
+pub(crate) use libui::theme;
+pub use libui::theme_picker;
+use libui::tool_badges;
+use libui::tui;
 
 const DEBUG_LOG_PATH_ENV_VAR: &str = "CHAOS_DEBUG_LOG_PATH";
 const DEBUG_LOG_FILTER: &str = "warn,chaos_kern=debug,chaos_boot=debug,chaos_fork=debug,\
@@ -148,12 +132,6 @@ fn init_optional_debug_file_layer() -> std::io::Result<(
         .with_filter(filter);
     Ok((Some(layer), Some(guard)))
 }
-
-// test_backend requires the optional `vt100` crate (enabled by the
-// `vt100-tests` feature).  Without that feature the module must not be
-// compiled at all because `vt100::Parser` would be unresolved.
-#[cfg(feature = "vt100-tests")]
-pub mod test_backend;
 
 use crate::onboarding::onboarding_screen::OnboardingScreenArgs;
 use crate::onboarding::onboarding_screen::run_onboarding_app;

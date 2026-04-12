@@ -9,11 +9,9 @@ use chaos_ipc::openai_models::ModelVisibility;
 use chaos_ipc::openai_models::TruncationMode;
 use chaos_ipc::openai_models::TruncationPolicyConfig;
 use chaos_ipc::openai_models::WebSearchToolType;
-use chaos_ipc::openai_models::default_input_modalities;
 
 use crate::config::Config;
 use crate::truncate::approx_bytes_for_tokens;
-use tracing::warn;
 
 pub const BASE_INSTRUCTIONS: &str = include_str!("../../prompt.md");
 const DEFAULT_PERSONALITY_HEADER: &str = "You are running inside ChaOS. ChaOS is a local model kernel. The operator defines your role. If the task uses a workspace, you share it with the operator.";
@@ -58,44 +56,6 @@ pub(crate) fn with_config_overrides(mut model: ModelInfo, config: &Config) -> Mo
     }
 
     model
-}
-
-/// Build a minimal fallback model descriptor for missing/unknown slugs.
-pub(crate) fn model_info_from_slug(slug: &str) -> ModelInfo {
-    warn!("Unknown model {slug} is used. This will use fallback model metadata.");
-    ModelInfo {
-        slug: slug.to_string(),
-        display_name: slug.to_string(),
-        description: None,
-        default_reasoning_level: None,
-        supported_reasoning_levels: Vec::new(),
-        shell_type: ConfigShellToolType::Default,
-        visibility: ModelVisibility::None,
-        supported_in_api: true,
-        priority: 99,
-        availability_nux: None,
-        base_instructions: BASE_INSTRUCTIONS.to_string(),
-        model_messages: local_personality_messages_for_slug(slug),
-        supports_reasoning_summaries: false,
-        default_reasoning_summary: ReasoningSummary::Auto,
-        support_verbosity: false,
-        default_verbosity: None,
-        // Unknown models get the portable JSON tool variant. `Freeform` emits
-        // `type: "custom"` on the wire, which is an OpenAI-Responses-only
-        // extension — Responses clones (xAI, DeepSeek, etc.) reject it with
-        // 422. Catalog entries can still opt into `Freeform` explicitly.
-        apply_patch_tool_type: Some(chaos_ipc::openai_models::ApplyPatchToolType::Function),
-        web_search_tool_type: WebSearchToolType::Text,
-        truncation_policy: TruncationPolicyConfig::bytes(/*limit*/ 10_000),
-        supports_parallel_tool_calls: false,
-        supports_image_detail_original: false,
-        context_window: Some(272_000),
-        auto_compact_token_limit: None,
-        effective_context_window_percent: 95,
-        experimental_supported_tools: Vec::new(),
-        input_modalities: default_input_modalities(),
-        used_fallback_model_metadata: true, // this is the fallback model metadata
-    }
 }
 
 /// Convert a provider-neutral `AbiModelInfo` into kern's `ModelInfo`.

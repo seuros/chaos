@@ -2117,28 +2117,6 @@ impl Session {
         turn_context
     }
 
-    pub(crate) async fn maybe_emit_unknown_model_warning_for_turn(&self, tc: &TurnContext) {
-        // TensorZero function names are not in any model catalog — suppress the
-        // fallback-metadata warning since the defaults are adequate and TensorZero
-        // provides its own model metadata via the API response.
-        if tc.provider.wire_api == crate::model_provider_info::WireApi::TensorZero {
-            tracing::debug!("Skipping fallback metadata warning for TensorZero provider");
-            return;
-        }
-        if tc.model_info.used_fallback_model_metadata && !self.services.model_client.is_clamped() {
-            let message = if tc.model_info.slug.is_empty() {
-                "No model configured. Are you logged in? Run `chaos login` or set an API key."
-                    .to_string()
-            } else {
-                format!(
-                    "Model metadata for `{}` not found. Defaulting to fallback metadata; this can degrade performance and cause issues.",
-                    tc.model_info.slug
-                )
-            };
-            self.send_event(tc, EventMsg::Warning(WarningEvent { message }))
-                .await;
-        }
-    }
     pub(crate) async fn new_default_turn(&self) -> Arc<TurnContext> {
         self.new_default_turn_with_sub_id(self.next_internal_sub_id())
             .await
@@ -3359,8 +3337,6 @@ mod handlers {
             // new_turn_with_sub_id already emits the error event.
             return;
         };
-        sess.maybe_emit_unknown_model_warning_for_turn(current_context.as_ref())
-            .await;
         current_context.session_telemetry.user_prompt(&items);
 
         // Attempt to inject input into current task.
@@ -4045,8 +4021,6 @@ mod handlers {
         review_request: ReviewRequest,
     ) {
         let turn_context = sess.new_default_turn_with_sub_id(sub_id.clone()).await;
-        sess.maybe_emit_unknown_model_warning_for_turn(turn_context.as_ref())
-            .await;
         sess.refresh_mcp_servers_if_requested(&turn_context).await;
         match resolve_review_request(review_request, turn_context.cwd.as_path()) {
             Ok(resolved) => {

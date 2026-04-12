@@ -1,0 +1,5 @@
+---
+source: lib/libui/chatwidget/tests.rs
+expression: term.backend().vt100().screen().contents()
+---
+

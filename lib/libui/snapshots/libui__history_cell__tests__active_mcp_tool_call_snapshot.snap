@@ -1,0 +1,5 @@
+---
+source: lib/libui/history_cell.rs
+expression: rendered
+---
+• Calling search.find_docs({"query":"ratatui styling","limit":3})

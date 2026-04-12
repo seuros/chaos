@@ -1,0 +1,13 @@
+---
+source: lib/libui/bottom_pane/chat_composer/chat_composer_tests.rs
+expression: terminal.backend()
+---
+"                                                                                                    "
+"› h                                                                                                 "
+"                                                                                                    "
+"                                                                                                    "
+"                                                                                                    "
+"                                                                                                    "
+"                                                                                                    "
+"                                                                                                    "
+"                                                                                 100% context left  "

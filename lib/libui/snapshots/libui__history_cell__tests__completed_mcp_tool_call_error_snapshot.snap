@@ -1,0 +1,6 @@
+---
+source: lib/libui/history_cell.rs
+expression: rendered
+---
+• Called search.find_docs({"query":"ratatui styling","limit":3})
+  └ Error: network timeout

@@ -1,0 +1,11 @@
+---
+source: lib/libui/history_cell.rs
+expression: rendered
+---
+/ps
+
+Background terminals
+
+  • just fix
+    ↳   indented first
+          more indented

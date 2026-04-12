@@ -1,0 +1,11 @@
+---
+source: lib/libui/chatwidget/tests.rs
+expression: snapshot
+---
+History:
+• Ran echo repro-marker
+  └ repro-marker
+
+Active:
+• Exploring
+  └ Read null

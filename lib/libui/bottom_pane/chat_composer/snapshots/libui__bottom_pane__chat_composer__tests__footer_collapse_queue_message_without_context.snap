@@ -1,0 +1,13 @@
+---
+source: lib/libui/bottom_pane/chat_composer/chat_composer_tests.rs
+expression: terminal.backend()
+---
+"                                        "
+"› Test                                  "
+"                                        "
+"                                        "
+"                                        "
+"                                        "
+"                                        "
+"                                        "
+"  tab to queue        98% context left  "

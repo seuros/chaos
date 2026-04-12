@@ -1,0 +1,6 @@
+---
+source: lib/libui/chatwidget/tests.rs
+expression: active_blob(&chat)
+---
+• Exploring
+  └ List ls -la

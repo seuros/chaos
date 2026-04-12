@@ -98,9 +98,27 @@ fn represent_for_responses(item: ResponseItem) -> Option<ResponseItem> {
             call_id,
         }),
 
+        // LocalShellCall → FunctionCall so that the matching
+        // FunctionCallOutput is not orphaned when the representer runs.
+        ResponseItem::LocalShellCall {
+            id,
+            call_id,
+            action,
+            status: _,
+        } => {
+            let call_id = call_id.unwrap_or_default();
+            let arguments = serde_json::to_string(&action).unwrap_or_default();
+            Some(ResponseItem::FunctionCall {
+                id: id.or_else(|| Some(call_id.clone())),
+                name: "shell_command".to_string(),
+                namespace: None,
+                arguments,
+                call_id,
+            })
+        }
+
         // Chaos-only types with no OpenAI equivalent — drop them.
-        ResponseItem::LocalShellCall { .. }
-        | ResponseItem::ToolSearchCall { .. }
+        ResponseItem::ToolSearchCall { .. }
         | ResponseItem::ToolSearchOutput { .. }
         | ResponseItem::GhostSnapshot { .. }
         | ResponseItem::Compaction { .. }
@@ -188,7 +206,7 @@ mod tests {
     }
 
     #[test]
-    fn local_shell_call_is_dropped() {
+    fn local_shell_call_becomes_function_call() {
         use chaos_ipc::models::{LocalShellAction, LocalShellExecAction, LocalShellStatus};
         let items = vec![ResponseItem::LocalShellCall {
             id: None,
@@ -204,7 +222,13 @@ mod tests {
         }];
 
         let result = ResponsesRepresenter.represent(items);
-        assert!(result.is_empty(), "LocalShellCall should be filtered out");
+        match &result[0] {
+            ResponseItem::FunctionCall { call_id, name, .. } => {
+                assert_eq!(call_id, "sh_1");
+                assert_eq!(name, "shell_command");
+            }
+            other => panic!("expected FunctionCall, got {other:?}"),
+        }
     }
 
     #[test]

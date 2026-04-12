@@ -1,0 +1,7 @@
+---
+source: lib/libui/history_cell.rs
+expression: rendered
+---
+• Updated Plan
+  └ □ Define error taxonomy
+    □ Implement mapping to user messages

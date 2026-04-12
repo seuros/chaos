@@ -1,0 +1,11 @@
+---
+source: lib/libui/chatwidget/tests.rs
+expression: rendered
+---
+• Waiting for background terminal (0s • esc to …
+  └ cargo test -p chaos-kern -- --exact…
+
+
+› Ask Chaos to do anything
+
+  ? for shortcuts            100% context left

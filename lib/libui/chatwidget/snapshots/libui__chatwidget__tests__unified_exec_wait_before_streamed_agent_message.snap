@@ -1,0 +1,7 @@
+---
+source: lib/libui/chatwidget/tests.rs
+expression: combined
+---
+• Waited for background terminal · cargo test -p chaos-kern
+
+• Streaming response.

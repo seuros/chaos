@@ -1,0 +1,17 @@
+---
+source: lib/libui/multi_agents.rs
+expression: snapshot
+---
+• Spawned Robie [scout] (gpt-5 high)
+  └ Compute 11! and reply with just the integer result.
+
+• Sent input to Robie [scout]
+  └ Please continue and return the answer only.
+
+• Waiting for Robie [scout]
+
+• Finished waiting
+  └ Robie [scout]: Completed - 39916800
+    Bob [task]: Error - tool timeout
+
+• Closed Robie [scout]

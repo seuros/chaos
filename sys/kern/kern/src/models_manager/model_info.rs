@@ -1,5 +1,6 @@
 use chaos_abi::AbiModelInfo;
 use chaos_ipc::config_types::ReasoningSummary;
+use chaos_ipc::openai_models::ApplyPatchToolType;
 use chaos_ipc::openai_models::ConfigShellToolType;
 use chaos_ipc::openai_models::InputModality;
 use chaos_ipc::openai_models::ModelInfo;
@@ -103,7 +104,11 @@ pub(crate) fn model_info_from_abi(abi: &AbiModelInfo) -> ModelInfo {
         },
         support_verbosity: false,
         default_verbosity: None,
-        apply_patch_tool_type: None,
+        // Unknown models get the portable JSON tool variant. `Freeform` emits
+        // `type: "custom"` on the wire, which is an OpenAI-Responses-only
+        // extension — Responses clones (xAI, DeepSeek, etc.) reject it with
+        // 422. Catalog entries can still opt into `Freeform` explicitly.
+        apply_patch_tool_type: Some(ApplyPatchToolType::Function),
         web_search_tool_type: WebSearchToolType::Text,
         truncation_policy: TruncationPolicyConfig {
             mode: TruncationMode::Bytes,

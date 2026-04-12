@@ -458,8 +458,11 @@ impl TestChaosHarness {
         output_type: ApplyPatchModelOutput,
     ) -> String {
         match output_type {
-            ApplyPatchModelOutput::Freeform => self.custom_tool_call_output(call_id).await,
-            ApplyPatchModelOutput::Function
+            // The OpenAI-compat representer converts CustomToolCallOutput →
+            // FunctionCallOutput on the wire, so Freeform outputs appear in
+            // request bodies as function_call_output, not custom_tool_call_output.
+            ApplyPatchModelOutput::Freeform
+            | ApplyPatchModelOutput::Function
             | ApplyPatchModelOutput::Shell
             | ApplyPatchModelOutput::ShellViaHeredoc
             | ApplyPatchModelOutput::ShellCommandViaHeredoc => {

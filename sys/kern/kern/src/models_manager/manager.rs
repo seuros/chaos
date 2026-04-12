@@ -375,7 +375,18 @@ impl ModelsManager {
                 ..remote
             }
         } else {
-            model_info::model_info_from_slug(model)
+            // No catalog entry for this slug — build a minimal descriptor from
+            // the slug itself. Safe defaults, no warning, no fallback flag.
+            model_info::model_info_from_abi(&chaos_abi::AbiModelInfo {
+                id: model.to_string(),
+                display_name: model.to_string(),
+                max_input_tokens: None,
+                max_output_tokens: None,
+                supports_thinking: false,
+                supports_images: false,
+                supports_structured_output: false,
+                supports_reasoning_effort: false,
+            })
         };
         model_info::with_config_overrides(model_info, config)
     }

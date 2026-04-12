@@ -79,7 +79,7 @@ async fn custom_tool_unknown_returns_custom_output_error() -> Result<()> {
     )
     .await?;
 
-    let item = mock.single_request().custom_tool_call_output(call_id);
+    let item = mock.single_request().function_call_output(call_id);
     let output = item
         .get("output")
         .and_then(Value::as_str)

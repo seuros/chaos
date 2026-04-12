@@ -51,7 +51,6 @@ use chaos_ipc::protocol::ListCustomPromptsResponseEvent;
 use chaos_ipc::protocol::McpListToolsResponseEvent;
 use chaos_ipc::protocol::McpStartupStatus;
 use chaos_ipc::protocol::Op;
-use chaos_ipc::protocol::RateLimitSnapshot;
 use chaos_ipc::protocol::ReviewRequest;
 use chaos_ipc::protocol::ReviewTarget;
 use chaos_ipc::protocol::TokenUsage;

@@ -19,11 +19,11 @@ use super::{
     ChatWidgetInit, ConnectorsCacheState, DEFAULT_PROJECT_DOC_FILENAME, ErrorEvent,
     ExternalEditorState, HashMap, InterruptManager, NUDGE_MODEL_SLUG, Notification, Notifications,
     PLAN_IMPLEMENTATION_CODING_MESSAGE, PLAN_IMPLEMENTATION_TITLE, PLAN_MODE_REASONING_SCOPE_TITLE,
-    PendingSteer, PendingSteerCompareKey, ProcessInputState, RateLimitSnapshot,
-    RateLimitSwitchPromptState, RateLimitWarningState, ReasoningEffortConfig, Rect, SandboxPolicy,
-    SessionHeader, SlashCommand, SleepInhibitor, StatusIndicatorState, TurnAbortReason,
-    UnifiedExecProcessSummary, UserMessage, UserMessageEvent, VecDeque, collaboration_modes,
-    queued_message_edit_binding_for_terminal, remap_placeholders_for_message,
+    PendingSteer, PendingSteerCompareKey, ProcessInputState, RateLimitSwitchPromptState,
+    RateLimitWarningState, ReasoningEffortConfig, Rect, SandboxPolicy, SessionHeader, SlashCommand,
+    SleepInhibitor, StatusIndicatorState, TurnAbortReason, UnifiedExecProcessSummary, UserMessage,
+    UserMessageEvent, VecDeque, collaboration_modes, queued_message_edit_binding_for_terminal,
+    remap_placeholders_for_message,
 };
 use crate::app_event::AppEvent;
 use crate::app_event::ExitMode;
@@ -73,6 +73,7 @@ use chaos_ipc::protocol::ExecCommandStatus as CoreExecCommandStatus;
 use chaos_ipc::protocol::ExecPolicyAmendment;
 use chaos_ipc::protocol::ExitedReviewModeEvent;
 use chaos_ipc::protocol::FileChange;
+use chaos_ipc::protocol::RateLimitSnapshot;
 use chaos_ipc::protocol::ReasoningContentDeltaEvent;
 
 use crate::test_render::render_to_trimmed_string;

@@ -81,6 +81,7 @@ fn test_model_info(
         auto_compact_token_limit: None,
         effective_context_window_percent: 95,
         experimental_supported_tools: Vec::new(),
+        native_server_side_tools: vec![],
     }
 }
 

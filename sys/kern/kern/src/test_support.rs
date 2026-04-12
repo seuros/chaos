@@ -74,6 +74,7 @@ pub fn test_model_info(slug: &str) -> ModelInfo {
         effective_context_window_percent: 95,
         experimental_supported_tools: Vec::new(),
         input_modalities: vec![InputModality::Text, InputModality::Image],
+        native_server_side_tools: vec![],
         used_fallback_model_metadata: false,
     }
 }

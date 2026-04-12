@@ -202,6 +202,8 @@ pub(crate) struct ToolsConfig {
     pub experimental_supported_tools: Vec<String>,
     pub agent_jobs_tools: bool,
     pub agent_jobs_worker_tools: bool,
+    /// Native server-side tools declared by the model/provider ABI.
+    pub native_server_side_tools: Vec<String>,
 }
 
 pub(crate) struct ToolsConfigParams<'a> {
@@ -276,6 +278,7 @@ impl ToolsConfig {
             experimental_supported_tools: model_info.experimental_supported_tools.clone(),
             agent_jobs_tools: include_agent_jobs,
             agent_jobs_worker_tools,
+            native_server_side_tools: model_info.native_server_side_tools.clone(),
         }
     }
 
@@ -1893,10 +1896,22 @@ pub(crate) fn build_specs_with_discoverable_tools(
         builder.register_handler("test_sync_tool", test_sync_handler);
     }
 
-    let external_web_access = match config.web_search_mode {
-        Some(WebSearchMode::Cached) => Some(false),
-        Some(WebSearchMode::Live) => Some(true),
-        Some(WebSearchMode::Disabled) | None => None,
+    // Skip the chaos-managed web search tool when the provider already injects
+    // it as a native server-side tool (e.g. xAI). Sending two `web_search`
+    // entries confuses providers that only expect one.
+    let native_owns_web_search = config
+        .native_server_side_tools
+        .iter()
+        .any(|t| t == "web_search");
+
+    let external_web_access = if native_owns_web_search {
+        None
+    } else {
+        match config.web_search_mode {
+            Some(WebSearchMode::Cached) => Some(false),
+            Some(WebSearchMode::Live) => Some(true),
+            Some(WebSearchMode::Disabled) | None => None,
+        }
     };
 
     if let Some(external_web_access) = external_web_access {

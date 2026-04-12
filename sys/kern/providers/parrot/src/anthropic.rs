@@ -761,6 +761,9 @@ async fn fetch_anthropic_models(
         structured_outputs: Option<Supported>,
         #[serde(default)]
         effort: Option<Supported>,
+        /// Server-side web search capability (present on Claude 3.5+).
+        #[serde(default)]
+        web_search: Option<Supported>,
     }
 
     #[derive(Deserialize)]
@@ -826,6 +829,9 @@ async fn fetch_anthropic_models(
         .into_iter()
         .map(|m| {
             let caps = m.capabilities.as_ref();
+            let supports_web_search = caps
+                .and_then(|c| c.web_search.as_ref())
+                .is_some_and(|s| s.supported);
             chaos_abi::AbiModelInfo {
                 id: m.id.clone(),
                 display_name: m.display_name.unwrap_or(m.id),
@@ -843,6 +849,11 @@ async fn fetch_anthropic_models(
                 supports_reasoning_effort: caps
                     .and_then(|c| c.effort.as_ref())
                     .is_some_and(|s| s.supported),
+                native_server_side_tools: if supports_web_search {
+                    vec!["web_search_20250305".to_string()]
+                } else {
+                    vec![]
+                },
             }
         })
         .collect();

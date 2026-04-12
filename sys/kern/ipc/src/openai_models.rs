@@ -258,6 +258,11 @@ pub struct ModelInfo {
     /// Input modalities accepted by the backend for this model.
     #[serde(default = "default_input_modalities")]
     pub input_modalities: Vec<InputModality>,
+    /// Server-side tools the provider handles natively (e.g. `web_search`, `x_search`).
+    /// These are injected into the request tools array as bare `{ "type": "<name>" }` entries
+    /// without any function schema — the provider executes them on its infrastructure.
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub native_server_side_tools: Vec<String>,
     /// Internal-only marker set by core when a model slug resolved to fallback metadata.
     #[serde(default, skip_serializing, skip_deserializing)]
     #[schemars(skip)]
@@ -453,6 +458,7 @@ mod tests {
             effective_context_window_percent: 95,
             experimental_supported_tools: vec![],
             input_modalities: default_input_modalities(),
+            native_server_side_tools: vec![],
             used_fallback_model_metadata: false,
         }
     }

@@ -22,6 +22,7 @@ base_url = "http://localhost:11434/v1"
         stream_idle_timeout_ms: None,
         requires_openai_auth: false,
         supports_websockets: false,
+        native_server_side_tools: vec![],
     };
 
     let provider: ModelProviderInfo = toml::from_str(azure_provider_toml).unwrap();
@@ -54,6 +55,7 @@ query_params = { api-version = "2025-04-01-preview" }
         stream_idle_timeout_ms: None,
         requires_openai_auth: false,
         supports_websockets: false,
+        native_server_side_tools: vec![],
     };
 
     let provider: ModelProviderInfo = toml::from_str(azure_provider_toml).unwrap();
@@ -90,6 +92,7 @@ env_http_headers = { "X-Example-Env-Header" = "EXAMPLE_ENV_VAR" }
         stream_idle_timeout_ms: None,
         requires_openai_auth: false,
         supports_websockets: false,
+        native_server_side_tools: vec![],
     };
 
     let provider: ModelProviderInfo = toml::from_str(azure_provider_toml).unwrap();

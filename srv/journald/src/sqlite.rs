@@ -444,6 +444,33 @@ impl JournalStore for SqliteJournalStore {
             next_seq,
         })
     }
+
+    async fn get_default_process(&self) -> Result<Option<ProcessId>, JournalError> {
+        let row = sqlx::query("SELECT value FROM settings WHERE key = 'default_session_id'")
+            .fetch_optional(&self.pool)
+            .await?;
+        match row {
+            None => Ok(None),
+            Some(row) => {
+                let value: String = row.get("value");
+                let process_id = ProcessId::from_string(&value)
+                    .map_err(|source| JournalError::InvalidProcessId { value, source })?;
+                Ok(Some(process_id))
+            }
+        }
+    }
+
+    async fn set_default_process(&self, process_id: &ProcessId) -> Result<(), JournalError> {
+        sqlx::query(
+            "INSERT INTO settings (key, value)
+             VALUES ('default_session_id', ?)
+             ON CONFLICT(key) DO UPDATE SET value = excluded.value",
+        )
+        .bind(process_id.to_string())
+        .execute(&self.pool)
+        .await?;
+        Ok(())
+    }
 }
 
 fn serialize_source(source: &SessionSource) -> Result<String, JournalError> {

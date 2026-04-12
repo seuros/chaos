@@ -96,6 +96,17 @@ enum RolloutCmd {
 }
 
 impl RolloutRecorderParams {
+    pub fn conversation_id(&self) -> ProcessId {
+        match self {
+            RolloutRecorderParams::Create {
+                conversation_id, ..
+            } => *conversation_id,
+            RolloutRecorderParams::Resume {
+                conversation_id, ..
+            } => *conversation_id,
+        }
+    }
+
     pub fn new(
         conversation_id: ProcessId,
         forked_from_id: Option<ProcessId>,
@@ -328,6 +339,10 @@ impl RolloutRecorder {
         runtime_db_ctx: Option<RuntimeDbHandle>,
         state_builder: Option<ProcessMetadataBuilder>,
     ) -> std::io::Result<Self> {
+        // Capture the session ID before consuming params so we can register
+        // it as the default session in the background.
+        let session_id_for_default = params.conversation_id();
+
         let (meta, event_persistence_mode, journal_sink, persisted) = match params {
             RolloutRecorderParams::Create {
                 conversation_id,
@@ -422,6 +437,13 @@ impl RolloutRecorder {
             config.generate_memories(),
             journal_sink,
         ));
+
+        // Fire-and-forget: update the default session pointer in the DB.
+        tokio::task::spawn(async move {
+            if let Err(err) = RolloutRecorder::set_default_session(session_id_for_default).await {
+                warn!(%err, "failed to update default session in journald");
+            }
+        });
 
         Ok(Self {
             tx,
@@ -523,6 +545,25 @@ impl RolloutRecorder {
             conversation_id: process_id,
             history,
         }))
+    }
+
+    /// Returns the default session ID stored in the DB, if any.
+    pub async fn get_default_session() -> std::io::Result<Option<ProcessId>> {
+        let client = journal_client_from_env_or_bootstrap()
+            .await
+            .map_err(IoError::other)?;
+        client.get_default_process().await.map_err(IoError::other)
+    }
+
+    /// Sets the default session ID in the DB.
+    pub async fn set_default_session(process_id: ProcessId) -> std::io::Result<()> {
+        let client = journal_client_from_env_or_bootstrap()
+            .await
+            .map_err(IoError::other)?;
+        client
+            .set_default_process(process_id)
+            .await
+            .map_err(IoError::other)
     }
 
     pub async fn journal_contains_process(process_id: ProcessId) -> std::io::Result<bool> {

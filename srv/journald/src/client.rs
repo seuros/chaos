@@ -234,6 +234,35 @@ impl JournalRpcClient {
         }
     }
 
+    pub async fn get_default_process(
+        &self,
+    ) -> Result<Option<chaos_ipc::ProcessId>, JournalClientError> {
+        let response = self
+            .send_request(JournalRequest::GetDefaultProcess(
+                crate::protocol::GetDefaultProcessRequest {},
+            ))
+            .await?;
+        match response {
+            JournalResponse::GetDefaultProcess(r) => Ok(r.process_id),
+            other => Err(unexpected_variant("get_default_process", &other)),
+        }
+    }
+
+    pub async fn set_default_process(
+        &self,
+        process_id: chaos_ipc::ProcessId,
+    ) -> Result<(), JournalClientError> {
+        let response = self
+            .send_request(JournalRequest::SetDefaultProcess(
+                crate::protocol::SetDefaultProcessRequest { process_id },
+            ))
+            .await?;
+        match response {
+            JournalResponse::SetDefaultProcess(_) => Ok(()),
+            other => Err(unexpected_variant("set_default_process", &other)),
+        }
+    }
+
     async fn send_request(
         &self,
         request: JournalRequest,
@@ -310,6 +339,8 @@ fn response_variant_name(response: &JournalResponse) -> &'static str {
         JournalResponse::ReleaseLease(_) => "release_lease",
         JournalResponse::AppendBatch(_) => "append_batch",
         JournalResponse::LoadJournal(_) => "load_journal",
+        JournalResponse::GetDefaultProcess(_) => "get_default_process",
+        JournalResponse::SetDefaultProcess(_) => "set_default_process",
     }
 }
 

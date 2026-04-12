@@ -342,3 +342,18 @@ CREATE VIEW process_message_counts AS
         SUM(estimated_bytes) AS total_estimated_bytes
     FROM message_history
     GROUP BY conversation_id;
+
+CREATE TABLE settings (
+    key TEXT PRIMARY KEY NOT NULL,
+    value TEXT NOT NULL,
+    created_at INTEGER NOT NULL DEFAULT (UNIXEPOCH()),
+    updated_at INTEGER NOT NULL DEFAULT (UNIXEPOCH())
+);
+
+CREATE TRIGGER settings_touch
+AFTER UPDATE ON settings
+FOR EACH ROW
+WHEN NEW.updated_at = OLD.updated_at
+BEGIN
+    UPDATE settings SET updated_at = UNIXEPOCH() WHERE key = NEW.key;
+END;

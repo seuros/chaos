@@ -13,6 +13,7 @@ fn unknown_model() -> ModelInfo {
         supports_images: false,
         supports_structured_output: false,
         supports_reasoning_effort: false,
+        native_server_side_tools: vec![],
     })
 }
 

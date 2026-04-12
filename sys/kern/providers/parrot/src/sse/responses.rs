@@ -24,6 +24,7 @@ use tokio::time::timeout;
 use tokio_util::io::ReaderStream;
 use tracing::debug;
 use tracing::trace;
+use tracing::warn;
 
 const X_REASONING_INCLUDED_HEADER: &str = "x-reasoning-included";
 const OPENAI_MODEL_HEADER: &str = "openai-model";
@@ -333,10 +334,12 @@ pub fn process_responses_event(
         }
         "response.output_item.added" => {
             if let Some(item_val) = event.item {
-                if let Ok(item) = serde_json::from_value::<ResponseItem>(item_val) {
-                    return Ok(Some(ResponseEvent::OutputItemAdded(item)));
+                match serde_json::from_value::<ResponseItem>(item_val) {
+                    Ok(item) => return Ok(Some(ResponseEvent::OutputItemAdded(item))),
+                    Err(err) => {
+                        warn!(%err, "failed to parse ResponseItem from output_item.added — provider may be sending an unrecognised item type");
+                    }
                 }
-                debug!("failed to parse ResponseItem from output_item.added");
             }
         }
         "response.reasoning_summary_part.added" => {

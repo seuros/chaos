@@ -1,19 +1,19 @@
 ---
 source: lib/libui/status/tests.rs
+assertion_line: 336
 expression: sanitized
 ---
 /status
 
-╭────────────────────────────────────────────────────────────────────────────╮
-│  >_ Chaos (v47.0.0)                                                        │
-│                                                                            │
-│                                                                            │
-│  Model:            gpt-5.1-codex-max (reasoning none, summaries auto)      │
-│  Directory: [[workspace]]                                                  │
-│  Permissions:      Custom (read-only, interactive)                         │
-│  Agents.md:        <none>                                                  │
-│                                                                            │
-│  Token usage:      1.2K total  (800 input + 400 output)                    │
-│  Context window:   100% left (1.2K used / 200K)                            │
-│  Monthly limit:    [██████████████████░░] 88% left (resets 07:08 on 7 May) │
-╰────────────────────────────────────────────────────────────────────────────╯
+╭───────────────────────────────────────────────────────────────────────────╮
+│  >_ Chaos (v47.0.0)                                                       │
+│                                                                           │
+│                                                                           │
+│  Model:           gpt-5.1-codex-max (reasoning none, summaries auto)      │
+│  Directory: [[workspace]]                                                 │
+│  Permissions:     Custom (read-only, interactive)                         │
+│  Agents.md:       <none>                                                  │
+│                                                                           │
+│  Token usage:     1.2K total  (800 input + 400 output)                    │
+│  Monthly limit:   [██████████████████░░] 88% left (resets 07:08 on 7 May) │
+╰───────────────────────────────────────────────────────────────────────────╯

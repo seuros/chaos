@@ -1,21 +1,21 @@
 ---
 source: lib/libui/status/tests.rs
+assertion_line: 282
 expression: sanitized
 ---
 /status
 
-╭───────────────────────────────────────────────────────────────────────╮
-│  >_ Chaos (v47.0.0)                                                   │
-│                                                                       │
-│                                                                       │
-│  Model:            gpt-5.1-codex-max (reasoning none, summaries auto) │
-│  Directory: [[workspace]]                                             │
-│  Permissions:      Custom (read-only, interactive)                    │
-│  Agents.md:        <none>                                             │
-│  Session:          0f0f3c13-6cf9-4aa4-8b80-7d49c2f1be2e               │
-│  Forked from:      e9f18a88-8081-4e51-9d4e-8af5cde2d8dd               │
-│                                                                       │
-│  Token usage:      1.2K total  (800 input + 400 output)               │
-│  Context window:   100% left (1.2K used / 200K)                       │
-│  Limits:           data not available yet                             │
-╰───────────────────────────────────────────────────────────────────────╯
+╭────────────────────────────────────────────────────────────────────╮
+│  >_ Chaos (v47.0.0)                                                │
+│                                                                    │
+│                                                                    │
+│  Model:         gpt-5.1-codex-max (reasoning none, summaries auto) │
+│  Directory: [[workspace]]                                          │
+│  Permissions:   Custom (read-only, interactive)                    │
+│  Agents.md:     <none>                                             │
+│  Session:       0f0f3c13-6cf9-4aa4-8b80-7d49c2f1be2e               │
+│  Forked from:   e9f18a88-8081-4e51-9d4e-8af5cde2d8dd               │
+│                                                                    │
+│  Token usage:   1.2K total  (800 input + 400 output)               │
+│  Limits:        data not available yet                             │
+╰────────────────────────────────────────────────────────────────────╯

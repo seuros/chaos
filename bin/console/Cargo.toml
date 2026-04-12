@@ -12,53 +12,34 @@ path = "src/lib.rs"
 [features]
 default = ["syntax"]
 # Enable vt100-based tests (emulator) when running with `--features vt100-tests`.
-vt100-tests = ["dep:vt100"]
+vt100-tests = ["libui/vt100-tests"]
 # Gate verbose debug logging inside the TUI implementation.
 debug-logs = []
 # Syntax highlighting via chaos-highlight (syntect + two-face).
-syntax = ["dep:chaos-highlight"]
+syntax = ["libui/syntax"]
 
 [lints]
 workspace = true
 
 [dependencies]
 anyhow = { workspace = true }
-base64 = { workspace = true }
 clap = { workspace = true, features = ["derive"] }
-chaos-highlight = { workspace = true, optional = true }
 chaos-termcap = { workspace = true }
 chaos-argv = { workspace = true }
-chaos-clamp = { workspace = true }
 chaos-init = { workspace = true }
 chaos-kern = { workspace = true }
 chaos-session = { workspace = true }
-chaos-sysinfo = { workspace = true }
-chaos-services = { workspace = true }
 chaos-locate = { workspace = true }
 chaos-pam = { workspace = true }
 chaos-pwd = { workspace = true }
 chaos-syslog = { workspace = true }
 chaos-ipc = { workspace = true }
-chaos-sh = { workspace = true }
 chaos-proc = { workspace = true }
-chaos-sudoers = { workspace = true }
 chaos-realpath = { workspace = true }
 chaos-getopt = { workspace = true }
-chaos-uptime = { workspace = true }
-chaos-git = { workspace = true }
-chaos-glob = { workspace = true }
-chaos-jail-report = { workspace = true }
-chaos-amphetamine = { workspace = true }
-chaos-wchar = { workspace = true }
 color-eyre = { workspace = true }
 crossterm = { workspace = true, features = ["bracketed-paste", "event-stream"] }
-derive_more = { workspace = true, features = ["is_variant"] }
-diffy = { workspace = true }
-dirs = { workspace = true }
-image = { workspace = true, features = ["jpeg", "png", "gif", "webp"] }
-itertools = { workspace = true }
 jiff = { workspace = true }
-pathdiff = { workspace = true }
 pulldown-cmark = { workspace = true }
 rand = { workspace = true }
 ratatui-hypertile = { workspace = true }
@@ -70,17 +51,9 @@ ratatui = { workspace = true, features = [
     "unstable-widget-ref",
 ] }
 ratatui-macros = { workspace = true }
-regex-lite = { workspace = true }
-mcp-guest = { workspace = true }
-serde = { workspace = true, features = ["derive"] }
 serde_json = { workspace = true, features = ["preserve_order"] }
 shlex = { workspace = true }
-strum = { workspace = true }
-strum_macros = { workspace = true }
-supports-color = { workspace = true }
-supports-hyperlinks = { workspace = true }
 tempfile = { workspace = true }
-textwrap = { workspace = true }
 thiserror = { workspace = true }
 tokio = { workspace = true, features = [
     "io-std",
@@ -95,20 +68,11 @@ tokio-stream = { workspace = true, features = ["sync"] }
 toml = { workspace = true }
 tracing = { workspace = true, features = ["log"] }
 tracing-appender = { workspace = true }
-unicodeit = { workspace = true }
 tracing-subscriber = { workspace = true, features = ["env-filter"] }
-unicode-segmentation = { workspace = true }
 unicode-width = { workspace = true }
-url = { workspace = true }
 webbrowser = { workspace = true }
 uuid = { workspace = true }
-vt100 = { workspace = true, optional = true }
-
-arboard = { workspace = true }
-tokio-util = { workspace = true, features = ["time"] }
-
-[target.'cfg(unix)'.dependencies]
-libc = { workspace = true }
+libui = { workspace = true }
 
 
 [dev-dependencies]
@@ -118,9 +82,9 @@ chaos-which = { workspace = true }
 chaos-pty = { workspace = true }
 assert_matches = { workspace = true }
 insta = { workspace = true }
+libui = { workspace = true, features = ["testing"] }
 pretty_assertions = { workspace = true }
 rand = { workspace = true }
-rustls = { workspace = true }
 serial_test = { workspace = true }
 uuid = { workspace = true }
 

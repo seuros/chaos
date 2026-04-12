@@ -1,9 +1,10 @@
 ---
 source: lib/libui/history_cell.rs
+assertion_line: 1435
 expression: rendered
 ---
 • Updated Plan
-  └ I’ll update Grafana call
+  └ I'll update Grafana call
     error handling by adding
     retries and clearer messages
     when the backend is

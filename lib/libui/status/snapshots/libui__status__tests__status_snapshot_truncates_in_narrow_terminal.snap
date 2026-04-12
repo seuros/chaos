@@ -1,5 +1,6 @@
 ---
 source: lib/libui/status/tests.rs
+assertion_line: 616
 expression: sanitized
 ---
 /status
@@ -8,12 +9,11 @@ expression: sanitized
 │  >_ Chaos (v47.0.0)                                                │
 │                                                                    │
 │                                                                    │
-│  Model:            gpt-5.1-codex-max (reasoning high, summaries de │
+│  Model:         gpt-5.1-codex-max (reasoning high, summaries detai │
 │  Directory: [[workspace]]                                          │
-│  Permissions:      Custom (read-only, interactive)                 │
-│  Agents.md:        <none>                                          │
+│  Permissions:   Custom (read-only, interactive)                    │
+│  Agents.md:     <none>                                             │
 │                                                                    │
-│  Token usage:      1.9K total  (1K input + 900 output)             │
-│  Context window:   100% left (2.25K used / 200K)                   │
-│  5h limit:         [██████░░░░░░░░░░░░░░] 28% left (resets 03:14)  │
+│  Token usage:   1.9K total  (1K input + 900 output)                │
+│  5h limit:      [██████░░░░░░░░░░░░░░] 28% left (resets 03:14)     │
 ╰────────────────────────────────────────────────────────────────────╯

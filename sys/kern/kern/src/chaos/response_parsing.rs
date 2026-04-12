@@ -147,7 +147,7 @@ impl PlanModeStreamState {
 }
 
 #[derive(Debug, Default)]
-pub(super) struct AssistantMessageStreamParsers {
+pub(crate) struct AssistantMessageStreamParsers {
     plan_mode: bool,
     parsers_by_item: HashMap<String, AssistantTextStreamParser>,
 }

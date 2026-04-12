@@ -4,15 +4,12 @@ use std::sync::Arc;
 use jiff::Timestamp;
 use jiff::Zoned;
 use serde_json::Value;
-use tokio_util::sync::CancellationToken;
 
+use chaos_ipc::config_types::ApprovalsReviewer;
 use chaos_ipc::config_types::CollaborationMode;
-use chaos_ipc::config_types::ModeKind;
 use chaos_ipc::config_types::Personality;
 use chaos_ipc::config_types::ReasoningSummary as ReasoningSummaryConfig;
 use chaos_ipc::config_types::ServiceTier;
-use chaos_ipc::config_types::Settings;
-use chaos_ipc::config_types::WebSearchMode;
 use chaos_ipc::openai_models::ModelInfo;
 use chaos_ipc::openai_models::ReasoningEffort as ReasoningEffortConfig;
 use chaos_ipc::permissions::FileSystemSandboxPolicy;
@@ -22,7 +19,6 @@ use chaos_ipc::protocol::SandboxPolicy;
 use chaos_ipc::protocol::SessionSource;
 use chaos_ipc::protocol::TurnContextItem;
 use chaos_ipc::protocol::TurnContextNetworkItem;
-use chaos_ipc::config_types::ApprovalsReviewer;
 
 use chaos_ready::ReadinessFlag;
 use chaos_syslog::SessionTelemetry;
@@ -35,19 +31,16 @@ use crate::config::Config;
 use crate::config::Constrained;
 use crate::config::ConstraintResult;
 use crate::config::GhostSnapshotConfig;
-use crate::config::StartedNetworkProxy;
-use crate::config::resolve_web_search_mode_for_turn;
 use crate::config::types::ShellEnvironmentPolicy;
 use crate::models_manager::manager::ModelsManager;
 use crate::models_manager::manager::RefreshStrategy;
 use crate::shell_snapshot::ShellSnapshot;
 use crate::skills::SkillLoadOutcome;
-use crate::skills::SkillsManager;
-use crate::turn_metadata::TurnMetadataState;
-use crate::turn_timing::TurnTimingState;
-use crate::truncate::TruncationPolicy;
 use crate::tools::spec::ToolsConfig;
 use crate::tools::spec::ToolsConfigParams;
+use crate::truncate::TruncationPolicy;
+use crate::turn_metadata::TurnMetadataState;
+use crate::turn_timing::TurnTimingState;
 use chaos_pf::NetworkProxy;
 
 /// Notes from the previous real user turn.

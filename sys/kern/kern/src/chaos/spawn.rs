@@ -12,34 +12,30 @@ use chaos_ipc::protocol::W3cTraceContext;
 use chaos_ipc::user_input::UserInput;
 use chaos_syslog::current_span_w3c_trace_context;
 use chaos_syslog::set_parent_from_w3c_trace_context;
+use futures::FutureExt;
 use futures::future::BoxFuture;
 use futures::future::Shared;
-use futures::FutureExt;
 use tokio::sync::watch;
 use tokio::task::JoinHandle;
+use tracing::Instrument;
 use tracing::info_span;
 use tracing::warn;
-use tracing::Instrument;
 use uuid::Uuid;
 
 use crate::AuthManager;
 use crate::config::Config;
 use crate::config::ConstraintResult;
-use crate::config::ManagedFeatures;
 use crate::error::ChaosErr;
 use crate::error::Result as ChaosResult;
 use crate::exec_policy::ExecPolicyManager;
 use crate::features::Feature;
 use crate::file_watcher::FileWatcher;
+use crate::mcp::McpManager;
 use crate::minions::AgentControl;
 use crate::minions::AgentStatus;
-use crate::mcp::McpManager;
 use crate::models_manager::manager::ModelsManager;
-use crate::models_manager::manager::RefreshStrategy;
 use crate::process::ProcessConfigSnapshot;
 use crate::rollout::map_session_init_error;
-use crate::rollout::RolloutRecorder;
-use crate::rollout::RolloutRecorderParams;
 use crate::runtime_db;
 use crate::shell_snapshot::ShellSnapshot;
 use crate::skills::SkillsManager;
@@ -49,7 +45,6 @@ use super::SessionConfiguration;
 use super::SessionSettingsUpdate;
 use super::SteerInputError;
 use super::submission_loop::submission_loop;
-use super::turn_context::make_turn_context;
 
 pub(crate) type SessionLoopTermination = Shared<BoxFuture<'static, ()>>;
 
@@ -72,6 +67,8 @@ pub struct Chaos {
 pub struct ChaosSpawnOk {
     pub chaos: Chaos,
     pub process_id: ProcessId,
+    /// Duplicate of `process_id`, kept for API compatibility.
+    #[allow(dead_code)]
     pub conversation_id: ProcessId,
 }
 
@@ -125,12 +122,11 @@ impl Chaos {
         use crate::features::Feature;
         use crate::models_manager::manager::RefreshStrategy;
         use crate::project_doc::get_user_instructions;
-        use crate::rollout::policy::EventPersistenceMode;
-        use crate::skills::SkillsManager;
+
         use chaos_ipc::config_types::CollaborationMode;
         use chaos_ipc::config_types::ModeKind;
         use chaos_ipc::config_types::Settings;
-        use chaos_ipc::models::BaseInstructions;
+
         use chaos_ipc::protocol::InitialHistory;
         use tracing::error;
 
@@ -181,9 +177,7 @@ impl Chaos {
             SessionSource::SubAgent(_) => RefreshStrategy::Offline,
             _ => RefreshStrategy::OnlineIfUncached,
         };
-        if config.model.is_none()
-            || !matches!(refresh_strategy, RefreshStrategy::Offline)
-        {
+        if config.model.is_none() || !matches!(refresh_strategy, RefreshStrategy::Offline) {
             let _ = models_manager.list_models(refresh_strategy).await;
         }
         let model = models_manager

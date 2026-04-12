@@ -1,8 +1,8 @@
 use std::collections::HashSet;
 use std::path::PathBuf;
 
-use chaos_ipc::protocol::SkillErrorInfo;
 use chaos_ipc::protocol::SkillDependencies as ProtocolSkillDependencies;
+use chaos_ipc::protocol::SkillErrorInfo;
 use chaos_ipc::protocol::SkillInterface as ProtocolSkillInterface;
 use chaos_ipc::protocol::SkillMetadata as ProtocolSkillMetadata;
 use chaos_ipc::protocol::SkillToolDependency as ProtocolSkillToolDependency;

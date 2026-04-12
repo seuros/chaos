@@ -1,4 +1,15 @@
-use super::*;
+use chaos_ipc::models::ResponseItem;
+use chaos_ipc::protocol::EventMsg;
+use chaos_ipc::protocol::RolloutItem;
+use chaos_ipc::protocol::TurnContextItem;
+
+use crate::compact;
+use crate::compact::collect_user_messages;
+use crate::context_manager::ContextManager;
+
+use super::session::Session;
+use super::turn_context::PreviousTurnSettings;
+use super::turn_context::TurnContext;
 
 // Return value of `Session::reconstruct_history_from_rollout`, bundling the rebuilt history with
 // the resume/fork hydration metadata derived from the same replay.

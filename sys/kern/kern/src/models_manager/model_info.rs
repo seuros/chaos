@@ -77,7 +77,7 @@ pub(crate) fn model_info_from_abi(abi: &AbiModelInfo) -> ModelInfo {
         vec![InputModality::Text]
     };
 
-    let context_window = abi.max_input_tokens.or(Some(200_000));
+    let context_window = abi.max_input_tokens;
     let truncation_limit = context_window
         .and_then(|tokens| usize::try_from(tokens).ok())
         .map(|tokens| approx_bytes_for_tokens(tokens) as i64)

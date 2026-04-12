@@ -376,18 +376,21 @@ impl ModelsManager {
             }
         } else {
             // No catalog entry for this slug — build a minimal descriptor from
-            // the slug itself. Safe defaults, no warning, no fallback flag.
-            model_info::model_info_from_abi(&chaos_abi::AbiModelInfo {
-                id: model.to_string(),
-                display_name: model.to_string(),
-                max_input_tokens: None,
-                max_output_tokens: None,
-                supports_thinking: false,
-                supports_images: false,
-                supports_structured_output: false,
-                supports_reasoning_effort: false,
-                native_server_side_tools: vec![],
-            })
+            // the slug itself. Mark as fallback so callers can detect the gap.
+            ModelInfo {
+                used_fallback_model_metadata: true,
+                ..model_info::model_info_from_abi(&chaos_abi::AbiModelInfo {
+                    id: model.to_string(),
+                    display_name: model.to_string(),
+                    max_input_tokens: None,
+                    max_output_tokens: None,
+                    supports_thinking: false,
+                    supports_images: true,
+                    supports_structured_output: false,
+                    supports_reasoning_effort: false,
+                    native_server_side_tools: vec![],
+                })
+            }
         };
         model_info::with_config_overrides(model_info, config)
     }
@@ -504,9 +507,10 @@ impl ModelsManager {
         if crate::model_provider_info::is_anthropic_wire(self.provider.base_url.as_deref()) {
             return self.fetch_catalog_via_adapter().await;
         }
-        // The chaos backend (default OpenAI provider with no custom base_url) returns
-        // the chaos-flavored ModelsResponse with rich metadata. Use ModelsClient for it.
-        if self.provider.is_openai() && self.provider.base_url.is_none() {
+        // The chaos backend always speaks the chaos-flavored ModelsResponse with
+        // rich metadata — whether or not base_url is overridden (e.g. in tests).
+        // Use ModelsClient for any openai-provider configuration.
+        if self.provider.is_openai() {
             return self.fetch_catalog_via_models_client().await;
         }
         // All other OpenAI-compatible providers (xAI, DeepSeek, custom deployments, etc.)

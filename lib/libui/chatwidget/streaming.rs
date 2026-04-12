@@ -30,8 +30,7 @@ impl ChatWidget {
             return;
         };
         self.needs_final_message_separator = true;
-        let cell =
-            history_cell::new_unified_exec_interaction(wait.command_display, String::new());
+        let cell = history_cell::new_unified_exec_interaction(wait.command_display, String::new());
         self.app_event_tx
             .send(AppEvent::InsertHistoryCell(Box::new(cell)));
         self.restore_reasoning_status_header();
@@ -124,12 +123,11 @@ impl ChatWidget {
         self.flush_active_cell();
 
         if self.plan_stream_controller.is_none() {
-            self.plan_stream_controller = Some(
-                crate::streaming::controller::PlanStreamController::new(
+            self.plan_stream_controller =
+                Some(crate::streaming::controller::PlanStreamController::new(
                     self.last_rendered_width.get().map(|w| w.saturating_sub(4)),
                     &self.config.cwd,
-                ),
-            );
+                ));
         }
         if let Some(controller) = self.plan_stream_controller.as_mut()
             && controller.push(&delta)
@@ -308,9 +306,7 @@ impl ChatWidget {
                 let elapsed_seconds = self
                     .bottom_pane
                     .status_widget()
-                    .map(
-                        crate::status_indicator_widget::StatusIndicatorWidget::elapsed_seconds,
-                    )
+                    .map(crate::status_indicator_widget::StatusIndicatorWidget::elapsed_seconds)
                     .map(|current| self.worked_elapsed_from(current));
                 self.add_to_history(history_cell::FinalMessageSeparator::new(
                     elapsed_seconds,

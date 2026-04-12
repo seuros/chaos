@@ -8,12 +8,11 @@
 use std::collections::HashMap;
 use std::path::PathBuf;
 
+use chaos_ipc::openai_models::ReasoningEffort as ReasoningEffortConfig;
 use chaos_ipc::parse_command::ParsedCommand;
 use chaos_ipc::protocol::ExecCommandSource;
 use chaos_ipc::user_input::TextElement;
 use chaos_kern::config::types::Notifications;
-use chaos_kern::models_manager::manager::ModelsManager;
-use chaos_ipc::openai_models::ReasoningEffort as ReasoningEffortConfig;
 
 use crate::bottom_pane::LocalImageAttachment;
 use crate::diff_render::display_path_for;
@@ -684,18 +683,14 @@ pub(super) fn extract_first_bold(s: &str) -> Option<String> {
     None
 }
 
-pub(super) fn hook_event_label(
-    event_name: chaos_ipc::protocol::HookEventName,
-) -> &'static str {
+pub(super) fn hook_event_label(event_name: chaos_ipc::protocol::HookEventName) -> &'static str {
     match event_name {
         chaos_ipc::protocol::HookEventName::SessionStart => "SessionStart",
         chaos_ipc::protocol::HookEventName::Stop => "Stop",
     }
 }
 
-pub(super) fn has_websocket_timing_metrics(
-    summary: chaos_syslog::RuntimeMetricsSummary,
-) -> bool {
+pub(super) fn has_websocket_timing_metrics(summary: chaos_syslog::RuntimeMetricsSummary) -> bool {
     summary.responses_api_overhead_ms > 0
         || summary.responses_api_inference_time_ms > 0
         || summary.responses_api_engine_iapi_ttft_ms > 0

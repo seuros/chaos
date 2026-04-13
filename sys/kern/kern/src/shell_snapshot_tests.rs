@@ -1,21 +1,17 @@
 use super::*;
 use pretty_assertions::assert_eq;
-#[cfg(unix)]
 use std::os::unix::ffi::OsStrExt;
-#[cfg(unix)]
 use std::process::Command;
 #[cfg(target_os = "linux")]
 use std::process::Command as StdCommand;
 
 use tempfile::tempdir;
 
-#[cfg(unix)]
 struct BlockingStdinPipe {
     original: i32,
     write_end: i32,
 }
 
-#[cfg(unix)]
 impl BlockingStdinPipe {
     fn install() -> Result<Self> {
         let mut fds = [0i32; 2];
@@ -54,7 +50,6 @@ impl BlockingStdinPipe {
     }
 }
 
-#[cfg(unix)]
 impl Drop for BlockingStdinPipe {
     fn drop(&mut self) {
         unsafe {
@@ -97,7 +92,6 @@ fn strip_snapshot_preamble_requires_marker() {
     assert!(result.is_err());
 }
 
-#[cfg(unix)]
 #[test]
 fn bash_snapshot_filters_invalid_exports() -> Result<()> {
     let output = Command::new("/bin/bash")
@@ -121,7 +115,6 @@ fn bash_snapshot_filters_invalid_exports() -> Result<()> {
     Ok(())
 }
 
-#[cfg(unix)]
 #[test]
 fn bash_snapshot_preserves_multiline_exports() -> Result<()> {
     let multiline_cert = "-----BEGIN CERTIFICATE-----\nabc\n-----END CERTIFICATE-----";
@@ -161,7 +154,6 @@ fn bash_snapshot_preserves_multiline_exports() -> Result<()> {
     Ok(())
 }
 
-#[cfg(unix)]
 #[tokio::test]
 async fn try_new_creates_and_deletes_snapshot_file() -> Result<()> {
     let dir = tempdir()?;
@@ -185,7 +177,6 @@ async fn try_new_creates_and_deletes_snapshot_file() -> Result<()> {
     Ok(())
 }
 
-#[cfg(unix)]
 #[tokio::test]
 async fn snapshot_shell_does_not_inherit_stdin() -> Result<()> {
     let _stdin_guard = BlockingStdinPipe::install()?;
@@ -344,7 +335,6 @@ async fn cleanup_stale_snapshots_removes_orphans_and_keeps_live() -> Result<()> 
     Ok(())
 }
 
-#[cfg(unix)]
 #[tokio::test]
 async fn cleanup_stale_snapshots_removes_stale_sessions() -> Result<()> {
     let dir = tempdir()?;
@@ -365,7 +355,6 @@ async fn cleanup_stale_snapshots_removes_stale_sessions() -> Result<()> {
     Ok(())
 }
 
-#[cfg(unix)]
 #[tokio::test]
 async fn cleanup_stale_snapshots_skips_active_session() -> Result<()> {
     let dir = tempdir()?;
@@ -386,7 +375,6 @@ async fn cleanup_stale_snapshots_skips_active_session() -> Result<()> {
     Ok(())
 }
 
-#[cfg(unix)]
 fn set_file_mtime(path: &Path, age: Duration) -> Result<()> {
     let now = SystemTime::now()
         .duration_since(SystemTime::UNIX_EPOCH)?

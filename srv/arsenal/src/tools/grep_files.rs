@@ -253,9 +253,7 @@ pub fn mount(
 mod tests {
     use super::*;
 
-    #[cfg(unix)]
     use std::os::unix::fs::PermissionsExt;
-    #[cfg(unix)]
     use std::os::unix::fs::symlink;
 
     #[test]
@@ -328,7 +326,6 @@ mod tests {
         assert!(results[0].ends_with("latin1.bin"));
     }
 
-    #[cfg(unix)]
     #[test]
     fn search_only_reads_regular_files() {
         let temp = tempfile::tempdir().expect("create temp dir");
@@ -343,7 +340,6 @@ mod tests {
         assert!(results[0].ends_with("match.txt"));
     }
 
-    #[cfg(unix)]
     #[test]
     fn search_reports_unreadable_file_errors() {
         let temp = tempfile::tempdir().expect("create temp dir");

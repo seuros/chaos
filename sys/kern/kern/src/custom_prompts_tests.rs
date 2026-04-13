@@ -49,7 +49,6 @@ async fn skips_non_utf8_files() {
 }
 
 #[tokio::test]
-#[cfg(unix)]
 async fn discovers_symlinked_md_files() {
     let tmp = tempdir().expect("create TempDir");
     let dir = tmp.path();

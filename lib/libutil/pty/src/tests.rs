@@ -4,9 +4,7 @@ use std::path::Path;
 use pretty_assertions::assert_eq;
 
 use crate::combine_output_receivers;
-#[cfg(unix)]
 use crate::pipe::spawn_process_no_stdin_with_inherited_fds;
-#[cfg(unix)]
 use crate::pty::spawn_process_with_inherited_fds;
 use crate::spawn_pipe_process;
 use crate::spawn_pipe_process_no_stdin;
@@ -121,7 +119,6 @@ async fn collect_output_until_exit(
     }
 }
 
-#[cfg(unix)]
 async fn wait_for_output_contains(
     output_rx: &mut tokio::sync::broadcast::Receiver<Vec<u8>>,
     needle: &str,
@@ -192,7 +189,6 @@ async fn wait_for_python_repl_ready(
     );
 }
 
-#[cfg(unix)]
 async fn wait_for_python_repl_ready_via_probe(
     writer: &tokio::sync::mpsc::Sender<Vec<u8>>,
     output_rx: &mut tokio::sync::broadcast::Receiver<Vec<u8>>,
@@ -244,7 +240,6 @@ async fn wait_for_python_repl_ready_via_probe(
     );
 }
 
-#[cfg(unix)]
 fn process_exists(pid: i32) -> anyhow::Result<bool> {
     let result = unsafe { libc::kill(pid, 0) };
     if result == 0 {
@@ -259,7 +254,6 @@ fn process_exists(pid: i32) -> anyhow::Result<bool> {
     }
 }
 
-#[cfg(unix)]
 async fn wait_for_marker_pid(
     output_rx: &mut tokio::sync::broadcast::Receiver<Vec<u8>>,
     marker: &str,
@@ -307,7 +301,6 @@ async fn wait_for_marker_pid(
     }
 }
 
-#[cfg(unix)]
 async fn wait_for_process_exit(pid: i32, timeout_ms: u64) -> anyhow::Result<bool> {
     let deadline = tokio::time::Instant::now() + tokio::time::Duration::from_millis(timeout_ms);
     loop {
@@ -407,7 +400,6 @@ async fn pipe_process_round_trips_stdin() -> anyhow::Result<()> {
     Ok(())
 }
 
-#[cfg(unix)]
 #[tokio::test(flavor = "multi_thread", worker_threads = 2)]
 async fn pipe_process_detaches_from_parent_session() -> anyhow::Result<()> {
     let parent_sid = unsafe { libc::getsid(0) };
@@ -586,7 +578,6 @@ async fn pipe_terminate_aborts_detached_readers() -> anyhow::Result<()> {
     }
 }
 
-#[cfg(unix)]
 #[tokio::test(flavor = "multi_thread", worker_threads = 2)]
 async fn pty_terminate_kills_background_children_in_same_process_group() -> anyhow::Result<()> {
     let env_map: HashMap<String, String> = std::env::vars().collect();
@@ -631,7 +622,6 @@ async fn pty_terminate_kills_background_children_in_same_process_group() -> anyh
     Ok(())
 }
 
-#[cfg(unix)]
 #[tokio::test(flavor = "multi_thread", worker_threads = 2)]
 async fn pty_spawn_can_preserve_inherited_fds() -> anyhow::Result<()> {
     use std::io::Read;
@@ -678,7 +668,6 @@ async fn pty_spawn_can_preserve_inherited_fds() -> anyhow::Result<()> {
     Ok(())
 }
 
-#[cfg(unix)]
 #[tokio::test(flavor = "multi_thread", worker_threads = 2)]
 async fn pty_preserving_inherited_fds_keeps_python_repl_running() -> anyhow::Result<()> {
     use std::os::fd::AsRawFd;
@@ -750,7 +739,6 @@ async fn pty_preserving_inherited_fds_keeps_python_repl_running() -> anyhow::Res
     Ok(())
 }
 
-#[cfg(unix)]
 #[tokio::test(flavor = "multi_thread", worker_threads = 2)]
 async fn pty_spawn_with_inherited_fds_reports_exec_failures() -> anyhow::Result<()> {
     use std::os::fd::AsRawFd;
@@ -798,7 +786,6 @@ async fn pty_spawn_with_inherited_fds_reports_exec_failures() -> anyhow::Result<
     Ok(())
 }
 
-#[cfg(unix)]
 #[tokio::test(flavor = "multi_thread", worker_threads = 2)]
 async fn pty_spawn_with_inherited_fds_supports_resize() -> anyhow::Result<()> {
     use std::os::fd::AsRawFd;
@@ -858,7 +845,6 @@ async fn pty_spawn_with_inherited_fds_supports_resize() -> anyhow::Result<()> {
     Ok(())
 }
 
-#[cfg(unix)]
 #[tokio::test(flavor = "multi_thread", worker_threads = 2)]
 async fn pipe_spawn_no_stdin_can_preserve_inherited_fds() -> anyhow::Result<()> {
     use std::io::Read;

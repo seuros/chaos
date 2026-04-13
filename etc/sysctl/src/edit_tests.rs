@@ -2,7 +2,6 @@ use super::*;
 use crate::types::McpServerTransportConfig;
 use chaos_ipc::openai_models::ReasoningEffort;
 use pretty_assertions::assert_eq;
-#[cfg(unix)]
 use std::os::unix::fs::symlink;
 use tempfile::tempdir;
 use toml::Value as TomlValue;
@@ -226,7 +225,6 @@ profiles = { fast = { model = "gordon", sandbox_mode = "strict" } }
     );
 }
 
-#[cfg(unix)]
 #[test]
 fn blocking_set_model_writes_through_symlink_chain() {
     let tmp = tempdir().expect("tmpdir");
@@ -259,7 +257,6 @@ model_reasoning_effort = "high"
     assert_eq!(contents, expected);
 }
 
-#[cfg(unix)]
 #[test]
 fn blocking_set_model_replaces_symlink_on_cycle() {
     let tmp = tempdir().expect("tmpdir");

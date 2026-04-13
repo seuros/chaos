@@ -431,6 +431,10 @@ mod tests {
         std::fs::create_dir_all(&self_dir).unwrap();
         let self_exe = self_dir.join("chaos");
         std::fs::write(&self_exe, b"#!/bin/sh\n").unwrap();
+        {
+            use std::os::unix::fs::PermissionsExt;
+            std::fs::set_permissions(&self_exe, std::fs::Permissions::from_mode(0o755)).unwrap();
+        }
         unsafe {
             std::env::set_var("PATH", &self_dir);
         }

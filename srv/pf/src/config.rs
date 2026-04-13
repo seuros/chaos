@@ -79,6 +79,8 @@ pub enum NetworkMode {
     Full,
 }
 
+impl rama::extensions::Extension for NetworkMode {}
+
 impl NetworkMode {
     pub fn allows_method(self, method: &str) -> bool {
         match self {

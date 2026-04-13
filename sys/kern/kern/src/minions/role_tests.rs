@@ -768,10 +768,12 @@ fn spawn_tool_spec_build_deduplicates_user_defined_built_in_roles() {
 
     let spec = spawn_tool_spec::build(&user_defined_roles);
 
-    assert!(spec.contains("researcher: no description"));
-    assert!(spec.contains("scout: {\nuser override\n}"));
-    assert!(spec.contains("default: {\nGeneral-purpose agent with no role constraints.\n}"));
+    assert!(spec.contains("researcher"));
+    assert!(spec.contains("scout"));
+    assert!(spec.contains("default"));
     assert!(!spec.contains("reconnaissance"));
+    assert!(!spec.contains("user override"));
+    assert!(!spec.contains("General-purpose agent"));
 }
 
 #[test]
@@ -788,10 +790,12 @@ fn spawn_tool_spec_lists_user_defined_roles_before_built_ins() {
     )]);
 
     let spec = spawn_tool_spec::build(&user_defined_roles);
-    let user_index = spec.find("aaa: {\nfirst\n}").expect("find user role");
-    let built_in_index = spec
-        .find("default: {\nGeneral-purpose agent with no role constraints.\n}")
-        .expect("find built-in role");
+    let roles_section = spec.find("Available roles:").expect("find roles section");
+    let roles = &spec[roles_section..];
+    let user_index = roles.find("aaa").expect("find user role");
+    let built_in_index = roles.find("\ndefault").expect("find built-in role");
+    assert!(!spec.contains("first"));
+    assert!(!spec.contains("General-purpose agent"));
 
     assert!(user_index < built_in_index);
 }
@@ -818,9 +822,8 @@ fn spawn_tool_spec_marks_role_locked_model_and_reasoning_effort() {
 
     let spec = spawn_tool_spec::build(&user_defined_roles);
 
-    assert!(spec.contains(
-            "Research carefully.\n- This role's model is set to `gpt-5` and its reasoning effort is set to `high`. These settings cannot be changed."
-        ));
+    assert!(spec.contains("researcher [model=gpt-5, reasoning_effort=high, locked]"));
+    assert!(!spec.contains("Research carefully"));
 }
 
 #[test]
@@ -845,9 +848,8 @@ fn spawn_tool_spec_marks_role_locked_reasoning_effort_only() {
 
     let spec = spawn_tool_spec::build(&user_defined_roles);
 
-    assert!(spec.contains(
-            "Review carefully.\n- This role's reasoning effort is set to `medium` and cannot be changed."
-        ));
+    assert!(spec.contains("reviewer [reasoning_effort=medium, locked]"));
+    assert!(!spec.contains("Review carefully"));
 }
 
 #[test]

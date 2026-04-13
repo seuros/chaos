@@ -309,51 +309,41 @@ pub(crate) mod spawn_tool_spec {
     }
 
     fn format_role(name: &str, declaration: &AgentRoleConfig) -> String {
-        if let Some(description) = &declaration.description {
-            let locked_settings_note = declaration
-                .config_file
-                .as_ref()
-                .and_then(|config_file| {
-                    let contents = built_in::config_file_contents(config_file)
-                        .map(str::to_owned)
-                        .or_else(|| std::fs::read_to_string(config_file).ok())?;
-                    parse_agent_role_file_contents(
-                        &contents,
-                        config_file,
-                        std::path::Path::new("."),
-                        Some(name),
-                    )
-                    .ok()
-                })
-                .map(|parsed| {
-                    let model = parsed.config.get("model").and_then(TomlValue::as_str);
-                    let reasoning_effort = parsed
-                        .config
-                        .get("model_reasoning_effort")
-                        .and_then(TomlValue::as_str);
+        let locked_settings_note = declaration
+            .config_file
+            .as_ref()
+            .and_then(|config_file| {
+                let contents = built_in::config_file_contents(config_file)
+                    .map(str::to_owned)
+                    .or_else(|| std::fs::read_to_string(config_file).ok())?;
+                parse_agent_role_file_contents(
+                    &contents,
+                    config_file,
+                    std::path::Path::new("."),
+                    Some(name),
+                )
+                .ok()
+            })
+            .map(|parsed| {
+                let model = parsed.config.get("model").and_then(TomlValue::as_str);
+                let reasoning_effort = parsed
+                    .config
+                    .get("model_reasoning_effort")
+                    .and_then(TomlValue::as_str);
 
-                    match (model, reasoning_effort) {
-                        (Some(model), Some(reasoning_effort)) => format!(
-                            "\n- This role's model is set to `{model}` and its reasoning effort is set to `{reasoning_effort}`. These settings cannot be changed."
-                        ),
-                        (Some(model), None) => {
-                            format!(
-                                "\n- This role's model is set to `{model}` and cannot be changed."
-                            )
-                        }
-                        (None, Some(reasoning_effort)) => {
-                            format!(
-                                "\n- This role's reasoning effort is set to `{reasoning_effort}` and cannot be changed."
-                            )
-                        }
-                        (None, None) => String::new(),
+                match (model, reasoning_effort) {
+                    (Some(model), Some(reasoning_effort)) => {
+                        format!(" [model={model}, reasoning_effort={reasoning_effort}, locked]")
                     }
-                })
-                .unwrap_or_default();
-            format!("{name}: {{\n{description}{locked_settings_note}\n}}")
-        } else {
-            format!("{name}: no description")
-        }
+                    (Some(model), None) => format!(" [model={model}, locked]"),
+                    (None, Some(reasoning_effort)) => {
+                        format!(" [reasoning_effort={reasoning_effort}, locked]")
+                    }
+                    (None, None) => String::new(),
+                }
+            })
+            .unwrap_or_default();
+        format!("{name}{locked_settings_note}")
     }
 }
 

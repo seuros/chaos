@@ -44,11 +44,42 @@ pub use test_sync::TestSyncHandler;
 pub use unified_exec::UnifiedExecHandler;
 pub use view_image::ViewImageHandler;
 
+/// Recursively sanitize a JSON value produced by a model that double-encodes
+/// string arguments. Some models (e.g. grok-4.20-reasoning) wrap string
+/// values in an extra layer of JSON encoding, producing arguments like
+/// `{"path": "\"sys/kern/foo.rs\""}` instead of `{"path": "sys/kern/foo.rs"}`.
+///
+/// For every string leaf: if the value is itself a valid JSON-encoded string
+/// (starts and ends with `"`) unwrap one layer. The check is conservative —
+/// it only fires when `serde_json::from_str::<String>` succeeds, so plain
+/// strings that happen to start/end with a quote character are unchanged.
+fn sanitize_value(value: Value) -> Value {
+    match value {
+        Value::Object(map) => Value::Object(
+            map.into_iter()
+                .map(|(k, v)| (k, sanitize_value(v)))
+                .collect(),
+        ),
+        Value::Array(arr) => Value::Array(arr.into_iter().map(sanitize_value).collect()),
+        Value::String(s) if s.starts_with('"') && s.ends_with('"') && s.len() >= 2 => {
+            match serde_json::from_str::<String>(&s) {
+                Ok(inner) => Value::String(inner),
+                Err(_) => Value::String(s),
+            }
+        }
+        other => other,
+    }
+}
+
 pub(crate) fn parse_arguments<T>(arguments: &str) -> Result<T, FunctionCallError>
 where
     T: for<'de> Deserialize<'de>,
 {
-    serde_json::from_str(arguments).map_err(|err| {
+    let raw: Value = serde_json::from_str(arguments).map_err(|err| {
+        FunctionCallError::RespondToModel(format!("failed to parse function arguments: {err}"))
+    })?;
+    let sanitized = sanitize_value(raw);
+    serde_json::from_value(sanitized).map_err(|err| {
         FunctionCallError::RespondToModel(format!("failed to parse function arguments: {err}"))
     })
 }

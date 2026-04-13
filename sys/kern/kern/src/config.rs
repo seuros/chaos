@@ -1,12 +1,8 @@
 use crate::auth::AuthCredentialsStoreMode;
-use crate::config::edit::ConfigEdit;
-use crate::config::edit::ConfigEditsBuilder;
 use crate::config::types::AppsConfigToml;
 use crate::config::types::DEFAULT_OTEL_ENVIRONMENT;
 use crate::config::types::History;
 use crate::config::types::McpServerConfig;
-use crate::config::types::McpServerDisabledReason;
-use crate::config::types::McpServerTransportConfig;
 use crate::config::types::MemoriesConfig;
 use crate::config::types::ModelAvailabilityNuxConfig;
 use crate::config::types::Notice;
@@ -22,11 +18,9 @@ use crate::config::types::SkillsConfig;
 use crate::config::types::Tui;
 use crate::config::types::UriBasedFileOpener;
 use crate::config_loader::ConfigLayerStack;
-use crate::config_loader::ConfigLayerStackOrdering;
 use crate::config_loader::ConfigRequirements;
 use crate::config_loader::ConstrainedWithSource;
 use crate::config_loader::LoaderOverrides;
-use crate::config_loader::McpServerIdentity;
 use crate::config_loader::McpServerRequirement;
 use crate::config_loader::ResidencyRequirement;
 use crate::config_loader::Sourced;
@@ -38,7 +32,6 @@ use crate::features::FeaturesToml;
 use crate::git_info::resolve_root_git_project_for_trust;
 use crate::mcp::oauth_types::OAuthCredentialsStoreMode;
 use crate::model_provider_info::ModelProviderInfo;
-use crate::model_provider_info::OPENAI_PROVIDER_ID;
 use crate::model_provider_info::built_in_model_providers;
 use crate::path_utils::normalize_for_native_workdir;
 use crate::project_doc::DEFAULT_PROJECT_DOC_FILENAME;
@@ -66,14 +59,12 @@ use chaos_ipc::permissions::FileSystemSandboxPolicy;
 use chaos_ipc::permissions::NetworkSandboxPolicy;
 use chaos_pwd::find_chaos_home;
 use chaos_realpath::AbsolutePathBuf;
-use chaos_realpath::AbsolutePathBufGuard;
 use schemars::JsonSchema;
 use serde::Deserialize;
 use serde::Serialize;
 use similar::DiffableStr;
 use std::collections::BTreeMap;
 use std::collections::HashMap;
-use std::io::ErrorKind;
 use std::path::Path;
 use std::path::PathBuf;
 
@@ -87,15 +78,21 @@ pub(crate) mod agent_roles;
 pub mod edit;
 mod managed_features;
 mod network_proxy_spec;
+pub(crate) mod parsing;
 mod permissions;
 pub mod profile;
 pub mod schema;
+pub(crate) mod serialization;
 pub mod service;
 pub mod types;
+pub(crate) mod validation;
+
 pub use chaos_pf::NetworkProxyAuditMetadata;
 pub use chaos_sysctl::Constrained;
 pub use chaos_sysctl::ConstraintError;
 pub use chaos_sysctl::ConstraintResult;
+#[cfg(test)]
+pub(crate) use validation::filter_mcp_servers_by_requirements;
 
 pub use managed_features::ManagedFeatures;
 pub use network_proxy_spec::NetworkProxySpec;
@@ -122,7 +119,6 @@ pub(crate) const DEFAULT_AGENT_JOB_MAX_RUNTIME_SECONDS: Option<u64> = None;
 
 pub const CONFIG_TOML_FILE: &str = "config.toml";
 const OPENAI_BASE_URL_ENV_VAR: &str = "OPENAI_BASE_URL";
-const RESERVED_MODEL_PROVIDER_IDS: [&str; 1] = [OPENAI_PROVIDER_ID];
 
 fn resolve_sqlite_home_env(resolved_cwd: &Path) -> Option<PathBuf> {
     let path = PathBuf::from(chaos_proc::sqlite_home_env_value()?);
@@ -132,6 +128,7 @@ fn resolve_sqlite_home_env(resolved_cwd: &Path) -> Option<PathBuf> {
         Some(resolved_cwd.join(path))
     }
 }
+
 #[cfg(test)]
 pub(crate) fn test_config() -> Config {
     let chaos_home = tempfile::tempdir().expect("create temp dir");
@@ -604,76 +601,9 @@ impl ConfigBuilder {
     }
 }
 
-fn feature_scope_segments(scope: &[String], feature_key: &str) -> Vec<String> {
-    let mut segments = scope.to_vec();
-    segments.push("features".to_string());
-    segments.push(feature_key.to_string());
-    segments
-}
-
-fn push_smart_approvals_alias_migration_edits(
-    edits: &mut Vec<ConfigEdit>,
-    scope: &[String],
-    features: &FeaturesToml,
-) {
-    if !features.entries.contains_key("smart_approvals") {
-        return;
-    }
-    // Remove the deprecated smart_approvals key. The guardian approval
-    // system it pointed to has been removed entirely.
-    edits.push(ConfigEdit::ClearPath {
-        segments: feature_scope_segments(scope, "smart_approvals"),
-    });
-    // Also clean up any lingering guardian_approval flag.
-    if features.entries.contains_key("guardian_approval") {
-        edits.push(ConfigEdit::ClearPath {
-            segments: feature_scope_segments(scope, "guardian_approval"),
-        });
-    }
-}
-
-/// Removes the legacy `smart_approvals` and `guardian_approval` feature
-/// flags from `config.toml` since the guardian approval system has been
-/// removed.
+/// Delegates to `serialization::maybe_migrate_smart_approvals_alias`.
 async fn maybe_migrate_smart_approvals_alias(chaos_home: &Path) -> std::io::Result<bool> {
-    let config_path = chaos_home.join(CONFIG_TOML_FILE);
-    if !tokio::fs::try_exists(&config_path).await? {
-        return Ok(false);
-    }
-
-    let config_contents = tokio::fs::read_to_string(&config_path).await?;
-    let Ok(config_toml) = toml::from_str::<ConfigToml>(&config_contents) else {
-        return Ok(false);
-    };
-
-    let mut edits = Vec::new();
-
-    let root_scope = Vec::new();
-    if let Some(features) = config_toml.features.as_ref() {
-        push_smart_approvals_alias_migration_edits(&mut edits, &root_scope, features);
-    }
-
-    for (profile_name, profile) in &config_toml.profiles {
-        if let Some(features) = profile.features.as_ref() {
-            let scope = vec!["profiles".to_string(), profile_name.clone()];
-            push_smart_approvals_alias_migration_edits(&mut edits, &scope, features);
-        }
-    }
-
-    if edits.is_empty() {
-        return Ok(false);
-    }
-
-    ConfigEditsBuilder::new(chaos_home)
-        .with_edits(edits)
-        .apply()
-        .await
-        .map_err(|err| {
-            std::io::Error::other(format!(
-                "failed to clean up deprecated approval aliases: {err}"
-            ))
-        })?;
-    Ok(true)
+    serialization::maybe_migrate_smart_approvals_alias(chaos_home).await
 }
 
 impl Config {
@@ -737,107 +667,27 @@ pub async fn load_config_as_toml_with_cli_overrides(
     cwd: &AbsolutePathBuf,
     cli_overrides: Vec<(String, TomlValue)>,
 ) -> std::io::Result<ConfigToml> {
-    if let Err(err) = maybe_migrate_smart_approvals_alias(chaos_home).await {
-        tracing::warn!(error = %err, "failed to migrate smart_approvals feature alias");
-    }
-    let config_layer_stack = load_config_layers_state(
-        chaos_home,
-        Some(cwd.clone()),
-        &cli_overrides,
-        LoaderOverrides::default(),
-    )
-    .await?;
-
-    let merged_toml = config_layer_stack.effective_config();
-    let cfg = deserialize_config_toml_with_base(merged_toml, chaos_home).map_err(|e| {
-        tracing::error!("Failed to deserialize overridden config: {e}");
-        e
-    })?;
-
-    Ok(cfg)
+    parsing::load_config_as_toml_with_cli_overrides(chaos_home, cwd, cli_overrides).await
 }
 
 pub(crate) fn deserialize_config_toml_with_base(
     root_value: TomlValue,
     config_base_dir: &Path,
 ) -> std::io::Result<ConfigToml> {
-    // This guard ensures that any relative paths that is deserialized into an
-    // [AbsolutePathBuf] is resolved against `config_base_dir`.
-    let _guard = AbsolutePathBufGuard::new(config_base_dir);
-    root_value
-        .try_into()
-        .map_err(|e| std::io::Error::new(std::io::ErrorKind::InvalidData, e))
-}
-
-fn load_catalog_json(path: &AbsolutePathBuf) -> std::io::Result<ModelsResponse> {
-    let file_contents = std::fs::read_to_string(path)?;
-    let catalog = serde_json::from_str::<ModelsResponse>(&file_contents).map_err(|err| {
-        std::io::Error::new(
-            ErrorKind::InvalidData,
-            format!(
-                "failed to parse model_catalog_json path `{}` as JSON: {err}",
-                path.display()
-            ),
-        )
-    })?;
-    if catalog.models.is_empty() {
-        return Err(std::io::Error::new(
-            ErrorKind::InvalidData,
-            format!(
-                "model_catalog_json path `{}` must contain at least one model",
-                path.display()
-            ),
-        ));
-    }
-    Ok(catalog)
+    parsing::deserialize_config_toml_with_base(root_value, config_base_dir)
 }
 
 fn load_model_catalog(
     model_catalog_json: Option<AbsolutePathBuf>,
 ) -> std::io::Result<Option<ModelsResponse>> {
-    model_catalog_json
-        .map(|path| load_catalog_json(&path))
-        .transpose()
-}
-
-fn filter_mcp_servers_by_requirements(
-    mcp_servers: &mut HashMap<String, McpServerConfig>,
-    mcp_requirements: Option<&Sourced<BTreeMap<String, McpServerRequirement>>>,
-) {
-    let Some(allowlist) = mcp_requirements else {
-        return;
-    };
-
-    let source = allowlist.source.clone();
-    for (name, server) in mcp_servers.iter_mut() {
-        let allowed = allowlist
-            .value
-            .get(name)
-            .is_some_and(|requirement| mcp_server_matches_requirement(requirement, server));
-        if allowed {
-            server.disabled_reason = None;
-        } else {
-            server.enabled = false;
-            server.disabled_reason = Some(McpServerDisabledReason::Requirements {
-                source: source.clone(),
-            });
-        }
-    }
+    parsing::load_model_catalog(model_catalog_json)
 }
 
 fn constrain_mcp_servers(
     mcp_servers: HashMap<String, McpServerConfig>,
     mcp_requirements: Option<&Sourced<BTreeMap<String, McpServerRequirement>>>,
 ) -> ConstraintResult<Constrained<HashMap<String, McpServerConfig>>> {
-    if mcp_requirements.is_none() {
-        return Ok(Constrained::allow_any(mcp_servers));
-    }
-
-    let mcp_requirements = mcp_requirements.cloned();
-    Constrained::normalized(mcp_servers, move |mut servers| {
-        filter_mcp_servers_by_requirements(&mut servers, mcp_requirements.as_ref());
-        servers
-    })
+    validation::constrain_mcp_servers(mcp_servers, mcp_requirements)
 }
 
 fn apply_requirement_constrained_value<T>(
@@ -849,50 +699,12 @@ fn apply_requirement_constrained_value<T>(
 where
     T: Clone + std::fmt::Debug + Send + Sync,
 {
-    if let Err(err) = constrained_value.set(configured_value) {
-        let fallback_value = constrained_value.get().clone();
-        tracing::warn!(
-            error = %err,
-            ?fallback_value,
-            requirement_source = ?constrained_value.source,
-            "configured value is disallowed by requirements; falling back to required value for {field_name}"
-        );
-        let message = format!(
-            "Configured value for `{field_name}` is disallowed by requirements; falling back to required value {fallback_value:?}. Details: {err}"
-        );
-        startup_warnings.push(message);
-
-        constrained_value.set(fallback_value).map_err(|fallback_err| {
-            std::io::Error::new(
-                std::io::ErrorKind::InvalidInput,
-                format!(
-                    "configured value for `{field_name}` is disallowed by requirements ({err}); fallback to a requirement-compliant value also failed ({fallback_err})"
-                ),
-            )
-        })?;
-    }
-
-    Ok(())
-}
-
-fn mcp_server_matches_requirement(
-    requirement: &McpServerRequirement,
-    server: &McpServerConfig,
-) -> bool {
-    match &requirement.identity {
-        McpServerIdentity::Command {
-            command: want_command,
-        } => matches!(
-            &server.transport,
-            McpServerTransportConfig::Stdio { command: got_command, .. }
-                if got_command == want_command
-        ),
-        McpServerIdentity::Url { url: want_url } => matches!(
-            &server.transport,
-            McpServerTransportConfig::StreamableHttp { url: got_url, .. }
-                if got_url == want_url
-        ),
-    }
+    validation::apply_requirement_constrained_value(
+        field_name,
+        configured_value,
+        constrained_value,
+        startup_warnings,
+    )
 }
 
 pub async fn load_global_mcp_servers(
@@ -917,33 +729,12 @@ pub async fn load_global_mcp_servers(
         return Ok(BTreeMap::new());
     };
 
-    ensure_no_inline_bearer_tokens(servers_value)?;
+    validation::ensure_no_inline_bearer_tokens(servers_value)?;
 
     servers_value
         .clone()
         .try_into()
         .map_err(|e| std::io::Error::new(std::io::ErrorKind::InvalidData, e))
-}
-
-/// We briefly allowed plain text bearer_token fields in MCP server configs.
-/// We want to warn people who recently added these fields but can remove this after a few months.
-fn ensure_no_inline_bearer_tokens(value: &TomlValue) -> std::io::Result<()> {
-    let Some(servers_table) = value.as_table() else {
-        return Ok(());
-    };
-
-    for (server_name, server_value) in servers_table {
-        if let Some(server_table) = server_value.as_table()
-            && server_table.contains_key("bearer_token")
-        {
-            let message = format!(
-                "mcp_servers.{server_name} uses unsupported `bearer_token`; set `bearer_token_env_var`."
-            );
-            return Err(std::io::Error::new(ErrorKind::InvalidData, message));
-        }
-    }
-
-    Ok(())
 }
 
 #[cfg(test)]
@@ -957,33 +748,12 @@ pub fn set_project_trust_level(
     project_path: &Path,
     trust_level: TrustLevel,
 ) -> anyhow::Result<()> {
-    use crate::config::edit::ConfigEditsBuilder;
-
-    ConfigEditsBuilder::new(chaos_home)
-        .set_project_trust_level(project_path, trust_level)
-        .apply_blocking()
+    serialization::set_project_trust_level(chaos_home, project_path, trust_level)
 }
 
 /// Save the default OSS provider preference to config.toml
 pub fn set_default_oss_provider(chaos_home: &Path, provider: &str) -> std::io::Result<()> {
-    // Any non-empty provider string is accepted and written to config.
-    if provider.trim().is_empty() {
-        return Err(std::io::Error::new(
-            std::io::ErrorKind::InvalidInput,
-            "Invalid OSS provider ''. Provider must not be empty.",
-        ));
-    }
-    use toml_edit::value;
-
-    let edits = [ConfigEdit::SetPath {
-        segments: vec!["oss_provider".to_string()],
-        value: value(provider),
-    }];
-
-    ConfigEditsBuilder::new(chaos_home)
-        .with_edits(edits)
-        .apply_blocking()
-        .map_err(|err| std::io::Error::other(format!("failed to persist config.toml: {err}")))
+    serialization::set_default_oss_provider(chaos_home, provider)
 }
 
 /// Base config deserialized from ~/.chaos/config.toml.
@@ -1411,17 +1181,7 @@ impl ConfigToml {
     }
 }
 
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
-enum PermissionConfigSyntax {
-    Legacy,
-    Profiles,
-}
-
-#[derive(Debug, Deserialize, Default)]
-struct PermissionSelectionToml {
-    default_permissions: Option<String>,
-    sandbox_mode: Option<SandboxMode>,
-}
+use validation::PermissionConfigSyntax;
 
 fn resolve_permission_config_syntax(
     config_layer_stack: &ConfigLayerStack,
@@ -1429,36 +1189,12 @@ fn resolve_permission_config_syntax(
     sandbox_mode_override: Option<SandboxMode>,
     profile_sandbox_mode: Option<SandboxMode>,
 ) -> Option<PermissionConfigSyntax> {
-    if sandbox_mode_override.is_some() || profile_sandbox_mode.is_some() {
-        return Some(PermissionConfigSyntax::Legacy);
-    }
-
-    let mut selection = None;
-    for layer in config_layer_stack.get_layers(
-        ConfigLayerStackOrdering::LowestPrecedenceFirst,
-        /*include_disabled*/ false,
-    ) {
-        let Ok(layer_selection) = layer.config.clone().try_into::<PermissionSelectionToml>() else {
-            continue;
-        };
-
-        if layer_selection.sandbox_mode.is_some() {
-            selection = Some(PermissionConfigSyntax::Legacy);
-        }
-        if layer_selection.default_permissions.is_some() {
-            selection = Some(PermissionConfigSyntax::Profiles);
-        }
-    }
-
-    selection.or_else(|| {
-        if cfg.default_permissions.is_some() {
-            Some(PermissionConfigSyntax::Profiles)
-        } else if cfg.sandbox_mode.is_some() {
-            Some(PermissionConfigSyntax::Legacy)
-        } else {
-            None
-        }
-    })
+    validation::resolve_permission_config_syntax(
+        config_layer_stack,
+        cfg,
+        sandbox_mode_override,
+        profile_sandbox_mode,
+    )
 }
 
 fn add_additional_file_system_writes(
@@ -1512,21 +1248,7 @@ pub struct ConfigOverrides {
 fn validate_reserved_model_provider_ids(
     model_providers: &HashMap<String, ModelProviderInfo>,
 ) -> Result<(), String> {
-    let mut conflicts = model_providers
-        .keys()
-        .filter(|key| RESERVED_MODEL_PROVIDER_IDS.contains(&key.as_str()))
-        .map(|key| format!("`{key}`"))
-        .collect::<Vec<_>>();
-    conflicts.sort_unstable();
-    if conflicts.is_empty() {
-        Ok(())
-    } else {
-        Err(format!(
-            "model_providers contains reserved built-in provider IDs: {}. \
-Built-in providers cannot be overridden. Rename your custom provider (for example, `openai-custom`).",
-            conflicts.join(", ")
-        ))
-    }
+    validation::validate_reserved_model_provider_ids(model_providers)
 }
 
 fn deserialize_model_providers<'de, D>(
@@ -1535,9 +1257,7 @@ fn deserialize_model_providers<'de, D>(
 where
     D: serde::Deserializer<'de>,
 {
-    let model_providers = HashMap::<String, ModelProviderInfo>::deserialize(deserializer)?;
-    validate_reserved_model_provider_ids(&model_providers).map_err(serde::de::Error::custom)?;
-    Ok(model_providers)
+    parsing::deserialize_model_providers(deserializer)
 }
 
 /// Resolves the OSS provider from CLI override, profile config, or global config.
@@ -2384,27 +2104,7 @@ impl Config {
 }
 
 pub(crate) fn uses_deprecated_instructions_file(config_layer_stack: &ConfigLayerStack) -> bool {
-    config_layer_stack
-        .layers_high_to_low()
-        .into_iter()
-        .any(|layer| toml_uses_deprecated_instructions_file(&layer.config))
-}
-
-fn toml_uses_deprecated_instructions_file(value: &TomlValue) -> bool {
-    let Some(table) = value.as_table() else {
-        return false;
-    };
-    if table.contains_key("experimental_instructions_file") {
-        return true;
-    }
-    let Some(profiles) = table.get("profiles").and_then(TomlValue::as_table) else {
-        return false;
-    };
-    profiles.values().any(|profile| {
-        profile.as_table().is_some_and(|profile_table| {
-            profile_table.contains_key("experimental_instructions_file")
-        })
-    })
+    serialization::uses_deprecated_instructions_file(config_layer_stack)
 }
 
 /// Returns the path to the folder where Chaos logs are stored. Does not verify

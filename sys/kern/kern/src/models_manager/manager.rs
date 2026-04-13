@@ -377,6 +377,15 @@ impl ModelsManager {
         } else {
             // No catalog entry for this slug — build a minimal descriptor from
             // the slug itself. Mark as fallback so callers can detect the gap.
+            // Derive native server-side tools from the provider URL so that
+            // unknown/new models on known providers (e.g. a fresh xAI model not
+            // yet in the catalog) still get the correct tool set and don't have
+            // client-managed web_search injected with `external_web_access`,
+            // which xAI rejects.
+            let native_server_side_tools =
+                crate::model_provider_info::native_server_side_tools_for_url(
+                    config.model_provider.base_url.as_deref(),
+                );
             ModelInfo {
                 used_fallback_model_metadata: true,
                 ..model_info::model_info_from_abi(&chaos_abi::AbiModelInfo {
@@ -388,7 +397,7 @@ impl ModelsManager {
                     supports_images: true,
                     supports_structured_output: false,
                     supports_reasoning_effort: false,
-                    native_server_side_tools: vec![],
+                    native_server_side_tools,
                 })
             }
         };

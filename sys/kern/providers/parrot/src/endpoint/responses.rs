@@ -21,6 +21,7 @@ use http::Method;
 use serde_json::Value;
 use std::sync::Arc;
 use std::sync::OnceLock;
+use tracing::debug;
 use tracing::instrument;
 
 pub struct ResponsesClient<T: HttpTransport, A: AuthProvider> {
@@ -84,6 +85,11 @@ impl<T: HttpTransport, A: AuthProvider> ResponsesClient<T, A> {
         if request.store && self.session.provider().is_azure_responses_endpoint() {
             attach_item_ids(&mut body, &request.input);
         }
+        debug!(
+            target: "chaos_parrot::request_body",
+            body = %body,
+            "responses api request body"
+        );
 
         let mut headers = extra_headers;
         if let Some(ref conv_id) = conversation_id {

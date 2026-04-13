@@ -5,10 +5,12 @@ use crate::config::types::ApprovalsReviewer;
 use crate::config::types::BundledSkillsConfig;
 use crate::config::types::FeedbackConfigToml;
 use crate::config::types::HistoryPersistence;
+use crate::config::types::McpServerDisabledReason;
 use crate::config::types::McpServerTransportConfig;
 use crate::config::types::ModelAvailabilityNuxConfig;
 use crate::config::types::NotificationMethod;
 use crate::config::types::Notifications;
+use crate::config_loader::McpServerIdentity;
 use crate::config_loader::RequirementSource;
 
 use chaos_ipc::permissions::FileSystemAccessMode;
@@ -25,6 +27,7 @@ use core_test_support::test_absolute_path;
 
 use std::collections::BTreeMap;
 use std::collections::HashMap;
+use std::io::ErrorKind;
 use std::time::Duration;
 use tempfile::TempDir;
 use toml_edit::DocumentMut;

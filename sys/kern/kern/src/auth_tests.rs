@@ -34,7 +34,7 @@ async fn refresh_without_id_token() {
         chaos_home.path().to_path_buf(),
         AuthCredentialsStoreMode::File,
     );
-    let updated = super::persist_tokens(
+    let updated = crate::auth::tokens::persist_tokens(
         &storage,
         None,
         Some("new-access-token".to_string()),

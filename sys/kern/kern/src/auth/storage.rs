@@ -53,7 +53,7 @@ pub(super) fn delete_file_if_exists(chaos_home: &Path) -> std::io::Result<bool> 
     }
 }
 
-pub(super) trait AuthStorageBackend: Debug + Send + Sync {
+pub(crate) trait AuthStorageBackend: Debug + Send + Sync {
     fn load(&self) -> std::io::Result<Option<AuthDotJson>>;
     fn save(&self, auth: &AuthDotJson) -> std::io::Result<()>;
     fn delete(&self) -> std::io::Result<bool>;

@@ -63,7 +63,7 @@ pub fn new_patch_apply_failure(stderr: String) -> PlainHistoryCell {
         lines.extend(output.lines);
     }
 
-    PlainHistoryCell { lines }
+    PlainHistoryCell::new(lines)
 }
 
 pub fn new_view_image_tool_call(path: PathBuf, cwd: &Path) -> PlainHistoryCell {
@@ -74,5 +74,5 @@ pub fn new_view_image_tool_call(path: PathBuf, cwd: &Path) -> PlainHistoryCell {
         vec!["  └ ".dim(), display_path.dim()].into(),
     ];
 
-    PlainHistoryCell { lines }
+    PlainHistoryCell::new(lines)
 }

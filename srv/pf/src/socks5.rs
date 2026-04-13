@@ -120,11 +120,11 @@ async fn run_socks5_with_listener(
         }));
         let socks_acceptor = base.with_udp_associator(udp_relay);
         listener
-            .serve(AddInputExtensionLayer::new(state).into_layer(socks_acceptor))
+            .serve(AddInputExtensionLayer::new_arc(state).into_layer(socks_acceptor))
             .await;
     } else {
         listener
-            .serve(AddInputExtensionLayer::new(state).into_layer(base))
+            .serve(AddInputExtensionLayer::new_arc(state).into_layer(base))
             .await;
     }
     Ok(())
@@ -137,8 +137,7 @@ async fn handle_socks5_tcp(
 ) -> Result<EstablishedClientConnection<TcpStream, TcpRequest>, BoxError> {
     let app_state = req
         .extensions()
-        .get_ref::<Arc<NetworkProxyState>>()
-        .cloned()
+        .get_arc::<NetworkProxyState>()
         .ok_or_else(|| io::Error::other("missing state"))?;
 
     let host = normalize_host(&req.authority.host.to_string());
@@ -550,7 +549,7 @@ mod tests {
         });
         let request =
             TcpRequest::new(HostWithPort::try_from("example.com:443").expect("valid authority"));
-        request.extensions().insert(state.clone());
+        request.extensions().insert_arc(state.clone());
 
         let (result, events) = capture_events(|| async {
             handle_socks5_tcp(request, TcpConnector::default(), None).await

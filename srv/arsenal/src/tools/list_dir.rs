@@ -303,30 +303,17 @@ mod tests {
             .await
             .expect("write grandchild");
 
-        #[cfg(unix)]
-        {
-            use std::os::unix::fs::symlink;
-            let link_path = dir_path.join("link");
-            symlink(dir_path.join("entry.txt"), &link_path).expect("create symlink");
-        }
+        use std::os::unix::fs::symlink;
+        let link_path = dir_path.join("link");
+        symlink(dir_path.join("entry.txt"), &link_path).expect("create symlink");
 
         let entries = list_dir_slice(dir_path, 1, 20, 3)
             .await
             .expect("list directory");
 
-        #[cfg(unix)]
         let expected = vec![
             "entry.txt".to_string(),
             "link@".to_string(),
-            "nested/".to_string(),
-            "  child.txt".to_string(),
-            "  deeper/".to_string(),
-            "    grandchild.txt".to_string(),
-        ];
-
-        #[cfg(not(unix))]
-        let expected = vec![
-            "entry.txt".to_string(),
             "nested/".to_string(),
             "  child.txt".to_string(),
             "  deeper/".to_string(),

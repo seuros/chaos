@@ -119,7 +119,6 @@ where
     }
 
     let mut cmd = Command::new(&prepared.program);
-    #[cfg(unix)]
     cmd.arg0(
         prepared
             .arg0

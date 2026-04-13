@@ -194,7 +194,6 @@ fn process_exec_tool_call_uses_platform_sandbox_for_network_only_restrictions() 
     );
 }
 
-#[cfg(unix)]
 #[test]
 fn sandbox_detection_flags_sigsys_exit_code() {
     let exit_code = EXIT_CODE_SIGNAL_BASE + libc::SIGSYS;
@@ -202,7 +201,6 @@ fn sandbox_detection_flags_sigsys_exit_code() {
     assert!(is_likely_sandbox_denied(SandboxType::LinuxSeccomp, &output));
 }
 
-#[cfg(unix)]
 #[tokio::test]
 async fn kill_child_process_group_kills_grandchildren_on_timeout() -> Result<()> {
     // On Linux/macOS, /bin/bash is typically present; on FreeBSD/OpenBSD,

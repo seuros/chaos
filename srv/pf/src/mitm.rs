@@ -51,6 +51,8 @@ pub struct MitmState {
     max_body_bytes: usize,
 }
 
+impl rama::extensions::Extension for MitmState {}
+
 #[derive(Clone)]
 struct MitmPolicyContext {
     target_host: String,
@@ -116,13 +118,11 @@ impl MitmState {
 pub(crate) async fn mitm_tunnel(upgraded: Upgraded) -> Result<()> {
     let mitm = upgraded
         .extensions()
-        .get_ref::<Arc<MitmState>>()
-        .cloned()
+        .get_arc::<MitmState>()
         .context("missing MITM state")?;
     let app_state = upgraded
         .extensions()
-        .get_ref::<Arc<NetworkProxyState>>()
-        .cloned()
+        .get_arc::<NetworkProxyState>()
         .context("missing app state")?;
     let target = upgraded
         .extensions()
@@ -148,11 +148,7 @@ pub(crate) async fn mitm_tunnel(upgraded: Upgraded) -> Result<()> {
         mitm,
     });
 
-    let executor = upgraded
-        .extensions()
-        .get_ref::<Executor>()
-        .cloned()
-        .unwrap_or_default();
+    let executor = Executor::default();
 
     let http_service = HttpServer::auto(executor).service(
         (

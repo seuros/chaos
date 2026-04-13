@@ -212,6 +212,8 @@ pub struct NetworkProxyState {
     audit_metadata: NetworkProxyAuditMetadata,
 }
 
+impl rama::extensions::Extension for NetworkProxyState {}
+
 impl std::fmt::Debug for NetworkProxyState {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         // Avoid logging internal state (config contents, derived globsets, etc.) which can be noisy

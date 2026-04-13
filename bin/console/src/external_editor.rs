@@ -66,7 +66,6 @@ mod tests {
     use super::*;
     use pretty_assertions::assert_eq;
     use serial_test::serial;
-    #[cfg(unix)]
     use tempfile::tempdir;
 
     struct EnvGuard {
@@ -124,7 +123,6 @@ mod tests {
     }
 
     #[tokio::test]
-    #[cfg(unix)]
     async fn run_editor_returns_updated_content() {
         use std::os::unix::fs::PermissionsExt;
 

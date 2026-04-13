@@ -1129,15 +1129,12 @@ fn resolve_gitdir_from_file(dot_git: &AbsolutePathBuf) -> Option<AbsolutePathBuf
 mod tests {
     use super::*;
     use pretty_assertions::assert_eq;
-    #[cfg(unix)]
     use std::fs;
     use std::path::Path;
     use tempfile::TempDir;
 
-    #[cfg(unix)]
     const SYMLINKED_TMPDIR_TEST_ENV: &str = "CHAOS_PROTOCOL_TEST_SYMLINKED_TMPDIR";
 
-    #[cfg(unix)]
     fn symlink_dir(original: &Path, link: &Path) -> std::io::Result<()> {
         std::os::unix::fs::symlink(original, link)
     }
@@ -1169,7 +1166,6 @@ mod tests {
         Ok(())
     }
 
-    #[cfg(unix)]
     #[test]
     fn effective_runtime_roots_canonicalize_symlinked_paths() {
         let cwd = TempDir::new().expect("tempdir");
@@ -1229,7 +1225,6 @@ mod tests {
         );
     }
 
-    #[cfg(unix)]
     #[test]
     fn writable_roots_preserve_symlinked_protected_subpaths() {
         let cwd = TempDir::new().expect("tempdir");
@@ -1269,7 +1264,6 @@ mod tests {
         );
     }
 
-    #[cfg(unix)]
     #[test]
     fn writable_roots_preserve_explicit_symlinked_carveouts_under_symlinked_roots() {
         let cwd = TempDir::new().expect("tempdir");
@@ -1322,7 +1316,6 @@ mod tests {
         );
     }
 
-    #[cfg(unix)]
     #[test]
     fn writable_roots_preserve_explicit_symlinked_carveouts_that_escape_root() {
         let cwd = TempDir::new().expect("tempdir");
@@ -1376,7 +1369,6 @@ mod tests {
         );
     }
 
-    #[cfg(unix)]
     #[test]
     fn writable_roots_preserve_explicit_symlinked_carveouts_that_alias_root() {
         let cwd = TempDir::new().expect("tempdir");
@@ -1412,7 +1404,6 @@ mod tests {
         assert_eq!(writable_roots[0].read_only_subpaths, vec![expected_alias]);
     }
 
-    #[cfg(unix)]
     #[test]
     fn tmpdir_special_path_canonicalizes_symlinked_tmpdir() {
         if std::env::var_os(SYMLINKED_TMPDIR_TEST_ENV).is_none() {

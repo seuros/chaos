@@ -139,7 +139,7 @@ async fn run_http_proxy_with_listener(
     info!("HTTP proxy listening on {addr}");
 
     listener
-        .serve(AddInputExtensionLayer::new(state).into_layer(http_service))
+        .serve(AddInputExtensionLayer::new_arc(state).into_layer(http_service))
         .await;
     Ok(())
 }
@@ -150,8 +150,7 @@ async fn http_connect_accept(
 ) -> Result<(Response, Request), Response> {
     let app_state = req
         .extensions()
-        .get_ref::<Arc<NetworkProxyState>>()
-        .cloned()
+        .get_arc::<NetworkProxyState>()
         .ok_or_else(|| text_response(StatusCode::INTERNAL_SERVER_ERROR, "missing state"))?;
 
     let authority = match RequestContext::try_from(&req).map(|ctx| ctx.host_with_port()) {
@@ -297,7 +296,7 @@ async fn http_connect_accept(
     req.extensions().insert(ProxyTarget(authority));
     req.extensions().insert(mode);
     if let Some(mitm_state) = mitm_state {
-        req.extensions().insert(mitm_state);
+        req.extensions().insert_arc(mitm_state);
     }
 
     DefaultHttpProxyConnectReplyService::new().serve(req).await
@@ -336,11 +335,7 @@ async fn http_connect_proxy(upgraded: Upgraded) -> Result<(), Infallible> {
         return Ok(());
     };
 
-    if mode == NetworkMode::Limited
-        && upgraded
-            .extensions()
-            .get_ref::<Arc<mitm::MitmState>>()
-            .is_some()
+    if mode == NetworkMode::Limited && upgraded.extensions().get_arc::<mitm::MitmState>().is_some()
     {
         let host = normalize_host(&target.host.to_string());
         let port = target.port;
@@ -351,11 +346,7 @@ async fn http_connect_proxy(upgraded: Upgraded) -> Result<(), Infallible> {
         return Ok(());
     }
 
-    let allow_upstream_proxy = match upgraded
-        .extensions()
-        .get_ref::<Arc<NetworkProxyState>>()
-        .cloned()
-    {
+    let allow_upstream_proxy = match upgraded.extensions().get_arc::<NetworkProxyState>() {
         Some(state) => match state.allow_upstream_proxy().await {
             Ok(allowed) => allowed,
             Err(err) => {
@@ -413,11 +404,7 @@ async fn http_plain_proxy(
     policy_decider: Option<Arc<dyn NetworkPolicyDecider>>,
     mut req: Request,
 ) -> Result<Response, Infallible> {
-    let app_state = match req
-        .extensions()
-        .get_ref::<Arc<NetworkProxyState>>()
-        .cloned()
-    {
+    let app_state = match req.extensions().get_arc::<NetworkProxyState>() {
         Some(state) => state,
         None => {
             error!("missing app state");
@@ -1008,7 +995,7 @@ mod tests {
             .header("host", "example.com:443")
             .body(Body::empty())
             .unwrap();
-        req.extensions().insert(state);
+        req.extensions().insert_arc(state);
 
         let response = http_connect_accept(None, req).await.unwrap_err();
         assert_eq!(response.status(), StatusCode::FORBIDDEN);
@@ -1032,7 +1019,7 @@ mod tests {
             .header("host", "example.com:443")
             .body(Body::empty())
             .unwrap();
-        req.extensions().insert(state);
+        req.extensions().insert_arc(state);
 
         let (response, _request) = http_connect_accept(None, req).await.unwrap();
         assert_eq!(response.status(), StatusCode::OK);
@@ -1113,7 +1100,7 @@ mod tests {
             .header("x-unix-socket", "/tmp/test.sock")
             .body(Body::empty())
             .expect("request should build");
-        req.extensions().insert(state);
+        req.extensions().insert_arc(state);
 
         let response = http_plain_proxy(None, req).await.unwrap();
 
@@ -1136,7 +1123,7 @@ mod tests {
             .header("x-unix-socket", "/tmp/test.sock")
             .body(Body::empty())
             .expect("request should build");
-        req.extensions().insert(state);
+        req.extensions().insert_arc(state);
 
         let response = http_plain_proxy(None, req).await.unwrap();
 
@@ -1165,7 +1152,7 @@ mod tests {
             .header("x-unix-socket", "/tmp/test.sock")
             .body(Body::empty())
             .expect("request should build");
-        req.extensions().insert(state);
+        req.extensions().insert_arc(state);
 
         let response = http_plain_proxy(None, req).await.unwrap();
         assert_eq!(response.status(), StatusCode::BAD_GATEWAY);
@@ -1186,7 +1173,7 @@ mod tests {
             .header("host", "api.openai.com:443")
             .body(Body::empty())
             .unwrap();
-        req.extensions().insert(state);
+        req.extensions().insert_arc(state);
 
         let response = http_connect_accept(None, req).await.unwrap_err();
         assert_eq!(response.status(), StatusCode::FORBIDDEN);
@@ -1207,7 +1194,7 @@ mod tests {
             .header(header::HOST, "api.github.com")
             .body(Body::empty())
             .unwrap();
-        req.extensions().insert(state);
+        req.extensions().insert_arc(state);
 
         let response = http_plain_proxy(None, req).await;
         assert_eq!(response.unwrap().status(), StatusCode::BAD_REQUEST);

@@ -124,6 +124,30 @@ fn represent_for_responses(item: ResponseItem) -> Option<ResponseItem> {
         | ResponseItem::Compaction { .. }
         | ResponseItem::Other => None,
 
+        // Reasoning items are OpenAI-specific and rely on encrypted_content
+        // for context restoration. Providers that don't support the
+        // reasoning.encrypted_content include (e.g. xAI) reject these items
+        // entirely — drop them from the wire representation.
+        ResponseItem::Reasoning { .. } => None,
+
+        // Map the OpenAI-specific "developer" role to the universally
+        // supported "system" role. OpenAI introduced "developer" as an alias
+        // for "system" in the Responses API, but xAI and other compatible
+        // providers only accept "system".
+        ResponseItem::Message {
+            id,
+            role,
+            content,
+            end_turn,
+            phase,
+        } if role == "developer" => Some(ResponseItem::Message {
+            id,
+            role: "system".to_string(),
+            content,
+            end_turn,
+            phase,
+        }),
+
         // Everything else (Message, Reasoning, FunctionCall, WebSearchCall,
         // ImageGenerationCall) passes through unchanged.
         other => Some(other),

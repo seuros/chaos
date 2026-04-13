@@ -94,6 +94,21 @@ pub fn is_anthropic_wire(base_url: Option<&str>) -> bool {
     base_url.map(|u| u.contains("anthropic")).unwrap_or(false)
 }
 
+/// Returns the native server-side tools a provider injects based on its base URL.
+///
+/// xAI exposes `web_search` and `x_search` as Responses-API server-side tools.
+/// These are sent as bare `{ "type": "<name>" }` entries — no function schema.
+/// Other providers get an empty list (they either don't support them or fetch
+/// the list dynamically from `/models`).
+pub fn native_server_side_tools_for_url(base_url: Option<&str>) -> Vec<String> {
+    match base_url {
+        Some(url) if url.contains("x.ai") => {
+            vec!["web_search".to_string(), "x_search".to_string()]
+        }
+        _ => vec![],
+    }
+}
+
 /// Serializable representation of a provider definition.
 #[derive(Debug, Clone, Deserialize, Serialize, PartialEq, JsonSchema)]
 #[schemars(deny_unknown_fields)]

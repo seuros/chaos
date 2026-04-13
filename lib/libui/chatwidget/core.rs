@@ -22,17 +22,17 @@ use crate::text_formatting::truncate_text;
 // ── Internal helper types ─────────────────────────────────────────────────────
 
 #[derive(Clone, Debug, PartialEq)]
-pub(super) struct RenderedUserMessageEvent {
-    pub(super) message: String,
-    pub(super) remote_image_urls: Vec<String>,
-    pub(super) local_images: Vec<PathBuf>,
-    pub(super) text_elements: Vec<TextElement>,
+pub(crate) struct RenderedUserMessageEvent {
+    pub(crate) message: String,
+    pub(crate) remote_image_urls: Vec<String>,
+    pub(crate) local_images: Vec<PathBuf>,
+    pub(crate) text_elements: Vec<TextElement>,
 }
 
 #[derive(Clone, Debug, PartialEq, Eq)]
-pub(super) struct PendingSteerCompareKey {
-    pub(super) message: String,
-    pub(super) image_count: usize,
+pub(crate) struct PendingSteerCompareKey {
+    pub(crate) message: String,
+    pub(crate) image_count: usize,
 }
 
 // Track information about an in-flight exec command.
@@ -289,8 +289,8 @@ pub struct UserMessage {
     pub(super) text: String,
     pub(super) local_images: Vec<LocalImageAttachment>,
     /// Remote image attachments represented as URLs.
-    pub(super) remote_image_urls: Vec<String>,
-    pub(super) text_elements: Vec<TextElement>,
+    pub(crate) remote_image_urls: Vec<String>,
+    pub(crate) text_elements: Vec<TextElement>,
     pub(super) mention_bindings: Vec<crate::bottom_pane::MentionBinding>,
 }
 
@@ -298,8 +298,8 @@ pub struct UserMessage {
 pub(super) struct ProcessComposerState {
     pub(super) text: String,
     pub(super) local_images: Vec<LocalImageAttachment>,
-    pub(super) remote_image_urls: Vec<String>,
-    pub(super) text_elements: Vec<TextElement>,
+    pub(crate) remote_image_urls: Vec<String>,
+    pub(crate) text_elements: Vec<TextElement>,
     pub(super) mention_bindings: Vec<crate::bottom_pane::MentionBinding>,
     pub(super) pending_pastes: Vec<(String, String)>,
 }

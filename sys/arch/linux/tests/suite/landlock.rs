@@ -1,5 +1,22 @@
 #![cfg(target_os = "linux")]
 #![allow(clippy::unwrap_used)]
+
+fn landlock_supported() -> bool {
+    use landlock::{ABI, Access, AccessFs, CompatLevel, Compatible, Ruleset, RulesetAttr};
+    let result = Ruleset::default()
+        .set_compatibility(CompatLevel::HardRequirement)
+        .handle_access(AccessFs::from_all(ABI::V1));
+    result.and_then(landlock::Ruleset::create).is_ok()
+}
+
+macro_rules! require_landlock {
+    () => {
+        if !landlock_supported() {
+            eprintln!("skipping: kernel does not support Landlock");
+            return;
+        }
+    };
+}
 use chaos_ipc::permissions::FileSystemAccessMode;
 use chaos_ipc::permissions::FileSystemPath;
 use chaos_ipc::permissions::FileSystemSandboxEntry;
@@ -151,6 +168,7 @@ fn expect_denied(
 
 #[tokio::test]
 async fn test_root_read() {
+    require_landlock!();
     run_cmd(&["ls", "-l", "/bin"], &[], SHORT_TIMEOUT_MS).await;
 }
 
@@ -169,6 +187,7 @@ async fn test_root_write() {
 
 #[tokio::test]
 async fn test_dev_null_write() {
+    require_landlock!();
     let output = run_cmd_result_with_writable_roots(
         &["bash", "-lc", "echo blah > /dev/null"],
         &[],
@@ -185,6 +204,7 @@ async fn test_dev_null_write() {
 
 #[tokio::test]
 async fn linux_sandbox_populates_minimal_dev_nodes() {
+    require_landlock!();
     let output = run_cmd_result_with_writable_roots(
         &[
             "bash",
@@ -203,6 +223,7 @@ async fn linux_sandbox_populates_minimal_dev_nodes() {
 
 #[tokio::test]
 async fn linux_sandbox_preserves_writable_dev_shm_bind_mount() {
+    require_landlock!();
     if !std::path::Path::new("/dev/shm").exists() {
         eprintln!("skipping Linux sandbox test: /dev/shm is unavailable in this environment");
         return;
@@ -240,6 +261,7 @@ async fn linux_sandbox_preserves_writable_dev_shm_bind_mount() {
 
 #[tokio::test]
 async fn test_writable_root() {
+    require_landlock!();
     let tmpdir = tempfile::tempdir().unwrap();
     let file_path = tmpdir.path().join("test");
     run_cmd(
@@ -258,6 +280,7 @@ async fn test_writable_root() {
 
 #[tokio::test]
 async fn test_no_new_privs_is_enabled() {
+    require_landlock!();
     let output = run_cmd_output(
         &["bash", "-lc", "grep '^NoNewPrivs:' /proc/self/status"],
         &[],
@@ -346,28 +369,33 @@ async fn assert_network_blocked(cmd: &[&str]) {
 
 #[tokio::test]
 async fn sandbox_blocks_curl() {
+    require_landlock!();
     assert_network_blocked(&["curl", "-I", "http://openai.com"]).await;
 }
 
 #[tokio::test]
 async fn sandbox_blocks_wget() {
+    require_landlock!();
     assert_network_blocked(&["wget", "-qO-", "http://openai.com"]).await;
 }
 
 #[tokio::test]
 async fn sandbox_blocks_ping() {
+    require_landlock!();
     // ICMP requires raw socket – should be denied quickly with EPERM.
     assert_network_blocked(&["ping", "-c", "1", "8.8.8.8"]).await;
 }
 
 #[tokio::test]
 async fn sandbox_blocks_nc() {
+    require_landlock!();
     // Zero‑length connection attempt to localhost.
     assert_network_blocked(&["nc", "-z", "127.0.0.1", "80"]).await;
 }
 
 #[tokio::test]
 async fn workspace_write_currently_allows_git_and_chaos_writes_on_linux_landlock_backend() {
+    require_landlock!();
     let tmpdir = tempfile::tempdir().expect("tempdir");
     let dot_git = tmpdir.path().join(".git");
     let dot_chaos = tmpdir.path().join(".chaos");
@@ -409,6 +437,7 @@ async fn workspace_write_currently_allows_git_and_chaos_writes_on_linux_landlock
 
 #[tokio::test]
 async fn workspace_write_currently_allows_chaos_symlink_replacement_on_linux_landlock_backend() {
+    require_landlock!();
     use std::os::unix::fs::symlink;
 
     let tmpdir = tempfile::tempdir().expect("tempdir");
@@ -439,6 +468,7 @@ async fn workspace_write_currently_allows_chaos_symlink_replacement_on_linux_lan
 
 #[tokio::test]
 async fn linux_landlock_rejects_explicit_split_policy_carveouts() {
+    require_landlock!();
     let tmpdir = tempfile::tempdir().expect("tempdir");
     let blocked = tmpdir.path().join("blocked");
     std::fs::create_dir_all(&blocked).expect("create blocked dir");
@@ -505,6 +535,7 @@ async fn linux_landlock_rejects_explicit_split_policy_carveouts() {
 
 #[tokio::test]
 async fn linux_landlock_rejects_nested_writable_carveouts_inside_unreadable_parents() {
+    require_landlock!();
     let tmpdir = tempfile::tempdir().expect("tempdir");
     let blocked = tmpdir.path().join("blocked");
     let allowed = blocked.join("allowed");
@@ -582,6 +613,7 @@ async fn linux_landlock_rejects_nested_writable_carveouts_inside_unreadable_pare
 
 #[tokio::test]
 async fn linux_landlock_rejects_root_read_carveouts() {
+    require_landlock!();
     let tmpdir = tempfile::tempdir().expect("tempdir");
     let blocked = tmpdir.path().join("blocked");
     std::fs::create_dir_all(&blocked).expect("create blocked dir");
@@ -627,6 +659,7 @@ async fn linux_landlock_rejects_root_read_carveouts() {
 
 #[tokio::test]
 async fn sandbox_blocks_ssh() {
+    require_landlock!();
     // Force ssh to attempt a real TCP connection but fail quickly.  `BatchMode`
     // avoids password prompts, and `ConnectTimeout` keeps the hang time low.
     assert_network_blocked(&[
@@ -642,11 +675,13 @@ async fn sandbox_blocks_ssh() {
 
 #[tokio::test]
 async fn sandbox_blocks_getent() {
+    require_landlock!();
     assert_network_blocked(&["getent", "ahosts", "openai.com"]).await;
 }
 
 #[tokio::test]
 async fn sandbox_blocks_dev_tcp_redirection() {
+    require_landlock!();
     // This syntax is only supported by bash and zsh. We try bash first.
     // Fallback generic socket attempt using /bin/sh with bash‑style /dev/tcp.  Not
     // all images ship bash, so we guard against 127 as well.

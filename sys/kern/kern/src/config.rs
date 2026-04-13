@@ -1,6 +1,5 @@
 use crate::auth::AuthCredentialsStoreMode;
 use crate::config::types::AppsConfigToml;
-use crate::config::types::DEFAULT_OTEL_ENVIRONMENT;
 use crate::config::types::History;
 use crate::config::types::McpServerConfig;
 use crate::config::types::MemoriesConfig;
@@ -8,9 +7,6 @@ use crate::config::types::ModelAvailabilityNuxConfig;
 use crate::config::types::Notice;
 use crate::config::types::NotificationMethod;
 use crate::config::types::Notifications;
-use crate::config::types::OtelConfig;
-use crate::config::types::OtelConfigToml;
-use crate::config::types::OtelExporterKind;
 use crate::config::types::SandboxWorkspaceWrite;
 use crate::config::types::ShellEnvironmentPolicy;
 use crate::config::types::ShellEnvironmentPolicyToml;
@@ -18,29 +14,15 @@ use crate::config::types::SkillsConfig;
 use crate::config::types::Tui;
 use crate::config::types::UriBasedFileOpener;
 use crate::config_loader::ConfigLayerStack;
-use crate::config_loader::ConfigRequirements;
-use crate::config_loader::ConstrainedWithSource;
 use crate::config_loader::LoaderOverrides;
-use crate::config_loader::McpServerRequirement;
 use crate::config_loader::ResidencyRequirement;
-use crate::config_loader::Sourced;
 use crate::config_loader::load_config_layers_state;
 
-use crate::features::FeatureOverrides;
-use crate::features::Features;
 use crate::features::FeaturesToml;
-use crate::git_info::resolve_root_git_project_for_trust;
 use crate::mcp::oauth_types::OAuthCredentialsStoreMode;
 use crate::model_provider_info::ModelProviderInfo;
-use crate::model_provider_info::built_in_model_providers;
-use crate::path_utils::normalize_for_native_workdir;
-use crate::project_doc::DEFAULT_PROJECT_DOC_FILENAME;
-use crate::project_doc::LOCAL_PROJECT_DOC_FILENAME;
 use crate::protocol::ApprovalPolicy;
-use crate::protocol::ReadOnlyAccess;
 use crate::protocol::SandboxPolicy;
-use crate::unified_exec::DEFAULT_MAX_BACKGROUND_TERMINAL_TIMEOUT_MS;
-use crate::unified_exec::MIN_EMPTY_YIELD_TIME_MS;
 use chaos_ipc::api::UserSavedConfig;
 use chaos_ipc::config_types::AltScreenMode;
 use chaos_ipc::config_types::ForcedLoginMethod;
@@ -57,43 +39,59 @@ use chaos_ipc::openai_models::ModelsResponse;
 use chaos_ipc::openai_models::ReasoningEffort;
 use chaos_ipc::permissions::FileSystemSandboxPolicy;
 use chaos_ipc::permissions::NetworkSandboxPolicy;
-use chaos_pwd::find_chaos_home;
 use chaos_realpath::AbsolutePathBuf;
 use schemars::JsonSchema;
 use serde::Deserialize;
 use serde::Serialize;
-use similar::DiffableStr;
 use std::collections::BTreeMap;
 use std::collections::HashMap;
-use std::path::Path;
 use std::path::PathBuf;
 
-use crate::config::permissions::compile_permission_profile;
-use crate::config::permissions::network_proxy_config_from_profile_network;
 use crate::config::profile::ConfigProfile;
-use chaos_pf::NetworkProxyConfig;
 use toml::Value as TomlValue;
 
 pub(crate) mod agent_roles;
 pub mod edit;
+pub mod loading;
 mod managed_features;
 mod network_proxy_spec;
 pub(crate) mod parsing;
 mod permissions;
 pub mod profile;
+pub mod requirements;
 pub mod schema;
 pub(crate) mod serialization;
 pub mod service;
 pub mod types;
 pub(crate) mod validation;
 
+#[cfg(test)]
+pub(crate) use crate::config::types::OtelConfig;
+#[cfg(test)]
+pub(crate) use crate::config::types::OtelExporterKind;
+#[cfg(test)]
+pub(crate) use crate::config_loader::McpServerRequirement;
+#[cfg(test)]
+pub(crate) use crate::config_loader::Sourced;
+#[cfg(test)]
+pub(crate) use crate::features::Features;
+#[cfg(test)]
+pub(crate) use crate::model_provider_info::built_in_model_providers;
+#[cfg(test)]
+pub(crate) use crate::protocol::ReadOnlyAccess;
+#[cfg(test)]
+pub(crate) use crate::unified_exec::DEFAULT_MAX_BACKGROUND_TERMINAL_TIMEOUT_MS;
 pub use chaos_pf::NetworkProxyAuditMetadata;
+pub use chaos_scm::GhostSnapshotConfig;
 pub use chaos_sysctl::Constrained;
 pub use chaos_sysctl::ConstraintError;
 pub use chaos_sysctl::ConstraintResult;
 #[cfg(test)]
+pub(crate) use std::path::Path;
+#[cfg(test)]
 pub(crate) use validation::filter_mcp_servers_by_requirements;
 
+pub use loading::ConfigBuilder;
 pub use managed_features::ManagedFeatures;
 pub use network_proxy_spec::NetworkProxySpec;
 pub use network_proxy_spec::StartedNetworkProxy;
@@ -107,8 +105,6 @@ pub use service::ConfigService;
 pub use service::ConfigServiceError;
 pub use types::ApprovalsReviewer;
 
-pub use chaos_scm::GhostSnapshotConfig;
-
 /// Maximum number of bytes of the documentation that will be embedded. Larger
 /// files are *silently truncated* to this size so we do not take up too much of
 /// the context window.
@@ -118,16 +114,7 @@ pub(crate) const DEFAULT_AGENT_MAX_DEPTH: i32 = 1;
 pub(crate) const DEFAULT_AGENT_JOB_MAX_RUNTIME_SECONDS: Option<u64> = None;
 
 pub const CONFIG_TOML_FILE: &str = "config.toml";
-const OPENAI_BASE_URL_ENV_VAR: &str = "OPENAI_BASE_URL";
-
-fn resolve_sqlite_home_env(resolved_cwd: &Path) -> Option<PathBuf> {
-    let path = PathBuf::from(chaos_proc::sqlite_home_env_value()?);
-    if path.is_absolute() {
-        Some(path)
-    } else {
-        Some(resolved_cwd.join(path))
-    }
-}
+pub(crate) const OPENAI_BASE_URL_ENV_VAR: &str = "OPENAI_BASE_URL";
 
 #[cfg(test)]
 pub(crate) fn test_config() -> Config {
@@ -273,8 +260,6 @@ pub struct Config {
 
     /// Persisted startup availability NUX state for model tooltips.
     pub model_availability_nux: ModelAvailabilityNuxConfig,
-
-    /// Start the TUI in the specified collaboration mode (plan/default).
 
     /// Controls whether the TUI uses the terminal's alternate screen buffer.
     ///
@@ -510,250 +495,6 @@ pub struct Config {
     /// Not settable via config file — test-only escape hatch to prevent real
     /// user scripts from polluting test tool lists.
     pub disable_user_scripts: bool,
-}
-
-#[derive(Debug, Clone, Default)]
-pub struct ConfigBuilder {
-    chaos_home: Option<PathBuf>,
-    cli_overrides: Option<Vec<(String, TomlValue)>>,
-    harness_overrides: Option<ConfigOverrides>,
-    loader_overrides: Option<LoaderOverrides>,
-    fallback_cwd: Option<PathBuf>,
-}
-
-impl ConfigBuilder {
-    pub fn chaos_home(mut self, chaos_home: PathBuf) -> Self {
-        self.chaos_home = Some(chaos_home);
-        self
-    }
-
-    pub fn cli_overrides(mut self, cli_overrides: Vec<(String, TomlValue)>) -> Self {
-        self.cli_overrides = Some(cli_overrides);
-        self
-    }
-
-    pub fn harness_overrides(mut self, harness_overrides: ConfigOverrides) -> Self {
-        self.harness_overrides = Some(harness_overrides);
-        self
-    }
-
-    pub fn loader_overrides(mut self, loader_overrides: LoaderOverrides) -> Self {
-        self.loader_overrides = Some(loader_overrides);
-        self
-    }
-
-    pub fn fallback_cwd(mut self, fallback_cwd: Option<PathBuf>) -> Self {
-        self.fallback_cwd = fallback_cwd;
-        self
-    }
-
-    pub async fn build(self) -> std::io::Result<Config> {
-        let Self {
-            chaos_home,
-            cli_overrides,
-            harness_overrides,
-            loader_overrides,
-            fallback_cwd,
-        } = self;
-        let chaos_home = chaos_home.map_or_else(find_chaos_home, std::io::Result::Ok)?;
-        if let Err(err) = maybe_migrate_smart_approvals_alias(&chaos_home).await {
-            tracing::warn!(error = %err, "failed to migrate smart_approvals feature alias");
-        }
-        let cli_overrides = cli_overrides.unwrap_or_default();
-        let mut harness_overrides = harness_overrides.unwrap_or_default();
-        let loader_overrides = loader_overrides.unwrap_or_default();
-        let cwd_override = harness_overrides.cwd.as_deref().or(fallback_cwd.as_deref());
-        let cwd = match cwd_override {
-            Some(path) => AbsolutePathBuf::try_from(path)?,
-            None => AbsolutePathBuf::current_dir()?,
-        };
-        harness_overrides.cwd = Some(cwd.to_path_buf());
-        let config_layer_stack =
-            load_config_layers_state(&chaos_home, Some(cwd), &cli_overrides, loader_overrides)
-                .await?;
-        let merged_toml = config_layer_stack.effective_config();
-
-        // Note that each layer in ConfigLayerStack should have resolved
-        // relative paths to absolute paths based on the parent folder of the
-        // respective config file, so we should be safe to deserialize without
-        // AbsolutePathBufGuard here.
-        let config_toml: ConfigToml = match merged_toml.try_into() {
-            Ok(config_toml) => config_toml,
-            Err(err) => {
-                if let Some(config_error) =
-                    crate::config_loader::first_layer_config_error(&config_layer_stack).await
-                {
-                    return Err(crate::config_loader::io_error_from_config_error(
-                        std::io::ErrorKind::InvalidData,
-                        config_error,
-                        Some(err),
-                    ));
-                }
-                return Err(std::io::Error::new(std::io::ErrorKind::InvalidData, err));
-            }
-        };
-        Config::load_config_with_layer_stack(
-            config_toml,
-            harness_overrides,
-            chaos_home,
-            config_layer_stack,
-        )
-    }
-}
-
-/// Delegates to `serialization::maybe_migrate_smart_approvals_alias`.
-async fn maybe_migrate_smart_approvals_alias(chaos_home: &Path) -> std::io::Result<bool> {
-    serialization::maybe_migrate_smart_approvals_alias(chaos_home).await
-}
-
-impl Config {
-    /// This is the preferred way to create an instance of [Config].
-    pub async fn load_with_cli_overrides(
-        cli_overrides: Vec<(String, TomlValue)>,
-    ) -> std::io::Result<Self> {
-        ConfigBuilder::default()
-            .cli_overrides(cli_overrides)
-            .build()
-            .await
-    }
-
-    /// Load a default configuration when user config files are invalid.
-    pub fn load_default_with_cli_overrides(
-        cli_overrides: Vec<(String, TomlValue)>,
-    ) -> std::io::Result<Self> {
-        let chaos_home = find_chaos_home()?;
-        let mut merged = toml::Value::try_from(ConfigToml::default()).map_err(|e| {
-            std::io::Error::new(
-                std::io::ErrorKind::InvalidData,
-                format!("failed to serialize default config: {e}"),
-            )
-        })?;
-        let cli_layer = crate::config_loader::build_cli_overrides_layer(&cli_overrides);
-        crate::config_loader::merge_toml_values(&mut merged, &cli_layer);
-        let config_toml = deserialize_config_toml_with_base(merged, &chaos_home)?;
-        Self::load_config_with_layer_stack(
-            config_toml,
-            ConfigOverrides::default(),
-            chaos_home,
-            ConfigLayerStack::default(),
-        )
-    }
-
-    /// This is a secondary way of creating [Config], which is appropriate when
-    /// the harness is meant to be used with a specific configuration that
-    /// ignores user settings. For example, the `chaos exec` subcommand is
-    /// designed to use `ApprovalPolicy::Headless` exclusively.
-    ///
-    /// Further, [ConfigOverrides] contains some options that are not supported
-    /// in [ConfigToml], such as `cwd`, `alcatraz_linux_exe`, and
-    /// `alcatraz_freebsd_exe`.
-    pub async fn load_with_cli_overrides_and_harness_overrides(
-        cli_overrides: Vec<(String, TomlValue)>,
-        harness_overrides: ConfigOverrides,
-    ) -> std::io::Result<Self> {
-        ConfigBuilder::default()
-            .cli_overrides(cli_overrides)
-            .harness_overrides(harness_overrides)
-            .build()
-            .await
-    }
-}
-
-/// DEPRECATED: Use [Config::load_with_cli_overrides()] instead because working
-/// with [ConfigToml] directly means that [ConfigRequirements] have not been
-/// applied yet, which risks failing to enforce required constraints.
-pub async fn load_config_as_toml_with_cli_overrides(
-    chaos_home: &Path,
-    cwd: &AbsolutePathBuf,
-    cli_overrides: Vec<(String, TomlValue)>,
-) -> std::io::Result<ConfigToml> {
-    parsing::load_config_as_toml_with_cli_overrides(chaos_home, cwd, cli_overrides).await
-}
-
-pub(crate) fn deserialize_config_toml_with_base(
-    root_value: TomlValue,
-    config_base_dir: &Path,
-) -> std::io::Result<ConfigToml> {
-    parsing::deserialize_config_toml_with_base(root_value, config_base_dir)
-}
-
-fn load_model_catalog(
-    model_catalog_json: Option<AbsolutePathBuf>,
-) -> std::io::Result<Option<ModelsResponse>> {
-    parsing::load_model_catalog(model_catalog_json)
-}
-
-fn constrain_mcp_servers(
-    mcp_servers: HashMap<String, McpServerConfig>,
-    mcp_requirements: Option<&Sourced<BTreeMap<String, McpServerRequirement>>>,
-) -> ConstraintResult<Constrained<HashMap<String, McpServerConfig>>> {
-    validation::constrain_mcp_servers(mcp_servers, mcp_requirements)
-}
-
-fn apply_requirement_constrained_value<T>(
-    field_name: &'static str,
-    configured_value: T,
-    constrained_value: &mut ConstrainedWithSource<T>,
-    startup_warnings: &mut Vec<String>,
-) -> std::io::Result<()>
-where
-    T: Clone + std::fmt::Debug + Send + Sync,
-{
-    validation::apply_requirement_constrained_value(
-        field_name,
-        configured_value,
-        constrained_value,
-        startup_warnings,
-    )
-}
-
-pub async fn load_global_mcp_servers(
-    chaos_home: &Path,
-) -> std::io::Result<BTreeMap<String, McpServerConfig>> {
-    // In general, Config::load_with_cli_overrides() should be used to load the
-    // full config with requirements.toml applied, but in this case, we need
-    // access to the raw TOML in order to warn the user about deprecated fields.
-    //
-    // Note that a more precise way to do this would be to audit the individual
-    // config layers for deprecated fields rather than reporting on the merged
-    // result.
-    let cli_overrides = Vec::<(String, TomlValue)>::new();
-    // There is no cwd/project context for this query, so this will not include
-    // MCP servers defined in in-repo .chaos/ folders.
-    let cwd: Option<AbsolutePathBuf> = None;
-    let config_layer_stack =
-        load_config_layers_state(chaos_home, cwd, &cli_overrides, LoaderOverrides::default())
-            .await?;
-    let merged_toml = config_layer_stack.effective_config();
-    let Some(servers_value) = merged_toml.get("mcp_servers") else {
-        return Ok(BTreeMap::new());
-    };
-
-    validation::ensure_no_inline_bearer_tokens(servers_value)?;
-
-    servers_value
-        .clone()
-        .try_into()
-        .map_err(|e| std::io::Error::new(std::io::ErrorKind::InvalidData, e))
-}
-
-#[cfg(test)]
-#[allow(unused_imports)]
-pub(crate) use chaos_sysctl::edit::set_project_trust_level_inner;
-
-/// Patch `CHAOS_HOME/config.toml` project state to set trust level.
-/// Use with caution.
-pub fn set_project_trust_level(
-    chaos_home: &Path,
-    project_path: &Path,
-    trust_level: TrustLevel,
-) -> anyhow::Result<()> {
-    serialization::set_project_trust_level(chaos_home, project_path, trust_level)
-}
-
-/// Save the default OSS provider preference to config.toml
-pub fn set_default_oss_provider(chaos_home: &Path, provider: &str) -> std::io::Result<()> {
-    serialization::set_default_oss_provider(chaos_home, provider)
 }
 
 /// Base config deserialized from ~/.chaos/config.toml.
@@ -1079,147 +820,6 @@ pub use chaos_sysctl::types::RealtimeWsMode;
 pub use chaos_sysctl::types::RealtimeWsVersion;
 pub use chaos_sysctl::types::ToolsToml;
 
-impl ConfigToml {
-    /// Derive the effective sandbox policy from the configuration.
-    fn derive_sandbox_policy(
-        &self,
-        sandbox_mode_override: Option<SandboxMode>,
-        profile_sandbox_mode: Option<SandboxMode>,
-        resolved_cwd: &Path,
-        sandbox_policy_constraint: Option<&Constrained<SandboxPolicy>>,
-    ) -> SandboxPolicy {
-        let sandbox_mode_was_explicit = sandbox_mode_override.is_some()
-            || profile_sandbox_mode.is_some()
-            || self.sandbox_mode.is_some();
-        let resolved_sandbox_mode = sandbox_mode_override
-            .or(profile_sandbox_mode)
-            .or(self.sandbox_mode)
-            .or_else(|| {
-                // If no sandbox_mode is set but this directory has a trust decision,
-                self.get_active_project(resolved_cwd).and_then(|p| {
-                    if p.is_trusted() || p.is_untrusted() {
-                        Some(SandboxMode::WorkspaceWrite)
-                    } else {
-                        None
-                    }
-                })
-            })
-            .unwrap_or_default();
-        let mut sandbox_policy = match resolved_sandbox_mode {
-            SandboxMode::ReadOnly => SandboxPolicy::new_read_only_policy(),
-            SandboxMode::WorkspaceWrite => match self.sandbox_workspace_write.as_ref() {
-                Some(SandboxWorkspaceWrite {
-                    writable_roots,
-                    network_access,
-                    exclude_tmpdir_env_var,
-                    exclude_slash_tmp,
-                }) => SandboxPolicy::WorkspaceWrite {
-                    writable_roots: writable_roots.clone(),
-                    read_only_access: ReadOnlyAccess::FullAccess,
-                    network_access: *network_access,
-                    exclude_tmpdir_env_var: *exclude_tmpdir_env_var,
-                    exclude_slash_tmp: *exclude_slash_tmp,
-                },
-                None => SandboxPolicy::new_workspace_write_policy(),
-            },
-            SandboxMode::RootAccess => SandboxPolicy::RootAccess,
-        };
-        if !sandbox_mode_was_explicit
-            && let Some(constraint) = sandbox_policy_constraint
-            && let Err(err) = constraint.can_set(&sandbox_policy)
-        {
-            tracing::warn!(
-                error = %err,
-                "default sandbox policy is disallowed by requirements; falling back to required default"
-            );
-            sandbox_policy = constraint.get().clone();
-        }
-        sandbox_policy
-    }
-
-    /// Resolves the cwd to an existing project, or returns None if ConfigToml
-    /// does not contain a project corresponding to cwd or a git repo for cwd
-    pub fn get_active_project(&self, resolved_cwd: &Path) -> Option<ProjectConfig> {
-        let projects = self.projects.clone().unwrap_or_default();
-
-        if let Some(project_config) = projects.get(&resolved_cwd.to_string_lossy().to_string()) {
-            return Some(project_config.clone());
-        }
-
-        // If cwd lives inside a git repo/worktree, check whether the root git project
-        // (the primary repository working directory) is trusted. This lets
-        // worktrees inherit trust from the main project.
-        if let Some(repo_root) = resolve_root_git_project_for_trust(resolved_cwd)
-            && let Some(project_config_for_root) =
-                projects.get(&repo_root.to_string_lossy().to_string_lossy().to_string())
-        {
-            return Some(project_config_for_root.clone());
-        }
-
-        None
-    }
-
-    pub fn get_config_profile(
-        &self,
-        override_profile: Option<String>,
-    ) -> Result<ConfigProfile, std::io::Error> {
-        let profile = override_profile.or_else(|| self.profile.clone());
-
-        match profile {
-            Some(key) => {
-                if let Some(profile) = self.profiles.get(key.as_str()) {
-                    return Ok(profile.clone());
-                }
-
-                Err(std::io::Error::new(
-                    std::io::ErrorKind::NotFound,
-                    format!("config profile `{key}` not found"),
-                ))
-            }
-            None => Ok(ConfigProfile::default()),
-        }
-    }
-}
-
-use validation::PermissionConfigSyntax;
-
-fn resolve_permission_config_syntax(
-    config_layer_stack: &ConfigLayerStack,
-    cfg: &ConfigToml,
-    sandbox_mode_override: Option<SandboxMode>,
-    profile_sandbox_mode: Option<SandboxMode>,
-) -> Option<PermissionConfigSyntax> {
-    validation::resolve_permission_config_syntax(
-        config_layer_stack,
-        cfg,
-        sandbox_mode_override,
-        profile_sandbox_mode,
-    )
-}
-
-fn add_additional_file_system_writes(
-    file_system_sandbox_policy: &mut FileSystemSandboxPolicy,
-    additional_writable_roots: &[AbsolutePathBuf],
-) {
-    for path in additional_writable_roots {
-        let exists = file_system_sandbox_policy.entries.iter().any(|entry| {
-            matches!(
-                &entry.path,
-                chaos_ipc::permissions::FileSystemPath::Path { path: existing }
-                    if existing == path && entry.access == chaos_ipc::permissions::FileSystemAccessMode::Write
-            )
-        });
-        if !exists {
-            file_system_sandbox_policy.entries.push(
-                chaos_ipc::permissions::FileSystemSandboxEntry {
-                    path: chaos_ipc::permissions::FileSystemPath::Path { path: path.clone() },
-                    access: chaos_ipc::permissions::FileSystemAccessMode::Write,
-                },
-            );
-        }
-    }
-}
-
 /// Optional overrides for user configuration (e.g., from CLI flags).
 #[derive(Default, Debug, Clone)]
 pub struct ConfigOverrides {
@@ -1245,12 +845,6 @@ pub struct ConfigOverrides {
     pub additional_writable_roots: Vec<PathBuf>,
 }
 
-fn validate_reserved_model_provider_ids(
-    model_providers: &HashMap<String, ModelProviderInfo>,
-) -> Result<(), String> {
-    validation::validate_reserved_model_provider_ids(model_providers)
-}
-
 fn deserialize_model_providers<'de, D>(
     deserializer: D,
 ) -> Result<HashMap<String, ModelProviderInfo>, D::Error>
@@ -1268,56 +862,18 @@ pub fn resolve_oss_provider(
     config_profile: Option<String>,
 ) -> Option<String> {
     if let Some(provider) = explicit_provider {
-        // Explicit provider specified (e.g., via --local-provider)
         Some(provider.to_string())
     } else {
-        // Check profile config first, then global config
         let profile = config_toml.get_config_profile(config_profile).ok();
         if let Some(profile) = &profile {
-            // Check if profile has an oss provider
             if let Some(profile_oss_provider) = &profile.oss_provider {
                 Some(profile_oss_provider.clone())
-            }
-            // If not then check if the toml has an oss provider
-            else {
+            } else {
                 config_toml.oss_provider.clone()
             }
         } else {
             config_toml.oss_provider.clone()
         }
-    }
-}
-
-/// Resolve the web search mode from explicit config and feature flags.
-fn resolve_web_search_mode(
-    config_toml: &ConfigToml,
-    config_profile: &ConfigProfile,
-    _features: &Features,
-) -> Option<WebSearchMode> {
-    if let Some(mode) = config_profile.web_search.or(config_toml.web_search) {
-        return Some(mode);
-    }
-    None
-}
-
-fn resolve_web_search_config(
-    config_toml: &ConfigToml,
-    config_profile: &ConfigProfile,
-) -> Option<WebSearchConfig> {
-    let base = config_toml
-        .tools
-        .as_ref()
-        .and_then(|tools| tools.web_search.as_ref());
-    let profile = config_profile
-        .tools
-        .as_ref()
-        .and_then(|tools| tools.web_search.as_ref());
-
-    match (base, profile) {
-        (None, None) => None,
-        (Some(base), None) => Some(base.clone().into()),
-        (None, Some(profile)) => Some(profile.clone().into()),
-        (Some(base), Some(profile)) => Some(base.merge(profile).into()),
     }
 }
 
@@ -1355,752 +911,68 @@ pub(crate) fn resolve_web_search_mode_for_turn(
     WebSearchMode::Disabled
 }
 
-impl Config {
-    pub(crate) fn reload_mcp_servers_from_layer_stack(&mut self) -> std::io::Result<()> {
-        let effective = self.config_layer_stack.effective_config();
-        let cfg: ConfigToml = effective.try_into().map_err(|err| {
-            std::io::Error::new(
-                std::io::ErrorKind::InvalidData,
-                format!("failed to parse effective config while reloading MCP servers: {err}"),
-            )
-        })?;
-        self.mcp_servers = constrain_mcp_servers(
-            cfg.mcp_servers,
-            self.config_layer_stack.requirements().mcp_servers.as_ref(),
-        )
-        .map_err(|err| std::io::Error::new(std::io::ErrorKind::InvalidData, err))?;
-        Ok(())
-    }
+/// DEPRECATED: Use [Config::load_with_cli_overrides()] instead because working
+/// with [ConfigToml] directly means that [ConfigRequirements] have not been
+/// applied yet, which risks failing to enforce required constraints.
+pub async fn load_config_as_toml_with_cli_overrides(
+    chaos_home: &std::path::Path,
+    cwd: &AbsolutePathBuf,
+    cli_overrides: Vec<(String, TomlValue)>,
+) -> std::io::Result<ConfigToml> {
+    parsing::load_config_as_toml_with_cli_overrides(chaos_home, cwd, cli_overrides).await
+}
 
-    #[cfg(test)]
-    fn load_from_base_config_with_overrides(
-        cfg: ConfigToml,
-        overrides: ConfigOverrides,
-        chaos_home: PathBuf,
-    ) -> std::io::Result<Self> {
-        // Note this ignores requirements.toml enforcement for tests.
-        let config_layer_stack = ConfigLayerStack::default();
-        Self::load_config_with_layer_stack(cfg, overrides, chaos_home, config_layer_stack)
-    }
+pub(crate) fn deserialize_config_toml_with_base(
+    root_value: TomlValue,
+    config_base_dir: &std::path::Path,
+) -> std::io::Result<ConfigToml> {
+    parsing::deserialize_config_toml_with_base(root_value, config_base_dir)
+}
 
-    pub(crate) fn load_config_with_layer_stack(
-        cfg: ConfigToml,
-        overrides: ConfigOverrides,
-        chaos_home: PathBuf,
-        config_layer_stack: ConfigLayerStack,
-    ) -> std::io::Result<Self> {
-        validate_reserved_model_provider_ids(&cfg.model_providers)
-            .map_err(|message| std::io::Error::new(std::io::ErrorKind::InvalidInput, message))?;
-        // Ensure that every field of ConfigRequirements is applied to the final
-        // Config.
-        let ConfigRequirements {
-            approval_policy: mut constrained_approval_policy,
-            sandbox_policy: mut constrained_sandbox_policy,
-            web_search_mode: mut constrained_web_search_mode,
-            feature_requirements,
-            mcp_servers,
-            exec_policy: _,
-            enforce_residency,
-            network: network_requirements,
-        } = config_layer_stack.requirements().clone();
+pub async fn load_global_mcp_servers(
+    chaos_home: &std::path::Path,
+) -> std::io::Result<BTreeMap<String, McpServerConfig>> {
+    let cli_overrides = Vec::<(String, TomlValue)>::new();
+    let cwd: Option<AbsolutePathBuf> = None;
+    let config_layer_stack =
+        load_config_layers_state(chaos_home, cwd, &cli_overrides, LoaderOverrides::default())
+            .await?;
+    let merged_toml = config_layer_stack.effective_config();
+    let Some(servers_value) = merged_toml.get("mcp_servers") else {
+        return Ok(BTreeMap::new());
+    };
 
-        let user_instructions = Self::load_instructions(Some(&chaos_home));
-        let mut startup_warnings = Vec::new();
+    validation::ensure_no_inline_bearer_tokens(servers_value)?;
 
-        // Destructure ConfigOverrides fully to ensure all overrides are applied.
-        let ConfigOverrides {
-            model,
-            review_model: override_review_model,
-            cwd,
-            approval_policy: approval_policy_override,
-            approvals_reviewer: approvals_reviewer_override,
-            sandbox_mode,
-            model_provider,
-            service_tier: service_tier_override,
-            config_profile: config_profile_key,
-            alcatraz_linux_exe,
-            alcatraz_freebsd_exe,
-            alcatraz_macos_exe,
-            base_instructions,
-            minion_instructions,
-            personality,
-            compact_prompt,
-            show_raw_agent_reasoning,
-            ephemeral,
-            additional_writable_roots,
-        } = overrides;
+    servers_value
+        .clone()
+        .try_into()
+        .map_err(|e| std::io::Error::new(std::io::ErrorKind::InvalidData, e))
+}
 
-        let active_profile_name = config_profile_key
-            .as_ref()
-            .or(cfg.profile.as_ref())
-            .cloned();
-        let config_profile = match active_profile_name.as_ref() {
-            Some(key) => cfg
-                .profiles
-                .get(key)
-                .ok_or_else(|| {
-                    std::io::Error::new(
-                        std::io::ErrorKind::NotFound,
-                        format!("config profile `{key}` not found"),
-                    )
-                })?
-                .clone(),
-            None => ConfigProfile::default(),
-        };
-        let feature_overrides = FeatureOverrides {};
+#[cfg(test)]
+#[allow(unused_imports)]
+pub(crate) use chaos_sysctl::edit::set_project_trust_level_inner;
 
-        let configured_features =
-            crate::features::features_from_config(&cfg, &config_profile, feature_overrides);
-        let features = ManagedFeatures::from_configured(configured_features, feature_requirements)?;
-        let resolved_cwd = normalize_for_native_workdir({
-            use std::env;
+#[cfg(test)]
+pub(crate) use requirements::resolve_web_search_mode;
 
-            match cwd {
-                None => {
-                    tracing::info!("cwd not set, using current dir");
-                    env::current_dir()?
-                }
-                Some(p) if p.is_absolute() => p,
-                Some(p) => {
-                    // Resolve relative path against the current working directory.
-                    tracing::info!("cwd is relative, resolving against current dir");
-                    let mut current = env::current_dir()?;
-                    current.push(p);
-                    current
-                }
-            }
-        });
-        let additional_writable_roots: Vec<AbsolutePathBuf> = additional_writable_roots
-            .into_iter()
-            .map(|path| AbsolutePathBuf::resolve_path_against_base(path, &resolved_cwd))
-            .collect::<Result<Vec<_>, _>>()?;
-        let active_project = cfg
-            .get_active_project(&resolved_cwd)
-            .unwrap_or(ProjectConfig { trust_level: None });
-        let permission_config_syntax = resolve_permission_config_syntax(
-            &config_layer_stack,
-            &cfg,
-            sandbox_mode,
-            config_profile.sandbox_mode,
-        );
-        let has_permission_profiles = cfg
-            .permissions
-            .as_ref()
-            .is_some_and(|profiles| !profiles.is_empty());
-        if has_permission_profiles
-            && !matches!(
-                permission_config_syntax,
-                Some(PermissionConfigSyntax::Legacy)
-            )
-            && cfg.default_permissions.is_none()
-        {
-            return Err(std::io::Error::new(
-                std::io::ErrorKind::InvalidInput,
-                "config defines `[permissions]` profiles but does not set `default_permissions`",
-            ));
-        }
+/// Patch `CHAOS_HOME/config.toml` project state to set trust level.
+/// Use with caution.
+pub fn set_project_trust_level(
+    chaos_home: &std::path::Path,
+    project_path: &std::path::Path,
+    trust_level: TrustLevel,
+) -> anyhow::Result<()> {
+    serialization::set_project_trust_level(chaos_home, project_path, trust_level)
+}
 
-        let profiles_are_active = matches!(
-            permission_config_syntax,
-            Some(PermissionConfigSyntax::Profiles)
-        ) || (permission_config_syntax.is_none()
-            && has_permission_profiles);
-        let (
-            configured_network_proxy_config,
-            sandbox_policy,
-            file_system_sandbox_policy,
-            network_sandbox_policy,
-        ) = if profiles_are_active {
-            let permissions = cfg.permissions.as_ref().ok_or_else(|| {
-                std::io::Error::new(
-                    std::io::ErrorKind::InvalidInput,
-                    "default_permissions requires a `[permissions]` table",
-                )
-            })?;
-            let default_permissions = cfg.default_permissions.as_deref().ok_or_else(|| {
-                std::io::Error::new(
-                    std::io::ErrorKind::InvalidInput,
-                    "default_permissions requires a named permissions profile",
-                )
-            })?;
-            let profile = resolve_permission_profile(permissions, default_permissions)?;
-            let configured_network_proxy_config =
-                network_proxy_config_from_profile_network(profile.network.as_ref());
-            let (mut file_system_sandbox_policy, network_sandbox_policy) =
-                compile_permission_profile(
-                    permissions,
-                    default_permissions,
-                    &mut startup_warnings,
-                )?;
-            let mut sandbox_policy = file_system_sandbox_policy
-                .to_legacy_sandbox_policy(network_sandbox_policy, &resolved_cwd)?;
-            if matches!(sandbox_policy, SandboxPolicy::WorkspaceWrite { .. }) {
-                add_additional_file_system_writes(
-                    &mut file_system_sandbox_policy,
-                    &additional_writable_roots,
-                );
-                sandbox_policy = file_system_sandbox_policy
-                    .to_legacy_sandbox_policy(network_sandbox_policy, &resolved_cwd)?;
-            }
-            (
-                configured_network_proxy_config,
-                sandbox_policy,
-                file_system_sandbox_policy,
-                network_sandbox_policy,
-            )
-        } else {
-            let configured_network_proxy_config = NetworkProxyConfig::default();
-            let mut sandbox_policy = cfg.derive_sandbox_policy(
-                sandbox_mode,
-                config_profile.sandbox_mode,
-                &resolved_cwd,
-                Some(&constrained_sandbox_policy),
-            );
-            if let SandboxPolicy::WorkspaceWrite { writable_roots, .. } = &mut sandbox_policy {
-                for path in &additional_writable_roots {
-                    if !writable_roots.iter().any(|existing| existing == path) {
-                        writable_roots.push(path.clone());
-                    }
-                }
-            }
-            let file_system_sandbox_policy =
-                FileSystemSandboxPolicy::from_legacy_sandbox_policy(&sandbox_policy, &resolved_cwd);
-            let network_sandbox_policy = NetworkSandboxPolicy::from(&sandbox_policy);
-            (
-                configured_network_proxy_config,
-                sandbox_policy,
-                file_system_sandbox_policy,
-                network_sandbox_policy,
-            )
-        };
-        let approval_policy_was_explicit = approval_policy_override.is_some()
-            || config_profile.approval_policy.is_some()
-            || cfg.approval_policy.is_some();
-        let mut approval_policy = approval_policy_override
-            .or(config_profile.approval_policy)
-            .or(cfg.approval_policy)
-            .unwrap_or_else(|| {
-                if active_project.is_trusted() {
-                    ApprovalPolicy::Interactive
-                } else if active_project.is_untrusted() {
-                    ApprovalPolicy::Supervised
-                } else {
-                    ApprovalPolicy::default()
-                }
-            });
-        if !approval_policy_was_explicit
-            && let Err(err) = constrained_approval_policy.can_set(&approval_policy)
-        {
-            tracing::warn!(
-                error = %err,
-                "default approval policy is disallowed by requirements; falling back to required default"
-            );
-            approval_policy = constrained_approval_policy.value();
-        }
-        let approvals_reviewer = approvals_reviewer_override
-            .or(config_profile.approvals_reviewer)
-            .or(cfg.approvals_reviewer)
-            .unwrap_or(ApprovalsReviewer::User);
-        let web_search_mode = resolve_web_search_mode(&cfg, &config_profile, &features)
-            .unwrap_or(WebSearchMode::Cached);
-        let web_search_config = resolve_web_search_config(&cfg, &config_profile);
-
-        let agent_roles = agent_roles::load_agent_roles(
-            cfg.agents.as_ref(),
-            &config_layer_stack,
-            &mut startup_warnings,
-        )?;
-
-        let openai_base_url = cfg
-            .openai_base_url
-            .clone()
-            .filter(|value| !value.is_empty());
-        let openai_base_url_from_env = std::env::var(OPENAI_BASE_URL_ENV_VAR)
-            .ok()
-            .filter(|value| !value.is_empty());
-        if openai_base_url_from_env.is_some() {
-            if openai_base_url.is_some() {
-                tracing::warn!(
-                    env_var = OPENAI_BASE_URL_ENV_VAR,
-                    "deprecated env var is ignored because `openai_base_url` is set in config.toml"
-                );
-            } else {
-                startup_warnings.push(format!(
-                    "`{OPENAI_BASE_URL_ENV_VAR}` is deprecated. Set `openai_base_url` in config.toml instead."
-                ));
-            }
-        }
-        let effective_openai_base_url = openai_base_url.or(openai_base_url_from_env);
-
-        let mut model_providers = built_in_model_providers(effective_openai_base_url);
-        // Merge user-defined providers into the built-in list.
-        for (key, provider) in cfg.model_providers.into_iter() {
-            model_providers.entry(key).or_insert(provider);
-        }
-
-        let model_provider_id = model_provider
-            .or(config_profile.model_provider)
-            .or(cfg.model_provider)
-            .unwrap_or_else(|| "openai".to_string());
-        let model_provider = model_providers
-            .get(&model_provider_id)
-            .ok_or_else(|| {
-                std::io::Error::new(
-                    std::io::ErrorKind::NotFound,
-                    format!("Model provider `{model_provider_id}` not found"),
-                )
-            })?
-            .clone();
-
-        let shell_environment_policy = cfg.shell_environment_policy.into();
-        let allow_login_shell = cfg.allow_login_shell.unwrap_or(true);
-
-        let history = cfg.history.unwrap_or_default();
-
-        let agent_max_threads = cfg
-            .agents
-            .as_ref()
-            .and_then(|agents| agents.max_threads)
-            .or(DEFAULT_AGENT_MAX_THREADS);
-        if agent_max_threads == Some(0) {
-            return Err(std::io::Error::new(
-                std::io::ErrorKind::InvalidInput,
-                "agents.max_threads must be at least 1",
-            ));
-        }
-        let agent_max_depth = cfg
-            .agents
-            .as_ref()
-            .and_then(|agents| agents.max_depth)
-            .unwrap_or(DEFAULT_AGENT_MAX_DEPTH);
-        if agent_max_depth < 1 {
-            return Err(std::io::Error::new(
-                std::io::ErrorKind::InvalidInput,
-                "agents.max_depth must be at least 1",
-            ));
-        }
-        let agent_job_max_runtime_seconds = cfg
-            .agents
-            .as_ref()
-            .and_then(|agents| agents.job_max_runtime_seconds)
-            .or(DEFAULT_AGENT_JOB_MAX_RUNTIME_SECONDS);
-        if agent_job_max_runtime_seconds == Some(0) {
-            return Err(std::io::Error::new(
-                std::io::ErrorKind::InvalidInput,
-                "agents.job_max_runtime_seconds must be at least 1",
-            ));
-        }
-        if let Some(max_runtime_seconds) = agent_job_max_runtime_seconds
-            && max_runtime_seconds > i64::MAX as u64
-        {
-            return Err(std::io::Error::new(
-                std::io::ErrorKind::InvalidInput,
-                "agents.job_max_runtime_seconds must fit within a 64-bit signed integer",
-            ));
-        }
-        let background_terminal_max_timeout = cfg
-            .background_terminal_max_timeout
-            .unwrap_or(DEFAULT_MAX_BACKGROUND_TERMINAL_TIMEOUT_MS)
-            .max(MIN_EMPTY_YIELD_TIME_MS);
-
-        let ghost_snapshot = {
-            let mut config = GhostSnapshotConfig::default();
-            if let Some(ghost_snapshot) = cfg.ghost_snapshot.as_ref()
-                && let Some(ignore_over_bytes) = ghost_snapshot.ignore_large_untracked_files
-            {
-                config.ignore_large_untracked_files = if ignore_over_bytes > 0 {
-                    Some(ignore_over_bytes)
-                } else {
-                    None
-                };
-            }
-            if let Some(ghost_snapshot) = cfg.ghost_snapshot.as_ref()
-                && let Some(threshold) = ghost_snapshot.ignore_large_untracked_dirs
-            {
-                config.ignore_large_untracked_dirs =
-                    if threshold > 0 { Some(threshold) } else { None };
-            }
-            if let Some(ghost_snapshot) = cfg.ghost_snapshot.as_ref()
-                && let Some(disable_warnings) = ghost_snapshot.disable_warnings
-            {
-                config.disable_warnings = disable_warnings;
-            }
-            config
-        };
-
-        let forced_chatgpt_workspace_id =
-            cfg.forced_chatgpt_workspace_id.as_ref().and_then(|value| {
-                let trimmed = value.trim();
-                if trimmed.is_empty() {
-                    None
-                } else {
-                    Some(trimmed.to_string())
-                }
-            });
-
-        let forced_login_method = cfg.forced_login_method;
-
-        let model = model.or(config_profile.model).or(cfg.model);
-        let service_tier = service_tier_override
-            .unwrap_or_else(|| config_profile.service_tier.or(cfg.service_tier));
-        let service_tier = match service_tier {
-            Some(ServiceTier::Flex) => Some(ServiceTier::Flex),
-            _ => None,
-        };
-
-        let compact_prompt = compact_prompt.or(cfg.compact_prompt).and_then(|value| {
-            let trimmed = value.trim();
-            if trimmed.is_empty() {
-                None
-            } else {
-                Some(trimmed.to_string())
-            }
-        });
-
-        // Load base instructions override from a file if specified. If the
-        // path is relative, resolve it against the effective cwd so the
-        // behaviour matches other path-like config values.
-        let model_instructions_path = config_profile
-            .model_instructions_file
-            .as_ref()
-            .or(cfg.model_instructions_file.as_ref());
-        let file_base_instructions =
-            Self::try_read_non_empty_file(model_instructions_path, "model instructions file")?;
-        let base_instructions = base_instructions.or(file_base_instructions);
-        let minion_instructions = minion_instructions.or(cfg.minion_instructions);
-        let personality = personality
-            .or(config_profile.personality)
-            .or(cfg.personality)
-            .or(Some(Personality::Pragmatic));
-
-        let experimental_compact_prompt_path = config_profile
-            .experimental_compact_prompt_file
-            .as_ref()
-            .or(cfg.experimental_compact_prompt_file.as_ref());
-        let file_compact_prompt = Self::try_read_non_empty_file(
-            experimental_compact_prompt_path,
-            "experimental compact prompt file",
-        )?;
-        let compact_prompt = compact_prompt.or(file_compact_prompt);
-
-        let review_model = override_review_model.or(cfg.review_model);
-
-        let model_catalog = load_model_catalog(
-            config_profile
-                .model_catalog_json
-                .clone()
-                .or(cfg.model_catalog_json.clone()),
-        )?;
-
-        let log_dir = cfg
-            .log_dir
-            .as_ref()
-            .map(AbsolutePathBuf::to_path_buf)
-            .unwrap_or_else(|| {
-                let mut p = chaos_home.clone();
-                p.push("log");
-                p
-            });
-        let sqlite_home = cfg
-            .sqlite_home
-            .as_ref()
-            .map(AbsolutePathBuf::to_path_buf)
-            .or_else(|| resolve_sqlite_home_env(&resolved_cwd))
-            .unwrap_or_else(|| chaos_home.to_path_buf());
-        let original_sandbox_policy = sandbox_policy.clone();
-
-        apply_requirement_constrained_value(
-            "approval_policy",
-            approval_policy,
-            &mut constrained_approval_policy,
-            &mut startup_warnings,
-        )?;
-        apply_requirement_constrained_value(
-            "sandbox_mode",
-            sandbox_policy,
-            &mut constrained_sandbox_policy,
-            &mut startup_warnings,
-        )?;
-        apply_requirement_constrained_value(
-            "web_search_mode",
-            web_search_mode,
-            &mut constrained_web_search_mode,
-            &mut startup_warnings,
-        )?;
-
-        let mcp_servers = constrain_mcp_servers(cfg.mcp_servers.clone(), mcp_servers.as_ref())
-            .map_err(|e| std::io::Error::new(std::io::ErrorKind::InvalidInput, format!("{e}")))?;
-
-        let (network_requirements, network_requirements_source) = match network_requirements {
-            Some(Sourced { value, source }) => (Some(value), Some(source)),
-            None => (None, None),
-        };
-        let has_network_requirements = network_requirements.is_some();
-        let network = NetworkProxySpec::from_config_and_constraints(
-            configured_network_proxy_config,
-            network_requirements,
-            constrained_sandbox_policy.get(),
-        )
-        .map_err(|err| {
-            if let Some(source) = network_requirements_source.as_ref() {
-                std::io::Error::new(
-                    err.kind(),
-                    format!("failed to build managed network proxy from {source}: {err}"),
-                )
-            } else {
-                err
-            }
-        })?;
-        let network = if has_network_requirements {
-            Some(network)
-        } else {
-            network.enabled().then_some(network)
-        };
-        let effective_sandbox_policy = constrained_sandbox_policy.value.get().clone();
-        let effective_file_system_sandbox_policy =
-            if effective_sandbox_policy == original_sandbox_policy {
-                file_system_sandbox_policy
-            } else {
-                FileSystemSandboxPolicy::from_legacy_sandbox_policy(
-                    &effective_sandbox_policy,
-                    &resolved_cwd,
-                )
-            };
-        let effective_network_sandbox_policy =
-            if effective_sandbox_policy == original_sandbox_policy {
-                network_sandbox_policy
-            } else {
-                NetworkSandboxPolicy::from(&effective_sandbox_policy)
-            };
-
-        let config = Self {
-            model,
-            service_tier,
-            review_model,
-            model_context_window: cfg.model_context_window,
-            model_auto_compact_token_limit: cfg.model_auto_compact_token_limit,
-            model_provider_id,
-            model_provider,
-            cwd: resolved_cwd,
-            startup_warnings,
-            permissions: Permissions {
-                approval_policy: constrained_approval_policy.value,
-                sandbox_policy: constrained_sandbox_policy.value,
-                file_system_sandbox_policy: effective_file_system_sandbox_policy,
-                network_sandbox_policy: effective_network_sandbox_policy,
-                network,
-                allow_login_shell,
-                shell_environment_policy,
-                macos_seatbelt_profile_extensions: None,
-            },
-            approvals_reviewer,
-            enforce_residency: enforce_residency.value,
-            notify: cfg.notify,
-            user_instructions,
-            base_instructions,
-            personality,
-            minion_instructions,
-            compact_prompt,
-            // The config.toml omits "_mode" because it's a config file. However, "_mode"
-            // is important in code to differentiate the mode from the store implementation.
-            cli_auth_credentials_store_mode: cfg.cli_auth_credentials_store.unwrap_or_default(),
-            mcp_servers,
-            // The config.toml omits "_mode" because it's a config file. However, "_mode"
-            // is important in code to differentiate the mode from the store implementation.
-            mcp_oauth_credentials_store_mode: cfg.mcp_oauth_credentials_store.unwrap_or_default(),
-            mcp_oauth_callback_port: cfg.mcp_oauth_callback_port,
-            mcp_oauth_callback_url: cfg.mcp_oauth_callback_url.clone(),
-            model_providers,
-            project_doc_max_bytes: cfg.project_doc_max_bytes.unwrap_or(PROJECT_DOC_MAX_BYTES),
-            project_doc_fallback_filenames: cfg
-                .project_doc_fallback_filenames
-                .unwrap_or_default()
-                .into_iter()
-                .filter_map(|name| {
-                    let trimmed = name.trim();
-                    if trimmed.is_empty() {
-                        None
-                    } else {
-                        Some(trimmed.to_string())
-                    }
-                })
-                .collect(),
-            tool_output_token_limit: cfg.tool_output_token_limit,
-            agent_max_threads,
-            agent_max_depth,
-            agent_roles,
-            agent_job_max_runtime_seconds,
-            chaos_home,
-            sqlite_home,
-            log_dir,
-            config_layer_stack,
-            history,
-            ephemeral: ephemeral.unwrap_or_default(),
-            file_opener: cfg.file_opener.unwrap_or(UriBasedFileOpener::VsCode),
-            alcatraz_linux_exe,
-            alcatraz_freebsd_exe,
-            alcatraz_macos_exe,
-
-            hide_agent_reasoning: cfg.hide_agent_reasoning.unwrap_or(false),
-            show_raw_agent_reasoning: cfg
-                .show_raw_agent_reasoning
-                .or(show_raw_agent_reasoning)
-                .unwrap_or(false),
-            model_reasoning_effort: config_profile
-                .model_reasoning_effort
-                .or(cfg.model_reasoning_effort),
-            plan_mode_reasoning_effort: config_profile
-                .plan_mode_reasoning_effort
-                .or(cfg.plan_mode_reasoning_effort),
-            model_reasoning_summary: config_profile
-                .model_reasoning_summary
-                .or(cfg.model_reasoning_summary),
-            model_supports_reasoning_summaries: cfg.model_supports_reasoning_summaries,
-            model_catalog,
-            model_verbosity: config_profile.model_verbosity.or(cfg.model_verbosity),
-            chatgpt_base_url: config_profile
-                .chatgpt_base_url
-                .or(cfg.chatgpt_base_url)
-                .unwrap_or("https://chatgpt.com/backend-api/".to_string()),
-            realtime_audio: cfg
-                .audio
-                .map_or_else(RealtimeAudioConfig::default, |audio| RealtimeAudioConfig {
-                    microphone: audio.microphone,
-                    speaker: audio.speaker,
-                }),
-            experimental_realtime_ws_base_url: cfg.experimental_realtime_ws_base_url,
-            experimental_realtime_ws_model: cfg.experimental_realtime_ws_model,
-            realtime: cfg
-                .realtime
-                .map_or_else(RealtimeConfig::default, |realtime| RealtimeConfig {
-                    version: realtime.version.unwrap_or_default(),
-                    session_type: realtime.session_type.unwrap_or_default(),
-                }),
-            experimental_realtime_ws_backend_prompt: cfg.experimental_realtime_ws_backend_prompt,
-            experimental_realtime_ws_startup_context: cfg.experimental_realtime_ws_startup_context,
-            experimental_realtime_start_instructions: cfg.experimental_realtime_start_instructions,
-            forced_chatgpt_workspace_id,
-            forced_login_method,
-            web_search_mode: constrained_web_search_mode.value,
-            web_search_config,
-            collab_enabled: true,
-            background_terminal_max_timeout,
-            ghost_snapshot,
-            features,
-            active_profile: active_profile_name,
-            active_project,
-            notices: cfg.notice.unwrap_or_default(),
-            disable_paste_burst: cfg.disable_paste_burst.unwrap_or(false),
-            analytics_enabled: config_profile
-                .analytics
-                .as_ref()
-                .and_then(|a| a.enabled)
-                .or(cfg.analytics.as_ref().and_then(|a| a.enabled)),
-            feedback_enabled: cfg
-                .feedback
-                .as_ref()
-                .and_then(|feedback| feedback.enabled)
-                .unwrap_or(true),
-            tui_notifications: cfg
-                .tui
-                .as_ref()
-                .map(|t| t.notifications.clone())
-                .unwrap_or_default(),
-            tui_notification_method: cfg
-                .tui
-                .as_ref()
-                .map(|t| t.notification_method)
-                .unwrap_or_default(),
-            animations: cfg.tui.as_ref().map(|t| t.animations).unwrap_or(true),
-            model_availability_nux: cfg
-                .tui
-                .as_ref()
-                .map(|t| t.model_availability_nux.clone())
-                .unwrap_or_default(),
-            tui_alternate_screen: cfg
-                .tui
-                .as_ref()
-                .map(|t| t.alternate_screen)
-                .unwrap_or_default(),
-            tui_status_line: cfg.tui.as_ref().and_then(|t| t.status_line.clone()),
-            tui_theme: cfg.tui.as_ref().and_then(|t| t.theme.clone()),
-            otel: {
-                let t: OtelConfigToml = cfg.otel.unwrap_or_default();
-                let log_user_prompt = t.log_user_prompt.unwrap_or(false);
-                let environment = t
-                    .environment
-                    .unwrap_or(DEFAULT_OTEL_ENVIRONMENT.to_string());
-                let exporter = t.exporter.unwrap_or(OtelExporterKind::None);
-                let trace_exporter = t.trace_exporter.unwrap_or_else(|| exporter.clone());
-                let metrics_exporter = t.metrics_exporter.unwrap_or(OtelExporterKind::None);
-                OtelConfig {
-                    log_user_prompt,
-                    environment,
-                    exporter,
-                    trace_exporter,
-                    metrics_exporter,
-                }
-            },
-            disable_user_scripts: false,
-            memories: cfg.memories.map(MemoriesConfig::from).unwrap_or_default(),
-        };
-        Ok(config)
-    }
-
-    fn load_instructions(codex_dir: Option<&Path>) -> Option<String> {
-        let base = codex_dir?;
-        for candidate in [LOCAL_PROJECT_DOC_FILENAME, DEFAULT_PROJECT_DOC_FILENAME] {
-            let mut path = base.to_path_buf();
-            path.push(candidate);
-            if let Ok(contents) = std::fs::read_to_string(&path) {
-                let trimmed = contents.trim();
-                if !trimmed.is_empty() {
-                    return Some(trimmed.to_string());
-                }
-            }
-        }
-        None
-    }
-
-    /// If `path` is `Some`, attempts to read the file at the given path and
-    /// returns its contents as a trimmed `String`. If the file is empty, or
-    /// is `Some` but cannot be read, returns an `Err`.
-    fn try_read_non_empty_file(
-        path: Option<&AbsolutePathBuf>,
-        context: &str,
-    ) -> std::io::Result<Option<String>> {
-        let Some(path) = path else {
-            return Ok(None);
-        };
-
-        let contents = std::fs::read_to_string(path).map_err(|e| {
-            std::io::Error::new(
-                e.kind(),
-                format!("failed to read {context} {}: {e}", path.display()),
-            )
-        })?;
-
-        let s = contents.trim().to_string();
-        if s.is_empty() {
-            Err(std::io::Error::new(
-                std::io::ErrorKind::InvalidData,
-                format!("{context} is empty: {}", path.display()),
-            ))
-        } else {
-            Ok(Some(s))
-        }
-    }
-
-    pub fn managed_network_requirements_enabled(&self) -> bool {
-        self.config_layer_stack
-            .requirements_toml()
-            .network
-            .is_some()
-    }
-
-    pub fn bundled_skills_enabled(&self) -> bool {
-        crate::skills::manager::bundled_skills_enabled_from_stack(&self.config_layer_stack)
-    }
+/// Save the default OSS provider preference to config.toml
+pub fn set_default_oss_provider(
+    chaos_home: &std::path::Path,
+    provider: &str,
+) -> std::io::Result<()> {
+    serialization::set_default_oss_provider(chaos_home, provider)
 }
 
 pub(crate) fn uses_deprecated_instructions_file(config_layer_stack: &ConfigLayerStack) -> bool {

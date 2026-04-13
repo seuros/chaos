@@ -137,7 +137,7 @@ impl ToolHandler for ShellHandler {
     fn is_mutating(&self, invocation: &ToolInvocation) -> impl Future<Output = bool> + Send + '_ {
         let result = match &invocation.payload {
             ToolPayload::Function { arguments } => {
-                serde_json::from_str::<ShellToolCallParams>(arguments)
+                crate::tools::handlers::parse_arguments::<ShellToolCallParams>(arguments)
                     .map(|params| !is_known_safe_command(&params.command))
                     .unwrap_or(true)
             }
@@ -220,20 +220,22 @@ impl ToolHandler for ShellCommandHandler {
             return std::future::ready(true);
         };
 
-        let result = serde_json::from_str::<ShellCommandToolCallParams>(arguments)
-            .map(|params| {
-                let use_login_shell = match Self::resolve_use_login_shell(
-                    params.login,
-                    invocation.turn.tools_config.allow_login_shell,
-                ) {
-                    Ok(use_login_shell) => use_login_shell,
-                    Err(_) => return true,
-                };
-                let shell = invocation.session.user_shell();
-                let command = Self::base_command(shell.as_ref(), &params.command, use_login_shell);
-                !is_known_safe_command(&command)
-            })
-            .unwrap_or(true);
+        let result =
+            crate::tools::handlers::parse_arguments::<ShellCommandToolCallParams>(arguments)
+                .map(|params| {
+                    let use_login_shell = match Self::resolve_use_login_shell(
+                        params.login,
+                        invocation.turn.tools_config.allow_login_shell,
+                    ) {
+                        Ok(use_login_shell) => use_login_shell,
+                        Err(_) => return true,
+                    };
+                    let shell = invocation.session.user_shell();
+                    let command =
+                        Self::base_command(shell.as_ref(), &params.command, use_login_shell);
+                    !is_known_safe_command(&command)
+                })
+                .unwrap_or(true);
         std::future::ready(result)
     }
 

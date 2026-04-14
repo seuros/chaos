@@ -87,6 +87,32 @@ where
     }
 }
 
+/// Type-erased pairing of an extractor with a usage store, suitable for
+/// stashing in an `Arc` and threading through transport code that isn't
+/// structured as a rama `Service` stack. Construct one per provider at
+/// boot and pass it by reference into the request path.
+pub struct UsageSniffer {
+    extractor: Box<dyn HeaderExtractor>,
+    store: Arc<UsageStore>,
+}
+
+impl UsageSniffer {
+    pub fn new<E>(extractor: E, store: Arc<UsageStore>) -> Self
+    where
+        E: HeaderExtractor + 'static,
+    {
+        Self {
+            extractor: Box::new(extractor),
+            store,
+        }
+    }
+
+    /// Extract windows from `headers` and persist them in the background.
+    pub fn sniff(&self, headers: &rama::http::HeaderMap) {
+        sniff_and_record(self.extractor.as_ref(), &self.store, headers);
+    }
+}
+
 /// Record rate-limit headers inline, without wrapping the HTTP client in a
 /// rama `Service`. This is the hook-point for transports that assemble
 /// requests imperatively (retry loops, manual SSE plumbing) where
@@ -97,7 +123,7 @@ where
 /// failures are logged through `tracing`.
 pub fn sniff_and_record<E>(extractor: &E, store: &Arc<UsageStore>, headers: &rama::http::HeaderMap)
 where
-    E: HeaderExtractor,
+    E: HeaderExtractor + ?Sized,
 {
     let observed_at = SystemTime::now()
         .duration_since(UNIX_EPOCH)

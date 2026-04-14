@@ -648,9 +648,15 @@ async fn run_sse_stream(
     turn_state: Option<Arc<OnceLock<String>>>,
     tx: mpsc::Sender<Result<TurnEvent, AbiError>>,
 ) -> Result<(), AbiError> {
-    let response =
-        crate::sse::transport::start_rama_post_sse_request(url, headers, body, retry, "tensorzero")
-            .await?;
+    let response = crate::sse::transport::start_rama_post_sse_request(
+        url,
+        headers,
+        body,
+        retry,
+        "tensorzero",
+        None,
+    )
+    .await?;
     process_sse_data_stream(
         response.into_body().into_data_stream(),
         idle_timeout,

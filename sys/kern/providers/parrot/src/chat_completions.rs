@@ -593,6 +593,7 @@ async fn run_sse_stream(
         body,
         retry,
         "chat_completions",
+        None,
     )
     .await?;
     process_sse_data_stream(response.into_body().into_data_stream(), idle_timeout, tx).await

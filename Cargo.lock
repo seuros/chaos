@@ -1705,9 +1705,11 @@ dependencies = [
  "chaos-proc",
  "chaos-ration",
  "chaos-storage",
+ "rama",
  "sqlx",
  "tempfile",
  "tokio",
+ "tracing",
 ]
 
 [[package]]

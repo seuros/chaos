@@ -701,6 +701,7 @@ async fn run_ratatui_app(
         prompt,
         images,
         no_alt_screen,
+        clamp: start_clamped,
         ..
     } = cli;
 
@@ -721,6 +722,7 @@ async fn run_ratatui_app(
         images,
         session_selection,
         should_show_trust_screen, // Proxy to: is it a first run in this directory?
+        start_clamped,
     )
     .await;
 

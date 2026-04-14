@@ -193,6 +193,7 @@ impl App {
         initial_images: Vec<PathBuf>,
         session_selection: SessionSelection,
         is_first_run: bool,
+        start_clamped: bool,
     ) -> Result<AppExitInfo> {
         use tokio_stream::StreamExt;
         let (app_event_tx, mut app_event_rx) = unbounded_channel();
@@ -375,6 +376,10 @@ impl App {
             primary_session_configured: None,
             pending_primary_events: VecDeque::new(),
         };
+
+        if start_clamped {
+            app.chat_widget.activate_clamp();
+        }
 
         let tui_events = tui.event_stream();
         tokio::pin!(tui_events);

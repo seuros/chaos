@@ -888,6 +888,21 @@ impl ChatWidget {
 
         widget
     }
+
+    /// Enable clamp mode programmatically (e.g., from `--clamp` CLI flag).
+    /// Equivalent to the user running `/clamp` from a fresh session.
+    pub fn activate_clamp(&mut self) {
+        crate::theme::set_clamped(true);
+        self.capture_pre_clamp_selection();
+        self.app_event_tx
+            .send(AppEvent::ChaosOp(chaos_ipc::protocol::Op::SetClamped {
+                enabled: true,
+            }));
+        self.add_info_message(
+            "Clamped: using Claude Code MAX subscription as transport.".to_string(),
+            Some("Type /clamp again to switch back".to_string()),
+        );
+    }
 }
 pub fn show_review_commit_picker_with_entries(
     chat: &mut ChatWidget,

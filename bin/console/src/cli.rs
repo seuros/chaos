@@ -102,6 +102,11 @@ pub struct Cli {
     #[arg(long = "add-dir", value_name = "DIR", value_hint = ValueHint::DirPath)]
     pub add_dir: Vec<PathBuf>,
 
+    /// Start the session in Claude Code MAX transport mode (clamp).
+    /// Equivalent to running /clamp immediately after launch.
+    #[arg(long = "clamp", default_value_t = false)]
+    pub clamp: bool,
+
     /// Disable alternate screen mode
     ///
     /// Runs the TUI in inline mode, preserving terminal scrollback history. This is useful

@@ -113,7 +113,7 @@ impl Default for ClampConfig {
     fn default() -> Self {
         Self {
             cli_path: None,
-            bare_mode: true,
+            bare_mode: false,
             cwd: None,
             system_prompt: Some(String::new()),
             mcp_config: None,
@@ -222,7 +222,7 @@ fn build_command(cli_path: &PathBuf, config: &ClampConfig) -> Command {
         cmd.arg("--bare");
     }
 
-    // Skip all setting discovery — we provide everything explicitly
+    // Skip all setting discovery — we provide everything explicitly.
     cmd.args(["--setting-sources", ""]);
 
     // System prompt
@@ -245,14 +245,18 @@ fn build_command(cli_path: &PathBuf, config: &ClampConfig) -> Command {
         cmd.args(["--mcp-config", &mcp.to_string()]);
     }
 
-    // Disallowed tools
-    if !config.disallowed_tools.is_empty() {
-        cmd.args(["--disallowedTools", &config.disallowed_tools.join(",")]);
-    }
-
-    // Allowed tools
-    if !config.allowed_tools.is_empty() {
-        cmd.args(["--allowedTools", &config.allowed_tools.join(",")]);
+    // Tool exposure: when allow_claude_code_tools is false (the default),
+    // disable all built-in tools so Claude Code only sees the MCP bridge.
+    // When true, leave the tool set unrestricted for direct use.
+    if !config.allow_claude_code_tools {
+        cmd.args(["--tools", ""]);
+    } else {
+        if !config.disallowed_tools.is_empty() {
+            cmd.args(["--disallowedTools", &config.disallowed_tools.join(",")]);
+        }
+        if !config.allowed_tools.is_empty() {
+            cmd.args(["--allowedTools", &config.allowed_tools.join(",")]);
+        }
     }
 
     // Working directory

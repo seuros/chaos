@@ -181,12 +181,17 @@ impl Session {
             let task_cancellation_token = cancellation_token.child_token();
             // Task-owned turn spans keep a core-owned span open for the
             // full task lifecycle after the submission dispatch span ends.
+            let model_label = if self.services.model_client.is_clamped() {
+                "clamp".to_string()
+            } else {
+                turn_context.model_info.slug.clone()
+            };
             let task_span = info_span!(
                 "turn",
                 otel.name = span_name,
                 thread.id = %self.conversation_id,
                 turn.id = %turn_context.sub_id,
-                model = %turn_context.model_info.slug,
+                model = %model_label,
             );
             tokio::spawn(
                 async move {

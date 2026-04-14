@@ -47,8 +47,8 @@ async fn clamp_round_trip() {
                 got_result = true;
                 break;
             }
-            Message::System { message } => {
-                eprintln!("[test] system: {message}");
+            Message::System { message, .. } => {
+                eprintln!("[test] system: {message:?}");
             }
             _ => {}
         }

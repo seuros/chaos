@@ -127,9 +127,18 @@ pub enum Message {
         session_id: Option<String>,
     },
 
-    /// A system message (e.g., rate limit, error).
+    /// A system message (e.g., init, rate limit, error).
+    ///
+    /// Claude Code emits these with varying shapes — some have a `message`
+    /// field, others (e.g. the `init` subtype) do not.  Accept any struct
+    /// body via flatten so deserialization never fails on an unknown layout.
     #[serde(rename = "system")]
-    System { message: Value },
+    System {
+        #[serde(default)]
+        message: Option<Value>,
+        #[serde(flatten)]
+        extra: serde_json::Map<String, Value>,
+    },
 
     /// A control response from Claude Code to our control request.
     #[serde(rename = "control_response")]

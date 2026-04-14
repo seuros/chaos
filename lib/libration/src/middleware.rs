@@ -101,6 +101,15 @@ pub struct UsageSniffer {
     store: Arc<UsageStore>,
 }
 
+impl std::fmt::Debug for UsageSniffer {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        f.debug_struct("UsageSniffer")
+            .field("provider", &self.extractor.provider())
+            .field("base_url", &self.base_url)
+            .finish()
+    }
+}
+
 impl UsageSniffer {
     pub fn new<E>(extractor: E, base_url: impl Into<Arc<str>>, store: Arc<UsageStore>) -> Self
     where

@@ -576,7 +576,9 @@ impl ModelsManager {
             )));
         };
 
-        let adapter = AnthropicAdapter::new(api_provider, adapter_auth, None);
+        let sniffer =
+            chaos_libration::registry::sniffer_for("anthropic_messages", &api_provider.base_url);
+        let adapter = AnthropicAdapter::new(api_provider, adapter_auth, None).with_sniffer(sniffer);
 
         let abi_models = timeout(MODELS_REFRESH_TIMEOUT, adapter.list_models())
             .await

@@ -63,13 +63,19 @@ pub fn adapter_for_wire(
     api_key: String,
     default_model: Option<String>,
 ) -> Option<Box<dyn ModelAdapter>> {
+    // Build a ration sniffer for this (wire, base_url) pair so rate-limit
+    // headers land in the usage store. Returns `None` when no shared
+    // store is installed (e.g. unit tests without a runtime database) —
+    // the adapter still works, it just doesn't record.
+    let sniffer = chaos_libration::registry::sniffer_for(wire, &base_url);
     match wire {
         "anthropic_messages" => Some(Box::new(
             anthropic::AnthropicAdapter::from_base_url_and_api_key(
                 base_url,
                 api_key,
                 default_model,
-            ),
+            )
+            .with_sniffer(sniffer),
         )),
         "responses" => Some(Box::new(openai::OpenAiAdapter::from_base_url_and_api_key(
             base_url,
@@ -81,14 +87,16 @@ pub fn adapter_for_wire(
                 base_url,
                 api_key,
                 default_model,
-            ),
+            )
+            .with_sniffer(sniffer),
         )),
         "tensorzero" => Some(Box::new(
             tensorzero::TensorZeroAdapter::from_base_url_and_api_key(
                 base_url,
                 api_key,
                 default_model,
-            ),
+            )
+            .with_sniffer(sniffer),
         )),
         _ => None,
     }

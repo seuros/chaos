@@ -844,12 +844,17 @@ impl ModelClientSession {
         )?;
 
         let auth = self.resolve_anthropic_auth()?;
+        let sniffer = chaos_libration::registry::sniffer_for(
+            "anthropic_messages",
+            &client_setup.api_provider.base_url,
+        );
 
         let adapter = AnthropicAdapter::new(
             client_setup.api_provider,
             auth,
             Some(model_info.slug.clone()),
-        );
+        )
+        .with_sniffer(sniffer);
 
         match adapter.stream(turn_request).await {
             Ok(stream) => {
@@ -1085,11 +1090,16 @@ impl ModelClientSession {
         )?;
 
         let api_key = self.resolve_chat_completions_api_key().unwrap_or_default();
+        let sniffer = chaos_libration::registry::sniffer_for(
+            "tensorzero",
+            &client_setup.api_provider.base_url,
+        );
         let adapter = chaos_parrot::tensorzero::TensorZeroAdapter::new(
             client_setup.api_provider,
             api_key,
             Some(model_info.slug.clone()),
-        );
+        )
+        .with_sniffer(sniffer);
 
         tracing::debug!(
             provider = %self.client.state.provider.name,
@@ -1144,11 +1154,16 @@ impl ModelClientSession {
         )?;
 
         let api_key = self.resolve_chat_completions_api_key()?;
+        let sniffer = chaos_libration::registry::sniffer_for(
+            "chat_completions",
+            &client_setup.api_provider.base_url,
+        );
         let adapter = ChatCompletionsAdapter::new(
             client_setup.api_provider,
             api_key,
             Some(model_info.slug.clone()),
-        );
+        )
+        .with_sniffer(sniffer);
 
         match adapter.stream(turn_request).await {
             Ok(stream) => {

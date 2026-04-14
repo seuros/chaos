@@ -14,12 +14,14 @@ use chaos_abi::TokenUsage;
 use chaos_abi::TurnEvent;
 use chaos_abi::TurnRequest;
 use chaos_abi::TurnStream;
+use chaos_libration::UsageSniffer;
 use http::HeaderMap;
 use rama::error::BoxError;
 use rama::futures::StreamExt;
 use rama::http::sse::EventStream;
 use serde::Serialize;
 use serde_json::Value;
+use std::sync::Arc;
 use std::time::Duration;
 use tokio::sync::mpsc;
 use tokio::time::timeout;
@@ -42,6 +44,7 @@ pub struct AnthropicAdapter {
     provider: Provider,
     auth: AnthropicAuth,
     default_model: Option<String>,
+    sniffer: Option<Arc<UsageSniffer>>,
 }
 
 impl AnthropicAdapter {
@@ -51,7 +54,18 @@ impl AnthropicAdapter {
             provider,
             auth,
             default_model,
+            sniffer: None,
         }
+    }
+
+    /// Attach an optional ration sniffer that records rate-limit
+    /// headers for every response this adapter issues. Callers that
+    /// skip this (or pass `None`) get no persistence, which is the
+    /// right default for tests and for transports that never want to
+    /// touch the usage store.
+    pub fn with_sniffer(mut self, sniffer: Option<Arc<UsageSniffer>>) -> Self {
+        self.sniffer = sniffer;
+        self
     }
 
     /// Convenience constructor for standalone use (tests, adapter_for_wire).
@@ -145,12 +159,21 @@ impl ModelAdapter for AnthropicAdapter {
             let headers = self.build_headers()?;
             let retry = self.provider.retry.clone();
             let idle_timeout = self.provider.stream_idle_timeout;
+            let sniffer = self.sniffer.clone();
 
             let (tx, rx) = mpsc::channel(64);
 
             tokio::spawn(async move {
-                if let Err(e) =
-                    run_sse_stream(&url, &headers, &body, &retry, idle_timeout, tx.clone()).await
+                if let Err(e) = run_sse_stream(
+                    &url,
+                    &headers,
+                    &body,
+                    &retry,
+                    idle_timeout,
+                    sniffer.as_ref(),
+                    tx.clone(),
+                )
+                .await
                 {
                     let _ = tx.send(Err(e)).await;
                 }
@@ -654,6 +677,7 @@ async fn run_sse_stream(
     body: &Value,
     retry: &crate::provider::RetryConfig,
     idle_timeout: Duration,
+    sniffer: Option<&Arc<UsageSniffer>>,
     tx: mpsc::Sender<Result<TurnEvent, AbiError>>,
 ) -> Result<(), AbiError> {
     let response = crate::sse::transport::start_rama_post_sse_request(
@@ -662,7 +686,7 @@ async fn run_sse_stream(
         body,
         retry,
         "anthropic_messages",
-        None,
+        sniffer,
     )
     .await?;
     process_sse_data_stream(response.into_body().into_data_stream(), idle_timeout, tx).await

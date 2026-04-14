@@ -132,6 +132,31 @@ fn map_api_error_extracts_identity_auth_details_from_headers() {
 }
 
 #[test]
+fn map_api_error_network_error_becomes_connection_failed() {
+    let err = map_api_error(ApiError::Transport(TransportError::Network(
+        "failed to (tcp) connect to any resolved IP address".to_string(),
+    )));
+    assert!(matches!(err, ChaosErr::ConnectionFailed(_)));
+    assert!(err.is_retryable());
+    assert!(err.to_string().contains("Connection failed"));
+}
+
+#[test]
+fn abi_transport_status_zero_becomes_network_error() {
+    use chaos_abi::AbiError;
+    let api_err = abi_error_to_api_error(AbiError::Transport {
+        status: 0,
+        message: "tcp connect refused".to_string(),
+    });
+    assert!(matches!(
+        api_err,
+        ApiError::Transport(TransportError::Network(_))
+    ));
+    let chaos = map_api_error(api_err);
+    assert!(matches!(chaos, ChaosErr::ConnectionFailed(_)));
+}
+
+#[test]
 fn core_auth_provider_reports_when_auth_header_will_attach() {
     let auth = CoreAuthProvider {
         token: Some("access-token".to_string()),

@@ -111,7 +111,9 @@ pub(crate) fn map_api_error(err: ApiError) -> ChaosErr {
             }),
             TransportError::Timeout => ChaosErr::Timeout,
             TransportError::Network(msg) | TransportError::Build(msg) => {
-                ChaosErr::Stream(msg, None)
+                ChaosErr::ConnectionFailed(crate::error::ConnectionFailedError {
+                    source: Box::new(std::io::Error::other(msg)),
+                })
             }
         },
         ApiError::RateLimit(msg) => ChaosErr::Stream(msg, None),
@@ -126,6 +128,9 @@ pub(crate) fn abi_error_to_api_error(err: AbiError) -> ApiError {
         AbiError::ServerOverloaded => ApiError::ServerOverloaded,
         AbiError::InvalidRequest { message } => ApiError::InvalidRequest { message },
         AbiError::Stream(message) => ApiError::Stream(message),
+        AbiError::Transport { status: 0, message } => {
+            ApiError::Transport(TransportError::Network(message))
+        }
         AbiError::Transport { status, message } => ApiError::Transport(TransportError::Http {
             status: http::StatusCode::from_u16(status)
                 .unwrap_or(http::StatusCode::INTERNAL_SERVER_ERROR),

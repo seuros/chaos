@@ -5,6 +5,10 @@
 //! request unchanged, extracts windows from the response headers using a
 //! provider-specific [`HeaderExtractor`], and fires the persistence
 //! off in the background so the HTTP hot path never waits on the database.
+//!
+//! Every sniffer is pinned to a `base_url` so snapshots for configs that
+//! share a provider tag but point at different endpoints (multi-account,
+//! proxy, staging mirror) don't collide in the store.
 
 use crate::UsageStore;
 use chaos_ration::HeaderExtractor;
@@ -21,14 +25,17 @@ use std::time::UNIX_EPOCH;
 #[derive(Clone)]
 pub struct RationLayer<E> {
     extractor: Arc<E>,
+    base_url: Arc<str>,
     store: Arc<UsageStore>,
 }
 
 impl<E> RationLayer<E> {
-    /// Build a layer from a concrete header extractor and a usage store.
-    pub fn new(extractor: E, store: Arc<UsageStore>) -> Self {
+    /// Build a layer from a concrete header extractor, the endpoint
+    /// `base_url` this layer fronts, and a usage store.
+    pub fn new(extractor: E, base_url: impl Into<Arc<str>>, store: Arc<UsageStore>) -> Self {
         Self {
             extractor: Arc::new(extractor),
+            base_url: base_url.into(),
             store,
         }
     }
@@ -41,6 +48,7 @@ impl<S, E> Layer<S> for RationLayer<E> {
         RationService {
             inner,
             extractor: Arc::clone(&self.extractor),
+            base_url: Arc::clone(&self.base_url),
             store: Arc::clone(&self.store),
         }
     }
@@ -51,6 +59,7 @@ impl<S, E> Layer<S> for RationLayer<E> {
 pub struct RationService<S, E> {
     inner: S,
     extractor: Arc<E>,
+    base_url: Arc<str>,
     store: Arc<UsageStore>,
 }
 
@@ -75,10 +84,11 @@ where
 
         if !windows.is_empty() {
             let provider = self.extractor.provider().to_string();
+            let base_url = self.base_url.to_string();
             let store = Arc::clone(&self.store);
             tokio::spawn(async move {
-                if let Err(err) = store.record(&provider, &windows).await {
-                    tracing::warn!(target: "ration", %provider, %err, "failed to record usage snapshot");
+                if let Err(err) = store.record(&provider, &base_url, &windows).await {
+                    tracing::warn!(target: "ration", %provider, %base_url, %err, "failed to record usage snapshot");
                 }
             });
         }
@@ -89,27 +99,40 @@ where
 
 /// Type-erased pairing of an extractor with a usage store, suitable for
 /// stashing in an `Arc` and threading through transport code that isn't
-/// structured as a rama `Service` stack. Construct one per provider at
-/// boot and pass it by reference into the request path.
+/// structured as a rama `Service` stack. Construct one per (provider,
+/// base_url) at boot and pass it by reference into the request path.
 pub struct UsageSniffer {
     extractor: Box<dyn HeaderExtractor>,
+    base_url: Arc<str>,
     store: Arc<UsageStore>,
 }
 
 impl UsageSniffer {
-    pub fn new<E>(extractor: E, store: Arc<UsageStore>) -> Self
+    pub fn new<E>(extractor: E, base_url: impl Into<Arc<str>>, store: Arc<UsageStore>) -> Self
     where
         E: HeaderExtractor + 'static,
     {
         Self {
             extractor: Box::new(extractor),
+            base_url: base_url.into(),
             store,
         }
     }
 
     /// Extract windows from `headers` and persist them in the background.
     pub fn sniff(&self, headers: &rama_http_types::HeaderMap) {
-        sniff_and_record(self.extractor.as_ref(), &self.store, headers);
+        sniff_and_record(
+            self.extractor.as_ref(),
+            &self.base_url,
+            &self.store,
+            headers,
+        );
+    }
+
+    /// The endpoint this sniffer was built for — useful for debug output
+    /// and for composing log context upstream.
+    pub fn base_url(&self) -> &str {
+        &self.base_url
     }
 }
 
@@ -123,6 +146,7 @@ impl UsageSniffer {
 /// failures are logged through `tracing`.
 pub fn sniff_and_record<E>(
     extractor: &E,
+    base_url: &str,
     store: &Arc<UsageStore>,
     headers: &rama_http_types::HeaderMap,
 ) where
@@ -137,10 +161,11 @@ pub fn sniff_and_record<E>(
         return;
     }
     let provider = extractor.provider().to_string();
+    let base_url = base_url.to_string();
     let store = Arc::clone(store);
     tokio::spawn(async move {
-        if let Err(err) = store.record(&provider, &windows).await {
-            tracing::warn!(target: "ration", %provider, %err, "failed to record usage snapshot");
+        if let Err(err) = store.record(&provider, &base_url, &windows).await {
+            tracing::warn!(target: "ration", %provider, %base_url, %err, "failed to record usage snapshot");
         }
     });
 }
@@ -206,7 +231,7 @@ mod tests {
         let extractor = FakeExtractor {
             calls: Arc::clone(&calls),
         };
-        let layer = RationLayer::new(extractor, Arc::clone(&store));
+        let layer = RationLayer::new(extractor, "https://example.com", Arc::clone(&store));
         let svc = layer.layer(EchoOk);
 
         let req = Request::builder()
@@ -223,6 +248,7 @@ mod tests {
             if !rows.is_empty() {
                 assert_eq!(rows.len(), 1);
                 assert_eq!(rows[0].provider, "fake");
+                assert_eq!(rows[0].base_url, "https://example.com");
                 assert_eq!(rows[0].window.remaining_percent(), 85);
                 return;
             }

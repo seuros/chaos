@@ -50,23 +50,30 @@ pub fn install_default_sniffers(storage: &ChaosStorageProvider) -> Option<Arc<Us
 
     let openai = Arc::new(UsageSniffer::new(
         OpenAICompatibleHeaders::new("openai"),
+        "https://api.openai.com/v1",
         Arc::clone(&store),
     ));
     install("api.openai.com", openai);
 
     let xai = Arc::new(UsageSniffer::new(
         OpenAICompatibleHeaders::new("xai"),
+        "https://api.x.ai/v1",
         Arc::clone(&store),
     ));
     install("api.x.ai", xai);
 
     let groq = Arc::new(UsageSniffer::new(
         OpenAICompatibleHeaders::new("groq"),
+        "https://api.groq.com/openai/v1",
         Arc::clone(&store),
     ));
     install("api.groq.com", groq);
 
-    let anthropic = Arc::new(UsageSniffer::new(AnthropicHeaders, Arc::clone(&store)));
+    let anthropic = Arc::new(UsageSniffer::new(
+        AnthropicHeaders,
+        "https://api.anthropic.com/v1",
+        Arc::clone(&store),
+    ));
     install("api.anthropic.com", anthropic);
 
     Some(store)

@@ -389,7 +389,7 @@ impl From<DeveloperInstructions> for ResponseItem {
     fn from(di: DeveloperInstructions) -> Self {
         ResponseItem::Message {
             id: None,
-            role: "developer".to_string(),
+            role: "system".to_string(),
             content: vec![ContentItem::InputText {
                 text: di.into_text(),
             }],

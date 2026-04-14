@@ -16,7 +16,6 @@ use tokio::sync::mpsc;
 use crate::AuthProvider;
 use crate::Provider;
 use crate::RamaTransport;
-use crate::ResponsesApiRequest;
 use crate::ResponsesClient;
 use crate::ResponsesOptions;
 use crate::SseTelemetry;
@@ -62,6 +61,8 @@ pub struct OpenAiAdapter<A: AuthProvider> {
     discovery_base_url: String,
     /// Bearer token captured from the auth provider at construction time.
     discovery_token: Option<String>,
+    /// Session-scoped representer — projects Chaos-ABI items to this provider's wire format.
+    representer: crate::representer::SessionRepresenter,
 }
 
 impl<A: AuthProvider> std::fmt::Debug for OpenAiAdapter<A> {
@@ -74,6 +75,8 @@ impl<A: AuthProvider> std::fmt::Debug for OpenAiAdapter<A> {
 }
 
 impl OpenAiAdapter<StaticAuthProvider> {
+    /// Convenience constructor for standalone / test use.
+    /// Defaults to the OpenAI representer (`system` → `developer`).
     pub fn from_base_url_and_api_key(
         base_url: String,
         api_key: String,
@@ -87,6 +90,7 @@ impl OpenAiAdapter<StaticAuthProvider> {
             provider,
             auth,
             default_model,
+            crate::representer::SessionRepresenter::openai(),
         )
     }
 }
@@ -97,6 +101,7 @@ impl<A: AuthProvider> OpenAiAdapter<A> {
         provider: Provider,
         auth: A,
         default_model: Option<String>,
+        representer: crate::representer::SessionRepresenter,
     ) -> Self {
         let discovery_base_url = provider.base_url.clone();
         let discovery_token = auth.bearer_token();
@@ -106,6 +111,7 @@ impl<A: AuthProvider> OpenAiAdapter<A> {
             default_model,
             discovery_base_url,
             discovery_token,
+            representer,
         }
     }
 
@@ -125,6 +131,7 @@ impl<A: AuthProvider> OpenAiAdapter<A> {
             default_model: self.default_model,
             discovery_base_url: self.discovery_base_url,
             discovery_token: self.discovery_token,
+            representer: self.representer,
         }
     }
 }
@@ -142,7 +149,10 @@ where
             }
 
             let options = responses_options_from_turn_request(&request, self.options.clone());
-            let api_request: ResponsesApiRequest = request.into();
+            let api_request = crate::adapter::turn_request_to_api_request(
+                request,
+                self.representer.as_representer(),
+            );
             let api_stream = self
                 .client
                 .stream_request(api_request, options)

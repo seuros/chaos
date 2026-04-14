@@ -190,7 +190,7 @@ async fn process_compacted_history_replaces_developer_messages() {
     let compacted_history = vec![
         ResponseItem::Message {
             id: None,
-            role: "developer".to_string(),
+            role: "system".to_string(),
             content: vec![ContentItem::InputText {
                 text: "stale permissions".to_string(),
             }],
@@ -208,7 +208,7 @@ async fn process_compacted_history_replaces_developer_messages() {
         },
         ResponseItem::Message {
             id: None,
-            role: "developer".to_string(),
+            role: "system".to_string(),
             content: vec![ContentItem::InputText {
                 text: "stale personality".to_string(),
             }],
@@ -309,7 +309,7 @@ keep me updated
         },
         ResponseItem::Message {
             id: None,
-            role: "developer".to_string(),
+            role: "system".to_string(),
             content: vec![ContentItem::InputText {
                 text: "stale developer instructions".to_string(),
             }],
@@ -420,11 +420,11 @@ async fn process_compacted_history_reinjects_model_switch_message() {
     .await;
 
     let ResponseItem::Message { role, content, .. } = &initial_context[0] else {
-        panic!("expected developer message");
+        panic!("expected system message");
     };
-    assert_eq!(role, "developer");
+    assert_eq!(role, "system");
     let [ContentItem::InputText { text }, ..] = content.as_slice() else {
-        panic!("expected developer text");
+        panic!("expected system text");
     };
     assert!(text.contains("<model_switch>"));
 
@@ -474,7 +474,7 @@ fn insert_initial_context_before_last_real_user_or_summary_keeps_summary_last() 
     ];
     let initial_context = vec![ResponseItem::Message {
         id: None,
-        role: "developer".to_string(),
+        role: "system".to_string(),
         content: vec![ContentItem::InputText {
             text: "fresh permissions".to_string(),
         }],
@@ -496,7 +496,7 @@ fn insert_initial_context_before_last_real_user_or_summary_keeps_summary_last() 
         },
         ResponseItem::Message {
             id: None,
-            role: "developer".to_string(),
+            role: "system".to_string(),
             content: vec![ContentItem::InputText {
                 text: "fresh permissions".to_string(),
             }],
@@ -532,7 +532,7 @@ fn insert_initial_context_before_last_real_user_or_summary_keeps_compaction_last
     }];
     let initial_context = vec![ResponseItem::Message {
         id: None,
-        role: "developer".to_string(),
+        role: "system".to_string(),
         content: vec![ContentItem::InputText {
             text: "fresh permissions".to_string(),
         }],
@@ -545,7 +545,7 @@ fn insert_initial_context_before_last_real_user_or_summary_keeps_compaction_last
     let expected = vec![
         ResponseItem::Message {
             id: None,
-            role: "developer".to_string(),
+            role: "system".to_string(),
             content: vec![ContentItem::InputText {
                 text: "fresh permissions".to_string(),
             }],

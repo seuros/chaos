@@ -48,6 +48,11 @@ impl ModelClient {
         enable_request_compression: bool,
         beta_features_header: Option<String>,
     ) -> Self {
+        let representer = if provider.is_openai() {
+            chaos_parrot::SessionRepresenter::openai()
+        } else {
+            chaos_parrot::SessionRepresenter::wannabe()
+        };
         Self {
             state: Arc::new(ModelClientState {
                 auth_manager,
@@ -63,6 +68,7 @@ impl ModelClient {
                 clamp_transport: tokio::sync::Mutex::new(None),
                 clamp_mcp_bridge: tokio::sync::Mutex::new(None),
                 session: std::sync::Mutex::new(Weak::new()),
+                representer,
             }),
         }
     }

@@ -20,8 +20,7 @@ pub(crate) use tools::active_clamp_turn_context;
 
 #[cfg(test)]
 pub(super) use tools::{
-    CLAMP_NATIVE_PASSTHROUGH_TOOLS, ClampLocalToolKind, ClampToolRouting,
-    build_clamp_disallowed_tools, clamp_permission_mode, clamp_tool_routing,
+    ClampLocalToolKind, ClampToolRouting, clamp_permission_mode, clamp_tool_routing,
     render_clamp_full_prompt, render_latest_clamp_user_message,
 };
 
@@ -89,6 +88,8 @@ pub(super) struct ModelClientState {
         tokio::sync::Mutex<Option<crate::clamp_bridge::ClampSessionBridge>>,
     /// Back-reference to the owning session for clamp-side MCP routing.
     pub(super) session: StdMutex<Weak<crate::chaos::Session>>,
+    /// Wire-format representer selected at session creation based on provider identity.
+    pub(super) representer: chaos_parrot::SessionRepresenter,
 }
 
 /// Resolved API client setup for a single request attempt.

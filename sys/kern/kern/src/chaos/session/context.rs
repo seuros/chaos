@@ -132,7 +132,7 @@ impl Session {
 
         let mut items = Vec::with_capacity(3);
         if let Some(developer_message) =
-            crate::context_manager::updates::build_developer_update_item(developer_sections)
+            crate::context_manager::updates::build_system_update_item(developer_sections)
         {
             items.push(developer_message);
         }

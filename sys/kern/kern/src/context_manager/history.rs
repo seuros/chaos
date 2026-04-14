@@ -406,12 +406,17 @@ fn truncate_function_output_payload(
     }
 }
 
-/// API messages include every non-system item (user/assistant messages, reasoning,
-/// tool calls, tool outputs, shell calls, web-search calls, and image-generation
-/// calls).
+/// API messages include all items that belong in the conversation history sent
+/// to the provider — user/system/assistant messages, reasoning, tool calls,
+/// outputs, shell calls, web-search calls, and image-generation calls.
+///
+/// The `"system"` role is the Chaos-ABI canonical role for kernel-injected
+/// instruction messages (formerly `"developer"` in the OpenAI wire dialect).
+/// These belong in history; representers remap the role to the provider-
+/// specific equivalent on the way out.
 fn is_api_message(message: &ResponseItem) -> bool {
     match message {
-        ResponseItem::Message { role, .. } => role.as_str() != "system",
+        ResponseItem::Message { .. } => true,
         ResponseItem::FunctionCallOutput { .. }
         | ResponseItem::FunctionCall { .. }
         | ResponseItem::ToolSearchCall { .. }
@@ -628,7 +633,7 @@ pub(crate) fn is_codex_generated_item(item: &ResponseItem) -> bool {
         ResponseItem::FunctionCallOutput { .. }
             | ResponseItem::ToolSearchOutput { .. }
             | ResponseItem::CustomToolCallOutput { .. }
-    ) || matches!(item, ResponseItem::Message { role, .. } if role == "developer")
+    ) || matches!(item, ResponseItem::Message { role, .. } if role == "system")
 }
 
 pub(crate) fn is_user_turn_boundary(item: &ResponseItem) -> bool {

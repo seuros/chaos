@@ -626,11 +626,17 @@ impl ModelsManager {
         };
 
         let auth_provider = StaticAuthProvider::new(token, None);
+        let representer = if self.provider.is_openai() {
+            chaos_parrot::SessionRepresenter::openai()
+        } else {
+            chaos_parrot::SessionRepresenter::wannabe()
+        };
         let adapter = OpenAiAdapter::new(
             chaos_parrot::RamaTransport::default_client(),
             api_provider,
             auth_provider,
             None,
+            representer,
         );
 
         let abi_models = timeout(MODELS_REFRESH_TIMEOUT, adapter.list_models())

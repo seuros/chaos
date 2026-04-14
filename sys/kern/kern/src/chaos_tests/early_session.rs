@@ -136,9 +136,9 @@ async fn reconstruct_history_uses_replacement_history_verbatim() {
         summary_item.clone(),
         ResponseItem::Message {
             id: None,
-            role: "developer".to_string(),
+            role: "system".to_string(),
             content: vec![ContentItem::InputText {
-                text: "stale developer instructions".to_string(),
+                text: "stale system instructions".to_string(),
             }],
             end_turn: None,
             phase: None,

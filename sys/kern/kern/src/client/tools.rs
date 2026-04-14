@@ -17,27 +17,6 @@ use crate::client_common::Prompt;
 use crate::exec_policy::ExecApprovalRequest;
 
 pub(crate) const CLAMP_NATIVE_PASSTHROUGH_TOOLS: &[&str] = &["WebSearch", "WebFetch"];
-const CLAMP_LOCAL_BUILTIN_TOOLS: &[&str] = &[
-    "Bash",
-    "Read",
-    "Write",
-    "Edit",
-    "MultiEdit",
-    "NotebookRead",
-    "NotebookEdit",
-    "Glob",
-    "Grep",
-    "LS",
-];
-const CLAMP_UNSUPPORTED_BUILTIN_TOOLS: &[&str] = &["Task", "TodoRead", "TodoWrite"];
-
-pub(crate) fn build_clamp_disallowed_tools() -> Vec<String> {
-    CLAMP_LOCAL_BUILTIN_TOOLS
-        .iter()
-        .chain(CLAMP_UNSUPPORTED_BUILTIN_TOOLS.iter())
-        .map(|tool| (*tool).to_string())
-        .collect()
-}
 
 pub(crate) fn clamp_permission_mode(approval_policy: ApprovalPolicy) -> String {
     match approval_policy {

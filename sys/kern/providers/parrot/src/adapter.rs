@@ -11,7 +11,6 @@ use crate::common::TextControls;
 use crate::common::TextFormat;
 use crate::common::TextFormatType;
 use crate::representer::Representer;
-use crate::representer::ResponsesRepresenter;
 use chaos_abi::AbiError;
 use chaos_abi::ToolDef;
 use chaos_abi::TurnEvent;
@@ -23,62 +22,69 @@ use serde_json::Value;
 // TurnRequest → ResponsesApiRequest
 // ---------------------------------------------------------------------------
 
-impl From<TurnRequest> for ResponsesApiRequest {
-    fn from(req: TurnRequest) -> Self {
-        let tools: Vec<Value> = req
-            .extensions
-            .get("openai_tools")
-            .and_then(Value::as_array)
-            .cloned()
-            .unwrap_or_else(|| req.tools.into_iter().map(tool_def_to_openai).collect());
+/// Convert a [`TurnRequest`] (Chaos-ABI) into a [`ResponsesApiRequest`] (wire format).
+///
+/// The `representer` controls how input items are projected:
+/// - [`crate::representer::ResponsesRepresenter`] for real OpenAI (remaps `system→developer`)
+/// - [`crate::representer::OpenwAInnabeRepresenter`] for xAI and compat clones (`system` unchanged,
+///   `Reasoning` items dropped)
+///
+/// Callers obtain the correct representer from the session's [`crate::representer::SessionRepresenter`].
+pub(crate) fn turn_request_to_api_request(
+    req: TurnRequest,
+    representer: &dyn Representer,
+) -> ResponsesApiRequest {
+    let tools: Vec<Value> = req
+        .extensions
+        .get("openai_tools")
+        .and_then(Value::as_array)
+        .cloned()
+        .unwrap_or_else(|| req.tools.into_iter().map(tool_def_to_openai).collect());
 
-        let reasoning = req.reasoning.map(|r| Reasoning {
-            effort: r.effort,
-            summary: r.summary,
-        });
+    let reasoning = req.reasoning.map(|r| Reasoning {
+        effort: r.effort,
+        summary: r.summary,
+    });
 
-        let include = if reasoning.is_some() {
-            vec!["reasoning.encrypted_content".to_string()]
-        } else {
-            Vec::new()
-        };
+    let include = if reasoning.is_some() {
+        vec!["reasoning.encrypted_content".to_string()]
+    } else {
+        Vec::new()
+    };
 
-        let text = build_text_controls(req.verbosity, &req.output_schema);
+    let text = build_text_controls(req.verbosity, &req.output_schema);
 
-        // Read provider-specific fields from extensions.
-        let store = req
-            .extensions
-            .get("store")
-            .and_then(Value::as_bool)
-            .unwrap_or(false);
-        let service_tier = req
-            .extensions
-            .get("service_tier")
-            .and_then(Value::as_str)
-            .map(String::from);
-        let prompt_cache_key = req
-            .extensions
-            .get("prompt_cache_key")
-            .and_then(Value::as_str)
-            .map(String::from);
+    // Read provider-specific fields from extensions.
+    let store = req
+        .extensions
+        .get("store")
+        .and_then(Value::as_bool)
+        .unwrap_or(false);
+    let service_tier = req
+        .extensions
+        .get("service_tier")
+        .and_then(Value::as_str)
+        .map(String::from);
+    let prompt_cache_key = req
+        .extensions
+        .get("prompt_cache_key")
+        .and_then(Value::as_str)
+        .map(String::from);
 
-        let representer = ResponsesRepresenter;
-
-        ResponsesApiRequest {
-            model: req.model,
-            instructions: req.instructions,
-            input: representer.represent(req.input),
-            tools,
-            tool_choice: "auto".to_string(),
-            parallel_tool_calls: req.parallel_tool_calls,
-            reasoning,
-            store,
-            stream: true,
-            include,
-            service_tier,
-            prompt_cache_key,
-            text,
-        }
+    ResponsesApiRequest {
+        model: req.model,
+        instructions: req.instructions,
+        input: representer.represent(req.input),
+        tools,
+        tool_choice: "auto".to_string(),
+        parallel_tool_calls: req.parallel_tool_calls,
+        reasoning,
+        store,
+        stream: true,
+        include,
+        service_tier,
+        prompt_cache_key,
+        text,
     }
 }
 
@@ -260,9 +266,25 @@ impl From<crate::error::ApiError> for AbiError {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::representer::ResponsesRepresenter;
     use chaos_abi::FunctionToolDef;
     use chaos_abi::ReasoningConfig;
     use serde_json::json;
+
+    fn make_req(model: &str) -> TurnRequest {
+        TurnRequest {
+            model: model.to_string(),
+            instructions: String::new(),
+            input: vec![],
+            tools: vec![],
+            parallel_tool_calls: false,
+            reasoning: None,
+            output_schema: None,
+            verbosity: None,
+            turn_state: None,
+            extensions: serde_json::Map::new(),
+        }
+    }
 
     #[test]
     fn turn_request_converts_to_responses_api_request() {
@@ -287,7 +309,7 @@ mod tests {
             extensions: serde_json::Map::new(),
         };
 
-        let api_req: ResponsesApiRequest = req.into();
+        let api_req = turn_request_to_api_request(req, &ResponsesRepresenter);
 
         assert_eq!(api_req.model, "gpt-4o");
         assert_eq!(api_req.instructions, "Be helpful.");
@@ -324,7 +346,7 @@ mod tests {
             extensions,
         };
 
-        let api_req: ResponsesApiRequest = req.into();
+        let api_req = turn_request_to_api_request(req, &ResponsesRepresenter);
 
         assert!(api_req.store);
         assert_eq!(api_req.service_tier.as_deref(), Some("priority"));
@@ -359,8 +381,38 @@ mod tests {
             extensions,
         };
 
-        let api_req: ResponsesApiRequest = req.into();
+        let api_req = turn_request_to_api_request(req, &ResponsesRepresenter);
         assert_eq!(api_req.tools, vec![json!({"type": "local_shell"})]);
+    }
+
+    #[test]
+    fn wannabe_representer_used_via_turn_request_conversion() {
+        use crate::representer::OpenwAInnabeRepresenter;
+        use chaos_ipc::models::ResponseItem;
+        let req = TurnRequest {
+            input: vec![
+                ResponseItem::Message {
+                    id: None,
+                    role: "system".into(),
+                    content: vec![],
+                    end_turn: None,
+                    phase: None,
+                },
+                ResponseItem::Reasoning {
+                    id: "rs".into(),
+                    summary: vec![],
+                    content: None,
+                    encrypted_content: None,
+                },
+            ],
+            ..make_req("grok-4")
+        };
+        let api_req = turn_request_to_api_request(req, &OpenwAInnabeRepresenter);
+        assert_eq!(api_req.input.len(), 1, "Reasoning item must be dropped");
+        assert!(
+            matches!(&api_req.input[0], ResponseItem::Message { role, .. } if role == "system"),
+            "system role must pass through unchanged for wannabe"
+        );
     }
 
     #[test]

@@ -53,30 +53,56 @@ pub struct UsageWindow {
 /// How recent and usable a [`UsageWindow`] reading is.
 ///
 /// Rate-limit headers only arrive on live responses, so between requests
-/// the last-seen window goes stale. Past `resets_at`, the budget has
-/// refilled and the old numbers are actively misleading.
+/// the last-seen window goes stale. Past `resets_at`, the stored window's
+/// reset clock has elapsed — the bucket has probably refilled, but we
+/// haven't observed the new reading, so callers should treat it as
+/// "re-fetch before trusting". When no reset hint exists at all, very
+/// old observations collapse into [`Freshness::Stale`] rather than
+/// lingering as "cached" indefinitely.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
 pub enum Freshness {
     /// Observed within the last minute — trust the numbers.
     Live,
-    /// Older than a minute but the reset window has not yet passed.
+    /// Older than a minute but still within a reasonable trust window
+    /// (either a known `resets_at` has not yet elapsed, or the
+    /// observation is younger than the unanchored staleness cap).
     Cached,
-    /// `resets_at` has elapsed — assume the budget recovered.
+    /// Stored `resets_at` has elapsed. The remote window has likely
+    /// refilled, but that refill is unverified — a fresh response is
+    /// needed before the numbers mean anything again.
     Reset,
+    /// Observation is old enough that we no longer trust it and there
+    /// is no reset hint to anchor recovery. Treat as unknown.
+    Stale,
 }
+
+/// Observations older than this with no `resets_at` collapse to
+/// [`Freshness::Stale`] — past five minutes the reading is likely
+/// irrelevant to current budget.
+const UNANCHORED_STALE_SECS: i64 = 300;
 
 impl UsageWindow {
     /// Classify a reading against the current time.
     pub fn freshness(&self, now: i64) -> Freshness {
-        if let Some(resets_at) = self.resets_at
-            && resets_at <= now
-        {
-            return Freshness::Reset;
-        }
-        if now - self.observed_at < 60 {
-            Freshness::Live
-        } else {
-            Freshness::Cached
+        let age = now.saturating_sub(self.observed_at);
+        match self.resets_at {
+            Some(resets_at) if resets_at <= now => Freshness::Reset,
+            Some(_) => {
+                if age < 60 {
+                    Freshness::Live
+                } else {
+                    Freshness::Cached
+                }
+            }
+            None => {
+                if age < 60 {
+                    Freshness::Live
+                } else if age < UNANCHORED_STALE_SECS {
+                    Freshness::Cached
+                } else {
+                    Freshness::Stale
+                }
+            }
         }
     }
 
@@ -96,6 +122,12 @@ impl UsageWindow {
     }
 
     /// Build a window from raw counts, deriving `utilization` automatically.
+    ///
+    /// A provider reporting `limit = 0` is saying "this budget does not
+    /// exist" (think: a plan without access to some pool), not "100%
+    /// available". We encode that as `utilization = 1.0` so downstream
+    /// "X% left" displays render as exhausted rather than flashing a
+    /// misleading full green bar for a window the caller can never use.
     pub fn from_raw(
         label: impl Into<String>,
         limit: u64,
@@ -104,7 +136,7 @@ impl UsageWindow {
         observed_at: i64,
     ) -> Self {
         let utilization = if limit == 0 {
-            0.0
+            1.0
         } else {
             1.0 - (remaining as f64 / limit as f64)
         };
@@ -131,10 +163,25 @@ mod tests {
         assert_eq!(w.remaining_raw(), Some((34_000, 40_000)));
         assert!((w.remaining_fraction() - 0.85).abs() < 1e-9);
 
-        // Freshness walks through the live → cached → reset progression.
+        // Freshness walks through the live → cached → reset progression
+        // when a resets_at is known.
         assert_eq!(w.freshness(1_030), Freshness::Live);
         assert_eq!(w.freshness(1_500), Freshness::Cached);
         assert_eq!(w.freshness(2_000), Freshness::Reset);
+
+        // Without a reset hint, aged observations eventually decay into
+        // Stale rather than lingering as Cached forever.
+        let unanchored = UsageWindow {
+            label: "tokens".into(),
+            limit: Some(40_000),
+            remaining: Some(34_000),
+            utilization: 0.15,
+            resets_at: None,
+            observed_at: 1_000,
+        };
+        assert_eq!(unanchored.freshness(1_030), Freshness::Live);
+        assert_eq!(unanchored.freshness(1_120), Freshness::Cached);
+        assert_eq!(unanchored.freshness(1_400), Freshness::Stale);
 
         // Percent-only windows (Claude MAX) bypass raw counts but still
         // answer the same question via utilization.
@@ -149,8 +196,10 @@ mod tests {
         assert_eq!(pct_only.remaining_percent(), 85);
         assert_eq!(pct_only.remaining_raw(), None);
 
-        // Zero-limit guard keeps derivation safe.
+        // limit=0 means "this budget does not exist" — render as
+        // exhausted, not as 100% available.
         let zero = UsageWindow::from_raw("weird", 0, 0, None, 1_000);
-        assert_eq!(zero.utilization, 0.0);
+        assert_eq!(zero.utilization, 1.0);
+        assert_eq!(zero.remaining_percent(), 0);
     }
 }

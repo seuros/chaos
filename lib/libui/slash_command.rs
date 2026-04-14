@@ -24,12 +24,10 @@ pub enum SlashCommand {
     New,
     Resume,
     Fork,
-    Init,
     Compact,
     Plan,
     Collab,
     Agent,
-    // Undo,
     Diff,
     Copy,
     Mention,
@@ -66,14 +64,12 @@ impl SlashCommand {
     pub fn description(self) -> &'static str {
         match self {
             SlashCommand::New => "start a new chat during a conversation",
-            SlashCommand::Init => "create an AGENTS.md file with instructions for Chaos",
             SlashCommand::Compact => "summarize conversation to prevent hitting the context limit",
             SlashCommand::Review => "review my current changes and find issues",
             SlashCommand::Rename => "rename the current thread",
             SlashCommand::Resume => "resume a saved chat",
             SlashCommand::Clear => "clear the terminal and start a new chat",
             SlashCommand::Fork => "fork the current chat",
-            // SlashCommand::Undo => "ask Chaos to undo a turn",
             SlashCommand::Quit | SlashCommand::Exit => "exit Chaos",
             SlashCommand::Diff => "show git diff (including untracked files)",
             SlashCommand::Copy => "copy the latest Chaos output to your clipboard",
@@ -130,9 +126,7 @@ impl SlashCommand {
             SlashCommand::New
             | SlashCommand::Resume
             | SlashCommand::Fork
-            | SlashCommand::Init
             | SlashCommand::Compact
-            // | SlashCommand::Undo
             | SlashCommand::Model
             | SlashCommand::Personality
             | SlashCommand::Approvals

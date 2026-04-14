@@ -34,6 +34,10 @@ pub const OPENAI_PROVIDER_ID: &str = "openai";
 pub const OPENAI_DEFAULT_BASE_URL: &str = chaos_services::openai::OPENAI_API_BASE;
 const CHATGPT_DEFAULT_BASE_URL: &str = chaos_services::openai::CHATGPT_BACKEND_BASE;
 
+const ANTHROPIC_PROVIDER_NAME: &str = "Anthropic";
+pub const ANTHROPIC_PROVIDER_ID: &str = "anthropic";
+pub const ANTHROPIC_DEFAULT_BASE_URL: &str = chaos_services::anthropic::API_BASE;
+
 /// Wire protocol that the provider speaks.
 #[derive(Debug, Clone, Copy, Default, PartialEq, Eq, Serialize, JsonSchema)]
 #[serde(rename_all = "lowercase")]
@@ -287,6 +291,34 @@ impl ModelProviderInfo {
             .unwrap_or(Duration::from_millis(DEFAULT_STREAM_IDLE_TIMEOUT_MS))
     }
 
+    pub fn create_anthropic_provider() -> ModelProviderInfo {
+        ModelProviderInfo {
+            name: ANTHROPIC_PROVIDER_NAME.into(),
+            base_url: Some(ANTHROPIC_DEFAULT_BASE_URL.into()),
+            env_key: Some("ANTHROPIC_API_KEY".into()),
+            env_key_instructions: Some(
+                "Create an API key at https://console.anthropic.com/ and export \
+                 it as `ANTHROPIC_API_KEY`."
+                    .into(),
+            ),
+            experimental_bearer_token: None,
+            wire_api: WireApi::Auto,
+            query_params: None,
+            http_headers: Some(
+                [("version".to_string(), CHAOS_VERSION.to_string())]
+                    .into_iter()
+                    .collect(),
+            ),
+            env_http_headers: None,
+            request_max_retries: None,
+            stream_max_retries: None,
+            stream_idle_timeout_ms: None,
+            requires_openai_auth: false,
+            supports_websockets: false,
+            native_server_side_tools: vec![],
+        }
+    }
+
     pub fn create_openai_provider(base_url: Option<String>) -> ModelProviderInfo {
         ModelProviderInfo {
             name: OPENAI_PROVIDER_NAME.into(),
@@ -334,21 +366,25 @@ impl ModelProviderInfo {
     }
 }
 
-/// Built-in default provider list.
-pub fn built_in_model_providers(
-    openai_base_url: Option<String>,
-) -> HashMap<String, ModelProviderInfo> {
+pub fn built_in_model_providers() -> HashMap<String, ModelProviderInfo> {
     use ModelProviderInfo as P;
-    let openai_provider = P::create_openai_provider(openai_base_url);
 
-    // We do not want to be in the business of adjucating which third-party
-    // providers are bundled with Chaos CLI, so we only include the OpenAI
-    // provider by default. Users are encouraged to add to
-    // `model_providers` in config.toml to add their own providers.
-    [(OPENAI_PROVIDER_ID, openai_provider)]
-        .into_iter()
-        .map(|(k, v)| (k.to_string(), v))
-        .collect()
+    let mut providers: HashMap<String, ModelProviderInfo> =
+        toml::from_str(chaos_services::THIRDPARTY_PROVIDERS_TOML).unwrap_or_else(|err| {
+            tracing::error!(error = %err, "failed to parse bundled thirdparty.toml");
+            HashMap::new()
+        });
+
+    providers.insert(
+        OPENAI_PROVIDER_ID.to_string(),
+        P::create_openai_provider(None),
+    );
+    providers.insert(
+        ANTHROPIC_PROVIDER_ID.to_string(),
+        P::create_anthropic_provider(),
+    );
+
+    providers
 }
 
 pub fn create_oss_provider_with_base_url(base_url: &str, wire_api: WireApi) -> ModelProviderInfo {

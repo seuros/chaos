@@ -3,17 +3,11 @@ use crate::text_formatting;
 use chaos_ipc::account::PlanType;
 use chaos_kern::AuthManager;
 use chaos_kern::auth::AuthMode as CoreAuthMode;
-use chaos_kern::config::Config;
-use chaos_kern::project_doc::discover_project_doc_paths;
 use jiff::Timestamp;
 use std::path::Path;
 use unicode_width::UnicodeWidthStr;
 
 use super::account::StatusAccountDisplay;
-
-fn normalize_agents_display_path(path: &Path) -> String {
-    path.display().to_string()
-}
 
 pub fn compose_model_display(
     model_name: &str,
@@ -33,54 +27,6 @@ pub fn compose_model_display(
     }
 
     (model_name.to_string(), details)
-}
-
-pub fn compose_agents_summary(config: &Config) -> String {
-    match discover_project_doc_paths(config) {
-        Ok(paths) => {
-            let mut rels: Vec<String> = Vec::new();
-            for p in paths {
-                let file_name = p
-                    .file_name()
-                    .map(|name| name.to_string_lossy().to_string())
-                    .unwrap_or_else(|| "<unknown>".to_string());
-                let display = if let Some(parent) = p.parent() {
-                    if parent == config.cwd {
-                        file_name.clone()
-                    } else {
-                        let mut cur = config.cwd.as_path();
-                        let mut ups = 0usize;
-                        let mut reached = false;
-                        while let Some(c) = cur.parent() {
-                            if cur == parent {
-                                reached = true;
-                                break;
-                            }
-                            cur = c;
-                            ups += 1;
-                        }
-                        if reached {
-                            let up = format!("..{}", std::path::MAIN_SEPARATOR);
-                            format!("{}{}", up.repeat(ups), file_name)
-                        } else if let Ok(stripped) = p.strip_prefix(&config.cwd) {
-                            normalize_agents_display_path(stripped)
-                        } else {
-                            normalize_agents_display_path(&p)
-                        }
-                    }
-                } else {
-                    normalize_agents_display_path(&p)
-                };
-                rels.push(display);
-            }
-            if rels.is_empty() {
-                "<none>".to_string()
-            } else {
-                rels.join(", ")
-            }
-        }
-        Err(_) => "<none>".to_string(),
-    }
 }
 
 pub fn compose_account_display(

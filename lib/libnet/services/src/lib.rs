@@ -28,3 +28,5 @@
 
 pub mod anthropic;
 pub mod openai;
+
+pub const THIRDPARTY_PROVIDERS_TOML: &str = include_str!("../thirdparty.toml");

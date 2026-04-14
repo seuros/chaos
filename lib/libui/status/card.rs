@@ -31,7 +31,6 @@ use super::format::line_display_width;
 use super::format::push_label;
 use super::format::truncate_line_to_width;
 use super::helpers::compose_account_display;
-use super::helpers::compose_agents_summary;
 use super::helpers::compose_model_display;
 use super::helpers::format_directory_display;
 use super::helpers::format_tokens_compact;
@@ -66,7 +65,6 @@ struct StatusHistoryCell {
     model_details: Vec<String>,
     directory: PathBuf,
     permissions: String,
-    agents_summary: String,
     collaboration_mode: Option<String>,
     model_provider: Option<String>,
     account: Option<StatusAccountDisplay>,
@@ -227,7 +225,6 @@ impl StatusHistoryCell {
         } else {
             format!("Custom ({sandbox}, {approval})")
         };
-        let agents_summary = compose_agents_summary(config);
         let model_provider = format_model_provider(config);
         let account = compose_account_display(auth_manager, plan_type);
         let session_id = session_id.as_ref().map(std::string::ToString::to_string);
@@ -260,7 +257,6 @@ impl StatusHistoryCell {
             model_details,
             directory: config.cwd.clone(),
             permissions,
-            agents_summary,
             collaboration_mode: collaboration_mode.map(ToString::to_string),
             model_provider,
             account,
@@ -532,7 +528,6 @@ impl HistoryCell for StatusHistoryCell {
         }
         lines.push(formatter.line("Directory", vec![Span::from(directory_value)]));
         lines.push(formatter.line("Permissions", vec![Span::from(self.permissions.clone())]));
-        lines.push(formatter.line("Agents.md", vec![Span::from(self.agents_summary.clone())]));
 
         if let Some(account_value) = account_value {
             lines.push(formatter.line("Account", vec![Span::from(account_value)]));

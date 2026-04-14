@@ -86,20 +86,6 @@ fn collect_user_messages_filters_session_prefix_entries() {
             id: None,
             role: "user".to_string(),
             content: vec![ContentItem::InputText {
-                text: r#"# AGENTS.md instructions for project
-
-<INSTRUCTIONS>
-do things
-</INSTRUCTIONS>"#
-                    .to_string(),
-            }],
-            end_turn: None,
-            phase: None,
-        },
-        ResponseItem::Message {
-            id: None,
-            role: "user".to_string(),
-            content: vec![ContentItem::InputText {
                 text: "<ENVIRONMENT_CONTEXT>cwd=/tmp</ENVIRONMENT_CONTEXT>".to_string(),
             }],
             end_turn: None,
@@ -258,20 +244,6 @@ async fn process_compacted_history_reinjects_full_initial_context() {
 #[tokio::test]
 async fn process_compacted_history_drops_non_user_content_messages() {
     let compacted_history = vec![
-        ResponseItem::Message {
-            id: None,
-            role: "user".to_string(),
-            content: vec![ContentItem::InputText {
-                text: r#"# AGENTS.md instructions for /repo
-
-<INSTRUCTIONS>
-keep me updated
-</INSTRUCTIONS>"#
-                    .to_string(),
-            }],
-            end_turn: None,
-            phase: None,
-        },
         ResponseItem::Message {
             id: None,
             role: "user".to_string(),

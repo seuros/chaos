@@ -93,7 +93,7 @@ async fn remote_models_get_model_info_uses_longest_matching_prefix() -> Result<(
     let auth = ChaosAuth::create_dummy_chatgpt_auth_for_testing();
     let provider = ModelProviderInfo {
         base_url: Some(format!("{}/v1", server.uri())),
-        ..built_in_model_providers(/* openai_base_url */ None)["openai"].clone()
+        ..built_in_model_providers()["openai"].clone()
     };
     let manager = chaos_kern::test_support::models_manager_with_provider(
         chaos_home.path().to_path_buf(),
@@ -588,7 +588,7 @@ async fn remote_models_do_not_append_removed_builtin_presets() -> Result<()> {
     let auth = ChaosAuth::create_dummy_chatgpt_auth_for_testing();
     let provider = ModelProviderInfo {
         base_url: Some(format!("{}/v1", server.uri())),
-        ..built_in_model_providers(/* openai_base_url */ None)["openai"].clone()
+        ..built_in_model_providers()["openai"].clone()
     };
     let manager = chaos_kern::test_support::models_manager_with_provider(
         chaos_home.path().to_path_buf(),
@@ -643,7 +643,7 @@ async fn remote_models_merge_adds_new_high_priority_first() -> Result<()> {
     let auth = ChaosAuth::create_dummy_chatgpt_auth_for_testing();
     let provider = ModelProviderInfo {
         base_url: Some(format!("{}/v1", server.uri())),
-        ..built_in_model_providers(/* openai_base_url */ None)["openai"].clone()
+        ..built_in_model_providers()["openai"].clone()
     };
     let manager = chaos_kern::test_support::models_manager_with_provider(
         chaos_home.path().to_path_buf(),
@@ -690,7 +690,7 @@ async fn remote_models_merge_replaces_overlapping_model() -> Result<()> {
     let auth = ChaosAuth::create_dummy_chatgpt_auth_for_testing();
     let provider = ModelProviderInfo {
         base_url: Some(format!("{}/v1", server.uri())),
-        ..built_in_model_providers(/* openai_base_url */ None)["openai"].clone()
+        ..built_in_model_providers()["openai"].clone()
     };
     let manager = chaos_kern::test_support::models_manager_with_provider(
         chaos_home.path().to_path_buf(),

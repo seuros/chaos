@@ -65,7 +65,6 @@ use chaos_kern::git_info::current_branch_name;
 use chaos_kern::git_info::local_git_branches;
 use chaos_kern::mcp::McpManager;
 use chaos_kern::models_manager::manager::ModelsManager;
-use chaos_kern::project_doc::DEFAULT_PROJECT_DOC_FILENAME;
 use chaos_kern::terminal::TerminalName;
 use chaos_kern::terminal::terminal_info;
 use chaos_syslog::RuntimeMetricsSummary;

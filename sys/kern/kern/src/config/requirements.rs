@@ -44,7 +44,6 @@ use super::RealtimeConfig;
 
 use super::{
     DEFAULT_AGENT_JOB_MAX_RUNTIME_SECONDS, DEFAULT_AGENT_MAX_DEPTH, DEFAULT_AGENT_MAX_THREADS,
-    OPENAI_BASE_URL_ENV_VAR, PROJECT_DOC_MAX_BYTES,
 };
 
 fn resolve_sqlite_home_env(resolved_cwd: &Path) -> Option<PathBuf> {
@@ -167,7 +166,7 @@ impl Config {
             network: network_requirements,
         } = config_layer_stack.requirements().clone();
 
-        let user_instructions = Self::load_instructions(Some(&chaos_home));
+        let user_instructions: Option<String> = None;
         let mut startup_warnings = Vec::new();
 
         let ConfigOverrides {
@@ -372,28 +371,7 @@ impl Config {
             &mut startup_warnings,
         )?;
 
-        let openai_base_url = cfg
-            .openai_base_url
-            .clone()
-            .filter(|value| !value.is_empty());
-        let openai_base_url_from_env = std::env::var(OPENAI_BASE_URL_ENV_VAR)
-            .ok()
-            .filter(|value| !value.is_empty());
-        if openai_base_url_from_env.is_some() {
-            if openai_base_url.is_some() {
-                tracing::warn!(
-                    env_var = OPENAI_BASE_URL_ENV_VAR,
-                    "deprecated env var is ignored because `openai_base_url` is set in config.toml"
-                );
-            } else {
-                startup_warnings.push(format!(
-                    "`{OPENAI_BASE_URL_ENV_VAR}` is deprecated. Set `openai_base_url` in config.toml instead."
-                ));
-            }
-        }
-        let effective_openai_base_url = openai_base_url.or(openai_base_url_from_env);
-
-        let mut model_providers = built_in_model_providers(effective_openai_base_url);
+        let mut model_providers = built_in_model_providers();
         for (key, provider) in cfg.model_providers.into_iter() {
             model_providers.entry(key).or_insert(provider);
         }
@@ -667,20 +645,6 @@ impl Config {
             mcp_oauth_callback_port: cfg.mcp_oauth_callback_port,
             mcp_oauth_callback_url: cfg.mcp_oauth_callback_url.clone(),
             model_providers,
-            project_doc_max_bytes: cfg.project_doc_max_bytes.unwrap_or(PROJECT_DOC_MAX_BYTES),
-            project_doc_fallback_filenames: cfg
-                .project_doc_fallback_filenames
-                .unwrap_or_default()
-                .into_iter()
-                .filter_map(|name| {
-                    let trimmed = name.trim();
-                    if trimmed.is_empty() {
-                        None
-                    } else {
-                        Some(trimmed.to_string())
-                    }
-                })
-                .collect(),
             tool_output_token_limit: cfg.tool_output_token_limit,
             agent_max_threads,
             agent_max_depth,
@@ -801,23 +765,6 @@ impl Config {
             memories: cfg.memories.map(MemoriesConfig::from).unwrap_or_default(),
         };
         Ok(config)
-    }
-
-    pub(crate) fn load_instructions(codex_dir: Option<&Path>) -> Option<String> {
-        use crate::project_doc::DEFAULT_PROJECT_DOC_FILENAME;
-        use crate::project_doc::LOCAL_PROJECT_DOC_FILENAME;
-        let base = codex_dir?;
-        for candidate in [LOCAL_PROJECT_DOC_FILENAME, DEFAULT_PROJECT_DOC_FILENAME] {
-            let mut path = base.to_path_buf();
-            path.push(candidate);
-            if let Ok(contents) = std::fs::read_to_string(&path) {
-                let trimmed = contents.trim();
-                if !trimmed.is_empty() {
-                    return Some(trimmed.to_string());
-                }
-            }
-        }
-        None
     }
 
     /// If `path` is `Some`, reads the file and returns trimmed contents.

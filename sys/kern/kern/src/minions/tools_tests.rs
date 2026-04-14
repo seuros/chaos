@@ -70,7 +70,7 @@ fn function_payload(args: serde_json::Value) -> ToolPayload {
 fn process_table() -> ProcessTable {
     ProcessTable::with_models_provider_for_tests(
         ChaosAuth::from_api_key("dummy"),
-        built_in_model_providers(/* openai_base_url */ None)["openai"].clone(),
+        built_in_model_providers()["openai"].clone(),
     )
 }
 
@@ -272,7 +272,7 @@ async fn spawn_agent_uses_scout_role_and_preserves_approval_policy() {
     let manager = process_table();
     session.services.agent_control = manager.agent_control();
     let mut config = (*turn.config).clone();
-    let provider = built_in_model_providers(/* openai_base_url */ None)["openai"].clone();
+    let provider = built_in_model_providers()["openai"].clone();
     config.model_provider_id = "openai".to_string();
     config.model_provider = provider.clone();
     config

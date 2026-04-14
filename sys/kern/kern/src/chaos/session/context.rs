@@ -100,15 +100,6 @@ impl Session {
                 );
             }
         }
-        if let Some(user_instructions) = turn_context.user_instructions.as_deref() {
-            contextual_user_sections.push(
-                crate::instructions::UserInstructions {
-                    text: user_instructions.to_string(),
-                    directory: turn_context.cwd.to_string_lossy().into_owned(),
-                }
-                .serialize_to_text(),
-            );
-        }
         let subagents = self
             .services
             .agent_control

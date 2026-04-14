@@ -55,6 +55,13 @@ pub(crate) async fn init(config: &Config) -> Option<RuntimeDbHandle> {
         warn!("failed to initialize cron scheduler storage backend: {err}");
     }
 
+    // Install ration sniffers for the first-party providers so SSE
+    // responses persist rate-limit headers without the transport layer
+    // needing to know which provider it is talking to.
+    if chaos_libration::registry::install_default_sniffers(&provider).is_none() {
+        warn!("failed to install ration sniffers: storage provider exposes no pool");
+    }
+
     Some(runtime)
 }
 

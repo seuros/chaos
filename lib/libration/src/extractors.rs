@@ -14,7 +14,7 @@
 
 use chaos_ration::HeaderExtractor;
 use chaos_ration::UsageWindow;
-use rama::http::HeaderMap;
+use rama_http_types::HeaderMap;
 
 /// Extractor for the OpenAI-style `x-ratelimit-*` family.
 ///
@@ -168,7 +168,7 @@ fn days_from_civil(y: i64, m: i64, d: i64) -> i64 {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use rama::http::HeaderValue;
+    use rama_http_types::HeaderValue;
 
     fn hdr(pairs: &[(&'static str, &str)]) -> HeaderMap {
         let mut map = HeaderMap::new();

@@ -38,7 +38,6 @@ use crate::process::ProcessConfigSnapshot;
 use crate::rollout::map_session_init_error;
 use crate::runtime_db;
 use crate::shell_snapshot::ShellSnapshot;
-use crate::skills::SkillsManager;
 
 use super::Session;
 use super::SessionConfiguration;
@@ -76,7 +75,6 @@ pub(crate) struct ChaosSpawnArgs {
     pub(crate) config: Config,
     pub(crate) auth_manager: Arc<AuthManager>,
     pub(crate) models_manager: Arc<ModelsManager>,
-    pub(crate) skills_manager: Arc<SkillsManager>,
     pub(crate) mcp_manager: Arc<McpManager>,
     pub(crate) file_watcher: Arc<FileWatcher>,
     pub(crate) conversation_history: chaos_ipc::protocol::InitialHistory,
@@ -134,7 +132,6 @@ impl Chaos {
             mut config,
             auth_manager,
             models_manager,
-            skills_manager,
             mcp_manager,
             file_watcher,
             conversation_history,
@@ -148,16 +145,6 @@ impl Chaos {
         } = args;
         let (tx_sub, rx_sub) = async_channel::bounded(SUBMISSION_CHANNEL_CAPACITY);
         let (tx_event, rx_event) = async_channel::unbounded();
-
-        let loaded_skills = skills_manager.skills_for_config(&config);
-
-        for err in &loaded_skills.errors {
-            tracing::error!(
-                "failed to load skill {}: {}",
-                err.path.display(),
-                err.message
-            );
-        }
 
         if let SessionSource::SubAgent(SubAgentSource::ProcessSpawn { depth, .. }) = session_source
             && depth >= config.agent_max_depth
@@ -277,7 +264,6 @@ impl Chaos {
             agent_status_tx.clone(),
             conversation_history,
             session_source_clone,
-            skills_manager,
             mcp_manager.clone(),
             file_watcher,
             agent_control,

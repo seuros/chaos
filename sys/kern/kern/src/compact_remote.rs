@@ -99,7 +99,6 @@ async fn run_remote_compact_task_inner_impl(
         sess.as_ref(),
         turn_context.as_ref(),
         &prompt_input,
-        /*skills_outcome*/ None,
         &CancellationToken::new(),
     )
     .await?;

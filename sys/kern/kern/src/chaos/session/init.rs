@@ -34,7 +34,6 @@ use crate::config::StartedNetworkProxy;
 use crate::config::resolve_web_search_mode_for_turn;
 use crate::exec_policy::ExecPolicyManager;
 use crate::file_watcher::FileWatcher;
-use crate::file_watcher::FileWatcherEvent;
 use crate::git_info::get_git_repo_root;
 use crate::mcp::McpManager;
 use crate::mcp::auth::compute_auth_statuses;
@@ -48,7 +47,6 @@ use crate::rollout::process_names;
 use crate::runtime_db;
 use crate::shell;
 use crate::shell_snapshot::ShellSnapshot;
-use crate::skills::SkillsManager;
 use crate::state::SessionServices;
 use crate::state::SessionState;
 use crate::tools::network_approval::NetworkApprovalService;
@@ -142,22 +140,12 @@ impl Session {
 
     pub(super) fn start_file_watcher_listener(self: &Arc<Self>) {
         let mut rx = self.services.file_watcher.subscribe();
-        let weak_sess = Arc::downgrade(self);
         tokio::spawn(async move {
             loop {
                 match rx.recv().await {
-                    Ok(FileWatcherEvent::SkillsChanged { .. }) => {
-                        let Some(sess) = weak_sess.upgrade() else {
-                            break;
-                        };
-                        let event = Event {
-                            id: sess.next_internal_sub_id(),
-                            msg: EventMsg::SkillsUpdateAvailable,
-                        };
-                        sess.send_event_raw(event).await;
-                    }
                     Err(tokio::sync::broadcast::error::RecvError::Closed) => break,
                     Err(tokio::sync::broadcast::error::RecvError::Lagged(_)) => continue,
+                    Ok(_) => continue,
                 }
             }
         });
@@ -175,7 +163,6 @@ impl Session {
         agent_status: watch::Sender<AgentStatus>,
         initial_history: InitialHistory,
         session_source: SessionSource,
-        skills_manager: Arc<SkillsManager>,
         mcp_manager: Arc<McpManager>,
         file_watcher: Arc<FileWatcher>,
         agent_control: AgentControl,
@@ -528,7 +515,6 @@ impl Session {
             session_telemetry,
             models_manager: Arc::clone(&models_manager),
             tool_approvals: Mutex::new(ApprovalStore::default()),
-            skills_manager,
             mcp_manager: Arc::clone(&mcp_manager),
             file_watcher,
             agent_control,

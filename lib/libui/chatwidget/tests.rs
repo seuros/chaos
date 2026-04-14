@@ -3034,7 +3034,6 @@ async fn exec_approval_emits_proposed_command_and_decision_history() {
         proposed_execpolicy_amendment: None,
         proposed_network_policy_amendments: None,
         additional_permissions: None,
-        skill_metadata: None,
         available_decisions: None,
         parsed_cmd: vec![],
     };
@@ -3085,7 +3084,6 @@ async fn exec_approval_uses_approval_id_when_present() {
             proposed_execpolicy_amendment: None,
             proposed_network_policy_amendments: None,
             additional_permissions: None,
-            skill_metadata: None,
             available_decisions: None,
             parsed_cmd: vec![],
         }),
@@ -3127,7 +3125,6 @@ async fn exec_approval_decision_truncates_multiline_and_long_commands() {
         proposed_execpolicy_amendment: None,
         proposed_network_policy_amendments: None,
         additional_permissions: None,
-        skill_metadata: None,
         available_decisions: None,
         parsed_cmd: vec![],
     };
@@ -3183,7 +3180,6 @@ async fn exec_approval_decision_truncates_multiline_and_long_commands() {
         proposed_execpolicy_amendment: None,
         proposed_network_policy_amendments: None,
         additional_permissions: None,
-        skill_metadata: None,
         available_decisions: None,
         parsed_cmd: vec![],
     };
@@ -3886,10 +3882,6 @@ fn rendered_user_message_event_from_inputs_matches_flattened_user_message_shape(
         },
         UserInput::LocalImage {
             path: local_image.clone(),
-        },
-        UserInput::Skill {
-            name: "demo".to_string(),
-            path: PathBuf::from("/tmp/skill/SKILL.md"),
         },
         UserInput::Mention {
             name: "repo".to_string(),
@@ -6534,7 +6526,6 @@ async fn approval_modal_exec_snapshot() -> anyhow::Result<()> {
         ])),
         proposed_network_policy_amendments: None,
         additional_permissions: None,
-        skill_metadata: None,
         available_decisions: None,
         parsed_cmd: vec![],
     };
@@ -6596,7 +6587,6 @@ async fn approval_modal_exec_without_reason_snapshot() -> anyhow::Result<()> {
         ])),
         proposed_network_policy_amendments: None,
         additional_permissions: None,
-        skill_metadata: None,
         available_decisions: None,
         parsed_cmd: vec![],
     };
@@ -6645,7 +6635,6 @@ async fn approval_modal_exec_multiline_prefix_hides_execpolicy_option_snapshot()
         proposed_execpolicy_amendment: Some(ExecPolicyAmendment::new(command)),
         proposed_network_policy_amendments: None,
         additional_permissions: None,
-        skill_metadata: None,
         available_decisions: None,
         parsed_cmd: vec![],
     };
@@ -7020,7 +7009,6 @@ async fn status_widget_and_approval_modal_snapshot() {
         ])),
         proposed_network_policy_amendments: None,
         additional_permissions: None,
-        skill_metadata: None,
         available_decisions: None,
         parsed_cmd: vec![],
     };

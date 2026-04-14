@@ -2,7 +2,6 @@ use crate::config::edit::ConfigEdit;
 use crate::config::edit::ConfigEditsBuilder;
 use crate::config::edit::apply_blocking;
 use crate::config::types::ApprovalsReviewer;
-use crate::config::types::BundledSkillsConfig;
 use crate::config::types::FeedbackConfigToml;
 use crate::config::types::HistoryPersistence;
 use crate::config::types::McpServerDisabledReason;
@@ -86,25 +85,6 @@ persistence = "none"
             max_bytes: None,
         }),
         history_no_persistence_cfg.history
-    );
-}
-
-#[test]
-fn parses_bundled_skills_config() {
-    let cfg: ConfigToml = toml::from_str(
-        r#"
-[skills.bundled]
-enabled = false
-"#,
-    )
-    .expect("TOML deserialization should succeed");
-
-    assert_eq!(
-        cfg.skills,
-        Some(SkillsConfig {
-            bundled: Some(BundledSkillsConfig { enabled: false }),
-            config: Vec::new(),
-        })
     );
 }
 

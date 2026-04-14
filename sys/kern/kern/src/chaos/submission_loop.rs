@@ -20,7 +20,6 @@ use crate::tools::spec::ToolsConfigParams;
 use super::Session;
 use super::SessionSettingsUpdate;
 use super::TurnContext;
-use super::TurnSkillsContext;
 
 pub(crate) mod handlers;
 
@@ -198,31 +197,6 @@ pub(super) async fn submission_loop(
                 }
                 Op::ListCustomPrompts => {
                     handlers::list_custom_prompts(&sess, sub.id.clone()).await;
-                    false
-                }
-                Op::ListSkills { cwds, force_reload } => {
-                    handlers::list_skills(&sess, sub.id.clone(), cwds, force_reload).await;
-                    false
-                }
-                Op::ListRemoteSkills {
-                    hazelnut_scope,
-                    product_surface,
-                    enabled,
-                } => {
-                    handlers::list_remote_skills(
-                        &sess,
-                        &config,
-                        sub.id.clone(),
-                        hazelnut_scope,
-                        product_surface,
-                        enabled,
-                    )
-                    .await;
-                    false
-                }
-                Op::DownloadRemoteSkill { hazelnut_id } => {
-                    handlers::export_remote_skill(&sess, &config, sub.id.clone(), hazelnut_id)
-                        .await;
                     false
                 }
                 Op::Undo => {
@@ -427,7 +401,6 @@ pub(super) async fn spawn_review_thread(
         dynamic_tools: parent_turn_context.dynamic_tools.clone(),
         truncation_policy: model_info.truncation_policy.into(),
         turn_metadata_state,
-        turn_skills: TurnSkillsContext::new(parent_turn_context.turn_skills.outcome.clone()),
         turn_timing_state: Arc::new(TurnTimingState::default()),
     };
 

@@ -35,7 +35,6 @@ use crate::config::types::ShellEnvironmentPolicy;
 use crate::models_manager::manager::ModelsManager;
 use crate::models_manager::manager::RefreshStrategy;
 use crate::shell_snapshot::ShellSnapshot;
-use crate::skills::SkillLoadOutcome;
 use crate::tools::spec::ToolsConfig;
 use crate::tools::spec::ToolsConfigParams;
 use crate::truncate::TruncationPolicy;
@@ -52,17 +51,6 @@ use chaos_pf::NetworkProxy;
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub(crate) struct PreviousTurnSettings {
     pub(crate) model: String,
-}
-
-#[derive(Clone, Debug)]
-pub(crate) struct TurnSkillsContext {
-    pub(crate) outcome: Arc<SkillLoadOutcome>,
-}
-
-impl TurnSkillsContext {
-    pub(crate) fn new(outcome: Arc<SkillLoadOutcome>) -> Self {
-        Self { outcome }
-    }
 }
 
 /// The context needed for a single turn of the thread.
@@ -107,7 +95,6 @@ pub(crate) struct TurnContext {
     pub(crate) truncation_policy: TruncationPolicy,
     pub(crate) dynamic_tools: Vec<chaos_ipc::dynamic_tools::DynamicToolSpec>,
     pub(crate) turn_metadata_state: Arc<TurnMetadataState>,
-    pub(crate) turn_skills: TurnSkillsContext,
     pub(crate) turn_timing_state: Arc<TurnTimingState>,
 }
 
@@ -212,7 +199,6 @@ impl TurnContext {
             truncation_policy,
             dynamic_tools: self.dynamic_tools.clone(),
             turn_metadata_state: self.turn_metadata_state.clone(),
-            turn_skills: self.turn_skills.clone(),
             turn_timing_state: Arc::clone(&self.turn_timing_state),
         }
     }
@@ -437,7 +423,6 @@ pub(super) fn make_turn_context(
     models_manager: &ModelsManager,
     network: Option<NetworkProxy>,
     sub_id: String,
-    skills_outcome: Arc<SkillLoadOutcome>,
 ) -> TurnContext {
     let reasoning_effort = session_configuration.collaboration_mode.reasoning_effort();
     let reasoning_summary = session_configuration
@@ -510,7 +495,6 @@ pub(super) fn make_turn_context(
         truncation_policy: model_info.truncation_policy.into(),
         dynamic_tools: session_configuration.dynamic_tools.clone(),
         turn_metadata_state,
-        turn_skills: TurnSkillsContext::new(skills_outcome),
         turn_timing_state: Arc::new(TurnTimingState::default()),
     }
 }

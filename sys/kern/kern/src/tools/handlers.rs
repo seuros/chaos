@@ -288,7 +288,6 @@ mod tests {
             ApprovalPolicy::Granular(GranularApprovalConfig {
                 sandbox_approval: true,
                 rules: true,
-                skill_approval: true,
                 request_permissions: false,
                 mcp_elicitations: true,
             }),

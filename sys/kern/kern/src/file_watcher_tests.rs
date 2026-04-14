@@ -56,84 +56,87 @@ fn flushes_pending_on_shutdown() {
 }
 
 #[test]
-fn classify_event_filters_to_skills_roots() {
-    let root = path("/tmp/skills");
+fn classify_event_filters_to_registered_roots() {
+    let root = path("/tmp/config");
     let state = RwLock::new(WatchState {
-        skills_root_ref_counts: HashMap::from([(root.clone(), 1)]),
+        roots_ref_counts: HashMap::from([(root.clone(), 1)]),
     });
     let event = notify_event(
         EventKind::Create(CreateKind::Any),
         vec![
-            root.join("demo/SKILL.md"),
-            path("/tmp/other/not-a-skill.txt"),
+            root.join("demo/file.toml"),
+            path("/tmp/other/not-a-config.txt"),
         ],
     );
 
     let classified = classify_event(&event, &state);
-    assert_eq!(classified, vec![root.join("demo/SKILL.md")]);
+    assert_eq!(classified, vec![root.join("demo/file.toml")]);
 }
 
 #[test]
 fn classify_event_supports_multiple_roots_without_prefix_false_positives() {
-    let root_a = path("/tmp/skills");
-    let root_b = path("/tmp/workspace/.chaos/skills");
+    let root_a = path("/tmp/config");
+    let root_b = path("/tmp/workspace/.chaos/config");
     let state = RwLock::new(WatchState {
-        skills_root_ref_counts: HashMap::from([(root_a.clone(), 1), (root_b.clone(), 1)]),
+        roots_ref_counts: HashMap::from([(root_a.clone(), 1), (root_b.clone(), 1)]),
     });
     let event = notify_event(
         EventKind::Modify(ModifyKind::Any),
         vec![
-            root_a.join("alpha/SKILL.md"),
-            path("/tmp/skills-extra/not-under-skills.txt"),
-            root_b.join("beta/SKILL.md"),
+            root_a.join("alpha/file.toml"),
+            path("/tmp/config-extra/not-under-config.txt"),
+            root_b.join("beta/file.toml"),
         ],
     );
 
     let classified = classify_event(&event, &state);
     assert_eq!(
         classified,
-        vec![root_a.join("alpha/SKILL.md"), root_b.join("beta/SKILL.md")]
+        vec![
+            root_a.join("alpha/file.toml"),
+            root_b.join("beta/file.toml")
+        ]
     );
 }
 
 #[test]
 fn classify_event_ignores_non_mutating_event_kinds() {
-    let root = path("/tmp/skills");
+    let root = path("/tmp/config");
     let state = RwLock::new(WatchState {
-        skills_root_ref_counts: HashMap::from([(root.clone(), 1)]),
+        roots_ref_counts: HashMap::from([(root.clone(), 1)]),
     });
-    let path = root.join("demo/SKILL.md");
+    let p = root.join("demo/file.toml");
 
     let access_event = notify_event(
         EventKind::Access(AccessKind::Open(AccessMode::Any)),
-        vec![path.clone()],
+        vec![p.clone()],
     );
     assert_eq!(classify_event(&access_event, &state), Vec::<PathBuf>::new());
 
-    let any_event = notify_event(EventKind::Any, vec![path.clone()]);
+    let any_event = notify_event(EventKind::Any, vec![p.clone()]);
     assert_eq!(classify_event(&any_event, &state), Vec::<PathBuf>::new());
 
-    let other_event = notify_event(EventKind::Other, vec![path]);
+    let other_event = notify_event(EventKind::Other, vec![p]);
     assert_eq!(classify_event(&other_event, &state), Vec::<PathBuf>::new());
 }
 
 #[test]
-fn register_skills_root_dedupes_state_entries() {
+fn register_root_dedupes_state_entries() {
     let watcher = FileWatcher::noop();
-    let root = path("/tmp/skills");
-    watcher.register_skills_root(root.clone());
-    watcher.register_skills_root(root);
-    watcher.register_skills_root(path("/tmp/other-skills"));
+    let root = path("/tmp/config");
+    watcher.register_root(root.clone());
+    watcher.register_root(root);
+    watcher.register_root(path("/tmp/other-config"));
 
     let state = watcher.state.read().expect("state lock");
-    assert_eq!(state.skills_root_ref_counts.len(), 2);
+    assert_eq!(state.roots_ref_counts.len(), 2);
 }
 
 #[test]
 fn watch_registration_drop_unregisters_roots() {
     let watcher = Arc::new(FileWatcher::noop());
-    let root = path("/tmp/skills");
-    watcher.register_skills_root(root.clone());
+    let root = path("/tmp/config");
+    watcher.register_root(root.clone());
     let registration = WatchRegistration {
         file_watcher: Arc::downgrade(&watcher),
         roots: vec![root],
@@ -142,17 +145,17 @@ fn watch_registration_drop_unregisters_roots() {
     drop(registration);
 
     let state = watcher.state.read().expect("state lock");
-    assert_eq!(state.skills_root_ref_counts.len(), 0);
+    assert_eq!(state.roots_ref_counts.len(), 0);
 }
 
 #[test]
 fn unregister_holds_state_lock_until_unwatch_finishes() {
     let temp_dir = tempfile::tempdir().expect("temp dir");
-    let root = temp_dir.path().join("skills");
+    let root = temp_dir.path().join("config");
     std::fs::create_dir(&root).expect("create root");
 
     let watcher = Arc::new(FileWatcher::new(temp_dir.path().to_path_buf()).expect("watcher"));
-    watcher.register_skills_root(root.clone());
+    watcher.register_root(root.clone());
 
     let inner = watcher.inner.as_ref().expect("watcher inner");
     let inner_guard = inner.lock().expect("inner lock");
@@ -175,7 +178,7 @@ fn unregister_holds_state_lock_until_unwatch_finishes() {
     let register_watcher = Arc::clone(&watcher);
     let register_root = root.clone();
     let register_thread = std::thread::spawn(move || {
-        register_watcher.register_skills_root(register_root);
+        register_watcher.register_root(register_root);
     });
 
     drop(inner_guard);
@@ -184,7 +187,7 @@ fn unregister_holds_state_lock_until_unwatch_finishes() {
     register_thread.join().expect("register join");
 
     let state = watcher.state.read().expect("state lock");
-    assert_eq!(state.skills_root_ref_counts.get(&root), Some(&1));
+    assert_eq!(state.roots_ref_counts.get(&root), Some(&1));
     drop(state);
 
     let inner = watcher.inner.as_ref().expect("watcher inner");
@@ -198,10 +201,10 @@ fn unregister_holds_state_lock_until_unwatch_finishes() {
 #[tokio::test]
 async fn spawn_event_loop_flushes_pending_changes_on_shutdown() {
     let watcher = FileWatcher::noop();
-    let root = path("/tmp/skills");
+    let root = path("/tmp/config");
     {
         let mut state = watcher.state.write().expect("state lock");
-        state.skills_root_ref_counts.insert(root.clone(), 1);
+        state.roots_ref_counts.insert(root.clone(), 1);
     }
 
     let (raw_tx, raw_rx) = mpsc::unbounded_channel();
@@ -211,7 +214,7 @@ async fn spawn_event_loop_flushes_pending_changes_on_shutdown() {
     raw_tx
         .send(Ok(notify_event(
             EventKind::Create(CreateKind::File),
-            vec![root.join("a/SKILL.md")],
+            vec![root.join("a/file.toml")],
         )))
         .expect("send first event");
     let first = timeout(Duration::from_secs(2), rx.recv())
@@ -220,15 +223,15 @@ async fn spawn_event_loop_flushes_pending_changes_on_shutdown() {
         .expect("broadcast recv first");
     assert_eq!(
         first,
-        FileWatcherEvent::SkillsChanged {
-            paths: vec![root.join("a/SKILL.md")]
+        FileWatcherEvent::ConfigChanged {
+            paths: vec![root.join("a/file.toml")]
         }
     );
 
     raw_tx
         .send(Ok(notify_event(
             EventKind::Remove(RemoveKind::File),
-            vec![root.join("b/SKILL.md")],
+            vec![root.join("b/file.toml")],
         )))
         .expect("send second event");
     drop(raw_tx);
@@ -239,8 +242,8 @@ async fn spawn_event_loop_flushes_pending_changes_on_shutdown() {
         .expect("broadcast recv second");
     assert_eq!(
         second,
-        FileWatcherEvent::SkillsChanged {
-            paths: vec![root.join("b/SKILL.md")]
+        FileWatcherEvent::ConfigChanged {
+            paths: vec![root.join("b/file.toml")]
         }
     );
 }

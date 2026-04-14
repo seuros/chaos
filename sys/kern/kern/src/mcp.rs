@@ -1,7 +1,5 @@
 pub mod auth;
 pub mod oauth_types;
-mod skill_dependencies;
-pub(crate) use skill_dependencies::maybe_prompt_and_install_mcp_dependencies;
 
 use std::collections::HashMap;
 use std::env;

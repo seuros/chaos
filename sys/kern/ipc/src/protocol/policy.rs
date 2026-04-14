@@ -59,9 +59,6 @@ pub struct GranularApprovalConfig {
     pub sandbox_approval: bool,
     /// Whether to allow prompts triggered by execpolicy `prompt` rules.
     pub rules: bool,
-    /// Whether to allow approval prompts triggered by skill script execution.
-    #[serde(default)]
-    pub skill_approval: bool,
     /// Whether to allow prompts triggered by the `request_permissions` tool.
     #[serde(default)]
     pub request_permissions: bool,
@@ -76,10 +73,6 @@ impl GranularApprovalConfig {
 
     pub const fn allows_rules_approval(self) -> bool {
         self.rules
-    }
-
-    pub const fn allows_skill_approval(self) -> bool {
-        self.skill_approval
     }
 
     pub const fn allows_request_permissions(self) -> bool {

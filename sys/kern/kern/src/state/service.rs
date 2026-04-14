@@ -11,7 +11,6 @@ use crate::mcp::McpManager;
 use crate::minions::AgentControl;
 use crate::models_manager::manager::ModelsManager;
 use crate::runtime_db::RuntimeDbHandle;
-use crate::skills::SkillsManager;
 use crate::tools::network_approval::NetworkApprovalService;
 use crate::tools::sandboxing::ApprovalStore;
 use crate::unified_exec::UnifiedExecProcessManager;
@@ -38,7 +37,6 @@ pub(crate) struct SessionServices {
     pub(crate) models_manager: Arc<ModelsManager>,
     pub(crate) session_telemetry: SessionTelemetry,
     pub(crate) tool_approvals: Mutex<ApprovalStore>,
-    pub(crate) skills_manager: Arc<SkillsManager>,
     pub(crate) mcp_manager: Arc<McpManager>,
     pub(crate) file_watcher: Arc<FileWatcher>,
     pub(crate) agent_control: AgentControl,

@@ -123,8 +123,6 @@ pub enum ApprovalPolicyV2 {
         sandbox_approval: bool,
         rules: bool,
         #[serde(default)]
-        skill_approval: bool,
-        #[serde(default)]
         request_permissions: bool,
         mcp_elicitations: bool,
     },

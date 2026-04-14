@@ -16,7 +16,6 @@ pub(super) mod settings;
 
 // ── New submodules ───────────────────────────────────────────────────────────
 pub(crate) mod session;
-pub(crate) mod skills_info;
 pub(crate) mod spawn;
 pub(crate) mod submission_loop;
 pub(crate) mod turn;
@@ -39,7 +38,6 @@ pub(crate) use turn_context::PreviousTurnSettings;
 pub(crate) use turn_context::SessionConfiguration;
 pub(crate) use turn_context::SessionSettingsUpdate;
 pub(crate) use turn_context::TurnContext;
-pub(crate) use turn_context::TurnSkillsContext;
 
 // Turn execution helpers used by compact / clamp_bridge / tasks
 pub(crate) use turn::built_tools;
@@ -107,8 +105,6 @@ pub(crate) use crate::minions::AgentStatus;
 pub(crate) use crate::models_manager::collaboration_mode_presets::CollaborationModesConfig;
 #[cfg(test)]
 pub(crate) use crate::models_manager::manager::ModelsManager;
-#[cfg(test)]
-pub(crate) use crate::skills::SkillsManager;
 #[cfg(test)]
 pub(crate) use crate::state::ActiveTurn;
 #[cfg(test)]

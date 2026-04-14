@@ -854,8 +854,4 @@ impl Config {
             .network
             .is_some()
     }
-
-    pub fn bundled_skills_enabled(&self) -> bool {
-        crate::skills::manager::bundled_skills_enabled_from_stack(&self.config_layer_stack)
-    }
 }

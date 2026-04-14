@@ -160,7 +160,7 @@ async fn handle_request(
     };
 
     let cancellation = CancellationToken::new();
-    let router = match built_tools(&session, &turn_context, &[], None, &cancellation).await {
+    let router = match built_tools(&session, &turn_context, &[], &cancellation).await {
         Ok(router) => router,
         Err(err) => {
             return ClampBridgeResponse::Error {

@@ -145,7 +145,6 @@ impl Session {
             .config_layer_stack
             .with_user_config(&config_toml_path, user_config);
         state.session_configuration.original_config_do_not_use = Arc::new(config);
-        self.services.skills_manager.clear_cache();
     }
 
     pub(crate) async fn reload_project_mcp_layer_and_refresh(&self, turn_context: &TurnContext) {

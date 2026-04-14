@@ -42,7 +42,7 @@ impl From<Vec<UserInput>> for ResponseInputItem {
                             PromptImageMode::ResizeToFit,
                         )
                     }
-                    UserInput::Skill { .. } | UserInput::Mention { .. } => Vec::new(), // Tool bodies are injected later in core
+                    UserInput::Mention { .. } => Vec::new(), // Tool bodies are injected later in core
                 })
                 .collect::<Vec<ContentItem>>(),
         }

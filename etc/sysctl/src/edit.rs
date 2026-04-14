@@ -14,7 +14,6 @@ use std::collections::HashMap;
 use std::path::Path;
 use std::path::PathBuf;
 use tokio::task;
-use toml_edit::ArrayOfTables;
 use toml_edit::DocumentMut;
 use toml_edit::Item as TomlItem;
 use toml_edit::Table as TomlTable;
@@ -40,8 +39,6 @@ pub enum ConfigEdit {
     SetNoticeHideRateLimitModelNudge(bool),
     /// Replace the entire `[mcp_servers]` table.
     ReplaceMcpServers(BTreeMap<String, McpServerConfig>),
-    /// Set or clear a skill config entry under `[[skills.config]]`.
-    SetSkillConfig { path: PathBuf, enabled: bool },
     /// Set trust_level under `[projects."<path>"]`,
     /// migrating inline tables to explicit tables.
     SetProjectTrustLevel { path: PathBuf, level: TrustLevel },
@@ -349,9 +346,6 @@ impl ConfigDocument {
                 value(*acknowledged),
             )),
             ConfigEdit::ReplaceMcpServers(servers) => Ok(self.replace_mcp_servers(servers)),
-            ConfigEdit::SetSkillConfig { path, enabled } => {
-                Ok(self.set_skill_config(path.as_path(), *enabled))
-            }
             ConfigEdit::SetPath { segments, value } => Ok(self.insert(segments, value.clone())),
             ConfigEdit::ClearPath { segments } => Ok(self.clear_owned(segments)),
             ConfigEdit::SetProjectTrustLevel { path, level } => {
@@ -433,113 +427,6 @@ impl ConfigDocument {
         }
 
         true
-    }
-
-    fn set_skill_config(&mut self, path: &Path, enabled: bool) -> bool {
-        let normalized_path = normalize_skill_config_path(path);
-        let mut remove_skills_table = false;
-        let mut mutated = false;
-
-        {
-            let root = self.doc.as_table_mut();
-            let skills_item = match root.get_mut("skills") {
-                Some(item) => item,
-                None => {
-                    if enabled {
-                        return false;
-                    }
-                    root.insert(
-                        "skills",
-                        TomlItem::Table(document_helpers::new_implicit_table()),
-                    );
-                    let Some(item) = root.get_mut("skills") else {
-                        return false;
-                    };
-                    item
-                }
-            };
-
-            if document_helpers::ensure_table_for_write(skills_item).is_none() {
-                if enabled {
-                    return false;
-                }
-                *skills_item = TomlItem::Table(document_helpers::new_implicit_table());
-            }
-            let Some(skills_table) = skills_item.as_table_mut() else {
-                return false;
-            };
-
-            let config_item = match skills_table.get_mut("config") {
-                Some(item) => item,
-                None => {
-                    if enabled {
-                        return false;
-                    }
-                    skills_table.insert("config", TomlItem::ArrayOfTables(ArrayOfTables::new()));
-                    let Some(item) = skills_table.get_mut("config") else {
-                        return false;
-                    };
-                    item
-                }
-            };
-
-            if !matches!(config_item, TomlItem::ArrayOfTables(_)) {
-                if enabled {
-                    return false;
-                }
-                *config_item = TomlItem::ArrayOfTables(ArrayOfTables::new());
-            }
-
-            let TomlItem::ArrayOfTables(overrides) = config_item else {
-                return false;
-            };
-
-            let existing_index = overrides.iter().enumerate().find_map(|(idx, table)| {
-                table
-                    .get("path")
-                    .and_then(|item| item.as_str())
-                    .map(Path::new)
-                    .map(normalize_skill_config_path)
-                    .filter(|value| *value == normalized_path)
-                    .map(|_| idx)
-            });
-
-            if enabled {
-                if let Some(index) = existing_index {
-                    overrides.remove(index);
-                    mutated = true;
-                    if overrides.is_empty() {
-                        skills_table.remove("config");
-                        if skills_table.is_empty() {
-                            remove_skills_table = true;
-                        }
-                    }
-                }
-            } else if let Some(index) = existing_index {
-                for (idx, table) in overrides.iter_mut().enumerate() {
-                    if idx == index {
-                        table["path"] = value(normalized_path);
-                        table["enabled"] = value(false);
-                        mutated = true;
-                        break;
-                    }
-                }
-            } else {
-                let mut entry = TomlTable::new();
-                entry.set_implicit(false);
-                entry["path"] = value(normalized_path);
-                entry["enabled"] = value(false);
-                overrides.push(entry);
-                mutated = true;
-            }
-        }
-
-        if remove_skills_table {
-            let root = self.doc.as_table_mut();
-            root.remove("skills");
-        }
-
-        mutated
     }
 
     fn scoped_segments(&self, scope: Scope, segments: &[&str]) -> Vec<String> {
@@ -647,13 +534,6 @@ impl ConfigDocument {
             _ => {}
         }
     }
-}
-
-fn normalize_skill_config_path(path: &Path) -> String {
-    path.canonicalize()
-        .unwrap_or_else(|_| path.to_path_buf())
-        .to_string_lossy()
-        .to_string()
 }
 
 /// Set the trust level for a project in the TOML document.

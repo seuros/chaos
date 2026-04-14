@@ -27,11 +27,6 @@ pub enum UserInput {
     /// `Image` variant (base64 data URL) during request serialization.
     LocalImage { path: std::path::PathBuf },
 
-    /// Skill selected by the user (name + path to SKILL.md).
-    Skill {
-        name: String,
-        path: std::path::PathBuf,
-    },
     /// Explicit structured mention selected by the user.
     ///
     /// `path` identifies the exact mention target, for example

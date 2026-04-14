@@ -273,7 +273,6 @@ async fn run_event_loop(
                             parsed_cmd,
                             network_approval_context: _,
                             additional_permissions: _,
-                            skill_metadata: _,
                             available_decisions: _,
                         } = ev;
                         handle_exec_approval_request(
@@ -363,9 +362,6 @@ async fn run_event_loop(
                     | EventMsg::McpListToolsResponse(_)
                     | EventMsg::AllToolsResponse(_)
                     | EventMsg::ListCustomPromptsResponse(_)
-                    | EventMsg::ListSkillsResponse(_)
-                    | EventMsg::ListRemoteSkillsResponse(_)
-                    | EventMsg::RemoteSkillDownloaded(_)
                     | EventMsg::ExecCommandBegin(_)
                     | EventMsg::TerminalInteraction(_)
                     | EventMsg::ExecCommandOutputDelta(_)
@@ -394,7 +390,6 @@ async fn run_event_loop(
                     | EventMsg::AgentMessageContentDelta(_)
                     | EventMsg::ReasoningContentDelta(_)
                     | EventMsg::ReasoningRawContentDelta(_)
-                    | EventMsg::SkillsUpdateAvailable
                     | EventMsg::UndoStarted(_)
                     | EventMsg::UndoCompleted(_)
                     | EventMsg::ExitedReviewMode(_)

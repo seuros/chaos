@@ -1,7 +1,6 @@
 use std::collections::HashMap;
 use std::path::PathBuf;
 
-use chaos_ipc::approvals::ExecApprovalRequestSkillMetadata;
 use chaos_ipc::approvals::ExecPolicyAmendment;
 use chaos_ipc::approvals::NetworkPolicyAmendment;
 use chaos_ipc::approvals::NetworkPolicyRuleAction;
@@ -210,7 +209,6 @@ impl Session {
         network_approval_context: Option<NetworkApprovalContext>,
         proposed_execpolicy_amendment: Option<ExecPolicyAmendment>,
         additional_permissions: Option<PermissionProfile>,
-        skill_metadata: Option<ExecApprovalRequestSkillMetadata>,
         available_decisions: Option<Vec<ReviewDecision>>,
     ) -> ReviewDecision {
         // Command-level approvals use `call_id`.
@@ -267,7 +265,6 @@ impl Session {
             proposed_execpolicy_amendment,
             proposed_network_policy_amendments,
             additional_permissions,
-            skill_metadata,
             available_decisions: Some(available_decisions),
             parsed_cmd,
         });

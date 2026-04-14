@@ -35,8 +35,6 @@ use super::ImageGenerationEndEvent;
 use super::ItemCompletedEvent;
 use super::ItemStartedEvent;
 use super::ListCustomPromptsResponseEvent;
-use super::ListRemoteSkillsResponseEvent;
-use super::ListSkillsResponseEvent;
 use super::McpListToolsResponseEvent;
 use super::McpStartupCompleteEvent;
 use super::McpStartupUpdateEvent;
@@ -51,7 +49,6 @@ use super::ProcessRolledBackEvent;
 use super::RawResponseItemEvent;
 use super::ReasoningContentDeltaEvent;
 use super::ReasoningRawContentDeltaEvent;
-use super::RemoteSkillDownloadedEvent;
 use super::ReviewRequest;
 use super::SessionConfiguredEvent;
 use super::StreamErrorEvent;
@@ -239,18 +236,6 @@ pub enum EventMsg {
 
     /// List of custom prompts available to the agent.
     ListCustomPromptsResponse(ListCustomPromptsResponseEvent),
-
-    /// List of skills available to the agent.
-    ListSkillsResponse(ListSkillsResponseEvent),
-
-    /// List of remote skills available to the agent.
-    ListRemoteSkillsResponse(ListRemoteSkillsResponseEvent),
-
-    /// Remote skill downloaded to local cache.
-    RemoteSkillDownloaded(RemoteSkillDownloadedEvent),
-
-    /// Notification that skill data may have been updated and clients may want to reload.
-    SkillsUpdateAvailable,
 
     PlanUpdate(UpdatePlanArgs),
 

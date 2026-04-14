@@ -159,7 +159,6 @@ async fn enqueue_primary_event_delivers_session_configured_before_buffered_appro
             proposed_execpolicy_amendment: None,
             proposed_network_policy_amendments: None,
             additional_permissions: None,
-            skill_metadata: None,
             available_decisions: None,
             parsed_cmd: Vec::new(),
         }),
@@ -1219,7 +1218,6 @@ async fn refresh_pending_process_approvals_only_lists_inactive_processes() {
                 proposed_execpolicy_amendment: None,
                 proposed_network_policy_amendments: None,
                 additional_permissions: None,
-                skill_metadata: None,
                 available_decisions: None,
                 parsed_cmd: Vec::new(),
             }),
@@ -1305,7 +1303,6 @@ async fn inactive_process_approval_bubbles_into_active_view() -> Result<()> {
                 proposed_execpolicy_amendment: None,
                 proposed_network_policy_amendments: None,
                 additional_permissions: None,
-                skill_metadata: None,
                 available_decisions: None,
                 parsed_cmd: Vec::new(),
             }),
@@ -1364,7 +1361,11 @@ async fn active_non_primary_shutdown_target_returns_none_for_non_shutdown_event(
     app.primary_process_id = Some(ProcessId::new());
 
     assert_eq!(
-        app.active_non_primary_shutdown_target(&EventMsg::SkillsUpdateAvailable),
+        app.active_non_primary_shutdown_target(&EventMsg::ListCustomPromptsResponse(
+            chaos_ipc::protocol::ListCustomPromptsResponseEvent {
+                custom_prompts: vec![]
+            }
+        )),
         None
     );
     Ok(())

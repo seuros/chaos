@@ -852,7 +852,9 @@ mod tests {
     }
 
     #[test]
-    fn build_command_enables_bare_mode_by_default() {
+    fn build_command_no_bare_mode_by_default() {
+        // bare_mode is false by default; keychain auth must remain accessible
+        // for Claude Code MAX OAuth to work.
         let config = ClampConfig::default();
         let command = build_command(&PathBuf::from("claude"), &config);
         let args: Vec<_> = command
@@ -860,13 +862,20 @@ mod tests {
             .get_args()
             .map(|arg| arg.to_string_lossy().into_owned())
             .collect();
-        assert!(args.iter().any(|arg| arg == "--bare"));
+        assert!(!args.iter().any(|arg| arg == "--bare"));
+        // settings files are still blocked
+        assert!(
+            args.windows(2)
+                .any(|w| w[0] == "--setting-sources" && w[1].is_empty())
+        );
     }
 
     #[test]
     fn build_command_includes_disallowed_tools() {
         let config = ClampConfig {
             disallowed_tools: vec!["Bash".to_string(), "Read".to_string()],
+            // disallowed_tools only takes effect when CC tools are permitted
+            allow_claude_code_tools: true,
             ..Default::default()
         };
         let command = build_command(&PathBuf::from("claude"), &config);

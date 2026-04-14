@@ -133,52 +133,6 @@ serpent = 4
 }
 
 #[test]
-fn set_skill_config_writes_disabled_entry() {
-    let tmp = tempdir().expect("tmpdir");
-    let chaos_home = tmp.path();
-
-    ConfigEditsBuilder::new(chaos_home)
-        .with_edits([ConfigEdit::SetSkillConfig {
-            path: PathBuf::from("/tmp/skills/demo/SKILL.md"),
-            enabled: false,
-        }])
-        .apply_blocking()
-        .expect("persist");
-
-    let contents = std::fs::read_to_string(chaos_home.join(CONFIG_TOML_FILE)).expect("read config");
-    let expected = r#"[[skills.config]]
-path = "/tmp/skills/demo/SKILL.md"
-enabled = false
-"#;
-    assert_eq!(contents, expected);
-}
-
-#[test]
-fn set_skill_config_removes_entry_when_enabled() {
-    let tmp = tempdir().expect("tmpdir");
-    let chaos_home = tmp.path();
-    std::fs::write(
-        chaos_home.join(CONFIG_TOML_FILE),
-        r#"[[skills.config]]
-path = "/tmp/skills/demo/SKILL.md"
-enabled = false
-"#,
-    )
-    .expect("seed config");
-
-    ConfigEditsBuilder::new(chaos_home)
-        .with_edits([ConfigEdit::SetSkillConfig {
-            path: PathBuf::from("/tmp/skills/demo/SKILL.md"),
-            enabled: true,
-        }])
-        .apply_blocking()
-        .expect("persist");
-
-    let contents = std::fs::read_to_string(chaos_home.join(CONFIG_TOML_FILE)).expect("read config");
-    assert_eq!(contents, "");
-}
-
-#[test]
 fn blocking_set_model_preserves_inline_table_contents() {
     let tmp = tempdir().expect("tmpdir");
     let chaos_home = tmp.path();

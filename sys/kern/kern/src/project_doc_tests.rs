@@ -1,7 +1,6 @@
 use super::*;
 use crate::config::ConfigBuilder;
 use std::fs;
-use std::path::PathBuf;
 use tempfile::TempDir;
 
 /// Helper that returns a `Config` pointing at `root` and using `limit` as
@@ -317,25 +316,6 @@ async fn agents_md_preferred_over_fallbacks() {
 }
 
 #[tokio::test]
-async fn skills_are_not_appended_to_project_doc() {
-    let tmp = tempfile::tempdir().expect("tempdir");
-    fs::write(tmp.path().join("AGENTS.md"), "base doc").unwrap();
-
-    let cfg = make_config(&tmp, 4096, None).await;
-    create_skill(
-        cfg.chaos_home.clone(),
-        "pdf-processing",
-        "extract from pdfs",
-    );
-
-    let res = get_user_instructions(&cfg)
-        .await
-        .expect("instructions expected");
-    let expected = format!("base doc\n\n{HIERARCHICAL_AGENTS_MESSAGE}");
-    assert_eq!(res, expected);
-}
-
-#[tokio::test]
 async fn apps_feature_does_not_emit_user_instructions_by_itself() {
     let tmp = tempfile::tempdir().expect("tempdir");
     let cfg = make_config(&tmp, 4096, None).await;
@@ -354,11 +334,4 @@ async fn apps_feature_does_not_append_to_project_doc_user_instructions() {
         .expect("instructions expected");
     let expected = format!("base doc\n\n{HIERARCHICAL_AGENTS_MESSAGE}");
     assert_eq!(res, expected);
-}
-
-fn create_skill(chaos_home: PathBuf, name: &str, description: &str) {
-    let skill_dir = chaos_home.join(format!("skills/{name}"));
-    fs::create_dir_all(&skill_dir).unwrap();
-    let content = format!("---\nname: {name}\ndescription: {description}\n---\n\n# Body\n");
-    fs::write(skill_dir.join("SKILL.md"), content).unwrap();
 }

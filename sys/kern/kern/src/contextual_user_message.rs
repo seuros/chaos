@@ -5,8 +5,6 @@ use chaos_ipc::protocol::ENVIRONMENT_CONTEXT_OPEN_TAG;
 
 pub(crate) const AGENTS_MD_START_MARKER: &str = "# AGENTS.md instructions for ";
 pub(crate) const AGENTS_MD_END_MARKER: &str = "</INSTRUCTIONS>";
-pub(crate) const SKILL_OPEN_TAG: &str = "<skill>";
-pub(crate) const SKILL_CLOSE_TAG: &str = "</skill>";
 pub(crate) const USER_SHELL_COMMAND_OPEN_TAG: &str = "<user_shell_command>";
 pub(crate) const USER_SHELL_COMMAND_CLOSE_TAG: &str = "</user_shell_command>";
 pub(crate) const TURN_ABORTED_OPEN_TAG: &str = "<turn_aborted>";
@@ -70,8 +68,6 @@ pub(crate) const ENVIRONMENT_CONTEXT_FRAGMENT: ContextualUserFragmentDefinition 
         ENVIRONMENT_CONTEXT_OPEN_TAG,
         ENVIRONMENT_CONTEXT_CLOSE_TAG,
     );
-pub(crate) const SKILL_FRAGMENT: ContextualUserFragmentDefinition =
-    ContextualUserFragmentDefinition::new(SKILL_OPEN_TAG, SKILL_CLOSE_TAG);
 pub(crate) const USER_SHELL_COMMAND_FRAGMENT: ContextualUserFragmentDefinition =
     ContextualUserFragmentDefinition::new(
         USER_SHELL_COMMAND_OPEN_TAG,
@@ -88,7 +84,6 @@ pub(crate) const SUBAGENT_NOTIFICATION_FRAGMENT: ContextualUserFragmentDefinitio
 const CONTEXTUAL_USER_FRAGMENTS: &[ContextualUserFragmentDefinition] = &[
     AGENTS_MD_FRAGMENT,
     ENVIRONMENT_CONTEXT_FRAGMENT,
-    SKILL_FRAGMENT,
     USER_SHELL_COMMAND_FRAGMENT,
     TURN_ABORTED_FRAGMENT,
     SUBAGENT_NOTIFICATION_FRAGMENT,
@@ -115,7 +110,7 @@ pub(crate) fn is_memory_excluded_contextual_user_fragment(content_item: &Content
     let ContentItem::InputText { text } = content_item else {
         return false;
     };
-    AGENTS_MD_FRAGMENT.matches_text(text) || SKILL_FRAGMENT.matches_text(text)
+    AGENTS_MD_FRAGMENT.matches_text(text)
 }
 
 #[cfg(test)]

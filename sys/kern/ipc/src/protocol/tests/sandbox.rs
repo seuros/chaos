@@ -150,7 +150,6 @@ fn granular_approval_config_mcp_elicitation_flag_is_field_driven() {
         GranularApprovalConfig {
             sandbox_approval: false,
             rules: false,
-            skill_approval: false,
             request_permissions: false,
             mcp_elicitations: true,
         }
@@ -160,35 +159,10 @@ fn granular_approval_config_mcp_elicitation_flag_is_field_driven() {
         !GranularApprovalConfig {
             sandbox_approval: false,
             rules: false,
-            skill_approval: false,
             request_permissions: false,
             mcp_elicitations: false,
         }
         .allows_mcp_elicitations()
-    );
-}
-
-#[test]
-fn granular_approval_config_skill_approval_flag_is_field_driven() {
-    assert!(
-        GranularApprovalConfig {
-            sandbox_approval: false,
-            rules: false,
-            skill_approval: true,
-            request_permissions: false,
-            mcp_elicitations: false,
-        }
-        .allows_skill_approval()
-    );
-    assert!(
-        !GranularApprovalConfig {
-            sandbox_approval: false,
-            rules: false,
-            skill_approval: false,
-            request_permissions: false,
-            mcp_elicitations: false,
-        }
-        .allows_skill_approval()
     );
 }
 
@@ -198,7 +172,6 @@ fn granular_approval_config_request_permissions_flag_is_field_driven() {
         GranularApprovalConfig {
             sandbox_approval: false,
             rules: false,
-            skill_approval: false,
             request_permissions: true,
             mcp_elicitations: false,
         }
@@ -208,7 +181,6 @@ fn granular_approval_config_request_permissions_flag_is_field_driven() {
         !GranularApprovalConfig {
             sandbox_approval: false,
             rules: false,
-            skill_approval: false,
             request_permissions: false,
             mcp_elicitations: false,
         }
@@ -230,7 +202,6 @@ fn granular_approval_config_defaults_missing_optional_flags_to_false() {
         GranularApprovalConfig {
             sandbox_approval: true,
             rules: false,
-            skill_approval: false,
             request_permissions: false,
             mcp_elicitations: true,
         }

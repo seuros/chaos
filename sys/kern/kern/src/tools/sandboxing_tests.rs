@@ -41,7 +41,6 @@ fn default_exec_approval_requirement_rejects_sandbox_prompt_when_granular_disabl
     let policy = ApprovalPolicy::Granular(GranularApprovalConfig {
         sandbox_approval: false,
         rules: true,
-        skill_approval: true,
         request_permissions: true,
         mcp_elicitations: true,
     });
@@ -63,7 +62,6 @@ fn default_exec_approval_requirement_keeps_prompt_when_granular_allows_sandbox_a
     let policy = ApprovalPolicy::Granular(GranularApprovalConfig {
         sandbox_approval: true,
         rules: false,
-        skill_approval: true,
         request_permissions: true,
         mcp_elicitations: false,
     });

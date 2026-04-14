@@ -16,16 +16,15 @@ use crate::minions::AgentControl;
 use crate::models_manager::collaboration_mode_presets::CollaborationModesConfig;
 use crate::models_manager::manager::ModelsManager;
 use crate::process::Process;
-use crate::protocol::Event;
-use crate::protocol::EventMsg;
 use crate::protocol::SessionConfiguredEvent;
 use crate::rollout::RolloutRecorder;
 use crate::rollout::truncation;
 use crate::shell_snapshot::ShellSnapshot;
-use crate::skills::SkillsManager;
 use chaos_ipc::ProcessId;
 use chaos_ipc::config_types::CollaborationModeMask;
 use chaos_ipc::openai_models::ModelPreset;
+use chaos_ipc::protocol::Event;
+use chaos_ipc::protocol::EventMsg;
 use chaos_ipc::protocol::InitialHistory;
 use chaos_ipc::protocol::McpServerRefreshConfig;
 use chaos_ipc::protocol::Op;
@@ -76,7 +75,7 @@ impl Drop for TempChaosHomeGuard {
     }
 }
 
-fn build_file_watcher(chaos_home: PathBuf, skills_manager: Arc<SkillsManager>) -> Arc<FileWatcher> {
+fn build_file_watcher(chaos_home: PathBuf) -> Arc<FileWatcher> {
     if should_use_process_table_test_behavior()
         && let Ok(handle) = Handle::try_current()
         && handle.runtime_flavor() == RuntimeFlavor::CurrentThread
@@ -87,33 +86,13 @@ fn build_file_watcher(chaos_home: PathBuf, skills_manager: Arc<SkillsManager>) -
         return Arc::new(FileWatcher::noop());
     }
 
-    let file_watcher = match FileWatcher::new(chaos_home) {
+    match FileWatcher::new(chaos_home) {
         Ok(file_watcher) => Arc::new(file_watcher),
         Err(err) => {
             warn!("failed to initialize file watcher: {err}");
             Arc::new(FileWatcher::noop())
         }
-    };
-
-    let mut rx = file_watcher.subscribe();
-    let skills_manager = Arc::clone(&skills_manager);
-    if let Ok(handle) = Handle::try_current() {
-        handle.spawn(async move {
-            loop {
-                match rx.recv().await {
-                    Ok(FileWatcherEvent::SkillsChanged { .. }) => {
-                        skills_manager.clear_cache();
-                    }
-                    Err(broadcast::error::RecvError::Closed) => break,
-                    Err(broadcast::error::RecvError::Lagged(_)) => continue,
-                }
-            }
-        });
-    } else {
-        warn!("file watcher listener skipped: no Tokio runtime available");
     }
-
-    file_watcher
 }
 
 /// Represents a newly created process, including the first event
@@ -167,7 +146,6 @@ pub(crate) struct ProcessTableState {
     process_created_tx: broadcast::Sender<ProcessId>,
     auth_manager: Arc<AuthManager>,
     models_manager: Arc<ModelsManager>,
-    skills_manager: Arc<SkillsManager>,
     mcp_manager: Arc<McpManager>,
     file_watcher: Arc<FileWatcher>,
     session_source: SessionSource,
@@ -187,11 +165,7 @@ impl ProcessTable {
         let models_provider = config.model_provider.clone();
         let (process_created_tx, _) = broadcast::channel(PROCESS_CREATED_CHANNEL_CAPACITY);
         let mcp_manager = Arc::new(McpManager::new());
-        let skills_manager = Arc::new(SkillsManager::new(
-            chaos_home.clone(),
-            config.bundled_skills_enabled(),
-        ));
-        let file_watcher = build_file_watcher(chaos_home.clone(), Arc::clone(&skills_manager));
+        let file_watcher = build_file_watcher(chaos_home.clone());
         Self {
             state: Arc::new(ProcessTableState {
                 processes: Arc::new(RwLock::new(HashMap::new())),
@@ -204,7 +178,6 @@ impl ProcessTable {
                     collaboration_modes_config,
                     models_provider,
                 )),
-                skills_manager,
                 mcp_manager,
                 file_watcher,
                 auth_manager,
@@ -246,11 +219,7 @@ impl ProcessTable {
         let auth_manager = AuthManager::from_auth_for_testing(auth);
         let (process_created_tx, _) = broadcast::channel(PROCESS_CREATED_CHANNEL_CAPACITY);
         let mcp_manager = Arc::new(McpManager::new());
-        let skills_manager = Arc::new(SkillsManager::new(
-            chaos_home.clone(),
-            /*bundled_skills_enabled*/ true,
-        ));
-        let file_watcher = build_file_watcher(chaos_home.clone(), Arc::clone(&skills_manager));
+        let file_watcher = build_file_watcher(chaos_home.clone());
         Self {
             state: Arc::new(ProcessTableState {
                 processes: Arc::new(RwLock::new(HashMap::new())),
@@ -261,7 +230,6 @@ impl ProcessTable {
                     auth_manager.clone(),
                     provider,
                 )),
-                skills_manager,
                 mcp_manager,
                 file_watcher,
                 auth_manager,
@@ -275,10 +243,6 @@ impl ProcessTable {
 
     pub fn session_source(&self) -> SessionSource {
         self.state.session_source.clone()
-    }
-
-    pub fn skills_manager(&self) -> Arc<SkillsManager> {
-        self.state.skills_manager.clone()
     }
 
     pub fn mcp_manager(&self) -> Arc<McpManager> {
@@ -745,16 +709,13 @@ impl ProcessTableState {
         inherited_shell_snapshot: Option<Arc<ShellSnapshot>>,
         parent_trace: Option<W3cTraceContext>,
     ) -> ChaosResult<NewProcess> {
-        let watch_registration = self
-            .file_watcher
-            .register_config(&config, self.skills_manager.as_ref());
+        let watch_registration = self.file_watcher.register_config(&config);
         let ChaosSpawnOk {
             chaos, process_id, ..
         } = Chaos::spawn(ChaosSpawnArgs {
             config,
             auth_manager,
             models_manager: Arc::clone(&self.models_manager),
-            skills_manager: Arc::clone(&self.skills_manager),
             mcp_manager: Arc::clone(&self.mcp_manager),
             file_watcher: Arc::clone(&self.file_watcher),
             conversation_history: initial_history,

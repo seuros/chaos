@@ -100,13 +100,6 @@ impl Session {
                 );
             }
         }
-        let implicit_skills = turn_context
-            .turn_skills
-            .outcome
-            .allowed_skills_for_implicit_invocation();
-        if let Some(skills_section) = crate::skills::render_skills_section(&implicit_skills) {
-            developer_sections.push(skills_section);
-        }
         if let Some(user_instructions) = turn_context.user_instructions.as_deref() {
             contextual_user_sections.push(
                 crate::instructions::UserInstructions {

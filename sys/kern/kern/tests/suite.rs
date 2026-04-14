@@ -84,8 +84,6 @@ mod json_result;
 mod list_dir;
 #[path = "suite/live_cli.rs"]
 mod live_cli;
-#[path = "suite/live_reload.rs"]
-mod live_reload;
 #[path = "suite/mcp_client.rs"]
 mod mcp_client;
 #[path = "suite/model_info_overrides.rs"]
@@ -130,8 +128,6 @@ mod shell_command;
 mod shell_serialization;
 #[path = "suite/shell_snapshot.rs"]
 mod shell_snapshot;
-#[path = "suite/skills.rs"]
-mod skills;
 #[path = "suite/spawn_agent_description.rs"]
 mod spawn_agent_description;
 #[path = "suite/stream_error_allows_next_turn.rs"]

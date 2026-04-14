@@ -1,7 +1,7 @@
 # chaos-ipc
 
-This crate defines the "types" for the protocol used by Chaos CLI, which includes both "internal types" for communication between `chaos-kern` and `chaos-xserver`, as well as "external types" used with the app server.
+Protocol types for inter-process communication between Chaos components. Defines
+`RolloutItem` — the atomic unit of session history — along with event messages,
+turn context, and session metadata that flow through the system.
 
-This crate should have minimal dependencies.
-
-Ideally, we should avoid "material business logic" in this crate, as we can always introduce `Ext`-style traits to add functionality to types in other crates.
+Minimal dependencies by design. No business logic lives here.

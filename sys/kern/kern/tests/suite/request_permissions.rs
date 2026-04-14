@@ -427,7 +427,6 @@ async fn request_permissions_tool_is_auto_denied_when_granular_request_permissio
     let approval_policy = ApprovalPolicy::Granular(GranularApprovalConfig {
         sandbox_approval: true,
         rules: true,
-        skill_approval: true,
         request_permissions: false,
         mcp_elicitations: true,
     });

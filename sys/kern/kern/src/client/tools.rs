@@ -426,7 +426,6 @@ pub(crate) async fn handle_clamp_tool_permission(
                             proposed_execpolicy_amendment,
                             None,
                             None,
-                            None,
                         )
                         .await;
                     if matches!(

@@ -745,7 +745,6 @@ async fn resolve_resume_process_id(
     args: &crate::cli::ResumeArgs,
 ) -> anyhow::Result<Option<ProcessId>> {
     if args.last {
-        let default_provider_filter = vec![config.model_provider_id.clone()];
         let filter_cwd = if args.all {
             None
         } else {
@@ -757,8 +756,6 @@ async fn resolve_resume_process_id(
             /*cursor*/ None,
             chaos_kern::ProcessSortKey::UpdatedAt,
             &[],
-            Some(default_provider_filter.as_slice()),
-            &config.model_provider_id,
             filter_cwd,
         )
         .await

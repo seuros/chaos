@@ -229,6 +229,9 @@ impl ChatWidget {
     }
 
     pub(crate) fn model_display_name(&self) -> &str {
+        if crate::theme::is_clamped() {
+            return "claude (MAX)";
+        }
         let model = self.current_model();
         if model.is_empty() {
             DEFAULT_MODEL_DISPLAY_NAME

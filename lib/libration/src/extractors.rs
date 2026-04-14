@@ -138,31 +138,12 @@ fn parse_duration_secs(raw: &str) -> Option<i64> {
     Some((total_ms + 999) / 1_000)
 }
 
-/// Parse an RFC-3339 timestamp into unix seconds. Pulls in nothing heavy
-/// because this only handles the subset Anthropic emits: `YYYY-MM-DDTHH:MM:SSZ`.
+/// Parse an RFC-3339 timestamp into unix seconds. Anthropic emits
+/// `YYYY-MM-DDTHH:MM:SSZ`; jiff handles that and every reasonable variant
+/// without us rolling a civil-from-days algorithm by hand.
 fn parse_rfc3339_secs(raw: &str) -> Option<i64> {
-    let raw = raw.trim().strip_suffix('Z')?;
-    // YYYY-MM-DDTHH:MM:SS
-    if raw.len() < 19 {
-        return None;
-    }
-    let year: i64 = raw.get(0..4)?.parse().ok()?;
-    let month: i64 = raw.get(5..7)?.parse().ok()?;
-    let day: i64 = raw.get(8..10)?.parse().ok()?;
-    let hour: i64 = raw.get(11..13)?.parse().ok()?;
-    let minute: i64 = raw.get(14..16)?.parse().ok()?;
-    let second: i64 = raw.get(17..19)?.parse().ok()?;
-    Some(days_from_civil(year, month, day) * 86_400 + hour * 3_600 + minute * 60 + second)
-}
-
-/// Howard Hinnant's civil-from-days algorithm — unix epoch = 1970-01-01.
-fn days_from_civil(y: i64, m: i64, d: i64) -> i64 {
-    let y = if m <= 2 { y - 1 } else { y };
-    let era = y.div_euclid(400);
-    let yoe = y - era * 400;
-    let doy = (153 * (if m > 2 { m - 3 } else { m + 9 }) + 2) / 5 + d - 1;
-    let doe = yoe * 365 + yoe / 4 - yoe / 100 + doy;
-    era * 146_097 + doe - 719_468
+    let ts: jiff::Timestamp = raw.trim().parse().ok()?;
+    Some(ts.as_second())
 }
 
 #[cfg(test)]

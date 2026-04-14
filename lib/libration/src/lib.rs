@@ -20,6 +20,7 @@ pub use extractors::AnthropicHeaders;
 pub use extractors::OpenAICompatibleHeaders;
 pub use middleware::RationLayer;
 pub use middleware::RationService;
+pub use middleware::UsageSniffer;
 pub use middleware::sniff_and_record;
 pub use store::LatestWindow;
 pub use store::UsageStore;

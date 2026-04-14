@@ -1834,6 +1834,7 @@ dependencies = [
  "bytes",
  "chaos-abi",
  "chaos-ipc",
+ "chaos-libration",
  "chaos-services",
  "codex-client",
  "futures",

@@ -662,6 +662,7 @@ async fn run_sse_stream(
         body,
         retry,
         "anthropic_messages",
+        None,
     )
     .await?;
     process_sse_data_stream(response.into_body().into_data_stream(), idle_timeout, tx).await

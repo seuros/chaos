@@ -13,6 +13,7 @@ workspace = true
 chaos-abi = { workspace = true }
 bytes = { workspace = true }
 chaos-ipc = { workspace = true }
+chaos-libration = { workspace = true }
 chaos-services = { workspace = true }
 codex-client = { workspace = true }
 futures = { workspace = true }

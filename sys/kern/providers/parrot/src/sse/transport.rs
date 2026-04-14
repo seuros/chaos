@@ -1,5 +1,6 @@
 use crate::provider::RetryConfig;
 use chaos_abi::AbiError;
+use chaos_libration::UsageSniffer;
 use http::HeaderMap;
 use rama::Service;
 use rama::http::Body;
@@ -9,14 +10,19 @@ use rama::http::StatusCode;
 use rama::http::body::util::BodyExt;
 use rama::http::client::EasyHttpWebClient;
 use serde_json::Value;
+use std::sync::Arc;
 
 /// Execute a POST SSE request with the provider's retry policy and return the successful response.
+///
+/// When `sniffer` is `Some`, rate-limit headers from the successful response
+/// are handed to the ration pipeline in a fire-and-forget background task.
 pub(crate) async fn start_rama_post_sse_request(
     url: &str,
     headers: &HeaderMap,
     body: &Value,
     retry: &RetryConfig,
     transport_name: &str,
+    sniffer: Option<&Arc<UsageSniffer>>,
 ) -> Result<Response<Body>, AbiError> {
     let body_bytes = serde_json::to_vec(body).map_err(|e| AbiError::InvalidRequest {
         message: e.to_string(),
@@ -85,6 +91,10 @@ pub(crate) async fn start_rama_post_sse_request(
                 status: status.as_u16(),
                 message: body_text.to_string(),
             });
+        }
+
+        if let Some(sniffer) = sniffer {
+            sniffer.sniff(response.headers());
         }
 
         return Ok(response);

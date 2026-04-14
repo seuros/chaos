@@ -1,6 +1,5 @@
 ---
 source: lib/libui/status/tests.rs
-assertion_line: 766
 expression: sanitized
 ---
 /status
@@ -12,7 +11,6 @@ expression: sanitized
 │  Model:         gpt-5.1-codex-max (reasoning none, summaries auto) │
 │  Directory: [[workspace]]                                          │
 │  Permissions:   Custom (read-only, interactive)                    │
-│  Agents.md:     <none>                                             │
 │                                                                    │
 │  Token usage:   750 total  (500 input + 250 output)                │
 │  Limits:        data not available yet                             │

@@ -87,6 +87,35 @@ where
     }
 }
 
+/// Record rate-limit headers inline, without wrapping the HTTP client in a
+/// rama `Service`. This is the hook-point for transports that assemble
+/// requests imperatively (retry loops, manual SSE plumbing) where
+/// slotting in a full middleware stack would be disruptive.
+///
+/// The actual write fires in the background via `tokio::spawn`, matching
+/// [`RationService`]'s semantics: persistence never blocks the caller and
+/// failures are logged through `tracing`.
+pub fn sniff_and_record<E>(extractor: &E, store: &Arc<UsageStore>, headers: &rama::http::HeaderMap)
+where
+    E: HeaderExtractor,
+{
+    let observed_at = SystemTime::now()
+        .duration_since(UNIX_EPOCH)
+        .map(|d| d.as_secs() as i64)
+        .unwrap_or(0);
+    let windows = extractor.extract(headers, observed_at);
+    if windows.is_empty() {
+        return;
+    }
+    let provider = extractor.provider().to_string();
+    let store = Arc::clone(store);
+    tokio::spawn(async move {
+        if let Err(err) = store.record(&provider, &windows).await {
+            tracing::warn!(target: "ration", %provider, %err, "failed to record usage snapshot");
+        }
+    });
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;

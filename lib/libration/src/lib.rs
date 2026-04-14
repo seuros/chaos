@@ -12,11 +12,15 @@
 //! misleading. Reads surface a [`Freshness`] so callers can decide whether
 //! to trust the snapshot or fall back to "budget recovered".
 
+pub mod extractors;
 pub mod middleware;
 pub mod store;
 
+pub use extractors::AnthropicHeaders;
+pub use extractors::OpenAICompatibleHeaders;
 pub use middleware::RationLayer;
 pub use middleware::RationService;
+pub use middleware::sniff_and_record;
 pub use store::LatestWindow;
 pub use store::UsageStore;
 

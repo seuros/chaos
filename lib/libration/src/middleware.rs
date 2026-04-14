@@ -8,10 +8,10 @@
 
 use crate::UsageStore;
 use chaos_ration::HeaderExtractor;
-use rama::Layer;
-use rama::Service;
-use rama::http::Request;
-use rama::http::Response;
+use rama_core::Layer;
+use rama_core::Service;
+use rama_http_types::Request;
+use rama_http_types::Response;
 use std::sync::Arc;
 use std::time::SystemTime;
 use std::time::UNIX_EPOCH;
@@ -108,7 +108,7 @@ impl UsageSniffer {
     }
 
     /// Extract windows from `headers` and persist them in the background.
-    pub fn sniff(&self, headers: &rama::http::HeaderMap) {
+    pub fn sniff(&self, headers: &rama_http_types::HeaderMap) {
         sniff_and_record(self.extractor.as_ref(), &self.store, headers);
     }
 }
@@ -121,8 +121,11 @@ impl UsageSniffer {
 /// The actual write fires in the background via `tokio::spawn`, matching
 /// [`RationService`]'s semantics: persistence never blocks the caller and
 /// failures are logged through `tracing`.
-pub fn sniff_and_record<E>(extractor: &E, store: &Arc<UsageStore>, headers: &rama::http::HeaderMap)
-where
+pub fn sniff_and_record<E>(
+    extractor: &E,
+    store: &Arc<UsageStore>,
+    headers: &rama_http_types::HeaderMap,
+) where
     E: HeaderExtractor + ?Sized,
 {
     let observed_at = SystemTime::now()
@@ -147,8 +150,8 @@ mod tests {
     use super::*;
     use chaos_ration::UsageWindow;
     use chaos_storage::ChaosStorageProvider;
-    use rama::http::Body;
-    use rama::http::HeaderMap;
+    use rama_http_types::Body;
+    use rama_http_types::HeaderMap;
     use std::convert::Infallible;
     use std::sync::Mutex;
 

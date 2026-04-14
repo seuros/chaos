@@ -33,6 +33,7 @@ chaos-diff = { workspace = true }
 chaos-git = { workspace = true }
 chaos-arsenal = { workspace = true }
 chaos-cron = { workspace = true }
+chaos-libration = { workspace = true }
 chaos-storage = { workspace = true }
 chaos-concierge = { workspace = true }
 chaos-journald = { workspace = true }

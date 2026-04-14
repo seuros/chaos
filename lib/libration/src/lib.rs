@@ -14,6 +14,7 @@
 
 pub mod extractors;
 pub mod middleware;
+pub mod registry;
 pub mod store;
 
 pub use extractors::AnthropicHeaders;
@@ -27,3 +28,12 @@ pub use store::UsageStore;
 
 pub use chaos_ration::Freshness;
 pub use chaos_ration::UsageWindow;
+
+// Re-export the rama traits/types that appear in this crate's public API so
+// downstream consumers don't need to pull `rama` into their own Cargo.toml
+// just to name `Layer` / `Service` / `HeaderMap` when wiring `RationLayer`.
+pub use rama_core::Layer;
+pub use rama_core::Service;
+pub use rama_http_types::HeaderMap;
+pub use rama_http_types::Request;
+pub use rama_http_types::Response;

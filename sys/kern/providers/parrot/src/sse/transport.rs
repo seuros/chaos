@@ -93,7 +93,10 @@ pub(crate) async fn start_rama_post_sse_request(
             });
         }
 
-        if let Some(sniffer) = sniffer {
+        let active_sniffer = sniffer
+            .cloned()
+            .or_else(|| chaos_libration::registry::lookup(url));
+        if let Some(sniffer) = active_sniffer.as_deref() {
             sniffer.sniff(response.headers());
         }
 

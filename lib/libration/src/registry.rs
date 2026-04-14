@@ -46,7 +46,7 @@ pub fn lookup(url: &str) -> Option<Arc<UsageSniffer>> {
 /// Returns the shared UsageStore so kernel code can also query it directly
 /// for the "85% left" surface in the TUI.
 pub fn install_default_sniffers(storage: &ChaosStorageProvider) -> Option<Arc<UsageStore>> {
-    let store = Arc::new(UsageStore::from_provider(storage)?);
+    let store = UsageStore::from_provider(storage)?;
 
     let openai = Arc::new(UsageSniffer::new(
         OpenAICompatibleHeaders::new("openai"),

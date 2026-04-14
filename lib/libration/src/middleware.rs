@@ -83,14 +83,8 @@ where
         let windows = self.extractor.extract(res.headers(), observed_at);
 
         if !windows.is_empty() {
-            let provider = self.extractor.provider().to_string();
-            let base_url = self.base_url.to_string();
-            let store = Arc::clone(&self.store);
-            tokio::spawn(async move {
-                if let Err(err) = store.record(&provider, &base_url, &windows).await {
-                    tracing::warn!(target: "ration", %provider, %base_url, %err, "failed to record usage snapshot");
-                }
-            });
+            self.store
+                .enqueue(self.extractor.provider(), &self.base_url, windows);
         }
 
         Ok(res)
@@ -160,14 +154,7 @@ pub fn sniff_and_record<E>(
     if windows.is_empty() {
         return;
     }
-    let provider = extractor.provider().to_string();
-    let base_url = base_url.to_string();
-    let store = Arc::clone(store);
-    tokio::spawn(async move {
-        if let Err(err) = store.record(&provider, &base_url, &windows).await {
-            tracing::warn!(target: "ration", %provider, %base_url, %err, "failed to record usage snapshot");
-        }
-    });
+    store.enqueue(extractor.provider(), base_url, windows);
 }
 
 #[cfg(test)]
@@ -225,7 +212,7 @@ mod tests {
             .await
             .expect("open runtime db");
         let provider = ChaosStorageProvider::from_sqlite_pool(pool);
-        let store = Arc::new(UsageStore::from_provider(&provider).expect("store"));
+        let store = UsageStore::from_provider(&provider).expect("store");
 
         let calls = Arc::new(Mutex::new(0usize));
         let extractor = FakeExtractor {

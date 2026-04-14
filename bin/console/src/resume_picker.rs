@@ -166,7 +166,6 @@ async fn run_session_picker(
                 request.cursor.as_ref(),
                 request.sort_key,
                 INTERACTIVE_SESSION_SOURCES,
-                None,
                 request.default_provider.as_str(),
                 /*search_term*/ None,
             )

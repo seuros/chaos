@@ -67,8 +67,7 @@ fn should_persist_event_msg_extended(ev: &EventMsg) -> bool {
 
 fn event_msg_persistence_mode(ev: &EventMsg) -> Option<EventPersistenceMode> {
     match ev {
-        EventMsg::UserMessage(_)
-        | EventMsg::AgentMessage(_)
+        EventMsg::AgentMessage(_)
         | EventMsg::AgentReasoning(_)
         | EventMsg::AgentReasoningRawContent(_)
         | EventMsg::TokenCount(_)
@@ -101,7 +100,8 @@ fn event_msg_persistence_mode(ev: &EventMsg) -> Option<EventPersistenceMode> {
         | EventMsg::CollabResumeEnd(_)
         | EventMsg::DynamicToolCallRequest(_)
         | EventMsg::DynamicToolCallResponse(_) => Some(EventPersistenceMode::Extended),
-        EventMsg::Warning(_)
+        EventMsg::UserMessage(_)
+        | EventMsg::Warning(_)
         | EventMsg::ModelReroute(_)
         | EventMsg::AgentReasoningSectionBreak(_)
         | EventMsg::RawResponseItem(_)

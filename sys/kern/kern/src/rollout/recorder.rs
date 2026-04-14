@@ -43,6 +43,8 @@ use crate::runtime_db;
 use crate::runtime_db::RuntimeDbHandle;
 use crate::truncate::TruncationPolicy;
 use crate::truncate::truncate_text;
+use chaos_ipc::models::ContentItem;
+use chaos_ipc::models::ResponseItem;
 use chaos_ipc::protocol::EventMsg;
 use chaos_ipc::protocol::InitialHistory;
 use chaos_ipc::protocol::ResumedHistory;
@@ -174,7 +176,6 @@ impl RolloutRecorder {
         cursor: Option<&Cursor>,
         sort_key: ProcessSortKey,
         allowed_sources: &[SessionSource],
-        model_providers: Option<&[String]>,
         default_provider: &str,
         search_term: Option<&str>,
     ) -> std::io::Result<ProcessesPage> {
@@ -184,7 +185,6 @@ impl RolloutRecorder {
             cursor,
             sort_key,
             allowed_sources,
-            model_providers,
             default_provider,
             /*archived*/ false,
             search_term,
@@ -200,7 +200,6 @@ impl RolloutRecorder {
         cursor: Option<&Cursor>,
         sort_key: ProcessSortKey,
         allowed_sources: &[SessionSource],
-        model_providers: Option<&[String]>,
         default_provider: &str,
         search_term: Option<&str>,
     ) -> std::io::Result<ProcessesPage> {
@@ -210,7 +209,6 @@ impl RolloutRecorder {
             cursor,
             sort_key,
             allowed_sources,
-            model_providers,
             default_provider,
             /*archived*/ true,
             search_term,
@@ -225,7 +223,6 @@ impl RolloutRecorder {
         cursor: Option<&Cursor>,
         sort_key: ProcessSortKey,
         allowed_sources: &[SessionSource],
-        model_providers: Option<&[String]>,
         _default_provider: &str,
         archived: bool,
         search_term: Option<&str>,
@@ -237,9 +234,7 @@ impl RolloutRecorder {
             .list_processes(Some(archived))
             .await
             .map_err(IoError::other)?;
-        records.retain(|record| {
-            journal_record_matches_filters(record, allowed_sources, model_providers)
-        });
+        records.retain(|record| journal_record_matches_filters(record, allowed_sources));
         sort_journal_records(&mut records, sort_key);
 
         let mut items = Vec::with_capacity(page_size);
@@ -293,8 +288,6 @@ impl RolloutRecorder {
         cursor: Option<&Cursor>,
         sort_key: ProcessSortKey,
         allowed_sources: &[SessionSource],
-        model_providers: Option<&[String]>,
-        default_provider: &str,
         filter_cwd: Option<&Path>,
     ) -> std::io::Result<Option<ProcessId>> {
         let client = journal_client_from_env_or_bootstrap()
@@ -304,9 +297,7 @@ impl RolloutRecorder {
             .list_processes(Some(false))
             .await
             .map_err(IoError::other)?;
-        records.retain(|record| {
-            journal_record_matches_filters(record, allowed_sources, model_providers)
-        });
+        records.retain(|record| journal_record_matches_filters(record, allowed_sources));
         sort_journal_records(&mut records, sort_key);
 
         let mut matched = 0usize;
@@ -325,7 +316,6 @@ impl RolloutRecorder {
             }
             return Ok(Some(record.process_id));
         }
-        let _ = default_provider;
         Ok(None)
     }
 
@@ -858,16 +848,8 @@ async fn journal_client_from_env_or_bootstrap() -> Result<JournalRpcClient, Stri
 fn journal_record_matches_filters(
     record: &JournalProcessRecord,
     allowed_sources: &[SessionSource],
-    model_providers: Option<&[String]>,
 ) -> bool {
     if !allowed_sources.is_empty() && !allowed_sources.contains(&record.source) {
-        return false;
-    }
-    if let Some(model_providers) = model_providers
-        && !model_providers
-            .iter()
-            .any(|provider| provider == &record.model_provider)
-    {
         return false;
     }
     true
@@ -939,10 +921,16 @@ fn journal_process_item_from_loaded(
                     }
                 }
             }
-            RolloutItem::EventMsg(EventMsg::UserMessage(user_message)) => {
+            RolloutItem::ResponseItem(ResponseItem::Message { role, content, .. })
+                if role == "user" =>
+            {
                 saw_user_event = true;
                 if first_user_message.is_none() {
-                    first_user_message = Some(user_message.message);
+                    let text = content.iter().find_map(|c| match c {
+                        ContentItem::InputText { text } => Some(text.clone()),
+                        _ => None,
+                    });
+                    first_user_message = text;
                 }
             }
             RolloutItem::ResponseItem(_)

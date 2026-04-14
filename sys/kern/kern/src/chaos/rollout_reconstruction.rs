@@ -58,8 +58,8 @@ fn finalize_active_segment<'a>(
     pending_rollback_turns: &mut usize,
 ) {
     // Thread rollback drops the newest surviving real user-message boundaries. In replay, that
-    // means skipping the next finalized segments that contain a non-contextual
-    // `EventMsg::UserMessage`.
+    // means skipping the next finalized segments that contain a persisted user
+    // ResponseItem::Message.
     if *pending_rollback_turns > 0 {
         if active_segment.counts_as_user_turn {
             *pending_rollback_turns -= 1;
@@ -164,7 +164,7 @@ impl Session {
                         });
                     }
                 }
-                RolloutItem::EventMsg(EventMsg::UserMessage(_)) => {
+                RolloutItem::ResponseItem(ResponseItem::Message { role, .. }) if role == "user" => {
                     let active_segment =
                         active_segment.get_or_insert_with(ActiveReplaySegment::default);
                     active_segment.counts_as_user_turn = true;
@@ -173,7 +173,7 @@ impl Session {
                     let active_segment =
                         active_segment.get_or_insert_with(ActiveReplaySegment::default);
                     // `TurnContextItem` can attach metadata to an existing segment, but only a
-                    // real `UserMessage` event should make the segment count as a user turn.
+                    // persisted user ResponseItem should make the segment count as a user turn.
                     if active_segment.turn_id.is_none() {
                         active_segment.turn_id = ctx.turn_id.clone();
                     }

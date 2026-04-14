@@ -1917,6 +1917,7 @@ dependencies = [
 name = "chaos-ration"
 version = "47.0.0"
 dependencies = [
+ "rama",
  "serde",
  "thiserror 2.0.18",
  "tokio",

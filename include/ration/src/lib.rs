@@ -4,5 +4,6 @@ pub mod usage;
 
 pub use error::RationError;
 pub use provider::UsageProvider;
+pub use usage::Freshness;
 pub use usage::Usage;
 pub use usage::UsageWindow;

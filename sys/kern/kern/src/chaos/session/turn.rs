@@ -148,11 +148,6 @@ impl Session {
                 &per_turn_config,
             )
             .await;
-        let skills_outcome = Arc::new(
-            self.services
-                .skills_manager
-                .skills_for_config(&per_turn_config),
-        );
         let mut turn_context: TurnContext = make_turn_context(
             Some(Arc::clone(&self.services.auth_manager)),
             &self.services.session_telemetry,
@@ -166,7 +161,6 @@ impl Session {
                 .as_ref()
                 .map(StartedNetworkProxy::proxy),
             sub_id,
-            skills_outcome,
         );
 
         if let Some(final_schema) = final_output_json_schema {
@@ -175,37 +169,6 @@ impl Session {
         let turn_context = Arc::new(turn_context);
         turn_context.turn_metadata_state.spawn_git_enrichment_task();
         turn_context
-    }
-
-    /// Associated-function shim so callers (including tests) can still write
-    /// `Session::make_turn_context(...)` after the logic was extracted to
-    /// `turn_context::make_turn_context`. Only used by test code.
-    #[cfg(test)]
-    #[allow(clippy::too_many_arguments)]
-    pub(crate) fn make_turn_context(
-        auth_manager: Option<Arc<crate::AuthManager>>,
-        session_telemetry: &chaos_syslog::SessionTelemetry,
-        provider: crate::ModelProviderInfo,
-        session_configuration: &SessionConfiguration,
-        per_turn_config: crate::config::Config,
-        model_info: chaos_ipc::openai_models::ModelInfo,
-        models_manager: &crate::models_manager::manager::ModelsManager,
-        network: Option<chaos_pf::NetworkProxy>,
-        sub_id: String,
-        skills_outcome: Arc<crate::skills::SkillLoadOutcome>,
-    ) -> TurnContext {
-        make_turn_context(
-            auth_manager,
-            session_telemetry,
-            provider,
-            session_configuration,
-            per_turn_config,
-            model_info,
-            models_manager,
-            network,
-            sub_id,
-            skills_outcome,
-        )
     }
 
     pub(crate) async fn new_default_turn(&self) -> Arc<TurnContext> {

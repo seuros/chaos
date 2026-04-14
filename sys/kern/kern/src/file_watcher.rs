@@ -1,9 +1,8 @@
-//! Watches skill roots for changes and broadcasts coarse-grained
+//! Watches config paths for changes and broadcasts coarse-grained
 //! `FileWatcherEvent`s that higher-level components react to on the next turn.
 
 use std::collections::HashMap;
 use std::collections::HashSet;
-use std::path::Path;
 use std::path::PathBuf;
 use std::sync::Arc;
 use std::sync::Mutex;
@@ -23,15 +22,14 @@ use tokio::time::sleep_until;
 use tracing::warn;
 
 use crate::config::Config;
-use crate::skills::SkillsManager;
 
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub enum FileWatcherEvent {
-    SkillsChanged { paths: Vec<PathBuf> },
+    ConfigChanged { paths: Vec<PathBuf> },
 }
 
 struct WatchState {
-    skills_root_ref_counts: HashMap<PathBuf, usize>,
+    roots_ref_counts: HashMap<PathBuf, usize>,
 }
 
 struct FileWatcherInner {
@@ -117,7 +115,7 @@ impl FileWatcher {
         };
         let (tx, _) = broadcast::channel(128);
         let state = Arc::new(RwLock::new(WatchState {
-            skills_root_ref_counts: HashMap::new(),
+            roots_ref_counts: HashMap::new(),
         }));
         let file_watcher = Self {
             inner: Some(Mutex::new(inner)),
@@ -133,7 +131,7 @@ impl FileWatcher {
         Self {
             inner: None,
             state: Arc::new(RwLock::new(WatchState {
-                skills_root_ref_counts: HashMap::new(),
+                roots_ref_counts: HashMap::new(),
             })),
             tx,
         }
@@ -143,25 +141,10 @@ impl FileWatcher {
         self.tx.subscribe()
     }
 
-    pub(crate) fn register_config(
-        self: &Arc<Self>,
-        config: &Config,
-        skills_manager: &SkillsManager,
-    ) -> WatchRegistration {
-        let deduped_roots: HashSet<PathBuf> = skills_manager
-            .skill_roots_for_config(config)
-            .into_iter()
-            .map(|root| root.path)
-            .collect();
-        let mut registered_roots: Vec<PathBuf> = deduped_roots.into_iter().collect();
-        registered_roots.sort_unstable_by(|a, b| a.as_os_str().cmp(b.as_os_str()));
-        for root in &registered_roots {
-            self.register_skills_root(root.clone());
-        }
-
+    pub(crate) fn register_config(self: &Arc<Self>, _config: &Config) -> WatchRegistration {
         WatchRegistration {
             file_watcher: Arc::downgrade(self),
-            roots: registered_roots,
+            roots: Vec::new(),
         }
     }
 
@@ -176,11 +159,11 @@ impl FileWatcher {
         if let Ok(handle) = Handle::try_current() {
             handle.spawn(async move {
                 let now = Instant::now();
-                let mut skills = ThrottledPaths::new(now);
+                let mut pending = ThrottledPaths::new(now);
 
                 loop {
                     let now = Instant::now();
-                    let next_deadline = skills.next_deadline(now);
+                    let next_deadline = pending.next_deadline(now);
                     let timer_deadline = next_deadline
                         .unwrap_or_else(|| now + Duration::from_secs(60 * 60 * 24 * 365));
                     let timer = sleep_until(timer_deadline);
@@ -190,12 +173,12 @@ impl FileWatcher {
                         res = raw_rx.recv() => {
                             match res {
                                 Some(Ok(event)) => {
-                                    let skills_paths = classify_event(&event, &state);
+                                    let paths = classify_event(&event, &state);
                                     let now = Instant::now();
-                                    skills.add(skills_paths);
+                                    pending.add(paths);
 
-                                    if let Some(paths) = skills.take_ready(now) {
-                                        let _ = tx.send(FileWatcherEvent::SkillsChanged { paths });
+                                    if let Some(paths) = pending.take_ready(now) {
+                                        let _ = tx.send(FileWatcherEvent::ConfigChanged { paths });
                                     }
                                 }
                                 Some(Err(err)) => {
@@ -205,8 +188,8 @@ impl FileWatcher {
                                     // Flush any pending changes before shutdown so subscribers
                                     // see the latest state.
                                     let now = Instant::now();
-                                    if let Some(paths) = skills.take_pending(now) {
-                                        let _ = tx.send(FileWatcherEvent::SkillsChanged { paths });
+                                    if let Some(paths) = pending.take_pending(now) {
+                                        let _ = tx.send(FileWatcherEvent::ConfigChanged { paths });
                                     }
                                     break;
                                 }
@@ -214,8 +197,8 @@ impl FileWatcher {
                         }
                         _ = &mut timer => {
                             let now = Instant::now();
-                            if let Some(paths) = skills.take_ready(now) {
-                                let _ = tx.send(FileWatcherEvent::SkillsChanged { paths });
+                            if let Some(paths) = pending.take_ready(now) {
+                                let _ = tx.send(FileWatcherEvent::ConfigChanged { paths });
                             }
                         }
                     }
@@ -226,15 +209,13 @@ impl FileWatcher {
         }
     }
 
-    fn register_skills_root(&self, root: PathBuf) {
+    #[allow(dead_code)]
+    pub(crate) fn register_root(&self, root: PathBuf) {
         let mut state = self
             .state
             .write()
             .unwrap_or_else(std::sync::PoisonError::into_inner);
-        let count = state
-            .skills_root_ref_counts
-            .entry(root.clone())
-            .or_insert(0);
+        let count = state.roots_ref_counts.entry(root.clone()).or_insert(0);
         *count += 1;
         if *count == 1 {
             self.watch_path(root, RecursiveMode::Recursive);
@@ -250,11 +231,11 @@ impl FileWatcher {
 
         for root in roots {
             let mut should_unwatch = false;
-            if let Some(count) = state.skills_root_ref_counts.get_mut(root) {
+            if let Some(count) = state.roots_ref_counts.get_mut(root) {
                 if *count > 1 {
                     *count -= 1;
                 } else {
-                    state.skills_root_ref_counts.remove(root);
+                    state.roots_ref_counts.remove(root);
                     should_unwatch = true;
                 }
             }
@@ -284,6 +265,7 @@ impl FileWatcher {
         }
     }
 
+    #[allow(dead_code)]
     fn watch_path(&self, path: PathBuf, mode: RecursiveMode) {
         let Some(inner) = &self.inner else {
             return;
@@ -317,34 +299,28 @@ fn classify_event(event: &Event, state: &RwLock<WatchState>) -> Vec<PathBuf> {
         return Vec::new();
     }
 
-    let mut skills_paths = Vec::new();
-    let skills_roots = match state.read() {
+    let roots = match state.read() {
         Ok(state) => state
-            .skills_root_ref_counts
+            .roots_ref_counts
             .keys()
             .cloned()
             .collect::<HashSet<_>>(),
         Err(err) => {
             let state = err.into_inner();
             state
-                .skills_root_ref_counts
+                .roots_ref_counts
                 .keys()
                 .cloned()
                 .collect::<HashSet<_>>()
         }
     };
 
-    for path in &event.paths {
-        if is_skills_path(path, &skills_roots) {
-            skills_paths.push(path.clone());
-        }
-    }
-
-    skills_paths
-}
-
-fn is_skills_path(path: &Path, roots: &HashSet<PathBuf>) -> bool {
-    roots.iter().any(|root| path.starts_with(root))
+    event
+        .paths
+        .iter()
+        .filter(|path| roots.iter().any(|root| path.starts_with(root)))
+        .cloned()
+        .collect()
 }
 
 #[cfg(test)]

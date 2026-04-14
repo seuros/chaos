@@ -19,8 +19,6 @@ use serde_json::Value;
 use ts_rs::TS;
 
 use super::ApprovalPolicy;
-use super::RemoteSkillHazelnutScope;
-use super::RemoteSkillProductSurface;
 use super::ReviewDecision;
 use super::ReviewRequest;
 use super::SandboxPolicy;
@@ -283,29 +281,6 @@ pub enum Op {
     /// Request the list of available custom prompts.
     ListCustomPrompts,
 
-    /// Request the list of skills for the provided `cwd` values or the session default.
-    ListSkills {
-        /// Working directories to scope repo skills discovery.
-        ///
-        /// When empty, the session default working directory is used.
-        #[serde(default, skip_serializing_if = "Vec::is_empty")]
-        cwds: Vec<PathBuf>,
-
-        /// When true, recompute skills even if a cached result exists.
-        #[serde(default, skip_serializing_if = "std::ops::Not::not")]
-        force_reload: bool,
-    },
-
-    /// Request the list of remote skills available via ChatGPT sharing.
-    ListRemoteSkills {
-        hazelnut_scope: RemoteSkillHazelnutScope,
-        product_surface: RemoteSkillProductSurface,
-        enabled: Option<bool>,
-    },
-
-    /// Download a remote skill by id into the local skills cache.
-    DownloadRemoteSkill { hazelnut_id: String },
-
     /// Request the agent to summarize the current conversation context.
     /// The agent will use its existing context (either conversation history or previous response id)
     /// to generate a summary which will be returned as an AgentMessage event.
@@ -375,9 +350,6 @@ impl Op {
             Self::RefreshMcpServers { .. } => "refresh_mcp_servers",
             Self::ReloadUserConfig => "reload_user_config",
             Self::ListCustomPrompts => "list_custom_prompts",
-            Self::ListSkills { .. } => "list_skills",
-            Self::ListRemoteSkills { .. } => "list_remote_skills",
-            Self::DownloadRemoteSkill { .. } => "download_remote_skill",
             Self::Compact => "compact",
             Self::DropMemories => "drop_memories",
             Self::UpdateMemories => "update_memories",

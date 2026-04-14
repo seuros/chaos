@@ -428,7 +428,7 @@ mod tests {
     use std::sync::Mutex as StdMutex;
     use std::time::Duration;
 
-    use chaos_ipc::protocol::{Event, EventMsg, Op};
+    use chaos_ipc::protocol::{Event, EventMsg, Op, WarningEvent};
     use tokio::sync::Mutex as AsyncMutex;
     use tokio::sync::Notify;
     use tokio::sync::mpsc::{self, unbounded_channel};
@@ -590,7 +590,9 @@ mod tests {
             .expect("drain_ops must forward the op before shutdown");
 
         events_tx
-            .send(Ok(ev(EventMsg::SkillsUpdateAvailable)))
+            .send(Ok(ev(EventMsg::Warning(WarningEvent {
+                message: "test".to_string(),
+            }))))
             .unwrap();
         events_tx.send(Ok(ev(EventMsg::ShutdownComplete))).unwrap();
 
@@ -608,7 +610,7 @@ mod tests {
 
         // Both events reached the client.
         let first = client_event_rx.recv().await.expect("first event");
-        assert!(matches!(first.msg, EventMsg::SkillsUpdateAvailable));
+        assert!(matches!(first.msg, EventMsg::Warning(_)));
         let second = client_event_rx.recv().await.expect("shutdown event");
         assert!(matches!(second.msg, EventMsg::ShutdownComplete));
 
@@ -647,7 +649,9 @@ mod tests {
         // Consumer leaves before any event arrives.
         drop(client_event_rx);
         events_tx
-            .send(Ok(ev(EventMsg::SkillsUpdateAvailable)))
+            .send(Ok(ev(EventMsg::Warning(WarningEvent {
+                message: "test".to_string(),
+            }))))
             .unwrap();
 
         timeout(EXIT_TIMEOUT, forward)
@@ -675,7 +679,9 @@ mod tests {
         let drain2 = tokio::spawn(drain_ops(fake2, op_rx2, cancel2.clone()));
 
         events_tx2
-            .send(Ok(ev(EventMsg::SkillsUpdateAvailable)))
+            .send(Ok(ev(EventMsg::Warning(WarningEvent {
+                message: "test".to_string(),
+            }))))
             .unwrap();
         events_tx2.send(Err("kernel died".to_string())).unwrap();
 
@@ -691,7 +697,7 @@ mod tests {
 
         // The healthy event still reached the client; the error was swallowed.
         let first = client_event_rx2.recv().await.expect("first event");
-        assert!(matches!(first.msg, EventMsg::SkillsUpdateAvailable));
+        assert!(matches!(first.msg, EventMsg::Warning(_)));
         assert!(
             client_event_rx2.try_recv().is_err(),
             "errors from drive_next_event are not forwarded"

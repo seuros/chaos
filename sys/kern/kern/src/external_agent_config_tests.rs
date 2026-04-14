@@ -14,13 +14,8 @@ fn service_for_paths(claude_home: PathBuf, chaos_home: PathBuf) -> ExternalAgent
 }
 
 #[test]
-fn detect_home_lists_config_skills_and_agents_md() {
+fn detect_home_lists_config_and_agents_md() {
     let (_root, claude_home, chaos_home) = fixture_paths();
-    let agents_skills = chaos_home
-        .parent()
-        .map(|parent| parent.join(".agents").join("skills"))
-        .unwrap_or_else(|| PathBuf::from(".agents").join("skills"));
-    fs::create_dir_all(claude_home.join("skills").join("skill-a")).expect("create skills");
     fs::write(claude_home.join("CLAUDE.md"), "claude rules").expect("write claude md");
     fs::write(
         claude_home.join("settings.json"),
@@ -42,15 +37,6 @@ fn detect_home_lists_config_skills_and_agents_md() {
                 "Migrate {} into {}",
                 claude_home.join("settings.json").display(),
                 chaos_home.join("config.toml").display()
-            ),
-            cwd: None,
-        },
-        ExternalAgentConfigMigrationItem {
-            item_type: ExternalAgentConfigMigrationItemType::Skills,
-            description: format!(
-                "Copy skill folders from {} to {}",
-                claude_home.join("skills").display(),
-                agents_skills.display()
             ),
             cwd: None,
         },
@@ -109,23 +95,13 @@ fn detect_repo_lists_agents_md_for_each_cwd() {
 }
 
 #[test]
-fn import_home_migrates_supported_config_fields_skills_and_agents_md() {
+fn import_home_migrates_supported_config_fields_and_agents_md() {
     let (_root, claude_home, chaos_home) = fixture_paths();
-    let agents_skills = chaos_home
-        .parent()
-        .map(|parent| parent.join(".agents").join("skills"))
-        .unwrap_or_else(|| PathBuf::from(".agents").join("skills"));
-    fs::create_dir_all(claude_home.join("skills").join("skill-a")).expect("create skills");
     fs::write(
             claude_home.join("settings.json"),
             r#"{"model":"claude","permissions":{"ask":["git push"]},"env":{"FOO":"bar","CI":false,"MAX_RETRIES":3,"MY_TEAM":"chaos","IGNORED":null,"LIST":["a","b"],"MAP":{"x":1}},"sandbox":{"enabled":true,"network":{"allowLocalBinding":true}}}"#,
         )
         .expect("write settings");
-    fs::write(
-        claude_home.join("skills").join("skill-a").join("SKILL.md"),
-        "Use Claude Code and CLAUDE utilities.",
-    )
-    .expect("write skill");
     fs::write(claude_home.join("CLAUDE.md"), "Claude code guidance").expect("write agents");
 
     service_for_paths(claude_home, chaos_home.clone())
@@ -140,11 +116,6 @@ fn import_home_migrates_supported_config_fields_skills_and_agents_md() {
                 description: String::new(),
                 cwd: None,
             },
-            ExternalAgentConfigMigrationItem {
-                item_type: ExternalAgentConfigMigrationItemType::Skills,
-                description: String::new(),
-                cwd: None,
-            },
         ])
         .expect("import");
 
@@ -156,11 +127,6 @@ fn import_home_migrates_supported_config_fields_skills_and_agents_md() {
     assert_eq!(
         fs::read_to_string(chaos_home.join("config.toml")).expect("read config"),
         "sandbox_mode = \"workspace-write\"\n\n[shell_environment_policy]\ninherit = \"core\"\n\n[shell_environment_policy.set]\nCI = \"false\"\nFOO = \"bar\"\nMAX_RETRIES = \"3\"\nMY_TEAM = \"chaos\"\n"
-    );
-    assert_eq!(
-        fs::read_to_string(agents_skills.join("skill-a").join("SKILL.md"))
-            .expect("read copied skill"),
-        "Use Chaos and Chaos utilities."
     );
 }
 
@@ -208,26 +174,6 @@ fn detect_home_skips_config_when_target_already_has_supported_fields() {
             "#,
     )
     .expect("write config");
-
-    let items = service_for_paths(claude_home, chaos_home)
-        .detect(ExternalAgentConfigDetectOptions {
-            include_home: true,
-            cwds: None,
-        })
-        .expect("detect");
-
-    assert_eq!(items, Vec::<ExternalAgentConfigMigrationItem>::new());
-}
-
-#[test]
-fn detect_home_skips_skills_when_all_skill_directories_exist() {
-    let (_root, claude_home, chaos_home) = fixture_paths();
-    let agents_skills = chaos_home
-        .parent()
-        .map(|parent| parent.join(".agents").join("skills"))
-        .unwrap_or_else(|| PathBuf::from(".agents").join("skills"));
-    fs::create_dir_all(claude_home.join("skills").join("skill-a")).expect("create source");
-    fs::create_dir_all(agents_skills.join("skill-a")).expect("create target");
 
     let items = service_for_paths(claude_home, chaos_home)
         .detect(ExternalAgentConfigDetectOptions {
@@ -365,33 +311,4 @@ fn import_repo_uses_non_empty_dot_claude_agents_source() {
         fs::read_to_string(repo_root.join("AGENTS.md")).expect("read target"),
         "Chaos guidance"
     );
-}
-
-#[test]
-fn migration_metric_tags_for_skills_include_skills_count() {
-    assert_eq!(
-        migration_metric_tags(ExternalAgentConfigMigrationItemType::Skills, Some(3)),
-        vec![
-            ("migration_type", "skills".to_string()),
-            ("skills_count", "3".to_string()),
-        ]
-    );
-}
-
-#[test]
-fn import_skills_returns_only_new_skill_directory_count() {
-    let (_root, claude_home, chaos_home) = fixture_paths();
-    let agents_skills = chaos_home
-        .parent()
-        .map(|parent| parent.join(".agents").join("skills"))
-        .unwrap_or_else(|| PathBuf::from(".agents").join("skills"));
-    fs::create_dir_all(claude_home.join("skills").join("skill-a")).expect("create source a");
-    fs::create_dir_all(claude_home.join("skills").join("skill-b")).expect("create source b");
-    fs::create_dir_all(agents_skills.join("skill-a")).expect("create existing target");
-
-    let copied_count = service_for_paths(claude_home, chaos_home)
-        .import_skills(None)
-        .expect("import skills");
-
-    assert_eq!(copied_count, 1);
 }

@@ -2,7 +2,6 @@ pub mod error;
 pub mod identity;
 pub mod memory;
 pub mod schema;
-pub mod skill;
 
 use std::path::Path;
 

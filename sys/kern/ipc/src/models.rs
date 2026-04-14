@@ -665,7 +665,6 @@ mod tests {
                 config: GranularApprovalConfig {
                     sandbox_approval: false,
                     rules: true,
-                    skill_approval: false,
                     request_permissions: true,
                     mcp_elicitations: false,
                 },
@@ -679,7 +678,7 @@ mod tests {
                     ),
                     granular_categories_section(
                         "These approval categories are automatically rejected instead of prompting the user:",
-                        &["- `sandbox_approval`", "- `skill_approval`", "- `mcp_elicitations`"],
+                        &["- `sandbox_approval`", "- `mcp_elicitations`"],
                     ),
                 ]
                 .join("\n\n"),
@@ -689,7 +688,6 @@ mod tests {
                 config: GranularApprovalConfig {
                     sandbox_approval: true,
                     rules: true,
-                    skill_approval: true,
                     request_permissions: true,
                     mcp_elicitations: true,
                 },
@@ -699,7 +697,6 @@ mod tests {
                     &[
                         "- `sandbox_approval`",
                         "- `rules`",
-                        "- `skill_approval`",
                         "- `mcp_elicitations`",
                     ],
                     &[],
@@ -712,7 +709,6 @@ mod tests {
                 config: GranularApprovalConfig {
                     sandbox_approval: true,
                     rules: true,
-                    skill_approval: true,
                     request_permissions: true,
                     mcp_elicitations: true,
                 },
@@ -722,7 +718,6 @@ mod tests {
                     &[
                         "- `sandbox_approval`",
                         "- `rules`",
-                        "- `skill_approval`",
                         "- `mcp_elicitations`",
                     ],
                     &[],
@@ -759,7 +754,6 @@ mod tests {
                 config: GranularApprovalConfig {
                     sandbox_approval: true,
                     rules: true,
-                    skill_approval: true,
                     request_permissions: true,
                     mcp_elicitations: true,
                 },
@@ -772,7 +766,6 @@ mod tests {
                 config: GranularApprovalConfig {
                     sandbox_approval: true,
                     rules: true,
-                    skill_approval: true,
                     request_permissions: false,
                     mcp_elicitations: true,
                 },
@@ -785,7 +778,6 @@ mod tests {
                 config: GranularApprovalConfig {
                     sandbox_approval: false,
                     rules: false,
-                    skill_approval: false,
                     request_permissions: true,
                     mcp_elicitations: false,
                 },

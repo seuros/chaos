@@ -16,6 +16,5 @@ pub(crate) use tasks::{
     set_process_name, undo,
 };
 pub(crate) use tools::{
-    dynamic_tool_response, export_remote_skill, list_all_tools, list_custom_prompts,
-    list_mcp_tools, list_remote_skills, list_skills,
+    dynamic_tool_response, list_all_tools, list_custom_prompts, list_mcp_tools,
 };

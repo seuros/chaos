@@ -69,7 +69,6 @@ pub(crate) async fn run_chaos_process_interactive(
         config,
         auth_manager,
         models_manager,
-        skills_manager: Arc::clone(&parent_session.services.skills_manager),
         mcp_manager: Arc::clone(&parent_session.services.mcp_manager),
         file_watcher: Arc::clone(&parent_session.services.file_watcher),
         conversation_history: initial_history.unwrap_or(InitialHistory::New),
@@ -414,7 +413,6 @@ async fn handle_exec_approval(
         network_approval_context,
         proposed_execpolicy_amendment,
         additional_permissions,
-        skill_metadata,
         available_decisions,
         ..
     } = event;
@@ -429,7 +427,6 @@ async fn handle_exec_approval(
             network_approval_context,
             proposed_execpolicy_amendment,
             additional_permissions,
-            skill_metadata,
             available_decisions,
         ),
         parent_session,

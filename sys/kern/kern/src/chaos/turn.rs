@@ -26,12 +26,7 @@ use crate::client::ModelClientSession;
 use crate::compact::InitialContextInjection;
 use crate::error::ChaosErr;
 use crate::error::Result as ChaosResult;
-use crate::mcp::maybe_prompt_and_install_mcp_dependencies;
 use crate::parse_turn_item;
-use crate::skills::SkillInjections;
-use crate::skills::SkillLoadOutcome;
-use crate::skills::build_skill_injections;
-use crate::skills::collect_explicit_skill_mentions;
 use crate::stream_events_utils::last_assistant_message_from_item;
 use crate::tools::ToolRouter;
 use crate::tools::router::ToolRouterParams;
@@ -111,8 +106,6 @@ pub(crate) async fn run_turn(
         return None;
     }
 
-    let skills_outcome = Some(turn_context.turn_skills.outcome.as_ref());
-
     sess.record_context_updates_and_set_reference_context_item(turn_context.as_ref())
         .await;
 
@@ -132,33 +125,6 @@ pub(crate) async fn run_turn(
     } else {
         HashMap::new()
     };
-    let mentioned_skills = skills_outcome.as_ref().map_or_else(Vec::new, |outcome| {
-        collect_explicit_skill_mentions(
-            &input,
-            &outcome.skills,
-            &outcome.disabled_paths,
-            &HashMap::new(),
-        )
-    });
-    maybe_prompt_and_install_mcp_dependencies(
-        sess.as_ref(),
-        turn_context.as_ref(),
-        &cancellation_token,
-        &mentioned_skills,
-    )
-    .await;
-
-    let session_telemetry = turn_context.session_telemetry.clone();
-    let SkillInjections {
-        items: skill_items,
-        warnings: skill_warnings,
-    } = build_skill_injections(&mentioned_skills, Some(&session_telemetry)).await;
-
-    for message in skill_warnings {
-        sess.send_event(&turn_context, EventMsg::Warning(WarningEvent { message }))
-            .await;
-    }
-
     let initial_input_for_turn: ResponseInputItem = ResponseInputItem::from(input.clone());
     let response_item: ResponseItem = initial_input_for_turn.clone().into();
     sess.record_user_prompt_and_emit_turn_item(turn_context.as_ref(), &input, response_item)
@@ -171,10 +137,6 @@ pub(crate) async fn run_turn(
     }))
     .await;
 
-    if !skill_items.is_empty() {
-        sess.record_conversation_items(&turn_context, &skill_items)
-            .await;
-    }
     sess.maybe_start_ghost_snapshot(Arc::clone(&turn_context), cancellation_token.child_token())
         .await;
     let mut last_agent_message: Option<String> = None;
@@ -291,7 +253,6 @@ pub(crate) async fn run_turn(
             &mut client_session,
             turn_metadata_header.as_deref(),
             sampling_request_input,
-            skills_outcome,
             &mut server_model_warning_emitted_for_turn,
             cancellation_token.child_token(),
         )
@@ -492,7 +453,6 @@ pub(crate) async fn built_tools(
     sess: &Session,
     turn_context: &TurnContext,
     _input: &[ResponseItem],
-    _skills_outcome: Option<&SkillLoadOutcome>,
     cancellation_token: &CancellationToken,
 ) -> ChaosResult<Arc<ToolRouter>> {
     let mcp_connection_manager = sess.services.mcp_connection_manager.read().await;

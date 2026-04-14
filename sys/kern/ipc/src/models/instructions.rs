@@ -274,7 +274,6 @@ fn granular_instructions(
             "`sandbox_approval`",
         )),
         Some((granular_config.allows_rules_approval(), "`rules`")),
-        Some((granular_config.allows_skill_approval(), "`skill_approval`")),
         request_permissions_tool_enabled.then_some((
             granular_config.allows_request_permissions(),
             "`request_permissions`",

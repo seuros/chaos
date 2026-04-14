@@ -158,3 +158,9 @@ pub struct ToolSummary {
 pub struct AllToolsResponseEvent {
     pub tools: Vec<ToolSummary>,
 }
+
+/// Response payload for `Op::ListCustomPrompts`.
+#[derive(Debug, Clone, Deserialize, Serialize, JsonSchema, TS)]
+pub struct ListCustomPromptsResponseEvent {
+    pub custom_prompts: Vec<crate::custom_prompts::CustomPrompt>,
+}

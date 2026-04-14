@@ -119,19 +119,6 @@ fn assistant_message(text: &str) -> ResponseItem {
     }
 }
 
-#[expect(dead_code)]
-fn skill_message(text: &str) -> ResponseItem {
-    ResponseItem::Message {
-        id: None,
-        role: "user".to_string(),
-        content: vec![ContentItem::InputText {
-            text: text.to_string(),
-        }],
-        end_turn: None,
-        phase: None,
-    }
-}
-
 fn developer_input_texts(items: &[ResponseItem]) -> Vec<&str> {
     items
         .iter()
@@ -496,7 +483,6 @@ pub(crate) async fn make_session_and_context() -> (Session, TurnContext) {
 
     let state = SessionState::new(session_configuration.clone());
     let mcp_manager = Arc::new(McpManager::new());
-    let skills_manager = Arc::new(SkillsManager::new(config.chaos_home.clone(), true));
     let network_approval = Arc::new(NetworkApprovalService::default());
 
     let file_watcher = Arc::new(FileWatcher::noop());
@@ -524,7 +510,6 @@ pub(crate) async fn make_session_and_context() -> (Session, TurnContext) {
         session_telemetry: session_telemetry.clone(),
         models_manager: Arc::clone(&models_manager),
         tool_approvals: Mutex::new(ApprovalStore::default()),
-        skills_manager,
         mcp_manager,
         file_watcher,
         agent_control,
@@ -544,8 +529,7 @@ pub(crate) async fn make_session_and_context() -> (Session, TurnContext) {
         hallucinate: None,
     };
 
-    let skills_outcome = Arc::new(services.skills_manager.skills_for_config(&per_turn_config));
-    let turn_context = Session::make_turn_context(
+    let turn_context = crate::chaos::turn_context::make_turn_context(
         Some(Arc::clone(&auth_manager)),
         &session_telemetry,
         session_configuration.provider.clone(),
@@ -555,7 +539,6 @@ pub(crate) async fn make_session_and_context() -> (Session, TurnContext) {
         &models_manager,
         None,
         "turn_id".to_string(),
-        skills_outcome,
     );
 
     let session = Session {
@@ -653,7 +636,6 @@ pub(crate) async fn make_session_and_context_with_dynamic_tools_and_rx(
 
     let state = SessionState::new(session_configuration.clone());
     let mcp_manager = Arc::new(McpManager::new());
-    let skills_manager = Arc::new(SkillsManager::new(config.chaos_home.clone(), true));
     let network_approval = Arc::new(NetworkApprovalService::default());
 
     let file_watcher = Arc::new(FileWatcher::noop());
@@ -681,7 +663,6 @@ pub(crate) async fn make_session_and_context_with_dynamic_tools_and_rx(
         session_telemetry: session_telemetry.clone(),
         models_manager: Arc::clone(&models_manager),
         tool_approvals: Mutex::new(ApprovalStore::default()),
-        skills_manager,
         mcp_manager,
         file_watcher,
         agent_control,
@@ -701,8 +682,7 @@ pub(crate) async fn make_session_and_context_with_dynamic_tools_and_rx(
         hallucinate: None,
     };
 
-    let skills_outcome = Arc::new(services.skills_manager.skills_for_config(&per_turn_config));
-    let turn_context = Arc::new(Session::make_turn_context(
+    let turn_context = Arc::new(crate::chaos::turn_context::make_turn_context(
         Some(Arc::clone(&auth_manager)),
         &session_telemetry,
         session_configuration.provider.clone(),
@@ -712,7 +692,6 @@ pub(crate) async fn make_session_and_context_with_dynamic_tools_and_rx(
         &models_manager,
         None,
         "turn_id".to_string(),
-        skills_outcome,
     ));
 
     let session = Arc::new(Session {

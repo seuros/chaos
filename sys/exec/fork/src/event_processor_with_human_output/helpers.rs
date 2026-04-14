@@ -101,9 +101,6 @@ impl EventProcessorWithHumanOutput {
                     | EventMsg::GetHistoryEntryResponse(_)
                     | EventMsg::McpListToolsResponse(_)
                     | EventMsg::ListCustomPromptsResponse(_)
-                    | EventMsg::ListSkillsResponse(_)
-                    | EventMsg::ListRemoteSkillsResponse(_)
-                    | EventMsg::RemoteSkillDownloaded(_)
                     | EventMsg::RawResponseItem(_)
                     | EventMsg::UserMessage(_)
                     | EventMsg::EnteredReviewMode(_)
@@ -114,7 +111,6 @@ impl EventProcessorWithHumanOutput {
                     | EventMsg::PlanDelta(_)
                     | EventMsg::ReasoningContentDelta(_)
                     | EventMsg::ReasoningRawContentDelta(_)
-                    | EventMsg::SkillsUpdateAvailable
                     | EventMsg::UndoCompleted(_)
                     | EventMsg::UndoStarted(_)
                     | EventMsg::ProcessRolledBack(_)

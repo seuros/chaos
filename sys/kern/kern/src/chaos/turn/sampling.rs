@@ -9,7 +9,6 @@ use crate::client::ModelClientSession;
 use crate::client_common::Prompt;
 use crate::error::ChaosErr;
 use crate::error::Result as ChaosResult;
-use crate::skills::SkillLoadOutcome;
 use crate::tools::ToolRouter;
 use crate::tools::context::SharedTurnDiffTracker;
 use crate::tools::parallel::ToolCallRuntime;
@@ -68,7 +67,6 @@ pub(super) async fn run_sampling_request(
     client_session: &mut ModelClientSession,
     turn_metadata_header: Option<&str>,
     input: Vec<chaos_ipc::models::ResponseItem>,
-    skills_outcome: Option<&SkillLoadOutcome>,
     server_model_warning_emitted_for_turn: &mut bool,
     cancellation_token: CancellationToken,
 ) -> ChaosResult<SamplingRequestResult> {
@@ -76,7 +74,6 @@ pub(super) async fn run_sampling_request(
         sess.as_ref(),
         turn_context.as_ref(),
         &input,
-        skills_outcome,
         &cancellation_token,
     )
     .await?;

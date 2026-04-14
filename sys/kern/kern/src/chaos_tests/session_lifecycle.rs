@@ -49,80 +49,6 @@ async fn session_configuration_apply_preserves_split_file_system_policy_on_cwd_o
 }
 
 #[tokio::test]
-async fn new_default_turn_uses_config_aware_skills_for_role_overrides() {
-    let (session, _turn_context) = make_session_and_context().await;
-    let parent_config = session.get_config().await;
-    let chaos_home = parent_config.chaos_home.clone();
-    let skill_dir = chaos_home.join("skills").join("demo");
-    std::fs::create_dir_all(&skill_dir).expect("create skill dir");
-    let skill_path = skill_dir.join("SKILL.md");
-    std::fs::write(
-        &skill_path,
-        "---\nname: demo-skill\ndescription: demo description\n---\n\n# Body\n",
-    )
-    .expect("write skill");
-
-    let parent_outcome = session
-        .services
-        .skills_manager
-        .skills_for_cwd(&parent_config.cwd, true)
-        .await;
-    let parent_skill = parent_outcome
-        .skills
-        .iter()
-        .find(|skill| skill.name == "demo-skill")
-        .expect("demo skill should be discovered");
-    assert!(parent_outcome.is_skill_enabled(parent_skill));
-
-    let role_path = chaos_home.join("skills-role.toml");
-    std::fs::write(
-        &role_path,
-        format!(
-            r#"minion_instructions = "Stay focused"
-
-[[skills.config]]
-path = "{}"
-enabled = false
-"#,
-            skill_path.display()
-        ),
-    )
-    .expect("write role config");
-
-    let mut child_config = (*parent_config).clone();
-    child_config.agent_roles.insert(
-        "custom".to_string(),
-        crate::config::AgentRoleConfig {
-            description: None,
-            config_file: Some(role_path),
-            nickname_candidates: None,
-            topics: None,
-            catchphrases: None,
-        },
-    );
-    crate::minions::role::apply_role_to_config(&mut child_config, Some("custom"))
-        .await
-        .expect("custom role should apply");
-
-    {
-        let mut state = session.state.lock().await;
-        state.session_configuration.original_config_do_not_use = Arc::new(child_config);
-    }
-
-    let child_turn = session
-        .new_default_turn_with_sub_id("role-skill-turn".to_string())
-        .await;
-    let child_skill = child_turn
-        .turn_skills
-        .outcome
-        .skills
-        .iter()
-        .find(|skill| skill.name == "demo-skill")
-        .expect("demo skill should be discovered");
-    assert!(!child_turn.turn_skills.outcome.is_skill_enabled(child_skill));
-}
-
-#[tokio::test]
 async fn session_configuration_apply_rederives_legacy_file_system_policy_on_cwd_update() {
     let mut session_configuration = make_session_configuration_for_tests().await;
     let workspace = tempfile::tempdir().expect("create temp dir");
@@ -202,7 +128,6 @@ async fn request_permissions_emits_event_when_granular_policy_allows_requests() 
             crate::protocol::GranularApprovalConfig {
                 sandbox_approval: true,
                 rules: true,
-                skill_approval: true,
                 request_permissions: true,
                 mcp_elicitations: true,
             },
@@ -277,7 +202,6 @@ async fn request_permissions_is_auto_denied_when_granular_policy_blocks_tool_req
             crate::protocol::GranularApprovalConfig {
                 sandbox_approval: true,
                 rules: true,
-                skill_approval: true,
                 request_permissions: false,
                 mcp_elicitations: true,
             },

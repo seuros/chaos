@@ -1,11 +1,8 @@
-use regex_lite::Regex;
 use serde_json::Value;
-use std::sync::OnceLock;
 
 use crate::responses::ResponsesRequest;
 use chaos_ipc::protocol::APPS_INSTRUCTIONS_OPEN_TAG;
 use chaos_ipc::protocol::PLUGINS_INSTRUCTIONS_OPEN_TAG;
-use chaos_ipc::protocol::SKILLS_INSTRUCTIONS_OPEN_TAG;
 
 #[derive(Debug, Clone, Copy, Default, PartialEq, Eq)]
 pub enum ContextSnapshotRenderMode {
@@ -275,9 +272,6 @@ fn canonicalize_snapshot_text(text: &str) -> String {
     if text.starts_with(APPS_INSTRUCTIONS_OPEN_TAG) {
         return "<APPS_INSTRUCTIONS>".to_string();
     }
-    if text.starts_with(SKILLS_INSTRUCTIONS_OPEN_TAG) {
-        return "<SKILLS_INSTRUCTIONS>".to_string();
-    }
     if text.starts_with(PLUGINS_INSTRUCTIONS_OPEN_TAG) {
         return "<PLUGINS_INSTRUCTIONS>".to_string();
     }
@@ -326,20 +320,11 @@ fn canonicalize_snapshot_text(text: &str) -> String {
 }
 
 fn is_capability_instruction_text(text: &str) -> bool {
-    text.starts_with(APPS_INSTRUCTIONS_OPEN_TAG)
-        || text.starts_with(SKILLS_INSTRUCTIONS_OPEN_TAG)
-        || text.starts_with(PLUGINS_INSTRUCTIONS_OPEN_TAG)
+    text.starts_with(APPS_INSTRUCTIONS_OPEN_TAG) || text.starts_with(PLUGINS_INSTRUCTIONS_OPEN_TAG)
 }
 
 fn normalize_dynamic_snapshot_paths(text: &str) -> String {
-    static SYSTEM_SKILL_PATH_RE: OnceLock<Regex> = OnceLock::new();
-    let system_skill_path_re = SYSTEM_SKILL_PATH_RE.get_or_init(|| {
-        Regex::new(r"/[^)\n]*/skills/\.system/([^/\n]+)/SKILL\.md")
-            .expect("system skill path regex should compile")
-    });
-    system_skill_path_re
-        .replace_all(text, "<SYSTEM_SKILLS_ROOT>/$1/SKILL.md")
-        .into_owned()
+    text.to_string()
 }
 
 #[cfg(test)]
@@ -422,7 +407,7 @@ mod tests {
                 },
                 {
                     "type": "input_text",
-                    "text": "<skills_instructions>\n## Skills\nbody\n</skills_instructions>"
+                    "text": "<plugins_instructions>\n## Plugins\nbody\n</plugins_instructions>"
                 }
             ]
         })];
@@ -434,7 +419,7 @@ mod tests {
 
         assert_eq!(
             rendered,
-            "00:message/developer[2]:\n    [01] <APPS_INSTRUCTIONS>\n    [02] <SKILLS_INSTRUCTIONS>"
+            "00:message/developer[2]:\n    [01] <APPS_INSTRUCTIONS>\n    [02] <PLUGINS_INSTRUCTIONS>"
         );
     }
 
@@ -445,7 +430,7 @@ mod tests {
             "role": "developer",
             "content": [
                 { "type": "input_text", "text": "<permissions instructions>\n...</permissions instructions>" },
-                { "type": "input_text", "text": "<skills_instructions>\n## Skills\n...</skills_instructions>" }
+                { "type": "input_text", "text": "<plugins_instructions>\n## Plugins\n...</plugins_instructions>" }
             ]
         })];
 

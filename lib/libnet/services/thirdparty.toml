@@ -1,0 +1,25 @@
+# Third-party model providers bundled with chaos.
+#
+# Each entry deserializes into `ModelProviderInfo`. The section key becomes
+# the provider ID used in `config.toml` (`model_provider = "..."`).
+#
+# Schema (all fields except `name` are optional):
+#
+#   [<provider_id>]
+#   name                     = "Display Name"
+#   base_url                 = "https://api.example.com/v1"
+#   env_key                  = "EXAMPLE_API_KEY"
+#   env_key_instructions     = "Grab a key at https://example.com/keys"
+#   wire_api                 = "auto" | "responses" | "chat_completions" | "tensorzero"
+#   query_params             = { foo = "bar" }
+#   http_headers             = { "X-Static-Header" = "value" }
+#   env_http_headers         = { "X-From-Env" = "ENV_VAR_NAME" }
+#   request_max_retries      = 4
+#   stream_max_retries       = 5
+#   stream_idle_timeout_ms   = 300000
+#   requires_openai_auth     = false
+#   supports_websockets      = false
+#   native_server_side_tools = []
+#
+# Entries in `~/.chaos/config.toml` under `[model_providers.<id>]` override
+# this file.

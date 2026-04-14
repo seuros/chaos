@@ -16,8 +16,8 @@
 
 use super::{
     ApprovalPolicy, Arc, AtomicBool, BottomPane, BottomPaneParams, Buffer, ChatWidget,
-    ChatWidgetInit, ConnectorsCacheState, DEFAULT_PROJECT_DOC_FILENAME, ErrorEvent,
-    ExternalEditorState, HashMap, InterruptManager, NUDGE_MODEL_SLUG, Notification, Notifications,
+    ChatWidgetInit, ConnectorsCacheState, ErrorEvent, ExternalEditorState, HashMap,
+    InterruptManager, NUDGE_MODEL_SLUG, Notification, Notifications,
     PLAN_IMPLEMENTATION_CODING_MESSAGE, PLAN_IMPLEMENTATION_TITLE, PLAN_MODE_REASONING_SCOPE_TITLE,
     PendingSteer, PendingSteerCompareKey, ProcessInputState, RateLimitSwitchPromptState,
     RateLimitWarningState, ReasoningEffortConfig, Rect, SandboxPolicy, SessionHeader, SlashCommand,
@@ -5003,38 +5003,6 @@ async fn review_popup_custom_prompt_action_sends_event() {
         }
     }
     assert!(found, "expected OpenReviewCustomPrompt event to be sent");
-}
-
-#[tokio::test]
-async fn slash_init_skips_when_project_doc_exists() {
-    let (mut chat, mut rx, mut op_rx) = make_chatwidget_manual(None).await;
-    let tempdir = tempdir().unwrap();
-    let existing_path = tempdir.path().join(DEFAULT_PROJECT_DOC_FILENAME);
-    std::fs::write(&existing_path, "existing instructions").unwrap();
-    chat.config.cwd = tempdir.path().to_path_buf();
-
-    chat.dispatch_command(SlashCommand::Init);
-
-    match op_rx.try_recv() {
-        Err(TryRecvError::Empty) => {}
-        other => panic!("expected no Chaos op to be sent, got {other:?}"),
-    }
-
-    let cells = drain_insert_history(&mut rx);
-    assert_eq!(cells.len(), 1, "expected one info message");
-    let rendered = lines_to_single_string(&cells[0]);
-    assert!(
-        rendered.contains(DEFAULT_PROJECT_DOC_FILENAME),
-        "info message should mention the existing file: {rendered:?}"
-    );
-    assert!(
-        rendered.contains("Skipping /init"),
-        "info message should explain why /init was skipped: {rendered:?}"
-    );
-    assert_eq!(
-        std::fs::read_to_string(existing_path).unwrap(),
-        "existing instructions"
-    );
 }
 
 #[tokio::test]

@@ -74,8 +74,6 @@ mod exec;
 mod exec_policy;
 #[path = "suite/grep_files.rs"]
 mod grep_files;
-#[path = "suite/hierarchical_agents.rs"]
-mod hierarchical_agents;
 #[path = "suite/items.rs"]
 mod items;
 #[path = "suite/json_result.rs"]

@@ -119,7 +119,6 @@ impl Chaos {
     async fn spawn_internal(args: ChaosSpawnArgs) -> ChaosResult<ChaosSpawnOk> {
         use crate::features::Feature;
         use crate::models_manager::manager::RefreshStrategy;
-        use crate::project_doc::get_user_instructions;
 
         use chaos_ipc::config_types::CollaborationMode;
         use chaos_ipc::config_types::ModeKind;
@@ -153,7 +152,7 @@ impl Chaos {
             config.collab_enabled = false;
         }
 
-        let user_instructions = get_user_instructions(&config).await;
+        let user_instructions = config.user_instructions.clone();
 
         let exec_policy = ExecPolicyManager::load(&config.config_layer_stack)
             .await

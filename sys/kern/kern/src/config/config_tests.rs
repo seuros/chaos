@@ -887,8 +887,6 @@ fn expected_precedence_fixture_config_baseline(fixture: &PrecedenceTestFixture) 
         mcp_oauth_callback_port: None,
         mcp_oauth_callback_url: None,
         model_providers: fixture.model_provider_map.clone(),
-        project_doc_max_bytes: PROJECT_DOC_MAX_BYTES,
-        project_doc_fallback_filenames: Vec::new(),
         tool_output_token_limit: None,
         agent_max_threads: DEFAULT_AGENT_MAX_THREADS,
         agent_max_depth: DEFAULT_AGENT_MAX_DEPTH,
@@ -1042,7 +1040,7 @@ model_verbosity = "high"
         native_server_side_tools: vec![],
     };
     let model_provider_map = {
-        let mut model_provider_map = built_in_model_providers(/* openai_base_url */ None);
+        let mut model_provider_map = built_in_model_providers();
         model_provider_map.insert("openai-custom".to_string(), openai_custom_provider.clone());
         model_provider_map
     };

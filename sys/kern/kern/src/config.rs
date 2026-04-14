@@ -107,13 +107,11 @@ pub use types::ApprovalsReviewer;
 /// Maximum number of bytes of the documentation that will be embedded. Larger
 /// files are *silently truncated* to this size so we do not take up too much of
 /// the context window.
-pub(crate) const PROJECT_DOC_MAX_BYTES: usize = 32 * 1024; // 32 KiB
 pub(crate) const DEFAULT_AGENT_MAX_THREADS: Option<usize> = Some(6);
 pub(crate) const DEFAULT_AGENT_MAX_DEPTH: i32 = 1;
 pub(crate) const DEFAULT_AGENT_JOB_MAX_RUNTIME_SECONDS: Option<u64> = None;
 
 pub const CONFIG_TOML_FILE: &str = "config.toml";
-pub(crate) const OPENAI_BASE_URL_ENV_VAR: &str = "OPENAI_BASE_URL";
 
 #[cfg(test)]
 pub(crate) fn test_config() -> Config {
@@ -213,7 +211,9 @@ pub struct Config {
     /// Defaults to `false`.
     pub show_raw_agent_reasoning: bool,
 
-    /// User-provided instructions from AGENTS.md.
+    /// Optional user-provided instructions (currently always `None`; a
+    /// schema-based replacement for the removed AGENTS.md loader will
+    /// repopulate this later).
     pub user_instructions: Option<String>,
 
     /// Base instructions override.
@@ -313,12 +313,6 @@ pub struct Config {
 
     /// Combined provider map (defaults plus user-defined providers).
     pub model_providers: HashMap<String, ModelProviderInfo>,
-
-    /// Maximum number of bytes to include from an AGENTS.md project doc file.
-    pub project_doc_max_bytes: usize,
-
-    /// Additional filenames to try when looking for project-level docs.
-    pub project_doc_fallback_filenames: Vec<String>,
 
     /// Token budget applied when storing tool/function outputs in the context manager.
     pub tool_output_token_limit: Option<usize>,
@@ -612,12 +606,6 @@ pub struct ConfigToml {
     #[serde(default, deserialize_with = "deserialize_model_providers")]
     pub model_providers: HashMap<String, ModelProviderInfo>,
 
-    /// Maximum number of bytes to include from an AGENTS.md project doc file.
-    pub project_doc_max_bytes: Option<usize>,
-
-    /// Ordered list of fallback filenames to look for when AGENTS.md is missing.
-    pub project_doc_fallback_filenames: Option<Vec<String>>,
-
     /// Token budget applied when storing tool/function outputs in the context manager.
     pub tool_output_token_limit: Option<usize>,
 
@@ -681,9 +669,6 @@ pub struct ConfigToml {
 
     /// Base URL for requests to ChatGPT (as opposed to the OpenAI API).
     pub chatgpt_base_url: Option<String>,
-
-    /// Base URL override for the built-in `openai` model provider.
-    pub openai_base_url: Option<String>,
 
     /// Machine-local realtime audio device preferences used by realtime voice.
     #[serde(default)]

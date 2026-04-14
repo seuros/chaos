@@ -23,8 +23,10 @@ impl TestChaosExecBuilder {
     pub fn cmd_with_server(&self, server: &MockServer) -> assert_cmd::Command {
         let mut cmd = self.cmd();
         let base = format!("{}/v1", server.uri());
-        cmd.arg("-c")
-            .arg(format!("openai_base_url={}", toml_string_literal(&base)));
+        cmd.arg("-c").arg(format!(
+            "model_providers.openai.base_url={}",
+            toml_string_literal(&base)
+        ));
         cmd
     }
 

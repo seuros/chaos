@@ -3,10 +3,6 @@ use chaos_ipc::models::ResponseItem;
 use chaos_ipc::protocol::ENVIRONMENT_CONTEXT_CLOSE_TAG;
 use chaos_ipc::protocol::ENVIRONMENT_CONTEXT_OPEN_TAG;
 
-pub(crate) const AGENTS_MD_START_MARKER: &str = "# AGENTS.md instructions for ";
-pub(crate) const AGENTS_MD_END_MARKER: &str = "</INSTRUCTIONS>";
-pub(crate) const SKILL_OPEN_TAG: &str = "<skill>";
-pub(crate) const SKILL_CLOSE_TAG: &str = "</skill>";
 pub(crate) const USER_SHELL_COMMAND_OPEN_TAG: &str = "<user_shell_command>";
 pub(crate) const USER_SHELL_COMMAND_CLOSE_TAG: &str = "</user_shell_command>";
 pub(crate) const TURN_ABORTED_OPEN_TAG: &str = "<turn_aborted>";
@@ -40,14 +36,6 @@ impl ContextualUserFragmentDefinition {
         starts_with_marker && ends_with_marker
     }
 
-    pub(crate) const fn start_marker(&self) -> &'static str {
-        self.start_marker
-    }
-
-    pub(crate) const fn end_marker(&self) -> &'static str {
-        self.end_marker
-    }
-
     pub(crate) fn wrap(&self, body: String) -> String {
         format!("{}\n{}\n{}", self.start_marker, body, self.end_marker)
     }
@@ -63,10 +51,6 @@ impl ContextualUserFragmentDefinition {
     }
 }
 
-pub(crate) const AGENTS_MD_FRAGMENT: ContextualUserFragmentDefinition =
-    ContextualUserFragmentDefinition::new(AGENTS_MD_START_MARKER, AGENTS_MD_END_MARKER);
-pub(crate) const SKILL_FRAGMENT: ContextualUserFragmentDefinition =
-    ContextualUserFragmentDefinition::new(SKILL_OPEN_TAG, SKILL_CLOSE_TAG);
 pub(crate) const ENVIRONMENT_CONTEXT_FRAGMENT: ContextualUserFragmentDefinition =
     ContextualUserFragmentDefinition::new(
         ENVIRONMENT_CONTEXT_OPEN_TAG,
@@ -86,8 +70,6 @@ pub(crate) const SUBAGENT_NOTIFICATION_FRAGMENT: ContextualUserFragmentDefinitio
     );
 
 const CONTEXTUAL_USER_FRAGMENTS: &[ContextualUserFragmentDefinition] = &[
-    AGENTS_MD_FRAGMENT,
-    SKILL_FRAGMENT,
     ENVIRONMENT_CONTEXT_FRAGMENT,
     USER_SHELL_COMMAND_FRAGMENT,
     TURN_ABORTED_FRAGMENT,
@@ -101,21 +83,6 @@ pub(crate) fn is_contextual_user_fragment(content_item: &ContentItem) -> bool {
     CONTEXTUAL_USER_FRAGMENTS
         .iter()
         .any(|definition| definition.matches_text(text))
-}
-
-/// Returns `true` for contextual fragments that should be excluded from
-/// memory / compaction summaries (AGENTS.md instructions and skill blocks),
-/// and `false` for fragments that carry runtime state (environment context,
-/// subagent notifications, etc.) which are not worth excluding.
-///
-/// NOTE: currently only wired into tests; production callsites land once the
-/// memories subsystem ships.
-#[cfg_attr(not(test), allow(dead_code))]
-pub(crate) fn is_memory_excluded_contextual_user_fragment(content_item: &ContentItem) -> bool {
-    let ContentItem::InputText { text } = content_item else {
-        return false;
-    };
-    AGENTS_MD_FRAGMENT.matches_text(text) || SKILL_FRAGMENT.matches_text(text)
 }
 
 #[cfg(test)]

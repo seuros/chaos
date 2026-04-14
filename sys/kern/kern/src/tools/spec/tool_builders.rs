@@ -92,7 +92,7 @@ pub(crate) fn create_exec_command_tool(
     ToolSpec::Function(ResponsesApiTool {
         name: "exec_command".to_string(),
         description:
-            "Runs a command in a PTY, returning output or a session ID for ongoing interaction."
+            "Runs a command in a PTY, returning output plus a task ID for lifecycle tracking and, when still running, a session ID for ongoing interaction."
                 .to_string(),
         strict: false,
         defer_loading: None,
@@ -411,7 +411,7 @@ pub(crate) fn create_spawn_agent_tool(config: &ToolsConfig) -> ToolSpec {
         Only use `spawn_agent` if and only if the user explicitly asks for sub-agents, delegation, or parallel agent work.
         Requests for depth, thoroughness, research, investigation, or detailed codebase analysis do not count as permission to spawn.
         Agent-role guidance below only helps choose which agent to use after spawning is already authorized; it never authorizes spawning by itself.
-        Spawn a sub-agent for a well-scoped task. Returns the agent id (and user-facing nickname when available) to use to communicate with this agent. This spawn_agent tool provides you access to smaller but more efficient sub-agents. A mini model can solve many tasks faster than the main model. You should follow the rules and guidelines below to use this tool.
+        Spawn a sub-agent for a well-scoped task. Returns the agent id, task id, and user-facing nickname when available. This spawn_agent tool provides you access to smaller but more efficient sub-agents. A mini model can solve many tasks faster than the main model. You should follow the rules and guidelines below to use this tool.
 
 {available_models_description}
 ### When to delegate vs. do the subtask yourself
@@ -1040,7 +1040,7 @@ pub(crate) fn create_read_mcp_resource_tool() -> ToolSpec {
             "uri".to_string(),
             JsonSchema::String {
                 description: Some(
-                    "Resource URI to read. Must be one of the URIs returned by list_mcp_resources."
+                    "Resource URI from list_mcp_resources, or tasks:// / tasks://get/<id> / tasks://result/<id>."
                         .to_string(),
                 ),
             },
@@ -1057,6 +1057,80 @@ pub(crate) fn create_read_mcp_resource_tool() -> ToolSpec {
         parameters: JsonSchema::Object {
             properties,
             required: Some(vec!["server".to_string(), "uri".to_string()]),
+            additional_properties: Some(false.into()),
+        },
+        output_schema: None,
+    })
+}
+
+pub(crate) fn create_call_mcp_tool_async_tool() -> ToolSpec {
+    let properties = BTreeMap::from([
+        (
+            "server".to_string(),
+            JsonSchema::String {
+                description: Some("MCP server name.".to_string()),
+            },
+        ),
+        (
+            "tool".to_string(),
+            JsonSchema::String {
+                description: Some("Tool name (must declare taskSupport).".to_string()),
+            },
+        ),
+        (
+            "arguments".to_string(),
+            JsonSchema::Object {
+                properties: BTreeMap::new(),
+                required: None,
+                additional_properties: Some(true.into()),
+            },
+        ),
+        (
+            "ttl".to_string(),
+            JsonSchema::Number {
+                description: Some("Task lifetime in milliseconds.".to_string()),
+            },
+        ),
+    ]);
+
+    ToolSpec::Function(ResponsesApiTool {
+        name: "call_mcp_tool_async".to_string(),
+        description: "Invoke an MCP tool as an async task. Returns a task ID.".to_string(),
+        strict: false,
+        defer_loading: None,
+        parameters: JsonSchema::Object {
+            properties,
+            required: Some(vec!["server".to_string(), "tool".to_string()]),
+            additional_properties: Some(false.into()),
+        },
+        output_schema: None,
+    })
+}
+
+pub(crate) fn create_cancel_mcp_task_tool() -> ToolSpec {
+    let properties = BTreeMap::from([
+        (
+            "server".to_string(),
+            JsonSchema::String {
+                description: Some("MCP server name.".to_string()),
+            },
+        ),
+        (
+            "task_id".to_string(),
+            JsonSchema::String {
+                description: Some("Task ID to cancel.".to_string()),
+            },
+        ),
+    ]);
+
+    ToolSpec::Function(ResponsesApiTool {
+        name: "cancel_mcp_task".to_string(),
+        description: "Cancel a running MCP task. Returns final task state.".to_string(),
+        strict: false,
+        defer_loading: None,
+        parameters: JsonSchema::Object {
+            properties,
+            required: Some(vec!["server".to_string(), "task_id".to_string()]),
             additional_properties: Some(false.into()),
         },
         output_schema: None,

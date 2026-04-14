@@ -10,6 +10,8 @@ use super::{
     collab_spawn_error, function_arguments, input_preview, parse_arguments, parse_collab_input,
     process_spawn_source, tool_output_json_text, tool_output_response_item,
 };
+use crate::internal_tasks;
+use crate::internal_tasks::INTERNAL_TASK_SERVER_NAME;
 use crate::minions::control::SpawnAgentOptions;
 use crate::minions::role::DEFAULT_ROLE_NAME;
 use crate::minions::role::apply_role_to_config;
@@ -146,7 +148,7 @@ impl ToolHandler for Handler {
                     prompt,
                     model: args.model.clone().unwrap_or_default(),
                     reasoning_effort: args.reasoning_effort.unwrap_or_default(),
-                    status,
+                    status: status.clone(),
                 }
                 .into(),
             )
@@ -158,10 +160,19 @@ impl ToolHandler for Handler {
             /*inc*/ 1,
             &[("role", role_tag)],
         );
+        let task = internal_tasks::register_agent_task(
+            session.clone(),
+            new_process_id,
+            nickname.clone(),
+            status,
+        )
+        .await;
 
         Ok(SpawnAgentResult {
             agent_id: new_process_id.to_string(),
             nickname,
+            task_id: task.task_id,
+            task_server: INTERNAL_TASK_SERVER_NAME.to_string(),
         })
     }
 }
@@ -186,6 +197,8 @@ struct SpawnAgentArgs {
 pub(crate) struct SpawnAgentResult {
     agent_id: String,
     nickname: Option<String>,
+    task_id: String,
+    task_server: String,
 }
 
 impl_tool_output!(SpawnAgentResult, "spawn_agent");

@@ -130,7 +130,7 @@ fn merge_inline_resources_adds_local_chaos_crons_resource() {
     let merged = merge_inline_resources(HashMap::new());
 
     let resources = merged
-        .get(CHAOS_INLINE_SERVER_NAME)
+        .get(INTERNAL_TASK_SERVER_NAME)
         .expect("inline chaos resources should exist");
 
     assert_eq!(resources.len(), 2);
@@ -172,7 +172,7 @@ fn merge_inline_resource_templates_adds_session_detail_template() {
     let merged = merge_inline_resource_templates(HashMap::new());
 
     let templates = merged
-        .get(CHAOS_INLINE_SERVER_NAME)
+        .get(INTERNAL_TASK_SERVER_NAME)
         .expect("inline chaos templates should exist");
 
     assert_eq!(templates.len(), 1);

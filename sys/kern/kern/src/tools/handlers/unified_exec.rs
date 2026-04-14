@@ -1,5 +1,6 @@
 use crate::features::Feature;
 use crate::function_tool::FunctionCallError;
+use crate::internal_tasks;
 use crate::is_safe_command::is_known_safe_command;
 use crate::protocol::EventMsg;
 use crate::protocol::TerminalInteractionEvent;
@@ -235,7 +236,7 @@ impl ToolHandler for UnifiedExecHandler {
                 .await?
                 {
                     manager.release_process_id(process_id).await;
-                    return Ok(ExecCommandToolOutput {
+                    let mut output = ExecCommandToolOutput {
                         event_call_id: String::new(),
                         chunk_id: String::new(),
                         wall_time: std::time::Duration::ZERO,
@@ -245,10 +246,16 @@ impl ToolHandler for UnifiedExecHandler {
                         exit_code: None,
                         original_token_count: None,
                         session_command: None,
-                    });
+                        task_id: None,
+                        task_server: None,
+                    };
+                    internal_tasks::attach_exec_task(context.session.clone(), &mut output)
+                        .await
+                        .map_err(|err| FunctionCallError::RespondToModel(err.to_string()))?;
+                    return Ok(output);
                 }
 
-                manager
+                let mut response = manager
                     .exec_command(
                         ExecCommandRequest {
                             command,
@@ -273,7 +280,11 @@ impl ToolHandler for UnifiedExecHandler {
                         FunctionCallError::RespondToModel(format!(
                             "exec_command failed for `{command_for_display}`: {err:?}"
                         ))
-                    })?
+                    })?;
+                internal_tasks::attach_exec_task(context.session.clone(), &mut response)
+                    .await
+                    .map_err(|err| FunctionCallError::RespondToModel(err.to_string()))?;
+                response
             }
             "write_stdin" => {
                 let args: WriteStdinArgs = parse_arguments(&arguments)?;

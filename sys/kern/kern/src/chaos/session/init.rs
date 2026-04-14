@@ -503,6 +503,7 @@ impl Session {
                 &config.permissions.approval_policy,
             ))),
             mcp_startup_cancellation_token: Mutex::new(CancellationToken::new()),
+            internal_task_store: crate::internal_tasks::InternalTaskStore::default(),
             unified_exec_manager: crate::unified_exec::UnifiedExecProcessManager::new(
                 config.background_terminal_max_timeout,
             ),

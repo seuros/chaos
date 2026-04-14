@@ -18,7 +18,10 @@ use chaos_ipc::protocol::EventMsg;
 use chaos_mcp_runtime::ElicitationResponse;
 use chaos_mcp_runtime::ListResourceTemplatesResult;
 use chaos_mcp_runtime::ListResourcesResult;
+use chaos_mcp_runtime::ListTasksResult;
 use chaos_mcp_runtime::McpRequestId as RequestId;
+use chaos_mcp_runtime::McpTask;
+use chaos_mcp_runtime::McpToolCallResult;
 use chaos_mcp_runtime::PaginatedRequestParams;
 use chaos_mcp_runtime::ReadResourceRequestParams;
 use chaos_mcp_runtime::ReadResourceResult;
@@ -178,6 +181,66 @@ impl Session {
         with_circuit_breaker(server, || {
             let mgr = self.services.mcp_connection_manager.clone();
             async move { mgr.read().await.read_resource(server, params).await }
+        })
+        .await
+    }
+
+    pub async fn call_tool_async(
+        &self,
+        server: &str,
+        tool: &str,
+        arguments: Option<serde_json::Value>,
+        meta: Option<serde_json::Value>,
+        ttl: Option<u64>,
+    ) -> anyhow::Result<McpTask> {
+        with_circuit_breaker(server, || {
+            let mgr = self.services.mcp_connection_manager.clone();
+            async move {
+                mgr.read()
+                    .await
+                    .call_tool_async(server, tool, arguments, meta, ttl)
+                    .await
+            }
+        })
+        .await
+    }
+
+    pub(crate) async fn get_mcp_task(
+        &self,
+        server: &str,
+        task_id: &str,
+    ) -> anyhow::Result<McpTask> {
+        with_circuit_breaker(server, || {
+            let mgr = self.services.mcp_connection_manager.clone();
+            async move { mgr.read().await.get_task(server, task_id).await }
+        })
+        .await
+    }
+
+    pub async fn get_mcp_task_result(
+        &self,
+        server: &str,
+        task_id: &str,
+    ) -> anyhow::Result<McpToolCallResult> {
+        with_circuit_breaker(server, || {
+            let mgr = self.services.mcp_connection_manager.clone();
+            async move { mgr.read().await.get_task_result(server, task_id).await }
+        })
+        .await
+    }
+
+    pub async fn list_mcp_tasks(&self, server: &str) -> anyhow::Result<ListTasksResult> {
+        with_circuit_breaker(server, || {
+            let mgr = self.services.mcp_connection_manager.clone();
+            async move { mgr.read().await.list_tasks(server).await }
+        })
+        .await
+    }
+
+    pub async fn cancel_mcp_task(&self, server: &str, task_id: &str) -> anyhow::Result<McpTask> {
+        with_circuit_breaker(server, || {
+            let mgr = self.services.mcp_connection_manager.clone();
+            async move { mgr.read().await.cancel_task(server, task_id).await }
         })
         .await
     }

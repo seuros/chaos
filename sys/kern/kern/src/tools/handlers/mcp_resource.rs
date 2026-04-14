@@ -7,6 +7,7 @@ use chaos_ipc::mcp::CallToolResult;
 use chaos_ipc::models::function_call_output_content_items_to_text;
 use chaos_mcp_runtime::ListResourceTemplatesResult;
 use chaos_mcp_runtime::ListResourcesResult;
+use chaos_mcp_runtime::McpToolCallResult;
 use chaos_mcp_runtime::PaginatedRequestParams;
 use chaos_mcp_runtime::ReadResourceRequestParams;
 use chaos_mcp_runtime::ReadResourceResult;
@@ -23,6 +24,7 @@ use crate::builtin_mcp_resources;
 use crate::chaos::Session;
 use crate::chaos::TurnContext;
 use crate::function_tool::FunctionCallError;
+use crate::internal_tasks::INTERNAL_TASK_SERVER_NAME;
 use crate::protocol::EventMsg;
 use crate::protocol::McpInvocation;
 use crate::protocol::McpToolCallBeginEvent;
@@ -34,8 +36,6 @@ use crate::tools::registry::ToolHandler;
 use crate::tools::registry::ToolKind;
 
 pub struct McpResourceHandler;
-
-const CHAOS_INLINE_SERVER_NAME: &str = "chaos_local";
 
 #[derive(Debug, Deserialize, Default)]
 struct ListResourcesArgs {
@@ -196,7 +196,7 @@ fn merge_inline_resources(
     mut resources_by_server: HashMap<String, Vec<ResourceInfo>>,
 ) -> HashMap<String, Vec<ResourceInfo>> {
     resources_by_server
-        .entry(CHAOS_INLINE_SERVER_NAME.to_string())
+        .entry(INTERNAL_TASK_SERVER_NAME.to_string())
         .or_default()
         .extend(chaos_inline_resources());
     resources_by_server
@@ -222,7 +222,7 @@ fn merge_inline_resource_templates(
     mut templates_by_server: HashMap<String, Vec<ResourceTemplateInfo>>,
 ) -> HashMap<String, Vec<ResourceTemplateInfo>> {
     templates_by_server
-        .entry(CHAOS_INLINE_SERVER_NAME.to_string())
+        .entry(INTERNAL_TASK_SERVER_NAME.to_string())
         .or_default()
         .extend(chaos_inline_resource_templates());
     templates_by_server
@@ -386,7 +386,7 @@ async fn handle_list_resources(
 
     let payload_result: Result<ListResourcesPayload, FunctionCallError> = async {
         if let Some(server_name) = server.clone() {
-            let result = if server_name == CHAOS_INLINE_SERVER_NAME {
+            let result = if server_name == INTERNAL_TASK_SERVER_NAME {
                 ListResourcesResult {
                     resources: chaos_inline_resources(),
                     next_cursor: None,
@@ -499,7 +499,7 @@ async fn handle_list_resource_templates(
 
     let payload_result: Result<ListResourceTemplatesPayload, FunctionCallError> = async {
         if let Some(server_name) = server.clone() {
-            let result = if server_name == CHAOS_INLINE_SERVER_NAME {
+            let result = if server_name == INTERNAL_TASK_SERVER_NAME {
                 ListResourceTemplatesResult {
                     resource_templates: chaos_inline_resource_templates(),
                     next_cursor: None,
@@ -592,6 +592,106 @@ async fn handle_list_resource_templates(
     }
 }
 
+enum TaskUri<'a> {
+    List,
+    Get { task_id: &'a str },
+    Result { task_id: &'a str },
+}
+
+/// Parse a `tasks://` URI into its operation variant.
+///
+/// - `tasks://`                → list all tasks on the server
+/// - `tasks://get/<task_id>`   → poll task status (tasks/get)
+/// - `tasks://result/<task_id>`→ retrieve task result (tasks/result, blocking)
+///
+/// The fixed path prefix ensures task IDs are treated as opaque strings; no
+/// suffix stripping is used so IDs containing `/` remain unambiguous.
+fn parse_task_uri(uri: &str) -> Option<TaskUri<'_>> {
+    let rest = uri.strip_prefix("tasks://")?;
+    if rest.is_empty() {
+        return Some(TaskUri::List);
+    }
+    if let Some(task_id) = rest.strip_prefix("get/")
+        && !task_id.is_empty()
+    {
+        return Some(TaskUri::Get { task_id });
+    }
+    if let Some(task_id) = rest.strip_prefix("result/")
+        && !task_id.is_empty()
+    {
+        return Some(TaskUri::Result { task_id });
+    }
+    None
+}
+
+async fn read_task_resource(
+    session: &Session,
+    server: &str,
+    uri: &str,
+    op: TaskUri<'_>,
+) -> Result<ReadResourceResult, FunctionCallError> {
+    let text = match op {
+        TaskUri::List => {
+            let result = if server == INTERNAL_TASK_SERVER_NAME {
+                session.list_internal_tasks().await
+            } else {
+                session.list_mcp_tasks(server).await.map_err(|e| {
+                    FunctionCallError::RespondToModel(format!("tasks/list failed: {e:#}"))
+                })?
+            };
+            serde_json::to_string(&result)
+        }
+        TaskUri::Get { task_id } => {
+            let task = if server == INTERNAL_TASK_SERVER_NAME {
+                session.get_internal_task(task_id).await.map_err(|e| {
+                    FunctionCallError::RespondToModel(format!("tasks/get failed: {e:#}"))
+                })?
+            } else {
+                session.get_mcp_task(server, task_id).await.map_err(|e| {
+                    FunctionCallError::RespondToModel(format!("tasks/get failed: {e:#}"))
+                })?
+            };
+            serde_json::to_string(&task)
+        }
+        TaskUri::Result { task_id } => {
+            let result = if server == INTERNAL_TASK_SERVER_NAME {
+                session
+                    .get_internal_task_result(task_id)
+                    .await
+                    .map_err(|e| {
+                        FunctionCallError::RespondToModel(format!("tasks/result failed: {e:#}"))
+                    })?
+            } else {
+                let result: McpToolCallResult = session
+                    .get_mcp_task_result(server, task_id)
+                    .await
+                    .map_err(|e| {
+                        FunctionCallError::RespondToModel(format!("tasks/result failed: {e:#}"))
+                    })?;
+                serde_json::to_value(result).map_err(|e| {
+                    FunctionCallError::RespondToModel(format!(
+                        "failed to serialize task result payload: {e}"
+                    ))
+                })?
+            };
+            serde_json::to_string(&result)
+        }
+    }
+    .map_err(|e| {
+        FunctionCallError::RespondToModel(format!("failed to serialize task response: {e}"))
+    })?;
+
+    Ok(ReadResourceResult {
+        contents: vec![ResourceContents::Text(ResourceContentsText {
+            uri: uri.to_string(),
+            mime_type: Some("application/json".to_string()),
+            text,
+            meta: None,
+        })],
+        meta: None,
+    })
+}
+
 async fn handle_read_resource(
     session: Arc<Session>,
     turn: Arc<TurnContext>,
@@ -613,7 +713,9 @@ async fn handle_read_resource(
     let start = Instant::now();
 
     let payload_result: Result<ReadResourcePayload, FunctionCallError> = async {
-        let result = if server == CHAOS_INLINE_SERVER_NAME {
+        let result = if let Some(op) = parse_task_uri(&uri) {
+            read_task_resource(&session, &server, &uri, op).await?
+        } else if server == INTERNAL_TASK_SERVER_NAME {
             read_inline_resource(&session, turn.as_ref(), &uri).await?
         } else {
             session

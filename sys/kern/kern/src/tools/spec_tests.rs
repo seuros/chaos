@@ -34,8 +34,10 @@ fn mcp_tool(
     }
 }
 
+const REPRESENTATIVE_CODE_EDIT_MODEL_SLUG: &str = "gpt-5-codex";
+
 #[test]
-fn mcp_tool_to_openai_tool_inserts_empty_properties() {
+fn mcp_tool_to_model_tool_inserts_empty_properties() {
     let tool = chaos_mcp_runtime::manager::McpToolInfo {
         name: "no_props".to_string(),
         title: None,
@@ -48,15 +50,65 @@ fn mcp_tool_to_openai_tool_inserts_empty_properties() {
         meta: None,
     };
 
-    let openai_tool =
-        mcp_tool_to_openai_tool("server/no_props".to_string(), tool).expect("convert tool");
-    let parameters = serde_json::to_value(openai_tool.parameters).expect("serialize schema");
+    let model_tool =
+        mcp_tool_to_model_tool("server/no_props".to_string(), tool).expect("convert tool");
+    let parameters = serde_json::to_value(model_tool.parameters).expect("serialize schema");
 
     assert_eq!(parameters.get("properties"), Some(&serde_json::json!({})));
 }
 
 #[test]
-fn mcp_tool_to_openai_tool_preserves_top_level_output_schema() {
+fn mcp_tool_to_model_tool_appends_task_support_hint() {
+    let tool = chaos_mcp_runtime::manager::McpToolInfo {
+        name: "long_job".to_string(),
+        title: None,
+        description: Some("Runs a long job".to_string()),
+        input_schema: serde_json::json!({"type": "object"}),
+        output_schema: None,
+        annotations: None,
+        execution: Some(chaos_mcp_runtime::McpToolExecution {
+            task_support: Some(chaos_mcp_runtime::McpTaskSupport::Optional),
+        }),
+        icons: None,
+        meta: None,
+    };
+
+    let model_tool =
+        mcp_tool_to_model_tool("mcp__server__long_job".to_string(), tool).expect("convert tool");
+
+    assert_eq!(
+        model_tool.description,
+        "Runs a long job [async available: call_mcp_tool_async]".to_string()
+    );
+}
+
+#[test]
+fn mcp_tool_to_model_tool_marks_required_async_tools() {
+    let tool = chaos_mcp_runtime::manager::McpToolInfo {
+        name: "batch_reindex".to_string(),
+        title: None,
+        description: Some("Reindexes everything".to_string()),
+        input_schema: serde_json::json!({"type": "object"}),
+        output_schema: None,
+        annotations: None,
+        execution: Some(chaos_mcp_runtime::McpToolExecution {
+            task_support: Some(chaos_mcp_runtime::McpTaskSupport::Required),
+        }),
+        icons: None,
+        meta: None,
+    };
+
+    let model_tool = mcp_tool_to_model_tool("mcp__server__batch_reindex".to_string(), tool)
+        .expect("convert tool");
+
+    assert_eq!(
+        model_tool.description,
+        "Reindexes everything [async only: use call_mcp_tool_async]".to_string()
+    );
+}
+
+#[test]
+fn mcp_tool_to_model_tool_preserves_top_level_output_schema() {
     let tool = chaos_mcp_runtime::manager::McpToolInfo {
         name: "with_output".to_string(),
         title: None,
@@ -78,11 +130,11 @@ fn mcp_tool_to_openai_tool_preserves_top_level_output_schema() {
         meta: None,
     };
 
-    let openai_tool = mcp_tool_to_openai_tool("mcp__server__with_output".to_string(), tool)
-        .expect("convert tool");
+    let model_tool =
+        mcp_tool_to_model_tool("mcp__server__with_output".to_string(), tool).expect("convert tool");
 
     assert_eq!(
-        openai_tool.output_schema,
+        model_tool.output_schema,
         Some(serde_json::json!({
             "type": "object",
             "properties": {
@@ -112,7 +164,7 @@ fn mcp_tool_to_openai_tool_preserves_top_level_output_schema() {
 }
 
 #[test]
-fn mcp_tool_to_openai_tool_preserves_output_schema_without_inferred_type() {
+fn mcp_tool_to_model_tool_preserves_output_schema_without_inferred_type() {
     let tool = chaos_mcp_runtime::manager::McpToolInfo {
         name: "with_enum_output".to_string(),
         title: None,
@@ -125,11 +177,11 @@ fn mcp_tool_to_openai_tool_preserves_output_schema_without_inferred_type() {
         meta: None,
     };
 
-    let openai_tool = mcp_tool_to_openai_tool("mcp__server__with_enum_output".to_string(), tool)
+    let model_tool = mcp_tool_to_model_tool("mcp__server__with_enum_output".to_string(), tool)
         .expect("convert tool");
 
     assert_eq!(
-        openai_tool.output_schema,
+        model_tool.output_schema,
         Some(serde_json::json!({
             "type": "object",
             "properties": {
@@ -166,11 +218,11 @@ fn search_tool_deferred_tools_always_set_defer_loading_true() {
         }),
     );
 
-    let openai_tool =
-        mcp_tool_to_deferred_openai_tool("mcp__codex_apps__lookup_order".to_string(), tool)
+    let model_tool =
+        mcp_tool_to_deferred_model_tool("mcp__codex_apps__lookup_order".to_string(), tool)
             .expect("convert deferred tool");
 
-    assert_eq!(openai_tool.defer_loading, Some(true));
+    assert_eq!(model_tool.defer_loading, Some(true));
 }
 
 #[test]
@@ -189,7 +241,7 @@ fn deferred_responses_api_tool_serializes_with_defer_loading() {
     );
 
     let serialized = serde_json::to_value(ToolSpec::Function(
-        mcp_tool_to_deferred_openai_tool("mcp__codex_apps__lookup_order".to_string(), tool)
+        mcp_tool_to_deferred_model_tool("mcp__codex_apps__lookup_order".to_string(), tool)
             .expect("convert deferred tool"),
     ))
     .expect("serialize deferred tool");
@@ -215,7 +267,7 @@ fn deferred_responses_api_tool_serializes_with_defer_loading() {
 }
 
 #[test]
-fn dynamic_tool_to_openai_tool_keeps_output_schema_absent() {
+fn dynamic_tool_to_model_tool_keeps_output_schema_absent() {
     let tool = DynamicToolSpec {
         name: "lookup_ticket".to_string(),
         description: "Fetch a ticket".to_string(),
@@ -229,12 +281,12 @@ fn dynamic_tool_to_openai_tool_keeps_output_schema_absent() {
         defer_loading: false,
     };
 
-    let openai_tool = dynamic_tool_to_openai_tool(&tool).expect("convert dynamic tool");
+    let model_tool = dynamic_tool_to_model_tool(&tool).expect("convert dynamic tool");
 
-    assert_eq!(openai_tool.output_schema, None);
-    assert_eq!(openai_tool.defer_loading, None);
+    assert_eq!(model_tool.output_schema, None);
+    assert_eq!(model_tool.defer_loading, None);
     assert_eq!(
-        openai_tool.parameters,
+        model_tool.parameters,
         JsonSchema::Object {
             properties: BTreeMap::from([(
                 "id".to_string(),
@@ -355,7 +407,7 @@ fn model_info_from_models_json(slug: &str) -> ModelInfo {
     let mut model = crate::test_support::test_model_info(slug);
 
     // Per-model tool configuration (mirrors the old catalog entries).
-    if slug == "gpt-5.1" || slug.contains("codex") || slug.contains("codex") {
+    if slug == "gpt-5.1" || slug.contains("codex") {
         model.shell_type = ConfigShellToolType::ShellCommand;
         model.apply_patch_tool_type = Some(ApplyPatchToolType::Freeform);
     } else {
@@ -368,8 +420,10 @@ fn model_info_from_models_json(slug: &str) -> ModelInfo {
 }
 
 #[test]
-fn test_full_toolset_specs_for_gpt5_codex_unified_exec_web_search() {
-    let model_info = model_info_from_models_json("gpt-5-codex");
+fn test_full_toolset_specs_for_codex_style_unified_exec_web_search_model() {
+    // Use gpt-5-codex as a representative codex-style model profile; this test is about the
+    // tool capability mix (unified exec + apply_patch + live web search), not OpenAI branding.
+    let model_info = model_info_from_models_json(REPRESENTATIVE_CODE_EDIT_MODEL_SLUG);
     let features = Features::with_defaults();
 
     let available_models = Vec::new();
@@ -840,7 +894,7 @@ fn assert_default_model_tools(
     assert_model_tools(model_slug, features, web_search_mode, &expected);
 }
 
-const GPT_5_DEFAULT_TOOL_TAIL: &[&str] = &[
+const DEFAULT_SHELL_MODEL_TOOL_TAIL: &[&str] = &[
     "update_plan",
     "request_user_input",
     "read_file",
@@ -867,7 +921,7 @@ const GPT_5_DEFAULT_TOOL_TAIL: &[&str] = &[
     "close_agent",
 ];
 
-const GPT_5_1_TOOL_TAIL: &[&str] = &[
+const CODE_EDIT_MODEL_TOOL_TAIL: &[&str] = &[
     "update_plan",
     "request_user_input",
     "apply_patch",
@@ -1135,6 +1189,8 @@ fn mcp_resource_tools_are_included_when_mcp_servers_are_present() {
             "list_mcp_resources",
             "list_mcp_resource_templates",
             "read_mcp_resource",
+            "call_mcp_tool_async",
+            "cancel_mcp_task",
         ],
     );
 }
@@ -1168,55 +1224,55 @@ fn spawn_agent_tool_description_uses_current_role_names() {
 }
 
 #[test]
-fn test_build_specs_gpt_default_toolsets() {
+fn test_build_specs_default_toolsets_for_model_profiles() {
     assert_default_model_tool_cases(&[
         DefaultModelToolCase {
             model_slug: "gpt-5-codex",
             shell_tool: "shell_command",
-            expected_tail: GPT_5_1_TOOL_TAIL,
+            expected_tail: CODE_EDIT_MODEL_TOOL_TAIL,
         },
         DefaultModelToolCase {
             model_slug: "gpt-5.1-codex",
             shell_tool: "shell_command",
-            expected_tail: GPT_5_1_TOOL_TAIL,
+            expected_tail: CODE_EDIT_MODEL_TOOL_TAIL,
         },
         DefaultModelToolCase {
             model_slug: "gpt-5.1-codex-max",
             shell_tool: "shell_command",
-            expected_tail: GPT_5_1_TOOL_TAIL,
+            expected_tail: CODE_EDIT_MODEL_TOOL_TAIL,
         },
         DefaultModelToolCase {
             model_slug: "gpt-5.1-codex-mini",
             shell_tool: "shell_command",
-            expected_tail: GPT_5_1_TOOL_TAIL,
+            expected_tail: CODE_EDIT_MODEL_TOOL_TAIL,
         },
         DefaultModelToolCase {
             model_slug: "gpt-5",
             shell_tool: "shell",
-            expected_tail: GPT_5_DEFAULT_TOOL_TAIL,
+            expected_tail: DEFAULT_SHELL_MODEL_TOOL_TAIL,
         },
         DefaultModelToolCase {
             model_slug: "gpt-5.1",
             shell_tool: "shell_command",
-            expected_tail: GPT_5_1_TOOL_TAIL,
+            expected_tail: CODE_EDIT_MODEL_TOOL_TAIL,
         },
     ]);
 }
 
 #[test]
-fn test_build_specs_gpt_unified_exec_web_search_toolsets() {
+fn test_build_specs_unified_exec_web_search_toolsets_for_code_edit_profiles() {
     assert_unified_exec_web_search_model_tool_cases(&[
         UnifiedExecWebSearchModelToolCase {
             model_slug: "gpt-5-codex",
-            expected_tail: GPT_5_1_TOOL_TAIL,
+            expected_tail: CODE_EDIT_MODEL_TOOL_TAIL,
         },
         UnifiedExecWebSearchModelToolCase {
             model_slug: "gpt-5.1-codex",
-            expected_tail: GPT_5_1_TOOL_TAIL,
+            expected_tail: CODE_EDIT_MODEL_TOOL_TAIL,
         },
         UnifiedExecWebSearchModelToolCase {
             model_slug: "gpt-5.1-codex-max",
-            expected_tail: GPT_5_1_TOOL_TAIL,
+            expected_tail: CODE_EDIT_MODEL_TOOL_TAIL,
         },
     ]);
 }
@@ -1803,7 +1859,7 @@ fn test_shell_command_tool() {
 }
 
 #[test]
-fn test_get_openai_tools_mcp_tools_with_additional_properties_schema() {
+fn test_get_model_tools_mcp_tools_with_additional_properties_schema() {
     let config = test_config();
     let model_info = ModelsManager::construct_model_info_offline_for_tests("gpt-5-codex", &config);
     let features = Features::with_defaults();

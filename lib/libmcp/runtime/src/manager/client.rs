@@ -442,7 +442,17 @@ pub(super) async fn make_managed_client(
             form: Some(mcp_guest::protocol::FormElicitationCapability {}),
             url: Some(mcp_guest::protocol::UrlElicitationCapability {}),
         }),
-        tasks: None,
+        tasks: Some(mcp_guest::protocol::TasksCapability {
+            list: Some(mcp_guest::protocol::EmptyObject {}),
+            cancel: Some(mcp_guest::protocol::EmptyObject {}),
+            requests: Some(mcp_guest::protocol::TasksRequestsCapability {
+                tools: Some(mcp_guest::protocol::TasksToolsCapability {
+                    call: Some(mcp_guest::protocol::EmptyObject {}),
+                }),
+                sampling: None,
+                elicitation: None,
+            }),
+        }),
     };
 
     // Build and connect session based on transport type

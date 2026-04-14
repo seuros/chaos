@@ -26,6 +26,7 @@ use std::collections::HashSet;
 use std::path::PathBuf;
 use std::sync::Arc;
 use std::sync::Weak;
+use std::time::Duration;
 
 use chaos_ipc::models::PermissionProfile;
 use chaos_pf::NetworkProxy;
@@ -36,6 +37,7 @@ use tokio::sync::Mutex;
 use crate::chaos::Session;
 use crate::chaos::TurnContext;
 use crate::sandboxing::SandboxPermissions;
+use crate::unified_exec::head_tail_buffer::HeadTailBuffer;
 
 mod async_watcher;
 mod errors;
@@ -147,6 +149,18 @@ struct ProcessEntry {
     network_approval_id: Option<String>,
     session: Weak<Session>,
     last_used: tokio::time::Instant,
+    started_at: tokio::time::Instant,
+    transcript: Arc<tokio::sync::Mutex<HeadTailBuffer>>,
+}
+
+pub(crate) enum ExecTaskSnapshot {
+    Running,
+    Exited {
+        exit_code: Option<i32>,
+        command: Vec<String>,
+        output: Vec<u8>,
+        wall_time: Duration,
+    },
 }
 
 pub(crate) fn clamp_yield_time(yield_time_ms: u64) -> u64 {

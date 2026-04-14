@@ -1,5 +1,5 @@
+mod adapters;
 mod config;
-mod converters;
 mod registry;
 mod schemas;
 mod tool_builders;
@@ -42,22 +42,23 @@ pub(crate) use std::collections::BTreeMap;
 #[cfg(test)]
 pub(crate) use std::collections::HashMap;
 
+pub(crate) use adapters::ApplyPatchToolArgs;
+pub(crate) use adapters::annotation_labels;
+#[cfg(test)]
+pub(crate) use adapters::annotation_suffix;
+pub use adapters::create_tools_json_for_responses_api;
+#[cfg(test)]
+pub(crate) use adapters::dynamic_tool_to_model_tool;
+#[cfg(test)]
+pub(crate) use adapters::mcp_tool_to_deferred_model_tool;
+#[cfg(test)]
+pub(crate) use adapters::mcp_tool_to_model_tool;
 pub(crate) use config::ToolsConfig;
 pub(crate) use config::ToolsConfigParams;
-pub(crate) use converters::ApplyPatchToolArgs;
-pub(crate) use converters::annotation_labels;
-#[cfg(test)]
-pub(crate) use converters::annotation_suffix;
-pub use converters::create_tools_json_for_responses_api;
-#[cfg(test)]
-pub(crate) use converters::dynamic_tool_to_openai_tool;
-#[cfg(test)]
-pub(crate) use converters::mcp_tool_to_deferred_openai_tool;
-#[cfg(test)]
-pub(crate) use converters::mcp_tool_to_openai_tool;
 #[cfg(test)]
 pub(crate) use registry::build_specs;
 pub(crate) use registry::build_specs_with_discoverable_tools;
+pub(crate) use tool_builders::{create_call_mcp_tool_async_tool, create_cancel_mcp_task_tool};
 #[cfg(test)]
 pub(crate) use tool_builders::{
     create_close_agent_tool, create_exec_command_tool, create_request_permissions_tool,

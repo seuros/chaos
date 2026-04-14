@@ -12,9 +12,10 @@ use crate::client_common::tools::ToolSpec;
 use crate::tools::registry::ToolRegistryBuilder;
 
 use super::ToolsConfig;
-use super::converters::{annotation_suffix, dynamic_tool_to_openai_tool, mcp_tool_to_openai_tool};
+use super::adapters::{annotation_suffix, dynamic_tool_to_model_tool, mcp_tool_to_model_tool};
 use super::tool_builders::{
-    create_close_agent_tool, create_exec_command_tool, create_list_mcp_resource_templates_tool,
+    create_call_mcp_tool_async_tool, create_cancel_mcp_task_tool, create_close_agent_tool,
+    create_exec_command_tool, create_list_mcp_resource_templates_tool,
     create_list_mcp_resources_tool, create_read_mcp_resource_tool,
     create_report_agent_job_result_tool, create_request_permissions_tool,
     create_request_user_input_tool, create_resume_agent_tool, create_send_input_tool,
@@ -92,6 +93,7 @@ pub(crate) fn build_specs_with_discoverable_tools(
     use crate::tools::handlers::HallucinateHandler;
     use crate::tools::handlers::McpHandler;
     use crate::tools::handlers::McpResourceHandler;
+    use crate::tools::handlers::McpTaskHandler;
     use crate::tools::handlers::PLAN_TOOL;
     use crate::tools::handlers::PlanHandler;
     use crate::tools::handlers::RequestPermissionsHandler;
@@ -114,6 +116,7 @@ pub(crate) fn build_specs_with_discoverable_tools(
     let view_image_handler = Arc::new(ViewImageHandler);
     let mcp_handler = Arc::new(McpHandler);
     let mcp_resource_handler = Arc::new(McpResourceHandler);
+    let mcp_task_handler = Arc::new(McpTaskHandler);
     let shell_command_handler = Arc::new(ShellCommandHandler::new());
     let request_permissions_handler = Arc::new(RequestPermissionsHandler);
     let request_user_input_handler = Arc::new(RequestUserInputHandler {
@@ -194,6 +197,19 @@ pub(crate) fn build_specs_with_discoverable_tools(
         builder.register_handler("list_mcp_resources", mcp_resource_handler.clone());
         builder.register_handler("list_mcp_resource_templates", mcp_resource_handler.clone());
         builder.register_handler("read_mcp_resource", mcp_resource_handler);
+
+        push_tool_spec(
+            &mut builder,
+            create_call_mcp_tool_async_tool(),
+            /*supports_parallel_tool_calls*/ false,
+        );
+        push_tool_spec(
+            &mut builder,
+            create_cancel_mcp_task_tool(),
+            /*supports_parallel_tool_calls*/ false,
+        );
+        builder.register_handler("call_mcp_tool_async", mcp_task_handler.clone());
+        builder.register_handler("cancel_mcp_task", mcp_task_handler);
     }
 
     push_tool_spec(
@@ -256,6 +272,11 @@ pub(crate) fn build_specs_with_discoverable_tools(
         let mut catalog_tools = catalog_tools;
         catalog_tools.sort_by(|(sa, _), (sb, _)| sa.cmp(sb));
         for (source, tool) in catalog_tools {
+            if source == "mcp_task" {
+                // These tools are wired explicitly from the `mcp_tools` block above so they only
+                // appear when MCP servers are present and are not duplicated via inventory.
+                continue;
+            }
             let input_schema = parse_tool_input_schema(&tool.input_schema)
                 .unwrap_or_else(|e| panic!("catalog tool {} has invalid schema: {e}", tool.name));
             let description = match tool.annotations.as_ref().and_then(|v| {
@@ -465,7 +486,7 @@ pub(crate) fn build_specs_with_discoverable_tools(
                 );
                 continue;
             }
-            match mcp_tool_to_openai_tool(name.clone(), tool.clone()) {
+            match mcp_tool_to_model_tool(name.clone(), tool.clone()) {
                 Ok(converted_tool) => {
                     tracing::debug!(
                         tool = %name,
@@ -480,7 +501,7 @@ pub(crate) fn build_specs_with_discoverable_tools(
                     builder.register_handler(name, mcp_handler.clone());
                 }
                 Err(e) => {
-                    tracing::error!("Failed to convert {name:?} MCP tool to OpenAI tool: {e:?}");
+                    tracing::error!("Failed to convert {name:?} MCP tool to model tool: {e:?}");
                 }
             }
         }
@@ -488,7 +509,7 @@ pub(crate) fn build_specs_with_discoverable_tools(
 
     if !dynamic_tools.is_empty() {
         for tool in dynamic_tools {
-            match dynamic_tool_to_openai_tool(tool) {
+            match dynamic_tool_to_model_tool(tool) {
                 Ok(converted_tool) => {
                     push_tool_spec(
                         &mut builder,
@@ -499,7 +520,7 @@ pub(crate) fn build_specs_with_discoverable_tools(
                 }
                 Err(e) => {
                     tracing::error!(
-                        "Failed to convert dynamic tool {:?} to OpenAI tool: {e:?}",
+                        "Failed to convert dynamic tool {:?} to model tool: {e:?}",
                         tool.name
                     );
                 }

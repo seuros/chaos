@@ -23,6 +23,8 @@ members = [
     "lib/libcontract/abi",
     "lib/libcontract/ipc",
     "lib/libcontract/traits",
+    # lib/libration — ration middleware's usage store
+    "lib/libration",
 
     # secure/ — security (peer to kernel)
     "secure/warden",
@@ -146,6 +148,7 @@ chaos-clamp = { path = "sys/modules/clamp" }
 # Internal — sys/kern/providers/
 chaos-parrot = { path = "sys/kern/providers/parrot" }
 chaos-ration = { path = "include/ration" }
+chaos-libration = { path = "lib/libration" }
 
 # Internal — srv/
 chaos-mcpd = { path = "srv/mcpd" }
@@ -447,6 +450,7 @@ ignored = [
     "zip",
     "opentelemetry_sdk",
     "chaos-ration",
+    "chaos-libration",
     "fd-lock",
     "chaos-minions",
     "chaos-parole",

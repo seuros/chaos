@@ -1698,6 +1698,19 @@ dependencies = [
 ]
 
 [[package]]
+name = "chaos-libration"
+version = "47.0.0"
+dependencies = [
+ "anyhow",
+ "chaos-proc",
+ "chaos-ration",
+ "chaos-storage",
+ "sqlx",
+ "tempfile",
+ "tokio",
+]
+
+[[package]]
 name = "chaos-locate"
 version = "47.0.0"
 dependencies = [

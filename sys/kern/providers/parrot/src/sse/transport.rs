@@ -15,8 +15,10 @@ use std::sync::Arc;
 /// Execute a POST SSE request with the provider's retry policy and return the successful response.
 ///
 /// When `sniffer` is `Some`, rate-limit headers from the response are handed
-/// to the ration pipeline in a fire-and-forget background task — regardless
-/// of status, because 429/5xx responses carry the freshest reset hints.
+/// to the ration pipeline — regardless of status, because 429/5xx responses
+/// carry the freshest reset hints. When `None`, no recording happens; the
+/// caller is expected to have attached a sniffer at adapter construction
+/// time if it wanted one.
 pub(crate) async fn start_rama_post_sse_request(
     url: &str,
     headers: &HeaderMap,
@@ -74,10 +76,7 @@ pub(crate) async fn start_rama_post_sse_request(
         // carry the most valuable reset hints (the bucket literally just
         // rejected us for being empty), and the error path below consumes
         // the response body, so we have to extract headers first.
-        let active_sniffer = sniffer
-            .cloned()
-            .or_else(|| chaos_libration::registry::lookup(url));
-        if let Some(sniffer) = active_sniffer.as_deref() {
+        if let Some(sniffer) = sniffer {
             sniffer.sniff(response.headers());
         }
 

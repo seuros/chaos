@@ -18,6 +18,7 @@ use chaos_abi::TokenUsage;
 use chaos_abi::TurnEvent;
 use chaos_abi::TurnRequest;
 use chaos_abi::TurnStream;
+use chaos_libration::UsageSniffer;
 use http::HeaderMap;
 use rama::error::BoxError;
 use rama::futures::StreamExt;
@@ -38,6 +39,7 @@ pub struct TensorZeroAdapter {
     api_key: String,
     /// TensorZero function name (e.g. "coding_large").
     default_function: Option<String>,
+    sniffer: Option<Arc<UsageSniffer>>,
 }
 
 impl TensorZeroAdapter {
@@ -46,7 +48,15 @@ impl TensorZeroAdapter {
             provider,
             api_key,
             default_function,
+            sniffer: None,
         }
+    }
+
+    /// Attach an optional ration sniffer that records rate-limit
+    /// headers for every response this adapter issues.
+    pub fn with_sniffer(mut self, sniffer: Option<Arc<UsageSniffer>>) -> Self {
+        self.sniffer = sniffer;
+        self
     }
 
     pub fn from_base_url_and_api_key(
@@ -113,6 +123,7 @@ impl ModelAdapter for TensorZeroAdapter {
             let headers = self.build_headers()?;
             let retry = self.provider.retry.clone();
             let idle_timeout = self.provider.stream_idle_timeout;
+            let sniffer = self.sniffer.clone();
 
             let (tx, rx) = mpsc::channel(64);
 
@@ -128,6 +139,7 @@ impl ModelAdapter for TensorZeroAdapter {
                     &retry,
                     idle_timeout,
                     turn_state,
+                    sniffer.as_ref(),
                     tx.clone(),
                 )
                 .await
@@ -639,6 +651,7 @@ fn parse_chunk(
 
 // ── SSE transport ──────────────────────────────────────────────────
 
+#[allow(clippy::too_many_arguments)]
 async fn run_sse_stream(
     url: &str,
     headers: &HeaderMap,
@@ -646,6 +659,7 @@ async fn run_sse_stream(
     retry: &crate::provider::RetryConfig,
     idle_timeout: Duration,
     turn_state: Option<Arc<OnceLock<String>>>,
+    sniffer: Option<&Arc<UsageSniffer>>,
     tx: mpsc::Sender<Result<TurnEvent, AbiError>>,
 ) -> Result<(), AbiError> {
     let response = crate::sse::transport::start_rama_post_sse_request(
@@ -654,7 +668,7 @@ async fn run_sse_stream(
         body,
         retry,
         "tensorzero",
-        None,
+        sniffer,
     )
     .await?;
     process_sse_data_stream(

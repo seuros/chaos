@@ -273,7 +273,7 @@ impl Session {
             if is_subagent {
                 (0, 0)
             } else {
-                crate::message_history::history_metadata(state_db_ctx.as_deref()).await
+                crate::message_history::history_metadata(state_db_ctx.as_ref()).await
             }
         }
         .instrument(info_span!(

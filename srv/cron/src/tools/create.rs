@@ -4,10 +4,10 @@ use mcp_host::prelude::*;
 use schemars::JsonSchema;
 use serde::Deserialize;
 
+use crate::BackendCronStorage;
 use crate::CronCtx;
 use crate::CronServer;
 use crate::CronStorage;
-use crate::SqliteCronStorage;
 use crate::job::CreateJobParams;
 use chaos_storage::ChaosStorageProvider;
 
@@ -71,8 +71,9 @@ impl CronServer {
 
 /// Standalone execution — callable from both MCP and kernel adapter.
 ///
-/// When `pool` is `Some`, the job is persisted to `chaos.sqlite`.
-/// When `None`, standalone mode falls back to `$CHAOS_SQLITE_HOME`.
+/// When `provider` is `Some`, the job is persisted to that configured
+/// shared runtime backend. When `None`, standalone mode resolves storage
+/// from environment.
 /// Missing DB access is treated as an execution error rather than a
 /// validation-only success, because cron jobs are always expected to persist.
 pub async fn execute(
@@ -84,7 +85,7 @@ pub async fn execute(
         Some(provider) => provider.clone(),
         None => ChaosStorageProvider::from_env(None).await?,
     };
-    let storage = SqliteCronStorage::from_provider(&provider)?;
+    let storage = BackendCronStorage::from_provider(&provider)?;
     execute_with_storage(params, &storage, owner).await
 }
 

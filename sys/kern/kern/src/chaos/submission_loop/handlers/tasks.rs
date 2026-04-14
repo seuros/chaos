@@ -241,7 +241,7 @@ pub async fn add_to_history(sess: &Arc<Session>, config: &Arc<Config>, text: Str
     let runtime_db = sess.services.runtime_db.clone();
     tokio::spawn(async move {
         if let Err(e) =
-            crate::message_history::append_entry(&text, &id, runtime_db.as_deref(), &config).await
+            crate::message_history::append_entry(&text, &id, runtime_db.as_ref(), &config).await
         {
             warn!("failed to append to message history: {e}");
         }
@@ -260,7 +260,7 @@ pub async fn get_history_entry_request(
     let _config = Arc::clone(config);
 
     tokio::spawn(async move {
-        let entry_opt = crate::message_history::lookup(log_id, offset, runtime_db.as_deref()).await;
+        let entry_opt = crate::message_history::lookup(log_id, offset, runtime_db.as_ref()).await;
 
         let event = Event {
             id: sub_id,

@@ -343,14 +343,19 @@ async fn codex_tool_passes_base_instructions() -> anyhow::Result<()> {
         .context("responses request should include instructions")?;
     assert!(instructions.starts_with("You are a helpful assistant."));
 
-    let developer_messages: Vec<&serde_json::Value> = request
+    let instruction_messages: Vec<&serde_json::Value> = request
         .get("input")
         .and_then(serde_json::Value::as_array)
         .context("responses request should include input items")?
         .iter()
-        .filter(|msg| msg.get("role").and_then(|role| role.as_str()) == Some("developer"))
+        .filter(|msg| {
+            matches!(
+                msg.get("role").and_then(|role| role.as_str()),
+                Some("developer" | "system")
+            )
+        })
         .collect();
-    let developer_contents: Vec<&str> = developer_messages
+    let instruction_contents: Vec<&str> = instruction_messages
         .iter()
         .filter_map(|msg| msg.get("content").and_then(serde_json::Value::as_array))
         .flat_map(|content| content.iter())
@@ -358,14 +363,14 @@ async fn codex_tool_passes_base_instructions() -> anyhow::Result<()> {
         .filter_map(|span| span.get("text").and_then(serde_json::Value::as_str))
         .collect();
     assert!(
-        developer_contents
+        instruction_contents
             .iter()
             .any(|content| content.contains("`sandbox_mode`")),
-        "expected permissions developer message, got {developer_contents:?}"
+        "expected permissions instruction message, got {instruction_contents:?}"
     );
     assert!(
-        developer_contents.contains(&"Foreshadow upcoming tool calls."),
-        "expected developer instructions in developer messages, got {developer_contents:?}"
+        instruction_contents.contains(&"Foreshadow upcoming tool calls."),
+        "expected minion instructions in instruction messages, got {instruction_contents:?}"
     );
 
     Ok(())

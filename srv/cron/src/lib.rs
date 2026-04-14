@@ -11,8 +11,8 @@ pub mod tools;
 pub use job::CreateJobParams;
 pub use job::CronJob;
 pub use job::CronScope;
+pub(crate) use provider::BackendCronStorage;
 pub(crate) use provider::CronStorage;
-pub(crate) use provider::SqliteCronStorage;
 pub use schedule::Schedule;
 pub use scheduler::Scheduler;
 pub use scheduler::shell_executor;
@@ -34,11 +34,16 @@ struct CronToolDriver;
 impl CatalogToolDriver for CronToolDriver {
     fn call_tool(&self, request: CatalogToolRequest) -> CatalogToolDriverFuture<'_> {
         Box::pin(async move {
-            let provider = chaos_storage::ChaosStorageProvider::from_optional_sqlite(
-                None,
-                Some(request.sqlite_home.as_path()),
-            )
-            .await?;
+            let provider = match chaos_storage::ChaosStorageProvider::from_env(None).await {
+                Ok(provider) => provider,
+                Err(_) => {
+                    chaos_storage::ChaosStorageProvider::from_optional_sqlite(
+                        None,
+                        Some(request.sqlite_home.as_path()),
+                    )
+                    .await?
+                }
+            };
             let owner = OwnerContext {
                 project_path: Some(request.cwd.to_string_lossy().to_string()),
                 session_id: Some(request.session_id),

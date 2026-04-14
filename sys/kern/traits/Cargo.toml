@@ -9,7 +9,6 @@ publish.workspace = true
 [dependencies]
 chaos-ipc = { workspace = true }
 chaos-sysctl = { workspace = true }
-chaos-proc = { workspace = true }
 chaos-syslog = { workspace = true }
 async-channel = { workspace = true }
 tokio = { workspace = true, features = ["sync"] }

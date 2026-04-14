@@ -135,7 +135,9 @@ pub(crate) use chaos_sh::parse_command;
 
 pub use client::ModelClient;
 pub use client::ModelClientSession;
-pub use client::X_CHAOS_TURN_METADATA_HEADER;
+pub use client::X_CODEX_BETA_FEATURES_HEADER;
+pub use client::X_CODEX_TURN_METADATA_HEADER;
+pub use client::X_CODEX_TURN_STATE_HEADER;
 pub use client_common::Prompt;
 pub use client_common::REVIEW_PROMPT;
 pub use client_common::ResponseEvent;

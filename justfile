@@ -34,6 +34,17 @@ check:
 test *args:
     cargo nextest run --workspace --all-features --no-fail-fast {{args}}
 
+# Run the bounded Postgres validation set for the new storage path.
+postgres-validate-storage database_url:
+    TEST_DATABASE_URL="{{database_url}}" cargo test -p chaos-storage postgres_ -- --nocapture
+
+postgres-validate-cron database_url:
+    TEST_DATABASE_URL="{{database_url}}" cargo test -p chaos-cron postgres_ -- --nocapture
+
+postgres-validate-new-storage-path database_url:
+    TEST_DATABASE_URL="{{database_url}}" cargo test -p chaos-storage postgres_ -- --nocapture
+    TEST_DATABASE_URL="{{database_url}}" cargo test -p chaos-cron postgres_ -- --nocapture
+
 # Lint + check + clippy (no tests)
 qq: fmt check clippy
 
@@ -52,4 +63,3 @@ mcp-server-run *args:
 [no-cd]
 write-hooks-schema:
     cargo run -p chaos-dtrace --bin write_hooks_schema_fixtures
-

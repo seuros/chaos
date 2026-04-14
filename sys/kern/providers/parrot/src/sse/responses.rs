@@ -28,6 +28,11 @@ use tracing::warn;
 
 const X_REASONING_INCLUDED_HEADER: &str = "x-reasoning-included";
 const OPENAI_MODEL_HEADER: &str = "openai-model";
+// Wire-facing turn-state header echoed by the ChatGPT codex proxy. Must
+// match `X_CODEX_TURN_STATE_HEADER` in chaos-kern. TODO(parrot): once
+// wire-header ownership lives in this crate, flip the dependency so kern
+// imports this const instead of duplicating.
+const X_CODEX_TURN_STATE_HEADER: &str = "x-codex-turn-state";
 
 /// Streams SSE events from an on-disk fixture for tests.
 pub fn stream_from_fixture(
@@ -79,7 +84,7 @@ pub fn spawn_response_stream(
     if let Some(turn_state) = turn_state.as_ref()
         && let Some(header_value) = stream_response
             .headers
-            .get("x-chaos-turn-state")
+            .get(X_CODEX_TURN_STATE_HEADER)
             .and_then(|v| v.to_str().ok())
     {
         let _ = turn_state.set(header_value.to_string());

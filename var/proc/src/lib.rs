@@ -1,7 +1,9 @@
-//! SQLite-backed runtime data for persisted session metadata.
+//! Runtime data for persisted session metadata.
 //!
 //! This crate owns the local process metadata, memories, and log indexes derived
 //! from persisted session history. Session replay itself lives in journald.
+//! SQLite remains the primary runtime implementation today; Postgres bootstrap
+//! helpers are exposed for backend-aware consumers.
 
 mod extract;
 pub mod log_db;
@@ -17,6 +19,7 @@ pub use model::LogTailCursor;
 pub use model::Phase2InputSelection;
 pub use model::Phase2JobClaimOutcome;
 /// Preferred entrypoint: owns configuration and metrics.
+pub use runtime::RuntimeDbHandle;
 pub use runtime::StateRuntime;
 
 /// Low-level storage engine: useful for focused tests.
@@ -47,6 +50,7 @@ pub use model::Stage1OutputRef;
 pub use model::Stage1StartupClaimParams;
 pub use runtime::open_runtime_db;
 pub use runtime::open_runtime_db_at_path;
+pub use runtime::open_runtime_db_postgres_url;
 pub use runtime::open_runtime_db_url;
 pub use runtime::runtime_db_filename;
 pub use runtime::runtime_db_path;

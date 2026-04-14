@@ -57,8 +57,15 @@ use crate::response_debug_context::telemetry_transport_error_message;
 use crate::util::FeedbackRequestTags;
 use crate::util::emit_feedback_request_tags;
 
-pub const X_CHAOS_TURN_STATE_HEADER: &str = "x-chaos-turn-state";
-pub const X_CHAOS_TURN_METADATA_HEADER: &str = "x-chaos-turn-metadata";
+// Wire-facing header names must remain "x-codex-*" so the ChatGPT codex
+// proxy recognizes them and takes the modern routing path. Otherwise it
+// falls back to a legacy path that injects `prompt_cache_retention` into
+// the forwarded body, which upstream /v1/responses then rejects.
+// TODO(parrot): move these wire-format constants into the parrot provider
+// adapter — kern shouldn't know about ChatGPT-proxy-specific header names.
+pub const X_CODEX_TURN_STATE_HEADER: &str = "x-codex-turn-state";
+pub const X_CODEX_TURN_METADATA_HEADER: &str = "x-codex-turn-metadata";
+pub const X_CODEX_BETA_FEATURES_HEADER: &str = "x-codex-beta-features";
 pub const X_RESPONSESAPI_INCLUDE_TIMING_METRICS_HEADER: &str =
     "x-responsesapi-include-timing-metrics";
 pub(super) const RESPONSES_ENDPOINT: &str = "/responses";

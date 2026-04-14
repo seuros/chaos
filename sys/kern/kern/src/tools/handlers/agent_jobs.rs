@@ -517,9 +517,9 @@ mod report_agent_job_result {
 
 fn required_runtime_db(
     session: &Arc<Session>,
-) -> Result<Arc<chaos_proc::StateRuntime>, FunctionCallError> {
+) -> Result<crate::runtime_db::RuntimeDbHandle, FunctionCallError> {
     session.runtime_db().ok_or_else(|| {
-        FunctionCallError::Fatal("sqlite runtime db is unavailable for this session".to_string())
+        FunctionCallError::Fatal("runtime db is unavailable for this session".to_string())
     })
 }
 
@@ -571,7 +571,7 @@ fn normalize_max_runtime_seconds(requested: Option<u64>) -> Result<Option<u64>, 
 async fn run_agent_job_loop(
     session: Arc<Session>,
     turn: Arc<TurnContext>,
-    db: Arc<chaos_proc::StateRuntime>,
+    db: crate::runtime_db::RuntimeDbHandle,
     job_id: String,
     options: JobRunnerOptions,
 ) -> anyhow::Result<()> {
@@ -788,7 +788,7 @@ async fn run_agent_job_loop(
 }
 
 async fn export_job_csv_snapshot(
-    db: Arc<chaos_proc::StateRuntime>,
+    db: crate::runtime_db::RuntimeDbHandle,
     job: &chaos_proc::AgentJob,
 ) -> anyhow::Result<()> {
     let items = db
@@ -806,7 +806,7 @@ async fn export_job_csv_snapshot(
 
 async fn recover_running_items(
     session: Arc<Session>,
-    db: Arc<chaos_proc::StateRuntime>,
+    db: crate::runtime_db::RuntimeDbHandle,
     job_id: &str,
     active_items: &mut HashMap<ProcessId, ActiveJobItem>,
     runtime_timeout: Duration,
@@ -893,7 +893,7 @@ async fn find_finished_threads(
 
 async fn reap_stale_active_items(
     session: Arc<Session>,
-    db: Arc<chaos_proc::StateRuntime>,
+    db: crate::runtime_db::RuntimeDbHandle,
     job_id: &str,
     active_items: &mut HashMap<ProcessId, ActiveJobItem>,
     runtime_timeout: Duration,
@@ -923,7 +923,7 @@ async fn reap_stale_active_items(
 
 async fn finalize_finished_item(
     session: Arc<Session>,
-    db: Arc<chaos_proc::StateRuntime>,
+    db: crate::runtime_db::RuntimeDbHandle,
     job_id: &str,
     item_id: &str,
     process_id: ProcessId,

@@ -1,12 +1,9 @@
-//! Runtime database access trait — decouples consumers from the concrete SQLite handle.
+//! Runtime database access trait.
+//!
+//! This stays backend-agnostic so consumers can ask whether runtime persistence
+//! is available without depending on a concrete SQLite or Postgres handle type.
 
-use std::sync::Arc;
-
-use chaos_proc::StateRuntime;
-
-/// Provides access to the optional SQLite runtime database.
-///
-/// Returns `None` when the session is ephemeral or runtime persistence is disabled.
+/// Reports whether runtime persistence is available for the current session.
 pub trait RuntimeAccess: Send + Sync {
-    fn runtime_db(&self) -> Option<Arc<StateRuntime>>;
+    fn has_runtime_db(&self) -> bool;
 }

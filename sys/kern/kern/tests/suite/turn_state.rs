@@ -1,6 +1,8 @@
 #![allow(clippy::expect_used, clippy::unwrap_used)]
 
 use anyhow::Result;
+use chaos_kern::X_CODEX_TURN_METADATA_HEADER;
+use chaos_kern::X_CODEX_TURN_STATE_HEADER as TURN_STATE_HEADER;
 use core_test_support::responses::ev_assistant_message;
 use core_test_support::responses::ev_completed;
 use core_test_support::responses::ev_reasoning_item;
@@ -14,8 +16,6 @@ use core_test_support::skip_if_no_network;
 use core_test_support::test_chaos::test_chaos;
 use pretty_assertions::assert_eq;
 use serde_json::Value;
-
-const TURN_STATE_HEADER: &str = "x-chaos-turn-state";
 
 #[tokio::test(flavor = "multi_thread", worker_threads = 2)]
 async fn responses_turn_state_persists_within_turn_and_resets_after() -> Result<()> {
@@ -72,11 +72,11 @@ async fn responses_turn_state_persists_within_turn_and_resets_after() -> Result<
             .map(str::to_string)
     };
 
-    let first_turn_id = parse_turn_id(requests[0].header("x-chaos-turn-metadata"))
+    let first_turn_id = parse_turn_id(requests[0].header(X_CODEX_TURN_METADATA_HEADER))
         .expect("first request should include turn metadata turn_id");
-    let second_turn_id = parse_turn_id(requests[1].header("x-chaos-turn-metadata"))
+    let second_turn_id = parse_turn_id(requests[1].header(X_CODEX_TURN_METADATA_HEADER))
         .expect("follow-up request should include turn metadata turn_id");
-    let third_turn_id = parse_turn_id(requests[2].header("x-chaos-turn-metadata"))
+    let third_turn_id = parse_turn_id(requests[2].header(X_CODEX_TURN_METADATA_HEADER))
         .expect("new turn request should include turn metadata turn_id");
 
     assert_eq!(first_turn_id, second_turn_id);

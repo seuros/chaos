@@ -9,22 +9,33 @@ use chaos_ipc::protocol::RolloutItem;
 use chaos_ipc::protocol::SessionSource;
 pub use chaos_proc::LogEntry;
 use chaos_proc::ProcessMetadataBuilder;
+pub use chaos_proc::RuntimeDbHandle;
+use chaos_storage::ChaosStorageProvider;
 use jiff::Timestamp;
 use serde_json::Value;
 use sqlx::SqlitePool;
 use std::path::Path;
 use std::path::PathBuf;
-use std::sync::Arc;
 use tracing::warn;
 use uuid::Uuid;
-
-/// Core-facing handle to the SQLite-backed runtime DB.
-pub type RuntimeDbHandle = Arc<chaos_proc::StateRuntime>;
 
 /// Initialize the runtime DB for thread persistence. To only be used
 /// inside `core`. The initialization should not be done anywhere else.
 pub(crate) async fn init(config: &Config) -> Option<RuntimeDbHandle> {
-    let runtime = match chaos_proc::StateRuntime::init(
+    let provider = match resolve_runtime_storage_provider(None, config.sqlite_home.as_path()).await
+    {
+        Ok(provider) => provider,
+        Err(err) => {
+            warn!(
+                "failed to initialize runtime storage for {}: {err}",
+                config.sqlite_home.display()
+            );
+            return None;
+        }
+    };
+
+    let runtime = match runtime_handle_from_provider(
+        &provider,
         config.sqlite_home.clone(),
         config.model_provider_id.clone(),
     )
@@ -40,32 +51,45 @@ pub(crate) async fn init(config: &Config) -> Option<RuntimeDbHandle> {
         }
     };
 
-    chaos_cron::spawn_scheduler(runtime.pool().to_owned(), chaos_cron::shell_executor());
+    if let Err(err) = chaos_cron::spawn_scheduler(&provider, chaos_cron::shell_executor()) {
+        warn!("failed to initialize cron scheduler storage backend: {err}");
+    }
 
     Some(runtime)
 }
 
-/// Resolve the shared runtime SQLite pool, opening it lazily when the runtime
-/// DB handle is unavailable.
-///
-/// Cron jobs and other shared runtime features live in the main runtime DB, so
-/// callers should use this even for sessions that are otherwise ephemeral.
-pub async fn resolve_runtime_pool(
-    existing_pool: Option<SqlitePool>,
-    sqlite_home: &Path,
-) -> Option<SqlitePool> {
-    if let Some(pool) = existing_pool {
-        return Some(pool);
+async fn runtime_handle_from_provider(
+    provider: &ChaosStorageProvider,
+    chaos_home: PathBuf,
+    default_provider: String,
+) -> anyhow::Result<RuntimeDbHandle> {
+    if let Some(pool) = provider.sqlite_pool_cloned() {
+        return Ok(RuntimeDbHandle::from_sqlite_pool(
+            chaos_home,
+            default_provider,
+            pool,
+        ));
     }
+    if let Some(pool) = provider.postgres_pool_cloned() {
+        return Ok(RuntimeDbHandle::from_postgres_pool(
+            chaos_home,
+            default_provider,
+            pool,
+        ));
+    }
+    anyhow::bail!("unsupported runtime storage backend")
+}
 
-    match chaos_proc::open_runtime_db(sqlite_home).await {
-        Ok(pool) => Some(pool),
-        Err(err) => {
-            warn!(
-                "failed to open runtime db on demand at {}: {err}",
-                chaos_proc::runtime_db_path(sqlite_home).display()
-            );
-            None
+/// Resolve the shared runtime storage provider, preferring explicit environment
+/// configuration and otherwise falling back to the configured SQLite home.
+pub async fn resolve_runtime_storage_provider(
+    existing_pool: Option<&SqlitePool>,
+    sqlite_home: &Path,
+) -> Result<ChaosStorageProvider, String> {
+    match ChaosStorageProvider::from_env(existing_pool).await {
+        Ok(provider) => Ok(provider),
+        Err(_) => {
+            ChaosStorageProvider::from_optional_sqlite(existing_pool, Some(sqlite_home)).await
         }
     }
 }
@@ -80,30 +104,60 @@ pub async fn get_runtime_db_for(
     sqlite_home: &Path,
     model_provider_id: &str,
 ) -> Option<RuntimeDbHandle> {
+    if let Ok(provider) = ChaosStorageProvider::from_env(None).await {
+        return runtime_handle_from_provider(
+            &provider,
+            sqlite_home.to_path_buf(),
+            model_provider_id.to_string(),
+        )
+        .await
+        .ok();
+    }
+
     let state_path = chaos_proc::runtime_db_path(sqlite_home);
     if !tokio::fs::try_exists(&state_path).await.unwrap_or(false) {
         return None;
     }
-    let runtime =
-        chaos_proc::StateRuntime::init(sqlite_home.to_path_buf(), model_provider_id.to_string())
-            .await
-            .ok()?;
-    Some(runtime)
+
+    let provider = ChaosStorageProvider::from_optional_sqlite(None, Some(sqlite_home))
+        .await
+        .ok()?;
+    runtime_handle_from_provider(
+        &provider,
+        sqlite_home.to_path_buf(),
+        model_provider_id.to_string(),
+    )
+    .await
+    .ok()
 }
 
-/// Open the runtime DB when the SQLite file exists, without feature gating.
-///
-/// This is used for parity checks during the SQLite migration phase.
+/// Open the runtime DB when the backing store appears present, without feature gating.
 pub async fn open_if_present(chaos_home: &Path, default_provider: &str) -> Option<RuntimeDbHandle> {
+    if let Ok(provider) = ChaosStorageProvider::from_env(None).await {
+        return runtime_handle_from_provider(
+            &provider,
+            chaos_home.to_path_buf(),
+            default_provider.to_string(),
+        )
+        .await
+        .ok();
+    }
+
     let db_path = chaos_proc::runtime_db_path(chaos_home);
     if !tokio::fs::try_exists(&db_path).await.unwrap_or(false) {
         return None;
     }
-    let runtime =
-        chaos_proc::StateRuntime::init(chaos_home.to_path_buf(), default_provider.to_string())
-            .await
-            .ok()?;
-    Some(runtime)
+
+    let provider = ChaosStorageProvider::from_optional_sqlite(None, Some(chaos_home))
+        .await
+        .ok()?;
+    runtime_handle_from_provider(
+        &provider,
+        chaos_home.to_path_buf(),
+        default_provider.to_string(),
+    )
+    .await
+    .ok()
 }
 
 fn cursor_to_anchor(cursor: Option<&Cursor>) -> Option<chaos_proc::Anchor> {
@@ -125,12 +179,10 @@ fn cursor_to_anchor(cursor: Option<&Cursor>) -> Option<chaos_proc::Anchor> {
     Some(chaos_proc::Anchor { ts, id })
 }
 
-/// Parse a `YYYY-MM-DDThh-mm-ss` filename timestamp into a `jiff::Timestamp`.
 fn parse_filename_timestamp(ts_str: &str) -> Option<Timestamp> {
     if ts_str.len() < 19 {
         return None;
     }
-    // "2026-01-27T12-34-56" → "2026-01-27T12:34:56Z"
     let normalized = format!(
         "{}-{}-{}T{}:{}:{}Z",
         &ts_str[0..4],
@@ -148,10 +200,9 @@ pub(crate) fn normalize_cwd_for_runtime_db(cwd: &Path) -> PathBuf {
     normalize_for_path_comparison(cwd).unwrap_or_else(|_| cwd.to_path_buf())
 }
 
-/// List thread ids from SQLite for parity checks without rollout scanning.
 #[allow(clippy::too_many_arguments)]
 pub async fn list_process_ids_db(
-    context: Option<&chaos_proc::StateRuntime>,
+    context: Option<&RuntimeDbHandle>,
     chaos_home: &Path,
     page_size: usize,
     cursor: Option<&Cursor>,
@@ -202,10 +253,9 @@ pub async fn list_process_ids_db(
     }
 }
 
-/// List process metadata from SQLite without rollout directory traversal.
 #[allow(clippy::too_many_arguments)]
 pub async fn list_processes_db(
-    context: Option<&chaos_proc::StateRuntime>,
+    context: Option<&RuntimeDbHandle>,
     chaos_home: &Path,
     page_size: usize,
     cursor: Option<&Cursor>,
@@ -257,9 +307,8 @@ pub async fn list_processes_db(
     }
 }
 
-/// Get dynamic tools for a thread id using SQLite.
 pub async fn get_dynamic_tools(
-    context: Option<&chaos_proc::StateRuntime>,
+    context: Option<&RuntimeDbHandle>,
     process_id: ProcessId,
     stage: &str,
 ) -> Option<Vec<DynamicToolSpec>> {
@@ -273,9 +322,8 @@ pub async fn get_dynamic_tools(
     }
 }
 
-/// Persist dynamic tools for a thread id using SQLite, if none exist yet.
 pub async fn persist_dynamic_tools(
-    context: Option<&chaos_proc::StateRuntime>,
+    context: Option<&RuntimeDbHandle>,
     process_id: ProcessId,
     tools: Option<&[DynamicToolSpec]>,
     stage: &str,
@@ -289,7 +337,7 @@ pub async fn persist_dynamic_tools(
 }
 
 pub async fn mark_process_memory_mode_polluted(
-    context: Option<&chaos_proc::StateRuntime>,
+    context: Option<&RuntimeDbHandle>,
     process_id: ProcessId,
     stage: &str,
 ) {
@@ -301,10 +349,9 @@ pub async fn mark_process_memory_mode_polluted(
     }
 }
 
-/// Apply persisted session items incrementally to the runtime DB.
 #[allow(clippy::too_many_arguments)]
 pub async fn apply_rollout_items(
-    context: Option<&chaos_proc::StateRuntime>,
+    context: Option<&RuntimeDbHandle>,
     _default_provider: &str,
     builder: Option<&ProcessMetadataBuilder>,
     items: &[RolloutItem],
@@ -343,7 +390,7 @@ pub async fn apply_rollout_items(
 }
 
 pub async fn touch_process_updated_at(
-    context: Option<&chaos_proc::StateRuntime>,
+    context: Option<&RuntimeDbHandle>,
     process_id: Option<ProcessId>,
     updated_at: Timestamp,
     stage: &str,

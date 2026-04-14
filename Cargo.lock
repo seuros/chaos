@@ -1624,7 +1624,6 @@ dependencies = [
  "core_test_support",
  "csv",
  "ctor",
- "dirs",
  "encoding_rs",
  "env-flags",
  "futures",
@@ -1652,7 +1651,6 @@ dependencies = [
  "seccompiler",
  "serde",
  "serde_json",
- "serde_yaml",
  "serial_test",
  "sha1 0.11.0",
  "sha2 0.11.0",
@@ -1757,7 +1755,6 @@ dependencies = [
  "chaos-kern",
  "chaos-proc",
  "chaos-sh",
- "chaos-storage",
  "core_test_support",
  "mcp-host",
  "mcp_test_support",
@@ -2117,7 +2114,6 @@ dependencies = [
  "anyhow",
  "async-channel",
  "chaos-ipc",
- "chaos-proc",
  "chaos-sysctl",
  "chaos-syslog",
  "inventory",
@@ -10238,19 +10234,6 @@ dependencies = [
 ]
 
 [[package]]
-name = "serde_yaml"
-version = "0.9.34+deprecated"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "6a8b1a1a2ebf674015cc02edccce75287f1a0130d394307b36743c2f5d504b47"
-dependencies = [
- "indexmap 2.14.0",
- "itoa",
- "ryu",
- "serde",
- "unsafe-libyaml",
-]
-
-[[package]]
 name = "serial2"
 version = "0.2.35"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -12087,12 +12070,6 @@ dependencies = [
  "crypto-common 0.1.7",
  "subtle",
 ]
-
-[[package]]
-name = "unsafe-libyaml"
-version = "0.2.11"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "673aac59facbab8a9007c7f6108d11f63b603f7cabff99fabf650fea5c32b861"
 
 [[package]]
 name = "untrusted"

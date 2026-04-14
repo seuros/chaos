@@ -63,7 +63,8 @@ use super::tools::{
 use super::{
     ApiTelemetry, AuthRequestTelemetryContext, HttpTurnRequestConfig, ModelClientSession,
     PendingUnauthorizedRetry, RESPONSES_ENDPOINT, RequestRouteTelemetry,
-    UnauthorizedRecoveryExecution, X_CHAOS_TURN_METADATA_HEADER, X_CHAOS_TURN_STATE_HEADER,
+    UnauthorizedRecoveryExecution, X_CODEX_BETA_FEATURES_HEADER, X_CODEX_TURN_METADATA_HEADER,
+    X_CODEX_TURN_STATE_HEADER,
 };
 
 // ── Response stream helpers ───────────────────────────────────────────────────
@@ -105,16 +106,16 @@ pub(super) fn build_responses_headers(
         && !value.is_empty()
         && let Ok(header_value) = HeaderValue::from_str(value)
     {
-        headers.insert("x-chaos-beta-features", header_value);
+        headers.insert(X_CODEX_BETA_FEATURES_HEADER, header_value);
     }
     if let Some(turn_state) = turn_state
         && let Some(state) = turn_state.get()
         && let Ok(header_value) = HeaderValue::from_str(state)
     {
-        headers.insert(X_CHAOS_TURN_STATE_HEADER, header_value);
+        headers.insert(X_CODEX_TURN_STATE_HEADER, header_value);
     }
     if let Some(header_value) = turn_metadata_header {
-        headers.insert(X_CHAOS_TURN_METADATA_HEADER, header_value.clone());
+        headers.insert(X_CODEX_TURN_METADATA_HEADER, header_value.clone());
     }
     headers
 }

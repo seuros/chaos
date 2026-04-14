@@ -1,3 +1,4 @@
+use sqlx::PgPool;
 use sqlx::SqlitePool;
 use std::path::Path;
 use std::path::PathBuf;
@@ -16,9 +17,8 @@ pub enum StorageKind {
 
 /// Backend bootstrap configuration resolved from config or environment.
 ///
-/// SQLite remains the only supported adapter for now. Postgres is represented
-/// explicitly so callers can move toward backend-driven configuration before
-/// the Postgres adapter lands.
+/// SQLite and Postgres are both represented explicitly so callers can move
+/// toward backend-driven configuration without hard-coding one engine.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub enum StorageConfig {
     SqliteHome(PathBuf),
@@ -59,12 +59,18 @@ pub struct ChaosStorageProvider {
 
 #[derive(Debug, Clone)]
 enum StorageBackend {
+    Postgres(PostgresStorageProvider),
     Sqlite(SqliteStorageProvider),
 }
 
 #[derive(Debug, Clone)]
 struct SqliteStorageProvider {
     pool: SqlitePool,
+}
+
+#[derive(Debug, Clone)]
+struct PostgresStorageProvider {
+    pool: PgPool,
 }
 
 impl ChaosStorageProvider {
@@ -75,11 +81,17 @@ impl ChaosStorageProvider {
         }
     }
 
+    /// Build a provider around an already-open Postgres pool.
+    pub fn from_postgres_pool(pool: PgPool) -> Self {
+        Self {
+            backend: StorageBackend::Postgres(PostgresStorageProvider { pool }),
+        }
+    }
+
     /// Build a provider from an explicit storage config.
     ///
-    /// SQLite is the only implemented backend in phase 1. Postgres config is
-    /// accepted at the type level but rejected here until a concrete adapter is
-    /// added.
+    /// SQLite and Postgres are both supported here; higher-level consumers may
+    /// still choose to only expose a subset of backends.
     pub async fn from_config(config: StorageConfig) -> Result<Self, String> {
         match config {
             StorageConfig::SqliteHome(sqlite_home) => {
@@ -94,14 +106,17 @@ impl ChaosStorageProvider {
                     .map_err(|err| format!("failed to open runtime db: {err}"))?;
                 Ok(Self::from_sqlite_pool(pool))
             }
-            StorageConfig::PostgresUrl(_) => {
-                Err("postgres storage backend is not implemented yet".to_string())
+            StorageConfig::PostgresUrl(database_url) => {
+                let pool = chaos_proc::open_runtime_db_postgres_url(&database_url)
+                    .await
+                    .map_err(|err| format!("failed to open runtime db: {err}"))?;
+                Ok(Self::from_postgres_pool(pool))
             }
         }
     }
 
-    /// Resolve a provider from an existing pool or from the configured SQLite
-    /// home.
+    /// Resolve a provider from an existing SQLite pool or from the configured
+    /// SQLite home.
     pub async fn from_optional_sqlite(
         existing_pool: Option<&SqlitePool>,
         sqlite_home: Option<&Path>,
@@ -115,7 +130,7 @@ impl ChaosStorageProvider {
         Self::from_config(StorageConfig::sqlite_home(sqlite_home)).await
     }
 
-    /// Resolve a provider from an existing pool or from an explicit storage
+    /// Resolve a provider from an existing SQLite pool or from an explicit storage
     /// config.
     pub async fn from_optional_config(
         existing_pool: Option<&SqlitePool>,
@@ -143,6 +158,7 @@ impl ChaosStorageProvider {
 
     pub fn kind(&self) -> StorageKind {
         match &self.backend {
+            StorageBackend::Postgres(_) => StorageKind::Postgres,
             StorageBackend::Sqlite(_) => StorageKind::Sqlite,
         }
     }
@@ -151,7 +167,17 @@ impl ChaosStorageProvider {
     /// typed SQL implementation locally.
     pub fn sqlite_pool_cloned(&self) -> Option<SqlitePool> {
         match &self.backend {
+            StorageBackend::Postgres(_) => None,
             StorageBackend::Sqlite(provider) => Some(provider.pool.clone()),
+        }
+    }
+
+    /// Transitional Postgres accessor for consumers that support the Postgres
+    /// backend explicitly.
+    pub fn postgres_pool_cloned(&self) -> Option<PgPool> {
+        match &self.backend {
+            StorageBackend::Postgres(provider) => Some(provider.pool.clone()),
+            StorageBackend::Sqlite(_) => None,
         }
     }
 }
@@ -201,6 +227,18 @@ mod tests {
     use std::sync::Mutex;
 
     static ENV_LOCK: Mutex<()> = Mutex::new(());
+    const TEST_DATABASE_URL_ENV: &str = "TEST_DATABASE_URL";
+
+    fn postgres_test_url() -> Option<String> {
+        std::env::var(TEST_DATABASE_URL_ENV)
+            .ok()
+            .map(|value| value.trim().to_string())
+            .filter(|value| !value.is_empty())
+    }
+
+    fn unreachable_postgres_url() -> &'static str {
+        "postgres://ubuntu:ubuntu@127.0.0.1:1/postgres?connect_timeout=1"
+    }
 
     #[tokio::test]
     async fn from_optional_sqlite_opens_shared_db() {
@@ -224,28 +262,81 @@ mod tests {
     }
 
     #[tokio::test]
-    async fn from_config_rejects_postgres_until_adapter_exists() {
+    async fn from_config_reports_connection_errors_for_postgres_url() {
         let err = ChaosStorageProvider::from_config(StorageConfig::postgres_url(
-            "postgres://ubuntu:ubuntu@localhost:5432/postgres",
+            unreachable_postgres_url(),
         ))
         .await
-        .expect_err("postgres adapter should not exist yet");
+        .expect_err("postgres adapter should attempt to connect");
 
-        assert!(err.contains("not implemented"), "unexpected error: {err}");
+        assert!(
+            err.contains("failed to open runtime db"),
+            "unexpected error: {err}"
+        );
     }
 
     #[tokio::test]
-    async fn from_env_uses_storage_url_when_present() {
+    async fn postgres_from_config_opens_postgres_runtime_schema_when_configured() {
+        let Some(database_url) = postgres_test_url() else {
+            eprintln!("skipping postgres storage validation; {TEST_DATABASE_URL_ENV} is not set");
+            return;
+        };
+
+        let provider = ChaosStorageProvider::from_config(StorageConfig::postgres_url(database_url))
+            .await
+            .expect("open postgres-backed storage provider");
+
+        assert_eq!(provider.kind(), StorageKind::Postgres);
+        assert!(
+            provider.sqlite_pool_cloned().is_none(),
+            "postgres provider should not expose a sqlite pool"
+        );
+
+        let pool = provider
+            .postgres_pool_cloned()
+            .expect("provider should expose postgres pool");
+        let cron_jobs_table: Option<String> =
+            sqlx::query_scalar("SELECT to_regclass('public.cron_jobs')::text")
+                .fetch_one(&pool)
+                .await
+                .expect("query postgres runtime schema");
+        assert_eq!(cron_jobs_table.as_deref(), Some("cron_jobs"));
+    }
+
+    #[tokio::test]
+    async fn from_env_prefers_postgres_storage_url_when_present() {
         let _guard = EnvGuard::set(
             CHAOS_STORAGE_URL_ENV,
             Some("postgres://ubuntu:ubuntu@localhost:5432/postgres"),
         );
 
-        let err = ChaosStorageProvider::from_env(None)
-            .await
-            .expect_err("postgres config should parse before sqlite fallback");
+        let config = super::resolve_storage_config_from_env()
+            .expect("postgres storage url should parse")
+            .expect("storage config");
 
-        assert!(err.contains("not implemented"), "unexpected error: {err}");
+        assert_eq!(
+            config,
+            StorageConfig::postgres_url("postgres://ubuntu:ubuntu@localhost:5432/postgres")
+        );
+    }
+
+    #[tokio::test]
+    async fn postgres_from_env_opens_postgres_runtime_schema_when_configured() {
+        let Some(database_url) = postgres_test_url() else {
+            eprintln!("skipping postgres storage validation; {TEST_DATABASE_URL_ENV} is not set");
+            return;
+        };
+        let _guard = EnvGuard::set(CHAOS_STORAGE_URL_ENV, Some(&database_url));
+
+        let provider = ChaosStorageProvider::from_env(None)
+            .await
+            .expect("resolve postgres provider from env");
+
+        assert_eq!(provider.kind(), StorageKind::Postgres);
+        assert!(
+            provider.postgres_pool_cloned().is_some(),
+            "postgres provider should expose postgres pool"
+        );
     }
 
     #[tokio::test]

@@ -1,13 +1,8 @@
 //! Trait implementations for core types — bridges between `chaos-traits` abstractions and
 //! the concrete `Config`, `Session`, and service types defined in chaos-kern.
 
-use std::collections::HashMap;
-use std::path::Path;
-use std::sync::Arc;
-
 use chaos_ipc::ProcessId;
 use chaos_ipc::protocol::Event;
-use chaos_proc::StateRuntime;
 use chaos_sysctl::Constrained;
 use chaos_sysctl::types::McpServerConfig;
 use chaos_sysctl::types::OAuthCredentialsStoreMode;
@@ -18,6 +13,8 @@ use chaos_traits::EventEmitter;
 use chaos_traits::RolloutConfig;
 use chaos_traits::RuntimeAccess;
 use chaos_traits::TelemetrySource;
+use std::collections::HashMap;
+use std::path::Path;
 
 use crate::chaos::Session;
 use crate::config::Config;
@@ -82,8 +79,8 @@ impl EventEmitter for Session {
 }
 
 impl RuntimeAccess for Session {
-    fn runtime_db(&self) -> Option<Arc<StateRuntime>> {
-        self.services.runtime_db.clone()
+    fn has_runtime_db(&self) -> bool {
+        self.services.runtime_db.is_some()
     }
 }
 

@@ -12,8 +12,11 @@
 //! misleading. Reads surface a [`Freshness`] so callers can decide whether
 //! to trust the snapshot or fall back to "budget recovered".
 
+pub mod middleware;
 pub mod store;
 
+pub use middleware::RationLayer;
+pub use middleware::RationService;
 pub use store::LatestWindow;
 pub use store::UsageStore;
 

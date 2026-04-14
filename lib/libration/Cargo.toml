@@ -15,7 +15,10 @@ path = "src/lib.rs"
 anyhow = { workspace = true }
 chaos-ration = { workspace = true }
 chaos-storage = { workspace = true }
+rama = { workspace = true }
 sqlx = { workspace = true }
+tokio = { workspace = true, features = ["rt"] }
+tracing = { workspace = true }
 
 [dev-dependencies]
 chaos-proc = { workspace = true }

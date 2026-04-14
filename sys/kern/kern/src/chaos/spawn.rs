@@ -194,7 +194,7 @@ impl Chaos {
                 Some(process_id) => {
                     let runtime_db_ctx = runtime_db::get_runtime_db(&config).await;
                     runtime_db::get_dynamic_tools(
-                        runtime_db_ctx.as_deref(),
+                        runtime_db_ctx.as_ref(),
                         process_id,
                         "codex_spawn",
                     )

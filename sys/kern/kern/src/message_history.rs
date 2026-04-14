@@ -1,22 +1,22 @@
 //! Persistence layer for the global, append-only message-history store.
 //!
-//! Entries are kept in the SQLite runtime DB so the TUI composer can recall prior
+//! Entries are kept in the runtime DB so the TUI composer can recall prior
 //! user prompts across sessions without relying on a separate JSONL sidecar.
 
 use std::io::Result;
 
 use crate::config::Config;
 use crate::config::types::HistoryPersistence;
+use crate::runtime_db::RuntimeDbHandle;
 
 use chaos_ipc::ProcessId;
 pub use chaos_ipc::message_history::HistoryEntry;
-use chaos_proc::StateRuntime;
 use tracing::warn;
 
 pub(crate) async fn append_entry(
     text: &str,
     conversation_id: &ProcessId,
-    runtime_db: Option<&StateRuntime>,
+    runtime_db: Option<&RuntimeDbHandle>,
     config: &Config,
 ) -> Result<()> {
     match config.history.persistence {
@@ -46,7 +46,7 @@ pub(crate) async fn append_entry(
 }
 
 /// Fetch the current store identifier and number of persisted entries.
-pub(crate) async fn history_metadata(runtime_db: Option<&StateRuntime>) -> (u64, usize) {
+pub(crate) async fn history_metadata(runtime_db: Option<&RuntimeDbHandle>) -> (u64, usize) {
     let Some(runtime_db) = runtime_db else {
         return (0, 0);
     };
@@ -63,7 +63,7 @@ pub(crate) async fn history_metadata(runtime_db: Option<&StateRuntime>) -> (u64,
 pub(crate) async fn lookup(
     log_id: u64,
     offset: usize,
-    runtime_db: Option<&StateRuntime>,
+    runtime_db: Option<&RuntimeDbHandle>,
 ) -> Option<HistoryEntry> {
     let runtime_db = runtime_db?;
     match runtime_db.get_message_history_entry(log_id, offset).await {

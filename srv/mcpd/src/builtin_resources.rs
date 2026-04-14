@@ -81,10 +81,10 @@ impl builtin_mcp_resources::ChaosBuiltinResourceBackend for McpHostBuiltinResour
             .server
             .runtime_db
             .as_ref()
-            .map(|rt| rt.pool().to_owned());
-        let provider = chaos_storage::ChaosStorageProvider::from_optional_sqlite(
+            .and_then(chaos_kern::runtime_db::RuntimeDbHandle::sqlite_pool_cloned);
+        let provider = chaos_kern::runtime_db::resolve_runtime_storage_provider(
             existing_runtime_pool.as_ref(),
-            Some(&self.server.sqlite_home),
+            &self.server.sqlite_home,
         )
         .await?;
         chaos_cron::resource::list_crons(Some(&provider)).await

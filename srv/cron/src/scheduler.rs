@@ -7,9 +7,9 @@ use std::sync::OnceLock;
 
 use crate::job::CronJob;
 use crate::job::CronScope;
+use crate::provider::BackendCronStorage;
 use crate::schedule::Schedule;
-use crate::store::CronStore;
-use sqlx::SqlitePool;
+use chaos_storage::ChaosStorageProvider;
 use tokio::sync::watch;
 use tracing::error;
 use tracing::info;
@@ -69,41 +69,42 @@ static SCHEDULER_GUARD: OnceLock<watch::Sender<bool>> = OnceLock::new();
 /// Spawn the global cron scheduler if it hasn't been started yet.
 ///
 /// Uses `OnceLock` to guarantee at most one scheduler instance per process.
-/// Returns the shutdown sender on first call, `None` on subsequent calls.
+/// Returns the shutdown sender on first call, `Ok(None)` on subsequent calls,
+/// or an error when the storage provider cannot supply a supported backend.
 /// The scheduler runs in a background `tokio::spawn` task until the shutdown
 /// sender is dropped or `true` is sent.
 pub fn spawn_global(
-    pool: SqlitePool,
+    provider: &ChaosStorageProvider,
     executor: JobExecutor,
-) -> Option<&'static watch::Sender<bool>> {
+) -> Result<Option<&'static watch::Sender<bool>>, String> {
     if SCHEDULER_GUARD.get().is_some() {
-        return None;
+        return Ok(None);
     }
 
+    let store = BackendCronStorage::from_provider(provider)?;
     let (shutdown_tx, shutdown_rx) = Scheduler::shutdown_channel();
     if SCHEDULER_GUARD.set(shutdown_tx).is_err() {
-        return None;
+        return Ok(None);
     }
 
-    let store = CronStore::new(pool);
     let scheduler = Scheduler::new(store, executor, DEFAULT_TICK_INTERVAL, shutdown_rx);
     tokio::spawn(scheduler.run());
 
-    SCHEDULER_GUARD.get()
+    Ok(SCHEDULER_GUARD.get())
 }
 
 /// The scheduler runs a background tick loop, checking for due jobs
 /// and dispatching them for execution.
 pub struct Scheduler {
-    store: CronStore,
+    store: BackendCronStorage,
     executor: JobExecutor,
     tick_interval: std::time::Duration,
     shutdown_rx: watch::Receiver<bool>,
 }
 
 impl Scheduler {
-    pub fn new(
-        store: CronStore,
+    pub(crate) fn new(
+        store: BackendCronStorage,
         executor: JobExecutor,
         tick_interval: std::time::Duration,
         shutdown_rx: watch::Receiver<bool>,

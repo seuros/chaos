@@ -1,7 +1,7 @@
 //! MCP resource: chaos://crons — exposes cron jobs as a readable resource.
 
+use crate::BackendCronStorage;
 use crate::CronStorage;
-use crate::SqliteCronStorage;
 use chaos_storage::ChaosStorageProvider;
 
 /// List all cron jobs as a JSON string.
@@ -10,7 +10,7 @@ pub async fn list_crons(provider: Option<&ChaosStorageProvider>) -> Result<Strin
         Some(provider) => provider.clone(),
         None => ChaosStorageProvider::from_env(None).await?,
     };
-    let storage = SqliteCronStorage::from_provider(&provider)?;
+    let storage = BackendCronStorage::from_provider(&provider)?;
     list_crons_with_storage(&storage).await
 }
 

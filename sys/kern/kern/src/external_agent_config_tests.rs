@@ -6,6 +6,8 @@ fn fixture_paths() -> (TempDir, PathBuf, PathBuf) {
     let root = TempDir::new().expect("create tempdir");
     let claude_home = root.path().join(".claude");
     let chaos_home = root.path().join(".chaos");
+    fs::create_dir_all(&claude_home).expect("create claude home");
+    fs::create_dir_all(&chaos_home).expect("create chaos home");
     (root, claude_home, chaos_home)
 }
 

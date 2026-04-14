@@ -312,7 +312,6 @@ serde = "1"
 serde_json = "1"
 serde_path_to_error = "0.1.20"
 serde_with = "3.18"
-serde_yaml = "0.9"
 state-machines = { version = "0.9", features = ["dynamic", "async"] }
 breaker-machines = { version = "0.7", features = [] }
 chrono-machines = { version = "0.3", features = ["std"] }
@@ -328,6 +327,7 @@ sqlx = { version = "0.8.6", default-features = false, features = [
     "json",
     "macros",
     "migrate",
+    "postgres",
     "runtime-tokio-rustls",
     "sqlite",
     "time",
@@ -466,4 +466,3 @@ codegen-units = 8
 debug = 1         # Reduce debug symbol size
 inherits = "test"
 opt-level = 0
-

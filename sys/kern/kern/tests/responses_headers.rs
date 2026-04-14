@@ -13,6 +13,7 @@ use chaos_kern::ModelProviderInfo;
 use chaos_kern::Prompt;
 use chaos_kern::ResponseEvent;
 use chaos_kern::WireApi;
+use chaos_kern::X_CODEX_TURN_METADATA_HEADER;
 use chaos_syslog::SessionTelemetry;
 use chaos_syslog::TelemetryAuthMode;
 use core_test_support::load_default_config_for_test;
@@ -386,10 +387,10 @@ async fn responses_stream_includes_turn_metadata_header_for_git_workspace_e2e() 
         .expect("submit first turn prompt");
     let initial_header = first_request
         .single_request()
-        .header("x-chaos-turn-metadata")
-        .expect("x-chaos-turn-metadata header should be present");
+        .header(X_CODEX_TURN_METADATA_HEADER)
+        .expect("x-codex-turn-metadata header should be present");
     let initial_parsed: serde_json::Value =
-        serde_json::from_str(&initial_header).expect("x-chaos-turn-metadata should be valid JSON");
+        serde_json::from_str(&initial_header).expect("x-codex-turn-metadata should be valid JSON");
     let initial_turn_id = initial_parsed
         .get("turn_id")
         .and_then(serde_json::Value::as_str)
@@ -397,7 +398,7 @@ async fn responses_stream_includes_turn_metadata_header_for_git_workspace_e2e() 
         .to_string();
     assert!(
         !initial_turn_id.is_empty(),
-        "turn_id should not be empty in x-chaos-turn-metadata"
+        "turn_id should not be empty in x-codex-turn-metadata"
     );
     assert_eq!(
         initial_parsed
@@ -477,13 +478,13 @@ async fn responses_stream_includes_turn_metadata_header_for_git_workspace_e2e() 
 
     let first_parsed: serde_json::Value = serde_json::from_str(
         &requests[0]
-            .header("x-chaos-turn-metadata")
+            .header(X_CODEX_TURN_METADATA_HEADER)
             .expect("first request should include turn metadata"),
     )
     .expect("first metadata should be valid json");
     let second_parsed: serde_json::Value = serde_json::from_str(
         &requests[1]
-            .header("x-chaos-turn-metadata")
+            .header(X_CODEX_TURN_METADATA_HEADER)
             .expect("second request should include turn metadata"),
     )
     .expect("second metadata should be valid json");

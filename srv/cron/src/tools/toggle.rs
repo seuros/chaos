@@ -4,13 +4,13 @@ use mcp_host::prelude::*;
 use schemars::JsonSchema;
 use serde::Deserialize;
 
+use crate::BackendCronStorage;
 use crate::CronCtx;
 use crate::CronJob;
 use crate::CronScope;
 use crate::CronServer;
 use crate::CronStorage;
 use crate::OwnerContext;
-use crate::SqliteCronStorage;
 use chaos_storage::ChaosStorageProvider;
 
 /// Parameters for the cron_toggle tool.
@@ -60,7 +60,7 @@ pub async fn execute(
         Some(provider) => provider.clone(),
         None => ChaosStorageProvider::from_env(None).await?,
     };
-    let storage = SqliteCronStorage::from_provider(&provider)?;
+    let storage = BackendCronStorage::from_provider(&provider)?;
     execute_with_storage(params, &storage, owner).await
 }
 

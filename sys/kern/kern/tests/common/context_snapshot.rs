@@ -324,7 +324,28 @@ fn is_capability_instruction_text(text: &str) -> bool {
 }
 
 fn normalize_dynamic_snapshot_paths(text: &str) -> String {
-    text.to_string()
+    const SYSTEM_SKILLS_SEGMENT: &str = "/skills/.system/";
+
+    let Some(marker_idx) = text.find(SYSTEM_SKILLS_SEGMENT) else {
+        return text.to_string();
+    };
+
+    let path_start = text[..marker_idx]
+        .rfind(|ch: char| ch.is_whitespace() || ch == '(')
+        .map(|idx| idx + 1)
+        .unwrap_or(0);
+    let suffix_start = marker_idx + SYSTEM_SKILLS_SEGMENT.len();
+    let path_end = text[suffix_start..]
+        .find(|ch: char| ch.is_whitespace() || ch == ')')
+        .map(|idx| suffix_start + idx)
+        .unwrap_or(text.len());
+
+    format!(
+        "{}<SYSTEM_SKILLS_ROOT>/{}{}",
+        &text[..path_start],
+        &text[suffix_start..path_end],
+        &text[path_end..]
+    )
 }
 
 #[cfg(test)]

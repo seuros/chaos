@@ -169,6 +169,11 @@ impl Session {
                         active_segment.get_or_insert_with(ActiveReplaySegment::default);
                     active_segment.counts_as_user_turn = true;
                 }
+                RolloutItem::EventMsg(EventMsg::UserMessage(_)) => {
+                    let active_segment =
+                        active_segment.get_or_insert_with(ActiveReplaySegment::default);
+                    active_segment.counts_as_user_turn = true;
+                }
                 RolloutItem::TurnContext(ctx) => {
                     let active_segment =
                         active_segment.get_or_insert_with(ActiveReplaySegment::default);

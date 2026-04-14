@@ -13,6 +13,7 @@ use crate::ProcessMetadataBuilder;
 use crate::ProcessesPage;
 use crate::SortKey;
 use crate::apply_rollout_item;
+use crate::migrations::POSTGRES_STATE_MIGRATOR;
 use crate::migrations::STATE_MIGRATOR;
 use crate::model::AgentJobRow;
 use crate::model::ProcessRow;
@@ -24,12 +25,17 @@ use chaos_ipc::protocol::RolloutItem;
 use log::LevelFilter;
 use serde_json::Value;
 use sqlx::ConnectOptions;
+use sqlx::PgConnection;
+use sqlx::PgPool;
 use sqlx::QueryBuilder;
 use sqlx::Row;
 use sqlx::Sqlite;
 use sqlx::SqliteConnection;
 use sqlx::SqlitePool;
 use sqlx::migrate::Migrator;
+use sqlx::postgres::PgConnectOptions;
+use sqlx::postgres::PgPoolOptions;
+use sqlx::postgres::PgRow;
 use sqlx::sqlite::SqliteAutoVacuum;
 use sqlx::sqlite::SqliteConnectOptions;
 use sqlx::sqlite::SqliteJournalMode;
@@ -41,6 +47,7 @@ use std::path::PathBuf;
 use std::str::FromStr;
 use std::sync::Arc;
 use std::time::Duration;
+use uuid::Uuid;
 mod agent_jobs;
 mod backfill;
 mod logs;
@@ -56,12 +63,26 @@ mod test_support;
 // - one bucket for processless rows with process_uuid IS NULL
 const LOG_PARTITION_SIZE_LIMIT_BYTES: i64 = 10 * 1024 * 1024;
 const LOG_PARTITION_ROW_LIMIT: i64 = 1_000;
+const POSTGRES_POOL_ACQUIRE_TIMEOUT: Duration = Duration::from_secs(5);
 
 #[derive(Clone)]
 pub struct StateRuntime {
     chaos_home: PathBuf,
     default_provider: String,
     pool: Arc<sqlx::SqlitePool>,
+}
+
+#[derive(Clone)]
+pub enum RuntimeDbHandle {
+    Postgres(Arc<PostgresRuntime>),
+    Sqlite(Arc<StateRuntime>),
+}
+
+#[derive(Clone)]
+pub struct PostgresRuntime {
+    chaos_home: PathBuf,
+    default_provider: String,
+    pool: PgPool,
 }
 
 impl StateRuntime {
@@ -73,12 +94,24 @@ impl StateRuntime {
         tokio::fs::create_dir_all(&chaos_home).await?;
         let runtime_path = runtime_db_path(chaos_home.as_path());
         let pool = Arc::new(open_sqlite(&runtime_path, &STATE_MIGRATOR).await?);
-        let runtime = Arc::new(Self {
-            pool,
+        Ok(Self::from_sqlite_pool(
             chaos_home,
             default_provider,
-        });
-        Ok(runtime)
+            Arc::unwrap_or_clone(pool),
+        ))
+    }
+
+    /// Build a runtime handle around an already-open SQLite pool.
+    pub fn from_sqlite_pool(
+        chaos_home: PathBuf,
+        default_provider: String,
+        pool: SqlitePool,
+    ) -> Arc<Self> {
+        Arc::new(Self {
+            pool: Arc::new(pool),
+            chaos_home,
+            default_provider,
+        })
     }
 
     /// Return the configured ChaOS home directory for this runtime.
@@ -89,6 +122,436 @@ impl StateRuntime {
     /// Return a reference to the runtime SQLite pool.
     pub fn pool(&self) -> &SqlitePool {
         self.pool.as_ref()
+    }
+}
+
+impl RuntimeDbHandle {
+    pub fn from_sqlite_pool(
+        chaos_home: PathBuf,
+        default_provider: String,
+        pool: SqlitePool,
+    ) -> Self {
+        Self::Sqlite(StateRuntime::from_sqlite_pool(
+            chaos_home,
+            default_provider,
+            pool,
+        ))
+    }
+
+    pub fn from_postgres_pool(chaos_home: PathBuf, default_provider: String, pool: PgPool) -> Self {
+        Self::Postgres(Arc::new(PostgresRuntime {
+            chaos_home,
+            default_provider,
+            pool,
+        }))
+    }
+
+    pub fn chaos_home(&self) -> &Path {
+        match self {
+            Self::Postgres(runtime) => runtime.chaos_home.as_path(),
+            Self::Sqlite(runtime) => runtime.chaos_home(),
+        }
+    }
+
+    pub fn sqlite_pool_cloned(&self) -> Option<SqlitePool> {
+        match self {
+            Self::Postgres(_) => None,
+            Self::Sqlite(runtime) => Some(runtime.pool().to_owned()),
+        }
+    }
+
+    pub async fn get_process(&self, id: ProcessId) -> anyhow::Result<Option<ProcessMetadata>> {
+        match self {
+            Self::Postgres(runtime) => runtime.get_process(id).await,
+            Self::Sqlite(runtime) => runtime.get_process(id).await,
+        }
+    }
+
+    #[allow(clippy::too_many_arguments)]
+    pub async fn list_processes(
+        &self,
+        page_size: usize,
+        anchor: Option<&crate::Anchor>,
+        sort_key: crate::SortKey,
+        allowed_sources: &[String],
+        model_providers: Option<&[String]>,
+        archived_only: bool,
+        search_term: Option<&str>,
+    ) -> anyhow::Result<crate::ProcessesPage> {
+        match self {
+            Self::Postgres(runtime) => {
+                runtime
+                    .list_processes(
+                        page_size,
+                        anchor,
+                        sort_key,
+                        allowed_sources,
+                        model_providers,
+                        archived_only,
+                        search_term,
+                    )
+                    .await
+            }
+            Self::Sqlite(runtime) => {
+                runtime
+                    .list_processes(
+                        page_size,
+                        anchor,
+                        sort_key,
+                        allowed_sources,
+                        model_providers,
+                        archived_only,
+                        search_term,
+                    )
+                    .await
+            }
+        }
+    }
+
+    pub async fn list_process_ids(
+        &self,
+        limit: usize,
+        anchor: Option<&crate::Anchor>,
+        sort_key: crate::SortKey,
+        allowed_sources: &[String],
+        model_providers: Option<&[String]>,
+        archived_only: bool,
+    ) -> anyhow::Result<Vec<ProcessId>> {
+        match self {
+            Self::Postgres(runtime) => {
+                runtime
+                    .list_process_ids(
+                        limit,
+                        anchor,
+                        sort_key,
+                        allowed_sources,
+                        model_providers,
+                        archived_only,
+                    )
+                    .await
+            }
+            Self::Sqlite(runtime) => {
+                runtime
+                    .list_process_ids(
+                        limit,
+                        anchor,
+                        sort_key,
+                        allowed_sources,
+                        model_providers,
+                        archived_only,
+                    )
+                    .await
+            }
+        }
+    }
+
+    pub async fn get_dynamic_tools(
+        &self,
+        process_id: ProcessId,
+    ) -> anyhow::Result<Option<Vec<DynamicToolSpec>>> {
+        match self {
+            Self::Postgres(runtime) => runtime.get_dynamic_tools(process_id).await,
+            Self::Sqlite(runtime) => runtime.get_dynamic_tools(process_id).await,
+        }
+    }
+
+    pub async fn persist_dynamic_tools(
+        &self,
+        process_id: ProcessId,
+        tools: Option<&[DynamicToolSpec]>,
+    ) -> anyhow::Result<()> {
+        match self {
+            Self::Postgres(runtime) => runtime.persist_dynamic_tools(process_id, tools).await,
+            Self::Sqlite(runtime) => runtime.persist_dynamic_tools(process_id, tools).await,
+        }
+    }
+
+    pub async fn mark_process_memory_mode_polluted(
+        &self,
+        process_id: ProcessId,
+    ) -> anyhow::Result<bool> {
+        match self {
+            Self::Postgres(runtime) => runtime.mark_process_memory_mode_polluted(process_id).await,
+            Self::Sqlite(runtime) => runtime.mark_process_memory_mode_polluted(process_id).await,
+        }
+    }
+
+    pub async fn apply_rollout_items(
+        &self,
+        builder: &ProcessMetadataBuilder,
+        items: &[RolloutItem],
+        new_process_memory_mode: Option<&str>,
+        updated_at_override: Option<jiff::Timestamp>,
+    ) -> anyhow::Result<()> {
+        match self {
+            Self::Postgres(runtime) => {
+                runtime
+                    .apply_rollout_items(
+                        builder,
+                        items,
+                        new_process_memory_mode,
+                        updated_at_override,
+                    )
+                    .await
+            }
+            Self::Sqlite(runtime) => {
+                runtime
+                    .apply_rollout_items(
+                        builder,
+                        items,
+                        new_process_memory_mode,
+                        updated_at_override,
+                    )
+                    .await
+            }
+        }
+    }
+
+    pub async fn touch_process_updated_at(
+        &self,
+        process_id: ProcessId,
+        updated_at: jiff::Timestamp,
+    ) -> anyhow::Result<bool> {
+        match self {
+            Self::Postgres(runtime) => {
+                runtime
+                    .touch_process_updated_at(process_id, updated_at)
+                    .await
+            }
+            Self::Sqlite(runtime) => {
+                runtime
+                    .touch_process_updated_at(process_id, updated_at)
+                    .await
+            }
+        }
+    }
+
+    pub async fn append_message_history_entry(
+        &self,
+        entry: &chaos_ipc::message_history::HistoryEntry,
+        max_bytes: Option<usize>,
+    ) -> anyhow::Result<()> {
+        match self {
+            Self::Postgres(runtime) => runtime.append_message_history_entry(entry, max_bytes).await,
+            Self::Sqlite(runtime) => runtime.append_message_history_entry(entry, max_bytes).await,
+        }
+    }
+
+    pub async fn message_history_metadata(&self) -> anyhow::Result<(u64, usize)> {
+        match self {
+            Self::Postgres(runtime) => runtime.message_history_metadata().await,
+            Self::Sqlite(runtime) => runtime.message_history_metadata().await,
+        }
+    }
+
+    pub async fn get_message_history_entry(
+        &self,
+        log_id: u64,
+        offset: usize,
+    ) -> anyhow::Result<Option<chaos_ipc::message_history::HistoryEntry>> {
+        match self {
+            Self::Postgres(runtime) => runtime.get_message_history_entry(log_id, offset).await,
+            Self::Sqlite(runtime) => runtime.get_message_history_entry(log_id, offset).await,
+        }
+    }
+
+    pub async fn create_agent_job(
+        &self,
+        params: &AgentJobCreateParams,
+        items: &[AgentJobItemCreateParams],
+    ) -> anyhow::Result<AgentJob> {
+        match self {
+            Self::Postgres(runtime) => runtime.create_agent_job(params, items).await,
+            Self::Sqlite(runtime) => runtime.create_agent_job(params, items).await,
+        }
+    }
+
+    pub async fn get_agent_job(&self, job_id: &str) -> anyhow::Result<Option<AgentJob>> {
+        match self {
+            Self::Postgres(runtime) => runtime.get_agent_job(job_id).await,
+            Self::Sqlite(runtime) => runtime.get_agent_job(job_id).await,
+        }
+    }
+
+    pub async fn list_agent_job_items(
+        &self,
+        job_id: &str,
+        status: Option<AgentJobItemStatus>,
+        limit: Option<usize>,
+    ) -> anyhow::Result<Vec<AgentJobItem>> {
+        match self {
+            Self::Postgres(runtime) => runtime.list_agent_job_items(job_id, status, limit).await,
+            Self::Sqlite(runtime) => runtime.list_agent_job_items(job_id, status, limit).await,
+        }
+    }
+
+    pub async fn get_agent_job_item(
+        &self,
+        job_id: &str,
+        item_id: &str,
+    ) -> anyhow::Result<Option<AgentJobItem>> {
+        match self {
+            Self::Postgres(runtime) => runtime.get_agent_job_item(job_id, item_id).await,
+            Self::Sqlite(runtime) => runtime.get_agent_job_item(job_id, item_id).await,
+        }
+    }
+
+    pub async fn mark_agent_job_running(&self, job_id: &str) -> anyhow::Result<()> {
+        match self {
+            Self::Postgres(runtime) => runtime.mark_agent_job_running(job_id).await,
+            Self::Sqlite(runtime) => runtime.mark_agent_job_running(job_id).await,
+        }
+    }
+
+    pub async fn mark_agent_job_completed(&self, job_id: &str) -> anyhow::Result<()> {
+        match self {
+            Self::Postgres(runtime) => runtime.mark_agent_job_completed(job_id).await,
+            Self::Sqlite(runtime) => runtime.mark_agent_job_completed(job_id).await,
+        }
+    }
+
+    pub async fn mark_agent_job_failed(
+        &self,
+        job_id: &str,
+        error_message: &str,
+    ) -> anyhow::Result<()> {
+        match self {
+            Self::Postgres(runtime) => runtime.mark_agent_job_failed(job_id, error_message).await,
+            Self::Sqlite(runtime) => runtime.mark_agent_job_failed(job_id, error_message).await,
+        }
+    }
+
+    pub async fn mark_agent_job_cancelled(
+        &self,
+        job_id: &str,
+        reason: &str,
+    ) -> anyhow::Result<bool> {
+        match self {
+            Self::Postgres(runtime) => runtime.mark_agent_job_cancelled(job_id, reason).await,
+            Self::Sqlite(runtime) => runtime.mark_agent_job_cancelled(job_id, reason).await,
+        }
+    }
+
+    pub async fn is_agent_job_cancelled(&self, job_id: &str) -> anyhow::Result<bool> {
+        match self {
+            Self::Postgres(runtime) => runtime.is_agent_job_cancelled(job_id).await,
+            Self::Sqlite(runtime) => runtime.is_agent_job_cancelled(job_id).await,
+        }
+    }
+
+    pub async fn mark_agent_job_item_running_with_thread(
+        &self,
+        job_id: &str,
+        item_id: &str,
+        process_id: &str,
+    ) -> anyhow::Result<bool> {
+        match self {
+            Self::Postgres(runtime) => {
+                runtime
+                    .mark_agent_job_item_running_with_thread(job_id, item_id, process_id)
+                    .await
+            }
+            Self::Sqlite(runtime) => {
+                runtime
+                    .mark_agent_job_item_running_with_thread(job_id, item_id, process_id)
+                    .await
+            }
+        }
+    }
+
+    pub async fn mark_agent_job_item_pending(
+        &self,
+        job_id: &str,
+        item_id: &str,
+        error_message: Option<&str>,
+    ) -> anyhow::Result<bool> {
+        match self {
+            Self::Postgres(runtime) => {
+                runtime
+                    .mark_agent_job_item_pending(job_id, item_id, error_message)
+                    .await
+            }
+            Self::Sqlite(runtime) => {
+                runtime
+                    .mark_agent_job_item_pending(job_id, item_id, error_message)
+                    .await
+            }
+        }
+    }
+
+    pub async fn report_agent_job_item_result(
+        &self,
+        job_id: &str,
+        item_id: &str,
+        reporting_process_id: &str,
+        result_json: &Value,
+    ) -> anyhow::Result<bool> {
+        match self {
+            Self::Postgres(runtime) => {
+                runtime
+                    .report_agent_job_item_result(
+                        job_id,
+                        item_id,
+                        reporting_process_id,
+                        result_json,
+                    )
+                    .await
+            }
+            Self::Sqlite(runtime) => {
+                runtime
+                    .report_agent_job_item_result(
+                        job_id,
+                        item_id,
+                        reporting_process_id,
+                        result_json,
+                    )
+                    .await
+            }
+        }
+    }
+
+    pub async fn mark_agent_job_item_completed(
+        &self,
+        job_id: &str,
+        item_id: &str,
+    ) -> anyhow::Result<bool> {
+        match self {
+            Self::Postgres(runtime) => runtime.mark_agent_job_item_completed(job_id, item_id).await,
+            Self::Sqlite(runtime) => runtime.mark_agent_job_item_completed(job_id, item_id).await,
+        }
+    }
+
+    pub async fn mark_agent_job_item_failed(
+        &self,
+        job_id: &str,
+        item_id: &str,
+        error_message: &str,
+    ) -> anyhow::Result<bool> {
+        match self {
+            Self::Postgres(runtime) => {
+                runtime
+                    .mark_agent_job_item_failed(job_id, item_id, error_message)
+                    .await
+            }
+            Self::Sqlite(runtime) => {
+                runtime
+                    .mark_agent_job_item_failed(job_id, item_id, error_message)
+                    .await
+            }
+        }
+    }
+
+    pub async fn get_agent_job_progress(&self, job_id: &str) -> anyhow::Result<AgentJobProgress> {
+        match self {
+            Self::Postgres(runtime) => runtime.get_agent_job_progress(job_id).await,
+            Self::Sqlite(runtime) => runtime.get_agent_job_progress(job_id).await,
+        }
+    }
+}
+
+impl AsRef<RuntimeDbHandle> for RuntimeDbHandle {
+    fn as_ref(&self) -> &RuntimeDbHandle {
+        self
     }
 }
 
@@ -172,6 +635,1252 @@ pub async fn open_runtime_db_url(database_url: &str) -> anyhow::Result<SqlitePoo
     open_sqlite_with_options(options, &STATE_MIGRATOR).await
 }
 
+async fn open_postgres_with_options(
+    options: PgConnectOptions,
+    migrator: &'static Migrator,
+) -> anyhow::Result<PgPool> {
+    let pool = PgPoolOptions::new()
+        .acquire_timeout(POSTGRES_POOL_ACQUIRE_TIMEOUT)
+        .max_connections(5)
+        .connect_with(options)
+        .await?;
+    migrator.run(&pool).await?;
+    Ok(pool)
+}
+
+fn postgres_connect_options_for_url(database_url: &str) -> anyhow::Result<PgConnectOptions> {
+    let options = PgConnectOptions::from_str(database_url)
+        .map_err(|err| anyhow::anyhow!("invalid postgres database URL: {err}"))?
+        .log_statements(LevelFilter::Off);
+    Ok(options)
+}
+
+pub async fn open_runtime_db_postgres_url(database_url: &str) -> anyhow::Result<PgPool> {
+    let options = postgres_connect_options_for_url(database_url)?;
+    open_postgres_with_options(options, &POSTGRES_STATE_MIGRATOR).await
+}
+
+impl PostgresRuntime {
+    async fn get_process(&self, id: ProcessId) -> anyhow::Result<Option<crate::ProcessMetadata>> {
+        let row = sqlx::query(
+            r#"
+SELECT
+    id,
+    created_at,
+    updated_at,
+    source,
+    agent_nickname,
+    agent_role,
+    model_provider,
+    cwd,
+    cli_version,
+    title,
+    sandbox_policy,
+    approval_mode,
+    tokens_used,
+    first_user_message,
+    archived_at,
+    git_sha,
+    git_branch,
+    git_origin_url
+FROM processes
+WHERE id = $1
+            "#,
+        )
+        .bind(id.to_string())
+        .fetch_optional(&self.pool)
+        .await?;
+        row.as_ref().map(process_from_pg_row).transpose()
+    }
+
+    #[allow(clippy::too_many_arguments)]
+    async fn list_processes(
+        &self,
+        page_size: usize,
+        anchor: Option<&crate::Anchor>,
+        sort_key: crate::SortKey,
+        allowed_sources: &[String],
+        model_providers: Option<&[String]>,
+        archived_only: bool,
+        search_term: Option<&str>,
+    ) -> anyhow::Result<crate::ProcessesPage> {
+        let limit = page_size.saturating_add(1);
+        let mut builder = QueryBuilder::<sqlx::Postgres>::new(
+            r#"
+SELECT
+    id,
+    created_at,
+    updated_at,
+    source,
+    agent_nickname,
+    agent_role,
+    model_provider,
+    cwd,
+    cli_version,
+    title,
+    sandbox_policy,
+    approval_mode,
+    tokens_used,
+    first_user_message,
+    archived_at,
+    git_sha,
+    git_branch,
+    git_origin_url
+FROM processes
+            "#,
+        );
+        push_process_filters_postgres(
+            &mut builder,
+            archived_only,
+            allowed_sources,
+            model_providers,
+            anchor,
+            sort_key,
+            search_term,
+        );
+        push_process_order_and_limit_postgres(&mut builder, sort_key, limit);
+
+        let rows = builder.build().fetch_all(&self.pool).await?;
+        let mut items = rows
+            .iter()
+            .map(process_from_pg_row)
+            .collect::<anyhow::Result<Vec<_>>>()?;
+        let num_scanned_rows = items.len();
+        let next_anchor = if items.len() > page_size {
+            items.pop();
+            items
+                .last()
+                .and_then(|item| anchor_from_process(item, sort_key))
+        } else {
+            None
+        };
+        Ok(crate::ProcessesPage {
+            items,
+            next_anchor,
+            num_scanned_rows,
+        })
+    }
+
+    async fn list_process_ids(
+        &self,
+        limit: usize,
+        anchor: Option<&crate::Anchor>,
+        sort_key: crate::SortKey,
+        allowed_sources: &[String],
+        model_providers: Option<&[String]>,
+        archived_only: bool,
+    ) -> anyhow::Result<Vec<ProcessId>> {
+        let mut builder = QueryBuilder::<sqlx::Postgres>::new("SELECT id FROM processes");
+        push_process_filters_postgres(
+            &mut builder,
+            archived_only,
+            allowed_sources,
+            model_providers,
+            anchor,
+            sort_key,
+            None,
+        );
+        push_process_order_and_limit_postgres(&mut builder, sort_key, limit);
+
+        let rows = builder.build().fetch_all(&self.pool).await?;
+        rows.into_iter()
+            .map(|row| {
+                let id: String = row.try_get("id")?;
+                Ok(ProcessId::try_from(id)?)
+            })
+            .collect()
+    }
+
+    async fn get_dynamic_tools(
+        &self,
+        process_id: ProcessId,
+    ) -> anyhow::Result<Option<Vec<DynamicToolSpec>>> {
+        let rows = sqlx::query(
+            r#"
+SELECT name, description, input_schema, defer_loading
+FROM process_dynamic_tools
+WHERE process_id = $1
+ORDER BY position ASC
+            "#,
+        )
+        .bind(process_id.to_string())
+        .fetch_all(&self.pool)
+        .await?;
+        if rows.is_empty() {
+            return Ok(None);
+        }
+
+        let mut tools = Vec::with_capacity(rows.len());
+        for row in rows {
+            tools.push(DynamicToolSpec {
+                name: row.try_get("name")?,
+                description: row.try_get("description")?,
+                input_schema: row.try_get("input_schema")?,
+                defer_loading: row.try_get("defer_loading")?,
+            });
+        }
+        Ok(Some(tools))
+    }
+
+    async fn persist_dynamic_tools(
+        &self,
+        process_id: ProcessId,
+        tools: Option<&[DynamicToolSpec]>,
+    ) -> anyhow::Result<()> {
+        let Some(tools) = tools else {
+            return Ok(());
+        };
+        if tools.is_empty() {
+            return Ok(());
+        }
+
+        let mut tx = self.pool.begin().await?;
+        let process_id = process_id.to_string();
+        for (idx, tool) in tools.iter().enumerate() {
+            let position = i64::try_from(idx).unwrap_or(i64::MAX);
+            sqlx::query(
+                r#"
+INSERT INTO process_dynamic_tools (
+    process_id,
+    position,
+    name,
+    description,
+    input_schema,
+    defer_loading
+) VALUES ($1, $2, $3, $4, $5, $6)
+ON CONFLICT(process_id, position) DO NOTHING
+                "#,
+            )
+            .bind(process_id.as_str())
+            .bind(position)
+            .bind(tool.name.as_str())
+            .bind(tool.description.as_str())
+            .bind(&tool.input_schema)
+            .bind(tool.defer_loading)
+            .execute(&mut *tx)
+            .await?;
+        }
+        tx.commit().await?;
+        Ok(())
+    }
+
+    async fn mark_process_memory_mode_polluted(
+        &self,
+        process_id: ProcessId,
+    ) -> anyhow::Result<bool> {
+        let result = sqlx::query(
+            "UPDATE processes SET memory_mode = 'polluted' WHERE id = $1 AND memory_mode != 'polluted'",
+        )
+        .bind(process_id.to_string())
+        .execute(&self.pool)
+        .await?;
+        Ok(result.rows_affected() > 0)
+    }
+
+    async fn apply_rollout_items(
+        &self,
+        builder: &ProcessMetadataBuilder,
+        items: &[RolloutItem],
+        new_process_memory_mode: Option<&str>,
+        updated_at_override: Option<jiff::Timestamp>,
+    ) -> anyhow::Result<()> {
+        if items.is_empty() {
+            return Ok(());
+        }
+
+        let existing_metadata = self.get_process(builder.id).await?;
+        let mut metadata = existing_metadata
+            .clone()
+            .unwrap_or_else(|| builder.build(&self.default_provider));
+        for item in items {
+            apply_rollout_item(&mut metadata, item, &self.default_provider);
+        }
+        if let Some(existing_metadata) = existing_metadata.as_ref() {
+            metadata.prefer_existing_git_info(existing_metadata);
+        }
+        let updated_at = updated_at_override.unwrap_or_else(jiff::Timestamp::now);
+        metadata.updated_at = updated_at;
+
+        self.upsert_process(&metadata, new_process_memory_mode)
+            .await?;
+
+        if let Some(memory_mode) = extract_memory_mode(items) {
+            let _ = sqlx::query("UPDATE processes SET memory_mode = $1 WHERE id = $2")
+                .bind(memory_mode)
+                .bind(builder.id.to_string())
+                .execute(&self.pool)
+                .await?;
+        }
+        if let Some(dynamic_tools) = extract_dynamic_tools(items) {
+            self.persist_dynamic_tools(builder.id, dynamic_tools.as_deref())
+                .await?;
+        }
+        Ok(())
+    }
+
+    async fn upsert_process(
+        &self,
+        metadata: &crate::ProcessMetadata,
+        creation_memory_mode: Option<&str>,
+    ) -> anyhow::Result<()> {
+        sqlx::query(
+            r#"
+INSERT INTO processes (
+    id,
+    source_json,
+    created_at,
+    updated_at,
+    source,
+    agent_nickname,
+    agent_role,
+    model_provider,
+    cwd,
+    cli_version,
+    title,
+    sandbox_policy,
+    approval_mode,
+    tokens_used,
+    first_user_message,
+    archived_at,
+    git_sha,
+    git_branch,
+    git_origin_url,
+    memory_mode
+) VALUES (
+    $1, $2, $3, $4, $5, $6, $7, $8, $9, $10,
+    $11, $12, $13, $14, $15, $16, $17, $18, $19, $20
+)
+ON CONFLICT(id) DO UPDATE SET
+    source_json = excluded.source_json,
+    created_at = excluded.created_at,
+    updated_at = excluded.updated_at,
+    source = excluded.source,
+    agent_nickname = excluded.agent_nickname,
+    agent_role = excluded.agent_role,
+    model_provider = excluded.model_provider,
+    cwd = excluded.cwd,
+    cli_version = excluded.cli_version,
+    title = excluded.title,
+    sandbox_policy = excluded.sandbox_policy,
+    approval_mode = excluded.approval_mode,
+    tokens_used = excluded.tokens_used,
+    first_user_message = excluded.first_user_message,
+    archived_at = excluded.archived_at,
+    git_sha = excluded.git_sha,
+    git_branch = excluded.git_branch,
+    git_origin_url = excluded.git_origin_url
+            "#,
+        )
+        .bind(metadata.id.to_string())
+        .bind(serde_json::Value::String(metadata.source.clone()))
+        .bind(metadata.created_at.as_second())
+        .bind(metadata.updated_at.as_second())
+        .bind(metadata.source.as_str())
+        .bind(metadata.agent_nickname.as_deref())
+        .bind(metadata.agent_role.as_deref())
+        .bind(metadata.model_provider.as_str())
+        .bind(metadata.cwd.display().to_string())
+        .bind(metadata.cli_version.as_str())
+        .bind(metadata.title.as_str())
+        .bind(metadata.sandbox_policy.as_str())
+        .bind(metadata.approval_mode.as_str())
+        .bind(metadata.tokens_used)
+        .bind(metadata.first_user_message.as_deref().unwrap_or_default())
+        .bind(metadata.archived_at.map(jiff::Timestamp::as_second))
+        .bind(metadata.git_sha.as_deref())
+        .bind(metadata.git_branch.as_deref())
+        .bind(metadata.git_origin_url.as_deref())
+        .bind(creation_memory_mode.unwrap_or("enabled"))
+        .execute(&self.pool)
+        .await?;
+        Ok(())
+    }
+
+    async fn touch_process_updated_at(
+        &self,
+        process_id: ProcessId,
+        updated_at: jiff::Timestamp,
+    ) -> anyhow::Result<bool> {
+        let result = sqlx::query("UPDATE processes SET updated_at = $1 WHERE id = $2")
+            .bind(updated_at.as_second())
+            .bind(process_id.to_string())
+            .execute(&self.pool)
+            .await?;
+        Ok(result.rows_affected() > 0)
+    }
+
+    async fn append_message_history_entry(
+        &self,
+        entry: &chaos_ipc::message_history::HistoryEntry,
+        max_bytes: Option<usize>,
+    ) -> anyhow::Result<()> {
+        let estimated_bytes = estimated_history_entry_bytes(entry)?;
+        let mut tx = self.pool.begin().await?;
+        sqlx::query(
+            r#"
+INSERT INTO message_history (conversation_id, ts, text, estimated_bytes)
+VALUES ($1, $2, $3, $4)
+            "#,
+        )
+        .bind(&entry.conversation_id)
+        .bind(i64::try_from(entry.ts).unwrap_or(i64::MAX))
+        .bind(&entry.text)
+        .bind(estimated_bytes)
+        .execute(&mut *tx)
+        .await?;
+        prune_message_history_after_insert_postgres(estimated_bytes, max_bytes, &mut tx).await?;
+        tx.commit().await?;
+        Ok(())
+    }
+
+    async fn message_history_metadata(&self) -> anyhow::Result<(u64, usize)> {
+        let count: i64 = sqlx::query_scalar("SELECT COUNT(*) FROM message_history")
+            .fetch_one(&self.pool)
+            .await?;
+        Ok((
+            self.message_history_log_id().await.unwrap_or(0),
+            usize::try_from(count).unwrap_or(0),
+        ))
+    }
+
+    async fn get_message_history_entry(
+        &self,
+        log_id: u64,
+        offset: usize,
+    ) -> anyhow::Result<Option<chaos_ipc::message_history::HistoryEntry>> {
+        let current_log_id = self.message_history_log_id().await.unwrap_or(0);
+        if log_id != 0 && current_log_id != 0 && current_log_id != log_id {
+            return Ok(None);
+        }
+
+        let row = sqlx::query(
+            r#"
+SELECT conversation_id, ts, text
+FROM message_history
+ORDER BY id ASC
+LIMIT 1 OFFSET $1
+            "#,
+        )
+        .bind(i64::try_from(offset).unwrap_or(i64::MAX))
+        .fetch_optional(&self.pool)
+        .await?;
+
+        row.map(
+            |row| -> anyhow::Result<chaos_ipc::message_history::HistoryEntry> {
+                Ok(chaos_ipc::message_history::HistoryEntry {
+                    conversation_id: row.try_get("conversation_id")?,
+                    ts: u64::try_from(row.try_get::<i64, _>("ts")?).unwrap_or(0),
+                    text: row.try_get("text")?,
+                })
+            },
+        )
+        .transpose()
+    }
+
+    async fn create_agent_job(
+        &self,
+        params: &AgentJobCreateParams,
+        items: &[AgentJobItemCreateParams],
+    ) -> anyhow::Result<AgentJob> {
+        let now = jiff::Timestamp::now().as_second();
+        let input_headers_json = serde_json::to_value(&params.input_headers)?;
+        let max_runtime_seconds = params
+            .max_runtime_seconds
+            .map(i64::try_from)
+            .transpose()
+            .map_err(|_| anyhow::anyhow!("invalid max_runtime_seconds value"))?;
+        let mut tx = self.pool.begin().await?;
+        sqlx::query(
+            r#"
+INSERT INTO agent_jobs (
+    id,
+    name,
+    status,
+    instruction,
+    auto_export,
+    max_runtime_seconds,
+    output_schema_json,
+    input_headers_json,
+    input_csv_path,
+    output_csv_path,
+    created_at,
+    updated_at,
+    started_at,
+    completed_at,
+    last_error
+) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, NULL, NULL, NULL)
+            "#,
+        )
+        .bind(params.id.as_str())
+        .bind(params.name.as_str())
+        .bind(AgentJobStatus::Pending.as_str())
+        .bind(params.instruction.as_str())
+        .bind(params.auto_export)
+        .bind(max_runtime_seconds)
+        .bind(params.output_schema_json.as_ref())
+        .bind(&input_headers_json)
+        .bind(params.input_csv_path.as_str())
+        .bind(params.output_csv_path.as_str())
+        .bind(now)
+        .bind(now)
+        .execute(&mut *tx)
+        .await?;
+
+        for item in items {
+            sqlx::query(
+                r#"
+INSERT INTO agent_job_items (
+    job_id,
+    item_id,
+    row_index,
+    source_id,
+    row_json,
+    status,
+    assigned_process_id,
+    attempt_count,
+    result_json,
+    last_error,
+    created_at,
+    updated_at,
+    completed_at,
+    reported_at
+) VALUES ($1, $2, $3, $4, $5, $6, NULL, 0, NULL, NULL, $7, $8, NULL, NULL)
+                "#,
+            )
+            .bind(params.id.as_str())
+            .bind(item.item_id.as_str())
+            .bind(item.row_index)
+            .bind(item.source_id.as_deref())
+            .bind(&item.row_json)
+            .bind(AgentJobItemStatus::Pending.as_str())
+            .bind(now)
+            .bind(now)
+            .execute(&mut *tx)
+            .await?;
+        }
+
+        tx.commit().await?;
+
+        let job_id = params.id.as_str();
+        self.get_agent_job(job_id)
+            .await?
+            .ok_or_else(|| anyhow::anyhow!("failed to load created agent job {job_id}"))
+    }
+
+    async fn get_agent_job(&self, job_id: &str) -> anyhow::Result<Option<AgentJob>> {
+        let row = sqlx::query(
+            r#"
+SELECT
+    id,
+    name,
+    status,
+    instruction,
+    CASE WHEN auto_export THEN 1 ELSE 0 END AS auto_export,
+    max_runtime_seconds,
+    output_schema_json::text AS output_schema_json,
+    input_headers_json::text AS input_headers_json,
+    input_csv_path,
+    output_csv_path,
+    created_at,
+    updated_at,
+    started_at,
+    completed_at,
+    last_error
+FROM agent_jobs
+WHERE id = $1
+            "#,
+        )
+        .bind(job_id)
+        .fetch_optional(&self.pool)
+        .await?;
+        row.as_ref().map(agent_job_from_pg_row).transpose()
+    }
+
+    async fn list_agent_job_items(
+        &self,
+        job_id: &str,
+        status: Option<AgentJobItemStatus>,
+        limit: Option<usize>,
+    ) -> anyhow::Result<Vec<AgentJobItem>> {
+        let mut builder = QueryBuilder::<sqlx::Postgres>::new(
+            r#"
+SELECT
+    job_id,
+    item_id,
+    row_index,
+    source_id,
+    row_json::text AS row_json,
+    status,
+    assigned_process_id,
+    attempt_count,
+    result_json::text AS result_json,
+    last_error,
+    created_at,
+    updated_at,
+    completed_at,
+    reported_at
+FROM agent_job_items
+WHERE job_id = 
+            "#,
+        );
+        builder.push_bind(job_id);
+        if let Some(status) = status {
+            builder.push(" AND status = ");
+            builder.push_bind(status.as_str());
+        }
+        builder.push(" ORDER BY row_index ASC");
+        if let Some(limit) = limit {
+            builder.push(" LIMIT ");
+            builder.push_bind(limit as i64);
+        }
+        let rows = builder.build().fetch_all(&self.pool).await?;
+        rows.iter().map(agent_job_item_from_pg_row).collect()
+    }
+
+    async fn get_agent_job_item(
+        &self,
+        job_id: &str,
+        item_id: &str,
+    ) -> anyhow::Result<Option<AgentJobItem>> {
+        let row = sqlx::query(
+            r#"
+SELECT
+    job_id,
+    item_id,
+    row_index,
+    source_id,
+    row_json::text AS row_json,
+    status,
+    assigned_process_id,
+    attempt_count,
+    result_json::text AS result_json,
+    last_error,
+    created_at,
+    updated_at,
+    completed_at,
+    reported_at
+FROM agent_job_items
+WHERE job_id = $1 AND item_id = $2
+            "#,
+        )
+        .bind(job_id)
+        .bind(item_id)
+        .fetch_optional(&self.pool)
+        .await?;
+        row.as_ref().map(agent_job_item_from_pg_row).transpose()
+    }
+
+    async fn mark_agent_job_running(&self, job_id: &str) -> anyhow::Result<()> {
+        let status = self.get_agent_job_status(job_id).await?;
+        anyhow::ensure!(
+            status == AgentJobStatus::Pending,
+            "cannot transition job {job_id} from {status:?} to Running"
+        );
+
+        let now = jiff::Timestamp::now().as_second();
+        sqlx::query(
+            r#"
+UPDATE agent_jobs
+SET
+    status = $1,
+    updated_at = $2,
+    started_at = COALESCE(started_at, $3),
+    completed_at = NULL,
+    last_error = NULL
+WHERE id = $4 AND status = $5
+            "#,
+        )
+        .bind(AgentJobStatus::Running.as_str())
+        .bind(now)
+        .bind(now)
+        .bind(job_id)
+        .bind(status.as_str())
+        .execute(&self.pool)
+        .await?;
+        Ok(())
+    }
+
+    async fn mark_agent_job_completed(&self, job_id: &str) -> anyhow::Result<()> {
+        let status = self.get_agent_job_status(job_id).await?;
+        anyhow::ensure!(
+            status == AgentJobStatus::Running,
+            "cannot transition job {job_id} from {status:?} to Completed"
+        );
+
+        let now = jiff::Timestamp::now().as_second();
+        sqlx::query(
+            r#"
+UPDATE agent_jobs
+SET status = $1, updated_at = $2, completed_at = $3, last_error = NULL
+WHERE id = $4 AND status = $5
+            "#,
+        )
+        .bind(AgentJobStatus::Completed.as_str())
+        .bind(now)
+        .bind(now)
+        .bind(job_id)
+        .bind(status.as_str())
+        .execute(&self.pool)
+        .await?;
+        Ok(())
+    }
+
+    async fn mark_agent_job_failed(&self, job_id: &str, error_message: &str) -> anyhow::Result<()> {
+        let status = self.get_agent_job_status(job_id).await?;
+        anyhow::ensure!(
+            matches!(status, AgentJobStatus::Pending | AgentJobStatus::Running),
+            "cannot transition job {job_id} from {status:?} to Failed"
+        );
+
+        let now = jiff::Timestamp::now().as_second();
+        sqlx::query(
+            r#"
+UPDATE agent_jobs
+SET status = $1, updated_at = $2, completed_at = $3, last_error = $4
+WHERE id = $5 AND status = $6
+            "#,
+        )
+        .bind(AgentJobStatus::Failed.as_str())
+        .bind(now)
+        .bind(now)
+        .bind(error_message)
+        .bind(job_id)
+        .bind(status.as_str())
+        .execute(&self.pool)
+        .await?;
+        Ok(())
+    }
+
+    async fn mark_agent_job_cancelled(&self, job_id: &str, reason: &str) -> anyhow::Result<bool> {
+        let status = self.get_agent_job_status(job_id).await?;
+        if !matches!(status, AgentJobStatus::Pending | AgentJobStatus::Running) {
+            return Ok(false);
+        }
+
+        let now = jiff::Timestamp::now().as_second();
+        let result = sqlx::query(
+            r#"
+UPDATE agent_jobs
+SET status = $1, updated_at = $2, completed_at = $3, last_error = $4
+WHERE id = $5 AND status = $6
+            "#,
+        )
+        .bind(AgentJobStatus::Cancelled.as_str())
+        .bind(now)
+        .bind(now)
+        .bind(reason)
+        .bind(job_id)
+        .bind(status.as_str())
+        .execute(&self.pool)
+        .await?;
+        Ok(result.rows_affected() > 0)
+    }
+
+    async fn get_agent_job_status(&self, job_id: &str) -> anyhow::Result<AgentJobStatus> {
+        let row = sqlx::query("SELECT status FROM agent_jobs WHERE id = $1")
+            .bind(job_id)
+            .fetch_optional(&self.pool)
+            .await?;
+        let row = row.ok_or_else(|| anyhow::anyhow!("agent job {job_id} not found"))?;
+        let status: String = row.try_get("status")?;
+        AgentJobStatus::parse(status.as_str())
+    }
+
+    async fn is_agent_job_cancelled(&self, job_id: &str) -> anyhow::Result<bool> {
+        let row = sqlx::query(
+            r#"
+SELECT status
+FROM agent_jobs
+WHERE id = $1
+            "#,
+        )
+        .bind(job_id)
+        .fetch_optional(&self.pool)
+        .await?;
+        let Some(row) = row else {
+            return Ok(false);
+        };
+        let status: String = row.try_get("status")?;
+        Ok(AgentJobStatus::parse(status.as_str())? == AgentJobStatus::Cancelled)
+    }
+
+    async fn mark_agent_job_item_running_with_thread(
+        &self,
+        job_id: &str,
+        item_id: &str,
+        process_id: &str,
+    ) -> anyhow::Result<bool> {
+        let now = jiff::Timestamp::now().as_second();
+        let result = sqlx::query(
+            r#"
+UPDATE agent_job_items
+SET
+    status = $1,
+    assigned_process_id = $2,
+    attempt_count = attempt_count + 1,
+    updated_at = $3,
+    last_error = NULL
+WHERE job_id = $4 AND item_id = $5 AND status = $6
+            "#,
+        )
+        .bind(AgentJobItemStatus::Running.as_str())
+        .bind(process_id)
+        .bind(now)
+        .bind(job_id)
+        .bind(item_id)
+        .bind(AgentJobItemStatus::Pending.as_str())
+        .execute(&self.pool)
+        .await?;
+        Ok(result.rows_affected() > 0)
+    }
+
+    async fn mark_agent_job_item_pending(
+        &self,
+        job_id: &str,
+        item_id: &str,
+        error_message: Option<&str>,
+    ) -> anyhow::Result<bool> {
+        let now = jiff::Timestamp::now().as_second();
+        let result = sqlx::query(
+            r#"
+UPDATE agent_job_items
+SET
+    status = $1,
+    assigned_process_id = NULL,
+    updated_at = $2,
+    last_error = $3
+WHERE job_id = $4 AND item_id = $5 AND status = $6
+            "#,
+        )
+        .bind(AgentJobItemStatus::Pending.as_str())
+        .bind(now)
+        .bind(error_message)
+        .bind(job_id)
+        .bind(item_id)
+        .bind(AgentJobItemStatus::Running.as_str())
+        .execute(&self.pool)
+        .await?;
+        Ok(result.rows_affected() > 0)
+    }
+
+    async fn report_agent_job_item_result(
+        &self,
+        job_id: &str,
+        item_id: &str,
+        reporting_process_id: &str,
+        result_json: &Value,
+    ) -> anyhow::Result<bool> {
+        let now = jiff::Timestamp::now().as_second();
+        let result = sqlx::query(
+            r#"
+UPDATE agent_job_items
+SET
+    result_json = $1,
+    reported_at = $2,
+    updated_at = $3,
+    last_error = NULL
+WHERE
+    job_id = $4
+    AND item_id = $5
+    AND status = $6
+    AND assigned_process_id = $7
+            "#,
+        )
+        .bind(result_json)
+        .bind(now)
+        .bind(now)
+        .bind(job_id)
+        .bind(item_id)
+        .bind(AgentJobItemStatus::Running.as_str())
+        .bind(reporting_process_id)
+        .execute(&self.pool)
+        .await?;
+        Ok(result.rows_affected() > 0)
+    }
+
+    async fn mark_agent_job_item_completed(
+        &self,
+        job_id: &str,
+        item_id: &str,
+    ) -> anyhow::Result<bool> {
+        let now = jiff::Timestamp::now().as_second();
+        let result = sqlx::query(
+            r#"
+UPDATE agent_job_items
+SET
+    status = $1,
+    completed_at = $2,
+    updated_at = $3,
+    assigned_process_id = NULL
+WHERE
+    job_id = $4
+    AND item_id = $5
+    AND status = $6
+    AND result_json IS NOT NULL
+            "#,
+        )
+        .bind(AgentJobItemStatus::Completed.as_str())
+        .bind(now)
+        .bind(now)
+        .bind(job_id)
+        .bind(item_id)
+        .bind(AgentJobItemStatus::Running.as_str())
+        .execute(&self.pool)
+        .await?;
+        Ok(result.rows_affected() > 0)
+    }
+
+    async fn mark_agent_job_item_failed(
+        &self,
+        job_id: &str,
+        item_id: &str,
+        error_message: &str,
+    ) -> anyhow::Result<bool> {
+        let now = jiff::Timestamp::now().as_second();
+        let result = sqlx::query(
+            r#"
+UPDATE agent_job_items
+SET
+    status = $1,
+    completed_at = $2,
+    updated_at = $3,
+    last_error = $4,
+    assigned_process_id = NULL
+WHERE
+    job_id = $5
+    AND item_id = $6
+    AND status = $7
+            "#,
+        )
+        .bind(AgentJobItemStatus::Failed.as_str())
+        .bind(now)
+        .bind(now)
+        .bind(error_message)
+        .bind(job_id)
+        .bind(item_id)
+        .bind(AgentJobItemStatus::Running.as_str())
+        .execute(&self.pool)
+        .await?;
+        Ok(result.rows_affected() > 0)
+    }
+
+    async fn get_agent_job_progress(&self, job_id: &str) -> anyhow::Result<AgentJobProgress> {
+        let row = sqlx::query(
+            r#"
+SELECT
+    COUNT(*) AS total_items,
+    SUM(CASE WHEN status = $1 THEN 1 ELSE 0 END) AS pending_items,
+    SUM(CASE WHEN status = $2 THEN 1 ELSE 0 END) AS running_items,
+    SUM(CASE WHEN status = $3 THEN 1 ELSE 0 END) AS completed_items,
+    SUM(CASE WHEN status = $4 THEN 1 ELSE 0 END) AS failed_items
+FROM agent_job_items
+WHERE job_id = $5
+            "#,
+        )
+        .bind(AgentJobItemStatus::Pending.as_str())
+        .bind(AgentJobItemStatus::Running.as_str())
+        .bind(AgentJobItemStatus::Completed.as_str())
+        .bind(AgentJobItemStatus::Failed.as_str())
+        .bind(job_id)
+        .fetch_one(&self.pool)
+        .await?;
+
+        let total_items: i64 = row.try_get("total_items")?;
+        let pending_items: Option<i64> = row.try_get("pending_items")?;
+        let running_items: Option<i64> = row.try_get("running_items")?;
+        let completed_items: Option<i64> = row.try_get("completed_items")?;
+        let failed_items: Option<i64> = row.try_get("failed_items")?;
+        Ok(AgentJobProgress {
+            total_items: usize::try_from(total_items).unwrap_or_default(),
+            pending_items: usize::try_from(pending_items.unwrap_or_default()).unwrap_or_default(),
+            running_items: usize::try_from(running_items.unwrap_or_default()).unwrap_or_default(),
+            completed_items: usize::try_from(completed_items.unwrap_or_default())
+                .unwrap_or_default(),
+            failed_items: usize::try_from(failed_items.unwrap_or_default()).unwrap_or_default(),
+        })
+    }
+
+    async fn message_history_log_id(&self) -> anyhow::Result<u64> {
+        let database_oid: i64 = sqlx::query_scalar(
+            "SELECT oid::bigint FROM pg_database WHERE datname = current_database()",
+        )
+        .fetch_one(&self.pool)
+        .await?;
+        Ok(u64::try_from(database_oid).unwrap_or(0))
+    }
+}
+
+fn process_from_pg_row(row: &PgRow) -> anyhow::Result<crate::ProcessMetadata> {
+    let first_user_message: String = row.try_get("first_user_message")?;
+    let id: String = row.try_get("id")?;
+    Ok(crate::ProcessMetadata {
+        id: ProcessId::try_from(id)?,
+        created_at: timestamp_from_epoch(row.try_get("created_at")?)?,
+        updated_at: timestamp_from_epoch(row.try_get("updated_at")?)?,
+        source: row.try_get("source")?,
+        agent_nickname: row.try_get("agent_nickname")?,
+        agent_role: row.try_get("agent_role")?,
+        model_provider: row.try_get("model_provider")?,
+        cwd: PathBuf::from(row.try_get::<String, _>("cwd")?),
+        cli_version: row.try_get("cli_version")?,
+        title: row.try_get("title")?,
+        sandbox_policy: row.try_get("sandbox_policy")?,
+        approval_mode: row.try_get("approval_mode")?,
+        tokens_used: row.try_get("tokens_used")?,
+        first_user_message: (!first_user_message.is_empty()).then_some(first_user_message),
+        archived_at: row
+            .try_get::<Option<i64>, _>("archived_at")?
+            .map(timestamp_from_epoch)
+            .transpose()?,
+        git_sha: row.try_get("git_sha")?,
+        git_branch: row.try_get("git_branch")?,
+        git_origin_url: row.try_get("git_origin_url")?,
+    })
+}
+
+fn agent_job_from_pg_row(row: &PgRow) -> anyhow::Result<AgentJob> {
+    let output_schema_json = row
+        .try_get::<Option<String>, _>("output_schema_json")?
+        .as_deref()
+        .map(serde_json::from_str)
+        .transpose()?;
+    let input_headers_json: String = row.try_get("input_headers_json")?;
+    let input_headers = serde_json::from_str(input_headers_json.as_str())?;
+    let max_runtime_seconds = row
+        .try_get::<Option<i64>, _>("max_runtime_seconds")?
+        .map(u64::try_from)
+        .transpose()
+        .map_err(|_| anyhow::anyhow!("invalid max_runtime_seconds value"))?;
+    let status: String = row.try_get("status")?;
+    Ok(AgentJob {
+        id: row.try_get("id")?,
+        name: row.try_get("name")?,
+        status: AgentJobStatus::parse(status.as_str())?,
+        instruction: row.try_get("instruction")?,
+        auto_export: row.try_get::<i64, _>("auto_export")? != 0,
+        max_runtime_seconds,
+        output_schema_json,
+        input_headers,
+        input_csv_path: row.try_get("input_csv_path")?,
+        output_csv_path: row.try_get("output_csv_path")?,
+        created_at: timestamp_from_epoch(row.try_get("created_at")?)?,
+        updated_at: timestamp_from_epoch(row.try_get("updated_at")?)?,
+        started_at: row
+            .try_get::<Option<i64>, _>("started_at")?
+            .map(timestamp_from_epoch)
+            .transpose()?,
+        completed_at: row
+            .try_get::<Option<i64>, _>("completed_at")?
+            .map(timestamp_from_epoch)
+            .transpose()?,
+        last_error: row.try_get("last_error")?,
+    })
+}
+
+fn agent_job_item_from_pg_row(row: &PgRow) -> anyhow::Result<AgentJobItem> {
+    let status: String = row.try_get("status")?;
+    Ok(AgentJobItem {
+        job_id: row.try_get("job_id")?,
+        item_id: row.try_get("item_id")?,
+        row_index: row.try_get("row_index")?,
+        source_id: row.try_get("source_id")?,
+        row_json: serde_json::from_str(row.try_get::<String, _>("row_json")?.as_str())?,
+        status: AgentJobItemStatus::parse(status.as_str())?,
+        assigned_process_id: row.try_get("assigned_process_id")?,
+        attempt_count: row.try_get("attempt_count")?,
+        result_json: row
+            .try_get::<Option<String>, _>("result_json")?
+            .as_deref()
+            .map(serde_json::from_str)
+            .transpose()?,
+        last_error: row.try_get("last_error")?,
+        created_at: timestamp_from_epoch(row.try_get("created_at")?)?,
+        updated_at: timestamp_from_epoch(row.try_get("updated_at")?)?,
+        completed_at: row
+            .try_get::<Option<i64>, _>("completed_at")?
+            .map(timestamp_from_epoch)
+            .transpose()?,
+        reported_at: row
+            .try_get::<Option<i64>, _>("reported_at")?
+            .map(timestamp_from_epoch)
+            .transpose()?,
+    })
+}
+
+fn estimated_history_entry_bytes(
+    entry: &chaos_ipc::message_history::HistoryEntry,
+) -> anyhow::Result<i64> {
+    let mut serialized = serde_json::to_string(entry)?;
+    serialized.push('\n');
+    Ok(i64::try_from(serialized.len()).unwrap_or(i64::MAX))
+}
+
+fn trim_target_bytes(max_bytes: i64, newest_entry_len: i64) -> i64 {
+    const HISTORY_SOFT_CAP_RATIO: f64 = 0.8;
+
+    let soft_cap_bytes = ((max_bytes as f64) * HISTORY_SOFT_CAP_RATIO)
+        .floor()
+        .clamp(1.0, max_bytes as f64) as i64;
+    soft_cap_bytes.max(newest_entry_len)
+}
+
+async fn prune_message_history_after_insert_postgres(
+    newest_entry_len: i64,
+    max_bytes: Option<usize>,
+    tx: &mut PgConnection,
+) -> anyhow::Result<()> {
+    let Some(max_bytes) = max_bytes else {
+        return Ok(());
+    };
+    if max_bytes == 0 {
+        return Ok(());
+    }
+
+    let max_bytes = i64::try_from(max_bytes).unwrap_or(i64::MAX);
+    let total_bytes: i64 =
+        sqlx::query_scalar("SELECT COALESCE(SUM(estimated_bytes), 0) FROM message_history")
+            .fetch_one(&mut *tx)
+            .await?;
+
+    if total_bytes <= max_bytes {
+        return Ok(());
+    }
+
+    let trim_target = trim_target_bytes(max_bytes, newest_entry_len);
+    sqlx::query(
+        r#"
+DELETE FROM message_history
+WHERE id IN (
+    SELECT id
+    FROM (
+        SELECT
+            id,
+            SUM(estimated_bytes) OVER (ORDER BY id DESC) AS cumulative_bytes
+        FROM message_history
+    ) ranked
+    WHERE cumulative_bytes > $1
+)
+        "#,
+    )
+    .bind(trim_target)
+    .execute(&mut *tx)
+    .await?;
+
+    Ok(())
+}
+
+fn timestamp_from_epoch(secs: i64) -> anyhow::Result<jiff::Timestamp> {
+    jiff::Timestamp::from_second(secs)
+        .map_err(|err| anyhow::anyhow!("invalid unix timestamp {secs}: {err}"))
+}
+
+fn anchor_from_process(
+    item: &crate::ProcessMetadata,
+    sort_key: crate::SortKey,
+) -> Option<crate::Anchor> {
+    let id = Uuid::parse_str(&item.id.to_string()).ok()?;
+    let ts = match sort_key {
+        crate::SortKey::CreatedAt => item.created_at,
+        crate::SortKey::UpdatedAt => item.updated_at,
+    };
+    Some(crate::Anchor { ts, id })
+}
+
+fn extract_dynamic_tools(items: &[RolloutItem]) -> Option<Option<Vec<DynamicToolSpec>>> {
+    items.iter().find_map(|item| match item {
+        RolloutItem::SessionMeta(meta_line) => Some(meta_line.meta.dynamic_tools.clone()),
+        RolloutItem::ResponseItem(_)
+        | RolloutItem::Compacted(_)
+        | RolloutItem::TurnContext(_)
+        | RolloutItem::EventMsg(_) => None,
+    })
+}
+
+fn extract_memory_mode(items: &[RolloutItem]) -> Option<String> {
+    items.iter().rev().find_map(|item| match item {
+        RolloutItem::SessionMeta(meta_line) => meta_line.meta.memory_mode.clone(),
+        RolloutItem::ResponseItem(_)
+        | RolloutItem::Compacted(_)
+        | RolloutItem::TurnContext(_)
+        | RolloutItem::EventMsg(_) => None,
+    })
+}
+
+fn push_process_filters_postgres<'a>(
+    builder: &mut QueryBuilder<'a, sqlx::Postgres>,
+    archived_only: bool,
+    allowed_sources: &'a [String],
+    model_providers: Option<&'a [String]>,
+    anchor: Option<&crate::Anchor>,
+    sort_key: crate::SortKey,
+    search_term: Option<&'a str>,
+) {
+    builder.push(" WHERE 1 = 1");
+    if archived_only {
+        builder.push(" AND archived_at IS NOT NULL");
+    } else {
+        builder.push(" AND archived_at IS NULL");
+    }
+    builder.push(" AND first_user_message <> ''");
+    if !allowed_sources.is_empty() {
+        builder.push(" AND source IN (");
+        let mut separated = builder.separated(", ");
+        for source in allowed_sources {
+            separated.push_bind(source);
+        }
+        separated.push_unseparated(")");
+    }
+    if let Some(model_providers) = model_providers
+        && !model_providers.is_empty()
+    {
+        builder.push(" AND model_provider IN (");
+        let mut separated = builder.separated(", ");
+        for provider in model_providers {
+            separated.push_bind(provider);
+        }
+        separated.push_unseparated(")");
+    }
+    if let Some(search_term) = search_term {
+        builder.push(" AND position(");
+        builder.push_bind(search_term);
+        builder.push(" in title) > 0");
+    }
+    if let Some(anchor) = anchor {
+        let anchor_ts = anchor.ts.as_second();
+        let column = match sort_key {
+            crate::SortKey::CreatedAt => "created_at",
+            crate::SortKey::UpdatedAt => "updated_at",
+        };
+        builder.push(" AND (");
+        builder.push(column);
+        builder.push(" < ");
+        builder.push_bind(anchor_ts);
+        builder.push(" OR (");
+        builder.push(column);
+        builder.push(" = ");
+        builder.push_bind(anchor_ts);
+        builder.push(" AND id < ");
+        builder.push_bind(anchor.id.to_string());
+        builder.push("))");
+    }
+}
+
+fn push_process_order_and_limit_postgres(
+    builder: &mut QueryBuilder<'_, sqlx::Postgres>,
+    sort_key: crate::SortKey,
+    limit: usize,
+) {
+    let order_column = match sort_key {
+        crate::SortKey::CreatedAt => "created_at",
+        crate::SortKey::UpdatedAt => "updated_at",
+    };
+    builder.push(" ORDER BY ");
+    builder.push(order_column);
+    builder.push(" DESC, id DESC");
+    builder.push(" LIMIT ");
+    builder.push_bind(limit as i64);
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -195,6 +1904,7 @@ mod tests {
 
         for table_name in [
             "processes",
+            "process_closure",
             "process_leases",
             "journal_entries",
             "logs",
@@ -205,7 +1915,6 @@ mod tests {
             "process_dynamic_tools",
             "agent_jobs",
             "agent_job_items",
-            "process_spawn_edges",
             "cron_jobs",
             "model_catalog_cache",
         ] {
@@ -242,6 +1951,9 @@ mod tests {
         for trigger_name in [
             "cron_jobs_touch",
             "processes_touch",
+            "processes_parent_process_id_immutable",
+            "processes_fork_at_seq_immutable",
+            "processes_insert_closure",
             "process_leases_touch",
             "agent_jobs_touch",
             "agent_job_items_touch",
@@ -426,5 +2138,115 @@ mod tests {
             .await
             .expect("fetch updated_at");
         assert!(updated_at > 1, "touch trigger should advance updated_at");
+    }
+
+    async fn insert_test_process(
+        pool: &SqlitePool,
+        id: &str,
+        parent_process_id: Option<&str>,
+        fork_at_seq: Option<i64>,
+    ) {
+        sqlx::query(
+            "INSERT INTO processes (
+                id, parent_process_id, fork_at_seq, source, source_json, model_provider, cwd,
+                created_at, updated_at, archived_at, title, sandbox_policy, approval_mode,
+                tokens_used, first_user_message, cli_version, agent_nickname, agent_role,
+                git_sha, git_branch, git_origin_url, memory_mode, model, reasoning_effort,
+                agent_path, process_name
+            ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, NULL, ?, ?, ?, ?, ?, ?, NULL, NULL, NULL, NULL, NULL, ?, NULL, NULL, NULL, NULL)",
+        )
+        .bind(id)
+        .bind(parent_process_id)
+        .bind(fork_at_seq)
+        .bind("cli")
+        .bind("\"cli\"")
+        .bind("openai")
+        .bind("/tmp")
+        .bind(1_i64)
+        .bind(1_i64)
+        .bind("")
+        .bind("")
+        .bind("")
+        .bind(0_i64)
+        .bind("")
+        .bind("")
+        .bind("enabled")
+        .execute(pool)
+        .await
+        .unwrap_or_else(|_| panic!("insert process {id}"));
+    }
+
+    #[tokio::test]
+    async fn process_closure_rows_are_materialized_from_parent_links() {
+        let chaos_home = test_support::unique_temp_dir();
+        tokio::fs::create_dir_all(&chaos_home)
+            .await
+            .expect("create temp chaos home");
+
+        let pool = open_runtime_db(chaos_home.as_path())
+            .await
+            .expect("open runtime db");
+
+        insert_test_process(&pool, "root", None, None).await;
+        insert_test_process(&pool, "child", Some("root"), Some(7)).await;
+        insert_test_process(&pool, "grandchild", Some("child"), Some(3)).await;
+
+        let closure_rows: Vec<(String, String, i64)> = sqlx::query_as(
+            "SELECT ancestor_process_id, descendant_process_id, depth
+             FROM process_closure
+             ORDER BY ancestor_process_id, descendant_process_id",
+        )
+        .fetch_all(&pool)
+        .await
+        .expect("fetch process closure rows");
+
+        assert_eq!(
+            closure_rows,
+            vec![
+                ("child".to_string(), "child".to_string(), 0),
+                ("child".to_string(), "grandchild".to_string(), 1),
+                ("grandchild".to_string(), "grandchild".to_string(), 0),
+                ("root".to_string(), "child".to_string(), 1),
+                ("root".to_string(), "grandchild".to_string(), 2),
+                ("root".to_string(), "root".to_string(), 0),
+            ]
+        );
+    }
+
+    #[tokio::test]
+    async fn process_lineage_columns_are_immutable_after_insert() {
+        let chaos_home = test_support::unique_temp_dir();
+        tokio::fs::create_dir_all(&chaos_home)
+            .await
+            .expect("create temp chaos home");
+
+        let pool = open_runtime_db(chaos_home.as_path())
+            .await
+            .expect("open runtime db");
+
+        insert_test_process(&pool, "root", None, None).await;
+        insert_test_process(&pool, "child", Some("root"), Some(7)).await;
+
+        let parent_err = sqlx::query("UPDATE processes SET parent_process_id = ? WHERE id = ?")
+            .bind::<Option<&str>>(None)
+            .bind("child")
+            .execute(&pool)
+            .await
+            .expect_err("updating parent_process_id should fail");
+        assert!(
+            parent_err.to_string().contains("immutable"),
+            "unexpected parent immutability error: {parent_err}"
+        );
+
+        let fork_err = sqlx::query("UPDATE processes SET fork_at_seq = ? WHERE id = ?")
+            .bind(8_i64)
+            .bind("child")
+            .execute(&pool)
+            .await
+            .expect_err("updating fork_at_seq should fail");
+        assert!(
+            fork_err.to_string().contains("immutable"),
+            "unexpected fork_at_seq immutability error: {fork_err}"
+        );
     }
 }

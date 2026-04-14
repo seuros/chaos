@@ -55,7 +55,6 @@ use chaos_ipc::protocol::SessionSource;
 use chaos_journald::LoadedJournal;
 use chaos_journald::ProcessRecord as JournalProcessRecord;
 use chaos_proc::ProcessMetadataBuilder;
-use chaos_proc::StateRuntime;
 use chaos_traits::RolloutConfig;
 
 #[derive(Clone)]
@@ -1006,7 +1005,7 @@ async fn rollout_writer(
 
                 write_and_reconcile_items(
                     items.as_slice(),
-                    runtime_db_ctx.as_deref(),
+                    runtime_db_ctx.as_ref(),
                     state_builder.as_ref(),
                     default_provider.as_str(),
                     &mut journal_sink,
@@ -1019,7 +1018,7 @@ async fn rollout_writer(
                         write_session_meta(
                             session_meta,
                             &cwd,
-                            runtime_db_ctx.as_deref(),
+                            runtime_db_ctx.as_ref(),
                             &mut state_builder,
                             default_provider.as_str(),
                             generate_memories,
@@ -1030,7 +1029,7 @@ async fn rollout_writer(
                     if !buffered_items.is_empty() {
                         write_and_reconcile_items(
                             buffered_items.as_slice(),
-                            runtime_db_ctx.as_deref(),
+                            runtime_db_ctx.as_ref(),
                             state_builder.as_ref(),
                             default_provider.as_str(),
                             &mut journal_sink,
@@ -1060,7 +1059,7 @@ async fn rollout_writer(
 async fn write_session_meta(
     session_meta: SessionMeta,
     cwd: &Path,
-    runtime_db_ctx: Option<&StateRuntime>,
+    runtime_db_ctx: Option<&RuntimeDbHandle>,
     state_builder: &mut Option<ProcessMetadataBuilder>,
     default_provider: &str,
     generate_memories: bool,
@@ -1092,7 +1091,7 @@ async fn write_session_meta(
 
 async fn write_and_reconcile_items(
     items: &[RolloutItem],
-    runtime_db_ctx: Option<&StateRuntime>,
+    runtime_db_ctx: Option<&RuntimeDbHandle>,
     state_builder: Option<&ProcessMetadataBuilder>,
     default_provider: &str,
     journal_sink: &mut JournalSink,
@@ -1110,7 +1109,7 @@ async fn write_and_reconcile_items(
 }
 
 async fn sync_process_state_after_write(
-    runtime_db_ctx: Option<&StateRuntime>,
+    runtime_db_ctx: Option<&RuntimeDbHandle>,
     state_builder: Option<&ProcessMetadataBuilder>,
     items: &[RolloutItem],
     default_provider: &str,

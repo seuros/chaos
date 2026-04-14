@@ -56,9 +56,9 @@ use crate::tools::spec::create_tools_json_for_responses_api;
 use crate::util::emit_feedback_auth_recovery_tags;
 
 use super::tools::{
-    build_clamp_disallowed_tools, build_clamp_mcp_config, clamp_permission_mode,
-    handle_clamp_hook_callback, handle_clamp_mcp_message, handle_clamp_tool_permission,
-    render_clamp_full_prompt, render_latest_clamp_user_message,
+    build_clamp_mcp_config, clamp_permission_mode, handle_clamp_hook_callback,
+    handle_clamp_mcp_message, handle_clamp_tool_permission, render_clamp_full_prompt,
+    render_latest_clamp_user_message,
 };
 use super::{
     ApiTelemetry, AuthRequestTelemetryContext, HttpTurnRequestConfig, ModelClientSession,
@@ -532,6 +532,7 @@ impl ModelClientSession {
                 client_setup.api_provider,
                 client_setup.api_auth,
                 Some(model_info.slug.clone()),
+                self.client.state.representer.clone(),
             )
             .with_options(options.clone())
             .with_telemetry(Some(request_telemetry), Some(sse_telemetry));
@@ -577,7 +578,10 @@ impl ModelClientSession {
         level = "info",
         skip_all,
         fields(
-            model = %model_info.slug,
+            // model_info.slug is the outer session model; clamp routes to
+            // Claude Code MAX which picks its own model.  Use "clamp" so
+            // traces are not misleadingly attributed to the outer slug.
+            model = "clamp",
             wire_api = "clamped",
             transport = "claude_subprocess",
         )
@@ -627,11 +631,9 @@ impl ModelClientSession {
                         }
                     };
                 let config = ClampConfig {
-                    bare_mode: true,
                     system_prompt: Some(system_prompt),
                     permission_mode: Some(clamp_permission_mode(clamp_state.approval_policy)),
                     mcp_config: Some(build_clamp_mcp_config(&bridge_socket_path, &bridge_token)),
-                    disallowed_tools: build_clamp_disallowed_tools(),
                     allow_claude_code_tools: false,
                     tool_permission_handler: Some(Arc::new(
                         move |tool_name, input, tool_use_id| {
@@ -697,7 +699,12 @@ impl ModelClientSession {
                 return;
             };
 
-            if let Err(e) = transport.set_model(&clamp_model_slug).await {
+            // Only override the model when running a Claude model slug.
+            // Non-Claude slugs (OpenAI, xAI, …) are not valid in Claude Code;
+            // in that case let the subprocess use its MAX-subscription default.
+            if clamp_model_slug.starts_with("claude")
+                && let Err(e) = transport.set_model(&clamp_model_slug).await
+            {
                 *guard = None;
                 let _ = tx_event
                     .send(Err(chaos_parrot::error::ApiError::Stream(format!(

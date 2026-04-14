@@ -1,18 +1,23 @@
-//! Wire-format representers — Trailblazer-style projection layer.
+//! Wire-format representers — projection layer between Chaos-ABI and provider wire formats.
 //!
-//! Each provider speaks a different dialect.  The representer's job is to
-//! project Chaos-ABI types (`ResponseItem`) into the subset that a
-//! particular wire format accepts, stripping internal extensions the
-//! upstream API would reject.
+//! Chaos-ABI uses `"system"` as the canonical instruction role.  Each provider
+//! adapter owns a [`SessionRepresenter`] that knows how to project ABI items
+//! into the wire format that provider expects, including any role remapping.
 //!
-//! Anthropic and ChatCompletions adapters already perform full structural
-//! conversion (ABI → `AnthropicMessage` / `ChatMessage`), so they don't
-//! need a representer pass.  The OpenAI Responses API, however, serializes
-//! `ResponseItem` directly via serde — meaning any ABI-internal field
-//! that isn't `skip_serializing_if` guarded will leak to the wire.
+//! ## Canonical role mapping
 //!
-//! The [`Representer`] trait formalises this projection so every adapter
-//! has a single, testable place where "what the wire sees" is decided.
+//! | Wire role     | Chaos-ABI role | Provider              |
+//! |---------------|----------------|-----------------------|
+//! | `developer`   | `system`       | OpenAI Responses API  |
+//! | `system`      | `system`       | xAI, compat clones    |
+//!
+//! OpenAI's Responses API introduced `developer` as its alias for system-level
+//! instructions.  That is an OpenAI-specific wire detail — Chaos-ABI does not
+//! expose it.  The [`ResponsesRepresenter`] remaps `system` → `developer` on
+//! the way out.  The [`OpenwAInnabeRepresenter`] lets `system` pass through.
+
+use std::fmt;
+use std::sync::Arc;
 
 use chaos_ipc::models::ResponseItem;
 
@@ -20,48 +25,25 @@ use chaos_ipc::models::ResponseItem;
 // Trait
 // ---------------------------------------------------------------------------
 
-/// Projects a sequence of ABI response items into provider-safe wire items.
-///
-/// Implementors strip, rename, or reshape fields that are Chaos-internal
-/// and would be rejected (or silently misinterpreted) by the upstream API.
-pub trait Representer {
-    /// Project a batch of items for serialization.
+/// Projects a sequence of Chaos-ABI response items into provider-safe wire items.
+pub trait Representer: Send + Sync {
     fn represent(&self, items: Vec<ResponseItem>) -> Vec<ResponseItem>;
 }
 
 // ---------------------------------------------------------------------------
-// OpenAI Responses API representer
+// Shared base transforms (private)
 // ---------------------------------------------------------------------------
 
-/// Representer for the OpenAI Responses API (and compatible providers).
+/// Common projection applied by all Responses-API-compatible representers.
 ///
-/// Normalises Chaos-ABI items to the subset the Responses API accepts:
-///
-/// - `CustomToolCall` → `FunctionCall`: chaos uses a dedicated variant for
-///   freeform/custom tools but OpenAI-compat providers only understand the
-///   standard `function_call` wire type.
-/// - `CustomToolCallOutput` → `FunctionCallOutput`: same reason; the
-///   `custom_tool_call_output` type is Chaos-internal and causes 422s on
-///   providers that validate against the OpenAI schema (e.g. xAI/Grok).
-/// - `tool_name` stripped from all output variants — an ABI extension not
-///   present in the OpenAI schema.
-/// - Chaos-only items (`LocalShellCall`, `ToolSearchCall`, `ToolSearchOutput`,
-///   `GhostSnapshot`, `Compaction`, `Other`) are dropped; they have no
-///   OpenAI equivalent and would be rejected.
-pub struct ResponsesRepresenter;
-
-impl Representer for ResponsesRepresenter {
-    fn represent(&self, items: Vec<ResponseItem>) -> Vec<ResponseItem> {
-        items
-            .into_iter()
-            .filter_map(represent_for_responses)
-            .collect()
-    }
-}
-
-fn represent_for_responses(item: ResponseItem) -> Option<ResponseItem> {
+/// - `CustomToolCall` → `FunctionCall`
+/// - `CustomToolCallOutput` → `FunctionCallOutput`
+/// - `LocalShellCall` → `FunctionCall("shell_command")`
+/// - Strips `tool_name` from output variants (ABI extension, not in OpenAI schema)
+/// - Drops: `ToolSearchCall`, `ToolSearchOutput`, `GhostSnapshot`, `Compaction`, `Other`
+fn base_represent(item: ResponseItem) -> Option<ResponseItem> {
     match item {
-        // Standard output — only strip the ABI-internal tool_name field.
+        // Standard output — strip the ABI-internal tool_name field.
         ResponseItem::FunctionCallOutput {
             call_id,
             output,
@@ -98,8 +80,8 @@ fn represent_for_responses(item: ResponseItem) -> Option<ResponseItem> {
             call_id,
         }),
 
-        // LocalShellCall → FunctionCall so that the matching
-        // FunctionCallOutput is not orphaned when the representer runs.
+        // LocalShellCall → FunctionCall so the matching FunctionCallOutput
+        // is not orphaned when the representer runs.
         ResponseItem::LocalShellCall {
             id,
             call_id,
@@ -124,33 +106,115 @@ fn represent_for_responses(item: ResponseItem) -> Option<ResponseItem> {
         | ResponseItem::Compaction { .. }
         | ResponseItem::Other => None,
 
-        // Reasoning items are OpenAI-specific and rely on encrypted_content
-        // for context restoration. Providers that don't support the
-        // reasoning.encrypted_content include (e.g. xAI) reject these items
-        // entirely — drop them from the wire representation.
-        ResponseItem::Reasoning { .. } => None,
+        // Everything else passes through to the per-representer stage.
+        other => Some(other),
+    }
+}
 
-        // Map the OpenAI-specific "developer" role to the universally
-        // supported "system" role. OpenAI introduced "developer" as an alias
-        // for "system" in the Responses API, but xAI and other compatible
-        // providers only accept "system".
+// ---------------------------------------------------------------------------
+// ResponsesRepresenter — real OpenAI
+// ---------------------------------------------------------------------------
+
+/// Representer for the real OpenAI Responses API.
+///
+/// Applies [`base_represent`] then remaps the Chaos-ABI `"system"` role to
+/// `"developer"`, which is the role OpenAI's Responses API requires for
+/// system-level instructions.  `Reasoning` items and all other OpenAI
+/// extensions pass through untouched.
+pub struct ResponsesRepresenter;
+
+impl Representer for ResponsesRepresenter {
+    fn represent(&self, items: Vec<ResponseItem>) -> Vec<ResponseItem> {
+        items
+            .into_iter()
+            .filter_map(base_represent)
+            .map(remap_system_to_developer)
+            .collect()
+    }
+}
+
+fn remap_system_to_developer(item: ResponseItem) -> ResponseItem {
+    match item {
         ResponseItem::Message {
             id,
             role,
             content,
             end_turn,
             phase,
-        } if role == "developer" => Some(ResponseItem::Message {
+        } if role == "system" => ResponseItem::Message {
             id,
-            role: "system".to_string(),
+            role: "developer".to_string(),
             content,
             end_turn,
             phase,
-        }),
+        },
+        other => other,
+    }
+}
 
-        // Everything else (Message, Reasoning, FunctionCall, WebSearchCall,
-        // ImageGenerationCall) passes through unchanged.
-        other => Some(other),
+// ---------------------------------------------------------------------------
+// OpenwAInnabeRepresenter — xAI and compat clones
+// ---------------------------------------------------------------------------
+
+/// Representer for providers that speak the OpenAI Responses API dialect but
+/// diverge from it — xAI/Grok being the founding member.
+///
+/// Applies [`base_represent`] then drops `Reasoning` items, which rely on
+/// OpenAI's `encrypted_content` mechanism for cross-turn context restoration
+/// that wannabe providers do not implement.
+///
+/// The Chaos-ABI `"system"` role passes through unchanged — xAI accepts
+/// `"system"` natively and does not use the `"developer"` alias.
+pub struct OpenwAInnabeRepresenter;
+
+impl Representer for OpenwAInnabeRepresenter {
+    fn represent(&self, items: Vec<ResponseItem>) -> Vec<ResponseItem> {
+        items
+            .into_iter()
+            .filter_map(base_represent)
+            .filter(|item| !matches!(item, ResponseItem::Reasoning { .. }))
+            .collect()
+    }
+}
+
+// ---------------------------------------------------------------------------
+// SessionRepresenter — session-scoped wrapper
+// ---------------------------------------------------------------------------
+
+/// Session-scoped representer handle.
+///
+/// Wraps an `Arc<dyn Representer>` so it can be cheaply cloned across retry
+/// loops without re-constructing the underlying representer.  Created once at
+/// session initialisation based on the provider identity.
+#[derive(Clone)]
+pub struct SessionRepresenter(Arc<dyn Representer>);
+
+impl SessionRepresenter {
+    /// Representer for the real OpenAI Responses API.
+    pub fn openai() -> Self {
+        Self(Arc::new(ResponsesRepresenter))
+    }
+
+    /// Representer for OpenAI-compatible providers that diverge from the spec
+    /// (xAI/Grok and future compat clones).
+    pub fn wannabe() -> Self {
+        Self(Arc::new(OpenwAInnabeRepresenter))
+    }
+
+    /// Project a batch of ABI items for wire serialization.
+    pub fn represent(&self, items: Vec<ResponseItem>) -> Vec<ResponseItem> {
+        self.0.represent(items)
+    }
+
+    /// Access the inner representer for callers that need `&dyn Representer`.
+    pub fn as_representer(&self) -> &dyn Representer {
+        self.0.as_ref()
+    }
+}
+
+impl fmt::Debug for SessionRepresenter {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        f.write_str("SessionRepresenter")
     }
 }
 
@@ -163,6 +227,96 @@ mod tests {
     use super::*;
     use chaos_ipc::models::FunctionCallOutputPayload;
 
+    // --- ResponsesRepresenter (real OpenAI) ---------------------------------
+
+    #[test]
+    fn openai_representer_remaps_system_to_developer() {
+        let items = vec![ResponseItem::Message {
+            id: None,
+            role: "system".into(),
+            content: vec![],
+            end_turn: None,
+            phase: None,
+        }];
+        let result = ResponsesRepresenter.represent(items);
+        assert!(
+            matches!(&result[0], ResponseItem::Message { role, .. } if role == "developer"),
+            "real OpenAI must remap system → developer"
+        );
+    }
+
+    #[test]
+    fn openai_representer_passes_reasoning_items_through() {
+        let items = vec![ResponseItem::Reasoning {
+            id: "rs_1".into(),
+            summary: vec![],
+            content: None,
+            encrypted_content: Some("enc".into()),
+        }];
+        let result = ResponsesRepresenter.represent(items);
+        assert_eq!(result.len(), 1, "real OpenAI keeps Reasoning items");
+    }
+
+    #[test]
+    fn openai_representer_passes_assistant_role_unchanged() {
+        let items = vec![ResponseItem::Message {
+            id: None,
+            role: "assistant".into(),
+            content: vec![],
+            end_turn: None,
+            phase: None,
+        }];
+        let result = ResponsesRepresenter.represent(items);
+        assert!(matches!(&result[0], ResponseItem::Message { role, .. } if role == "assistant"));
+    }
+
+    // --- OpenwAInnabeRepresenter (xAI and friends) --------------------------
+
+    #[test]
+    fn wannabe_passes_system_role_through() {
+        let items = vec![ResponseItem::Message {
+            id: None,
+            role: "system".into(),
+            content: vec![],
+            end_turn: None,
+            phase: None,
+        }];
+        let result = OpenwAInnabeRepresenter.represent(items);
+        assert!(
+            matches!(&result[0], ResponseItem::Message { role, .. } if role == "system"),
+            "wannabe must keep system role unchanged"
+        );
+    }
+
+    #[test]
+    fn wannabe_drops_reasoning_items() {
+        let items = vec![ResponseItem::Reasoning {
+            id: "rs_1".into(),
+            summary: vec![],
+            content: None,
+            encrypted_content: Some("enc".into()),
+        }];
+        let result = OpenwAInnabeRepresenter.represent(items);
+        assert!(result.is_empty(), "wannabe must drop Reasoning items");
+    }
+
+    #[test]
+    fn wannabe_still_converts_custom_tool_call() {
+        let items = vec![ResponseItem::CustomToolCall {
+            id: None,
+            status: None,
+            call_id: "call_w".into(),
+            name: "apply_patch".into(),
+            input: r#"{"p":"x"}"#.into(),
+        }];
+        let result = OpenwAInnabeRepresenter.represent(items);
+        assert!(
+            matches!(&result[0], ResponseItem::FunctionCall { call_id, .. } if call_id == "call_w")
+        );
+    }
+
+    // --- Shared base behaviour ----------------------------------------------
+
     #[test]
     fn strips_tool_name_from_function_call_output() {
         let items = vec![ResponseItem::FunctionCallOutput {
@@ -170,9 +324,7 @@ mod tests {
             output: FunctionCallOutputPayload::from_text("ok".into()),
             tool_name: Some("read_file".into()),
         }];
-
         let result = ResponsesRepresenter.represent(items);
-
         match &result[0] {
             ResponseItem::FunctionCallOutput { tool_name, .. } => {
                 assert!(tool_name.is_none());
@@ -188,9 +340,7 @@ mod tests {
             output: FunctionCallOutputPayload::from_text("patched".into()),
             tool_name: Some("apply_patch".into()),
         }];
-
         let result = ResponsesRepresenter.represent(items);
-
         match &result[0] {
             ResponseItem::FunctionCallOutput {
                 call_id, tool_name, ..
@@ -211,9 +361,7 @@ mod tests {
             name: "apply_patch".into(),
             input: r#"{"patch":"..."}"#.into(),
         }];
-
         let result = ResponsesRepresenter.represent(items);
-
         match &result[0] {
             ResponseItem::FunctionCall {
                 call_id,
@@ -244,7 +392,6 @@ mod tests {
                 user: None,
             }),
         }];
-
         let result = ResponsesRepresenter.represent(items);
         match &result[0] {
             ResponseItem::FunctionCall { call_id, name, .. } => {
@@ -255,17 +402,50 @@ mod tests {
         }
     }
 
+    // --- SessionRepresenter -------------------------------------------------
+
     #[test]
-    fn passes_through_message() {
+    fn session_representer_openai_remaps_system() {
+        let sr = SessionRepresenter::openai();
         let items = vec![ResponseItem::Message {
             id: None,
-            role: "assistant".into(),
+            role: "system".into(),
             content: vec![],
             end_turn: None,
             phase: None,
         }];
+        let result = sr.represent(items);
+        assert!(matches!(&result[0], ResponseItem::Message { role, .. } if role == "developer"));
+    }
 
-        let result = ResponsesRepresenter.represent(items);
-        assert!(matches!(&result[0], ResponseItem::Message { role, .. } if role == "assistant"));
+    #[test]
+    fn session_representer_wannabe_keeps_system() {
+        let sr = SessionRepresenter::wannabe();
+        let items = vec![ResponseItem::Message {
+            id: None,
+            role: "system".into(),
+            content: vec![],
+            end_turn: None,
+            phase: None,
+        }];
+        let result = sr.represent(items);
+        assert!(matches!(&result[0], ResponseItem::Message { role, .. } if role == "system"));
+    }
+
+    #[test]
+    fn session_representer_is_clone() {
+        let sr = SessionRepresenter::openai();
+        let sr2 = sr.clone();
+        // both should work identically
+        let items = || {
+            vec![ResponseItem::Message {
+                id: None,
+                role: "system".into(),
+                content: vec![],
+                end_turn: None,
+                phase: None,
+            }]
+        };
+        assert_eq!(sr.represent(items()).len(), sr2.represent(items()).len());
     }
 }

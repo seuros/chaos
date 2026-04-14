@@ -116,8 +116,8 @@ pub(crate) fn build_model_instructions_update_item(
     ))
 }
 
-pub(crate) fn build_developer_update_item(text_sections: Vec<String>) -> Option<ResponseItem> {
-    build_text_message("developer", text_sections)
+pub(crate) fn build_system_update_item(text_sections: Vec<String>) -> Option<ResponseItem> {
+    build_text_message("system", text_sections)
 }
 
 pub(crate) fn build_contextual_user_message(text_sections: Vec<String>) -> Option<ResponseItem> {
@@ -165,7 +165,7 @@ pub(crate) fn build_settings_update_items(
     .collect();
 
     let mut items = Vec::with_capacity(2);
-    if let Some(developer_message) = build_developer_update_item(developer_update_sections) {
+    if let Some(developer_message) = build_system_update_item(developer_update_sections) {
         items.push(developer_message);
     }
     if let Some(contextual_user_message) = contextual_user_message {

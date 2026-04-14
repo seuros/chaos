@@ -136,7 +136,7 @@ fn developer_input_texts(items: &[ResponseItem]) -> Vec<&str> {
     items
         .iter()
         .filter_map(|item| match item {
-            ResponseItem::Message { role, content, .. } if role == "developer" => {
+            ResponseItem::Message { role, content, .. } if role == "system" => {
                 Some(content.as_slice())
             }
             _ => None,
@@ -794,7 +794,7 @@ async fn sample_rollout(
     // what reconstruction produces (build_initial_context may omit it when baked into model).
     if !initial_context.iter().any(|m| {
         matches!(m, ResponseItem::Message { role, content, .. }
-        if role == "developer"
+        if role == "system"
             && content.iter().any(|c| {
                 matches!(c, ContentItem::InputText { text } if text.contains("<personality_spec>"))
             }))
@@ -808,7 +808,7 @@ async fn sample_rollout(
         let msg = DeveloperInstructions::personality_spec_message(personality_message).into();
         let insert_at = initial_context
             .iter()
-            .position(|m| matches!(m, ResponseItem::Message { role, .. } if role == "developer"))
+            .position(|m| matches!(m, ResponseItem::Message { role, .. } if role == "system"))
             .map(|i| i + 1)
             .unwrap_or(0);
         initial_context.insert(insert_at, msg);

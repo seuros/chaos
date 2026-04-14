@@ -78,7 +78,7 @@ impl Session {
 
         if self
             .inject_response_items(vec![ResponseInputItem::Message {
-                role: "developer".to_string(),
+                role: "system".to_string(),
                 content: vec![ContentItem::InputText { text }],
             }])
             .await
@@ -175,7 +175,7 @@ impl Session {
 
         if self
             .inject_response_items(vec![ResponseInputItem::Message {
-                role: "developer".to_string(),
+                role: "system".to_string(),
                 content: vec![ContentItem::InputText { text }],
             }])
             .await

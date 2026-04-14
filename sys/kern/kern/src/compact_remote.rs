@@ -191,7 +191,7 @@ pub(crate) async fn process_compacted_history(
 /// append fresh canonical context from the current session.
 ///
 /// We drop:
-/// - `developer` messages because remote output can include stale/duplicated
+/// - `system` messages because remote output can include stale/duplicated
 ///   instruction content.
 /// - non-user-content `user` messages (session prefix/instruction wrappers),
 ///   keeping only real user messages as parsed by `parse_turn_item`.
@@ -202,7 +202,7 @@ pub(crate) async fn process_compacted_history(
 ///   they parse as `TurnItem::UserMessage`.
 fn should_keep_compacted_history_item(item: &ResponseItem) -> bool {
     match item {
-        ResponseItem::Message { role, .. } if role == "developer" => false,
+        ResponseItem::Message { role, .. } if role == "system" => false,
         ResponseItem::Message { role, .. } if role == "user" => {
             matches!(
                 crate::event_mapping::parse_turn_item(item),

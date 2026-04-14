@@ -114,12 +114,14 @@ fn approx_token_count_for_text(text: &str) -> i64 {
 fn filters_non_api_messages() {
     let mut h = ContextManager::default();
     let policy = TruncationPolicy::Tokens(10_000);
-    // System message is not API messages; Other is ignored.
+    // "system" is the Chaos-ABI canonical role for kernel-injected instructions;
+    // it is stored in history (representer remaps it on the way to the wire).
+    // Only `ResponseItem::Other` is unconditionally dropped.
     let system = ResponseItem::Message {
         id: None,
         role: "system".to_string(),
         content: vec![ContentItem::OutputText {
-            text: "ignored".to_string(),
+            text: "instructions".to_string(),
         }],
         end_turn: None,
         phase: None,
@@ -136,6 +138,15 @@ fn filters_non_api_messages() {
     assert_eq!(
         items,
         vec![
+            ResponseItem::Message {
+                id: None,
+                role: "system".to_string(),
+                content: vec![ContentItem::OutputText {
+                    text: "instructions".to_string(),
+                }],
+                end_turn: None,
+                phase: None,
+            },
             ResponseItem::Reasoning {
                 id: String::new(),
                 summary: vec![ReasoningItemReasoningSummary::SummaryText {

@@ -8,8 +8,6 @@ use super::clamp_permission_mode;
 use super::clamp_tool_routing;
 use super::render_clamp_full_prompt;
 use super::render_latest_clamp_user_message;
-use crate::client::CLAMP_NATIVE_PASSTHROUGH_TOOLS;
-use crate::client::build_clamp_disallowed_tools;
 use chaos_ipc::ProcessId;
 use chaos_ipc::models::ContentItem;
 use chaos_ipc::models::FunctionCallOutputPayload;
@@ -205,37 +203,6 @@ fn clamp_tool_routing_maps_supported_local_tools() {
 #[test]
 fn clamp_tool_routing_rejects_unregistered_tools() {
     assert_eq!(clamp_tool_routing("Task"), None);
-}
-
-#[test]
-fn build_clamp_disallowed_tools_blocks_local_and_unsupported_builtins() {
-    let disallowed = build_clamp_disallowed_tools();
-    for expected in [
-        "Bash",
-        "Read",
-        "NotebookRead",
-        "Write",
-        "Edit",
-        "MultiEdit",
-        "NotebookEdit",
-        "Glob",
-        "Grep",
-        "LS",
-        "Task",
-        "TodoRead",
-        "TodoWrite",
-    ] {
-        assert!(
-            disallowed.iter().any(|tool| tool == expected),
-            "missing {expected}"
-        );
-    }
-    for allowed in CLAMP_NATIVE_PASSTHROUGH_TOOLS {
-        assert!(
-            !disallowed.iter().any(|tool| tool == allowed),
-            "{allowed} should stay native"
-        );
-    }
 }
 
 #[test]

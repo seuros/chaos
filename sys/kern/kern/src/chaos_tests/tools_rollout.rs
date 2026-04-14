@@ -579,11 +579,11 @@ async fn build_initial_context_prepends_model_switch_message() {
     let initial_context = session.build_initial_context(&turn_context).await;
 
     let ResponseItem::Message { role, content, .. } = &initial_context[0] else {
-        panic!("expected developer message");
+        panic!("expected system message");
     };
-    assert_eq!(role, "developer");
+    assert_eq!(role, "system");
     let [ContentItem::InputText { text }, ..] = content.as_slice() else {
-        panic!("expected developer text");
+        panic!("expected system text");
     };
     assert!(text.contains("<model_switch>"));
 }

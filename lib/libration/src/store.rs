@@ -8,6 +8,22 @@ use sqlx::Row;
 use sqlx::SqlitePool;
 use sqlx::postgres::PgRow;
 use sqlx::sqlite::SqliteRow;
+use std::sync::Arc;
+use tokio::sync::mpsc;
+
+/// Capacity of the background-writer queue. A DB outage won't stall the
+/// HTTP hot path or spawn an unbounded fleet of tasks: once this many
+/// snapshots are pending, new ones are dropped with a warning and the
+/// sniffer carries on.
+const WRITER_QUEUE_CAPACITY: usize = 256;
+
+/// One pending write's payload, shipped over the mpsc channel to the
+/// single consumer task that owns the database pool.
+struct WriteJob {
+    provider: String,
+    base_url: String,
+    windows: Vec<UsageWindow>,
+}
 
 /// A row from `ration_usage` paired with the caller's freshness verdict.
 ///
@@ -25,9 +41,15 @@ pub struct LatestWindow {
 /// Persistence for rate-limit snapshots. Upserts the latest reading per
 /// (provider, base_url, label) into `ration_usage` and appends every
 /// snapshot to `ration_history` — history is never pruned.
-#[derive(Clone)]
+///
+/// Writes from the HTTP hot path flow through a bounded mpsc channel
+/// into a single long-lived consumer task that owns the database pool.
+/// That shape turns what used to be one-spawn-per-response into a
+/// serialized queue: a DB outage fills the channel, and new snapshots
+/// are dropped with a warning instead of stacking up unbounded tasks.
 pub struct UsageStore {
     backend: Backend,
+    writer: mpsc::Sender<WriteJob>,
 }
 
 #[derive(Clone)]
@@ -37,21 +59,68 @@ enum Backend {
 }
 
 impl UsageStore {
-    /// Build a store from a chaos-storage provider. Returns `None` if the
-    /// provider has no usable pool (should not happen once wired from boot,
-    /// but we stay defensive so misconfig surfaces as an error, not a panic).
-    pub fn from_provider(provider: &ChaosStorageProvider) -> Option<Self> {
-        if let Some(pool) = provider.sqlite_pool_cloned() {
-            return Some(Self {
-                backend: Backend::Sqlite(pool),
-            });
+    /// Build a store from a chaos-storage provider and spawn the
+    /// background writer. Returns `None` if the provider has no usable
+    /// pool (should not happen once wired from boot, but we stay
+    /// defensive so misconfig surfaces as an error, not a panic).
+    ///
+    /// Must be called from within a tokio runtime — the returned store
+    /// drives its writer on the current runtime.
+    pub fn from_provider(provider: &ChaosStorageProvider) -> Option<Arc<Self>> {
+        let backend = if let Some(pool) = provider.sqlite_pool_cloned() {
+            Backend::Sqlite(pool)
+        } else if let Some(pool) = provider.postgres_pool_cloned() {
+            Backend::Postgres(pool)
+        } else {
+            return None;
+        };
+
+        let (tx, rx) = mpsc::channel(WRITER_QUEUE_CAPACITY);
+        let store = Arc::new(Self {
+            backend: backend.clone(),
+            writer: tx,
+        });
+        // Hand the writer its own clone of the backend rather than the
+        // whole store: otherwise the task would hold the last reference
+        // to the mpsc::Sender, the channel would never close, and the
+        // loop would never terminate when the public `Arc<UsageStore>`
+        // finally drops.
+        tokio::spawn(async move { run_writer(backend, rx).await });
+        Some(store)
+    }
+
+    /// Enqueue a batch of windows for asynchronous persistence. Returns
+    /// immediately: the actual write happens on the consumer task. If
+    /// the writer queue is full (sustained DB outage) the snapshot is
+    /// dropped with a warning so the caller never stalls.
+    pub fn enqueue(&self, provider: &str, base_url: &str, windows: Vec<UsageWindow>) {
+        if windows.is_empty() {
+            return;
         }
-        if let Some(pool) = provider.postgres_pool_cloned() {
-            return Some(Self {
-                backend: Backend::Postgres(pool),
-            });
+        let job = WriteJob {
+            provider: provider.to_string(),
+            base_url: base_url.to_string(),
+            windows,
+        };
+        match self.writer.try_send(job) {
+            Ok(()) => {}
+            Err(mpsc::error::TrySendError::Full(job)) => {
+                tracing::warn!(
+                    target: "ration",
+                    provider = %job.provider,
+                    base_url = %job.base_url,
+                    "ration writer queue full; dropping usage snapshot"
+                );
+            }
+            Err(mpsc::error::TrySendError::Closed(job)) => {
+                tracing::warn!(
+                    target: "ration",
+                    provider = %job.provider,
+                    base_url = %job.base_url,
+                    "ration writer task is gone; dropping usage snapshot"
+                );
+            }
         }
-        None
     }
 
     /// Persist a batch of windows observed from a single response. Appends
@@ -95,6 +164,31 @@ impl UsageStore {
             Backend::Postgres(pool) => fetch_latest_postgres(pool, None).await?,
         };
         Ok(tag_freshness(rows, now))
+    }
+}
+
+/// Drain the mpsc channel, persisting each batch as it arrives. Runs
+/// for the lifetime of the store — the loop exits when the last sender
+/// is dropped (which happens when the `Arc<UsageStore>` goes away).
+async fn run_writer(backend: Backend, mut rx: mpsc::Receiver<WriteJob>) {
+    while let Some(job) = rx.recv().await {
+        let result = match &backend {
+            Backend::Sqlite(pool) => {
+                record_sqlite(pool, &job.provider, &job.base_url, &job.windows).await
+            }
+            Backend::Postgres(pool) => {
+                record_postgres(pool, &job.provider, &job.base_url, &job.windows).await
+            }
+        };
+        if let Err(err) = result {
+            tracing::warn!(
+                target: "ration",
+                provider = %job.provider,
+                base_url = %job.base_url,
+                %err,
+                "failed to record usage snapshot"
+            );
+        }
     }
 }
 
@@ -302,7 +396,7 @@ fn postgres_row_to_window(row: PgRow) -> (String, String, UsageWindow) {
 mod tests {
     use super::*;
 
-    async fn open_sqlite_store() -> (tempfile::TempDir, UsageStore) {
+    async fn open_sqlite_store() -> (tempfile::TempDir, Arc<UsageStore>) {
         let dir = tempfile::tempdir().expect("tempdir");
         let pool = chaos_proc::open_runtime_db(dir.path())
             .await

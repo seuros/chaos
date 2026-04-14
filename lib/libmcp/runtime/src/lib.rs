@@ -23,6 +23,7 @@ pub use manager::ToolInfo;
 // need a direct mcp-guest dependency.
 pub use mcp_guest::ListResourceTemplatesResult;
 pub use mcp_guest::ListResourcesResult;
+pub use mcp_guest::ListTasksResult;
 pub use mcp_guest::PaginatedRequestParams;
 pub use mcp_guest::ReadResourceRequestParams;
 pub use mcp_guest::ReadResourceResult;
@@ -31,6 +32,10 @@ pub use mcp_guest::ResourceContentsText;
 pub use mcp_guest::ResourceInfo;
 pub use mcp_guest::ResourceTemplateInfo;
 pub use mcp_guest::ToolAnnotations;
+pub use mcp_guest::protocol::CallToolResult as McpToolCallResult;
 pub use mcp_guest::protocol::ElicitationAction;
 pub use mcp_guest::protocol::ElicitationResponse;
 pub use mcp_guest::protocol::RequestId as McpRequestId;
+pub use mcp_guest::protocol::Task as McpTask;
+pub use mcp_guest::protocol::TaskSupport as McpTaskSupport;
+pub use mcp_guest::protocol::ToolExecution as McpToolExecution;

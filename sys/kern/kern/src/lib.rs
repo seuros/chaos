@@ -48,6 +48,7 @@ mod flags;
 pub mod git_info;
 
 pub mod instructions;
+mod internal_tasks;
 pub mod landlock;
 pub mod mcp;
 mod mcp_manage_tools;

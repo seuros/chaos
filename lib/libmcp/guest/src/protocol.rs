@@ -22,6 +22,7 @@ pub use mcp_host::protocol::types::SetLevelRequest;
 pub use mcp_host::protocol::types::Task;
 pub use mcp_host::protocol::types::TaskMetadata;
 pub use mcp_host::protocol::types::TaskStatus;
+pub use mcp_host::protocol::types::TaskSupport;
 pub use mcp_host::protocol::types::ToolAnnotations;
 pub use mcp_host::protocol::types::ToolExecution;
 pub use mcp_host::protocol::version::JSON_RPC_VERSION;

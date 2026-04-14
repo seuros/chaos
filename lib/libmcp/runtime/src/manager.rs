@@ -520,11 +520,39 @@ impl McpConnectionManager {
             ));
         }
 
-        // Convert arguments Value to Map<String, Value> for mcp-guest
-        let arguments_map = arguments.and_then(|v| match v {
-            serde_json::Value::Object(map) => Some(map),
-            _ => None,
-        });
+        // Reject Required tools on the sync path up front with an actionable
+        // error rather than letting the server return a task and then failing late.
+        {
+            let tools = client
+                .tools
+                .read()
+                .unwrap_or_else(std::sync::PoisonError::into_inner);
+            if tools
+                .iter()
+                .find(|t| t.tool.name == tool)
+                .and_then(|t| t.tool.execution.as_ref()?.task_support)
+                == Some(mcp_guest::protocol::TaskSupport::Required)
+            {
+                return Err(anyhow!(
+                    "tool '{tool}' on server '{server}' requires async execution \
+                     (taskSupport: required); use call_mcp_tool_async instead"
+                ));
+            }
+        }
+
+        // Convert arguments Value to Map<String, Value> for mcp-guest.
+        // Non-object shapes are rejected — silently dropping them would turn
+        // a caller bug into misleading server behaviour.
+        let arguments_map = match arguments {
+            None => None,
+            Some(serde_json::Value::Object(map)) => Some(map),
+            Some(other) => {
+                return Err(anyhow!(
+                    "tool call arguments must be a JSON object, got {}",
+                    other.to_string().chars().take(80).collect::<String>()
+                ));
+            }
+        };
 
         let params = mcp_guest::protocol::CallToolRequestParams {
             name: tool.to_string(),
@@ -625,6 +653,138 @@ impl McpConnectionManager {
             .with_context(|| format!("resources/read failed for `{server}` ({uri})"))?;
 
         Ok(result)
+    }
+
+    /// Invoke a tool with task augmentation, returning the task ID immediately.
+    pub async fn call_tool_async(
+        &self,
+        server: &str,
+        tool: &str,
+        arguments: Option<serde_json::Value>,
+        meta: Option<serde_json::Value>,
+        ttl: Option<u64>,
+    ) -> Result<mcp_guest::protocol::Task> {
+        let client = self.client_by_name(server).await?;
+        if !client.tool_filter.allows(tool) {
+            return Err(anyhow!(
+                "tool '{tool}' is disabled for MCP server '{server}'"
+            ));
+        }
+
+        // Validate taskSupport before making the wire call. Forbidden means the
+        // server will reject task-augmented calls for this tool; Required/Optional
+        // are the two valid cases. Absent is treated as Forbidden per spec.
+        {
+            let tools = client
+                .tools
+                .read()
+                .unwrap_or_else(std::sync::PoisonError::into_inner);
+            let tool_info = tools.iter().find(|t| t.tool.name == tool);
+            let task_support = tool_info
+                .and_then(|t| t.tool.execution.as_ref())
+                .and_then(|e| e.task_support);
+            match task_support {
+                Some(mcp_guest::protocol::TaskSupport::Optional)
+                | Some(mcp_guest::protocol::TaskSupport::Required) => {}
+                _ => {
+                    return Err(anyhow!(
+                        "tool '{tool}' on server '{server}' does not support async execution \
+                         (taskSupport is Forbidden or absent); use call_mcp_tool instead"
+                    ));
+                }
+            }
+        }
+
+        let arguments_map = match arguments {
+            None => None,
+            Some(serde_json::Value::Object(map)) => Some(map),
+            Some(other) => {
+                return Err(anyhow!(
+                    "async tool call arguments must be a JSON object, got {}",
+                    other.to_string().chars().take(80).collect::<String>()
+                ));
+            }
+        };
+
+        let params = mcp_guest::protocol::CallToolRequestParams {
+            name: tool.to_string(),
+            arguments: arguments_map,
+            meta,
+            task: Some(mcp_guest::protocol::TaskMetadata { ttl }),
+        };
+
+        let response = client
+            .session
+            .call_tool_with(params)
+            .await
+            .map_err(|e| anyhow!("{e}"))
+            .with_context(|| format!("async tool call failed for `{server}/{tool}`"))?;
+
+        match response {
+            TaskOrResult::Task(task_result) => Ok(task_result.task),
+            TaskOrResult::Result(_) => Err(anyhow!(
+                "server '{server}' returned a direct result for task-augmented call to '{tool}'; \
+                 server must declare tasks capability"
+            )),
+        }
+    }
+
+    /// Poll task status.
+    pub async fn get_task(&self, server: &str, task_id: &str) -> Result<mcp_guest::protocol::Task> {
+        let client = self.client_by_name(server).await?;
+        client
+            .session
+            .get_task(task_id)
+            .await
+            .map_err(|e| anyhow!("{e}"))
+            .with_context(|| format!("tasks/get failed for `{server}` ({task_id})"))
+    }
+
+    /// Block until a task reaches a terminal state and return its result.
+    pub async fn get_task_result(
+        &self,
+        server: &str,
+        task_id: &str,
+    ) -> Result<mcp_guest::protocol::CallToolResult> {
+        let client = self.client_by_name(server).await?;
+        let raw: serde_json::Value = client
+            .session
+            .request_value(
+                "tasks/result",
+                Some(serde_json::json!({ "taskId": task_id })),
+            )
+            .await
+            .map_err(|e| anyhow!("{e}"))
+            .with_context(|| format!("tasks/result failed for `{server}` ({task_id})"))?;
+        serde_json::from_value(raw).with_context(|| {
+            format!("failed to deserialize tasks/result for `{server}` ({task_id})")
+        })
+    }
+
+    /// List tasks from a server (paginates all pages).
+    pub async fn list_tasks(&self, server: &str) -> Result<mcp_guest::ListTasksResult> {
+        let client = self.client_by_name(server).await?;
+        client
+            .session
+            .list_tasks()
+            .await
+            .map_err(|e| anyhow!("{e}"))
+            .with_context(|| format!("tasks/list failed for `{server}`"))
+    }
+
+    /// Cancel a running task.
+    pub async fn cancel_task(
+        &self,
+        server: &str,
+        task_id: &str,
+    ) -> Result<mcp_guest::protocol::Task> {
+        let client = self.client_by_name(server).await?;
+        client
+            .session
+            .cancel_task(task_id)
+            .await
+            .map_err(|e| anyhow!("{e}"))
+            .with_context(|| format!("tasks/cancel failed for `{server}` ({task_id})"))
     }
 
     pub async fn parse_tool_name(&self, tool_name: &str) -> Option<(String, String)> {

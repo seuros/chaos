@@ -494,6 +494,7 @@ pub(crate) async fn make_session_and_context() -> (Session, TurnContext) {
             &config.permissions.approval_policy,
         ))),
         mcp_startup_cancellation_token: Mutex::new(CancellationToken::new()),
+        internal_task_store: crate::internal_tasks::InternalTaskStore::default(),
         unified_exec_manager: UnifiedExecProcessManager::new(
             config.background_terminal_max_timeout,
         ),
@@ -647,6 +648,7 @@ pub(crate) async fn make_session_and_context_with_dynamic_tools_and_rx(
             &config.permissions.approval_policy,
         ))),
         mcp_startup_cancellation_token: Mutex::new(CancellationToken::new()),
+        internal_task_store: crate::internal_tasks::InternalTaskStore::default(),
         unified_exec_manager: UnifiedExecProcessManager::new(
             config.background_terminal_max_timeout,
         ),

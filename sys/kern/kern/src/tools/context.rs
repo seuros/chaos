@@ -235,6 +235,8 @@ pub struct ExecCommandToolOutput {
     pub exit_code: Option<i32>,
     pub original_token_count: Option<usize>,
     pub session_command: Option<Vec<String>>,
+    pub task_id: Option<String>,
+    pub task_server: Option<String>,
 }
 
 impl ToolOutput for ExecCommandToolOutput {
@@ -288,6 +290,14 @@ impl ExecCommandToolOutput {
 
         if let Some(process_id) = &self.process_id {
             sections.push(format!("Process running with session ID {process_id}"));
+        }
+
+        if let Some(task_id) = &self.task_id {
+            sections.push(format!("Task ID: {task_id}"));
+        }
+
+        if let Some(task_server) = &self.task_server {
+            sections.push(format!("Task server: {task_server}"));
         }
 
         if let Some(original_token_count) = self.original_token_count {

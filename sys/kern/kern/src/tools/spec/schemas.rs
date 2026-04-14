@@ -23,6 +23,14 @@ pub(crate) fn unified_exec_output_schema() -> JsonValue {
                 "type": "number",
                 "description": "Session identifier to pass to write_stdin when the process is still running."
             },
+            "task_id": {
+                "type": "string",
+                "description": "Task identifier for polling command lifecycle through tasks:// resources."
+            },
+            "task_server": {
+                "type": "string",
+                "description": "Server name to pass to read_mcp_resource/cancel_mcp_task for the task."
+            },
             "original_token_count": {
                 "type": "number",
                 "description": "Approximate token count before output truncation."
@@ -79,9 +87,17 @@ pub(crate) fn spawn_agent_output_schema() -> JsonValue {
             "nickname": {
                 "type": ["string", "null"],
                 "description": "User-facing nickname for the spawned agent when available."
+            },
+            "task_id": {
+                "type": "string",
+                "description": "Task identifier for polling agent lifecycle through tasks:// resources."
+            },
+            "task_server": {
+                "type": "string",
+                "description": "Server name to pass to read_mcp_resource/cancel_mcp_task for the task."
             }
         },
-        "required": ["agent_id", "nickname"],
+        "required": ["agent_id", "nickname", "task_id", "task_server"],
         "additionalProperties": false
     })
 }

@@ -71,20 +71,31 @@ pub(crate) fn annotation_labels(annotations: &chaos_mcp_runtime::ToolAnnotations
     hints
 }
 
-pub(crate) fn mcp_tool_to_openai_tool(
+/// Append a task-support hint to a tool description so the model knows whether
+/// async invocation is required, optional, or unavailable.
+fn task_support_suffix(tool: &chaos_mcp_runtime::manager::McpToolInfo) -> &'static str {
+    use chaos_mcp_runtime::McpTaskSupport;
+    match tool.execution.as_ref().and_then(|e| e.task_support) {
+        Some(McpTaskSupport::Required) => " [async only: use call_mcp_tool_async]",
+        Some(McpTaskSupport::Optional) => " [async available: call_mcp_tool_async]",
+        _ => "",
+    }
+}
+
+pub(crate) fn mcp_tool_to_model_tool(
     fully_qualified_name: String,
     tool: chaos_mcp_runtime::manager::McpToolInfo,
 ) -> Result<ResponsesApiTool, serde_json::Error> {
+    let task_suffix = task_support_suffix(&tool);
     let description = match (&tool.description, &tool.annotations) {
         (Some(desc), Some(ann)) => {
-            let suffix = annotation_suffix(ann);
-            if suffix.is_empty() {
-                Some(desc.clone())
-            } else {
-                Some(format!("{desc}{suffix}"))
-            }
+            let ann_suffix = annotation_suffix(ann);
+            Some(format!("{desc}{ann_suffix}{task_suffix}"))
         }
-        (desc, _) => desc.clone(),
+        (Some(desc), _) => Some(format!("{desc}{task_suffix}")),
+        // No description but there is a task-support hint worth surfacing.
+        (None, _) if !task_suffix.is_empty() => Some(task_suffix.trim().to_string()),
+        (None, _) => None,
     };
     mcp_tool_to_responses_api_tool(
         fully_qualified_name,
@@ -96,7 +107,7 @@ pub(crate) fn mcp_tool_to_openai_tool(
 }
 
 #[cfg(test)]
-pub(crate) fn mcp_tool_to_deferred_openai_tool(
+pub(crate) fn mcp_tool_to_deferred_model_tool(
     name: String,
     tool: chaos_mcp_runtime::manager::McpToolInfo,
 ) -> Result<ResponsesApiTool, serde_json::Error> {
@@ -114,7 +125,7 @@ pub(crate) fn mcp_tool_to_deferred_openai_tool(
     mcp_tool_to_responses_api_tool(name, description, tool.input_schema, None, true)
 }
 
-pub(crate) fn dynamic_tool_to_openai_tool(
+pub(crate) fn dynamic_tool_to_model_tool(
     tool: &DynamicToolSpec,
 ) -> Result<ResponsesApiTool, serde_json::Error> {
     let input_schema = parse_tool_input_schema(&tool.input_schema)?;

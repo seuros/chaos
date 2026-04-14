@@ -7,6 +7,7 @@ use crate::client::ModelClient;
 use crate::config::StartedNetworkProxy;
 use crate::exec_policy::ExecPolicyManager;
 use crate::file_watcher::FileWatcher;
+use crate::internal_tasks::InternalTaskStore;
 use crate::mcp::McpManager;
 use crate::minions::AgentControl;
 use crate::models_manager::manager::ModelsManager;
@@ -26,6 +27,7 @@ pub(crate) struct SessionServices {
     pub(crate) catalog: Arc<CatalogSink>,
     pub(crate) mcp_connection_manager: Arc<RwLock<McpConnectionManager>>,
     pub(crate) mcp_startup_cancellation_token: Mutex<CancellationToken>,
+    pub(crate) internal_task_store: InternalTaskStore,
     pub(crate) unified_exec_manager: UnifiedExecProcessManager,
     pub(crate) hooks: Hooks,
     pub(crate) rollout: Mutex<Option<RolloutRecorder>>,

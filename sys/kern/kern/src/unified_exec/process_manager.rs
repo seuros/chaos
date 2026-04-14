@@ -29,6 +29,7 @@ use crate::tools::runtimes::unified_exec::UnifiedExecRuntime;
 use crate::tools::sandboxing::ToolCtx;
 use crate::truncate::approx_token_count;
 use crate::unified_exec::ExecCommandRequest;
+use crate::unified_exec::ExecTaskSnapshot;
 use crate::unified_exec::MAX_UNIFIED_EXEC_PROCESSES;
 use crate::unified_exec::MAX_YIELD_TIME_MS;
 use crate::unified_exec::MIN_EMPTY_YIELD_TIME_MS;
@@ -300,6 +301,8 @@ impl UnifiedExecProcessManager {
             exit_code,
             original_token_count: Some(original_token_count),
             session_command: Some(request.command.clone()),
+            task_id: None,
+            task_server: None,
         };
 
         Ok(response)
@@ -395,9 +398,44 @@ impl UnifiedExecProcessManager {
             exit_code,
             original_token_count: Some(original_token_count),
             session_command: Some(session_command.clone()),
+            task_id: None,
+            task_server: None,
         };
 
         Ok(response)
+    }
+
+    pub(crate) async fn terminate_process(&self, process_id: i32) -> Result<(), UnifiedExecError> {
+        let removed = {
+            let mut store = self.process_store.lock().await;
+            store
+                .remove(process_id)
+                .ok_or(UnifiedExecError::UnknownProcessId { process_id })?
+        };
+        Self::unregister_network_approval_for_entry(&removed).await;
+        removed.process.terminate();
+        Ok(())
+    }
+
+    pub(crate) async fn task_snapshot(
+        &self,
+        process_id: i32,
+    ) -> Result<ExecTaskSnapshot, UnifiedExecError> {
+        let status = self.refresh_process_state(process_id).await;
+        match status {
+            ProcessStatus::Alive { .. } => Ok(ExecTaskSnapshot::Running),
+            ProcessStatus::Exited { exit_code, entry } => {
+                let output = entry.transcript.lock().await.to_bytes();
+                let wall_time = entry.started_at.elapsed();
+                Ok(ExecTaskSnapshot::Exited {
+                    exit_code,
+                    command: entry.command.clone(),
+                    output,
+                    wall_time,
+                })
+            }
+            ProcessStatus::Unknown => Err(UnifiedExecError::UnknownProcessId { process_id }),
+        }
     }
 
     async fn refresh_process_state(&self, process_id: i32) -> ProcessStatus {
@@ -500,6 +538,8 @@ impl UnifiedExecProcessManager {
             network_approval_id,
             session: Arc::downgrade(&context.session),
             last_used: started_at,
+            started_at,
+            transcript: Arc::clone(&transcript),
         };
         let (number_processes, pruned_entry) = {
             let mut store = self.process_store.lock().await;

@@ -6,6 +6,7 @@ use chaos_ipc::api::McpElicitationObjectType;
 use chaos_ipc::api::McpElicitationSchema;
 use chaos_ipc::api::McpServerElicitationRequest;
 use chaos_ipc::api::McpServerElicitationRequestParams;
+use chaos_mcp_runtime::McpTask;
 use tracing::error;
 
 use crate::arc_monitor::ArcMonitorOutcome;
@@ -1067,6 +1068,268 @@ async fn notify_mcp_tool_call_skip(
     });
     notify_mcp_tool_call_event(sess, turn_context, tool_call_end_event).await;
     Err(message)
+}
+
+/// Async variant of [`handle_mcp_tool_call`]. Runs the same metadata lookup,
+/// approval, and ARC-monitor stack but calls the task-augmented transport path
+/// instead of the blocking one. On success the server returns a task handle
+/// immediately; the caller is responsible for polling or retrieving the result
+/// later via `tasks://` URIs.
+pub(crate) async fn handle_mcp_tool_call_async(
+    sess: Arc<Session>,
+    turn_context: &Arc<TurnContext>,
+    call_id: String,
+    server: String,
+    tool: String,
+    arguments: Option<serde_json::Value>,
+    ttl: Option<u64>,
+) -> Result<McpTask, crate::function_tool::FunctionCallError> {
+    use crate::function_tool::FunctionCallError;
+
+    tracing::debug!(
+        server = %server,
+        tool = %tool,
+        "MCP async tool call begin",
+    );
+
+    let invocation = McpInvocation {
+        server: server.clone(),
+        tool: tool.clone(),
+        arguments: arguments.clone(),
+    };
+
+    let metadata =
+        lookup_mcp_tool_metadata(sess.as_ref(), turn_context.as_ref(), &server, &tool).await;
+    let request_meta = build_mcp_tool_call_request_meta(&server, metadata.as_ref());
+
+    notify_mcp_tool_call_event(
+        sess.as_ref(),
+        turn_context.as_ref(),
+        EventMsg::McpToolCallBegin(McpToolCallBeginEvent {
+            call_id: call_id.clone(),
+            invocation: invocation.clone(),
+        }),
+    )
+    .await;
+
+    if let Some(decision) = maybe_request_mcp_tool_approval(
+        &sess,
+        turn_context,
+        &call_id,
+        &invocation,
+        metadata.as_ref(),
+        AppToolApproval::Auto,
+    )
+    .await
+    {
+        let denied_msg = match decision {
+            McpToolApprovalDecision::Accept
+            | McpToolApprovalDecision::AcceptForSession
+            | McpToolApprovalDecision::AcceptAndRemember => None,
+            McpToolApprovalDecision::Decline => {
+                Some("user rejected async MCP tool call".to_string())
+            }
+            McpToolApprovalDecision::Cancel => {
+                Some("user cancelled async MCP tool call".to_string())
+            }
+            McpToolApprovalDecision::BlockedBySafetyMonitor(ref reason) => {
+                Some(arc_monitor_interrupt_message(reason))
+            }
+        };
+        if let Some(msg) = denied_msg {
+            notify_mcp_tool_call_event(
+                sess.as_ref(),
+                turn_context.as_ref(),
+                EventMsg::McpToolCallEnd(McpToolCallEndEvent {
+                    call_id,
+                    invocation,
+                    duration: Duration::ZERO,
+                    result: Err(msg.clone()),
+                }),
+            )
+            .await;
+            turn_context.session_telemetry.counter(
+                "chaos.mcp.call",
+                /*inc*/ 1,
+                &[("status", "denied"), ("mode", "async")],
+            );
+            return Err(FunctionCallError::RespondToModel(msg));
+        }
+    }
+
+    maybe_mark_process_memory_mode_polluted(sess.as_ref(), turn_context.as_ref()).await;
+
+    let start = Instant::now();
+    let outcome = sess
+        .call_tool_async(&server, &tool, arguments, request_meta, ttl)
+        .await
+        .map_err(|e| FunctionCallError::RespondToModel(format!("async tool call failed: {e:#}")));
+    let elapsed = start.elapsed();
+
+    let (end_result, return_value) = match outcome {
+        Ok(task) => {
+            let text = serde_json::to_string(&task).unwrap_or_default();
+            let result = Ok(CallToolResult {
+                content: vec![serde_json::json!({"type": "text", "text": text})],
+                structured_content: None,
+                is_error: Some(false),
+                meta: None,
+            });
+            (result, Ok(task))
+        }
+        Err(e) => {
+            let msg = e.to_string();
+            (Err(msg), Err(e))
+        }
+    };
+
+    notify_mcp_tool_call_event(
+        sess.as_ref(),
+        turn_context.as_ref(),
+        EventMsg::McpToolCallEnd(McpToolCallEndEvent {
+            call_id,
+            invocation,
+            duration: elapsed,
+            result: end_result,
+        }),
+    )
+    .await;
+
+    let status = if return_value.is_ok() { "ok" } else { "error" };
+    turn_context.session_telemetry.counter(
+        "chaos.mcp.call",
+        /*inc*/ 1,
+        &[("status", status), ("mode", "async")],
+    );
+
+    return_value
+}
+
+/// Cancel an in-flight async task through the approval stack.
+///
+/// Cancel is a remote state mutation and must respect the same approval and
+/// ARC policies as initiating a call. The invocation is recorded with a
+/// synthetic tool name so the audit trail clearly identifies cancellations.
+pub(crate) async fn handle_mcp_cancel_task(
+    sess: Arc<Session>,
+    turn_context: &Arc<TurnContext>,
+    call_id: String,
+    server: String,
+    task_id: String,
+) -> Result<McpTask, crate::function_tool::FunctionCallError> {
+    use crate::function_tool::FunctionCallError;
+
+    let invocation = McpInvocation {
+        server: server.clone(),
+        tool: "tasks/cancel".to_string(),
+        arguments: Some(serde_json::json!({ "taskId": task_id })),
+    };
+
+    let metadata = lookup_mcp_tool_metadata(
+        sess.as_ref(),
+        turn_context.as_ref(),
+        &server,
+        "tasks/cancel",
+    )
+    .await;
+
+    notify_mcp_tool_call_event(
+        sess.as_ref(),
+        turn_context.as_ref(),
+        EventMsg::McpToolCallBegin(McpToolCallBeginEvent {
+            call_id: call_id.clone(),
+            invocation: invocation.clone(),
+        }),
+    )
+    .await;
+
+    if let Some(decision) = maybe_request_mcp_tool_approval(
+        &sess,
+        turn_context,
+        &call_id,
+        &invocation,
+        metadata.as_ref(),
+        AppToolApproval::Auto,
+    )
+    .await
+    {
+        let denied_msg = match decision {
+            McpToolApprovalDecision::Accept
+            | McpToolApprovalDecision::AcceptForSession
+            | McpToolApprovalDecision::AcceptAndRemember => None,
+            McpToolApprovalDecision::Decline => Some("user rejected task cancellation".to_string()),
+            McpToolApprovalDecision::Cancel => {
+                Some("user cancelled the cancel request".to_string())
+            }
+            McpToolApprovalDecision::BlockedBySafetyMonitor(ref reason) => {
+                Some(arc_monitor_interrupt_message(reason))
+            }
+        };
+        if let Some(msg) = denied_msg {
+            notify_mcp_tool_call_event(
+                sess.as_ref(),
+                turn_context.as_ref(),
+                EventMsg::McpToolCallEnd(McpToolCallEndEvent {
+                    call_id,
+                    invocation,
+                    duration: Duration::ZERO,
+                    result: Err(msg.clone()),
+                }),
+            )
+            .await;
+            turn_context.session_telemetry.counter(
+                "chaos.mcp.call",
+                /*inc*/ 1,
+                &[("status", "denied"), ("mode", "cancel")],
+            );
+            return Err(FunctionCallError::RespondToModel(msg));
+        }
+    }
+
+    let start = Instant::now();
+    let outcome = sess
+        .cancel_mcp_task(&server, &task_id)
+        .await
+        .map_err(|e| FunctionCallError::RespondToModel(format!("tasks/cancel failed: {e:#}")));
+    let elapsed = start.elapsed();
+
+    let (end_result, return_value) = match outcome {
+        Ok(task) => {
+            let text = serde_json::to_string(&task).unwrap_or_default();
+            let result = Ok(CallToolResult {
+                content: vec![serde_json::json!({"type": "text", "text": text})],
+                structured_content: None,
+                is_error: Some(false),
+                meta: None,
+            });
+            (result, Ok(task))
+        }
+        Err(e) => {
+            let msg = e.to_string();
+            (Err(msg), Err(e))
+        }
+    };
+
+    notify_mcp_tool_call_event(
+        sess.as_ref(),
+        turn_context.as_ref(),
+        EventMsg::McpToolCallEnd(McpToolCallEndEvent {
+            call_id,
+            invocation,
+            duration: elapsed,
+            result: end_result,
+        }),
+    )
+    .await;
+
+    let status = if return_value.is_ok() { "ok" } else { "error" };
+    turn_context.session_telemetry.counter(
+        "chaos.mcp.call",
+        /*inc*/ 1,
+        &[("status", status), ("mode", "cancel")],
+    );
+
+    return_value
 }
 
 #[cfg(test)]

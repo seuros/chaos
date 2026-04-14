@@ -19,7 +19,6 @@ CREATE TABLE ration_usage (
     CHECK (remaining IS NULL OR remaining >= 0)
 );
 
-CREATE INDEX idx_ration_usage_provider ON ration_usage(provider);
 CREATE INDEX idx_ration_usage_resets_at ON ration_usage(resets_at);
 
 CREATE TRIGGER ration_usage_touch

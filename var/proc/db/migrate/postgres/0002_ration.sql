@@ -7,8 +7,8 @@
 CREATE TABLE ration_usage (
     provider TEXT NOT NULL,
     label TEXT NOT NULL,
-    limit_value INTEGER,
-    remaining INTEGER,
+    limit_value BIGINT,
+    remaining BIGINT,
     utilization DOUBLE PRECISION NOT NULL,
     resets_at BIGINT,
     observed_at BIGINT NOT NULL,
@@ -19,7 +19,6 @@ CREATE TABLE ration_usage (
     CHECK (remaining IS NULL OR remaining >= 0)
 );
 
-CREATE INDEX idx_ration_usage_provider ON ration_usage(provider);
 CREATE INDEX idx_ration_usage_resets_at ON ration_usage(resets_at);
 
 CREATE TRIGGER ration_usage_touch
@@ -28,11 +27,11 @@ FOR EACH ROW
 EXECUTE FUNCTION chaos_touch_updated_at_epoch();
 
 CREATE TABLE ration_history (
-    id SERIAL PRIMARY KEY,
+    id BIGSERIAL PRIMARY KEY,
     provider TEXT NOT NULL,
     label TEXT NOT NULL,
-    limit_value INTEGER,
-    remaining INTEGER,
+    limit_value BIGINT,
+    remaining BIGINT,
     utilization DOUBLE PRECISION NOT NULL,
     resets_at BIGINT,
     observed_at BIGINT NOT NULL,

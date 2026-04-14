@@ -488,6 +488,13 @@ fn test_full_toolset_specs_for_codex_style_unified_exec_web_search_model() {
             if !seen.insert(reg.name) {
                 continue;
             }
+            // mcp_task tools are wired explicitly when mcp_tools is Some(_),
+            // not via the inventory fallback path. Mirror the builder
+            // (registry.rs:275) so expected tracks actual when this test
+            // runs with mcp_tools = None.
+            if reg.name == "mcp_task" {
+                continue;
+            }
             for tool in (reg.tools)() {
                 let input_schema =
                     parse_tool_input_schema(&tool.input_schema).unwrap_or_else(|e| {

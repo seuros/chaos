@@ -568,6 +568,7 @@ mod tests {
     use crate::bottom_pane::selection_popup_common::menu_surface_inset;
     use crate::render::renderable::Renderable;
     use crate::test_render::render_to_first_char_string;
+    use crate::test_support::make_app_event_sender_with_rx;
     use chaos_ipc::protocol::Op;
     use chaos_ipc::request_user_input::RequestUserInputAnswer;
     use chaos_ipc::request_user_input::RequestUserInputQuestion;
@@ -578,15 +579,13 @@ mod tests {
     use pretty_assertions::assert_eq;
     use ratatui::layout::Rect;
     use std::collections::HashMap;
-    use tokio::sync::mpsc::unbounded_channel;
     use unicode_width::UnicodeWidthStr;
 
     fn test_sender() -> (
         AppEventSender,
-        tokio::sync::mpsc::UnboundedReceiver<AppEvent>,
+        tokio::sync::mpsc::UnboundedReceiver<crate::app_event::AppEvent>,
     ) {
-        let (tx_raw, rx) = unbounded_channel::<AppEvent>();
-        (AppEventSender::new(tx_raw), rx)
+        make_app_event_sender_with_rx()
     }
 
     fn expect_interrupt_only(rx: &mut tokio::sync::mpsc::UnboundedReceiver<AppEvent>) {

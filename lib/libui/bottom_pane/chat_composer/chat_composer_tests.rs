@@ -1,5 +1,8 @@
 use super::*;
+use crate::app_event::AppEvent;
 use crate::bottom_pane::footer::footer_height;
+use crate::test_support::make_app_event_sender;
+use crate::test_support::make_app_event_sender_with_rx;
 use chaos_ipc::api::AppInfo;
 use crossterm::event::KeyEvent;
 use crossterm::event::KeyModifiers;
@@ -11,9 +14,6 @@ use ratatui::layout::Rect;
 use std::path::PathBuf;
 use tempfile::tempdir;
 
-use crate::app_event::AppEvent;
-
-use crate::bottom_pane::AppEventSender;
 use crate::bottom_pane::ChatComposer;
 use crate::bottom_pane::InputResult;
 use crate::bottom_pane::chat_composer::AttachedImage;
@@ -22,12 +22,10 @@ use crate::bottom_pane::prompt_args::PromptArg;
 use crate::bottom_pane::prompt_args::extract_positional_args_for_prompt_line;
 use crate::bottom_pane::textarea::TextArea;
 use crate::render::renderable::Renderable;
-use tokio::sync::mpsc::unbounded_channel;
 
 #[test]
 fn footer_hint_row_is_separated_from_composer() {
-    let (tx, _rx) = unbounded_channel::<AppEvent>();
-    let sender = AppEventSender::new(tx);
+    let sender = make_app_event_sender();
     let composer = ChatComposer::new(
         true,
         sender,
@@ -80,8 +78,7 @@ fn footer_hint_row_is_separated_from_composer() {
 
 #[test]
 fn footer_flash_overrides_footer_hint_override() {
-    let (tx, _rx) = unbounded_channel::<AppEvent>();
-    let sender = AppEventSender::new(tx);
+    let sender = make_app_event_sender();
     let mut composer = ChatComposer::new(
         true,
         sender,
@@ -118,8 +115,7 @@ fn footer_flash_overrides_footer_hint_override() {
 
 #[test]
 fn footer_flash_expires_and_falls_back_to_hint_override() {
-    let (tx, _rx) = unbounded_channel::<AppEvent>();
-    let sender = AppEventSender::new(tx);
+    let sender = make_app_event_sender();
     let mut composer = ChatComposer::new(
         true,
         sender,
@@ -166,8 +162,7 @@ fn snapshot_composer_state_with_width<F>(
     use ratatui::Terminal;
     use ratatui::backend::TestBackend;
 
-    let (tx, _rx) = unbounded_channel::<AppEvent>();
-    let sender = AppEventSender::new(tx);
+    let sender = make_app_event_sender();
     let mut composer = ChatComposer::new(
         true,
         sender,
@@ -405,8 +400,7 @@ fn esc_hint_stays_hidden_with_draft_content() {
     use crossterm::event::KeyEvent;
     use crossterm::event::KeyModifiers;
 
-    let (tx, _rx) = unbounded_channel::<AppEvent>();
-    let sender = AppEventSender::new(tx);
+    let sender = make_app_event_sender();
     let mut composer = ChatComposer::new(
         true,
         sender,
@@ -432,8 +426,7 @@ fn esc_hint_stays_hidden_with_draft_content() {
 fn base_footer_mode_tracks_empty_state_after_quit_hint_expires() {
     use crossterm::event::KeyCode;
 
-    let (tx, _rx) = unbounded_channel::<AppEvent>();
-    let sender = AppEventSender::new(tx);
+    let sender = make_app_event_sender();
     let mut composer = ChatComposer::new(
         true,
         sender,
@@ -454,8 +447,7 @@ fn base_footer_mode_tracks_empty_state_after_quit_hint_expires() {
 
 #[test]
 fn clear_for_ctrl_c_records_cleared_draft() {
-    let (tx, _rx) = unbounded_channel::<AppEvent>();
-    let sender = AppEventSender::new(tx);
+    let sender = make_app_event_sender();
     let mut composer = ChatComposer::new(
         true,
         sender,
@@ -480,8 +472,7 @@ fn clear_for_ctrl_c_preserves_pending_paste_history_entry() {
     use crossterm::event::KeyEvent;
     use crossterm::event::KeyModifiers;
 
-    let (tx, _rx) = unbounded_channel::<AppEvent>();
-    let sender = AppEventSender::new(tx);
+    let sender = make_app_event_sender();
     let mut composer = ChatComposer::new(
         true,
         sender,
@@ -542,8 +533,7 @@ fn clear_for_ctrl_c_preserves_pending_paste_history_entry() {
 
 #[test]
 fn clear_for_ctrl_c_preserves_image_draft_state() {
-    let (tx, _rx) = unbounded_channel::<AppEvent>();
-    let sender = AppEventSender::new(tx);
+    let sender = make_app_event_sender();
     let mut composer = ChatComposer::new(
         true,
         sender,
@@ -585,8 +575,7 @@ fn clear_for_ctrl_c_preserves_image_draft_state() {
 
 #[test]
 fn clear_for_ctrl_c_preserves_remote_offset_image_labels() {
-    let (tx, _rx) = unbounded_channel::<AppEvent>();
-    let sender = AppEventSender::new(tx);
+    let sender = make_app_event_sender();
     let mut composer = ChatComposer::new(
         true,
         sender,
@@ -627,8 +616,7 @@ fn clear_for_ctrl_c_preserves_remote_offset_image_labels() {
 
 #[test]
 fn apply_history_entry_preserves_local_placeholders_after_remote_prefix() {
-    let (tx, _rx) = unbounded_channel::<AppEvent>();
-    let sender = AppEventSender::new(tx);
+    let sender = make_app_event_sender();
     let mut composer = ChatComposer::new(
         true,
         sender,
@@ -670,8 +658,7 @@ fn question_mark_only_toggles_on_first_char() {
     use crossterm::event::KeyEvent;
     use crossterm::event::KeyModifiers;
 
-    let (tx, _rx) = unbounded_channel::<AppEvent>();
-    let sender = AppEventSender::new(tx);
+    let sender = make_app_event_sender();
     let mut composer = ChatComposer::new(
         true,
         sender,
@@ -712,8 +699,7 @@ fn question_mark_does_not_toggle_during_paste_burst() {
     use crossterm::event::KeyEvent;
     use crossterm::event::KeyModifiers;
 
-    let (tx, _rx) = unbounded_channel::<AppEvent>();
-    let sender = AppEventSender::new(tx);
+    let sender = make_app_event_sender();
     let mut composer = ChatComposer::new(
         true,
         sender,
@@ -741,8 +727,7 @@ fn question_mark_does_not_toggle_during_paste_burst() {
 
 #[test]
 fn set_connector_mentions_skips_disabled_connectors() {
-    let (tx, _rx) = unbounded_channel::<AppEvent>();
-    let sender = AppEventSender::new(tx);
+    let sender = make_app_event_sender();
     let mut composer = ChatComposer::new(
         true,
         sender,
@@ -778,8 +763,7 @@ fn set_connector_mentions_skips_disabled_connectors() {
 
 #[test]
 fn set_connector_mentions_excludes_disabled_apps_from_mention_popup() {
-    let (tx, _rx) = unbounded_channel::<AppEvent>();
-    let sender = AppEventSender::new(tx);
+    let sender = make_app_event_sender();
     let mut composer = ChatComposer::new(
         true,
         sender,
@@ -815,8 +799,7 @@ fn shortcut_overlay_persists_while_task_running() {
     use crossterm::event::KeyEvent;
     use crossterm::event::KeyModifiers;
 
-    let (tx, _rx) = unbounded_channel::<AppEvent>();
-    let sender = AppEventSender::new(tx);
+    let sender = make_app_event_sender();
     let mut composer = ChatComposer::new(
         true,
         sender,
@@ -1065,8 +1048,7 @@ fn enter_submits_when_file_popup_has_no_selection() {
     use crossterm::event::KeyEvent;
     use crossterm::event::KeyModifiers;
 
-    let (tx, _rx) = unbounded_channel::<AppEvent>();
-    let sender = AppEventSender::new(tx);
+    let sender = make_app_event_sender();
     let mut composer = ChatComposer::new(
         true,
         sender,
@@ -1100,8 +1082,7 @@ fn ascii_prefix_survives_non_ascii_followup() {
     use crossterm::event::KeyEvent;
     use crossterm::event::KeyModifiers;
 
-    let (tx, _rx) = unbounded_channel::<AppEvent>();
-    let sender = AppEventSender::new(tx);
+    let sender = make_app_event_sender();
     let mut composer = ChatComposer::new(
         true,
         sender,
@@ -1130,8 +1111,7 @@ fn non_ascii_char_inserts_immediately_without_burst_state() {
     use crossterm::event::KeyEvent;
     use crossterm::event::KeyModifiers;
 
-    let (tx, _rx) = unbounded_channel::<AppEvent>();
-    let sender = AppEventSender::new(tx);
+    let sender = make_app_event_sender();
     let mut composer = ChatComposer::new(
         true,
         sender,
@@ -1154,8 +1134,7 @@ fn non_ascii_burst_buffers_enter_and_flushes_multiline() {
     use crossterm::event::KeyEvent;
     use crossterm::event::KeyModifiers;
 
-    let (tx, _rx) = unbounded_channel::<AppEvent>();
-    let sender = AppEventSender::new(tx);
+    let sender = make_app_event_sender();
     let mut composer = ChatComposer::new(
         true,
         sender,
@@ -1187,8 +1166,7 @@ fn non_ascii_burst_preserves_ideographic_space_and_ascii() {
     use crossterm::event::KeyEvent;
     use crossterm::event::KeyModifiers;
 
-    let (tx, _rx) = unbounded_channel::<AppEvent>();
-    let sender = AppEventSender::new(tx);
+    let sender = make_app_event_sender();
     let mut composer = ChatComposer::new(
         true,
         sender,
@@ -1235,8 +1213,7 @@ fn non_ascii_burst_buffers_large_multiline_mixed_ascii_and_unicode() {
 白云千载 青山依旧\n\
 程序员 与 Unicode 同行";
 
-    let (tx, _rx) = unbounded_channel::<AppEvent>();
-    let sender = AppEventSender::new(tx);
+    let sender = make_app_event_sender();
     let mut composer = ChatComposer::new(
         true,
         sender,
@@ -1272,8 +1249,7 @@ fn ascii_burst_treats_enter_as_newline() {
     use crossterm::event::KeyEvent;
     use crossterm::event::KeyModifiers;
 
-    let (tx, _rx) = unbounded_channel::<AppEvent>();
-    let sender = AppEventSender::new(tx);
+    let sender = make_app_event_sender();
     let mut composer = ChatComposer::new(
         true,
         sender,
@@ -1322,8 +1298,7 @@ fn slash_context_enter_ignores_paste_burst_enter_suppression() {
     use crossterm::event::KeyEvent;
     use crossterm::event::KeyModifiers;
 
-    let (tx, _rx) = unbounded_channel::<AppEvent>();
-    let sender = AppEventSender::new(tx);
+    let sender = make_app_event_sender();
     let mut composer = ChatComposer::new(
         true,
         sender,
@@ -1350,8 +1325,7 @@ fn non_char_key_flushes_active_burst_before_input() {
     use crossterm::event::KeyEvent;
     use crossterm::event::KeyModifiers;
 
-    let (tx, _rx) = unbounded_channel::<AppEvent>();
-    let sender = AppEventSender::new(tx);
+    let sender = make_app_event_sender();
     let mut composer = ChatComposer::new(
         true,
         sender,
@@ -1385,8 +1359,7 @@ fn disable_paste_burst_flushes_pending_first_char_and_inserts_immediately() {
     use crossterm::event::KeyEvent;
     use crossterm::event::KeyModifiers;
 
-    let (tx, _rx) = unbounded_channel::<AppEvent>();
-    let sender = AppEventSender::new(tx);
+    let sender = make_app_event_sender();
     let mut composer = ChatComposer::new(
         true,
         sender,
@@ -1418,8 +1391,7 @@ fn handle_paste_small_inserts_text() {
     use crossterm::event::KeyEvent;
     use crossterm::event::KeyModifiers;
 
-    let (tx, _rx) = unbounded_channel::<AppEvent>();
-    let sender = AppEventSender::new(tx);
+    let sender = make_app_event_sender();
     let mut composer = ChatComposer::new(
         true,
         sender,
@@ -1446,8 +1418,7 @@ fn empty_enter_returns_none() {
     use crossterm::event::KeyEvent;
     use crossterm::event::KeyModifiers;
 
-    let (tx, _rx) = unbounded_channel::<AppEvent>();
-    let sender = AppEventSender::new(tx);
+    let sender = make_app_event_sender();
     let mut composer = ChatComposer::new(
         true,
         sender,
@@ -1475,8 +1446,7 @@ fn handle_paste_large_uses_placeholder_and_replaces_on_submit() {
     use crossterm::event::KeyEvent;
     use crossterm::event::KeyModifiers;
 
-    let (tx, _rx) = unbounded_channel::<AppEvent>();
-    let sender = AppEventSender::new(tx);
+    let sender = make_app_event_sender();
     let mut composer = ChatComposer::new(
         true,
         sender,
@@ -1508,8 +1478,7 @@ fn submit_at_character_limit_succeeds() {
     use crossterm::event::KeyEvent;
     use crossterm::event::KeyModifiers;
 
-    let (tx, _rx) = unbounded_channel::<AppEvent>();
-    let sender = AppEventSender::new(tx);
+    let sender = make_app_event_sender();
     let mut composer = ChatComposer::new(
         true,
         sender,
@@ -1536,8 +1505,7 @@ fn oversized_submit_reports_error_and_restores_draft() {
     use crossterm::event::KeyEvent;
     use crossterm::event::KeyModifiers;
 
-    let (tx, mut rx) = unbounded_channel::<AppEvent>();
-    let sender = AppEventSender::new(tx);
+    let (sender, mut rx) = make_app_event_sender_with_rx();
     let mut composer = ChatComposer::new(
         true,
         sender,
@@ -1578,8 +1546,7 @@ fn oversized_queued_submission_reports_error_and_restores_draft() {
     use crossterm::event::KeyEvent;
     use crossterm::event::KeyModifiers;
 
-    let (tx, mut rx) = unbounded_channel::<AppEvent>();
-    let sender = AppEventSender::new(tx);
+    let (sender, mut rx) = make_app_event_sender_with_rx();
     let mut composer = ChatComposer::new(
         true,
         sender,
@@ -1623,8 +1590,7 @@ fn edit_clears_pending_paste() {
     use crossterm::event::KeyModifiers;
 
     let large = "y".repeat(LARGE_PASTE_CHAR_THRESHOLD + 1);
-    let (tx, _rx) = unbounded_channel::<AppEvent>();
-    let sender = AppEventSender::new(tx);
+    let sender = make_app_event_sender();
     let mut composer = ChatComposer::new(
         true,
         sender,
@@ -1649,8 +1615,7 @@ fn ui_snapshots() {
     use ratatui::Terminal;
     use ratatui::backend::TestBackend;
 
-    let (tx, _rx) = unbounded_channel::<AppEvent>();
-    let sender = AppEventSender::new(tx);
+    let sender = make_app_event_sender();
     let mut terminal = match Terminal::new(TestBackend::new(100, 10)) {
         Ok(t) => t,
         Err(e) => panic!("Failed to create terminal: {e}"),
@@ -1755,8 +1720,7 @@ fn slash_popup_model_first_for_mo_ui() {
     use ratatui::Terminal;
     use ratatui::backend::TestBackend;
 
-    let (tx, _rx) = unbounded_channel::<AppEvent>();
-    let sender = AppEventSender::new(tx);
+    let sender = make_app_event_sender();
 
     let mut composer = ChatComposer::new(
         true,
@@ -1784,8 +1748,7 @@ fn slash_popup_model_first_for_mo_ui() {
 #[test]
 fn slash_popup_model_first_for_mo_logic() {
     use super::super::command_popup::CommandItem;
-    let (tx, _rx) = unbounded_channel::<AppEvent>();
-    let sender = AppEventSender::new(tx);
+    let sender = make_app_event_sender();
     let mut composer = ChatComposer::new(
         true,
         sender,
@@ -1814,8 +1777,7 @@ fn slash_popup_resume_for_res_ui() {
     use ratatui::Terminal;
     use ratatui::backend::TestBackend;
 
-    let (tx, _rx) = unbounded_channel::<AppEvent>();
-    let sender = AppEventSender::new(tx);
+    let sender = make_app_event_sender();
 
     let mut composer = ChatComposer::new(
         true,
@@ -1840,8 +1802,7 @@ fn slash_popup_resume_for_res_ui() {
 #[test]
 fn slash_popup_resume_for_res_logic() {
     use super::super::command_popup::CommandItem;
-    let (tx, _rx) = unbounded_channel::<AppEvent>();
-    let sender = AppEventSender::new(tx);
+    let sender = make_app_event_sender();
     let mut composer = ChatComposer::new(
         true,
         sender,
@@ -1896,8 +1857,7 @@ fn slash_command_dispatches_and_does_not_submit_literal_text() {
     use crossterm::event::KeyEvent;
     use crossterm::event::KeyModifiers;
 
-    let (tx, _rx) = unbounded_channel::<AppEvent>();
-    let sender = AppEventSender::new(tx);
+    let sender = make_app_event_sender();
     let mut composer = ChatComposer::new(
         true,
         sender,
@@ -1941,8 +1901,7 @@ fn kill_buffer_persists_after_submit() {
     use crossterm::event::KeyEvent;
     use crossterm::event::KeyModifiers;
 
-    let (tx, _rx) = unbounded_channel::<AppEvent>();
-    let sender = AppEventSender::new(tx);
+    let sender = make_app_event_sender();
     let mut composer = ChatComposer::new(
         true,
         sender,
@@ -1975,8 +1934,7 @@ fn kill_buffer_persists_after_slash_command_dispatch() {
     use crossterm::event::KeyEvent;
     use crossterm::event::KeyModifiers;
 
-    let (tx, _rx) = unbounded_channel::<AppEvent>();
-    let sender = AppEventSender::new(tx);
+    let sender = make_app_event_sender();
     let mut composer = ChatComposer::new(
         true,
         sender,
@@ -2013,8 +1971,7 @@ fn slash_command_disabled_while_task_running_keeps_text() {
     use crossterm::event::KeyEvent;
     use crossterm::event::KeyModifiers;
 
-    let (tx, mut rx) = unbounded_channel::<AppEvent>();
-    let sender = AppEventSender::new(tx);
+    let (sender, mut rx) = make_app_event_sender_with_rx();
     let mut composer = ChatComposer::new(
         true,
         sender,
@@ -2091,8 +2048,7 @@ fn slash_tab_completion_moves_cursor_to_end() {
     use crossterm::event::KeyEvent;
     use crossterm::event::KeyModifiers;
 
-    let (tx, _rx) = unbounded_channel::<AppEvent>();
-    let sender = AppEventSender::new(tx);
+    let sender = make_app_event_sender();
     let mut composer = ChatComposer::new(
         true,
         sender,
@@ -2112,8 +2068,7 @@ fn slash_tab_completion_moves_cursor_to_end() {
 
 #[test]
 fn slash_tab_then_enter_dispatches_builtin_command() {
-    let (tx, _rx) = unbounded_channel::<AppEvent>();
-    let sender = AppEventSender::new(tx);
+    let sender = make_app_event_sender();
     let mut composer = ChatComposer::new(
         true,
         sender,
@@ -2150,8 +2105,7 @@ fn slash_tab_then_enter_dispatches_builtin_command() {
 
 #[test]
 fn slash_command_elementizes_on_space() {
-    let (tx, _rx) = unbounded_channel::<AppEvent>();
-    let sender = AppEventSender::new(tx);
+    let sender = make_app_event_sender();
     let mut composer = ChatComposer::new(
         true,
         sender,
@@ -2172,8 +2126,7 @@ fn slash_command_elementizes_on_space() {
 
 #[test]
 fn slash_command_elementizes_only_known_commands() {
-    let (tx, _rx) = unbounded_channel::<AppEvent>();
-    let sender = AppEventSender::new(tx);
+    let sender = make_app_event_sender();
     let mut composer = ChatComposer::new(
         true,
         sender,
@@ -2193,8 +2146,7 @@ fn slash_command_elementizes_only_known_commands() {
 
 #[test]
 fn slash_command_element_removed_when_not_at_start() {
-    let (tx, _rx) = unbounded_channel::<AppEvent>();
-    let sender = AppEventSender::new(tx);
+    let sender = make_app_event_sender();
     let mut composer = ChatComposer::new(
         true,
         sender,
@@ -2225,8 +2177,7 @@ fn tab_submits_when_no_task_running() {
     use crossterm::event::KeyEvent;
     use crossterm::event::KeyModifiers;
 
-    let (tx, _rx) = unbounded_channel::<AppEvent>();
-    let sender = AppEventSender::new(tx);
+    let sender = make_app_event_sender();
     let mut composer = ChatComposer::new(
         true,
         sender,
@@ -2253,8 +2204,7 @@ fn tab_does_not_submit_for_bang_shell_command() {
     use crossterm::event::KeyEvent;
     use crossterm::event::KeyModifiers;
 
-    let (tx, _rx) = unbounded_channel::<AppEvent>();
-    let sender = AppEventSender::new(tx);
+    let sender = make_app_event_sender();
     let mut composer = ChatComposer::new(
         true,
         sender,
@@ -2282,8 +2232,7 @@ fn slash_mention_dispatches_command_and_inserts_at() {
     use crossterm::event::KeyEvent;
     use crossterm::event::KeyModifiers;
 
-    let (tx, _rx) = unbounded_channel::<AppEvent>();
-    let sender = AppEventSender::new(tx);
+    let sender = make_app_event_sender();
     let mut composer = ChatComposer::new(
         true,
         sender,
@@ -2323,8 +2272,7 @@ fn slash_plan_args_preserve_text_elements() {
     use crossterm::event::KeyEvent;
     use crossterm::event::KeyModifiers;
 
-    let (tx, _rx) = unbounded_channel::<AppEvent>();
-    let sender = AppEventSender::new(tx);
+    let sender = make_app_event_sender();
     let mut composer = ChatComposer::new(
         true,
         sender,
@@ -2361,8 +2309,7 @@ fn file_completion_preserves_large_paste_placeholder_elements() {
     use crossterm::event::KeyEvent;
     use crossterm::event::KeyModifiers;
 
-    let (tx, _rx) = unbounded_channel::<AppEvent>();
-    let sender = AppEventSender::new(tx);
+    let sender = make_app_event_sender();
     let mut composer = ChatComposer::new(
         true,
         sender,
@@ -2418,8 +2365,7 @@ fn test_multiple_pastes_submission() {
     use crossterm::event::KeyEvent;
     use crossterm::event::KeyModifiers;
 
-    let (tx, _rx) = unbounded_channel::<AppEvent>();
-    let sender = AppEventSender::new(tx);
+    let sender = make_app_event_sender();
     let mut composer = ChatComposer::new(
         true,
         sender,
@@ -2496,8 +2442,7 @@ fn test_placeholder_deletion() {
     use crossterm::event::KeyEvent;
     use crossterm::event::KeyModifiers;
 
-    let (tx, _rx) = unbounded_channel::<AppEvent>();
-    let sender = AppEventSender::new(tx);
+    let sender = make_app_event_sender();
     let mut composer = ChatComposer::new(
         true,
         sender,
@@ -2570,8 +2515,7 @@ fn deleting_duplicate_length_pastes_removes_only_target() {
     use crossterm::event::KeyEvent;
     use crossterm::event::KeyModifiers;
 
-    let (tx, _rx) = unbounded_channel::<AppEvent>();
-    let sender = AppEventSender::new(tx);
+    let sender = make_app_event_sender();
     let mut composer = ChatComposer::new(
         true,
         sender,
@@ -2609,8 +2553,7 @@ fn large_paste_numbering_does_not_reuse_after_deletion() {
     use crossterm::event::KeyEvent;
     use crossterm::event::KeyModifiers;
 
-    let (tx, _rx) = unbounded_channel::<AppEvent>();
-    let sender = AppEventSender::new(tx);
+    let sender = make_app_event_sender();
     let mut composer = ChatComposer::new(
         true,
         sender,
@@ -2649,8 +2592,7 @@ fn test_partial_placeholder_deletion() {
     use crossterm::event::KeyEvent;
     use crossterm::event::KeyModifiers;
 
-    let (tx, _rx) = unbounded_channel::<AppEvent>();
-    let sender = AppEventSender::new(tx);
+    let sender = make_app_event_sender();
     let mut composer = ChatComposer::new(
         true,
         sender,
@@ -2697,8 +2639,7 @@ fn test_partial_placeholder_deletion() {
 // --- Image attachment tests ---
 #[test]
 fn attach_image_and_submit_includes_local_image_paths() {
-    let (tx, _rx) = unbounded_channel::<AppEvent>();
-    let sender = AppEventSender::new(tx);
+    let sender = make_app_event_sender();
     let mut composer = ChatComposer::new(
         true,
         sender,
@@ -2734,8 +2675,7 @@ fn attach_image_and_submit_includes_local_image_paths() {
 
 #[test]
 fn submit_captures_recent_mention_bindings_before_clearing_textarea() {
-    let (tx, _rx) = unbounded_channel::<AppEvent>();
-    let sender = AppEventSender::new(tx);
+    let sender = make_app_event_sender();
     let mut composer = ChatComposer::new(
         true,
         sender,
@@ -2766,8 +2706,7 @@ fn submit_captures_recent_mention_bindings_before_clearing_textarea() {
 
 #[test]
 fn history_navigation_restores_remote_and_local_image_attachments() {
-    let (tx, _rx) = unbounded_channel::<AppEvent>();
-    let sender = AppEventSender::new(tx);
+    let sender = make_app_event_sender();
     let mut composer = ChatComposer::new(
         true,
         sender,
@@ -2800,8 +2739,7 @@ fn history_navigation_restores_remote_and_local_image_attachments() {
 
 #[test]
 fn history_navigation_restores_remote_only_submissions() {
-    let (tx, _rx) = unbounded_channel::<AppEvent>();
-    let sender = AppEventSender::new(tx);
+    let sender = make_app_event_sender();
     let mut composer = ChatComposer::new(
         true,
         sender,
@@ -2832,8 +2770,7 @@ fn history_navigation_restores_remote_only_submissions() {
 
 #[test]
 fn history_navigation_leaves_cursor_at_end_of_line() {
-    let (tx, _rx) = unbounded_channel::<AppEvent>();
-    let sender = AppEventSender::new(tx);
+    let sender = make_app_event_sender();
     let mut composer = ChatComposer::new(
         true,
         sender,
@@ -2875,8 +2812,7 @@ fn history_navigation_leaves_cursor_at_end_of_line() {
 
 #[test]
 fn set_text_content_reattaches_images_without_placeholder_metadata() {
-    let (tx, _rx) = unbounded_channel::<AppEvent>();
-    let sender = AppEventSender::new(tx);
+    let sender = make_app_event_sender();
     let mut composer = ChatComposer::new(
         true,
         sender,
@@ -2897,8 +2833,7 @@ fn set_text_content_reattaches_images_without_placeholder_metadata() {
 
 #[test]
 fn large_paste_preserves_image_text_elements_on_submit() {
-    let (tx, _rx) = unbounded_channel::<AppEvent>();
-    let sender = AppEventSender::new(tx);
+    let sender = make_app_event_sender();
     let mut composer = ChatComposer::new(
         true,
         sender,
@@ -2939,8 +2874,7 @@ fn large_paste_preserves_image_text_elements_on_submit() {
 
 #[test]
 fn large_paste_with_leading_whitespace_trims_and_shifts_elements() {
-    let (tx, _rx) = unbounded_channel::<AppEvent>();
-    let sender = AppEventSender::new(tx);
+    let sender = make_app_event_sender();
     let mut composer = ChatComposer::new(
         true,
         sender,
@@ -2981,8 +2915,7 @@ fn large_paste_with_leading_whitespace_trims_and_shifts_elements() {
 
 #[test]
 fn pasted_crlf_normalizes_newlines_for_elements() {
-    let (tx, _rx) = unbounded_channel::<AppEvent>();
-    let sender = AppEventSender::new(tx);
+    let sender = make_app_event_sender();
     let mut composer = ChatComposer::new(
         true,
         sender,
@@ -3023,8 +2956,7 @@ fn pasted_crlf_normalizes_newlines_for_elements() {
 
 #[test]
 fn suppressed_submission_restores_pending_paste_payload() {
-    let (tx, _rx) = unbounded_channel::<AppEvent>();
-    let sender = AppEventSender::new(tx);
+    let sender = make_app_event_sender();
     let mut composer = ChatComposer::new(
         true,
         sender,
@@ -3067,8 +2999,7 @@ fn suppressed_submission_restores_pending_paste_payload() {
 
 #[test]
 fn attach_image_without_text_submits_empty_text_and_images() {
-    let (tx, _rx) = unbounded_channel::<AppEvent>();
-    let sender = AppEventSender::new(tx);
+    let sender = make_app_event_sender();
     let mut composer = ChatComposer::new(
         true,
         sender,
@@ -3105,8 +3036,7 @@ fn attach_image_without_text_submits_empty_text_and_images() {
 
 #[test]
 fn duplicate_image_placeholders_get_suffix() {
-    let (tx, _rx) = unbounded_channel::<AppEvent>();
-    let sender = AppEventSender::new(tx);
+    let sender = make_app_event_sender();
     let mut composer = ChatComposer::new(
         true,
         sender,
@@ -3128,8 +3058,7 @@ fn duplicate_image_placeholders_get_suffix() {
 
 #[test]
 fn image_placeholder_backspace_behaves_like_text_placeholder() {
-    let (tx, _rx) = unbounded_channel::<AppEvent>();
-    let sender = AppEventSender::new(tx);
+    let sender = make_app_event_sender();
     let mut composer = ChatComposer::new(
         true,
         sender,
@@ -3168,8 +3097,7 @@ fn backspace_with_multibyte_text_before_placeholder_does_not_panic() {
     use crossterm::event::KeyEvent;
     use crossterm::event::KeyModifiers;
 
-    let (tx, _rx) = unbounded_channel::<AppEvent>();
-    let sender = AppEventSender::new(tx);
+    let sender = make_app_event_sender();
     let mut composer = ChatComposer::new(
         true,
         sender,
@@ -3194,8 +3122,7 @@ fn backspace_with_multibyte_text_before_placeholder_does_not_panic() {
 
 #[test]
 fn deleting_one_of_duplicate_image_placeholders_removes_one_entry() {
-    let (tx, _rx) = unbounded_channel::<AppEvent>();
-    let sender = AppEventSender::new(tx);
+    let sender = make_app_event_sender();
     let mut composer = ChatComposer::new(
         true,
         sender,
@@ -3254,8 +3181,7 @@ fn deleting_reordered_image_one_renumbers_text_in_place() {
     use crossterm::event::KeyEvent;
     use crossterm::event::KeyModifiers;
 
-    let (tx, _rx) = unbounded_channel::<AppEvent>();
-    let sender = AppEventSender::new(tx);
+    let sender = make_app_event_sender();
     let mut composer = ChatComposer::new(
         true,
         sender,
@@ -3317,8 +3243,7 @@ fn deleting_first_text_element_renumbers_following_text_element() {
     use crossterm::event::KeyEvent;
     use crossterm::event::KeyModifiers;
 
-    let (tx, _rx) = unbounded_channel::<AppEvent>();
-    let sender = AppEventSender::new(tx);
+    let sender = make_app_event_sender();
     let mut composer = ChatComposer::new(
         true,
         sender,
@@ -3355,8 +3280,7 @@ fn pasting_filepath_attaches_image() {
         ImageBuffer::from_fn(3, 2, |_x, _y| Rgba([1, 2, 3, 255]));
     img.save(&tmp_path).expect("failed to write temp png");
 
-    let (tx, _rx) = unbounded_channel::<AppEvent>();
-    let sender = AppEventSender::new(tx);
+    let sender = make_app_event_sender();
     let mut composer = ChatComposer::new(
         true,
         sender,
@@ -3377,8 +3301,7 @@ fn pasting_filepath_attaches_image() {
 fn selecting_custom_prompt_without_args_submits_content() {
     let prompt_text = "Hello from saved prompt";
 
-    let (tx, _rx) = unbounded_channel::<AppEvent>();
-    let sender = AppEventSender::new(tx);
+    let sender = make_app_event_sender();
     let mut composer = ChatComposer::new(
         true,
         sender,
@@ -3416,8 +3339,7 @@ fn selecting_custom_prompt_without_args_submits_content() {
 
 #[test]
 fn custom_prompt_submission_expands_arguments() {
-    let (tx, _rx) = unbounded_channel::<AppEvent>();
-    let sender = AppEventSender::new(tx);
+    let sender = make_app_event_sender();
     let mut composer = ChatComposer::new(
         true,
         sender,
@@ -3451,8 +3373,7 @@ fn custom_prompt_submission_expands_arguments() {
 
 #[test]
 fn custom_prompt_submission_accepts_quoted_values() {
-    let (tx, _rx) = unbounded_channel::<AppEvent>();
-    let sender = AppEventSender::new(tx);
+    let sender = make_app_event_sender();
     let mut composer = ChatComposer::new(
         true,
         sender,
@@ -3490,8 +3411,7 @@ fn custom_prompt_submission_preserves_image_placeholder_unquoted() {
     use crossterm::event::KeyEvent;
     use crossterm::event::KeyModifiers;
 
-    let (tx, _rx) = unbounded_channel::<AppEvent>();
-    let sender = AppEventSender::new(tx);
+    let sender = make_app_event_sender();
     let mut composer = ChatComposer::new(
         true,
         sender,
@@ -3545,8 +3465,7 @@ fn custom_prompt_submission_preserves_image_placeholder_quoted() {
     use crossterm::event::KeyEvent;
     use crossterm::event::KeyModifiers;
 
-    let (tx, _rx) = unbounded_channel::<AppEvent>();
-    let sender = AppEventSender::new(tx);
+    let sender = make_app_event_sender();
     let mut composer = ChatComposer::new(
         true,
         sender,
@@ -3601,8 +3520,7 @@ fn custom_prompt_submission_drops_unused_image_arg() {
     use crossterm::event::KeyEvent;
     use crossterm::event::KeyModifiers;
 
-    let (tx, _rx) = unbounded_channel::<AppEvent>();
-    let sender = AppEventSender::new(tx);
+    let sender = make_app_event_sender();
     let mut composer = ChatComposer::new(
         true,
         sender,
@@ -3649,8 +3567,7 @@ fn custom_prompt_with_large_paste_expands_correctly() {
     use crossterm::event::KeyEvent;
     use crossterm::event::KeyModifiers;
 
-    let (tx, _rx) = unbounded_channel::<AppEvent>();
-    let sender = AppEventSender::new(tx);
+    let sender = make_app_event_sender();
     let mut composer = ChatComposer::new(
         true,
         sender,
@@ -3713,8 +3630,7 @@ fn custom_prompt_with_large_paste_and_image_preserves_elements() {
     use crossterm::event::KeyEvent;
     use crossterm::event::KeyModifiers;
 
-    let (tx, _rx) = unbounded_channel::<AppEvent>();
-    let sender = AppEventSender::new(tx);
+    let sender = make_app_event_sender();
     let mut composer = ChatComposer::new(
         true,
         sender,
@@ -3771,8 +3687,7 @@ fn slash_path_input_submits_without_command_error() {
     use crossterm::event::KeyEvent;
     use crossterm::event::KeyModifiers;
 
-    let (tx, mut rx) = unbounded_channel::<AppEvent>();
-    let sender = AppEventSender::new(tx);
+    let (sender, mut rx) = make_app_event_sender_with_rx();
     let mut composer = ChatComposer::new(
         true,
         sender,
@@ -3807,8 +3722,7 @@ fn slash_with_leading_space_submits_as_text() {
     use crossterm::event::KeyEvent;
     use crossterm::event::KeyModifiers;
 
-    let (tx, mut rx) = unbounded_channel::<AppEvent>();
-    let sender = AppEventSender::new(tx);
+    let (sender, mut rx) = make_app_event_sender_with_rx();
     let mut composer = ChatComposer::new(
         true,
         sender,
@@ -3839,8 +3753,7 @@ fn slash_with_leading_space_submits_as_text() {
 
 #[test]
 fn custom_prompt_invalid_args_reports_error() {
-    let (tx, mut rx) = unbounded_channel::<AppEvent>();
-    let sender = AppEventSender::new(tx);
+    let (sender, mut rx) = make_app_event_sender_with_rx();
     let mut composer = ChatComposer::new(
         true,
         sender,
@@ -3889,8 +3802,7 @@ fn custom_prompt_invalid_args_reports_error() {
 
 #[test]
 fn custom_prompt_missing_required_args_reports_error() {
-    let (tx, mut rx) = unbounded_channel::<AppEvent>();
-    let sender = AppEventSender::new(tx);
+    let (sender, mut rx) = make_app_event_sender_with_rx();
     let mut composer = ChatComposer::new(
         true,
         sender,
@@ -3944,8 +3856,7 @@ fn selecting_custom_prompt_with_args_expands_placeholders() {
     // Support $1..$9 and $ARGUMENTS in prompt content.
     let prompt_text = "Header: $1\nArgs: $ARGUMENTS\nNinth: $9\n";
 
-    let (tx, _rx) = unbounded_channel::<AppEvent>();
-    let sender = AppEventSender::new(tx);
+    let sender = make_app_event_sender();
     let mut composer = ChatComposer::new(
         true,
         sender,
@@ -3982,8 +3893,7 @@ fn selecting_custom_prompt_with_args_expands_placeholders() {
 
 #[test]
 fn popup_prompt_submission_prunes_unused_image_attachments() {
-    let (tx, _rx) = unbounded_channel::<AppEvent>();
-    let sender = AppEventSender::new(tx);
+    let sender = make_app_event_sender();
     let mut composer = ChatComposer::new(
         true,
         sender,
@@ -4020,8 +3930,7 @@ fn popup_prompt_submission_prunes_unused_image_attachments() {
 
 #[test]
 fn numeric_prompt_auto_submit_prunes_unused_image_attachments() {
-    let (tx, _rx) = unbounded_channel::<AppEvent>();
-    let sender = AppEventSender::new(tx);
+    let sender = make_app_event_sender();
     let mut composer = ChatComposer::new(
         true,
         sender,
@@ -4063,8 +3972,7 @@ fn numeric_prompt_auto_submit_prunes_unused_image_attachments() {
 
 #[test]
 fn numeric_prompt_auto_submit_expands_pending_pastes() {
-    let (tx, _rx) = unbounded_channel::<AppEvent>();
-    let sender = AppEventSender::new(tx);
+    let sender = make_app_event_sender();
     let mut composer = ChatComposer::new(
         true,
         sender,
@@ -4103,8 +4011,7 @@ fn numeric_prompt_auto_submit_expands_pending_pastes() {
 
 #[test]
 fn queued_prompt_submission_prunes_unused_image_attachments() {
-    let (tx, _rx) = unbounded_channel::<AppEvent>();
-    let sender = AppEventSender::new(tx);
+    let sender = make_app_event_sender();
     let mut composer = ChatComposer::new(
         true,
         sender,
@@ -4144,8 +4051,7 @@ fn queued_prompt_submission_prunes_unused_image_attachments() {
 
 #[test]
 fn prompt_expansion_over_character_limit_reports_error_and_restores_draft() {
-    let (tx, mut rx) = unbounded_channel::<AppEvent>();
-    let sender = AppEventSender::new(tx);
+    let (sender, mut rx) = make_app_event_sender_with_rx();
     let mut composer = ChatComposer::new(
         true,
         sender,
@@ -4227,8 +4133,7 @@ fn selecting_custom_prompt_with_positional_args_submits_numeric_expansion() {
 fn numeric_prompt_positional_args_does_not_error() {
     // Ensure that a prompt with only numeric placeholders does not trigger
     // key=value parsing errors when given positional arguments.
-    let (tx, _rx) = unbounded_channel::<AppEvent>();
-    let sender = AppEventSender::new(tx);
+    let sender = make_app_event_sender();
     let mut composer = ChatComposer::new(
         true,
         sender,
@@ -4263,8 +4168,7 @@ fn numeric_prompt_positional_args_does_not_error() {
 fn selecting_custom_prompt_with_no_args_inserts_template() {
     let prompt_text = "X:$1 Y:$2 All:[$ARGUMENTS]";
 
-    let (tx, _rx) = unbounded_channel::<AppEvent>();
-    let sender = AppEventSender::new(tx);
+    let sender = make_app_event_sender();
     let mut composer = ChatComposer::new(
         true,
         sender,
@@ -4299,8 +4203,7 @@ fn selecting_custom_prompt_preserves_literal_dollar_dollar() {
     // '$$' should remain untouched.
     let prompt_text = "Cost: $$ and first: $1";
 
-    let (tx, _rx) = unbounded_channel::<AppEvent>();
-    let sender = AppEventSender::new(tx);
+    let sender = make_app_event_sender();
     let mut composer = ChatComposer::new(
         true,
         sender,
@@ -4337,8 +4240,7 @@ fn selecting_custom_prompt_preserves_literal_dollar_dollar() {
 fn selecting_custom_prompt_reuses_cached_arguments_join() {
     let prompt_text = "First: $ARGUMENTS\nSecond: $ARGUMENTS";
 
-    let (tx, _rx) = unbounded_channel::<AppEvent>();
-    let sender = AppEventSender::new(tx);
+    let sender = make_app_event_sender();
     let mut composer = ChatComposer::new(
         true,
         sender,
@@ -4380,8 +4282,7 @@ fn pending_first_ascii_char_flushes_as_typed() {
     use crossterm::event::KeyEvent;
     use crossterm::event::KeyModifiers;
 
-    let (tx, _rx) = unbounded_channel::<AppEvent>();
-    let sender = AppEventSender::new(tx);
+    let sender = make_app_event_sender();
     let mut composer = ChatComposer::new(
         true,
         sender,
@@ -4409,8 +4310,7 @@ fn burst_paste_fast_small_buffers_and_flushes_on_stop() {
     use crossterm::event::KeyEvent;
     use crossterm::event::KeyModifiers;
 
-    let (tx, _rx) = unbounded_channel::<AppEvent>();
-    let sender = AppEventSender::new(tx);
+    let sender = make_app_event_sender();
     let mut composer = ChatComposer::new(
         true,
         sender,
@@ -4456,8 +4356,7 @@ fn burst_paste_fast_small_buffers_and_flushes_on_stop() {
 /// the payload is large, it should insert a placeholder and defer the full text until submit.
 #[test]
 fn burst_paste_fast_large_inserts_placeholder_on_flush() {
-    let (tx, _rx) = unbounded_channel::<AppEvent>();
-    let sender = AppEventSender::new(tx);
+    let sender = make_app_event_sender();
     let mut composer = ChatComposer::new(
         true,
         sender,
@@ -4495,8 +4394,7 @@ fn burst_paste_fast_large_inserts_placeholder_on_flush() {
 /// burst. Characters should appear immediately and should not trigger a paste placeholder.
 #[test]
 fn humanlike_typing_1000_chars_appears_live_no_placeholder() {
-    let (tx, _rx) = unbounded_channel::<AppEvent>();
-    let sender = AppEventSender::new(tx);
+    let sender = make_app_event_sender();
     let mut composer = ChatComposer::new(
         true,
         sender,
@@ -4518,10 +4416,8 @@ fn slash_popup_not_activated_for_slash_space_text_history_like_input() {
     use crossterm::event::KeyCode;
     use crossterm::event::KeyEvent;
     use crossterm::event::KeyModifiers;
-    use tokio::sync::mpsc::unbounded_channel;
 
-    let (tx, _rx) = unbounded_channel::<AppEvent>();
-    let sender = AppEventSender::new(tx);
+    let sender = make_app_event_sender();
     let mut composer = ChatComposer::new(
         true,
         sender,
@@ -4548,10 +4444,8 @@ fn slash_popup_not_activated_for_slash_space_text_history_like_input() {
 #[test]
 fn slash_popup_activated_for_bare_slash_and_valid_prefixes() {
     // use crossterm::event::{KeyCode, KeyEvent, KeyModifiers};
-    use tokio::sync::mpsc::unbounded_channel;
 
-    let (tx, _rx) = unbounded_channel::<AppEvent>();
-    let sender = AppEventSender::new(tx);
+    let sender = make_app_event_sender();
     let mut composer = ChatComposer::new(
         true,
         sender,
@@ -4593,8 +4487,7 @@ fn slash_popup_activated_for_bare_slash_and_valid_prefixes() {
 
 #[test]
 fn apply_external_edit_rebuilds_text_and_attachments() {
-    let (tx, _rx) = unbounded_channel::<AppEvent>();
-    let sender = AppEventSender::new(tx);
+    let sender = make_app_event_sender();
     let mut composer = ChatComposer::new(
         true,
         sender,
@@ -4627,8 +4520,7 @@ fn apply_external_edit_rebuilds_text_and_attachments() {
 
 #[test]
 fn apply_external_edit_drops_missing_attachments() {
-    let (tx, _rx) = unbounded_channel::<AppEvent>();
-    let sender = AppEventSender::new(tx);
+    let sender = make_app_event_sender();
     let mut composer = ChatComposer::new(
         true,
         sender,
@@ -4652,8 +4544,7 @@ fn apply_external_edit_drops_missing_attachments() {
 
 #[test]
 fn apply_external_edit_renumbers_image_placeholders() {
-    let (tx, _rx) = unbounded_channel::<AppEvent>();
-    let sender = AppEventSender::new(tx);
+    let sender = make_app_event_sender();
     let mut composer = ChatComposer::new(
         true,
         sender,
@@ -4680,8 +4571,7 @@ fn apply_external_edit_renumbers_image_placeholders() {
 
 #[test]
 fn current_text_with_pending_expands_placeholders() {
-    let (tx, _rx) = unbounded_channel::<AppEvent>();
-    let sender = AppEventSender::new(tx);
+    let sender = make_app_event_sender();
     let mut composer = ChatComposer::new(
         true,
         sender,
@@ -4705,8 +4595,7 @@ fn current_text_with_pending_expands_placeholders() {
 
 #[test]
 fn apply_external_edit_limits_duplicates_to_occurrences() {
-    let (tx, _rx) = unbounded_channel::<AppEvent>();
-    let sender = AppEventSender::new(tx);
+    let sender = make_app_event_sender();
     let mut composer = ChatComposer::new(
         true,
         sender,
@@ -4733,8 +4622,7 @@ fn apply_external_edit_limits_duplicates_to_occurrences() {
 
 #[test]
 fn remote_images_do_not_modify_textarea_text_or_elements() {
-    let (tx, _rx) = unbounded_channel::<AppEvent>();
-    let sender = AppEventSender::new(tx);
+    let sender = make_app_event_sender();
     let mut composer = ChatComposer::new(
         true,
         sender,
@@ -4754,8 +4642,7 @@ fn remote_images_do_not_modify_textarea_text_or_elements() {
 
 #[test]
 fn attach_image_after_remote_prefix_uses_offset_label() {
-    let (tx, _rx) = unbounded_channel::<AppEvent>();
-    let sender = AppEventSender::new(tx);
+    let sender = make_app_event_sender();
     let mut composer = ChatComposer::new(
         true,
         sender,
@@ -4776,8 +4663,7 @@ fn attach_image_after_remote_prefix_uses_offset_label() {
 
 #[test]
 fn prepare_submission_keeps_remote_offset_local_placeholder_numbering() {
-    let (tx, _rx) = unbounded_channel::<AppEvent>();
-    let sender = AppEventSender::new(tx);
+    let sender = make_app_event_sender();
     let mut composer = ChatComposer::new(
         true,
         sender,
@@ -4813,8 +4699,7 @@ fn prepare_submission_keeps_remote_offset_local_placeholder_numbering() {
 
 #[test]
 fn prepare_submission_with_only_remote_images_returns_empty_text() {
-    let (tx, _rx) = unbounded_channel::<AppEvent>();
-    let sender = AppEventSender::new(tx);
+    let sender = make_app_event_sender();
     let mut composer = ChatComposer::new(
         true,
         sender,
@@ -4833,8 +4718,7 @@ fn prepare_submission_with_only_remote_images_returns_empty_text() {
 
 #[test]
 fn delete_selected_remote_image_relabels_local_placeholders() {
-    let (tx, _rx) = unbounded_channel::<AppEvent>();
-    let sender = AppEventSender::new(tx);
+    let sender = make_app_event_sender();
     let mut composer = ChatComposer::new(
         true,
         sender,
@@ -4872,8 +4756,7 @@ fn input_disabled_ignores_keypresses_and_hides_cursor() {
     use crossterm::event::KeyEvent;
     use crossterm::event::KeyModifiers;
 
-    let (tx, _rx) = unbounded_channel::<AppEvent>();
-    let sender = AppEventSender::new(tx);
+    let sender = make_app_event_sender();
     let mut composer = ChatComposer::new(
         true,
         sender,

@@ -13,19 +13,13 @@ mod tests {
     use super::*;
     use crate::app_event::AppEvent;
     use crate::test_render::render_to_first_char_string;
+    use crate::test_support::make_app_event_sender_with_rx;
     use chaos_ipc::ProcessId;
     use chaos_ipc::approvals::ElicitationAction;
     use chaos_ipc::approvals::ElicitationRequest;
     use chaos_ipc::approvals::ElicitationRequestEvent;
     use chaos_ipc::mcp::RequestId as McpRequestId;
     use chaos_ipc::protocol::Op;
-    use pretty_assertions::assert_eq;
-    use ratatui::layout::Rect;
-    use serde_json::Value;
-    use tokio::sync::mpsc::UnboundedReceiver;
-    use tokio::sync::mpsc::unbounded_channel;
-
-    use crate::app_event_sender::AppEventSender;
     use domain::{
         APPROVAL_ACCEPT_ONCE_VALUE, APPROVAL_CANCEL_VALUE, APPROVAL_DECLINE_VALUE,
         APPROVAL_FIELD_ID, APPROVAL_META_KIND_KEY, APPROVAL_META_KIND_MCP_TOOL_CALL,
@@ -35,10 +29,15 @@ mod tests {
         McpServerElicitationResponseMode, McpToolApprovalDisplayParam, ToolSuggestionRequest,
         ToolSuggestionToolType,
     };
+    use pretty_assertions::assert_eq;
+    use ratatui::layout::Rect;
+    use serde_json::Value;
 
-    fn test_sender() -> (AppEventSender, UnboundedReceiver<AppEvent>) {
-        let (tx_raw, rx) = unbounded_channel::<AppEvent>();
-        (AppEventSender::new(tx_raw), rx)
+    fn test_sender() -> (
+        crate::app_event_sender::AppEventSender,
+        tokio::sync::mpsc::UnboundedReceiver<crate::app_event::AppEvent>,
+    ) {
+        make_app_event_sender_with_rx()
     }
 
     fn form_request(

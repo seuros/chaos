@@ -10,9 +10,9 @@ pub use state::ApprovalOverlay;
 mod tests {
     use super::*;
     use crate::app_event::AppEvent;
-    use crate::app_event_sender::AppEventSender;
     use crate::bottom_pane::BottomPaneView;
     use crate::render::renderable::Renderable;
+    use crate::test_support::make_app_event_sender_with_rx;
     use chaos_ipc::ProcessId;
     use chaos_ipc::mcp::RequestId;
     use chaos_ipc::models::FileSystemPermissions;
@@ -40,7 +40,6 @@ mod tests {
     use pretty_assertions::assert_eq;
     use ratatui::buffer::Buffer;
     use ratatui::layout::Rect;
-    use tokio::sync::mpsc::unbounded_channel;
 
     use super::super::CancellationEvent;
     use request::exec_options;
@@ -121,8 +120,7 @@ mod tests {
 
     #[test]
     fn ctrl_c_aborts_and_clears_queue() {
-        let (tx, _rx) = unbounded_channel::<AppEvent>();
-        let tx = AppEventSender::new(tx);
+        let tx = crate::test_support::make_app_event_sender();
         let mut view = ApprovalOverlay::new(make_exec_request(), tx, Features::with_defaults());
         view.enqueue_request(make_exec_request());
         assert_eq!(CancellationEvent::Handled, view.on_ctrl_c());
@@ -132,8 +130,7 @@ mod tests {
 
     #[test]
     fn shortcut_triggers_selection() {
-        let (tx, mut rx) = unbounded_channel::<AppEvent>();
-        let tx = AppEventSender::new(tx);
+        let (tx, mut rx) = make_app_event_sender_with_rx();
         let mut view = ApprovalOverlay::new(make_exec_request(), tx, Features::with_defaults());
         assert!(!view.is_complete());
         view.handle_key_event(KeyEvent::new(KeyCode::Char('y'), KeyModifiers::NONE));
@@ -150,8 +147,7 @@ mod tests {
 
     #[test]
     fn o_opens_source_process_for_cross_process_approval() {
-        let (tx, mut rx) = unbounded_channel::<AppEvent>();
-        let tx = AppEventSender::new(tx);
+        let (tx, mut rx) = make_app_event_sender_with_rx();
         let process_id = ProcessId::new();
         let mut view = ApprovalOverlay::new(
             ApprovalRequest::Exec {
@@ -179,8 +175,7 @@ mod tests {
 
     #[test]
     fn cross_process_footer_hint_mentions_o_shortcut() {
-        let (tx, _rx) = unbounded_channel::<AppEvent>();
-        let tx = AppEventSender::new(tx);
+        let tx = crate::test_support::make_app_event_sender();
         let view = ApprovalOverlay::new(
             ApprovalRequest::Exec {
                 process_id: ProcessId::new(),
@@ -204,8 +199,7 @@ mod tests {
 
     #[test]
     fn mcp_url_elicitation_snapshot() {
-        let (tx, _rx) = unbounded_channel::<AppEvent>();
-        let tx = AppEventSender::new(tx);
+        let tx = crate::test_support::make_app_event_sender();
         let view = ApprovalOverlay::new(
             make_url_elicitation_request(),
             tx,
@@ -220,8 +214,7 @@ mod tests {
 
     #[test]
     fn accepting_url_elicitation_opens_browser_and_resolves_on_success() {
-        let (tx, mut rx) = unbounded_channel::<AppEvent>();
-        let tx = AppEventSender::new(tx);
+        let (tx, mut rx) = make_app_event_sender_with_rx();
         let request = make_url_elicitation_request();
         let process_id = request.process_id();
         let mut view = ApprovalOverlay::new(request, tx, Features::with_defaults());
@@ -253,8 +246,7 @@ mod tests {
 
     #[test]
     fn exec_prefix_option_emits_execpolicy_amendment() {
-        let (tx, mut rx) = unbounded_channel::<AppEvent>();
-        let tx = AppEventSender::new(tx);
+        let (tx, mut rx) = make_app_event_sender_with_rx();
         let mut view = ApprovalOverlay::new(
             ApprovalRequest::Exec {
                 process_id: ProcessId::new(),
@@ -305,8 +297,7 @@ mod tests {
 
     #[test]
     fn network_deny_forever_shortcut_is_not_bound() {
-        let (tx, mut rx) = unbounded_channel::<AppEvent>();
-        let tx = AppEventSender::new(tx);
+        let (tx, mut rx) = make_app_event_sender_with_rx();
         let mut view = ApprovalOverlay::new(
             ApprovalRequest::Exec {
                 process_id: ProcessId::new(),
@@ -344,8 +335,7 @@ mod tests {
 
     #[test]
     fn header_includes_command_snippet() {
-        let (tx, _rx) = unbounded_channel::<AppEvent>();
-        let tx = AppEventSender::new(tx);
+        let tx = crate::test_support::make_app_event_sender();
         let command = vec!["echo".into(), "hello".into(), "world".into()];
         let exec_request = ApprovalRequest::Exec {
             process_id: ProcessId::new(),
@@ -477,8 +467,7 @@ mod tests {
 
     #[test]
     fn permissions_session_shortcut_submits_session_scope() {
-        let (tx, mut rx) = unbounded_channel::<AppEvent>();
-        let tx = AppEventSender::new(tx);
+        let (tx, mut rx) = make_app_event_sender_with_rx();
         let mut view =
             ApprovalOverlay::new(make_permissions_request(), tx, Features::with_defaults());
 
@@ -504,8 +493,7 @@ mod tests {
 
     #[test]
     fn additional_permissions_prompt_shows_permission_rule_line() {
-        let (tx, _rx) = unbounded_channel::<AppEvent>();
-        let tx = AppEventSender::new(tx);
+        let tx = crate::test_support::make_app_event_sender();
         let exec_request = ApprovalRequest::Exec {
             process_id: ProcessId::new(),
             process_label: None,
@@ -552,8 +540,7 @@ mod tests {
 
     #[test]
     fn additional_permissions_prompt_snapshot() {
-        let (tx, _rx) = unbounded_channel::<AppEvent>();
-        let tx = AppEventSender::new(tx);
+        let tx = crate::test_support::make_app_event_sender();
         let exec_request = ApprovalRequest::Exec {
             process_id: ProcessId::new(),
             process_label: None,
@@ -583,8 +570,7 @@ mod tests {
 
     #[test]
     fn permissions_prompt_snapshot() {
-        let (tx, _rx) = unbounded_channel::<AppEvent>();
-        let tx = AppEventSender::new(tx);
+        let tx = crate::test_support::make_app_event_sender();
         let view = ApprovalOverlay::new(make_permissions_request(), tx, Features::with_defaults());
         assert_snapshot!(
             "approval_overlay_permissions_prompt",
@@ -594,8 +580,7 @@ mod tests {
 
     #[test]
     fn additional_permissions_macos_prompt_snapshot() {
-        let (tx, _rx) = unbounded_channel::<AppEvent>();
-        let tx = AppEventSender::new(tx);
+        let tx = crate::test_support::make_app_event_sender();
         let exec_request = ApprovalRequest::Exec {
             process_id: ProcessId::new(),
             process_label: None,
@@ -630,8 +615,7 @@ mod tests {
 
     #[test]
     fn network_exec_prompt_title_includes_host() {
-        let (tx, _rx) = unbounded_channel::<AppEvent>();
-        let tx = AppEventSender::new(tx);
+        let tx = crate::test_support::make_app_event_sender();
         let exec_request = ApprovalRequest::Exec {
             process_id: ProcessId::new(),
             process_label: None,
@@ -719,8 +703,7 @@ mod tests {
 
     #[test]
     fn enter_sets_last_selected_index_without_dismissing() {
-        let (tx_raw, mut rx) = unbounded_channel::<AppEvent>();
-        let tx = AppEventSender::new(tx_raw);
+        let (tx, mut rx) = make_app_event_sender_with_rx();
         let mut view = ApprovalOverlay::new(make_exec_request(), tx, Features::with_defaults());
         view.handle_key_event(KeyEvent::new(KeyCode::Enter, KeyModifiers::NONE));
 

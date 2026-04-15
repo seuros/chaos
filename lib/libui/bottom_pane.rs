@@ -197,6 +197,8 @@ mod tests {
     use crate::status_indicator_widget::StatusDetailsCapitalization;
     use crate::test_render::buffer_to_first_char_string;
     use crate::test_render::render_to_first_char_string;
+    use crate::test_support::make_app_event_sender;
+    use crate::test_support::make_app_event_sender_with_rx;
     use chaos_ipc::protocol::Op;
     use crossterm::event::KeyEventKind;
     use crossterm::event::KeyModifiers;
@@ -205,7 +207,6 @@ mod tests {
     use ratatui::layout::Rect;
     use std::cell::Cell;
     use std::rc::Rc;
-    use tokio::sync::mpsc::unbounded_channel;
 
     fn exec_request() -> ApprovalRequest {
         ApprovalRequest::Exec {
@@ -225,8 +226,7 @@ mod tests {
 
     #[test]
     fn ctrl_c_on_modal_consumes_without_showing_quit_hint() {
-        let (tx_raw, _rx) = unbounded_channel::<AppEvent>();
-        let tx = AppEventSender::new(tx_raw);
+        let tx = make_app_event_sender();
         let features = Features::with_defaults();
         let mut pane = BottomPane::new(BottomPaneParams {
             app_event_tx: tx,
@@ -247,8 +247,7 @@ mod tests {
 
     #[test]
     fn overlay_not_shown_above_approval_modal() {
-        let (tx_raw, _rx) = unbounded_channel::<AppEvent>();
-        let tx = AppEventSender::new(tx_raw);
+        let tx = make_app_event_sender();
         let features = Features::with_defaults();
         let mut pane = BottomPane::new(BottomPaneParams {
             app_event_tx: tx,
@@ -280,8 +279,7 @@ mod tests {
 
     #[test]
     fn composer_shown_after_denied_while_task_running() {
-        let (tx_raw, _rx) = unbounded_channel::<AppEvent>();
-        let tx = AppEventSender::new(tx_raw);
+        let tx = make_app_event_sender();
         let features = Features::with_defaults();
         let mut pane = BottomPane::new(BottomPaneParams {
             app_event_tx: tx,
@@ -347,8 +345,7 @@ mod tests {
 
     #[test]
     fn status_indicator_visible_during_command_execution() {
-        let (tx_raw, _rx) = unbounded_channel::<AppEvent>();
-        let tx = AppEventSender::new(tx_raw);
+        let tx = make_app_event_sender();
         let mut pane = BottomPane::new(BottomPaneParams {
             app_event_tx: tx,
             frame_requester: FrameRequester::test_dummy(),
@@ -373,8 +370,7 @@ mod tests {
 
     #[test]
     fn status_and_composer_fill_height_without_bottom_padding() {
-        let (tx_raw, _rx) = unbounded_channel::<AppEvent>();
-        let tx = AppEventSender::new(tx_raw);
+        let tx = make_app_event_sender();
         let mut pane = BottomPane::new(BottomPaneParams {
             app_event_tx: tx,
             frame_requester: FrameRequester::test_dummy(),
@@ -403,8 +399,7 @@ mod tests {
 
     #[test]
     fn status_only_snapshot() {
-        let (tx_raw, _rx) = unbounded_channel::<AppEvent>();
-        let tx = AppEventSender::new(tx_raw);
+        let tx = make_app_event_sender();
         let mut pane = BottomPane::new(BottomPaneParams {
             app_event_tx: tx,
             frame_requester: FrameRequester::test_dummy(),
@@ -428,8 +423,7 @@ mod tests {
 
     #[test]
     fn unified_exec_summary_does_not_increase_height_when_status_visible() {
-        let (tx_raw, _rx) = unbounded_channel::<AppEvent>();
-        let tx = AppEventSender::new(tx_raw);
+        let tx = make_app_event_sender();
         let mut pane = BottomPane::new(BottomPaneParams {
             app_event_tx: tx,
             frame_requester: FrameRequester::test_dummy(),
@@ -456,8 +450,7 @@ mod tests {
 
     #[test]
     fn status_with_details_and_queued_messages_snapshot() {
-        let (tx_raw, _rx) = unbounded_channel::<AppEvent>();
-        let tx = AppEventSender::new(tx_raw);
+        let tx = make_app_event_sender();
         let mut pane = BottomPane::new(BottomPaneParams {
             app_event_tx: tx,
             frame_requester: FrameRequester::test_dummy(),
@@ -488,8 +481,7 @@ mod tests {
 
     #[test]
     fn queued_messages_visible_when_status_hidden_snapshot() {
-        let (tx_raw, _rx) = unbounded_channel::<AppEvent>();
-        let tx = AppEventSender::new(tx_raw);
+        let tx = make_app_event_sender();
         let mut pane = BottomPane::new(BottomPaneParams {
             app_event_tx: tx,
             frame_requester: FrameRequester::test_dummy(),
@@ -515,8 +507,7 @@ mod tests {
 
     #[test]
     fn status_and_queued_messages_snapshot() {
-        let (tx_raw, _rx) = unbounded_channel::<AppEvent>();
-        let tx = AppEventSender::new(tx_raw);
+        let tx = make_app_event_sender();
         let mut pane = BottomPane::new(BottomPaneParams {
             app_event_tx: tx,
             frame_requester: FrameRequester::test_dummy(),
@@ -541,8 +532,7 @@ mod tests {
 
     #[test]
     fn remote_images_render_above_composer_text() {
-        let (tx_raw, _rx) = unbounded_channel::<AppEvent>();
-        let tx = AppEventSender::new(tx_raw);
+        let tx = make_app_event_sender();
         let mut pane = BottomPane::new(BottomPaneParams {
             app_event_tx: tx,
             frame_requester: FrameRequester::test_dummy(),
@@ -569,8 +559,7 @@ mod tests {
 
     #[test]
     fn drain_pending_submission_state_clears_remote_image_urls() {
-        let (tx_raw, _rx) = unbounded_channel::<AppEvent>();
-        let tx = AppEventSender::new(tx_raw);
+        let tx = make_app_event_sender();
         let mut pane = BottomPane::new(BottomPaneParams {
             app_event_tx: tx,
             frame_requester: FrameRequester::test_dummy(),
@@ -591,8 +580,7 @@ mod tests {
 
     #[test]
     fn esc_with_slash_command_popup_does_not_interrupt_task() {
-        let (tx_raw, mut rx) = unbounded_channel::<AppEvent>();
-        let tx = AppEventSender::new(tx_raw);
+        let (tx, mut rx) = make_app_event_sender_with_rx();
         let mut pane = BottomPane::new(BottomPaneParams {
             app_event_tx: tx,
             frame_requester: FrameRequester::test_dummy(),
@@ -625,8 +613,7 @@ mod tests {
 
     #[test]
     fn esc_with_agent_command_without_popup_does_not_interrupt_task() {
-        let (tx_raw, mut rx) = unbounded_channel::<AppEvent>();
-        let tx = AppEventSender::new(tx_raw);
+        let (tx, mut rx) = make_app_event_sender_with_rx();
         let mut pane = BottomPane::new(BottomPaneParams {
             app_event_tx: tx,
             frame_requester: FrameRequester::test_dummy(),
@@ -660,8 +647,7 @@ mod tests {
 
     #[test]
     fn esc_release_after_dismissing_agent_picker_does_not_interrupt_task() {
-        let (tx_raw, mut rx) = unbounded_channel::<AppEvent>();
-        let tx = AppEventSender::new(tx_raw);
+        let (tx, mut rx) = make_app_event_sender_with_rx();
         let mut pane = BottomPane::new(BottomPaneParams {
             app_event_tx: tx,
             frame_requester: FrameRequester::test_dummy(),
@@ -707,8 +693,7 @@ mod tests {
 
     #[test]
     fn esc_interrupts_running_task_when_no_popup() {
-        let (tx_raw, mut rx) = unbounded_channel::<AppEvent>();
-        let tx = AppEventSender::new(tx_raw);
+        let (tx, mut rx) = make_app_event_sender_with_rx();
         let mut pane = BottomPane::new(BottomPaneParams {
             app_event_tx: tx,
             frame_requester: FrameRequester::test_dummy(),
@@ -762,8 +747,7 @@ mod tests {
             }
         }
 
-        let (tx_raw, _rx) = unbounded_channel::<AppEvent>();
-        let tx = AppEventSender::new(tx_raw);
+        let tx = make_app_event_sender();
         let mut pane = BottomPane::new(BottomPaneParams {
             app_event_tx: tx,
             frame_requester: FrameRequester::test_dummy(),
@@ -809,8 +793,7 @@ mod tests {
             }
         }
 
-        let (tx_raw, _rx) = unbounded_channel::<AppEvent>();
-        let tx = AppEventSender::new(tx_raw);
+        let tx = make_app_event_sender();
         let mut pane = BottomPane::new(BottomPaneParams {
             app_event_tx: tx,
             frame_requester: FrameRequester::test_dummy(),

@@ -10,6 +10,3 @@ workspace = true
 
 [dependencies]
 regex-lite = { workspace = true }
-
-[dev-dependencies]
-pretty_assertions = { workspace = true }

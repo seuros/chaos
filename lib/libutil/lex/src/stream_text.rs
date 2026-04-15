@@ -24,8 +24,11 @@ impl<T> StreamTextChunk<T> {
 }
 
 /// Feed all `chunks` through `parser`, call `finish`, and return the accumulated result.
-#[cfg(test)]
-pub(crate) fn collect_chunks<P: StreamTextParser>(
+///
+/// Useful for asserting parser behavior across arbitrary chunk boundaries —
+/// the same input split a hundred different ways must produce the same
+/// extracted output.
+pub fn collect_chunks<P: StreamTextParser>(
     parser: &mut P,
     chunks: &[&str],
 ) -> StreamTextChunk<P::Extracted> {

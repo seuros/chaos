@@ -102,6 +102,7 @@ members = [
 
     # tests/
     "tests/check",
+    "tests/regress",
 ]
 exclude = [
     "drivers/dictator",
@@ -213,6 +214,7 @@ chaos-jail-report = { path = "lib/libutil/jail-report" }
 chaos-amphetamine = { path = "lib/libutil/amphetamine" }
 chaos-lex = { path = "lib/libutil/lex" }
 chaos-wchar = { path = "lib/libutil/wchar" }
+chaos-apropos = { path = "lib/libutil/apropos" }
 
 # Internal — tests/
 chaos-check = { path = "tests/check" }

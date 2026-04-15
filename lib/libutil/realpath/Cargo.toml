@@ -18,8 +18,3 @@ ts-rs = { workspace = true, features = [
     "serde-json-impl",
     "no-serde-warnings",
 ] }
-
-[dev-dependencies]
-pretty_assertions = { workspace = true }
-serde_json = { workspace = true }
-tempfile = { workspace = true }

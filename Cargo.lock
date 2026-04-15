@@ -1707,7 +1707,6 @@ dependencies = [
  "chaos-ration",
  "chaos-storage",
  "jiff",
- "rama-core",
  "rama-http-types",
  "sqlx",
  "tempfile",

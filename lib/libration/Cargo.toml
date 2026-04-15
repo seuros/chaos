@@ -16,7 +16,6 @@ anyhow = { workspace = true }
 chaos-ration = { workspace = true }
 chaos-storage = { workspace = true }
 jiff = { workspace = true }
-rama-core = { workspace = true }
 rama-http-types = { workspace = true }
 sqlx = { workspace = true }
 tokio = { workspace = true, features = ["rt"] }

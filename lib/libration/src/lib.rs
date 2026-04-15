@@ -19,8 +19,6 @@ pub mod store;
 
 pub use extractors::AnthropicHeaders;
 pub use extractors::OpenAICompatibleHeaders;
-pub use middleware::RationLayer;
-pub use middleware::RationService;
 pub use middleware::UsageSniffer;
 pub use middleware::sniff_and_record;
 pub use store::LatestWindow;
@@ -29,11 +27,7 @@ pub use store::UsageStore;
 pub use chaos_ration::Freshness;
 pub use chaos_ration::UsageWindow;
 
-// Re-export the rama traits/types that appear in this crate's public API so
-// downstream consumers don't need to pull `rama` into their own Cargo.toml
-// just to name `Layer` / `Service` / `HeaderMap` when wiring `RationLayer`.
-pub use rama_core::Layer;
-pub use rama_core::Service;
+// Re-export the rama header type used in the sniffer's public API so
+// downstream consumers don't need to pull `rama` into their own
+// Cargo.toml just to name `HeaderMap` when calling `UsageSniffer::sniff`.
 pub use rama_http_types::HeaderMap;
-pub use rama_http_types::Request;
-pub use rama_http_types::Response;

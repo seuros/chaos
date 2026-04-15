@@ -298,7 +298,6 @@ predicates = "3"
 pretty_assertions = "1.4.1"
 pulldown-cmark = "0.13"
 rama = { git = "https://github.com/plabayo/rama.git", features = ["http-full", "rustls", "ring", "compression", "socks5", "opentelemetry"] }
-rama-core = { git = "https://github.com/plabayo/rama.git" }
 rama-http-types = { git = "https://github.com/plabayo/rama.git" }
 rand = "0.10"
 ratatui = "0.30.0"

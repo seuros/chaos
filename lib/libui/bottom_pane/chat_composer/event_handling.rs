@@ -8,6 +8,31 @@ use crossterm::event::{KeyCode, KeyEvent, KeyEventKind, KeyModifiers};
 use std::path::PathBuf;
 use std::time::Instant;
 
+/// Check if a key matches popup navigation (Up/Ctrl-P for up, Down/Ctrl-N for down).
+/// Returns `Some(true)` for up, `Some(false)` for down, `None` otherwise.
+fn popup_nav_key(key_event: &KeyEvent) -> Option<bool> {
+    match key_event {
+        KeyEvent {
+            code: KeyCode::Up, ..
+        }
+        | KeyEvent {
+            code: KeyCode::Char('p'),
+            modifiers: KeyModifiers::CONTROL,
+            ..
+        } => Some(true),
+        KeyEvent {
+            code: KeyCode::Down,
+            ..
+        }
+        | KeyEvent {
+            code: KeyCode::Char('n'),
+            modifiers: KeyModifiers::CONTROL,
+            ..
+        } => Some(false),
+        _ => None,
+    }
+}
+
 impl ChatComposer {
     /// Handle a key event coming from the main UI.
     pub fn handle_key_event(&mut self, key_event: KeyEvent) -> (InputResult, bool) {
@@ -51,27 +76,14 @@ impl ChatComposer {
         };
 
         match key_event {
-            KeyEvent {
-                code: KeyCode::Up, ..
-            }
-            | KeyEvent {
-                code: KeyCode::Char('p'),
-                modifiers: KeyModifiers::CONTROL,
-                ..
-            } => {
-                popup.move_up();
-                (InputResult::None, true)
-            }
-            KeyEvent {
-                code: KeyCode::Down,
-                ..
-            }
-            | KeyEvent {
-                code: KeyCode::Char('n'),
-                modifiers: KeyModifiers::CONTROL,
-                ..
-            } => {
-                popup.move_down();
+            key_event if popup_nav_key(&key_event).is_some() => {
+                if let Some(is_up) = popup_nav_key(&key_event) {
+                    if is_up {
+                        popup.move_up();
+                    } else {
+                        popup.move_down();
+                    }
+                }
                 (InputResult::None, true)
             }
             KeyEvent {
@@ -239,27 +251,14 @@ impl ChatComposer {
         };
 
         match key_event {
-            KeyEvent {
-                code: KeyCode::Up, ..
-            }
-            | KeyEvent {
-                code: KeyCode::Char('p'),
-                modifiers: KeyModifiers::CONTROL,
-                ..
-            } => {
-                popup.move_up();
-                (InputResult::None, true)
-            }
-            KeyEvent {
-                code: KeyCode::Down,
-                ..
-            }
-            | KeyEvent {
-                code: KeyCode::Char('n'),
-                modifiers: KeyModifiers::CONTROL,
-                ..
-            } => {
-                popup.move_down();
+            key_event if popup_nav_key(&key_event).is_some() => {
+                if let Some(is_up) = popup_nav_key(&key_event) {
+                    if is_up {
+                        popup.move_up();
+                    } else {
+                        popup.move_down();
+                    }
+                }
                 (InputResult::None, true)
             }
             KeyEvent {

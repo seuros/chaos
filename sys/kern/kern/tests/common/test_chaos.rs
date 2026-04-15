@@ -97,11 +97,15 @@ impl TestChaosBuilder {
         self
     }
 
-    pub async fn build(&mut self, server: &wiremock::MockServer) -> anyhow::Result<TestChaos> {
-        let home = match self.home.clone() {
+    fn get_or_create_home(&self) -> anyhow::Result<Arc<TempDir>> {
+        Ok(match self.home.clone() {
             Some(home) => home,
             None => Arc::new(TempDir::new()?),
-        };
+        })
+    }
+
+    pub async fn build(&mut self, server: &wiremock::MockServer) -> anyhow::Result<TestChaos> {
+        let home = self.get_or_create_home()?;
         Box::pin(self.build_with_home(server, home, /*resume_from*/ None)).await
     }
 
@@ -110,10 +114,7 @@ impl TestChaosBuilder {
         server: &StreamingSseServer,
     ) -> anyhow::Result<TestChaos> {
         let base_url = server.uri();
-        let home = match self.home.clone() {
-            Some(home) => home,
-            None => Arc::new(TempDir::new()?),
-        };
+        let home = self.get_or_create_home()?;
         Box::pin(self.build_with_home_and_base_url(
             format!("{base_url}/v1"),
             home,

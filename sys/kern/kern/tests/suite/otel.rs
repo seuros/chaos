@@ -1,9 +1,11 @@
+#![allow(clippy::unwrap_used, clippy::expect_used)]
 use chaos_ipc::protocol::ApprovalPolicy;
 use chaos_ipc::protocol::EventMsg;
 use chaos_ipc::protocol::Op;
 use chaos_ipc::protocol::ReviewDecision;
 use chaos_ipc::protocol::SandboxPolicy;
 use chaos_ipc::user_input::UserInput;
+use chaos_kern::Process;
 use chaos_kern::config::Constrained;
 use core_test_support::responses::ev_assistant_message;
 use core_test_support::responses::ev_completed;
@@ -25,9 +27,11 @@ use core_test_support::responses::start_mock_server;
 use core_test_support::test_chaos::TestChaos;
 use core_test_support::test_chaos::test_chaos;
 use core_test_support::wait_for_event;
+use std::sync::Arc;
 use std::sync::Mutex;
 use tracing::Level;
 use tracing_test::traced_test;
+use wiremock::MockServer;
 
 use tracing_subscriber::fmt::format::FmtSpan;
 use tracing_test::internal::MockWriter;
@@ -70,6 +74,18 @@ fn assert_empty_mcp_tool_fields(line: &str) -> Result<(), String> {
     Ok(())
 }
 
+async fn setup_test_chaos_with_server() -> (MockServer, Arc<Process>) {
+    let server = start_mock_server().await;
+    let TestChaos { process: chaos, .. } =
+        test_chaos().build(&server).await.expect("test_chaos build");
+    (server, chaos)
+}
+
+fn get_buffer_logs(buffer: &Mutex<Vec<u8>>) -> String {
+    let bytes = buffer.lock().expect("log buffer poisoned").clone();
+    String::from_utf8(bytes).expect("log buffer not utf-8")
+}
+
 #[test]
 fn extract_log_field_handles_empty_bare_values() {
     let line = "event.name=\"chaos.tool_result\" mcp_server= mcp_server_origin=";
@@ -93,11 +109,9 @@ fn extract_log_field_does_not_confuse_similar_keys() {
 #[tokio::test]
 #[traced_test]
 async fn responses_api_emits_api_request_event() {
-    let server = start_mock_server().await;
+    let (server, chaos) = setup_test_chaos_with_server().await;
 
     mount_sse_once(&server, sse(vec![ev_completed("done")])).await;
-
-    let TestChaos { process: chaos, .. } = test_chaos().build(&server).await.unwrap();
 
     chaos
         .submit(Op::UserInput {
@@ -132,15 +146,13 @@ async fn responses_api_emits_api_request_event() {
 #[tokio::test]
 #[traced_test]
 async fn process_sse_emits_tracing_for_output_item() {
-    let server = start_mock_server().await;
+    let (server, chaos) = setup_test_chaos_with_server().await;
 
     mount_sse_once(
         &server,
         sse(vec![ev_assistant_message("id1", "hi"), ev_completed("id2")]),
     )
     .await;
-
-    let TestChaos { process: chaos, .. } = test_chaos().build(&server).await.unwrap();
 
     chaos
         .submit(Op::UserInput {
@@ -170,11 +182,9 @@ async fn process_sse_emits_tracing_for_output_item() {
 #[tokio::test]
 #[traced_test]
 async fn process_sse_emits_failed_event_on_parse_error() {
-    let server = start_mock_server().await;
+    let (server, chaos) = setup_test_chaos_with_server().await;
 
     mount_sse_once(&server, "data: not-json\n\n".to_string()).await;
-
-    let TestChaos { process: chaos, .. } = test_chaos().build(&server).await.unwrap();
 
     chaos
         .submit(Op::UserInput {
@@ -205,11 +215,9 @@ async fn process_sse_emits_failed_event_on_parse_error() {
 #[tokio::test]
 #[traced_test]
 async fn process_sse_records_failed_event_when_stream_closes_without_completed() {
-    let server = start_mock_server().await;
+    let (server, chaos) = setup_test_chaos_with_server().await;
 
     mount_sse_once(&server, sse(vec![ev_assistant_message("id", "hi")])).await;
-
-    let TestChaos { process: chaos, .. } = test_chaos().build(&server).await.unwrap();
 
     chaos
         .submit(Op::UserInput {
@@ -240,7 +248,7 @@ async fn process_sse_records_failed_event_when_stream_closes_without_completed()
 #[tokio::test]
 #[traced_test]
 async fn process_sse_failed_event_records_response_error_message() {
-    let server = start_mock_server().await;
+    let (server, chaos) = setup_test_chaos_with_server().await;
 
     mount_sse_once(
         &server,
@@ -263,8 +271,6 @@ async fn process_sse_failed_event_records_response_error_message() {
         ]),
     )
     .await;
-
-    let TestChaos { process: chaos, .. } = test_chaos().build(&server).await.unwrap();
 
     chaos
         .submit(Op::UserInput {
@@ -296,7 +302,7 @@ async fn process_sse_failed_event_records_response_error_message() {
 #[tokio::test]
 #[traced_test]
 async fn process_sse_failed_event_logs_parse_error() {
-    let server = start_mock_server().await;
+    let (server, chaos) = setup_test_chaos_with_server().await;
 
     mount_sse_once(
         &server,
@@ -316,8 +322,6 @@ async fn process_sse_failed_event_logs_parse_error() {
         ]),
     )
     .await;
-
-    let TestChaos { process: chaos, .. } = test_chaos().build(&server).await.unwrap();
 
     chaos
         .submit(Op::UserInput {
@@ -346,7 +350,7 @@ async fn process_sse_failed_event_logs_parse_error() {
 #[tokio::test]
 #[traced_test]
 async fn process_sse_failed_event_logs_missing_error() {
-    let server = start_mock_server().await;
+    let (server, chaos) = setup_test_chaos_with_server().await;
 
     mount_sse_once(
         &server,
@@ -356,8 +360,6 @@ async fn process_sse_failed_event_logs_missing_error() {
         })]),
     )
     .await;
-
-    let TestChaos { process: chaos, .. } = test_chaos().build(&server).await.unwrap();
 
     chaos
         .submit(Op::UserInput {
@@ -386,7 +388,7 @@ async fn process_sse_failed_event_logs_missing_error() {
 #[tokio::test]
 #[traced_test]
 async fn process_sse_failed_event_logs_response_completed_parse_error() {
-    let server = start_mock_server().await;
+    let (server, chaos) = setup_test_chaos_with_server().await;
 
     mount_sse_once(
         &server,
@@ -405,8 +407,6 @@ async fn process_sse_failed_event_logs_response_completed_parse_error() {
         ]),
     )
     .await;
-
-    let TestChaos { process: chaos, .. } = test_chaos().build(&server).await.unwrap();
 
     chaos
         .submit(Op::UserInput {
@@ -438,7 +438,7 @@ async fn process_sse_failed_event_logs_response_completed_parse_error() {
 #[tokio::test]
 #[traced_test]
 async fn process_sse_emits_completed_telemetry() {
-    let server = start_mock_server().await;
+    let (server, chaos) = setup_test_chaos_with_server().await;
 
     mount_sse_once(
         &server,
@@ -457,8 +457,6 @@ async fn process_sse_emits_completed_telemetry() {
         })]),
     )
     .await;
-
-    let TestChaos { process: chaos, .. } = test_chaos().build(&server).await.unwrap();
 
     chaos
         .submit(Op::UserInput {
@@ -502,7 +500,7 @@ async fn handle_responses_span_records_response_kind_and_tool_name() {
         .finish();
     let _guard = tracing::subscriber::set_default(subscriber);
 
-    let server = start_mock_server().await;
+    let (server, chaos) = setup_test_chaos_with_server().await;
 
     mount_sse_once(
         &server,
@@ -521,8 +519,6 @@ async fn handle_responses_span_records_response_kind_and_tool_name() {
     )
     .await;
 
-    let TestChaos { process: chaos, .. } = test_chaos().build(&server).await.unwrap();
-
     chaos
         .submit(Op::UserInput {
             items: vec![UserInput::Text {
@@ -536,7 +532,7 @@ async fn handle_responses_span_records_response_kind_and_tool_name() {
 
     wait_for_event(&chaos, |ev| matches!(ev, EventMsg::TurnComplete(_))).await;
 
-    let logs = String::from_utf8(buffer.lock().unwrap().clone()).unwrap();
+    let logs = get_buffer_logs(buffer);
 
     assert!(
         logs.contains("handle_responses{otel.name=\"function_call\"")
@@ -562,7 +558,7 @@ async fn record_responses_sets_span_fields_for_response_events() {
         .finish();
     let _guard = tracing::subscriber::set_default(subscriber);
 
-    let server = start_mock_server().await;
+    let (server, chaos) = setup_test_chaos_with_server().await;
 
     let sse_body = sse(vec![
         ev_response_created("resp-1"),
@@ -596,8 +592,6 @@ async fn record_responses_sets_span_fields_for_response_events() {
     )
     .await;
 
-    let TestChaos { process: chaos, .. } = test_chaos().build(&server).await.unwrap();
-
     chaos
         .submit(Op::UserInput {
             items: vec![UserInput::Text {
@@ -611,7 +605,7 @@ async fn record_responses_sets_span_fields_for_response_events() {
 
     wait_for_event(&chaos, |ev| matches!(ev, EventMsg::TurnComplete(_))).await;
 
-    let logs = String::from_utf8(buffer.lock().unwrap().clone()).unwrap();
+    let logs = get_buffer_logs(buffer);
 
     let expected = [
         ("created", None::<&str>, None::<&str>),
@@ -648,7 +642,7 @@ async fn record_responses_sets_span_fields_for_response_events() {
 #[tokio::test]
 #[traced_test]
 async fn handle_response_item_records_tool_result_for_custom_tool_call() {
-    let server = start_mock_server().await;
+    let (server, chaos) = setup_test_chaos_with_server().await;
 
     mount_sse_once(
         &server,
@@ -670,8 +664,6 @@ async fn handle_response_item_records_tool_result_for_custom_tool_call() {
         ]),
     )
     .await;
-
-    let TestChaos { process: chaos, .. } = test_chaos().build(&server).await.unwrap();
 
     chaos
         .submit(Op::UserInput {
@@ -715,7 +707,7 @@ async fn handle_response_item_records_tool_result_for_custom_tool_call() {
 #[tokio::test]
 #[traced_test]
 async fn handle_response_item_records_tool_result_for_function_call() {
-    let server = start_mock_server().await;
+    let (server, chaos) = setup_test_chaos_with_server().await;
 
     mount_sse_once(
         &server,
@@ -734,8 +726,6 @@ async fn handle_response_item_records_tool_result_for_function_call() {
         ]),
     )
     .await;
-
-    let TestChaos { process: chaos, .. } = test_chaos().build(&server).await.unwrap();
 
     chaos
         .submit(Op::UserInput {
@@ -779,7 +769,7 @@ async fn handle_response_item_records_tool_result_for_function_call() {
 #[tokio::test]
 #[traced_test]
 async fn handle_response_item_records_tool_result_for_local_shell_missing_ids() {
-    let server = start_mock_server().await;
+    let (server, chaos) = setup_test_chaos_with_server().await;
 
     mount_sse_once(
         &server,
@@ -808,8 +798,6 @@ async fn handle_response_item_records_tool_result_for_local_shell_missing_ids() 
         ]),
     )
     .await;
-
-    let TestChaos { process: chaos, .. } = test_chaos().build(&server).await.unwrap();
 
     chaos
         .submit(Op::UserInput {
@@ -847,7 +835,7 @@ async fn handle_response_item_records_tool_result_for_local_shell_missing_ids() 
 #[tokio::test]
 #[traced_test]
 async fn handle_response_item_records_tool_result_for_local_shell_call() {
-    let server = start_mock_server().await;
+    let (server, chaos) = setup_test_chaos_with_server().await;
 
     mount_sse_once(
         &server,
@@ -866,8 +854,6 @@ async fn handle_response_item_records_tool_result_for_local_shell_call() {
         ]),
     )
     .await;
-
-    let TestChaos { process: chaos, .. } = test_chaos().build(&server).await.unwrap();
 
     chaos
         .submit(Op::UserInput {

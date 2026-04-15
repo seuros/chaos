@@ -19,6 +19,24 @@ pub type ClientHandlerFuture<'a> = Pin<Box<dyn Future<Output = ()> + Send + 'a>>
 pub type ClientHandlerResultFuture<'a, T> =
     Pin<Box<dyn Future<Output = Result<T, GuestError>> + Send + 'a>>;
 
+macro_rules! noop_notification {
+    ($name:ident) => {
+        fn $name(&self) -> ClientHandlerFuture<'_> {
+            Box::pin(async {})
+        }
+    };
+    ($name:ident, $param_ty:ty) => {
+        fn $name(&self, _: $param_ty) -> ClientHandlerFuture<'_> {
+            Box::pin(async {})
+        }
+    };
+    ($name:ident, $param1_ty:ty, $param2_ty:ty) => {
+        fn $name(&self, _: $param1_ty, _: $param2_ty) -> ClientHandlerFuture<'_> {
+            Box::pin(async {})
+        }
+    };
+}
+
 pub trait ClientHandler: Send + Sync + 'static {
     fn handle_ping(&self) -> ClientHandlerResultFuture<'_, Value> {
         Box::pin(async { Ok(serde_json::json!({})) })
@@ -50,55 +68,19 @@ pub trait ClientHandler: Send + Sync + 'static {
         })
     }
 
-    fn on_log_message(&self, _params: LogMessageNotificationParams) -> ClientHandlerFuture<'_> {
-        Box::pin(async {})
-    }
-
-    fn on_progress(&self, _params: ProgressNotificationParams) -> ClientHandlerFuture<'_> {
-        Box::pin(async {})
-    }
-
-    fn on_tools_list_changed(&self) -> ClientHandlerFuture<'_> {
-        Box::pin(async {})
-    }
-
-    fn on_resources_list_changed(&self) -> ClientHandlerFuture<'_> {
-        Box::pin(async {})
-    }
-
-    fn on_prompts_list_changed(&self) -> ClientHandlerFuture<'_> {
-        Box::pin(async {})
-    }
-
-    fn on_roots_list_changed(&self) -> ClientHandlerFuture<'_> {
-        Box::pin(async {})
-    }
-
-    fn on_resource_updated(
-        &self,
-        _params: ResourceUpdatedNotificationParams,
-    ) -> ClientHandlerFuture<'_> {
-        Box::pin(async {})
-    }
-
-    fn on_task_status(&self, _task: Task) -> ClientHandlerFuture<'_> {
-        Box::pin(async {})
-    }
-
-    fn on_elicitation_complete(
-        &self,
-        _params: ElicitationCompleteNotificationParams,
-    ) -> ClientHandlerFuture<'_> {
-        Box::pin(async {})
-    }
-
-    fn on_custom_notification(
-        &self,
-        _method: String,
-        _params: Option<Value>,
-    ) -> ClientHandlerFuture<'_> {
-        Box::pin(async {})
-    }
+    noop_notification!(on_log_message, LogMessageNotificationParams);
+    noop_notification!(on_progress, ProgressNotificationParams);
+    noop_notification!(on_tools_list_changed);
+    noop_notification!(on_resources_list_changed);
+    noop_notification!(on_prompts_list_changed);
+    noop_notification!(on_roots_list_changed);
+    noop_notification!(on_resource_updated, ResourceUpdatedNotificationParams);
+    noop_notification!(on_task_status, Task);
+    noop_notification!(
+        on_elicitation_complete,
+        ElicitationCompleteNotificationParams
+    );
+    noop_notification!(on_custom_notification, String, Option<Value>);
 
     fn on_custom_request(
         &self,

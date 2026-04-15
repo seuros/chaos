@@ -5,13 +5,13 @@
 //! is a logical node that owns state and routes inbound traffic. An
 //! **adapter** is a typed port on a router. A **packet** is one quantum
 //! of traffic across an adapter, optionally carrying a reply channel and
-//! a W3C trace `path`. A **tunnel** is a long-lived typed stream
-//! (reserved for future use, e.g. SSE or watcher streams).
+//! a W3C trace `path`.
 //!
-//! This module is deliberately minimal — it is not an actor framework.
-//! Callers construct an mpsc pair, spawn a router task that consumes
-//! `Packet<Op>`, and hand the corresponding [`Adapter`] to collaborators.
-//! See `chaos-kern`'s rollout recorder for a canonical example.
+//! This module is deliberately minimal — it is not an actor framework,
+//! and there is no `Router` trait: callers construct an mpsc pair, spawn
+//! a router task that consumes `Packet<Op>`, and hand the corresponding
+//! [`Adapter`] to collaborators. A trait is only worth adding once two
+//! or more routers share concrete surface.
 //!
 //! # Invariants
 //!
@@ -21,8 +21,6 @@
 //!   consume it or return an error; leaking a oneshot hangs the caller.
 //! - The `path` field propagates W3C trace context across the mailbox
 //!   hop so OTel spans remain linked through the handoff.
-
-use std::future::Future;
 
 use chaos_ipc::protocol::W3cTraceContext;
 use tokio::sync::mpsc;
@@ -184,46 +182,6 @@ impl<Op, Reply> Adapter<Op, Reply> {
     pub fn is_closed(&self) -> bool {
         self.tx.is_closed()
     }
-}
-
-/// Minimal trait every router implements. Implementations own their
-/// state and typically return an [`Adapter`] from a constructor that
-/// spawns the router task internally.
-///
-/// The trait is intentionally narrow. Routers that need more surface
-/// (shutdown hooks, health checks, streaming tunnels) expose those
-/// as typed ops on their `Op` enum rather than broadening this trait.
-pub trait Router {
-    /// The command envelope accepted by this router's adapter.
-    type Op: Send + 'static;
-    /// The reply payload, when the router supports request-reply.
-    type Reply: Send + 'static;
-
-    /// Start the router and return an adapter bound to it.
-    fn enumerate(self) -> Adapter<Self::Op, Self::Reply>;
-}
-
-/// Long-lived typed stream reserved for future use (SSE, watchers,
-/// event tunnels). Intentionally unimplemented in this scaffolding —
-/// only the type skeleton is exposed so downstream crates can reference
-/// the name.
-#[allow(dead_code)]
-pub struct Tunnel<Op> {
-    _phantom: std::marker::PhantomData<fn(Op)>,
-}
-
-/// Spawn a router loop with W3C trace context inherited from the
-/// caller's current span. The helper instruments the spawned future
-/// so spans produced inside the router re-parent to the caller's
-/// trace, preserving OTel linkage across the mailbox hop.
-pub fn enumerate_traced<F>(span_name: &'static str, fut: F) -> tokio::task::JoinHandle<F::Output>
-where
-    F: Future + Send + 'static,
-    F::Output: Send + 'static,
-{
-    use tracing::Instrument;
-    let span = tracing::info_span!("router.enumerate", name = span_name);
-    tokio::spawn(fut.instrument(span))
 }
 
 #[cfg(test)]

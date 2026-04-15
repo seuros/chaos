@@ -29,8 +29,5 @@ pub use router::Adapter;
 pub use router::AdapterError;
 pub use router::DEFAULT_ADAPTER_CAPACITY;
 pub use router::Packet;
-pub use router::Router;
-pub use router::Tunnel;
-pub use router::enumerate_traced;
 pub use runtime_access::RuntimeAccess;
 pub use telemetry::TelemetrySource;

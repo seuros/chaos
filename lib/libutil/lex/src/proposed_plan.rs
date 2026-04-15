@@ -1,5 +1,6 @@
 use crate::StreamTextChunk;
 use crate::StreamTextParser;
+use crate::collect_visible_text;
 use crate::tagged_line_parser::TagSpec;
 use crate::tagged_line_parser::TaggedLineParser;
 use crate::tagged_line_parser::TaggedLineSegment;
@@ -84,10 +85,8 @@ fn map_segments(segments: Vec<TaggedLineSegment<PlanTag>>) -> StreamTextChunk<Pr
 }
 
 pub fn strip_proposed_plan_blocks(text: &str) -> String {
-    let mut parser = ProposedPlanParser::new();
-    let mut out = parser.push_str(text).visible_text;
-    out.push_str(&parser.finish().visible_text);
-    out
+    let parser = ProposedPlanParser::new();
+    collect_visible_text(parser, text).visible_text
 }
 
 pub fn extract_proposed_plan_text(text: &str) -> Option<String> {

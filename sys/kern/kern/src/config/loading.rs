@@ -104,6 +104,39 @@ async fn maybe_migrate_smart_approvals_alias(chaos_home: &Path) -> std::io::Resu
     serialization::maybe_migrate_smart_approvals_alias(chaos_home).await
 }
 
+/// Load configuration and exit the process on failure.
+///
+/// Builds a [`Config`] from the given CLI key/value overrides,
+/// harness overrides, and an optional fallback working directory. On
+/// success the config is returned. On failure an error message is printed
+/// to stderr and the process exits with code 1.
+///
+/// This function is the single authoritative "load or die" path shared by
+/// the chaos CLI and the console TUI. Both call sites pass the already-parsed
+/// `Vec<(String, TomlValue)>` produced by
+/// [`chaos_getopt::CliConfigOverrides::parse_overrides`], supply their own
+/// [`ConfigOverrides`], and opt into fallback-cwd behaviour as needed.
+pub async fn load_config_or_exit(
+    cli_overrides: Vec<(String, TomlValue)>,
+    harness_overrides: ConfigOverrides,
+    fallback_cwd: Option<PathBuf>,
+) -> Config {
+    #[allow(clippy::print_stderr)]
+    match ConfigBuilder::default()
+        .cli_overrides(cli_overrides)
+        .harness_overrides(harness_overrides)
+        .fallback_cwd(fallback_cwd)
+        .build()
+        .await
+    {
+        Ok(config) => config,
+        Err(err) => {
+            eprintln!("Error loading configuration: {err}");
+            std::process::exit(1);
+        }
+    }
+}
+
 /// Public load methods on [`Config`] that delegate to the builder or inner
 /// loading path.
 impl Config {

@@ -19,9 +19,9 @@ use chaos_kern::RolloutRecorder;
 use chaos_kern::auth::enforce_login_restrictions;
 use chaos_kern::check_execpolicy_for_warnings;
 use chaos_kern::config::Config;
-use chaos_kern::config::ConfigBuilder;
 use chaos_kern::config::ConfigOverrides;
 use chaos_kern::config::load_config_as_toml_with_cli_overrides;
+use chaos_kern::config::load_config_or_exit as kern_load_config_or_exit;
 use chaos_kern::config::resolve_oss_provider;
 use chaos_kern::config_loader::ConfigLoadError;
 use chaos_kern::config_loader::LoaderOverrides;
@@ -860,7 +860,7 @@ async fn load_config_or_exit(
     cli_kv_overrides: Vec<(String, toml::Value)>,
     overrides: ConfigOverrides,
 ) -> Config {
-    load_config_or_exit_with_fallback_cwd(cli_kv_overrides, overrides, /*fallback_cwd*/ None).await
+    kern_load_config_or_exit(cli_kv_overrides, overrides, None).await
 }
 
 async fn load_config_or_exit_with_fallback_cwd(
@@ -868,20 +868,7 @@ async fn load_config_or_exit_with_fallback_cwd(
     overrides: ConfigOverrides,
     fallback_cwd: Option<PathBuf>,
 ) -> Config {
-    #[allow(clippy::print_stderr)]
-    match ConfigBuilder::default()
-        .cli_overrides(cli_kv_overrides)
-        .harness_overrides(overrides)
-        .fallback_cwd(fallback_cwd)
-        .build()
-        .await
-    {
-        Ok(config) => config,
-        Err(err) => {
-            eprintln!("Error loading configuration: {err}");
-            std::process::exit(1);
-        }
-    }
+    kern_load_config_or_exit(cli_kv_overrides, overrides, fallback_cwd).await
 }
 
 /// Determine if the user has decided whether to trust the current directory.

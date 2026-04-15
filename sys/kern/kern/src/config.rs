@@ -91,6 +91,7 @@ pub(crate) use std::path::Path;
 pub(crate) use validation::filter_mcp_servers_by_requirements;
 
 pub use loading::ConfigBuilder;
+pub use loading::load_config_or_exit;
 pub use managed_features::ManagedFeatures;
 pub use network_proxy_spec::NetworkProxySpec;
 pub use network_proxy_spec::StartedNetworkProxy;

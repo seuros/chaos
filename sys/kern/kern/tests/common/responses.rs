@@ -20,6 +20,31 @@ use wiremock::matchers::path_regex;
 
 use crate::test_chaos::ApplyPatchModelOutput;
 
+fn json_response_200(body: Value) -> ResponseTemplate {
+    ResponseTemplate::new(200)
+        .insert_header("content-type", "application/json")
+        .set_body_json(body)
+}
+
+fn json_response_200_models(body: ModelsResponse) -> ResponseTemplate {
+    ResponseTemplate::new(200)
+        .insert_header("content-type", "application/json")
+        .set_body_json(body)
+}
+
+fn json_response_200_with_header(body: ModelsResponse, header: (&str, &str)) -> ResponseTemplate {
+    ResponseTemplate::new(200)
+        .insert_header("content-type", "application/json")
+        .insert_header(header.0, header.1)
+        .set_body_json(body)
+}
+
+fn event_stream_response_200(body: String) -> ResponseTemplate {
+    ResponseTemplate::new(200)
+        .insert_header("content-type", "text/event-stream")
+        .set_body_string(body)
+}
+
 #[derive(Debug, Clone)]
 pub struct ResponseMock {
     requests: Arc<Mutex<Vec<ResponsesRequest>>>,
@@ -850,11 +875,7 @@ where
 {
     let (mock, response_mock) = compact_mock();
     mock.and(matcher)
-        .respond_with(
-            ResponseTemplate::new(200)
-                .insert_header("content-type", "application/json")
-                .set_body_json(body.clone()),
-        )
+        .respond_with(json_response_200(body.clone()))
         .up_to_n_times(1)
         .mount(server)
         .await;
@@ -862,13 +883,7 @@ where
 }
 
 pub async fn mount_compact_json_once(server: &MockServer, body: serde_json::Value) -> ResponseMock {
-    mount_compact_response_once(
-        server,
-        ResponseTemplate::new(200)
-            .insert_header("content-type", "application/json")
-            .set_body_json(body),
-    )
-    .await
+    mount_compact_response_once(server, json_response_200(body)).await
 }
 
 /// Mount a `/responses/compact` mock that mirrors the default remote compaction shape:
@@ -935,9 +950,7 @@ pub async fn mount_compact_user_history_with_summary_sequence(
                 "type": "compaction",
                 "encrypted_content": summary_text,
             }));
-            ResponseTemplate::new(200)
-                .insert_header("content-type", "application/json")
-                .set_body_json(serde_json::json!({ "output": output }))
+            json_response_200(serde_json::json!({ "output": output }))
         }
     }
 
@@ -969,14 +982,10 @@ pub async fn mount_compact_response_once(
 
 pub async fn mount_models_once(server: &MockServer, body: ModelsResponse) -> ModelsMock {
     let (mock, models_mock) = models_mock();
-    mock.respond_with(
-        ResponseTemplate::new(200)
-            .insert_header("content-type", "application/json")
-            .set_body_json(body.clone()),
-    )
-    .up_to_n_times(1)
-    .mount(server)
-    .await;
+    mock.respond_with(json_response_200_models(body.clone()))
+        .up_to_n_times(1)
+        .mount(server)
+        .await;
     models_mock
 }
 
@@ -986,15 +995,10 @@ pub async fn mount_models_once_with_delay(
     delay: Duration,
 ) -> ModelsMock {
     let (mock, models_mock) = models_mock();
-    mock.respond_with(
-        ResponseTemplate::new(200)
-            .insert_header("content-type", "application/json")
-            .set_body_json(body.clone())
-            .set_delay(delay),
-    )
-    .up_to_n_times(1)
-    .mount(server)
-    .await;
+    mock.respond_with(json_response_200_models(body.clone()).set_delay(delay))
+        .up_to_n_times(1)
+        .mount(server)
+        .await;
     models_mock
 }
 
@@ -1004,16 +1008,10 @@ pub async fn mount_models_once_with_etag(
     etag: &str,
 ) -> ModelsMock {
     let (mock, models_mock) = models_mock();
-    mock.respond_with(
-        ResponseTemplate::new(200)
-            .insert_header("content-type", "application/json")
-            // ModelsClient reads the ETag header, not a JSON field.
-            .insert_header("ETag", etag)
-            .set_body_json(body.clone()),
-    )
-    .up_to_n_times(1)
-    .mount(server)
-    .await;
+    mock.respond_with(json_response_200_with_header(body.clone(), ("ETag", etag)))
+        .up_to_n_times(1)
+        .mount(server)
+        .await;
     models_mock
 }
 
@@ -1076,9 +1074,7 @@ pub async fn mount_sse_sequence(server: &MockServer, bodies: Vec<String>) -> Res
         fn respond(&self, _: &wiremock::Request) -> ResponseTemplate {
             let call_num = self.num_calls.fetch_add(1, Ordering::SeqCst);
             match self.responses.get(call_num) {
-                Some(body) => ResponseTemplate::new(200)
-                    .insert_header("content-type", "text/event-stream")
-                    .set_body_string(body.clone()),
+                Some(body) => event_stream_response_200(body.clone()),
                 None => panic!("no response for {call_num}"),
             }
         }

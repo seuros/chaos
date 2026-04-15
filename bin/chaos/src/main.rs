@@ -340,6 +340,15 @@ fn main() -> anyhow::Result<()> {
     })
 }
 
+/// Prepend `$root` (a `CliConfigOverrides`) into `$target.config_overrides`,
+/// consuming a clone so the caller can reuse `root_config_overrides` in
+/// subsequent arms.
+macro_rules! prepend_root_flags {
+    ($target:expr, $root:expr) => {
+        prepend_config_flags(&mut $target.config_overrides, $root.clone())
+    };
+}
+
 async fn cli_main(arg0_paths: Arg0DispatchPaths) -> anyhow::Result<()> {
     let MultitoolCli {
         debug,
@@ -362,34 +371,25 @@ async fn cli_main(arg0_paths: Arg0DispatchPaths) -> anyhow::Result<()> {
 
     match subcommand {
         None => {
-            prepend_config_flags(
-                &mut interactive.config_overrides,
-                root_config_overrides.clone(),
-            );
+            prepend_root_flags!(interactive, root_config_overrides);
             let exit_info = run_interactive_tui(interactive, arg0_paths.clone()).await?;
             handle_app_exit(exit_info)?;
         }
         Some(Subcommand::Exec(mut exec_cli)) => {
-            prepend_config_flags(
-                &mut exec_cli.config_overrides,
-                root_config_overrides.clone(),
-            );
+            prepend_root_flags!(exec_cli, root_config_overrides);
             chaos_fork::run_main(exec_cli, arg0_paths.clone()).await?;
         }
         Some(Subcommand::Review(review_args)) => {
             let mut exec_cli = ExecCli::try_parse_from(["chaos", "exec"])?;
             exec_cli.command = Some(ExecCommand::Review(review_args));
-            prepend_config_flags(
-                &mut exec_cli.config_overrides,
-                root_config_overrides.clone(),
-            );
+            prepend_root_flags!(exec_cli, root_config_overrides);
             chaos_fork::run_main(exec_cli, arg0_paths.clone()).await?;
         }
         Some(Subcommand::Mcp(mut mcp_cli)) => {
             if matches!(mcp_cli.subcommand, crate::mcp_cmd::McpSubcommand::Serve) {
                 chaos_mcpd::run_main(arg0_paths.clone(), root_config_overrides).await?;
             } else {
-                prepend_config_flags(&mut mcp_cli.config_overrides, root_config_overrides.clone());
+                prepend_root_flags!(mcp_cli, root_config_overrides);
                 mcp_cli.run().await?;
             }
         }
@@ -428,10 +428,7 @@ async fn cli_main(arg0_paths: Arg0DispatchPaths) -> anyhow::Result<()> {
             handle_app_exit(exit_info)?;
         }
         Some(Subcommand::Login(mut login_cli)) => {
-            prepend_config_flags(
-                &mut login_cli.config_overrides,
-                root_config_overrides.clone(),
-            );
+            prepend_root_flags!(login_cli, root_config_overrides);
             match login_cli.action {
                 Some(LoginSubcommand::Status) => {
                     run_login_status(login_cli.config_overrides).await;
@@ -454,20 +451,14 @@ async fn cli_main(arg0_paths: Arg0DispatchPaths) -> anyhow::Result<()> {
             }
         }
         Some(Subcommand::Logout(mut logout_cli)) => {
-            prepend_config_flags(
-                &mut logout_cli.config_overrides,
-                root_config_overrides.clone(),
-            );
+            prepend_root_flags!(logout_cli, root_config_overrides);
             run_logout(logout_cli.config_overrides).await;
         }
         Some(Subcommand::Completion(completion_cli)) => {
             print_completion(completion_cli);
         }
         Some(Subcommand::Sandbox(mut sandbox_cmd)) => {
-            prepend_config_flags(
-                &mut sandbox_cmd.config_overrides,
-                root_config_overrides.clone(),
-            );
+            prepend_root_flags!(sandbox_cmd, root_config_overrides);
 
             #[cfg(target_os = "linux")]
             {

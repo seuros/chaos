@@ -39,25 +39,13 @@ impl HeaderExtractor for OpenAICompatibleHeaders {
     }
 
     fn extract(&self, headers: &HeaderMap, observed_at: i64) -> Vec<UsageWindow> {
-        let mut windows = Vec::new();
-        for label in ["requests", "tokens"] {
-            let limit = get_u64(headers, &format!("x-ratelimit-limit-{label}"));
-            let remaining = get_u64(headers, &format!("x-ratelimit-remaining-{label}"));
-            let reset_in = get_str(headers, &format!("x-ratelimit-reset-{label}"))
-                .and_then(parse_duration_secs);
-
-            if let (Some(limit), Some(remaining)) = (limit, remaining) {
-                let resets_at = reset_in.map(|d| observed_at + d);
-                windows.push(UsageWindow::from_raw(
-                    label,
-                    limit,
-                    remaining,
-                    resets_at,
-                    observed_at,
-                ));
-            }
-        }
-        windows
+        extract_windows(
+            headers,
+            observed_at,
+            &["requests", "tokens"],
+            |label, slot| format!("x-ratelimit-{slot}-{label}"),
+            |raw, base| parse_duration_secs(raw).map(|d| base + d),
+        )
     }
 }
 
@@ -70,25 +58,50 @@ impl HeaderExtractor for AnthropicHeaders {
     }
 
     fn extract(&self, headers: &HeaderMap, observed_at: i64) -> Vec<UsageWindow> {
-        let mut windows = Vec::new();
-        for label in ["requests", "tokens", "input-tokens", "output-tokens"] {
-            let limit = get_u64(headers, &format!("anthropic-ratelimit-{label}-limit"));
-            let remaining = get_u64(headers, &format!("anthropic-ratelimit-{label}-remaining"));
-            let reset = get_str(headers, &format!("anthropic-ratelimit-{label}-reset"))
-                .and_then(parse_rfc3339_secs);
-
-            if let (Some(limit), Some(remaining)) = (limit, remaining) {
-                windows.push(UsageWindow::from_raw(
-                    label,
-                    limit,
-                    remaining,
-                    reset,
-                    observed_at,
-                ));
-            }
-        }
-        windows
+        extract_windows(
+            headers,
+            observed_at,
+            &["requests", "tokens", "input-tokens", "output-tokens"],
+            |label, slot| format!("anthropic-ratelimit-{label}-{slot}"),
+            |raw, _base| parse_rfc3339_secs(raw),
+        )
     }
+}
+
+/// Shared extraction loop used by every provider extractor.
+///
+/// * `labels`     — the window names to iterate ("requests", "tokens", …).
+/// * `header_name` — maps `(label, slot)` to a concrete header name; `slot`
+///   is one of `"limit"`, `"remaining"`, or `"reset"`. The closure lets each
+///   provider arrange the three components in whatever order its API dictates.
+/// * `parse_reset` — converts the raw reset string plus `observed_at` into an
+///   absolute unix-second timestamp, or `None` when the header is absent or
+///   unparseable. Delta-based providers add to `observed_at`; absolute
+///   providers ignore it.
+fn extract_windows(
+    headers: &HeaderMap,
+    observed_at: i64,
+    labels: &[&str],
+    header_name: impl Fn(&str, &str) -> String,
+    parse_reset: impl Fn(&str, i64) -> Option<i64>,
+) -> Vec<UsageWindow> {
+    let mut windows = Vec::new();
+    for &label in labels {
+        let limit = get_u64(headers, &header_name(label, "limit"));
+        let remaining = get_u64(headers, &header_name(label, "remaining"));
+        let resets_at = get_str(headers, &header_name(label, "reset"))
+            .and_then(|raw| parse_reset(raw, observed_at));
+        if let (Some(limit), Some(remaining)) = (limit, remaining) {
+            windows.push(UsageWindow::from_raw(
+                label,
+                limit,
+                remaining,
+                resets_at,
+                observed_at,
+            ));
+        }
+    }
+    windows
 }
 
 fn get_str<'a>(headers: &'a HeaderMap, name: &str) -> Option<&'a str> {

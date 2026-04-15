@@ -1286,7 +1286,6 @@ version = "47.0.0"
 name = "chaos-conv"
 version = "47.0.0"
 dependencies = [
- "pretty_assertions",
  "serde_json",
  "toml 1.1.2+spec-1.1.0",
 ]
@@ -1441,7 +1440,6 @@ version = "47.0.0"
 dependencies = [
  "chaos-ipc",
  "clap",
- "pretty_assertions",
  "serde",
  "toml 1.1.2+spec-1.1.0",
 ]
@@ -1534,8 +1532,6 @@ version = "47.0.0"
 dependencies = [
  "chaos-ipc",
  "chaos-kern",
- "chaos-realpath",
- "pretty_assertions",
 ]
 
 [[package]]
@@ -1957,12 +1953,34 @@ version = "47.0.0"
 dependencies = [
  "dirs",
  "path-absolutize",
- "pretty_assertions",
  "schemars 1.2.1",
  "serde",
+ "ts-rs",
+]
+
+[[package]]
+name = "chaos-regress"
+version = "47.0.0"
+dependencies = [
+ "chaos-amphetamine",
+ "chaos-apropos",
+ "chaos-conv",
+ "chaos-getopt",
+ "chaos-glob",
+ "chaos-ipc",
+ "chaos-jail-report",
+ "chaos-lex",
+ "chaos-realpath",
+ "chaos-scm",
+ "chaos-tmpfs",
+ "chaos-uptime",
+ "chaos-wchar",
+ "dirs",
+ "pretty_assertions",
  "serde_json",
  "tempfile",
- "ts-rs",
+ "tokio",
+ "toml 1.1.2+spec-1.1.0",
 ]
 
 [[package]]
@@ -2185,7 +2203,6 @@ dependencies = [
 name = "chaos-wchar"
 version = "47.0.0"
 dependencies = [
- "pretty_assertions",
  "regex-lite",
 ]
 

@@ -19,5 +19,6 @@ pub use proposed_plan::extract_proposed_plan_text;
 pub use proposed_plan::strip_proposed_plan_blocks;
 pub use stream_text::StreamTextChunk;
 pub use stream_text::StreamTextParser;
+pub use stream_text::collect_chunks;
 pub use utf8_stream::Utf8StreamParser;
 pub use utf8_stream::Utf8StreamParserError;

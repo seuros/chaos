@@ -11,7 +11,3 @@ workspace = true
 [dependencies]
 chaos-kern = { workspace = true }
 chaos-ipc = { workspace = true }
-
-[dev-dependencies]
-chaos-realpath = { workspace = true }
-pretty_assertions = { workspace = true }

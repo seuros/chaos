@@ -52,4 +52,21 @@ impl Session {
         let state = self.state.lock().await;
         state.dependency_env()
     }
+
+    /// Snapshot of the session's base `Config` as captured at session
+    /// init. Callers that need to spawn a sub-agent clone this and
+    /// overlay per-agent overrides (model / instructions / cwd)
+    /// rather than reaching into `SessionConfiguration` directly.
+    pub(crate) async fn base_config(&self) -> crate::config::Config {
+        let state = self.state.lock().await;
+        (*state.session_configuration.original_config_do_not_use).clone()
+    }
+
+    /// The session's own `SessionSource`. Used to derive a
+    /// `SubAgentSource::ProcessSpawn` for child spawns so depth
+    /// and parent linkage are tagged correctly.
+    pub(crate) async fn session_source(&self) -> chaos_ipc::protocol::SessionSource {
+        let state = self.state.lock().await;
+        state.session_configuration.session_source.clone()
+    }
 }

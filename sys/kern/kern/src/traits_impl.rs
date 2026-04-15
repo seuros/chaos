@@ -97,13 +97,44 @@ impl chaos_traits::AgentSpawner for Session {
 
     async fn spawn_agent(
         &self,
-        _config: AgentSpawnConfig,
-        _prompt: String,
+        config: AgentSpawnConfig,
+        prompt: String,
     ) -> anyhow::Result<ProcessId> {
-        // TODO: Wire to self.services.agent_control.spawn_agent() during Phase D migration.
-        // The full implementation requires building an AgentConfig from AgentSpawnConfig,
-        // which depends on types not yet extracted. This stub compiles and will be completed
-        // when chaos-memento actually consumes it.
-        anyhow::bail!("AgentSpawner::spawn_agent not yet wired — complete during Phase D")
+        // Clone the session's base Config and overlay the caller's
+        // model / base-instructions / cwd. The satellite surface
+        // (`AgentSpawnConfig`) intentionally exposes only the knobs
+        // a sub-agent caller controls; every other field inherits
+        // the parent session's configuration.
+        let mut kern_config = self.base_config().await;
+        kern_config.model = Some(config.model);
+        kern_config.base_instructions = Some(config.instructions);
+        kern_config.cwd = config.cwd;
+
+        let parent_source = self.session_source().await;
+        let depth = crate::minions::next_process_spawn_depth(&parent_source);
+        let session_source = chaos_ipc::protocol::SessionSource::SubAgent(
+            chaos_ipc::protocol::SubAgentSource::ProcessSpawn {
+                parent_process_id: self.conversation_id,
+                depth,
+                agent_nickname: None,
+                agent_role: None,
+            },
+        );
+
+        let items = vec![chaos_ipc::user_input::UserInput::Text {
+            text: prompt,
+            text_elements: Vec::new(),
+        }];
+
+        let conversation_id = self.conversation_id;
+        self.services
+            .agent_control
+            .spawn_agent(kern_config, items, Some(session_source))
+            .await
+            .map_err(|err| {
+                anyhow::anyhow!(
+                    "AgentSpawner::spawn_agent failed (parent conversation_id={conversation_id}): {err}"
+                )
+            })
     }
 }

@@ -4,12 +4,12 @@ use crate::representer::ResponsesRepresenter;
 
 pub(crate) const MIME_APPLICATION_JSON: &str = "application/json";
 pub(crate) const MIME_TEXT_EVENT_STREAM: &str = "text/event-stream";
-use chaos_ipc::config_types::ReasoningSummary as ReasoningSummaryConfig;
-use chaos_ipc::config_types::Verbosity as VerbosityConfig;
-use chaos_ipc::models::ResponseItem;
-use chaos_ipc::openai_models::ReasoningEffort as ReasoningEffortConfig;
-use chaos_ipc::protocol::RateLimitSnapshot;
-use chaos_ipc::protocol::TokenUsage;
+use chaos_abi::RateLimitSnapshot;
+use chaos_abi::ReasoningEffort as ReasoningEffortConfig;
+use chaos_abi::ReasoningSummary as ReasoningSummaryConfig;
+use chaos_abi::ResponseItem;
+use chaos_abi::TokenUsage;
+use chaos_abi::Verbosity as VerbosityConfig;
 use futures::Stream;
 use serde::Deserialize;
 use serde::Serialize;

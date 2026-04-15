@@ -19,7 +19,7 @@
 use std::fmt;
 use std::sync::Arc;
 
-use chaos_ipc::models::ResponseItem;
+use chaos_abi::ResponseItem;
 
 // ---------------------------------------------------------------------------
 // Trait

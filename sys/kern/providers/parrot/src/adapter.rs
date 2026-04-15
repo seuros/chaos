@@ -15,7 +15,7 @@ use chaos_abi::AbiError;
 use chaos_abi::ToolDef;
 use chaos_abi::TurnEvent;
 use chaos_abi::TurnRequest;
-use chaos_ipc::config_types::Verbosity as VerbosityConfig;
+use chaos_abi::Verbosity as VerbosityConfig;
 use serde_json::Value;
 
 // ---------------------------------------------------------------------------
@@ -388,7 +388,7 @@ mod tests {
     #[test]
     fn wannabe_representer_used_via_turn_request_conversion() {
         use crate::representer::OpenwAInnabeRepresenter;
-        use chaos_ipc::models::ResponseItem;
+        use chaos_abi::ResponseItem;
         let req = TurnRequest {
             input: vec![
                 ResponseItem::Message {

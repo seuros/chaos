@@ -170,7 +170,7 @@ impl RequestUserInputOverlay {
 
     fn render_unanswered_confirmation(&self, area: Rect, buf: &mut Buffer) {
         let content_area = render_menu_surface(area, buf);
-        if content_area.width == 0 || content_area.height == 0 {
+        if content_area.is_empty() {
             return;
         }
         let width = content_area.width.max(1);
@@ -246,7 +246,7 @@ impl RequestUserInputOverlay {
 
     /// Render the full request-user-input overlay.
     pub(super) fn render_ui(&self, area: Rect, buf: &mut Buffer) {
-        if area.width == 0 || area.height == 0 {
+        if area.is_empty() {
             return;
         }
         if self.confirm_unanswered_active() {
@@ -256,7 +256,7 @@ impl RequestUserInputOverlay {
         // Paint the same menu surface used by other bottom-pane overlays and
         // then render the overlay content inside its inset area.
         let content_area = render_menu_surface(area, buf);
-        if content_area.width == 0 || content_area.height == 0 {
+        if content_area.is_empty() {
             return;
         }
         let sections = self.layout_sections(content_area);
@@ -398,12 +398,12 @@ impl RequestUserInputOverlay {
             return None;
         }
         let content_area = menu_surface_inset(area);
-        if content_area.width == 0 || content_area.height == 0 {
+        if content_area.is_empty() {
             return None;
         }
         let sections = self.layout_sections(content_area);
         let input_area = sections.notes_area;
-        if input_area.width == 0 || input_area.height == 0 {
+        if input_area.is_empty() {
             return None;
         }
         self.composer.cursor_pos(input_area)
@@ -411,7 +411,7 @@ impl RequestUserInputOverlay {
 
     /// Render the notes composer.
     fn render_notes_input(&self, area: Rect, buf: &mut Buffer) {
-        if area.width == 0 || area.height == 0 {
+        if area.is_empty() {
             return;
         }
         let is_secret = self
@@ -444,7 +444,7 @@ fn render_rows_bottom_aligned(
     max_results: usize,
     empty_message: &str,
 ) {
-    if area.width == 0 || area.height == 0 {
+    if area.is_empty() {
         return;
     }
 

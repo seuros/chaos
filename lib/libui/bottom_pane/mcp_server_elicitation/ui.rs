@@ -588,7 +588,7 @@ impl McpServerElicitationOverlay {
     }
 
     fn render_prompt(&self, area: Rect, buf: &mut Buffer) {
-        if area.width == 0 || area.height == 0 {
+        if area.is_empty() {
             return;
         }
         let answered = self.is_current_field_answered();
@@ -615,7 +615,7 @@ impl McpServerElicitationOverlay {
     }
 
     fn render_input(&self, area: Rect, buf: &mut Buffer) {
-        if area.width == 0 || area.height == 0 {
+        if area.is_empty() {
             return;
         }
         if self.current_field_is_select() {
@@ -639,7 +639,7 @@ impl McpServerElicitationOverlay {
     }
 
     fn render_footer(&self, area: Rect, input_area_height: u16, buf: &mut Buffer) {
-        if area.width == 0 || area.height == 0 {
+        if area.is_empty() {
             return;
         }
         let options_hidden = self.current_field_is_select()
@@ -704,11 +704,11 @@ impl Renderable for McpServerElicitationOverlay {
     }
 
     fn render(&self, area: Rect, buf: &mut Buffer) {
-        if area.width == 0 || area.height == 0 {
+        if area.is_empty() {
             return;
         }
         let content_area = render_menu_surface(area, buf);
-        if content_area.width == 0 || content_area.height == 0 {
+        if content_area.is_empty() {
             return;
         }
         let prompt_lines = self.wrapped_prompt_lines(content_area.width);
@@ -782,7 +782,7 @@ impl Renderable for McpServerElicitationOverlay {
             return None;
         }
         let content_area = menu_surface_inset(area);
-        if content_area.width == 0 || content_area.height == 0 {
+        if content_area.is_empty() {
             return None;
         }
         let prompt_lines = self.wrapped_prompt_lines(content_area.width);

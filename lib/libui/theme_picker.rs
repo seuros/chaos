@@ -170,7 +170,7 @@ fn render_preview(
     center_vertically: bool,
     left_inset: u16,
 ) {
-    if area.height == 0 || area.width == 0 {
+    if area.is_empty() {
         return;
     }
     if preview_rows.is_empty() {

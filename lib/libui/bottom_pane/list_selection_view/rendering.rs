@@ -91,7 +91,7 @@ impl Renderable for ListSelectionView {
     }
 
     fn render(&self, area: Rect, buf: &mut Buffer) {
-        if area.height == 0 || area.width == 0 {
+        if area.is_empty() {
             return;
         }
 

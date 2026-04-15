@@ -220,8 +220,7 @@ impl MultiSelectPicker {
             .or_else(|| (len > 0).then_some(0));
 
         let visible = Self::max_visible_rows(len);
-        self.state.clamp_selection(len);
-        self.state.ensure_visible(len, visible);
+        self.state.sync_visible(len, visible);
     }
 
     /// Returns the number of items visible after filtering.
@@ -272,17 +271,15 @@ impl MultiSelectPicker {
     /// Moves the selection cursor up, wrapping to the bottom if at the top.
     fn move_up(&mut self) {
         let len = self.visible_len();
-        self.state.move_up_wrap(len);
         let visible = Self::max_visible_rows(len);
-        self.state.ensure_visible(len, visible);
+        self.state.step_up(len, visible);
     }
 
     /// Moves the selection cursor down, wrapping to the top if at the bottom.
     fn move_down(&mut self) {
         let len = self.visible_len();
-        self.state.move_down_wrap(len);
         let visible = Self::max_visible_rows(len);
-        self.state.ensure_visible(len, visible);
+        self.state.step_down(len, visible);
     }
 
     /// Toggles the enabled state of the currently selected item.

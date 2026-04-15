@@ -11,6 +11,10 @@ use tracing_subscriber::layer::SubscriberExt;
 use tracing_subscriber::registry::LookupSpan;
 use tracing_subscriber::util::SubscriberInitExt;
 
+fn setup_tag_collector() -> Arc<Mutex<BTreeMap<String, String>>> {
+    Arc::new(Mutex::new(BTreeMap::new()))
+}
+
 #[test]
 fn test_try_parse_error_message() {
     let text = r#"{
@@ -86,7 +90,7 @@ where
 
 #[test]
 fn emit_feedback_request_tags_records_sentry_feedback_fields() {
-    let tags = Arc::new(Mutex::new(BTreeMap::new()));
+    let tags = setup_tag_collector();
     let _guard = tracing_subscriber::registry()
         .with(TagCollectorLayer { tags: tags.clone() })
         .set_default();
@@ -143,7 +147,7 @@ fn emit_feedback_request_tags_records_sentry_feedback_fields() {
 
 #[test]
 fn emit_feedback_auth_recovery_tags_preserves_401_specific_fields() {
-    let tags = Arc::new(Mutex::new(BTreeMap::new()));
+    let tags = setup_tag_collector();
     let _guard = tracing_subscriber::registry()
         .with(TagCollectorLayer { tags: tags.clone() })
         .set_default();
@@ -179,7 +183,7 @@ fn emit_feedback_auth_recovery_tags_preserves_401_specific_fields() {
 
 #[test]
 fn emit_feedback_auth_recovery_tags_clears_stale_401_fields() {
-    let tags = Arc::new(Mutex::new(BTreeMap::new()));
+    let tags = setup_tag_collector();
     let _guard = tracing_subscriber::registry()
         .with(TagCollectorLayer { tags: tags.clone() })
         .set_default();
@@ -221,7 +225,7 @@ fn emit_feedback_auth_recovery_tags_clears_stale_401_fields() {
 
 #[test]
 fn emit_feedback_request_tags_preserves_latest_auth_fields_after_unauthorized() {
-    let tags = Arc::new(Mutex::new(BTreeMap::new()));
+    let tags = setup_tag_collector();
     let _guard = tracing_subscriber::registry()
         .with(TagCollectorLayer { tags: tags.clone() })
         .set_default();
@@ -269,7 +273,7 @@ fn emit_feedback_request_tags_preserves_latest_auth_fields_after_unauthorized() 
 
 #[test]
 fn emit_feedback_request_tags_clears_stale_latest_auth_fields() {
-    let tags = Arc::new(Mutex::new(BTreeMap::new()));
+    let tags = setup_tag_collector();
     let _guard = tracing_subscriber::registry()
         .with(TagCollectorLayer { tags: tags.clone() })
         .set_default();

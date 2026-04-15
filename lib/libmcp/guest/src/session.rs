@@ -106,6 +106,30 @@ impl McpSession {
         self.request_value_with_timeout(method, params, None).await
     }
 
+    async fn execute_with_timeout<T, F>(
+        &self,
+        request_id: RequestId,
+        timeout: Duration,
+        fut: F,
+    ) -> Result<T, GuestError>
+    where
+        F: std::future::Future<Output = Result<T, GuestError>>,
+    {
+        match tokio::time::timeout(timeout, fut).await {
+            Ok(result) => result,
+            Err(_) => {
+                let _ = self
+                    .command_tx
+                    .send(RuntimeCommand::Cancel {
+                        request_id,
+                        reason: Some(format!("request timed out after {timeout:?}")),
+                    })
+                    .await;
+                Err(GuestError::Timeout(timeout))
+            }
+        }
+    }
+
     pub async fn request_value_with_timeout(
         &self,
         method: impl Into<String>,
@@ -126,20 +150,13 @@ impl McpSession {
             .map_err(|_| GuestError::Disconnected)?;
 
         let timeout = timeout_override.unwrap_or(self.shared.default_timeout);
-        match tokio::time::timeout(timeout, response_rx).await {
-            Ok(Ok(result)) => result,
-            Ok(Err(_)) => Err(GuestError::Disconnected),
-            Err(_) => {
-                let _ = self
-                    .command_tx
-                    .send(RuntimeCommand::Cancel {
-                        request_id,
-                        reason: Some(format!("request timed out after {timeout:?}")),
-                    })
-                    .await;
-                Err(GuestError::Timeout(timeout))
+        self.execute_with_timeout(request_id, timeout, async {
+            match response_rx.await {
+                Ok(result) => result,
+                Err(_) => Err(GuestError::Disconnected),
             }
-        }
+        })
+        .await
     }
 
     pub async fn request<TParams, TResult>(

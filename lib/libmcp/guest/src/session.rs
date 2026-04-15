@@ -335,22 +335,21 @@ impl McpSession {
     }
 
     pub async fn subscribe_resource(&self, uri: impl Into<String>) -> Result<(), GuestError> {
-        let _: Value = self
-            .request(
-                "resources/subscribe",
-                &SubscribeRequestParams {
-                    uri: uri.into(),
-                    meta: None,
-                },
-            )
-            .await?;
-        Ok(())
+        self.subscribe_request("resources/subscribe", uri).await
     }
 
     pub async fn unsubscribe_resource(&self, uri: impl Into<String>) -> Result<(), GuestError> {
+        self.subscribe_request("resources/unsubscribe", uri).await
+    }
+
+    async fn subscribe_request(
+        &self,
+        method: &'static str,
+        uri: impl Into<String>,
+    ) -> Result<(), GuestError> {
         let _: Value = self
             .request(
-                "resources/unsubscribe",
+                method,
                 &SubscribeRequestParams {
                     uri: uri.into(),
                     meta: None,

@@ -188,6 +188,30 @@ enum Backend {
     Postgres(PgPool),
 }
 
+impl Backend {
+    async fn record(
+        &self,
+        provider: &str,
+        base_url: &str,
+        windows: &[UsageWindow],
+    ) -> anyhow::Result<()> {
+        match self {
+            Backend::Sqlite(pool) => record_sqlite(pool, provider, base_url, windows).await,
+            Backend::Postgres(pool) => record_postgres(pool, provider, base_url, windows).await,
+        }
+    }
+
+    async fn fetch_latest(
+        &self,
+        provider: Option<&str>,
+    ) -> anyhow::Result<Vec<(String, String, UsageWindow)>> {
+        match self {
+            Backend::Sqlite(pool) => fetch_latest_sqlite(pool, provider).await,
+            Backend::Postgres(pool) => fetch_latest_postgres(pool, provider).await,
+        }
+    }
+}
+
 impl UsageStore {
     /// Build a store from a chaos-storage provider and spawn the
     /// background writer. Returns `None` if the provider has no usable
@@ -267,10 +291,7 @@ impl UsageStore {
         if windows.is_empty() {
             return Ok(());
         }
-        match &self.backend {
-            Backend::Sqlite(pool) => record_sqlite(pool, provider, base_url, windows).await,
-            Backend::Postgres(pool) => record_postgres(pool, provider, base_url, windows).await,
-        }
+        self.backend.record(provider, base_url, windows).await
     }
 
     /// Fetch the latest window for every (base_url, label) under
@@ -279,20 +300,14 @@ impl UsageStore {
     /// stale-but-valid cache, and past-reset "budget recovered" states
     /// without recomputing the rule.
     pub async fn latest_for(&self, provider: &str, now: i64) -> anyhow::Result<Vec<LatestWindow>> {
-        let rows = match &self.backend {
-            Backend::Sqlite(pool) => fetch_latest_sqlite(pool, Some(provider)).await?,
-            Backend::Postgres(pool) => fetch_latest_postgres(pool, Some(provider)).await?,
-        };
+        let rows = self.backend.fetch_latest(Some(provider)).await?;
         Ok(tag_freshness(rows, now))
     }
 
     /// Fetch the latest window for every (provider, base_url, label) in
     /// the store.
     pub async fn latest_all(&self, now: i64) -> anyhow::Result<Vec<LatestWindow>> {
-        let rows = match &self.backend {
-            Backend::Sqlite(pool) => fetch_latest_sqlite(pool, None).await?,
-            Backend::Postgres(pool) => fetch_latest_postgres(pool, None).await?,
-        };
+        let rows = self.backend.fetch_latest(None).await?;
         Ok(tag_freshness(rows, now))
     }
 }
@@ -302,14 +317,9 @@ impl UsageStore {
 /// is dropped (which happens when the `Arc<UsageStore>` goes away).
 async fn run_writer(backend: Backend, mut rx: mpsc::Receiver<WriteJob>) {
     while let Some(job) = rx.recv().await {
-        let result = match &backend {
-            Backend::Sqlite(pool) => {
-                record_sqlite(pool, &job.provider, &job.base_url, &job.windows).await
-            }
-            Backend::Postgres(pool) => {
-                record_postgres(pool, &job.provider, &job.base_url, &job.windows).await
-            }
-        };
+        let result = backend
+            .record(&job.provider, &job.base_url, &job.windows)
+            .await;
         if let Err(err) = result {
             tracing::warn!(
                 target: "ration",

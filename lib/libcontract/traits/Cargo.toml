@@ -11,7 +11,8 @@ chaos-ipc = { workspace = true }
 chaos-sysctl = { workspace = true }
 chaos-syslog = { workspace = true }
 async-channel = { workspace = true }
-tokio = { workspace = true, features = ["sync"] }
+tokio = { workspace = true, features = ["sync", "rt"] }
+tracing = { workspace = true }
 anyhow = { workspace = true }
 serde = { workspace = true, features = ["derive"] }
 serde_json = { workspace = true }

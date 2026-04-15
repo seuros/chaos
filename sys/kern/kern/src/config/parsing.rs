@@ -62,14 +62,48 @@ pub(crate) fn deserialize_model_providers<'de, D>(
 where
     D: serde::Deserializer<'de>,
 {
+    use crate::model_provider_info::ModelProviderInfo;
+    use crate::model_provider_info::built_in_model_providers;
     use serde::Deserialize;
-    let model_providers =
-        HashMap::<String, crate::model_provider_info::ModelProviderInfo>::deserialize(
-            deserializer,
-        )?;
-    super::validation::validate_reserved_model_provider_ids(&model_providers)
-        .map_err(serde::de::Error::custom)?;
-    Ok(model_providers)
+
+    let raw = HashMap::<String, toml::Value>::deserialize(deserializer)?;
+    let built_ins = built_in_model_providers();
+    let mut out: HashMap<String, ModelProviderInfo> = HashMap::with_capacity(raw.len());
+
+    for (key, value) in raw {
+        let provider = if let Some(baseline) = built_ins.get(&key) {
+            // Partial overrides of built-in providers (e.g. test harnesses
+            // redirecting `openai.base_url` at a mock server) merge onto
+            // the built-in baseline so `name` and other required fields
+            // don't have to be restated.
+            let mut merged = toml::Value::try_from(baseline).map_err(serde::de::Error::custom)?;
+            merge_toml_value(&mut merged, value);
+            ModelProviderInfo::deserialize(merged).map_err(serde::de::Error::custom)?
+        } else {
+            ModelProviderInfo::deserialize(value).map_err(serde::de::Error::custom)?
+        };
+        out.insert(key, provider);
+    }
+
+    Ok(out)
+}
+
+fn merge_toml_value(base: &mut TomlValue, overlay: TomlValue) {
+    match (base, overlay) {
+        (TomlValue::Table(base_tbl), TomlValue::Table(overlay_tbl)) => {
+            for (k, v) in overlay_tbl {
+                match base_tbl.get_mut(&k) {
+                    Some(existing) => merge_toml_value(existing, v),
+                    None => {
+                        base_tbl.insert(k, v);
+                    }
+                }
+            }
+        }
+        (slot, overlay) => {
+            *slot = overlay;
+        }
+    }
 }
 
 /// Load the global config as a raw `ConfigToml` (without applying requirements).

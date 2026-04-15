@@ -152,9 +152,6 @@ impl Config {
         chaos_home: PathBuf,
         config_layer_stack: ConfigLayerStack,
     ) -> std::io::Result<Self> {
-        validation::validate_reserved_model_provider_ids(&cfg.model_providers)
-            .map_err(|message| std::io::Error::new(std::io::ErrorKind::InvalidInput, message))?;
-
         let ConfigRequirements {
             approval_policy: mut constrained_approval_policy,
             sandbox_policy: mut constrained_sandbox_policy,
@@ -372,8 +369,12 @@ impl Config {
         )?;
 
         let mut model_providers = built_in_model_providers();
+        // User-configured providers replace built-ins. Partial overrides
+        // against a built-in ID were already merged onto the built-in
+        // baseline inside `deserialize_model_providers`, so every entry
+        // in `cfg.model_providers` is a complete, ready-to-use provider.
         for (key, provider) in cfg.model_providers.into_iter() {
-            model_providers.entry(key).or_insert(provider);
+            model_providers.insert(key, provider);
         }
 
         let model_provider_id = model_provider

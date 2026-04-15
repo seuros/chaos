@@ -7,39 +7,15 @@ use chaos_ipc::config_types::SandboxMode;
 use chaos_sysctl::Constrained;
 use chaos_sysctl::ConstraintResult;
 
+use super::ConfigLayerStack as CLayerStack;
+use super::types::McpServerConfig;
+use super::types::McpServerDisabledReason;
+use super::types::McpServerTransportConfig;
 use crate::config::ConfigToml;
 use crate::config_loader::ConfigLayerStackOrdering;
 use crate::config_loader::McpServerIdentity;
 use crate::config_loader::McpServerRequirement;
 use crate::config_loader::Sourced;
-use crate::model_provider_info::OPENAI_PROVIDER_ID;
-
-use super::ConfigLayerStack as CLayerStack;
-use super::types::McpServerConfig;
-use super::types::McpServerDisabledReason;
-use super::types::McpServerTransportConfig;
-
-const RESERVED_MODEL_PROVIDER_IDS: [&str; 1] = [OPENAI_PROVIDER_ID];
-
-pub(crate) fn validate_reserved_model_provider_ids(
-    model_providers: &HashMap<String, crate::model_provider_info::ModelProviderInfo>,
-) -> Result<(), String> {
-    let mut conflicts = model_providers
-        .keys()
-        .filter(|key| RESERVED_MODEL_PROVIDER_IDS.contains(&key.as_str()))
-        .map(|key| format!("`{key}`"))
-        .collect::<Vec<_>>();
-    conflicts.sort_unstable();
-    if conflicts.is_empty() {
-        Ok(())
-    } else {
-        Err(format!(
-            "model_providers contains reserved built-in provider IDs: {}. \
-Built-in providers cannot be overridden. Rename your custom provider (for example, `openai-custom`).",
-            conflicts.join(", ")
-        ))
-    }
-}
 
 pub(crate) fn apply_requirement_constrained_value<T>(
     field_name: &'static str,

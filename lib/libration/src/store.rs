@@ -6,8 +6,6 @@ use chaos_storage::ChaosStorageProvider;
 use sqlx::PgPool;
 use sqlx::Row;
 use sqlx::SqlitePool;
-use sqlx::postgres::PgRow;
-use sqlx::sqlite::SqliteRow;
 use std::sync::Arc;
 use tokio::sync::mpsc;
 
@@ -16,6 +14,33 @@ use tokio::sync::mpsc;
 /// snapshots are pending, new ones are dropped with a warning and the
 /// sniffer carries on.
 const WRITER_QUEUE_CAPACITY: usize = 256;
+
+/// Map a `ration_usage` row to `(provider, base_url, UsageWindow)`.
+///
+/// The body is identical for SqlitePool rows and PgPool rows — only the
+/// concrete `Row` type differs, and sqlx's column-by-name access works
+/// on both. Chasing a generic `fn` runs into a wall of
+/// `Decode`/`ColumnIndex` bounds that repeat the column list back in
+/// the where clause; a macro keeps the mapping readable while still
+/// writing the column names exactly once.
+macro_rules! row_to_window {
+    ($row:expr) => {{
+        let row = $row;
+        let provider: String = row.get("provider");
+        let base_url: String = row.get("base_url");
+        let limit: Option<i64> = row.get("limit_value");
+        let remaining: Option<i64> = row.get("remaining");
+        let window = UsageWindow {
+            label: row.get("label"),
+            limit: limit.map(|v| v as u64),
+            remaining: remaining.map(|v| v as u64),
+            utilization: row.get("utilization"),
+            resets_at: row.get("resets_at"),
+            observed_at: row.get("observed_at"),
+        };
+        (provider, base_url, window)
+    }};
+}
 
 /// One pending write's payload, shipped over the mpsc channel to the
 /// single consumer task that owns the database pool.
@@ -334,7 +359,7 @@ async fn fetch_latest_sqlite(
         .fetch_all(pool)
         .await?
     };
-    Ok(rows.into_iter().map(sqlite_row_to_window).collect())
+    Ok(rows.into_iter().map(|r| row_to_window!(r)).collect())
 }
 
 async fn fetch_latest_postgres(
@@ -357,39 +382,7 @@ async fn fetch_latest_postgres(
         .fetch_all(pool)
         .await?
     };
-    Ok(rows.into_iter().map(postgres_row_to_window).collect())
-}
-
-fn sqlite_row_to_window(row: SqliteRow) -> (String, String, UsageWindow) {
-    let provider: String = row.get("provider");
-    let base_url: String = row.get("base_url");
-    let limit: Option<i64> = row.get("limit_value");
-    let remaining: Option<i64> = row.get("remaining");
-    let window = UsageWindow {
-        label: row.get("label"),
-        limit: limit.map(|v| v as u64),
-        remaining: remaining.map(|v| v as u64),
-        utilization: row.get("utilization"),
-        resets_at: row.get("resets_at"),
-        observed_at: row.get("observed_at"),
-    };
-    (provider, base_url, window)
-}
-
-fn postgres_row_to_window(row: PgRow) -> (String, String, UsageWindow) {
-    let provider: String = row.get("provider");
-    let base_url: String = row.get("base_url");
-    let limit: Option<i64> = row.get("limit_value");
-    let remaining: Option<i64> = row.get("remaining");
-    let window = UsageWindow {
-        label: row.get("label"),
-        limit: limit.map(|v| v as u64),
-        remaining: remaining.map(|v| v as u64),
-        utilization: row.get("utilization"),
-        resets_at: row.get("resets_at"),
-        observed_at: row.get("observed_at"),
-    };
-    (provider, base_url, window)
+    Ok(rows.into_iter().map(|r| row_to_window!(r)).collect())
 }
 
 #[cfg(test)]

@@ -100,12 +100,12 @@ impl chaos_traits::AgentSpawner for Session {
         config: AgentSpawnConfig,
         prompt: String,
     ) -> anyhow::Result<ProcessId> {
-        // Clone the session's base Config and overlay the caller's
+        // Clone the session's effective Config and overlay the caller's
         // model / base-instructions / cwd. The satellite surface
         // (`AgentSpawnConfig`) intentionally exposes only the knobs
         // a sub-agent caller controls; every other field inherits
         // the parent session's configuration.
-        let mut kern_config = self.base_config().await;
+        let mut kern_config = self.effective_config_for_spawn().await;
         kern_config.model = Some(config.model);
         kern_config.base_instructions = Some(config.instructions);
         kern_config.cwd = config.cwd;

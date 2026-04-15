@@ -1,6 +1,5 @@
 use crossterm::event::KeyCode;
 use crossterm::event::KeyEvent;
-use crossterm::event::KeyEventKind;
 use crossterm::event::KeyModifiers;
 
 use crate::app_event::AppEvent;
@@ -56,9 +55,6 @@ impl RequestUserInputOverlay {
     }
 
     pub(super) fn handle_confirm_unanswered_key_event(&mut self, key_event: KeyEvent) {
-        if key_event.kind == KeyEventKind::Release {
-            return;
-        }
         let Some(state) = self.confirm_unanswered.as_mut() else {
             return;
         };
@@ -140,10 +136,6 @@ impl BottomPaneView for RequestUserInputOverlay {
     }
 
     fn handle_key_event(&mut self, key_event: KeyEvent) {
-        if key_event.kind == KeyEventKind::Release {
-            return;
-        }
-
         if self.confirm_unanswered_active() {
             self.handle_confirm_unanswered_key_event(key_event);
             return;

@@ -128,12 +128,13 @@ impl BottomPane {
 
     /// Forward a key event to the active view or the composer.
     pub fn handle_key_event(&mut self, key_event: KeyEvent) -> InputResult {
+        // Release events are always ignored; only Press events are actionable.
+        if key_event.kind == KeyEventKind::Release {
+            return InputResult::None;
+        }
+
         // If a modal/view is active, handle it here; otherwise forward to composer.
         if !self.view_stack.is_empty() {
-            if key_event.kind == KeyEventKind::Release {
-                return InputResult::None;
-            }
-
             // We need three pieces of information after routing the key:
             // whether Esc completed the view, whether the view finished for any
             // reason, and whether a paste-burst timer should be scheduled.

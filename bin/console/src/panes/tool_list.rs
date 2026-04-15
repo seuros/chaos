@@ -4,8 +4,6 @@ use crate::theme;
 use crate::tool_badges::tool_name_style;
 use crate::tool_badges::tool_name_style_from_labels_and_annotations;
 use chaos_ipc::protocol::ToolSummary;
-use crossterm::event::KeyEvent;
-use crossterm::event::KeyEventKind;
 use ratatui::buffer::Buffer;
 use ratatui::layout::Rect;
 use ratatui::prelude::Widget;
@@ -20,7 +18,6 @@ use ratatui::widgets::Wrap;
 use ratatui_hypertile::KeyChord;
 use ratatui_hypertile::KeyCode as HypertileKeyCode;
 use ratatui_hypertile::Modifiers;
-use ratatui_hypertile_extras::keychord_from_crossterm;
 
 /// Result of a key event handled by the tool-list pane.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -63,20 +60,6 @@ impl ToolListPane {
 
     pub fn scroll_down(&mut self, n: u16) {
         self.scroll = self.scroll.saturating_add(n);
-    }
-
-    /// Handle a key event when this pane is focused.
-    #[allow(dead_code)]
-    pub fn handle_key_event(&mut self, key_event: KeyEvent) -> ToolListKeyResult {
-        if key_event.kind != KeyEventKind::Press && key_event.kind != KeyEventKind::Repeat {
-            return ToolListKeyResult::Ignored;
-        }
-
-        let Some(chord) = keychord_from_crossterm(key_event) else {
-            return ToolListKeyResult::Ignored;
-        };
-
-        self.handle_chord(chord)
     }
 
     pub fn handle_chord(&mut self, chord: KeyChord) -> ToolListKeyResult {

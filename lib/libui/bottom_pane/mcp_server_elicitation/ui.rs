@@ -5,7 +5,6 @@ use chaos_ipc::protocol::Op;
 use chaos_ipc::user_input::TextElement;
 use crossterm::event::KeyCode;
 use crossterm::event::KeyEvent;
-use crossterm::event::KeyEventKind;
 use crossterm::event::KeyModifiers;
 use ratatui::buffer::Buffer;
 use ratatui::layout::Rect;
@@ -817,10 +816,6 @@ impl BottomPaneView for McpServerElicitationOverlay {
     }
 
     fn handle_key_event(&mut self, key_event: KeyEvent) {
-        if key_event.kind == KeyEventKind::Release {
-            return;
-        }
-
         if matches!(key_event.code, KeyCode::Esc) {
             self.dispatch_cancel();
             self.done = true;

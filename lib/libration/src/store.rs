@@ -42,6 +42,111 @@ macro_rules! row_to_window {
     }};
 }
 
+/// Persist one window in a transaction using dialect-specific SQL.
+///
+/// `$ph` is a closure `|n: u8| -> String` that formats a positional
+/// placeholder — `"?"` for SQLite, `format!("${n}")` for Postgres.
+/// `$now` is a `&str` fragment for the current-epoch expression that
+/// appears in `updated_at` — `"UNIXEPOCH()"` vs
+/// `"EXTRACT(EPOCH FROM clock_timestamp())::BIGINT"`.
+///
+/// Both INSERT statements carry exactly 8 bind parameters in the same
+/// order: provider, base_url, label, limit_value, remaining, utilization,
+/// resets_at, observed_at. The macro preserves that order and delegates
+/// the actual `.execute()` call to the caller via `$exec`, which receives
+/// a fully-bound `sqlx::query::Query` and must produce an async block
+/// returning `anyhow::Result<()>`.
+macro_rules! record_windows {
+    ($tx:expr, $provider:expr, $base_url:expr, $windows:expr, $ph:expr, $now:expr) => {{
+        let tx = &mut $tx;
+        let ph = $ph;
+        let now: &str = $now;
+        for w in $windows {
+            let limit = w.limit.map(|v| v as i64);
+            let remaining = w.remaining.map(|v| v as i64);
+
+            sqlx::query(&format!(
+                "INSERT INTO ration_history \
+                 (provider, base_url, label, limit_value, remaining, utilization, resets_at, observed_at) \
+                 VALUES ({p1}, {p2}, {p3}, {p4}, {p5}, {p6}, {p7}, {p8})",
+                p1 = ph(1), p2 = ph(2), p3 = ph(3), p4 = ph(4),
+                p5 = ph(5), p6 = ph(6), p7 = ph(7), p8 = ph(8),
+            ))
+            .bind($provider)
+            .bind($base_url)
+            .bind(&w.label)
+            .bind(limit)
+            .bind(remaining)
+            .bind(w.utilization)
+            .bind(w.resets_at)
+            .bind(w.observed_at)
+            .execute(&mut **tx)
+            .await?;
+
+            sqlx::query(&format!(
+                "INSERT INTO ration_usage \
+                 (provider, base_url, label, limit_value, remaining, utilization, resets_at, observed_at, updated_at) \
+                 VALUES ({p1}, {p2}, {p3}, {p4}, {p5}, {p6}, {p7}, {p8}, {now}) \
+                 ON CONFLICT(provider, base_url, label) DO UPDATE SET \
+                    limit_value = excluded.limit_value, \
+                    remaining = excluded.remaining, \
+                    utilization = excluded.utilization, \
+                    resets_at = excluded.resets_at, \
+                    observed_at = excluded.observed_at, \
+                    updated_at = {now}",
+                p1 = ph(1), p2 = ph(2), p3 = ph(3), p4 = ph(4),
+                p5 = ph(5), p6 = ph(6), p7 = ph(7), p8 = ph(8),
+                now = now,
+            ))
+            .bind($provider)
+            .bind($base_url)
+            .bind(&w.label)
+            .bind(limit)
+            .bind(remaining)
+            .bind(w.utilization)
+            .bind(w.resets_at)
+            .bind(w.observed_at)
+            .execute(&mut **tx)
+            .await?;
+        }
+    }};
+}
+
+/// Fetch the latest usage rows for an optional provider filter, using the
+/// supplied placeholder token for the WHERE clause bind.
+///
+/// `$pool` is the connection pool (Sqlite or Postgres). `$provider` is
+/// `Option<&str>`. `$ph1` is the placeholder string for position 1
+/// — `"?"` or `"$1"`. The SELECT columns and ORDER BY are dialect-neutral
+/// so they are written once here.
+macro_rules! fetch_latest {
+    ($pool:expr, $provider:expr, $ph1:expr) => {{
+        let rows = if let Some(p) = $provider {
+            sqlx::query(&format!(
+                "SELECT provider, base_url, label, limit_value, remaining, \
+                 utilization, resets_at, observed_at \
+                 FROM ration_usage WHERE provider = {ph1} \
+                 ORDER BY base_url ASC, label ASC",
+                ph1 = $ph1,
+            ))
+            .bind(p)
+            .fetch_all($pool)
+            .await?
+        } else {
+            sqlx::query(
+                "SELECT provider, base_url, label, limit_value, remaining, \
+                 utilization, resets_at, observed_at \
+                 FROM ration_usage ORDER BY provider ASC, base_url ASC, label ASC",
+            )
+            .fetch_all($pool)
+            .await?
+        };
+        let out: Vec<(String, String, UsageWindow)> =
+            rows.into_iter().map(|r| row_to_window!(r)).collect();
+        Ok(out)
+    }};
+}
+
 /// One pending write's payload, shipped over the mpsc channel to the
 /// single consumer task that owns the database pool.
 struct WriteJob {
@@ -238,49 +343,14 @@ async fn record_sqlite(
     windows: &[UsageWindow],
 ) -> anyhow::Result<()> {
     let mut tx = pool.begin().await?;
-    for w in windows {
-        let limit = w.limit.map(|v| v as i64);
-        let remaining = w.remaining.map(|v| v as i64);
-
-        sqlx::query(
-            "INSERT INTO ration_history \
-             (provider, base_url, label, limit_value, remaining, utilization, resets_at, observed_at) \
-             VALUES (?, ?, ?, ?, ?, ?, ?, ?)",
-        )
-        .bind(provider)
-        .bind(base_url)
-        .bind(&w.label)
-        .bind(limit)
-        .bind(remaining)
-        .bind(w.utilization)
-        .bind(w.resets_at)
-        .bind(w.observed_at)
-        .execute(&mut *tx)
-        .await?;
-
-        sqlx::query(
-            "INSERT INTO ration_usage \
-             (provider, base_url, label, limit_value, remaining, utilization, resets_at, observed_at, updated_at) \
-             VALUES (?, ?, ?, ?, ?, ?, ?, ?, UNIXEPOCH()) \
-             ON CONFLICT(provider, base_url, label) DO UPDATE SET \
-                limit_value = excluded.limit_value, \
-                remaining = excluded.remaining, \
-                utilization = excluded.utilization, \
-                resets_at = excluded.resets_at, \
-                observed_at = excluded.observed_at, \
-                updated_at = UNIXEPOCH()",
-        )
-        .bind(provider)
-        .bind(base_url)
-        .bind(&w.label)
-        .bind(limit)
-        .bind(remaining)
-        .bind(w.utilization)
-        .bind(w.resets_at)
-        .bind(w.observed_at)
-        .execute(&mut *tx)
-        .await?;
-    }
+    record_windows!(
+        tx,
+        provider,
+        base_url,
+        windows,
+        |_| "?".to_owned(),
+        "UNIXEPOCH()"
+    );
     tx.commit().await?;
     Ok(())
 }
@@ -292,49 +362,14 @@ async fn record_postgres(
     windows: &[UsageWindow],
 ) -> anyhow::Result<()> {
     let mut tx = pool.begin().await?;
-    for w in windows {
-        let limit = w.limit.map(|v| v as i64);
-        let remaining = w.remaining.map(|v| v as i64);
-
-        sqlx::query(
-            "INSERT INTO ration_history \
-             (provider, base_url, label, limit_value, remaining, utilization, resets_at, observed_at) \
-             VALUES ($1, $2, $3, $4, $5, $6, $7, $8)",
-        )
-        .bind(provider)
-        .bind(base_url)
-        .bind(&w.label)
-        .bind(limit)
-        .bind(remaining)
-        .bind(w.utilization)
-        .bind(w.resets_at)
-        .bind(w.observed_at)
-        .execute(&mut *tx)
-        .await?;
-
-        sqlx::query(
-            "INSERT INTO ration_usage \
-             (provider, base_url, label, limit_value, remaining, utilization, resets_at, observed_at, updated_at) \
-             VALUES ($1, $2, $3, $4, $5, $6, $7, $8, EXTRACT(EPOCH FROM clock_timestamp())::BIGINT) \
-             ON CONFLICT (provider, base_url, label) DO UPDATE SET \
-                limit_value = EXCLUDED.limit_value, \
-                remaining = EXCLUDED.remaining, \
-                utilization = EXCLUDED.utilization, \
-                resets_at = EXCLUDED.resets_at, \
-                observed_at = EXCLUDED.observed_at, \
-                updated_at = EXTRACT(EPOCH FROM clock_timestamp())::BIGINT",
-        )
-        .bind(provider)
-        .bind(base_url)
-        .bind(&w.label)
-        .bind(limit)
-        .bind(remaining)
-        .bind(w.utilization)
-        .bind(w.resets_at)
-        .bind(w.observed_at)
-        .execute(&mut *tx)
-        .await?;
-    }
+    record_windows!(
+        tx,
+        provider,
+        base_url,
+        windows,
+        |n: u8| format!("${n}"),
+        "EXTRACT(EPOCH FROM clock_timestamp())::BIGINT"
+    );
     tx.commit().await?;
     Ok(())
 }
@@ -343,46 +378,14 @@ async fn fetch_latest_sqlite(
     pool: &SqlitePool,
     provider: Option<&str>,
 ) -> anyhow::Result<Vec<(String, String, UsageWindow)>> {
-    let rows = if let Some(p) = provider {
-        sqlx::query(
-            "SELECT provider, base_url, label, limit_value, remaining, utilization, resets_at, observed_at \
-             FROM ration_usage WHERE provider = ? ORDER BY base_url ASC, label ASC",
-        )
-        .bind(p)
-        .fetch_all(pool)
-        .await?
-    } else {
-        sqlx::query(
-            "SELECT provider, base_url, label, limit_value, remaining, utilization, resets_at, observed_at \
-             FROM ration_usage ORDER BY provider ASC, base_url ASC, label ASC",
-        )
-        .fetch_all(pool)
-        .await?
-    };
-    Ok(rows.into_iter().map(|r| row_to_window!(r)).collect())
+    fetch_latest!(pool, provider, "?")
 }
 
 async fn fetch_latest_postgres(
     pool: &PgPool,
     provider: Option<&str>,
 ) -> anyhow::Result<Vec<(String, String, UsageWindow)>> {
-    let rows = if let Some(p) = provider {
-        sqlx::query(
-            "SELECT provider, base_url, label, limit_value, remaining, utilization, resets_at, observed_at \
-             FROM ration_usage WHERE provider = $1 ORDER BY base_url ASC, label ASC",
-        )
-        .bind(p)
-        .fetch_all(pool)
-        .await?
-    } else {
-        sqlx::query(
-            "SELECT provider, base_url, label, limit_value, remaining, utilization, resets_at, observed_at \
-             FROM ration_usage ORDER BY provider ASC, base_url ASC, label ASC",
-        )
-        .fetch_all(pool)
-        .await?
-    };
-    Ok(rows.into_iter().map(|r| row_to_window!(r)).collect())
+    fetch_latest!(pool, provider, "$1")
 }
 
 #[cfg(test)]

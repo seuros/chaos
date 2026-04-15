@@ -13,6 +13,7 @@ use crate::file_watcher::FileWatcher;
 use crate::file_watcher::FileWatcherEvent;
 use crate::mcp::McpManager;
 use crate::minions::AgentControl;
+use crate::minions::router::ProcessTableRouter;
 use crate::models_manager::collaboration_mode_presets::CollaborationModesConfig;
 use crate::models_manager::manager::ModelsManager;
 use crate::process::Process;
@@ -134,6 +135,7 @@ enum ShutdownOutcome {
 /// them in memory.
 pub struct ProcessTable {
     state: Arc<ProcessTableState>,
+    router: ProcessTableRouter,
     _test_chaos_home_guard: Option<TempChaosHomeGuard>,
 }
 
@@ -166,25 +168,28 @@ impl ProcessTable {
         let (process_created_tx, _) = broadcast::channel(PROCESS_CREATED_CHANNEL_CAPACITY);
         let mcp_manager = Arc::new(McpManager::new());
         let file_watcher = build_file_watcher(chaos_home.clone());
+        let state = Arc::new(ProcessTableState {
+            processes: Arc::new(RwLock::new(HashMap::new())),
+            closed_process_histories: Arc::new(RwLock::new(HashMap::new())),
+            process_created_tx,
+            models_manager: Arc::new(ModelsManager::new_with_provider(
+                chaos_home,
+                auth_manager.clone(),
+                config.model_catalog.clone(),
+                collaboration_modes_config,
+                models_provider,
+            )),
+            mcp_manager,
+            file_watcher,
+            auth_manager,
+            session_source,
+            ops_log: should_use_process_table_test_behavior()
+                .then(|| Arc::new(std::sync::Mutex::new(Vec::new()))),
+        });
+        let router = ProcessTableRouter::enumerate(Arc::clone(&state));
         Self {
-            state: Arc::new(ProcessTableState {
-                processes: Arc::new(RwLock::new(HashMap::new())),
-                closed_process_histories: Arc::new(RwLock::new(HashMap::new())),
-                process_created_tx,
-                models_manager: Arc::new(ModelsManager::new_with_provider(
-                    chaos_home,
-                    auth_manager.clone(),
-                    config.model_catalog.clone(),
-                    collaboration_modes_config,
-                    models_provider,
-                )),
-                mcp_manager,
-                file_watcher,
-                auth_manager,
-                session_source,
-                ops_log: should_use_process_table_test_behavior()
-                    .then(|| Arc::new(std::sync::Mutex::new(Vec::new()))),
-            }),
+            state,
+            router,
             _test_chaos_home_guard: None,
         }
     }
@@ -220,23 +225,26 @@ impl ProcessTable {
         let (process_created_tx, _) = broadcast::channel(PROCESS_CREATED_CHANNEL_CAPACITY);
         let mcp_manager = Arc::new(McpManager::new());
         let file_watcher = build_file_watcher(chaos_home.clone());
+        let state = Arc::new(ProcessTableState {
+            processes: Arc::new(RwLock::new(HashMap::new())),
+            closed_process_histories: Arc::new(RwLock::new(HashMap::new())),
+            process_created_tx,
+            models_manager: Arc::new(ModelsManager::with_provider_for_tests(
+                chaos_home,
+                auth_manager.clone(),
+                provider,
+            )),
+            mcp_manager,
+            file_watcher,
+            auth_manager,
+            session_source: SessionSource::Exec,
+            ops_log: should_use_process_table_test_behavior()
+                .then(|| Arc::new(std::sync::Mutex::new(Vec::new()))),
+        });
+        let router = ProcessTableRouter::enumerate(Arc::clone(&state));
         Self {
-            state: Arc::new(ProcessTableState {
-                processes: Arc::new(RwLock::new(HashMap::new())),
-                closed_process_histories: Arc::new(RwLock::new(HashMap::new())),
-                process_created_tx,
-                models_manager: Arc::new(ModelsManager::with_provider_for_tests(
-                    chaos_home,
-                    auth_manager.clone(),
-                    provider,
-                )),
-                mcp_manager,
-                file_watcher,
-                auth_manager,
-                session_source: SessionSource::Exec,
-                ops_log: should_use_process_table_test_behavior()
-                    .then(|| Arc::new(std::sync::Mutex::new(Vec::new()))),
-            }),
+            state,
+            router,
             _test_chaos_home_guard: None,
         }
     }
@@ -486,7 +494,30 @@ impl ProcessTable {
     }
 
     pub(crate) fn agent_control(&self) -> AgentControl {
-        AgentControl::new(Arc::downgrade(&self.state))
+        AgentControl::new(Arc::downgrade(&self.state), self.router.adapter())
+    }
+
+    /// Issue a `Drain` packet through the process-table router and
+    /// wait for every currently-dispatched spawn / resume / fork body
+    /// to complete. Scope matches `ProcessTableOp::Drain`: only the
+    /// routed state mutation is covered. Post-reply work performed by
+    /// the caller (slot commit, process-created notification, initial
+    /// `Op::UserInput` submission, completion-watcher spawn) is *not*
+    /// awaited and must be joined separately by the turn-boundary
+    /// handler before `TurnAborted` is emitted.
+    #[allow(dead_code, reason = "wired by the turn-boundary drain follow-up")]
+    pub(crate) async fn drain_router(&self) -> ChaosResult<()> {
+        let (tx, rx) = tokio::sync::oneshot::channel();
+        self.router
+            .adapter()
+            .send(crate::minions::router::ProcessTableOp::Drain { reply: tx })
+            .await
+            .map_err(|err| {
+                ChaosErr::UnsupportedOperation(format!("process-table router unreachable: {err}"))
+            })?;
+        rx.await.map_err(|_| {
+            ChaosErr::UnsupportedOperation("process-table router dropped drain reply".to_string())
+        })
     }
 
     #[cfg(test)]
@@ -500,6 +531,14 @@ impl ProcessTable {
 }
 
 impl ProcessTableState {
+    pub(crate) fn auth_manager(&self) -> &Arc<AuthManager> {
+        &self.auth_manager
+    }
+
+    pub(crate) fn session_source(&self) -> SessionSource {
+        self.session_source.clone()
+    }
+
     pub(crate) async fn list_process_ids(&self) -> Vec<ProcessId> {
         self.processes.read().await.keys().copied().collect()
     }
@@ -546,47 +585,6 @@ impl ProcessTableState {
             }
         }
         removed
-    }
-
-    /// Spawn a new thread with no history using a provided config.
-    pub(crate) async fn spawn_new_process(
-        &self,
-        config: Config,
-        agent_control: AgentControl,
-    ) -> ChaosResult<NewProcess> {
-        Box::pin(self.spawn_new_process_with_source(
-            config,
-            agent_control,
-            self.session_source.clone(),
-            /*persist_extended_history*/ false,
-            /*metrics_service_name*/ None,
-            /*inherited_shell_snapshot*/ None,
-        ))
-        .await
-    }
-
-    pub(crate) async fn spawn_new_process_with_source(
-        &self,
-        config: Config,
-        agent_control: AgentControl,
-        session_source: SessionSource,
-        persist_extended_history: bool,
-        metrics_service_name: Option<String>,
-        inherited_shell_snapshot: Option<Arc<ShellSnapshot>>,
-    ) -> ChaosResult<NewProcess> {
-        Box::pin(self.spawn_process_with_source(
-            config,
-            InitialHistory::New,
-            Arc::clone(&self.auth_manager),
-            agent_control,
-            session_source,
-            Vec::new(),
-            persist_extended_history,
-            metrics_service_name,
-            inherited_shell_snapshot,
-            /*parent_trace*/ None,
-        ))
-        .await
     }
 
     pub(crate) async fn resume_process_with_source(

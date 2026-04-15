@@ -139,7 +139,7 @@ async fn wait_for_subagent_notification(parent_thread: &Arc<Process>) -> bool {
 
 #[tokio::test]
 async fn send_input_errors_when_manager_dropped() {
-    let control = AgentControl::default();
+    let control = AgentControl::for_tests();
     let err = control
         .send_input(
             ProcessId::new(),
@@ -158,7 +158,7 @@ async fn send_input_errors_when_manager_dropped() {
 
 #[tokio::test]
 async fn get_status_returns_not_found_without_manager() {
-    let control = AgentControl::default();
+    let control = AgentControl::for_tests();
     let got = control.get_status(ProcessId::new()).await;
     assert_eq!(got, AgentStatus::NotFound);
 }
@@ -213,7 +213,7 @@ async fn on_event_updates_status_from_shutdown_complete() {
 
 #[tokio::test]
 async fn spawn_agent_errors_when_manager_dropped() {
-    let control = AgentControl::default();
+    let control = AgentControl::for_tests();
     let (_home, config) = test_config().await;
     let err = control
         .spawn_agent(config, text_input("hello"), None)
@@ -227,7 +227,7 @@ async fn spawn_agent_errors_when_manager_dropped() {
 
 #[tokio::test]
 async fn resume_agent_errors_when_manager_dropped() {
-    let control = AgentControl::default();
+    let control = AgentControl::for_tests();
     let (_home, config) = test_config().await;
     let err = control
         .resume_agent_from_rollout(config, ProcessId::new(), SessionSource::Exec)

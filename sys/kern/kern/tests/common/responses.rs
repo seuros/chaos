@@ -802,21 +802,33 @@ pub async fn mount_response_once(server: &MockServer, response: ResponseTemplate
     response_mock
 }
 
-pub async fn mount_response_once_match<M>(
+async fn mount_with_matcher<M>(
     server: &MockServer,
+    mock_builder: (MockBuilder, ResponseMock),
     matcher: M,
     response: ResponseTemplate,
 ) -> ResponseMock
 where
-    M: wiremock::Match + Send + Sync + 'static,
+    M: Match + Send + Sync + 'static,
 {
-    let (mock, response_mock) = base_mock();
+    let (mock, response_mock) = mock_builder;
     mock.and(matcher)
         .respond_with(response)
         .up_to_n_times(1)
         .mount(server)
         .await;
     response_mock
+}
+
+pub async fn mount_response_once_match<M>(
+    server: &MockServer,
+    matcher: M,
+    response: ResponseTemplate,
+) -> ResponseMock
+where
+    M: Match + Send + Sync + 'static,
+{
+    mount_with_matcher(server, base_mock(), matcher, response).await
 }
 
 fn base_mock() -> (MockBuilder, ResponseMock) {
@@ -845,15 +857,9 @@ fn models_mock() -> (MockBuilder, ModelsMock) {
 
 pub async fn mount_sse_once_match<M>(server: &MockServer, matcher: M, body: String) -> ResponseMock
 where
-    M: wiremock::Match + Send + Sync + 'static,
+    M: Match + Send + Sync + 'static,
 {
-    let (mock, response_mock) = base_mock();
-    mock.and(matcher)
-        .respond_with(sse_response(body))
-        .up_to_n_times(1)
-        .mount(server)
-        .await;
-    response_mock
+    mount_with_matcher(server, base_mock(), matcher, sse_response(body)).await
 }
 
 pub async fn mount_sse_once(server: &MockServer, body: String) -> ResponseMock {
@@ -871,15 +877,15 @@ pub async fn mount_compact_json_once_match<M>(
     body: serde_json::Value,
 ) -> ResponseMock
 where
-    M: wiremock::Match + Send + Sync + 'static,
+    M: Match + Send + Sync + 'static,
 {
-    let (mock, response_mock) = compact_mock();
-    mock.and(matcher)
-        .respond_with(json_response_200(body.clone()))
-        .up_to_n_times(1)
-        .mount(server)
-        .await;
-    response_mock
+    mount_with_matcher(
+        server,
+        compact_mock(),
+        matcher,
+        json_response_200(body.clone()),
+    )
+    .await
 }
 
 pub async fn mount_compact_json_once(server: &MockServer, body: serde_json::Value) -> ResponseMock {

@@ -15,6 +15,8 @@ use chaos_kern::auth::CLIENT_ID;
 use chaos_kern::auth::login_with_api_key;
 use chaos_kern::auth::logout;
 use chaos_kern::config::Config;
+use chaos_kern::config::ConfigOverrides;
+use chaos_kern::config::load_config_or_exit as kern_load_config_or_exit;
 use chaos_pam::DeviceCode;
 use chaos_pam::LoginFlowMode;
 use chaos_pam::LoginFlowUpdate;
@@ -435,14 +437,7 @@ async fn load_config_or_exit(cli_config_overrides: CliConfigOverrides) -> Config
             std::process::exit(1);
         }
     };
-
-    match Config::load_with_cli_overrides(cli_overrides).await {
-        Ok(config) => config,
-        Err(e) => {
-            eprintln!("Error loading configuration: {e}");
-            std::process::exit(1);
-        }
-    }
+    kern_load_config_or_exit(cli_overrides, ConfigOverrides::default(), None).await
 }
 
 fn safe_format_key(key: &str) -> String {

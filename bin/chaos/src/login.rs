@@ -22,22 +22,20 @@ use chaos_pam::LoginFlowMode;
 use chaos_pam::LoginFlowUpdate;
 use chaos_pam::ServerOptions;
 use chaos_pam::spawn_login_flow;
-use std::fs::OpenOptions;
 use std::io::IsTerminal;
 use std::io::Read;
-use tracing_appender::non_blocking;
 use tracing_appender::non_blocking::WorkerGuard;
-use tracing_subscriber::EnvFilter;
-use tracing_subscriber::Layer;
 use tracing_subscriber::layer::SubscriberExt;
 use tracing_subscriber::util::SubscriberInitExt;
+
+use chaos_snitch::open_debug_log_file_layer;
+use chaos_snitch::open_log_file_layer;
 
 const CHATGPT_LOGIN_DISABLED_MESSAGE: &str =
     "ChatGPT login is disabled. Use API key login instead.";
 const API_KEY_LOGIN_DISABLED_MESSAGE: &str =
     "API key login is disabled. Use ChatGPT login instead.";
 const LOGIN_SUCCESS_MESSAGE: &str = "Successfully logged in";
-const DEBUG_LOG_PATH_ENV_VAR: &str = "CHAOS_DEBUG_LOG_PATH";
 const DEBUG_LOG_FILTER: &str = "warn,chaos_kern=debug,chaos_boot=debug,chaos_fork=debug,\
 chaos_console=debug,chaos_mcpd=debug,chaos_pam=debug,chaos_syslog=debug,\
 chaos_ipc=debug,chaos_selinux=debug,chaos_dtrace=debug,chaos_hallucinate=debug,\
@@ -45,11 +43,12 @@ mcp_guest=debug,chaos_clamp=debug,chaos_parrot=debug";
 
 /// Installs a small file-backed tracing layer for direct `chaos login` flows.
 ///
-/// This deliberately duplicates a narrow slice of the TUI logging setup instead of reusing it
-/// wholesale. The TUI stack includes session-oriented layers that are valuable for interactive
-/// runs but unnecessary for a one-shot login command. Keeping the direct CLI path local lets this
-/// command produce a durable `chaos-login.log` artifact without coupling it to the TUI's broader
-/// telemetry and feedback initialization.
+/// This deliberately uses a narrow file-logging setup instead of the TUI logging
+/// stack. The TUI stack includes session-oriented layers that are valuable for
+/// interactive runs but unnecessary for a one-shot login command. Keeping the
+/// direct CLI path local lets this command produce a durable `chaos-login.log`
+/// artifact without coupling it to the TUI's broader telemetry and feedback
+/// initialization.
 fn init_login_file_logging(config: &Config) -> Vec<WorkerGuard> {
     let log_dir = match chaos_kern::config::log_dir(config) {
         Ok(log_dir) => log_dir,
@@ -67,17 +66,17 @@ fn init_login_file_logging(config: &Config) -> Vec<WorkerGuard> {
         return Vec::new();
     }
 
-    let mut log_file_opts = OpenOptions::new();
-    log_file_opts.create(true).append(true);
-
-    {
-        use std::os::unix::fs::OpenOptionsExt;
-        log_file_opts.mode(0o600);
-    }
-
     let log_path = log_dir.join("chaos-login.log");
-    let log_file = match log_file_opts.open(&log_path) {
-        Ok(log_file) => log_file,
+
+    // Direct `chaos login` otherwise relies on ephemeral stderr and browser output.
+    // Persist the same login targets to a file so support can inspect auth failures
+    // without reproducing them through TUI or app-server.
+    let (file_layer, file_guard) = match open_log_file_layer(
+        &log_path,
+        "chaos_boot=info,chaos_kern=info,chaos_pam=info",
+        tracing_subscriber::fmt::format::FmtSpan::NONE,
+    ) {
+        Ok(pair) => pair,
         Err(err) => {
             eprintln!(
                 "Warning: failed to open login log file {}: {err}",
@@ -87,56 +86,15 @@ fn init_login_file_logging(config: &Config) -> Vec<WorkerGuard> {
         }
     };
 
-    let (login_non_blocking, login_guard) = non_blocking(log_file);
-    let env_filter = EnvFilter::try_from_default_env()
-        .unwrap_or_else(|_| EnvFilter::new("chaos_boot=info,chaos_kern=info,chaos_pam=info"));
-    let file_layer = tracing_subscriber::fmt::layer()
-        .with_writer(login_non_blocking)
-        .with_target(true)
-        .with_ansi(false)
-        .with_filter(env_filter);
-    let mut guards = vec![login_guard];
-
-    let debug_file_layer = if let Some(debug_path) =
-        std::env::var_os(DEBUG_LOG_PATH_ENV_VAR).map(std::path::PathBuf::from)
-    {
-        let mut debug_log_file_opts = OpenOptions::new();
-        debug_log_file_opts.create(true).append(true);
-
-        {
-            use std::os::unix::fs::OpenOptionsExt;
-            debug_log_file_opts.mode(0o600);
-        }
-
-        match debug_log_file_opts.open(&debug_path) {
-            Ok(debug_log_file) => {
-                let (debug_non_blocking, debug_guard) = non_blocking(debug_log_file);
-                guards.push(debug_guard);
-                let filter = EnvFilter::try_from_default_env()
-                    .unwrap_or_else(|_| EnvFilter::new(DEBUG_LOG_FILTER));
-                Some(
-                    tracing_subscriber::fmt::layer()
-                        .with_writer(debug_non_blocking)
-                        .with_target(true)
-                        .with_ansi(false)
-                        .with_filter(filter),
-                )
-            }
+    let (debug_file_layer, debug_guard) =
+        match open_debug_log_file_layer::<tracing_subscriber::Registry>(DEBUG_LOG_FILTER) {
+            Ok(pair) => pair,
             Err(err) => {
-                eprintln!(
-                    "Warning: failed to open debug log file {}: {err}",
-                    debug_path.display()
-                );
-                None
+                eprintln!("Warning: failed to open debug log file: {err}");
+                (None, None)
             }
-        }
-    } else {
-        None
-    };
+        };
 
-    // Direct `chaos login` otherwise relies on ephemeral stderr and browser output.
-    // Persist the same login targets to a file so support can inspect auth failures
-    // without reproducing them through TUI or app-server.
     if let Err(err) = tracing_subscriber::registry()
         .with(debug_file_layer)
         .with(file_layer)
@@ -149,6 +107,10 @@ fn init_login_file_logging(config: &Config) -> Vec<WorkerGuard> {
         return Vec::new();
     }
 
+    let mut guards = vec![file_guard];
+    if let Some(g) = debug_guard {
+        guards.push(g);
+    }
     guards
 }
 

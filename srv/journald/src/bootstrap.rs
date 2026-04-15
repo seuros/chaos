@@ -23,9 +23,10 @@ pub struct BootstrapPaths {
 
 impl BootstrapPaths {
     pub fn discover() -> std::io::Result<Self> {
-        let config = crate::JournalServerConfig::discover()?;
+        let chaos_home = chaos_pwd::find_chaos_home()?;
+        let config = crate::JournalServerConfig::from_chaos_home(chaos_home.as_path());
         Ok(Self {
-            runtime_dir: crate::default_socket_runtime_dir()?,
+            runtime_dir: crate::default_socket_runtime_dir(chaos_home.as_path()),
             socket_path: config.socket_path,
             sqlite_db_path: config.sqlite_db_path,
         })
@@ -37,7 +38,8 @@ impl BootstrapPaths {
 }
 
 pub fn runtime_socket_dir() -> std::io::Result<PathBuf> {
-    crate::default_socket_runtime_dir()
+    let chaos_home = chaos_pwd::find_chaos_home()?;
+    Ok(crate::default_socket_runtime_dir(chaos_home.as_path()))
 }
 
 pub async fn ensure_sqlite_journald_running(binary_path: Option<&Path>) -> Result<BootstrapPaths> {

@@ -27,7 +27,7 @@ pub struct JournalServerConfig {
 impl JournalServerConfig {
     pub fn from_chaos_home(chaos_home: &Path) -> Self {
         Self {
-            socket_path: default_socket_path_in(),
+            socket_path: default_socket_path_in(chaos_home),
             sqlite_db_path: sqlite_db_path_in(chaos_home),
         }
     }
@@ -39,17 +39,17 @@ impl JournalServerConfig {
 }
 
 pub fn default_socket_path() -> std::io::Result<PathBuf> {
-    Ok(default_socket_path_in())
+    let chaos_home = chaos_pwd::find_chaos_home()?;
+    Ok(default_socket_path_in(chaos_home.as_path()))
 }
 
-pub fn default_socket_runtime_dir() -> std::io::Result<PathBuf> {
-    if let Some(runtime_dir) = std::env::var_os("XDG_RUNTIME_DIR").filter(|value| !value.is_empty())
-    {
-        return Ok(PathBuf::from(runtime_dir).join("chaos"));
-    }
-
-    let uid = unsafe { libc::geteuid() };
-    Ok(std::env::temp_dir().join(format!("chaos-{uid}")))
+/// Per-`chaos_home` runtime directory holding the journald socket and
+/// startup lock. Isolating by chaos_home means tests (which point
+/// `CHAOS_HOME` at a tempdir) never share a socket with the user's
+/// real daemon, so a test that leaks its daemon can't hijack the
+/// user's `~/.chaos` socket.
+pub fn default_socket_runtime_dir(chaos_home: &Path) -> PathBuf {
+    chaos_home.join("run")
 }
 
 pub fn sqlite_db_path() -> std::io::Result<PathBuf> {
@@ -130,10 +130,8 @@ pub async fn run_sqlite_journal_server(config: JournalServerConfig) -> Result<()
     }
 }
 
-fn default_socket_path_in() -> PathBuf {
-    default_socket_runtime_dir()
-        .unwrap_or_else(|_| std::env::temp_dir().join("chaos"))
-        .join(DEFAULT_SOCKET_FILENAME)
+fn default_socket_path_in(chaos_home: &Path) -> PathBuf {
+    default_socket_runtime_dir(chaos_home).join(DEFAULT_SOCKET_FILENAME)
 }
 
 fn sqlite_db_path_in(chaos_home: &Path) -> PathBuf {

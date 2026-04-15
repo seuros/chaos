@@ -18,6 +18,7 @@ use tracing::enabled;
 use tracing::trace;
 
 use crate::ensure_rustls_crypto_provider;
+use crate::telemetry::inject_trace_headers;
 
 pub type ByteStream = BoxStream<'static, Result<Bytes, TransportError>>;
 
@@ -134,30 +135,6 @@ impl RamaTransport {
             .body(rama_body)
             .map_err(|err| TransportError::Build(err.to_string()))
     }
-}
-
-fn inject_trace_headers(headers: &mut HeaderMap) {
-    use rama::telemetry::opentelemetry::global;
-    use rama::telemetry::opentelemetry::propagation::Injector;
-    use tracing::Span;
-    use tracing_opentelemetry::OpenTelemetrySpanExt;
-
-    struct HeaderMapInjector<'a>(&'a mut HeaderMap);
-
-    impl Injector for HeaderMapInjector<'_> {
-        fn set(&mut self, key: &str, value: String) {
-            if let (Ok(name), Ok(val)) = (
-                rama::http::HeaderName::from_bytes(key.as_bytes()),
-                rama::http::HeaderValue::from_str(&value),
-            ) {
-                self.0.insert(name, val);
-            }
-        }
-    }
-
-    global::get_text_map_propagator(|prop| {
-        prop.inject_context(&Span::current().context(), &mut HeaderMapInjector(headers));
-    });
 }
 
 impl HttpTransport for RamaTransport {

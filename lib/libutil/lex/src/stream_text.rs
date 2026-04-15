@@ -44,6 +44,24 @@ pub fn collect_chunks<P: StreamTextParser>(
     all
 }
 
+/// Collect visible text and extracted payloads from a complete string.
+///
+/// This is the batch-processing version of streaming parsers. It feeds the
+/// entire input in one `push_str` call, flushes with `finish`, and returns
+/// the accumulated visible text and extracted payloads.
+///
+/// Useful for simple one-shot text processing where streaming is not needed.
+pub fn collect_visible_text<P: StreamTextParser>(
+    mut parser: P,
+    input: &str,
+) -> StreamTextChunk<P::Extracted> {
+    let mut out = parser.push_str(input);
+    let tail = parser.finish();
+    out.visible_text.push_str(&tail.visible_text);
+    out.extracted.extend(tail.extracted);
+    out
+}
+
 /// Trait for parsers that consume streamed text and emit visible text plus extracted payloads.
 pub trait StreamTextParser {
     /// Payload extracted by this parser (for example a citation body).

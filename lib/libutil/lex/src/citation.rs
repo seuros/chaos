@@ -2,6 +2,7 @@ use crate::InlineHiddenTagParser;
 use crate::InlineTagSpec;
 use crate::StreamTextChunk;
 use crate::StreamTextParser;
+use crate::collect_visible_text;
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 enum CitationTag {
@@ -67,10 +68,7 @@ impl StreamTextParser for CitationStreamParser {
 /// This uses [`CitationStreamParser`] internally, so it inherits the same semantics:
 /// literal, non-nested matching and auto-closing unterminated citations at EOF.
 pub fn strip_citations(text: &str) -> (String, Vec<String>) {
-    let mut parser = CitationStreamParser::new();
-    let mut out = parser.push_str(text);
-    let tail = parser.finish();
-    out.visible_text.push_str(&tail.visible_text);
-    out.extracted.extend(tail.extracted);
+    let parser = CitationStreamParser::new();
+    let out = collect_visible_text(parser, text);
     (out.visible_text, out.extracted)
 }

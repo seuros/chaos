@@ -1,6 +1,7 @@
 pub(crate) mod control;
 mod guards;
 pub(crate) mod role;
+pub(crate) mod router;
 pub(crate) mod status;
 pub(crate) mod tools;
 

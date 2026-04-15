@@ -4,7 +4,12 @@ use crate::minions::AgentStatus;
 use crate::minions::guards::Guards;
 use crate::minions::role::DEFAULT_ROLE_NAME;
 use crate::minions::role::resolve_role_config;
+use crate::minions::router::ForkArgs;
+use crate::minions::router::ProcessTableOp;
+use crate::minions::router::ResumeArgs;
+use crate::minions::router::SpawnArgs;
 use crate::minions::status::is_final;
+use crate::process_table::NewProcess;
 use crate::process_table::ProcessTableState;
 use crate::rollout::RolloutRecorder;
 use crate::runtime_db;
@@ -20,8 +25,10 @@ use chaos_ipc::protocol::RolloutItem;
 use chaos_ipc::protocol::SessionSource;
 use chaos_ipc::protocol::SubAgentSource;
 use chaos_ipc::user_input::UserInput;
+use chaos_traits::Adapter;
 use std::sync::Arc;
 use std::sync::Weak;
+use tokio::sync::oneshot;
 use tokio::sync::watch;
 use tracing::warn;
 
@@ -48,22 +55,56 @@ fn agent_nickname_candidates(
 /// An `AgentControl` instance is shared per "user session" which means the same `AgentControl`
 /// is used for every sub-agent spawned by Chaos. By doing so, we make sure the guards are
 /// scoped to a user session.
-#[derive(Clone, Default)]
+#[derive(Clone)]
 pub(crate) struct AgentControl {
     /// Weak handle back to the global process registry/state.
     /// This is `Weak` to avoid reference cycles and shadow persistence of the form
     /// `ProcessTableState -> Process -> Session -> SessionServices -> ProcessTableState`.
     manager: Weak<ProcessTableState>,
+    /// Typed mailbox for process-table mutation ingress (spawn / resume / fork).
+    router: Adapter<ProcessTableOp>,
     state: Arc<Guards>,
 }
 
 impl AgentControl {
-    /// Construct a new `AgentControl` that can spawn/message agents via the given manager state.
-    pub(crate) fn new(manager: Weak<ProcessTableState>) -> Self {
+    /// Construct a new `AgentControl` wired to the given state plus its
+    /// process-table router adapter.
+    pub(crate) fn new(manager: Weak<ProcessTableState>, router: Adapter<ProcessTableOp>) -> Self {
         Self {
             manager,
-            ..Default::default()
+            router,
+            state: Arc::default(),
         }
+    }
+
+    /// Construct a detached `AgentControl` for tests that never exercise
+    /// the spawn paths. The router adapter's receiver is dropped, so any
+    /// accidental mutation call surfaces as an error rather than silently
+    /// succeeding.
+    #[cfg(test)]
+    pub(crate) fn for_tests() -> Self {
+        let (router, _rx) = Adapter::<ProcessTableOp>::bounded(1);
+        drop(_rx);
+        Self {
+            manager: Weak::new(),
+            router,
+            state: Arc::default(),
+        }
+    }
+
+    async fn call_router(
+        &self,
+        trace: Option<chaos_ipc::protocol::W3cTraceContext>,
+        make_op: impl FnOnce(oneshot::Sender<ChaosResult<NewProcess>>) -> ProcessTableOp,
+    ) -> ChaosResult<NewProcess> {
+        let (tx, rx) = oneshot::channel();
+        let op = make_op(tx);
+        self.router.send_traced(op, trace).await.map_err(|err| {
+            ChaosErr::UnsupportedOperation(format!("process-table router unreachable: {err}"))
+        })?;
+        rx.await.map_err(|_| {
+            ChaosErr::UnsupportedOperation("process-table router dropped reply".to_string())
+        })?
     }
 
     /// Spawn a new agent thread and submit the initial prompt.
@@ -173,30 +214,66 @@ impl AgentControl {
                         },
                     ));
                     let initial_history = InitialHistory::Forked(forked_rollout_items);
-                    state
-                        .fork_process_with_source(
-                            config,
-                            initial_history,
-                            self.clone(),
-                            session_source,
-                            /*persist_extended_history*/ false,
-                            inherited_shell_snapshot,
-                        )
-                        .await?
+                    let agent_control = self.clone();
+                    self.call_router(
+                        chaos_syslog::current_span_w3c_trace_context(),
+                        move |reply| ProcessTableOp::Fork {
+                            args: Box::new(ForkArgs {
+                                config,
+                                initial_history,
+                                agent_control,
+                                session_source,
+                                persist_extended_history: false,
+                                inherited_shell_snapshot,
+                            }),
+                            reply,
+                        },
+                    )
+                    .await?
                 } else {
-                    state
-                        .spawn_new_process_with_source(
-                            config,
-                            self.clone(),
-                            session_source,
-                            /*persist_extended_history*/ false,
-                            /*metrics_service_name*/ None,
-                            inherited_shell_snapshot,
-                        )
-                        .await?
+                    let agent_control = self.clone();
+                    let auth_manager = Arc::clone(state.auth_manager());
+                    self.call_router(
+                        chaos_syslog::current_span_w3c_trace_context(),
+                        move |reply| ProcessTableOp::Spawn {
+                            args: Box::new(SpawnArgs {
+                                config,
+                                auth_manager,
+                                agent_control,
+                                session_source,
+                                persist_extended_history: false,
+                                metrics_service_name: None,
+                                inherited_shell_snapshot,
+                                parent_trace: None,
+                            }),
+                            reply,
+                        },
+                    )
+                    .await?
                 }
             }
-            None => state.spawn_new_process(config, self.clone()).await?,
+            None => {
+                let agent_control = self.clone();
+                let auth_manager = Arc::clone(state.auth_manager());
+                let session_source = state.session_source();
+                self.call_router(
+                    chaos_syslog::current_span_w3c_trace_context(),
+                    move |reply| ProcessTableOp::Spawn {
+                        args: Box::new(SpawnArgs {
+                            config,
+                            auth_manager,
+                            agent_control,
+                            session_source,
+                            persist_extended_history: false,
+                            metrics_service_name: None,
+                            inherited_shell_snapshot: None,
+                            parent_trace: None,
+                        }),
+                        reply,
+                    },
+                )
+                .await?
+            }
         };
         let process_id = new_process.process_id();
         reservation.commit(process_id);
@@ -264,13 +341,20 @@ impl AgentControl {
         let inherited_shell_snapshot = self
             .inherited_shell_snapshot_for_source(&state, Some(&session_source))
             .await;
-        let resumed_process = state
-            .resume_process_with_source(
-                config,
-                process_id,
-                self.clone(),
-                session_source,
-                inherited_shell_snapshot,
+        let agent_control = self.clone();
+        let resumed_process = self
+            .call_router(
+                chaos_syslog::current_span_w3c_trace_context(),
+                move |reply| ProcessTableOp::Resume {
+                    args: Box::new(ResumeArgs {
+                        config,
+                        process_id,
+                        agent_control,
+                        session_source,
+                        inherited_shell_snapshot,
+                    }),
+                    reply,
+                },
             )
             .await?;
         let process_id = resumed_process.process_id();

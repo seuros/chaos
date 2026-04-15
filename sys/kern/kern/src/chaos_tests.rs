@@ -425,7 +425,7 @@ pub(crate) async fn make_session_and_context() -> (Session, TurnContext) {
         None,
         CollaborationModesConfig::default(),
     ));
-    let agent_control = AgentControl::default();
+    let agent_control = AgentControl::for_tests();
     let exec_policy = ExecPolicyManager::default();
     let (agent_status_tx, _agent_status_rx) = watch::channel(AgentStatus::PendingInit);
     let model = ModelsManager::get_model_offline_for_tests(config.model.as_deref());
@@ -579,7 +579,7 @@ pub(crate) async fn make_session_and_context_with_dynamic_tools_and_rx(
         None,
         CollaborationModesConfig::default(),
     ));
-    let agent_control = AgentControl::default();
+    let agent_control = AgentControl::for_tests();
     let exec_policy = ExecPolicyManager::default();
     let (agent_status_tx, _agent_status_rx) = watch::channel(AgentStatus::PendingInit);
     let model = ModelsManager::get_model_offline_for_tests(config.model.as_deref());

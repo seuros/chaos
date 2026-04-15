@@ -124,24 +124,24 @@ async fn prefixes_context_and_instructions_once_and_consistently_across_requests
         "expected permissions + cached contextual user prefix + user msg"
     );
 
-    let ui_text = input1[1]["content"][0]["text"]
-        .as_str()
-        .expect("ui message text");
-    assert!(
-        ui_text.contains("be consistent and helpful"),
-        "expected user instructions in UI message: {ui_text}"
-    );
-
+    // `user_instructions` was evicted by b430498671 — it no longer rides
+    // along in the contextual user prefix. Only the environment context
+    // is bundled there now.
     let shell = default_user_shell();
     let cwd_str = config.cwd.to_string_lossy();
-    let env_text = input1[1]["content"][1]["text"]
+    let env_text = input1[1]["content"][0]["text"]
         .as_str()
         .expect("environment context text");
     assert_default_env_context(env_text, &cwd_str, &shell);
     assert_eq!(
-        input1[1]["content"][1]["type"].as_str(),
+        input1[1]["content"][0]["type"].as_str(),
         Some("input_text"),
-        "expected environment context bundled after UI message in cached contextual message"
+        "expected environment context to be the sole cached contextual entry"
+    );
+    assert_eq!(
+        input1[1]["content"].as_array().map(Vec::len),
+        Some(1),
+        "cached contextual user message should contain only environment context"
     );
     assert_eq!(input1[2], text_user_input("hello 1".to_string()));
 
@@ -464,21 +464,18 @@ async fn send_user_turn_with_no_changes_does_not_send_environment_context() -> a
     let expected_permissions_msg = body1["input"][0].clone();
     let expected_ui_msg = body1["input"][1].clone();
 
+    // Post b430498671: `user_instructions` no longer rides along in the
+    // cached contextual user prefix. Only the environment context is
+    // bundled there.
     let shell = default_user_shell();
     let default_cwd_lossy = default_cwd.to_string_lossy();
-    let expected_env_text_1 = expected_ui_msg["content"][1]["text"]
+    let expected_env_text_1 = expected_ui_msg["content"][0]["text"]
         .as_str()
         .expect("cached environment context text")
         .to_string();
     assert_default_env_context(&expected_env_text_1, &default_cwd_lossy, &shell);
 
-    let expected_contextual_user_msg_1 = text_user_input_parts(vec![
-        expected_ui_msg["content"][0]["text"]
-            .as_str()
-            .expect("cached user instructions text")
-            .to_string(),
-        expected_env_text_1,
-    ]);
+    let expected_contextual_user_msg_1 = text_user_input_parts(vec![expected_env_text_1]);
     let expected_user_message_1 = text_user_input("hello 1".to_string());
 
     let expected_input_1 = serde_json::Value::Array(vec![
@@ -584,19 +581,15 @@ async fn send_user_turn_with_changes_sends_environment_context() -> anyhow::Resu
     let expected_permissions_msg = body1["input"][0].clone();
     let expected_ui_msg = body1["input"][1].clone();
 
+    // Post b430498671: only environment context is bundled into the
+    // cached contextual user prefix; `user_instructions` was evicted.
     let shell = default_user_shell();
-    let expected_env_text_1 = expected_ui_msg["content"][1]["text"]
+    let expected_env_text_1 = expected_ui_msg["content"][0]["text"]
         .as_str()
         .expect("cached environment context text")
         .to_string();
     assert_default_env_context(&expected_env_text_1, &default_cwd.to_string_lossy(), &shell);
-    let expected_contextual_user_msg_1 = text_user_input_parts(vec![
-        expected_ui_msg["content"][0]["text"]
-            .as_str()
-            .expect("cached user instructions text")
-            .to_string(),
-        expected_env_text_1,
-    ]);
+    let expected_contextual_user_msg_1 = text_user_input_parts(vec![expected_env_text_1]);
     let expected_user_message_1 = text_user_input("hello 1".to_string());
     let expected_input_1 = serde_json::Value::Array(vec![
         expected_permissions_msg.clone(),

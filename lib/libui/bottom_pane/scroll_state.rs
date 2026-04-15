@@ -1,3 +1,29 @@
+use crossterm::event::KeyCode;
+
+/// Vim-style vertical navigation direction recognised by [`nav_key`].
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub(crate) enum NavDir {
+    Up,
+    Down,
+}
+
+/// Classify a key code as vim-style up/down navigation.
+///
+/// Returns `Some(NavDir::Up)` for `Up` and unmodified `k`,
+/// `Some(NavDir::Down)` for `Down` and unmodified `j`,
+/// and `None` for anything else.
+///
+/// Use this at match sites that share the
+/// `KeyCode::Up | KeyCode::Char('k')` / `KeyCode::Down | KeyCode::Char('j')`
+/// pattern so the canonical key set lives in one place.
+pub(crate) fn nav_key(code: KeyCode) -> Option<NavDir> {
+    match code {
+        KeyCode::Up | KeyCode::Char('k') => Some(NavDir::Up),
+        KeyCode::Down | KeyCode::Char('j') => Some(NavDir::Down),
+        _ => None,
+    }
+}
+
 /// Generic scroll/selection state for a vertical list menu.
 ///
 /// Encapsulates the common behavior of a selectable list that supports:

@@ -2,6 +2,9 @@ use crossterm::event::KeyCode;
 use crossterm::event::KeyEvent;
 use crossterm::event::KeyModifiers;
 
+use crate::bottom_pane::scroll_state::NavDir;
+use crate::bottom_pane::scroll_state::nav_key;
+
 use crate::app_event::AppEvent;
 use crate::bottom_pane::CancellationEvent;
 use crate::bottom_pane::InputResult;
@@ -66,10 +69,10 @@ impl RequestUserInputOverlay {
                     self.jump_to_question(idx);
                 }
             }
-            KeyCode::Up | KeyCode::Char('k') => {
+            code if matches!(nav_key(code), Some(NavDir::Up)) => {
                 state.move_up_wrap(/*len*/ 2);
             }
-            KeyCode::Down | KeyCode::Char('j') => {
+            code if matches!(nav_key(code), Some(NavDir::Down)) => {
                 state.move_down_wrap(/*len*/ 2);
             }
             KeyCode::Enter => {
@@ -221,7 +224,7 @@ impl BottomPaneView for RequestUserInputOverlay {
                 let options_len = self.options_len();
                 // Keep selection synchronized as the user moves.
                 match key_event.code {
-                    KeyCode::Up | KeyCode::Char('k') => {
+                    code if matches!(nav_key(code), Some(NavDir::Up)) => {
                         let moved = if let Some(answer) = self.current_answer_mut() {
                             answer.options_state.move_up_wrap(options_len);
                             answer.answer_committed = false;
@@ -233,7 +236,7 @@ impl BottomPaneView for RequestUserInputOverlay {
                             self.sync_composer_placeholder();
                         }
                     }
-                    KeyCode::Down | KeyCode::Char('j') => {
+                    code if matches!(nav_key(code), Some(NavDir::Down)) => {
                         let moved = if let Some(answer) = self.current_answer_mut() {
                             answer.options_state.move_down_wrap(options_len);
                             answer.answer_committed = false;

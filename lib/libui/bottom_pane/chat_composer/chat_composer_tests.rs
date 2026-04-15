@@ -1891,7 +1891,7 @@ fn type_chars_humanlike(composer: &mut ChatComposer, chars: &[char]) {
 }
 
 #[test]
-fn slash_init_dispatches_command_and_does_not_submit_literal_text() {
+fn slash_command_dispatches_and_does_not_submit_literal_text() {
     use crossterm::event::KeyCode;
     use crossterm::event::KeyEvent;
     use crossterm::event::KeyModifiers;
@@ -1906,8 +1906,10 @@ fn slash_init_dispatches_command_and_does_not_submit_literal_text() {
         false,
     );
 
-    // Type the slash command.
-    type_chars_humanlike(&mut composer, &['/', 'i', 'n', 'i', 't']);
+    // Type a slash command that exists in the enum. /model is a stable
+    // built-in and not in ALIAS_COMMANDS, so it behaves the same as any
+    // other dispatched command without args.
+    type_chars_humanlike(&mut composer, &['/', 'm', 'o', 'd', 'e', 'l']);
 
     // Press Enter to dispatch the selected command.
     let (result, _needs_redraw) =
@@ -1917,10 +1919,10 @@ fn slash_init_dispatches_command_and_does_not_submit_literal_text() {
     // Command result (not submit literal text) and clear its textarea.
     match result {
         InputResult::Command(cmd) => {
-            assert_eq!(cmd.command(), "init");
+            assert_eq!(cmd.command(), "model");
         }
         InputResult::CommandWithArgs(_, _, _) => {
-            panic!("expected command dispatch without args for '/init'")
+            panic!("expected command dispatch without args for '/model'")
         }
         InputResult::Submitted { text, .. } => {
             panic!("expected command dispatch, but composer submitted literal text: {text}")
@@ -1928,7 +1930,7 @@ fn slash_init_dispatches_command_and_does_not_submit_literal_text() {
         InputResult::Queued { .. } => {
             panic!("expected command dispatch, but composer queued literal text")
         }
-        InputResult::None => panic!("expected Command result for '/init'"),
+        InputResult::None => panic!("expected Command result for '/model'"),
     }
     assert!(composer.textarea.is_empty(), "composer should be cleared");
 }

@@ -9,16 +9,13 @@ use rama::http::HttpError;
 use rama::http::Method;
 use rama::http::body::util::BodyExt;
 use rama::service::BoxService;
-use rama::telemetry::opentelemetry::global;
-use rama::telemetry::opentelemetry::propagation::Injector;
 use serde::Serialize;
 use std::fmt::Display;
 use std::sync::Arc;
 use tokio::sync::Mutex;
-use tracing::Span;
-use tracing_opentelemetry::OpenTelemetrySpanExt;
 
 use crate::ensure_rustls_crypto_provider;
+use crate::telemetry::inject_trace_headers;
 
 type RamaClient = BoxService<rama::http::Request, rama::http::Response, OpaqueError>;
 
@@ -235,28 +232,10 @@ pub enum ChaosClientError {
     Json(String),
 }
 
-fn inject_trace_headers(headers: &mut HeaderMap) {
-    struct HeaderMapInjector<'a>(&'a mut HeaderMap);
-
-    impl Injector for HeaderMapInjector<'_> {
-        fn set(&mut self, key: &str, value: String) {
-            if let (Ok(name), Ok(val)) = (
-                HeaderName::from_bytes(key.as_bytes()),
-                HeaderValue::from_str(&value),
-            ) {
-                self.0.insert(name, val);
-            }
-        }
-    }
-
-    global::get_text_map_propagator(|prop| {
-        prop.inject_context(&Span::current().context(), &mut HeaderMapInjector(headers));
-    });
-}
-
 #[cfg(test)]
 mod tests {
     use super::*;
+    use rama::telemetry::opentelemetry::global;
     use rama::telemetry::opentelemetry::propagation::Extractor;
     use rama::telemetry::opentelemetry::propagation::TextMapPropagator;
     use rama::telemetry::opentelemetry::sdk::propagation::TraceContextPropagator;
@@ -264,6 +243,7 @@ mod tests {
     use rama::telemetry::opentelemetry::trace::TraceContextExt;
     use rama::telemetry::opentelemetry::trace::TracerProvider;
     use tracing::trace_span;
+    use tracing_opentelemetry::OpenTelemetrySpanExt;
     use tracing_subscriber::layer::SubscriberExt;
     use tracing_subscriber::util::SubscriberInitExt;
 

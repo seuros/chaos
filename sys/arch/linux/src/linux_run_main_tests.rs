@@ -1,6 +1,8 @@
 #[cfg(test)]
 use super::*;
 #[cfg(test)]
+use alcatraz_base::sandbox_policy::ResolveSandboxPoliciesError;
+#[cfg(test)]
 use chaos_ipc::protocol::FileSystemSandboxPolicy;
 #[cfg(test)]
 use chaos_ipc::protocol::NetworkSandboxPolicy;
@@ -12,6 +14,8 @@ use chaos_ipc::protocol::SandboxPolicy;
 use chaos_realpath::AbsolutePathBuf;
 #[cfg(test)]
 use pretty_assertions::assert_eq;
+#[cfg(test)]
+use std::path::Path;
 
 #[test]
 fn split_only_filesystem_policy_requires_direct_runtime_enforcement() {

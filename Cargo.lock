@@ -123,6 +123,7 @@ dependencies = [
 name = "alcatraz-base"
 version = "47.0.0"
 dependencies = [
+ "chaos-ipc",
  "landlock",
  "seccompiler",
  "thiserror 2.0.18",

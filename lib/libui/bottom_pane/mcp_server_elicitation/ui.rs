@@ -22,7 +22,9 @@ use crate::bottom_pane::ChatComposer;
 use crate::bottom_pane::ChatComposerConfig;
 use crate::bottom_pane::InputResult;
 use crate::bottom_pane::bottom_pane_view::BottomPaneView;
+use crate::bottom_pane::scroll_state::NavDir;
 use crate::bottom_pane::scroll_state::ScrollState;
+use crate::bottom_pane::scroll_state::nav_key;
 use crate::bottom_pane::selection_popup_common::GenericDisplayRow;
 use crate::bottom_pane::selection_popup_common::measure_rows_height;
 use crate::bottom_pane::selection_popup_common::menu_surface_inset;
@@ -872,13 +874,13 @@ impl BottomPaneView for McpServerElicitationOverlay {
             self.validation_error = None;
             let options_len = self.options_len();
             match key_event.code {
-                KeyCode::Up | KeyCode::Char('k') => {
+                code if matches!(nav_key(code), Some(NavDir::Up)) => {
                     if let Some(answer) = self.current_answer_mut() {
                         answer.selection.move_up_wrap(options_len);
                         answer.answer_committed = false;
                     }
                 }
-                KeyCode::Down | KeyCode::Char('j') => {
+                code if matches!(nav_key(code), Some(NavDir::Down)) => {
                     if let Some(answer) = self.current_answer_mut() {
                         answer.selection.move_down_wrap(options_len);
                         answer.answer_committed = false;

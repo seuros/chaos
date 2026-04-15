@@ -137,8 +137,15 @@ impl RamaTransport {
     }
 }
 
-impl HttpTransport for RamaTransport {
-    async fn execute(&self, req: Request) -> Result<Response, TransportError> {
+struct RawResponse {
+    status: StatusCode,
+    headers: HeaderMap,
+    url: String,
+    body: rama::http::Response,
+}
+
+impl RamaTransport {
+    async fn send(&self, req: Request) -> Result<RawResponse, TransportError> {
         if enabled!(Level::TRACE) {
             trace!(
                 "{} to {}: {}",
@@ -158,9 +165,26 @@ impl HttpTransport for RamaTransport {
             .await
             .map_err(|err| TransportError::Network(err.to_string()))?;
 
-        let status = response.status();
-        let headers = response.headers().clone();
-        let body_bytes = response
+        Ok(RawResponse {
+            status: response.status(),
+            headers: response.headers().clone(),
+            url,
+            body: response,
+        })
+    }
+}
+
+impl HttpTransport for RamaTransport {
+    async fn execute(&self, req: Request) -> Result<Response, TransportError> {
+        let raw = self.send(req).await?;
+        let RawResponse {
+            status,
+            headers,
+            url,
+            body,
+        } = raw;
+
+        let body_bytes = body
             .into_body()
             .collect()
             .await
@@ -185,30 +209,16 @@ impl HttpTransport for RamaTransport {
     }
 
     async fn stream(&self, req: Request) -> Result<StreamResponse, TransportError> {
-        if enabled!(Level::TRACE) {
-            trace!(
-                "{} to {}: {}",
-                req.method,
-                req.url,
-                req.body.as_ref().unwrap_or_default()
-            );
-        }
-
-        let url = req.url.clone();
-        let request = Self::build_request(req)?;
-        let response = self
-            .client
-            .lock()
-            .await
-            .serve(request)
-            .await
-            .map_err(|err| TransportError::Network(err.to_string()))?;
-
-        let status = response.status();
-        let headers = response.headers().clone();
+        let raw = self.send(req).await?;
+        let RawResponse {
+            status,
+            headers,
+            url,
+            body,
+        } = raw;
 
         if !status.is_success() {
-            let body_bytes = response
+            let body_bytes = body
                 .into_body()
                 .collect()
                 .await
@@ -223,7 +233,7 @@ impl HttpTransport for RamaTransport {
             });
         }
 
-        let body_stream = response.into_body().into_data_stream();
+        let body_stream = body.into_body().into_data_stream();
         let stream = tokio_stream::StreamExt::map(body_stream, |result: Result<Bytes, _>| {
             result.map_err(|err| TransportError::Network(err.to_string()))
         });

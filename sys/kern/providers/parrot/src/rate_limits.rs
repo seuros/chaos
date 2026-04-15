@@ -1,6 +1,6 @@
+use chaos_abi::RateLimitSnapshot;
 use chaos_ipc::account::PlanType;
 use chaos_ipc::protocol::CreditsSnapshot;
-use chaos_ipc::protocol::RateLimitSnapshot;
 use chaos_ipc::protocol::RateLimitWindow;
 use http::HeaderMap;
 use serde::Deserialize;

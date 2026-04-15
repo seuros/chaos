@@ -26,6 +26,7 @@ use chaos_ipc::request_user_input::RequestUserInputArgs;
 use chaos_ipc::request_user_input::RequestUserInputResponse;
 use chaos_pf::normalize_host;
 use tokio::sync::oneshot;
+use tracing::error;
 use tracing::warn;
 
 use super::Session;
@@ -33,6 +34,8 @@ use super::TurnContext;
 use crate::exec_policy::ExecPolicyUpdateError;
 use crate::network_policy_decision::execpolicy_network_rule_amendment;
 use crate::protocol::ApprovalPolicy;
+use crate::state::turn::ApprovalKind;
+use crate::state::turn::PendingInsert;
 
 impl Session {
     /// Adds an execpolicy amendment to both the in-memory and on-disk policies
@@ -216,21 +219,27 @@ impl Session {
         let effective_approval_id = approval_id.clone().unwrap_or_else(|| call_id.clone());
         // Add the tx_approve callback to the map before sending the request.
         let (tx_approve, rx_approve) = oneshot::channel();
-        let prev_entry = {
+        let insert_result = {
             let mut active = self.active_turn.lock().await;
             match active.as_mut() {
                 Some(at) => {
                     let mut ts = at.turn_state.lock().await;
-                    ts.insert_pending_approval(effective_approval_id.clone(), tx_approve)
+                    ts.insert_pending_approval(
+                        ApprovalKind::Exec,
+                        effective_approval_id.clone(),
+                        tx_approve,
+                    )
                 }
-                None => None,
+                None => PendingInsert::Inserted, // no active turn: send-only best effort
             }
         };
-        if prev_entry.is_some() {
-            warn!(
-                "Overwriting existing pending approval for \
-                 call_id: {effective_approval_id}"
+        if let PendingInsert::Duplicate(_) = insert_result {
+            error!(
+                "Duplicate pending exec approval for call_id: \
+                 {effective_approval_id}; aborting the new request to preserve \
+                 the in-flight responder"
             );
+            return ReviewDecision::Abort;
         }
 
         let parsed_cmd = crate::parse_command::parse_command(&command);
@@ -283,18 +292,25 @@ impl Session {
         // Add the tx_approve callback to the map before sending the request.
         let (tx_approve, rx_approve) = oneshot::channel();
         let approval_id = call_id.clone();
-        let prev_entry = {
+        let insert_result = {
             let mut active = self.active_turn.lock().await;
             match active.as_mut() {
                 Some(at) => {
                     let mut ts = at.turn_state.lock().await;
-                    ts.insert_pending_approval(approval_id.clone(), tx_approve)
+                    ts.insert_pending_approval(ApprovalKind::Patch, approval_id.clone(), tx_approve)
                 }
-                None => None,
+                None => PendingInsert::Inserted,
             }
         };
-        if prev_entry.is_some() {
-            warn!("Overwriting existing pending approval for call_id: {approval_id}");
+        if let PendingInsert::Duplicate(tx_reject) = insert_result {
+            error!(
+                "Duplicate pending patch approval for call_id: {approval_id}; \
+                 aborting the new request to preserve the in-flight responder"
+            );
+            // Deliver an immediate abort through the caller's receiver so the
+            // downstream `.await` resolves without racing the original request.
+            let _ = tx_reject.send(ReviewDecision::Abort);
+            return rx_approve;
         }
 
         let event = EventMsg::ApplyPatchApprovalRequest(ApplyPatchApprovalRequestEvent {
@@ -335,21 +351,25 @@ impl Session {
         }
 
         let (tx_response, rx_response) = oneshot::channel();
-        let prev_entry = {
+        let insert_result = {
             let mut active = self.active_turn.lock().await;
             match active.as_mut() {
                 Some(at) => {
                     let mut ts = at.turn_state.lock().await;
                     ts.insert_pending_request_permissions(call_id.clone(), tx_response)
                 }
-                None => None,
+                None => PendingInsert::Inserted,
             }
         };
-        if prev_entry.is_some() {
-            warn!(
-                "Overwriting existing pending request_permissions \
-                 for call_id: {call_id}"
+        if let PendingInsert::Duplicate(_) = insert_result {
+            error!(
+                "Duplicate pending request_permissions for call_id: {call_id}; \
+                 returning default profile to preserve the in-flight responder"
             );
+            return Some(RequestPermissionsResponse {
+                permissions: RequestPermissionProfile::default(),
+                scope: PermissionGrantScope::Turn,
+            });
         }
 
         let event = EventMsg::RequestPermissions(RequestPermissionsEvent {
@@ -428,13 +448,21 @@ impl Session {
         }
     }
 
-    pub async fn notify_approval(&self, approval_id: &str, decision: ReviewDecision) {
+    /// Deliver a decision to a pending approval. `kind` selects the
+    /// namespace so an exec `call_id` cannot resolve a patch approval (and
+    /// vice-versa) even if the ids happen to collide.
+    pub async fn notify_approval(
+        &self,
+        kind: ApprovalKind,
+        approval_id: &str,
+        decision: ReviewDecision,
+    ) {
         let entry = {
             let mut active = self.active_turn.lock().await;
             match active.as_mut() {
                 Some(at) => {
                     let mut ts = at.turn_state.lock().await;
-                    ts.remove_pending_approval(approval_id)
+                    ts.remove_pending_approval(kind, approval_id)
                 }
                 None => None,
             }
@@ -444,9 +472,21 @@ impl Session {
                 tx_approve.send(decision).ok();
             }
             None => {
-                warn!("No pending approval found for call_id: {approval_id}");
+                warn!("No pending approval found for kind: {kind:?} call_id: {approval_id}");
             }
         }
+    }
+
+    /// Convenience wrapper: exec approvals are the common case.
+    pub async fn notify_exec_approval(&self, approval_id: &str, decision: ReviewDecision) {
+        self.notify_approval(ApprovalKind::Exec, approval_id, decision)
+            .await;
+    }
+
+    /// Convenience wrapper for patch approvals.
+    pub async fn notify_patch_approval(&self, approval_id: &str, decision: ReviewDecision) {
+        self.notify_approval(ApprovalKind::Patch, approval_id, decision)
+            .await;
     }
 
     pub(crate) async fn granted_turn_permissions(&self) -> Option<PermissionProfile> {
@@ -471,18 +511,19 @@ impl Session {
         let sub_id = turn_context.sub_id.clone();
         let (tx_response, rx_response) = oneshot::channel();
         let event_id = sub_id.clone();
-        let prev_entry = {
+        let insert_result = {
             let mut active = self.active_turn.lock().await;
             match active.as_mut() {
                 Some(at) => {
                     let mut ts = at.turn_state.lock().await;
                     ts.insert_pending_user_input(sub_id, tx_response)
                 }
-                None => None,
+                None => PendingInsert::Inserted,
             }
         };
-        if prev_entry.is_some() {
-            warn!("Overwriting existing pending user input for sub_id: {event_id}");
+        if let PendingInsert::Duplicate(_) = insert_result {
+            error!("Duplicate pending user input for sub_id: {event_id}");
+            return None;
         }
 
         let event = EventMsg::RequestUserInput(RequestUserInputEvent {

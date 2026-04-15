@@ -281,14 +281,11 @@ impl Renderable for StatusLineSetupView {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::app_event_sender::AppEventSender;
     use crate::test_render::render_to_string;
+    use crate::test_support::make_app_event_sender;
     use insta::assert_snapshot;
     use pretty_assertions::assert_eq;
     use ratatui::layout::Rect;
-    use tokio::sync::mpsc::unbounded_channel;
-
-    use crate::app_event::AppEvent;
 
     #[test]
     fn preview_uses_runtime_values() {
@@ -344,7 +341,7 @@ mod tests {
 
     #[test]
     fn setup_view_snapshot_uses_runtime_preview_values() {
-        let (tx_raw, _rx) = unbounded_channel::<AppEvent>();
+        let tx = make_app_event_sender();
         let view = StatusLineSetupView::new(
             Some(&[
                 StatusLineItem::ModelName.to_string(),
@@ -360,7 +357,7 @@ mod tests {
                 ),
                 (StatusLineItem::WeeklyLimit, "weekly 82%".to_string()),
             ]),
-            AppEventSender::new(tx_raw),
+            tx,
         );
 
         assert_snapshot!(render_lines(&view, 72));

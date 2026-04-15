@@ -46,6 +46,7 @@ pub mod version;
 pub mod wrapping;
 
 pub mod test_render;
+pub mod test_support;
 
 #[cfg(feature = "vt100-tests")]
 pub mod test_backend;

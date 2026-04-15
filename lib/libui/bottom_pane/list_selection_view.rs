@@ -17,6 +17,8 @@ mod tests {
     use crate::app_event::AppEvent;
     use crate::bottom_pane::popup_consts::standard_popup_hint_line;
     use crate::test_render::render_to_string;
+    use crate::test_support::make_app_event_sender;
+    use crate::test_support::make_app_event_sender_with_rx;
     use crossterm::event::KeyCode;
     use insta::assert_snapshot;
     use pretty_assertions::assert_eq;
@@ -24,7 +26,6 @@ mod tests {
     use ratatui::layout::Rect;
     use ratatui::style::Color;
     use ratatui::style::Style;
-    use tokio::sync::mpsc::unbounded_channel;
 
     use types::SIDE_CONTENT_GAP;
 
@@ -72,8 +73,7 @@ mod tests {
     }
 
     fn make_selection_view(subtitle: Option<&str>) -> ListSelectionView {
-        let (tx_raw, _rx) = unbounded_channel::<AppEvent>();
-        let tx = AppEventSender::new(tx_raw);
+        let tx = make_app_event_sender();
         let items = vec![
             SelectionItem {
                 name: "Read Only".to_string(),
@@ -143,8 +143,7 @@ mod tests {
     }
 
     fn render_before_after_scroll_snapshot(col_width_mode: ColumnWidthMode, width: u16) -> String {
-        let (tx_raw, _rx) = unbounded_channel::<AppEvent>();
-        let tx = AppEventSender::new(tx_raw);
+        let tx = make_app_event_sender();
         let mut view = ListSelectionView::new(
             SelectionViewParams {
                 title: Some("Debug".to_string()),
@@ -165,7 +164,6 @@ mod tests {
     }
 
     use super::super::bottom_pane_view::BottomPaneView;
-    use crate::app_event_sender::AppEventSender;
     use crate::render::renderable::Renderable;
     use crossterm::event::KeyEvent;
     use ratatui::style::Stylize;
@@ -187,8 +185,7 @@ mod tests {
 
     #[test]
     fn theme_picker_subtitle_uses_fallback_text_in_94x35_terminal() {
-        let (tx_raw, _rx) = unbounded_channel::<AppEvent>();
-        let tx = AppEventSender::new(tx_raw);
+        let tx = make_app_event_sender();
         let home = dirs::home_dir().expect("home directory should be available");
         let chaos_home = home.join(".chaos");
         let params =
@@ -210,8 +207,7 @@ mod tests {
 
     #[test]
     fn preserve_side_content_bg_keeps_rendered_background_colors() {
-        let (tx_raw, _rx) = unbounded_channel::<AppEvent>();
-        let tx = AppEventSender::new(tx_raw);
+        let tx = make_app_event_sender();
         let view = ListSelectionView::new(
             SelectionViewParams {
                 title: Some("Debug".to_string()),
@@ -253,8 +249,7 @@ mod tests {
 
     #[test]
     fn snapshot_footer_note_wraps() {
-        let (tx_raw, _rx) = unbounded_channel::<AppEvent>();
-        let tx = AppEventSender::new(tx_raw);
+        let tx = make_app_event_sender();
         let items = vec![SelectionItem {
             name: "Read Only".to_string(),
             description: Some("Chaos can read files".to_string()),
@@ -285,8 +280,7 @@ mod tests {
 
     #[test]
     fn renders_search_query_line_when_enabled() {
-        let (tx_raw, _rx) = unbounded_channel::<AppEvent>();
-        let tx = AppEventSender::new(tx_raw);
+        let tx = make_app_event_sender();
         let items = vec![SelectionItem {
             name: "Read Only".to_string(),
             description: Some("Chaos can read files".to_string()),
@@ -316,8 +310,7 @@ mod tests {
 
     #[test]
     fn enter_with_no_matches_triggers_cancel_callback() {
-        let (tx_raw, mut rx) = unbounded_channel::<AppEvent>();
-        let tx = AppEventSender::new(tx_raw);
+        let (tx, mut rx) = make_app_event_sender_with_rx();
         let mut view = ListSelectionView::new(
             SelectionViewParams {
                 items: vec![SelectionItem {
@@ -347,8 +340,7 @@ mod tests {
 
     #[test]
     fn move_down_without_selection_change_does_not_fire_callback() {
-        let (tx_raw, mut rx) = unbounded_channel::<AppEvent>();
-        let tx = AppEventSender::new(tx_raw);
+        let (tx, mut rx) = make_app_event_sender_with_rx();
         let mut view = ListSelectionView::new(
             SelectionViewParams {
                 items: vec![SelectionItem {
@@ -376,8 +368,7 @@ mod tests {
 
     #[test]
     fn wraps_long_option_without_overflowing_columns() {
-        let (tx_raw, _rx) = unbounded_channel::<AppEvent>();
-        let tx = AppEventSender::new(tx_raw);
+        let tx = make_app_event_sender();
         let items = vec![
             SelectionItem {
                 name: "Yes, proceed".to_string(),
@@ -417,8 +408,7 @@ mod tests {
 
     #[test]
     fn width_changes_do_not_hide_rows() {
-        let (tx_raw, _rx) = unbounded_channel::<AppEvent>();
-        let tx = AppEventSender::new(tx_raw);
+        let tx = make_app_event_sender();
         let items = vec![
             SelectionItem {
                 name: "gpt-5.1-codex".to_string(),
@@ -471,8 +461,7 @@ mod tests {
 
     #[test]
     fn narrow_width_keeps_all_rows_visible() {
-        let (tx_raw, _rx) = unbounded_channel::<AppEvent>();
-        let tx = AppEventSender::new(tx_raw);
+        let tx = make_app_event_sender();
         let desc = "x".repeat(10);
         let items: Vec<SelectionItem> = (1..=3)
             .map(|idx| SelectionItem {
@@ -499,8 +488,7 @@ mod tests {
 
     #[test]
     fn snapshot_model_picker_width_80() {
-        let (tx_raw, _rx) = unbounded_channel::<AppEvent>();
-        let tx = AppEventSender::new(tx_raw);
+        let tx = make_app_event_sender();
         let items = vec![
             SelectionItem {
                 name: "gpt-5.1-codex".to_string(),
@@ -546,8 +534,7 @@ mod tests {
 
     #[test]
     fn snapshot_narrow_width_preserves_third_option() {
-        let (tx_raw, _rx) = unbounded_channel::<AppEvent>();
-        let tx = AppEventSender::new(tx_raw);
+        let tx = make_app_event_sender();
         let desc = "x".repeat(10);
         let items: Vec<SelectionItem> = (1..=3)
             .map(|idx| SelectionItem {
@@ -597,8 +584,7 @@ mod tests {
 
     #[test]
     fn auto_all_rows_col_width_does_not_shift_when_scrolling() {
-        let (tx_raw, _rx) = unbounded_channel::<AppEvent>();
-        let tx = AppEventSender::new(tx_raw);
+        let tx = make_app_event_sender();
 
         let mut view = ListSelectionView::new(
             SelectionViewParams {
@@ -631,8 +617,7 @@ mod tests {
 
     #[test]
     fn fixed_col_width_is_30_70_and_does_not_shift_when_scrolling() {
-        let (tx_raw, _rx) = unbounded_channel::<AppEvent>();
-        let tx = AppEventSender::new(tx_raw);
+        let tx = make_app_event_sender();
         let width = 96;
         let mut view = ListSelectionView::new(
             SelectionViewParams {
@@ -665,8 +650,7 @@ mod tests {
 
     #[test]
     fn side_layout_width_half_uses_exact_split() {
-        let (tx_raw, _rx) = unbounded_channel::<AppEvent>();
-        let tx = AppEventSender::new(tx_raw);
+        let tx = make_app_event_sender();
         let view = ListSelectionView::new(
             SelectionViewParams {
                 items: vec![SelectionItem {
@@ -692,8 +676,7 @@ mod tests {
 
     #[test]
     fn side_layout_width_half_falls_back_when_list_would_be_too_narrow() {
-        let (tx_raw, _rx) = unbounded_channel::<AppEvent>();
-        let tx = AppEventSender::new(tx_raw);
+        let tx = make_app_event_sender();
         let view = ListSelectionView::new(
             SelectionViewParams {
                 items: vec![SelectionItem {
@@ -717,8 +700,7 @@ mod tests {
 
     #[test]
     fn stacked_side_content_is_used_when_side_by_side_does_not_fit() {
-        let (tx_raw, _rx) = unbounded_channel::<AppEvent>();
-        let tx = AppEventSender::new(tx_raw);
+        let tx = make_app_event_sender();
         let view = ListSelectionView::new(
             SelectionViewParams {
                 title: Some("Debug".to_string()),
@@ -755,8 +737,7 @@ mod tests {
 
     #[test]
     fn side_content_clearing_resets_symbols_and_style() {
-        let (tx_raw, _rx) = unbounded_channel::<AppEvent>();
-        let tx = AppEventSender::new(tx_raw);
+        let tx = make_app_event_sender();
         let view = ListSelectionView::new(
             SelectionViewParams {
                 title: Some("Debug".to_string()),
@@ -814,8 +795,7 @@ mod tests {
 
     #[test]
     fn side_content_clearing_handles_non_zero_buffer_origin() {
-        let (tx_raw, _rx) = unbounded_channel::<AppEvent>();
-        let tx = AppEventSender::new(tx_raw);
+        let tx = make_app_event_sender();
         let view = ListSelectionView::new(
             SelectionViewParams {
                 title: Some("Debug".to_string()),

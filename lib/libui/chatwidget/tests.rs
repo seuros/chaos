@@ -34,6 +34,8 @@ use crate::history_cell::UserHistoryCell;
 use crate::render::renderable::Renderable;
 #[cfg(feature = "vt100-tests")]
 use crate::test_backend::VT100Backend;
+use crate::test_support::make_app_event_sender;
+use crate::test_support::make_app_event_sender_with_rx;
 use crate::tui::FrameRequester;
 use assert_matches::assert_matches;
 use chaos_ipc::ProcessId;
@@ -133,7 +135,6 @@ use std::path::PathBuf;
 use std::sync::OnceLock;
 use tempfile::tempdir;
 use tokio::sync::mpsc::error::TryRecvError;
-use tokio::sync::mpsc::unbounded_channel;
 use toml::Value as TomlValue;
 
 async fn test_config() -> Config {
@@ -1709,8 +1710,7 @@ async fn turn_started_uses_runtime_context_window_before_first_token_count() {
 )]
 #[tokio::test]
 async fn helpers_are_available_and_do_not_panic() {
-    let (tx_raw, _rx) = unbounded_channel::<AppEvent>();
-    let tx = AppEventSender::new(tx_raw);
+    let tx = make_app_event_sender();
     let cfg = test_config().await;
     let resolved_model = chaos_kern::test_support::get_model_offline(cfg.model.as_deref());
     let session_telemetry = test_session_telemetry(&cfg, resolved_model.as_str());
@@ -1763,9 +1763,8 @@ async fn make_chatwidget_manual(
     tokio::sync::mpsc::UnboundedReceiver<Op>,
 ) {
     ensure_rustls_crypto_provider();
-    let (tx_raw, rx) = unbounded_channel::<AppEvent>();
-    let app_event_tx = AppEventSender::new(tx_raw);
-    let (op_tx, op_rx) = unbounded_channel::<Op>();
+    let (app_event_tx, rx) = make_app_event_sender_with_rx();
+    let (op_tx, op_rx) = tokio::sync::mpsc::unbounded_channel::<Op>();
     let mut cfg = test_config().await;
     let resolved_model = model_override
         .map(str::to_owned)
@@ -2410,8 +2409,7 @@ async fn plan_reasoning_scope_popup_all_modes_persists_global_and_plan_override(
 
 #[test]
 fn queue_persist_model_selection_skips_clamped_writes() {
-    let (raw_tx, mut rx) = unbounded_channel();
-    let tx = AppEventSender::new(raw_tx);
+    let (tx, mut rx) = make_app_event_sender_with_rx();
 
     ChatWidget::queue_persist_model_selection(
         &tx,
@@ -2425,8 +2423,7 @@ fn queue_persist_model_selection_skips_clamped_writes() {
 
 #[test]
 fn queue_persist_model_selection_emits_when_unclamped() {
-    let (raw_tx, mut rx) = unbounded_channel();
-    let tx = AppEventSender::new(raw_tx);
+    let (tx, mut rx) = make_app_event_sender_with_rx();
 
     ChatWidget::queue_persist_model_selection(
         &tx,
@@ -5169,7 +5166,7 @@ async fn collaboration_modes_defaults_to_code_on_startup() {
     let init = ChatWidgetInit {
         config: cfg,
         frame_requester: FrameRequester::test_dummy(),
-        app_event_tx: AppEventSender::new(unbounded_channel::<AppEvent>().0),
+        app_event_tx: make_app_event_sender(),
         initial_user_message: None,
         enhanced_keys_supported: false,
         auth_manager,

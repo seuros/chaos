@@ -659,14 +659,13 @@ fn looks_like_mixed_http_auth_input(input: &str) -> bool {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::test_support::make_app_event_sender;
     use chaos_kern::config_loader::ConfigLayerStack;
     use std::collections::HashMap;
     use tempfile::tempdir;
-    use tokio::sync::mpsc::unbounded_channel;
 
     fn make_form() -> McpAddForm {
-        let (tx, _rx) = unbounded_channel();
-        let sender = AppEventSender::new(tx);
+        let sender = make_app_event_sender();
         McpAddForm::new(
             std::env::temp_dir(),
             ConfigLayerStack::default(),
@@ -818,8 +817,7 @@ mod tests {
     #[test]
     fn submit_without_active_process_does_not_write_mcp_json() {
         let tmp = tempdir().expect("tempdir");
-        let (tx, _rx) = unbounded_channel();
-        let sender = AppEventSender::new(tx);
+        let sender = crate::test_support::make_app_event_sender();
         let mut form = McpAddForm::new(
             tmp.path().to_path_buf(),
             ConfigLayerStack::default(),

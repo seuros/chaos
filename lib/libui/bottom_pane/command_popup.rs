@@ -285,41 +285,6 @@ mod tests {
     use pretty_assertions::assert_eq;
 
     #[test]
-    fn filter_includes_init_when_typing_prefix() {
-        let mut popup = CommandPopup::new(Vec::new(), CommandPopupFlags::default());
-        // Simulate the composer line starting with '/in' so the popup filters
-        // matching commands by prefix.
-        popup.on_composer_text_change("/in".to_string());
-
-        // Access the filtered list via the selected command and ensure that
-        // one of the matches is the new "init" command.
-        let matches = popup.filtered_items();
-        let has_init = matches.iter().any(|item| match item {
-            CommandItem::Builtin(cmd) => cmd.command() == "init",
-            CommandItem::UserPrompt(_) => false,
-        });
-        assert!(
-            has_init,
-            "expected '/init' to appear among filtered commands"
-        );
-    }
-
-    #[test]
-    fn selecting_init_by_exact_match() {
-        let mut popup = CommandPopup::new(Vec::new(), CommandPopupFlags::default());
-        popup.on_composer_text_change("/init".to_string());
-
-        // When an exact match exists, the selected command should be that
-        // command by default.
-        let selected = popup.selected_item();
-        match selected {
-            Some(CommandItem::Builtin(cmd)) => assert_eq!(cmd.command(), "init"),
-            Some(CommandItem::UserPrompt(_)) => panic!("unexpected prompt selected for '/init'"),
-            None => panic!("expected a selected command for exact match"),
-        }
-    }
-
-    #[test]
     fn model_is_first_suggestion_for_mo() {
         let mut popup = CommandPopup::new(Vec::new(), CommandPopupFlags::default());
         popup.on_composer_text_change("/mo".to_string());
@@ -382,11 +347,11 @@ mod tests {
 
     #[test]
     fn prompt_name_collision_with_builtin_is_ignored() {
-        // Create a prompt named like a builtin (e.g. "init").
+        // Create a prompt named like a builtin (e.g. "model").
         let popup = CommandPopup::new(
             vec![CustomPrompt {
-                name: "init".to_string(),
-                path: "/tmp/init.md".to_string().into(),
+                name: "model".to_string(),
+                path: "/tmp/model.md".to_string().into(),
                 content: "should be ignored".to_string(),
                 description: None,
                 argument_hint: None,
@@ -395,7 +360,7 @@ mod tests {
         );
         let items = popup.filtered_items();
         let has_collision_prompt = items.into_iter().any(|it| match it {
-            CommandItem::UserPrompt(i) => popup.prompt(i).is_some_and(|p| p.name == "init"),
+            CommandItem::UserPrompt(i) => popup.prompt(i).is_some_and(|p| p.name == "model"),
             _ => false,
         });
         assert!(

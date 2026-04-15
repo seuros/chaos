@@ -52,7 +52,7 @@ pub async fn exec_approval(
         ReviewDecision::Abort => {
             sess.interrupt_task().await;
         }
-        other => sess.notify_approval(&approval_id, other).await,
+        other => sess.notify_exec_approval(&approval_id, other).await,
     }
 }
 
@@ -61,7 +61,7 @@ pub async fn patch_approval(sess: &Arc<Session>, id: String, decision: ReviewDec
         ReviewDecision::Abort => {
             sess.interrupt_task().await;
         }
-        other => sess.notify_approval(&id, other).await,
+        other => sess.notify_patch_approval(&id, other).await,
     }
 }
 

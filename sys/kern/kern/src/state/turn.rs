@@ -99,10 +99,29 @@ pub(crate) enum MailboxDeliveryPhase {
     NextTurn,
 }
 
+/// Distinguishes the kind of approval so `call_id` cannot collide across
+/// different approval flows (exec vs patch). Each kind has its own namespace
+/// in the pending-approvals map.
+#[derive(Clone, Copy, Debug, Eq, PartialEq, Hash)]
+pub(crate) enum ApprovalKind {
+    Exec,
+    Patch,
+}
+
+/// Result of attempting to insert a pending responder. Rejects duplicates
+/// by construction so racing callers cannot silently clobber a prior
+/// oneshot — the unused sender is handed back to the caller to synthesize
+/// an immediate abort response.
+#[must_use]
+pub(crate) enum PendingInsert<T> {
+    Inserted,
+    Duplicate(oneshot::Sender<T>),
+}
+
 /// Mutable state for a single turn.
 #[derive(Default)]
 pub(crate) struct TurnState {
-    pending_approvals: HashMap<String, oneshot::Sender<ReviewDecision>>,
+    pending_approvals: HashMap<(ApprovalKind, String), oneshot::Sender<ReviewDecision>>,
     pending_request_permissions: HashMap<String, oneshot::Sender<RequestPermissionsResponse>>,
     pending_user_input: HashMap<String, oneshot::Sender<RequestUserInputResponse>>,
     pending_elicitations: HashMap<(String, RequestId), oneshot::Sender<ElicitationResponse>>,
@@ -115,19 +134,32 @@ pub(crate) struct TurnState {
 }
 
 impl TurnState {
+    /// Inserts a pending approval responder keyed by (`kind`, `key`).
+    /// Rejects duplicates rather than overwriting — the silent-overwrite
+    /// warning used to mask a real race. Callers on `Duplicate` must treat
+    /// it as an immediate abort.
     pub(crate) fn insert_pending_approval(
         &mut self,
+        kind: ApprovalKind,
         key: String,
         tx: oneshot::Sender<ReviewDecision>,
-    ) -> Option<oneshot::Sender<ReviewDecision>> {
-        self.pending_approvals.insert(key, tx)
+    ) -> PendingInsert<ReviewDecision> {
+        use std::collections::hash_map::Entry;
+        match self.pending_approvals.entry((kind, key)) {
+            Entry::Occupied(_) => PendingInsert::Duplicate(tx),
+            Entry::Vacant(slot) => {
+                slot.insert(tx);
+                PendingInsert::Inserted
+            }
+        }
     }
 
     pub(crate) fn remove_pending_approval(
         &mut self,
+        kind: ApprovalKind,
         key: &str,
     ) -> Option<oneshot::Sender<ReviewDecision>> {
-        self.pending_approvals.remove(key)
+        self.pending_approvals.remove(&(kind, key.to_string()))
     }
 
     pub(crate) fn clear_pending(&mut self) {
@@ -143,8 +175,15 @@ impl TurnState {
         &mut self,
         key: String,
         tx: oneshot::Sender<RequestPermissionsResponse>,
-    ) -> Option<oneshot::Sender<RequestPermissionsResponse>> {
-        self.pending_request_permissions.insert(key, tx)
+    ) -> PendingInsert<RequestPermissionsResponse> {
+        use std::collections::hash_map::Entry;
+        match self.pending_request_permissions.entry(key) {
+            Entry::Occupied(_) => PendingInsert::Duplicate(tx),
+            Entry::Vacant(slot) => {
+                slot.insert(tx);
+                PendingInsert::Inserted
+            }
+        }
     }
 
     pub(crate) fn remove_pending_request_permissions(
@@ -158,8 +197,15 @@ impl TurnState {
         &mut self,
         key: String,
         tx: oneshot::Sender<RequestUserInputResponse>,
-    ) -> Option<oneshot::Sender<RequestUserInputResponse>> {
-        self.pending_user_input.insert(key, tx)
+    ) -> PendingInsert<RequestUserInputResponse> {
+        use std::collections::hash_map::Entry;
+        match self.pending_user_input.entry(key) {
+            Entry::Occupied(_) => PendingInsert::Duplicate(tx),
+            Entry::Vacant(slot) => {
+                slot.insert(tx);
+                PendingInsert::Inserted
+            }
+        }
     }
 
     pub(crate) fn remove_pending_user_input(
@@ -331,6 +377,43 @@ mod tests {
 
         ts.record_tool_call_emitted();
         assert!(ts.accepts_mailbox_delivery());
+    }
+
+    #[test]
+    fn pending_approvals_reject_duplicates_across_kinds_independently() {
+        let mut ts = TurnState::default();
+        let (tx_a, _rx_a) = oneshot::channel();
+        let (tx_b, _rx_b) = oneshot::channel();
+        let (tx_c, _rx_c) = oneshot::channel();
+
+        // First exec insert for call_id=foo — accepted.
+        assert!(matches!(
+            ts.insert_pending_approval(ApprovalKind::Exec, "foo".into(), tx_a),
+            PendingInsert::Inserted
+        ));
+        // Duplicate exec insert for the same call_id — rejected.
+        assert!(matches!(
+            ts.insert_pending_approval(ApprovalKind::Exec, "foo".into(), tx_b),
+            PendingInsert::Duplicate(_)
+        ));
+        // Patch with the same textual id — accepted (separate namespace).
+        assert!(matches!(
+            ts.insert_pending_approval(ApprovalKind::Patch, "foo".into(), tx_c),
+            PendingInsert::Inserted
+        ));
+        // Removing by the wrong kind must not find the entry.
+        assert!(
+            ts.remove_pending_approval(ApprovalKind::Patch, "nope")
+                .is_none()
+        );
+        assert!(
+            ts.remove_pending_approval(ApprovalKind::Exec, "foo")
+                .is_some()
+        );
+        assert!(
+            ts.remove_pending_approval(ApprovalKind::Patch, "foo")
+                .is_some()
+        );
     }
 
     #[test]

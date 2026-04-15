@@ -430,6 +430,7 @@ async fn handle_exec_approval(
             available_decisions,
         ),
         parent_session,
+        crate::state::turn::ApprovalKind::Exec,
         &approval_id_for_op,
         cancel_token,
         /*review_cancel_token*/ None,
@@ -468,6 +469,7 @@ async fn handle_patch_approval(
     let decision = await_approval_with_cancel(
         async move { decision_rx.await.unwrap_or_default() },
         parent_session,
+        crate::state::turn::ApprovalKind::Patch,
         &approval_id,
         cancel_token,
         /*review_cancel_token*/ None,
@@ -583,10 +585,13 @@ where
     }
 }
 
-/// Await an approval decision, aborting on cancellation.
+/// Await an approval decision, aborting on cancellation. `kind` selects the
+/// namespace for the abort notify so exec and patch approvals cannot
+/// cross-pollinate even when their ids collide.
 async fn await_approval_with_cancel<F>(
     fut: F,
     parent_session: &Session,
+    kind: crate::state::turn::ApprovalKind,
     approval_id: &str,
     cancel_token: &CancellationToken,
     review_cancel_token: Option<&CancellationToken>,
@@ -601,7 +606,7 @@ where
                 review_cancel_token.cancel();
             }
             parent_session
-                .notify_approval(approval_id, chaos_ipc::protocol::ReviewDecision::Abort)
+                .notify_approval(kind, approval_id, chaos_ipc::protocol::ReviewDecision::Abort)
                 .await;
             chaos_ipc::protocol::ReviewDecision::Abort
         }

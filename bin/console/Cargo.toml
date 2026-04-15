@@ -72,6 +72,7 @@ tracing-subscriber = { workspace = true, features = ["env-filter"] }
 unicode-width = { workspace = true }
 webbrowser = { workspace = true }
 uuid = { workspace = true }
+chaos-snitch = { workspace = true }
 libui = { workspace = true }
 
 

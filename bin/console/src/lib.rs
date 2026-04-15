@@ -36,16 +36,17 @@ use chaos_proc::StateRuntime;
 use chaos_proc::log_db;
 use chaos_pwd::find_chaos_home;
 use chaos_realpath::AbsolutePathBuf;
+use chaos_snitch::BoxedLogLayer;
+use chaos_snitch::open_debug_log_file_layer;
+use chaos_snitch::open_log_file_layer;
 use cwd_prompt::CwdPromptAction;
 use cwd_prompt::CwdPromptOutcome;
 use cwd_prompt::CwdSelection;
-use std::fs::OpenOptions;
 use std::path::Path;
 use std::path::PathBuf;
 use std::sync::Arc;
 use tracing::error;
 use tracing::warn;
-use tracing_appender::non_blocking;
 use tracing_appender::non_blocking::WorkerGuard;
 use tracing_subscriber::EnvFilter;
 use tracing_subscriber::prelude::*;
@@ -99,38 +100,16 @@ pub use libui::theme_picker;
 use libui::tool_badges;
 use libui::tui;
 
-const DEBUG_LOG_PATH_ENV_VAR: &str = "CHAOS_DEBUG_LOG_PATH";
 const DEBUG_LOG_FILTER: &str = "warn,chaos_kern=debug,chaos_boot=debug,chaos_fork=debug,\
 chaos_console=debug,chaos_mcpd=debug,chaos_pam=debug,chaos_syslog=debug,\
 chaos_ipc=debug,chaos_selinux=debug,chaos_dtrace=debug,chaos_hallucinate=debug,\
 mcp_guest=debug,chaos_clamp=debug,chaos_parrot=debug";
 
 fn init_optional_debug_file_layer() -> std::io::Result<(
-    Option<impl tracing_subscriber::Layer<tracing_subscriber::Registry> + Send + Sync + 'static>,
+    Option<BoxedLogLayer<tracing_subscriber::Registry>>,
     Option<WorkerGuard>,
 )> {
-    let Some(path) = std::env::var_os(DEBUG_LOG_PATH_ENV_VAR).map(PathBuf::from) else {
-        return Ok((None, None));
-    };
-
-    let mut log_file_opts = OpenOptions::new();
-    log_file_opts.create(true).append(true);
-
-    {
-        use std::os::unix::fs::OpenOptionsExt;
-        log_file_opts.mode(0o600);
-    }
-
-    let log_file = log_file_opts.open(&path)?;
-    let (non_blocking, guard) = non_blocking(log_file);
-    let filter =
-        EnvFilter::try_from_default_env().unwrap_or_else(|_| EnvFilter::new(DEBUG_LOG_FILTER));
-    let layer = tracing_subscriber::fmt::layer()
-        .with_writer(non_blocking)
-        .with_target(true)
-        .with_ansi(false)
-        .with_filter(filter);
-    Ok((Some(layer), Some(guard)))
+    open_debug_log_file_layer::<tracing_subscriber::Registry>(DEBUG_LOG_FILTER)
 }
 
 use crate::onboarding::onboarding_screen::OnboardingScreenArgs;
@@ -315,39 +294,16 @@ pub async fn run_main(
 
     let log_dir = chaos_kern::config::log_dir(&config)?;
     std::fs::create_dir_all(&log_dir)?;
-    // Open (or create) your log file, appending to it.
-    let mut log_file_opts = OpenOptions::new();
-    log_file_opts.create(true).append(true);
 
-    // Ensure the file is only readable and writable by the current user.
-    {
-        use std::os::unix::fs::OpenOptionsExt;
-        log_file_opts.mode(0o600);
-    }
-
-    let log_file = log_file_opts.open(log_dir.join("chaos-console.log"))?;
-
-    // Wrap file in non‑blocking writer.
-    let (non_blocking, _guard) = non_blocking(log_file);
-
-    // use RUST_LOG env var, default to info for Chaos crates.
-    let env_filter = || {
-        EnvFilter::try_from_default_env().unwrap_or_else(|_| {
-            EnvFilter::new("chaos_kern=info,chaos_console=info,codex_mcp_guest=info")
-        })
-    };
-
-    let file_layer = tracing_subscriber::fmt::layer()
-        .with_writer(non_blocking)
-        // Keep target enabled so we can selectively filter via `RUST_LOG=...` and then
-        // grep for a specific module/target while troubleshooting.
-        .with_target(true)
-        .with_ansi(false)
-        .with_span_events(
-            tracing_subscriber::fmt::format::FmtSpan::NEW
-                | tracing_subscriber::fmt::format::FmtSpan::CLOSE,
-        )
-        .with_filter(env_filter());
+    // Open (or create) the console log file, appending to it, with mode 0o600.
+    // Keep target enabled so we can selectively filter via `RUST_LOG=...` and
+    // grep for a specific module/target while troubleshooting.
+    let (file_layer, _guard) = open_log_file_layer(
+        &log_dir.join("chaos-console.log"),
+        "chaos_kern=info,chaos_console=info,codex_mcp_guest=info",
+        tracing_subscriber::fmt::format::FmtSpan::NEW
+            | tracing_subscriber::fmt::format::FmtSpan::CLOSE,
+    )?;
     let (debug_file_layer, _debug_log_guard) = init_optional_debug_file_layer()?;
 
     if cli.oss && model_provider_override.is_some() {
@@ -411,6 +367,11 @@ pub async fn run_main(
             );
             None
         }
+    };
+    let env_filter = || {
+        EnvFilter::try_from_default_env().unwrap_or_else(|_| {
+            EnvFilter::new("chaos_kern=info,chaos_console=info,codex_mcp_guest=info")
+        })
     };
     let log_db_layer = log_state_db
         .as_ref()

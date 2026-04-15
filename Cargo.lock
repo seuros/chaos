@@ -1192,6 +1192,7 @@ dependencies = [
  "chaos-pf",
  "chaos-pwd",
  "chaos-selinux",
+ "chaos-snitch",
  "chaos-sysctl",
  "chaos-which",
  "clap",
@@ -1247,6 +1248,7 @@ dependencies = [
  "chaos-pwd",
  "chaos-realpath",
  "chaos-session",
+ "chaos-snitch",
  "chaos-syslog",
  "chaos-termcap",
  "chaos-which",
@@ -2046,6 +2048,11 @@ dependencies = [
 [[package]]
 name = "chaos-snitch"
 version = "47.0.0"
+dependencies = [
+ "tracing",
+ "tracing-appender",
+ "tracing-subscriber",
+]
 
 [[package]]
 name = "chaos-storage"

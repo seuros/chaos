@@ -32,6 +32,7 @@ chaos-mcpd = { workspace = true }
 chaos-pwd = { workspace = true }
 chaos-ipc = { workspace = true }
 chaos-console = { workspace = true }
+chaos-snitch = { workspace = true }
 rama = { workspace = true }
 libc = { workspace = true }
 mimalloc = { workspace = true }

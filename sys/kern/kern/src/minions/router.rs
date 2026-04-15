@@ -94,10 +94,10 @@ pub(crate) enum ProcessTableOp {
         reply: oneshot::Sender<ChaosResult<NewProcess>>,
     },
     /// Wait until every packet already observed by the router has
-    /// fully completed, then ack. Consumed at turn boundaries before
-    /// `TurnAborted` is emitted; the wiring lands alongside that
-    /// handler in a follow-up.
-    #[allow(dead_code, reason = "wired by the turn-boundary drain follow-up")]
+    /// fully completed, then ack. Issued by the turn-boundary
+    /// handler in `Session::abort_all_tasks` before `TurnAborted`
+    /// is emitted, so any in-flight routed spawn / resume / fork
+    /// body finishes mutating state before the abort is observable.
     Drain { reply: oneshot::Sender<()> },
 }
 

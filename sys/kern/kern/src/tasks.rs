@@ -232,6 +232,16 @@ impl Session {
 
     pub async fn abort_all_tasks(self: &Arc<Self>, reason: TurnAbortReason) {
         if let Some(mut active_turn) = self.take_active_turn().await {
+            // Before emitting `TurnAborted`, drain the process-table
+            // router so any in-flight spawn / resume / fork body
+            // finishes mutating state. Without this barrier, a routed
+            // body can land after the abort is observable and surface
+            // as out-of-order events. Scope is narrow by design
+            // (see `ProcessTableOp::Drain`): routed state mutation
+            // only, not post-reply caller work.
+            if let Err(err) = self.services.agent_control.drain().await {
+                warn!("process-table drain before TurnAborted failed: {err}");
+            }
             for task in active_turn.drain_tasks() {
                 self.handle_task_abort(task, reason.clone()).await;
             }

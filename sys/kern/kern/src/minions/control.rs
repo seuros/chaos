@@ -107,6 +107,30 @@ impl AgentControl {
         })?
     }
 
+    /// Issue a `Drain` packet and wait for every currently-dispatched
+    /// spawn / resume / fork body to complete. Scope matches
+    /// `ProcessTableOp::Drain`: only the routed state mutation is
+    /// awaited. Post-reply work performed by the caller after the
+    /// reply lands (slot commit, process-created notification,
+    /// initial `Op::UserInput` submission, completion-watcher spawn)
+    /// is *not* covered; turn-boundary handlers that need a stronger
+    /// barrier must join that work separately.
+    pub(crate) async fn drain(&self) -> ChaosResult<()> {
+        let (tx, rx) = oneshot::channel();
+        self.router
+            .send_traced(
+                ProcessTableOp::Drain { reply: tx },
+                chaos_syslog::current_span_w3c_trace_context(),
+            )
+            .await
+            .map_err(|err| {
+                ChaosErr::UnsupportedOperation(format!("process-table router unreachable: {err}"))
+            })?;
+        rx.await.map_err(|_| {
+            ChaosErr::UnsupportedOperation("process-table router dropped drain reply".to_string())
+        })
+    }
+
     /// Spawn a new agent thread and submit the initial prompt.
     pub(crate) async fn spawn_agent(
         &self,

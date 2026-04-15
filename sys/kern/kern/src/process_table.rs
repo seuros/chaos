@@ -497,29 +497,6 @@ impl ProcessTable {
         AgentControl::new(Arc::downgrade(&self.state), self.router.adapter())
     }
 
-    /// Issue a `Drain` packet through the process-table router and
-    /// wait for every currently-dispatched spawn / resume / fork body
-    /// to complete. Scope matches `ProcessTableOp::Drain`: only the
-    /// routed state mutation is covered. Post-reply work performed by
-    /// the caller (slot commit, process-created notification, initial
-    /// `Op::UserInput` submission, completion-watcher spawn) is *not*
-    /// awaited and must be joined separately by the turn-boundary
-    /// handler before `TurnAborted` is emitted.
-    #[allow(dead_code, reason = "wired by the turn-boundary drain follow-up")]
-    pub(crate) async fn drain_router(&self) -> ChaosResult<()> {
-        let (tx, rx) = tokio::sync::oneshot::channel();
-        self.router
-            .adapter()
-            .send(crate::minions::router::ProcessTableOp::Drain { reply: tx })
-            .await
-            .map_err(|err| {
-                ChaosErr::UnsupportedOperation(format!("process-table router unreachable: {err}"))
-            })?;
-        rx.await.map_err(|_| {
-            ChaosErr::UnsupportedOperation("process-table router dropped drain reply".to_string())
-        })
-    }
-
     #[cfg(test)]
     pub(crate) fn captured_ops(&self) -> Vec<(ProcessId, Op)> {
         self.state

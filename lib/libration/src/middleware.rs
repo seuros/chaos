@@ -90,8 +90,8 @@ pub fn sniff_and_record<E>(
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::test_support::open_sqlite_store;
     use chaos_ration::UsageWindow;
-    use chaos_storage::ChaosStorageProvider;
     use rama_http_types::HeaderMap;
     use std::sync::Mutex;
 
@@ -120,12 +120,7 @@ mod tests {
 
     #[tokio::test]
     async fn sniffer_extracts_and_records_in_background() {
-        let dir = tempfile::tempdir().expect("tempdir");
-        let pool = chaos_proc::open_runtime_db(dir.path())
-            .await
-            .expect("open runtime db");
-        let provider = ChaosStorageProvider::from_sqlite_pool(pool);
-        let store = UsageStore::from_provider(&provider).expect("store");
+        let (_dir, store) = open_sqlite_store().await;
 
         let calls = Arc::new(Mutex::new(0usize));
         let extractor = FakeExtractor {

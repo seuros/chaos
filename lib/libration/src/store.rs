@@ -401,16 +401,7 @@ async fn fetch_latest_postgres(
 #[cfg(test)]
 mod tests {
     use super::*;
-
-    async fn open_sqlite_store() -> (tempfile::TempDir, Arc<UsageStore>) {
-        let dir = tempfile::tempdir().expect("tempdir");
-        let pool = chaos_proc::open_runtime_db(dir.path())
-            .await
-            .expect("open runtime db");
-        let provider = ChaosStorageProvider::from_sqlite_pool(pool);
-        let store = UsageStore::from_provider(&provider).expect("store");
-        (dir, store)
-    }
+    use crate::test_support::open_sqlite_store;
 
     #[tokio::test]
     async fn record_upsert_freshness_and_base_url_isolation() {

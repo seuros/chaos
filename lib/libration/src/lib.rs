@@ -17,6 +17,9 @@ pub mod middleware;
 pub mod registry;
 pub mod store;
 
+#[cfg(test)]
+pub mod test_support;
+
 pub use extractors::AnthropicHeaders;
 pub use extractors::OpenAICompatibleHeaders;
 pub use middleware::UsageSniffer;

@@ -168,8 +168,7 @@ impl ListSelectionView {
             .or_else(|| (len > 0).then_some(0));
 
         let visible = Self::max_visible_rows(len);
-        self.state.clamp_selection(len);
-        self.state.ensure_visible(len, visible);
+        self.state.sync_visible(len, visible);
 
         // Notify the callback when filtering changes the selected actual item
         // so live preview stays in sync (e.g. typing in the theme picker).
@@ -233,9 +232,8 @@ impl ListSelectionView {
     pub(super) fn move_up(&mut self) {
         let before = self.selected_actual_idx();
         let len = self.visible_len();
-        self.state.move_up_wrap(len);
         let visible = Self::max_visible_rows(len);
-        self.state.ensure_visible(len, visible);
+        self.state.step_up(len, visible);
         self.skip_disabled_up();
         if self.selected_actual_idx() != before {
             self.fire_selection_changed();
@@ -245,9 +243,8 @@ impl ListSelectionView {
     pub(super) fn move_down(&mut self) {
         let before = self.selected_actual_idx();
         let len = self.visible_len();
-        self.state.move_down_wrap(len);
         let visible = Self::max_visible_rows(len);
-        self.state.ensure_visible(len, visible);
+        self.state.step_down(len, visible);
         self.skip_disabled_down();
         if self.selected_actual_idx() != before {
             self.fire_selection_changed();

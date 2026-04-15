@@ -113,9 +113,8 @@ impl CommandPopup {
 
         // Reset or clamp selected index based on new filtered list.
         let matches_len = self.filtered_items().len();
-        self.state.clamp_selection(matches_len);
         self.state
-            .ensure_visible(matches_len, MAX_POPUP_ROWS.min(matches_len));
+            .sync_visible(matches_len, MAX_POPUP_ROWS.min(matches_len));
     }
 
     /// Determine the preferred height of the popup for a given width.
@@ -242,16 +241,13 @@ impl CommandPopup {
     /// Move the selection cursor one step up.
     pub fn move_up(&mut self) {
         let len = self.filtered_items().len();
-        self.state.move_up_wrap(len);
-        self.state.ensure_visible(len, MAX_POPUP_ROWS.min(len));
+        self.state.step_up(len, MAX_POPUP_ROWS.min(len));
     }
 
     /// Move the selection cursor one step down.
     pub fn move_down(&mut self) {
-        let matches_len = self.filtered_items().len();
-        self.state.move_down_wrap(matches_len);
-        self.state
-            .ensure_visible(matches_len, MAX_POPUP_ROWS.min(matches_len));
+        let len = self.filtered_items().len();
+        self.state.step_down(len, MAX_POPUP_ROWS.min(len));
     }
 
     /// Return currently selected command, if any.

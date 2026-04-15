@@ -73,22 +73,19 @@ impl FileSearchPopup {
         self.matches = matches;
         self.waiting = false;
         let len = self.matches.len();
-        self.state.clamp_selection(len);
-        self.state.ensure_visible(len, len.min(MAX_POPUP_ROWS));
+        self.state.sync_visible(len, len.min(MAX_POPUP_ROWS));
     }
 
     /// Move selection cursor up.
     pub fn move_up(&mut self) {
         let len = self.matches.len();
-        self.state.move_up_wrap(len);
-        self.state.ensure_visible(len, len.min(MAX_POPUP_ROWS));
+        self.state.step_up(len, len.min(MAX_POPUP_ROWS));
     }
 
     /// Move selection cursor down.
     pub fn move_down(&mut self) {
         let len = self.matches.len();
-        self.state.move_down_wrap(len);
-        self.state.ensure_visible(len, len.min(MAX_POPUP_ROWS));
+        self.state.step_down(len, len.min(MAX_POPUP_ROWS));
     }
 
     pub fn selected_match(&self) -> Option<&PathBuf> {

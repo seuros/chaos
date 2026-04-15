@@ -62,6 +62,33 @@ impl ScrollState {
         });
     }
 
+    /// Move up one step and rescroll the viewport in a single call.
+    ///
+    /// Equivalent to `move_up_wrap(len)` followed by
+    /// `ensure_visible(len, visible_rows)`. The two calls are always paired at
+    /// call sites that display a scrolling list, so the fused helper lets
+    /// popups write the intent — step the cursor — without repeating the
+    /// scroll bookkeeping that always has to follow.
+    pub fn step_up(&mut self, len: usize, visible_rows: usize) {
+        self.move_up_wrap(len);
+        self.ensure_visible(len, visible_rows);
+    }
+
+    /// Move down one step and rescroll the viewport in a single call.
+    /// See `step_up` for the rationale.
+    pub fn step_down(&mut self, len: usize, visible_rows: usize) {
+        self.move_down_wrap(len);
+        self.ensure_visible(len, visible_rows);
+    }
+
+    /// Clamp the selection to the current list length and rescroll in a
+    /// single call. Used after the item list changes (a new filter, a fresh
+    /// set of matches) to keep the cursor in range and visible.
+    pub fn sync_visible(&mut self, len: usize, visible_rows: usize) {
+        self.clamp_selection(len);
+        self.ensure_visible(len, visible_rows);
+    }
+
     /// Adjust `scroll_top` so that the current `selected_idx` is visible within
     /// the window of `visible_rows`.
     pub fn ensure_visible(&mut self, len: usize, visible_rows: usize) {

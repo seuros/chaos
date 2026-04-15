@@ -61,7 +61,6 @@ pub use chaos_mcp_runtime::manager::SandboxState;
 pub use text_encoding::bytes_to_string_smart;
 mod mcp_tool_call;
 pub mod mention_syntax;
-mod mentions;
 mod message_history;
 mod model_provider_info;
 pub mod path_utils;

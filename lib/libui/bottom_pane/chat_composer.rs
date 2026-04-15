@@ -664,7 +664,6 @@ impl ChatComposer {
         self.has_focus = has_focus;
     }
 
-    #[allow(dead_code)]
     pub fn set_input_enabled(&mut self, enabled: bool, placeholder: Option<String>) {
         self.input_enabled = enabled;
         self.input_disabled_placeholder = if enabled { None } else { placeholder };

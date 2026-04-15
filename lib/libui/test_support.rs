@@ -1,4 +1,9 @@
 //! Shared test helpers and fixtures.
+//!
+//! The module is `pub` rather than `#[cfg(test)]`-gated because
+//! `chatwidget::tests` is compiled as a non-test module under the `testing`
+//! feature; gating this module breaks that build.
+#![allow(dead_code)]
 
 use tokio::sync::mpsc::UnboundedReceiver;
 

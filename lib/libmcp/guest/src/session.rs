@@ -212,29 +212,47 @@ impl McpSession {
         Ok(())
     }
 
-    pub async fn list_tools(&self) -> Result<Vec<ToolInfo>, GuestError> {
-        if let Some(cached) = self.shared.tools.read().await.clone() {
-            return Ok(cached);
-        }
-
-        let mut cursor = None;
-        let mut tools = Vec::new();
+    /// Drive a cursor-based MCP list endpoint to completion, collecting all
+    /// pages into a single `Vec<Item>`.
+    ///
+    /// `extract` receives each page response and returns `(items, next_cursor)`.
+    async fn paginated_list<Resp, Item, F>(
+        &self,
+        method: &'static str,
+        extract: F,
+    ) -> Result<Vec<Item>, GuestError>
+    where
+        Resp: DeserializeOwned,
+        F: Fn(Resp) -> (Vec<Item>, Option<String>),
+    {
+        let mut cursor: Option<String> = None;
+        let mut items = Vec::new();
         loop {
-            let result: ListToolsResult = self
+            let resp: Resp = self
                 .request(
-                    "tools/list",
+                    method,
                     &PaginatedRequestParams {
                         cursor: cursor.clone(),
                     },
                 )
                 .await?;
-            tools.extend(result.tools);
-            cursor = result.next_cursor;
+            let (page, next) = extract(resp);
+            items.extend(page);
+            cursor = next;
             if cursor.is_none() {
                 break;
             }
         }
+        Ok(items)
+    }
 
+    pub async fn list_tools(&self) -> Result<Vec<ToolInfo>, GuestError> {
+        if let Some(cached) = self.shared.tools.read().await.clone() {
+            return Ok(cached);
+        }
+        let tools = self
+            .paginated_list("tools/list", |r: ListToolsResult| (r.tools, r.next_cursor))
+            .await?;
         *self.shared.tools.write().await = Some(tools.clone());
         Ok(tools)
     }
@@ -268,25 +286,11 @@ impl McpSession {
         if let Some(cached) = self.shared.resources.read().await.clone() {
             return Ok(cached);
         }
-
-        let mut cursor = None;
-        let mut resources = Vec::new();
-        loop {
-            let result: ListResourcesResult = self
-                .request(
-                    "resources/list",
-                    &PaginatedRequestParams {
-                        cursor: cursor.clone(),
-                    },
-                )
-                .await?;
-            resources.extend(result.resources);
-            cursor = result.next_cursor;
-            if cursor.is_none() {
-                break;
-            }
-        }
-
+        let resources = self
+            .paginated_list("resources/list", |r: ListResourcesResult| {
+                (r.resources, r.next_cursor)
+            })
+            .await?;
         *self.shared.resources.write().await = Some(resources.clone());
         Ok(resources)
     }
@@ -297,25 +301,12 @@ impl McpSession {
         if let Some(cached) = self.shared.resource_templates.read().await.clone() {
             return Ok(cached);
         }
-
-        let mut cursor = None;
-        let mut templates = Vec::new();
-        loop {
-            let result: ListResourceTemplatesResult = self
-                .request(
-                    "resources/templates/list",
-                    &PaginatedRequestParams {
-                        cursor: cursor.clone(),
-                    },
-                )
-                .await?;
-            templates.extend(result.resource_templates);
-            cursor = result.next_cursor;
-            if cursor.is_none() {
-                break;
-            }
-        }
-
+        let templates = self
+            .paginated_list(
+                "resources/templates/list",
+                |r: ListResourceTemplatesResult| (r.resource_templates, r.next_cursor),
+            )
+            .await?;
         *self.shared.resource_templates.write().await = Some(templates.clone());
         Ok(templates)
     }
@@ -363,25 +354,11 @@ impl McpSession {
         if let Some(cached) = self.shared.prompts.read().await.clone() {
             return Ok(cached);
         }
-
-        let mut cursor = None;
-        let mut prompts = Vec::new();
-        loop {
-            let result: ListPromptsResult = self
-                .request(
-                    "prompts/list",
-                    &PaginatedRequestParams {
-                        cursor: cursor.clone(),
-                    },
-                )
-                .await?;
-            prompts.extend(result.prompts);
-            cursor = result.next_cursor;
-            if cursor.is_none() {
-                break;
-            }
-        }
-
+        let prompts = self
+            .paginated_list("prompts/list", |r: ListPromptsResult| {
+                (r.prompts, r.next_cursor)
+            })
+            .await?;
         *self.shared.prompts.write().await = Some(prompts.clone());
         Ok(prompts)
     }
@@ -419,25 +396,9 @@ impl McpSession {
     }
 
     pub async fn list_tasks(&self) -> Result<ListTasksResult, GuestError> {
-        let mut cursor = None;
-        let mut tasks = Vec::new();
-
-        loop {
-            let result: ListTasksResult = self
-                .request(
-                    "tasks/list",
-                    &PaginatedRequestParams {
-                        cursor: cursor.clone(),
-                    },
-                )
-                .await?;
-            tasks.extend(result.tasks);
-            cursor = result.next_cursor;
-            if cursor.is_none() {
-                break;
-            }
-        }
-
+        let tasks = self
+            .paginated_list("tasks/list", |r: ListTasksResult| (r.tasks, r.next_cursor))
+            .await?;
         Ok(ListTasksResult {
             tasks,
             next_cursor: None,

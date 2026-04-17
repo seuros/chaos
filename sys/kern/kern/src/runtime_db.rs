@@ -1,5 +1,4 @@
 use crate::config::Config;
-use crate::models_manager::cache::ModelsCacheManager;
 use crate::path_utils::normalize_for_path_comparison;
 use crate::rollout::list::Cursor;
 use crate::rollout::list::ProcessSortKey;
@@ -8,6 +7,7 @@ use chaos_ipc::ProcessId;
 use chaos_ipc::dynamic_tools::DynamicToolSpec;
 use chaos_ipc::protocol::RolloutItem;
 use chaos_ipc::protocol::SessionSource;
+use chaos_model_catalog::ModelsCacheManager;
 use chaos_parrot::endpoint::batches::AnthropicSpoolBackend;
 use chaos_parrot::endpoint::batches::XaiSpoolBackend;
 pub use chaos_proc::LogEntry;

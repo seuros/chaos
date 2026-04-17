@@ -1598,6 +1598,7 @@ dependencies = [
  "chaos-lsd",
  "chaos-mcp-runtime",
  "chaos-minions",
+ "chaos-model-catalog",
  "chaos-parrot",
  "chaos-pf",
  "chaos-pixbuf",
@@ -1794,6 +1795,22 @@ dependencies = [
 [[package]]
 name = "chaos-minions"
 version = "47.0.0"
+
+[[package]]
+name = "chaos-model-catalog"
+version = "47.0.0"
+dependencies = [
+ "chaos-abi",
+ "chaos-ipc",
+ "chaos-storage",
+ "jiff",
+ "serde",
+ "serde_json",
+ "sqlx",
+ "state-machines",
+ "tokio",
+ "tracing",
+]
 
 [[package]]
 name = "chaos-pam"

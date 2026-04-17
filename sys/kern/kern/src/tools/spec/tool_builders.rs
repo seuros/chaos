@@ -8,10 +8,10 @@ use chaos_parrot::sanitize::ResponsesApiTool;
 use crate::client_common::tools::FreeformTool;
 use crate::client_common::tools::FreeformToolFormat;
 use crate::client_common::tools::ToolSpec;
+use crate::collaboration_modes::CollaborationModesConfig;
 use crate::minions::tools::DEFAULT_WAIT_TIMEOUT_MS;
 use crate::minions::tools::MAX_WAIT_TIMEOUT_MS;
 use crate::minions::tools::MIN_WAIT_TIMEOUT_MS;
-use crate::models_manager::collaboration_mode_presets::CollaborationModesConfig;
 use crate::tools::handlers::request_permissions_tool_description;
 use crate::tools::handlers::request_user_input_tool_description;
 

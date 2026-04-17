@@ -35,7 +35,7 @@ use chaos_kern::config_loader::ConfigLoadError;
 use chaos_kern::config_loader::format_config_error_with_source;
 use chaos_kern::format_exec_policy_error_with_source;
 use chaos_kern::git_info::get_git_repo_root;
-use chaos_kern::models_manager::collaboration_mode_presets::CollaborationModesConfig;
+use chaos_kern::models_manager::CollaborationModesConfig;
 use chaos_pwd::find_chaos_home;
 use chaos_realpath::AbsolutePathBuf;
 use chaos_syslog::set_parent_from_context;

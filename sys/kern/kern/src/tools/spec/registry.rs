@@ -220,7 +220,7 @@ pub(crate) fn build_specs_with_discoverable_tools(
     builder.register_handler("update_plan", plan_handler);
 
     if config.request_user_input {
-        use crate::models_manager::collaboration_mode_presets::CollaborationModesConfig;
+        use crate::collaboration_modes::CollaborationModesConfig;
         push_tool_spec(
             &mut builder,
             create_request_user_input_tool(CollaborationModesConfig {

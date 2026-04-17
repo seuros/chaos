@@ -47,7 +47,7 @@ use chaos_ipc::protocol::Event;
 use chaos_ipc::protocol::Op;
 use chaos_ipc::protocol::SessionSource;
 use chaos_kern::config::ConfigBuilder;
-use chaos_kern::models_manager::collaboration_mode_presets::CollaborationModesConfig;
+use chaos_kern::models_manager::CollaborationModesConfig;
 use chaos_session::ClientSession;
 use iced::Task;
 use tokio::sync::mpsc::UnboundedReceiver;

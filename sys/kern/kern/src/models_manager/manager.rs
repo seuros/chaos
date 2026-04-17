@@ -1,18 +1,14 @@
-use super::cache::ModelsCache;
-use super::cache::ModelsCacheManager;
-use super::cache::ModelsCacheScope;
-use super::discovery_machine::ModelDiscoveryWorkflow;
 use crate::api_bridge::auth_provider_from_auth;
 use crate::api_bridge::map_api_error;
 use crate::auth::AuthManager;
 use crate::auth::AuthMode;
 use crate::auth::ChaosAuth;
+use crate::collaboration_modes::CollaborationModesConfig;
+use crate::collaboration_modes::builtin_collaboration_mode_presets;
 use crate::config::Config;
 use crate::error::ChaosErr;
 use crate::error::Result as CoreResult;
 use crate::model_provider_info::ModelProviderInfo;
-use crate::models_manager::collaboration_mode_presets::CollaborationModesConfig;
-use crate::models_manager::collaboration_mode_presets::builtin_collaboration_mode_presets;
 use crate::models_manager::model_info;
 use crate::response_debug_context::extract_response_debug_context;
 use crate::response_debug_context::telemetry_transport_error_message;
@@ -22,6 +18,10 @@ use chaos_ipc::config_types::CollaborationModeMask;
 use chaos_ipc::openai_models::ModelInfo;
 use chaos_ipc::openai_models::ModelPreset;
 use chaos_ipc::openai_models::ModelsResponse;
+use chaos_model_catalog::ModelDiscoveryWorkflow;
+use chaos_model_catalog::ModelsCache;
+use chaos_model_catalog::ModelsCacheManager;
+use chaos_model_catalog::ModelsCacheScope;
 use chaos_parrot::ModelsClient;
 use chaos_parrot::RamaTransport;
 use chaos_parrot::RequestTelemetry;
@@ -32,7 +32,6 @@ use chrono_machines::backoff::BackoffStrategy;
 use http::HeaderMap;
 use rand::make_rng;
 use rand::rngs::StdRng;
-use std::fmt;
 use std::path::PathBuf;
 use std::sync::Arc;
 use std::time::Duration;
@@ -132,32 +131,7 @@ impl RequestTelemetry for ModelsRequestTelemetry {
     }
 }
 
-/// Strategy for refreshing available models.
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
-pub enum RefreshStrategy {
-    /// Always fetch from the network, ignoring cache.
-    Online,
-    /// Only use cached data, never fetch from the network.
-    Offline,
-    /// Use cache if available and fresh, otherwise fetch from the network.
-    OnlineIfUncached,
-}
-
-impl RefreshStrategy {
-    const fn as_str(self) -> &'static str {
-        match self {
-            Self::Online => "online",
-            Self::Offline => "offline",
-            Self::OnlineIfUncached => "online_if_uncached",
-        }
-    }
-}
-
-impl fmt::Display for RefreshStrategy {
-    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-        f.write_str(self.as_str())
-    }
-}
+pub use chaos_model_catalog::RefreshStrategy;
 
 /// How the manager's base catalog is sourced for the lifetime of the process.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]

@@ -23,6 +23,7 @@ pub mod chaos;
 mod clamp_bridge;
 mod client;
 mod client_common;
+pub(crate) mod collaboration_modes;
 pub use chaos::SteerInputError;
 mod compact_remote;
 mod process;

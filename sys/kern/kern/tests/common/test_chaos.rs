@@ -19,7 +19,7 @@ use chaos_kern::Process;
 use chaos_kern::ProcessTable;
 use chaos_kern::built_in_model_providers;
 use chaos_kern::config::Config;
-use chaos_kern::models_manager::collaboration_mode_presets::CollaborationModesConfig;
+use chaos_kern::models_manager::CollaborationModesConfig;
 use serde_json::Value;
 use tempfile::TempDir;
 use wiremock::MockServer;

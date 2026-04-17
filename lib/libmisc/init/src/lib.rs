@@ -20,7 +20,7 @@
 //! use chaos_init::ChaosInit;
 //! use chaos_ipc::protocol::SessionSource;
 //! use chaos_kern::config::Config;
-//! use chaos_kern::models_manager::collaboration_mode_presets::CollaborationModesConfig;
+//! use chaos_kern::models_manager::CollaborationModesConfig;
 //!
 //! # fn demo(config: Config) {
 //! let init = ChaosInit::boot(
@@ -39,7 +39,7 @@ use chaos_ipc::protocol::SessionSource;
 use chaos_kern::AuthManager;
 use chaos_kern::ProcessTable;
 use chaos_kern::config::Config;
-use chaos_kern::models_manager::collaboration_mode_presets::CollaborationModesConfig;
+use chaos_kern::models_manager::CollaborationModesConfig;
 
 /// The runtime pair every chaos frontend needs to open a session.
 ///

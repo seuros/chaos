@@ -51,6 +51,7 @@ Primary RPCs:
 - `chaos` tool for create-or-resume process execution
 - `chaos://sessions` and `chaos://sessions/{id}` resources for process discovery
 - `chaos://crons` resource for scheduled job discovery
+- `chaos://spool` resource for persisted spool/batch discovery
 - `config/read`, `config/value/write`, `config/batchWrite`
 - `model/list`
 

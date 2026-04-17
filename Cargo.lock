@@ -1090,6 +1090,7 @@ dependencies = [
  "futures",
  "serde",
  "serde_json",
+ "state-machines",
  "thiserror 2.0.18",
  "tokio",
 ]
@@ -1298,6 +1299,7 @@ name = "chaos-cron"
 version = "47.0.0"
 dependencies = [
  "anyhow",
+ "chaos-abi",
  "chaos-proc",
  "chaos-storage",
  "chaos-traits",
@@ -1780,6 +1782,7 @@ dependencies = [
  "serde",
  "serde_json",
  "shlex",
+ "sqlx",
  "state-machines",
  "tempfile",
  "tokio",
@@ -2166,7 +2169,6 @@ dependencies = [
  "serde",
  "serde_json",
  "tokio",
- "tracing",
 ]
 
 [[package]]

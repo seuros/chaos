@@ -235,7 +235,7 @@ struct AnthropicTool {
     input_schema: Value,
 }
 
-fn build_request_body(request: &TurnRequest, model: &str) -> Result<Value, AbiError> {
+pub(crate) fn build_request_body(request: &TurnRequest, model: &str) -> Result<Value, AbiError> {
     let max_tokens = request
         .extensions
         .get("max_tokens")

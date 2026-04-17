@@ -136,6 +136,27 @@ impl BackendCronStorage {
             Self::Postgres(storage) => storage.store.mark_run(id, next_run_at).await,
         }
     }
+
+    pub async fn delete_spool_jobs_for_manifest_except(
+        &self,
+        manifest_id: &str,
+        keep_id: Option<&str>,
+    ) -> anyhow::Result<u64> {
+        match self {
+            Self::Sqlite(storage) => {
+                storage
+                    .store
+                    .delete_spool_jobs_for_manifest_except(manifest_id, keep_id)
+                    .await
+            }
+            Self::Postgres(storage) => {
+                storage
+                    .store
+                    .delete_spool_jobs_for_manifest_except(manifest_id, keep_id)
+                    .await
+            }
+        }
+    }
 }
 
 impl CronStorage for BackendCronStorage {

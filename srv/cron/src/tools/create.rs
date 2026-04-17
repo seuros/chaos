@@ -120,14 +120,14 @@ async fn execute_with_storage<S: CronStorage>(
         _ => None,
     };
 
-    let create_params = CreateJobParams {
-        name: params.name.clone(),
-        schedule: params.schedule.clone(),
-        command: params.command.clone(),
+    let create_params = CreateJobParams::shell(
+        params.name.clone(),
+        params.schedule.clone(),
+        params.command.clone(),
         scope,
         project_path,
         session_id,
-    };
+    );
 
     let job = storage
         .create(&create_params)

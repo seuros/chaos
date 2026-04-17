@@ -267,7 +267,6 @@ mod tests {
     use crate::chat::NoticeLevel;
     use crate::state::Status;
     use crate::state::TurnState;
-    use crate::turn::DEFAULT_MODEL;
 
     fn mk_window() -> (ChaosWindow, tokio::sync::mpsc::UnboundedReceiver<Op>) {
         let (op_tx, op_rx) = unbounded_channel::<Op>();
@@ -296,7 +295,7 @@ mod tests {
             session_id: ProcessId::default(),
             forked_from_id: None,
             process_name: None,
-            model: DEFAULT_MODEL.to_string(),
+            model: String::new(),
             model_provider_id: "chaos-xclient-test".to_string(),
             service_tier: None,
             approval_policy: ApprovalPolicy::default(),
@@ -341,7 +340,7 @@ mod tests {
         // The submission queue saw a real UserTurn.
         match op_rx.try_recv() {
             Ok(Op::UserTurn { items, model, .. }) => {
-                assert_eq!(model, DEFAULT_MODEL);
+                assert!(model.is_empty());
                 assert_eq!(items.len(), 1);
                 assert!(matches!(&items[0], UserInput::Text { text, .. } if text == "hello"));
             }

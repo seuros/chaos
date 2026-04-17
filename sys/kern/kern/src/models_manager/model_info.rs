@@ -4,8 +4,6 @@ use chaos_ipc::openai_models::ApplyPatchToolType;
 use chaos_ipc::openai_models::ConfigShellToolType;
 use chaos_ipc::openai_models::InputModality;
 use chaos_ipc::openai_models::ModelInfo;
-use chaos_ipc::openai_models::ModelInstructionsVariables;
-use chaos_ipc::openai_models::ModelMessages;
 use chaos_ipc::openai_models::ModelVisibility;
 use chaos_ipc::openai_models::TruncationMode;
 use chaos_ipc::openai_models::TruncationPolicyConfig;
@@ -15,10 +13,6 @@ use crate::config::Config;
 use crate::truncate::approx_bytes_for_tokens;
 
 pub const BASE_INSTRUCTIONS: &str = include_str!("../../prompt.md");
-const DEFAULT_PERSONALITY_HEADER: &str = "You are running inside ChaOS. ChaOS is a local model kernel. The operator defines your role. If the task uses a workspace, you share it with the operator.";
-const LOCAL_FRIENDLY_TEMPLATE: &str = "You optimize for clarity, usefulness, and team morale.";
-const LOCAL_PRAGMATIC_TEMPLATE: &str = "You are deeply pragmatic, effective, and outcome-oriented.";
-const PERSONALITY_PLACEHOLDER: &str = "{{ personality }}";
 
 pub(crate) fn with_config_overrides(mut model: ModelInfo, config: &Config) -> ModelInfo {
     if let Some(supports_reasoning_summaries) = config.model_supports_reasoning_summaries
@@ -60,7 +54,7 @@ pub(crate) fn with_config_overrides(mut model: ModelInfo, config: &Config) -> Mo
         // Always override server-supplied instructions with the local prompt.
         // The server sends OpenAI-branded personality; ChaOS has its own identity.
         model.base_instructions = BASE_INSTRUCTIONS.to_string();
-        model.model_messages = local_personality_messages_for_slug(model.slug.as_str());
+        model.model_messages = None;
     }
 
     model
@@ -95,7 +89,7 @@ pub(crate) fn model_info_from_abi(abi: &AbiModelInfo) -> ModelInfo {
         priority: 50,
         availability_nux: None,
         base_instructions: BASE_INSTRUCTIONS.to_string(),
-        model_messages: local_personality_messages_for_slug(&abi.id),
+        model_messages: None,
         supports_reasoning_summaries: abi.supports_thinking,
         default_reasoning_summary: if abi.supports_thinking {
             ReasoningSummary::Auto
@@ -123,22 +117,6 @@ pub(crate) fn model_info_from_abi(abi: &AbiModelInfo) -> ModelInfo {
         input_modalities,
         native_server_side_tools: abi.native_server_side_tools.clone(),
         used_fallback_model_metadata: false,
-    }
-}
-
-fn local_personality_messages_for_slug(slug: &str) -> Option<ModelMessages> {
-    match slug {
-        "gpt-5.2-codex" | "exp-codex-personality" => Some(ModelMessages {
-            instructions_template: Some(format!(
-                "{DEFAULT_PERSONALITY_HEADER}\n\n{PERSONALITY_PLACEHOLDER}\n\n{BASE_INSTRUCTIONS}"
-            )),
-            instructions_variables: Some(ModelInstructionsVariables {
-                personality_default: Some(String::new()),
-                personality_friendly: Some(LOCAL_FRIENDLY_TEMPLATE.to_string()),
-                personality_pragmatic: Some(LOCAL_PRAGMATIC_TEMPLATE.to_string()),
-            }),
-        }),
-        _ => None,
     }
 }
 

@@ -1,0 +1,35 @@
+[package]
+name = "chaos-model-catalog"
+description = "Model catalog: refresh strategy, discovery state machine, and provider-scoped cache"
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+publish.workspace = true
+
+[lib]
+doctest = false
+name = "chaos_model_catalog"
+path = "src/lib.rs"
+
+[dependencies]
+chaos-abi = { workspace = true }
+chaos-ipc = { workspace = true }
+chaos-storage = { workspace = true }
+jiff = { workspace = true }
+serde = { workspace = true, features = ["derive"] }
+serde_json = { workspace = true }
+sqlx = { workspace = true }
+state-machines = { workspace = true, features = ["dynamic", "async"] }
+tokio = { workspace = true, features = ["rt"] }
+tracing = { workspace = true }
+
+[features]
+# Exposes test-only helpers (set_ttl, manipulate_cache_for_test, mutate_cache_for_test)
+# for use in integration tests of dependent crates.
+test-support = []
+
+[dev-dependencies]
+tokio = { workspace = true, features = ["macros", "rt-multi-thread"] }
+
+[lints]
+workspace = true

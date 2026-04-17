@@ -117,7 +117,7 @@ use chaos_kern::config::ConstraintError;
 #[cfg(feature = "vt100-tests")]
 use chaos_kern::config_loader::RequirementSource;
 
-use chaos_kern::models_manager::collaboration_mode_presets::CollaborationModesConfig;
+use chaos_kern::models_manager::CollaborationModesConfig;
 use chaos_kern::models_manager::manager::ModelsManager;
 use chaos_kern::terminal::TerminalName;
 use chaos_realpath::AbsolutePathBuf;

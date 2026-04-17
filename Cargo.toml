@@ -25,6 +25,8 @@ members = [
     "lib/libcontract/traits",
     # lib/libration — ration middleware's usage store
     "lib/libration",
+    # lib/libmodel — model catalog, cache, and refresh strategy
+    "lib/libmodel/catalog",
 
     # secure/ — security (peer to kernel)
     "secure/warden",
@@ -150,6 +152,7 @@ chaos-clamp = { path = "sys/modules/clamp" }
 chaos-parrot = { path = "sys/kern/providers/parrot" }
 chaos-ration = { path = "include/ration" }
 chaos-libration = { path = "lib/libration" }
+chaos-model-catalog = { path = "lib/libmodel/catalog" }
 
 # Internal — srv/
 chaos-mcpd = { path = "srv/mcpd" }

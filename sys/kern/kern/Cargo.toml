@@ -34,6 +34,7 @@ chaos-git = { workspace = true }
 chaos-arsenal = { workspace = true }
 chaos-cron = { workspace = true }
 chaos-libration = { workspace = true }
+chaos-model-catalog = { workspace = true }
 chaos-storage = { workspace = true }
 chaos-concierge = { workspace = true }
 chaos-journald = { workspace = true }
@@ -143,6 +144,7 @@ chaos-doas = { workspace = true }
 
 [dev-dependencies]
 assert_cmd = { workspace = true }
+chaos-model-catalog = { workspace = true, features = ["test-support"] }
 assert_matches = { workspace = true }
 keyring-core = { workspace = true }
 chaos-argv = { workspace = true }

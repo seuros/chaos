@@ -16,7 +16,7 @@ use chaos_kern::ProcessTable;
 use chaos_kern::config::Config;
 use chaos_kern::config::types::McpServerConfig;
 use chaos_kern::config::types::McpServerTransportConfig;
-use chaos_kern::models_manager::collaboration_mode_presets::CollaborationModesConfig;
+use chaos_kern::models_manager::CollaborationModesConfig;
 use mcp_host::prelude::*;
 use tokio::sync::Mutex;
 use tracing_subscriber::EnvFilter;

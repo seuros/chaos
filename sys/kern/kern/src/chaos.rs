@@ -82,6 +82,8 @@ pub(crate) use crate::AuthManager;
 #[cfg(test)]
 pub(crate) use crate::client::ModelClient;
 #[cfg(test)]
+pub(crate) use crate::collaboration_modes::CollaborationModesConfig;
+#[cfg(test)]
 pub(crate) use crate::compact;
 #[cfg(test)]
 pub(crate) use crate::compact::collect_user_messages;
@@ -101,8 +103,6 @@ pub(crate) use crate::mcp::McpManager;
 pub(crate) use crate::minions::AgentControl;
 #[cfg(test)]
 pub(crate) use crate::minions::AgentStatus;
-#[cfg(test)]
-pub(crate) use crate::models_manager::collaboration_mode_presets::CollaborationModesConfig;
 #[cfg(test)]
 pub(crate) use crate::models_manager::manager::ModelsManager;
 #[cfg(test)]

@@ -1,4 +1,4 @@
-use crate::models_manager::manager::RefreshStrategy;
+use crate::refresh_strategy::RefreshStrategy;
 use state_machines::state_machine;
 
 state_machine! {
@@ -47,7 +47,7 @@ state_machine! {
 
 #[cfg(test)]
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
-pub(crate) enum ModelDiscoveryState {
+pub enum ModelDiscoveryState {
     Idle,
     CheckingCache,
     CacheMiss,
@@ -59,18 +59,18 @@ pub(crate) enum ModelDiscoveryState {
 }
 
 #[derive(Debug)]
-pub(crate) struct ModelDiscoveryWorkflow {
+pub struct ModelDiscoveryWorkflow {
     machine: DynamicModelDiscovery<()>,
 }
 
 impl ModelDiscoveryWorkflow {
-    pub(crate) fn new() -> Self {
+    pub fn new() -> Self {
         Self {
             machine: DynamicModelDiscovery::new(()),
         }
     }
 
-    pub(crate) fn begin(&mut self, strategy: RefreshStrategy) {
+    pub fn begin(&mut self, strategy: RefreshStrategy) {
         match strategy {
             RefreshStrategy::Offline | RefreshStrategy::OnlineIfUncached => {
                 let _ = self.machine.handle(ModelDiscoveryEvent::InspectCache);
@@ -81,32 +81,32 @@ impl ModelDiscoveryWorkflow {
         }
     }
 
-    pub(crate) fn record_cache_hit(&mut self) {
+    pub fn record_cache_hit(&mut self) {
         let _ = self.machine.handle(ModelDiscoveryEvent::CacheHit);
     }
 
-    pub(crate) fn record_cache_miss(&mut self) {
+    pub fn record_cache_miss(&mut self) {
         let _ = self.machine.handle(ModelDiscoveryEvent::CacheMiss);
     }
 
-    pub(crate) fn record_fetch_started(&mut self) {
+    pub fn record_fetch_started(&mut self) {
         let _ = self.machine.handle(ModelDiscoveryEvent::Fetch);
     }
 
-    pub(crate) fn record_live_catalog(&mut self) {
+    pub fn record_live_catalog(&mut self) {
         let _ = self.machine.handle(ModelDiscoveryEvent::FetchedLive);
     }
 
-    pub(crate) fn record_unsupported_catalog(&mut self) {
+    pub fn record_unsupported_catalog(&mut self) {
         let _ = self.machine.handle(ModelDiscoveryEvent::FetchedUnsupported);
     }
 
-    pub(crate) fn record_failed(&mut self) {
+    pub fn record_failed(&mut self) {
         let _ = self.machine.handle(ModelDiscoveryEvent::FetchFailed);
     }
 
     #[cfg(test)]
-    pub(crate) fn state(&self) -> ModelDiscoveryState {
+    pub fn state(&self) -> ModelDiscoveryState {
         match self.machine.current_state() {
             "Idle" => ModelDiscoveryState::Idle,
             "CheckingCache" => ModelDiscoveryState::CheckingCache,
@@ -121,6 +121,12 @@ impl ModelDiscoveryWorkflow {
     }
 }
 
+impl Default for ModelDiscoveryWorkflow {
+    fn default() -> Self {
+        Self::new()
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -128,9 +134,7 @@ mod tests {
     #[test]
     fn offline_refresh_starts_with_cache_lookup() {
         let mut workflow = ModelDiscoveryWorkflow::new();
-
         workflow.begin(RefreshStrategy::Offline);
-
         assert_eq!(workflow.state(), ModelDiscoveryState::CheckingCache);
     }
 
@@ -138,9 +142,7 @@ mod tests {
     fn online_uncached_cache_hit_stops_at_cached_catalog() {
         let mut workflow = ModelDiscoveryWorkflow::new();
         workflow.begin(RefreshStrategy::OnlineIfUncached);
-
         workflow.record_cache_hit();
-
         assert_eq!(workflow.state(), ModelDiscoveryState::CachedCatalog);
     }
 
@@ -148,11 +150,9 @@ mod tests {
     fn online_uncached_cache_miss_flows_into_live_catalog() {
         let mut workflow = ModelDiscoveryWorkflow::new();
         workflow.begin(RefreshStrategy::OnlineIfUncached);
-
         workflow.record_cache_miss();
         workflow.record_fetch_started();
         workflow.record_live_catalog();
-
         assert_eq!(workflow.state(), ModelDiscoveryState::LiveCatalog);
     }
 
@@ -160,9 +160,7 @@ mod tests {
     fn online_fetch_can_land_in_unsupported_catalog() {
         let mut workflow = ModelDiscoveryWorkflow::new();
         workflow.begin(RefreshStrategy::Online);
-
         workflow.record_unsupported_catalog();
-
         assert_eq!(workflow.state(), ModelDiscoveryState::UnsupportedCatalog);
     }
 }

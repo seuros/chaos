@@ -10,11 +10,11 @@ use serde_json::json;
 #[cfg(test)]
 pub(crate) use crate::client_common::tools::ToolSpec;
 #[cfg(test)]
+pub(crate) use crate::collaboration_modes::CollaborationModesConfig;
+#[cfg(test)]
 pub(crate) use crate::features::Feature;
 #[cfg(test)]
 pub(crate) use crate::features::Features;
-#[cfg(test)]
-pub(crate) use crate::models_manager::collaboration_mode_presets::CollaborationModesConfig;
 #[cfg(test)]
 pub(crate) use crate::tools::handlers::PLAN_TOOL;
 #[cfg(test)]

@@ -1,7 +1,7 @@
 use super::*;
 use crate::chaos::make_session_and_context;
+use crate::collaboration_modes::CollaborationModesConfig;
 use crate::config::test_config;
-use crate::models_manager::collaboration_mode_presets::CollaborationModesConfig;
 use crate::models_manager::manager::RefreshStrategy;
 use assert_matches::assert_matches;
 use chaos_ipc::models::ContentItem;

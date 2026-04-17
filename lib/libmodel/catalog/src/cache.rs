@@ -18,7 +18,7 @@ use tracing::info;
 
 /// Manages loading and saving of model catalogs in the shared runtime store.
 #[derive(Debug)]
-pub(crate) struct ModelsCacheManager {
+pub struct ModelsCacheManager {
     sqlite_home: PathBuf,
     cache_ttl: Duration,
     chaos_pool: OnceCell<Option<RuntimeCachePool>>,
@@ -32,7 +32,7 @@ enum RuntimeCachePool {
 
 impl ModelsCacheManager {
     /// Create a new cache manager backed by the shared runtime store.
-    pub(crate) fn new(sqlite_home: PathBuf, cache_ttl: Duration) -> Self {
+    pub fn new(sqlite_home: PathBuf, cache_ttl: Duration) -> Self {
         Self {
             sqlite_home,
             cache_ttl,
@@ -42,7 +42,7 @@ impl ModelsCacheManager {
 
     /// Attempt to load a fresh cache entry. Returns `None` if the cache doesn't exist, is stale,
     /// or was written for a different provider scope.
-    pub(crate) async fn load_fresh(
+    pub async fn load_fresh(
         &self,
         expected_version: &str,
         expected_scope: &ModelsCacheScope,
@@ -92,7 +92,7 @@ impl ModelsCacheManager {
     }
 
     /// Persist the cache to disk, creating parent directories as needed.
-    pub(crate) async fn persist_cache(
+    pub async fn persist_cache(
         &self,
         models: &[ModelInfo],
         etag: Option<String>,
@@ -112,10 +112,7 @@ impl ModelsCacheManager {
     }
 
     /// Renew the cache TTL by updating the fetched_at timestamp to now.
-    pub(crate) async fn renew_cache_ttl(
-        &self,
-        expected_scope: &ModelsCacheScope,
-    ) -> io::Result<()> {
+    pub async fn renew_cache_ttl(&self, expected_scope: &ModelsCacheScope) -> io::Result<()> {
         let mut cache = match self.load(expected_scope).await? {
             Some(cache) => cache,
             None => return Err(io::Error::new(ErrorKind::NotFound, "cache not found")),
@@ -265,7 +262,7 @@ impl ModelsCacheManager {
 
     /// Return the slug of the highest-priority `supported_in_api` model for
     /// the given provider name, or `None` if the cache is empty or unreachable.
-    pub(crate) async fn first_model_id(&self, provider_name: &str) -> Option<String> {
+    pub async fn first_model_id(&self, provider_name: &str) -> Option<String> {
         let pool = self.runtime_pool().await?;
 
         let models: Vec<ModelInfo> = match pool {
@@ -302,15 +299,13 @@ impl ModelsCacheManager {
             .map(|m| m.slug)
     }
 
-    #[cfg(test)]
-    /// Set the cache TTL.
-    pub(crate) fn set_ttl(&mut self, ttl: Duration) {
+    #[cfg(any(test, feature = "test-support"))]
+    pub fn set_ttl(&mut self, ttl: Duration) {
         self.cache_ttl = ttl;
     }
 
-    #[cfg(test)]
-    /// Manipulate the newest cached catalog for testing. Allows setting a custom fetched_at timestamp.
-    pub(crate) async fn manipulate_cache_for_test<F>(&self, f: F) -> io::Result<()>
+    #[cfg(any(test, feature = "test-support"))]
+    pub async fn manipulate_cache_for_test<F>(&self, f: F) -> io::Result<()>
     where
         F: FnOnce(&mut Timestamp),
     {
@@ -322,9 +317,8 @@ impl ModelsCacheManager {
         self.save_internal(&cache).await
     }
 
-    #[cfg(test)]
-    /// Mutate the newest cached catalog for testing.
-    pub(crate) async fn mutate_cache_for_test<F>(&self, f: F) -> io::Result<()>
+    #[cfg(any(test, feature = "test-support"))]
+    pub async fn mutate_cache_for_test<F>(&self, f: F) -> io::Result<()>
     where
         F: FnOnce(&mut ModelsCache),
     {
@@ -336,7 +330,7 @@ impl ModelsCacheManager {
         self.save_internal(&cache).await
     }
 
-    #[cfg(test)]
+    #[cfg(any(test, feature = "test-support"))]
     async fn load_first_for_test(&self) -> io::Result<Option<ModelsCache>> {
         let Some(pool) = self.runtime_pool().await else {
             return Ok(None);
@@ -428,27 +422,26 @@ fn decode_models_cache_row_postgres(
 
 /// Serialized snapshot of models and metadata cached on disk.
 #[derive(Debug, Clone, Serialize, Deserialize)]
-pub(crate) struct ModelsCache {
-    pub(crate) fetched_at: Timestamp,
+pub struct ModelsCache {
+    pub fetched_at: Timestamp,
     #[serde(default, skip_serializing_if = "Option::is_none")]
-    pub(crate) etag: Option<String>,
+    pub etag: Option<String>,
     #[serde(default, skip_serializing_if = "Option::is_none")]
-    pub(crate) client_version: Option<String>,
+    pub client_version: Option<String>,
     #[serde(default, skip_serializing_if = "Option::is_none")]
-    pub(crate) scope: Option<ModelsCacheScope>,
-    pub(crate) models: Vec<ModelInfo>,
+    pub scope: Option<ModelsCacheScope>,
+    pub models: Vec<ModelInfo>,
 }
 
 /// Provider identity for a cached model catalog.
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
-pub(crate) struct ModelsCacheScope {
-    pub(crate) provider_name: String,
-    pub(crate) wire_api: String,
-    pub(crate) base_url: String,
+pub struct ModelsCacheScope {
+    pub provider_name: String,
+    pub wire_api: String,
+    pub base_url: String,
 }
 
 impl ModelsCache {
-    /// Returns `true` when the cache entry has not exceeded the configured TTL.
     fn is_fresh(&self, ttl: Duration) -> bool {
         if ttl.is_zero() {
             return false;

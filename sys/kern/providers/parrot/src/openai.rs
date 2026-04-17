@@ -278,6 +278,28 @@ async fn fetch_openai_models(
     #[derive(Deserialize)]
     struct ModelEntry {
         id: String,
+        /// Human-readable name when provided by the provider.
+        #[serde(default)]
+        display_name: Option<String>,
+        /// Context window in tokens. Captured under multiple field names.
+        #[serde(default)]
+        #[serde(alias = "context_window")]
+        #[serde(alias = "max_context_tokens")]
+        #[serde(alias = "max_input_tokens")]
+        context_length: Option<i64>,
+        /// Max output tokens when exposed.
+        #[serde(default)]
+        #[serde(alias = "max_output_tokens")]
+        max_tokens_output: Option<i64>,
+        /// Reasoning/thinking capability.
+        #[serde(default)]
+        #[serde(alias = "supports_thinking")]
+        supports_reasoning: Option<bool>,
+        /// Image input capability.
+        #[serde(default)]
+        #[serde(alias = "supports_vision")]
+        #[serde(alias = "supports_image_input")]
+        supports_image_in: Option<bool>,
     }
 
     let url = format!("{}/models", base_url.trim_end_matches('/'));
@@ -335,16 +357,19 @@ async fn fetch_openai_models(
     let models = resp
         .data
         .into_iter()
-        .map(|m| chaos_abi::AbiModelInfo {
-            display_name: m.id.clone(),
-            id: m.id,
-            max_input_tokens: None,
-            max_output_tokens: None,
-            supports_thinking: false,
-            supports_images: false,
-            supports_structured_output: false,
-            supports_reasoning_effort: false,
-            native_server_side_tools: native_tools.clone(),
+        .map(|m| {
+            let id = m.id;
+            chaos_abi::AbiModelInfo {
+                display_name: m.display_name.unwrap_or_else(|| id.clone()),
+                id,
+                max_input_tokens: m.context_length,
+                max_output_tokens: m.max_tokens_output,
+                supports_thinking: m.supports_reasoning.unwrap_or(false),
+                supports_images: m.supports_image_in.unwrap_or(false),
+                supports_structured_output: false,
+                supports_reasoning_effort: false,
+                native_server_side_tools: native_tools.clone(),
+            }
         })
         .collect();
 

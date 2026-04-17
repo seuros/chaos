@@ -225,6 +225,14 @@ pub async fn run_main(
         tracing::warn!(error = %err, "failed to run personality migration");
     }
 
+    // If `-c model_provider=<name>` was passed, promote it into the typed
+    // ConfigOverrides so requirements.rs can detect it was explicitly overridden
+    // (and avoid inheriting a model from a different provider).
+    let cli_model_provider: Option<String> = cli_kv_overrides
+        .iter()
+        .find(|(k, _)| k == "model_provider")
+        .and_then(|(_, v)| v.as_str().map(ToString::to_string));
+
     let model_provider_override = if cli.oss {
         let resolved = resolve_oss_provider(
             cli.oss_provider.as_deref(),
@@ -240,7 +248,7 @@ pub async fn run_main(
             ));
         }
     } else {
-        None
+        cli_model_provider
     };
 
     let model = cli.model.clone();
@@ -252,6 +260,7 @@ pub async fn run_main(
         approval_policy,
         sandbox_mode,
         cwd,
+        provider_user_override: model_provider_override.is_some(),
         model_provider: model_provider_override.clone(),
         config_profile: cli.config_profile.clone(),
         alcatraz_linux_exe: arg0_paths.alcatraz_linux_exe.clone(),

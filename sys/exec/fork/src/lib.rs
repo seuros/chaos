@@ -322,6 +322,7 @@ pub async fn run_main(cli: Cli, arg0_paths: Arg0DispatchPaths) -> anyhow::Result
         show_raw_agent_reasoning: oss.then_some(true),
         ephemeral: ephemeral.then_some(true),
         additional_writable_roots: add_dir,
+        provider_user_override: model_provider.is_some(),
     };
 
     let config = ConfigBuilder::default()

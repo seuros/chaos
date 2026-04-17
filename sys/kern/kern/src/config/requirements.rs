@@ -174,6 +174,7 @@ impl Config {
             approvals_reviewer: approvals_reviewer_override,
             sandbox_mode,
             model_provider,
+            provider_user_override,
             service_tier: service_tier_override,
             config_profile: config_profile_key,
             alcatraz_linux_exe,
@@ -479,7 +480,15 @@ impl Config {
 
         let forced_login_method = cfg.forced_login_method;
 
-        let model = model.or(config_profile.model).or(cfg.model);
+        // When the user explicitly chose a different provider (CLI flag), don't
+        // inherit cfg.model — it likely belongs to a different provider. Role
+        // reload also sets model_provider for preservation but leaves
+        // provider_user_override = false, so the model is kept in that case.
+        let model = if provider_user_override {
+            model.or(config_profile.model)
+        } else {
+            model.or(config_profile.model).or(cfg.model)
+        };
         let service_tier = service_tier_override
             .unwrap_or_else(|| config_profile.service_tier.or(cfg.service_tier));
         let service_tier = match service_tier {

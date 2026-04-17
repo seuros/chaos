@@ -44,7 +44,34 @@ impl std::str::FromStr for CronScope {
     }
 }
 
-/// A scheduled job stored in chaos.sqlite.
+/// Semantic payload of a scheduled job.
+#[derive(Debug, Clone, Serialize, Deserialize)]
+#[serde(tag = "kind", rename_all = "snake_case")]
+pub enum JobKind {
+    /// Run `command` via `sh -c`.
+    Shell { command: String },
+    /// Poll a spool batch submitted to `backend`, keyed by `manifest_id`
+    /// into `spool_jobs`. `schedule` is the poll cadence.
+    Spool {
+        backend: String,
+        manifest_id: String,
+    },
+}
+
+impl JobKind {
+    pub const SHELL_TAG: &'static str = "shell";
+    pub const SPOOL_TAG: &'static str = "spool";
+
+    /// Tag used in `cron_jobs.kind`.
+    pub fn tag(&self) -> &'static str {
+        match self {
+            Self::Shell { .. } => Self::SHELL_TAG,
+            Self::Spool { .. } => Self::SPOOL_TAG,
+        }
+    }
+}
+
+/// A scheduled job stored in the shared runtime DB.
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct CronJob {
     pub id: String,
@@ -63,6 +90,16 @@ pub struct CronJob {
     pub next_run_at: Option<i64>,
     pub created_at: i64,
     pub updated_at: i64,
+    /// Dispatch tag: `"shell"` or `"spool"`.
+    #[serde(default = "default_kind")]
+    pub kind: String,
+    /// When `kind == "spool"`, the `spool_jobs` row this cron drives.
+    #[serde(default)]
+    pub manifest_id: Option<String>,
+}
+
+fn default_kind() -> String {
+    JobKind::SHELL_TAG.to_string()
 }
 
 /// Parameters for creating a new cron job.
@@ -74,4 +111,50 @@ pub struct CreateJobParams {
     pub scope: CronScope,
     pub project_path: Option<String>,
     pub session_id: Option<String>,
+    pub kind: String,
+    pub manifest_id: Option<String>,
+}
+
+impl CreateJobParams {
+    /// Shorthand for a shell-kind job with neither manifest binding.
+    pub fn shell(
+        name: String,
+        schedule: String,
+        command: String,
+        scope: CronScope,
+        project_path: Option<String>,
+        session_id: Option<String>,
+    ) -> Self {
+        Self {
+            name,
+            schedule,
+            command,
+            scope,
+            project_path,
+            session_id,
+            kind: JobKind::SHELL_TAG.to_string(),
+            manifest_id: None,
+        }
+    }
+
+    /// Shorthand for a spool-kind job driving a manifest.
+    pub fn spool(
+        name: String,
+        schedule: String,
+        manifest_id: String,
+        scope: CronScope,
+        project_path: Option<String>,
+        session_id: Option<String>,
+    ) -> Self {
+        Self {
+            name,
+            schedule,
+            command: String::new(),
+            scope,
+            project_path,
+            session_id,
+            kind: JobKind::SPOOL_TAG.to_string(),
+            manifest_id: Some(manifest_id),
+        }
+    }
 }

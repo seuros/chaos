@@ -12,6 +12,7 @@ path = "src/lib.rs"
 
 [dependencies]
 anyhow = { workspace = true }
+chaos-abi = { workspace = true }
 chaos-proc = { workspace = true }
 chaos-traits = { workspace = true }
 inventory = { workspace = true }

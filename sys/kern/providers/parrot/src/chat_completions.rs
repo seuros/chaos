@@ -209,7 +209,7 @@ struct ChatToolFunction {
     parameters: Value,
 }
 
-fn build_request_body(request: &TurnRequest, model: &str) -> Result<Value, AbiError> {
+pub(crate) fn build_request_body(request: &TurnRequest, model: &str) -> Result<Value, AbiError> {
     let mut messages: Vec<ChatMessage> = Vec::new();
 
     // Prepend the system prompt when instructions are non-empty.

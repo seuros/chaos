@@ -9,11 +9,13 @@ pub const JSON_MIME_TYPE: &str = "application/json";
 pub const CHAOS_SESSIONS_URI: &str = "chaos://sessions";
 pub const CHAOS_SESSIONS_URI_TEMPLATE: &str = "chaos://sessions/{id}";
 pub const CHAOS_CRONS_URI: &str = "chaos://crons";
+pub const CHAOS_SPOOL_URI: &str = "chaos://spool";
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum ChaosBuiltinResourceKind {
     Sessions,
     Crons,
+    Spool,
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -39,7 +41,7 @@ pub struct ChaosBuiltinResourceTemplateSpec {
     pub mime_type: &'static str,
 }
 
-const RESOURCE_SPECS: [ChaosBuiltinResourceSpec; 2] = [
+const RESOURCE_SPECS: [ChaosBuiltinResourceSpec; 3] = [
     ChaosBuiltinResourceSpec {
         kind: ChaosBuiltinResourceKind::Sessions,
         uri: CHAOS_SESSIONS_URI,
@@ -52,6 +54,13 @@ const RESOURCE_SPECS: [ChaosBuiltinResourceSpec; 2] = [
         uri: CHAOS_CRONS_URI,
         name: "crons",
         description: "List all scheduled cron jobs",
+        mime_type: JSON_MIME_TYPE,
+    },
+    ChaosBuiltinResourceSpec {
+        kind: ChaosBuiltinResourceKind::Spool,
+        uri: CHAOS_SPOOL_URI,
+        name: "spool",
+        description: "List all persisted spool jobs",
         mime_type: JSON_MIME_TYPE,
     },
 ];
@@ -78,12 +87,14 @@ pub enum ResolvedChaosBuiltinResource {
     Sessions,
     SessionDetail { process_id: ProcessId },
     Crons,
+    Spool,
 }
 
 pub fn resolve_resource_uri(uri: &str) -> Result<Option<ResolvedChaosBuiltinResource>, String> {
     match uri {
         CHAOS_SESSIONS_URI => Ok(Some(ResolvedChaosBuiltinResource::Sessions)),
         CHAOS_CRONS_URI => Ok(Some(ResolvedChaosBuiltinResource::Crons)),
+        CHAOS_SPOOL_URI => Ok(Some(ResolvedChaosBuiltinResource::Spool)),
         _ => {
             let Some(id) = uri.strip_prefix("chaos://sessions/") else {
                 return Ok(None);
@@ -180,11 +191,18 @@ pub async fn crons_json_from_provider(
     chaos_cron::resource::list_crons(provider).await
 }
 
+pub async fn spool_json_from_provider(
+    provider: Option<&ChaosStorageProvider>,
+) -> Result<String, String> {
+    chaos_cron::resource::list_spool(provider).await
+}
+
 #[allow(async_fn_in_trait)]
 pub trait ChaosBuiltinResourceBackend {
     async fn sessions_json(&self) -> Result<String, String>;
     async fn session_detail_json(&self, process_id: ProcessId) -> Result<String, String>;
     async fn crons_json(&self) -> Result<String, String>;
+    async fn spool_json(&self) -> Result<String, String>;
 }
 
 pub async fn read_resource_json<B: ChaosBuiltinResourceBackend + Sync>(
@@ -197,6 +215,7 @@ pub async fn read_resource_json<B: ChaosBuiltinResourceBackend + Sync>(
             backend.session_detail_json(process_id).await.map(Some)
         }
         Some(ResolvedChaosBuiltinResource::Crons) => backend.crons_json().await.map(Some),
+        Some(ResolvedChaosBuiltinResource::Spool) => backend.spool_json().await.map(Some),
         None => Ok(None),
     }
 }
@@ -214,6 +233,10 @@ mod tests {
         assert_eq!(
             resolve_resource_uri(CHAOS_CRONS_URI).expect("resolve crons"),
             Some(ResolvedChaosBuiltinResource::Crons)
+        );
+        assert_eq!(
+            resolve_resource_uri(CHAOS_SPOOL_URI).expect("resolve spool"),
+            Some(ResolvedChaosBuiltinResource::Spool)
         );
     }
 

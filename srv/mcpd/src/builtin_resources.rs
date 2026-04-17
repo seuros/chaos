@@ -89,6 +89,20 @@ impl builtin_mcp_resources::ChaosBuiltinResourceBackend for McpHostBuiltinResour
         .await?;
         chaos_cron::resource::list_crons(Some(&provider)).await
     }
+
+    async fn spool_json(&self) -> Result<String, String> {
+        let existing_runtime_pool = self
+            .server
+            .runtime_db
+            .as_ref()
+            .and_then(chaos_kern::runtime_db::RuntimeDbHandle::sqlite_pool_cloned);
+        let provider = chaos_kern::runtime_db::resolve_runtime_storage_provider(
+            existing_runtime_pool.as_ref(),
+            &self.server.sqlite_home,
+        )
+        .await?;
+        chaos_cron::resource::list_spool(Some(&provider)).await
+    }
 }
 
 async fn read_builtin_resource_json(
@@ -130,6 +144,14 @@ fn crons_list_handler<'a>(
 ) -> ResourceReadFuture<'a> {
     let _ = ctx;
     read_static_resource_handler(server, builtin_mcp_resources::CHAOS_CRONS_URI)
+}
+
+fn spool_list_handler<'a>(
+    server: &'a ChaosMcpServer,
+    ctx: ExecutionContext<'a>,
+) -> ResourceReadFuture<'a> {
+    let _ = ctx;
+    read_static_resource_handler(server, builtin_mcp_resources::CHAOS_SPOOL_URI)
 }
 
 fn session_detail_handler<'a>(
@@ -181,6 +203,7 @@ pub(crate) fn resource_router() -> McpResourceRouter<ChaosMcpServer> {
         let handler = match spec.kind {
             builtin_mcp_resources::ChaosBuiltinResourceKind::Sessions => sessions_list_handler,
             builtin_mcp_resources::ChaosBuiltinResourceKind::Crons => crons_list_handler,
+            builtin_mcp_resources::ChaosBuiltinResourceKind::Spool => spool_list_handler,
         };
         router = router.with_resource(resource_info(spec), handler, None);
     }

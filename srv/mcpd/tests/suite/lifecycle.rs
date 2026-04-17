@@ -162,6 +162,7 @@ async fn resources_are_listed_after_initialize() -> Result<()> {
         .collect();
     assert!(uris.contains(&"chaos://sessions"));
     assert!(uris.contains(&"chaos://crons"));
+    assert!(uris.contains(&"chaos://spool"));
 
     Ok(())
 }
@@ -236,6 +237,42 @@ async fn cron_resource_can_be_read_after_initialize() -> Result<()> {
 }
 
 #[tokio::test(flavor = "multi_thread", worker_threads = 2)]
+async fn spool_resource_can_be_read_after_initialize() -> Result<()> {
+    let (_codex_home, mut mcp) = spawn_mcp_process().await?;
+    mcp.initialize().await?;
+
+    let request_id = mcp
+        .send_custom_request("resources/read", Some(json!({ "uri": "chaos://spool" })))
+        .await?;
+    let message = timeout(
+        DEFAULT_READ_TIMEOUT,
+        mcp.read_stream_until_response_or_error_message(request_id.clone()),
+    )
+    .await??;
+
+    let JsonRpcMessage::Response(resp) = message else {
+        anyhow::bail!("expected JSON-RPC response, got: {message:?}");
+    };
+    assert_eq!(resp.id, request_id.to_value());
+    assert!(resp.error.is_none(), "unexpected error: {:?}", resp.error);
+
+    assert_eq!(
+        resp.result.as_ref().unwrap(),
+        &json!({
+            "contents": [
+                {
+                    "uri": "chaos://spool",
+                    "mimeType": "application/json",
+                    "text": "[]"
+                }
+            ]
+        })
+    );
+
+    Ok(())
+}
+
+#[tokio::test(flavor = "multi_thread", worker_threads = 2)]
 async fn cron_resource_reads_jobs_from_runtime_db_even_without_preopened_state_runtime()
 -> Result<()> {
     let (chaos_home, mut mcp) = spawn_mcp_process().await?;
@@ -243,14 +280,14 @@ async fn cron_resource_reads_jobs_from_runtime_db_even_without_preopened_state_r
     let pool = open_runtime_db(chaos_home.path()).await?;
     let store = CronStore::new(pool);
     store
-        .create(&CreateJobParams {
-            name: "persisted job".to_string(),
-            schedule: "5m".to_string(),
-            command: "echo hi".to_string(),
-            scope: CronScope::Project,
-            project_path: Some("/tmp/project".to_string()),
-            session_id: None,
-        })
+        .create(&CreateJobParams::shell(
+            "persisted job".to_string(),
+            "5m".to_string(),
+            "echo hi".to_string(),
+            CronScope::Project,
+            Some("/tmp/project".to_string()),
+            None,
+        ))
         .await?;
 
     mcp.initialize().await?;
@@ -279,6 +316,52 @@ async fn cron_resource_reads_jobs_from_runtime_db_even_without_preopened_state_r
     assert_eq!(items[0]["name"], json!("persisted job"));
     assert_eq!(items[0]["scope"], json!("project"));
     assert_eq!(items[0]["command"], json!("echo hi"));
+
+    Ok(())
+}
+
+#[tokio::test(flavor = "multi_thread", worker_threads = 2)]
+async fn spool_resource_reads_rows_from_runtime_db_even_without_preopened_state_runtime()
+-> Result<()> {
+    let (chaos_home, mut mcp) = spawn_mcp_process().await?;
+
+    let pool = open_runtime_db(chaos_home.path()).await?;
+    sqlx::query(
+        "INSERT INTO spool_jobs \
+         (manifest_id, backend, batch_id, status, request_count, payload_json, submitted_at, created_at, updated_at) \
+         VALUES (?, 'xai', 'batch-1', 'InProgress', 2, '[\"a\",\"b\"]', 123, 111, 222)",
+    )
+    .bind("manifest-1")
+    .execute(&pool)
+    .await?;
+
+    mcp.initialize().await?;
+
+    let request_id = mcp
+        .send_custom_request("resources/read", Some(json!({ "uri": "chaos://spool" })))
+        .await?;
+    let message = timeout(
+        DEFAULT_READ_TIMEOUT,
+        mcp.read_stream_until_response_or_error_message(request_id.clone()),
+    )
+    .await??;
+
+    let JsonRpcMessage::Response(resp) = message else {
+        anyhow::bail!("expected JSON-RPC response, got: {message:?}");
+    };
+    assert_eq!(resp.id, request_id.to_value());
+    assert!(resp.error.is_none(), "unexpected error: {:?}", resp.error);
+
+    let text = resp.result.as_ref().unwrap()["contents"][0]["text"]
+        .as_str()
+        .expect("spool resource text");
+    let spool: serde_json::Value = serde_json::from_str(text)?;
+    let items = spool.as_array().expect("spool list array");
+    assert_eq!(items.len(), 1);
+    assert_eq!(items[0]["manifest_id"], json!("manifest-1"));
+    assert_eq!(items[0]["backend"], json!("xai"));
+    assert_eq!(items[0]["batch_id"], json!("batch-1"));
+    assert_eq!(items[0]["status"], json!("InProgress"));
 
     Ok(())
 }

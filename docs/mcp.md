@@ -90,6 +90,7 @@ This starts Chaos as a stdio MCP server exposing:
 | `chaos://sessions` | List all sessions |
 | `chaos://sessions/{id}` | Read session details |
 | `chaos://crons` | List scheduled jobs |
+| `chaos://spool` | List persisted spool jobs |
 
 ### Integrating with other harnesses
 

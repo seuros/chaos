@@ -7,6 +7,7 @@ use std::sync::OnceLock;
 
 use crate::job::CronJob;
 use crate::job::CronScope;
+use crate::job::JobKind;
 use crate::provider::BackendCronStorage;
 use crate::schedule::Schedule;
 use chaos_storage::ChaosStorageProvider;
@@ -24,6 +25,23 @@ const DEFAULT_TICK_INTERVAL: std::time::Duration = std::time::Duration::from_sec
 pub type JobExecutor = Arc<
     dyn Fn(&CronJob) -> Pin<Box<dyn Future<Output = Result<String, String>> + Send>> + Send + Sync,
 >;
+
+/// Compose a shell executor and a spool executor into one dispatcher keyed
+/// on `job.kind`. Unknown kinds error out.
+pub fn dispatch_executor(shell: JobExecutor, spool: JobExecutor) -> JobExecutor {
+    Arc::new(move |job| {
+        let shell = shell.clone();
+        let spool = spool.clone();
+        match job.kind.as_str() {
+            JobKind::SHELL_TAG => shell(job),
+            JobKind::SPOOL_TAG => spool(job),
+            other => {
+                let msg = format!("unknown cron job kind: {other}");
+                Box::pin(async move { Err(msg) })
+            }
+        }
+    })
+}
 
 /// Default executor — runs job.command as a shell command via `sh -c`.
 pub fn shell_executor() -> JobExecutor {

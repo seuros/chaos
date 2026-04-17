@@ -5,18 +5,26 @@ mod provider;
 pub mod resource;
 mod schedule;
 mod scheduler;
+mod spool_exec;
+mod spool_store;
+mod spool_submit;
 mod store;
 pub mod tools;
 
 pub use job::CreateJobParams;
 pub use job::CronJob;
 pub use job::CronScope;
+pub use job::JobKind;
 pub(crate) use provider::BackendCronStorage;
 pub(crate) use provider::CronStorage;
 pub use schedule::Schedule;
+pub use scheduler::JobExecutor;
 pub use scheduler::Scheduler;
+pub use scheduler::dispatch_executor;
 pub use scheduler::shell_executor;
 pub use scheduler::spawn_global as spawn_scheduler;
+pub use spool_exec::spool_executor_from_provider;
+pub use spool_submit::submit_manifest_from_provider;
 pub use store::CronStore;
 pub use tools::create::OwnerContext;
 
@@ -61,6 +69,12 @@ impl CatalogToolDriver for CronToolDriver {
                             .map_err(|e| format!("invalid arguments: {e}"))?;
                     tools::toggle::execute(&params, Some(&provider), Some(&owner)).await
                 }
+                "spool_submit" => {
+                    let params: tools::spool_submit::SpoolSubmitParams =
+                        serde_json::from_value(request.arguments)
+                            .map_err(|e| format!("invalid arguments: {e}"))?;
+                    tools::spool_submit::execute(&params, Some(&provider), &owner).await
+                }
                 other => Err(format!("unknown cron tool: {other}")),
             }?;
             Ok(CatalogToolResult {
@@ -95,5 +109,9 @@ pub type CronCtx<'a> = Ctx<'a>;
 
 /// Returns tool metadata for all cron tools.
 pub fn tool_infos() -> Vec<ToolInfo> {
-    vec![tools::create::tool_info(), tools::toggle::tool_info()]
+    vec![
+        tools::create::tool_info(),
+        tools::toggle::tool_info(),
+        tools::spool_submit::tool_info(),
+    ]
 }

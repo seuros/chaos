@@ -12,8 +12,11 @@ pub mod event;
 pub mod models;
 pub mod reasoning;
 pub mod request;
+pub mod secret;
+pub mod spool;
 pub mod stream;
 pub mod tools;
+pub mod turn_result;
 
 // Re-export ABI surface.
 pub use adapter::AdapterFuture;
@@ -27,10 +30,26 @@ pub use models::ListModelsError;
 pub use models::ListModelsFuture;
 pub use reasoning::ReasoningConfig;
 pub use request::TurnRequest;
+pub use secret::Secret;
+pub use spool::DynamicSpool;
+pub use spool::SpoolBackend;
+pub use spool::SpoolCheckpoint;
+pub use spool::SpoolError;
+pub use spool::SpoolEvent;
+pub use spool::SpoolItem;
+pub use spool::SpoolPhase;
+pub use spool::SpoolRecord;
+pub use spool::SpoolRegistry;
+pub use spool::SpoolStatusReport;
+pub use spool::set_shared_spool_registry;
+pub use spool::shared_spool_registry;
 pub use stream::TurnStream;
 pub use tools::FreeformToolDef;
 pub use tools::FunctionToolDef;
 pub use tools::ToolDef;
+pub use turn_result::TurnError;
+pub use turn_result::TurnOutput;
+pub use turn_result::TurnResult;
 
 // Re-export neutral types from protocol that the ABI traffics in.
 pub use chaos_ipc::config_types::ReasoningSummary;

@@ -7,6 +7,8 @@ use chaos_ipc::ProcessId;
 use chaos_ipc::dynamic_tools::DynamicToolSpec;
 use chaos_ipc::protocol::RolloutItem;
 use chaos_ipc::protocol::SessionSource;
+use chaos_parrot::endpoint::batches::AnthropicSpoolBackend;
+use chaos_parrot::endpoint::batches::XaiSpoolBackend;
 pub use chaos_proc::LogEntry;
 use chaos_proc::ProcessMetadataBuilder;
 pub use chaos_proc::RuntimeDbHandle;
@@ -16,6 +18,7 @@ use serde_json::Value;
 use sqlx::SqlitePool;
 use std::path::Path;
 use std::path::PathBuf;
+use std::sync::Arc;
 use tracing::warn;
 use uuid::Uuid;
 
@@ -51,7 +54,7 @@ pub(crate) async fn init(config: &Config) -> Option<RuntimeDbHandle> {
         }
     };
 
-    if let Err(err) = chaos_cron::spawn_scheduler(&provider, chaos_cron::shell_executor()) {
+    if let Err(err) = chaos_cron::spawn_scheduler(&provider, scheduler_executor(&provider)) {
         warn!("failed to initialize cron scheduler storage backend: {err}");
     }
 
@@ -66,6 +69,55 @@ pub(crate) async fn init(config: &Config) -> Option<RuntimeDbHandle> {
     }
 
     Some(runtime)
+}
+
+fn scheduler_executor(provider: &ChaosStorageProvider) -> chaos_cron::JobExecutor {
+    let shell = chaos_cron::shell_executor();
+    let registry = spool_registry_from_env();
+    if registry.is_empty() {
+        return shell;
+    }
+
+    let registry = Arc::new(registry);
+    // Publish the same registry to process-wide callers (MCP tools, CLI
+    // subcommands) so they reach the same backends kern booted with. A
+    // registry already installed is a no-op — tests and repeated init tolerate
+    // the second install being dropped.
+    let _ = chaos_abi::set_shared_spool_registry(registry.clone());
+
+    let spool = match chaos_cron::spool_executor_from_provider(registry, provider) {
+        Ok(executor) => executor,
+        Err(err) => {
+            warn!("spool backends configured, but spool execution is unavailable: {err}");
+            return shell;
+        }
+    };
+
+    chaos_cron::dispatch_executor(shell, spool)
+}
+
+fn spool_registry_from_env() -> chaos_abi::SpoolRegistry {
+    let mut registry = chaos_abi::SpoolRegistry::new();
+
+    if let Some(api_key) = non_empty_env("ANTHROPIC_API_KEY") {
+        let model = non_empty_env("ANTHROPIC_SPOOL_MODEL")
+            .unwrap_or_else(|| "claude-haiku-4-5-20251001".to_string());
+        registry.register(Arc::new(AnthropicSpoolBackend::new(api_key, model)));
+    }
+
+    if let Some(api_key) = non_empty_env("XAI_API_KEY") {
+        let model = non_empty_env("XAI_SPOOL_MODEL").unwrap_or_else(|| "grok-4-1-fast".to_string());
+        registry.register(Arc::new(XaiSpoolBackend::new(api_key, model)));
+    }
+
+    registry
+}
+
+fn non_empty_env(name: &str) -> Option<String> {
+    std::env::var(name)
+        .ok()
+        .map(|value| value.trim().to_string())
+        .filter(|value| !value.is_empty())
 }
 
 async fn runtime_handle_from_provider(

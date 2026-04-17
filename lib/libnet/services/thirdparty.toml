@@ -23,3 +23,10 @@
 #
 # Entries in `~/.chaos/config.toml` under `[model_providers.<id>]` override
 # this file.
+
+[charm]
+name                 = "Charm Hyper"
+base_url             = "https://hyper.charm.land/v1"
+env_key              = "CHARM_API_KEY"
+env_key_instructions = "Get an API key at https://charm.land and export it as CHARM_API_KEY."
+wire_api             = "chat_completions"

@@ -80,14 +80,15 @@ impl ChatCompletionsAdapter {
         self.provider.url_for_path("/chat/completions")
     }
 
-    fn model_for_request(&self, request_model: &str) -> String {
-        if request_model.is_empty() {
-            self.default_model
-                .clone()
-                .unwrap_or_else(|| "gpt-4o".to_string())
-        } else {
-            request_model.to_string()
+    fn model_for_request(&self, request_model: &str) -> Result<String, AbiError> {
+        if !request_model.is_empty() {
+            return Ok(request_model.to_string());
         }
+        self.default_model
+            .clone()
+            .ok_or_else(|| AbiError::InvalidRequest {
+                message: "no model configured for Chat Completions provider".to_string(),
+            })
     }
 
     fn build_headers(&self) -> Result<HeaderMap, AbiError> {
@@ -121,7 +122,7 @@ impl ModelAdapter for ChatCompletionsAdapter {
     fn stream(&self, request: TurnRequest) -> AdapterFuture<'_> {
         Box::pin(async move {
             let url = self.chat_completions_url();
-            let model = self.model_for_request(&request.model);
+            let model = self.model_for_request(&request.model)?;
             let body = build_request_body(&request, &model)?;
             let headers = self.build_headers()?;
             let retry = self.provider.retry.clone();

@@ -83,14 +83,15 @@ impl AnthropicAdapter {
         self.provider.url_for_path("/messages")
     }
 
-    fn model_for_request(&self, request_model: &str) -> String {
-        if request_model.is_empty() {
-            self.default_model
-                .clone()
-                .unwrap_or_else(|| "claude-sonnet-4-20250514".to_string())
-        } else {
-            request_model.to_string()
+    fn model_for_request(&self, request_model: &str) -> Result<String, AbiError> {
+        if !request_model.is_empty() {
+            return Ok(request_model.to_string());
         }
+        self.default_model
+            .clone()
+            .ok_or_else(|| AbiError::InvalidRequest {
+                message: "no model configured for Anthropic provider".to_string(),
+            })
     }
 
     /// Build the merged header map: provider headers + Anthropic-specific headers.
@@ -154,7 +155,7 @@ impl ModelAdapter for AnthropicAdapter {
             }
 
             let url = self.messages_url();
-            let model = self.model_for_request(&request.model);
+            let model = self.model_for_request(&request.model)?;
             let body = build_request_body(&request, &model)?;
             let headers = self.build_headers()?;
             let retry = self.provider.retry.clone();

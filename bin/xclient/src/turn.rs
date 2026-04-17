@@ -8,18 +8,13 @@ use chaos_ipc::protocol::SandboxPolicy;
 use chaos_ipc::user_input::UserInput;
 use chaos_kern::config::Config;
 
-/// Fallback model slug used when the user's config does not pin a model.
-/// Matches the default `bin/console` uses for the same case.
-pub(super) const DEFAULT_MODEL: &str = "gpt-5-codex";
-
 /// Precomputed defaults for [`Op::UserTurn`] submissions.
 ///
 /// Snapshotted from [`Config`] at boot so the composer can submit turns
 /// without keeping a live `Config` reference around. Fields are cloned into
-/// each submission. When the user's config does not pin a model, we fall
-/// back to [`DEFAULT_MODEL`] so the scaffold still produces a well-formed
-/// `Op::UserTurn` (the kernel will surface an `Error` event if that model
-/// isn't reachable — which is exactly what we want the GUI to render).
+/// each submission. When the user's config does not pin a model, an empty
+/// string is passed and the kernel surfaces an `Error` event — which is
+/// exactly what we want the GUI to render.
 #[derive(Debug, Clone)]
 pub struct TurnTemplate {
     pub(super) cwd: PathBuf,
@@ -36,10 +31,7 @@ impl TurnTemplate {
             cwd: config.cwd.clone(),
             approval_policy: config.permissions.approval_policy.value(),
             sandbox_policy: config.permissions.sandbox_policy.get().clone(),
-            model: config
-                .model
-                .clone()
-                .unwrap_or_else(|| DEFAULT_MODEL.to_string()),
+            model: config.model.clone().unwrap_or_default(),
         }
     }
 
@@ -51,7 +43,7 @@ impl TurnTemplate {
             cwd: PathBuf::from("/"),
             approval_policy: ApprovalPolicy::default(),
             sandbox_policy: SandboxPolicy::new_read_only_policy(),
-            model: DEFAULT_MODEL.to_string(),
+            model: String::new(),
         }
     }
 

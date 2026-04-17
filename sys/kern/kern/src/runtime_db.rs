@@ -1,4 +1,5 @@
 use crate::config::Config;
+use crate::models_manager::cache::ModelsCacheManager;
 use crate::path_utils::normalize_for_path_comparison;
 use crate::rollout::list::Cursor;
 use crate::rollout::list::ProcessSortKey;
@@ -19,6 +20,7 @@ use sqlx::SqlitePool;
 use std::path::Path;
 use std::path::PathBuf;
 use std::sync::Arc;
+use std::time::Duration;
 use tracing::warn;
 use uuid::Uuid;
 
@@ -54,7 +56,10 @@ pub(crate) async fn init(config: &Config) -> Option<RuntimeDbHandle> {
         }
     };
 
-    if let Err(err) = chaos_cron::spawn_scheduler(&provider, scheduler_executor(&provider)) {
+    if let Err(err) = chaos_cron::spawn_scheduler(
+        &provider,
+        scheduler_executor(&provider, config.sqlite_home.as_path()).await,
+    ) {
         warn!("failed to initialize cron scheduler storage backend: {err}");
     }
 
@@ -71,9 +76,12 @@ pub(crate) async fn init(config: &Config) -> Option<RuntimeDbHandle> {
     Some(runtime)
 }
 
-fn scheduler_executor(provider: &ChaosStorageProvider) -> chaos_cron::JobExecutor {
+async fn scheduler_executor(
+    provider: &ChaosStorageProvider,
+    sqlite_home: &Path,
+) -> chaos_cron::JobExecutor {
     let shell = chaos_cron::shell_executor();
-    let registry = spool_registry_from_env();
+    let registry = spool_registry_from_env(sqlite_home).await;
     if registry.is_empty() {
         return shell;
     }
@@ -96,18 +104,36 @@ fn scheduler_executor(provider: &ChaosStorageProvider) -> chaos_cron::JobExecuto
     chaos_cron::dispatch_executor(shell, spool)
 }
 
-fn spool_registry_from_env() -> chaos_abi::SpoolRegistry {
+async fn spool_registry_from_env(sqlite_home: &Path) -> chaos_abi::SpoolRegistry {
     let mut registry = chaos_abi::SpoolRegistry::new();
+    let cache = ModelsCacheManager::new(sqlite_home.to_path_buf(), Duration::from_secs(3600));
 
     if let Some(api_key) = non_empty_env("ANTHROPIC_API_KEY") {
-        let model = non_empty_env("ANTHROPIC_SPOOL_MODEL")
-            .unwrap_or_else(|| "claude-haiku-4-5-20251001".to_string());
-        registry.register(Arc::new(AnthropicSpoolBackend::new(api_key, model)));
+        let model = if let Some(m) = non_empty_env("ANTHROPIC_SPOOL_MODEL") {
+            Some(m)
+        } else {
+            cache.first_model_id("anthropic").await
+        };
+        match model {
+            Some(m) => registry.register(Arc::new(AnthropicSpoolBackend::new(api_key, m))),
+            None => warn!(
+                "ANTHROPIC_API_KEY set but no spool model resolved; fetch models or set ANTHROPIC_SPOOL_MODEL"
+            ),
+        }
     }
 
     if let Some(api_key) = non_empty_env("XAI_API_KEY") {
-        let model = non_empty_env("XAI_SPOOL_MODEL").unwrap_or_else(|| "grok-4-1-fast".to_string());
-        registry.register(Arc::new(XaiSpoolBackend::new(api_key, model)));
+        let model = if let Some(m) = non_empty_env("XAI_SPOOL_MODEL") {
+            Some(m)
+        } else {
+            cache.first_model_id("xai").await
+        };
+        match model {
+            Some(m) => registry.register(Arc::new(XaiSpoolBackend::new(api_key, m))),
+            None => warn!(
+                "XAI_API_KEY set but no spool model resolved; fetch models or set XAI_SPOOL_MODEL"
+            ),
+        }
     }
 
     registry

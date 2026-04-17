@@ -263,6 +263,45 @@ impl ModelsCacheManager {
             .clone()
     }
 
+    /// Return the slug of the highest-priority `supported_in_api` model for
+    /// the given provider name, or `None` if the cache is empty or unreachable.
+    pub(crate) async fn first_model_id(&self, provider_name: &str) -> Option<String> {
+        let pool = self.runtime_pool().await?;
+
+        let models: Vec<ModelInfo> = match pool {
+            RuntimeCachePool::Sqlite(pool) => {
+                let json: String = sqlx::query_scalar(
+                    "SELECT models_json FROM model_catalog_cache \
+                     WHERE provider_name = ? \
+                     ORDER BY fetched_at DESC LIMIT 1",
+                )
+                .bind(provider_name)
+                .fetch_optional(&pool)
+                .await
+                .ok()??;
+                serde_json::from_str(&json).ok()?
+            }
+            RuntimeCachePool::Postgres(pool) => {
+                let json: serde_json::Value = sqlx::query_scalar(
+                    "SELECT models_json FROM model_catalog_cache \
+                     WHERE provider_name = $1 \
+                     ORDER BY fetched_at DESC LIMIT 1",
+                )
+                .bind(provider_name)
+                .fetch_optional(&pool)
+                .await
+                .ok()??;
+                serde_json::from_value(json).ok()?
+            }
+        };
+
+        models
+            .into_iter()
+            .filter(|m| m.supported_in_api)
+            .max_by_key(|m| m.priority)
+            .map(|m| m.slug)
+    }
+
     #[cfg(test)]
     /// Set the cache TTL.
     pub(crate) fn set_ttl(&mut self, ttl: Duration) {

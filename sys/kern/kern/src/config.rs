@@ -812,6 +812,12 @@ pub struct ConfigOverrides {
     pub approvals_reviewer: Option<ApprovalsReviewer>,
     pub sandbox_mode: Option<SandboxMode>,
     pub model_provider: Option<String>,
+    /// True when the provider was explicitly chosen by the user (CLI flag or
+    /// interactive override). When set, the global `cfg.model` is NOT
+    /// inherited so the provider's own default is used instead. Distinct from
+    /// internal role-reload preservation which also sets `model_provider` but
+    /// should NOT clear the model.
+    pub provider_user_override: bool,
     pub service_tier: Option<Option<ServiceTier>>,
     pub config_profile: Option<String>,
     pub alcatraz_linux_exe: Option<PathBuf>,

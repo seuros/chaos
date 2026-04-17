@@ -63,6 +63,10 @@ struct MultitoolCli {
     #[arg(short = 'd', long = "debug", global = true, default_value_t = false)]
     debug: bool,
 
+    /// Override the model provider (e.g. openai, anthropic, charm). Equivalent to `-c model_provider=<name>`.
+    #[arg(long = "provider", value_name = "PROVIDER", global = true)]
+    provider: Option<String>,
+
     #[clap(flatten)]
     pub config_overrides: CliConfigOverrides,
 
@@ -357,6 +361,7 @@ macro_rules! prepend_root_flags {
 async fn cli_main(arg0_paths: Arg0DispatchPaths) -> anyhow::Result<()> {
     let MultitoolCli {
         debug,
+        provider,
         config_overrides: mut root_config_overrides,
         feature_toggles,
         mut interactive,
@@ -368,6 +373,13 @@ async fn cli_main(arg0_paths: Arg0DispatchPaths) -> anyhow::Result<()> {
     // compose with its existing subscriber stack.
     if debug {
         debug_logging::prepare_debug_logging()?;
+    }
+
+    // Fold --provider into config overrides so it flows to all subcommands.
+    if let Some(p) = provider {
+        root_config_overrides
+            .raw_overrides
+            .push(format!("model_provider={p}"));
     }
 
     // Fold --enable/--disable into config overrides so they flow to all subcommands.
@@ -769,6 +781,7 @@ mod tests {
             config_overrides: root_overrides,
             subcommand,
             feature_toggles: _,
+            provider: _,
         } = cli;
 
         let Subcommand::Resume(ResumeCommand {
@@ -799,6 +812,7 @@ mod tests {
             config_overrides: root_overrides,
             subcommand,
             feature_toggles: _,
+            provider: _,
         } = cli;
 
         let Subcommand::Fork(ForkCommand {

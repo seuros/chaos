@@ -30,8 +30,10 @@ use supports_color::Stream;
 
 mod debug_logging;
 mod mcp_cmd;
+mod models_cmd;
 
 use crate::mcp_cmd::McpCli;
+use crate::models_cmd::ModelsCli;
 
 use chaos_kern::config::Config;
 use chaos_kern::config::ConfigOverrides;
@@ -110,6 +112,9 @@ enum Subcommand {
 
     /// Inspect feature flags.
     Features(FeaturesCli),
+
+    /// List available models for the active provider.
+    Models(ModelsCli),
 
     /// Hidden MCP bridge used by clamp subprocesses.
     #[clap(hide = true, name = "clamp-session-bridge")]
@@ -548,6 +553,10 @@ async fn cli_main(arg0_paths: Arg0DispatchPaths) -> anyhow::Result<()> {
                 disable_feature_in_config(&interactive, &feature).await?;
             }
         },
+        Some(Subcommand::Models(cli)) => {
+            let profile = interactive.config_profile.clone();
+            models_cmd::run(cli, profile).await?;
+        }
         Some(Subcommand::ClampSessionBridge) => {
             chaos_mcpd::run_clamp_session_bridge_main().await?;
         }

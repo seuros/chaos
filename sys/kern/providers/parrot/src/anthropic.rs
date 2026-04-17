@@ -770,11 +770,22 @@ async fn fetch_anthropic_models(
         #[serde(default)]
         display_name: Option<String>,
         #[serde(default)]
+        #[serde(alias = "context_length")]
+        #[serde(alias = "context_window")]
         max_input_tokens: Option<i64>,
         #[serde(default)]
         max_tokens: Option<i64>,
         #[serde(default)]
         capabilities: Option<Capabilities>,
+        // Flat capability fields — fallback for providers that omit the
+        // capabilities object (e.g. Kimi-style Anthropic-compat proxies).
+        #[serde(default)]
+        #[serde(alias = "supports_thinking")]
+        supports_reasoning: Option<bool>,
+        #[serde(default)]
+        #[serde(alias = "supports_vision")]
+        #[serde(alias = "supports_image_input")]
+        supports_image_in: Option<bool>,
     }
 
     #[derive(Deserialize)]
@@ -858,17 +869,21 @@ async fn fetch_anthropic_models(
             let supports_web_search = caps
                 .and_then(|c| c.web_search.as_ref())
                 .is_some_and(|s| s.supported);
+            let id = m.id;
             chaos_abi::AbiModelInfo {
-                id: m.id.clone(),
-                display_name: m.display_name.unwrap_or(m.id),
+                display_name: m.display_name.unwrap_or_else(|| id.clone()),
+                id,
                 max_input_tokens: m.max_input_tokens,
                 max_output_tokens: m.max_tokens,
+                // capabilities struct takes precedence; flat fields are fallback
                 supports_thinking: caps
                     .and_then(|c| c.thinking.as_ref())
-                    .is_some_and(|s| s.supported),
+                    .is_some_and(|s| s.supported)
+                    || m.supports_reasoning.unwrap_or(false),
                 supports_images: caps
                     .and_then(|c| c.image_input.as_ref())
-                    .is_some_and(|s| s.supported),
+                    .is_some_and(|s| s.supported)
+                    || m.supports_image_in.unwrap_or(false),
                 supports_structured_output: caps
                     .and_then(|c| c.structured_outputs.as_ref())
                     .is_some_and(|s| s.supported),

@@ -317,7 +317,7 @@ pub(super) async fn spawn_review_thread(
         features: &review_features,
         web_search_mode: Some(review_web_search_mode),
         session_source: parent_turn_context.session_source.clone(),
-        sandbox_policy: parent_turn_context.sandbox_policy.get(),
+        file_system_sandbox_policy: &parent_turn_context.file_system_sandbox_policy,
         collab_enabled: config.collab_enabled,
     })
     .with_web_search_config(/*web_search_config*/ None)
@@ -361,7 +361,7 @@ pub(super) async fn spawn_review_thread(
     let turn_metadata_state = Arc::new(TurnMetadataState::new(
         review_turn_id.clone(),
         parent_turn_context.cwd.clone(),
-        parent_turn_context.sandbox_policy.get(),
+        &parent_turn_context.file_system_sandbox_policy,
     ));
 
     let review_turn_context = TurnContext {
@@ -387,7 +387,6 @@ pub(super) async fn spawn_review_thread(
         collaboration_mode: parent_turn_context.collaboration_mode.clone(),
         personality: parent_turn_context.personality,
         approval_policy: parent_turn_context.approval_policy.clone(),
-        sandbox_policy: parent_turn_context.sandbox_policy.clone(),
         file_system_sandbox_policy: parent_turn_context.file_system_sandbox_policy.clone(),
         network_sandbox_policy: parent_turn_context.network_sandbox_policy,
         network: parent_turn_context.network.clone(),

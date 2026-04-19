@@ -1,5 +1,6 @@
 use crate::config_loader::NetworkConstraints;
-use chaos_ipc::protocol::SandboxPolicy;
+use chaos_ipc::permissions::FileSystemSandboxKind;
+use chaos_ipc::permissions::FileSystemSandboxPolicy;
 use chaos_pf::BlockedRequestObserver;
 use chaos_pf::ConfigReloader;
 use chaos_pf::ConfigState;
@@ -90,7 +91,7 @@ impl NetworkProxySpec {
     pub(crate) fn from_config_and_constraints(
         config: NetworkProxyConfig,
         requirements: Option<NetworkConstraints>,
-        sandbox_policy: &SandboxPolicy,
+        file_system_sandbox_policy: &FileSystemSandboxPolicy,
     ) -> std::io::Result<Self> {
         let hard_deny_allowlist_misses = requirements
             .as_ref()
@@ -99,7 +100,7 @@ impl NetworkProxySpec {
             Self::apply_requirements(
                 config,
                 &requirements,
-                sandbox_policy,
+                file_system_sandbox_policy,
                 hard_deny_allowlist_misses,
             )
         } else {
@@ -120,7 +121,7 @@ impl NetworkProxySpec {
 
     pub async fn start_proxy(
         &self,
-        sandbox_policy: &SandboxPolicy,
+        file_system_sandbox_policy: &FileSystemSandboxPolicy,
         policy_decider: Option<Arc<dyn NetworkPolicyDecider>>,
         blocked_request_observer: Option<Arc<dyn BlockedRequestObserver>>,
         enable_network_approval_flow: bool,
@@ -131,8 +132,8 @@ impl NetworkProxySpec {
         if enable_network_approval_flow
             && !self.hard_deny_allowlist_misses
             && matches!(
-                sandbox_policy,
-                SandboxPolicy::ReadOnly { .. } | SandboxPolicy::WorkspaceWrite { .. }
+                file_system_sandbox_policy.kind,
+                FileSystemSandboxKind::Restricted
             )
         {
             builder = match policy_decider {
@@ -191,13 +192,16 @@ impl NetworkProxySpec {
     fn apply_requirements(
         mut config: NetworkProxyConfig,
         requirements: &NetworkConstraints,
-        sandbox_policy: &SandboxPolicy,
+        file_system_sandbox_policy: &FileSystemSandboxPolicy,
         hard_deny_allowlist_misses: bool,
     ) -> (NetworkProxyConfig, NetworkProxyConstraints) {
         let mut constraints = NetworkProxyConstraints::default();
-        let allowlist_expansion_enabled =
-            Self::allowlist_expansion_enabled(sandbox_policy, hard_deny_allowlist_misses);
-        let denylist_expansion_enabled = Self::denylist_expansion_enabled(sandbox_policy);
+        let allowlist_expansion_enabled = Self::allowlist_expansion_enabled(
+            file_system_sandbox_policy,
+            hard_deny_allowlist_misses,
+        );
+        let denylist_expansion_enabled =
+            Self::denylist_expansion_enabled(file_system_sandbox_policy);
 
         if let Some(enabled) = requirements.enabled {
             config.network.enabled = enabled;
@@ -267,12 +271,12 @@ impl NetworkProxySpec {
     }
 
     fn allowlist_expansion_enabled(
-        sandbox_policy: &SandboxPolicy,
+        file_system_sandbox_policy: &FileSystemSandboxPolicy,
         hard_deny_allowlist_misses: bool,
     ) -> bool {
         matches!(
-            sandbox_policy,
-            SandboxPolicy::ReadOnly { .. } | SandboxPolicy::WorkspaceWrite { .. }
+            file_system_sandbox_policy.kind,
+            FileSystemSandboxKind::Restricted
         ) && !hard_deny_allowlist_misses
     }
 
@@ -280,10 +284,10 @@ impl NetworkProxySpec {
         requirements.managed_allowed_domains_only.unwrap_or(false)
     }
 
-    fn denylist_expansion_enabled(sandbox_policy: &SandboxPolicy) -> bool {
+    fn denylist_expansion_enabled(file_system_sandbox_policy: &FileSystemSandboxPolicy) -> bool {
         matches!(
-            sandbox_policy,
-            SandboxPolicy::ReadOnly { .. } | SandboxPolicy::WorkspaceWrite { .. }
+            file_system_sandbox_policy.kind,
+            FileSystemSandboxKind::Restricted
         )
     }
 

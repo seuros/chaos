@@ -5,9 +5,11 @@
 //! SQLite remains the primary runtime implementation today; Postgres bootstrap
 //! helpers are exposed for backend-aware consumers.
 
+pub mod backfill;
 mod extract;
-pub mod log_db;
+pub mod memories;
 mod migrations;
+pub mod minion_jobs;
 mod model;
 mod runtime;
 
@@ -16,8 +18,6 @@ pub use model::LogQuery;
 pub use model::LogRow;
 pub use model::LogTailBatch;
 pub use model::LogTailCursor;
-pub use model::Phase2InputSelection;
-pub use model::Phase2JobClaimOutcome;
 /// Preferred entrypoint: owns configuration and metrics.
 pub use runtime::RuntimeDbHandle;
 pub use runtime::StateRuntime;
@@ -27,27 +27,22 @@ pub use runtime::StateRuntime;
 /// Most consumers should prefer [`StateRuntime`].
 pub use extract::apply_rollout_item;
 pub use extract::rollout_item_affects_process_metadata;
-pub use model::AgentJob;
-pub use model::AgentJobCreateParams;
-pub use model::AgentJobItem;
-pub use model::AgentJobItemCreateParams;
-pub use model::AgentJobItemStatus;
-pub use model::AgentJobProgress;
-pub use model::AgentJobStatus;
 pub use model::Anchor;
 pub use model::BackfillState;
 pub use model::BackfillStats;
 pub use model::BackfillStatus;
 pub use model::ExtractionOutcome;
+pub use model::MinionJob;
+pub use model::MinionJobCreateParams;
+pub use model::MinionJobItem;
+pub use model::MinionJobItemCreateParams;
+pub use model::MinionJobItemStatus;
+pub use model::MinionJobProgress;
+pub use model::MinionJobStatus;
 pub use model::ProcessMetadata;
 pub use model::ProcessMetadataBuilder;
 pub use model::ProcessesPage;
 pub use model::SortKey;
-pub use model::Stage1JobClaim;
-pub use model::Stage1JobClaimOutcome;
-pub use model::Stage1Output;
-pub use model::Stage1OutputRef;
-pub use model::Stage1StartupClaimParams;
 pub use runtime::open_runtime_db;
 pub use runtime::open_runtime_db_at_path;
 pub use runtime::open_runtime_db_postgres_url;

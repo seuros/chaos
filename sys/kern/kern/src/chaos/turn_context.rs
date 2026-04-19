@@ -19,6 +19,7 @@ use chaos_ipc::protocol::SandboxPolicy;
 use chaos_ipc::protocol::SessionSource;
 use chaos_ipc::protocol::TurnContextItem;
 use chaos_ipc::protocol::TurnContextNetworkItem;
+use chaos_parole::sandbox::file_system_policy_from_sandbox_policy;
 
 use chaos_ready::ReadinessFlag;
 use chaos_syslog::SessionTelemetry;
@@ -79,7 +80,6 @@ pub(crate) struct TurnContext {
     pub(crate) collaboration_mode: CollaborationMode,
     pub(crate) personality: Option<Personality>,
     pub(crate) approval_policy: Constrained<ApprovalPolicy>,
-    pub(crate) sandbox_policy: Constrained<SandboxPolicy>,
     pub(crate) file_system_sandbox_policy: FileSystemSandboxPolicy,
     pub(crate) network_sandbox_policy: NetworkSandboxPolicy,
     pub(crate) network: Option<NetworkProxy>,
@@ -151,7 +151,7 @@ impl TurnContext {
             features: &features,
             web_search_mode: self.tools_config.web_search_mode,
             session_source: self.session_source.clone(),
-            sandbox_policy: self.sandbox_policy.get(),
+            file_system_sandbox_policy: &self.file_system_sandbox_policy,
             collab_enabled: config.collab_enabled,
         })
         .with_unified_exec_shell_mode(self.tools_config.unified_exec_shell_mode.clone())
@@ -183,7 +183,6 @@ impl TurnContext {
             collaboration_mode,
             personality: self.personality,
             approval_policy: self.approval_policy.clone(),
-            sandbox_policy: self.sandbox_policy.clone(),
             file_system_sandbox_policy: self.file_system_sandbox_policy.clone(),
             network_sandbox_policy: self.network_sandbox_policy,
             network: self.network.clone(),
@@ -223,7 +222,8 @@ impl TurnContext {
             current_date: self.current_date.clone(),
             timezone: self.timezone.clone(),
             approval_policy: self.approval_policy.value(),
-            sandbox_policy: self.sandbox_policy.get().clone(),
+            file_system_sandbox_policy: self.file_system_sandbox_policy.clone(),
+            network_sandbox_policy: self.network_sandbox_policy,
             network: self.turn_context_network_item(),
             model: self.model_info.slug.clone(),
             personality: self.personality,
@@ -291,8 +291,6 @@ pub(crate) struct SessionConfiguration {
     /// When to escalate for approval for execution
     pub(super) approval_policy: Constrained<ApprovalPolicy>,
     pub(super) approvals_reviewer: ApprovalsReviewer,
-    /// How to sandbox commands executed in the system
-    pub(super) sandbox_policy: Constrained<SandboxPolicy>,
     pub(super) file_system_sandbox_policy: FileSystemSandboxPolicy,
     pub(super) network_sandbox_policy: NetworkSandboxPolicy,
 
@@ -333,7 +331,8 @@ impl SessionConfiguration {
             service_tier: self.service_tier,
             approval_policy: self.approval_policy.value(),
             approvals_reviewer: self.approvals_reviewer,
-            sandbox_policy: self.sandbox_policy.get().clone(),
+            file_system_sandbox_policy: self.file_system_sandbox_policy.clone(),
+            network_sandbox_policy: self.network_sandbox_policy,
             cwd: self.cwd.clone(),
             ephemeral: self.original_config_do_not_use.ephemeral,
             reasoning_effort: self.collaboration_mode.reasoning_effort(),
@@ -344,11 +343,6 @@ impl SessionConfiguration {
 
     pub(crate) fn apply(&self, updates: &SessionSettingsUpdate) -> ConstraintResult<Self> {
         let mut next_configuration = self.clone();
-        let file_system_policy_matches_legacy = self.file_system_sandbox_policy
-            == FileSystemSandboxPolicy::from_legacy_sandbox_policy(
-                self.sandbox_policy.get(),
-                &self.cwd,
-            );
         if let Some(collaboration_mode) = updates.collaboration_mode.clone() {
             next_configuration.collaboration_mode = collaboration_mode;
         }
@@ -367,26 +361,13 @@ impl SessionConfiguration {
         if let Some(approvals_reviewer) = updates.approvals_reviewer {
             next_configuration.approvals_reviewer = approvals_reviewer;
         }
-        let mut sandbox_policy_changed = false;
         if let Some(sandbox_policy) = updates.sandbox_policy.clone() {
-            next_configuration.sandbox_policy.set(sandbox_policy)?;
-            next_configuration.network_sandbox_policy =
-                NetworkSandboxPolicy::from(next_configuration.sandbox_policy.get());
-            sandbox_policy_changed = true;
+            next_configuration.file_system_sandbox_policy =
+                file_system_policy_from_sandbox_policy(&sandbox_policy, &self.cwd);
+            next_configuration.network_sandbox_policy = NetworkSandboxPolicy::from(&sandbox_policy);
         }
-        let mut cwd_changed = false;
         if let Some(cwd) = updates.cwd.clone() {
             next_configuration.cwd = cwd;
-            cwd_changed = true;
-        }
-        if sandbox_policy_changed || (cwd_changed && file_system_policy_matches_legacy) {
-            // Preserve richer split policies across cwd-only updates; only
-            // rederive when the session is already using the legacy bridge.
-            next_configuration.file_system_sandbox_policy =
-                FileSystemSandboxPolicy::from_legacy_sandbox_policy(
-                    next_configuration.sandbox_policy.get(),
-                    &next_configuration.cwd,
-                );
         }
         if let Some(app_server_client_name) = updates.app_server_client_name.clone() {
             next_configuration.app_server_client_name = Some(app_server_client_name);
@@ -444,7 +425,7 @@ pub(super) fn make_turn_context(
         features: &per_turn_config.features,
         web_search_mode: Some(per_turn_config.web_search_mode.value()),
         session_source: session_source.clone(),
-        sandbox_policy: session_configuration.sandbox_policy.get(),
+        file_system_sandbox_policy: &session_configuration.file_system_sandbox_policy,
         collab_enabled: per_turn_config.collab_enabled,
     })
     .with_web_search_config(per_turn_config.web_search_config.clone())
@@ -455,7 +436,7 @@ pub(super) fn make_turn_context(
     let turn_metadata_state = Arc::new(TurnMetadataState::new(
         sub_id.clone(),
         cwd.clone(),
-        session_configuration.sandbox_policy.get(),
+        &session_configuration.file_system_sandbox_policy,
     ));
     let (current_date, timezone) = local_time_context();
     TurnContext {
@@ -479,7 +460,6 @@ pub(super) fn make_turn_context(
         collaboration_mode: session_configuration.collaboration_mode.clone(),
         personality: session_configuration.personality,
         approval_policy: session_configuration.approval_policy.clone(),
-        sandbox_policy: session_configuration.sandbox_policy.clone(),
         file_system_sandbox_policy: session_configuration.file_system_sandbox_policy.clone(),
         network_sandbox_policy: session_configuration.network_sandbox_policy,
         network,

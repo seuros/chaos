@@ -110,7 +110,7 @@ pub use types::ApprovalsReviewer;
 /// the context window.
 pub(crate) const DEFAULT_AGENT_MAX_THREADS: Option<usize> = Some(6);
 pub(crate) const DEFAULT_AGENT_MAX_DEPTH: i32 = 1;
-pub(crate) const DEFAULT_AGENT_JOB_MAX_RUNTIME_SECONDS: Option<u64> = None;
+pub(crate) const DEFAULT_MINION_JOB_MAX_RUNTIME_SECONDS: Option<u64> = None;
 
 pub const CONFIG_TOML_FILE: &str = "config.toml";
 
@@ -320,8 +320,8 @@ pub struct Config {
 
     /// Maximum number of agent threads that can be open concurrently.
     pub agent_max_threads: Option<usize>,
-    /// Maximum runtime in seconds for agent job tasks before they are failed.
-    pub agent_job_max_runtime_seconds: Option<u64>,
+    /// Maximum runtime in seconds for minion job tasks before they are failed.
+    pub minion_job_max_runtime_seconds: Option<u64>,
 
     /// Maximum nesting depth allowed for spawned agent threads.
     pub agent_max_depth: i32,
@@ -867,11 +867,15 @@ pub fn resolve_oss_provider(
 
 pub(crate) fn resolve_web_search_mode_for_turn(
     web_search_mode: &Constrained<WebSearchMode>,
-    sandbox_policy: &SandboxPolicy,
+    file_system_sandbox_policy: &FileSystemSandboxPolicy,
 ) -> WebSearchMode {
     let preferred = web_search_mode.value();
 
-    if matches!(sandbox_policy, SandboxPolicy::RootAccess) && preferred != WebSearchMode::Disabled {
+    if matches!(
+        file_system_sandbox_policy.kind,
+        chaos_ipc::permissions::FileSystemSandboxKind::Unrestricted
+    ) && preferred != WebSearchMode::Disabled
+    {
         for mode in [
             WebSearchMode::Live,
             WebSearchMode::Cached,

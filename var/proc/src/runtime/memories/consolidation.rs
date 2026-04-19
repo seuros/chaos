@@ -16,7 +16,10 @@ impl StateRuntime {
     /// `pending/error` jobs to `pending`, and advances `input_watermark` so each
     /// enqueue marks new consolidation work even when `source_updated_at` is
     /// older than prior maxima.
-    pub async fn enqueue_global_consolidation(&self, input_watermark: i64) -> anyhow::Result<()> {
+    pub(crate) async fn enqueue_global_consolidation(
+        &self,
+        input_watermark: i64,
+    ) -> anyhow::Result<()> {
         enqueue_global_consolidation_with_executor(self.pool.as_ref(), input_watermark).await
     }
 
@@ -29,7 +32,7 @@ impl StateRuntime {
     /// - returns `SkippedRunning` when an active running lease exists
     /// - otherwise updates the row to `running`, sets ownership + lease, and
     ///   returns `Claimed`
-    pub async fn try_claim_global_phase2_job(
+    pub(crate) async fn try_claim_global_phase2_job(
         &self,
         worker_id: ProcessId,
         lease_seconds: i64,
@@ -132,7 +135,7 @@ WHERE kind = ? AND job_key = ?
     /// Query behavior:
     /// - `UPDATE jobs SET lease_until = ?` for the singleton global row
     /// - requires `status='running'` and matching `ownership_token`
-    pub async fn heartbeat_global_phase2_job(
+    pub(crate) async fn heartbeat_global_phase2_job(
         &self,
         ownership_token: &str,
         lease_seconds: i64,
@@ -169,7 +172,7 @@ WHERE kind = ? AND job_key = ?
     ///   snapshots remain marked as part of the latest successful phase-2
     ///   selection, and persists each selected snapshot's
     ///   `source_updated_at` for future retained-vs-added diffing
-    pub async fn mark_global_phase2_job_succeeded(
+    pub(crate) async fn mark_global_phase2_job_succeeded(
         &self,
         ownership_token: &str,
         completed_watermark: i64,
@@ -244,7 +247,7 @@ WHERE process_id = ? AND source_updated_at = ?
     /// - sets `status='error'`, clears lease
     /// - writes failure reason and retry time
     /// - decrements `retry_remaining`
-    pub async fn mark_global_phase2_job_failed(
+    pub(crate) async fn mark_global_phase2_job_failed(
         &self,
         ownership_token: &str,
         failure_reason: &str,
@@ -285,7 +288,7 @@ WHERE kind = ? AND job_key = ?
     /// - same state transition as [`Self::mark_global_phase2_job_failed`]
     /// - matches rows where `ownership_token = ? OR ownership_token IS NULL`
     /// - allows recovering a stuck unowned running row
-    pub async fn mark_global_phase2_job_failed_if_unowned(
+    pub(crate) async fn mark_global_phase2_job_failed_if_unowned(
         &self,
         ownership_token: &str,
         failure_reason: &str,

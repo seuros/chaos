@@ -1,53 +1,10 @@
-use chaos_pixbuf::PromptImageMode;
 use schemars::JsonSchema;
 use serde::Deserialize;
 use serde::Serialize;
 use ts_rs::TS;
 
-use super::images::image_close_tag_text;
-use super::images::image_open_tag_text;
-use super::images::local_image_content_items_with_label_number;
 use super::permissions::PermissionProfile;
 use super::permissions::SandboxPermissions;
-use super::response::ContentItem;
-use super::response::ResponseInputItem;
-use crate::user_input::UserInput;
-
-impl From<Vec<UserInput>> for ResponseInputItem {
-    fn from(items: Vec<UserInput>) -> Self {
-        let mut image_index = 0;
-        Self::Message {
-            role: "user".to_string(),
-            content: items
-                .into_iter()
-                .flat_map(|c| match c {
-                    UserInput::Text { text, .. } => vec![ContentItem::InputText { text }],
-                    UserInput::Image { image_url } => {
-                        image_index += 1;
-                        vec![
-                            ContentItem::InputText {
-                                text: image_open_tag_text(),
-                            },
-                            ContentItem::InputImage { image_url },
-                            ContentItem::InputText {
-                                text: image_close_tag_text(),
-                            },
-                        ]
-                    }
-                    UserInput::LocalImage { path } => {
-                        image_index += 1;
-                        local_image_content_items_with_label_number(
-                            &path,
-                            Some(image_index),
-                            PromptImageMode::ResizeToFit,
-                        )
-                    }
-                    UserInput::Mention { .. } => Vec::new(), // Tool bodies are injected later in core
-                })
-                .collect::<Vec<ContentItem>>(),
-        }
-    }
-}
 
 #[derive(Serialize, Deserialize, Debug, Clone, PartialEq, JsonSchema, TS)]
 pub struct SearchToolCallParams {

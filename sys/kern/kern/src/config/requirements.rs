@@ -5,6 +5,7 @@ use chaos_ipc::config_types::ServiceTier;
 use chaos_ipc::config_types::WebSearchMode;
 use chaos_ipc::permissions::FileSystemSandboxPolicy;
 use chaos_ipc::permissions::NetworkSandboxPolicy;
+use chaos_parole::sandbox::file_system_policy_from_sandbox_policy;
 use chaos_realpath::AbsolutePathBuf;
 
 use crate::config::Config;
@@ -43,7 +44,7 @@ use super::RealtimeAudioConfig;
 use super::RealtimeConfig;
 
 use super::{
-    DEFAULT_AGENT_JOB_MAX_RUNTIME_SECONDS, DEFAULT_AGENT_MAX_DEPTH, DEFAULT_AGENT_MAX_THREADS,
+    DEFAULT_AGENT_MAX_DEPTH, DEFAULT_AGENT_MAX_THREADS, DEFAULT_MINION_JOB_MAX_RUNTIME_SECONDS,
 };
 
 fn resolve_sqlite_home_env(resolved_cwd: &Path) -> Option<PathBuf> {
@@ -291,14 +292,14 @@ impl Config {
                     &mut startup_warnings,
                 )?;
             let mut sandbox_policy = file_system_sandbox_policy
-                .to_legacy_sandbox_policy(network_sandbox_policy, &resolved_cwd)?;
+                .to_sandbox_policy(network_sandbox_policy, &resolved_cwd)?;
             if matches!(sandbox_policy, SandboxPolicy::WorkspaceWrite { .. }) {
                 add_additional_file_system_writes(
                     &mut file_system_sandbox_policy,
                     &additional_writable_roots,
                 );
                 sandbox_policy = file_system_sandbox_policy
-                    .to_legacy_sandbox_policy(network_sandbox_policy, &resolved_cwd)?;
+                    .to_sandbox_policy(network_sandbox_policy, &resolved_cwd)?;
             }
             (
                 configured_network_proxy_config,
@@ -322,7 +323,7 @@ impl Config {
                 }
             }
             let file_system_sandbox_policy =
-                FileSystemSandboxPolicy::from_legacy_sandbox_policy(&sandbox_policy, &resolved_cwd);
+                file_system_policy_from_sandbox_policy(&sandbox_policy, &resolved_cwd);
             let network_sandbox_policy = NetworkSandboxPolicy::from(&sandbox_policy);
             (
                 configured_network_proxy_config,
@@ -419,18 +420,18 @@ impl Config {
                 "agents.max_depth must be at least 1",
             ));
         }
-        let agent_job_max_runtime_seconds = cfg
+        let minion_job_max_runtime_seconds = cfg
             .agents
             .as_ref()
             .and_then(|agents| agents.job_max_runtime_seconds)
-            .or(DEFAULT_AGENT_JOB_MAX_RUNTIME_SECONDS);
-        if agent_job_max_runtime_seconds == Some(0) {
+            .or(DEFAULT_MINION_JOB_MAX_RUNTIME_SECONDS);
+        if minion_job_max_runtime_seconds == Some(0) {
             return Err(std::io::Error::new(
                 std::io::ErrorKind::InvalidInput,
                 "agents.job_max_runtime_seconds must be at least 1",
             ));
         }
-        if let Some(max_runtime_seconds) = agent_job_max_runtime_seconds
+        if let Some(max_runtime_seconds) = minion_job_max_runtime_seconds
             && max_runtime_seconds > i64::MAX as u64
         {
             return Err(std::io::Error::new(
@@ -587,7 +588,7 @@ impl Config {
         let network = NetworkProxySpec::from_config_and_constraints(
             configured_network_proxy_config,
             network_requirements,
-            constrained_sandbox_policy.get(),
+            &file_system_sandbox_policy,
         )
         .map_err(|err| {
             if let Some(source) = network_requirements_source.as_ref() {
@@ -609,10 +610,7 @@ impl Config {
             if effective_sandbox_policy == original_sandbox_policy {
                 file_system_sandbox_policy
             } else {
-                FileSystemSandboxPolicy::from_legacy_sandbox_policy(
-                    &effective_sandbox_policy,
-                    &resolved_cwd,
-                )
+                file_system_policy_from_sandbox_policy(&effective_sandbox_policy, &resolved_cwd)
             };
         let effective_network_sandbox_policy =
             if effective_sandbox_policy == original_sandbox_policy {
@@ -659,7 +657,7 @@ impl Config {
             agent_max_threads,
             agent_max_depth,
             agent_roles,
-            agent_job_max_runtime_seconds,
+            minion_job_max_runtime_seconds,
             chaos_home,
             sqlite_home,
             log_dir,

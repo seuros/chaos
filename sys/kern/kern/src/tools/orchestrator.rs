@@ -179,7 +179,6 @@ impl ToolOrchestrator {
         // via crate::safety::get_platform_sandbox(..).
         let initial_attempt = SandboxAttempt {
             sandbox: initial_sandbox,
-            policy: &turn_ctx.sandbox_policy,
             file_system_policy: &turn_ctx.file_system_sandbox_policy,
             network_policy: turn_ctx.network_sandbox_policy,
             enforce_managed_network: has_managed_network_requirements,
@@ -297,7 +296,6 @@ impl ToolOrchestrator {
 
                 let escalated_attempt = SandboxAttempt {
                     sandbox: crate::exec::SandboxType::None,
-                    policy: &turn_ctx.sandbox_policy,
                     file_system_policy: &turn_ctx.file_system_sandbox_policy,
                     network_policy: turn_ctx.network_sandbox_policy,
                     enforce_managed_network: has_managed_network_requirements,

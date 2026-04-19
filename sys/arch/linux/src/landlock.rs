@@ -11,6 +11,10 @@ use alcatraz_base::error::AlcatrazError;
 use alcatraz_base::error::Result;
 use chaos_ipc::protocol::NetworkSandboxPolicy;
 use chaos_ipc::protocol::SandboxPolicy;
+use chaos_parole::sandbox::file_system_policy_from_sandbox_policy;
+use chaos_parole::sandbox::has_full_disk_read_access;
+use chaos_parole::sandbox::has_full_disk_write_access;
+use chaos_parole::sandbox::writable_roots;
 use chaos_realpath::AbsolutePathBuf;
 
 use landlock::ABI;
@@ -52,6 +56,7 @@ pub fn apply_sandbox_policy_to_current_thread(
     allowed_proxy_ports: &[u16],
 ) -> Result<()> {
     check_minimum_kernel_version()?;
+    let file_system_policy = file_system_policy_from_sandbox_policy(sandbox_policy, cwd);
 
     let network_seccomp_mode = network_seccomp_mode(
         network_sandbox_policy,
@@ -63,21 +68,20 @@ pub fn apply_sandbox_policy_to_current_thread(
     // `PR_SET_NO_NEW_PRIVS` is required for both seccomp and landlock.
     if network_seccomp_mode.is_some()
         || apply_proxy_port_landlock
-        || (apply_landlock_fs && !sandbox_policy.has_full_disk_write_access())
+        || (apply_landlock_fs && !has_full_disk_write_access(&file_system_policy))
     {
         set_no_new_privs()?;
     }
 
-    if apply_landlock_fs && !sandbox_policy.has_full_disk_write_access() {
-        if !sandbox_policy.has_full_disk_read_access() {
+    if apply_landlock_fs && !has_full_disk_write_access(&file_system_policy) {
+        if !has_full_disk_read_access(&file_system_policy) {
             return Err(AlcatrazError::UnsupportedOperation(
                 "Restricted read-only access is not supported by the Linux Landlock filesystem backend."
                     .to_string(),
             ));
         }
 
-        let writable_roots = sandbox_policy
-            .get_writable_roots_with_cwd(cwd)
+        let writable_roots = writable_roots(&file_system_policy, cwd)
             .into_iter()
             .map(|writable_root| writable_root.root)
             .collect();

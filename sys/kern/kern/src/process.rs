@@ -16,8 +16,9 @@ use chaos_ipc::models::ContentItem;
 use chaos_ipc::models::ResponseInputItem;
 use chaos_ipc::models::ResponseItem;
 use chaos_ipc::openai_models::ReasoningEffort;
+use chaos_ipc::permissions::FileSystemSandboxPolicy;
+use chaos_ipc::permissions::NetworkSandboxPolicy;
 use chaos_ipc::protocol::ApprovalPolicy;
-use chaos_ipc::protocol::SandboxPolicy;
 use chaos_ipc::protocol::SessionSource;
 use chaos_ipc::protocol::W3cTraceContext;
 use chaos_ipc::user_input::UserInput;
@@ -34,7 +35,8 @@ pub struct ProcessConfigSnapshot {
     pub service_tier: Option<ServiceTier>,
     pub approval_policy: ApprovalPolicy,
     pub approvals_reviewer: ApprovalsReviewer,
-    pub sandbox_policy: SandboxPolicy,
+    pub file_system_sandbox_policy: FileSystemSandboxPolicy,
+    pub network_sandbox_policy: NetworkSandboxPolicy,
     pub cwd: PathBuf,
     pub ephemeral: bool,
     pub reasoning_effort: Option<ReasoningEffort>,

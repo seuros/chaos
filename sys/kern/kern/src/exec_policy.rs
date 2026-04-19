@@ -13,7 +13,6 @@ use chaos_ipc::approvals::ExecPolicyAmendment;
 use chaos_ipc::permissions::FileSystemSandboxKind;
 use chaos_ipc::permissions::FileSystemSandboxPolicy;
 use chaos_ipc::protocol::ApprovalPolicy;
-use chaos_ipc::protocol::SandboxPolicy;
 use chaos_selinux::AmendError;
 use chaos_selinux::Decision;
 use chaos_selinux::Error as ExecPolicyRuleError;
@@ -164,7 +163,6 @@ pub(crate) struct ExecPolicyManager {
 pub(crate) struct ExecApprovalRequest<'a> {
     pub(crate) command: &'a [String],
     pub(crate) approval_policy: ApprovalPolicy,
-    pub(crate) sandbox_policy: &'a SandboxPolicy,
     pub(crate) file_system_sandbox_policy: &'a FileSystemSandboxPolicy,
     pub(crate) sandbox_permissions: SandboxPermissions,
     pub(crate) prefix_rule: Option<Vec<String>>,
@@ -197,7 +195,6 @@ impl ExecPolicyManager {
         let ExecApprovalRequest {
             command,
             approval_policy,
-            sandbox_policy,
             file_system_sandbox_policy,
             sandbox_permissions,
             prefix_rule,
@@ -211,7 +208,6 @@ impl ExecPolicyManager {
         let exec_policy_fallback = |cmd: &[String]| {
             render_decision_for_unmatched_command(
                 approval_policy,
-                sandbox_policy,
                 file_system_sandbox_policy,
                 cmd,
                 sandbox_permissions,
@@ -486,7 +482,6 @@ pub async fn load_exec_policy(config_stack: &ConfigLayerStack) -> Result<Policy,
 /// If a command is not matched by any execpolicy rule, derive a [`Decision`].
 pub fn render_decision_for_unmatched_command(
     approval_policy: ApprovalPolicy,
-    _sandbox_policy: &SandboxPolicy,
     file_system_sandbox_policy: &FileSystemSandboxPolicy,
     command: &[String],
     sandbox_permissions: SandboxPermissions,

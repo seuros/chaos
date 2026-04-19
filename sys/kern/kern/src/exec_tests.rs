@@ -1,4 +1,5 @@
 use super::*;
+use chaos_ipc::protocol::SandboxPolicy;
 use pretty_assertions::assert_eq;
 use std::time::Duration;
 use tokio::io::AsyncWriteExt;
@@ -232,8 +233,6 @@ async fn kill_child_process_group_kills_grandchildren_on_timeout() -> Result<()>
     let output = exec(
         params,
         SandboxType::None,
-        &SandboxPolicy::new_read_only_policy(),
-        &FileSystemSandboxPolicy::from(&SandboxPolicy::new_read_only_policy()),
         NetworkSandboxPolicy::Restricted,
         None,
         None,
@@ -289,7 +288,6 @@ async fn process_exec_tool_call_respects_cancellation_token() -> Result<()> {
     });
     let result = process_exec_tool_call(
         params,
-        &SandboxPolicy::RootAccess,
         &FileSystemSandboxPolicy::from(&SandboxPolicy::RootAccess),
         NetworkSandboxPolicy::Enabled,
         cwd.as_path(),

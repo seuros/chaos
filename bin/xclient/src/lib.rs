@@ -300,7 +300,12 @@ mod tests {
             service_tier: None,
             approval_policy: ApprovalPolicy::default(),
             approvals_reviewer: ApprovalsReviewer::default(),
-            sandbox_policy: SandboxPolicy::new_read_only_policy(),
+            file_system_sandbox_policy: chaos_ipc::protocol::FileSystemSandboxPolicy::from(
+                &SandboxPolicy::new_read_only_policy(),
+            ),
+            network_sandbox_policy: chaos_ipc::protocol::NetworkSandboxPolicy::from(
+                &SandboxPolicy::new_read_only_policy(),
+            ),
             cwd: PathBuf::from("/"),
             reasoning_effort: None,
             history_log_id: 0,

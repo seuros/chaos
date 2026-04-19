@@ -33,7 +33,7 @@ impl StateRuntime {
     /// For each selected thread, this function calls [`Self::try_claim_stage1_job`]
     /// with `source_updated_at = thread.updated_at.as_second()` and returns up to
     /// `max_claimed` successful claims.
-    pub async fn claim_stage1_jobs_for_startup(
+    pub(crate) async fn claim_stage1_jobs_for_startup(
         &self,
         current_process_id: ProcessId,
         params: Stage1StartupClaimParams<'_>,
@@ -167,7 +167,7 @@ LEFT JOIN jobs
     /// If claiming fails, a follow-up read maps current row state to a precise
     /// skip outcome (`SkippedRunning`, `SkippedRetryBackoff`, or
     /// `SkippedRetryExhausted`).
-    pub async fn try_claim_stage1_job(
+    pub(crate) async fn try_claim_stage1_job(
         &self,
         process_id: ProcessId,
         worker_id: ProcessId,
@@ -354,7 +354,7 @@ WHERE kind = ? AND job_key = ?
     /// - persists optional `rollout_slug` for rollout summary artifact naming
     /// - enqueues/advances the global phase-2 job watermark using
     ///   `source_updated_at`
-    pub async fn mark_stage1_job_succeeded(
+    pub(crate) async fn mark_stage1_job_succeeded(
         &self,
         process_id: ProcessId,
         ownership_token: &str,
@@ -435,7 +435,7 @@ WHERE excluded.source_updated_at >= stage1_outputs.source_updated_at
     /// - deletes any existing `stage1_outputs` row for the thread
     /// - enqueues/advances the global phase-2 job watermark using the claimed
     ///   `input_watermark` only when deleting an existing `stage1_outputs` row
-    pub async fn mark_stage1_job_succeeded_no_output(
+    pub(crate) async fn mark_stage1_job_succeeded_no_output(
         &self,
         process_id: ProcessId,
         ownership_token: &str,
@@ -510,7 +510,7 @@ WHERE process_id = ?
     /// - sets `status='error'`, clears lease, writes `last_error`
     /// - decrements `retry_remaining`
     /// - sets `retry_at = now + retry_delay_seconds`
-    pub async fn mark_stage1_job_failed(
+    pub(crate) async fn mark_stage1_job_failed(
         &self,
         process_id: ProcessId,
         ownership_token: &str,

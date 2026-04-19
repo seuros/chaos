@@ -59,8 +59,9 @@ impl Session {
             developer_sections.push(model_switch_message.into_text());
         }
         developer_sections.push(
-            chaos_ipc::models::DeveloperInstructions::from_policy(
-                turn_context.sandbox_policy.get(),
+            crate::developer_instructions::from_policies(
+                &turn_context.file_system_sandbox_policy,
+                turn_context.network_sandbox_policy,
                 turn_context.approval_policy.value(),
                 self.services.exec_policy.current().as_ref(),
                 &turn_context.cwd,

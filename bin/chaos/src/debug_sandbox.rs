@@ -196,7 +196,7 @@ async fn run_command_under_sandbox(
     let network_proxy = match config.permissions.network.as_ref() {
         Some(spec) => Some(
             spec.start_proxy(
-                config.permissions.sandbox_policy.get(),
+                &config.permissions.file_system_sandbox_policy,
                 /*policy_decider*/ None,
                 /*blocked_request_observer*/ None,
                 managed_network_requirements_enabled,

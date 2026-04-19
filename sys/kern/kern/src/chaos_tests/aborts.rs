@@ -467,14 +467,10 @@ async fn rejects_escalated_permissions_when_policy_not_on_request() {
     // Now retry the same command WITHOUT escalated permissions; should succeed.
     // Force RootAccess to avoid platform sandbox dependencies in tests.
     let turn_context_mut = Arc::get_mut(&mut turn_context).expect("unique turn context Arc");
-    turn_context_mut
-        .sandbox_policy
-        .set(SandboxPolicy::RootAccess)
-        .expect("test setup should allow updating sandbox policy");
     turn_context_mut.file_system_sandbox_policy =
-        FileSystemSandboxPolicy::from(turn_context_mut.sandbox_policy.get());
+        FileSystemSandboxPolicy::from(&SandboxPolicy::RootAccess);
     turn_context_mut.network_sandbox_policy =
-        NetworkSandboxPolicy::from(turn_context_mut.sandbox_policy.get());
+        NetworkSandboxPolicy::from(&SandboxPolicy::RootAccess);
 
     let resp2 = handler
         .handle(ToolInvocation {

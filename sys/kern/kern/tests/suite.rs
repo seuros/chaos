@@ -56,8 +56,6 @@ pub static CHAOS_ALIASES_TEMP_DIR: TestChaosAliasesGuard = unsafe {
 
 #[path = "suite/abort_tasks.rs"]
 mod abort_tasks;
-#[path = "suite/agent_jobs.rs"]
-mod agent_jobs;
 #[path = "suite/apply_patch_cli.rs"]
 mod apply_patch_cli;
 #[path = "suite/approvals.rs"]
@@ -84,6 +82,8 @@ mod list_dir;
 mod live_cli;
 #[path = "suite/mcp_client.rs"]
 mod mcp_client;
+#[path = "suite/minion_jobs.rs"]
+mod minion_jobs;
 #[path = "suite/model_info_overrides.rs"]
 mod model_info_overrides;
 #[path = "suite/model_overrides.rs"]

@@ -1,7 +1,4 @@
-use chaos_ipc::models::ContentItem;
-use chaos_ipc::models::FunctionCallOutputContentItem;
 use chaos_ipc::models::ImageDetail;
-use chaos_ipc::models::local_image_content_items_with_label_number;
 use chaos_ipc::openai_models::InputModality;
 use chaos_pixbuf::PromptImageMode;
 use serde::Deserialize;
@@ -9,6 +6,7 @@ use tokio::fs;
 
 use crate::function_tool::FunctionCallError;
 use crate::original_image_detail::can_request_original_image_detail;
+use crate::prompt_images::local_image_tool_output_items;
 use crate::protocol::EventMsg;
 use crate::protocol::ViewImageToolCallEvent;
 use crate::tools::context::FunctionToolOutput;
@@ -112,19 +110,7 @@ impl ToolHandler for ViewImageHandler {
         };
         let image_detail = use_original_detail.then_some(ImageDetail::Original);
 
-        let content = local_image_content_items_with_label_number(
-            &abs_path, /*label_number*/ None, image_mode,
-        )
-        .into_iter()
-        .map(|item| match item {
-            ContentItem::InputText { text } => FunctionCallOutputContentItem::InputText { text },
-            ContentItem::InputImage { image_url } => FunctionCallOutputContentItem::InputImage {
-                image_url,
-                detail: image_detail,
-            },
-            ContentItem::OutputText { text } => FunctionCallOutputContentItem::InputText { text },
-        })
-        .collect();
+        let content = local_image_tool_output_items(&abs_path, image_mode, image_detail);
 
         session
             .send_event(

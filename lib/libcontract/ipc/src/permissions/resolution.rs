@@ -92,24 +92,24 @@ impl FileSystemSandboxPolicy {
         })
     }
 
-    /// Converts a legacy sandbox policy into an equivalent filesystem policy
-    /// for the provided cwd.
+    /// Converts a sandbox policy into an equivalent filesystem policy for the
+    /// provided cwd.
     ///
-    /// Legacy `WorkspaceWrite` policies may list readable roots that live
-    /// under an already-writable root. Those paths were redundant in the
-    /// legacy model and should not become read-only carveouts when projected
-    /// into split filesystem policy.
-    pub fn from_legacy_sandbox_policy(sandbox_policy: &SandboxPolicy, cwd: &Path) -> Self {
+    /// `WorkspaceWrite` policies may list readable roots that live under an
+    /// already-writable root. Those paths are redundant in the high-level
+    /// policy and must not become read-only carveouts when projected into the
+    /// filesystem policy.
+    pub fn from_sandbox_policy(sandbox_policy: &SandboxPolicy, cwd: &Path) -> Self {
         let mut file_system_policy = Self::from(sandbox_policy);
         if matches!(sandbox_policy, SandboxPolicy::WorkspaceWrite { .. }) {
-            let legacy_writable_roots = sandbox_policy.get_writable_roots_with_cwd(cwd);
+            let writable_roots = sandbox_policy.get_writable_roots_with_cwd(cwd);
             file_system_policy.entries.retain(|entry| {
                 if entry.access != FileSystemAccessMode::Read {
                     return true;
                 }
 
                 match &entry.path {
-                    FileSystemPath::Path { path } => !legacy_writable_roots
+                    FileSystemPath::Path { path } => !writable_roots
                         .iter()
                         .any(|root| root.is_path_writable(path.as_path())),
                     FileSystemPath::Special { .. } => true,
@@ -193,12 +193,12 @@ impl FileSystemSandboxPolicy {
             return false;
         }
 
-        let Ok(legacy_policy) = self.to_legacy_sandbox_policy(network_policy, cwd) else {
+        let Ok(sandbox_policy) = self.to_sandbox_policy(network_policy, cwd) else {
             return true;
         };
 
         self.semantic_signature(cwd)
-            != FileSystemSandboxPolicy::from_legacy_sandbox_policy(&legacy_policy, cwd)
+            != FileSystemSandboxPolicy::from_sandbox_policy(&sandbox_policy, cwd)
                 .semantic_signature(cwd)
     }
 
@@ -347,7 +347,7 @@ impl FileSystemSandboxPolicy {
         )
     }
 
-    pub fn to_legacy_sandbox_policy(
+    pub fn to_sandbox_policy(
         &self,
         network_policy: NetworkSandboxPolicy,
         cwd: &Path,

@@ -60,7 +60,11 @@ pub(super) async fn try_run_sampling_request(
     crate::feedback_tags!(
         model = turn_context.model_info.slug.clone(),
         approval_policy = turn_context.approval_policy.value(),
-        sandbox_policy = turn_context.sandbox_policy.get(),
+        sandbox_policy = crate::sandbox_tags::sandbox_policy_tag_for_policies(
+            &turn_context.file_system_sandbox_policy,
+            turn_context.network_sandbox_policy,
+            &turn_context.cwd,
+        ),
         effort = turn_context.reasoning_effort,
         auth_mode = sess.services.auth_manager.auth_mode(),
         features = sess.features.enabled_features(),

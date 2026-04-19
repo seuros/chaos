@@ -267,12 +267,12 @@ mod tests {
     use tempfile::TempDir;
 
     #[test]
-    fn resolve_sandbox_policies_derives_split_policies_from_legacy_policy() {
+    fn resolve_sandbox_policies_derives_split_policies_from_sandbox_policy() {
         let sandbox_policy = SandboxPolicy::new_read_only_policy();
 
         let resolved =
             resolve_sandbox_policies(Path::new("/tmp"), Some(sandbox_policy.clone()), None, None)
-                .expect("legacy policy should resolve");
+                .expect("sandbox policy should resolve");
 
         assert_eq!(resolved.sandbox_policy, sandbox_policy);
         assert_eq!(
@@ -286,7 +286,7 @@ mod tests {
     }
 
     #[test]
-    fn resolve_sandbox_policies_derives_legacy_policy_from_split_policies() {
+    fn resolve_sandbox_policies_derives_sandbox_policy_from_split_policies() {
         let sandbox_policy = SandboxPolicy::new_read_only_policy();
         let file_system_sandbox_policy = FileSystemSandboxPolicy::from(&sandbox_policy);
         let network_sandbox_policy = NetworkSandboxPolicy::from(&sandbox_policy);
@@ -321,18 +321,18 @@ mod tests {
     }
 
     #[test]
-    fn resolve_sandbox_policies_rejects_mismatched_legacy_and_split_inputs() {
+    fn resolve_sandbox_policies_rejects_mismatched_sandbox_and_split_inputs() {
         let err = resolve_sandbox_policies(
             Path::new("/tmp"),
             Some(SandboxPolicy::new_read_only_policy()),
             Some(FileSystemSandboxPolicy::unrestricted()),
             Some(NetworkSandboxPolicy::Enabled),
         )
-        .expect_err("mismatched legacy and split policies should fail");
+        .expect_err("mismatched sandbox and split policies should fail");
         assert!(
             matches!(
                 err,
-                ResolveSandboxPoliciesError::MismatchedLegacyPolicy { .. }
+                ResolveSandboxPoliciesError::MismatchedSandboxPolicy { .. }
             ),
             "{err}"
         );

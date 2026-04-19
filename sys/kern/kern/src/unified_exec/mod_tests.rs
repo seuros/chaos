@@ -17,13 +17,11 @@ async fn test_session_and_turn() -> (Arc<Session>, Arc<TurnContext>) {
     turn.approval_policy
         .set(ApprovalPolicy::Headless)
         .expect("test setup should allow updating approval policy");
-    turn.sandbox_policy
-        .set(SandboxPolicy::RootAccess)
-        .expect("test setup should allow updating sandbox policy");
+    let sandbox_policy = SandboxPolicy::RootAccess;
     turn.file_system_sandbox_policy =
-        chaos_ipc::permissions::FileSystemSandboxPolicy::from(turn.sandbox_policy.get());
+        chaos_ipc::permissions::FileSystemSandboxPolicy::from(&sandbox_policy);
     turn.network_sandbox_policy =
-        chaos_ipc::permissions::NetworkSandboxPolicy::from(turn.sandbox_policy.get());
+        chaos_ipc::permissions::NetworkSandboxPolicy::from(&sandbox_policy);
     (Arc::new(session), Arc::new(turn))
 }
 

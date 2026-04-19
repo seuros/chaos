@@ -12,7 +12,7 @@ impl StateRuntime {
     ///
     /// Each thread id increments `usage_count` by one and sets `last_usage` to
     /// the current Unix timestamp. Missing rows are ignored.
-    pub async fn record_stage1_output_usage(
+    pub(crate) async fn record_stage1_output_usage(
         &self,
         process_ids: &[ProcessId],
     ) -> anyhow::Result<usize> {
@@ -52,7 +52,7 @@ WHERE process_id = ?
     /// - joins `processes` to include thread `cwd` and `git_branch`
     /// - orders by `source_updated_at DESC, process_id DESC`
     /// - applies `LIMIT n`
-    pub async fn list_stage1_outputs_for_global(
+    pub(crate) async fn list_stage1_outputs_for_global(
         &self,
         n: usize,
     ) -> anyhow::Result<Vec<Stage1Output>> {
@@ -98,7 +98,7 @@ LIMIT ?
     /// - keeps recency as `COALESCE(last_usage, source_updated_at)`
     /// - removes rows older than `max_unused_days`
     /// - prunes at most `limit` rows ordered from stalest to newest
-    pub async fn prune_stage1_outputs_for_retention(
+    pub(crate) async fn prune_stage1_outputs_for_retention(
         &self,
         max_unused_days: i64,
         limit: usize,
@@ -156,7 +156,7 @@ WHERE process_id IN (
     /// - removed rows are previously selected rows that are still present in
     ///   `stage1_outputs` but are no longer in the current selection, including
     ///   processes that are no longer memory-eligible
-    pub async fn get_phase2_input_selection(
+    pub(crate) async fn get_phase2_input_selection(
         &self,
         n: usize,
         max_unused_days: i64,

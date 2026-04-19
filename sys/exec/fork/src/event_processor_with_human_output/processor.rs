@@ -98,9 +98,9 @@ impl EventProcessor for EventProcessorWithHumanOutput {
     fn process_event(&mut self, event: Event) -> ChaosStatus {
         let Event { id: _, msg } = event;
         if let EventMsg::BackgroundEvent(BackgroundEventEvent { message }) = &msg
-            && let Some(update) = Self::parse_agent_job_progress(message)
+            && let Some(update) = Self::parse_minion_job_progress(message)
         {
-            self.render_agent_job_progress(update);
+            self.render_minion_job_progress(update);
             return ChaosStatus::Running;
         }
         if self.progress_active && !Self::should_interrupt_progress(&msg) {

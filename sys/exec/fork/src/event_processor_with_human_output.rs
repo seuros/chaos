@@ -106,7 +106,7 @@ impl EventProcessorWithHumanOutput {
 }
 
 #[derive(Debug, Deserialize)]
-pub(super) struct AgentJobProgressMessage {
+pub(super) struct MinionJobProgressMessage {
     pub(super) job_id: String,
     pub(super) total_items: usize,
     pub(super) pending_items: usize,

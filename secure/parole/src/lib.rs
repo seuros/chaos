@@ -5,3 +5,5 @@
 //! escalation decisions. One crate to unify the scattered approval
 //! logic currently spread across core's sandboxing, exec_policy, and
 //! config modules.
+
+pub mod sandbox;

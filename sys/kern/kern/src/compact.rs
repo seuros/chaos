@@ -11,6 +11,7 @@ use crate::client::ModelClientSession;
 use crate::client_common::ResponseEvent;
 use crate::error::ChaosErr;
 use crate::error::Result as ChaosResult;
+use crate::prompt_images::response_input_item_from_user_input;
 use crate::protocol::CompactedItem;
 use crate::protocol::EventMsg;
 use crate::protocol::TurnStartedEvent;
@@ -96,7 +97,7 @@ async fn run_compact_task_inner(
     let compaction_item = TurnItem::ContextCompaction(ContextCompactionItem::new());
     sess.emit_turn_item_started(&turn_context, &compaction_item)
         .await;
-    let initial_input_for_turn: ResponseInputItem = ResponseInputItem::from(input);
+    let initial_input_for_turn: ResponseInputItem = response_input_item_from_user_input(input);
 
     let mut history = sess.clone_history().await;
     history.record_items(

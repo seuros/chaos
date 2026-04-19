@@ -204,20 +204,25 @@ impl ApplyPatchRuntime {
     ) -> Result<ExecToolCallOutput, ToolError> {
         use crate::error::ChaosErr;
         use crate::error::SandboxErr;
-        use crate::sandboxing::EffectiveSandboxPermissions;
+        use crate::sandboxing::effective_file_system_sandbox_policy;
+        use crate::sandboxing::effective_network_sandbox_policy;
         use std::io::Read as _;
         use std::io::Write as _;
         use std::os::fd::FromRawFd;
 
-        // Merge request-specific additional_permissions into the turn-wide
-        // policy so that approved extra write roots are reflected in landlock.
-        let effective = EffectiveSandboxPermissions::new(
-            attempt.policy,
-            None, // no macOS seatbelt on Linux
+        let file_system_sandbox_policy = effective_file_system_sandbox_policy(
+            attempt.file_system_policy,
             req.additional_permissions.as_ref(),
         );
-        let sandbox_policy = &effective.sandbox_policy;
-        let network_policy = attempt.network_policy;
+        let network_policy = effective_network_sandbox_policy(
+            attempt.network_policy,
+            req.additional_permissions.as_ref(),
+        );
+        let sandbox_policy = file_system_sandbox_policy
+            .to_sandbox_policy(network_policy, attempt.sandbox_cwd)
+            .map_err(|err| {
+                ToolError::Rejected(format!("invalid sandbox policy projection: {err}"))
+            })?;
         // Resolve writable roots against the turn cwd (sandbox_cwd), not
         // req.action.cwd which may be a nested subdirectory.
         let cwd = attempt.sandbox_cwd;
@@ -262,7 +267,7 @@ impl ApplyPatchRuntime {
 
             // Apply landlock+seccomp sandbox.
             let sandbox_result = alcatraz_linux::landlock::apply_sandbox_policy_to_current_thread(
-                sandbox_policy,
+                &sandbox_policy,
                 network_policy,
                 cwd,
                 true,  // apply_landlock_fs

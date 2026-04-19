@@ -124,6 +124,7 @@ name = "alcatraz-base"
 version = "47.0.0"
 dependencies = [
  "chaos-ipc",
+ "chaos-parole",
  "landlock",
  "seccompiler",
  "thiserror 2.0.18",
@@ -135,6 +136,7 @@ version = "47.0.0"
 dependencies = [
  "alcatraz-base",
  "chaos-ipc",
+ "chaos-parole",
  "chaos-pf",
  "chaos-realpath",
  "clap",
@@ -156,6 +158,7 @@ dependencies = [
  "alcatraz-base",
  "chaos-ipc",
  "chaos-kern",
+ "chaos-parole",
  "chaos-realpath",
  "clap",
  "dbus-secret-service-keyring-store",
@@ -177,6 +180,7 @@ name = "alcatraz-macos"
 version = "47.0.0"
 dependencies = [
  "chaos-ipc",
+ "chaos-parole",
  "chaos-pf",
  "chaos-realpath",
  "dirs",
@@ -1509,14 +1513,12 @@ name = "chaos-ipc"
 version = "47.0.0"
 dependencies = [
  "anyhow",
- "chaos-pixbuf",
  "chaos-realpath",
  "chaos-scm",
  "chaos-selinux",
  "icu_decimal",
  "icu_locale_core",
  "icu_provider",
- "mime_guess",
  "pretty_assertions",
  "schemars 1.2.1",
  "serde",
@@ -1599,6 +1601,7 @@ dependencies = [
  "chaos-mcp-runtime",
  "chaos-minions",
  "chaos-model-catalog",
+ "chaos-parole",
  "chaos-parrot",
  "chaos-pf",
  "chaos-pixbuf",
@@ -1642,6 +1645,7 @@ dependencies = [
  "landlock",
  "libc",
  "mcp-host",
+ "mime_guess",
  "notify",
  "openssl-sys",
  "os_info",
@@ -1844,6 +1848,10 @@ dependencies = [
 [[package]]
 name = "chaos-parole"
 version = "47.0.0"
+dependencies = [
+ "chaos-ipc",
+ "chaos-realpath",
+]
 
 [[package]]
 name = "chaos-parrot"
@@ -1926,7 +1934,6 @@ dependencies = [
  "state-machines",
  "tokio",
  "tracing",
- "tracing-subscriber",
  "uuid",
 ]
 
@@ -2069,9 +2076,13 @@ dependencies = [
 name = "chaos-snitch"
 version = "47.0.0"
 dependencies = [
+ "chaos-proc",
+ "jiff",
+ "tokio",
  "tracing",
  "tracing-appender",
  "tracing-subscriber",
+ "uuid",
 ]
 
 [[package]]

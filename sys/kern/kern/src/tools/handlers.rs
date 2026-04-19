@@ -1,4 +1,3 @@
-pub(crate) mod agent_jobs;
 pub mod apply_patch;
 mod catalog_module;
 mod dynamic;
@@ -6,6 +5,7 @@ mod hallucinate;
 mod mcp;
 mod mcp_resource;
 mod mcp_task;
+pub(crate) mod minion_jobs;
 mod plan;
 mod request_permissions;
 mod request_user_input;

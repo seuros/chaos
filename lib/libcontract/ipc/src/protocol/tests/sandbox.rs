@@ -442,7 +442,7 @@ fn legacy_workspace_write_nested_readable_root_stays_writable() {
 
     assert_eq!(
         sorted_writable_roots(
-            FileSystemSandboxPolicy::from_legacy_sandbox_policy(&policy, cwd.path())
+            FileSystemSandboxPolicy::from_sandbox_policy(&policy, cwd.path())
                 .get_writable_roots_with_cwd(cwd.path())
         ),
         vec![(canonical_cwd, Vec::new())]
@@ -462,7 +462,7 @@ fn file_system_policy_rejects_legacy_bridge_for_non_workspace_writes() {
     }]);
 
     let err = policy
-        .to_legacy_sandbox_policy(NetworkSandboxPolicy::Restricted, cwd)
+        .to_sandbox_policy(NetworkSandboxPolicy::Restricted, cwd)
         .expect_err("non-workspace writes should be rejected");
 
     assert!(
@@ -530,9 +530,9 @@ fn legacy_sandbox_policy_semantics_survive_split_bridge() {
     ];
 
     for expected in policies {
-        let actual = FileSystemSandboxPolicy::from_legacy_sandbox_policy(&expected, cwd.path())
-            .to_legacy_sandbox_policy(NetworkSandboxPolicy::from(&expected), cwd.path())
-            .expect("legacy bridge should preserve legacy policy semantics");
+        let actual = FileSystemSandboxPolicy::from_sandbox_policy(&expected, cwd.path())
+            .to_sandbox_policy(NetworkSandboxPolicy::from(&expected), cwd.path())
+            .expect("sandbox-policy projection should preserve policy semantics");
 
         assert_same_sandbox_policy_semantics(&expected, &actual, cwd.path());
     }

@@ -1,4 +1,5 @@
 use super::*;
+use chaos_ipc::protocol::SandboxPolicy;
 use pretty_assertions::assert_eq;
 
 #[test]
@@ -32,7 +33,7 @@ fn requirements_allowed_domains_are_a_baseline_for_user_allowlist() {
     let spec = NetworkProxySpec::from_config_and_constraints(
         config,
         Some(requirements),
-        &SandboxPolicy::new_read_only_policy(),
+        &FileSystemSandboxPolicy::from(&SandboxPolicy::new_read_only_policy()),
     )
     .expect("config should stay within the managed allowlist");
 
@@ -61,7 +62,7 @@ fn root_access_keeps_managed_allowlist_and_denylist_fixed() {
     let spec = NetworkProxySpec::from_config_and_constraints(
         config,
         Some(requirements),
-        &SandboxPolicy::RootAccess,
+        &FileSystemSandboxPolicy::unrestricted(),
     )
     .expect("yolo mode should pin the effective policy to the managed baseline");
 
@@ -90,7 +91,7 @@ fn managed_allowed_domains_only_disables_default_mode_allowlist_expansion() {
     let spec = NetworkProxySpec::from_config_and_constraints(
         config,
         Some(requirements),
-        &SandboxPolicy::new_workspace_write_policy(),
+        &FileSystemSandboxPolicy::from(&SandboxPolicy::new_workspace_write_policy()),
     )
     .expect("managed baseline should still load");
 
@@ -114,7 +115,7 @@ fn managed_allowed_domains_only_ignores_user_allowlist_and_hard_denies_misses() 
     let spec = NetworkProxySpec::from_config_and_constraints(
         config,
         Some(requirements),
-        &SandboxPolicy::new_workspace_write_policy(),
+        &FileSystemSandboxPolicy::from(&SandboxPolicy::new_workspace_write_policy()),
     )
     .expect("managed-only allowlist should still load");
 
@@ -142,7 +143,7 @@ fn managed_allowed_domains_only_without_managed_allowlist_blocks_all_user_domain
     let spec = NetworkProxySpec::from_config_and_constraints(
         config,
         Some(requirements),
-        &SandboxPolicy::new_workspace_write_policy(),
+        &FileSystemSandboxPolicy::from(&SandboxPolicy::new_workspace_write_policy()),
     )
     .expect("managed-only mode should treat missing managed allowlist as empty");
 
@@ -164,7 +165,7 @@ fn managed_allowed_domains_only_blocks_all_user_domains_in_full_access_without_m
     let spec = NetworkProxySpec::from_config_and_constraints(
         config,
         Some(requirements),
-        &SandboxPolicy::RootAccess,
+        &FileSystemSandboxPolicy::unrestricted(),
     )
     .expect("managed-only mode should treat missing managed allowlist as empty");
 
@@ -186,7 +187,7 @@ fn requirements_denied_domains_are_a_baseline_for_default_mode() {
     let spec = NetworkProxySpec::from_config_and_constraints(
         config,
         Some(requirements),
-        &SandboxPolicy::new_workspace_write_policy(),
+        &FileSystemSandboxPolicy::from(&SandboxPolicy::new_workspace_write_policy()),
     )
     .expect("default mode should merge managed and user deny entries");
 

@@ -281,7 +281,7 @@ WHERE id IN (
         Ok(())
     }
 
-    pub(crate) async fn delete_logs_before(&self, cutoff_ts: i64) -> anyhow::Result<u64> {
+    pub async fn delete_logs_before(&self, cutoff_ts: i64) -> anyhow::Result<u64> {
         let result = sqlx::query("DELETE FROM logs WHERE ts < ?")
             .bind(cutoff_ts)
             .execute(self.pool.as_ref())

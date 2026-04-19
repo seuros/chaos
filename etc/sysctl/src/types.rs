@@ -1060,7 +1060,7 @@ pub struct AgentsToml {
     /// Maximum nesting depth allowed for spawned agent threads.
     #[schemars(range(min = 1))]
     pub max_depth: Option<i32>,
-    /// Default maximum runtime in seconds for agent job tasks.
+    /// Default maximum runtime in seconds for minion job tasks.
     #[schemars(range(min = 1))]
     pub job_max_runtime_seconds: Option<u64>,
 
